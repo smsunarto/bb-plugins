@@ -1,12 +1,16 @@
 import { experimental_defineHostEntry } from "@get-bb/plugin-sdk/host";
 import { snapshotHostContract } from "../shared/host-contract.ts";
-import { capture, forget, turnPatch } from "./snapshots.ts";
+import { forget, pin, snapshot, turnPatch } from "./snapshots.ts";
 
 export default experimental_defineHostEntry({
   contract: snapshotHostContract,
   handlers: {
-    async capture({ environmentPath, threadId, at, kind }, context) {
-      return { captured: await capture(environmentPath, threadId, at, kind, context.signal) };
+    async snapshot({ environmentPath }, context) {
+      return { commit: await snapshot(environmentPath, context.signal) };
+    },
+    async pin({ environmentPath, threadId, captures }, context) {
+      await pin(environmentPath, threadId, captures, context.signal);
+      return {};
     },
     async turnPatch({ environmentPath, threadId, window, recordedPaths, known }, context) {
       return {
@@ -20,8 +24,8 @@ export default experimental_defineHostEntry({
         ),
       };
     },
-    async forget({ environmentPath, threadId }, context) {
-      await forget(environmentPath, threadId, context.signal);
+    async forget({ environmentPath, threadId, at }, context) {
+      await forget(environmentPath, threadId, at, context.signal);
       return {};
     },
   },

@@ -503,7 +503,7 @@ function snapshot(overrides: Record<string, unknown> = {}) {
       otherPatch: null,
       limited: false,
       uncovered: [],
-      attribution: { start: "s", end: "e", foreign: [] },
+      attribution: { start: "s", end: "e", contested: [] },
       ...overrides,
     },
   };
@@ -622,49 +622,129 @@ test("edits reported under the resolved environment path stay in this workspace"
 
 const readyEnvironment = { status: "ready", hostId: "h", path: "/ws/dotfiles" };
 
-test("the dispatch hook baselines the checkout before a turn starts and always proceeds", async () => {
-  const calls: ExperimentalFakeHostRpcCall[] = [];
-  const { harness } = await setup(undefined, undefined, [], null, (call) => {
-    calls.push(call);
-    if (calls.length > 1) throw new Error("host offline");
-    return { captured: true };
-  });
+const commitOf = (n: number) => n.toString(16).padStart(40, "0");
+/** A fake host that logs each snapshot by number and each pin as kind@snapshot. */
+function recordingHost(fail: (n: number) => "late" | "throw" | null = () => null) {
+  const log: string[] = [];
+  let count = 0;
+  const call = async (call: ExperimentalFakeHostRpcCall) => {
+    if (call.method === "snapshot") {
+      const n = ++count;
+      const failure = fail(n);
+      if (failure === "throw") throw new Error("snapshot failed");
+      if (failure === "late") await new Promise((resolve) => setTimeout(resolve, 1_600));
+      log.push(`snapshot:${n}`);
+      return { commit: commitOf(n) };
+    }
+    if (call.method === "pin") {
+      const { captures } = call.input as { captures: { kind: string; commit: string | null }[] };
+      const pins = captures.map((c) => `${c.kind}@${c.commit ? parseInt(c.commit, 16) : "-"}`);
+      log.push(`pin:${pins.join(",")}`);
+      return {};
+    }
+    log.push(call.method);
+    return call.method === "turnPatch" ? { snapshot: null } : {};
+  };
+  return { log, call };
+}
+const lifecycleThread = { id: "thread-1", status: "idle", environmentId: "env-1" };
+async function lifecycle(fail?: (n: number) => "late" | "throw" | null) {
+  const host = recordingHost(fail);
+  const { harness } = await setup(undefined, undefined, [], null, host.call);
+  stubWorkspaces(harness);
   const hook = harness.registrations.hooks["message.dispatch"]!;
-  const dispatch = (attempt: "start-turn" | "join-turn") =>
+  const dispatch = (attempt: "start-turn" | "join-turn" = "start-turn", status = "idle") =>
     hook(
       makeMessageDispatchHookContext({
         attempt,
         environment: readyEnvironment as never,
-        thread: { id: "thread-1" } as never,
+        thread: { ...lifecycleThread, status } as never,
       }),
     );
-  expect(await dispatch("start-turn")).toEqual({ action: "proceed" });
+  const thread = lifecycleThread as never;
+  const emit = (event: "thread.active" | "thread.idle" | "thread.failed" | "thread.deleted") =>
+    harness.behavior.emitThreadEvent(event, { thread, lastAssistantText: null, error: null });
+  return { harness, log: host.log, dispatch, emit };
+}
+
+test("a turn's baseline is the snapshot its dispatch waited for", async () => {
+  const { harness, log, dispatch, emit } = await lifecycle();
+  expect(await dispatch()).toEqual({ action: "proceed" });
   expect(await dispatch("join-turn")).toEqual({ action: "proceed" });
-  expect(await dispatch("start-turn")).toEqual({ action: "proceed" });
-  expect(calls.map((call) => [call.method, (call.input as { kind: string }).kind])).toEqual([
-    ["capture", "start"],
-    ["capture", "start"],
+  await emit("thread.active");
+  expect(await dispatch("start-turn", "active")).toEqual({ action: "proceed" }); // Queues as busy.
+  await emit("thread.idle");
+  await emit("thread.deleted");
+  expect(log).toEqual([
+    "snapshot:1",
+    "snapshot:2",
+    "pin:start@1,open@2",
+    "snapshot:3",
+    "pin:end@3",
+    "turnPatch", // Attributed as soon as it ends, while overlapping captures exist.
+    "forget",
+  ]);
+  expect(harness.realtimeSignals).toHaveLength(3);
+  await harness.lifecycle.dispose();
+});
+
+test("a baseline that missed the dispatch budget is never pinned", async () => {
+  const { harness, log, dispatch, emit } = await lifecycle((n) => (n === 1 ? "late" : null));
+  const began = Date.now();
+  expect(await dispatch()).toEqual({ action: "proceed" });
+  expect(Date.now() - began).toBeLessThan(1_600);
+  await emit("thread.active");
+  expect(log).toEqual(["snapshot:1", "snapshot:2", "pin:open@2"]);
+  await harness.lifecycle.dispose();
+});
+
+test("a baseline whose message was queued instead is never pinned", async () => {
+  const { harness, log, dispatch } = await lifecycle();
+  await dispatch();
+  await harness.behavior.emitThreadEvent("message.queued", {
+    entry: { threadId: "thread-1" } as never,
+  });
+  await harness.behavior.emitThreadEvent("thread.active", { thread: lifecycleThread as never });
+  expect(log).toEqual(["snapshot:1", "snapshot:2", "pin:open@2"]);
+  await harness.lifecycle.dispose();
+});
+
+test("a dispatch that beats thread.idle pins its baseline as the previous turn's end", async () => {
+  const { harness, log, dispatch, emit } = await lifecycle();
+  await emit("thread.active");
+  await dispatch();
+  await emit("thread.idle");
+  await emit("thread.active");
+  expect(log).toEqual([
+    "snapshot:1",
+    "pin:open@1",
+    "snapshot:2",
+    "pin:end@2",
+    "turnPatch",
+    "snapshot:3",
+    "pin:start@2,open@3",
   ]);
   await harness.lifecycle.dispose();
 });
 
-test("finishing a turn captures the checkout before announcing the change", async () => {
-  const order: string[] = [];
-  const { harness } = await setup(undefined, undefined, [], null, (call) => {
-    order.push(`${call.method}:${(call.input as { kind?: string }).kind}`);
-    return { captured: true };
+test("a failed end snapshot still marks the thread as finished", async () => {
+  const { harness, log, emit } = await lifecycle((n) => (n === 2 ? "throw" : null));
+  await emit("thread.active");
+  await emit("thread.failed");
+  expect(log).toEqual(["snapshot:1", "pin:open@1", "pin:stop@-", "turnPatch"]);
+  await harness.lifecycle.dispose();
+});
+
+test("a thread's snapshot operations run in arrival order, environment lookups included", async () => {
+  const { harness, log, emit } = await lifecycle();
+  let slow = true;
+  harness.sdk.stub("environments.get", async () => {
+    if (slow) await new Promise((resolve) => setTimeout(resolve, 20));
+    slow = false;
+    return { id: "env-1", hostId: "h", path: "/ws/dotfiles", name: null };
   });
-  stubWorkspaces(harness);
-  const thread = { id: "thread-1", environmentId: "env-1" } as never;
-  await harness.behavior.emitThreadEvent("thread.active", { thread });
-  await harness.behavior.emitThreadEvent("thread.idle", { thread, lastAssistantText: null });
-  await harness.behavior.emitThreadEvent("thread.deleted", { thread });
-  expect(order).toEqual(["capture:open", "capture:end", "forget:undefined"]);
-  expect(harness.realtimeSignals.map((signal) => signal.channel)).toEqual([
-    "latest-turn-changed",
-    "latest-turn-changed",
-    "latest-turn-changed",
-  ]);
+  await Promise.all([emit("thread.active"), emit("thread.deleted")]);
+  expect(log).toEqual(["snapshot:1", "pin:open@1", "forget"]);
   await harness.lifecycle.dispose();
 });
 
@@ -689,9 +769,9 @@ test("an empty snapshot hides reverted edits but keeps edits it cannot see", asy
   await harness.lifecycle.dispose();
 });
 
-test("a remembered attribution is sent back so pruning never reshuffles a card", async () => {
+test("a remembered attribution, even an empty one, is sent back so a card never reshuffles", async () => {
   const inputs: unknown[] = [];
-  const attribution = { start: "s", end: "e", foreign: ["b.ts"] };
+  const attribution = { start: "s", end: "e", contested: [] };
   const { harness } = await setup([started, completed], [message], [], null, (call) => {
     inputs.push((call.input as { known?: unknown }).known);
     return snapshot({ otherPatch: otherPatchText, attribution });
@@ -703,24 +783,22 @@ test("a remembered attribution is sent back so pruning never reshuffles a card",
   await harness.lifecycle.dispose();
 });
 
-test("a thread's snapshot operations run in order, so forgetting waits for a capture", async () => {
-  const order: string[] = [];
-  let release!: () => void;
-  const blocked = new Promise<void>((resolve) => (release = resolve));
-  const { harness } = await setup(undefined, undefined, [], null, async (call) => {
-    order.push(`${call.method}:begin`);
-    if (call.method === "capture") await blocked;
-    order.push(`${call.method}:done`);
-    return call.method === "capture" ? { captured: true } : {};
-  });
+test("an empty snapshot hides reverted edits even when the environment is unavailable", async () => {
+  const { harness } = await setup(
+    [started, completed],
+    [absoluteEdit("/ws/dotfiles/src/b.ts", "reverted"), command, message],
+    [],
+    null,
+    () => snapshot({ patch: "" }),
+  );
   stubWorkspaces(harness);
-  const thread = { id: "thread-1", environmentId: "env-1" } as never;
-  const active = harness.behavior.emitThreadEvent("thread.active", { thread });
-  const deleted = harness.behavior.emitThreadEvent("thread.deleted", { thread });
-  await new Promise((resolve) => setTimeout(resolve, 10));
-  release();
-  await Promise.all([active, deleted]);
-  expect(order).toEqual(["capture:begin", "capture:done", "forget:begin", "forget:done"]);
+  let lookups = 0;
+  harness.sdk.stub("threads.get", async () => {
+    // The snapshot target resolves; the attribution context does not.
+    if (lookups++ > 0) throw new Error("thread unavailable");
+    return { environmentId: "env-1", projectId: "proj_dot" } as never;
+  });
+  expect(await harness.callRpc("latestTurn", { threadId: "thread-1" })).toEqual({ turn: null });
   await harness.lifecycle.dispose();
 });
 

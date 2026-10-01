@@ -68,3 +68,18 @@ test("Git-quoted file names are shown as their real names", () => {
   ]);
   expect(turnChanges({ ...turn, patch: octal }).map((change) => change.path)).toEqual(["ü.ts"]);
 });
+
+test("quoted names keep characters outside the Basic Multilingual Plane", () => {
+  const astral =
+    'diff --git "a/😀\\"File\\".unity" "b/😀\\"File\\".unity"\nnew file mode 100644\n--- /dev/null\n+++ "b/😀\\"File\\".unity"\n@@ -0,0 +1 @@\n+x\n';
+  const turn = { turnId: "t", anchorId: null, changes: [], limited: false };
+  expect(turnChanges({ ...turn, patch: astral }).map((change) => change.path)).toEqual([
+    '😀"File".unity',
+  ]);
+});
+
+test("recorded edits a patch cannot cover render beside it", () => {
+  const submodule = { id: "s", path: "vendor/lib/x.ts", patch, added: 1, removed: 1 };
+  const changes = turnChanges({ ...base, patch, changes: [submodule] });
+  expect(changes.map((change) => change.path)).toEqual(["a.ts", "vendor/lib/x.ts"]);
+});

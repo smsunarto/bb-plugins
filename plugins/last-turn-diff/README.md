@@ -8,23 +8,24 @@ The plugin has no agent tools, instructions, skills, message directives, message
 
 Turn diffs come from Git snapshots of the thread's checkout, the approach T3 Code uses. The diff between the captures around a turn is its patch, so shell, formatter, and code-generator edits appear alongside provider-recorded edits.
 
-| Capture | Taken on | Role |
-|:--|:--|:--|
-| `start` | `message.dispatch` hook, before the provider sees the message | Baseline. Provisional: another plugin may still queue the message. |
-| `open` | `thread.active` | Baseline for turns that skipped dispatch (first message, Send-now, notifications). Marks the thread as running. |
-| `end` | `thread.idle`, `thread.failed` | End of the turn. Marks the thread as done. |
+| Capture | Taken on                                                        | Role                                                                          |
+| :------ | :-------------------------------------------------------------- | :---------------------------------------------------------------------------- |
+| `start` | `message.dispatch` hook, while the message is held              | Baseline. Pinned at `thread.active` only if the hook waited for it to finish. |
+| `open`  | `thread.active`                                                 | Marks the thread as running. Never a baseline.                                |
+| `end`   | `thread.idle`, `thread.failed`, or the next dispatch if earlier | End of the turn. Marks the thread as done.                                    |
+| `stop`  | `thread.idle` or `thread.failed` when the `end` snapshot failed | Marks the thread as done. Never bounds a diff.                                |
 
-Each capture records when it began and finished. A baseline counts only if it began after the previous turn completed and finished before this turn could write (`turn/started` plus one second, under a model round trip). An end counts only if it began after the turn completed and finished before the next turn could write. Captures that miss either bound are discarded, and the turn falls back below. One thread's captures and cleanup run in order.
+Timestamps alone never tie a capture to a turn. The server runs one thread's snapshot operations in arrival order, and the dispatch hook waits for that queue. So a baseline that finished inside the hook was taken before the turn could write, and every earlier `end` finished before it too. A baseline is dropped if the hook gave up on it, or if the pass queued the message instead (a Send-now later skips the hook). An `end` counts only if no next turn has started, or if it finished no later than the next turn's pinned baseline. Turns without that proof (Send-now, a first message before its environment is ready, a slow capture) fall back below.
 
-Each capture runs `git add --all` into a throwaway index seeded from the real one, with assume-unchanged and skip-worktree flags cleared, then `write-tree`, `commit-tree`, and `update-ref`. It never touches the real index, HEAD, or branches. Captures live under `refs/bb-last-turn/<checkout>/<thread>/`, keyed by a hash of the worktree root, 24 per thread. Archiving or deleting a thread drops its refs. Ignored files are excluded. Edits inside submodules are invisible to snapshots, so the provider's recorded edits there are kept.
+Each capture runs `git add --all` into a throwaway index seeded from the real one, with assume-unchanged and skip-worktree flags cleared, then `write-tree`, `commit-tree`, and `update-ref`. It never touches the real index, HEAD, or branches. Captures live under `refs/bb-last-turn/<checkout>/<thread>/`, keyed by a hash of the worktree root. A thread keeps its latest 24 and anything from the last six hours, the longest a turn is treated as running. Archiving or deleting a thread drops its older refs and leaves recent ones behind a `gone` marker as evidence for overlapping turns. Absent sparse-checkout files keep their committed content. Ignored files and edits inside submodules are invisible to snapshots, so the provider's recorded edits there are kept.
 
 GitButler: `but` ignores this ref namespace. The diff compares working-tree snapshots, so `but commit`, `but absorb`, and workspace-commit rewrites during a turn keep the change in the turn. `but pull` or `but apply` during a turn changes files, and those files appear too.
 
-Concurrent agents in one checkout: the turn's window is cut at every capture any thread takes in it. A file changed while no other thread was mid-turn (between its `open` and `end`) belongs to this turn. A file changed while another thread was also running belongs to this turn only if its provider recorded editing it. Otherwise it is listed under **Other agents in this checkout** and left out of the totals. A shell write made while two agents ran is therefore listed under Other in both cards. A file both agents edited shows both agents' hunks. Paths are compared after resolving symlinks, so a project added as `/tmp/x` still matches edits reported under `/private/tmp/x`. The first nonempty attribution for a capture pair is kept in plugin storage, so pruning another thread's captures never reshuffles a card.
+Concurrent agents in one checkout: the turn's window is cut at every capture any thread takes in it. A file changed while no other thread was mid-turn (between its `open` and `end`) belongs to this turn. A file changed while another thread was also running belongs to this turn only if its provider recorded editing it. Otherwise it is listed under **Other agents in this checkout** and left out of the totals. A shell write made while two agents ran is therefore listed under Other in both cards. A file both agents edited shows both agents' hunks. Paths are compared after resolving symlinks, so a project added as `/tmp/x` still matches edits reported under `/private/tmp/x`. Each turn is attributed when it ends, and the result is kept in plugin storage, so losing another thread's captures later never reshuffles a card. The turn's recorded edits are subtracted on every read, so provider data that arrives late still claims its files.
 
 An empty snapshot means the checkout ended where it began, so provider edits that were later reverted are not shown. Snapshot patches over 1,000,000 bytes show the limit notice.
 
-The dispatch hook holds bb's dispatch lock, so it waits at most 1.5 seconds for a capture before letting the message through. A slower capture usually finishes too late to count, and `thread.active` supplies the baseline instead.
+The dispatch hook holds bb's dispatch lock, so it waits at most 1.5 seconds for a capture before letting the message through. A slower capture is dropped, and that turn and the one before it fall back.
 
 ## Fallbacks
 

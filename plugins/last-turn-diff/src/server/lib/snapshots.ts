@@ -2,7 +2,7 @@ import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import {
   snapshotHostContract,
   type Attribution,
-  type CaptureKind,
+  type Pin,
   type SnapshotPatch,
   type TurnWindow,
 } from "../../shared/host-contract.ts";
@@ -31,16 +31,35 @@ export async function resolveTarget(
     : null;
 }
 
-export async function captureWorkspace(
+export interface Shot {
+  commit: string;
+  at: number;
+  finishedAt: number;
+}
+
+/**
+ * Snapshot the checkout without pinning it. `at` and `finishedAt` bracket the
+ * whole host call on the server clock, the one that stamps turn events.
+ */
+export async function snapshotWorkspace(bb: BbPluginApi, target: Target): Promise<Shot | null> {
+  const at = Date.now();
+  const { commit } = await client(bb).call(
+    "snapshot",
+    { environmentPath: target.environmentPath },
+    { hostId: target.hostId },
+  );
+  return commit ? { commit, at, finishedAt: Date.now() } : null;
+}
+
+export async function pinWorkspace(
   bb: BbPluginApi,
   target: Target,
   threadId: string,
-  kind: CaptureKind,
-  at: number,
+  captures: Pin[],
 ): Promise<void> {
   await client(bb).call(
-    "capture",
-    { environmentPath: target.environmentPath, threadId, at, kind },
+    "pin",
+    { environmentPath: target.environmentPath, threadId, captures },
     { hostId: target.hostId },
   );
 }
@@ -52,7 +71,7 @@ export async function forgetWorkspace(
 ): Promise<void> {
   await client(bb).call(
     "forget",
-    { environmentPath: target.environmentPath, threadId },
+    { environmentPath: target.environmentPath, threadId, at: Date.now() },
     { hostId: target.hostId },
   );
   for (const key of await bb.storage.kv.list(attributionPrefix(threadId))) {
@@ -81,12 +100,12 @@ function attributionKey(threadId: string, window: TurnWindow): string {
 }
 
 /**
- * Attribution depends on other threads' captures, which get pruned. Keep the
- * first answer for a capture pair so a card never reshuffles later. Only
- * nonempty answers are kept: pruning can shrink the foreign set, never grow it.
+ * Attribution depends on other threads' captures, which get pruned or
+ * forgotten. Keep the first answer for a capture pair, empty or not, so a card
+ * never reshuffles later.
  */
 async function remember(bb: BbPluginApi, threadId: string, key: string, value: Attribution) {
-  if (value.foreign.length === 0 || JSON.stringify(value).length > 200_000) return;
+  if (JSON.stringify(value).length > 200_000) return;
   await bb.storage.kv.set(key, value);
   const keys = (await bb.storage.kv.list(attributionPrefix(threadId))).sort();
   for (const stale of keys.slice(0, -KEEP_ATTRIBUTIONS)) await bb.storage.kv.delete(stale);

@@ -3,7 +3,7 @@ import { execFileSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { capture, forget, turnPatch } from "../src/host/snapshots.ts";
+import { forget, pin, snapshot, turnPatch } from "../src/host/snapshots.ts";
 import type { CaptureKind, TurnWindow } from "../src/shared/host-contract.ts";
 
 const signal = new AbortController().signal;
@@ -42,8 +42,13 @@ function turn(started: number, completed: number, extra: Partial<TurnWindow> = {
     ...extra,
   };
 }
-const snap = (dir: string, thread: string, at: number, kind: CaptureKind) =>
-  capture(dir, thread, T(at), kind, signal);
+/** Snapshot and pin, as the server does once it knows what the capture proves. */
+async function snap(dir: string, thread: string, at: number, kind: CaptureKind) {
+  const commit = await snapshot(dir, signal);
+  await pin(dir, thread, [{ kind, at: T(at), finishedAt: T(at) + 1, commit }], signal);
+}
+const refs = (dir: string) =>
+  sh(dir, "for-each-ref", "--format=%(refname)", "refs/bb-last-turn").split("\n").filter(Boolean);
 const diff = (dir: string, thread: string, window: TurnWindow, recorded: string[] = []) =>
   turnPatch(dir, thread, window, recorded, undefined, signal);
 
@@ -84,7 +89,9 @@ test("committing mid-turn, as `but commit` does, keeps the change in the turn", 
 
 test("another agent's edits in the same checkout are split out", async () => {
   const dir = repo();
+  await snap(dir, "thr_a", 0.9, "start");
   await snap(dir, "thr_a", 1, "open");
+  await snap(dir, "thr_b", 1.9, "start");
   await snap(dir, "thr_b", 2, "open");
   writeFileSync(join(dir, "b.ts"), "b from agent B\n");
   writeFileSync(join(dir, "a.ts"), "a from agent A\n");
@@ -103,10 +110,11 @@ test("another agent's edits in the same checkout are split out", async () => {
   expect(files(b?.otherPatch)).toEqual(["a.ts", "fmt.ts"]);
 });
 
-test("a dispatch baseline that never became a running turn does not contest the window", async () => {
+test("a thread whose end capture failed stops contesting once its stop marker lands", async () => {
   const dir = repo();
-  await snap(dir, "thr_b", 0.5, "start"); // Queued by another plugin; never opened.
-  await snap(dir, "thr_a", 1, "open");
+  await snap(dir, "thr_b", 0.5, "open");
+  await pin(dir, "thr_b", [{ kind: "stop", at: T(0.8), finishedAt: T(0.8), commit: null }], signal);
+  await snap(dir, "thr_a", 1, "start");
   writeFileSync(join(dir, "fmt.ts"), "shell output\n");
   await snap(dir, "thr_a", 3, "end");
 
@@ -115,9 +123,9 @@ test("a dispatch baseline that never became a running turn does not contest the 
   expect(result?.otherPatch).toBeNull();
 });
 
-test("an attribution, once known, survives the other thread's captures being dropped", async () => {
+test("an overlapping thread's captures outlive forgetting it, and a known answer outlives them", async () => {
   const dir = repo();
-  await snap(dir, "thr_a", 1, "open");
+  await snap(dir, "thr_a", 1, "start");
   await snap(dir, "thr_b", 2, "open");
   writeFileSync(join(dir, "b.ts"), "b from agent B\n");
   await snap(dir, "thr_b", 3, "end");
@@ -125,11 +133,25 @@ test("an attribution, once known, survives the other thread's captures being dro
   const first = await diff(dir, "thr_a", turn(1.5, 3.5));
   expect(files(first?.otherPatch)).toEqual(["b.ts"]);
 
-  await forget(dir, "thr_b", signal);
+  // Archived while recent: B's captures stay as evidence behind a marker.
+  await forget(dir, "thr_b", T(5), signal);
+  expect(files((await diff(dir, "thr_a", turn(1.5, 3.5)))?.otherPatch)).toEqual(["b.ts"]);
+
+  await forget(dir, "thr_b", T(5) + 7 * 3_600_000, signal);
+  expect(refs(dir).filter((ref) => ref.includes("/thr_b/"))).toEqual([]);
   const again = await turnPatch(dir, "thr_a", turn(1.5, 3.5), [], first!.attribution, signal);
   expect(files(again?.otherPatch)).toEqual(["b.ts"]);
-  // Without the remembered answer, B's edit would now be claimed by A.
-  expect(files((await diff(dir, "thr_a", turn(1.5, 3.5)))?.patch)).toEqual(["b.ts"]);
+  // The provider later turns out to have recorded the edit: it is A's after all.
+  const recorded = await turnPatch(
+    dir,
+    "thr_a",
+    turn(1.5, 3.5),
+    ["b.ts"],
+    first!.attribution,
+    signal,
+  );
+  expect(files(recorded?.patch)).toEqual(["b.ts"]);
+  expect(recorded?.otherPatch).toBeNull();
 });
 
 test("paths are relative to an environment inside the repository", async () => {
@@ -149,7 +171,7 @@ test("recorded paths match through a symlinked environment path", async () => {
   const link = `${dir}-link`;
   symlinkSync(dir, link);
   repos.push(link);
-  await snap(link, "thr_a", 1, "open");
+  await snap(link, "thr_a", 1, "start");
   await snap(link, "thr_b", 1.1, "open");
   writeFileSync(join(dir, "a.ts"), "a from agent A\n");
   await snap(link, "thr_b", 3, "end");
@@ -165,21 +187,65 @@ test("recorded paths match through a symlinked environment path", async () => {
 
 test("only captures that provably bracket the turn are used", async () => {
   const dir = repo();
-  await snap(dir, "thr_a", 1, "end"); // The previous turn's end.
-  writeFileSync(join(dir, "b.ts"), "edited between turns\n");
-  await snap(dir, "thr_a", 5, "open");
+  await snap(dir, "thr_a", 1, "start");
+  await snap(dir, "thr_a", 1.5, "open");
   writeFileSync(join(dir, "a.ts"), "edited by the turn\n");
-  await snap(dir, "thr_a", 9, "end");
-  const window = turn(4.9999, 8, { prevCompletedAt: T(0.9) });
+  await snap(dir, "thr_a", 3, "end");
+  writeFileSync(join(dir, "b.ts"), "edited between turns\n");
+  await snap(dir, "thr_a", 5, "start"); // The next turn's baseline.
+  const window = turn(2, 2.5, { nextStartedAt: T(6) });
 
-  // thread.active landed just after turn/started: it still wins over the previous end.
+  // The next dispatch waited for the end, so it precedes the next turn.
   expect(files((await diff(dir, "thr_a", window))?.patch)).toEqual(["a.ts"]);
-  // A baseline still being read well after the turn started may hold its first edits.
-  expect(await diff(dir, "thr_a", { ...window, startedAt: T(4) })).toBeNull();
-  // An end capture still being read after the next turn started may hold its edits.
-  expect(await diff(dir, "thr_a", { ...window, nextStartedAt: T(8.5) })).toBeNull();
-  // Without its own baseline, the previous turn's end is not borrowed.
-  expect(await diff(dir, "thr_a", { ...window, prevCompletedAt: T(6) })).toBeNull();
+  // The next turn skipped the hook (Send-now): nothing proves the end came first.
+  expect(await diff(dir, "thr_a", { ...window, nextStartedAt: T(4) })).toBeNull();
+  // A baseline from before the previous turn completed is not borrowed.
+  expect(await diff(dir, "thr_a", { ...window, prevCompletedAt: T(1.2) })).toBeNull();
+});
+
+test("an open is never a baseline and a start is never an end", async () => {
+  const dir = repo();
+  await snap(dir, "thr_a", 1.5, "open");
+  await snap(dir, "thr_a", 3, "end");
+  expect(await diff(dir, "thr_a", turn(2, 2.5))).toBeNull();
+
+  await snap(dir, "thr_b", 1, "start");
+  writeFileSync(join(dir, "between.ts"), "edited after the turn\n");
+  await snap(dir, "thr_b", 5, "start");
+  expect(await diff(dir, "thr_b", turn(2, 2.5))).toBeNull();
+});
+
+test("an end captured after the next turn's baseline is discarded", async () => {
+  const dir = repo();
+  await snap(dir, "thr_a", 1, "start");
+  await snap(dir, "thr_a", 5, "start"); // The next dispatch won the race to the queue.
+  writeFileSync(join(dir, "next.ts"), "the next turn's edit\n");
+  await snap(dir, "thr_a", 6, "end"); // thread.idle's capture, already inside the next turn.
+  expect(await diff(dir, "thr_a", turn(2, 2.5, { nextStartedAt: T(7) }))).toBeNull();
+
+  // The dispatch pinned its baseline as the previous end too.
+  const commit = await snapshot(dir, signal);
+  await pin(
+    dir,
+    "thr_b",
+    [{ kind: "start", at: T(1), finishedAt: T(1) + 1, commit: await snapshot(dir, signal) }],
+    signal,
+  );
+  writeFileSync(join(dir, "b.ts"), "b from the turn\n");
+  const doubled = await snapshot(dir, signal);
+  const shot = { at: T(5), finishedAt: T(5) + 1, commit: doubled };
+  await pin(
+    dir,
+    "thr_b",
+    [
+      { kind: "end", ...shot },
+      { kind: "start", ...shot },
+    ],
+    signal,
+  );
+  expect(commit).not.toBe(doubled);
+  const result = await diff(dir, "thr_b", turn(2, 2.5, { nextStartedAt: T(7) }));
+  expect(files(result?.patch)).toEqual(["b.ts"]);
 });
 
 test("changes hidden by index flags are still captured", async () => {
@@ -220,6 +286,28 @@ test("submodule roots are reported as outside snapshot coverage", async () => {
   });
 });
 
+test("recorded files Git ignores are reported as outside snapshot coverage", async () => {
+  const dir = repo();
+  await snap(dir, "thr_a", 1, "start");
+  writeFileSync(join(dir, "ignored.log"), "written by a recorded edit\n");
+  await snap(dir, "thr_a", 3, "end");
+
+  const result = await diff(dir, "thr_a", turn(2, 2.5), [join(dir, "ignored.log"), "a.ts"]);
+  expect(result).toMatchObject({ patch: "", uncovered: ["ignored.log"] });
+});
+
+test("sparse-checkout exclusions keep their committed content", async () => {
+  const dir = repo();
+  sh(dir, "sparse-checkout", "set", "--no-cone", "/a.ts", "/.gitignore");
+  await snap(dir, "thr_a", 1, "start");
+  writeFileSync(join(dir, "b.ts"), "b materialized and edited\n");
+  await snap(dir, "thr_a", 3, "end");
+
+  const result = await diff(dir, "thr_a", turn(2, 2.5));
+  expect(result?.patch).toContain("-b\n+b materialized and edited");
+  expect(result?.patch).not.toContain("new file");
+});
+
 test("turns without a bracketing pair of captures have no snapshot", async () => {
   const dir = repo();
   await snap(dir, "thr_a", 1, "start");
@@ -227,16 +315,19 @@ test("turns without a bracketing pair of captures have no snapshot", async () =>
   expect(await diff(dir, "thr_b", turn(2, 2.5))).toBeNull();
   const plain = mkdtempSync(join(tmpdir(), "last-turn-plain-"));
   repos.push(plain);
-  expect(await capture(plain, "thr_a", 1_000, "start", signal)).toBe(false);
+  expect(await snapshot(plain, signal)).toBeNull();
 });
 
-test("captures are bounded per thread and forgotten with it", async () => {
+test("captures are kept while recent or among a thread's latest, and forgotten with it", async () => {
   const dir = repo();
   for (let at = 1; at <= 30; at++) await snap(dir, "thr_a", at, "start");
-  const refs = () =>
-    sh(dir, "for-each-ref", "--format=%(refname)", "refs/bb-last-turn").split("\n").filter(Boolean);
-  expect(refs()).toHaveLength(24);
-  expect(refs()[0]).toMatch(/\/thr_a\/000000000070000-\d{15}-start$/);
-  await forget(dir, "thr_a", signal);
-  expect(refs()).toEqual([]);
+  expect(refs(dir)).toHaveLength(30);
+  const later = (7 * 3_600_000) / 10_000; // Seven hours on the test clock.
+  await snap(dir, "thr_a", later, "start");
+  expect(refs(dir)).toHaveLength(24);
+  expect(refs(dir)[0]).toMatch(/\/thr_a\/000000000080000-\d{15}-start$/);
+  await forget(dir, "thr_a", T(later + 1), signal);
+  expect(refs(dir).map((ref) => ref.slice(-5))).toEqual(["start", "-gone"]);
+  await forget(dir, "thr_a", T(later * 2), signal);
+  expect(refs(dir)).toEqual([]);
 });

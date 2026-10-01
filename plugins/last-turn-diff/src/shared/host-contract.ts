@@ -2,12 +2,15 @@ import { defineRpcContract } from "@get-bb/plugin-sdk";
 import { z } from "zod";
 
 /**
- * - `start`: a provisional baseline taken at dispatch. The turn may never run
- *   (another plugin can queue it), so it never marks the thread as running.
+ * - `start`: a turn's baseline, taken while the dispatch hook held the turn
+ *   back. Only pinned once the turn really began.
  * - `open`: taken when the thread turns active. The thread is mid-turn.
- * - `end`: taken when the thread goes idle or fails. The thread is done.
+ * - `end`: taken after the turn. Only proven to precede the next turn when
+ *   that turn's `start` finished after it.
+ * - `stop`: the thread finished but its `end` capture failed. A lifecycle
+ *   marker only: it points at an older commit and never bounds a diff.
  */
-export type CaptureKind = "start" | "open" | "end";
+export type CaptureKind = "start" | "open" | "end" | "stop";
 const target = {
   environmentPath: z.string().min(1).max(4096),
   threadId: z.string().regex(/^[A-Za-z0-9_-]{1,200}$/),
@@ -23,11 +26,15 @@ const windowSchema = z.object({
   nextStartedAt: time.nullable(),
 });
 export type TurnWindow = z.infer<typeof windowSchema>;
-/** Repository-relative files another thread may have written, for one capture pair. */
+/**
+ * Repository-relative files that changed only while another thread in the
+ * checkout was mid-turn, for one capture pair. The turn's own recorded edits
+ * are subtracted on every read, so late-arriving provider evidence still wins.
+ */
 const attributionSchema = z.object({
   start: z.string(),
   end: z.string(),
-  foreign: z.array(z.string()),
+  contested: z.array(z.string()),
 });
 export type Attribution = z.infer<typeof attributionSchema>;
 const snapshotPatchSchema = z.object({
@@ -38,16 +45,35 @@ const snapshotPatchSchema = z.object({
   /** Files that changed while another thread in the same checkout was mid-turn. */
   otherPatch: z.string().nullable(),
   limited: z.boolean(),
-  /** Environment-relative submodule roots. Snapshots cannot see edits inside them. */
+  /**
+   * Environment-relative paths snapshots cannot see: submodule roots, and
+   * recorded files Git ignores.
+   */
   uncovered: z.array(z.string()),
   attribution: attributionSchema,
 });
 export type SnapshotPatch = z.infer<typeof snapshotPatchSchema>;
 
+const commit = z.string().regex(/^[0-9a-f]{40,64}$/);
+const pinSchema = z.object({
+  kind: z.enum(["start", "open", "end", "stop"]),
+  /** Server clock when the capture began and when its snapshot returned. */
+  at: time,
+  finishedAt: time,
+  /** Null for `stop`: the host points it at the thread's latest capture. */
+  commit: commit.nullable(),
+});
+export type Pin = z.infer<typeof pinSchema>;
+
 export const snapshotHostContract = defineRpcContract({
-  capture: {
-    input: z.object({ ...target, at: time, kind: z.enum(["start", "open", "end"]) }).strict(),
-    output: z.object({ captured: z.boolean() }),
+  /** Record the checkout's files as a commit. Pins nothing: the server decides what it proves. */
+  snapshot: {
+    input: z.object({ environmentPath: target.environmentPath }).strict(),
+    output: z.object({ commit: commit.nullable() }),
+  },
+  pin: {
+    input: z.object({ ...target, captures: z.array(pinSchema).min(1).max(4) }).strict(),
+    output: z.object({}),
   },
   turnPatch: {
     input: z
@@ -62,5 +88,5 @@ export const snapshotHostContract = defineRpcContract({
       .strict(),
     output: z.object({ snapshot: snapshotPatchSchema.nullable() }),
   },
-  forget: { input: z.object(target).strict(), output: z.object({}) },
+  forget: { input: z.object({ ...target, at: time }).strict(), output: z.object({}) },
 });

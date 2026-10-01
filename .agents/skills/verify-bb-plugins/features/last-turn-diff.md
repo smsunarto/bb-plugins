@@ -27,7 +27,9 @@ expanded diff, and the later turn's replacement or retention. Save the thread UR
   turn appears. Non-Git environments still need a recorded aggregate patch or
   file-change event.
 - Snapshots start with the first turn dispatched after the plugin loads. Older
-  turns fall back to recorded edits.
+  turns, Send-now turns, and a first message sent before its environment is
+  ready fall back to recorded edits. Start a fixture thread with a ready
+  environment and send its test turn as a follow-up.
 - The old preview remains while a new turn is running. Assert replacement after
   completion, not at turn start.
 - Missing final assistant rows prevent the preview from mounting. A never-run

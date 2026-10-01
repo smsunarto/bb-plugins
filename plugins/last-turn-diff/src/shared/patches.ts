@@ -39,19 +39,25 @@ const ESCAPES: Record<string, number> = { a: 7, b: 8, t: 9, n: 10, v: 11, f: 12,
  */
 export function unquoteGitPath(name: string): string {
   if (!name.includes("\\")) return name;
+  const encoder = new TextEncoder();
   const bytes: number[] = [];
-  for (let i = 0; i < name.length; i++) {
-    const char = name[i]!;
-    if (char !== "\\") {
-      bytes.push(...new TextEncoder().encode(char));
+  for (let i = 0; i < name.length;) {
+    if (name[i] !== "\\") {
+      // Whole code points: an astral character is two UTF-16 units.
+      const char = String.fromCodePoint(name.codePointAt(i)!);
+      bytes.push(...encoder.encode(char));
+      i += char.length;
       continue;
     }
-    const next = name[++i] ?? "";
-    const octal = name.slice(i, i + 3);
+    const octal = name.slice(i + 1, i + 4);
     if (/^[0-7]{3}$/.test(octal)) {
       bytes.push(parseInt(octal, 8));
+      i += 4;
+    } else {
+      const next = name[i + 1] ?? "";
+      bytes.push(ESCAPES[next] ?? next.charCodeAt(0));
       i += 2;
-    } else bytes.push(ESCAPES[next] ?? next.charCodeAt(0));
+    }
   }
   return new TextDecoder().decode(new Uint8Array(bytes));
 }
@@ -80,11 +86,7 @@ export function turnChanges(turn: LatestTurn): Change[] {
   if (turn.patch === null || turn.patch.trim() === "") {
     return [...turn.changes.map(positionChange), ...others];
   }
-  // The aggregate patch only covers the thread's own worktree; the server keeps
-  // foreign-workspace row changes in `turn.changes` to render alongside it.
-  return [
-    ...splitPatch(turn.patch, ""),
-    ...turn.changes.filter((change) => change.workspace !== undefined).map(positionChange),
-    ...others,
-  ];
+  // Beside a patch, the server keeps in `turn.changes` only the recorded edits
+  // the patch cannot cover: other workspaces, submodules, ignored files.
+  return [...splitPatch(turn.patch, ""), ...turn.changes.map(positionChange), ...others];
 }

@@ -2,7 +2,8 @@ import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import { buildLatestTurn, findTurnAnchor, type TurnRow } from "./build-latest-turn.ts";
 import type { LatestTurn } from "../../shared/contract.ts";
 import type { SnapshotPatch, TurnWindow } from "../../shared/host-contract.ts";
-import type { Attributor } from "./workspace-attribution.ts";
+import { resolveTarget, snapshotPatch } from "./snapshots.ts";
+import { workspaceAttributor, type Attributor } from "./workspace-attribution.ts";
 
 type Threads = BbPluginApi["sdk"]["threads"];
 type Event = Awaited<ReturnType<Threads["events"]["list"]>>[number];
@@ -17,6 +18,21 @@ export interface Coverage {
   root: string;
   /** Environment-relative submodule roots the snapshot cannot see into. */
   uncovered: string[];
+}
+
+/** The latest turn with workspace snapshots and attribution, falling back to provider data. */
+export async function loadLatestTurn(bb: BbPluginApi, threadId: string) {
+  const [target, attribute] = await Promise.all([
+    // No checkout: fall back to the provider's recorded changes.
+    (async () => resolveTarget(bb, await bb.sdk.threads.get({ threadId })))().catch(() => null),
+    workspaceAttributor(bb, threadId),
+  ]);
+  return readLatestTurn(
+    bb.sdk.threads,
+    threadId,
+    target ? (window, rows) => snapshotPatch(bb, target, threadId, window, rows) : undefined,
+    attribute,
+  );
 }
 
 /**
