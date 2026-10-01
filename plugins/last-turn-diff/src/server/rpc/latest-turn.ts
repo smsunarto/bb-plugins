@@ -1,6 +1,6 @@
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import { addUnityContext } from "../lib/unity-context.ts";
-import { attributeWorkspaces } from "../lib/workspace-attribution.ts";
+import { workspaceAttributor } from "../lib/workspace-attribution.ts";
 import { defineQuery } from "@bb-kit/core/rpc";
 import { z } from "zod";
 import { latestTurnSchema, type LatestTurn } from "../../shared/contract.ts";
@@ -20,20 +20,17 @@ export const latestTurn = defineQuery({
   input: z.strictObject({ threadId: z.string().min(1).max(200) }),
   output: z.object({ turn: latestTurnSchema }),
   async execute(ctx, { threadId }): Promise<{ turn: LatestTurn | null }> {
-    const target = await threadTarget(ctx.bb, threadId);
-    const found = await readLatestTurn(
+    const [target, attribute] = await Promise.all([
+      threadTarget(ctx.bb, threadId),
+      workspaceAttributor(ctx.bb, threadId),
+    ]);
+    const turn = await readLatestTurn(
       ctx.bb.sdk.threads,
       threadId,
       target ? (window, rows) => snapshotPatch(ctx.bb, target, threadId, window, rows) : undefined,
+      attribute,
     );
-    if (!found) return { turn: null };
-    const attributed = await attributeWorkspaces(
-      ctx.bb,
-      threadId,
-      found.turn,
-      found.rows,
-      found.resolvedRoot,
-    );
-    return { turn: await addUnityContext(ctx.bb, threadId, attributed) };
+    if (!turn) return { turn: null };
+    return { turn: await addUnityContext(ctx.bb, threadId, turn) };
   },
 });

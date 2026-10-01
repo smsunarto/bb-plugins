@@ -2,6 +2,7 @@ import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import { join } from "node:path";
 import { MAX_PATCH_CHARS, type TurnRow } from "./build-latest-turn.ts";
 import type { Change, LatestTurn } from "../../shared/contract.ts";
+import type { Coverage } from "./read-latest-turn.ts";
 
 type Environment = Awaited<ReturnType<BbPluginApi["sdk"]["environments"]["get"]>>;
 type Project = Awaited<ReturnType<BbPluginApi["sdk"]["projects"]["list"]>>[number];
@@ -64,12 +65,20 @@ export function isFileChangeRow(row: TurnRow): row is FileChangeRow {
   );
 }
 
-/** Edits outside the thread's own worktree that the aggregate patch cannot cover. */
-function foreignRowChanges(
+function insideAny(roots: readonly string[], path: string | undefined): boolean {
+  return path !== undefined && roots.some((root) => path === root || path.startsWith(`${root}/`));
+}
+
+/**
+ * Edits the patch cannot cover: those outside the thread's own worktree, and
+ * those inside submodules, which a workspace snapshot records only as a commit.
+ */
+function uncoveredRowChanges(
   turnId: string,
   patchLength: number,
   rows: TurnRow[],
   attribute: Attribute,
+  submodules: readonly string[],
 ): { changes: Change[]; limited: boolean } {
   const changes: Change[] = [];
   let limited = false;
@@ -77,7 +86,9 @@ function foreignRowChanges(
   for (const row of rows) {
     if (row.turnId !== turnId || !isFileChangeRow(row)) continue;
     const attribution = attribute(row.change.path);
-    if (attribution.workspace === undefined) continue;
+    if (attribution.workspace === undefined && !insideAny(submodules, attribution.relPath)) {
+      continue;
+    }
     let text = row.change.diff;
     if (text !== null && text.length > remaining) {
       text = null;
@@ -95,6 +106,9 @@ function foreignRowChanges(
   return { changes, limited };
 }
 
+/** Labels a turn's changes by owning workspace. Pure, so turn selection can apply it per candidate. */
+export type Attributor = (turn: LatestTurn, rows: TurnRow[], coverage?: Coverage) => LatestTurn;
+
 /**
  * Label each recorded change with the workspace that owns it. Provider-reported
  * change paths are absolute, so a turn that edited another checkout shows up
@@ -102,18 +116,12 @@ function foreignRowChanges(
  * a workspace-relative `relPath` for display. Unattributable foreign paths are
  * labeled by their parent directory.
  *
- * When an aggregate patch exists it only covers the thread's own worktree, so
- * foreign file-change rows are appended to `changes` alongside it. Never
- * throws — attribution is decorative.
+ * When a patch exists (aggregate or snapshot) it only covers the thread's own
+ * worktree, so foreign and submodule file-change rows are appended to
+ * `changes` alongside it. Never throws — attribution is decorative; without
+ * the thread's environment, turns pass through unlabeled.
  */
-export async function attributeWorkspaces(
-  bb: BbPluginApi,
-  threadId: string,
-  turn: LatestTurn,
-  rows: TurnRow[],
-  /** The environment path with symlinks resolved, which providers may report instead. */
-  resolvedRoot?: string,
-): Promise<LatestTurn> {
+export async function workspaceAttributor(bb: BbPluginApi, threadId: string): Promise<Attributor> {
   try {
     const thread = await bb.sdk.threads.get({ threadId });
     const environment: Environment | null = thread.environmentId
@@ -125,41 +133,43 @@ export async function attributeWorkspaces(
     const own = root ? sources.find((source) => source.root === root) : undefined;
     const ownLabel = own?.label ?? environment?.name ?? (root ? lastSegment(root) : undefined);
 
-    const attribute: Attribute = (path) => {
-      // Relative paths resolve against the env root so `../` escapes still
-      // attribute correctly; without a root they can only be local.
-      const absolute = isAbsolute(path)
-        ? stripTrailingSeparators(path)
-        : root
-          ? join(root, path)
-          : null;
-      if (absolute === null) return {};
-      const local =
-        (root === null ? null : under(root, absolute)) ??
-        (resolvedRoot === undefined ? null : under(resolvedRoot, absolute));
-      if (local !== null) return local ? { relPath: local } : {};
-      const foreign = sources.find((source) => under(source.root, absolute) !== null);
-      if (foreign) return { workspace: foreign.label, relPath: under(foreign.root, absolute)! };
-      return { workspace: lastSegment(parentDirectory(absolute)) };
-    };
+    return (turn, rows, coverage) => {
+      const attribute: Attribute = (path) => {
+        // Relative paths resolve against the env root so `../` escapes still
+        // attribute correctly; without a root they can only be local.
+        const absolute = isAbsolute(path)
+          ? stripTrailingSeparators(path)
+          : root
+            ? join(root, path)
+            : null;
+        if (absolute === null) return {};
+        const local =
+          (root === null ? null : under(root, absolute)) ??
+          (coverage === undefined ? null : under(coverage.root, absolute));
+        if (local !== null) return local ? { relPath: local } : {};
+        const foreign = sources.find((source) => under(source.root, absolute) !== null);
+        if (foreign) return { workspace: foreign.label, relPath: under(foreign.root, absolute)! };
+        return { workspace: lastSegment(parentDirectory(absolute)) };
+      };
 
-    const changes: Change[] = turn.changes.map((change) => ({
-      ...change,
-      ...attribute(change.path),
-    }));
-    let limited = turn.limited;
-    if (turn.patch !== null) {
-      const foreign = foreignRowChanges(turn.turnId, turn.patch.length, rows, attribute);
-      changes.push(...foreign.changes);
-      limited ||= foreign.limited;
-    }
-    return {
-      ...turn,
-      changes,
-      limited,
-      ...(ownLabel ? { workspace: ownLabel } : {}),
+      let limited = turn.limited;
+      let changes: Change[];
+      if (turn.patch === null) {
+        changes = turn.changes.map((change) => ({ ...change, ...attribute(change.path) }));
+      } else {
+        const extra = uncoveredRowChanges(
+          turn.turnId,
+          turn.patch.length,
+          rows,
+          attribute,
+          coverage?.uncovered ?? [],
+        );
+        changes = extra.changes;
+        limited ||= extra.limited;
+      }
+      return { ...turn, changes, limited, ...(ownLabel ? { workspace: ownLabel } : {}) };
     };
   } catch {
-    return turn;
+    return (turn) => turn;
   }
 }

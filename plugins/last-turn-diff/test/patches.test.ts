@@ -56,3 +56,15 @@ test("recorded changes without hunk headers render positioned and hide line numb
   const [kept] = turnChanges({ ...base, changes: [{ ...change, patch }] });
   expect(kept).toEqual({ ...change, patch });
 });
+
+test("Git-quoted file names are shown as their real names", () => {
+  const quoted =
+    'diff --git "a/we\\"ird\\ttab.ts" "b/we\\"ird\\ttab.ts"\nnew file mode 100644\n--- /dev/null\n+++ "b/we\\"ird\\ttab.ts"\n@@ -0,0 +1 @@\n+x\n';
+  const octal =
+    'diff --git "a/\\303\\274.ts" "b/\\303\\274.ts"\n--- "a/\\303\\274.ts"\n+++ "b/\\303\\274.ts"\n@@ -1 +1 @@\n-a\n+b\n';
+  const turn = { turnId: "t", anchorId: null, changes: [], limited: false };
+  expect(turnChanges({ ...turn, patch: quoted }).map((change) => change.path)).toEqual([
+    'we"ird\ttab.ts',
+  ]);
+  expect(turnChanges({ ...turn, patch: octal }).map((change) => change.path)).toEqual(["ü.ts"]);
+});

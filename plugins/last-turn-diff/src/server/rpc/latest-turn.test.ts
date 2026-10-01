@@ -93,7 +93,7 @@ async function setup(
           (input.afterSeq === undefined || event.seq > Number(input.afterSeq)) &&
           (input.beforeSeq === undefined || event.seq < Number(input.beforeSeq)),
       )
-      .sort((a, b) => b.seq - a.seq)
+      .sort((a, b) => (input.order === "asc" ? a.seq - b.seq : b.seq - a.seq))
       .slice(0, Number(input.limit ?? 100)),
   );
   const details = mock<Threads["timelineTurnSummaryDetails"]>(async () => {
@@ -495,24 +495,44 @@ test("unresolvable environments leave changes unattributed", async () => {
 const snapshotPatchText =
   "diff --git a/fmt.ts b/fmt.ts\n--- a/fmt.ts\n+++ b/fmt.ts\n@@ -1 +1 @@\n-a\n+b\n";
 const otherPatchText = "diff --git a/b.ts b/b.ts\n--- a/b.ts\n+++ b/b.ts\n@@ -1 +1 @@\n-c\n+d\n";
+function snapshot(overrides: Record<string, unknown> = {}) {
+  return {
+    snapshot: {
+      root: "/ws/dotfiles",
+      patch: snapshotPatchText,
+      otherPatch: null,
+      limited: false,
+      uncovered: [],
+      attribution: { start: "s", end: "e", foreign: [] },
+      ...overrides,
+    },
+  };
+}
 
 test("a workspace snapshot outranks the provider patch and covers unrecorded edits", async () => {
   const calls: ExperimentalFakeHostRpcCall[] = [];
+  const previous = {
+    ...completed,
+    id: "end-1",
+    seq: 4,
+    createdAt: 500,
+    scope: { kind: "turn" as const, turnId: "turn-1" },
+  };
+  const next = {
+    ...started,
+    id: "start-3",
+    seq: 30,
+    createdAt: 12_000,
+    scope: { kind: "turn" as const, turnId: "turn-3" },
+  };
   const { harness } = await setup(
-    [{ ...started, createdAt: 1_000 }, updated, { ...completed, createdAt: 9_000 }],
+    [previous, { ...started, createdAt: 1_000 }, updated, { ...completed, createdAt: 9_000 }, next],
     [absoluteEdit("/ws/dotfiles/src/b.ts", "local"), message],
     [],
     null,
     (call) => {
       calls.push(call);
-      return {
-        snapshot: {
-          root: "/ws/dotfiles",
-          patch: snapshotPatchText,
-          otherPatch: otherPatchText,
-          limited: false,
-        },
-      };
+      return snapshot({ otherPatch: otherPatchText });
     },
   );
   stubWorkspaces(harness);
@@ -526,8 +546,12 @@ test("a workspace snapshot outranks the provider patch and covers unrecorded edi
       input: {
         environmentPath: "/ws/dotfiles",
         threadId: "thread-1",
-        startedAt: 1_000,
-        completedAt: 9_000,
+        window: {
+          prevCompletedAt: 500,
+          startedAt: 1_000,
+          completedAt: 9_000,
+          nextStartedAt: 12_000,
+        },
         recordedPaths: ["/ws/dotfiles/src/b.ts"],
       },
     },
@@ -536,9 +560,7 @@ test("a workspace snapshot outranks the provider patch and covers unrecorded edi
 });
 
 test("a turn whose only edits came from shell commands still shows them", async () => {
-  const { harness } = await setup([started, completed], [message], [], null, () => ({
-    snapshot: { root: "/ws/dotfiles", patch: snapshotPatchText, otherPatch: null, limited: false },
-  }));
+  const { harness } = await setup([started, completed], [message], [], null, () => snapshot());
   stubWorkspaces(harness);
   expect(await harness.callRpc("latestTurn", { threadId: "thread-1" })).toMatchObject({
     turn: { turnId: "turn-2", patch: snapshotPatchText, changes: [] },
@@ -565,13 +587,11 @@ const command = {
 } as unknown as Row;
 
 test("others' changes alone keep a turn that ran commands, not a chat-only reply", async () => {
-  const onlyOthers = () => ({
-    snapshot: { root: "/ws/dotfiles", patch: "", otherPatch: otherPatchText, limited: false },
-  });
+  const onlyOthers = () => snapshot({ patch: "", otherPatch: otherPatchText });
   const ran = await setup([started, completed], [command, message], [], null, onlyOthers);
   stubWorkspaces(ran.harness);
   expect(await ran.harness.callRpc("latestTurn", { threadId: "thread-1" })).toMatchObject({
-    turn: { turnId: "turn-2", patch: null, otherPatch: otherPatchText, changes: [] },
+    turn: { turnId: "turn-2", patch: "", otherPatch: otherPatchText, changes: [] },
   });
   await ran.harness.lifecycle.dispose();
 
@@ -589,14 +609,7 @@ test("edits reported under the resolved environment path stay in this workspace"
     [absoluteEdit("/private/ws/dotfiles/src/b.ts", "resolved"), message],
     [],
     null,
-    () => ({
-      snapshot: {
-        root: "/private/ws/dotfiles",
-        patch: snapshotPatchText,
-        otherPatch: null,
-        limited: false,
-      },
-    }),
+    () => snapshot({ root: "/private/ws/dotfiles" }),
   );
   stubWorkspaces(harness);
   const result = (await harness.callRpc("latestTurn", {
@@ -646,11 +659,94 @@ test("finishing a turn captures the checkout before announcing the change", asyn
   await harness.behavior.emitThreadEvent("thread.active", { thread });
   await harness.behavior.emitThreadEvent("thread.idle", { thread, lastAssistantText: null });
   await harness.behavior.emitThreadEvent("thread.deleted", { thread });
-  expect(order).toEqual(["capture:start", "capture:end", "forget:undefined"]);
+  expect(order).toEqual(["capture:open", "capture:end", "forget:undefined"]);
   expect(harness.realtimeSignals.map((signal) => signal.channel)).toEqual([
     "latest-turn-changed",
     "latest-turn-changed",
     "latest-turn-changed",
   ]);
+  await harness.lifecycle.dispose();
+});
+
+test("an empty snapshot hides reverted edits but keeps edits it cannot see", async () => {
+  const { harness } = await setup(
+    [started, completed],
+    [
+      absoluteEdit("/ws/dotfiles/src/b.ts", "reverted"),
+      absoluteEdit("/ws/dotfiles/vendor/lib/x.ts", "submodule"),
+      absoluteEdit("/ws/bb-plugins/src/a.ts", "foreign"),
+      message,
+    ],
+    [],
+    null,
+    () => snapshot({ patch: "", uncovered: ["vendor/lib"] }),
+  );
+  stubWorkspaces(harness);
+  const result = (await harness.callRpc("latestTurn", {
+    threadId: "thread-1",
+  })) as LatestTurnResult;
+  expect(result.turn?.changes.map((change) => change.id)).toEqual(["submodule", "foreign"]);
+  await harness.lifecycle.dispose();
+});
+
+test("a remembered attribution is sent back so pruning never reshuffles a card", async () => {
+  const inputs: unknown[] = [];
+  const attribution = { start: "s", end: "e", foreign: ["b.ts"] };
+  const { harness } = await setup([started, completed], [message], [], null, (call) => {
+    inputs.push((call.input as { known?: unknown }).known);
+    return snapshot({ otherPatch: otherPatchText, attribution });
+  });
+  stubWorkspaces(harness);
+  await harness.callRpc("latestTurn", { threadId: "thread-1" });
+  await harness.callRpc("latestTurn", { threadId: "thread-1" });
+  expect(inputs).toEqual([undefined, attribution]);
+  await harness.lifecycle.dispose();
+});
+
+test("a thread's snapshot operations run in order, so forgetting waits for a capture", async () => {
+  const order: string[] = [];
+  let release!: () => void;
+  const blocked = new Promise<void>((resolve) => (release = resolve));
+  const { harness } = await setup(undefined, undefined, [], null, async (call) => {
+    order.push(`${call.method}:begin`);
+    if (call.method === "capture") await blocked;
+    order.push(`${call.method}:done`);
+    return call.method === "capture" ? { captured: true } : {};
+  });
+  stubWorkspaces(harness);
+  const thread = { id: "thread-1", environmentId: "env-1" } as never;
+  const active = harness.behavior.emitThreadEvent("thread.active", { thread });
+  const deleted = harness.behavior.emitThreadEvent("thread.deleted", { thread });
+  await new Promise((resolve) => setTimeout(resolve, 10));
+  release();
+  await Promise.all([active, deleted]);
+  expect(order).toEqual(["capture:begin", "capture:done", "forget:begin", "forget:done"]);
+  await harness.lifecycle.dispose();
+});
+
+test("a turn whose edits were all reverted keeps the previous turn's preview", async () => {
+  const scope = { kind: "turn" as const, turnId: "turn-1" };
+  const earlier: Event[] = [
+    { ...started, id: "start-1", seq: 2, createdAt: 100, scope },
+    { ...completed, id: "end-1", seq: 8, createdAt: 200, scope },
+  ];
+  const reverted = [
+    absoluteEdit("/ws/dotfiles/src/b.ts", "edit"),
+    absoluteEdit("/ws/dotfiles/src/b.ts", "undo"),
+  ];
+  const { harness } = await setup(
+    [...earlier, { ...started, createdAt: 300 }, { ...completed, createdAt: 400 }],
+    [...reverted, message],
+    [],
+    null,
+    (call) => {
+      const { window } = call.input as { window: { startedAt: number } };
+      return snapshot(window.startedAt === 300 ? { patch: "" } : {});
+    },
+  );
+  stubWorkspaces(harness);
+  expect(await harness.callRpc("latestTurn", { threadId: "thread-1" })).toMatchObject({
+    turn: { turnId: "turn-1", patch: snapshotPatchText },
+  });
   await harness.lifecycle.dispose();
 });

@@ -8,14 +8,14 @@ export default experimental_defineHostEntry({
     async capture({ environmentPath, threadId, at, kind }, context) {
       return { captured: await capture(environmentPath, threadId, at, kind, context.signal) };
     },
-    async turnPatch({ environmentPath, threadId, startedAt, completedAt, recordedPaths }, context) {
+    async turnPatch({ environmentPath, threadId, window, recordedPaths, known }, context) {
       return {
         snapshot: await turnPatch(
           environmentPath,
           threadId,
-          startedAt,
-          completedAt,
+          window,
           recordedPaths,
+          known,
           context.signal,
         ),
       };

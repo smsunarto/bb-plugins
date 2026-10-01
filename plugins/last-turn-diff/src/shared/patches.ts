@@ -30,6 +30,32 @@ function positionChange(change: Change): Change {
   return synthesized ? { ...change, patch, unpositioned: true } : change;
 }
 
+const ESCAPES: Record<string, number> = { a: 7, b: 8, t: 9, n: 10, v: 11, f: 12, r: 13 };
+
+/**
+ * Pierre strips Git's quotes from a header path but keeps its C-style escapes
+ * (`\"`, `\t`, octal UTF-8 bytes). Git quotes every path containing a
+ * backslash, so any backslash left in a parsed name is an escape.
+ */
+export function unquoteGitPath(name: string): string {
+  if (!name.includes("\\")) return name;
+  const bytes: number[] = [];
+  for (let i = 0; i < name.length; i++) {
+    const char = name[i]!;
+    if (char !== "\\") {
+      bytes.push(...new TextEncoder().encode(char));
+      continue;
+    }
+    const next = name[++i] ?? "";
+    const octal = name.slice(i, i + 3);
+    if (/^[0-7]{3}$/.test(octal)) {
+      bytes.push(parseInt(octal, 8));
+      i += 2;
+    } else bytes.push(ESCAPES[next] ?? next.charCodeAt(0));
+  }
+  return new TextDecoder().decode(new Uint8Array(bytes));
+}
+
 function splitPatch(patch: string, idPrefix: string): Change[] {
   const chunks = patch.split(GIT_DIFF_FILE_BREAK_REGEX).filter((chunk) => chunk.trim() !== "");
   const changes: Change[] = [];
@@ -39,7 +65,7 @@ function splitPatch(patch: string, idPrefix: string): Change[] {
       const file = getSingularPatch(patch);
       const added = file.hunks.reduce((total, hunk) => total + hunk.additionLines, 0);
       const removed = file.hunks.reduce((total, hunk) => total + hunk.deletionLines, 0);
-      changes.push({ id, path: file.name, patch, added, removed });
+      changes.push({ id, path: unquoteGitPath(file.name), patch, added, removed });
     } catch {
       // Preserve unparseable and binary patches as text, never silently hide changes.
       changes.push({ id, path: "Recorded changes", patch, added: 0, removed: 0 });

@@ -1,9 +1,14 @@
-import { execFile } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import { copyFile, mkdtemp, realpath, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
-import type { CaptureKind, SnapshotPatch } from "../shared/host-contract.ts";
+import type {
+  Attribution,
+  CaptureKind,
+  SnapshotPatch,
+  TurnWindow,
+} from "../shared/host-contract.ts";
 
 /**
  * Workspace snapshots, T3 Code style: each capture writes the checkout's files
@@ -15,17 +20,23 @@ import type { CaptureKind, SnapshotPatch } from "../shared/host-contract.ts";
  * absorb`, and workspace-commit rewrites during the turn: moving changes into
  * commits leaves the working tree, and so the snapshot, unchanged.
  *
- * Ref layout: `refs/bb-last-turn/<checkout>/<thread>/<at>-<kind>`. `checkout`
- * hashes the worktree root, so linked worktrees sharing one ref store never
- * see each other's captures. `at` is the server's clock, the same clock that
- * stamps turn events.
+ * Ref layout: `refs/bb-last-turn/<checkout>/<thread>/<at>-<finishedAt>-<kind>`.
+ * `checkout` hashes the worktree root, so linked worktrees sharing one ref
+ * store never see each other's captures. `at` is the server's clock when the
+ * capture was requested, the clock that stamps turn events. `finishedAt` adds
+ * the capture's own duration: the files were read somewhere in between.
  */
 const NAMESPACE = "refs/bb-last-turn";
-/** Captures retained per thread. Two per turn, so the last several turns. */
-const KEEP = 16;
-/** `thread.active` lands just after `turn/started` when a turn skipped the dispatch hook. */
-const START_GRACE_MS = 2_000;
-const MAX_PATCH_CHARS = 1_000_000;
+/** Captures retained per thread: start, open, and end for the last several turns. */
+const KEEP = 24;
+/**
+ * A capture finishing this soon after `turn/started` still precedes the
+ * turn's first write, which needs at least one model round trip.
+ */
+const START_GRACE_MS = 1_000;
+/** An `open` with no `end` this old came from a lost capture, not a running turn. */
+const MAX_TURN_MS = 6 * 60 * 60 * 1000;
+const MAX_PATCH_BYTES = 1_000_000;
 const MAX_OUTPUT_BYTES = 32 * 1024 * 1024;
 const IDENTITY = {
   GIT_AUTHOR_NAME: "bb last-turn-diff",
@@ -44,12 +55,16 @@ const DIFF_CONFIG = [
   "-c",
   "core.quotePath=false",
 ];
+// Never take optional locks on the real index GitButler also writes.
+const BASE_ENV = { GIT_TERMINAL_PROMPT: "0", GIT_OPTIONAL_LOCKS: "0" };
 
 interface Capture {
   ref: string;
   commit: string;
+  tree: string;
   threadId: string;
   at: number;
+  finishedAt: number;
   kind: CaptureKind;
 }
 
@@ -58,9 +73,10 @@ function git(
   args: readonly string[],
   signal: AbortSignal,
   env: Record<string, string> = {},
+  input?: string,
 ): Promise<string> {
   return new Promise((resolve, reject) => {
-    execFile(
+    const child = execFile(
       "git",
       args,
       {
@@ -69,14 +85,49 @@ function git(
         maxBuffer: MAX_OUTPUT_BYTES,
         signal,
         windowsHide: true,
-        // Never take optional locks on the real index GitButler also writes.
-        env: { ...process.env, GIT_TERMINAL_PROMPT: "0", GIT_OPTIONAL_LOCKS: "0", ...env },
+        env: { ...process.env, ...BASE_ENV, ...env },
       },
       (error, stdout, stderr) => {
         if (error) reject(new Error(stderr.trim() || error.message));
         else resolve(stdout);
       },
     );
+    child.stdin?.end(input ?? "");
+  });
+}
+
+/** Like `git`, but stops reading at `limit` bytes and answers null instead. */
+function gitCapped(
+  cwd: string,
+  args: readonly string[],
+  limit: number,
+  signal: AbortSignal,
+): Promise<string | null> {
+  return new Promise((resolve, reject) => {
+    const child = spawn("git", args, {
+      cwd,
+      signal,
+      windowsHide: true,
+      env: { ...process.env, ...BASE_ENV },
+    });
+    const chunks: Buffer[] = [];
+    let size = 0;
+    let overflow = false;
+    let stderr = "";
+    child.stdout.on("data", (chunk: Buffer) => {
+      size += chunk.length;
+      if (size > limit) {
+        overflow = true;
+        child.kill();
+      } else chunks.push(chunk);
+    });
+    child.stderr.on("data", (chunk: Buffer) => (stderr += chunk.toString()));
+    child.on("error", reject);
+    child.on("close", (code) => {
+      if (overflow) resolve(null);
+      else if (code === 0) resolve(Buffer.concat(chunks).toString("utf8"));
+      else reject(new Error(stderr.trim() || `git exited ${code}`));
+    });
   });
 }
 
@@ -103,30 +154,66 @@ function threadPrefix(target: Checkout, threadId: string): string {
   return `${target.refPrefix}${threadId}/`;
 }
 
-async function listCaptures(
-  target: Checkout,
-  prefix: string,
-  signal: AbortSignal,
-): Promise<Capture[]> {
+/** Every ref under `prefix`, parsed when it is a capture. */
+async function listRefs(target: Checkout, prefix: string, signal: AbortSignal) {
   const out = await git(
     target.top,
-    ["for-each-ref", "--format=%(refname) %(objectname)", prefix],
+    ["for-each-ref", "--format=%(refname) %(objectname) %(tree)", prefix],
     signal,
   );
+  const refs: string[] = [];
   const captures: Capture[] = [];
   for (const line of out.split("\n")) {
-    const [ref, commit] = line.split(" ");
-    const match = ref?.slice(target.refPrefix.length).match(/^([^/]+)\/(\d+)-(start|end)$/);
-    if (!ref || !commit || !match) continue;
+    const [ref, commit, tree] = line.split(" ");
+    if (!ref || !commit || !tree) continue;
+    refs.push(ref);
+    const match = ref
+      .slice(target.refPrefix.length)
+      .match(/^([^/]+)\/(\d+)-(\d+)-(start|open|end)$/);
+    if (!match) continue;
     captures.push({
       ref,
       commit,
+      tree,
       threadId: match[1]!,
       at: Number(match[2]),
-      kind: match[3] as CaptureKind,
+      finishedAt: Number(match[3]),
+      kind: match[4] as CaptureKind,
     });
   }
-  return captures.sort((a, b) => a.at - b.at);
+  return { refs, captures: captures.sort((a, b) => a.at - b.at) };
+}
+
+/**
+ * Seed the private index from the real one so unchanged files keep their stat
+ * cache, then drop the flags that tell `git add` to look away. A file marked
+ * assume-unchanged or skip-worktree can still change on disk.
+ */
+async function seedIndex(target: Checkout, env: { GIT_INDEX_FILE: string }, signal: AbortSignal) {
+  const real = (
+    await git(target.top, ["rev-parse", "--path-format=absolute", "--git-path", "index"], signal)
+  ).trim();
+  const copied = await copyFile(real, env.GIT_INDEX_FILE).then(
+    () => true,
+    () => false,
+  );
+  if (!copied) return;
+  const assumed: string[] = [];
+  const skipped: string[] = [];
+  for (const entry of (await git(target.top, ["ls-files", "-z", "-v"], signal, env)).split("\0")) {
+    const tag = entry[0];
+    const path = entry.slice(2);
+    if (!tag || !path) continue;
+    if (tag !== tag.toUpperCase()) assumed.push(path);
+    if (tag.toUpperCase() === "S") skipped.push(path);
+  }
+  for (const [flag, paths] of [
+    ["--no-assume-unchanged", assumed],
+    ["--no-skip-worktree", skipped],
+  ] as const) {
+    if (paths.length === 0) continue;
+    await git(target.top, ["update-index", "-z", flag, "--stdin"], signal, env, paths.join("\0"));
+  }
 }
 
 /** Record the checkout's current files, including untracked, non-ignored ones. */
@@ -137,20 +224,23 @@ export async function capture(
   kind: CaptureKind,
   signal: AbortSignal,
 ): Promise<boolean> {
+  const began = performance.now();
   const target = await checkout(environmentPath, signal);
   if (!target) return false;
   const scratch = await mkdtemp(join(tmpdir(), "bb-last-turn-"));
   try {
-    const index = join(scratch, "index");
-    // Seeding from the real index reuses its stat cache, so only files that
-    // changed are rehashed. The real index is only ever read.
-    const real = (
-      await git(target.top, ["rev-parse", "--path-format=absolute", "--git-path", "index"], signal)
-    ).trim();
-    await copyFile(real, index).catch(() => undefined);
-    const env = { GIT_INDEX_FILE: index };
+    const env = { GIT_INDEX_FILE: join(scratch, "index") };
+    await seedIndex(target, env, signal);
+    const sparse = await git(target.top, ["config", "--bool", "core.sparseCheckout"], signal)
+      .then((value) => value.trim() === "true")
+      .catch(() => false);
     // fsmonitor state belongs to the real index; a full stat walk is exact.
-    await git(target.top, ["-c", "core.fsmonitor=false", "add", "--all", "--", "."], signal, env);
+    await git(
+      target.top,
+      ["-c", "core.fsmonitor=false", "add", "--all", ...(sparse ? ["--sparse"] : []), "--", "."],
+      signal,
+      env,
+    );
     const tree = (await git(target.top, ["write-tree"], signal, env)).trim();
     const date = `@${Math.floor(at / 1000)} +0000`;
     const commit = (
@@ -160,34 +250,30 @@ export async function capture(
         GIT_COMMITTER_DATE: date,
       })
     ).trim();
+    const finishedAt = at + Math.ceil(performance.now() - began);
     const prefix = threadPrefix(target, threadId);
-    await git(
-      target.top,
-      ["update-ref", `${prefix}${String(at).padStart(15, "0")}-${kind}`, commit],
-      signal,
-    );
-    const stale = (await listCaptures(target, prefix, signal)).slice(0, -KEEP);
+    const name = `${String(at).padStart(15, "0")}-${String(finishedAt).padStart(15, "0")}-${kind}`;
+    await git(target.top, ["update-ref", `${prefix}${name}`, commit], signal);
+    const stale = (await listRefs(target, prefix, signal)).captures.slice(0, -KEEP);
     // Pruning races other threads' pruning on packed-refs; the next capture retries.
-    if (stale.length > 0) await deleteRefs(target, stale, signal).catch(() => undefined);
+    await deleteRefs(
+      target,
+      stale.map((capture) => capture.ref),
+      signal,
+    ).catch(() => undefined);
     return true;
   } finally {
     await rm(scratch, { recursive: true, force: true });
   }
 }
 
-async function deleteRefs(target: Checkout, captures: Capture[], signal: AbortSignal) {
-  await new Promise<void>((resolve, reject) => {
-    const child = execFile(
-      "git",
-      ["update-ref", "--stdin"],
-      { cwd: target.top, signal, windowsHide: true },
-      (error) => (error ? reject(error) : resolve()),
-    );
-    child.stdin?.end(captures.map((capture) => `delete ${capture.ref}\n`).join(""));
-  });
+async function deleteRefs(target: Checkout, refs: string[], signal: AbortSignal) {
+  if (refs.length === 0) return;
+  const input = refs.map((ref) => `delete ${ref}\n`).join("");
+  await git(target.top, ["update-ref", "--stdin"], signal, {}, input);
 }
 
-/** Drop every capture this thread holds in the checkout. */
+/** Drop every ref this thread holds in the checkout. */
 export async function forget(
   environmentPath: string,
   threadId: string,
@@ -195,38 +281,46 @@ export async function forget(
 ): Promise<void> {
   const target = await checkout(environmentPath, signal);
   if (!target) return;
-  const captures = await listCaptures(target, threadPrefix(target, threadId), signal);
-  if (captures.length > 0) await deleteRefs(target, captures, signal);
+  const { refs } = await listRefs(target, threadPrefix(target, threadId), signal);
+  await deleteRefs(target, refs, signal);
 }
 
-function bracket(captures: Capture[], startedAt: number, completedAt: number) {
-  // The newest capture up to just after the start. A late `thread.active`
-  // capture must win over the previous turn's end, or edits made between the
-  // turns would land in this one.
-  const start = captures.findLast(
-    (capture) => capture.at <= startedAt + START_GRACE_MS && capture.at < completedAt,
+/**
+ * The capture pair that provably brackets the turn. The baseline must come
+ * after the previous turn and finish before this one could write. The end must
+ * come after the turn and finish before the next one could write. Captures
+ * that miss either bound are discarded rather than stretched to fit.
+ */
+function bracket(captures: Capture[], window: TurnWindow) {
+  const baselines = captures.filter(
+    (capture) =>
+      capture.kind !== "end" &&
+      capture.at >= window.prevCompletedAt &&
+      capture.at < window.completedAt,
   );
-  const end = captures.find((capture) => capture.at >= completedAt);
+  const start =
+    baselines.findLast((capture) => capture.finishedAt <= window.startedAt) ??
+    baselines.findLast((capture) => capture.finishedAt <= window.startedAt + START_GRACE_MS);
+  const deadline = window.nextStartedAt === null ? Infinity : window.nextStartedAt + START_GRACE_MS;
+  const end = captures.find(
+    (capture) => capture.at >= window.completedAt && capture.finishedAt <= deadline,
+  );
   return start && end && start.at < end.at ? { start, end } : null;
 }
 
-/** Whether `threadId` was mid-turn at `at`: its latest capture by then opened a turn. */
+/** Whether `threadId` was mid-turn at `at`: its latest lifecycle capture opened a turn. */
 function running(captures: Capture[], threadId: string, at: number): boolean {
-  return (
-    captures.findLast((capture) => capture.threadId === threadId && capture.at <= at)?.kind ===
-    "start"
+  const last = captures.findLast(
+    (capture) => capture.threadId === threadId && capture.kind !== "start" && capture.at <= at,
   );
+  return last?.kind === "open" && at - last.at < MAX_TURN_MS;
 }
 
-async function changedPaths(
-  target: Checkout,
-  from: string,
-  to: string,
-  signal: AbortSignal,
-): Promise<string[]> {
+async function changedPaths(target: Checkout, from: Capture, to: Capture, signal: AbortSignal) {
+  if (from.tree === to.tree) return [];
   const out = await git(
     target.top,
-    ["diff-tree", "-r", "-z", "--no-renames", "--name-only", from, to],
+    ["diff-tree", "-r", "-z", "--no-renames", "--name-only", from.tree, to.tree],
     signal,
   );
   return out.split("\0").filter(Boolean);
@@ -247,21 +341,19 @@ async function foreignPaths(
   end: Capture,
   ownPaths: ReadonlySet<string>,
   signal: AbortSignal,
-): Promise<Set<string>> {
+): Promise<string[]> {
   const cuts = [start, ...all.filter((c) => c.at > start.at && c.at < end.at), end];
   const others = [...new Set(all.map((c) => c.threadId))].filter((id) => id !== threadId);
   const mine = new Set<string>();
   const shared = new Set<string>();
   for (let i = 0; i + 1 < cuts.length; i++) {
     const from = cuts[i]!;
-    const to = cuts[i + 1]!;
-    if (from.commit === to.commit) continue;
     const contested = others.some((other) => running(all, other, from.at));
-    for (const path of await changedPaths(target, from.commit, to.commit, signal)) {
+    for (const path of await changedPaths(target, from, cuts[i + 1]!, signal)) {
       (contested ? shared : mine).add(path);
     }
   }
-  return new Set([...shared].filter((path) => !mine.has(path) && !ownPaths.has(path)));
+  return [...shared].filter((path) => !mine.has(path) && !ownPaths.has(path));
 }
 
 /** Split a `git diff` patch into per-file chunks keyed by post-image path. */
@@ -300,64 +392,83 @@ async function repoPaths(
   );
 }
 
+/** Environment-relative submodule roots in the end capture. */
+async function submodules(target: Checkout, end: Capture, signal: AbortSignal) {
+  const out = await git(target.top, ["ls-tree", "-r", "-z", end.tree], signal);
+  return out
+    .split("\0")
+    .filter((entry) => entry.startsWith("160000 "))
+    .map((entry) => entry.slice(entry.indexOf("\t") + 1))
+    .filter((path) => path.startsWith(target.prefix))
+    .map((path) => path.slice(target.prefix.length));
+}
+
 /**
  * The diff between the captures bracketing a turn, or null when this thread
- * has no pair of captures around it. Paths are relative to `environmentPath`.
- * `recordedPaths` are the files the provider recorded editing, as it reported them.
+ * has no valid pair of captures around it. Paths are relative to
+ * `environmentPath`. `recordedPaths` are the files the provider recorded
+ * editing, as it reported them. `known` reuses an earlier attribution for the
+ * same capture pair, which pruning other threads' captures must not change.
  */
 export async function turnPatch(
   environmentPath: string,
   threadId: string,
-  startedAt: number,
-  completedAt: number,
+  window: TurnWindow,
   recordedPaths: readonly string[],
+  known: Attribution | undefined,
   signal: AbortSignal,
 ): Promise<SnapshotPatch | null> {
   const target = await checkout(environmentPath, signal);
   if (!target) return null;
-  const all = await listCaptures(target, target.refPrefix, signal);
-  const window = bracket(
+  const all = (await listRefs(target, target.refPrefix, signal)).captures;
+  const pair = bracket(
     all.filter((capture) => capture.threadId === threadId),
-    startedAt,
-    completedAt,
+    window,
   );
-  if (!window) return null;
-  const { start, end } = window;
+  if (!pair) return null;
+  const { start, end } = pair;
   const range = [start.commit, end.commit];
   const scope = target.prefix ? [`--relative=${target.prefix}`] : [];
   const flags = ["--no-ext-diff", "--no-textconv", "--no-color", "-M", ...scope];
-  const patch = await git(
+  const patch = await gitCapped(
     target.top,
     [...DIFF_CONFIG, "diff", ...flags, "--src-prefix=a/", "--dst-prefix=b/", ...range],
+    MAX_PATCH_BYTES,
     signal,
   );
-  const foreign = await foreignPaths(
-    target,
-    all,
-    threadId,
-    start,
-    end,
-    await repoPaths(target, environmentPath, recordedPaths),
-    signal,
-  );
-  const root = join(target.top, target.prefix).replace(/\/$/, "");
-  const whole = patch.length > MAX_PATCH_CHARS ? null : patch;
-  const unsplit = { root, patch: whole, otherPatch: null, limited: whole === null };
-  if (foreign.size === 0) return unsplit;
+  const foreign =
+    known?.start === start.commit && known.end === end.commit
+      ? known.foreign
+      : await foreignPaths(
+          target,
+          all,
+          threadId,
+          start,
+          end,
+          await repoPaths(target, environmentPath, recordedPaths),
+          signal,
+        );
+  const base = {
+    root: join(target.top, target.prefix).replace(/\/$/, ""),
+    uncovered: await submodules(target, end, signal),
+    attribution: { start: start.commit, end: end.commit, foreign },
+  };
+  const unsplit = { ...base, patch, otherPatch: null, limited: patch === null };
+  if (foreign.length === 0 || patch === null) return unsplit;
 
   const names = (
     await git(target.top, [...DIFF_CONFIG, "diff", ...flags, "-z", "--name-only", ...range], signal)
   )
     .split("\0")
     .filter(Boolean);
-  const chunks = whole === null ? null : fileChunks(whole, names);
+  const chunks = fileChunks(patch, names);
   // Without a reliable file split, keep everything rather than hide changes.
   if (chunks === null) return unsplit;
-  const isForeign = (path: string) => foreign.has(target.prefix + path);
+  const isForeign = new Set(foreign.map((path) => path.slice(target.prefix.length)));
   const pick = (foreignFiles: boolean) =>
     chunks
-      .filter((chunk) => isForeign(chunk.path) === foreignFiles)
+      .filter((chunk) => isForeign.has(chunk.path) === foreignFiles)
       .map((chunk) => chunk.text)
       .join("");
-  return { root, patch: pick(false), otherPatch: pick(true) || null, limited: false };
+  return { ...base, patch: pick(false), otherPatch: pick(true) || null, limited: false };
 }
