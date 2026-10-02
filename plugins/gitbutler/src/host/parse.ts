@@ -136,6 +136,32 @@ function stack(value: unknown): Stack | undefined {
   };
 }
 
+/** When the stack last gained a commit, or -Infinity for a stack with none. */
+function lastCommittedAt(stack: Stack): number {
+  let latest = -Infinity;
+  for (const branch of stack.branches) {
+    for (const commit of branch.commits) {
+      const time = Date.parse(commit.createdAt);
+      if (time > latest) latest = time;
+    }
+  }
+  return latest;
+}
+
+/**
+ * `but` lists stacks in the order they were applied. The stack an agent just
+ * committed to is the one worth reading, so the most recently committed one
+ * leads and empty stacks trail. The sort is stable, so ties keep CLI order.
+ */
+function byLastCommit(stacks: Stack[]): Stack[] {
+  const times = new Map(stacks.map((stack) => [stack, lastCommittedAt(stack)]));
+  return stacks.sort((left, right) => {
+    const a = times.get(left)!;
+    const b = times.get(right)!;
+    return a === b ? 0 : b > a ? 1 : -1;
+  });
+}
+
 export function baseCommit(value: unknown): BaseCommit | undefined {
   const record = asObject(value);
   const commitId = asString(record?.["commitId"]);
@@ -161,10 +187,12 @@ export function parseWorkspace(payload: unknown, repoName: string): Workspace {
     reason: null,
     repoName,
     unassignedChanges: fileChanges(root["uncommittedChanges"]),
-    stacks: asArray(root["stacks"]).flatMap((entry) => {
-      const parsed = stack(entry);
-      return parsed ? [parsed] : [];
-    }),
+    stacks: byLastCommit(
+      asArray(root["stacks"]).flatMap((entry) => {
+        const parsed = stack(entry);
+        return parsed ? [parsed] : [];
+      }),
+    ),
     base: baseCommit(root["mergeBase"]) ?? null,
     upstream: upstreamState
       ? {
