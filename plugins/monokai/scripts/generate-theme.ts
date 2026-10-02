@@ -623,6 +623,10 @@ const requiredRules: Array<{
     },
   },
   {
+    selector: ".dark [data-follow-up-composer]",
+    declarations: { "background-color": "var(--background)" },
+  },
+  {
     selector: '.dark [aria-label="Thread context before sending"]',
     declarations: { "background-color": "var(--agent-surface-background)" },
   },

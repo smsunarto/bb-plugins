@@ -552,6 +552,27 @@
   border-radius: 11px 11px 0 0;
 }
 
+/* bb tucks an attached queue card 20px under the follow-up composer and
+ * relies on the composer's opaque bg-background to cover it. The 6% layer
+ * would composite over that card, so the wrapper restores the opaque ground
+ * beneath it. The top radius matches the promptbox to keep the tucked card
+ * visible at the corners, as upstream shows it. */
+.dark [data-follow-up-composer] {
+  background-color: var(--background);
+  border-radius: 12px 12px 0 0;
+}
+
+/* bb reserves a 20px gutter for an invisible drag grip, even when the list
+ * cannot reorder. Collapse the disabled grip so the message text aligns with
+ * the Queue title. The -0.25rem margin cancels the row's 6px gap, minus the
+ * 2px that separates the row inset (10px) from the title inset (12px). */
+.dark [data-queued-message-row] button[aria-label^="Reorder queued message"]:disabled {
+  width: 0;
+  padding: 0;
+  margin-left: -0.25rem;
+  overflow: hidden;
+}
+
 /* Context is a separate request surface; its compact git inlay is layout. */
 .dark [aria-label="Thread context before sending"] {
   background-color: var(--agent-surface-background);
