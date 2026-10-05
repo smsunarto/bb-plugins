@@ -30,9 +30,9 @@ struct Account: Decodable {
     let id: String
     let identity: String
     let plan: String?
-    let priority: Int
     let status: String
     let current: Bool
+    let lastUsedAt: Double?
     let observedAt: Double?
     let heldUntil: Double?
     let error: String?
@@ -42,6 +42,8 @@ struct Account: Decodable {
     let extraUsage: ExtraUsage?
     let resetNotice: String?
     let webResetCredits: WebResetCredits?
+
+    var disabled: Bool { status == "disabled" }
 }
 
 struct WebResetCredits: Decodable {
@@ -77,9 +79,17 @@ struct UsageWindow: Decodable {
     let usedPercent: Double
     let resetAt: Double?
     let windowMinutes: Int?
+    /// Set on a per-model weekly limit. Null on the shared limits.
+    let model: String?
 
-    var remainingPercent: Double { max(0, min(100, 100 - usedPercent)) }
     var resetDate: Date? { date(resetAt) }
+
+    /// The pool keeps a window's last reading until its next read, so a window whose
+    /// reset has passed is shown as the fresh window it now is.
+    func remaining(at now: Date) -> Double {
+        if let reset = resetDate, reset <= now { return 100 }
+        return max(0, min(100, 100 - usedPercent))
+    }
 }
 
 private struct Envelope: Decodable {
@@ -99,8 +109,12 @@ final class Store: ObservableObject {
     @Published var refreshing = false
     @Published var now = Date()
 
+    func provider(_ id: String) -> Provider? {
+        snapshot?.providers.first { $0.id == id }
+    }
+
     func account(provider: String, id: String) -> (Provider, Account)? {
-        guard let provider = snapshot?.providers.first(where: { $0.id == provider }),
+        guard let provider = self.provider(provider),
               let account = provider.accounts.first(where: { $0.id == id })
         else { return nil }
         return (provider, account)
@@ -149,52 +163,50 @@ enum Format {
         return formatter
     }()
 
-    private static let clock: DateFormatter = {
-        let formatter = DateFormatter()
-        formatter.timeStyle = .short
-        formatter.dateStyle = .none
-        return formatter
-    }()
-
     static func updated(_ date: Date, now: Date) -> String {
-        let age = now.timeIntervalSince(date)
-        if age < 60 { return "Updated just now" }
-        if age < 86_400 { return "Updated \(relative.localizedString(for: date, relativeTo: now))" }
-        return "Updated \(clock.string(from: date))"
+        if now.timeIntervalSince(date) < 60 { return "Updated just now" }
+        return "Updated \(relative.localizedString(for: date, relativeTo: now))"
     }
 
-    static func time(_ date: Date) -> String { clock.string(from: date) }
-
-    /// "3d 19h · 21d 17h · 28d 15h", up to four credits, then "+N".
-    static func expiries(_ expiries: [Double?], now: Date) -> String {
-        let items = expiries.prefix(4).map { expiry -> String in
-            guard let date = date(expiry) else { return "No expiry" }
-            let countdown = countdown(to: date, now: now)
-            return countdown.hasPrefix("in ") ? String(countdown.dropFirst(3)) : countdown
-        }
-        let more = expiries.count > 4 ? ["+\(expiries.count - 4)"] : []
-        return (items + more).joined(separator: " · ")
+    /// "Expires in 17d 10h", or "Never expires" for a credit without an expiry.
+    static func expiry(_ expiry: Double?, now: Date) -> String {
+        guard let date = date(expiry) else { return "Never expires" }
+        let countdown = countdown(to: date, now: now)
+        return countdown == "now" ? "Expires now" : "Expires \(countdown)"
     }
 
-    /// Codex credits are a raw count; POSIX formatting keeps them as "62500".
-    private static let credits: NumberFormatter = {
+    /// Codex credits are a raw count: "59,713" from 1,000 up, "12.34" below.
+    private static func creditFormatter(fractionDigits: Int) -> NumberFormatter {
         let formatter = NumberFormatter()
         formatter.numberStyle = .decimal
-        formatter.maximumFractionDigits = 2
-        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.maximumFractionDigits = fractionDigits
+        formatter.locale = Locale(identifier: "en_US")
         return formatter
-    }()
-
-    static func credits(_ value: Double) -> String {
-        credits.string(from: NSNumber(value: value)) ?? String(value)
     }
 
-    static func money(_ value: Double, currency: String) -> String {
+    private static let wholeCredits = creditFormatter(fractionDigits: 0)
+    private static let fractionalCredits = creditFormatter(fractionDigits: 2)
+
+    static func credits(_ value: Double) -> String {
+        let formatter = abs(value) >= 1000 ? wholeCredits : fractionalCredits
+        return formatter.string(from: NSNumber(value: value)) ?? String(value)
+    }
+
+    static func money(_ value: Double, currency: String, cents: Bool = true) -> String {
         let formatter = NumberFormatter()
         formatter.numberStyle = .currency
         formatter.locale = Locale(identifier: "en_US")
         formatter.currencyCode = currency
+        if !cents { formatter.maximumFractionDigits = 0 }
         return formatter.string(from: NSNumber(value: value)) ?? String(format: "%.2f", value)
+    }
+
+    /// Provider errors often arrive as a raw JSON body. Show its message, not the JSON.
+    static func error(_ error: String) -> String {
+        guard let match = error.firstMatch(of: #/"message"\s*:\s*"((?:[^"\\]|\\.)*)"/#) else { return error }
+        // The capture is still a JSON string body, so decode its escapes.
+        let message = (try? JSONDecoder().decode(String.self, from: Data("\"\(match.1)\"".utf8))) ?? String(match.1)
+        return message.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? error : message
     }
 }
 
@@ -208,10 +220,10 @@ struct Pace {
     var onTrack: Bool { abs(deltaPercent) <= 2 }
     var inReserve: Bool { deltaPercent < 0 }
 
-    /// Linear pace through a weekly window: how far usage sits from an even burn.
-    static func weekly(_ window: UsageWindow, now: Date) -> Pace? {
-        guard let minutes = window.windowMinutes, minutes == 10080, let reset = window.resetDate,
-              window.remainingPercent > 0 else { return nil }
+    /// Linear pace through a window of known length: how far usage sits from an even burn.
+    static func of(_ window: UsageWindow, now: Date) -> Pace? {
+        guard let minutes = window.windowMinutes, minutes > 0, let reset = window.resetDate,
+              window.remaining(at: now) > 0 else { return nil }
         let duration = Double(minutes) * 60
         let untilReset = reset.timeIntervalSince(now)
         guard untilReset > 0, untilReset <= duration else { return nil }
@@ -223,24 +235,22 @@ struct Pace {
 
         let delta = actual - expected
         let rounded = Int(abs(delta).rounded())
-        let left = abs(delta) <= 2 || rounded == 0
-            ? "On pace"
-            : delta > 0 ? "\(rounded)% in deficit" : "\(rounded)% in reserve"
+        let onPace = abs(delta) <= 2 || rounded == 0
+        // Usage below an even burn always lasts until the reset, so reserve needs no runway.
+        if !onPace, delta < 0 {
+            return Pace(expectedUsedPercent: expected, deltaPercent: delta, text: "\(rounded)% in reserve")
+        }
 
-        var right: String?
-        if actual == 0 {
-            right = "Lasts until reset"
-        } else {
+        let left = onPace ? "On pace" : "\(rounded)% in deficit"
+        var right = "Lasts until reset"
+        if actual > 0 {
             let runway = (100 - actual) / (actual / elapsed)
-            if runway >= untilReset {
-                right = "Lasts until reset"
-            } else {
+            if runway < untilReset {
                 let eta = Format.countdown(to: now.addingTimeInterval(runway), now: now)
                 right = eta == "now" ? "Runs out now" : "Runs out \(eta)"
             }
         }
-        let text = right.map { "\(left) · \($0)" } ?? left
-        return Pace(expectedUsedPercent: expected, deltaPercent: delta, text: text)
+        return Pace(expectedUsedPercent: expected, deltaPercent: delta, text: "\(left) · \(right)")
     }
 }
 
@@ -258,14 +268,13 @@ enum Brand {
 
 let menuWidth: CGFloat = 310
 
-/// Quota-warning thresholds, in percent left, drawn as ticks on every bar.
-let warningMarkers: [Double] = [50, 20]
+/// Matches the inset of NSMenu's separators and item icons, so cards line up with them.
+let cardInset: CGFloat = 16
 
 struct UsageBar: View {
     let remaining: Double
     let tint: Color
     let pace: Pace?
-    var markers: [Double] = warningMarkers
 
     var body: some View {
         Canvas { context, size in
@@ -281,26 +290,19 @@ struct UsageBar: View {
                 context.fill(Path(roundedRect: fill, cornerRadius: radius), with: .color(tint))
             }
 
-            // Punch a gap through the bar, then draw a thin stripe in it.
-            func notch(at x: CGFloat, gap: CGFloat, stripe: CGFloat, color: Color) {
-                context.blendMode = .destinationOut
-                context.fill(
-                    Path(CGRect(x: x - gap / 2, y: 0, width: gap, height: size.height)),
-                    with: .color(.white.opacity(0.9)))
-                context.blendMode = .normal
-                context.fill(
-                    Path(CGRect(x: x - stripe / 2, y: 0, width: stripe, height: size.height)),
-                    with: .color(color))
-            }
-            for marker in markers {
-                notch(at: size.width * marker / 100, gap: 5, stripe: 1, color: .primary.opacity(0.68))
-            }
+            // Punch a gap through the bar where an even burn would be, then draw a stripe in it.
             if let pace, !pace.onTrack {
                 let x = size.width * (100 - pace.expectedUsedPercent) / 100
-                notch(at: x, gap: 6, stripe: 2, color: pace.inReserve ? .green : .red)
+                context.blendMode = .destinationOut
+                context.fill(Path(CGRect(x: x - 3, y: 0, width: 6, height: size.height)), with: .color(.white.opacity(0.9)))
+                context.blendMode = .normal
+                context.fill(
+                    Path(CGRect(x: x - 1, y: 0, width: 2, height: size.height)),
+                    with: .color(pace.inReserve ? .green : .red))
             }
         }
         .frame(height: 6)
+        .accessibilityHidden(true)
     }
 }
 
@@ -308,24 +310,29 @@ struct UsageRow: View {
     let window: UsageWindow
     let tint: Color
     let now: Date
+    /// A disabled account burns nothing, so its pace would be fiction.
+    let showsPace: Bool
 
     var body: some View {
-        let pace = Pace.weekly(window, now: now)
+        let remaining = window.remaining(at: now)
+        // A full window has not started, so its reset and pace say nothing.
+        let started = remaining.rounded() < 100
+        let pace = started && showsPace ? Pace.of(window, now: now) : nil
         VStack(alignment: .leading, spacing: 6) {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
-                Text("\(window.label) \(Format.percent(window.remainingPercent)) left")
+                Text("\(window.label) \(Format.percent(remaining)) left")
                     .font(.body)
                     .fontWeight(.medium)
                     .lineLimit(1)
                 Spacer(minLength: 8)
-                if let reset = window.resetDate {
+                if started, let reset = window.resetDate {
                     Text(Format.resets(reset, now: now))
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                 }
             }
-            UsageBar(remaining: window.remainingPercent, tint: tint, pace: pace)
+            UsageBar(remaining: remaining, tint: tint, pace: pace)
             if let pace {
                 Text(pace.text)
                     .font(.footnote)
@@ -333,36 +340,47 @@ struct UsageRow: View {
                     .lineLimit(2)
             }
         }
+        .accessibilityElement(children: .combine)
     }
 }
 
-/// CodexBar's MenuCardView+CodexResetCredits.
+/// One line per extra: a medium label on the left, a secondary detail on the right.
+struct ExtraRow: View {
+    let label: String
+    let detail: String?
+    var help: String?
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Text(label).font(.body).fontWeight(.medium).lineLimit(1).layoutPriority(1)
+            Spacer(minLength: 8)
+            if let detail {
+                Text(detail)
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .monospacedDigit()
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+            }
+        }
+        .help(help ?? "")
+        .accessibilityElement(children: .combine)
+    }
+}
+
+/// CodexBar's MenuCardView+CodexResetCredits, folded to one line. The tooltip lists every expiry.
 struct ResetCreditsRow: View {
-    let credits: ResetCredits
+    let expiries: [Double?]
     let now: Date
 
     var body: some View {
-        let expiries = credits.available(at: now)
-        let count = expiries.count
-        VStack(alignment: .leading, spacing: 4) {
-            Text("Limit Reset Credits").font(.body).fontWeight(.medium).lineLimit(1)
-            HStack(alignment: .firstTextBaseline, spacing: 8) {
-                Text("\(count) available")
-                    .font(.footnote.weight(.semibold))
-                    .lineLimit(1)
-                    .layoutPriority(1)
-                Spacer(minLength: 8)
-                HStack(alignment: .firstTextBaseline, spacing: 4) {
-                    Image(systemName: "clock").font(.caption2)
-                    Text(Format.expiries(expiries, now: now))
-                        .font(.caption)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.8)
-                }
-                .foregroundStyle(.secondary)
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
+        // Soonest first, so a nil first entry means none of them expire.
+        let soonest = expiries.first.flatMap { $0 }
+        ExtraRow(
+            label: expiries.count == 1 ? "1 limit reset" : "\(expiries.count) limit resets",
+            detail: soonest.map { expiries.count == 1 ? Format.expiry($0, now: now) : "Next " + Format.expiry($0, now: now).lowercased() },
+            help: expiries.enumerated().map { "\($0.offset + 1). \(Format.expiry($0.element, now: now))" }
+                .joined(separator: "\n"))
     }
 }
 
@@ -370,21 +388,14 @@ struct WebResetCreditsRow: View {
     let credits: WebResetCredits
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text("Limit Reset Credits").font(.body).fontWeight(.medium)
-            Text("\(credits.count) available").font(.footnote.weight(.semibold))
-            if let expiry = credits.expiry {
-                Label(expiry, systemImage: "clock")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
+        ExtraRow(
+            label: credits.count == 1 ? "1 limit reset" : "\(credits.count) limit resets",
+            detail: credits.expiry,
+            help: credits.expiry)
     }
 }
 
-/// CodexBar's ProviderCostContent: an inline balance, or spend against a cap with a bar.
+/// CodexBar's ProviderCostContent. Like every other bar, the spend bar fills with what is left.
 struct ExtraUsageRow: View {
     let usage: ExtraUsage
     let tint: Color
@@ -392,24 +403,27 @@ struct ExtraUsageRow: View {
     var body: some View {
         if usage.kind == "spend", let used = usage.used, let limit = usage.limit, limit > 0 {
             let currency = usage.currency ?? "USD"
-            let usedPercent = min(100, max(0, used / limit * 100))
+            let left = max(0, limit - used)
             VStack(alignment: .leading, spacing: 6) {
-                Text("Extra usage").font(.body).fontWeight(.medium).lineLimit(1)
-                UsageBar(remaining: 100 - usedPercent, tint: tint, pace: nil, markers: [])
-                HStack(alignment: .firstTextBaseline) {
-                    Text("Monthly cap: \(Format.money(used, currency: currency)) / \(Format.money(limit, currency: currency))")
-                        .font(.footnote)
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    Text("Extra usage \(Format.money(left, currency: currency)) left")
+                        .font(.body)
+                        .fontWeight(.medium)
                         .lineLimit(1)
-                    Spacer()
-                    Text("\(Int(usedPercent.rounded()))% used").font(.footnote).foregroundStyle(.secondary)
+                        .layoutPriority(1)
+                    Spacer(minLength: 8)
+                    Text("of \(Format.money(limit, currency: currency, cents: false)) a month")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
                 }
+                UsageBar(remaining: min(100, left / limit * 100), tint: tint, pace: nil)
             }
+            .accessibilityElement(children: .combine)
         } else if let balance = usage.balance {
-            HStack(alignment: .firstTextBaseline) {
-                Text("Extra usage").font(.body).fontWeight(.medium)
-                Spacer()
-                Text("Balance: \(Format.credits(balance))").font(.footnote).monospacedDigit().lineLimit(1)
-            }
+            // The server sends only positive balances; keep a sliver from reading "0".
+            let amount = balance < 0.005 ? "<0.01" : Format.credits(balance)
+            ExtraRow(label: "Extra usage", detail: amount == "1" ? "1 credit" : "\(amount) credits")
         }
     }
 }
@@ -426,81 +440,169 @@ struct AccountCard: View {
     }
 
     private func subtitle(_ account: Account) -> (String, Bool) {
-        if let error = account.error { return (error, true) }
-        if store.refreshing { return ("Refreshing…", false) }
+        if let error = account.error { return (Format.error(error), true) }
+        if store.refreshing, !account.disabled { return ("Refreshing…", false) }
         if let observed = date(account.observedAt) {
             return (Format.updated(observed, now: store.now), false)
         }
-        return ("Not fetched yet", false)
+        return ("No usage reading yet", false)
+    }
+
+    /// The pool's routing state. Problems read orange; the account in use reads in the accent color.
+    private func routing(_ account: Account) -> (String, Color)? {
+        var parts: [String] = []
+        if account.inFlight > 0 {
+            parts.append("In use · \(account.inFlight) in flight")
+        } else if account.current, account.lastUsedAt != nil {
+            parts.append("Last used")
+        }
+        switch account.status {
+        case "held":
+            parts.append(date(account.heldUntil).map { "Held · back \(Format.countdown(to: $0, now: store.now))" } ?? "Held")
+            return (parts.joined(separator: " · "), Color(nsColor: .systemOrange))
+        case "exhausted":
+            parts.append("Exhausted")
+            return (parts.joined(separator: " · "), Color(nsColor: .systemOrange))
+        case "disabled":
+            return ("Disabled", .secondary)
+        default:
+            return parts.isEmpty ? nil : (parts.joined(separator: " · "), Color(nsColor: .controlAccentColor))
+        }
     }
 
     private func card(provider: Provider, account: Account) -> some View {
         let (subtitle, isError) = subtitle(account)
+        let routing = routing(account)
+        let tint = Brand.tint(provider.id)
+        let resets = account.resetCredits?.available(at: store.now) ?? []
+        let webResets = resets.isEmpty && account.webResetCredits?.isFresh(at: store.now) == true ? account.webResetCredits : nil
+        let hasExtras = !resets.isEmpty || webResets != nil || account.extraUsage != nil
         return VStack(alignment: .leading, spacing: 0) {
             VStack(alignment: .leading, spacing: 4) {
                 HStack(alignment: .firstTextBaseline, spacing: 12) {
-                    Text(provider.name).font(.headline).fontWeight(.semibold).lineLimit(1)
-                    Spacer()
                     Text(account.identity)
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
+                        .font(.headline)
+                        .fontWeight(.semibold)
                         .lineLimit(1)
                         .truncationMode(.middle)
+                    Spacer(minLength: 8)
+                    if let plan = account.plan {
+                        Text(plan).font(.subheadline).foregroundStyle(.secondary).lineLimit(1).layoutPriority(1)
+                    }
                 }
                 HStack(alignment: .firstTextBaseline, spacing: 12) {
                     Text(subtitle)
                         .font(.footnote)
                         .foregroundStyle(isError ? Color(nsColor: .systemRed) : .secondary)
                         .lineLimit(isError ? 4 : 1)
-                    Spacer()
-                    if let plan = account.plan {
-                        Text(plan).font(.footnote).foregroundStyle(.secondary).lineLimit(1)
+                        .help(isError ? account.error ?? "" : "")
+                    Spacer(minLength: 8)
+                    if let routing {
+                        Text(routing.0)
+                            .font(.footnote)
+                            .fontWeight(.semibold)
+                            .foregroundStyle(routing.1)
+                            .lineLimit(1)
+                            .layoutPriority(1)
                     }
                 }
             }
-            let availableResets = account.resetCredits?.available(at: store.now) ?? []
-            let webResets = availableResets.isEmpty && account.webResetCredits?.isFresh(at: store.now) == true ? account.webResetCredits : nil
-            if !account.windows.isEmpty || !availableResets.isEmpty || webResets != nil || account.resetNotice != nil {
+            .accessibilityElement(children: .combine)
+            if !account.windows.isEmpty {
                 Divider().padding(.top, 6).padding(.bottom, 12)
                 VStack(alignment: .leading, spacing: 12) {
                     ForEach(Array(account.windows.enumerated()), id: \.offset) { _, window in
-                        UsageRow(window: window, tint: Brand.tint(provider.id), now: store.now)
-                    }
-                    if let credits = account.resetCredits, !availableResets.isEmpty {
-                        if !account.windows.isEmpty { Divider() }
-                        ResetCreditsRow(credits: credits, now: store.now)
-                    }
-                    if let credits = webResets {
-                        if !account.windows.isEmpty { Divider() }
-                        WebResetCreditsRow(credits: credits)
-                    }
-                    if let notice = account.resetNotice, webResets == nil {
-                        Link(notice, destination: URL(string: "https://claude.ai/settings/usage")!)
-                            .font(.footnote)
-                            .help("Claude Code does not expose full-reset inventory. Check the signed-in account in Claude.")
+                        UsageRow(window: window, tint: tint, now: store.now, showsPace: !account.disabled)
                     }
                 }
             }
-            if let extra = account.extraUsage {
+            if hasExtras {
                 Divider().padding(.vertical, 12)
-                ExtraUsageRow(usage: extra, tint: Brand.tint(provider.id))
+                VStack(alignment: .leading, spacing: 8) {
+                    if !resets.isEmpty { ResetCreditsRow(expiries: resets, now: store.now) }
+                    if let webResets { WebResetCreditsRow(credits: webResets) }
+                    if let extra = account.extraUsage { ExtraUsageRow(usage: extra, tint: tint) }
+                }
             }
         }
-        .padding(.horizontal, 20)
-        .padding(.top, 6)
+        .padding(.horizontal, cardInset)
+        .padding(.top, 8)
         .padding(.bottom, 10)
         .frame(width: menuWidth, alignment: .leading)
-        .opacity(account.status == "disabled" ? 0.5 : 1)
+        .opacity(account.disabled ? 0.5 : 1)
+    }
+}
+
+/// Shown above the cards when the last read failed and the menu shows older data.
+struct ErrorBanner: View {
+    @ObservedObject var store: Store
+
+    var body: some View {
+        if let error = store.snapshot?.error {
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .foregroundStyle(Color(nsColor: .systemOrange))
+                    .accessibilityHidden(true)
+                Text(error)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .font(.footnote)
+            .padding(.horizontal, cardInset)
+            .padding(.vertical, 6)
+            .frame(width: menuWidth, alignment: .leading)
+        }
     }
 }
 
 // MARK: - Status items
+
+/// NSMenu sizes a custom-view row from its intrinsic height, and an open menu resizes
+/// with every change to it. So a row reports its measured height here (CodexBar's
+/// MenuHostingView) and changes it only when the content needs a new one: a passing
+/// smaller size would clamp the scroll position of a menu taller than the screen.
+final class MenuRowHost: NSHostingView<AnyView> {
+    private var measured: CGFloat?
+
+    convenience init(_ view: some View) {
+        self.init(rootView: AnyView(view))
+        fit()
+    }
+
+    required init(rootView: AnyView) { super.init(rootView: rootView) }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
+
+    override var intrinsicContentSize: NSSize {
+        guard let measured else { return super.intrinsicContentSize }
+        return NSSize(width: menuWidth, height: measured)
+    }
+
+    /// Apply SwiftUI's pending state, then measure without the cached height, which
+    /// would otherwise feed back into fittingSize.
+    func fit() {
+        layoutSubtreeIfNeeded()
+        let previous = measured
+        measured = nil
+        let height = fittingSize.height
+        measured = height
+        guard previous != height else { return }
+        setFrameSize(NSSize(width: menuWidth, height: height))
+        invalidateIntrinsicContentSize()
+        superview?.layoutSubtreeIfNeeded()
+    }
+}
 
 final class ProviderItem: NSObject, NSMenuDelegate {
     let providerId: String
     let statusItem: NSStatusItem
     let store: Store
     private let logo: NSImage?
+    private var open = false
+    /// What the open menu was built from. A change in shape rebuilds it; otherwise rows refit.
+    private var shape: [String] = []
+    private var hosts: [MenuRowHost] = []
 
     init(providerId: String, store: Store, nativeDir: String) {
         self.providerId = providerId
@@ -520,67 +622,97 @@ final class ProviderItem: NSObject, NSMenuDelegate {
 
     func remove() { NSStatusBar.system.removeStatusItem(statusItem) }
 
-    /// The current account's percent left, on the first exhausted window or else the
-    /// first window, as CodexBar's "automatic" menu bar metric picks it.
+    /// The current account's lowest percent left across its shared limits, like CodexBar's
+    /// most-constrained metric: one number has to carry the limit that binds first. A
+    /// per-model limit only diverts that model's requests, so it counts only when the
+    /// account reports nothing else.
     func render() {
         guard let button = statusItem.button else { return }
-        let provider = store.snapshot?.providers.first { $0.id == providerId }
+        let now = store.now
+        let provider = store.provider(providerId)
         let account = provider?.accounts.first { $0.current } ?? provider?.accounts.first
-        let window = account?.windows.first { $0.remainingPercent <= 0 } ?? account?.windows.first
-        let title = window.map { Format.percent($0.remainingPercent) } ?? "–"
+        let windows = account?.windows ?? []
+        let shared = windows.filter { $0.model == nil }
+        let window = (shared.isEmpty ? windows : shared).min { $0.remaining(at: now) < $1.remaining(at: now) }
+        let title = window.map { Format.percent($0.remaining(at: now)) } ?? "–"
         button.attributedTitle = NSAttributedString(
             string: title,
             attributes: [.font: NSFont.monospacedDigitSystemFont(ofSize: NSFont.systemFontSize, weight: .regular)])
-        button.appearsDisabled = store.snapshot?.error != nil || account?.error != nil
-        button.setAccessibilityLabel("\(provider?.name ?? providerId) usage \(title) left")
+        let stale = store.snapshot?.error != nil || account?.error != nil
+        button.appearsDisabled = stale
+        let name = provider?.name ?? providerId
+        let detail = window.map { "\($0.label) \(title) left" } ?? "No usage reading"
+        button.toolTip = [account.map { "\(name) · \($0.identity)" } ?? name, detail]
+            .joined(separator: "\n")
+        button.setAccessibilityLabel("\(name), \(detail)\(stale ? ", not up to date" : "")")
     }
 
     func menuNeedsUpdate(_ menu: NSMenu) {
         Wire.send("menuOpened")
         store.now = Date()
-        menu.removeAllItems()
-        guard let provider = store.snapshot?.providers.first(where: { $0.id == providerId }) else { return }
+        build(menu)
+    }
 
-        if let error = store.snapshot?.error {
-            let item = NSMenuItem(title: "Account Pooler unavailable: \(error)", action: nil, keyEquivalent: "")
-            item.isEnabled = false
-            menu.addItem(item)
+    func menuWillOpen(_ menu: NSMenu) { open = true }
+
+    func menuDidClose(_ menu: NSMenu) { open = false }
+
+    /// Keep an open menu in step with new snapshots and the clock.
+    func update() {
+        guard open, let menu = statusItem.menu else { return }
+        if shape(store.provider(providerId)) != shape {
+            build(menu)
+        } else {
+            hosts.forEach { $0.fit() }
+        }
+    }
+
+    private func notice(_ provider: Provider) -> String? {
+        provider.accounts.first { account in
+            account.resetNotice != nil && !account.disabled && account.webResetCredits?.isFresh(at: store.now) != true
+        }?.resetNotice
+    }
+
+    private func shape(_ provider: Provider?) -> [String] {
+        guard let provider else { return [] }
+        return provider.accounts.map(\.id) + [store.snapshot?.error == nil ? "" : "error", notice(provider) ?? ""]
+    }
+
+    private func build(_ menu: NSMenu) {
+        menu.removeAllItems()
+        hosts = []
+        let provider = store.provider(providerId)
+        shape = shape(provider)
+        guard let provider else { return }
+
+        if store.snapshot?.error != nil {
+            menu.addItem(row(ErrorBanner(store: store)))
             menu.addItem(.separator())
         }
-
         for (index, account) in provider.accounts.enumerated() {
             if index > 0 { menu.addItem(.separator()) }
-            menu.addItem(NSMenuItem.sectionHeader(title: header(account, position: index + 1)))
-            let card = NSHostingView(rootView: AccountCard(store: store, providerId: providerId, accountId: account.id))
-            card.frame = NSRect(x: 0, y: 0, width: menuWidth, height: card.fittingSize.height)
-            let item = NSMenuItem()
-            item.view = card
-            menu.addItem(item)
+            menu.addItem(row(AccountCard(store: store, providerId: providerId, accountId: account.id)))
         }
 
         menu.addItem(.separator())
+        if let notice = notice(provider) {
+            let item = action(notice, symbol: "arrow.up.forward.app", key: "", selector: #selector(openClaudeUsage))
+            item.toolTip = "Claude Code does not expose full-reset inventory. Check the signed-in account in Claude."
+            menu.addItem(item)
+        }
         menu.addItem(action("Refresh", symbol: "arrow.clockwise", key: "r", selector: #selector(refresh)))
         menu.addItem(action("Open bb", symbol: "macwindow", key: "o", selector: #selector(openBb)))
-        menu.addItem(action("Quit", symbol: "xmark.rectangle", key: "q", selector: #selector(quit)))
+        menu.addItem(action("Quit Usage Bar", symbol: "xmark.rectangle", key: "q", selector: #selector(quit)))
     }
 
-    /// Pool routing state, in the slot CodexBar uses for an account's organization.
-    private func header(_ account: Account, position: Int) -> String {
-        var parts = ["Account \(position)"]
-        if account.inFlight > 0 {
-            parts.append("In use · \(account.inFlight) in flight")
-        } else if account.current {
-            parts.append("Last used")
-        }
-        switch account.status {
-        case "held":
-            if let until = date(account.heldUntil) { parts.append("Held until \(Format.time(until))") }
-        case "exhausted": parts.append("Exhausted")
-        case "disabled": parts.append("Disabled")
-        case "error": parts.append("Error")
-        default: break
-        }
-        return parts.joined(separator: " · ")
+    private func row(_ view: some View) -> NSMenuItem {
+        let host = MenuRowHost(view)
+        hosts.append(host)
+        let item = NSMenuItem()
+        // An empty title keeps macOS from painting a placeholder title behind the view.
+        item.title = ""
+        item.view = host
+        return item
     }
 
     private func action(_ title: String, symbol: String, key: String, selector: Selector) -> NSMenuItem {
@@ -588,6 +720,10 @@ final class ProviderItem: NSObject, NSMenuDelegate {
         item.target = self
         item.image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)
         return item
+    }
+
+    @objc private func openClaudeUsage() {
+        NSWorkspace.shared.open(URL(string: "https://claude.ai/settings/usage")!)
     }
 
     @objc private func refresh() {
@@ -614,8 +750,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     init(nativeDir: String) { self.nativeDir = nativeDir }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        // Countdowns tick while a menu is open, so run in the common modes.
-        let timer = Timer(timeInterval: 15, repeats: true) { [weak self] _ in self?.store.now = Date() }
+        // Countdowns tick while a menu is open, so run in the common modes. They round
+        // up to the minute, so a late tick never shows an early value.
+        let timer = Timer(timeInterval: 15, repeats: true) { [weak self] _ in self?.tick() }
+        timer.tolerance = 1.5
         RunLoop.main.add(timer, forMode: .common)
         clock = timer
 
@@ -628,13 +766,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    private func tick() {
+        store.now = Date()
+        for item in items.values {
+            item.render()
+            item.update()
+        }
+    }
+
     private func receive(_ data: Data) {
         let decoder = JSONDecoder()
         guard let envelope = try? decoder.decode(Envelope.self, from: data) else { return }
         switch envelope.type {
         case "snapshot":
-            guard let snapshot = try? decoder.decode(Snapshot.self, from: data) else {
-                FileHandle.standardError.write(Data("usage-bar: undecodable snapshot\n".utf8))
+            let snapshot: Snapshot
+            do {
+                snapshot = try decoder.decode(Snapshot.self, from: data)
+            } catch {
+                FileHandle.standardError.write(Data("usage-bar: undecodable snapshot: \(error)\n".utf8))
                 return
             }
             store.snapshot = snapshot
@@ -657,7 +806,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         for provider in snapshot.providers.reversed() where items[provider.id] == nil {
             items[provider.id] = ProviderItem(providerId: provider.id, store: store, nativeDir: nativeDir)
         }
-        for item in items.values { item.render() }
+        for item in items.values {
+            item.render()
+            item.update()
+        }
     }
 }
 
@@ -665,8 +817,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 enum UsageBarApp {
     static func main() {
         guard CommandLine.arguments.count > 1 else {
-            FileHandle.standardError.write(Data("usage: UsageBar <native-dir>\n".utf8))
+            FileHandle.standardError.write(Data("usage: UsageBar <native-dir> | UsageBar --check-snapshot\n".utf8))
             exit(64)
+        }
+        // test/wire.test.ts: decode each stdin line as the app would, and fail on the first mismatch.
+        if CommandLine.arguments[1] == "--check-snapshot" {
+            while let line = readLine() {
+                do {
+                    _ = try JSONDecoder().decode(Snapshot.self, from: Data(line.utf8))
+                } catch {
+                    FileHandle.standardError.write(Data("\(error)\n".utf8))
+                    exit(1)
+                }
+            }
+            exit(0)
         }
         let app = NSApplication.shared
         app.setActivationPolicy(.accessory)
