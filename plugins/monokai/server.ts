@@ -13,7 +13,7 @@ export default function plugin(bb: BbPluginApi) {
       type: "select",
       label: "UI font",
       description:
-        "Applies to the full bb interface on mobile and desktop. Code keeps Berkeley Mono.",
+        "Applies to the full bb interface on mobile and desktop while bb Monokai is the selected palette. Code and the terminal stay monospace.",
       options: [...UI_FONT_OPTIONS],
       default: DEFAULT_UI_FONT,
     },

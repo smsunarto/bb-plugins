@@ -61,19 +61,24 @@ reinstall.
 
 Installing the plugin only adds the palette. The `bb theme set` line above is
 what selects it. You can also switch in bb under
-**Settings → Appearance → Palette**:
+**Settings → Appearance → Palette**.
 
 Disabling or removing the plugin returns bb to the default palette.
 
 Choose **Inter (Default)** or **SF Pro** under **Settings → bb Monokai → UI
-font**. The choice applies to the full interface at desktop and mobile widths.
-Code, diffs, and file paths keep the Berkeley Mono stack. The terminal uses
+font**. While bb Monokai is the selected palette, the choice applies to the
+full interface at desktop and mobile widths. Code, diff bodies, and the
+terminal keep the Berkeley Mono stack. Git diff and smart-embed headers,
+including their file paths, use the selected UI font. The terminal uses
 BerkeleyMono Nerd Font Mono at size 13 with 1.4 line height and a #181818
-background, matching the Ghostty cursor-monokai setup. A plugin content script applies these settings to existing and new
-xterm terminals, including the WebGL renderer, without a BB core update. It
-restores the previous typography when Monokai is deselected or unloaded. The
-adapter uses guarded React-ref and xterm-addon discovery. If a future BB
-version changes those private attachments, it leaves the terminal untouched.
+background, matching the Ghostty cursor-monokai setup. A plugin content script
+applies these settings to existing and new xterm terminals, including the
+WebGL renderer, without a BB core update. It restores the previous typography
+when Monokai is deselected or unloaded. Each time it changes or restores a
+terminal's typography, it has bb resend the terminal size to the shell, so
+full-screen programs reflow without a pane resize. The adapter uses guarded
+React-ref and xterm-addon discovery. If a future BB version changes those
+private attachments, it leaves the terminal untouched.
 
 The in-app notification center now uses the same Monokai surfaces and states as
 the rest of bb, including its selected row, controls, dividers, and desktop
@@ -93,9 +98,9 @@ bb theme.
 - bb set to **dark** appearance. The palette only restyles `.dark`; light mode
   keeps bb's defaults.
 - Optional: **Berkeley Mono**. It is _not_ bundled. Install it yourself and the
-  type stack picks it up. Without it the
-  stack falls back to `ui-monospace`, Menlo, then `monospace`. The terminal
-  additionally prefers `BerkeleyMono Nerd Font Mono` when present.
+  type stack picks it up. Without it, code falls back to `ui-monospace`,
+  Menlo, then `monospace`. The terminal uses its own stack:
+  `BerkeleyMono Nerd Font Mono`, then `Berkeley Mono`, then `monospace`.
 - Optional: **SF Pro**. bb uses the Apple system font on Apple platforms. Other
   platforms need SF Pro installed or use the generic sans-serif fallback.
 
@@ -136,17 +141,20 @@ ratio against the ground it sits on.
 
 ## What it restyles
 
-| Surface              | Notes                                                                                 |
-| -------------------- | ------------------------------------------------------------------------------------- |
-| App chrome           | panes, panels, sidebar, menus, buttons, mention pills, focus rings                    |
-| Conversation links   | accent text with an alpha-derived rounded hover surface                               |
-| Terminal             | all 16 ANSI colors plus 16 companion foreground tokens, one per ANSI background       |
-| Diff viewer          | addition / deletion / modified colors, gutter number grounds and role-colored numbers |
-| Syntax tokens        | the Cursor Monokai TextMate layer, in diffs and file previews                         |
-| File tree            | the git-status column — added, untracked, renamed, modified, deleted, ignored         |
-| Inline code          | the sugar-high token set, measured on the `#1E1E1E` well                              |
-| Composer stop button | repainted to the danger hue                                                           |
-| Notifications        | in-app history center and desktop transient toasts                                    |
+| Surface              | Notes                                                                                                                              |
+| -------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| App chrome           | panes, panels, sidebar, menus, buttons, mention pills, focus rings                                                                 |
+| Conversation links   | medium-weight accent text with a globe glyph (an envelope for mail) and an alpha-derived rounded hover surface                     |
+| Agent replies        | 14px prose in the Codex app's markdown geometry, fenced blocks with a labeled header, task checkboxes, full-strength activity rows |
+| Terminal             | all 16 ANSI colors plus 16 companion foreground tokens, one per ANSI background                                                    |
+| Diff viewer          | addition / deletion / modified colors, gutter number grounds and role-colored numbers                                              |
+| Diff headers         | Diffs.com-style file headers with change-kind icons in the side panel. Open in editor is hidden there                              |
+| Syntax tokens        | the Cursor Monokai TextMate layer, in diffs and file previews                                                                      |
+| Monaco editor        | the same code theme, plus JavaScript and TypeScript tokens for declarations, calls, types, and parameters                          |
+| File tree            | the git-status column — added, untracked, renamed, modified, deleted, ignored                                                      |
+| Inline code          | soft yellow `#EED996` on the 8% hover layer. Fenced blocks use the sugar-high token set on `#181818`                               |
+| Composer stop button | repainted to the danger hue                                                                                                        |
+| Notifications        | in-app history center and desktop transient toasts                                                                                 |
 
 ### Syntax tokens
 
@@ -154,8 +162,8 @@ Token colors are not a CSS surface — Shiki writes an inline style on every spa
 inside a shadow root. bb 0.38 answers that with a manifest field that picks the
 Shiki theme, so the plugin ships one: `themes/bb-monokai-code.json`, the same
 TextMate layer as the Cursor Monokai editor theme. One hue per kind — pink machinery, cyan structure, green
-callables, yellow literals, purple constants, gray commentary, white for
-everything else.
+callables, yellow literals, purple constants, orange parameters, gray
+commentary, white for everything else.
 
 Only the dark side is declared, so light mode keeps bb's `pierre-light`. A
 diff has no language server behind it, so this is the TextMate layer alone:
@@ -181,6 +189,7 @@ mode the palette contributes fonts only.
 - **The favicon tint** comes from a fixed list, with no CSS involved.
 - **Built-in bb plugin panels** (tasks, docs, github, workflows, memory) ship
   their own bundles with raw scale colors.
+- **The desktop find bar (Cmd+F).** Electron draws it outside the page.
 
 ## Develop from source
 

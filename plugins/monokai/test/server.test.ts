@@ -13,7 +13,7 @@ describe("bb Monokai UI font setting", () => {
         type: "select",
         label: "UI font",
         description:
-          "Applies to the full bb interface on mobile and desktop. Code keeps Berkeley Mono.",
+          "Applies to the full bb interface on mobile and desktop while bb Monokai is the selected palette. Code and the terminal stay monospace.",
         options: ["Inter (Default)", "SF Pro"],
         default: "Inter (Default)",
       },
