@@ -16,12 +16,12 @@ import {
   normalizeEmail,
   withClaudeWeb,
 } from "./claude-web.ts";
-import { type AccountExtras, claudeExtras, codexExtras, NO_EXTRAS } from "./extras.ts";
+import { claudeExtras, codexExtras, type ExtrasUpdate, NO_EXTRAS } from "./extras.ts";
 import { accountListSchema, type MenuAccount, type MenuProvider, poolProviders } from "./pool.ts";
 
 export const POOL_PLUGIN_ID = "account-pool";
 
-type ExtrasReader = (provider: MenuProvider["id"], accountId: string) => Promise<AccountExtras>;
+type ExtrasReader = (provider: MenuProvider["id"], accountId: string) => Promise<ExtrasUpdate>;
 
 /** Where the menu's accounts come from, and how to reach each one's extras. */
 export interface Source {
@@ -66,7 +66,8 @@ function webFallback(
       let web: ReturnType<ClaudeWebReader> | null = null;
       return async (provider, accountId) => {
         const extras = await read(provider, accountId);
-        if (provider !== "claude" || extras.resetCredits !== null) return extras;
+        // Credits OAuth reported win. Unknown ones (a transient failure) still ask the web.
+        if (provider !== "claude" || extras.resetCredits != null) return extras;
         const email = normalizeEmail(accounts.find((account) => account.id === accountId)?.email);
         if (
           !email ||
@@ -217,7 +218,6 @@ async function builtinSource(
       .filter((entry) => entry.provider === id)
       .map(({ account }) => account);
     accounts.forEach((account, index) => {
-      account.priority = index + 1;
       account.current = index === 0;
     });
     return accounts.length > 0 ? [{ id, name: id === "codex" ? "Codex" : "Claude", accounts }] : [];

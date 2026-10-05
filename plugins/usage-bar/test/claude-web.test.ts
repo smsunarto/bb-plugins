@@ -1,11 +1,14 @@
 import { expect, test } from "bun:test";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import {
   createClaudeWebReader,
   parseClaudeWeb,
   withClaudeWeb,
 } from "../src/server/lib/claude-web.ts";
-import { NO_EXTRAS } from "../src/server/lib/extras.ts";
+import { type AccountExtras, NO_EXTRAS } from "../src/server/lib/extras.ts";
 import { createSourceReader } from "../src/server/lib/sources.ts";
 import { createMenuState } from "../src/server/lib/menu-state.ts";
 
@@ -37,7 +40,7 @@ function payload(email = "one@example.com", updatedAt = NOW, value = "1 availabl
     },
   ];
 }
-const expected = { count: 1, expiry: "Expires Oct 22 at 9:00 AM", freshUntil: NOW + 300_000 };
+const expected = { count: 1, expiry: "Expires Oct 22 at 9:00 AM", freshUntil: NOW + 690_000 };
 
 test("retained quota source refreshes web resets after failure and cache expiry", async () => {
   let now = NOW;
@@ -96,24 +99,24 @@ test("retained quota source refreshes web resets after failure and cache expiry"
     const shown = () => state.snapshot().providers[0]!.accounts[0]!.webResetCredits;
     await state.publish(() => read(signal, false));
     await state.refresh();
-    expect(shown()).toEqual({ ...expected, freshUntil: NOW + 303_000 });
+    expect(shown()).toEqual({ ...expected, freshUntil: NOW + 693_000 });
     failed = true;
     now += 301_000;
     await state.publish(() => read(signal, true), true);
-    expect(shown()).toEqual({ ...expected, count: 2, freshUntil: now + 300_000 });
-    expect(state.snapshot().error).toBe("Usage unavailable. Check the provider in bb.");
+    expect(shown()).toEqual({ ...expected, count: 2, freshUntil: now + 690_000 });
+    expect(state.snapshot().error).toBe("Couldn't refresh usage. Showing the last reading.");
     const started = now;
     await state.publish(() => read(signal, true), true);
-    expect(shown()).toEqual({ ...expected, count: 3, freshUntil: now + 300_000 });
+    expect(shown()).toEqual({ ...expected, count: 3, freshUntil: now + 690_000 });
     // The service gate must not reopen before the reader's completed-read cache expires.
     now = started + 301_000;
     await state.publish(() => read(signal, false));
     await state.refresh();
-    expect(shown()).toEqual({ ...expected, count: 3, freshUntil: started + 303_000 });
+    expect(shown()).toEqual({ ...expected, count: 3, freshUntil: started + 693_000 });
     now = started + 303_001;
     await state.publish(() => read(signal, false));
     await state.refresh();
-    expect(shown()).toEqual({ ...expected, count: 4, freshUntil: now + 300_000 });
+    expect(shown()).toEqual({ ...expected, count: 4, freshUntil: now + 690_000 });
   } finally {
     await harness.lifecycle.dispose();
   }
@@ -184,7 +187,7 @@ test("shares requests, caches failures, and Refresh bypasses the web cache", asy
   now += 300_000;
   expect(await read(signal, false)).toEqual({
     email: "one@example.com",
-    credits: { ...expected, freshUntil: now + 300_000 },
+    credits: { ...expected, freshUntil: now + 690_000 },
   });
   expect(calls).toBe(3);
   let failures = 0;
@@ -202,15 +205,113 @@ test("shares requests, caches failures, and Refresh bypasses the web cache", asy
   expect(failures).toBe(2);
 });
 
-test("a cached observation expires independently of the request cache", async () => {
+test("a reading accepted near the parse limit stays fresh natively past the next refresh", async () => {
+  // FRESH_MS - 1_000 old: the oldest reading the parse gate accepts.
+  const updatedAt = NOW - 299_000;
   let now = NOW;
   const read = createClaudeWebReader(
-    async () => payload("one@example.com", NOW - 290_000),
+    async () => payload("one@example.com", updatedAt),
     () => now,
   );
-  expect((await read(signal, false))?.credits.freshUntil).toBe(NOW + 10_000);
+  const freshUntil = (await read(signal, false))?.credits.freshUntil ?? 0;
+  expect(freshUntil).toBe(updatedAt + 690_000);
+  expect(freshUntil - now).toBeGreaterThanOrEqual(300_000 + 60_000);
+  // The cache keeps serving it, but a re-fetch after one cycle is too old to parse.
   now += 10_000;
+  expect((await read(signal, false))?.credits.freshUntil).toBe(freshUntil);
+  now = NOW + 300_000;
   expect(await read(signal, false)).toBeNull();
+});
+
+test("while Claude OAuth is throttled, web resets keep refreshing over the kept extras", async () => {
+  const dataDir = await mkdtemp(join(tmpdir(), "usage-bar-throttled-"));
+  const secrets = join(dataDir, "plugins/account-pool/secrets/accounts");
+  await mkdir(secrets, { recursive: true });
+  await writeFile(
+    join(secrets, "account-one.json"),
+    JSON.stringify({ kind: "oauth", accessToken: "fixture-token", expiresAt: null }),
+  );
+  let status = 200;
+  const original = globalThis.fetch;
+  globalThis.fetch = async () =>
+    Response.json(
+      { extra_usage: { is_enabled: true, monthly_limit: 5000, used_credits: 1000 } },
+      { status },
+    );
+  let now = NOW;
+  let calls = 0;
+  const readWeb = createClaudeWebReader(
+    async () => {
+      calls++;
+      return payload("one@example.com", now, `${calls} available`);
+    },
+    () => now,
+  );
+  const account = {
+    id: "one",
+    provider: "claude",
+    label: "One",
+    email: "one@example.com",
+    subscriptionType: "max",
+    rateLimitTier: null,
+    enabled: true,
+    priority: 1,
+    lastUsedAt: null,
+    fiveHourUtilization: 0.25,
+    fiveHourResetAt: null,
+    sevenDayUtilization: null,
+    sevenDayResetAt: null,
+    familyWeekly: {},
+    limitWindows: [],
+    observedAt: null,
+    heldUntil: null,
+    error: null,
+    inFlight: 0,
+    status: "ready",
+  };
+  const { bb, harness } = createFakePluginHost({
+    pluginId: "usage-bar",
+    dataDir,
+    sdk: {
+      plugins: {
+        experimental_discoverRpc: async () => [{ pluginId: "account-pool" }],
+        callRpc: async () => [account],
+      },
+    },
+  });
+  try {
+    const state = createMenuState(
+      signal,
+      () => {},
+      () => now,
+    );
+    state.setSource(await createSourceReader(bb, readWeb)(signal, false));
+    const shown = () => {
+      const { resetCredits, extraUsage, resetNotice, webResetCredits } =
+        state.snapshot().providers[0]!.accounts[0]!;
+      return { resetCredits, extraUsage, resetNotice, webResetCredits };
+    };
+    const observed = (count: number, at: number): AccountExtras => ({
+      resetCredits: null,
+      extraUsage: { kind: "spend", used: 10, limit: 50, currency: "USD" },
+      resetNotice: "Check Claude for full resets",
+      webResetCredits: { ...expected, count, freshUntil: at + 690_000 },
+    });
+    await state.refresh(true);
+    expect(shown()).toEqual(observed(1, NOW));
+    status = 429;
+    now += 60_000;
+    await state.refresh(true);
+    expect(shown()).toEqual(observed(2, NOW + 60_000));
+    now += 60_000;
+    await state.refresh(true);
+    expect(shown()).toEqual(observed(3, NOW + 120_000));
+    expect(calls).toBe(3);
+  } finally {
+    globalThis.fetch = original;
+    await harness.lifecycle.dispose();
+    await rm(dataDir, { recursive: true, force: true });
+  }
 });
 
 test("pool source shares one web refresh and keeps a mismatched pooled account empty", async () => {

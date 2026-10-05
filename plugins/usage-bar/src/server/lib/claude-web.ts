@@ -1,10 +1,15 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { z } from "zod";
-import type { AccountExtras } from "./extras.ts";
+import type { ExtrasUpdate } from "./extras.ts";
 
 const CLI = "/Applications/CodexBar.app/Contents/Helpers/CodexBarCLI";
 const FRESH_MS = 5 * 60_000;
+/**
+ * How late the next refresh can land after the 5-minute extras cadence: the 15 s
+ * menu poll, the 10 s OAuth timeout, and the 20 s CLI timeout, with slack.
+ */
+const REFRESH_HEADROOM_MS = 90_000;
 const exec = promisify(execFile);
 
 /** CodexBar exposes display text, not grant handles or exact expiry timestamps. */
@@ -81,7 +86,10 @@ export function parseClaudeWeb(body: unknown, now: number): WebUsage | null {
   if (!Number.isInteger(count) || count < 1 || count > 50) return null;
   const expiry = row.secondaryValue ?? null;
   if (!validExpiry(expiry)) return null;
-  return { email, credits: { count, expiry, freshUntil: updatedAt + FRESH_MS } };
+  // A reading up to FRESH_MS old must stay fresh natively until the next refresh lands,
+  // otherwise the row flips off between refreshes.
+  const freshUntil = updatedAt + 2 * FRESH_MS + REFRESH_HEADROOM_MS;
+  return { email, credits: { count, expiry, freshUntil } };
 }
 
 async function fetchWeb(signal: AbortSignal): Promise<unknown> {
@@ -134,16 +142,22 @@ export function createClaudeWebReader(
 
 export type ClaudeWebReader = ReturnType<typeof createClaudeWebReader>;
 
-/** Email is the CLI's only identity. Duplicate pool emails, including disabled accounts, are ambiguous. */
+/**
+ * Email is the CLI's only identity. Duplicate pool emails, including disabled accounts,
+ * are ambiguous. Credits OAuth reported leave the update as read. When OAuth failed
+ * transiently, the update carries only the web fields and merges onto the kept ones.
+ */
 export function withClaudeWeb(
-  extras: AccountExtras,
+  extras: ExtrasUpdate,
   accountId: string,
   accounts: { id: string; email: string | null | undefined }[],
   web: WebUsage | null,
-): AccountExtras {
-  if (!web || extras.resetCredits !== null) return extras;
+): ExtrasUpdate {
+  if (extras.resetCredits != null) return extras;
+  const unmatched = { ...extras, webResetCredits: null };
+  if (!web) return unmatched;
   const matches = accounts.filter((account) => normalizeEmail(account.email) === web.email);
-  if (matches.length !== 1 || matches[0]?.id !== accountId) return extras;
+  if (matches.length !== 1 || matches[0]?.id !== accountId) return unmatched;
   // Keep the link as a fallback once the native clock expires this short-lived observation.
   return {
     ...extras,

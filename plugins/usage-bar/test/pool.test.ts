@@ -73,16 +73,16 @@ test("Codex windows read as Session then Weekly, skipping the empty header place
           id: "id",
           identity: "me@example.com",
           plan: "Team",
-          priority: 1,
           status: "ready",
           current: true,
+          lastUsedAt: null,
           observedAt: null,
           heldUntil: null,
           error: null,
           inFlight: 0,
           windows: [
-            { label: "Session", usedPercent: 0, resetAt: 1000, windowMinutes: 300 },
-            { label: "Weekly", usedPercent: 87, resetAt: 2000, windowMinutes: 10080 },
+            { label: "Session", usedPercent: 0, resetAt: 1000, windowMinutes: 300, model: null },
+            { label: "Weekly", usedPercent: 87, resetAt: 2000, windowMinutes: 10080, model: null },
           ],
         },
       ],
@@ -107,9 +107,9 @@ test("Claude shows session, weekly, and each model's weekly window with its Max 
   expect(claude?.accounts[0]?.identity).toBe("Scott");
   expect(claude?.accounts[0]?.plan).toBe("Max 20x");
   expect(claude?.accounts[0]?.windows).toEqual([
-    { label: "Session", usedPercent: 48, resetAt: 100, windowMinutes: 300 },
-    { label: "Weekly", usedPercent: 52, resetAt: 200, windowMinutes: 10080 },
-    { label: "Fable", usedPercent: 58, resetAt: 300, windowMinutes: 10080 },
+    { label: "Session", usedPercent: 48, resetAt: 100, windowMinutes: 300, model: null },
+    { label: "Weekly", usedPercent: 52, resetAt: 200, windowMinutes: 10080, model: null },
+    { label: "Fable weekly", usedPercent: 58, resetAt: 300, windowMinutes: 10080, model: "fable" },
   ]);
 });
 
@@ -123,8 +123,45 @@ test("a Codex window of unknown length keeps its usage under its slot name", () 
     }),
   ]);
   expect(codex?.accounts[0]?.windows).toEqual([
-    { label: "Session", usedPercent: 10, resetAt: 1, windowMinutes: 300 },
-    { label: "Secondary", usedPercent: 85, resetAt: 9, windowMinutes: null },
+    { label: "Session", usedPercent: 10, resetAt: 1, windowMinutes: 300, model: null },
+    { label: "Secondary", usedPercent: 85, resetAt: 9, windowMinutes: null, model: null },
+  ]);
+});
+
+test.each([
+  [300, "Session"],
+  [1440, "Daily"],
+  [10080, "Weekly"],
+  [2880, "2d"],
+  [43200, "30d"],
+  [60, "1h"],
+  [90, "90m"],
+])("a %i-minute Codex window reads %s", (windowMinutes, label) => {
+  const [codex] = poolProviders([
+    account({ limitWindows: [{ slot: "primary", windowMinutes, utilization: 0.5, resetAt: 1 }] }),
+  ]);
+  expect(codex?.accounts[0]?.windows).toEqual([
+    { label, usedPercent: 50, resetAt: 1, windowMinutes, model: null },
+  ]);
+});
+
+test("negative pool priorities sort ahead of the default", () => {
+  const parsed = accountListSchema.parse([
+    account({ id: "B", priority: -5 }),
+    account({ id: "A", priority: -10 }),
+    account({ id: "C", priority: 1 }),
+  ]);
+  expect(poolProviders(parsed)[0]?.accounts.map((entry) => entry.id)).toEqual(["A", "B", "C"]);
+});
+
+test("each account reports the pool's last recorded use", () => {
+  const providers = poolProviders([
+    account({ id: "used", lastUsedAt: 1234 }),
+    account({ id: "fresh", priority: 2 }),
+  ]);
+  expect(providers[0]?.accounts.map(({ id, lastUsedAt }) => [id, lastUsedAt])).toEqual([
+    ["used", 1234],
+    ["fresh", null],
   ]);
 });
 
@@ -176,7 +213,9 @@ test("invalid timestamps and fractional native integers preserve valid quota wit
     observedAt: null,
     heldUntil: null,
     inFlight: 0,
-    windows: [{ label: "Session", usedPercent: 25, resetAt: null, windowMinutes: 300 }],
+    windows: [
+      { label: "Session", usedPercent: 25, resetAt: null, windowMinutes: 300, model: null },
+    ],
   });
   expect(
     accountListSchema.safeParse([account({ id: "same" }), account({ id: "same" })]).success,

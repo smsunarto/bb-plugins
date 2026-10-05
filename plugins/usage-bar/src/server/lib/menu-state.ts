@@ -1,6 +1,9 @@
-import { type AccountExtras, NO_EXTRAS } from "./extras.ts";
+import { type AccountExtras, type ExtrasUpdate, NO_EXTRAS } from "./extras.ts";
 import type { MenuSnapshot } from "./pool.ts";
 import type { Source } from "./sources.ts";
+
+/** Kept extras expire after six 5-minute passes in a row that learned nothing. */
+const KEPT_MS = 30 * 60_000;
 
 /** Own account-scoped observations and serialize background/manual extras refreshes. */
 export function createMenuState(signal: AbortSignal, changed: () => void, now = Date.now) {
@@ -13,7 +16,8 @@ export function createMenuState(signal: AbortSignal, changed: () => void, now = 
   let queued = false;
   let publication = 0;
   let forcedPublication: Promise<void> | null = null;
-  const extras = new Map<string, AccountExtras>();
+  /** `knownAt` is the last update with at least one known field. */
+  const extras = new Map<string, { value: AccountExtras; knownAt: number }>();
   const state = {
     publish(read: () => Promise<Source>, force = false): Promise<void> {
       // Opening a menu or polling cannot supersede an explicit Refresh.
@@ -55,7 +59,7 @@ export function createMenuState(signal: AbortSignal, changed: () => void, now = 
                   resetNotice: null,
                   webResetCredits: null,
                 },
-                account.status === "disabled" ? {} : extras.get(account.id),
+                account.status === "disabled" ? {} : extras.get(account.id)?.value,
               ),
             ),
           }),
@@ -86,7 +90,7 @@ export function createMenuState(signal: AbortSignal, changed: () => void, now = 
       changed();
     },
     failed() {
-      error = "Usage unavailable. Check the provider in bb.";
+      error = "Couldn't refresh usage. Showing the last reading.";
       changed();
     },
     refresh(force = false): Promise<void> {
@@ -114,13 +118,24 @@ export function createMenuState(signal: AbortSignal, changed: () => void, now = 
                 provider.accounts
                   .filter((account) => account.status !== "disabled")
                   .map(async (account) => {
-                    let result: AccountExtras;
+                    let result: ExtrasUpdate;
                     try {
                       result = await readExtras(provider.id, account.id);
                     } catch {
                       result = NO_EXTRAS;
                     }
-                    if (!signal.aborted && version === generation) extras.set(account.id, result);
+                    if (signal.aborted || version !== generation) return;
+                    // A missing field is unknown, so it keeps the last observation.
+                    const known = Object.fromEntries(
+                      Object.entries(result).filter(([, value]) => value !== undefined),
+                    );
+                    const kept = extras.get(account.id);
+                    if (Object.keys(known).length > 0) {
+                      const value = { ...(kept?.value ?? NO_EXTRAS), ...known };
+                      extras.set(account.id, { value, knownAt: now() });
+                    } else if (kept && now() - kept.knownAt >= KEPT_MS) {
+                      extras.delete(account.id);
+                    }
                   }),
               ),
             );

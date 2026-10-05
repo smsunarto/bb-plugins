@@ -77,7 +77,6 @@ test("Codex workspace identity can come from the ID token", () => {
   ).toMatchObject({
     accountId: "workspace",
     accountKey: "openai:chatgpt:workspace",
-    email: "same@example.com",
   });
 });
 
@@ -94,16 +93,13 @@ test("Claude throttling makes one request and surface gating yields a usage-page
         });
   };
   try {
-    expect(await claudeExtras("fixture-token")).toEqual({
-      resetCredits: null,
-      extraUsage: null,
-      resetNotice: null,
-    });
+    expect(await claudeExtras("fixture-token")).toStrictEqual({});
     expect(requests).toBe(1);
-    expect(await claudeExtras("fixture-token")).toEqual({
+    expect(await claudeExtras("fixture-token")).toStrictEqual({
       resetCredits: null,
       extraUsage: { kind: "spend", used: 10, limit: 50, currency: "USD" },
       resetNotice: "Check Claude for full resets",
+      webResetCredits: null,
     });
   } finally {
     globalThis.fetch = original;
@@ -185,7 +181,7 @@ test("malformed JWT payloads are ignored without crashing credential reads", () 
     parseCodexCredential({
       tokens: { access_token: jwt(null), id_token: jwt(null), account_id: "workspace" },
     }),
-  ).toMatchObject({ accountKey: "openai:chatgpt:workspace", email: null });
+  ).toMatchObject({ accountKey: "openai:chatgpt:workspace" });
   expect(
     parseCodexCredential({ tokens: { access_token: jwt({ exp: 1 }), account_id: "workspace" } }),
   ).toBeNull();

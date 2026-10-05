@@ -4,8 +4,8 @@ import type { WebResetCredits } from "./claude-web.ts";
 /**
  * Quota extras bb does not model: limit reset credits for both providers, Codex's
  * credit balance, and Claude's extra-usage spend. Fetched straight from the provider endpoints CodexBar
- * uses, with an access token the caller supplies. Every function here returns null
- * rather than throwing, so one failing account never blanks the menu.
+ * uses, with an access token the caller supplies. Nothing here throws, so one
+ * failing account never blanks the menu.
  */
 
 /** Unredeemed, unexpired reset credits, soonest expiry first; null expiry never lapses. */
@@ -19,33 +19,55 @@ export type ExtraUsage =
   /** Claude: spend against a monthly cap, in currency units. */
   | { kind: "spend"; used: number; limit: number; currency: string };
 
+/** One account's observed extras. Null means observed: the account has none. */
 export interface AccountExtras {
   resetCredits: ResetCredits | null;
   extraUsage: ExtraUsage | null;
-  resetNotice?: string | null;
-  webResetCredits?: WebResetCredits | null;
+  resetNotice: string | null;
+  webResetCredits: WebResetCredits | null;
 }
 
-export const NO_EXTRAS: AccountExtras = { resetCredits: null, extraUsage: null };
+/** A missing field is unknown and keeps the last observation. */
+export type ExtrasUpdate = Partial<AccountExtras>;
+
+export const NO_EXTRAS: AccountExtras = {
+  resetCredits: null,
+  extraUsage: null,
+  resetNotice: null,
+  webResetCredits: null,
+};
 
 const CODEX_BASE = "https://chatgpt.com/backend-api";
 const CLAUDE_USAGE_URL = "https://api.anthropic.com/api/oauth/usage";
 const TIMEOUT_MS = 10_000;
+
+/** A network failure, throttling, or a server error says nothing about the account. */
+function transient(status: number): boolean {
+  return status === 0 || status === 429 || status >= 500;
+}
 
 async function getJson(
   url: string,
   headers: Record<string, string>,
   signal?: AbortSignal,
 ): Promise<{ body: unknown; status: number }> {
+  let response: Response;
   try {
     signal?.throwIfAborted();
-    const response = await fetch(url, {
+    response = await fetch(url, {
       headers: { Accept: "application/json", ...headers },
       signal: AbortSignal.any([AbortSignal.timeout(TIMEOUT_MS), ...(signal ? [signal] : [])]),
     });
-    return { body: response.ok ? await response.json() : null, status: response.status };
   } catch {
     return { body: null, status: 0 };
+  }
+  if (!response.ok) return { body: null, status: response.status };
+  try {
+    return { body: await response.json(), status: response.status };
+  } catch (error) {
+    // A 2xx body that is not JSON is an answer with nothing in it. A read cut off
+    // midway (abort, timeout, reset) is transient.
+    return { body: null, status: error instanceof SyntaxError ? response.status : 0 };
   }
 }
 
@@ -141,17 +163,18 @@ export function purchasedCodexBalance(body: unknown, balance: number | null): nu
   return remaining !== null && Math.abs(balance - remaining) < 0.0001 ? null : balance;
 }
 
+/** A transient endpoint leaves the fields it reports unknown; the others are still read. */
 export async function codexExtras(
   token: string,
   accountId: string | null,
   signal?: AbortSignal,
-): Promise<AccountExtras> {
+): Promise<ExtrasUpdate> {
   const headers: Record<string, string> = {
     Authorization: `Bearer ${token}`,
     "User-Agent": "bb-usage-bar",
     ...(accountId ? { "ChatGPT-Account-Id": accountId } : {}),
   };
-  const [creditsBody, usageBody] = await Promise.all([
+  const [credits, usage] = await Promise.all([
     getJson(
       `${CODEX_BASE}/wham/rate-limit-reset-credits`,
       {
@@ -163,21 +186,25 @@ export async function codexExtras(
     ),
     getJson(`${CODEX_BASE}/wham/usage`, headers, signal),
   ]);
-  let { balance, ask } = parseCodexBalance(usageBody.body);
-  if (!ask) balance = purchasedCodexBalance(usageBody.body, balance);
+  const extras: ExtrasUpdate = { resetNotice: null, webResetCredits: null };
+  if (!transient(credits.status)) extras.resetCredits = parseResetCredits(credits.body, Date.now());
+  if (transient(usage.status)) return extras;
+  let { balance, ask } = parseCodexBalance(usage.body);
+  if (!ask) balance = purchasedCodexBalance(usage.body, balance);
   // Workspace accounts leave the balance off `wham/usage` and report it here.
   if (ask && accountId) {
-    const body = await getJson(
+    const remaining = await getJson(
       `${CODEX_BASE}/accounts/${encodeURIComponent(accountId)}/remaining_balance`,
       headers,
       signal,
     );
-    balance = toNumber(z.object({ balance: balanceSchema }).safeParse(body.body).data?.balance);
+    if (transient(remaining.status)) return extras;
+    balance = toNumber(
+      z.object({ balance: balanceSchema }).safeParse(remaining.body).data?.balance,
+    );
   }
-  return {
-    resetCredits: parseResetCredits(creditsBody.body, Date.now()),
-    extraUsage: balance !== null && balance > 0 ? { kind: "balance", balance } : null,
-  };
+  extras.extraUsage = balance !== null && balance > 0 ? { kind: "balance", balance } : null;
+  return extras;
 }
 
 const claudeUsageSchema = z.object({
@@ -251,7 +278,8 @@ export function parseClaudeResetCredits(body: unknown, now: number): ResetCredit
   return expiries.length === 0 ? null : { expiries };
 }
 
-export async function claudeExtras(token: string, signal?: AbortSignal): Promise<AccountExtras> {
+/** One response carries every field, so a transient failure leaves them all unknown. */
+export async function claudeExtras(token: string, signal?: AbortSignal): Promise<ExtrasUpdate> {
   const headers = {
     Authorization: `Bearer ${token}`,
     "anthropic-beta": "oauth-2025-04-20",
@@ -264,6 +292,7 @@ export async function claudeExtras(token: string, signal?: AbortSignal): Promise
   if (response.status === 400 || response.status === 404 || response.status === 422) {
     response = await getJson(CLAUDE_USAGE_URL, headers, signal);
   }
+  if (transient(response.status)) return {};
   const { body } = response;
   const surface = z
     .object({ cedar_ember: z.object({ ineligible_reason: z.string().nullish() }).nullish() })
@@ -273,5 +302,6 @@ export async function claudeExtras(token: string, signal?: AbortSignal): Promise
     extraUsage: parseClaudeExtraUsage(body),
     resetNotice:
       surface?.cedar_ember?.ineligible_reason === "surface" ? "Check Claude for full resets" : null,
+    webResetCredits: null,
   };
 }

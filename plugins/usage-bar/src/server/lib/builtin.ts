@@ -79,17 +79,18 @@ function menuWindow(window: UsageWindow): MenuWindow {
   };
   switch (window.kind) {
     case "five-hour":
-      return { ...shared, label: "Session", windowMinutes: 300 };
+      return { ...shared, label: "Session", windowMinutes: 300, model: null };
     case "daily":
-      return { ...shared, label: "Daily", windowMinutes: 1440 };
+      return { ...shared, label: "Daily", windowMinutes: 1440, model: null };
     case "weekly":
       return {
         ...shared,
-        label: window.model === null ? "Weekly" : capitalize(window.model),
+        label: window.model === null ? "Weekly" : `${capitalize(window.model)} weekly`,
         windowMinutes: 10080,
+        model: window.model,
       };
     case "custom":
-      return { ...shared, label: window.label, windowMinutes: null };
+      return { ...shared, label: window.label, windowMinutes: null, model: null };
   }
 }
 
@@ -114,9 +115,9 @@ export function builtinAccount(
     id: measurement.accountKey ? `${key}:${measurement.accountKey}` : key,
     identity: usage.accountEmail ?? resource.label,
     plan: usage.planLabel ?? null,
-    priority: position,
     status: error === null ? "ready" : "error",
     current: position === 1,
+    lastUsedAt: null,
     observedAt: measurement.observedAt,
     heldUntil: null,
     error,

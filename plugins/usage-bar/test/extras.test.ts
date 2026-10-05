@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 import { builtinAccount, measurementSchema } from "../src/server/lib/builtin.ts";
 import {
+  type AccountExtras,
   parseClaudeExtraUsage,
   parseClaudeResetCredits,
   parseCodexBalance,
@@ -136,9 +137,9 @@ test("a built-in provider's measurement becomes a menu account with labeled wind
     id: "k",
     identity: "me@example.com",
     plan: "Max 20x",
-    priority: 1,
     status: "ready",
     current: true,
+    lastUsedAt: null,
     observedAt: 5,
     heldUntil: null,
     error: null,
@@ -149,9 +150,16 @@ test("a built-in provider's measurement becomes a menu account with labeled wind
         usedPercent: 40,
         resetAt: Date.parse("2026-10-01T03:00:00Z"),
         windowMinutes: 300,
+        model: null,
       },
-      { label: "Weekly", usedPercent: 52.5, resetAt: null, windowMinutes: 10080 },
-      { label: "Fable", usedPercent: 58, resetAt: null, windowMinutes: 10080 },
+      { label: "Weekly", usedPercent: 52.5, resetAt: null, windowMinutes: 10080, model: null },
+      {
+        label: "Fable weekly",
+        usedPercent: 58,
+        resetAt: null,
+        windowMinutes: 10080,
+        model: "fable",
+      },
     ],
   });
 });
@@ -247,16 +255,118 @@ test("provider extras requests obey service cancellation", async () => {
   try {
     const pending = claudeExtras("fixture-token", controller.signal);
     controller.abort();
-    expect(await pending).toEqual({ resetCredits: null, extraUsage: null, resetNotice: null });
+    expect(await pending).toStrictEqual({});
     expect(captured?.aborted).toBe(true);
     globalThis.fetch = async () => Response.json({ credits: { has_credits: true, balance: 7 } });
-    expect(await codexExtras("fixture-token", null)).toEqual({
+    expect(await codexExtras("fixture-token", null)).toStrictEqual({
       resetCredits: null,
       extraUsage: { kind: "balance", balance: 7 },
+      resetNotice: null,
+      webResetCredits: null,
     });
-    expect(await codexExtras("fixture-token", null, controller.signal)).toEqual({
+    expect(await codexExtras("fixture-token", null, controller.signal)).toStrictEqual({
+      resetNotice: null,
+      webResetCredits: null,
+    });
+  } finally {
+    globalThis.fetch = original;
+  }
+});
+
+test("a transient request leaves only the fields it reports unknown, and a revoked token clears", async () => {
+  const { claudeExtras, codexExtras } = await import("../src/server/lib/extras.ts");
+  const original = globalThis.fetch;
+  let listed: number | undefined = 7;
+  let usage = 200;
+  let remaining = 200;
+  let other = 429;
+  globalThis.fetch = async (url) => {
+    const { pathname } = new URL(String(url));
+    if (pathname.endsWith("/wham/usage"))
+      return Response.json({ credits: { has_credits: true, balance: listed } }, { status: usage });
+    if (pathname.endsWith("/remaining_balance"))
+      return Response.json({ balance: 9 }, { status: remaining });
+    return Response.json({}, { status: other });
+  };
+  try {
+    // Reset credits throttled: the balance still arrives.
+    expect(await codexExtras("fixture-token", null)).toStrictEqual({
+      extraUsage: { kind: "balance", balance: 7 },
+      resetNotice: null,
+      webResetCredits: null,
+    });
+    expect(await claudeExtras("fixture-token")).toStrictEqual({});
+    other = 503;
+    expect(await claudeExtras("fixture-token")).toStrictEqual({});
+    // Balance failing on either endpoint: the reset credits still arrive.
+    other = 200;
+    usage = 502;
+    expect(await codexExtras("fixture-token", "workspace")).toStrictEqual({
+      resetCredits: null,
+      resetNotice: null,
+      webResetCredits: null,
+    });
+    usage = 200;
+    listed = undefined;
+    remaining = 503;
+    expect(await codexExtras("fixture-token", "workspace")).toStrictEqual({
+      resetCredits: null,
+      resetNotice: null,
+      webResetCredits: null,
+    });
+    remaining = 200;
+    expect(await codexExtras("fixture-token", "workspace")).toStrictEqual({
+      resetCredits: null,
+      extraUsage: { kind: "balance", balance: 9 },
+      resetNotice: null,
+      webResetCredits: null,
+    });
+    other = 401;
+    usage = 401;
+    const cleared = {
       resetCredits: null,
       extraUsage: null,
+      resetNotice: null,
+      webResetCredits: null,
+    };
+    expect(await codexExtras("fixture-token", null)).toStrictEqual(cleared);
+    expect(await claudeExtras("fixture-token")).toStrictEqual(cleared);
+  } finally {
+    globalThis.fetch = original;
+  }
+});
+
+test("a 2xx body that is not JSON is an observed none, but a cut-off read is unknown", async () => {
+  const { codexExtras } = await import("../src/server/lib/extras.ts");
+  const original = globalThis.fetch;
+  let credits = () => new Response(null, { status: 204 });
+  globalThis.fetch = async (url) =>
+    String(url).endsWith("/wham/usage")
+      ? Response.json({ credits: { has_credits: true, balance: 7 } })
+      : credits();
+  const observed: AccountExtras = {
+    resetCredits: null,
+    extraUsage: { kind: "balance", balance: 7 },
+    resetNotice: null,
+    webResetCredits: null,
+  };
+  try {
+    expect(await codexExtras("fixture-token", null)).toStrictEqual(observed);
+    credits = () =>
+      new Response("<html>Sign in</html>", { headers: { "Content-Type": "text/html" } });
+    expect(await codexExtras("fixture-token", null)).toStrictEqual(observed);
+    credits = () =>
+      new Response(
+        new ReadableStream({
+          start(controller) {
+            controller.error(new Error("connection reset"));
+          },
+        }),
+      );
+    expect(await codexExtras("fixture-token", null)).toStrictEqual({
+      extraUsage: { kind: "balance", balance: 7 },
+      resetNotice: null,
+      webResetCredits: null,
     });
   } finally {
     globalThis.fetch = original;

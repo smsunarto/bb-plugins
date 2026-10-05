@@ -18,7 +18,6 @@ export interface LocalCredential {
   token: string;
   /** Codex's ChatGPT account id, sent as ChatGPT-Account-Id. */
   accountId: string | null;
-  email: string | null;
   /** Same namespaced account identity as provider-usage.v1. */
   accountKey: string | null;
 }
@@ -90,9 +89,8 @@ const codexAuthSchema = z.object({
 export function parseCodexCredential(body: unknown): LocalCredential | null {
   const auth = codexAuthSchema.safeParse(body).data;
   if (!auth || !jwtLive(auth.tokens.access_token, Date.now())) return null;
-  const idClaims = jwtPayload(auth.tokens.id_token);
   const accessClaims = jwtPayload(auth.tokens.access_token)["https://api.openai.com/auth"];
-  const idAuthClaims = idClaims["https://api.openai.com/auth"];
+  const idAuthClaims = jwtPayload(auth.tokens.id_token)["https://api.openai.com/auth"];
   const claimAccount = [accessClaims, idAuthClaims].flatMap((claims) =>
     typeof claims === "object" &&
     claims !== null &&
@@ -105,7 +103,6 @@ export function parseCodexCredential(body: unknown): LocalCredential | null {
     token: auth.tokens.access_token,
     accountId,
     accountKey: accountId ? `openai:chatgpt:${accountId}` : null,
-    email: typeof idClaims.email === "string" ? idClaims.email : null,
   };
 }
 
@@ -163,11 +160,7 @@ export async function localClaude(): Promise<LocalCredential | null> {
     return null;
   }
   const account = z
-    .object({
-      oauthAccount: z
-        .object({ emailAddress: z.string().nullish(), accountUuid: z.string().nullish() })
-        .nullish(),
-    })
+    .object({ oauthAccount: z.object({ accountUuid: z.string().nullish() }).nullish() })
     .safeParse(await readJson(join(homedir(), ".claude.json"))).data;
   return {
     token: credentials.accessToken,
@@ -175,6 +168,5 @@ export async function localClaude(): Promise<LocalCredential | null> {
     accountKey: account?.oauthAccount?.accountUuid
       ? `anthropic:account:${account.oauthAccount.accountUuid}`
       : null,
-    email: account?.oauthAccount?.emailAddress ?? null,
   };
 }

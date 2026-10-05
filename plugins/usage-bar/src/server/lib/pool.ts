@@ -2,11 +2,6 @@ import { z } from "zod";
 import type { ExtraUsage, ResetCredits } from "./extras.ts";
 import type { WebResetCredits } from "./claude-web.ts";
 
-/**
- * The slice of Account Pooler's `AccountSummary` (bb `plugins/account-pool/src/contracts.ts`)
- * this plugin reads. Unknown fields are stripped, so new pool fields never break the parse.
- * `utilization` is a 0..1 fraction; every timestamp is epoch milliseconds.
- */
 /** JavaScript Date's supported epoch range also keeps native countdowns representable. */
 export const timestampSchema = z.number().min(-8.64e15).max(8.64e15).nullable().catch(null);
 
@@ -15,6 +10,11 @@ const quotaSchema = z.object({
   resetAt: timestampSchema,
 });
 
+/**
+ * The slice of Account Pooler's `AccountSummary` (bb `plugins/account-pool/src/contracts.ts`)
+ * this plugin reads. Unknown fields are stripped, so new pool fields never break the parse.
+ * `utilization` is a 0..1 fraction; every timestamp is epoch milliseconds.
+ */
 const accountSummarySchema = z.object({
   id: z.string(),
   provider: z.string(),
@@ -24,7 +24,7 @@ const accountSummarySchema = z.object({
   subscriptionType: z.string().nullable(),
   rateLimitTier: z.string().nullable(),
   enabled: z.boolean(),
-  priority: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER).catch(0),
+  priority: z.number().int().catch(0),
   lastUsedAt: timestampSchema,
   fiveHourUtilization: z.number().nullable(),
   fiveHourResetAt: timestampSchema,
@@ -34,19 +34,13 @@ const accountSummarySchema = z.object({
   limitWindows: z.array(
     quotaSchema.extend({
       slot: z.string(),
-      windowMinutes: z
-        .number()
-        .int()
-        .positive()
-        .max(Number.MAX_SAFE_INTEGER)
-        .nullable()
-        .catch(null),
+      windowMinutes: z.number().int().positive().nullable().catch(null),
     }),
   ),
   observedAt: timestampSchema,
   heldUntil: timestampSchema,
   error: z.string().nullable(),
-  inFlight: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER).catch(0),
+  inFlight: z.number().int().min(0).catch(0),
   status: z.enum(["disabled", "ready", "held", "exhausted", "error"]),
 });
 
@@ -65,6 +59,8 @@ export interface MenuWindow {
   resetAt: number | null;
   /** Null when the provider reported a window without its length. */
   windowMinutes: number | null;
+  /** The model a per-model weekly limit applies to. Null for the shared limits. */
+  model: string | null;
 }
 
 export interface MenuAccount {
@@ -72,10 +68,11 @@ export interface MenuAccount {
   /** Right-aligned header identity: the email, or the pool label when there is none. */
   identity: string;
   plan: string | null;
-  priority: number;
   status: AccountSummary["status"];
   /** The best observable guess at the pool's active account. It drives the menu bar percent. */
   current: boolean;
+  /** The pool's last recorded use. Null when unknown (built-in fallback, or never used). */
+  lastUsedAt: number | null;
   observedAt: number | null;
   heldUntil: number | null;
   error: string | null;
@@ -94,7 +91,11 @@ export interface MenuProvider {
   accounts: MenuAccount[];
 }
 
-/** Everything the native helper renders. */
+/**
+ * Everything the native helper renders. Mirrored by `struct Snapshot` in
+ * native/UsageBar.swift, which requires every non-optional field.
+ * test/wire.test.ts decodes real snapshots with the helper.
+ */
 export interface MenuSnapshot {
   providers: MenuProvider[];
   /** Why the last read failed, shown dimmed like CodexBar's stale state. */
@@ -115,7 +116,10 @@ function percent(utilization: number): number {
 }
 
 function windowLabel(minutes: number): string {
-  return WINDOW_LABELS[minutes] ?? (minutes % 60 === 0 ? `${minutes / 60}h` : `${minutes}m`);
+  const named = WINDOW_LABELS[minutes];
+  if (named !== undefined) return named;
+  if (minutes % 1440 === 0) return `${minutes / 1440}d`;
+  return minutes % 60 === 0 ? `${minutes / 60}h` : `${minutes}m`;
 }
 
 function capitalize(value: string): string {
@@ -139,6 +143,7 @@ function codexWindows(account: AccountSummary): MenuWindow[] {
           usedPercent: percent(utilization),
           resetAt: window.resetAt,
           windowMinutes,
+          model: null,
         },
       ];
     })
@@ -158,6 +163,7 @@ function claudeWindows(account: AccountSummary): MenuWindow[] {
       usedPercent: percent(account.fiveHourUtilization),
       resetAt: account.fiveHourResetAt,
       windowMinutes: 300,
+      model: null,
     });
   }
   if (account.sevenDayUtilization !== null) {
@@ -166,15 +172,17 @@ function claudeWindows(account: AccountSummary): MenuWindow[] {
       usedPercent: percent(account.sevenDayUtilization),
       resetAt: account.sevenDayResetAt,
       windowMinutes: WEEK_MINUTES,
+      model: null,
     });
   }
   for (const [family, quota] of Object.entries(account.familyWeekly)) {
     if (quota === null || quota.utilization === null) continue;
     windows.push({
-      label: capitalize(family),
+      label: `${capitalize(family)} weekly`,
       usedPercent: percent(quota.utilization),
       resetAt: quota.resetAt,
       windowMinutes: WEEK_MINUTES,
+      model: family,
     });
   }
   return windows;
@@ -221,9 +229,9 @@ export function poolProviders(accounts: AccountSummary[]): MenuProvider[] {
           id: account.id,
           identity: account.email ?? account.label,
           plan: planName(account),
-          priority: account.priority,
           status: account.status,
           current: account.id === currentId,
+          lastUsedAt: account.lastUsedAt,
           observedAt: account.observedAt,
           heldUntil: account.heldUntil,
           error: account.error,

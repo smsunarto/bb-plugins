@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import { createMenuState } from "../src/server/lib/menu-state.ts";
 import type { Source } from "../src/server/lib/sources.ts";
-import type { AccountExtras } from "../src/server/lib/extras.ts";
+import { codexExtras, type ExtrasUpdate } from "../src/server/lib/extras.ts";
 function defer<T>() {
   let resolve!: (value: T | PromiseLike<T>) => void;
   const promise = new Promise<T>((done) => {
@@ -9,13 +9,13 @@ function defer<T>() {
   });
   return { promise, resolve };
 }
-const balance = (value: number): AccountExtras => ({
+const balance = (value: number): ExtrasUpdate => ({
   resetCredits: null,
   extraUsage: { kind: "balance", balance: value },
 });
 function source(
   email: string,
-  extras: (provider: "codex" | "claude", id: string, fresh?: boolean) => Promise<AccountExtras>,
+  extras: (provider: "codex" | "claude", id: string, fresh?: boolean) => Promise<ExtrasUpdate>,
   status: "ready" | "disabled" = "ready",
 ): Source {
   return {
@@ -30,14 +30,16 @@ function source(
             id: "same-id",
             identity: email,
             plan: null,
-            priority: 1,
             status,
             current: true,
+            lastUsedAt: null,
             observedAt: 1,
             heldUntil: null,
             error: null,
             inFlight: 0,
-            windows: [{ label: "Session", usedPercent: 25, resetAt: null, windowMinutes: 300 }],
+            windows: [
+              { label: "Session", usedPercent: 25, resetAt: null, windowMinutes: 300, model: null },
+            ],
           },
         ],
       },
@@ -68,7 +70,7 @@ test("a synchronous batch factory failure clears extras and the next Refresh rec
 
 test("Refresh starts a fresh pass at every background completion ordering", async () => {
   for (let ticks = 0; ticks < 12; ticks++) {
-    const old = defer<AccountExtras>();
+    const old = defer<ExtrasUpdate>();
     const read = defer<Source>();
     const state = createMenuState(new AbortController().signal, () => {});
     state.setSource(source("a@example.com", () => old.promise));
@@ -83,8 +85,8 @@ test("Refresh starts a fresh pass at every background completion ordering", asyn
 });
 
 test("Refresh queued behind a background fetch waits for fresh extras", async () => {
-  const first = defer<AccountExtras>();
-  const second = defer<AccountExtras>();
+  const first = defer<ExtrasUpdate>();
+  const second = defer<ExtrasUpdate>();
   const state = createMenuState(new AbortController().signal, () => {});
   state.setSource(
     source("a@example.com", async (_p, _id, fresh) => (fresh ? second.promise : first.promise)),
@@ -107,8 +109,8 @@ test("Refresh queued behind a background fetch waits for fresh extras", async ()
 });
 
 test("account A to B to A rejects the old observation and fetches the new source", async () => {
-  const old = defer<AccountExtras>();
-  const current = defer<AccountExtras>();
+  const old = defer<ExtrasUpdate>();
+  const current = defer<ExtrasUpdate>();
   const seen: (number | null)[] = [];
   const state = createMenuState(new AbortController().signal, () => {
     const extra = state.snapshot().providers[0]?.accounts[0]?.extraUsage;
@@ -140,9 +142,9 @@ test("disabled accounts and rejected extras clear old extras while global failur
   await state.refresh(true);
   expect(shown(state).extraUsage).toBeNull();
   state.failed();
-  expect(state.snapshot().error).toBe("Usage unavailable. Check the provider in bb.");
+  expect(state.snapshot().error).toBe("Couldn't refresh usage. Showing the last reading.");
   expect(shown(state).windows).toEqual([
-    { label: "Session", usedPercent: 25, resetAt: null, windowMinutes: 300 },
+    { label: "Session", usedPercent: 25, resetAt: null, windowMinutes: 300, model: null },
   ]);
   state.setSource(source("a@example.com", async () => balance(9), "disabled"));
   await state.refresh(true);
@@ -153,9 +155,57 @@ test("disabled accounts and rejected extras clear old extras while global failur
   });
 });
 
+test("an update keeps every field it leaves unknown", async () => {
+  let next: ExtrasUpdate = { ...balance(7), resetCredits: { expiries: [null] } };
+  const state = createMenuState(new AbortController().signal, () => {});
+  state.setSource(source("a@example.com", async () => next));
+  await state.refresh(true);
+  next = { extraUsage: null };
+  await state.refresh(true);
+  expect(shown(state)).toMatchObject({ resetCredits: { expiries: [null] }, extraUsage: null });
+});
+
+test("kept extras clear once 30 minutes pass with nothing known", async () => {
+  let clock = 0;
+  let next: ExtrasUpdate = balance(7);
+  const state = createMenuState(
+    new AbortController().signal,
+    () => {},
+    () => clock,
+  );
+  state.setSource(source("a@example.com", async () => next));
+  await state.refresh(true);
+  next = {};
+  clock = 29 * 60_000;
+  await state.refresh(true);
+  expect(shown(state).extraUsage).toEqual({ kind: "balance", balance: 7 });
+  clock = 30 * 60_000;
+  await state.refresh(true);
+  expect(shown(state)).toMatchObject({ resetCredits: null, extraUsage: null });
+});
+
+test("a throttled reset-credit request still shows the fetched balance on first load", async () => {
+  const original = globalThis.fetch;
+  globalThis.fetch = async (url) =>
+    String(url).endsWith("/wham/usage")
+      ? Response.json({ credits: { has_credits: true, balance: 7 } })
+      : Response.json({}, { status: 429 });
+  try {
+    const state = createMenuState(new AbortController().signal, () => {});
+    state.setSource(source("a@example.com", () => codexExtras("fixture-token", null)));
+    await state.refresh(true);
+    expect(shown(state)).toMatchObject({
+      resetCredits: null,
+      extraUsage: { kind: "balance", balance: 7 },
+    });
+  } finally {
+    globalThis.fetch = original;
+  }
+});
+
 test("shutdown does not publish a late extras result", async () => {
   const abort = new AbortController();
-  const deferred = defer<AccountExtras>();
+  const deferred = defer<ExtrasUpdate>();
   const state = createMenuState(abort.signal, () => {});
   state.setSource(source("a@example.com", () => deferred.promise));
   const pending = state.refresh();
