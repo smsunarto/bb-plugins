@@ -27,6 +27,8 @@
   "tokenColors": [
     {
       "scope": [
+        "punctuation",
+        "entity.other.attribute-name",
         "punctuation.definition.delayed.unison",
         "punctuation.definition.list.begin.unison",
         "punctuation.definition.list.end.unison",
@@ -174,6 +176,10 @@
         "punctuation.definition.list.begin.markdown",
         "punctuation.definition.list.markdown",
         "beginning.punctuation.definition.list.markdown",
+        "beginning.punctuation.definition.list.markdown.xi",
+        "variable.unordered.list.mdx",
+        "variable.ordered.list.mdx",
+        "string.other.number.mdx",
         "string.regexp",
         "source.json meta.structure.dictionary.json > value.json > string.quoted.json",
         "source.json meta.structure.array.json > value.json > string.quoted.json",
@@ -182,7 +188,6 @@
         "entity.name.goto-label.php",
         "source.ini",
         "constant.regexp.xi",
-        "beginning.punctuation.definition.list.markdown.xi",
         "entity.name.label.cs",
         "punctuation.definition.block.sequence.item.yaml"
       ],
@@ -192,6 +197,7 @@
     },
     {
       "scope": [
+        "constant",
         "constant.language.false.cpp",
         "constant.language.true.cpp",
         "constant.other.ellipsis.python",
@@ -226,6 +232,7 @@
     },
     {
       "scope": [
+        "entity.name.tag",
         "keyword.operator.quantifier.regexp",
         "markup.deleted.diff",
         "keyword.operator.expression.import",
@@ -331,9 +338,6 @@
         "meta.function-call.generic.python",
         "entity.name.function",
         "variable.function",
-        "entity.other.attribute-name",
-        "entity.other.attribute-name.id",
-        "entity.other.attribute-name.class.css",
         "markup.heading",
         "markup.heading punctuation.definition.heading",
         "punctuation.definition.heading.markdown",
@@ -341,8 +345,6 @@
         "meta.function-call.php",
         "meta.function-call.object.php",
         "meta.function-call.static.php",
-        "entity.other.attribute-name.pseudo-element",
-        "entity.other.attribute-name.pseudo-class",
         "meta.method.groovy",
         "entity.name.function.xi",
         "entity.name.scope-resolution.function.call",
@@ -367,6 +369,7 @@
     },
     {
       "scope": [
+        "markup.underline.link",
         "keyword.control.directive",
         "variable.other.generic-type.haskell",
         "storage.type.haskell",
@@ -446,6 +449,7 @@
     },
     {
       "scope": [
+        "variable.parameter",
         "variable.parameter.function.language.special.self.python",
         "variable.language.this.cpp",
         "variable.language.rust",
@@ -530,6 +534,17 @@
       ],
       "settings": {
         "fontStyle": "italic"
+      }
+    },
+    {
+      "scope": [
+        "markup.heading.markdown",
+        "markup.heading.setext.1.markdown",
+        "markup.heading.setext.2.markdown",
+        "markup.bold.markdown"
+      ],
+      "settings": {
+        "fontStyle": "bold"
       }
     },
     {
@@ -859,7 +874,10 @@
     },
     {
       "scope": [
-        "markup.list"
+        "punctuation.definition.list.begin.markdown",
+        "variable.unordered.list.mdx",
+        "variable.ordered.list.mdx",
+        "string.other.number.mdx"
       ],
       "settings": {
         "foreground": "#f7d05c"
@@ -867,7 +885,15 @@
     },
     {
       "scope": [
-        "markup.bold",
+        "markup.bold"
+      ],
+      "settings": {
+        "foreground": "#51dae9",
+        "fontStyle": "bold"
+      }
+    },
+    {
+      "scope": [
         "markup.italic"
       ],
       "settings": {
@@ -888,7 +914,8 @@
         "markup.heading"
       ],
       "settings": {
-        "foreground": "#9ddd54"
+        "foreground": "#9ddd54",
+        "fontStyle": "bold"
       }
     },
     {
@@ -897,7 +924,7 @@
       ],
       "settings": {
         "foreground": "#9ddd54",
-        "fontStyle": ""
+        "fontStyle": "bold"
       }
     },
     {

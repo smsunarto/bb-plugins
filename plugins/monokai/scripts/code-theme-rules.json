@@ -3,6 +3,8 @@
   "rules": [
     {
       "scope": [
+        "punctuation",
+        "entity.other.attribute-name",
         "punctuation.definition.delayed.unison",
         "punctuation.definition.list.begin.unison",
         "punctuation.definition.list.end.unison",
@@ -146,6 +148,10 @@
         "punctuation.definition.list.begin.markdown",
         "punctuation.definition.list.markdown",
         "beginning.punctuation.definition.list.markdown",
+        "beginning.punctuation.definition.list.markdown.xi",
+        "variable.unordered.list.mdx",
+        "variable.ordered.list.mdx",
+        "string.other.number.mdx",
         "string.regexp",
         "source.json meta.structure.dictionary.json > value.json > string.quoted.json",
         "source.json meta.structure.array.json > value.json > string.quoted.json",
@@ -154,7 +160,6 @@
         "entity.name.goto-label.php",
         "source.ini",
         "constant.regexp.xi",
-        "beginning.punctuation.definition.list.markdown.xi",
         "entity.name.label.cs",
         "punctuation.definition.block.sequence.item.yaml"
       ],
@@ -162,6 +167,7 @@
     },
     {
       "scope": [
+        "constant",
         "constant.language.false.cpp",
         "constant.language.true.cpp",
         "constant.other.ellipsis.python",
@@ -194,6 +200,7 @@
     },
     {
       "scope": [
+        "entity.name.tag",
         "keyword.operator.quantifier.regexp",
         "markup.deleted.diff",
         "keyword.operator.expression.import",
@@ -297,9 +304,6 @@
         "meta.function-call.generic.python",
         "entity.name.function",
         "variable.function",
-        "entity.other.attribute-name",
-        "entity.other.attribute-name.id",
-        "entity.other.attribute-name.class.css",
         "markup.heading",
         "markup.heading punctuation.definition.heading",
         "punctuation.definition.heading.markdown",
@@ -307,8 +311,6 @@
         "meta.function-call.php",
         "meta.function-call.object.php",
         "meta.function-call.static.php",
-        "entity.other.attribute-name.pseudo-element",
-        "entity.other.attribute-name.pseudo-class",
         "meta.method.groovy",
         "entity.name.function.xi",
         "entity.name.scope-resolution.function.call",
@@ -331,6 +333,7 @@
     },
     {
       "scope": [
+        "markup.underline.link",
         "keyword.control.directive",
         "variable.other.generic-type.haskell",
         "storage.type.haskell",
@@ -408,6 +411,7 @@
     },
     {
       "scope": [
+        "variable.parameter",
         "variable.parameter.function.language.special.self.python",
         "variable.language.this.cpp",
         "variable.language.rust",
@@ -469,6 +473,15 @@
     {
       "scope": ["variable.parameter", "variable.language.super", "markup.italic.markdown"],
       "fontStyle": "italic"
+    },
+    {
+      "scope": [
+        "markup.heading.markdown",
+        "markup.heading.setext.1.markdown",
+        "markup.heading.setext.2.markdown",
+        "markup.bold.markdown"
+      ],
+      "fontStyle": "bold"
     },
     {
       "scope": ["meta.embedded", "source.groovy.embedded"],
@@ -651,11 +664,21 @@
       "foreground": "code.keyword"
     },
     {
-      "scope": ["markup.list"],
+      "scope": [
+        "punctuation.definition.list.begin.markdown",
+        "variable.unordered.list.mdx",
+        "variable.ordered.list.mdx",
+        "string.other.number.mdx"
+      ],
       "foreground": "code.string"
     },
     {
-      "scope": ["markup.bold", "markup.italic"],
+      "scope": ["markup.bold"],
+      "foreground": "code.type",
+      "fontStyle": "bold"
+    },
+    {
+      "scope": ["markup.italic"],
       "foreground": "code.type"
     },
     {
@@ -665,12 +688,13 @@
     },
     {
       "scope": ["markup.heading"],
-      "foreground": "code.entity"
+      "foreground": "code.entity",
+      "fontStyle": "bold"
     },
     {
       "scope": ["markup.heading.setext"],
       "foreground": "code.entity",
-      "fontStyle": ""
+      "fontStyle": "bold"
     },
     {
       "scope": ["token.info-token"],
