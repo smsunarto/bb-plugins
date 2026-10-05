@@ -24,12 +24,16 @@ export const changedPayload = z.discriminatedUnion("kind", [
 ]);
 export type ChangedPayload = z.infer<typeof changedPayload>;
 
-/** Focus the Whiteboard tab in clients that show `threadId` (design §3.6). */
+/**
+ * Focus the Whiteboard tab in clients that show `threadId` (design §3.6).
+ * `at` identifies the open and orders it per thread; `claimOpen` answers the
+ * same `at` for it.
+ */
 export const openPayload = z.object({
   threadId: z.string(),
   sessionId: z.string(),
   title: z.string(),
-  nonce: z.string(),
+  at: z.number(),
 });
 export type OpenPayload = z.infer<typeof openPayload>;
 

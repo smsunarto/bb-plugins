@@ -8,9 +8,11 @@ import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { PNG } from "pngjs";
 import jpeg from "jpeg-js";
+import { UI_INTEREST_TTL_MS } from "../../shared/contracts/api-tunnel.ts";
 import type { Engine, WhiteboardSettings } from "../../shared/contracts/engine.ts";
+import { panelParamsJson, panelTabId } from "../../shared/contracts/panel.ts";
 import { ReviewStore } from "./vendor/review/src/review-api/store.ts";
-import { createEngine, collectApiResponse, UI_INTEREST_TTL_MS } from "./engine.ts";
+import { createEngine, collectApiResponse } from "./engine.ts";
 import { gitFixture, type GitFixture } from "./host-io/testing/git-fixture.ts";
 import {
   createInProcessHostClient,
@@ -211,6 +213,39 @@ test("loopback calls retain thread context, create durable tabs, and follow rena
     operation: { type: "attention", reviewId: created.reviewId, action: "dismiss" },
   });
   await vi.waitFor(() => expect(tabs.get("t1")!.tabs).toEqual([]));
+});
+
+test("a thread panel's info records the tab it shows once, so a dismissal closes it", async () => {
+  const created = await create();
+  const sessionRows = () =>
+    bb.storage
+      .database()
+      .prepare("SELECT thread_id FROM session_threads WHERE session_id=?")
+      .all(created.reviewId);
+  // The client opened this tab itself (a Home row), so the server never wrote it.
+  tabs.get("t1")!.tabs = [
+    {
+      id: panelTabId(panelParamsJson(created.reviewId)),
+      kind: "plugin-panel",
+      pluginId: "whiteboard",
+      actionId: "whiteboard",
+      title: "Walkthrough",
+      paramsJson: panelParamsJson(created.reviewId),
+    },
+  ];
+
+  await engine.info({ threadId: "t1", sessionId: created.reviewId });
+  await engine.info({ threadId: "t1", sessionId: created.reviewId });
+  await engine.info({ sessionId: created.reviewId });
+
+  expect(sessionRows()).toEqual([{ thread_id: "t1" }]);
+  await expect(engine.claimOpen("t1")).resolves.toBeNull();
+  await post("/commands", {
+    commandId: randomUUID(),
+    operation: { type: "attention", reviewId: created.reviewId, action: "dismiss" },
+  });
+  await vi.waitFor(() => expect(tabs.get("t1")!.tabs).toEqual([]));
+  expect(sessionRows()).toEqual([]);
 });
 
 test("watch snapshots cancel their subscriptions and refetch fresh state", async () => {
@@ -443,7 +478,17 @@ test("interest expires after 90 seconds and dispose leaves no engine timers", as
   expect(vi.getTimerCount()).toBeGreaterThan(baseline);
   await vi.advanceTimersByTimeAsync(UI_INTEREST_TTL_MS);
   expect(vi.getTimerCount()).toBe(baseline);
+  // The panels' heartbeat renews the same lease without reading a snapshot.
+  await engine.renewInterest();
+  expect(vi.getTimerCount()).toBeGreaterThan(baseline);
+  await vi.advanceTimersByTimeAsync(UI_INTEREST_TTL_MS - 1);
+  await engine.renewInterest();
+  await vi.advanceTimersByTimeAsync(UI_INTEREST_TTL_MS - 1);
+  expect(vi.getTimerCount()).toBeGreaterThan(baseline);
+  await vi.advanceTimersByTimeAsync(1);
+  expect(vi.getTimerCount()).toBe(baseline);
   await engine.dispose();
+  await engine.renewInterest();
   expect(vi.getTimerCount()).toBe(0);
   vi.useRealTimers();
 });

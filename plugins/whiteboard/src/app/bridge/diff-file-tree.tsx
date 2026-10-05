@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type KeyboardEvent } from "react";
 import type {
   ReviewDiffFileWire,
   ReviewDiffProgress,
@@ -11,8 +11,9 @@ import { buildChangedTree, type ChangedTreeElement } from "./two-side.ts";
  * The Diffs view file tree, ported from Desktop `reviewChangedFilesTree.ts`:
  * folders first, single-child folder chains compressed into one row, a status
  * glyph, and per file the remaining `+N −N`, or Viewed, Folded or Unchanged.
- * A click reveals the file in the diff. Viewed boxes live on the diff headers,
- * as upstream.
+ * A click reveals the file in the diff. Keyboard follows the WAI-ARIA tree
+ * pattern with one tab stop. Each file row ends in a Viewed box, a bb
+ * addition (design §0.1); Space on the row toggles it.
  */
 export function DiffFileTree({
   files,
@@ -31,7 +32,12 @@ export function DiffFileTree({
   onToggleViewed?: (path: string) => void;
 }) {
   const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(() => new Set());
+  const [focused, setFocused] = useState<string>();
   const byPath = new Map(progress?.files.map((file) => [file.path, file]));
+  const tree = buildChangedTree(files);
+  const shown = visiblePaths(tree, collapsed);
+  // The roving tab stop: the last focused row, else the active file, else the first row.
+  const tabStop = [focused, activePath].find((path) => path && shown.includes(path)) ?? shown[0];
   const toggle = (path: string) =>
     setCollapsed((current) => {
       const next = new Set(current);
@@ -40,6 +46,50 @@ export function DiffFileTree({
 
       return next;
     });
+
+  /**
+   * Arrows, Home and End move between rows; Right and Left also expand and
+   * collapse folders. Enter stays the button's click: reveal a file, toggle a folder.
+   */
+  const navigate = (
+    event: KeyboardEvent<HTMLElement>,
+    folder?: { path: string; open: boolean },
+  ) => {
+    const row = event.currentTarget;
+    const rows = [
+      ...(row.closest('[role="tree"]')?.querySelectorAll<HTMLElement>('[role="treeitem"]') ?? []),
+    ];
+    const index = rows.indexOf(row);
+    const level = (item: HTMLElement) => Number(item.getAttribute("aria-level"));
+    let next: HTMLElement | undefined;
+
+    switch (event.key) {
+      case "ArrowDown":
+        next = rows[index + 1];
+        break;
+      case "ArrowUp":
+        next = rows[index - 1];
+        break;
+      case "Home":
+        next = rows[0];
+        break;
+      case "End":
+        next = rows.at(-1);
+        break;
+      case "ArrowRight":
+        if (folder?.open) next = rows[index + 1];
+        else if (folder) toggle(folder.path);
+        break;
+      case "ArrowLeft":
+        if (folder?.open) toggle(folder.path);
+        else next = rows.slice(0, index).findLast((item) => level(item) < level(row));
+        break;
+      default:
+        return;
+    }
+    event.preventDefault();
+    next?.focus();
+  };
 
   const render = (elements: readonly ChangedTreeElement[], depth: number) =>
     elements.map((element) => {
@@ -53,6 +103,9 @@ export function DiffFileTree({
             progress={byPath.get(element.file.path)}
             showFileCounts={showFileCounts}
             active={element.file.path === activePath}
+            tabbable={element.file.path === tabStop}
+            onFocus={setFocused}
+            onKeyDown={navigate}
             onReveal={onReveal}
             onToggleViewed={onToggleViewed}
           />
@@ -61,17 +114,19 @@ export function DiffFileTree({
       const open = !collapsed.has(folder.path);
 
       return (
-        <div
-          key={`dir:${folder.path}`}
-          role="treeitem"
-          aria-expanded={open}
-          aria-label={folder.path}
-        >
+        <div key={`dir:${folder.path}`}>
           <button
             type="button"
-            className="review-changed-files-row review-changed-files-folder flex h-[22px] w-full min-w-0 cursor-pointer items-center gap-1.5 pr-2 text-left text-[12px] text-[var(--ink-muted)] hover:bg-[var(--wb-surface-raised)]"
+            role="treeitem"
+            aria-level={depth + 1}
+            aria-expanded={open}
+            aria-label={folder.path}
+            tabIndex={folder.path === tabStop ? 0 : -1}
+            className="review-changed-files-row review-changed-files-folder flex h-[24px] w-full min-w-0 cursor-pointer items-center gap-1.5 pr-2 text-left text-[12px] text-[var(--ink-muted)]"
             style={{ paddingLeft: 8 + depth * 12 }}
             onClick={() => toggle(folder.path)}
+            onFocus={() => setFocused(folder.path)}
+            onKeyDown={(event) => navigate(event, { path: folder.path, open })}
           >
             <Chevron open={open} />
             <span className="review-changed-files-label truncate">{names.join("/")}</span>
@@ -91,7 +146,7 @@ export function DiffFileTree({
       role="tree"
       aria-label="Changed files"
     >
-      {render(buildChangedTree(files), 0)}
+      {render(tree, 0)}
     </div>
   );
 }
@@ -109,6 +164,22 @@ function compress(folder: Extract<ChangedTreeElement, { kind: "folder" }>) {
   return { names, folder: current };
 }
 
+/** The paths of the rows on screen, in order: files and compressed folders outside collapsed ones. */
+function visiblePaths(
+  elements: readonly ChangedTreeElement[],
+  collapsed: ReadonlySet<string>,
+): string[] {
+  return elements.flatMap((element) => {
+    if (element.kind === "file") return [element.file.path];
+    const { folder } = compress(element);
+
+    return [
+      folder.path,
+      ...(collapsed.has(folder.path) ? [] : visiblePaths(folder.children, collapsed)),
+    ];
+  });
+}
+
 function FileRow({
   file,
   name,
@@ -116,6 +187,9 @@ function FileRow({
   progress,
   showFileCounts,
   active,
+  tabbable,
+  onFocus,
+  onKeyDown,
   onReveal,
   onToggleViewed,
 }: {
@@ -125,32 +199,42 @@ function FileRow({
   progress?: ReviewDiffProgressFile;
   showFileCounts: boolean;
   active: boolean;
+  tabbable: boolean;
+  onFocus(path: string): void;
+  onKeyDown(event: KeyboardEvent<HTMLElement>): void;
   onReveal(path: string): void;
   onToggleViewed?: (path: string) => void;
 }) {
   const counts = treeCounts(file, progress, showFileCounts);
+  const viewable = onToggleViewed && file.status !== "unchanged";
+  const checked = progress?.state === "partial" ? "mixed" : progress?.state === "viewed";
 
   return (
-    <div className="flex items-center">
-      {onToggleViewed && file.status !== "unchanged" ? (
-        <input
-          type="checkbox"
-          className="ml-2 cursor-pointer accent-[var(--wb-accent)]"
-          checked={progress?.state === "viewed"}
-          aria-label={`${progress?.state === "viewed" ? "Mark unviewed" : "Mark viewed"}: ${file.path}`}
-          onChange={() => onToggleViewed(file.path)}
-        />
-      ) : null}
+    <div
+      className={`flex h-[24px] items-center gap-1.5 pr-2 hover:bg-[var(--wb-surface-raised)] ${active ? "bg-[var(--wb-surface-raised)]" : ""}`}
+    >
       <button
         type="button"
         role="treeitem"
+        aria-level={depth + 1}
         aria-selected={active}
+        // The box is hidden from assistive tech, so the row carries its state.
+        aria-checked={viewable ? checked : undefined}
         aria-label={file.path}
+        tabIndex={tabbable ? 0 : -1}
         title={counts.tooltip}
         data-review-file={file.path}
-        className={`review-changed-files-row flex h-[22px] w-full min-w-0 cursor-pointer items-center gap-1.5 pr-2 text-left text-[12px] hover:bg-[var(--wb-surface-raised)] ${active ? "bg-[var(--wb-surface-raised)] text-[var(--ink)]" : "text-[var(--ink-muted)]"} ${progress?.state === "viewed" ? "review-file-viewed opacity-50" : ""} ${progress?.state === "folded" ? "review-file-folded opacity-50" : ""}`}
+        className={`review-changed-files-row flex h-full min-w-0 flex-1 cursor-pointer items-center gap-1.5 text-left text-[12px] ${active ? "text-[var(--ink)]" : "text-[var(--ink-muted)]"} ${progress?.state === "viewed" ? "review-file-viewed opacity-50" : ""} ${progress?.state === "folded" ? "review-file-folded opacity-50" : ""}`}
         style={{ paddingLeft: 8 + depth * 12 + 14 }}
         onClick={() => onReveal(file.path)}
+        onFocus={() => onFocus(file.path)}
+        onKeyDown={(event) => {
+          if (event.key === " " && viewable) {
+            event.preventDefault();
+            // Toggle once per press, as a native checkbox does.
+            if (!event.repeat) onToggleViewed(file.path);
+          } else onKeyDown(event);
+        }}
       >
         <StatusGlyph status={file.status} />
         <span className="review-changed-files-label min-w-0 flex-1 truncate">{name}</span>
@@ -165,6 +249,25 @@ function FileRow({
           )}
         </span>
       </button>
+      {onToggleViewed ? (
+        // The lens rows' box (tokens.css). Space on the row is its keyboard
+        // path, so it stays out of the tab order and the accessibility tree.
+        // An unchanged file keeps the slot so the counts stay aligned.
+        <button
+          type="button"
+          // tokens.css styles `button.review-viewed-check[aria-checked]`, as on the lens rows.
+          // oxlint-disable-next-line jsx-a11y/prefer-tag-over-role
+          role="checkbox"
+          className={`review-viewed-check ${viewable ? "" : "is-empty"}`}
+          aria-checked={checked}
+          aria-hidden="true"
+          tabIndex={-1}
+          disabled={!viewable}
+          title={progress?.state === "viewed" ? "Mark as unviewed" : "Mark as viewed"}
+          onMouseDown={(event) => event.preventDefault()}
+          onClick={() => onToggleViewed(file.path)}
+        />
+      ) : null}
     </div>
   );
 }

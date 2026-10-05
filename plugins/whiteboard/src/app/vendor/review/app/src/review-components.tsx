@@ -82,7 +82,7 @@ function ReviewPanelFrame({
 
   useEffect(() => {
     const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key !== "Escape" || !appRef?.current) return;
+      if (event.key !== "Escape" || !(event.target instanceof Node) || !appRef?.current?.closest(".review-canvas-root")?.contains(event.target)) return;
       event.preventDefault();
       onClose();
     };

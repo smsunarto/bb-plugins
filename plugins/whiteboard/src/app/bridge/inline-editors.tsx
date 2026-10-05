@@ -53,37 +53,48 @@ export function createInlineEditors(deps: CodeSurfaceDeps): ReviewInlineEditorFa
         if (root) root.hidden = collapsed;
         reportHeight(contentHeight);
       };
+      // Progress re-renders the peek. Its files and ranges keep their identity, so it does not reload.
+      let progress = spec.progress;
+      let render: (() => void) | undefined;
       try {
         const view = deps.sourceView?.();
         const reviewId = view?.reviewId ?? deps.reviewId;
         if (!reviewId) throw new Error("No Whiteboard session is open.");
         const { lens, comparison } = documentScope(view, reviewId, spec);
         void loadFiles(reader, comparison, lens).then((files) => {
-          if (disposed) return undefined;
-          deps.portals.update(
-            id,
-            <div
-              data-wb-peek=""
-              hidden={collapsed}
-              className={spec.heightMode === "capped" ? "max-h-[400px] overflow-y-auto" : ""}
-              onFocus={spec.onDidFocus}
-            >
-              {files.map((file) => (
-                <CodeFile
-                  key={file.path}
-                  file={file}
-                  reader={reader}
-                  comparison={comparison}
-                  ranges={lensRangesFor(lens.ranges, file)}
-                  side={spec.side}
-                  openFile={deps.openFile}
-                  onError={onError}
-                  onHeight={reportHeight}
-                  heightMode={spec.heightMode}
-                />
-              ))}
-            </div>,
-          );
+          const peeks = files.map((file) => ({ file, ranges: lensRangesFor(lens.ranges, file) }));
+          render = () => {
+            if (disposed) return;
+            deps.portals.update(
+              id,
+              <div
+                data-wb-peek=""
+                hidden={collapsed}
+                className={
+                  spec.heightMode === "capped" ? "flex max-h-[400px] flex-col overflow-hidden" : ""
+                }
+                onFocus={spec.onDidFocus}
+              >
+                {peeks.map(({ file, ranges }) => (
+                  <CodeFile
+                    key={file.path}
+                    file={file}
+                    reader={reader}
+                    comparison={comparison}
+                    ranges={ranges}
+                    side={spec.side}
+                    label={spec.title}
+                    progress={progress?.files.find((item) => item.path === file.path)}
+                    openFile={deps.openFile}
+                    onError={onError}
+                    onHeight={reportHeight}
+                    heightMode={spec.heightMode}
+                  />
+                ))}
+              </div>,
+            );
+          };
+          render();
           return undefined;
         }, onError);
       } catch (error) {
@@ -93,7 +104,10 @@ export function createInlineEditors(deps: CodeSurfaceDeps): ReviewInlineEditorFa
         get height() {
           return height;
         },
-        setProgress() {},
+        setProgress(value) {
+          progress = value;
+          render?.();
+        },
         setActive(active) {
           spec.container.classList.toggle("review-document-code-active", active);
         },

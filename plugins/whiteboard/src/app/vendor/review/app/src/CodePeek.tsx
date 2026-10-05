@@ -173,8 +173,8 @@ export function CodePeekCard({
     return (
       <section className="code-peek" role="status">
         {outcome === "failed"
-          ? "Diff selection unavailable"
-          : "Loading diff selection…"}
+          ? `Can't show ${codePeekRangeTitle(source.file, source.start.line, source.end.line)}`
+          : `Loading ${codePeekRangeTitle(source.file, source.start.line, source.end.line)}…`}
       </section>
     );
 

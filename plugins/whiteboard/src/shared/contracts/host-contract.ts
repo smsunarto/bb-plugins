@@ -2,20 +2,7 @@ import { defineRpcContract } from "@get-bb/plugin-sdk";
 import { z } from "zod";
 import { vcsHandle, wireError, wireResult, wireValue } from "./wire.ts";
 
-/**
- * The upstream modules the host entry runs, by facade name (design §3.1). The
- * allowlist in `src/host/lib/invoke.ts` lists the callable exports of each.
- *
- * - `local-vcs`: detectLocalVcs, diffFileSummariesTrees, diffFileSummariesWorkingTree,
- *   diffTrees, diffWorkingTree, gitCommonDir, git, listCommitRange,
- *   listTrackedFilesAtCommit, readFileAtCommit, resolveRepoContext and the rest
- *   of the closure's async exports
- * - `worktree-source`, `pull-request`: every async export
- * - `review-stack`: resolveReviewStackLayers (runs `gh api`)
- * - `review-branch-links`: resolveReviewBranchLinks
- * - `review-head-checkout`: ensureReviewPinnedCheckout
- * - `fs`: realpath, stat, readFile, writeFile, mkdir, exists, execFile
- */
+/** The upstream modules the host entry runs, by facade name (design §3.1). */
 export const HOST_MODULES = [
   "local-vcs",
   "worktree-source",
@@ -26,6 +13,53 @@ export const HOST_MODULES = [
   "fs",
 ] as const;
 export type HostModule = (typeof HOST_MODULES)[number];
+
+/**
+ * The callable exports of each host module: what server facades may `invoke`,
+ * and what the allowlist in `src/host/lib/invoke.ts` must implement.
+ */
+export const HOST_FUNCTION_NAMES = {
+  "local-vcs": [
+    "detectLocalVcs",
+    "gitCommonDir",
+    "resolveRepoContext",
+    "git",
+    "diff",
+    "diffTrees",
+    "diffWorkingTree",
+    "diffFileSummariesTrees",
+    "diffFileSummariesWorkingTree",
+    "listCommitRange",
+    "listTrackedFilesAtCommit",
+    "readFileAtCommit",
+  ],
+  "worktree-source": [
+    "localSourcePath",
+    "workingFiles",
+    "inspectWorktree",
+    "retainedWorktreeTree",
+    "retainedWorktreeHead",
+    "pruneWorktreeTrees",
+    "readWorkingFile",
+  ],
+  "pull-request": ["run"],
+  "review-stack": ["resolveReviewStackLayers"],
+  "review-branch-links": ["resolveReviewBranchLinks"],
+  "review-head-checkout": ["ensureReviewPinnedCheckout"],
+  fs: [
+    "realpath",
+    "stat",
+    "lstat",
+    "readFile",
+    "readlink",
+    "writeFile",
+    "writePrivateJsonAtomic",
+    "mkdir",
+    "exists",
+    "execFile",
+  ],
+} as const satisfies { readonly [M in HostModule]: readonly string[] };
+export type HostFunctionName<M extends HostModule> = (typeof HOST_FUNCTION_NAMES)[M][number];
 
 /** Every method of upstream `LocalVcs` (local-vcs/src/index.ts:46-71). */
 export const VCS_METHODS = [

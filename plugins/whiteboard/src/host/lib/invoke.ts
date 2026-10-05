@@ -1,5 +1,10 @@
 import { execFile } from "node:child_process";
-import type { HostInput, HostModule, HostOutput } from "../../shared/contracts/host-contract.ts";
+import type {
+  HostFunctionName,
+  HostInput,
+  HostModule,
+  HostOutput,
+} from "../../shared/contracts/host-contract.ts";
 import * as localVcs from "../../shared/node/vendor/local-vcs/src/index.ts";
 import { defaultPullRequestDeps } from "../../shared/node/vendor/review/src/review-api/pull-request.ts";
 import * as worktreeSource from "../../shared/node/vendor/review/src/review-api/worktree-source.ts";
@@ -25,14 +30,12 @@ const plain =
     fn(...args);
 
 /**
- * The allowlist (design §3.1): every export a server facade sends to the
- * host, by module. Upstream functions run unchanged; a few entries pin the
- * upstream default for a parameter that cannot cross the hop (a function) or
- * thread the call's abort signal into the subprocess.
+ * The allowlist (design §3.1): one entry per `HOST_FUNCTION_NAMES` export, by
+ * module. Upstream functions run unchanged; a few entries pin the upstream
+ * default for a parameter that cannot cross the hop (a function) or thread the
+ * call's abort signal into the subprocess.
  */
-export const HOST_FUNCTIONS: {
-  readonly [M in HostModule]: Readonly<Record<string, HostFunction>>;
-} = {
+export const HOST_FUNCTIONS = {
   "local-vcs": {
     detectLocalVcs: plain(localVcs.detectLocalVcs),
     gitCommonDir: plain(localVcs.gitCommonDir),
@@ -85,14 +88,14 @@ export const HOST_FUNCTIONS: {
     exists: plain(hostFs.exists),
     execFile: ([file, args, options], signal) => hostFs.execFile(file, args, options, signal),
   },
-};
+} satisfies { readonly [M in HostModule]: Readonly<Record<HostFunctionName<M>, HostFunction>> };
 
 /** Run one allowlisted host-module export with wire-decoded args (design §3.1). */
 export async function invoke(
   input: HostInput<"invoke">,
   signal: AbortSignal,
 ): Promise<HostOutput<"invoke">> {
-  const table = HOST_FUNCTIONS[input.module];
+  const table: Readonly<Record<string, HostFunction>> = HOST_FUNCTIONS[input.module];
   if (!Object.hasOwn(table, input.fn)) {
     return {
       ok: false,

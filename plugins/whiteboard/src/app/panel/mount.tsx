@@ -1,6 +1,8 @@
 import {
   type BbNavigate,
+  useBbContext,
   useBbNavigate,
+  useComposer,
   useRealtime,
   useRealtimeConnectionState,
 } from "@get-bb/plugin-sdk/app";
@@ -14,9 +16,14 @@ import {
   useState,
   useSyncExternalStore,
 } from "react";
+import { toast } from "sonner";
 import type { InfoOutput } from "../../shared/contracts/api-tunnel.ts";
 import { CHANNELS, changedPayload } from "../../shared/contracts/channels.ts";
 import { NAV_PANEL_PATH, PANEL_ACTION_ID } from "../../shared/contracts/panel.ts";
+import {
+  SESSION_MENTION_PROVIDER,
+  sessionMentionId,
+} from "../../shared/contracts/selection-handoff.ts";
 import {
   type ReviewApiSummary,
   type ReviewCanvasBridge,
@@ -24,12 +31,15 @@ import {
   type ReviewSourceView,
   ReviewApiClient,
 } from "../../shared/vendor/review-protocol/src/index.ts";
+import { registerHandoffSink } from "../bridge/agent-handoff.ts";
 import { createBbBridge } from "../bridge/bb-bridge.ts";
 import { createSurfaceEvents } from "../bridge/events.ts";
 import { type LiveHub, createLiveHub } from "../bridge/live-watch.ts";
 import { PortalHost, createPortals } from "../bridge/portals.tsx";
 import { currentTheme, onDidChangeTheme } from "../bridge/theme.ts";
-import { rpc } from "../rpc.ts";
+import { Button } from "../components/ui/button.tsx";
+import { UNAVAILABLE_TITLE } from "../lib/whiteboard-info.tsx";
+import { type WhiteboardRpcClient, rpc } from "../rpc.ts";
 import "../styles/index.css";
 import { ApiCanvas } from "../vendor/review/app/src/api-canvas.tsx";
 import { createReviewFindHost } from "../vendor/review/app/src/review-find.tsx";
@@ -82,8 +92,8 @@ function useStableNavigate(): BbNavigate {
 }
 
 /** Feed `whiteboard:changed` and reconnects into the mount's hub. */
-function useLiveHub(): LiveHub {
-  const hub = useMemo(createLiveHub, []);
+function useLiveHub(client: WhiteboardRpcClient): LiveHub {
+  const hub = useMemo(() => createLiveHub(client), [client]);
   useRealtime(CHANNELS.changed, (payload) => {
     const parsed = changedPayload.safeParse(payload);
     if (parsed.success) hub.invalidate(parsed.data);
@@ -133,15 +143,17 @@ function catalogMode(info: InfoOutput): "structural" | "textual" {
   return info.structuralDiffEnabled ? "structural" : "textual";
 }
 
+type Removal = "deleted" | "dismissed" | null;
+
 /** Upstream closes a canvas whose session leaves the catalog or becomes dismissed. */
 function useRemoved(
   client: ReviewApiClient,
   reviewId: string,
   mode: "structural" | "textual",
-): boolean {
-  const [removed, setRemoved] = useState(false);
+): Removal {
+  const [removed, setRemoved] = useState<Removal>(null);
   useEffect(() => {
-    setRemoved(false);
+    setRemoved(null);
     const abort = new AbortController();
     // Desktop closes on the active -> dismissed transition (reviewApiCatalogService.ts:84-87).
     // A session opened while dismissed stays readable until it is restored and dismissed again.
@@ -152,7 +164,8 @@ function useRemoved(
       (reviews) => {
         const entry = reviews.find((review) => review.reviewId === reviewId);
         if (entry && !entry.dismissedAt) seenActive = true;
-        setRemoved(!entry || (Boolean(entry.dismissedAt) && seenActive));
+        if (!entry) setRemoved("deleted");
+        else setRemoved(entry.dismissedAt && seenActive ? "dismissed" : null);
       },
       () => {},
       mode,
@@ -166,6 +179,8 @@ function CanvasView({
   bridge,
   client,
   reviewId,
+  threadId,
+  navigate,
   info,
   findHost,
   setSourceView,
@@ -173,6 +188,8 @@ function CanvasView({
   bridge: ReviewCanvasBridge;
   client: ReviewApiClient;
   reviewId: string;
+  threadId: string | undefined;
+  navigate: BbNavigate;
   info: InfoOutput;
   findHost: ReturnType<typeof createReviewFindHost>;
   setSourceView: NonNullable<ApiContent["setSourceView"]>;
@@ -197,11 +214,59 @@ function CanvasView({
     }),
     [bridge, reviewId, info.structuralDiffEnabled, info.softwareMapEnabled, setSourceView],
   );
-  if (removed) return <EmptyState title={REMOVED_TITLE} />;
+  if (removed === "deleted") return <EmptyState title={REMOVED_TITLE} />;
+  if (removed === "dismissed") {
+    return (
+      <Dismissed client={client} reviewId={reviewId} threadId={threadId} navigate={navigate} />
+    );
+  }
   return (
     <div data-review-api="" className="review-api-canvas">
       <ApiCanvas key={reviewId} content={content} findHost={findHost} />
     </div>
+  );
+}
+
+function Dismissed({
+  client,
+  reviewId,
+  threadId,
+  navigate,
+}: {
+  client: ReviewApiClient;
+  reviewId: string;
+  threadId: string | undefined;
+  navigate: BbNavigate;
+}) {
+  const route = useBbContext();
+  // The full page closes like Desktop's canvas: back to Home, which lists it under Dismissed.
+  // Not while a thread holds the route (a split pane beside it): navigating would pull
+  // that pane's focus and history entry here. Decided once, on mount: clicking Undo
+  // focuses this pane, which moves the route here.
+  const [closeToHome] = useState(() => !threadId && route.threadId === null);
+  useEffect(() => {
+    if (closeToHome) navigate.toPluginPanel(NAV_PANEL_PATH, { subPath: "", replace: true });
+  }, [closeToHome, navigate]);
+  if (closeToHome) return null;
+  // A thread tab the server did not record, or a full page beside a thread pane.
+  return (
+    <EmptyState
+      title="Whiteboard dismissed."
+      description="It stays under Dismissed on Whiteboard Home."
+    >
+      <Button
+        size="sm"
+        variant="outline"
+        onClick={() =>
+          postAttention(client, reviewId, "restore").catch((error: unknown) => {
+            console.warn("[whiteboard] Could not restore session:", error);
+            toast.error("Could not restore the Whiteboard. Try again.");
+          })
+        }
+      >
+        Undo
+      </Button>
+    </EmptyState>
   );
 }
 
@@ -237,8 +302,7 @@ function HomeView({
     },
     [client],
   );
-  if (!reviews)
-    return error ? <EmptyState title="Whiteboard is unavailable." description={error} /> : null;
+  if (!reviews) return error ? <EmptyState title={UNAVAILABLE_TITLE} description={error} /> : null;
   return (
     <ReviewHome
       reviews={reviews}
@@ -266,7 +330,8 @@ export function WhiteboardMount({
 }) {
   const rpcClient = rpc.useClient();
   const navigate = useStableNavigate();
-  const hub = useLiveHub();
+  const composer = useComposer();
+  const hub = useLiveHub(rpcClient);
   const sourceViewRef = useRef<ReviewSourceView>(undefined);
   const setSourceView = useCallback<NonNullable<ApiContent["setSourceView"]>>((address, view) => {
     sourceViewRef.current = address.kind === "version" ? { ...view, generation: undefined } : view;
@@ -316,6 +381,23 @@ export function WhiteboardMount({
     [navigate, threadId],
   );
 
+  // "Add to chat" from this mount's selection popover: the quote, then a pill
+  // that tells the agent which session version it came from. A thread panel
+  // writes the thread's draft. The full page has no thread, so both land in
+  // the new-thread draft and bb opens compose.
+  useEffect(() => {
+    if (!container) return;
+    return registerHandoffSink(container, (handoff) => {
+      composer.addQuote(handoff.quote);
+      composer.insertMention({
+        provider: SESSION_MENTION_PROVIDER,
+        id: sessionMentionId(handoff),
+        label: handoff.title,
+      });
+      if (!threadId) navigate.toCompose({ focusPrompt: true });
+    });
+  }, [container, composer, navigate, threadId]);
+
   // Cmd/Ctrl+F opens Whiteboard find only while focus is inside this panel.
   // Elsewhere the key stays bb's. A native listener on the root stops the
   // event before it reaches bb's document-level shortcut.
@@ -339,6 +421,8 @@ export function WhiteboardMount({
         bridge={bridge}
         client={client}
         reviewId={sessionId}
+        threadId={threadId}
+        navigate={navigate}
         info={info}
         findHost={findHost}
         setSourceView={setSourceView}

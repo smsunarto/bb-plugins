@@ -13,7 +13,7 @@ import {
 import ELK, {
   type ElkNode,
   type LayoutOptions,
-} from "elkjs/lib/elk.bundled.js";
+} from "../../../../../lib/elk.ts";
 import type { CSSProperties } from "react";
 
 import {

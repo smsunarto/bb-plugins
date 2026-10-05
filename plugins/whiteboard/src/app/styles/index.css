@@ -8,3 +8,7 @@
 @import "../vendor/review/app/src/api-document.css";
 @import "@bb-plugins/markdown-prose/prose.css";
 @import "./tokens.css";
+@import "./document.css";
+@import "./diff-tab.css";
+@import "./diagram.css";
+@import "./home.css";

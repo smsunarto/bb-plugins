@@ -154,7 +154,18 @@ export function createBbBridge(deps: BbBridgeDeps): ReviewCanvasBridge {
       // Read per call: a mount may pass a live getter for settings changes.
       softwareMapEnabled: () => deps.info.softwareMapEnabled,
     }),
-    subscribe: (listener) => events.subscribe(listener),
+    subscribe(listener) {
+      const surface = events.subscribe(listener);
+      // Desktop pushes theme changes as a surface event (debug-settings.tsx
+      // keys diagrams' color mode on it). bb's arrive as a class on <html>.
+      const theme = onDidChangeTheme((next) => listener({ event: "themeChanged", theme: next }));
+      return {
+        dispose() {
+          surface.dispose();
+          theme.dispose();
+        },
+      };
+    },
     currentTheme,
     onDidChangeTheme,
     currentDiffLayout,

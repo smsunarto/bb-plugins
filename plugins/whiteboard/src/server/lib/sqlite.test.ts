@@ -4,7 +4,12 @@ import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import BetterSqlite3 from "better-sqlite3";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { migrate } from "./migrations.ts";
-import { DatabaseSync, installDatabase, installDatabaseOpener } from "./sqlite.ts";
+import {
+  BB_PLUGIN_DATABASE,
+  DatabaseSync,
+  installDatabase,
+  installDatabaseOpener,
+} from "./sqlite.ts";
 import { ACTIVITY_TTL_MS } from "./vendor/review/src/review-api/activity.ts";
 import { type ReviewProviders, ReviewStore } from "./vendor/review/src/review-api/store.ts";
 
@@ -104,10 +109,22 @@ describe("DatabaseSync over better-sqlite3", () => {
   it("turns foreign keys on for a handle that has them off", () => {
     const handle = new BetterSqlite3(":memory:");
     handle.pragma("foreign_keys = OFF");
-    installDatabase(handle);
-    const db = new DatabaseSync("ignored");
+    const db = new DatabaseSync(installDatabase(handle));
     expect(db.prepare("PRAGMA foreign_keys").get()).toEqual({ foreign_keys: 1 });
     expect(handle.pragma("foreign_keys", { simple: true })).toBe(1);
+    handle.close();
+  });
+
+  it("opens bb's handle only by the path installDatabase returns", () => {
+    const handle = new BetterSqlite3(":memory:");
+    expect(installDatabase(handle)).toBe("bb-plugin-database");
+
+    expect(() => new DatabaseSync(":memory:")).toThrow(
+      `whiteboard: bb's plugin database is installed, so the store opens "bb-plugin-database", not ":memory:".`,
+    );
+    const db = new DatabaseSync(BB_PLUGIN_DATABASE);
+    db.exec("CREATE TABLE t(a)");
+    expect(handle.prepare("SELECT name FROM sqlite_master").pluck().all()).toEqual(["t"]);
     handle.close();
   });
 
@@ -125,12 +142,11 @@ function storeOnBb() {
   const { bb, harness } = createFakePluginHost({ pluginId: "whiteboard" });
   migrate(bb);
   const db = bb.storage.database();
-  installDatabase(db);
-  return { bb, harness, db, store: new ReviewStore("ignored.db", providers) };
+  return { bb, harness, db, store: new ReviewStore(installDatabase(db), providers) };
 }
 
 describe("ReviewStore on bb.storage.database()", () => {
-  it("creates upstream's tables beside the plugin tables and ignores its path", async () => {
+  it("creates upstream's tables beside the plugin tables", async () => {
     const { db, store, harness } = storeOnBb();
     const tables = db
       .prepare("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")
@@ -152,7 +168,6 @@ describe("ReviewStore on bb.storage.database()", () => {
         "versions",
       ]),
     );
-    expect(db.name).not.toContain("ignored.db");
     await store.close();
     await harness.dispose();
   });
@@ -169,7 +184,7 @@ describe("ReviewStore on bb.storage.database()", () => {
 
     await store.close();
     expect(db.open).toBe(true);
-    const restarted = new ReviewStore("ignored.db", providers);
+    const restarted = new ReviewStore(BB_PLUGIN_DATABASE, providers);
     expect(await restarted.execute(command)).toEqual(first);
     expect(restarted.list()).toHaveLength(1);
     await expect(

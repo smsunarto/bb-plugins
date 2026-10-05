@@ -2,7 +2,7 @@ import {
   experimental_Diff as Diff,
   experimental_SourceCode as SourceCode,
 } from "@get-bb/plugin-sdk/app";
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { type RefObject, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { API_ORIGIN, API_PREFIX } from "../../shared/contracts/api-tunnel.ts";
 import type {
   ReviewCommitScope,
@@ -10,6 +10,7 @@ import type {
   ReviewDiffLens,
   ReviewDiffProgress,
   ReviewDiffProgressFile,
+  ReviewDiffProgressState,
   ReviewDiffSide,
   ReviewDiffViewFactory,
   ReviewDiffViewHandle,
@@ -19,10 +20,14 @@ import type {
   ReviewSourcePins,
   ReviewSourceView,
 } from "../../shared/vendor/review-protocol/src/index.ts";
-import { DiffFileTree } from "./diff-file-tree.tsx";
+import type { CoverageProgress } from "../../shared/vendor/review/src/viewed-coverage.ts";
+import { ViewedButton } from "../vendor/review/app/src/viewed-button.tsx";
+import { Chevron, DiffFileTree, treeCounts } from "./diff-file-tree.tsx";
 import type { Portals } from "./portals.tsx";
 import { currentDiffLayout, onDidChangeDiffLayout } from "./theme.ts";
+import { BASE_SOURCE_NOT_OPENABLE, PINNED_SOURCE_NOT_OPENABLE } from "./verbs.ts";
 import {
+  contextPatch,
   lensFiles,
   lensRangesFor,
   orderDiffFiles,
@@ -119,6 +124,8 @@ async function readJson<T>(request: Request, url: string): Promise<T> {
 export interface FileModel {
   livePath?: string;
   patch?: string;
+  /** The head line of the first change, where the Diffs view opens the file. */
+  firstChangedLine?: number;
   source?: { path: string; content: string };
   old: { path: string; content: string };
   new: { path: string; content: string };
@@ -153,7 +160,9 @@ export async function loadFileModel(
     new: { path: head?.path ?? "/dev/null", content: headText.text },
     livePath: headText.localPath,
   };
-  model.patch = sourcePatch({ file, base: model.old.content, head: model.new.content, ranges });
+  const patch = sourcePatch({ file, base: model.old.content, head: model.new.content, ranges });
+  model.patch = patch?.text;
+  model.firstChangedLine = patch?.firstChangedLine;
   if (model.patch || file.status === "unchanged") return model;
   // A peek outside the comparison hunks renders raw source, including Git
   // filters/line endings. Its navigation is validated against those raw bytes.
@@ -253,7 +262,12 @@ export function CodeFile({
   comparison,
   ranges,
   side = "head",
+  label = file.path,
   progress,
+  open,
+  onToggleOpen,
+  lazyRoot,
+  onRevealLoad,
   onToggleViewed,
   openFile,
   onError,
@@ -263,9 +277,19 @@ export function CodeFile({
   file: ReviewDiffFileWire;
   reader: SourceReader;
   comparison: Comparison;
+  /** A peek's lens ranges. The Diffs view passes none. */
   ranges?: readonly SourceRange[];
   side?: ReviewDiffSide;
+  /** The header label, a peek's `path:from-to`. */
+  label?: string;
   progress?: ReviewDiffProgressFile;
+  /** The Diffs view folds a file to its header. Peeks stay open. */
+  open?: boolean;
+  onToggleOpen?: () => void;
+  /** Load the body once it nears this scroller's viewport. Without one it loads at once. */
+  lazyRoot?: HTMLElement;
+  /** Set on a reveal's target: it loads at once and calls this when its source lands. */
+  onRevealLoad?: () => void;
   onToggleViewed?: () => void;
   openFile?: OpenSourceFile;
   onError(error: unknown): void;
@@ -275,16 +299,24 @@ export function CodeFile({
   const [loaded, setLoaded] = useState<{ model?: FileModel; error?: string }>({});
   const [layout, setLayout] = useState(currentDiffLayout);
   const root = useRef<HTMLDivElement>(null);
+  const inline = useInlineBreakpoint(root);
+  const shown = useShown(root, lazyRoot, open !== false, onRevealLoad !== undefined);
+  const revealLoad = useRef(onRevealLoad);
+  revealLoad.current = onRevealLoad;
   useEffect(() => {
     const listener = onDidChangeDiffLayout(setLayout);
     return () => listener.dispose();
   }, []);
   useEffect(() => {
+    if (!shown) return;
     let current = true;
     setLoaded({});
     loadFileModel(reader, comparison, file, ranges, side).then(
       (model) => {
-        if (current) setLoaded({ model });
+        if (current) {
+          setLoaded({ model });
+          revealLoad.current?.();
+        }
         return undefined;
       },
       (error: unknown) => {
@@ -298,10 +330,127 @@ export function CodeFile({
     return () => {
       current = false;
     };
-  }, [reader, comparison, file, ranges, side, onError]);
+  }, [reader, comparison, file, ranges, side, onError, shown]);
+  useReportedHeight(root, onHeight, heightMode, loaded);
+  const range = ranges?.find((item) => item.side === side) ?? ranges?.[0];
+  // Vendored http.ts `/:id/file` returns `localPath` only for live head bytes of
+  // a worktree comparison without commit or pins. `livePath` carries that gate.
+  const { canOpen, readOnly } = openability(
+    loaded.model,
+    side === "base" || range?.side === "base",
+    Boolean(openFile),
+    file.status === "deleted",
+  );
+  const line = loaded.model?.firstChangedLine;
+  const openInEditor = () => {
+    if (!canOpen) return;
+    void openFile!({
+      reviewId: comparison.reviewId,
+      version: comparison.version,
+      generation: comparison.generation,
+      path: file.path,
+      pins: comparison.pins,
+      ...(range
+        ? { startLine: range.fromLine, endLine: range.toLine }
+        : line
+          ? { startLine: line, endLine: line }
+          : {}),
+    }).catch(onError);
+  };
+  return (
+    <div
+      ref={root}
+      data-wb-path={file.path}
+      className="review-files-editor-item flex min-h-0 flex-col border-b border-[var(--rule)]"
+    >
+      <FileHeader
+        file={file}
+        label={label}
+        peek={ranges !== undefined}
+        progress={progress}
+        open={open}
+        onToggleOpen={onToggleOpen}
+        onOpen={canOpen ? openInEditor : undefined}
+        readOnly={readOnly}
+        onToggleViewed={onToggleViewed}
+      />
+      {open === false ? null : loaded.error ? (
+        <div role="alert" className="px-3 py-2 text-[var(--change-removed)]">
+          {loaded.error}
+        </div>
+      ) : shown ? (
+        <CodeContents
+          file={file}
+          model={loaded.model}
+          ranges={ranges}
+          side={side}
+          view={layout === "split" && inline ? "unified" : layout}
+          capped={heightMode === "capped"}
+        />
+      ) : (
+        <div style={{ height: 18 * Math.min(file.additions + file.deletions + 6, 40) }} />
+      )}
+    </div>
+  );
+}
+
+/** Monaco's `renderSideBySideInlineBreakpoint`: a split diff renders inline below 900px. */
+function useInlineBreakpoint(ref: RefObject<HTMLElement | null>) {
+  const [inline, setInline] = useState(false);
   useLayoutEffect(() => {
-    if (!onHeight || !root.current) return;
-    const element = root.current;
+    const element = ref.current;
+    if (!element) return;
+    const measure = () => {
+      const width = element.getBoundingClientRect().width;
+      setInline(width > 0 && width < 900);
+    };
+    measure();
+    if (typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(measure);
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [ref]);
+  return inline;
+}
+
+/** Whether a body may load: once it is open within 600px of `root` (DocumentCodeView's margin). */
+function useShown(
+  ref: RefObject<HTMLElement | null>,
+  root: HTMLElement | undefined,
+  open: boolean,
+  force: boolean,
+) {
+  const [shown, setShown] = useState(root === undefined);
+  useLayoutEffect(() => {
+    const element = ref.current;
+    if (shown || !open || !element) return;
+    // jsdom and legacy hosts lack IntersectionObserver; loading eagerly beats never loading.
+    if (force || typeof IntersectionObserver === "undefined") {
+      setShown(true);
+      return;
+    }
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((entry) => entry.isIntersecting)) setShown(true);
+      },
+      { root, rootMargin: "600px 0px" },
+    );
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [ref, root, shown, open, force]);
+  return shown;
+}
+
+/** Reports the element's document height now and whenever it resizes. */
+function useReportedHeight(
+  ref: RefObject<HTMLElement | null>,
+  onHeight: ((height: number) => void) | undefined,
+  heightMode: ReviewInlineEditorSpec["heightMode"] | undefined,
+  content: unknown,
+) {
+  useLayoutEffect(() => {
+    const element = ref.current;
+    if (!onHeight || !element) return;
     const report = () => {
       const height = element.getBoundingClientRect().height || element.scrollHeight;
       if (height > 0) onHeight(documentHeight(height, heightMode ?? "content"));
@@ -311,114 +460,137 @@ export function CodeFile({
     const observer = new ResizeObserver(report);
     observer.observe(element);
     return () => observer.disconnect();
-  }, [loaded, heightMode, onHeight]);
-  const range = ranges?.find((item) => item.side === side) ?? ranges?.[0];
-  const canOpen = Boolean(
-    side === "head" &&
-    range?.side !== "base" &&
-    openFile &&
-    loaded.model?.livePath &&
-    (comparison.version === undefined || comparison.generation !== undefined) &&
-    !comparison.commit &&
-    !comparison.pins,
-  );
-  const open = () => {
-    if (!canOpen) return;
-    void openFile!({
-      reviewId: comparison.reviewId,
-      version: comparison.version,
-      generation: comparison.generation,
-      path: file.path,
-      pins: comparison.pins,
-      ...(range ? { startLine: range.fromLine, endLine: range.toLine } : {}),
-    }).catch(onError);
-  };
-  return (
-    <div
-      ref={root}
-      data-wb-path={file.path}
-      className="review-files-editor-item border-b border-[var(--rule)]"
-    >
-      <FileHeader
-        file={file}
-        progress={progress}
-        onOpen={canOpen ? open : undefined}
-        onToggleViewed={onToggleViewed}
-      />
-      {loaded.error ? (
-        <div role="alert" className="px-3 py-2 text-[var(--change-removed)]">
-          {loaded.error}
-        </div>
-      ) : (
-        <CodeContents
-          file={file}
-          model={loaded.model}
-          ranges={ranges}
-          side={side}
-          layout={layout}
-        />
-      )}
-    </div>
-  );
+  }, [ref, onHeight, heightMode, content]);
 }
 
+/**
+ * Whether a source opens in File Editor, or why not. Known only once the
+ * source loads. A deletion has no file to open.
+ */
+function openability(
+  model: FileModel | undefined,
+  baseSide: boolean,
+  hasOpener: boolean,
+  deleted: boolean,
+): { canOpen: boolean; readOnly?: string } {
+  if (!hasOpener || !model) return { canOpen: false };
+  if (!baseSide && model.livePath) return { canOpen: true };
+  if (deleted) return { canOpen: false };
+  return {
+    canOpen: false,
+    readOnly: baseSide ? BASE_SOURCE_NOT_OPENABLE : PINNED_SOURCE_NOT_OPENABLE,
+  };
+}
+
+const PATH_LABEL = "review-path-label min-w-0 flex-1 truncate text-left [direction:rtl]";
+
+/** Upstream's multi-diff header. Counts and labels come from the file tree's `treeCounts`. */
 function FileHeader({
   file,
+  label,
+  peek,
   progress,
+  open,
+  onToggleOpen,
   onOpen,
+  readOnly,
   onToggleViewed,
 }: {
   file: ReviewDiffFileWire;
+  label: string;
+  peek: boolean;
   progress?: ReviewDiffProgressFile;
+  open?: boolean;
+  onToggleOpen?: () => void;
   onOpen?: () => void;
+  /** Why the loaded source cannot open in File Editor. */
+  readOnly?: string;
   onToggleViewed?: () => void;
 }) {
+  // Peeks count only what their lens progress covers; pinned peeks have none.
+  const counts = treeCounts(file, progress, !peek);
+  // The path elides from the left, so the file name stays; the title holds all of it.
+  const title = onOpen
+    ? `${label}\nOpen file in File Editor`
+    : readOnly
+      ? `${label}\n${readOnly}`
+      : label;
   return (
-    <div className="review-multidiff-header flex h-9 items-center gap-2 bg-[var(--wb-surface-raised)] px-3 text-xs">
+    <div className="review-multidiff-header flex h-9 shrink-0 items-center gap-2 bg-[var(--wb-surface-raised)] px-3 text-xs">
+      {onToggleOpen ? (
+        <button
+          type="button"
+          className="-ml-1.5 flex size-6 shrink-0 cursor-pointer items-center justify-center text-[var(--ink-muted)]"
+          aria-expanded={open}
+          aria-label={`Toggle diff: ${file.path}`}
+          onClick={onToggleOpen}
+        >
+          <Chevron open={open !== false} />
+        </button>
+      ) : null}
       {onOpen ? (
         <button
           type="button"
-          className="review-path-label min-w-0 flex-1 cursor-pointer truncate text-left"
-          title="Open file in File Editor"
+          className={`${PATH_LABEL} cursor-pointer`}
+          title={title}
           onClick={onOpen}
         >
-          {file.path}
+          <bdi>{label}</bdi>
         </button>
       ) : (
-        <span className="review-path-label min-w-0 flex-1 truncate">{file.path}</span>
+        <span className={PATH_LABEL} title={title}>
+          <bdi>{label}</bdi>
+        </span>
       )}
-      <span className="font-[family-name:var(--wb-font-mono)] tabular-nums">
-        {progress?.state === "viewed" ? (
-          "Viewed"
-        ) : progress?.state === "folded" ? (
-          "Folded"
-        ) : (
-          <>
-            <span className="text-[var(--change-added)]">
-              +{progress?.remaining.additions ?? file.additions}
-            </span>{" "}
-            <span className="text-[var(--change-removed)]">
-              −{progress?.remaining.deletions ?? file.deletions}
-            </span>
-          </>
-        )}
-      </span>
+      {counts.label === "" ? null : (
+        <span
+          className={`review-multidiff-counts shrink-0 font-[family-name:var(--wb-font-mono)] tabular-nums ${counts.label ? "text-[var(--ink-muted)]" : ""}`}
+          title={counts.tooltip}
+        >
+          {counts.label ?? (
+            <>
+              <span className="text-[var(--change-added)]">{counts.added}</span>{" "}
+              <span className="text-[var(--change-removed)]">{counts.removed}</span>
+            </>
+          )}
+        </span>
+      )}
       {onOpen ? (
         <button
           type="button"
-          className="review-multidiff-open cursor-pointer text-[var(--ink-muted)]"
+          className="review-multidiff-open shrink-0 cursor-pointer text-[var(--ink-muted)]"
           onClick={onOpen}
         >
           Open file
         </button>
-      ) : (
-        <span className="text-[var(--ink-faint)]">Read only</span>
-      )}
+      ) : null}
       {onToggleViewed ? (
-        <ViewedCheck state={progress?.state} label={file.path} onToggle={onToggleViewed} />
+        <ViewedButton
+          progress={viewedProgress(
+            progress ?? {
+              state: "unread",
+              total: { additions: file.additions, deletions: file.deletions },
+              remaining: { additions: file.additions, deletions: file.deletions },
+            },
+          )}
+          label={file.path}
+          onClick={onToggleViewed}
+        />
       ) : null}
     </div>
   );
+}
+
+/** The lens rows' viewed box reads coverage; file and section progress carry the same counts. */
+function viewedProgress(
+  progress: Pick<ReviewDiffProgressFile, "state" | "total" | "remaining">,
+): CoverageProgress {
+  return {
+    state: progress.state,
+    total: progress.total,
+    remaining: progress.remaining,
+    folded: { additions: 0, deletions: 0 },
+  };
 }
 
 function CodeContents({
@@ -426,59 +598,57 @@ function CodeContents({
   model,
   ranges,
   side,
-  layout,
+  view,
+  capped,
 }: {
   file: ReviewDiffFileWire;
   model?: FileModel;
   ranges?: readonly SourceRange[];
   side: ReviewDiffSide;
-  layout: "unified" | "split";
+  view: "unified" | "split";
+  /** A capped peek gives the code its one scroller below a fixed header. */
+  capped: boolean;
 }) {
   if (!model) return <output className="block px-3 py-2">Loading source…</output>;
-  if (model.patch)
-    return (
-      <Diff
-        patch={model.patch}
-        path={file.path}
-        view={layout}
-        experimental_fullFileContents={{ old: model.old, new: model.new }}
-      />
-    );
   let source = model.source ?? (side === "base" ? model.old : model.new);
   if (source.path === "/dev/null") source = side === "base" ? model.new : model.old;
-  const range = ranges?.find((item) => item.side === side) ?? ranges?.[0];
-  return (
-    <SourceCode
-      content={source.content}
-      path={source.path}
-      highlightedLines={range ? { start: range.fromLine, end: range.toLine } : null}
-      className="max-h-[400px]"
-    />
-  );
-}
-
-export function ViewedCheck({
-  state,
-  label,
-  onToggle,
-}: {
-  state?: ReviewDiffProgressFile["state"];
-  label: string;
-  onToggle(): void;
-}) {
-  const input = useRef<HTMLInputElement>(null);
-  useEffect(() => {
-    if (input.current) input.current.indeterminate = state === "partial";
-  }, [state]);
-  return (
-    <input
-      ref={input}
-      type="checkbox"
-      className="review-viewed-check cursor-pointer accent-[var(--wb-accent)]"
-      checked={state === "viewed"}
-      aria-label={`${state === "viewed" ? "Mark unviewed" : "Mark viewed"}: ${label}`}
-      onChange={onToggle}
-    />
+  const sideRanges = ranges?.filter((item) => item.side === side);
+  // A peek outside every hunk shows its ranges ±3 lines of source; bb folds the rest.
+  const context =
+    !model.patch && ranges?.length
+      ? contextPatch({
+          path: source.path,
+          content: source.content,
+          ranges: sideRanges?.length ? sideRanges : ranges,
+        })
+      : undefined;
+  const props = model.patch
+    ? {
+        patch: model.patch,
+        path: file.path,
+        view,
+        experimental_fullFileContents: { old: model.old, new: model.new },
+      }
+    : context && {
+        patch: context,
+        path: source.path,
+        view: "unified" as const,
+        experimental_fullFileContents: { old: source, new: source },
+      };
+  if (!props)
+    return (
+      <SourceCode
+        content={source.content}
+        path={source.path}
+        className={capped ? "min-h-0 flex-1" : "max-h-[400px]"}
+      />
+    );
+  return capped ? (
+    <div className="min-h-0 flex-1 overflow-auto">
+      <Diff {...props} />
+    </div>
+  ) : (
+    <Diff {...props} />
   );
 }
 
@@ -486,6 +656,44 @@ export function documentHeight(content: number, heightMode: ReviewInlineEditorSp
   const height = Math.max(40, Math.ceil(content));
   return heightMode === "capped" ? Math.min(400, height) : height;
 }
+
+/**
+ * Which Diffs view files are open, upstream's GitHub shape (`reviewFilesDiffView.ts`):
+ * a viewed or folded file starts closed, a file closes when it is marked viewed and
+ * reopens when it is unmarked. A reveal opens its file. Keys are `${sectionId}:${path}`.
+ */
+function fileFolds() {
+  const folds = new Map<string, { path: string; state?: ReviewDiffProgressState; open: boolean }>();
+  return {
+    /** Records `state`. Idempotent for an unchanged state, so a render may call it. */
+    isOpen(
+      key: string,
+      path: string,
+      state: ReviewDiffProgressState | undefined,
+      revealed: boolean,
+    ) {
+      const fold = folds.get(key);
+      const done = state === "viewed" || state === "folded";
+      let open: boolean;
+      if (!fold) open = revealed || !done;
+      else if (fold.state === undefined) open = fold.open && !done;
+      else if (fold.state !== "viewed" && state === "viewed") open = false;
+      else if (fold.state === "viewed" && state !== "viewed") open = true;
+      else open = fold.open;
+      folds.set(key, { path, state, open });
+      return open;
+    },
+    toggle(key: string) {
+      const fold = folds.get(key);
+      if (fold) fold.open = !fold.open;
+    },
+    reveal(path: string) {
+      for (const fold of folds.values()) if (fold.path === path) fold.open = true;
+    },
+  };
+}
+
+type FileFolds = ReturnType<typeof fileFolds>;
 
 export function createDiffView(deps: CodeSurfaceDeps): ReviewDiffViewFactory {
   const reader = createSourceReader(deps.request);
@@ -509,18 +717,12 @@ export function createDiffView(deps: CodeSurfaceDeps): ReviewDiffViewFactory {
       let disposed = false;
       let files: ReviewDiffFileWire[] = [];
       let progress = spec.progress;
-      let activePath: string | undefined;
+      // A request, not a state: revealing the active file again scrolls again.
+      let reveal: Reveal | undefined;
+      const folds = fileFolds();
       let current: Comparison;
       try {
-        current = comparison(spec.scope);
-        if (spec.lens && (spec.scope || spec.lens.reviewId !== current.reviewId))
-          throw new Error("A lens must use its review comparison.");
-        if (spec.lens)
-          current = {
-            ...current,
-            version: spec.lens.version,
-            generation: spec.lens.version === current.version ? current.generation : undefined,
-          };
+        current = lensComparison(comparison(spec.scope), spec);
       } catch (error) {
         errors.fire(error);
         return { focus() {}, onDidError: errors.subscribe, dispose: errors.dispose };
@@ -528,9 +730,13 @@ export function createDiffView(deps: CodeSurfaceDeps): ReviewDiffViewFactory {
       const onError = errors.fire;
       const scroll = new Set<(viewport: { height: number }) => void>();
       const revealFile = (path: string) => {
-        activePath = path;
+        reveal = { path, seq: (reveal?.seq ?? 0) + 1 };
+        folds.reveal(path);
         render();
-        queueMicrotask(() => fileElement(path)?.scrollIntoView?.({ block: "start" }));
+      };
+      const toggleOpen = (key: string) => {
+        folds.toggle(key);
+        render();
       };
       const fileElement = (path: string) =>
         Array.from(spec.container.querySelectorAll<HTMLElement>("[data-wb-path]")).find(
@@ -548,7 +754,9 @@ export function createDiffView(deps: CodeSurfaceDeps): ReviewDiffViewFactory {
             comparison={current}
             openFile={deps.openFile}
             onError={onError}
-            activePath={activePath}
+            reveal={reveal}
+            folds={folds}
+            onToggleOpen={toggleOpen}
           />,
         );
         if (spec.fileTreeContainer)
@@ -558,7 +766,7 @@ export function createDiffView(deps: CodeSurfaceDeps): ReviewDiffViewFactory {
               files={files}
               progress={progress}
               showFileCounts
-              activePath={activePath}
+              activePath={reveal?.path}
               onReveal={revealFile}
               onToggleViewed={
                 spec.onToggleViewed ? (path) => spec.onToggleViewed?.(path) : undefined
@@ -582,7 +790,6 @@ export function createDiffView(deps: CodeSurfaceDeps): ReviewDiffViewFactory {
         if (!disposed) {
           files = loaded;
           render();
-          if (activePath) revealFile(activePath);
         }
         return undefined;
       }, onError);
@@ -628,6 +835,23 @@ export function createDiffView(deps: CodeSurfaceDeps): ReviewDiffViewFactory {
   };
 }
 
+/** A lens reads its own immutable version of the session's comparison. */
+function lensComparison(current: Comparison, spec: ReviewDiffViewSpec): Comparison {
+  if (!spec.lens) return current;
+  if (spec.scope || spec.lens.reviewId !== current.reviewId)
+    throw new Error("A lens must use its review comparison.");
+  return {
+    ...current,
+    version: spec.lens.version,
+    generation: spec.lens.version === current.version ? current.generation : undefined,
+  };
+}
+
+interface Reveal {
+  path: string;
+  seq: number;
+}
+
 function DiffList({
   files,
   spec,
@@ -636,7 +860,9 @@ function DiffList({
   comparison,
   openFile,
   onError,
-  activePath,
+  reveal,
+  folds,
+  onToggleOpen,
 }: {
   files: readonly ReviewDiffFileWire[];
   spec: ReviewDiffViewSpec;
@@ -645,46 +871,53 @@ function DiffList({
   comparison: Comparison;
   openFile?: OpenSourceFile;
   onError(error: unknown): void;
-  activePath?: string;
+  reveal?: Reveal;
+  folds: FileFolds;
+  onToggleOpen(key: string): void;
 }) {
   const root = useRef<HTMLDivElement>(null);
+  const [revealLoads, setRevealLoads] = useState(0);
+  const onRevealLoad = useCallback(() => setRevealLoads((count) => count + 1), []);
+  // The one reveal scroller: a new request, late files, or the target's source landing.
   useLayoutEffect(() => {
-    if (!activePath) return;
+    if (!reveal) return;
     Array.from(root.current?.querySelectorAll<HTMLElement>("[data-wb-path]") ?? [])
-      .find((element) => element.dataset.wbPath === activePath)
+      .find((element) => element.dataset.wbPath === reveal.path)
       ?.scrollIntoView?.({ block: "start" });
-  }, [activePath, files]);
-  useLayoutEffect(() => {
-    const document = spec.document;
-    const element = root.current;
-    if (!document || !element) return;
-    const report = () => {
-      const height = element.getBoundingClientRect().height || element.scrollHeight;
-      if (height > 0) document.onDidChangeHeight(documentHeight(height, document.heightMode));
-    };
-    report();
-    if (typeof ResizeObserver === "undefined") return;
-    const observer = new ResizeObserver(report);
-    observer.observe(element);
-    return () => observer.disconnect();
-  }, [spec.document, files]);
-  const renderFile = (file: ReviewDiffFileWire, sectionId?: string) => (
-    <CodeFile
-      key={`${sectionId ?? ""}:${file.path}`}
-      file={file}
-      reader={reader}
-      comparison={comparison}
-      progress={(sectionId
+  }, [reveal, files, revealLoads]);
+  const document = spec.document;
+  const onDocumentHeight = useCallback(
+    (height: number) => document?.onDidChangeHeight(height),
+    [document],
+  );
+  useReportedHeight(root, document ? onDocumentHeight : undefined, document?.heightMode, files);
+  const renderFile = (file: ReviewDiffFileWire, sectionId?: string) => {
+    const key = `${sectionId ?? ""}:${file.path}`;
+    const fileProgress = (
+      sectionId
         ? progress?.sections?.find((section) => section.id === sectionId)?.files
         : progress?.files
-      )?.find((item) => item.path === file.path)}
-      openFile={openFile}
-      onError={onError}
-      onToggleViewed={
-        spec.onToggleViewed ? () => spec.onToggleViewed?.(file.path, sectionId) : undefined
-      }
-    />
-  );
+    )?.find((item) => item.path === file.path);
+    const revealed = reveal?.path === file.path;
+    return (
+      <CodeFile
+        key={key}
+        file={file}
+        reader={reader}
+        comparison={comparison}
+        progress={fileProgress}
+        open={folds.isOpen(key, file.path, fileProgress?.state, revealed)}
+        onToggleOpen={() => onToggleOpen(key)}
+        lazyRoot={spec.container}
+        onRevealLoad={revealed ? onRevealLoad : undefined}
+        openFile={openFile}
+        onError={onError}
+        onToggleViewed={
+          spec.onToggleViewed ? () => spec.onToggleViewed?.(file.path, sectionId) : undefined
+        }
+      />
+    );
+  };
   return (
     <div
       ref={root}
@@ -701,10 +934,10 @@ function DiffList({
                   +{section.remaining.additions} −{section.remaining.deletions}
                 </span>
                 {spec.onToggleSection ? (
-                  <ViewedCheck
-                    state={section.state}
+                  <ViewedButton
+                    progress={viewedProgress(section)}
                     label={section.label}
-                    onToggle={() => spec.onToggleSection?.(section.id)}
+                    onClick={() => spec.onToggleSection?.(section.id)}
                   />
                 ) : null}
               </div>

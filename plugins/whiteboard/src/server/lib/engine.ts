@@ -4,6 +4,7 @@ import {
   API_ORIGIN,
   API_PREFIX,
   NDJSON_COLLECT_LIMIT_BYTES,
+  UI_INTEREST_TTL_MS,
   isWatchPath,
   type ApiResponse,
 } from "../../shared/contracts/api-tunnel.ts";
@@ -11,22 +12,20 @@ import type { Engine, WhiteboardSettings } from "../../shared/contracts/engine.t
 import { ReviewApiClient } from "../../shared/vendor/review-protocol/src/index.ts";
 import { createHostResolver } from "./host-resolver.ts";
 import { installHostIo, onWorkerExit } from "./host-io/client.ts";
+import { forgetExists, memoizeExists } from "./host-io/fs.ts";
 import { forgetRepoContext, resolveRepoContext } from "./host-io/local-vcs.ts";
 import { defaultPullRequestDeps } from "./host-io/pull-request.ts";
 import { forgetProbes, probeHost } from "./host-io/probe.ts";
 import { migrate } from "./migrations.ts";
 import { createOpenPanel } from "./open-panel.ts";
 import { createRealtime, publishEngineChanges } from "./realtime.ts";
-import { trackSessionTabs } from "./session-tabs.ts";
+import { createSessionTabs } from "./session-tabs.ts";
 import { whenSettingsLoaded } from "./settings.ts";
 import { installDatabase } from "./sqlite.ts";
 import { PLUGIN_VERSION, createStatus } from "./status.ts";
 import { currentThread, desktopAvailable, runWithThread } from "./thread-context.ts";
 import { createReviewApi } from "./vendor/review/src/review-api/http.ts";
 import { openLocalReviewStore } from "./vendor/review/src/review-api/local-data.ts";
-
-/** Mounted panels renew one engine-wide worktree interest lease every 30 seconds. */
-export const UI_INTEREST_TTL_MS = 90_000;
 
 const jsonError = (status: number, error: string): ApiResponse => ({
   status,
@@ -118,10 +117,11 @@ export async function collectApiResponse(response: Response, watch: boolean): Pr
 /** The store, Hono API, host routing and lifecycle share one owner per plugin load. */
 export function createEngine(bb: BbPluginApi, settings: WhiteboardSettings): Engine {
   migrate(bb);
-  installDatabase(bb.storage.database());
+  const database = installDatabase(bb.storage.database());
   const resolver = createHostResolver(bb);
   const uninstallHost = installHostIo(bb, resolver);
-  const { store, data } = openLocalReviewStore(":memory:", {
+  const stopExistsMemo = memoizeExists();
+  const { store, data } = openLocalReviewStore(database, {
     pullRequests: defaultPullRequestDeps,
   });
   const register = data.register.bind(data);
@@ -133,14 +133,16 @@ export function createEngine(bb: BbPluginApi, settings: WhiteboardSettings): Eng
       { repositoryId: repository.id, rootPath: store.repositoryPath(repository.id) },
       hostId,
     );
+    forgetExists();
     await resolveRepoContext(store.repositoryPath(repository.id));
     return repository;
   };
   const realtime = createRealtime(bb);
+  const tabs = createSessionTabs({ bb, store });
   const reviewApi = createReviewApi(
     store,
     data,
-    createOpenPanel({ bb, settings, realtime }),
+    createOpenPanel({ settings, realtime, openTab: tabs.open }),
     undefined,
     () => ({
       desktopAvailable: desktopAvailable(),
@@ -152,8 +154,10 @@ export function createEngine(bb: BbPluginApi, settings: WhiteboardSettings): Eng
   );
   const app = new Hono().route(API_PREFIX, reviewApi);
   const stopChanges = publishEngineChanges(realtime, { store, data });
-  const stopTabs = trackSessionTabs({ bb, store });
-  const stopExits = onWorkerExit((hostId) => forgetProbes(hostId));
+  const stopExits = onWorkerExit((hostId) => {
+    forgetProbes(hostId);
+    forgetExists();
+  });
   const lifecycle = new AbortController();
   const activeRequests = new Set<Promise<Response>>();
   let disposed = false;
@@ -167,6 +171,7 @@ export function createEngine(bb: BbPluginApi, settings: WhiteboardSettings): Eng
     stopInterest = undefined;
   };
   const renewInterest = () => {
+    if (disposed) return;
     stopInterest ??= store.watchWorktrees();
     clearTimeout(interestTimer);
     interestTimer = setTimeout(expireInterest, UI_INTEREST_TTL_MS);
@@ -223,6 +228,8 @@ export function createEngine(bb: BbPluginApi, settings: WhiteboardSettings): Eng
         await ready;
         if (disposed) throw new Error("Whiteboard is shutting down.");
         const snapshot = input.sessionId ? store.read(input.sessionId) : undefined;
+        // Home rows, verbs and restored tabs open without the agent's `open`.
+        if (input.threadId && input.sessionId) tabs.track(input.threadId, input.sessionId);
         let structuralDiffEnabled = false;
         try {
           const hostId = await resolver.hostFor({ repositoryId: snapshot?.pins?.repositoryId });
@@ -240,6 +247,11 @@ export function createEngine(bb: BbPluginApi, settings: WhiteboardSettings): Eng
         };
       });
     },
+    async renewInterest() {
+      await ready;
+      renewInterest();
+    },
+    claimOpen: (threadId, after) => tabs.claimOpen(threadId, after),
     client: () => client,
     async withThread(context, fn) {
       return runWithThread(context, async () => {
@@ -253,7 +265,7 @@ export function createEngine(bb: BbPluginApi, settings: WhiteboardSettings): Eng
         disposed = true;
         lifecycle.abort();
         stopChanges();
-        stopTabs();
+        tabs.dispose();
         realtime.dispose();
         expireInterest();
         stopExits();
@@ -262,6 +274,7 @@ export function createEngine(bb: BbPluginApi, settings: WhiteboardSettings): Eng
         await store.close();
         await data.close();
         uninstallHost();
+        stopExistsMemo();
         forgetRepoContext();
         forgetProbes();
       })());

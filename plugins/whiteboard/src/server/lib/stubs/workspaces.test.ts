@@ -27,8 +27,7 @@ const post = async (route: string, body: unknown) => {
 beforeEach(async () => {
   host = createFakePluginHost({ pluginId: "whiteboard" });
   migrate(host.bb);
-  installDatabase(host.bb.storage.database());
-  store = new ReviewStore("ignored.db", {
+  store = new ReviewStore(installDatabase(host.bb.storage.database()), {
     validatePins: async () => {},
     validateSource: async () => {},
     validateResource: async () => {},

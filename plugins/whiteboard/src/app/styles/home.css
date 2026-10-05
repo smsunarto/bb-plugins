@@ -1,0 +1,50 @@
+/*
+ * Home's table in narrow bb panels. Upstream sizes it for a Desktop editor
+ * area (`min-width: 840px` in whiteboard.css), so a thread panel or compact
+ * window scrolls it sideways and hides Updated and the row menu. Here it fits
+ * the panel instead: the title column absorbs what is left and truncates.
+ * The minimum goes at every width, because Home's side padding and the
+ * scrollbar can leave the table under 840px above any breakpoint.
+ *
+ * Columns follow upstream's order: PR, Title, Head branch, Created, Updated,
+ * actions. A hidden column needs its <col> and its cells: `visibility:
+ * collapse` drops the column in Chromium, and the zero width and padding drop
+ * it where columns only hide. Cells never use `display: none`, which would
+ * shift the next cell into the hidden column. The empty-result row is one
+ * `colspan` cell, so it is left alone.
+ */
+.review-canvas-root[data-review-theme] .review-home-table {
+  min-width: 0;
+}
+
+@container review-canvas (max-width: 900px) {
+  .review-canvas-root[data-review-theme] .review-home-table col.review-home-col-branch {
+    width: 0;
+    visibility: collapse;
+  }
+
+  .review-canvas-root[data-review-theme] .review-home-table th:nth-child(3),
+  .review-canvas-root[data-review-theme] .review-home-table td:not([colspan]):nth-child(3) {
+    padding: 0;
+    visibility: collapse;
+  }
+
+  /* Fits "Oct 15, 03:43": 13 characters of 13px mono plus 16px padding. */
+  .review-canvas-root[data-review-theme] .review-home-table col.review-home-col-date {
+    width: 120px;
+  }
+}
+
+/* Phone-width panels: Created goes too, so the title keeps room to read. */
+@container review-canvas (max-width: 660px) {
+  .review-canvas-root[data-review-theme] .review-home-table col:nth-child(4) {
+    width: 0;
+    visibility: collapse;
+  }
+
+  .review-canvas-root[data-review-theme] .review-home-table th:nth-child(4),
+  .review-canvas-root[data-review-theme] .review-home-table td:not([colspan]):nth-child(4) {
+    padding: 0;
+    visibility: collapse;
+  }
+}

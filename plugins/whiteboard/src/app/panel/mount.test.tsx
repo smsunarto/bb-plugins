@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
+import { toast } from "sonner";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ApiRequest, ApiResponse } from "../../shared/contracts/api-tunnel.ts";
 import type {
@@ -14,8 +15,11 @@ import type {
 const sdk = vi.hoisted(() => ({
   realtime: new Map<string, (payload: unknown) => void>(),
   connection: "connected" as "connected" | "connecting" | "reconnecting",
+  context: { projectId: null as string | null, threadId: null as string | null },
+  composer: { addQuote: (_text: string) => {}, insertMention: (_mention: unknown) => {} },
   navigate: {
-    toPluginPanel: () => {},
+    toPluginPanel: (_path: string, _options?: unknown) => {},
+    toCompose: (_options?: unknown) => {},
     openThreadPanel: () => true,
     openUrl: () => true,
     experimental_openFilePreview: () => true,
@@ -24,6 +28,7 @@ const sdk = vi.hoisted(() => ({
 const rpcState = vi.hoisted(() => ({
   catalog: [] as Array<{ reviewId: string; title: string; dismissedAt: string | null }>,
   calls: [] as ApiRequest[],
+  failCommands: false,
 }));
 const find = vi.hoisted(() => ({ showFind: (_seed?: string) => true as boolean }));
 const canvas = vi.hoisted(() => ({
@@ -32,11 +37,13 @@ const canvas = vi.hoisted(() => ({
 }));
 
 vi.mock("@get-bb/plugin-sdk/app", () => ({
+  useBbContext: () => sdk.context,
   useBbNavigate: () => sdk.navigate,
   useRealtime: (channel: string, handler: (payload: unknown) => void) => {
     sdk.realtime.set(channel, handler);
   },
   useRealtimeConnectionState: () => sdk.connection,
+  useComposer: () => sdk.composer,
   experimental_Icon: ({ name }: { name: string }) => <svg data-icon={name} />,
   useSdk: () => ({
     threads: { get: async () => ({ environment: { hostId: "host-1" } }) },
@@ -47,6 +54,9 @@ vi.mock("@get-bb/plugin-sdk/app", () => ({
 vi.mock("../rpc.ts", () => {
   const api = async (request: ApiRequest): Promise<ApiResponse> => {
     rpcState.calls.push(request);
+    if (rpcState.failCommands && request.path === "/commands") {
+      return { status: 500, contentType: "application/json", encoding: "utf8", body: "{}" };
+    }
     const body = request.path.startsWith("/watch")
       ? `${JSON.stringify([{ value: rpcState.catalog }])}\n`
       : "{}";
@@ -87,7 +97,8 @@ vi.mock("../bridge/diff-view.tsx", () => ({
   },
 }));
 
-const { REMOVED_TITLE, WhiteboardMount } = await import("./mount.tsx");
+const { WhiteboardMount } = await import("./mount.tsx");
+const { copyText } = await import("../bridge/agent-handoff.ts");
 
 const INFO = {
   appVersion: "1.0.0",
@@ -101,20 +112,34 @@ beforeEach(() => {
   document.documentElement.className = "dark";
   rpcState.catalog = [{ reviewId: SESSION, title: "Auth walkthrough", dismissedAt: null }];
   rpcState.calls = [];
+  rpcState.failCommands = false;
   sdk.realtime.clear();
   sdk.connection = "connected";
+  sdk.context = { projectId: null, threadId: null };
   canvas.content = undefined;
   canvas.sourceView = undefined;
 });
 
 afterEach(() => {
   cleanup();
+  vi.restoreAllMocks();
+  document.getSelection()?.removeAllRanges();
   document.documentElement.className = "";
 });
 
 const root = () => document.querySelector<HTMLElement>(".review-canvas-root")!;
 const themeHost = () => root().querySelector<HTMLElement>(".review-theme-host")!;
 const watchCalls = () => rpcState.calls.filter((call) => call.path.startsWith("/watch")).length;
+const commands = () =>
+  rpcState.calls
+    .filter((call) => call.path === "/commands")
+    .map((call) => JSON.parse(call.body!).operation);
+const catalogChanged = () =>
+  act(() => sdk.realtime.get("whiteboard:changed")!({ kind: "catalog" }));
+const catalogEntry = (dismissedAt: string | null) => [
+  { reviewId: SESSION, title: "Auth walkthrough", dismissedAt },
+];
+const settle = () => new Promise((resolve) => setTimeout(resolve, 10));
 
 describe("WhiteboardMount", () => {
   it("preserves current source generation and strips it for a historical address", async () => {
@@ -230,31 +255,108 @@ describe("WhiteboardMount", () => {
     render(<WhiteboardMount sessionId={SESSION} threadId="thread-1" info={INFO} />);
     await screen.findByTestId("api-canvas");
     rpcState.catalog = [];
-    act(() => sdk.realtime.get("whiteboard:changed")!({ kind: "catalog" }));
-    expect(await screen.findByText(REMOVED_TITLE)).toBeTruthy();
+    catalogChanged();
+    expect(await screen.findByText("This Whiteboard was removed.")).toBeTruthy();
   });
 
-  it("closes on dismiss, but keeps a session opened while dismissed until it is re-dismissed", async () => {
-    const changed = () => act(() => sdk.realtime.get("whiteboard:changed")!({ kind: "catalog" }));
-    const entry = (dismissedAt: string | null) => [
-      { reviewId: SESSION, title: "Auth walkthrough", dismissedAt },
-    ];
+  it("returns the full page to Home when its session is dismissed", async () => {
+    const toPluginPanel = vi.spyOn(sdk.navigate, "toPluginPanel");
+    render(<WhiteboardMount sessionId={SESSION} info={INFO} />);
+    await screen.findByTestId("api-canvas");
 
-    rpcState.catalog = entry("2026-09-30T00:00:00.000Z");
+    rpcState.catalog = catalogEntry("2026-09-30T01:00:00.000Z");
+    catalogChanged();
+    await waitFor(() =>
+      expect(toPluginPanel.mock.calls).toEqual([["whiteboard", { subPath: "", replace: true }]]),
+    );
+    expect(screen.queryByText("Whiteboard dismissed.")).toBeNull();
+  });
+
+  it("keeps the full page open beside a focused thread pane, and through Undo", async () => {
+    const toPluginPanel = vi.spyOn(sdk.navigate, "toPluginPanel");
+    sdk.context = { projectId: "project-1", threadId: "thread-9" };
+    const view = render(<WhiteboardMount sessionId={SESSION} info={INFO} />);
+    await screen.findByTestId("api-canvas");
+
+    rpcState.catalog = catalogEntry("2026-09-30T01:00:00.000Z");
+    catalogChanged();
+    expect(await screen.findByText("Whiteboard dismissed.")).toBeTruthy();
+
+    // Pressing Undo focuses this pane first, which moves the route here.
+    sdk.context = { projectId: null, threadId: null };
+    view.rerender(<WhiteboardMount sessionId={SESSION} info={INFO} />);
+    rpcState.calls = [];
+    act(() => screen.getByRole("button", { name: "Undo" }).click());
+    await waitFor(() =>
+      expect(commands()).toEqual([{ type: "attention", reviewId: SESSION, action: "restore" }]),
+    );
+    expect(toPluginPanel).not.toHaveBeenCalled();
+  });
+
+  it("tells the user when Undo cannot restore the session", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    const error = vi.spyOn(toast, "error");
     render(<WhiteboardMount sessionId={SESSION} threadId="thread-1" info={INFO} />);
     await screen.findByTestId("api-canvas");
-    changed();
-    await new Promise((resolve) => setTimeout(resolve, 10));
-    expect(screen.queryByText(REMOVED_TITLE)).toBeNull();
+    rpcState.catalog = catalogEntry("2026-09-30T01:00:00.000Z");
+    catalogChanged();
+    await screen.findByText("Whiteboard dismissed.");
 
-    rpcState.catalog = entry(null);
-    changed();
-    await new Promise((resolve) => setTimeout(resolve, 10));
+    rpcState.failCommands = true;
+    act(() => screen.getByRole("button", { name: "Undo" }).click());
+    await waitFor(() =>
+      expect(error.mock.calls).toEqual([["Could not restore the Whiteboard. Try again."]]),
+    );
+    expect(screen.getByText("Whiteboard dismissed.")).toBeTruthy();
+  });
+
+  it("keeps a thread tab opened while dismissed, then offers Undo once it is re-dismissed", async () => {
+    const toPluginPanel = vi.spyOn(sdk.navigate, "toPluginPanel");
+    rpcState.catalog = catalogEntry("2026-09-30T00:00:00.000Z");
+    render(<WhiteboardMount sessionId={SESSION} threadId="thread-1" info={INFO} />);
+    await screen.findByTestId("api-canvas");
+    catalogChanged();
+    await settle();
+    expect(screen.queryByText("Whiteboard dismissed.")).toBeNull();
+
+    rpcState.catalog = catalogEntry(null);
+    catalogChanged();
+    await settle();
     expect(screen.getByTestId("api-canvas")).toBeTruthy();
 
-    rpcState.catalog = entry("2026-09-30T01:00:00.000Z");
-    changed();
-    expect(await screen.findByText(REMOVED_TITLE)).toBeTruthy();
+    rpcState.catalog = catalogEntry("2026-09-30T01:00:00.000Z");
+    catalogChanged();
+    expect(await screen.findByText("Whiteboard dismissed.")).toBeTruthy();
+    expect(screen.getByText("It stays under Dismissed on Whiteboard Home.")).toBeTruthy();
+    expect(toPluginPanel).not.toHaveBeenCalled();
+
+    rpcState.calls = [];
+    act(() => screen.getByRole("button", { name: "Undo" }).click());
+    await waitFor(() =>
+      expect(commands()).toEqual([{ type: "attention", reviewId: SESSION, action: "restore" }]),
+    );
+  });
+
+  it("adds a canvas selection to the thread composer, or to bb compose from the full page", async () => {
+    const addQuote = vi.spyOn(sdk.composer, "addQuote");
+    const insertMention = vi.spyOn(sdk.composer, "insertMention");
+    const toCompose = vi.spyOn(sdk.navigate, "toCompose");
+    const handoff = (quote: string) => ({ quote, sessionId: SESSION, version: 2, title: "Auth" });
+    const pill = { provider: "session", id: `${SESSION}@2`, label: "Auth" };
+    const thread = render(<WhiteboardMount sessionId={SESSION} threadId="thread-1" info={INFO} />);
+    const threadCanvas = await screen.findByTestId("api-canvas");
+    expect(await copyText("agent context", handoff("quote text"), threadCanvas)).toBe(true);
+    expect(addQuote.mock.calls).toEqual([["quote text"]]);
+    expect(insertMention.mock.calls).toEqual([[pill]]);
+    expect(toCompose).not.toHaveBeenCalled();
+    thread.unmount();
+
+    render(<WhiteboardMount sessionId={SESSION} info={INFO} />);
+    const pageCanvas = await screen.findByTestId("api-canvas");
+    expect(await copyText("agent context", handoff("from the full page"), pageCanvas)).toBe(true);
+    expect(addQuote.mock.calls).toEqual([["quote text"], ["from the full page"]]);
+    expect(insertMention.mock.calls).toEqual([[pill], [pill]]);
+    expect(toCompose.mock.calls).toEqual([[{ focusPrompt: true }]]);
   });
 
   it("refetches live streams after a realtime reconnect", async () => {

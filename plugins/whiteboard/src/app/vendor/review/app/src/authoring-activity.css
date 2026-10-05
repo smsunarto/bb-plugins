@@ -1,6 +1,5 @@
 /* Vendored from dev.fast review/app/src/authoring-activity.css @4ecc570 (MIT). */
-@scope (.review-canvas-root) {
-.host-authoring-activity {
+:where(.review-canvas-root) .host-authoring-activity {
   display: inline-flex;
   flex: 0 1 auto;
   min-width: 0;
@@ -14,17 +13,15 @@
 }
 
 /* A long update ends in an ellipsis inside the pill; the tooltip has it all. */
-.host-authoring-text {
+:where(.review-canvas-root) .host-authoring-text {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
-.host-authoring-courier {
+:where(.review-canvas-root) .host-authoring-courier {
   flex-shrink: 0;
   width: 16px;
   height: 20px;
   overflow: visible;
-}
-
 }

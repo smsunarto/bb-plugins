@@ -10,7 +10,11 @@ function tunnelWith(answer: (request: ApiRequest) => ApiResponse | Promise<ApiRe
   const api = vi.fn(async (request: ApiRequest) => answer(request));
   return {
     api,
-    request: createTunnel({ rpc: { api }, threadId: "thread-1", hub: createLiveHub() }),
+    request: createTunnel({
+      rpc: { api },
+      threadId: "thread-1",
+      hub: createLiveHub({ interest: async () => ({}) }),
+    }),
   };
 }
 

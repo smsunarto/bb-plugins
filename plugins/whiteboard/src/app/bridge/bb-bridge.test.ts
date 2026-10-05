@@ -34,14 +34,14 @@ const { createPortals } = await import("./portals.tsx");
 
 function bridgeWith(info = { softwareMapEnabled: false }) {
   const deps = {
-    rpc: { api: vi.fn() } as unknown as WhiteboardRpcClient,
+    rpc: { api: vi.fn(), interest: vi.fn(async () => ({})) } as unknown as WhiteboardRpcClient,
     threadId: "thread-1",
     reviewId: "s1",
     navigate: { openUrl: vi.fn(() => true) } as unknown as BbNavigate,
     info: { appVersion: "", scratchpadEnabled: false, structuralDiffEnabled: false, ...info },
     portals: createPortals(),
     events: createSurfaceEvents(),
-    hub: createLiveHub(),
+    hub: createLiveHub({ interest: vi.fn(async () => ({})) }),
   };
   return { bridge: createBbBridge(deps), deps };
 }
@@ -55,6 +55,22 @@ describe("createBbBridge", () => {
       reviewId: "s1",
       appVersion: "0.0.0",
     });
+  });
+
+  it("tells surface listeners when bb's theme changes, until they unsubscribe", async () => {
+    document.documentElement.className = "dark";
+    const { bridge } = bridgeWith();
+    const listener = vi.fn();
+    const subscription = bridge.subscribe(listener);
+
+    document.documentElement.classList.remove("dark");
+    await Promise.resolve();
+    expect(listener.mock.calls).toEqual([[{ event: "themeChanged", theme: "light" }]]);
+
+    subscription.dispose();
+    document.documentElement.classList.add("dark");
+    await Promise.resolve();
+    expect(listener).toHaveBeenCalledTimes(1);
   });
 
   it("reads info flags per call, so settings changes reach a live bridge", async () => {

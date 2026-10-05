@@ -32,6 +32,38 @@ export function renameToolTokens(text: string): string {
   return text.replace(TOKEN, "whiteboard_session_$1");
 }
 
+/**
+ * Upstream description phrases that send the agent to Whiteboard Desktop,
+ * and bb's wording: the reader is a panel tab on the calling thread
+ * (`open-panel.ts`), and `desktopAvailable` means "called from a thread".
+ * `guidance.ts` and the vendored catalog keep upstream's text; the agent
+ * boundary adapts it, as it renames tool tokens.
+ */
+export const BB_WORDING: ReadonlyArray<readonly [from: string, to: string]> = [
+  [
+    "documents the user reads in Whiteboard Desktop",
+    "documents the user reads in the thread's Whiteboard panel",
+  ],
+  [
+    "opens the new review in Desktop when it is available",
+    "opens the new review as a tab in the calling bb thread",
+  ],
+  [
+    "When Desktop is available the review opens there",
+    "When called from a bb thread the review opens there as a panel tab",
+  ],
+  ["without taking over Desktop", "without adding a thread tab"],
+  [
+    "Discover whether Desktop is available",
+    "Discover whether a bb thread can show the review (desktopAvailable)",
+  ],
+];
+
+/** Replace every `BB_WORDING` phrase. Idempotent: no replacement contains a phrase. */
+export function adaptWording(text: string): string {
+  return BB_WORDING.reduce((out, [from, to]) => out.replaceAll(from, to), text);
+}
+
 /** Keys whose values are data, not prose (upstream `translateSchemaDescriptions`). */
 const DATA_KEYS = new Set(["examples", "default", "const", "enum"]);
 

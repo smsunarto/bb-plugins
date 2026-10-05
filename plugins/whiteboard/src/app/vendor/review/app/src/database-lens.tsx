@@ -17,7 +17,7 @@ import type {
   DatabaseOperation,
   DatabaseStore,
 } from "../../../../../shared/vendor/review/src/review-api/document.ts";
-import { DiagramTourOverlay, useDiagramTourShell } from "./diagram-tour.tsx";
+import { DiagramTourOverlay, useDiagramTourShell } from "../../../../components/diagram-tour.tsx";
 import { useReviewSession } from "./host/review-session.tsx";
 import type { GuidedTour, PeekAnchor } from "./review-panel-model.ts";
 import { useTourPersist, useTourRestore } from "./review-view-state.ts";

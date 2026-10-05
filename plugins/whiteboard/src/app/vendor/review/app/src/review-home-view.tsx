@@ -218,7 +218,7 @@ export function ReviewHome({
       <div className="review-home-scroll">
         <div className="review-home-content">
           <div className="review-home-page-header">
-            <h1>Sessions</h1>
+            <h1>Whiteboards</h1>
             <div className="review-home-page-header-tools">
               <SearchBox query={query} onChange={setQuery} />
             </div>
@@ -230,8 +230,8 @@ export function ReviewHome({
           {needle && active.length === 0 && !scratchpadShown ? (
             <p className="review-home-search-empty">
               {dismissed.length > 0
-                ? `No active reviews match “${needle}”. Look in Dismissed below.`
-                : `No reviews match “${needle}”.`}
+                ? `No active whiteboards match “${needle}”. Look in Dismissed below.`
+                : `No whiteboards match “${needle}”.`}
             </p>
           ) : null}
           <SearchQueryContext.Provider value={needle}>
@@ -274,8 +274,13 @@ function SearchBox({
 
   // ⌘F (Ctrl+F off the Mac) jumps to the filter instead of the browser's
   // find bar. Ctrl+F stays forward-char on the Mac.
+  // bb: the window is bb's, so only keys typed inside this canvas count.
+  // Elsewhere the key stays bb's find.
   useEffect(() => {
     const mac = /Mac|iPhone|iPad/.test(navigator.platform);
+    const root = input.current?.closest<HTMLElement>(".review-canvas-root");
+
+    if (!root) return;
 
     const keydown = (event: KeyboardEvent) => {
       if (
@@ -291,9 +296,9 @@ function SearchBox({
       }
     };
 
-    window.addEventListener("keydown", keydown);
+    root.addEventListener("keydown", keydown);
 
-    return () => window.removeEventListener("keydown", keydown);
+    return () => root.removeEventListener("keydown", keydown);
   }, []);
 
   return (
@@ -303,8 +308,8 @@ function SearchBox({
         ref={input}
         type="search"
         value={query}
-        placeholder="Search sessions"
-        aria-label="Search sessions"
+        placeholder="Search whiteboards"
+        aria-label="Search whiteboards"
         spellCheck={false}
         onChange={(event) => onChange(event.target.value)}
         onKeyDown={(event) => {
@@ -351,7 +356,7 @@ function DismissedSection({
   onDelete?(review: ReviewApiSummary): Promise<void>;
 }) {
   return (
-    <section className="review-home-dismissed" aria-label="Dismissed sessions">
+    <section className="review-home-dismissed" aria-label="Dismissed whiteboards">
       <button
         type="button"
         className="review-home-dismissed-toggle"
@@ -449,9 +454,9 @@ function ReviewTable({
   });
 
   return (
-    <section className="review-home-table-section" aria-label="Sessions">
+    <section className="review-home-table-section" aria-label="Whiteboards">
       <div className="review-home-table-toolbar">
-        <span>{countLabel(filtered.length, "review")}</span>
+        <span>{countLabel(filtered.length, "whiteboard")}</span>
         <div className="review-home-table-controls">
           <TableMenu
             label="Filter"
@@ -465,7 +470,7 @@ function ReviewTable({
           />
           <TableMenu<ReviewSort>
             label="Sort"
-            ariaLabel="Sort reviews"
+            ariaLabel="Sort whiteboards"
             value={sort}
             options={[
               { value: "newest", label: "Newest first" },
@@ -549,7 +554,7 @@ function ReviewTable({
             ))}
             {sorted.length === 0 ? (
               <tr>
-                <td colSpan={6}>No reviews match this repository.</td>
+                <td colSpan={6}>No whiteboards match this repository.</td>
               </tr>
             ) : null}
           </tbody>
@@ -602,7 +607,7 @@ function ReviewRowActions({ review }: { review: ReviewApiSummary }) {
           ref={popover}
           popover="manual"
           role="menu"
-          aria-label="Session actions"
+          aria-label="Whiteboard actions"
           className="review-home-row-menu"
         >
           <DeleteReviewButton review={review} onDelete={onDelete} menu />
@@ -744,7 +749,7 @@ function DismissReviewButton({ review }: { review: ReviewApiSummary }) {
       type="button"
       className="review-home-dismiss"
       aria-label={`Dismiss ${title}`}
-      title="Dismiss session"
+      title="Dismiss whiteboard"
       disabled={busy}
       onKeyDown={(event) => event.stopPropagation()}
       onClick={(event) => {
@@ -790,7 +795,7 @@ function DeleteReviewButton({
       }
       role={menu ? "menuitem" : undefined}
       aria-label={armed ? `Confirm delete ${title}` : `Delete ${title}`}
-      title={armed ? "Confirm delete" : "Delete session"}
+      title={armed ? "Confirm delete" : "Delete whiteboard"}
       disabled={busy}
       onBlur={() => setArmed(false)}
       onKeyDown={(event) => event.stopPropagation()}
@@ -815,7 +820,7 @@ function DeleteReviewButton({
       {menu ? (
         <>
           <TrashIcon />
-          <span>{armed ? "Confirm delete" : "Delete session"}</span>
+          <span>{armed ? "Confirm delete" : "Delete whiteboard"}</span>
         </>
       ) : armed ? (
         "Delete?"
@@ -888,7 +893,7 @@ export function formatRelativeTime(
 }
 
 function reviewTitle(review: ReviewApiSummary): string {
-  return review.title.trim() || "Untitled session";
+  return review.title.trim() || "Untitled whiteboard";
 }
 
 function matchesQuery(review: ReviewApiSummary, query: string): boolean {

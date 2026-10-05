@@ -7,6 +7,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { HOST_PAYLOAD_LIMIT_BYTES } from "../../shared/contracts/host-contract.ts";
 import { diffrExecutable } from "../../shared/node/vendor/review/src/server/structural-diff.ts";
 import { ReviewInputError } from "../../shared/vendor/review/src/review-api/input-error.ts";
+import hostEntry from "../host.ts";
 import { BLOB_RESPONSE_BYTES, closeBlobReaders, readBlobs } from "./blobs.ts";
 import { failure, hostResult } from "./codec.ts";
 import { invoke, probe } from "./invoke.ts";
@@ -142,7 +143,7 @@ describe("host results", () => {
 });
 
 describe("readBlobs", () => {
-  it("answers the in-order prefix that fits the response budget, across read windows", async () => {
+  const repository = () => {
     const root = mkdtempSync(path.join(tmpdir(), "whiteboard-blobs-"));
     temps.push(root);
     const git = (...args: string[]) =>
@@ -151,6 +152,11 @@ describe("readBlobs", () => {
         encoding: "utf8",
       });
     git("init", "-q");
+    return { root, git };
+  };
+
+  it("answers the in-order prefix that fits the response budget, across read windows", async () => {
+    const { root, git } = repository();
     // 150 blobs of 30 000 bytes: 40 000 bytes of base64 each, so 104 fit in 4 MiB.
     for (let index = 0; index < 150; index++)
       writeFileSync(path.join(root, `f${index}.txt`), String(index % 10).repeat(30_000));
@@ -173,5 +179,28 @@ describe("readBlobs", () => {
     } finally {
       await closeBlobReaders();
     }
+  });
+
+  it("stops its git cat-file readers when the host entry is disposed", async () => {
+    const { root, git } = repository();
+    writeFileSync(path.join(root, "a.txt"), "alpha");
+    git("add", "-A");
+    git("commit", "-qm", "a");
+    const commit = git("rev-parse", "HEAD").trim();
+    /** Running `git -C <root> cat-file --batch` processes. */
+    const catFiles = () =>
+      execFileSync("ps", ["-A", "-ww", "-o", "command="], { encoding: "utf8" })
+        .split("\n")
+        .filter((command) => command.includes("cat-file") && command.includes(root));
+
+    const { items } = await readBlobs(
+      { rootPath: root, kind: "git", items: [{ commit, path: "a.txt" }] },
+      new AbortController().signal,
+    );
+    expect(Buffer.from(items[0]!.bytes!, "base64").toString()).toBe("alpha");
+    expect(catFiles()).toHaveLength(1);
+
+    await hostEntry.dispose?.();
+    expect(catFiles()).toEqual([]);
   });
 });

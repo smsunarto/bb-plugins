@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 
@@ -28,6 +28,7 @@ const BB_TOKENS = new Set([
   "--secondary",
   "--accent",
   "--muted-foreground",
+  "--readback-foreground",
   "--subtle-foreground",
   "--border",
   "--timeline-accent",
@@ -71,12 +72,14 @@ const LITERAL =
 
 type Declaration = { sheet: string; selector: string; property: string; value: string };
 
-function declarations(sheet: string): Declaration[] {
-  const css = read(sheet);
+/** The vendoring tool's zero-specificity confinement of every vendored rule. */
+const VENDOR_SCOPE = ":where(.review-canvas-root) ";
+
+function declarations(sheet: string, css = read(sheet)): Declaration[] {
   const out: Declaration[] = [];
   const body = css.replace(/\/\*[\s\S]*?\*\//g, "");
   for (const match of body.matchAll(/([^{};]+)\{([^{}]*)\}/g)) {
-    const selector = match[1]!.trim().replace(/\s+/g, " ");
+    const selector = match[1]!.trim().replace(/\s+/g, " ").replaceAll(VENDOR_SCOPE, "");
     for (const part of match[2]!.split(";")) {
       const colon = part.indexOf(":");
       if (colon < 0) continue;
@@ -119,7 +122,7 @@ const tokens = declarations("styles/tokens.css");
 const defined = new Set(
   tokens.filter((entry) => entry.property.startsWith("--")).map((entry) => entry.property),
 );
-const vendored = VENDORED_SHEETS.flatMap(declarations);
+const vendored = VENDORED_SHEETS.flatMap((sheet) => declarations(sheet));
 /** Workbench variables upstream itself pins to `transparent` on the canvas. */
 const pinned = new Set(
   vendored
@@ -127,6 +130,105 @@ const pinned = new Set(
     .map((entry) => entry.property),
 );
 const resolvable = new Set([...defined, ...pinned]);
+
+/** Top-level selector parts of every style rule, as written (keyframe stops and at-rule blocks skipped). */
+function selectorParts(sheet: string): string[] {
+  const body = read(sheet).replace(/\/\*[\s\S]*?\*\//g, "");
+  const parts: string[] = [];
+  for (const match of body.matchAll(/([^{};]+)\{[^{}]*\}/g)) {
+    const selector = match[1]!.trim().replace(/\s+/g, " ");
+    let depth = 0;
+    let start = 0;
+    for (let i = 0; i <= selector.length; i++) {
+      const char = selector[i];
+      if (char === "(" || char === "[") depth++;
+      else if (char === ")" || char === "]") depth--;
+      else if ((char === "," && depth === 0) || i === selector.length) {
+        parts.push(selector.slice(start, i).trim());
+        start = i + 1;
+      }
+    }
+  }
+  return parts.filter((part) => !part.startsWith("@") && !/^(from|to|[\d.]+%)$/.test(part));
+}
+
+/** Monokai's dark tokens (bb's `.dark` theme in plugins/monokai). */
+const MONOKAI = new Map(
+  declarations(
+    "bb-monokai.css",
+    readFileSync(path.resolve(APP, "../../../monokai/themes/bb-monokai.css"), "utf8"),
+  )
+    .filter((entry) => entry.selector === ".dark")
+    .map((entry) => [entry.property, entry.value]),
+);
+const bridged = new Map(
+  tokens
+    .filter((entry) => entry.property.startsWith("--"))
+    .map((entry) => [entry.property, entry.value]),
+);
+
+/** Every step of a `var()` chain through tokens.css, then Monokai. */
+function resolveUnderMonokai(value: string): string[] {
+  const steps = [value];
+  let name = /^var\((--[\w-]+)\)$/.exec(value)?.[1];
+  while (name) {
+    const next = bridged.get(name) ?? MONOKAI.get(name) ?? `unset ${name}`;
+    steps.push(next);
+    name = /^var\((--[\w-]+)\)$/.exec(next)?.[1];
+  }
+  return steps;
+}
+
+/** WCAG contrast of a `#rrggbb[aa]` color composited over an opaque `#rrggbb` ground. */
+function contrast(foreground: string, ground: string): number {
+  const channels = (hex: string) => {
+    const match = /^#([0-9a-f]{6})([0-9a-f]{2})?$/i.exec(hex);
+    if (!match) throw new Error(`not a hex color: ${hex}`);
+    const rgb = [0, 2, 4].map((i) => Number.parseInt(match[1]!.slice(i, i + 2), 16) / 255);
+    return { rgb, alpha: match[2] ? Number.parseInt(match[2], 16) / 255 : 1 };
+  };
+  const luminance = (rgb: number[]) => {
+    const [r, g, b] = rgb.map((v) => (v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4));
+    return 0.2126 * r! + 0.7152 * g! + 0.0722 * b!;
+  };
+  const back = channels(ground).rgb;
+  const front = channels(foreground);
+  const mixed = front.rgb.map((v, i) => v * front.alpha + back[i]! * (1 - front.alpha));
+  const [high, low] = [luminance(mixed), luminance(back)].sort((a, b) => b - a);
+  return (high! + 0.05) / (low! + 0.05);
+}
+
+/**
+ * Canvas controls whose upstream focus state is invisible or hover-identical,
+ * each with the ring offset that keeps all four sides inside the box clipping it.
+ */
+const FOCUS_RINGS = [
+  [".review-toc-link", "1px"],
+  [".review-toc--rail .review-toc-link", "-2px"],
+  [".review-toc-toggle", "-4px"],
+  [".review-section-toggle", "1px"],
+  [".review-diff-settings-button", "1px"],
+  [".icon-button", "1px"],
+  [".copy-for-agent-popover", "1px"],
+  [".review-history-banner button", "1px"],
+  [".side-panel-resizer", "-2px"],
+  [".side-panel-sheet-resizer", "-2px"],
+] as const;
+
+/** The `property` tokens.css gives `control` on focus, from the last rule matching it (each later rule is more specific). */
+function focusRing(control: string, property: string): string | undefined {
+  return tokens.findLast((entry) => {
+    const subject = /^\.review-canvas-root\[data-review-theme\] (.+):focus-visible$/.exec(
+      entry.selector,
+    )?.[1];
+    if (entry.property !== property || !subject) return false;
+    const members = /^:is\((.*)\)$/
+      .exec(subject)?.[1]
+      ?.split(",")
+      .map((member) => member.trim()) ?? [subject];
+    return members.some((member) => control === member || control.endsWith(` ${member}`));
+  })?.value;
+}
 
 describe("tokens.css", () => {
   it("maps every literal-color token of the vendored sheets", () => {
@@ -184,5 +286,70 @@ describe("tokens.css", () => {
       )
       .map((entry) => `${entry.sheet} ${entry.selector} ${entry.property}: ${entry.value}`);
     expect(unhandled).toEqual([]);
+  });
+
+  it("confines vendored rules without specificity, so every override outranks them", () => {
+    const unconfined = VENDORED_SHEETS.flatMap(selectorParts).filter(
+      (part) => part !== ".review-canvas-root" && !part.startsWith(VENDOR_SCOPE),
+    );
+    const unprefixed = selectorParts("styles/tokens.css").filter(
+      (part) => !part.startsWith(".review-canvas-root[data-review-theme"),
+    );
+    expect({ unconfined, unprefixed }).toEqual({ unconfined: [], unprefixed: [] });
+  });
+
+  it("never wraps a vendored sheet in @scope", () => {
+    expect(VENDORED_SHEETS.filter((sheet) => /@scope/.test(read(sheet)))).toEqual([]);
+  });
+
+  it("keeps faint labels readable under Monokai", () => {
+    const inkFaint = vendored
+      .filter((entry) => entry.property === "--ink-faint")
+      .map((entry) => withoutBridgedFallbacks(entry.value, resolvable));
+    expect(inkFaint).toEqual([
+      "var(--vscode-disabledForeground)",
+      "var(--vscode-disabledForeground)",
+    ]);
+    const steps = resolveUnderMonokai("var(--vscode-disabledForeground)");
+    expect(steps.slice(0, 2)).toEqual([
+      "var(--vscode-disabledForeground)",
+      "var(--readback-foreground)",
+    ]);
+    expect(contrast(steps.at(-1)!, MONOKAI.get("--background")!)).toBeGreaterThanOrEqual(4.5);
+  });
+
+  it("keeps a collapsed section's title readable under Monokai", () => {
+    const color = tokens.find(
+      (entry) =>
+        entry.selector ===
+          ".review-canvas-root[data-review-theme] .review-section--collapsed .review-section-heading h2" &&
+        entry.property === "color",
+    );
+    const steps = resolveUnderMonokai(color?.value ?? "unset");
+    expect(contrast(steps.at(-1)!, MONOKAI.get("--background")!)).toBeGreaterThanOrEqual(3);
+  });
+
+  it("draws an accent focus ring on every canvas control, inside any box that clips it", () => {
+    const rings = FOCUS_RINGS.map(([control]) => [
+      control,
+      focusRing(control, "outline"),
+      focusRing(control, "outline-offset"),
+    ]);
+    expect(rings).toEqual(
+      FOCUS_RINGS.map(([control, offset]) => [control, "2px solid var(--timeline-accent)", offset]),
+    );
+  });
+});
+
+describe("authored sheets", () => {
+  it("use theme tokens instead of color literals", () => {
+    const sheets = readdirSync(path.join(APP, "styles")).filter(
+      (file) => file.endsWith(".css") && file !== "tokens.css" && file !== "index.css",
+    );
+    const literals = sheets
+      .flatMap((file) => declarations(`styles/${file}`))
+      .filter((entry) => LITERAL.test(entry.value))
+      .map((entry) => `${entry.sheet} ${entry.selector} ${entry.property}: ${entry.value}`);
+    expect(literals).toEqual([]);
   });
 });

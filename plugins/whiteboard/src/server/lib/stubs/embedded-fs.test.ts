@@ -70,12 +70,12 @@ describe("renderInstructions on the engine's virtual root", () => {
     expect(await renderInstructions("scratchpad", on)).toBe(INSTRUCTIONS.scratchpad);
   });
 
-  test("gated topics answer upstream's off messages", async () => {
+  test("gated topics answer their bb-adapted off messages", async () => {
     expect(await renderInstructions("scratchpad", off)).toBe(
-      "The Whiteboard scratchpad is turned off or Whiteboard Desktop is not running. Answer in chat; the scratchpad can be turned on in the Whiteboard plugin settings in bb.",
+      "The Whiteboard scratchpad is turned off. Answer in chat; the scratchpad can be turned on in the Whiteboard plugin settings in bb.",
     );
     expect(await renderInstructions("trace-archaeology", on)).toBe(
-      "Trace capture is off in this bb plugin. Uploaded trace quotes are supported. Configure capture through Whiteboard Desktop.",
+      "Trace capture is off in this bb plugin, so no agent traces are available. Uploaded trace quotes are supported.",
     );
   });
 });

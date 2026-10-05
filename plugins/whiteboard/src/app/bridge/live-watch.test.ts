@@ -1,8 +1,14 @@
-import { describe, expect, it, vi } from "vitest";
-import type { ApiRequest, ApiResponse } from "../../shared/contracts/api-tunnel.ts";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import {
+  type ApiRequest,
+  type ApiResponse,
+  WATCH_HEARTBEAT_MS,
+} from "../../shared/contracts/api-tunnel.ts";
 import { ReviewApiClient } from "../../shared/vendor/review-protocol/src/index.ts";
 import {
+  SAFETY_REFETCH_MS,
   changeMatches,
+  type LiveHub,
   createLiveHub,
   diffLine,
   watchResponse,
@@ -25,8 +31,14 @@ function fakeRpc(initial: unknown) {
     calls.push(request);
     return box.status === 200 ? json(box.state) : json({ error: "Gone." }, box.status);
   });
-  return { box, calls, rpc: { api } };
+  const interest = vi.fn(async () => ({}));
+  return { box, calls, rpc: { api, interest } };
 }
+
+afterEach(() => {
+  vi.useRealTimers();
+  vi.unstubAllGlobals();
+});
 
 const decoder = new TextDecoder();
 
@@ -38,9 +50,9 @@ async function nextLine(reader: ReadableStreamDefaultReader<Uint8Array>) {
 /** Let queued microtasks and the fake RPC settle. */
 const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
 
-async function open(path: string, initial: unknown, heartbeatMs = 60_000) {
+async function open(path: string, initial: unknown, shared?: LiveHub) {
   const fake = fakeRpc(initial);
-  const hub = createLiveHub();
+  const hub = shared ?? createLiveHub(fake.rpc);
   const abort = new AbortController();
   const response = await watchResponse({
     rpc: fake.rpc,
@@ -48,10 +60,12 @@ async function open(path: string, initial: unknown, heartbeatMs = 60_000) {
     path,
     signal: abort.signal,
     hub,
-    heartbeatMs,
   });
   return { ...fake, hub, abort, response, reader: response.body!.getReader() };
 }
+
+const subscriptionsPath = (items: unknown[]) =>
+  `/watch?subscriptions=${encodeURIComponent(JSON.stringify(items))}`;
 
 describe("watchSubscriptions", () => {
   it("reads the three watch route shapes", () => {
@@ -184,10 +198,54 @@ describe("watchResponse", () => {
     stream.abort.abort();
   });
 
-  it("renews the server lease on the heartbeat", async () => {
-    const stream = await open("/a/watch", { version: 1 }, 5);
+  it("re-reads only the subscriptions an invalidation matches", async () => {
+    const catalog = { reviewId: null, mode: "textual" };
+    const review = { reviewId: "a", mode: "textual" };
+    const state: Record<string, unknown> = { catalog: ["a"], a: { version: 1 } };
+    const calls: ApiRequest[] = [];
+    // The server answers one entry per subscription the path asks for.
+    const rpc = {
+      api: vi.fn(async (request: ApiRequest) => {
+        calls.push(request);
+        const items = watchSubscriptions(request.path);
+        return json(items.map((item) => ({ value: state[item.reviewId ?? "catalog"] })));
+      }),
+      interest: vi.fn(async () => ({})),
+    };
+    const hub = createLiveHub(rpc);
+    const abort = new AbortController();
+    const path = subscriptionsPath([catalog, review]);
+    const response = await watchResponse({ rpc, path, signal: abort.signal, hub });
+    const reader = response.body!.getReader();
+    expect(await nextLine(reader)).toBe('[{"value":["a"]},{"value":{"version":1}}]\n');
+
+    state.catalog = ["a", "b"];
+    hub.invalidate({ kind: "catalog" });
+    expect(await nextLine(reader)).toBe('[{"value":["a","b"]},null]\n');
+    expect(calls.map((call) => call.path)).toEqual([path, subscriptionsPath([catalog])]);
+
+    state.a = { version: 2 };
+    hub.invalidate({ kind: "review", reviewId: "a" });
+    expect(await nextLine(reader)).toBe('[null,{"value":{"version":2}}]\n');
+    expect(calls.at(-1)?.path).toBe(subscriptionsPath([review]));
+
+    hub.reconnected();
+    await settle();
+    expect(calls.at(-1)?.path).toBe(path);
+    abort.abort();
+  });
+
+  it("re-reads in full every 5 minutes in case a change was never published", async () => {
+    vi.useFakeTimers();
+    const stream = await open("/a/watch", { version: 1 });
     await nextLine(stream.reader);
-    await vi.waitFor(() => expect(stream.calls.length).toBeGreaterThanOrEqual(3));
+    stream.box.state = { version: 2 };
+
+    vi.advanceTimersByTime(SAFETY_REFETCH_MS);
+
+    expect(SAFETY_REFETCH_MS).toBe(300_000);
+    expect(await nextLine(stream.reader)).toBe('{"version":2}\n');
+    expect(stream.calls).toHaveLength(2);
     stream.abort.abort();
   });
 
@@ -197,7 +255,7 @@ describe("watchResponse", () => {
     const response = await watchResponse({
       rpc: fake.rpc,
       path: "/gone/watch",
-      hub: createLiveHub(),
+      hub: createLiveHub(fake.rpc),
     });
     expect(response.status).toBe(404);
     expect(await response.json()).toEqual({ error: "Gone." });
@@ -244,7 +302,7 @@ describe("ReviewApiClient.follow over the tunnel", () => {
       return json([{ value: fake.box.state }]);
     });
     fake.box.state = [{ reviewId: "a" }];
-    const hub = createLiveHub();
+    const hub = createLiveHub(fake.rpc);
     const request = createTunnel({ rpc: fake.rpc, hub });
     const client = new ReviewApiClient({ serverUrl: "http://127.0.0.1:1", token: "" }, request);
     const seen: unknown[] = [];
@@ -270,5 +328,43 @@ describe("ReviewApiClient.follow over the tunnel", () => {
     await vi.waitFor(() => expect(seen).toHaveLength(3));
     expect(seen).toEqual([[{ reviewId: "a" }], [{ reviewId: "a" }, { reviewId: "b" }], []]);
     abort.abort();
+  });
+});
+
+describe("the hub's interest heartbeat", () => {
+  it("renews once per beat for the whole mount, without reading any snapshot", async () => {
+    vi.useFakeTimers();
+    const interest = vi.fn(async () => ({}));
+    const hub = createLiveHub({ interest });
+    const first = await open("/a/watch", { version: 1 }, hub);
+    const second = await open("/watch", [], hub);
+
+    vi.advanceTimersByTime(60_000);
+
+    expect(WATCH_HEARTBEAT_MS).toBe(30_000);
+    expect(interest).toHaveBeenCalledTimes(2);
+    expect(first.calls).toHaveLength(1);
+    expect(second.calls).toHaveLength(1);
+
+    first.abort.abort();
+    second.abort.abort();
+    vi.advanceTimersByTime(60_000);
+    expect(interest).toHaveBeenCalledTimes(2);
+  });
+
+  it("renews nothing while the document is hidden, and once when it shows again", async () => {
+    vi.useFakeTimers();
+    const document = Object.assign(new EventTarget(), { visibilityState: "hidden" });
+    vi.stubGlobal("document", document);
+    const stream = await open("/a/watch", { version: 1 });
+
+    vi.advanceTimersByTime(SAFETY_REFETCH_MS);
+    expect(stream.rpc.interest).toHaveBeenCalledTimes(0);
+    expect(stream.calls).toHaveLength(1);
+
+    document.visibilityState = "visible";
+    document.dispatchEvent(new Event("visibilitychange"));
+    expect(stream.rpc.interest).toHaveBeenCalledTimes(1);
+    stream.abort.abort();
   });
 });

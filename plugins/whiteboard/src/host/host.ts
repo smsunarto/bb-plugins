@@ -3,7 +3,7 @@ import {
   whiteboardHostContract,
   whiteboardHostSignals,
 } from "../shared/contracts/host-contract.ts";
-import { readBlobs } from "./lib/blobs.ts";
+import { closeBlobReaders, readBlobs } from "./lib/blobs.ts";
 import { invoke, probe } from "./lib/invoke.ts";
 import { cancelStructuralDiff, runStructuralDiff } from "./lib/structural-stream.ts";
 import { vcsCall } from "./lib/vcs-handles.ts";
@@ -27,4 +27,5 @@ export default experimental_defineHostEntry({
     unwatchWorktree: (input) => unwatchWorktree(input),
     probe: () => probe(),
   },
+  dispose: closeBlobReaders,
 });

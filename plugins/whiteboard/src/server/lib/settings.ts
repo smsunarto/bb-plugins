@@ -4,8 +4,9 @@ import type { WhiteboardSettings } from "../../shared/contracts/engine.ts";
 
 /**
  * The plugin settings (design §3.4). Labels and descriptions are upstream's
- * Desktop settings page (`settings-page.tsx:247-269`), in its order. Both
- * default to false: upstream Desktop's Software Map default is
+ * Desktop settings page (`settings-page.tsx:247-269`), in its order, saying
+ * Whiteboards where upstream says sessions. Both default to false: upstream
+ * Desktop's Software Map default is
  * `review.experimental.softwareMap.enabled: false`
  * (`reviewConfiguration.ts:49-52`), and its scratchpad preference defaults
  * to false (`review-preferences.ts`).
@@ -14,7 +15,7 @@ export const SETTING_DESCRIPTORS = {
   softwareMapEnabled: {
     type: "boolean",
     label: "Software Map",
-    description: "Show the experimental Software Map view in sessions.",
+    description: "Show the experimental Software Map view in Whiteboards.",
     default: false,
   },
   scratchpadEnabled: {

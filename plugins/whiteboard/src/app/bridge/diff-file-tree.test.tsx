@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
-import { act, cleanup, render } from "@testing-library/react";
-import { afterEach, describe, expect, it } from "vitest";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type {
   ReviewDiffFileWire,
   ReviewDiffProgress,
@@ -17,7 +17,7 @@ const files: ReviewDiffFileWire[] = [
 const rows = (root: HTMLElement) =>
   [...root.querySelectorAll<HTMLElement>("[role=treeitem]")].map((row) => [
     row.getAttribute("aria-label"),
-    (row.matches("button") ? row : row.querySelector(":scope > button"))?.textContent,
+    row.textContent,
   ]);
 
 afterEach(cleanup);
@@ -34,6 +34,8 @@ describe("DiffFileTree", () => {
       ["packages/core/src/b.ts", "b.ts+1.2k −0"],
       ["z.ts", "z.ts+0 −4"],
     ]);
+    // Without a Viewed toggle, rows carry no checked state.
+    expect(container.querySelector("[aria-checked]")).toBeNull();
   });
 
   it("shows remaining counts and Viewed from progress, with the remaining-of-total tooltip", () => {
@@ -89,7 +91,7 @@ describe("DiffFileTree", () => {
     );
 
     await act(async () =>
-      container.querySelector<HTMLElement>('[aria-label="packages/core/src"] > button')!.click(),
+      container.querySelector<HTMLElement>('[aria-label="packages/core/src"]')!.click(),
     );
     expect(rows(container).map(([path]) => path)).toEqual([
       "docs",
@@ -127,5 +129,122 @@ describe("DiffFileTree", () => {
     ]);
     expect(row.classList.contains("review-file-folded")).toBe(true);
     expect(row.classList.contains("review-file-viewed")).toBe(false);
+  });
+
+  describe("keyboard", () => {
+    const flat: ReviewDiffFileWire[] = [
+      { path: "src/a.ts", status: "modified", additions: 1, deletions: 1 },
+      { path: "src/b.ts", status: "added", additions: 2, deletions: 0 },
+      { path: "README.md", status: "modified", additions: 1, deletions: 0 },
+    ];
+    const item = (name: string) => screen.getByRole("treeitem", { name });
+    const setup = () => {
+      const onToggleViewed = vi.fn();
+      const { container } = render(
+        <DiffFileTree
+          files={flat}
+          showFileCounts
+          onReveal={() => {}}
+          onToggleViewed={onToggleViewed}
+        />,
+      );
+      return { container, onToggleViewed };
+    };
+
+    it("has exactly one tab stop", () => {
+      const { container } = setup();
+
+      expect(
+        [...container.querySelectorAll("[role=treeitem][tabindex='0']")].map((row) =>
+          row.getAttribute("aria-label"),
+        ),
+      ).toEqual(["src"]);
+    });
+
+    it("moves down into a folder and jumps to the last row", () => {
+      setup();
+      act(() => item("src").focus());
+
+      fireEvent.keyDown(item("src"), { key: "ArrowDown" });
+      expect(document.activeElement).toBe(item("src/a.ts"));
+
+      fireEvent.keyDown(item("src/a.ts"), { key: "End" });
+      expect(document.activeElement).toBe(item("README.md"));
+      expect(item("README.md").tabIndex).toBe(0);
+      expect(item("src").tabIndex).toBe(-1);
+    });
+
+    it("collapses an expanded folder with ArrowLeft", () => {
+      setup();
+
+      fireEvent.keyDown(item("src"), { key: "ArrowLeft" });
+      expect(item("src").getAttribute("aria-expanded")).toBe("false");
+      expect(screen.queryByRole("treeitem", { name: "src/a.ts" })).toBeNull();
+    });
+
+    it("moves from a file to its folder with ArrowLeft and reopens it with ArrowRight", () => {
+      setup();
+
+      fireEvent.keyDown(item("src/b.ts"), { key: "ArrowLeft" });
+      expect(document.activeElement).toBe(item("src"));
+
+      fireEvent.keyDown(item("src"), { key: "ArrowLeft" });
+      fireEvent.keyDown(item("src"), { key: "ArrowRight" });
+      expect(item("src").getAttribute("aria-expanded")).toBe("true");
+      fireEvent.keyDown(item("src"), { key: "ArrowRight" });
+      expect(document.activeElement).toBe(item("src/a.ts"));
+    });
+
+    it("toggles Viewed with Space on a file", () => {
+      const { onToggleViewed } = setup();
+
+      fireEvent.keyDown(item("src/a.ts"), { key: " " });
+      // Holding Space does not flip it back and forth.
+      fireEvent.keyDown(item("src/a.ts"), { key: " ", repeat: true });
+      expect(onToggleViewed.mock.calls).toEqual([["src/a.ts"]]);
+    });
+
+    it("exposes each file's Viewed state on its row", () => {
+      const progressFile = (path: string, state: "viewed" | "partial") => ({
+        path,
+        state,
+        remaining: { additions: 0, deletions: 0 },
+        total: { additions: 1, deletions: 1 },
+        viewedRanges: [],
+        changedRanges: [],
+      });
+      render(
+        <DiffFileTree
+          files={flat}
+          progress={{
+            files: [progressFile("src/a.ts", "viewed"), progressFile("src/b.ts", "partial")],
+          }}
+          onReveal={() => {}}
+          onToggleViewed={() => {}}
+        />,
+      );
+
+      expect(
+        ["src", "src/a.ts", "src/b.ts", "README.md"].map((name) =>
+          item(name).getAttribute("aria-checked"),
+        ),
+      ).toEqual([null, "true", "mixed", "false"]);
+    });
+
+    it("renders the Viewed box as the lens rows' button, out of tab order and hidden", () => {
+      const { container, onToggleViewed } = setup();
+      const box = container.querySelector<HTMLElement>(
+        '[data-review-file="src/a.ts"] + .review-viewed-check',
+      )!;
+
+      expect(container.querySelector("input[type=checkbox]")).toBeNull();
+      expect([box.tagName, box.getAttribute("tabindex"), box.getAttribute("aria-hidden")]).toEqual([
+        "BUTTON",
+        "-1",
+        "true",
+      ]);
+      fireEvent.click(box);
+      expect(onToggleViewed.mock.calls).toEqual([["src/a.ts"]]);
+    });
   });
 });

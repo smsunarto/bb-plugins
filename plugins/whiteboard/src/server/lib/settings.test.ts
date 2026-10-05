@@ -40,7 +40,7 @@ describe("settings", () => {
       softwareMapEnabled: {
         type: "boolean",
         label: "Software Map",
-        description: "Show the experimental Software Map view in sessions.",
+        description: "Show the experimental Software Map view in Whiteboards.",
         default: false,
       },
       scratchpadEnabled: {

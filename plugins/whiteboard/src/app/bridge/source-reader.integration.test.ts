@@ -176,6 +176,7 @@ it.each(["clean filter", "CRLF"])(
           ? ["-EXPORT CONST A = 10;", "+EXPORT CONST A = 11;"]
           : ["-export const a = 10;", "+export const a = 11;"],
       );
+      expect(model.firstChangedLine).toBe(1);
       expect(model.livePath).toBeUndefined();
       expect(await reader.file(current, "head", "src/a.ts")).toMatchObject({
         text: raw,

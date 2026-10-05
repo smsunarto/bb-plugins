@@ -1,0 +1,52 @@
+/*
+ * Diff tab layout in bb. Imported by `bridge/diff-file-tree.tsx`.
+ *
+ * Upstream mounts a self-scrolling Monaco multi-diff widget in
+ * `.review-diff-view-host`. The port renders a list of bb diffs there, so the
+ * host itself scrolls, as `bridge/diff-view.tsx` assumes (its scroll listener
+ * and offsets read the host), and the grid track no longer grows to the
+ * diffs' min-content width. The host rule also covers the commit-scoped diff,
+ * which mounts its host outside `.diff-workspace-editor`.
+ *
+ * Selectors add `[data-review-theme]` to beat the vendored scoped rules on
+ * specificity, as in tokens.css.
+ */
+.review-canvas-root[data-review-theme] .review-diff-view {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.review-canvas-root[data-review-theme] .review-diff-view-host {
+  overflow: auto;
+  min-width: 0;
+  overscroll-behavior: contain;
+}
+
+/*
+ * The vendored `.diff-workspace button { background: transparent }` is
+ * unlayered, so it beats Tailwind's layered `hover:bg-*` on the folder button.
+ * File rows hover on their wrapper div instead.
+ */
+@media (hover: hover) {
+  .review-canvas-root[data-review-theme] .review-changed-files-folder:hover {
+    background: var(--wb-surface-raised);
+  }
+}
+
+/*
+ * Thread panels are about 700px wide. Below 900px the sidebar is capped at a
+ * third of the workspace and the lens cabinet hugs its rows, so FILES sits
+ * under the lenses. Both resizers keep working: max-width caps the dragged
+ * width, and the cabinet's flex-basis still applies below its content height.
+ * The query reads the canvas root's container, because a container on
+ * `.diff-workspace` would re-root bb's fixed menus.
+ */
+@container review-canvas (max-width: 900px) {
+  .review-canvas-root[data-review-theme] .diff-workspace-sidebar {
+    min-width: 200px;
+    max-width: clamp(200px, 34%, 800px);
+  }
+
+  .review-canvas-root[data-review-theme] .diff-sidebar-lenses {
+    max-height: fit-content;
+  }
+}

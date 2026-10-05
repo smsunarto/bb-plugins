@@ -49,6 +49,35 @@ export const infoOutput = z.object({
 });
 export type InfoOutput = z.infer<typeof infoOutput>;
 
+/** A mounted panel renews the engine's worktree interest lease this often (`interest`)... */
+export const WATCH_HEARTBEAT_MS = 30_000;
+/** ...and the engine lets the lease lapse this long after the last renewal or watch read. */
+export const UI_INTEREST_TTL_MS = 90_000;
+
+/** `interest` answers nothing; the call is the renewal. */
+export const interestOutput = z.object({});
+
+/** How long an agent's open waits for a client of its thread to focus the tab. */
+export const PENDING_OPEN_TTL_MS = 5 * 60_000;
+
+/**
+ * Read the focus an agent's open left for a thread (design §3.6). `after` is
+ * the newest open the client focused there: the server forgets opens up to
+ * it, so each focuses once, and answers only a newer one.
+ */
+export const claimOpenInput = z.strictObject({
+  threadId: z.string().min(1),
+  after: z.number().optional(),
+});
+export const claimOpenOutput = z.object({
+  /**
+   * Null when no newer open is waiting, it is older than 5 minutes, or its tab
+   * was closed. `at` orders opens per thread, as `whiteboard:open` does.
+   */
+  open: z.object({ sessionId: z.string(), title: z.string(), at: z.number() }).nullable(),
+});
+export type PendingOpen = NonNullable<z.infer<typeof claimOpenOutput>["open"]>;
+
 /** `/watch` and `/:id/watch` answer one snapshot line per tunnel call (design §1.3). */
 export function isWatchPath(path: string): boolean {
   const pathname = path.split("?", 1)[0] ?? path;

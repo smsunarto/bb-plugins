@@ -27,7 +27,7 @@ import type { Step } from "../../../../../shared/vendor/review/src/review-api/do
 import { useReviewDebugSettings } from "./debug-settings.tsx";
 import { DiagramHeader } from "./diagram-header.tsx";
 import { hasTextSelectionWithin } from "./diagram-text-selection.ts";
-import { DiagramTourOverlay, useDiagramTourShell } from "./diagram-tour.tsx";
+import { DiagramTourOverlay, useDiagramTourShell } from "../../../../components/diagram-tour.tsx";
 import { useMotionPhase } from "./draw-queue-provider.tsx";
 import { useReviewSession } from "./host/review-session.tsx";
 import { useReviewPanel } from "./review-panel.tsx";

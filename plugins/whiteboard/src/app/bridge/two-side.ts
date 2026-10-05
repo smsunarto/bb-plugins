@@ -125,13 +125,16 @@ export function orderDiffFiles(files: readonly ReviewDiffFileWire[]): ReviewDiff
   return ordered;
 }
 
-/** A single-file patch. Peeks retain only hunks intersecting their authored ranges. */
+/**
+ * A single-file patch. Peeks retain only hunks intersecting their authored ranges.
+ * `firstChangedLine` is the head line of the first change, where Open file lands.
+ */
 export function sourcePatch(input: {
   file: ReviewDiffFileWire;
   base: string;
   head: string;
   ranges?: readonly SourceRange[];
-}): string | undefined {
+}): { text: string; firstChangedLine: number } | undefined {
   const { file, base, head, ranges } = input;
   const patch = structuredPatch(
     file.status === "added" ? "/dev/null" : `a/${file.previousPath ?? file.path}`,
@@ -154,5 +157,51 @@ export function sourcePatch(input: {
         return range.fromLine <= start + Math.max(1, count) - 1 && range.toLine >= start;
       }),
     );
-  return patch.hunks.length ? formatPatch(patch) : undefined;
+  const [first] = patch.hunks;
+  if (!first) return undefined;
+  const context = first.lines.findIndex((line) => !line.startsWith(" "));
+  return {
+    text: formatPatch(patch),
+    firstChangedLine: Math.max(1, first.newStart + Math.max(0, context)),
+  };
+}
+
+/**
+ * Context-only hunks over a peek's ranges ±3 lines, as upstream's lens window.
+ * Overlapping or adjacent windows merge. bb's Diff keeps real line numbers and
+ * folds the rest of the file into its own expanders. `undefined` when every
+ * range starts past the end of the file.
+ */
+export function contextPatch(input: {
+  path: string;
+  content: string;
+  ranges: readonly { fromLine: number; toLine: number }[];
+}): string | undefined {
+  const lines = input.content.split("\n");
+  const finalNewline = lines.at(-1) === "";
+  if (finalNewline) lines.pop();
+  const windows: { start: number; end: number }[] = [];
+  for (const range of input.ranges
+    .filter((item) => item.fromLine <= lines.length)
+    .sort((left, right) => left.fromLine - right.fromLine)) {
+    const start = Math.max(1, range.fromLine - 3);
+    const end = Math.min(lines.length, range.toLine + 3);
+    const last = windows.at(-1);
+    if (last && start <= last.end + 1) last.end = Math.max(last.end, end);
+    else windows.push({ start, end });
+  }
+  if (!windows.length) return undefined;
+  return formatPatch({
+    oldFileName: `a/${input.path}`,
+    newFileName: `b/${input.path}`,
+    oldHeader: undefined,
+    newHeader: undefined,
+    isGit: true,
+    hunks: windows.map(({ start, end }) => {
+      const body = lines.slice(start - 1, end).map((line) => ` ${line}`);
+      if (end === lines.length && !finalNewline) body.push("\\ No newline at end of file");
+      const count = end - start + 1;
+      return { oldStart: start, oldLines: count, newStart: start, newLines: count, lines: body };
+    }),
+  });
 }

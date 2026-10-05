@@ -941,7 +941,7 @@ it("logs a provider failure and names its kind without returning its local detai
     expect(response.status).toBe(500);
     const { error } = await response.json();
     expect(error).toContain("EACCES");
-    expect(error).toContain("main.log");
+    expect(error).toContain("server-stdio.log");
     expect(error).not.toContain("/Users/someone");
     expect(logged).toHaveBeenCalledWith(
       expect.stringContaining(`/${reviewId}/progress`),

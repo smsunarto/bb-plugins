@@ -1,10 +1,6 @@
-import { type PluginNavPanelProps, useBbNavigate } from "@get-bb/plugin-sdk/app";
-import { NAV_PANEL_PATH } from "../../shared/contracts/panel.ts";
-import { Button } from "../components/ui/button.tsx";
+import type { PluginNavPanelProps } from "@get-bb/plugin-sdk/app";
 import { WhiteboardInfo } from "../lib/whiteboard-info.tsx";
 import { WhiteboardMount } from "./mount.tsx";
-
-export const ALL_WHITEBOARDS = "All Whiteboards";
 
 /** The navPanel route's session id: the first path segment, if any. */
 export function routeSessionId(subPath: string): string | undefined {
@@ -21,35 +17,22 @@ export function routeSessionId(subPath: string): string | undefined {
 /**
  * The `navPanel` route (design §3.6): Home at "", the full-page canvas at
  * "<sessionId>". Home has no thread, so it opens sessions here through
- * `toPluginPanel`, and browser back returns to the list.
+ * `toPluginPanel`, and browser back returns to the list. The way back from a
+ * session is `HomeHeader`, in bb's title bar.
  */
 export function HomePanel({ subPath }: PluginNavPanelProps) {
-  const navigate = useBbNavigate();
   const sessionId = routeSessionId(subPath);
   return (
-    <div className="flex h-full min-h-0 w-full flex-col bg-background" data-wb-panel="nav">
-      {sessionId ? (
-        <div className="flex shrink-0 items-center border-b border-border px-2 py-1">
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => navigate.toPluginPanel(NAV_PANEL_PATH, { subPath: "" })}
-          >
-            ← {ALL_WHITEBOARDS}
-          </Button>
-        </div>
-      ) : null}
-      <div className="min-h-0 flex-1">
-        <WhiteboardInfo {...(sessionId ? { sessionId } : {})}>
-          {(info) => (
-            <WhiteboardMount
-              key={sessionId ?? ""}
-              info={info}
-              {...(sessionId ? { sessionId } : {})}
-            />
-          )}
-        </WhiteboardInfo>
-      </div>
+    <div className="h-full min-h-0 w-full bg-background" data-wb-panel="nav">
+      <WhiteboardInfo {...(sessionId ? { sessionId } : {})}>
+        {(info) => (
+          <WhiteboardMount
+            key={sessionId ?? ""}
+            info={info}
+            {...(sessionId ? { sessionId } : {})}
+          />
+        )}
+      </WhiteboardInfo>
     </div>
   );
 }

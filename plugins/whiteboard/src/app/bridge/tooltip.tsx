@@ -18,7 +18,10 @@ import type { Portals } from "./portals.tsx";
  * fixed-position stand-in laid over the target's box. The stand-in lives in
  * `document.body`: `.review-canvas-root` uses container queries, which would
  * re-anchor a fixed descendant. `instant` shows at once (viewed box, diff
- * counts); otherwise the hover waits like bb's own tooltips.
+ * counts); otherwise the hover waits like bb's own tooltips. As in Desktop
+ * (reviewCanvasPart.ts, reviewTooltip.ts), only keyboard focus shows one, an
+ * expanded menu button shows none, and a click, a key or Escape anywhere
+ * hides it.
  */
 export const TOOLTIP_DELAY_MS = 500;
 
@@ -107,8 +110,12 @@ export function createTooltips(
   return (target, text, options = {}) => {
     live++;
     let timer: ReturnType<typeof setTimeout> | undefined;
+    const doc = target.ownerDocument;
+    const escape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") hide();
+    };
     const show = () => {
-      if (!target.isConnected) return;
+      if (!target.isConnected || target.getAttribute("aria-expanded") === "true") return;
       ensureHost();
       const box = target.getBoundingClientRect();
       owner = target;
@@ -117,10 +124,13 @@ export function createTooltips(
         text,
         ...(options.detail ? { detail: options.detail } : {}),
       });
+      // Escape dismisses a hover tooltip while focus is elsewhere (WCAG 1.4.13).
+      doc.addEventListener("keydown", escape, true);
     };
     const hide = () => {
       clearTimeout(timer);
       timer = undefined;
+      doc.removeEventListener("keydown", escape, true);
       if (owner === target) {
         owner = null;
         store.set(null);
@@ -131,11 +141,17 @@ export function createTooltips(
       if (options.instant) show();
       else timer = setTimeout(show, TOOLTIP_DELAY_MS);
     };
+    // A click focuses its button too; only keyboard focus shows the tooltip.
+    const focus = () => {
+      if (target.matches(":focus-visible")) enter();
+    };
     const events: Array<[string, () => void]> = [
       ["pointerenter", enter],
       ["pointerleave", hide],
       ["pointerdown", hide],
-      ["focusin", enter],
+      ["click", hide],
+      ["keydown", hide],
+      ["focusin", focus],
       ["focusout", hide],
     ];
     for (const [type, handler] of events) target.addEventListener(type, handler);

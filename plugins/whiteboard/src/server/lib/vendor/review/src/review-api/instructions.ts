@@ -52,11 +52,11 @@ export async function renderInstructions(
   root = findReviewPackageRoot(import.meta.url),
 ): Promise<string> {
   if (topic === "scratchpad" && !scratchpadAvailable(context)) {
-    return "The Whiteboard scratchpad is turned off or Whiteboard Desktop is not running. Answer in chat; the scratchpad can be turned on in the Whiteboard plugin settings in bb.";
+    return "The Whiteboard scratchpad is turned off. Answer in chat; the scratchpad can be turned on in the Whiteboard plugin settings in bb.";
   }
 
   if (topic === "trace-archaeology" && !context.traceEnabled)
-    return "Trace capture is off in this bb plugin. Uploaded trace quotes are supported. Configure capture through Whiteboard Desktop.";
+    return "Trace capture is off in this bb plugin, so no agent traces are available. Uploaded trace quotes are supported.";
 
   if (topic !== "authoring") return read(root, topic);
 

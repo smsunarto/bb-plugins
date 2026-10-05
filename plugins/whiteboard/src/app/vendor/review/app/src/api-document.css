@@ -1,11 +1,10 @@
 /* Vendored from dev.fast review/app/src/api-document.css @4ecc570 (MIT). */
-@scope (.review-canvas-root) {
 /* A node is a plain block: margins collapse through it, so a block sits
    where its content would on its own. */
-.review-document .api-document-node > .review-trace-quote-container {
+:where(.review-canvas-root) .review-document .api-document-node > .review-trace-quote-container {
   display: block;
 }
-.review-document
+:where(.review-canvas-root) .review-document
   .api-document-node
   > :is(
     p,
@@ -25,11 +24,9 @@
   max-width: calc(100cqi - 2 * var(--review-document-padding-inline));
   margin-inline: auto;
 }
-.review-image img,
-.review-image-inline {
+:where(.review-canvas-root) .review-image img,
+:where(.review-canvas-root) .review-image-inline {
   display: block;
   max-width: 100%;
   height: auto;
-}
-
 }

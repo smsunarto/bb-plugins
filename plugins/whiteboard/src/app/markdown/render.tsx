@@ -91,7 +91,16 @@ function renderNode(
       ? { ...context, highlight: false }
       : context;
 
-  return fromSpec(node.type.spec.toDOM!(node), renderContent(node, inner), key, extra);
+  const element = fromSpec(node.type.spec.toDOM!(node), renderContent(node, inner), key, extra);
+  // Cells keep words whole (document.css), so a table can outgrow its column.
+  // It scrolls on its own: the canvas clips sideways overflow.
+  return node.type.name === "table" ? (
+    <div key={key} className="wb-table-scroll">
+      {element}
+    </div>
+  ) : (
+    element
+  );
 }
 
 /** TipTap `TaskItem`'s node view (`@tiptap/extension-task-item` `addNodeView`). */

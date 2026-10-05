@@ -1,5 +1,5 @@
 import type { ReviewApiClient } from "../vendor/review-protocol/src/index.ts";
-import type { ApiRequest, ApiResponse, InfoInput, InfoOutput } from "./api-tunnel.ts";
+import type { ApiRequest, ApiResponse, InfoInput, InfoOutput, PendingOpen } from "./api-tunnel.ts";
 import type { SettingsPayload } from "./channels.ts";
 
 /**
@@ -27,8 +27,12 @@ export type ThreadContextInput = {
 export interface Engine {
   /** Run one tunnel request through Hono (design §3.2). Never throws for HTTP errors. */
   request(input: ApiRequest): Promise<ApiResponse>;
-  /** The `info` RPC. */
+  /** The `info` RPC. A thread panel showing a session also records its tab (design §3.6). */
   info(input: InfoInput): Promise<InfoOutput>;
+  /** The `interest` RPC: keep worktrees watched for `UI_INTEREST_TTL_MS` more. */
+  renewInterest(): Promise<void>;
+  /** The `claimOpen` RPC: forget opens up to `after`, and read a newer waiting one. */
+  claimOpen(threadId: string, after?: number): Promise<PendingOpen | null>;
   /** A loopback `ReviewApiClient` whose transport is the in-process Hono app. */
   client(): ReviewApiClient;
   /** Run `fn` with a ThreadContext when `context.threadId` is set. */

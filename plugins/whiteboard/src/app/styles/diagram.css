@@ -1,0 +1,66 @@
+/*
+ * Diagram figures and the fullscreen diagram tour, fitted to bb's panels.
+ * Imported by components/diagram-tour.tsx, which every diagram kind reaches.
+ * Every selector adds `[data-review-theme]` to win over the vendored sheets
+ * on specificity. No color values here.
+ */
+
+/*
+ * Upstream treats a canvas under 1080px as a rare terminal split and gives a
+ * flow tour's stage 40% of the height. bb's thread panel is always that
+ * narrow, so the stage gets 58% and its description two lines. Sequence and
+ * database stages stay hidden there, as upstream has them.
+ */
+@container review-canvas (max-width: 1080px) {
+  .review-canvas-root[data-review-theme] .diagram-tour-overlay--flow {
+    grid-template-rows: minmax(260px, 58%) minmax(0, 1fr);
+  }
+
+  .review-canvas-root[data-review-theme] .diagram-tour-stage .flow-diagram-description {
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+}
+
+/* Full node labels on up to two lines; the 62px node holds two plus the caption. */
+.review-canvas-root[data-review-theme] .flow-node-label {
+  white-space: normal;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow-wrap: anywhere;
+  line-height: 1.3;
+}
+
+/*
+ * Upstream's canvas sits in Desktop's .monaco-workbench, whose 13px/1.4em
+ * base the tour and side panel text inherits. bb's base is 16px.
+ */
+.review-canvas-root[data-review-theme] :is(.diagram-tour-overlay, .side-panel) {
+  font-size: 13px;
+  line-height: 1.4em;
+}
+
+/* The overlay takes focus as a fallback and on background clicks; no ring around the whole panel. */
+.review-canvas-root[data-review-theme] .diagram-tour-overlay:focus {
+  outline: none;
+}
+
+/*
+ * A flow with no code (plans, architecture) has nothing to explore and no
+ * changes to color: drop the footer's hint, and the legend when no node changed.
+ * Code nodes caption their counts in spans; concept nodes caption bare text.
+ */
+.review-canvas-root[data-review-theme] .flow-diagram:not(:has(.flow-node-caption > span)) > footer {
+  display: none;
+}
+
+.review-canvas-root[data-review-theme]
+  .flow-diagram:not(
+    :has(.lens-flow-node--added, .lens-flow-node--removed, .lens-flow-node--modified)
+  )
+  .flow-diagram-legend {
+  display: none;
+}

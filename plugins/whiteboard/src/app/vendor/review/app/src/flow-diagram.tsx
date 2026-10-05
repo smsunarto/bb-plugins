@@ -5,7 +5,7 @@ import { createPortal } from "react-dom";
 import type { FlowDiagramBlock } from "../../../../../shared/vendor/review/src/review-api/blocks/flow_diagram.ts";
 import type { Snapshot } from "../../../../../server/lib/vendor/review/src/review-api/store.ts";
 import { DiagramHeader } from "./diagram-header.tsx";
-import { DiagramTourOverlay, useDiagramTourShell } from "./diagram-tour.tsx";
+import { DiagramTourOverlay, useDiagramTourShell } from "../../../../components/diagram-tour.tsx";
 import { FlowGraph } from "./flow-graph.tsx";
 import type { GuidedTour, GuidedTourStop } from "./review-panel-model.ts";
 

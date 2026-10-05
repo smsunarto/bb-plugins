@@ -3,11 +3,18 @@ import { DatabaseSync as NodeDatabaseSync } from "node:sqlite";
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { afterEach, describe, expect, test, vi } from "vitest";
+import { PENDING_OPEN_TTL_MS } from "../../shared/contracts/api-tunnel.ts";
 import type { WhiteboardSettings } from "../../shared/contracts/engine.ts";
 import { MIGRATIONS } from "./migrations.ts";
-import { createOpenPanel } from "./open-panel.ts";
+import { panelParamsJson, panelTabId } from "../../shared/contracts/panel.ts";
+import { NO_THREAD_MESSAGE, createOpenPanel } from "./open-panel.ts";
 import { createRealtime } from "./realtime.ts";
-import { TAB_WRITE_ATTEMPTS, trackSessionTabs, upsertSessionTab } from "./session-tabs.ts";
+import {
+  type SessionTabs,
+  TAB_WRITE_ATTEMPTS,
+  createSessionTabs,
+  sessionTab,
+} from "./session-tabs.ts";
 import { desktopAvailable, runWithThread } from "./thread-context.ts";
 import { createReviewApi } from "./vendor/review/src/review-api/http.ts";
 import { ReviewStore } from "./vendor/review/src/review-api/store.ts";
@@ -98,7 +105,10 @@ const settings: WhiteboardSettings = {
 };
 
 const stores: ReviewStore[] = [];
+const loads: SessionTabs[] = [];
 afterEach(async () => {
+  vi.useRealTimers();
+  for (const tabs of loads.splice(0)) tabs.dispose();
   await Promise.all(stores.splice(0).map((store) => store.close()));
 });
 
@@ -124,13 +134,24 @@ function command(store: ReviewStore, operation: Record<string, unknown>) {
   return store.execute({ commandId: randomUUID(), operation });
 }
 
+/** One plugin load: the tab owner on `store`, and the open callback the review API gets. */
+function load(bb: BbPluginApi, store: ReviewStore) {
+  const sessionTabs = createSessionTabs({ bb, store });
+  loads.push(sessionTabs);
+  const open = createOpenPanel({
+    settings,
+    realtime: createRealtime(bb),
+    openTab: sessionTabs.open,
+  });
+  return { sessionTabs, open };
+}
+
 function setup(initial: Record<string, Tab[]> = {}) {
   const tabs = fakeThreadTabs(initial);
   const { bb, harness } = createFakePluginHost({ pluginId: "whiteboard", sdk: tabs.sdk });
   bb.storage.migrate(bb.storage.database(), [...MIGRATIONS]);
-  const realtime = createRealtime(bb);
-  const open = createOpenPanel({ bb, settings, realtime });
-  return { bb, harness, tabs, realtime, open };
+  const store = newStore();
+  return { bb, harness, tabs, store, ...load(bb, store) };
 }
 
 function rows(bb: BbPluginApi) {
@@ -139,6 +160,9 @@ function rows(bb: BbPluginApi) {
     .prepare("SELECT session_id, thread_id FROM session_threads ORDER BY rowid")
     .all();
 }
+
+const titles = (tabs: ReturnType<typeof fakeThreadTabs>, threadId: string) =>
+  tabs.threads.get(threadId)!.tabs.map((tab) => tab.title ?? tab.kind);
 
 /** Let the tracker's sweep finish: it runs on promise turns after a catalog event. */
 async function settle() {
@@ -149,7 +173,8 @@ describe("open panel", () => {
   test("without a calling thread it refuses with upstream's text", async () => {
     const { open, harness } = setup({ t1: [] });
     await expect(open({ reviewId: SESSION, title: "Plan" })).rejects.toMatchObject({
-      message: "The desktop is not connected.",
+      message:
+        "Whiteboard opens sessions in a bb thread. Call this from an agent thread, or open it from Whiteboard in the sidebar.",
       status: 409,
     });
     expect(harness.inspection.sdk.calls).toEqual([]);
@@ -157,7 +182,7 @@ describe("open panel", () => {
   });
 
   test("appends the client's tab without fileOpenerOwner, records the thread and asks clients to focus", async () => {
-    const { bb, open, tabs, harness } = setup({ t1: [OTHER_TAB] });
+    const { bb, open, tabs, harness, sessionTabs } = setup({ t1: [OTHER_TAB] });
 
     const result = await runWithThread({ threadId: "t1", projectId: "p1" }, () =>
       open({ reviewId: SESSION, title: "Plan" }),
@@ -191,11 +216,15 @@ describe("open panel", () => {
     expect(harness.inspection.realtimeSignals).toEqual([
       {
         channel: "whiteboard:open",
-        payload: { threadId: "t1", sessionId: SESSION, title: "Plan", nonce: expect.any(String) },
+        payload: { threadId: "t1", sessionId: SESSION, title: "Plan", at: expect.any(Number) },
       },
     ]);
-    const nonce = (harness.inspection.realtimeSignals[0]!.payload as { nonce: string }).nonce;
-    expect(nonce).toMatch(/^[0-9a-f-]{36}$/);
+    const { at } = harness.inspection.realtimeSignals[0]!.payload as { at: number };
+    await expect(sessionTabs.claimOpen("t1")).resolves.toEqual({
+      sessionId: SESSION,
+      title: "Plan",
+      at,
+    });
   });
 
   test("a repeat open writes nothing new; a new title retitles the same tab", async () => {
@@ -213,11 +242,12 @@ describe("open panel", () => {
     ]);
     expect(harness.inspection.sdk.callsTo("threads.tabs.update")).toHaveLength(2);
     expect(rows(bb)).toEqual([{ session_id: SESSION, thread_id: "t1" }]);
-    // Every open asks clients to focus, with a fresh nonce each time.
-    const nonces = harness.inspection.realtimeSignals.map(
-      (signal) => (signal.payload as { nonce: string }).nonce,
+    // Every open asks clients to focus, each later than the one before.
+    const ats = harness.inspection.realtimeSignals.map(
+      (signal) => (signal.payload as { at: number }).at,
     );
-    expect(new Set(nonces).size).toBe(3);
+    expect(ats).toHaveLength(3);
+    expect(ats[0]! < ats[1]! && ats[1]! < ats[2]!).toBe(true);
   });
 
   test("a stale revision re-reads and retries", async () => {
@@ -239,7 +269,7 @@ describe("open panel", () => {
   });
 
   test("gives up after three retries and records nothing", async () => {
-    const { bb, open, tabs, harness } = setup({ t1: [] });
+    const { bb, open, tabs, harness, sessionTabs } = setup({ t1: [] });
     tabs.interleave(TAB_WRITE_ATTEMPTS);
 
     await expect(
@@ -248,11 +278,11 @@ describe("open panel", () => {
     expect(harness.inspection.sdk.callsTo("threads.tabs.update")).toHaveLength(4);
     expect(rows(bb)).toEqual([]);
     expect(harness.inspection.realtimeSignals).toEqual([]);
+    await expect(sessionTabs.claimOpen("t1")).resolves.toBeNull();
   });
 
   test("upstream create and open routes report opened, openError and the thread-less refusal", async () => {
-    const { open, tabs } = setup({ t1: [] });
-    const store = newStore();
+    const { open, tabs, store } = setup({ t1: [] });
     const api = createReviewApi(store, undefined, open, undefined, async () => ({
       desktopAvailable: desktopAvailable(),
       softwareMapEnabled: true,
@@ -298,7 +328,7 @@ describe("open panel", () => {
 
     const reopen = await post(`/${created.reviewId}/open`, {});
     expect(reopen.status).toBe(409);
-    expect(await reopen.json()).toMatchObject({ error: "The desktop is not connected." });
+    expect(await reopen.json()).toMatchObject({ error: NO_THREAD_MESSAGE });
 
     // Upstream Desktop reports a failed open as a 409 carrying its reason
     // (desktop-server.ts openApiReview), not the generic 500.
@@ -311,7 +341,7 @@ describe("open panel", () => {
   });
 
   test("a title longer than bb's tab limit is cut to fit, in the tab and the focus event", async () => {
-    const { open, tabs, harness } = setup({ t1: [] });
+    const { open, tabs, harness, sessionTabs } = setup({ t1: [] });
     const long = "x".repeat(2000);
 
     await runWithThread({ threadId: "t1" }, () => open({ reviewId: SESSION, title: long }));
@@ -323,25 +353,172 @@ describe("open panel", () => {
     expect(harness.inspection.realtimeSignals).toEqual([
       {
         channel: "whiteboard:open",
-        payload: { threadId: "t1", sessionId: SESSION, title: expected, nonce: expect.any(String) },
+        payload: { threadId: "t1", sessionId: SESSION, title: expected, at: expect.any(Number) },
       },
     ]);
+    await expect(sessionTabs.claimOpen("t1")).resolves.toEqual({
+      sessionId: SESSION,
+      title: expected,
+      at: expect.any(Number),
+    });
+  });
+
+  test("a claim reads the open until a client that focused it passes its at", async () => {
+    const { sessionTabs } = setup({ t1: [] });
+
+    const at = await sessionTabs.open("t1", "s1", "T");
+
+    await expect(sessionTabs.claimOpen("t2")).resolves.toBeNull();
+    await expect(sessionTabs.claimOpen("t1")).resolves.toEqual({ sessionId: "s1", title: "T", at });
+    await expect(sessionTabs.claimOpen("t1", at - 1)).resolves.toEqual({
+      sessionId: "s1",
+      title: "T",
+      at,
+    });
+    await expect(sessionTabs.claimOpen("t1", at)).resolves.toBeNull();
+    await expect(sessionTabs.claimOpen("t1")).resolves.toBeNull();
+  });
+
+  test("a claim carries the title a rename gave the tab since the open", async () => {
+    const { sessionTabs, store, tabs } = setup({ t1: [] });
+    const sessionId = await createSession(store, "Draft");
+
+    await sessionTabs.open("t1", sessionId, "Draft");
+    await command(store, { type: "rename", reviewId: sessionId, title: "Final plan" });
+    await settle();
+
+    expect(titles(tabs, "t1")).toEqual(["Final plan"]);
+    await expect(sessionTabs.claimOpen("t1")).resolves.toEqual({
+      sessionId,
+      title: "Final plan",
+      at: expect.any(Number),
+    });
+  });
+
+  test("a tab the user closed before anyone claimed it stays closed", async () => {
+    const { sessionTabs, tabs } = setup({ t1: [OTHER_TAB] });
+
+    await sessionTabs.open("t1", "s1", "T");
+    tabs.threads.get("t1")!.tabs = [OTHER_TAB];
+
+    await expect(sessionTabs.claimOpen("t1")).resolves.toBeNull();
+    await expect(sessionTabs.claimOpen("t1")).resolves.toBeNull();
+  });
+
+  test("a claim whose tab read fails leaves the open for the next claim", async () => {
+    const { sessionTabs, harness, tabs } = setup({ t1: [] });
+    await sessionTabs.open("t1", "s1", "T");
+    harness.inspection.sdk.stub("threads.tabs.get", async () => {
+      throw new Error("bb unavailable");
+    });
+
+    await expect(sessionTabs.claimOpen("t1")).rejects.toThrow("bb unavailable");
+
+    harness.inspection.sdk.stub("threads.tabs.get", tabs.sdk.threads.tabs.get);
+    await expect(sessionTabs.claimOpen("t1")).resolves.toEqual({
+      sessionId: "s1",
+      title: "T",
+      at: expect.any(Number),
+    });
+  });
+
+  test("a claim whose tab read fails after a newer open was focused does not bring the old one back", async () => {
+    const { sessionTabs, harness, tabs } = setup({ t1: [] });
+    await sessionTabs.open("t1", "s1", "Old");
+    let fail: (() => void) | undefined;
+    let first = true;
+    harness.inspection.sdk.stub("threads.tabs.get", async (input) => {
+      if (!first) return tabs.sdk.threads.tabs.get(input as { threadId: string });
+      first = false;
+      await new Promise<void>((resolve) => {
+        fail = resolve;
+      });
+      throw new Error("bb unavailable");
+    });
+
+    const claim = sessionTabs.claimOpen("t1");
+    await vi.waitFor(() => expect(fail).toBeTypeOf("function"));
+    const newer = await sessionTabs.open("t1", "s2", "New");
+    await expect(sessionTabs.claimOpen("t1")).resolves.toEqual({
+      sessionId: "s2",
+      title: "New",
+      at: newer,
+    });
+    await expect(sessionTabs.claimOpen("t1", newer)).resolves.toBeNull();
+    fail!();
+
+    await expect(claim).rejects.toThrow("bb unavailable");
+    await expect(sessionTabs.claimOpen("t1")).resolves.toBeNull();
+  });
+
+  test("a claim that finds its tab closed keeps a newer open that replaced it meanwhile", async () => {
+    const { sessionTabs, harness, tabs } = setup({ t1: [] });
+    await sessionTabs.open("t1", "s1", "Old");
+    let release: (() => void) | undefined;
+    let first = true;
+    harness.inspection.sdk.stub("threads.tabs.get", async (input) => {
+      if (first) {
+        first = false;
+        await new Promise<void>((resolve) => {
+          release = resolve;
+        });
+      }
+      return tabs.sdk.threads.tabs.get(input as { threadId: string });
+    });
+
+    const claim = sessionTabs.claimOpen("t1");
+    await vi.waitFor(() => expect(release).toBeTypeOf("function"));
+    tabs.threads.get("t1")!.tabs = [];
+    const newer = await sessionTabs.open("t1", "s2", "New");
+    release!();
+
+    await expect(claim).resolves.toBeNull();
+    await expect(sessionTabs.claimOpen("t1")).resolves.toEqual({
+      sessionId: "s2",
+      title: "New",
+      at: newer,
+    });
+  });
+
+  test("a claim whose tab read outlasts another client's focus answers nothing", async () => {
+    const { sessionTabs, harness, tabs } = setup({ t1: [] });
+    const at = await sessionTabs.open("t1", "s1", "Plan");
+    let release: (() => void) | undefined;
+    harness.inspection.sdk.stub("threads.tabs.get", async (input) => {
+      await new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      return tabs.sdk.threads.tabs.get(input as { threadId: string });
+    });
+
+    const slow = sessionTabs.claimOpen("t1");
+    await vi.waitFor(() => expect(release).toBeTypeOf("function"));
+    await expect(sessionTabs.claimOpen("t1", at)).resolves.toBeNull();
+    release!();
+
+    await expect(slow).resolves.toBeNull();
+  });
+
+  test("an open nobody claims within 5 minutes expires", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    const { sessionTabs } = setup({ t1: [] });
+
+    await sessionTabs.open("t1", "s1", "T");
+    vi.advanceTimersByTime(300_001);
+
+    expect(PENDING_OPEN_TTL_MS).toBe(300_000);
+    await expect(sessionTabs.claimOpen("t1")).resolves.toBeNull();
   });
 });
 
 describe("tab maintenance", () => {
   async function opened(threads: string[], title = "Plan") {
     const context = setup(Object.fromEntries(threads.map((id) => [id, [OTHER_TAB]])));
-    const store = newStore();
-    const sessionId = await createSession(store, title);
+    const sessionId = await createSession(context.store, title);
     for (const threadId of threads)
       await runWithThread({ threadId }, () => context.open({ reviewId: sessionId, title }));
-    const stop = trackSessionTabs({ bb: context.bb, store });
-    return { ...context, store, sessionId, stop };
+    return { ...context, sessionId, stop: () => context.sessionTabs.dispose() };
   }
-  const titles = (tabs: ReturnType<typeof fakeThreadTabs>, threadId: string) =>
-    tabs.threads.get(threadId)!.tabs.map((tab) => tab.title ?? tab.kind);
-
   test("a rename retitles the tab in every recorded thread", async () => {
     const { store, sessionId, tabs } = await opened(["t1", "t2"]);
 
@@ -363,9 +540,9 @@ describe("tab maintenance", () => {
 
   test("a rename does not reopen a tab the user closed", async () => {
     const { bb, store, sessionId, tabs } = await opened(["t1"]);
-    await upsertSessionTab(bb, "t1", "unrelated", "Other");
+    // The user closed the session's tab; another Whiteboard tab stays.
     const thread = tabs.threads.get("t1")!;
-    thread.tabs = thread.tabs.filter((tab) => tab.kind !== "plugin-panel" || tab.title === "Other");
+    thread.tabs = [OTHER_TAB, sessionTab("unrelated", "Other")];
 
     await command(store, { type: "rename", reviewId: sessionId, title: "Renamed" });
     await settle();
@@ -374,24 +551,37 @@ describe("tab maintenance", () => {
     expect(rows(bb)).toEqual([{ session_id: sessionId, thread_id: "t1" }]);
   });
 
-  test("a session opened after the tracker started still follows renames", async () => {
-    const context = setup({ t1: [] });
-    const store = newStore();
-    const stop = trackSessionTabs({ bb: context.bb, store });
-    const sessionId = await createSession(store, "Plan");
-    await runWithThread({ threadId: "t1" }, () =>
-      context.open({ reviewId: sessionId, title: "Plan" }),
-    );
+  test("after a reload, tabs recorded by the previous load still follow renames", async () => {
+    const { bb, store, sessionId, tabs, stop } = await opened(["t1"]);
+    stop();
+    load(bb, store);
 
     await command(store, { type: "rename", reviewId: sessionId, title: "Renamed" });
     await settle();
 
-    expect(titles(context.tabs, "t1")).toEqual(["Renamed"]);
-    stop();
+    expect(titles(tabs, "t1")).toEqual(["git-diff", "Renamed"]);
   });
 
-  test("delete removes the tab and forgets the threads", async () => {
-    const { bb, store, sessionId, tabs } = await opened(["t1", "t2"]);
+  test("after a reload, a retitle the previous load could not write lands on the next change", async () => {
+    const { bb, store, sessionId, tabs, stop, harness } = await opened(["t1"]);
+    harness.inspection.sdk.stub("threads.tabs.update", async () => {
+      throw new Error("bb unavailable");
+    });
+    await command(store, { type: "rename", reviewId: sessionId, title: "Renamed" });
+    await settle();
+    expect(titles(tabs, "t1")).toEqual(["git-diff", "Plan"]);
+    stop();
+
+    harness.inspection.sdk.stub("threads.tabs.update", tabs.sdk.threads.tabs.update);
+    load(bb, store);
+    await createSession(store, "Unrelated");
+    await settle();
+
+    expect(titles(tabs, "t1")).toEqual(["git-diff", "Renamed"]);
+  });
+
+  test("delete removes the tab, forgets the threads and drops an unclaimed open", async () => {
+    const { bb, store, sessionId, tabs, sessionTabs } = await opened(["t1", "t2"]);
 
     await command(store, { type: "delete", reviewId: sessionId });
     await settle();
@@ -399,6 +589,7 @@ describe("tab maintenance", () => {
     expect(titles(tabs, "t1")).toEqual(["git-diff"]);
     expect(titles(tabs, "t2")).toEqual(["git-diff"]);
     expect(rows(bb)).toEqual([]);
+    await expect(sessionTabs.claimOpen("t1")).resolves.toBeNull();
   });
 
   test("dismiss removes the tab; restore does not bring it back", async () => {
@@ -498,5 +689,76 @@ describe("tab maintenance", () => {
 
     expect(titles(tabs, "t1")).toEqual(["git-diff", "Plan"]);
     expect(harness.inspection.sdk.calls).toHaveLength(reads);
+  });
+});
+
+describe("tabs a panel shows", () => {
+  /** A session whose tab the client opened in t1 (a Home row or a verb), not the agent. */
+  async function shown(title = "Second") {
+    const context = setup();
+    const sessionId = await createSession(context.store, title);
+    context.tabs.threads.set("t1", {
+      revision: 1,
+      tabs: [OTHER_TAB, sessionTab(sessionId, title)],
+    });
+    return { ...context, sessionId };
+  }
+  const tabIds = (tabs: ReturnType<typeof fakeThreadTabs>) =>
+    tabs.threads.get("t1")!.tabs.map((tab) => tab.id);
+
+  test("a tracked tab is recorded once and follows renames", async () => {
+    const { bb, store, tabs, sessionTabs, sessionId } = await shown();
+
+    sessionTabs.track("t1", sessionId);
+    sessionTabs.track("t1", sessionId);
+    expect(rows(bb)).toEqual([{ session_id: sessionId, thread_id: "t1" }]);
+
+    await command(store, { type: "rename", reviewId: sessionId, title: "Renamed" });
+    await settle();
+    expect(titles(tabs, "t1")).toEqual(["git-diff", "Renamed"]);
+    // Tracking is not an agent open: nothing waits to be focused.
+    await expect(sessionTabs.claimOpen("t1")).resolves.toBeNull();
+  });
+
+  test("a tracked tab closes when its session is dismissed", async () => {
+    const { bb, store, tabs, sessionTabs, sessionId } = await shown();
+    expect(tabIds(tabs)).toEqual([OTHER_TAB.id, panelTabId(panelParamsJson(sessionId))]);
+
+    sessionTabs.track("t1", sessionId);
+    await command(store, { type: "attention", reviewId: sessionId, action: "dismiss" });
+    await settle();
+
+    expect(tabIds(tabs)).toEqual([OTHER_TAB.id]);
+    expect(rows(bb)).toEqual([]);
+  });
+
+  test("a dismissed session opened from Home keeps its tab until the next dismissal", async () => {
+    const { bb, store, tabs, sessionTabs, sessionId, harness } = await shown();
+    await command(store, { type: "attention", reviewId: sessionId, action: "dismiss" });
+    await settle();
+
+    await new Promise((resolve) => setTimeout(resolve, 2));
+    sessionTabs.track("t1", sessionId);
+    await command(store, { type: "rename", reviewId: sessionId, title: "Renamed" });
+    await settle();
+    expect(titles(tabs, "t1")).toEqual(["git-diff", "Renamed"]);
+
+    // The next dismissal's close fails once. The panel remounting meanwhile
+    // is not a fresh open, so the retry still closes the tab.
+    await command(store, { type: "attention", reviewId: sessionId, action: "restore" });
+    await new Promise((resolve) => setTimeout(resolve, 2));
+    harness.inspection.sdk.stub("threads.tabs.update", async () => {
+      throw new Error("bb unavailable");
+    });
+    await command(store, { type: "attention", reviewId: sessionId, action: "dismiss" });
+    await settle();
+    expect(rows(bb)).toEqual([{ session_id: sessionId, thread_id: "t1" }]);
+    harness.inspection.sdk.stub("threads.tabs.update", tabs.sdk.threads.tabs.update);
+    await new Promise((resolve) => setTimeout(resolve, 2));
+    sessionTabs.track("t1", sessionId);
+    await command(store, { type: "rename", reviewId: sessionId, title: "Again" });
+    await settle();
+    expect(titles(tabs, "t1")).toEqual(["git-diff"]);
+    expect(rows(bb)).toEqual([]);
   });
 });

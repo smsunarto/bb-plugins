@@ -36,6 +36,12 @@ export function fakeEngine(handle: (request: Request) => Response | Promise<Resp
     info: async () => {
       throw new Error("fake engine: info is not used by tools");
     },
+    renewInterest: async () => {
+      throw new Error("fake engine: renewInterest is not used by tools");
+    },
+    claimOpen: async () => {
+      throw new Error("fake engine: claimOpen is not used by tools");
+    },
     client: () =>
       new ReviewApiClient(
         { serverUrl: "http://whiteboard.local", token: "" },

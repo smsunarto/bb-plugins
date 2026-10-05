@@ -12,7 +12,7 @@ import { createPortal } from "react-dom";
 import { z } from "zod";
 
 import type { AgentSelection } from "../../../../../shared/vendor/review/src/agent-selection.ts";
-import { copyText } from "./copy-text.tsx";
+import { copyText } from "../../../../bridge/agent-handoff.ts";
 import { useReviewSession } from "./host/review-session.tsx";
 import { useToast } from "./toast.tsx";
 
@@ -172,11 +172,11 @@ export function AgentSelectionProvider({
 
       if (!response.ok) throw new Error("Context unavailable");
 
-      const { text } = z
-        .object({ text: z.string() })
+      const { text, handoff } = z
+        .object({ text: z.string(), handoff: z.unknown().optional() })
         .parse(await response.json());
 
-      if (!(await copyText(text))) throw new Error("Clipboard unavailable");
+      if (!(await copyText(text, handoff, selection.anchorContainer))) throw new Error("Clipboard unavailable");
       setCopiedSelection(
         JSON.stringify([
           selection.target,
@@ -186,12 +186,12 @@ export function AgentSelectionProvider({
       );
       setToast({
         kind: "success",
-        text: "Selection copied to clipboard. Paste into your agent to chat about it.",
+        text: "Added to chat.",
       });
     } catch {
       setToast({
         kind: "error",
-        text: "Could not copy selection. Please try again.",
+        text: "Could not add the selection to chat. Please try again.",
       });
     } finally {
       copying.current = false;
@@ -241,7 +241,7 @@ export function AgentSelectionProvider({
                   type="button"
                   className="copy-for-agent-popover"
                   aria-keyshortcuts="Meta+Shift+C"
-                  aria-label="Copy for Agent"
+                  aria-label="Add to chat"
                   disabled={busy}
                   style={{
                     position: "absolute",
@@ -251,7 +251,7 @@ export function AgentSelectionProvider({
                   onMouseDown={(event) => event.preventDefault()}
                   onClick={() => void copy()}
                 >
-                  <span>{busy ? "Copying…" : "Copy for Agent"}</span>
+                  <span>{busy ? "Adding…" : "Add to chat"}</span>
                   <kbd aria-hidden="true">
                     <span>⇧</span>
                     <span>⌘</span>

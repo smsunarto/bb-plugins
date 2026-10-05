@@ -6,11 +6,13 @@ import type { Pins } from "../../../shared/vendor/review/src/review-api/document
  */
 type TraceStorageKind = "s3" | "hosted";
 
+// Upstream reports `selection.mode`, which is "none" when nothing is configured.
+// The list then loads empty, so the Trace tab shows only for uploaded traces.
 export async function listPinnedTraces(_cwd: string, _pins: Pins, override?: TraceStorageKind) {
   return {
     ok: true as const,
     configured: false,
-    storage: override ?? null,
+    storage: override ?? ("none" as const),
     sources: [] as TraceStorageKind[],
     sessions: [] as never[],
   };

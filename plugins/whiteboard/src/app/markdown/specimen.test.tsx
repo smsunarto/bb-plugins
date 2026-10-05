@@ -217,6 +217,7 @@ describe("markdown specimen", () => {
   it("renders the GFM table, the ts fence, and only https images", () => {
     const { container } = renderSpecimen();
 
+    expect(container.querySelector("table")?.parentElement?.className).toBe("wb-table-scroll");
     expect(container.querySelector("table")?.outerHTML).toBe(
       '<table style="min-width: 50px;"><colgroup><col style="min-width: 25px;"><col style="min-width: 25px;"></colgroup>' +
         '<tbody><tr><th colspan="1" rowspan="1"><p>File</p></th><th colspan="1" rowspan="1"><p>Status</p></th></tr>' +
@@ -363,7 +364,10 @@ describe("Docs parity", () => {
     return normalized(root, "a");
   }
 
-  /** Our blocks with prose wrappers unwrapped, minus the footnote section and heading ids. */
+  /**
+   * Our blocks with prose and table-scroll wrappers unwrapped, minus the
+   * footnote section and heading ids.
+   */
   function oursHtml(container: HTMLElement): string {
     const root = document.createElement("div");
     const clone = container.cloneNode(true);
@@ -372,6 +376,8 @@ describe("Docs parity", () => {
         root.append(...child.childNodes);
         child.remove();
       } else root.append(child);
+    for (const wrapper of root.querySelectorAll(".wb-table-scroll"))
+      wrapper.replaceWith(...wrapper.childNodes);
     root.querySelector("section[data-footnotes]")?.remove();
     for (const heading of root.querySelectorAll(":is(h1, h2, h3)")) {
       heading.removeAttribute("id");

@@ -1,6 +1,7 @@
 // Vendored from dev.fast review/src/review-api/http.ts @4ecc570 (MIT).
 import type { JsonObject } from "../../../../../../shared/vendor/json/src/index.ts";
 import type { ReviewStructuralDiffEvent } from "../../../../../../shared/vendor/review-protocol/src/index.ts";
+import type { SelectionHandoff } from "../../../../../../shared/contracts/selection-handoff.ts";
 import { errorMessage } from "../../../../../../shared/node/vendor/generated/trace-core-index.ts";
 import { Hono, type MiddlewareHandler } from "hono";
 import { z } from "zod";
@@ -115,8 +116,8 @@ export function createReviewApi(
       );
 
     // Provider failures may contain local paths/subprocess output: the server
-    // log gets the cause, the response only its kind. Desktop routes this
-    // process's stderr to its main log.
+    // log gets the cause, the response only its kind. The plugin runs inside
+    // the bb server, whose launcher appends stderr to logs/server-stdio.log.
     console.error(
       `[Review API] ${context.req.method} ${context.req.path} failed:`,
       error,
@@ -124,7 +125,7 @@ export function createReviewApi(
 
     return context.json(
       {
-        error: `Review operation failed (${failureKind(error)}). The server logged the cause; Whiteboard Desktop writes it to main.log in its logs folder.`,
+        error: `Review operation failed (${failureKind(error)}). The server logged the cause; bb writes it to server-stdio.log in its logs folder (~/.bb/logs by default).`,
       },
       500,
     );
@@ -1032,6 +1033,14 @@ export function createReviewApi(
         "",
         "",
       ].join("\n"),
+      // bb's "Add to chat" quotes the selection alone and pills the session
+      // (selection-handoff.ts); `text` stays the clipboard copy.
+      handoff: {
+        quote: target.kind === "text" ? target.quote : text,
+        sessionId: snapshot.reviewId,
+        version: snapshot.version,
+        title: snapshot.title,
+      } satisfies SelectionHandoff,
     });
   });
 

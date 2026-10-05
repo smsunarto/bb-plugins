@@ -18,7 +18,7 @@ import {
 import { DiffCount } from "./diff-count.tsx";
 import { DisplayedReviewVersionContext } from "./displayed-review-version-context.ts";
 import { useReviewSession } from "./host/review-session.tsx";
-import { ReviewBranchRange } from "./review-branch-range.tsx";
+import { ReviewBranchRange } from "../../../../components/branch-range.tsx";
 import { useReviewDiffFiles } from "./review-diff-files-context.tsx";
 
 interface ReviewDocumentMetaState {

@@ -1,0 +1,163 @@
+/*
+ * Document chrome fitted to bb's panels. Layered after tokens.css, which only
+ * holds bb tokens (tokens.test.ts); these rules read the vendored --review-*
+ * layout variables. Every selector adds `[data-review-theme]` to win over the
+ * vendored sheets on specificity. No color values here.
+ */
+
+/*
+ * Contents pill. Below the rail threshold (review-toc.tsx, 1360px shell)
+ * upstream floats the pill over the first heading. In bb's thread panel that
+ * is always, so dock it in the topbar row, left of the tabs, and grow the card
+ * from there. The pill rules key on `--rail`, which mirrors the JS threshold.
+ */
+.review-canvas-root[data-review-theme] .review-toc:not(.review-toc--rail) {
+  top: calc((var(--review-header-height) - 28px) / 2);
+  left: 6px;
+  width: 28px;
+  height: 28px;
+  /* The topbar's layer: later in the shell, the pill paints over the topbar,
+     and a diagram tour (same layer, portaled after the shell) covers both. */
+  z-index: var(--review-debug-layer);
+}
+
+.review-canvas-root[data-review-theme] .review-toc-toggle {
+  width: 28px;
+  height: 28px;
+}
+
+.review-canvas-root[data-review-theme] .review-toc:not(.review-toc--rail) .review-toc-head {
+  height: 28px;
+  line-height: 28px;
+}
+
+.review-canvas-root[data-review-theme] .review-toc--open:not(.review-toc--rail) {
+  width: min(248px, calc(100cqi - 12px));
+  height: auto;
+}
+
+/* Reserve the pill's slot by shell width, not by whether the pill is mounted
+   (it is absent off the Whiteboard view and below two headings), so the tabs
+   never shift. The shell is the review-content container. */
+@container review-content (max-width: 1359.98px) {
+  .review-canvas-root[data-review-theme] .review-topbar {
+    padding-inline-start: 40px;
+  }
+}
+
+/*
+ * The closed list leaves the Tab order and the accessibility tree once its
+ * fade ends. Opening shows it at once (visibility is not delayed there).
+ * heading-scroll.ts moves focus to the chosen heading before the delay ends.
+ */
+.review-canvas-root[data-review-theme] .review-toc:not(.review-toc--open) .review-toc-body {
+  visibility: hidden;
+  transition:
+    opacity 80ms ease,
+    visibility 0s linear 80ms;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .review-canvas-root[data-review-theme] .review-toc:not(.review-toc--open) .review-toc-body {
+    transition:
+      opacity 140ms ease,
+      visibility 0s linear 140ms;
+  }
+}
+
+/*
+ * Topbar. bb has no source-tree navigation (verbs.ts answers with an error
+ * toast) and dev.fast's Discord is not bb's, so both buttons are hidden. The
+ * context divider stays only while something else (the authoring badge) shows.
+ */
+.review-canvas-root[data-review-theme] .review-open-source-tree,
+.review-canvas-root[data-review-theme] .review-topbar-icon-button:has(> .ui-icon--discord) {
+  display: none;
+}
+
+.review-canvas-root[data-review-theme]
+  .review-topbar-context:not(:has(> :not(.review-open-source-tree)))::before {
+  display: none;
+}
+
+/* Phone widths: tighter tabs and an icon-only Dismiss, so every action fits
+   without the strip scrolling. The label stays as the button's name. */
+@container review-content (max-width: 520px) {
+  .review-canvas-root[data-review-theme] .review-topbar-left .review-segmented {
+    gap: 12px;
+  }
+
+  .review-canvas-root[data-review-theme] .review-corner-dismiss {
+    width: var(--chrome-control-height);
+    justify-content: center;
+    padding: 0;
+  }
+
+  .review-canvas-root[data-review-theme] .review-corner-dismiss > span {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+}
+
+/* A peek still loading, or one that cannot resolve (CodePeek.tsx), is one
+   muted row in the peek's frame, as upstream styles an inline editor error. */
+.review-canvas-root[data-review-theme] .code-peek[role="status"] {
+  display: flex;
+  align-items: center;
+  min-height: 32px;
+  padding: 0 10px;
+  border: 1px solid var(--rule-soft);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--ink-faint);
+  font: 11px/1.4 var(--wb-font-mono);
+}
+
+/* Upstream spaces consecutive peeks as siblings (styles.css), but the API
+   document wraps every block in `.api-document-node`, so its peeks touched. */
+.review-canvas-root[data-review-theme]
+  .review-document
+  .api-document-node:has(> .code-peek)
+  + .api-document-node
+  > .code-peek {
+  margin-block-start: 14px;
+}
+
+/*
+ * Prose. Markdown runs sit in a `.bb-markdown-prose` wrapper, so the vendored
+ * direct-child measure (api-document.css) misses their paragraphs and tables.
+ * Give the wrapper the same measure so text lines up with headings and peeks.
+ */
+.review-canvas-root[data-review-theme] .review-document .api-document-node > .bb-markdown-prose {
+  width: min(100%, var(--review-prose-max-width));
+  max-width: calc(100cqi - 2 * var(--review-document-padding-inline));
+  margin-inline: auto;
+}
+
+/* bb prose lays tables out automatically, where upstream's `anywhere` lets a
+   column shrink to one character. Keep words whole; code may still break. A
+   table wider than its column scrolls in its wrapper (render.tsx). */
+.review-canvas-root[data-review-theme] .review-document .bb-markdown-prose :is(th, td) {
+  overflow-wrap: break-word;
+}
+
+.review-canvas-root[data-review-theme] .bb-markdown-prose .wb-table-scroll {
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+.review-canvas-root[data-review-theme] .review-document .bb-markdown-prose :is(th, td) code {
+  overflow-wrap: anywhere;
+}
+
+/* bb's Button inside the canvas (Home's empty state, the dismissed panel).
+   Upstream's unlayered `button { font: inherit }` outranks the layered text
+   utilities, and the canvas would pass down its mono face. */
+.review-canvas-root[data-review-theme] [data-slot="button"] {
+  font: revert-layer;
+  font-family: var(--font-sans);
+}

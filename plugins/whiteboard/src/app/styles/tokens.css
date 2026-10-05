@@ -1,11 +1,11 @@
 /*
  * Whiteboard tokens on bb's theme (design §3.8). Owned by WP4.
  *
- * The vendored sheets declare their palette inside `@scope (.review-canvas-root)`:
- * dark on `:scope`, light on `.review-app--theme-light` (the inner
- * `.review-theme-host`). Scoped rules beat unscoped ones only at equal
- * specificity, so every override below adds `[data-review-theme]`, which the
- * mount always sets, and wins on specificity alone.
+ * The vendored sheets declare their palette under `:where(.review-canvas-root)`,
+ * which adds no specificity: dark on `.review-canvas-root`, light on
+ * `.review-app--theme-light` (the inner `.review-theme-host`). Every override
+ * below adds `.review-canvas-root[data-review-theme]`, which the mount always
+ * sets, so it wins on specificity alone, in any sheet order.
  *
  * Every value is a bb theme token or a color-mix of bb tokens. bb's tokens
  * already switch with the `.dark` class on <html>, so one declaration covers
@@ -28,7 +28,8 @@
   --vscode-editor-foreground: var(--foreground);
   --vscode-foreground: var(--foreground);
   --vscode-descriptionForeground: var(--muted-foreground);
-  --vscode-disabledForeground: var(--subtle-foreground);
+  /* --ink-faint labels counts, numbers and names: bb's readback tier, not the ghosted subtle one. */
+  --vscode-disabledForeground: var(--readback-foreground);
   --vscode-icon-foreground: var(--muted-foreground);
   --vscode-editorWidget-background: var(--popover);
   --vscode-editorWidget-border: color-mix(in oklab, var(--foreground) 8%, var(--border));
@@ -253,6 +254,46 @@
 
 .review-canvas-root[data-review-theme] .copy-for-agent-popover kbd {
   background: var(--state-hover);
+}
+
+/* Upstream ghosts a collapsed section's title (--ghost, about 1.5:1). Recede it to a readable tier. */
+.review-canvas-root[data-review-theme] .review-section--collapsed .review-section-heading h2 {
+  color: var(--readback-foreground);
+}
+
+/*
+ * Upstream drops the focus ring on these controls, or draws a --rule-soft
+ * hairline. Draw the canvas's accent ring instead. Where a box clips the
+ * control's outside, the ring is inset.
+ */
+.review-canvas-root[data-review-theme]
+  :is(
+    .review-toc-link,
+    .review-section-toggle,
+    .review-diff-settings-button,
+    .icon-button,
+    .copy-for-agent-popover,
+    .review-history-banner button
+  ):focus-visible {
+  outline: 2px solid var(--timeline-accent);
+  outline-offset: 1px;
+}
+
+/* The rail's list sits flush in its scroller. The popover's padded list does not. */
+.review-canvas-root[data-review-theme] .review-toc--rail .review-toc-link:focus-visible {
+  outline-offset: -2px;
+}
+
+/* The pill clips the toggle's last 2px (a 28px toggle in a 26px padding box), so inset past that. */
+.review-canvas-root[data-review-theme] .review-toc-toggle:focus-visible {
+  outline: 2px solid var(--timeline-accent);
+  outline-offset: -4px;
+}
+
+.review-canvas-root[data-review-theme]
+  :is(.side-panel-resizer, .side-panel-sheet-resizer):focus-visible {
+  outline: 2px solid var(--timeline-accent);
+  outline-offset: -2px;
 }
 
 /* The lens button depended on review-desktop's workbench review.css. Keep its

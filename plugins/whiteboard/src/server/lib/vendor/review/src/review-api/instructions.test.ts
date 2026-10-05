@@ -126,7 +126,7 @@ describe("renderInstructions", () => {
 
     it("answers the trace-archaeology topic with an off message when capture is off", async () => {
       expect(await renderInstructions("trace-archaeology", off, root)).toBe(
-        "Trace capture is off in this bb plugin. Uploaded trace quotes are supported. Configure capture through Whiteboard Desktop.",
+        "Trace capture is off in this bb plugin, so no agent traces are available. Uploaded trace quotes are supported.",
       );
     });
   });

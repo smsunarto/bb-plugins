@@ -482,12 +482,14 @@ describe("the other host modules", () => {
   });
 
   it("rejects a function the allowlist does not name", async () => {
+    // @ts-expect-error gitArgsSync is not a host function name.
     await expect(invokeHost("local-vcs", "gitArgsSync", [repo.root, []], {})).rejects.toMatchObject(
       {
         name: "unknown_function",
         message: "whiteboard: local-vcs.gitArgsSync is not an allowlisted host function.",
       },
     );
+    // @ts-expect-error constructor is not a host function name.
     await expect(invokeHost("fs", "constructor", [], {})).rejects.toMatchObject({
       name: "unknown_function",
     });

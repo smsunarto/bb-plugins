@@ -4,9 +4,10 @@ import type * as NodeSqlite from "node:sqlite";
 /**
  * The `node:sqlite` surface `store.ts` and `activity.ts` use, over the bb
  * plugin database (design §3.10). The engine installs bb's handle with
- * `installDatabase` before it constructs the store, and the constructor then
- * ignores its path. Differences from better-sqlite3 that upstream can observe
- * are normalized here:
+ * `installDatabase`, which returns the path the store must open:
+ * `BB_PLUGIN_DATABASE`. While a handle is installed, any other path throws,
+ * so a store can never silently land on bb's database. Differences from
+ * better-sqlite3 that upstream can observe are normalized here:
  *
  * - `foreign_keys` is on, as `node:sqlite` enables it by default.
  * - BLOB columns read back as `Uint8Array`, not `Buffer`.
@@ -36,9 +37,13 @@ type Source =
 
 let source: Source | undefined;
 
-/** Install the bb handle that every later `new DatabaseSync(...)` wraps. */
-export function installDatabase(handle: BetterSqlite3.Database): void {
+/** The path that names bb's plugin database. Not a file: the handle is bb's. */
+export const BB_PLUGIN_DATABASE = "bb-plugin-database";
+
+/** Install the bb handle that `new DatabaseSync(BB_PLUGIN_DATABASE)` wraps. Returns that path. */
+export function installDatabase(handle: BetterSqlite3.Database): typeof BB_PLUGIN_DATABASE {
   source = { kind: "borrowed", handle };
+  return BB_PLUGIN_DATABASE;
 }
 
 /** Open a fresh database per `new DatabaseSync(path)` instead. For specs on real better-sqlite3. */
@@ -137,6 +142,10 @@ class Database {
     if (!source)
       throw new Error(
         "whiteboard: no database installed. Call installDatabase(bb.storage.database()) before constructing the store.",
+      );
+    if (source.kind === "borrowed" && path !== BB_PLUGIN_DATABASE)
+      throw new Error(
+        `whiteboard: bb's plugin database is installed, so the store opens "${BB_PLUGIN_DATABASE}", not "${path}".`,
       );
     this.#owned = source.kind === "owned";
     this.#handle =

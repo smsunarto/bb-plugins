@@ -87,9 +87,47 @@ export async function mkdir(
   return (value as string | null | undefined) ?? undefined;
 }
 
+/** How long a memoized `exists` answer is reused. */
+export const EXISTS_TTL_MS = 3_000;
+
+/**
+ * Memoized `exists` answers, kept while an engine runs (`memoizeExists`).
+ * Every `exists` caller in local-data.ts checks a repository root, and the
+ * store's 1 Hz worktree refresh asks for each session's root. Without the
+ * memo each ask is a host RPC. The cost: a removed checkout shows up to 3 s
+ * late. Off by default, so specs that move a checkout see the move at once.
+ */
+let answers: Map<string, { at: number; answer: Promise<boolean> }> | undefined;
+
+/** Reuse repository-root answers for `EXISTS_TTL_MS`. Returns the off switch. */
+export function memoizeExists(): () => void {
+  const mine = new Map<string, { at: number; answer: Promise<boolean> }>();
+  answers = mine;
+  return () => {
+    if (answers === mine) answers = undefined;
+  };
+}
+
+/** Drop memoized answers: a repository was registered or rebound, or a host worker exited. */
+export function forgetExists(): void {
+  answers?.clear();
+}
+
 /** `existsSync` on the host; async because the path may live on another machine. */
-export async function exists(target: string): Promise<boolean> {
-  return (await invokeHost("fs", "exists", [target], on(target))) as boolean;
+export function exists(target: string): Promise<boolean> {
+  const memo = answers;
+  const ask = async () => (await invokeHost("fs", "exists", [target], on(target))) as boolean;
+  if (!memo) return ask();
+  const now = Date.now();
+  const cached = memo.get(target);
+  if (cached && now - cached.at < EXISTS_TTL_MS) return cached.answer;
+  const answer = ask();
+  memo.set(target, { at: now, answer });
+  // A failed ask is not an answer: the next call asks again.
+  answer.catch(() => {
+    if (memo.get(target)?.answer === answer) memo.delete(target);
+  });
+  return answer;
 }
 
 /** `promisify(execFile)` on the host that owns `options.cwd` or the `-C`/`--git-dir` path. */

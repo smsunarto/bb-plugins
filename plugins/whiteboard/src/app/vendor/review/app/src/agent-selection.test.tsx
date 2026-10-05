@@ -5,7 +5,7 @@ import { createRoot } from "react-dom/client";
 import { expect, it, vi } from "vitest";
 
 import { AgentSelectionProvider, useAgentSelection } from "./agent-selection.tsx";
-import * as clipboard from "./copy-text.tsx";
+import * as clipboard from "../../../../bridge/agent-handoff.ts";
 import { ReviewSessionProvider } from "./host/review-session.tsx";
 import { testReviewSession } from "./review-session-test-utils.tsx";
 
@@ -79,12 +79,12 @@ it("copies only on click or Shift+Cmd+C, reports failures, and clears on revisio
     await act(async () => container.querySelector("button")!.click());
     expect(fetch).not.toHaveBeenCalled();
     expect(
-      container.querySelector('[aria-label="Copy for Agent"]'),
+      container.querySelector('[aria-label="Add to chat"]'),
     ).not.toBeNull();
 
     const popover = () =>
       container.querySelector<HTMLButtonElement>(
-        '[aria-label="Copy for Agent"]',
+        '[aria-label="Add to chat"]',
       )!;
 
     expect(popover().style.top).toBe("82px");
@@ -114,34 +114,38 @@ it("copies only on click or Shift+Cmd+C, reports failures, and clears on revisio
     expect(fetch).not.toHaveBeenCalled();
     await act(async () =>
       container
-        .querySelector<HTMLButtonElement>('[aria-label="Copy for Agent"]')!
+        .querySelector<HTMLButtonElement>('[aria-label="Add to chat"]')!
         .click(),
     );
-    expect(write).toHaveBeenLastCalledWith("Review: /review.mdx\n\nselected");
+    expect(write).toHaveBeenLastCalledWith(
+      "Review: /review.mdx\n\nselected",
+      undefined,
+      expect.objectContaining({ className: "review-document" }),
+    );
     expect(
       JSON.parse(fetch.mock.calls[0]![1]!.body as string),
     ).not.toHaveProperty("anchorElement");
     expect(notify).toHaveBeenLastCalledWith({
       kind: "success",
-      text: expect.stringContaining("copied to clipboard"),
+      text: expect.stringContaining("Added to chat."),
     });
     expect(container.querySelector('[role="status"]')).toBeNull();
     await act(async () => {
       shortcut();
     });
     expect(write).toHaveBeenCalledTimes(2);
-    expect(container.querySelector('[aria-label="Copy for Agent"]')).toBeNull();
+    expect(container.querySelector('[aria-label="Add to chat"]')).toBeNull();
     write.mockResolvedValue(false);
     await act(async () => {
       shortcut();
     });
     expect(notify).toHaveBeenLastCalledWith({
       kind: "error",
-      text: expect.stringContaining("Could not copy"),
+      text: expect.stringContaining("Could not add the selection to chat."),
     });
     expect(container.querySelector('[role="status"]')).toBeNull();
     await act(async () => render("two"));
-    expect(container.querySelector('[aria-label="Copy for Agent"]')).toBeNull();
+    expect(container.querySelector('[aria-label="Add to chat"]')).toBeNull();
     await act(async () => {
       shortcut();
     });

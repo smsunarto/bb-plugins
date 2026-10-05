@@ -992,6 +992,12 @@ it("copies prose with the displayed version's title and immutable review identit
   expect(response.status).toBe(200);
   expect(await response.json()).toEqual({
     text: `Selected text from Whiteboard: Original title\nSession ID: ${reviewId}\nVersion: 0\nRepository ID: ${pins.repositoryId}\nSession base: ${pins.base}\nSession head: ${pins.head}\nRead this version with whiteboard_session_get({"sessionId":"${reviewId}","version":0,"full":true}).\n\n> First line\n> Second line\n\n`,
+    handoff: {
+      quote: "First line\nSecond line",
+      sessionId: reviewId,
+      version: 0,
+      title: "Original title",
+    },
   });
 });
 
@@ -1026,6 +1032,12 @@ it("copies code from historical pins after a repin, never from working-tree cont
   expect(historical.status).toBe(200);
   expect(await historical.json()).toEqual({
     text: `Selected code from Whiteboard: Code\nSession ID: ${reviewId}\nVersion: 0\nRepository ID: ${pins.repositoryId}\nSession base: ${pins.base}\nSession head: ${pins.head}\nRead this version with whiteboard_session_get({"sessionId":"${reviewId}","version":0,"full":true}).\n\n## Value\n\nSelected source\n\n## head: example.ts:1-1 (${pins.head})\n    export const value = 2;\n\n`,
+    handoff: {
+      quote: `## Value\n\nSelected source\n\n## head: example.ts:1-1 (${pins.head})\n    export const value = 2;`,
+      sessionId: reviewId,
+      version: 0,
+      title: "Code",
+    },
   });
 
   const latest = await app.request(`/${reviewId}/copy-context`, {

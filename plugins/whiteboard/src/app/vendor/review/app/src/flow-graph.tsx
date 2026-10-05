@@ -1,6 +1,7 @@
 // Vendored from dev.fast review/app/src/flow-graph.tsx @4ecc570 (MIT).
 import {
   BaseEdge,
+  Controls,
   type Edge,
   type EdgeProps,
   Handle,
@@ -11,9 +12,27 @@ import {
   ReactFlow,
   ReactFlowProvider,
   useReactFlow,
+  ViewportPortal,
 } from "@xyflow/react";
-import ELK, { type ElkNode } from "elkjs/lib/elk.bundled.js";
-import { type RefObject, useEffect, useMemo, useRef, useState } from "react";
+import {
+  type RefObject,
+  useEffect,
+  useEffectEvent,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+
+import ELK, { type ElkNode } from "../../../../lib/elk.ts";
+import {
+  EXPANDED_MAX_ZOOM,
+  EXPANDED_ZOOM_FLOOR,
+  FLOW_PADDING as PADDING,
+  centerViewport,
+  fitZoom,
+  inlineFlowHeight,
+  shouldPan,
+} from "../../../../lib/flow-fit.ts";
 
 import type {
   FlowDiagramBlock,
@@ -35,6 +54,10 @@ import { useReviewLenses } from "./review-lenses.tsx";
  * tall layout is still inside the box the reader is looking at. Nodes are
  * DOM, edges are paths, so the draw queue's phases apply as they do to a
  * sequence diagram. A decision is a dashed box, a terminal a pill.
+ *
+ * bb: inline, the box grows to the drawing's height (up to 1400px) instead
+ * of shrinking the drawing into upstream's fixed box. Expanded, the fit
+ * stops at a readable zoom and follows the selected node (lib/flow-fit.ts).
  */
 export function FlowGraph({
   block,
@@ -57,7 +80,13 @@ export function FlowGraph({
   const { theme } = useReviewDebugSettings();
   const [error, setError] = useState<string>();
   const [layout, setLayout] = useState<Layout>();
-  const frame = useRef<HTMLDivElement>(null);
+  const [frame, setFrame] = useState<HTMLDivElement | null>(null);
+  const [frameSize, setFrameSize] = useState<FrameSize>();
+  // Set by the reader's own pan or zoom; refits stop from then on.
+  const moved = useRef(false);
+  const markMoved = () => {
+    moved.current = true;
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -74,6 +103,28 @@ export function FlowGraph({
       cancelled = true;
     };
   }, [block, direction]);
+
+  // The frame's width sizes an inline figure, and every resize refits.
+  // Measured at once too, so the width is known before ELK's async layout lands.
+  useEffect(() => {
+    if (!frame) return;
+
+    const measure = () => {
+      const { width, height } = frame.getBoundingClientRect();
+
+      setFrameSize((size) =>
+        size?.width === width && size.height === height
+          ? size
+          : { width, height },
+      );
+    };
+
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(frame);
+
+    return () => observer.disconnect();
+  }, [frame]);
 
   const nodes = useMemo<FlowNodeType[]>(
     () =>
@@ -127,48 +178,100 @@ export function FlowGraph({
 
   if (error) return <p role="alert">Could not lay out diagram: {error}</p>;
 
-  if (!layout) return <p className="lens-diagram-note">Laying out flow…</p>;
+  // Inline only: the tour stage passes "100%" and fills its overlay.
+  const frameHeight =
+    !interactive && typeof height === "number" && layout && frameSize
+      ? inlineFlowHeight({
+          layoutWidth: layout.width,
+          layoutHeight: layout.height,
+          frameWidth: frameSize.width,
+          minHeight: height,
+        })
+      : height;
 
+  // The frame holds its default height while ELK runs, so nothing jumps.
   return (
     <div
-      ref={frame}
+      ref={setFrame}
       className="lens-flow"
-      style={{ height }}
+      style={{ height: frameHeight }}
       aria-label={block.title}
     >
-      <ReactFlowProvider>
-        <ReactFlow
-          colorMode={theme}
-          nodes={nodes}
-          edges={edges}
-          nodeTypes={nodeTypes}
-          edgeTypes={edgeTypes}
-          minZoom={0.1}
-          maxZoom={1}
-          onNodeClick={(_, node) => {
-            if (node.type === "flowNode") node.data.select();
-          }}
-          nodesDraggable={false}
-          nodesConnectable={false}
-          nodesFocusable={false}
-          edgesFocusable={false}
-          elementsSelectable={false}
-          panActivationKeyCode={null}
-          panOnDrag={interactive}
-          preventScrolling={interactive}
-          zoomOnScroll={interactive}
-          zoomOnPinch={interactive}
-          zoomOnDoubleClick={false}
-          proOptions={{ hideAttribution: true }}
-        >
-          <FitToLayout layout={layout} frame={frame} />
-        </ReactFlow>
-      </ReactFlowProvider>
+      {layout ? (
+        <ReactFlowProvider>
+          <ReactFlow
+            colorMode={theme}
+            nodes={nodes}
+            edges={edges}
+            nodeTypes={nodeTypes}
+            edgeTypes={edgeTypes}
+            minZoom={0.1}
+            maxZoom={interactive ? EXPANDED_MAX_ZOOM : 1}
+            onNodeClick={(_, node) => {
+              if (node.type === "flowNode") node.data.select();
+            }}
+            // Programmatic moves carry no event; only the reader's do. A
+            // press starts a gesture without moving (a node click), so a
+            // drag counts from its first move.
+            onMoveStart={(event) => {
+              if (
+                event &&
+                event.type !== "mousedown" &&
+                event.type !== "touchstart"
+              )
+                markMoved();
+            }}
+            onMove={(event) => {
+              if (event) markMoved();
+            }}
+            nodesDraggable={false}
+            nodesConnectable={false}
+            nodesFocusable={false}
+            edgesFocusable={false}
+            elementsSelectable={false}
+            panActivationKeyCode={null}
+            panOnDrag={interactive}
+            panOnScroll={interactive}
+            preventScrolling={interactive}
+            zoomOnScroll={interactive}
+            zoomOnPinch={interactive}
+            zoomOnDoubleClick={false}
+            proOptions={{ hideAttribution: true }}
+          >
+            <FitToLayout
+              layout={layout}
+              frame={frame}
+              frameSize={frameSize}
+              interactive={interactive}
+              selected={selectedKey ? layout.nodes.get(selectedKey) : undefined}
+              moved={moved}
+            />
+            <FlowEdgeLabels layout={layout} edges={edges} />
+            {interactive && (
+              <Controls
+                showInteractive={false}
+                fitViewOptions={{ padding: `${PADDING}px`, maxZoom: 1 }}
+                onZoomIn={markMoved}
+                onZoomOut={markMoved}
+                onFitView={markMoved}
+              />
+            )}
+          </ReactFlow>
+        </ReactFlowProvider>
+      ) : (
+        <p className="lens-diagram-note">Laying out flow…</p>
+      )}
     </div>
   );
 }
 
-const PADDING = 24;
+interface FrameSize {
+  width: number;
+  height: number;
+}
+
+const motionDuration = () =>
+  matchMedia("(prefers-reduced-motion: reduce)").matches ? 0 : 300;
 
 const ARROW = {
   type: MarkerType.ArrowClosed,
@@ -181,53 +284,120 @@ const ARROW = {
  * Fits the box to the layout: ELK reports the drawing's size, the frame
  * reports its own, so the viewport is set outright instead of asking React
  * Flow to measure nodes first. Refits on every layout and every resize,
- * animated once the first fit has landed. Never enlarges past 1:1.
+ * animated once the first fit has landed, until the reader pans or zooms by
+ * hand. Never enlarges past 1:1. Expanded, the fit stops at a readable zoom
+ * centered on the selected node, and selecting a node off screen pans to it.
  */
 function FitToLayout({
   layout,
   frame,
+  frameSize,
+  interactive,
+  selected,
+  moved,
 }: {
   layout: Layout;
-  frame: RefObject<HTMLDivElement | null>;
+  frame: HTMLDivElement | null;
+  /** The observed size: a change refits. */
+  frameSize: FrameSize | undefined;
+  interactive: boolean;
+  selected: { x: number; y: number } | undefined;
+  moved: RefObject<boolean>;
 }) {
   const flow = useReactFlow();
   const fitted = useRef(false);
+  const focus = selected && { ...selected, w: SIZE.width, h: SIZE.height };
 
-  useEffect(() => {
-    const element = frame.current;
+  const fit = useEffectEvent(() => {
+    // Measured now: an inline frame resizes in the commit the layout lands in.
+    const box = frame?.getBoundingClientRect();
 
-    if (!element) return;
+    if (!box?.width || !box.height || moved.current) return;
 
-    const fit = () => {
-      const { width, height } = element.getBoundingClientRect();
+    const zoom = interactive
+      ? Math.max(fitZoom(layout, box), EXPANDED_ZOOM_FLOOR)
+      : fitZoom(layout, box);
 
-      if (!width || !height) return;
+    void flow.setViewport(centerViewport(layout, box, zoom, focus), {
+      duration: fitted.current ? motionDuration() : 0,
+    });
+    fitted.current = true;
+  });
 
-      const zoom = Math.min(
-        1,
-        (width - PADDING * 2) / Math.max(1, layout.width),
-        (height - PADDING * 2) / Math.max(1, layout.height),
-      );
+  const reveal = useEffectEvent(() => {
+    const box = frame?.getBoundingClientRect();
 
-      void flow.setViewport(
-        {
-          x: (width - layout.width * zoom) / 2,
-          y: (height - layout.height * zoom) / 2,
-          zoom,
-        },
-        { duration: fitted.current ? 300 : 0 },
-      );
-      fitted.current = true;
-    };
+    if (!focus || !box || !fitted.current) return;
 
-    fit();
-    const observer = new ResizeObserver(fit);
-    observer.observe(element);
+    const viewport = flow.getViewport();
 
-    return () => observer.disconnect();
-  }, [flow, frame, layout]);
+    if (!shouldPan({ ...viewport, width: box.width, height: box.height }, focus))
+      return;
+
+    void flow.setViewport(centerViewport(layout, box, viewport.zoom, focus), {
+      duration: motionDuration(),
+    });
+  });
+
+  useEffect(() => fit(), [layout, frameSize]);
+
+  useEffect(() => reveal(), [selected]);
 
   return null;
+}
+
+/**
+ * Every edge label in one SVG layer above the edges, so no later edge paints
+ * over an earlier edge's label. Flow coordinates, like the edge paths.
+ */
+function FlowEdgeLabels({
+  layout,
+  edges,
+}: {
+  layout: Layout;
+  edges: FlowEdgeType[];
+}) {
+  return (
+    <ViewportPortal>
+      <svg
+        className="lens-flow-edge-labels"
+        width={layout.width}
+        height={layout.height}
+        style={{ position: "absolute", top: 0, left: 0, overflow: "visible" }}
+      >
+        {edges.map((edge) =>
+          edge.data?.label ? (
+            <FlowEdgeLabel
+              key={edge.id}
+              unitId={edge.data.unitId}
+              label={edge.data.label}
+            />
+          ) : null,
+        )}
+      </svg>
+    </ViewportPortal>
+  );
+}
+
+function FlowEdgeLabel({
+  unitId,
+  label,
+}: {
+  unitId: string | undefined;
+  label: { text: string; x: number; y: number };
+}) {
+  const motion = useMotionPhase(unitId);
+
+  return (
+    <text
+      className="lens-flow-edge-label"
+      x={label.x}
+      y={label.y}
+      data-motion={motion}
+    >
+      {label.text}
+    </text>
+  );
 }
 
 interface Layout {
@@ -425,9 +595,7 @@ function FlowNode({ data }: NodeProps<FlowNodeType>) {
         />
       </svg>
       <div className="flow-node-text">
-        <span className="flow-node-label">
-          {node.label.length > 26 ? `${node.label.slice(0, 25)}…` : node.label}
-        </span>
+        <span className="flow-node-label">{node.label}</span>
         <span className="flow-node-caption lens-flow-caption">
           {unavailable ? (
             availability === "pending" ? (
@@ -455,33 +623,22 @@ function FlowEdge({ id, data, markerEnd }: EdgeProps<FlowEdgeType>) {
     .map((point, index) => `${index ? "L" : "M"}${point.x},${point.y}`)
     .join(" ");
 
+  // The label draws in FlowEdgeLabels, above every edge.
   return (
-    <>
-      <BaseEdge
-        id={id}
-        path={path}
-        className="lens-flow-edge"
-        // The arrowhead is the last stroke.
-        markerEnd={
-          motion === "outline" || motion === "stroke" ? undefined : markerEnd
-        }
-        strokeDasharray={data.dashed ? "6 4" : undefined}
-        pathLength={1}
-        interactionWidth={0}
-        data-review-unit-id={data.unitId}
-        data-motion={motion}
-      />
-      {data.label && (
-        <text
-          className="lens-flow-edge-label"
-          x={data.label.x}
-          y={data.label.y}
-          data-motion={motion}
-        >
-          {data.label.text}
-        </text>
-      )}
-    </>
+    <BaseEdge
+      id={id}
+      path={path}
+      className="lens-flow-edge"
+      // The arrowhead is the last stroke.
+      markerEnd={
+        motion === "outline" || motion === "stroke" ? undefined : markerEnd
+      }
+      strokeDasharray={data.dashed ? "6 4" : undefined}
+      pathLength={1}
+      interactionWidth={0}
+      data-review-unit-id={data.unitId}
+      data-motion={motion}
+    />
   );
 }
 

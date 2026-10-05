@@ -52,13 +52,13 @@ describe("createRealtime", () => {
   test("open and settings publish at once", () => {
     const { realtime, signals } = host();
 
-    realtime.open({ threadId: "t1", sessionId: "s1", title: "Plan", nonce: "n1" });
+    realtime.open({ threadId: "t1", sessionId: "s1", title: "Plan", at: 1 });
     realtime.settings({ scratchpadEnabled: true, softwareMapEnabled: false });
 
     expect(signals).toEqual([
       {
         channel: "whiteboard:open",
-        payload: { threadId: "t1", sessionId: "s1", title: "Plan", nonce: "n1" },
+        payload: { threadId: "t1", sessionId: "s1", title: "Plan", at: 1 },
       },
       {
         channel: "whiteboard:settings",
@@ -78,7 +78,7 @@ describe("createRealtime", () => {
     realtime.dispose();
     await harness.lifecycle.dispose();
     realtime.changed({ kind: "catalog" });
-    realtime.open({ threadId: "t1", sessionId: "s1", title: "Plan", nonce: "n1" });
+    realtime.open({ threadId: "t1", sessionId: "s1", title: "Plan", at: 1 });
     vi.advanceTimersByTime(1_000);
 
     expect(signals).toEqual([]);

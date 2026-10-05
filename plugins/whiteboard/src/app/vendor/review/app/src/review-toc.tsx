@@ -7,7 +7,7 @@ import {
   cssIdentifier,
   getReviewScrollRoot,
   scrollToReviewHeading,
-} from "./review-heading-scroll.ts";
+} from "../../../../lib/heading-scroll.ts";
 import { useReviewRoots } from "./review-root-context.tsx";
 import {
   activeTargetForScroll,

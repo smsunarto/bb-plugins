@@ -3,6 +3,7 @@ import type { HostResolver } from "../../../shared/contracts/engine.ts";
 import {
   HOST_PAYLOAD_LIMIT_BYTES,
   HOST_TIMEOUT_MS,
+  type HostFunctionName,
   type HostModule,
   type HostSignalPayload,
   type WhiteboardHostContract,
@@ -214,9 +215,9 @@ export function encodeArgs(args: readonly unknown[]) {
 export type InvokeOptions = { timeoutMs?: number; signal?: AbortSignal };
 
 /** Call one allowlisted host export on the host `route` names. Returns the host it ran on. */
-export async function invokeOn(
-  module: HostModule,
-  fn: string,
+export async function invokeOn<M extends HostModule>(
+  module: M,
+  fn: HostFunctionName<M>,
   args: readonly unknown[],
   route: HostRoute,
   options: InvokeOptions = {},
@@ -235,9 +236,9 @@ export async function invokeOn(
 }
 
 /** `invokeOn`, returning the value only. */
-export async function invokeHost(
-  module: HostModule,
-  fn: string,
+export async function invokeHost<M extends HostModule>(
+  module: M,
+  fn: HostFunctionName<M>,
   args: readonly unknown[],
   route: HostRoute,
   options?: InvokeOptions,

@@ -14,7 +14,7 @@ import { authoringTools } from "../vendor/review/src/review-api/authoring-tools.
 import { callPublicTool, publicTool } from "../vendor/review/src/review-api/public-tools.ts";
 import { flattenSchema } from "./flatten-schema.ts";
 import { mcpAuthoringGuidance } from "./guidance.ts";
-import { bbToolName, renameSchemaDescriptions, renameToolTokens } from "./rename.ts";
+import { adaptWording, bbToolName, renameSchemaDescriptions, renameToolTokens } from "./rename.ts";
 
 /** Trace storage needs the external CLI or hosted store, so trace stays off (design Q2). */
 export const TRACE_ENABLED = false;
@@ -62,10 +62,12 @@ function buildCatalog(scratchpadEnabled: boolean): CatalogTool[] {
   return ordered.map((tool) => ({
     tool,
     name: bbToolName(tool.name),
-    description: renameToolTokens(
-      tool.name === INSTRUCTIONS_TOOL
-        ? `${mcpAuthoringGuidance({ scratchpadAvailable: true, traceEnabled: TRACE_ENABLED })}\n\n${tool.description}`
-        : tool.description,
+    description: adaptWording(
+      renameToolTokens(
+        tool.name === INSTRUCTIONS_TOOL
+          ? `${mcpAuthoringGuidance({ scratchpadAvailable: true, traceEnabled: TRACE_ENABLED })}\n\n${tool.description}`
+          : tool.description,
+      ),
     ),
     parameters: renameSchemaDescriptions(flattenSchema(tool.inputSchema as JsonObject)),
   }));
