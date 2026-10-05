@@ -16,80 +16,24 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { type CodeThemeRuleFile, codeThemeRulesPath } from "./code-theme-rules";
+import { roleValues, tokenRoles } from "./generate-theme";
+
+// The plugin typechecks against bun-types/test only. The full bun-types clash
+// with this workspace's @types/node, so declare the one runtime API used here.
+declare const Bun: { JSONC: { parse(source: string): unknown } };
 
 const contractLinkPath = fileURLToPath(new URL("../CONTRACT.md", import.meta.url));
 
-// Hexes as the editor theme spells them, mapped to this workspace's roles.
-// Both sides are authored against CONTRACT.md, so a hex that is absent here
-// means the contract moved and the palette has not caught up.
-const roleByColor = new Map(
-  Object.entries({
-    "#E3E3DD": "text.ink",
-    "#E3E3DD8C": "text.ink55",
-    "#E3E3DD4D": "text.ink30",
-    "#BEB89999": "text.comment60",
-    "#FE5D86": "code.keyword",
-    "#FE5D8699": "code.keyword60",
-    "#9DDD54": "code.entity",
-    "#F7D05C": "code.string",
-    "#51DAE9": "code.type",
-    "#A895FE": "code.constant",
-    "#A895FEA0": "code.constant63",
-    "#FF8342": "code.parameter",
-    "#E34671": "feedback.error",
-    "#F1B467": "feedback.warning",
-    "#6796E6": "feedback.info",
-    "#B267E6": "feedback.debug",
-    "#181818": "ground.content",
-  }).map(([color, role]) => [color.toLowerCase(), role]),
+// Token roles by color, read from the generator's registry. Both sides are
+// authored against CONTRACT.md, so a hex that is absent here means the contract
+// moved and the palette has not caught up.
+const roleByColor = new Map<string, string>(
+  [...tokenRoles].map((role) => [roleValues[role], role]),
 );
 
 interface SourceRule {
   scope: string | string[];
   settings: { foreground?: string; background?: string; fontStyle?: string };
-}
-
-// The editor theme is JSONC — comments carry the per-rule rationale the
-// contract asks for, and trailing commas come with them.
-function parseJsonc(source: string): unknown {
-  let out = "";
-  let index = 0;
-  let inString = false;
-  while (index < source.length) {
-    const character = source[index];
-    if (inString) {
-      out += character;
-      if (character === "\\") {
-        out += source[index + 1] ?? "";
-        index += 2;
-        continue;
-      }
-      if (character === '"') inString = false;
-      index += 1;
-      continue;
-    }
-    if (character === '"') {
-      inString = true;
-      out += character;
-      index += 1;
-      continue;
-    }
-    if (character === "/" && source[index + 1] === "/") {
-      while (index < source.length && source[index] !== "\n") index += 1;
-      continue;
-    }
-    if (character === "/" && source[index + 1] === "*") {
-      index += 2;
-      while (index < source.length && !(source[index] === "*" && source[index + 1] === "/")) {
-        index += 1;
-      }
-      index += 2;
-      continue;
-    }
-    out += character;
-    index += 1;
-  }
-  return JSON.parse(out.replace(/,(\s*[}\]])/g, "$1")) as unknown;
 }
 
 async function resolveThemeRoot(): Promise<string> {
@@ -142,6 +86,11 @@ export function convertRules(source: readonly SourceRule[]): CodeThemeRuleFile["
 }
 
 async function main(): Promise<void> {
+  // Any other argument would still rewrite the tracked rules.
+  const args = process.argv.slice(2);
+  if (args.some((arg) => arg !== "--check")) {
+    throw new Error(`Unknown argument(s): ${args.join(" ")}. Usage: sync-code-theme.ts [--check]`);
+  }
   const themeRoot = await resolveThemeRoot();
   const layerPath = join(themeRoot, "themes", "generated-textmate.json");
   const mainPath = join(themeRoot, "themes", "Cursor Monokai-color-theme.json");
@@ -150,14 +99,27 @@ async function main(): Promise<void> {
     readFile(layerPath, "utf8"),
     readFile(mainPath, "utf8"),
   ]);
-  const layer = parseJsonc(layerSource) as { tokenColors: SourceRule[] };
-  const main = parseJsonc(mainSource) as { tokenColors: SourceRule[] };
+  // The editor theme is JSONC. Comments carry the per-rule rationale the
+  // contract asks for, and trailing commas come with them.
+  const layer = Bun.JSONC.parse(layerSource) as { tokenColors: SourceRule[] };
+  const main = Bun.JSONC.parse(mainSource) as { tokenColors: SourceRule[] };
 
   // VS Code merges an included theme first and lets the including file win, so
   // the flattened order has to be layer-then-main for the last rule to hold.
   const rules = convertRules([...layer.tokenColors, ...main.tokenColors]);
-  const output = `${JSON.stringify({ source: "smsunarto-theme", rules } satisfies CodeThemeRuleFile, null, 2)}\n`;
-  await writeFile(codeThemeRulesPath, output);
+  const vendored = { source: "smsunarto-theme", rules } satisfies CodeThemeRuleFile;
+  if (args.includes("--check")) {
+    // oxfmt reflows the vendored file, so compare data, not bytes.
+    const current = JSON.parse(await readFile(codeThemeRulesPath, "utf8")) as unknown;
+    if (JSON.stringify(current) !== JSON.stringify(vendored)) {
+      throw new Error(
+        "code-theme-rules.json is behind smsunarto-theme. Run bun run sync:code-theme.",
+      );
+    }
+    console.log(`code-theme-rules.json matches ${themeRoot}.`);
+    return;
+  }
+  await writeFile(codeThemeRulesPath, `${JSON.stringify(vendored, null, 2)}\n`);
   console.log(`Vendored ${rules.length} rule(s) from ${themeRoot}.`);
 }
 

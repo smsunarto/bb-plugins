@@ -45,7 +45,7 @@
       {
         "id": "bb-monokai",
         "name": "bb Monokai",
-        "description": "Dark-only Monokai-family palette: one meaning per hue, a single text ladder, the shared ANSI content palette, and a monospace-first type stack.",
+        "description": "Dark-only Monokai-family palette: one meaning per hue, a single text ladder, the shared ANSI content palette, and Berkeley Mono code beside an Inter or SF Pro interface.",
         "css": "./themes/bb-monokai.css",
         "codeTheme": {
           "dark": "./themes/bb-monokai-code.json"
@@ -72,12 +72,14 @@
   ],
   "devDependencies": {
     "@get-bb/plugin-sdk": "0.5.29",
+    "@pierre/diffs": "^1.2.9",
     "@storybook/react-vite": "10.5.7",
     "@types/better-sqlite3": "^7.6.12",
     "@types/node": "^22.0.0",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
     "better-sqlite3": "^12.0.0",
+    "bun-types": "^1.4.0",
     "hono": "^4.11.9",
     "react": "19.2.8",
     "react-dom": "19.2.8",
@@ -91,10 +93,11 @@
     "storybook": "storybook dev --port 6006",
     "generate:theme": "bun run scripts/generate-theme.ts",
     "sync:code-theme": "bun run scripts/sync-code-theme.ts",
+    "check:code-theme": "bun run scripts/sync-code-theme.ts --check",
     "check:theme": "bun run scripts/generate-theme.ts --check",
     "check": "bun run typecheck && bun run check:theme",
     "build": "bun run check && bb plugin build .",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p storybook",
     "test": "bun test test/*.test.ts",
     "clean": "rm -rf dist"
   }

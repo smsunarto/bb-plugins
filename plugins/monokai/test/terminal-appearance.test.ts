@@ -1,8 +1,10 @@
-import { describe, expect, mock, test } from "bun:test";
+import { afterEach, describe, expect, mock, test } from "bun:test";
+import type { PluginContentScriptContext } from "@get-bb/plugin-sdk/app";
 
 import {
   applyTerminalAppearance,
   findTerminalBinding,
+  mountTerminalAppearance,
   type TerminalAppearance,
 } from "../app/terminal-appearance.ts";
 
@@ -41,6 +43,75 @@ function fixture() {
     return: null,
   };
   return { element, terminal, fit, fiber };
+}
+
+const DOM_GLOBALS = [
+  "document",
+  "getComputedStyle",
+  "MutationObserver",
+  "requestAnimationFrame",
+  "cancelAnimationFrame",
+];
+afterEach(() => {
+  for (const name of DOM_GLOBALS) Reflect.deleteProperty(globalThis, name);
+});
+
+// A bb 0.45 page with one terminal in a 480px pane. Like ThreadTerminalView,
+// bb refits on document.fonts "loadingdone" and sends the PTY xterm's rows.
+function bbPage() {
+  const { element, terminal, fit, fiber } = fixture();
+  Object.assign(element, { isConnected: true, __reactFiber$test: fiber });
+  fit.fit.mockImplementation(() => {
+    terminal.rows = Math.floor(480 / (terminal.options.fontSize * terminal.options.lineHeight));
+  });
+  const ptyRows: number[] = [];
+  const frames: Array<() => void> = [];
+  const fonts = new EventTarget();
+  fonts.addEventListener("loadingdone", () =>
+    frames.push(() => {
+      fit.fit();
+      ptyRows.push(terminal.rows);
+    }),
+  );
+  const tokens = new Map([
+    ["--bb-monokai-active", "1"],
+    ["--terminal-font-family", appearance.fontFamily],
+    ["--terminal-font-size", "13"],
+    ["--terminal-line-height", "1.4"],
+    ["--terminal-background", "#141414"],
+  ]);
+  const documentElement = {};
+  let notify: (records: unknown[]) => void = () => {};
+  Object.assign(globalThis, {
+    document: {
+      documentElement,
+      head: {},
+      body: {},
+      fonts,
+      querySelectorAll: () => [element],
+      addEventListener() {},
+      removeEventListener() {},
+    },
+    getComputedStyle: () => ({ getPropertyValue: (name: string) => tokens.get(name) ?? "" }),
+    MutationObserver: class {
+      constructor(callback: (records: unknown[]) => void) {
+        notify = callback;
+      }
+      observe() {}
+      disconnect() {}
+    },
+    requestAnimationFrame: (callback: () => void) => frames.push(callback),
+    cancelAnimationFrame: () => {},
+  });
+  return {
+    terminal,
+    ptyRows,
+    frame: () => frames.splice(0).forEach((callback) => callback()),
+    selectTheme: (active: boolean) => {
+      tokens.set("--bb-monokai-active", active ? "1" : "");
+      notify([{ target: documentElement, addedNodes: [], removedNodes: [] }]);
+    },
+  };
 }
 
 describe("terminal discovery", () => {
@@ -134,5 +205,35 @@ describe("terminal appearance ownership", () => {
     expect(terminal.refresh).not.toHaveBeenCalled();
     restore?.();
     expect(terminal.options).toEqual(original);
+  });
+});
+
+describe("terminal PTY size", () => {
+  test("sends the PTY the refit grid when the theme is selected and deselected", () => {
+    const page = bbPage();
+    mountTerminalAppearance({ signal: new AbortController().signal } as PluginContentScriptContext);
+    page.frame(); // The adapter applies 13px / 1.4.
+    page.frame(); // bb's fit runs.
+    expect(page.terminal.options.fontSize).toBe(13);
+    expect(page.ptyRows).toEqual([26]);
+
+    page.selectTheme(false);
+    page.frame();
+    page.frame();
+    expect(page.terminal.options.fontSize).toBe(12);
+    expect(page.ptyRows).toEqual([26, 40]);
+  });
+
+  test("sends the PTY the host grid when the plugin is disabled", () => {
+    const page = bbPage();
+    const controller = new AbortController();
+    mountTerminalAppearance({ signal: controller.signal } as PluginContentScriptContext);
+    page.frame();
+    page.frame();
+
+    controller.abort();
+    page.frame();
+    expect(page.terminal.options.fontSize).toBe(12);
+    expect(page.ptyRows).toEqual([26, 40]);
   });
 });

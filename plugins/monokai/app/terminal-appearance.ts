@@ -193,6 +193,13 @@ function tagSurfaces(terminals: Element[], previous: Set<Element>): Set<Element>
   return next;
 }
 
+// FitAddon resizes only xterm. bb 0.45 sends the PTY its rows and cols only
+// from its own fit, and its document.fonts "loadingdone" listener remeasures
+// and refits every mounted terminal through that path.
+function resyncHostTerminals(): void {
+  document.fonts?.dispatchEvent(new Event("loadingdone"));
+}
+
 function relevantNode(node: Node): boolean {
   if (!(node instanceof Element)) return node.parentElement?.tagName === "STYLE";
   return (
@@ -220,17 +227,18 @@ export function mountTerminalAppearance({ signal }: PluginContentScriptContext):
     frame = null;
     if (disposed) return;
     const appearance = readAppearance();
+    let resized = false;
     for (const [element, entry] of applied) {
       if (element.isConnected && appearance && sameAppearance(entry.appearance, appearance))
         continue;
       restore(entry);
       applied.delete(element);
+      resized = true;
     }
     const terminals = appearance ? [...document.querySelectorAll(".xterm")] : [];
     surfaces = tagSurfaces(terminals, surfaces);
-    if (!appearance) return;
     for (const element of terminals) {
-      if (applied.has(element) || hostOwned.has(element)) continue;
+      if (!appearance || applied.has(element) || hostOwned.has(element)) continue;
       const binding = findElementBinding(element);
       if (!binding) continue;
       try {
@@ -240,10 +248,12 @@ export function mountTerminalAppearance({ signal }: PluginContentScriptContext):
           continue;
         }
         applied.set(element, { appearance, restore: restoreAppearance });
+        resized = true;
       } catch {
         /* Skip an unavailable or concurrently disposed terminal. */
       }
     }
+    if (resized) resyncHostTerminals();
   };
   const schedule = () => {
     if (!disposed && frame === null) frame = requestAnimationFrame(reconcile);
@@ -277,6 +287,7 @@ export function mountTerminalAppearance({ signal }: PluginContentScriptContext):
     document.removeEventListener("load", onLoad, true);
     if (frame !== null) cancelAnimationFrame(frame);
     for (const entry of applied.values()) restore(entry);
+    if (applied.size > 0) resyncHostTerminals();
     applied.clear();
     surfaces = tagSurfaces([], surfaces);
     if (registry[ACTIVE_MOUNT] === dispose) delete registry[ACTIVE_MOUNT];

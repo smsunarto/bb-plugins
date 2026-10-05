@@ -1,8 +1,6 @@
 import type { PluginContentScriptContext } from "@get-bb/plugin-sdk/app";
 
 const ACTIVE_PROPERTY = "--bb-monokai-active";
-const MONOKAI_CANVAS = "#181818";
-const MONOKAI_INK = "#e3e3dd";
 const ACTIVE_MOUNT = Symbol.for("bb.monokai.monaco-syntax-tokens.active-mount");
 const EDITOR_STYLESHEET = /\/editor\.css(?:[?#].*)?$/;
 const MAX_SOURCE_LENGTH = 1_000_000;
@@ -49,6 +47,7 @@ interface Disposable {
 interface MonacoModel {
   getLanguageId(): string;
   getValue(): string;
+  getValueLength(): number;
   getVersionId(): number;
 }
 
@@ -107,6 +106,7 @@ export interface MonacoDomFallbackDependencies {
   findDecoratedSpans(): readonly HTMLElement[];
   findEditors(): readonly Element[];
   findLines(): readonly HTMLElement[];
+  findMutatedLines(record: MutationRecord): readonly HTMLElement[];
   mutationContainsEditor(node: Node): boolean;
   requestFrame(callback: FrameRequestCallback): number;
 }
@@ -199,11 +199,7 @@ function isBlockedLexicalType(type: string | null): boolean {
 }
 
 export function isMonokaiThemeActive(style: CssPropertyReader): boolean {
-  const value = (property: string) => style.getPropertyValue(property).trim().toLowerCase();
-  return (
-    value(ACTIVE_PROPERTY) === "1" ||
-    (value("--canvas") === MONOKAI_CANVAS && value("--ink") === MONOKAI_INK)
-  );
+  return style.getPropertyValue(ACTIVE_PROPERTY).trim() === "1";
 }
 
 function scanSource(
@@ -542,7 +538,8 @@ function createProvider(monaco: MonacoRuntime): MonacoSemanticTokensProvider {
       const version = model.getVersionId();
       const cached = cache.get(model);
       if (cached?.version === version) return { resultId: String(version), data: cached.data };
-      if (cancellation.isCancellationRequested) {
+      // syntaxTokensForSource ignores sources past the cap, so skip Monaco's whole-file tokenize.
+      if (cancellation.isCancellationRequested || model.getValueLength() > MAX_SOURCE_LENGTH) {
         return { resultId: String(version), data: new Uint32Array() };
       }
       const source = model.getValue();
@@ -561,29 +558,49 @@ function createProvider(monaco: MonacoRuntime): MonacoSemanticTokensProvider {
 }
 
 function attachRuntime(monaco: MonacoRuntime): () => void {
-  const previousOptions = new Map<MonacoEditor, true | false | "configuredByTheme">();
+  // Standalone Monaco writes editor options into one configuration service that every editor
+  // shares. Record the first value the theme replaces and restore it once on detach, through a
+  // live editor or, when every editor has closed, the one the value came from.
+  let original: { editor: MonacoEditor; setting: true | false | "configuredByTheme" } | null = null;
+  let detached = false;
+  const record = (editor: MonacoEditor) => {
+    original ??= {
+      editor,
+      setting: editor.getRawOptions()["semanticHighlighting.enabled"] ?? "configuredByTheme",
+    };
+  };
   const enable = (editor: MonacoEditor) => {
-    if (!previousOptions.has(editor)) {
-      previousOptions.set(
-        editor,
-        editor.getRawOptions()["semanticHighlighting.enabled"] ?? "configuredByTheme",
-      );
+    if (detached) return;
+    try {
+      editor.updateOptions({ "semanticHighlighting.enabled": true });
+    } catch {
+      // The editor was disposed before its microtask ran.
     }
-    editor.updateOptions({ "semanticHighlighting.enabled": true });
   };
   const providers = ["javascript", "typescript"].map((languageId) =>
     monaco.languages.registerDocumentSemanticTokensProvider(languageId, createProvider(monaco)),
   );
-  for (const editor of monaco.editor.getEditors()) enable(editor);
-  const created = monaco.editor.onDidCreateEditor(enable);
+  for (const editor of monaco.editor.getEditors()) {
+    record(editor);
+    enable(editor);
+  }
+  const created = monaco.editor.onDidCreateEditor((editor) => {
+    record(editor);
+    // Monaco fires this inside the editor constructor, before the editor can write the shared
+    // setting that semantic tokens read. Enable it once the constructor returns.
+    queueMicrotask(() => enable(editor));
+  });
   return () => {
+    detached = true;
     for (const provider of providers) provider.dispose();
     created.dispose();
-    for (const [editor, setting] of previousOptions) {
+    if (!original) return;
+    const live = monaco.editor.getEditors();
+    for (const editor of live.length > 0 ? live : [original.editor]) {
       try {
-        editor.updateOptions({ "semanticHighlighting.enabled": setting });
+        editor.updateOptions({ "semanticHighlighting.enabled": original.setting });
       } catch {
-        // The editor may have been disposed before the theme changed.
+        // A disposed editor may refuse the write. The shared setting then stays enabled.
       }
     }
   };
@@ -639,6 +656,16 @@ function browserDomFallbackDependencies(): MonacoDomFallbackDependencies {
     findEditors: () => Array.from(document.querySelectorAll<Element>(".monaco-editor")),
     findLines: () =>
       Array.from(document.querySelectorAll<HTMLElement>(".monaco-editor .view-line")),
+    findMutatedLines: (record) => {
+      const target = record.target instanceof Element ? record.target : record.target.parentElement;
+      const owner = target?.closest<HTMLElement>(".view-line");
+      const added = [...record.addedNodes].flatMap((node) => {
+        if (!(node instanceof HTMLElement)) return [];
+        if (node.matches(".view-line")) return [node];
+        return Array.from(node.querySelectorAll<HTMLElement>(".view-line"));
+      });
+      return owner ? [owner, ...added] : added;
+    },
     mutationContainsEditor: (node) =>
       node instanceof Element &&
       (node.matches(".monaco-editor") || node.querySelector(".monaco-editor") !== null),
@@ -661,6 +688,13 @@ export function mountMonacoDomFallback(
     if (frame !== null || disposed) return;
     frame = dependencies.requestFrame(decorate);
   };
+  // Monaco re-renders lines inside an animation frame and replaces their markup, which drops
+  // the classes. Observer callbacks run before that frame paints, so decorate touched lines here.
+  const decorateMutations: MutationCallback = (records) => {
+    for (const line of new Set(records.flatMap(dependencies.findMutatedLines))) {
+      decorateMonacoLine(line);
+    }
+  };
   const syncEditors = () => {
     if (disposed) return;
     const current = new Set(dependencies.findEditors());
@@ -671,7 +705,7 @@ export function mountMonacoDomFallback(
     }
     for (const editor of current) {
       if (editorObservers.has(editor)) continue;
-      const observer = dependencies.createObserver(schedule);
+      const observer = dependencies.createObserver(decorateMutations);
       observer.observe(editor, { childList: true, characterData: true, subtree: true });
       editorObservers.set(editor, observer);
       schedule();

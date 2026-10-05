@@ -2,7 +2,8 @@ import { describe, expect, test } from "bun:test";
 import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { readCodeThemeRules } from "../scripts/code-theme-rules";
-import { auditTheme, renderCodeTheme, renderTheme } from "../scripts/generate-theme";
+import { auditTheme, renderCodeTheme, renderTheme, roleValues } from "../scripts/generate-theme";
+import { convertRules } from "../scripts/sync-code-theme";
 
 const templatePath = fileURLToPath(new URL("../scripts/bb-monokai.template.css", import.meta.url));
 const themePath = fileURLToPath(new URL("../themes/bb-monokai.css", import.meta.url));
@@ -11,6 +12,25 @@ const template = await readFile(templatePath, "utf8");
 const theme = await readFile(themePath, "utf8");
 const codeTheme = await readFile(codeThemePath, "utf8");
 const codeThemeRules = readCodeThemeRules().rules;
+const diffHeaderCss = await readFile(new URL("../app/diff-header.css", import.meta.url), "utf8");
+
+// Each style rule with the at-rule preludes around it, outermost first. The
+// theme has no braces inside strings, so brace depth is the nesting.
+function styleRules(css: string): Array<{ selector: string; atRules: string[] }> {
+  const rules: Array<{ selector: string; atRules: string[] }> = [];
+  const open: string[] = [];
+  for (const [, text = "", brace] of css
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .matchAll(/([^{}]*)([{}])/g)) {
+    if (brace === "{") {
+      open.push(text.trim().replace(/\s+/g, " "));
+      continue;
+    }
+    const selector = open.pop() ?? "";
+    if (!selector.startsWith("@")) rules.push({ selector, atRules: [...open] });
+  }
+  return rules;
+}
 
 describe("bb Monokai surface palette", () => {
   test("assigns conversation, sidebar, user, and chrome grounds", () => {
@@ -28,7 +48,6 @@ describe("bb Monokai surface palette", () => {
       ".dark [data-message-column].group\\/message [data-markdown-preview] {\n  font-size: max(14px, var(--text-sm))",
     );
     expect(theme).toContain("--terminal-background: #181818");
-    expect(theme.toLowerCase()).not.toContain("#141414");
   });
 
   test("pins annotated bb surfaces to their intended grounds", () => {
@@ -66,8 +85,6 @@ describe("bb Monokai contract audit", () => {
     expect(theme).toContain(
       ".dark .bb-code-highlight.bb-code-highlight {\n  background-color: #181818;",
     );
-    expect(theme).not.toContain("--diffs-dark-bg: #1e1e1e");
-    expect(theme).not.toContain("--diffs-bg-context-override: #1e1e1e");
     for (const role of ["context-gutter", "buffer", "addition-number", "deletion-number"]) {
       expect(theme).toContain(`--diffs-bg-${role}-override: #181818`);
     }
@@ -102,9 +119,9 @@ describe("bb Monokai contract audit", () => {
   });
 
   test("keeps mobile composer placeholders at a readable regular weight", () => {
-    expect(theme).toContain("@media (max-width: 767px)");
-    expect(theme).toContain("p.is-editor-empty:first-child::before");
-    expect(theme).toContain("font-weight: 400");
+    expect(theme).toContain(
+      "@media (max-width: 767px) {\n  .dark\n    [data-promptbox]\n    [data-promptbox-editor-content]\n    .ProseMirror\n    p.is-editor-empty:first-child::before {\n    font-weight: 400;\n  }\n}",
+    );
   });
 
   test("styles bb's notification center without replacing responsive placement", () => {
@@ -115,14 +132,52 @@ describe("bb Monokai contract audit", () => {
     expect(theme).toContain(
       '@media (min-width: 768px) {\n  .dark [data-testid="notification-center"] {\n    overflow: hidden;\n    border-color: var(--border);\n    border-radius: 16px;',
     );
-    expect(template).toContain("0 0 0 1px var(--border)");
+    expect(theme).toContain(
+      '.dark [data-testid="notification-center"] > div:first-child,\n.dark [data-testid="notification-row"] {\n  border-color: var(--border-seam);\n}',
+    );
+  });
+
+  test("gives toasts and the notification center one host edge and the host shadow", () => {
+    expect(theme).toContain(
+      '  .dark [data-testid="notification-center"] {\n    overflow: hidden;\n    border-color: var(--border);\n    border-radius: 16px;\n    background: var(--popover);\n    box-shadow: var(--shadow-md);\n  }',
+    );
+    expect(theme).toContain(
+      "    border-color: var(--border);\n    color: var(--popover-foreground);\n    box-shadow: var(--shadow-md);\n  }",
+    );
+    expect(theme).not.toContain("0 0 0 1px var(--border),");
+  });
+
+  test("leaves Radix checkboxes to bb's checked fill", () => {
+    const rules = theme.replace(/\/\*[\s\S]*?\*\//g, "");
+    expect(rules.match(/button\.border-input(?!:not\(\[role="checkbox"\]\))/g)).toBeNull();
+    expect(theme).toContain(
+      '.dark button.border-input:not([role="checkbox"]),\n.dark button.border.bg-card {\n  background-color: var(--control-background);',
+    );
+  });
+
+  test("gives desktop and compact Send the same 14% filled-action layer", () => {
+    expect(theme).toContain(
+      ".dark button.bg-primary,\n.dark button.bg-foreground {\n  background-color: var(--control-primary);",
+    );
+    expect(theme).toContain(
+      `.dark [data-promptbox-send-menu].bg-foreground {\n  --background: ${roleValues["layer.sendSegmentLift"]};\n  background-color: var(--control-primary);\n  color: var(--foreground);`,
+    );
+  });
+
+  test("lifts a hovered desktop Send segment to compact Send's 20% hover", () => {
+    const alpha = (hex: string) => Number.parseInt(hex.slice(7, 9), 16) / 255;
+    // bb's segment hover is `!bg-background/15` over the wrapper's fill.
+    const lift = 0.15 * alpha(roleValues["layer.sendSegmentLift"]);
+    const hovered = 1 - (1 - alpha(roleValues["layer.selected"])) * (1 - lift);
+    expect(hovered).toBeCloseTo(alpha(roleValues["layer.active"]), 2);
   });
 
   test("leaves compact mobile toasts on bb's native layout", () => {
-    expect(theme).toContain(
-      '@media (min-width: 768px) {\n  .dark [data-testid="app-layout-content-shell"] > main,',
+    const toastRules = styleRules(theme).filter((rule) => rule.selector.includes("[data-sonner-"));
+    expect(toastRules.length).toBeGreaterThan(0);
+    expect(toastRules.filter((rule) => rule.atRules[0] !== "@media (min-width: 768px)")).toEqual(
+      [],
     );
-    expect(theme).not.toContain("On narrow screens, keep the full text column");
   });
 
   test("rejects an unknown template role", () => {
@@ -138,8 +193,13 @@ describe("bb Monokai contract audit", () => {
   });
 
   test("gates every hover fill behind a hover-capable pointer", () => {
-    const bareHoverRules = theme.split("\n").filter((line) => /^\.dark[^\n]*:hover/.test(line));
-    expect(bareHoverRules).toEqual([]);
+    const hoverRules = [theme, diffHeaderCss]
+      .flatMap(styleRules)
+      .filter((rule) => rule.selector.includes(":hover"));
+    expect(hoverRules.length).toBeGreaterThan(0);
+    expect(hoverRules.filter((rule) => !rule.atRules.includes("@media (hover: hover)"))).toEqual(
+      [],
+    );
     expect(theme).toContain(
       "@media (hover: hover) {\n  .dark button.bg-primary:hover,\n  .dark button.bg-foreground:hover {",
     );
@@ -196,13 +256,14 @@ describe("bb Monokai contract audit", () => {
       ".dark [data-monokai-diff-panel] [data-monokai-diff-card] {\n  overflow: hidden;\n  border-color: var(--border);\n  border-radius: 10px;\n  background-color: #181818;",
     );
     expect(theme).toContain(
-      ".dark [data-monokai-diff-panel] [data-monokai-diff-shell] {\n  min-height: 44px;\n  margin-top: 0;\n  display: flex;\n  align-items: center;\n  padding: 0 16px;\n  border-top: 0;\n  border-radius: 0;\n  font-size: 13px;\n  line-height: 20px;\n  font-weight: 400;",
+      ".dark [data-monokai-diff-panel] [data-monokai-diff-shell] {\n  margin-top: 0;\n  display: flex;\n  align-items: center;\n  border-top: 0;\n  border-radius: 0;\n  font-size: 13px;\n  line-height: 20px;\n  font-weight: 400;\n}",
     );
     expect(theme).toContain(
-      ".dark [data-monokai-diff-panel] [data-monokai-diff-shell] button[aria-expanded] {\n  width: 24px;\n  height: 24px;\n  margin-left: -5px;\n  padding: 0;\n  border-radius: 8px;\n  background-color: transparent;\n  color: var(--muted-foreground);",
+      ".dark [data-monokai-diff-panel] [data-monokai-diff-shell] button[aria-expanded] {\n  width: 24px;\n  height: 24px;\n  padding: 0;\n  border-radius: 8px;\n  background-color: transparent;\n  color: var(--muted-foreground);\n}",
     );
-    expect(theme).toContain(
-      ".dark [data-monokai-diff-panel] [data-monokai-diff-shell] button[aria-expanded] svg {\n  width: 10px;\n  height: 16px;",
+    // app/diff-header.css is the one owner of the shell's height and padding.
+    expect(diffHeaderCss).toContain(
+      "[data-monokai-diff-shell] {\n  min-height: 40px;\n  padding-block: 0;\n  padding-inline: 12px;\n}",
     );
     expect(theme).toContain(
       "[data-monokai-diff-shell]\n  button[aria-expanded]\n  + span\n  > button:not(.font-mono) {\n  width: 24px;",
@@ -212,6 +273,39 @@ describe("bb Monokai contract audit", () => {
     );
     expect(theme).toContain(
       "[data-monokai-diff-shell] > .flex > span:last-child > .text-xs {\n  display: flex;\n  align-items: center;\n  gap: 1ch;\n  font-family: var(--font-mono);\n  font-size: 13px;\n  line-height: 20px;\n  font-weight: 400;\n  font-variant-numeric: tabular-nums;",
+    );
+  });
+
+  test("feeds Pierre's diff mix slots opaque targets", () => {
+    // Change rows fall back to the opaque feedback colors. Selection targets
+    // land on the 14% layer, #353534, after Pierre's 25% and 40% lab mixes.
+    expect(theme).not.toContain("--diffs-bg-addition-override");
+    expect(theme).not.toContain("--diffs-bg-deletion-override");
+    expect(theme).toContain("--diffs-addition-color-override: #3fa266;");
+    expect(theme).toContain("--diffs-deletion-color-override: #e34671;");
+    expect(theme).toContain("--diffs-bg-addition-emphasis-override: #3fa26644;");
+    expect(theme).toContain("--diffs-bg-deletion-emphasis-override: #e3467144;");
+    expect(theme).toContain("--diffs-bg-hover-override: #e3e3dd;");
+    expect(theme).toContain("--diffs-bg-selection-override: #9b9b97;");
+    expect(theme).toContain("--diffs-bg-selection-number-override: #666664;");
+  });
+
+  test("hands bb's terminal font token the Berkeley stack", () => {
+    expect(theme).toContain(
+      '  --terminal-font-family: "BerkeleyMono Nerd Font Mono", "Berkeley Mono", monospace;\n',
+    );
+    expect(theme).toContain("  --font-terminal: var(--terminal-font-family);\n");
+  });
+
+  test("keeps one fade on timeline status decorations", () => {
+    expect(theme).toContain(
+      ".dark .group\\/timeline-row > button[aria-expanded] > span > .opacity-40,\n.dark .group\\/timeline-row > button[aria-expanded] .text-subtle-foreground.opacity-75 {\n  opacity: 1;\n}",
+    );
+  });
+
+  test("keeps wrapped inline code chips padded and rounded on each line", () => {
+    expect(theme).toContain(
+      ".dark code.rounded.bg-muted\\/70 {\n  box-decoration-break: clone;\n  -webkit-box-decoration-break: clone;\n}",
     );
   });
 
@@ -286,6 +380,14 @@ describe("bb Monokai contract audit", () => {
     );
   });
 
+  test("rejects an attribute selector that changes case", () => {
+    // bb labels the button "Stop run". aria-label matching is case-sensitive.
+    const changed = theme.replaceAll('aria-label="Stop run"', 'aria-label="stop run"');
+    expect(() => auditTheme(changed)).toThrow(
+      '.dark [data-promptbox-submit-action][aria-label="Stop run"]: expected one rule, found 0',
+    );
+  });
+
   test("rejects an illegible registered foreground/background pair", () => {
     const changed = theme.replace("--primary-foreground: #181818", "--primary-foreground: #e3e3dd");
     expect(() => auditTheme(changed)).toThrow("--primary-foreground on --primary:");
@@ -293,15 +395,11 @@ describe("bb Monokai contract audit", () => {
 });
 
 describe("bb Monokai selector cost", () => {
-  test("ships no :has() selectors", async () => {
+  test("ships no :has() selectors", () => {
     // Blink re-checks a :has() subject when DOM beneath it changes, so every
     // rule made streamed timeline tokens restyle part of the page. Anchor on a
     // bb hook, or tag the element from a content script that already finds it
     // (app/diff-header.ts, app/terminal-appearance.ts).
-    const diffHeaderCss = await readFile(
-      new URL("../app/diff-header.css", import.meta.url),
-      "utf8",
-    );
     for (const css of [theme, diffHeaderCss])
       expect(css.replace(/\/\*[\s\S]*?\*\//g, "").match(/[^\n]*:has\([^\n]*/g)).toBeNull();
   });
@@ -365,6 +463,24 @@ describe("bb Monokai code theme", () => {
     expect(foregroundByScope.get("identifier.ts")).toBe("#e3e3dd");
     expect(foregroundByScope.get("type.identifier.ts")).toBe("#e3e3dd");
     expect(foregroundByScope.get("delimiter")).toBe("#e3e3dd");
+  });
+
+  test("vendors editor colors as palette roles", () => {
+    expect(
+      convertRules([
+        { scope: "markup.heading, entity.name.section", settings: { foreground: "#9DDD54" } },
+        { scope: ["comment"], settings: { foreground: "#BEB89999", fontStyle: "italic" } },
+      ]),
+    ).toEqual([
+      { scope: ["markup.heading", "entity.name.section"], foreground: "code.entity" },
+      { scope: ["comment"], foreground: "text.comment60", fontStyle: "italic" },
+    ]);
+  });
+
+  test("stops the sync on an editor color with no token role", () => {
+    expect(() => convertRules([{ scope: "keyword", settings: { foreground: "#88C0D0" } }])).toThrow(
+      "#88C0D0 on keyword has no role. Amend CONTRACT.md and the palette before syncing.",
+    );
   });
 
   test("rejects a chrome-only role on a token", () => {

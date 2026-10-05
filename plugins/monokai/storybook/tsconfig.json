@@ -1,0 +1,8 @@
+{
+  "extends": "../tsconfig.json",
+  "compilerOptions": {
+    // Storybook 10's bundled declarations fail TypeScript 7's library check.
+    "skipLibCheck": true
+  },
+  "include": ["../.storybook/**/*", "**/*.tsx"]
+}

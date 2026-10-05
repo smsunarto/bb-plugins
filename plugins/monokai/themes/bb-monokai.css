@@ -61,12 +61,11 @@
   background-color: #181818;
 }
 
+/* app/diff-header.css owns the shell's height, padding, and chevron. */
 .dark [data-monokai-diff-panel] [data-monokai-diff-shell] {
-  min-height: 44px;
   margin-top: 0;
   display: flex;
   align-items: center;
-  padding: 0 16px;
   border-top: 0;
   border-radius: 0;
   font-size: 13px;
@@ -86,19 +85,10 @@
 .dark [data-monokai-diff-panel] [data-monokai-diff-shell] button[aria-expanded] {
   width: 24px;
   height: 24px;
-  margin-left: -5px;
   padding: 0;
   border-radius: 8px;
   background-color: transparent;
   color: var(--muted-foreground);
-  transition:
-    color 150ms cubic-bezier(0.4, 0, 0.2, 1),
-    background-color 150ms cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-.dark [data-monokai-diff-panel] [data-monokai-diff-shell] button[aria-expanded] svg {
-  width: 10px;
-  height: 16px;
 }
 
 @media (hover: hover) {
@@ -131,9 +121,6 @@
   border-radius: 8px;
   background-color: transparent;
   color: var(--muted-foreground);
-  transition:
-    color 150ms cubic-bezier(0.4, 0, 0.2, 1),
-    background-color 150ms cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 @media (hover: hover) {
@@ -198,6 +185,9 @@
    * script applies these options to both its DOM and WebGL renderers. */
   --terminal-background: #181818;
   --terminal-font-family: "BerkeleyMono Nerd Font Mono", "Berkeley Mono", monospace;
+  /* bb's own family token. bb reads it when it creates a terminal and resets
+   * the family to it on every theme change, so it must name the same stack. */
+  --font-terminal: var(--terminal-font-family);
   --terminal-font-size: 13;
   --terminal-line-height: 1.4;
   --bb-monokai-code-entity: #9ddd54;
@@ -255,12 +245,12 @@
    * --foreground stays opaque: it is also the xterm foreground and cursor, and
    * ANSI bright-white is #E3E3DD. */
   --foreground: #e3e3dd; /* 14.17:1 on --background */
-  --muted-foreground: #e3e3ddbd; /* secondary 74% — 8.02:1 */
-  --readback-foreground: #e3e3dd8c; /* muted 55% — 4.96:1 */
+  --muted-foreground: #e3e3ddbd; /* secondary 74% — 8.20:1 */
+  --readback-foreground: #e3e3dd8c; /* muted 55% — 5.00:1 */
   --subtle-foreground: #e3e3dd4d; /* faint 30% — the deliberately ghosted
                                    * "where, not what" tier */
 
-  --accent-foreground: #e3e3dd; /* on #262626 — 11.74:1 */
+  --accent-foreground: #e3e3dd; /* on --accent over --background (#252525) — 11.90:1 */
   --secondary-foreground: #e3e3dd;
 
   /* ---- Accent ----------------------------------------------------------
@@ -280,9 +270,6 @@
   /* Sidebar search match is a find match, so the accent is legal here; the
    * upstream gold is not in this palette. Alphas match editor.findMatch*. */
   --sidebar-search-match: #88c0d044;
-  --sidebar-search-match-border: #88c0d066;
-
-  --resource-source-shelf-card-hover-border: #e3e3dd33;
 
   /* ---- Feedback — one hex per role ------------------------------------- */
   --destructive: #e34671;
@@ -311,9 +298,10 @@
    * Keep both navigation sidebars on the content ground. Terminal chrome stays
    * on its separate --terminal-background token above. */
   --sidebar: #181818;
-  --sidebar-foreground: #e3e3ddbd; /* 8.02:1 */
+  --sidebar-foreground: #e3e3ddbd; /* 7.98:1 */
   --sidebar-accent: #e3e3dd14;
-  --sidebar-accent-foreground: #e3e3dd; /* selection keeps primary text */
+  --sidebar-accent-foreground: #e3e3dd; /* hover text; the selected-row rule
+                                         * below reuses it */
   --sidebar-border: #e3e3dd1f; /* shared alpha edge; one owner per boundary */
 
   /* ---- Mention pills ---------------------------------------------------
@@ -386,18 +374,24 @@
   --diffs-bg-context-gutter-override: #181818;
   --diffs-bg-buffer-override: #181818;
   --diffs-bg-separator-override: #e3e3dd0f;
-  --diffs-bg-addition-override: #3fa26622;
   --diffs-bg-addition-emphasis-override: #3fa26644;
-  --diffs-bg-deletion-override: #e3467122;
   --diffs-bg-deletion-emphasis-override: #e3467144;
-  --diffs-bg-hover-override: #e3e3dd14;
-  --diffs-bg-selection-override: #e3e3dd24;
+
+  /* Pierre treats the row, selection, and hover slots as lab mix targets, not
+   * fills: a change row takes 20% of its target, a selection 25% (40% in the
+   * gutter), and hover 9%. An alpha layer there all but vanishes. Change rows
+   * leave their slots unset, so Pierre mixes the feedback colors above and
+   * keeps its striped deletion bar. The opaque selection targets make the mix
+   * land on the 14% selected layer over the content ground. Hover mixes full
+   * ink, which lifts about 7.5% at a 9% weight, just short of the 8% layer. */
+  --diffs-bg-hover-override: #e3e3dd;
+  --diffs-bg-selection-override: #9b9b97;
 
   /* Number gutters share the neutral code ground, not the change-row wash.
    * Feedback numbers retain their contrast against the content surface. */
   --diffs-bg-addition-number-override: #181818;
   --diffs-bg-deletion-number-override: #181818;
-  --diffs-bg-selection-number-override: #e3e3dd24;
+  --diffs-bg-selection-number-override: #666664;
   --diffs-fg-number-override: #e3e3dd8c;
   --diffs-fg-number-addition-override: #3fa266;
   --diffs-fg-number-deletion-override: #e34671;
@@ -460,6 +454,15 @@
   border-color: transparent;
 }
 
+/* bb paints the active settings and plugins row with the same 8%
+ * --sidebar-accent as hover, but keeps 74% text, so a hovered row would
+ * outrank the selection. Selection takes the 14% layer and primary text. The
+ * rule is unlayered, so a hovered selected row stays at 14%. */
+.dark [data-sidebar="panel"] a[aria-current="page"].bg-sidebar-accent {
+  background-color: var(--surface-selected);
+  color: var(--sidebar-accent-foreground);
+}
+
 /* User requests use the shared 6% ink surface with an 8% edge while keeping
  * bb's native bubble geometry. Agent replies stay flat on the #151515
  * conversation ground. */
@@ -467,10 +470,6 @@
   background-color: var(--agent-surface-background);
   background-clip: padding-box;
   border-color: var(--agent-surface-border);
-}
-
-.dark [data-gh-stack-container] {
-  background-color: var(--agent-surface-background);
 }
 
 /* Some bb captions deliberately reduce the already-faint subtle token to 75%.
@@ -482,11 +481,13 @@
 
 /* bb's collapsed timeline toggles ("Ran 2 commands", "Thought 3s",
  * "Worked for 5m") wrap their label in an opacity-40 span under a subtle or
- * muted button: 30% x 40% is ~12% alpha, which vanishes on this ground. Drop
- * the multiplier and keep one fade per span: subtle lifts to readback, muted
+ * muted button: 30% x 40% is ~12% alpha, which vanishes on this ground. Status
+ * decorations ("1 error") also fade their subtle span to 75%. Drop the
+ * multipliers and keep one fade per span: subtle lifts to readback, muted
  * stays muted, so "Worked for" still sits under its duration. Hover and focus
  * climb one step as upstream intends. */
-.dark .group\/timeline-row > button[aria-expanded] > span > .opacity-40 {
+.dark .group\/timeline-row > button[aria-expanded] > span > .opacity-40,
+.dark .group\/timeline-row > button[aria-expanded] .text-subtle-foreground.opacity-75 {
   opacity: 1;
 }
 .dark .group\/timeline-row > button[aria-expanded].text-subtle-foreground,
@@ -506,12 +507,15 @@
 
 /* Shared host-component adapter. Field and outline-button fills depend only
  * on role, never on which card, sidebar, dialog, or composer contains them.
- * Clip the translucent fill inside its edge to avoid double compositing. */
+ * Clip the translucent fill inside its edge to avoid double compositing.
+ * Radix checkboxes are also `button.border-input`, but bb draws their checked
+ * state with layered utilities this unlayered fill would hide, so they keep
+ * bb's own look. */
 .dark input.border-input,
 .dark textarea.border-input,
 .dark select.border-input,
 .dark [role="combobox"].border-input,
-.dark button.border-input,
+.dark button.border-input:not([role="checkbox"]),
 .dark button.border.bg-card {
   background-color: var(--control-background);
   background-clip: padding-box;
@@ -530,17 +534,36 @@
   .dark textarea.border-input:hover:not(:disabled),
   .dark select.border-input:hover:not(:disabled),
   .dark [role="combobox"].border-input:hover:not(:disabled),
-  .dark button.border-input:hover:not(:disabled),
+  .dark button.border-input:not([role="checkbox"]):hover:not(:disabled),
   .dark button.border.bg-card:hover:not(:disabled) {
     background-color: var(--state-hover);
   }
+
+  /* bb's resource browse card hovers to a 2.5% ink fill, which lifts bb's
+   * opaque card. Over the 4% --card layer it darkens the card instead, and its
+   * 30% hover edge passes the 20% strong edge. Hover takes the 8% step and the
+   * strong edge. The class literal is unique to ResourceBrowseCard (bb 0.45
+   * collection.tsx). */
+  .dark .bg-card.border-border[class*="hover:bg-[color-mix(in_oklab,var(--ink)_2.5%"]:hover {
+    background-color: var(--state-hover);
+    border-color: var(--surface-selected-border);
+  }
 }
 
-.dark button.border-input:active:not(:disabled),
+.dark button.border-input:not([role="checkbox"]):active:not(:disabled),
 .dark button.border.bg-card:active:not(:disabled),
-.dark button.border-input[data-state="open"],
+.dark button.border-input:not([role="checkbox"])[data-state="open"],
 .dark button.border.bg-card[data-state="open"] {
   background-color: var(--surface-selected);
+}
+
+/* bb pads some focus rings with a 2px --background offset, which blends into
+ * bb's opaque cards. Monokai cards and fields are translucent layers, so the
+ * offset paints a #151515 moat inside them. Drop the offset and keep the 25%
+ * ring flush on whatever the control sits on. */
+.dark .ring-offset-background:focus-visible,
+.dark .focus-visible\:ring-offset-background:focus-visible {
+  --tw-ring-offset-width: 0px;
 }
 
 /* The composer owns one 6% layer. Its editor is layout, not another surface. */
@@ -710,20 +733,22 @@
 
 /* Inline images must read as pictures, not as part of the panel. Most of them
  * are dark screenshots on the #181818 ground, so without an edge they merge
- * into the message. Every image surface gets the theme's standard --border
- * keyline: markdown images (which bb ships frameless), attachment thumbnails
- * in both bubbles, and timeline row previews. Markdown images also get bb's
- * rounded-md radius, a border-box so max-w-full holds, and more block margin
- * than bb's my-2 so the frame is not packed against the surrounding prose.
- * vertical-align drops the inline baseline gap under the frame. Every bb
- * zoom button wraps its image directly, so the button needs no :has selector. */
-.dark img.cursor-zoom-in,
-.dark button.cursor-zoom-in {
+ * into the message. Markdown images (which bb ships frameless) and the
+ * bordered zoom buttons around attachment thumbnails in both bubbles and
+ * timeline row previews get the theme's standard --border keyline. Unbordered
+ * zoom buttons (image diffs, file previews) frame their own image or fill a
+ * panel, so they stay out. Markdown images also get bb's rounded-md radius, a
+ * border-box so max-w-full holds, and more block margin than bb's my-2 so the
+ * frame is not packed against the surrounding prose. vertical-align drops the
+ * inline baseline gap under the frame. Every bb zoom button wraps its image
+ * directly, so the button needs no :has selector. */
+.dark img[data-markdown-image],
+.dark button.cursor-zoom-in.border {
   border: 1px solid var(--border);
 }
 
-.dark img.cursor-zoom-in {
-  border-radius: 0.375rem; /* = rounded-md; bb defines no --radius token */
+.dark img[data-markdown-image] {
+  border-radius: calc(var(--radius) - 2px); /* = bb's rounded-md */
   box-sizing: border-box;
   margin-block: 1.25rem;
   vertical-align: middle;
@@ -733,6 +758,18 @@
  * which continues to own links and mention accents. */
 .dark button.bg-primary,
 .dark button.bg-foreground {
+  background-color: var(--control-primary);
+  color: var(--foreground);
+}
+
+/* On desktop bb 0.45 paints the send fill on a send-menu wrapper and forces
+ * the buttons inside it transparent with !important, so the rule above misses
+ * Send. Give the wrapper the same 14% layer and ink that compact Send gets as a
+ * bare button. bb lifts a hovered or open segment with 15% of --background
+ * through an !important utility the theme cannot outrank, so --background here
+ * is the ink alpha that makes that lift land on compact Send's 20% hover. */
+.dark [data-promptbox-send-menu].bg-foreground {
+  --background: #e3e3dd74;
   background-color: var(--control-primary);
   color: var(--foreground);
 }
@@ -774,6 +811,14 @@
 .dark .bg-popover,
 .dark [role="menu"] {
   --state-active: var(--state-hover);
+}
+
+/* bb draws menu dividers with bg-muted, which this palette maps to the 14%
+ * selected layer, brighter than the menu's own 12% edge. Use the context
+ * menu's divider tone. The compact dropdown renders its divider as an <hr>. */
+.dark [role="menu"] [role="separator"].bg-muted,
+.dark hr.bg-muted {
+  background-color: var(--border);
 }
 
 /* The model-search row is one field, including its inset around the input.
@@ -883,11 +928,11 @@
 
 /* Composer stop button.
  *
- * bb 0.36 renders the run-interrupt control as `variant="secondary"`, so the
- * chip lands on --secondary (#262626) over the composer's #212121 ground —
- * 1.35:1, under the 3:1 floor for a UI component. The send chip it replaces is
- * `variant="default"` (--foreground on --background) at 14.17:1, so the control
- * fades out at the one moment it is the only one that can be pressed.
+ * bb renders the run-interrupt control as `variant="secondary"`, so the chip
+ * lands on --secondary (#2C2C2C over the composer's #212121 ground) — 1.15:1,
+ * under the 3:1 floor for a UI component. The send chip it replaces is the 14%
+ * --control-primary layer (#3C3C3C, 1.46:1), so the control fades out at the
+ * one moment it is the only one that can be pressed.
  *
  * Stop is an interrupt, which is the destructive role — the same reading later
  * bb builds adopt by switching this button to `variant="destructive"`. When
@@ -902,7 +947,7 @@
  * because `hover:bg-secondary/80` ties at 0,2,0 and would otherwise decide on
  * sheet order; the /90 step mirrors what `variant="destructive"` uses. */
 .dark [data-promptbox-submit-action][aria-label="Stop run"] {
-  background-color: var(--destructive); /* 4.31:1 on the composer ground */
+  background-color: var(--destructive); /* 4.13:1 on the composer ground */
   border-color: transparent;
   color: var(--foreground); /* the ladder white on the fill — 3.03:1, over the
                              * 3:1 floor this glyph answers to (WCAG 1.4.11,
@@ -918,6 +963,14 @@
   .dark [data-promptbox-submit-action][aria-label="Stop run"]:hover {
     background-color: color-mix(in oklab, var(--destructive) 90%, transparent);
   }
+}
+
+/* bb draws inline code as a rounded, padded chip. Like conversation links,
+ * clone the decoration so a chip that wraps keeps its padding and radius on
+ * each line. */
+.dark code.rounded.bg-muted\/70 {
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
 }
 
 /* Lightweight code highlighter (sugar-high) used for code blocks in the
@@ -975,15 +1028,15 @@
 .dark .bb-code-highlight.bb-code-highlight {
   background-color: #181818;
   --sh-space: inherit;
-  --sh-identifier: #e3e3dd; /* everything else — 12.79:1 */
+  --sh-identifier: #e3e3dd; /* everything else — 13.78:1 */
   --sh-property: #e3e3dd; /* properties are white by contract */
   --sh-sign: #e3e3dd; /* punctuation; sugar-high cannot split operators out */
   --sh-comment: #beb89999; /* blends to #7C7865 — 4.00:1, the contract's
                             * deliberately sub-AA comment tier */
-  --sh-keyword: #fe5d86; /* language machinery — 5.59:1 */
-  --sh-string: #f7d05c; /* literal text — 11.09:1 */
-  --sh-class: #51dae9; /* compile-time structure — 9.85:1 */
-  --sh-entity: #9ddd54; /* callables — 10.13:1 */
+  --sh-keyword: #fe5d86; /* language machinery — 6.02:1 */
+  --sh-string: #f7d05c; /* literal text — 11.95:1 */
+  --sh-class: #51dae9; /* compile-time structure — 10.62:1 */
+  --sh-entity: #9ddd54; /* callables — 10.91:1 */
   --sh-jsxliterals: #fe5d86; /* JSX tags are machinery, same as keywords */
   /* The pre inherits the prose `leading-relaxed` strut from the thread
    * container, while sugar-high renders each line as an inline-block. The
@@ -1127,12 +1180,10 @@ diffs-container {
   font-family: var(--font-sans);
 }
 
-.dark [data-testid="notification-center"] > div:first-child {
-  border-color: var(--border-seam);
-}
-
+/* The header divider and bb's divide-y row dividers share one 4% seam. */
+.dark [data-testid="notification-center"] > div:first-child,
 .dark [data-testid="notification-row"] {
-  transition: background-color 120ms ease-out;
+  border-color: var(--border-seam);
 }
 
 .dark [data-testid="notification-row"][data-focused="true"] {
@@ -1150,20 +1201,16 @@ diffs-container {
   }
 }
 
-.dark [data-testid="notification-center"] button:focus-visible {
-  outline: 2px solid var(--ring);
-  outline-offset: 2px;
-}
-
+/* The host border is the one 1px edge. Elevation is bb's --shadow-md, as on
+ * context menus. A shadow in the #181818 chrome ground would be lighter than
+ * the #151515 conversation under it. */
 @media (min-width: 768px) {
   .dark [data-testid="notification-center"] {
     overflow: hidden;
     border-color: var(--border);
     border-radius: 16px;
     background: var(--popover);
-    box-shadow:
-      0 0 0 1px var(--border),
-      0 4px 12px -4px #181818eb;
+    box-shadow: var(--shadow-md);
   }
 }
 
@@ -1178,132 +1225,121 @@ diffs-container {
     anchor-name: --bb-monokai-conversation;
   }
 
-.dark [data-split-pane-id][data-focused="false"] [data-thread-window] {
-  anchor-name: none;
-}
+  .dark [data-split-pane-id][data-focused="false"] [data-thread-window] {
+    anchor-name: none;
+  }
 
-.dark [data-sonner-toaster] {
-  position-anchor: --bb-monokai-conversation;
-  top: calc(env(safe-area-inset-top) + var(--bb-app-chrome-row-height, 48px) + 16px) !important;
-  right: auto !important;
-  bottom: auto !important;
-  left: 50% !important;
-  width: min(384px, calc(100vw - 32px)) !important;
-  transform: translateX(-50%) !important;
-  font-family: var(--font-sans);
-  --normal-bg: var(--popover);
-  --normal-text: var(--popover-foreground);
-  --normal-border: var(--border);
-}
-
-@supports (position-anchor: --bb-monokai-conversation) {
   .dark [data-sonner-toaster] {
-    top: max(
-      calc(env(safe-area-inset-top) + var(--bb-app-chrome-row-height, 48px) + 16px),
-      calc(anchor(top, 0px) + 16px)
-    ) !important;
-    left: anchor(center, 50%) !important;
-    width: min(384px, calc(anchor-size(width, 100vw) - 32px)) !important;
+    position-anchor: --bb-monokai-conversation;
+    top: calc(env(safe-area-inset-top) + var(--bb-app-chrome-row-height, 48px) + 16px) !important;
+    right: auto !important;
+    bottom: auto !important;
+    left: 50% !important;
+    width: min(384px, calc(100vw - 32px)) !important;
+    transform: translateX(-50%) !important;
+    font-family: var(--font-sans);
+    --normal-bg: var(--popover);
+    --normal-text: var(--popover-foreground);
+    --normal-border: var(--border);
   }
-}
 
-/* bb still declares bottom-position data attributes. Reverse Sonner's stack
- * direction without replacing its animation, dismissal, or button handlers. */
-.dark [data-sonner-toast] {
-  top: 0;
-  bottom: auto;
-  width: 100%;
-  --lift: 1;
-  --lift-amount: var(--gap);
-}
-
-.dark [data-sonner-toast][data-mounted="false"] {
-  --y: translateY(-100%);
-}
-
-.dark [data-sonner-toast].bb-app-toast > div {
-  position: relative;
-  width: 100%;
-  max-width: 100%;
-  padding: 12px;
-  border-radius: 16px;
-  background: var(--popover);
-  border-color: var(--border);
-  color: var(--popover-foreground);
-  box-shadow:
-    0 0 0 1px var(--border),
-    0 4px 12px -4px #181818eb;
-}
-
-.dark [data-sonner-toast].bb-app-toast > div > div {
-  align-items: center;
-  gap: 10px;
-}
-
-.dark [data-sonner-toast].bb-app-toast > div > div > div:first-child {
-  margin-top: 0;
-  color: var(--muted-foreground);
-}
-
-/* Keep bb's title and details rows in normal flow. Flattening the details
- * into a grid can place wrapped actions on top of the description. */
-.dark [data-sonner-toast].bb-app-toast svg {
-  margin: 0;
-}
-
-.dark [data-sonner-toast].bb-app-toast > div > div > div:nth-child(2) > div:first-child > div {
-  font-size: 13px;
-  line-height: 20px;
-  font-weight: 500;
-}
-
-.dark [data-sonner-toast].bb-app-toast > div > div > div:nth-child(2) > div:nth-child(2) > div {
-  font-size: 12px;
-  line-height: 18px;
-  color: var(--muted-foreground);
-}
-
-.dark [data-sonner-toast].bb-app-toast > div > div > div:nth-child(2) > div:nth-child(2) > button {
-  height: 28px;
-  padding: 0 10px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: var(--secondary);
-  background-clip: padding-box;
-  color: var(--secondary-foreground);
-  text-decoration: none;
-}
-
-@media (hover: hover) {
-  .dark [data-sonner-toast].bb-app-toast > div > div > div:nth-child(2) > div:nth-child(2) > button:hover {
-    background: var(--state-hover);
+  @supports (position-anchor: --bb-monokai-conversation) {
+    .dark [data-sonner-toaster] {
+      top: max(
+        calc(env(safe-area-inset-top) + var(--bb-app-chrome-row-height, 48px) + 16px),
+        calc(anchor(top, 0px) + 16px)
+      ) !important;
+      left: anchor(center, 50%) !important;
+      width: min(384px, calc(anchor-size(width, 100vw) - 32px)) !important;
+    }
   }
-}
 
-.dark [data-sonner-toast].bb-app-toast button[aria-label="Dismiss notification"] {
-  position: static;
-  width: 28px;
-  height: 28px;
-  margin: 0;
-  transform: none;
-  border: 0;
-  border-radius: 50%;
-  background: transparent;
-  color: var(--muted-foreground);
-}
+  /* bb still declares bottom-position data attributes. Reverse Sonner's stack
+   * direction without replacing its animation, dismissal, or button handlers. */
+  .dark [data-sonner-toast] {
+    top: 0;
+    bottom: auto;
+    width: 100%;
+    --lift: 1;
+    --lift-amount: var(--gap);
+  }
 
-@media (hover: hover) {
-  .dark [data-sonner-toast].bb-app-toast button[aria-label="Dismiss notification"]:hover {
-    background: var(--state-hover);
+  .dark [data-sonner-toast][data-mounted="false"] {
+    --y: translateY(-100%);
+  }
+
+  /* One 1px host edge and bb's --shadow-md, like the notification center. */
+  .dark [data-sonner-toast].bb-app-toast > div {
+    position: relative;
+    width: 100%;
+    max-width: 100%;
+    padding: 12px;
+    border-radius: 16px;
+    background: var(--popover);
+    border-color: var(--border);
     color: var(--popover-foreground);
+    box-shadow: var(--shadow-md);
   }
-}
 
-.dark [data-sonner-toast].bb-app-toast button:focus-visible {
-  outline: 2px solid var(--ring);
-  outline-offset: 2px;
-}
+  .dark [data-sonner-toast].bb-app-toast > div > div {
+    align-items: center;
+    gap: 10px;
+  }
 
+  .dark [data-sonner-toast].bb-app-toast > div > div > div:first-child {
+    margin-top: 0;
+    color: var(--muted-foreground);
+  }
+
+  /* Keep bb's title and details rows in normal flow. Flattening the details
+   * into a grid can place wrapped actions on top of the description. */
+  .dark [data-sonner-toast].bb-app-toast svg {
+    margin: 0;
+  }
+
+  .dark [data-sonner-toast].bb-app-toast > div > div > div:nth-child(2) > div:nth-child(2) > div {
+    font-size: 12px;
+    line-height: 18px;
+    color: var(--muted-foreground);
+  }
+
+  /* bb 0.45 wraps toast actions in a .flex-wrap row. Stepping through it keeps
+   * the description's "Show more" link out of the chip. */
+  .dark [data-sonner-toast].bb-app-toast > div > div > div:nth-child(2) > div:nth-child(2) > .flex-wrap > button {
+    height: 28px;
+    padding: 0 10px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--secondary);
+    background-clip: padding-box;
+    color: var(--secondary-foreground);
+    text-decoration: none;
+  }
+
+  @media (hover: hover) {
+    .dark [data-sonner-toast].bb-app-toast > div > div > div:nth-child(2) > div:nth-child(2) > .flex-wrap > button:hover {
+      background: var(--state-hover);
+    }
+  }
+
+  .dark [data-sonner-toast].bb-app-toast button[aria-label="Dismiss notification"] {
+    position: static;
+    width: 28px;
+    height: 28px;
+    margin: 0;
+    transform: none;
+    border: 0;
+    border-radius: 50%;
+    background: transparent;
+    color: var(--muted-foreground);
+  }
+
+  @media (hover: hover) {
+    .dark [data-sonner-toast].bb-app-toast button[aria-label="Dismiss notification"]:hover {
+      background: var(--state-hover);
+      color: var(--popover-foreground);
+    }
+  }
 }
 
 /* Agent replies copy the Codex app's markdown geometry, measured from its

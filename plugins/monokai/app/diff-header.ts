@@ -1,7 +1,10 @@
 import type { PluginContentScriptContext } from "@get-bb/plugin-sdk/app";
 import { SVGSpriteSheet } from "@pierre/diffs";
 
-const PANEL = ":is(#thread-detail-secondary-panel, [data-secondary-panel-shelf])";
+// bb's secondary panel, suffixed with a pane id in split workspaces, or its
+// compact shelf. The panel's resize handle shares the id prefix.
+const PANEL =
+  ':is([id^="thread-detail-secondary-panel"]:not(#thread-detail-secondary-panel-handle), [data-testid="secondary-panel-shelf"])';
 const HEADER = `${PANEL} .bg-background > .flex:has(> span > button[aria-expanded])`;
 // bb's diff toolbar, or a plugin list that opts in (gitbutler's file cards).
 const DIFF_VIEW = '[data-testid="git-diff-toolbar-layout"], [data-monokai-diff-surface]';

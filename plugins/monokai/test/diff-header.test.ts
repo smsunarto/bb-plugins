@@ -19,7 +19,7 @@ function header(changeKind: unknown) {
 }
 
 test("reads all native change kinds, including rename and copy", () => {
-  for (const kind of ["added", "deleted", "modified", "renamed", "copied"]) {
+  for (const kind of ["added", "deleted", "modified", "renamed", "copied"] as const) {
     expect(readHeaderKind(header(kind).element)).toBe(kind);
   }
 });

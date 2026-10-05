@@ -163,7 +163,7 @@ export const ChromeAndStates: Story = {
                 <span className="sb-pill">
                   <span style={{ color: "var(--pill-icon)" }}>@</span>theme
                 </span>
-                <span className="sb-tooltip bg-primary">
+                <span className="sb-tooltip bg-primary" data-side="top">
                   <span role="tooltip">Neutral tooltip</span>
                 </span>
               </div>
@@ -250,7 +250,8 @@ export const ContentPalettes: Story = {
           <div
             className="sb-diff-row"
             style={tokenStyle({
-              "--diff-bg": "var(--diffs-bg-addition-override)",
+              "--diff-bg":
+                "color-mix(in lab, var(--diffs-bg-context-override) 80%, var(--diffs-addition-color-override))",
               "--diff-number-bg": "var(--diffs-bg-addition-number-override)",
               "--diff-number-fg": "var(--diffs-fg-number-addition-override)",
             })}
@@ -261,7 +262,8 @@ export const ContentPalettes: Story = {
           <div
             className="sb-diff-row"
             style={tokenStyle({
-              "--diff-bg": "var(--diffs-bg-deletion-override)",
+              "--diff-bg":
+                "color-mix(in lab, var(--diffs-bg-context-override) 80%, var(--diffs-deletion-color-override))",
               "--diff-number-bg": "var(--diffs-bg-deletion-number-override)",
               "--diff-number-fg": "var(--diffs-fg-number-deletion-override)",
             })}

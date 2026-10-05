@@ -1,5 +1,9 @@
+/* Each :is() panel scope in this file repeats PANEL in diff-header.ts. */
 [data-monokai-diff-headers]
-  :is(#thread-detail-secondary-panel, [data-secondary-panel-shelf])
+  :is(
+    [id^="thread-detail-secondary-panel"]:not(#thread-detail-secondary-panel-handle),
+    [data-testid="secondary-panel-shelf"]
+  )
   button:is(
     [aria-label="Open in editor"],
     [aria-label^="Open in editor ("],
@@ -31,17 +35,13 @@
   padding-inline: 12px;
 }
 
-.dark[data-monokai-diff-headers]
-  [data-monokai-diff-panel]
-  [data-monokai-diff-shell]
-  button[aria-expanded] {
-  margin-left: 0;
-}
-
 /* Pierre's landing-page chevron uses a 10x16 viewBox. Resizing BB's 24x24
  * stroke icon to 10x16 shrinks its artwork rather than matching that glyph. */
 .dark[data-monokai-diff-headers]
-  :is(#thread-detail-secondary-panel, [data-secondary-panel-shelf])
+  :is(
+    [id^="thread-detail-secondary-panel"]:not(#thread-detail-secondary-panel-handle),
+    [data-testid="secondary-panel-shelf"]
+  )
   .bg-background
   > .flex
   > span
@@ -51,7 +51,10 @@
 }
 
 .dark[data-monokai-diff-headers]
-  :is(#thread-detail-secondary-panel, [data-secondary-panel-shelf])
+  :is(
+    [id^="thread-detail-secondary-panel"]:not(#thread-detail-secondary-panel-handle),
+    [data-testid="secondary-panel-shelf"]
+  )
   .bg-background
   > .flex
   > span
@@ -67,7 +70,10 @@
 }
 
 .dark[data-monokai-diff-headers]
-  :is(#thread-detail-secondary-panel, [data-secondary-panel-shelf])
+  :is(
+    [id^="thread-detail-secondary-panel"]:not(#thread-detail-secondary-panel-handle),
+    [data-testid="secondary-panel-shelf"]
+  )
   .bg-background
   > .flex
   > span
@@ -76,7 +82,10 @@
 }
 
 [data-monokai-diff-headers]
-  :is(#thread-detail-secondary-panel, [data-secondary-panel-shelf])
+  :is(
+    [id^="thread-detail-secondary-panel"]:not(#thread-detail-secondary-panel-handle),
+    [data-testid="secondary-panel-shelf"]
+  )
   .bg-background
   > .flex
   > span

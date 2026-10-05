@@ -7,9 +7,11 @@ import { mountTerminalAppearance } from "../app/terminal-appearance.ts";
   document.documentElement.style.setProperty("--bb-monokai-active", "1");
   document.body.innerHTML =
     '<div id="unrelated"></div><div id="thread-detail-secondary-panel"><div data-testid="git-diff-toolbar-layout"></div></div>' +
-    '<div data-secondary-panel-shelf><div id="plain"></div></div>' +
+    '<div id="thread-detail-secondary-panel-p2"><div data-testid="git-diff-toolbar-layout"></div></div>' +
+    '<div data-testid="secondary-panel-shelf"><div id="plain"></div></div>' +
     '<div class="bg-sidebar p-2"><div><div class="xterm"></div></div></div>';
   const panel = document.querySelector("#thread-detail-secondary-panel")!;
+  const splitPanel = document.querySelector("#thread-detail-secondary-panel-p2")!;
   let reads = 0;
   let scans = 0;
   const query = document.querySelectorAll.bind(document);
@@ -19,8 +21,9 @@ import { mountTerminalAppearance } from "../app/terminal-appearance.ts";
   }) as any;
   const nativeWidth = Object.getOwnPropertyDescriptor(Element.prototype, "scrollWidth")!.get!;
   for (let i = 0; i < 81; i++) {
-    // Half the cards carry bb's sticky sentinel. The last header sits in a
-    // shelf without a diff toolbar, so its shelf stays untagged.
+    // Half the cards carry bb's sticky sentinel. The second-to-last header sits
+    // in a split pane's panel. The last sits in the compact shelf without a
+    // diff toolbar, so its shelf stays untagged.
     const card = document.createElement("div");
     if (i % 2 === 0) card.innerHTML = '<div class="h-0"></div>';
     const wrapper = document.createElement("div");
@@ -43,7 +46,7 @@ import { mountTerminalAppearance } from "../app/terminal-appearance.ts";
         return nativeWidth.call(this);
       },
     });
-    (i === 80 ? document.querySelector("#plain")! : panel).append(card);
+    (i === 80 ? document.querySelector("#plain")! : i === 79 ? splitPanel : panel).append(card);
   }
   const controller = new AbortController();
   const dispose = mountDiffHeader({ signal: controller.signal } as any);
@@ -52,7 +55,7 @@ import { mountTerminalAppearance } from "../app/terminal-appearance.ts";
     ["--terminal-font-size", "12"],
     ["--terminal-line-height", "1.2"],
     ["--terminal-background", "#181818"],
-  ])
+  ] as const)
     document.documentElement.style.setProperty(name, value);
   const disposeTerminal = mountTerminalAppearance({ signal: controller.signal } as any);
   const frame = () => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
@@ -86,7 +89,7 @@ import { mountTerminalAppearance } from "../app/terminal-appearance.ts";
     result.tagged !== 81 ||
     result.shells !== 81 ||
     result.cards !== 41 ||
-    result.panels.join() !== "thread-detail-secondary-panel" ||
+    result.panels.join() !== "thread-detail-secondary-panel,thread-detail-secondary-panel-p2" ||
     result.terminalSurfaces !== 1
   )
     throw new Error(`Diff or terminal surfaces were not tagged: ${JSON.stringify(result)}`);
