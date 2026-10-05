@@ -121,6 +121,10 @@
         "vitest": "^4.1.1",
       },
     },
+    "packages/markdown-prose": {
+      "name": "@bb-plugins/markdown-prose",
+      "version": "0.1.0",
+    },
     "packages/unity-inspector": {
       "name": "@bb-plugins/unity-inspector",
       "version": "0.1.0",
@@ -713,6 +717,8 @@
     "@bb-plugins/codex-inference": ["@bb-plugins/codex-inference@workspace:packages/codex-inference"],
 
     "@bb-plugins/icons": ["@bb-plugins/icons@workspace:packages/bb-kit-icons"],
+
+    "@bb-plugins/markdown-prose": ["@bb-plugins/markdown-prose@workspace:packages/markdown-prose"],
 
     "@bb-plugins/unity-inspector": ["@bb-plugins/unity-inspector@workspace:packages/unity-inspector"],
 

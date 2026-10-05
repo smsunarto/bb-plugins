@@ -1,0 +1,12 @@
+{
+  "name": "@bb-plugins/markdown-prose",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./prose.css": {
+      "types": "./prose.css.d.ts",
+      "default": "./prose.css"
+    }
+  }
+}
