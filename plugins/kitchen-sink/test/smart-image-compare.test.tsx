@@ -1,47 +1,166 @@
 import { expect, test } from "bun:test";
 import { installDom } from "@bb-kit/core/testing";
 installDom();
-const { fireEvent } = await import("@testing-library/react");
+const { fireEvent, waitFor } = await import("@testing-library/react");
 const { renderSlot } = await import("@get-bb/plugin-sdk/testing/app");
-const { SmartImageCompareDirective, imageCompareUrl } =
-  await import("../src/app/smart-image-compare.tsx");
-const message = { id: "message", threadId: "thread", turnId: "turn", projectId: "project" };
+const { SmartImageCompareDirective } = await import("../src/app/smart-image-compare.tsx");
 
-function renderComparison(attributes: Record<string, string>) {
+const HOUR = 3_600_000;
+let threads = 0;
+let hosts = 0;
+
+/**
+ * A thread whose workspace is /repo; each lease gets the next base URL. Leases
+ * are cached per host root, so each fake gets its own host unless one is named.
+ */
+function fakeSdk(overrides: { environmentId?: string | null; path?: string; host?: string } = {}) {
+  let leases = 0;
+  const hostId = overrides.host ?? `host-${++hosts}`;
+  return {
+    threads: {
+      get: async () => ({
+        environmentId: "environmentId" in overrides ? overrides.environmentId : "env-1",
+      }),
+      storageLocation: async () => ({ hostId, storageRootPath: "/storage/thread" }),
+    },
+    environments: { get: async () => ({ hostId, path: overrides.path ?? "/repo" }) },
+    files: {
+      createPreview: async () => ({
+        baseUrl: `/api/v1/previews/lease-${++leases}`,
+        expiresAtMs: Date.now() + HOUR,
+      }),
+    },
+  };
+}
+
+function renderComparison(
+  attributes: Record<string, string>,
+  sdk = fakeSdk(),
+  threadId = `thread-${++threads}`,
+) {
   return renderSlot(
     { component: SmartImageCompareDirective },
     {
       attributes,
-      message,
+      message: { id: "message", threadId, turnId: "turn", projectId: "project" },
       source: "::smart-image-compare{}",
       openWorkspaceFile: null,
     },
+    { sdk: sdk as never },
   );
 }
 
-test("resolves local images through the owning thread and preserves remote URLs", () => {
-  expect(imageCompareUrl("screens/before #1.png", "thread", "workspace")).toBe(
-    "/api/v1/threads/thread/worktree/files/screens/before%20%231.png",
+function previewCalls(view: ReturnType<typeof renderComparison>) {
+  return view.inspection.sdkCalls.filter((call) => call.method === "files.createPreview");
+}
+
+test("loads workspace images through a preview lease on the thread's worktree", async () => {
+  const view = renderComparison(
+    { before: "screens/before #1.png", after: "https://example.com/image.png" },
+    fakeSdk({ host: "host-workspace" }),
   );
-  expect(imageCompareUrl("after.png", "thread", "thread-storage")).toBe(
-    "/api/v1/threads/thread/thread-storage/files/after.png",
+  const before = view.getByAltText("Before") as HTMLImageElement;
+  await waitFor(() =>
+    expect(before.getAttribute("src")).toBe("/api/v1/previews/lease-1/screens/before%20%231.png"),
   );
-  expect(imageCompareUrl("https://example.com/image.png", "thread", "workspace")).toBe(
-    "https://example.com/image.png",
+  expect(view.getByAltText("After").getAttribute("src")).toBe("https://example.com/image.png");
+  expect(previewCalls(view).map((call) => call.args[0])).toEqual([
+    { hostId: "host-workspace", rootPath: "/repo" },
+  ]);
+  view.unmount();
+});
+
+test("loads thread-storage images through a lease on the thread's storage root", async () => {
+  const view = renderComparison(
+    { before: "a.png", after: "b.png", source: "thread-storage" },
+    fakeSdk({ host: "host-storage" }),
   );
+  await waitFor(() =>
+    expect(view.getByAltText("After").getAttribute("src")).toBe("/api/v1/previews/lease-1/b.png"),
+  );
+  expect(previewCalls(view).map((call) => call.args[0])).toEqual([
+    { hostId: "host-storage", rootPath: "/storage/thread" },
+  ]);
+  view.unmount();
+});
+
+test("renews the lease once when an image fails, then names the image that cannot load", async () => {
+  const view = renderComparison({ before: "a.png", after: "b.png", afterLabel: "Updated" });
+  const after = view.getByAltText("Updated");
+  await waitFor(() => expect(after.getAttribute("src")).toBe("/api/v1/previews/lease-1/b.png"));
+  fireEvent.error(after);
+  await waitFor(() => expect(after.getAttribute("src")).toBe("/api/v1/previews/lease-2/b.png"));
+  expect(view.queryByRole("alert")).toBeNull();
+  fireEvent.error(after);
+  expect(view.getByRole("alert").textContent).toBe(
+    "Could not load the Updated image. Check its path and access permissions.",
+  );
+  expect(previewCalls(view)).toHaveLength(2);
+  view.unmount();
+});
+
+test("reports a failed remote image at once without renewing the local lease", async () => {
+  const view = renderComparison({ before: "a.png", after: "https://example.com/missing.png" });
+  await waitFor(() =>
+    expect(view.getByAltText("Before").getAttribute("src")).toBe("/api/v1/previews/lease-1/a.png"),
+  );
+  fireEvent.error(view.getByAltText("After"));
+  expect(view.getByRole("alert").textContent).toBe(
+    "Could not load the After image. Check its path and access permissions.",
+  );
+  expect(previewCalls(view)).toHaveLength(1);
+  view.unmount();
+});
+
+test("leases the thread's current workspace after it moves", async () => {
+  const first = renderComparison(
+    { before: "a.png", after: "b.png" },
+    fakeSdk({ host: "host-moving" }),
+    "moving-thread",
+  );
+  await waitFor(() => expect(previewCalls(first)).toHaveLength(1));
+  first.unmount();
+  const moved = renderComparison(
+    { before: "a.png", after: "b.png" },
+    fakeSdk({ host: "host-moving", path: "/repo-moved" }),
+    "moving-thread",
+  );
+  await waitFor(() =>
+    expect(previewCalls(moved).map((call) => call.args[0])).toEqual([
+      { hostId: "host-moving", rootPath: "/repo-moved" },
+    ]),
+  );
+  moved.unmount();
+});
+
+test("reports a thread without a workspace instead of loading images", async () => {
+  const view = renderComparison(
+    { before: "a.png", after: "b.png" },
+    fakeSdk({ environmentId: null }),
+  );
+  expect((await view.findByRole("alert")).textContent).toBe(
+    "Could not open this thread's images: This thread has no workspace.",
+  );
+  expect(view.getByAltText("Before").getAttribute("src")).toBeNull();
+  view.unmount();
+});
+
+test("rejects paths that escape the workspace and credentialed URLs", () => {
   for (const path of [
-    "",
     "../secret.png",
     "/tmp/image.png",
     "javascript:alert(1)",
     "file:///tmp/a",
     "https://user:pass@example.com/a",
   ]) {
-    expect(() => imageCompareUrl(path, "thread", "workspace")).toThrow();
+    const view = renderComparison({ before: path, after: "b.png" });
+    expect(view.getByRole("alert")).toBeDefined();
+    expect(view.queryByRole("slider")).toBeNull();
+    view.unmount();
   }
 });
 
-test("renders custom labels, accessible images, and reports dimension and load failures", () => {
+test("renders custom labels and reports unequal dimensions", () => {
   const view = renderComparison({
     before: "before.png",
     after: "after.png",
@@ -58,8 +177,6 @@ test("renders custom labels, accessible images, and reports dimension and load f
   fireEvent.load(after);
   expect(view.getByRole("alert").textContent).toContain("800×600 and 1600×900");
   expect(view.getByRole("slider")).toBeDefined();
-  fireEvent.error(after);
-  expect(view.getByText(/Could not load a comparison image/)).toBeDefined();
   view.unmount();
 });
 
