@@ -19,10 +19,12 @@
 }
 
 /*
- * The thread-activity probe draws nothing: it only carries the pane's thread
- * id and working state for the scroll router. Take the host's group wrapper
- * out of the header row's flow so it costs no gap.
+ * bb wraps every thread-header and browser-toolbar slot in a flex group, even
+ * when the plugin draws nothing there: the thread-activity probe, a listener,
+ * or a button that only shows in some threads. Each empty group still costs
+ * the row a flex gap, so a plugin button ended up 4px further from bb's own
+ * controls per empty slot. Take groups with nothing visible out of the row.
  */
-[role="group"][aria-label="Thread scroll activity"] {
+[data-bb-plugin-root] > [role="group"]:not(:has(> :not([hidden]))) {
   display: none;
 }
