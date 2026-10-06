@@ -33,7 +33,14 @@ function searchPath(env: NodeJS.ProcessEnv): string {
   return merged.join(delimiter);
 }
 
-type RunResult = { stdout: string; stderr: string; code: number | null; spawnFailed: boolean };
+type RunResult = {
+  stdout: string;
+  stderr: string;
+  code: number | null;
+  spawnFailed: boolean;
+  /** Past `MAX_OUTPUT_BYTES`, where Node kills the child, so there is no exit code. */
+  overflowed: boolean;
+};
 
 function run(
   command: string,
@@ -60,6 +67,7 @@ function run(
           stderr,
           code,
           spawnFailed: Boolean(error) && (error as NodeJS.ErrnoException).code === "ENOENT",
+          overflowed: error?.code === "ERR_CHILD_PROCESS_STDIO_MAXBUFFER",
         });
       },
     );
@@ -142,10 +150,27 @@ export async function runBut(
 /**
  * `but`'s refusal as one readable line. Its stderr is `Error: <what>`, then
  * `Caused by:` and the reason, then a `Hint:` naming more CLI commands. The
- * panel shows what and why, without the prefixes or the hint.
+ * panel shows what and why, without the prefixes or the hint. A failed fetch
+ * instead dumps git's argv and output, so only git's own `fatal:` lines say
+ * what went wrong.
  */
+/**
+ * libgit2's own words for a checkout blocked by files that still hold
+ * conflict markers, which a pull or a delete runs into after an earlier one
+ * left them, said the way the panel's notice says it.
+ */
+function plainly(message: string): string {
+  return /unresolved conflicts exist in the index/.test(message)
+    ? "Files still hold conflict markers. Resolve them in your editor or GitButler, then try again."
+    : message;
+}
+
 function refusal(stderr: string): string {
   const lines = stderr.split("\n").map((line) => line.trim());
+  const fatal = lines.filter((line) => line.startsWith("fatal:"));
+  if (fatal.length > 0) {
+    return `Could not reach the remote. ${fatal.map((line) => line.replace(/^fatal:\s*/, "")).join(" ")}`;
+  }
   const hint = lines.findIndex((line) => line.startsWith("Hint:"));
   return (hint === -1 ? lines : lines.slice(0, hint))
     .filter((line) => line !== "" && line !== "Caused by:")
@@ -156,21 +181,24 @@ function refusal(stderr: string): string {
 /**
  * Run a `but` command that changes the repository. Unlike a read, success
  * often prints nothing at all (`reword`, `land`), so only the exit status and
- * a structured `{ error }` decide the outcome.
+ * a structured `{ error }` decide the outcome. A success can still carry
+ * news: the JSON it printed, if any, and warnings on stderr.
  */
 export async function runButAction(
   cwd: string,
   args: readonly string[],
   signal: AbortSignal,
-): Promise<void> {
+): Promise<{ payload: unknown; stderr: string }> {
   const result = await run("but", [...args, "--json"], cwd, signal);
   if (signal.aborted) throw new Error("aborted");
   if (result.spawnFailed) throw await spawnFailure("but", cwd);
-  const failure = structuredError(parseJson(result.stdout));
-  if (failure) throw new ButFailedError(failure.message);
+  const payload = parseJson(result.stdout);
+  const failure = structuredError(payload);
+  if (failure) throw new ButFailedError(plainly(failure.message));
   if (result.code !== 0) {
-    throw new ButFailedError(refusal(result.stderr) || `but ${args[0] ?? ""} failed.`);
+    throw new ButFailedError(plainly(refusal(result.stderr) || `but ${args[0] ?? ""} failed.`));
   }
+  return { payload, stderr: result.stderr };
 }
 
 export async function runGit(
@@ -181,6 +209,8 @@ export async function runGit(
   const result = await run("git", args, cwd, signal);
   if (signal.aborted) throw new Error("aborted");
   if (result.spawnFailed) throw await spawnFailure("git", cwd);
+  // History is read a page at a time, so only a diff grows this large.
+  if (result.overflowed) throw new ButFailedError("This diff is too large to show.");
   if (result.code !== 0) {
     throw new ButFailedError(firstLine(result.stderr) || "git failed.");
   }

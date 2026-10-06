@@ -1,13 +1,15 @@
 /**
  * A `but status -u --json` payload, shaped from real CLI output and trimmed
- * to the cases the parser has to get right: an untracked file, a two-branch
- * stack, assigned changes, an upstream commit, a conflicted commit, and a
- * `branchStatus` the plugin does not know.
+ * to the cases the parser has to get right: an untracked file, a deleted
+ * file, a two-branch stack, assigned changes, an upstream commit, a review
+ * with a failing check, a conflicted commit, and a `branchStatus` the plugin
+ * does not know.
  */
 export const statusPayload = {
   uncommittedChanges: [
     { cliId: "uz", filePath: "bun.lock", changeType: "modified" },
     { cliId: "ot", filePath: "plugins/gitbutler/LICENSE", changeType: "added" },
+    { cliId: "gn", filePath: "gone.ts", changeType: "removed" },
   ],
   stacks: [
     {
@@ -46,8 +48,14 @@ export const statusPayload = {
             },
           ],
           branchStatus: "nothingToPush",
-          reviewId: "42",
-          ci: { status: "success" },
+          reviewId: "(#42)",
+          ci: {
+            pendingCheckTitles: [],
+            passingCheckTitles: ["test"],
+            failingCheckTitles: ["lint"],
+            status: "complete",
+            conclusion: "failure",
+          },
         },
         {
           cliId: "cb",
@@ -139,18 +147,4 @@ export const diffPayload = {
     },
     { path: "logo.png", status: "modified", diff: { type: "binary" } },
   ],
-};
-
-/** `but show <commit> --json`. */
-export const showPayload = {
-  commit: "8f4598a1eaca7d3d7080a6756164040f0707d0d5",
-  author: { name: "Scott Sunarto", email: "github@smsunarto.com" },
-  committer: { name: "Scott Sunarto", email: "github@smsunarto.com" },
-  date: "2026-09-22 14:43:26 -0700",
-  message: "feat(top): add the thing\n\nWith a body.",
-  files: [
-    { path: "src/app/app.tsx", status: "modified" },
-    { path: "src/app/new.tsx", status: "added" },
-  ],
-  changeId: "syvmzmsvwkuzpwuuxyvnmywkktuzxqul",
 };

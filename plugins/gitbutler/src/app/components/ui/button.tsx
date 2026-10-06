@@ -10,7 +10,9 @@ const buttonVariants = cva(
   // focus-visible:ring-1` swaps bb's own 2px focus outline for a 1px ring, so a
   // shadcn button in this panel got a thinner indicator than the plain buttons
   // beside it. Letting bb's `:focus-visible` rule through keeps one indicator.
-  `inline-flex cursor-pointer items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium ${CONTROL_HOVER_TRANSITION} disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0`,
+  // An icon's own `size-*` class wins over the 16px default, which would
+  // otherwise outrank it on specificity.
+  `inline-flex cursor-pointer items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium ${CONTROL_HOVER_TRANSITION} disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg:not([class*='size-'])]:size-4 [&_svg]:shrink-0`,
   {
     variants: {
       variant: {

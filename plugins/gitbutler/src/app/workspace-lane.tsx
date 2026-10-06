@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
-import { experimental_Icon as Icon } from "@get-bb/plugin-sdk/app";
+import { experimental_Icon as Icon, useBbNavigate } from "@get-bb/plugin-sdk/app";
 import { keepPreviousData } from "@tanstack/react-query";
 import type {
   BaseCommit,
@@ -13,7 +13,8 @@ import type {
 import { Button } from "./components/ui/button.tsx";
 import { cn } from "./lib/utils.ts";
 import { Loading, Notice, errorText } from "./notice.tsx";
-import { rpc, defined } from "./rpc.ts";
+import { REFRESH_INTERVAL_MS } from "./query-client.ts";
+import { rpc } from "./rpc.ts";
 import { relativeTime, shortId, subject } from "./format.ts";
 import { BranchActions, BranchName } from "./branch-actions.tsx";
 import { usePatches } from "./file-cards.tsx";
@@ -28,12 +29,18 @@ import type { WorkspaceTarget } from "./branch-actions.tsx";
  * is one column, so they stack vertically here.
  */
 
-const REFRESH_INTERVAL_MS = 10_000;
 const BASE_HISTORY_PAGE = 60;
 const BASE_HISTORY_MAX = 500;
 
 /** Anything the detail screen can be opened from: a stack, base, or history row. */
-export type CommitRef = { commitId: string; createdAt: string; message: string };
+export type CommitRef = {
+  commitId: string;
+  /** GitButler's id for the change, kept when an amend or rebase rewrites the commit. */
+  changeId?: string | null;
+  createdAt: string;
+  message: string;
+  authorName: string;
+};
 
 const CARD = "overflow-hidden rounded-lg border border-border bg-card";
 // Inside a card: a divider and a muted label, as GitButler heads a sub-list.
@@ -64,6 +71,8 @@ const BRANCH_LOOK: Readonly<
 > = {
   unpushed: { tone: "local", icon: "GitBranch", label: "Unpushed", diamond: false },
   pushed: { tone: "remote", icon: "GitBranch", label: "Pushed", diamond: true },
+  ahead: { tone: "remote", icon: "ArrowUp", label: "Ahead", diamond: false },
+  behind: { tone: "remote", icon: "ArrowDown", label: "Behind", diamond: false },
   diverged: { tone: "remote", icon: "ArrowUpDown", label: "Diverged", diamond: false },
   integrated: { tone: "integrated", icon: "GitMerge", label: "Integrated", diamond: false },
   conflicted: { tone: "conflicted", icon: "AlertTriangle", label: "Conflicted", diamond: false },
@@ -113,8 +122,9 @@ function Rail({
 
 /** Which commit is open under its row, and what opening one of its files does. */
 export type CommitExpansion = WorkspaceTarget & {
+  /** A change id where the commit has one, else its commit id. */
   expanded: string | null;
-  onToggle: (commitId: string) => void;
+  onToggle: (key: string) => void;
   onOpenFile: (commit: CommitRef, path: string) => void;
 };
 
@@ -141,7 +151,9 @@ function CommitRow({
   meta?: ReactNode;
 }) {
   const expansion = useContext(CommitExpansionContext)!;
-  const open = expansion.expanded === commit.commitId;
+  // By change id, so an open commit stays open when GitButler rewrites it.
+  const key = commit.changeId ?? commit.commitId;
+  const open = expansion.expanded === key;
   const title = subject(commit.message);
   const railTone = commit.conflicted ? "conflicted" : tone;
   return (
@@ -149,10 +161,11 @@ function CommitRow({
       <button
         type="button"
         className={cn(
-          "relative flex w-full min-w-0 items-stretch text-start hover:bg-state-hover",
+          // The card clips outside the row, so the focus outline is drawn inside it.
+          "relative flex w-full min-w-0 cursor-pointer items-stretch text-start hover:bg-state-hover focus-visible:-outline-offset-2",
           commit.conflicted && "bg-destructive/10",
         )}
-        onClick={() => expansion.onToggle(commit.commitId)}
+        onClick={() => expansion.onToggle(key)}
         aria-expanded={open}
         title={`${shortId(commit.commitId)} ${title}`}
       >
@@ -189,7 +202,7 @@ function CommitRow({
           </span>
           <span className="flex shrink-0 gap-1.5 text-[11px] tabular-nums text-muted-foreground">
             {meta}
-            {/* Rewrites itself on every refresh, so tabular digits stop the row twitching. */}
+            {/* Rewrites itself as the panel ticks, so tabular digits stop the row twitching. */}
             <span>{relativeTime(commit.createdAt)}</span>
           </span>
         </span>
@@ -224,26 +237,35 @@ function CommitFiles({ commit, expansion }: { commit: CommitRef; expansion: Comm
     () => ({ kind: "commit", commitId: commit.commitId }),
     [commit.commitId],
   );
-  const { patches, changes, totals } = usePatches(
+  const { patches, changes, totals, truncated } = usePatches(
     expansion.threadId,
     expansion.repositoryKey,
     source,
   );
-  if (patches.isPending) return <Loading label="Loading changes…" />;
+  // `flow-root` keeps the message's margins inside the filled box.
+  if (patches.isPending) {
+    return (
+      <div className="flow-root px-2.5">
+        <Loading label="Loading changes…" />
+      </div>
+    );
+  }
   if (patches.isError) {
     return (
-      <Notice
-        title="Changes failed to load"
-        detail={errorText(patches.error)}
-        onRetry={() => void patches.refetch()}
-      />
+      <div className="flow-root px-2.5">
+        <Notice
+          title="Changes failed to load"
+          detail={errorText(patches.error)}
+          onRetry={() => void patches.refetch()}
+        />
+      </div>
     );
   }
   return (
     <ChangesCard
       title="Changed files"
       changes={changes}
-      stats={<LineStats added={totals.added} removed={totals.removed} />}
+      stats={truncated ? null : <LineStats added={totals.added} removed={totals.removed} />}
       defaultOpen
       onOpenFile={(path) => expansion.onOpenFile(commit, path)}
     />
@@ -340,6 +362,9 @@ function CardHeader({
   );
 }
 
+const CHIP =
+  "inline-flex h-4.5 shrink-0 items-center gap-1 rounded-full bg-secondary px-1.5 text-[11px] font-semibold whitespace-nowrap text-secondary-foreground";
+
 /** A small pill beside the branch name, so status costs no row of its own. */
 function Chip({
   className,
@@ -351,29 +376,63 @@ function Chip({
   children: ReactNode;
 }) {
   return (
-    <span
-      className={cn(
-        "inline-flex h-4.5 shrink-0 items-center gap-1 rounded-full bg-secondary px-1.5 text-[11px] font-semibold whitespace-nowrap text-secondary-foreground",
-        className,
-      )}
-      title={title}
-    >
+    <span className={cn(CHIP, className)} title={title}>
       {children}
     </span>
   );
+}
+
+/** The review's checks overall, in bb's feedback colours. */
+const CI_LOOK: Readonly<
+  Record<NonNullable<Branch["ci"]>, { icon: string; tone: string; label: string }>
+> = {
+  success: { icon: "CircleCheck", tone: "text-success", label: "Checks passed" },
+  failure: { icon: "CircleX", tone: "text-destructive-text", label: "Checks failed" },
+  pending: { icon: "Clock", tone: "text-warning-text", label: "Checks running" },
+};
+
+/**
+ * Opens a branch's review on its forge. `but` asks the forge for the link,
+ * so it is looked up when the chip is clicked, never on a poll.
+ */
+function useReviewLink(target: WorkspaceTarget, branch: string) {
+  const navigate = useBbNavigate();
+  const link = rpc.reviewUrl.useQuery({ ...target, branch }, { enabled: false });
+  // This card's last click, not the shared cache: a lookup that failed before
+  // the panel remounted is not news to a reader who has not clicked since.
+  const [problem, setProblem] = useState<string | null>(null);
+  return {
+    open: async () => {
+      setProblem(null);
+      const result = await link.refetch();
+      if (result.isError) setProblem(errorText(result.error));
+      else if (result.data?.url) navigate.openUrl(result.data.url);
+      else setProblem("GitButler could not find this PR on its forge.");
+    },
+    opening: link.isFetching,
+    problem,
+  };
 }
 
 function BranchCard({
   target,
   branch,
   last,
+  pushedWith,
+  branchesAbove,
 }: {
   target: WorkspaceTarget;
   branch: Branch;
   /** The bottom branch of its stack: its last segment runs on to the base. */
   last: boolean;
+  /** This branch and every branch below it, which `but push` forces along. */
+  pushedWith: readonly Branch[];
+  /** Branches stacked on this one. */
+  branchesAbove: number;
 }) {
   const look = BRANCH_LOOK[branch.status];
+  const ci = branch.ci ? CI_LOOK[branch.ci] : null;
+  const review = useReviewLink(target, branch.name);
   const upstream = branch.upstreamCommits;
   return (
     <article className={CARD} aria-label={`Branch ${branch.name}`}>
@@ -381,6 +440,13 @@ function BranchCard({
         icon={look.icon}
         tone={look.tone}
         heading={<BranchName key={branch.name} target={target} name={branch.name} />}
+        details={
+          review.problem ? (
+            <span role="alert" className="truncate text-destructive-text" title={review.problem}>
+              {review.problem}
+            </span>
+          ) : null
+        }
         trailing={
           <>
             {look.label ? (
@@ -396,15 +462,40 @@ function BranchCard({
               </Chip>
             ) : null}
             {branch.reviewId ? (
-              <Chip>
-                <Icon name="GitPullRequest" className="size-3" aria-hidden />
-                {`PR #${branch.reviewId}`}
+              <button
+                type="button"
+                className={cn(CHIP, "cursor-pointer hover:bg-secondary/80")}
+                aria-label={`Open PR ${branch.reviewId}`}
+                aria-busy={review.opening}
+                onClick={() => void review.open()}
+              >
+                <Icon
+                  name={review.opening ? "Spinner" : "GitPullRequest"}
+                  className={cn("size-3", review.opening && "animate-spin")}
+                  aria-hidden
+                />
+                {`PR ${branch.reviewId}`}
+              </button>
+            ) : null}
+            {ci ? (
+              <Chip
+                title={ci.label}
+                className={cn("bg-transparent px-1 ring-1 ring-border ring-inset", ci.tone)}
+              >
+                <Icon name={ci.icon} className="size-3" aria-hidden />
+                <span className="sr-only">{ci.label}</span>
               </Chip>
             ) : null}
           </>
         }
       />
-      <BranchActions target={target} branch={branch} landable={last} />
+      <BranchActions
+        target={target}
+        branch={branch}
+        landable={last}
+        pushedWith={pushedWith}
+        branchesAbove={branchesAbove}
+      />
       {/*
        * Upstream commits were once told apart from local ones by colour alone,
        * which says nothing to anyone who cannot separate the two hues. The
@@ -412,7 +503,7 @@ function BranchCard({
        */}
       {upstream.length > 0 ? (
         <>
-          <p className={cn(CARD_LABEL, "text-warning")}>
+          <p className={cn(CARD_LABEL, "text-warning-text")}>
             Upstream, not in this branch <Count>{upstream.length}</Count>
           </p>
           <ul className="list-none">
@@ -489,7 +580,14 @@ export function StackLane({
         const last = index === stack.branches.length - 1;
         return (
           <div key={branch.name} className="contents">
-            <BranchCard target={target} branch={branch} last={last} />
+            <BranchCard
+              target={target}
+              branch={branch}
+              last={last}
+              // Top first, so a branch's ancestors are the ones after it.
+              pushedWith={stack.branches.slice(index)}
+              branchesAbove={index}
+            />
             {last ? null : <Connector tone={BRANCH_LOOK[branch.status].tone} />}
           </div>
         );
@@ -516,7 +614,7 @@ export function BaseCard({
   useEffect(() => setLimit(BASE_HISTORY_PAGE), [base.commitId]);
 
   const history = rpc.baseHistory.useQuery(
-    defined({ threadId, repositoryKey, from: base.commitId, offset: 0, limit }),
+    { threadId, repositoryKey, from: base.commitId, offset: 0, limit },
     // A bigger page is a new key. Keep the list the reader was looking at
     // until the longer one lands, instead of swapping it for a spinner.
     { staleTime: REFRESH_INTERVAL_MS, placeholderData: keepPreviousData },
@@ -529,9 +627,7 @@ export function BaseCard({
       <CardHeader
         icon="Target"
         tone="remote"
-        heading={
-          <h3 className="m-0 min-w-0 flex-1 truncate text-[13px] font-semibold">Common base</h3>
-        }
+        heading={<h3 className="m-0 min-w-0 flex-1 truncate text-sm font-semibold">Common base</h3>}
         details={<span>Where the applied branches meet the target</span>}
       />
       <ul className="list-none border-t border-border">
@@ -540,8 +636,9 @@ export function BaseCard({
           tone="remote"
           diamond
           bottom={commits.length > 0 ? "solid" : "dashed"}
-          last={commits.length === 0}
-          meta={<span>{base.authorName}</span>}
+          // A labelled section always follows, and its label draws the rule.
+          last
+          meta={<span className="max-w-24 truncate">{base.authorName}</span>}
         />
       </ul>
       {/* The list below carried no label once, so it read as commits from nowhere. */}

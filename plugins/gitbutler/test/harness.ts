@@ -11,11 +11,7 @@ export type HostCall = { method: string; input: unknown; options: unknown };
 
 type Environment = { hostId: string; path: string | null; status: string };
 
-export function harness(options: {
-  environment?: Environment | null;
-  result?: unknown;
-  hostError?: Error;
-}) {
+export function harness(options: { environment?: Environment | null; result?: unknown }) {
   const calls: HostCall[] = [];
   const bb = {
     sdk: {
@@ -30,7 +26,6 @@ export function harness(options: {
       experimental_client: () => ({
         call: async (method: string, input: unknown, callOptions: unknown) => {
           calls.push({ method, input, options: callOptions });
-          if (options.hostError) throw options.hostError;
           return options.result;
         },
       }),

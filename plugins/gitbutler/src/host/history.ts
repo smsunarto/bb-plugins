@@ -2,8 +2,11 @@ import type { BaseCommit } from "../shared/schema.ts";
 import { runGit } from "./cli.ts";
 import { parseGitLog } from "./parse.ts";
 
-/** NUL-delimited so a subject containing any printable character survives. */
-const FORMAT = "--format=%H%x00%an%x00%aI%x00%s%x00%x00";
+/**
+ * NUL-delimited, with `-z` ending each record in one, so any message survives.
+ * The whole message, not the subject: the commit's detail screen shows its body.
+ */
+const FORMAT = "--format=%H%x00%an%x00%aI%x00%B";
 
 /**
  * The target-branch history strictly below the workspace's common base. The
@@ -21,6 +24,7 @@ export async function readBaseHistory(
     repositoryPath,
     [
       "log",
+      "-z",
       "--no-show-signature",
       FORMAT,
       `--skip=${offset + 1}`,

@@ -7,11 +7,11 @@ import { getSingularPatch } from "@pierre/diffs";
 import { FileDiff } from "@pierre/diffs/react";
 import type { ChangeKind, FilePatch, PatchSource } from "../shared/schema.ts";
 import { ChangedFilesCard, FileList, LineStats, fileOrder, useListMode } from "./file-list.tsx";
+import { cn } from "./lib/utils.ts";
 import { Loading, Notice, errorText } from "./notice.tsx";
-import { COMMIT_QUERY } from "./query-client.ts";
-import { rpc, defined } from "./rpc.ts";
+import { COMMIT_QUERY, REFRESH_INTERVAL_MS } from "./query-client.ts";
+import { rpc } from "./rpc.ts";
 
-const REFRESH_INTERVAL_MS = 10_000;
 const COPIED_FEEDBACK_MS = 1_200;
 /** Room left above a file scrolled to, so its card's top edge stays in view. */
 const SCROLL_MARGIN_PX = 8;
@@ -20,10 +20,20 @@ const PIN_MS = 2_000;
 
 type Parsed = ReturnType<typeof getSingularPatch>;
 
-function parse(patch: string): Parsed | null {
+/**
+ * Pierre's worker pool keeps a highlighted diff under its `cacheKey`, and a
+ * diff whose text changed needs a new one. The key is the patch text itself,
+ * not a hash of it: a hash can collide, and then the same path in another
+ * commit, or in the worktree after an edit, would draw the old highlight.
+ * The pool keeps at most a hundred diffs and already holds their text, so a
+ * text key at most doubles what it keeps.
+ */
+const cacheKeyOf = (patch: string) => `gitbutler:${patch}`;
+
+export function parsePatch(patch: string): Parsed | null {
   if (patch === "") return null;
   try {
-    return getSingularPatch(patch);
+    return { ...getSingularPatch(patch), cacheKey: cacheKeyOf(patch) };
   } catch {
     return null;
   }
@@ -47,17 +57,16 @@ function countLines(parsed: Parsed | null): { added: number; removed: number } {
 function FileHeader({
   model,
   open,
-  added,
-  removed,
-  hasDiff,
+  counts,
+  truncated,
   bodyId,
   onToggle,
 }: {
   model: { path: string; label: string; changeKind: ChangeKind };
   open: boolean;
-  added: number;
-  removed: number;
-  hasDiff: boolean;
+  /** Null when there is no patch text to count. */
+  counts: { added: number; removed: number } | null;
+  truncated: boolean;
   bodyId: string;
   onToggle: () => void;
 }) {
@@ -80,7 +89,10 @@ function FileHeader({
           >
             <Icon
               name="ChevronRight"
-              className="size-3.5 shrink-0 transition-transform duration-150 motion-reduce:transition-none"
+              className={cn(
+                "size-3.5 shrink-0 transition-transform duration-150 motion-reduce:transition-none",
+                open && "rotate-90",
+              )}
               aria-hidden
             />
           </button>
@@ -119,15 +131,15 @@ function FileHeader({
         </span>
         <span className="flex shrink-0 items-center gap-1">
           <span className="whitespace-nowrap text-xs tabular-nums">
-            {hasDiff ? (
+            {counts ? (
               <>
-                <span className="text-diff-added">+{added}</span>{" "}
-                <span className="text-diff-removed">-{removed}</span>
+                <span className="text-diff-added">+{counts.added}</span>{" "}
+                <span className="text-diff-removed">-{counts.removed}</span>
               </>
             ) : (
               /* Every other row ends in a count pair. A bare change letter in
                  that slot read as a count, so say plainly there is none. */
-              <span className="text-muted-foreground">No diff</span>
+              <span className="text-muted-foreground">{truncated ? "Too large" : "No diff"}</span>
             )}
           </span>
         </span>
@@ -145,8 +157,8 @@ function FileCard({ file }: { file: FilePatch }) {
   const bodyId = useId();
   const onToggle = () => setOpen((current) => !current);
   const { mode, name } = useCodeTheme();
-  const parsed = useMemo(() => parse(file.patch), [file.patch]);
-  const counts = useMemo(() => countLines(parsed), [parsed]);
+  const parsed = useMemo(() => parsePatch(file.patch), [file.patch]);
+  const counts = useMemo(() => (parsed ? countLines(parsed) : null), [parsed]);
   const model = useMemo(
     () => ({ path: file.path, label: file.path, changeKind: file.kind }),
     [file.kind, file.path],
@@ -167,16 +179,17 @@ function FileCard({ file }: { file: FilePatch }) {
   );
 
   return (
+    // Clipped, not hidden: a hidden overflow would make this card the sticky
+    // header's scroll container, and the header would scroll away with the diff.
     <div
-      className="overflow-hidden rounded-lg border border-border bg-card"
+      className="overflow-clip rounded-lg border border-border bg-card"
       data-file-card={file.path}
     >
       <FileHeader
         model={model}
         open={open}
-        added={counts.added}
-        removed={counts.removed}
-        hasDiff={parsed !== null}
+        counts={counts}
+        truncated={file.truncated}
         bodyId={bodyId}
         onToggle={onToggle}
       />
@@ -186,18 +199,20 @@ function FileCard({ file }: { file: FilePatch }) {
             <div className="gb-diff border-t border-border">
               {/* One phrasing for one condition, here and in the branch below. */}
               {file.truncated ? (
-                <p className="border-b border-border px-2 py-1 text-[11px] text-warning">
+                <p className="border-b border-border px-2 py-1 text-[11px] text-warning-text">
                   This diff is too large to show in full. Open the file in your editor to read the
                   rest.
                 </p>
               ) : null}
-              <FileDiff disableWorkerPool fileDiff={parsed} options={bodyOptions} />
+              <FileDiff fileDiff={parsed} options={bodyOptions} />
             </div>
           ) : (
             <p className="border-t border-border px-2.5 py-1.5 text-[11px] leading-normal text-muted-foreground">
               {file.truncated
                 ? "This diff is too large to show. Open the file in your editor to read it."
-                : "No text to show. The file is binary or its contents did not change."}
+                : file.kind === "renamed" && file.previousPath
+                  ? `Renamed from ${file.previousPath}.`
+                  : "No text to show. The file is binary or its contents did not change."}
             </p>
           )
         ) : null}
@@ -217,10 +232,12 @@ export function usePatches(
   source: PatchSource,
 ) {
   const patches = rpc.patches.useQuery(
-    defined({ threadId, repositoryKey, source }),
+    { threadId, repositoryKey, source },
     // A commit's diff is fixed by its id. The worktree's is not, so that one
     // is refreshed on the panel's usual cadence.
-    source.kind === "commit" ? COMMIT_QUERY : { staleTime: REFRESH_INTERVAL_MS },
+    source.kind === "commit"
+      ? COMMIT_QUERY
+      : { staleTime: REFRESH_INTERVAL_MS, refetchInterval: REFRESH_INTERVAL_MS },
   );
   const files = patches.data?.files;
   const changes = useMemo(
@@ -231,14 +248,17 @@ export function usePatches(
     () =>
       (files ?? []).reduce(
         (total, file) => {
-          const { added, removed } = countLines(parse(file.patch));
+          const { added, removed } = countLines(parsePatch(file.patch));
           return { added: total.added + added, removed: total.removed + removed };
         },
         { added: 0, removed: 0 },
       ),
     [files],
   );
-  return { patches, files, changes, totals };
+  // Past the host's budget, or `but`'s own size limit, some files arrive
+  // without patch text, so the totals would undercount. Callers drop them
+  // rather than show a part.
+  return { patches, files, changes, totals, truncated: patches.data?.truncated ?? false };
 }
 
 /**
@@ -273,7 +293,11 @@ export function FileCards({
   const [mode] = useListMode();
   const [active, setActive] = useState(initialPath);
   const section = useRef<HTMLElement>(null);
-  const { patches, files, changes, totals } = usePatches(threadId, repositoryKey, source);
+  const { patches, files, changes, totals, truncated } = usePatches(
+    threadId,
+    repositoryKey,
+    source,
+  );
 
   const scrollTo = useCallback((path: string) => {
     const card = [
@@ -320,10 +344,15 @@ export function FileCards({
     );
   }
   if (!files || files.length === 0) {
-    return (
+    return source.kind === "commit" ? (
       <Notice
         title="No file changes"
         detail="This commit records no file contents. Merges and empty commits look like this."
+      />
+    ) : (
+      <Notice
+        title="No uncommitted changes"
+        detail="The worktree has no changes now. They were committed or discarded."
       />
     );
   }
@@ -345,7 +374,7 @@ export function FileCards({
       <ChangedFilesCard
         title="Changed files"
         count={files.length}
-        stats={<LineStats added={totals.added} removed={totals.removed} />}
+        stats={truncated ? null : <LineStats added={totals.added} removed={totals.removed} />}
         open={listOpen}
         onToggle={() => setListOpen((current) => !current)}
       >

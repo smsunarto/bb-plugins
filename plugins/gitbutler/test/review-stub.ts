@@ -5,9 +5,7 @@ import type { BbPluginApi } from "@get-bb/plugin-sdk";
  * like the real one (an omitted key is the first repository), real KV
  * semantics, and children whose status the test sets.
  */
-export function reviewContext(
-  options: { environmentId?: string | null; environment?: unknown } = {},
-) {
+export function reviewContext(options: { environment?: unknown } = {}) {
   const spawned: Record<string, unknown>[] = [];
   const hostInputs: unknown[] = [];
   const kv = new Map<string, unknown>();
@@ -15,7 +13,7 @@ export function reviewContext(
   const parent = {
     id: "t1",
     projectId: "p1",
-    environmentId: options.environmentId === undefined ? "env-1" : options.environmentId,
+    environmentId: "env-1",
     providerId: "claude-code",
     environment:
       options.environment === undefined

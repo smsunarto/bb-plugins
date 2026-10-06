@@ -1,6 +1,6 @@
 import { beforeEach, expect, test } from "bun:test";
+import { pluginQueryClient } from "@bb-kit/core/rpc/query";
 import { installDom } from "@bb-kit/core/testing";
-import { queryClient } from "../src/app/query-client.ts";
 import { parseWorkspace } from "../src/host/parse.ts";
 import { statusPayload } from "./fixtures.ts";
 
@@ -24,9 +24,16 @@ class InertResizeObserver {
 const { loadPluginApp, renderSlot } = await import("@get-bb/plugin-sdk/testing/app");
 
 const workspace = parseWorkspace(statusPayload, "bb-plugins");
+// The fixture's scott/bottom commit is conflicted, for the parser's tests.
+// `but` refuses to push or land that, and most cards here need both.
+workspace.stacks[0]!.branches[1]!.commits[0]!.conflicted = false;
 
-// The cache outlives the panel on purpose. Between tests it must not.
-beforeEach(() => queryClient.clear());
+// The cache and the remembered repository outlive the panel on purpose.
+// Between tests they must not.
+beforeEach(() => {
+  pluginQueryClient.clear();
+  window.localStorage.clear();
+});
 
 async function panel(rpc: Record<string, (input: never) => unknown>) {
   const app = await loadPluginApp(() => import("../src/app/app.tsx"));
@@ -190,18 +197,12 @@ test("lets the repository picker stand in for the name instead of printing both"
 test("opens a commit and then one of its files as a diff", async () => {
   const slot = await panel({
     ...baseRpc,
-    commit: () => ({
-      commitId: "8f4598a1eaca7d3d7080a6756164040f0707d0d5",
-      message: "feat(top): add the thing\n\nWith a body.",
-      authorName: "Scott Sunarto",
-      authorEmail: "github@smsunarto.com",
-      files: [{ path: "src/app/app.tsx", kind: "modified" }],
-    }),
     patches: () => ({
       files: [
         {
           path: "src/app/app.tsx",
           kind: "modified",
+          previousPath: null,
           patch:
             "diff --git a/src/app/app.tsx b/src/app/app.tsx\n" +
             "--- a/src/app/app.tsx\n+++ b/src/app/app.tsx\n@@ -1 +1 @@\n-old\n+new\n",
@@ -229,15 +230,33 @@ test("opens a commit and then one of its files as a diff", async () => {
     source: { kind: "commit", commitId: "8f4598a1eaca7d3d7080a6756164040f0707d0d5" },
   });
 
-  // A file opens its diff.
-  fireEvent.click(within(files).getByTitle("src/app/app.tsx"));
+  // A file opens its diff, over the workspace, which waits behind it.
+  const file = within(files).getByTitle("src/app/app.tsx");
+  file.focus();
+  fireEvent.click(file);
   await waitFor(() =>
     expect(slot.getByRole("button", { name: "Collapse src/app/app.tsx" })).toBeTruthy(),
   );
+  const back = slot.getByRole("button", { name: "Back to workspace" });
+  expect(document.activeElement).toBe(back);
+  expect(row.closest("[inert]")).toBeTruthy();
+  // The detail screen carries the whole message, body included.
+  expect(slot.getByText("With a body.")).toBeTruthy();
 
-  fireEvent.click(slot.getByText("Workspace"));
-  await waitFor(() => expect(slot.getByText("scott/top")).toBeTruthy());
-  // Back on the workspace, the commit is still open. A second click closes it.
+  fireEvent.click(back);
+  expect(slot.queryByRole("button", { name: "Back to workspace" })).toBeNull();
+  // Focus is back on the file it left from, and the commit is still open.
+  expect(document.activeElement).toBe(file);
+  expect(row.closest("[inert]")).toBeNull();
+  expect(row.getAttribute("aria-expanded")).toBe("true");
+
+  // Escape goes back as well.
+  fireEvent.click(file);
+  await waitFor(() => expect(slot.getByRole("button", { name: "Back to workspace" })).toBeTruthy());
+  fireEvent.keyDown(slot.getByRole("button", { name: "Back to workspace" }), { key: "Escape" });
+  expect(slot.queryByRole("button", { name: "Back to workspace" })).toBeNull();
+
+  // A second click on the commit closes it.
   fireEvent.click(slot.getByText("feat(top): add the thing"));
   expect(slot.queryByRole("region", { name: "Changed files" })).toBeNull();
   slot.lifecycle.unmount();
@@ -251,6 +270,7 @@ test("opens an uncommitted file straight into its working-tree diff", async () =
         {
           path: "bun.lock",
           kind: "modified",
+          previousPath: null,
           patch:
             "diff --git a/bun.lock b/bun.lock\n--- a/bun.lock\n+++ b/bun.lock\n@@ -1 +1 @@\n-a\n+b\n",
           truncated: false,
@@ -286,6 +306,7 @@ test("opens an uncommitted file straight into its working-tree diff", async () =
 const patch = (path: string, kind = "modified") => ({
   path,
   kind,
+  previousPath: null,
   patch: `diff --git a/${path} b/${path}\n--- a/${path}\n+++ b/${path}\n@@ -1 +1 @@\n-a\n+b\n`,
   truncated: false,
 });
@@ -344,15 +365,15 @@ test("the tree view folds shared folders into one row, and every list follows th
 
   // The choice outlives the card: the detail screen opens in the tree too.
   fireEvent.click(card().getByRole("treeitem", { name: /README/ }));
-  await waitFor(() => expect(slot.getByText("Changed files")).toBeTruthy());
-  expect(slot.getAllByRole("treeitem").map((row) => row.title)).toEqual([
+  const detail = await waitFor(() => within(slot.getByRole("region", { name: "Changes" })));
+  expect(detail.getAllByRole("treeitem").map((row) => row.title)).toEqual([
     "src/app",
     "src/app/a.tsx",
     "src/app/b.tsx",
     "README.md",
   ]);
   // Back to the default, which the other tests assume.
-  fireEvent.click(slot.getByRole("button", { name: "List view" }));
+  fireEvent.click(detail.getByRole("button", { name: "List view" }));
   expect(window.localStorage.getItem("bb-plugin-gitbutler:file-list-mode")).toBe("list");
   slot.lifecycle.unmount();
 });
@@ -385,8 +406,11 @@ test("a file opens every diff, scrolled to that file, and the list scrolls betwe
       expect(openDiffs(slot)).toEqual(["src/app/b.tsx", "src/app/a.tsx", "README.md"]),
     );
     expect(scrolls).toEqual([392]);
+    // The workspace stays mounted under the detail screen, with its own rows.
     const row = (path: string) =>
-      slot.container.querySelector<HTMLElement>(`[data-row][title="${path}"]`)!;
+      slot
+        .getByRole("region", { name: "Changes" })
+        .querySelector<HTMLElement>(`[data-row][title="${path}"]`)!;
     expect(row("README.md").getAttribute("aria-selected")).toBe("true");
 
     fireEvent.click(row("src/app/b.tsx"));
@@ -416,7 +440,6 @@ test("tells the user how to fix a repository that GitButler has not set up", asy
       stacks: [],
       base: null,
       upstream: null,
-      revision: "setup",
     }),
   });
 
@@ -438,7 +461,6 @@ test("says so when the GitButler CLI is missing on the host", async () => {
       stacks: [],
       base: null,
       upstream: null,
-      revision: "missing",
     }),
   });
 
@@ -491,13 +513,13 @@ test("the header draws nothing outside a GitButler workspace", async () => {
   slot.lifecycle.unmount();
 });
 
-function recordActions(result: () => unknown = () => ({ ok: true })) {
+function recordActions(result: () => unknown = () => ({ status: "done" })) {
   const actions: unknown[] = [];
   return {
     actions,
     rpc: {
       ...baseRpc,
-      branchAction: (input: { action: unknown }) => {
+      butAction: (input: { action: unknown }) => {
         actions.push(input);
         return result();
       },
@@ -532,7 +554,7 @@ test("pushes a branch by name from its card", async () => {
   await waitFor(() => expect(actions).toHaveLength(1));
   expect(actions[0]).toEqual({
     threadId: "thread-1",
-    action: { kind: "push", branch: "scott/bottom", force: false },
+    action: { kind: "push", branch: "scott/bottom", force: false, acceptedLoss: [] },
   });
   slot.lifecycle.unmount();
 });
@@ -595,8 +617,15 @@ test("asks before landing, and lands only on the second click", async () => {
   const { actions, rpc } = recordActions();
   const { slot, card } = await bottomCard(rpc);
   fireEvent.click(card.getByRole("button", { name: "Land" }));
-  expect(card.getByText(/straight onto the target/)).toBeTruthy();
+  expect(card.getByText(/can't easily be undone/)).toBeTruthy();
   expect(actions).toHaveLength(0);
+  // Focus starts on the safe answer. Escape backs out to the Land button.
+  expect(document.activeElement).toBe(card.getByRole("button", { name: "Cancel" }));
+  fireEvent.keyDown(card.getByRole("button", { name: "Cancel" }), { key: "Escape" });
+  expect(card.queryByText(/can't easily be undone/)).toBeNull();
+  expect(document.activeElement).toBe(card.getByRole("button", { name: "Land" }));
+
+  fireEvent.click(card.getByRole("button", { name: "Land" }));
   fireEvent.click(card.getByRole("button", { name: "Land" }));
   await waitFor(() => expect(actions).toHaveLength(1));
   expect((actions[0] as { action: unknown }).action).toEqual({
@@ -606,12 +635,69 @@ test("asks before landing, and lands only on the second click", async () => {
   slot.lifecycle.unmount();
 });
 
+test("hands the focus back to Land once, not each time a poll redraws it", async () => {
+  // Integrated, the branch has nothing to land, so its Land button goes away.
+  const integrated = structuredClone(workspace);
+  const branches = integrated.stacks.flatMap((stack) => stack.branches);
+  Object.assign(
+    branches.find((branch) => branch.name === "scott/bottom")!,
+    {
+      status: "integrated",
+    },
+  );
+  let landed = false;
+  const { slot, card } = await bottomCard({
+    ...baseRpc,
+    workspace: () => (landed ? integrated : workspace),
+  });
+  fireEvent.click(card.getByRole("button", { name: "Land" }));
+  fireEvent.click(card.getByRole("button", { name: "Cancel" }));
+  expect(document.activeElement).toBe(card.getByRole("button", { name: "Land" }));
+
+  // The reader moves on to bb's composer while the agent keeps working.
+  const composer = document.body.appendChild(document.createElement("textarea"));
+  composer.focus();
+  landed = true;
+  await pluginQueryClient.invalidateQueries();
+  await waitFor(() => expect(card.queryByRole("button", { name: "Land" })).toBeNull());
+  landed = false;
+  await pluginQueryClient.invalidateQueries();
+  await waitFor(() => expect(card.getByRole("button", { name: "Land" })).toBeTruthy());
+  expect(document.activeElement).toBe(composer);
+  composer.remove();
+  slot.lifecycle.unmount();
+});
+
+test("a confirmed land runs to the end, with no Cancel to hide it", async () => {
+  let finish = () => {};
+  const { actions, rpc } = recordActions(
+    () => new Promise((resolve) => (finish = () => resolve({ status: "done" }))),
+  );
+  const { slot, card } = await bottomCard(rpc);
+  fireEvent.click(card.getByRole("button", { name: "Land" }));
+  fireEvent.click(card.getByRole("button", { name: "Land" }));
+  await waitFor(() => expect(actions).toHaveLength(1));
+  const cancel = card.getByRole("button", { name: "Cancel" }) as HTMLButtonElement;
+  await waitFor(() => expect(cancel.disabled).toBe(true));
+  fireEvent.keyDown(cancel, { key: "Escape" });
+  expect(card.getByText(/can't easily be undone/)).toBeTruthy();
+
+  finish();
+  await waitFor(() => expect(card.queryByText(/can't easily be undone/)).toBeNull());
+  expect(actions).toHaveLength(1);
+  slot.lifecycle.unmount();
+});
+
 test("renames a branch from its name, and Escape leaves it alone", async () => {
   const { actions, rpc } = recordActions();
   const { slot, card } = await bottomCard(rpc);
   fireEvent.click(card.getByRole("button", { name: "Rename branch scott/bottom" }));
   fireEvent.keyDown(card.getByLabelText("New name for scott/bottom"), { key: "Escape" });
   expect(actions).toHaveLength(0);
+  // The field is gone, so the name it came from takes the focus back.
+  expect(document.activeElement).toBe(
+    card.getByRole("button", { name: "Rename branch scott/bottom" }),
+  );
 
   fireEvent.click(card.getByRole("button", { name: "Rename branch scott/bottom" }));
   const field = card.getByLabelText("New name for scott/bottom");
@@ -635,5 +721,734 @@ test("shows the CLI's refusal on the card that asked", async () => {
   await waitFor(() =>
     expect(card.getByRole("alert").textContent).toContain("Unable to determine the forge"),
   );
+  slot.lifecycle.unmount();
+});
+
+const notReady = {
+  repoName: "",
+  unassignedChanges: [],
+  stacks: [],
+  base: null,
+  upstream: null,
+};
+const STALE = "Couldn't refresh. Showing the last workspace.";
+
+test("a refresh that reads an error keeps the board and says it is stale", async () => {
+  let failing = false;
+  const slot = await panel({
+    ...baseRpc,
+    workspace: () =>
+      failing ? { ...notReady, state: "error", reason: "The repository is locked." } : workspace,
+  });
+  await waitFor(() => expect(slot.getByText("scott/top")).toBeTruthy());
+
+  failing = true;
+  fireEvent.click(slot.getByLabelText("Refresh"));
+  await waitFor(() => expect(slot.getByText(STALE)).toBeTruthy());
+  expect(slot.getByText(STALE).title).toBe("The repository is locked.");
+  expect(slot.getByText("scott/top")).toBeTruthy();
+  expect(slot.getByText("bb-plugins")).toBeTruthy();
+  expect(slot.queryByText("GitButler could not read this workspace")).toBeNull();
+
+  // The next good read clears the note.
+  failing = false;
+  fireEvent.click(slot.getByLabelText("Refresh"));
+  await waitFor(() => expect(slot.queryByText(STALE)).toBeNull());
+  slot.lifecycle.unmount();
+});
+
+test("a refresh the host cannot answer keeps the board as well", async () => {
+  let failing = false;
+  const slot = await panel({
+    ...baseRpc,
+    workspace: () => {
+      if (failing) throw new Error("socket closed");
+      return workspace;
+    },
+  });
+  await waitFor(() => expect(slot.getByText("scott/top")).toBeTruthy());
+
+  failing = true;
+  fireEvent.click(slot.getByLabelText("Refresh"));
+  await waitFor(() => expect(slot.getByText(STALE)).toBeTruthy(), { timeout: 4_000 });
+  expect(slot.getByText(STALE).title).toBe("socket closed");
+  expect(slot.getByText("scott/top")).toBeTruthy();
+  expect(slot.queryByText("GitButler could not be reached")).toBeNull();
+  slot.lifecycle.unmount();
+});
+
+const STORED_REPOSITORY = "bb-plugin-gitbutler:repository:thread-1";
+
+test("forgets a remembered repository that is no longer there", async () => {
+  window.localStorage.setItem(STORED_REPOSITORY, "repos/gone");
+  try {
+    const slot = await panel(baseRpc);
+    await waitFor(() => expect(window.localStorage.getItem(STORED_REPOSITORY)).toBeNull());
+    const read = (call: { method: string }) => call.method === "workspace";
+    expect(slot.inspection.rpcCalls.find(read)?.input).toEqual({
+      threadId: "thread-1",
+      repositoryKey: "repos/gone",
+    });
+    await waitFor(() =>
+      expect(slot.inspection.rpcCalls.findLast(read)?.input).toEqual({ threadId: "thread-1" }),
+    );
+    slot.lifecycle.unmount();
+  } finally {
+    window.localStorage.removeItem(STORED_REPOSITORY);
+  }
+});
+
+test("keeps a remembered repository when discovery fails", async () => {
+  window.localStorage.setItem(STORED_REPOSITORY, "repos/api");
+  try {
+    let listed = false;
+    const slot = await panel({
+      ...baseRpc,
+      repositories: () => {
+        listed = true;
+        return { repositories: [], reason: "The environment could not be read." };
+      },
+    });
+    await waitFor(() => expect(listed).toBe(true));
+    await waitFor(() => expect(slot.getByText("scott/top")).toBeTruthy());
+    expect(window.localStorage.getItem(STORED_REPOSITORY)).toBe("repos/api");
+    slot.lifecycle.unmount();
+  } finally {
+    window.localStorage.removeItem(STORED_REPOSITORY);
+  }
+});
+
+test("shows a branch's checks, and its PR chip opens the PR on the forge", async () => {
+  const lookups: unknown[] = [];
+  const slot = await panel({
+    ...baseRpc,
+    reviewUrl: (input: unknown) => {
+      lookups.push(input);
+      return { url: "https://github.com/acme/repo/pull/42" };
+    },
+  });
+  await waitFor(() => expect(slot.getByText("scott/top")).toBeTruthy());
+  const top = within(slot.getByRole("article", { name: "Branch scott/top" }));
+  // The fixture's review has a failing check. A branch with no review has no chip.
+  expect(top.getByTitle("Checks failed").textContent).toBe("Checks failed");
+  const bottom = within(slot.getByRole("article", { name: "Branch scott/bottom" }));
+  expect(bottom.queryByTitle(/^Checks /)).toBeNull();
+
+  // The link comes from the forge, so nothing asks for it until the click.
+  const chip = top.getByRole("button", { name: "Open PR #42" });
+  expect(chip.textContent).toBe("PR #42");
+  expect(lookups).toEqual([]);
+  fireEvent.click(chip);
+  await waitFor(() =>
+    expect(slot.inspection.navigateCalls).toEqual([
+      { method: "openUrl", url: "https://github.com/acme/repo/pull/42" },
+    ]),
+  );
+  expect(lookups).toEqual([{ threadId: "thread-1", branch: "scott/top" }]);
+  slot.lifecycle.unmount();
+});
+
+test("says so when the forge has no link for a branch's PR", async () => {
+  const slot = await panel({ ...baseRpc, reviewUrl: () => ({ url: null }) });
+  await waitFor(() => expect(slot.getByText("scott/top")).toBeTruthy());
+  const top = within(slot.getByRole("article", { name: "Branch scott/top" }));
+  fireEvent.click(top.getByRole("button", { name: "Open PR #42" }));
+  await waitFor(() =>
+    expect(top.getByRole("alert").textContent).toBe(
+      "GitButler could not find this PR on its forge.",
+    ),
+  );
+  expect(slot.inspection.navigateCalls).toEqual([]);
+  slot.lifecycle.unmount();
+
+  // The answer is still cached, but a panel opened again has not asked yet.
+  const again = await panel({ ...baseRpc, reviewUrl: () => ({ url: null }) });
+  await waitFor(() => expect(again.getByText("scott/top")).toBeTruthy());
+  const card = within(again.getByRole("article", { name: "Branch scott/top" }));
+  expect(card.queryByRole("alert")).toBeNull();
+  again.lifecycle.unmount();
+});
+
+test("asks before a force push deletes upstream commits, and only then", async () => {
+  const forced = structuredClone(workspace);
+  for (const branch of forced.stacks.flatMap((stack) => stack.branches)) {
+    Object.assign(branch, { status: "diverged", push: "force" });
+  }
+  const { actions, rpc } = recordActions();
+  const slot = await panel({ ...rpc, workspace: () => forced });
+  await waitFor(() => expect(slot.getByText("scott/top")).toBeTruthy());
+
+  // scott/top has an upstream commit that this push would delete.
+  const top = within(slot.getByRole("article", { name: "Branch scott/top" }));
+  fireEvent.click(top.getByRole("button", { name: "Force push" }));
+  expect(
+    top.getByText(/This deletes the upstream commit shown in this stack from the remote/),
+  ).toBeTruthy();
+  expect(actions).toHaveLength(0);
+  fireEvent.click(top.getByRole("button", { name: "Cancel" }));
+  expect(document.activeElement).toBe(top.getByRole("button", { name: "Force push" }));
+
+  fireEvent.click(top.getByRole("button", { name: "Force push" }));
+  fireEvent.click(top.getByRole("button", { name: "Force push" }));
+  await waitFor(() => expect(actions).toHaveLength(1));
+  expect((actions[0] as { action: unknown }).action).toEqual({
+    kind: "push",
+    branch: "scott/top",
+    force: true,
+    // What the reader agreed to delete, by id, so the host stops if the remote has more.
+    acceptedLoss: ["1111111111111111111111111111111111111111"],
+  });
+
+  // scott/bottom has none, so its force push replaces only its own commits.
+  const bottom = within(slot.getByRole("article", { name: "Branch scott/bottom" }));
+  fireEvent.click(bottom.getByRole("button", { name: "Force push" }));
+  await waitFor(() => expect(actions).toHaveLength(2));
+  expect((actions[1] as { action: unknown }).action).toEqual({
+    kind: "push",
+    branch: "scott/bottom",
+    force: true,
+    acceptedLoss: [],
+  });
+  slot.lifecycle.unmount();
+});
+
+test("asks before a force push deletes upstream commits on a branch below it", async () => {
+  const forced = structuredClone(workspace);
+  const [top, bottom] = forced.stacks[0]!.branches;
+  // `but push scott/top` forces scott/bottom along with it, and only the
+  // bottom branch has commits nobody has here.
+  Object.assign(top!, { status: "diverged", push: "force", newUpstream: 0 });
+  bottom!.upstreamCommits = top!.upstreamCommits;
+  bottom!.newUpstream = 1;
+  top!.upstreamCommits = [];
+  const { actions, rpc } = recordActions();
+  const slot = await panel({ ...rpc, workspace: () => forced });
+  await waitFor(() => expect(slot.getByText("scott/top")).toBeTruthy());
+
+  const card = within(slot.getByRole("article", { name: "Branch scott/top" }));
+  fireEvent.click(card.getByRole("button", { name: "Force push" }));
+  expect(
+    card.getByText(/This deletes the upstream commit shown in this stack from the remote/),
+  ).toBeTruthy();
+  expect(actions).toHaveLength(0);
+  slot.lifecycle.unmount();
+});
+
+test("asks before a plain push, too, when a branch below has upstream commits", async () => {
+  const ahead = structuredClone(workspace);
+  const [top, bottom] = ahead.stacks[0]!.branches;
+  // `but push` forces by default, so a fast-forward of scott/top still
+  // overwrites scott/bottom's remote.
+  Object.assign(top!, { status: "ahead", push: "push", newUpstream: 0 });
+  bottom!.upstreamCommits = top!.upstreamCommits;
+  bottom!.newUpstream = 1;
+  top!.upstreamCommits = [];
+  const { actions, rpc } = recordActions();
+  const slot = await panel({ ...rpc, workspace: () => ahead });
+  await waitFor(() => expect(slot.getByText("scott/top")).toBeTruthy());
+
+  const card = within(slot.getByRole("article", { name: "Branch scott/top" }));
+  fireEvent.click(card.getByRole("button", { name: "Push" }));
+  expect(
+    card.getByText(/This deletes the upstream commit shown in this stack from the remote/),
+  ).toBeTruthy();
+  expect(actions).toHaveLength(0);
+  fireEvent.click(card.getByRole("button", { name: "Push" }));
+  await waitFor(() => expect(actions).toHaveLength(1));
+  expect((actions[0] as { action: unknown }).action).toEqual({
+    kind: "push",
+    branch: "scott/top",
+    force: false,
+    acceptedLoss: ["1111111111111111111111111111111111111111"],
+  });
+  slot.lifecycle.unmount();
+});
+
+test("drops an open confirmation when the reader switches repository", async () => {
+  const forced = structuredClone(workspace);
+  Object.assign(forced.stacks[0]!.branches[0]!, { status: "diverged", push: "force" });
+  const { actions, rpc } = recordActions();
+  const slot = await panel({
+    ...rpc,
+    repositories: () => ({
+      repositories: [
+        { key: ".", name: "bb-plugins" },
+        { key: "repos/other", name: "other" },
+      ],
+      reason: null,
+    }),
+    // Both repositories have a scott/top.
+    workspace: () => forced,
+  });
+  await waitFor(() => expect(slot.getByText("scott/top")).toBeTruthy());
+  // Visit the other repository first, so both boards are cached and the
+  // switch below swaps one for the other without a loading screen between.
+  fireEvent.change(slot.getByLabelText("Repository"), { target: { value: "repos/other" } });
+  await waitFor(() => expect(slot.getByText("scott/top")).toBeTruthy());
+  fireEvent.change(slot.getByLabelText("Repository"), { target: { value: "." } });
+  await waitFor(() => expect(slot.getByText("scott/top")).toBeTruthy());
+  const before = within(slot.getByRole("article", { name: "Branch scott/top" }));
+  fireEvent.click(before.getByRole("button", { name: "Force push" }));
+  expect(before.getByText(/This deletes/)).toBeTruthy();
+
+  fireEvent.change(slot.getByLabelText("Repository"), { target: { value: "repos/other" } });
+  await waitFor(() => expect(slot.getByText("scott/top")).toBeTruthy());
+  const after = within(slot.getByRole("article", { name: "Branch scott/top" }));
+  expect(after.queryByText(/This deletes/)).toBeNull();
+  expect(after.getByRole("button", { name: "Force push" })).toBeTruthy();
+  expect(actions).toHaveLength(0);
+  slot.lifecycle.unmount();
+});
+
+test("refuses a new name `but` would read as another branch's full ref", async () => {
+  const { actions, rpc } = recordActions();
+  const { slot, card } = await bottomCard(rpc);
+  fireEvent.click(card.getByRole("button", { name: "Rename branch scott/bottom" }));
+  const field = card.getByLabelText("New name for scott/bottom") as HTMLInputElement;
+  fireEvent.change(field, { target: { value: "refs/heads/topic" } });
+  fireEvent.keyDown(field, { key: "Enter" });
+  expect(card.getByRole("alert").textContent).toBe("A branch name cannot start with refs/.");
+  expect(actions).toHaveLength(0);
+  slot.lifecycle.unmount();
+});
+
+test("keeps a branch name GitButler would refuse in the field, and says why", async () => {
+  const { actions, rpc } = recordActions();
+  const { slot, card } = await bottomCard(rpc);
+  fireEvent.click(card.getByRole("button", { name: "Rename branch scott/bottom" }));
+  const field = card.getByLabelText("New name for scott/bottom") as HTMLInputElement;
+  fireEvent.change(field, { target: { value: "my feature" } });
+  fireEvent.keyDown(field, { key: "Enter" });
+
+  expect(card.getByRole("alert").textContent).toBe(
+    "A branch name cannot start with a dash or contain whitespace.",
+  );
+  expect(field.getAttribute("aria-invalid")).toBe("true");
+  // Leaving the field keeps the typed name too.
+  fireEvent.blur(field);
+  expect(card.getByLabelText("New name for scott/bottom")).toBe(field);
+  expect(field.value).toBe("my feature");
+  expect(actions).toHaveLength(0);
+
+  fireEvent.change(field, { target: { value: "my-feature" } });
+  expect(card.queryByRole("alert")).toBeNull();
+  fireEvent.blur(field);
+  await waitFor(() => expect(actions).toHaveLength(1));
+  expect((actions[0] as { action: unknown }).action).toEqual({
+    kind: "rename",
+    branch: "scott/bottom",
+    name: "my-feature",
+  });
+  slot.lifecycle.unmount();
+});
+
+async function openUncommitted(rpc: Record<string, (input: never) => unknown>) {
+  const slot = await panel(rpc);
+  await waitFor(() => expect(slot.getByText("Uncommitted changes")).toBeTruthy());
+  fireEvent.click(slot.getByText("Uncommitted changes"));
+  await waitFor(() => expect(slot.getByTitle("bun.lock")).toBeTruthy());
+  fireEvent.click(slot.getByTitle("bun.lock"));
+  return slot;
+}
+
+test("Back puts the focus on the board when the row that opened the diff has gone", async () => {
+  let committed = false;
+  const slot = await panel({
+    ...baseRpc,
+    workspace: () => (committed ? { ...workspace, unassignedChanges: [] } : workspace),
+    patches: () => ({ files: [patch("bun.lock")], truncated: false }),
+  });
+  await waitFor(() => expect(slot.getByText("Uncommitted changes")).toBeTruthy());
+  fireEvent.click(slot.getByText("Uncommitted changes"));
+  const row = await waitFor(() => slot.getByTitle("bun.lock"));
+  row.focus();
+  fireEvent.click(row);
+  const back = await waitFor(() => slot.getByRole("button", { name: "Back to workspace" }));
+
+  // The agent commits the file while its diff is open.
+  committed = true;
+  await pluginQueryClient.invalidateQueries();
+  await waitFor(() => expect(row.isConnected).toBe(false));
+  fireEvent.click(back);
+  // Not the page body, so Tab carries on from the top of the panel.
+  expect(document.activeElement).not.toBe(document.body);
+  expect(document.activeElement!.contains(slot.getByLabelText("Refresh"))).toBe(true);
+  slot.lifecycle.unmount();
+});
+
+test("an uncommitted screen whose changes are gone says so, not that a commit is empty", async () => {
+  const slot = await openUncommitted({
+    ...baseRpc,
+    patches: () => ({ files: [], truncated: false }),
+  });
+  await waitFor(() => expect(slot.getByText("No uncommitted changes")).toBeTruthy());
+  expect(slot.queryByText(/This commit records no file contents/)).toBeNull();
+  slot.lifecycle.unmount();
+});
+
+test("names a renamed file's old path, and marks a file too large to show", async () => {
+  const slot = await openUncommitted({
+    ...baseRpc,
+    patches: () => ({
+      files: [
+        patch("bun.lock"),
+        {
+          path: "src/new-name.ts",
+          kind: "renamed",
+          previousPath: "src/old-name.ts",
+          patch: "",
+          truncated: false,
+        },
+        { path: "dist/app.js", kind: "modified", previousPath: null, patch: "", truncated: true },
+      ],
+      truncated: true,
+    }),
+  });
+  const detail = await waitFor(() => within(slot.getByRole("region", { name: "Changes" })));
+  // A binary file renamed and edited has no hunks either, so nothing claims the contents held.
+  expect(detail.getByText("Renamed from src/old-name.ts.")).toBeTruthy();
+  expect(detail.getByText("Too large")).toBeTruthy();
+  expect(
+    detail.getByText("This diff is too large to show. Open the file in your editor to read it."),
+  ).toBeTruthy();
+  // Past the budget the line totals would undercount, so the list header shows none.
+  const list = within(detail.getByRole("region", { name: "Changed files" }));
+  expect(list.queryByText("+1")).toBeNull();
+  expect(detail.getAllByText("+1")).toHaveLength(1);
+  slot.lifecycle.unmount();
+});
+
+function topCard(slot: Awaited<ReturnType<typeof panel>>) {
+  return within(slot.getByRole("article", { name: "Branch scott/top" }));
+}
+
+/** Answers each `butAction` call with the next result, the last one repeating. */
+function answering(...results: unknown[]) {
+  let call = 0;
+  return () => results[Math.min(call++, results.length - 1)];
+}
+
+test("a branch only behind its remote offers Pull and no push", async () => {
+  const behind = structuredClone(workspace);
+  const top = behind.stacks[0]!.branches.find((branch) => branch.name === "scott/top")!;
+  Object.assign(top, { status: "behind", push: "none", newUpstream: 1 });
+  const slot = await panel({ ...baseRpc, workspace: () => behind });
+  await waitFor(() => expect(slot.getByText("scott/top")).toBeTruthy());
+  const card = topCard(slot);
+  expect(card.getByText("Behind")).toBeTruthy();
+  expect(card.getByRole("button", { name: "Pull" })).toBeTruthy();
+  expect(card.queryByRole("button", { name: "Push" })).toBeNull();
+  expect(card.queryByRole("button", { name: "Force push" })).toBeNull();
+  slot.lifecycle.unmount();
+});
+
+test("offers Pull only when the remote has commits the branch lacks", async () => {
+  const copies = structuredClone(workspace);
+  // A rebased branch: its remote holds old copies of its own commits, nothing new.
+  copies.stacks[0]!.branches.find((branch) => branch.name === "scott/top")!.newUpstream = 0;
+  const slot = await panel({ ...baseRpc, workspace: () => copies });
+  await waitFor(() => expect(slot.getByText("scott/top")).toBeTruthy());
+  expect(topCard(slot).queryByRole("button", { name: "Pull" })).toBeNull();
+  const bottom = within(slot.getByRole("article", { name: "Branch scott/bottom" }));
+  expect(bottom.queryByRole("button", { name: "Pull" })).toBeNull();
+  slot.lifecycle.unmount();
+});
+
+const TOP_CONFLICTS = { conflicted: ["scott/top"], overlapsUncommitted: false };
+
+test("Pull runs on the branch, and asks before leaving conflicts", async () => {
+  const { actions, rpc } = recordActions(
+    answering(
+      { status: "confirm", risk: TOP_CONFLICTS },
+      { status: "confirm", risk: TOP_CONFLICTS },
+      { status: "done" },
+    ),
+  );
+  const slot = await panel(rpc);
+  await waitFor(() => expect(slot.getByText("scott/top")).toBeTruthy());
+  const card = topCard(slot);
+  fireEvent.click(card.getByRole("button", { name: "Pull" }));
+  await waitFor(() =>
+    expect(card.getByText(/leaves conflicted commits in/).textContent).toBe(
+      "Pulling scott/top leaves conflicted commits in scott/top. Resolve them before pushing.",
+    ),
+  );
+  expect((actions[0] as { action: unknown }).action).toEqual({
+    kind: "pull",
+    branch: "scott/top",
+    accepted: null,
+  });
+  // Backing out returns to the Pull button and runs nothing more.
+  fireEvent.keyDown(card.getByRole("button", { name: "Cancel" }), { key: "Escape" });
+  expect(document.activeElement).toBe(card.getByRole("button", { name: "Pull" }));
+  expect(actions).toHaveLength(1);
+
+  fireEvent.click(card.getByRole("button", { name: "Pull" }));
+  fireEvent.click(await card.findByRole("button", { name: "Pull anyway" }));
+  await waitFor(() => expect(actions).toHaveLength(3));
+  expect((actions[2] as { action: unknown }).action).toEqual({
+    kind: "pull",
+    branch: "scott/top",
+    // The risk the reader saw, so the host asks again if it finds more.
+    accepted: TOP_CONFLICTS,
+  });
+  await waitFor(() => expect(card.queryByText(/leaves conflicted commits/)).toBeNull());
+  slot.lifecycle.unmount();
+});
+
+/**
+ * Answers `butAction` a moment later, as a browser behaves meanwhile: the
+ * disabled button that sent it loses the focus.
+ */
+function droppingFocus(result: unknown) {
+  return async () => {
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    // jsdom will not blur a disabled button, so the focus goes somewhere
+    // that then disappears, which leaves it on the page as a browser does.
+    const elsewhere = document.body.appendChild(document.createElement("button"));
+    elsewhere.focus();
+    elsewhere.remove();
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    return result;
+  };
+}
+
+test("the focus comes back to the card once its request ends", async () => {
+  const { rpc } = recordActions(droppingFocus({ status: "upToDate" }));
+  const slot = await panel(rpc);
+  await waitFor(() => expect(slot.getByText("scott/top")).toBeTruthy());
+  const card = topCard(slot);
+  card.getByRole("button", { name: "Pull" }).focus();
+  fireEvent.click(card.getByRole("button", { name: "Pull" }));
+  await card.findByRole("status");
+  await waitFor(() =>
+    expect(document.activeElement).toBe(card.getByRole("button", { name: "Pull" })),
+  );
+  slot.lifecycle.unmount();
+});
+
+test("the focus comes back to the header's Pull once it ends", async () => {
+  const { rpc } = recordActions(droppingFocus({ status: "upToDate" }));
+  const slot = await panel(rpc);
+  await waitFor(() => expect(slot.getByText("scott/top")).toBeTruthy());
+  slot.getByRole("button", HEADER_PULL).focus();
+  fireEvent.click(slot.getByRole("button", HEADER_PULL));
+  await slot.findByText("Already up to date.");
+  await waitFor(() => expect(document.activeElement).toBe(slot.getByRole("button", HEADER_PULL)));
+  slot.lifecycle.unmount();
+});
+
+test("Pull says so when the remote had nothing new", async () => {
+  const { rpc } = recordActions(() => ({ status: "upToDate" }));
+  const slot = await panel(rpc);
+  await waitFor(() => expect(slot.getByText("scott/top")).toBeTruthy());
+  const card = topCard(slot);
+  fireEvent.click(card.getByRole("button", { name: "Pull" }));
+  expect((await card.findByRole("status")).textContent).toBe("Already up to date.");
+  slot.lifecycle.unmount();
+});
+
+test("Delete asks first, says what is lost and what stays, and deletes by name", async () => {
+  const { actions, rpc } = recordActions();
+  const { slot, card } = await bottomCard(rpc);
+  fireEvent.click(card.getByRole("button", { name: "Delete scott/bottom" }));
+  // scott/bottom was never pushed and has scott/top stacked on it.
+  expect(card.getByText(/^Delete \?/).textContent).toBe(
+    "Delete scott/bottom? Its commit was never pushed, so only GitButler's undo history keeps it afterwards. The branch above it moves down onto the base.",
+  );
+  expect(actions).toHaveLength(0);
+  expect(document.activeElement).toBe(card.getByRole("button", { name: "Cancel" }));
+  fireEvent.keyDown(card.getByRole("button", { name: "Cancel" }), { key: "Escape" });
+  expect(document.activeElement).toBe(card.getByRole("button", { name: "Delete scott/bottom" }));
+
+  fireEvent.click(card.getByRole("button", { name: "Delete scott/bottom" }));
+  fireEvent.click(card.getByRole("button", { name: "Delete" }));
+  await waitFor(() => expect(actions).toHaveLength(1));
+  expect((actions[0] as { action: unknown }).action).toEqual({
+    kind: "delete",
+    branch: "scott/bottom",
+    accepted: null,
+  });
+  slot.lifecycle.unmount();
+});
+
+test("Delete asks once more when uncommitted changes sit in the branch's files", async () => {
+  const risk = { conflicted: [], overlapsUncommitted: true };
+  const { actions, rpc } = recordActions(
+    answering({ status: "confirm", risk }, { status: "done" }),
+  );
+  const { slot, card } = await bottomCard(rpc);
+  fireEvent.click(card.getByRole("button", { name: "Delete scott/bottom" }));
+  // Answered from the keyboard, so the focus sits on the answer.
+  card.getByRole("button", { name: "Delete" }).focus();
+  fireEvent.click(card.getByRole("button", { name: "Delete" }));
+  await waitFor(() =>
+    expect(card.getByText(/^Your uncommitted changes/).textContent).toBe(
+      "Your uncommitted changes touch files scott/bottom changed, so deleting it can write conflict markers into them.",
+    ),
+  );
+  // A fresh question: the focus is on its Cancel, not the button that was just clicked.
+  expect(document.activeElement).toBe(card.getByRole("button", { name: "Cancel" }));
+  fireEvent.click(card.getByRole("button", { name: "Delete anyway" }));
+  await waitFor(() => expect(actions).toHaveLength(2));
+  expect((actions[1] as { action: unknown }).action).toEqual({
+    kind: "delete",
+    branch: "scott/bottom",
+    accepted: risk,
+  });
+  slot.lifecycle.unmount();
+});
+
+test("a conflicted commit takes away every button that pushes it, from the branches above too", async () => {
+  const conflicted = structuredClone(workspace);
+  const [top, bottom] = conflicted.stacks[0]!.branches;
+  bottom!.commits[0]!.conflicted = true;
+  // scott/top has a commit of its own to push.
+  Object.assign(top!, { status: "ahead", push: "push" });
+  const slot = await panel({ ...baseRpc, workspace: () => conflicted });
+  await waitFor(() => expect(slot.getByText("scott/bottom")).toBeTruthy());
+  const card = within(slot.getByRole("article", { name: "Branch scott/bottom" }));
+  for (const name of ["Push", "Create PR", "Land"]) {
+    expect(card.queryByRole("button", { name })).toBeNull();
+  }
+  expect(card.getByRole("button", { name: "Delete scott/bottom" })).toBeTruthy();
+  // `but push scott/top` takes scott/bottom's conflicted commit along.
+  for (const name of ["Push", "Force push", "Create PR"]) {
+    expect(topCard(slot).queryByRole("button", { name })).toBeNull();
+  }
+  expect(topCard(slot).getByRole("button", { name: "Pull" })).toBeTruthy();
+  slot.lifecycle.unmount();
+});
+
+test("deleting a pushed branch at the top of its stack loses nothing the remote lacks", async () => {
+  const { slot } = await bottomCard(baseRpc);
+  const card = topCard(slot);
+  fireEvent.click(card.getByRole("button", { name: "Delete scott/top" }));
+  expect(card.getByText(/^Delete \?/).textContent).toBe(
+    "Delete scott/top? Its commit leaves the workspace. The remote branch and any PR stay.",
+  );
+  slot.lifecycle.unmount();
+});
+
+const HEADER_PULL = { name: "Pull the target branch into the workspace" };
+
+const BOTH_AND_FILES = { conflicted: ["scott/top", "scott/bottom"], overlapsUncommitted: true };
+
+test("the header's Pull updates the workspace, asking first about conflicts", async () => {
+  const { actions, rpc } = recordActions(
+    answering({ status: "confirm", risk: BOTH_AND_FILES }, { status: "done" }),
+  );
+  const slot = await panel(rpc);
+  await waitFor(() => expect(slot.getByText("scott/top")).toBeTruthy());
+  fireEvent.click(slot.getByRole("button", HEADER_PULL));
+  await waitFor(() =>
+    expect(slot.getByText(/^Pulling leaves/).textContent).toBe(
+      "Pulling leaves conflicted commits in scott/top and scott/bottom. Resolve them before pushing. Your uncommitted changes touch files the incoming commits change, so conflict markers can get written into them.",
+    ),
+  );
+  expect(actions[0]).toEqual({
+    threadId: "thread-1",
+    action: { kind: "updateWorkspace", accepted: null },
+  });
+  fireEvent.click(slot.getByRole("button", { name: "Pull anyway" }));
+  await waitFor(() => expect(actions).toHaveLength(2));
+  expect((actions[1] as { action: unknown }).action).toEqual({
+    kind: "updateWorkspace",
+    accepted: BOTH_AND_FILES,
+  });
+  await waitFor(() => expect(slot.queryByText(/^Pulling leaves/)).toBeNull());
+  slot.lifecycle.unmount();
+});
+
+test("the header's Pull can be backed out of, and says when nothing was new", async () => {
+  const { actions, rpc } = recordActions(
+    answering(
+      { status: "confirm", risk: { conflicted: [], overlapsUncommitted: true } },
+      { status: "upToDate" },
+    ),
+  );
+  const slot = await panel(rpc);
+  await waitFor(() => expect(slot.getByText("scott/top")).toBeTruthy());
+  fireEvent.click(slot.getByRole("button", HEADER_PULL));
+  fireEvent.click(await slot.findByRole("button", { name: "Cancel" }));
+  expect(slot.queryByText(/^Your uncommitted changes touch/)).toBeNull();
+  expect(document.activeElement).toBe(slot.getByRole("button", HEADER_PULL));
+
+  fireEvent.click(slot.getByRole("button", HEADER_PULL));
+  await waitFor(() => expect(actions).toHaveLength(2));
+  expect(await slot.findByText("Already up to date.")).toBeTruthy();
+  slot.lifecycle.unmount();
+});
+
+test("the header's Pull shows why it failed", async () => {
+  const { rpc } = recordActions(() => {
+    throw new Error("Could not reach the remote. Repository not found.");
+  });
+  const slot = await panel(rpc);
+  await waitFor(() => expect(slot.getByText("scott/top")).toBeTruthy());
+  fireEvent.click(slot.getByRole("button", HEADER_PULL));
+  await waitFor(() =>
+    expect(slot.getByRole("alert").textContent).toBe(
+      "Could not reach the remote. Repository not found.",
+    ),
+  );
+  slot.lifecycle.unmount();
+});
+
+test("the header's Pull failure stays with its repository", async () => {
+  const { rpc } = recordActions(() => {
+    throw new Error("Could not reach the remote. Repository not found.");
+  });
+  const slot = await panel({
+    ...rpc,
+    repositories: () => ({
+      repositories: [
+        { key: ".", name: "bb-plugins" },
+        { key: "repos/other", name: "other" },
+      ],
+      reason: null,
+    }),
+  });
+  await waitFor(() => expect(slot.getByText("scott/top")).toBeTruthy());
+  fireEvent.change(slot.getByLabelText("Repository"), { target: { value: "." } });
+  await waitFor(() => expect(slot.getByText("scott/top")).toBeTruthy());
+  fireEvent.click(slot.getByRole("button", HEADER_PULL));
+  await waitFor(() => expect(slot.getByRole("alert")).toBeTruthy());
+
+  fireEvent.change(slot.getByLabelText("Repository"), { target: { value: "repos/other" } });
+  await waitFor(() => expect(slot.getByText("scott/top")).toBeTruthy());
+  expect(slot.queryByRole("alert")).toBeNull();
+  slot.lifecycle.unmount();
+});
+
+test("lists files left with conflict markers, which status keeps out of the changes", async () => {
+  const conflicted = { ...workspace, conflictedFiles: ["README.md", "src/app.ts"] };
+  const slot = await panel({ ...baseRpc, workspace: () => conflicted });
+  const section = within(await slot.findByRole("region", { name: "Conflicted files" }));
+  expect(section.getByText("2 files hold conflict markers")).toBeTruthy();
+  expect(section.getAllByRole("listitem").map((item) => item.textContent)).toEqual([
+    "README.md",
+    "src/app.ts",
+  ]);
+  slot.lifecycle.unmount();
+});
+
+test("a force push over only the old copies of rebased commits goes straight out", async () => {
+  const rebased = structuredClone(workspace);
+  for (const branch of rebased.stacks.flatMap((stack) => stack.branches)) {
+    // Each remote still lists the pre-rebase commits, but none of them is new.
+    Object.assign(branch, { status: "diverged", push: "force", newUpstream: 0 });
+  }
+  const { actions, rpc } = recordActions();
+  const slot = await panel({ ...rpc, workspace: () => rebased });
+  await waitFor(() => expect(slot.getByText("scott/top")).toBeTruthy());
+  fireEvent.click(topCard(slot).getByRole("button", { name: "Force push" }));
+  await waitFor(() => expect(actions).toHaveLength(1));
+  expect((actions[0] as { action: unknown }).action).toEqual({
+    kind: "push",
+    branch: "scott/top",
+    force: true,
+    acceptedLoss: [],
+  });
   slot.lifecycle.unmount();
 });

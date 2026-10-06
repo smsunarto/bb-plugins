@@ -1,10 +1,17 @@
 import { experimental_defineHostEntry } from "@get-bb/plugin-sdk/host";
 import { gitbutlerHostContract } from "../shared/host-contract.ts";
 import type { Workspace, WorkspaceState } from "../shared/schema.ts";
-import { actionArgs } from "./actions.ts";
-import { ButMissingError, ButSetupRequiredError, runBut, runButAction } from "./cli.ts";
+import { runAction } from "./actions.ts";
+import { ButFailedError, ButMissingError, ButSetupRequiredError, runBut, runGit } from "./cli.ts";
 import { readBaseHistory } from "./history.ts";
-import { parseCommitDetails, parseWorkspace, patchesFor } from "./parse.ts";
+import { compareWithRemotes } from "./upstream.ts";
+import {
+  parseWorkspace,
+  patchesFor,
+  patchesFromGit,
+  reviewUrl,
+  uncommittedKinds,
+} from "./parse.ts";
 import { listRepositories, NoRepositoryError, resolveRepository } from "./repositories.ts";
 
 const MAX_PATCH_CHARS = 1_500_000;
@@ -28,7 +35,7 @@ function emptyWorkspace(state: WorkspaceState, reason: string): Workspace {
     stacks: [],
     base: null,
     upstream: null,
-    revision: `${state}:${reason}`,
+    conflictedFiles: [],
   };
 }
 
@@ -55,9 +62,16 @@ export default experimental_defineHostEntry({
       try {
         const repository = await resolveRepository(environmentPath, repositoryKey, context.signal);
         // One call carries the whole panel. `-u` attaches the upstream commits
-        // that are not integrated yet; per-commit files come from `commit`.
+        // that are not integrated yet; per-commit files come from `patches`.
         const payload = await runBut(repository.path, ["status", "-u"], context.signal);
-        return parseWorkspace(payload, repository.name);
+        const workspace = parseWorkspace(payload, repository.name);
+        // Without the comparison the cards keep GitButler's own labels.
+        return await compareWithRemotes(repository.path, workspace, context.signal).catch(
+          (error: unknown) => {
+            if (context.signal.aborted) throw error;
+            return workspace;
+          },
+        );
       } catch (error) {
         if (context.signal.aborted) throw error;
         const { state, reason } = unavailable(error);
@@ -76,26 +90,61 @@ export default experimental_defineHostEntry({
       }
     },
 
-    async commit({ environmentPath, repositoryKey, commitId }, context) {
-      const repository = await resolveRepository(environmentPath, repositoryKey, context.signal);
-      const payload = await runBut(repository.path, ["show", commitId], context.signal);
-      return parseCommitDetails(payload, commitId);
-    },
-
     async patches({ environmentPath, repositoryKey, source }, context) {
       const repository = await resolveRepository(environmentPath, repositoryKey, context.signal);
-      const payload = await runBut(
-        repository.path,
-        source.kind === "commit" ? ["diff", source.commitId] : ["diff"],
-        context.signal,
-      );
-      return patchesFor(payload, MAX_PATCH_CHARS);
+      if (source.kind === "uncommitted") {
+        const [payload, status] = await Promise.all([
+          runBut(repository.path, ["diff"], context.signal),
+          // Only the kinds come from here, so the diff still shows without them.
+          runBut(repository.path, ["status"], context.signal).catch(() => null),
+        ]);
+        return patchesFor(payload, MAX_PATCH_CHARS, status ? uncommittedKinds(status) : undefined);
+      }
+      try {
+        const payload = await runBut(repository.path, ["diff", source.commitId], context.signal);
+        return patchesFor(payload, MAX_PATCH_CHARS);
+      } catch (error) {
+        if (context.signal.aborted || !(error instanceof ButFailedError)) throw error;
+        // `but diff` resolves only workspace commits. The common base and the
+        // target history below it are plain git. The reader's git config can
+        // change the headers the parser reads paths from, so they are pinned.
+        const output = await runGit(
+          repository.path,
+          [
+            "-c",
+            "core.quotePath=false",
+            "show",
+            "--format=",
+            "--no-color",
+            "--no-ext-diff",
+            "--src-prefix=a/",
+            "--dst-prefix=b/",
+            "--submodule=short",
+            "-M",
+            "--diff-merges=first-parent",
+            source.commitId,
+            "--",
+          ],
+          context.signal,
+        );
+        return patchesFromGit(output, MAX_PATCH_CHARS);
+      }
     },
 
-    async branchAction({ environmentPath, repositoryKey, action }, context) {
+    async butAction({ environmentPath, repositoryKey, action }, context) {
       const repository = await resolveRepository(environmentPath, repositoryKey, context.signal);
-      await runButAction(repository.path, actionArgs(action), context.signal);
-      return { ok: true as const };
+      return runAction(repository.path, action, context.signal);
+    },
+
+    async reviewUrl({ environmentPath, repositoryKey, branch }, context) {
+      const repository = await resolveRepository(environmentPath, repositoryKey, context.signal);
+      // `-r` asks the forge, so this runs when the reader opens a review, never on a poll.
+      const payload = await runBut(
+        repository.path,
+        ["branch", "show", branch, "-r"],
+        context.signal,
+      );
+      return { url: reviewUrl(payload) };
     },
   },
 });

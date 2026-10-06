@@ -1,9 +1,8 @@
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import { gitbutlerHostContract } from "../../shared/host-contract.ts";
+import { PANEL_ACTION_ID } from "../../shared/panel.ts";
 import { resolveTarget } from "./target.ts";
 
-/** Must match the app's `threadPanelAction` id. */
-export const PANEL_ACTION_ID = "gitbutler";
 const PLUGIN_ID = "gitbutler";
 const OFFERED_KEY = "panelTabOffered";
 

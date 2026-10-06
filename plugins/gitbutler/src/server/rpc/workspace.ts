@@ -20,7 +20,7 @@ export const workspace = defineQuery({
         stacks: [],
         base: null,
         upstream: null,
-        revision: `noEnvironment:${reason}`,
+        conflictedFiles: [],
       };
     }
     return ctx.bb.hosts

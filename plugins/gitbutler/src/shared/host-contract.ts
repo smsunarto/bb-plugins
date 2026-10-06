@@ -2,9 +2,9 @@ import { defineRpcContract } from "@get-bb/plugin-sdk";
 import { z } from "zod";
 import {
   baseHistorySchema,
-  branchActionResultSchema,
-  branchActionSchema,
-  commitDetailsSchema,
+  branchNameSchema,
+  butActionResultSchema,
+  butActionSchema,
   commitIdSchema,
   environmentPathSchema,
   patchesSchema,
@@ -12,6 +12,7 @@ import {
   repositoriesSchema,
   repositoryKeySchema,
   resolvedRepositorySchema,
+  reviewUrlSchema,
   workspaceSchema,
 } from "./schema.ts";
 
@@ -37,16 +38,16 @@ export const gitbutlerHostContract = defineRpcContract({
       .strict(),
     output: baseHistorySchema,
   },
-  commit: {
-    input: target.extend({ commitId: commitIdSchema }).strict(),
-    output: commitDetailsSchema,
-  },
   patches: {
     input: target.extend({ source: patchSourceSchema }).strict(),
     output: patchesSchema,
   },
-  branchAction: {
-    input: target.extend({ action: branchActionSchema }).strict(),
-    output: branchActionResultSchema,
+  butAction: {
+    input: target.extend({ action: butActionSchema }).strict(),
+    output: butActionResultSchema,
+  },
+  reviewUrl: {
+    input: target.extend({ branch: branchNameSchema }).strict(),
+    output: reviewUrlSchema,
   },
 });

@@ -1,29 +1,36 @@
-import { defineQuery } from "@bb-kit/core/rpc";
+import { defineMutation } from "@bb-kit/core/rpc";
 import { z } from "zod";
 import { gitbutlerHostContract } from "../../shared/host-contract.ts";
-import { commitDetailsSchema, commitIdSchema, repositoryKeySchema } from "../../shared/schema.ts";
+import {
+  butActionResultSchema,
+  butActionSchema,
+  repositoryKeySchema,
+} from "../../shared/schema.ts";
 import { resolveTarget } from "../lib/target.ts";
 
-export const commit = defineQuery({
+/** Pushes, pulls, and review creation talk to a remote, so they get longer than a read. */
+const ACTION_TIMEOUT_MS = 5 * 60_000;
+
+export const butAction = defineMutation({
   input: z
     .object({
       threadId: z.string().min(1),
       repositoryKey: repositoryKeySchema.optional(),
-      commitId: commitIdSchema,
+      action: butActionSchema,
     })
     .strict(),
-  output: commitDetailsSchema,
-  async execute(ctx, { threadId, repositoryKey, commitId }) {
+  output: butActionResultSchema,
+  async execute(ctx, { threadId, repositoryKey, action }) {
     const { target, reason } = await resolveTarget(ctx.bb, threadId);
     if (!target) throw new Error(reason);
     return ctx.bb.hosts.experimental_client({ contract: gitbutlerHostContract }).call(
-      "commit",
+      "butAction",
       {
         environmentPath: target.environmentPath,
         ...(repositoryKey ? { repositoryKey } : {}),
-        commitId,
+        action,
       },
-      { hostId: target.hostId },
+      { hostId: target.hostId, timeoutMs: ACTION_TIMEOUT_MS },
     );
   },
 });

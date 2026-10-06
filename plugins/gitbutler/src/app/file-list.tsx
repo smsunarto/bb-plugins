@@ -78,7 +78,7 @@ const SPRITE_PATHS: ReadonlyMap<string, readonly string[]> = new Map(
 /** GitButler's solid count pill. */
 export function Count({ children }: { children: number }) {
   return (
-    <span className="inline-flex h-4 shrink-0 items-center rounded-full bg-secondary px-1.5 text-[10px] font-semibold tabular-nums text-secondary-foreground">
+    <span className="inline-flex h-4 shrink-0 items-center rounded-full bg-secondary px-1.5 text-2xs font-semibold tabular-nums text-secondary-foreground">
       {children}
     </span>
   );
@@ -278,8 +278,10 @@ function FileName({ path, showDirectory }: { path: string; showDirectory: boolea
   );
 }
 
+// bb's own focus outline, drawn inside the row: the card clips anything
+// outside it, and a fill alone would read the same as the selected row.
 const ROW =
-  "flex h-7.5 w-full min-w-0 cursor-pointer items-center gap-2 ps-3.5 pe-2 text-start outline-none hover:bg-state-hover focus-visible:bg-state-active aria-selected:bg-state-active";
+  "flex h-7.5 w-full min-w-0 cursor-pointer items-center gap-2 ps-3.5 pe-2 text-start -outline-offset-2 hover:bg-state-hover aria-selected:bg-state-active";
 
 /**
  * The rows themselves. A click or Enter on a file calls `onSelect` with it.
@@ -438,8 +440,17 @@ export function FileList({
             onClick={() => onSelect(path)}
             {...common}
           >
-            <Indent depth={row.depth} />
-            <Icon name="File" className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />
+            {/* The folder row's cluster, with an empty slot where the chevron
+                goes, so a file's icon lines up with its sibling folders'. */}
+            <span className="flex h-full shrink-0 items-center gap-1.5 text-muted-foreground">
+              <Indent depth={row.depth} />
+              {mode === "tree" ? <span className="w-2.5 shrink-0" aria-hidden /> : null}
+              <Icon
+                name="File"
+                className={cn("size-3.5 shrink-0", mode === "tree" && "ms-0.5")}
+                aria-hidden
+              />
+            </span>
             <FileName path={path} showDirectory={mode === "list"} />
             <FileStatus kind={row.change.kind} />
           </button>
@@ -476,7 +487,7 @@ export function ChangedFilesCard({
       <header className="flex h-9 min-w-0 items-center gap-2 pe-2">
         <button
           type="button"
-          className="flex h-full min-w-0 flex-1 cursor-pointer items-center gap-2 ps-2.5 text-start disabled:cursor-default"
+          className="flex h-full min-w-0 flex-1 cursor-pointer items-center gap-2 ps-2.5 text-start focus-visible:-outline-offset-2 disabled:cursor-default"
           onClick={onToggle}
           aria-expanded={open && !empty}
           disabled={empty}
@@ -490,7 +501,7 @@ export function ChangedFilesCard({
             )}
             aria-hidden
           />
-          <span className="truncate text-[13px] font-semibold">{title}</span>
+          <span className="truncate text-sm font-semibold">{title}</span>
           <Count>{count}</Count>
           {stats}
         </button>

@@ -9,7 +9,6 @@ import { z } from "zod";
 export const environmentPathSchema = z.string().min(1).max(16_384);
 /** Relative to the environment root, or "." for the root repository itself. */
 export const repositoryKeySchema = z.string().min(1).max(1024);
-export const filePathSchema = z.string().min(1).max(16_384);
 export const commitIdSchema = z.string().regex(/^[0-9a-fA-F]{4,64}$/);
 
 export const changeKindSchema = z.enum(["added", "modified", "deleted", "renamed", "copied"]);
@@ -22,21 +21,8 @@ export const commitSchema = z
     changeId: z.string().nullable(),
     message: z.string(),
     authorName: z.string(),
-    authorEmail: z.string(),
     createdAt: z.string(),
     conflicted: z.boolean(),
-    reviewId: z.string().nullable(),
-  })
-  .strict();
-
-/** What `but show` adds on top of a list row: the body and the file list. */
-export const commitDetailsSchema = z
-  .object({
-    commitId: z.string(),
-    message: z.string(),
-    authorName: z.string(),
-    authorEmail: z.string(),
-    files: z.array(fileChangeSchema),
   })
   .strict();
 
@@ -44,6 +30,9 @@ export const commitDetailsSchema = z
 export const branchStatusSchema = z.enum([
   "unpushed",
   "pushed",
+  "ahead",
+  /** The remote has commits this branch lacks, and this branch has nothing the remote lacks. */
+  "behind",
   "diverged",
   "integrated",
   "conflicted",
@@ -60,10 +49,18 @@ export const branchSchema = z
     status: branchStatusSchema,
     rawStatus: z.string(),
     push: pushModeSchema,
+    /** The forge's own form, symbol included: "#42" on GitHub, "!42" on GitLab. */
     reviewId: z.string().nullable(),
-    ci: z.string().nullable(),
+    /** The review's checks overall. Null with no review, no checks, or no verdict. */
+    ci: z.enum(["pending", "success", "failure"]).nullable(),
     commits: z.array(commitSchema),
     upstreamCommits: z.array(commitSchema),
+    /**
+     * Upstream commits with no equivalent here: what Pull brings in, and what
+     * a force push deletes. A rebased branch's remote still holds its old
+     * copies, which show as upstream commits but lose nothing when replaced.
+     */
+    newUpstream: z.number().int().nonnegative(),
   })
   .strict();
 
@@ -85,13 +82,7 @@ export const baseCommitSchema = z
   })
   .strict();
 
-export const upstreamSchema = z
-  .object({
-    behind: z.number().int().nonnegative(),
-    latestCommitId: z.string().nullable(),
-    lastFetched: z.string().nullable(),
-  })
-  .strict();
+export const upstreamSchema = z.object({ behind: z.number().int().nonnegative() }).strict();
 
 /** Why the panel has nothing to show. `ready` is the only usable state. */
 export const workspaceStateSchema = z.enum([
@@ -112,8 +103,11 @@ export const workspaceSchema = z
     stacks: z.array(stackSchema),
     base: baseCommitSchema.nullable(),
     upstream: upstreamSchema.nullable(),
-    /** Changes whenever anything above does, so polling can skip re-renders. */
-    revision: z.string(),
+    /**
+     * Uncommitted files holding conflict markers, which `but status` lists
+     * apart from the other changes. A pull or delete can leave them behind.
+     */
+    conflictedFiles: z.array(z.string()),
   })
   .strict();
 
@@ -142,6 +136,8 @@ export const filePatchSchema = z
   .object({
     path: z.string(),
     kind: changeKindSchema,
+    /** The old path of a renamed file. Null when the path did not change. */
+    previousPath: z.string().nullable(),
     patch: z.string(),
     truncated: z.boolean(),
   })
@@ -153,24 +149,76 @@ export const patchesSchema = z
 
 /**
  * A branch name as an argv value. No whitespace, and no leading dash, so `but`
- * can never read it as a flag. Git applies its own ref rules after that.
+ * can never read it as a flag. No leading `refs/` either: `but` reads
+ * `refs/heads/topic` as the full name of `topic`, another branch. Git applies
+ * its own ref rules after that.
  */
 export const branchNameSchema = z
   .string()
   .min(1)
-  .max(255)
-  .regex(/^[^\s-]\S*$/, "A branch name cannot start with a dash or contain whitespace.");
+  .max(255, "A branch name can be at most 255 characters.")
+  .regex(/^[^\s-]\S*$/, "A branch name cannot start with a dash or contain whitespace.")
+  .refine((name) => !name.startsWith("refs/"), "A branch name cannot start with refs/.");
 
-/** The branch-card buttons that run `but` directly, each on one named branch. */
-export const branchActionSchema = z.discriminatedUnion("kind", [
-  z.object({ kind: z.literal("push"), branch: branchNameSchema, force: z.boolean() }).strict(),
+/**
+ * What a write would do beyond its own job, which the reader accepts before
+ * it runs: leave commits in these branches conflicted, or write conflict
+ * markers into uncommitted files.
+ */
+export const actionRiskSchema = z
+  .object({ conflicted: z.array(z.string()), overlapsUncommitted: z.boolean() })
+  .strict();
+
+/**
+ * Every `but` write the panel runs: the branch-card buttons, each on one named
+ * branch, and the header's Pull for the whole workspace. Pull, Update, and
+ * Delete check for risks first. `accepted` is the risk the reader agreed to,
+ * so a retry that finds anything more asks again.
+ */
+export const butActionSchema = z.discriminatedUnion("kind", [
+  z
+    .object({
+      kind: z.literal("push"),
+      branch: branchNameSchema,
+      force: z.boolean(),
+      /**
+       * The upstream commits the reader agreed this push deletes, by id: none
+       * when they were not asked. Ids, not a count, so a remote rewritten in
+       * the meantime asks again.
+       */
+      acceptedLoss: z.array(z.string()),
+    })
+    .strict(),
   z.object({ kind: z.literal("land"), branch: branchNameSchema }).strict(),
   z
     .object({ kind: z.literal("rename"), branch: branchNameSchema, name: branchNameSchema })
     .strict(),
+  z
+    .object({
+      kind: z.literal("pull"),
+      branch: branchNameSchema,
+      accepted: actionRiskSchema.nullable(),
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal("delete"),
+      branch: branchNameSchema,
+      accepted: actionRiskSchema.nullable(),
+    })
+    .strict(),
+  z.object({ kind: z.literal("updateWorkspace"), accepted: actionRiskSchema.nullable() }).strict(),
 ]);
 
-export const branchActionResultSchema = z.object({ ok: z.literal(true) }).strict();
+/** How a write ended. `confirm` means nothing ran yet: the reader is asked about `risk` first. */
+export const butActionResultSchema = z.discriminatedUnion("status", [
+  z.object({ status: z.literal("done") }).strict(),
+  z.object({ status: z.literal("upToDate") }).strict(),
+  z.object({ status: z.literal("confirm"), risk: actionRiskSchema }).strict(),
+]);
+
+/** Where a branch's review lives on its forge, or null when it has none. */
+export const reviewUrlSchema = z.object({ url: z.string().nullable() }).strict();
 
 /** The repository a possibly omitted key means, as the host found it. */
 export const resolvedRepositorySchema = z.object({ key: z.string(), path: z.string() }).strict();
@@ -185,7 +233,6 @@ export const reviewRequestsSchema = z.object({ requests: z.array(reviewRequestSc
 export type ChangeKind = z.infer<typeof changeKindSchema>;
 export type FileChange = z.infer<typeof fileChangeSchema>;
 export type Commit = z.infer<typeof commitSchema>;
-export type CommitDetails = z.infer<typeof commitDetailsSchema>;
 export type Branch = z.infer<typeof branchSchema>;
 export type Stack = z.infer<typeof stackSchema>;
 export type BaseCommit = z.infer<typeof baseCommitSchema>;
@@ -197,5 +244,7 @@ export type FilePatch = z.infer<typeof filePatchSchema>;
 export type Patches = z.infer<typeof patchesSchema>;
 export type BranchStatus = z.infer<typeof branchStatusSchema>;
 export type PushMode = z.infer<typeof pushModeSchema>;
-export type BranchAction = z.infer<typeof branchActionSchema>;
+export type ButAction = z.infer<typeof butActionSchema>;
+export type ButActionResult = z.infer<typeof butActionResultSchema>;
+export type ActionRisk = z.infer<typeof actionRiskSchema>;
 export type ReviewRequest = z.infer<typeof reviewRequestSchema>;

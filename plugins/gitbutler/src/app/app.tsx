@@ -1,5 +1,14 @@
-import { useCallback, useLayoutEffect, useMemo, useRef, useState } from "react";
-import type { ReactNode } from "react";
+import {
+  forwardRef,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import type { ReactNode, RefObject } from "react";
+import type { UseQueryResult } from "@tanstack/react-query";
 import {
   definePluginApp,
   experimental_Icon as Icon,
@@ -8,24 +17,24 @@ import {
 } from "@get-bb/plugin-sdk/app";
 import type { PluginThreadHeaderActionProps } from "@get-bb/plugin-sdk/app";
 import { PluginQueryBoundary } from "@bb-kit/core/rpc/query";
-import type { PatchSource, Repository, Workspace } from "../shared/schema.ts";
+import { PANEL_ACTION_ID } from "../shared/panel.ts";
+import type { ActionRisk, PatchSource, Repository, Workspace } from "../shared/schema.ts";
 import { Badge } from "./components/ui/badge.tsx";
 import { Button } from "./components/ui/button.tsx";
 import { cn } from "./lib/utils.ts";
 import { Loading, Notice, errorText } from "./notice.tsx";
+import { Confirm, pullRiskPrompt, useButAction, useFocusAfter } from "./branch-actions.tsx";
+import type { WorkspaceTarget } from "./branch-actions.tsx";
 import { FileCards } from "./file-cards.tsx";
 import { GitButlerMark } from "./gitbutler-mark.tsx";
-import { COMMIT_QUERY, queryClient } from "./query-client.ts";
-import { rpc, defined } from "./rpc.ts";
+import { REFRESH_INTERVAL_MS } from "./query-client.ts";
+import { rpc } from "./rpc.ts";
 import { relativeTime, shortId, subject } from "./format.ts";
 import { BaseCard, CommitExpansionContext, StackLane, UncommittedCard } from "./workspace-lane.tsx";
-import type { CommitExpansion } from "./workspace-lane.tsx";
+import type { CommitExpansion, CommitRef } from "./workspace-lane.tsx";
 import "./gitbutler.css";
 
-const REFRESH_INTERVAL_MS = 10_000;
 const REPOSITORY_STORAGE_PREFIX = "bb-plugin-gitbutler:repository:";
-/** Shared with the server, which adds this tab to new GitButler threads. */
-const PANEL_ACTION_ID = "gitbutler";
 const HEADER_LABEL = "View in GitButler";
 
 const SHELL = "flex h-full min-w-0 flex-col overflow-hidden bg-background text-foreground text-xs";
@@ -40,7 +49,7 @@ const GUTTER = "[scrollbar-gutter:stable_both-edges]";
 const HEADER = `flex shrink-0 items-center gap-2 overflow-hidden border-b border-border bg-card px-2.5 py-1.5 ${GUTTER}`;
 /** What the detail screen is showing, and the file it opened on. */
 type Selection =
-  | { kind: "commit"; commitId: string; createdAt: string; message: string; path: string }
+  | { kind: "commit"; commit: CommitRef; path: string }
   | { kind: "uncommitted"; path: string };
 
 const UNCOMMITTED_SOURCE: PatchSource = { kind: "uncommitted" };
@@ -64,10 +73,6 @@ function writeRepository(threadId: string, key: string | null): void {
   }
 }
 
-/**
- * A shell command inside prose. Notices are plain text nodes, so a command
- * written with Markdown backticks would reach the reader as backticks.
- */
 /**
  * The panel's scroll container. Each reserved gutter is as wide as the reader's
  * scrollbar, which is 11px when scrollbars are classic and 0 when they overlay
@@ -104,6 +109,10 @@ function ScrollArea({ children }: { children: ReactNode }) {
   );
 }
 
+/**
+ * A shell command inside prose. Notices are plain text nodes, so a command
+ * written with Markdown backticks would reach the reader as backticks.
+ */
 function Command({ children }: { children: string }) {
   return (
     <code className="rounded bg-secondary px-1 py-px font-mono text-foreground" translate="no">
@@ -222,32 +231,27 @@ function CommitDetail({
   repositoryKey: string | undefined;
   selection: Extract<Selection, { kind: "commit" }>;
 }) {
-  const details = rpc.commit.useQuery(
-    defined({ threadId, repositoryKey, commitId: selection.commitId }),
-    COMMIT_QUERY,
-  );
+  const { commit } = selection;
   const source = useMemo<PatchSource>(
-    () => ({ kind: "commit", commitId: selection.commitId }),
-    [selection.commitId],
+    () => ({ kind: "commit", commitId: commit.commitId }),
+    [commit.commitId],
   );
-  const message = details.data?.message ?? selection.message;
+  const title = subject(commit.message);
+  // Everything under the subject: where an agent's commit says why.
+  const body = commit.message.slice(title.length).trim();
 
   return (
     <>
-      <h2 className="m-0 text-[13px] font-semibold text-balance [overflow-wrap:anywhere]">
-        {subject(message)}
-      </h2>
+      <h2 className="m-0 text-sm font-semibold text-balance [overflow-wrap:anywhere]">{title}</h2>
       <p className="mt-1 flex gap-2 text-[11px] tabular-nums text-muted-foreground">
-        <code className="font-mono">{shortId(selection.commitId)}</code>
-        {details.data ? <span>{details.data.authorName}</span> : null}
-        <span>{relativeTime(selection.createdAt)}</span>
+        <code className="font-mono">{shortId(commit.commitId)}</code>
+        <span>{commit.authorName}</span>
+        <span>{relativeTime(commit.createdAt)}</span>
       </p>
-      {details.isError ? (
-        <Notice
-          title="Commit failed to load"
-          detail={errorText(details.error)}
-          onRetry={() => void details.refetch()}
-        />
+      {body ? (
+        <p className="mt-2 whitespace-pre-wrap leading-normal text-muted-foreground [overflow-wrap:anywhere]">
+          {body}
+        </p>
       ) : null}
       <FileCards
         threadId={threadId}
@@ -271,12 +275,26 @@ function DetailScreen({
   onBack: () => void;
 }) {
   return (
-    <div className={SHELL}>
+    // Escape goes back from wherever the focus is on this screen. Focusable
+    // itself, so a click into the diff text keeps the focus here.
+    // oxlint-disable-next-line jsx-a11y/no-static-element-interactions
+    <div
+      className={cn(SHELL, "outline-none")}
+      tabIndex={-1}
+      onKeyDown={(event) => {
+        if (event.key === "Escape" && !event.defaultPrevented) onBack();
+      }}
+    >
       <header className={HEADER}>
         <Button
           variant="ghost"
           size="sm"
           className="h-6 gap-1 px-1.5 text-xs font-normal text-muted-foreground"
+          aria-label="Back to workspace"
+          // The workspace under this screen goes inert and drops the focus,
+          // so the focus starts here instead of on the page body.
+          // oxlint-disable-next-line jsx-a11y/no-autofocus
+          autoFocus
           onClick={onBack}
         >
           <Icon name="ArrowLeft" className="size-3" aria-hidden />
@@ -288,7 +306,7 @@ function DetailScreen({
           <CommitDetail threadId={threadId} repositoryKey={repositoryKey} selection={selection} />
         ) : (
           <>
-            <h2 className="m-0 text-[13px] font-semibold">Uncommitted</h2>
+            <h2 className="m-0 text-sm font-semibold">Uncommitted</h2>
             <FileCards
               threadId={threadId}
               repositoryKey={repositoryKey}
@@ -319,6 +337,7 @@ function WorkspaceBody({
   return (
     <>
       <div className="flex flex-col gap-4">
+        <ConflictedFiles paths={data.conflictedFiles} />
         <UncommittedCard changes={data.unassignedChanges} onOpenFile={onOpenFile} />
         {data.stacks.map((stack) => (
           <StackLane
@@ -344,6 +363,205 @@ function WorkspaceBody({
   );
 }
 
+/**
+ * Files a pull or a delete left with conflict markers. `but status` lists them
+ * apart from the other uncommitted changes, so without this they would drop
+ * out of the panel at the moment they need attention.
+ */
+function ConflictedFiles({ paths }: { paths: readonly string[] }) {
+  if (paths.length === 0) return null;
+  return (
+    <section
+      aria-label="Conflicted files"
+      className="rounded-md border border-destructive-text/40 bg-card px-2.5 py-2 leading-normal"
+    >
+      <p className="flex items-center gap-1.5 font-semibold text-destructive-text">
+        <Icon name="AlertTriangle" className="size-3 shrink-0" aria-hidden />
+        {paths.length === 1
+          ? "One file holds conflict markers"
+          : `${paths.length} files hold conflict markers`}
+      </p>
+      <ul className="mt-1 list-none font-mono text-[11px] [overflow-wrap:anywhere]">
+        {paths.map((path) => (
+          <li key={path}>{path}</li>
+        ))}
+      </ul>
+      <p className="mt-1 text-muted-foreground">
+        Resolve them in your editor or GitButler, then commit.
+      </p>
+    </section>
+  );
+}
+
+/**
+ * The header's Pull: `but pull` for the whole workspace, which rebases every
+ * applied branch onto the target branch. It fetches first, so it also finds
+ * commits the "behind" count has not heard of. It asks before leaving
+ * conflicts, and says so when there was nothing to pull.
+ */
+function useWorkspacePull(target: WorkspaceTarget) {
+  const action = useButAction(target);
+  // Tagged with the repository it is about, so switching drops it.
+  const [outcome, setOutcome] = useState<{
+    key: string | undefined;
+    question: ActionRisk | null;
+    upToDate: boolean;
+  } | null>(null);
+  const shown = outcome?.key === target.repositoryKey ? outcome : null;
+  const start = (accepted: ActionRisk | null) => {
+    setOutcome(null);
+    action.run({ kind: "updateWorkspace", accepted }, (result) =>
+      setOutcome({
+        key: target.repositoryKey,
+        question: result.status === "confirm" ? result.risk : null,
+        upToDate: result.status === "upToDate",
+      }),
+    );
+  };
+  return {
+    start,
+    cancel: () => setOutcome(null),
+    pending: action.pending,
+    error: action.error,
+    question: shown?.question ?? null,
+    upToDate: shown?.upToDate ?? false,
+  };
+}
+
+/** The header's Pull. Its spinner tracks its own request, as Refresh's does. */
+const PullButton = forwardRef<
+  HTMLButtonElement,
+  { pull: ReturnType<typeof useWorkspacePull>; shown: boolean }
+>(function PullButton({ pull, shown }, ref) {
+  // Only a workspace that read cleanly has branches to pull into.
+  if (!shown) return null;
+  return (
+    <Button
+      ref={ref}
+      variant="outline"
+      size="sm"
+      className="h-6 gap-1 px-2 text-xs font-normal"
+      aria-label="Pull the target branch into the workspace"
+      disabled={pull.pending}
+      onClick={() => pull.start(null)}
+    >
+      <Icon
+        name={pull.pending ? "Spinner" : "ArrowDown"}
+        className={cn("size-3", pull.pending && "animate-spin")}
+        aria-hidden
+      />
+      Pull
+    </Button>
+  );
+});
+
+/** The header's Pull button, which takes the focus back after a pull unless a question took it. */
+function usePullFocus(pull: ReturnType<typeof useWorkspacePull>) {
+  const button = useRef<HTMLButtonElement>(null);
+  useFocusAfter(pull.pending, () => (pull.question ? null : button.current));
+  return button;
+}
+
+/** Under the header: the Pull confirmation, its refusal, or its "nothing new". */
+function WorkspacePullStatus({
+  pull,
+  pullButton,
+}: {
+  pull: ReturnType<typeof useWorkspacePull>;
+  /** Where the focus goes back to when the reader backs out. */
+  pullButton: RefObject<HTMLButtonElement | null>;
+}) {
+  const onCancel = () => {
+    pull.cancel();
+    pullButton.current?.focus();
+  };
+  const row = cn("shrink-0 border-b border-border px-2.5 py-1.5", GUTTER);
+  if (pull.question) {
+    return (
+      <div className={row}>
+        <Confirm
+          prompt={pullRiskPrompt(pull.question)}
+          label="Pull anyway"
+          pending={pull.pending}
+          onCancel={onCancel}
+          onConfirm={() => pull.start(pull.question)}
+        />
+      </div>
+    );
+  }
+  if (pull.error) {
+    return (
+      <p role="alert" className={cn(row, "text-[11px] leading-normal text-destructive-text")}>
+        {pull.error.message}
+      </p>
+    );
+  }
+  if (pull.upToDate) {
+    return (
+      <output className={cn(row, "block text-[11px] text-muted-foreground")}>
+        Already up to date.
+      </output>
+    );
+  }
+  return null;
+}
+
+/** Under the header while the board on screen is the last one that read cleanly. */
+function StaleNote({ reason }: { reason: string | null }) {
+  if (reason === null) return null;
+  return (
+    <p
+      className={cn(
+        "shrink-0 overflow-hidden border-b border-border px-2.5 py-1 text-[11px] text-muted-foreground",
+        GUTTER,
+      )}
+      title={reason || undefined}
+    >
+      Couldn't refresh. Showing the last workspace.
+    </p>
+  );
+}
+
+/**
+ * Redraws the panel once a minute. Relative times are plain text, and a poll
+ * with nothing new redraws nothing, so without it "just now" would stay up
+ * for an hour.
+ */
+function useMinuteTick(): void {
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    const id = window.setInterval(() => setTick((tick) => tick + 1), 60_000);
+    return () => window.clearInterval(id);
+  }, []);
+}
+
+/**
+ * The workspace to draw. A poll that fails after a good one keeps the board
+ * the reader was using, with its open drafts and confirmations, and marks it
+ * stale. Only a failure does: the other states are answers the reader has to
+ * act on. The board kept is the current repository's, never another's.
+ */
+function useShownWorkspace(
+  workspace: UseQueryResult<Workspace, Error>,
+  repositoryKey: string | undefined,
+): { data: Workspace | undefined; stale: string | null } {
+  const [lastReady, setLastReady] = useState<{
+    repositoryKey: string | undefined;
+    data: Workspace;
+  } | null>(null);
+  const latest = workspace.data;
+  if (latest?.state === "ready" && latest !== lastReady?.data) {
+    setLastReady({ repositoryKey, data: latest });
+  }
+  const fallback =
+    lastReady && lastReady.repositoryKey === repositoryKey ? lastReady.data : undefined;
+  if (latest?.state === "error" && fallback) return { data: fallback, stale: latest.reason ?? "" };
+  if (workspace.isRefetchError && latest?.state === "ready") {
+    return { data: latest, stale: errorText(workspace.error) };
+  }
+  return { data: latest, stale: null };
+}
+
 function WorkspacePanel({ threadId }: { threadId: string }) {
   const [repositoryKey, setRepositoryKey] = useState<string | undefined>(
     () => readRepository(threadId) ?? undefined,
@@ -351,62 +569,78 @@ function WorkspacePanel({ threadId }: { threadId: string }) {
   const [selection, setSelection] = useState<Selection | null>(null);
   const [expandedCommit, setExpandedCommit] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+  // What had the focus when the detail screen opened, so Back returns it there.
+  const returnFocus = useRef<HTMLElement | null>(null);
+  const board = useRef<HTMLDivElement>(null);
+  useMinuteTick();
 
   const repositories = rpc.repositories.useQuery({ threadId }, { staleTime: 60_000 });
-  const workspace = rpc.workspace.useQuery(defined({ threadId, repositoryKey }), {
-    refetchInterval: REFRESH_INTERVAL_MS,
-    refetchOnWindowFocus: true,
-  });
+  const workspace = rpc.workspace.useQuery(
+    { threadId, repositoryKey },
+    { refetchInterval: REFRESH_INTERVAL_MS, refetchOnWindowFocus: true },
+  );
 
   const chooseRepository = useCallback(
-    (key: string) => {
+    (key: string | undefined) => {
       setRepositoryKey(key);
-      writeRepository(threadId, key);
+      writeRepository(threadId, key ?? null);
       setSelection(null);
       setExpandedCommit(null);
     },
     [threadId],
   );
 
+  /*
+   * A remembered repository that has gone leaves the panel on a notice, often
+   * with no picker to leave it by, so fall back to the default one. Not after
+   * a failed discovery: it lists nothing, and a good choice would be lost.
+   */
+  useEffect(() => {
+    const list = repositories.data;
+    if (!list || list.reason !== null || list.repositories.length === 0) return;
+    if (repositoryKey === undefined) return;
+    if (list.repositories.some((repository) => repository.key === repositoryKey)) return;
+    chooseRepository(undefined);
+  }, [chooseRepository, repositories.data, repositoryKey]);
+
+  const open = useCallback((next: Selection) => {
+    returnFocus.current =
+      document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    setSelection(next);
+  }, []);
+
   const expansion = useMemo<CommitExpansion>(
     () => ({
       threadId,
       repositoryKey,
       expanded: expandedCommit,
-      onToggle: (commitId) =>
-        setExpandedCommit((current) => (current === commitId ? null : commitId)),
-      onOpenFile: (commit, path) =>
-        setSelection({
-          kind: "commit",
-          commitId: commit.commitId,
-          createdAt: commit.createdAt,
-          message: commit.message,
-          path,
-        }),
+      onToggle: (key) => setExpandedCommit((current) => (current === key ? null : key)),
+      onOpenFile: (commit, path) => open({ kind: "commit", commit, path }),
     }),
-    [expandedCommit, repositoryKey, threadId],
+    [expandedCommit, open, repositoryKey, threadId],
   );
 
-  const openUncommittedFile = useCallback((path: string) => {
-    setSelection({ kind: "uncommitted", path });
-  }, []);
+  const openUncommittedFile = useCallback(
+    (path: string) => open({ kind: "uncommitted", path }),
+    [open],
+  );
 
   const back = useCallback(() => setSelection(null), []);
 
-  // Selection first: a failed background poll should not throw the reader out
-  // of the commit they had open.
-  if (selection) {
-    return (
-      <DetailScreen
-        threadId={threadId}
-        repositoryKey={repositoryKey}
-        selection={selection}
-        onBack={back}
-      />
-    );
-  }
+  // The workspace stayed mounted under the detail screen, so the row that
+  // opened it is usually still there to take the focus back. It is gone once
+  // its file was committed or GitButler rewrote its commit, and then the
+  // board takes the focus instead of the page.
+  useEffect(() => {
+    const opener = returnFocus.current;
+    if (selection !== null || opener === null) return;
+    returnFocus.current = null;
+    (opener.isConnected ? opener : board.current)?.focus();
+  }, [selection]);
 
-  const data = workspace.data;
+  const { data, stale } = useShownWorkspace(workspace, repositoryKey);
+  const pull = useWorkspacePull({ threadId, repositoryKey });
+  const pullButton = usePullFocus(pull);
   const behind = data?.upstream?.behind ?? 0;
   const choices = repositories.data?.repositories ?? [];
   const refresh = () => {
@@ -420,60 +654,95 @@ function WorkspacePanel({ threadId }: { threadId: string }) {
    * reader needed it and left the failure with no way out of itself.
    */
   return (
-    <div className={SHELL}>
-      <header className={HEADER}>
-        {choices.length > 1 ? (
-          <RepositoryPicker
-            repositories={choices}
-            value={repositoryKey}
-            onChange={chooseRepository}
-          />
-        ) : (
-          <span
-            className="min-w-0 flex-1 truncate font-semibold"
-            title={data?.repoName || undefined}
+    <div className="relative h-full">
+      <div
+        ref={board}
+        className={cn(SHELL, "outline-none")}
+        tabIndex={-1}
+        inert={selection !== null}
+      >
+        <header className={HEADER}>
+          {choices.length > 1 ? (
+            <RepositoryPicker
+              repositories={choices}
+              value={repositoryKey}
+              onChange={chooseRepository}
+            />
+          ) : (
+            <span
+              className="min-w-0 flex-1 truncate font-semibold"
+              title={data?.repoName || undefined}
+            >
+              {data?.repoName || "GitButler"}
+            </span>
+          )}
+          {behind > 0 ? <Pill tone="text-warning-text">{`${behind} behind`}</Pill> : null}
+          <PullButton ref={pullButton} pull={pull} shown={data?.state === "ready"} />
+          <Button
+            variant="ghost"
+            size="icon"
+            className="size-6 text-muted-foreground"
+            onClick={refresh}
+            aria-label="Refresh"
+            aria-busy={refreshing}
           >
-            {data?.repoName || "GitButler"}
-          </span>
-        )}
-        {behind > 0 ? <Pill tone="text-warning">{`${behind} behind`}</Pill> : null}
-        <Button
-          variant="ghost"
-          size="icon"
-          className="size-6 text-muted-foreground"
-          onClick={refresh}
-          aria-label="Refresh"
-          aria-busy={refreshing}
-        >
-          {/*
-           * The spinner tracks the click, not `isFetching`: the panel polls
-           * every ten seconds, so tying it to the query made the icon blink
-           * six times a minute on its own.
-           */}
-          <Icon name={refreshing ? "Spinner" : "RotateCcw"} className="size-3.5" aria-hidden />
-        </Button>
-      </header>
-      <ScrollArea>
-        {workspace.isPending ? (
-          <Loading label="Loading workspace…" />
-        ) : workspace.isError ? (
-          <Notice
-            title="GitButler could not be reached"
-            detail={errorText(workspace.error)}
-            onRetry={refresh}
-          />
-        ) : (
-          <CommitExpansionContext.Provider value={expansion}>
-            <WorkspaceBody
-              threadId={threadId}
-              repositoryKey={repositoryKey}
-              data={workspace.data}
-              onOpenFile={openUncommittedFile}
+            {/*
+             * The spinner tracks the click, not `isFetching`: the panel polls
+             * every ten seconds, so tying it to the query made the icon blink
+             * six times a minute on its own.
+             */}
+            <Icon
+              name={refreshing ? "Spinner" : "RotateCcw"}
+              className={cn("size-3.5", refreshing && "animate-spin")}
+              aria-hidden
+            />
+          </Button>
+        </header>
+        <WorkspacePullStatus pull={pull} pullButton={pullButton} />
+        <StaleNote reason={stale} />
+        <ScrollArea>
+          {data ? (
+            <CommitExpansionContext.Provider value={expansion}>
+              {/*
+               * Keyed by repository: two repositories can share branch names,
+               * and a card's open confirmation or draft must not carry over to
+               * the same-named branch of the next one.
+               */}
+              <WorkspaceBody
+                key={repositoryKey ?? ""}
+                threadId={threadId}
+                repositoryKey={repositoryKey}
+                data={data}
+                onOpenFile={openUncommittedFile}
+                onRetry={refresh}
+              />
+            </CommitExpansionContext.Provider>
+          ) : workspace.isError ? (
+            <Notice
+              title="GitButler could not be reached"
+              detail={errorText(workspace.error)}
               onRetry={refresh}
             />
-          </CommitExpansionContext.Provider>
-        )}
-      </ScrollArea>
+          ) : (
+            <Loading label="Loading workspace…" />
+          )}
+        </ScrollArea>
+      </div>
+      {/*
+       * Over the workspace, not in its place: Back finds the board scrolled
+       * where the reader left it, and a failed poll behind the detail cannot
+       * throw them out of the commit they had open.
+       */}
+      {selection ? (
+        <div className="absolute inset-0">
+          <DetailScreen
+            threadId={threadId}
+            repositoryKey={repositoryKey}
+            selection={selection}
+            onBack={back}
+          />
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -489,7 +758,7 @@ function GitButlerApp({ threadId }: { threadId?: string }) {
     );
   }
   return (
-    <PluginQueryBoundary client={queryClient}>
+    <PluginQueryBoundary>
       <WorkspacePanel key={resolved} threadId={resolved} />
     </PluginQueryBoundary>
   );
@@ -504,9 +773,7 @@ function GitButlerApp({ threadId }: { threadId?: string }) {
 function HeaderButton({ threadId, isCompactViewport }: PluginThreadHeaderActionProps) {
   const navigate = useBbNavigate();
   const repositoryKey = readRepository(threadId) ?? undefined;
-  const workspace = rpc.workspace.useQuery(defined({ threadId, repositoryKey }), {
-    staleTime: 60_000,
-  });
+  const workspace = rpc.workspace.useQuery({ threadId, repositoryKey }, { staleTime: 60_000 });
   if (workspace.data?.state !== "ready") return null;
   return (
     // bb's own toolbar buttons (the editor picker beside this one) are an
@@ -514,7 +781,7 @@ function HeaderButton({ threadId, isCompactViewport }: PluginThreadHeaderActionP
     <Button
       variant="outline"
       size="sm"
-      className="h-7 gap-1.5 border-border px-2 text-xs font-medium text-foreground shadow-none max-md:pointer-coarse:h-9"
+      className="h-7 gap-1.5 border-border/70 px-2 text-xs font-normal text-foreground shadow-none max-md:pointer-coarse:h-9"
       aria-label={HEADER_LABEL}
       onClick={() => navigate.openThreadPanel({ actionId: PANEL_ACTION_ID })}
     >
@@ -526,7 +793,7 @@ function HeaderButton({ threadId, isCompactViewport }: PluginThreadHeaderActionP
 
 function HeaderAction(props: PluginThreadHeaderActionProps) {
   return (
-    <PluginQueryBoundary client={queryClient}>
+    <PluginQueryBoundary>
       <HeaderButton key={props.threadId} {...props} />
     </PluginQueryBoundary>
   );

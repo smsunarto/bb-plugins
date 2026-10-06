@@ -1,10 +1,9 @@
-import { createHash } from "node:crypto";
 import type {
   BaseCommit,
   Branch,
   BranchStatus,
+  ChangeKind,
   Commit,
-  CommitDetails,
   FileChange,
   FilePatch,
   Patches,
@@ -47,7 +46,9 @@ function fileChange(value: unknown): FileChange | undefined {
   const path = asString(record?.["filePath"] ?? record?.["path"]);
   if (path === "") return undefined;
   const raw = asString(record?.["changeType"] ?? record?.["status"], "modified");
-  return { path, kind: CHANGE_KINDS.has(raw) ? (raw as FileChange["kind"]) : "modified" };
+  // `but status` calls a deletion `removed` where `but diff` says `deleted`.
+  const kind = raw === "removed" ? "deleted" : raw;
+  return { path, kind: CHANGE_KINDS.has(kind) ? (kind as ChangeKind) : "modified" };
 }
 
 function fileChanges(value: unknown): FileChange[] {
@@ -66,10 +67,8 @@ function commit(value: unknown): Commit | undefined {
     changeId: asNullableString(record?.["changeId"]),
     message: asString(record?.["message"]),
     authorName: asString(record?.["authorName"]),
-    authorEmail: asString(record?.["authorEmail"]),
     createdAt: asString(record?.["createdAt"]),
     conflicted: record?.["conflicted"] === true,
-    reviewId: asNullableString(record?.["reviewId"]),
   };
 }
 
@@ -83,7 +82,8 @@ function commits(value: unknown): Commit[] {
 /** GitButler's `branchStatus` strings, mapped onto the panel's vocabulary. */
 const BRANCH_STATUS: Readonly<Record<string, BranchStatus>> = {
   completelyUnpushed: "unpushed",
-  unpushedCommits: "diverged",
+  // Local commits on top of the remote branch, which a plain push fast-forwards.
+  unpushedCommits: "ahead",
   unpushedCommitsRequiringForce: "diverged",
   nothingToPush: "pushed",
   remoteAhead: "diverged",
@@ -100,23 +100,35 @@ const PUSH_MODE: Readonly<Record<string, PushMode>> = {
   unpushedCommitsRequiringForce: "force",
 };
 
+/** The review's checks: still running, or the forge's verdict once they finish. */
+function ciState(value: unknown): Branch["ci"] {
+  const ci = asObject(value);
+  if (!ci) return null;
+  if (ci["status"] === "inProgress") return "pending";
+  const conclusion = ci["conclusion"];
+  return conclusion === "success" || conclusion === "failure" ? conclusion : null;
+}
+
 function branch(value: unknown): Branch | undefined {
   const record = asObject(value);
   const name = asString(record?.["name"]);
   if (name === "") return undefined;
   const rawStatus = asString(record?.["branchStatus"], "unknown");
-  const ci = asObject(record?.["ci"]);
   const branchCommits = commits(record?.["commits"]);
+  const upstream = commits(record?.["upstreamCommits"]);
   return {
     name,
     status: BRANCH_STATUS[rawStatus] ?? "unknown",
     rawStatus,
     // An empty branch has a status too, but nothing a push would send.
     push: branchCommits.length > 0 ? (PUSH_MODE[rawStatus] ?? "none") : "none",
-    reviewId: asNullableString(record?.["reviewId"]),
-    ci: ci ? asNullableString(ci["status"] ?? ci["state"]) : asNullableString(record?.["ci"]),
+    // `but status` wraps the id in parentheses, as in "(#42)".
+    reviewId: asNullableString(record?.["reviewId"])?.replace(/^\((.+)\)$/, "$1") ?? null,
+    ci: ciState(record?.["ci"]),
     commits: branchCommits,
-    upstreamCommits: commits(record?.["upstreamCommits"]),
+    upstreamCommits: upstream,
+    // Until git compares the two sides (upstream.ts), every one counts as new.
+    newUpstream: upstream.length,
   };
 }
 
@@ -174,15 +186,11 @@ export function baseCommit(value: unknown): BaseCommit | undefined {
   };
 }
 
-function revisionOf(workspace: Omit<Workspace, "revision">): string {
-  return createHash("sha256").update(JSON.stringify(workspace)).digest("hex").slice(0, 16);
-}
-
 export function parseWorkspace(payload: unknown, repoName: string): Workspace {
   const root = asObject(payload) ?? {};
   const upstreamState = asObject(root["upstreamState"]);
   const behind = typeof upstreamState?.["behind"] === "number" ? upstreamState["behind"] : 0;
-  const withoutRevision: Omit<Workspace, "revision"> = {
+  return {
     state: "ready",
     reason: null,
     repoName,
@@ -194,28 +202,182 @@ export function parseWorkspace(payload: unknown, repoName: string): Workspace {
       }),
     ),
     base: baseCommit(root["mergeBase"]) ?? null,
-    upstream: upstreamState
-      ? {
-          behind: Math.max(0, Math.trunc(behind)),
-          latestCommitId: baseCommit(upstreamState["latestCommit"])?.commitId ?? null,
-          lastFetched: asNullableString(upstreamState["lastFetched"]),
-        }
-      : null,
+    upstream: upstreamState ? { behind: Math.max(0, Math.trunc(behind)) } : null,
+    // Present only while some file holds conflict markers.
+    conflictedFiles: asArray(root["conflictedFiles"]).flatMap((path) =>
+      typeof path === "string" && path !== "" ? [path] : [],
+    ),
   };
-  return { ...withoutRevision, revision: revisionOf(withoutRevision) };
 }
 
-/** `but show --json` to the detail view's extra fields. */
-export function parseCommitDetails(payload: unknown, commitId: string): CommitDetails {
-  const root = asObject(payload) ?? {};
-  const author = asObject(root["author"]);
+/** What `but pull --check` predicts a workspace update would do. */
+export type PullCheck = {
+  upToDate: boolean;
+  /** Branches whose commits the update would leave conflicted. */
+  conflicted: string[];
+  /** Uncommitted changes overlap incoming commits, so files would get conflict markers. */
+  overlapsUncommitted: boolean;
+};
+
+/**
+ * Throws on a shape it does not know rather than guess: a guess of "no
+ * conflicts" would run the update without asking.
+ */
+export function pullCheck(payload: unknown): PullCheck {
+  const root = asObject(payload);
+  const statuses = root?.["branchStatuses"];
+  if (typeof root?.["upToDate"] !== "boolean" || !Array.isArray(statuses)) {
+    throw new Error("GitButler's pull check answered in a shape this panel does not know.");
+  }
   return {
-    commitId: asString(root["commit"], commitId),
-    message: asString(root["message"]),
-    authorName: asString(author?.["name"]),
-    authorEmail: asString(author?.["email"]),
-    files: fileChanges(root["files"]),
+    upToDate: root["upToDate"],
+    conflicted: statuses.flatMap((entry) => {
+      const status = asObject(entry);
+      const name = asString(status?.["name"]);
+      return status?.["status"] === "conflicted" && name !== "" ? [name] : [];
+    }),
+    overlapsUncommitted: root["hasWorktreeConflicts"] === true,
   };
+}
+
+/** What a `but branch update --dry-run` preview would do to the workspace. */
+export type UpdatePreview = {
+  /** Commits the update would take out of one branch and into another. */
+  moved: { from: string; to: string }[];
+  /** Branches the update would leave with newly conflicted commits. */
+  conflicted: string[];
+};
+
+/**
+ * Follows each of the workspace's commits into the preview, by commit id
+ * through the preview's map of rewritten commits. A pull may only add
+ * commits to the branch it pulls.
+ *
+ * `but` 0.22.3 can update the lower branch of a stack by taking the upper
+ * branch's commits into it, and a plain push then publishes them under the
+ * wrong name. Its preview shows the move, so the panel refuses before it
+ * happens. A commit the preview no longer holds at all counts as moved too.
+ * Throws on a preview shape it does not know, for the same reason as
+ * `pullCheck`.
+ */
+export function judgeBranchUpdate(statusPayload: unknown, previewPayload: unknown): UpdatePreview {
+  const { replaced, owner, conflictedIn } = previewCommits(previewPayload);
+  const moved = new Map<string, { from: string; to: string }>();
+  const commits = parseWorkspace(statusPayload, "").stacks.flatMap((stack) =>
+    stack.branches.flatMap((branch) => branch.commits.map((commit) => ({ branch, commit }))),
+  );
+  for (const { branch, commit } of commits) {
+    const now = asString(replaced[commit.commitId], commit.commitId);
+    // Already conflicted before the update, so not news the reader must accept.
+    if (commit.conflicted) conflictedIn.delete(now);
+    const to = owner.get(now) ?? "";
+    if (to !== branch.name) moved.set(`${branch.name}\0${to}`, { from: branch.name, to });
+  }
+  return { moved: [...moved.values()], conflicted: [...new Set(conflictedIn.values())] };
+}
+
+/** An update preview's rewritten commits, which branch holds each commit, and which conflict. */
+function previewCommits(previewPayload: unknown): {
+  replaced: Record<string, unknown>;
+  owner: Map<string, string>;
+  conflictedIn: Map<string, string>;
+} {
+  const workspace = asObject(asObject(previewPayload)?.["workspace"]);
+  const replaced = asObject(workspace?.["replacedCommits"]);
+  const stacks = asObject(workspace?.["headInfo"])?.["stacks"];
+  if (!replaced || !Array.isArray(stacks)) {
+    throw new Error("GitButler's update preview answered in a shape this panel does not know.");
+  }
+  const owner = new Map<string, string>();
+  const conflictedIn = new Map<string, string>();
+  const segments = stacks.flatMap((stack) => asArray(asObject(stack)?.["segments"]));
+  for (const segment of segments.map(asObject)) {
+    const name = asString(asObject(segment?.["refName"])?.["displayName"]);
+    for (const commit of asArray(segment?.["commits"]).map(asObject)) {
+      const id = asString(commit?.["id"]);
+      if (id === "") continue;
+      owner.set(id, name);
+      if (commit?.["hasConflicts"] === true) conflictedIn.set(id, name);
+    }
+  }
+  return { replaced, owner, conflictedIn };
+}
+
+/**
+ * The workspace branch a write names, read from `but status -u --json`.
+ * `but` resolves an argument as a CLI id too, and ids are short words like
+ * `fi`, so a branch named like another item's id could send the write there.
+ * Throws for a branch that left the workspace or whose name is such an id.
+ */
+export function namedBranch(statusPayload: unknown, name: string): Branch {
+  const branch = parseWorkspace(statusPayload, "")
+    .stacks.flatMap((stack) => stack.branches)
+    .find((candidate) => candidate.name === name);
+  if (branch === undefined) throw new Error(`${name} is no longer in the workspace.`);
+  if (cliIdElsewhere(statusPayload, name)) {
+    throw new Error(
+      `GitButler also uses ${name} as the id of something else in this workspace, so \`but\` could act on that instead. Rename the branch in GitButler first.`,
+    );
+  }
+  return branch;
+}
+
+/** Whether any item in the status, other than the branch called `name`, has `name` as its id. */
+function cliIdElsewhere(value: unknown, name: string): boolean {
+  if (Array.isArray(value)) return value.some((entry) => cliIdElsewhere(entry, name));
+  const record = asObject(value);
+  if (!record) return false;
+  if (record["cliId"] === name && record["name"] !== name) return true;
+  return Object.values(record).some((entry) => cliIdElsewhere(entry, name));
+}
+
+/** `but branch show -r --json` to the web address of the branch's review. */
+export function reviewUrl(payload: unknown): string | null {
+  const [review] = asArray(asObject(payload)?.["reviews"]);
+  return asNullableString(asObject(review)?.["url"]);
+}
+
+/**
+ * Each uncommitted file's change kind. `but diff` calls every uncommitted file
+ * modified, new and deleted ones included, so the kind comes from `but status`.
+ */
+export function uncommittedKinds(statusPayload: unknown): Map<string, ChangeKind> {
+  const workspace = parseWorkspace(statusPayload, "");
+  const changes = [
+    ...workspace.unassignedChanges,
+    ...workspace.stacks.flatMap((stack) => stack.assignedChanges),
+  ];
+  return new Map(changes.map((change) => [change.path, change.kind]));
+}
+
+const QUOTED_ESCAPES: Readonly<Record<string, string>> = {
+  a: "\x07",
+  b: "\b",
+  t: "\t",
+  n: "\n",
+  v: "\v",
+  f: "\f",
+  r: "\r",
+};
+
+/** git's escape for one character of a quoted path. */
+function escapeChar(char: string): string {
+  if (char === '"' || char === "\\") return `\\${char}`;
+  const named = Object.entries(QUOTED_ESCAPES).find(([, value]) => value === char)?.[0];
+  return named === undefined
+    ? `\\${char.charCodeAt(0).toString(8).padStart(3, "0")}`
+    : `\\${named}`;
+}
+
+/**
+ * A header path written the way git writes it: C-quoted when it holds a quote,
+ * a backslash, or a control character. Bare, a newline in a file name would
+ * end the header line and the rest of the name would read as patch lines.
+ */
+function quotePath(path: string): string {
+  const special = (char: string) => char === '"' || char === "\\" || char < " " || char === "\x7f";
+  if (![...path].some(special)) return path;
+  return `"${[...path].map((char) => (special(char) ? escapeChar(char) : char)).join("")}"`;
 }
 
 /**
@@ -224,14 +386,18 @@ export function parseCommitDetails(payload: unknown, commitId: string): CommitDe
  * `diff --git` and `---`/`+++` lines are what name the file, and the filename
  * is what selects the syntax highlighter.
  */
-function patchHeader(path: string, previousPath: string, status: string): string {
-  const lines = [`diff --git a/${previousPath} b/${path}`];
-  if (status === "added") lines.push("new file mode 100644");
-  else if (status === "deleted") lines.push("deleted file mode 100644");
-  else if (previousPath !== path) lines.push(`rename from ${previousPath}`, `rename to ${path}`);
+function patchHeader(path: string, previousPath: string, kind: ChangeKind): string {
+  const before = quotePath(`a/${previousPath}`);
+  const after = quotePath(`b/${path}`);
+  const lines = [`diff --git ${before} ${after}`];
+  if (kind === "added") lines.push("new file mode 100644");
+  else if (kind === "deleted") lines.push("deleted file mode 100644");
+  else if (previousPath !== path) {
+    lines.push(`rename from ${quotePath(previousPath)}`, `rename to ${quotePath(path)}`);
+  }
   lines.push(
-    status === "added" ? "--- /dev/null" : `--- a/${previousPath}`,
-    status === "deleted" ? "+++ /dev/null" : `+++ b/${path}`,
+    kind === "added" ? "--- /dev/null" : `--- ${before}`,
+    kind === "deleted" ? "+++ /dev/null" : `+++ ${after}`,
     "",
   );
   return lines.join("\n");
@@ -264,8 +430,8 @@ function hunkOrder(hunk: string): [number, number] {
 type Grouped = {
   change: FileChange;
   previousPath: string;
-  status: string;
-  binary: boolean;
+  /** Over `but`'s own size limit, so it sent no hunks at all. */
+  tooLarge: boolean;
   hunks: string[];
 };
 
@@ -273,9 +439,9 @@ type Grouped = {
  * `but diff --json` emits one record per hunk, each carrying the change id
  * GitButler commits by, so a file with six edits arrives six times. The panel
  * shows files, not hunks, so they are folded back together here and re-sorted
- * into file order.
+ * into file order. `kinds` overrides the kind `but diff` reported.
  */
-function groupByPath(payload: unknown): Grouped[] {
+function groupByPath(payload: unknown, kinds?: ReadonlyMap<string, ChangeKind>): Grouped[] {
   const groups = new Map<string, Grouped>();
   for (const entry of asArray(asObject(payload)?.["changes"])) {
     const record = asObject(entry);
@@ -285,17 +451,17 @@ function groupByPath(payload: unknown): Grouped[] {
     let group = groups.get(change.path);
     if (!group) {
       group = {
-        change,
+        change: { path: change.path, kind: kinds?.get(change.path) ?? change.kind },
         previousPath: asString(record["previousPath"] ?? record["oldPath"], change.path),
-        status: asString(record["status"] ?? record["changeType"]),
-        binary: false,
+        tooLarge: false,
         hunks: [],
       };
       groups.set(change.path, group);
     }
     const diff = asObject(record["diff"]);
+    // Binary files and files over the size limit carry no hunks.
     if (diff && asString(diff["type"]) !== "patch") {
-      group.binary = true;
+      group.tooLarge ||= asString(diff["type"]) === "tooLarge";
       continue;
     }
     for (const hunk of asArray(diff?.["hunks"])) {
@@ -314,27 +480,125 @@ function groupByPath(payload: unknown): Grouped[] {
 }
 
 /**
- * `but diff --json` to one complete git patch per file. The panel renders the
- * whole change set at once, so a single CLI call covers every card and the
- * budget is shared: once it runs out the remaining files arrive with an empty
- * patch and `truncated` set, rather than one enormous payload.
+ * A path as a patch header writes it. `core.quotePath=false` keeps non-ASCII
+ * names bare, but a name with a quote, a backslash, or a control character is
+ * still C-quoted, with octal escapes for the bytes of anything unprintable.
  */
-export function patchesFor(payload: unknown, maxChars: number): Patches {
+function headerPath(text: string): string {
+  if (!/^".*"$/s.test(text)) return text;
+  const encoder = new TextEncoder();
+  const bytes: number[] = [];
+  for (const [, octal, escaped, raw] of text
+    .slice(1, -1)
+    .matchAll(/\\([0-7]{3})|\\(.)|([^\\]+)/gs)) {
+    if (octal !== undefined) bytes.push(Number.parseInt(octal, 8));
+    else
+      bytes.push(
+        ...encoder.encode(escaped === undefined ? raw : (QUOTED_ESCAPES[escaped] ?? escaped)),
+      );
+  }
+  // A name may start with U+FEFF, which the default decoder drops as a BOM.
+  return new TextDecoder("utf-8", { ignoreBOM: true }).decode(Uint8Array.from(bytes));
+}
+
+/** The path a `---`/`+++` line names, without its side prefix, or none for /dev/null. */
+function sidePath(value: string | undefined, prefix: "a/" | "b/"): string | undefined {
+  // git ends a path that contains a space with a tab.
+  const path = value === undefined ? undefined : headerPath(value.replace(/\t$/, ""));
+  return path?.startsWith(prefix) ? path.slice(prefix.length) : undefined;
+}
+
+/**
+ * The path of a `diff --git` line whose two sides are the same file, which is
+ * every change but a rename, and a rename names itself on its own lines.
+ */
+function diffGitPath(line: string): string | undefined {
+  const quoted = /^diff --git "(?:[^"\\]|\\.)*" ("(?:[^"\\]|\\.)*")$/.exec(line)?.[1];
+  if (quoted !== undefined) return sidePath(quoted, "b/");
+  return /^diff --git a\/(.+) b\/\1$/.exec(line)?.[1];
+}
+
+/** One file's `diff --git` block of `git show` output, or null for one it cannot name. */
+function gitGroup(chunk: string): Grouped | null {
+  const firstHunk = chunk.search(/^@@ /m);
+  const header = (firstHunk === -1 ? chunk : chunk.slice(0, firstHunk)).split("\n");
+  const field = (prefix: string) =>
+    header.find((line) => line.startsWith(prefix))?.slice(prefix.length);
+  const pathField = (prefix: string) => {
+    const value = field(prefix);
+    return value === undefined ? undefined : headerPath(value);
+  };
+  const previousPath = pathField("rename from ");
+  const path =
+    pathField("rename to ") ??
+    sidePath(field("+++ "), "b/") ??
+    // A deleted file's only path is its old one.
+    sidePath(field("--- "), "a/") ??
+    // A binary file has no ---/+++ lines at all.
+    diffGitPath(header[0] ?? "");
+  if (!path) return null;
+  let kind: ChangeKind = previousPath === undefined ? "modified" : "renamed";
+  if (field("new file mode") !== undefined) kind = "added";
+  if (field("deleted file mode") !== undefined) kind = "deleted";
+  return {
+    change: { path, kind },
+    previousPath: previousPath ?? path,
+    tooLarge: false,
+    hunks: firstHunk === -1 ? [] : chunk.slice(firstHunk).split(/^(?=@@ )/m),
+  };
+}
+
+/**
+ * `git show` output to the same groups. Git already writes a patch per file,
+ * but regrouping it keeps the header, the kind, and the budget in one place
+ * for both sources.
+ */
+function groupGitPatch(output: string): Grouped[] {
+  const groups = new Map<string, Grouped>();
+  for (const chunk of output.split(/^(?=diff --git )/m)) {
+    const group = gitGroup(chunk);
+    if (!group) continue;
+    const earlier = groups.get(group.change.path);
+    if (!earlier) {
+      groups.set(group.change.path, group);
+      continue;
+    }
+    /*
+     * A file that became a symlink, or the reverse, is written as a deletion
+     * and an addition of the same path. The panel has one card per path, so
+     * the two fold into one change that shows the side that exists now.
+     */
+    earlier.change = { path: earlier.change.path, kind: "modified" };
+    if (group.change.kind !== "deleted") earlier.hunks = group.hunks;
+  }
+  return [...groups.values()];
+}
+
+/**
+ * One complete git patch per file. The panel renders the whole change set at
+ * once, so a single call covers every card and the budget is shared: once it
+ * runs out the remaining files arrive with an empty patch and `truncated` set,
+ * rather than one enormous payload.
+ */
+function patchesOf(groups: readonly Grouped[], maxChars: number): Patches {
   const files: FilePatch[] = [];
   let budget = maxChars;
   let truncated = false;
 
-  for (const group of groupByPath(payload)) {
+  for (const group of groups) {
+    const previousPath = group.previousPath === group.change.path ? null : group.previousPath;
     if (group.hunks.length === 0) {
-      files.push({ ...group.change, patch: "", truncated: false });
+      truncated ||= group.tooLarge;
+      files.push({ ...group.change, previousPath, patch: "", truncated: group.tooLarge });
       continue;
     }
     const body = patchBody(group.hunks, budget);
     budget -= body.body.length;
     truncated ||= body.truncated;
-    const header = patchHeader(group.change.path, group.previousPath, group.status);
+    const header = patchHeader(group.change.path, group.previousPath, group.change.kind);
     files.push({
       ...group.change,
+      previousPath,
       patch: body.body === "" ? "" : header + body.body,
       truncated: body.truncated,
     });
@@ -342,19 +606,35 @@ export function patchesFor(payload: unknown, maxChars: number): Patches {
   return { files, truncated };
 }
 
+/** `but diff --json` to patches. `kinds` corrects what it reports for uncommitted files. */
+export function patchesFor(
+  payload: unknown,
+  maxChars: number,
+  kinds?: ReadonlyMap<string, ChangeKind>,
+): Patches {
+  return patchesOf(groupByPath(payload, kinds), maxChars);
+}
+
+/** `git show` to patches, for a commit `but diff` cannot resolve. */
+export function patchesFromGit(output: string, maxChars: number): Patches {
+  return patchesOf(groupGitPatch(output), maxChars);
+}
+
 /**
- * `git log` records, NUL-delimited so paths and subjects survive intact. git
- * terminates each formatted record with a newline of its own, so every record
- * after the first starts with one.
+ * `git log -z` records: four NUL-terminated fields each, so a subject with any
+ * printable character, or none at all, cannot shift the fields after it.
  */
 export function parseGitLog(output: string): BaseCommit[] {
   const parsed: BaseCommit[] = [];
-  for (const rawRecord of output.split("\0\0")) {
-    const record = rawRecord.replace(/^\s+/, "");
-    if (record === "") continue;
-    const [commitId = "", authorName = "", createdAt = "", message = ""] = record.split("\0");
-    if (commitId === "") continue;
-    parsed.push({ commitId, authorName, createdAt, message });
+  const fields = output.split("\0");
+  for (let index = 0; index + 3 < fields.length; index += 4) {
+    const [commitId = "", authorName = "", createdAt = "", message = ""] = fields.slice(
+      index,
+      index + 4,
+    );
+    // `%B` ends the message with a newline the workspace's messages do not have.
+    if (commitId !== "")
+      parsed.push({ commitId, authorName, createdAt, message: message.trimEnd() });
   }
   return parsed;
 }

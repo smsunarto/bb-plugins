@@ -10,7 +10,7 @@ const ready = {
   stacks: [],
   base: null,
   upstream: null,
-  revision: "r1",
+  conflictedFiles: [],
 };
 
 test("forwards the environment path and host to the host entry", async () => {
@@ -33,7 +33,8 @@ test("forwards a chosen repository and omits the key when there is none", async 
 
   const unchosen = harness({ result: ready });
   await workspace.execute(unchosen.ctx, { threadId: "t1" });
-  // The host input is `.strict()`, so an explicit undefined would be rejected.
+  // bb's test host rejects an undefined value and the real one drops it, so
+  // the key is left out rather than sent as undefined.
   expect(Object.keys(unchosen.calls[0]?.input as object)).toEqual(["environmentPath"]);
 });
 

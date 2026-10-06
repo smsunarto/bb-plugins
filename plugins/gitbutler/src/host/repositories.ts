@@ -31,12 +31,12 @@ async function gitTopLevel(candidate: string, signal: AbortSignal): Promise<stri
   }
 }
 
-type Discovery = { root: string; repositories: Array<Repository & { path: string }> };
+type Discovery = Array<Repository & { path: string }>;
 
 async function discover(environmentPath: string, signal: AbortSignal): Promise<Discovery> {
   const root = await realpath(environmentPath);
   if ((await gitTopLevel(root, signal)) === root) {
-    return { root, repositories: [{ key: ".", name: basename(root), path: root }] };
+    return [{ key: ".", name: basename(root), path: root }];
   }
 
   let reposDirectory: string;
@@ -45,30 +45,32 @@ async function discover(environmentPath: string, signal: AbortSignal): Promise<D
     reposDirectory = await realpath(resolve(root, REPOS_DIRECTORY));
     entries = await readdir(reposDirectory);
   } catch {
-    return { root, repositories: [] };
+    return [];
   }
 
-  const found: Array<Repository & { path: string }> = [];
-  for (const entry of entries.sort()) {
-    let candidate: string;
-    try {
-      candidate = await realpath(resolve(reposDirectory, entry));
-    } catch {
-      continue;
-    }
-    if (!isInside(root, candidate)) continue;
-    if (dirname(candidate) !== reposDirectory) continue;
-    if ((await gitTopLevel(candidate, signal)) !== candidate) continue;
-    found.push({ key: `${REPOS_DIRECTORY}/${entry}`, name: entry, path: candidate });
-  }
-  return { root, repositories: found };
+  // Every call rescans, so the entries are checked at once rather than one
+  // git spawn after another. Promise.all keeps the sorted order.
+  const checked = await Promise.all(
+    entries.sort().map(async (entry) => {
+      let candidate: string;
+      try {
+        candidate = await realpath(resolve(reposDirectory, entry));
+      } catch {
+        return undefined;
+      }
+      if (!isInside(root, candidate) || dirname(candidate) !== reposDirectory) return undefined;
+      if ((await gitTopLevel(candidate, signal)) !== candidate) return undefined;
+      return { key: `${REPOS_DIRECTORY}/${entry}`, name: entry, path: candidate };
+    }),
+  );
+  return checked.filter((repository) => repository !== undefined);
 }
 
 export async function listRepositories(
   environmentPath: string,
   signal: AbortSignal,
 ): Promise<Repository[]> {
-  const { repositories } = await discover(environmentPath, signal);
+  const repositories = await discover(environmentPath, signal);
   return repositories.map(({ key, name }) => ({ key, name }));
 }
 
@@ -82,7 +84,7 @@ export async function resolveRepository(
   repositoryKey: string | undefined,
   signal: AbortSignal,
 ): Promise<{ key: string; name: string; path: string }> {
-  const { repositories } = await discover(environmentPath, signal);
+  const repositories = await discover(environmentPath, signal);
   if (repositories.length === 0) {
     throw new NoRepositoryError(
       "No Git repository was found at the environment root or under its repos/ directory.",

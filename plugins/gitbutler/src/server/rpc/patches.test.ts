@@ -10,6 +10,7 @@ test("forwards the patch source to the host entry", async () => {
       {
         path: "README.md",
         kind: "modified" as const,
+        previousPath: null,
         patch:
           "diff --git a/README.md b/README.md\n--- a/README.md\n+++ b/README.md\n@@ -1 +1 @@\n-a\n+b\n",
         truncated: false,

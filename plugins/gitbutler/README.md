@@ -12,12 +12,21 @@ what `but status` shows.
 ## What it shows
 
 - Applied stacks, in workspace order, with each stack's branches
-- Per-branch push status, review id, and CI state
+- Per-branch push status: **Ahead** when local commits wait for a plain
+  push, **Behind** when only the remote has new commits, **Diverged** when
+  both sides moved or a force push is needed. GitButler calls a branch that
+  is only behind "requiring force", so the panel asks git which it is.
+- Each branch's PR, as a chip that opens it on the forge, and a chip for its
+  checks: passed, failed, or running
 - Commits on each branch, with conflicted commits marked
 - Upstream commits a branch has not integrated yet
-- Uncommitted changes, and changes assigned to a specific stack
+- Uncommitted changes, changes assigned to a specific stack, and files left
+  with conflict markers
+- How far the workspace is behind its target branch
 - The common base, and the target-branch history continuing below it
-- Per-file diffs rendered by bb's own diff viewer
+- Per-file diffs rendered by bb's own diff viewer, for any commit, the target
+  history included. The diff screen opens over the workspace, and Back or
+  Escape returns to the same scroll position
 
 ## Thread header and tab
 
@@ -28,16 +37,46 @@ what `but status` shows.
 
 ## Branch actions
 
+The header's **Pull** fetches, then rebases every applied branch onto the
+target branch (`but pull`). It asks first when that would leave conflicted
+commits or write conflict markers into uncommitted files, and says so when
+there was nothing new.
+
 Each branch card can change the repository:
 
 - **Rename:** click the branch name (`but reword <branch> -m <name>`).
-- **Push**, or **Force push** after commits were rewritten (`but push`).
+- **Pull** when the branch's remote has commits it lacks
+  (`but branch update <branch>`). That command does not fetch, so the panel
+  fetches first, then reads the dry run before changing anything. It asks
+  before leaving conflicts or touching files with uncommitted changes, and
+  asks again if a retry finds more. It refuses when GitButler would move
+  another branch's commits into this one, which `but` 0.22.3 does to the
+  lower branch of some stacks.
+- **Push**, or **Force push** after commits were rewritten (`but push`). A
+  push that would delete new upstream commits, on the branch or one below it
+  in its stack, asks first. It fetches before it pushes, and stops if the
+  remote then holds any commit the reader was not asked about. Old copies of
+  commits that were since rebased don't count. A conflicted commit, on the
+  branch or one below it that the push takes along, hides Push, Create PR,
+  and Land: `but push` refuses it.
 - **Create PR** spawns a subthread of the current thread. Its agent reads the
   branch, writes the title and description, and runs `but pr new`. While it
   works, the card links to it instead of offering a second one. It needs a
   forge authenticated with `but config forge auth`.
 - **Land** onto the target without a PR, after a confirmation (`but land`).
-  Only the bottom branch of a stack can land.
+  It pushes the target to the remote and can't easily be undone. Only the
+  bottom branch of a stack can land.
+- **Delete**, after a confirmation that says what is lost
+  (`but branch delete <branch>`). The local branch and its commits leave the
+  workspace. The remote branch and any PR stay. Branches stacked above it
+  move down onto the base. Unpushed commits survive only in GitButler's undo
+  history. It asks once more when uncommitted changes sit in files the branch
+  changed, because deleting it can write conflict markers into them.
+
+`but` also reads a short argument as a CLI id, and `refs/heads/x` as the
+branch `x`. Before each write, the panel checks that the branch is still in
+the workspace and that its name is neither another item's id nor a name that
+starts with `refs/`.
 
 The panel never commits, amends, applies, unapplies, or restores from the
 oplog.
