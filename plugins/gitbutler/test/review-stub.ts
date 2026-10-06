@@ -1,15 +1,21 @@
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 
 /**
- * A parent thread on a ready environment, a host that resolves repositories
+ * Parent threads on a ready environment, a host that resolves repositories
  * like the real one (an omitted key is the first repository), real KV
  * semantics, and children whose status the test sets.
  */
 export function reviewContext(options: { environment?: unknown } = {}) {
   const spawned: Record<string, unknown>[] = [];
+  const sent: Record<string, unknown>[] = [];
   const hostInputs: unknown[] = [];
   const kv = new Map<string, unknown>();
-  const children = new Map<string, { status: string; archivedAt: number | null }>();
+  const children = new Map<
+    string,
+    { status: string; archivedAt: number | null; queuedMessageCount?: number }
+  >();
+  /** Thread lookups that fail with this HTTP status, as a server hiccup would. */
+  const lookupFailures = new Map<string, number>();
   const parent = {
     id: "t1",
     projectId: "p1",
@@ -24,10 +30,19 @@ export function reviewContext(options: { environment?: unknown } = {}) {
     sdk: {
       threads: {
         get: async ({ threadId }: { threadId: string }) => {
-          if (threadId === "t1") return parent;
+          // t2 is another thread on the same environment, as local threads share one.
+          if (threadId === "t1" || threadId === "t2") return { ...parent, id: threadId };
+          const failure = lookupFailures.get(threadId);
+          if (failure) throw Object.assign(new Error(`HTTP ${failure}`), { status: failure });
           const child = children.get(threadId);
-          if (!child) throw new Error("Thread not found");
-          return { id: threadId, deletedAt: null, ...child };
+          // bb answers a deleted thread the way the SDK's BbHttpError reports it.
+          if (!child) throw Object.assign(new Error("HTTP 404: Thread not found"), { status: 404 });
+          return { id: threadId, deletedAt: null, queuedMessageCount: 0, ...child };
+        },
+        send: async (args: { threadId: string } & Record<string, unknown>) => {
+          sent.push(args);
+          children.set(args.threadId, { status: "active", archivedAt: null });
+          return {};
         },
         spawn: async (args: Record<string, unknown>) => {
           spawned.push(args);
@@ -42,7 +57,7 @@ export function reviewContext(options: { environment?: unknown } = {}) {
         call: async (_method: string, input: { repositoryKey?: string }) => {
           hostInputs.push(input);
           const key = input.repositoryKey ?? "repos/api";
-          return { key, path: `/work/${key}` };
+          return { key, path: key === "." ? "/work" : `/work/${key}` };
         },
       }),
     },
@@ -53,5 +68,5 @@ export function reviewContext(options: { environment?: unknown } = {}) {
       },
     },
   } as unknown as BbPluginApi;
-  return { ctx: { bb } as never, spawned, hostInputs, children };
+  return { ctx: { bb } as never, spawned, sent, hostInputs, children, lookupFailures };
 }

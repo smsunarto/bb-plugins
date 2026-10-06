@@ -81,6 +81,26 @@ starts with `refs/`.
 The panel never commits, amends, applies, unapplies, or restores from the
 oplog.
 
+## Conflicts
+
+When a branch holds conflicted commits, or uncommitted files hold conflict
+markers, a **Conflicts to resolve** section at the top of the panel names
+them. Its **Resolve conflicts** button spawns a subthread of the current
+thread, on the same workspace, that resolves every one of them: the files
+first with `but resolve <path>`, then the commits with `but resolve apply`,
+the lowest branch of each stack first. It does not push, land, or commit.
+
+It stays out of resolution mode, which would swap the working tree out from
+under the thread. GitButler resolves some conflicts only in that mode: a
+deletion, a rename, or a binary or oversized file. The subthread lists those
+and asks before it enters the mode.
+
+There is one such subthread per repository, not per branch or per thread:
+resolving a lower commit rebases every commit above it. While it works, the
+section links to it, in every thread on that workspace. Once it stops, which
+may mean it is waiting for an answer, **Continue resolving** sends it the job
+again instead of starting a second one. Archive it to start fresh.
+
 ## Requirements
 
 - The GitButler CLI (`but`) installed on the machine hosting the thread's

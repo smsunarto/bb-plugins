@@ -1,7 +1,8 @@
 import { defineQuery } from "@bb-kit/core/rpc";
 import { z } from "zod";
 import { repositoryKeySchema, reviewRequestsSchema } from "../../shared/schema.ts";
-import { locateRepository, readReviewRequests } from "../lib/review-requests.ts";
+import { readReviewRequests } from "../lib/review-requests.ts";
+import { locateRepository } from "../lib/subthreads.ts";
 
 /** The Create PR subthreads this thread started for the repository on screen. */
 export const reviewRequests = defineQuery({

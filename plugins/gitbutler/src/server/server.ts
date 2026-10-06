@@ -2,9 +2,11 @@ import { definePlugin } from "@bb-kit/core/plugin";
 import { offerPanelTab } from "./lib/panel-tab.ts";
 import { baseHistory } from "./rpc/base-history.ts";
 import { butAction } from "./rpc/but-action.ts";
+import { conflictResolution } from "./rpc/conflict-resolution.ts";
 import { patches } from "./rpc/patches.ts";
 import { repositories } from "./rpc/repositories.ts";
 import { requestReview } from "./rpc/request-review.ts";
+import { resolveConflicts } from "./rpc/resolve-conflicts.ts";
 import { reviewRequests } from "./rpc/review-requests.ts";
 import { reviewUrl } from "./rpc/review-url.ts";
 import { workspace } from "./rpc/workspace.ts";
@@ -20,6 +22,8 @@ export default definePlugin({
     requestReview,
     reviewRequests,
     reviewUrl,
+    resolveConflicts,
+    conflictResolution,
   },
   setup(bb) {
     // `active` rather than `created`: a new thread's environment is still

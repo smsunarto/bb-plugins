@@ -9,7 +9,7 @@ test("lists the children per repository, drops archived ones, and lets a stopped
   await requestReview.execute(ctx, { threadId: "t1", branch: "scott/bottom" });
   await requestReview.execute(ctx, { threadId: "t1", repositoryKey: ".", branch: "elsewhere" });
   children.set("child-1", { status: "idle", archivedAt: null });
-  children.set("child-2", { status: "active", archivedAt: 1 });
+  children.set("child-2", { status: "idle", archivedAt: 1 });
 
   expect(await reviewRequests.execute(ctx, { threadId: "t1" })).toEqual({
     requests: [{ branch: "scott/top", threadId: "child-1", running: false }],

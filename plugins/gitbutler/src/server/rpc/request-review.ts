@@ -1,12 +1,9 @@
 import { defineMutation } from "@bb-kit/core/rpc";
 import { z } from "zod";
 import { branchNameSchema, repositoryKeySchema } from "../../shared/schema.ts";
-import { reviewPrompt } from "../lib/review-prompt.ts";
-import {
-  locateRepository,
-  readReviewRequests,
-  recordReviewRequest,
-} from "../lib/review-requests.ts";
+import { reviewPrompt } from "../lib/prompts.ts";
+import { readReviewRequests, recordReviewRequest } from "../lib/review-requests.ts";
+import { locateRepository, spawnSubthread } from "../lib/subthreads.ts";
 
 /**
  * Create PR hands the branch to a subthread of the reader's thread. It shares
@@ -30,21 +27,15 @@ export const requestReview = defineMutation({
     );
     if (running) return { threadId: running.threadId };
 
-    const thread = await ctx.bb.sdk.threads.get({ threadId });
-    if (!thread.environmentId) throw new Error("This thread has no project environment.");
-    const child = await ctx.bb.sdk.threads.spawn({
-      projectId: thread.projectId,
-      environment: { type: "reuse", environmentId: thread.environmentId },
-      providerId: thread.providerId,
-      parentThreadId: threadId,
+    const childId = await spawnSubthread(ctx.bb, threadId, {
       title: `Create PR for ${branch}`,
       prompt: reviewPrompt(branch, repository.path),
     });
     await recordReviewRequest(ctx.bb, threadId, {
       repositoryKey: repository.key,
       branch,
-      threadId: child.id,
+      threadId: childId,
     });
-    return { threadId: child.id };
+    return { threadId: childId };
   },
 });

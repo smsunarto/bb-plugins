@@ -1,4 +1,5 @@
-import { beforeEach, expect, test } from "bun:test";
+import { beforeEach, expect, onTestFinished, test } from "bun:test";
+import { environmentManager } from "@tanstack/react-query";
 import { pluginQueryClient } from "@bb-kit/core/rpc/query";
 import { installDom } from "@bb-kit/core/testing";
 import { parseWorkspace } from "../src/host/parse.ts";
@@ -51,6 +52,7 @@ async function panel(rpc: Record<string, (input: never) => unknown>) {
 
 const baseRpc = {
   reviewRequests: () => ({ requests: [] }),
+  conflictResolution: () => ({ subthread: null }),
   repositories: () => ({ repositories: [{ key: ".", name: "bb-plugins" }], reason: null }),
   workspace: () => workspace,
   baseHistory: () => ({
@@ -1306,8 +1308,7 @@ test("a conflicted commit takes away every button that pushes it, from the branc
   // scott/top has a commit of its own to push.
   Object.assign(top!, { status: "ahead", push: "push" });
   const slot = await panel({ ...baseRpc, workspace: () => conflicted });
-  await waitFor(() => expect(slot.getByText("scott/bottom")).toBeTruthy());
-  const card = within(slot.getByRole("article", { name: "Branch scott/bottom" }));
+  const card = within(await slot.findByRole("article", { name: "Branch scott/bottom" }));
   for (const name of ["Push", "Create PR", "Land"]) {
     expect(card.queryByRole("button", { name })).toBeNull();
   }
@@ -1424,12 +1425,194 @@ test("the header's Pull failure stays with its repository", async () => {
 test("lists files left with conflict markers, which status keeps out of the changes", async () => {
   const conflicted = { ...workspace, conflictedFiles: ["README.md", "src/app.ts"] };
   const slot = await panel({ ...baseRpc, workspace: () => conflicted });
-  const section = within(await slot.findByRole("region", { name: "Conflicted files" }));
-  expect(section.getByText("2 files hold conflict markers")).toBeTruthy();
+  const section = within(await slot.findByRole("region", { name: "Conflicts" }));
+  expect(section.getByText("2 files hold conflict markers:")).toBeTruthy();
   expect(section.getAllByRole("listitem").map((item) => item.textContent)).toEqual([
     "README.md",
     "src/app.ts",
   ]);
+  expect(section.getByRole("button", { name: "Resolve conflicts" })).toBeTruthy();
+  slot.lifecycle.unmount();
+});
+
+test("a clean workspace has no conflicts section", async () => {
+  const slot = await panel(baseRpc);
+  await waitFor(() => expect(slot.getByText("scott/bottom")).toBeTruthy());
+  expect(slot.queryByRole("region", { name: "Conflicts" })).toBeNull();
+  slot.lifecycle.unmount();
+});
+
+/** The fixture with scott/bottom's commit conflicted again. */
+function withConflictedBottom() {
+  const conflicted = structuredClone(workspace);
+  conflicted.stacks[0]!.branches[1]!.commits[0]!.conflicted = true;
+  return conflicted;
+}
+
+test("Resolve conflicts hands every conflict to one subthread and links to it", async () => {
+  const requests: unknown[] = [];
+  let subthread: { threadId: string; running: boolean } | null = null;
+  const slot = await panel({
+    ...baseRpc,
+    workspace: () => ({ ...withConflictedBottom(), conflictedFiles: ["README.md"] }),
+    // Slow, as over a network: the link must not wait for a refetch.
+    conflictResolution: async () => {
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      return { subthread };
+    },
+    resolveConflicts: async (input: unknown) => {
+      requests.push(input);
+      const started = await droppingFocus({ threadId: "child-1" })();
+      subthread = { threadId: "child-1", running: true };
+      return started;
+    },
+  });
+  const section = within(await slot.findByRole("region", { name: "Conflicts" }));
+  expect(section.getByText(/conflicted commit/).textContent).toBe(
+    "scott/bottom has a conflicted commit, which can't be pushed.",
+  );
+  expect(section.getByText("One file holds conflict markers:")).toBeTruthy();
+  expect(section.getByRole("status").textContent).toBe("A subthread can resolve them for you.");
+
+  section.getByRole("button", { name: "Resolve conflicts" }).focus();
+  fireEvent.click(section.getByRole("button", { name: "Resolve conflicts" }));
+  await waitFor(() => expect(section.getByRole("button", { name: "Open subthread" })).toBeTruthy());
+  expect(requests).toEqual([{ threadId: "thread-1" }]);
+  expect(section.getByRole("status").textContent).toBe("A subthread is resolving the conflicts.");
+  // A second subthread would rewrite the same commits.
+  expect(section.queryByRole("button", { name: "Resolve conflicts" })).toBeNull();
+  // The button that started it is gone, so the focus moves to the link.
+  await waitFor(() =>
+    expect(document.activeElement).toBe(section.getByRole("button", { name: "Open subthread" })),
+  );
+
+  fireEvent.click(section.getByRole("button", { name: "Open subthread" }));
+  expect(slot.inspection.navigateCalls).toEqual([{ method: "toThread", threadId: "child-1" }]);
+  slot.lifecycle.unmount();
+});
+
+test("a click before the first read lands still shows the subthread it started", async () => {
+  let subthread: { threadId: string; running: boolean } | null = null;
+  const slot = await panel({
+    ...baseRpc,
+    workspace: withConflictedBottom,
+    // Reads what is there when asked, and answers late.
+    conflictResolution: async () => {
+      const seen = subthread;
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      return { subthread: seen };
+    },
+    resolveConflicts: () => {
+      subthread = { threadId: "child-1", running: true };
+      return { threadId: "child-1" };
+    },
+  });
+  const section = within(await slot.findByRole("region", { name: "Conflicts" }));
+  fireEvent.click(section.getByRole("button", { name: "Resolve conflicts" }));
+  await waitFor(() => expect(section.getByRole("button", { name: "Open subthread" })).toBeTruthy());
+  // Past the moment the stale first read would have answered.
+  await new Promise((resolve) => setTimeout(resolve, 200));
+  expect(section.getByRole("status").textContent).toBe("A subthread is resolving the conflicts.");
+  expect(section.queryByRole("button", { name: "Resolve conflicts" })).toBeNull();
+  slot.lifecycle.unmount();
+});
+
+test("a stopped conflict subthread is resumed, not replaced", async () => {
+  const requests: unknown[] = [];
+  const slot = await panel({
+    ...baseRpc,
+    workspace: withConflictedBottom,
+    conflictResolution: () => ({ subthread: { threadId: "child-1", running: false } }),
+    resolveConflicts: (input: unknown) => {
+      requests.push(input);
+      return { threadId: "child-1" };
+    },
+  });
+  const section = within(await slot.findByRole("region", { name: "Conflicts" }));
+  await waitFor(() =>
+    expect(section.getByRole("status").textContent).toBe(
+      "The conflict subthread has stopped. It may be waiting on you.",
+    ),
+  );
+  expect(section.getByRole("button", { name: "Open subthread" })).toBeTruthy();
+  // It may be waiting on an answer, so there is no button that starts a second one.
+  expect(section.queryByRole("button", { name: "Resolve conflicts" })).toBeNull();
+
+  fireEvent.click(section.getByRole("button", { name: "Continue resolving" }));
+  await waitFor(() =>
+    expect(section.getByRole("status").textContent).toBe("A subthread is resolving the conflicts."),
+  );
+  expect(requests).toEqual([{ threadId: "thread-1" }]);
+  expect(section.queryByRole("button", { name: "Continue resolving" })).toBeNull();
+  slot.lifecycle.unmount();
+});
+
+test("an open panel finds a subthread another thread started on the same workspace", async () => {
+  // TanStack decided it runs on a server when it loaded, before the DOM was
+  // installed, and a server never polls. This test is about the poll.
+  environmentManager.setIsServer(() => false);
+  onTestFinished(() => environmentManager.setIsServer(() => true));
+  let subthread: { threadId: string; running: boolean } | null = null;
+  const slot = await panel({
+    ...baseRpc,
+    workspace: withConflictedBottom,
+    conflictResolution: () => {
+      const seen = subthread;
+      // Another thread's click lands after this panel's first read.
+      subthread = { threadId: "child-9", running: true };
+      return { subthread: seen };
+    },
+  });
+  const section = within(await slot.findByRole("region", { name: "Conflicts" }));
+  await waitFor(() =>
+    expect(section.getByRole("status").textContent).toBe("A subthread can resolve them for you."),
+  );
+  await waitFor(
+    () =>
+      expect(section.getByRole("status").textContent).toBe(
+        "A subthread is resolving the conflicts.",
+      ),
+    { timeout: 7_000 },
+  );
+  expect(section.queryByRole("button", { name: "Resolve conflicts" })).toBeNull();
+  slot.lifecycle.unmount();
+});
+
+test("the resolver's own panel says it is the one resolving, with nothing to click", async () => {
+  const slot = await panel({
+    ...baseRpc,
+    workspace: withConflictedBottom,
+    conflictResolution: () => ({ subthread: { threadId: "thread-1", running: true } }),
+  });
+  const section = within(await slot.findByRole("region", { name: "Conflicts" }));
+  await waitFor(() =>
+    expect(section.getByRole("status").textContent).toBe("This thread is resolving the conflicts."),
+  );
+  expect(section.queryAllByRole("button")).toEqual([]);
+  slot.lifecycle.unmount();
+});
+
+test("says why the subthread could not be resumed, and gives the focus back to the button", async () => {
+  const slot = await panel({
+    ...baseRpc,
+    workspace: withConflictedBottom,
+    conflictResolution: () => ({ subthread: { threadId: "child-1", running: false } }),
+    resolveConflicts: async () => {
+      await droppingFocus(null)();
+      throw new Error("Thread not found");
+    },
+  });
+  const section = within(await slot.findByRole("region", { name: "Conflicts" }));
+  const resume = await waitFor(() => section.getByRole("button", { name: "Continue resolving" }));
+  resume.focus();
+  fireEvent.click(resume);
+  await waitFor(() => expect(section.getByRole("alert").textContent).toBe("Thread not found"));
+  // Not to Open subthread, which comes first in the row.
+  await waitFor(() =>
+    expect(document.activeElement).toBe(
+      section.getByRole("button", { name: "Continue resolving" }),
+    ),
+  );
   slot.lifecycle.unmount();
 });
 

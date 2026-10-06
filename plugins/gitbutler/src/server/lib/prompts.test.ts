@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { reviewPrompt } from "./review-prompt.ts";
+import { conflictPrompt, reviewPrompt } from "./prompts.ts";
 
 test("quotes the branch and path so the shell runs them as data", () => {
   // Git accepts every one of these characters in a branch name.
@@ -14,4 +14,9 @@ test("quotes the branch and path so the shell runs them as data", () => {
 test("a backtick run in the branch cannot close the fence around it", () => {
   const prompt = reviewPrompt("a```b", "/work");
   expect(prompt).toContain("````sh\ncd '/work'\nbut show 'a```b'\n````");
+});
+
+test("the conflict prompt quotes the path so the shell runs it as data", () => {
+  const prompt = conflictPrompt("/work/repos/it's here");
+  expect(prompt).toContain("```sh\ncd '/work/repos/it'\\''s here'\nbut status\n```");
 });

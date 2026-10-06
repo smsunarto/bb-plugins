@@ -25,6 +25,7 @@ import { cn } from "./lib/utils.ts";
 import { Loading, Notice, errorText } from "./notice.tsx";
 import { Confirm, pullRiskPrompt, useButAction, useFocusAfter } from "./branch-actions.tsx";
 import type { WorkspaceTarget } from "./branch-actions.tsx";
+import { Conflicts } from "./conflicts.tsx";
 import { FileCards } from "./file-cards.tsx";
 import { GitButlerMark } from "./gitbutler-mark.tsx";
 import { REFRESH_INTERVAL_MS } from "./query-client.ts";
@@ -337,7 +338,7 @@ function WorkspaceBody({
   return (
     <>
       <div className="flex flex-col gap-4">
-        <ConflictedFiles paths={data.conflictedFiles} />
+        <Conflicts target={{ threadId, repositoryKey }} workspace={data} />
         <UncommittedCard changes={data.unassignedChanges} onOpenFile={onOpenFile} />
         {data.stacks.map((stack) => (
           <StackLane
@@ -360,36 +361,6 @@ function WorkspaceBody({
         ) : null}
       </div>
     </>
-  );
-}
-
-/**
- * Files a pull or a delete left with conflict markers. `but status` lists them
- * apart from the other uncommitted changes, so without this they would drop
- * out of the panel at the moment they need attention.
- */
-function ConflictedFiles({ paths }: { paths: readonly string[] }) {
-  if (paths.length === 0) return null;
-  return (
-    <section
-      aria-label="Conflicted files"
-      className="rounded-md border border-destructive-text/40 bg-card px-2.5 py-2 leading-normal"
-    >
-      <p className="flex items-center gap-1.5 font-semibold text-destructive-text">
-        <Icon name="AlertTriangle" className="size-3 shrink-0" aria-hidden />
-        {paths.length === 1
-          ? "One file holds conflict markers"
-          : `${paths.length} files hold conflict markers`}
-      </p>
-      <ul className="mt-1 list-none font-mono text-[11px] [overflow-wrap:anywhere]">
-        {paths.map((path) => (
-          <li key={path}>{path}</li>
-        ))}
-      </ul>
-      <p className="mt-1 text-muted-foreground">
-        Resolve them in your editor or GitButler, then commit.
-      </p>
-    </section>
   );
 }
 

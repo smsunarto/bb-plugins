@@ -230,6 +230,14 @@ export const reviewRequestSchema = z
 
 export const reviewRequestsSchema = z.object({ requests: z.array(reviewRequestSchema) }).strict();
 
+/** A subthread the panel started, and whether its agent is still at work. */
+export const subthreadSchema = z.object({ threadId: z.string(), running: z.boolean() }).strict();
+
+/** The repository's Resolve conflicts subthread, or null when it has none still around. */
+export const conflictResolutionSchema = z
+  .object({ subthread: subthreadSchema.nullable() })
+  .strict();
+
 export type ChangeKind = z.infer<typeof changeKindSchema>;
 export type FileChange = z.infer<typeof fileChangeSchema>;
 export type Commit = z.infer<typeof commitSchema>;
@@ -248,3 +256,4 @@ export type ButAction = z.infer<typeof butActionSchema>;
 export type ButActionResult = z.infer<typeof butActionResultSchema>;
 export type ActionRisk = z.infer<typeof actionRiskSchema>;
 export type ReviewRequest = z.infer<typeof reviewRequestSchema>;
+export type Subthread = z.infer<typeof subthreadSchema>;

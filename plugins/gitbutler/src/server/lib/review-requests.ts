@@ -1,7 +1,6 @@
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
-import { gitbutlerHostContract } from "../../shared/host-contract.ts";
 import type { ReviewRequest } from "../../shared/schema.ts";
-import { resolveTarget } from "./target.ts";
+import { liveSubthread } from "./subthreads.ts";
 
 /**
  * Which branch each Create PR subthread is for. bb threads carry no metadata,
@@ -12,30 +11,7 @@ import { resolveTarget } from "./target.ts";
 
 type Entry = { repositoryKey: string; branch: string; threadId: string };
 
-const RUNNING = new Set(["pending", "starting", "active", "stopping"]);
-
 const kvKey = (threadId: string) => `review-requests:${threadId}`;
-
-/**
- * The repository the panel means, resolved by the host the same way every
- * other call is. An omitted key is the panel's default repository, so the
- * subthread gets that repository's path rather than no path at all.
- */
-export async function locateRepository(
-  bb: BbPluginApi,
-  threadId: string,
-  repositoryKey: string | undefined,
-) {
-  const { target, reason } = await resolveTarget(bb, threadId);
-  if (!target) throw new Error(reason);
-  return bb.hosts
-    .experimental_client({ contract: gitbutlerHostContract })
-    .call(
-      "repository",
-      { environmentPath: target.environmentPath, ...(repositoryKey ? { repositoryKey } : {}) },
-      { hostId: target.hostId },
-    );
-}
 
 /** The subthreads still around for one repository. Archived or deleted ones drop out. */
 export async function readReviewRequests(
@@ -48,9 +24,8 @@ export async function readReviewRequests(
     entries
       .filter((entry) => entry.repositoryKey === repositoryKey)
       .map(async ({ branch, threadId: childId }) => {
-        const child = await bb.sdk.threads.get({ threadId: childId }).catch(() => null);
-        if (!child || child.archivedAt !== null || child.deletedAt !== null) return null;
-        return { branch, threadId: childId, running: RUNNING.has(child.status) };
+        const child = await liveSubthread(bb, childId);
+        return child ? { branch, threadId: childId, running: child.running } : null;
       }),
   );
   return requests.filter((request) => request !== null);
