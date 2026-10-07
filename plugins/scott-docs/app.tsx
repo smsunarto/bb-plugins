@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import "@bb-plugins/markdown-prose/prose.css";
 import {
   definePluginApp,
   experimental_FileLink as FileLink,
@@ -265,148 +266,29 @@ const MarkdownTaskInput = Extension.create({
 
 const STYLE_MARKER = "data-bb-simple-notes-styles";
 const EDITOR_CSS = `
-/* Rendered Markdown reading theme from the smsunarto-theme contract. Colors
-   stay on host tokens so Docs reads on any bb theme. A theme recolors the
-   prose through the --docs-prose-* hooks; bb Monokai supplies its palette. */
-.bb-simple-notes-editor {
-  --docs-prose-heading: var(--foreground);
-  --docs-prose-strong: var(--foreground);
-  --docs-prose-link: var(--primary);
-  --docs-prose-link-hover: var(--primary);
-  --docs-prose-marker: var(--muted-foreground);
-  --docs-prose-quote-rule: var(--border);
-  --docs-prose-rule: var(--border-seam, var(--border));
-  --docs-prose-code-well: var(--secondary);
-  --docs-prose-code-block: var(--secondary);
-  container-type: inline-size;
-}
-.bb-simple-notes-editor .tiptap {
-  outline: none;
-  width: 100%;
-  max-width: 700px;
-  box-sizing: border-box;
-  margin: 0 auto;
-  padding: 48px clamp(24px, 4vw, 56px) 40vh;
-  color: var(--foreground);
-  caret-color: var(--foreground);
-  font-family: var(--font-sans, sans-serif);
-  font-size: 17px;
-  font-kerning: normal;
-  font-weight: 400;
-  letter-spacing: normal;
-  line-height: 1.5;
-  overflow-wrap: break-word;
-  text-rendering: optimizeLegibility;
-  -webkit-font-smoothing: antialiased;
-}
-.bb-simple-notes-editor[data-inline="true"] .tiptap { padding: 1.25rem 1.5rem; max-width: none; min-height: 8rem; font-size: 14px; }
-.bb-simple-notes-editor .tiptap > :first-child,
-.bb-simple-notes-editor .tiptap li > :first-child,
-.bb-simple-notes-editor .tiptap blockquote > :first-child { margin-top: 0; }
-.bb-simple-notes-editor .tiptap p { margin: 1.75rem 0; }
-.bb-simple-notes-editor .tiptap h1,
-.bb-simple-notes-editor .tiptap h2,
-.bb-simple-notes-editor .tiptap h3,
-.bb-simple-notes-editor .tiptap h4,
-.bb-simple-notes-editor .tiptap h5,
-.bb-simple-notes-editor .tiptap h6 {
-  border-bottom: 0;
-  color: var(--docs-prose-heading);
-  font-family: inherit;
-  font-weight: 600;
-  padding-bottom: 0;
-}
-/* Heading scale: 1.5 / 1.25 / 1.1 / 1 em at weight 600, more room above than below. */
-.bb-simple-notes-editor .tiptap h1 { font-size: 1.5em; line-height: 1.2; letter-spacing: -0.02em; margin: 2.5rem 0 1rem; }
-.bb-simple-notes-editor .tiptap h2 { font-size: 1.25em; line-height: 1.25; letter-spacing: -0.015em; margin: 2.25rem 0 0.875rem; }
-.bb-simple-notes-editor .tiptap h3 { font-size: 1.1em; line-height: 1.3; letter-spacing: -0.01em; margin: 1.75rem 0 0.75rem; }
-.bb-simple-notes-editor .tiptap h4 { font-size: 1em; line-height: 1.3; letter-spacing: 0; margin: 1.75rem 0 0.5rem; }
-.bb-simple-notes-editor .tiptap h5 { font-size: 0.85em; line-height: 1.3; margin: 1.75rem 0; font-weight: 500; }
-.bb-simple-notes-editor .tiptap h6 { font-size: 0.8em; line-height: 1.3; margin: 1.75rem 0; font-weight: 500; }
-.bb-simple-notes-editor .tiptap ul,
-.bb-simple-notes-editor .tiptap ol { margin: 1.75rem 0; padding-inline-start: 0; }
-.bb-simple-notes-editor .tiptap ul { list-style: disc; }
-.bb-simple-notes-editor .tiptap ol { list-style: decimal; }
-.bb-simple-notes-editor .tiptap :is(ul, ol) > li { margin-inline-start: 30px; }
-.bb-simple-notes-editor .tiptap ol ol > li,
-.bb-simple-notes-editor .tiptap ul ul > li { margin-inline-start: 32px; }
-/* List spacing steps by depth: 0.5em between top-level items, 0.25em between
-   nested siblings, 0.25em from a parent item's text to its child list. */
-.bb-simple-notes-editor .tiptap li + li { margin-top: 0.5em; }
-.bb-simple-notes-editor .tiptap li li + li { margin-top: 0.25em; }
-.bb-simple-notes-editor .tiptap li > p { margin: 0; }
-.bb-simple-notes-editor .tiptap li > :is(ul, ol) { margin: 0.25em 0 0; }
-.bb-simple-notes-editor .tiptap li::marker { color: var(--docs-prose-marker); }
-.bb-simple-notes-editor .tiptap strong { color: var(--docs-prose-strong); font-weight: 600; }
-.bb-simple-notes-editor .tiptap em { color: color-mix(in srgb, currentColor 84%, transparent); }
-.bb-simple-notes-editor .tiptap a {
-  color: var(--docs-prose-link);
-  cursor: pointer;
-  text-decoration: underline;
-  text-decoration-color: currentColor;
-  text-decoration-thickness: from-font;
-  text-underline-offset: 0.12em;
-}
-.bb-simple-notes-editor .tiptap a:hover { color: var(--docs-prose-link-hover); }
+/* Editing mechanics stay here. Markdown presentation follows BB's agent stream. */
+.bb-simple-notes-editor { container-type: inline-size; }
+.bb-simple-notes-editor .tiptap { outline: none; width: 100%; max-width: 700px; box-sizing: border-box; margin: 0 auto; padding: 48px clamp(24px, 4vw, 56px) 40vh; caret-color: var(--foreground); }
+.bb-simple-notes-editor[data-inline="true"] .tiptap { padding: 1.25rem 1.5rem; max-width: none; min-height: 8rem; }
 .bb-simple-notes-editor .tiptap a:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; border-radius: 0.125em; }
-.bb-simple-notes-editor .tiptap code:has(> a) { background: transparent; border: 0; border-radius: 0; font-family: inherit; font-size: inherit; padding: 0; }
-.bb-simple-notes-editor .tiptap blockquote { border-left: 1px solid var(--docs-prose-quote-rule); border-radius: 0; color: var(--muted-foreground); margin: 1rem 0; padding: 0 0 0 1.1em; }
-/* A quote reads as one unit: its blocks step by 0.75em instead of the prose gap. */
-.bb-simple-notes-editor .tiptap blockquote > * { margin-bottom: 0; }
-.bb-simple-notes-editor .tiptap blockquote > * + * { margin-top: 0.75em; }
-.bb-simple-notes-editor .tiptap :is(code, pre) { font-family: var(--font-mono, monospace); }
-.bb-simple-notes-editor .tiptap code { color: var(--foreground); font-size: 0.875em; line-height: 1.5; }
-.bb-simple-notes-editor .tiptap :not(pre) > code { background: var(--docs-prose-code-well); border: 1px solid var(--border); border-radius: 4px; box-decoration-break: clone; padding: 0.1em 0.3em; -webkit-box-decoration-break: clone; }
-.bb-simple-notes-editor .tiptap pre {
-  background: var(--docs-prose-code-block);
-  border: 0;
-  border-radius: 4px;
-  box-sizing: border-box;
-  font-size: 13px;
-  left: 50%;
-  line-height: 19.5px;
-  margin: 1rem 0;
-  max-width: none;
-  overflow-x: auto;
-  padding: 12.75px 17px;
-  position: relative;
-  transform: translateX(-50%);
-  white-space: pre;
-  width: min(calc(100ch + 34px), calc(100cqw - 64px));
-  word-break: normal;
-}
-/* Box-drawing glyphs are 1.2em tall, so tree and patch fences tighten to 1.3
-   leading to keep vertical connectors joined. */
 .bb-simple-notes-editor .tiptap pre:has(> code:is(.language-diagram, .language-patch)) { line-height: 1.3; }
-.bb-simple-notes-editor .tiptap pre code { background: transparent; border: 0; display: inline-block; font-size: inherit; line-height: inherit; overflow-wrap: normal; padding: 0; white-space: pre; word-break: normal; }
-.bb-simple-notes-editor .tiptap img { display: block; max-width: 100%; max-height: 38rem; margin: 1.75rem auto; border-radius: 4px; border: 1px solid var(--border); }
-.bb-simple-notes-editor .tiptap .tableWrapper { margin: 1.75rem 0; overflow-x: auto; }
-.bb-simple-notes-editor .tiptap table { width: 100%; border: 0; border-collapse: collapse; border-radius: 0; table-layout: fixed; font-size: 0.875em; line-height: 1.3; }
-.bb-simple-notes-editor .tiptap th,
-.bb-simple-notes-editor .tiptap td { position: relative; min-width: 6rem; border: 0; border-bottom: 1px solid var(--docs-prose-rule); padding: 0.25em 0.625em 0.25em 0; text-align: left; vertical-align: top; }
-.bb-simple-notes-editor .tiptap th { font-weight: 600; }
-.bb-simple-notes-editor .tiptap :is(th, td) > p { margin: 0; }
-.bb-simple-notes-editor .tiptap :is(th, td) > p + p { margin-top: 0.65em; }
+.bb-simple-notes-editor .tiptap .tableWrapper { overflow-x: auto; }
+.bb-simple-notes-editor .tiptap :is(th, td) { position: relative; min-width: 6rem; }
 .bb-simple-notes-editor .tiptap .selectedCell::after { position: absolute; inset: 0; z-index: 2; pointer-events: none; content: ""; background: color-mix(in oklab, var(--primary) 14%, transparent); }
 .bb-simple-notes-editor .tiptap .column-resize-handle { position: absolute; top: 0; right: -2px; bottom: -1px; width: 4px; z-index: 3; pointer-events: none; background: var(--primary); }
 .bb-simple-notes-editor .tiptap.resize-cursor { cursor: col-resize; }
-.bb-simple-notes-editor .tiptap hr { border: 0; border-top: 1px solid var(--docs-prose-rule); margin: 1.75rem 0; }
-.bb-simple-notes-editor .tiptap ul[data-type="taskList"] { list-style: none; padding-inline-start: 0; }
-.bb-simple-notes-editor .tiptap ul[data-type="taskList"] li { display: flex; align-items: flex-start; gap: 0.5em; margin-inline-start: 0; padding-left: 0; }
-.bb-simple-notes-editor .tiptap ul[data-type="taskList"] li > label { flex: 0 0 auto; display: inline-flex; align-items: center; height: 1.5em; user-select: none; }
+.bb-simple-notes-editor .tiptap ul[data-type="taskList"] { list-style: none; }
+.bb-simple-notes-editor .tiptap ul[data-type="taskList"] li { display: flex; align-items: flex-start; gap: 0.5em; }
+.bb-simple-notes-editor .tiptap ul[data-type="taskList"] li > label { flex: 0 0 auto; display: inline-flex; align-items: center; height: 1.625em; user-select: none; }
 .bb-simple-notes-editor .tiptap ul[data-type="taskList"] li > div { flex: 1 1 auto; min-width: 0; }
-/* Task text sits in a div beside the checkbox, so the li > p and li > ul
-   list rules do not reach it. */
-.bb-simple-notes-editor .tiptap ul[data-type="taskList"] li > div > p { margin: 0; line-height: 1.5; }
-.bb-simple-notes-editor .tiptap ul[data-type="taskList"] li > div > :is(ul, ol) { margin: 0.25em 0 0; }
-.bb-simple-notes-editor .tiptap ul[data-type="taskList"] input[type="checkbox"] { display: block; width: 15px; height: 15px; accent-color: var(--primary); cursor: pointer; margin: 0; }
-.bb-simple-notes-editor .tiptap ul[data-type="taskList"] li[data-checked="true"] > div { color: var(--muted-foreground); text-decoration: line-through; }
+.bb-simple-notes-editor .tiptap ul[data-type="taskList"] li > div > p { margin: 0; }
+.bb-simple-notes-editor .tiptap ul[data-type="taskList"] input[type="checkbox"] { display: block; width: 14px; height: 14px; accent-color: var(--primary); cursor: pointer; margin: 0; }
 .bb-simple-notes-editor .tiptap p.is-editor-empty:first-child::before { content: attr(data-placeholder); float: left; height: 0; pointer-events: none; color: var(--muted-foreground); }
 .bb-simple-notes-editor .tiptap ::selection { background: var(--muted); }
-.simple-html-embed { margin:1.75rem 0; overflow:hidden; border:1px solid var(--border); border-radius:4px; background:var(--docs-prose-code-block); }
-.simple-html-embed-header { border-bottom:1px solid var(--docs-prose-rule); background:var(--secondary); padding:.45rem .7rem; color:var(--muted-foreground); font:11px var(--font-mono,monospace); }
+.simple-html-embed { margin:1.75rem 0; overflow:hidden; border:1px solid var(--border); border-radius:4px; background:var(--surface-recessed, var(--secondary)); }
+.simple-html-embed-header { border-bottom:1px solid var(--border); background:var(--secondary); padding:.45rem .7rem; color:var(--muted-foreground); font:11px var(--font-mono,monospace); }
 .simple-html-embed iframe { display:block; width:100%; border:0; background:white; }
-.bb-docs-panel .tiptap { max-width: none; padding: 1rem 0 3rem; font-size: 14px; }
+.bb-docs-panel .tiptap { max-width: none; padding: 1rem 0 3rem; }
 @media (max-width: 47.999rem) { .bb-simple-notes-editor .tiptap { padding-inline: 1.25rem; } }
 `;
 
@@ -525,6 +407,7 @@ function TiptapEditor(props: {
       onBlur: () => latest.current.onFocusChange?.(false),
       editorProps: {
         attributes: {
+          class: "bb-markdown-prose",
           role: "textbox",
           "aria-label": "Document content",
           "aria-multiline": "true",

@@ -42,10 +42,10 @@ describe("bb Monokai surface palette", () => {
       ".dark [data-promptbox] {\n  background-color: var(--agent-surface-background)",
     );
     expect(theme).toContain(
-      ".dark code.bg-muted\\/70 {\n  background-color: var(--accent);\n  color: #eed996;",
+      ".dark code.bg-muted\\/70,\n.dark .bb-markdown-prose :not(pre) > code {\n  background-color: var(--accent);\n  color: #eed996;",
     );
     expect(theme).toContain(
-      ".dark [data-message-column].group\\/message [data-markdown-preview] {\n  font-size: max(14px, var(--text-sm))",
+      ".dark [data-message-column].group\\/message [data-markdown-preview],\n.dark .bb-markdown-prose,\n.dark .canvas-prose [data-markdown-preview] {\n  font-size: max(14px, var(--text-sm))",
     );
     expect(theme).toContain("--terminal-background: #181818");
   });
@@ -70,10 +70,10 @@ describe("bb Monokai surface palette", () => {
 
   test("styles conversation links with an alpha-derived accent hover surface", () => {
     expect(theme).toContain(
-      ".dark [data-message-column] [data-markdown-preview] a.underline {\n  color: var(--primary);\n  text-decoration-line: none;",
+      ".dark [data-message-column] [data-markdown-preview] a.underline,\n.dark .bb-markdown-prose a {\n  color: var(--primary);\n  text-decoration-line: none;",
     );
     expect(theme).toContain(
-      "@media (hover: hover) {\n  .dark [data-message-column] [data-markdown-preview] a.underline:hover {\n    background-color: #88c0d026;",
+      "@media (hover: hover) {\n  .dark [data-message-column] [data-markdown-preview] a.underline:hover,\n  .dark .bb-markdown-prose a:hover {\n    background-color: #88c0d026;",
     );
   });
 });
@@ -115,7 +115,9 @@ describe("bb Monokai contract audit", () => {
       ".dark body {\n  -webkit-font-smoothing: antialiased;\n  -moz-osx-font-smoothing: grayscale;\n}",
     );
     expect(theme).not.toContain("font-synthesis:");
-    expect(theme).toContain(".dark [data-markdown-preview] :is(p, li) {\n  text-wrap: pretty;");
+    expect(theme).toContain(
+      ".dark [data-markdown-preview] :is(p, li),\n.dark .bb-markdown-prose :is(p, li) {\n  text-wrap: pretty;",
+    );
   });
 
   test("keeps mobile composer placeholders at a readable regular weight", () => {
@@ -208,6 +210,15 @@ describe("bb Monokai contract audit", () => {
     );
   });
 
+  test("neutralizes diff fence tokens and highlights CSS fence properties", () => {
+    expect(theme).toContain(
+      "> :is(.language-diagram, .language-patch, .language-diff) {\n  --sh-identifier: var(--foreground)",
+    );
+    expect(theme).toContain(
+      "> :is(.language-css, .language-scss, .language-less) {\n  --sh-property: #51dae9;\n  --sh-class: #a895fe;",
+    );
+  });
+
   test("joins diagram connectors at the phone code size", () => {
     expect(theme).toContain(
       "@media (max-width: 767px) and (pointer: coarse) {\n  .dark .bb-code-highlight.bb-code-highlight > :is(.language-diagram, .language-patch) {\n    line-height: 1.2;",
@@ -217,29 +228,39 @@ describe("bb Monokai contract audit", () => {
   test("sets agent replies and trace rows on the Codex rhythm", () => {
     const agent = ".dark [data-message-column].group\\/message [data-markdown-preview]";
     expect(theme).toContain(
-      `${agent} {\n  --agent-md-space: calc(max(14px, var(--text-sm)) / 4);\n  font-weight: 430;`,
+      `${agent},\n.dark .bb-markdown-prose,\n.dark .canvas-prose [data-markdown-preview] {\n  --agent-md-space: calc(max(14px, var(--text-sm)) / 4);\n  font-weight: 430;`,
     );
     expect(theme).toContain(
-      `${agent} h1 {\n  margin: calc(var(--agent-md-space) * 4) 0 8px;\n  font-size: calc(var(--agent-md-space) * 6);`,
+      `${agent} h1,\n.dark .bb-markdown-prose h1 {\n  margin: calc(var(--agent-md-space) * 4) 0 8px;\n  font-size: calc(var(--agent-md-space) * 6);`,
     );
-    expect(theme).toContain(`${agent} > p + p {\n  margin-top: calc(var(--agent-md-space) * 4);`);
-    expect(theme).toContain(`${agent} li {\n  margin: 0 0 4px;`);
-    expect(theme).toContain(`${agent} :is(strong, b) {\n  font-weight: 700;`);
-    expect(theme).toContain('.dark [data-timeline-row-list="top-level"] {\n  gap: 28px;\n  padding-bottom: 20px;');
+    expect(theme).toContain(
+      `${agent} > p + p,\n.dark .bb-markdown-prose > p + p {\n  margin-top: calc(var(--agent-md-space) * 4);`,
+    );
+    expect(theme).toContain(`${agent} li,\n.dark .bb-markdown-prose li {\n  margin: 0 0 4px;`);
+    expect(theme).toContain(
+      `${agent} :is(strong, b),\n.dark .bb-markdown-prose :is(strong, b) {\n  font-weight: 700;`,
+    );
+    expect(theme).toContain('.dark [data-timeline-row-list="top-level"] {\n  gap: 28px;\n}');
     expect(theme).toContain('.dark [data-timeline-row-list="bundle"] {\n  gap: 8px;');
     expect(theme).toContain(
       ".dark [data-timeline-row-list] .rounded-md.text-muted-foreground.opacity-40 {\n  opacity: 1;",
     );
+    // bb's 20px action row holds the absolutely positioned hover actions.
+    // Collapsing it lets them spill over the next timeline item.
+    expect(theme).not.toContain(".relative.w-full.h-5");
     expect(theme).toContain(
-      ".dark [data-message-column].group\\/message > .relative.w-full.h-5 {\n  height: 0;",
-    );
-    expect(theme).toContain(
-      ".dark [data-message-column].group\\/message + [data-last-turn-diff-portal] {\n  padding-top: 20px;",
+      ".dark [data-message-column] .absolute.top-0 > button.size-5 > [data-icon-root].size-3 {\n  width: 16px;\n  height: 16px;",
     );
     expect(theme).toContain('> span:empty::after {\n  content: "text";');
-    expect(theme).toContain("  button {\n  width: 36px;\n  height: 36px;");
-    expect(theme).toContain('a.underline[href^="mailto:"]::before {\n  mask-image: url(');
-    expect(theme).toContain("a.underline code.bg-muted\\/70 {\n  color: inherit;");
+    expect(theme).toContain(
+      "  button,\n.dark .bb-markdown-prose .bg-surface-recessed.my-2.rounded-md > .flex.justify-between:first-child button {\n  width: 36px;\n  height: 36px;",
+    );
+    expect(theme).toContain(
+      'a.underline[href^="mailto:"]::before,\n.dark .bb-markdown-prose a[href^="mailto:"]::before {\n  mask-image: url(',
+    );
+    expect(theme).toContain(
+      "a.underline code.bg-muted\\/70,\n.dark .bb-markdown-prose a :not(pre) > code {\n  color: inherit;",
+    );
     expect(theme).toContain(
       ".dark [data-timeline-row-list] span.text-sm.leading-5 {\n  font-size: max(14px, var(--text-sm));\n  line-height: 21px;",
     );

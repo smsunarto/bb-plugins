@@ -60,6 +60,7 @@
     "instructions/"
   ],
   "dependencies": {
+    "@bb-plugins/markdown-prose": "workspace:*",
     "@bb-kit/core": "0.2.0",
     "@codemirror/view": "^6.38.6",
     "@mdxeditor/editor": "^4.2.4",

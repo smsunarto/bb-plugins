@@ -549,27 +549,6 @@ const darkExpected = declarationMap({
   "--trees-file-icon-cyan": roleValues["text.ink55"],
 });
 
-// Rendered Markdown roles shared by every plugin prose surface (Canvas, Docs),
-// so the two editors cannot drift apart. Canvas headings take the strongest
-// ink so links stay its only colored prose. Docs keeps the contract's green
-// headings as its one override.
-const proseRoles = {
-  heading: palette.text.ink,
-  strong: palette.code.type,
-  link: palette.code.type,
-  "link-hover": palette.contentTint.cyan,
-  marker: palette.contentTint.comment,
-  "quote-rule": palette.code.keyword,
-  rule: "var(--border-hairline)",
-  "code-well": "var(--accent)",
-} as const;
-
-function proseHooks(prefix: string): Record<string, string> {
-  return Object.fromEntries(
-    Object.entries(proseRoles).map(([role, value]) => [`${prefix}-${role}`, value]),
-  );
-}
-
 const requiredRules: Array<{
   selector: string;
   declarations: Record<string, string>;
@@ -768,13 +747,11 @@ const requiredRules: Array<{
       "--diffs-dark": palette.text.ink,
     },
   },
-  { selector: ".dark .canvas-prose", declarations: proseHooks("--canvas-prose") },
   {
-    selector: ".dark .bb-simple-notes-editor",
+    selector: ".dark .canvas-prose",
     declarations: {
-      ...proseHooks("--docs-prose"),
-      "--docs-prose-heading": palette.code.entity,
-      "--docs-prose-code-block": palette.ground.content,
+      "--canvas-prose-rule": "var(--border-hairline)",
+      "--canvas-prose-code-well": palette.ground.content,
     },
   },
 ];

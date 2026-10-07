@@ -111,7 +111,7 @@ export function CanvasWidget({ markdown }: { markdown: string }) {
   return (
     <div
       ref={root}
-      className="canvas-prose canvas-document"
+      className="canvas-prose canvas-document bb-markdown-prose"
       data-canvas-style={style}
       contentEditable={false}
     >

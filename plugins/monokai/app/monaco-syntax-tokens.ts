@@ -645,7 +645,7 @@ function decorateMonacoLine(line: HTMLElement): void {
 function browserDomFallbackDependencies(): MonacoDomFallbackDependencies {
   return {
     body: document.body,
-    cancelFrame: cancelAnimationFrame,
+    cancelFrame: (id) => window.cancelAnimationFrame(id),
     createObserver: (callback) => new MutationObserver(callback),
     findDecoratedSpans: () =>
       Array.from(
@@ -669,7 +669,7 @@ function browserDomFallbackDependencies(): MonacoDomFallbackDependencies {
     mutationContainsEditor: (node) =>
       node instanceof Element &&
       (node.matches(".monaco-editor") || node.querySelector(".monaco-editor") !== null),
-    requestFrame: requestAnimationFrame,
+    requestFrame: (callback) => window.requestAnimationFrame(callback),
   };
 }
 

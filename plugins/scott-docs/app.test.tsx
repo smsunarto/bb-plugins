@@ -825,14 +825,9 @@ describe("Docs nav panel", () => {
     const styles = document.head.querySelector("style[data-bb-simple-notes-styles]");
     expect(styles?.textContent).not.toBe("stale editor styles");
     expect(styles?.textContent).toContain("align-items: flex-start");
-    expect(styles?.textContent).toContain("height: 1.5em");
+    expect(styles?.textContent).toContain("height: 1.625em");
     expect(styles?.textContent).toContain("cursor: pointer; margin: 0");
-    expect(styles?.textContent).toContain(
-      'ul[data-type="taskList"] li > div > p { margin: 0; line-height: 1.5; }',
-    );
-    expect(styles?.textContent).toContain(
-      'ul[data-type="taskList"] li > div > :is(ul, ol) { margin: 0.25em 0 0; }',
-    );
+    expect(styles?.textContent).toContain('ul[data-type="taskList"] li > div > p { margin: 0; }');
   });
 
   it("renders and autosaves editable Markdown tables", async () => {
@@ -874,7 +869,6 @@ describe("Docs nav panel", () => {
     expect(table?.closest('[contenteditable="true"]')).toBeTruthy();
 
     const styles = document.head.querySelector("style[data-bb-simple-notes-styles]");
-    expect(styles?.textContent).toContain("border-collapse: collapse");
     expect(styles?.textContent).toContain("column-resize-handle");
 
     const firstBodyCell = table?.querySelector("td p");
@@ -1768,7 +1762,7 @@ describe("Docs nav panel", () => {
     await findTreeItem(slot.container, "roadmap.md");
   });
 
-  it("styles the Markdown reading theme through host tokens and prose hooks", async () => {
+  it("renders editable Markdown using the shared stream presentation", async () => {
     const slot = renderSlot(
       app.navPanels[0]!,
       { subPath: "personal/theme.md" },
@@ -1789,16 +1783,11 @@ describe("Docs nav panel", () => {
     );
 
     await slot.findByText("Strong");
-    const styles = document.head.querySelector("style[data-bb-simple-notes-styles]")?.textContent;
-    expect(styles).toContain("max-width: 700px");
-    expect(styles).not.toMatch(/#[0-9a-f]{3,8}\b/i);
-    expect(styles).toContain("color: var(--docs-prose-heading)");
-    expect(styles).toContain(
-      ".bb-simple-notes-editor .tiptap strong { color: var(--docs-prose-strong)",
-    );
-    expect(styles).toContain(
-      ".bb-simple-notes-editor .tiptap a:hover { color: var(--docs-prose-link-hover); }",
-    );
+    const editor = slot.container.querySelector(".tiptap.bb-markdown-prose");
+    expect(editor?.getAttribute("contenteditable")).toBe("true");
+    expect(editor?.querySelector("h1")?.textContent).toBe("Theme");
+    expect(editor?.querySelector("strong")?.textContent).toBe("Strong");
+    expect(editor?.querySelector("a")?.getAttribute("href")).toBe("https://example.com");
   });
 
   it("opens MDX vault entries through bb's file opener", async () => {

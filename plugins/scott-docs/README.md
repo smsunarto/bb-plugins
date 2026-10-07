@@ -7,8 +7,8 @@ mentions, and links that open inside a thread.
 
 This fork is published as `@smsunarto/bb-plugin-scott-docs` with plugin ID
 `scott-docs`.
-It keeps upstream's Tiptap editor and proposal review, and adds the smsunarto
-Monokai reading theme, a [Pierre Trees](https://trees.software/) explorer,
+It keeps upstream's Tiptap editor and proposal review, and adds
+BB's agent-stream Markdown styling, a [Pierre Trees](https://trees.software/) explorer,
 and hidden human-authored folders. bb's built-in Docs (`simple-notes`) claims
 the same `bb docs` command, so installing the fork disables `simple-notes` when
 it is enabled.

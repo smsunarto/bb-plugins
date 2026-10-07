@@ -632,7 +632,8 @@
  * hit area on hover. The fill is the accent at 15% alpha so the conversation
  * ground remains part of the resulting color instead of introducing another
  * opaque surface. Negative inline margins preserve surrounding prose spacing. */
-.dark [data-message-column] [data-markdown-preview] a.underline {
+.dark [data-message-column] [data-markdown-preview] a.underline,
+.dark .bb-markdown-prose a {
   color: var(--primary);
   text-decoration-line: none;
   border-radius: 0.375rem;
@@ -643,7 +644,8 @@
 }
 
 @media (hover: hover) {
-  .dark [data-message-column] [data-markdown-preview] a.underline:hover {
+  .dark [data-message-column] [data-markdown-preview] a.underline:hover,
+  .dark .bb-markdown-prose a:hover {
     background-color: #88c0d026;
   }
 }
@@ -991,28 +993,44 @@
  * A soft yellow sets it apart from white body prose. Full-strength string
  * yellow pulled the eye off the sentence, and alpha over the ground went
  * muddy, so the role blends the yellow into the ink instead. */
-.dark code.bg-muted\/70 {
+.dark code.bg-muted\/70,
+.dark .bb-markdown-prose :not(pre) > code {
   background-color: var(--accent);
   color: #eed996;
+}
+
+/* Agent message prose reads at 14px instead of bb's 13px `text-sm`. The
+ * agent column carries `group/message` itself; the user column nests it in a
+ * bubble, so this skips user requests. The markdown preview re-declares
+ * `text-sm`, so it needs the size too. max() keeps bb's 15px phone size. */
+.dark [data-message-column].group\/message,
+.dark [data-message-column].group\/message [data-markdown-preview],
+.dark .bb-markdown-prose,
+.dark .canvas-prose [data-markdown-preview] {
+  font-size: max(14px, var(--text-sm));
 }
 
 /* Markdown line breaking and tracking. Paragraphs and list items avoid a
  * one-word last line. Headings split into lines of even length. bb's 16-18px
  * h1 and h2 take Inter's recommended tracking for that size. The uppercase h5
  * and h6 labels open up so capitals do not crowd. */
-.dark [data-markdown-preview] :is(p, li) {
+.dark [data-markdown-preview] :is(p, li),
+.dark .bb-markdown-prose :is(p, li) {
   text-wrap: pretty;
 }
 
-.dark [data-markdown-preview] :is(h1, h2, h3, h4, h5, h6) {
+.dark [data-markdown-preview] :is(h1, h2, h3, h4, h5, h6),
+.dark .bb-markdown-prose :is(h1, h2, h3, h4, h5, h6) {
   text-wrap: balance;
 }
 
-.dark [data-markdown-preview] :is(h1, h2) {
+.dark [data-markdown-preview] :is(h1, h2),
+.dark .bb-markdown-prose :is(h1, h2) {
   letter-spacing: -0.011em;
 }
 
-.dark [data-markdown-preview] :is(h5, h6) {
+.dark [data-markdown-preview] :is(h5, h6),
+.dark .bb-markdown-prose :is(h5, h6) {
   letter-spacing: 0.05em;
 }
 
@@ -1089,8 +1107,14 @@
  * still classifies capitalized labels and connectors as code tokens. Collapse
  * every token to the text color so the diagram stays legible instead of
  * acquiring arbitrary syntax hues. The fence's code element carries the
- * language class, and its tokens inherit the variables from it. */
-.dark .bb-code-highlight.bb-code-highlight > :is(.language-diagram, .language-patch) {
+ * language class, and its tokens inherit the variables from it.
+ * `diff` fences collapse too. Sugar-high's diff preset has no grammar for the
+ * embedded language, so an apostrophe in a changed line opens a string that
+ * paints every following line yellow. The add/remove row shading carries the
+ * meaning. */
+.dark
+  .bb-code-highlight.bb-code-highlight
+  > :is(.language-diagram, .language-patch, .language-diff) {
   --sh-identifier: var(--foreground);
   --sh-property: var(--foreground);
   --sh-sign: var(--foreground);
@@ -1100,6 +1124,17 @@
   --sh-class: var(--foreground);
   --sh-entity: var(--foreground);
   --sh-jsxliterals: var(--foreground);
+}
+
+/* Sugar-high's CSS lexer tags declaration names as properties, numbers with
+ * units as classes, and hex colors as strings. Left on the shared mapping,
+ * properties stay white and only numbers and hexes carry hue, so a CSS fence
+ * reads as unhighlighted. Follow the code theme instead: property names cyan
+ * (meta.property-name.css) and numbers purple (constant.numeric). Selector
+ * segments after a `.` also lex as properties, so they turn cyan with them. */
+.dark .bb-code-highlight.bb-code-highlight > :is(.language-css, .language-scss, .language-less) {
+  --sh-property: #51dae9;
+  --sh-class: #a895fe;
 }
 
 /* Code and diff surface ground. `--diffs-bg` and `--diffs-fg` have no
@@ -1138,33 +1173,11 @@ diffs-container {
   font-family: var(--font-sans);
 }
 
-/* The canvas plugin renders `.canvas-mdx` prose on the Cursor theme's rendered
- * Markdown contract. Its stylesheet exposes these hooks so a theme can supply
- * the accent hues; without them it falls back to bb's neutral tokens. */
+/* Canvas components share the stream's content surface and border tokens.
+ * Markdown presentation is owned by the shared stream rules above. */
 .dark .canvas-prose {
-  --canvas-prose-heading: #e3e3dd;
-  --canvas-prose-strong: #51dae9;
-  --canvas-prose-link: #51dae9;
-  --canvas-prose-link-hover: #75f0ff;
-  --canvas-prose-marker: #7c7865;
-  --canvas-prose-quote-rule: #fe5d86;
   --canvas-prose-rule: var(--border-hairline);
-  --canvas-prose-code-well: var(--accent);
-}
-
-/* The docs plugin renders its Tiptap editor on the same rendered Markdown
- * contract through --docs-prose-* hooks. Headings keep the contract's green.
- * Fenced code sits on the content ground, like fenced code in the thread. */
-.dark .bb-simple-notes-editor {
-  --docs-prose-heading: #9ddd54;
-  --docs-prose-strong: #51dae9;
-  --docs-prose-link: #51dae9;
-  --docs-prose-link-hover: #75f0ff;
-  --docs-prose-marker: #7c7865;
-  --docs-prose-quote-rule: #fe5d86;
-  --docs-prose-rule: var(--border-hairline);
-  --docs-prose-code-well: var(--accent);
-  --docs-prose-code-block: #181818;
+  --canvas-prose-code-well: #181818;
 }
 
 /* Plugin marketplace category icons are decoration, not feedback. bb tints
@@ -1367,26 +1380,31 @@ diffs-container {
 /* Agent replies copy the Codex app's markdown geometry, measured from its
  * renderer: every gap, size, and leading is a multiple of one quarter of the
  * body size (3.5px at 14px). Colors stay on this palette's roles. Scoped to
- * the agent column; user bubbles keep bb's compact markdown. Bold weight, the
+ * the agent column and the editable Docs/Canvas adapters; user bubbles keep bb's compact markdown. Bold weight, the
  * gap under headings and paragraphs, and the gap between list items keep bb's
  * own values, which read less packed than Codex's. */
-.dark [data-message-column].group\/message [data-markdown-preview] {
+.dark [data-message-column].group\/message [data-markdown-preview],
+.dark .bb-markdown-prose,
+.dark .canvas-prose [data-markdown-preview] {
   --agent-md-space: calc(max(14px, var(--text-sm)) / 4);
   font-weight: 430;
 }
 
-.dark [data-message-column].group\/message [data-markdown-preview] :is(strong, b) {
+.dark [data-message-column].group\/message [data-markdown-preview] :is(strong, b),
+.dark .bb-markdown-prose :is(strong, b) {
   font-weight: 700;
 }
 
-.dark [data-message-column].group\/message [data-markdown-preview] th {
+.dark [data-message-column].group\/message [data-markdown-preview] th,
+.dark .bb-markdown-prose th {
   font-weight: 600;
 }
 
 /* Codex keeps an agent's single newlines as line breaks. bb's renderer leaves
  * them in the paragraph text, so pre-line shows them. A hard break renders as
  * a <br> followed by that same newline, so the <br> would double it. */
-.dark [data-message-column].group\/message [data-markdown-preview] p {
+.dark [data-message-column].group\/message [data-markdown-preview] p,
+.dark .bb-markdown-prose p {
   margin: 0 0 8px;
   white-space: pre-line;
 }
@@ -1395,83 +1413,100 @@ diffs-container {
   display: none;
 }
 
-.dark [data-message-column].group\/message [data-markdown-preview] > p:where(:not(:first-child)) {
+.dark [data-message-column].group\/message [data-markdown-preview] > p:where(:not(:first-child)),
+.dark .bb-markdown-prose > p:where(:not(:first-child)) {
   margin-top: calc(var(--agent-md-space) * 2);
 }
 
-.dark [data-message-column].group\/message [data-markdown-preview] > p + p {
+.dark [data-message-column].group\/message [data-markdown-preview] > p + p,
+.dark .bb-markdown-prose > p + p {
   margin-top: calc(var(--agent-md-space) * 4);
 }
 
 .dark [data-message-column].group\/message [data-markdown-preview] > :is(h1, h2, h3) + p,
-.dark [data-message-column].group\/message [data-markdown-preview] h4 + p {
+.dark [data-message-column].group\/message [data-markdown-preview] h4 + p,
+.dark .bb-markdown-prose > :is(h1, h2, h3) + p,
+.dark .bb-markdown-prose h4 + p {
   margin-top: 0;
 }
 
-.dark [data-message-column].group\/message [data-markdown-preview] :is(h1, h2, h3, h4, h5, h6) {
+.dark [data-message-column].group\/message [data-markdown-preview] :is(h1, h2, h3, h4, h5, h6),
+.dark .bb-markdown-prose :is(h1, h2, h3, h4, h5, h6) {
   color: var(--foreground);
   font-weight: 600;
   letter-spacing: normal;
   text-transform: none;
 }
 
-.dark [data-message-column].group\/message [data-markdown-preview] h1 {
+.dark [data-message-column].group\/message [data-markdown-preview] h1,
+.dark .bb-markdown-prose h1 {
   margin: calc(var(--agent-md-space) * 4) 0 8px;
   font-size: calc(var(--agent-md-space) * 6);
   line-height: calc(var(--agent-md-space) * 8);
 }
 
-.dark [data-message-column].group\/message [data-markdown-preview] h2 {
+.dark [data-message-column].group\/message [data-markdown-preview] h2,
+.dark .bb-markdown-prose h2 {
   margin: calc(var(--agent-md-space) * 4) 0 8px;
   font-size: calc(var(--agent-md-space) * 5);
   line-height: calc(var(--agent-md-space) * 7);
 }
 
-.dark [data-message-column].group\/message [data-markdown-preview] h3 {
+.dark [data-message-column].group\/message [data-markdown-preview] h3,
+.dark .bb-markdown-prose h3 {
   margin: calc(var(--agent-md-space) * 4) 0 8px;
   font-size: calc(var(--agent-md-space) * 4.5);
   line-height: calc(var(--agent-md-space) * 7);
 }
 
-.dark [data-message-column].group\/message [data-markdown-preview] h4 {
+.dark [data-message-column].group\/message [data-markdown-preview] h4,
+.dark .bb-markdown-prose h4 {
   margin: calc(var(--agent-md-space) * 4) 0 0;
   font-size: calc(var(--agent-md-space) * 4);
   line-height: calc(var(--agent-md-space) * 6);
 }
 
-.dark [data-message-column].group\/message [data-markdown-preview] :is(h5, h6) {
+.dark [data-message-column].group\/message [data-markdown-preview] :is(h5, h6),
+.dark .bb-markdown-prose :is(h5, h6) {
   margin: 0;
   font-size: calc(var(--agent-md-space) * 4);
   line-height: calc(var(--agent-md-space) * 6.5);
 }
 
-.dark [data-message-column].group\/message [data-markdown-preview] :is(ul, ol) {
+.dark [data-message-column].group\/message [data-markdown-preview] :is(ul, ol),
+.dark .bb-markdown-prose :is(ul, ol) {
   margin: 0;
   padding-inline-start: calc(var(--agent-md-space) * 6.5);
 }
 
-.dark [data-message-column].group\/message [data-markdown-preview] :is(ul, ol) ul {
+.dark [data-message-column].group\/message [data-markdown-preview] :is(ul, ol) ul,
+.dark .bb-markdown-prose :is(ul, ol) ul {
   list-style-type: circle;
 }
 
-.dark [data-message-column].group\/message [data-markdown-preview] :is(ul, ol) :is(ul, ol) ul {
+.dark [data-message-column].group\/message [data-markdown-preview] :is(ul, ol) :is(ul, ol) ul,
+.dark .bb-markdown-prose :is(ul, ol) :is(ul, ol) ul {
   list-style-type: square;
 }
 
-.dark [data-message-column].group\/message [data-markdown-preview] li {
+.dark [data-message-column].group\/message [data-markdown-preview] li,
+.dark .bb-markdown-prose li {
   margin: 0 0 4px;
   padding-inline-start: calc(var(--agent-md-space) * 1.5);
 }
 
-.dark [data-message-column].group\/message [data-markdown-preview] li::marker {
+.dark [data-message-column].group\/message [data-markdown-preview] li::marker,
+.dark .bb-markdown-prose li::marker {
   font-weight: 600;
 }
 
-.dark [data-message-column].group\/message [data-markdown-preview] li > p {
+.dark [data-message-column].group\/message [data-markdown-preview] li > p,
+.dark .bb-markdown-prose li > p {
   margin: 0;
 }
 
-.dark [data-message-column].group\/message [data-markdown-preview] li > p + p {
+.dark [data-message-column].group\/message [data-markdown-preview] li > p + p,
+.dark .bb-markdown-prose li > p + p {
   margin-top: calc(var(--agent-md-space) * 4);
 }
 
@@ -1479,7 +1514,10 @@ diffs-container {
  * renders native inputs, which take no pseudo-elements, so the box, fill, and
  * check are mask layers over the ink: 12% edge like --border, 8% fill like
  * --accent. */
-.dark [data-message-column].group\/message [data-markdown-preview] li > input[type="checkbox"] {
+.dark [data-message-column].group\/message [data-markdown-preview] li > input[type="checkbox"],
+.dark .bb-markdown-prose li > input[type="checkbox"],
+.dark .bb-markdown-prose li > label > input[type="checkbox"],
+.dark .bb-markdown-prose li[role="checkbox"]::before {
   appearance: none;
   width: 14px;
   height: 14px;
@@ -1489,13 +1527,17 @@ diffs-container {
   mask: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 14 14'><rect x='0.5' y='0.5' width='13' height='13' rx='4.5' fill='none' stroke='black' stroke-opacity='0.12'/></svg>") center / 14px no-repeat;
 }
 
-.dark [data-message-column].group\/message [data-markdown-preview] li > input[type="checkbox"]:checked {
+.dark [data-message-column].group\/message [data-markdown-preview] li > input[type="checkbox"]:checked,
+.dark .bb-markdown-prose li > input[type="checkbox"]:checked,
+.dark .bb-markdown-prose li > label > input[type="checkbox"]:checked,
+.dark .bb-markdown-prose li[role="checkbox"][aria-checked="true"]::before {
   mask-image: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 14 14'><rect width='14' height='14' rx='5' fill-opacity='0.08'/><rect x='0.5' y='0.5' width='13' height='13' rx='4.5' fill='none' stroke='black' stroke-opacity='0.12'/><svg x='1' y='1' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='black' stroke-linecap='round' stroke-linejoin='round' stroke-width='2'><path d='M20 6 9 17l-5-5'/></svg></svg>");
 }
 
 /* The quote rule is an inset bar, not a border, so it stops short of the
  * quote's padding like Codex's. */
-.dark [data-message-column].group\/message [data-markdown-preview] blockquote {
+.dark [data-message-column].group\/message [data-markdown-preview] blockquote,
+.dark .bb-markdown-prose blockquote {
   position: relative;
   margin: 0 0 calc(var(--agent-md-space) * 2);
   border-left: 0;
@@ -1505,7 +1547,8 @@ diffs-container {
   font-style: normal;
 }
 
-.dark [data-message-column].group\/message [data-markdown-preview] blockquote::after {
+.dark [data-message-column].group\/message [data-markdown-preview] blockquote::after,
+.dark .bb-markdown-prose blockquote::after {
   content: "";
   position: absolute;
   inset-block: calc(var(--agent-md-space) * 2);
@@ -1515,23 +1558,30 @@ diffs-container {
   background-color: var(--border);
 }
 
-.dark [data-message-column].group\/message [data-markdown-preview] blockquote > p {
+.dark [data-message-column].group\/message [data-markdown-preview] blockquote > p,
+.dark .bb-markdown-prose blockquote > p {
   margin: 0;
   font-weight: 400;
 }
 
 .dark [data-message-column].group\/message [data-markdown-preview] :is(blockquote, li) > :last-child,
-.dark [data-message-column].group\/message [data-markdown-preview] > :last-child {
+.dark [data-message-column].group\/message [data-markdown-preview] > :last-child,
+.dark .bb-markdown-prose :is(blockquote, li) > :last-child,
+.dark .bb-markdown-prose > :last-child {
   margin-bottom: 0;
 }
 
 .dark [data-message-column].group\/message [data-markdown-preview] :is(blockquote, li) > :first-child,
 .dark [data-message-column].group\/message [data-markdown-preview] > :first-child,
-.dark [data-message-column].group\/message [data-markdown-preview] hr + * {
+.dark [data-message-column].group\/message [data-markdown-preview] hr + *,
+.dark .bb-markdown-prose :is(blockquote, li) > :first-child,
+.dark .bb-markdown-prose > :first-child,
+.dark .bb-markdown-prose hr + * {
   margin-top: 0;
 }
 
-.dark [data-message-column].group\/message [data-markdown-preview] hr {
+.dark [data-message-column].group\/message [data-markdown-preview] hr,
+.dark .bb-markdown-prose hr {
   margin: calc(var(--agent-md-space) * 7) 0;
 }
 
@@ -1539,18 +1589,21 @@ diffs-container {
  * the right only, with rules between rows. bb centres a wider breakout box
  * with inline styles and publishes the column width as --md-content-w, so
  * the scroller shifts back to the column edge instead of fighting them. */
-.dark [data-message-column].group\/message [data-markdown-preview] .my-2.flex.justify-center {
+.dark [data-message-column].group\/message [data-markdown-preview] .my-2.flex.justify-center,
+.dark .bb-markdown-prose .my-2.flex.justify-center {
   justify-content: flex-start;
   margin-block: calc(var(--agent-md-space) * 4) 0;
 }
 
-.dark [data-message-column].group\/message [data-markdown-preview] .my-2.flex.justify-center > div {
+.dark [data-message-column].group\/message [data-markdown-preview] .my-2.flex.justify-center > div,
+.dark .bb-markdown-prose .my-2.flex.justify-center > div {
   --agent-md-table-shift: max(0px, calc((100% - var(--md-content-w, 100%)) / 2));
   max-width: calc(100% - var(--agent-md-table-shift));
   margin-inline-start: var(--agent-md-table-shift);
 }
 
-.dark [data-message-column].group\/message [data-markdown-preview] table {
+.dark [data-message-column].group\/message [data-markdown-preview] table,
+.dark .bb-markdown-prose table {
   min-width: var(--md-content-w, 100%);
   border: 0;
   border-collapse: separate;
@@ -1560,44 +1613,53 @@ diffs-container {
   line-height: calc(var(--agent-md-space) * 6.5);
 }
 
-.dark [data-message-column].group\/message [data-markdown-preview] thead {
+.dark [data-message-column].group\/message [data-markdown-preview] thead,
+.dark .bb-markdown-prose thead {
   background-color: transparent;
 }
 
-.dark [data-message-column].group\/message [data-markdown-preview] :is(th, td) {
+.dark [data-message-column].group\/message [data-markdown-preview] :is(th, td),
+.dark .bb-markdown-prose :is(th, td) {
   border: 0;
   vertical-align: top;
 }
 
-.dark [data-message-column].group\/message [data-markdown-preview] th {
+.dark [data-message-column].group\/message [data-markdown-preview] th,
+.dark .bb-markdown-prose th {
   border-bottom: 1px solid var(--border);
   padding: calc(var(--agent-md-space) * 2) calc(var(--agent-md-space) * 6)
     calc(var(--agent-md-space) * 2) 0;
   line-height: calc(var(--agent-md-space) * 4);
 }
 
-.dark [data-message-column].group\/message [data-markdown-preview] th:last-child {
+.dark [data-message-column].group\/message [data-markdown-preview] th:last-child,
+.dark .bb-markdown-prose th:last-child {
   padding-inline-end: calc(var(--agent-md-space) * 10);
 }
 
-.dark [data-message-column].group\/message [data-markdown-preview] td {
+.dark [data-message-column].group\/message [data-markdown-preview] td,
+.dark .bb-markdown-prose td {
   padding: calc(var(--agent-md-space) * 2.5) calc(var(--agent-md-space) * 6)
     calc(var(--agent-md-space) * 2.5) 0;
 }
 
-.dark [data-message-column].group\/message [data-markdown-preview] td:last-child {
+.dark [data-message-column].group\/message [data-markdown-preview] td:last-child,
+.dark .bb-markdown-prose td:last-child {
   padding-inline-end: 0;
 }
 
-.dark [data-message-column].group\/message [data-markdown-preview] tbody tr:not(:last-child) td {
+.dark [data-message-column].group\/message [data-markdown-preview] tbody tr:not(:last-child) td,
+.dark .bb-markdown-prose tbody tr:not(:last-child) td {
   border-bottom: 1px solid var(--border-hairline);
 }
 
-.dark [data-message-column].group\/message [data-markdown-preview] tbody tr:last-child td {
+.dark [data-message-column].group\/message [data-markdown-preview] tbody tr:last-child td,
+.dark .bb-markdown-prose tbody tr:last-child td {
   padding-bottom: calc(var(--agent-md-space) * 6);
 }
 
-.dark [data-message-column].group\/message [data-markdown-preview] code.bg-muted\/70 {
+.dark [data-message-column].group\/message [data-markdown-preview] code.bg-muted\/70,
+.dark .bb-markdown-prose :not(pre) > code {
   border-radius: 6px;
   padding: 1px 6px;
   font-size: 0.92em;
@@ -1606,7 +1668,8 @@ diffs-container {
 
 /* Fenced blocks: a 48px header row, 20px gutters, and 13px code. :where()
  * lets the first- and last-child resets above trim the outer margins. */
-.dark [data-message-column].group\/message [data-markdown-preview] :where(.bg-surface-recessed.my-2.rounded-md) {
+.dark [data-message-column].group\/message [data-markdown-preview] :where(.bg-surface-recessed.my-2.rounded-md),
+.dark .bb-markdown-prose :where(.bg-surface-recessed.my-2.rounded-md) {
   margin: calc(var(--agent-md-space) * 5) 0;
   border-radius: 20px;
 }
@@ -1615,7 +1678,8 @@ diffs-container {
   [data-message-column].group\/message
   [data-markdown-preview]
   .bg-surface-recessed.my-2.rounded-md
-  > .flex.justify-between:first-child {
+  > .flex.justify-between:first-child,
+.dark .bb-markdown-prose .bg-surface-recessed.my-2.rounded-md > .flex.justify-between:first-child {
   min-height: 48px;
   padding: 6px 6px 6px 20px;
 }
@@ -1625,7 +1689,8 @@ diffs-container {
   [data-markdown-preview]
   .bg-surface-recessed.my-2.rounded-md
   > .flex.justify-between:first-child
-  > span {
+  > span,
+.dark .bb-markdown-prose .bg-surface-recessed.my-2.rounded-md > .flex.justify-between:first-child > span {
   display: inline-flex;
   align-items: center;
   gap: 8px;
@@ -1644,7 +1709,8 @@ diffs-container {
   [data-markdown-preview]
   .bg-surface-recessed.my-2.rounded-md
   > .flex.justify-between:first-child
-  > span::before {
+  > span::before,
+.dark .bb-markdown-prose .bg-surface-recessed.my-2.rounded-md > .flex.justify-between:first-child > span::before {
   content: "";
   flex: none;
   width: 20px;
@@ -1659,7 +1725,8 @@ diffs-container {
   [data-markdown-preview]
   .bg-surface-recessed.my-2.rounded-md
   > .flex.justify-between:first-child
-  > span:empty::after {
+  > span:empty::after,
+.dark .bb-markdown-prose .bg-surface-recessed.my-2.rounded-md > .flex.justify-between:first-child > span:empty::after {
   content: "text";
 }
 
@@ -1669,7 +1736,8 @@ diffs-container {
   [data-markdown-preview]
   .bg-surface-recessed.my-2.rounded-md
   > .flex.justify-between:first-child
-  > div {
+  > div,
+.dark .bb-markdown-prose .bg-surface-recessed.my-2.rounded-md > .flex.justify-between:first-child > div {
   gap: 1px;
 }
 
@@ -1678,7 +1746,8 @@ diffs-container {
   [data-markdown-preview]
   .bg-surface-recessed.my-2.rounded-md
   > .flex.justify-between:first-child
-  button {
+  button,
+.dark .bb-markdown-prose .bg-surface-recessed.my-2.rounded-md > .flex.justify-between:first-child button {
   width: 36px;
   height: 36px;
   border-radius: 9999px;
@@ -1690,7 +1759,8 @@ diffs-container {
   .bg-surface-recessed.my-2.rounded-md
   > .flex.justify-between:first-child
   button
-  svg {
+  svg,
+.dark .bb-markdown-prose .bg-surface-recessed.my-2.rounded-md > .flex.justify-between:first-child button svg {
   width: 16px;
   height: 16px;
 }
@@ -1706,7 +1776,8 @@ diffs-container {
   }
 }
 
-.dark [data-message-column].group\/message [data-markdown-preview] pre.bb-code-highlight {
+.dark [data-message-column].group\/message [data-markdown-preview] pre.bb-code-highlight,
+.dark .bb-markdown-prose pre.bb-code-highlight {
   padding: 0 20px 12px;
 }
 
@@ -1727,14 +1798,16 @@ diffs-container {
 /* Links lead with a 16px Lucide glyph and a 3px gap, at medium weight: a
  * globe for web and in-page links, an envelope for mail. Footnote markers
  * stay bare, and file links keep bb's own open-file glyph. */
-.dark [data-message-column] [data-markdown-preview] a.underline:not([data-footnote-ref], [data-footnote-backref], [href^="file:"]) {
+.dark [data-message-column] [data-markdown-preview] a.underline:not([data-footnote-ref], [data-footnote-backref], [href^="file:"]),
+.dark .bb-markdown-prose a:not([data-footnote-ref], [data-footnote-backref], [href^="file:"]) {
   font-weight: 500;
 }
 
 .dark
   [data-message-column]
   [data-markdown-preview]
-  a.underline:not([data-footnote-ref], [data-footnote-backref], [href^="file:"])::before {
+  a.underline:not([data-footnote-ref], [data-footnote-backref], [href^="file:"])::before,
+.dark .bb-markdown-prose a:not([data-footnote-ref], [data-footnote-backref], [href^="file:"])::before {
   content: "";
   display: inline-block;
   width: 16px;
@@ -1745,13 +1818,15 @@ diffs-container {
   mask: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-linecap='round' stroke-linejoin='round' stroke-width='2'><circle cx='12' cy='12' r='10'/><path d='M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20'/><path d='M2 12h20'/></svg>") center / 16px no-repeat;
 }
 
-.dark [data-message-column] [data-markdown-preview] a.underline[href^="mailto:"]::before {
+.dark [data-message-column] [data-markdown-preview] a.underline[href^="mailto:"]::before,
+.dark .bb-markdown-prose a[href^="mailto:"]::before {
   mask-image: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-linecap='round' stroke-linejoin='round' stroke-width='2'><path d='m22 7-8.991 5.727a2 2 0 0 1-2.009 0L2 7'/><rect x='2' y='4' width='20' height='16' rx='2'/></svg>");
 }
 
 /* Code inside a link reads as the link: it takes the link color over the
  * inline-code yellow and keeps the code chip. */
-.dark [data-message-column] [data-markdown-preview] a.underline code.bg-muted\/70 {
+.dark [data-message-column] [data-markdown-preview] a.underline code.bg-muted\/70,
+.dark .bb-markdown-prose a :not(pre) > code {
   color: inherit;
 }
 
@@ -1760,7 +1835,6 @@ diffs-container {
  * than Codex's 25px and 16px so long runs of tool calls don't read as a block. */
 .dark [data-timeline-row-list="top-level"] {
   gap: 28px;
-  padding-bottom: 20px;
 }
 
 .dark [data-timeline-row-list="bundle"] {
@@ -1780,23 +1854,6 @@ diffs-container {
   color: var(--readback-foreground);
 }
 
-/* bb reserves a 20px row under a finished agent message for its hover
- * actions, but not while the turn streams, so the space under a message
- * changes when the turn ends and never matches the space above it. The row
- * takes no height here: every item sits one list gap from the next, and the
- * actions appear on hover inside that gap. The list's bottom padding gives
- * the last message's actions the same room. */
-.dark [data-message-column].group\/message > .relative.w-full.h-5 {
-  height: 0;
-}
-
-/* The Last turn diff card mounts inside the message's row, not as the next
- * list item, so no list gap separates it from the actions. Give back the
- * row's 20px above the card. */
-.dark [data-message-column].group\/message + [data-last-turn-diff-portal] {
-  padding-top: 20px;
-}
-
 /* bb wraps each row's icon and label in an inline-flex span on a 13px strut,
  * which pads the row to 23px. Making its wrapper a flex box drops the strut. */
 .dark [data-timeline-row-list] .flex.leading-5 > span.min-w-0.max-w-full {
@@ -1808,7 +1865,73 @@ diffs-container {
   height: 16px;
 }
 
+/* Message hover actions draw 12px icons on a 24px grid with a 1.5 stroke,
+ * a 0.75px line that blurs across device pixels. At 16px the line is 1px,
+ * the size bb already uses on touch. The 20px buttons keep their size, so
+ * bb's row layout math is unchanged. */
+.dark [data-message-column] .absolute.top-0 > button.size-5 > [data-icon-root].size-3 {
+  width: 16px;
+  height: 16px;
+}
+
 .dark [data-timeline-row-list] span.text-sm.leading-5 {
   font-size: max(14px, var(--text-sm));
   line-height: 21px;
+}
+
+/* Editable fenced blocks have their own controls and markup. Match the stream's
+ * code body without applying prose rules to CodeMirror's toolbar. */
+.dark .bb-markdown-prose pre:not(.bb-code-highlight),
+.dark .bb-markdown-prose .canvas-mdx-code {
+  margin: calc(var(--agent-md-space) * 5) 0;
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  background-color: #181818;
+  font-size: 13px;
+  font-weight: 430;
+  line-height: 20px;
+  overflow: hidden;
+}
+.dark .bb-markdown-prose pre:not(.bb-code-highlight) {
+  padding: 12px 20px;
+  overflow-x: auto;
+}
+.dark .bb-markdown-prose .canvas-mdx-code > div {
+  background: transparent;
+}
+.dark .bb-markdown-prose .canvas-mdx-code > div > div:first-child {
+  min-height: 48px;
+  padding: 6px;
+  border: 0;
+}
+.dark .bb-markdown-prose .canvas-mdx-code > div > div:nth-child(2) {
+  padding: 0 20px 12px;
+}
+.dark .bb-markdown-prose .canvas-mdx-code .cm-editor {
+  font-size: 13px;
+  font-weight: 430;
+  line-height: 20px;
+}
+.dark .bb-markdown-prose .tableWrapper {
+  margin: calc(var(--agent-md-space) * 4) 0 0;
+}
+.dark .bb-markdown-prose li > div > p { margin: 0; }
+.dark .bb-markdown-prose li > div > p + p { margin-top: calc(var(--agent-md-space) * 4); }
+
+/* Lexical uses a pseudo-element checkbox rather than a native input. Its
+ * click target still owns the interaction while the stream owns the shape. */
+.dark .bb-markdown-prose li[role="checkbox"] {
+  margin-inline: 0;
+  padding-inline-start: calc(14px + var(--agent-md-space) * 1.5);
+  padding-inline-end: 0;
+  text-decoration: none;
+}
+.dark .bb-markdown-prose li[role="checkbox"]::before {
+  content: "";
+  border: 0;
+  border-radius: 0;
+  top: calc((1.625em - 14px) / 2);
+}
+.dark .bb-markdown-prose li[role="checkbox"]::after {
+  display: none;
 }

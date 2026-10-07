@@ -1,6 +1,6 @@
 # bb Monokai
 
-- `CONTRACT.md` is the source of truth. Amend it before the bb adapter.
+- `CONTRACT.md` owns palette policy. BB's agent stream owns Markdown presentation. Docs and Canvas adapt the stream's rules, including theme overrides, rather than maintaining separate reading styles.
 - Do not edit `themes/bb-monokai.css` or `themes/bb-monokai-code.json` by hand.
 - Use Storybook for the palette catalog. Use live bb for shadow DOM and host selectors.
 - Code theme tokens are inline styles in a shadow root. CSS cannot set them. The theme is dark only. Light stays on `pierre-light`.

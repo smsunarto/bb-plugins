@@ -82,7 +82,7 @@ style: github
 ---
 ```
 
-Canvas widget styles are `default` and `github`. The surrounding editable prose follows the host theme's `--canvas-prose-*` tokens. Leave frontmatter out for `default`.
+Canvas widget styles are `default` and `github`. Editable Markdown and Markdown inside widgets follow BB's agent stream, including the selected font and Monokai overrides. Leave frontmatter out for `default`.
 
 ## Templates
 

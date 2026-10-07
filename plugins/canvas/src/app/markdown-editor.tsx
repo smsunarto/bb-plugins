@@ -1,4 +1,5 @@
 import { useCellValues, usePublisher } from "@mdxeditor/gurx";
+import "@bb-plugins/markdown-prose/prose.css";
 import { EditorView } from "@codemirror/view";
 import {
   createContext,
@@ -11,6 +12,7 @@ import {
 } from "react";
 import {
   MDXEditor,
+  lexicalTheme,
   addSyntaxExtension$,
   realmPlugin,
   markdownProcessingError$,
@@ -79,6 +81,19 @@ const codeBlockLanguages = {
   markdown: "Markdown",
 };
 const codeBlockKeys = normalizeCodeBlockLanguages(codeBlockLanguages).keyMap;
+
+// Lexical wraps a nested list in a separate item. Keep the preceding item's
+// gap out of that wrapper so the rendered list follows BB's stream rhythm.
+const editorTheme = {
+  ...lexicalTheme,
+  list: {
+    ...lexicalTheme.list,
+    nested: {
+      ...lexicalTheme.list?.nested,
+      listitem: `${lexicalTheme.list?.nested?.listitem ?? ""} canvas-mdx-nested-list-item`,
+    },
+  },
+};
 
 // Wrap MDXEditor's CodeMirror block in a class so markdown-editor.css can style
 // it without matching the delete button. Priority 2 outranks codeMirrorPlugin's
@@ -287,10 +302,11 @@ function EditorSession(
     <SourceRequestContext.Provider value={sourceRequest}>
       <MDXEditor
         ref={editorRef}
+        lexicalTheme={editorTheme}
         readOnly={applying}
         markdown={document.body}
         suppressHtmlProcessing={!/\.mdx$/i.test(notePath)}
-        contentEditableClassName="canvas-prose canvas-mdx-prose"
+        contentEditableClassName="canvas-prose canvas-mdx-prose bb-markdown-prose"
         className="canvas-mdx-editor"
         plugins={plugins}
         placeholder="Start writing…"
