@@ -2,7 +2,7 @@ import { definePlugin } from "@bb-kit/core/plugin";
 import { api } from "../rpc/api.ts";
 import { liveFile } from "../rpc/live-file.ts";
 import { randomUUID } from "node:crypto";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
@@ -20,6 +20,10 @@ import {
   type InProcessHostClient,
 } from "./host-io/testing/in-process.ts";
 
+// Structural diff runs the diffr that ships in Whiteboard.app, which CI runners lack.
+const HAS_DIFFR = existsSync(
+  "/Applications/Whiteboard.app/Contents/Resources/app/review-runtime/bin/diffr",
+);
 let host: ReturnType<typeof createFakePluginHost>;
 let bb: BbPluginApi;
 let engine: Engine;
@@ -572,7 +576,7 @@ test("dispose waits for an in-flight source read before closing the shared datab
   expect((await engine.request({ method: "GET", path: "/capabilities" })).status).toBe(503);
 });
 
-test("the assembled structural-diff tunnel returns every event through completion", async () => {
+test.skipIf(!HAS_DIFFR)("the assembled structural-diff tunnel returns every event through completion", async () => {
   const created = await create();
   const info = await engine.info({ sessionId: created.reviewId });
   expect(info.structuralDiffEnabled).toBe(true);
@@ -591,7 +595,7 @@ test("the assembled structural-diff tunnel returns every event through completio
   expect(client.calls.some((call) => call.method === "structuralDiff")).toBe(true);
 });
 
-test("dirty worktree source, structural counts and lenses retain their selected generation", async () => {
+test.skipIf(!HAS_DIFFR)("dirty worktree source, structural counts and lenses retain their selected generation", async () => {
   repo.write(".gitignore", "ignored.txt\n");
   repo.write("order.ts", 'export const status = "queued";\n');
   repo.head = repo.commit("Order baseline");
@@ -778,7 +782,7 @@ test.each(["assume-unchanged", "skip-worktree", "split-index"])(
   },
 );
 
-test("the worktree API reads exact CRLF source while Git-clean native comparisons stay empty", async () => {
+test.skipIf(!HAS_DIFFR)("the worktree API reads exact CRLF source while Git-clean native comparisons stay empty", async () => {
   repo.write(".gitattributes", "*.ts text=auto\n");
   repo.head = repo.commit("Normalized baseline");
   const raw = "export const a = 10;\r\nexport const a2 = 20;\r\n";
