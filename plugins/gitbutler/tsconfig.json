@@ -2,15 +2,8 @@
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
     "target": "es2023",
-    "lib": [
-      "es2023",
-      "dom",
-      "dom.iterable"
-    ],
-    "types": [
-      "node",
-      "bun-types/test"
-    ],
+    "lib": ["es2023", "dom", "dom.iterable"],
+    "types": ["node", "bun-types/test"],
     "jsx": "react-jsx",
     "erasableSyntaxOnly": true,
     "noUncheckedIndexedAccess": true,
@@ -19,9 +12,7 @@
     "noFallthroughCasesInSwitch": true,
     "noImplicitReturns": true,
     "paths": {
-      "@/*": [
-        "./src/*"
-      ]
+      "@/*": ["./src/*"]
     }
   }
 }

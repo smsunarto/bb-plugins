@@ -43,7 +43,7 @@ function entryText(content: readonly { type: string; text?: string }[]): string 
 export default definePlugin({
   pluginId: "last-turn-diff",
   rpc: { latestTurn },
-  setup(bb) {
+  setup({ bb }) {
     const publish = (threadId: string) => bb.realtime.publish(CHANGED_CHANNEL, { threadId });
     const warn = (error: unknown) => bb.log.warn(`workspace snapshot failed: ${String(error)}`);
 

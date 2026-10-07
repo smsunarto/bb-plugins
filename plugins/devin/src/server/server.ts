@@ -2,7 +2,7 @@ import { definePlugin } from "@bb-kit/core/plugin";
 import { DEVIN_PROVIDER_ID } from "../shared/devin.ts";
 import { cloudProjectInstructions } from "./lib/cloud-context.ts";
 import { devinProviderDeclaration } from "./lib/declaration.ts";
-import { setupTargetStore } from "./lib/targets.ts";
+import { openTargetStore } from "./lib/targets.ts";
 import { cloudIntent } from "./rpc/cloud-intent.ts";
 import { cloudSession } from "./rpc/cloud-session.ts";
 import { setCloudIntent } from "./rpc/set-cloud-intent.ts";
@@ -10,8 +10,8 @@ import { setCloudIntent } from "./rpc/set-cloud-intent.ts";
 export default definePlugin({
   pluginId: "devin",
   rpc: { cloudIntent, setCloudIntent, cloudSession },
-  setup(bb) {
-    const store = setupTargetStore(bb);
+  services: (bb) => ({ targets: openTargetStore(bb) }),
+  setup({ bb, targets: store }) {
     // A missing Devin CLI does not stop registration: the bridge reports it
     // as not installed and bb shows the provider as unavailable.
     bb.providers.register(devinProviderDeclaration(store));

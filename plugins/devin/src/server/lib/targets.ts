@@ -1,3 +1,4 @@
+import type { Context } from "@bb-kit/core/plugin";
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import type { DevinTarget } from "../../shared/devin.ts";
 
@@ -77,18 +78,11 @@ export function createTargetStore(db: Database, now: () => number = Date.now) {
 
 export type TargetStore = ReturnType<typeof createTargetStore>;
 
-const stores = new WeakMap<BbPluginApi, TargetStore>();
+/** What `services` adds to every handler's ctx. */
+export type TargetsContext = Context<{ targets: TargetStore }>;
 
-export function setupTargetStore(bb: BbPluginApi): TargetStore {
+export function openTargetStore(bb: BbPluginApi): TargetStore {
   const db = bb.storage.database();
   bb.storage.migrate(db, TARGET_MIGRATIONS);
-  const store = createTargetStore(db);
-  stores.set(bb, store);
-  return store;
-}
-
-export function getTargetStore(bb: BbPluginApi): TargetStore {
-  const store = stores.get(bb);
-  if (store === undefined) throw new Error("The Devin target store is not initialized.");
-  return store;
+  return createTargetStore(db);
 }

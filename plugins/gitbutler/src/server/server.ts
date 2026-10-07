@@ -25,7 +25,7 @@ export default definePlugin({
     resolveConflicts,
     conflictResolution,
   },
-  setup(bb) {
+  setup({ bb }) {
     // `active` rather than `created`: a new thread's environment is still
     // provisioning when it is created, so there is no workspace to check yet.
     bb.events.on("thread.active", async ({ thread }) => {

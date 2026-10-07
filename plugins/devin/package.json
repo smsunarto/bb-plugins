@@ -71,7 +71,7 @@
     "lint": "oxlint",
     "typecheck": "tsc --noEmit",
     "test": "node --test --import tsx 'src/**/*.test.ts'",
-    "check": "node --import tsx ../../packages/bb-kit-core/src/bin/bin.ts check",
+    "check": "node --import tsx ../../packages/bb-kit-dev/src/bin.ts check",
     "clean": "rm -rf dist"
   }
 }

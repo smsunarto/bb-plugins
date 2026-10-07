@@ -106,6 +106,7 @@ test("definePlugin returns the entry factory carrying the rpc map by identity", 
 test("definePlugin rejects invalid ids, RPC keys, command keys, and tool keys", () => {
   assert.throws(() => definePlugin({ pluginId: "Demo", rpc: {} }), /invalid plugin id "Demo"/);
   assert.throws(() => definePlugin({ pluginId: "demo", rpc: { "bad-key": ping } }), /bad-key/);
+  // oxlint-disable-next-line unicorn/no-thenable -- the reserved key is what this asserts on.
   assert.throws(() => definePlugin({ pluginId: "demo", rpc: { then: ping } }), /reserved RPC key/);
   assert.throws(
     () => definePlugin({ pluginId: "demo", rpc: {}, command: { rpc: status } }),

@@ -48,13 +48,7 @@ test("the manifest declares the skills root that holds every composer command", 
 
 test("each skill directory carries a SKILL.md whose frontmatter name matches the directory", async () => {
   const directories = (await readdir(skillsRoot)).sort();
-  expect(directories).toEqual([
-    "ship-it",
-    "smart-embeds",
-    "subthread",
-    "sync",
-    "test-remotely",
-  ]);
+  expect(directories).toEqual(["ship-it", "smart-embeds", "subthread", "sync", "test-remotely"]);
   for (const directory of directories) {
     const path = join(skillsRoot, directory, "SKILL.md");
     expect((await stat(path)).isFile()).toBe(true);

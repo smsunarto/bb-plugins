@@ -1,7 +1,7 @@
 import { defineQuery } from "@bb-kit/core/rpc";
 import { z } from "zod";
 import { cloudSessionView, DEVIN_PROVIDER_ID } from "../../shared/devin.ts";
-import { getTargetStore } from "../lib/targets.ts";
+import type { TargetsContext } from "../lib/targets.ts";
 
 const cloudSessionSchema = z.discriminatedUnion("state", [
   z.object({ state: z.literal("hidden") }).strict(),
@@ -21,8 +21,8 @@ const cloudSessionSchema = z.discriminatedUnion("state", [
 export const cloudSession = defineQuery({
   input: z.object({ threadId: z.string().min(1) }).strict(),
   output: cloudSessionSchema,
-  async execute(ctx, { threadId }) {
-    if (getTargetStore(ctx.bb).target(threadId) !== "cloud") return { state: "hidden" as const };
+  async execute(ctx: TargetsContext, { threadId }) {
+    if (ctx.targets.target(threadId) !== "cloud") return { state: "hidden" as const };
     const thread = await ctx.bb.sdk.threads.get({ threadId });
     if (thread.providerId !== DEVIN_PROVIDER_ID) return { state: "hidden" as const };
     const [identity] = await ctx.bb.sdk.threads.events.list({
