@@ -33,6 +33,11 @@
       "component": "amp",
       "package-name": "@smsunarto/bb-plugin-amp"
     },
+    "plugins/devin": {
+      "release-type": "node",
+      "component": "devin",
+      "package-name": "@smsunarto/bb-plugin-devin"
+    },
     "plugins/gh-stack": {
       "release-type": "node",
       "component": "gh-stack",
