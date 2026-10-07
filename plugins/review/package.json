@@ -22,7 +22,11 @@
     "name": "Review",
     "description": "Agents ask the other model family to review their work before ending a turn. A banner shows the running review.",
     "branding": {
-      "icon": "./assets/icon.svg"
+      "icon": "./assets/icon.svg",
+      "logo": {
+        "light": "./assets/logo.svg",
+        "dark": "./assets/logo-dark.svg"
+      }
     },
     "server": "./src/server/server.ts",
     "app": "./src/app/app.tsx"
