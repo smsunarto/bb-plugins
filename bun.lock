@@ -142,6 +142,32 @@
         "react": ">=19",
       },
     },
+    "plugins/agent-instructions": {
+      "name": "@smsunarto/bb-plugin-agent-instructions",
+      "version": "0.1.0",
+      "dependencies": {
+        "@bb-kit/core": "0.2.0",
+        "@tanstack/react-query": "^5.101.4",
+        "zod": "^4.4.3",
+      },
+      "devDependencies": {
+        "@get-bb/plugin-sdk": "0.5.29",
+        "@radix-ui/react-slot": "^1.3.0",
+        "@testing-library/react": "16.3.2",
+        "@types/node": "^22.0.0",
+        "@types/react": "^19.0.0",
+        "@types/react-dom": "^19.0.0",
+        "bun-types": "^1.4.0",
+        "class-variance-authority": "^0.7.1",
+        "clsx": "^2.1.1",
+        "jsdom": "25.0.1",
+        "react": "19.2.8",
+        "react-dom": "19.2.8",
+        "tailwind-merge": "^3.4.0",
+        "tsx": "4.23.12",
+        "typescript": "^6.0.0",
+      },
+    },
     "plugins/agentation": {
       "name": "@smsunarto/bb-plugin-agentation",
       "version": "0.3.0",
@@ -1700,6 +1726,8 @@
     "@shikijs/types": ["@shikijs/types@4.4.3", "", { "dependencies": { "@shikijs/vscode-textmate": "^10.0.2", "@types/hast": "^3.0.5" } }, "sha512-UEJxmRR++MAGR6hugn0vgVS2W/6lWAts84FFSrnlH9sP0LNol7E5+NQ792pH8liWUhyMyjhTgSUH3k7iD7tc5g=="],
 
     "@shikijs/vscode-textmate": ["@shikijs/vscode-textmate@10.0.2", "", {}, "sha512-83yeghZ2xxin3Nj8z1NMd/NCuca+gsYXswywDy5bHvwlWL8tpTQmzGeUuHd9FC3E/SBEMvzJRwWEOz5gGes9Qg=="],
+
+    "@smsunarto/bb-plugin-agent-instructions": ["@smsunarto/bb-plugin-agent-instructions@workspace:plugins/agent-instructions"],
 
     "@smsunarto/bb-plugin-agentation": ["@smsunarto/bb-plugin-agentation@workspace:plugins/agentation"],
 

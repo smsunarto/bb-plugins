@@ -8,6 +8,10 @@
       "source": "./plugins/agentation"
     },
     {
+      "name": "agent-instructions",
+      "source": "./plugins/agent-instructions"
+    },
+    {
       "name": "amp",
       "source": "./plugins/amp"
     },

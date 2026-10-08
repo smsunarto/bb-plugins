@@ -18,6 +18,7 @@ import {
   GitPullRequestIcon,
   KitchenUtensilsIcon,
   Layers01Icon,
+  ListSettingIcon,
   PanelLeftIcon,
   Settings01Icon,
   WhiteboardIcon,
@@ -135,6 +136,10 @@ const paletteIcon: readonly IconNode[] = [
 ];
 
 const customIcons = {
+  "agent-instructions": {
+    name: "ListSetting",
+    nodes: ListSettingIcon,
+  },
   agentation: {
     name: "ChatFeedback",
     nodes: ChatFeedbackIcon,
