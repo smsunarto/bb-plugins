@@ -8,9 +8,11 @@ import {
   RESERVED_COMMAND_KEYS,
   TOOL_KEY_PATTERN,
   camelName,
+  toolDescriptionFile,
   toolName,
   unitKey,
 } from "@bb-kit/core/names";
+import { TOOL_INSTRUCTIONS_MAX_CHARS } from "@bb-kit/core/instructions";
 import { UNIT_NAME_PATTERN, pluginRelative, resolveImport } from "./shared.ts";
 import {
   classifyRootEntry,
@@ -24,12 +26,12 @@ import {
 import { derivePluginID } from "./derive-plugin-id.ts";
 
 /**
- * `bb-kit check` (§8): static verification of the eight rules — wiring
+ * `bb-kit check` (§8): static verification of the nine rules — wiring
  * bijection and naming (1), definePlugin id = derived plugin id (2), the name
  * table (3), manifest paths and engines (4),
  * composition and host CLI policy (5), sibling tests (warn-only, 6),
- * agent tool names and skills selection against the host policy (7), and
- * runtime ownership boundaries (8).
+ * agent tool names and skills selection against the host policy (7),
+ * runtime ownership boundaries (8), and tool text in instructions/ (9).
  *
  * check EXECUTES no plugin code. Parsing goes through the plugin's own
  * TypeScript — the plugin's `typescript` package (a plain CJS library;
@@ -437,6 +439,7 @@ export async function runCheck(options: CheckOptions): Promise<BinResult> {
 
   let pluginId: string | undefined;
   const derivedToolNames: { name: string; line: number }[] = [];
+  let toolNamesKnown = false;
   if (project) {
     const ts = project.ts;
     const stringText = (node: TS.Node | undefined): string | undefined =>
@@ -857,6 +860,13 @@ export async function runCheck(options: CheckOptions): Promise<BinResult> {
                   toolsRead = true;
                 }
                 skillsProperty = getProperty(agentsObject, "skills");
+                if (getProperty(agentsObject, "files") === undefined) {
+                  fail(
+                    "agents has no files entry — pass `files: instructionFiles(import.meta.url)` so tools read their descriptions (rule 9)",
+                    serverRelative,
+                    lineOfNode(sourceFile, agentsProperty),
+                  );
+                }
               }
               // bb-kit synthesizes the plugin's single configure from
               // `enabled` and `agents.skills` (ADR-0017); a hand
@@ -1028,6 +1038,7 @@ export async function runCheck(options: CheckOptions): Promise<BinResult> {
         // rule 3: tool names — derived by the same toolName the factory
         // registers with, so the printed contract IS the registered name.
         const namePluginId = pluginId ?? id;
+        toolNamesKnown = toolsRead && namePluginId !== undefined;
         if (toolsRead && namePluginId !== undefined && toolEntries.length > 0) {
           for (const entry of toolEntries) {
             derivedToolNames.push({ name: toolName(namePluginId, entry.key), line: entry.line });
@@ -1184,7 +1195,58 @@ export async function runCheck(options: CheckOptions): Promise<BinResult> {
     }
   }
 
+  // ---- rule 9: agent text lives in instructions/ ------------------
+  if (toolNamesKnown) {
+    checkToolText(cwd, derivedToolNames, compositionRoot, fail);
+  }
+
   return finishCheck(errors, warnings, table);
+}
+
+/**
+ * Rule 9: `definePlugin` reads every tool's description from
+ * `instructions/tools/<name>.md`, and the Prompt Editor lists that
+ * directory. A missing file fails the load; an orphan is text the editor
+ * shows but no agent ever receives.
+ */
+function checkToolText(
+  cwd: string,
+  tools: { name: string; line: number }[],
+  compositionRoot: string,
+  fail: (message: string, file?: string, line?: number) => void,
+): void {
+  const names = new Set(tools.map((tool) => tool.name));
+  for (const { name, line } of tools) {
+    const file = toolDescriptionFile(name);
+    const absolute = join(cwd, file);
+    if (!existsSync(absolute) || readFileSync(absolute, "utf8").trim() === "") {
+      fail(`tool "${name}" has no description — write ${file} (rule 9)`, compositionRoot, line);
+    }
+  }
+  const dir = join(cwd, "instructions", "tools");
+  if (!existsSync(dir)) return;
+  for (const entry of readdirSync(dir).sort()) {
+    const file = `instructions/tools/${entry}`;
+    const match = /^(.+?)(\.instructions)?\.md$/.exec(entry);
+    if (match === null) {
+      fail(`${file} is not a tool description or snippet — rule 9`, file);
+      continue;
+    }
+    const [, name = "", snippet] = match;
+    if (!names.has(name)) {
+      fail(`${file} describes no registered tool — rule 9`, file);
+      continue;
+    }
+    if (snippet !== undefined) {
+      const length = readFileSync(join(dir, entry), "utf8").trim().length;
+      if (length > TOOL_INSTRUCTIONS_MAX_CHARS) {
+        fail(
+          `${file} is ${length} characters — the host rejects a tool snippet over ${TOOL_INSTRUCTIONS_MAX_CHARS} (rule 9)`,
+          file,
+        );
+      }
+    }
+  }
 }
 
 function finishCheck(errors: Finding[], warnings: Finding[], table: string): BinResult {

@@ -53,3 +53,12 @@ export function unitKey(kind: UnitKind, basename: string): string {
 export function toolName(pluginId: string, key: string): string {
   return `${pluginId.replaceAll("-", "_")}_${key}`;
 }
+
+/**
+ * Where a tool's description lives, relative to the plugin root.
+ * `@bb-kit/core/instructions` reads it; `bb-kit add` and `check` write and
+ * verify it.
+ */
+export function toolDescriptionFile(publicName: string): string {
+  return `instructions/tools/${publicName}.md`;
+}

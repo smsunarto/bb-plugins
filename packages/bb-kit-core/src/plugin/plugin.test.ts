@@ -1,5 +1,9 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { pathToFileURL } from "node:url";
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import {
   createFakePluginHost,
@@ -16,7 +20,26 @@ import {
 } from "./plugin.ts";
 import { defineCommand, PluginCliError } from "../command/command.ts";
 import { defineMutation, defineQuery } from "../rpc/rpc.ts";
+import { instructionFiles } from "../instructions/instructions.ts";
 import { defineTool } from "../tools/tools.ts";
+
+/** A plugin root on disk whose `instructions/tools/` describes every test tool. */
+function pluginFiles(tools: Record<string, string>) {
+  const root = mkdtempSync(join(tmpdir(), "bb-kit-plugin-"));
+  writeFileSync(join(root, "package.json"), '{"name":"fixture"}');
+  mkdirSync(join(root, "instructions", "tools"), { recursive: true });
+  for (const [name, text] of Object.entries(tools)) {
+    writeFileSync(join(root, "instructions", "tools", `${name}.md`), text);
+  }
+  return instructionFiles(pathToFileURL(join(root, "server.ts")).href);
+}
+
+const files = pluginFiles({
+  demo_ns_greet: "Greet someone",
+  demo_greet: "Greet someone",
+  demo_gated: "Only in project p",
+  demo_fails: "Fail",
+});
 
 const echo = defineQuery({
   input: z.object({ path: z.string() }).strict(),
@@ -113,12 +136,12 @@ test("definePlugin rejects invalid ids, RPC keys, command keys, and tool keys", 
     /"rpc" is a reserved command name/,
   );
   const tool = defineTool({
-    description: "t",
     parameters: z.object({}),
     execute: () => "ok",
   });
   assert.throws(
-    () => definePlugin({ pluginId: "demo", rpc: {}, agents: { tools: { "Bad-Key": tool } } }),
+    () =>
+      definePlugin({ pluginId: "demo", rpc: {}, agents: { files, tools: { "Bad-Key": tool } } }),
     /invalid tool key "Bad-Key"/,
   );
 });
@@ -320,14 +343,13 @@ test("commands report unexpected failures, not PluginCliError or aborts", async 
 // ── agents ──────────────────────────────────────────────────────────
 
 const greet = defineTool({
-  description: "Greet someone",
   parameters: z.object({ name: z.string() }),
   execute: (ctx, { name }) => `hello ${name} from ${ctx.tool.threadId}`,
 });
 
 test("tools register under the plugin-prefixed name and get the tool context", async () => {
   const { harness } = await load(
-    definePlugin({ pluginId: "demo-ns", rpc: {}, agents: { tools: { greet } } }),
+    definePlugin({ pluginId: "demo-ns", rpc: {}, agents: { files, tools: { greet } } }),
   );
   assert.equal(
     await harness.callAgentTool("demo_ns_greet", { name: "ada" }, { threadId: "thr_1" }),
@@ -335,9 +357,34 @@ test("tools register under the plugin-prefixed name and get the tool context", a
   );
 });
 
+test("a tool's description and thread snippet come from its instruction files", async () => {
+  const described = pluginFiles({
+    demo_greet: "\nGreet someone by name.\n",
+    "demo_greet.instructions": "Prefer demo_greet over echo.",
+  });
+  const host = createFakePluginHost({ pluginId: "demo" });
+  await definePlugin({ pluginId: "demo", rpc: {}, agents: { files: described, tools: { greet } } })(
+    host.bb,
+  );
+  const [registered] = host.harness.inspection.registrations.agentTools;
+  assert.equal(registered?.description, "Greet someone by name.");
+  assert.equal(registered?.instructions, "Prefer demo_greet over echo.");
+});
+
+test("a tool without a description file fails the load", async () => {
+  const host = createFakePluginHost({ pluginId: "demo" });
+  await assert.rejects(
+    definePlugin({
+      pluginId: "demo",
+      rpc: {},
+      agents: { files: pluginFiles({}), tools: { greet } },
+    })(host.bb),
+    /instructions\/tools\/demo_greet\.md|ENOENT/,
+  );
+});
+
 test("gated tools and skills resolve per session through configure", async () => {
   const gated = defineTool({
-    description: "Only in project p",
     parameters: z.object({}),
     enabled: (_ctx, session) => session.project.id === "p",
     execute: () => "ok",
@@ -346,7 +393,7 @@ test("gated tools and skills resolve per session through configure", async () =>
   await definePlugin({
     pluginId: "demo",
     rpc: {},
-    agents: { tools: { greet, gated }, skills: ["guide"] },
+    agents: { files, tools: { greet, gated }, skills: ["guide"] },
   })(host.bb);
   const inProject = await host.harness.resolveAgentConfiguration(
     makePluginAgentConfigurationContext({ project: { id: "p" } }),
@@ -372,6 +419,7 @@ test("agents.instructions receives the plugin context", async () => {
     rpc: {},
     services: () => ({ counter: counter() }),
     agents: {
+      files,
       tools: {},
       instructions: (ctx, { threadId }) => `${threadId}:${ctx.counter.next()}`,
     },
@@ -384,7 +432,6 @@ test("tool failures are captured unless the call was aborted", async () => {
   const { failures, reporter } = recordingReporter();
   const boom = new Error("boom");
   const fails = defineTool({
-    description: "Fail",
     parameters: z.object({}),
     execute: (ctx) => Promise.reject(ctx.tool.signal.aborted ? ctx.tool.signal.reason : boom),
   });
@@ -392,7 +439,7 @@ test("tool failures are captured unless the call was aborted", async () => {
     definePlugin({
       pluginId: "demo",
       rpc: {},
-      agents: { tools: { fails } },
+      agents: { files, tools: { fails } },
       errorReporter: () => reporter,
     }),
   );
@@ -516,7 +563,7 @@ test("startup, RPC, and tool calls are traced with their outcomes", async () => 
     definePlugin({
       pluginId: "demo",
       rpc: { ping, fails },
-      agents: { tools: { greet } },
+      agents: { files, tools: { greet } },
       performanceReporter: () => reporter,
     }),
   );

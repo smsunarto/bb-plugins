@@ -10,6 +10,7 @@ import {
 } from "../names/names.ts";
 import type { RPCContext, RPCProcedures, RuntimeProcedure, StandardSchemaV1 } from "../rpc/rpc.ts";
 import { assertRPCKeys, callProcedure, noInputSchema, RPCValidationError } from "../rpc/rpc.ts";
+import type { InstructionFiles } from "../instructions/instructions.ts";
 import type { RuntimeTool, Session, ToolMap, ToolsContext } from "../tools/tools.ts";
 import type { MaybePromise } from "../utils/types.ts";
 import {
@@ -100,6 +101,11 @@ export function definePlugin<
     rpcPublication?: { discoverable?: boolean; description?: string };
     command?: M;
     agents?: {
+      /**
+       * `instructionFiles(import.meta.url)`. Each tool's description and
+       * thread snippet are read from `instructions/tools/` at load.
+       */
+      files: InstructionFiles;
       tools: T;
       skills?: string[] | ((ctx: Context<S>, session: Session) => string[]);
       instructions?(
@@ -332,6 +338,7 @@ function registerAgents(
   pluginId: string,
   tools: Record<string, RuntimeTool>,
   agents: {
+    files: InstructionFiles;
     skills?: string[] | ((ctx: never, session: Session) => string[]);
     instructions?(ctx: never, resolution: { threadId: string; projectId: string }): string | null;
   },
@@ -343,8 +350,7 @@ function registerAgents(
     const traceOperation = toolTraceOperation(key);
     bb.agents.registerTool({
       name: operation,
-      description: tool.description,
-      ...(tool.instructions === undefined ? {} : { instructions: tool.instructions }),
+      ...agents.files.tool(operation),
       ...(tool.presentation === undefined ? {} : { presentation: tool.presentation }),
       // A zod object schema at runtime. The SDK's overloads name zod's
       // types, which bb-kit does not import.

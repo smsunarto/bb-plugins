@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { BinResult } from "./shared.ts";
-import { camelName, toolName, unitKey } from "@bb-kit/core/names";
+import { camelName, toolDescriptionFile, toolName, unitKey } from "@bb-kit/core/names";
 import { UNIT_NAME_PATTERN, relativeImport } from "./shared.ts";
 import { defaultLayout, parseLayout, unitDir, unitFile, type SrcLayout } from "./layout.ts";
 import { derivePluginID } from "./derive-plugin-id.ts";
@@ -107,7 +107,6 @@ function toolTemplate(name: string, exportName: string): string {
     'import type { Context } from "@bb-kit/core/plugin";',
     "",
     `export const ${exportName} = defineTool({`,
-    `  description: "TODO: describe ${name} for the agent",`,
     "  parameters: z.object({ value: z.string() }),",
     `  execute: (_ctx: ToolContext<Context>, _input) => "${name}: TODO",`,
     "});",
@@ -182,10 +181,21 @@ export function runAdd(kind: string, name: string, options: AddOptions): BinResu
     layout = defaultLayout();
   }
 
+  let publicToolName: string | undefined;
+  if (isTool && packageName !== undefined) {
+    try {
+      publicToolName = toolName(derivePluginID(packageName), unitKey("tools", name));
+    } catch {
+      // An underivable package name — check rule 2 reports it.
+    }
+  }
   const dir = unitDir(layout, unitKind);
   const unitRelative = unitFile(layout, unitKind, name);
   const testRelative = `${dir}/${name}.test.ts`;
-  for (const relative of [unitRelative, testRelative]) {
+  const descriptionRelative =
+    publicToolName === undefined ? undefined : toolDescriptionFile(publicToolName);
+  for (const relative of [unitRelative, testRelative, descriptionRelative]) {
+    if (relative === undefined) continue;
     if (existsSync(join(options.cwd, relative))) {
       return {
         exitCode: 1,
@@ -213,10 +223,19 @@ export function runAdd(kind: string, name: string, options: AddOptions): BinResu
   mkdirSync(join(options.cwd, dir), { recursive: true });
   writeFileSync(join(options.cwd, unitRelative), unitContent);
   writeFileSync(join(options.cwd, testRelative), testContent);
+  if (descriptionRelative !== undefined) {
+    mkdirSync(join(options.cwd, descriptionRelative, ".."), { recursive: true });
+    writeFileSync(
+      join(options.cwd, descriptionRelative),
+      `TODO: describe ${publicToolName} for the agent.\n`,
+    );
+  }
 
   const importSpecifier = relativeImport(layout.compositionRoot, unitRelative);
 
-  const lines = [`created ${unitRelative}`, `created ${testRelative}`, ""];
+  const lines = [`created ${unitRelative}`, `created ${testRelative}`];
+  if (descriptionRelative !== undefined) lines.push(`created ${descriptionRelative}`);
+  lines.push("");
   lines.push(`wire it in ${layout.compositionRoot} — the import:`, "");
   lines.push(`  import { ${exportName} } from "${importSpecifier}";`, "");
   if (isProcedure) {
@@ -227,13 +246,10 @@ export function runAdd(kind: string, name: string, options: AddOptions): BinResu
     const entry = key === exportName ? `${exportName},` : `${key}: ${exportName},`;
     lines.push("and the agents.tools entry:", "", `  ${entry}`, "");
     lines.push(`(the agents.tools key must stay "${key}" — check rule 1 pins it to the filename)`);
-    if (packageName !== undefined) {
-      try {
-        lines.push(`name: ${toolName(derivePluginID(packageName), key)}`);
-      } catch {
-        // An underivable package name — check rule 2 reports it.
-      }
-    }
+    lines.push(
+      'agents also needs files: instructionFiles(import.meta.url), from "@bb-kit/core/instructions"',
+    );
+    if (publicToolName !== undefined) lines.push(`name: ${publicToolName}`);
   } else {
     const entry = name === exportName ? `${exportName},` : `"${name}": ${exportName},`;
     lines.push("and the command entry:", "", `  ${entry}`, "");

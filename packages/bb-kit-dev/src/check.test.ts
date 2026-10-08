@@ -15,7 +15,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { runCheck, isValidSemverRange } from "./check.ts";
 import { runCreate } from "./create.ts";
-import { camelName } from "@bb-kit/core/names";
+import { camelName, toolName } from "@bb-kit/core/names";
 import { UNIT_NAME_PATTERN } from "./shared.ts";
 
 /**
@@ -59,8 +59,15 @@ function edit(root: string, relative: string, from: string, to: string): void {
   writeFileSync(path, after);
 }
 
-/** A tools unit whose export is camel(base), optionally gated. */
-function addToolUnit(root: string, base: string, { enabled = false } = {}): void {
+/** A tools unit whose export is camel(base), optionally gated, with its description file. */
+function addToolUnit(
+  root: string,
+  base: string,
+  { enabled = false, pluginId = "notes" } = {},
+): void {
+  const descriptions = join(root, "instructions", "tools");
+  mkdirSync(descriptions, { recursive: true });
+  writeFileSync(join(descriptions, `${toolName(pluginId, base.replaceAll("-", "_"))}.md`), "d\n");
   mkdirSync(join(root, "src", "server", "tools"), { recursive: true });
   writeFileSync(
     join(root, "src", "server", "tools", `${base}.ts`),
@@ -69,7 +76,6 @@ function addToolUnit(root: string, base: string, { enabled = false } = {}): void
       'import { z } from "zod";',
       "",
       `export const ${camelName(base)} = defineTool({`,
-      '  description: "d",',
       "  parameters: z.object({}),",
       ...(enabled ? ["  enabled: () => true,"] : []),
       '  execute: () => "ok",',
@@ -86,13 +92,13 @@ function wireAgents(root: string, base: string, entry: string): void {
     root,
     "src/server/server.ts",
     'import { definePlugin } from "@bb-kit/core/plugin";',
-    `import { definePlugin } from "@bb-kit/core/plugin";\nimport { ${camelName(base)} } from "./tools/${base}.ts";`,
+    `import { definePlugin } from "@bb-kit/core/plugin";\nimport { instructionFiles } from "@bb-kit/core/instructions";\nimport { ${camelName(base)} } from "./tools/${base}.ts";\n\nconst files = instructionFiles(import.meta.url);`,
   );
   edit(
     root,
     "src/server/server.ts",
     "command: { status },",
-    `command: { status },\n  agents: ${entry},`,
+    `command: { status },\n  agents: ${entry.replace(/^\{ /, "{ files, ")},`,
   );
 }
 
@@ -441,6 +447,47 @@ test("a wired tools unit passes and the table derives the public name", async ()
   assert.match(result.stdout, /Tool names:\n {2}notes_beacon\n/);
 });
 
+test("a tool without its description file fails rule 9", async () => {
+  const root = makeFixture();
+  addToolUnit(root, "beacon");
+  rmSync(join(root, "instructions", "tools", "notes_beacon.md"));
+  wireAgents(root, "beacon", "{ tools: { beacon } }");
+  const result = await runCheck({ cwd: root });
+  assert.equal(result.exitCode, 1);
+  assert.match(
+    result.stderr,
+    /tool "notes_beacon" has no description — write instructions\/tools\/notes_beacon\.md \(rule 9\)/,
+  );
+});
+
+test("agents without its files entry fails rule 9", async () => {
+  const root = makeFixture();
+  addToolUnit(root, "beacon");
+  wireAgents(root, "beacon", "{ tools: { beacon } }");
+  edit(root, "src/server/server.ts", "agents: { files, tools", "agents: { tools");
+  const result = await runCheck({ cwd: root });
+  assert.equal(result.exitCode, 1);
+  assert.match(result.stderr, /agents has no files entry .* \(rule 9\)/);
+});
+
+test("tool text that no tool reads, or a snippet the host would reject, fails rule 9", async () => {
+  const root = makeFixture();
+  addToolUnit(root, "beacon");
+  wireAgents(root, "beacon", "{ tools: { beacon } }");
+  const dir = join(root, "instructions", "tools");
+  writeFileSync(join(dir, "notes_gone.md"), "stale\n");
+  writeFileSync(join(dir, "notes_beacon.instructions.md"), "x".repeat(4097));
+  writeFileSync(join(dir, "notes.txt"), "stray\n");
+  const result = await runCheck({ cwd: root });
+  assert.equal(result.exitCode, 1);
+  assert.match(result.stderr, /instructions\/tools\/notes_gone\.md describes no registered tool/);
+  assert.match(
+    result.stderr,
+    /notes_beacon\.instructions\.md is 4097 characters — the host rejects a tool snippet over 4096/,
+  );
+  assert.match(result.stderr, /instructions\/tools\/notes\.txt is not a tool description/);
+});
+
 test("an agents.tools key that is not the underscored basename fails rule 1", async () => {
   const root = makeFixture();
   addToolUnit(root, "two-word");
@@ -506,7 +553,7 @@ test(
   async () => {
     assert.ok(reservedCandidate);
     const root = makeFixture(`bb-plugin-${reservedCandidate.prefix}`);
-    addToolUnit(root, reservedCandidate.base);
+    addToolUnit(root, reservedCandidate.base, { pluginId: reservedCandidate.prefix });
     wireAgents(
       root,
       reservedCandidate.base,
@@ -536,8 +583,8 @@ test("a gated tool with manifest skills and no agents.skills fails rule 7", asyn
   edit(
     root,
     "src/server/server.ts",
-    "agents: { tools: { beacon } },",
-    'agents: { tools: { beacon }, skills: ["how-to"] },',
+    "agents: { files, tools: { beacon } },",
+    'agents: { files, tools: { beacon }, skills: ["how-to"] },',
   );
   const after = await runCheck({ cwd: root });
   assert.equal(after.stderr, "");

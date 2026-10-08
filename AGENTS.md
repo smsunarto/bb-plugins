@@ -15,6 +15,7 @@
 - Code diffs, syntax highlighting: https://diffs.com
 - Prefer to use an existing color palette from `/plugins/monokai` theme. If a new color is needed, it should be added to the theme before being used. This is so that when we update the theme, the color change is applied to all plugins that use it.
 - Always check whether the SDK provides an API that can be used to achieve the desired functionality before handrolling our own solution.
+- Keep agent-facing text (thread instructions, prompts, tool descriptions) in `<plugin>/instructions/` and read it with `instructionFiles` from `@bb-kit/core/instructions`. Tool descriptions go in `instructions/tools/<tool>.md`, with an optional `<tool>.instructions.md` thread snippet. The Prompt Editor plugin edits these files, so do not inline agent text in code.
 
 ## Work -> Plugins Routing
 

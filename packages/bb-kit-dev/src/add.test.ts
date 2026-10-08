@@ -115,6 +115,11 @@ test("add tool writes the unit and prints the derived name", () => {
   assert.match(result.stdout, /and the agents\.tools entry:/);
   assert.match(result.stdout, /\n {2}beacon,\n/);
   assert.match(result.stdout, /name: notes_beacon/);
+  assert.equal(
+    readFileSync(join(cwd, "instructions/tools/notes_beacon.md"), "utf8"),
+    "TODO: describe notes_beacon for the agent.\n",
+  );
+  assert.match(result.stdout, /created instructions\/tools\/notes_beacon\.md/);
 });
 
 test("add tool pins the underscored key when the name is hyphenated", () => {

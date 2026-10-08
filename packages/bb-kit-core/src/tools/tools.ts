@@ -24,10 +24,13 @@ type ObjectSchema = StandardSchemaV1 & JSONObjectSchema;
  * `enabled` is synchronous because the host resolves the agent
  * configuration synchronously; a Promise there fails the selection
  * closed.
+ *
+ * A tool carries no description: `definePlugin` reads it from
+ * `instructions/tools/<public name>.md` (and the optional thread snippet
+ * from `<public name>.instructions.md`), so the Prompt Editor edits the
+ * text the agent actually receives.
  */
 export type DefinedTool<C extends Context, In extends ObjectSchema> = {
-  readonly description: string;
-  readonly instructions?: string;
   readonly presentation?: ToolPresentation;
   readonly parameters: In;
   enabled?(ctx: C, session: Session): boolean;
@@ -45,8 +48,6 @@ export function defineTool<In extends ObjectSchema, C extends Context = Context>
 }
 
 export type AnyTool = {
-  readonly description: string;
-  readonly instructions?: string;
   readonly presentation?: ToolPresentation;
   readonly parameters: StandardSchemaV1;
   enabled?(ctx: never, session: never): boolean;
@@ -57,8 +58,6 @@ export type ToolMap = Record<string, AnyTool>;
 
 /** The runtime view the composition root calls. */
 export type RuntimeTool = {
-  description: string;
-  instructions?: string;
   presentation?: ToolPresentation;
   parameters: StandardSchemaV1;
   enabled?: (ctx: unknown, session: Session) => boolean;

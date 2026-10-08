@@ -72,15 +72,16 @@ Scaffolding, `add`, `check`, and isolated bb dev instances live in
 
 ## Subpaths
 
-| Subpath                  | Exports                                                                                                                                              |
-| ------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `@bb-kit/core/plugin`    | `definePlugin`, types `DefinedPlugin`, `Context`, `PluginErrorReporterFactory`, `PluginPerformanceReporterFactory`                                   |
-| `@bb-kit/core/rpc`       | `defineQuery`, `defineMutation`, `callProcedure`, `RPCValidationError`, types `Client`, `RPCContext`, `RPCProcedures`, `SchemaInput`, `SchemaOutput` |
-| `@bb-kit/core/command`   | `defineCommand`, `PluginCliError`, types `CommandContext`, `CommandResult`                                                                           |
-| `@bb-kit/core/tools`     | `defineTool`, types `ToolContext`, `ToolResult`, `ToolPresentation`                                                                                  |
-| `@bb-kit/core/rpc/query` | `createRPC`, `PluginQueryBoundary`, `pluginQueryClient` (browser)                                                                                    |
-| `@bb-kit/core/names`     | `camelName`, `unitKey`, `toolName`, and the naming patterns `bb-kit check` enforces                                                                  |
-| `@bb-kit/core/testing`   | `installDom`. Use `createFakePluginHost` from `@get-bb/plugin-sdk/testing` for a fake `bb`.                                                          |
+| Subpath                     | Exports                                                                                                                                              |
+| --------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `@bb-kit/core/plugin`       | `definePlugin`, types `DefinedPlugin`, `Context`, `PluginErrorReporterFactory`, `PluginPerformanceReporterFactory`                                   |
+| `@bb-kit/core/rpc`          | `defineQuery`, `defineMutation`, `callProcedure`, `RPCValidationError`, types `Client`, `RPCContext`, `RPCProcedures`, `SchemaInput`, `SchemaOutput` |
+| `@bb-kit/core/command`      | `defineCommand`, `PluginCliError`, types `CommandContext`, `CommandResult`                                                                           |
+| `@bb-kit/core/tools`        | `defineTool`, types `ToolContext`, `ToolResult`, `ToolPresentation`                                                                                  |
+| `@bb-kit/core/rpc/query`    | `createRPC`, `PluginQueryBoundary`, `pluginQueryClient` (browser)                                                                                    |
+| `@bb-kit/core/instructions` | `instructionFiles`, `placeholders`, `fill`: agent-facing Markdown under `<plugin>/instructions/`                                                     |
+| `@bb-kit/core/names`        | `camelName`, `unitKey`, `toolName`, and the naming patterns `bb-kit check` enforces                                                                  |
+| `@bb-kit/core/testing`      | `installDom`. Use `createFakePluginHost` from `@get-bb/plugin-sdk/testing` for a fake `bb`.                                                          |
 
 There is no root export; the subpath is the unit.
 

@@ -42,6 +42,10 @@
       "types": "./dist/tools/tools.d.ts",
       "import": "./dist/tools/tools.js"
     },
+    "./instructions": {
+      "types": "./dist/instructions/instructions.d.ts",
+      "import": "./dist/instructions/instructions.js"
+    },
     "./names": {
       "types": "./dist/names/names.d.ts",
       "import": "./dist/names/names.js"
@@ -52,7 +56,7 @@
     }
   },
   "scripts": {
-    "build": "rm -rf dist && bun build src/plugin/plugin.ts src/rpc/rpc.ts src/rpc/query/query.ts src/command/command.ts src/tools/tools.ts src/names/names.ts src/testing/testing.ts --root src --outdir dist --target=node --format=esm --packages=external --splitting --sourcemap=linked && tsc -p tsconfig.build.json",
+    "build": "rm -rf dist && bun build src/plugin/plugin.ts src/rpc/rpc.ts src/rpc/query/query.ts src/command/command.ts src/tools/tools.ts src/instructions/instructions.ts src/names/names.ts src/testing/testing.ts --root src --outdir dist --target=node --format=esm --packages=external --splitting --sourcemap=linked && tsc -p tsconfig.build.json",
     "typecheck": "tsc -p tsconfig.json",
     "test": "bun test --timeout=30000",
     "clean": "rm -rf dist"
