@@ -1,4 +1,5 @@
-import { useCallback, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { pluginQueryClient } from "@bb-kit/core/rpc/query";
 import {
   experimental_Icon as Icon,
   experimental_useCodeTheme as useCodeTheme,
@@ -221,6 +222,41 @@ function FileCard({ file }: { file: FilePatch }) {
   );
 }
 
+// A commit's diff is fixed by its id. The worktree's is not, so that one
+// is refreshed on the panel's usual cadence.
+const WORKTREE_PATCHES = { staleTime: REFRESH_INTERVAL_MS } as const;
+
+/** Long enough that a pointer sweeping down the list does not fetch every row it crosses. */
+const INTENT_DELAY_MS = 75;
+
+/**
+ * Handlers that start a diff loading when the reader points at, or tabs to,
+ * the control that opens it. The diff is usually in by the time they click,
+ * so the row opens on its files instead of a placeholder.
+ */
+export function usePatchesIntent(
+  threadId: string,
+  repositoryKey: string | undefined,
+  source: PatchSource,
+) {
+  const client = rpc.useClient();
+  const timer = useRef<number | undefined>(undefined);
+  useEffect(() => () => window.clearTimeout(timer.current), []);
+  const start = () => {
+    window.clearTimeout(timer.current);
+    timer.current = window.setTimeout(() => {
+      const input = { threadId, repositoryKey, source };
+      void pluginQueryClient.prefetchQuery({
+        queryKey: rpc.patches.queryKey(input),
+        queryFn: () => client.patches(input),
+        ...(source.kind === "commit" ? COMMIT_QUERY : WORKTREE_PATCHES),
+      });
+    }, INTENT_DELAY_MS);
+  };
+  const stop = () => window.clearTimeout(timer.current);
+  return { onPointerEnter: start, onPointerLeave: stop, onFocus: start, onBlur: stop };
+}
+
 /**
  * One `but diff` call for a commit or the worktree, with the file list and line
  * totals derived from it. Keyed off the query result, not a fresh `?? []`, so
@@ -233,11 +269,9 @@ export function usePatches(
 ) {
   const patches = rpc.patches.useQuery(
     { threadId, repositoryKey, source },
-    // A commit's diff is fixed by its id. The worktree's is not, so that one
-    // is refreshed on the panel's usual cadence.
     source.kind === "commit"
       ? COMMIT_QUERY
-      : { staleTime: REFRESH_INTERVAL_MS, refetchInterval: REFRESH_INTERVAL_MS },
+      : { ...WORKTREE_PATCHES, refetchInterval: REFRESH_INTERVAL_MS },
   );
   const files = patches.data?.files;
   const changes = useMemo(

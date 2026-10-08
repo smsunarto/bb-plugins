@@ -106,6 +106,84 @@ test("shows the workspace it already has when the panel is mounted again", async
   second.lifecycle.unmount();
 });
 
+test("draws the last board and history at once after a reload, then checks them", async () => {
+  const first = await panel(baseRpc);
+  await waitFor(() => expect(first.getByText("chore: older work")).toBeTruthy());
+  first.lifecycle.unmount();
+
+  // A reload: memory is gone, storage is not, and the server is slow.
+  pluginQueryClient.clear();
+  let release: () => void = () => {};
+  const second = await panel({
+    ...baseRpc,
+    workspace: () =>
+      new Promise((resolve) => {
+        release = () => resolve({ ...workspace, repoName: "bb-plugins renamed" });
+      }),
+  });
+  expect(second.getByText("scott/top")).toBeTruthy();
+  expect(second.getByText("chore: older work")).toBeTruthy();
+  expect(second.queryByText("Loading workspace…")).toBeNull();
+  expect(second.getByRole("button", { name: "Refresh" }).getAttribute("aria-busy")).toBe("true");
+
+  release();
+  await waitFor(() =>
+    expect(second.getByRole("button", { name: "Refresh" }).getAttribute("aria-busy")).toBe(
+      "false",
+    ),
+  );
+  second.lifecycle.unmount();
+});
+
+test("does not draw a stored board for a workspace that stopped being one", async () => {
+  const first = await panel(baseRpc);
+  await waitFor(() => expect(first.getByText("scott/top")).toBeTruthy());
+  first.lifecycle.unmount();
+  pluginQueryClient.clear();
+
+  const notice = { ...workspace, state: "setupRequired" as const, stacks: [], base: null };
+  const second = await panel({ ...baseRpc, workspace: () => notice });
+  await waitFor(() =>
+    expect(second.getByText("This repository is not a GitButler project")).toBeTruthy(),
+  );
+  second.lifecycle.unmount();
+
+  // The notice replaced the stored board, so the next reload starts clean.
+  pluginQueryClient.clear();
+  const third = await panel({ ...baseRpc, workspace: () => new Promise(() => {}) });
+  expect(third.queryByText("scott/top")).toBeNull();
+  expect(third.getByText("Loading workspace…")).toBeTruthy();
+  third.lifecycle.unmount();
+});
+
+test("starts a commit's diff loading when the pointer rests on its row", async () => {
+  const asked: string[] = [];
+  const slot = await panel({
+    ...baseRpc,
+    patches: (input: { source: { kind: string; commitId?: string } }) => {
+      asked.push(input.source.commitId ?? input.source.kind);
+      return { files: [], truncated: false };
+    },
+  });
+  await waitFor(() => expect(slot.getByText("feat(top): add the thing")).toBeTruthy());
+  const row = slot.getByText("feat(top): add the thing").closest("button")!;
+
+  // A pointer passing straight over the row fetches nothing.
+  fireEvent.pointerEnter(row);
+  fireEvent.pointerLeave(row);
+  await new Promise((resolve) => setTimeout(resolve, 150));
+  expect(asked).toEqual([]);
+
+  fireEvent.pointerEnter(row);
+  await waitFor(() => expect(asked).toHaveLength(1));
+
+  // The click finds the answer already in, and does not ask again.
+  fireEvent.click(row);
+  await waitFor(() => expect(slot.getByRole("region", { name: "Changed files" })).toBeTruthy());
+  expect(asked).toHaveLength(1);
+  slot.lifecycle.unmount();
+});
+
 test("keeps the history on screen while a longer page loads", async () => {
   let release: () => void = () => {};
   const slot = await panel({
@@ -558,6 +636,32 @@ test("pushes a branch by name from its card", async () => {
     threadId: "thread-1",
     action: { kind: "push", branch: "scott/bottom", force: false, acceptedLoss: [] },
   });
+  slot.lifecycle.unmount();
+});
+
+test("a push refreshes the board but keeps an open commit's diff", async () => {
+  const { actions, rpc } = recordActions();
+  const reads = { workspace: 0, patches: 0 };
+  const { slot, card } = await bottomCard({
+    ...rpc,
+    workspace: () => {
+      reads.workspace += 1;
+      return workspace;
+    },
+    patches: () => {
+      reads.patches += 1;
+      return { files: [], truncated: false };
+    },
+  });
+  fireEvent.click(slot.getByText("feat(top): add the thing"));
+  await waitFor(() => expect(reads.patches).toBe(1));
+  const before = reads.workspace;
+
+  fireEvent.click(card.getByRole("button", { name: "Push" }));
+  await waitFor(() => expect(actions).toHaveLength(1));
+  await waitFor(() => expect(reads.workspace).toBe(before + 1));
+  // A commit's diff is fixed by its id, so a write has no reason to fetch it again.
+  expect(reads.patches).toBe(1);
   slot.lifecycle.unmount();
 });
 

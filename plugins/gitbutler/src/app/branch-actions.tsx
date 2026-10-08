@@ -1,5 +1,6 @@
 import { useEffect, useId, useRef, useState } from "react";
 import type { ReactNode } from "react";
+import type { Query, QueryKey } from "@tanstack/react-query";
 import { experimental_Icon as Icon, useBbNavigate } from "@get-bb/plugin-sdk/app";
 import { pluginQueryClient } from "@bb-kit/core/rpc/query";
 import { branchNameSchema } from "../shared/schema.ts";
@@ -8,6 +9,7 @@ import type {
   Branch,
   ButAction,
   ButActionResult,
+  PatchSource,
   PushMode,
   ReviewRequest,
 } from "../shared/schema.ts";
@@ -63,10 +65,37 @@ function useFooterFocus(...busy: boolean[]) {
   return footer;
 }
 
+/** Whether a cached read is `method`'s answer for this thread. */
+function readOf(method: { queryKey: () => QueryKey }, threadId: string) {
+  const [name] = method.queryKey();
+  return (query: Query) =>
+    query.queryKey[0] === name &&
+    (query.queryKey[1] as { threadId?: unknown } | undefined)?.threadId === threadId;
+}
+
+/**
+ * Fetch again what a write or an agent's turn can change: the board, the
+ * worktree's diff, and the subthreads working on it. Diffs and history are keyed by commit id, which
+ * a write cannot change, so open commits are not fetched again. The promise
+ * is the board's, so a request's spinner ends when the board shows its
+ * result and not a moment before.
+ */
+export function refreshWorkspace(threadId: string): Promise<void> {
+  const uncommitted = readOf(rpc.patches, threadId);
+  void pluginQueryClient.invalidateQueries({
+    predicate: (query) =>
+      uncommitted(query) &&
+      (query.queryKey[1] as { source?: PatchSource }).source?.kind === "uncommitted",
+  });
+  void pluginQueryClient.invalidateQueries({ predicate: readOf(rpc.reviewRequests, threadId) });
+  void pluginQueryClient.invalidateQueries({ predicate: readOf(rpc.conflictResolution, threadId) });
+  return pluginQueryClient.invalidateQueries({ predicate: readOf(rpc.workspace, threadId) });
+}
+
 /** Runs `but` writes for the card or the header. One request at a time per caller. */
 export function useButAction(target: WorkspaceTarget) {
   const mutation = rpc.butAction.useMutation({
-    onSettled: () => pluginQueryClient.invalidateQueries(),
+    onSettled: () => refreshWorkspace(target.threadId),
   });
   // A request about another repository is not this one's to show, even
   // while it is still running after the reader switched.
@@ -193,7 +222,7 @@ function useReviewRequest(target: WorkspaceTarget, branch: string) {
       query.state.data?.requests.some((request) => request.running) ? REVIEW_POLL_MS : false,
   });
   const mutation = rpc.requestReview.useMutation({
-    onSettled: () => pluginQueryClient.invalidateQueries(),
+    onSettled: () => refreshWorkspace(target.threadId),
   });
   return {
     request: () => mutation.mutate({ ...target, branch }),

@@ -1,4 +1,5 @@
 import { definePlugin } from "@bb-kit/core/plugin";
+import { TURN_ENDED_CHANNEL } from "../shared/panel.ts";
 import { offerPanelTab } from "./lib/panel-tab.ts";
 import { baseHistory } from "./rpc/base-history.ts";
 import { butAction } from "./rpc/but-action.ts";
@@ -26,6 +27,12 @@ export default definePlugin({
     conflictResolution,
   },
   setup({ bb }) {
+    // An agent's writes come in a burst that ends with its turn. Saying so
+    // lets an open panel show them now rather than on its next poll.
+    const turnEnded = ({ thread }: { thread: { id: string } }) =>
+      bb.realtime.publish(TURN_ENDED_CHANNEL, { threadId: thread.id });
+    bb.events.on("thread.idle", turnEnded);
+    bb.events.on("thread.failed", turnEnded);
     // `active` rather than `created`: a new thread's environment is still
     // provisioning when it is created, so there is no workspace to check yet.
     bb.events.on("thread.active", async ({ thread }) => {

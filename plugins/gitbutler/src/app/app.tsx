@@ -14,22 +14,30 @@ import {
   experimental_Icon as Icon,
   useBbContext,
   useBbNavigate,
+  useRealtime,
 } from "@get-bb/plugin-sdk/app";
 import type { PluginThreadHeaderActionProps } from "@get-bb/plugin-sdk/app";
 import { PluginQueryBoundary } from "@bb-kit/core/rpc/query";
-import { PANEL_ACTION_ID } from "../shared/panel.ts";
+import { PANEL_ACTION_ID, TURN_ENDED_CHANNEL } from "../shared/panel.ts";
 import type { ActionRisk, PatchSource, Repository, Workspace } from "../shared/schema.ts";
 import { Badge } from "./components/ui/badge.tsx";
 import { Button } from "./components/ui/button.tsx";
 import { cn } from "./lib/utils.ts";
 import { Loading, Notice, errorText } from "./notice.tsx";
-import { Confirm, pullRiskPrompt, useButAction, useFocusAfter } from "./branch-actions.tsx";
+import {
+  Confirm,
+  pullRiskPrompt,
+  refreshWorkspace,
+  useButAction,
+  useFocusAfter,
+} from "./branch-actions.tsx";
 import type { WorkspaceTarget } from "./branch-actions.tsx";
 import { Conflicts } from "./conflicts.tsx";
 import { FileCards } from "./file-cards.tsx";
 import { GitButlerMark } from "./gitbutler-mark.tsx";
 import { REFRESH_INTERVAL_MS } from "./query-client.ts";
 import { rpc } from "./rpc.ts";
+import { storedAnswer } from "./stored-queries.ts";
 import { relativeTime, shortId, subject } from "./format.ts";
 import { BaseCard, CommitExpansionContext, StackLane, UncommittedCard } from "./workspace-lane.tsx";
 import type { CommitExpansion, CommitRef } from "./workspace-lane.tsx";
@@ -545,10 +553,17 @@ function WorkspacePanel({ threadId }: { threadId: string }) {
   const board = useRef<HTMLDivElement>(null);
   useMinuteTick();
 
-  const repositories = rpc.repositories.useQuery({ threadId }, { staleTime: 60_000 });
+  const repositories = rpc.repositories.useQuery(
+    { threadId },
+    { ...storedAnswer("repositories", { threadId }), staleTime: 60_000 },
+  );
   const workspace = rpc.workspace.useQuery(
     { threadId, repositoryKey },
-    { refetchInterval: REFRESH_INTERVAL_MS, refetchOnWindowFocus: true },
+    {
+      ...storedAnswer("workspace", { threadId, repositoryKey }),
+      refetchInterval: REFRESH_INTERVAL_MS,
+      refetchOnWindowFocus: true,
+    },
   );
 
   const chooseRepository = useCallback(
@@ -609,6 +624,12 @@ function WorkspacePanel({ threadId }: { threadId: string }) {
     (opener.isConnected ? opener : board.current)?.focus();
   }, [selection]);
 
+  useRealtime(TURN_ENDED_CHANNEL, (payload) => {
+    if ((payload as { threadId?: unknown } | null)?.threadId === threadId) {
+      void refreshWorkspace(threadId);
+    }
+  });
+
   const { data, stale } = useShownWorkspace(workspace, repositoryKey);
   const pull = useWorkspacePull({ threadId, repositoryKey });
   const pullButton = usePullFocus(pull);
@@ -618,6 +639,11 @@ function WorkspacePanel({ threadId }: { threadId: string }) {
     setRefreshing(true);
     void workspace.refetch().finally(() => setRefreshing(false));
   };
+  // A board drawn from storage or memory is checked as soon as the panel
+  // opens. Until that first read lands, Refresh spins as if clicked, so a
+  // board that is about to change says so.
+  const syncing =
+    refreshing || (data !== undefined && workspace.isFetching && !workspace.isFetchedAfterMount);
 
   /*
    * The header is drawn in every state, loading and failure included. It used
@@ -655,16 +681,16 @@ function WorkspacePanel({ threadId }: { threadId: string }) {
             className="size-6 text-muted-foreground"
             onClick={refresh}
             aria-label="Refresh"
-            aria-busy={refreshing}
+            aria-busy={syncing}
           >
             {/*
-             * The spinner tracks the click, not `isFetching`: the panel polls
-             * every ten seconds, so tying it to the query made the icon blink
-             * six times a minute on its own.
+             * The spinner tracks the click and the first check, not
+             * `isFetching`: the panel polls every ten seconds, so tying it to
+             * the query made the icon blink six times a minute on its own.
              */}
             <Icon
-              name={refreshing ? "Spinner" : "RotateCcw"}
-              className={cn("size-3.5", refreshing && "animate-spin")}
+              name={syncing ? "Spinner" : "RotateCcw"}
+              className={cn("size-3.5", syncing && "animate-spin")}
               aria-hidden
             />
           </Button>
@@ -744,7 +770,10 @@ function GitButlerApp({ threadId }: { threadId?: string }) {
 function HeaderButton({ threadId, isCompactViewport }: PluginThreadHeaderActionProps) {
   const navigate = useBbNavigate();
   const repositoryKey = readRepository(threadId) ?? undefined;
-  const workspace = rpc.workspace.useQuery({ threadId, repositoryKey }, { staleTime: 60_000 });
+  const workspace = rpc.workspace.useQuery(
+    { threadId, repositoryKey },
+    { ...storedAnswer("workspace", { threadId, repositoryKey }), staleTime: 60_000 },
+  );
   if (workspace.data?.state !== "ready") return null;
   return (
     // bb's own toolbar buttons (the editor picker beside this one) are an

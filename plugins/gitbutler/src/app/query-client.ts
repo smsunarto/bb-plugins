@@ -7,3 +7,6 @@ export const COMMIT_QUERY = { staleTime: Number.POSITIVE_INFINITY, gcTime: 30 * 
 
 /** How often the panel re-reads the workspace, and how long worktree-derived reads stay fresh. */
 export const REFRESH_INTERVAL_MS = 10_000;
+
+/** Base history commits per page. The first page is also the one kept across reloads. */
+export const BASE_HISTORY_PAGE = 60;

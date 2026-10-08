@@ -13,11 +13,12 @@ import type {
 import { Button } from "./components/ui/button.tsx";
 import { cn } from "./lib/utils.ts";
 import { Loading, Notice, errorText } from "./notice.tsx";
-import { REFRESH_INTERVAL_MS } from "./query-client.ts";
+import { BASE_HISTORY_PAGE, REFRESH_INTERVAL_MS } from "./query-client.ts";
 import { rpc } from "./rpc.ts";
+import { storedAnswer } from "./stored-queries.ts";
 import { relativeTime, shortId, subject } from "./format.ts";
 import { BranchActions, BranchName } from "./branch-actions.tsx";
-import { usePatches } from "./file-cards.tsx";
+import { usePatches, usePatchesIntent } from "./file-cards.tsx";
 import { ChangedFilesCard, Count, FileList, LineStats, useListMode } from "./file-list.tsx";
 import type { WorkspaceTarget } from "./branch-actions.tsx";
 
@@ -29,7 +30,6 @@ import type { WorkspaceTarget } from "./branch-actions.tsx";
  * is one column, so they stack vertically here.
  */
 
-const BASE_HISTORY_PAGE = 60;
 const BASE_HISTORY_MAX = 500;
 
 /** Anything the detail screen can be opened from: a stack, base, or history row. */
@@ -156,6 +156,11 @@ function CommitRow({
   const open = expansion.expanded === key;
   const title = subject(commit.message);
   const railTone = commit.conflicted ? "conflicted" : tone;
+  const source = useMemo<PatchSource>(
+    () => ({ kind: "commit", commitId: commit.commitId }),
+    [commit.commitId],
+  );
+  const intent = usePatchesIntent(expansion.threadId, expansion.repositoryKey, source);
   return (
     <li>
       <button
@@ -166,6 +171,7 @@ function CommitRow({
           commit.conflicted && "bg-destructive/10",
         )}
         onClick={() => expansion.onToggle(key)}
+        {...(open ? {} : intent)}
         aria-expanded={open}
         title={`${shortId(commit.commitId)} ${title}`}
       >
@@ -613,12 +619,14 @@ export function BaseCard({
   // A new base means a different history; start the window over.
   useEffect(() => setLimit(BASE_HISTORY_PAGE), [base.commitId]);
 
-  const history = rpc.baseHistory.useQuery(
-    { threadId, repositoryKey, from: base.commitId, offset: 0, limit },
+  const input = { threadId, repositoryKey, from: base.commitId, offset: 0, limit };
+  const history = rpc.baseHistory.useQuery(input, {
+    ...storedAnswer("baseHistory", input),
     // A bigger page is a new key. Keep the list the reader was looking at
     // until the longer one lands, instead of swapping it for a spinner.
-    { staleTime: REFRESH_INTERVAL_MS, placeholderData: keepPreviousData },
-  );
+    staleTime: REFRESH_INTERVAL_MS,
+    placeholderData: keepPreviousData,
+  });
   const commits = history.data?.reason ? [] : (history.data?.commits ?? []);
   const more = Boolean(history.data?.hasMore) && limit < BASE_HISTORY_MAX;
 
