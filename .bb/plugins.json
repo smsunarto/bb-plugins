@@ -44,6 +44,10 @@
       "source": "./plugins/monokai"
     },
     {
+      "name": "prompt-editor",
+      "source": "./plugins/prompt-editor"
+    },
+    {
       "name": "review",
       "source": "./plugins/review"
     },

@@ -1,0 +1,238 @@
+.pe-panel {
+  --pe-mono: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  --pe-hairline: var(--border-hairline, var(--border));
+  --pe-recessed: var(--surface-recessed, var(--muted));
+  --pe-good: var(--success, var(--foreground));
+  --pe-warn: var(--warning, var(--foreground));
+  --pe-bad: var(--destructive-text, var(--destructive));
+  display: grid;
+  grid-template-columns: minmax(220px, 280px) minmax(0, 1fr);
+  height: 100%;
+  min-height: 0;
+  color: var(--foreground);
+  background: var(--background);
+  font-size: 13px;
+}
+.pe-panel h1,
+.pe-panel h2,
+.pe-panel h3,
+.pe-panel p {
+  margin: 0;
+}
+.pe-panel code,
+.pe-mono {
+  font-family: var(--pe-mono);
+}
+.pe-sidebar {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  border-right: 1px solid var(--pe-hairline);
+}
+.pe-sidebar-head {
+  padding: 16px 16px 12px;
+}
+.pe-sidebar-head h1 {
+  font-size: 15px;
+  font-weight: 600;
+}
+.pe-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0 8px 16px;
+}
+.pe-group + .pe-group {
+  margin-top: 2px;
+}
+.pe-plugin,
+.pe-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.pe-plugin {
+  justify-content: space-between;
+  padding: 7px 8px;
+}
+.pe-plugin[aria-expanded="true"] .pe-plugin-name {
+  font-weight: 600;
+}
+.pe-row {
+  padding: 4px 8px;
+  color: var(--muted-foreground);
+}
+.pe-row[data-nested] {
+  padding-left: 20px;
+}
+.pe-plugin:hover,
+.pe-row:hover {
+  background: var(--state-hover, var(--accent));
+}
+.pe-row[aria-current] {
+  background: var(--accent);
+  color: var(--foreground);
+}
+.pe-plugin:focus-visible,
+.pe-row:focus-visible,
+.pe-button:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: -2px;
+}
+.pe-row-label {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pe-files {
+  padding: 2px 0 8px 8px;
+}
+.pe-label {
+  color: var(--subtle-foreground, var(--muted-foreground));
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.pe-files .pe-label {
+  padding: 10px 8px 4px;
+}
+.pe-meta {
+  color: var(--muted-foreground);
+  font-size: 12px;
+  white-space: nowrap;
+}
+.pe-meta[data-tone="bad"] {
+  color: var(--pe-bad);
+}
+.pe-tag {
+  flex: none;
+  padding: 0 5px;
+  border: 1px solid var(--pe-hairline);
+  border-radius: 4px;
+  font-size: 10.5px;
+  line-height: 16px;
+}
+.pe-tag[data-tone="warn"] {
+  color: var(--pe-warn);
+}
+.pe-dot {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--primary);
+}
+.pe-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+  min-height: 0;
+  padding: 16px 20px;
+}
+.pe-empty {
+  align-items: center;
+  justify-content: center;
+  color: var(--muted-foreground);
+}
+.pe-editor-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+.pe-editor-head h2 {
+  margin-top: 2px;
+  font-size: 14px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.pe-actions {
+  display: flex;
+  flex: none;
+  gap: 8px;
+}
+.pe-button {
+  padding: 5px 12px;
+  border: 1px solid var(--input, var(--border));
+  border-radius: 6px;
+  background: var(--background);
+  color: var(--foreground);
+  font: inherit;
+  cursor: pointer;
+}
+.pe-button[data-primary] {
+  border-color: var(--primary);
+  background: var(--primary);
+  color: var(--primary-foreground);
+}
+.pe-button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.pe-notice {
+  padding: 8px 10px;
+  border: 1px solid var(--pe-hairline);
+  border-radius: 6px;
+  background: var(--pe-recessed);
+  color: var(--muted-foreground);
+  line-height: 1.5;
+}
+.pe-notice[data-tone="good"] {
+  color: var(--pe-good);
+}
+.pe-notice[data-tone="warn"] {
+  color: var(--pe-warn);
+}
+.pe-notice[data-tone="bad"] {
+  border-color: var(--surface-destructive-border, var(--pe-hairline));
+  background: var(--surface-destructive, var(--pe-recessed));
+  color: var(--pe-bad);
+}
+.pe-textarea,
+.pe-readonly {
+  flex: 1;
+  min-height: 240px;
+  margin: 0;
+  padding: 12px;
+  border: 1px solid var(--pe-hairline);
+  border-radius: 8px;
+  background: var(--card, var(--background));
+  color: var(--foreground);
+  font: 12.5px/1.6 var(--pe-mono);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  overflow-y: auto;
+  resize: none;
+}
+.pe-textarea:focus {
+  outline: none;
+  border-color: var(--ring);
+}
+.pe-editor-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.pe-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.pe-chip {
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: var(--pe-recessed);
+  font-size: 11.5px;
+}

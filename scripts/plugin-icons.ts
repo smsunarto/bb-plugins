@@ -12,6 +12,7 @@ import {
   CloudServerIcon,
   DashboardSpeed02Icon,
   Doc01Icon,
+  FileEditIcon,
   KeyboardIcon,
   GitBranchIcon,
   KitchenUtensilsIcon,
@@ -157,6 +158,10 @@ const customIcons = {
   cloudflare: {
     name: "CloudServer",
     nodes: CloudServerIcon,
+  },
+  "prompt-editor": {
+    name: "EditFile",
+    nodes: FileEditIcon,
   },
   "scott-docs": {
     name: "Doc",
