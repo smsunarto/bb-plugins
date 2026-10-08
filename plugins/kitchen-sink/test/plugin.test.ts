@@ -4,7 +4,10 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createFakePluginHost, makeThreadResponse } from "@get-bb/plugin-sdk/testing";
 
-import plugin, { SMART_EMBED_INSTRUCTIONS } from "../src/server/server.ts";
+import plugin from "../src/server/server.ts";
+import { files } from "../src/server/lib/instructions.ts";
+
+const SMART_EMBED_INSTRUCTIONS = files.read("smart-embeds");
 import { mentionProviders } from "../src/server/mentions.ts";
 import { WORKSPACE_CHANGED_CHANNEL } from "../src/shared/contract.ts";
 

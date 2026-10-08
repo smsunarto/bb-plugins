@@ -1,3 +1,4 @@
+import { instructionFiles } from "@bb-kit/core/instructions";
 import { definePlugin } from "@bb-kit/core/plugin";
 import { overview } from "./rpc/overview.ts";
 import { create } from "./rpc/create.ts";
@@ -40,7 +41,7 @@ export default definePlugin({
     oauthDisconnect,
   },
   command: { status },
-  agents: { tools: { shares } },
+  agents: { files: instructionFiles(import.meta.url), tools: { shares } },
   services(bb) {
     return {
       ...createService(bb),

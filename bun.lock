@@ -146,6 +146,7 @@
       "name": "@smsunarto/bb-plugin-agentation",
       "version": "0.3.0",
       "dependencies": {
+        "@bb-kit/core": "0.2.0",
         "@radix-ui/react-slot": "^1.3.0",
         "zod": "^4.3.6",
       },
@@ -368,6 +369,7 @@
       "name": "@smsunarto/bb-plugin-gh-stack",
       "version": "0.3.0",
       "dependencies": {
+        "@bb-kit/core": "0.2.0",
         "@pierre/trees": "^1.0.0-beta.6",
         "@radix-ui/react-slot": "^1.3.0",
         "zod": "^4.3.6",
@@ -432,6 +434,7 @@
       "name": "@smsunarto/bb-plugin-gtd-sidebar",
       "version": "0.5.1",
       "dependencies": {
+        "@bb-kit/core": "0.2.0",
         "@dnd-kit/core": "6.3.1",
         "@dnd-kit/sortable": "10.0.0",
         "@dnd-kit/utilities": "3.2.2",
@@ -632,6 +635,7 @@
       "name": "@smsunarto/bb-plugin-scott-inline-vis",
       "version": "0.1.0",
       "dependencies": {
+        "@bb-kit/core": "0.2.0",
         "mdast-util-from-markdown": "2.0.3",
         "mdast-util-gfm": "3.1.0",
         "mdast-util-to-markdown": "2.1.2",

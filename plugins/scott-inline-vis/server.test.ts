@@ -2,7 +2,7 @@ import { stat } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { afterEach, expect, test } from "vitest";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
-import plugin, { INSTRUCTIONS } from "./server.ts";
+import plugin, { files } from "./server.ts";
 import { widgetStateSnapshotSchema, type SaveWidgetState } from "./state-contract.ts";
 import { stateMigrations } from "./widget-state.ts";
 
@@ -64,7 +64,7 @@ test("routes agents to the bundled inline-vis skill", async () => {
     threadId: "thread-1",
     projectId: "project-1",
   });
-  expect(instructions).toBe(INSTRUCTIONS);
+  expect(instructions).toBe(files.read("inline-vis"));
   expect(instructions).toContain("read the `inline-vis` skill");
   const skill = fileURLToPath(new URL("./skills/inline-vis/SKILL.md", import.meta.url));
   expect((await stat(skill)).isFile()).toBe(true);

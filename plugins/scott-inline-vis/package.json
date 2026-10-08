@@ -47,6 +47,7 @@
     "dist/app.meta.json",
     "dist/app.css",
     "assets/",
+    "instructions/",
     "server.ts",
     "app.tsx",
     "app.css",
@@ -76,6 +77,7 @@
     "test": "vitest run --config vitest.config.ts"
   },
   "dependencies": {
+    "@bb-kit/core": "0.2.0",
     "mdast-util-from-markdown": "2.0.3",
     "mdast-util-gfm": "3.1.0",
     "mdast-util-to-markdown": "2.1.2",

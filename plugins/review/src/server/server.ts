@@ -1,6 +1,6 @@
 import { definePlugin } from "@bb-kit/core/plugin";
 import { start } from "./command/start.ts";
-import { AUTHOR_INSTRUCTIONS } from "./lib/review.ts";
+import { authorInstructions } from "./lib/review.ts";
 
 export default definePlugin({
   pluginId: "review",
@@ -30,7 +30,7 @@ export default definePlugin({
     bb.agents.configure((session) => ({
       tools: [],
       skills: [],
-      ...(skip.has(session.origin.pluginId ?? "") ? {} : { instructions: AUTHOR_INSTRUCTIONS }),
+      ...(skip.has(session.origin.pluginId ?? "") ? {} : { instructions: authorInstructions() }),
     }));
   },
 });

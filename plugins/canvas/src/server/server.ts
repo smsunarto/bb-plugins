@@ -4,6 +4,7 @@ import { check } from "./command/check.ts";
 import { comment as commentCommand } from "./command/comment.ts";
 import { comments as commentsCommand } from "./command/comments.ts";
 import { commentsInstructions } from "./comments-store.ts";
+import { files } from "./lib/instructions.ts";
 import { comment } from "./rpc/comment.ts";
 import { comments } from "./rpc/comments.ts";
 import { render } from "./rpc/render.ts";
@@ -33,6 +34,7 @@ export default definePlugin({
   },
   command: { generate, check, comments: commentsCommand, comment: commentCommand },
   agents: {
+    files,
     tools: {},
     instructions(_ctx, { threadId }) {
       return commentsInstructions(threadId);

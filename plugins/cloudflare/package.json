@@ -37,6 +37,7 @@
     "dist/*.css",
     "dist/*.json",
     "assets/",
+    "instructions/",
     "src/",
     "README.md",
     "LICENSE"

@@ -87,7 +87,10 @@ import {
   threadTurnInProgress,
   turnAssignmentPhase,
 } from "./lib/delivery.ts";
-import { readInstructions } from "./lib/instructions.ts";
+import { instructionFiles } from "@bb-kit/core/instructions";
+
+// Agent-facing text, editable in the Prompt Editor plugin.
+const files = instructionFiles(import.meta.url);
 
 const openStatuses: AnnotationStatus[] = ["pending", "acknowledged"];
 
@@ -863,8 +866,7 @@ export default async function plugin(bb: BbPluginApi) {
 
   bb.agents.registerTool({
     name: "agentation_list_sessions",
-    description:
-      "List annotation sessions — one per bb page a human has left visual feedback on. Start here to discover which pages have feedback.",
+    ...files.tool("agentation_list_sessions"),
     presentation: {
       label: {
         pending: "Listing annotation sessions",
@@ -888,8 +890,7 @@ export default async function plugin(bb: BbPluginApi) {
 
   bb.agents.registerTool({
     name: "agentation_get_session",
-    description:
-      "Get one annotation session with every annotation on it, including resolved and dismissed ones.",
+    ...files.tool("agentation_get_session"),
     presentation: {
       label: {
         pending: "Reading annotation session",
@@ -911,8 +912,7 @@ export default async function plugin(bb: BbPluginApi) {
 
   bb.agents.registerTool({
     name: "agentation_get_pending",
-    description:
-      "Get the open (pending or acknowledged) annotations for one session, rendered with the bb route, owning plugin, SDK UI registration, and DOM selector for each.",
+    ...files.tool("agentation_get_pending"),
     presentation: {
       label: {
         pending: "Reading pending annotations",
@@ -933,9 +933,7 @@ export default async function plugin(bb: BbPluginApi) {
 
   bb.agents.registerTool({
     name: "agentation_get_all_pending",
-    description:
-      "Get every open annotation across all bb pages. Use this when the human refers to UI feedback but did not supply a self-contained Agentation annotation batch.",
-    instructions: readInstructions("get-all-pending"),
+    ...files.tool("agentation_get_all_pending"),
     presentation: {
       label: {
         pending: "Reading all pending annotations",
@@ -957,7 +955,7 @@ export default async function plugin(bb: BbPluginApi) {
 
   bb.agents.registerTool({
     name: "agentation_acknowledge",
-    description: "Mark an annotation as acknowledged so the human can see you have picked it up.",
+    ...files.tool("agentation_acknowledge"),
     presentation: {
       label: {
         pending: "Acknowledging annotation",
@@ -979,8 +977,7 @@ export default async function plugin(bb: BbPluginApi) {
 
   bb.agents.registerTool({
     name: "agentation_resolve",
-    description:
-      "Mark an annotation as resolved after you have fixed it. The marker disappears from the human's toolbar. Include a short summary of what changed.",
+    ...files.tool("agentation_resolve"),
     presentation: {
       label: {
         pending: "Resolving annotation",
@@ -1006,8 +1003,7 @@ export default async function plugin(bb: BbPluginApi) {
 
   bb.agents.registerTool({
     name: "agentation_dismiss",
-    description:
-      "Dismiss an annotation you have decided not to act on. A reason is required — the human sees it.",
+    ...files.tool("agentation_dismiss"),
     presentation: {
       label: {
         pending: "Dismissing annotation",
@@ -1030,8 +1026,7 @@ export default async function plugin(bb: BbPluginApi) {
 
   bb.agents.registerTool({
     name: "agentation_reply",
-    description:
-      "Add a message to an annotation's thread — ask a clarifying question, or report progress. The human reads and answers it in the Agentation panel.",
+    ...files.tool("agentation_reply"),
     presentation: {
       label: {
         pending: "Replying to annotation",
@@ -1052,8 +1047,7 @@ export default async function plugin(bb: BbPluginApi) {
 
   bb.agents.registerTool({
     name: "agentation_watch_annotations",
-    description:
-      "Block until new annotations appear, then return the batch. Call it in a loop for hands-free feedback: watch, fix, resolve, watch again.",
+    ...files.tool("agentation_watch_annotations"),
     presentation: {
       label: {
         pending: "Watching for new annotations",
@@ -1165,9 +1159,7 @@ export default async function plugin(bb: BbPluginApi) {
     try {
       const pending = countByStatus(db).pending;
       if (pending === 0) return null;
-      return readInstructions("pending-feedback").replace(/{{pending}}|{{plural}}/g, (key) =>
-        key === "{{pending}}" ? String(pending) : pending === 1 ? "" : "s",
-      );
+      return files.read("pending-feedback", { pending, plural: pending === 1 ? "" : "s" });
     } catch {
       return null;
     }

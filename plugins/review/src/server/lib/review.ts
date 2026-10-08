@@ -3,6 +3,11 @@
  * author are told. Every other file asks this one.
  */
 
+import { instructionFiles } from "@bb-kit/core/instructions";
+
+// What the reviewer and the author are told, editable in the Prompt Editor plugin.
+const files = instructionFiles(import.meta.url);
+
 export type ReviewerModels = { claudeModel: string; codexModel: string };
 
 export type Reviewer = {
@@ -37,23 +42,10 @@ export function pickReviewer(
 }
 
 export function reviewerPrompt(brief: string): string {
-  return [
-    "You are an adversarial reviewer. Another agent wrote the work described below and asked you to find what is wrong with it before it reaches the user.",
-    "",
-    "- Read the code and run read-only checks. Do not edit files, commit, or spawn threads.",
-    "- Hunt for correctness bugs, broken edge cases, wrong assumptions, and missed requirements. Skip style nits.",
-    "- Verify each finding against the code before you report it.",
-    "- End with a numbered list of findings, most severe first. Give each one a file and line, the failure scenario, and a suggested fix. Say so plainly if you found nothing.",
-    "",
-    "## Brief from the author",
-    "",
-    brief.trim(),
-  ].join("\n");
+  return files.read("reviewer", { brief: brief.trim() });
 }
 
-export const AUTHOR_INSTRUCTIONS = `Before you end a turn with substantial work whose correctness is not already obvious, get an adversarial review of it:
-
-1. Write a brief to a file: the goal, the changed files, and what to attack.
-2. Run \`bb review start --file <path>\`. It spawns a hidden reviewer subthread on the other model family and prints its thread ID. The user sees a banner while it runs.
-3. Wait with \`bb thread wait <id> --timeout 90s\`. If the wait times out, the review is still running. Repeat until it stops, then read the findings with \`bb thread output <id>\`.
-4. Fix the valid findings in this thread before you end the turn.`;
+/** The author's thread instructions: when and how to ask for a review. */
+export function authorInstructions(): string {
+  return files.read("author");
+}

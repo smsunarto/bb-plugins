@@ -36,6 +36,7 @@
     "dist/*.css",
     "dist/*.json",
     "assets/",
+    "instructions/",
     "src/",
     "!src/**/*.test.ts",
     "!src/**/*.test.tsx",

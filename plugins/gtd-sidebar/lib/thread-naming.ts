@@ -1,4 +1,4 @@
-import { readInstructions } from "./instructions.ts";
+import { instructionFiles } from "@bb-kit/core/instructions";
 
 export type NamingIntent = { kind: "automatic" } | { kind: "forced" };
 
@@ -66,11 +66,9 @@ const MAX_GENERATED_TITLE_LENGTH = 96;
 const MAX_REQUEST_CONTEXT_LENGTH = 1_500;
 const titleSegmenter = new Intl.Segmenter(undefined, { granularity: "grapheme" });
 
-const THREAD_TITLE_FORMAT = readInstructions("thread-title-format");
-
-const GENERATE_TITLE_INSTRUCTIONS = `${readInstructions("generate-title")}\n${THREAD_TITLE_FORMAT}`;
-
-const REVIEW_TITLE_INSTRUCTIONS = `${readInstructions("review-title")}\n${THREAD_TITLE_FORMAT}`;
+// Naming prompts, editable in the Prompt Editor plugin. Read per call so an
+// edit applies to the next title without a reload.
+const files = instructionFiles(import.meta.url);
 
 export interface ThreadNamingPromptContext {
   initialUserPrompt?: string;
@@ -130,7 +128,7 @@ export function renderThreadNamingPrompt(
       500,
     ],
   ];
-  let prompt = context.allowKeep ? REVIEW_TITLE_INSTRUCTIONS : GENERATE_TITLE_INSTRUCTIONS;
+  let prompt = `${files.read(context.allowKeep ? "review-title" : "generate-title")}\n${files.read("thread-title-format")}`;
   for (const [label, value, limit] of sections) {
     const selected = value.trim().slice(0, limit);
     if (selected === "") continue;

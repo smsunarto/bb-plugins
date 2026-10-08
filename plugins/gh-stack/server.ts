@@ -1,4 +1,4 @@
-import { readInstructions } from "./lib/instructions.ts";
+import { instructionFiles } from "@bb-kit/core/instructions";
 // @smsunarto/bb-plugin-gh-stack — stacked-PR visibility and actions for BB threads.
 //
 // Runs `gh stack` commands in a thread's workspace (server host):
@@ -792,10 +792,13 @@ function humanizeBranch(branch: string): string {
   return words ? words.charAt(0).toUpperCase() + words.slice(1) : "";
 }
 
+// Agent-facing prompts, editable in the Prompt Editor plugin.
+const files = instructionFiles(import.meta.url);
+
 function suggestNamePrompt(conventional: boolean): string {
-  return readInstructions("suggest-name").replace("{{titleRule}}", () =>
-    readInstructions(conventional ? "suggest-conventional" : "suggest-title"),
-  );
+  return files.read("suggest-name", {
+    titleRule: files.read(conventional ? "suggest-conventional" : "suggest-title"),
+  });
 }
 
 function sanitizeTitle(text: string): string {
@@ -814,29 +817,24 @@ function conventionsLines(settings: Settings, detectedPrefix: string | null): st
   const lines: string[] = [];
   const prefix = settings.branchPrefix || detectedPrefix;
   if (prefix) {
-    lines.push(readInstructions("branch-prefix").replace("{{prefix}}", () => prefix));
+    lines.push(files.read("branch-prefix", { prefix }));
   }
   if (settings.conventionalCommits) {
-    lines.push(readInstructions("conventional-commits"));
+    lines.push(files.read("conventional-commits"));
   }
   return lines;
 }
 
-function magicCreatePrompt(settings: Settings, detectedPrefix: string | null): string {
-  return readInstructions("magic-create").replace(/{{splitProtocol}}|{{conventions}}\n/g, (key) => {
-    if (key === "{{splitProtocol}}") return readInstructions("split-protocol");
-    const lines = conventionsLines(settings, detectedPrefix);
-    return lines.length ? `${lines.join("\n")}\n` : "";
-  });
-}
-
-// Same idea on a workspace that already has a stack: extend it rather than
-// init a new one.
-function magicExtendPrompt(settings: Settings, detectedPrefix: string | null): string {
-  return readInstructions("magic-extend").replace(/{{splitProtocol}}|{{conventions}}\n/g, (key) => {
-    if (key === "{{splitProtocol}}") return readInstructions("split-protocol");
-    const lines = conventionsLines(settings, detectedPrefix);
-    return lines.length ? `${lines.join("\n")}\n` : "";
+// Magic Stack: split the workspace's work into layers. "magic-extend" builds on
+// an existing stack instead of starting a new one.
+function magicPrompt(
+  name: "magic-create" | "magic-extend",
+  settings: Settings,
+  detectedPrefix: string | null,
+): string {
+  return files.read(name, {
+    splitProtocol: files.read("split-protocol"),
+    conventions: conventionsLines(settings, detectedPrefix).join("\n"),
   });
 }
 
@@ -844,9 +842,9 @@ function magicExtendPrompt(settings: Settings, detectedPrefix: string | null): s
 // agent can untangle. Self-contained on purpose: recovery is the most
 // destructive path here and must not depend on a skill being installed.
 function syncRecoveryPrompt(withSubmit: boolean): string {
-  return readInstructions("sync-recovery").replace("{{submitRule}}", () =>
-    readInstructions(withSubmit ? "recovery-submit" : "recovery-no-submit"),
-  );
+  return files.read("sync-recovery", {
+    submitRule: files.read(withSubmit ? "recovery-submit" : "recovery-no-submit"),
+  });
 }
 
 // Cached stacks stay served without hitting gh for this long; older entries
@@ -2552,8 +2550,8 @@ export default async function plugin(bb: BbPluginApi) {
           {
             type: "text",
             text: hasStack
-              ? magicExtendPrompt(settings, detectedPrefix)
-              : magicCreatePrompt(settings, detectedPrefix),
+              ? magicPrompt("magic-extend", settings, detectedPrefix)
+              : magicPrompt("magic-create", settings, detectedPrefix),
             mentions: [],
           },
         ],

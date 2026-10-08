@@ -1,3 +1,8 @@
+import { instructionFiles } from "@bb-kit/core/instructions";
+
+// Editable in the Prompt Editor plugin.
+const files = instructionFiles(import.meta.url);
+
 const oneLine = (value: string): string => value.replace(/\s+/g, " ").trim();
 
 /**
@@ -7,5 +12,5 @@ const oneLine = (value: string): string => value.replace(/\s+/g, " ").trim();
  */
 export function cloudProjectInstructions(gitRemoteUrl: string | null): string | undefined {
   if (gitRemoteUrl === null) return undefined;
-  return `Repository: ${oneLine(gitRemoteUrl)}. Work there; clone it first if it is not on this machine.`;
+  return files.read("cloud-project", { remote: oneLine(gitRemoteUrl) });
 }
