@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
   canPark,
+  formatWakeTime,
   nextWakeDelayMs,
   refreshRetryDelayMs,
   resolveShelf,
@@ -150,6 +151,22 @@ describe("snoozeUntilTomorrow", () => {
     assert.equal(tomorrow.getDate(), 6);
     assert.equal(tomorrow.getHours(), 9);
     assert.equal(tomorrow.getMinutes(), 0);
+  });
+});
+
+describe("formatWakeTime", () => {
+  // Newer ICU puts a narrow no-break space before "AM".
+  const wakeLabel = (until: Date, now: Date) =>
+    formatWakeTime(until.getTime(), now, "en-US").replace(/\s/gu, " ");
+
+  it("calls the next calendar day tomorrow", () => {
+    const now = new Date(2026, 0, 5, 23, 30, 0);
+    assert.equal(wakeLabel(new Date(snoozeUntilTomorrow(now)), now), "tomorrow, 9:00 AM");
+  });
+
+  it("names the weekday for any other day", () => {
+    const now = new Date(2026, 0, 5, 10, 0, 0);
+    assert.equal(wakeLabel(new Date(2026, 0, 8, 14, 5, 0), now), "Thu 2:05 PM");
   });
 });
 

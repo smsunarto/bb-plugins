@@ -161,7 +161,8 @@ export function RenameEditor({
         autoCapitalize="sentences"
         autoCorrect="off"
         className={cn(
-          "min-w-0 flex-1 appearance-none border-0 bg-transparent px-0 py-0 [font:inherit] outline-none",
+          // 16px on a phone, or iOS zooms the page to edit and stays zoomed.
+          "min-w-0 flex-1 appearance-none border-0 bg-transparent px-0 py-0 [font:inherit] max-md:pointer-coarse:text-[16px] outline-none",
           isPending && "opacity-60",
         )}
         spellCheck={false}

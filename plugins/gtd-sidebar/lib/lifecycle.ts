@@ -130,6 +130,22 @@ export function snoozeUntilTomorrow(now: Date): number {
 }
 
 /**
+ * A wake time as the snooze toast says it: "tomorrow, 9:00 AM" for the next
+ * calendar day, otherwise "Thu 9:00 AM". `locales` defaults to the user's;
+ * tests pin it.
+ */
+export function formatWakeTime(until: number, now: Date, locales?: string): string {
+  const wake = new Date(until);
+  const time = new Intl.DateTimeFormat(locales, { hour: "numeric", minute: "2-digit" }).format(
+    wake,
+  );
+  const tomorrow = new Date(now);
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  if (wake.toDateString() === tomorrow.toDateString()) return `tomorrow, ${time}`;
+  return `${new Intl.DateTimeFormat(locales, { weekday: "short" }).format(wake)} ${time}`;
+}
+
+/**
  * `setTimeout` delays are signed 32-bit: a far-future wake overflows and fires
  * immediately, which turns one snooze into a tight re-arm loop. Clamped, the
  * timer simply re-arms every ~24.8 days until the wake is in range.

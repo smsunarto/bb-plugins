@@ -2,6 +2,9 @@ import type { IconName } from "../ui/icon";
 
 export type ActiveThreadShelf = "pinned" | "nextAction" | "waiting";
 
+/** The snooze's name in menus and on the row's button. The toast states the time. */
+export const SNOOZE_TOMORROW_LABEL = "Snooze until tomorrow";
+
 export type RowCommand =
   | {
       kind: "open";
@@ -70,7 +73,7 @@ function lifecycleActions(lifecycle: RowLifecycleState): ThreadAction[] {
       if (lifecycle.canPark) {
         actions.push({
           id: "snooze-tomorrow",
-          label: "Snooze",
+          label: SNOOZE_TOMORROW_LABEL,
           icon: "Clock",
           execute: lifecycle.snoozeUntilTomorrow,
         });

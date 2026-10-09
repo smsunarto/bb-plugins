@@ -11,7 +11,7 @@
   Snooze stay first, and Archive stays excluded. Add Open in split, Copy thread
   link, Mark read/unread, and Rename alongside Pin and Delete.
 - Every shelf now groups its threads by project once more than one project is in
-  view. A 26px header names the project, folds the group, and shows
+  view. A 32px header names the project, folds the group, and shows
   `needs-you / total` while folded; hovering it reveals a new-thread button for
   that project. Shelf headers stick while their rows scroll. The repo
   chip is gone from every row: the project lives in the group header (and on a
@@ -63,6 +63,67 @@
 
 ### Patch Changes
 
+- The machine globe, and the machine name on a card's second line, now mark
+  only threads on another machine. An empty **Local machine** setting means
+  bb's primary host, so a single-machine sidebar shows no globes.
+- The open thread is now the only row that looks selected. It takes bb's
+  selection layer (`--state-active`), and hovered rows share the project
+  header's hover fill. Pressing the open row on touch, lifting it into the
+  long-press menu, or dragging a thread onto it keeps its selection.
+- A long-pressed card on touch now lifts above the menu's scrim instead of
+  vanishing while the menu is open.
+- The long-press sheet now takes the theme's popover and hairline colours, so a
+  dark bb on a light OS no longer draws a white sheet. It keeps clear of the
+  notch and home indicator, widens to fit its longest label, shows a fill under
+  a pressed item, and fades instead of zooming under Reduce Motion.
+- Snooze and Settle now appear on hover or keyboard focus only. A click, or a
+  tap on a tablet, no longer leaves them showing over the row's status. Touch
+  reaches them through the row's menu. A card's second line stays visible while
+  they show. A parked row's restore button replaces its status instead of
+  drawing over it, and Wake now uses the menu's alarm-clock icon.
+- Every shelf header is now a heading, so screen readers can jump to Waiting,
+  Snoozed, and Settled. Shelf chevrons point down when open and right when
+  folded, like other disclosures. All shelf rules end on the same edge, and
+  touch shelf headers are 40px tall.
+- A two-line card's fold chevron now sits on its title line instead of between
+  the title and the second line.
+- A tapped project header on a touch screen no longer stays tinted, and a press
+  fills the header or its **+** while the finger is down. Keyboard focus on a
+  folded header shows its fold chevron, and screen readers hear its count as
+  "5 threads, 2 need you" instead of "2 / 5".
+- The project scope picker's chevron now sits beside its label, with the
+  machine picker at the right edge. A long project name ends in an ellipsis.
+  Both pickers show a focus ring under keyboard focus but not after a mouse
+  pick, stay filled while open, and have 40px items on phones.
+- On a phone, nested Snoozed and Settled rows now step in 16px per level like
+  cards, so a title clears its fold chevron and a family keeps its columns when
+  it moves between shelves.
+- A touch press now tints its row after 100ms, so a scroll flick no longer
+  flashes the row under the finger. Holding a row no longer brings up iOS's link
+  callout, and the long-press menu lifts a copy that keeps the row's chevron,
+  title, status, and restore button in place.
+- Renaming a thread on a phone no longer zooms the page, and phone rows draw
+  their age labels in a readable tint instead of a faint ghost.
+- Screen readers now hear a row's status, age, or wake time after its title,
+  and "Unread response" only once. An open Snoozed or Settled thread is marked
+  as the current page, like an open card.
+- Shift+F10 or the Menu key opens a focused row's or project header's
+  right-click menu, so pin, rename, delete, and **Move up**/**Move down** have
+  a keyboard path on macOS too.
+- A project header's right-click menu now draws on the same translucent,
+  blurred surface as a thread's. Both menus take their rim from the theme's
+  border colour.
+- Snoozing a thread now shows a toast with its wake time, "Snoozed until
+  tomorrow, 9:00 AM", and an **Undo** that wakes it and its subthreads. A
+  second snooze replaces the toast. The Snooze button and menu item read
+  "Snooze until tomorrow".
+- A two-line card whose title is cut off now shows the full title in a tooltip
+  on hover or keyboard focus. A title that fits gets no tooltip.
+- Machine globes no longer take red, amber, green, or purple, which read as
+  error, attention, success, or merged beside a status glyph. bb Monokai gives
+  them four identity hues (`--machine-1` to `--machine-4`). Other themes fall
+  back to four distinct ANSI blue, cyan, and magenta tones that keep 3:1
+  contrast on the selected row.
 - Match the touch project header's corner radius to the 12px thread rows.
 
 - Machine-scoped inboxes now keep repository group headers visible even when

@@ -137,7 +137,7 @@ export default async function plugin(bb: BbPluginApi) {
     localMachineId: {
       type: "string",
       label: "Local machine",
-      description: "Machine ID whose threads show no machine globe.",
+      description: "Machine ID whose threads show no machine globe. Empty uses bb's primary host.",
       default: "",
     },
     groupThreadsByProject: {

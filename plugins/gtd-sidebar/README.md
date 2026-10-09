@@ -108,10 +108,10 @@ group headers stay pinned while their rows scroll.
 
 Groups follow bb's project order in every shelf, with your personal project
 last. Drag a group header onto another group to drop its project in that
-slot — or right-click it for **Move up** and **Move down**, the keyboard
-path. Both reorder the project in bb itself, so every shelf agrees and bb's
-own project lists follow along. The personal project's group never drags and
-nothing lands after it.
+slot — or right-click it, or focus it and press Shift+F10, for **Move up**
+and **Move down**, the keyboard path. Both reorder the project in bb itself,
+so every shelf agrees and bb's own project lists follow along. The personal
+project's group never drags and nothing lands after it.
 
 The shelf still comes first: the same project appears under Next Action and
 under Waiting when it has work in both, and folding it in one shelf leaves it
@@ -271,9 +271,9 @@ services. The explicit naming command below is a separate user-requested inferen
 | Show GitButler branches (`gitButlerBranches`)           | Off     | Periodically read GitButler branches on primary checkouts through the host CLI. Off stops refreshes and server host reads, restoring BB's native labels.                                                       |
 | Automatically name threads (`automaticallyNameThreads`) | Off     | Infer titles on user requests through the existing Codex login. Sends request context and naming rules. Off skips automatic context reads/inference and prevents an in-flight result from renaming the thread. |
 
-| Supporting preference            | Default | Purpose                                                                                                   |
-| -------------------------------- | ------- | --------------------------------------------------------------------------------------------------------- |
-| Local machine (`localMachineId`) | Empty   | Choose which machine's threads omit the globe. This does not move threads or change their execution host. |
+| Supporting preference            | Default           | Purpose                                                                                                   |
+| -------------------------------- | ----------------- | --------------------------------------------------------------------------------------------------------- |
+| Local machine (`localMachineId`) | bb's primary host | Choose which machine's threads omit the globe. This does not move threads or change their execution host. |
 
 ### Opt-in and migration behavior
 

@@ -1,4 +1,10 @@
-import { useState, useLayoutEffect, type ReactNode, type RefObject } from "react";
+import {
+  useState,
+  useLayoutEffect,
+  type CSSProperties,
+  type ReactNode,
+  type RefObject,
+} from "react";
 import { createPortal } from "react-dom";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import { cn } from "../../lib/utils";
@@ -18,8 +24,9 @@ import { ThreadMenuActions, type ThreadMenuActionsProps } from "./thread-menu-ac
  */
 const SHARED_LAYER_CLASS = cn(
   "rounded-xl",
-  "border border-black/10 dark:border-white/10",
-  "shadow-[0_12px_36px_rgba(0,0,0,0.3)] dark:shadow-[0_16px_40px_rgba(0,0,0,0.55)]",
+  "border border-border-hairline",
+  // bb's largest elevation token, so light and dark themes each set the depth.
+  "shadow-[var(--shadow-xl)]",
 );
 
 export function CompactThreadActionMenu({
@@ -32,11 +39,14 @@ export function CompactThreadActionMenu({
   onOpenChange,
   anchorRef,
   highlightContent,
+  isActive = false,
 }: ThreadMenuActionsProps & {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   anchorRef?: RefObject<HTMLElement | null>;
   highlightContent?: ReactNode;
+  /** The row is the open thread, so its lifted copy keeps the selected fill. */
+  isActive?: boolean;
 }) {
   const [content, setContent] = useState<HTMLDivElement | null>(null);
   const [scrollable, setScrollable] = useState(false);
@@ -50,9 +60,24 @@ export function CompactThreadActionMenu({
     return () => observer.disconnect();
   }, [content]);
   const [rect, setRect] = useState<DOMRect | null>(null);
+  const [padding, setPadding] = useState<AnchorPadding | null>(null);
+  const [insets, setInsets] = useState(NO_INSETS);
 
   useLayoutEffect(() => {
-    if (open && anchorRef?.current) setRect(anchorRef.current.getBoundingClientRect());
+    if (!open) return;
+    const anchor = anchorRef?.current;
+    if (anchor) {
+      setRect(anchor.getBoundingClientRect());
+      // The row's padding depends on its depth and group, so the lifted copy
+      // reads it rather than guessing, and draws its content where it was.
+      const style = getComputedStyle(anchor);
+      setPadding({
+        paddingLeft: style.paddingLeft,
+        paddingRight: style.paddingRight,
+        groupIndent: style.getPropertyValue("--gtd-group-indent"),
+      });
+    }
+    setInsets(readSafeAreaInsets());
   }, [open, anchorRef]);
 
   return (
@@ -66,7 +91,7 @@ export function CompactThreadActionMenu({
         />
       </DropdownMenu.Trigger>
       <DimOverlay open={open} />
-      <HighlightedThreadAnchor open={open} rect={rect}>
+      <HighlightedThreadAnchor open={open} rect={rect} padding={padding} isActive={isActive}>
         {highlightContent}
       </HighlightedThreadAnchor>
       <DropdownMenu.Portal>
@@ -79,10 +104,19 @@ export function CompactThreadActionMenu({
           side="top"
           align="start"
           sideOffset={6}
-          collisionPadding={12}
+          // Clear of the status bar, notch and home indicator as well as the
+          // screen edge, so a Dynamic Island cannot cover the first items.
+          collisionPadding={{
+            top: 12 + insets.top,
+            bottom: 12 + insets.bottom,
+            left: 12 + insets.left,
+            right: 12 + insets.right,
+          }}
+          // As wide as the row, wider when a label needs it, never off screen.
           style={{
             maxHeight: "var(--radix-dropdown-menu-content-available-height)",
-            width: rect ? `${rect.width}px` : "var(--radix-dropdown-menu-trigger-width)",
+            minWidth: rect ? `${rect.width}px` : "var(--radix-dropdown-menu-trigger-width)",
+            maxWidth: "var(--radix-dropdown-menu-content-available-width)",
           }}
           onPointerDown={(event) => event.stopPropagation()}
           className={cn(
@@ -100,7 +134,7 @@ export function CompactThreadActionMenu({
               // Translucent over a saturated blur, like a UIKit menu material.
               // 24px holds up across the 280ms rise on mobile Safari; the
               // scrim below already softens the list.
-              "bg-white/70 backdrop-blur-xl backdrop-saturate-150 dark:bg-[#1c1c1e]/70",
+              "bg-popover/70 backdrop-blur-xl backdrop-saturate-150",
               "group-data-[state=open]/sheet:animate-[gtd-sheet-fade-in_180ms_ease-out_both]",
               "group-data-[state=closed]/sheet:animate-[gtd-sheet-fade-out_150ms_ease-in_both]",
             )}
@@ -120,6 +154,36 @@ export function CompactThreadActionMenu({
       </DropdownMenu.Portal>
     </DropdownMenu.Root>
   );
+}
+
+const NO_INSETS = { top: 0, bottom: 0, left: 0, right: 0 };
+
+/** The pressed row's resolved padding, and the group indent its chevron sits by. */
+interface AnchorPadding {
+  paddingLeft: string;
+  paddingRight: string;
+  groupIndent: string;
+}
+
+/**
+ * The viewport's safe-area insets in px. Only CSS can read `env()`, so a
+ * hidden probe pads itself by each inset and reports what it resolved to.
+ */
+function readSafeAreaInsets(): typeof NO_INSETS {
+  const probe = document.createElement("div");
+  probe.style.cssText =
+    "position:fixed;visibility:hidden;padding-top:env(safe-area-inset-top);padding-bottom:env(safe-area-inset-bottom);padding-left:env(safe-area-inset-left);padding-right:env(safe-area-inset-right)";
+  document.body.append(probe);
+  const style = getComputedStyle(probe);
+  const px = (value: string) => Number.parseFloat(value) || 0;
+  const insets = {
+    top: px(style.paddingTop),
+    bottom: px(style.paddingBottom),
+    left: px(style.paddingLeft),
+    right: px(style.paddingRight),
+  };
+  probe.remove();
+  return insets;
 }
 
 /**
@@ -160,10 +224,14 @@ function DimOverlay({ open }: { open: boolean }) {
 function HighlightedThreadAnchor({
   open,
   rect,
+  padding,
+  isActive,
   children,
 }: {
   open: boolean;
   rect?: DOMRect | null;
+  padding: AnchorPadding | null;
+  isActive: boolean;
   children?: ReactNode;
 }) {
   const scope = usePortalScopeProps();
@@ -171,6 +239,10 @@ function HighlightedThreadAnchor({
 
   if (open && !mounted) setMounted(true);
   if (!mounted || !rect || !children) return null;
+  // The row's own fill, pressed or selected for the open thread, over the
+  // sidebar it sits on: the copy floats above the scrim, and a translucent
+  // fill alone would take the scrim's shade.
+  const fill = isActive ? "var(--state-active)" : "var(--sidebar-accent)";
 
   return createPortal(
     <div
@@ -186,16 +258,29 @@ function HighlightedThreadAnchor({
         left: rect.left,
         width: rect.width,
         height: rect.height,
+        background: `linear-gradient(${fill}, ${fill}), var(--sidebar)`,
       }}
       className={cn(
         "pointer-events-none fixed z-50 overflow-hidden",
         SHARED_LAYER_CLASS,
-        "bg-sidebar-accent",
         "data-[state=open]:animate-[gtd-highlight-in_200ms_ease-out_both]",
         "data-[state=closed]:animate-[gtd-highlight-out_150ms_ease-in_both]",
       )}
     >
-      {children}
+      {/* Out over the 1px border, so the content box is the row's own box
+         and nothing inside shifts as the row lifts. */}
+      <div
+        className="absolute -inset-px"
+        style={
+          {
+            paddingLeft: padding?.paddingLeft,
+            paddingRight: padding?.paddingRight,
+            "--gtd-group-indent": padding?.groupIndent,
+          } as CSSProperties
+        }
+      >
+        {children}
+      </div>
     </div>,
     document.body,
   );

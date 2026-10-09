@@ -13,6 +13,7 @@ import {
   type ThreadActionPlan,
 } from "./thread-actions";
 import type { ThreadRename } from "./inline-rename";
+import { MENU_ITEM_CLASS } from "./menu-surface";
 
 export interface ThreadMenuActionsProps {
   thread: PluginSidebarThread;
@@ -99,8 +100,8 @@ export function ThreadMenuActions({
             onSelect={action.execute}
             className={cn(
               compact
-                ? "relative flex h-[44px] cursor-default select-none items-center gap-3.5 px-4 text-[16px] font-normal leading-none tracking-[-0.01em] outline-none data-[highlighted]:bg-black/[0.06] dark:data-[highlighted]:bg-white/10"
-                : "flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-sm outline-none data-[disabled]:pointer-events-none data-[disabled]:opacity-50 data-[highlighted]:bg-accent",
+                ? "relative flex h-[44px] cursor-default select-none items-center gap-3.5 px-4 text-[16px] font-normal leading-none tracking-[-0.01em] outline-none data-[highlighted]:bg-state-hover active:bg-state-active"
+                : MENU_ITEM_CLASS,
               action.destructive
                 ? "text-destructive-text"
                 : "data-[highlighted]:text-accent-foreground",

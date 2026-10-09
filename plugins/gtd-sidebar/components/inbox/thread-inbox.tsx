@@ -17,7 +17,7 @@ import {
 import { toast } from "sonner";
 import { Icon } from "../ui/icon";
 import { cn } from "../../lib/utils";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../ui/select";
+import { Select, SelectContent, SelectItem, SelectValue } from "../ui/select";
 import { ThreadCard } from "./thread-card";
 import { SlimRow } from "./slim-row";
 import type { ActiveThreadShelf, RowCommand } from "./thread-actions";
@@ -63,7 +63,7 @@ import { retainUnchangedThreads } from "../../lib/stable-threads";
 import { useMinuteClock } from "../../hooks/use-minute-clock";
 import { gitButlerLabelsMatch, resolveSidebarBranchLabel } from "../../lib/gitbutler";
 import { filterByMachine, sidebarMachines } from "../../lib/machines";
-import { MachineScopePicker } from "./machine-scope-picker";
+import { MachineScopePicker, ScopeTrigger, scopeItemClassName } from "./machine-scope-picker";
 import { MachineAppearanceProvider } from "./machine-appearance";
 import { RenameProvider } from "./inline-rename";
 import { CompactViewportOverrideProvider } from "../ui/hooks/use-compact-viewport";
@@ -137,7 +137,7 @@ function InboxList({
   const [machineScope, setMachineScope] = useState<string | null>(null);
   const machines = sidebarMachines(threads, sidebar.experimental_hosts);
   // Optional enhancements stay off until the SDK confirms an explicit opt-in.
-  const { values: settingValues } = useSettings();
+  const { values: settingValues, isLoading: settingsLoading } = useSettings();
   const showProviderIcon = settingValues?.showProviderIcon === true;
   const compactThreads = settingValues?.compactThreads === true;
   const repositoryGroupsEnabled = settingValues?.groupThreadsByProject !== false;
@@ -450,7 +450,10 @@ function InboxList({
   });
 
   return (
-    <MachineAppearanceProvider localMachineId={settingValues?.localMachineId}>
+    <MachineAppearanceProvider
+      localMachineId={settingValues?.localMachineId}
+      settingsLoading={settingsLoading}
+    >
       <DndContext {...sidebarDrag.contextProps}>
         <div
           data-gtd-sidebar-thread-list=""
@@ -465,30 +468,25 @@ function InboxList({
         >
           <div className="flex shrink-0 items-center gap-1 px-2 pb-0.5">
             <Select value={scope} onValueChange={setScope}>
-              {/* Ghost trigger: no border, no filled track — it reads as a label
-                until you hover it.
-
-                `border-transparent` alongside `border-0`, because width and
-                color are separate merge groups: `border-0` alone leaves
-                `border-input` on the element, and a theme is free to key a
-                recessed background off that class rather than off a drawn
-                border. Evicting the color class is what actually keeps the
-                track clear. */}
-              <SelectTrigger
-                className={cn(
-                  "h-6 min-w-0 flex-1 border-0 border-transparent px-1.5 py-1 text-xs font-medium text-muted-foreground shadow-none hover:bg-sidebar-accent focus:ring-0",
-                  isCompactViewport && "min-h-10",
-                )}
+              {/* It sizes to its label, so the chevron sits beside it. The
+                machine picker takes the slack. */}
+              <ScopeTrigger
+                isCompactViewport={isCompactViewport}
+                className="min-w-0 flex-initial justify-start font-medium"
                 aria-label={`Project scope: ${scopeLabel}`}
               >
                 <SelectValue />
-              </SelectTrigger>
+              </ScopeTrigger>
               <SelectContent>
-                <SelectItem value={ALL_PROJECTS} className="text-xs">
+                <SelectItem value={ALL_PROJECTS} className={scopeItemClassName(isCompactViewport)}>
                   All projects
                 </SelectItem>
                 {projects.map((project) => (
-                  <SelectItem key={project.id} value={project.id} className="text-xs">
+                  <SelectItem
+                    key={project.id}
+                    value={project.id}
+                    className={scopeItemClassName(isCompactViewport)}
+                  >
                     {project.name}
                   </SelectItem>
                 ))}
@@ -1129,38 +1127,51 @@ function ShelfHeader({
       <h2
         ref={measureRef}
         data-index={measureIndex}
-        className="gtd-shelf-header flex items-center gap-2 px-2.5 pb-0.5 pt-2"
+        className={cn(
+          "gtd-shelf-header flex items-center gap-2 pr-2.5",
+          isCompactViewport ? "min-h-10" : "pb-0.5 pt-2",
+        )}
       >
         {title}
         {rule}
+        {/* The chevron's empty box, so this rule ends where a folding
+            shelf's does. */}
+        <span aria-hidden className={TRAILING_GLYPH_BOX_CLASS} />
       </h2>
     );
   }
 
+  // The heading owns the sticky pin and the list's measurement. The button
+  // inside it reaches back over the heading's left inset (app.css), so it
+  // stays the whole hit target.
   return (
-    <button
-      ref={measureRef}
-      data-index={measureIndex}
-      type="button"
-      onClick={onToggle}
-      aria-expanded={expanded}
-      // Padded like a card, so the chevron ends on the same right edge as
-      // every row's status and provider glyph. `cursor-pointer` is explicit
-      // because Tailwind v4's preflight gives a button `cursor: default`,
-      // and the whole header is the hit target for collapsing the shelf.
-      className={cn(
-        "gtd-shelf-header flex w-full cursor-pointer items-center gap-2 px-2.5 text-left",
-        isCompactViewport ? "min-h-10" : "pb-0.5 pt-2",
-      )}
-    >
-      {title}
-      {rule}
-      <span className={TRAILING_GLYPH_BOX_CLASS}>
-        <Icon
-          name="ChevronDown"
-          className={cn("size-3 transition-transform", mutedClass, expanded && "rotate-180")}
-        />
-      </span>
-    </button>
+    <h2 ref={measureRef} data-index={measureIndex} className="gtd-shelf-header flex">
+      <button
+        type="button"
+        onClick={onToggle}
+        aria-expanded={expanded}
+        // Padded like a card, so the chevron ends on the same right edge as
+        // every row's status and provider glyph. `cursor-pointer` is explicit
+        // because Tailwind v4's preflight gives a button `cursor: default`,
+        // and the whole header is the hit target for collapsing the shelf.
+        className={cn(
+          "flex cursor-pointer items-center gap-2 pr-2.5 text-left",
+          isCompactViewport ? "min-h-10" : "pb-0.5 pt-2",
+        )}
+      >
+        {title}
+        {rule}
+        <span className={TRAILING_GLYPH_BOX_CLASS}>
+          <Icon
+            name="ChevronDown"
+            className={cn(
+              "size-3 transition-transform motion-reduce:transition-none",
+              mutedClass,
+              !expanded && "-rotate-90",
+            )}
+          />
+        </span>
+      </button>
+    </h2>
   );
 }

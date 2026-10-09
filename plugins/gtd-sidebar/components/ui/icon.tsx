@@ -183,6 +183,9 @@ export function Icon({
       className={cn(className)}
       aria-hidden={ariaHidden}
       aria-label={ariaLabel}
+      // Browsers disagree on a bare svg's role. `img` makes the label the
+      // glyph's name everywhere, including inside a row's description.
+      role={ariaLabel ? "img" : undefined}
       data-icon={name}
     />
   );

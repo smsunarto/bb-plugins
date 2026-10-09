@@ -1,4 +1,5 @@
 import type { PluginSidebarThread, PluginSidebarThreadShortcut } from "@get-bb/plugin-sdk/app";
+import { cn } from "../../lib/utils";
 import { StatusGlyph, hasStatusGlyph } from "./status-glyph";
 import { relativeTimeLabel } from "../../lib/relative-time";
 import { useMinuteClock } from "../../hooks/use-minute-clock";
@@ -31,26 +32,69 @@ export function StatusOrTime({
   thread,
   isUnread = thread.isUnread,
   shortcut = null,
+  isCompactViewport = false,
 }: {
   thread: PluginSidebarThread;
   /** Includes unread descendants while the family is collapsed. */
   isUnread?: boolean;
   /** bb's jump key for this row while the command modifier is held. */
   shortcut?: PluginSidebarThreadShortcut | null;
+  /** A phone, where the age has to read at arm's length. */
+  isCompactViewport?: boolean;
 }) {
   if (shortcut) return <ShortcutPill shortcut={shortcut} />;
-  if (thread.indicator !== "unread-success" && hasStatusGlyph(thread.indicator)) {
+  if (drawsStatusGlyph(thread)) {
     return <StatusGlyph indicator={thread.indicator} label={thread.indicatorLabel} />;
   }
   if (isUnread) return <StatusGlyph indicator="unread-success" label="Unread response" />;
-  return <AgeLabel at={thread.latestAttentionAt} />;
+  return <AgeLabel at={thread.latestAttentionAt} isCompactViewport={isCompactViewport} />;
 }
 
-/** Reads the minute clock itself, so a tick re-renders the ages, not the rows. */
-function AgeLabel({ at }: { at: number }) {
+/** The thread's own status glyph outranks the unread dot in the slot. */
+function drawsStatusGlyph(thread: PluginSidebarThread): boolean {
+  return thread.indicator !== "unread-success" && hasStatusGlyph(thread.indicator);
+}
+
+/**
+ * The ids a row's link names as its description, so a screen reader hears the
+ * row's status, age or wake time after its title, and "Unread response" once.
+ * Where the slot draws the unread dot, the row's unread note stands in for it:
+ * the note says the same, or says the unread work sits in collapsed subthreads.
+ */
+export function rowDescribedBy(
+  statusId: string,
+  unreadId: string,
+  {
+    thread,
+    isUnread,
+    shortcut,
+  }: {
+    /** The thread the slot draws: a collapsed family's loudest member. */
+    thread: PluginSidebarThread;
+    /** Includes unread descendants while the family is collapsed. */
+    isUnread: boolean;
+    shortcut: PluginSidebarThreadShortcut | null;
+  },
+): string {
+  if (!isUnread) return statusId;
+  const slotDrawsDot = shortcut === null && !drawsStatusGlyph(thread);
+  return slotDrawsDot ? unreadId : `${statusId} ${unreadId}`;
+}
+
+/**
+ * Reads the minute clock itself, so a tick re-renders the ages, not the rows.
+ * A phone lifts the age to the readback tier: on a settled row it is the only
+ * signal left, and the desktop's ghost tint is too faint to read there.
+ */
+function AgeLabel({ at, isCompactViewport }: { at: number; isCompactViewport: boolean }) {
   const now = useMinuteClock();
   return (
-    <span className="tabular-nums text-2xs text-muted-foreground/40">
+    <span
+      className={cn(
+        "tabular-nums text-2xs",
+        isCompactViewport ? "text-readback-foreground" : "text-muted-foreground/40",
+      )}
+    >
       {relativeTimeLabel(at, now)}
     </span>
   );

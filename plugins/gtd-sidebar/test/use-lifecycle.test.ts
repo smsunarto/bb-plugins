@@ -38,11 +38,13 @@ if (process.env.GTD_LIFECYCLE_TEST_CHILD !== "1") {
       writable: true,
     });
   }
-  const { act, cleanup, configure } = await import("@testing-library/react");
+  const { act, cleanup, configure, fireEvent, screen } = await import("@testing-library/react");
   const { installTestPluginRuntime, renderSlot } = await import("@get-bb/plugin-sdk/testing/app");
   installTestPluginRuntime();
-  const { createElement } = await import("react");
+  const { createElement, Fragment } = await import("react");
+  const { Toaster } = await import("sonner");
   const { useLifecycle } = await import("../hooks/use-lifecycle.ts");
+  const { snoozeUntilTomorrow } = await import("../lib/lifecycle.ts");
 
   interface LifecycleRow {
     threadId: string;
@@ -105,6 +107,50 @@ if (process.env.GTD_LIFECYCLE_TEST_CHILD !== "1") {
     );
   }
 
+  // The row's Snooze button, beside the Toaster bb mounts for every plugin.
+  function SnoozeProbe({ until }: { until: number }) {
+    const lifecycle = useLifecycle();
+    return createElement(
+      Fragment,
+      null,
+      createElement(
+        "button",
+        { type: "button", onClick: () => lifecycle.snooze("t", until) },
+        "Snooze",
+      ),
+      createElement(Toaster),
+    );
+  }
+
+  function mountSnooze(until: number) {
+    return renderSlot(
+      { component: SnoozeProbe },
+      { until },
+      {
+        rpc: {
+          listLifecycle: () => ({ rows: [] }),
+          snooze: () => ({ ok: true }),
+          unsnooze: () => ({ ok: true }),
+        } as never,
+      },
+    );
+  }
+
+  // The rpc resolves first, then Sonner queues its toast on a zero-delay timer.
+  async function settle() {
+    await act(async () => {});
+    await act(async () => {
+      jest.advanceTimersByTime(1);
+    });
+  }
+
+  // Newer ICU puts a narrow no-break space before "AM".
+  function toastTitles(): string[] {
+    return Array.from(document.querySelectorAll("[data-sonner-toast] [data-title]")).map((title) =>
+      title.textContent!.replace(/\s/gu, " "),
+    );
+  }
+
   beforeEach(() => {
     jest.useFakeTimers();
     configure({ reactStrictMode: false });
@@ -161,6 +207,31 @@ if (process.env.GTD_LIFECYCLE_TEST_CHILD !== "1") {
         jest.advanceTimersByTime(10_100);
       });
       assert.equal(slot.container.textContent, "active");
+    });
+
+    it("confirms a snooze with its wake time and undoes it from the toast", async () => {
+      const until = snoozeUntilTomorrow(new Date());
+      const slot = mountSnooze(until);
+      await act(async () => {});
+      fireEvent.click(slot.getByRole("button", { name: "Snooze" }));
+      await settle();
+      // A second press replaces the toast rather than stacking another.
+      fireEvent.click(slot.getByRole("button", { name: "Snooze" }));
+      await settle();
+      assert.deepEqual(toastTitles(), ["Snoozed until tomorrow, 9:00 AM"]);
+
+      fireEvent.click(screen.getByRole("button", { name: "Undo" }));
+      await settle();
+      assert.deepEqual(
+        slot.inspection.rpcCalls
+          .filter(({ method }) => method !== "listLifecycle")
+          .map(({ method, input }) => [method, input]),
+        [
+          ["snooze", { threadId: "t", snoozedUntil: until }],
+          ["snooze", { threadId: "t", snoozedUntil: until }],
+          ["unsnooze", { threadId: "t" }],
+        ],
+      );
     });
   });
 }

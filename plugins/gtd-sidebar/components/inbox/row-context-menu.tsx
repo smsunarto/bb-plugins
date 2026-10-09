@@ -1,9 +1,8 @@
 import type { ReactNode } from "react";
 import * as ContextMenu from "@radix-ui/react-context-menu";
 import type { PluginSidebarThread } from "@get-bb/plugin-sdk/app";
-import { cn } from "../../lib/utils";
-import { usePortalScopeProps } from "../../lib/portal-scope";
 import type { DispatchRowCommand, ThreadActionPlan } from "./thread-actions";
+import { MenuSurface } from "./menu-surface";
 import { ThreadMenuActions } from "./thread-menu-actions";
 import type { ThreadRename } from "./inline-rename";
 
@@ -36,36 +35,15 @@ export function RowContextMenu({
       <ContextMenu.Trigger asChild disabled={disabled}>
         {children}
       </ContextMenu.Trigger>
-      <ContextMenu.Portal>
-        <ContextMenu.Content
-          {...usePortalScopeProps()}
-          aria-label="Thread actions"
-          onCloseAutoFocus={rename.onCloseAutoFocus}
-          className="z-50 min-w-44 text-popover-foreground"
-          // The theme paints context-menu content as an opaque, bordered
-          // 15px card. Inline resets outrank that selector so the blurred
-          // layer below is the only surface, with the theme's geometry on it.
-          style={{ padding: 0, border: 0, background: "transparent", boxShadow: "none" }}
-        >
-          <div
-            className={cn(
-              "rounded-[15px] p-[5px]",
-              // Translucent on purpose: the blurred sidebar shows through.
-              "bg-popover/70 backdrop-blur-xl backdrop-saturate-150",
-              // A 1px inner rim lifts the edge off the blur.
-              "shadow-[inset_0_0_0_1px_rgba(255,255,255,0.12),0_0_0_0.5px_rgba(0,0,0,0.18),0_16px_40px_rgba(0,0,0,0.26),0_2px_6px_rgba(0,0,0,0.18)]",
-            )}
-          >
-            <ThreadMenuActions
-              thread={thread}
-              command={command}
-              plan={plan}
-              rename={rename}
-              canSplit={canSplit}
-            />
-          </div>
-        </ContextMenu.Content>
-      </ContextMenu.Portal>
+      <MenuSurface aria-label="Thread actions" onCloseAutoFocus={rename.onCloseAutoFocus}>
+        <ThreadMenuActions
+          thread={thread}
+          command={command}
+          plan={plan}
+          rename={rename}
+          canSplit={canSplit}
+        />
+      </MenuSurface>
     </ContextMenu.Root>
   );
 }
