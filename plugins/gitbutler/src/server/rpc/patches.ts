@@ -1,8 +1,7 @@
 import { defineQuery } from "@bb-kit/core/rpc";
 import { z } from "zod";
-import { gitbutlerHostContract } from "../../shared/host-contract.ts";
 import { patchesSchema, patchSourceSchema, repositoryKeySchema } from "../../shared/schema.ts";
-import { resolveTarget } from "../lib/target.ts";
+import { hostClient, resolveTarget } from "../lib/target.ts";
 
 export const patches = defineQuery({
   input: z
@@ -16,7 +15,7 @@ export const patches = defineQuery({
   async execute(ctx, { threadId, repositoryKey, source }) {
     const { target, reason } = await resolveTarget(ctx.bb, threadId);
     if (!target) throw new Error(reason);
-    return ctx.bb.hosts.experimental_client({ contract: gitbutlerHostContract }).call(
+    return hostClient(ctx.bb).call(
       "patches",
       {
         environmentPath: target.environmentPath,

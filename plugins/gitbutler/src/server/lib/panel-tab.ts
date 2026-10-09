@@ -1,7 +1,6 @@
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
-import { gitbutlerHostContract } from "../../shared/host-contract.ts";
 import { PANEL_ACTION_ID } from "../../shared/panel.ts";
-import { resolveTarget } from "./target.ts";
+import { hostClient, resolveTarget } from "./target.ts";
 
 const PLUGIN_ID = "gitbutler";
 const OFFERED_KEY = "panelTabOffered";
@@ -23,9 +22,11 @@ export async function offerPanelTab(bb: BbPluginApi, threadId: string): Promise<
 
   const { target } = await resolveTarget(bb, threadId);
   if (!target) return;
-  const workspace = await bb.hosts
-    .experimental_client({ contract: gitbutlerHostContract })
-    .call("workspace", { environmentPath: target.environmentPath }, { hostId: target.hostId });
+  const workspace = await hostClient(bb).call(
+    "workspace",
+    { environmentPath: target.environmentPath },
+    { hostId: target.hostId },
+  );
   if (workspace.state !== "ready") return;
 
   const current = await threads.tabs.get({ threadId });

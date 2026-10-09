@@ -264,7 +264,7 @@ test("keeps refresh reachable when the workspace query fails, and retries on cli
   });
 
   // One retry, then the failure shows.
-  await waitFor(() => expect(slot.getByText("GitButler could not be reached")).toBeTruthy(), {
+  await waitFor(() => expect(slot.getByText("Could not read this workspace")).toBeTruthy(), {
     timeout: 4_000,
   });
   expect(slot.getByText("but exited with code 1")).toBeTruthy();
@@ -1074,12 +1074,31 @@ test("a refresh that reads an error keeps the board and says it is stale", async
   expect(slot.getByText("The repository is locked.").title).toBe("The repository is locked.");
   expect(slot.getByText("scott/top")).toBeTruthy();
   expect(slot.getByText("bb-plugins")).toBeTruthy();
-  expect(slot.queryByText("GitButler could not read this workspace")).toBeNull();
+  expect(slot.queryByText("Could not read this workspace")).toBeNull();
 
   // The next good read clears the note.
   failing = false;
   fireEvent.click(slot.getByLabelText("Refresh"));
   await waitFor(() => expect(slot.queryByText(STALE)).toBeNull());
+  slot.lifecycle.unmount();
+});
+
+test("a cold panel on a disconnected machine names the machine, not GitButler", async () => {
+  const offline = "Personal Mac is not connected. The workspace loads when it reconnects.";
+  const slot = await panel({
+    ...baseRpc,
+    workspace: () => ({
+      ...notReady,
+      state: "error",
+      reason: offline,
+      environmentId: "env-1",
+      repositoryKey: null,
+      conflictedFiles: [],
+    }),
+  });
+
+  await waitFor(() => expect(slot.getByText("Could not read this workspace")).toBeTruthy());
+  expect(slot.getByText(offline)).toBeTruthy();
   slot.lifecycle.unmount();
 });
 
@@ -1099,7 +1118,7 @@ test("a refresh the host cannot answer keeps the board as well", async () => {
   await waitFor(() => expect(slot.getByText(STALE)).toBeTruthy(), { timeout: 4_000 });
   expect(slot.getByText("socket closed").title).toBe("socket closed");
   expect(slot.getByText("scott/top")).toBeTruthy();
-  expect(slot.queryByText("GitButler could not be reached")).toBeNull();
+  expect(slot.queryByText("Could not read this workspace")).toBeNull();
   slot.lifecycle.unmount();
 });
 

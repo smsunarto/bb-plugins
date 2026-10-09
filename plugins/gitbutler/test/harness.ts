@@ -11,21 +11,36 @@ export type HostCall = { method: string; input: unknown; options: unknown };
 
 type Environment = { id?: string; hostId: string; path: string | null; status: string };
 
-export function harness(options: { environment?: Environment | null; result?: unknown }) {
+type Host = { name: string; status: "connected" | "disconnected" };
+
+export function harness(options: {
+  environment?: Environment | null;
+  result?: unknown;
+  /** What the host call rejects with, in place of answering `result`. */
+  error?: Error;
+  /** What bb says about the environment's host. Any other host is not found. */
+  host?: Host;
+}) {
   const calls: HostCall[] = [];
+  const environment =
+    options.environment === undefined
+      ? { id: "env-1", hostId: "host-1", path: "/work", status: "ready" }
+      : options.environment;
   const bb = {
     sdk: {
-      threads: {
-        get: async () =>
-          options.environment === undefined
-            ? { environment: { id: "env-1", hostId: "host-1", path: "/work", status: "ready" } }
-            : { environment: options.environment },
+      threads: { get: async () => ({ environment }) },
+      hosts: {
+        get: async ({ hostId }: { hostId: string }) => {
+          if (!options.host || hostId !== environment?.hostId) throw new Error("Host not found");
+          return { id: hostId, ...options.host };
+        },
       },
     },
     hosts: {
       experimental_client: () => ({
         call: async (method: string, input: unknown, callOptions: unknown) => {
           calls.push({ method, input, options: callOptions });
+          if (options.error) throw options.error;
           return options.result;
         },
       }),

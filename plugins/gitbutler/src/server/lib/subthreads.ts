@@ -1,7 +1,6 @@
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
-import { gitbutlerHostContract } from "../../shared/host-contract.ts";
 import type { Subthread } from "../../shared/schema.ts";
-import { MOVED, writeTarget } from "./target.ts";
+import { hostClient, MOVED, writeTarget } from "./target.ts";
 
 /**
  * The subthreads the panel hands work to: Create PR and Resolve conflicts.
@@ -35,13 +34,11 @@ export async function locateRepository(
   environmentId?: string,
 ): Promise<LocatedRepository> {
   const target = await writeTarget(bb, threadId, environmentId);
-  const repository = await bb.hosts
-    .experimental_client({ contract: gitbutlerHostContract })
-    .call(
-      "repository",
-      { environmentPath: target.environmentPath, ...(repositoryKey ? { repositoryKey } : {}) },
-      { hostId: target.hostId },
-    );
+  const repository = await hostClient(bb).call(
+    "repository",
+    { environmentPath: target.environmentPath, ...(repositoryKey ? { repositoryKey } : {}) },
+    { hostId: target.hostId },
+  );
   return { hostId: target.hostId, environmentId: target.environmentId, ...repository };
 }
 

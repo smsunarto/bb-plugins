@@ -1,4 +1,32 @@
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
+import { gitbutlerHostContract } from "../../shared/host-contract.ts";
+
+/** bb lost the machine a call was for, named the way the reader knows it. */
+export class HostOffline extends Error {
+  constructor(hostName: string) {
+    super(`${hostName} is not connected.`);
+  }
+}
+
+/**
+ * The client for this plugin's host entry. The environment usually lives on
+ * another machine than the bb server, and bb rejects a call to one it lost
+ * with a bare "Host is not connected". Such a failure becomes a HostOffline
+ * that names the machine. The lookup runs only once a call has failed, so a
+ * poll costs no extra round trip.
+ */
+export function hostClient(bb: BbPluginApi) {
+  const client = bb.hosts.experimental_client({ contract: gitbutlerHostContract });
+  const call: typeof client.call = async (method, input, options) => {
+    try {
+      return await client.call(method, input, options);
+    } catch (error) {
+      const host = await bb.sdk.hosts.get({ hostId: options.hostId }).catch(() => null);
+      throw host?.status === "disconnected" ? new HostOffline(host.name) : error;
+    }
+  };
+  return { call };
+}
 
 /**
  * The panel is always scoped to one thread's environment. Resolution fails

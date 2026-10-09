@@ -1,8 +1,7 @@
 import { defineQuery } from "@bb-kit/core/rpc";
 import { z } from "zod";
-import { gitbutlerHostContract } from "../../shared/host-contract.ts";
 import { branchNameSchema, repositoryKeySchema, reviewUrlSchema } from "../../shared/schema.ts";
-import { resolveTarget } from "../lib/target.ts";
+import { hostClient, resolveTarget } from "../lib/target.ts";
 
 /** The forge page of a branch's review, read when the reader asks to open it. */
 export const reviewUrl = defineQuery({
@@ -17,7 +16,7 @@ export const reviewUrl = defineQuery({
   async execute(ctx, { threadId, repositoryKey, branch }) {
     const { target, reason } = await resolveTarget(ctx.bb, threadId);
     if (!target) throw new Error(reason);
-    return ctx.bb.hosts.experimental_client({ contract: gitbutlerHostContract }).call(
+    return hostClient(ctx.bb).call(
       "reviewUrl",
       {
         environmentPath: target.environmentPath,

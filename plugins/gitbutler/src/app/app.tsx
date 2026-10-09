@@ -317,7 +317,7 @@ function UnavailableWorkspace({
   return (
     <Notice
       icon="AlertTriangle"
-      title="GitButler could not read this workspace"
+      title="Could not read this workspace"
       detail={detail}
       onRetry={onRetry}
     />
@@ -1210,7 +1210,7 @@ function WorkspacePanel({ threadId }: { threadId: string }) {
             ) : workspace.isError ? (
               <Notice
                 icon="AlertCircle"
-                title="GitButler could not be reached"
+                title="Could not read this workspace"
                 detail={errorText(workspace.error)}
                 onRetry={refresh}
               />
