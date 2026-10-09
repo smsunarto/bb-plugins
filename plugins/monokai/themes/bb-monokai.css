@@ -304,6 +304,16 @@
                                          * below reuses it */
   --sidebar-border: #e3e3dd1f; /* shared alpha edge; one owner per boundary */
 
+  /* ---- Machine identity ------------------------------------------------
+   * Categorical, like the chart series: a hue names a remote machine and
+   * nothing else. Plugin globes sit beside status glyphs, so no entry comes
+   * from a feedback family. Contrast is on --sidebar, against the 3:1 floor
+   * for glyphs. */
+  --machine-1: #3093f4; /* 5.59:1 */
+  --machine-2: #75f0ff; /* 13.24:1 */
+  --machine-3: #ee8fc8; /* 7.95:1 */
+  --machine-4: #7cacfe; /* 7.77:1 */
+
   /* ---- Mention pills ---------------------------------------------------
    * The gradient syntax is required (the token is consumed as a
    * background-image); the stops are flat so the chip stays on the ramp. */

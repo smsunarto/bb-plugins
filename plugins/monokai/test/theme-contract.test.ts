@@ -50,6 +50,12 @@ describe("bb Monokai surface palette", () => {
     expect(theme).toContain("--terminal-background: #181818");
   });
 
+  test("names remote machines with hues outside the feedback families", () => {
+    expect(theme).toContain(
+      "--machine-1: #3093f4; /* 5.59:1 */\n  --machine-2: #75f0ff; /* 13.24:1 */\n  --machine-3: #ee8fc8; /* 7.95:1 */\n  --machine-4: #7cacfe; /* 7.77:1 */",
+    );
+  });
+
   test("pins annotated bb surfaces to their intended grounds", () => {
     expect(theme).toContain(
       ".dark .thread-scrollbar > .flex.min-h-full.min-w-0.flex-col {\n  background-color: #151515",
@@ -412,6 +418,11 @@ describe("bb Monokai contract audit", () => {
   test("rejects an illegible registered foreground/background pair", () => {
     const changed = theme.replace("--primary-foreground: #181818", "--primary-foreground: #e3e3dd");
     expect(() => auditTheme(changed)).toThrow("--primary-foreground on --primary:");
+  });
+
+  test("holds machine globes to the 3:1 non-text floor on the sidebar", () => {
+    const changed = theme.replace("--machine-1: #3093f4", "--machine-1: #e3e3dd1f");
+    expect(() => auditTheme(changed)).toThrow("--machine-1 on --sidebar: 1.36:1 (needs 3.0:1)");
   });
 });
 

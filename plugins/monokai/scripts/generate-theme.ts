@@ -50,6 +50,11 @@ const palette = {
     purple: "#bdb2fe",
     cyan: "#75f0ff",
   },
+  // Machine identity reuses depth blue and two content tints. No registered
+  // pink sits clear of both error and merged, so rose is the one hue it adds.
+  identity: {
+    rose: "#ee8fc8",
+  },
 } as const satisfies Record<string, unknown>;
 
 // One neutral ladder for the whole adapter. Solid fallbacks composite these
@@ -134,6 +139,7 @@ export const roleValues = {
   "content.blue": palette.contentTint.blue,
   "content.purple": palette.contentTint.purple,
   "content.cyan": palette.contentTint.cyan,
+  "identity.rose": palette.identity.rose,
 } as const satisfies Record<string, string>;
 
 interface CssRule {
@@ -507,6 +513,10 @@ const darkExpected = declarationMap({
   "--sidebar-accent": roleValues["layer.hover"],
   "--sidebar-accent-foreground": palette.text.ink,
   "--sidebar-border": roleValues["layer.edge"],
+  "--machine-1": palette.depth.blue,
+  "--machine-2": palette.contentTint.cyan,
+  "--machine-3": palette.identity.rose,
+  "--machine-4": palette.contentTint.blue,
   "--pill-surface": `linear-gradient(to bottom, ${roleValues["layer.control"]}, ${roleValues["layer.control"]})`,
   "--pill-surface-border": roleValues["layer.edge"],
   "--pill-foreground": palette.text.ink,
@@ -869,19 +879,24 @@ export function auditTheme(source: string): void {
   }
 
   const token = (name: string): string => dark.get(name) ?? "#000000";
-  for (const [foreground, background] of [
-    ["--foreground", "--background"],
-    ["--muted-foreground", "--background"],
-    ["--readback-foreground", "--background"],
-    ["--sidebar-foreground", "--sidebar"],
-    ["--primary-foreground", "--primary"],
-    ["--destructive-foreground", "--destructive"],
+  for (const [foreground, background, floor] of [
+    ["--foreground", "--background", 4.5],
+    ["--muted-foreground", "--background", 4.5],
+    ["--readback-foreground", "--background", 4.5],
+    ["--sidebar-foreground", "--sidebar", 4.5],
+    ["--primary-foreground", "--primary", 4.5],
+    ["--destructive-foreground", "--destructive", 4.5],
+    // A machine globe is a glyph, not text, so it answers to the 3:1 non-text floor.
+    ["--machine-1", "--sidebar", 3],
+    ["--machine-2", "--sidebar", 3],
+    ["--machine-3", "--sidebar", 3],
+    ["--machine-4", "--sidebar", 3],
   ] as const) {
     requireContrast(
       `${foreground} on ${background}`,
       token(foreground),
       token(background),
-      4.5,
+      floor,
       violations,
     );
   }

@@ -17,8 +17,10 @@ function tokenStyle(values: Record<`--${string}`, string>): TokenStyle {
 function Swatch({ label, token }: { label: string; token: string }) {
   return (
     <article className="sb-swatch" style={tokenStyle({ "--swatch": `var(${token})` })}>
-      <span className="sb-token-name">{label}</span>
-      <p>{token}</p>
+      <div className="sb-swatch-caption">
+        <span className="sb-token-name">{label}</span>
+        <p>{token}</p>
+      </div>
     </article>
   );
 }
@@ -201,7 +203,7 @@ export const ContentPalettes: Story = {
     <Page
       kicker="Program-owned color"
       title="Content palettes"
-      description="ANSI, code, diff, and tree colors keep content semantics separate from the single chrome accent."
+      description="ANSI, code, diff, tree, and machine colors keep content semantics separate from the single chrome accent."
     >
       <section className="sb-section">
         <h2>Terminal ANSI</h2>
@@ -302,6 +304,16 @@ export const ContentPalettes: Story = {
               </span>
             </div>
           ))}
+        </div>
+      </section>
+
+      <section className="sb-section">
+        <h2>Machine identity</h2>
+        <div className="sb-grid">
+          <Swatch label="Blue" token="--machine-1" />
+          <Swatch label="Cyan" token="--machine-2" />
+          <Swatch label="Rose" token="--machine-3" />
+          <Swatch label="Periwinkle" token="--machine-4" />
         </div>
       </section>
     </Page>
