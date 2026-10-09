@@ -4,7 +4,12 @@ import type { RenderEmbedInput, RenderEmbedOutput } from "../../shared/contract.
 import { rangePatch } from "./diff-range.ts";
 import { relativeEmbedPath, splitPatchFiles } from "./patch-file.ts";
 import { readDiffSnapshot, saveDiffSnapshot, snapshotDatabase } from "./diff-snapshot.ts";
-import { resolveWorkspace, workspaceEnvironmentId } from "./workspace-root.ts";
+import {
+  labelForeignHost,
+  resolveWorkspace,
+  threadWorkspaceRoot,
+  workspaceEnvironmentId,
+} from "./workspace-root.ts";
 
 type Input = Exclude<RenderEmbedInput, { kind: "code" }>;
 const MAX_PATCH_BYTES = 1_500_000;
@@ -55,6 +60,16 @@ function validateInput(input: Input): void {
     throw new Error('workspace= only applies to source="workspace" or source="commit" diffs.');
 }
 
+/** A `workspace=` selector resolved on the citing thread's machine, labelled for the reader. */
+async function workspaceTarget(bb: BbPluginApi, workspace: string, threadId: string) {
+  const own = await threadWorkspaceRoot(bb, threadId).catch(() => null);
+  const root = await resolveWorkspace(bb, workspace, own?.hostId);
+  return {
+    environmentId: await workspaceEnvironmentId(bb, root),
+    label: (await labelForeignHost(bb, root, own?.hostId)).label,
+  };
+}
+
 type Source = { patch: string; source: string };
 async function gitSource(
   bb: BbPluginApi,
@@ -63,9 +78,11 @@ async function gitSource(
   let environmentId: string;
   let workspaceLabel: string | null = null;
   if (input.workspace !== undefined) {
-    const root = await resolveWorkspace(bb, input.workspace);
-    environmentId = await workspaceEnvironmentId(bb, root);
-    workspaceLabel = root.label;
+    ({ environmentId, label: workspaceLabel } = await workspaceTarget(
+      bb,
+      input.workspace,
+      input.threadId,
+    ));
   } else {
     const thread = await bb.sdk.threads.get({ threadId: input.threadId });
     if (!thread.environmentId) throw new Error("This thread has no workspace environment.");

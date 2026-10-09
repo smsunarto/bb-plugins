@@ -256,6 +256,135 @@ describe("cross-workspace citations", () => {
     });
   });
 
+  describe("a project checked out on several machines", () => {
+    const MAC = "host_mac";
+    const SERVER = "host_cardinal";
+    const names: Record<string, string> = { [MAC]: "Personal Mac", [SERVER]: "codex@cardinal" };
+    const checkout = (hostId: string, path: string, isDefault: boolean) => ({
+      ...source(hostId, path),
+      isDefault,
+    });
+    /** A Mac thread whose environment is a subdirectory its citation path does not resolve in. */
+    function macThread(existsOn: Record<string, boolean>, delays: Record<string, number> = {}) {
+      const { ctx, read, bb } = context();
+      read.mockRejectedValueOnce(Object.assign(new Error("HTTP 404"), { status: 404 }));
+      bb.sdk.environments.get = (async () => ({
+        hostId: MAC,
+        path: "/mac/dotfiles/plugins/x",
+      })) as never;
+      bb.sdk.hosts.get = (async ({ hostId }: { hostId: string }) => ({
+        id: hostId,
+        name: names[hostId],
+      })) as never;
+      bb.sdk.hosts.pathsExist = (async ({
+        hostId,
+        paths,
+        signal,
+      }: {
+        hostId: string;
+        paths: string[];
+        signal?: AbortSignal;
+      }) => {
+        // A sleeping machine answers only when the caller gives up on it.
+        if (delays[hostId] === Infinity)
+          await new Promise((_, reject) => signal?.addEventListener("abort", reject));
+        await new Promise((resolve) => setTimeout(resolve, delays[hostId] ?? 0));
+        return {
+          existence: Object.fromEntries(paths.map((path) => [path, existsOn[hostId] ?? false])),
+        };
+      }) as never;
+      return { ctx, read, bb };
+    }
+
+    test("the thread's own machine's checkout wins even when the server answers first", async () => {
+      const { ctx, read, bb } = macThread({ [MAC]: true, [SERVER]: true }, { [MAC]: 20 });
+      bb.sdk.projects.list = async () => [
+        {
+          ...project("proj_own", "dotfiles", "/mac/dotfiles"),
+          sources: [checkout(SERVER, "/srv/dotfiles", true), checkout(MAC, "/mac/dotfiles", false)],
+        },
+      ];
+      const result = await renderEmbed.execute(ctx, { kind: "code", threadId: "t", path: "a.ts" });
+      expect(result).toMatchObject({ status: "ready", workspace: "dotfiles" });
+      expect(read).toHaveBeenLastCalledWith({
+        hostId: MAC,
+        path: "/mac/dotfiles/a.ts",
+        rootPath: "/mac/dotfiles",
+      });
+    });
+
+    test("another machine's checkout of the thread's own project is never shown", async () => {
+      const { ctx, read, bb } = macThread({ [SERVER]: true });
+      bb.sdk.projects.list = async () => [
+        {
+          ...project("proj_own", "dotfiles", "/mac/dotfiles"),
+          sources: [checkout(SERVER, "/srv/dotfiles", true), checkout(MAC, "/mac/dotfiles", false)],
+        },
+      ];
+      expect(await renderEmbed.execute(ctx, { kind: "code", threadId: "t", path: "a.ts" })).toEqual(
+        { status: "error", message: "Could not load a.ts from any known workspace." },
+      );
+      expect(read).toHaveBeenCalledTimes(1);
+    });
+
+    test("a hit in another project on another machine names that machine", async () => {
+      const { ctx, read, bb } = macThread({ [SERVER]: true });
+      bb.sdk.projects.list = async () => [
+        project("proj_own", "dotfiles", "/mac/dotfiles", MAC),
+        project("proj_bb", "bb-plugins", "/srv/bb-plugins", SERVER),
+      ];
+      const result = await renderEmbed.execute(ctx, { kind: "code", threadId: "t", path: "a.ts" });
+      expect(result).toMatchObject({ status: "ready", workspace: "bb-plugins on codex@cardinal" });
+      expect(read).toHaveBeenLastCalledWith({
+        hostId: SERVER,
+        path: "/srv/bb-plugins/a.ts",
+        rootPath: "/srv/bb-plugins",
+      });
+    });
+
+    test("workspace= reads the project's checkout on the thread's own machine", async () => {
+      const { ctx, read, bb } = macThread({});
+      read.mockReset();
+      read.mockResolvedValue({ contentEncoding: "utf8", content: "one" });
+      bb.sdk.projects.list = async () => [
+        {
+          ...project("proj_bb", "bb-plugins", "/mac/bb-plugins"),
+          sources: [
+            checkout(SERVER, "/srv/bb-plugins", true),
+            checkout(MAC, "/mac/bb-plugins", false),
+          ],
+        },
+      ];
+      const result = await renderEmbed.execute(ctx, {
+        kind: "code",
+        threadId: "t",
+        path: "a.ts",
+        workspace: "bb-plugins",
+      });
+      expect(result).toMatchObject({ status: "ready", workspace: "bb-plugins" });
+      expect(read).toHaveBeenCalledWith({
+        hostId: MAC,
+        path: "/mac/bb-plugins/a.ts",
+        rootPath: "/mac/bb-plugins",
+      });
+    });
+
+    test("a sleeping machine does not stall the citation", async () => {
+      const { ctx, read, bb } = macThread({ [SERVER]: true }, { [MAC]: Infinity });
+      bb.sdk.projects.list = async () => [
+        project("proj_own", "dotfiles", "/mac/dotfiles-main", MAC),
+        project("proj_bb", "bb-plugins", "/srv/bb-plugins", SERVER),
+      ];
+      const result = await renderEmbed.execute(ctx, { kind: "code", threadId: "t", path: "a.ts" });
+      expect(result).toMatchObject({ status: "ready", workspace: "bb-plugins on codex@cardinal" });
+      expect(read).toHaveBeenLastCalledWith({
+        hostId: SERVER,
+        path: "/srv/bb-plugins/a.ts",
+        rootPath: "/srv/bb-plugins",
+      });
+    });
+  });
+
   test("non-miss read failures never probe other workspaces", async () => {
     const { ctx, read, bb } = context();
     read.mockRejectedValueOnce(new Error("permission denied"));

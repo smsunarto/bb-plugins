@@ -6,8 +6,13 @@
 // agent tools, the CLI, and "Send to agent" all return, so an annotation reads
 // the same wherever an agent meets it.
 
+import { instructionFiles } from "@bb-kit/core/instructions";
+
 import type { Session, StoredAnnotation } from "./afs.ts";
 import { pluginUiSurfacePromptContext } from "./plugin-ui-surface-map.ts";
+
+// Agent-facing text, editable in the Prompt Editor plugin.
+const files = instructionFiles(import.meta.url);
 
 function line(label: string, value: string | null | undefined): string {
   return value ? `**${label}:** ${value}\n` : "";
@@ -30,10 +35,19 @@ function pluginUiOf(annotation: StoredAnnotation): string | null {
 }
 
 function pluginSourceOf(annotation: StoredAnnotation): string | null {
-  const { pluginId, pluginProvenance, pluginSource } = annotation.bb;
+  const { pluginId, pluginProvenance, pluginSource, pluginSourceHost } = annotation.bb;
   if (!pluginId || !pluginProvenance) return null;
   if (pluginProvenance === "builtin") {
     return `bundled with bb — source in get-bb/bb \`plugins/${pluginId}\`. It is a forkable built-in: change it in a fork or in bb core, not in an installed plugin.`;
+  }
+  // A path source is a directory on the bb server's machine, which an agent
+  // on another host cannot open as written.
+  if (pluginSource?.startsWith("path:")) {
+    return files.read("plugin-source-path", {
+      source: pluginSource,
+      host: pluginSourceHost ? ` (\`${pluginSourceHost}\`)` : "",
+      pluginId,
+    });
   }
   return pluginSource ? `installed from \`${pluginSource}\`` : "installed plugin";
 }

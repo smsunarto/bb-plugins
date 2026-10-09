@@ -61,6 +61,11 @@ export const bbContextSchema = z.object({
   pluginProvenance: z.enum(["builtin", "direct", "catalog"]).nullable().optional(),
   /** The owning plugin's install source as bb records it, e.g. `path:/…`. */
   pluginSource: z.string().nullable().optional(),
+  /**
+   * bb's name for the machine a `path:` source is on: the bb server's own
+   * host, which can differ from the host an agent reading the path runs on.
+   */
+  pluginSourceHost: z.string().nullable().optional(),
   threadId: z.string().nullable(),
   projectId: z.string().nullable(),
   /** Human label for the route, used in listings. */

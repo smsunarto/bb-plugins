@@ -253,6 +253,16 @@ export const rpcContract = defineRpcContract({
   },
 });
 
+/** bb's name for the server's own machine, where `path:` plugin sources live. */
+async function serverHostName(bb: BbPluginApi): Promise<string | null> {
+  try {
+    const { primaryHostId } = await bb.sdk.system.config();
+    return primaryHostId ? (await bb.sdk.hosts.get({ hostId: primaryHostId })).name : null;
+  } catch {
+    return null;
+  }
+}
+
 export default async function plugin(bb: BbPluginApi) {
   const settings = bb.settings.define({
     deliveryMode: {
@@ -402,17 +412,22 @@ export default async function plugin(bb: BbPluginApi) {
 
   // Whether an annotated plugin ships with bb or was installed, and from where.
   // Read once and refreshed when an annotation names a plugin not yet listed.
-  type PluginOrigin = Pick<BbContext, "pluginProvenance" | "pluginSource">;
+  type PluginOrigin = Pick<BbContext, "pluginProvenance" | "pluginSource" | "pluginSourceHost">;
   let pluginOrigins = new Map<string, PluginOrigin>();
 
   async function learnPluginOrigins(pluginIds: Iterable<string | null>): Promise<void> {
     if ([...pluginIds].every((id) => id === null || pluginOrigins.has(id))) return;
     try {
       const { plugins } = await bb.sdk.plugins.list();
+      const serverHost = await serverHostName(bb);
       pluginOrigins = new Map(
         plugins.map((plugin) => [
           plugin.id,
-          { pluginProvenance: plugin.provenance, pluginSource: plugin.source },
+          {
+            pluginProvenance: plugin.provenance,
+            pluginSource: plugin.source,
+            pluginSourceHost: plugin.source.startsWith("path:") ? serverHost : null,
+          },
         ]),
       );
     } catch (error) {
@@ -424,7 +439,12 @@ export default async function plugin(bb: BbPluginApi) {
 
   /** The client's context with the owning plugin's origin as bb reports it. */
   function withPluginOrigin(context: BbContext): BbContext {
-    const { pluginProvenance: _provenance, pluginSource: _source, ...rest } = context;
+    const {
+      pluginProvenance: _provenance,
+      pluginSource: _source,
+      pluginSourceHost: _sourceHost,
+      ...rest
+    } = context;
     const origin = rest.pluginId ? pluginOrigins.get(rest.pluginId) : undefined;
     return origin ? { ...rest, ...origin } : rest;
   }

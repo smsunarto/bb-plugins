@@ -1,0 +1,1 @@
+installed from `{{source}}`, a directory on the bb server's machine{{host}}. bb runs the plugin from that copy. If you work in another checkout or on another machine, the change reaches the running plugin only after it lands in that directory and `bb plugin reload {{pluginId}}` runs.

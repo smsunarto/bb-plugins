@@ -69,7 +69,8 @@ export type SmartEmbedsRpcContract = {
 
 /**
  * Realtime channel the server publishes on when a thread's workspace may have
- * changed. The app drops or refreshes cached embeds for that thread.
+ * changed. The app drops or refreshes cached embeds for that thread, and plays
+ * the completion sound when the reason is `idle`.
  */
 export const WORKSPACE_CHANGED_CHANNEL = "workspace-changed";
 
@@ -81,3 +82,6 @@ export const workspaceChangedSignalSchema = z
   .strict();
 
 export type WorkspaceChangedSignal = z.output<typeof workspaceChangedSignalSchema>;
+
+/** Plugin http route (under `/api/v1/plugins/<id>/http`) that serves the turn completion sound. */
+export const COMPLETION_SOUND_PATH = "/completion-sound";

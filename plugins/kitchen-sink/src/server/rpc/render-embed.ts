@@ -13,6 +13,7 @@ import {
 import { codeCitation } from "../lib/code-citation.ts";
 import {
   candidateWorkspaceRoots,
+  labelForeignHost,
   resolveWorkspace,
   threadWorkspaceRoot,
   WorkspaceError,
@@ -20,6 +21,8 @@ import {
 } from "../lib/workspace-root.ts";
 const MAX_PATH_LENGTH = 1024;
 const MAX_FILE_BYTES = 1_500_000;
+/** A sleeping machine must not stall a citation the reader is waiting on. */
+const PROBE_TIMEOUT_MS = 3_000;
 /** A relative path that stays inside its root: no leading slash, no `..`, no empty segments. */
 function relativePath(value: string | undefined): string | null {
   const path = value?.trim() ?? "";
@@ -61,24 +64,12 @@ function readAt(bb: BbPluginApi, root: WorkspaceRoot, path: string): Promise<Fil
   });
 }
 
-/** True when the resolved root is not the workspace the containing thread runs in. */
-async function isForeignWorkspace(
-  bb: BbPluginApi,
-  threadId: string,
-  root: WorkspaceRoot,
-): Promise<boolean> {
-  try {
-    const own = await threadWorkspaceRoot(bb, threadId);
-    return own.hostId !== root.hostId || own.path !== root.path;
-  } catch {
-    return true;
-  }
-}
-
 /**
- * Probe other project checkouts for the cited path. The containing thread's
- * project wins outright; a single hit elsewhere resolves; several foreign hits
- * fail closed with the workspace names so the reader can pin one.
+ * Probe other project checkouts for the cited path. Hits on the thread's own
+ * machine win over other machines, and the thread's project wins outright; a
+ * single hit elsewhere resolves; several hits fail closed with the workspace
+ * names so the reader can pin one. Another machine's checkout of the thread's
+ * own project is never a candidate: it holds a different working copy.
  */
 async function probeWorkspaceRoots(
   bb: BbPluginApi,
@@ -87,38 +78,47 @@ async function probeWorkspaceRoots(
 ): Promise<WorkspaceRoot> {
   const thread = await bb.sdk.threads.get({ threadId });
   const own = await threadWorkspaceRoot(bb, threadId).catch(() => null);
-  const candidates = await candidateWorkspaceRoots(
-    bb,
-    thread.projectId ?? null,
-    own ?? { hostId: "", path: "", label: "" },
-  );
+  const candidates = (
+    await candidateWorkspaceRoots(
+      bb,
+      thread.projectId ?? null,
+      own ?? { hostId: "", path: "", label: "" },
+    )
+  ).filter((root) => !own || root.projectId !== thread.projectId || root.hostId === own.hostId);
   const byHost = new Map<string, WorkspaceRoot[]>();
   for (const root of candidates) {
     const list = byHost.get(root.hostId) ?? [];
     list.push(root);
     byHost.set(root.hostId, list);
   }
-  const hits: WorkspaceRoot[] = [];
+  const found = new Set<WorkspaceRoot>();
   await Promise.all(
     [...byHost].map(async ([hostId, roots]) => {
       try {
         const result = await bb.sdk.hosts.pathsExist({
           hostId,
           paths: roots.map((root) => join(root.path, path)),
+          signal: AbortSignal.timeout(PROBE_TIMEOUT_MS),
         });
         for (const root of roots) {
-          if (result.existence[join(root.path, path)]) hits.push(root);
+          if (result.existence[join(root.path, path)]) found.add(root);
         }
       } catch {
-        // An unreachable host simply cannot hold the citation.
+        // An unreachable or sleeping host simply cannot hold the citation.
       }
     }),
   );
-  const preferred = hits.find((hit) => hit.projectId === thread.projectId);
-  if (preferred) return preferred;
-  if (hits.length === 1) return hits[0]!;
-  if (hits.length > 1) {
-    const labels = [...new Set(hits.map((hit) => hit.label))].join(", ");
+  // Candidate order decides, never which host answered first.
+  const hits = candidates.filter((root) => found.has(root));
+  const local = hits.filter((hit) => hit.hostId === own?.hostId);
+  const pool = local.length > 0 ? local : hits;
+  const labelled = (root: WorkspaceRoot) => labelForeignHost(bb, root, own?.hostId);
+  const preferred = pool.find((hit) => hit.projectId === thread.projectId);
+  if (preferred) return labelled(preferred);
+  if (pool.length === 1) return labelled(pool[0]!);
+  if (pool.length > 1) {
+    const roots = await Promise.all(pool.map(labelled));
+    const labels = [...new Set(roots.map((root) => root.label))].join(", ");
     throw new WorkspaceError(
       `${path} exists in several workspaces (${labels}). Add workspace="<name>" to choose.`,
     );
@@ -133,11 +133,11 @@ async function citationFile(
   path: string,
 ): Promise<CitationFile> {
   if (input.workspace !== undefined) {
-    const root = await resolveWorkspace(bb, input.workspace);
+    const own = await threadWorkspaceRoot(bb, input.threadId).catch(() => null);
+    const root = await resolveWorkspace(bb, input.workspace, own?.hostId);
     const file = await readAt(bb, root, path);
-    return (await isForeignWorkspace(bb, input.threadId, root))
-      ? { file, workspace: root.label }
-      : { file };
+    if (own && own.hostId === root.hostId && own.path === root.path) return { file };
+    return { file, workspace: (await labelForeignHost(bb, root, own?.hostId)).label };
   }
   const root = await threadWorkspaceRoot(bb, input.threadId);
   try {

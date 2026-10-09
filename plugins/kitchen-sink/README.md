@@ -82,9 +82,20 @@ Append a `PluginMentionProviderRegistration` to `mentionProviders` in `src/serve
 
 ## Turn completion sound
 
-Kitchen Sink plays Cursor's completion sound when a thread becomes idle, using
-macOS `afplay` on the Mac running BB. It also plays while the thread is focused.
-This uses the same sound asset as the retired Notify plugin and requires Cursor
-at `/Applications/Cursor.app`. Other operating systems skip playback. Missing
-assets or audio failures are logged without interrupting the agent. Plugin reload
-or shutdown stops any sound still playing.
+Kitchen Sink plays a sound in your browser when a thread becomes idle, so you
+hear it on the machine you are using, wherever the BB server runs. It also plays
+while the thread is focused or the tab is in the background.
+
+- **Sound:** Cursor's completion sound, the asset the retired Notify plugin used.
+  The server reads it from any connected machine with Cursor at
+  `/Applications/Cursor.app`, keeps it in memory, and serves it at
+  `/api/v1/plugins/kitchen-sink/http/completion-sound`. Kitchen Sink does not
+  ship the file. When no machine has Cursor, the browser synthesizes a short
+  chime instead.
+- **One tab plays:** with several BB tabs open, one tab per browser plays. A tab
+  takes part only after you have clicked or typed in it, because browsers block
+  sound in a tab you never touched.
+- **Blocked audio stays silent:** if the browser refuses playback, nothing is
+  shown and the agent is not interrupted. Safari allows sound only from audio
+  that a click or key press started, so the tab unlocks its audio on your first
+  click or key press, and again after any refusal.

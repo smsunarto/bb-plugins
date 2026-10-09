@@ -17,6 +17,7 @@ import {
 } from "../shared/contract.ts";
 import { embedCache, embedCacheKey, type EmbedRequest } from "./embed-cache.ts";
 import { UnityCitationView } from "@bb-plugins/unity-inspector/app";
+import { CompletionSound } from "./completion-sound.tsx";
 import { DevinIcon } from "./devin-branding.tsx";
 import { SendHaptic } from "./send-haptic.tsx";
 import { SmartImageCompareDirective } from "./smart-image-compare.tsx";
@@ -291,6 +292,7 @@ export default definePluginApp((app) => {
     providerId: "acp-devin",
     icon: DevinIcon,
   });
+  app.slots.experimental_appOverlay({ id: "completion-sound", component: CompletionSound });
   app.slots.experimental_threadHeaderAction({
     id: "thread-activity-probe",
     title: PROBE_GROUP_TITLE,

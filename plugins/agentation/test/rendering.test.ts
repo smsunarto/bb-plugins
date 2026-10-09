@@ -105,20 +105,30 @@ test("the sidebar thread list says whether bb or an installed plugin owns it", (
     /\*\*Plugin source:\*\* bundled with bb — source in get-bb\/bb `plugins\/thread-list`\. It is a forkable built-in/,
   );
 
-  const installed = renderAnnotation(
-    stored({
-      bb: {
-        ...threadList,
-        pluginId: "gtd-sidebar",
-        surfaceId: "inbox",
-        pluginProvenance: "direct",
-        pluginSource: "path:/Users/me/git/bb-plugins/plugins/gtd-sidebar",
-      },
-    }),
+  const installed = (pluginSourceHost?: string) =>
+    renderAnnotation(
+      stored({
+        bb: {
+          ...threadList,
+          pluginId: "gtd-sidebar",
+          surfaceId: "inbox",
+          pluginProvenance: "direct",
+          pluginSource: "path:/home/codex/git/bb-plugins/plugins/gtd-sidebar",
+          ...(pluginSourceHost ? { pluginSourceHost } : {}),
+        },
+      }),
+    )
+      .split("\n")
+      .find((line) => line.startsWith("**Plugin source:**"));
+  // An agent on another machine learns where the path lives and how its own edit reaches bb.
+  assert.equal(
+    installed("codex@cardinal"),
+    "**Plugin source:** installed from `path:/home/codex/git/bb-plugins/plugins/gtd-sidebar`, a directory on the bb server's machine (`codex@cardinal`). bb runs the plugin from that copy. If you work in another checkout or on another machine, the change reaches the running plugin only after it lands in that directory and `bb plugin reload gtd-sidebar` runs.",
   );
-  assert.match(
-    installed,
-    /\*\*Plugin source:\*\* installed from `path:\/Users\/me\/git\/bb-plugins\/plugins\/gtd-sidebar`/,
+  // Annotations stored before bb recorded the server's host still say whose path it is.
+  assert.equal(
+    installed(),
+    "**Plugin source:** installed from `path:/home/codex/git/bb-plugins/plugins/gtd-sidebar`, a directory on the bb server's machine. bb runs the plugin from that copy. If you work in another checkout or on another machine, the change reaches the running plugin only after it lands in that directory and `bb plugin reload gtd-sidebar` runs.",
   );
 
   // Annotations stored before bb recorded origins render without the line.

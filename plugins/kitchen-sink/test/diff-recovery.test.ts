@@ -298,7 +298,9 @@ test("workspace= diffs the environment anchored at another project's checkout", 
       },
     ],
   } as never;
-  bb.sdk.threads.list = (async () => [{ environmentId: "env_bbp" }]) as never;
+  bb.sdk.environments.list = (async () => [
+    { id: "env_bbp", hostId: "h", path: "/bb-plugins/", status: "ready" },
+  ]) as never;
   bb.sdk.environments.get = (async ({ environmentId }: { environmentId: string }) =>
     environmentId === "env_bbp"
       ? { id: "env_bbp", path: "/bb-plugins", status: "ready", mergeBaseBranch: "origin/main" }
@@ -313,6 +315,80 @@ test("workspace= diffs the environment anchored at another project's checkout", 
     environmentId: "env_bbp",
     target: "all",
     mergeBaseBranch: "origin/main",
+  });
+});
+
+describe("workspace= on a project checked out on several machines", () => {
+  const MAC = "host_personal_mac";
+  const DEV_MAC = "host_dev_mac";
+  const SERVER = "host_cardinal";
+  const HOST_NAMES: Record<string, string> = {
+    [MAC]: "Personal Mac",
+    [DEV_MAC]: "Dev Mac",
+    [SERVER]: "codex@cardinal",
+  };
+  const source = (hostId: string, isDefault: boolean) => ({
+    id: `src_${hostId}`,
+    projectId: "proj_dotfiles",
+    hostId,
+    path: "/Users/me/dotfiles",
+    type: "local_path",
+    isDefault,
+    createdAt: 0,
+    updatedAt: 0,
+  });
+  /** Both Macs hold the same path; the Dev Mac thread was active most recently. */
+  const environments = [
+    { id: "env_dev", hostId: DEV_MAC, path: "/Users/me/dotfiles", status: "ready" },
+    { id: "env_mac", hostId: MAC, path: "/Users/me/dotfiles", status: "ready" },
+  ];
+  function onHost(threadHostId: string) {
+    const { bb, diff } = setup();
+    bb.sdk.projects = {
+      list: async () => [
+        {
+          id: "proj_dotfiles",
+          name: "dotfiles",
+          kind: "standard",
+          gitRemoteUrl: null,
+          createdAt: 0,
+          updatedAt: 0,
+          sources: [source(MAC, true), source(DEV_MAC, false)],
+        },
+      ],
+    } as never;
+    bb.sdk.hosts = {
+      get: async ({ hostId }: { hostId: string }) => ({ id: hostId, name: HOST_NAMES[hostId] }),
+    } as never;
+    bb.sdk.threads.list = (async () => [
+      { environmentId: "env_dev" },
+      { environmentId: "env_mac" },
+    ]) as never;
+    bb.sdk.environments.list = (async (filter: { hostId?: string; projectId?: string }) =>
+      environments.filter((entry) => !filter.hostId || entry.hostId === filter.hostId)) as never;
+    bb.sdk.environments.get = (async ({ environmentId }: { environmentId: string }) =>
+      environmentId === "e"
+        ? { id: "e", hostId: threadHostId, path: "/work/thread", mergeBaseBranch: "origin/main" }
+        : {
+            ...environments.find((entry) => entry.id === environmentId),
+            mergeBaseBranch: "main",
+          }) as never;
+    return { bb, diff };
+  }
+
+  test.each([
+    [SERVER, "env_mac", "Workspace dotfiles on Personal Mac"],
+    [MAC, "env_mac", "Workspace dotfiles"],
+    [DEV_MAC, "env_dev", "Workspace dotfiles"],
+  ])("a thread on %s diffs %s", async (threadHostId, environmentId, label) => {
+    const { bb, diff } = onHost(threadHostId);
+    expect(
+      await loadDiffEmbed(bb, { ...input, source: "workspace", workspace: "dotfiles" }),
+    ).toMatchObject({
+      status: "ready",
+      source: `${label}: branch and uncommitted changes at first display`,
+    });
+    expect(diff).toHaveBeenCalledWith({ environmentId, target: "all", mergeBaseBranch: "main" });
   });
 });
 
