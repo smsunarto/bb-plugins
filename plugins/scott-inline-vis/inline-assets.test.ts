@@ -68,7 +68,7 @@ test("loads video and source src once through the authenticated preview boundary
     redirect: "error",
     signal,
   });
-  const doc = new DOMParser().parseFromString(result.srcDoc!, "text/html");
+  const doc = new DOMParser().parseFromString(result.html!, "text/html");
   expect(doc.querySelector("base")?.href).toMatch(/\/file-previews\/lease\/player\.html$/);
   expect(doc.querySelector("video")?.hasAttribute("src")).toBe(false);
   expect(result.assets[0]?.hash).toBe("#t=2");
@@ -87,7 +87,7 @@ test("does not fetch or rewrite HTML containing only existing data or remote emb
     documentUrl.href,
     new AbortController().signal,
   );
-  expect(result.srcDoc).toBeUndefined();
+  expect(result.html).toBeUndefined();
   expect(fetch).not.toHaveBeenCalled();
 });
 
@@ -139,7 +139,7 @@ test("fetches videos through the SDK preview lease", async () => {
     new AbortController().signal,
   );
   expect(String(fetch.mock.calls[0]![0])).toMatch(/\/file-previews\/lease\/clip\.mp4$/);
-  const doc = new DOMParser().parseFromString(result.srcDoc!, "text/html");
+  const doc = new DOMParser().parseFromString(result.html!, "text/html");
   expect(doc.querySelector("base")?.href).toMatch(/\/file-previews\/lease\/player\.html$/);
 });
 
@@ -157,7 +157,7 @@ test("honors an explicit local base and leaves remote-base embeds alone", async 
     documentUrl.href,
     new AbortController().signal,
   );
-  expect(remote.srcDoc).toBeUndefined();
+  expect(remote.html).toBeUndefined();
   expect(fetch).toHaveBeenCalledTimes(1);
 });
 
@@ -169,7 +169,7 @@ test("reports decoder failures inside the opaque frame and clears the alert afte
     new AbortController().signal,
   );
   const { JSDOM } = await import("jsdom");
-  const dom = new JSDOM(result.srcDoc!, {
+  const dom = new JSDOM(result.html!, {
     runScripts: "dangerously",
     beforeParse(window) {
       window.URL.createObjectURL = vi.fn(() => "blob:null/video");
@@ -204,7 +204,7 @@ test("loads sibling images through the same opaque-frame bridge", async () => {
   );
   expect(String(fetch.mock.calls[0]![0])).toBe(`${root.href}before.png`);
   expect(result.assets[0]?.blob.type).toBe("image/png");
-  expect(result.srcDoc).toContain('data-bb-inline-preview="0"');
+  expect(result.html).toContain('data-bb-inline-preview="0"');
 });
 
 test("local-media Escape waits for author handlers before forwarding", async () => {

@@ -113,6 +113,27 @@ type SdkFakes = NonNullable<
   NonNullable<Parameters<typeof import("@get-bb/plugin-sdk/testing/app").renderSlot>[2]>["sdk"]
 >;
 const LEASE_URL = "/api/v1/file-previews/lease";
+const FRAME_URL = "/api/v1/plugins/scott-inline-vis/http/frame";
+/** Request the prepared document the way the frame page does once it loads. */
+function frameDocument(iframe: HTMLIFrameElement | null | undefined): string | undefined {
+  const frameWindow = iframe?.contentWindow;
+  if (!frameWindow) return undefined;
+  let html: string | undefined;
+  const post = vi.spyOn(frameWindow, "postMessage").mockImplementation((data) => {
+    if (data?.type === "bb:inline-vis:document") html = data.html;
+  });
+  try {
+    window.dispatchEvent(
+      new MessageEvent("message", {
+        source: frameWindow,
+        data: { type: "bb:inline-vis:frame-ready" },
+      }),
+    );
+  } finally {
+    post.mockRestore();
+  }
+  return html;
+}
 /** The host file API as `useSdk()` sees it: `read` returns each file's text. */
 function previewSdk(
   read: (path: string) => string | Promise<string>,
@@ -305,18 +326,22 @@ test("inline-vis sends assets once only to the prepared opaque frame and stops o
       message: inlineVisMessage,
       openWorkspaceFile: null,
     },
-    { sdk: previewSdk(() => '<video controls src="clip.mp4"></video>') },
+    {
+      sdk: previewSdk(() => '<video controls src="clip.mp4"></video>'),
+      pluginId: "scott-inline-vis",
+    },
   );
   try {
-    await waitFor(() =>
-      expect(slot.container.querySelector("iframe")?.getAttribute("srcdoc")).toContain(
-        "bb:inline-preview-ready",
-      ),
-    );
-    expect(slot.container.querySelector("iframe")?.getAttribute("sandbox")).toBe("allow-scripts");
+    const html = await waitFor(() => {
+      const value = frameDocument(slot.container.querySelector("iframe"));
+      expect(value).toContain("bb:inline-preview-ready");
+      return value!;
+    });
     const iframe = slot.container.querySelector("iframe")!;
+    expect(iframe.getAttribute("sandbox")).toBe("allow-scripts");
+    expect(iframe.getAttribute("src")).toBe(FRAME_URL);
     const post = vi.spyOn(iframe.contentWindow!, "postMessage").mockImplementation(() => {});
-    const token = iframe.srcdoc.match(/const token = "([^"]+)"/)![1];
+    const token = html.match(/const token = "([^"]+)"/)![1];
     const ready = (source: Window | null, value: string) =>
       window.dispatchEvent(
         new window.MessageEvent("message", {
@@ -629,7 +654,7 @@ test("inline-vis keeps an open iframe after its lease expires and refreshes only
 });
 
 async function renderFragment(
-  html: string,
+  fragment: string,
   {
     height,
     composerText,
@@ -654,43 +679,66 @@ async function renderFragment(
       openWorkspaceFile: null,
     },
     {
-      sdk: previewSdk(() => html),
+      sdk: previewSdk(() => fragment),
       pluginId: "scott-inline-vis",
       composer: { text: composerText ?? "" },
       rpc,
     },
   );
-  const iframe = await waitFor(() => {
+  // The app answers the frame page's request once, so keep the delivered document.
+  const { iframe, html } = await waitFor(() => {
     const element = slot.container.querySelector("iframe");
-    expect(element?.getAttribute("srcdoc")).toBeTruthy();
-    return element as HTMLIFrameElement;
+    const delivered = frameDocument(element);
+    expect(delivered).toBeTruthy();
+    return { iframe: element as HTMLIFrameElement, html: delivered! };
   });
-  // The frame listener registers in a passive effect after the srcdoc commit.
+  // The frame listener registers in a passive effect after the frame commit.
   await act(async () => {});
-  const srcdoc = iframe.getAttribute("srcdoc")!;
-  const token = /"token":"([^"]+)"/u.exec(srcdoc)![1]!;
+  const token = /"token":"([^"]+)"/u.exec(html)![1]!;
   const send = (data: Record<string, unknown>) =>
     act(() => {
       window.dispatchEvent(
         new MessageEvent("message", { data: { token, ...data }, source: iframe.contentWindow }),
       );
     });
-  return { slot, iframe, srcdoc, token, send };
+  return { slot, iframe, html, token, send };
 }
 
 test("inline-vis renders an HTML fragment inside the visualization runtime", async () => {
-  const { slot, iframe, srcdoc } = await renderFragment('<div id="viz" class="card">Hi</div>');
+  const { slot, iframe, html } = await renderFragment('<div id="viz" class="card">Hi</div>');
 
-  expect(iframe.getAttribute("src")).toBeNull();
+  // bb mobile cancels about:srcdoc frames, so the document loads through a same-origin page.
+  expect(iframe.getAttribute("src")).toBe(FRAME_URL);
+  expect(iframe.getAttribute("srcdoc")).toBeNull();
   expect(iframe.getAttribute("sandbox")).toBe("allow-scripts");
-  const frameDocument = new DOMParser().parseFromString(srcdoc, "text/html");
-  expect(frameDocument.querySelector("base")?.getAttribute("href")).toBe(
+  const parsed = new DOMParser().parseFromString(html, "text/html");
+  expect(parsed.querySelector("base")?.getAttribute("href")).toBe(
     "http://localhost:3000/api/v1/file-previews/lease/chart.html",
   );
-  expect(frameDocument.querySelector("style")?.textContent).toContain("--viz-series-1");
-  expect(frameDocument.querySelector("#viz")?.textContent).toBe("Hi");
+  expect(parsed.querySelector("style")?.textContent).toContain("--viz-series-1");
+  expect(parsed.querySelector("#viz")?.textContent).toBe("Hi");
   // The runtime script runs before the fragment's own markup and scripts.
-  expect(frameDocument.head.querySelector("script")?.textContent).toContain('"bb"');
+  expect(parsed.head.querySelector("script")?.textContent).toContain('"bb"');
+  slot.unmount();
+});
+
+test("inline-vis answers each frame once and replaces a frame that asks again", async () => {
+  const { slot, iframe, html } = await renderFragment("<p>Secret state</p>");
+  expect(html).toContain("Secret state");
+  // A reload, or a page a preview link navigated to, asks from the same window.
+  let again: string | undefined;
+  act(() => {
+    again = frameDocument(iframe);
+  });
+  expect(again).toBeUndefined();
+  const fresh = slot.container.querySelector("iframe")!;
+  expect(fresh).not.toBe(iframe);
+  expect(fresh.getAttribute("src")).toBe(FRAME_URL);
+  let reloaded: string | undefined;
+  act(() => {
+    reloaded = frameDocument(fresh);
+  });
+  expect(reloaded).toBe(html);
   slot.unmount();
 });
 
@@ -755,11 +803,11 @@ test("inline-vis restores saved fragment state when the preview reopens", async 
   first.slot.unmount();
 
   const second = await renderFragment("<p>State</p>");
-  expect(second.srcdoc).toContain('"state":"{\\"tab\\":\\"latency\\"}"');
+  expect(second.html).toContain('"state":"{\\"tab\\":\\"latency\\"}"');
   second.slot.unmount();
 
   const otherMessage = await renderFragment("<p>State</p>", { messageId: "message-other" });
-  expect(otherMessage.srcdoc).toContain('"state":null');
+  expect(otherMessage.html).toContain('"state":null');
   otherMessage.slot.unmount();
 });
 
@@ -961,7 +1009,7 @@ test("reopening waits for the prior preview's pending save before restoring", as
   expect(read).toHaveBeenCalledTimes(1);
   release();
   await waitFor(() =>
-    expect(slot.container.querySelector("iframe")?.getAttribute("srcdoc")).toContain(
+    expect(frameDocument(slot.container.querySelector("iframe"))).toContain(
       '"state":"{\\"radius\\":7}"',
     ),
   );
@@ -1021,7 +1069,7 @@ test("valid legacy state stays available when migration fails and restores on re
   expect(window.localStorage.getItem(key)).toBe('{"selected":"studio"}');
   slot.unmount();
   const retried = await renderFragment("<p>Legacy</p>");
-  expect(retried.srcdoc).toContain('"state":"{\\"selected\\":\\"studio\\"}"');
+  expect(retried.html).toContain('"state":"{\\"selected\\":\\"studio\\"}"');
   expect(window.localStorage.getItem(key)).toBeNull();
   retried.slot.unmount();
 });
@@ -1129,7 +1177,7 @@ test("late and partial control registration preserves saved edits and attached c
   );
   await waitFor(() => expect(first.slot.container.querySelector("iframe")).toBeTruthy());
   const iframe = first.slot.container.querySelector("iframe")!;
-  const token = /"token":"([^"]+)"/u.exec(iframe.srcdoc)![1]!;
+  const token = /"token":"([^"]+)"/u.exec(frameDocument(iframe)!)![1]!;
   const publish = (groups: unknown[]) =>
     act(() =>
       window.dispatchEvent(
@@ -1166,7 +1214,7 @@ test("late and partial control registration preserves saved edits and attached c
 test("state read failures leave a usable preview without writing defaults and retry restores saved data", async () => {
   let available = false;
   const save = vi.fn(stateRpc.saveState);
-  const { slot, send, srcdoc } = await renderFragment("<p>Usable preview</p>", {
+  const { slot, send, html } = await renderFragment("<p>Usable preview</p>", {
     rpc: {
       readState: () => {
         if (!available) throw new Error("State server restarting");
@@ -1185,7 +1233,7 @@ test("state read failures leave a usable preview without writing defaults and re
       saveState: save,
     },
   });
-  expect(srcdoc).toContain("Usable preview");
+  expect(html).toContain("Usable preview");
   expect(slot.getByRole("alert").textContent).toContain("Preview changes will not be saved");
   send({ type: "bb:inline-vis:state", state: '{"radius":18}' });
   send({
@@ -1200,7 +1248,9 @@ test("state read failures leave a usable preview without writing defaults and re
   available = true;
   fireEvent.click(slot.getByRole("button", { name: "Retry saved state" }));
   await waitFor(() =>
-    expect(slot.container.querySelector("iframe")?.srcdoc).toContain('"state":"{\\"radius\\":7}"'),
+    expect(frameDocument(slot.container.querySelector("iframe"))).toContain(
+      '"state":"{\\"radius\\":7}"',
+    ),
   );
   expect(slot.queryByRole("alert")).toBeNull();
   slot.unmount();
@@ -1244,11 +1294,13 @@ test("prepared full HTML forwards Escape without gaining the fragment state API"
       rpc: { saveState: save },
     },
   );
-  await waitFor(() =>
-    expect(slot.container.querySelector("iframe")?.srcdoc).toContain("bb:inline-vis:escape"),
-  );
+  const html = await waitFor(() => {
+    const delivered = frameDocument(slot.container.querySelector("iframe"));
+    expect(delivered).toContain("bb:inline-vis:escape");
+    return delivered!;
+  });
   const iframe = slot.container.querySelector("iframe")!;
-  const token = /const token = "([^"]+)"/u.exec(iframe.srcdoc)![1]!;
+  const token = /const token = "([^"]+)"/u.exec(html)![1]!;
   await act(async () => {});
   fireEvent.click(slot.getByRole("button", { name: "Wide view" }));
   const send = (data: Record<string, unknown>) =>
@@ -1466,7 +1518,7 @@ test("reading authoritative server state retires an obsolete legacy key", async 
     tweaks: null,
   });
   const first = await renderFragment("<p>Existing server state</p>");
-  expect(first.srcdoc).toContain('"state":"{\\"selected\\":\\"server\\"}"');
+  expect(first.html).toContain('"state":"{\\"selected\\":\\"server\\"}"');
   expect(window.localStorage.getItem(legacyKey)).toBeNull();
   first.slot.unmount();
   const second = await renderFragment("<p>Usable preview</p>", {
@@ -1476,7 +1528,7 @@ test("reading authoritative server state retires an obsolete legacy key", async 
       },
     },
   });
-  expect(second.srcdoc).toContain("Usable preview");
+  expect(second.html).toContain("Usable preview");
   expect(second.slot.getByRole("alert").textContent).toContain("Saved state is unavailable");
   second.slot.unmount();
 });
@@ -1573,8 +1625,8 @@ test("legacy browser state fills a tweaks-only server row without losing adjustm
     fields: ["tweaks"],
     tweaks,
   });
-  const { slot, srcdoc } = await renderFragment("<p>Legacy</p>");
-  expect(srcdoc).toContain('"state":"{\\"selected\\":\\"legacy\\"}"');
+  const { slot, html } = await renderFragment("<p>Legacy</p>");
+  expect(html).toContain('"state":"{\\"selected\\":\\"legacy\\"}"');
   expect([...snapshots.values()][0]).toMatchObject({
     state: '{"selected":"legacy"}',
     tweaks,
@@ -1597,10 +1649,10 @@ test("an explicitly saved null state wins over an obsolete browser snapshot", as
     modelContent: null,
   });
   const save = vi.fn(stateRpc.saveState);
-  const { slot, srcdoc } = await renderFragment("<p>Cleared state</p>", {
+  const { slot, html } = await renderFragment("<p>Cleared state</p>", {
     rpc: { saveState: save },
   });
-  expect(srcdoc).toContain('"state":null');
+  expect(html).toContain('"state":null');
   expect(save).not.toHaveBeenCalled();
   expect(window.localStorage.getItem(legacyKey)).toBeNull();
   slot.unmount();
@@ -1618,10 +1670,10 @@ test("an ambiguous old null snapshot retains its browser legacy copy", async () 
   const snapshot = stateRpc.saveState({ ...identity, fields: ["tweaks"], tweaks: "[]" });
   snapshots.set(identityKey(identity), { ...snapshot, hasWidgetState: null });
   const save = vi.fn(stateRpc.saveState);
-  const { slot, srcdoc } = await renderFragment("<p>Existing snapshot</p>", {
+  const { slot, html } = await renderFragment("<p>Existing snapshot</p>", {
     rpc: { saveState: save },
   });
-  expect(srcdoc).toContain('"state":null');
+  expect(html).toContain('"state":null');
   expect(save).not.toHaveBeenCalled();
   expect(window.localStorage.getItem(legacyKey)).toBe('{"selected":"legacy"}');
   slot.unmount();

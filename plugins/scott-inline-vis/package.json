@@ -57,6 +57,7 @@
     "inline-vis-expansion.ts",
     "load-preview.ts",
     "preview-markdown.ts",
+    "preview-frame.ts",
     "state-contract.ts",
     "widget-state.ts",
     "use-widget-state.ts",

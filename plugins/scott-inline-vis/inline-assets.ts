@@ -97,7 +97,7 @@ export async function prepareInlineAssets(
   previewUrl: string,
   signal: AbortSignal,
   prepare?: (document: Document, token: string) => void,
-): Promise<{ srcDoc?: string; assets: InlinePreviewAsset[]; token?: string }> {
+): Promise<{ html?: string; assets: InlinePreviewAsset[]; token?: string }> {
   const documentUrl = new URL(previewUrl, window.location.href);
   const rootUrl = new URL("./", documentUrl);
   const document = new DOMParser().parseFromString(html, "text/html");
@@ -150,10 +150,10 @@ export async function prepareInlineAssets(
     document.head.prepend(bridge);
   }
   if (localBase) {
-    // srcdoc otherwise inherits the app URL. Keep other relative assets at the HTML directory.
+    // The frame page's URL is the plugin route. Keep other relative assets at the HTML directory.
     const base = document.createElement("base");
     base.href = assetBase.href;
     document.head.prepend(base);
   }
-  return { srcDoc: `<!doctype html>\n${document.documentElement.outerHTML}`, assets, token };
+  return { html: `<!doctype html>\n${document.documentElement.outerHTML}`, assets, token };
 }

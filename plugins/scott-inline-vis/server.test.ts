@@ -3,6 +3,7 @@ import { fileURLToPath } from "node:url";
 import { afterEach, expect, test } from "vitest";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import plugin, { files } from "./server.ts";
+import { PREVIEW_FRAME_HTML } from "./preview-frame.ts";
 import { widgetStateSnapshotSchema, type SaveWidgetState } from "./state-contract.ts";
 import { stateMigrations } from "./widget-state.ts";
 
@@ -43,6 +44,15 @@ function provider(host: FakeHost) {
   if (!registered) throw new Error("Missing visualization state mention provider");
   return registered;
 }
+
+test("serves the preview frame page as an opaque sandbox", async () => {
+  const host = await stateHost();
+  const response = await host.harness.fetchHttp("GET", "/frame");
+  expect(response.status).toBe(200);
+  expect(response.headers.get("content-type")).toBe("text/html; charset=utf-8");
+  expect(response.headers.get("content-security-policy")).toBe("sandbox allow-scripts");
+  expect(await response.text()).toBe(PREVIEW_FRAME_HTML);
+});
 
 test("a fresh install disables bb's built-in inline-vis, which claims the same directive", async () => {
   const { bb, harness } = createFakePluginHost({

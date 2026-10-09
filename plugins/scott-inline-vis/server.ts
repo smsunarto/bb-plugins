@@ -2,6 +2,7 @@ import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import { instructionFiles } from "@bb-kit/core/instructions";
 import { z } from "zod";
 import { absoluteFileSchema, stateContract, widgetIdentitySchema } from "./state-contract.ts";
+import { PREVIEW_FRAME_HEADERS, PREVIEW_FRAME_HTML, PREVIEW_FRAME_PATH } from "./preview-frame.ts";
 import {
   createWidgetStateStore,
   parseStateMentionId,
@@ -34,6 +35,12 @@ export default async function plugin(bb: BbPluginApi) {
       );
     }
   }
+
+  bb.http.route(
+    "GET",
+    PREVIEW_FRAME_PATH,
+    () => new Response(PREVIEW_FRAME_HTML, { headers: PREVIEW_FRAME_HEADERS }),
+  );
 
   bb.rpc.register(stateContract, {
     async saveState(input) {

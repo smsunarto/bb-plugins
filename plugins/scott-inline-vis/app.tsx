@@ -34,6 +34,7 @@ import {
   sameTheme,
 } from "./fragment-runtime.ts";
 import { previewMarkdown } from "./preview-markdown.ts";
+import { PREVIEW_FRAME_MESSAGES, previewFrameUrl } from "./preview-frame.ts";
 import { createPreviewExpansion } from "./inline-vis-expansion.ts";
 import { loadPreview } from "./load-preview.ts";
 import { TweakPanel } from "./tweak-panel.tsx";
@@ -48,7 +49,7 @@ type LoadState =
       file: string;
       hostId: string;
       url: string;
-      srcDoc?: string;
+      html?: string;
       assets: InlinePreviewAsset[];
       token?: string;
       fragment: boolean;
@@ -258,12 +259,15 @@ function CollapsiblePreview(props: PluginMessageDirectiveProps) {
 function PreviewDocument({
   preview,
   frame,
+  frameKey,
   height,
 }: {
   preview: Extract<LoadState, { status: "ready" }>;
   frame: RefObject<HTMLIFrameElement | null>;
+  frameKey: number;
   height: number;
 }) {
+  const pluginId = experimental_usePluginId();
   if (preview.kind === "markdown")
     return (
       <div style={{ height }} className="inline-vis-markdown">
@@ -272,9 +276,9 @@ function PreviewDocument({
     );
   return (
     <iframe
+      key={frameKey}
       title={`inline-vis: ${preview.file}`}
-      src={preview.srcDoc ? undefined : preview.url}
-      srcDoc={preview.srcDoc}
+      src={preview.html === undefined ? preview.url : previewFrameUrl(pluginId)}
       ref={frame}
       sandbox="allow-scripts"
       style={{ height }}
@@ -296,6 +300,10 @@ function useFragmentBridge(
     groups: [],
     original: false,
   });
+  // Windows that already received a document. A frame keeps its window when it
+  // navigates, so a window that asks again may now hold a page from elsewhere.
+  const served = useRef(new WeakSet<Window>());
+  const [frameKey, setFrameKey] = useState(0);
   const onMessage = useEffectEvent((event: MessageEvent) => {
     if (event.source !== frame.current?.contentWindow) return;
     if (state.status !== "ready" || state.kind !== "html" || !state.token) return;
@@ -318,6 +326,25 @@ function useFragmentBridge(
       void addContext(data.prompt);
     }
   });
+  useLayoutEffect(() => {
+    if (state.status !== "ready" || state.kind !== "html" || state.html === undefined) return;
+    const html = state.html;
+    const deliver = (event: MessageEvent) => {
+      const target = frame.current?.contentWindow;
+      if (!target || event.source !== target || event.data?.type !== PREVIEW_FRAME_MESSAGES.ready)
+        return;
+      // Each window gets the document once. One that asks again reloaded or
+      // navigated back to the frame page, so a fresh frame replaces it.
+      if (served.current.has(target)) {
+        setFrameKey((key) => key + 1);
+        return;
+      }
+      served.current.add(target);
+      target.postMessage({ type: PREVIEW_FRAME_MESSAGES.document, html }, "*");
+    };
+    window.addEventListener("message", deliver);
+    return () => window.removeEventListener("message", deliver);
+  }, [state, frame]);
   useLayoutEffect(() => {
     if (
       state.status !== "ready" ||
@@ -377,7 +404,7 @@ function useFragmentBridge(
     };
   }, [state, frame]);
 
-  return { contentHeight, tweaks };
+  return { contentHeight, tweaks, frameKey };
 }
 
 function PreviewActions({
@@ -497,7 +524,7 @@ function ExpandedPreview({
     // An inline preview must not take focus from the composer on load.
     else element.setAttribute("open", "");
   }, [wide, state.status]);
-  const { contentHeight, tweaks } = useFragmentBridge(
+  const { contentHeight, tweaks, frameKey } = useFragmentBridge(
     state,
     frame,
     updateState,
@@ -664,7 +691,7 @@ function ExpandedPreview({
           className={`inline-vis-workspace${tweakOpen && tweaks.groups.length > 0 ? " inline-vis-with-tweaks" : ""}`}
         >
           <div className="inline-vis-preview">
-            <PreviewDocument preview={state} frame={frame} height={height} />
+            <PreviewDocument preview={state} frame={frame} frameKey={frameKey} height={height} />
           </div>
           {tweakOpen && tweaks.groups.length > 0 && (
             <TweakPanel
