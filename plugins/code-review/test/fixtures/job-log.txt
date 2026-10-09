@@ -1,0 +1,34 @@
+2026-10-02T17:52:38.2845804Z go: downloading google.golang.org/protobuf v1.36.12
+2026-10-02T17:52:38.2949949Z go: downloading github.com/hashicorp/golang-lru/v2 v2.0.7
+2026-10-02T17:52:38.5195046Z go: downloading github.com/matttproud/golang_protobuf_extensions v1.0.1
+2026-10-02T17:53:30.2596471Z level=warning msg="The linter 'gomodguard' is deprecated (since v2.12.0) due to: new major version. Replaced by gomodguard_v2."
+2026-10-02T17:53:30.2599750Z level=warning msg="Suggested new configuration:\nlinters:\n  enable:\n    - gomodguard_v2\n  settings:\n    gomodguard_v2:\n      blocked:\n        - module: github.com/golang/protobuf\n          recommendations:\n            - google.golang.org/protobuf\n          reason: see https://developers.google.com/protocol-buffers/docs/reference/go/faq#modules\n        - module: github.com/satori/go.uuid\n          recommendations:\n            - github.com/google/uuid\n          reason: satori's package is not maintained\n        - module: github.com/gofrs/uuid\n          recommendations:\n            - github.com/gofrs/uuid/v5\n          reason: gofrs' package was not go module before v5\n"
+2026-10-02T17:55:46.6528260Z internal/systems/decode_more.go:1: : # github.com/acme/app/shards/gameplay/internal/systems [github.com/acme/app/shards/gameplay/internal/systems.test]
+2026-10-02T17:55:46.6570928Z ##[error]internal/systems/resolve_test.go:140:11: undefined: engine.RegisterPlugin
+2026-10-02T17:55:46.6584499Z ##[error]internal/systems/resolve_test.go:142:11: undefined: engine.RegisterSystem
+2026-10-02T17:55:46.6587151Z ##[error]internal/systems/resolve_test.go:143:11: undefined: engine.RegisterSystem
+2026-10-02T17:55:46.6588178Z ##[error]internal/systems/resolve_test.go:144:11: undefined: engine.RegisterSystem
+2026-10-02T17:55:46.6590894Z ##[error]internal/systems/resolve_test.go:181:18: assignment mismatch: 2 variables but UpgradeCommand{…}.MarshalWire returns 1 value (typecheck)
+2026-10-02T17:55:46.6592006Z package system
+2026-10-02T17:55:46.6592369Z 1 issues:
+2026-10-02T17:55:46.6592514Z * typecheck: 1
+2026-10-02T17:55:46.7454266Z [31mtask: Failed to run task "lint": task: Failed to run task "_lint:go": exit status 1
+2026-10-02T17:55:46.7472120Z ##[error]task: Failed to run task "_lint:go": exit status 1
+2026-10-02T17:55:46.7474539Z [0m
+2026-10-02T17:55:46.7479750Z ##[error]Process completed with exit code 201.
+2026-10-02T17:55:46.7648126Z Post job cleanup.
+2026-10-02T17:55:46.8957688Z [command]/usr/bin/git version
+2026-10-02T17:55:46.9024250Z git version 2.54.0
+2026-10-02T17:55:46.9073473Z Temporarily overriding HOME='/home/runner/work/_temp/105e25a5-2ef2-4fd3-82c0-afc91fe49943' before making global git config changes
+2026-10-02T17:55:46.9074357Z Adding repository directory to the temporary git global config as a safe directory
+2026-10-02T17:55:46.9079823Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/api/api
+2026-10-02T17:55:46.9138082Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-10-02T17:55:46.9210065Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-10-02T17:55:46.9442386Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-10-02T17:55:46.9465615Z http.https://github.com/.extraheader
+2026-10-02T17:55:46.9477622Z [command]/usr/bin/git config --local --unset-all http.https://github.com/.extraheader
+2026-10-02T17:55:46.9517777Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-10-02T17:55:46.9805002Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-10-02T17:55:46.9841695Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-10-02T17:55:47.0221912Z Cleaning up orphan processes
+2026-10-02T17:55:47.0318527Z ##[warning]Node.js 20 is deprecated. The following actions target Node.js 20 but are being forced to run on Node.js 24: actions/checkout@v4, actions/setup-go@v5, arduino/setup-task@v2. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/

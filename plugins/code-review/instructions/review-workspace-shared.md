@@ -1,0 +1,1 @@
+This environment is someone's working checkout of {{branch}}, and it may hold their uncommitted or unpushed work. Do not check out, reset, stash, or clean anything. When the working tree differs from the head commit, read the pull request's version of a file with `git show {{headRefOid}}:<path>`.

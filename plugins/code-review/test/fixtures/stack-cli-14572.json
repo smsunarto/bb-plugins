@@ -1,0 +1,30 @@
+{
+  "repository": {
+    "children": {
+      "nodes": [
+        {
+          "number": 14580,
+          "title": "`gh issue artifact` stack 10/11: Add `edit --restore-version`",
+          "state": "OPEN",
+          "isDraft": false,
+          "headRefName": "bagtoad/artifact-restore-version",
+          "baseRefName": "bagtoad/artifact-skill-docs",
+          "isCrossRepository": false
+        }
+      ]
+    },
+    "parents": {
+      "nodes": [
+        {
+          "number": 14571,
+          "title": "`gh issue artifact` stack 8/11: Add `edit`",
+          "state": "OPEN",
+          "isDraft": false,
+          "headRefName": "bagtoad/artifact-edit",
+          "baseRefName": "bagtoad/artifact-create",
+          "isCrossRepository": false
+        }
+      ]
+    }
+  }
+}

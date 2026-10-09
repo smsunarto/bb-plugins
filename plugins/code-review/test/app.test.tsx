@@ -1,0 +1,872 @@
+import "./dom.ts";
+import { beforeEach, expect, test } from "bun:test";
+import { pluginQueryClient } from "@bb-kit/core/rpc/query";
+import type { PrRef, PullRequest } from "../src/shared/schema.ts";
+import { agentActivity, checks, inbox, pullRequest } from "./app-fixtures.ts";
+
+const { fireEvent, waitFor, within } = await import("@testing-library/react");
+const { loadPluginApp, renderSlot } = await import("@get-bb/plugin-sdk/testing/app");
+
+// The cache and the remembered inbox tab outlive the page on purpose.
+// Between tests they must not.
+beforeEach(() => {
+  pluginQueryClient.clear();
+  window.localStorage.clear();
+});
+
+type Handlers = Record<string, (input: never) => unknown>;
+
+const baseRpc: Handlers = {
+  status: () => ({ ok: true, login: "scott" }),
+  inbox: () => inbox,
+  pullRequest: () => pullRequest,
+  checks: () => checks,
+  agentActivity: () => agentActivity,
+  reviewInstructions: () => ({ instructions: "" }),
+};
+
+async function registration() {
+  const app = await loadPluginApp(() => import("../src/app/app.tsx"));
+  expect(app.navPanels).toHaveLength(1);
+  return app.navPanels[0]!;
+}
+
+async function page(subPath: string, rpc: Handlers = baseRpc) {
+  return renderSlot(await registration(), { subPath }, { rpc: rpc as never });
+}
+
+const PR_PATH = "acme/api/pull/42";
+
+/**
+ * Waits until `query` finds nothing. `expect(element).toBeNull()` would print
+ * the whole jsdom window, megabytes of it, on every miss, and stall the
+ * render being waited for past the timeout.
+ */
+function gone(query: () => HTMLElement | null) {
+  return waitFor(() => {
+    if (query()) throw new Error("Still on screen");
+  });
+}
+
+/** Radix tabs select on mouse down, not click. */
+function selectTab(tab: HTMLElement) {
+  fireEvent.mouseDown(tab, { button: 0 });
+}
+
+test("registers one Code Review page in the sidebar", async () => {
+  const panel = await registration();
+  expect(panel.id).toBe("code-review");
+  expect(panel.title).toBe("Code Review");
+  expect(panel.path).toBe("code-review");
+  expect(panel.icon).toBe("GitPullRequest");
+});
+
+test("the sidebar counts pull requests still waiting for the viewer's review", async () => {
+  const panel = await registration();
+  const accessory = renderSlot(
+    { component: panel.experimental_sidebarAccessory! },
+    {},
+    { rpc: baseRpc as never },
+  );
+  // #42 and #7 wait on the viewer; #40 is reviewed already.
+  await waitFor(() => expect(accessory.container.textContent).toBe("2"));
+  accessory.lifecycle.unmount();
+});
+
+test("the sidebar shows nothing when no review is waiting", async () => {
+  const panel = await registration();
+  const accessory = renderSlot(
+    { component: panel.experimental_sidebarAccessory! },
+    {},
+    { rpc: { ...baseRpc, inbox: () => ({ ...inbox, assigned: [], team: [] }) } as never },
+  );
+  await waitFor(() => expect(accessory.rpcCalls).toEqual([{ method: "inbox", input: null }]));
+  expect(accessory.container.textContent).toBe("");
+  accessory.lifecycle.unmount();
+});
+
+test("lists what is assigned to the viewer, with a count on every tab", async () => {
+  const slot = await page("");
+  await slot.findByText("Rate-limit the login endpoint");
+
+  const tabs = slot.getAllByRole("tab").map((tab) => tab.textContent);
+  expect(tabs).toEqual(["Assigned to me2", "My team1", "Authored by me1"]);
+  const rows = slot.getAllByRole("button", { name: /^acme\// });
+  expect(rows.map((row) => row.textContent)).toEqual([
+    expect.stringContaining("Rate-limit the login endpoint"),
+    expect.stringContaining("Log slow queries"),
+  ]);
+  const first = within(rows[0]!);
+  expect(first.getByText("#42")).toBeTruthy();
+  expect(first.getByText("Checks: Failed")).toBeTruthy();
+  expect(first.getByText("Review requested")).toBeTruthy();
+  expect(within(rows[1]!).getByText("Approved")).toBeTruthy();
+  // Nothing is selected while the URL names no pull request.
+  expect(slot.getByText("Select a pull request")).toBeTruthy();
+  slot.lifecycle.unmount();
+});
+
+test("another tab shows its own list, and the choice is remembered", async () => {
+  const slot = await page("");
+  await slot.findByText("Rate-limit the login endpoint");
+
+  selectTab(slot.getByRole("tab", { name: /Authored by me/ }));
+  const row = await slot.findByRole("button", { name: /Drop the legacy token table/ });
+  // The viewer's own draft shows GitHub's verdict, not a review request.
+  expect(within(row).getByText("Draft")).toBeTruthy();
+  expect(within(row).getByText("Changes requested")).toBeTruthy();
+  expect(slot.queryByText("Rate-limit the login endpoint")).toBeNull();
+  slot.lifecycle.unmount();
+
+  const again = await page("");
+  expect(await again.findByText("Drop the legacy token table")).toBeTruthy();
+  again.lifecycle.unmount();
+});
+
+test("an empty tab says what would show up there", async () => {
+  const slot = await page("", { ...baseRpc, inbox: () => ({ ...inbox, team: [] }) });
+  await slot.findByText("Rate-limit the login endpoint");
+  selectTab(slot.getByRole("tab", { name: /My team/ }));
+  expect(await slot.findByText("No team review requests")).toBeTruthy();
+  slot.lifecycle.unmount();
+});
+
+test("a row opens its pull request in the page's URL", async () => {
+  const slot = await page("");
+  fireEvent.click(await slot.findByRole("button", { name: /Rate-limit the login endpoint/ }));
+  expect(slot.navigateCalls).toEqual([
+    { method: "toPluginPanel", path: "code-review", options: { subPath: PR_PATH } },
+  ]);
+  slot.lifecycle.unmount();
+});
+
+test("a pasted pull request link opens at once", async () => {
+  const slot = await page("");
+  const input = await slot.findByLabelText("Pull request link");
+  fireEvent.paste(input, {
+    clipboardData: { getData: () => "https://github.com/acme/web/pull/7/files#diff-1" },
+  });
+  expect(slot.navigateCalls).toEqual([
+    { method: "toPluginPanel", path: "code-review", options: { subPath: "acme/web/pull/7" } },
+  ]);
+  slot.lifecycle.unmount();
+});
+
+test("text that names no pull request is explained, not opened", async () => {
+  const slot = await page("");
+  const input = await slot.findByLabelText("Pull request link");
+  fireEvent.change(input, { target: { value: "acme/api" } });
+  fireEvent.submit(input.closest("form")!);
+  expect(slot.getByRole("alert").textContent).toBe(
+    "Not a pull request. Paste a github.com pull request link or owner/repo#123.",
+  );
+  expect(input.getAttribute("aria-invalid")).toBe("true");
+  expect(slot.navigateCalls).toEqual([]);
+
+  fireEvent.change(input, { target: { value: "acme/api#9" } });
+  expect(slot.queryByRole("alert")).toBeNull();
+  fireEvent.submit(input.closest("form")!);
+  expect(slot.navigateCalls).toEqual([
+    { method: "toPluginPanel", path: "code-review", options: { subPath: "acme/api/pull/9" } },
+  ]);
+  slot.lifecycle.unmount();
+});
+
+test("without a signed-in gh, the page says how to sign in and checks again", async () => {
+  let asked = 0;
+  const slot = await page("", {
+    ...baseRpc,
+    status: () => {
+      asked += 1;
+      return {
+        ok: false,
+        reason: "unauthenticated",
+        message: "You are not logged into any GitHub hosts.",
+      };
+    },
+  });
+  expect(await slot.findByRole("heading", { name: "Sign in to GitHub" })).toBeTruthy();
+  expect(slot.getByText("gh auth login")).toBeTruthy();
+  expect(slot.getByText("You are not logged into any GitHub hosts.")).toBeTruthy();
+  // The inbox is not asked for while gh cannot answer it.
+  expect(slot.rpcCalls.map((call) => call.method)).toEqual(["status"]);
+
+  fireEvent.click(slot.getByRole("button", { name: "Try again" }));
+  await waitFor(() => expect(asked).toBe(2));
+  slot.lifecycle.unmount();
+});
+
+test("without gh at all, the page links to its installer", async () => {
+  const slot = await page("", {
+    ...baseRpc,
+    status: () => ({ ok: false, reason: "gh-missing", message: "" }),
+  });
+  expect(await slot.findByRole("heading", { name: "Install the GitHub CLI" })).toBeTruthy();
+  fireEvent.click(slot.getByRole("link", { name: "Install gh" }));
+  expect(slot.navigateCalls).toEqual([{ method: "openUrl", url: "https://cli.github.com" }]);
+  slot.lifecycle.unmount();
+});
+
+test("a pull request opens on its summary, beside the inbox", async () => {
+  const slot = await page(PR_PATH);
+  const heading = await slot.findByRole("heading", { level: 1 });
+  expect(heading.textContent).toBe("Rate-limit the login endpoint #42");
+
+  // Its inbox row is the current one.
+  const row = slot.getByRole("button", { name: /Rate-limit the login endpoint/ });
+  expect(row.getAttribute("aria-current")).toBe("page");
+
+  expect(slot.getByText("ada/rate-limit")).toBeTruthy();
+  expect(slot.getByText("+120")).toBeTruthy();
+  expect(slot.getByText("−30")).toBeTruthy();
+  expect(slot.getByText("4 files")).toBeTruthy();
+  expect(slot.getByRole("tab", { name: "Summary", selected: true })).toBeTruthy();
+
+  expect(slot.getByText("Adds a **token bucket** in front of `/login`.")).toBeTruthy();
+  expect(slot.getByText("security")).toBeTruthy();
+  const reviewers = within(slot.getByRole("region", { name: "Reviewers" }));
+  const [scott, grace] = reviewers.getAllByRole("listitem").map((item) => within(item));
+  expect(scott!.getByText("scott")).toBeTruthy();
+  expect(scott!.getByText("Review requested")).toBeTruthy();
+  expect(grace!.getByText("grace")).toBeTruthy();
+  expect(grace!.getByText("Approved")).toBeTruthy();
+  const checksSection = within(slot.getByRole("region", { name: "Checks" }));
+  expect(await checksSection.findByText("1 failing, 1 passed")).toBeTruthy();
+
+  const activity = within(slot.getByRole("region", { name: "Activity" }));
+  expect(activity.getByText("feat(auth): add a token bucket")).toBeTruthy();
+  expect(activity.getByText("3333333")).toBeTruthy();
+  expect(activity.getByText("Does this cover the SSO callback too?")).toBeTruthy();
+  expect(activity.getByText("approved these changes")).toBeTruthy();
+  expect(activity.getByText("· 2 comments")).toBeTruthy();
+  expect(activity.getByText("Looks good once CI passes.")).toBeTruthy();
+  expect(activity.getByText("force-pushed the branch")).toBeTruthy();
+
+  // The drafts waiting in the pending review are on the button that posts them.
+  expect(slot.getByRole("button", { name: "Submit review (2 draft comments)" })).toBeTruthy();
+  slot.lifecycle.unmount();
+});
+
+test("the tabs and View all change the URL, not local state", async () => {
+  const slot = await page(PR_PATH);
+  await slot.findByRole("heading", { level: 1 });
+  selectTab(slot.getByRole("tab", { name: /Changes/ }));
+  const viewAll = await slot.findByRole("button", { name: "View all 2" });
+  fireEvent.click(viewAll);
+  expect(slot.navigateCalls).toEqual([
+    { method: "toPluginPanel", path: "code-review", options: { subPath: `${PR_PATH}/changes` } },
+    { method: "toPluginPanel", path: "code-review", options: { subPath: `${PR_PATH}/checks` } },
+  ]);
+  slot.lifecycle.unmount();
+});
+
+test("merge conflicts are flagged only while the pull request is open", async () => {
+  const conflicting: PullRequest = { ...pullRequest, mergeable: "conflicting" };
+  const open = await page(PR_PATH, { ...baseRpc, pullRequest: () => conflicting });
+  expect(await open.findByText("Merge conflicts")).toBeTruthy();
+  open.lifecycle.unmount();
+
+  for (const state of ["closed", "merged"] as const) {
+    pluginQueryClient.clear();
+    const done = await page(PR_PATH, {
+      ...baseRpc,
+      pullRequest: () => ({ ...conflicting, state }),
+    });
+    await done.findByRole("heading", { level: 1 });
+    expect(done.queryByText("Merge conflicts")).toBeNull();
+    done.lifecycle.unmount();
+  }
+});
+
+test("Open on GitHub opens the pull request's page", async () => {
+  const slot = await page(PR_PATH);
+  fireEvent.click(await slot.findByRole("link", { name: "Open on GitHub" }));
+  expect(slot.navigateCalls).toEqual([{ method: "openUrl", url: pullRequest.url }]);
+  slot.lifecycle.unmount();
+});
+
+test("pinning shows the pull request in the inbox before the server answers", async () => {
+  const pins: unknown[] = [];
+  let answer: () => void = () => {};
+  const slot = await page(PR_PATH, {
+    ...baseRpc,
+    setPinned: (input: never) => {
+      pins.push(input);
+      return new Promise((resolve) => {
+        answer = () => resolve({ pinned: [pullRequest.ref] });
+      });
+    },
+  });
+  const pin = await slot.findByRole("button", { name: "Pin to inbox" });
+  await waitFor(() => expect(pin.hasAttribute("disabled")).toBe(false));
+  expect(pin.getAttribute("aria-pressed")).toBe("false");
+
+  fireEvent.click(pin);
+  const pinned = within(await slot.findByRole("region", { name: "Pinned" }));
+  expect(pinned.getByText("Rate-limit the login endpoint")).toBeTruthy();
+  expect(pin.getAttribute("aria-pressed")).toBe("true");
+  expect(pins).toEqual([{ ref: pullRequest.ref, pinned: true }]);
+  answer();
+  slot.lifecycle.unmount();
+});
+
+test("a pin the server refuses is taken back", async () => {
+  const slot = await page(PR_PATH, {
+    ...baseRpc,
+    setPinned: () => {
+      throw new Error("KV is read-only");
+    },
+  });
+  const pin = await slot.findByRole("button", { name: "Pin to inbox" });
+  await waitFor(() => expect(pin.hasAttribute("disabled")).toBe(false));
+  fireEvent.click(pin);
+  expect((await slot.findByRole("alert")).textContent).toBe("Could not pin: KV is read-only");
+  expect(pin.getAttribute("aria-pressed")).toBe("false");
+  expect(slot.queryByRole("region", { name: "Pinned" })).toBeNull();
+  slot.lifecycle.unmount();
+});
+
+async function openSubmit(pr: PullRequest, extra: Handlers = {}) {
+  const slot = await page(PR_PATH, { ...baseRpc, pullRequest: () => pr, ...extra });
+  fireEvent.click(await slot.findByRole("button", { name: /^Submit review/ }));
+  const dialog = within(await slot.findByRole("dialog", { name: "Submit review" }));
+  return { slot, dialog };
+}
+
+test("submits an approval with its summary and the drafts, then confirms it", async () => {
+  const submitted: unknown[] = [];
+  const reads = { pullRequest: 0 };
+  const { slot, dialog } = await openSubmit(pullRequest, {
+    pullRequest: () => {
+      reads.pullRequest += 1;
+      return pullRequest;
+    },
+    submitReview: (input: never) => {
+      submitted.push(input);
+      return { url: "https://github.com/acme/api/pull/42#pullrequestreview-9" };
+    },
+  });
+  expect(dialog.getByText("2 draft comments will be posted with this review.")).toBeTruthy();
+  fireEvent.change(dialog.getByLabelText("Review summary"), {
+    target: { value: "  Ship it.  " },
+  });
+  fireEvent.click(dialog.getByRole("radio", { name: /Approve/ }));
+  fireEvent.click(dialog.getByRole("button", { name: "Submit review" }));
+
+  expect(await dialog.findByText("Your review is on GitHub.")).toBeTruthy();
+  expect(submitted).toEqual([
+    {
+      pullRequestId: "PR_kwDOA42",
+      headRefOid: pullRequest.headRefOid,
+      event: "APPROVE",
+      body: "Ship it.",
+    },
+  ]);
+  // The pull request is read again, so its drafts and reviewers catch up.
+  await waitFor(() => expect(reads.pullRequest).toBe(2));
+  fireEvent.click(dialog.getByRole("link", { name: "View on GitHub" }));
+  expect(slot.navigateCalls).toEqual([
+    { method: "openUrl", url: "https://github.com/acme/api/pull/42#pullrequestreview-9" },
+  ]);
+  slot.lifecycle.unmount();
+});
+
+/** Escape closes the popover, which unmounts the form. */
+function closeSubmit(slot: Awaited<ReturnType<typeof page>>) {
+  fireEvent.keyDown(slot.getByRole("dialog", { name: "Submit review" }), { key: "Escape" });
+  return gone(() => slot.queryByRole("dialog"));
+}
+
+async function reopenSubmit(slot: Awaited<ReturnType<typeof page>>) {
+  fireEvent.click(slot.getByRole("button", { name: /^Submit review/ }));
+  return within(await slot.findByRole("dialog", { name: "Submit review" }));
+}
+
+test("a review sent just before the popover closes still clears the form and refreshes", async () => {
+  let answer: () => void = () => {};
+  const reads = { pullRequest: 0 };
+  const { slot, dialog } = await openSubmit(pullRequest, {
+    pullRequest: () => {
+      reads.pullRequest += 1;
+      return pullRequest;
+    },
+    submitReview: () =>
+      new Promise((resolve) => {
+        answer = () => resolve({ url: null });
+      }),
+  });
+  fireEvent.change(dialog.getByLabelText("Review summary"), { target: { value: "Ship it." } });
+  fireEvent.click(dialog.getByRole("radio", { name: /Approve/ }));
+  fireEvent.click(dialog.getByRole("button", { name: "Submit review" }));
+  await dialog.findByRole("button", { name: "Submitting…" });
+  await closeSubmit(slot);
+
+  answer();
+  await waitFor(() => expect(reads.pullRequest).toBe(2));
+  const reopened = await reopenSubmit(slot);
+  expect((reopened.getByLabelText("Review summary") as HTMLTextAreaElement).value).toBe("");
+  expect((reopened.getByRole("radio", { name: /Comment/ }) as HTMLInputElement).checked).toBe(true);
+  slot.lifecycle.unmount();
+});
+
+test("drafts discarded just before the popover closes still clear the form and refresh", async () => {
+  let answer: () => void = () => {};
+  const reads = { pullRequest: 0 };
+  const { slot, dialog } = await openSubmit(pullRequest, {
+    pullRequest: () => {
+      reads.pullRequest += 1;
+      return pullRequest;
+    },
+    discardReview: () =>
+      new Promise((resolve) => {
+        answer = () => resolve({ ok: true });
+      }),
+  });
+  fireEvent.change(dialog.getByLabelText("Review summary"), { target: { value: "Not yet." } });
+  fireEvent.click(dialog.getByRole("button", { name: "Discard drafts" }));
+  fireEvent.click(dialog.getByRole("button", { name: "Discard" }));
+  await dialog.findByRole("button", { name: "Discarding…" });
+  await closeSubmit(slot);
+
+  answer();
+  await waitFor(() => expect(reads.pullRequest).toBe(2));
+  const reopened = await reopenSubmit(slot);
+  expect((reopened.getByLabelText("Review summary") as HTMLTextAreaElement).value).toBe("");
+  slot.lifecycle.unmount();
+});
+
+test("reopened while the review is out, the form stays busy and sends it only once", async () => {
+  const submitted: unknown[] = [];
+  let answer: () => void = () => {};
+  const { slot, dialog } = await openSubmit(pullRequest, {
+    submitReview: (input: never) => {
+      submitted.push(input);
+      return new Promise((resolve) => {
+        answer = () => resolve({ url: null });
+      });
+    },
+  });
+  fireEvent.change(dialog.getByLabelText("Review summary"), { target: { value: "Ship it." } });
+  fireEvent.click(dialog.getByRole("button", { name: "Submit review" }));
+  await dialog.findByRole("button", { name: "Submitting…" });
+  await closeSubmit(slot);
+
+  const reopened = await reopenSubmit(slot);
+  const busy = reopened.getByRole("button", { name: "Submitting…" }) as HTMLButtonElement;
+  expect(busy.disabled).toBe(true);
+  fireEvent.click(busy);
+  fireEvent.keyDown(reopened.getByLabelText("Review summary"), { key: "Enter", metaKey: true });
+
+  answer();
+  expect(await reopened.findByText("Your review is on GitHub.")).toBeTruthy();
+  expect(submitted).toEqual([
+    {
+      pullRequestId: "PR_kwDOA42",
+      headRefOid: pullRequest.headRefOid,
+      event: "COMMENT",
+      body: "Ship it.",
+    },
+  ]);
+  slot.lifecycle.unmount();
+});
+
+test("reopened while drafts are being discarded, the form stays busy and discards only once", async () => {
+  const discarded: unknown[] = [];
+  const submitted: unknown[] = [];
+  let answer: () => void = () => {};
+  const { slot, dialog } = await openSubmit(pullRequest, {
+    discardReview: (input: never) => {
+      discarded.push(input);
+      return new Promise((resolve) => {
+        answer = () => resolve({ ok: true });
+      });
+    },
+    submitReview: (input: never) => {
+      submitted.push(input);
+      return { url: null };
+    },
+  });
+  fireEvent.click(dialog.getByRole("button", { name: "Discard drafts" }));
+  fireEvent.click(dialog.getByRole("button", { name: "Discard" }));
+  await dialog.findByRole("button", { name: "Discarding…" });
+  await closeSubmit(slot);
+
+  const reopened = await reopenSubmit(slot);
+  const busy = reopened.getByRole("button", { name: "Discarding…" }) as HTMLButtonElement;
+  expect(busy.disabled).toBe(true);
+  expect((reopened.getByRole("button", { name: "Keep" }) as HTMLButtonElement).disabled).toBe(true);
+  fireEvent.click(busy);
+  // Nor can the drafts being deleted go out in a review meanwhile.
+  fireEvent.keyDown(reopened.getByLabelText("Review summary"), { key: "Enter", metaKey: true });
+
+  answer();
+  await gone(() => slot.queryByRole("dialog"));
+  expect(discarded).toEqual([{ pullRequestId: "PR_kwDOA42" }]);
+  expect(submitted).toEqual([]);
+  slot.lifecycle.unmount();
+});
+
+test("a review closed before the form shows it busy is still sent only once", async () => {
+  const submitted: unknown[] = [];
+  const answers: (() => void)[] = [];
+  const { slot, dialog } = await openSubmit(pullRequest, {
+    submitReview: (input: never) => {
+      submitted.push(input);
+      return new Promise((resolve) => answers.push(() => resolve({ url: null })));
+    },
+  });
+  fireEvent.change(dialog.getByLabelText("Review summary"), { target: { value: "Ship it." } });
+  fireEvent.click(dialog.getByRole("button", { name: "Submit review" }));
+  // Escape lands before the render that shows the review as out.
+  fireEvent.keyDown(slot.getByRole("dialog", { name: "Submit review" }), { key: "Escape" });
+  await gone(() => slot.queryByRole("dialog"));
+
+  const reopened = await reopenSubmit(slot);
+  fireEvent.click(reopened.getByRole("button", { name: /^Submit/ }));
+  fireEvent.keyDown(reopened.getByLabelText("Review summary"), { key: "Enter", metaKey: true });
+  await waitFor(() =>
+    expect(reopened.getByRole("button", { name: "Submitting…" }).hasAttribute("disabled")).toBe(
+      true,
+    ),
+  );
+
+  for (const answer of answers) answer();
+  expect(await reopened.findByText("Your review is on GitHub.")).toBeTruthy();
+  expect(submitted).toEqual([
+    {
+      pullRequestId: "PR_kwDOA42",
+      headRefOid: pullRequest.headRefOid,
+      event: "COMMENT",
+      body: "Ship it.",
+    },
+  ]);
+  slot.lifecycle.unmount();
+});
+
+test("a page opened again while the review is out shows it busy and does not send it twice", async () => {
+  const submitted: unknown[] = [];
+  let answer: () => void = () => {};
+  const rpc: Handlers = {
+    submitReview: (input: never) => {
+      submitted.push(input);
+      return new Promise((resolve) => {
+        answer = () => resolve({ url: null });
+      });
+    },
+  };
+  const first = await openSubmit(pullRequest, rpc);
+  fireEvent.change(first.dialog.getByLabelText("Review summary"), {
+    target: { value: "Ship it." },
+  });
+  fireEvent.click(first.dialog.getByRole("button", { name: "Submit review" }));
+  first.slot.lifecycle.unmount();
+
+  const { slot, dialog } = await openSubmit(pullRequest, rpc);
+  const busy = dialog.getByRole("button", { name: "Submitting…" }) as HTMLButtonElement;
+  expect(busy.disabled).toBe(true);
+  // The drafts alone are enough to send, so only the request that is out holds this back.
+  fireEvent.keyDown(dialog.getByLabelText("Review summary"), { key: "Enter", metaKey: true });
+
+  answer();
+  await dialog.findByRole("button", { name: "Submit review" });
+  expect(submitted).toHaveLength(1);
+  slot.lifecycle.unmount();
+});
+
+test("the pull request opened under another casing of its URL does not send the review twice", async () => {
+  const submitted: unknown[] = [];
+  let answer: () => void = () => {};
+  const rpc: Handlers = {
+    ...baseRpc,
+    // GitHub finds the pull request in any casing, and the server names it as asked.
+    pullRequest: ({ ref }: { ref: PrRef }) => ({ ...pullRequest, ref }),
+    submitReview: (input: never) => {
+      submitted.push(input);
+      return new Promise((resolve) => {
+        answer = () => resolve({ url: null });
+      });
+    },
+  };
+  const first = await page(PR_PATH, rpc);
+  fireEvent.click(await first.findByRole("button", { name: /^Submit review/ }));
+  const firstDialog = within(await first.findByRole("dialog", { name: "Submit review" }));
+  fireEvent.change(firstDialog.getByLabelText("Review summary"), { target: { value: "Ship it." } });
+  fireEvent.click(firstDialog.getByRole("button", { name: "Submit review" }));
+  await firstDialog.findByRole("button", { name: "Submitting…" });
+  first.lifecycle.unmount();
+
+  const slot = await page("ACME/API/pull/42", rpc);
+  fireEvent.click(await slot.findByRole("button", { name: /^Submit review/ }));
+  const dialog = within(await slot.findByRole("dialog", { name: "Submit review" }));
+  fireEvent.keyDown(dialog.getByLabelText("Review summary"), { key: "Enter", metaKey: true });
+  fireEvent.click(dialog.getByRole("button", { name: /^Submit/ }));
+
+  answer();
+  await dialog.findByRole("button", { name: "Submit review" });
+  expect(submitted).toEqual([
+    {
+      pullRequestId: "PR_kwDOA42",
+      headRefOid: pullRequest.headRefOid,
+      event: "COMMENT",
+      body: "Ship it.",
+    },
+  ]);
+  slot.lifecycle.unmount();
+});
+
+test("a review refused after the page was opened again shows the refusal there", async () => {
+  let refuse: () => void = () => {};
+  const rpc: Handlers = {
+    submitReview: () =>
+      new Promise((_resolve, reject) => {
+        refuse = () => reject(new Error("Review cannot be submitted on a stale commit."));
+      }),
+  };
+  const first = await openSubmit(pullRequest, rpc);
+  fireEvent.change(first.dialog.getByLabelText("Review summary"), {
+    target: { value: "Ship it." },
+  });
+  fireEvent.click(first.dialog.getByRole("button", { name: "Submit review" }));
+  await first.dialog.findByRole("button", { name: "Submitting…" });
+  first.slot.lifecycle.unmount();
+
+  const { slot, dialog } = await openSubmit(pullRequest, rpc);
+  const body = dialog.getByLabelText("Review summary") as HTMLTextAreaElement;
+  fireEvent.change(body, { target: { value: "Needs work" } });
+  refuse();
+  expect((await dialog.findByRole("alert")).textContent).toBe(
+    "GitHub did not take the reviewReview cannot be submitted on a stale commit.",
+  );
+  expect(body.value).toBe("Needs work");
+  const submit = dialog.getByRole("button", { name: "Submit review" }) as HTMLButtonElement;
+  expect(submit.disabled).toBe(false);
+
+  // Closing the popover dismisses the refusal, and only the refusal.
+  await closeSubmit(slot);
+  const reopened = await reopenSubmit(slot);
+  expect(reopened.queryByRole("alert")).toBeNull();
+  expect((reopened.getByLabelText("Review summary") as HTMLTextAreaElement).value).toBe(
+    "Needs work",
+  );
+  slot.lifecycle.unmount();
+});
+
+test("a refusal that lands as the popover closes is kept for the next opening", async () => {
+  let refuse: () => void = () => {};
+  const { slot, dialog } = await openSubmit(pullRequest, {
+    submitReview: () =>
+      new Promise((_resolve, reject) => {
+        refuse = () => reject(new Error("Review cannot be submitted on a stale commit."));
+      }),
+  });
+  fireEvent.change(dialog.getByLabelText("Review summary"), { target: { value: "Ship it." } });
+  fireEvent.click(dialog.getByRole("button", { name: "Submit review" }));
+  await dialog.findByRole("button", { name: "Submitting…" });
+
+  // Escape lands the moment the refusal is cached, before any render shows it.
+  const cache = pluginQueryClient.getMutationCache();
+  const stop = cache.subscribe((event) => {
+    if (event.type !== "updated" || event.mutation.state.status !== "error") return;
+    stop();
+    fireEvent.keyDown(slot.getByRole("dialog", { name: "Submit review" }), { key: "Escape" });
+  });
+  refuse();
+  await gone(() => slot.queryByRole("dialog"));
+
+  const reopened = await reopenSubmit(slot);
+  expect((await reopened.findByRole("alert")).textContent).toBe(
+    "GitHub did not take the reviewReview cannot be submitted on a stale commit.",
+  );
+  // Seen now, so this close dismisses it.
+  await closeSubmit(slot);
+  expect((await reopenSubmit(slot)).queryByRole("alert")).toBeNull();
+  slot.lifecycle.unmount();
+});
+
+test("a discard refused after the page was opened again shows the refusal there", async () => {
+  let refuse: () => void = () => {};
+  const rpc: Handlers = {
+    discardReview: () =>
+      new Promise((_resolve, reject) => {
+        refuse = () => reject(new Error("Pending review was already submitted."));
+      }),
+  };
+  const first = await openSubmit(pullRequest, rpc);
+  fireEvent.click(first.dialog.getByRole("button", { name: "Discard drafts" }));
+  fireEvent.click(first.dialog.getByRole("button", { name: "Discard" }));
+  await first.dialog.findByRole("button", { name: "Discarding…" });
+  first.slot.lifecycle.unmount();
+
+  const { slot, dialog } = await openSubmit(pullRequest, rpc);
+  const body = dialog.getByLabelText("Review summary") as HTMLTextAreaElement;
+  fireEvent.change(body, { target: { value: "Needs work" } });
+  refuse();
+  expect((await dialog.findByRole("alert")).textContent).toBe(
+    "Pending review was already submitted.",
+  );
+  expect(body.value).toBe("Needs work");
+
+  // Keep dismisses the refusal, so the next confirmation starts clean.
+  fireEvent.click(dialog.getByRole("button", { name: "Keep" }));
+  fireEvent.click(await dialog.findByRole("button", { name: "Discard drafts" }));
+  expect(dialog.queryByRole("alert")).toBeNull();
+  slot.lifecycle.unmount();
+});
+
+test("drafts discarded and closed before the form shows it busy are discarded only once", async () => {
+  const discarded: unknown[] = [];
+  const answers: (() => void)[] = [];
+  const { slot, dialog } = await openSubmit(pullRequest, {
+    discardReview: (input: never) => {
+      discarded.push(input);
+      return new Promise((resolve) => answers.push(() => resolve({ ok: true })));
+    },
+  });
+  fireEvent.click(dialog.getByRole("button", { name: "Discard drafts" }));
+  fireEvent.click(dialog.getByRole("button", { name: "Discard" }));
+  // Escape lands before the render that shows the discard as out.
+  fireEvent.keyDown(slot.getByRole("dialog", { name: "Submit review" }), { key: "Escape" });
+  await gone(() => slot.queryByRole("dialog"));
+
+  // The viewer asks to discard again, the way the reopened form offers it.
+  const reopened = await reopenSubmit(slot);
+  fireEvent.click(reopened.getByRole("button", { name: /^Discard( drafts|ing…)$/ }));
+  fireEvent.click(reopened.getByRole("button", { name: /^Discard(ing…)?$/ }));
+  await waitFor(() =>
+    expect(reopened.getByRole("button", { name: "Discarding…" }).hasAttribute("disabled")).toBe(
+      true,
+    ),
+  );
+
+  for (const answer of answers) answer();
+  await gone(() => slot.queryByRole("dialog"));
+  expect(discarded).toEqual([{ pullRequestId: "PR_kwDOA42" }]);
+  slot.lifecycle.unmount();
+});
+
+test("the author can only comment, and is told why", async () => {
+  const { slot, dialog } = await openSubmit({
+    ...pullRequest,
+    viewer: { login: "scott", isAuthor: true, canApprove: false },
+  });
+  const approve = dialog.getByRole("radio", { name: /Approve/ }) as HTMLInputElement;
+  const requestChanges = dialog.getByRole("radio", { name: /Request changes/ }) as HTMLInputElement;
+  expect(approve.disabled).toBe(true);
+  expect(requestChanges.disabled).toBe(true);
+  expect((dialog.getByRole("radio", { name: /Comment/ }) as HTMLInputElement).checked).toBe(true);
+  expect(
+    dialog.getByText("You opened this pull request, so you can only comment on it."),
+  ).toBeTruthy();
+  slot.lifecycle.unmount();
+});
+
+test("a comment with no text and no drafts cannot be sent", async () => {
+  const { slot, dialog } = await openSubmit({ ...pullRequest, pendingReview: null });
+  const submit = dialog.getByRole("button", { name: "Submit review" }) as HTMLButtonElement;
+  expect(submit.disabled).toBe(true);
+  expect(dialog.getByText("Write a comment to submit.")).toBeTruthy();
+  // No pending review means nothing to discard.
+  expect(dialog.queryByRole("button", { name: "Discard drafts" })).toBeNull();
+
+  fireEvent.change(dialog.getByLabelText("Review summary"), { target: { value: "Thoughts" } });
+  expect(submit.disabled).toBe(false);
+  slot.lifecycle.unmount();
+});
+
+test("GitHub's refusal is shown in the form, which keeps the text", async () => {
+  const { slot, dialog } = await openSubmit(pullRequest, {
+    submitReview: () => {
+      throw new Error("Review cannot be submitted on a stale commit.");
+    },
+  });
+  const body = dialog.getByLabelText("Review summary") as HTMLTextAreaElement;
+  fireEvent.change(body, { target: { value: "Needs work" } });
+  fireEvent.click(dialog.getByRole("button", { name: "Submit review" }));
+  expect((await dialog.findByRole("alert")).textContent).toBe(
+    "GitHub did not take the reviewReview cannot be submitted on a stale commit.",
+  );
+  expect(body.value).toBe("Needs work");
+
+  // The refusal belongs to that attempt. Opening again starts clean but keeps the text.
+  await closeSubmit(slot);
+  const reopened = await reopenSubmit(slot);
+  expect(reopened.queryByRole("alert")).toBeNull();
+  expect((reopened.getByLabelText("Review summary") as HTMLTextAreaElement).value).toBe(
+    "Needs work",
+  );
+  slot.lifecycle.unmount();
+});
+
+test("a failed discard is forgotten once the viewer keeps the drafts or closes the popover", async () => {
+  const { slot, dialog } = await openSubmit(pullRequest, {
+    discardReview: () => {
+      throw new Error("Pending review was already submitted.");
+    },
+  });
+  const refused = async () =>
+    expect((await dialog.findByRole("alert")).textContent).toBe(
+      "Pending review was already submitted.",
+    );
+
+  fireEvent.click(dialog.getByRole("button", { name: "Discard drafts" }));
+  fireEvent.click(dialog.getByRole("button", { name: "Discard" }));
+  await refused();
+  fireEvent.click(dialog.getByRole("button", { name: "Keep" }));
+  fireEvent.click(dialog.getByRole("button", { name: "Discard drafts" }));
+  await gone(() => dialog.queryByRole("alert"));
+
+  fireEvent.click(dialog.getByRole("button", { name: "Discard" }));
+  await refused();
+  await closeSubmit(slot);
+  const reopened = await reopenSubmit(slot);
+  fireEvent.click(reopened.getByRole("button", { name: "Discard drafts" }));
+  expect(reopened.queryByRole("alert")).toBeNull();
+  slot.lifecycle.unmount();
+});
+
+test("discarding drafts asks first, then deletes the pending review", async () => {
+  const discarded: unknown[] = [];
+  const { slot, dialog } = await openSubmit(pullRequest, {
+    discardReview: (input: never) => {
+      discarded.push(input);
+      return { ok: true };
+    },
+  });
+  fireEvent.click(dialog.getByRole("button", { name: "Discard drafts" }));
+  expect(
+    dialog.getByText(
+      "Discard 2 draft comments? This deletes them from GitHub and cannot be undone.",
+    ),
+  ).toBeTruthy();
+  expect(discarded).toEqual([]);
+  fireEvent.click(dialog.getByRole("button", { name: "Discard" }));
+  await waitFor(() => expect(discarded).toEqual([{ pullRequestId: "PR_kwDOA42" }]));
+  await gone(() => slot.queryByRole("dialog"));
+  slot.lifecycle.unmount();
+});
+
+test("a pull request GitHub cannot find says so, with a way back", async () => {
+  const slot = await page("acme/api/pull/999", {
+    ...baseRpc,
+    pullRequest: () => {
+      throw new Error("Could not resolve to a PullRequest with the number of 999.");
+    },
+  });
+  const alert = await slot.findByRole("alert", {}, { timeout: 5_000 });
+  expect(alert.textContent).toContain("Could not open acme/api#999");
+  expect(alert.textContent).toContain("Could not resolve to a PullRequest with the number of 999.");
+  fireEvent.click(within(alert).getByRole("button", { name: "Back to inbox" }));
+  expect(slot.navigateCalls).toEqual([
+    { method: "toPluginPanel", path: "code-review", options: { subPath: "" } },
+  ]);
+  slot.lifecycle.unmount();
+});
+
+test("a URL that names no pull request offers the way back", async () => {
+  const slot = await page("acme/api/issues/3");
+  fireEvent.click(await slot.findByRole("button", { name: "Back to inbox" }));
+  expect(slot.navigateCalls).toEqual([
+    { method: "toPluginPanel", path: "code-review", options: { subPath: "", replace: true } },
+  ]);
+  slot.lifecycle.unmount();
+});

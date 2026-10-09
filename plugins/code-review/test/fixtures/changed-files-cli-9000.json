@@ -1,0 +1,31 @@
+{
+  "repository": {
+    "pullRequest": {
+      "headRefOid": "cc36d32a212a2b8b6611fb73549fe6d04fb6ec38",
+      "files": {
+        "pageInfo": {
+          "hasNextPage": false,
+          "endCursor": "NA"
+        },
+        "nodes": [
+          {
+            "path": "pkg/cmd/attestation/verify/verify.go",
+            "viewerViewedState": "UNVIEWED"
+          },
+          {
+            "path": "pkg/cmd/attestation/verify/verify_test.go",
+            "viewerViewedState": "UNVIEWED"
+          },
+          {
+            "path": "pkg/cmdutil/auth_check.go",
+            "viewerViewedState": "UNVIEWED"
+          },
+          {
+            "path": "pkg/cmdutil/auth_check_test.go",
+            "viewerViewedState": "UNVIEWED"
+          }
+        ]
+      }
+    }
+  }
+}

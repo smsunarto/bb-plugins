@@ -1,0 +1,166 @@
+{
+  "repository": {
+    "pullRequest": {
+      "headRefOid": "423b69654005c318d92687f191a3b8f473043c25",
+      "commits": {
+        "nodes": [
+          {
+            "commit": {
+              "id": "C_kwDOLJWO49oAKDQyM2I2OTY1NDAwNWMzMThkOTI2ODdmMTkxYTNiOGY0NzMwNDNjMjU",
+              "statusCheckRollup": {
+                "state": "FAILURE",
+                "contexts": {
+                  "pageInfo": {
+                    "hasNextPage": false,
+                    "endCursor": "Nw"
+                  },
+                  "nodes": [
+                    {
+                      "__typename": "CheckRun",
+                      "databaseId": 110959498696,
+                      "name": "Lint",
+                      "status": "COMPLETED",
+                      "conclusion": "FAILURE",
+                      "detailsUrl": "https://github.com/acme/api/actions/runs/37043618707/job/110959498696",
+                      "startedAt": "2026-10-02T17:52:18Z",
+                      "completedAt": "2026-10-02T17:55:48Z",
+                      "title": null,
+                      "checkSuite": {
+                        "app": {
+                          "name": "GitHub Actions"
+                        },
+                        "workflowRun": {
+                          "workflow": {
+                            "name": "CI"
+                          }
+                        }
+                      }
+                    },
+                    {
+                      "__typename": "CheckRun",
+                      "databaseId": 110959522353,
+                      "name": "Lint (PR Title)",
+                      "status": "COMPLETED",
+                      "conclusion": "SUCCESS",
+                      "detailsUrl": "https://github.com/acme/api/actions/runs/37043626167/job/110959522353",
+                      "startedAt": "2026-10-02T17:52:14Z",
+                      "completedAt": "2026-10-02T17:52:19Z",
+                      "title": null,
+                      "checkSuite": {
+                        "app": {
+                          "name": "GitHub Actions"
+                        },
+                        "workflowRun": {
+                          "workflow": {
+                            "name": "PR"
+                          }
+                        }
+                      }
+                    },
+                    {
+                      "__typename": "CheckRun",
+                      "databaseId": 110959498281,
+                      "name": "Test",
+                      "status": "COMPLETED",
+                      "conclusion": "FAILURE",
+                      "detailsUrl": "https://github.com/acme/api/actions/runs/37043618707/job/110959498281",
+                      "startedAt": "2026-10-02T17:52:09Z",
+                      "completedAt": "2026-10-02T17:53:10Z",
+                      "title": null,
+                      "checkSuite": {
+                        "app": {
+                          "name": "GitHub Actions"
+                        },
+                        "workflowRun": {
+                          "workflow": {
+                            "name": "CI"
+                          }
+                        }
+                      }
+                    },
+                    {
+                      "__typename": "CheckRun",
+                      "databaseId": 110959498726,
+                      "name": "Qodana",
+                      "status": "COMPLETED",
+                      "conclusion": "SUCCESS",
+                      "detailsUrl": "https://github.com/acme/api/actions/runs/37043618707/job/110959498726",
+                      "startedAt": "2026-10-02T17:52:09Z",
+                      "completedAt": "2026-10-02T17:57:03Z",
+                      "title": null,
+                      "checkSuite": {
+                        "app": {
+                          "name": "GitHub Actions"
+                        },
+                        "workflowRun": {
+                          "workflow": {
+                            "name": "CI"
+                          }
+                        }
+                      }
+                    },
+                    {
+                      "__typename": "CheckRun",
+                      "databaseId": 110960956479,
+                      "name": "Qodana for Go",
+                      "status": "COMPLETED",
+                      "conclusion": "NEUTRAL",
+                      "detailsUrl": "https://github.com/acme/api/runs/110960956479",
+                      "startedAt": "2026-10-02T17:56:08Z",
+                      "completedAt": "2026-10-02T17:56:08Z",
+                      "title": "1637 new problems found by Qodana for Go",
+                      "checkSuite": {
+                        "app": {
+                          "name": "GitHub Actions"
+                        },
+                        "workflowRun": {
+                          "workflow": {
+                            "name": "CI"
+                          }
+                        }
+                      }
+                    },
+                    {
+                      "__typename": "CheckRun",
+                      "databaseId": 110959514483,
+                      "name": "cubic · AI code reviewer",
+                      "status": "COMPLETED",
+                      "conclusion": "NEUTRAL",
+                      "detailsUrl": "https://www.cubic.dev/pr/acme/api/pull/1034",
+                      "startedAt": "2026-10-02T17:52:10Z",
+                      "completedAt": "2026-10-02T17:52:10Z",
+                      "title": "Automatic AI review not started after branch rewrite",
+                      "checkSuite": {
+                        "app": {
+                          "name": "cubic-dev-ai"
+                        },
+                        "workflowRun": null
+                      }
+                    },
+                    {
+                      "__typename": "CheckRun",
+                      "databaseId": 110959505861,
+                      "name": "Macroscope - Correctness Check",
+                      "status": "COMPLETED",
+                      "conclusion": "SKIPPED",
+                      "detailsUrl": "https://github.com/acme/api/pull/1034/checks?check_run_id=110959505861",
+                      "startedAt": "2026-10-02T17:52:08Z",
+                      "completedAt": "2026-10-02T17:52:11Z",
+                      "title": "Credit balance exhausted.",
+                      "checkSuite": {
+                        "app": {
+                          "name": "MacroscopeApp"
+                        },
+                        "workflowRun": null
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        ]
+      }
+    }
+  }
+}

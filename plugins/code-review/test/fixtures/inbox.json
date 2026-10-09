@@ -1,0 +1,246 @@
+{
+  "viewer": {
+    "login": "sms-yui"
+  },
+  "requested": {
+    "nodes": [
+      {
+        "number": 1034,
+        "title": "chore: remove an unused decoder",
+        "url": "https://github.com/acme/api/pull/1034",
+        "state": "OPEN",
+        "isDraft": false,
+        "updatedAt": "2026-10-02T17:52:05Z",
+        "repository": {
+          "name": "api",
+          "owner": {
+            "login": "acme"
+          }
+        },
+        "author": {
+          "login": "detail-app",
+          "avatarUrl": "https://avatars.githubusercontent.com/in/987401?v=4"
+        },
+        "headRefName": "chore/remove-unused-decoder",
+        "baseRefName": "main",
+        "additions": 0,
+        "deletions": 29,
+        "changedFiles": 1,
+        "reviewDecision": null,
+        "commits": {
+          "nodes": [
+            {
+              "commit": {
+                "statusCheckRollup": {
+                  "state": "FAILURE"
+                }
+              }
+            }
+          ]
+        },
+        "viewerLatestReview": null,
+        "pendingReviews": {
+          "totalCount": 0
+        },
+        "reviewRequests": {
+          "nodes": [
+            {
+              "requestedReviewer": {
+                "login": "sms-yui"
+              }
+            }
+          ]
+        }
+      }
+    ]
+  },
+  "assignee": {
+    "nodes": [
+      {
+        "number": 1034,
+        "title": "chore: remove an unused decoder",
+        "url": "https://github.com/acme/api/pull/1034",
+        "state": "OPEN",
+        "isDraft": false,
+        "updatedAt": "2026-10-02T17:52:05Z",
+        "repository": {
+          "name": "api",
+          "owner": {
+            "login": "acme"
+          }
+        },
+        "author": {
+          "login": "detail-app",
+          "avatarUrl": "https://avatars.githubusercontent.com/in/987401?v=4"
+        },
+        "headRefName": "chore/remove-unused-decoder",
+        "baseRefName": "main",
+        "additions": 0,
+        "deletions": 29,
+        "changedFiles": 1,
+        "reviewDecision": null,
+        "commits": {
+          "nodes": [
+            {
+              "commit": {
+                "statusCheckRollup": {
+                  "state": "FAILURE"
+                }
+              }
+            }
+          ]
+        },
+        "viewerLatestReview": null,
+        "pendingReviews": {
+          "totalCount": 0
+        },
+        "reviewRequests": {
+          "nodes": [
+            {
+              "requestedReviewer": {
+                "login": "sms-yui"
+              }
+            }
+          ]
+        }
+      }
+    ]
+  },
+  "team": {
+    "nodes": []
+  },
+  "authored": {
+    "nodes": [
+      {
+        "number": 1677,
+        "title": "fix: harden runtime edge cases",
+        "url": "https://github.com/acme/client/pull/1677",
+        "state": "OPEN",
+        "isDraft": false,
+        "updatedAt": "2026-08-20T17:49:34Z",
+        "repository": {
+          "name": "client",
+          "owner": {
+            "login": "acme"
+          }
+        },
+        "author": {
+          "login": "sms-yui",
+          "avatarUrl": "https://avatars.githubusercontent.com/u/287818108?u=61ef9d5179ffb75cd724908cbfd3170149fb6872&v=4"
+        },
+        "headRefName": "fix/runtime-hardening",
+        "baseRefName": "main",
+        "additions": 249,
+        "deletions": 38,
+        "changedFiles": 6,
+        "reviewDecision": null,
+        "commits": {
+          "nodes": [
+            {
+              "commit": {
+                "statusCheckRollup": {
+                  "state": "FAILURE"
+                }
+              }
+            }
+          ]
+        },
+        "viewerLatestReview": null,
+        "pendingReviews": {
+          "totalCount": 0
+        },
+        "reviewRequests": {
+          "nodes": []
+        }
+      },
+      {
+        "number": 1675,
+        "title": "fix: cancel pending subscriptions",
+        "url": "https://github.com/acme/client/pull/1675",
+        "state": "OPEN",
+        "isDraft": false,
+        "updatedAt": "2026-08-20T17:57:04Z",
+        "repository": {
+          "name": "client",
+          "owner": {
+            "login": "acme"
+          }
+        },
+        "author": {
+          "login": "sms-yui",
+          "avatarUrl": "https://avatars.githubusercontent.com/u/287818108?u=61ef9d5179ffb75cd724908cbfd3170149fb6872&v=4"
+        },
+        "headRefName": "fix/subscription-lifecycle",
+        "baseRefName": "main",
+        "additions": 221,
+        "deletions": 10,
+        "changedFiles": 4,
+        "reviewDecision": null,
+        "commits": {
+          "nodes": [
+            {
+              "commit": {
+                "statusCheckRollup": {
+                  "state": "FAILURE"
+                }
+              }
+            }
+          ]
+        },
+        "viewerLatestReview": null,
+        "pendingReviews": {
+          "totalCount": 0
+        },
+        "reviewRequests": {
+          "nodes": []
+        }
+      }
+    ]
+  },
+  "p0": {
+    "number": 9000,
+    "title": "proof of concept for flag-level disable auth check",
+    "url": "https://github.com/cli/cli/pull/9000",
+    "state": "MERGED",
+    "isDraft": false,
+    "updatedAt": "2026-08-13T14:03:02Z",
+    "repository": {
+      "name": "cli",
+      "owner": {
+        "login": "cli"
+      }
+    },
+    "author": {
+      "login": "andyfeller",
+      "avatarUrl": "https://avatars.githubusercontent.com/u/2089743?u=9bfb41dc48321cdf872336340b0769283953fe50&v=4"
+    },
+    "headRefName": "andyfeller/flag-level-disableauth",
+    "baseRefName": "trunk",
+    "additions": 123,
+    "deletions": 2,
+    "changedFiles": 4,
+    "reviewDecision": "APPROVED",
+    "commits": {
+      "nodes": [
+        {
+          "commit": {
+            "statusCheckRollup": null
+          }
+        }
+      ]
+    },
+    "viewerLatestReview": null,
+    "pendingReviews": {
+      "totalCount": 0
+    },
+    "reviewRequests": {
+      "nodes": [
+        {
+          "requestedReviewer": null
+        }
+      ]
+    }
+  },
+  "p1": null,
+  "p2": null
+}

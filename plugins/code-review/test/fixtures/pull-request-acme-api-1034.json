@@ -1,0 +1,122 @@
+{
+  "viewer": {
+    "login": "sms-yui"
+  },
+  "repository": {
+    "nameWithOwner": "acme/api",
+    "defaultBranchRef": {
+      "name": "main"
+    },
+    "pullRequest": {
+      "id": "PR_kwDOLJWO488AAAABFmSInA",
+      "number": 1034,
+      "title": "chore: remove an unused decoder",
+      "body": "Removes a decoder nothing calls.",
+      "url": "https://github.com/acme/api/pull/1034",
+      "state": "OPEN",
+      "isDraft": false,
+      "createdAt": "2026-09-28T23:47:41Z",
+      "updatedAt": "2026-10-02T17:52:05Z",
+      "author": {
+        "login": "detail-app",
+        "avatarUrl": "https://avatars.githubusercontent.com/in/987401?v=4"
+      },
+      "headRefName": "chore/remove-unused-decoder",
+      "baseRefName": "main",
+      "headRefOid": "423b69654005c318d92687f191a3b8f473043c25",
+      "baseRefOid": "1f47a0690cc0c17564dbbfb8959e16488411bc4a",
+      "isCrossRepository": false,
+      "headRepository": {
+        "nameWithOwner": "acme/api"
+      },
+      "additions": 0,
+      "deletions": 29,
+      "changedFiles": 1,
+      "reviewDecision": null,
+      "mergeable": "MERGEABLE",
+      "commits": {
+        "totalCount": 1
+      },
+      "labels": {
+        "nodes": []
+      },
+      "reviewRequests": {
+        "nodes": [
+          {
+            "requestedReviewer": {
+              "__typename": "User",
+              "login": "sms-yui",
+              "avatarUrl": "https://avatars.githubusercontent.com/u/287818108?u=61ef9d5179ffb75cd724908cbfd3170149fb6872&v=4"
+            }
+          }
+        ]
+      },
+      "latestReviews": {
+        "nodes": []
+      },
+      "pendingReviews": {
+        "nodes": []
+      },
+      "timelineItems": {
+        "nodes": [
+          {
+            "__typename": "ReviewRequestedEvent",
+            "id": "RRE_lADOLJWO488AAAABTyWS_M8AAAAHdZP2pw",
+            "createdAt": "2026-09-28T23:47:44Z",
+            "actor": {
+              "login": "detail-app",
+              "avatarUrl": "https://avatars.githubusercontent.com/in/987401?v=4"
+            },
+            "requestedReviewer": {
+              "login": "sms-yui"
+            }
+          },
+          {
+            "__typename": "IssueComment",
+            "id": "IC_kwDOLJWO488AAAABXockkw",
+            "author": {
+              "login": "claude",
+              "avatarUrl": "https://avatars.githubusercontent.com/in/1236702?v=4"
+            },
+            "body": "Looks unused to me too.",
+            "createdAt": "2026-09-28T23:48:10Z",
+            "url": "https://github.com/acme/api/pull/1034#issuecomment-5880882323"
+          },
+          {
+            "__typename": "PullRequestCommit",
+            "id": "PURC_lADOLJWO488AAAABFmSInNoAKDQyM2I2OTY1NDAwNWMzMThkOTI2ODdmMTkxYTNiOGY0NzMwNDNjMjU",
+            "commit": {
+              "oid": "423b69654005c318d92687f191a3b8f473043c25",
+              "messageHeadline": "chore: remove an unused decoder",
+              "committedDate": "2026-10-02T17:51:39Z",
+              "author": {
+                "name": "detail-app[bot]",
+                "avatarUrl": "https://avatars.githubusercontent.com/in/987401?v=4",
+                "user": {
+                  "login": "detail-app[bot]",
+                  "avatarUrl": "https://avatars.githubusercontent.com/in/987401?v=4"
+                }
+              }
+            }
+          },
+          {
+            "__typename": "HeadRefForcePushedEvent",
+            "id": "HRFPE_lADOLJWO488AAAABTyWS_M8AAAAHiHeP9A",
+            "createdAt": "2026-10-02T17:52:05Z",
+            "actor": {
+              "login": "detail-app",
+              "avatarUrl": "https://avatars.githubusercontent.com/in/987401?v=4"
+            }
+          }
+        ]
+      },
+      "reviewThreads": {
+        "pageInfo": {
+          "hasNextPage": false,
+          "endCursor": null
+        },
+        "nodes": []
+      }
+    }
+  }
+}

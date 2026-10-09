@@ -1,0 +1,339 @@
+{
+  "viewer": {
+    "login": "sms-yui"
+  },
+  "repository": {
+    "nameWithOwner": "cli/cli",
+    "defaultBranchRef": {
+      "name": "trunk"
+    },
+    "pullRequest": {
+      "id": "PR_kwDODKw3uc5tufty",
+      "number": 9000,
+      "title": "proof of concept for flag-level disable auth check",
+      "body": "Relates #8995 \r\n\r\nBuilding upon the existing command-level disable auth check logic, this commit adds flag-level disable auth check logic for any flag set with `-b,--bundle` flag of `gh attestation ve…",
+      "url": "https://github.com/cli/cli/pull/9000",
+      "state": "MERGED",
+      "isDraft": false,
+      "createdAt": "2024-04-25T13:32:21Z",
+      "updatedAt": "2026-08-13T14:03:02Z",
+      "author": {
+        "login": "andyfeller",
+        "avatarUrl": "https://avatars.githubusercontent.com/u/2089743?u=9bfb41dc48321cdf872336340b0769283953fe50&v=4"
+      },
+      "headRefName": "andyfeller/flag-level-disableauth",
+      "baseRefName": "trunk",
+      "headRefOid": "cc36d32a212a2b8b6611fb73549fe6d04fb6ec38",
+      "baseRefOid": "28c4d3075b5916acdb6974a7e4f5c49d2c274a86",
+      "isCrossRepository": false,
+      "headRepository": {
+        "nameWithOwner": "cli/cli"
+      },
+      "additions": 123,
+      "deletions": 2,
+      "changedFiles": 4,
+      "reviewDecision": "APPROVED",
+      "mergeable": "UNKNOWN",
+      "commits": {
+        "totalCount": 3
+      },
+      "labels": {
+        "nodes": [
+          {
+            "name": "external",
+            "color": "2700AF"
+          }
+        ]
+      },
+      "reviewRequests": {
+        "nodes": [
+          {
+            "requestedReviewer": null
+          }
+        ]
+      },
+      "latestReviews": {
+        "nodes": [
+          {
+            "state": "APPROVED",
+            "author": {
+              "login": "steiza",
+              "avatarUrl": "https://avatars.githubusercontent.com/u/167759?u=abcc2840cccd26a1f83f40fff7314a36552e4f65&v=4"
+            }
+          },
+          {
+            "state": "APPROVED",
+            "author": {
+              "login": "williammartin",
+              "avatarUrl": "https://avatars.githubusercontent.com/u/1611510?u=1208184deacce6d59b31fb28f8464688c577ffdf&v=4"
+            }
+          }
+        ]
+      },
+      "pendingReviews": {
+        "nodes": []
+      },
+      "timelineItems": {
+        "nodes": [
+          {
+            "__typename": "PullRequestCommit",
+            "id": "PURC_lADODKw3uc5tufty2gAoMmQ5MTA0MDZjNjkwYWYwY2UyYWQzOWY3OWY5NDhhNzEzMzIxYzJiMQ",
+            "commit": {
+              "oid": "2d910406c690af0ce2ad39f79f948a713321c2b1",
+              "messageHeadline": "proof of concept for flag-level disable auth check",
+              "committedDate": "2024-04-25T13:28:49Z",
+              "author": {
+                "name": "Andy Feller",
+                "avatarUrl": "https://avatars.githubusercontent.com/u/2089743?v=4",
+                "user": {
+                  "login": "andyfeller",
+                  "avatarUrl": "https://avatars.githubusercontent.com/u/2089743?u=9bfb41dc48321cdf872336340b0769283953fe50&v=4"
+                }
+              }
+            }
+          },
+          {
+            "__typename": "PullRequestReview",
+            "id": "PRR_kwDODKw3uc54m4Eg",
+            "author": {
+              "login": "steiza",
+              "avatarUrl": "https://avatars.githubusercontent.com/u/167759?u=abcc2840cccd26a1f83f40fff7314a36552e4f65&v=4"
+            },
+            "state": "APPROVED",
+            "body": "This looks like a workable alternative to #8995 to me!",
+            "createdAt": "2024-04-25T19:55:42Z",
+            "submittedAt": "2024-04-25T19:55:42Z",
+            "url": "https://github.com/cli/cli/pull/9000#pullrequestreview-2023457056",
+            "comments": {
+              "totalCount": 0
+            }
+          },
+          {
+            "__typename": "IssueComment",
+            "id": "IC_kwDODKw3uc57_LKj",
+            "author": {
+              "login": "andyfeller",
+              "avatarUrl": "https://avatars.githubusercontent.com/u/2089743?u=9bfb41dc48321cdf872336340b0769283953fe50&v=4"
+            },
+            "body": "@steiza @phillmv : is the manual process I listed above how you would test the feature?\r\n\r\n@williammartin : is there anything about these changes you'd like to see beyond adding tests around the vario…",
+            "createdAt": "2024-04-26T21:44:55Z",
+            "url": "https://github.com/cli/cli/pull/9000#issuecomment-2080158371"
+          },
+          {
+            "__typename": "IssueComment",
+            "id": "IC_kwDODKw3uc58HP2A",
+            "author": {
+              "login": "williammartin",
+              "avatarUrl": "https://avatars.githubusercontent.com/u/1611510?u=1208184deacce6d59b31fb28f8464688c577ffdf&v=4"
+            },
+            "body": "### TL;DR\r\n\r\nLet's move forward with this PR, thanks!\r\n\r\n### Design thoughts\r\n\r\nI appreciate the work you've done here and I think it's pretty clever. That said, for a few reasons I prefer a less abst…",
+            "createdAt": "2024-04-29T09:32:46Z",
+            "url": "https://github.com/cli/cli/pull/9000#issuecomment-2082274688"
+          },
+          {
+            "__typename": "IssueComment",
+            "id": "IC_kwDODKw3uc58ItIR",
+            "author": {
+              "login": "andyfeller",
+              "avatarUrl": "https://avatars.githubusercontent.com/u/2089743?u=9bfb41dc48321cdf872336340b0769283953fe50&v=4"
+            },
+            "body": "**Firstly, I want to say I completely agree with you:**\r\n\r\n> I think the auth checks are too tightly coupled to Cobra configuration and that the responsibility to make this decision should be owned cl…",
+            "createdAt": "2024-04-29T12:56:41Z",
+            "url": "https://github.com/cli/cli/pull/9000#issuecomment-2082656785"
+          },
+          {
+            "__typename": "PullRequestCommit",
+            "id": "PURC_lADODKw3uc5tufty2gAoOGUzYWZlNTVkZjAzNzQ5MzQzZDM3NzFjODA0MTA2ZGMyYTQ3NmYyYQ",
+            "commit": {
+              "oid": "8e3afe55df03749343d3771c804106dc2a476f2a",
+              "messageHeadline": "Test cmdutil.IsAuthCheckEnabled cases",
+              "committedDate": "2024-04-29T14:02:01Z",
+              "author": {
+                "name": "Andy Feller",
+                "avatarUrl": "https://avatars.githubusercontent.com/u/2089743?v=4",
+                "user": {
+                  "login": "andyfeller",
+                  "avatarUrl": "https://avatars.githubusercontent.com/u/2089743?u=9bfb41dc48321cdf872336340b0769283953fe50&v=4"
+                }
+              }
+            }
+          },
+          {
+            "__typename": "ReadyForReviewEvent",
+            "id": "RFRE_lADODKw3uc6G69inzwAAAALxoLYe",
+            "createdAt": "2024-04-29T14:03:20Z",
+            "actor": {
+              "login": "andyfeller",
+              "avatarUrl": "https://avatars.githubusercontent.com/u/2089743?u=9bfb41dc48321cdf872336340b0769283953fe50&v=4"
+            }
+          },
+          {
+            "__typename": "ReviewRequestedEvent",
+            "id": "RRE_lADODKw3uc6G69inzwAAAALxoLcM",
+            "createdAt": "2024-04-29T14:03:20Z",
+            "actor": {
+              "login": "andyfeller",
+              "avatarUrl": "https://avatars.githubusercontent.com/u/2089743?u=9bfb41dc48321cdf872336340b0769283953fe50&v=4"
+            },
+            "requestedReviewer": null
+          },
+          {
+            "__typename": "ReviewRequestedEvent",
+            "id": "RRE_lADODKw3uc6G69inzwAAAALxoLdg",
+            "createdAt": "2024-04-29T14:03:21Z",
+            "actor": {
+              "login": "andyfeller",
+              "avatarUrl": "https://avatars.githubusercontent.com/u/2089743?u=9bfb41dc48321cdf872336340b0769283953fe50&v=4"
+            },
+            "requestedReviewer": null
+          },
+          {
+            "__typename": "ReviewRequestedEvent",
+            "id": "RRE_lADODKw3uc6G69inzwAAAALxoLjp",
+            "createdAt": "2024-04-29T14:03:22Z",
+            "actor": {
+              "login": "andyfeller",
+              "avatarUrl": "https://avatars.githubusercontent.com/u/2089743?u=9bfb41dc48321cdf872336340b0769283953fe50&v=4"
+            },
+            "requestedReviewer": {
+              "login": "williammartin"
+            }
+          },
+          {
+            "__typename": "PullRequestReview",
+            "id": "PRR_kwDODKw3uc546mgq",
+            "author": {
+              "login": "williammartin",
+              "avatarUrl": "https://avatars.githubusercontent.com/u/1611510?u=1208184deacce6d59b31fb28f8464688c577ffdf&v=4"
+            },
+            "state": "COMMENTED",
+            "body": "One test addition I think would be useful",
+            "createdAt": "2024-04-29T14:06:54Z",
+            "submittedAt": "2024-04-29T15:00:09Z",
+            "url": "https://github.com/cli/cli/pull/9000#pullrequestreview-2028628010",
+            "comments": {
+              "totalCount": 2
+            }
+          },
+          {
+            "__typename": "PullRequestCommit",
+            "id": "PURC_lADODKw3uc5tufty2gAoY2MzNmQzMmEyMTJhMmI4YjY2MTFmYjczNTQ5ZmU2ZDA0ZmI2ZWMzOA",
+            "commit": {
+              "oid": "cc36d32a212a2b8b6611fb73549fe6d04fb6ec38",
+              "messageHeadline": "Test `gh at verify -b` does not require auth",
+              "committedDate": "2024-04-29T16:02:41Z",
+              "author": {
+                "name": "Andy Feller",
+                "avatarUrl": "https://avatars.githubusercontent.com/u/2089743?v=4",
+                "user": {
+                  "login": "andyfeller",
+                  "avatarUrl": "https://avatars.githubusercontent.com/u/2089743?u=9bfb41dc48321cdf872336340b0769283953fe50&v=4"
+                }
+              }
+            }
+          },
+          {
+            "__typename": "PullRequestReview",
+            "id": "PRR_kwDODKw3uc5470tb",
+            "author": {
+              "login": "williammartin",
+              "avatarUrl": "https://avatars.githubusercontent.com/u/1611510?u=1208184deacce6d59b31fb28f8464688c577ffdf&v=4"
+            },
+            "state": "APPROVED",
+            "body": "### Before (without `--bundle`)\r\n\r\n```\r\nGH_CONFIG_DIR=/tmp/test/gh gh attestation verify oci://ghcr.io/phillmv/arquivo -o phillmv                     \r\nTo get started with GitHub CLI, please run:  gh …",
+            "createdAt": "2024-04-29T16:07:45Z",
+            "submittedAt": "2024-04-29T16:07:45Z",
+            "url": "https://github.com/cli/cli/pull/9000#pullrequestreview-2028948315",
+            "comments": {
+              "totalCount": 0
+            }
+          },
+          {
+            "__typename": "MergedEvent",
+            "id": "ME_lADODKw3uc6G69inzwAAAALxvwd6",
+            "createdAt": "2024-04-29T16:15:49Z",
+            "actor": {
+              "login": "andyfeller",
+              "avatarUrl": "https://avatars.githubusercontent.com/u/2089743?u=9bfb41dc48321cdf872336340b0769283953fe50&v=4"
+            },
+            "mergeRefName": "trunk",
+            "mergeCommit": {
+              "abbreviatedOid": "68dfd87"
+            }
+          },
+          {
+            "__typename": "ClosedEvent",
+            "id": "CE_lADODKw3uc6G69inzwAAAALxvweb",
+            "createdAt": "2024-04-29T16:15:50Z",
+            "actor": {
+              "login": "andyfeller",
+              "avatarUrl": "https://avatars.githubusercontent.com/u/2089743?u=9bfb41dc48321cdf872336340b0769283953fe50&v=4"
+            }
+          }
+        ]
+      },
+      "reviewThreads": {
+        "pageInfo": {
+          "hasNextPage": false,
+          "endCursor": "Y3Vyc29yOnYyOpK0MjAyNC0wNC0yOVQxNDo1OTo0NlrOPEcYxw=="
+        },
+        "nodes": [
+          {
+            "id": "PRRT_kwDODKw3uc48Rk4m",
+            "path": "pkg/cmd/attestation/verify/verify.go",
+            "line": 130,
+            "startLine": 130,
+            "originalLine": 130,
+            "diffSide": "RIGHT",
+            "isResolved": true,
+            "isOutdated": false,
+            "subjectType": "LINE",
+            "comments": {
+              "nodes": [
+                {
+                  "id": "PRRC_kwDODKw3uc5eXQNN",
+                  "author": {
+                    "login": "williammartin",
+                    "avatarUrl": "https://avatars.githubusercontent.com/u/1611510?u=1208184deacce6d59b31fb28f8464688c577ffdf&v=4"
+                  },
+                  "body": "Could I interest you in the following tests:\r\n\r\n```go\r\nfunc TestVerifyCmdAuthChecks(t *testing.T) {\r\n\tf := &cmdutil.Factory{}\r\n\r\n\tt.Run(\"by default auth check is required\", func(t *testing.T) {\r\n\t\tcmd…",
+                  "createdAt": "2024-04-29T14:06:54Z",
+                  "url": "https://github.com/cli/cli/pull/9000#discussion_r1583153997",
+                  "state": "SUBMITTED",
+                  "diffHunk": "@@ -127,6 +127,7 @@ func NewVerifyCmd(f *cmdutil.Factory, runF func(*Options) error) *cobra.Command\n \n \t// general flags\n \tverifyCmd.Flags().StringVarP(&opts.BundlePath, \"bundle\", \"b\", \"\", \"Path to bundle on disk, either a single bundle in a JSON file or a JSON lines file with multiple bundles\")\n+\tcmdutil.DisableAuthCheckFlag(verifyCmd.Flags().Lookup(\"bundle\"))"
+                }
+              ]
+            }
+          },
+          {
+            "id": "PRRT_kwDODKw3uc48RxjH",
+            "path": "pkg/cmdutil/auth_check_test.go",
+            "line": 113,
+            "startLine": 113,
+            "originalLine": 113,
+            "diffSide": "RIGHT",
+            "isResolved": false,
+            "isOutdated": false,
+            "subjectType": "LINE",
+            "comments": {
+              "nodes": [
+                {
+                  "id": "PRRC_kwDODKw3uc5eXjzv",
+                  "author": {
+                    "login": "williammartin",
+                    "avatarUrl": "https://avatars.githubusercontent.com/u/1611510?u=1208184deacce6d59b31fb28f8464688c577ffdf&v=4"
+                  },
+                  "body": "Lol not suspicious of coupling at all.",
+                  "createdAt": "2024-04-29T14:59:46Z",
+                  "url": "https://github.com/cli/cli/pull/9000#discussion_r1583234287",
+                  "state": "SUBMITTED",
+                  "diffHunk": "@@ -53,3 +54,66 @@ func Test_CheckAuth(t *testing.T) {\n \t\t})\n \t}\n }\n+\n+func Test_IsAuthCheckEnabled(t *testing.T) {\n+\ttests := []struct {\n+\t\tname               string\n+\t\tinit               func() (*cobra.Command, error)\n+\t\tisAuthCheckEnabled bool\n+\t}{\n+\t\t{\n+\t\t\tname: \"no annotations\",\n+\t\t\tinit: func() (*cobra.Command, error) {\n+\t\t\t\tcmd := &cobra.Command{}\n+\t\t\t\tcmd.Flags().Bool(\"flag\", false, \"\")\n+\t\t\t\treturn cmd, nil\n+\t\t\t},\n+\t\t\tisAuthCheckEnabled: true,\n+\t\t},\n+\t\t{\n+\t\t\tname: \"command-level disable\",\n+\t\t\tinit: func() (*cobra.Command, error) {\n+\t\t\t\tcmd := &cobra.Command{}\n+\t\t\t\tDisableAuthCheck(cmd)\n+\t\t\t\treturn cmd, nil\n+\t\t\t},\n+\t\t\tisAuthCheckEnabled: false,\n+\t\t},\n+\t\t{\n+\t\t\tname: \"command with flag-level disable, flag not set\",\n+\t\t\tinit: func() (*cobra.Command, error) {\n+\t\t\t\tcmd := &cobra.Command{}\n+\t\t\t\tcmd.Flags().Bool(\"flag\", false, \"\")\n+\t\t\t\tDisableAuthCheckFlag(cmd.Flag(\"flag\"))\n+\t\t\t\treturn cmd, nil\n+\t\t\t},\n+\t\t\tisAuthCheckEnabled: true,\n+\t\t},\n+\t\t{\n+\t\t\tname: \"command with flag-level disable, flag set\",\n+\t\t\tinit: func() (*cobra.Command, error) {\n+\t\t\t\tcmd := &cobra.Command{}\n+\t\t\t\tcmd.Flags().Bool(\"flag\", false, \"\")\n+\t\t\t\tif err := cmd.Flags().Set(\"flag\", \"true\"); err != nil {\n+\t\t\t\t\treturn nil, err\n+\t\t\t\t}\n+\n+\t\t\t\tDisableAuthCheckFlag(cmd.Flag(\"flag\"))\n+\t\t\t\treturn cmd, nil\n+\t\t\t},\n+\t\t\tisAuthCheckEnabled: false,\n+\t\t},\n+\t}\n+\n+\tfor _, tt := range tests {\n+\t\tt.Run(tt.name, func(t *testing.T) {\n+\t\t\tcmd, err := tt.init()\n+\t\t\trequire.NoError(t, err)\n+\n+\t\t\t// IsAuthCheckEnabled assumes commands under test are subcommands"
+                }
+              ]
+            }
+          }
+        ]
+      }
+    }
+  }
+}

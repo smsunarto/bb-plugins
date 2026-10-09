@@ -1,0 +1,15 @@
+/*
+ * Everything the page draws itself is a Tailwind utility over bb's theme
+ * tokens. What is left here is the part Tailwind cannot reach: Pierre renders
+ * each diff inside a shadow root, and the only styling that crosses that
+ * boundary is its own CSS custom properties.
+ *
+ * The monokai theme already publishes the `--diffs-*-override` colour
+ * variables, so this only matches the diff's type to the page's.
+ */
+.cr-diff {
+  --diffs-header-font-family: var(--font-sans, system-ui, sans-serif);
+  --diffs-font-family: var(--font-mono, ui-monospace, monospace);
+  --diffs-font-size: 11px;
+  --diffs-line-height: 20px;
+}

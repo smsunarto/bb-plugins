@@ -1,0 +1,124 @@
+{
+  "viewer": {
+    "login": "sms-yui"
+  },
+  "repository": {
+    "nameWithOwner": "cli/cli",
+    "defaultBranchRef": {
+      "name": "trunk"
+    },
+    "pullRequest": {
+      "id": "PR_kwDODKw3uc8AAAABGI1x4g",
+      "number": 14572,
+      "title": "`gh issue artifact` stack 9/11: Document `gh issue artifact` in the `gh` skill",
+      "body": "Part of the pull request stack tracked in #14563.\n\n<!--\nThank you for contributing to GitHub CLI!\n\nIf you are proposing a fix for a security issue, STOP and follow .github/SECURITY.md instead.\n\nKeep t…",
+      "url": "https://github.com/cli/cli/pull/14572",
+      "state": "OPEN",
+      "isDraft": false,
+      "createdAt": "2026-10-01T16:59:27Z",
+      "updatedAt": "2026-10-07T13:11:10Z",
+      "author": {
+        "login": "BagToad",
+        "avatarUrl": "https://avatars.githubusercontent.com/u/47394200?u=38155c9aa3b997813620b354b92bae0516cb8b86&v=4"
+      },
+      "headRefName": "bagtoad/artifact-skill-docs",
+      "baseRefName": "bagtoad/artifact-edit",
+      "headRefOid": "92561b6aad6988bf6e98d5ffe2bdf1425b9c74c1",
+      "baseRefOid": "740b05942657170a840cc8bee293f63e07fe9a0b",
+      "isCrossRepository": false,
+      "headRepository": {
+        "nameWithOwner": "cli/cli"
+      },
+      "additions": 95,
+      "deletions": 5,
+      "changedFiles": 1,
+      "reviewDecision": "REVIEW_REQUIRED",
+      "mergeable": "MERGEABLE",
+      "commits": {
+        "totalCount": 1
+      },
+      "labels": {
+        "nodes": []
+      },
+      "reviewRequests": {
+        "nodes": [
+          {
+            "requestedReviewer": {
+              "__typename": "User",
+              "login": "babakks",
+              "avatarUrl": "https://avatars.githubusercontent.com/u/36728931?v=4"
+            }
+          }
+        ]
+      },
+      "latestReviews": {
+        "nodes": []
+      },
+      "pendingReviews": {
+        "nodes": []
+      },
+      "timelineItems": {
+        "nodes": [
+          {
+            "__typename": "PullRequestCommit",
+            "id": "PURC_lADODKw3uc8AAAABGI1x4toAKDkyNTYxYjZhYWQ2OTg4YmY2ZTk4ZDVmZmUyYmRmMTQyNWI5Yzc0YzE",
+            "commit": {
+              "oid": "92561b6aad6988bf6e98d5ffe2bdf1425b9c74c1",
+              "messageHeadline": "Document gh issue artifact in the gh skill",
+              "committedDate": "2026-10-01T14:48:57Z",
+              "author": {
+                "name": "BagToad",
+                "avatarUrl": "https://avatars.githubusercontent.com/u/47394200?v=4",
+                "user": {
+                  "login": "BagToad",
+                  "avatarUrl": "https://avatars.githubusercontent.com/u/47394200?u=38155c9aa3b997813620b354b92bae0516cb8b86&v=4"
+                }
+              }
+            }
+          },
+          {
+            "__typename": "ReviewRequestedEvent",
+            "id": "RRE_lADODKw3uc8AAAABUbfcgM8AAAAHg4tmRg",
+            "createdAt": "2026-10-01T16:59:28Z",
+            "actor": {
+              "login": "BagToad",
+              "avatarUrl": "https://avatars.githubusercontent.com/u/47394200?u=38155c9aa3b997813620b354b92bae0516cb8b86&v=4"
+            },
+            "requestedReviewer": null
+          },
+          {
+            "__typename": "ReviewRequestedEvent",
+            "id": "RRE_lADODKw3uc8AAAABUbfcgM8AAAAHg4to3g",
+            "createdAt": "2026-10-01T16:59:28Z",
+            "actor": {
+              "login": "BagToad",
+              "avatarUrl": "https://avatars.githubusercontent.com/u/47394200?u=38155c9aa3b997813620b354b92bae0516cb8b86&v=4"
+            },
+            "requestedReviewer": {
+              "login": "williammartin"
+            }
+          },
+          {
+            "__typename": "ReviewRequestedEvent",
+            "id": "RRE_lADODKw3uc8AAAABUbfcgM8AAAAHnJkwnw",
+            "createdAt": "2026-10-07T13:11:10Z",
+            "actor": {
+              "login": "williammartin",
+              "avatarUrl": "https://avatars.githubusercontent.com/u/1611510?u=1208184deacce6d59b31fb28f8464688c577ffdf&v=4"
+            },
+            "requestedReviewer": {
+              "login": "babakks"
+            }
+          }
+        ]
+      },
+      "reviewThreads": {
+        "pageInfo": {
+          "hasNextPage": false,
+          "endCursor": null
+        },
+        "nodes": []
+      }
+    }
+  }
+}

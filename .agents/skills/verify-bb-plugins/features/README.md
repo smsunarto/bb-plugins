@@ -25,6 +25,7 @@ Every run must show the initial state, the user action, and its visible result. 
 
 - [Agentation feedback](agentation-feedback.md)
 - [Canvas file opener](canvas-file-opener.md)
+- [Code Review](code-review.md)
 - [GitHub Stack panel](github-stack-panel.md)
 - [GTD sidebar](gtd-sidebar.md)
 - [Kitchen Sink message embeds](kitchen-sink-embeds.md)

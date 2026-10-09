@@ -15,6 +15,7 @@ import {
   FileEditIcon,
   KeyboardIcon,
   GitBranchIcon,
+  GitPullRequestIcon,
   KitchenUtensilsIcon,
   Layers01Icon,
   PanelLeftIcon,
@@ -170,6 +171,10 @@ const customIcons = {
   dotfiles: {
     name: "Settings",
     nodes: Settings01Icon,
+  },
+  "code-review": {
+    name: "GitPullRequest",
+    nodes: GitPullRequestIcon,
   },
   "gh-stack": {
     name: "Layers",

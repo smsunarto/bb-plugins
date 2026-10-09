@@ -16,6 +16,10 @@
       "source": "./plugins/cloudflare"
     },
     {
+      "name": "code-review",
+      "source": "./plugins/code-review"
+    },
+    {
       "name": "devin",
       "source": "./plugins/devin"
     },
