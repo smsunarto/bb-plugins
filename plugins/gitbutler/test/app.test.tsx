@@ -776,6 +776,40 @@ test("asks before landing, and lands only on the second click", async () => {
   expect((actions[0] as { action: unknown }).action).toEqual({
     kind: "land",
     branch: "scott/bottom",
+    message: null,
+  });
+  slot.lifecycle.unmount();
+});
+
+test("squashes a branch of several commits under a message the reader can edit", async () => {
+  const several = structuredClone(workspace);
+  const bottom = several.stacks[0]!.branches[1]!;
+  bottom.commits.unshift({
+    ...bottom.commits[0]!,
+    commitId: "b".repeat(40),
+    changeId: "newer",
+    message: "feat(bottom): extend it\n\nWith a body the squash leaves out.",
+  });
+  const { actions, rpc } = recordActions();
+  const { slot, card } = await bottomCard({ ...rpc, workspace: () => several });
+  fireEvent.click(card.getByRole("button", { name: "Land" }));
+  expect(card.getByText(/Squash .*'s 2 commits into one/)).toBeTruthy();
+  const field = card.getByRole("textbox", {
+    name: "Squashed commit message",
+  }) as HTMLTextAreaElement;
+  expect(field.value).toBe("fix(bottom): repair it\n\n- feat(bottom): extend it");
+
+  fireEvent.change(field, { target: { value: "  " } });
+  const answer = card.getByRole("button", { name: "Squash and land" }) as HTMLButtonElement;
+  expect(answer.disabled).toBe(true);
+  fireEvent.change(field, { target: { value: "fix(bottom): repair and extend it\n" } });
+  expect(answer.disabled).toBe(false);
+  fireEvent.click(answer);
+  await waitFor(() => expect(actions).toHaveLength(1));
+  expect((actions[0] as { action: unknown }).action).toEqual({
+    kind: "land",
+    branch: "scott/bottom",
+    message: "fix(bottom): repair and extend it",
   });
   slot.lifecycle.unmount();
 });

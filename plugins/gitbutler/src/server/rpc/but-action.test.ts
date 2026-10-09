@@ -28,7 +28,7 @@ test("forwards the workspace pull, which names no branch, and the host's questio
 
 test("does not reach a host when the thread has no environment", async () => {
   const { ctx, calls } = harness({ environment: null });
-  const action = { kind: "land" as const, branch: "scott/top" };
+  const action = { kind: "land" as const, branch: "scott/top", message: null };
 
   expect(butAction.execute(ctx, { threadId: "t1", action })).rejects.toThrow(
     "This thread has no project environment.",
@@ -38,7 +38,7 @@ test("does not reach a host when the thread has no environment", async () => {
 
 test("refuses a write aimed at a board read in another environment", async () => {
   const { ctx, calls } = harness({ result: { status: "done" } });
-  const action = { kind: "land" as const, branch: "scott/top" };
+  const action = { kind: "land" as const, branch: "scott/top", message: null };
 
   await expect(
     butAction.execute(ctx, { threadId: "t1", environmentId: "env-old", action }),

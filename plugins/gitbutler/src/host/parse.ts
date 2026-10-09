@@ -269,6 +269,17 @@ export function pullCheck(payload: unknown): PullCheck {
   };
 }
 
+/** The target branch's name and newest commit, as `but pull --check` just fetched them. */
+export function checkedTarget(payload: unknown): { name: string; commitId: string } {
+  const base = asObject(asObject(payload)?.["baseBranch"]);
+  const name = asString(base?.["name"]);
+  const commitId = asString(base?.["currentSha"]);
+  if (name === "" || commitId === "") {
+    throw new Error("GitButler's pull check answered in a shape this panel does not know.");
+  }
+  return { name, commitId };
+}
+
 /** What a `but branch update --dry-run` preview would do to the workspace. */
 export type UpdatePreview = {
   /** Commits the update would take out of one branch and into another. */

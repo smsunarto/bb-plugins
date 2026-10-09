@@ -6,6 +6,7 @@ import {
   statusPayload,
 } from "../../test/fixtures.ts";
 import {
+  checkedTarget,
   judgeBranchUpdate,
   namedBranch,
   parseGitLog,
@@ -701,4 +702,14 @@ test("parseOplog reads each operation newest first, with an ISO time", () => {
   expect(parseOplog([{ id: "" }, { id: "abc", details: null }, "junk"])).toEqual([
     { id: "abc", operation: "Unknown", title: "Unknown", body: null, createdAt: "" },
   ]);
+});
+
+test("checkedTarget reads the target branch the pull check fetched", () => {
+  const sha = "a".repeat(40);
+  expect(
+    checkedTarget({ baseBranch: { name: "origin/main", currentSha: sha }, upToDate: true }),
+  ).toEqual({ name: "origin/main", commitId: sha });
+  expect(() => checkedTarget({ upToDate: true })).toThrow(
+    "GitButler's pull check answered in a shape this panel does not know.",
+  );
 });

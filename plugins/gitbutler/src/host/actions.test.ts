@@ -18,8 +18,7 @@ test("push names the branch and forces only when asked", () => {
   ]);
 });
 
-test("land skips the CLI's confirmation and rename rewords the branch", () => {
-  expect(actionArgs({ kind: "land", branch: "scott/top" })).toEqual(["land", "scott/top", "--yes"]);
+test("rename rewords the branch", () => {
   expect(actionArgs({ kind: "rename", branch: "scott/top", name: "scott/better" })).toEqual([
     "reword",
     "scott/top",
@@ -493,4 +492,128 @@ test("a fetch that cannot reach the remote reads as git's reason, not its argv d
   expect((failure as Error).message).toBe(
     "Could not reach the remote. '/tmp/origin.git' does not appear to be a git repository Could not read from remote repository.",
   );
+});
+
+/** A pull check after its fetch, with the target branch at `target`. */
+const checkAt = (target: string) => ({
+  ...CHECK_CLEAN,
+  baseBranch: { name: "origin/main", currentSha: target },
+});
+
+/**
+ * `but status -u --json` with scott/top holding `commits`, newest first, alone
+ * in its stack unless scott/bottom stays under it.
+ */
+function statusOfTop(commits: string[], { stacked = false } = {}) {
+  const status = statusWith(0);
+  const [top] = status.stacks[0]!.branches;
+  top!.commits = commits.map((commitId, index) => ({
+    cliId: `c${index}`,
+    commitId,
+    changeId: `change${index}`,
+    conflicted: false,
+  }));
+  if (!stacked) status.stacks[0]!.branches.splice(1);
+  return status;
+}
+
+const land = (message: string | null) => ({ kind: "land" as const, branch: "scott/top", message });
+const TWO = () => [sha["scott/top@remote"]!, sha["scott/top"]!];
+const MESSAGE = "feat: top and remote";
+
+test("Land squashes a branch of several commits into one, then lands it", async () => {
+  const main = (await runGit(repository, ["rev-parse", "main"], signal)).trim();
+  const calls = await scriptedBut({
+    "pull --check": checkAt(main),
+    "status -u": statusOfTop(TWO()),
+    [`squash scott/top --message=${MESSAGE}`]: "{}",
+    "land scott/top --yes": "{}",
+  });
+  expect(await runAction(repository, land(MESSAGE), signal)).toEqual({ status: "done" });
+  expect(await calls()).toEqual([
+    "pull --check --json",
+    "status -u --json",
+    `squash scott/top --message=${MESSAGE} --json`,
+    "land scott/top --yes --json",
+  ]);
+});
+
+test("Land lands a branch of one commit as it is", async () => {
+  const main = (await runGit(repository, ["rev-parse", "main"], signal)).trim();
+  const calls = await scriptedBut({
+    "pull --check": checkAt(main),
+    "status -u": statusOfTop([sha["scott/top"]!]),
+    "land scott/top --yes": "{}",
+  });
+  expect(await runAction(repository, land(null), signal)).toEqual({ status: "done" });
+  expect(await calls()).toEqual([
+    "pull --check --json",
+    "status -u --json",
+    "land scott/top --yes --json",
+  ]);
+});
+
+test("Land refuses, before changing anything, a branch behind the target", async () => {
+  // scott/bottom's commit is on the target and not under scott/top, so landing would merge.
+  const calls = await scriptedBut({
+    "pull --check": checkAt(sha["scott/bottom"]!),
+    "status -u": statusOfTop(TWO()),
+  });
+  const failure = await runAction(repository, land(MESSAGE), signal).catch((error: Error) => error);
+  expect((failure as Error).message).toBe(
+    "Land stopped before changing anything: scott/top is a commit behind origin/main. Pull the workspace first, so it lands as one commit on top.",
+  );
+  expect(await calls()).toEqual(["pull --check --json", "status -u --json"]);
+});
+
+test("Land refuses a branch that gained commits after it was chosen with one", async () => {
+  const main = (await runGit(repository, ["rev-parse", "main"], signal)).trim();
+  const calls = await scriptedBut({
+    "pull --check": checkAt(main),
+    "status -u": statusOfTop(TWO()),
+  });
+  const failure = await runAction(repository, land(null), signal).catch((error: Error) => error);
+  expect((failure as Error).message).toBe(
+    "Land stopped before changing anything: scott/top has more commits than when you chose Land. Land it again to write their squashed message.",
+  );
+  expect(await calls()).toEqual(["pull --check --json", "status -u --json"]);
+});
+
+test("a land that fails after the squash says the branch stays squashed", async () => {
+  const main = (await runGit(repository, ["rev-parse", "main"], signal)).trim();
+  await scriptedBut({
+    "pull --check": checkAt(main),
+    "status -u": statusOfTop(TWO()),
+    [`squash scott/top --message=${MESSAGE}`]: "{}",
+  });
+  const failure = await runAction(repository, land(MESSAGE), signal).catch((error: Error) => error);
+  expect((failure as Error).message).toEndWith(
+    " scott/top is now one squashed commit. If the target does not have it yet, land it again.",
+  );
+});
+
+test("Land refuses, before squashing, a branch that now has another branch below it", async () => {
+  const main = (await runGit(repository, ["rev-parse", "main"], signal)).trim();
+  const calls = await scriptedBut({
+    "pull --check": checkAt(main),
+    "status -u": statusOfTop(TWO(), { stacked: true }),
+  });
+  const failure = await runAction(repository, land(MESSAGE), signal).catch((error: Error) => error);
+  expect((failure as Error).message).toBe(
+    "Land stopped before changing anything: scott/top has a branch below it now, and only the lowest branch of a stack can land.",
+  );
+  expect(await calls()).toEqual(["pull --check --json", "status -u --json"]);
+});
+
+test("Land refuses to drop a squash message when the branch is down to one commit", async () => {
+  const main = (await runGit(repository, ["rev-parse", "main"], signal)).trim();
+  const calls = await scriptedBut({
+    "pull --check": checkAt(main),
+    "status -u": statusOfTop([sha["scott/top"]!]),
+  });
+  const failure = await runAction(repository, land(MESSAGE), signal).catch((error: Error) => error);
+  expect((failure as Error).message).toBe(
+    "Land stopped before changing anything: scott/top is down to one commit since you chose Land. Land it again to land that commit as it is.",
+  );
+  expect(await calls()).toEqual(["pull --check --json", "status -u --json"]);
 });

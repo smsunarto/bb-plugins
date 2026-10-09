@@ -217,7 +217,21 @@ export const butActionSchema = z.discriminatedUnion("kind", [
       acceptedLoss: z.array(z.string()),
     })
     .strict(),
-  z.object({ kind: z.literal("land"), branch: branchNameSchema }).strict(),
+  z
+    .object({
+      kind: z.literal("land"),
+      branch: branchNameSchema,
+      /**
+       * The message of the one commit a branch of several is squashed into
+       * before it lands. Null for a branch of one commit, which lands as is.
+       */
+      message: z
+        .string()
+        .max(20_000, "A commit message can be at most 20,000 characters.")
+        .regex(/\S/, "Write a commit message.")
+        .nullable(),
+    })
+    .strict(),
   z
     .object({ kind: z.literal("rename"), branch: branchNameSchema, name: branchNameSchema })
     .strict(),

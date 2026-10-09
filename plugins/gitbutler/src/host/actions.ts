@@ -2,6 +2,7 @@ import type { ActionRisk, Branch, ButAction, ButActionResult } from "../shared/s
 import { upstreamLoss } from "../shared/upstream-loss.ts";
 import { ButFailedError, runBut, runButAction, runGit } from "./cli.ts";
 import {
+  checkedTarget,
   judgeBranchUpdate,
   namedBranch,
   parseWorkspace,
@@ -10,7 +11,7 @@ import {
 } from "./parse.ts";
 import { compareWithRemotes, incoming, trackingRefs } from "./upstream.ts";
 
-type OneCommand = Exclude<ButAction, { kind: "pull" | "updateWorkspace" }>;
+type OneCommand = Exclude<ButAction, { kind: "pull" | "land" | "updateWorkspace" }>;
 
 /**
  * The buttons that are one `but` command each, as argv. Branches are named,
@@ -20,9 +21,6 @@ export function actionArgs(action: OneCommand): string[] {
   switch (action.kind) {
     case "push":
       return ["push", action.branch, ...(action.force ? ["--with-force"] : [])];
-    case "land":
-      // The panel asks before it calls this, so the CLI's own prompt is skipped.
-      return ["land", action.branch, "--yes"];
     case "rename":
       return ["reword", action.branch, "-m", action.name];
     case "delete":
@@ -47,10 +45,12 @@ export async function runAction(
 ): Promise<ButActionResult> {
   if (action.kind === "updateWorkspace") return updateWorkspace(cwd, action.accepted, signal);
   // Fetched first, so the status read next knows the remote's latest commits.
-  if (action.kind === "pull" || action.kind === "push") await fetchRemotes(cwd, signal);
+  const fetched =
+    action.kind === "rename" || action.kind === "delete" ? null : await fetchRemotes(cwd, signal);
   const status = await runBut(cwd, ["status", "-u"], signal);
   const branch = namedBranch(status, action.branch);
   if (action.kind === "pull") return pullBranch(cwd, status, branch, action.accepted, signal);
+  if (action.kind === "land") return land(cwd, fetched, status, branch, action.message, signal);
   if (action.kind === "push")
     await checkUpstreamLoss(cwd, status, branch, action.acceptedLoss, signal);
   if (action.kind === "delete") {
@@ -62,6 +62,88 @@ export async function runAction(
   }
   await runButAction(cwd, actionArgs(action), signal);
   return DONE;
+}
+
+/**
+ * Lands a branch as one commit on top of the target, as a squash merge does.
+ * `but land` has no squash of its own, so a branch of several commits is
+ * squashed first, into one with the reader's message. `but land` then
+ * fast-forwards the target only when the branch sits on its newest commit,
+ * and otherwise lands a merge commit, so a branch behind the target stops
+ * before anything changes. A commit pushed to the target between this check
+ * and the land still gets the merge commit: `but land` fetches once more and
+ * has no fast-forward-only mode.
+ */
+async function land(
+  cwd: string,
+  fetched: unknown,
+  status: unknown,
+  branch: Branch,
+  message: string | null,
+  signal: AbortSignal,
+): Promise<ButActionResult> {
+  const refusal =
+    landRefusal(status, branch, message) ?? (await behindTarget(cwd, fetched, branch, signal));
+  if (refusal !== null)
+    throw new ButFailedError(`Land stopped before changing anything: ${refusal}`);
+  if (message !== null) {
+    // Joined to its flag, so a message starting with a dash is not read as one.
+    await runButAction(cwd, ["squash", branch.name, `--message=${message}`], signal);
+  }
+  try {
+    // The panel asks before it calls this, so the CLI's own prompt is skipped.
+    await runButAction(cwd, ["land", branch.name, "--yes"], signal);
+  } catch (error) {
+    // Not taken back with `but undo`, which would also take back whatever
+    // uncommitted changes were made since the squash. `but land` can also
+    // fail after its push went out, so the target may have the commit.
+    if (message !== null && error instanceof Error) {
+      error.message += ` ${branch.name} is now one squashed commit. If the target does not have it yet, land it again.`;
+    }
+    throw error;
+  }
+  return DONE;
+}
+
+/** Says so when the branch is behind the target, which `but land` would merge it with. */
+async function behindTarget(
+  cwd: string,
+  fetched: unknown,
+  branch: Branch,
+  signal: AbortSignal,
+): Promise<string | null> {
+  const target = checkedTarget(fetched);
+  const tip = branch.commits[0]!.commitId;
+  const behind = Number(
+    await runGit(cwd, ["rev-list", "--count", `${tip}..${target.commitId}`], signal),
+  );
+  if (behind === 0) return null;
+  return `${branch.name} is ${behind === 1 ? "a commit" : `${behind} commits`} behind ${target.name}. Pull the workspace first, so it lands as one commit on top.`;
+}
+
+/**
+ * Why the branch, as the fresh status has it, can't land as the reader
+ * confirmed it. A message was written for the several commits they saw.
+ */
+function landRefusal(status: unknown, branch: Branch, message: string | null): string | null {
+  const stack = parseWorkspace(status, "").stacks.find((entry) =>
+    entry.branches.some((candidate) => candidate.name === branch.name),
+  );
+  if (stack?.branches.at(-1)?.name !== branch.name) {
+    return `${branch.name} has a branch below it now, and only the lowest branch of a stack can land.`;
+  }
+  if (branch.commits.length === 0) return `${branch.name} has no commits to land.`;
+  if (branch.commits.some((commit) => commit.conflicted)) {
+    return `${branch.name} has conflicted commits, which \`but land\` refuses.`;
+  }
+  const several = branch.commits.length > 1;
+  if (several && message === null) {
+    return `${branch.name} has more commits than when you chose Land. Land it again to write their squashed message.`;
+  }
+  if (!several && message !== null) {
+    return `${branch.name} is down to one commit since you chose Land. Land it again to land that commit as it is.`;
+  }
+  return null;
 }
 
 /** Whether the reader agreed to at least every part of `risk`. */

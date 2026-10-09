@@ -71,7 +71,13 @@ Each branch card can change the repository:
   forge authenticated with `but config forge auth`.
 - **Land** onto the target without a PR, after a confirmation (`but land`).
   It pushes the target to the remote and can't easily be undone. Only the
-  bottom branch of a stack can land.
+  bottom branch of a stack can land. A branch of several commits is squashed
+  into one first (`but squash <branch>`), under a message the confirmation
+  prefills and lets you edit: the oldest commit's subject, then the later
+  ones as a list. Its PR stays open, because its own commits never reach the
+  target. Land refuses a branch behind the target, which `but land` would
+  merge instead: pull the workspace first. When the land fails after the
+  squash, the branch stays squashed.
 - **Delete**, after a confirmation that says what is lost
   (`but branch delete <branch>`). The local branch and its commits leave the
   workspace. The remote branch and any PR stay. Branches stacked above it

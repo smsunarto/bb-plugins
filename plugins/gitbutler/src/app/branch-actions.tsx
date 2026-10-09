@@ -26,6 +26,7 @@ import {
 import type { WorkspaceIdentity, WriteScope } from "./board-context.tsx";
 import { Button } from "./components/ui/button.tsx";
 import { upstreamLoss } from "../shared/upstream-loss.ts";
+import { squashMessage } from "./format.ts";
 import { cn } from "./lib/utils.ts";
 import { rpc } from "./rpc.ts";
 
@@ -125,7 +126,9 @@ function outcomeLine(action: ButAction, result: ButActionResult): string | null 
     case "push":
       return `Pushed ${action.branch}`;
     case "land":
-      return `Landed ${action.branch}`;
+      return action.message === null
+        ? `Landed ${action.branch}`
+        : `Squashed and landed ${action.branch}`;
     case "rename":
       return `Renamed to ${action.name}`;
     case "delete":
@@ -415,7 +418,8 @@ function ReviewStatus({ request }: { request: ReviewRequest }) {
  */
 type Mode =
   | { kind: "idle" }
-  | { kind: "land" }
+  /** `message` is the squashed commit's, for a branch of several commits. */
+  | { kind: "land"; message: string }
   | { kind: "push" }
   | { kind: "delete"; risk: ActionRisk | null }
   | { kind: "pull"; risk: ActionRisk };
@@ -426,6 +430,36 @@ const IDLE: Mode = { kind: "idle" };
 /** The question a write's host answered with, about what it found. */
 function askAbout(action: ButAction, risk: ActionRisk): Mode {
   return action.kind === "delete" ? { kind: "delete", risk } : { kind: "pull", risk };
+}
+
+/** Land's question, with the message of the one commit a branch of several is squashed into. */
+function landing(branch: Branch): Mode {
+  return { kind: "land", message: squashMessage(branch.commits.map((commit) => commit.message)) };
+}
+
+/** The squashed commit's message, for Land on a branch of several commits. */
+function SquashMessage({
+  mode,
+  branch,
+  pending,
+  onChange,
+}: {
+  mode: Mode;
+  branch: Branch;
+  pending: boolean;
+  onChange: (message: string) => void;
+}) {
+  if (mode.kind !== "land" || branch.commits.length < 2) return null;
+  return (
+    <textarea
+      aria-label="Squashed commit message"
+      className={cn(FIELD, "basis-full resize-y leading-normal")}
+      rows={Math.min(8, mode.message.split("\n").length + 1)}
+      value={mode.message}
+      readOnly={pending}
+      onChange={(event) => onChange(event.target.value)}
+    />
+  );
 }
 
 /** Tells one question from the next, even of the same kind. */
@@ -504,6 +538,7 @@ export function Confirm({
   tone = "default",
   onConfirm,
   onCancel,
+  children,
 }: {
   prompt: ReactNode;
   label: string;
@@ -513,6 +548,8 @@ export function Confirm({
   tone?: ConfirmTone;
   onConfirm: () => void;
   onCancel: () => void;
+  /** What the answer runs with, such as a message, on its own line under the prompt. */
+  children?: ReactNode;
 }) {
   const promptId = useId();
   const look = CONFIRM_LOOK[tone];
@@ -538,8 +575,9 @@ export function Confirm({
         ) : null}
         {prompt}
       </p>
+      {children}
       {/* One unit, so a long prompt never wraps Cancel apart from its answer. */}
-      <div className="flex shrink-0 gap-1.5">
+      <div className="ms-auto flex shrink-0 gap-1.5">
         <Button
           variant="ghost"
           size="sm"
@@ -664,21 +702,46 @@ function confirmationFor(
   lost: { count: number; commits: string[] },
   force: boolean,
   branchesAbove: number,
-): { prompt: ReactNode; label: string; action: ButAction; tone: ConfirmTone } {
+): {
+  prompt: ReactNode;
+  label: string;
+  action: ButAction;
+  tone: ConfirmTone;
+  /** Why the answer can't run yet, beyond what holds every write back. */
+  blocked?: string;
+} {
   const name = <span className="font-semibold text-foreground">{branch.name}</span>;
   switch (mode.kind) {
-    case "land":
+    case "land": {
+      const count = branch.commits.length;
+      if (count < 2) {
+        return {
+          prompt: (
+            <>
+              Land {name} on the target branch? This pushes it to the remote without a PR and can't
+              easily be undone.
+            </>
+          ),
+          label: "Land",
+          action: { kind: "land", branch: branch.name, message: null },
+          tone: "attention",
+        };
+      }
       return {
         prompt: (
           <>
-            Land {name} on the target branch? This pushes it to the remote without a PR and can't
-            easily be undone.
+            Squash {name}'s {count} commits into one and land it on the target branch? This pushes
+            it to the remote without a PR and can't easily be undone.
+            {/* The forge closes a review only once the review's own commits land. */}
+            {branch.reviewId === null ? null : <> Its PR {branch.reviewId} stays open.</>}
           </>
         ),
-        label: "Land",
-        action: { kind: "land", branch: branch.name },
+        label: "Squash and land",
+        action: { kind: "land", branch: branch.name, message: mode.message.trim() },
         tone: "attention",
+        ...(mode.message.trim() === "" ? { blocked: "Write the commit message first" } : {}),
       };
+    }
     case "delete":
       return {
         prompt: mode.risk ? (
@@ -911,11 +974,18 @@ export function BranchActions({
           prompt={confirmation.prompt}
           label={confirmation.label}
           pending={action.pending}
-          blocked={action.blocked}
+          blocked={action.blocked ?? confirmation.blocked}
           tone={confirmation.tone}
           onCancel={() => choose(IDLE)}
           onConfirm={() => run(confirmation.action)}
-        />
+        >
+          <SquashMessage
+            mode={mode}
+            branch={branch}
+            pending={action.pending}
+            onChange={(message) => setMode({ kind: "land", message })}
+          />
+        </Confirm>
       ) : (
         <ActionRow
           branch={branch.name}
@@ -926,7 +996,7 @@ export function BranchActions({
           blocked={action.blocked}
           refocus={refocus}
           onPull={() => run({ kind: "pull", branch: branch.name, accepted: null })}
-          onLand={() => choose({ kind: "land" })}
+          onLand={() => choose(landing(branch))}
           onDelete={() => choose({ kind: "delete", risk: null })}
           onReview={() => {
             action.reset();

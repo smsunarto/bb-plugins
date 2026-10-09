@@ -8,6 +8,16 @@ export function subject(message: string): string {
   return message.split("\n", 1)[0] ?? "";
 }
 
+/**
+ * What a branch's commits, given newest first, are squashed into when it
+ * lands: the subject of the oldest, which started the branch, then the later
+ * subjects as a list, oldest first.
+ */
+export function squashMessage(newestFirst: readonly string[]): string {
+  const [first = "", ...later] = newestFirst.map(subject).reverse();
+  return later.length === 0 ? first : `${first}\n\n${later.map((line) => `- ${line}`).join("\n")}`;
+}
+
 const MINUTE = 60_000;
 const HOUR = 60 * MINUTE;
 const DAY = 24 * HOUR;
