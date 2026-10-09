@@ -9,9 +9,10 @@ import {
   useState,
 } from "react";
 import type { ReactNode, RefObject } from "react";
-import { useIsMutating } from "@tanstack/react-query";
+import { useIsMutating, useMutationState } from "@tanstack/react-query";
 import { experimental_Icon as Icon } from "@get-bb/plugin-sdk/app";
 import { pluginQueryClient } from "@bb-kit/core/rpc/query";
+import type { ButAction } from "../shared/schema.ts";
 import { cn } from "./lib/utils.ts";
 
 /*
@@ -53,6 +54,35 @@ export function butWriteKey(target: Target) {
 /** Whether a `but` write to this workspace is running, from any card or the header. */
 export function useWriteBusy(target: Target): boolean {
   return useIsMutating({ mutationKey: butWriteKey(target) }, pluginQueryClient) > 0;
+}
+
+export type WriteFailure = { id: number; action: ButAction; error: Error };
+
+/**
+ * The last `but` write to this workspace, when it failed. Read from the
+ * mutation cache rather than the request's own hook, so a card that the
+ * write's refresh drew as a new one, because the write took its oldest
+ * commit, still hears why.
+ */
+export function useLastWriteFailure(target: Target): WriteFailure | null {
+  const writes = useMutationState(
+    {
+      filters: { mutationKey: butWriteKey(target) },
+      select: (mutation) => ({
+        id: mutation.mutationId,
+        error: mutation.state.status === "error" ? mutation.state.error : null,
+        action: (mutation.state.variables as { action?: ButAction } | undefined)?.action,
+      }),
+    },
+    pluginQueryClient,
+  );
+  const last = writes.reduce<(typeof writes)[number] | null>(
+    (latest, write) => (latest && latest.id > write.id ? latest : write),
+    null,
+  );
+  return last?.error && last.action
+    ? { id: last.id, action: last.action, error: last.error }
+    : null;
 }
 
 // Long enough to read a short line, short enough not to be mistaken for state.

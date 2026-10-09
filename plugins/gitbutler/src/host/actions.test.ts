@@ -43,6 +43,15 @@ afterEach(async () => {
   cleanup = [];
 });
 
+/** Answers `scriptedBut` gives one argv in turn, one per call, repeating the last. */
+class Turns {
+  readonly answers: unknown[];
+  constructor(answers: unknown[]) {
+    this.answers = answers;
+  }
+}
+const turns = (...answers: unknown[]) => new Turns(answers);
+
 /**
  * A `but` that answers each argv from `answers` and logs every call. An argv
  * it was not given fails the way `but` refuses, so a call the flow should not
@@ -51,11 +60,23 @@ afterEach(async () => {
 async function scriptedBut(answers: Record<string, unknown>): Promise<() => Promise<string[]>> {
   const directory = await mkdtemp(join(tmpdir(), "gitbutler-scripted-"));
   const cases = await Promise.all(
-    Object.entries(answers).map(async ([argv], index) => {
-      const file = join(directory, `${index}.out`);
-      const answer = answers[argv];
-      await writeFile(file, typeof answer === "string" ? answer : JSON.stringify(answer));
-      return `  "${argv} --json") cat '${file}' ;;`;
+    Object.entries(answers).map(async ([argv, answer], index) => {
+      const each = answer instanceof Turns ? answer.answers : [answer];
+      await Promise.all(
+        each.map((one, turn) =>
+          writeFile(
+            join(directory, `${index}.${turn}.out`),
+            typeof one === "string" ? one : JSON.stringify(one),
+          ),
+        ),
+      );
+      const counter = join(directory, `${index}.turn`);
+      return [
+        `  "${argv} --json")`,
+        `    n=$(cat '${counter}' 2>/dev/null || echo 0)`,
+        `    [ "$n" -lt ${each.length - 1} ] && echo $((n + 1)) > '${counter}'`,
+        `    cat '${directory}/${index}.'$n'.out' ;;`,
+      ].join("\n");
     }),
   );
   const log = join(directory, "calls.log");
@@ -517,7 +538,12 @@ function statusOfTop(commits: string[], { stacked = false } = {}) {
   return status;
 }
 
-const land = (message: string | null) => ({ kind: "land" as const, branch: "scott/top", message });
+const land = (message: string | null, accepted: ActionRisk | null = null) => ({
+  kind: "land" as const,
+  branch: "scott/top",
+  message,
+  accepted,
+});
 const TWO = () => [sha["scott/top@remote"]!, sha["scott/top"]!];
 const MESSAGE = "feat: top and remote";
 
@@ -553,17 +579,139 @@ test("Land lands a branch of one commit as it is", async () => {
   ]);
 });
 
-test("Land refuses, before changing anything, a branch behind the target", async () => {
-  // scott/bottom's commit is on the target and not under scott/top, so landing would merge.
+/**
+ * A target with scott/bottom's commit, which scott/top lacks, and scott/top
+ * as the pull leaves it: scott/bottom's remote commits stand in for scott/top's
+ * two rebased onto that target.
+ */
+const BEHIND = () => checkAt(sha["scott/bottom"]!);
+const PULLED = () => statusOfTop([sha["scott/bottom@remote"]!, sha["scott/bottom"]!]);
+
+test("Land pulls a branch behind the target up to it, then squashes and lands it", async () => {
   const calls = await scriptedBut({
-    "pull --check": checkAt(sha["scott/bottom"]!),
+    "pull --check": BEHIND(),
+    "status -u": turns(statusOfTop(TWO()), PULLED()),
+    pull: "{}",
+    [`squash scott/top --message=${MESSAGE}`]: "{}",
+    "land scott/top --yes": "{}",
+  });
+  expect(await runAction(repository, land(MESSAGE), signal)).toEqual({ status: "done" });
+  expect(await calls()).toEqual([
+    "pull --check --json",
+    "status -u --json",
+    "pull --json",
+    "status -u --json",
+    `squash scott/top --message=${MESSAGE} --json`,
+    "land scott/top --yes --json",
+  ]);
+});
+
+test("Land asks before a pull that leaves conflicts elsewhere, and the retry that accepted them lands", async () => {
+  const risk = { conflicted: ["scott/other"], overlapsUncommitted: true };
+  const check = {
+    ...BEHIND(),
+    branchStatuses: [{ name: "scott/other", status: "conflicted" }],
+    hasWorktreeConflicts: true,
+  };
+  const asked = await scriptedBut({ "pull --check": check, "status -u": statusOfTop(TWO()) });
+  expect(await runAction(repository, land(MESSAGE), signal)).toEqual({ status: "confirm", risk });
+  expect(await asked()).toEqual(["pull --check --json", "status -u --json"]);
+
+  const calls = await scriptedBut({
+    "pull --check": check,
+    "status -u": turns(statusOfTop(TWO()), PULLED()),
+    pull: "{}",
+    [`squash scott/top --message=${MESSAGE}`]: "{}",
+    "land scott/top --yes": "{}",
+  });
+  expect(await runAction(repository, land(MESSAGE, risk), signal)).toEqual({ status: "done" });
+  expect(await calls()).toEqual([
+    "pull --check --json",
+    "status -u --json",
+    "pull --json",
+    "status -u --json",
+    `squash scott/top --message=${MESSAGE} --json`,
+    "land scott/top --yes --json",
+  ]);
+});
+
+test("Land refuses, before changing anything, a branch the pull would leave conflicted", async () => {
+  const calls = await scriptedBut({
+    "pull --check": {
+      ...BEHIND(),
+      branchStatuses: [{ name: "scott/top", status: "conflicted" }],
+    },
     "status -u": statusOfTop(TWO()),
   });
   const failure = await runAction(repository, land(MESSAGE), signal).catch((error: Error) => error);
   expect((failure as Error).message).toBe(
-    "Land stopped before changing anything: scott/top is a commit behind origin/main. Pull the workspace first, so it lands as one commit on top.",
+    "Land stopped before changing anything: scott/top conflicts with the new commits on origin/main. Pull the workspace, resolve the conflicts, then land it.",
   );
   expect(await calls()).toEqual(["pull --check --json", "status -u --json"]);
+});
+
+test("Land stops after the pull when the branch is still behind the target", async () => {
+  const calls = await scriptedBut({
+    "pull --check": BEHIND(),
+    "status -u": statusOfTop(TWO()),
+    pull: "{}",
+  });
+  const failure = await runAction(repository, land(MESSAGE), signal).catch((error: Error) => error);
+  expect((failure as Error).message).toBe(
+    "Land pulled the workspace, then stopped: scott/top is still a commit behind origin/main, so `but land` would merge it. Land it again.",
+  );
+  expect(await calls()).toEqual([
+    "pull --check --json",
+    "status -u --json",
+    "pull --json",
+    "status -u --json",
+  ]);
+});
+
+test("Land stops after a pull that took the branch out of the workspace", async () => {
+  await scriptedBut({
+    "pull --check": BEHIND(),
+    "status -u": turns(statusOfTop(TWO()), { ...statusWith(0), stacks: [] }),
+    pull: "{}",
+  });
+  const failure = await runAction(repository, land(MESSAGE), signal).catch((error: Error) => error);
+  expect((failure as Error).message).toBe(
+    "Land pulled the workspace, then stopped: scott/top is no longer in the workspace.",
+  );
+});
+
+test("Land stops after a pull that took commits the target already has, before squashing the rest", async () => {
+  const calls = await scriptedBut({
+    "pull --check": BEHIND(),
+    "status -u": turns(statusOfTop(TWO()), statusOfTop([sha["scott/bottom@remote"]!])),
+    pull: "{}",
+  });
+  const failure = await runAction(repository, land(MESSAGE), signal).catch((error: Error) => error);
+  expect((failure as Error).message).toBe(
+    "Land pulled the workspace, then stopped: the target already had one of scott/top's 2 commits, so the pull took it out. Land it again to land the rest.",
+  );
+  expect(await calls()).toEqual([
+    "pull --check --json",
+    "status -u --json",
+    "pull --json",
+    "status -u --json",
+  ]);
+});
+
+test("a land that fails after the pull and the squash says both ran", async () => {
+  await scriptedBut({
+    "pull --check": BEHIND(),
+    "status -u": turns(statusOfTop(TWO()), PULLED()),
+    pull: "{}",
+    [`squash scott/top --message=${MESSAGE}`]: "{}",
+  });
+  const failure = (await runAction(repository, land(MESSAGE), signal).catch(
+    (error: Error) => error,
+  )) as Error;
+  expect(failure.message).toStartWith("Land pulled the workspace, then stopped: ");
+  expect(failure.message).toEndWith(
+    " scott/top is now one squashed commit. If the target does not have it yet, land it again.",
+  );
 });
 
 test("Land refuses a branch that gained commits after it was chosen with one", async () => {

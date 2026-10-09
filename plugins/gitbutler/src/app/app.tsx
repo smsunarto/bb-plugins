@@ -608,6 +608,7 @@ function WorkspaceBody({
             key={keys[index]}
             target={target}
             stack={stack}
+            behind={data.upstream?.behind ?? 0}
             onOpenFile={(path) => onOpenAssigned(stack, path)}
           />
         ))}

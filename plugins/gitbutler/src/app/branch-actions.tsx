@@ -16,6 +16,7 @@ import type {
 import {
   butWriteKey,
   useAnnounce,
+  useLastWriteFailure,
   useBoardLive,
   useBoardWorkspace,
   useFocusAfterWrite,
@@ -23,7 +24,7 @@ import {
   sameScope,
   writeScope,
 } from "./board-context.tsx";
-import type { WorkspaceIdentity, WriteScope } from "./board-context.tsx";
+import type { WorkspaceIdentity, WriteFailure, WriteScope } from "./board-context.tsx";
 import { Button } from "./components/ui/button.tsx";
 import { upstreamLoss } from "../shared/upstream-loss.ts";
 import { squashMessage } from "./format.ts";
@@ -166,6 +167,9 @@ export function useButAction(
   const workspace = target.workspace === undefined ? board : target.workspace;
   const scope = { ...target, workspace };
   const busy = useWriteBusy(scope);
+  const lastFailure = useLastWriteFailure(scope);
+  // The failure this caller already answered, which it no longer shows.
+  const [cleared, setCleared] = useState<number | null>(null);
   const announce = useAnnounce();
   const focusAfterWrite = useFocusAfterWrite();
   const mutation = rpc.butAction.useMutation({
@@ -194,15 +198,23 @@ export function useButAction(
   const mine = sent !== undefined && sameScope(sent, aim);
   const pending = mine && mutation.isPending;
   return {
-    run: (action: ButAction, onResult?: (result: ButActionResult) => void) =>
-      mutation.mutate({ ...aim, action }, { onSuccess: (result) => onResult?.(result) }),
+    run: (action: ButAction, onResult?: (result: ButActionResult) => void, onError?: () => void) =>
+      mutation.mutate(
+        { ...aim, action },
+        { onSuccess: (result) => onResult?.(result), onError: () => onError?.() },
+      ),
     pending,
     /** Which kind of request is in flight, so only its own button spins. */
     running: pending ? (sent?.action.kind ?? null) : null,
     /** Why no write can start here now, other than this caller's own, or null. */
     blocked: writeBlocked(live, busy && !pending),
     error: mine ? mutation.error : null,
-    reset: mutation.reset,
+    /** The last write's failure, whoever started it, until this caller answers it. */
+    lastFailure: lastFailure && lastFailure.id !== cleared ? lastFailure : null,
+    reset: () => {
+      mutation.reset();
+      if (lastFailure) setCleared(lastFailure.id);
+    },
   };
 }
 
@@ -413,13 +425,17 @@ function ReviewStatus({ request }: { request: ReviewRequest }) {
 
 /**
  * The footer's state: its buttons, or a confirmation. Pull asks only when the
- * host found a risk. Delete always asks, and asks again with `risk` when the
- * host found one.
+ * host found a risk. Land and Delete always ask, and ask again with `risk`
+ * when the host found one.
  */
 type Mode =
   | { kind: "idle" }
-  /** `message` is the squashed commit's, for a branch of several commits. */
-  | { kind: "land"; message: string }
+  /**
+   * `message` is the squashed commit's, for a branch of several commits.
+   * `risk` is what the pull that brings a branch behind the target up to it
+   * would also do.
+   */
+  | { kind: "land"; message: string; risk: ActionRisk | null }
   | { kind: "push" }
   | { kind: "delete"; risk: ActionRisk | null }
   | { kind: "pull"; risk: ActionRisk };
@@ -429,12 +445,14 @@ const IDLE: Mode = { kind: "idle" };
 
 /** The question a write's host answered with, about what it found. */
 function askAbout(action: ButAction, risk: ActionRisk): Mode {
+  if (action.kind === "land") return { kind: "land", message: action.message ?? "", risk };
   return action.kind === "delete" ? { kind: "delete", risk } : { kind: "pull", risk };
 }
 
 /** Land's question, with the message of the one commit a branch of several is squashed into. */
 function landing(branch: Branch): Mode {
-  return { kind: "land", message: squashMessage(branch.commits.map((commit) => commit.message)) };
+  const message = squashMessage(branch.commits.map((commit) => commit.message));
+  return { kind: "land", message, risk: null };
 }
 
 /** The squashed commit's message, for Land on a branch of several commits. */
@@ -694,6 +712,68 @@ function deletePrompt(branch: Branch, branchesAbove: number): ReactNode {
   );
 }
 
+type Confirmation = {
+  prompt: ReactNode;
+  label: string;
+  action: ButAction;
+  tone: ConfirmTone;
+  /** Why the answer can't run yet, beyond what holds every write back. */
+  blocked?: string;
+};
+
+/**
+ * Land's question. A branch of several commits is squashed into one first,
+ * and a branch behind the target is pulled up to it first, so the question
+ * says so: the pull rebases every applied branch, not only this one.
+ */
+function landConfirmation(
+  mode: Extract<Mode, { kind: "land" }>,
+  branch: Branch,
+  behind: number,
+): Confirmation {
+  const name = <span className="font-semibold text-foreground">{branch.name}</span>;
+  const count = branch.commits.length;
+  const squash = count > 1;
+  const pull = mode.risk ? (
+    <> Landing pulls the workspace first. {pullRiskPrompt(mode.risk)}</>
+  ) : behind > 0 ? (
+    <>
+      {" "}
+      The target has {behind === 1 ? "a new commit" : `${behind} new commits`}, so this pulls the
+      workspace first, which rebases every applied branch.
+    </>
+  ) : null;
+  const message = mode.message.trim();
+  return {
+    prompt: (
+      <>
+        {squash ? (
+          <>
+            Squash {name}'s {count} commits into one and land it
+          </>
+        ) : (
+          <>Land {name}</>
+        )}{" "}
+        on the target branch? This pushes it to the remote without a PR and can't easily be undone.
+        {pull}
+        {/* The forge closes a review only once its own commits land, which a squash or a pull rewrites. */}
+        {(squash || pull !== null) && branch.reviewId !== null ? (
+          <> Its PR {branch.reviewId} stays open.</>
+        ) : null}
+      </>
+    ),
+    label: `${squash ? "Squash and land" : "Land"}${mode.risk ? " anyway" : ""}`,
+    action: {
+      kind: "land",
+      branch: branch.name,
+      message: squash ? message : null,
+      accepted: mode.risk,
+    },
+    tone: "attention",
+    ...(squash && message === "" ? { blocked: "Write the commit message first" } : {}),
+  };
+}
+
 /** What each confirmation asks, and what its second click runs. */
 function confirmationFor(
   mode: Exclude<Mode, { kind: "idle" }>,
@@ -702,46 +782,13 @@ function confirmationFor(
   lost: { count: number; commits: string[] },
   force: boolean,
   branchesAbove: number,
-): {
-  prompt: ReactNode;
-  label: string;
-  action: ButAction;
-  tone: ConfirmTone;
-  /** Why the answer can't run yet, beyond what holds every write back. */
-  blocked?: string;
-} {
+  /** Commits the target has that the workspace lacks, as GitButler last fetched it. */
+  behind: number,
+): Confirmation {
   const name = <span className="font-semibold text-foreground">{branch.name}</span>;
   switch (mode.kind) {
-    case "land": {
-      const count = branch.commits.length;
-      if (count < 2) {
-        return {
-          prompt: (
-            <>
-              Land {name} on the target branch? This pushes it to the remote without a PR and can't
-              easily be undone.
-            </>
-          ),
-          label: "Land",
-          action: { kind: "land", branch: branch.name, message: null },
-          tone: "attention",
-        };
-      }
-      return {
-        prompt: (
-          <>
-            Squash {name}'s {count} commits into one and land it on the target branch? This pushes
-            it to the remote without a PR and can't easily be undone.
-            {/* The forge closes a review only once the review's own commits land. */}
-            {branch.reviewId === null ? null : <> Its PR {branch.reviewId} stays open.</>}
-          </>
-        ),
-        label: "Squash and land",
-        action: { kind: "land", branch: branch.name, message: mode.message.trim() },
-        tone: "attention",
-        ...(mode.message.trim() === "" ? { blocked: "Write the commit message first" } : {}),
-      };
-    }
+    case "land":
+      return landConfirmation(mode, branch, behind);
     case "delete":
       return {
         prompt: mode.risk ? (
@@ -780,6 +827,17 @@ function confirmationFor(
       };
     }
   }
+}
+
+/**
+ * A failed write of this footer's on `branch`, from whichever card started
+ * it. Renames say theirs under the name.
+ */
+function footerFailure(failure: WriteFailure | null, branch: string): Error | null {
+  if (!failure || failure.action.kind === "rename" || failure.action.kind === "updateWorkspace") {
+    return null;
+  }
+  return failure.action.branch === branch ? failure.error : null;
 }
 
 /** The new upstream commits a push deletes: how many, and which by id. */
@@ -908,6 +966,7 @@ export function BranchActions({
   landable,
   pushedWith,
   branchesAbove,
+  behind,
 }: {
   target: WorkspaceTarget;
   branch: Branch;
@@ -920,6 +979,8 @@ export function BranchActions({
   pushedWith: readonly Branch[];
   /** Branches stacked on this one, which a delete moves down onto the base. */
   branchesAbove: number;
+  /** Commits the target has that the workspace lacks, as GitButler last fetched it. */
+  behind: number;
 }) {
   const [mode, setMode] = useState<Mode>(IDLE);
   const [refocus, setRefocus] = useState<ModeKind>("idle");
@@ -943,11 +1004,15 @@ export function BranchActions({
   const run = (next: ButAction) => {
     review.reset();
     // How it went, "Already up to date." too, goes to the board's status line.
-    action.run(next, (result) =>
-      setMode(result.status === "confirm" ? askAbout(next, result.risk) : IDLE),
+    action.run(
+      next,
+      (result) => setMode(result.status === "confirm" ? askAbout(next, result.risk) : IDLE),
+      // The pull a land asked about may have run before it failed, so the
+      // question is asked again from the board the failure leaves.
+      () => setMode((current) => (current.kind === "land" ? { ...current, risk: null } : current)),
     );
   };
-  const error = action.error ?? review.error;
+  const error = action.error ?? footerFailure(action.lastFailure, branch.name) ?? review.error;
   const force = available.push === "force";
   /*
    * `but push` forces by default, with or without `--with-force`, and takes
@@ -959,7 +1024,9 @@ export function BranchActions({
   const atRisk = pushRisk(pushedWith);
   const asksFirst = atRisk.count > 0;
   const confirmation =
-    mode.kind === "idle" ? null : confirmationFor(mode, branch, atRisk, force, branchesAbove);
+    mode.kind === "idle"
+      ? null
+      : confirmationFor(mode, branch, atRisk, force, branchesAbove, behind);
 
   return (
     <div
@@ -983,7 +1050,9 @@ export function BranchActions({
             mode={mode}
             branch={branch}
             pending={action.pending}
-            onChange={(message) => setMode({ kind: "land", message })}
+            onChange={(message) =>
+              setMode((current) => (current.kind === "land" ? { ...current, message } : current))
+            }
           />
         </Confirm>
       ) : (

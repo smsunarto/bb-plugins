@@ -624,6 +624,7 @@ function BranchCard({
   last,
   pushedWith,
   branchesAbove,
+  behind,
 }: {
   target: WorkspaceTarget;
   branch: Branch;
@@ -633,6 +634,8 @@ function BranchCard({
   pushedWith: readonly Branch[];
   /** Branches stacked on this one. */
   branchesAbove: number;
+  /** Commits the target has that the workspace lacks, which Land pulls first. */
+  behind: number;
 }) {
   const look = BRANCH_LOOK[branch.status];
   const review = useReviewLink(target, branch.name);
@@ -693,6 +696,7 @@ function BranchCard({
         landable={last}
         pushedWith={pushedWith}
         branchesAbove={branchesAbove}
+        behind={behind}
       />
       {/*
        * Upstream commits were once told apart from local ones by colour alone,
@@ -792,10 +796,13 @@ export function stackKeys(stacks: Stack[]): string[] {
 export function StackLane({
   target,
   stack,
+  behind,
   onOpenFile,
 }: {
   target: WorkspaceTarget;
   stack: Stack;
+  /** Commits the target has that the workspace lacks, as GitButler last fetched it. */
+  behind: number;
   /** Opens one of the stack's assigned files. */
   onOpenFile: (path: string) => void;
 }) {
@@ -829,6 +836,7 @@ export function StackLane({
               // Top first, so a branch's ancestors are the ones after it.
               pushedWith={stack.branches.slice(index)}
               branchesAbove={index}
+              behind={behind}
             />
             {last ? null : <Connector tone={BRANCH_LOOK[branch.status].tone} />}
           </div>

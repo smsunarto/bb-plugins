@@ -199,9 +199,10 @@ export const actionRiskSchema = z
 
 /**
  * Every `but` write the panel runs: the branch-card buttons, each on one named
- * branch, and the header's Pull for the whole workspace. Pull, Update, and
- * Delete check for risks first. `accepted` is the risk the reader agreed to,
- * so a retry that finds anything more asks again.
+ * branch, and the header's Pull for the whole workspace. Pull, Land, Update,
+ * and Delete check for risks first, Land for those of the workspace pull it
+ * runs when the branch is behind the target. `accepted` is the risk the
+ * reader agreed to, so a retry that finds anything more asks again.
  */
 export const butActionSchema = z.discriminatedUnion("kind", [
   z
@@ -230,6 +231,7 @@ export const butActionSchema = z.discriminatedUnion("kind", [
         .max(20_000, "A commit message can be at most 20,000 characters.")
         .regex(/\S/, "Write a commit message.")
         .nullable(),
+      accepted: actionRiskSchema.nullable(),
     })
     .strict(),
   z

@@ -777,6 +777,7 @@ test("asks before landing, and lands only on the second click", async () => {
     kind: "land",
     branch: "scott/bottom",
     message: null,
+    accepted: null,
   });
   slot.lifecycle.unmount();
 });
@@ -810,7 +811,153 @@ test("squashes a branch of several commits under a message the reader can edit",
     kind: "land",
     branch: "scott/bottom",
     message: "fix(bottom): repair and extend it",
+    accepted: null,
   });
+  slot.lifecycle.unmount();
+});
+
+test("Land says it pulls a workspace behind the target first, and asks about what the pull leaves", async () => {
+  const risk = { conflicted: ["scott/top"], overlapsUncommitted: false };
+  const { actions, rpc } = recordActions(
+    answering({ status: "confirm", risk }, { status: "done" }),
+  );
+  const { slot, card } = await bottomCard(rpc);
+  fireEvent.click(card.getByRole("button", { name: "Land" }));
+  // The workspace is 3 commits behind its target.
+  expect(card.getByText(/can't easily be undone/).textContent).toEndWith(
+    "The target has 3 new commits, so this pulls the workspace first, which rebases every applied branch.",
+  );
+  fireEvent.click(card.getByRole("button", { name: "Land" }));
+  await waitFor(() =>
+    expect(card.getByText(/can't easily be undone/).textContent).toEndWith(
+      "Landing pulls the workspace first. Pulling leaves conflicted commits in scott/top. Resolve them before pushing.",
+    ),
+  );
+  fireEvent.click(card.getByRole("button", { name: "Land anyway" }));
+  await waitFor(() => expect(actions).toHaveLength(2));
+  expect((actions[1] as { action: unknown }).action).toEqual({
+    kind: "land",
+    branch: "scott/bottom",
+    message: null,
+    accepted: risk,
+  });
+  slot.lifecycle.unmount();
+});
+
+test("Land says nothing of a pull when the workspace is up to date with the target", async () => {
+  const current = structuredClone(workspace);
+  current.upstream = { ...current.upstream!, behind: 0 };
+  const { slot, card } = await bottomCard({ ...baseRpc, workspace: () => current });
+  fireEvent.click(card.getByRole("button", { name: "Land" }));
+  expect(card.getByText(/can't easily be undone/).textContent).toEndWith("can't easily be undone.");
+  slot.lifecycle.unmount();
+});
+
+/** The workspace with a newer commit on scott/bottom, so Land squashes two. */
+function bottomOfTwo() {
+  const several = structuredClone(workspace);
+  const bottom = several.stacks[0]!.branches[1]!;
+  bottom.commits.unshift({
+    ...bottom.commits[0]!,
+    commitId: "b".repeat(40),
+    changeId: "newer",
+    message: "feat(bottom): extend it",
+  });
+  return several;
+}
+
+test("a squash message survives Land's question about the pull, edits included", async () => {
+  const risk = { conflicted: ["scott/top"], overlapsUncommitted: false };
+  const { actions, rpc } = recordActions(
+    answering({ status: "confirm", risk }, { status: "done" }),
+  );
+  const { slot, card } = await bottomCard({ ...rpc, workspace: () => bottomOfTwo() });
+  fireEvent.click(card.getByRole("button", { name: "Land" }));
+  const field = () =>
+    card.getByRole("textbox", { name: "Squashed commit message" }) as HTMLTextAreaElement;
+  fireEvent.change(field(), { target: { value: "fix(bottom): one" } });
+  fireEvent.click(card.getByRole("button", { name: "Squash and land" }));
+  await waitFor(() => expect(card.getByText(/Landing pulls the workspace first/)).toBeTruthy());
+  expect(field().value).toBe("fix(bottom): one");
+
+  // Typing under the question keeps the question, and the focus.
+  field().focus();
+  fireEvent.change(field(), { target: { value: "fix(bottom): one and two" } });
+  expect(document.activeElement).toBe(field());
+  fireEvent.click(card.getByRole("button", { name: "Squash and land anyway" }));
+  await waitFor(() => expect(actions).toHaveLength(2));
+  expect((actions[1] as { action: unknown }).action).toEqual({
+    kind: "land",
+    branch: "scott/bottom",
+    message: "fix(bottom): one and two",
+    accepted: risk,
+  });
+  slot.lifecycle.unmount();
+});
+
+test("a land that fails after its pull asks again without the pull it already ran", async () => {
+  const risk = { conflicted: ["scott/top"], overlapsUncommitted: false };
+  let calls = 0;
+  const { rpc } = recordActions(() => {
+    calls += 1;
+    if (calls === 1) return { status: "confirm", risk };
+    throw new Error("Land pulled the workspace, then stopped: the repository is locked.");
+  });
+  const { slot, card } = await bottomCard(rpc);
+  fireEvent.click(card.getByRole("button", { name: "Land" }));
+  fireEvent.click(card.getByRole("button", { name: "Land" }));
+  fireEvent.click(await card.findByRole("button", { name: "Land anyway" }));
+  await waitFor(() =>
+    expect(card.getByRole("alert").textContent).toBe(
+      "Land pulled the workspace, then stopped: the repository is locked.",
+    ),
+  );
+  expect(card.queryByText(/Landing pulls the workspace first/)).toBeNull();
+  expect(card.getByRole("button", { name: "Land" })).toBeTruthy();
+  slot.lifecycle.unmount();
+});
+
+test("a land whose pull took the card's oldest commit still says why it stopped", async () => {
+  // The pull drops the commit the target already has, which the card was keyed by.
+  const after = structuredClone(workspace);
+  const left = after.stacks[0]!.branches[1]!;
+  left.commits = [{ ...left.commits[0]!, commitId: "b".repeat(40), changeId: "newer" }];
+  let pulled = false;
+  const stopped =
+    "Land pulled the workspace, then stopped: the target already had one of scott/bottom's 2 commits, so the pull took it out. Land it again to land the rest.";
+  const { rpc } = recordActions(() => {
+    pulled = true;
+    throw new Error(stopped);
+  });
+  const { slot } = await bottomCard({
+    ...rpc,
+    workspace: () => (pulled ? after : bottomOfTwo()),
+  });
+  const card = () => within(slot.getByRole("article", { name: "Branch scott/bottom" }));
+  fireEvent.click(card().getByRole("button", { name: "Land" }));
+  fireEvent.click(card().getByRole("button", { name: "Squash and land" }));
+  // Once the board shows the one commit left, the card is a new one.
+  await waitFor(() => expect(card().getAllByText(/repair it|extend it/)).toHaveLength(1));
+  expect(card().getByRole("alert").textContent).toBe(stopped);
+
+  // Answering it clears it: Land asks afresh about the one commit left.
+  fireEvent.click(card().getByRole("button", { name: "Land" }));
+  expect(card().queryByRole("alert")).toBeNull();
+  expect(card().getByText(/can't easily be undone/).textContent).toStartWith(
+    "Land scott/bottom on the target branch?",
+  );
+  slot.lifecycle.unmount();
+});
+
+test("Land says a PR stays open when the pull first rewrites its one commit", async () => {
+  const reviewed = structuredClone(workspace);
+  reviewed.stacks[0]!.branches[1]!.reviewId = "#7";
+  const { slot, card } = await bottomCard({ ...baseRpc, workspace: () => reviewed });
+  fireEvent.click(card.getByRole("button", { name: "Land" }));
+  // The workspace is 3 commits behind its target.
+  expect(card.getByText(/can't easily be undone/).textContent).toEndWith(
+    "which rebases every applied branch. Its PR #7 stays open.",
+  );
   slot.lifecycle.unmount();
 });
 

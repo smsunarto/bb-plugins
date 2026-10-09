@@ -74,10 +74,16 @@ Each branch card can change the repository:
   bottom branch of a stack can land. A branch of several commits is squashed
   into one first (`but squash <branch>`), under a message the confirmation
   prefills and lets you edit: the oldest commit's subject, then the later
-  ones as a list. Its PR stays open, because its own commits never reach the
-  target. Land refuses a branch behind the target, which `but land` would
-  merge instead: pull the workspace first. When the land fails after the
-  squash, the branch stays squashed.
+  ones as a list. A branch behind the target, which `but land` would merge
+  instead, is brought up to it first with `but pull`, which rebases every
+  applied branch. The confirmation says so when the panel knows the target
+  moved, and asks again before a pull that leaves conflicts or touches
+  uncommitted files, as the header's Pull does. It refuses when the branch
+  itself would conflict, and stops after the pull when the pull took commits
+  the target already has out of the branch, so the message is written for
+  what is left. A squash or a pull rewrites the branch's commits, so its PR
+  stays open. Nothing that ran is undone when a later step fails, and the
+  error says what ran: the pull, the squash, or both.
 - **Delete**, after a confirmation that says what is lost
   (`but branch delete <branch>`). The local branch and its commits leave the
   workspace. The remote branch and any PR stay. Branches stacked above it
