@@ -2,9 +2,10 @@ import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { expect, test } from "vitest";
 import { createStatus } from "./status.ts";
 
-test("status names this bb plugin, in upstream Desktop's key order", () => {
+test("status names this bb plugin, in upstream Desktop's key order, with nothing machine-local", () => {
   const { bb } = createFakePluginHost({
     pluginId: "whiteboard",
+    appUrl: "https://scott.getbb.app",
     loopbackBaseUrl: "http://127.0.0.1:40000",
     dataDir: "/data/bb",
   });
@@ -19,30 +20,24 @@ test("status names this bb plugin, in upstream Desktop's key order", () => {
     "url",
     "home",
   ]);
+  // The agent may run on another machine: no server loopback URL or data dir.
   expect(status).toEqual({
     key: "stable",
     channel: "bb-plugin",
     checkout: null,
     appVersion: "0.1.0",
     cliVersion: null,
-    instanceId: "http://127.0.0.1:40000",
+    instanceId: "https://scott.getbb.app",
     url: null,
-    home: "/data/bb",
+    home: null,
   });
 });
 
-test("server fields that are not bound yet read as null", () => {
-  const { bb } = createFakePluginHost({ pluginId: "whiteboard" });
-  const unbound = Object.create(bb) as typeof bb;
-  Object.defineProperty(unbound, "server", {
-    value: {
-      get loopbackBaseUrl(): string {
-        throw new Error("not bound");
-      },
-      get experimental_dataDir(): string {
-        throw new Error("not bound");
-      },
-    },
+test("without a public app URL the instance id is null", () => {
+  const { bb } = createFakePluginHost({
+    pluginId: "whiteboard",
+    loopbackBaseUrl: "http://127.0.0.1:40000",
+    dataDir: "/data/bb",
   });
-  expect(createStatus(unbound)()).toMatchObject({ instanceId: null, home: null });
+  expect(createStatus(bb)()).toMatchObject({ instanceId: null, url: null, home: null });
 });

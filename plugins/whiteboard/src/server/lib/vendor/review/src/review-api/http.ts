@@ -8,6 +8,7 @@ import { z } from "zod";
 
 import { AgentSelectionSchema, selectionMarkdown } from "../../../../../../shared/vendor/review/src/agent-selection.ts";
 import { resolveReviewBranchLinks } from "../../../../host-io/review-branch-links.ts";
+import { HostUnavailableError } from "../../../../host-io/client.ts";
 import { resolveReviewStackLayers } from "../../../../host-io/review-stack.ts";
 import { readBoundedRequestJson } from "../server/hono-http.ts";
 import { HttpJsonError } from "../server/http-json.ts";
@@ -108,6 +109,10 @@ export function createReviewApi(
     if (error instanceof ReviewInputError)
       return context.json({ error: error.message }, error.status);
 
+    // bb: the checkout's host is offline; the message names that machine.
+    if (error instanceof HostUnavailableError)
+      return context.json({ error: error.message }, 503);
+
     // A readable message for agents and the canvas; issues stay for programs.
     if (error instanceof z.ZodError)
       return context.json(
@@ -125,7 +130,7 @@ export function createReviewApi(
 
     return context.json(
       {
-        error: `Review operation failed (${failureKind(error)}). The server logged the cause; bb writes it to server-stdio.log in its logs folder (~/.bb/logs by default).`,
+        error: `Review operation failed (${failureKind(error)}). The bb server logged the cause in server-stdio.log, in the bb server's logs folder.`,
       },
       500,
     );
@@ -1105,6 +1110,9 @@ export function createReviewApi(
         pullRequestNumber: review.origin?.pullRequestNumber,
         presentedDocumentRevision: String(review.version),
       })),
+      undefined,
+      // bb: gh runs on the host that holds this session's checkout.
+      { repositoryId },
     );
 
     return context.json({ layers });

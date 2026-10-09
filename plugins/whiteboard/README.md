@@ -23,7 +23,27 @@ sidebar.
   viewports never focus it. Tabs opened from Home or a link are tracked too.
   They follow renames and close when the session is dismissed or deleted.
 - **Git.** Git, `gh` and diffr run on the bb host that owns the repository,
-  through the plugin's host entry.
+  through the plugin's host entry. That host can be another machine than the
+  bb server or the browser.
+- **One host per path.** Registering a repository binds its path to the
+  calling thread's host, and the path is read only there. Whiteboard keys
+  checkouts by path, so a path registered from one machine is refused (409,
+  naming both machines) from another machine that has a checkout at the same
+  path. Use a thread on the first machine, or a checkout at another path.
+  A session on that repository reads the first machine's checkout, whichever
+  thread creates or reads it. Routing matches registered path prefixes, so a
+  checkout from a second machine that lands under the first machine's
+  registered path (for example inside its shared Git directory) is read on
+  the first machine.
+- **Offline hosts.** When a repository's host is not connected or stops
+  answering, reads fail with 503 and name that machine. A cheap check (tool
+  probe, checkout exists, watch liveness) on a host that stopped answering
+  fails after about 11 seconds: bb adds 6 seconds of grace to its 5-second
+  budget. Creating a Whiteboard from a pull request URL skips checkouts on
+  hosts that cannot be reached. Home's structural diff mode follows the first
+  host that has diffr. While a live-worktree watch is armed, its host is
+  asked every 10 seconds whether it still holds it, and a watch lost to a
+  daemon restart is armed again.
 - **Storage.** Sessions, retained resources and history live in the plugin's bb database.
   Worktree source is retained in namespaced Git refs on its host. Each generation
   keeps raw source bytes and a Git-normalized comparison tree. Older review versions
@@ -127,7 +147,7 @@ These files have hand-edited (`edit`) rows in the vendoring map:
     pointer to Desktop: no setting turns it on. Uploaded trace quotes remain
     supported.
 - **Tool wording.** bb has no Whiteboard Desktop. The reader is a Whiteboard
-  tab on the calling thread. The agent boundary adapts five tool-description
+  tab on the calling thread. The agent boundary adapts six tool-description
   phrases, the same way it renames tool tokens (`BB_WORDING` in
   `src/server/lib/tools/rename.ts`). `guidance.ts` and the vendored catalog keep
   upstream's text. Two result strings change at their source. These wording
@@ -142,11 +162,29 @@ These files have hand-edited (`edit`) rows in the vendoring map:
   - "without taking over Desktop" becomes "without adding a thread tab"
   - "Discover whether Desktop is available" becomes
     "Discover whether a bb thread can show the review (desktopAvailable)"
+  - "The prepared checkout path is on the authoring server." becomes
+    "Pass the checkout's absolute path on the calling thread's machine.
+    Whiteboard runs Git there through that machine's bb host."
   - `review-api/instructions.ts`: the scratchpad-off message drops
     "or Whiteboard Desktop is not running". bb always supplies the panel
     opener, so only the setting gates the scratchpad.
-  - `review-api/http.ts`: the 500 error names bb's `server-stdio.log` in its
-    logs folder (`~/.bb/logs` by default) instead of Desktop's `main.log`.
+  - `review-api/http.ts`: the 500 error names `server-stdio.log` in the bb
+    server's logs folder instead of Desktop's `main.log`. The browser and the
+    agent may be on other machines than the server, so it names no path.
+- **Hosts.** The server, the browser and a repository's checkout may be on
+  three machines. Authored code adapts most of this (`host-io/`,
+  `host-resolver.ts`, `status.ts`). These vendored edits remain:
+  - `review-api/http.ts`: a `HostUnavailableError` (the checkout's host is
+    not connected or did not answer) answers 503 with its message, which
+    names the machine. The stack route passes the session's repository, so
+    `gh` runs on the host that holds the checkout.
+  - `review-api/local-data.ts`: finding a checkout for a pull request URL
+    skips a candidate whose host is unavailable. When nothing matched and a
+    host was unavailable, that host's error is thrown instead of the
+    "No registered checkout" 404.
+- **Status.** `whiteboard_status` reports bb's public app URL as `instanceId`
+  (null when none is configured) and `home: null`. The server's loopback URL
+  and data directory mean nothing on the agent's machine (`status.ts`).
 - **`review_*` names stay.** A few upstream error strings still say
   `review_open`, `review_file` and similar. They are left byte-identical.
 - **Not ported.** Sharing, telemetry, bug reports, the welcome and CLI install

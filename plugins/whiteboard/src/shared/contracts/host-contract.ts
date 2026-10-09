@@ -78,8 +78,19 @@ export type VcsMethod = (typeof VCS_METHODS)[number];
 
 /** The host worker rejects JSON above 8 MiB. Entries answer PayloadTooLarge above this. */
 export const HOST_PAYLOAD_LIMIT_BYTES = 7 * 1024 * 1024;
-/** Host hop timeouts (design §3.1). */
-export const HOST_TIMEOUT_MS = { default: 30_000, diff: 120_000, long: 600_000 } as const;
+/**
+ * Host hop timeouts (design §3.1). `probe` bounds the cheap questions a panel
+ * or a cross-repository search waits on (tool probe, root exists, watch
+ * liveness). bb adds 6 s of transport grace, and up to 5 s more while a
+ * dropped host's lease runs out, so a host that stopped answering costs
+ * about 11 to 16 s instead of 36 to 41 s.
+ */
+export const HOST_TIMEOUT_MS = {
+  probe: 5_000,
+  default: 30_000,
+  diff: 120_000,
+  long: 600_000,
+} as const;
 
 export const whiteboardHostContract = defineRpcContract({
   /** One allowlisted async export. Args and results use the wire codec. */
@@ -135,6 +146,11 @@ export const whiteboardHostContract = defineRpcContract({
   unwatchWorktree: {
     input: z.strictObject({ watchId: z.string() }),
     output: z.object({ ok: z.literal(true) }),
+  },
+  /** Which of these watches the host still holds. A restarted daemon holds none. */
+  watchAlive: {
+    input: z.strictObject({ watchIds: z.array(z.string()).max(2000) }),
+    output: z.object({ live: z.array(z.string()) }),
   },
   probe: {
     input: z.strictObject({}),

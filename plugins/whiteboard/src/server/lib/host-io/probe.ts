@@ -1,4 +1,4 @@
-import type { HostOutput } from "../../../shared/contracts/host-contract.ts";
+import { HOST_TIMEOUT_MS, type HostOutput } from "../../../shared/contracts/host-contract.ts";
 import { hostIo } from "./client.ts";
 
 export type HostProbe = HostOutput<"probe">;
@@ -15,7 +15,7 @@ export function probeHost(hostId: string): Promise<HostProbe> {
   let probe = probes.get(hostId);
   if (!probe) {
     probe = hostIo()
-      .client.call("probe", {}, { hostId })
+      .client.call("probe", {}, { hostId, timeoutMs: HOST_TIMEOUT_MS.probe })
       .then((result) => {
         lastDiffr = result.diffr;
         return result;

@@ -48,6 +48,7 @@ import {
   sliceSourceRange,
 } from "../../../../../../shared/vendor/review/src/source.ts";
 import { checkoutFs } from "../../../../host-io/checkout-fs.ts";
+import { HostUnavailableError } from "../../../../host-io/client.ts";
 import {
   type ComparisonCoverage,
   type CoverageMode,
@@ -965,26 +966,37 @@ export class LocalReviewData {
     if (repository.id && candidates.length === 0)
       throw new ReviewInputError("Repository is not registered.", 404);
 
+    // bb: a checkout on a host that is offline cannot be asked; try the rest.
+    let offline: HostUnavailableError | undefined;
+
     for (const { id } of candidates) {
-      if (!(await exists(this.store.repositoryPath(id)))) continue;
-      const vcs = await this.vcs(id);
-      const gitDir = vcs && (await gitCommonDir(vcs.rootPath));
+      try {
+        if (!(await exists(this.store.repositoryPath(id)))) continue;
+        const vcs = await this.vcs(id);
+        const gitDir = vcs && (await gitCommonDir(vcs.rootPath));
 
-      if (!vcs || !gitDir) continue;
+        if (!vcs || !gitDir) continue;
 
-      const remote = (await githubRemotes(gitDir, deps)).find(
-        (entry) => entry.slug.toLowerCase() === slug.toLowerCase(),
-      );
+        const remote = (await githubRemotes(gitDir, deps)).find(
+          (entry) => entry.slug.toLowerCase() === slug.toLowerCase(),
+        );
 
-      if (remote)
-        return {
-          repositoryId: id,
-          rootPath: vcs.rootPath,
-          gitDir,
-          kind: vcs.kind,
-          remote: remote.name,
-        };
+        if (remote)
+          return {
+            repositoryId: id,
+            rootPath: vcs.rootPath,
+            gitDir,
+            kind: vcs.kind,
+            remote: remote.name,
+          };
+      } catch (error) {
+        if (!(error instanceof HostUnavailableError)) throw error;
+        offline ??= error;
+      }
     }
+
+    // The match may be the offline checkout: say which machine to reconnect.
+    if (offline) throw offline;
 
     throw new ReviewInputError(
       repository.id

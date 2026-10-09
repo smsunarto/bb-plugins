@@ -59,22 +59,35 @@ export const resolveRepoContext: typeof upstream.resolveRepoContext = async (roo
   return context;
 };
 
+/** A miss re-primes a path at most this often, so an offline host is not asked every second. */
+export const REPO_CONTEXT_RETRY_MS = 10_000;
+const primedAt = new Map<string, number>();
+
 /**
  * Served from the repo-context cache the async facade primes. A miss answers
- * null and starts a prime, so the next read has it (`store.ts` does not
- * memoize a miss).
+ * null and starts a prime, so a later read has it (`store.ts` does not
+ * memoize a miss). The store lists every second while a panel watches.
  */
 export const resolveRepoContextSync: typeof upstream.resolveRepoContextSync = (rootPath) => {
   const key = path.resolve(rootPath);
   if (repoContexts.has(key)) return repoContexts.get(key)!;
-  void resolveRepoContext(key).catch(() => {});
+  const now = Date.now();
+  if (now - (primedAt.get(key) ?? -Infinity) >= REPO_CONTEXT_RETRY_MS) {
+    primedAt.set(key, now);
+    void resolveRepoContext(key).catch(() => {});
+  }
   return null;
 };
 
 /** Forget cached repo contexts (a re-registered or removed checkout). */
 export function forgetRepoContext(rootPath?: string): void {
-  if (rootPath === undefined) repoContexts.clear();
-  else repoContexts.delete(path.resolve(rootPath));
+  if (rootPath === undefined) {
+    repoContexts.clear();
+    primedAt.clear();
+  } else {
+    repoContexts.delete(path.resolve(rootPath));
+    primedAt.delete(path.resolve(rootPath));
+  }
 }
 
 export const createBlobBatchReader: typeof upstream.createBlobBatchReader = (input) =>

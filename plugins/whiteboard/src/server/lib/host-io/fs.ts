@@ -1,5 +1,6 @@
 import type { ExecFileOptions } from "node:child_process";
 import type { BigIntStats, MakeDirectoryOptions, Stats } from "node:fs";
+import { HOST_TIMEOUT_MS } from "../../../shared/contracts/host-contract.ts";
 import { type HostRoute, invokeHost } from "./client.ts";
 import { commandRoute } from "./pull-request.ts";
 
@@ -116,7 +117,11 @@ export function forgetExists(): void {
 /** `existsSync` on the host; async because the path may live on another machine. */
 export function exists(target: string): Promise<boolean> {
   const memo = answers;
-  const ask = async () => (await invokeHost("fs", "exists", [target], on(target))) as boolean;
+  // A probe budget: a cross-repository search skips a host that stopped answering.
+  const ask = async () =>
+    (await invokeHost("fs", "exists", [target], on(target), {
+      timeoutMs: HOST_TIMEOUT_MS.probe,
+    })) as boolean;
   if (!memo) return ask();
   const now = Date.now();
   const cached = memo.get(target);

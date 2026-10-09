@@ -36,6 +36,8 @@ export function renameToolTokens(text: string): string {
  * Upstream description phrases that send the agent to Whiteboard Desktop,
  * and bb's wording: the reader is a panel tab on the calling thread
  * (`open-panel.ts`), and `desktopAvailable` means "called from a thread".
+ * Desktop read checkouts on its own machine. In bb a checkout lives on the
+ * calling thread's host, which may not be the bb server's machine.
  * `guidance.ts` and the vendored catalog keep upstream's text; the agent
  * boundary adapts it, as it renames tool tokens.
  */
@@ -56,6 +58,10 @@ export const BB_WORDING: ReadonlyArray<readonly [from: string, to: string]> = [
   [
     "Discover whether Desktop is available",
     "Discover whether a bb thread can show the review (desktopAvailable)",
+  ],
+  [
+    "The prepared checkout path is on the authoring server.",
+    "Pass the checkout's absolute path on the calling thread's machine. Whiteboard runs Git there through that machine's bb host.",
   ],
 ];
 

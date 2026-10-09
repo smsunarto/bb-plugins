@@ -7,7 +7,7 @@ import { closeBlobReaders, readBlobs } from "./lib/blobs.ts";
 import { invoke, probe } from "./lib/invoke.ts";
 import { cancelStructuralDiff, runStructuralDiff } from "./lib/structural-stream.ts";
 import { vcsCall } from "./lib/vcs-handles.ts";
-import { unwatchWorktree, watchWorktree } from "./lib/watch.ts";
+import { unwatchWorktree, watchAlive, watchWorktree } from "./lib/watch.ts";
 
 export default experimental_defineHostEntry({
   contract: whiteboardHostContract,
@@ -25,6 +25,7 @@ export default experimental_defineHostEntry({
     cancelStructuralDiff: (input) => cancelStructuralDiff(input),
     watchWorktree: (input, ctx) => watchWorktree(input, ctx),
     unwatchWorktree: (input) => unwatchWorktree(input),
+    watchAlive: (input) => watchAlive(input),
     probe: () => probe(),
   },
   dispose: closeBlobReaders,

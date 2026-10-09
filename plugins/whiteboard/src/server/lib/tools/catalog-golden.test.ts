@@ -115,6 +115,15 @@ test("capabilities and create describe the calling bb thread, not Desktop", asyn
   );
 });
 
+test("register_repository asks for the path on the calling thread's machine, not the server's", async () => {
+  const descriptions = new Map(
+    (await registered(false)).map((tool) => [tool.name, tool.description]),
+  );
+  expect(descriptions.get("whiteboard_session_register_repository")).toBe(
+    "Register a local Git or jj repository. Pass the checkout's absolute path on the calling thread's machine. Whiteboard runs Git there through that machine's bb host.",
+  );
+});
+
 test("every BB_WORDING phrase still occurs in upstream's catalog", () => {
   const upstream = [...golden.scratchpadOff.tools, ...golden.scratchpadOn.tools].map(
     (tool) => tool.description,

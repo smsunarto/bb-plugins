@@ -116,7 +116,9 @@ describe("hostFor", () => {
 
 describe("bindRepository", () => {
   it("is idempotent for the same host and rejects a second host for a bound path", async () => {
-    const { bb, resolver } = setup({ hosts: [connected("laptop", "Scott's Laptop")] });
+    const { bb, resolver } = setup({
+      hosts: [connected("laptop", "Scott's Laptop"), connected("devbox", "Devbox")],
+    });
     await resolver.bindRepository({ repositoryId: "repo-1", rootPath: "/work/app" }, "laptop");
     await resolver.bindRepository({ repositoryId: "repo-1", rootPath: "/work/app" }, "laptop");
     const byId = await resolver
@@ -126,7 +128,7 @@ describe("bindRepository", () => {
     expect(byId).toMatchObject({
       status: 409,
       message:
-        "/work/app is already registered from another bb host (Scott's Laptop). Whiteboard keys checkouts by path, so one path can belong to one host.",
+        "/work/app is already registered from another bb host (Scott's Laptop), and this call comes from Devbox. Whiteboard keys checkouts by path, so one path can belong to one host. Work on this checkout from a thread on Scott's Laptop, or register a checkout at a different path on Devbox.",
     });
     // The same path under another repository id is still the bound path.
     await expect(
@@ -138,6 +140,7 @@ describe("bindRepository", () => {
         .prepare("SELECT repository_id, host_id FROM repository_hosts ORDER BY repository_id")
         .all(),
     ).toEqual([{ repository_id: "repo-1", host_id: "laptop" }]);
+    expect(resolver.boundHosts()).toEqual(["laptop"]);
   });
 
   it("names an unknown host by its id", async () => {
@@ -145,6 +148,8 @@ describe("bindRepository", () => {
     await resolver.bindRepository({ repositoryId: "repo-1", rootPath: "/work/app" }, "gone");
     await expect(
       resolver.bindRepository({ repositoryId: "repo-1", rootPath: "/work/app" }, "other"),
-    ).rejects.toThrow("/work/app is already registered from another bb host (gone).");
+    ).rejects.toThrow(
+      "/work/app is already registered from another bb host (gone), and this call comes from other.",
+    );
   });
 });

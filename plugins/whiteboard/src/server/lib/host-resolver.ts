@@ -7,8 +7,12 @@ import { currentThread } from "./thread-context.ts";
 export const NO_HOST_MESSAGE =
   "Whiteboard cannot tell which bb host has this checkout. Run the tool from a thread in that project.";
 
-export function boundElsewhereMessage(rootPath: string, hostName: string): string {
-  return `${rootPath} is already registered from another bb host (${hostName}). Whiteboard keys checkouts by path, so one path can belong to one host.`;
+export function boundElsewhereMessage(
+  rootPath: string,
+  boundHost: string,
+  callerHost: string,
+): string {
+  return `${rootPath} is already registered from another bb host (${boundHost}), and this call comes from ${callerHost}. Whiteboard keys checkouts by path, so one path can belong to one host. Work on this checkout from a thread on ${boundHost}, or register a checkout at a different path on ${callerHost}.`;
 }
 
 /** The resolver the host-io facades use. Beyond `HostResolver` it learns paths hosts report. */
@@ -21,6 +25,10 @@ export interface WhiteboardHostResolver extends HostResolver {
   rememberPath(rootPath: string, hostId: string): void;
   /** The host driving this call, ignoring repository bindings (steps 2-4). Registration binds to it. */
   callerHost(): Promise<string>;
+  /** Every host a registered repository is bound to. */
+  boundHosts(): string[];
+  /** The host's display name, or its id when bb does not list it. */
+  hostName(hostId: string): Promise<string>;
 }
 
 /** Whether `child` is `parent` or lies under it. */
@@ -129,7 +137,10 @@ export function createHostResolver(bb: BbPluginApi): WhiteboardHostResolver {
         )?.hostId;
       if (existing === hostId) return;
       if (existing !== undefined)
-        throw new ReviewInputError(boundElsewhereMessage(rootPath, await hostName(existing)), 409);
+        throw new ReviewInputError(
+          boundElsewhereMessage(rootPath, await hostName(existing), await hostName(hostId)),
+          409,
+        );
       db()
         .prepare("INSERT INTO repository_hosts(repository_id, host_id) VALUES (?, ?)")
         .run(repository.repositoryId, hostId);
@@ -138,6 +149,13 @@ export function createHostResolver(bb: BbPluginApi): WhiteboardHostResolver {
       remembered.set(path.resolve(rootPath), hostId);
     },
     callerHost,
+    boundHosts: () =>
+      (
+        db().prepare("SELECT DISTINCT host_id AS hostId FROM repository_hosts").all() as {
+          hostId: string;
+        }[]
+      ).map((row) => row.hostId),
+    hostName,
   };
 }
 

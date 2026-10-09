@@ -11,7 +11,12 @@ import {
 import type { Engine, WhiteboardSettings } from "../../shared/contracts/engine.ts";
 import { ReviewApiClient } from "../../shared/vendor/review-protocol/src/index.ts";
 import { createHostResolver } from "./host-resolver.ts";
-import { installHostIo, onWorkerExit } from "./host-io/client.ts";
+import {
+  HostUnavailableError,
+  installHostIo,
+  onWorkerExit,
+  withHostRoute,
+} from "./host-io/client.ts";
 import { forgetExists, memoizeExists } from "./host-io/fs.ts";
 import { forgetRepoContext, resolveRepoContext } from "./host-io/local-vcs.ts";
 import { defaultPullRequestDeps } from "./host-io/pull-request.ts";
@@ -126,9 +131,10 @@ export function createEngine(bb: BbPluginApi, settings: WhiteboardSettings): Eng
   });
   const register = data.register.bind(data);
   data.register = async (root) => {
-    // Registration belongs to the caller's host, even when this path is already bound.
+    // Registration belongs to the caller's host, even when this path is already
+    // bound: the path is read there, never on the host that holds the binding.
     const hostId = await resolver.callerHost();
-    const repository = await register(root);
+    const repository = await withHostRoute(hostId, () => register(root));
     await resolver.bindRepository(
       { repositoryId: repository.id, rootPath: store.repositoryPath(repository.id) },
       hostId,
@@ -177,16 +183,16 @@ export function createEngine(bb: BbPluginApi, settings: WhiteboardSettings): Eng
     interestTimer = setTimeout(expireInterest, UI_INTEREST_TTL_MS);
     interestTimer.unref?.();
   };
-  const ready = Promise.all([
-    whenSettingsLoaded(settings),
-    ...store
-      .repositories()
-      .map(({ path }) =>
-        resolveRepoContext(path).catch((error: unknown) =>
-          bb.log.warn(`whiteboard: repository context could not be refreshed: ${String(error)}`),
-        ),
-      ),
-  ]);
+  // Requests wait for settings only, never for a repository's host.
+  const ready = whenSettingsLoaded(settings);
+  // Host calls fail during factory registration; bb starts services after it.
+  // A host that is offline now is primed on its first catalog read instead.
+  bb.background.service("repo-contexts", {
+    async start() {
+      await Promise.allSettled(store.repositories().map(({ path }) => resolveRepoContext(path)));
+      store.invalidateCatalog();
+    },
+  });
   const fetchApi = async (url: string, init?: RequestInit): Promise<Response> => {
     await ready;
     if (disposed)
@@ -230,15 +236,30 @@ export function createEngine(bb: BbPluginApi, settings: WhiteboardSettings): Eng
         const snapshot = input.sessionId ? store.read(input.sessionId) : undefined;
         // Home rows, verbs and restored tabs open without the agent's `open`.
         if (input.threadId && input.sessionId) tabs.track(input.threadId, input.sessionId);
-        let structuralDiffEnabled = false;
-        try {
-          const hostId = await resolver.hostFor({ repositoryId: snapshot?.pins?.repositoryId });
-          structuralDiffEnabled = !!(await probeHost(hostId)).diffr;
-        } catch (error) {
-          bb.log.warn(
-            `whiteboard: structural diff capability could not be probed: ${String(error)}`,
-          );
-        }
+        // diffr runs on the repository's host. Home (no pinned session) lists
+        // every repository, so it asks every host that holds one. The first
+        // host with diffr decides, so a silent host does not hold Home up.
+        const repositoryId = snapshot?.pins?.repositoryId;
+        const hosts: Array<string | Promise<string>> = repositoryId
+          ? [resolver.hostFor({ repositoryId })]
+          : resolver.boundHosts();
+        const hasDiffr = async (hostId: string | Promise<string>) => {
+          try {
+            return !!(await probeHost(await hostId)).diffr;
+          } catch (error) {
+            const message = `whiteboard: structural diff capability could not be probed: ${String(error)}`;
+            // An offline host is expected; its reads name it to the user.
+            if (error instanceof HostUnavailableError) bb.log.debug(message);
+            else bb.log.warn(message);
+            return false;
+          }
+        };
+        const structuralDiffEnabled = await new Promise<boolean>((resolve) => {
+          const answers = hosts.map(async (hostId) => {
+            if (await hasDiffr(hostId)) resolve(true);
+          });
+          void Promise.all(answers).then(() => resolve(false));
+        });
         return {
           appVersion: PLUGIN_VERSION,
           softwareMapEnabled: settings.softwareMapEnabled(),

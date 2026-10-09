@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from "node:async_hooks";
 import type { BbPluginApi, ExperimentalHostClient } from "@get-bb/plugin-sdk";
 import type { HostResolver } from "../../../shared/contracts/engine.ts";
 import {
@@ -50,6 +51,63 @@ type Installation = HostIo & {
 let current: Installation | undefined;
 
 /**
+ * A host call bb could not deliver or finish: the host is not connected, is
+ * suspended, or did not answer before the call's timeout. The message names
+ * the machine, because the browser and the agent may be on other machines.
+ * Not a `ReviewInputError`: upstream treats those as invalid sources, and an
+ * offline host says nothing about the source.
+ */
+export class HostUnavailableError extends Error {
+  override readonly name = "HostUnavailableError";
+
+  constructor(
+    readonly hostId: string,
+    hostName: string,
+    timedOut: boolean,
+  ) {
+    super(
+      timedOut
+        ? `${hostName} did not answer in time. Whiteboard reads this checkout on ${hostName}. Check that it is awake and connected to bb, then retry.`
+        : `${hostName} is not connected to bb. Whiteboard reads this checkout on ${hostName}. Reconnect it, then retry.`,
+    );
+  }
+}
+
+/**
+ * The host daemon enforces the call's timeout itself, including fetching the
+ * host artifact and starting the worker, and answers before bb's transport
+ * timeout (the timeout plus 6 s of grace). It answers `command_failed` with
+ * one of these messages.
+ */
+const DAEMON_DEADLINE =
+  /^host plugin call \S+ (?:reached its deadline before dispatch|exceeded its deadline)$/;
+
+/** A bb transport failure (`ApiError` body), or undefined for the host entry's own error. */
+function transportFailure(error: unknown): "unavailable" | "timedOut" | undefined {
+  const body = (error as { body?: { code?: unknown; message?: unknown } } | null)?.body;
+  if (body?.code === "host_unavailable") return "unavailable";
+  if (body?.code === "command_timeout") return "timedOut";
+  if (
+    body?.code === "command_failed" &&
+    typeof body.message === "string" &&
+    DAEMON_DEADLINE.test(body.message)
+  )
+    return "timedOut";
+  return undefined;
+}
+
+async function fromTransportError(
+  error: unknown,
+  hostId: string,
+  resolver: HostResolver,
+): Promise<unknown> {
+  const failure = transportFailure(error);
+  if (!failure) return error;
+  const name = isWhiteboardHostResolver(resolver) ? await resolver.hostName(hostId) : hostId;
+  return new HostUnavailableError(hostId, name, failure === "timedOut");
+}
+
+/**
  * Install the host client and resolver the facades use, and return an
  * uninstall for `bb.onDispose`.
  */
@@ -74,7 +132,15 @@ export function installHostClient(
 ): () => void {
   const previous = current;
   const installation: Installation = {
-    client,
+    // Every facade calls through here, so transport failures are named once.
+    client: {
+      call: ((method, input, options) =>
+        client.call(method, input, options).catch(async (error: unknown) => {
+          throw await fromTransportError(error, options.hostId, resolver);
+        })) as WhiteboardHostClient["call"],
+      experimental_onSignal: (signal, handler) => client.experimental_onSignal(signal, handler),
+      experimental_onWorkerExit: (handler) => client.experimental_onWorkerExit(handler),
+    },
     resolver,
     streams: new Map(),
     watches: new Map(),
@@ -161,9 +227,20 @@ export function onUninstall(dispose: () => void): () => void {
 /** Where a host call goes: an explicit host, or the host that owns a repository or path. */
 export type HostRoute = { hostId: string } | { repositoryId?: string; rootPath?: string };
 
+const pinnedHost = new AsyncLocalStorage<string>();
+
+/**
+ * Run `fn` with every path or repository route sent to `hostId`. Registration
+ * uses it: the caller's checkout is on the caller's host, even when the same
+ * path is already bound to another host.
+ */
+export function withHostRoute<T>(hostId: string, fn: () => Promise<T>): Promise<T> {
+  return pinnedHost.run(hostId, fn);
+}
+
 export async function routeHost(route: HostRoute): Promise<string> {
   if ("hostId" in route) return route.hostId;
-  return installation().resolver.hostFor(route);
+  return pinnedHost.getStore() ?? installation().resolver.hostFor(route);
 }
 
 /** Record that `rootPath` came from `hostId`, so later calls on it return there. */

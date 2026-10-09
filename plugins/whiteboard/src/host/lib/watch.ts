@@ -14,8 +14,9 @@ const watches = new Map<string, Promise<ExperimentalHostWatchSubscription>>();
  * Watch a checkout through the daemon's native watcher and emit one
  * `worktreeChanged` signal per coalesced delivery (design §1.3). The watch
  * outlives this call and retains the worker; a worker exit drops it, and the
- * server re-arms it from `experimental_onWorkerExit`. Re-watching an id
- * replaces its watch.
+ * server re-arms it from `experimental_onWorkerExit`. A daemon restart emits
+ * no exit, so the server also asks `watchAlive` and re-arms what is gone.
+ * Re-watching an id replaces its watch.
  */
 export async function watchWorktree(
   input: HostInput<"watchWorktree">,
@@ -39,6 +40,10 @@ export async function watchWorktree(
     throw error;
   }
   return { ok: true };
+}
+
+export function watchAlive(input: HostInput<"watchAlive">): HostOutput<"watchAlive"> {
+  return { live: input.watchIds.filter((watchId) => watches.has(watchId)) };
 }
 
 export async function unwatchWorktree(

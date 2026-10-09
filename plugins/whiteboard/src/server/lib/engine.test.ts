@@ -3,17 +3,22 @@ import { api } from "../rpc/api.ts";
 import { liveFile } from "../rpc/live-file.ts";
 import { randomUUID } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
+import path from "node:path";
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { PNG } from "pngjs";
 import jpeg from "jpeg-js";
 import { UI_INTEREST_TTL_MS } from "../../shared/contracts/api-tunnel.ts";
+import { CHANNELS } from "../../shared/contracts/channels.ts";
 import type { Engine, WhiteboardSettings } from "../../shared/contracts/engine.ts";
 import { panelParamsJson, panelTabId } from "../../shared/contracts/panel.ts";
 import { ReviewStore } from "./vendor/review/src/review-api/store.ts";
 import { createEngine, collectApiResponse } from "./engine.ts";
+import { forgetExists } from "./host-io/fs.ts";
+import { forgetRepoContext } from "./host-io/local-vcs.ts";
 import { gitFixture, type GitFixture } from "./host-io/testing/git-fixture.ts";
+import { WATCH_CHECK_MS } from "./host-io/watch.ts";
 import {
   createInProcessHostClient,
   IN_PROCESS_HOST_ID,
@@ -31,6 +36,8 @@ let repo: GitFixture;
 let client: InProcessHostClient;
 let repositoryId: string;
 const tabs = new Map<string, { revision: number; tabs: Array<Record<string, unknown>> }>();
+/** Background services by name. A reload re-registers them, as a new plugin load would. */
+const services = new Map<string, { start(signal: AbortSignal): void | Promise<void> }>();
 const settings: WhiteboardSettings = {
   scratchpadEnabled: () => false,
   softwareMapEnabled: () => false,
@@ -75,8 +82,14 @@ beforeEach(async () => {
   tabs.clear();
   tabs.set("t1", { revision: 0, tabs: [] });
   tabs.set("t2", { revision: 0, tabs: [] });
+  services.clear();
   bb = {
     ...host.bb,
+    background: {
+      ...host.bb.background,
+      service: (name: string, service: { start(signal: AbortSignal): void | Promise<void> }) =>
+        void services.set(name, service),
+    },
     hosts: { ...host.bb.hosts, experimental_client: () => client },
     sdk: {
       ...host.bb.sdk,
@@ -497,15 +510,42 @@ test("interest expires after 90 seconds and dispose leaves no engine timers", as
   vi.useRealTimers();
 });
 
-test("repository registration refuses a second caller host and preserves the original binding", async () => {
+/** Two connected machines: thread-less calls can no longer fall back to the only host. */
+const twoHosts = () =>
+  vi.spyOn(bb.sdk.hosts, "list").mockResolvedValue([
+    { id: IN_PROCESS_HOST_ID, name: "Personal Mac", type: "persistent", status: "connected" },
+    { id: "second-host", name: "Dev Mac", type: "persistent", status: "connected" },
+  ] as never);
+
+/** bb's `ApiError` for a host whose daemon is not connected. */
+const hostNotConnected = () =>
+  Object.assign(new Error("Host is not connected"), {
+    status: 502,
+    body: { code: "host_unavailable", message: "Host is not connected" },
+  });
+
+test("repository registration reads the path on the caller's host and names both hosts when it is bound elsewhere", async () => {
   vi.spyOn(bb.sdk.environments, "get").mockResolvedValue({ hostId: "second-host" } as never);
+  twoHosts();
+  const before = client.calls.length;
   const registered = await post("/repositories", { path: repo.root }, "t2");
   expect(registered).toEqual({
     status: 409,
     body: {
-      error: `${repo.root} is already registered from another bb host (Test host). Whiteboard keys checkouts by path, so one path can belong to one host.`,
+      error: `${repo.root} is already registered from another bb host (Personal Mac), and this call comes from Dev Mac. Whiteboard keys checkouts by path, so one path can belong to one host. Work on this checkout from a thread on Personal Mac, or register a checkout at a different path on Dev Mac.`,
     },
   });
+  // The checkout at this path on the bound host is never read for a Dev Mac caller.
+  expect(
+    client.calls.slice(before).map(({ hostId, input }) => {
+      const { module, fn } = input as { module?: string; fn?: string };
+      return `${hostId} ${module}.${fn}`;
+    }),
+  ).toEqual([
+    "second-host fs.realpath",
+    "second-host local-vcs.detectLocalVcs",
+    "second-host fs.realpath",
+  ]);
   expect(
     bb.storage
       .database()
@@ -513,6 +553,189 @@ test("repository registration refuses a second caller host and preserves the ori
       .get(repositoryId),
   ).toEqual({ host_id: IN_PROCESS_HOST_ID });
   vi.restoreAllMocks();
+});
+
+test("loading asks no host; the repo-contexts service then primes each repository's catalog group", async () => {
+  await create();
+  // A restart: the repository is registered and nothing is cached in memory.
+  await engine.dispose();
+  forgetRepoContext();
+  // bb rejects host calls until the plugin factory has resolved.
+  let activated = false;
+  const early: string[] = [];
+  const call = client.call;
+  vi.spyOn(client, "call").mockImplementation(((method, input, options) => {
+    if (activated) return call(method, input, options);
+    early.push(method);
+    return Promise.reject(
+      new Error("host plugin calls are unavailable during factory registration"),
+    );
+  }) as typeof client.call);
+  engine = createEngine(bb, settings);
+  await new Promise((resolve) => setImmediate(resolve));
+  expect(early).toEqual([]);
+  activated = true;
+  const signals = host.harness.inspection.realtimeSignals;
+  const seen = signals.length;
+  await services.get("repo-contexts")!.start(new AbortController().signal);
+  await vi.waitFor(() =>
+    expect(signals.slice(seen)).toContainEqual({
+      channel: CHANNELS.changed,
+      payload: { kind: "catalog" },
+    }),
+  );
+  const catalog = (await get("")).body as Array<{ repositoryGroup?: unknown }>;
+  expect(catalog.map((review) => review.repositoryGroup)).toEqual([
+    { key: `git:${repo.root}/.git`, label: path.basename(repo.root) },
+  ]);
+  vi.restoreAllMocks();
+});
+
+test("a repository host that is not connected answers 503 naming that machine", async () => {
+  const created = await create();
+  twoHosts();
+  // Past the memoized root check: the next read asks the host.
+  forgetExists();
+  vi.spyOn(client, "call").mockRejectedValue(hostNotConnected());
+  expect(await get(`/${created.reviewId}/file?file=src/a.ts&side=head`)).toEqual({
+    status: 503,
+    body: {
+      error:
+        "Personal Mac is not connected to bb. Whiteboard reads this checkout on Personal Mac. Reconnect it, then retry.",
+    },
+  });
+  vi.restoreAllMocks();
+});
+
+test("Home's info probes the hosts that hold repositories, not the caller's", async () => {
+  twoHosts();
+  const warn = vi.spyOn(bb.log, "warn");
+  const call = client.call;
+  const probed: string[] = [];
+  vi.spyOn(client, "call").mockImplementation(((method, input, options) => {
+    if (method !== "probe") return call(method, input, options);
+    probed.push(options.hostId);
+    return Promise.resolve({
+      platform: "darwin",
+      git: true,
+      jj: false,
+      gh: true,
+      diffr: "/bin/diffr",
+    });
+  }) as typeof client.call);
+  expect(await engine.info({})).toMatchObject({ structuralDiffEnabled: true });
+  expect(probed).toEqual([IN_PROCESS_HOST_ID]);
+  expect(warn).not.toHaveBeenCalled();
+  vi.restoreAllMocks();
+});
+
+/** A second repository, bound to Dev Mac (`second-host`). */
+const bindDevMacRepository = () =>
+  bb.storage
+    .database()
+    .prepare("INSERT INTO repository_hosts(repository_id, host_id) VALUES (?, ?)")
+    .run("dev-mac-repository", "second-host");
+
+const probeResult = (diffr: string | null) => ({
+  platform: "darwin",
+  git: true,
+  jj: false,
+  gh: true,
+  diffr,
+});
+
+test("Home's info answers with the first host that has diffr, without waiting for a silent one", async () => {
+  twoHosts();
+  bindDevMacRepository();
+  const call = client.call;
+  vi.spyOn(client, "call").mockImplementation(((method, input, options) => {
+    if (method !== "probe") return call(method, input, options);
+    // Dev Mac's daemon is gone and bb has not noticed yet: no answer.
+    if (options.hostId === "second-host") return new Promise(() => {});
+    return Promise.resolve(probeResult("/bin/diffr"));
+  }) as typeof client.call);
+  expect(await engine.info({})).toMatchObject({ structuralDiffEnabled: true });
+  vi.restoreAllMocks();
+});
+
+test("Home's info logs a host that is not connected at debug, not as a warning", async () => {
+  twoHosts();
+  bindDevMacRepository();
+  const warn = vi.spyOn(bb.log, "warn");
+  const debug = vi.spyOn(bb.log, "debug");
+  const call = client.call;
+  vi.spyOn(client, "call").mockImplementation(((method, input, options) => {
+    if (method !== "probe") return call(method, input, options);
+    if (options.hostId === "second-host") return Promise.reject(hostNotConnected());
+    return Promise.resolve(probeResult(null));
+  }) as typeof client.call);
+  expect(await engine.info({})).toMatchObject({ structuralDiffEnabled: false });
+  expect(warn).not.toHaveBeenCalled();
+  expect(debug).toHaveBeenCalledWith(
+    "whiteboard: structural diff capability could not be probed: HostUnavailableError: Dev Mac is not connected to bb. Whiteboard reads this checkout on Dev Mac. Reconnect it, then retry.",
+  );
+  vi.restoreAllMocks();
+});
+
+test("a thread-less stack read asks the host of the session's repository", async () => {
+  const { body: created } = await post("/commands", {
+    commandId: randomUUID(),
+    operation: {
+      type: "create",
+      title: "Stacked",
+      pins: { repositoryId, base: repo.base, head: repo.head },
+      pullRequestUrl: "https://github.com/o/r/pull/7",
+    },
+  });
+  twoHosts();
+  const layer = {
+    branch: "seven",
+    pullRequestNumber: 7,
+    pullRequestUrl: "https://github.com/o/r/pull/7",
+    reviewUuid: null,
+    reviewTitle: null,
+    relation: "current",
+  };
+  const call = client.call;
+  const asked: string[] = [];
+  vi.spyOn(client, "call").mockImplementation(((method, input, options) => {
+    if ((input as { module?: string }).module !== "review-stack")
+      return call(method, input, options);
+    asked.push(options.hostId);
+    return Promise.resolve({ ok: true, value: [layer] });
+  }) as typeof client.call);
+  expect(await get(`/${created.reviewId}/stack`)).toEqual({
+    status: 200,
+    body: { layers: [layer] },
+  });
+  expect(asked).toEqual([IN_PROCESS_HOST_ID]);
+  vi.restoreAllMocks();
+});
+
+test("with no panel open, a watch the host dropped without a worker exit is armed again", async () => {
+  // The check timer starts with the first armed watch, so fake it before any read.
+  vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+  repo.write("src/a.ts", "export const live = 1;\n");
+  const live = await create(undefined, true);
+  // An agent's read: nothing renews UI interest.
+  await get(`/${live.reviewId}/diff?format=files`);
+  const arms = () => client.calls.filter((entry) => entry.method === "watchWorktree");
+  await vi.waitFor(() => expect(arms().length).toBeGreaterThan(0));
+  const watched = arms().map((entry) => (entry.input as { watchId: string }).watchId);
+  // A daemon restart: the host holds no watch, and no worker exit is reported.
+  for (const watchId of watched)
+    await client.call("unwatchWorktree", { watchId }, { hostId: IN_PROCESS_HOST_ID });
+  const before = arms().length;
+  await vi.advanceTimersByTimeAsync(WATCH_CHECK_MS);
+  vi.useRealTimers();
+  await vi.waitFor(() =>
+    expect(
+      arms()
+        .slice(before)
+        .map((entry) => (entry.input as { watchId: string }).watchId)
+        .sort(),
+    ).toEqual([...watched].sort()),
+  );
 });
 
 test("source bytes containing tool names survive the real loopback transport unchanged", async () => {
@@ -576,195 +799,205 @@ test("dispose waits for an in-flight source read before closing the shared datab
   expect((await engine.request({ method: "GET", path: "/capabilities" })).status).toBe(503);
 });
 
-test.skipIf(!HAS_DIFFR)("the assembled structural-diff tunnel returns every event through completion", async () => {
-  const created = await create();
-  const info = await engine.info({ sessionId: created.reviewId });
-  expect(info.structuralDiffEnabled).toBe(true);
-  const response = await engine.request({
-    method: "GET",
-    path: `/${created.reviewId}/structural-diff`,
-  });
-  expect(response.status).toBe(200);
-  const events = response.body
-    .trim()
-    .split("\n")
-    .map((line) => JSON.parse(line));
-  expect(events[0]).toMatchObject({ type: "start" });
-  expect(events.at(-1)).toEqual({ type: "complete", succeeded: 3, failed: 0 });
-  expect(events.filter((event) => event.type === "file")).toHaveLength(3);
-  expect(client.calls.some((call) => call.method === "structuralDiff")).toBe(true);
-});
+test.skipIf(!HAS_DIFFR)(
+  "the assembled structural-diff tunnel returns every event through completion",
+  async () => {
+    const created = await create();
+    const info = await engine.info({ sessionId: created.reviewId });
+    expect(info.structuralDiffEnabled).toBe(true);
+    const response = await engine.request({
+      method: "GET",
+      path: `/${created.reviewId}/structural-diff`,
+    });
+    expect(response.status).toBe(200);
+    const events = response.body
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line));
+    expect(events[0]).toMatchObject({ type: "start" });
+    expect(events.at(-1)).toEqual({ type: "complete", succeeded: 3, failed: 0 });
+    expect(events.filter((event) => event.type === "file")).toHaveLength(3);
+    expect(client.calls.some((call) => call.method === "structuralDiff")).toBe(true);
+  },
+);
 
-test.skipIf(!HAS_DIFFR)("dirty worktree source, structural counts and lenses retain their selected generation", async () => {
-  repo.write(".gitignore", "ignored.txt\n");
-  repo.write("order.ts", 'export const status = "queued";\n');
-  repo.head = repo.commit("Order baseline");
-  repo.write("order.ts", 'export const status = "staged";\n');
-  repo.git("add", "order.ts");
-  repo.write("order.ts", 'export const status = "processing";\n');
-  repo.write("note.ts", "export const note = 1;\n");
-  repo.write("ignored.txt", "private ignored content\n");
-  const index = repo.git("ls-files", "--stage");
-  const staged = repo.git("diff", "--cached");
-  const working = repo.git("status", "--porcelain=v1");
-  const created = await post("/commands", {
-    commandId: randomUUID(),
-    operation: { type: "create", title: "Dirty order", target: { kind: "worktree", repositoryId } },
-  });
-  expect(created.status).toBe(200);
-  const id = created.body.reviewId;
-  const saved = (await get(`/${id}?full=true&version=0`)).body;
-  expect(saved.pins.base).toBe(repo.head);
-  expect(saved.pins.head).toBe(repo.head);
-  expect((await get(`/${id}/diff?format=files`)).body).toEqual([
-    { path: "note.ts", status: "added", additions: 1, deletions: 0 },
-    { path: "order.ts", status: "modified", additions: 1, deletions: 1 },
-  ]);
-  const leaseId = randomUUID();
-  expect(
-    (await post(`/${id}/activity`, { action: "begin", leaseId, scope: "lenses" })).status,
-  ).toBe(200);
-  const lens = await post("/commands", {
-    commandId: randomUUID(),
-    leaseId,
-    operation: {
-      type: "lens",
-      reviewId: id,
-      edit: {
-        type: "insert",
-        title: "Order state",
-        targets: [{ kind: "files", patterns: ["order.ts"] }],
+test.skipIf(!HAS_DIFFR)(
+  "dirty worktree source, structural counts and lenses retain their selected generation",
+  async () => {
+    repo.write(".gitignore", "ignored.txt\n");
+    repo.write("order.ts", 'export const status = "queued";\n');
+    repo.head = repo.commit("Order baseline");
+    repo.write("order.ts", 'export const status = "staged";\n');
+    repo.git("add", "order.ts");
+    repo.write("order.ts", 'export const status = "processing";\n');
+    repo.write("note.ts", "export const note = 1;\n");
+    repo.write("ignored.txt", "private ignored content\n");
+    const index = repo.git("ls-files", "--stage");
+    const staged = repo.git("diff", "--cached");
+    const working = repo.git("status", "--porcelain=v1");
+    const created = await post("/commands", {
+      commandId: randomUUID(),
+      operation: {
+        type: "create",
+        title: "Dirty order",
+        target: { kind: "worktree", repositoryId },
       },
-    },
-  });
-  expect(lens.status).toBe(200);
-  const report = (await get(`/${id}/lenses`)).body;
-  expect(report.lenses).toContainEqual(
-    expect.objectContaining({ id: lens.body.targetId, fileCount: 1 }),
-  );
-  const progress = (await get(`/${id}/progress`)).body;
-  expect(progress.files.map((file: { path: string }) => file.path).sort()).toEqual([
-    "note.ts",
-    "order.ts",
-  ]);
-  expect(progress.files.find((file: { path: string }) => file.path === "order.ts").changed).toEqual(
-    { base: [[0, 1]], head: [[0, 1]] },
-  );
-  const catalog = await engine.client().read<Array<{ reviewId: string; diffStats: unknown }>>("");
-  expect(catalog.find((session) => session.reviewId === id)!.diffStats).toEqual({
-    fileCount: 2,
-    additions: 2,
-    deletions: 1,
-  });
-  expect(repo.git("ls-files", "--stage")).toBe(index);
-  expect(repo.git("diff", "--cached")).toBe(staged);
-  expect(repo.git("status", "--porcelain=v1")).toBe(working);
-  const structural = await engine.request({
-    method: "GET",
-    path: `/${id}/structural-diff?version=0&file=order.ts`,
-  });
-  const selected = structural.body
-    .trim()
-    .split("\n")
-    .map((line) => JSON.parse(line));
-  expect(selected.find((event) => event.type === "file").diff.rhs.text).toBe(
-    'export const status = "processing";\n',
-  );
-  expect(selected.at(-1)).toEqual({ type: "complete", succeeded: 1, failed: 0 });
-
-  for (let revision = 2; revision <= 5; revision++) {
-    const previous = (await get(`/${id}?full=true`)).body;
-    repo.write(
-      "order.ts",
-      `export const status = "revision ${revision}";\nexport const count = ${revision};\n`,
+    });
+    expect(created.status).toBe(200);
+    const id = created.body.reviewId;
+    const saved = (await get(`/${id}?full=true&version=0`)).body;
+    expect(saved.pins.base).toBe(repo.head);
+    expect(saved.pins.head).toBe(repo.head);
+    expect((await get(`/${id}/diff?format=files`)).body).toEqual([
+      { path: "note.ts", status: "added", additions: 1, deletions: 0 },
+      { path: "order.ts", status: "modified", additions: 1, deletions: 1 },
+    ]);
+    const leaseId = randomUUID();
+    expect(
+      (await post(`/${id}/activity`, { action: "begin", leaseId, scope: "lenses" })).status,
+    ).toBe(200);
+    const lens = await post("/commands", {
+      commandId: randomUUID(),
+      leaseId,
+      operation: {
+        type: "lens",
+        reviewId: id,
+        edit: {
+          type: "insert",
+          title: "Order state",
+          targets: [{ kind: "files", patterns: ["order.ts"] }],
+        },
+      },
+    });
+    expect(lens.status).toBe(200);
+    const report = (await get(`/${id}/lenses`)).body;
+    expect(report.lenses).toContainEqual(
+      expect.objectContaining({ id: lens.body.targetId, fileCount: 1 }),
     );
-    await vi.waitFor(
-      async () =>
-        expect((await get(`/${id}/file?side=head&file=order.ts`)).body.text).toContain(
-          `revision ${revision}`,
-        ),
-      { timeout: 5_000 },
+    const progress = (await get(`/${id}/progress`)).body;
+    expect(progress.files.map((file: { path: string }) => file.path).sort()).toEqual([
+      "note.ts",
+      "order.ts",
+    ]);
+    expect(
+      progress.files.find((file: { path: string }) => file.path === "order.ts").changed,
+    ).toEqual({ base: [[0, 1]], head: [[0, 1]] });
+    const catalog = await engine.client().read<Array<{ reviewId: string; diffStats: unknown }>>("");
+    expect(catalog.find((session) => session.reviewId === id)!.diffStats).toEqual({
+      fileCount: 2,
+      additions: 2,
+      deletions: 1,
+    });
+    expect(repo.git("ls-files", "--stage")).toBe(index);
+    expect(repo.git("diff", "--cached")).toBe(staged);
+    expect(repo.git("status", "--porcelain=v1")).toBe(working);
+    const structural = await engine.request({
+      method: "GET",
+      path: `/${id}/structural-diff?version=0&file=order.ts`,
+    });
+    const selected = structural.body
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line));
+    expect(selected.find((event) => event.type === "file").diff.rhs.text).toBe(
+      'export const status = "processing";\n',
+    );
+    expect(selected.at(-1)).toEqual({ type: "complete", succeeded: 1, failed: 0 });
+
+    for (let revision = 2; revision <= 5; revision++) {
+      const previous = (await get(`/${id}?full=true`)).body;
+      repo.write(
+        "order.ts",
+        `export const status = "revision ${revision}";\nexport const count = ${revision};\n`,
+      );
+      await vi.waitFor(
+        async () =>
+          expect((await get(`/${id}/file?side=head&file=order.ts`)).body.text).toContain(
+            `revision ${revision}`,
+          ),
+        { timeout: 5_000 },
+      );
+      expect(
+        (
+          await get(
+            `/${id}/file?side=head&file=order.ts&version=0&generation=${previous.pins.worktreeRevision}`,
+          )
+        ).body.text,
+      ).toContain(revision === 2 ? "processing" : `revision ${revision - 1}`);
+    }
+    const current = (await get(`/${id}?full=true`)).body;
+    expect(current.pins.worktreeRevision).not.toBe(saved.pins.worktreeRevision);
+    expect((await get(`/${id}/file?side=head&file=order.ts&version=0`)).body).toMatchObject({
+      text: 'export const status = "processing";\n',
+    });
+    expect((await get(`/${id}/file?side=head&file=order.ts&version=0`)).body).not.toHaveProperty(
+      "localPath",
     );
     expect(
       (
         await get(
-          `/${id}/file?side=head&file=order.ts&version=0&generation=${previous.pins.worktreeRevision}`,
+          `/${id}/file?side=head&file=order.ts&version=1&generation=${current.pins.worktreeRevision}`,
         )
       ).body.text,
-    ).toContain(revision === 2 ? "processing" : `revision ${revision - 1}`);
-  }
-  const current = (await get(`/${id}?full=true`)).body;
-  expect(current.pins.worktreeRevision).not.toBe(saved.pins.worktreeRevision);
-  expect((await get(`/${id}/file?side=head&file=order.ts&version=0`)).body).toMatchObject({
-    text: 'export const status = "processing";\n',
-  });
-  expect((await get(`/${id}/file?side=head&file=order.ts&version=0`)).body).not.toHaveProperty(
-    "localPath",
-  );
-  expect(
-    (
-      await get(
-        `/${id}/file?side=head&file=order.ts&version=1&generation=${current.pins.worktreeRevision}`,
-      )
-    ).body.text,
-  ).toContain("revision 5");
-  expect(
-    (
-      await get(
-        `/${id}/file?side=head&file=order.ts&version=0&generation=${current.pins.worktreeRevision}`,
-      )
-    ).body,
-  ).toMatchObject({
-    text: 'export const status = "revision 5";\nexport const count = 5;\n',
-    localPath: `${repo.root}/order.ts`,
-  });
-  expect(
-    await host.harness.behavior.callRpc("liveFile", {
-      sessionId: id,
-      path: "order.ts",
-      version: 1,
-      generation: current.pins.worktreeRevision,
-    }),
-  ).toEqual({
-    target: { kind: "host", hostId: IN_PROCESS_HOST_ID, path: `${repo.root}/order.ts` },
-  });
-  expect(
-    await host.harness.behavior.callRpc("liveFile", {
-      sessionId: id,
-      path: "order.ts",
-      version: 1,
-    }),
-  ).toEqual({ target: null });
-  expect(
-    await host.harness.behavior.callRpc("liveFile", {
-      sessionId: id,
-      path: "order.ts",
-      version: 0,
-      generation: saved.pins.worktreeRevision,
-    }),
-  ).toEqual({ target: null });
-  expect((await get(`/${id}/progress?version=0`)).body.files).toEqual(progress.files);
-  const older = await engine.request({
-    method: "GET",
-    path: `/${id}/structural-diff?version=0&file=order.ts`,
-  });
-  expect(older.body).toBe(structural.body);
-  expect(
-    (await get(`/${id}/file?side=head&file=order.ts&version=1&generation=${"0".repeat(64)}`))
-      .status,
-  ).toBe(409);
-  const refs = repo
-    .git("for-each-ref", "--format=%(refname)", "refs/bb-whiteboard/worktrees")
-    .trim()
-    .split("\n");
-  expect(refs).toHaveLength(10);
-  await engine.dispose();
-  repo.git("gc", "--prune=now");
-  engine = createEngine(bb, settings);
-  expect((await get(`/${id}/file?side=head&file=order.ts&version=0`)).body.text).toBe(
-    'export const status = "processing";\n',
-  );
-});
+    ).toContain("revision 5");
+    expect(
+      (
+        await get(
+          `/${id}/file?side=head&file=order.ts&version=0&generation=${current.pins.worktreeRevision}`,
+        )
+      ).body,
+    ).toMatchObject({
+      text: 'export const status = "revision 5";\nexport const count = 5;\n',
+      localPath: `${repo.root}/order.ts`,
+    });
+    expect(
+      await host.harness.behavior.callRpc("liveFile", {
+        sessionId: id,
+        path: "order.ts",
+        version: 1,
+        generation: current.pins.worktreeRevision,
+      }),
+    ).toEqual({
+      target: { kind: "host", hostId: IN_PROCESS_HOST_ID, path: `${repo.root}/order.ts` },
+    });
+    expect(
+      await host.harness.behavior.callRpc("liveFile", {
+        sessionId: id,
+        path: "order.ts",
+        version: 1,
+      }),
+    ).toEqual({ target: null });
+    expect(
+      await host.harness.behavior.callRpc("liveFile", {
+        sessionId: id,
+        path: "order.ts",
+        version: 0,
+        generation: saved.pins.worktreeRevision,
+      }),
+    ).toEqual({ target: null });
+    expect((await get(`/${id}/progress?version=0`)).body.files).toEqual(progress.files);
+    const older = await engine.request({
+      method: "GET",
+      path: `/${id}/structural-diff?version=0&file=order.ts`,
+    });
+    expect(older.body).toBe(structural.body);
+    expect(
+      (await get(`/${id}/file?side=head&file=order.ts&version=1&generation=${"0".repeat(64)}`))
+        .status,
+    ).toBe(409);
+    const refs = repo
+      .git("for-each-ref", "--format=%(refname)", "refs/bb-whiteboard/worktrees")
+      .trim()
+      .split("\n");
+    expect(refs).toHaveLength(10);
+    await engine.dispose();
+    repo.git("gc", "--prune=now");
+    engine = createEngine(bb, settings);
+    expect((await get(`/${id}/file?side=head&file=order.ts&version=0`)).body.text).toBe(
+      'export const status = "processing";\n',
+    );
+  },
+);
 
 test.each(["assume-unchanged", "skip-worktree", "split-index"])(
   "retained raw CRLF source ignores %s staging optimization",
@@ -782,34 +1015,41 @@ test.each(["assume-unchanged", "skip-worktree", "split-index"])(
   },
 );
 
-test.skipIf(!HAS_DIFFR)("the worktree API reads exact CRLF source while Git-clean native comparisons stay empty", async () => {
-  repo.write(".gitattributes", "*.ts text=auto\n");
-  repo.head = repo.commit("Normalized baseline");
-  const raw = "export const a = 10;\r\nexport const a2 = 20;\r\n";
-  repo.write("src/a.ts", raw);
-  expect(repo.git("diff", "--name-only")).toBe("");
-  const created = await post("/commands", {
-    commandId: randomUUID(),
-    operation: { type: "create", title: "Clean CRLF", target: { kind: "worktree", repositoryId } },
-  });
-  expect(created.status).toBe(200);
-  const id = created.body.reviewId;
-  expect((await get(`/${id}/file?side=head&file=src/a.ts`)).body).toMatchObject({
-    text: raw,
-    localPath: `${repo.root}/src/a.ts`,
-  });
-  expect((await get(`/${id}/diff?format=files`)).body).toEqual([]);
-  expect((await get(`/${id}/progress`)).body.files).toEqual([]);
-  const structural = await engine.request({
-    method: "GET",
-    path: `/${id}/structural-diff?file=src/a.ts`,
-  });
-  expect(structural.status).toBe(200);
-  const events = structural.body
-    .trim()
-    .split("\n")
-    .map((line) => JSON.parse(line));
-  expect(events[0]).toMatchObject({ type: "start", files: [] });
-  expect(events).not.toContainEqual(expect.objectContaining({ type: "file" }));
-  expect(events.at(-1)).toEqual({ type: "complete", succeeded: 0, failed: 0 });
-});
+test.skipIf(!HAS_DIFFR)(
+  "the worktree API reads exact CRLF source while Git-clean native comparisons stay empty",
+  async () => {
+    repo.write(".gitattributes", "*.ts text=auto\n");
+    repo.head = repo.commit("Normalized baseline");
+    const raw = "export const a = 10;\r\nexport const a2 = 20;\r\n";
+    repo.write("src/a.ts", raw);
+    expect(repo.git("diff", "--name-only")).toBe("");
+    const created = await post("/commands", {
+      commandId: randomUUID(),
+      operation: {
+        type: "create",
+        title: "Clean CRLF",
+        target: { kind: "worktree", repositoryId },
+      },
+    });
+    expect(created.status).toBe(200);
+    const id = created.body.reviewId;
+    expect((await get(`/${id}/file?side=head&file=src/a.ts`)).body).toMatchObject({
+      text: raw,
+      localPath: `${repo.root}/src/a.ts`,
+    });
+    expect((await get(`/${id}/diff?format=files`)).body).toEqual([]);
+    expect((await get(`/${id}/progress`)).body.files).toEqual([]);
+    const structural = await engine.request({
+      method: "GET",
+      path: `/${id}/structural-diff?file=src/a.ts`,
+    });
+    expect(structural.status).toBe(200);
+    const events = structural.body
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line));
+    expect(events[0]).toMatchObject({ type: "start", files: [] });
+    expect(events).not.toContainEqual(expect.objectContaining({ type: "file" }));
+    expect(events.at(-1)).toEqual({ type: "complete", succeeded: 0, failed: 0 });
+  },
+);
