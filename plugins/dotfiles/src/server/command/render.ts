@@ -1,17 +1,14 @@
-import { defineCommand, PluginCliError, type CommandContext } from "@bb-kit/core/command";
+import { defineCommand, type CommandContext } from "@bb-kit/core/command";
 
 import type { GitContext } from "../git.ts";
-import { overview } from "../rpc/overview.ts";
+import { actedOn, commandCheckout } from "../lib/command-checkout.ts";
 import { runTask } from "../rpc/run-task.ts";
 
 export const render = defineCommand({
-  summary: "Render agent configs and settings overlays via mise",
+  summary: "Render agent configs and settings overlays via mise on this thread's machine",
   async execute(ctx: CommandContext<GitContext>) {
-    const snapshot = await overview.execute(ctx);
-    if (!snapshot.repoExists) {
-      throw new PluginCliError(`dotfiles repo not found at ${snapshot.repoPath}`);
-    }
-    const result = await runTask.execute(ctx, { task: "render" });
-    return { exitCode: result.exitCode, stdout: result.output };
+    const snapshot = await commandCheckout(ctx);
+    const result = await runTask.execute(ctx, { hostId: snapshot.host.id, task: "render" });
+    return { exitCode: result.exitCode, stdout: result.output, stderr: actedOn(snapshot) };
   },
 });

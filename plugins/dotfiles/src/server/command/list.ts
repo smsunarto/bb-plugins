@@ -1,15 +1,12 @@
-import { defineCommand, PluginCliError, type CommandContext } from "@bb-kit/core/command";
+import { defineCommand, type CommandContext } from "@bb-kit/core/command";
 
 import type { GitContext } from "../git.ts";
-import { overview } from "../rpc/overview.ts";
+import { actedOn, commandCheckout } from "../lib/command-checkout.ts";
 
 export const list = defineCommand({
-  summary: "List tweakable files with dirty markers",
+  summary: "List tweakable files with dirty markers on this thread's machine",
   async execute(ctx: CommandContext<GitContext>) {
-    const snapshot = await overview.execute(ctx);
-    if (!snapshot.repoExists) {
-      throw new PluginCliError(`dotfiles repo not found at ${snapshot.repoPath}`);
-    }
+    const snapshot = await commandCheckout(ctx);
     const lines: string[] = [];
     for (const group of snapshot.groups) {
       lines.push(`# ${group.title}`);
@@ -24,6 +21,6 @@ export const list = defineCommand({
         lines.push(`  ${file.path}${flags ? `  [${flags}]` : ""}`);
       }
     }
-    return { exitCode: 0, stdout: lines.join("\n") };
+    return { exitCode: 0, stdout: lines.join("\n"), stderr: actedOn(snapshot) };
   },
 });

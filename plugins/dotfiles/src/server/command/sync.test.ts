@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { PluginCliError } from "@bb-kit/core/command";
 
 import { createFakeContext } from "../fake-context.ts";
+import { cleanRepo } from "../fake-git.ts";
 import { sync } from "./sync.ts";
 
 function args(publish: boolean) {
@@ -12,11 +13,18 @@ function args(publish: boolean) {
 test("sync throws when the repo is missing", async () => {
   await assert.rejects(
     () =>
-      Promise.resolve(sync.execute(createFakeContext({ repoExists: () => false }), args(false))),
+      Promise.resolve(
+        sync.execute(
+          createFakeContext({
+            inspect: async (target) => cleanRepo(target, { repoExists: false }),
+          }),
+          args(false),
+        ),
+      ),
     (error: unknown) => {
       assert.ok(error instanceof PluginCliError);
       assert.equal(error.exitCode, 1);
-      assert.equal(error.message, "dotfiles repo not found at /dotfiles");
+      assert.equal(error.message, "dotfiles repo not found at /dotfiles on codex@cardinal");
       return true;
     },
   );
@@ -27,10 +35,14 @@ test("sync without --publish runs the pull-only task", async () => {
     run: async () => ({ exitCode: 0, output: "pulled" }),
   });
   const result = await sync.execute(ctx, args(false));
-  assert.deepEqual(result, { exitCode: 0, stdout: "pulled" });
+  assert.deepEqual(result, {
+    exitCode: 0,
+    stdout: "pulled",
+    stderr: "host: codex@cardinal · repo: /dotfiles\n",
+  });
   assert.deepEqual(
-    ctx.git.run.mock.calls.map(([, command]) => command),
-    ["mise run sync:pull"],
+    ctx.git.run.mock.calls.map(([target, command]) => [target.hostId, command]),
+    [["host_server", "mise run sync:pull"]],
   );
 });
 
@@ -39,9 +51,13 @@ test("sync --publish publishes instead of pulling", async () => {
     run: async () => ({ exitCode: 1, output: "push rejected" }),
   });
   const result = await sync.execute(ctx, args(true));
-  assert.deepEqual(result, { exitCode: 1, stdout: "push rejected" });
+  assert.deepEqual(result, {
+    exitCode: 1,
+    stdout: "push rejected",
+    stderr: "host: codex@cardinal · repo: /dotfiles\n",
+  });
   assert.deepEqual(
-    ctx.git.run.mock.calls.map(([, command]) => command),
-    ["mise run sync"],
+    ctx.git.run.mock.calls.map(([target, command]) => [target.hostId, command]),
+    [["host_server", "mise run sync"]],
   );
 });

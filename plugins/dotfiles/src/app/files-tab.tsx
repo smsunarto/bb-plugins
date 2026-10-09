@@ -12,29 +12,35 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { pluginQueryClient, PluginQueryBoundary } from "@bb-kit/core/rpc/query";
+import { HostPicker, usePanelOverview } from "./host-picker.tsx";
 import { rpc, type RPCOutput } from "./rpc.ts";
 import { useDotfilesRoute, type DotfilesNavigation } from "./route.ts";
 import { errorMessage } from "./tasks.ts";
 
-type OverviewResult = RPCOutput<"overview">;
-type OverviewFile = OverviewResult["groups"][number]["files"][number];
+type ReadyOverview = Extract<RPCOutput<"overview">, { state: "ready" }>;
+type OverviewFile = ReadyOverview["groups"][number]["files"][number];
 
-interface PendingRemoval {
+interface SkillRow {
   readonly name: string;
   readonly path: string;
 }
 
+/** A removal names the machine whose file list the reader clicked. */
+interface PendingRemoval extends SkillRow {
+  readonly host: ReadyOverview["host"];
+}
+
 function FilesTabBody(props: PluginNavPanelProps): ReactElement {
   const nav = useDotfilesRoute(props.subPath);
-  const overview = rpc.overview.useQuery();
+  const overview = usePanelOverview();
   const [pendingRemoval, setPendingRemoval] = useState<PendingRemoval | null>(null);
   const removeSkillMutation = rpc.removeSkill.useMutation({
     onSuccess: () => pluginQueryClient.invalidateQueries({ queryKey: rpc.overview.queryKey() }),
   });
 
-  async function removeSkill({ name, path }: PendingRemoval): Promise<void> {
+  async function removeSkill({ name, path, host: machine }: PendingRemoval): Promise<void> {
     try {
-      const result = await removeSkillMutation.mutateAsync({ name });
+      const result = await removeSkillMutation.mutateAsync({ hostId: machine.id, name });
       if (result.outcome === "not-found") {
         toast.error(`Skill ${name} no longer exists`);
         return;
@@ -50,54 +56,59 @@ function FilesTabBody(props: PluginNavPanelProps): ReactElement {
     }
   }
 
-  if (overview.isPending) {
-    return <div className="h-full" aria-busy="true" aria-label="Loading dotfiles" />;
-  }
-  if (overview.isError) {
-    return (
-      <div className="flex h-full flex-col items-center justify-center gap-3 p-6 text-center">
-        <p className="text-sm text-destructive">
-          Failed to load dotfiles: {errorMessage(overview.error)}
-        </p>
-        <Button variant="outline" onClick={() => void overview.refetch()}>
-          Retry
-        </Button>
-      </div>
-    );
-  }
-
-  const dirtyCount = overview.data.gitEntries.length;
+  const ready = overview.data?.state === "ready" ? overview.data : undefined;
+  const dirtyCount = ready?.gitEntries.length ?? 0;
 
   return (
     <>
       <div className="border-b border-border p-3">
-        <div className="text-sm font-medium text-foreground">
-          {overview.data.branch}
-          <span className="ml-2 text-xs text-muted-foreground">
-            {dirtyCount === 0 ? "clean" : `${dirtyCount} dirty`}
-          </span>
-        </div>
-        <div className="mt-0.5 truncate text-xs text-muted-foreground">
-          {overview.data.repoPath}
-        </div>
-      </div>
-      <div className="min-h-0 flex-1 overflow-y-auto p-2">
-        {overview.data.groups.map((group) => (
-          <div key={group.id} className="mb-3">
-            <div className="px-2 pb-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">
-              {group.title}
-            </div>
-            {group.files.map((item) => (
-              <FileRow
-                key={item.path}
-                item={item}
-                nav={nav}
-                onRemove={(removal) => setPendingRemoval(removal)}
-              />
-            ))}
+        {ready !== undefined && (
+          <div className="mb-1 text-sm font-medium text-foreground">
+            {ready.branch}
+            <span className="ml-2 text-xs text-muted-foreground">
+              {dirtyCount === 0 ? "clean" : `${dirtyCount} dirty`}
+            </span>
           </div>
-        ))}
+        )}
+        <div className="flex min-w-0 items-center gap-2 text-xs text-muted-foreground">
+          <HostPicker />
+          {ready !== undefined && <span className="min-w-0 truncate">{ready.repoPath}</span>}
+        </div>
       </div>
+      {overview.isPending ? (
+        <div className="h-full" aria-busy="true" aria-label="Loading dotfiles" />
+      ) : overview.isError ? (
+        <div className="flex h-full flex-col items-center justify-center gap-3 p-6 text-center">
+          <p className="text-sm text-destructive">
+            Failed to load dotfiles: {errorMessage(overview.error)}
+          </p>
+          <Button variant="outline" onClick={() => void overview.refetch()}>
+            Retry
+          </Button>
+        </div>
+      ) : ready === undefined ? (
+        <div className="p-4 text-sm text-muted-foreground">
+          {overview.data.host.name} is not connected.
+        </div>
+      ) : (
+        <div className="min-h-0 flex-1 overflow-y-auto p-2">
+          {ready.groups.map((group) => (
+            <div key={group.id} className="mb-3">
+              <div className="px-2 pb-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                {group.title}
+              </div>
+              {group.files.map((item) => (
+                <FileRow
+                  key={item.path}
+                  item={item}
+                  nav={nav}
+                  onRemove={(row) => setPendingRemoval({ ...row, host: ready.host })}
+                />
+              ))}
+            </div>
+          ))}
+        </div>
+      )}
       {pendingRemoval !== null && (
         <Dialog
           open
@@ -109,8 +120,8 @@ function FilesTabBody(props: PluginNavPanelProps): ReactElement {
             <DialogHeader>
               <DialogTitle>Remove skill</DialogTitle>
               <DialogDescription>
-                Remove skill "{pendingRemoval.name}" via npx skills? This deletes it for every
-                agent.
+                Remove skill "{pendingRemoval.name}" via npx skills on {pendingRemoval.host.name}?
+                This deletes it for every agent on that machine.
               </DialogDescription>
             </DialogHeader>
             <DialogFooter>
@@ -141,7 +152,7 @@ function FileRow({
 }: {
   readonly item: OverviewFile;
   readonly nav: DotfilesNavigation;
-  readonly onRemove: (removal: PendingRemoval) => void;
+  readonly onRemove: (row: SkillRow) => void;
 }): ReactElement {
   const selected = nav.path === item.path;
   const removeSkillName = item.removeSkillName;

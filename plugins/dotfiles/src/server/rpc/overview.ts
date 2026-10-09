@@ -5,7 +5,7 @@ import {
   groupDefinitions,
   isValidSkillName,
   type TweakableGroupDefinition,
-} from "../domain.ts";
+} from "../../shared/domain.ts";
 import type { GitContext } from "../git.ts";
 
 function toOverviewGroup(
@@ -29,60 +29,66 @@ function toOverviewGroup(
   };
 }
 
+const host = z.object({ id: z.string(), name: z.string() }).strict();
+
 export const overview = defineQuery({
-  output: z
-    .object({
-      repoPath: z.string(),
-      repoExists: z.boolean(),
-      branch: z.string(),
-      groups: z.array(
-        z
-          .object({
-            id: z.string(),
-            title: z.string(),
-            files: z.array(
-              z
-                .object({
-                  path: z.string(),
-                  title: z.string(),
-                  note: z.string().optional(),
-                  render: z.boolean().optional(),
-                  exists: z.boolean(),
-                  dirty: z.boolean(),
-                  removeSkillName: z.string().optional(),
-                })
-                .strict(),
-            ),
-          })
-          .strict(),
-      ),
-      gitEntries: z.array(gitEntrySchema),
-    })
-    .strict(),
-  async execute(ctx: GitContext) {
+  input: z.object({ hostId: z.string().min(1).optional() }).strict(),
+  output: z.discriminatedUnion("state", [
+    z.object({ state: z.literal("offline"), host }).strict(),
+    z
+      .object({
+        state: z.literal("ready"),
+        host,
+        repoPath: z.string(),
+        repoExists: z.boolean(),
+        branch: z.string(),
+        groups: z.array(
+          z
+            .object({
+              id: z.string(),
+              title: z.string(),
+              files: z.array(
+                z
+                  .object({
+                    path: z.string(),
+                    title: z.string(),
+                    note: z.string().optional(),
+                    render: z.boolean().optional(),
+                    exists: z.boolean(),
+                    dirty: z.boolean(),
+                    removeSkillName: z.string().optional(),
+                  })
+                  .strict(),
+              ),
+            })
+            .strict(),
+        ),
+        gitEntries: z.array(gitEntrySchema),
+      })
+      .strict(),
+  ]),
+  async execute(ctx: GitContext, { hostId }) {
     const { git } = ctx;
-    const repoPath = await git.getRepoPath();
-    const repoExists = git.repoExists(repoPath);
-    const skills = repoExists ? git.discoverSkills(repoPath) : [];
-    const status = repoExists ? await git.gitStatus(repoPath) : { branch: "missing", entries: [] };
-    const dirtyPaths = new Set(status.entries.map((entry) => entry.path));
+    const target = await git.target(hostId);
+    const machine = { id: target.hostId, name: target.hostName };
+    if (!target.connected) return { state: "offline" as const, host: machine };
+    const repo = await git.inspect(target);
+    const missingPaths = new Set(repo.missingPaths);
+    const dirtyPaths = new Set(repo.entries.map((entry) => entry.path));
     const removableSkillNames = new Map(
-      skills
+      repo.skills
         .filter((skill) => isValidSkillName(skill.title))
         .map((skill) => [skill.path, skill.title]),
     );
     return {
-      repoPath,
-      repoExists,
-      branch: status.branch,
-      gitEntries: status.entries,
-      groups: groupDefinitions(skills).map((group) =>
-        toOverviewGroup(
-          group,
-          (path) => git.pathExists(repoPath, path),
-          dirtyPaths,
-          removableSkillNames,
-        ),
+      state: "ready" as const,
+      host: machine,
+      repoPath: repo.repoPath,
+      repoExists: repo.repoExists,
+      branch: repo.branch,
+      gitEntries: repo.entries,
+      groups: groupDefinitions(repo.skills).map((group) =>
+        toOverviewGroup(group, (path) => !missingPaths.has(path), dirtyPaths, removableSkillNames),
       ),
     };
   },

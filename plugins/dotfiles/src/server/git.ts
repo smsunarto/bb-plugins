@@ -1,206 +1,169 @@
 import type { Context } from "@bb-kit/core/plugin";
-import type { BbPluginApi } from "@get-bb/plugin-sdk";
-import { spawn, type ChildProcess } from "node:child_process";
-import { existsSync, readdirSync } from "node:fs";
-import { homedir } from "node:os";
+import type { BbPluginApi, ExperimentalHostClient } from "@get-bb/plugin-sdk";
 import { join } from "node:path";
-import type { GitEntry, TaskResult, TweakableDefinition } from "./domain.ts";
+import type { TaskResult } from "../shared/domain.ts";
+import { dotfilesHostContract, type RepoInspection } from "../shared/host-contract.ts";
 
-const outputCap = 200_000;
-const defaultTimeoutMs = 300_000;
+/** The host kills a task at 300 s. The extra 10 s carries its output back. */
+const taskTimeoutMs = 310_000;
 
-interface LoginShell {
-  readonly path: string;
-  readonly args: readonly string[];
+/** The checkout a call acts on: one machine, and the repo path as configured. */
+export interface Target {
+  readonly hostId: string;
+  readonly hostName: string;
+  readonly connected: boolean;
+  /** As configured. `~` expands on the target machine. */
+  readonly repoPath: string;
+}
+
+/** A target after the host read it. `repoPath` is now absolute. */
+export type Repo = Target & RepoInspection;
+
+export interface DotfilesHosts {
+  /** The stored pick, else the bb server's own machine. */
+  readonly selectedHostId: string | null;
+  readonly hosts: { id: string; name: string; connected: boolean }[];
 }
 
 /** Everything the rpc and command handlers consume — the DI seam for tests. */
 export interface DotfilesGit {
-  getRepoPath(): Promise<string>;
-  repoExists(repoPath: string): boolean;
-  pathExists(repoPath: string, path: string): boolean;
-  discoverSkills(repoPath: string): readonly TweakableDefinition[];
-  gitStatus(repoPath: string): Promise<{
-    branch: string;
-    entries: GitEntry[];
-  }>;
-  readFile(
-    repoPath: string,
-    path: string,
-  ): Promise<{
-    content: string;
-    sha256: string;
-  }>;
-  readHeadFile(repoPath: string, path: string): Promise<string | null>;
+  hosts(): Promise<DotfilesHosts>;
+  selectHost(hostId: string): Promise<void>;
+  /** `hostId` when given, else the panel's machine, else the bb server's own. */
+  target(hostId: string | undefined): Promise<Target>;
+  /** The machine an agent's thread runs on, when the thread has an environment. */
+  threadHostId(threadId: string): Promise<string | undefined>;
+  inspect(target: Target): Promise<Repo>;
+  readFile(repo: Repo, path: string): Promise<{ content: string; sha256: string }>;
+  readHeadFile(repo: Repo, path: string): Promise<string | null>;
   writeFile(
-    repoPath: string,
+    repo: Repo,
     path: string,
     content: string,
     expectedSha256: string | undefined,
   ): Promise<{ outcome: "written"; sha256: string } | { outcome: "conflict" }>;
-  run(repoPath: string, command: string): Promise<TaskResult>;
-  removeSkill(repoPath: string, name: string): Promise<TaskResult>;
+  run(target: Target, command: string): Promise<TaskResult>;
+  removeSkill(repo: Repo, name: string): Promise<TaskResult>;
 }
 
 /** The `ctx` every rpc and command handler declares: the host plus `git`. */
 export type GitContext = Context<{ git: DotfilesGit }>;
 
-export interface GitDependencies {
-  readonly files: BbPluginApi["sdk"]["files"];
-  readonly getConfiguredRepoPath: () => Promise<string>;
-}
-
-export interface ManagedDotfilesGit extends DotfilesGit {
-  dispose(): void;
-}
-
-function expandHome(path: string): string {
-  if (path === "~") return homedir();
-  return path.startsWith("~/") ? join(homedir(), path.slice(2)) : path;
-}
-
-function resolveLoginShell(): LoginShell {
-  const candidates = [
-    process.env.SHELL,
-    "/opt/homebrew/bin/fish",
-    "/usr/local/bin/fish",
-    "/usr/bin/fish",
-  ];
-  for (const candidate of candidates) {
-    if (candidate?.endsWith("/fish") && existsSync(candidate)) {
-      return { path: candidate, args: ["-l", "-c"] };
-    }
-  }
-  return { path: "/bin/sh", args: ["-lc"] };
-}
+export type DotfilesHostClient = Pick<ExperimentalHostClient<typeof dotfilesHostContract>, "call">;
 
 function quoteShell(value: string): string {
   return `'${value.replaceAll("'", `'"'"'`)}'`;
 }
 
-export function createDotfilesGit({
-  files,
-  getConfiguredRepoPath,
-}: GitDependencies): ManagedDotfilesGit {
-  const loginShell = resolveLoginShell();
-  const activeChildren = new Set<ChildProcess>();
+function assertConnected(target: Target): void {
+  if (!target.connected) throw new Error(`${target.hostName} is not connected.`);
+}
 
-  function runCommand(
-    command: string,
-    cwd: string,
-    timeoutMs = defaultTimeoutMs,
-  ): Promise<TaskResult> {
-    return new Promise((resolvePromise) => {
-      const child = spawn(loginShell.path, [...loginShell.args, command], { cwd });
-      activeChildren.add(child);
-      let output = "";
-      let truncated = false;
-      let settled = false;
+export function createDotfilesGit(
+  bb: BbPluginApi,
+  host: DotfilesHostClient = bb.hosts.experimental_client({ contract: dotfilesHostContract }),
+): DotfilesGit {
+  const settings = bb.settings.define({
+    repoPath: {
+      type: "string",
+      label: "Dotfiles repo path",
+      description:
+        "On the machine picked in the Dotfiles panel. A leading ~ is that machine's home.",
+      default: "~/git/dotfiles",
+    },
+    hostId: {
+      type: "string",
+      label: "Machine (bb host id)",
+      description:
+        "The machine the Dotfiles panel acts on. Pick it in the panel. Empty means the bb server's own machine.",
+    },
+  });
 
-      const append = (chunk: Buffer): void => {
-        const text = chunk.toString("utf8");
-        const remaining = outputCap - output.length;
-        if (remaining <= 0) {
-          truncated = true;
-          return;
-        }
-        output += text.slice(0, remaining);
-        if (text.length > remaining) truncated = true;
-      };
-
-      const settle = (result: TaskResult): void => {
-        if (settled) return;
-        settled = true;
-        clearTimeout(timer);
-        activeChildren.delete(child);
-        // Both `error` and `close` can fire. The `settled` guard makes this
-        // exact-once even though static promise lint cannot prove it.
-        /* oxlint-disable-next-line promise/no-multiple-resolved */
-        resolvePromise(result);
-      };
-
-      child.stdout.on("data", append);
-      child.stderr.on("data", append);
-      const timer = setTimeout(() => {
-        output += `\n[timed out after ${timeoutMs / 1000}s]`;
-        child.kill("SIGKILL");
-      }, timeoutMs);
-      child.on("close", (code) => {
-        settle({
-          exitCode: code ?? 1,
-          output: `${output}${truncated ? "\n[output truncated]" : ""}`,
-        });
-      });
-      child.on("error", (error) => {
-        settle({
-          exitCode: 127,
-          output: `${output}${output ? "\n" : ""}${String(error)}`,
-        });
-      });
-    });
+  async function selectedHostId(configured: string | undefined): Promise<string | null> {
+    return configured || (await bb.sdk.system.config()).primaryHostId;
   }
 
-  function discoverSkills(repoPath: string): readonly TweakableDefinition[] {
-    const skillsDirectory = join(repoPath, ".dotfiles/.agents/skills");
-    if (!existsSync(skillsDirectory)) return [];
-    return readdirSync(skillsDirectory, { withFileTypes: true })
-      .filter(
-        (entry) => entry.isDirectory() && existsSync(join(skillsDirectory, entry.name, "SKILL.md")),
-      )
-      .map((entry) => ({
-        path: `.dotfiles/.agents/skills/${entry.name}/SKILL.md`,
-        title: entry.name,
-      }))
-      .sort((left, right) => left.title.localeCompare(right.title));
+  async function run(target: Target, command: string): Promise<TaskResult> {
+    assertConnected(target);
+    return host.call(
+      "run",
+      { repoPath: target.repoPath, command },
+      { hostId: target.hostId, timeoutMs: taskTimeoutMs },
+    );
   }
 
   return {
-    async getRepoPath() {
-      return expandHome(await getConfiguredRepoPath());
-    },
-
-    repoExists: existsSync,
-
-    pathExists(repoPath, path) {
-      return existsSync(join(repoPath, path));
-    },
-
-    discoverSkills,
-
-    async gitStatus(repoPath) {
-      const result = await runCommand("git status --porcelain=v1 -b", repoPath, 30_000);
-      if (result.exitCode !== 0) return { branch: "unknown", entries: [] };
-      const lines = result.output.split("\n").filter(Boolean);
-      const branchLine = lines.find((line) => line.startsWith("## "));
-      const branch = branchLine?.slice(3).split("...")[0] ?? "unknown";
+    async hosts() {
+      const [hosts, { hostId }] = await Promise.all([bb.sdk.hosts.list(), settings.get()]);
       return {
-        branch,
-        entries: lines
-          .filter((line) => !line.startsWith("## "))
-          .map((line) => ({
-            status: line.slice(0, 2).trim(),
-            path: line.slice(3),
-          })),
+        selectedHostId: await selectedHostId(hostId),
+        hosts: hosts.map((item) => ({
+          id: item.id,
+          name: item.name,
+          connected: item.status === "connected",
+        })),
       };
     },
 
-    async readFile(repoPath, path) {
-      const file = await files.read({ path: join(repoPath, path) });
+    async selectHost(hostId) {
+      // A removed machine fails here instead of being stored.
+      await bb.sdk.hosts.get({ hostId });
+      await settings.experimental_set({ hostId });
+    },
+
+    async target(requested) {
+      const configured = await settings.get();
+      const hostId = requested ?? (await selectedHostId(configured.hostId));
+      if (!hostId) throw new Error("No machine is selected. Pick one in the Dotfiles panel.");
+      const machine = await bb.sdk.hosts.get({ hostId });
+      return {
+        hostId,
+        hostName: machine.name,
+        connected: machine.status === "connected",
+        repoPath: configured.repoPath,
+      };
+    },
+
+    async threadHostId(threadId) {
+      const thread = await bb.sdk.threads.get({ threadId, include: "environment" });
+      return "environment" in thread ? thread.environment?.hostId : undefined;
+    },
+
+    async inspect(target) {
+      assertConnected(target);
+      const inspection = await host.call(
+        "inspect",
+        { repoPath: target.repoPath },
+        { hostId: target.hostId },
+      );
+      return { ...target, ...inspection };
+    },
+
+    async readFile(repo, path) {
+      const file = await bb.sdk.files.read({
+        hostId: repo.hostId,
+        path: join(repo.repoPath, path),
+      });
       if (file.contentEncoding !== "utf8") {
         throw new Error(`not a text file: ${path} (${file.contentEncoding})`);
       }
       return { content: file.content, sha256: file.sha256 };
     },
 
-    async readHeadFile(repoPath, path) {
-      const result = await runCommand(`git show HEAD:${quoteShell(path)}`, repoPath, 30_000);
-      return result.exitCode === 0 ? result.output : null;
+    async readHeadFile(repo, path) {
+      const head = await host.call(
+        "readHead",
+        { repoPath: repo.repoPath, path },
+        { hostId: repo.hostId },
+      );
+      return head.content;
     },
 
-    async writeFile(repoPath, path, content, expectedSha256) {
-      const result = await files.write({
-        path: join(repoPath, path),
-        rootPath: repoPath,
+    async writeFile(repo, path, content, expectedSha256) {
+      const result = await bb.sdk.files.write({
+        hostId: repo.hostId,
+        path: join(repo.repoPath, path),
+        rootPath: repo.repoPath,
         content,
         expectedSha256,
       });
@@ -209,17 +172,10 @@ export function createDotfilesGit({
         : { outcome: "conflict" };
     },
 
-    run(repoPath, command) {
-      return runCommand(command, repoPath);
-    },
+    run,
 
-    removeSkill(repoPath, name) {
-      return runCommand(`npx -y skills remove ${quoteShell(name)} -g -y`, repoPath);
-    },
-
-    dispose() {
-      for (const child of activeChildren) child.kill("SIGKILL");
-      activeChildren.clear();
+    removeSkill(repo, name) {
+      return run(repo, `npx -y skills remove ${quoteShell(name)} -g -y`);
     },
   };
 }

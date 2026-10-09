@@ -26,12 +26,13 @@ export interface ReadyFileEditor {
 }
 
 function commitWritten(
+  hostId: string,
   path: RepoPath,
   content: string,
   result: { readonly sha256: string; readonly renderHint: boolean },
 ): void {
   if (result.renderHint) markRenderStale();
-  const key = rpc.readFile.queryKey({ path });
+  const key = rpc.readFile.queryKey({ hostId, path });
   const cached = pluginQueryClient.getQueryData<ReadFileResult>(key);
   if (cached !== undefined) {
     pluginQueryClient.setQueryData<ReadFileResult>(key, {
@@ -43,9 +44,10 @@ function commitWritten(
   void pluginQueryClient.invalidateQueries({ queryKey: rpc.overview.queryKey() });
 }
 
-export function useFileEditor(path: RepoPath): FileEditor {
+/** Edit `path` in `hostId`'s checkout. Every read and save names that machine. */
+export function useFileEditor(hostId: string, path: RepoPath): FileEditor {
   // staleTime Infinity: the draft, not the cache, is live while editing.
-  const file = rpc.readFile.useQuery({ path }, { staleTime: Number.POSITIVE_INFINITY });
+  const file = rpc.readFile.useQuery({ hostId, path }, { staleTime: Number.POSITIVE_INFINITY });
   const client = rpc.useClient();
 
   const draftRef = useRef<string | null>(null);
@@ -95,6 +97,7 @@ export function useFileEditor(path: RepoPath): FileEditor {
           const submitted: string | null = draftRef.current;
           if (submitted === null) return;
           const result = await client.saveFile({
+            hostId,
             path,
             content: submitted,
             ...(unconditional ? {} : { expectedSha256: shaRef.current }),
@@ -109,7 +112,7 @@ export function useFileEditor(path: RepoPath): FileEditor {
           conflictRef.current = false;
           setConflict(false);
           setSaveError(null);
-          commitWritten(path, submitted, result);
+          commitWritten(hostId, path, submitted, result);
           if (draftRef.current === submitted) return;
           unconditional = false;
         }
@@ -120,7 +123,7 @@ export function useFileEditor(path: RepoPath): FileEditor {
         setSaving(false);
       }
     },
-    [client, path],
+    [client, hostId, path],
   );
 
   useEffect(() => {
@@ -130,12 +133,17 @@ export function useFileEditor(path: RepoPath): FileEditor {
       const sha = shaRef.current;
       if (draft === null || sha === null || draft === savedRef.current) return;
       const flushOnUnmount = async (): Promise<void> => {
-        const result = await client.saveFile({ path, content: draft, expectedSha256: sha });
-        if (result.outcome === "written") commitWritten(path, draft, result);
+        const result = await client.saveFile({
+          hostId,
+          path,
+          content: draft,
+          expectedSha256: sha,
+        });
+        if (result.outcome === "written") commitWritten(hostId, path, draft, result);
       };
       void flushOnUnmount().catch(() => {});
     };
-  }, [client, path]);
+  }, [client, hostId, path]);
 
   if (file.isError) {
     return {

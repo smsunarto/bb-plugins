@@ -11,15 +11,16 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { PluginQueryBoundary } from "@bb-kit/core/rpc/query";
-import { rpc } from "./rpc.ts";
+import { usePanelOverview } from "./host-picker.tsx";
 import { quickTasks, useTasks } from "./tasks.ts";
 
 function TasksTabBody(): ReactElement {
   const tasks = useTasks();
-  const overview = rpc.overview.useQuery();
+  const overview = usePanelOverview();
   const [confirmingPublish, setConfirmingPublish] = useState(false);
   const running = tasks.current?.status === "running";
-  const disabled = running || overview.data?.repoExists !== true;
+  const ready = overview.data?.state === "ready" && overview.data.repoExists ? overview.data : null;
+  const disabled = running || ready === null;
 
   return (
     <>
@@ -36,7 +37,7 @@ function TasksTabBody(): ReactElement {
                 disabled={disabled}
                 onClick={() => {
                   if (task === "publish") setConfirmingPublish(true);
-                  else tasks.run(task);
+                  else if (ready !== null) tasks.run(task, ready.host);
                 }}
               >
                 {isRunning ? `${label}…` : label}
@@ -44,21 +45,30 @@ function TasksTabBody(): ReactElement {
             );
           })}
         </div>
+        {overview.data !== undefined && (
+          <div className="mt-2 truncate text-xs text-muted-foreground">
+            {overview.data.state === "offline"
+              ? `${overview.data.host.name} is not connected.`
+              : `Runs on ${overview.data.host.name}`}
+          </div>
+        )}
       </div>
       <div className="min-h-0 flex-1 overflow-auto">
         {tasks.current === null ? (
           <div className="p-4 text-sm text-muted-foreground">Run a task to see its output.</div>
         ) : tasks.current.status === "running" ? (
-          <div className="p-4 text-sm text-muted-foreground">{tasks.current.id} — running…</div>
+          <div className="p-4 text-sm text-muted-foreground">
+            {tasks.current.id} on {tasks.current.host} — running…
+          </div>
         ) : tasks.current.status === "failed" ? (
           <div className="p-4 text-sm text-destructive">
-            {tasks.current.id} — failed: {tasks.current.message}
+            {tasks.current.id} on {tasks.current.host} — failed: {tasks.current.message}
           </div>
         ) : (
           <>
             <div className="flex items-center justify-between px-4 py-1.5">
               <span className="text-xs font-medium text-muted-foreground">
-                {tasks.current.id} — exit {tasks.current.exitCode}
+                {tasks.current.id} on {tasks.current.host} — exit {tasks.current.exitCode}
               </span>
               <Button size="sm" variant="ghost" onClick={tasks.dismiss}>
                 Dismiss
@@ -70,13 +80,13 @@ function TasksTabBody(): ReactElement {
           </>
         )}
       </div>
-      {confirmingPublish && (
+      {confirmingPublish && ready !== null && (
         <Dialog open onOpenChange={setConfirmingPublish}>
           <DialogContent>
             <DialogHeader>
               <DialogTitle>Publish</DialogTitle>
               <DialogDescription>
-                Publish? This rebases onto origin/main and pushes.
+                Publish from {ready.host.name}? This rebases onto origin/main and pushes.
               </DialogDescription>
             </DialogHeader>
             <DialogFooter>
@@ -87,7 +97,7 @@ function TasksTabBody(): ReactElement {
                 variant="destructive"
                 onClick={() => {
                   setConfirmingPublish(false);
-                  tasks.run("publish");
+                  tasks.run("publish", ready.host);
                 }}
               >
                 Publish

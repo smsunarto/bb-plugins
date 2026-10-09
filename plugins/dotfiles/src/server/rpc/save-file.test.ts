@@ -46,7 +46,7 @@ test("returns explicit save conflict and render outcomes", async () => {
 test("omitting expectedSha256 writes unconditionally", async () => {
   let captured: string | undefined = "unset";
   const ctx = createFakeContext({
-    writeFile: async (_repoPath, _path, _content, expectedSha256) => {
+    writeFile: async (_repo, _path, _content, expectedSha256) => {
       captured = expectedSha256;
       return { outcome: "written", sha256: "sha-forced" };
     },
@@ -78,4 +78,18 @@ test("saves only registered files", async () => {
       }),
     /not a tweakable file/,
   );
+});
+
+test("writes to the machine the draft was read from", async () => {
+  const writes: string[] = [];
+  const ctx = createFakeContext({
+    writeFile: async (repo, path, content) => {
+      writes.push(`${repo.hostId}:${repo.repoPath}/${path} = ${content}`);
+      return { outcome: "written", sha256: "sha-mac" };
+    },
+  });
+
+  await saveFile.execute(ctx, { hostId: "host_mac", path: "AGENTS.md", content: "next" });
+
+  assert.deepEqual(writes, ["host_mac:/dotfiles/AGENTS.md = next"]);
 });

@@ -7,16 +7,18 @@ import {
   experimental_SourceCode as SourceCode,
 } from "@get-bb/plugin-sdk/app";
 import type { RepoPath } from "./route.ts";
-import { useTasks, type Tasks } from "./tasks.ts";
+import { useTasks, type TaskHost, type Tasks } from "./tasks.ts";
 import { useFileEditor, type ReadyFileEditor } from "./use-file-editor.ts";
 import { WorkingFileEditor } from "./working-file-editor.tsx";
 
 export interface FileViewProps {
+  /** The machine the file is read from and saved to. */
+  readonly host: TaskHost;
   readonly path: RepoPath;
 }
 
-export function FileView({ path }: FileViewProps): ReactElement {
-  const editor = useFileEditor(path);
+export function FileView({ host, path }: FileViewProps): ReactElement {
+  const editor = useFileEditor(host.id, path);
   const tasks = useTasks();
 
   if (editor.status === "loading") {
@@ -34,7 +36,7 @@ export function FileView({ path }: FileViewProps): ReactElement {
       </div>
     );
   }
-  return <ReadyFileView path={path} editor={editor} tasks={tasks} />;
+  return <ReadyFileView host={host} path={path} editor={editor} tasks={tasks} />;
 }
 
 function saveStatusLabel(editor: ReadyFileEditor): string {
@@ -45,10 +47,12 @@ function saveStatusLabel(editor: ReadyFileEditor): string {
 }
 
 function ReadyFileView({
+  host,
   path,
   editor,
   tasks,
 }: {
+  readonly host: TaskHost;
   readonly path: RepoPath;
   readonly editor: ReadyFileEditor;
   readonly tasks: Tasks;
@@ -121,7 +125,7 @@ function ReadyFileView({
             size="sm"
             variant="outline"
             disabled={tasks.current?.status === "running"}
-            onClick={() => tasks.run("render")}
+            onClick={() => tasks.run("render", host)}
           >
             Run render
           </Button>

@@ -1,10 +1,10 @@
 import { z } from "zod";
 import { defineQuery } from "@bb-kit/core/rpc";
-import { isAllowedPath } from "../domain.ts";
+import { isAllowedPath } from "../../shared/domain.ts";
 import type { GitContext } from "../git.ts";
 
 export const readFile = defineQuery({
-  input: z.object({ path: z.string() }).strict(),
+  input: z.object({ hostId: z.string().min(1).optional(), path: z.string() }).strict(),
   output: z
     .object({
       content: z.string(),
@@ -12,18 +12,17 @@ export const readFile = defineQuery({
       headContent: z.string().nullable(),
     })
     .strict(),
-  async execute(ctx: GitContext, { path }) {
+  async execute(ctx: GitContext, { hostId, path }) {
     const { git } = ctx;
-    const repoPath = await git.getRepoPath();
+    const repo = await git.inspect(await git.target(hostId));
     // Allowlist guard, duplicated with save-file.ts on purpose: rpc/
     // holds only units, so shared micro-logic stays inline.
-    const skills = git.repoExists(repoPath) ? git.discoverSkills(repoPath) : [];
-    if (!isAllowedPath(path, skills)) {
+    if (!isAllowedPath(path, repo.skills)) {
       throw new Error(`not a tweakable file: ${path}`);
     }
     const [file, headContent] = await Promise.all([
-      git.readFile(repoPath, path),
-      git.readHeadFile(repoPath, path),
+      git.readFile(repo, path),
+      git.readHeadFile(repo, path),
     ]);
     return { ...file, headContent };
   },

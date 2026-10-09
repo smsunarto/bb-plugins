@@ -23,8 +23,8 @@
   "type": "module",
   "private": true,
   "engines": {
-    "bb": ">=0.40.0 <1.0.0",
-    "bbPluginSdk": ">=0.4.21"
+    "bb": ">=0.44.0 <1.0.0",
+    "bbPluginSdk": ">=0.5.29"
   },
   "bb": {
     "name": "Dotfiles",
@@ -38,6 +38,7 @@
     },
     "server": "./src/server/server.ts",
     "app": "./src/app/app.tsx",
+    "host": "./src/host/host.ts",
     "skills": []
   },
   "files": [
@@ -46,11 +47,15 @@
     "dist/app.js",
     "dist/app.meta.json",
     "dist/app.css",
+    "dist/host.js",
+    "dist/host.meta.json",
     "assets/",
     "README.md",
     "LICENSE",
     "src/server/",
-    "src/app/"
+    "src/app/",
+    "src/host/",
+    "src/shared/"
   ],
   "dependencies": {
     "@bb-kit/core": "0.2.0",

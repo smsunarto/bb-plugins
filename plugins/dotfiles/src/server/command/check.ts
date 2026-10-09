@@ -1,8 +1,8 @@
 import { defineCommand, PluginCliError, type CommandContext } from "@bb-kit/core/command";
 
-import type { TaskId } from "../domain.ts";
+import type { TaskId } from "../../shared/domain.ts";
 import type { GitContext } from "../git.ts";
-import { overview } from "../rpc/overview.ts";
+import { actedOn, commandCheckout } from "../lib/command-checkout.ts";
 import { runTask } from "../rpc/run-task.ts";
 
 const checkTasks: Readonly<Record<string, TaskId>> = {
@@ -18,7 +18,7 @@ const checkTasks: Readonly<Record<string, TaskId>> = {
 };
 
 export const check = defineCommand({
-  summary: "Run all validation or one named check target",
+  summary: "Run all validation or one named check target on this thread's machine",
   positionals: [
     {
       name: "target",
@@ -26,10 +26,7 @@ export const check = defineCommand({
     },
   ],
   async execute(ctx: CommandContext<GitContext>, { positionals: { target } }) {
-    const snapshot = await overview.execute(ctx);
-    if (!snapshot.repoExists) {
-      throw new PluginCliError(`dotfiles repo not found at ${snapshot.repoPath}`);
-    }
+    const snapshot = await commandCheckout(ctx);
     const task = target === undefined ? "check" : checkTasks[target];
     if (task === undefined) {
       throw new PluginCliError(`unknown check target: ${target}`, {
@@ -37,7 +34,7 @@ export const check = defineCommand({
         exitCode: 2,
       });
     }
-    const result = await runTask.execute(ctx, { task });
-    return { exitCode: result.exitCode, stdout: result.output };
+    const result = await runTask.execute(ctx, { hostId: snapshot.host.id, task });
+    return { exitCode: result.exitCode, stdout: result.output, stderr: actedOn(snapshot) };
   },
 });
