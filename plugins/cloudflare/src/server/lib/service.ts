@@ -656,8 +656,16 @@ export class CloudflareService {
     return result;
   }
   private async observeShares(result: Overview) {
+    // Unknown when bb could not list its machines: then each host is asked.
+    const online = result.hosts.error
+      ? null
+      : new Set(result.hosts.items.filter((host) => host.online).map((host) => host.id));
     for (const share of result.shares) {
       if (share.desiredState === "running" && share.state !== "partial") {
+        if (online && !online.has(share.hostId)) {
+          share.state = "offline";
+          continue;
+        }
         const tunnel = result.tunnels.items.find((item) => item.id === share.resources.tunnelId);
         try {
           const host = await this.deps.status(share.hostId, share.id);

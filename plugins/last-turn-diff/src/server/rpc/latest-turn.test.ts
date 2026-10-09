@@ -945,6 +945,278 @@ test("a thread's snapshot operations run in arrival order, environment lookups i
   await harness.lifecycle.dispose();
 });
 
+/**
+ * A host that can go offline, logging each call it takes as `host method
+ * thread kinds`. It refuses calls logged as a `refused` line. While `timeout`
+ * is set the host is asleep: bb still lists it as connected, and each call
+ * fails once `timeout` moves the test's clock past bb's host-call timeout.
+ */
+async function sleepyHost() {
+  const state = {
+    offline: false,
+    timeout: null as (() => void) | null,
+    refused: new Set<string>(),
+  };
+  const gates = new Map<string, Promise<void>>();
+  const log: string[] = [];
+  const { harness, bb } = await setup(undefined, undefined, [], null, async (call) => {
+    if (state.offline) throw new Error("Host is not connected");
+    const input = call.input as { threadId?: string; captures?: { kind: string }[] };
+    const kinds = input.captures?.map((capture) => capture.kind).join(",");
+    const line = [call.hostId, call.method, input.threadId, kinds].filter(Boolean).join(" ");
+    log.push(line);
+    await gates.get(line);
+    if (state.timeout) {
+      state.timeout();
+      throw new Error("Host plugin call timed out");
+    }
+    if (state.refused.has(line)) throw new Error("git update-ref failed");
+    if (call.method === "snapshot") return { commit: commitOf(log.length) };
+    return call.method === "turnPatch" ? { snapshot: null } : {};
+  });
+  stubWorkspaces(harness);
+  harness.sdk.stub("hosts.get", async () => ({
+    id: "h",
+    status: state.offline ? "disconnected" : "connected",
+  }));
+  const emit = (event: "thread.active" | "thread.failed" | "thread.deleted", id: string) =>
+    harness.behavior.emitThreadEvent(event, {
+      thread: { ...lifecycleThread, id },
+      lastAssistantText: null,
+      error: null,
+    } as never);
+  /** Hold the calls logged as `line` until the returned function runs. */
+  const hold = (line: string) => {
+    let open = () => {};
+    gates.set(line, new Promise<void>((resolve) => (open = resolve)));
+    return open;
+  };
+  return { harness, bb, state, log, emit, hold };
+}
+
+test("a turn end its offline host missed lands before that host's next pin", async () => {
+  const { harness, state, log, emit } = await sleepyHost();
+  await emit("thread.active", "thread-1");
+  state.offline = true; // The machine sleeps mid-turn, and the turn fails.
+  await emit("thread.failed", "thread-1");
+  state.offline = false;
+  await emit("thread.active", "thread-2");
+  expect(log).toEqual([
+    "h snapshot",
+    "h pin thread-1 open",
+    "h snapshot",
+    // thread-1 no longer reads as mid-turn to thread-2's checkout.
+    "h pin thread-1 stop",
+    "h pin thread-2 open",
+  ]);
+  await harness.lifecycle.dispose();
+});
+
+test("forgetting a thread on an offline host clears its records now and the host's later", async () => {
+  const { harness, bb, state, log, emit } = await sleepyHost();
+  await bb.storage.kv.set("attribution:thread-1:000000000000001", {
+    start: "s",
+    end: "e",
+    contested: [],
+    owned: [],
+  });
+  state.offline = true;
+  await emit("thread.deleted", "thread-1");
+  expect(await bb.storage.kv.list("attribution:thread-1:")).toEqual([]);
+  expect(log).toEqual([]);
+
+  state.offline = false;
+  await harness.behavior.runSchedule("settle-owed");
+  await harness.behavior.runSchedule("settle-owed");
+  expect(log).toEqual(["h forget thread-1"]);
+  await harness.lifecycle.dispose();
+});
+
+/** Whether `condition` holds within `ms`. Polls, so a test never waits past it. */
+async function until(condition: () => boolean, ms = 1_000): Promise<boolean> {
+  for (const end = Date.now() + ms; !condition() && Date.now() < end;) {
+    await new Promise((resolve) => setTimeout(resolve, 5));
+  }
+  return condition();
+}
+
+/** Date.now, moved on by `pass(ms)` the way a call that waits out its timeout moves it. */
+function lateClock() {
+  const realNow = Date.now;
+  let late = 0;
+  const now = spyOn(Date, "now").mockImplementation(() => realNow() + late);
+  return { pass: (ms: number) => void (late += ms), restore: () => now.mockRestore() };
+}
+/** bb's host-call timeout plus its transport grace. */
+const HOST_CALL_TIMEOUT_MS = 36_000;
+
+test("a host that times out costs one attempt and never holds up a healthy host", async () => {
+  const connected = new Set<string>();
+  // Asleep, the mac is still listed as connected, so each call waits out its timeout.
+  let asleep = false;
+  let wake = () => {};
+  const awake = new Promise<void>((resolve) => (wake = resolve));
+  const clock = lateClock();
+  const log: string[] = [];
+  const { harness } = await setup(undefined, undefined, [], null, async (call) => {
+    log.push(`${call.hostId} ${call.method} ${(call.input as { threadId: string }).threadId}`);
+    if (!connected.has(call.hostId)) throw new Error("Host is not connected");
+    if (asleep && call.hostId === "mac") {
+      await awake;
+      clock.pass(HOST_CALL_TIMEOUT_MS);
+      throw new Error("Host plugin call timed out");
+    }
+    return {};
+  });
+  harness.sdk.stub("environments.get", async ({ environmentId }) => ({
+    id: environmentId,
+    hostId: environmentId === "env-server" ? "server" : "mac",
+    path: "/ws/dotfiles",
+    name: null,
+  }));
+  harness.sdk.stub("hosts.get", async ({ hostId }) => ({
+    id: hostId,
+    status: connected.has(hostId) ? "connected" : "disconnected",
+  }));
+  const forget = (id: string, environmentId: string) =>
+    harness.behavior.emitThreadEvent("thread.deleted", {
+      thread: { ...lifecycleThread, id, environmentId },
+      lastAssistantText: null,
+      error: null,
+    } as never);
+  for (const id of ["m1", "m2", "m3", "m4"]) await forget(id, "env-mac");
+  await forget("s1", "env-server");
+
+  connected.add("server").add("mac");
+  asleep = true;
+  log.length = 0;
+  const settling = harness.behavior.runSchedule("settle-owed");
+  const reached = await until(() => log.includes("server forget s1"));
+  expect({ reached, log: [...log].sort() }).toEqual({
+    reached: true,
+    log: ["mac forget m1", "server forget s1"],
+  });
+  const later = forget("m5", "env-mac"); // Arrives while the replay waits on the mac.
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  wake();
+  await Promise.all([settling, later]);
+  clock.restore();
+  // The mac's other debts were never tried, and m5 was not sent either: all five wait for it.
+  expect(log.sort()).toEqual(["mac forget m1", "server forget s1"]);
+
+  asleep = false;
+  log.length = 0;
+  await harness.behavior.runSchedule("settle-owed");
+  expect(log).toEqual([
+    "mac forget m1",
+    "mac forget m2",
+    "mac forget m3",
+    "mac forget m4",
+    "mac forget m5",
+  ]);
+  await harness.lifecycle.dispose();
+});
+
+test("a pin and a turn read behind a replay that timed out wait out no second timeout", async () => {
+  const { harness, state, log, emit } = await sleepyHost();
+  state.offline = true;
+  await emit("thread.deleted", "thread-1"); // Its forget is owed.
+  state.offline = false;
+  const clock = lateClock();
+  state.timeout = () => clock.pass(HOST_CALL_TIMEOUT_MS);
+  await emit("thread.failed", "thread-2");
+  clock.restore();
+  // Each replay tried the owed forget once. thread-2's stop and turn read never went out.
+  expect(log).toEqual(["h snapshot", "h forget thread-1", "h forget thread-1"]);
+
+  state.timeout = null;
+  log.length = 0;
+  await harness.behavior.runSchedule("settle-owed");
+  expect(log).toEqual(["h forget thread-1", "h pin thread-2 stop"]);
+  await harness.lifecycle.dispose();
+});
+
+test("a delivery while its host replays what it is owed waits for that replay, not another", async () => {
+  const { harness, state, log, emit, hold } = await sleepyHost();
+  await emit("thread.active", "thread-1");
+  state.offline = true;
+  await emit("thread.failed", "thread-1"); // Its stop is owed.
+  state.offline = false;
+  const finish = hold("h pin thread-1 stop");
+  const second = emit("thread.active", "thread-2");
+  expect(await until(() => log.includes("h pin thread-1 stop"))).toBe(true);
+  const third = emit("thread.active", "thread-3");
+  // Long enough for a second replay to start, if one would.
+  await until(() => log.filter((line) => line === "h pin thread-1 stop").length > 1, 100);
+  finish();
+  await Promise.all([second, third]);
+  expect(log).toEqual([
+    "h snapshot",
+    "h pin thread-1 open",
+    "h snapshot",
+    "h pin thread-1 stop",
+    "h snapshot",
+    "h pin thread-2 open",
+    "h pin thread-3 open",
+  ]);
+  await harness.lifecycle.dispose();
+});
+
+test("a delivery that arrives mid-replay lands after every debt owed when it arrived", async () => {
+  const { harness, state, log, emit, hold } = await sleepyHost();
+  // thread-a's forget is on its way, and the host refuses it once a replay is under way.
+  const refuseA = hold("h forget thread-a");
+  state.refused.add("h forget thread-a");
+  const a = emit("thread.deleted", "thread-a");
+  expect(await until(() => log.includes("h forget thread-a"))).toBe(true);
+  state.offline = true;
+  await emit("thread.deleted", "thread-old"); // Its forget is owed.
+  state.offline = false;
+  const finishOld = hold("h forget thread-old");
+  const settling = harness.behavior.runSchedule("settle-owed");
+  expect(await until(() => log.includes("h forget thread-old"))).toBe(true);
+  refuseA();
+  await a; // thread-a's forget is owed too, after the replay listed what it would send.
+  state.refused.clear();
+  const b = emit("thread.deleted", "thread-b");
+  await new Promise((resolve) => setTimeout(resolve, 50)); // thread-b waits on the replay.
+  finishOld();
+  await Promise.all([b, settling]);
+  expect(log).toEqual([
+    "h forget thread-a",
+    "h forget thread-old",
+    "h forget thread-a",
+    "h forget thread-b",
+  ]);
+  await harness.lifecycle.dispose();
+});
+
+test("a debt its connected host refuses stays owed without holding up later ones", async () => {
+  const { harness, state, log, emit } = await sleepyHost();
+  state.offline = true;
+  await emit("thread.deleted", "thread-1");
+  await emit("thread.deleted", "thread-2");
+  state.offline = false;
+  state.refused.add("h forget thread-1");
+  await harness.behavior.runSchedule("settle-owed");
+  expect(log).toEqual(["h forget thread-1", "h forget thread-2"]);
+  state.refused.clear();
+  await harness.behavior.runSchedule("settle-owed");
+  expect(log).toEqual(["h forget thread-1", "h forget thread-2", "h forget thread-1"]);
+  await harness.lifecycle.dispose();
+});
+
+test("a host away for long is owed only its newest hundred debts", async () => {
+  const { harness, state, log, emit } = await sleepyHost();
+  const id = (n: number) => `t-${String(n).padStart(3, "0")}`;
+  state.offline = true;
+  for (let n = 1; n <= 101; n++) await emit("thread.deleted", id(n));
+  state.offline = false;
+  await harness.behavior.runSchedule("settle-owed");
+  expect(log).toEqual(Array.from({ length: 100 }, (_, n) => `h forget ${id(n + 2)}`));
+  await harness.lifecycle.dispose();
+});
+
 test("an empty snapshot hides reverted edits but keeps edits it cannot see", async () => {
   const { harness } = await setup(
     [started, completed],

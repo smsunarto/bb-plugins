@@ -80,6 +80,13 @@ type Reporters = {
  * Load order: services → RPC → CLI → agents → setup. `services(bb)`
  * runs once per load. A service that holds resources registers its own
  * cleanup with `bb.onDispose`.
+ *
+ * All of it runs inside bb's plugin factory, before bb activates the
+ * plugin. There, host plugin calls (`bb.hosts.experimental_client().call`)
+ * always throw, and `bb.sdk` and `bb.server.loopbackBaseUrl` throw while the
+ * server is still starting. Work that needs them runs later: in a handler,
+ * a timer, or a `bb.background.service`, whose `start` runs once the
+ * factory has resolved.
  */
 export function definePlugin<
   R extends RPCProcedures,
@@ -91,7 +98,9 @@ export function definePlugin<
     pluginId: string;
     /**
      * Build the plugin's long-lived collaborators once per load. Keep it
-     * synchronous; async start-up work belongs in `setup`.
+     * synchronous and free of host and SDK calls: it runs before bb
+     * activates the plugin. Start-up work belongs in a
+     * `bb.background.service`.
      */
     services?(bb: BbPluginApi): S & Demanded<NoInfer<R>, NoInfer<M>, NoInfer<T>>;
     errorReporter?: PluginErrorReporterFactory;
@@ -113,7 +122,12 @@ export function definePlugin<
         resolution: { threadId: string; projectId: string },
       ): string | null;
     };
-    /** Runs last, for host wiring bb-kit does not own: events, hooks, http, settings. */
+    /**
+     * Runs last, for host wiring bb-kit does not own: events, hooks, http,
+     * settings, background services. Register here, and start work from
+     * those: host plugin calls throw here, and a rejected await fails the
+     * whole load.
+     */
     setup?(ctx: Context<S>): MaybePromise<void>;
   } & RequireServices<NoInfer<R>, NoInfer<M>, NoInfer<T>>,
 ): DefinedPlugin<R> {

@@ -65,6 +65,8 @@ export const shareSchema = z
       "configuring",
       "starting",
       "running",
+      // Observed only, never stored: the share's bb machine is not connected.
+      "offline",
       "stopped",
       "partial",
       "removing",

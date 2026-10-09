@@ -264,6 +264,20 @@ test("Access readback precedes loopback ingress and DNS, with no private output"
   expect(overview.tunnels.items[0]?.connections).toBe(1);
   expect(overview.shares[0]).not.toHaveProperty("appSnapshot");
 });
+test("overview labels a share whose machine is offline as offline without asking that machine", async () => {
+  const f = fixture();
+  await create(f);
+  f.set({ online: false });
+  let asked = 0;
+  f.deps.status = async () => {
+    asked += 1;
+    throw new Error("Host is not connected");
+  };
+
+  const overview = await f.service.overview();
+  expect(overview.shares[0]?.state).toBe("offline");
+  expect(asked).toBe(0);
+});
 for (const kind of ["cfd_tunnel", "policies", "apps", "dns_records"]) {
   test(`lost ${kind} POST response recovers IDs across service restart without duplication`, async () => {
     const f = fixture();

@@ -44,6 +44,13 @@ some handler demands. `services` runs once, synchronously, before
 anything registers. Use it instead of a module-level `WeakMap` keyed by
 `bb`.
 
+`services` and `setup` both run inside bb's plugin factory, before bb
+activates the plugin. Host plugin calls (`bb.hosts.experimental_client().call`)
+always throw there, and `bb.sdk` and `bb.server.loopbackBaseUrl` throw while
+the server is still starting. Register work there and run it later: in a
+handler, a timer, or `bb.background.service(name, { start })`, whose `start`
+runs once the factory has resolved.
+
 ## Commands
 
 `defineCommand` takes the SDK's CLI declarations (`options`,

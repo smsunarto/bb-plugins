@@ -6,6 +6,7 @@ import {
   forgetWorkspace,
   pinWorkspace,
   resolveTarget,
+  settleOwed,
   snapshotWorkspace,
   type Shot,
   type Target,
@@ -66,6 +67,9 @@ export default definePlugin({
     const snap = (target: Target) => snapshotWorkspace(bb, target).catch(warn);
     const checkoutOf = (thread: { environmentId: string | null }) =>
       resolveTarget(bb, thread).catch(() => null);
+    // Pins, forgets, and turn reads replay what their host is owed first.
+    // This reaches the hosts whose checkouts no thread touches again.
+    bb.background.schedule("settle-owed", "*/5 * * * *", () => settleOwed(bb));
 
     /** Pin the turn's end; a lifecycle marker even when the snapshot failed. */
     const finish = (threadId: string, target: Target, shot: Shot | null | void) => {
