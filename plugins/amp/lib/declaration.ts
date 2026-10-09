@@ -2,11 +2,13 @@ import { z } from "zod";
 import type { PluginProviderDeclaration } from "@get-bb/plugin-sdk";
 import { AMP_AGENT } from "../src/execution-target.ts";
 import { AMP_FALLBACK_MODELS } from "../src/bridge/model-catalog.ts";
+import type { OrbIntent } from "../src/orb-intent.ts";
 import { AMP_NATIVE_SKILL_ROOTS } from "./provision.ts";
 import { AMP_SENTRY_ENV } from "./telemetry.ts";
 
 /** `amp/oracle` timeline items carry only this receipt. The report body
- *  stays in the XDG store and the plugin's `getOracleReport` RPC serves it. */
+ *  stays in the XDG store on the thread's host, and the plugin's
+ *  `getOracleReport` RPC fetches it from there through the host entry. */
 export const oracleReceiptSchema = z.object({
   reportId: z.string().min(1),
   question: z.string(),
@@ -23,25 +25,15 @@ export const threadLinkStateSchema = z.object({
 
 export type AmpThreadLinkState = z.infer<typeof threadLinkStateSchema>;
 
-/** Paths the registration resolved at plugin load. `deriveProviderOptions`
- *  closes over them: it is synchronous and sits on the turn-submit path, so
- *  it must not resolve anything itself. */
-export interface AmpProviderPaths {
-  /** The Amp CLI the bridge spawns, for executions and thread commands.
-   *  Null when it was not found at load: the provider still registers so bb
-   *  can offer Install, and the bridge resolves the CLI on the host. */
-  ampCliPath: string | null;
-}
-
 /**
  * The provider declaration for `bb.providers.register`. The executable
  * implementation is the plugin's own provider bridge — the
  * `experimental_providerBridge` export of the `bb.host` artifact — so there
- * is no launch spec: bb runs the bridge in the plugin host and the bridge
- * spawns the Amp CLI itself. `id` never changes; "acp-amp" is persisted on
- * every existing thread.
+ * is no launch spec: bb runs the bridge on the thread's host and the bridge
+ * finds and spawns that host's Amp CLI itself. `id` never changes; "acp-amp"
+ * is persisted on every existing thread.
  */
-export function buildAmpProviderDeclaration(paths: AmpProviderPaths): PluginProviderDeclaration {
+export function buildAmpProviderDeclaration(orb: OrbIntent): PluginProviderDeclaration {
   return {
     id: AMP_AGENT.providerId,
     displayName: AMP_AGENT.displayName,
@@ -90,7 +82,10 @@ export function buildAmpProviderDeclaration(paths: AmpProviderPaths): PluginProv
       passthrough: ["AMP_CLI_PATH", "AMP_URL", "AMP_API_KEY", ...AMP_SENTRY_ENV],
     },
     experimental_nativeSkillRoots: AMP_NATIVE_SKILL_ROOTS,
-    deriveProviderOptions: (): Record<string, string> =>
-      paths.ampCliPath === null ? {} : { ampCliPath: paths.ampCliPath },
+    // Synchronous and on the turn-submit path, so it answers from memory. A
+    // thread's first command can take the armed intent (src/orb-intent.ts).
+    // The bridge applies the target when thread/start creates a fresh record.
+    deriveProviderOptions: ({ threadId }): Record<string, string> =>
+      orb.runsOnOrb(threadId) ? { executionTarget: "orb" } : {},
   };
 }

@@ -1,7 +1,7 @@
 // Session-level Orb routing driven through createAmpSession with fake deps.
 // The execution target is fixed on the record before the session exists:
-// the bridge entry consumes the composer's armed Orb intent at thread/start
-// (entry.ts). These tests pin which runner a record's turns reach and what
+// the bridge entry takes the server's Orb choice from providerOptions at
+// thread/start (entry.ts). These tests pin which runner a record's turns reach and what
 // `amp/thread-link` announces. Runner internals stay out of scope.
 import assert from "node:assert/strict";
 import { test } from "bun:test";

@@ -40,7 +40,6 @@ import {
 import { resolveAmpCliLaunch } from "../../lib/provision.ts";
 import { AMP_WIRE_MODELS } from "./model-catalog.ts";
 import { createFileOracleReportStore } from "../oracle-report-store.ts";
-import { consumeOrbIntent } from "../orb-intent.ts";
 import { createSessionStore } from "../session-store.ts";
 import { installStderrGuard } from "../stderr-guard.ts";
 import {
@@ -116,9 +115,6 @@ interface BridgeState {
   oracle: OracleReports;
   errors: AmpErrorReporter | undefined;
   performance: AmpPerformanceReporter | undefined;
-  /** The bridge's persistent data directory. The composer's armed Orb
-   * intent (src/orb-intent.ts) is consumed from here at thread/start. */
-  dataDir: string;
 }
 
 let state: BridgeState | null = null;
@@ -157,32 +153,30 @@ function providerOptionsOf(options: BridgeExecutionOptions): unknown {
   return (options as { providerOptions?: unknown }).providerOptions;
 }
 
-/** The Amp CLI on this host, or null when there is none. The recorded path
- * (the registration's providerOptions, else AMP_CLI_PATH) goes through
- * `resolveAmpCliLaunch`, the same resolution the registration uses: a
- * GUI-launched daemon has a minimal PATH, which is why that search looks in
- * `~/.local/bin` and friends at all, and a stale recorded path is checked for
- * executability and superseded by a fresh search instead of being spawned
- * because it is set. Maintenance requests (model list, installation) answer
- * from this, so a CLI installed after registration is found. */
-function hostCliPath(providerOptions: unknown): string | null {
+/** The Amp CLI on this host, or null when there is none. The bridge runs on
+ * the thread's host, so the CLI is resolved here and never taken from the bb
+ * server, whose paths mean nothing on another machine. A configured path
+ * (providerOptions.ampCliPath, the test seam, else AMP_CLI_PATH) goes through
+ * `resolveAmpCliLaunch`: a GUI-launched daemon has a minimal PATH, which is
+ * why that search looks in `~/.local/bin` and friends at all, and a stale
+ * configured path is checked for executability and superseded by a fresh
+ * search instead of being spawned because it is set. Sessions, maintenance
+ * requests (model list, installation), and the host entry's `cliStatus` all
+ * answer from this, so a CLI installed after the plugin loaded is found. */
+export function hostCliPath(providerOptions: unknown): string | null {
   const configured =
     readProviderOptions(providerOptions).ampCliPath ?? process.env.AMP_CLI_PATH?.trim();
   const recorded = configured !== undefined && configured.length > 0 ? configured : null;
   return resolveAmpCliLaunch(recorded)?.command ?? null;
 }
 
-/** Sessionless requests (archive or rename with no open session) carry no
- * providerOptions, so they resolve the CLI themselves. Resolving differently
- * here archived and renamed through a binary the sessions never used. */
-function ambientCliPath(): string {
-  return hostCliPath(undefined) ?? "amp";
-}
-
-/** The Amp CLI a session spawns: the registration's providerOptions win over
- * the ambient AMP_CLI_PATH, with bare `amp` on PATH as the last resort. */
-function resolveCliPath(options: BridgeExecutionOptions): string {
-  return readProviderOptions(providerOptionsOf(options)).ampCliPath ?? ambientCliPath();
+/** The Amp CLI to spawn, with bare `amp` on PATH as the last resort.
+ * Sessionless requests (archive or rename with no open session) carry no
+ * providerOptions and pass none. They go through the same search as the
+ * sessions, so they never archive or rename through a binary the sessions
+ * did not use. */
+function cliPathFor(providerOptions: unknown): string {
+  return hostCliPath(providerOptions) ?? "amp";
 }
 
 /** One-shot `amp threads …` invocation (archive, rename), outside the
@@ -260,7 +254,7 @@ async function openSession(args: {
   dynamicTools: readonly DynamicTool[];
   options: BridgeExecutionOptions;
 }): Promise<ManagedSession> {
-  const cliPath = resolveCliPath(args.options);
+  const cliPath = cliPathFor(providerOptionsOf(args.options));
   const scope = {};
   let proxy: ToolProxy | null = null;
   if (args.dynamicTools.length > 0) {
@@ -351,7 +345,9 @@ async function archiveThread(
     io.sendResult(id, {});
     return;
   }
-  const result = await threadCommand(ambientCliPath())(archiveArgv(record.ampThreadId, archived));
+  const result = await threadCommand(cliPathFor(undefined))(
+    archiveArgv(record.ampThreadId, archived),
+  );
   if (!result.ok) throw new Error(`amp threads archive failed: ${result.stderr.trim()}`);
   io.sendResult(id, {});
 }
@@ -442,15 +438,16 @@ const handlers: Record<string, RequestHandler> = {
     if (existing !== null && existing.threadId === threadId) {
       record = existing;
     } else {
-      // Only a fresh record consumes the composer's armed Orb intent. The
+      // Only a fresh record takes the composer's Orb choice, which the server
+      // settles and sends in providerOptions (src/orb-intent.ts). The
       // executor is fixed when the thread is created, matching Amp, whose
       // executor is a creation-time option.
-      const orb = consumeOrbIntent(bridge.dataDir);
+      const orb = readProviderOptions(providerOptionsOf(options)).executionTarget === "orb";
       record = { ampThreadId: null, executionTarget: orb ? "orb" : "local", threadId };
       // Write-through so the choice survives a restart before the first turn.
       // Local needs this as much as Orb: without a record the restart looks
-      // like a fresh thread, so an intent armed in the meantime would be
-      // consumed for a thread whose executor was already settled.
+      // like a fresh thread, so an intent armed in the meantime would move a
+      // thread whose executor was already settled.
       await bridge.store.write(providerThreadId, record);
     }
     const managed = await openSession({
@@ -637,7 +634,7 @@ const handlers: Record<string, RequestHandler> = {
       io.sendResult(id, {});
       return;
     }
-    const result = await threadCommand(ambientCliPath())([
+    const result = await threadCommand(cliPathFor(undefined))([
       "threads",
       "rename",
       record.ampThreadId,
@@ -719,7 +716,6 @@ export const experimental_providerBridge = experimental_defineProviderBridge({
         oracle: createOracleReports(),
         errors,
         performance: createAmpPerformanceReporter(context.pluginId),
-        dataDir: context.dataDir,
       };
     } catch (error) {
       errors?.capture({ boundary: "host.bridge", operation: "bridge/start", error });

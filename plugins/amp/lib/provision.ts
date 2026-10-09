@@ -83,9 +83,9 @@ function findBinary(
 }
 
 /**
- * Resolve the Amp CLI. The bundled bridge spawns it directly; the
- * registration passes this resolved path down in providerOptions. The home
- * comes from `env` like PATH does, so one env describes the whole host.
+ * Resolve the Amp CLI on the machine this runs on. The bridge and the host
+ * entry call it on the thread's host. The home comes from `env` like PATH
+ * does, so one env describes the whole host.
  */
 export function resolveAmpCli(
   env: NodeJS.ProcessEnv,
@@ -110,9 +110,9 @@ export interface AmpCliLaunch {
 }
 
 /**
- * Resolve the same Amp executable and environment that the registered launch
- * spec names. `ampCliPath` is the path the registration resolved at load; a
- * stale or null one falls back to a fresh lookup.
+ * Resolve the Amp executable and its environment. `ampCliPath` is a
+ * configured path (AMP_CLI_PATH or the providerOptions test seam); a stale or
+ * null one falls back to a fresh lookup.
  */
 export function resolveAmpCliLaunch(
   ampCliPath: string | null,

@@ -23,11 +23,14 @@ export type { AmpPermissionRule } from "./execute.ts";
 /** Provider-flavored knobs bb passes through untouched in `providerOptions`. */
 export const ampProviderOptionsSchema = z
   .object({
-    /** Absolute path of the Amp CLI the bridge spawns (registration-resolved,
-     * and the test seam). */
+    /** An Amp CLI to prefer over this host's own search (the test seam). The
+     * bridge checks it is executable before using it. */
     ampCliPath: z.string().min(1).optional(),
     /** Amp project for new Orb threads. */
     orbProject: z.string().min(1).optional(),
+    /** Where a thread created by this thread/start runs: the composer's Orb
+     * toggle, settled by the server (src/orb-intent.ts). */
+    executionTarget: z.enum(["local", "orb"]).optional(),
   })
   .partial();
 

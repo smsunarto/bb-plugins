@@ -186,14 +186,15 @@ prompts, paths, thread ids, tool data, argv, or stderr. A lightweight Sentry
 envelope is emitted only after the measured startup finishes; the performance
 path does not load the Sentry SDK.
 
-| Command         | What it does                                                                                                |
-| --------------- | ----------------------------------------------------------------------------------------------------------- |
-| `bb amp status` | Print every link in the chain: Amp CLI, bridge bundle, provider registration, legacy config entry, and auth |
+| Command         | What it does                                                                                                             |
+| --------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| `bb amp status` | Print every link in the chain: Amp CLI on each host, bridge bundle, provider registration, legacy config entry, and auth |
 
 ```console
 $ bb amp status
-Amp CLI: /Users/you/.local/bin/amp
-bridge bundle: /path/to/plugins/amp/dist/host.js
+Amp CLI on Personal Mac: /Users/you/.local/bin/amp
+Amp CLI on build-box: NOT FOUND. Install it with the Install button in bb's composer, …
+bridge bundle on the bb server: /path/to/plugins/amp/dist/host.js
 bb provider acp-amp: registered
 legacy config entry amp: absent
 auth: handled by the Amp CLI — run `amp login` once, or export AMP_API_KEY in your environment

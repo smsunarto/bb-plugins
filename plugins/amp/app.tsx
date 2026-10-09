@@ -59,8 +59,17 @@ function TraceList({ report }: { report: OracleReport }) {
 
 /** The Oracle report card. Two surfaces share it: the `amp/oracle` timeline
  *  renderer (new threads) and the legacy message directive (ACP-era threads,
- *  whose directives stay in their message bodies). */
-function OracleCard({ reportId, question }: { reportId: string | undefined; question?: string }) {
+ *  whose directives stay in their message bodies). The report lives on the
+ *  host that ran the thread, so the server needs the thread to find it. */
+function OracleCard({
+  reportId,
+  threadId,
+  question,
+}: {
+  reportId: string | undefined;
+  threadId: string;
+  question?: string;
+}) {
   const rpc = useRpc<typeof rpcContract>();
   const [state, setState] = useState<OracleState>({ kind: "loading" });
 
@@ -78,7 +87,7 @@ function OracleCard({ reportId, question }: { reportId: string | undefined; ques
     setState({ kind: "loading" });
     const load = async () => {
       try {
-        const result = await rpc.call("getOracleReport", { reportId });
+        const result = await rpc.call("getOracleReport", { reportId, threadId });
         if (cancelled) return;
         if (result.report === null) {
           if (lastReport?.status === "running") {
@@ -107,7 +116,7 @@ function OracleCard({ reportId, question }: { reportId: string | undefined; ques
       cancelled = true;
       if (timer !== undefined) clearTimeout(timer);
     };
-  }, [reportId, rpc]);
+  }, [reportId, threadId, rpc]);
 
   if (state.kind !== "ready") {
     return (
@@ -169,13 +178,13 @@ function OracleCard({ reportId, question }: { reportId: string | undefined; ques
   );
 }
 
-function OracleDirective({ attributes }: PluginMessageDirectiveProps) {
-  return <OracleCard reportId={attributes.reportId} />;
+function OracleDirective({ attributes, message }: PluginMessageDirectiveProps) {
+  return <OracleCard reportId={attributes.reportId} threadId={message.threadId} />;
 }
 
 /** Body renderer for `amp/oracle` timeline items. The payload is the bridge's
  *  receipt, validated against the declared schema at ingest. */
-function OracleTimelineItem({ payload }: PluginTimelineRendererProps) {
+function OracleTimelineItem({ payload, thread }: PluginTimelineRendererProps) {
   const receipt =
     payload !== null && typeof payload === "object" && !Array.isArray(payload)
       ? (payload as { reportId?: unknown; question?: unknown })
@@ -184,6 +193,7 @@ function OracleTimelineItem({ payload }: PluginTimelineRendererProps) {
     <OracleCard
       question={typeof receipt.question === "string" ? receipt.question : undefined}
       reportId={typeof receipt.reportId === "string" ? receipt.reportId : undefined}
+      threadId={thread.id}
     />
   );
 }
@@ -383,9 +393,9 @@ function useAmpComposerGate(): {
 /** New-thread composer action, rendered only while Amp is the selected
  *  provider (useAmpComposerGate); the wrapper span stays mounted as the
  *  gate's DOM anchor while the button unmounts. Pressing it arms a one-shot
- *  Orb intent on the server; nothing is typed into the draft. The bridge
- *  consumes the intent when the next thread starts, so the armed state
- *  lives server-side, and every remount re-reads it. Nothing here disarms on
+ *  Orb intent on the server; nothing is typed into the draft. The next Amp
+ *  thread bb creates claims the intent, so the armed state lives
+ *  server-side, and every remount re-reads it. Nothing here disarms on
  *  the way off Amp: the read makes a returning armed intent visible before
  *  the user can send, which is all the removed disarm bought, and it cost
  *  the arm whenever the host repainted the picker markers. The intent's own

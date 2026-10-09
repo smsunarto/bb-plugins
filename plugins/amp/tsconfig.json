@@ -6,5 +6,5 @@
     "lib": ["ES2022", "DOM"],
     "types": ["node"]
   },
-  "include": ["server.ts", "app.tsx", "lib", "src", "types"]
+  "include": ["server.ts", "app.tsx", "host.ts", "lib", "src", "types"]
 }

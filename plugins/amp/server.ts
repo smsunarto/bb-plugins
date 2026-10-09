@@ -15,20 +15,14 @@ import { buildAmpProviderDeclaration, threadLinkStateSchema } from "./lib/declar
 import {
   cleanupLegacyAmpEntry,
   inspectLegacyAmpEntry,
-  resolveAmpCli,
   BRIDGE_BUILD_HINT,
   type LegacyCleanupResult,
   type LegacyConfigPaths,
 } from "./lib/provision.js";
 import { AMP_THREAD_LINK_KIND } from "./src/bridge/kinds.js";
 import { AMP_AGENT } from "./src/execution-target.js";
-import { loadOracleReport } from "./src/oracle-report-store.js";
-import {
-  armOrbIntent,
-  bridgeDataDirFor,
-  disarmOrbIntent,
-  readOrbIntent,
-} from "./src/orb-intent.js";
+import { ampHostContract, oracleReportSchema } from "./src/host-contract.js";
+import { createOrbIntent } from "./src/orb-intent.js";
 import { threadLinkToOrbUsageView } from "./src/orb-usage.js";
 import { PLUGIN_TELEMETRY } from "./shared/telemetry.js";
 
@@ -75,29 +69,10 @@ export const rpcContract = defineRpcContract({
   },
   getOracleReport: {
     experimental_description:
-      "Load a stored Amp Oracle report (request, response, and trace) by the id an amp/oracle timeline row carries.",
-    input: z.object({ reportId: z.string().uuid() }).strict(),
+      "Load a stored Amp Oracle report (request, response, and trace) by the id an amp/oracle timeline row carries, from the host that ran the thread.",
+    input: z.object({ reportId: z.string().uuid(), threadId: z.string().min(1) }).strict(),
     output: z.object({
-      report: z
-        .object({
-          id: z.string(),
-          request: z.string().nullable(),
-          response: z.string(),
-          status: z.enum(["running", "completed", "error"]),
-          trace: z.array(
-            z.object({
-              id: z.string(),
-              toolCallId: z.string().nullable(),
-              kind: z.enum(["thinking", "message", "tool"]),
-              title: z.string(),
-              content: z.string().nullable(),
-              status: z.enum(["running", "completed", "error"]).nullable(),
-              createdAt: z.string(),
-            }),
-          ),
-          createdAt: z.string(),
-        })
-        .nullable(),
+      report: oracleReportSchema.nullable(),
       error: z.string().nullable(),
     }),
   },
@@ -120,6 +95,13 @@ const HOST_BUNDLE = existsSync(join(MODULE_DIR, "host.js"))
 /** How many extension-state rows to scan for the latest `amp/thread-link`.
  *  Other kinds may interleave; the thread-link row is normally first. */
 const THREAD_LINK_SCAN_LIMIT = 50;
+
+/** One call to a host entry. An Oracle card polls every 750 ms while its
+ *  report runs, so a host that does not answer fails the poll fast. */
+const HOST_CALL_TIMEOUT_MS = 5_000;
+
+const ORACLE_UNAVAILABLE =
+  "The Oracle report is unavailable. Open the native tool call to view its output.";
 
 export function createAmpPlugin(errorReporter = telemetry.errorReporter) {
   return async function plugin(bb: BbPluginApi) {
@@ -147,8 +129,61 @@ export default createAmpPlugin();
 async function registerPlugin(bb: BbPluginApi, reporter: SentryPluginReporter | undefined) {
   bb.log.info("loaded");
 
-  /** Amp CLI path the registration resolved; `bb amp status` reuses it. */
-  let ampCliPath: string | null = null;
+  const orb = createOrbIntent(
+    async (threadId) => (await bb.sdk.threads.get({ threadId })).createdAt,
+  );
+  /** The `host.ts` entry on each host daemon: the machine that runs a thread
+   *  holds its Oracle reports and its Amp CLI, not the bb server. */
+  const ampHost = bb.hosts.experimental_client({ contract: ampHostContract });
+
+  async function hostName(hostId: string): Promise<string> {
+    try {
+      return (await bb.sdk.hosts.get({ hostId })).name;
+    } catch {
+      return hostId;
+    }
+  }
+
+  function askHost(hostId: string, reportId: string) {
+    return ampHost.call("oracleReport", { reportId }, { hostId, timeoutMs: HOST_CALL_TIMEOUT_MS });
+  }
+
+  /** The bridge wrote the report on the host that ran the thread at the time,
+   *  and it stays there. The thread's current host answers first, which
+   *  covers a running report. A thread that has moved since, or ACP-era
+   *  history with no environment, then asks every other connected host at
+   *  once, and the first that has the report answers. */
+  async function fetchOracleReport(reportId: string, threadId: string) {
+    const thread = await bb.sdk.threads.get({ threadId, include: "environment" });
+    const hostId = "environment" in thread ? thread.environment?.hostId : undefined;
+    let hostUnreachable = false;
+    if (hostId !== undefined) {
+      try {
+        const { report } = await askHost(hostId, reportId);
+        if (report !== null) return { report, error: null };
+      } catch {
+        hostUnreachable = true;
+      }
+    }
+    const otherHosts = (await bb.sdk.hosts.list()).filter(
+      (host) => host.status === "connected" && host.id !== hostId,
+    );
+    const found = await Promise.any(
+      otherHosts.map(async (host) => {
+        const { report } = await askHost(host.id, reportId);
+        if (report === null) throw new Error(`no Oracle report on ${host.id}`);
+        return report;
+      }),
+    ).catch(() => null);
+    if (found !== null) return { report: found, error: null };
+    if (hostId !== undefined && hostUnreachable) {
+      return {
+        report: null,
+        error: `The Oracle report is stored on ${await hostName(hostId)}, which bb cannot reach right now. Open the native tool call to view its output.`,
+      };
+    }
+    return { report: null, error: ORACLE_UNAVAILABLE };
+  }
 
   bb.rpc.register(
     rpcContract,
@@ -176,35 +211,24 @@ async function registerPlugin(bb: BbPluginApi, reporter: SentryPluginReporter | 
           return { state: "hidden" as const };
         });
       },
-      // The Orb toggle arms the next thread here. The provider bridge consumes
-      // the intent at thread/start in its own process, so the slot is a file
-      // under the plugin's bridge data directory (src/orb-intent.ts). The path
-      // derives from experimental_dataDir but only ever touches the plugin's
-      // own bridge storage, never a bb-managed file.
+      // The Orb toggle arms the next thread here. The next Amp thread bb
+      // creates claims it, and deriveProviderOptions carries the choice to
+      // the bridge on that thread's host (src/orb-intent.ts).
       getOrbIntent() {
         return observeFailure(reporter, "rpc.execute", "getOrbIntent", () => ({
-          armed: readOrbIntent(bridgeDataDirFor(bb.server.experimental_dataDir)),
+          armed: orb.armed(),
         }));
       },
       setOrbIntent({ armed }) {
         return observeFailure(reporter, "rpc.execute", "setOrbIntent", () => {
-          const dir = bridgeDataDirFor(bb.server.experimental_dataDir);
-          if (armed) armOrbIntent(dir);
-          else disarmOrbIntent(dir);
+          orb.setArmed(armed);
           return { armed };
         });
       },
-      getOracleReport({ reportId }) {
-        return observeFailure(reporter, "rpc.execute", "getOracleReport", () => {
-          const report = loadOracleReport(reportId);
-          return report === null
-            ? {
-                report: null,
-                error:
-                  "The Oracle report is unavailable. Open the native tool call to view its output.",
-              }
-            : { report, error: null };
-        });
+      getOracleReport({ reportId, threadId }) {
+        return observeFailure(reporter, "rpc.execute", "getOracleReport", () =>
+          fetchOracleReport(reportId, threadId),
+        );
       },
     },
     {
@@ -268,18 +292,14 @@ async function registerPlugin(bb: BbPluginApi, reporter: SentryPluginReporter | 
   // Register the provider on first load, so installing the plugin is the whole
   // install. A background service is the seam for it: bb starts one after the
   // factory resolves, when `bb.sdk` is bound, and a service that returns
-  // without throwing simply stops. A missing Amp CLI does not stop it: the
-  // provider registers anyway, the bridge reports the CLI as not installed,
-  // and bb's composer offers Install (src/bridge/installation.ts).
+  // without throwing simply stops. The Amp CLI is not looked up here: the
+  // bridge finds it on each thread's host, reports it as not installed where
+  // it is missing, and bb's composer offers Install (src/bridge/installation.ts).
   bb.background.service("register", {
     async start() {
       return observeFailure(reporter, "background.service", "register", async () => {
-        ampCliPath = resolveAmpCli(process.env);
-        if (ampCliPath === null) {
-          bb.log.info("the Amp CLI was not found; bb will offer to install it");
-        }
         try {
-          bb.providers.register(buildAmpProviderDeclaration({ ampCliPath }));
+          bb.providers.register(buildAmpProviderDeclaration(orb));
         } catch (error) {
           bb.log.error(`Could not register the Amp provider: ${String(error)}`);
           bb.status.needsConfiguration(
@@ -292,11 +312,37 @@ async function registerPlugin(bb: BbPluginApi, reporter: SentryPluginReporter | 
     },
   });
 
+  /** One line per host: Amp threads run on the host that owns their
+   *  environment, so each host answers for its own Amp CLI. */
+  async function cliLines(): Promise<string[]> {
+    let hosts: Awaited<ReturnType<typeof bb.sdk.hosts.list>>;
+    try {
+      hosts = await bb.sdk.hosts.list();
+    } catch (error) {
+      return [`Amp CLI: unknown (${String(error)})`];
+    }
+    return Promise.all(
+      hosts.map(async (host) => {
+        const label = `Amp CLI on ${host.name}`;
+        if (host.status !== "connected") return `${label}: host not connected`;
+        try {
+          const { path } = await ampHost.call(
+            "cliStatus",
+            {},
+            { hostId: host.id, timeoutMs: HOST_CALL_TIMEOUT_MS },
+          );
+          return `${label}: ${path ?? `NOT FOUND. ${AMP_CLI_HINT}`}`;
+        } catch (error) {
+          return `${label}: unknown (${String(error)})`;
+        }
+      }),
+    );
+  }
+
   async function statusLines(): Promise<string[]> {
-    const amp = ampCliPath ?? resolveAmpCli(process.env);
     const lines = [
-      `Amp CLI: ${amp ?? `NOT FOUND. ${AMP_CLI_HINT}`}`,
-      `bridge bundle: ${existsSync(HOST_BUNDLE) ? HOST_BUNDLE : `MISSING (${HOST_BUNDLE}); ${BRIDGE_BUILD_HINT}`}`,
+      ...(await cliLines()),
+      `bridge bundle on the bb server: ${existsSync(HOST_BUNDLE) ? HOST_BUNDLE : `MISSING (${HOST_BUNDLE}); ${BRIDGE_BUILD_HINT}`}`,
     ];
     try {
       const providers = await bb.sdk.providers.list();
@@ -332,7 +378,8 @@ async function registerPlugin(bb: BbPluginApi, reporter: SentryPluginReporter | 
   }
 
   const status = cliCommand({
-    summary: "Check the Amp CLI, the bridge bundle, bb config, and provider registrations",
+    summary:
+      "Check the Amp CLI on each host, the bridge bundle, bb config, and provider registrations",
     async run() {
       return observeFailure(reporter, "command.execute", "status", async () => ({
         exitCode: 0,
@@ -350,11 +397,18 @@ async function registerPlugin(bb: BbPluginApi, reporter: SentryPluginReporter | 
     }),
   );
 
+  bb.events.on("thread.created", ({ thread }) => {
+    observeFailure(reporter, "event.handler", "thread.created", () => {
+      if (thread.providerId === AMP_AGENT.providerId) orb.claim(thread.id);
+    });
+  });
+
   // ACP-era kv rows (thread links, orb usage, archive watches). New state
   // lives on the thread's own extension-state events, which leave with the
   // thread; this sweep only clears leftovers from before the migration.
   bb.events.on("thread.deleted", async ({ thread }) => {
     return observeFailure(reporter, "event.handler", "thread.deleted", async () => {
+      orb.forget(thread.id);
       await Promise.all([
         bb.storage.kv.delete(`amp-thread-link:${thread.id}`),
         bb.storage.kv.delete(`orb-usage:${thread.id}`),

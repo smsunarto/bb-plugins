@@ -74,7 +74,7 @@ test("resolveNodeRuntime flags anything but plain node as Electron", () => {
   assert.equal(resolveNodeRuntime("C:\\nodejs\\Node.exe", "win32").electron, false);
 });
 
-test("resolveAmpCliLaunch uses the registration-resolved path", () => {
+test("resolveAmpCliLaunch uses a configured path that is executable", () => {
   const f = fixture();
   const launch = resolveAmpCliLaunch(f.amp, { PATH: "/nonexistent" });
   assert.notEqual(launch, null);

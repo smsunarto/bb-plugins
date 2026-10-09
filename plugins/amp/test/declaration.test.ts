@@ -5,18 +5,33 @@ import {
   buildAmpProviderDeclaration,
   oracleReceiptSchema,
   threadLinkStateSchema,
-  type AmpProviderPaths,
 } from "../lib/declaration.ts";
 import { AMP_NATIVE_SKILL_ROOTS } from "../lib/provision.ts";
 import { AMP_FALLBACK_MODELS } from "../src/bridge/model-catalog.ts";
 import { AMP_ORACLE_KIND, AMP_THREAD_LINK_KIND } from "../src/bridge/shapes.ts";
+import { createOrbIntent } from "../src/orb-intent.ts";
 
-const PATHS: AmpProviderPaths = {
-  ampCliPath: "/usr/local/bin/amp",
-};
+/** Every thread in these tests was created just now, after any press. */
+function orbIntent() {
+  return createOrbIntent(async () => Date.now());
+}
+
+function declaration() {
+  return buildAmpProviderDeclaration(orbIntent());
+}
+
+function optionsFor(provider: ReturnType<typeof declaration>, threadId: string) {
+  return provider.deriveProviderOptions?.({
+    threadId,
+    projectId: "prj_1",
+    model: "default",
+    permissionMode: "full",
+    settings: {},
+  });
+}
 
 test("the declaration passes the SDK validator", () => {
-  const normalized = validatePluginProviderDeclaration(buildAmpProviderDeclaration(PATHS));
+  const normalized = validatePluginProviderDeclaration(declaration());
   assert.equal(normalized.id, "acp-amp");
   assert.equal(normalized.displayName, "Amp");
   assert.equal(normalized.icon, "./assets/icon.svg");
@@ -58,22 +73,21 @@ test("the declaration passes the SDK validator", () => {
 });
 
 test("service tiers and reasoning levels pin the wire ids the bridge maps", () => {
-  const declaration = buildAmpProviderDeclaration(PATHS);
+  const provider = declaration();
   // options.ts: `serviceTier === "fast"` selects Amp's fast mode.
   assert.deepEqual(
-    declaration.serviceTiers?.map((tier) => tier.id),
+    provider.serviceTiers?.map((tier) => tier.id),
     ["default", "fast"],
   );
   // options.ts modeFor: the four Amp modes behind bb's reasoning ladder.
   assert.deepEqual(
-    declaration.reasoningLevels?.map((level) => level.id),
+    provider.reasoningLevels?.map((level) => level.id),
     ["low", "medium", "high", "ultra"],
   );
 });
 
 test("extension kind keys prefix to the bridge's wire values", () => {
-  const declaration = buildAmpProviderDeclaration(PATHS);
-  const kinds = declaration.extensionKinds ?? {};
+  const kinds = declaration().extensionKinds ?? {};
   assert.deepEqual(Object.keys(kinds).sort(), ["oracle", "thread-link"]);
   // bb prefixes the plugin id ("amp"); the bridge emits these full names.
   assert.equal(AMP_ORACLE_KIND, "amp/oracle");
@@ -112,36 +126,23 @@ test("the thread-link schema accepts local and orb states", () => {
   );
 });
 
-test("deriveProviderOptions returns the closed-over paths", () => {
-  const declaration = buildAmpProviderDeclaration(PATHS);
-  const options = declaration.deriveProviderOptions?.({
-    threadId: "thr_1",
-    projectId: "prj_1",
-    model: "default",
-    permissionMode: "full",
-    settings: {},
-  });
-  assert.deepEqual(options, { ampCliPath: PATHS.ampCliPath });
+test("deriveProviderOptions names no CLI path: each host's bridge finds its own", () => {
+  // A path the server resolved means nothing on another machine.
+  assert.deepEqual(optionsFor(declaration(), "thr_1"), {});
 });
 
-test("without a CLI at load the declaration still registers and names no path", () => {
-  const declaration = buildAmpProviderDeclaration({ ampCliPath: null });
-  assert.equal(validatePluginProviderDeclaration(declaration).maintenance.installation, true);
-  const options = declaration.deriveProviderOptions?.({
-    threadId: "thr_1",
-    projectId: "prj_1",
-    model: "default",
-    permissionMode: "full",
-    settings: {},
-  });
-  // The bridge then resolves the CLI on the host (src/bridge/entry.ts).
-  assert.deepEqual(options, {});
+test("deriveProviderOptions sends Orb only to the thread that claimed the toggle", () => {
+  const orb = orbIntent();
+  const provider = buildAmpProviderDeclaration(orb);
+  orb.setArmed(true);
+  orb.claim("thr_orb");
+  assert.deepEqual(optionsFor(provider, "thr_orb"), { executionTarget: "orb" });
+  assert.deepEqual(optionsFor(provider, "thr_local"), {});
 });
 
 test("the fallback catalog is one default model on the declared mode ladder", () => {
-  const declaration = buildAmpProviderDeclaration(PATHS);
   assert.equal(AMP_FALLBACK_MODELS.filter((model) => model.isDefault).length, 1);
-  const ladder = declaration.capabilities.reasoningLevels;
+  const ladder = declaration().capabilities.reasoningLevels;
   for (const model of AMP_FALLBACK_MODELS) {
     const efforts = model.supportedReasoningEfforts.map((effort) => effort.reasoningEffort);
     // options.ts maps every bb level onto an Amp mode; the picker offers
