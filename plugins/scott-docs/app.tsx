@@ -1243,6 +1243,8 @@ function NotePane({
 function DocsFileOpener({ path: filePath, source }: PluginFileOpenerProps) {
   const rpc = useRpc<typeof docsRpcContract>();
   const navigate = useBbNavigate();
+  // bb names a thread's host file by its environment; the server resolves the host.
+  const [openedHostId, setOpenedHostId] = useState<string | null>(null);
   const liveFileTarget = useMemo<ExperimentalLiveFileTarget | null>(() => {
     switch (source.kind) {
       case "workspace":
@@ -1253,20 +1255,16 @@ function DocsFileOpener({ path: filePath, source }: PluginFileOpenerProps) {
               environmentId: source.environmentId,
               path: filePath,
             };
-      case "host":
-        return source.experimental_hostId === undefined
-          ? null
-          : {
-              kind: source.kind,
-              hostId: source.experimental_hostId,
-              path: filePath,
-            };
+      case "host": {
+        const hostId = source.experimental_hostId ?? openedHostId;
+        return hostId === null ? null : { kind: source.kind, hostId, path: filePath };
+      }
       case "thread-storage":
         return source.threadId === null
           ? null
           : { kind: source.kind, threadId: source.threadId, path: filePath };
     }
-  }, [filePath, source]);
+  }, [filePath, openedHostId, source]);
   const openerSource = useMemo(
     () => ({
       kind: source.kind,
@@ -1289,10 +1287,11 @@ function DocsFileOpener({ path: filePath, source }: PluginFileOpenerProps) {
     () => ({
       delay: 700,
       read: async () => {
-        const { file, preview, previewPath } = await rpc.call("openFile", {
+        const { file, preview, previewPath, hostId } = await rpc.call("openFile", {
           source: openerSource,
           path: filePath,
         });
+        setOpenedHostId(hostId);
         return {
           content: file.content,
           sha256: file.sha256,
@@ -1486,6 +1485,7 @@ function Tree({
   onMoveFile,
   onVaultChange,
   onAddVault,
+  onBindVault,
 }: {
   data: NotesData;
   selectedPath: string | null;
@@ -1496,6 +1496,7 @@ function Tree({
   onMoveFile(sourcePath: string, targetFolder: string): void;
   onVaultChange(vaultId: string): void;
   onAddVault(): void;
+  onBindVault(hostId: string): void;
 }) {
   const [query, setQuery] = useState("");
   const [searchOpen, setSearchOpen] = useState(false);
@@ -1507,6 +1508,12 @@ function Tree({
     ? data.hosts.find((host) => host.id === data.vault.hostId)
     : null;
   const hostUnavailable = Boolean(data.vault.hostId && selectedHost?.status !== "connected");
+  // Offer another machine only when this one cannot hold the vault: it is
+  // unbound, or its host answered that the folder is missing (host.ts). A
+  // sleeping host is not a reason to move the vault elsewhere.
+  const wrongHost =
+    !data.vault.hostId ||
+    (!hostUnavailable && /(Folder not found|Not a folder): /.test(data.error ?? ""));
 
   const orderedEntries = useMemo(
     () => orderEntries(data.entries, data.entryOrder),
@@ -1626,7 +1633,19 @@ function Tree({
         />
       </div>
       <nav aria-label="Notes" className="relative flex min-h-0 flex-1 flex-col">
-        {data.error ? <div className="p-3 text-xs text-destructive">{data.error}</div> : null}
+        {data.error ? (
+          <div className="grid gap-2 p-3 text-xs">
+            <p className="text-destructive">{data.error}</p>
+            {wrongHost ? (
+              <VaultHostChooser
+                key={data.vault.id}
+                hosts={data.hosts}
+                hostId={data.vault.hostId}
+                onBind={onBindVault}
+              />
+            ) : null}
+          </div>
+        ) : null}
         <PierreFileTree
           aria-label="Notes file tree"
           className="block min-h-0 w-full flex-1"
@@ -1714,6 +1733,44 @@ function Tree({
   );
 }
 
+// A vault saved before the server moved, or bound to the wrong machine, shows
+// an error instead of an empty tree. Let the user point it at the right host.
+function VaultHostChooser({
+  hosts,
+  hostId,
+  onBind,
+}: {
+  hosts: Host[];
+  hostId: string | null;
+  onBind(hostId: string): void;
+}) {
+  const [selected, setSelected] = useState(hostId ?? "");
+  return (
+    <div className="flex items-center gap-1">
+      <Select value={selected} onValueChange={setSelected}>
+        <SelectTrigger className="h-8 min-w-0 flex-1" aria-label="Vault machine">
+          <SelectValue placeholder="Choose machine" />
+        </SelectTrigger>
+        <SelectContent>
+          {hosts.map((host) => (
+            <SelectItem key={host.id} value={host.id}>
+              {host.name} · {host.status}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+      <Button
+        size="sm"
+        variant="outline"
+        disabled={!selected || selected === hostId}
+        onClick={() => onBind(selected)}
+      >
+        Use machine
+      </Button>
+    </div>
+  );
+}
+
 const MARKDOWN_PATH = /\.(md|markdown)$/i;
 const MDX_PATH = /\.mdx$/i;
 
@@ -1760,7 +1817,8 @@ function NotesWorkspace({
   const [vaultDialogOpen, setVaultDialogOpen] = useState(false);
   const [vaultName, setVaultName] = useState("");
   const [vaultRootPath, setVaultRootPath] = useState("");
-  const [vaultHostId, setVaultHostId] = useState("primary");
+  const [vaultHostId, setVaultHostId] = useState("");
+  const [primaryHostId, setPrimaryHostId] = useState<string | null>(null);
   const [vaultError, setVaultError] = useState<string | null>(null);
   const { data, error, refresh } = useNotebook(route.vaultId);
   const activeVaultId = data?.vault.id ?? route.vaultId;
@@ -1782,17 +1840,34 @@ function NotesWorkspace({
         return;
       }
       // MDX belongs to whichever plugin bb picks as its file opener (Canvas).
-      void (async () => {
-        const hostId = vault.hostId ?? (await sdk.system.config()).primaryHostId;
-        if (!hostId) return;
-        navigate.experimental_openFilePreview({
-          target: { kind: "host", hostId, path: `${vault.rootPath.replace(/[\\/]$/, "")}/${path}` },
-          location: null,
-        });
-      })().catch((error: unknown) => toast.error(`Could not open ${path}: ${errorMessage(error)}`));
+      // Only a vault bound to a host lists entries to click.
+      if (!vault.hostId) return;
+      navigate.experimental_openFilePreview({
+        target: {
+          kind: "host",
+          hostId: vault.hostId,
+          path: `${vault.rootPath.replace(/[\\/]$/, "")}/${path}`,
+        },
+        location: null,
+      });
     },
-    [activeVaultId, isCurrentVault, navigate, navigateTo, sdk, vault],
+    [activeVaultId, isCurrentVault, navigate, navigateTo, vault],
   );
+
+  // Name the server's own host in the add-vault dialog and preselect it.
+  useEffect(() => {
+    if (!vaultDialogOpen) return;
+    let live = true;
+    void (async () => {
+      const { primaryHostId: hostId } = await sdk.system.config();
+      if (!live) return;
+      setPrimaryHostId(hostId);
+      setVaultHostId((current) => current || hostId || "");
+    })().catch(() => {});
+    return () => {
+      live = false;
+    };
+  }, [sdk, vaultDialogOpen]);
 
   if (!data || !activeVaultId) {
     if (error)
@@ -1846,22 +1921,27 @@ function NotesWorkspace({
   const createVault = async () => {
     const name = vaultName.trim();
     const rootPath = vaultRootPath.trim();
-    if (!name || !rootPath) return;
+    if (!name || !rootPath || !vaultHostId) return;
     setVaultError(null);
     try {
-      const value = await rpc.call("createVault", {
-        name,
-        rootPath,
-        ...(vaultHostId === "primary" ? {} : { hostId: vaultHostId }),
-      });
+      const value = await rpc.call("createVault", { name, rootPath, hostId: vaultHostId });
       if (!isCurrentVault(activeVaultId)) return;
       setVaultName("");
       setVaultRootPath("");
-      setVaultHostId("primary");
+      setVaultHostId("");
       setVaultDialogOpen(false);
       navigateTo(value.id);
     } catch (error) {
       setVaultError(errorMessage(error));
+    }
+  };
+
+  const bindVault = async (hostId: string) => {
+    try {
+      await rpc.call("setVaultHost", { vaultId: activeVaultId, hostId });
+      if (isCurrentVault(activeVaultId)) refresh();
+    } catch (error) {
+      toast.error(`Could not change the vault's machine: ${errorMessage(error)}`);
     }
   };
 
@@ -1918,6 +1998,7 @@ function NotesWorkspace({
             onMoveFile={(sourcePath, targetFolder) => void moveFile(sourcePath, targetFolder)}
             onVaultChange={(value) => navigateTo(value)}
             onAddVault={() => setVaultDialogOpen(true)}
+            onBindVault={(hostId) => void bindVault(hostId)}
           />
         ) : filePath && MARKDOWN_PATH.test(filePath) ? (
           <NotePane
@@ -1997,7 +2078,7 @@ function NotesWorkspace({
               <DialogHeader>
                 <DialogTitle>Add vault</DialogTitle>
                 <DialogDescription>
-                  Open a notes folder from this machine or a connected host.
+                  Open a notes folder on one of your connected machines.
                 </DialogDescription>
               </DialogHeader>
               <label htmlFor="docs-vault-name" className="grid gap-1.5 text-sm font-medium">
@@ -2015,20 +2096,20 @@ function NotesWorkspace({
                   id="docs-vault-path"
                   value={vaultRootPath}
                   onChange={(event) => setVaultRootPath(event.target.value)}
-                  placeholder="/Users/me/Notes"
+                  placeholder="Absolute path on that machine"
                 />
               </label>
               <label htmlFor="docs-vault-host" className="grid gap-1.5 text-sm font-medium">
-                Host
+                Machine
                 <Select value={vaultHostId} onValueChange={setVaultHostId}>
                   <SelectTrigger id="docs-vault-host" aria-label="Vault host">
-                    <SelectValue />
+                    <SelectValue placeholder="Choose machine" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="primary">Server machine</SelectItem>
                     {data.hosts.map((host) => (
                       <SelectItem key={host.id} value={host.id}>
-                        {host.name} · {host.status}
+                        {host.name}
+                        {host.id === primaryHostId ? " · bb server" : ""} · {host.status}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -2039,7 +2120,10 @@ function NotesWorkspace({
                 <Button type="button" variant="ghost" onClick={() => setVaultDialogOpen(false)}>
                   Cancel
                 </Button>
-                <Button type="submit" disabled={!vaultName.trim() || !vaultRootPath.trim()}>
+                <Button
+                  type="submit"
+                  disabled={!vaultName.trim() || !vaultRootPath.trim() || !vaultHostId}
+                >
                   Add vault
                 </Button>
               </DialogFooter>

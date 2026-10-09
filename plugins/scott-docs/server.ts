@@ -1,9 +1,8 @@
 import { proposalSchema, type Proposal } from "./proposals.js";
-import { watch } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { isRecord, parseMarkdownDocument } from "./markdown-document.js";
-import { DOCS_PATH_LIST_LIMIT, docsHostContract } from "./host-contract.js";
+import { DOCS_PATH_LIST_LIMIT, docsHostContract, docsHostSignals } from "./host-contract.js";
 import { isExcludedDocsPath } from "./path-policy.js";
 import {
   defineRpcContract,
@@ -24,6 +23,8 @@ const MAX_ATTACHMENT_BYTES = 20 * 1024 * 1024;
 const SYNC_STATE_FILE = ".bb-docs-state.json";
 const SYNC_STATE_VERSION = 1;
 const MENTION_SUMMARY_TTL_MS = 10_000;
+// bb drops a mention provider after 2 s; answer with the vaults ready by then.
+const MENTION_VAULT_WAIT_MS = 1_500;
 const SUMMARY_READ_CONCURRENCY = 8;
 const MARKDOWN_PATH = /\.(md|markdown)$/i;
 // The tree lists MDX beside Docs documents; bb's file opener handles them.
@@ -67,7 +68,8 @@ const WORKSPACE_HOST_OPTION = {
   type: "string",
   placeholder: "id",
   aliases: ["host", "host-id"],
-  description: "Host holding the workspace directory; defaults to the thread environment's host",
+  description:
+    "Host holding the workspace directory; defaults to the thread environment's host, else the one machine that has the working directory",
 } as const;
 
 const JSON_OPTION = {
@@ -97,27 +99,9 @@ interface SyncCliArgs {
   diff: boolean;
 }
 
-interface VaultWatcher {
-  close(): void;
-  on(event: "error", listener: () => void): void;
-}
-
-type WatchVault = (rootPath: string, onChange: () => void) => VaultWatcher;
-
-const watchNativeVault: WatchVault = (rootPath, onChange) => {
-  const watcher = watch(rootPath, { recursive: true }, onChange);
-  return {
-    close: () => watcher.close(),
-    on: (event, listener) => {
-      watcher.on(event, listener);
-    },
-  };
-};
-
-interface VaultEntry {
-  kind: "file" | "directory";
-  path: string;
-}
+type VaultEntry =
+  | { kind: "directory"; path: string }
+  | { kind: "file"; path: string; modifiedAtMs: number; sizeBytes: number };
 
 interface NoteSummary {
   path: string;
@@ -129,7 +113,7 @@ interface NoteSummary {
 interface ResolvedOpenerFile {
   path: string;
   rootPath: string;
-  hostId: string | null;
+  hostId: string;
 }
 
 const vaultIdSchema = z.string().min(1).optional();
@@ -467,6 +451,12 @@ export const docsRpcContract = defineRpcContract({
       .strict(),
     output: vaultSchema,
   },
+  setVaultHost: {
+    experimental_description:
+      "Bind a vault to the connected host that holds its folder, keeping its proposals and order.",
+    input: z.object({ vaultId: z.string().min(1), hostId: z.string().min(1) }).strict(),
+    output: vaultSchema,
+  },
   removeVault: {
     experimental_description: "Unregister a vault configuration.",
     input: z.object({ vaultId: z.string().min(1) }).strict(),
@@ -504,6 +494,7 @@ export const docsRpcContract = defineRpcContract({
         file: fileReadSchema,
         preview: previewSchema,
         previewPath: z.string(),
+        hostId: z.string().min(1),
       })
       .strict(),
   },
@@ -609,14 +600,6 @@ function normalizeHostRoot(value: string): string {
   return path.win32.isAbsolute(value) && !path.posix.isAbsolute(value)
     ? path.win32.normalize(value)
     : path.posix.normalize(value);
-}
-
-function hostIdArgs(hostId: string | null | undefined): { hostId?: string } {
-  return hostId ? { hostId } : {};
-}
-
-function hostArgs(vault: Vault): { hostId?: string } {
-  return hostIdArgs(vault.hostId);
 }
 
 function syncEntryFromFile(
@@ -728,8 +711,11 @@ function waitForDelay(ms: number, signal: AbortSignal): Promise<void> {
   });
 }
 
-export default async function plugin(bb: BbPluginApi, watchVault: WatchVault = watchNativeVault) {
-  const hostFiles = bb.hosts.experimental_client({ contract: docsHostContract });
+export default async function plugin(bb: BbPluginApi) {
+  const hostFiles = bb.hosts.experimental_client({
+    contract: docsHostContract,
+    experimental_signals: docsHostSignals,
+  });
   const db = bb.storage.database();
   bb.storage.migrate(db, [
     `CREATE TABLE IF NOT EXISTS vaults (
@@ -754,16 +740,27 @@ export default async function plugin(bb: BbPluginApi, watchVault: WatchVault = w
     )`,
   ]);
 
-  function seedDefaultVault(): boolean {
-    if (Number(db.prepare("SELECT COUNT(*) AS count FROM vaults").pluck().get()) !== 0) {
-      return false;
-    }
-    db.prepare(
-      "INSERT INTO vaults (id, name, host_id, root_path, created_at) VALUES (?, ?, NULL, ?, ?)",
-    ).run("personal", "Personal", path.resolve(expandHome(DEFAULT_DIR)), Date.now());
-    return true;
+  function hasVaults(): boolean {
+    return Number(db.prepare("SELECT COUNT(*) AS count FROM vaults").pluck().get()) !== 0;
   }
-  const seededDefaultVault = seedDefaultVault();
+
+  // ~/Notes is the server's home folder, so the vault belongs to the
+  // server's own host. Handlers and the watch-vaults service create it, not
+  // the factory: bb.sdk can be unbound there on a cold start, and a vault
+  // saved without a host would follow a later server move. The folder comes
+  // first, so a failure saves nothing and the next call tries again.
+  async function ensureDefaultVault(): Promise<void> {
+    if (hasVaults()) return;
+    const { primaryHostId } = await bb.sdk.system.config();
+    if (!primaryHostId) throw new Error("bb has no server machine yet");
+    const rootPath = path.resolve(expandHome(DEFAULT_DIR));
+    await bb.sdk.files.mkdir({ hostId: primaryHostId, path: rootPath, recursive: true });
+    if (hasVaults()) return;
+    db.prepare(
+      "INSERT INTO vaults (id, name, host_id, root_path, created_at) VALUES (?, ?, ?, ?, ?)",
+    ).run("personal", "Personal", primaryHostId, rootPath, Date.now());
+    bb.realtime.publish("vault-changed", { vaultId: "personal" });
+  }
 
   function listVaults(): Vault[] {
     return db
@@ -788,34 +785,111 @@ export default async function plugin(bb: BbPluginApi, watchVault: WatchVault = w
       .map((row) => requireString(requireRecord(row).child_path, "child_path"));
   }
 
-  if (seededDefaultVault) {
-    const vault = getVault("personal");
+  // Null when bb cannot say; createVault then asks for a machine.
+  async function loadPrimaryHostId(): Promise<string | null> {
     try {
-      await bb.sdk.files.mkdir({ path: vault.rootPath, recursive: true });
-    } catch (error) {
-      bb.log.warn(`could not create default vault: ${errorMessage(error)}`);
+      return (await bb.sdk.system.config()).primaryHostId;
+    } catch {
+      return null;
     }
+  }
+
+  // Host names that hold an unbound vault's folder, from the last probe.
+  const unboundCandidates = new Map<string, string[]>();
+
+  // Vaults saved before Docs stored a host have NULL, which meant "the
+  // server's machine" at the time. After a server move that is another
+  // machine, so an unbound vault fails loudly until it is bound.
+  function vaultHostId(vault: Vault): string {
+    if (vault.hostId) return vault.hostId;
+    const candidates = unboundCandidates.get(vault.id) ?? [];
+    throw new Error(
+      `Choose the machine that holds ${vault.rootPath} for the ${vault.name} vault${
+        candidates.length > 0 ? ` (found on ${candidates.join(", ")})` : ""
+      }, or run bb docs vault-host ${vault.id} <host-id>.`,
+    );
+  }
+
+  function hostArgs(vault: Vault): { hostId: string } {
+    return { hostId: vaultHostId(vault) };
+  }
+
+  type HostRecord = Awaited<ReturnType<typeof bb.sdk.hosts.list>>[number];
+
+  // Probe every connected host for a path. `complete` is false when a host
+  // is away or did not answer: it may hold the path too.
+  async function hostsHoldingPath(
+    hostPath: string,
+  ): Promise<{ holders: HostRecord[]; complete: boolean }> {
+    const hosts = await bb.sdk.hosts.list();
+    const connected = hosts.filter((host) => host.status === "connected");
+    const probes = await Promise.allSettled(
+      connected.map((host) =>
+        bb.sdk.hosts.pathsExist({
+          hostId: host.id,
+          paths: [hostPath],
+          signal: AbortSignal.timeout(5_000),
+        }),
+      ),
+    );
+    return {
+      holders: connected.filter((_, index) => {
+        const probe = probes[index]!;
+        return probe.status === "fulfilled" && probe.value.existence[hostPath] === true;
+      }),
+      complete:
+        connected.length === hosts.length && probes.every((probe) => probe.status === "fulfilled"),
+    };
+  }
+
+  function vaultHostChanged(vaultId: string): void {
+    unboundCandidates.delete(vaultId);
+    mentionSummaries.delete(vaultId);
+    bb.realtime.publish("vault-changed", { vaultId });
+  }
+
+  // A NULL-host vault was saved when NULL meant "the server's machine". bb
+  // keeps only the last server move, so after several moves no history
+  // names that machine. Bind only when the folder is on exactly one machine
+  // and every machine answered. Otherwise the user chooses: a guess would
+  // read and write another machine's files, and a bound vault is not
+  // revisited.
+  async function bindLegacyVaults(): Promise<void> {
+    const vaults = listVaults().filter((vault) => !vault.hostId);
+    await Promise.all(
+      vaults.map(async (vault) => {
+        const { holders, complete } = await hostsHoldingPath(vault.rootPath);
+        const [holder] = holders;
+        if (!holder || holders.length !== 1 || !complete) {
+          unboundCandidates.set(
+            vault.id,
+            holders.map((host) => host.name),
+          );
+          return;
+        }
+        const bound = db
+          .prepare("UPDATE vaults SET host_id = ? WHERE id = ? AND host_id IS NULL")
+          .run(holder.id, vault.id);
+        if (bound.changes === 0) return;
+        vaultHostChanged(vault.id);
+        bb.log.info(`bound vault ${vault.id} to host ${holder.id}`);
+      }),
+    );
   }
 
   // Docs walks vaults through its own host entry: SDK listings either hide
   // every dot folder or cannot exclude nested tool state such as
   // .claude/worktrees, which path-policy.ts skips without descending.
-  async function listHostPaths(args: {
-    hostId: string | null | undefined;
-    path: string;
-    signal?: AbortSignal;
-  }) {
-    const hostId = args.hostId ?? (await bb.sdk.system.config()).primaryHostId;
-    if (!hostId) throw new Error("This bb installation has no primary host");
+  function listHostPaths(args: { hostId: string; path: string; signal?: AbortSignal }) {
     return hostFiles.call(
       "listPaths",
       { path: args.path, includeFiles: true, includeDirectories: true, limit: MAX_TREE_ENTRIES },
-      { hostId, ...(args.signal ? { signal: args.signal } : {}) },
+      { hostId: args.hostId, ...(args.signal ? { signal: args.signal } : {}) },
     );
   }
 
   function listVaultPaths(vault: Vault, signal?: AbortSignal) {
-    return listHostPaths({ hostId: vault.hostId, path: vault.rootPath, signal });
+    return listHostPaths({ hostId: vaultHostId(vault), path: vault.rootPath, signal });
   }
 
   async function listEntries(
@@ -826,13 +900,18 @@ export default async function plugin(bb: BbPluginApi, watchVault: WatchVault = w
     return {
       entries: result.paths
         .filter((entry) => entry.kind === "directory" || TREE_FILE_PATH.test(entry.path))
-        .map((entry) => ({
-          kind: entry.kind,
-          path: entry.path.replace(/\\/g, "/"),
-        })),
+        .map((entry) => Object.assign(entry, { path: entry.path.replace(/\\/g, "/") })),
       truncated: result.truncated,
     };
   }
+
+  // Summaries survive between listings and are re-read only when a note's
+  // modification time or size changes. The key includes the host and root,
+  // so a rebound or moved vault starts over.
+  const summaryCache = new Map<
+    string,
+    Map<string, { modifiedAtMs: number; sizeBytes: number; note: NoteSummary }>
+  >();
 
   async function listNoteSummaries(
     vault: Vault,
@@ -840,39 +919,60 @@ export default async function plugin(bb: BbPluginApi, watchVault: WatchVault = w
     signal?: AbortSignal,
   ): Promise<NoteSummary[]> {
     const entries = knownEntries ?? (await listEntries(vault, signal)).entries;
-    const markdownPaths = entries
-      .filter((entry) => entry.kind === "file" && MARKDOWN_PATH.test(entry.path))
-      .map((entry) => entry.path);
-    const notes: Array<NoteSummary | null> = markdownPaths.map(() => null);
+    const cacheKey = JSON.stringify([vault.id, vault.hostId, vault.rootPath]);
+    const previous = summaryCache.get(cacheKey);
+    const next = new Map<string, { modifiedAtMs: number; sizeBytes: number; note: NoteSummary }>();
+    const stale: Array<Extract<VaultEntry, { kind: "file" }>> = [];
+    for (const entry of entries) {
+      if (entry.kind !== "file" || !MARKDOWN_PATH.test(entry.path)) continue;
+      const cached = previous?.get(entry.path);
+      if (cached?.modifiedAtMs === entry.modifiedAtMs && cached.sizeBytes === entry.sizeBytes) {
+        next.set(entry.path, cached);
+      } else {
+        stale.push(entry);
+      }
+    }
     let nextIndex = 0;
-    await Promise.all(
-      Array.from({ length: Math.min(SUMMARY_READ_CONCURRENCY, markdownPaths.length) }, async () => {
-        while (nextIndex < markdownPaths.length) {
-          signal?.throwIfAborted();
-          const index = nextIndex++;
-          const notePath = markdownPaths[index]!;
-          try {
-            const file = await bb.sdk.files.read({
-              ...hostArgs(vault),
-              path: absolutePath(vault, notePath),
-              rootPath: vault.rootPath,
-              ...(signal ? { signal } : {}),
-            });
-            const fallback = path.posix.basename(notePath).replace(MARKDOWN_PATH, "");
-            const summary = summarizeMarkdown(file.content, fallback);
-            notes[index] = {
-              path: notePath,
-              title: summary.title,
-              preview: summary.preview,
-              modifiedAtMs: file.modifiedAtMs ?? 0,
-            };
-          } catch {}
-        }
-      }),
-    );
+    // Commit even when aborted: `next` holds only verified notes, so an
+    // interrupted pass still saves the reads it finished.
+    try {
+      await Promise.all(
+        Array.from({ length: Math.min(SUMMARY_READ_CONCURRENCY, stale.length) }, async () => {
+          while (nextIndex < stale.length) {
+            signal?.throwIfAborted();
+            const entry = stale[nextIndex++]!;
+            try {
+              const file = await bb.sdk.files.read({
+                ...hostArgs(vault),
+                path: absolutePath(vault, entry.path),
+                rootPath: vault.rootPath,
+                ...(signal ? { signal } : {}),
+              });
+              const fallback = path.posix.basename(entry.path).replace(MARKDOWN_PATH, "");
+              const summary = summarizeMarkdown(file.content, fallback);
+              next.set(entry.path, {
+                modifiedAtMs: entry.modifiedAtMs,
+                sizeBytes: entry.sizeBytes,
+                note: {
+                  path: entry.path,
+                  title: summary.title,
+                  preview: summary.preview,
+                  modifiedAtMs: entry.modifiedAtMs,
+                },
+              });
+            } catch {}
+          }
+        }),
+      );
+    } finally {
+      summaryCache.set(cacheKey, next);
+    }
     signal?.throwIfAborted();
-    return notes
-      .filter((note): note is NoteSummary => note !== null)
+    return entries
+      .flatMap((entry) => {
+        const cached = next.get(entry.path);
+        return entry.kind === "file" && cached ? [cached.note] : [];
+      })
       .sort((a, b) => b.modifiedAtMs - a.modifiedAtMs);
   }
 
@@ -928,6 +1028,7 @@ export default async function plugin(bb: BbPluginApi, watchVault: WatchVault = w
   }
 
   async function notebookData(vaultId?: string) {
+    await ensureDefaultVault();
     const vault = getVault(vaultId);
     try {
       const [{ entries, truncated }, hosts] = await Promise.all([
@@ -939,7 +1040,7 @@ export default async function plugin(bb: BbPluginApi, watchVault: WatchVault = w
         vaults: listVaults(),
         vault,
         hosts,
-        entries,
+        entries: entries.map(({ kind, path: entryPath }) => ({ kind, path: entryPath })),
         entryOrder: listEntryOrder(vault.id),
         notes,
         truncated,
@@ -1063,6 +1164,20 @@ export default async function plugin(bb: BbPluginApi, watchVault: WatchVault = w
     return proposal;
   }
 
+  // bb names a thread's host file by its environment (or thread), not by
+  // host id: the path is absolute on that thread's machine. The primary host
+  // is the server's, which is a different disk when the thread runs elsewhere.
+  async function openerHostId(source: OpenerSource): Promise<string> {
+    if (source.experimental_hostId) return source.experimental_hostId;
+    const environmentId =
+      source.environmentId ??
+      (source.threadId
+        ? (await bb.sdk.threads.get({ threadId: source.threadId })).environmentId
+        : null);
+    if (!environmentId) throw new Error("Cannot resolve the machine that holds this file");
+    return (await bb.sdk.environments.get({ environmentId })).hostId;
+  }
+
   async function resolveOpenerFile(
     source: OpenerSource,
     pathValue: unknown,
@@ -1077,7 +1192,7 @@ export default async function plugin(bb: BbPluginApi, watchVault: WatchVault = w
       return {
         path: normalized,
         rootPath: pathApi.dirname(normalized),
-        hostId: source.experimental_hostId ?? null,
+        hostId: await openerHostId(source),
       };
     }
     if (source.kind === "workspace" && source.environmentId) {
@@ -1793,10 +1908,12 @@ export default async function plugin(bb: BbPluginApi, watchVault: WatchVault = w
       const name = requireString(input.name, "name");
       const rootPath = requireString(input.rootPath, "rootPath");
       if (!isAbsoluteHostPath(rootPath)) throw new Error('"rootPath" must be absolute');
-      const hostId = optionalString(input.hostId) ?? null;
+      // Store a concrete host: "the server's machine" changes when the server moves.
+      const hostId = optionalString(input.hostId) ?? (await loadPrimaryHostId());
+      if (!hostId) throw new Error("Choose the machine that holds the vault folder");
       const resolvedRoot = normalizeHostRoot(rootPath);
       await bb.sdk.files.mkdir({
-        ...hostIdArgs(hostId),
+        hostId,
         path: resolvedRoot,
         recursive: true,
       });
@@ -1810,6 +1927,31 @@ export default async function plugin(bb: BbPluginApi, watchVault: WatchVault = w
       ).run(id, name, hostId, resolvedRoot, Date.now());
       bb.realtime.publish("vault-changed", { vaultId: id });
       return getVault(id);
+    },
+    async setVaultHost(input) {
+      const vault = getVault(input.vaultId);
+      const host = (await bb.sdk.hosts.list()).find((candidate) => candidate.id === input.hostId);
+      if (!host) throw new Error(`Unknown machine: ${input.hostId}`);
+      // Refuse a machine that answers without the folder. One that is away
+      // is allowed: Docs reads nothing there until it connects and lists it.
+      const probe =
+        host.status === "connected"
+          ? await bb.sdk.hosts
+              .pathsExist({
+                hostId: host.id,
+                paths: [vault.rootPath],
+                signal: AbortSignal.timeout(5_000),
+              })
+              .catch(() => null)
+          : null;
+      if (probe?.existence[vault.rootPath] === false) {
+        throw new Error(`${host.name} has no folder at ${vault.rootPath}`);
+      }
+      return serializeVault(vault.id, async () => {
+        db.prepare("UPDATE vaults SET host_id = ? WHERE id = ?").run(input.hostId, vault.id);
+        vaultHostChanged(vault.id);
+        return getVault(vault.id);
+      });
     },
     async removeVault(input) {
       const id = requireString(input.vaultId, "vaultId");
@@ -1870,14 +2012,14 @@ export default async function plugin(bb: BbPluginApi, watchVault: WatchVault = w
     async openFile(input) {
       const target = await resolveOpenerFile(input.source, input.path);
       const args = {
-        ...hostIdArgs(target.hostId),
+        hostId: target.hostId,
         path: target.path,
         rootPath: target.rootPath,
       };
       const [file, preview] = await Promise.all([
         bb.sdk.files.read(args),
         bb.sdk.files.createPreview({
-          ...hostIdArgs(target.hostId),
+          hostId: target.hostId,
           rootPath: target.rootPath,
         }),
       ]);
@@ -1886,12 +2028,13 @@ export default async function plugin(bb: BbPluginApi, watchVault: WatchVault = w
         file,
         preview,
         previewPath: pathApi.relative(target.rootPath, target.path).replace(/\\/g, "/"),
+        hostId: target.hostId,
       };
     },
     async readOpenedFile(input) {
       const target = await resolveOpenerFile(input.source, input.path);
       return bb.sdk.files.read({
-        ...hostIdArgs(target.hostId),
+        hostId: target.hostId,
         path: target.path,
         rootPath: target.rootPath,
       });
@@ -1899,7 +2042,7 @@ export default async function plugin(bb: BbPluginApi, watchVault: WatchVault = w
     async saveOpenedFile(input) {
       const target = await resolveOpenerFile(input.source, input.path);
       const result = await bb.sdk.files.write({
-        ...hostIdArgs(target.hostId),
+        hostId: target.hostId,
         path: target.path,
         rootPath: target.rootPath,
         content: input.content,
@@ -1996,28 +2139,57 @@ export default async function plugin(bb: BbPluginApi, watchVault: WatchVault = w
     return hostPathApi(rootPath).join(rootPath, ...relativePath.split("/"));
   }
 
-  async function resolveWorkspaceHostId(
+  // The CLI's working directory is on the invoking machine, which is not
+  // necessarily the server's. Resolve that machine from --workspace-host,
+  // then the thread's environment, then the one connected host that has the
+  // directory. Never fall back to the server's own working directory or host.
+  async function resolveWorkspace(
     args: SyncCliArgs,
     context: PluginCliContext,
-  ): Promise<string | undefined> {
-    if (args.workspaceHostId) return args.workspaceHostId;
-    if (!context.threadId) return undefined;
-    const thread = await bb.sdk.threads.get({ threadId: context.threadId });
-    if (!thread.environmentId) return undefined;
-    const environment = await bb.sdk.environments.get({
-      environmentId: thread.environmentId,
-    });
-    return environment.hostId;
+    target: string,
+  ): Promise<{ rootPath: string; host: { id: string; name: string } }> {
+    if (!context.cwd && !isAbsoluteHostPath(target)) {
+      throw new CliUsageError(
+        `Pass an absolute path instead of ${target}; bb sent no working directory`,
+      );
+    }
+    const rootPath = context.cwd ? resolveHostPath(context.cwd, target) : normalizeHostRoot(target);
+    const probePath = context.cwd ?? rootPath;
+    let hostId = args.workspaceHostId;
+    if (!hostId && context.threadId) {
+      const thread = await bb.sdk.threads.get({ threadId: context.threadId });
+      if (thread.environmentId) {
+        hostId = (await bb.sdk.environments.get({ environmentId: thread.environmentId })).hostId;
+      }
+    }
+    if (hostId) {
+      const name = (await bb.sdk.hosts.list().catch(() => [])).find(
+        (host) => host.id === hostId,
+      )?.name;
+      return { rootPath, host: { id: hostId, name: name ?? hostId } };
+    }
+    const { holders } = await hostsHoldingPath(probePath);
+    const [holder] = holders;
+    if (holder && holders.length === 1) {
+      return { rootPath, host: { id: holder.id, name: holder.name } };
+    }
+    throw new CliUsageError(
+      holders.length === 0
+        ? `No connected machine has ${probePath}; pass --workspace-host <id>`
+        : `Pass --workspace-host <id>; ${probePath} exists on ${holders
+            .map((host) => `${host.name} (${host.id})`)
+            .join(", ")}`,
+    );
   }
 
   async function readWorkspaceFile(
     rootPath: string,
-    hostId: string | undefined,
+    hostId: string,
     relativePath: string,
   ): Promise<Awaited<ReturnType<typeof bb.sdk.files.read>> | null> {
     try {
       return await bb.sdk.files.read({
-        ...hostIdArgs(hostId),
+        hostId,
         path: localFilePath(rootPath, relativePath),
         rootPath,
       });
@@ -2029,7 +2201,7 @@ export default async function plugin(bb: BbPluginApi, watchVault: WatchVault = w
 
   async function readSyncState(
     rootPath: string,
-    hostId: string | undefined,
+    hostId: string,
   ): Promise<{
     state: SyncState;
     sha256: string;
@@ -2076,12 +2248,12 @@ export default async function plugin(bb: BbPluginApi, watchVault: WatchVault = w
 
   async function writeSyncState(
     rootPath: string,
-    hostId: string | undefined,
+    hostId: string,
     state: SyncState,
     expectedSha256: string | null,
   ): Promise<void> {
     const result = await bb.sdk.files.write({
-      ...hostIdArgs(hostId),
+      hostId,
       path: localFilePath(rootPath, SYNC_STATE_FILE),
       rootPath,
       content: `${JSON.stringify(state, null, 2)}\n`,
@@ -2163,10 +2335,13 @@ export default async function plugin(bb: BbPluginApi, watchVault: WatchVault = w
 
   async function runPull(args: SyncCliArgs, context: PluginCliContext) {
     const scope = parsePullScope(args);
+    const { rootPath, host } = await resolveWorkspace(
+      args,
+      context,
+      args.into ?? `docs-${getVault(args.vaultId).id}`,
+    );
+    const hostId = host.id;
     const snapshot = await syncSnapshot(args.vaultId, scope);
-    const cwd = context.cwd ?? process.cwd();
-    const rootPath = resolveHostPath(cwd, args.into ?? `docs-${snapshot.vault.id}`);
-    const hostId = await resolveWorkspaceHostId(args, context);
     const existing = await readSyncState(rootPath, hostId);
     if (
       existing &&
@@ -2236,6 +2411,7 @@ export default async function plugin(bb: BbPluginApi, watchVault: WatchVault = w
       return {
         outcome: "conflict" as const,
         rootPath,
+        workspaceHost: host,
         vaultId: snapshot.vault.id,
         scope: snapshot.scope,
         written: [],
@@ -2249,13 +2425,13 @@ export default async function plugin(bb: BbPluginApi, watchVault: WatchVault = w
     const deletedDirectories: string[] = [];
     try {
       await bb.sdk.files.mkdir({
-        ...hostIdArgs(hostId),
+        hostId,
         path: rootPath,
         recursive: true,
       });
       for (const directory of snapshot.directories) {
         await bb.sdk.files.mkdir({
-          ...hostIdArgs(hostId),
+          hostId,
           path: localFilePath(rootPath, directory),
           rootPath,
           recursive: true,
@@ -2263,7 +2439,7 @@ export default async function plugin(bb: BbPluginApi, watchVault: WatchVault = w
       }
       for (const write of writes) {
         const result = await bb.sdk.files.write({
-          ...hostIdArgs(hostId),
+          hostId,
           path: localFilePath(rootPath, write.file.localPath),
           rootPath,
           content: write.file.content,
@@ -2286,7 +2462,7 @@ export default async function plugin(bb: BbPluginApi, watchVault: WatchVault = w
           );
         }
         await bb.sdk.files.remove({
-          ...hostIdArgs(hostId),
+          hostId,
           path: localFilePath(rootPath, deletion.path),
           rootPath,
           recursive: false,
@@ -2299,7 +2475,7 @@ export default async function plugin(bb: BbPluginApi, watchVault: WatchVault = w
       )) {
         try {
           await bb.sdk.files.remove({
-            ...hostIdArgs(hostId),
+            hostId,
             path: localFilePath(rootPath, directory),
             rootPath,
             recursive: false,
@@ -2314,6 +2490,7 @@ export default async function plugin(bb: BbPluginApi, watchVault: WatchVault = w
       return {
         outcome: "partial" as const,
         rootPath,
+        workspaceHost: host,
         vaultId: snapshot.vault.id,
         scope: snapshot.scope,
         written,
@@ -2330,6 +2507,7 @@ export default async function plugin(bb: BbPluginApi, watchVault: WatchVault = w
     return {
       outcome: "pulled" as const,
       rootPath,
+      workspaceHost: host,
       vaultId: snapshot.vault.id,
       scope: snapshot.scope,
       written,
@@ -2340,16 +2518,16 @@ export default async function plugin(bb: BbPluginApi, watchVault: WatchVault = w
   }
 
   async function runPushPlan(args: SyncCliArgs, context: PluginCliContext, apply: boolean) {
-    const cwd = context.cwd ?? process.cwd();
     const defaultVault = getVault(args.vaultId);
-    const rootPath = resolveHostPath(
-      cwd,
-      args.positionals[0] ?? args.into ?? `docs-${defaultVault.id}`,
-    );
     if (args.positionals.length > 1) {
       throw new Error("push/status accepts only one workspace directory");
     }
-    const hostId = await resolveWorkspaceHostId(args, context);
+    const { rootPath, host } = await resolveWorkspace(
+      args,
+      context,
+      args.positionals[0] ?? args.into ?? `docs-${defaultVault.id}`,
+    );
+    const hostId = host.id;
     const existing = await readSyncState(rootPath, hostId);
     if (!existing) {
       throw new Error(`${SYNC_STATE_FILE} was not found; run bb docs pull first`);
@@ -2551,6 +2729,7 @@ export default async function plugin(bb: BbPluginApi, watchVault: WatchVault = w
     }
     const plan = {
       rootPath,
+      workspaceHost: host,
       vaultId: existing.state.vault.id,
       scope: existing.state.scope,
       writes: writes.map((write) => write.path),
@@ -2589,6 +2768,11 @@ export default async function plugin(bb: BbPluginApi, watchVault: WatchVault = w
       : [];
   }
 
+  function workspaceHostSuffix(result: Record<string, unknown>): string {
+    const host = result.workspaceHost;
+    return isRecord(host) && typeof host.name === "string" ? ` on ${host.name}` : "";
+  }
+
   function formatSyncHumanOutput(command: string, result: unknown): string {
     if (!isRecord(result)) return JSON.stringify(result, null, 2);
     if (command === "pull") {
@@ -2596,9 +2780,9 @@ export default async function plugin(bb: BbPluginApi, watchVault: WatchVault = w
         return `Pull stopped: ${Array.isArray(result.conflicts) ? result.conflicts.length : 0} conflict(s). No files were changed.\n${JSON.stringify(result.conflicts, null, 2)}`;
       }
       if (result.outcome === "partial") {
-        return `Pull partially completed in ${String(result.rootPath)}. The prior manifest remains valid; rerun pull to recover safely.\n${JSON.stringify(result.errors, null, 2)}`;
+        return `Pull partially completed in ${String(result.rootPath)}${workspaceHostSuffix(result)}. The prior manifest remains valid; rerun pull to recover safely.\n${JSON.stringify(result.errors, null, 2)}`;
       }
-      return `Pulled ${stringArray(result.written).length} file(s) into ${String(result.rootPath)}${stringArray(result.deleted).length > 0 ? `; removed ${stringArray(result.deleted).length} remotely deleted file(s)` : ""}${stringArray(result.deletedDirectories).length > 0 ? `; removed ${stringArray(result.deletedDirectories).length} remotely deleted director${stringArray(result.deletedDirectories).length === 1 ? "y" : "ies"}` : ""}.`;
+      return `Pulled ${stringArray(result.written).length} file(s) into ${String(result.rootPath)}${workspaceHostSuffix(result)}${stringArray(result.deleted).length > 0 ? `; removed ${stringArray(result.deleted).length} remotely deleted file(s)` : ""}${stringArray(result.deletedDirectories).length > 0 ? `; removed ${stringArray(result.deletedDirectories).length} remotely deleted director${stringArray(result.deletedDirectories).length === 1 ? "y" : "ies"}` : ""}.`;
     }
     if (command === "status" || command === "push") {
       const writes = stringArray(result.writes);
@@ -2608,7 +2792,7 @@ export default async function plugin(bb: BbPluginApi, watchVault: WatchVault = w
       const warnings = Array.isArray(result.warnings) ? result.warnings : [];
       const conflicts = Array.isArray(result.conflicts) ? result.conflicts : [];
       const lines = [
-        `Docs workspace: ${String(result.rootPath)}`,
+        `Docs workspace: ${String(result.rootPath)}${workspaceHostSuffix(result)}`,
         `Vault: ${String(result.vaultId)}`,
         `Changes: ${writes.length} write(s), ${deletes.length} file deletion(s), ${directories.length} directory creation(s), ${deleteDirectories.length} directory deletion(s), ${warnings.length} warning(s), ${conflicts.length} conflict(s)`,
       ];
@@ -2787,11 +2971,7 @@ export default async function plugin(bb: BbPluginApi, watchVault: WatchVault = w
           },
           run: (input, context) =>
             attemptCli(async () => {
-              const candidatePath = resolveHostPath(
-                context.cwd ?? process.cwd(),
-                input.options.file,
-              );
-              const hostId = await resolveWorkspaceHostId(
+              const { rootPath: candidatePath, host } = await resolveWorkspace(
                 workspaceArgs({
                   positionals: [],
                   vaultId: input.options.vault,
@@ -2799,9 +2979,10 @@ export default async function plugin(bb: BbPluginApi, watchVault: WatchVault = w
                   workspaceHostId: input.options["workspace-host"],
                 }),
                 context,
+                input.options.file,
               );
               const file = await bb.sdk.files.read({
-                ...hostIdArgs(hostId),
+                hostId: host.id,
                 path: candidatePath,
                 rootPath: (path.win32.isAbsolute(candidatePath) &&
                 !path.posix.isAbsolute(candidatePath)
@@ -2874,7 +3055,7 @@ export default async function plugin(bb: BbPluginApi, watchVault: WatchVault = w
             },
             {
               name: "host-id",
-              description: "Connected host holding the directory; omit for this server",
+              description: "Connected host holding the directory; defaults to the server's host",
             },
           ],
           options: { json: JSON_OPTION },
@@ -2886,6 +3067,37 @@ export default async function plugin(bb: BbPluginApi, watchVault: WatchVault = w
                 await handlers.createVault({
                   name: input.positionals.name,
                   rootPath: input.positionals["absolute-root"],
+                  hostId: input.positionals["host-id"],
+                }),
+                input.options.json,
+              ),
+            })),
+        }),
+        "vault-host": cliCommand({
+          summary: "Bind a vault to the machine that holds its folder",
+          description:
+            "Keeps the vault's proposals and file order. Refuses a connected machine without the folder. Host IDs come from bb machine list.",
+          suggestFor: ["vault-machine", "vault-bind"],
+          positionals: [
+            {
+              name: "id",
+              description: "Vault ID from `bb docs vaults`",
+              required: true,
+            },
+            {
+              name: "host-id",
+              description: "Connected host holding the vault folder",
+              required: true,
+            },
+          ],
+          options: { json: JSON_OPTION },
+          run: (input) =>
+            attemptCli(async () => ({
+              exitCode: 0,
+              stdout: renderCliResult(
+                "vault-host",
+                await handlers.setVaultHost({
+                  vaultId: input.positionals.id,
                   hostId: input.positionals["host-id"],
                 }),
                 input.options.json,
@@ -3229,9 +3441,31 @@ export default async function plugin(bb: BbPluginApi, watchVault: WatchVault = w
     label: "Docs",
     async search({ query }) {
       const needle = query.trim().toLowerCase();
+      // One asleep or slow machine must not hide the other vaults. A vault
+      // that misses the wait keeps loading into the cache for the next keystroke.
+      const hosts = await bb.sdk.hosts.list().catch(() => null);
+      const connected = hosts
+        ? new Set(hosts.filter((host) => host.status === "connected").map((host) => host.id))
+        : null;
+      const vaults = listVaults().filter(
+        (vault) => vault.hostId !== null && (connected === null || connected.has(vault.hostId)),
+      );
+      const settled = await Promise.allSettled(
+        vaults.map(
+          (vault) =>
+            new Promise<NoteSummary[]>((resolve, reject) => {
+              const timer = setTimeout(() => resolve([]), MENTION_VAULT_WAIT_MS);
+              mentionNoteSummaries(vault)
+                .then(resolve, reject)
+                .finally(() => clearTimeout(timer));
+            }),
+        ),
+      );
       const matches = [];
-      for (const vault of listVaults()) {
-        for (const note of await mentionNoteSummaries(vault)) {
+      for (const [index, vault] of vaults.entries()) {
+        const result = settled[index]!;
+        if (result.status === "rejected") continue;
+        for (const note of result.value) {
           if (
             needle &&
             !`${vault.name} ${note.title} ${note.preview} ${note.path}`
@@ -3276,7 +3510,7 @@ export default async function plugin(bb: BbPluginApi, watchVault: WatchVault = w
   });
 
   // A removed machine never returns under the same id, so its vaults can never load again.
-  bb.events.on("experimental_host.deleted", ({ host }) => {
+  bb.events.on("experimental_host.deleted", async ({ host }) => {
     const removed = listVaults().filter((vault) => vault.hostId === host.id);
     if (removed.length === 0) return;
     db.transaction(() => {
@@ -3285,88 +3519,125 @@ export default async function plugin(bb: BbPluginApi, watchVault: WatchVault = w
         db.prepare("DELETE FROM entry_order WHERE vault_id = ?").run(vault.id);
         db.prepare("DELETE FROM vaults WHERE id = ?").run(vault.id);
       }
-      seedDefaultVault();
     })();
     for (const vault of removed) {
       mentionSummaries.delete(vault.id);
       bb.realtime.publish("vault-changed", { vaultId: vault.id });
     }
+    // On failure the watch-vaults service retries.
+    await ensureDefaultVault().catch((error: unknown) =>
+      bb.log.warn(`could not create the Personal vault: ${errorMessage(error)}`),
+    );
   });
 
+  // A daemon restart drops its watches without a worker exit, and the host
+  // can reconnect between two polls. Ask each host which of its watches it
+  // still holds. A host that cannot answer keeps them until a later poll.
+  async function lostWatches(
+    armed: ReadonlyMap<string, { hostId: string }>,
+    connected: ReadonlySet<string>,
+    signal: AbortSignal,
+  ): Promise<string[]> {
+    const lost = await Promise.all(
+      [...connected].map(async (hostId) => {
+        const vaultIds = [...armed]
+          .filter(([, watch]) => watch.hostId === hostId)
+          .map(([vaultId]) => vaultId);
+        if (vaultIds.length === 0) return [];
+        const answer = await hostFiles
+          .call("watchAlive", { vaultIds }, { hostId, timeoutMs: 5_000, signal })
+          .catch(() => null);
+        return answer ? vaultIds.filter((vaultId) => !answer.live.includes(vaultId)) : [];
+      }),
+    );
+    return lost.flat();
+  }
+
+  // Each vault is watched by the native watcher on its own host. The
+  // server's filesystem is not the vault's, so watching it would see nothing.
   bb.background.service("watch-vaults", {
     async start(signal) {
-      const watchers = new Map<string, VaultWatcher>();
-      const retryNative = new Set<string>();
-      let debounce: NodeJS.Timeout | null = null;
-      let previous = "";
+      const armed = new Map<string, { hostId: string; rootPath: string }>();
+      const warned = new Set<string>();
+      let setupWarning: string | null = null;
+      let wake: (() => void) | null = null;
+      const changed = (vaultId: string) => {
+        mentionSummaries.delete(vaultId);
+        bb.realtime.publish("vault-changed", { vaultId });
+      };
+      // Re-arming publishes a change, since changes made while unwatched are unknown.
+      const offSignal = hostFiles.experimental_onSignal("vaultChanged", ({ hostId, payload }) => {
+        if (armed.get(payload.vaultId)?.hostId !== hostId) return;
+        if (payload.kind !== "watch-error") return changed(payload.vaultId);
+        armed.delete(payload.vaultId);
+        wake?.();
+      });
+      // A restarted worker has lost its watches.
+      const offExit = hostFiles.experimental_onWorkerExit(({ hostId }) => {
+        for (const [vaultId, watch] of armed) if (watch.hostId === hostId) armed.delete(vaultId);
+        wake?.();
+      });
+      const unwatch = (vaultId: string, hostId: string) =>
+        void hostFiles.call("unwatchVault", { vaultId }, { hostId }).catch(() => {});
       try {
         while (!signal.aborted) {
+          try {
+            await ensureDefaultVault();
+            await bindLegacyVaults();
+            setupWarning = null;
+          } catch (error) {
+            const message = errorMessage(error);
+            if (message !== setupWarning) bb.log.warn(`could not set up vaults: ${message}`);
+            setupWarning = message;
+          }
           const vaults = listVaults();
-          const localIds = new Set(
-            vaults.filter((vault) => !vault.hostId).map((vault) => vault.id),
+          const hosts = await bb.sdk.hosts.list().catch(() => []);
+          const connected = new Set(
+            hosts.filter((host) => host.status === "connected").map((host) => host.id),
           );
-          for (const [vaultId, watcher] of watchers) {
-            if (!localIds.has(vaultId)) {
-              watcher.close();
-              watchers.delete(vaultId);
+          for (const [vaultId, watch] of armed) {
+            const vault = vaults.find((candidate) => candidate.id === vaultId);
+            if (vault?.hostId === watch.hostId && vault.rootPath === watch.rootPath) {
+              if (connected.has(watch.hostId)) continue;
+            } else {
+              unwatch(vaultId, watch.hostId);
             }
+            // Signals sent while a host was away are lost: re-arm on return.
+            armed.delete(vaultId);
+          }
+          for (const vaultId of await lostWatches(armed, connected, signal)) {
+            armed.delete(vaultId);
+            changed(vaultId);
           }
           for (const vault of vaults) {
-            if (vault.hostId || watchers.has(vault.id)) continue;
+            if (!vault.hostId || armed.has(vault.id) || !connected.has(vault.hostId)) continue;
+            const watch = { hostId: vault.hostId, rootPath: vault.rootPath };
             try {
-              const watcher = watchVault(vault.rootPath, () => {
-                mentionSummaries.delete(vault.id);
-                if (debounce) clearTimeout(debounce);
-                debounce = setTimeout(() => {
-                  bb.realtime.publish("vault-changed", {
-                    vaultId: vault.id,
-                  });
-                }, 250);
-              });
-              watcher.on("error", () => {
-                watcher.close();
-                watchers.delete(vault.id);
-                retryNative.add(vault.id);
-              });
-              watchers.set(vault.id, watcher);
-              retryNative.delete(vault.id);
-            } catch (error) {
-              if (!retryNative.has(vault.id)) {
-                bb.log.warn(
-                  `cannot watch ${vault.rootPath}; using polling: ${errorMessage(error)}`,
-                );
-              }
-              retryNative.add(vault.id);
-            }
-          }
-
-          const snapshots: string[] = [];
-          for (const vault of vaults) {
-            if (watchers.has(vault.id)) continue;
-            try {
-              const { entries } = await listEntries(vault);
-              const notes = await listNoteSummaries(vault, entries);
-              snapshots.push(
-                JSON.stringify({
-                  id: vault.id,
-                  entries: entries.map((entry) => `${entry.kind}:${entry.path}`),
-                  notes: notes.map((note) => `${note.path}:${note.modifiedAtMs}`),
-                }),
+              await hostFiles.call(
+                "watchVault",
+                { vaultId: vault.id, rootPath: vault.rootPath },
+                { hostId: vault.hostId, signal },
               );
-            } catch {
-              snapshots.push(`${vault.id}:offline`);
+              armed.set(vault.id, watch);
+              warned.delete(vault.id);
+              changed(vault.id);
+            } catch (error) {
+              if (signal.aborted) break;
+              if (!warned.has(vault.id)) {
+                warned.add(vault.id);
+                bb.log.warn(`cannot watch vault ${vault.id}: ${errorMessage(error)}`);
+              }
             }
           }
-          const next = snapshots.join("\n");
-          if (previous && previous !== next) {
-            bb.realtime.publish("vault-changed", {});
-          }
-          previous = next;
-          await waitForDelay(10_000, signal);
+          const pause = new AbortController();
+          wake = () => pause.abort();
+          await waitForDelay(10_000, AbortSignal.any([signal, pause.signal]));
+          wake = null;
         }
       } finally {
-        if (debounce) clearTimeout(debounce);
-        for (const watcher of watchers.values()) watcher.close();
+        offSignal();
+        offExit();
+        for (const [vaultId, watch] of armed) unwatch(vaultId, watch.hostId);
       }
     },
   });

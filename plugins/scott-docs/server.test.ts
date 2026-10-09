@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import os from "node:os";
 import path from "node:path";
@@ -8,18 +8,42 @@ import simpleNotes, { docsRpcContract } from "./server";
 
 const temporaryDirectories: string[] = [];
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
 type FakeHostOptions = NonNullable<Parameters<typeof createFakePluginHost>[0]>;
+type FileStat = { modifiedAtMs: number; sizeBytes: number };
+
+// Real fixtures report their size; a fixed time keeps tied note order stable.
+async function statFixture(filePath: string): Promise<FileStat> {
+  const stats = await stat(filePath).catch(() => null);
+  return { modifiedAtMs: 1, sizeBytes: stats?.size ?? 0 };
+}
 
 // Docs lists vaults through its own host entry. Route that call to the fake
 // SDK file listing so fixtures, stubs, and recorded calls stay in one place.
-function createDocsHost(options: FakeHostOptions) {
+function createDocsHost(
+  options: FakeHostOptions & { statFile?: (filePath: string) => Promise<FileStat> },
+) {
+  const { statFile = statFixture, ...hostOptions } = options;
+  // Vault watches each host holds. Clearing a host's set is a daemon restart.
+  const hostWatches = new Map<string, Set<string>>();
+  const watchesOn = (hostId: string) => {
+    if (!hostWatches.has(hostId)) hostWatches.set(hostId, new Set());
+    return hostWatches.get(hostId)!;
+  };
   const host: ReturnType<typeof createFakePluginHost> = createFakePluginHost({
-    ...options,
+    ...hostOptions,
     experimental_callHostRpc: async ({ method, input, hostId }) => {
+      const { vaultId, vaultIds } = input as { vaultId?: string; vaultIds?: string[] };
+      if (method === "watchVault") {
+        watchesOn(hostId).add(vaultId!);
+        return { ok: true };
+      }
+      if (method === "unwatchVault") {
+        watchesOn(hostId).delete(vaultId!);
+        return { ok: true };
+      }
+      if (method === "watchAlive") {
+        return { live: vaultIds!.filter((id) => watchesOn(hostId).has(id)) };
+      }
       if (method !== "listPaths") throw new Error(`Unexpected host RPC: ${method}`);
       const {
         path: root,
@@ -40,17 +64,28 @@ function createDocsHost(options: FakeHostOptions) {
         limit,
       });
       return {
-        paths: result.paths.map(({ kind, path: listedPath }) => ({ kind, path: listedPath })),
+        paths: await Promise.all(
+          result.paths.map(async ({ kind, path: listedPath }) =>
+            kind === "directory"
+              ? { kind, path: listedPath }
+              : { kind, path: listedPath, ...(await statFile(path.posix.join(root, listedPath))) },
+          ),
+        ),
         truncated: result.truncated,
       };
     },
     sdk: {
-      ...options.sdk,
-      system: { config: async () => ({ primaryHostId: "host_primary" }), ...options.sdk?.system },
+      ...hostOptions.sdk,
+      system: {
+        config: async () => ({ primaryHostId: "host_primary" }),
+        ...hostOptions.sdk?.system,
+      },
     },
   });
-  return host;
+  return Object.assign(host, { hostWatches });
 }
+
+const serverHost = makeHostResponse({ id: "host_primary", name: "Server" });
 
 afterEach(async () => {
   await Promise.all(
@@ -60,10 +95,16 @@ afterEach(async () => {
   );
 });
 
-async function loadNotebook(
-  notes: Record<string, string>,
-  watchVault?: NonNullable<Parameters<typeof simpleNotes>[1]>,
-) {
+function insertPersonalVault(bb: ReturnType<typeof createDocsHost>["bb"], rootPath: string) {
+  bb.storage
+    .database()
+    .prepare(
+      "INSERT INTO vaults (id, name, host_id, root_path, created_at) VALUES ('personal', 'Personal', 'host_primary', ?, ?)",
+    )
+    .run(rootPath, Date.now());
+}
+
+async function loadNotebook(notes: Record<string, string>) {
   const directory = await mkdtemp(path.join(os.tmpdir(), "bb-simple-notes-"));
   temporaryDirectories.push(directory);
   await Promise.all(
@@ -108,14 +149,11 @@ async function loadNotebook(
           expiresAtMs: Date.now() + 60_000,
         }),
       },
-      hosts: { list: async () => [] },
+      hosts: { list: async () => [serverHost] },
     },
   });
-  await simpleNotes(host.bb, watchVault);
-  host.bb.storage
-    .database()
-    .prepare("UPDATE vaults SET root_path = ? WHERE id = 'personal'")
-    .run(directory);
+  await simpleNotes(host.bb);
+  insertPersonalVault(host.bb, directory);
   host.harness.sdk.calls.length = 0;
   return host;
 }
@@ -273,14 +311,25 @@ async function loadVirtualSyncVault(initial: Record<string, VirtualFile>) {
           return { paths: [], truncated: false };
         },
       },
-      hosts: { list: async () => [] },
+      hosts: {
+        list: async () => [serverHost],
+        pathsExist: async ({ paths }) => ({
+          existence: Object.fromEntries(
+            paths.map((entry) => [entry, files.has(entry) || directories.has(entry)]),
+          ),
+        }),
+      },
+    },
+    statFile: async (filePath) => {
+      const file = files.get(filePath);
+      return {
+        modifiedAtMs: file?.modifiedAtMs ?? 0,
+        sizeBytes: file ? Buffer.from(file.content, file.contentEncoding).length : 0,
+      };
     },
   });
   await simpleNotes(host.bb);
-  host.bb.storage
-    .database()
-    .prepare("UPDATE vaults SET root_path = ? WHERE id = 'personal'")
-    .run("/vault");
+  insertPersonalVault(host.bb, "/vault");
   host.harness.sdk.calls.length = 0;
   return {
     ...host,
@@ -386,6 +435,7 @@ describe("Docs mention provider", () => {
         threadId: null,
         projectId: null,
         environmentId: null,
+        experimental_hostId: "host_primary",
       },
       path: "/vault/plan.md",
       content: "# Edited in file opener",
@@ -409,7 +459,7 @@ describe("Docs mention provider", () => {
     expect(await search()).toEqual([]);
   });
 
-  it("retries a failed vault scan instead of caching the failure", async () => {
+  it("skips a failed vault scan and retries it on the next search", async () => {
     const { harness } = await loadNotebook({ "plan.md": "# Plan" });
     const listPaths = vi
       .fn()
@@ -434,7 +484,7 @@ describe("Docs mention provider", () => {
       projectId: null,
       threadId: null,
     };
-    await expect(provider.search(context)).rejects.toThrow("Host offline");
+    await expect(provider.search(context)).resolves.toEqual([]);
     expect(await provider.search(context)).toMatchObject([{ title: "Plan" }]);
     expect(listPaths).toHaveBeenCalledTimes(2);
   });
@@ -623,6 +673,7 @@ describe("Docs mention provider", () => {
     expect(harness.sdk.callsTo("files.read")).toEqual([
       [
         {
+          hostId: "host_primary",
           path: path.join(temporaryDirectories[0]!, "ideas.md"),
           rootPath: temporaryDirectories[0],
         },
@@ -661,30 +712,66 @@ describe("Docs vault operations", () => {
     },
   );
 
-  it("creates the initial Personal vault without exposing a folder setting", async () => {
-    const host = createDocsHost({
-      pluginId: "simple-notes",
-      sdk: {
-        files: { mkdir: async () => ({ ok: true as const }) },
-      },
-    });
+  it.each(["watch-vaults", "listNotes"] as const)(
+    "creates the initial Personal vault on the server's host after a cold start, from %s",
+    async (trigger) => {
+      const host = createDocsHost({
+        pluginId: "simple-notes",
+        sdk: {
+          files: {
+            mkdir: async () => ({ ok: true as const }),
+            listPaths: async () => ({ paths: [], truncated: false }),
+          },
+          hosts: { list: async () => [serverHost] },
+        },
+      });
+      // On a cold start bb binds bb.sdk only after the factory has run.
+      let sdkBound = false;
+      const coldBb = new Proxy(host.bb, {
+        get(target, key, receiver) {
+          if (key === "sdk" && !sdkBound) throw new Error("bb.sdk is not bound yet");
+          return Reflect.get(target, key, receiver);
+        },
+      });
+      const vaults = async () =>
+        JSON.parse((await host.harness.runCli(["vaults", "--json"])).stdout) as unknown;
+      const notes = path.join(os.homedir(), "Notes");
 
-    await simpleNotes(host.bb);
+      await simpleNotes(coldBb);
+      expect(await vaults()).toEqual([]);
 
-    const result = await host.harness.runCli(["vaults", "--json"]);
-    expect(result.exitCode).toBe(0);
-    expect(JSON.parse(result.stdout)).toEqual([
-      {
-        id: "personal",
-        name: "Personal",
-        hostId: null,
-        rootPath: path.join(os.homedir(), "Notes"),
-      },
-    ]);
-    await expect(host.harness.setSettings({ directory: "/Elsewhere" })).rejects.toThrow(
-      'unknown setting "directory"',
-    );
-  });
+      sdkBound = true;
+      if (trigger === "listNotes") {
+        await expect(host.harness.callRpc("listNotes", {})).resolves.toMatchObject({
+          vault: { id: "personal", hostId: "host_primary", rootPath: notes },
+          error: null,
+        });
+      }
+      // The service creates the vault, or finds it and creates nothing more.
+      const service = host.harness.runService("watch-vaults");
+      try {
+        await waitForSignal(() =>
+          host.harness.experimental_hostRpcCalls.some((call) => call.method === "watchVault"),
+        );
+      } finally {
+        service.controller.abort();
+        await service.done;
+      }
+
+      expect(await vaults()).toEqual([
+        { id: "personal", name: "Personal", hostId: "host_primary", rootPath: notes },
+      ]);
+      expect(host.harness.sdk.callsTo("files.mkdir")).toEqual([
+        [{ hostId: "host_primary", path: notes, recursive: true }],
+      ]);
+      expect(host.harness.realtimeSignals).toContainEqual(
+        expect.objectContaining({ channel: "vault-changed", payload: { vaultId: "personal" } }),
+      );
+      await expect(host.harness.setSettings({ directory: "/Elsewhere" })).rejects.toThrow(
+        'unknown setting "directory"',
+      );
+    },
+  );
 
   it("keeps a frontmatter-managed document at its existing path", async () => {
     const { harness } = await loadNotebook({
@@ -1118,6 +1205,7 @@ describe("Docs vault operations", () => {
     expect(harness.sdk.callsTo("files.remove")).toEqual([
       [
         {
+          hostId: "host_primary",
           path: path.join(rootPath, "empty"),
           rootPath,
           recursive: false,
@@ -1125,6 +1213,7 @@ describe("Docs vault operations", () => {
       ],
       [
         {
+          hostId: "host_primary",
           path: path.join(rootPath, "archive"),
           rootPath,
           recursive: true,
@@ -1173,6 +1262,7 @@ describe("Docs vault operations", () => {
     expect(harness.sdk.callsTo("files.mkdir")).toEqual([
       [
         {
+          hostId: "host_primary",
           path: path.join(rootPath, "projects"),
           rootPath,
           recursive: false,
@@ -1182,6 +1272,7 @@ describe("Docs vault operations", () => {
     expect(harness.sdk.callsTo("files.move")).toEqual([
       [
         {
+          hostId: "host_primary",
           sourcePath: path.join(rootPath, "draft.md"),
           destinationPath: path.join(rootPath, "projects", "plan.md"),
           rootPath,
@@ -1190,20 +1281,26 @@ describe("Docs vault operations", () => {
     ]);
   });
 
-  it("opens and saves absolute host Markdown files for the file opener", async () => {
+  it("opens and saves a thread's absolute host file on the thread's machine", async () => {
     const { harness } = await loadNotebook({ "plan.md": "# Plan" });
+    harness.sdk.stub("environments.get", async ({ environmentId }: { environmentId: string }) => {
+      if (environmentId !== "env_mac") throw new Error(`Unknown environment: ${environmentId}`);
+      return { id: "env_mac", hostId: "host_mac" };
+    });
     const rootPath = temporaryDirectories[0]!;
     const filePath = path.join(rootPath, "plan.md");
+    // bb's shape for a thread's host file: its environment, no host id.
     const source = {
       kind: "host",
       threadId: "thread_1",
-      environmentId: null,
-      projectId: "project_1",
+      environmentId: "env_mac",
+      projectId: null,
     };
 
     await expect(harness.callRpc("openFile", { source, path: filePath })).resolves.toMatchObject({
       file: { content: "# Plan", sha256: "test-sha" },
       previewPath: "plan.md",
+      hostId: "host_mac",
     });
     await expect(
       harness.callRpc("saveOpenedFile", {
@@ -1213,14 +1310,46 @@ describe("Docs vault operations", () => {
         expectedSha256: "test-sha",
       }),
     ).resolves.toMatchObject({ outcome: "written", sha256: "written-sha" });
-    expect(harness.sdk.callsTo("files.write").at(-1)).toEqual([
-      {
-        path: filePath,
-        rootPath,
-        content: "# Updated",
-        expectedSha256: "test-sha",
-      },
+    expect(harness.sdk.callsTo("files.read")).toEqual([
+      [{ hostId: "host_mac", path: filePath, rootPath }],
     ]);
+    expect(harness.sdk.callsTo("files.createPreview")).toEqual([
+      [{ hostId: "host_mac", rootPath }],
+    ]);
+    expect(harness.sdk.callsTo("files.write")).toEqual([
+      [
+        {
+          hostId: "host_mac",
+          path: filePath,
+          rootPath,
+          content: "# Updated",
+          expectedSha256: "test-sha",
+        },
+      ],
+    ]);
+  });
+
+  it("resolves a thread's host file through the thread when bb omits the environment", async () => {
+    const { harness } = await loadNotebook({ "plan.md": "# Plan" });
+    harness.sdk.stub("threads.get", async () => ({ id: "thread_1", environmentId: "env_mac" }));
+    harness.sdk.stub("environments.get", async () => ({ id: "env_mac", hostId: "host_mac" }));
+    const filePath = path.join(temporaryDirectories[0]!, "plan.md");
+    const source = { kind: "host", threadId: "thread_1", environmentId: null, projectId: null };
+
+    await expect(
+      harness.callRpc("readOpenedFile", { source, path: filePath }),
+    ).resolves.toMatchObject({ content: "# Plan" });
+    expect(harness.sdk.callsTo("files.read")).toEqual([
+      [{ hostId: "host_mac", path: filePath, rootPath: temporaryDirectories[0] }],
+    ]);
+
+    await expect(
+      harness.callRpc("readOpenedFile", {
+        source: { kind: "host", threadId: null, environmentId: null, projectId: null },
+        path: filePath,
+      }),
+    ).rejects.toThrow("Cannot resolve the machine that holds this file");
+    expect(harness.sdk.callsTo("files.read")).toHaveLength(1);
   });
 
   it("routes explicit host opener reads, previews, and saves to that host", async () => {
@@ -1274,6 +1403,7 @@ describe("Docs vault operations", () => {
       },
       preview: expect.objectContaining({ baseUrl: "/remote-preview" }),
       previewPath: "plan.md",
+      hostId: "host_remote",
     });
     await expect(
       host.harness.callRpc("saveOpenedFile", {
@@ -1550,51 +1680,127 @@ describe("Docs vault operations", () => {
     expect(harness.sdk.callsTo("threads.storageLocation")).toEqual([]);
   });
 
-  it("publishes watched filesystem changes without waiting for the poll", async () => {
-    const changeListeners: Array<() => void> = [];
-    const closeWatcher = vi.fn();
-    const watchedRoots: string[] = [];
-    const { harness } = await loadNotebook({ "plan.md": "# Plan" }, (rootPath, onChange) => {
-      watchedRoots.push(rootPath);
-      changeListeners.push(onChange);
-      return {
-        close: closeWatcher,
-        on: () => undefined,
-      };
-    });
+  it("watches each vault on its own host and publishes its changes without rereading", async () => {
+    const { harness } = await loadNotebook({ "plan.md": "# Plan" });
+    const rootPath = temporaryDirectories[0]!;
+    const provider = harness.registrations.mentionProviders[0]!;
+    const context = { trigger: "@" as const, query: "", projectId: null, threadId: null };
+    expect(await provider.search(context)).toMatchObject([{ title: "Plan" }]);
     const service = harness.runService("watch-vaults");
     try {
-      expect(watchedRoots).toEqual([temporaryDirectories[0]]);
-      const notifyChange = changeListeners[0];
-      if (!notifyChange) {
-        throw new Error("Expected vault watcher callback");
-      }
-      const provider = harness.registrations.mentionProviders[0]!;
-      const context = {
-        trigger: "@" as const,
-        query: "",
-        projectId: null,
-        threadId: null,
-      };
-      expect(await provider.search(context)).toMatchObject([{ title: "Plan" }]);
-      await writeFile(path.join(temporaryDirectories[0]!, "plan.md"), "# Updated");
-      notifyChange();
-      expect(await provider.search(context)).toMatchObject([{ title: "Updated" }]);
-      await waitForSignal(
-        () =>
-          harness.realtimeSignals.some(
-            (signal) =>
-              signal.channel === "vault-changed" &&
-              isRecord(signal.payload) &&
-              signal.payload.vaultId === "personal",
-          ),
-        1_000,
+      // Arming publishes once: changes made before the watch started are unknown.
+      await waitForSignal(() =>
+        harness.realtimeSignals.some((signal) => signal.channel === "vault-changed"),
       );
+      expect(
+        harness.experimental_hostRpcCalls
+          .filter((call) => call.method === "watchVault")
+          .map(({ hostId, input }) => ({ hostId, input })),
+      ).toEqual([{ hostId: "host_primary", input: { vaultId: "personal", rootPath } }]);
+      const published = harness.realtimeSignals.length;
+      const reads = harness.sdk.callsTo("files.read").length;
+
+      await harness.behavior.experimental_emitHostSignal("host_other", "vaultChanged", {
+        vaultId: "personal",
+        kind: "changed",
+      });
+      expect(harness.realtimeSignals.slice(published)).toEqual([]);
+
+      await harness.behavior.experimental_emitHostSignal("host_primary", "vaultChanged", {
+        vaultId: "personal",
+        kind: "changed",
+      });
+      expect(harness.realtimeSignals.slice(published)).toEqual([
+        expect.objectContaining({ channel: "vault-changed", payload: { vaultId: "personal" } }),
+      ]);
+      expect(harness.sdk.callsTo("files.read")).toHaveLength(reads);
+
+      await writeFile(path.join(rootPath, "plan.md"), "# Updated");
+      expect(await provider.search(context)).toMatchObject([{ title: "Updated" }]);
     } finally {
       service.controller.abort();
       await service.done;
     }
-    expect(closeWatcher).toHaveBeenCalledOnce();
+    expect(
+      harness.experimental_hostRpcCalls
+        .filter((call) => call.method === "unwatchVault")
+        .map(({ hostId, input }) => ({ hostId, input })),
+    ).toEqual([{ hostId: "host_primary", input: { vaultId: "personal" } }]);
+  });
+
+  it("re-arms a vault watch after its host worker restarts", async () => {
+    const { harness } = await loadNotebook({ "plan.md": "# Plan" });
+    const watchCalls = () =>
+      harness.experimental_hostRpcCalls.filter((call) => call.method === "watchVault").length;
+    const service = harness.runService("watch-vaults");
+    try {
+      await waitForSignal(() => watchCalls() === 1);
+      await harness.behavior.experimental_emitHostWorkerExit("host_primary");
+      await waitForSignal(() => watchCalls() === 2);
+    } finally {
+      service.controller.abort();
+      await service.done;
+    }
+  });
+
+  // The service checks its watches every 10 s; fake timers run those polls.
+  async function advanceUntil(predicate: () => boolean): Promise<void> {
+    for (let elapsed = 0; !predicate(); elapsed += 1_000) {
+      if (elapsed > 60_000) throw new Error("Timed out waiting for signal");
+      await vi.advanceTimersByTimeAsync(1_000);
+    }
+  }
+
+  it("re-arms a vault watch its host lost without a worker exit", async () => {
+    const { harness, hostWatches } = await loadNotebook({ "plan.md": "# Plan" });
+    const rootPath = temporaryDirectories[0]!;
+    const watchCalls = () =>
+      harness.experimental_hostRpcCalls
+        .filter((call) => call.method === "watchVault")
+        .map(({ hostId, input }) => ({ hostId, input }));
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    const service = harness.runService("watch-vaults");
+    try {
+      await advanceUntil(() => watchCalls().length === 1);
+      // The daemon restarted and reconnected between two polls: no worker
+      // exit, no disconnect seen, and the new daemon holds no watches.
+      hostWatches.get("host_primary")!.clear();
+      const published = harness.realtimeSignals.length;
+      await advanceUntil(() => watchCalls().length === 2);
+      expect(watchCalls()).toEqual([
+        { hostId: "host_primary", input: { vaultId: "personal", rootPath } },
+        { hostId: "host_primary", input: { vaultId: "personal", rootPath } },
+      ]);
+      expect(harness.realtimeSignals.slice(published)).toContainEqual(
+        expect.objectContaining({ channel: "vault-changed", payload: { vaultId: "personal" } }),
+      );
+    } finally {
+      service.controller.abort();
+      await service.done;
+      vi.useRealTimers();
+    }
+  });
+
+  it("re-arms a vault watch when its host comes back", async () => {
+    const { harness } = await loadNotebook({ "plan.md": "# Plan" });
+    const watchCalls = () =>
+      harness.experimental_hostRpcCalls.filter((call) => call.method === "watchVault").length;
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    const service = harness.runService("watch-vaults");
+    try {
+      await advanceUntil(() => watchCalls() === 1);
+      harness.sdk.stub("hosts.list", async () => [{ ...serverHost, status: "disconnected" }]);
+      const polls = harness.sdk.callsTo("hosts.list").length;
+      await advanceUntil(() => harness.sdk.callsTo("hosts.list").length > polls);
+      expect(watchCalls()).toBe(1);
+
+      harness.sdk.stub("hosts.list", async () => [serverHost]);
+      await advanceUntil(() => watchCalls() === 2);
+    } finally {
+      service.controller.abort();
+      await service.done;
+      vi.useRealTimers();
+    }
   });
 });
 
@@ -2013,5 +2219,370 @@ describe("Docs fork divergences", () => {
       host: makeHostResponse({ id: "host_other" }),
     });
     expect(vaultIds()).toEqual(["personal"]);
+  });
+});
+
+describe("Docs across machines", () => {
+  const personalMac = makeHostResponse({ id: "host_mac", name: "Personal Mac" });
+  const devMac = makeHostResponse({ id: "host_dev", name: "Dev Mac" });
+
+  it("stores the server's host for a vault added without one", async () => {
+    const { harness } = await loadNotebook({});
+
+    await expect(
+      harness.callRpc("createVault", { name: "Work", rootPath: "/srv/work" }),
+    ).resolves.toEqual({ id: "work", name: "Work", hostId: "host_primary", rootPath: "/srv/work" });
+    expect(harness.sdk.callsTo("files.mkdir")).toEqual([
+      [{ hostId: "host_primary", path: "/srv/work", recursive: true }],
+    ]);
+  });
+
+  it("binds a vault saved without a host only to the one machine that holds it", async () => {
+    const { bb, harness } = await loadNotebook({});
+    const insert = bb.storage
+      .database()
+      .prepare(
+        "INSERT INTO vaults (id, name, host_id, root_path, created_at) VALUES (?, ?, NULL, ?, ?)",
+      );
+    insert.run("obsidian", "Obsidian", "/Users/me/obsidian-vault", 1_000);
+    insert.run("dotfiles", "Dotfiles", "/Users/me/dotfiles", 2_000);
+    insert.run("scratch", "Scratch", "/shared/scratch", 3_000);
+    insert.run("asleep", "Asleep", "/Users/me/asleep", 4_000);
+    insert.run("server-notes", "Server notes", "/srv/notes", 6_000);
+    const holdings: Record<string, string[]> = {
+      host_mac: ["/Users/me/obsidian-vault", "/Users/me/dotfiles"],
+      host_dev: ["/Users/me/dotfiles", "/shared/scratch", "/Users/me/asleep"],
+      host_primary: ["/shared/scratch", "/srv/notes"],
+    };
+    let devMacStatus: "connected" | "disconnected" = "disconnected";
+    harness.sdk.stub("hosts.list", async () => [
+      personalMac,
+      { ...devMac, status: devMacStatus },
+      serverHost,
+    ]);
+    harness.sdk.stub(
+      "hosts.pathsExist",
+      async ({ hostId, paths }: { hostId: string; paths: string[] }) => {
+        if (hostId === "host_mac" && paths.includes("/Users/me/asleep")) {
+          throw new Error("Host is not connected");
+        }
+        return {
+          existence: Object.fromEntries(
+            paths.map((entry) => [entry, holdings[hostId]?.includes(entry) ?? false]),
+          ),
+        };
+      },
+    );
+    // The server moved Personal Mac -> Dev Mac -> here. bb remembers only the
+    // last move, so it cannot tell which Mac saved these vaults.
+    harness.sdk.stub("experimental_server.moveStatus", async () => ({
+      move: null,
+      lastMove: {
+        moveId: "move_2",
+        fromHostId: "host_dev",
+        fromHostName: "Dev Mac",
+        toHostId: "host_primary",
+        toHostName: "Server",
+        completedAt: 5_000,
+        oldCopyDeletedAt: null,
+      },
+    }));
+    const watchCount = () =>
+      harness.experimental_hostRpcCalls.filter((call) => call.method === "watchVault").length;
+    const bindingPass = async () => {
+      const watched = watchCount();
+      const service = harness.runService("watch-vaults");
+      try {
+        // Watches are armed after binding, so a new one ends the pass.
+        await waitForSignal(() => watchCount() > watched);
+      } finally {
+        service.controller.abort();
+        await service.done;
+      }
+      return Object.fromEntries(
+        JSON.parse((await harness.runCli(["vaults", "--json"])).stdout).map(
+          (vault: { id: string; hostId: string | null }) => [vault.id, vault.hostId],
+        ),
+      );
+    };
+
+    // Dev Mac is away, so any of these folders may also be there.
+    await expect(bindingPass()).resolves.toEqual({
+      personal: "host_primary",
+      obsidian: null,
+      dotfiles: null,
+      scratch: null,
+      asleep: null,
+      "server-notes": null,
+    });
+
+    devMacStatus = "connected";
+    await expect(bindingPass()).resolves.toEqual({
+      personal: "host_primary",
+      obsidian: "host_mac",
+      // On both Macs: the user chooses.
+      dotfiles: null,
+      scratch: null,
+      // Personal Mac did not answer for this folder.
+      asleep: null,
+      "server-notes": "host_primary",
+    });
+
+    harness.sdk.calls.length = 0;
+    const listPathsBefore = harness.experimental_hostRpcCalls.filter(
+      (call) => call.method === "listPaths",
+    ).length;
+    await expect(harness.callRpc("listNotes", { vaultId: "dotfiles" })).resolves.toMatchObject({
+      entries: [],
+      error:
+        "Choose the machine that holds /Users/me/dotfiles for the Dotfiles vault (found on Personal Mac, Dev Mac), or run bb docs vault-host dotfiles <host-id>.",
+    });
+    expect(
+      harness.experimental_hostRpcCalls.filter((call) => call.method === "listPaths"),
+    ).toHaveLength(listPathsBefore);
+    const read = await harness.runCli(["read", "plan.md", "--vault", "dotfiles"]);
+    expect(read.exitCode).toBe(1);
+    expect(read.stderr).toContain("Choose the machine that holds /Users/me/dotfiles");
+    expect(harness.sdk.callsTo("files.read")).toEqual([]);
+  });
+
+  it("rebinds a vault to a chosen machine and keeps its proposals", async () => {
+    const { bb, harness } = await loadNotebook({});
+    const db = bb.storage.database();
+    db.prepare(
+      "INSERT INTO vaults (id, name, host_id, root_path, created_at) VALUES (?, ?, NULL, ?, ?)",
+    ).run("dotfiles", "Dotfiles", "/Users/me/dotfiles", 1_000);
+    db.prepare("INSERT INTO proposals (vault_id, path, data) VALUES (?, ?, ?)").run(
+      "dotfiles",
+      "AGENTS.md",
+      "{}",
+    );
+    harness.sdk.stub("hosts.list", async () => [personalMac, devMac, serverHost]);
+    harness.sdk.stub(
+      "hosts.pathsExist",
+      async ({ hostId, paths }: { hostId: string; paths: string[] }) => ({
+        existence: Object.fromEntries(paths.map((entry) => [entry, hostId !== "host_primary"])),
+      }),
+    );
+
+    const unknown = await harness.runCli(["vault-host", "dotfiles", "host_gone"]);
+    expect(unknown.exitCode).toBe(1);
+    expect(unknown.stderr).toContain("Unknown machine: host_gone");
+
+    const missing = await harness.runCli(["vault-host", "dotfiles", "host_primary"]);
+    expect(missing.exitCode).toBe(1);
+    expect(missing.stderr).toContain("Server has no folder at /Users/me/dotfiles");
+
+    const bound = await harness.runCli(["vault-host", "dotfiles", "host_dev", "--json"]);
+    expect(bound.exitCode).toBe(0);
+    expect(JSON.parse(bound.stdout)).toEqual({
+      id: "dotfiles",
+      name: "Dotfiles",
+      hostId: "host_dev",
+      rootPath: "/Users/me/dotfiles",
+    });
+    expect(
+      db.prepare("SELECT path FROM proposals WHERE vault_id = 'dotfiles'").pluck().all(),
+    ).toEqual(["AGENTS.md"]);
+    expect(harness.realtimeSignals).toContainEqual(
+      expect.objectContaining({ channel: "vault-changed", payload: { vaultId: "dotfiles" } }),
+    );
+  });
+
+  it("keeps other vaults' mentions when one machine is offline or slow", async () => {
+    const { bb, harness } = await loadNotebook({ "plan.md": "# Plan" });
+    const insert = bb.storage
+      .database()
+      .prepare(
+        "INSERT INTO vaults (id, name, host_id, root_path, created_at) VALUES (?, ?, ?, ?, ?)",
+      );
+    insert.run("obsidian", "Obsidian", "host_mac", "/Users/me/obsidian-vault", Date.now());
+    insert.run("dotfiles", "Dotfiles", "host_dev", "/Users/me/dotfiles", Date.now());
+    harness.sdk.stub("hosts.list", async () => [personalMac, devMac, serverHost]);
+    const primaryListing = {
+      paths: [{ kind: "file", path: "plan.md", name: "plan.md", score: 0, positions: [] }],
+      truncated: false,
+    };
+    harness.sdk.stub("files.listPaths", async ({ hostId }: { hostId: string }) => {
+      if (hostId === "host_mac") throw new Error("Host is not connected");
+      if (hostId === "host_dev") return new Promise(() => {});
+      return primaryListing;
+    });
+    const provider = harness.registrations.mentionProviders[0]!;
+
+    const started = Date.now();
+    await expect(
+      provider.search({ trigger: "@", query: "plan", projectId: null, threadId: null }),
+    ).resolves.toMatchObject([{ id: "personal:plan.md", title: "Plan" }]);
+    expect(Date.now() - started).toBeLessThan(2_000);
+
+    harness.sdk.stub("hosts.list", async () => [
+      { ...personalMac, status: "disconnected" },
+      devMac,
+      serverHost,
+    ]);
+    const listed = harness.sdk.callsTo("files.listPaths").length;
+    await expect(
+      provider.search({ trigger: "@", query: "plan", projectId: null, threadId: null }),
+    ).resolves.toMatchObject([{ id: "personal:plan.md" }]);
+    expect(
+      harness.sdk
+        .callsTo("files.listPaths")
+        .slice(listed)
+        .map(([args]) => (args as { hostId: string }).hostId),
+    ).not.toContain("host_mac");
+  });
+
+  it("rereads only the notes whose time or size changed", async () => {
+    const { harness, setUtf8 } = await loadVirtualSyncVault({
+      "/vault/a.md": { content: "# A", contentEncoding: "utf8", modifiedAtMs: 1 },
+      "/vault/b.md": { content: "# B", contentEncoding: "utf8", modifiedAtMs: 2 },
+    });
+    const readPaths = () =>
+      harness.sdk.callsTo("files.read").map(([args]) => (args as { path: string }).path);
+
+    await expect(harness.callRpc("listNotes", {})).resolves.toMatchObject({
+      notes: [{ title: "B" }, { title: "A" }],
+    });
+    expect(readPaths()).toEqual(["/vault/a.md", "/vault/b.md"]);
+
+    await harness.callRpc("listNotes", {});
+    expect(readPaths()).toHaveLength(2);
+
+    setUtf8("/vault/a.md", "# A, edited");
+    await expect(harness.callRpc("listNotes", {})).resolves.toMatchObject({
+      notes: [{ title: "A, edited" }, { title: "B" }],
+    });
+    expect(readPaths()).toEqual(["/vault/a.md", "/vault/b.md", "/vault/a.md"]);
+  });
+
+  it("pulls into the invoking machine and refuses to guess between machines", async () => {
+    const { harness, files } = await loadVirtualSyncVault({
+      "/vault/plan.md": { content: "# Plan", contentEncoding: "utf8", modifiedAtMs: 1 },
+    });
+    harness.sdk.stub("hosts.list", async () => [serverHost, personalMac]);
+    harness.sdk.stub("hosts.pathsExist", async ({ paths }: { paths: string[] }) => ({
+      existence: Object.fromEntries(paths.map((entry) => [entry, entry === "/work"])),
+    }));
+
+    const ambiguous = await harness.runCli(["pull", "plan.md", "--into", "sync"], {
+      cwd: "/work",
+    });
+    expect(ambiguous.exitCode).toBe(2);
+    expect(ambiguous.stderr).toContain(
+      "Pass --workspace-host <id>; /work exists on Server (host_primary), Personal Mac (host_mac)",
+    );
+    expect(files.has("/work/sync/plan.md")).toBe(false);
+
+    const noCwd = await harness.runCli(["pull", "plan.md", "--into", "sync"]);
+    expect(noCwd.exitCode).toBe(2);
+    expect(noCwd.stderr).toContain("Pass an absolute path instead of sync");
+
+    harness.sdk.stub("threads.get", async () => ({ id: "thread_mac", environmentId: "env_mac" }));
+    harness.sdk.stub("environments.get", async () => ({ id: "env_mac", hostId: "host_mac" }));
+    const pulled = await harness.runCli(["pull", "plan.md", "--into", "sync"], {
+      cwd: "/work",
+      threadId: "thread_mac",
+    });
+    expect(pulled).toMatchObject({
+      exitCode: 0,
+      stdout: "Pulled 1 file(s) into /work/sync on Personal Mac.",
+    });
+    expect(
+      harness.sdk
+        .callsTo("files.write")
+        .map(([args]) => args as { hostId: string; path: string })
+        .map(({ hostId, path: written }) => ({ hostId, path: written })),
+    ).toEqual([
+      { hostId: "host_mac", path: "/work/sync/plan.md" },
+      { hostId: "host_mac", path: "/work/sync/.bb-docs-state.json" },
+    ]);
+  });
+
+  it("pulls into the one connected machine that has the working directory", async () => {
+    const { harness } = await loadVirtualSyncVault({
+      "/vault/plan.md": { content: "# Plan", contentEncoding: "utf8", modifiedAtMs: 1 },
+    });
+    harness.sdk.stub("hosts.list", async () => [serverHost, personalMac]);
+    harness.sdk.stub(
+      "hosts.pathsExist",
+      async ({ hostId, paths }: { hostId: string; paths: string[] }) => ({
+        existence: Object.fromEntries(paths.map((entry) => [entry, hostId === "host_mac"])),
+      }),
+    );
+
+    await expect(
+      harness.runCli(["pull", "plan.md", "--into", "sync"], { cwd: "/work" }),
+    ).resolves.toMatchObject({
+      exitCode: 0,
+      stdout: "Pulled 1 file(s) into /work/sync on Personal Mac.",
+    });
+    expect(
+      harness.sdk
+        .callsTo("files.write")
+        .map(([args]) => args as { hostId: string; path: string })
+        .map(({ hostId, path: written }) => ({ hostId, path: written })),
+    ).toEqual([
+      { hostId: "host_mac", path: "/work/sync/plan.md" },
+      { hostId: "host_mac", path: "/work/sync/.bb-docs-state.json" },
+    ]);
+  });
+
+  it("keeps the notes an interrupted mention scan already read", async () => {
+    const { harness } = await loadVirtualSyncVault({
+      "/vault/a.md": { content: "# A", contentEncoding: "utf8", modifiedAtMs: 1 },
+      "/vault/b.md": { content: "# B", contentEncoding: "utf8", modifiedAtMs: 2 },
+      "/vault/c.md": { content: "# C", contentEncoding: "utf8", modifiedAtMs: 3 },
+    });
+    // The 10 s scan deadline, made controllable instead of waited out.
+    let deadline = new AbortController();
+    const timeout = AbortSignal.timeout.bind(AbortSignal);
+    const timeoutSpy = vi
+      .spyOn(AbortSignal, "timeout")
+      .mockImplementation((ms) => (ms === 10_000 ? deadline.signal : timeout(ms)));
+    // c.md is behind a slow link and does not arrive before the deadline.
+    let slow = true;
+    harness.sdk.stub(
+      "files.read",
+      async ({ path: filePath, signal }: { path: string; signal?: AbortSignal }) => {
+        if (filePath === "/vault/c.md" && slow) {
+          await new Promise((_, reject) =>
+            signal?.addEventListener("abort", () => reject(signal.reason), { once: true }),
+          );
+        }
+        const content = `# ${path.posix.basename(filePath, ".md").toUpperCase()}`;
+        return {
+          path: filePath,
+          content,
+          contentEncoding: "utf8" as const,
+          mimeType: "text/markdown",
+          sizeBytes: Buffer.byteLength(content),
+          modifiedAtMs: 1,
+          sha256: "sha",
+        };
+      },
+    );
+    const readPaths = () =>
+      harness.sdk.callsTo("files.read").map(([args]) => (args as { path: string }).path);
+    const provider = harness.registrations.mentionProviders[0]!;
+    const search = () =>
+      provider.search({ trigger: "@", query: "", projectId: null, threadId: null });
+    try {
+      const first = search();
+      await waitForSignal(() => readPaths().length === 3);
+      deadline.abort();
+      await expect(first).resolves.toEqual([]);
+
+      slow = false;
+      deadline = new AbortController();
+      await expect(search()).resolves.toMatchObject([
+        { id: "personal:c.md" },
+        { id: "personal:b.md" },
+        { id: "personal:a.md" },
+      ]);
+      expect(readPaths().slice(3)).toEqual(["/vault/c.md"]);
+    } finally {
+      timeoutSpy.mockRestore();
+    }
   });
 });

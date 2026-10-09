@@ -2,7 +2,7 @@
 import { act, cleanup, fireEvent, waitFor, within } from "@testing-library/react";
 import { StrictMode } from "react";
 import { DOMParser as ProseMirrorDOMParser } from "@tiptap/pm/model";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from "vitest";
 import { loadPluginApp, renderSlot, type RenderSlotOptions } from "@get-bb/plugin-sdk/testing/app";
 
 const app = await loadPluginApp(() => import("./app"));
@@ -96,14 +96,14 @@ function listNotesResult(
       {
         id: "personal",
         name: "Personal",
-        hostId: null,
+        hostId: "host_local",
         rootPath: "/Users/me/Notes",
       },
     ],
     vault: {
       id: "personal",
       name: "Personal",
-      hostId: null,
+      hostId: "host_local",
       rootPath: "/Users/me/Notes",
     },
     hosts: [{ id: "host_local", name: "My Mac", status: "connected" }],
@@ -122,20 +122,20 @@ function listNotesResultForVault(vaultId: "personal" | "work", path: string, tit
       {
         id: "personal",
         name: "Personal",
-        hostId: null,
+        hostId: "host_local",
         rootPath: "/vaults/personal",
       },
       {
         id: "work",
         name: "Work",
-        hostId: null,
+        hostId: "host_local",
         rootPath: "/vaults/work",
       },
     ],
     vault: {
       id: vaultId,
       name: vaultId === "work" ? "Work" : "Personal",
-      hostId: null,
+      hostId: "host_local",
       rootPath: `/vaults/${vaultId}`,
     },
   };
@@ -519,7 +519,7 @@ describe("Docs nav panel", () => {
               vault: {
                 id: vaultId,
                 name,
-                hostId: null,
+                hostId: "host_local",
                 rootPath: `/vaults/${vaultId}`,
               },
             };
@@ -575,20 +575,20 @@ describe("Docs nav panel", () => {
         {
           id: "personal",
           name: "Personal",
-          hostId: null,
+          hostId: "host_local",
           rootPath: "/vaults/personal",
         },
         {
           id: "work",
           name: "Work",
-          hostId: null,
+          hostId: "host_local",
           rootPath: "/vaults/work",
         },
       ],
       vault: {
         id: vaultId,
         name: vaultId === "work" ? "Work" : "Personal",
-        hostId: null,
+        hostId: "host_local",
         rootPath: `/vaults/${vaultId}`,
       },
     });
@@ -851,6 +851,137 @@ describe("Docs nav panel", () => {
 
     await slot.findByText("Host unavailable");
     expect(slot.queryByText("Remote Mac")).toBeNull();
+  });
+
+  it("offers another machine when the folder is missing but not while its host is away", async () => {
+    const base = listNotesResult([]);
+    const obsidian = {
+      id: "obsidian",
+      name: "Obsidian",
+      hostId: "host_mac",
+      rootPath: "/Users/me/obsidian-vault",
+    };
+    let macStatus = "disconnected";
+    let error = "Host is not connected";
+    const slot = renderSlot(
+      navigationRegistration,
+      { subPath: "obsidian" },
+      {
+        rpc: {
+          listNotes: () => ({
+            ...base,
+            vaults: [obsidian],
+            vault: obsidian,
+            hosts: [
+              { id: "host_mac", name: "Personal Mac", status: macStatus },
+              { id: "host_dev", name: "Dev Mac", status: "connected" },
+            ],
+            error,
+          }),
+        },
+      },
+    );
+
+    await slot.findByText("Host is not connected");
+    expect(slot.queryByRole("combobox", { name: "Vault machine" })).toBeNull();
+
+    macStatus = "connected";
+    error = "Folder not found: /Users/me/obsidian-vault";
+    await slot.emitRealtime("vault-changed", { vaultId: "obsidian" });
+    await slot.findByText("Folder not found: /Users/me/obsidian-vault");
+    expect(slot.getByRole("combobox", { name: "Vault machine" })).toBeTruthy();
+  });
+
+  it("asks which machine holds a vault saved without one and binds it there", async () => {
+    // jsdom has no scrollIntoView; Radix Select scrolls the highlighted option.
+    Object.defineProperty(Element.prototype, "scrollIntoView", {
+      configurable: true,
+      value: vi.fn(),
+    });
+    onTestFinished(() => {
+      Reflect.deleteProperty(Element.prototype, "scrollIntoView");
+    });
+    const base = listNotesResult([]);
+    const obsidian = {
+      id: "obsidian",
+      name: "Obsidian",
+      hostId: null,
+      rootPath: "/Users/me/obsidian-vault",
+    };
+    const slot = renderSlot(
+      navigationRegistration,
+      { subPath: "obsidian" },
+      {
+        rpc: {
+          listNotes: () => ({
+            ...base,
+            vaults: [obsidian],
+            vault: obsidian,
+            hosts: [
+              { id: "host_server", name: "codex@cardinal", status: "connected" },
+              { id: "host_mac", name: "Personal Mac", status: "connected" },
+            ],
+            error:
+              "Choose the machine that holds /Users/me/obsidian-vault for the Obsidian vault (found on Personal Mac), or run bb docs vault-host obsidian <host-id>.",
+          }),
+          setVaultHost: () => ({ ...obsidian, hostId: "host_mac" }),
+        },
+      },
+    );
+
+    await slot.findByText(/Choose the machine that holds \/Users\/me\/obsidian-vault/);
+    const use = slot.getByRole("button", { name: "Use machine" });
+    expect(use.hasAttribute("disabled")).toBe(true);
+    fireEvent.keyDown(slot.getByRole("combobox", { name: "Vault machine" }), { key: "Enter" });
+    fireEvent.click(await slot.findByRole("option", { name: "Personal Mac · connected" }));
+    await waitFor(() => expect(use.hasAttribute("disabled")).toBe(false));
+    fireEvent.click(use);
+    await waitFor(() =>
+      expect(slot.rpcCalls).toContainEqual({
+        method: "setVaultHost",
+        input: { vaultId: "obsidian", hostId: "host_mac" },
+      }),
+    );
+  });
+
+  it("adds a vault on a named machine instead of an implicit server machine", async () => {
+    const slot = renderSlot(
+      navigationRegistration,
+      { subPath: "personal" },
+      {
+        sdk: { system: { config: async () => ({ primaryHostId: "host_server" }) as never } },
+        rpc: {
+          listNotes: () => ({
+            ...listNotesResult([]),
+            hosts: [
+              { id: "host_server", name: "codex@cardinal", status: "connected" },
+              { id: "host_mac", name: "Personal Mac", status: "connected" },
+            ],
+          }),
+          createVault: () => ({
+            id: "work",
+            name: "Work",
+            hostId: "host_server",
+            rootPath: "/srv/work",
+          }),
+        },
+      },
+    );
+
+    fireEvent.click(await slot.findByRole("button", { name: "Add vault" }));
+    expect(slot.queryByText("Server machine")).toBeNull();
+    await slot.findByText("codex@cardinal · bb server · connected");
+    fireEvent.change(slot.getByLabelText("Name"), { target: { value: "Work" } });
+    fireEvent.change(slot.getByPlaceholderText("Absolute path on that machine"), {
+      target: { value: "/srv/work" },
+    });
+    fireEvent.click(slot.getByRole("button", { name: "Add vault", hidden: false }));
+    await waitFor(() =>
+      expect(slot.rpcCalls).toContainEqual({
+        method: "createVault",
+        input: { name: "Work", rootPath: "/srv/work", hostId: "host_server" },
+      }),
+    );
   });
 
   it("keeps task checkboxes aligned with the first line of their text", async () => {
@@ -1858,8 +1989,6 @@ describe("Docs nav panel", () => {
       { subPath: "personal" },
       {
         openFilePreview,
-        // The component reads only primaryHostId from the full system config.
-        sdk: { system: { config: async () => ({ primaryHostId: "host_local" }) as never } },
         rpc: {
           listNotes: () =>
             listNotesResult(
@@ -1886,6 +2015,37 @@ describe("Docs nav panel", () => {
       }),
     );
     expect(slot.navigateCalls.some((call) => call.method === "toPluginPanel")).toBe(false);
+  });
+
+  it("links a thread's host file to the machine the server resolved", async () => {
+    const openFileExternally = vi.fn(() => true);
+    const source = {
+      kind: "host" as const,
+      threadId: "thr_1",
+      environmentId: "env_mac",
+      projectId: null,
+    };
+    const slot = renderSlot(
+      app.fileOpeners[0]!,
+      { path: "/Users/me/.claude/plans/plan.md", source, Original: () => null },
+      {
+        openFileExternally,
+        rpc: {
+          openFile: () => ({
+            file: { content: "# Plan", sha256: "sha" },
+            preview,
+            previewPath: "plan.md",
+            hostId: "host_mac",
+          }),
+        },
+      },
+    );
+
+    fireEvent.click(await slot.findByRole("button", { name: "Open file externally" }));
+    expect(openFileExternally).toHaveBeenCalledWith({
+      target: { kind: "host", hostId: "host_mac", path: "/Users/me/.claude/plans/plan.md" },
+      location: null,
+    });
   });
 
   it("reloads an opened file when it changes on disk", async () => {

@@ -48,6 +48,15 @@ const EXCLUDED_CHILD_DIRECTORIES = new Map([
   [".yarn", new Set(["cache", "unplugged"])],
 ]);
 
+// The same trees as native watcher ignore globs, so the host never watches
+// dependency or build output. isExcludedDocsPath still filters every event.
+export const DOCS_WATCH_IGNORED_PATHS = [
+  ...EXCLUDED_DIRECTORY_NAMES,
+  ...[...EXCLUDED_CHILD_DIRECTORIES].flatMap(([parent, children]) =>
+    [...children].map((child) => `${parent}/${child}`),
+  ),
+].flatMap((directory) => [`**/${directory}`, `**/${directory}/**`]);
+
 export function isExcludedDocsPath(value: string): boolean {
   const segments = value
     .replace(/\\/g, "/")

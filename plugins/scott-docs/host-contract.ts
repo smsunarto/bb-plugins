@@ -17,16 +17,46 @@ export const docsHostContract = defineRpcContract({
       .object({
         paths: z
           .array(
-            z
-              .object({
-                kind: z.enum(["file", "directory"]),
-                path: z.string().min(1),
-              })
-              .strict(),
+            z.discriminatedUnion("kind", [
+              z.object({ kind: z.literal("directory"), path: z.string().min(1) }).strict(),
+              z
+                .object({
+                  kind: z.literal("file"),
+                  path: z.string().min(1),
+                  // Archives can restore pre-1970 times, so allow negatives.
+                  modifiedAtMs: z.number(),
+                  sizeBytes: z.number().int().nonnegative(),
+                })
+                .strict(),
+            ]),
           )
           .max(DOCS_PATH_LIST_LIMIT),
         truncated: z.boolean(),
       })
       .strict(),
   },
+  watchVault: {
+    input: z.object({ vaultId: z.string().min(1), rootPath: z.string().min(1) }).strict(),
+    output: z.object({ ok: z.literal(true) }).strict(),
+  },
+  unwatchVault: {
+    input: z.object({ vaultId: z.string().min(1) }).strict(),
+    output: z.object({ ok: z.literal(true) }).strict(),
+  },
+  // Which of these watches the host still holds. A restarted daemon holds none.
+  watchAlive: {
+    input: z.object({ vaultIds: z.array(z.string().min(1)).max(1_000) }).strict(),
+    output: z.object({ live: z.array(z.string()) }).strict(),
+  },
 });
+
+export const docsHostSignals = {
+  vaultChanged: {
+    payload: z
+      .object({
+        vaultId: z.string().min(1),
+        kind: z.enum(["changed", "rescan-required", "watch-error"]),
+      })
+      .strict(),
+  },
+} as const;

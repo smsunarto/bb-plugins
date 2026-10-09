@@ -26,9 +26,15 @@ registry at `desktop-v0.44.0` (`components.json`).
 
 - **Vaults on connected hosts:** each vault is a named `{ hostId, rootPath }`
   pair. A new installation starts with a Personal vault at `~/Notes` on the
-  server machine. Manage local and remote vaults from the Docs panel. When
-  bb removes a host, its vaults and their proposals are deleted, and the
-  Personal vault is recreated if no vault remains.
+  server machine. Manage local and remote vaults from the Docs panel. Every
+  vault stores a concrete host. A vault saved by an older version without one
+  is bound to the one machine that has its folder, once every machine has
+  answered. When several machines have it, or one is away, Docs asks which
+  machine to use instead of guessing. It offers another
+  machine only for an unbound vault or a missing folder, never just because
+  the vault's machine is away. When bb removes
+  a host, its vaults and their proposals are deleted, and the Personal vault
+  is recreated if no vault remains.
 - **Nested folders:** the resizable right sidebar recursively displays folders,
   Markdown documents, MDX files, and HTML pages. It can be collapsed, and
   search stays hidden until requested. The Pierre Trees explorer supports
@@ -39,9 +45,11 @@ registry at `desktop-v0.44.0` (`components.json`).
   `.canvas.mdx`, open through bb's file opener (Canvas) rather than Docs.
 - **Safe host-routed operations:** all list/read/write/mkdir/move/remove calls
   go through `bb.sdk.files` with an explicit vault root. Saves retain SHA-256
-  compare-and-swap conflict handling. Local vaults use native filesystem
-  watching for immediate UI refreshes; remote or unwatchable vaults fall back
-  to polling.
+  compare-and-swap conflict handling. Each vault is watched by the native
+  watcher on its own host for immediate UI refreshes. Every 10 seconds the
+  server asks each host which watches it still holds and re-arms the ones a
+  restarted daemon or deleted folder dropped. Note summaries are re-read only
+  when a file's modification time or size changes.
 - **Default Markdown editor:** Docs registers for `.md` and `.markdown`
   files, so it can be selected under Settings → File openers or chosen from a
   file link's Open with menu. Workspace, absolute host, and thread-storage
@@ -109,6 +117,7 @@ The plugin registers the agent-discoverable `bb docs` command:
 ```sh
 bb docs vaults --json
 bb docs vault-add Work /home/me/work-docs host_workstation
+bb docs vault-host work host_laptop
 bb docs list --vault personal --json
 bb docs read projects/plan.md --vault personal
 bb docs pull projects/plan.md --vault personal --into ./docs-work
@@ -172,8 +181,9 @@ bb docs push ./docs-work --delete
   manifests fail closed. Move the directory aside for inspection and pull into
   a clean destination; the CLI never guesses or repairs identity metadata.
 - **Workspace host:** agent invocations resolve the workspace host from the
-  current thread environment. Standalone multi-host callers can pass
-  `--workspace-host <id>`; omission intentionally targets the server machine.
+  current thread environment. Without a thread, the CLI uses the one connected
+  machine that has the working directory, and otherwise asks for
+  `--workspace-host <id>`. Output names the machine it used.
 
 Human output is concise and `--json` returns a stable structured result on
 success; a failure adds the `{"ok":false,"error":{"code","message","hint"?}}`
