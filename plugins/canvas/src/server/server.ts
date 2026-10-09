@@ -16,6 +16,11 @@ import { decideProposal as decide } from "./rpc/decide-proposal.ts";
 import { file } from "./rpc/file.ts";
 import { preview } from "./rpc/preview.ts";
 import { save } from "./rpc/save.ts";
+import {
+  PREVIEW_FRAME_HEADERS,
+  PREVIEW_FRAME_HTML,
+  PREVIEW_FRAME_PATH,
+} from "../shared/preview-frame.ts";
 
 export default definePlugin({
   pluginId: "canvas",
@@ -33,6 +38,13 @@ export default definePlugin({
     save,
   },
   command: { generate, check, comments: commentsCommand, comment: commentCommand },
+  setup({ bb }) {
+    bb.http.route(
+      "GET",
+      PREVIEW_FRAME_PATH,
+      () => new Response(PREVIEW_FRAME_HTML, { headers: PREVIEW_FRAME_HEADERS }),
+    );
+  },
   agents: {
     files,
     tools: {},

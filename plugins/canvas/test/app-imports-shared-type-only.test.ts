@@ -14,6 +14,7 @@ const valueSafeShared = new Set([
   "anchor.ts",
   "ids.ts",
   "ops.ts",
+  "preview-frame.ts",
   "source.ts",
   "styles.ts",
   "suggest.ts",
