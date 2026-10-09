@@ -1,11 +1,11 @@
 import { defineCommand, PluginCliError } from "@bb-kit/core/command";
-import { isAbsolute, resolve } from "node:path";
 import { placeThreads, type PlacedThread } from "../../shared/anchor.ts";
 import type { CanvasDocument } from "../../shared/document.ts";
 import { fileNameOf } from "../../shared/document.ts";
 import { defaultStyle } from "../../shared/styles.ts";
 import { CommentsError, readComments } from "../comments-store.ts";
 import { formatWhen } from "../format.ts";
+import { absolutePath, cliSource, hostOption } from "../lib/cli-source.ts";
 import { render } from "../rpc/render.ts";
 
 const emptyDocument: CanvasDocument = { style: defaultStyle, nodes: [], stateIds: [] };
@@ -48,10 +48,11 @@ export const comments = defineCommand({
       type: "boolean",
       description: "Print {path, sidecarPath, parses, threads: [{thread, match, context}]} as JSON",
     },
+    host: hostOption,
   },
-  async execute(ctx, { positionals: { path }, options: { all, json } }) {
-    const absolute = isAbsolute(path) ? path : resolve(ctx.cwd ?? process.cwd(), path);
-    const source = { kind: "host", hostId: null, path: absolute } as const;
+  async execute(ctx, { positionals: { path }, options: { all, json, host } }) {
+    const absolute = absolutePath(ctx, path);
+    const source = await cliSource(ctx, absolute, host);
     const rendered = await render.execute(ctx, { source, knownSha256: null });
     if (rendered.status === "unreadable") {
       throw new PluginCliError(`${path}: ${rendered.reason}: ${rendered.detail}`, { exitCode: 2 });

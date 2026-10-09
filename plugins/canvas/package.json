@@ -39,6 +39,7 @@
     },
     "server": "./src/server/server.ts",
     "app": "./src/app/app.tsx",
+    "host": "./src/host/host.ts",
     "skills": [
       "skills"
     ]
@@ -49,12 +50,15 @@
     "dist/app.js",
     "dist/app.meta.json",
     "dist/app.css",
+    "dist/host.js",
+    "dist/host.meta.json",
     "assets/",
     "README.md",
     "LICENSE",
     "THIRD_PARTY_NOTICES.md",
     "src/server/",
     "src/app/",
+    "src/host/",
     "src/shared/",
     "skills/",
     "instructions/"

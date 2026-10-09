@@ -92,6 +92,8 @@ Canvas widget styles are `default` and `github`. Editable Markdown and Markdown 
 
 A canvas link opens a Canvas file tab beside the chat. Canvas registers the file opener for `.mdx`, which covers `.canvas.mdx`. Canvas does not open `.md` files.
 
+Files are read and written on the host of the thread that opened them, which is usually another machine than the bb server. An absolute link outside the thread's worktree and storage opens on the host of that thread's environment. An open canvas checks the file and its comments for outside writes every 1.5 s. The plugin's host entry (`src/host/host.ts`) answers each check with a stat, so only a changed file crosses machines again.
+
 ## MDX editing
 
 - **Rich text and source.** The toolbar covers headings, lists, links, tables, images, and code blocks. Switch to source mode to edit MDX props, expressions, or imports.
@@ -131,6 +133,8 @@ bb canvas comments /abs/path/report.canvas.mdx --json     # {path, sidecarPath, 
 bb canvas comment  /abs/path/report.canvas.mdx cmt_7f3k2a9x1p --reply "Verified 4m02s, table fixed." --resolve
 bb canvas comment  /abs/path/report.canvas.mdx cmt_7f3k2a9x1p --reopen
 ```
+
+Paths are on the invoking agent's host, which is usually not the bb server's machine. Inside a thread, `bb canvas check`, `comments`, `comment`, and `generate` use the thread's host. Outside a thread, pass `--host <host-id>`.
 
 `bb canvas comments` exits 0 whether or not comments exist. A thread line names the block (`block 4 Table "Top offenders"`), adds `edited since` when the block changed under the comment, and shows the exact `quote` or, for a detached thread, what the block `was`. For thread-storage canvases, the agent's thread instructions also gain an "Open canvas comments" line after the first comment write since the server started.
 

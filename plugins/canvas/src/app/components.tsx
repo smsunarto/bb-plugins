@@ -354,9 +354,6 @@ function FileLinkComponent(props: CanvasComponentProps): ReactElement {
   const { path, line, label } = typed<{ path: string; line?: number; label?: string }>(props.props);
   const canvas = useCanvas();
   const text = label ?? (line === undefined ? path : `${path}:${line}`);
-  if (canvas.target === null) {
-    return <code className="text-muted-foreground">{text}</code>;
-  }
   const target = { ...canvas.target, path: resolveLinkPath(canvas.path, canvas.source.kind, path) };
   return (
     <FileLink

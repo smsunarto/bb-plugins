@@ -1,8 +1,8 @@
 import { defineCommand, PluginCliError } from "@bb-kit/core/command";
-import { isAbsolute, resolve } from "node:path";
 import type { CommentOp } from "../../shared/comments.ts";
 import { newId } from "../../shared/ids.ts";
 import { applyCommentOp, CommentsError } from "../comments-store.ts";
+import { cliSource, hostOption } from "../lib/cli-source.ts";
 
 export const comment = defineCommand({
   summary: "Reply to, resolve, or reopen a comment thread on a .canvas.mdx file as the agent",
@@ -14,18 +14,18 @@ export const comment = defineCommand({
     reply: { type: "string", description: "Reply text", placeholder: "text" },
     resolve: { type: "boolean", description: "Mark the thread resolved" },
     reopen: { type: "boolean", description: "Reopen a resolved thread" },
+    host: hostOption,
   },
   constraints: [
     { kind: "at-least-one", options: ["reply", "resolve", "reopen"] },
     { kind: "at-most-one", options: ["resolve", "reopen"] },
   ],
   async execute(ctx, { positionals: { path, threadId }, options }) {
-    const { reply, resolve: markResolved, reopen } = options;
+    const { reply, resolve: markResolved, reopen, host } = options;
     if (reply === "") {
       throw new PluginCliError("--reply needs text", { code: "invalid_value" });
     }
-    const absolute = isAbsolute(path) ? path : resolve(ctx.cwd ?? process.cwd(), path);
-    const source = { kind: "host", hostId: null, path: absolute } as const;
+    const source = await cliSource(ctx, path, host);
     const ops: { op: CommentOp; did: string }[] = [];
     if (reply !== undefined) {
       const message = {

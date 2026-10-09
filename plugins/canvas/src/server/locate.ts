@@ -3,7 +3,7 @@ import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import type { CanvasSource, UnreadableReason } from "../shared/document.ts";
 
 export interface FileLocation {
-  readonly hostId?: string;
+  readonly hostId: string;
   readonly path: string;
   readonly rootPath?: string;
 }
@@ -79,12 +79,6 @@ export async function locateSource(bb: BbPluginApi, source: CanvasSource): Promi
       }
     }
     case "host":
-      return {
-        ok: true,
-        location:
-          source.hostId === null
-            ? { path: source.path }
-            : { hostId: source.hostId, path: source.path },
-      };
+      return { ok: true, location: { hostId: source.hostId, path: source.path } };
   }
 }

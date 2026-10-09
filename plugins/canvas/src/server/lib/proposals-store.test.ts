@@ -3,8 +3,8 @@ import { fakeBb, fileKeyOf, type FakeBbOptions } from "../fake-bb.ts";
 import { decideProposal, readProposals } from "./proposals-store.ts";
 import { applyReplacement, type Proposal } from "../../shared/proposals.ts";
 
-const source = { kind: "host", hostId: null, path: "/review.canvas.mdx" } as const;
-const documentKey = fileKeyOf(undefined, undefined, source.path);
+const source = { kind: "host", hostId: "host-r", path: "/review.canvas.mdx" } as const;
+const documentKey = fileKeyOf("host-r", undefined, source.path);
 const sidecarKey = `${documentKey}.suggestions.json`;
 const first: Proposal = {
   id: "edit-one",

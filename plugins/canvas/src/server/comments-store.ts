@@ -5,10 +5,12 @@ import {
   emptyCommentsFile,
   type CommentOp,
   type CommentsFile,
+  type CommentsOutput,
 } from "../shared/comments.ts";
 import type { CanvasSource, CommentsSignal } from "../shared/document.ts";
 import { commentsChannel } from "../shared/document.ts";
 import { applyOp, UnknownThreadError } from "../shared/ops.ts";
+import { pollRead } from "./lib/poll-read.ts";
 import { locateSource, type FileLocation } from "./locate.ts";
 
 export { applyOp } from "../shared/ops.ts";
@@ -42,22 +44,21 @@ async function sidecarLocation(bb: BbPluginApi, source: CanvasSource): Promise<F
   return { ...located.location, path: sidecarPathOf(located.location.path) };
 }
 
-async function readAt(bb: BbPluginApi, location: FileLocation): Promise<ReadComments> {
-  let raw: Awaited<ReturnType<typeof bb.sdk.files.read>>;
+type RawSidecar = Awaited<ReturnType<BbPluginApi["sdk"]["files"]["read"]>>;
+
+/** The read's result, or null when no sidecar exists yet. */
+async function rawOrMissing<T>(read: Promise<T>): Promise<T | null> {
   try {
-    raw = await bb.sdk.files.read(location);
+    return await read;
   } catch (error) {
     const detail = messageOf(error);
-    if (/ENOENT|no such file|not found|does not exist|ENOTDIR/i.test(detail)) {
-      return {
-        file: emptyCommentsFile,
-        sha256: null,
-        malformed: false,
-        sidecarPath: location.path,
-      };
-    }
+    if (/ENOENT|no such file|not found|does not exist|ENOTDIR/i.test(detail)) return null;
     throw new CommentsError(detail);
   }
+}
+
+function parsedAt(raw: RawSidecar | null, sidecarPath: string): ReadComments {
+  if (raw === null) return { file: emptyCommentsFile, sha256: null, malformed: false, sidecarPath };
   let parsed: unknown = null;
   try {
     parsed = raw.contentEncoding === "utf8" ? JSON.parse(raw.content) : null;
@@ -66,12 +67,32 @@ async function readAt(bb: BbPluginApi, location: FileLocation): Promise<ReadComm
   }
   const validated = commentsFileSchema.safeParse(parsed);
   return validated.success
-    ? { file: validated.data, sha256: raw.sha256, malformed: false, sidecarPath: location.path }
-    : { file: emptyCommentsFile, sha256: raw.sha256, malformed: true, sidecarPath: location.path };
+    ? { file: validated.data, sha256: raw.sha256, malformed: false, sidecarPath }
+    : { file: emptyCommentsFile, sha256: raw.sha256, malformed: true, sidecarPath };
+}
+
+async function readAt(bb: BbPluginApi, location: FileLocation): Promise<ReadComments> {
+  return parsedAt(await rawOrMissing(bb.sdk.files.read(location)), location.path);
 }
 
 export async function readComments(bb: BbPluginApi, source: CanvasSource): Promise<ReadComments> {
   return readAt(bb, await sidecarLocation(bb, source));
+}
+
+/** The pane's poll: `unchanged` while the sidecar is still the version with `knownSha256`. */
+export async function pollComments(
+  bb: BbPluginApi,
+  source: CanvasSource,
+  knownSha256: string | null,
+): Promise<CommentsOutput> {
+  const location = await sidecarLocation(bb, source);
+  const raw = await rawOrMissing(pollRead(bb, location, knownSha256));
+  if (raw !== null && "unchanged" in raw) return { status: "unchanged", sha256: raw.unchanged };
+  const read = parsedAt(raw, location.path);
+  if (knownSha256 !== null && knownSha256 === read.sha256) {
+    return { status: "unchanged", sha256: read.sha256 };
+  }
+  return { status: "loaded", sha256: read.sha256, file: read.file, malformed: read.malformed };
 }
 
 // Best effort: filled by writes since the server started, thread-storage only.

@@ -148,3 +148,80 @@ it("falls back to bb's preview when Canvas cannot address the file", () => {
   );
   expect(slot.getByText("ORIGINAL")).toBeTruthy();
 });
+
+const elsewhere: PluginFileOpenerProps = {
+  path: "/Users/me/git/other/doc.mdx",
+  // How bb opens an absolute link outside the thread's worktree and storage.
+  source: { kind: "host", environmentId: "env-mac", threadId: "thr", projectId: null },
+  Original: () => <pre>ORIGINAL</pre>,
+};
+
+it("reads a host file from the host of the environment that opened it", async () => {
+  const file = mock((_input: unknown) => ({
+    status: "read",
+    sha256: "v1",
+    content: "# Doc\n\nOn the Mac.\n",
+  }));
+  const preview = mock((_input: unknown) => ({
+    baseUrl: "/preview",
+    expiresAtMs: 1,
+    path: "doc.mdx",
+  }));
+  const slot = renderSlot({ component: MdxOpener }, elsewhere, {
+    rpc: { file, preview },
+    sdk: { environments: { get: async () => ({ hostId: "host-mac" }) as never } },
+  });
+  await slot.findByText("On the Mac.");
+  const source = { kind: "host", hostId: "host-mac", path: "/Users/me/git/other/doc.mdx" };
+  expect(file.mock.calls[0]?.[0]).toEqual({ source, knownSha256: null });
+  expect(preview.mock.calls[0]?.[0]).toEqual({ source });
+});
+
+it("keeps bb's preview when the opener cannot find the file's host", async () => {
+  const file = mock(() => ({ status: "read", sha256: "v1", content: "# Doc\n" }));
+  const slot = renderSlot({ component: MdxOpener }, elsewhere, {
+    rpc: { file },
+    sdk: {
+      environments: {
+        get: async () => {
+          throw new Error("environment not found");
+        },
+      },
+    },
+  });
+  expect(await slot.findByText("ORIGINAL")).toBeTruthy();
+  expect(file).not.toHaveBeenCalled();
+});
+
+it("renews a lease about to expire when an external write reloads the embeds", async () => {
+  const disk = { content: '# Guide\n\n::html{src="./page.html"}\n', sha256: "v1" };
+  let leases = 0;
+  const preview = mock(() => {
+    leases += 1;
+    // The first lease is a minute from expiry when the agent writes.
+    const expiresAtMs = Date.now() + (leases === 1 ? 60_000 : 3_600_000);
+    return { baseUrl: `/lease-${leases}`, expiresAtMs, path: "notes/guide.mdx" };
+  });
+  const file = mock((raw: unknown) =>
+    (raw as { knownSha256: string | null }).knownSha256 === disk.sha256
+      ? { status: "unchanged", sha256: disk.sha256 }
+      : { status: "read", sha256: disk.sha256, content: disk.content },
+  );
+  const pages: string[] = [];
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = (async (input: URL | RequestInfo) => {
+    pages.push(new URL(String(input)).pathname);
+    return new Response("<p>page</p>");
+  }) as typeof fetch;
+  try {
+    const slot = renderSlot({ component: MdxOpener }, props, { rpc: { file, preview } });
+    await waitFor(() => expect(pages).toEqual(["/lease-1/notes/page.html"]));
+    disk.content = `${disk.content}\nWritten by an agent.\n`;
+    disk.sha256 = "v2";
+    await slot.findByText("Written by an agent.", undefined, { timeout: 4000 });
+    await waitFor(() => expect(pages.at(-1)).toBe("/lease-2/notes/page.html"));
+    expect(preview).toHaveBeenCalledTimes(2);
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+});

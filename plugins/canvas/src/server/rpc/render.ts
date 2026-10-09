@@ -7,12 +7,9 @@ export const render = defineQuery({
   input: renderInputSchema,
   output: renderOutputSchema,
   async execute(ctx, { source, knownSha256 }): Promise<RenderOutput> {
-    const read = await readCanvasFile(ctx.bb, source);
-    if (!read.ok) return { status: "unreadable", reason: read.reason, detail: read.detail };
+    const read = await readCanvasFile(ctx.bb, source, knownSha256);
+    if (read.status !== "read") return read;
     const { file } = read;
-    if (knownSha256 !== null && knownSha256 === file.sha256) {
-      return { status: "unchanged", sha256: file.sha256 };
-    }
     const parsed = parseCanvas(file.content);
     if (!parsed.ok) {
       return { status: "unparseable", sha256: file.sha256, diagnostic: parsed.diagnostic };

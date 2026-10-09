@@ -111,7 +111,13 @@ export { collectDiagnostics, collectStateIds } from "./walk.ts";
 export type { StyleName } from "./styles.ts";
 export { defaultStyle, isStyleName, styleNames, styles, suggestStyleName } from "./styles.ts";
 
-export type { CanvasSource, CommentsSignal, NarrowSourceResult, StateSignal } from "./source.ts";
+export type {
+  CanvasSource,
+  CommentsSignal,
+  HostLookup,
+  NarrowSourceResult,
+  StateSignal,
+} from "./source.ts";
 export {
   commentsChannel,
   fileNameOf,
@@ -135,7 +141,7 @@ export const canvasSourceSchema = z.discriminatedUnion("kind", [
   }),
   z.object({
     kind: z.literal("host"),
-    hostId: z.string().min(1).nullable(),
+    hostId: z.string().min(1),
     path: z.string().min(1),
   }),
 ]);

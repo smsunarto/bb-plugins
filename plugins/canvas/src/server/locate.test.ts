@@ -71,7 +71,7 @@ test("thread-storage sources resolve through the thread storage location", async
   });
 });
 
-test("host sources use the explicit host id first and the primary host otherwise", async () => {
+test("host sources read from their own host without a lookup", async () => {
   const bb = fakeBb({});
   const explicit = await locateSource(bb, {
     kind: "host",
@@ -82,8 +82,6 @@ test("host sources use the explicit host id first and the primary host otherwise
     ok: true,
     location: { hostId: "host-c", path: "/abs/x.canvas.mdx" },
   });
-  const primary = await locateSource(bb, { kind: "host", hostId: null, path: "/abs/x.canvas.mdx" });
-  assert.deepEqual(primary, { ok: true, location: { path: "/abs/x.canvas.mdx" } });
   assert.deepEqual(bb.calls.environmentsGet, []);
   assert.deepEqual(bb.calls.storageLocation, []);
 });

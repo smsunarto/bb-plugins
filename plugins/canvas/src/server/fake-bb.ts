@@ -25,6 +25,12 @@ export interface FakeBbOptions {
   >;
   readonly threads?: Readonly<Record<string, { hostId: string; storageRootPath: string }>>;
   readonly files?: Readonly<Record<string, FakeFile | Error>>;
+  /**
+   * What the canvas host entry reports for `stamp`, by host and path
+   * (`fileKeyOf(hostId, undefined, path)`). Mutable, so a test can play a
+   * write on the host. Omitted: no host entry, and every stamp call fails.
+   */
+  readonly stamps?: Map<string, string | null>;
   /** Runs before each write lands, so a test can play a concurrent writer. */
   readonly beforeWrite?: (args: FakeWriteArgs, store: FakeStore) => void;
 }
@@ -34,6 +40,7 @@ export interface FakeCalls {
   readonly storageLocation: { threadId: string }[];
   readonly filesRead: { hostId?: string; path: string; rootPath?: string }[];
   readonly filesWrite: FakeWriteArgs[];
+  readonly hostCalls: { hostId: string; method: string; input: unknown }[];
   readonly published: { channel: string; payload: unknown }[];
 }
 
@@ -63,6 +70,7 @@ export function fakeBb(options: FakeBbOptions): FakeBb {
     storageLocation: [],
     filesRead: [],
     filesWrite: [],
+    hostCalls: [],
     published: [],
   };
   const store: FakeStore = new Map(Object.entries(options.files ?? {}));
@@ -118,8 +126,18 @@ export function fakeBb(options: FakeBbOptions): FakeBb {
     },
   };
   const kv = new Map<string, unknown>();
+  const hosts = {
+    experimental_client: () => ({
+      async call(method: string, input: { path: string }, { hostId }: { hostId: string }) {
+        calls.hostCalls.push({ hostId, method, input });
+        if (options.stamps === undefined) throw new Error("plugin host entry is not running");
+        return { stamp: options.stamps.get(fileKey({ hostId, path: input.path })) ?? null };
+      },
+    }),
+  };
   const bb = {
     sdk,
+    hosts,
     storage: {
       kv: {
         get: async (key: string) => kv.get(key),

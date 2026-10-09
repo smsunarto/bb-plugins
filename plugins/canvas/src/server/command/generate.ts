@@ -1,5 +1,5 @@
 import { defineCommand, PluginCliError } from "@bb-kit/core/command";
-import { isAbsolute, resolve } from "node:path";
+import { absolutePath, hostOption, invokingHostId } from "../lib/cli-source.ts";
 import { generateCanvas, templateName } from "../lib/generate.ts";
 import { maxCanvasBytes } from "../../shared/parse.ts";
 
@@ -21,11 +21,7 @@ export const generate = defineCommand({
       placeholder: "file",
       required: true,
     },
-    host: {
-      type: "string",
-      description: "Host ID; required outside a thread",
-      placeholder: "host-id",
-    },
+    host: hostOption,
     json: { type: "boolean", description: "Print the generated path as JSON" },
   },
   async execute(ctx, { positionals, options: input }) {
@@ -36,21 +32,12 @@ export const generate = defineCommand({
         { code: "invalid_value" },
       );
     }
-    const absolute = (path: string) => {
-      if (isAbsolute(path)) return path;
-      if (!ctx.cwd)
-        throw new PluginCliError("Use absolute paths when no working directory is available");
-      return resolve(ctx.cwd, path);
-    };
-    const out = absolute(input.out);
+    const out = absolutePath(ctx, input.out);
     if (!out.endsWith(".canvas.mdx")) throw new PluginCliError("Output must end in .canvas.mdx");
-    let hostId = input.host;
-    if (!hostId && ctx.threadId) {
-      hostId = (await ctx.bb.sdk.threads.storageLocation({ threadId: ctx.threadId })).hostId;
-    }
-    if (!hostId) throw new PluginCliError("Pass --host <host-id> when running outside a thread");
+    const data = absolutePath(ctx, input.data);
+    const hostId = await invokingHostId(ctx, input.host);
     try {
-      const file = await ctx.bb.sdk.files.read({ hostId, path: absolute(input.data) });
+      const file = await ctx.bb.sdk.files.read({ hostId, path: data });
       if (file.contentEncoding !== "utf8") throw new Error("Data must be a UTF-8 JSON file");
       if (Buffer.byteLength(file.content, "utf8") > maxCanvasBytes)
         throw new Error("Data exceeds 2 MiB");

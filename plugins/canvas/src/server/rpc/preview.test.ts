@@ -5,9 +5,9 @@ import { fakeBb } from "../fake-bb.ts";
 import { preview } from "./preview.ts";
 
 function withPreviews(bb: ReturnType<typeof fakeBb>) {
-  const leases: { hostId?: string; rootPath: string }[] = [];
+  const leases: { hostId?: string; rootPath: string; ttlMs?: number }[] = [];
   Object.assign(bb.sdk.files, {
-    async createPreview(args: { hostId?: string; rootPath: string }) {
+    async createPreview(args: { hostId?: string; rootPath: string; ttlMs?: number }) {
       leases.push(args);
       return { baseUrl: "/preview/lease", expiresAtMs: 99 };
     },
@@ -24,7 +24,8 @@ test("preview serves the worktree and locates the file inside it", async () => {
     expiresAtMs: 99,
     path: "docs/a.mdx",
   });
-  assert.deepEqual(leases, [{ hostId: "host-a", rootPath: "/repo" }]);
+  // An hour, bb's longest lease, instead of the 10 minute default.
+  assert.deepEqual(leases, [{ hostId: "host-a", rootPath: "/repo", ttlMs: 3_600_000 }]);
 });
 
 test("preview serves a host file's own directory", async () => {
@@ -33,5 +34,5 @@ test("preview serves a host file's own directory", async () => {
   const source: CanvasSource = { kind: "host", hostId: "host-b", path: "/notes/deep/a.mdx" };
   const result = await preview.execute({ bb }, { source });
   assert.equal(result.path, "a.mdx");
-  assert.deepEqual(leases, [{ hostId: "host-b", rootPath: "/notes/deep" }]);
+  assert.deepEqual(leases, [{ hostId: "host-b", rootPath: "/notes/deep", ttlMs: 3_600_000 }]);
 });

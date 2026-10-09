@@ -6,33 +6,54 @@ import type { PluginFileOpenerSource } from "@get-bb/plugin-sdk";
 export type CanvasSource =
   | { readonly kind: "workspace"; readonly environmentId: string; readonly path: string }
   | { readonly kind: "thread-storage"; readonly threadId: string; readonly path: string }
-  | { readonly kind: "host"; readonly hostId: string | null; readonly path: string };
+  | { readonly kind: "host"; readonly hostId: string; readonly path: string };
+
+/**
+ * A host path bb opened without naming its host. The path is on the host of
+ * the environment or thread that opened it, which is rarely the server's, so
+ * the opener looks the host up before it reads anything.
+ */
+export interface HostLookup {
+  readonly kind: "host-lookup";
+  readonly owner:
+    | { readonly environmentId: string; readonly threadId: null }
+    | { readonly environmentId: null; readonly threadId: string };
+  readonly path: string;
+}
 
 export type NarrowSourceResult =
-  | { readonly ok: true; readonly value: CanvasSource }
-  | { readonly ok: false; readonly reason: "no-environment" | "no-thread" | "empty-path" };
+  | { readonly ok: true; readonly value: CanvasSource | HostLookup }
+  | {
+      readonly ok: false;
+      readonly reason: "no-environment" | "no-thread" | "no-host" | "empty-path";
+    };
+
+function present(value: string | null | undefined): value is string {
+  return value !== null && value !== undefined && value.length > 0;
+}
 
 export function narrowSource(source: PluginFileOpenerSource, path: string): NarrowSourceResult {
   if (path.length === 0) return { ok: false, reason: "empty-path" };
   switch (source.kind) {
     case "workspace": {
-      if (source.environmentId === null || source.environmentId.length === 0) {
-        return { ok: false, reason: "no-environment" };
-      }
+      if (!present(source.environmentId)) return { ok: false, reason: "no-environment" };
       return { ok: true, value: { kind: "workspace", environmentId: source.environmentId, path } };
     }
     case "thread-storage": {
-      if (source.threadId === null || source.threadId.length === 0) {
-        return { ok: false, reason: "no-thread" };
-      }
+      if (!present(source.threadId)) return { ok: false, reason: "no-thread" };
       return { ok: true, value: { kind: "thread-storage", threadId: source.threadId, path } };
     }
     case "host": {
-      const hostId =
-        source.experimental_hostId !== undefined && source.experimental_hostId.length > 0
-          ? source.experimental_hostId
+      if (present(source.experimental_hostId)) {
+        return { ok: true, value: { kind: "host", hostId: source.experimental_hostId, path } };
+      }
+      const owner = present(source.environmentId)
+        ? { environmentId: source.environmentId, threadId: null }
+        : present(source.threadId)
+          ? { environmentId: null, threadId: source.threadId }
           : null;
-      return { ok: true, value: { kind: "host", hostId, path } };
+      if (owner === null) return { ok: false, reason: "no-host" };
+      return { ok: true, value: { kind: "host-lookup", owner, path } };
     }
   }
 }
@@ -51,7 +72,7 @@ export function stateKeyOf(source: CanvasSource): string {
     case "thread-storage":
       return ["thread-storage", source.threadId, path].join("\0");
     case "host":
-      return ["host", source.hostId ?? "", path].join("\0");
+      return ["host", source.hostId, path].join("\0");
   }
 }
 

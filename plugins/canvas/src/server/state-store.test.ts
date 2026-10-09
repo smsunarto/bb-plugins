@@ -4,7 +4,7 @@ import { stateKeyOf, type CanvasSource } from "../shared/document.ts";
 import { fakeBb } from "./fake-bb.ts";
 import { clearState, kvKeyOf, readState, writeState } from "./state-store.ts";
 
-const source: CanvasSource = { kind: "host", hostId: null, path: "/tmp/a.canvas.mdx" };
+const source: CanvasSource = { kind: "host", hostId: "host-t", path: "/tmp/a.canvas.mdx" };
 
 test("readState returns the empty state when nothing is stored or the row is malformed", async () => {
   const bb = fakeBb({});

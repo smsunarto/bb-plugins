@@ -62,9 +62,16 @@ test("canvasDocumentSchema round-trips the node tree", () => {
 
 test("renderInputSchema defaults knownSha256 to null", () => {
   const parsed = renderInputSchema.parse({
-    source: { kind: "host", hostId: null, path: "/tmp/a.canvas.mdx" },
+    source: { kind: "host", hostId: "h1", path: "/tmp/a.canvas.mdx" },
   });
   assert.equal(parsed.knownSha256, null);
+});
+
+test("a host source without a host never reaches the server's own host", () => {
+  const parsed = renderInputSchema.safeParse({
+    source: { kind: "host", hostId: null, path: "/Users/me/a.canvas.mdx" },
+  });
+  assert.equal(parsed.success, false);
 });
 
 test("isCanvasPath accepts only the .canvas.mdx suffix", () => {
@@ -99,9 +106,25 @@ test("narrowSource maps each opener kind to one shape", () => {
     ok: false,
     reason: "no-thread",
   });
-  assert.deepEqual(narrowSource({ ...base, kind: "host" }, "/a.mdx"), {
+  // bb routes a host path without a host by the environment, else the thread, that opened it.
+  assert.deepEqual(
+    narrowSource({ ...base, kind: "host", environmentId: "env", threadId: "t" }, "/a.mdx"),
+    {
+      ok: true,
+      value: {
+        kind: "host-lookup",
+        owner: { environmentId: "env", threadId: null },
+        path: "/a.mdx",
+      },
+    },
+  );
+  assert.deepEqual(narrowSource({ ...base, kind: "host", threadId: "t" }, "/a.mdx"), {
     ok: true,
-    value: { kind: "host", hostId: null, path: "/a.mdx" },
+    value: { kind: "host-lookup", owner: { environmentId: null, threadId: "t" }, path: "/a.mdx" },
+  });
+  assert.deepEqual(narrowSource({ ...base, kind: "host" }, "/a.mdx"), {
+    ok: false,
+    reason: "no-host",
   });
   assert.deepEqual(narrowSource({ ...base, kind: "host", experimental_hostId: "h1" }, "/a.mdx"), {
     ok: true,
@@ -118,7 +141,7 @@ test("stateKeyOf is stable, injective across kinds, and normalizes separators", 
   assert.equal(a, stateKeyOf({ kind: "workspace", environmentId: "e", path: "x\\y.canvas.mdx" }));
   assert.notEqual(a, stateKeyOf({ kind: "thread-storage", threadId: "e", path: "x/y.canvas.mdx" }));
   assert.notEqual(
-    stateKeyOf({ kind: "host", hostId: null, path: "/x" }),
-    stateKeyOf({ kind: "host", hostId: "h", path: "/x" }),
+    stateKeyOf({ kind: "host", hostId: "mac", path: "/x" }),
+    stateKeyOf({ kind: "host", hostId: "linux", path: "/x" }),
   );
 });

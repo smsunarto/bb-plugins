@@ -12,8 +12,8 @@ import {
 } from "./comments-store.ts";
 import { fakeBb, fileKeyOf } from "./fake-bb.ts";
 
-const source: CanvasSource = { kind: "host", hostId: null, path: "/w/a.canvas.mdx" };
-const sidecarKey = fileKeyOf(undefined, undefined, "/w/a.canvas.mdx.comments.json");
+const source: CanvasSource = { kind: "host", hostId: "host-w", path: "/w/a.canvas.mdx" };
+const sidecarKey = fileKeyOf("host-w", undefined, "/w/a.canvas.mdx.comments.json");
 
 const thread: CommentThread = {
   id: "cmt_abcdefghij",
@@ -33,7 +33,9 @@ test("readComments reads the sidecar beside the canvas and treats a missing one 
     malformed: false,
     sidecarPath: "/w/a.canvas.mdx.comments.json",
   });
-  assert.deepEqual(bb.calls.filesRead, [{ path: "/w/a.canvas.mdx.comments.json" }]);
+  assert.deepEqual(bb.calls.filesRead, [
+    { hostId: "host-w", path: "/w/a.canvas.mdx.comments.json" },
+  ]);
 });
 
 test("readComments keeps the host and root fence of the canvas location", async () => {

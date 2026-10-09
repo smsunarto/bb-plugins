@@ -3,6 +3,10 @@ import { defineQuery } from "@bb-kit/core/rpc";
 import { previewInputSchema, previewOutputSchema } from "../../shared/file.ts";
 import { locateSource } from "../locate.ts";
 
+// bb's longest lease. The opener renews it when an external write remounts
+// the editor near expiry, which is when images and embeds load again.
+const leaseTtlMs = 60 * 60 * 1000;
+
 export const preview = defineQuery({
   input: previewInputSchema,
   output: previewOutputSchema,
@@ -13,10 +17,7 @@ export const preview = defineQuery({
     // A host file has no enclosing worktree, so its own directory is the root.
     const paths = win32.isAbsolute(path) && !posix.isAbsolute(path) ? win32 : posix;
     const rootPath = located.location.rootPath ?? paths.dirname(path);
-    const lease = await ctx.bb.sdk.files.createPreview({
-      ...(hostId === undefined ? {} : { hostId }),
-      rootPath,
-    });
+    const lease = await ctx.bb.sdk.files.createPreview({ hostId, rootPath, ttlMs: leaseTtlMs });
     return {
       baseUrl: lease.baseUrl,
       expiresAtMs: lease.expiresAtMs,

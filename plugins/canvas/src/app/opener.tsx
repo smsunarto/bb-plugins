@@ -1,14 +1,18 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ReactElement } from "react";
+import { useSdk } from "@get-bb/plugin-sdk/app";
 import type { PluginFileOpenerProps } from "@get-bb/plugin-sdk/app";
 import { narrowSource } from "../shared/source.ts";
-import type { CanvasSource } from "../shared/source.ts";
+import type { CanvasSource, HostLookup } from "../shared/source.ts";
 import { buttonClass } from "./components.tsx";
 import { MarkdownEditor } from "./markdown-editor.tsx";
 import { rpc } from "./rpc.ts";
 
 const pollIntervalMs = 1500;
 const saveDelayMs = 700;
+// An external write remounts the editor, which loads images and embeds again.
+// A lease this close to expiry is renewed first.
+const leaseRenewMs = 5 * 60 * 1000;
 
 type Opened =
   | { readonly status: "loading" }
@@ -39,6 +43,7 @@ function EditorSession(props: { readonly source: CanvasSource }): ReactElement {
   const shaRef = useRef<string | null>(null);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const savingRef = useRef(false);
+  const leaseExpiresRef = useRef(0);
 
   useEffect(() => {
     let active = true;
@@ -64,6 +69,7 @@ function EditorSession(props: { readonly source: CanvasSource }): ReactElement {
         markdownRef.current = file.content;
         savedRef.current = file.content;
         shaRef.current = file.sha256;
+        leaseExpiresRef.current = preview.expiresAtMs;
         setOpened({
           status: "ready",
           content: file.content,
@@ -90,7 +96,12 @@ function EditorSession(props: { readonly source: CanvasSource }): ReactElement {
       const knownSha256 = shaRef.current;
       try {
         const file = await client.file({ source, knownSha256 });
-        if (!active || file.status !== "read" || shaRef.current !== knownSha256) return;
+        if (file.status !== "read") return;
+        const lease =
+          leaseExpiresRef.current - Date.now() < leaseRenewMs
+            ? await client.preview({ source }).catch(() => null)
+            : null;
+        if (!active || shaRef.current !== knownSha256) return;
         // An external write only replaces a clean document. A pending draft
         // keeps its edits and asks the user to reload or overwrite.
         if (savingRef.current || markdownRef.current !== savedRef.current) {
@@ -100,8 +111,13 @@ function EditorSession(props: { readonly source: CanvasSource }): ReactElement {
         markdownRef.current = file.content;
         savedRef.current = file.content;
         shaRef.current = file.sha256;
+        if (lease !== null) leaseExpiresRef.current = lease.expiresAtMs;
+        const renewed =
+          lease === null ? {} : { previewBaseUrl: lease.baseUrl, previewPath: lease.path };
         setOpened((previous) =>
-          previous.status === "ready" ? { ...previous, content: file.content } : previous,
+          previous.status === "ready"
+            ? { ...previous, ...renewed, content: file.content }
+            : previous,
         );
       } catch {
         // Keep the editable document during a temporary host disconnect. The
@@ -163,9 +179,7 @@ function EditorSession(props: { readonly source: CanvasSource }): ReactElement {
     [save],
   );
 
-  if (opened.status === "loading") {
-    return <p className="px-3 py-2 text-sm text-muted-foreground">Loading</p>;
-  }
+  if (opened.status === "loading") return loadingView();
   if (opened.status === "failed") {
     return (
       <div className="m-3 rounded-md border border-border px-3 py-2 text-sm">
@@ -230,10 +244,51 @@ function EditorSession(props: { readonly source: CanvasSource }): ReactElement {
   );
 }
 
+function loadingView(): ReactElement {
+  return <p className="px-3 py-2 text-sm text-muted-foreground">Loading</p>;
+}
+
+// Every read, save, and preview needs the file's host. The environment's host
+// is a database read, so it resolves even while that host is offline, and the
+// read then reports the outage with a Retry.
+function HostLookupSession(props: {
+  readonly lookup: HostLookup;
+  readonly Original: PluginFileOpenerProps["Original"];
+}): ReactElement {
+  // The opener keys each lookup by its owner and path, so the first one is final.
+  const [lookup] = useState(props.lookup);
+  const { Original } = props;
+  const sdk = useSdk();
+  const [hostId, setHostId] = useState<string | null | "failed">(null);
+  useEffect(() => {
+    let active = true;
+    const { environmentId, threadId } = lookup.owner;
+    const found =
+      environmentId !== null
+        ? sdk.environments.get({ environmentId })
+        : sdk.threads.storageLocation({ threadId });
+    found.then(
+      (owner) => active && setHostId(owner.hostId),
+      () => active && setHostId("failed"),
+    );
+    return () => {
+      active = false;
+    };
+  }, [sdk, lookup]);
+  if (hostId === "failed") return <Original />;
+  if (hostId === null) return loadingView();
+  const source: CanvasSource = { kind: "host", hostId, path: lookup.path };
+  return <EditorSession key={JSON.stringify(source)} source={source} />;
+}
+
 // Opens .mdx and .canvas.mdx files in the MDX editor. A file Canvas cannot
 // address (a project file without an environment) keeps bb's own preview.
 export function MdxOpener({ path, source, Original }: PluginFileOpenerProps): ReactElement {
   const narrowed = narrowSource(source, path);
   if (!narrowed.ok) return <Original />;
-  return <EditorSession key={JSON.stringify(narrowed.value)} source={narrowed.value} />;
+  const { value } = narrowed;
+  if (value.kind === "host-lookup") {
+    return <HostLookupSession key={JSON.stringify(value)} lookup={value} Original={Original} />;
+  }
+  return <EditorSession key={JSON.stringify(value)} source={value} />;
 }

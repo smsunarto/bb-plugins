@@ -14,21 +14,21 @@ export interface CanvasContextValue {
   readonly source: CanvasSource;
   readonly path: string;
   readonly fileName: string;
-  readonly target: ExperimentalLiveFileTarget | null;
+  readonly target: ExperimentalLiveFileTarget;
   readonly view: CanvasViewMode;
   readonly setView: (view: CanvasViewMode) => void;
 }
 
 const CanvasContext = createContext<CanvasContextValue | null>(null);
 
-export function targetOf(source: CanvasSource, path: string): ExperimentalLiveFileTarget | null {
+export function targetOf(source: CanvasSource, path: string): ExperimentalLiveFileTarget {
   switch (source.kind) {
     case "workspace":
       return { kind: "workspace", environmentId: source.environmentId, path };
     case "thread-storage":
       return { kind: "thread-storage", threadId: source.threadId, path };
     case "host":
-      return source.hostId === null ? null : { kind: "host", hostId: source.hostId, path };
+      return { kind: "host", hostId: source.hostId, path };
   }
 }
 

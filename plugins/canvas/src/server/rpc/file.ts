@@ -6,11 +6,9 @@ export const file = defineQuery({
   input: fileInputSchema,
   output: fileOutputSchema,
   async execute(ctx, { source, knownSha256 }): Promise<FileOutput> {
-    const read = await readCanvasFile(ctx.bb, source);
-    if (!read.ok) return { status: "unreadable", reason: read.reason, detail: read.detail };
+    const read = await readCanvasFile(ctx.bb, source, knownSha256);
+    if (read.status !== "read") return read;
     const { sha256, content } = read.file;
-    return knownSha256 === sha256
-      ? { status: "unchanged", sha256 }
-      : { status: "read", sha256, content };
+    return { status: "read", sha256, content };
   },
 });

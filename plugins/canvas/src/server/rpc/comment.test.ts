@@ -6,7 +6,7 @@ import { fakeBb } from "../fake-bb.ts";
 import { comment } from "./comment.ts";
 import { comments } from "./comments.ts";
 
-const source: CanvasSource = { kind: "host", hostId: null, path: "/w/a.canvas.mdx" };
+const source: CanvasSource = { kind: "host", hostId: "host-w", path: "/w/a.canvas.mdx" };
 const thread: CommentThread = {
   id: "cmt_abcdefghij",
   anchor: { blockId: "0123456789ab", index: 0, quote: null, preview: "Title" },
