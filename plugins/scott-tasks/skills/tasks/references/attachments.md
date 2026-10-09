@@ -35,5 +35,7 @@ file unless `--remove-references` confirms description cleanup.
 The invoking machine owns `--file`, `--attach`, `--out`, `--description-file`,
 and `--body-file` paths. In a thread, this is the thread machine.
 
-Outside a thread, these paths use the server machine. Use
-`--machine <id-or-name>` for another enrolled machine.
+Outside a thread, pass `--machine <id-or-name>`; the command fails without it
+unless only one machine is enrolled. Use `--machine` inside a thread to target
+another enrolled machine, with absolute paths: relative paths resolve only on
+the thread's own machine.

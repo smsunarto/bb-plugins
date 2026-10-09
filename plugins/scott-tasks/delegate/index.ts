@@ -164,29 +164,63 @@ function collectAttachments(
 
 type SpawnEnvironment = Parameters<BbPluginApi["sdk"]["threads"]["spawn"]>[0]["environment"];
 
-async function presetSpawnEnvironment(bb: BbPluginApi, preset: Preset): Promise<SpawnEnvironment> {
-  if (preset.environmentKind === "project-default") {
-    return { type: "project-default" };
-  }
-
-  const hostId = preset.machineId ?? (await bb.sdk.system.config()).primaryHostId;
-  if (hostId === null) {
-    throw new DelegationError(
-      "spawn_target_invalid",
-      "Could not create a worktree because BB has no default machine",
-    );
-  }
+function managedWorktree(hostId: string, baseBranch: string | null): SpawnEnvironment {
   return {
     type: "host",
     hostId,
     workspace: {
       type: "managed-worktree",
-      baseBranch:
-        preset.baseBranch === null
-          ? { kind: "default" }
-          : { kind: "named", name: preset.baseBranch },
+      baseBranch: baseBranch === null ? { kind: "default" } : { kind: "named", name: baseBranch },
     },
   };
+}
+
+/**
+ * A preset without a pinned machine runs where the linked bb project lives: its
+ * default source, else its first source, on a connected machine. Core's
+ * `project-default` always targets the server's primary host, so off that host
+ * the plugin applies core's rule itself: a worktree from the default base
+ * branch, or the source folder when it is not a git checkout.
+ */
+async function presetSpawnEnvironment(
+  bb: BbPluginApi,
+  preset: Preset,
+  bbProjectId: string,
+): Promise<SpawnEnvironment> {
+  if (preset.machineId !== null) return managedWorktree(preset.machineId, preset.baseBranch);
+
+  const project = await bb.sdk.projects.get({ projectId: bbProjectId });
+  const projectDefault = preset.environmentKind === "project-default";
+  if (projectDefault && project.kind === "personal") return { type: "project-default" };
+  const hosts = await bb.sdk.hosts.list();
+  const connected = new Set(
+    hosts.filter((host) => host.status === "connected").map((host) => host.id),
+  );
+  const sources = project.sources.filter((candidate) => connected.has(candidate.hostId));
+  const source = sources.find((candidate) => candidate.isDefault) ?? sources[0];
+  if (!source) {
+    const offline = project.sources.map(
+      (candidate) => hosts.find((host) => host.id === candidate.hostId)?.name ?? candidate.hostId,
+    );
+    throw new DelegationError(
+      "spawn_target_invalid",
+      offline.length === 0
+        ? `bb project "${project.name}" has no source folder on any machine`
+        : `bb project "${project.name}" has no source folder on a connected machine; it lives on ${offline.join(", ")}`,
+    );
+  }
+  if (!projectDefault) return managedWorktree(source.hostId, preset.baseBranch);
+  if (source.hostId === (await bb.sdk.system.config()).primaryHostId) {
+    return { type: "project-default" };
+  }
+  const { defaultWorktreeBaseBranch } = await bb.sdk.projects.branches({
+    projectId: bbProjectId,
+    hostId: source.hostId,
+    limit: "1",
+  });
+  return defaultWorktreeBaseBranch === null
+    ? { type: "host", hostId: source.hostId, workspace: { type: "unmanaged", path: null } }
+    : managedWorktree(source.hostId, defaultWorktreeBaseBranch);
 }
 
 function isBbHttpError(error: unknown): error is Error & { code: string | null; status: number } {
@@ -208,20 +242,38 @@ const SPAWN_TARGET_ERROR_CODES = new Set([
   "workspace_unavailable",
 ]);
 
-function mapSpawnTargetError(error: unknown, preset: Preset): never {
-  if (
-    preset.environmentKind === "new-worktree" &&
+/** Core answers a malformed request (model, options) with 400 invalid_request; those pass through. */
+function isSpawnTargetError(error: unknown): error is Error {
+  return (
     isBbHttpError(error) &&
     error.code !== null &&
-    SPAWN_TARGET_ERROR_CODES.has(error.code)
+    SPAWN_TARGET_ERROR_CODES.has(error.code) &&
+    !(error.code === "invalid_request" && error.status === 400)
+  );
+}
+
+async function mapSpawnTargetError(
+  bb: BbPluginApi,
+  error: unknown,
+  environment: SpawnEnvironment,
+): Promise<never> {
+  if (
+    environment.type === "host" &&
+    environment.hostId !== undefined &&
+    environment.workspace.type !== "personal" &&
+    isSpawnTargetError(error)
   ) {
-    const machine = preset.machineId ?? "the default machine";
-    const branch = preset.baseBranch ?? "the default branch";
+    const { hostId, workspace } = environment;
+    const machine = await bb.sdk.hosts
+      .get({ hostId })
+      .then((host) => host.name)
+      .catch(() => hostId);
+    const target =
+      workspace.type === "managed-worktree"
+        ? `create a worktree on ${machine} from ${workspace.baseBranch.kind === "named" ? workspace.baseBranch.name : "the default branch"}`
+        : `open the project folder on ${machine}`;
     const detail = error.message.replace(/^HTTP \d+:\s*/u, "");
-    throw new DelegationError(
-      "spawn_target_invalid",
-      `Could not create a worktree on ${machine} from ${branch}: ${detail}`,
-    );
+    throw new DelegationError("spawn_target_invalid", `Could not ${target}: ${detail}`);
   }
   throw error;
 }
@@ -299,7 +351,7 @@ export function handlers(
         extraInstructions: input.extraInstructions,
       });
 
-      const environment = await presetSpawnEnvironment(bb, preset);
+      const environment = await presetSpawnEnvironment(bb, preset, linkedBbProjectId);
       const thread = await bb.sdk.threads
         .spawn({
           projectId: linkedBbProjectId,
@@ -312,7 +364,7 @@ export function handlers(
           title,
           prompt,
         })
-        .catch((error: unknown) => mapSpawnTargetError(error, preset));
+        .catch((error: unknown) => mapSpawnTargetError(bb, error, environment));
 
       const taskThread = store.transaction(() => {
         const attached = store.tasks.upsertTaskThread({

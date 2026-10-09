@@ -575,7 +575,7 @@ describe("describePresetEnvironment", () => {
         presetRow({ baseBranch: null, machineId: null }) as never,
         MACHINES,
       ),
-    ).toBe("Worktree · default · default");
+    ).toBe("Worktree · default · project's machine");
     expect(
       describePresetEnvironment(presetRow({ machineId: "mach_gone" }) as never, MACHINES),
     ).toBe("Worktree · main · mach_gone");

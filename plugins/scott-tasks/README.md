@@ -90,8 +90,10 @@ project id (`proj_...`); `bb tasks project list` shows both columns. Repeatable
 options (`--label`, `--status`, `--priority`, `--add-label`, `--remove-label`)
 also accept one comma-separated list. File paths (`--file`, `--attach`,
 `--out`, `--description-file`, `--body-file`) resolve on the invoking machine:
-inside an agent thread that is the thread's machine, otherwise the server's
-machine; pass `--machine <id-or-name>` to target another enrolled machine.
+inside an agent thread that is the thread's machine. Outside a thread, pass
+`--machine <id-or-name>` to name the enrolled machine that owns the paths,
+unless only one machine is enrolled. `--machine` for a machine other than the
+thread's needs absolute paths.
 
 | Command                                        | Purpose                                                                                                                                    |
 | ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |

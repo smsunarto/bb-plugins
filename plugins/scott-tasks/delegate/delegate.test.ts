@@ -6,6 +6,52 @@ import { displayWidth } from "../shared/text-measure";
 import { delegationRpcContract } from "./contract";
 import { buildSeedPrompt, registerDelegation } from ".";
 
+interface TestSource {
+  hostId: string;
+  isDefault: boolean;
+}
+
+function bbProject(
+  name: string,
+  sources: TestSource[],
+  kind: "standard" | "personal" = "standard",
+) {
+  return {
+    id: "proj_bb",
+    kind,
+    name,
+    gitRemoteUrl: null,
+    createdAt: 0,
+    updatedAt: 0,
+    sources: sources.map((source) => ({
+      id: `src_${source.hostId}`,
+      projectId: "proj_bb",
+      path: `/src/${name}`,
+      type: "local_path" as const,
+      createdAt: 0,
+      updatedAt: 0,
+      ...source,
+    })),
+  };
+}
+
+function hostList(hosts: Record<string, "connected" | "disconnected">) {
+  return Object.entries(hosts).map(([id, status]) => ({
+    id,
+    name: id === "host_mac" ? "Personal Mac" : id,
+    status,
+  }));
+}
+
+/** A linked bb project whose default source is on the server's primary host. */
+const PRIMARY_HOST_PROJECT_SDK = {
+  projects: {
+    get: async () => bbProject("Tasks plugin", [{ hostId: "host_primary", isDefault: true }]),
+  },
+  hosts: { list: async () => hostList({ host_primary: "connected" }) },
+  system: { config: async () => ({ primaryHostId: "host_primary" }) },
+};
+
 function createTestPreset(
   store: ReturnType<typeof createStore>,
   overrides: Partial<{
@@ -34,6 +80,7 @@ describe("task delegation", () => {
     const { bb, harness } = createFakePluginHost({
       pluginId: "tasks",
       sdk: {
+        ...PRIMARY_HOST_PROJECT_SDK,
         threads: {
           spawn: async () => ({ id: "thr_delegated" }),
           get: async () => makeThreadResponse({ id: "thr_delegated", status: "starting" }),
@@ -126,6 +173,7 @@ describe("task delegation", () => {
     const { bb, harness } = createFakePluginHost({
       pluginId: "tasks",
       sdk: {
+        ...PRIMARY_HOST_PROJECT_SDK,
         threads: {
           spawn: async () => ({ id: "thr_fast" }),
           get: async () => makeThreadResponse({ id: "thr_fast", status: "active" }),
@@ -166,6 +214,7 @@ describe("task delegation", () => {
     const { bb, harness } = createFakePluginHost({
       pluginId: "tasks",
       sdk: {
+        ...PRIMARY_HOST_PROJECT_SDK,
         threads: {
           spawn: async () => ({ id: "thr_wide_title" }),
           get: async () => makeThreadResponse({ id: "thr_wide_title", status: "starting" }),
@@ -250,63 +299,6 @@ describe("task delegation", () => {
     await harness.dispose();
   });
 
-  it("resolves the default machine and default branch for a worktree preset", async () => {
-    const { bb, harness } = createFakePluginHost({
-      pluginId: "tasks",
-      sdk: {
-        system: {
-          config: async () => ({ primaryHostId: "host_primary" }),
-        },
-        threads: {
-          spawn: async () => ({ id: "thr_default_worktree" }),
-          get: async () =>
-            makeThreadResponse({
-              id: "thr_default_worktree",
-              status: "starting",
-            }),
-        },
-      },
-    });
-    const store = createStore(bb);
-    const project = store.tasks.createProject({
-      name: "Default worktree target",
-      prefix: "DWT",
-      color: "blue",
-      linkedBbProjectId: "proj_demo",
-    });
-    const task = store.tasks.createTask({
-      projectId: project.id,
-      title: "Use default worktree target",
-    });
-    registerDelegation(bb, store);
-    const preset = createTestPreset(store, {
-      environmentKind: "new-worktree",
-    });
-
-    await harness.callRpc("delegate", {
-      taskId: task.id,
-      presetId: preset.id,
-    });
-
-    expect(harness.sdk.callsTo("system.config")).toEqual([[]]);
-    expect(harness.sdk.callsTo("threads.spawn")).toEqual([
-      [
-        expect.objectContaining({
-          environment: {
-            type: "host",
-            hostId: "host_primary",
-            workspace: {
-              type: "managed-worktree",
-              baseBranch: { kind: "default" },
-            },
-          },
-        }),
-      ],
-    ]);
-
-    await harness.dispose();
-  });
-
   it("maps a rejected worktree target to a friendly typed delegation error", async () => {
     const spawnError = Object.assign(new Error("HTTP 404: Host not found"), {
       code: "host_not_found",
@@ -315,6 +307,11 @@ describe("task delegation", () => {
     const { bb, harness } = createFakePluginHost({
       pluginId: "tasks",
       sdk: {
+        hosts: {
+          get: async () => {
+            throw spawnError;
+          },
+        },
         threads: {
           spawn: async () => {
             throw spawnError;
@@ -430,6 +427,261 @@ describe("task delegation", () => {
         payload: { taskId: task.id, projectId: project.id },
       },
     ]);
+
+    await harness.dispose();
+  });
+});
+
+describe("delegation to a preset without a pinned machine", () => {
+  const MAC_ONLY = [{ hostId: "host_mac", isDefault: true }];
+
+  const ALL_CONNECTED = { host_primary: "connected", host_mac: "connected" } as const;
+
+  function setUp(
+    project: ReturnType<typeof bbProject>,
+    preset: Parameters<typeof createTestPreset>[1],
+    {
+      spawn = async () => ({ id: "thr_routed" }),
+      hosts = ALL_CONNECTED,
+      defaultWorktreeBaseBranch = "main",
+    }: {
+      spawn?: () => Promise<{ id: string }>;
+      hosts?: Record<string, "connected" | "disconnected">;
+      defaultWorktreeBaseBranch?: string | null;
+    } = {},
+  ) {
+    const { bb, harness } = createFakePluginHost({
+      pluginId: "tasks",
+      sdk: {
+        projects: {
+          get: async () => project,
+          branches: async () => ({ defaultWorktreeBaseBranch }),
+        },
+        system: { config: async () => ({ primaryHostId: "host_primary" }) },
+        hosts: {
+          list: async () => hostList(hosts),
+          get: async ({ hostId }: { hostId: string }) =>
+            hostList(hosts).find((host) => host.id === hostId),
+        },
+        threads: {
+          spawn,
+          get: async () => makeThreadResponse({ id: "thr_routed", status: "starting" }),
+        },
+      },
+    });
+    const store = createStore(bb);
+    const tracker = store.tasks.createProject({
+      name: "Routing",
+      prefix: "RTE",
+      color: "blue",
+      linkedBbProjectId: "proj_bb",
+    });
+    const task = store.tasks.createTask({ projectId: tracker.id, title: "Route me" });
+    registerDelegation(bb, store);
+    const presetId = createTestPreset(store, preset).id;
+    return {
+      harness,
+      delegate: () => harness.callRpc("delegate", { taskId: task.id, presetId }),
+      spawnedEnvironments: () =>
+        harness.sdk
+          .callsTo("threads.spawn")
+          .map(([args]) => (args as { environment: unknown }).environment),
+    };
+  }
+
+  it.each([
+    {
+      name: "a worktree preset for a project that only lives on a Mac",
+      project: bbProject("world-engine", MAC_ONLY),
+      preset: { environmentKind: "new-worktree" as const },
+      environment: {
+        type: "host",
+        hostId: "host_mac",
+        workspace: { type: "managed-worktree", baseBranch: { kind: "default" } },
+      },
+    },
+    {
+      name: "a worktree preset with a base branch",
+      project: bbProject("world-engine", MAC_ONLY),
+      preset: { environmentKind: "new-worktree" as const, baseBranch: "release/next" },
+      environment: {
+        type: "host",
+        hostId: "host_mac",
+        workspace: {
+          type: "managed-worktree",
+          baseBranch: { kind: "named", name: "release/next" },
+        },
+      },
+    },
+    {
+      name: "a project-default preset for a project that only lives on a Mac",
+      project: bbProject("world-engine", MAC_ONLY),
+      preset: { environmentKind: "project-default" as const },
+      environment: {
+        type: "host",
+        hostId: "host_mac",
+        workspace: { type: "managed-worktree", baseBranch: { kind: "named", name: "main" } },
+      },
+    },
+    {
+      name: "a project-default preset for a Mac-only folder that is not a git checkout",
+      project: bbProject("git", MAC_ONLY),
+      preset: { environmentKind: "project-default" as const },
+      sdk: { defaultWorktreeBaseBranch: null },
+      environment: {
+        type: "host",
+        hostId: "host_mac",
+        workspace: { type: "unmanaged", path: null },
+      },
+    },
+    {
+      name: "a worktree preset whose project defaults to the Mac but also lives on the server",
+      project: bbProject("dotfiles", [
+        { hostId: "host_primary", isDefault: false },
+        { hostId: "host_mac", isDefault: true },
+      ]),
+      preset: { environmentKind: "new-worktree" as const },
+      environment: {
+        type: "host",
+        hostId: "host_mac",
+        workspace: { type: "managed-worktree", baseBranch: { kind: "default" } },
+      },
+    },
+    {
+      name: "a worktree preset whose default machine is offline but which also lives on the server",
+      project: bbProject("dotfiles", [
+        { hostId: "host_primary", isDefault: false },
+        { hostId: "host_mac", isDefault: true },
+      ]),
+      preset: { environmentKind: "new-worktree" as const },
+      sdk: { hosts: { host_primary: "connected", host_mac: "disconnected" } as const },
+      environment: {
+        type: "host",
+        hostId: "host_primary",
+        workspace: { type: "managed-worktree", baseBranch: { kind: "default" } },
+      },
+    },
+    {
+      name: "a project-default preset whose project defaults to the server's machine",
+      project: bbProject("bb-plugins", [
+        { hostId: "host_mac", isDefault: false },
+        { hostId: "host_primary", isDefault: true },
+      ]),
+      preset: { environmentKind: "project-default" as const },
+      environment: { type: "project-default" },
+    },
+    {
+      name: "a project-default preset for the personal project",
+      project: bbProject("Personal", [], "personal"),
+      preset: { environmentKind: "project-default" as const },
+      environment: { type: "project-default" },
+    },
+  ])("spawns $name where the project lives", async ({ project, preset, sdk, environment }) => {
+    const { harness, delegate, spawnedEnvironments } = setUp(project, preset, sdk);
+
+    await expect(delegate()).resolves.toEqual({ threadId: "thr_routed" });
+    expect(harness.sdk.callsTo("projects.get")).toEqual([[{ projectId: "proj_bb" }]]);
+    expect(spawnedEnvironments()).toEqual([environment]);
+
+    await harness.dispose();
+  });
+
+  it("names the project instead of spawning when it has no source on any machine", async () => {
+    const { harness, delegate, spawnedEnvironments } = setUp(bbProject("world-engine", []), {
+      environmentKind: "new-worktree",
+    });
+
+    await expect(delegate()).rejects.toMatchObject({
+      code: "handler_error",
+      message: 'bb project "world-engine" has no source folder on any machine',
+    });
+    expect(spawnedEnvironments()).toEqual([]);
+
+    await harness.dispose();
+  });
+
+  it("names the project and its offline machines when no source is on a connected machine", async () => {
+    const { harness, delegate, spawnedEnvironments } = setUp(
+      bbProject("world-engine", MAC_ONLY),
+      { environmentKind: "new-worktree" },
+      { hosts: { host_primary: "connected", host_mac: "disconnected" } },
+    );
+
+    await expect(delegate()).rejects.toMatchObject({
+      code: "handler_error",
+      message:
+        'bb project "world-engine" has no source folder on a connected machine; it lives on Personal Mac',
+    });
+    expect(spawnedEnvironments()).toEqual([]);
+
+    await harness.dispose();
+  });
+
+  it("names the resolved machine when it rejects the worktree", async () => {
+    const { harness, delegate } = setUp(
+      bbProject("world-engine", MAC_ONLY),
+      { environmentKind: "project-default" },
+      {
+        spawn: async () => {
+          throw Object.assign(new Error("HTTP 409: Host is not connected"), {
+            code: "host_unavailable",
+            status: 409,
+          });
+        },
+      },
+    );
+
+    await expect(delegate()).rejects.toMatchObject({
+      code: "handler_error",
+      message: "Could not create a worktree on Personal Mac from main: Host is not connected",
+    });
+    expect(harness.sdk.callsTo("projects.branches")).toEqual([
+      [{ projectId: "proj_bb", hostId: "host_mac", limit: "1" }],
+    ]);
+
+    await harness.dispose();
+  });
+
+  it("names the machine when it rejects the project folder of a non-git project", async () => {
+    const { harness, delegate } = setUp(
+      bbProject("git", MAC_ONLY),
+      { environmentKind: "project-default" },
+      {
+        defaultWorktreeBaseBranch: null,
+        spawn: async () => {
+          throw Object.assign(
+            new Error(
+              "HTTP 409: Workspace path is already attached to an environment in provisioning state",
+            ),
+            { code: "invalid_request", status: 409 },
+          );
+        },
+      },
+    );
+
+    await expect(delegate()).rejects.toMatchObject({
+      code: "handler_error",
+      message:
+        "Could not open the project folder on Personal Mac: Workspace path is already attached to an environment in provisioning state",
+    });
+
+    await harness.dispose();
+  });
+
+  it("passes a rejected model through without blaming the machine", async () => {
+    const message =
+      'HTTP 400: Model "claude-sonnet-5" is not available in this thread\'s claude-code model catalog.';
+    const { harness, delegate } = setUp(
+      bbProject("world-engine", MAC_ONLY),
+      { environmentKind: "new-worktree" },
+      {
+        spawn: async () => {
+          throw Object.assign(new Error(message), { code: "invalid_request", status: 400 });
+        },
+      },
+    );
+
+    await expect(delegate()).rejects.toMatchObject({ code: "handler_error", message });
 
     await harness.dispose();
   });

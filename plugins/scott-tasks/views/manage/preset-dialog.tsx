@@ -56,7 +56,7 @@ export function describePresetEnvironment(
   const branch = preset.baseBranch ?? "default";
   const machine =
     preset.machineId === null
-      ? "default"
+      ? "project's machine"
       : (machines.find((entry) => entry.id === preset.machineId)?.name ?? preset.machineId);
   return `Worktree · ${branch} · ${machine}`;
 }
@@ -265,7 +265,7 @@ export function PresetDialog({
                     <SelectValue placeholder={machines === undefined ? "Loading…" : "Machine"} />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value={DEFAULT_MACHINE_VALUE}>Default machine</SelectItem>
+                    <SelectItem value={DEFAULT_MACHINE_VALUE}>Project's machine</SelectItem>
                     {(machines ?? []).map((machine) => (
                       <SelectItem key={machine.id} value={machine.id}>
                         {machine.name}

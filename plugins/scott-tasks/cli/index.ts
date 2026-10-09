@@ -1,4 +1,4 @@
-import { resolve } from "node:path";
+import { isAbsolute, resolve } from "node:path";
 import {
   PluginCliError,
   cliCommand,
@@ -62,7 +62,7 @@ const MACHINE_OPTION = {
   type: "string",
   placeholder: "id-or-name",
   description:
-    "Enrolled machine that owns the file paths; defaults to the invoking thread's machine, otherwise the server's",
+    "Enrolled machine that owns the file paths; defaults to the invoking thread's machine, and is required outside a thread when several machines are enrolled",
 } as const;
 
 const PROJECT_OPTION = {
@@ -133,20 +133,56 @@ function unwrapTask(result: TaskMutationResult): Task {
   return result.task;
 }
 
-async function resolveClientHostId(
+interface ClientMachine {
+  hostId: string;
+  /** The caller's cwd, kept only while it belongs to `hostId`. */
+  cwd: string | undefined;
+}
+
+/**
+ * The machine that owns CLI file paths. The CLI runs on the bb server, which may
+ * not be the caller's machine, so it never falls back to the server's own disk.
+ */
+async function resolveClientMachine(
   bb: BbPluginApi,
   domain: TasksDomain,
   machine: string | undefined,
   ctx: PluginCliContext,
-): Promise<string | undefined> {
-  if (machine !== undefined) return resolveMachineId(domain, machine);
-  if (!ctx.threadId) return undefined;
-  const thread = await bb.sdk.threads.get({ threadId: ctx.threadId });
-  if (!thread.environmentId) return undefined;
-  const environment = await bb.sdk.environments.get({
-    environmentId: thread.environmentId,
+): Promise<ClientMachine> {
+  const environmentId = ctx.threadId
+    ? (await bb.sdk.threads.get({ threadId: ctx.threadId })).environmentId
+    : null;
+  const threadHostId = environmentId
+    ? (await bb.sdk.environments.get({ environmentId })).hostId
+    : null;
+  if (machine !== undefined) {
+    const hostId = await resolveMachineId(domain, machine);
+    const cwdIsOnHost = threadHostId === null || threadHostId === hostId;
+    return { hostId, cwd: cwdIsOnHost ? ctx.cwd : undefined };
+  }
+  if (threadHostId !== null) return { hostId: threadHostId, cwd: ctx.cwd };
+  const machines = await listMachines(domain);
+  const [only] = machines;
+  if (only && machines.length === 1) return { hostId: only.id, cwd: ctx.cwd };
+  throw new CliError(
+    ctx.threadId
+      ? `thread ${ctx.threadId} has no machine; pass --machine <id-or-name>`
+      : "file paths outside a bb thread need --machine <id-or-name>",
+    {
+      code: "machine_required",
+      hint: `enrolled machines: ${machines.map((entry) => entry.name).join(", ") || "none"}`,
+    },
+  );
+}
+
+/** Resolve a CLI path against the caller's cwd on the target machine, never the server's. */
+function clientPath(machine: ClientMachine, path: string): string {
+  if (isAbsolute(path)) return resolve(path);
+  if (machine.cwd !== undefined) return resolve(machine.cwd, path);
+  throw new CliError(`relative path needs a working directory on the target machine: ${path}`, {
+    code: "invalid_path",
+    hint: "pass an absolute path",
   });
-  return environment.hostId;
 }
 
 function isMissingClientFileError(error: unknown): boolean {
@@ -156,13 +192,10 @@ function isMissingClientFileError(error: unknown): boolean {
 
 async function readClientFile(
   bb: BbPluginApi,
-  hostId: string | undefined,
+  hostId: string,
   path: string,
 ): Promise<{ bytes: Buffer; text: string | null }> {
-  const file = await bb.sdk.files.read({
-    ...(hostId ? { hostId } : {}),
-    path,
-  });
+  const file = await bb.sdk.files.read({ hostId, path });
   return {
     bytes: Buffer.from(file.content, file.contentEncoding === "base64" ? "base64" : "utf8"),
     text: file.contentEncoding === "utf8" ? file.content : null,
@@ -171,7 +204,7 @@ async function readClientFile(
 
 async function readAttachmentSource(
   bb: BbPluginApi,
-  hostId: string | undefined,
+  hostId: string,
   path: string,
 ): Promise<Buffer> {
   try {
@@ -188,12 +221,12 @@ async function readAttachmentSource(
 
 async function writeClientFile(
   bb: BbPluginApi,
-  hostId: string | undefined,
+  hostId: string,
   path: string,
   content: Buffer,
 ): Promise<void> {
   await bb.sdk.files.write({
-    ...(hostId ? { hostId } : {}),
+    hostId,
     path,
     content: content.toString("base64"),
     contentEncoding: "base64",
@@ -205,17 +238,14 @@ function attachmentFileName(path: string): string {
   return path.split(/[\\/]/).at(-1) || "attachment";
 }
 
-async function readTextOption(
+async function readTextFile(
   bb: BbPluginApi,
-  ctx: PluginCliContext,
-  hostId: string | undefined,
-  inline: string | undefined,
-  file: string | undefined,
-): Promise<string | undefined> {
-  if (file === undefined) return inline;
-  const path = resolve(ctx.cwd ?? process.cwd(), file);
+  machine: ClientMachine,
+  file: string,
+): Promise<string> {
+  const path = clientPath(machine, file);
   try {
-    const { text } = await readClientFile(bb, hostId, path);
+    const { text } = await readClientFile(bb, machine.hostId, path);
     if (text === null) {
       throw new CliError(`could not read ${file}: file is not UTF-8 text`);
     }
@@ -224,6 +254,40 @@ async function readTextOption(
     if (error instanceof PluginCliError) throw error;
     throw new CliError(`could not read ${file}: ${errorMessage(error)}`);
   }
+}
+
+/** Read `create`'s --attach and --description-file inputs on the caller's machine. */
+async function readCreateFiles(
+  bb: BbPluginApi,
+  domain: TasksDomain,
+  ctx: PluginCliContext,
+  options: {
+    attach: readonly string[];
+    description?: string;
+    "description-file"?: string;
+    machine?: string;
+  },
+): Promise<{ attachSources: Array<{ path: string; bytes: Buffer }>; description?: string }> {
+  const descriptionFile = options["description-file"];
+  if (options.attach.length === 0 && descriptionFile === undefined) {
+    if (options.machine !== undefined) {
+      throw new CliError("--machine requires --attach or --description-file");
+    }
+    return { attachSources: [], description: options.description };
+  }
+  const machine = await resolveClientMachine(bb, domain, options.machine, ctx);
+  const attachPaths = options.attach.map((path) => clientPath(machine, path));
+  const attachSources: Array<{ path: string; bytes: Buffer }> = [];
+  for (const path of attachPaths) {
+    attachSources.push({ path, bytes: await readAttachmentSource(bb, machine.hostId, path) });
+  }
+  return {
+    attachSources,
+    description:
+      descriptionFile === undefined
+        ? options.description
+        : await readTextFile(bb, machine, descriptionFile),
+  };
 }
 
 function derivePrefix(name: string, projects: readonly Project[]): string {
@@ -456,10 +520,14 @@ function presetServiceTier(
   return value === "none" ? null : value;
 }
 
-async function resolveMachineId(domain: TasksDomain, address: string): Promise<string> {
-  const machines = tasksRpcContract.listMachines.output.parse(
+async function listMachines(domain: TasksDomain) {
+  return tasksRpcContract.listMachines.output.parse(
     await domain.listMachines(tasksRpcContract.listMachines.input.parse({})),
   ).machines;
+}
+
+async function resolveMachineId(domain: TasksDomain, address: string): Promise<string> {
+  const machines = await listMachines(domain);
   const normalized = address.trim().toLocaleLowerCase();
   const matches = machines.filter(
     (machine) => machine.id === address.trim() || machine.name.toLocaleLowerCase() === normalized,
@@ -545,9 +613,9 @@ async function labelsForTaskList(
 }
 
 function resolveInvokingThreadId(thread: string | undefined, ctx: PluginCliContext): string {
-  const threadId = thread ?? process.env.BB_THREAD_ID ?? ctx.threadId;
+  const threadId = thread ?? ctx.threadId;
   if (!threadId) {
-    throw new CliError("missing --thread and BB_THREAD_ID is not set", {
+    throw new CliError("missing --thread and no invoking bb thread", {
       code: "missing_required",
     });
   }
@@ -1070,24 +1138,12 @@ export function registerTasksCli(
           ],
           run(input, ctx) {
             return guard(async () => {
-              const attachPaths = input.options.attach.map((path) =>
-                resolve(ctx.cwd ?? process.cwd(), path),
+              const { attachSources, description } = await readCreateFiles(
+                bb,
+                domain,
+                ctx,
+                input.options,
               );
-              const descriptionFile = input.options["description-file"];
-              const usesClientFiles = attachPaths.length > 0 || descriptionFile !== undefined;
-              if (input.options.machine !== undefined && !usesClientFiles) {
-                throw new CliError("--machine requires --attach or --description-file");
-              }
-              const clientHostId = usesClientFiles
-                ? await resolveClientHostId(bb, domain, input.options.machine, ctx)
-                : undefined;
-              const attachSources: Array<{ path: string; bytes: Buffer }> = [];
-              for (const path of attachPaths) {
-                attachSources.push({
-                  path,
-                  bytes: await readAttachmentSource(bb, clientHostId, path),
-                });
-              }
               const project = await selectedProject(domain, ctx, input.options.project, true);
               if (!project) throw new CliError("project is required");
               const labels = await projectLabels(domain, project.id);
@@ -1097,14 +1153,7 @@ export function registerTasksCli(
               const created = tasksRpcContract.createTask.input.parse({
                 projectId: project.id,
                 title: input.options.title,
-                description:
-                  (await readTextOption(
-                    bb,
-                    ctx,
-                    clientHostId,
-                    input.options.description,
-                    descriptionFile,
-                  )) ?? "",
+                description: description ?? "",
                 priority: input.options.priority,
                 dueDate: input.options.due ?? null,
                 parentTaskId: parent?.id ?? null,
@@ -1149,7 +1198,7 @@ export function registerTasksCli(
               return {
                 exitCode: 1,
                 stdout,
-                stderr: `created ${task.key}, but ${failedAttachments.length} of ${attachPaths.length} attachments failed; see stdout for per-file recovery commands`,
+                stderr: `created ${task.key}, but ${failedAttachments.length} of ${attachSources.length} attachments failed; see stdout for per-file recovery commands`,
               };
             });
           },
@@ -1516,17 +1565,14 @@ export function registerTasksCli(
               const parent =
                 parentAddress === undefined ? undefined : await resolveTask(domain, parentAddress);
               const descriptionFile = input.options["description-file"];
-              const clientHostId =
-                descriptionFile !== undefined
-                  ? await resolveClientHostId(bb, domain, input.options.machine, ctx)
-                  : undefined;
-              const description = await readTextOption(
-                bb,
-                ctx,
-                clientHostId,
-                input.options.description,
-                descriptionFile,
-              );
+              const description =
+                descriptionFile === undefined
+                  ? input.options.description
+                  : await readTextFile(
+                      bb,
+                      await resolveClientMachine(bb, domain, input.options.machine, ctx),
+                      descriptionFile,
+                    );
               const labels = await projectLabels(domain, task.projectId);
               const nextLabels = new Set(task.labelIds);
               for (const name of input.options["add-label"]) {
@@ -1613,17 +1659,14 @@ export function registerTasksCli(
             return guard(async () => {
               const task = await resolveTask(domain, input.positionals["key-or-id"]);
               const bodyFile = input.options["body-file"];
-              const clientHostId =
-                bodyFile !== undefined
-                  ? await resolveClientHostId(bb, domain, input.options.machine, ctx)
-                  : undefined;
-              const body = await readTextOption(
-                bb,
-                ctx,
-                clientHostId,
-                input.options.body,
-                bodyFile,
-              );
+              const body =
+                bodyFile === undefined
+                  ? input.options.body
+                  : await readTextFile(
+                      bb,
+                      await resolveClientMachine(bb, domain, input.options.machine, ctx),
+                      bodyFile,
+                    );
               if (body === undefined) {
                 throw new CliError("missing required --body or --body-file", {
                   code: "missing_required",
@@ -1741,7 +1784,7 @@ export function registerTasksCli(
         "attachment add": cliCommand({
           summary: "Attach a file to a task or comment",
           description:
-            "File paths are read from the invoking machine: the thread's machine inside an agent thread, otherwise the server's.",
+            "File paths are read from the invoking machine: the thread's machine inside an agent thread. Outside a thread, pass --machine.",
           positionals: [
             {
               name: "key-or-comment-id",
@@ -1767,7 +1810,6 @@ export function registerTasksCli(
           run(input, ctx) {
             return guard(async () => {
               const ownerAddress = input.positionals["key-or-comment-id"];
-              const sourcePath = resolve(ctx.cwd ?? process.cwd(), input.options.file);
               const normalizedOwner = ownerAddress.trim().toUpperCase();
               const comment = ULID_PATTERN.test(normalizedOwner)
                 ? store.tasks.getComment(normalizedOwner)
@@ -1780,13 +1822,9 @@ export function registerTasksCli(
               const owner = comment
                 ? { commentId: comment.id }
                 : { taskId: (await resolveTask(domain, ownerAddress)).id };
-              const clientHostId = await resolveClientHostId(
-                bb,
-                domain,
-                input.options.machine,
-                ctx,
-              );
-              const content = await readAttachmentSource(bb, clientHostId, sourcePath);
+              const machine = await resolveClientMachine(bb, domain, input.options.machine, ctx);
+              const sourcePath = clientPath(machine, input.options.file);
+              const content = await readAttachmentSource(bb, machine.hostId, sourcePath);
               const attachment = await saveAttachmentFromBytes(store.tasks, content, {
                 ...owner,
                 fileName: input.options.name ?? attachmentFileName(sourcePath),
@@ -1804,7 +1842,7 @@ export function registerTasksCli(
         "attachment get": cliCommand({
           summary: "Download an attachment to a path",
           description:
-            "The file is written on the invoking machine: the thread's machine inside an agent thread, otherwise the server's.",
+            "The file is written on the invoking machine: the thread's machine inside an agent thread. Outside a thread, pass --machine.",
           positionals: [
             {
               name: "attachment-id",
@@ -1826,18 +1864,13 @@ export function registerTasksCli(
           },
           run(input, ctx) {
             return guard(async () => {
-              const outPath = resolve(ctx.cwd ?? process.cwd(), input.options.out);
-              const clientHostId = await resolveClientHostId(
-                bb,
-                domain,
-                input.options.machine,
-                ctx,
-              );
+              const machine = await resolveClientMachine(bb, domain, input.options.machine, ctx);
+              const outPath = clientPath(machine, input.options.out);
               const { attachment, content } = await readAttachmentContent(
                 store.tasks,
                 input.positionals["attachment-id"],
               );
-              await writeClientFile(bb, clientHostId, outPath, content);
+              await writeClientFile(bb, machine.hostId, outPath, content);
               return input.options.json
                 ? JSON.stringify({ attachment, out: outPath })
                 : `Saved ${attachment.fileName}  ${outPath}`;
@@ -2050,7 +2083,8 @@ export function registerTasksCli(
             machine: {
               type: "string",
               placeholder: "id-or-name",
-              description: "Enrolled machine that hosts the worktree",
+              description:
+                "Enrolled machine that hosts the worktree; defaults to the linked bb project's default machine",
             },
             instructions: {
               type: "string",
@@ -2145,7 +2179,8 @@ export function registerTasksCli(
             machine: {
               type: "string",
               placeholder: "id-or-name",
-              description: "Enrolled machine that hosts the worktree",
+              description:
+                "Enrolled machine that hosts the worktree; defaults to the linked bb project's default machine",
             },
             instructions: {
               type: "string",
@@ -2281,7 +2316,7 @@ export function registerTasksCli(
               type: "string",
               placeholder: "thread-id",
               aliases: ["thread-id"],
-              description: "Thread to attach; defaults to BB_THREAD_ID or the invoking thread",
+              description: "Thread to attach; defaults to the invoking thread",
             },
             json: JSON_OPTION,
           },
@@ -2312,7 +2347,7 @@ export function registerTasksCli(
               type: "string",
               placeholder: "thread-id",
               aliases: ["thread-id"],
-              description: "Thread to detach; defaults to BB_THREAD_ID or the invoking thread",
+              description: "Thread to detach; defaults to the invoking thread",
             },
             json: JSON_OPTION,
           },

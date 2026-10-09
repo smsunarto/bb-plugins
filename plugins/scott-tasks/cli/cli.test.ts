@@ -59,6 +59,35 @@ function localFilesSdk() {
   };
 }
 
+/**
+ * Run with BB_THREAD_ID set in the bb server's own process env, as when the
+ * server was started from inside a bb thread. The CLI must ignore it.
+ */
+async function withServerThreadEnv(threadId: string, run: () => Promise<void>): Promise<void> {
+  const previous = process.env.BB_THREAD_ID;
+  process.env.BB_THREAD_ID = threadId;
+  try {
+    await run();
+  } finally {
+    if (previous === undefined) delete process.env.BB_THREAD_ID;
+    else process.env.BB_THREAD_ID = previous;
+  }
+}
+
+/** CLI context of an agent thread whose machine is the one running the tests. */
+const LOCAL_THREAD = { threadId: "thr_local_worker" };
+
+function localMachineSdk() {
+  return {
+    files: localFilesSdk(),
+    threads: {
+      get: async ({ threadId }: { threadId: string }) =>
+        makeThreadResponse({ id: threadId, environmentId: "env_local" }),
+    },
+    environments: { get: async () => ({ hostId: "host_local" }) },
+  };
+}
+
 function stdout(result: { exitCode: number; stdout: string; stderr: string }): string {
   expect(result, result.stderr).toMatchObject({ exitCode: 0, stderr: "" });
   return result.stdout;
@@ -924,13 +953,13 @@ describe("bb tasks CLI", () => {
     await harness.dispose();
   });
 
-  it("self-attaches through BB_THREAD_ID and lists the live thread status", async () => {
+  it("self-attaches the invoking thread and lists the live thread status", async () => {
     const { bb, harness } = createFakePluginHost({
       pluginId: "tasks",
       sdk: {
         threads: {
-          get: async () => ({
-            id: "thr_cli_self",
+          get: async ({ threadId }: { threadId: string }) => ({
+            id: threadId,
             title: "CLI self attach",
             titleFallback: null,
             status: "active",
@@ -943,16 +972,13 @@ describe("bb tasks CLI", () => {
     stdout(await harness.runCli(["project", "create", "--name", "Attach", "--prefix", "ATT"]));
     stdout(await harness.runCli(["create", "--project", "ATT", "--title", "Attach this worker"]));
 
-    const previousThreadId = process.env.BB_THREAD_ID;
-    process.env.BB_THREAD_ID = "thr_cli_self";
-    try {
-      expect(JSON.parse(stdout(await harness.runCli(["attach", "ATT-1", "--json"])))).toMatchObject(
-        { task: { key: "ATT-1" }, threadId: "thr_cli_self" },
-      );
-    } finally {
-      if (previousThreadId === undefined) delete process.env.BB_THREAD_ID;
-      else process.env.BB_THREAD_ID = previousThreadId;
-    }
+    await withServerThreadEnv("thr_server_stale", async () => {
+      expect(
+        JSON.parse(
+          stdout(await harness.runCli(["attach", "ATT-1", "--json"], { threadId: "thr_cli_self" })),
+        ),
+      ).toMatchObject({ task: { key: "ATT-1" }, threadId: "thr_cli_self" });
+    });
 
     const threads = JSON.parse(stdout(await harness.runCli(["threads", "ATT-1", "--json"])));
     expect(threads.taskThreads).toEqual([
@@ -1055,21 +1081,19 @@ describe("bb tasks CLI", () => {
       stderr: "Thread thr_dead_worker is not attached to DET-1\n",
     });
 
-    const previousThreadId = process.env.BB_THREAD_ID;
-    process.env.BB_THREAD_ID = "thr_live_worker";
-    try {
-      expect(JSON.parse(stdout(await harness.runCli(["detach", "DET-1", "--json"])))).toMatchObject(
-        { task: { key: "DET-1" }, threadId: "thr_live_worker" },
-      );
-      delete process.env.BB_THREAD_ID;
+    await withServerThreadEnv("thr_dead_worker", async () => {
+      expect(
+        JSON.parse(
+          stdout(
+            await harness.runCli(["detach", "DET-1", "--json"], { threadId: "thr_live_worker" }),
+          ),
+        ),
+      ).toMatchObject({ task: { key: "DET-1" }, threadId: "thr_live_worker" });
       await expect(harness.runCli(["detach", "DET-1"])).resolves.toMatchObject({
         exitCode: 1,
-        stderr: "missing --thread and BB_THREAD_ID is not set\n",
+        stderr: "missing --thread and no invoking bb thread\n",
       });
-    } finally {
-      if (previousThreadId === undefined) delete process.env.BB_THREAD_ID;
-      else process.env.BB_THREAD_ID = previousThreadId;
-    }
+    });
     expect(
       JSON.parse(stdout(await harness.runCli(["threads", "DET-1", "--json"]))).taskThreads,
     ).toEqual([]);
@@ -1085,37 +1109,35 @@ describe("bb tasks CLI", () => {
     await writeFile(pngPath, new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]));
     const { bb, harness } = createFakePluginHost({
       pluginId: "tasks",
-      sdk: { files: localFilesSdk() },
+      sdk: localMachineSdk(),
     });
     await plugin(bb);
 
     try {
       stdout(await harness.runCli(["project", "create", "--name", "Attach", "--prefix", "ATT"]));
 
-      const missing = await harness.runCli([
-        "create",
-        "--project",
-        "att",
-        "--title",
-        "Broken attach",
-        "--attach",
-        join(directory, "missing.bin"),
-      ]);
+      const missing = await harness.runCli(
+        [
+          "create",
+          "--project",
+          "att",
+          "--title",
+          "Broken attach",
+          "--attach",
+          join(directory, "missing.bin"),
+        ],
+        LOCAL_THREAD,
+      );
       expect(missing.exitCode).toBe(1);
       expect(missing.stderr).toContain("attachment source is not a file");
 
       const hugePath = join(directory, "huge.bin");
       await writeFile(hugePath, "");
       await truncate(hugePath, 25 * 1024 * 1024 + 1);
-      const oversized = await harness.runCli([
-        "create",
-        "--project",
-        "att",
-        "--title",
-        "Oversized attach",
-        "--attach",
-        hugePath,
-      ]);
+      const oversized = await harness.runCli(
+        ["create", "--project", "att", "--title", "Oversized attach", "--attach", hugePath],
+        LOCAL_THREAD,
+      );
       expect(oversized.exitCode).toBe(1);
       expect(oversized.stderr).toContain("exceeds the 25 MB limit");
 
@@ -1125,18 +1147,21 @@ describe("bb tasks CLI", () => {
 
       const created = JSON.parse(
         stdout(
-          await harness.runCli([
-            "create",
-            "--project",
-            "att",
-            "--title",
-            "Starts with files",
-            "--attach",
-            notesPath,
-            "--attach",
-            pngPath,
-            "--json",
-          ]),
+          await harness.runCli(
+            [
+              "create",
+              "--project",
+              "att",
+              "--title",
+              "Starts with files",
+              "--attach",
+              notesPath,
+              "--attach",
+              pngPath,
+              "--json",
+            ],
+            LOCAL_THREAD,
+          ),
         ),
       );
       expect(created.task).toMatchObject({ key: "ATT-1" });
@@ -1159,7 +1184,10 @@ describe("bb tasks CLI", () => {
 
       const outputPath = join(directory, "roundtrip.txt");
       stdout(
-        await harness.runCli(["attachment", "get", created.attachments[0].id, "--out", outputPath]),
+        await harness.runCli(
+          ["attachment", "get", created.attachments[0].id, "--out", outputPath],
+          LOCAL_THREAD,
+        ),
       );
       expect(await readFile(outputPath, "utf8")).toBe("attach me at create\n");
     } finally {
@@ -1178,27 +1206,30 @@ describe("bb tasks CLI", () => {
     await writeFile(lastPath, "last", "utf8");
     const { bb, harness } = createFakePluginHost({
       pluginId: "tasks",
-      sdk: { files: localFilesSdk() },
+      sdk: localMachineSdk(),
     });
     await plugin(bb);
 
     try {
       stdout(await harness.runCli(["project", "create", "--name", "Mixed", "--prefix", "MIX"]));
 
-      const mixed = await harness.runCli([
-        "create",
-        "--project",
-        "mix",
-        "--title",
-        "Mixed outcome",
-        "--attach",
-        firstPath,
-        "--attach",
-        boomPath,
-        "--attach",
-        lastPath,
-        "--json",
-      ]);
+      const mixed = await harness.runCli(
+        [
+          "create",
+          "--project",
+          "mix",
+          "--title",
+          "Mixed outcome",
+          "--attach",
+          firstPath,
+          "--attach",
+          boomPath,
+          "--attach",
+          lastPath,
+          "--json",
+        ],
+        LOCAL_THREAD,
+      );
       expect(mixed.exitCode).toBe(1);
       expect(mixed.stderr).toContain("1 of 3 attachments failed");
       const payload = JSON.parse(mixed.stdout);
@@ -1214,17 +1245,20 @@ describe("bb tasks CLI", () => {
       );
       expect(listed.attachments).toHaveLength(2);
 
-      const human = await harness.runCli([
-        "create",
-        "--project",
-        "mix",
-        "--title",
-        "Mixed outcome again",
-        "--attach",
-        firstPath,
-        "--attach",
-        boomPath,
-      ]);
+      const human = await harness.runCli(
+        [
+          "create",
+          "--project",
+          "mix",
+          "--title",
+          "Mixed outcome again",
+          "--attach",
+          firstPath,
+          "--attach",
+          boomPath,
+        ],
+        LOCAL_THREAD,
+      );
       expect(human.exitCode).toBe(1);
       expect(human.stdout).toContain("Created MIX-2");
       expect(human.stdout).toContain("Attached first.txt");
@@ -1359,7 +1393,7 @@ describe("bb tasks CLI", () => {
     await writeFile(pngPath, new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]));
     const { bb, harness } = createFakePluginHost({
       pluginId: "tasks",
-      sdk: { files: localFilesSdk() },
+      sdk: localMachineSdk(),
     });
     await plugin(bb);
 
@@ -1369,16 +1403,10 @@ describe("bb tasks CLI", () => {
 
       const attachment = JSON.parse(
         stdout(
-          await harness.runCli([
-            "attachment",
-            "add",
-            "FILE-1",
-            "--file",
-            inputPath,
-            "--name",
-            "renamed.txt",
-            "--json",
-          ]),
+          await harness.runCli(
+            ["attachment", "add", "FILE-1", "--file", inputPath, "--name", "renamed.txt", "--json"],
+            LOCAL_THREAD,
+          ),
         ),
       ).attachment;
       expect(attachment).toMatchObject({
@@ -1390,7 +1418,12 @@ describe("bb tasks CLI", () => {
 
       const signalsBeforePng = harness.realtimeSignals.length;
       const pngAttachment = JSON.parse(
-        stdout(await harness.runCli(["attachment", "add", "FILE-1", "--file", pngPath, "--json"])),
+        stdout(
+          await harness.runCli(
+            ["attachment", "add", "FILE-1", "--file", pngPath, "--json"],
+            LOCAL_THREAD,
+          ),
+        ),
       ).attachment;
       expect(pngAttachment).toMatchObject({
         fileName: "pixel.png",
@@ -1445,7 +1478,10 @@ describe("bb tasks CLI", () => {
       ).comment;
       const commentAttachment = JSON.parse(
         stdout(
-          await harness.runCli(["attachment", "add", comment.id, "--file", inputPath, "--json"]),
+          await harness.runCli(
+            ["attachment", "add", comment.id, "--file", inputPath, "--json"],
+            LOCAL_THREAD,
+          ),
         ),
       ).attachment;
       expect(commentAttachment).toMatchObject({
@@ -1462,7 +1498,12 @@ describe("bb tasks CLI", () => {
         ]),
       );
 
-      stdout(await harness.runCli(["attachment", "get", attachment.id, "--out", outputPath]));
+      stdout(
+        await harness.runCli(
+          ["attachment", "get", attachment.id, "--out", outputPath],
+          LOCAL_THREAD,
+        ),
+      );
       expect(await readFile(outputPath, "utf8")).toBe("attachment bytes from CLI\n");
 
       const removed = JSON.parse(
@@ -1623,6 +1664,211 @@ describe("bb tasks CLI", () => {
       hostId: "machine-remote",
       path: "/remote/notes.md",
     });
+
+    await harness.dispose();
+  });
+
+  it("requires --machine for file paths outside a bb thread instead of using the server's disk", async () => {
+    const { bb, harness } = createFakePluginHost({
+      pluginId: "tasks",
+      sdk: {
+        hosts: {
+          list: async () => [
+            { id: "host_mac", name: "Personal Mac" },
+            { id: "host_server", name: "codex@cardinal" },
+          ],
+        },
+        threads: {
+          get: async ({ threadId }: { threadId: string }) =>
+            makeThreadResponse({ id: threadId, environmentId: null }),
+        },
+        files: {
+          read: async ({ path }: { path: string }) => ({
+            path,
+            content: "screenshot bytes",
+            contentEncoding: "utf8",
+            sizeBytes: 16,
+          }),
+          write: async ({ path }: { path: string }) => ({ outcome: "written", path }),
+        },
+      },
+    });
+    await plugin(bb);
+    stdout(await harness.runCli(["project", "create", "--name", "Outside", "--prefix", "OUT"]));
+    stdout(await harness.runCli(["create", "--project", "OUT", "--title", "From a Mac shell"]));
+    const macShell = { cwd: "/Users/me/shots" };
+
+    const added = JSON.parse(
+      stdout(
+        await harness.runCli(
+          [
+            "attachment",
+            "add",
+            "OUT-1",
+            "--file",
+            "./shot.png",
+            "--machine",
+            "Personal Mac",
+            "--json",
+          ],
+          macShell,
+        ),
+      ),
+    ).attachment;
+    expect(harness.sdk.callsTo("files.read")).toEqual([
+      [{ hostId: "host_mac", path: "/Users/me/shots/shot.png" }],
+    ]);
+
+    const noThread = await harness.runCli(
+      ["attachment", "add", "OUT-1", "--file", "./shot.png", "--json"],
+      macShell,
+    );
+    expect(noThread.exitCode).toBe(1);
+    expect(JSON.parse(noThread.stdout)).toEqual({
+      ok: false,
+      error: {
+        code: "machine_required",
+        message: "file paths outside a bb thread need --machine <id-or-name>",
+        hint: "enrolled machines: Personal Mac, codex@cardinal",
+      },
+    });
+    const outNoThread = await harness.runCli(
+      ["attachment", "get", added.id, "--out", "/tmp/shot.png"],
+      macShell,
+    );
+    expect(outNoThread.exitCode).toBe(1);
+    expect(outNoThread.stderr).toContain(
+      "file paths outside a bb thread need --machine <id-or-name>",
+    );
+    const threadWithoutMachine = await harness.runCli(
+      ["comment", "OUT-1", "--body-file", "notes.md"],
+      { threadId: "thr_pending", cwd: "/Users/me" },
+    );
+    expect(threadWithoutMachine.exitCode).toBe(1);
+    expect(threadWithoutMachine.stderr).toContain(
+      "thread thr_pending has no machine; pass --machine <id-or-name>",
+    );
+    const relativeWithoutCwd = await harness.runCli([
+      "attachment",
+      "add",
+      "OUT-1",
+      "--file",
+      "shot.png",
+      "--machine",
+      "Personal Mac",
+    ]);
+    expect(relativeWithoutCwd.exitCode).toBe(1);
+    expect(relativeWithoutCwd.stderr).toContain(
+      "relative path needs a working directory on the target machine: shot.png",
+    );
+    expect(harness.sdk.callsTo("files.read")).toHaveLength(1);
+    expect(harness.sdk.callsTo("files.write")).toEqual([]);
+
+    await harness.dispose();
+  });
+
+  it("uses the only enrolled machine for file paths outside a bb thread", async () => {
+    const { bb, harness } = createFakePluginHost({
+      pluginId: "tasks",
+      sdk: {
+        hosts: { list: async () => [{ id: "host_only", name: "Laptop" }] },
+        files: {
+          read: async ({ path }: { path: string }) => ({
+            path,
+            content: "screenshot bytes",
+            contentEncoding: "utf8",
+            sizeBytes: 16,
+          }),
+          write: async ({ path }: { path: string }) => ({ outcome: "written", path }),
+        },
+      },
+    });
+    await plugin(bb);
+    stdout(await harness.runCli(["project", "create", "--name", "Solo", "--prefix", "SOLO"]));
+    stdout(await harness.runCli(["create", "--project", "SOLO", "--title", "One machine"]));
+    const shell = { cwd: "/home/me/shots" };
+
+    const added = JSON.parse(
+      stdout(
+        await harness.runCli(
+          ["attachment", "add", "SOLO-1", "--file", "shot.png", "--json"],
+          shell,
+        ),
+      ),
+    ).attachment;
+    stdout(await harness.runCli(["attachment", "get", added.id, "--out", "copy.png"], shell));
+
+    expect(harness.sdk.callsTo("files.read")).toEqual([
+      [{ hostId: "host_only", path: "/home/me/shots/shot.png" }],
+    ]);
+    expect(harness.sdk.callsTo("files.write")).toEqual([
+      [expect.objectContaining({ hostId: "host_only", path: "/home/me/shots/copy.png" })],
+    ]);
+
+    await harness.dispose();
+  });
+
+  it("keeps a thread's relative paths off another machine named with --machine", async () => {
+    const { bb, harness } = createFakePluginHost({
+      pluginId: "tasks",
+      sdk: {
+        hosts: {
+          list: async () => [
+            { id: "host_server", name: "codex@cardinal" },
+            { id: "host_mac", name: "Personal Mac" },
+          ],
+        },
+        threads: {
+          get: async ({ threadId }: { threadId: string }) =>
+            makeThreadResponse({ id: threadId, environmentId: "env_server" }),
+        },
+        environments: { get: async () => ({ hostId: "host_server" }) },
+        files: {
+          read: async ({ path }: { path: string }) => ({
+            path,
+            content: "screenshot bytes",
+            contentEncoding: "utf8",
+            sizeBytes: 16,
+          }),
+        },
+      },
+    });
+    await plugin(bb);
+    stdout(await harness.runCli(["project", "create", "--name", "Cross", "--prefix", "CRS"]));
+    stdout(await harness.runCli(["create", "--project", "CRS", "--title", "Mac screenshot"]));
+    const serverThread = { threadId: "thr_server", cwd: "/home/codex/git/bb-plugins" };
+
+    const relative = await harness.runCli(
+      ["attachment", "add", "CRS-1", "--file", "./shot.png", "--machine", "Personal Mac", "--json"],
+      serverThread,
+    );
+    expect(relative.exitCode).toBe(1);
+    expect(JSON.parse(relative.stdout)).toEqual({
+      ok: false,
+      error: {
+        code: "invalid_path",
+        message: "relative path needs a working directory on the target machine: ./shot.png",
+        hint: "pass an absolute path",
+      },
+    });
+    expect(harness.sdk.callsTo("files.read")).toEqual([]);
+
+    stdout(
+      await harness.runCli(
+        ["attachment", "add", "CRS-1", "--file", "/Users/me/shot.png", "--machine", "Personal Mac"],
+        serverThread,
+      ),
+    );
+    stdout(
+      await harness.runCli(
+        ["attachment", "add", "CRS-1", "--file", "notes.md", "--machine", "codex@cardinal"],
+        serverThread,
+      ),
+    );
+    expect(harness.sdk.callsTo("files.read")).toEqual([
+      [{ hostId: "host_mac", path: "/Users/me/shot.png" }],
+      [{ hostId: "host_server", path: "/home/codex/git/bb-plugins/notes.md" }],
+    ]);
 
     await harness.dispose();
   });
