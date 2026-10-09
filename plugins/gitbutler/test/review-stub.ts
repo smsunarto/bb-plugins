@@ -5,7 +5,13 @@ import type { BbPluginApi } from "@get-bb/plugin-sdk";
  * like the real one (an omitted key is the first repository), real KV
  * semantics, and children whose status the test sets.
  */
-export function reviewContext(options: { environment?: unknown } = {}) {
+export function reviewContext(
+  options: {
+    environment?: unknown;
+    /** Runs as the host resolves a repository, as a move mid-request would. */
+    onLocate?: () => void;
+  } = {},
+) {
   const spawned: Record<string, unknown>[] = [];
   const sent: Record<string, unknown>[] = [];
   const hostInputs: unknown[] = [];
@@ -23,7 +29,7 @@ export function reviewContext(options: { environment?: unknown } = {}) {
     providerId: "claude-code",
     environment:
       options.environment === undefined
-        ? { hostId: "host-1", path: "/work", status: "ready" }
+        ? { id: "env-1", hostId: "host-1", path: "/work", status: "ready" }
         : options.environment,
   };
   const bb = {
@@ -54,10 +60,15 @@ export function reviewContext(options: { environment?: unknown } = {}) {
     },
     hosts: {
       experimental_client: () => ({
-        call: async (_method: string, input: { repositoryKey?: string }) => {
+        call: async (
+          _method: string,
+          input: { environmentPath: string; repositoryKey?: string },
+        ) => {
           hostInputs.push(input);
+          options.onLocate?.();
           const key = input.repositoryKey ?? "repos/api";
-          return { key, path: key === "." ? "/work" : `/work/${key}` };
+          const root = input.environmentPath;
+          return { key, path: key === "." ? root : `${root}/${key}` };
         },
       }),
     },
@@ -68,5 +79,10 @@ export function reviewContext(options: { environment?: unknown } = {}) {
       },
     },
   } as unknown as BbPluginApi;
-  return { ctx: { bb } as never, spawned, sent, hostInputs, children, lookupFailures };
+  /** Moves the parent threads to another environment, on another host. */
+  const move = () => {
+    parent.environmentId = "env-2";
+    parent.environment = { id: "env-2", hostId: "host-2", path: "/other", status: "ready" };
+  };
+  return { ctx: { bb } as never, spawned, sent, hostInputs, children, lookupFailures, move };
 }

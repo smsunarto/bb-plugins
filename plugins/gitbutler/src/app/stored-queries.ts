@@ -31,15 +31,20 @@ type Rule<Schema extends z.ZodType> = {
   applies: (input: unknown) => boolean;
   /** Whether this answer replaces the stored one. False drops it. */
   keep: (data: z.infer<Schema>) => boolean;
+  /** An answer that says nothing about the stored one, which it neither replaces nor drops. */
+  ignore?: (data: z.infer<Schema>) => boolean;
 };
 
 const RULES = {
   // A notice is quick to redraw and may be the fix the reader is waiting
   // for, so only a board replaces the stored one, and a notice clears it.
+  // A failed read is the exception: one host hiccup says nothing about the
+  // board, and the panel keeps drawing the last good one through it.
   workspace: {
     schema: workspaceSchema,
     applies: () => true,
     keep: (data) => data.state === "ready",
+    ignore: (data) => data.state === "error",
   } satisfies Rule<typeof workspaceSchema>,
   repositories: {
     schema: repositoriesSchema,
@@ -60,6 +65,7 @@ const RULES = {
 
 type Method = keyof typeof RULES;
 type Data<M extends Method> = z.infer<(typeof RULES)[M]["schema"]>;
+type Input<M extends Method> = Parameters<(typeof rpc)[M]["queryKey"]>[0];
 type Entry = { at: number; data: unknown };
 
 function storage(): Storage | null {
@@ -83,7 +89,11 @@ function readIndex(store: Storage): string[] {
 
 function remove(store: Storage, hash: string): void {
   store.removeItem(`${PREFIX}${hash}`);
-  store.setItem(INDEX, JSON.stringify(readIndex(store).filter((item) => item !== hash)));
+  try {
+    store.setItem(INDEX, JSON.stringify(readIndex(store).filter((item) => item !== hash)));
+  } catch {
+    // An index naming an entry that is gone costs a lookup, nothing more.
+  }
 }
 
 function write(store: Storage, hash: string, entry: Entry): void {
@@ -146,13 +156,19 @@ pluginQueryClient.getQueryCache().subscribe((event) => {
   const { queryKey, state } = event.query;
   const rule = ruleFor(queryKey);
   const store = storage();
-  if (!rule || !store) return;
+  if (!rule || !store || rule.ignore?.(state.data)) return;
   const hash = hashKey(queryKey);
   if (written.get(hash) === state.data) return;
   if (written.size >= MAX_ENTRIES * 2) written.clear();
   written.set(hash, state.data);
-  if (rule.keep(state.data)) write(store, hash, { at: state.dataUpdatedAt, data: state.data });
-  else remove(store, hash);
+  // Storage only speeds up the next cold open. A refusal from it must never
+  // reach the query, whose answer is good either way.
+  try {
+    if (rule.keep(state.data)) write(store, hash, { at: state.dataUpdatedAt, data: state.data });
+    else remove(store, hash);
+  } catch {
+    written.delete(hash);
+  }
 });
 
 /**
@@ -162,7 +178,7 @@ pluginQueryClient.getQueryCache().subscribe((event) => {
  */
 export function storedAnswer<M extends Method>(
   method: M,
-  input: Parameters<(typeof rpc)[M]["queryKey"]>[0],
+  input: Input<M>,
 ): { initialData: () => Data<M> | undefined; initialDataUpdatedAt: () => number | undefined } {
   let entry: Entry | undefined | null = null;
   const once = () => {
@@ -173,4 +189,9 @@ export function storedAnswer<M extends Method>(
     initialData: () => once()?.data as Data<M> | undefined,
     initialDataUpdatedAt: () => once()?.at,
   };
+}
+
+/** The stored answer for a read, if one is kept and still fits the schema. */
+export function readStored<M extends Method>(method: M, input: Input<M>): Data<M> | undefined {
+  return read(rpc[method].queryKey(input as never))?.data as Data<M> | undefined;
 }

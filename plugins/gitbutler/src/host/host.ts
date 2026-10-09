@@ -1,11 +1,14 @@
 import { experimental_defineHostEntry } from "@get-bb/plugin-sdk/host";
 import { gitbutlerHostContract } from "../shared/host-contract.ts";
-import type { Workspace, WorkspaceState } from "../shared/schema.ts";
+import type { HostWorkspace, WorkspaceState } from "../shared/schema.ts";
 import { runAction } from "./actions.ts";
+import { readParkedBranches } from "./branches.ts";
 import { ButFailedError, ButMissingError, ButSetupRequiredError, runBut, runGit } from "./cli.ts";
 import { readBaseHistory } from "./history.ts";
 import { compareWithRemotes } from "./upstream.ts";
 import {
+  parseOplog,
+  parseReviews,
   parseWorkspace,
   patchesFor,
   patchesFromGit,
@@ -26,10 +29,15 @@ function unavailable(error: unknown): { state: WorkspaceState; reason: string } 
   return { state: "error", reason: error instanceof Error ? error.message : String(error) };
 }
 
-function emptyWorkspace(state: WorkspaceState, reason: string): Workspace {
+function emptyWorkspace(
+  state: WorkspaceState,
+  reason: string,
+  repositoryKey: string | null,
+): HostWorkspace {
   return {
     state,
     reason,
+    repositoryKey,
     repoName: "",
     unassignedChanges: [],
     stacks: [],
@@ -37,6 +45,52 @@ function emptyWorkspace(state: WorkspaceState, reason: string): Workspace {
     upstream: null,
     conflictedFiles: [],
   };
+}
+
+/**
+ * One commit's patches from git. The reader's git config can change the
+ * headers the parser reads paths from, so they are pinned.
+ */
+function showCommit(repositoryPath: string, commitId: string, signal: AbortSignal) {
+  return runGit(
+    repositoryPath,
+    [
+      "-c",
+      "core.quotePath=false",
+      "show",
+      "--format=",
+      "--no-color",
+      "--no-ext-diff",
+      "--src-prefix=a/",
+      "--dst-prefix=b/",
+      "--submodule=short",
+      "-M",
+      "--diff-merges=first-parent",
+      commitId,
+      "--",
+    ],
+    signal,
+  );
+}
+
+/**
+ * The last action queued on each repository, by its real path. An action's
+ * checks (the fetch, a dry run, the upstream-loss check) only hold until
+ * another write lands, and separate panels and browsers each send their own,
+ * so the host runs one repository's actions one at a time, checks included.
+ */
+const actionQueues = new Map<string, Promise<unknown>>();
+
+function oneAtATime<T>(repositoryPath: string, action: () => Promise<T>): Promise<T> {
+  const result = (actionQueues.get(repositoryPath) ?? Promise.resolve()).then(action);
+  // A failed action still frees the repository, and the last one out removes its entry.
+  const queue: Promise<unknown> = result
+    .catch(() => undefined)
+    .finally(() => {
+      if (actionQueues.get(repositoryPath) === queue) actionQueues.delete(repositoryPath);
+    });
+  actionQueues.set(repositoryPath, queue);
+  return result;
 }
 
 export default experimental_defineHostEntry({
@@ -59,12 +113,14 @@ export default experimental_defineHostEntry({
     },
 
     async workspace({ environmentPath, repositoryKey }, context) {
+      let resolvedKey: string | null = null;
       try {
         const repository = await resolveRepository(environmentPath, repositoryKey, context.signal);
+        resolvedKey = repository.key;
         // One call carries the whole panel. `-u` attaches the upstream commits
         // that are not integrated yet; per-commit files come from `patches`.
         const payload = await runBut(repository.path, ["status", "-u"], context.signal);
-        const workspace = parseWorkspace(payload, repository.name);
+        const workspace = parseWorkspace(payload, repository.name, repository.key);
         // Without the comparison the cards keep GitButler's own labels.
         return await compareWithRemotes(repository.path, workspace, context.signal).catch(
           (error: unknown) => {
@@ -75,7 +131,7 @@ export default experimental_defineHostEntry({
       } catch (error) {
         if (context.signal.aborted) throw error;
         const { state, reason } = unavailable(error);
-        return emptyWorkspace(state, reason);
+        return emptyWorkspace(state, reason, resolvedKey);
       }
     },
 
@@ -100,40 +156,25 @@ export default experimental_defineHostEntry({
         ]);
         return patchesFor(payload, MAX_PATCH_CHARS, status ? uncommittedKinds(status) : undefined);
       }
-      try {
-        const payload = await runBut(repository.path, ["diff", source.commitId], context.signal);
-        return patchesFor(payload, MAX_PATCH_CHARS);
-      } catch (error) {
-        if (context.signal.aborted || !(error instanceof ButFailedError)) throw error;
-        // `but diff` resolves only workspace commits. The common base and the
-        // target history below it are plain git. The reader's git config can
-        // change the headers the parser reads paths from, so they are pinned.
-        const output = await runGit(
-          repository.path,
-          [
-            "-c",
-            "core.quotePath=false",
-            "show",
-            "--format=",
-            "--no-color",
-            "--no-ext-diff",
-            "--src-prefix=a/",
-            "--dst-prefix=b/",
-            "--submodule=short",
-            "-M",
-            "--diff-merges=first-parent",
-            source.commitId,
-            "--",
-          ],
-          context.signal,
-        );
-        return patchesFromGit(output, MAX_PATCH_CHARS);
+      // `but diff` resolves only workspace commits. The common base and the
+      // target history are plain git, so a commit the panel knows is there
+      // skips the `but` call that would fail.
+      if (source.where === undefined) {
+        try {
+          const payload = await runBut(repository.path, ["diff", source.commitId], context.signal);
+          return patchesFor(payload, MAX_PATCH_CHARS);
+        } catch (error) {
+          if (context.signal.aborted || !(error instanceof ButFailedError)) throw error;
+        }
       }
+      const output = await showCommit(repository.path, source.commitId, context.signal);
+      return patchesFromGit(output, MAX_PATCH_CHARS);
     },
 
     async butAction({ environmentPath, repositoryKey, action }, context) {
+      // The path is the real one, so every spelling of one repository shares a queue.
       const repository = await resolveRepository(environmentPath, repositoryKey, context.signal);
-      return runAction(repository.path, action, context.signal);
+      return oneAtATime(repository.path, () => runAction(repository.path, action, context.signal));
     },
 
     async reviewUrl({ environmentPath, repositoryKey, branch }, context) {
@@ -145,6 +186,45 @@ export default experimental_defineHostEntry({
         context.signal,
       );
       return { url: reviewUrl(payload) };
+    },
+
+    async reviews({ environmentPath, repositoryKey }, context) {
+      try {
+        const repository = await resolveRepository(environmentPath, repositoryKey, context.signal);
+        // `--review` can ask the forge, so this is read apart from the
+        // workspace and never holds it up. Checks and counts are skipped.
+        const payload = await runBut(
+          repository.path,
+          ["branch", "list", "--local", "--review", "--no-check", "--no-ahead"],
+          context.signal,
+        );
+        return { reviews: parseReviews(payload), reason: null };
+      } catch (error) {
+        if (context.signal.aborted) throw error;
+        return { reviews: [], reason: unavailable(error).reason };
+      }
+    },
+
+    async oplog({ environmentPath, repositoryKey }, context) {
+      try {
+        const repository = await resolveRepository(environmentPath, repositoryKey, context.signal);
+        const payload = await runBut(repository.path, ["oplog", "list"], context.signal);
+        return { entries: parseOplog(payload), reason: null };
+      } catch (error) {
+        if (context.signal.aborted) throw error;
+        return { entries: [], reason: unavailable(error).reason };
+      }
+    },
+
+    async parkedBranches({ environmentPath, repositoryKey }, context) {
+      try {
+        const repository = await resolveRepository(environmentPath, repositoryKey, context.signal);
+        const parked = await readParkedBranches(repository.path, context.signal);
+        return { ...parked, reason: null };
+      } catch (error) {
+        if (context.signal.aborted) throw error;
+        return { branches: [], hasMore: false, reason: unavailable(error).reason };
+      }
     },
   },
 });

@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 import { reviewContext as context } from "../../../test/review-stub.ts";
 import { requestReview } from "./request-review.ts";
+import { reviewRequests } from "./review-requests.ts";
 
 test("spawns a visible child on the same environment, pointed at the repository path", async () => {
   const { ctx, spawned } = context();
@@ -39,4 +40,47 @@ test("spawns nothing for a thread without an environment", async () => {
   );
   expect(spawned).toHaveLength(0);
   expect(hostInputs).toHaveLength(0);
+});
+
+test("spawns nothing for a board read in another environment", async () => {
+  const { ctx, spawned } = context();
+  await expect(
+    requestReview.execute(ctx, { threadId: "t1", environmentId: "env-old", branch: "scott/top" }),
+  ).rejects.toThrow("This thread moved to another environment since the board was read.");
+  expect(spawned).toHaveLength(0);
+  await requestReview.execute(ctx, { threadId: "t1", environmentId: "env-1", branch: "scott/top" });
+  expect(spawned).toHaveLength(1);
+});
+
+test("spawns nothing when the thread moves while the request runs", async () => {
+  let move = () => {};
+  const stub = context({ onLocate: () => move() });
+  move = stub.move;
+  await expect(
+    requestReview.execute(stub.ctx, {
+      threadId: "t1",
+      environmentId: "env-1",
+      branch: "scott/top",
+    }),
+  ).rejects.toThrow("This thread moved to another environment since the board was read.");
+  expect(stub.spawned).toHaveLength(0);
+});
+
+test("a thread that moved gets a new PR subthread, not the one from its old environment", async () => {
+  const { ctx, spawned, move } = context();
+  await requestReview.execute(ctx, { threadId: "t1", environmentId: "env-1", branch: "scott/top" });
+  move();
+
+  expect(
+    await requestReview.execute(ctx, {
+      threadId: "t1",
+      environmentId: "env-2",
+      branch: "scott/top",
+    }),
+  ).toEqual({ threadId: "child-2" });
+  expect(spawned[1]).toMatchObject({ environment: { type: "reuse", environmentId: "env-2" } });
+  expect(spawned[1]!["prompt"]).toContain("cd '/other/repos/api'");
+  expect(await reviewRequests.execute(ctx, { threadId: "t1" })).toEqual({
+    requests: [{ branch: "scott/top", threadId: "child-2", running: true }],
+  });
 });

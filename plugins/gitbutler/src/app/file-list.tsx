@@ -250,7 +250,7 @@ function Indent({ depth }: { depth: number }) {
       {Array.from({ length: depth }, (_, index) => (
         <span
           key={index}
-          className="relative w-2.5 before:absolute before:inset-y-0 before:left-1/2 before:w-px before:bg-muted-foreground/25"
+          className="relative w-2.5 before:absolute before:inset-y-0 before:left-1/2 before:w-px before:bg-border"
         />
       ))}
     </span>
@@ -472,6 +472,8 @@ export function ChangedFilesCard({
   stats,
   open,
   onToggle,
+  attention = false,
+  actions,
   children,
 }: {
   title: string;
@@ -479,12 +481,21 @@ export function ChangedFilesCard({
   stats?: ReactNode;
   open: boolean;
   onToggle: () => void;
+  /** Tints the header, for files that are waiting on the reader. */
+  attention?: boolean;
+  /** Buttons beside the toggle, outside it so they are not part of its name. */
+  actions?: ReactNode;
   children: ReactNode;
 }) {
   const empty = count === 0;
   return (
     <section className="overflow-hidden rounded-lg border border-border bg-card" aria-label={title}>
-      <header className="flex h-9 min-w-0 items-center gap-2 pe-2">
+      <header
+        className={cn(
+          "flex h-9 min-w-0 items-center gap-2 pe-2",
+          attention && "bg-surface-attention",
+        )}
+      >
         <button
           type="button"
           className="flex h-full min-w-0 flex-1 cursor-pointer items-center gap-2 ps-2.5 text-start focus-visible:-outline-offset-2 disabled:cursor-default"
@@ -505,6 +516,7 @@ export function ChangedFilesCard({
           <Count>{count}</Count>
           {stats}
         </button>
+        {actions}
         {open && !empty ? <ListModeToggle /> : null}
       </header>
       {open && !empty ? <div className="border-t border-border">{children}</div> : null}

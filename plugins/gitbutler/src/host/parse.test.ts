@@ -1,9 +1,18 @@
 import { expect, test } from "bun:test";
-import { diffPayload, statusPayload } from "../../test/fixtures.ts";
+import {
+  branchListPayload,
+  diffPayload,
+  oplogPayload,
+  statusPayload,
+} from "../../test/fixtures.ts";
 import {
   judgeBranchUpdate,
   namedBranch,
   parseGitLog,
+  parseOplog,
+  parseParkedBranches,
+  parseRefSubjects,
+  parseReviews,
   parseWorkspace,
   patchesFor,
   patchesFromGit,
@@ -132,7 +141,36 @@ test("parseWorkspace reads the base and upstream state", () => {
     authorName: "Scott Sunarto",
     createdAt: "2026-09-22T20:36:27+00:00",
   });
-  expect(workspace.upstream).toEqual({ behind: 3 });
+  expect(workspace.upstream).toEqual({
+    behind: 3,
+    lastFetched: "2026-09-23T00:08:01.396+00:00",
+    latest: {
+      commitId: "2222222222222222222222222222222222222222",
+      subject: "chore: upstream tip",
+    },
+  });
+});
+
+test("parseWorkspace names the resolved repository, and the upstream tip by its subject only", () => {
+  const payload = {
+    ...statusPayload,
+    upstreamState: {
+      behind: 1,
+      latestCommit: {
+        ...statusPayload.upstreamState.latestCommit,
+        message: "feat: one line\n\nThe body the panel does not show.",
+      },
+    },
+  };
+  const workspace = parseWorkspace(payload, "bb-plugins", ".");
+  expect(workspace.repositoryKey).toBe(".");
+  expect(workspace.upstream).toEqual({
+    behind: 1,
+    lastFetched: null,
+    latest: { commitId: "2222222222222222222222222222222222222222", subject: "feat: one line" },
+  });
+  // A caller that only reads the stacks names no repository.
+  expect(parseWorkspace(statusPayload, "bb-plugins").repositoryKey).toBeNull();
 });
 
 test("parseWorkspace survives a payload with nothing it expects", () => {
@@ -568,4 +606,99 @@ test("namedBranch finds the branch, and refuses one whose name is another item's
   expect(() => namedBranch(status, "scott/gone")).toThrow(
     "scott/gone is no longer in the workspace.",
   );
+});
+
+test("parseReviews reads each branch's review, applied and parked alike", () => {
+  expect(parseReviews(branchListPayload)).toEqual([
+    {
+      branch: "feat/header-polish",
+      number: 140,
+      state: "open",
+      url: "https://github.com/smsunarto/bb-plugins/pull/140",
+    },
+    {
+      branch: "release-please--branches--main--components--gh-stack",
+      number: 135,
+      state: "open",
+      url: "https://github.com/smsunarto/bb-plugins/pull/135",
+    },
+  ]);
+});
+
+test("parseReviews reads a draft, and skips a review with no usable number", () => {
+  const payload = {
+    appliedStacks: [{ heads: [{ name: "feat/wip", reviews: [{ number: 7, draft: true }] }] }],
+    branches: [
+      { name: "feat/odd", reviews: [{ number: "7", url: "https://example.com/7" }] },
+      { name: "", reviews: [{ number: 8 }] },
+    ],
+  };
+  expect(parseReviews(payload)).toEqual([
+    { branch: "feat/wip", number: 7, state: "draft", url: null },
+  ]);
+  expect(parseReviews("not json")).toEqual([]);
+});
+
+test("parseParkedBranches lists only the branches outside the workspace", () => {
+  expect(parseParkedBranches(branchListPayload)).toEqual({
+    branches: [
+      { name: "scott/monokai-codex-stream", subject: null, updatedAt: "2026-09-30T06:03:46.000Z" },
+      {
+        name: "release-please--branches--main--components--gh-stack",
+        subject: null,
+        updatedAt: "2026-09-15T00:50:31.000Z",
+      },
+    ],
+    hasMore: false,
+  });
+  const payload = {
+    appliedStacks: [{ heads: [{ name: "feat/applied" }] }],
+    branches: [{ name: "feat/applied" }, { name: "feat/parked", lastCommitAt: "soon" }],
+    hasMoreBranches: true,
+  };
+  expect(parseParkedBranches(payload)).toEqual({
+    branches: [{ name: "feat/parked", subject: null, updatedAt: null }],
+    hasMore: true,
+  });
+});
+
+test("parseRefSubjects pairs each NUL-ended name with its subject", () => {
+  // git ends each record with a newline, and a commit can have an empty subject.
+  const output = "main\0first: on main\0\nfeat/x\0\0\n";
+  expect(parseRefSubjects(output)).toEqual(
+    new Map([
+      ["main", "first: on main"],
+      ["feat/x", ""],
+    ]),
+  );
+  expect(parseRefSubjects("")).toEqual(new Map());
+});
+
+test("parseOplog reads each operation newest first, with an ISO time", () => {
+  expect(parseOplog(oplogPayload)).toEqual([
+    {
+      id: "22c2d57fb4e93d0fbb45aad16aea1b513b6596d5",
+      operation: "SquashCommit",
+      title: "SquashCommit",
+      body: null,
+      createdAt: "2026-10-08T23:19:39.000Z",
+    },
+    {
+      id: "95ff0df18673fdc3ef01df172daa35de0c719031",
+      operation: "CreateCommit",
+      title: "CreateCommit",
+      body: null,
+      createdAt: "2026-10-08T23:15:01.000Z",
+    },
+    {
+      id: "d208d31c7e523857c33880daea4241514e0acc3c",
+      operation: "MergeUpstream",
+      title: "MergeUpstream",
+      body: null,
+      createdAt: "2026-10-07T00:41:34.000Z",
+    },
+  ]);
+  expect(parseOplog([{ id: "" }, { id: "abc", details: null }, "junk"])).toEqual([
+    { id: "abc", operation: "Unknown", title: "Unknown", body: null, createdAt: "" },
+  ]);
 });

@@ -1,4 +1,4 @@
-import type { Branch, Workspace } from "../shared/schema.ts";
+import type { Branch, HostWorkspace } from "../shared/schema.ts";
 import { runGit } from "./cli.ts";
 
 /**
@@ -14,9 +14,9 @@ import { runGit } from "./cli.ts";
  */
 export async function compareWithRemotes(
   cwd: string,
-  workspace: Workspace,
+  workspace: HostWorkspace,
   signal: AbortSignal,
-): Promise<Workspace> {
+): Promise<HostWorkspace> {
   const behind = workspace.stacks
     .flatMap((stack) => stack.branches)
     .filter((branch) => branch.upstreamCommits.length > 0);

@@ -3,17 +3,23 @@ import { pluginQueryClient } from "@bb-kit/core/rpc/query";
 import {
   experimental_Icon as Icon,
   experimental_useCodeTheme as useCodeTheme,
+  useBbNavigate,
 } from "@get-bb/plugin-sdk/app";
+import type { ExperimentalFileOpenOptions } from "@get-bb/plugin-sdk/app";
 import { getSingularPatch } from "@pierre/diffs";
 import { FileDiff } from "@pierre/diffs/react";
-import type { ChangeKind, FilePatch, PatchSource } from "../shared/schema.ts";
+import { keepPreviousData } from "@tanstack/react-query";
+import type { ChangeKind, FilePatch, PatchSource, Workspace } from "../shared/schema.ts";
+import { AskAgentButton } from "./ask-agent.tsx";
+import { CONTROL_HOVER_TRANSITION } from "./components/ui/motion.ts";
+import { CopyButton } from "./copy-button.tsx";
 import { ChangedFilesCard, FileList, LineStats, fileOrder, useListMode } from "./file-list.tsx";
+import { shortId } from "./format.ts";
 import { cn } from "./lib/utils.ts";
-import { Loading, Notice, errorText } from "./notice.tsx";
+import { FileRowsSkeleton, Notice, errorText } from "./notice.tsx";
 import { COMMIT_QUERY, REFRESH_INTERVAL_MS } from "./query-client.ts";
 import { rpc } from "./rpc.ts";
 
-const COPIED_FEEDBACK_MS = 1_200;
 /** Room left above a file scrolled to, so its card's top edge stays in view. */
 const SCROLL_MARGIN_PX = 8;
 /** How long the opened file is held in place while the diffs above it render. */
@@ -49,6 +55,66 @@ function countLines(parsed: Parsed | null): { added: number; removed: number } {
 }
 
 /**
+ * The first line the diff changes, numbered as the file reads after it, so
+ * the preview opens on the change and not at the top. Null with no hunks.
+ */
+export function firstChangedLine(parsed: Parsed | null): number | null {
+  const hunk = parsed?.hunks[0];
+  if (!hunk) return null;
+  let line = hunk.additionStart;
+  for (const content of hunk.hunkContent) {
+    if (content.type === "change") break;
+    line += content.lines;
+  }
+  // A hunk that empties the file starts at line 0.
+  return Math.max(1, line);
+}
+
+/** What bb's file preview needs from the workspace answer to find a file. */
+export type FileWorkspace = Pick<Workspace, "environmentId" | "repositoryKey">;
+
+/** Opens a repository file in bb's preview, at `line` when there is one. */
+export type OpenFile = (path: string, line: number | null) => void;
+
+/**
+ * The preview request for a file of this repository. bb names a workspace file
+ * by its path from the environment root, and the repository key is the
+ * repository's folder under that root, "." for the root itself. Null until
+ * the panel knows which environment and repository it read.
+ */
+export function filePreview(
+  workspace: FileWorkspace | undefined,
+): ((path: string, line: number | null) => ExperimentalFileOpenOptions) | null {
+  const environmentId = workspace?.environmentId;
+  const repositoryKey = workspace?.repositoryKey;
+  if (!environmentId || !repositoryKey) return null;
+  return (path, line) => ({
+    target: {
+      kind: "workspace",
+      environmentId,
+      path: repositoryKey === "." ? path : `${repositoryKey}/${path}`,
+    },
+    location: line === null ? null : { kind: "line", line, column: null },
+  });
+}
+
+/** Opens files in bb's preview. Null when there is no preview to open them in. */
+export function useOpenFile(workspace: FileWorkspace | undefined): OpenFile | null {
+  const navigate = useBbNavigate();
+  const preview = filePreview(workspace);
+  // bb hosts from before the preview have no such method.
+  if (!preview || typeof navigate.experimental_openFilePreview !== "function") return null;
+  return (path, line) => {
+    navigate.experimental_openFilePreview(preview(path, line));
+  };
+}
+
+const ICON_BUTTON = cn(
+  "inline-flex size-5 shrink-0 cursor-pointer items-center justify-center rounded-md text-muted-foreground hover:bg-state-hover hover:text-foreground",
+  CONTROL_HOVER_TRANSITION,
+);
+
+/**
  * bb's diff panel draws its own file header in the light DOM, and this panel
  * renders inside the same secondary-panel shelf. Reproducing that markup, down
  * to the `model` prop `plugins/monokai` reads off the fiber, means monokai's
@@ -62,6 +128,8 @@ function FileHeader({
   truncated,
   bodyId,
   onToggle,
+  quote,
+  openFile,
 }: {
   model: { path: string; label: string; changeKind: ChangeKind };
   open: boolean;
@@ -70,9 +138,11 @@ function FileHeader({
   truncated: boolean;
   bodyId: string;
   onToggle: () => void;
+  /** What Ask agent quotes: the path and where the change is. */
+  quote: string;
+  /** Null when there is no preview, or no file left to open. */
+  openFile: Opener | null;
 }) {
-  const [copied, setCopied] = useState(false);
-
   return (
     // Sticky like bb's: monokai paints a sticky diff header with its opaque
     // fallback and a static one with a 6% layer, so this is what picks the same
@@ -99,9 +169,9 @@ function FileHeader({
           </button>
           {/* monokai's content script prepends the change icon into this span. */}
           <span className="flex min-w-0 flex-1 items-center gap-1.5 pl-[1ch]">
-            {/* bb makes the filename a button that opens the file. This panel
-                has nowhere to open it, so it toggles the row instead, which
-                also gives the disclosure a target worth aiming at. */}
+            {/* bb makes the filename a button that opens the file. Here it
+                toggles the row, which gives the disclosure a target worth
+                aiming at, and Open sits beside Copy instead. */}
             <button
               type="button"
               className="inline-flex min-w-0 flex-1 cursor-pointer items-center gap-1 text-left font-mono text-xs font-medium leading-5 text-foreground underline-offset-2 hover:underline"
@@ -116,18 +186,19 @@ function FileHeader({
                 {`\u200e${model.path}`}
               </span>
             </button>
-            <button
-              type="button"
-              aria-label={`Copy path for ${model.path}`}
-              className="inline-flex size-5 shrink-0 cursor-pointer items-center justify-center rounded-md text-muted-foreground transition-colors duration-150 hover:bg-state-hover hover:text-foreground"
-              onClick={async () => {
-                await navigator.clipboard.writeText(model.path);
-                setCopied(true);
-                setTimeout(() => setCopied(false), COPIED_FEEDBACK_MS);
-              }}
-            >
-              <Icon name={copied ? "Check" : "Copy"} className="size-3" aria-hidden />
-            </button>
+            <CopyButton value={model.path} label={`Copy path for ${model.path}`} />
+            {openFile ? (
+              <button
+                type="button"
+                aria-label={openFile.label}
+                title={openFile.label}
+                className={ICON_BUTTON}
+                onClick={openFile.run}
+              >
+                <Icon name="ArrowUpRight" className="size-3" aria-hidden />
+              </button>
+            ) : null}
+            <AskAgentButton text={quote} label={`Ask agent about ${model.path}`} />
           </span>
         </span>
         <span className="flex shrink-0 items-center gap-1">
@@ -149,11 +220,76 @@ function FileHeader({
   );
 }
 
+/** What Ask agent quotes: the file, and which version of it the card shows. */
+function fileQuote(path: string, commit: string | null): string {
+  return commit ? `${path} in commit ${commit}` : `${path} (uncommitted)`;
+}
+
+type Opener = { label: string; run: () => void };
+
+/**
+ * The preview reads the worktree, so a commit's file opens as it is now, at
+ * its top: the commit's line numbers are off by whatever changed the file
+ * since. A deleted file has nothing to open, and neither does an upstream
+ * commit's, which is not in the worktree until it is pulled.
+ */
+function fileOpener(
+  file: FilePatch,
+  parsed: Parsed | null,
+  source: PatchSource,
+  openFile: OpenFile | null,
+): Opener | null {
+  if (!openFile || file.kind === "deleted") return null;
+  if (source.kind === "uncommitted") {
+    return { label: `Open ${file.path}`, run: () => openFile(file.path, firstChangedLine(parsed)) };
+  }
+  if (source.where === "upstream") return null;
+  return { label: `Open current version of ${file.path}`, run: () => openFile(file.path, null) };
+}
+
+/** A diff too large to show, cut short or left out, and where to read it instead. */
+function TooLarge({
+  partial,
+  opener,
+  commit,
+}: {
+  partial: boolean;
+  opener: Opener | null;
+  commit: boolean;
+}) {
+  const lead = partial
+    ? "This diff is too large to show in full."
+    : "This diff is too large to show.";
+  const rest = partial ? "the rest" : "it";
+  if (!opener) return `${lead} Open the file in your editor to read ${rest}.`;
+  return (
+    <>
+      {`${lead} `}
+      <button
+        type="button"
+        className="cursor-pointer underline underline-offset-2"
+        onClick={opener.run}
+      >
+        {commit ? "Open the current file" : "Open the file"}
+      </button>
+      {` to read ${rest}.`}
+    </>
+  );
+}
+
 /**
  * One file: bb's own header, always drawn, and Pierre's diff body below it once
  * the row is open.
  */
-function FileCard({ file }: { file: FilePatch }) {
+function FileCard({
+  file,
+  source,
+  openFile,
+}: {
+  file: FilePatch;
+  source: PatchSource;
+  openFile: OpenFile | null;
+}) {
   const [open, setOpen] = useState(true);
   const bodyId = useId();
   const onToggle = () => setOpen((current) => !current);
@@ -164,6 +300,9 @@ function FileCard({ file }: { file: FilePatch }) {
     () => ({ path: file.path, label: file.path, changeKind: file.kind }),
     [file.kind, file.path],
   );
+  const commit = source.kind === "commit" ? shortId(source.commitId) : null;
+  const quote = fileQuote(file.path, commit);
+  const opener = fileOpener(file, parsed, source, openFile);
 
   const bodyOptions = useMemo(
     () => ({
@@ -193,6 +332,8 @@ function FileCard({ file }: { file: FilePatch }) {
         truncated={file.truncated}
         bodyId={bodyId}
         onToggle={onToggle}
+        quote={quote}
+        openFile={opener}
       />
       <div id={bodyId} hidden={!open}>
         {open ? (
@@ -201,19 +342,20 @@ function FileCard({ file }: { file: FilePatch }) {
               {/* One phrasing for one condition, here and in the branch below. */}
               {file.truncated ? (
                 <p className="border-b border-border px-2 py-1 text-[11px] text-warning-text">
-                  This diff is too large to show in full. Open the file in your editor to read the
-                  rest.
+                  <TooLarge partial opener={opener} commit={commit !== null} />
                 </p>
               ) : null}
               <FileDiff fileDiff={parsed} options={bodyOptions} />
             </div>
           ) : (
             <p className="border-t border-border px-2.5 py-1.5 text-[11px] leading-normal text-muted-foreground">
-              {file.truncated
-                ? "This diff is too large to show. Open the file in your editor to read it."
-                : file.kind === "renamed" && file.previousPath
-                  ? `Renamed from ${file.previousPath}.`
-                  : "No text to show. The file is binary or its contents did not change."}
+              {file.truncated ? (
+                <TooLarge partial={false} opener={opener} commit={commit !== null} />
+              ) : file.kind === "renamed" && file.previousPath ? (
+                `Renamed from ${file.previousPath}.`
+              ) : (
+                "No text to show. The file is binary or its contents did not change."
+              )}
             </p>
           )
         ) : null}
@@ -261,19 +403,31 @@ export function usePatchesIntent(
  * One `but diff` call for a commit or the worktree, with the file list and line
  * totals derived from it. Keyed off the query result, not a fresh `?? []`, so
  * the derivations run once per fetch rather than once per render.
+ *
+ * `keepPrevious` holds a commit's last diff on screen while a rewrite of the
+ * same change loads, for a caller whose view stays on that change. `paths`
+ * narrows the answer to those files after the fact, so the query, and its
+ * cache, stay the whole set's.
  */
 export function usePatches(
   threadId: string,
   repositoryKey: string | undefined,
   source: PatchSource,
+  options: { keepPrevious?: boolean; paths?: readonly string[] } = {},
 ) {
+  const { keepPrevious = false, paths } = options;
   const patches = rpc.patches.useQuery(
     { threadId, repositoryKey, source },
     source.kind === "commit"
-      ? COMMIT_QUERY
+      ? { ...COMMIT_QUERY, placeholderData: keepPrevious ? keepPreviousData : undefined }
       : { ...WORKTREE_PATCHES, refetchInterval: REFRESH_INTERVAL_MS },
   );
-  const files = patches.data?.files;
+  const all = patches.data?.files;
+  const files = useMemo(() => {
+    if (!all || !paths) return all;
+    const wanted = new Set(paths);
+    return all.filter((file) => wanted.has(file.path));
+  }, [all, paths]);
   const changes = useMemo(
     () => (files ?? []).map((file) => ({ path: file.path, kind: file.kind })),
     [files],
@@ -291,8 +445,10 @@ export function usePatches(
   );
   // Past the host's budget, or `but`'s own size limit, some files arrive
   // without patch text, so the totals would undercount. Callers drop them
-  // rather than show a part.
-  return { patches, files, changes, totals, truncated: patches.data?.truncated ?? false };
+  // rather than show a part. Read off the files shown, not the whole answer,
+  // so a cut file outside `paths` does not hide the totals of the rest.
+  const truncated = files?.some((file) => file.truncated) ?? false;
+  return { patches, files, changes, totals, truncated };
 }
 
 /**
@@ -317,20 +473,28 @@ export function FileCards({
   repositoryKey,
   source,
   initialPath,
+  paths,
+  workspace,
 }: {
   threadId: string;
   repositoryKey: string | undefined;
   source: PatchSource;
   initialPath: string | null;
+  /** Only these files, as for the changes assigned to one branch. */
+  paths?: readonly string[];
+  /** The board's answer, which says where the files live for bb's preview. */
+  workspace: FileWorkspace | undefined;
 }) {
   const [listOpen, setListOpen] = useState(true);
   const [mode] = useListMode();
   const [active, setActive] = useState(initialPath);
   const section = useRef<HTMLElement>(null);
+  const openFile = useOpenFile(workspace);
   const { patches, files, changes, totals, truncated } = usePatches(
     threadId,
     repositoryKey,
     source,
+    { paths },
   );
 
   const scrollTo = useCallback((path: string) => {
@@ -367,10 +531,17 @@ export function FileCards({
     return stop;
   }, [ready, initialPath, scrollTo]);
 
-  if (patches.isPending) return <Loading label="Loading changes…" />;
+  if (patches.isPending) {
+    return (
+      <div className="mt-2">
+        <FileRowsSkeleton label="Loading changes…" rows={3} />
+      </div>
+    );
+  }
   if (patches.isError) {
     return (
       <Notice
+        icon="AlertCircle"
         title="Changes failed to load"
         detail={errorText(patches.error)}
         onRetry={() => void patches.refetch()}
@@ -380,13 +551,19 @@ export function FileCards({
   if (!files || files.length === 0) {
     return source.kind === "commit" ? (
       <Notice
+        icon="FileDiff"
         title="No file changes"
         detail="This commit records no file contents. Merges and empty commits look like this."
       />
     ) : (
       <Notice
+        icon="Check"
         title="No uncommitted changes"
-        detail="The worktree has no changes now. They were committed or discarded."
+        detail={
+          paths
+            ? "These files have no changes now. They were committed or discarded."
+            : "The worktree has no changes now. They were committed or discarded."
+        }
       />
     );
   }
@@ -424,7 +601,7 @@ export function FileCards({
         />
       </ChangedFilesCard>
       {fileOrder(changes, mode).map((path) => (
-        <FileCard key={path} file={byPath.get(path)!} />
+        <FileCard key={path} file={byPath.get(path)!} source={source} openFile={openFile} />
       ))}
     </section>
   );

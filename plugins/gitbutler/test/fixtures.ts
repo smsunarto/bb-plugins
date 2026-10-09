@@ -148,3 +148,98 @@ export const diffPayload = {
     { path: "logo.png", status: "modified", diff: { type: "binary" } },
   ],
 };
+
+const author = { name: "Scott Sunarto", email: "github@smsunarto.com" };
+
+/**
+ * `but branch list --local --review --no-check --no-ahead --json` from
+ * `but` 0.22.3, trimmed: a two-branch applied stack whose top has a review,
+ * a parked branch with a review, and one without. A review record carries
+ * only its number and address.
+ */
+export const branchListPayload = {
+  appliedStacks: [
+    {
+      id: "3fd190a5-35ea-4eae-a830-1e23a7c1554c",
+      heads: [
+        {
+          name: "feat/header-polish",
+          reviews: [{ number: 140, url: "https://github.com/smsunarto/bb-plugins/pull/140" }],
+          lastCommitAt: 1791501300000,
+          commitsAhead: null,
+          lastAuthor: author,
+          mergesCleanly: null,
+        },
+        {
+          name: "feat/stacked-tabs",
+          reviews: [],
+          lastCommitAt: 1791501300000,
+          commitsAhead: null,
+          lastAuthor: author,
+          mergesCleanly: null,
+        },
+      ],
+    },
+  ],
+  branches: [
+    {
+      name: "scott/monokai-codex-stream",
+      reviews: [],
+      hasLocal: true,
+      lastCommitAt: 1790748226000,
+      commitsAhead: null,
+      lastAuthor: author,
+      mergesCleanly: null,
+    },
+    {
+      name: "release-please--branches--main--components--gh-stack",
+      reviews: [{ number: 135, url: "https://github.com/smsunarto/bb-plugins/pull/135" }],
+      hasLocal: true,
+      lastCommitAt: 1789433431000,
+      commitsAhead: null,
+      lastAuthor: {
+        name: "github-actions[bot]",
+        email: "41898282+github-actions[bot]@users.noreply.github.com",
+      },
+      mergesCleanly: null,
+    },
+  ],
+  hasMoreBranches: false,
+};
+
+/** `but oplog list --json` from `but` 0.22.3, trimmed to three entries, newest first. */
+export const oplogPayload = [
+  {
+    id: "22c2d57fb4e93d0fbb45aad16aea1b513b6596d5",
+    createdAt: 1791501579000,
+    details: {
+      version: 3,
+      operation: "SquashCommit",
+      title: "SquashCommit",
+      body: null,
+      trailers: [],
+    },
+  },
+  {
+    id: "95ff0df18673fdc3ef01df172daa35de0c719031",
+    createdAt: 1791501301000,
+    details: {
+      version: 3,
+      operation: "CreateCommit",
+      title: "CreateCommit",
+      body: null,
+      trailers: [],
+    },
+  },
+  {
+    id: "d208d31c7e523857c33880daea4241514e0acc3c",
+    createdAt: 1791333694000,
+    details: {
+      version: 3,
+      operation: "MergeUpstream",
+      title: "MergeUpstream",
+      body: null,
+      trailers: [],
+    },
+  },
+];

@@ -3,9 +3,12 @@ import type { ReactNode } from "react";
 import { experimental_Icon as Icon, useBbNavigate } from "@get-bb/plugin-sdk/app";
 import { pluginQueryClient } from "@bb-kit/core/rpc/query";
 import type { Branch, Workspace } from "../shared/schema.ts";
+import { useBoardLive, useBoardWorkspace, writeScope } from "./board-context.tsx";
 import { Button } from "./components/ui/button.tsx";
-import { listNames, useFocusAfter } from "./branch-actions.tsx";
+import { listNames, useFocusAfter, writeBlocked } from "./branch-actions.tsx";
 import type { WorkspaceTarget } from "./branch-actions.tsx";
+import { useOpenFile } from "./file-cards.tsx";
+import { cn } from "./lib/utils.ts";
 import { rpc } from "./rpc.ts";
 
 /**
@@ -54,11 +57,12 @@ export function Conflicts({
 }) {
   const branches = conflictedBranches(workspace);
   const files = workspace.conflictedFiles;
+  const openFile = useOpenFile(workspace);
   if (branches.length === 0 && files.length === 0) return null;
   return (
     <section
       aria-label="Conflicts"
-      className="rounded-md border border-destructive-text/40 bg-card px-2.5 py-2 leading-normal"
+      className="rounded-md border border-surface-destructive-border bg-surface-destructive px-2.5 py-2 leading-normal"
     >
       <p className="flex items-center gap-1.5 font-semibold text-destructive-text">
         <Icon name="AlertTriangle" className="size-3 shrink-0" aria-hidden />
@@ -81,7 +85,20 @@ export function Conflicts({
           </p>
           <ul className="list-none font-mono text-[11px] [overflow-wrap:anywhere]">
             {files.map((path) => (
-              <li key={path}>{path}</li>
+              <li key={path}>
+                {/* The markers are in the worktree, which is what bb's preview shows. */}
+                {openFile ? (
+                  <button
+                    type="button"
+                    className="cursor-pointer text-start underline-offset-2 hover:underline"
+                    onClick={() => openFile(path, null)}
+                  >
+                    {path}
+                  </button>
+                ) : (
+                  path
+                )}
+              </li>
             ))}
           </ul>
         </>
@@ -96,6 +113,7 @@ export function Conflicts({
  * on the workspace started it, and the button that starts or resumes it.
  */
 function useConflictResolution(target: WorkspaceTarget) {
+  const board = useBoardWorkspace();
   const resolution = rpc.conflictResolution.useQuery(target, {
     // For as long as there are conflicts to show: the subthread stops, is
     // answered from elsewhere and starts again, or is started by another
@@ -107,14 +125,14 @@ function useConflictResolution(target: WorkspaceTarget) {
     // A read still in flight began before the request and would hide it, so
     // it is dropped. Awaited, so the button gives way to the link in the
     // render the request ends in, and the focus follows.
-    onSuccess: async ({ threadId }, input) => {
-      const queryKey = rpc.conflictResolution.queryKey(input);
+    onSuccess: async ({ threadId }) => {
+      const queryKey = rpc.conflictResolution.queryKey(target);
       await pluginQueryClient.cancelQueries({ queryKey });
       pluginQueryClient.setQueryData(queryKey, { subthread: { threadId, running: true } });
     },
   });
   return {
-    start: () => mutation.mutate(target),
+    start: () => mutation.mutate(writeScope(target, board)),
     pending: mutation.isPending,
     error: mutation.error,
     subthread: resolution.data?.subthread ?? null,
@@ -127,6 +145,9 @@ function ResolveConflicts({ target }: { target: WorkspaceTarget }) {
   const { subthread } = resolution;
   // The resolver's own panel shows the same section, about itself.
   const own = subthread?.threadId === target.threadId;
+  // A board from storage may show conflicts resolved since, and the button
+  // would start an agent on them. It waits for the board to be read again.
+  const blocked = writeBlocked(useBoardLive(), false);
   const button = useRef<HTMLButtonElement>(null);
   const link = useRef<HTMLButtonElement>(null);
   // The button disables itself while it asks, which drops the focus. It comes
@@ -162,21 +183,24 @@ function ResolveConflicts({ target }: { target: WorkspaceTarget }) {
          * than starting a second one beside it.
          */}
         {own || subthread?.running ? null : (
-          <Button
-            ref={button}
-            variant="outline"
-            size="sm"
-            className={ACTION}
-            disabled={resolution.pending}
-            onClick={resolution.start}
-          >
-            <Icon
-              name={resolution.pending ? "Spinner" : "GitMerge"}
-              className={resolution.pending ? "size-3 animate-spin" : "size-3"}
-              aria-hidden
-            />
-            {subthread ? "Continue resolving" : "Resolve conflicts"}
-          </Button>
+          // A disabled button takes no hover, so what holds it says why.
+          <span className="flex" title={blocked ?? undefined}>
+            <Button
+              ref={button}
+              variant="outline"
+              size="sm"
+              className={ACTION}
+              disabled={resolution.pending || blocked !== null}
+              onClick={resolution.start}
+            >
+              <Icon
+                name={resolution.pending ? "Spinner" : "GitMerge"}
+                className={cn("size-3", resolution.pending && "animate-spin")}
+                aria-hidden
+              />
+              {subthread ? "Continue resolving" : "Resolve conflicts"}
+            </Button>
+          </span>
         )}
       </div>
       {resolution.error ? (

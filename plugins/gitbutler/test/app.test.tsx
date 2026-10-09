@@ -2,8 +2,10 @@ import { beforeEach, expect, onTestFinished, test } from "bun:test";
 import { environmentManager } from "@tanstack/react-query";
 import { pluginQueryClient } from "@bb-kit/core/rpc/query";
 import { installDom } from "@bb-kit/core/testing";
-import { parseWorkspace } from "../src/host/parse.ts";
-import { statusPayload } from "./fixtures.ts";
+import type { RenderSlotOptions } from "@get-bb/plugin-sdk/testing/app";
+import { parseOplog, parseWorkspace } from "../src/host/parse.ts";
+import type { Workspace } from "../src/shared/schema.ts";
+import { oplogPayload, statusPayload } from "./fixtures.ts";
 
 installDom();
 // After the DOM exists: React DOM decides at load time whether the document
@@ -24,7 +26,11 @@ class InertResizeObserver {
 (globalThis as { ResizeObserver?: unknown }).ResizeObserver ??= InertResizeObserver;
 const { loadPluginApp, renderSlot } = await import("@get-bb/plugin-sdk/testing/app");
 
-const workspace = parseWorkspace(statusPayload, "bb-plugins");
+// The server adds which environment it read, which the host never knows.
+const workspace: Workspace = {
+  ...parseWorkspace(statusPayload, "bb-plugins", "."),
+  environmentId: "env-1",
+};
 // The fixture's scott/bottom commit is conflicted, for the parser's tests.
 // `but` refuses to push or land that, and most cards here need both.
 workspace.stacks[0]!.branches[1]!.commits[0]!.conflicted = false;
@@ -36,7 +42,10 @@ beforeEach(() => {
   window.localStorage.clear();
 });
 
-async function panel(rpc: Record<string, (input: never) => unknown>) {
+async function panel(
+  rpc: Record<string, (input: never) => unknown>,
+  options: Omit<RenderSlotOptions, "rpc" | "context"> = {},
+) {
   const app = await loadPluginApp(() => import("../src/app/app.tsx"));
   const registration = app.threadPanelActions[0]!;
   expect(registration.id).toBe("gitbutler");
@@ -44,10 +53,19 @@ async function panel(rpc: Record<string, (input: never) => unknown>) {
     registration,
     { threadId: "thread-1", params: null },
     {
+      ...options,
       rpc: rpc as never,
       context: { threadId: "thread-1", projectId: "project-1" },
     },
   );
+}
+
+/** `board` as the host answers it for the repository asked for. */
+function inRepository(board: Workspace) {
+  return (input: { repositoryKey?: string }) => ({
+    ...board,
+    repositoryKey: input.repositoryKey ?? board.repositoryKey,
+  });
 }
 
 const baseRpc = {
@@ -55,6 +73,9 @@ const baseRpc = {
   conflictResolution: () => ({ subthread: null }),
   repositories: () => ({ repositories: [{ key: ".", name: "bb-plugins" }], reason: null }),
   workspace: () => workspace,
+  reviews: () => ({ reviews: [], reason: null }),
+  oplog: () => ({ entries: [], reason: null }),
+  parkedBranches: () => ({ branches: [], hasMore: false, reason: null }),
   baseHistory: () => ({
     commits: [
       {
@@ -128,9 +149,7 @@ test("draws the last board and history at once after a reload, then checks them"
 
   release();
   await waitFor(() =>
-    expect(second.getByRole("button", { name: "Refresh" }).getAttribute("aria-busy")).toBe(
-      "false",
-    ),
+    expect(second.getByRole("button", { name: "Refresh" }).getAttribute("aria-busy")).toBe("false"),
   );
   second.lifecycle.unmount();
 });
@@ -152,7 +171,7 @@ test("does not draw a stored board for a workspace that stopped being one", asyn
   pluginQueryClient.clear();
   const third = await panel({ ...baseRpc, workspace: () => new Promise(() => {}) });
   expect(third.queryByText("scott/top")).toBeNull();
-  expect(third.getByText("Loading workspace…")).toBeTruthy();
+  expect(await third.findByText("Loading workspace…")).toBeTruthy();
   third.lifecycle.unmount();
 });
 
@@ -339,6 +358,22 @@ test("opens a commit and then one of its files as a diff", async () => {
   // A second click on the commit closes it.
   fireEvent.click(slot.getByText("feat(top): add the thing"));
   expect(slot.queryByRole("region", { name: "Changed files" })).toBeNull();
+  slot.lifecycle.unmount();
+});
+
+test("an upstream commit with a local commit's change id opens on its own", async () => {
+  // Rebased upstream, the remote's copy of a commit keeps the change id.
+  const rebased = structuredClone(workspace);
+  const branch = rebased.stacks[0]!.branches[0]!;
+  branch.upstreamCommits[0]!.changeId = branch.commits[0]!.changeId;
+  const slot = await panel({ ...baseRpc, workspace: () => rebased });
+
+  await waitFor(() => expect(slot.getByText("chore: someone else's push")).toBeTruthy());
+  fireEvent.click(slot.getByText("chore: someone else's push"));
+  const row = (text: string) =>
+    slot.getByText(text).closest("button")!.getAttribute("aria-expanded");
+  expect(row("chore: someone else's push")).toBe("true");
+  expect(row("feat(top): add the thing")).toBe("false");
   slot.lifecycle.unmount();
 });
 
@@ -634,6 +669,8 @@ test("pushes a branch by name from its card", async () => {
   await waitFor(() => expect(actions).toHaveLength(1));
   expect(actions[0]).toEqual({
     threadId: "thread-1",
+    repositoryKey: ".",
+    environmentId: "env-1",
     action: { kind: "push", branch: "scott/bottom", force: false, acceptedLoss: [] },
   });
   slot.lifecycle.unmount();
@@ -679,7 +716,9 @@ test("Create PR hands the branch to a subthread and links to it", async () => {
   });
   fireEvent.click(card.getByRole("button", { name: "Create PR" }));
   await waitFor(() => expect(card.getByRole("button", { name: "Open subthread" })).toBeTruthy());
-  expect(requests).toEqual([{ threadId: "thread-1", branch: "scott/bottom" }]);
+  expect(requests).toEqual([
+    { threadId: "thread-1", repositoryKey: ".", environmentId: "env-1", branch: "scott/bottom" },
+  ]);
   expect(card.getByRole("status").textContent).toContain(
     "A subthread is writing and opening the PR.",
   );
@@ -851,7 +890,7 @@ test("a refresh that reads an error keeps the board and says it is stale", async
   failing = true;
   fireEvent.click(slot.getByLabelText("Refresh"));
   await waitFor(() => expect(slot.getByText(STALE)).toBeTruthy());
-  expect(slot.getByText(STALE).title).toBe("The repository is locked.");
+  expect(slot.getByText("The repository is locked.").title).toBe("The repository is locked.");
   expect(slot.getByText("scott/top")).toBeTruthy();
   expect(slot.getByText("bb-plugins")).toBeTruthy();
   expect(slot.queryByText("GitButler could not read this workspace")).toBeNull();
@@ -877,7 +916,7 @@ test("a refresh the host cannot answer keeps the board as well", async () => {
   failing = true;
   fireEvent.click(slot.getByLabelText("Refresh"));
   await waitFor(() => expect(slot.getByText(STALE)).toBeTruthy(), { timeout: 4_000 });
-  expect(slot.getByText(STALE).title).toBe("socket closed");
+  expect(slot.getByText("socket closed").title).toBe("socket closed");
   expect(slot.getByText("scott/top")).toBeTruthy();
   expect(slot.queryByText("GitButler could not be reached")).toBeNull();
   slot.lifecycle.unmount();
@@ -936,13 +975,17 @@ test("shows a branch's checks, and its PR chip opens the PR on the forge", async
   await waitFor(() => expect(slot.getByText("scott/top")).toBeTruthy());
   const top = within(slot.getByRole("article", { name: "Branch scott/top" }));
   // The fixture's review has a failing check. A branch with no review has no chip.
-  expect(top.getByTitle("Checks failed").textContent).toBe("Checks failed");
+  // The chip asks the agent, and its name says so where a title cannot.
+  expect(
+    top.getByRole("button", { name: "Checks failing on scott/top: ask agent to fix them" })
+      .textContent,
+  ).toBe("Checks failing");
   const bottom = within(slot.getByRole("article", { name: "Branch scott/bottom" }));
-  expect(bottom.queryByTitle(/^Checks /)).toBeNull();
+  expect(bottom.queryByText(/^Checks /)).toBeNull();
 
   // The link comes from the forge, so nothing asks for it until the click.
-  const chip = top.getByRole("button", { name: "Open PR #42" });
-  expect(chip.textContent).toBe("PR #42");
+  const chip = top.getByRole("button", { name: "PR #42" });
+  expect(chip.title).toBe("Open PR #42");
   expect(lookups).toEqual([]);
   fireEvent.click(chip);
   await waitFor(() =>
@@ -958,7 +1001,7 @@ test("says so when the forge has no link for a branch's PR", async () => {
   const slot = await panel({ ...baseRpc, reviewUrl: () => ({ url: null }) });
   await waitFor(() => expect(slot.getByText("scott/top")).toBeTruthy());
   const top = within(slot.getByRole("article", { name: "Branch scott/top" }));
-  fireEvent.click(top.getByRole("button", { name: "Open PR #42" }));
+  fireEvent.click(top.getByRole("button", { name: "PR #42" }));
   await waitFor(() =>
     expect(top.getByRole("alert").textContent).toBe(
       "GitButler could not find this PR on its forge.",
@@ -1084,7 +1127,7 @@ test("drops an open confirmation when the reader switches repository", async () 
       reason: null,
     }),
     // Both repositories have a scott/top.
-    workspace: () => forced,
+    workspace: inRepository(forced),
   });
   await waitFor(() => expect(slot.getByText("scott/top")).toBeTruthy());
   // Visit the other repository first, so both boards are cached and the
@@ -1214,9 +1257,10 @@ test("names a renamed file's old path, and marks a file too large to show", asyn
   // A binary file renamed and edited has no hunks either, so nothing claims the contents held.
   expect(detail.getByText("Renamed from src/old-name.ts.")).toBeTruthy();
   expect(detail.getByText("Too large")).toBeTruthy();
-  expect(
-    detail.getByText("This diff is too large to show. Open the file in your editor to read it."),
-  ).toBeTruthy();
+  const open = detail.getByRole("button", { name: "Open the file" });
+  expect(open.parentElement?.textContent).toBe(
+    "This diff is too large to show. Open the file to read it.",
+  );
   // Past the budget the line totals would undercount, so the list header shows none.
   const list = within(detail.getByRole("region", { name: "Changed files" }));
   expect(list.queryByText("+1")).toBeNull();
@@ -1326,7 +1370,7 @@ test("the focus comes back to the card once its request ends", async () => {
   const card = topCard(slot);
   card.getByRole("button", { name: "Pull" }).focus();
   fireEvent.click(card.getByRole("button", { name: "Pull" }));
-  await card.findByRole("status");
+  await slot.findByText("Already up to date.");
   await waitFor(() =>
     expect(document.activeElement).toBe(card.getByRole("button", { name: "Pull" })),
   );
@@ -1350,7 +1394,7 @@ test("Pull says so when the remote had nothing new", async () => {
   await waitFor(() => expect(slot.getByText("scott/top")).toBeTruthy());
   const card = topCard(slot);
   fireEvent.click(card.getByRole("button", { name: "Pull" }));
-  expect((await card.findByRole("status")).textContent).toBe("Already up to date.");
+  expect((await slot.findByRole("status")).textContent).toBe("Already up to date.");
   slot.lifecycle.unmount();
 });
 
@@ -1453,6 +1497,8 @@ test("the header's Pull updates the workspace, asking first about conflicts", as
   );
   expect(actions[0]).toEqual({
     threadId: "thread-1",
+    repositoryKey: ".",
+    environmentId: "env-1",
     action: { kind: "updateWorkspace", accepted: null },
   });
   fireEvent.click(slot.getByRole("button", { name: "Pull anyway" }));
@@ -1462,6 +1508,31 @@ test("the header's Pull updates the workspace, asking first about conflicts", as
     accepted: BOTH_AND_FILES,
   });
   await waitFor(() => expect(slot.queryByText(/^Pulling leaves/)).toBeNull());
+  slot.lifecycle.unmount();
+});
+
+test("a thread that moved to another environment drops the questions read in the old one", async () => {
+  const forced = structuredClone(workspace);
+  Object.assign(forced.stacks[0]!.branches[0]!, { status: "diverged", push: "force" });
+  let board = forced;
+  const { actions, rpc } = recordActions(answering({ status: "confirm", risk: BOTH_AND_FILES }));
+  const slot = await panel({ ...rpc, workspace: () => board });
+  await waitFor(() => expect(slot.getByText("scott/top")).toBeTruthy());
+  fireEvent.click(slot.getByRole("button", HEADER_PULL));
+  await waitFor(() => expect(slot.getByText(/^Pulling leaves/)).toBeTruthy());
+  const card = within(slot.getByRole("article", { name: "Branch scott/top" }));
+  fireEvent.click(card.getByRole("button", { name: "Force push" }));
+  expect(card.getByText(/This deletes/)).toBeTruthy();
+
+  // The same branches, read again in the thread's new environment.
+  board = { ...forced, environmentId: "env-2" };
+  fireEvent.click(slot.getByRole("button", { name: "Refresh" }));
+  await waitFor(() => expect(slot.queryByText(/^Pulling leaves/)).toBeNull());
+  expect(slot.queryByRole("button", { name: "Pull anyway" })).toBeNull();
+  const moved = within(slot.getByRole("article", { name: "Branch scott/top" }));
+  expect(moved.queryByText(/This deletes/)).toBeNull();
+  expect(moved.getByRole("button", { name: "Force push" })).toBeTruthy();
+  expect(actions).toHaveLength(1);
   slot.lifecycle.unmount();
 });
 
@@ -1513,6 +1584,7 @@ test("the header's Pull failure stays with its repository", async () => {
       ],
       reason: null,
     }),
+    workspace: inRepository(workspace),
   });
   await waitFor(() => expect(slot.getByText("scott/top")).toBeTruthy());
   fireEvent.change(slot.getByLabelText("Repository"), { target: { value: "." } });
@@ -1520,9 +1592,43 @@ test("the header's Pull failure stays with its repository", async () => {
   fireEvent.click(slot.getByRole("button", HEADER_PULL));
   await waitFor(() => expect(slot.getByRole("alert")).toBeTruthy());
 
+  // The failure belongs to the board it was read on, which stays up until
+  // the other repository's board lands.
   fireEvent.change(slot.getByLabelText("Repository"), { target: { value: "repos/other" } });
   await waitFor(() => expect(slot.getByText("scott/top")).toBeTruthy());
-  expect(slot.queryByRole("alert")).toBeNull();
+  await waitFor(() => expect(slot.queryByRole("alert")).toBeNull());
+  slot.lifecycle.unmount();
+});
+
+test("the header's Pull still asks its question after the reader looked at another repository", async () => {
+  let answer = (_result: unknown) => {};
+  const { rpc } = recordActions(() => new Promise((resolve) => (answer = resolve)));
+  const slot = await panel({
+    ...rpc,
+    repositories: () => ({
+      repositories: [
+        { key: ".", name: "bb-plugins" },
+        { key: "repos/other", name: "other" },
+      ],
+      reason: null,
+    }),
+    workspace: inRepository(workspace),
+  });
+  await waitFor(() => expect(slot.getByText("scott/top")).toBeTruthy());
+  fireEvent.change(slot.getByLabelText("Repository"), { target: { value: "." } });
+  await waitFor(() => expect(slot.getByText("scott/top")).toBeTruthy());
+  fireEvent.click(slot.getByRole("button", HEADER_PULL));
+
+  fireEvent.change(slot.getByLabelText("Repository"), { target: { value: "repos/other" } });
+  await waitFor(() => expect(slot.getByText("scott/top")).toBeTruthy());
+  answer({ status: "confirm", risk: BOTH_AND_FILES });
+  await waitFor(() => expect(pluginQueryClient.isMutating()).toBe(0));
+  expect(slot.queryByText(/^Pulling leaves/)).toBeNull();
+
+  fireEvent.change(slot.getByLabelText("Repository"), { target: { value: "." } });
+  expect((await slot.findByText(/^Pulling leaves/)).textContent).toBe(
+    "Pulling leaves conflicted commits in scott/top and scott/bottom. Resolve them before pushing. Your uncommitted changes touch files the incoming commits change, so conflict markers can get written into them.",
+  );
   slot.lifecycle.unmount();
 });
 
@@ -1581,7 +1687,7 @@ test("Resolve conflicts hands every conflict to one subthread and links to it", 
   section.getByRole("button", { name: "Resolve conflicts" }).focus();
   fireEvent.click(section.getByRole("button", { name: "Resolve conflicts" }));
   await waitFor(() => expect(section.getByRole("button", { name: "Open subthread" })).toBeTruthy());
-  expect(requests).toEqual([{ threadId: "thread-1" }]);
+  expect(requests).toEqual([{ threadId: "thread-1", repositoryKey: ".", environmentId: "env-1" }]);
   expect(section.getByRole("status").textContent).toBe("A subthread is resolving the conflicts.");
   // A second subthread would rewrite the same commits.
   expect(section.queryByRole("button", { name: "Resolve conflicts" })).toBeNull();
@@ -1646,7 +1752,7 @@ test("a stopped conflict subthread is resumed, not replaced", async () => {
   await waitFor(() =>
     expect(section.getByRole("status").textContent).toBe("A subthread is resolving the conflicts."),
   );
-  expect(requests).toEqual([{ threadId: "thread-1" }]);
+  expect(requests).toEqual([{ threadId: "thread-1", repositoryKey: ".", environmentId: "env-1" }]);
   expect(section.queryByRole("button", { name: "Continue resolving" })).toBeNull();
   slot.lifecycle.unmount();
 });
@@ -1737,5 +1843,671 @@ test("a force push over only the old copies of rebased commits goes straight out
     force: true,
     acceptedLoss: [],
   });
+  slot.lifecycle.unmount();
+});
+
+test("a board drawn from storage takes no writes until it has been read again", async () => {
+  const first = await panel(baseRpc);
+  await waitFor(() => expect(first.getByText("scott/bottom")).toBeTruthy());
+  first.lifecycle.unmount();
+
+  // A reload: the board comes back from storage while the server is slow.
+  pluginQueryClient.clear();
+  let release: () => void = () => {};
+  const { actions, rpc } = recordActions();
+  const slot = await panel({
+    ...rpc,
+    workspace: () =>
+      new Promise((resolve) => {
+        release = () => resolve(workspace);
+      }),
+  });
+  const checking = "Checking the workspace…";
+  const card = within(slot.getByRole("article", { name: "Branch scott/bottom" }));
+  const push = card.getByRole("button", { name: "Push" }) as HTMLButtonElement;
+  expect(push.disabled).toBe(true);
+  expect(push.parentElement?.title).toBe(checking);
+  const rename = card.getByRole("button", { name: "Rename branch scott/bottom" });
+  expect(rename.title).toBe(checking);
+  const pull = slot.getByRole("button", HEADER_PULL) as HTMLButtonElement;
+  expect(pull.disabled).toBe(true);
+  expect(pull.parentElement?.title).toBe(checking);
+  fireEvent.click(push);
+  expect(actions).toHaveLength(0);
+
+  release();
+  await waitFor(() => expect(push.disabled).toBe(false));
+  expect(push.parentElement?.title).toBe("");
+  expect(rename.title).toBe("scott/bottom (click to rename)");
+  expect(pull.disabled).toBe(false);
+  fireEvent.click(push);
+  await waitFor(() => expect(actions).toHaveLength(1));
+  slot.lifecycle.unmount();
+});
+
+test("conflicts on a board drawn from storage wait for a read before a subthread is started", async () => {
+  const first = await panel({ ...baseRpc, workspace: withConflictedBottom });
+  await first.findByRole("region", { name: "Conflicts" });
+  first.lifecycle.unmount();
+
+  // A reload: the stored board still shows the conflicts, and the read is slow.
+  pluginQueryClient.clear();
+  let release: () => void = () => {};
+  const requests: unknown[] = [];
+  const slot = await panel({
+    ...baseRpc,
+    workspace: () =>
+      new Promise((resolve) => {
+        release = () => resolve(withConflictedBottom());
+      }),
+    resolveConflicts: (input: unknown) => {
+      requests.push(input);
+      return { threadId: "child-1" };
+    },
+  });
+  const section = within(await slot.findByRole("region", { name: "Conflicts" }));
+  const resolve = section.getByRole("button", { name: "Resolve conflicts" }) as HTMLButtonElement;
+  expect(resolve.disabled).toBe(true);
+  expect(resolve.parentElement?.title).toBe("Checking the workspace…");
+  fireEvent.click(resolve);
+  expect(requests).toEqual([]);
+
+  release();
+  await waitFor(() => expect(resolve.disabled).toBe(false));
+  expect(resolve.parentElement?.title).toBe("");
+  fireEvent.click(resolve);
+  await waitFor(() =>
+    expect(requests).toEqual([
+      { threadId: "thread-1", repositoryKey: ".", environmentId: "env-1" },
+    ]),
+  );
+  slot.lifecycle.unmount();
+});
+
+test("a turn ending reads the workspace again, and a turn of this thread's family offers to commit what it left", async () => {
+  let reads = 0;
+  let unassigned = workspace.unassignedChanges;
+  const slot = await panel({
+    ...baseRpc,
+    workspace: () => {
+      reads += 1;
+      return { ...workspace, unassignedChanges: unassigned };
+    },
+  });
+  await waitFor(() => expect(slot.getByText("scott/top")).toBeTruthy());
+  const before = reads;
+
+  // A turn on another environment is not news here.
+  await slot.emitRealtime("workspace-changed", {
+    environmentId: "env-2",
+    threadId: "thread-1",
+    parentThreadId: null,
+  });
+  // Another thread's turn on this environment changes the board, but the
+  // files may be the reader's own, so nothing claims an agent left them.
+  await slot.emitRealtime("workspace-changed", {
+    environmentId: "env-1",
+    threadId: "thread-2",
+    parentThreadId: null,
+  });
+  await waitFor(() => expect(reads).toBe(before + 1));
+  const uncommitted = within(slot.getByRole("region", { name: "Uncommitted changes" }));
+  expect(uncommitted.queryByRole("button", { name: "Ask agent to commit" })).toBeNull();
+
+  // A subthread's turn is this thread's work.
+  await slot.emitRealtime("workspace-changed", {
+    environmentId: "env-1",
+    threadId: "child-1",
+    parentThreadId: "thread-1",
+  });
+  await waitFor(() => expect(reads).toBe(before + 2));
+  fireEvent.click(await uncommitted.findByRole("button", { name: "Ask agent to commit" }));
+  expect(slot.inspection.composer.quotes).toEqual([
+    "These 3 files are uncommitted: bun.lock, plugins/gitbutler/LICENSE, gone.ts. Commit them to the right branch with but.",
+  ]);
+  expect(slot.inspection.composer.focusCount).toBe(1);
+
+  // Once the files are committed the card stops asking.
+  unassigned = [];
+  fireEvent.click(slot.getByRole("button", { name: "Refresh" }));
+  await waitFor(() =>
+    expect(slot.queryByRole("button", { name: "Ask agent to commit" })).toBeNull(),
+  );
+
+  // A dropped connection may have missed a signal, so coming back reads again.
+  const beforeReconnect = reads;
+  await slot.setRealtimeConnectionState("reconnecting");
+  await slot.setRealtimeConnectionState("connected");
+  await waitFor(() => expect(reads).toBe(beforeReconnect + 1));
+  slot.lifecycle.unmount();
+});
+
+test("runs one write at a time, and every other write control says why it waits", async () => {
+  let finish: (result: unknown) => void = () => {};
+  const { actions, rpc } = recordActions(
+    () =>
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+  );
+  const { slot, card } = await bottomCard(rpc);
+  fireEvent.click(card.getByRole("button", { name: "Push" }));
+  await waitFor(() => expect(actions).toHaveLength(1));
+
+  const waiting = "Another GitButler action is running";
+  const top = topCard(slot);
+  const remove = top.getByRole("button", { name: "Delete scott/top" }) as HTMLButtonElement;
+  await waitFor(() => expect(remove.disabled).toBe(true));
+  expect(remove.parentElement?.title).toBe(waiting);
+  expect(top.getByRole("button", { name: "Rename branch scott/top" }).title).toBe(waiting);
+  const pull = slot.getByRole("button", HEADER_PULL) as HTMLButtonElement;
+  expect(pull.disabled).toBe(true);
+  expect(pull.parentElement?.title).toBe(waiting);
+  // The card that asked shows its own request, not a reason to wait.
+  expect(card.getByRole("button", { name: "Delete scott/bottom" }).parentElement?.title).toBe("");
+  fireEvent.click(remove);
+  expect(top.queryByRole("button", { name: "Delete" })).toBeNull();
+
+  finish({ status: "done" });
+  await waitFor(() => expect(remove.disabled).toBe(false));
+  expect(remove.parentElement?.title).toBe("");
+  expect(pull.disabled).toBe(false);
+  expect(actions).toHaveLength(1);
+  slot.lifecycle.unmount();
+});
+
+test("a rename `but` refuses keeps the typed name in the field, with its reason", async () => {
+  const { actions, rpc } = recordActions(() => {
+    throw new Error("A branch named scott/taken already exists.");
+  });
+  const { slot, card } = await bottomCard(rpc);
+  fireEvent.click(card.getByRole("button", { name: "Rename branch scott/bottom" }));
+  const field = card.getByLabelText("New name for scott/bottom") as HTMLInputElement;
+  fireEvent.change(field, { target: { value: "scott/taken" } });
+  fireEvent.keyDown(field, { key: "Enter" });
+  await waitFor(() => expect(actions).toHaveLength(1));
+
+  await waitFor(() =>
+    expect(card.getByRole("alert").textContent).toBe("A branch named scott/taken already exists."),
+  );
+  expect(card.getByLabelText("New name for scott/bottom")).toBe(field);
+  expect(field.value).toBe("scott/taken");
+  expect(field.readOnly).toBe(false);
+  expect(field.getAttribute("aria-invalid")).toBe("true");
+  // Enter left the field to apply, so the focus comes back to fix the name.
+  await waitFor(() => expect(document.activeElement).toBe(field));
+  slot.lifecycle.unmount();
+});
+
+test("a delete puts the focus on the next branch's name once its card is gone", async () => {
+  const without = structuredClone(workspace);
+  without.stacks[0]!.branches.splice(1, 1);
+  let deleted = false;
+  const { rpc } = recordActions(() => {
+    deleted = true;
+    return { status: "done" };
+  });
+  const { slot, card } = await bottomCard({
+    ...rpc,
+    workspace: () => (deleted ? without : workspace),
+  });
+  fireEvent.click(card.getByRole("button", { name: "Delete scott/bottom" }));
+  fireEvent.click(card.getByRole("button", { name: "Delete" }));
+
+  await waitFor(() =>
+    expect(slot.queryByRole("article", { name: "Branch scott/bottom" })).toBeNull(),
+  );
+  // scott/experimental came after scott/bottom on the board.
+  await waitFor(() =>
+    expect(document.activeElement).toBe(
+      slot.getByRole("button", { name: "Rename branch scott/experimental" }),
+    ),
+  );
+  expect(await slot.findByText("Deleted scott/bottom")).toBeTruthy();
+  slot.lifecycle.unmount();
+});
+
+test("a rename gives the focus to the new name once its card is drawn", async () => {
+  // With no commits, the branch and its stack have only their names to be
+  // known by, so the rename draws both anew and the page drops the focus.
+  const empty = structuredClone(workspace);
+  empty.stacks[0]!.branches[1]!.commits = [];
+  const renamed = structuredClone(empty);
+  renamed.stacks[0]!.key = "scott/base";
+  renamed.stacks[0]!.branches[1]!.name = "scott/base";
+  let done = false;
+  const { rpc } = recordActions(() => {
+    done = true;
+    return { status: "done" };
+  });
+  const { slot, card } = await bottomCard({
+    ...rpc,
+    workspace: () => (done ? renamed : empty),
+  });
+  fireEvent.click(card.getByRole("button", { name: "Rename branch scott/bottom" }));
+  const field = card.getByLabelText("New name for scott/bottom");
+  fireEvent.change(field, { target: { value: "scott/base" } });
+  fireEvent.keyDown(field, { key: "Enter" });
+
+  await waitFor(() =>
+    expect(document.activeElement).toBe(
+      slot.getByRole("button", { name: "Rename branch scott/base" }),
+    ),
+  );
+  slot.lifecycle.unmount();
+});
+
+// The stack keeps its identity whatever its bottom branch holds.
+const BOTTOM_SHAPES: Array<[string, (board: Workspace) => void]> = [
+  ["a commit with a change id", () => {}],
+  ["no commits", (board) => (board.stacks[0]!.branches[1]!.commits = [])],
+  [
+    "a commit without a change id",
+    (board) => (board.stacks[0]!.branches[1]!.commits[0]!.changeId = null),
+  ],
+];
+
+for (const [shape, reshape] of BOTTOM_SHAPES) {
+  test(`a rename leaves the focus where the reader moved it while it ran, the bottom branch holding ${shape}`, async () => {
+    const before = structuredClone(workspace);
+    reshape(before);
+    const renamed = structuredClone(before);
+    renamed.stacks[0]!.key = "scott/base";
+    renamed.stacks[0]!.branches[1]!.name = "scott/base";
+    let finish = () => {};
+    let done = false;
+    const { rpc } = recordActions(
+      () =>
+        new Promise((resolve) => {
+          finish = () => {
+            done = true;
+            resolve({ status: "done" });
+          };
+        }),
+    );
+    const { slot, card } = await bottomCard({
+      ...rpc,
+      workspace: () => (done ? renamed : before),
+    });
+    fireEvent.click(card.getByRole("button", { name: "Rename branch scott/bottom" }));
+    const field = card.getByLabelText("New name for scott/bottom");
+    fireEvent.change(field, { target: { value: "scott/base" } });
+    fireEvent.keyDown(field, { key: "Enter" });
+    await waitFor(() => expect(pluginQueryClient.isMutating()).toBe(1));
+
+    // The reader moves on to a commit of the branch above, in the same stack.
+    const above = slot.getByText("feat(top): add the thing").closest("button")!;
+    above.focus();
+    expect(document.activeElement).toBe(above);
+    finish();
+    await waitFor(() =>
+      expect(slot.getByRole("button", { name: "Rename branch scott/base" })).toBeTruthy(),
+    );
+    await waitFor(() => expect(pluginQueryClient.isMutating()).toBe(0));
+    expect(above.isConnected).toBe(true);
+    expect(document.activeElement).toBe(above);
+    slot.lifecycle.unmount();
+  });
+}
+
+test("a branch's open rename stays its own when a stack sharing its oldest change goes away", async () => {
+  // A commit copied onto another branch keeps its change id.
+  const copied = structuredClone(workspace.stacks[1]!);
+  copied.key = "scott/copy";
+  copied.branches[0]!.name = "scott/copy";
+  copied.branches[0]!.commits = structuredClone(workspace.stacks[0]!.branches[1]!.commits);
+  let board: Workspace = { ...workspace, stacks: [copied, workspace.stacks[0]!] };
+  const slot = await panel({ ...baseRpc, workspace: () => board });
+  await waitFor(() => expect(slot.getByText("scott/copy")).toBeTruthy());
+  fireEvent.click(slot.getByRole("button", { name: "Rename branch scott/copy" }));
+  expect(slot.getByLabelText("New name for scott/copy")).toBeTruthy();
+
+  board = workspace;
+  fireEvent.click(slot.getByRole("button", { name: "Refresh" }));
+  await waitFor(() => expect(slot.queryByText("scott/copy")).toBeNull());
+  expect(slot.queryByLabelText("New name for scott/bottom")).toBeNull();
+  expect(slot.getByRole("button", { name: "Rename branch scott/bottom" })).toBeTruthy();
+  slot.lifecycle.unmount();
+});
+
+test("says what a write did over the foot of the board, then clears the line", async () => {
+  const { rpc } = recordActions();
+  const { slot, card } = await bottomCard(rpc);
+  fireEvent.click(card.getByRole("button", { name: "Push" }));
+  const line = await slot.findByText("Pushed scott/bottom");
+  expect(line.tagName).toBe("OUTPUT");
+  expect(line.getAttribute("aria-live")).toBe("polite");
+  expect(card.queryByText("Pushed scott/bottom")).toBeNull();
+  // The line lasts three seconds. The margin covers a busy test run.
+  await waitFor(() => expect(slot.queryByText("Pushed scott/bottom")).toBeNull(), {
+    timeout: 8_000,
+  });
+  slot.lifecycle.unmount();
+});
+
+test("an assigned file opens with only its stack's files beside it", async () => {
+  const slot = await panel({
+    ...baseRpc,
+    patches: () => ({ files: [patch("bun.lock"), patch("src/app/app.tsx")], truncated: false }),
+  });
+  const assigned = within(await slot.findByRole("region", { name: "Assigned changes" }));
+  fireEvent.click(assigned.getByTitle("src/app/app.tsx"));
+
+  expect(await slot.findByRole("heading", { name: "Assigned to scott/top" })).toBeTruthy();
+  await waitFor(() =>
+    expect(slot.getByRole("button", { name: "Collapse src/app/app.tsx" })).toBeTruthy(),
+  );
+  // bun.lock is in the same worktree diff but belongs to no stack.
+  expect(slot.queryByRole("button", { name: "Collapse bun.lock" })).toBeNull();
+  expect(slot.inspection.rpcCalls.find((call) => call.method === "patches")?.input).toEqual({
+    threadId: "thread-1",
+    source: { kind: "uncommitted" },
+  });
+  slot.lifecycle.unmount();
+});
+
+test("Open shows the file in bb's preview, under its repository, at its first change", async () => {
+  const nested = { ...workspace, repositoryKey: "repos/api" };
+  const slot = await openUncommitted({
+    ...baseRpc,
+    workspace: () => nested,
+    patches: () => ({ files: [patch("bun.lock")], truncated: false }),
+  });
+  fireEvent.click(await slot.findByRole("button", { name: "Open bun.lock" }));
+  expect(slot.inspection.navigateCalls).toEqual([
+    {
+      method: "experimental_openFilePreview",
+      options: {
+        target: { kind: "workspace", environmentId: "env-1", path: "repos/api/bun.lock" },
+        location: { kind: "line", line: 1, column: null },
+      },
+    },
+  ]);
+  slot.lifecycle.unmount();
+});
+
+test("a commit's file opens as it is now, at its top, and an upstream commit's not at all", async () => {
+  const slot = await panel({
+    ...baseRpc,
+    patches: () => ({ files: [patch("bun.lock")], truncated: false }),
+  });
+  const openFrom = async (commit: string) => {
+    await waitFor(() => expect(slot.getByText(commit)).toBeTruthy());
+    fireEvent.click(slot.getByText(commit));
+    const files = await waitFor(() => slot.getByRole("region", { name: "Changed files" }));
+    fireEvent.click(within(files).getByTitle("bun.lock"));
+    await waitFor(() =>
+      expect(slot.getByRole("button", { name: "Collapse bun.lock" })).toBeTruthy(),
+    );
+  };
+
+  await openFrom("feat(top): add the thing");
+  fireEvent.click(slot.getByRole("button", { name: "Open current version of bun.lock" }));
+  expect(slot.inspection.navigateCalls).toEqual([
+    {
+      method: "experimental_openFilePreview",
+      options: {
+        target: { kind: "workspace", environmentId: "env-1", path: "bun.lock" },
+        location: null,
+      },
+    },
+  ]);
+  fireEvent.click(slot.getByRole("button", { name: "Back to workspace" }));
+
+  await openFrom("chore: someone else's push");
+  expect(slot.queryByRole("button", { name: /^Open .*bun\.lock$/ })).toBeNull();
+  slot.lifecycle.unmount();
+});
+
+test("a workspace answer without its environment offers no Open", async () => {
+  const slot = await openUncommitted({
+    ...baseRpc,
+    workspace: () => ({ ...workspace, environmentId: null }),
+    patches: () => ({ files: [patch("bun.lock")], truncated: false }),
+  });
+  await waitFor(() => expect(slot.getByRole("button", { name: "Collapse bun.lock" })).toBeTruthy());
+  expect(slot.queryByRole("button", { name: "Open bun.lock" })).toBeNull();
+  slot.lifecycle.unmount();
+});
+
+test("ask-agent buttons quote what they are about into the thread's composer", async () => {
+  const slot = await panel({
+    ...baseRpc,
+    patches: () => ({ files: [patch("src/app/app.tsx")], truncated: false }),
+  });
+  await waitFor(() => expect(slot.getByText("scott/top")).toBeTruthy());
+  fireEvent.click(slot.getByRole("button", { name: "Ask agent about scott/top" }));
+  fireEvent.click(
+    slot.getByRole("button", { name: "Checks failing on scott/top: ask agent to fix them" }),
+  );
+  // History edits are the agent's to run, so the commit screen quotes them.
+  fireEvent.click(slot.getByText("feat(top): add the thing"));
+  const files = await waitFor(() => slot.getByRole("region", { name: "Changed files" }));
+  fireEvent.click(within(files).getByTitle("src/app/app.tsx"));
+  fireEvent.click(await slot.findByRole("button", { name: "Reword" }));
+  expect(slot.inspection.composer.quotes).toEqual([
+    "Branch scott/top: 1 commit, pushed, PR #42",
+    "Checks are failing on branch scott/top (PR #42). Find the failing check and fix it.",
+    'Reword commit 8f4598a (change syvmzmsvwkuzpwuuxyvnmywkktuzxqul) "feat(top): add the thing" with `but reword`.',
+  ]);
+  expect(slot.inspection.composer.focusCount).toBe(3);
+  slot.lifecycle.unmount();
+
+  // A new thread's draft goes to another agent, so there is nothing to ask.
+  const draft = await panel(baseRpc, {
+    composer: { scope: { kind: "new-thread", projectId: "project-1" } },
+  });
+  await waitFor(() => expect(draft.getByText("scott/top")).toBeTruthy());
+  expect(draft.queryByRole("button", { name: "Ask agent about scott/top" })).toBeNull();
+  expect(draft.queryByRole("button", { name: /^Checks failing/ })).toBeNull();
+  expect(draft.getByText("Checks failing")).toBeTruthy();
+  draft.lifecycle.unmount();
+});
+
+test("a quote names the repository when the environment holds several", async () => {
+  const slot = await panel({
+    ...baseRpc,
+    workspace: () => ({ ...workspace, repositoryKey: "repos/api" }),
+  });
+  await waitFor(() => expect(slot.getByText("scott/top")).toBeTruthy());
+  fireEvent.click(slot.getByRole("button", { name: "Ask agent about scott/top" }));
+  expect(slot.inspection.composer.quotes).toEqual([
+    "Branch scott/top: 1 commit, pushed, PR #42\n\nRepository: repos/api",
+  ]);
+  slot.lifecycle.unmount();
+});
+
+test("reads the history below a base once, and again only for a new base", async () => {
+  const asked: string[] = [];
+  let base = workspace.base!;
+  let reads = 0;
+  const slot = await panel({
+    ...baseRpc,
+    workspace: () => {
+      reads += 1;
+      return { ...workspace, base };
+    },
+    baseHistory: (input: { from: string }) => {
+      asked.push(input.from);
+      return baseRpc.baseHistory();
+    },
+  });
+  await waitFor(() => expect(slot.getByText("chore: older work")).toBeTruthy());
+
+  // An agent's turn reads everything it can change, which is not this.
+  await slot.emitRealtime("workspace-changed", {
+    environmentId: "env-1",
+    threadId: "thread-1",
+    parentThreadId: null,
+  });
+  await waitFor(() => expect(reads).toBe(2));
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  expect(asked).toEqual(["654681d034f5e25b7d987f0c8ed8a3c4118a72aa"]);
+
+  base = { ...base, commitId: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" };
+  fireEvent.click(slot.getByRole("button", { name: "Refresh" }));
+  await waitFor(() =>
+    expect(asked).toEqual([
+      "654681d034f5e25b7d987f0c8ed8a3c4118a72aa",
+      "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    ]),
+  );
+  slot.lifecycle.unmount();
+});
+
+test("a new base does not draw the old base's history as its own", async () => {
+  let base = workspace.base!;
+  let release: () => void = () => {};
+  const slot = await panel({
+    ...baseRpc,
+    workspace: () => ({ ...workspace, base }),
+    baseHistory: (input: { from: string }) =>
+      input.from === workspace.base!.commitId
+        ? baseRpc.baseHistory()
+        : new Promise((resolve) => {
+            release = () =>
+              resolve({
+                ...baseRpc.baseHistory(),
+                commits: [
+                  {
+                    commitId: "cccccccccccccccccccccccccccccccccccccccc",
+                    message: "chore: under the new base",
+                    authorName: "Ada",
+                    createdAt: "2026-09-21T10:00:00+00:00",
+                  },
+                ],
+              });
+          }),
+  });
+  await waitFor(() => expect(slot.getByText("chore: older work")).toBeTruthy());
+
+  base = { ...base, commitId: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" };
+  fireEvent.click(slot.getByRole("button", { name: "Refresh" }));
+  await waitFor(() => expect(slot.getByText("Loading history…")).toBeTruthy());
+  expect(slot.queryByText("chore: older work")).toBeNull();
+
+  release();
+  await waitFor(() => expect(slot.getByText("chore: under the new base")).toBeTruthy());
+  slot.lifecycle.unmount();
+});
+
+test("the PR chip says where each review stands, and opens a link the review read has", async () => {
+  const lookups: unknown[] = [];
+  const slot = await panel(
+    {
+      ...baseRpc,
+      reviews: () => ({
+        reviews: [
+          {
+            branch: "scott/top",
+            number: 42,
+            state: "open",
+            url: "https://github.com/acme/repo/pull/42",
+          },
+          { branch: "scott/bottom", number: 7, state: "draft", url: null },
+        ],
+        reason: null,
+      }),
+      reviewUrl: (input: unknown) => {
+        lookups.push(input);
+        return { url: null };
+      },
+    },
+    { openUrl: () => true },
+  );
+  await waitFor(() => expect(slot.getByText("scott/top")).toBeTruthy());
+  const link = await topCard(slot).findByRole("link", { name: "Open #42" });
+  expect(link.title).toBe("Open PR #42");
+  // `but status` does not know scott/bottom's review. The review read does.
+  const bottom = within(slot.getByRole("article", { name: "Branch scott/bottom" }));
+  expect(bottom.getByRole("button", { name: "Draft #7" }).title).toBe("Open PR #7");
+  // A branch with a PR has nothing to create.
+  expect(bottom.queryByRole("button", { name: "Create PR" })).toBeNull();
+  const experimental = within(slot.getByRole("article", { name: "Branch scott/experimental" }));
+  expect(experimental.queryByTitle(/^Open PR/)).toBeNull();
+
+  fireEvent.click(link);
+  expect(slot.inspection.navigateCalls).toEqual([
+    { method: "openUrl", url: "https://github.com/acme/repo/pull/42" },
+  ]);
+  expect(lookups).toEqual([]);
+  slot.lifecycle.unmount();
+});
+
+test("the history screen lists GitButler's operations and asks the agent to restore one", async () => {
+  const slot = await panel({
+    ...baseRpc,
+    oplog: () => ({ entries: parseOplog(oplogPayload), reason: null }),
+  });
+  await waitFor(() => expect(slot.getByText("scott/top")).toBeTruthy());
+  const history = slot.getByRole("button", { name: "Operation history" });
+  history.focus();
+  fireEvent.click(history);
+
+  expect(slot.getByRole("heading", { name: "Operation history" })).toBeTruthy();
+  expect(await slot.findByText("Squash commit")).toBeTruthy();
+  expect(slot.getByText("Create commit")).toBeTruthy();
+  expect(slot.getByText("Merge upstream")).toBeTruthy();
+  fireEvent.click(slot.getByRole("button", { name: "Ask agent to restore snapshot 22c2d57" }));
+  expect(slot.inspection.composer.quotes).toEqual([
+    "Restore the GitButler workspace to snapshot 22c2d57fb4e93d0fbb45aad16aea1b513b6596d5 (Squash commit) with `but oplog restore`.",
+  ]);
+
+  fireEvent.click(slot.getByRole("button", { name: "Back to workspace" }));
+  expect(slot.queryByRole("heading", { name: "Operation history" })).toBeNull();
+  expect(document.activeElement).toBe(history);
+  slot.lifecycle.unmount();
+});
+
+test("Refresh reads the reviews and parked branches again, not only the board", async () => {
+  const reads = { workspace: 0, reviews: 0, parkedBranches: 0 };
+  const slot = await panel({
+    ...baseRpc,
+    workspace: () => {
+      reads.workspace += 1;
+      return baseRpc.workspace();
+    },
+    reviews: () => {
+      reads.reviews += 1;
+      return baseRpc.reviews();
+    },
+    parkedBranches: () => {
+      reads.parkedBranches += 1;
+      return baseRpc.parkedBranches();
+    },
+  });
+  await waitFor(() => expect(reads).toEqual({ workspace: 1, reviews: 1, parkedBranches: 1 }));
+
+  fireEvent.click(slot.getByRole("button", { name: "Refresh" }));
+  await waitFor(() => expect(reads).toEqual({ workspace: 2, reviews: 2, parkedBranches: 2 }));
+  slot.lifecycle.unmount();
+});
+
+test("lists the branches the workspace does not apply, closed until asked", async () => {
+  const slot = await panel({
+    ...baseRpc,
+    parkedBranches: () => ({
+      branches: [
+        { name: "scott/parked", subject: "feat: half done", updatedAt: "2026-10-01T00:00:00.000Z" },
+        { name: "scott/old", subject: null, updatedAt: null },
+      ],
+      hasMore: true,
+      reason: null,
+    }),
+  });
+  const parked = within(await slot.findByRole("region", { name: "Not applied" }));
+  const toggle = parked.getByRole("button", { name: "Not applied 2" });
+  expect(toggle.getAttribute("aria-expanded")).toBe("false");
+  expect(parked.queryByText("scott/parked")).toBeNull();
+
+  fireEvent.click(toggle);
+  expect(parked.getByText("scott/parked")).toBeTruthy();
+  expect(parked.getByText("feat: half done")).toBeTruthy();
+  expect(parked.getByText("scott/old")).toBeTruthy();
+  expect(parked.getByText("Showing the most recently updated branches only.")).toBeTruthy();
+  fireEvent.click(parked.getByRole("button", { name: "Ask agent to apply scott/parked" }));
+  expect(slot.inspection.composer.quotes).toEqual([
+    "Apply branch scott/parked to the workspace with but.",
+  ]);
   slot.lifecycle.unmount();
 });

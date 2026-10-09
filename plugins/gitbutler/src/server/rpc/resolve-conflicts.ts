@@ -16,11 +16,16 @@ import { locateRepository, spawnSubthread } from "../lib/subthreads.ts";
  */
 export const resolveConflicts = defineMutation({
   input: z
-    .object({ threadId: z.string().min(1), repositoryKey: repositoryKeySchema.optional() })
+    .object({
+      threadId: z.string().min(1),
+      repositoryKey: repositoryKeySchema.optional(),
+      /** The environment of the board the reader acted on. */
+      environmentId: z.string().min(1).optional(),
+    })
     .strict(),
   output: z.object({ threadId: z.string() }).strict(),
-  async execute(ctx, { threadId, repositoryKey }) {
-    const repository = await locateRepository(ctx.bb, threadId, repositoryKey);
+  async execute(ctx, { threadId, repositoryKey, environmentId }) {
+    const repository = await locateRepository(ctx.bb, threadId, repositoryKey, environmentId);
     const prompt = conflictPrompt(repository.path);
     const childId = await claimConflictResolution(ctx.bb, repository, async (current) => {
       if (current?.running) return current.threadId;
@@ -34,7 +39,10 @@ export const resolveConflicts = defineMutation({
       }
       // The folder name, on either kind of host path.
       const name = repository.path.split(/[\\/]/).findLast(Boolean) ?? repository.key;
-      return spawnSubthread(ctx.bb, threadId, { title: `Resolve conflicts in ${name}`, prompt });
+      return spawnSubthread(ctx.bb, threadId, repository, {
+        title: `Resolve conflicts in ${name}`,
+        prompt,
+      });
     });
     return { threadId: childId };
   },

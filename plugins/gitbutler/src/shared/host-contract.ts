@@ -7,13 +7,16 @@ import {
   butActionSchema,
   commitIdSchema,
   environmentPathSchema,
+  hostWorkspaceSchema,
+  oplogSchema,
+  parkedBranchesSchema,
   patchesSchema,
   patchSourceSchema,
   repositoriesSchema,
   repositoryKeySchema,
   resolvedRepositorySchema,
+  reviewsSchema,
   reviewUrlSchema,
-  workspaceSchema,
 } from "./schema.ts";
 
 const target = z.object({
@@ -27,7 +30,7 @@ export const gitbutlerHostContract = defineRpcContract({
     output: repositoriesSchema,
   },
   repository: { input: target.strict(), output: resolvedRepositorySchema },
-  workspace: { input: target.strict(), output: workspaceSchema },
+  workspace: { input: target.strict(), output: hostWorkspaceSchema },
   baseHistory: {
     input: target
       .extend({
@@ -50,4 +53,7 @@ export const gitbutlerHostContract = defineRpcContract({
     input: target.extend({ branch: branchNameSchema }).strict(),
     output: reviewUrlSchema,
   },
+  reviews: { input: target.strict(), output: reviewsSchema },
+  oplog: { input: target.strict(), output: oplogSchema },
+  parkedBranches: { input: target.strict(), output: parkedBranchesSchema },
 });

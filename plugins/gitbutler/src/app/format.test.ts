@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { relativeTime, shortId, subject } from "./format.ts";
+import { absoluteTime, relativeTime, shortId, subject } from "./format.ts";
 
 test("subject is the first line of a commit message", () => {
   const message = "feat(top): add the thing\n\nWith a body.\nAnd more.";
@@ -24,4 +24,14 @@ test("relativeTime counts back from a fixed now", () => {
 
 test("relativeTime is blank for a date the CLI did not supply", () => {
   expect(relativeTime("")).toBe("");
+});
+
+test("absoluteTime spells out the date and time", () => {
+  // Newer ICU puts a narrow no-break space before "PM".
+  const text = absoluteTime("2026-01-02T15:04:00Z", "en-US", "UTC").replace(/\s/gu, " ");
+  expect(text).toBe("Jan 2, 2026, 3:04 PM");
+});
+
+test("absoluteTime is blank for a date the CLI did not supply", () => {
+  expect(absoluteTime("")).toBe("");
 });

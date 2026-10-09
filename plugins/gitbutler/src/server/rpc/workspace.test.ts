@@ -5,6 +5,7 @@ import { workspace } from "./workspace.ts";
 const ready = {
   state: "ready" as const,
   reason: null,
+  repositoryKey: ".",
   repoName: "bb-plugins",
   unassignedChanges: [],
   stacks: [],
@@ -13,11 +14,11 @@ const ready = {
   conflictedFiles: [],
 };
 
-test("forwards the environment path and host to the host entry", async () => {
+test("forwards the environment path and host to the host entry, and names the environment", async () => {
   const { ctx, calls } = harness({ result: ready });
   const result = await workspace.execute(ctx, { threadId: "t1" });
 
-  expect(result).toEqual(ready);
+  expect(result).toEqual({ ...ready, environmentId: "env-1" });
   expect(calls).toEqual([
     { method: "workspace", input: { environmentPath: "/work" }, options: { hostId: "host-1" } },
   ]);
@@ -44,6 +45,8 @@ test("explains a thread with no environment instead of calling the host", async 
 
   expect(result.state).toBe("noEnvironment");
   expect(result.reason).toBe("This thread has no project environment.");
+  expect(result.environmentId).toBeNull();
+  expect(result.repositoryKey).toBeNull();
   expect(calls).toEqual([]);
 });
 

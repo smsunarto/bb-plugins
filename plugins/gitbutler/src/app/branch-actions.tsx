@@ -13,6 +13,17 @@ import type {
   PushMode,
   ReviewRequest,
 } from "../shared/schema.ts";
+import {
+  butWriteKey,
+  useAnnounce,
+  useBoardLive,
+  useBoardWorkspace,
+  useFocusAfterWrite,
+  useWriteBusy,
+  sameScope,
+  writeScope,
+} from "./board-context.tsx";
+import type { WorkspaceIdentity, WriteScope } from "./board-context.tsx";
 import { Button } from "./components/ui/button.tsx";
 import { upstreamLoss } from "../shared/upstream-loss.ts";
 import { cn } from "./lib/utils.ts";
@@ -27,6 +38,12 @@ import { rpc } from "./rpc.ts";
  */
 
 export type WorkspaceTarget = { threadId: string; repositoryKey: string | undefined };
+
+/**
+ * Where a write goes. `workspace` is the board's, which a caller inside the
+ * board leaves out and a caller above it, such as the header's Pull, passes.
+ */
+export type WriteTarget = WorkspaceTarget & { workspace?: WorkspaceIdentity | null };
 
 const ACTION = "h-6 gap-1 px-2 text-xs font-normal";
 const FIELD =
@@ -75,10 +92,11 @@ function readOf(method: { queryKey: () => QueryKey }, threadId: string) {
 
 /**
  * Fetch again what a write or an agent's turn can change: the board, the
- * worktree's diff, and the subthreads working on it. Diffs and history are keyed by commit id, which
- * a write cannot change, so open commits are not fetched again. The promise
- * is the board's, so a request's spinner ends when the board shows its
- * result and not a moment before.
+ * worktree's diff, the subthreads working on it, its reviews, its parked
+ * branches, and the operation log. Diffs and history are keyed by commit id,
+ * which a write cannot change, so open commits are not fetched again. The
+ * promise is the board's, so a request's spinner ends when the board shows
+ * its result and not a moment before.
  */
 export function refreshWorkspace(threadId: string): Promise<void> {
   const uncommitted = readOf(rpc.patches, threadId);
@@ -87,26 +105,99 @@ export function refreshWorkspace(threadId: string): Promise<void> {
       uncommitted(query) &&
       (query.queryKey[1] as { source?: PatchSource }).source?.kind === "uncommitted",
   });
-  void pluginQueryClient.invalidateQueries({ predicate: readOf(rpc.reviewRequests, threadId) });
-  void pluginQueryClient.invalidateQueries({ predicate: readOf(rpc.conflictResolution, threadId) });
+  for (const method of [
+    rpc.reviewRequests,
+    rpc.conflictResolution,
+    rpc.reviews,
+    rpc.parkedBranches,
+    rpc.oplog,
+  ]) {
+    void pluginQueryClient.invalidateQueries({ predicate: readOf(method, threadId) });
+  }
   return pluginQueryClient.invalidateQueries({ predicate: readOf(rpc.workspace, threadId) });
 }
 
-/** Runs `but` writes for the card or the header. One request at a time per caller. */
-export function useButAction(target: WorkspaceTarget) {
+/** What the status line says once a card's write is through. The header's Pull says its own. */
+function outcomeLine(action: ButAction, result: ButActionResult): string | null {
+  if (action.kind === "updateWorkspace" || result.status === "confirm") return null;
+  if (result.status === "upToDate") return "Already up to date.";
+  switch (action.kind) {
+    case "push":
+      return `Pushed ${action.branch}`;
+    case "land":
+      return `Landed ${action.branch}`;
+    case "rename":
+      return `Renamed to ${action.name}`;
+    case "delete":
+      return `Deleted ${action.branch}`;
+    case "pull":
+      return `Pulled ${action.branch}`;
+  }
+}
+
+/**
+ * Why no write can start on a board now, or null. A board from storage that
+ * has not been read again may be hours old, and writes to one workspace run
+ * one at a time.
+ */
+export function writeBlocked(live: boolean, otherWrite: boolean): string | null {
+  if (!live) return "Checking the workspace…";
+  return otherWrite ? "Another GitButler action is running" : null;
+}
+
+/**
+ * Runs `but` writes for the card or the header. Writes to one workspace
+ * rewrite the same branches, so they share one mutation key and run one at
+ * a time: `blocked` says why a caller can't start one now.
+ *
+ * `onSettled` hears every request this caller started, once the board shows
+ * its result. `run`'s callback does not when the reader switched repository
+ * while it ran: that changes the mutation key, and TanStack drops it.
+ */
+export function useButAction(
+  target: WriteTarget,
+  onSettled?: (result: ButActionResult | undefined, error: Error | null, sent: WriteScope) => void,
+) {
+  const live = useBoardLive();
+  const board = useBoardWorkspace();
+  const workspace = target.workspace === undefined ? board : target.workspace;
+  const scope = { ...target, workspace };
+  const busy = useWriteBusy(scope);
+  const announce = useAnnounce();
+  const focusAfterWrite = useFocusAfterWrite();
   const mutation = rpc.butAction.useMutation({
-    onSettled: () => refreshWorkspace(target.threadId),
+    mutationKey: butWriteKey(scope),
+    // Reported here, once the board shows the result, and not in `run`'s
+    // callback: Delete and Land take the card, and that callback, away first.
+    onSettled: async (result, error, sent) => {
+      await refreshWorkspace(target.threadId);
+      onSettled?.(result, error, sent);
+      if (!result) return;
+      const { action } = sent;
+      if (result.status === "done" && (action.kind === "delete" || action.kind === "land")) {
+        focusAfterWrite("removed", action.branch);
+      }
+      if (result.status === "done" && action.kind === "rename") {
+        focusAfterWrite("renamed", action.name);
+      }
+      const line = outcomeLine(action, result);
+      if (line !== null) announce(line);
+    },
   });
   // A request about another repository is not this one's to show, even
   // while it is still running after the reader switched.
+  const aim = writeScope(target, workspace);
   const sent = mutation.variables;
-  const mine = sent?.threadId === target.threadId && sent.repositoryKey === target.repositoryKey;
+  const mine = sent !== undefined && sameScope(sent, aim);
+  const pending = mine && mutation.isPending;
   return {
     run: (action: ButAction, onResult?: (result: ButActionResult) => void) =>
-      mutation.mutate({ ...target, action }, { onSuccess: (result) => onResult?.(result) }),
-    pending: mine && mutation.isPending,
+      mutation.mutate({ ...aim, action }, { onSuccess: (result) => onResult?.(result) }),
+    pending,
     /** Which kind of request is in flight, so only its own button spins. */
-    running: mine && mutation.isPending ? (sent?.action.kind ?? null) : null,
+    running: pending ? (sent?.action.kind ?? null) : null,
+    /** Why no write can start here now, other than this caller's own, or null. */
+    blocked: writeBlocked(live, busy && !pending),
     error: mine ? mutation.error : null,
     reset: mutation.reset,
   };
@@ -114,8 +205,9 @@ export function useButAction(target: WorkspaceTarget) {
 
 /**
  * The branch name, which is also its rename control: click it, type, and
- * Enter or leaving the field applies. Escape puts the old name back. A name
- * `but` would refuse keeps the field open with the typed text in it.
+ * Enter or leaving the field applies. Escape puts the old name back. While
+ * `but` renames, the field holds the new name, read-only. A name `but` would
+ * refuse, or did, keeps the field open with that name in it.
  */
 export function BranchName({ target, name }: { target: WorkspaceTarget; name: string }) {
   const [draft, setDraft] = useState<string | null>(null);
@@ -124,86 +216,145 @@ export function BranchName({ target, name }: { target: WorkspaceTarget; name: st
   // elsewhere leaves the focus where it went.
   const [closedByKey, setClosedByKey] = useState(false);
   const hintId = useId();
+  const field = useRef<HTMLInputElement>(null);
   const action = useButAction(target);
+  // Enter left the field to apply. A refused name brings the focus back to fix it.
+  useFocusAfter(action.pending, () => field.current);
 
   const next = draft?.trim() ?? "";
   const changed = next !== "" && next !== name;
-  const problem = changed ? branchNameSchema.safeParse(next).error?.issues[0]?.message : undefined;
+  const badName = changed ? branchNameSchema.safeParse(next).error?.issues[0]?.message : undefined;
+  // A good name still waits while another write runs.
+  const problem = changed ? (badName ?? action.blocked ?? undefined) : undefined;
   const acceptable = problem === undefined;
+  // One line under the field: what `but` said, or why the name cannot go yet.
+  const message = action.error?.message ?? (invalid ? problem : undefined);
 
   const commit = () => {
+    if (action.pending) return;
     if (!acceptable) {
       setInvalid(true);
       return;
     }
-    setDraft(null);
-    if (changed) action.run({ kind: "rename", branch: name, name: next });
+    if (!changed) {
+      setDraft(null);
+      return;
+    }
+    // While `but` renames, the field reads the name it was asked for. The
+    // board gives the new name the focus once drawn, unless the reader moved on.
+    setClosedByKey(false);
+    setDraft(next);
+    action.run({ kind: "rename", branch: name, name: next }, (result) => {
+      if (result.status === "done") setDraft(null);
+    });
   };
 
   return (
     <div className="flex min-w-0 flex-1 flex-col">
       {draft === null ? (
-        <h3 className="m-0 flex min-w-0 text-sm font-semibold">
-          <button
-            type="button"
-            className="-mx-1 min-w-0 cursor-pointer truncate rounded-sm px-1 text-start hover:bg-state-hover disabled:opacity-60"
-            title={`${name} (click to rename)`}
-            aria-label={`Rename branch ${name}`}
-            disabled={action.pending}
-            // oxlint-disable-next-line jsx-a11y/no-autofocus
-            autoFocus={closedByKey}
-            onClick={() => {
-              action.reset();
-              setClosedByKey(false);
-              setDraft(name);
-            }}
-          >
-            {name}
-          </button>
-        </h3>
-      ) : (
-        <input
-          // The user just asked to edit this field, so focus follows the click.
-          // oxlint-disable-next-line jsx-a11y/no-autofocus
-          autoFocus
-          className={cn(FIELD, "py-0.5 text-sm font-semibold")}
-          aria-label={`New name for ${name}`}
-          aria-invalid={invalid}
-          aria-describedby={invalid ? hintId : undefined}
-          value={draft}
-          onChange={(event) => {
-            setInvalid(false);
-            setDraft(event.target.value);
-          }}
-          onFocus={(event) => event.target.select()}
-          onBlur={commit}
-          onKeyDown={(event) => {
-            // Enter applies by leaving the field, so a refused name keeps focus.
-            if (event.key === "Enter") {
-              if (acceptable) {
-                setClosedByKey(true);
-                event.currentTarget.blur();
-              } else setInvalid(true);
-            }
-            if (event.key === "Escape") {
-              setClosedByKey(true);
-              setInvalid(false);
-              setDraft(null);
-            }
+        <NameButton
+          name={name}
+          blocked={action.blocked}
+          takeFocus={closedByKey}
+          onClick={() => {
+            action.reset();
+            setClosedByKey(false);
+            setDraft(name);
           }}
         />
+      ) : (
+        <span className="relative flex min-w-0">
+          <input
+            ref={field}
+            // The user just asked to edit this field, so focus follows the click.
+            // oxlint-disable-next-line jsx-a11y/no-autofocus
+            autoFocus
+            readOnly={action.pending}
+            className={cn(
+              FIELD,
+              "py-0.5 text-sm font-semibold",
+              action.pending && "pe-6 text-muted-foreground",
+            )}
+            aria-label={`New name for ${name}`}
+            aria-invalid={action.error !== null || (invalid && badName !== undefined)}
+            aria-describedby={message ? hintId : undefined}
+            value={draft}
+            onChange={(event) => {
+              if (action.error) action.reset();
+              setInvalid(false);
+              setDraft(event.target.value);
+            }}
+            onFocus={(event) => {
+              setClosedByKey(false);
+              event.target.select();
+            }}
+            onBlur={commit}
+            onKeyDown={(event) => {
+              // Once asked, the rename runs to the end: backing out would only hide it.
+              if (action.pending) return;
+              // Enter applies by leaving the field, so a refused name keeps focus.
+              if (event.key === "Enter") {
+                if (acceptable) {
+                  setClosedByKey(true);
+                  event.currentTarget.blur();
+                } else setInvalid(true);
+              }
+              if (event.key === "Escape") {
+                setClosedByKey(true);
+                setInvalid(false);
+                action.reset();
+                setDraft(null);
+              }
+            }}
+          />
+          <span className="pointer-events-none absolute inset-y-0 end-2 flex items-center text-muted-foreground">
+            <Pending pending={action.pending} />
+          </span>
+        </span>
       )}
-      {draft !== null && invalid ? (
+      {message ? (
         <p id={hintId} role="alert" className="mt-0.5 text-[11px] text-destructive-text">
-          {problem}
-        </p>
-      ) : null}
-      {action.error ? (
-        <p role="alert" className="mt-0.5 text-[11px] text-destructive-text">
-          {action.error.message}
+          {message}
         </p>
       ) : null}
     </div>
+  );
+}
+
+/** The name as a button, with a pencil that shows on hover or focus. */
+function NameButton({
+  name,
+  blocked,
+  takeFocus,
+  onClick,
+}: {
+  name: string;
+  blocked: string | null;
+  takeFocus: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <h3 className="m-0 flex min-w-0 text-sm font-semibold">
+      <button
+        type="button"
+        data-branch-name={name}
+        className="group -mx-1 flex min-w-0 cursor-pointer items-center gap-1 rounded-sm px-1 text-start enabled:hover:bg-state-hover disabled:cursor-default"
+        title={blocked ?? `${name} (click to rename)`}
+        aria-label={`Rename branch ${name}`}
+        disabled={blocked !== null}
+        // oxlint-disable-next-line jsx-a11y/no-autofocus
+        autoFocus={takeFocus}
+        onClick={onClick}
+      >
+        <span className="truncate">{name}</span>
+        {/* Holds its room while hidden, so a hover never moves the name. */}
+        <Icon
+          name="Edit"
+          className="size-3 shrink-0 text-subtle-foreground opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100 group-disabled:invisible"
+          aria-hidden
+        />
+      </button>
+    </h3>
   );
 }
 
@@ -216,6 +367,7 @@ const REVIEW_POLL_MS = 5_000;
  * panel remounts or the repository changes.
  */
 function useReviewRequest(target: WorkspaceTarget, branch: string) {
+  const board = useBoardWorkspace();
   const requests = rpc.reviewRequests.useQuery(target, {
     // Poll only while a subthread works, so the card sees it finish.
     refetchInterval: (query) =>
@@ -225,7 +377,7 @@ function useReviewRequest(target: WorkspaceTarget, branch: string) {
     onSettled: () => refreshWorkspace(target.threadId),
   });
   return {
-    request: () => mutation.mutate({ ...target, branch }),
+    request: () => mutation.mutate({ ...writeScope(target, board), branch }),
     pending: mutation.isPending,
     current: requests.data?.requests.find((request) => request.branch === branch) ?? null,
     error: mutation.error,
@@ -322,36 +474,70 @@ function ActionButton({
 }
 
 /**
+ * How hard a confirmation's answer is to take back: `destructive` loses work
+ * or deletes commits from the remote, and `attention` changes the remote in a
+ * way that can't easily be undone.
+ */
+export type ConfirmTone = "default" | "attention" | "destructive";
+
+/** Each tone's tint, and its warning icon's colour, so it never rests on the tint alone. */
+const CONFIRM_LOOK: Record<ConfirmTone, { box: string; icon: string } | null> = {
+  default: null,
+  attention: { box: "border-transparent bg-surface-attention", icon: "text-attention" },
+  destructive: {
+    box: "border-surface-destructive-border bg-surface-destructive",
+    icon: "text-destructive-text",
+  },
+};
+
+/**
  * Asked once more before a change that is hard to take back. Focus starts on
- * Cancel, and Escape cancels. Once confirmed, the request runs to the end:
- * backing out then would only hide it.
+ * Cancel, and Escape cancels. Both answers are described by the prompt, so
+ * the focused Cancel reads out what is at stake. Once confirmed, the request
+ * runs to the end: backing out then would only hide it.
  */
 export function Confirm({
   prompt,
   label,
   pending,
-  destructive = false,
+  blocked = null,
+  tone = "default",
   onConfirm,
   onCancel,
 }: {
   prompt: ReactNode;
   label: string;
   pending: boolean;
-  /** The answer deletes work, so it wears the destructive colour. */
-  destructive?: boolean;
+  /** Why the answer can't run yet, shown on hover. Cancel still works. */
+  blocked?: string | null;
+  tone?: ConfirmTone;
   onConfirm: () => void;
   onCancel: () => void;
 }) {
+  const promptId = useId();
+  const look = CONFIRM_LOOK[tone];
   return (
     // Escape from either button inside cancels.
     // oxlint-disable-next-line jsx-a11y/no-static-element-interactions
     <div
-      className="flex flex-wrap items-center gap-1.5"
+      className={cn(
+        "flex flex-wrap items-center gap-1.5",
+        look && cn("rounded-md border px-2 py-1.5", look.box),
+      )}
       onKeyDown={(event) => {
         if (event.key === "Escape" && !pending) onCancel();
       }}
     >
-      <p className="me-auto min-w-0 text-muted-foreground">{prompt}</p>
+      <p id={promptId} className="me-auto min-w-0 text-muted-foreground">
+        {look ? (
+          <Icon
+            name="AlertTriangle"
+            className={cn("me-1 inline-block size-3 align-[-2px]", look.icon)}
+            aria-hidden
+          />
+        ) : null}
+        {prompt}
+      </p>
       {/* One unit, so a long prompt never wraps Cancel apart from its answer. */}
       <div className="flex shrink-0 gap-1.5">
         <Button
@@ -359,6 +545,7 @@ export function Confirm({
           size="sm"
           className={ACTION}
           disabled={pending}
+          aria-describedby={promptId}
           // The safe answer takes focus, so a stray Enter cancels.
           // oxlint-disable-next-line jsx-a11y/no-autofocus
           autoFocus
@@ -366,16 +553,20 @@ export function Confirm({
         >
           Cancel
         </Button>
-        <Button
-          size="sm"
-          variant={destructive ? "destructive" : "default"}
-          className={ACTION}
-          disabled={pending}
-          onClick={onConfirm}
-        >
-          <Pending pending={pending} />
-          {label}
-        </Button>
+        {/* A disabled button takes no hover, so what holds it says why. */}
+        <span className="flex" title={blocked ?? undefined}>
+          <Button
+            size="sm"
+            variant={tone === "destructive" ? "destructive" : "default"}
+            className={ACTION}
+            disabled={pending || blocked !== null}
+            aria-describedby={promptId}
+            onClick={onConfirm}
+          >
+            <Pending pending={pending} />
+            {label}
+          </Button>
+        </span>
       </div>
     </div>
   );
@@ -473,7 +664,7 @@ function confirmationFor(
   lost: { count: number; commits: string[] },
   force: boolean,
   branchesAbove: number,
-): { prompt: ReactNode; label: string; action: ButAction; destructive: boolean } {
+): { prompt: ReactNode; label: string; action: ButAction; tone: ConfirmTone } {
   const name = <span className="font-semibold text-foreground">{branch.name}</span>;
   switch (mode.kind) {
     case "land":
@@ -486,7 +677,7 @@ function confirmationFor(
         ),
         label: "Land",
         action: { kind: "land", branch: branch.name },
-        destructive: false,
+        tone: "attention",
       };
     case "delete":
       return {
@@ -500,14 +691,14 @@ function confirmationFor(
         ),
         label: mode.risk ? "Delete anyway" : "Delete",
         action: { kind: "delete", branch: branch.name, accepted: mode.risk },
-        destructive: true,
+        tone: "destructive",
       };
     case "pull":
       return {
         prompt: pullRiskPrompt(mode.risk, branch.name),
         label: "Pull anyway",
         action: { kind: "pull", branch: branch.name, accepted: mode.risk },
-        destructive: false,
+        tone: "default",
       };
     case "push": {
       const label = force ? "Force push" : "Push";
@@ -521,7 +712,8 @@ function confirmationFor(
         ),
         label,
         action: { kind: "push", branch: branch.name, force, acceptedLoss: lost.commits },
-        destructive: false,
+        // It only asks when it deletes upstream commits, whichever label it wears.
+        tone: "destructive",
       };
     }
   }
@@ -559,6 +751,7 @@ function ActionRow({
   available,
   running,
   requesting,
+  blocked,
   refocus,
   onPull,
   onPush,
@@ -570,6 +763,8 @@ function ActionRow({
   available: Available;
   running: ButAction["kind"] | null;
   requesting: boolean;
+  /** Why no request can start here now, or null. */
+  blocked: string | null;
   /** The confirmation just cancelled, whose button takes the focus back. */
   refocus: ModeKind;
   onPull: () => void;
@@ -578,9 +773,10 @@ function ActionRow({
   onLand: () => void;
   onDelete: () => void;
 }) {
-  const busy = running !== null || requesting;
+  const busy = running !== null || requesting || blocked !== null;
   return (
-    <div className="flex flex-wrap items-center gap-1.5">
+    // A disabled button takes no hover, so the row says why its buttons are off.
+    <div className="flex flex-wrap items-center gap-1.5" title={blocked ?? undefined}>
       {/* First: on a branch behind its remote, pulling is the safe way forward. */}
       {available.pull ? (
         <ActionButton
@@ -639,11 +835,6 @@ function ActionRow({
   );
 }
 
-/** Said under the buttons when a pull found nothing new on the remote. */
-function UpToDate() {
-  return <output className="text-[11px] text-muted-foreground">Already up to date.</output>;
-}
-
 /**
  * The footer under a branch header. Every branch can at least be deleted,
  * so every card has one.
@@ -669,7 +860,6 @@ export function BranchActions({
 }) {
   const [mode, setMode] = useState<Mode>(IDLE);
   const [refocus, setRefocus] = useState<ModeKind>("idle");
-  const [upToDate, setUpToDate] = useState(false);
   // For one render only: the button takes the focus as it mounts, and a poll
   // that later drops and restores it must not pull the focus there again.
   useEffect(() => {
@@ -683,22 +873,16 @@ export function BranchActions({
   const choose = (next: Mode) => {
     action.reset();
     review.reset();
-    setUpToDate(false);
     // Back from a confirmation, focus returns to the button that opened it.
     setRefocus(next.kind === "idle" ? mode.kind : "idle");
     setMode(next);
   };
   const run = (next: ButAction) => {
     review.reset();
-    setUpToDate(false);
-    action.run(next, (result) => {
-      if (result.status === "confirm") {
-        setMode(askAbout(next, result.risk));
-        return;
-      }
-      setUpToDate(result.status === "upToDate");
-      setMode(IDLE);
-    });
+    // How it went, "Already up to date." too, goes to the board's status line.
+    action.run(next, (result) =>
+      setMode(result.status === "confirm" ? askAbout(next, result.risk) : IDLE),
+    );
   };
   const error = action.error ?? review.error;
   const force = available.push === "force";
@@ -727,7 +911,8 @@ export function BranchActions({
           prompt={confirmation.prompt}
           label={confirmation.label}
           pending={action.pending}
-          destructive={confirmation.destructive}
+          blocked={action.blocked}
+          tone={confirmation.tone}
           onCancel={() => choose(IDLE)}
           onConfirm={() => run(confirmation.action)}
         />
@@ -738,13 +923,13 @@ export function BranchActions({
           available={{ ...available, review: available.review && !review.current?.running }}
           running={action.running}
           requesting={review.pending}
+          blocked={action.blocked}
           refocus={refocus}
           onPull={() => run({ kind: "pull", branch: branch.name, accepted: null })}
           onLand={() => choose({ kind: "land" })}
           onDelete={() => choose({ kind: "delete", risk: null })}
           onReview={() => {
             action.reset();
-            setUpToDate(false);
             review.request();
           }}
           onPush={() =>
@@ -754,7 +939,6 @@ export function BranchActions({
           }
         />
       )}
-      {upToDate && !confirmation ? <UpToDate /> : null}
       {/* Once the PR exists the card shows it, so a finished subthread drops out. */}
       {review.current && (review.current.running || branch.reviewId === null) ? (
         <ReviewStatus request={review.current} />

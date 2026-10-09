@@ -15,27 +15,25 @@ export const requestReview = defineMutation({
     .object({
       threadId: z.string().min(1),
       repositoryKey: repositoryKeySchema.optional(),
+      /** The environment of the board the reader acted on. */
+      environmentId: z.string().min(1).optional(),
       branch: branchNameSchema,
     })
     .strict(),
   output: z.object({ threadId: z.string() }).strict(),
-  async execute(ctx, { threadId, repositoryKey, branch }) {
-    const repository = await locateRepository(ctx.bb, threadId, repositoryKey);
+  async execute(ctx, { threadId, repositoryKey, environmentId, branch }) {
+    const repository = await locateRepository(ctx.bb, threadId, repositoryKey, environmentId);
     // One subthread per branch: asking again while it works returns the same one.
-    const running = (await readReviewRequests(ctx.bb, threadId, repository.key)).find(
+    const running = (await readReviewRequests(ctx.bb, threadId, repository)).find(
       (request) => request.branch === branch && request.running,
     );
     if (running) return { threadId: running.threadId };
 
-    const childId = await spawnSubthread(ctx.bb, threadId, {
+    const childId = await spawnSubthread(ctx.bb, threadId, repository, {
       title: `Create PR for ${branch}`,
       prompt: reviewPrompt(branch, repository.path),
     });
-    await recordReviewRequest(ctx.bb, threadId, {
-      repositoryKey: repository.key,
-      branch,
-      threadId: childId,
-    });
+    await recordReviewRequest(ctx.bb, threadId, repository, { branch, threadId: childId });
     return { threadId: childId };
   },
 });

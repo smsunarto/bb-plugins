@@ -9,7 +9,7 @@ import type { BbPluginApi } from "@get-bb/plugin-sdk";
 
 export type HostCall = { method: string; input: unknown; options: unknown };
 
-type Environment = { hostId: string; path: string | null; status: string };
+type Environment = { id?: string; hostId: string; path: string | null; status: string };
 
 export function harness(options: { environment?: Environment | null; result?: unknown }) {
   const calls: HostCall[] = [];
@@ -18,7 +18,7 @@ export function harness(options: { environment?: Environment | null; result?: un
       threads: {
         get: async () =>
           options.environment === undefined
-            ? { environment: { hostId: "host-1", path: "/work", status: "ready" } }
+            ? { environment: { id: "env-1", hostId: "host-1", path: "/work", status: "ready" } }
             : { environment: options.environment },
       },
     },

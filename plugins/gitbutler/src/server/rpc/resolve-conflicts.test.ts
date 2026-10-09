@@ -106,3 +106,23 @@ test("spawns nothing for a thread without an environment", async () => {
   expect(spawned).toHaveLength(0);
   expect(hostInputs).toHaveLength(0);
 });
+
+test("spawns nothing for a board read in another environment", async () => {
+  const { ctx, spawned } = context();
+  await expect(
+    resolveConflicts.execute(ctx, { threadId: "t1", environmentId: "env-old" }),
+  ).rejects.toThrow("This thread moved to another environment since the board was read.");
+  expect(spawned).toHaveLength(0);
+  await resolveConflicts.execute(ctx, { threadId: "t1", environmentId: "env-1" });
+  expect(spawned).toHaveLength(1);
+});
+
+test("spawns nothing when the thread moves while the request runs", async () => {
+  let move = () => {};
+  const stub = context({ onLocate: () => move() });
+  move = stub.move;
+  await expect(
+    resolveConflicts.execute(stub.ctx, { threadId: "t1", environmentId: "env-1" }),
+  ).rejects.toThrow("This thread moved to another environment since the board was read.");
+  expect(stub.spawned).toHaveLength(0);
+});

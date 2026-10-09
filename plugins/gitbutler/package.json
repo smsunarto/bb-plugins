@@ -37,6 +37,7 @@
     "dist/*.css",
     "dist/*.json",
     "assets/",
+    "instructions/",
     "src/",
     "!src/**/*.test.ts",
     "README.md",

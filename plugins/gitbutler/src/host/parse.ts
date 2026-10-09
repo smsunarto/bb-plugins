@@ -1,15 +1,19 @@
 import type {
   BaseCommit,
   Branch,
+  BranchReview,
   BranchStatus,
   ChangeKind,
   Commit,
   FileChange,
   FilePatch,
+  HostWorkspace,
+  OplogEntry,
+  ParkedBranch,
   Patches,
   PushMode,
   Stack,
-  Workspace,
+  Upstream,
 } from "../shared/schema.ts";
 
 /**
@@ -186,13 +190,38 @@ export function baseCommit(value: unknown): BaseCommit | undefined {
   };
 }
 
-export function parseWorkspace(payload: unknown, repoName: string): Workspace {
+/** The first line of a commit message. */
+function subjectOf(message: string): string {
+  return message.split("\n", 1)[0]!.trim();
+}
+
+/** The target as GitButler last fetched it: how far ahead it is, and its newest commit. */
+function upstream(value: unknown): Upstream | null {
+  const record = asObject(value);
+  if (!record) return null;
+  const behind = typeof record["behind"] === "number" ? record["behind"] : 0;
+  const latest = baseCommit(record["latestCommit"]);
+  return {
+    behind: Math.max(0, Math.trunc(behind)),
+    lastFetched: asNullableString(record["lastFetched"]),
+    latest: latest ? { commitId: latest.commitId, subject: subjectOf(latest.message) } : null,
+  };
+}
+
+/**
+ * `repositoryKey` is the repository the host resolved. Callers that only read
+ * the stacks leave it out.
+ */
+export function parseWorkspace(
+  payload: unknown,
+  repoName: string,
+  repositoryKey: string | null = null,
+): HostWorkspace {
   const root = asObject(payload) ?? {};
-  const upstreamState = asObject(root["upstreamState"]);
-  const behind = typeof upstreamState?.["behind"] === "number" ? upstreamState["behind"] : 0;
   return {
     state: "ready",
     reason: null,
+    repositoryKey,
     repoName,
     unassignedChanges: fileChanges(root["uncommittedChanges"]),
     stacks: byLastCommit(
@@ -202,7 +231,7 @@ export function parseWorkspace(payload: unknown, repoName: string): Workspace {
       }),
     ),
     base: baseCommit(root["mergeBase"]) ?? null,
-    upstream: upstreamState ? { behind: Math.max(0, Math.trunc(behind)) } : null,
+    upstream: upstream(root["upstreamState"]),
     // Present only while some file holds conflict markers.
     conflictedFiles: asArray(root["conflictedFiles"]).flatMap((path) =>
       typeof path === "string" && path !== "" ? [path] : [],
@@ -335,6 +364,110 @@ function cliIdElsewhere(value: unknown, name: string): boolean {
 export function reviewUrl(payload: unknown): string | null {
   const [review] = asArray(asObject(payload)?.["reviews"]);
   return asNullableString(asObject(review)?.["url"]);
+}
+
+/** Milliseconds since the epoch, as `but branch list` and `but oplog` write times, in ISO form. */
+function isoTime(value: unknown): string | null {
+  if (typeof value !== "number") return null;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date.toISOString();
+}
+
+/** `but branch list --json` heads: the workspace's, then every other local branch. */
+function listedHeads(payload: unknown): { applied: Json[]; parked: Json[] } {
+  const root = asObject(payload);
+  const records = (entries: unknown[]) =>
+    entries.flatMap((entry) => {
+      const record = asObject(entry);
+      return record ? [record] : [];
+    });
+  return {
+    applied: records(
+      asArray(root?.["appliedStacks"]).flatMap((stack) => asArray(asObject(stack)?.["heads"])),
+    ),
+    parked: records(asArray(root?.["branches"])),
+  };
+}
+
+/**
+ * `but branch list --review --json` to each branch's review. A record carries
+ * only the number and address, and `but` keeps open reviews only, so a listed
+ * review is open, or a draft where its record says so.
+ */
+export function parseReviews(payload: unknown): BranchReview[] {
+  const { applied, parked } = listedHeads(payload);
+  return [...applied, ...parked].flatMap((head): BranchReview[] => {
+    const branch = asString(head["name"]);
+    const review = asObject(asArray(head["reviews"])[0]);
+    const number = review?.["number"];
+    if (branch === "" || typeof number !== "number" || !Number.isInteger(number) || number < 0) {
+      return [];
+    }
+    return [
+      {
+        branch,
+        number,
+        state: review?.["draft"] === true ? "draft" : "open",
+        url: asNullableString(review?.["url"]),
+      },
+    ];
+  });
+}
+
+/**
+ * `but branch list --local --json` lists the workspace's branches under
+ * `appliedStacks` and every other local branch under `branches`. The second
+ * are the parked ones. `but` names no commit message, so `subject` is left
+ * for git to fill in.
+ */
+export function parseParkedBranches(payload: unknown): {
+  branches: ParkedBranch[];
+  hasMore: boolean;
+} {
+  const { applied, parked } = listedHeads(payload);
+  const inWorkspace = new Set(applied.map((head) => asString(head["name"])));
+  return {
+    branches: parked.flatMap((record) => {
+      const name = asString(record["name"]);
+      if (name === "" || inWorkspace.has(name)) return [];
+      return [{ name, subject: null, updatedAt: isoTime(record["lastCommitAt"]) }];
+    }),
+    hasMore: asObject(payload)?.["hasMoreBranches"] === true,
+  };
+}
+
+/**
+ * `git for-each-ref` output whose format ends both fields, a branch's short
+ * name and its subject, with a NUL. git adds a newline after each record.
+ */
+export function parseRefSubjects(output: string): Map<string, string> {
+  const fields = output.split("\0");
+  const subjects = new Map<string, string>();
+  for (let index = 0; index + 1 < fields.length; index += 2) {
+    const name = fields[index]!.replace(/^\n/, "");
+    if (name !== "") subjects.set(name, fields[index + 1]!);
+  }
+  return subjects;
+}
+
+/** `but oplog list --json` to its entries, newest first as `but` lists them. */
+export function parseOplog(payload: unknown): OplogEntry[] {
+  return asArray(payload).flatMap((entry) => {
+    const record = asObject(entry);
+    const id = asString(record?.["id"]);
+    if (id === "") return [];
+    const details = asObject(record?.["details"]);
+    const operation = asString(details?.["operation"], "Unknown");
+    return [
+      {
+        id,
+        operation,
+        title: asString(details?.["title"], operation),
+        body: asNullableString(details?.["body"]),
+        createdAt: isoTime(record?.["createdAt"]) ?? "",
+      },
+    ];
+  });
 }
 
 /**

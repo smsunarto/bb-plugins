@@ -82,7 +82,15 @@ export const baseCommitSchema = z
   })
   .strict();
 
-export const upstreamSchema = z.object({ behind: z.number().int().nonnegative() }).strict();
+export const upstreamSchema = z
+  .object({
+    behind: z.number().int().nonnegative(),
+    /** When GitButler last fetched the target, as an ISO time. Null before the first fetch. */
+    lastFetched: z.string().nullable(),
+    /** The target's newest commit, with the first line of its message. */
+    latest: z.object({ commitId: z.string(), subject: z.string() }).strict().nullable(),
+  })
+  .strict();
 
 /** Why the panel has nothing to show. `ready` is the only usable state. */
 export const workspaceStateSchema = z.enum([
@@ -98,6 +106,13 @@ export const workspaceSchema = z
   .object({
     state: workspaceStateSchema,
     reason: z.string().nullable(),
+    /**
+     * The thread's environment, so a panel can tell which workspace-changed
+     * signals are about it. Null when the thread has no usable environment.
+     */
+    environmentId: z.string().nullable(),
+    /** The repository the host read, "." for the root. Null when it found none. */
+    repositoryKey: z.string().nullable(),
     repoName: z.string(),
     unassignedChanges: z.array(fileChangeSchema),
     stacks: z.array(stackSchema),
@@ -110,6 +125,9 @@ export const workspaceSchema = z
     conflictedFiles: z.array(z.string()),
   })
   .strict();
+
+/** What the host reads. The server knows the environment and adds it. */
+export const hostWorkspaceSchema = workspaceSchema.omit({ environmentId: true });
 
 export const repositorySchema = z.object({ key: z.string(), name: z.string() }).strict();
 
@@ -125,10 +143,20 @@ export const baseHistorySchema = z
   })
   .strict();
 
-/** Uncommitted work has no commit id; a commit patch names one. */
+/**
+ * Uncommitted work has no commit id; a commit patch names one. `where` marks
+ * a commit the panel knows is on the target, the common base or a commit
+ * above it, which `but diff` cannot resolve, so the host goes straight to git.
+ */
 export const patchSourceSchema = z.union([
   z.object({ kind: z.literal("uncommitted") }).strict(),
-  z.object({ kind: z.literal("commit"), commitId: commitIdSchema }).strict(),
+  z
+    .object({
+      kind: z.literal("commit"),
+      commitId: commitIdSchema,
+      where: z.enum(["base", "upstream"]).optional(),
+    })
+    .strict(),
 ]);
 
 /** One file of a `but diff` payload: a complete git patch Pierre can parse. */
@@ -220,6 +248,67 @@ export const butActionResultSchema = z.discriminatedUnion("status", [
 /** Where a branch's review lives on its forge, or null when it has none. */
 export const reviewUrlSchema = z.object({ url: z.string().nullable() }).strict();
 
+/**
+ * Where a branch's review stands on its forge. `but` 0.22.3 lists open reviews
+ * only and does not say which are drafts, so its answers are open, or draft
+ * when a record says so. Merged and closed are for a CLI that reports them.
+ */
+export const reviewStateSchema = z.enum(["open", "draft", "merged", "closed"]);
+
+export const branchReviewSchema = z
+  .object({
+    branch: z.string(),
+    number: z.number().int().nonnegative(),
+    state: reviewStateSchema,
+    url: z.string().nullable(),
+  })
+  .strict();
+
+/**
+ * Every local branch's review, read apart from the workspace because it can
+ * ask the forge. Without a forge account `but` answers from its own cache,
+ * which can miss reviews opened elsewhere.
+ */
+export const reviewsSchema = z
+  .object({ reviews: z.array(branchReviewSchema), reason: z.string().nullable() })
+  .strict();
+
+/** One entry of GitButler's operation log, newest first, which restores read by `id`. */
+export const oplogEntrySchema = z
+  .object({
+    id: z.string(),
+    /** GitButler's name for the kind of write, as in "CreateCommit". */
+    operation: z.string(),
+    title: z.string(),
+    body: z.string().nullable(),
+    createdAt: z.string(),
+  })
+  .strict();
+
+export const oplogSchema = z
+  .object({ entries: z.array(oplogEntrySchema), reason: z.string().nullable() })
+  .strict();
+
+/** A local branch that is not applied to the workspace. */
+export const parkedBranchSchema = z
+  .object({
+    name: z.string(),
+    /** Its head commit's subject. Null when git could not read it. */
+    subject: z.string().nullable(),
+    /** When its head commit was made, as an ISO time. */
+    updatedAt: z.string().nullable(),
+  })
+  .strict();
+
+/** `but` lists the 20 most recently updated, and `hasMore` says it left some out. */
+export const parkedBranchesSchema = z
+  .object({
+    branches: z.array(parkedBranchSchema),
+    hasMore: z.boolean(),
+    reason: z.string().nullable(),
+  })
+  .strict();
+
 /** The repository a possibly omitted key means, as the host found it. */
 export const resolvedRepositorySchema = z.object({ key: z.string(), path: z.string() }).strict();
 
@@ -244,7 +333,9 @@ export type Commit = z.infer<typeof commitSchema>;
 export type Branch = z.infer<typeof branchSchema>;
 export type Stack = z.infer<typeof stackSchema>;
 export type BaseCommit = z.infer<typeof baseCommitSchema>;
+export type Upstream = z.infer<typeof upstreamSchema>;
 export type Workspace = z.infer<typeof workspaceSchema>;
+export type HostWorkspace = z.infer<typeof hostWorkspaceSchema>;
 export type WorkspaceState = z.infer<typeof workspaceStateSchema>;
 export type Repository = z.infer<typeof repositorySchema>;
 export type PatchSource = z.infer<typeof patchSourceSchema>;
@@ -257,3 +348,10 @@ export type ButActionResult = z.infer<typeof butActionResultSchema>;
 export type ActionRisk = z.infer<typeof actionRiskSchema>;
 export type ReviewRequest = z.infer<typeof reviewRequestSchema>;
 export type Subthread = z.infer<typeof subthreadSchema>;
+export type ReviewState = z.infer<typeof reviewStateSchema>;
+export type BranchReview = z.infer<typeof branchReviewSchema>;
+export type Reviews = z.infer<typeof reviewsSchema>;
+export type OplogEntry = z.infer<typeof oplogEntrySchema>;
+export type Oplog = z.infer<typeof oplogSchema>;
+export type ParkedBranch = z.infer<typeof parkedBranchSchema>;
+export type ParkedBranches = z.infer<typeof parkedBranchesSchema>;

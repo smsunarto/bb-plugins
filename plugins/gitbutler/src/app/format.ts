@@ -22,3 +22,21 @@ export function relativeTime(value: string, now = Date.now()): string {
   if (elapsed < 7 * DAY) return `${Math.floor(elapsed / DAY)}d ago`;
   return new Date(timestamp).toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }
+
+const ABSOLUTE_STYLE = { dateStyle: "medium", timeStyle: "short" } as const;
+// Made once: a board draws one per commit, and building a format is the slow part.
+const absoluteFormat = new Intl.DateTimeFormat(undefined, ABSOLUTE_STYLE);
+
+/**
+ * The date and time in full, for a tooltip under a relative one. The reader's
+ * locale and zone unless given, which only a test needs.
+ */
+export function absoluteTime(value: string, locale?: string, timeZone?: string): string {
+  const timestamp = Date.parse(value);
+  if (Number.isNaN(timestamp)) return "";
+  const format =
+    locale === undefined && timeZone === undefined
+      ? absoluteFormat
+      : new Intl.DateTimeFormat(locale, { ...ABSOLUTE_STYLE, timeZone });
+  return format.format(timestamp);
+}

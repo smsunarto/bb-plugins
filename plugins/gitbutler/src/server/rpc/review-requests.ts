@@ -12,6 +12,6 @@ export const reviewRequests = defineQuery({
   output: reviewRequestsSchema,
   async execute(ctx, { threadId, repositoryKey }) {
     const repository = await locateRepository(ctx.bb, threadId, repositoryKey);
-    return { requests: await readReviewRequests(ctx.bb, threadId, repository.key) };
+    return { requests: await readReviewRequests(ctx.bb, threadId, repository) };
   },
 });

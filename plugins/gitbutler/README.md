@@ -27,6 +27,12 @@ what `but status` shows.
 - Per-file diffs rendered by bb's own diff viewer, for any commit, the target
   history included. The diff screen opens over the workspace, and Back or
   Escape returns to the same scroll position
+- Branches GitButler knows that the workspace does not apply, under
+  **Not applied**, closed until opened
+- GitButler's operation history (`but oplog`), from the header's
+  **Operation history** button
+- The last board it read, at once when the panel opens again, while it reads
+  the workspace behind it. Writes wait until that read lands
 
 ## Thread header and tab
 
@@ -79,7 +85,8 @@ the workspace and that its name is neither another item's id nor a name that
 starts with `refs/`.
 
 The panel never commits, amends, applies, unapplies, or restores from the
-oplog.
+oplog. Its **Ask agent** buttons quote the request into the thread's composer
+instead, for the agent to run.
 
 ## Conflicts
 

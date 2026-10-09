@@ -35,3 +35,16 @@ test("does not reach a host when the thread has no environment", async () => {
   );
   expect(calls).toHaveLength(0);
 });
+
+test("refuses a write aimed at a board read in another environment", async () => {
+  const { ctx, calls } = harness({ result: { status: "done" } });
+  const action = { kind: "land" as const, branch: "scott/top" };
+
+  await expect(
+    butAction.execute(ctx, { threadId: "t1", environmentId: "env-old", action }),
+  ).rejects.toThrow("This thread moved to another environment since the board was read.");
+  expect(calls).toHaveLength(0);
+  expect(await butAction.execute(ctx, { threadId: "t1", environmentId: "env-1", action })).toEqual({
+    status: "done",
+  });
+});
