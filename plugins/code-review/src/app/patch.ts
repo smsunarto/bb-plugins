@@ -211,7 +211,7 @@ export function placeThreads(
 }
 
 /**
- * Codex findings as inline annotations. A finding can name a line the diff
+ * bb findings as inline annotations. A finding can name a line the diff
  * leaves out, unchanged code the change breaks, and those are listed under
  * the file header instead.
  */

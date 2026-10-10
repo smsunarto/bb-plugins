@@ -38,6 +38,7 @@ function file(overrides: Partial<ChangedFile> = {}): ChangedFile {
     deletions: 2,
     patch: HUNKS,
     viewed: "unviewed",
+    generated: false,
     ...overrides,
   };
 }

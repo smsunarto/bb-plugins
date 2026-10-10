@@ -6,7 +6,7 @@ import type {
   PullRequest,
   ReviewThread,
 } from "../shared/schema.ts";
-import { activeReview, linkedThreadTitle } from "./codex-review.tsx";
+import { activeReview, linkedThreadTitle } from "./bb-review.tsx";
 import {
   findingDraftBody,
   findingLocation,
@@ -30,7 +30,7 @@ function finding(id: string, extra: Partial<Finding> = {}): Finding {
 }
 
 describe("findings", () => {
-  test("priority labels read the way Codex writes them", () => {
+  test("priority labels read the way the reviewer writes them", () => {
     expect([0, 1, 2, 3].map(priorityLabel)).toEqual(["P0", "P1", "P2", "P3"]);
   });
 
@@ -165,7 +165,7 @@ describe("linked threads", () => {
     expect(linkedThreadTitle(linked("a", { title: "Review acme/api#7" }))).toBe(
       "Review acme/api#7",
     );
-    expect(linkedThreadTitle(linked("a"))).toBe("Codex review");
+    expect(linkedThreadTitle(linked("a"))).toBe("bb review");
     expect(linkedThreadTitle(linked("a", { kind: "fix", title: " " }))).toBe("Fix checks");
   });
 });

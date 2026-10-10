@@ -4,7 +4,7 @@ import { PR_TABS, prKey, prSubPath, sameRef } from "../shared/schema.ts";
 import type { Checks, Inbox, InboxPr, PrRef, PrTab, PullRequest } from "../shared/schema.ts";
 import { ChangesTab } from "./changes.tsx";
 import { ChecksTab, useChecks } from "./checks.tsx";
-import { ReviewWithCodexButton } from "./codex-review.tsx";
+import { ReviewWithBbButton } from "./bb-review.tsx";
 import { Button, buttonVariants } from "./components/ui/button.tsx";
 import { COARSE_POINTER_COMPACT_ICON_BUTTON_CLASS } from "./components/ui/coarse-pointer-sizing.ts";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "./components/ui/tabs.tsx";
@@ -33,7 +33,7 @@ function useBackToInbox(): () => void {
   return () => navigate.toPluginPanel(PANEL_PATH, { subPath: "" });
 }
 
-/** The right pane: one pull request's header, toolbar, and tabs. The tab lives in the URL. */
+/** One pull request's header, toolbar, and tabs. The tab lives in the URL. */
 export function PrView({ prRef, tab }: { prRef: PrRef; tab: PrTab }) {
   const pullRequest = rpc.pullRequest.useQuery(
     { ref: prRef },
@@ -45,7 +45,6 @@ export function PrView({ prRef, tab }: { prRef: PrRef; tab: PrTab }) {
     return (
       <div className="flex min-h-0 flex-1 flex-col">
         <div className="flex items-center gap-1 border-b border-border px-3 py-2">
-          <BackButton />
           <span className="truncate text-muted-foreground">{prKey(prRef)}</span>
         </div>
         <div className="p-4">
@@ -79,22 +78,6 @@ export function PrView({ prRef, tab }: { prRef: PrRef; tab: PrTab }) {
   return <Loaded pr={pr} tab={tab} />;
 }
 
-/** Narrow, the pull request fills the page, so this is the way back to the list. */
-function BackButton() {
-  const back = useBackToInbox();
-  return (
-    <Button
-      variant="ghost"
-      size="icon"
-      className={cn(ICON_BUTTON, "-ms-1.5 shrink-0 @3xl/page:hidden")}
-      aria-label="Back to inbox"
-      onClick={back}
-    >
-      <Icon name="ChevronLeft" aria-hidden />
-    </Button>
-  );
-}
-
 function Loaded({ pr, tab }: { pr: PullRequest; tab: PrTab }) {
   const navigate = useBbNavigate();
   const checks = useChecks(pr.ref, pr.headRefOid);
@@ -111,7 +94,6 @@ function Loaded({ pr, tab }: { pr: PullRequest; tab: PrTab }) {
       <header className="shrink-0 border-b border-border bg-background px-3 pt-2.5">
         <div className="flex flex-wrap items-start gap-x-3 gap-y-2">
           <div className="flex min-w-0 flex-1 basis-64 items-start gap-1">
-            <BackButton />
             <h1 className="min-w-0 text-sm leading-snug font-semibold [overflow-wrap:anywhere]">
               {pr.title}{" "}
               <span className="font-normal text-muted-foreground tabular-nums">
@@ -237,7 +219,7 @@ function Toolbar({ pr }: { pr: PullRequest }) {
           <Icon name="ExternalLink" aria-hidden />
         </UrlLink>
       </Tip>
-      <ReviewWithCodexButton pr={pr} />
+      <ReviewWithBbButton pr={pr} />
       <SubmitReviewButton pr={pr} />
     </div>
   );

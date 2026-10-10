@@ -19,7 +19,7 @@ const { installTestPluginRuntime, renderSlot } = await import("@get-bb/plugin-sd
 installTestPluginRuntime();
 const { PluginQueryBoundary } = await import("@bb-kit/core/rpc/query");
 const { ChecksTab } = await import("./checks.tsx");
-const { FindingsCard, LinkedThreads, ReviewWithCodexButton } = await import("./codex-review.tsx");
+const { FindingsCard, LinkedThreads, ReviewWithBbButton } = await import("./bb-review.tsx");
 const { FindingCard } = await import("./finding.tsx");
 const { SubmitReviewButton } = await import("./submit-review.tsx");
 const { rpc: pluginRpc } = await import("./rpc.ts");
@@ -242,7 +242,8 @@ test("Fix opens a composer seeded with the prompt for the selected failures", as
     ref: { owner: "acme", repo: "api", number: 42 },
     checkIds: ["run:2"],
   });
-  expect(composer.dataset.defaultProviderId).toBe("codex");
+  // No provider is pinned, so the composer opens on bb's default agent.
+  expect(composer.dataset.defaultProviderId).toBe("");
   expect(composer.dataset.defaultProjectId).toBe("project-api");
   expect(composer.dataset.layout).toBe("contained");
   expect(composer.dataset.draftKey).toBe(`code-review-fix:acme/api#42@${HEAD}:run:2`);
@@ -261,6 +262,7 @@ test("Fix opens a composer seeded with the prompt for the selected failures", as
   };
   expect(start.ref).toEqual({ owner: "acme", repo: "api", number: 42 });
   expect(start.headRefOid).toBe(HEAD);
+  // The test composer submits "codex" when no provider is pinned.
   expect([start.request.projectId, start.request.providerId]).toEqual(["project-api", "codex"]);
   await gone(() => slot.queryByTestId("bb-new-thread-composer"));
   slot.lifecycle.unmount();
@@ -289,9 +291,9 @@ test("a prompt that cannot be built says why and can be asked for again", async 
   slot.lifecycle.unmount();
 });
 
-// ── Review with Codex ────────────────────────────────────────────────────
+// ── Review with bb ────────────────────────────────────────────────────
 
-test("Review with Codex starts one review, then opens it instead of starting another", async () => {
+test("Review with bb starts one review, then opens it instead of starting another", async () => {
   let activity = noActivity;
   const rpc: Handlers = {
     agentActivity: () => activity,
@@ -300,9 +302,9 @@ test("Review with Codex starts one review, then opens it instead of starting ano
       return { threadId: "thread-review" };
     },
   };
-  const slot = mount(ReviewWithCodexButton, rpc);
+  const slot = mount(ReviewWithBbButton, rpc);
 
-  fireEvent.click(await slot.findByRole("button", { name: "Review with Codex" }));
+  fireEvent.click(await slot.findByRole("button", { name: "Review with bb" }));
   const reviewing = await slot.findByRole("button", { name: "Reviewing…" });
   expect(slot.rpcCalls.filter((call) => call.method === "startReview")).toEqual([
     { method: "startReview", input: { ref: { owner: "acme", repo: "api", number: 42 } } },
@@ -315,14 +317,14 @@ test("Review with Codex starts one review, then opens it instead of starting ano
 });
 
 /**
- * The Codex button once `thread` is on screen: the thread list beside it
+ * The review button once `thread` is on screen: the thread list beside it
  * reads the same activity, so its row shows the button has it too.
  */
 async function reviewButtonBeside(thread: LinkedThread) {
   const activity: AgentActivity = { threads: [thread], latestReview: null };
   const Both = ({ pr }: { pr: PullRequest }) => (
     <>
-      <ReviewWithCodexButton pr={pr} />
+      <ReviewWithBbButton pr={pr} />
       <LinkedThreads pr={pr} />
     </>
   );
@@ -335,7 +337,7 @@ test("a review running on an older head does not block reviewing the new one", a
   const slot = await reviewButtonBeside(
     linked("thread-old", { status: "active", headRefOid: OLD_HEAD }),
   );
-  expect(slot.getByRole("button", { name: "Review with Codex" })).toBeTruthy();
+  expect(slot.getByRole("button", { name: "Review with bb" })).toBeTruthy();
   slot.lifecycle.unmount();
 });
 
@@ -343,7 +345,7 @@ test("a review running against the old base does not block reviewing after a ret
   const slot = await reviewButtonBeside(
     linked("thread-old", { status: "active", baseRefName: "release" }),
   );
-  expect(slot.getByRole("button", { name: "Review with Codex" })).toBeTruthy();
+  expect(slot.getByRole("button", { name: "Review with bb" })).toBeTruthy();
   slot.lifecycle.unmount();
 });
 
@@ -359,14 +361,14 @@ test("the gear edits the standing review instructions", async () => {
     reviewInstructions: () => ({ instructions: "Flag missing tests." }),
     setReviewInstructions: (input: { instructions: string }) => input,
   };
-  const slot = mount(ReviewWithCodexButton, rpc);
-  fireEvent.click(await slot.findByRole("button", { name: "Codex review instructions" }));
+  const slot = mount(ReviewWithBbButton, rpc);
+  fireEvent.click(await slot.findByRole("button", { name: "bb review instructions" }));
 
   const field = (await slot.findByRole("textbox", {
     name: "Review instructions",
   })) as HTMLTextAreaElement;
   expect(field.value).toBe("Flag missing tests.");
-  expect(slot.getByText("Standing criteria and report format for every Codex review")).toBeTruthy();
+  expect(slot.getByText("Standing criteria and report format for every bb review")).toBeTruthy();
   expect((slot.getByRole("button", { name: "Save" }) as HTMLButtonElement).disabled).toBe(true);
 
   fireEvent.change(field, { target: { value: "Flag missing tests.\nIgnore style." } });
@@ -379,7 +381,7 @@ test("the gear edits the standing review instructions", async () => {
 });
 
 test("activity for this pull request is read again when the server says it changed", async () => {
-  const slot = mount(ReviewWithCodexButton, { agentActivity: () => noActivity });
+  const slot = mount(ReviewWithBbButton, { agentActivity: () => noActivity });
   await waitFor(() => expect(slot.rpcCalls).toHaveLength(1));
 
   await slot.emitRealtime(AGENT_ACTIVITY_CHANNEL, { key: "acme/other#42" });
@@ -796,7 +798,7 @@ test("a finding whose review ran on an older head cannot be drafted, and says wh
   const draft = slot.getByRole("button", { name: "Add as draft comment" }) as HTMLButtonElement;
   expect(draft.disabled).toBe(true);
   expect(draft.parentElement?.getAttribute("title")).toBe(
-    "Codex reviewed an older version of this diff, so this line may not match it.",
+    "bb reviewed an older version of this diff, so this line may not match it.",
   );
   fireEvent.click(draft);
   expect(slot.rpcCalls).toEqual([]);
@@ -836,7 +838,7 @@ test("a review against another base is marked stale and its findings cannot be d
   });
   const stale = await slot.findByText("Stale");
   expect(stale.getAttribute("title")).toBe(
-    "Codex reviewed the changes against release. The pull request now targets main.",
+    "bb reviewed the changes against release. The pull request now targets main.",
   );
   const draft = slot.getByRole("button", { name: "Add as draft comment" }) as HTMLButtonElement;
   expect(draft.disabled).toBe(true);
@@ -855,7 +857,7 @@ test("a clean review says so, and no review shows nothing", async () => {
   none.lifecycle.unmount();
 });
 
-test("a review under way says Codex is reviewing", async () => {
+test("a review under way says bb is reviewing", async () => {
   const activity: AgentActivity = {
     threads: [linked("thread-review", { status: "active" })],
     latestReview: {
@@ -869,7 +871,7 @@ test("a review under way says Codex is reviewing", async () => {
   };
   const slot = mount(FindingsCard, { agentActivity: () => activity });
   expect(
-    await slot.findByText("Codex is reviewing. Findings appear here when it reports."),
+    await slot.findByText("bb is reviewing. Findings appear here when it reports."),
   ).toBeTruthy();
   slot.lifecycle.unmount();
 });
@@ -887,7 +889,7 @@ test("linked threads open on click, and a deleted one cannot be opened", async (
   const fix = await slot.findByRole("button", {
     name: /^Fix checks on acme\/api#42: Fix thread, working/,
   });
-  const gone = slot.getByRole("button", { name: /^Codex review: Review thread, deleted/ });
+  const gone = slot.getByRole("button", { name: /^bb review: Review thread, deleted/ });
   expect((gone as HTMLButtonElement).disabled).toBe(true);
   expect(within(gone).getByText("9999999")).toBeTruthy();
   fireEvent.click(fix);

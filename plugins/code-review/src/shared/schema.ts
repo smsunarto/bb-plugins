@@ -331,6 +331,8 @@ export const changedFileSchema = z.object({
    */
   patch: z.string().nullable(),
   viewed: viewedStateSchema,
+  /** Machine-written (a lockfile, build output, `linguist-generated`), so it sorts last and starts folded. */
+  generated: z.boolean(),
 });
 export type ChangedFile = z.infer<typeof changedFileSchema>;
 
@@ -370,7 +372,7 @@ export const checksSchema = z.object({
 });
 export type Checks = z.infer<typeof checksSchema>;
 
-// ── Codex reviews and linked threads ─────────────────────────────────────
+// ── bb reviews and linked threads ─────────────────────────────────────
 
 /** P0 blocks release, P1 is urgent, P2 is an ordinary defect, P3 is low impact. */
 export const findingSchema = z.object({
@@ -401,7 +403,7 @@ export type LinkedThread = z.infer<typeof linkedThreadSchema>;
 
 export const reviewRunSchema = z.object({
   threadId: z.string(),
-  /** The diff Codex reviewed, which the findings' line numbers count in. */
+  /** The diff bb reviewed, which the findings' line numbers count in. */
   headRefOid: z.string(),
   baseRefName: z.string(),
   /** Set once the review agent reports. Null while it is still reviewing. */
@@ -413,7 +415,7 @@ export type ReviewRun = z.infer<typeof reviewRunSchema>;
 
 export const agentActivitySchema = z.object({
   threads: z.array(linkedThreadSchema),
-  /** The newest Codex review of this pull request, if any. */
+  /** The newest bb review of this pull request, if any. */
   latestReview: reviewRunSchema.nullable(),
 });
 export type AgentActivity = z.infer<typeof agentActivitySchema>;

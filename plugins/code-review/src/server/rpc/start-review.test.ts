@@ -51,7 +51,7 @@ function context(
   return { ...fake, status };
 }
 
-test("starts a high-effort Codex review in a fresh worktree and links it to the pull request", async () => {
+test("starts a high-effort bb review in a fresh worktree and links it to the pull request", async () => {
   const { ctx, harness } = context();
   await ctx.store.setInstructions("Watch the auth paths.");
 
@@ -59,6 +59,8 @@ test("starts a high-effort Codex review in a fresh worktree and links it to the 
 
   const [[spawn]] = harness.sdk.callsTo("threads.spawn") as [[Record<string, unknown>]];
   const { prompt, ...args } = spawn;
+  // No provider is pinned, so bb starts the review on its default agent.
+  expect(args).not.toHaveProperty("providerId");
   expect(args).toMatchObject({
     projectId: "p-cli",
     environment: {
@@ -66,7 +68,6 @@ test("starts a high-effort Codex review in a fresh worktree and links it to the 
       hostId: "host-1",
       workspace: { type: "managed-worktree", baseBranch: { kind: "default" } },
     },
-    providerId: "codex",
     reasoningLevel: "high",
     visibility: "visible",
     title: "Review Cli/cli#9000",
@@ -152,7 +153,7 @@ test("reviews in the environment already on the branch, leaving its working tree
 test("a repository that is not a bb project is named in the error", async () => {
   const { ctx, harness } = context({ projects: [] });
   await expect(startReview.execute(ctx, { ref: REF })).rejects.toThrow(
-    "Add Cli/cli as a bb project to review it with Codex.",
+    "Add Cli/cli as a bb project to review it with bb.",
   );
   expect(harness.sdk.callsTo("threads.spawn")).toEqual([]);
 });

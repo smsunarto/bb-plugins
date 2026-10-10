@@ -178,7 +178,6 @@ function FixComposer({
       <NewThreadComposer
         {...(projectId ? { defaultProjectId: projectId } : {})}
         {...(environment ? { defaultEnvironment: environment } : {})}
-        defaultProviderId="codex"
         initialPrompt={text}
         draftKey={fixDraftKey(pr, checkIds)}
         layout="contained"

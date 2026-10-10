@@ -51,6 +51,7 @@ test("joins recorded REST patches with the viewer's viewed marks by path", async
       additions: 1,
       deletions: 0,
       viewed: "unviewed",
+      generated: false,
     },
     {
       path: "pkg/cmd/attestation/verify/verify_test.go",
@@ -59,6 +60,7 @@ test("joins recorded REST patches with the viewer's viewed marks by path", async
       additions: 31,
       deletions: 0,
       viewed: "unviewed",
+      generated: false,
     },
     {
       path: "pkg/cmdutil/auth_check.go",
@@ -67,6 +69,7 @@ test("joins recorded REST patches with the viewer's viewed marks by path", async
       additions: 27,
       deletions: 2,
       viewed: "unviewed",
+      generated: false,
     },
     {
       path: "pkg/cmdutil/auth_check_test.go",
@@ -75,6 +78,7 @@ test("joins recorded REST patches with the viewer's viewed marks by path", async
       additions: 64,
       deletions: 0,
       viewed: "unviewed",
+      generated: false,
     },
   ]);
   expect(changed.files[0]?.patch).toStartWith(
@@ -150,6 +154,7 @@ test("renames keep their old path, binaries have no patch, and later pages of ma
         deletions: 0,
         patch: "@@ -1 +1 @@\n-a\n+b",
         viewed: "viewed",
+        generated: false,
       },
       {
         path: "logo.png",
@@ -159,6 +164,7 @@ test("renames keep their old path, binaries have no patch, and later pages of ma
         deletions: 0,
         patch: null,
         viewed: "dismissed",
+        generated: false,
       },
       {
         path: "gone.ts",
@@ -168,6 +174,7 @@ test("renames keep their old path, binaries have no patch, and later pages of ma
         deletions: 3,
         patch: "@@ -1,3 +0,0 @@",
         viewed: "unviewed",
+        generated: false,
       },
     ],
   });
@@ -224,6 +231,7 @@ test("a push between reads loads again, and patches carry the head they were rea
         deletions: 0,
         patch: "@@ at new on main @@",
         viewed: "unviewed",
+        generated: false,
       },
     ],
   });
@@ -255,6 +263,7 @@ test("a retarget between reads loads again, and patches carry the base they comp
         deletions: 0,
         patch: "@@ at abc on release @@",
         viewed: "unviewed",
+        generated: false,
       },
     ],
   });
@@ -282,4 +291,29 @@ test("an unknown file status reads as changed", () => {
     [],
   );
   expect(changed.files[0]?.status).toBe("changed");
+});
+
+test("files the head's .gitattributes marks linguist-generated read as generated", async () => {
+  const marks = recordedMarks();
+  const attributes = "pkg/cmdutil/*_test.go linguist-generated\n";
+  const { gh } = fakeGh({
+    graphql: {
+      ChangedFiles: {
+        repository: {
+          pullRequest: {
+            ...marks.repository.pullRequest,
+            commits: { nodes: [{ commit: { file: { object: { text: attributes } } } }] },
+          },
+        },
+      },
+      PullRequestHead: head(CLI_HEAD),
+    },
+    rest: { [FILES_PATH]: fixtureText("rest-files-cli-9000.ndjson") },
+  });
+
+  const changed = await loadChangedFiles(gh, { owner: "cli", repo: "cli", number: 9000 });
+
+  expect(changed.files.filter((file) => file.generated).map((file) => file.path)).toEqual([
+    "pkg/cmdutil/auth_check_test.go",
+  ]);
 });

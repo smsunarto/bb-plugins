@@ -16,10 +16,13 @@ import { rpc } from "./rpc.ts";
 const SHELL = "flex h-full min-h-0 min-w-0 overflow-hidden bg-background text-xs text-foreground";
 const GH_INSTALL_URL = "https://cli.github.com";
 
+/** Whether gh is installed and signed in only changes when the reader fixes it, and Try again asks again then. */
+const STATUS_QUERY = { staleTime: 5 * 60_000 } as const;
+
 /**
- * The Code Review page. The URL is the state: `subPath` is empty for the
- * inbox alone, or names a pull request and its tab. Wide, the inbox and the
- * pull request sit side by side; narrow, whichever the URL names fills it.
+ * The Code Review page. The URL is the state: `subPath` is empty when no pull
+ * request is open, or names a pull request and its tab. The inbox lives in the
+ * page's Inbox tab, which reads the same URL.
  */
 export function CodeReviewPage({ subPath }: PluginNavPanelProps) {
   return (
@@ -32,9 +35,7 @@ export function CodeReviewPage({ subPath }: PluginNavPanelProps) {
 }
 
 function Page({ subPath }: { subPath: string }) {
-  // Whether gh is installed and signed in only changes when the reader
-  // fixes it, and Try again asks again then.
-  const status = rpc.status.useQuery({ staleTime: 5 * 60_000 });
+  const status = rpc.status.useQuery(STATUS_QUERY);
   if (!status.data) {
     return (
       <div className={cn(SHELL, "flex-col p-4")}>
@@ -65,34 +66,48 @@ function Page({ subPath }: { subPath: string }) {
   }
 
   const route = parsePrSubPath(subPath);
-  const showsDetail = subPath.replace(/^\/+|\/+$/g, "") !== "";
   return (
-    <div className={cn(SHELL, "@container/page")}>
-      <nav
-        aria-label="Pull request inbox"
-        className={cn(
-          "min-h-0 w-full flex-col border-border @3xl/page:flex @3xl/page:w-80 @3xl/page:shrink-0 @3xl/page:border-r",
-          showsDetail ? "hidden" : "flex",
-        )}
-      >
-        <Inbox selected={route?.ref ?? null} />
+    <section aria-label="Pull request" className={cn(SHELL, "flex-col")}>
+      {route ? (
+        // Keyed, so a different pull request starts from its own scroll and drafts.
+        <PrView key={prKey(route.ref)} prRef={route.ref} tab={route.tab} />
+      ) : subPath.replace(/^\/+|\/+$/g, "") !== "" ? (
+        <UnknownPage />
+      ) : (
+        <NothingSelected />
+      )}
+    </section>
+  );
+}
+
+/** The Inbox tab in the page's right panel: the viewer's queues, once gh can answer. */
+export function InboxTab({ subPath }: PluginNavPanelProps) {
+  return (
+    <PluginQueryBoundary>
+      <TooltipProvider delayDuration={400}>
+        <InboxTabBody subPath={subPath} />
+      </TooltipProvider>
+    </PluginQueryBoundary>
+  );
+}
+
+function InboxTabBody({ subPath }: { subPath: string }) {
+  const status = rpc.status.useQuery(STATUS_QUERY);
+  if (status.data?.ok) {
+    return (
+      <nav aria-label="Pull request inbox" className={cn(SHELL, "flex-col")}>
+        <Inbox selected={parsePrSubPath(subPath)?.ref ?? null} />
       </nav>
-      <section
-        aria-label="Pull request"
-        className={cn(
-          "min-h-0 min-w-0 flex-1 flex-col @3xl/page:flex",
-          showsDetail ? "flex" : "hidden",
-        )}
-      >
-        {route ? (
-          // Keyed, so a different pull request starts from its own scroll and drafts.
-          <PrView key={prKey(route.ref)} prRef={route.ref} tab={route.tab} />
-        ) : showsDetail ? (
-          <UnknownPage />
-        ) : (
-          <NothingSelected />
-        )}
-      </section>
+    );
+  }
+  // The page explains what gh needs; the inbox waits until gh can answer it.
+  return (
+    <div className={cn(SHELL, "flex-col p-3 text-muted-foreground")}>
+      {status.data || status.isError ? (
+        <p>GitHub is unavailable. The page says how to fix it.</p>
+      ) : (
+        <Loading label="Connecting to GitHub…" />
+      )}
     </div>
   );
 }
@@ -193,7 +208,7 @@ function NothingSelected() {
       <Icon name="GitPullRequest" className="mb-2 size-6 text-subtle-foreground" aria-hidden />
       <p className="font-medium text-foreground">Select a pull request</p>
       <p className="mt-1 max-w-64 leading-normal">
-        Choose one from the inbox, or paste a GitHub link in the box above it.
+        Choose one in the Inbox tab, or paste a GitHub link at its top.
       </p>
     </div>
   );

@@ -14,7 +14,7 @@ import type { PrHead } from "./pull-request.ts";
 
 const files = instructionFiles(import.meta.url);
 
-/** The prompt of a Codex review of `pr`. */
+/** The prompt of a bb review of `pr`. */
 export function reviewPrompt(
   pr: PrHead,
   { reused, instructions }: { reused: boolean; instructions: string },
@@ -35,7 +35,7 @@ export function reviewPrompt(
     : files.read("review-workspace-fresh", {
         checkout: fenced(`git checkout --detach ${pr.headRefOid}`),
       });
-  return files.read("review-with-codex", {
+  return files.read("review-with-bb", {
     ...vars,
     fetch: fenced(
       [

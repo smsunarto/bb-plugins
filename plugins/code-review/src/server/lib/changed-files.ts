@@ -7,6 +7,7 @@ import {
   sameRevision,
 } from "../../shared/schema.ts";
 import { type Gh, GhError } from "./gh.ts";
+import { parseGitattributes, isGenerated } from "./generated.ts";
 import { type GqlPageInfo, remainingPages, restRepo } from "./github.ts";
 import { loadPrHead } from "./pull-request.ts";
 
@@ -28,6 +29,7 @@ export const FILES_QUERY = `query ChangedFiles($owner: String!, $name: String!, 
     pullRequest(number: $number) {
       headRefOid
       baseRefName
+      commits(last: 1) { nodes { commit { file(path: ".gitattributes") { object { ... on Blob { text } } } } } }
       files(first: 100, after: $after) {
         pageInfo { hasNextPage endCursor }
         nodes { path viewerViewedState }
@@ -37,7 +39,11 @@ export const FILES_QUERY = `query ChangedFiles($owner: String!, $name: String!, 
 }`;
 
 type Files = { pageInfo: GqlPageInfo; nodes: { path: string; viewerViewedState: string }[] };
-type FilesPage = { repository: { pullRequest: DiffRevision & { files: Files } } };
+/** The head commit's root `.gitattributes`, if it has one. */
+type HeadAttributes = {
+  commits?: { nodes: { commit: { file: { object: { text?: string | null } | null } | null } }[] };
+};
+type FilesPage = { repository: { pullRequest: DiffRevision & HeadAttributes & { files: Files } } };
 
 export type RestFile = {
   filename: string;
@@ -68,8 +74,10 @@ export function mapChangedFiles(
   { headRefOid, baseRefName }: DiffRevision,
   files: RestFile[],
   viewed: Files["nodes"],
+  gitattributes = "",
 ): ChangedFiles {
   const marks = new Map(viewed.map((node) => [node.path, VIEWED[node.viewerViewedState]]));
+  const rules = parseGitattributes(gitattributes);
   return {
     headRefOid,
     baseRefName,
@@ -81,6 +89,7 @@ export function mapChangedFiles(
       deletions: file.deletions,
       patch: file.patch ?? null,
       viewed: marks.get(file.filename) ?? "unviewed",
+      generated: isGenerated(file.filename, file.patch ?? null, rules),
     })),
   };
 }
@@ -98,7 +107,13 @@ async function readChangedFiles(gh: Gh, ref: PrRef): Promise<ChangedFiles> {
   const variables = { owner: ref.owner, name: ref.repo, number: ref.number };
   const page = (after: string | null) =>
     gh.graphql(FILES_QUERY, { ...variables, after }) as Promise<FilesPage>;
-  const { files: firstFiles, ...revision } = (await page(null)).repository.pullRequest;
+  const {
+    files: firstFiles,
+    commits,
+    headRefOid,
+    baseRefName,
+  } = (await page(null)).repository.pullRequest;
+  const gitattributes = commits?.nodes[0]?.commit.file?.object?.text ?? "";
   const [files, viewed] = await Promise.all([
     gh.rest(`${restRepo(ref.owner, ref.repo)}/pulls/${ref.number}/files?per_page=100`, {
       paginate: true,
@@ -110,5 +125,5 @@ async function readChangedFiles(gh: Gh, ref: PrRef): Promise<ChangedFiles> {
       30,
     ),
   ]);
-  return mapChangedFiles(revision, files, viewed);
+  return mapChangedFiles({ headRefOid, baseRefName }, files, viewed, gitattributes);
 }

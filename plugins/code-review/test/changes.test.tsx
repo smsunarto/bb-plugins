@@ -79,6 +79,7 @@ const files: ChangedFiles = {
       additions: 2,
       deletions: 1,
       viewed: "unviewed",
+      generated: false,
       patch: "@@ -1,3 +1,4 @@\n import a\n-const b = 1;\n+const b = 2;\n+const c = 3;\n export {};",
     },
     {
@@ -88,6 +89,7 @@ const files: ChangedFiles = {
       additions: 0,
       deletions: 0,
       viewed: "unviewed",
+      generated: false,
       patch: null,
     },
     {
@@ -97,6 +99,7 @@ const files: ChangedFiles = {
       additions: 0,
       deletions: 3,
       viewed: "viewed",
+      generated: false,
       patch: "@@ -1,3 +0,0 @@\n-a\n-b\n-c",
     },
   ],
@@ -171,6 +174,37 @@ test("lists every changed file with its threads inline, and folds the viewed one
   ).toBeTruthy();
   expect(slot.getByRole("button", { name: "Expand docs/old.md" })).toBeTruthy();
   expect(slot.getByRole("button", { name: "Collapse src/login.ts" })).toBeTruthy();
+  slot.lifecycle.unmount();
+});
+
+test("a generated file sorts after the rest and starts folded, and opens on request", async () => {
+  const lockfile = {
+    path: "bun.lock",
+    previousPath: null,
+    status: "modified" as const,
+    additions: 4,
+    deletions: 1,
+    viewed: "unviewed" as const,
+    generated: true,
+    patch: "@@ -1,2 +1,5 @@\n {\n-  a\n+  b\n+  c\n+  d\n+  e",
+  };
+  const slot = (
+    await changesTab([], { changedFiles: () => ({ ...files, files: [lockfile, ...files.files] }) })
+  ).render();
+  await slot.findByText("1 of 4 files viewed");
+
+  expect(
+    slot
+      .getAllByRole("article")
+      .map((card) => card.getAttribute("aria-label"))
+      .filter((name) => !name?.startsWith("Comment")),
+  ).toEqual(["src/login.ts", "assets/logo.png", "docs/old.md", "bun.lock"]);
+  const card = slot.getByRole("article", { name: "bun.lock" });
+  expect(within(card).getByText("Generated")).toBeTruthy();
+  expect(within(card).getByText("Generated file, 5 changed lines, folded.")).toBeTruthy();
+
+  fireEvent.click(within(card).getByRole("button", { name: "Show diff" }));
+  expect(await within(card).findByRole("button", { name: "Collapse bun.lock" })).toBeTruthy();
   slot.lifecycle.unmount();
 });
 
@@ -734,9 +768,7 @@ test("findings from a review against another base are marked as older", async ()
     })
   ).render();
 
-  expect(
-    await slot.findByText("Codex findings are from an older version of this diff"),
-  ).toBeTruthy();
+  expect(await slot.findByText("bb findings are from an older version of this diff")).toBeTruthy();
   slot.lifecycle.unmount();
 });
 

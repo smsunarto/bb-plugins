@@ -43,7 +43,7 @@ export async function findProject(
 
 export async function requireProject(bb: BbPluginApi, owner: string, repo: string) {
   const project = await findProject(bb, owner, repo);
-  if (!project) throw new Error(`Add ${owner}/${repo} as a bb project to review it with Codex.`);
+  if (!project) throw new Error(`Add ${owner}/${repo} as a bb project to review it with bb.`);
   return project;
 }
 

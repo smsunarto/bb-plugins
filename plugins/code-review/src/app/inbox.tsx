@@ -94,7 +94,7 @@ function useOpenPr(): (ref: PrRef) => void {
   return (ref) => navigate.toPluginPanel(PANEL_PATH, { subPath: prSubPath(ref) });
 }
 
-/** The left pane: a box to open any pull request by link, then the viewer's queues. */
+/** The Inbox tab: a box to open any pull request by link, then the viewer's queues. */
 export function Inbox({ selected }: { selected: PrRef | null }) {
   const inbox = useInbox();
   // The tab the reader last chose, kept across visits.

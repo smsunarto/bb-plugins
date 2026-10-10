@@ -24,12 +24,12 @@ import { rpc } from "./rpc.ts";
 export const REVEAL_EVENT = "code-review:reveal";
 export type RevealDetail = Pick<Finding, "path" | "line" | "side">;
 
-/** `P0` to `P3`, as Codex writes them. */
+/** `P0` to `P3`, as the reviewer writes them. */
 export function priorityLabel(priority: number): string {
   return `P${priority}`;
 }
 
-// What each priority means, from Codex's review rubric.
+// What each priority means, from the review rubric.
 const PRIORITY_MEANING = ["Blocks release", "Urgent", "Normal", "Low impact"];
 
 // P0 reads as an error, P1 as a warning, and the rest stay quiet.
@@ -87,7 +87,7 @@ type SavedDraft = Awaited<ReturnType<DraftMutation["mutateAsync"]>>;
 type DraftLines = Pick<ReviewThread, "path" | "line" | "side" | "startLine" | "startSide">;
 
 /**
- * Whether a draft with this body on these lines is the finding's. Codex can
+ * Whether a draft with this body on these lines is the finding's. The reviewer can
  * word two findings alike, so the draft has to sit on the finding's exact
  * lines too.
  */
@@ -191,7 +191,7 @@ export function PriorityBadge({ priority }: { priority: number }) {
 const ACTION = "h-6 gap-1.5 px-2 text-xs font-normal [&_[data-icon-root]]:size-3";
 
 /**
- * One Codex finding: priority, title, where it is, and why. `onReveal` adds
+ * One bb finding: priority, title, where it is, and why. `onReveal` adds
  * "Show in Changes". With `pr`, the finding can also become a draft comment
  * in the viewer's pending review, unless the review ran on another head or
  * base, whose line numbers may not match the diff any more.
@@ -346,7 +346,7 @@ function DraftCommentButton({
   );
   // A disabled button shows no tooltip of its own, so the reason sits on a wrapper.
   return outdated ? (
-    <span title="Codex reviewed an older version of this diff, so this line may not match it.">
+    <span title="bb reviewed an older version of this diff, so this line may not match it.">
       {button}
     </span>
   ) : (

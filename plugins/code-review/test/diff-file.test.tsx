@@ -21,6 +21,7 @@ function changed(overrides: Partial<ChangedFile> = {}): ChangedFile {
     additions: 2,
     deletions: 1,
     viewed: "unviewed",
+    generated: false,
     patch: "@@ -1,3 +1,4 @@\n import a\n-const b = 1;\n+const b = 2;\n+const c = 3;\n export {};",
     ...overrides,
   };

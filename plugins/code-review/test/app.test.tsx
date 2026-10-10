@@ -35,6 +35,13 @@ async function page(subPath: string, rpc: Handlers = baseRpc) {
   return renderSlot(await registration(), { subPath }, { rpc: rpc as never });
 }
 
+/** The Inbox tab in the page's right panel, reading the same URL as the page. */
+async function inboxTab(subPath: string, rpc: Handlers = baseRpc) {
+  const tab = (await registration()).fixedTabs?.[0];
+  if (!tab) throw new Error("Code Review declares no Inbox tab");
+  return renderSlot(tab, { subPath }, { rpc: rpc as never });
+}
+
 const PR_PATH = "acme/api/pull/42";
 
 /**
@@ -59,6 +66,9 @@ test("registers one Code Review page in the sidebar", async () => {
   expect(panel.title).toBe("Code Review");
   expect(panel.path).toBe("code-review");
   expect(panel.icon).toBe("GitPullRequest");
+  expect(panel.fixedTabs?.map(({ panelId, id, title }) => ({ panelId, id, title }))).toEqual([
+    { panelId: "code-review", id: "inbox", title: "Inbox" },
+  ]);
 });
 
 test("the sidebar counts pull requests still waiting for the viewer's review", async () => {
@@ -86,7 +96,7 @@ test("the sidebar shows nothing when no review is waiting", async () => {
 });
 
 test("lists what is assigned to the viewer, with a count on every tab", async () => {
-  const slot = await page("");
+  const slot = await inboxTab("");
   await slot.findByText("Rate-limit the login endpoint");
 
   const tabs = slot.getAllByRole("tab").map((tab) => tab.textContent);
@@ -101,13 +111,22 @@ test("lists what is assigned to the viewer, with a count on every tab", async ()
   expect(first.getByText("Checks: Failed")).toBeTruthy();
   expect(first.getByText("Review requested")).toBeTruthy();
   expect(within(rows[1]!).getByText("Approved")).toBeTruthy();
-  // Nothing is selected while the URL names no pull request.
-  expect(slot.getByText("Select a pull request")).toBeTruthy();
+  expect(rows.some((row) => row.getAttribute("aria-current") === "page")).toBe(false);
+  slot.lifecycle.unmount();
+});
+
+test("with no pull request in the URL, the page points to the Inbox tab", async () => {
+  const slot = await page("");
+  expect(await slot.findByText("Select a pull request")).toBeTruthy();
+  expect(
+    slot.getByText("Choose one in the Inbox tab, or paste a GitHub link at its top."),
+  ).toBeTruthy();
+  expect(slot.rpcCalls.map((call) => call.method)).toEqual(["status"]);
   slot.lifecycle.unmount();
 });
 
 test("another tab shows its own list, and the choice is remembered", async () => {
-  const slot = await page("");
+  const slot = await inboxTab("");
   await slot.findByText("Rate-limit the login endpoint");
 
   selectTab(slot.getByRole("tab", { name: /Authored by me/ }));
@@ -118,13 +137,13 @@ test("another tab shows its own list, and the choice is remembered", async () =>
   expect(slot.queryByText("Rate-limit the login endpoint")).toBeNull();
   slot.lifecycle.unmount();
 
-  const again = await page("");
+  const again = await inboxTab("");
   expect(await again.findByText("Drop the legacy token table")).toBeTruthy();
   again.lifecycle.unmount();
 });
 
 test("an empty tab says what would show up there", async () => {
-  const slot = await page("", { ...baseRpc, inbox: () => ({ ...inbox, team: [] }) });
+  const slot = await inboxTab("", { ...baseRpc, inbox: () => ({ ...inbox, team: [] }) });
   await slot.findByText("Rate-limit the login endpoint");
   selectTab(slot.getByRole("tab", { name: /My team/ }));
   expect(await slot.findByText("No team review requests")).toBeTruthy();
@@ -132,7 +151,7 @@ test("an empty tab says what would show up there", async () => {
 });
 
 test("a row opens its pull request in the page's URL", async () => {
-  const slot = await page("");
+  const slot = await inboxTab("");
   fireEvent.click(await slot.findByRole("button", { name: /Rate-limit the login endpoint/ }));
   expect(slot.navigateCalls).toEqual([
     { method: "toPluginPanel", path: "code-review", options: { subPath: PR_PATH } },
@@ -141,7 +160,7 @@ test("a row opens its pull request in the page's URL", async () => {
 });
 
 test("a pasted pull request link opens at once", async () => {
-  const slot = await page("");
+  const slot = await inboxTab("");
   const input = await slot.findByLabelText("Pull request link");
   fireEvent.paste(input, {
     clipboardData: { getData: () => "https://github.com/acme/web/pull/7/files#diff-1" },
@@ -153,7 +172,7 @@ test("a pasted pull request link opens at once", async () => {
 });
 
 test("text that names no pull request is explained, not opened", async () => {
-  const slot = await page("");
+  const slot = await inboxTab("");
   const input = await slot.findByLabelText("Pull request link");
   fireEvent.change(input, { target: { value: "acme/api" } });
   fireEvent.submit(input.closest("form")!);
@@ -196,6 +215,16 @@ test("without a signed-in gh, the page says how to sign in and checks again", as
   slot.lifecycle.unmount();
 });
 
+test("without a signed-in gh, the Inbox tab defers to the page and asks for no inbox", async () => {
+  const tab = await inboxTab("", {
+    ...baseRpc,
+    status: () => ({ ok: false, reason: "unauthenticated", message: "" }),
+  });
+  expect(await tab.findByText("GitHub is unavailable. The page says how to fix it.")).toBeTruthy();
+  expect(tab.rpcCalls.map((call) => call.method)).toEqual(["status"]);
+  tab.lifecycle.unmount();
+});
+
 test("without gh at all, the page links to its installer", async () => {
   const slot = await page("", {
     ...baseRpc,
@@ -207,14 +236,16 @@ test("without gh at all, the page links to its installer", async () => {
   slot.lifecycle.unmount();
 });
 
-test("a pull request opens on its summary, beside the inbox", async () => {
+test("a pull request opens on its summary, current in the Inbox tab", async () => {
   const slot = await page(PR_PATH);
+  const tab = await inboxTab(PR_PATH);
   const heading = await slot.findByRole("heading", { level: 1 });
   expect(heading.textContent).toBe("Rate-limit the login endpoint #42");
 
   // Its inbox row is the current one.
-  const row = slot.getByRole("button", { name: /Rate-limit the login endpoint/ });
+  const row = await tab.findByRole("button", { name: /Rate-limit the login endpoint/ });
   expect(row.getAttribute("aria-current")).toBe("page");
+  tab.lifecycle.unmount();
 
   expect(slot.getByText("ada/rate-limit")).toBeTruthy();
   expect(slot.getByText("+120")).toBeTruthy();
@@ -288,7 +319,7 @@ test("Open on GitHub opens the pull request's page", async () => {
 test("pinning shows the pull request in the inbox before the server answers", async () => {
   const pins: unknown[] = [];
   let answer: () => void = () => {};
-  const slot = await page(PR_PATH, {
+  const rpc: Handlers = {
     ...baseRpc,
     setPinned: (input: never) => {
       pins.push(input);
@@ -296,33 +327,39 @@ test("pinning shows the pull request in the inbox before the server answers", as
         answer = () => resolve({ pinned: [pullRequest.ref] });
       });
     },
-  });
+  };
+  const slot = await page(PR_PATH, rpc);
+  const tab = await inboxTab(PR_PATH, rpc);
   const pin = await slot.findByRole("button", { name: "Pin to inbox" });
   await waitFor(() => expect(pin.hasAttribute("disabled")).toBe(false));
   expect(pin.getAttribute("aria-pressed")).toBe("false");
 
   fireEvent.click(pin);
-  const pinned = within(await slot.findByRole("region", { name: "Pinned" }));
+  const pinned = within(await tab.findByRole("region", { name: "Pinned" }));
   expect(pinned.getByText("Rate-limit the login endpoint")).toBeTruthy();
   expect(pin.getAttribute("aria-pressed")).toBe("true");
   expect(pins).toEqual([{ ref: pullRequest.ref, pinned: true }]);
   answer();
+  tab.lifecycle.unmount();
   slot.lifecycle.unmount();
 });
 
 test("a pin the server refuses is taken back", async () => {
-  const slot = await page(PR_PATH, {
+  const rpc: Handlers = {
     ...baseRpc,
     setPinned: () => {
       throw new Error("KV is read-only");
     },
-  });
+  };
+  const slot = await page(PR_PATH, rpc);
+  const tab = await inboxTab(PR_PATH, rpc);
   const pin = await slot.findByRole("button", { name: "Pin to inbox" });
   await waitFor(() => expect(pin.hasAttribute("disabled")).toBe(false));
   fireEvent.click(pin);
   expect((await slot.findByRole("alert")).textContent).toBe("Could not pin: KV is read-only");
   expect(pin.getAttribute("aria-pressed")).toBe("false");
-  expect(slot.queryByRole("region", { name: "Pinned" })).toBeNull();
+  expect(tab.queryByRole("region", { name: "Pinned" })).toBeNull();
+  tab.lifecycle.unmount();
   slot.lifecycle.unmount();
 });
 

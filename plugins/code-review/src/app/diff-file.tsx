@@ -19,7 +19,7 @@ import type {
 } from "../shared/schema.ts";
 import { Button } from "./components/ui/button.tsx";
 import { CONTROL_HOVER_TRANSITION } from "./components/ui/motion.ts";
-import { CodexMark } from "./codex-review.tsx";
+import { ReviewMark } from "./bb-review.tsx";
 import { FindingCard } from "./finding.tsx";
 import { plural } from "./format.ts";
 import { cn } from "./lib/utils.ts";
@@ -179,6 +179,11 @@ function FileHeader({
           {`\u200e${shown}`}
         </span>
         {status ? <Chip tone={status.tone}>{status.label}</Chip> : null}
+        {file.generated ? (
+          <Chip tone="text-muted-foreground" title="Generated, so it starts folded at the end">
+            Generated
+          </Chip>
+        ) : null}
         {file.viewed === "dismissed" ? (
           <Chip tone="text-attention" title="Changed since you marked it viewed">
             Changed
@@ -204,19 +209,30 @@ function FileHeader({
           </span>
         </span>
       </span>
+      {/* A bordered pill with its own box, as in Pierre's diff header. Checked,
+          it takes the accent, so the files left to read stand out down the list. */}
       <label
         className={cn(
-          "inline-flex h-6 shrink-0 cursor-pointer items-center gap-1.5 rounded-md px-1.5 select-none hover:bg-state-hover",
-          viewed ? "text-foreground" : "text-muted-foreground",
+          "inline-flex h-6 shrink-0 cursor-pointer items-center gap-1.5 rounded-md border px-1.5 text-xs select-none has-[:focus-visible]:ring-1 has-[:focus-visible]:ring-ring",
+          viewed
+            ? "border-primary/40 bg-primary/10 text-foreground"
+            : "border-border text-muted-foreground hover:bg-state-hover hover:text-foreground",
           CONTROL_HOVER_TRANSITION,
         )}
       >
-        <input
-          type="checkbox"
-          className="size-3.5 cursor-pointer accent-primary"
-          checked={viewed}
-          onChange={(event) => onViewedChange(event.target.checked)}
-        />
+        <span className="relative grid size-3.5 shrink-0 place-items-center">
+          <input
+            type="checkbox"
+            className="peer size-3.5 cursor-pointer appearance-none rounded-[3px] border border-muted-foreground/60 bg-background outline-none checked:border-primary checked:bg-primary"
+            checked={viewed}
+            onChange={(event) => onViewedChange(event.target.checked)}
+          />
+          <Icon
+            name="Check"
+            className="pointer-events-none absolute size-2.5 text-primary-foreground opacity-0 peer-checked:opacity-100"
+            aria-hidden
+          />
+        </span>
         Viewed
         <span className="sr-only"> {file.path}</span>
       </label>
@@ -331,7 +347,7 @@ function Outdated({ pr, threads }: { pr: PullRequest; threads: readonly ReviewTh
   );
 }
 
-/** A Codex finding, said to be one, since inline it sits among people's comments. */
+/** A bb finding, said to be one, since inline it sits among people's comments. */
 function InlineFinding({
   pr,
   finding,
@@ -347,10 +363,10 @@ function InlineFinding({
   return (
     <div className="flex min-w-0 flex-col gap-1 font-sans text-xs leading-normal text-foreground">
       <p className="flex items-center gap-1 text-[11px] text-muted-foreground">
-        <CodexMark className="size-3" />
-        {stale ? "Codex finding, from a review of an older commit" : "Codex finding"}
+        <ReviewMark className="size-3" />
+        {stale ? "bb finding, from a review of an older commit" : "bb finding"}
       </p>
-      {/* Not stale means Codex reviewed this diff, so the finding's lines are
+      {/* Not stale means bb reviewed this diff, so the finding's lines are
           this diff's lines even while the pull request has moved on. */}
       <FindingCard finding={finding} stale={stale} pr={pr} reviewed={revision} />
     </div>
@@ -359,7 +375,7 @@ function InlineFinding({
 
 const NO_LINES: DiffLines = new Map();
 
-/** An annotation row other than the new-comment form: a thread or a Codex finding. */
+/** An annotation row other than the new-comment form: a thread or a bb finding. */
 function AnnotationRow({
   data,
   pr,
@@ -612,11 +628,19 @@ function FileBody({
   );
 }
 
-/** A folded large diff says why it is folded, and opens on request. */
-function LargeDiffHint({ file, onShow }: { file: ChangedFile; onShow: () => void }) {
+/** A diff that starts folded, unread: a generated file, or one too long to draw at once. */
+export function startsFolded(file: ChangedFile): boolean {
+  return file.viewed !== "viewed" && (file.generated || isLargeFile(file));
+}
+
+/** A diff folded by `startsFolded` says why, and opens on request. */
+function FoldedDiffHint({ file, onShow }: { file: ChangedFile; onShow: () => void }) {
+  const lines = plural(file.additions + file.deletions, "changed line");
   return (
     <p className="flex flex-wrap items-center gap-2 border-t border-border px-3 py-2 text-muted-foreground">
-      {`Large diff, ${plural(file.additions + file.deletions, "changed line")}, folded to keep the page fast.`}
+      {file.generated
+        ? `Generated file, ${lines}, folded.`
+        : `Large diff, ${lines}, folded to keep the page fast.`}
       <Button variant="outline" size="sm" className="h-6 px-2 text-xs font-normal" onClick={onShow}>
         Show diff
       </Button>
@@ -661,7 +685,7 @@ export const DiffFile = memo(function DiffFile({
 }) {
   const bodyId = useId();
   const githubUrl = useGithubFileUrl(pr.url, file.path);
-  const folded = !open && isLargeFile(file) && file.viewed !== "viewed";
+  const folded = !open && startsFolded(file);
   const revision = useMemo(() => ({ headRefOid, baseRefName }), [headRefOid, baseRefName]);
 
   return (
@@ -682,7 +706,7 @@ export const DiffFile = memo(function DiffFile({
         onToggle={() => onOpenChange(file.path, !open)}
         onViewedChange={(viewed) => onViewedChange(file, viewed)}
       />
-      {folded ? <LargeDiffHint file={file} onShow={() => onOpenChange(file.path, true)} /> : null}
+      {folded ? <FoldedDiffHint file={file} onShow={() => onOpenChange(file.path, true)} /> : null}
       <div id={bodyId} hidden={!open}>
         {open ? (
           <FileBody

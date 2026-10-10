@@ -16,7 +16,7 @@ import { loadPrHead } from "../lib/pull-request.ts";
 const withLock = createLocks();
 
 /**
- * Starts a Codex thread that reviews the pull request's head commit and
+ * Starts a thread on bb's default agent that reviews the pull request's head commit and
  * reports its findings with `code_review_report_findings`. Asking again
  * while a review of the same commit and base runs returns that review.
  */
@@ -34,7 +34,6 @@ export const startReview = defineMutation({
       const thread = await ctx.bb.sdk.threads.spawn({
         projectId: project.id,
         environment,
-        providerId: "codex",
         reasoningLevel: "high",
         visibility: "visible",
         title: `Review ${prKey(ref)}`,

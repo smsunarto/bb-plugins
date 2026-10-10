@@ -51,7 +51,7 @@ test("finds the project by its remote, case-insensitively, and names the fix whe
   expect((await findProject(bb, "cli", "cli"))?.id).toBe("p-cli");
   expect(await findProject(bb, "acme", "api")).toBeNull();
   await expect(requireProject(bb, "acme", "api")).rejects.toThrow(
-    "Add acme/api as a bb project to review it with Codex.",
+    "Add acme/api as a bb project to review it with bb.",
   );
 });
 

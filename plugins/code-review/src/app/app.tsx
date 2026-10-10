@@ -1,7 +1,7 @@
 import { definePluginApp } from "@get-bb/plugin-sdk/app";
 import { PluginQueryBoundary } from "@bb-kit/core/rpc/query";
 import { NeedsReviewCount } from "./inbox.tsx";
-import { CodeReviewPage } from "./page.tsx";
+import { CodeReviewPage, InboxTab } from "./page.tsx";
 import { PANEL_PATH } from "./format.ts";
 import "./code-review.css";
 
@@ -22,5 +22,15 @@ export default definePluginApp((app) => {
     path: PANEL_PATH,
     component: CodeReviewPage,
     experimental_sidebarAccessory: SidebarAccessory,
+    fixedTabs: [
+      {
+        panelId: "code-review",
+        id: "inbox",
+        title: "Inbox",
+        icon: "GitPullRequest",
+        component: InboxTab,
+        layout: "flush",
+      },
+    ],
   });
 });

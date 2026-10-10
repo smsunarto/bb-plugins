@@ -8,7 +8,7 @@ import type { CodeReviewContext } from "../lib/context.ts";
 const line = z.number().int().positive();
 
 /**
- * How a Codex review hands its findings to the panel. Only threads the
+ * How a bb review hands its findings to the panel. Only threads the
  * panel started as reviews get it: their bb metadata says which pull request.
  */
 export const reportFindings = defineTool({

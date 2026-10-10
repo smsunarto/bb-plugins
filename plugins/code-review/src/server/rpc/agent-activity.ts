@@ -4,7 +4,7 @@ import { agentActivitySchema, prRefSchema } from "../../shared/schema.ts";
 import { agentActivity as readActivity } from "../lib/activity.ts";
 import type { CodeReviewContext } from "../lib/context.ts";
 
-/** The bb threads started for the pull request, and the Codex review to show. */
+/** The bb threads started for the pull request, and the bb review to show. */
 export const agentActivity = defineQuery({
   input: z.strictObject({ ref: prRefSchema }),
   output: agentActivitySchema,

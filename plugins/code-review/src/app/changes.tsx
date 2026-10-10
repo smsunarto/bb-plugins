@@ -22,11 +22,11 @@ import type {
   ReviewThread,
   ViewedState,
 } from "../shared/schema.ts";
-import { useAgentActivity } from "./codex-review.tsx";
+import { useAgentActivity } from "./bb-review.tsx";
 import { Button } from "./components/ui/button.tsx";
 import { CONTROL_HOVER_TRANSITION } from "./components/ui/motion.ts";
 import { Input } from "./components/ui/input.tsx";
-import { DiffFile, isLargeFile } from "./diff-file.tsx";
+import { DiffFile, startsFolded } from "./diff-file.tsx";
 import type { DiffStyle } from "./diff-file.tsx";
 import { REVEAL_EVENT } from "./finding.tsx";
 import type { RevealDetail } from "./finding.tsx";
@@ -38,7 +38,7 @@ import { ReviewThreadView } from "./review-thread.tsx";
 import { rpc } from "./rpc.ts";
 
 /*
- * The Changes tab: every changed file's diff, with review threads and Codex
+ * The Changes tab: every changed file's diff, with review threads and bb
  * findings inline, a file list to jump around in, and GitHub's per-viewer
  * "Viewed" marks. It scrolls on its own, so the file list and the summary
  * bar stay put while the diffs move.
@@ -111,9 +111,14 @@ function groupByPath<T extends { path: string }>(items: readonly T[]): Map<strin
   return groups;
 }
 
-/** A viewed file, and one too long to draw at once, start folded. */
+/** A viewed file, a generated one, and one too long to draw at once, start folded. */
 function startsOpen(file: ChangedFile): boolean {
-  return file.viewed !== "viewed" && !isLargeFile(file);
+  return file.viewed !== "viewed" && !startsFolded(file);
+}
+
+/** GitHub's order, with generated files moved to the end, as they need the least reading. */
+function readingOrder(files: readonly ChangedFile[]): ChangedFile[] {
+  return [...files.filter((file) => !file.generated), ...files.filter((file) => file.generated)];
 }
 
 function matches(file: Pick<ChangedFile, "path" | "previousPath">, filter: string): boolean {
@@ -517,7 +522,7 @@ function ChangesView({
   const scroller = useRef<HTMLDivElement>(null);
   const list = useRef<HTMLDivElement>(null);
 
-  const all = changed.files;
+  const all = useMemo(() => readingOrder(changed.files), [changed.files]);
   const shown = useMemo(() => all.filter((file) => matches(file, filter)), [all, filter]);
   const shownPaths = useMemo(() => shown.map((file) => file.path), [shown]);
   const threadsByPath = useMemo(() => groupByPath(pr.threads), [pr.threads]);
@@ -788,7 +793,7 @@ function Toolbar({
       </span>
       {findingsStale ? (
         <span className="text-[11px] text-warning-text">
-          Codex findings are from an older version of this diff
+          bb findings are from an older version of this diff
         </span>
       ) : null}
       <span className="ml-auto flex items-center gap-1.5">

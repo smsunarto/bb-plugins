@@ -11,7 +11,7 @@ import {
 import type { Link, Store } from "./store.ts";
 
 /*
- * The bb threads started for a pull request: Codex reviews and check fixes.
+ * The bb threads started for a pull request: bb reviews and check fixes.
  * Their status is read live from bb, so a thread the reader stopped,
  * archived, or deleted shows as it is now.
  */

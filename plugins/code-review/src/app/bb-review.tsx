@@ -3,8 +3,6 @@ import type { FormEvent } from "react";
 import {
   Markdown,
   experimental_Icon as Icon,
-  experimental_ProviderIcon as ProviderIcon,
-  experimental_useProviders as useProviders,
   useBbNavigate,
   useRealtime,
 } from "@get-bb/plugin-sdk/app";
@@ -58,7 +56,7 @@ export function isBusy(thread: LinkedThread): boolean {
   return BUSY.has(thread.status);
 }
 
-/** The Codex review thread still working on `revision`, if there is one. */
+/** The bb review thread still working on `revision`, if there is one. */
 export function activeReview(
   activity: AgentActivity | undefined,
   revision: DiffRevision,
@@ -122,40 +120,22 @@ function recordStarted(ref: PrRef, thread: LinkedThread): void {
   void pluginQueryClient.invalidateQueries({ queryKey });
 }
 
-// ── Review with Codex ────────────────────────────────────────────────────
+// ── Review with bb ────────────────────────────────────────────────────
 
-/**
- * The Codex mark from bb's provider directory. Older bb has no provider icon
- * component, so the choice is made once, at load, and the hook order holds.
- */
-export const CodexMark =
-  (typeof ProviderIcon === "function" || typeof ProviderIcon === "object") &&
-  typeof useProviders === "function"
-    ? function CodexProviderMark({ className }: { className?: string }) {
-        const codex = useProviders().providers.find((provider) => provider.id === "codex");
-        return (
-          <ProviderIcon
-            providerKind="agent"
-            provider={codex ?? { id: "codex" }}
-            fallback="Bot"
-            className={className}
-            aria-hidden
-          />
-        );
-      }
-    : function CodexFallbackMark({ className }: { className?: string }) {
-        return <Icon name="Bot" className={className} aria-hidden />;
-      };
+/** The mark beside a bb review and its findings. Provider-neutral, since bb picks the agent. */
+export function ReviewMark({ className }: { className?: string }) {
+  return <Icon name="Bot" className={className} aria-hidden />;
+}
 
 // Outlined, so Submit review beside it stays the toolbar's one primary action.
 const SPLIT = "h-7 text-xs max-md:pointer-coarse:h-9 [&_[data-icon-root]]:size-3.5";
 
 /**
- * Starts a read-only Codex review of the pull request's head. While one is
- * running on this head, the button opens it instead of starting another. The
- * gear edits the instructions every review gets.
+ * Starts a read-only review of the pull request's head on bb's default
+ * agent. While one is running on this head, the button opens it instead of
+ * starting another. The gear edits the instructions every review gets.
  */
-export function ReviewWithCodexButton({ pr }: { pr: PullRequest }) {
+export function ReviewWithBbButton({ pr }: { pr: PullRequest }) {
   const navigate = useBbNavigate();
   const activity = useAgentActivity(pr.ref);
   const running = activeReview(activity.data, pr);
@@ -171,7 +151,7 @@ export function ReviewWithCodexButton({ pr }: { pr: PullRequest }) {
         headRefOid: pr.headRefOid,
         baseRefName: pr.baseRefName,
       });
-      toast(`Codex is reviewing #${pr.ref.number}`, {
+      toast(`bb is reviewing #${pr.ref.number}`, {
         action: { label: "Open thread", onClick: () => navigate.toThread(threadId) },
       });
     },
@@ -196,15 +176,15 @@ export function ReviewWithCodexButton({ pr }: { pr: PullRequest }) {
         {running || start.isPending ? (
           <Icon name="Loading" className="motion-safe:animate-spin" aria-hidden />
         ) : (
-          <CodexMark className="size-3.5" />
+          <ReviewMark className="size-3.5" />
         )}
-        {running ? "Reviewing…" : start.isPending ? "Starting…" : "Review with Codex"}
+        {running ? "Reviewing…" : start.isPending ? "Starting…" : "Review with bb"}
       </Button>
       <Button
         variant="outline"
         size="sm"
         className={cn(SPLIT, "-ms-px w-7 rounded-s-none px-0 max-md:pointer-coarse:w-9")}
-        aria-label="Codex review instructions"
+        aria-label="bb review instructions"
         onClick={() => setEditing(true)}
       >
         <Icon name="Settings" aria-hidden />
@@ -216,7 +196,7 @@ export function ReviewWithCodexButton({ pr }: { pr: PullRequest }) {
 
 // ── Review instructions ──────────────────────────────────────────────────
 
-/** Edits the standing instructions that go into every Codex review prompt. */
+/** Edits the standing instructions that go into every bb review prompt. */
 export function ReviewInstructionsDialog({
   open,
   onOpenChange,
@@ -230,7 +210,7 @@ export function ReviewInstructionsDialog({
         <DialogHeader>
           <DialogTitle>Review instructions</DialogTitle>
           <DialogDescription className="text-xs">
-            Standing criteria and report format for every Codex review
+            Standing criteria and report format for every bb review
           </DialogDescription>
         </DialogHeader>
         {/* The content unmounts while closed, so each opening reads the saved text afresh. */}
@@ -340,7 +320,7 @@ function useRevealFinding(pr: PullRequest): (finding: Finding) => void {
 }
 
 /**
- * The latest Codex review: its summary and findings, most urgent first. A
+ * The latest bb review: its summary and findings, most urgent first. A
  * review still running on the head is said above them. Nothing at all until
  * the pull request has had a review.
  */
@@ -353,12 +333,12 @@ export function FindingsCard({ pr }: { pr: PullRequest }) {
   const runThread = run
     ? activity.data?.threads.find((linked) => linked.threadId === run.threadId)
     : undefined;
-  // A retarget changes the diff Codex read as surely as a push does.
+  // A retarget changes the diff the reviewer read as surely as a push does.
   const stale = run !== null && !sameRevision(run, pr);
 
   return (
     <Section
-      title="Codex review"
+      title="bb review"
       aside={
         <>
           {run ? <ReviewMeta run={run} stale={stale} pr={pr} /> : null}
@@ -407,7 +387,7 @@ function Reviewing({ headRefOid }: { headRefOid?: string }) {
     <output className="flex items-center gap-1.5 text-muted-foreground">
       <Icon name="Loading" className="size-3 shrink-0 motion-safe:animate-spin" aria-hidden />
       <span>
-        Codex is reviewing
+        bb is reviewing
         {headRefOid ? (
           <>
             {" "}
@@ -425,14 +405,14 @@ function Reviewing({ headRefOid }: { headRefOid?: string }) {
 /** Why a review's findings may not match the diff any more. */
 function staleReason(run: ReviewRun, pr: DiffRevision): string {
   return run.headRefOid === pr.headRefOid
-    ? `Codex reviewed the changes against ${run.baseRefName}. The pull request now targets ${pr.baseRefName}.`
-    : `Codex reviewed ${shortSha(run.headRefOid)}. The pull request is now at ${shortSha(pr.headRefOid)}.`;
+    ? `bb reviewed the changes against ${run.baseRefName}. The pull request now targets ${pr.baseRefName}.`
+    : `bb reviewed ${shortSha(run.headRefOid)}. The pull request is now at ${shortSha(pr.headRefOid)}.`;
 }
 
 function ReviewMeta({ run, stale, pr }: { run: ReviewRun; stale: boolean; pr: DiffRevision }) {
   return (
     <span className="flex min-w-0 items-center gap-1.5 text-[11px] text-muted-foreground">
-      <span translate="no" className="font-mono" title="The commit Codex reviewed">
+      <span translate="no" className="font-mono" title="The commit bb reviewed">
         {shortSha(run.headRefOid)}
       </span>
       {run.reportedAt ? (
@@ -530,7 +510,7 @@ const STATUS_LOOK: Readonly<Record<LinkedThread["status"], { label: string; dot:
 /** The thread's title, or what it was started to do when bb has none yet. */
 export function linkedThreadTitle(thread: LinkedThread): string {
   if (thread.title?.trim()) return thread.title;
-  return thread.kind === "review" ? "Codex review" : "Fix checks";
+  return thread.kind === "review" ? "bb review" : "Fix checks";
 }
 
 /** Agent threads started from this pull request, newest first. Nothing when there are none. */

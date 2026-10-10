@@ -4,7 +4,7 @@ import type { CodeReviewContext } from "../lib/context.ts";
 
 const MAX_INSTRUCTIONS = 8000;
 
-/** Saves the instructions every later Codex review gets. Blank clears them. */
+/** Saves the instructions every later bb review gets. Blank clears them. */
 export const setReviewInstructions = defineMutation({
   input: z.strictObject({
     instructions: z

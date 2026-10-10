@@ -7,7 +7,7 @@ import {
 import { prSubPath } from "../shared/schema.ts";
 import type { Check, PullRequest, ReviewState, StackPr, TimelineItem } from "../shared/schema.ts";
 import { useChecks } from "./checks.tsx";
-import { FindingsCard, LinkedThreads } from "./codex-review.tsx";
+import { FindingsCard, LinkedThreads } from "./bb-review.tsx";
 import { Button } from "./components/ui/button.tsx";
 import { PANEL_PATH, plural, shortSha, subject } from "./format.ts";
 import { cn } from "./lib/utils.ts";
@@ -42,7 +42,7 @@ const REVIEW_VERB: Record<ReviewState, string> = {
 };
 
 /*
- * Narrow, the summary is one column: what the pull request is, Codex's
+ * Narrow, the summary is one column: what the pull request is, the review's
  * findings, who and what it waits on, then the history. Wide, the waiting-on
  * part moves to a side column. While narrow, the main column's wrapper is
  * `display: contents`, so `order` can put the side column between its parts.
