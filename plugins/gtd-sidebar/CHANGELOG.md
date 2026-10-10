@@ -80,6 +80,40 @@
   time this version loads. Provider names and marks now come from bb's own cached
   roster instead of a plugin round trip.
 
+## [0.6.0](https://github.com/smsunarto/bb-plugins/compare/gtd-sidebar/v0.5.1...gtd-sidebar/v0.6.0) (2026-10-10)
+
+
+### Features
+
+* **gtd-sidebar,kitchen-sink:** native haptics on long press and send; CSS blur menus ([9865bcf](https://github.com/smsunarto/bb-plugins/commit/9865bcfd0769110ec49b8439af9950313c33da26))
+* **gtd-sidebar:** adopt bb 0.44 sidebar APIs and port thread-list parity ([abc2211](https://github.com/smsunarto/bb-plugins/commit/abc221165322c3790af1a229ce1fcf36784d27cf))
+* **gtd-sidebar:** draw bb's row jump keys and read the worktree flag ([c12af29](https://github.com/smsunarto/bb-plugins/commit/c12af292f259029fa21b8c29c73293fc399ab6dc))
+* **gtd-sidebar:** draw the queued-message glyphs ([15db145](https://github.com/smsunarto/bb-plugins/commit/15db14559624501527a17d5cc9bfcfc99134f491))
+* **gtd-sidebar:** liquid-glass thread menus ([eae260c](https://github.com/smsunarto/bb-plugins/commit/eae260cae8624508bd69d653d3e786576e08d529))
+* **gtd-sidebar:** start Settled project groups folded ([9fa3be7](https://github.com/smsunarto/bb-plugins/commit/9fa3be7dc33cd7734ef1ca2bc38aa20b6fe1dc6e))
+
+
+### Bug Fixes
+
+* **gtd-sidebar:** align mobile and desktop thread menus ([488bba2](https://github.com/smsunarto/bb-plugins/commit/488bba2107e5023a698122a6fc5f8b5f49ea2d96))
+* **gtd-sidebar:** expose project new-thread action on mobile ([3c4d6a9](https://github.com/smsunarto/bb-plugins/commit/3c4d6a9fd98668d6cda52a92212e7f646e4d4a30))
+* **gtd-sidebar:** include composer chip context in thread titles ([c2cc2ae](https://github.com/smsunarto/bb-plugins/commit/c2cc2ae18088d731b8c2fe8e01e7577a07c620a6))
+* **gtd-sidebar:** name threads through bb 0.44's Codex transport ([ae2577e](https://github.com/smsunarto/bb-plugins/commit/ae2577ec0b5ea9a6a4ac8f92cac5c214b23b6099))
+* **gtd-sidebar:** refresh only shelves affected by deletion ([1a7ed19](https://github.com/smsunarto/bb-plugins/commit/1a7ed19f3748d661060b2de35aa1e799ba51b563))
+* **gtd-sidebar:** satisfy the SDK 0.5.9 sidebar thread shape ([4089838](https://github.com/smsunarto/bb-plugins/commit/408983815dd8d8ad0ab88f90f4b866ae372f56a1))
+* **gtd-sidebar:** separate subthread arrows from tree guides ([e749b6c](https://github.com/smsunarto/bb-plugins/commit/e749b6cf43d8e67f1944cf253d9a3cd9eb5c137e))
+* **gtd-sidebar:** show unread activity in mobile status slots ([3056c29](https://github.com/smsunarto/bb-plugins/commit/3056c2951a7ff14ca025380b489ea60a9e1f3ce1))
+* **gtd-sidebar:** snooze thread families together ([654681d](https://github.com/smsunarto/bb-plugins/commit/654681d034f5e25b7d987f0c8ed8a3c4118a72aa))
+* **gtd-sidebar:** use GPT-6-Luna for thread titles ([b31c309](https://github.com/smsunarto/bb-plugins/commit/b31c3094cd7bec04c77feaaea72f792310af29de))
+
+
+### Performance Improvements
+
+* **gtd-sidebar:** measure title overflow with one shared observer ([1dc8402](https://github.com/smsunarto/bb-plugins/commit/1dc84023bef57bfa56e265026c190e34281ac7ad))
+* **gtd-sidebar:** re-render only the rows that changed ([dabcfba](https://github.com/smsunarto/bb-plugins/commit/dabcfba6a946acd04da2812a019a920dcf1710f8))
+* **gtd-sidebar:** style rows without :has() ([ac68121](https://github.com/smsunarto/bb-plugins/commit/ac68121ad3e0eca3557ebaadbad982c53497fe47))
+* **gtd-sidebar:** window the thread list ([4c48b6d](https://github.com/smsunarto/bb-plugins/commit/4c48b6d7747558820b6d8c475b559792c11c938e))
+
 ## [0.5.1](https://github.com/smsunarto/bb-plugins/compare/gtd-sidebar/v0.5.0...gtd-sidebar/v0.5.1) (2026-09-22)
 
 
