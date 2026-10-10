@@ -1,7 +1,8 @@
-import { definePluginApp } from "@get-bb/plugin-sdk/app";
+import { definePluginApp, useBbNavigate } from "@get-bb/plugin-sdk/app";
+import type { PluginNavPanelProps } from "@get-bb/plugin-sdk/app";
 import { PluginQueryBoundary } from "@bb-kit/core/rpc/query";
 import { useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useSyncExternalStore } from "react";
 import type {
   AgentFile,
   FileContent,
@@ -13,8 +14,35 @@ import type {
 import { rpc } from "./rpc.ts";
 import "./prompt-editor.css";
 
+const PANEL_PATH = "prompt-editor";
+
 /** What the editor shows: a file, or a tool whose text lives in code. */
 type Selection = { pluginId: string; path: string } | { pluginId: string; tool: string };
+
+/**
+ * The URL is the selection, so the page and its Plugins tab agree:
+ * `<pluginId>/file/<path>` or `<pluginId>/tool/<name>`. bb encodes and decodes
+ * each segment, so these stay raw.
+ */
+function selectionSubPath(selection: Selection): string {
+  return "path" in selection
+    ? `${selection.pluginId}/file/${selection.path}`
+    : `${selection.pluginId}/tool/${selection.tool}`;
+}
+
+function parseSelection(subPath: string): Selection | null {
+  const [pluginId, kind, ...rest] = subPath.split("/");
+  if (!pluginId || rest.length === 0) return null;
+  if (kind === "file") return { pluginId, path: rest.join("/") };
+  if (kind === "tool" && rest.length === 1) return { pluginId, tool: rest[0]! };
+  return null;
+}
+
+function useSelect(): (selection: Selection) => void {
+  const navigate = useBbNavigate();
+  return (selection) =>
+    navigate.toPluginPanel(PANEL_PATH, { subPath: selectionSubPath(selection) });
+}
 
 const KIND_LABEL: Record<FileKind, string> = {
   "tool-description": "Tool description",
@@ -31,6 +59,33 @@ const draftKey = (pluginId: string, path: string) => `${pluginId}\u0000${path}`;
  */
 type Draft = { base: string; text: string };
 type DraftUpdate = (draft: Draft | undefined) => Draft | undefined;
+
+/**
+ * Unsaved edits, keyed by `draftKey`. The page edits them and the Plugins tab
+ * marks them, so they live outside both components, for the app session.
+ */
+let drafts: ReadonlyMap<string, Draft> = new Map();
+const draftListeners = new Set<() => void>();
+
+function subscribeDrafts(listener: () => void) {
+  draftListeners.add(listener);
+  return () => void draftListeners.delete(listener);
+}
+
+function useDrafts(): ReadonlyMap<string, Draft> {
+  return useSyncExternalStore(subscribeDrafts, () => drafts);
+}
+
+function updateDraft(key: string, update: DraftUpdate) {
+  const current = drafts.get(key);
+  const draft = update(current);
+  if (draft === current) return;
+  const next = new Map(drafts);
+  if (draft === undefined) next.delete(key);
+  else next.set(key, draft);
+  drafts = next;
+  for (const listener of draftListeners) listener();
+}
 
 function PluginList(props: {
   plugins: Plugin[];
@@ -342,10 +397,36 @@ function FileEditor(props: {
   );
 }
 
-function PromptEditor() {
+/** The Plugins tab in the page's right panel: every plugin's tools, prompts, and skills. */
+function PluginsTabBody({ subPath }: { subPath: string }) {
   const plugins = rpc.plugins.useQuery();
-  const [selection, setSelection] = useState<Selection | null>(null);
-  const [drafts, setDrafts] = useState<ReadonlyMap<string, Draft>>(new Map());
+  const dirty = useDrafts();
+  const select = useSelect();
+  if (plugins.isPending) return <p className="pe-panel pe-tab-state pe-meta">Loading plugins…</p>;
+  if (plugins.isError) {
+    return (
+      <div className="pe-panel pe-tab-state">
+        <p className="pe-notice" data-tone="bad">
+          {plugins.error.message}
+        </p>
+      </div>
+    );
+  }
+  return (
+    <div className="pe-panel">
+      <PluginList
+        plugins={plugins.data.plugins}
+        selection={parseSelection(subPath)}
+        dirty={new Set(dirty.keys())}
+        onSelect={select}
+      />
+    </div>
+  );
+}
+
+function PromptEditor({ subPath }: { subPath: string }) {
+  const plugins = rpc.plugins.useQuery();
+  const drafts = useDrafts();
 
   if (plugins.isPending) return <main className="pe-panel pe-empty">Loading plugins…</main>;
   if (plugins.isError) {
@@ -358,18 +439,12 @@ function PromptEditor() {
     );
   }
 
-  const list = plugins.data.plugins;
-  const plugin = list.find((p) => p.id === selection?.pluginId);
-  const updateDraft = (key: string, update: DraftUpdate) =>
-    setDrafts((current) => {
-      const draft = update(current.get(key));
-      const next = new Map(current);
-      if (draft === undefined) next.delete(key);
-      else next.set(key, draft);
-      return next;
-    });
+  const selection = parseSelection(subPath);
+  const plugin = plugins.data.plugins.find((p) => p.id === selection?.pluginId);
 
-  let body = <div className="pe-editor pe-empty">Pick a tool, prompt, or skill.</div>;
+  let body = (
+    <div className="pe-editor pe-empty">Pick a tool, prompt, or skill in the Plugins tab.</div>
+  );
   if (plugin && selection && "tool" in selection) {
     const tool = plugin.tools.find((t) => t.name === selection.tool);
     if (tool) body = <CodeTool plugin={plugin} tool={tool} />;
@@ -389,29 +464,21 @@ function PromptEditor() {
     }
   }
 
+  return <main className="pe-panel">{body}</main>;
+}
+
+function PromptEditorPage({ subPath }: PluginNavPanelProps) {
   return (
-    <main className="pe-panel">
-      <aside className="pe-sidebar">
-        <header className="pe-sidebar-head">
-          <h1>Prompt Editor</h1>
-          <p className="pe-meta">What your plugins tell agents.</p>
-        </header>
-        <PluginList
-          plugins={list}
-          selection={selection}
-          dirty={new Set(drafts.keys())}
-          onSelect={setSelection}
-        />
-      </aside>
-      {body}
-    </main>
+    <PluginQueryBoundary>
+      <PromptEditor subPath={subPath} />
+    </PluginQueryBoundary>
   );
 }
 
-function PromptEditorApp() {
+function PluginsTab({ subPath }: PluginNavPanelProps) {
   return (
     <PluginQueryBoundary>
-      <PromptEditor />
+      <PluginsTabBody subPath={subPath} />
     </PluginQueryBoundary>
   );
 }
@@ -421,7 +488,17 @@ export default definePluginApp((app) => {
     id: "prompt-editor",
     title: "Prompt Editor",
     icon: "EditFile",
-    path: "prompt-editor",
-    component: PromptEditorApp,
+    path: PANEL_PATH,
+    component: PromptEditorPage,
+    fixedTabs: [
+      {
+        panelId: "prompt-editor",
+        id: "plugins",
+        title: "Plugins",
+        icon: "Puzzle",
+        component: PluginsTab,
+        layout: "flush",
+      },
+    ],
   });
 });
