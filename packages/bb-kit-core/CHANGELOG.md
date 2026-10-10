@@ -1,5 +1,25 @@
 # Changelog
 
+## [1.0.0](https://github.com/smsunarto/bb-plugins/compare/bb-kit-core/v0.2.0...bb-kit-core/v1.0.0) (2026-10-10)
+
+
+### ⚠ BREAKING CHANGES
+
+* **bb-kit-core:** setup receives ctx instead of bb. argv, CommandError, hostContext, stubHostContext, and stubClient are removed. The bb-kit bin moves to @bb-kit/dev.
+
+### Features
+
+* **bb-kit-core:** opt-in discoverable RPC ([1f6bf3e](https://github.com/smsunarto/bb-plugins/commit/1f6bf3e16a0466080fe5a3ba513d762de9bc2be9))
+* **bb-kit-core:** rebuild on SDK CLI, add services and names ([1851a61](https://github.com/smsunarto/bb-plugins/commit/1851a61b8364e5b2902c9f1bdb0b627df460542e))
+* **bb-kit:** run bb dev stacks without scripts/bb-dev-app ([6d847f1](https://github.com/smsunarto/bb-plugins/commit/6d847f17fa5894a41ca3a90bf74d38221b1dbc22))
+
+
+### Bug Fixes
+
+* **bb-kit-core:** compile against plugin SDK 0.5.9 ([b6b9823](https://github.com/smsunarto/bb-plugins/commit/b6b9823792744e19eccd168fb03cd92107166ac0))
+* **bb-kit:** stop a dev session before deleting its checkout ([846c520](https://github.com/smsunarto/bb-plugins/commit/846c52044e5fabc1d629a23725c7bd398d7a442d))
+* **plugins:** finish the bb-kit migration ([9f1f691](https://github.com/smsunarto/bb-plugins/commit/9f1f69137627fc52bd427af377a0c26e479e1d9f))
+
 ## [0.2.0](https://github.com/smsunarto/bb-plugins/compare/bb-kit-core/v0.1.0...bb-kit-core/v0.2.0) (2026-09-15)
 
 
