@@ -328,6 +328,47 @@ export const parkedBranchesSchema = z
 /** The repository a possibly omitted key means, as the host found it. */
 export const resolvedRepositorySchema = z.object({ key: z.string(), path: z.string() }).strict();
 
+/**
+ * A repository's `origin` remote, reduced to host and path in lower case, so
+ * the SSH and HTTPS spellings of one GitHub repository compare equal. Null
+ * when it has no `origin`.
+ */
+export const originSchema = z.string().min(1).max(2048);
+
+export const repositoryOriginSchema = z
+  .object({ path: z.string(), origin: originSchema.nullable() })
+  .strict();
+
+/** A GitButler workspace on some machine, read by that machine's host. */
+export const hostCheckoutSchema = z
+  .object({
+    path: z.string(),
+    state: workspaceStateSchema,
+    reason: z.string().nullable(),
+    stacks: z.array(stackSchema),
+  })
+  .strict();
+
+export const checkoutSchema = hostCheckoutSchema
+  .extend({ hostId: z.string(), machine: z.string() })
+  .strict();
+
+/**
+ * The thread's repository as every other connected machine has it applied,
+ * in bb's machine order. The thread's own checkout is left out: the board is it.
+ */
+export const otherMachinesSchema = z
+  .object({
+    checkouts: z.array(checkoutSchema),
+    reason: z.string().nullable(),
+    /**
+     * The thread's environment when it was read, so a panel whose thread has
+     * moved since never shows the old repository's machines.
+     */
+    environmentId: z.string().nullable(),
+  })
+  .strict();
+
 /** A Create PR subthread the panel started, and whether its agent is still at work. */
 export const reviewRequestSchema = z
   .object({ branch: z.string(), threadId: z.string(), running: z.boolean() })
@@ -371,3 +412,6 @@ export type OplogEntry = z.infer<typeof oplogEntrySchema>;
 export type Oplog = z.infer<typeof oplogSchema>;
 export type ParkedBranch = z.infer<typeof parkedBranchSchema>;
 export type ParkedBranches = z.infer<typeof parkedBranchesSchema>;
+export type HostCheckout = z.infer<typeof hostCheckoutSchema>;
+export type Checkout = z.infer<typeof checkoutSchema>;
+export type OtherMachines = z.infer<typeof otherMachinesSchema>;

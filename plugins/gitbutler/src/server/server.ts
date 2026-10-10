@@ -5,6 +5,7 @@ import { baseHistory } from "./rpc/base-history.ts";
 import { butAction } from "./rpc/but-action.ts";
 import { conflictResolution } from "./rpc/conflict-resolution.ts";
 import { oplog } from "./rpc/oplog.ts";
+import { otherMachines } from "./rpc/other-machines.ts";
 import { parkedBranches } from "./rpc/parked-branches.ts";
 import { patches } from "./rpc/patches.ts";
 import { repositories } from "./rpc/repositories.ts";
@@ -29,6 +30,7 @@ export default definePlugin({
     reviews,
     oplog,
     parkedBranches,
+    otherMachines,
     resolveConflicts,
     conflictResolution,
   },

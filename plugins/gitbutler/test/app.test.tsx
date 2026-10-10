@@ -76,6 +76,7 @@ const baseRpc = {
   reviews: () => ({ reviews: [], reason: null }),
   oplog: () => ({ entries: [], reason: null }),
   parkedBranches: () => ({ branches: [], hasMore: false, reason: null }),
+  otherMachines: () => ({ checkouts: [], reason: null, environmentId: "env-1" }),
   baseHistory: () => ({
     commits: [
       {
@@ -2680,6 +2681,103 @@ test("Refresh reads the reviews and parked branches again, not only the board", 
 
   fireEvent.click(slot.getByRole("button", { name: "Refresh" }));
   await waitFor(() => expect(reads).toEqual({ workspace: 2, reviews: 2, parkedBranches: 2 }));
+  slot.lifecycle.unmount();
+});
+
+test("shows each other machine's applied branches, open, and Refresh reads them again", async () => {
+  let reads = 0;
+  const slot = await panel({
+    ...baseRpc,
+    otherMachines: () => {
+      reads += 1;
+      return {
+        checkouts: [
+          {
+            hostId: "laptop",
+            machine: "Personal Mac",
+            path: "/Users/me/git/bb-plugins",
+            state: "ready",
+            reason: null,
+            stacks: workspace.stacks.slice(0, 1),
+          },
+          {
+            hostId: "gcp",
+            machine: "gcp",
+            path: "/home/me/bb-plugins",
+            state: "cliMissing",
+            reason: "The GitButler CLI (but) is not installed on this environment's host.",
+            stacks: [],
+          },
+        ],
+        reason: null,
+        environmentId: "env-1",
+      };
+    },
+  });
+  const laptop = within(await slot.findByRole("region", { name: "On Personal Mac" }));
+  const toggle = laptop.getByRole("button", { name: "Personal Mac 2" });
+  expect(toggle.getAttribute("aria-expanded")).toBe("true");
+  const top = within(laptop.getByRole("listitem", { name: "Branch scott/top" }));
+  expect(top.getByText("1 commit")).toBeTruthy();
+  expect(top.getByText("· feat(top): add the thing")).toBeTruthy();
+  expect(laptop.getByRole("listitem", { name: "Branch scott/bottom" })).toBeTruthy();
+  // Read only: the cards there have no buttons to change that machine.
+  expect(laptop.queryByRole("button", { name: /Push|Land|Delete/ })).toBeNull();
+
+  const gcp = within(slot.getByRole("region", { name: "On gcp" }));
+  expect(
+    gcp.getByText("The GitButler CLI (but) is not installed on this environment's host."),
+  ).toBeTruthy();
+
+  fireEvent.click(toggle);
+  expect(laptop.queryByText("scott/top")).toBeNull();
+
+  expect(reads).toBe(1);
+  fireEvent.click(slot.getByRole("button", { name: "Refresh" }));
+  await waitFor(() => expect(reads).toBe(2));
+  slot.lifecycle.unmount();
+});
+
+const laptopCheckout = {
+  hostId: "laptop",
+  machine: "Personal Mac",
+  path: "/Users/me/git/bb-plugins",
+  state: "ready",
+  reason: null,
+  stacks: workspace.stacks.slice(0, 1),
+};
+
+test("shows other machines' branches where this checkout is not a GitButler workspace", async () => {
+  const slot = await panel({
+    ...baseRpc,
+    workspace: () => ({
+      ...workspace,
+      state: "setupRequired",
+      reason: "Not set up.",
+      stacks: [],
+      base: null,
+      upstream: null,
+    }),
+    otherMachines: () => ({ checkouts: [laptopCheckout], reason: null, environmentId: "env-1" }),
+  });
+  expect(await slot.findByText("This repository is not a GitButler project")).toBeTruthy();
+  const laptop = within(await slot.findByRole("region", { name: "On Personal Mac" }));
+  expect(laptop.getByText("scott/top")).toBeTruthy();
+  slot.lifecycle.unmount();
+});
+
+test("never shows machines read for an environment the thread has left", async () => {
+  let otherReads = 0;
+  const slot = await panel({
+    ...baseRpc,
+    otherMachines: () => {
+      otherReads += 1;
+      return { checkouts: [laptopCheckout], reason: null, environmentId: "env-old" };
+    },
+  });
+  await waitFor(() => expect(otherReads).toBe(1));
+  expect(await slot.findByRole("article", { name: "Branch scott/top" })).toBeTruthy();
+  expect(slot.queryByRole("region", { name: "On Personal Mac" })).toBeNull();
   slot.lifecycle.unmount();
 });
 

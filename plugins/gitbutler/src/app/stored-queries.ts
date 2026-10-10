@@ -2,7 +2,12 @@ import { hashKey } from "@tanstack/react-query";
 import type { QueryKey } from "@tanstack/react-query";
 import { pluginQueryClient } from "@bb-kit/core/rpc/query";
 import type { z } from "zod";
-import { baseHistorySchema, repositoriesSchema, workspaceSchema } from "../shared/schema.ts";
+import {
+  baseHistorySchema,
+  otherMachinesSchema,
+  repositoriesSchema,
+  workspaceSchema,
+} from "../shared/schema.ts";
 import { BASE_HISTORY_PAGE } from "./query-client.ts";
 import { rpc } from "./rpc.ts";
 
@@ -14,7 +19,7 @@ import { rpc } from "./rpc.ts";
  * straight away, so it is the first frame, never the last word.
  *
  * Only reads that are cheap to be briefly wrong about are kept: a board that
- * read cleanly, the repository list, and the first page of base history,
+ * read cleanly, the repository list, the other machines' branches, and the first page of base history,
  * which is addressed by commit and never changes. Diffs are not. They are
  * large, and memory already holds the ones opened this session.
  */
@@ -51,6 +56,13 @@ const RULES = {
     applies: () => true,
     keep: (data) => data.reason === null,
   } satisfies Rule<typeof repositoriesSchema>,
+  // Every machine is a slow read away, so the cards come back at once with
+  // the last answer instead of after it.
+  otherMachines: {
+    schema: otherMachinesSchema,
+    applies: () => true,
+    keep: (data) => data.reason === null,
+  } satisfies Rule<typeof otherMachinesSchema>,
   baseHistory: {
     schema: baseHistorySchema,
     // The first page only. "Load more" pages are a longer key each, and

@@ -1,5 +1,5 @@
 import { afterAll, afterEach, beforeAll, expect, test } from "bun:test";
-import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { experimental_createHostEntryHarness } from "@get-bb/plugin-sdk/testing/host";
@@ -225,6 +225,67 @@ test("oplog reads the operations and never restores or undoes", async () => {
     "MergeUpstream",
   ]);
   expect(await butCalls()).toEqual(["oplog list --json"]);
+});
+
+/** A repository at `path` whose HEAD is on `head`, with `origin` as its only remote. */
+async function checkout(path: string, head: string, origin: string) {
+  await runGit(scratch, ["init", "--quiet", `--initial-branch=${head}`, path], signal);
+  await runGit(path, ["remote", "add", "origin", origin], signal);
+}
+
+test("checkouts keeps the GitButler workspaces of one origin, each once", async () => {
+  await answering({});
+  const machine = join(scratch, "machine");
+  await checkout(join(machine, "app"), "gitbutler/workspace", "git@github.com:o/app.git");
+  // The same repository over HTTPS, as an environment's repos/ child.
+  await checkout(
+    join(machine, "env", "repos", "app"),
+    "gitbutler/workspace",
+    "https://github.com/O/app",
+  );
+  // A plain clone and a worktree-style checkout sit on a branch of their own.
+  await checkout(join(machine, "clone"), "main", "git@github.com:o/app.git");
+  await checkout(join(machine, "other"), "gitbutler/workspace", "git@github.com:o/other.git");
+  await symlink(join(machine, "app"), join(machine, "alias"));
+
+  const answer = await host.experimental_call("checkouts", {
+    paths: ["app", "alias", "env", "clone", "other", "gone"].map((name) => join(machine, name)),
+    origin: "github.com/o/app",
+  });
+
+  const real = await realpath(machine);
+  expect(
+    answer.checkouts.map(({ path, state, stacks }) => ({
+      path,
+      state,
+      branches: stacks.flatMap((stack) => stack.branches.map((branch) => branch.name)),
+    })),
+  ).toEqual([
+    {
+      path: join(real, "app"),
+      state: "ready",
+      branches: ["scott/top", "scott/bottom", "scott/experimental"],
+    },
+    {
+      path: join(real, "env", "repos", "app"),
+      state: "ready",
+      branches: ["scott/top", "scott/bottom", "scott/experimental"],
+    },
+  ]);
+  // The clone, the other repository, and the missing path never reach `but`.
+  expect(await butCalls()).toEqual(["status -u --json", "status -u --json"]);
+});
+
+test("origin names the resolved repository and its normalized remote", async () => {
+  const answer = await host.experimental_call("origin", { environmentPath: repository });
+  expect(answer).toEqual({ path: await realpath(repository), origin: null });
+
+  const remote = join(scratch, "remote-origin");
+  await checkout(remote, "main", "git@github.com:Smsunarto/BB-Plugins.git");
+  expect(await host.experimental_call("origin", { environmentPath: remote })).toEqual({
+    path: await realpath(remote),
+    origin: "github.com/smsunarto/bb-plugins",
+  });
 });
 
 test("each read explains a failing `but` instead of throwing", async () => {

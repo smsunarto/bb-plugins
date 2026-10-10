@@ -5,6 +5,7 @@ import { runAction } from "./actions.ts";
 import { readParkedBranches } from "./branches.ts";
 import { ButFailedError, ButMissingError, ButSetupRequiredError, runBut, runGit } from "./cli.ts";
 import { readBaseHistory } from "./history.ts";
+import { readOrigin } from "./origin.ts";
 import { compareWithRemotes } from "./upstream.ts";
 import {
   parseOplog,
@@ -15,7 +16,12 @@ import {
   reviewUrl,
   uncommittedKinds,
 } from "./parse.ts";
-import { listRepositories, NoRepositoryError, resolveRepository } from "./repositories.ts";
+import {
+  findCheckouts,
+  listRepositories,
+  NoRepositoryError,
+  resolveRepository,
+} from "./repositories.ts";
 
 const MAX_PATCH_CHARS = 1_500_000;
 
@@ -45,6 +51,28 @@ function emptyWorkspace(
     upstream: null,
     conflictedFiles: [],
   };
+}
+
+/** The board of one repository, or why there is none. */
+async function readWorkspace(
+  repository: { key: string; name: string; path: string },
+  signal: AbortSignal,
+): Promise<HostWorkspace> {
+  try {
+    // One call carries the whole panel. `-u` attaches the upstream commits
+    // that are not integrated yet; per-commit files come from `patches`.
+    const payload = await runBut(repository.path, ["status", "-u"], signal);
+    const workspace = parseWorkspace(payload, repository.name, repository.key);
+    // Without the comparison the cards keep GitButler's own labels.
+    return await compareWithRemotes(repository.path, workspace, signal).catch((error: unknown) => {
+      if (signal.aborted) throw error;
+      return workspace;
+    });
+  } catch (error) {
+    if (signal.aborted) throw error;
+    const { state, reason } = unavailable(error);
+    return emptyWorkspace(state, reason, repository.key);
+  }
 }
 
 /**
@@ -113,26 +141,31 @@ export default experimental_defineHostEntry({
     },
 
     async workspace({ environmentPath, repositoryKey }, context) {
-      let resolvedKey: string | null = null;
+      let repository;
       try {
-        const repository = await resolveRepository(environmentPath, repositoryKey, context.signal);
-        resolvedKey = repository.key;
-        // One call carries the whole panel. `-u` attaches the upstream commits
-        // that are not integrated yet; per-commit files come from `patches`.
-        const payload = await runBut(repository.path, ["status", "-u"], context.signal);
-        const workspace = parseWorkspace(payload, repository.name, repository.key);
-        // Without the comparison the cards keep GitButler's own labels.
-        return await compareWithRemotes(repository.path, workspace, context.signal).catch(
-          (error: unknown) => {
-            if (context.signal.aborted) throw error;
-            return workspace;
-          },
-        );
+        repository = await resolveRepository(environmentPath, repositoryKey, context.signal);
       } catch (error) {
         if (context.signal.aborted) throw error;
         const { state, reason } = unavailable(error);
-        return emptyWorkspace(state, reason, resolvedKey);
+        return emptyWorkspace(state, reason, null);
       }
+      return readWorkspace(repository, context.signal);
+    },
+
+    async origin({ environmentPath, repositoryKey }, context) {
+      const { path } = await resolveRepository(environmentPath, repositoryKey, context.signal);
+      return { path, origin: await readOrigin(path, context.signal) };
+    },
+
+    async checkouts({ paths, origin }, context) {
+      const repositories = await findCheckouts(paths, origin, context.signal);
+      const checkouts = await Promise.all(
+        repositories.map(async (repository) => {
+          const { state, reason, stacks } = await readWorkspace(repository, context.signal);
+          return { path: repository.path, state, reason, stacks };
+        }),
+      );
+      return { checkouts };
     },
 
     async baseHistory({ environmentPath, repositoryKey, from, offset, limit }, context) {

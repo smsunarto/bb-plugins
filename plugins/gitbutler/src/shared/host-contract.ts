@@ -7,13 +7,16 @@ import {
   butActionSchema,
   commitIdSchema,
   environmentPathSchema,
+  hostCheckoutSchema,
   hostWorkspaceSchema,
   oplogSchema,
+  originSchema,
   parkedBranchesSchema,
   patchesSchema,
   patchSourceSchema,
   repositoriesSchema,
   repositoryKeySchema,
+  repositoryOriginSchema,
   resolvedRepositorySchema,
   reviewsSchema,
   reviewUrlSchema,
@@ -56,4 +59,16 @@ export const gitbutlerHostContract = defineRpcContract({
   reviews: { input: target.strict(), output: reviewsSchema },
   oplog: { input: target.strict(), output: oplogSchema },
   parkedBranches: { input: target.strict(), output: parkedBranchesSchema },
+  origin: { input: target.strict(), output: repositoryOriginSchema },
+  /**
+   * The GitButler workspaces among `paths` whose origin is `origin`. The
+   * paths are every checkout bb knows on this machine, so most are other
+   * repositories and drop out.
+   */
+  checkouts: {
+    input: z
+      .object({ paths: z.array(environmentPathSchema).max(100_000), origin: originSchema })
+      .strict(),
+    output: z.object({ checkouts: z.array(hostCheckoutSchema) }).strict(),
+  },
 });

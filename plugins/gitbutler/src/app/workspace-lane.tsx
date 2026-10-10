@@ -64,9 +64,9 @@ const CARD_LABEL =
  * a solid segment (`bg-current`) and a dashed one (a `currentColor` gradient)
  * read the same class.
  */
-type Tone = "local" | "remote" | "upstream" | "integrated" | "conflicted";
+export type Tone = "local" | "remote" | "upstream" | "integrated" | "conflicted";
 
-const TONE: Readonly<Record<Tone, string>> = {
+export const TONE: Readonly<Record<Tone, string>> = {
   local: "text-muted-foreground",
   remote: "text-primary",
   upstream: "text-warning",
@@ -78,7 +78,7 @@ const TONE: Readonly<Record<Tone, string>> = {
  * One row per GitButler push status. The CLI reports it per branch, not per
  * commit, so every commit on a branch takes the branch's tone.
  */
-const BRANCH_LOOK: Readonly<
+export const BRANCH_LOOK: Readonly<
   Record<BranchStatus, { tone: Tone; icon: string; label: string; diamond: boolean }>
 > = {
   unpushed: { tone: "local", icon: "GitBranch", label: "Unpushed", diamond: false },
@@ -446,7 +446,7 @@ const CHIP =
   "inline-flex h-4.5 shrink-0 items-center gap-1 rounded-full bg-secondary px-1.5 text-[11px] font-semibold whitespace-nowrap text-secondary-foreground";
 
 /** A small pill beside the branch name, so status costs no row of its own. */
-function Chip({
+export function Chip({
   className,
   title,
   children,

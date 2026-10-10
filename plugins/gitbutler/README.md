@@ -27,6 +27,8 @@ what `but status` shows.
 - Per-file diffs rendered by bb's own diff viewer, for any commit, the target
   history included. The diff screen opens over the workspace, and Back or
   Escape returns to the same scroll position
+- The same repository's applied branches on your other machines, one card
+  per machine. See [Other machines](#other-machines)
 - Branches GitButler knows that the workspace does not apply, under
   **Not applied**, closed until opened
 - GitButler's operation history (`but oplog`), from the header's
@@ -119,6 +121,20 @@ resolving a lower commit rebases every commit above it. While it works, the
 section links to it, in every thread on that workspace. Once it stops, which
 may mean it is waiting for an answer, **Continue resolving** sends it the job
 again instead of starting a second one. Archive it to start fresh.
+
+## Other machines
+
+Below the board, each other connected machine that has this repository applied
+in GitButler gets a card with its branches: status, PR number, commit count,
+and newest commit. The cards are read only. To change a branch there, use a
+thread on that machine.
+
+The panel finds them through bb: every project source and ready environment on
+each connected machine. A checkout counts when its `origin` is this one's, in
+any spelling (SSH or HTTPS), and its HEAD is on `gitbutler/workspace`. A plain
+clone, a linked worktree, or a repository without an `origin` does not count.
+An offline machine is left out until it reconnects. The cards refresh every 30
+seconds and on the header's **Refresh**.
 
 ## Requirements
 

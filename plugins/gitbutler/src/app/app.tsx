@@ -20,7 +20,7 @@ import {
   useRealtimeConnectionState,
 } from "@get-bb/plugin-sdk/app";
 import type { PluginThreadHeaderActionProps } from "@get-bb/plugin-sdk/app";
-import { PluginQueryBoundary } from "@bb-kit/core/rpc/query";
+import { PluginQueryBoundary, pluginQueryClient } from "@bb-kit/core/rpc/query";
 import {
   PANEL_ACTION_ID,
   WORKSPACE_CHANGED_CHANNEL,
@@ -63,6 +63,7 @@ import { CopyButton } from "./copy-button.tsx";
 import { FileCards } from "./file-cards.tsx";
 import { GitButlerMark } from "./gitbutler-mark.tsx";
 import { OperationHistory } from "./history-screen.tsx";
+import { OtherMachines } from "./other-machines.tsx";
 import { ParkedBranches } from "./parked-branches.tsx";
 import { REFRESH_INTERVAL_MS } from "./query-client.ts";
 import { rpc } from "./rpc.ts";
@@ -591,8 +592,16 @@ function WorkspaceBody({
   onOpenAssigned: (stack: Stack, path: string) => void;
   onRetry: () => void;
 }) {
-  if (data.state !== "ready") return <UnavailableWorkspace workspace={data} onRetry={onRetry} />;
   const target = { threadId, repositoryKey };
+  if (data.state !== "ready") {
+    // Another machine's branches are worth seeing even where GitButler is not set up.
+    return (
+      <div className="flex flex-col gap-4">
+        <UnavailableWorkspace workspace={data} onRetry={onRetry} />
+        <OtherMachines target={target} environmentId={data.environmentId} />
+      </div>
+    );
+  }
   const keys = stackKeys(data.stacks);
   return (
     <>
@@ -619,6 +628,7 @@ function WorkspaceBody({
             detail="Apply a branch in GitButler, or ask the agent to start one. Applied branches show up here as stacks, with their commits."
           />
         ) : null}
+        <OtherMachines target={target} environmentId={data.environmentId} />
         <ParkedBranches target={target} />
         {data.base ? (
           <BaseCard
@@ -1153,6 +1163,9 @@ function WorkspacePanel({ threadId }: { threadId: string }) {
   const refresh = () => {
     setRefreshing(true);
     void repositories.refetch();
+    // Not part of refreshWorkspace, which every turn's end runs: no turn here
+    // changes another machine, and the read reaches all of them.
+    void pluginQueryClient.invalidateQueries({ queryKey: rpc.otherMachines.queryKey() });
     void refreshWorkspace(threadId).finally(() => setRefreshing(false));
   };
   const syncing = refreshing || checkingFirst(workspace);
