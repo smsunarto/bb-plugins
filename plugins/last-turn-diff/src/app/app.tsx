@@ -1,5 +1,4 @@
 import { UnityDiffView } from "@bb-plugins/unity-inspector/app";
-import type { UnityDiff } from "@bb-plugins/unity-inspector/model";
 import { PluginQueryBoundary } from "@bb-kit/core/rpc/query";
 import {
   definePluginApp,
@@ -14,10 +13,10 @@ import { CHANGED_CHANNEL, type Change, type LatestTurn } from "../shared/contrac
 import { mountDiffPortal } from "./portal.ts";
 import { turnChanges } from "../shared/patches.ts";
 import { rpc } from "./rpc.ts";
-import { Chevron, FileHeader } from "./file-header.tsx";
+import { Chevron, DiffCounts, FileHeader } from "./file-header.tsx";
 import "./app.css";
 
-/** `other` marks changes other agents made in this checkout, whatever the workspace label. */
+/** `other` marks changes made while other agents in this checkout ran, whatever the workspace label. */
 type WorkspaceGroup = { key: string; label: string; other: boolean; changes: Change[] };
 
 /**
@@ -34,7 +33,7 @@ function groupByWorkspace(changes: Change[], ownLabel: string | undefined): Work
   };
   const others: WorkspaceGroup = {
     key: "other",
-    label: "Other agents in this checkout",
+    label: "Changed while other agents ran",
     other: true,
     changes: [],
   };
@@ -78,6 +77,18 @@ function groupFiles(changes: Change[]): FileEntry[] {
   return [...files.values()];
 }
 
+/** Totals describe this turn; other agents' changes are listed but not counted. */
+function turnTotals(groups: { other: boolean; files: FileEntry[] }[]) {
+  const counted = groups.filter((group) => !group.other);
+  const edits = counted.flatMap((group) => group.files.flatMap((file) => file.edits));
+  return {
+    workspaces: counted.length,
+    fileCount: counted.reduce((total, group) => total + group.files.length, 0),
+    added: edits.reduce((total, edit) => total + edit.added, 0),
+    removed: edits.reduce((total, edit) => total + edit.removed, 0),
+  };
+}
+
 function TurnDiff({ turn }: { turn: LatestTurn }) {
   const bodyIdPrefix = useId();
   const changes = useMemo(() => turnChanges(turn), [turn]);
@@ -99,13 +110,7 @@ function TurnDiff({ turn }: { turn: LatestTurn }) {
     .flatMap((group) => group.files.map((file) => file.change));
   const hasExpanded = visible.some((change) => expanded.has(change.id));
   if (changes.length === 0 && !turn.limited) return null;
-  // Totals describe this turn; other agents' changes are listed but not counted.
-  const own = changes.filter((change) => !change.other);
-  const fileCount = groups
-    .filter((group) => !group.other)
-    .reduce((total, group) => total + group.files.length, 0);
-  const added = own.reduce((total, change) => total + change.added, 0);
-  const removed = own.reduce((total, change) => total + change.removed, 0);
+  const { workspaces, fileCount, added, removed } = turnTotals(groups);
   return (
     <section
       className="last-turn-diff"
@@ -113,12 +118,16 @@ function TurnDiff({ turn }: { turn: LatestTurn }) {
       data-last-turn-id={turn.turnId}
     >
       <header className="last-turn-diff-heading">
-        <strong>Last turn</strong>
-        <span>
-          {fileCount} {fileCount === 1 ? "file" : "files"} changed
-        </span>
-        <span className="last-turn-diff-added">+{added}</span>
-        <span className="last-turn-diff-removed">−{removed}</span>
+        <h3 className="last-turn-diff-title">
+          <strong>Last turn</strong>
+          {/* A turn whose only files changed while other agents ran claims none. */}
+          {fileCount > 0 ? (
+            <span>
+              {fileCount} {fileCount === 1 ? "file" : "files"} changed
+            </span>
+          ) : null}
+          {added + removed > 0 ? <DiffCounts added={added} removed={removed} /> : null}
+        </h3>
         {visible.length > 0 ? (
           <button
             type="button"
@@ -140,13 +149,18 @@ function TurnDiff({ turn }: { turn: LatestTurn }) {
         ) : null}
       </header>
       {turn.limited ? (
-        <p className="last-turn-diff-notice">Some changes exceed the preview limit.</p>
+        <p className="last-turn-diff-notice">
+          Some changes are too large to preview, so the file list and totals may be incomplete.
+        </p>
       ) : null}
       {groups.map((group) => (
-        <section className="last-turn-diff-workspace" key={group.key}>
+        <section key={group.key}>
           {/* Others' changes are always labeled so they never read as this turn's. */}
           {group.other ? (
-            <h3 className="last-turn-diff-workspace-label" title={group.label}>
+            <h4
+              className="last-turn-diff-workspace-label last-turn-diff-workspace-toggle"
+              title={group.label}
+            >
               <button
                 type="button"
                 className="last-turn-diff-group-toggle"
@@ -154,17 +168,19 @@ function TurnDiff({ turn }: { turn: LatestTurn }) {
                 aria-controls={`${bodyIdPrefix}-other`}
                 onClick={() => setOthersOpen((open) => !open)}
               >
-                <Chevron />
                 {group.label}
                 <span className="last-turn-diff-group-count">
                   {group.files.length} {group.files.length === 1 ? "file" : "files"}
                 </span>
+                <Chevron />
               </button>
-            </h3>
-          ) : groups.length > 1 ? (
-            <h3 className="last-turn-diff-workspace-label" title={group.label}>
+            </h4>
+          ) : groups.length > 1 && (group.key !== "own" || workspaces > 1) ? (
+            // The others group labels itself, so the turn's own files need a
+            // label only beside another workspace's.
+            <h4 className="last-turn-diff-workspace-label" title={group.label}>
               {group.label}
-            </h3>
+            </h4>
           ) : null}
           <div id={group.other ? `${bodyIdPrefix}-other` : undefined}>
             {group.other && !othersOpen
@@ -184,28 +200,11 @@ function TurnDiff({ turn }: { turn: LatestTurn }) {
                         });
                       }}
                     />
+                    {/* Mounted while closed so the toggle's aria-controls resolves. */}
                     <div id={`${bodyIdPrefix}-${change.id}`} hidden={!expanded.has(change.id)}>
-                      {edits.map((edit, index) => (
-                        <div key={edit.id}>
-                          {expanded.has(change.id) && edits.length > 1 ? (
-                            <p className="last-turn-diff-notice">
-                              <span>
-                                Edit {index + 1} of {edits.length}
-                              </span>
-                              {" · "}
-                              <span className="last-turn-diff-added">+{edit.added}</span>{" "}
-                              <span className="last-turn-diff-removed">−{edit.removed}</span>
-                            </p>
-                          ) : null}
-                          <FileBody
-                            unity={turn.unity?.[edit.id]}
-                            patch={edit.patch}
-                            path={edit.relPath ?? edit.path}
-                            open={expanded.has(change.id)}
-                            showLineNumbers={!edit.unpositioned}
-                          />
-                        </div>
-                      ))}
+                      {expanded.has(change.id) ? (
+                        <FileEdits edits={edits} unity={turn.unity} />
+                      ) : null}
                     </div>
                   </div>
                 ))}
@@ -216,36 +215,38 @@ function TurnDiff({ turn }: { turn: LatestTurn }) {
   );
 }
 
-function FileBody({
-  patch,
-  path,
-  open,
-  unity,
-  showLineNumbers,
-}: {
-  patch: string | null;
-  path: string;
-  open: boolean;
-  unity?: UnityDiff;
-  showLineNumbers: boolean;
-}) {
-  if (!open) return <div className="last-turn-diff-body" />;
-  const raw = patch ? (
-    <Diff
-      patch={patch}
-      path={path}
-      view="unified"
-      overflow="scroll"
-      showLineNumbers={showLineNumbers}
-    />
-  ) : (
-    <p className="last-turn-diff-notice">No text diff recorded for this change.</p>
-  );
-  return (
-    <div className="last-turn-diff-body">
-      {unity ? <UnityDiffView diff={unity} path={path} raw={raw} /> : raw}
-    </div>
-  );
+/** An expanded file: each recorded edit's diff, captioned when there are several. */
+function FileEdits({ edits, unity }: { edits: Change[]; unity: LatestTurn["unity"] }) {
+  return edits.map((edit, index) => {
+    const path = edit.relPath ?? edit.path;
+    const diff = unity?.[edit.id];
+    const raw = edit.patch ? (
+      <Diff
+        patch={edit.patch}
+        path={path}
+        view="unified"
+        overflow="scroll"
+        showLineNumbers={!edit.unpositioned}
+      />
+    ) : (
+      <p className="last-turn-diff-notice">No text diff recorded for this change.</p>
+    );
+    return (
+      <div key={edit.id}>
+        {edits.length > 1 ? (
+          <p className="last-turn-diff-edit-label">
+            <span>
+              Edit {index + 1} of {edits.length}
+            </span>
+            <DiffCounts added={edit.added} removed={edit.removed} hideZero />
+          </p>
+        ) : null}
+        <div className="last-turn-diff-body">
+          {diff ? <UnityDiffView diff={diff} path={path} raw={raw} /> : raw}
+        </div>
+      </div>
+    );
+  });
 }
 
 function LatestDiff({ threadId }: { threadId: string }) {

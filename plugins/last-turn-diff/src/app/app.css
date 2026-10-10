@@ -20,6 +20,17 @@
   padding: 4px 12px;
   line-height: 20px;
   color: var(--muted-foreground);
+  /* BB's own changed-files strip is a raised surface. Monokai layers its own. */
+  background-color: var(--surface-raised-solid);
+}
+.last-turn-diff-title {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-width: 0;
+  margin: 0;
+  font: inherit;
 }
 .last-turn-diff-heading strong {
   color: var(--foreground);
@@ -37,21 +48,19 @@
   line-height: 24px;
   cursor: pointer;
 }
-.last-turn-diff-toggle-all:hover {
-  background: var(--accent);
-  color: var(--foreground);
-}
 .last-turn-diff-toggle-all:focus-visible {
   outline: 2px solid var(--ring);
-  outline-offset: 2px;
+  outline-offset: 1px;
+}
+.last-turn-diff-counts {
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
 }
 .last-turn-diff-added {
   color: var(--diff-added, var(--success));
-  font-variant-numeric: tabular-nums;
 }
 .last-turn-diff-removed {
   color: var(--diff-removed, var(--destructive));
-  font-variant-numeric: tabular-nums;
 }
 .last-turn-diff-workspace-label {
   display: flex;
@@ -65,13 +74,18 @@
   font-weight: 500;
   line-height: 20px;
 }
+/* The toggle fills the row, so it owns the padding and the hit area. */
+.last-turn-diff-workspace-toggle {
+  padding: 0;
+}
 .last-turn-diff-group-toggle {
   display: flex;
   flex: 1 1 auto;
   align-items: center;
   gap: 6px;
   min-width: 0;
-  padding: 0;
+  min-height: 24px;
+  padding: 2px 12px;
   border: 0;
   background: transparent;
   color: inherit;
@@ -83,12 +97,10 @@
   /* Rotation keeps the 8px layout box, so reserve room for the 12px it draws. */
   margin-inline: 2px;
 }
-.last-turn-diff-group-toggle:hover {
-  color: var(--foreground);
-}
 .last-turn-diff-group-toggle:focus-visible {
+  /* Inset, like the file rows, so the card's overflow never clips it. */
   outline: 2px solid var(--ring);
-  outline-offset: 2px;
+  outline-offset: -2px;
 }
 .last-turn-diff-group-count {
   font-weight: 400;
@@ -99,15 +111,22 @@
 }
 .last-turn-diff-file-header {
   position: relative;
+  /* Pierre's :host paints the code theme's ground and ink. Rows are card chrome,
+   * so they follow the card; expanded bodies (BB's Diff) keep the code ground.
+   * A document rule on the host element outranks Pierre's :host rule. */
+  background-color: transparent;
+  color: var(--foreground);
+  --diffs-bg: transparent;
   --diffs-header-font-family: var(--font-sans, system-ui, sans-serif);
-  --diffs-font-family: var(--font-mono, ui-monospace, monospace);
   --diffs-font-size: 11px;
   --diffs-line-height: 22px;
   --diffs-gap-block: 2px;
   --diffs-gap-inline: 6px;
 }
 .last-turn-diff-chevron {
-  display: inline-flex;
+  /* Pierre wraps the prefix in a block slot. A block flex button avoids the
+   * inline baseline space that otherwise shifts its visual center upward. */
+  display: flex;
   width: 18px;
   height: 20px;
   flex: 0 0 auto;
@@ -115,16 +134,9 @@
   justify-content: center;
   padding: 0;
   border: 0;
-  border-radius: 4px;
   background: transparent;
   color: var(--muted-foreground);
   cursor: pointer;
-}
-.last-turn-diff-file-header:hover {
-  --diffs-bg: var(--accent);
-}
-.last-turn-diff-file-header:hover .last-turn-diff-chevron {
-  color: var(--foreground);
 }
 .last-turn-diff-chevron::after {
   /* Extend the native button's hit target across the entire Pierre header. */
@@ -152,12 +164,13 @@
 .last-turn-diff-group-toggle[aria-expanded="true"] svg {
   transform: rotate(0deg);
 }
-.last-turn-diff-recorded-counts {
+.last-turn-diff-row-meta {
   display: inline-flex;
   flex: 0 0 auto;
   gap: 6px;
-  font-family: var(--font-mono, ui-monospace, monospace);
-  font-size: 11px;
+}
+.last-turn-diff-edit-count {
+  color: var(--muted-foreground);
 }
 @media (prefers-reduced-motion: reduce) {
   .last-turn-diff-chevron svg,
@@ -173,4 +186,32 @@
 .last-turn-diff-notice {
   padding: 10px 12px;
   color: var(--muted-foreground);
+}
+/* Each caption sits under the divider and heads its own diff. */
+.last-turn-diff-edit-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  padding: 8px 12px 0;
+  border-top: 1px solid var(--border);
+  color: var(--muted-foreground);
+  font-size: 11px;
+  line-height: 16px;
+}
+.last-turn-diff-edit-label + .last-turn-diff-body {
+  border-top: 0;
+}
+@media (hover: hover) {
+  .last-turn-diff-toggle-all:hover,
+  .last-turn-diff-group-toggle:hover {
+    background: var(--state-hover);
+    color: var(--foreground);
+  }
+  .last-turn-diff-file-header:hover {
+    --diffs-bg: var(--state-hover);
+  }
+  .last-turn-diff-file-header:hover .last-turn-diff-chevron {
+    color: var(--foreground);
+  }
 }

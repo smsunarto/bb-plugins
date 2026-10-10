@@ -574,10 +574,6 @@ const requiredRules: Array<{
     declarations: { "background-color": "transparent" },
   },
   {
-    selector: ".dark .last-turn-diff-chevron",
-    declarations: { display: "flex" },
-  },
-  {
     selector: '.dark [data-sidebar="panel"]',
     declarations: { "border-color": "var(--sidebar-border)" },
   },

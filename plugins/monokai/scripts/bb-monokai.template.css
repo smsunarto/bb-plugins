@@ -839,12 +839,6 @@
   box-shadow: none;
 }
 
-/* Pierre centers the prefix slot. A block flex button avoids the inline
- * baseline space that otherwise shifts its visual center upward. */
-.dark .last-turn-diff-chevron {
-  display: flex;
-}
-
 /* Radix publishes these context-menu sizing variables on both root menus and
  * submenus. Scope geometry here so dropdown pickers retain their own layout. */
 .dark [role="menu"][style*="--radix-context-menu-content"] {
