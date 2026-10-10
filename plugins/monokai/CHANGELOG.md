@@ -1,5 +1,37 @@
 # @smsunarto/bb-plugin-monokai
 
+## [0.5.0](https://github.com/smsunarto/bb-plugins/compare/monokai/v0.4.0...monokai/v0.5.0) (2026-10-10)
+
+
+### Features
+
+* **canvas,docs,monokai:** style prose with the shared markdown-prose sheet ([376b547](https://github.com/smsunarto/bb-plugins/commit/376b547af50eef2255ae0eea4fc330df7e3cfee5))
+* **docs,monokai:** theme Docs prose through --docs-prose-* hooks ([debdfaa](https://github.com/smsunarto/bb-plugins/commit/debdfaa9f92cf66d085bca16f0136341e182e341))
+* **monokai:** antialias dark text and balance markdown wrapping ([6e278e1](https://github.com/smsunarto/bb-plugins/commit/6e278e11476ddaf2a23fcd1bcbb194ea693c92b8))
+* **monokai:** let a plugin opt into the diff-header treatment ([2ddd66c](https://github.com/smsunarto/bb-plugins/commit/2ddd66cbc1daf0b5e5de881f46327ba8a0c2a5bc))
+* **monokai:** match the Codex app's agent stream geometry ([470da01](https://github.com/smsunarto/bb-plugins/commit/470da01165f1813f7aa7deeef6d4b113306f734b))
+* **monokai:** set agent message prose to 14px ([d2cf19e](https://github.com/smsunarto/bb-plugins/commit/d2cf19e422d545bcb482f491854f2373b8c6c4b7))
+* **monokai:** tint inline code a soft yellow ([a4ea949](https://github.com/smsunarto/bb-plugins/commit/a4ea949b770c0669a6208777b409466ec6c266d5))
+
+
+### Bug Fixes
+
+* **monokai:** cover the tucked queue card and align queued text ([43555f2](https://github.com/smsunarto/bb-plugins/commit/43555f2d76281b872454dad8fa70c601b67391ec))
+* **monokai:** keep message actions clear of the Last turn diff card ([b5eb5f5](https://github.com/smsunarto/bb-plugins/commit/b5eb5f5c6602ff27d634371864154fd0ed29a2d4))
+* **monokai:** mute marketplace category icons ([bc41dc0](https://github.com/smsunarto/bb-plugins/commit/bc41dc0c1ea44727ce00bb55de38d90b9851254d))
+* **monokai:** polish bb 0.45 surfaces, adapters, and checks ([65bd237](https://github.com/smsunarto/bb-plugins/commit/65bd237e023b389238afc4428016ee22967c3f33))
+* **monokai:** replace Codex glyphs with Lucide icons ([66a3a14](https://github.com/smsunarto/bb-plugins/commit/66a3a144d8c75d039e97c878c4badc9f9d9fa97d))
+* **monokai:** restore safe-area padding in mobile picker drawers ([b60bd93](https://github.com/smsunarto/bb-plugins/commit/b60bd939f54b6aa1a6977ec8e9771c82558f7df4))
+
+
+### Performance Improvements
+
+* **monokai:** drop the composer and settings :has() rules ([5ec0192](https://github.com/smsunarto/bb-plugins/commit/5ec01926de2ea750501f1725aaaf03221c4d3ad8))
+* **monokai:** drop the remaining :has() rules ([77b1b9f](https://github.com/smsunarto/bb-plugins/commit/77b1b9f70091072037976037754048e15bc88a28))
+* **monokai:** stop right-panel resize from restyling the whole panel ([3a489a9](https://github.com/smsunarto/bb-plugins/commit/3a489a92c8637f784b91e1b8472ec6019ce50696))
+* **monokai:** tag diff cards, shells, and panels instead of matching them with :has() ([f3309bc](https://github.com/smsunarto/bb-plugins/commit/f3309bc14d73237920c4d0117c3212e4ff170f45))
+* **monokai:** tag diff headers instead of matching them with :has() ([cee99ce](https://github.com/smsunarto/bb-plugins/commit/cee99ce7ef341e5f5a64f481e550afea69b492da))
+
 ## [0.4.0](https://github.com/smsunarto/bb-plugins/compare/monokai/v0.3.2...monokai/v0.4.0) (2026-09-15)
 
 ### Features
