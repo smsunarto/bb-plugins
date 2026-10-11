@@ -276,6 +276,166 @@ test("checkouts keeps the GitButler workspaces of one origin, each once", async 
   expect(await butCalls()).toEqual(["status -u --json", "status -u --json"]);
 });
 
+/**
+ * A GitButler workspace with a two-branch stack on `main`: `scott/bottom`
+ * adds `bottom.txt`, `scott/top` adds `top.txt` above it. Answers with the
+ * commit ids of `main`, bottom, and top.
+ */
+async function stackedWorkspace(path: string) {
+  await checkout(path, "main", "git@github.com:Acme/App.git");
+  await runGit(path, ["config", "user.email", "test@example.com"], signal);
+  await runGit(path, ["config", "user.name", "Test Person"], signal);
+  await runGit(path, ["config", "commit.gpgsign", "false"], signal);
+  const commit = async (file: string, message: string) => {
+    await writeFile(join(path, file), `${file}\n`);
+    await runGit(path, ["add", file], signal);
+    await runGit(path, ["commit", "--quiet", "-m", message], signal);
+    return (await runGit(path, ["rev-parse", "HEAD"], signal)).trim();
+  };
+  const base = await commit("base.txt", "chore: base");
+  const bottom = await commit("bottom.txt", "feat: bottom");
+  const top = await commit("top.txt", "feat: top");
+  await runGit(path, ["switch", "--quiet", "-c", "gitbutler/workspace"], signal);
+  return { base, bottom, top };
+}
+
+/** A `but status` stack branch for `parseWorkspace`. */
+function rawBranch(name: string, commitIds: string[], extra: Record<string, unknown> = {}) {
+  return {
+    cliId: name.slice(0, 2),
+    name,
+    commits: commitIds.map((commitId) => ({
+      cliId: commitId.slice(0, 3),
+      changeId: null,
+      commitId,
+      createdAt: "2026-09-22T21:43:26+00:00",
+      message: `commit ${commitId.slice(0, 7)}`,
+      authorName: "Test Person",
+      authorEmail: "test@example.com",
+      conflicted: false,
+      reviewId: null,
+      changes: null,
+    })),
+    upstreamCommits: [],
+    branchStatus: "completelyUnpushed",
+    reviewId: null,
+    ci: null,
+    ...extra,
+  };
+}
+
+test("unpublishedBranches names each workspace branch with no review yet, and where it starts", async () => {
+  const machine = join(scratch, "unpublished");
+  const { base, bottom, top } = await stackedWorkspace(join(machine, "app"));
+  // A plain clone is not a workspace, and never reaches `but`.
+  await checkout(join(machine, "clone"), "main", "git@github.com:acme/app.git");
+  const payload = join(scratch, "unpublished-status.json");
+  await writeFile(
+    payload,
+    JSON.stringify({
+      ...statusPayload,
+      stacks: [
+        {
+          cliId: "s1",
+          assignedChanges: [],
+          branches: [rawBranch("scott/top", [top]), rawBranch("scott/bottom", [bottom])],
+        },
+        {
+          cliId: "s2",
+          assignedChanges: [],
+          branches: [
+            rawBranch("scott/in-review", [bottom], {
+              reviewId: "(#7)",
+              branchStatus: "nothingToPush",
+            }),
+            rawBranch("scott/landed", [base], { branchStatus: "integrated" }),
+            rawBranch("scott/empty", []),
+          ],
+        },
+      ],
+    }),
+  );
+  restore = await fakeBut(
+    [
+      `printf '%s\n' "$*" >> '${log}'`,
+      `case "$1 $2" in`,
+      `  "status --json") cat '${payload}' ;;`,
+      `  *) echo "unexpected" >&2; exit 1 ;;`,
+      `esac`,
+    ].join("\n"),
+  );
+
+  const answer = await host.experimental_call("unpublishedBranches", {
+    paths: [join(machine, "app"), join(machine, "clone")],
+  });
+
+  const real = await realpath(join(machine, "app"));
+  expect(
+    answer.branches.map(({ commits, ...branch }) =>
+      Object.assign(branch, { commits: commits.map((c) => c.commitId) }),
+    ),
+  ).toEqual([
+    {
+      path: real,
+      repoName: "app",
+      origin: "github.com/acme/app",
+      branch: "scott/top",
+      status: "unpushed",
+      head: top,
+      base: bottom,
+      parent: "scott/bottom",
+      commits: [top],
+    },
+    {
+      path: real,
+      repoName: "app",
+      origin: "github.com/acme/app",
+      branch: "scott/bottom",
+      status: "unpushed",
+      head: bottom,
+      base,
+      parent: null,
+      commits: [bottom],
+    },
+  ]);
+  expect(await butCalls()).toEqual(["status --json"]);
+});
+
+test("a range patch is everything the head changes since the base, from git", async () => {
+  const app = join(scratch, "range", "app");
+  const { base, top } = await stackedWorkspace(app);
+  const patches = await host.experimental_call("patches", {
+    environmentPath: app,
+    source: { kind: "range", base, head: top, within: [join(scratch, "elsewhere"), app] },
+  });
+
+  expect(patches.files.map((file) => [file.path, file.kind])).toEqual([
+    ["bottom.txt", "added"],
+    ["top.txt", "added"],
+  ]);
+  expect(patches.files[1]?.patch).toContain("+top.txt");
+});
+
+test("a range is read only in a GitButler workspace among the checkouts bb knows", async () => {
+  const app = join(scratch, "range-known", "app");
+  const { base, top } = await stackedWorkspace(app);
+  const range = { kind: "range", base, head: top } as const;
+
+  await expect(
+    host.experimental_call("patches", {
+      environmentPath: app,
+      source: { ...range, within: [repository] },
+    }),
+  ).rejects.toThrow("That is not a GitButler workspace bb knows on this machine.");
+  // A plain clone bb knows is still not a workspace.
+  await expect(
+    host.experimental_call("patches", {
+      environmentPath: repository,
+      source: { ...range, within: [repository] },
+    }),
+  ).rejects.toThrow("That is not a GitButler workspace bb knows on this machine.");
+});
+
 test("origin names the resolved repository and its normalized remote", async () => {
   const answer = await host.experimental_call("origin", { environmentPath: repository });
   expect(answer).toEqual({ path: await realpath(repository), origin: null });

@@ -118,16 +118,17 @@ async function inBatches<T, R>(items: readonly T[], map: (item: T) => Promise<R>
 const WORKSPACE_HEAD = "refs/heads/gitbutler/workspace";
 
 /**
- * The GitButler workspaces among `paths` whose origin is `origin`, each path
- * searched the way an environment is. A path that is gone or holds another
- * repository drops out, and a repository reached by two paths is listed once.
- * A linked worktree is on a branch of its own, so it drops out too.
+ * The GitButler workspaces among `paths` whose origin is `origin`, or any
+ * origin when it is null, each path searched the way an environment is. A
+ * path that is gone or holds another repository drops out, and a repository
+ * reached by two paths is listed once. A linked worktree is on a branch of
+ * its own, so it drops out too.
  */
 export async function findCheckouts(
   paths: readonly string[],
-  origin: string,
+  origin: string | null,
   signal: AbortSignal,
-): Promise<Discovery> {
+): Promise<Array<Discovery[number] & { origin: string | null }>> {
   const found = await inBatches(paths, (path) =>
     discover(path, signal).catch((error: unknown) => {
       if (signal.aborted) throw error;
@@ -143,9 +144,35 @@ export async function findCheckouts(
       }),
       readOrigin(repository.path, signal),
     ]);
-    return head.trim() === WORKSPACE_HEAD && own === origin ? repository : undefined;
+    const wanted = origin === null || own === origin;
+    return head.trim() === WORKSPACE_HEAD && wanted ? { ...repository, origin: own } : undefined;
   });
   return matched
     .filter((repository) => repository !== undefined)
     .sort((a, b) => a.path.localeCompare(b.path));
+}
+
+/**
+ * Whether the repository at real path `path` is a GitButler workspace found
+ * under one of `paths`, searched the way {@link findCheckouts} searches them.
+ */
+export async function isKnownWorkspace(
+  paths: readonly string[],
+  path: string,
+  signal: AbortSignal,
+): Promise<boolean> {
+  const found = await inBatches(paths, (known) =>
+    discover(known, signal).catch((error: unknown) => {
+      if (signal.aborted) throw error;
+      return [];
+    }),
+  );
+  if (!found.flat().some((repository) => repository.path === path)) return false;
+  const head = await runGit(path, ["symbolic-ref", "-q", "HEAD"], signal).catch(
+    (error: unknown) => {
+      if (signal.aborted) throw error;
+      return "";
+    },
+  );
+  return head.trim() === WORKSPACE_HEAD;
 }

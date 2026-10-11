@@ -136,6 +136,20 @@ clone, a linked worktree, or a repository without an `origin` does not count.
 An offline machine is left out until it reconnects. The cards refresh every 30
 seconds and on the header's **Refresh**.
 
+## For other plugins
+
+Two RPCs serve other plugins through `bb.sdk.plugins.callRpc`; the board does
+not use them. [Code Review](../code-review) reads them for its **Unpublished**
+inbox.
+
+- `unpublishedBranches`: every branch with commits, no PR, and not yet
+  integrated, in every GitButler workspace bb knows on every connected
+  machine. Each has its machine, checkout path, origin, push status, `base`
+  and `head` commits (`base..head` is the branch alone, without the branch
+  it is stacked on), parent branch, and commits.
+- `branchPatches`: `{ hostId, path, base, head }` to that range's per-file
+  git patches, read on the branch's machine.
+
 ## Requirements
 
 - The GitButler CLI (`but`) installed on the machine hosting the thread's

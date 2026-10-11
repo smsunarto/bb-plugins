@@ -1,6 +1,7 @@
 import { defineQuery } from "@bb-kit/core/rpc";
 import { z } from "zod";
 import { otherMachinesSchema, repositoryKeySchema, type Checkout } from "../../shared/schema.ts";
+import { knownCheckoutPaths } from "../lib/checkout-paths.ts";
 import { hostClient, resolveTarget } from "../lib/target.ts";
 
 /** A machine reads one `but status` per checkout it holds, and a laptop can be slow to answer. */
@@ -43,31 +44,13 @@ export const otherMachines = defineQuery({
     const origin = own.origin;
     if (origin === null) return { checkouts: [], reason: null, environmentId };
 
-    const [hosts, projects, environments] = await Promise.all([
-      ctx.bb.sdk.hosts.list(),
-      ctx.bb.sdk.projects.list(),
-      ctx.bb.sdk.environments.list({ status: "ready" }),
-    ]);
-    const paths = new Map<string, Set<string>>();
-    const add = (hostId: string, path: string | null) => {
-      if (!path) return;
-      const known = paths.get(hostId) ?? new Set<string>();
-      known.add(path);
-      paths.set(hostId, known);
-    };
-    for (const project of projects) {
-      for (const source of project.sources) add(source.hostId, source.path);
-    }
-    for (const environment of environments) add(environment.hostId, environment.path);
-
+    const machines = await knownCheckoutPaths(ctx.bb);
     const reads = await Promise.all(
-      hosts.map(async (host): Promise<Checkout[]> => {
-        const known = paths.get(host.id);
-        if (host.status !== "connected" || !known) return [];
+      machines.map(async ({ host, paths }): Promise<Checkout[]> => {
         try {
           const { checkouts } = await client.call(
             "checkouts",
-            { paths: [...known], origin },
+            { paths, origin },
             { hostId: host.id, timeoutMs: MACHINE_TIMEOUT_MS },
           );
           return checkouts

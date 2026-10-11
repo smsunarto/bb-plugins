@@ -159,6 +159,20 @@ export const patchSourceSchema = z.union([
     .strict(),
 ]);
 
+/**
+ * Everything `head` changes since `base`: a whole branch, as a review reads
+ * it. Other plugins ask for these through `branchPatches`; the board never does.
+ */
+export const rangeSourceSchema = z
+  .object({
+    kind: z.literal("range"),
+    base: commitIdSchema,
+    head: commitIdSchema,
+    /** The checkout paths bb knows on the machine. Only a GitButler workspace among them is read. */
+    within: z.array(z.string()),
+  })
+  .strict();
+
 /** One file of a `but diff` payload: a complete git patch Pierre can parse. */
 export const filePatchSchema = z
   .object({
@@ -369,6 +383,44 @@ export const otherMachinesSchema = z
   })
   .strict();
 
+/**
+ * A branch nobody can review on the forge yet: it has commits, no review
+ * (pull request), and has not landed. Other plugins read these, so the shape
+ * is a contract: add fields, don't change them.
+ */
+export const unpublishedBranchSchema = z
+  .object({
+    /** The repository's real path on its machine. */
+    path: z.string(),
+    repoName: z.string(),
+    /** `host/owner/repo`, lowercased, e.g. `github.com/acme/api`. Null without an origin. */
+    origin: originSchema.nullable(),
+    branch: z.string(),
+    status: branchStatusSchema,
+    /** The branch's tip. */
+    head: z.string(),
+    /** The commit the branch starts from: its oldest commit's parent. `base..head` is the branch. */
+    base: z.string(),
+    /** The branch it is stacked on, or null at the bottom of its stack. */
+    parent: z.string().nullable(),
+    /** Newest first. */
+    commits: z.array(commitSchema),
+  })
+  .strict();
+
+export const hostUnpublishedBranchesSchema = z
+  .object({ branches: z.array(unpublishedBranchSchema) })
+  .strict();
+
+/** Every connected machine's unpublished branches, in bb's machine order. */
+export const unpublishedBranchesSchema = z
+  .object({
+    branches: z.array(
+      unpublishedBranchSchema.extend({ hostId: z.string(), machine: z.string() }).strict(),
+    ),
+  })
+  .strict();
+
 /** A Create PR subthread the panel started, and whether its agent is still at work. */
 export const reviewRequestSchema = z
   .object({ branch: z.string(), threadId: z.string(), running: z.boolean() })
@@ -395,6 +447,7 @@ export type Workspace = z.infer<typeof workspaceSchema>;
 export type HostWorkspace = z.infer<typeof hostWorkspaceSchema>;
 export type WorkspaceState = z.infer<typeof workspaceStateSchema>;
 export type Repository = z.infer<typeof repositorySchema>;
+export type UnpublishedBranch = z.infer<typeof unpublishedBranchSchema>;
 export type PatchSource = z.infer<typeof patchSourceSchema>;
 export type FilePatch = z.infer<typeof filePatchSchema>;
 export type Patches = z.infer<typeof patchesSchema>;

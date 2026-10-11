@@ -8,12 +8,14 @@ import {
   commitIdSchema,
   environmentPathSchema,
   hostCheckoutSchema,
+  hostUnpublishedBranchesSchema,
   hostWorkspaceSchema,
   oplogSchema,
   originSchema,
   parkedBranchesSchema,
   patchesSchema,
   patchSourceSchema,
+  rangeSourceSchema,
   repositoriesSchema,
   repositoryKeySchema,
   repositoryOriginSchema,
@@ -45,7 +47,7 @@ export const gitbutlerHostContract = defineRpcContract({
     output: baseHistorySchema,
   },
   patches: {
-    input: target.extend({ source: patchSourceSchema }).strict(),
+    input: target.extend({ source: z.union([patchSourceSchema, rangeSourceSchema]) }).strict(),
     output: patchesSchema,
   },
   butAction: {
@@ -70,5 +72,10 @@ export const gitbutlerHostContract = defineRpcContract({
       .object({ paths: z.array(environmentPathSchema).max(100_000), origin: originSchema })
       .strict(),
     output: z.object({ checkouts: z.array(hostCheckoutSchema) }).strict(),
+  },
+  /** The unpublished branches of every GitButler workspace among `paths`, whatever its origin. */
+  unpublishedBranches: {
+    input: z.object({ paths: z.array(environmentPathSchema).max(100_000) }).strict(),
+    output: hostUnpublishedBranchesSchema,
   },
 });

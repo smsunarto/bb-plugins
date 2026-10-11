@@ -6,6 +6,7 @@ import { readParkedBranches } from "./branches.ts";
 import { ButFailedError, ButMissingError, ButSetupRequiredError, runBut, runGit } from "./cli.ts";
 import { readBaseHistory } from "./history.ts";
 import { readOrigin } from "./origin.ts";
+import { readUnpublished } from "./unpublished.ts";
 import { compareWithRemotes } from "./upstream.ts";
 import {
   parseOplog,
@@ -18,6 +19,7 @@ import {
 } from "./parse.ts";
 import {
   findCheckouts,
+  isKnownWorkspace,
   listRepositories,
   NoRepositoryError,
   resolveRepository,
@@ -102,6 +104,31 @@ function showCommit(repositoryPath: string, commitId: string, signal: AbortSigna
 }
 
 /**
+ * Everything `head` changes since `base`, from git, with the same pinned
+ * headers as {@link showCommit}.
+ */
+function diffRange(repositoryPath: string, base: string, head: string, signal: AbortSignal) {
+  return runGit(
+    repositoryPath,
+    [
+      "-c",
+      "core.quotePath=false",
+      "diff",
+      "--no-color",
+      "--no-ext-diff",
+      "--src-prefix=a/",
+      "--dst-prefix=b/",
+      "--submodule=short",
+      "-M",
+      base,
+      head,
+      "--",
+    ],
+    signal,
+  );
+}
+
+/**
  * The last action queued on each repository, by its real path. An action's
  * checks (the fetch, a dry run, the upstream-loss check) only hold until
  * another write lands, and separate panels and browsers each send their own,
@@ -168,6 +195,20 @@ export default experimental_defineHostEntry({
       return { checkouts };
     },
 
+    async unpublishedBranches({ paths }, context) {
+      const repositories = await findCheckouts(paths, null, context.signal);
+      const found = await Promise.all(
+        repositories.map((repository) =>
+          // One workspace that cannot be read leaves the others standing.
+          readUnpublished(repository, context.signal).catch((error: unknown) => {
+            if (context.signal.aborted) throw error;
+            return [];
+          }),
+        ),
+      );
+      return { branches: found.flat() };
+    },
+
     async baseHistory({ environmentPath, repositoryKey, from, offset, limit }, context) {
       try {
         const repository = await resolveRepository(environmentPath, repositoryKey, context.signal);
@@ -181,6 +222,16 @@ export default experimental_defineHostEntry({
 
     async patches({ environmentPath, repositoryKey, source }, context) {
       const repository = await resolveRepository(environmentPath, repositoryKey, context.signal);
+      if (source.kind === "range") {
+        // Another plugin names the path, so only a workspace bb knows here is read.
+        if (!(await isKnownWorkspace(source.within, repository.path, context.signal))) {
+          throw new NoRepositoryError(
+            "That is not a GitButler workspace bb knows on this machine.",
+          );
+        }
+        const output = await diffRange(repository.path, source.base, source.head, context.signal);
+        return patchesFromGit(output, MAX_PATCH_CHARS);
+      }
       if (source.kind === "uncommitted") {
         const [payload, status] = await Promise.all([
           runBut(repository.path, ["diff"], context.signal),

@@ -2,6 +2,7 @@ import { definePlugin } from "@bb-kit/core/plugin";
 import { offerPanelTab } from "./lib/panel-tab.ts";
 import { publishWorkspaceChanged } from "./lib/workspace-signal.ts";
 import { baseHistory } from "./rpc/base-history.ts";
+import { branchPatches } from "./rpc/branch-patches.ts";
 import { butAction } from "./rpc/but-action.ts";
 import { conflictResolution } from "./rpc/conflict-resolution.ts";
 import { oplog } from "./rpc/oplog.ts";
@@ -14,6 +15,7 @@ import { resolveConflicts } from "./rpc/resolve-conflicts.ts";
 import { reviewRequests } from "./rpc/review-requests.ts";
 import { reviewUrl } from "./rpc/review-url.ts";
 import { reviews } from "./rpc/reviews.ts";
+import { unpublishedBranches } from "./rpc/unpublished-branches.ts";
 import { workspace } from "./rpc/workspace.ts";
 
 export default definePlugin({
@@ -33,6 +35,9 @@ export default definePlugin({
     otherMachines,
     resolveConflicts,
     conflictResolution,
+    // Read by other plugins (Code Review), not by the board.
+    unpublishedBranches,
+    branchPatches,
   },
   setup({ bb }) {
     bb.events.on("thread.idle", ({ thread }) => publishWorkspaceChanged(bb, thread));
