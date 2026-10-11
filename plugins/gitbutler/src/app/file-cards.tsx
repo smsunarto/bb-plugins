@@ -1,4 +1,13 @@
-import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
+import {
+  memo,
+  useCallback,
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { pluginQueryClient } from "@bb-kit/core/rpc/query";
 import {
   experimental_Icon as Icon,
@@ -98,15 +107,23 @@ export function filePreview(
   });
 }
 
-/** Opens files in bb's preview. Null when there is no preview to open them in. */
+/**
+ * Opens files in bb's preview. Null when there is no preview to open them in.
+ * The same function until the repository changes, so the diff cards it is
+ * handed to skip rendering while the reader moves through the file list.
+ */
 export function useOpenFile(workspace: FileWorkspace | undefined): OpenFile | null {
   const navigate = useBbNavigate();
-  const preview = filePreview(workspace);
-  // bb hosts from before the preview have no such method.
-  if (!preview || typeof navigate.experimental_openFilePreview !== "function") return null;
-  return (path, line) => {
-    navigate.experimental_openFilePreview(preview(path, line));
-  };
+  const environmentId = workspace?.environmentId ?? null;
+  const repositoryKey = workspace?.repositoryKey ?? null;
+  return useMemo(() => {
+    const preview = filePreview({ environmentId, repositoryKey });
+    // bb hosts from before the preview have no such method.
+    if (!preview || typeof navigate.experimental_openFilePreview !== "function") return null;
+    return (path, line) => {
+      navigate.experimental_openFilePreview(preview(path, line));
+    };
+  }, [navigate, environmentId, repositoryKey]);
 }
 
 const ICON_BUTTON = cn(
@@ -279,9 +296,10 @@ function TooLarge({
 
 /**
  * One file: bb's own header, always drawn, and Pierre's diff body below it once
- * the row is open.
+ * the row is open. Memoized: the list above re-renders on every arrow key, and
+ * a commit can have hundreds of these, each re-rendering its diff.
  */
-function FileCard({
+const FileCard = memo(function FileCard({
   file,
   source,
   openFile,
@@ -345,7 +363,10 @@ function FileCard({
                   <TooLarge partial opener={opener} commit={commit !== null} />
                 </p>
               ) : null}
-              <FileDiff fileDiff={parsed} options={bodyOptions} />
+              {/* bb 0.46's virtualized diff (Pierre 1.2.9) keeps the first patch
+                  it was handed, so a worktree file whose patch changed needs a
+                  new one. The cache key is the patch text. */}
+              <FileDiff key={parsed.cacheKey} fileDiff={parsed} options={bodyOptions} />
             </div>
           ) : (
             <p className="border-t border-border px-2.5 py-1.5 text-[11px] leading-normal text-muted-foreground">
@@ -362,7 +383,7 @@ function FileCard({
       </div>
     </div>
   );
-}
+});
 
 // A commit's diff is fixed by its id. The worktree's is not, so that one
 // is refreshed on the panel's usual cadence.

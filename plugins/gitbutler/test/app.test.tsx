@@ -14,16 +14,18 @@ installDom();
 const { fireEvent, waitFor, within } = await import("@testing-library/react");
 
 /*
- * jsdom ships no ResizeObserver, and Pierre measures its own gutter on mount.
- * The panel's assertions are about what renders, not about layout, so an
- * inert observer is enough to let the diff cards mount.
+ * jsdom ships no ResizeObserver or IntersectionObserver, and Pierre measures
+ * its own gutter on mount and virtualizes against the panel's scroll area.
+ * The panel's assertions are about what renders, not about layout, so inert
+ * observers are enough to let the diff cards mount.
  */
-class InertResizeObserver {
+class InertObserver {
   observe(): void {}
   unobserve(): void {}
   disconnect(): void {}
 }
-(globalThis as { ResizeObserver?: unknown }).ResizeObserver ??= InertResizeObserver;
+(globalThis as { ResizeObserver?: unknown }).ResizeObserver ??= InertObserver;
+(globalThis as { IntersectionObserver?: unknown }).IntersectionObserver ??= InertObserver;
 const { loadPluginApp, renderSlot } = await import("@get-bb/plugin-sdk/testing/app");
 
 // The server adds which environment it read, which the host never knows.

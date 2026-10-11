@@ -9,6 +9,8 @@ import {
   useSyncExternalStore,
 } from "react";
 import type { ReactNode, RefObject } from "react";
+import { Virtualizer } from "@pierre/diffs";
+import { VirtualizerContext } from "@pierre/diffs/react";
 import type { UseQueryResult } from "@tanstack/react-query";
 import {
   UrlLink,
@@ -157,9 +159,21 @@ function useStoredRepository(threadId: string): string | null {
  * the page, and CSS has no way to read which. The top inset is measured to
  * match, so the first row sits as far below the header as it does from the
  * panel's sides.
+ *
+ * It is also the viewport Pierre virtualizes against, as bb's own source view
+ * is: a diff inside draws only the lines near the visible part and holds the
+ * rest at their estimated height. Without it, a commit of a hundred files
+ * mounted every line of every diff at once, and each keypress in its file list
+ * relaid out all of them.
+ *
+ * In a dev build of bb, StrictMode mounts each diff twice into one element, and
+ * Pierre (1.2.9 to 1.3.5) leaves the first mount's height placeholder behind:
+ * offscreen diffs read twice as tall and scroll in blank. Production mounts
+ * once and draws them correctly.
  */
 function ScrollArea({ children }: { children: ReactNode }) {
   const ref = useRef<HTMLDivElement>(null);
+  const [virtualizer] = useState(() => new Virtualizer());
   useLayoutEffect(() => {
     const element = ref.current;
     if (!element) return;
@@ -171,19 +185,27 @@ function ScrollArea({ children }: { children: ReactNode }) {
     // in. The content box narrows when that happens, which this observes.
     const observer = new ResizeObserver(measure);
     observer.observe(element);
-    return () => observer.disconnect();
-  }, []);
+    // The diffs mounted before this ran wait in its queue until now.
+    virtualizer.setup(element);
+    return () => {
+      observer.disconnect();
+      virtualizer.cleanUp();
+    };
+  }, [virtualizer]);
   return (
-    <div
-      ref={ref}
-      data-scroll-area
-      className={cn(
-        "min-h-0 flex-1 overflow-auto px-2.5 pb-6 pt-[calc(--spacing(2.5)+var(--gutter,0px))]",
-        GUTTER,
-      )}
-    >
-      {children}
-    </div>
+    <VirtualizerContext.Provider value={virtualizer}>
+      <div
+        ref={ref}
+        data-scroll-area
+        className={cn(
+          "min-h-0 flex-1 overflow-auto px-2.5 pb-6 pt-[calc(--spacing(2.5)+var(--gutter,0px))]",
+          GUTTER,
+        )}
+      >
+        {/* One child: the virtualizer reads the page's height off the first. */}
+        <div>{children}</div>
+      </div>
+    </VirtualizerContext.Provider>
   );
 }
 
