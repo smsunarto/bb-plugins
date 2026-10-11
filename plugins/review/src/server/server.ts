@@ -1,36 +1,50 @@
 import { definePlugin } from "@bb-kit/core/plugin";
 import { start } from "./command/start.ts";
-import { authorInstructions } from "./lib/review.ts";
+import { result } from "./command/result.ts";
+import { context } from "./command/context.ts";
+import { start as startTool } from "./tools/start.ts";
+import { result as resultTool } from "./tools/result.ts";
+import { context as contextTool } from "./tools/context.ts";
+import { authorInstructions, files, MANUAL_SKILLS } from "./lib/review.ts";
+import { ReviewService } from "./lib/service.ts";
 
 export default definePlugin({
   pluginId: "review",
   rpc: {},
-  command: { start },
+  command: { start, result, context },
   services(bb) {
     const settings = bb.settings.define({
       claudeModel: {
         type: "string",
         label: "Claude reviewer model",
-        description: "Reviews work done on OpenAI models.",
+        description: "Reviews OpenAI authors at the selected mode's effort.",
         default: "claude-opus-5-5[1m]",
       },
       codexModel: {
         type: "string",
         label: "Codex reviewer model",
-        description: "Reviews work done on every other model.",
+        description: "Reviews other authors at the selected mode's effort.",
         default: "gpt-6-astra",
       },
     });
-    return { reviewerModels: () => settings.get() };
+    return { reviews: new ReviewService(bb, () => settings.get()) };
   },
-  setup({ bb }) {
-    // A reviewer is this plugin's own spawn, and asking it to review itself
-    // would recurse. Side chats answer questions; they do not ship work.
-    const skip = new Set([bb.pluginId, "side-chat"]);
-    bb.agents.configure((session) => ({
-      tools: [],
-      skills: [],
-      ...(skip.has(session.origin.pluginId ?? "") ? {} : { instructions: authorInstructions() }),
-    }));
+  // No tool enabled or agents.skills: bb-kit registers tools, and setup owns the one configure.
+  agents: { files, tools: { start: startTool, result: resultTool, context: contextTool } },
+  setup(ctx) {
+    const { bb } = ctx;
+    bb.agents.configure((session) => {
+      const reviewer = session.origin.pluginId === bb.pluginId;
+      const sideChat = session.origin.pluginId === "side-chat";
+      return {
+        tools: reviewer
+          ? ["review_context"]
+          : sideChat
+            ? []
+            : ["review_start", "review_result", "review_context"],
+        skills: reviewer || sideChat ? [] : ["review-workflow", ...MANUAL_SKILLS],
+        ...(reviewer || sideChat ? {} : { instructions: authorInstructions() }),
+      };
+    });
   },
 });

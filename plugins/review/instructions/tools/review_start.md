@@ -1,0 +1,1 @@
+Start an independent design or implementation review. Quick/Standard/Deep control scope and effort. Implementation requires a fixed GitButler branch or base/head. Reuse defaults to auto. Start with a short summary; disclose brief/evidence lazily. Deep implementation review is required before ship/PR.

@@ -1,147 +1,147 @@
 import { defineCommand, PluginCliError, type CommandContext } from "@bb-kit/core/command";
-import type { Context } from "@bb-kit/core/plugin";
 import { isAbsolute, resolve } from "node:path";
-import { pickReviewer, REVIEW_TITLE, reviewerPrompt, type ReviewerModels } from "../lib/review.ts";
+import type { Context } from "@bb-kit/core/plugin";
+import { requestSchema } from "../../shared/schema.ts";
+import type { ReviewService } from "../lib/service.ts";
+export type ReviewContext = Context<{ reviews: ReviewService }>;
 
-type StartContext = CommandContext<Context<{ reviewerModels(): Promise<ReviewerModels> }>>;
+async function readBrief(ctx: CommandContext<ReviewContext>, path: string | undefined) {
+  if (!path) return undefined;
+  if (!isAbsolute(path) && !ctx.cwd)
+    throw new PluginCliError("Pass an absolute --file path", { code: "relative_path" });
+  const { hostId } = await ctx.bb.sdk.threads.storageLocation({ threadId: ctx.threadId! });
+  const file = await ctx.bb.sdk.files.read({ hostId, path: resolve(ctx.cwd ?? "/", path) });
+  if (file.contentEncoding !== "utf8")
+    throw new PluginCliError("Brief must be UTF-8 text", { code: "binary_brief" });
+  return file.content;
+}
+function targetFromOptions(options: {
+  branch?: string;
+  base?: string;
+  head?: string;
+  upstream?: string;
+}) {
+  if (options.branch && (options.base || options.head || options.upstream))
+    throw new PluginCliError("Choose --branch or --base with --head", { code: "invalid_target" });
+  if (Boolean(options.base) !== Boolean(options.head))
+    throw new PluginCliError("--base and --head must be supplied together", {
+      code: "invalid_target",
+    });
+  if (options.upstream && !options.base)
+    throw new PluginCliError("--upstream requires --base and --head", { code: "invalid_target" });
+  if (options.branch) return { branch: options.branch };
+  if (options.base && options.head)
+    return { base: options.base, head: options.head, upstream: options.upstream };
+  return undefined;
+}
+function receiptText(receipt: Awaited<ReturnType<ReviewService["start"]>>) {
+  const lines = [
+    `Review run ${receipt.runId} (${receipt.mode} ${receipt.kind}): ${receipt.threadId ?? "dispatching"}.`,
+  ];
+  if (receipt.reused) lines.push("Reused an existing run/reviewer.");
+  lines.push(`Result: bb review result ${receipt.runId} --wait 60s`);
+  if ("message" in receipt && typeof receipt.message === "string") lines.push(receipt.message);
+  return lines.join("\n") + "\n";
+}
 
 export const start = defineCommand({
-  summary: "Spawn a hidden adversarial reviewer for the calling thread's work",
+  summary: "Start or reuse a scoped design or implementation review",
   options: {
     file: {
       type: "string",
-      description: "Brief file on the calling machine: the goal, the changed files, what to attack",
+      description: "Optional detailed brief on the calling host (instead of --prompt)",
       placeholder: "path",
     },
-    prompt: { type: "string", description: "Brief text, instead of --file", placeholder: "text" },
+    prompt: {
+      type: "string",
+      description: "Short review summary; additional context is disclosed lazily",
+      placeholder: "text",
+    },
+    kind: {
+      type: "enum",
+      values: ["design", "implementation"],
+      default: "implementation",
+      description: "Design before consequential work, or implementation at a fixed checkpoint",
+    },
+    mode: {
+      type: "enum",
+      values: ["quick", "standard", "deep"],
+      default: "standard",
+      description: "Quick medium, Standard high, Deep max (required before ship/PR)",
+    },
+    scope: {
+      type: "enum",
+      values: ["segment", "publication"],
+      default: "segment",
+      description:
+        "Publication reviews cover the selected stack from its merge base; required for the ship gate",
+    },
+    branch: {
+      type: "string",
+      description: "Applied GitButler branch containing only the intended checkpointed work",
+    },
+    base: {
+      type: "string",
+      description: "Explicit base commit/ref, with --head; excludes HEAD/workspace",
+    },
+    head: {
+      type: "string",
+      description: "Explicit head commit/ref, with --base; excludes HEAD/workspace",
+    },
+    upstream: {
+      type: "string",
+      description:
+        "Declared publication destination ref for plain Git, with --base/--head (for example origin/main)",
+    },
+    reuse: {
+      type: "enum",
+      values: ["auto", "new"],
+      default: "auto",
+      description: "Reuse an eligible idle reviewer or request fresh judgment",
+    },
+    "review-thread": {
+      type: "string",
+      description: "Reuse this eligible idle reviewer instead of automatic selection",
+    },
+    workstream: {
+      type: "string",
+      description: "Stable workstream label for design-to-implementation reuse",
+    },
+    json: { type: "boolean", description: "Return the run receipt as JSON" },
   },
   constraints: [{ kind: "exactly-one", options: ["file", "prompt"] }],
-  async execute(ctx: StartContext, { options }) {
-    const threadId = ctx.threadId;
-    if (!threadId) {
+  async execute(ctx: CommandContext<ReviewContext>, { options }) {
+    if (!ctx.threadId)
       throw new PluginCliError("bb review start must run inside a bb thread", {
         code: "no_thread",
-        hint: "Run it from an agent's shell, where BB_THREAD_ID is set.",
       });
-    }
-    const brief = options.prompt ?? (await readBrief(ctx, threadId, options.file ?? ""));
-    if (!brief.trim()) throw new PluginCliError("The brief is empty", { code: "empty_brief" });
-
-    const [thread, models] = await Promise.all([
-      ctx.bb.sdk.threads.get({ threadId }),
-      ctx.reviewerModels(),
-    ]);
-    if (thread.originPluginId === ctx.bb.pluginId) {
-      throw new PluginCliError("Reviewer threads cannot start another review", {
-        code: "nested_review",
-      });
-    }
-    if (!thread.environmentId) {
-      throw new PluginCliError("This thread has no environment to review", {
-        code: "no_environment",
-      });
-    }
-    const reviewer = pickReviewer(
-      {
-        providerId: thread.providerId,
-        // These providers serve one family. Other providers can switch families per turn.
-        model: ["codex", "claude-code"].includes(thread.providerId)
-          ? null
-          : await authorModel(ctx, threadId),
-      },
-      models,
-    );
-    const child = await ctx.bb.sdk.threads.spawn({
-      projectId: thread.projectId,
-      environment: { type: "reuse", environmentId: thread.environmentId },
-      parentThreadId: threadId,
-      visibility: "hidden",
-      title: REVIEW_TITLE,
-      providerId: reviewer.providerId,
-      model: reviewer.model,
-      reasoningLevel: reviewer.reasoningLevel,
-      serviceTier: reviewer.serviceTier,
-      prompt: reviewerPrompt(brief),
+    const target = targetFromOptions(options);
+    const brief = await readBrief(ctx, options.file);
+    const parsed = requestSchema.safeParse({
+      kind: options.kind,
+      mode: options.mode,
+      scope: options.scope,
+      summary: options.prompt ?? brief?.trim().split("\n")[0]?.slice(0, 2000),
+      brief,
+      workstream: options.workstream,
+      target,
+      reuse: options["review-thread"] ? { threadId: options["review-thread"] } : options.reuse,
     });
-    return {
-      exitCode: 0,
-      stdout: [
-        `Reviewer ${child.id} started on ${reviewer.providerId} ${reviewer.model}.`,
-        `Wait: bb thread wait ${child.id} --timeout 90s`,
-        "Repeat the wait if it times out. The review is still running.",
-        `Findings: bb thread output ${child.id}`,
-        "",
-      ].join("\n"),
-    };
+    if (!parsed.success) throw new PluginCliError(parsed.error.message, { code: "invalid_brief" });
+    try {
+      const receipt = await ctx.reviews.start(
+        ctx.threadId,
+        parsed.data,
+        ctx.signal ?? new AbortController().signal,
+      );
+      return {
+        exitCode: 0,
+        stdout: options.json ? `${JSON.stringify(receipt)}\n` : receiptText(receipt),
+      };
+    } catch (error) {
+      throw new PluginCliError(error instanceof Error ? error.message : String(error), {
+        code: "review_failed",
+      });
+    }
   },
 });
-
-/** Match the first accepted input of the latest turn to its recorded execution.
- * Next-turn overrides and later steering inputs do not describe the author model.
- */
-async function authorModel(ctx: StartContext, threadId: string): Promise<string> {
-  const events = ctx.bb.sdk.threads.events;
-  const [started] = await events.list({
-    threadId,
-    types: ["turn/started"],
-    order: "desc",
-    limit: "1",
-  });
-  if (!started || started.scope.kind !== "turn") {
-    throw new PluginCliError("This thread has no recorded author turn", { code: "no_author_turn" });
-  }
-  const [accepted] = await events.list({
-    threadId,
-    types: ["turn/input/accepted"],
-    afterSeq: String(started.seq),
-    order: "asc",
-    limit: "1",
-  });
-  if (
-    accepted?.type !== "turn/input/accepted" ||
-    accepted.scope.kind !== "turn" ||
-    accepted.scope.turnId !== started.scope.turnId
-  ) {
-    throw new PluginCliError("The author turn has no recorded accepted input", {
-      code: "no_author_input",
-    });
-  }
-  let beforeSeq = String(accepted.seq);
-  for (;;) {
-    const requests = await events.list({
-      threadId,
-      types: ["client/turn/requested"],
-      beforeSeq,
-      order: "desc",
-      limit: "100",
-    });
-    for (const request of requests) {
-      if (
-        request.type === "client/turn/requested" &&
-        request.data.requestId === accepted.data.clientRequestId
-      ) {
-        return request.data.execution.model;
-      }
-    }
-    const oldest = requests.at(-1);
-    if (!oldest) {
-      throw new PluginCliError("The author turn has no recorded execution model", {
-        code: "no_author_model",
-      });
-    }
-    beforeSeq = String(oldest.seq);
-  }
-}
-
-/** The path names a file on the calling machine, which may not be the server. */
-async function readBrief(ctx: StartContext, threadId: string, path: string): Promise<string> {
-  if (!isAbsolute(path) && !ctx.cwd) {
-    throw new PluginCliError("Pass an absolute --file path", { code: "relative_path" });
-  }
-  const { hostId } = await ctx.bb.sdk.threads.storageLocation({ threadId });
-  const file = await ctx.bb.sdk.files.read({ hostId, path: resolve(ctx.cwd ?? "/", path) });
-  if (file.contentEncoding !== "utf8") {
-    throw new PluginCliError(`${path} is not UTF-8 text`, { code: "binary_brief" });
-  }
-  return file.content;
-}

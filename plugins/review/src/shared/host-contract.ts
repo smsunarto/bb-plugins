@@ -1,0 +1,33 @@
+import { defineRpcContract } from "@get-bb/plugin-sdk";
+import { z } from "zod";
+import { pinnedTargetSchema, targetSchema } from "./schema.ts";
+
+export const reviewHostContract = defineRpcContract({
+  snapshot: {
+    input: z
+      .object({
+        environmentPath: z.string().min(1),
+        target: targetSchema,
+        scope: z.enum(["segment", "publication"]),
+      })
+      .strict(),
+    output: pinnedTargetSchema,
+  },
+  read: {
+    input: z
+      .object({
+        target: pinnedTargetSchema,
+        section: z.enum(["diff", "tree", "file"]),
+        path: z.string().min(1).max(4096).optional(),
+        side: z.enum(["base", "head"]),
+        offset: z.number().int().min(0),
+      })
+      .strict(),
+    output: z.object({
+      text: z.string(),
+      nextOffset: z.number().nullable(),
+      totalLength: z.number(),
+      sha256: z.string().regex(/^[a-f0-9]{64}$/),
+    }),
+  },
+});

@@ -1,0 +1,1 @@
+Read bounded immutable review context: brief, captured evidence, pinned diff/tree/base/head source, or full report. Follow nextOffset for additional pages. Use this run's source instead of the shared workspace. Only the author, its same-environment descendants, and reviewer may read it.

@@ -20,7 +20,7 @@
   },
   "bb": {
     "name": "Review",
-    "description": "Agents ask the other model family to review their work before ending a turn. A banner shows the running review.",
+    "description": "Independent design and implementation review with scoped checkpoints, review modes, and reusable reviewers.",
     "branding": {
       "icon": "./assets/icon.svg",
       "logo": {
@@ -29,7 +29,8 @@
       }
     },
     "server": "./src/server/server.ts",
-    "app": "./src/app/app.tsx"
+    "app": "./src/app/app.tsx",
+    "host": "./src/host/host.ts"
   },
   "files": [
     "dist/*.js",
@@ -41,7 +42,8 @@
     "!src/**/*.test.ts",
     "!src/**/*.test.tsx",
     "README.md",
-    "LICENSE"
+    "LICENSE",
+    "skills/"
   ],
   "dependencies": {
     "@bb-kit/core": "0.2.0",
@@ -65,7 +67,7 @@
     "build": "bb plugin build .",
     "lint": "oxlint",
     "typecheck": "tsc --noEmit",
-    "test": "bun test --timeout=30000",
+    "test": "bun test --preload ./test/sqlite-preload.js src --timeout=30000",
     "check": "node --import tsx ../../packages/bb-kit-dev/src/bin.ts check",
     "clean": "rm -rf dist"
   }

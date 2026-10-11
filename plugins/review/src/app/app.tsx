@@ -23,10 +23,16 @@ const RELEVANT_CHANGES = new Set([
   "thread-deleted",
 ]);
 
+type RunDisplay = {
+  mode: "quick" | "standard" | "deep";
+  kind: "design" | "implementation";
+  startedAt: number;
+  status: string;
+};
 type Review = Pick<
   Awaited<ReturnType<PluginBrowserBbSdk["threads"]["get"]>>,
   "id" | "providerId" | "status" | "createdAt"
->;
+> & { run?: RunDisplay };
 type ReviewParent = { threadId: string; isReview: boolean; parentThreadId: string | null };
 
 // This graph only reserves space. Buttons always use fresh SDK responses.
@@ -98,6 +104,8 @@ function useReviews(threadId: string): Review[] | null {
     let discovered = false;
     let retry: ReturnType<typeof setTimeout> | undefined;
     let retryDelay = 1000;
+    let poll: ReturnType<typeof setTimeout> | undefined;
+    let pollDelay = 3000;
     const refresh = async () => {
       clearTimeout(retry);
       retry = undefined;
@@ -121,16 +129,53 @@ function useReviews(threadId: string): Review[] | null {
       } finally {
         pending -= 1;
       }
+      const withRuns = await Promise.all(
+        children.map(async (child) => {
+          try {
+            const metadata = await sdk.threads.getPluginMetadata({ threadId: child.id, pluginId });
+            const run = metadata.reviewRun as RunDisplay | undefined;
+            return {
+              ...child,
+              run:
+                run &&
+                typeof run.startedAt === "number" &&
+                ["quick", "standard", "deep"].includes(run.mode) &&
+                ["design", "implementation"].includes(run.kind)
+                  ? run
+                  : undefined,
+            };
+          } catch {
+            return { ...child, run: undefined };
+          }
+        }),
+      );
       // A slower, older response must not overwrite a newer one.
       if (request !== latest) return;
       retryDelay = 1000;
       discovered = true;
       known = new Set(children.map((child) => child.id));
       knownLayout(sdk).recordChildren(threadId, children);
+      clearTimeout(poll);
+      if (
+        withRuns.some(
+          (child) =>
+            !RUNNING.has(child.status) &&
+            (child.run?.status === "running" || child.run?.status === "starting"),
+        )
+      ) {
+        poll = setTimeout(() => void refresh(), pollDelay);
+        pollDelay = Math.min(pollDelay * 2, 30000);
+      } else pollDelay = 3000;
       setReviews(
-        children
-          .sort((a, b) => b.createdAt - a.createdAt)
-          .map(({ id, providerId, status, createdAt }) => ({ id, providerId, status, createdAt })),
+        withRuns
+          .sort((a, b) => (b.run?.startedAt ?? b.createdAt) - (a.run?.startedAt ?? a.createdAt))
+          .map(({ id, providerId, status, createdAt, run }) => ({
+            id,
+            providerId,
+            status,
+            createdAt,
+            run,
+          })),
       );
     };
     const unsubscribe = sdk.subscribe({
@@ -149,6 +194,7 @@ function useReviews(threadId: string): Review[] | null {
           (created || reparented || ours || pending > 0 || !discovered) &&
           event.changes.some((change) => RELEVANT_CHANGES.has(change))
         ) {
+          pollDelay = 3000;
           void refresh();
         }
       },
@@ -157,6 +203,7 @@ function useReviews(threadId: string): Review[] | null {
     return () => {
       latest = -1;
       clearTimeout(retry);
+      clearTimeout(poll);
       unsubscribe();
     };
   }, [sdk, pluginId, threadId, connection]);
@@ -169,6 +216,8 @@ const PHASES = {
   running: { icon: "Spinner", tone: "text-muted-foreground animate-spin", status: "Running" },
   complete: { icon: "CircleCheck", tone: "text-success", status: "Done" },
   failed: { icon: "AlertCircle", tone: "text-destructive", status: "Failed" },
+  awaiting: { icon: "Clock", tone: "text-muted-foreground", status: "Awaiting result" },
+  incomplete: { icon: "AlertCircle", tone: "text-muted-foreground", status: "Incomplete" },
 } as const;
 
 type Navigation =
@@ -181,7 +230,15 @@ type Navigation =
       running: number;
       startedAt: number;
       providerId: string;
+      title: string;
     };
+
+function reviewPhase(review: Review): keyof typeof PHASES {
+  if (review.status === "error" || review.run?.status === "failed") return "failed";
+  if (review.run?.status === "incomplete") return "incomplete";
+  if (review.run?.status === "running" || review.run?.status === "starting") return "awaiting";
+  return "complete";
+}
 
 /** Select one navigation target before rendering either direction in the same row. */
 function reviewNavigation(parent: ReviewParent, reviews: Review[] | null): Navigation | null {
@@ -193,19 +250,21 @@ function reviewNavigation(parent: ReviewParent, reviews: Review[] | null): Navig
   const running = reviews?.filter((review) => RUNNING.has(review.status)) ?? [];
   const review = running[0] ?? reviews?.[0];
   if (!review) return null;
-  const phase = running.length > 0 ? "running" : review.status === "error" ? "failed" : "complete";
+  const phase = running.length > 0 ? "running" : reviewPhase(review);
+  const title = review.run
+    ? `${review.run.mode[0]!.toUpperCase()}${review.run.mode.slice(1)} ${review.run.kind} review`
+    : "Adversarial review";
   const label =
-    running.length > 1
-      ? `${running.length} adversarial reviews running`
-      : `Adversarial review ${phase}`;
+    running.length > 1 ? `${running.length} adversarial reviews running` : `${title} ${phase}`;
   return {
     back: false,
     target: review.id,
     label,
     phase,
     running: running.length,
-    startedAt: review.createdAt,
+    startedAt: review.run?.startedAt ?? review.createdAt,
     providerId: review.providerId,
+    title,
   };
 }
 
@@ -289,7 +348,7 @@ function ReviewRow({ threadId }: { threadId: string }) {
       <Icon name={phase.icon} className={`size-3.5 shrink-0 ${phase.tone}`} aria-hidden />
       <span className="flex min-w-0 flex-1 items-baseline gap-1.5 text-left">
         <span className={`${running ? "animate-shine " : ""}min-w-0 truncate font-medium`}>
-          Adversarial review
+          {navigation.title}
         </span>
         <span
           className={`shrink-0 whitespace-nowrap ${running ? "text-muted-foreground" : phase.tone}`}
