@@ -9,7 +9,9 @@ This fork is published as `@smsunarto/bb-plugin-scott-docs` with plugin ID
 `scott-docs`.
 It keeps upstream's Tiptap editor and proposal review, and adds
 BB's agent-stream Markdown styling, a [Pierre Trees](https://trees.software/) explorer,
-and hidden human-authored folders. bb's built-in Docs (`simple-notes`) claims
+and hidden human-authored folders. Reopening the last document comes from
+[Better Notes](https://github.com/SawyerHood/sawyer-plugins/tree/main/plugins/better-notes)
+at `d3424f24e2ce`. bb's built-in Docs (`simple-notes`) claims
 the same `bb docs` command, so installing the fork disables `simple-notes` when
 it is enabled.
 
@@ -74,6 +76,9 @@ registry at `desktop-v0.44.0` (`components.json`).
   leases. Relative styles, scripts, modules, images, and data files stay under
   the selected vault root. HTML responses use `sandbox allow-scripts`, and the
   iframe never receives `allow-same-origin`.
+- **Last document:** the Docs panel reopens on the Markdown or HTML document
+  it last showed. Choosing a vault clears that memory and browses the vault.
+  The sidebar never navigates on its own.
 - **Chat mentions:** `@` searches every vault's titles, previews, filenames,
   and folders. Searches share in-flight reads and cache summaries for up to
   ten seconds. Docs edits and local filesystem notifications invalidate the

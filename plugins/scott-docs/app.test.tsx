@@ -24,6 +24,7 @@ const rangeGetClientRectsDescriptor = Object.getOwnPropertyDescriptor(
 );
 
 beforeEach(() => {
+  localStorage.clear();
   vi.stubGlobal(
     "ResizeObserver",
     class {
@@ -221,6 +222,66 @@ function treeItemLabels(container: HTMLElement) {
 }
 
 describe("Docs nav panel", () => {
+  it("remembers the document and restores it when the panel reopens", async () => {
+    const slot = renderSlot(
+      docsRegistration,
+      { subPath: "personal/plans/My report.html" },
+      { rpc: { listNotes: () => listNotesResult([]), preparePreview: () => preview } },
+    );
+    await slot.findByTitle("plans/My report.html");
+    expect(localStorage.getItem("bb-plugin-scott-docs:last-document")).toBe(
+      "personal/plans/My report.html",
+    );
+    cleanup();
+    const reopened = renderSlot(
+      docsRegistration,
+      { subPath: "" },
+      { rpc: { listNotes: () => listNotesResult([]) } },
+    );
+    await waitFor(() =>
+      expect(reopened.navigateCalls).toContainEqual({
+        method: "toPluginPanel",
+        path: "docs",
+        options: { subPath: "personal/plans/My report.html", replace: true },
+      }),
+    );
+  });
+
+  it("honors explicit vault navigation instead of restoring an old document", async () => {
+    localStorage.setItem("bb-plugin-scott-docs:last-document", "personal/old.md");
+    const slot = renderSlot(
+      docsRegistration,
+      { subPath: "personal" },
+      { rpc: { listNotes: () => listNotesResult([]) } },
+    );
+    await slot.findByText("Select a note or HTML page.");
+    expect(slot.navigateCalls).toEqual([]);
+    expect(localStorage.getItem("bb-plugin-scott-docs:last-document")).toBeNull();
+  });
+
+  it("ignores malformed saved locations", async () => {
+    localStorage.setItem("bb-plugin-scott-docs:last-document", "%invalid");
+    const slot = renderSlot(
+      docsRegistration,
+      { subPath: "" },
+      { rpc: { listNotes: () => listNotesResult([]) } },
+    );
+    await slot.findByText("Select a note or HTML page.");
+    expect(slot.navigateCalls).toEqual([]);
+  });
+
+  it("keeps the sidebar from moving the reader to the saved document", async () => {
+    localStorage.setItem("bb-plugin-scott-docs:last-document", "personal/old.md");
+    const slot = renderSlot(
+      navigationRegistration,
+      { subPath: "" },
+      { rpc: { listNotes: () => listNotesResult([]) } },
+    );
+    await slot.findByRole("navigation", { name: "Notes" });
+    expect(slot.navigateCalls).toEqual([]);
+    expect(localStorage.getItem("bb-plugin-scott-docs:last-document")).toBe("personal/old.md");
+  });
+
   it("registers the Docs surfaces", () => {
     expect(app.navPanels[0]).toMatchObject({
       id: "docs",

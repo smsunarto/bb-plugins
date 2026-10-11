@@ -993,7 +993,7 @@ function DocsDirectiveCard({ attributes }: PluginMessageDirectiveProps) {
         aria-label="Open in Docs"
         onClick={openInDocs}
       >
-        <HugeiconsIcon icon={ArrowUpRight01Icon} />
+        <HugeiconsIcon icon={ArrowUpRight01Icon} className="size-4" />
       </Button>
     </div>
   );
@@ -1089,7 +1089,7 @@ function DocumentPanel({ params }: PluginThreadPanelProps) {
             })
           }
         >
-          <HugeiconsIcon icon={ArrowUpRight01Icon} />
+          <HugeiconsIcon icon={ArrowUpRight01Icon} className="size-4" />
         </Button>
       </div>
       <HtmlPreview {...document} panel />
@@ -2051,7 +2051,40 @@ function NotesWorkspace({
   );
 }
 
+// Only the main panel remembers its document. The sidebar and the document
+// picker mount NotesWorkspace too, and neither should move the reader.
+const LAST_DOCUMENT_KEY = "bb-plugin-scott-docs:last-document";
+
 function NotesPanel(props: PluginNavPanelProps) {
+  const navigate = useBbNavigate();
+  const { subPath } = props;
+  const restoredRef = useRef(false);
+  useEffect(() => {
+    try {
+      if (subPath) {
+        restoredRef.current = false;
+        const route = parseRoute(subPath);
+        // Choosing a vault, not a document, is a request to browse it.
+        if (route.vaultId && route.filePath) localStorage.setItem(LAST_DOCUMENT_KEY, subPath);
+        else localStorage.removeItem(LAST_DOCUMENT_KEY);
+        return;
+      }
+      if (restoredRef.current) return;
+      restoredRef.current = true;
+      const saved = localStorage.getItem(LAST_DOCUMENT_KEY);
+      if (!saved) return;
+      const previous = parseRoute(saved);
+      if (
+        previous.vaultId &&
+        previous.filePath &&
+        /\.(md|markdown|html?)$/i.test(previous.filePath)
+      ) {
+        navigate.toPluginPanel("docs", { subPath: saved, replace: true });
+      }
+    } catch {
+      // Unavailable storage or a malformed saved path leaves the panel browsing.
+    }
+  }, [navigate, subPath]);
   return <NotesWorkspace {...props} navigationOnly={false} />;
 }
 
