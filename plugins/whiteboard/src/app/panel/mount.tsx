@@ -14,7 +14,6 @@ import {
   useMemo,
   useRef,
   useState,
-  useSyncExternalStore,
 } from "react";
 import { toast } from "sonner";
 import type { InfoOutput } from "../../shared/contracts/api-tunnel.ts";
@@ -36,7 +35,6 @@ import { createBbBridge } from "../bridge/bb-bridge.ts";
 import { createSurfaceEvents } from "../bridge/events.ts";
 import { type LiveHub, createLiveHub } from "../bridge/live-watch.ts";
 import { PortalHost, createPortals } from "../bridge/portals.tsx";
-import { currentTheme, onDidChangeTheme } from "../bridge/theme.ts";
 import { Button } from "../components/ui/button.tsx";
 import { UNAVAILABLE_TITLE } from "../lib/whiteboard-info.tsx";
 import { type WhiteboardRpcClient, rpc } from "../rpc.ts";
@@ -51,8 +49,9 @@ import { EmptyState } from "./empty-state.tsx";
  * The bb version of upstream `desktop-entry.tsx` + `reviewCanvasPart.ts`
  * (design §3.8):
  *
- *   div.review-canvas-root [data-review-theme]     scope root of the vendored CSS
- *     div.review-theme-host(.review-app--theme-light)
+ *   div.light                                      bb's light token scope, display: contents
+ *     div.review-canvas-root [data-review-theme]   scope root of the vendored CSS
+ *       div.review-theme-host.review-app--theme-light
  *       ReviewContainerProvider
  *         div[data-review-api].review-api-canvas > ApiCanvas   (sessionId)
  *         ReviewHome                                         (no sessionId)
@@ -63,11 +62,6 @@ import { EmptyState } from "./empty-state.tsx";
 export const REMOVED_TITLE = "This Whiteboard was removed.";
 
 type ApiContent = Extract<ReviewCanvasContent, { kind: "api" }>;
-
-const themeSubscribe = (listener: () => void) => {
-  const subscription = onDidChangeTheme(listener);
-  return () => subscription.dispose();
-};
 
 /** A stable `BbNavigate` that always calls the latest hook value. */
 function useStableNavigate(): BbNavigate {
@@ -365,7 +359,6 @@ export function WhiteboardMount({
   // Panels key the mount by session, so one find host per mount is one per session.
   const [findHost] = useState(createReviewFindHost);
 
-  const theme = useSyncExternalStore(themeSubscribe, currentTheme, currentTheme);
   const [container, setContainer] = useState<HTMLDivElement | null>(null);
 
   const openSession = useCallback(
@@ -433,17 +426,24 @@ export function WhiteboardMount({
   }
 
   return (
-    <div ref={setContainer} className="review-canvas-root" data-review-theme={theme} tabIndex={-1}>
+    // Always light. `.light` is bb's light token scope: bb's tokens resolve to
+    // its light palette on this wrapper, even while bb is dark, and the canvas
+    // inherits them resolved. It cannot sit on the canvas root, which redeclares
+    // bb names such as --ink that bb's light tokens read.
+    <div className="light" style={{ display: "contents" }}>
       <div
-        className={
-          theme === "light" ? "review-theme-host review-app--theme-light" : "review-theme-host"
-        }
+        ref={setContainer}
+        className="review-canvas-root"
+        data-review-theme="light"
+        tabIndex={-1}
       >
-        {container ? (
-          <ReviewContainerProvider container={container}>{body}</ReviewContainerProvider>
-        ) : null}
+        <div className="review-theme-host review-app--theme-light">
+          {container ? (
+            <ReviewContainerProvider container={container}>{body}</ReviewContainerProvider>
+          ) : null}
+        </div>
+        <PortalHost portals={portals} />
       </div>
-      <PortalHost portals={portals} />
     </div>
   );
 }

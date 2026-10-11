@@ -6,23 +6,16 @@ import type {
 import { DIFF_LAYOUT_STORAGE_KEY } from "../../shared/contracts/panel.ts";
 
 /**
- * bb theme and Diff layout preference for the bridge (design §3.8).
- * bb marks dark mode with `.dark` on `<html>`; Whiteboard only names a choice.
+ * Whiteboard theme and Diff layout preference for the bridge (design §3.8).
+ * The Whiteboard is always light, whatever bb's appearance: the mount puts the
+ * canvas in bb's `.light` token scope, so the theme never changes.
  */
 export function currentTheme(): ReviewTheme {
-  return document.documentElement.classList.contains("dark") ? "dark" : "light";
+  return "light";
 }
 
-export function onDidChangeTheme(listener: (theme: ReviewTheme) => void): ReviewDisposable {
-  let last = currentTheme();
-  const observer = new MutationObserver(() => {
-    const next = currentTheme();
-    if (next === last) return;
-    last = next;
-    listener(next);
-  });
-  observer.observe(document.documentElement, { attributes: true, attributeFilter: ["class"] });
-  return { dispose: () => observer.disconnect() };
+export function onDidChangeTheme(): ReviewDisposable {
+  return { dispose() {} };
 }
 
 const layoutListeners = new Set<(layout: ReviewDiffLayout) => void>();

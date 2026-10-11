@@ -57,7 +57,7 @@ describe("createBbBridge", () => {
     });
   });
 
-  it("tells surface listeners when bb's theme changes, until they unsubscribe", async () => {
+  it("gives the canvas the light theme while bb is dark, and never a theme change", async () => {
     document.documentElement.className = "dark";
     const { bridge } = bridgeWith();
     const listener = vi.fn();
@@ -65,12 +65,10 @@ describe("createBbBridge", () => {
 
     document.documentElement.classList.remove("dark");
     await Promise.resolve();
-    expect(listener.mock.calls).toEqual([[{ event: "themeChanged", theme: "light" }]]);
-
+    expect([bridge.config.theme, bridge.currentTheme()]).toEqual(["light", "light"]);
+    expect(listener).not.toHaveBeenCalled();
     subscription.dispose();
-    document.documentElement.classList.add("dark");
-    await Promise.resolve();
-    expect(listener).toHaveBeenCalledTimes(1);
+    document.documentElement.className = "";
   });
 
   it("reads info flags per call, so settings changes reach a live bridge", async () => {

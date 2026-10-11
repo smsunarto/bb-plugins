@@ -1,40 +1,10 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { DIFF_LAYOUT_STORAGE_KEY } from "../../shared/contracts/panel.ts";
-import {
-  currentDiffLayout,
-  currentTheme,
-  onDidChangeDiffLayout,
-  onDidChangeTheme,
-  setDiffLayout,
-} from "./theme.ts";
+import { currentDiffLayout, onDidChangeDiffLayout, setDiffLayout } from "./theme.ts";
 
 afterEach(() => {
-  document.documentElement.className = "";
   window.localStorage.clear();
-});
-
-describe("theme", () => {
-  it("follows bb's .dark class on <html>", () => {
-    expect(currentTheme()).toBe("light");
-    document.documentElement.classList.add("dark");
-    expect(currentTheme()).toBe("dark");
-  });
-
-  it("fires once per theme change, not per class change", async () => {
-    const seen: string[] = [];
-    const subscription = onDidChangeTheme((theme) => seen.push(theme));
-    document.documentElement.classList.add("dark");
-    await Promise.resolve();
-    document.documentElement.classList.add("unrelated");
-    await Promise.resolve();
-    document.documentElement.classList.remove("dark");
-    await Promise.resolve();
-    subscription.dispose();
-    document.documentElement.classList.add("dark");
-    await Promise.resolve();
-    expect(seen).toEqual(["dark", "light"]);
-  });
 });
 
 describe("diff layout", () => {

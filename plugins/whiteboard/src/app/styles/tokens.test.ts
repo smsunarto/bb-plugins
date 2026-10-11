@@ -19,7 +19,7 @@ const VENDORED_SHEETS = [
   "vendor/npm/@xyflow/react/dist/style.css",
 ];
 
-/** bb theme tokens (bb `apps/app/src/components/ui/theme.css`, both themes; monokai pins `.dark`). */
+/** bb theme tokens (bb `apps/app/src/components/ui/theme.css`). The canvas reads bb's `.light` scope. */
 const BB_TOKENS = new Set([
   "--background",
   "--foreground",
@@ -43,6 +43,7 @@ const BB_TOKENS = new Set([
   "--success",
   "--destructive-text",
   "--pr-merged",
+  "--font-sans",
   "--font-mono",
   // Collisions, readable only because tokens.css resets them to `inherit`.
   "--diff-added",
@@ -50,8 +51,14 @@ const BB_TOKENS = new Set([
   "--shadow-color",
 ]);
 
-/** Upstream names that are also bb tokens. Overriding them must not self-reference. */
-const COLLISIONS = ["--diff-added", "--diff-removed", "--shadow-color", "--font-serif"];
+/** Upstream names that are also bb tokens, with the value that avoids a self-reference. */
+const COLLISIONS = {
+  "--diff-added": "inherit",
+  "--diff-removed": "inherit",
+  "--shadow-color": "inherit",
+  // bb sets prose in its sans face, not upstream's serif.
+  "--font-serif": "var(--font-sans)",
+};
 
 /** Literal colors left in vendored rules, each with the reason it is acceptable. */
 const ALLOWED_RULE_LITERALS = [
@@ -132,70 +139,56 @@ const pinned = new Set(
 const resolvable = new Set([...defined, ...pinned]);
 
 /** Top-level selector parts of every style rule, as written (keyframe stops and at-rule blocks skipped). */
-function selectorParts(sheet: string): string[] {
-  const body = read(sheet).replace(/\/\*[\s\S]*?\*\//g, "");
+/** A selector list's top-level parts (commas inside `:is()` or `[]` stay put). */
+function splitSelector(selector: string): string[] {
   const parts: string[] = [];
-  for (const match of body.matchAll(/([^{};]+)\{[^{}]*\}/g)) {
-    const selector = match[1]!.trim().replace(/\s+/g, " ");
-    let depth = 0;
-    let start = 0;
-    for (let i = 0; i <= selector.length; i++) {
-      const char = selector[i];
-      if (char === "(" || char === "[") depth++;
-      else if (char === ")" || char === "]") depth--;
-      else if ((char === "," && depth === 0) || i === selector.length) {
-        parts.push(selector.slice(start, i).trim());
-        start = i + 1;
-      }
+  let depth = 0;
+  let start = 0;
+  for (let i = 0; i <= selector.length; i++) {
+    const char = selector[i];
+    if (char === "(" || char === "[") depth++;
+    else if (char === ")" || char === "]") depth--;
+    else if ((char === "," && depth === 0) || i === selector.length) {
+      parts.push(selector.slice(start, i).trim());
+      start = i + 1;
     }
   }
-  return parts.filter((part) => !part.startsWith("@") && !/^(from|to|[\d.]+%)$/.test(part));
+  return parts;
 }
 
-/** Monokai's dark tokens (bb's `.dark` theme in plugins/monokai). */
-const MONOKAI = new Map(
-  declarations(
-    "bb-monokai.css",
-    readFileSync(path.resolve(APP, "../../../monokai/themes/bb-monokai.css"), "utf8"),
-  )
-    .filter((entry) => entry.selector === ".dark")
-    .map((entry) => [entry.property, entry.value]),
-);
-const bridged = new Map(
-  tokens
-    .filter((entry) => entry.property.startsWith("--"))
-    .map((entry) => [entry.property, entry.value]),
-);
-
-/** Every step of a `var()` chain through tokens.css, then Monokai. */
-function resolveUnderMonokai(value: string): string[] {
-  const steps = [value];
-  let name = /^var\((--[\w-]+)\)$/.exec(value)?.[1];
-  while (name) {
-    const next = bridged.get(name) ?? MONOKAI.get(name) ?? `unset ${name}`;
-    steps.push(next);
-    name = /^var\((--[\w-]+)\)$/.exec(next)?.[1];
-  }
-  return steps;
+function selectorParts(sheet: string): string[] {
+  const body = read(sheet).replace(/\/\*[\s\S]*?\*\//g, "");
+  return [...body.matchAll(/([^{};]+)\{[^{}]*\}/g)]
+    .flatMap((match) => splitSelector(match[1]!.trim().replace(/\s+/g, " ")))
+    .filter((part) => !part.startsWith("@") && !/^(from|to|[\d.]+%)$/.test(part));
 }
 
-/** WCAG contrast of a `#rrggbb[aa]` color composited over an opaque `#rrggbb` ground. */
-function contrast(foreground: string, ground: string): number {
-  const channels = (hex: string) => {
-    const match = /^#([0-9a-f]{6})([0-9a-f]{2})?$/i.exec(hex);
-    if (!match) throw new Error(`not a hex color: ${hex}`);
-    const rgb = [0, 2, 4].map((i) => Number.parseInt(match[1]!.slice(i, i + 2), 16) / 255);
-    return { rgb, alpha: match[2] ? Number.parseInt(match[2], 16) / 255 : 1 };
-  };
-  const luminance = (rgb: number[]) => {
-    const [r, g, b] = rgb.map((v) => (v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4));
-    return 0.2126 * r! + 0.7152 * g! + 0.0722 * b!;
-  };
-  const back = channels(ground).rgb;
-  const front = channels(foreground);
-  const mixed = front.rgb.map((v, i) => v * front.alpha + back[i]! * (1 - front.alpha));
-  const [high, low] = [luminance(mixed), luminance(back)].sort((a, b) => b - a);
-  return (high! + 0.05) / (low! + 0.05);
+const monokai = declarations(
+  "bb-monokai.css",
+  readFileSync(path.resolve(APP, "../../../monokai/themes/bb-monokai.css"), "utf8"),
+);
+/** Tokens Monokai declares on `.dark` (plugins/monokai). */
+const MONOKAI_DARK = monokai
+  .filter((entry) => entry.selector === ".dark")
+  .map((entry) => entry.property);
+
+/** A font family named outright rather than through a token. */
+const LITERAL_FACE =
+  /["']|(?<![\w-])(?:monospace|serif|sans-serif|system-ui|-apple-system)(?![\w-])/;
+
+/** Whether some tokens.css rule sets `property` on `part` (a vendored selector part). */
+function overridesPart(property: string, part: string): boolean {
+  return tokens
+    .filter((entry) => entry.property === property)
+    .flatMap((entry) => splitSelector(entry.selector))
+    .some((selector) => {
+      const subject = /^\.review-canvas-root\[data-review-theme\] (.+)$/.exec(selector)?.[1];
+      if (!subject) return false;
+      const members = /^:is\((.*)\)$/.exec(subject)?.[1]?.split(",") ?? [subject];
+      return members
+        .map((member) => member.trim())
+        .some((member) => part === member || part.endsWith(` ${member}`));
+    });
 }
 
 /**
@@ -257,10 +250,10 @@ describe("tokens.css", () => {
     expect(offending).toEqual([]);
   });
 
-  it("resets colliding names to bb's value instead of self-referencing", () => {
-    for (const name of COLLISIONS) {
+  it("resets colliding names without self-referencing", () => {
+    for (const [name, value] of Object.entries(COLLISIONS)) {
       const values = tokens.filter((entry) => entry.property === name).map((entry) => entry.value);
-      expect(values).toEqual(["inherit"]);
+      expect(values).toEqual([value]);
     }
   });
 
@@ -302,31 +295,36 @@ describe("tokens.css", () => {
     expect(VENDORED_SHEETS.filter((sheet) => /@scope/.test(read(sheet)))).toEqual([]);
   });
 
-  it("keeps faint labels readable under Monokai", () => {
-    const inkFaint = vendored
-      .filter((entry) => entry.property === "--ink-faint")
-      .map((entry) => withoutBridgedFallbacks(entry.value, resolvable));
-    expect(inkFaint).toEqual([
-      "var(--vscode-disabledForeground)",
-      "var(--vscode-disabledForeground)",
-    ]);
-    const steps = resolveUnderMonokai("var(--vscode-disabledForeground)");
-    expect(steps.slice(0, 2)).toEqual([
-      "var(--vscode-disabledForeground)",
-      "var(--readback-foreground)",
-    ]);
-    expect(contrast(steps.at(-1)!, MONOKAI.get("--background")!)).toBeGreaterThanOrEqual(4.5);
+  it("sets every literal font face of the vendored rules in a bb face", () => {
+    const literal = vendored
+      .filter((entry) => entry.property === "font-family" || entry.property === "font")
+      .filter((entry) => LITERAL_FACE.test(entry.value.replace(/var\([^()]*\)/g, "")))
+      .flatMap((entry) => entry.selector.split(",").map((part) => part.trim()))
+      .filter((part) => !overridesPart("font-family", part));
+    expect(literal).toEqual([]);
   });
 
-  it("keeps a collapsed section's title readable under Monokai", () => {
-    const color = tokens.find(
-      (entry) =>
-        entry.selector ===
-          ".review-canvas-root[data-review-theme] .review-section--collapsed .review-section-heading h2" &&
-        entry.property === "color",
+  it("overrides every literal color Monokai's dark Markdown rules paint", () => {
+    const literal = monokai
+      .filter((entry) => !entry.property.startsWith("mask") && LITERAL.test(entry.value))
+      .flatMap((entry) =>
+        entry.selector
+          .split(",")
+          .map((part) => part.trim())
+          .filter((part) => part.startsWith(".dark .bb-markdown-prose "))
+          .map((part) => ({ property: entry.property, part: part.slice(".dark ".length) })),
+      );
+    expect(literal.length).toBeGreaterThan(0);
+    expect(literal.filter(({ property, part }) => !overridesPart(property, part))).toEqual([]);
+  });
+
+  it("drops every diff view override Monokai sets for dark mode only", () => {
+    const darkOnly = MONOKAI_DARK.filter((name) => name.startsWith("--diffs-"));
+    const dropped = new Set(
+      tokens.filter((entry) => entry.value === "initial").map((entry) => entry.property),
     );
-    const steps = resolveUnderMonokai(color?.value ?? "unset");
-    expect(contrast(steps.at(-1)!, MONOKAI.get("--background")!)).toBeGreaterThanOrEqual(3);
+    expect(darkOnly.length).toBeGreaterThan(0);
+    expect(darkOnly.filter((name) => !dropped.has(name))).toEqual([]);
   });
 
   it("draws an accent focus ring on every canvas control, inside any box that clips it", () => {

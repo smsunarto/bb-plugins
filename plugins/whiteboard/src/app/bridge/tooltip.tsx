@@ -69,7 +69,8 @@ function TooltipView({ store }: { store: TooltipStore }) {
             }}
           />
         </TooltipTrigger>
-        <TooltipContent side="top" data-wb-tooltip="">
+        {/* Portaled to <body>, outside the canvas: bring bb's light scope along. */}
+        <TooltipContent side="top" className="light" data-wb-tooltip="">
           <span className="block">{shown.text}</span>
           {shown.detail ? <span className="block opacity-70">{shown.detail}</span> : null}
         </TooltipContent>

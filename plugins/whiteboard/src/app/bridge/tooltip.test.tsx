@@ -37,6 +37,8 @@ describe("setupTooltip", () => {
     act(() => target.dispatchEvent(new Event("pointerenter")));
     expect(await screen.findAllByText("Viewed")).not.toHaveLength(0);
     expect(tooltipText()).toContain("3 of 5 files");
+    // Outside the canvas, so it carries bb's light scope itself.
+    expect(document.querySelector("[data-wb-tooltip]")!.closest(".light")).not.toBeNull();
 
     act(() => target.dispatchEvent(new Event("pointerleave")));
     expect(tooltipText()).toBeNull();

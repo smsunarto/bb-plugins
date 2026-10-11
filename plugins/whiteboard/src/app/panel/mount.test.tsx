@@ -170,19 +170,14 @@ describe("WhiteboardMount", () => {
     );
     expect(canvas.sourceView!()).toEqual({ reviewId: SESSION, version: 1, generation: undefined });
   });
-  it("renders the vendored CSS scope root and follows bb's theme", async () => {
+  it("renders the vendored CSS scope root in bb's light scope while bb is dark", async () => {
     render(<WhiteboardMount sessionId={SESSION} threadId="thread-1" info={INFO} />);
     await screen.findByTestId("api-canvas");
-    expect(root().dataset.reviewTheme).toBe("dark");
-    expect(themeHost().className).toBe("review-theme-host");
-    expect(root().contains(screen.getByTestId("api-canvas"))).toBe(true);
-
-    await act(async () => {
-      document.documentElement.classList.remove("dark");
-      await Promise.resolve();
-    });
+    expect(document.documentElement.className).toBe("dark");
+    expect(root().parentElement!.className).toBe("light");
     expect(root().dataset.reviewTheme).toBe("light");
     expect(themeHost().className).toBe("review-theme-host review-app--theme-light");
+    expect(root().contains(screen.getByTestId("api-canvas"))).toBe(true);
   });
 
   it("marks the session viewed when it opens", async () => {

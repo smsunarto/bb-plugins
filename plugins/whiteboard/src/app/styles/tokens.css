@@ -7,13 +7,15 @@
  * below adds `.review-canvas-root[data-review-theme]`, which the mount always
  * sets, so it wins on specificity alone, in any sheet order.
  *
- * Every value is a bb theme token or a color-mix of bb tokens. bb's tokens
- * already switch with the `.dark` class on <html>, so one declaration covers
- * both themes. `styles/tokens.test.ts` enforces this.
+ * Every value is a bb theme token or a color-mix of bb tokens. The Whiteboard
+ * is always light: the mount wraps the root in `.light`, bb's light token
+ * scope, so bb's tokens resolve to its light palette even under `.dark` on <html>.
+ * `styles/tokens.test.ts` enforces this.
  *
  * Five upstream names collide with bb tokens (--ink, --diff-added,
  * --diff-removed, --shadow-color, --font-serif). A self-reference would be a
- * cycle, so those use `inherit` (bb's own value) or the bridge (--ink).
+ * cycle, so those use `inherit` (bb's own value), the bridge (--ink) or, for
+ * --font-serif, bb's sans face.
  */
 
 /*
@@ -91,12 +93,40 @@
   --xy-resize-background-color: var(--timeline-accent);
 }
 
-.review-canvas-root[data-review-theme="dark"] {
-  color-scheme: dark;
+.review-canvas-root[data-review-theme] {
+  color-scheme: light;
 }
 
-.review-canvas-root[data-review-theme="light"] {
+/*
+ * bb's code views (@pierre/diffs) carry both palettes and pick one with
+ * light-dark(), but pin `color-scheme` on their shadow host to bb's mode. The
+ * page's rule outranks the shadow root's `:host`. A theme can also tune them
+ * with `--diffs-*-override` on `.dark` alone, which bb's `.light` scope never
+ * redeclares, so drop those here: Monokai's, kept in sync by tokens.test.ts.
+ */
+.review-canvas-root[data-review-theme] diffs-container {
   color-scheme: light;
+}
+
+.review-canvas-root[data-review-theme] {
+  --diffs-addition-color-override: initial;
+  --diffs-deletion-color-override: initial;
+  --diffs-modified-color-override: initial;
+  --diffs-bg-context-override: initial;
+  --diffs-bg-context-gutter-override: initial;
+  --diffs-bg-buffer-override: initial;
+  --diffs-bg-separator-override: initial;
+  --diffs-bg-addition-emphasis-override: initial;
+  --diffs-bg-deletion-emphasis-override: initial;
+  --diffs-bg-hover-override: initial;
+  --diffs-bg-selection-override: initial;
+  --diffs-bg-addition-number-override: initial;
+  --diffs-bg-deletion-number-override: initial;
+  --diffs-bg-selection-number-override: initial;
+  --diffs-fg-number-override: initial;
+  --diffs-fg-number-addition-override: initial;
+  --diffs-fg-number-deletion-override: initial;
+  --diffs-fg-conflict-marker-override: initial;
 }
 
 /*
@@ -110,10 +140,14 @@
   --diff-added: inherit;
   --diff-removed: inherit;
   --shadow-color: inherit;
-  --font-serif: inherit;
 
-  /* Fonts are bb's. The canvas keeps upstream's mono display face. */
-  --wb-font-mono: var(--font-mono);
+  /*
+   * Fonts are bb's: text in bb's UI face, code in its mono face. Upstream sets
+   * prose in serif and its chrome, labels and diagrams in --wb-font-mono, so
+   * both read bb's sans. Code takes --font-mono back below.
+   */
+  --font-serif: var(--font-sans);
+  --wb-font-mono: var(--font-sans);
 
   /* Surfaces. */
   --ghost: color-mix(in oklab, var(--foreground) 18%, var(--background));
@@ -222,6 +256,52 @@
   --review-home-view-toggle-active-bg: var(--background);
   --review-home-view-toggle-shadow: var(--shadow-color);
   --review-home-view-toggle-highlight: var(--surface-raised);
+}
+
+/* Code, file references, commit IDs and schema fields stay in bb's mono face. */
+.review-canvas-root[data-review-theme]
+  :is(
+    code,
+    pre,
+    kbd,
+    samp,
+    .panel-static-code-surface,
+    .rendered-code-body,
+    .review-branch-name,
+    .review-commit-sha,
+    .review-trace-figure-body,
+    .software-map-node-meta span,
+    .software-map-data-store-schema-key,
+    .software-map-data-store-schema-row-name,
+    .software-map-data-store-schema-row-type
+  ) {
+  font-family: var(--font-mono);
+}
+
+/* Upstream names literal faces here. */
+.review-canvas-root[data-review-theme]
+  :is(.copy-for-agent-popover, .software-map, .software-map-change-badge) {
+  font-family: var(--font-sans);
+}
+
+/*
+ * Monokai paints Markdown code and link hovers for dark mode with literal
+ * colors, and its `.dark …` rules still match inside the light scope. Take
+ * token colors back.
+ */
+.review-canvas-root[data-review-theme] .bb-markdown-prose :not(pre) > code {
+  color: inherit;
+}
+
+.review-canvas-root[data-review-theme] .bb-markdown-prose pre:not(.bb-code-highlight),
+.review-canvas-root[data-review-theme] .bb-markdown-prose .canvas-mdx-code {
+  background-color: var(--surface-recessed);
+}
+
+@media (hover: hover) {
+  .review-canvas-root[data-review-theme] .bb-markdown-prose a:hover {
+    background-color: color-mix(in oklab, var(--timeline-accent) 15%, transparent);
+  }
 }
 
 /* `.review-app` re-declares the tutorial ring with a literal tint. */
