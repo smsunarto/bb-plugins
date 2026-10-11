@@ -3,7 +3,7 @@ import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { agentActivity, linkThread, runningReview } from "./activity.ts";
 import { createStore } from "./store.ts";
 
-const REF = { owner: "cli", repo: "cli", number: 9000 };
+const KEY = "cli/cli#9000";
 
 function host(
   threads: Record<string, { status: string; title?: string | null; deletedAt?: number }>,
@@ -44,26 +44,26 @@ test("linked threads read their live status; a deleted one reads as missing", as
     t1: { status: "idle", title: "Review cli/cli#9000" },
     t3: { status: "active", deletedAt: 5 },
   });
-  await linkThread(bb, store, REF, {
+  await linkThread(bb, store, KEY, {
     threadId: "t1",
     kind: "review",
     headRefOid: "old",
     baseRefName: "main",
   });
-  await linkThread(bb, store, REF, {
+  await linkThread(bb, store, KEY, {
     threadId: "t2",
     kind: "fix",
     headRefOid: "old",
     baseRefName: "main",
   });
-  await linkThread(bb, store, REF, {
+  await linkThread(bb, store, KEY, {
     threadId: "t3",
     kind: "fix",
     headRefOid: "new",
     baseRefName: "main",
   });
 
-  const activity = await agentActivity(bb, store, REF);
+  const activity = await agentActivity(bb, store, KEY);
 
   expect(activity.threads.map(({ createdAt: _createdAt, ...thread }) => thread)).toEqual([
     {
@@ -106,7 +106,7 @@ test("the review shown is the newest that reported, unless a newer one is still 
     r3: { status: "active" },
   };
   const { bb, store } = host(threads);
-  await linkThread(bb, store, REF, {
+  await linkThread(bb, store, KEY, {
     threadId: "r1",
     kind: "review",
     headRefOid: "a",
@@ -114,21 +114,21 @@ test("the review shown is the newest that reported, unless a newer one is still 
   });
   await store.setRun(run("r1", "a"));
   // r2 ended without reporting: the earlier report still stands.
-  await linkThread(bb, store, REF, {
+  await linkThread(bb, store, KEY, {
     threadId: "r2",
     kind: "review",
     headRefOid: "b",
     baseRefName: "main",
   });
-  expect((await agentActivity(bb, store, REF)).latestReview).toEqual(run("r1", "a"));
+  expect((await agentActivity(bb, store, KEY)).latestReview).toEqual(run("r1", "a"));
 
-  await linkThread(bb, store, REF, {
+  await linkThread(bb, store, KEY, {
     threadId: "r3",
     kind: "review",
     headRefOid: "c",
     baseRefName: "main",
   });
-  expect((await agentActivity(bb, store, REF)).latestReview).toEqual({
+  expect((await agentActivity(bb, store, KEY)).latestReview).toEqual({
     threadId: "r3",
     headRefOid: "c",
     baseRefName: "main",
@@ -136,26 +136,26 @@ test("the review shown is the newest that reported, unless a newer one is still 
     summary: null,
     findings: [],
   });
-  expect(await runningReview(bb, store, REF, { headRefOid: "c", baseRefName: "main" })).toBe("r3");
-  expect(await runningReview(bb, store, REF, { headRefOid: "b", baseRefName: "main" })).toBeNull();
+  expect(await runningReview(bb, store, KEY, { headRefOid: "c", baseRefName: "main" })).toBe("r3");
+  expect(await runningReview(bb, store, KEY, { headRefOid: "b", baseRefName: "main" })).toBeNull();
 
   threads["r3"] = { status: "idle" };
   await store.setRun(run("r3", "c"));
-  expect((await agentActivity(bb, store, REF)).latestReview).toEqual(run("r3", "c"));
-  expect(await runningReview(bb, store, REF, { headRefOid: "c", baseRefName: "main" })).toBeNull();
+  expect((await agentActivity(bb, store, KEY)).latestReview).toEqual(run("r3", "c"));
+  expect(await runningReview(bb, store, KEY, { headRefOid: "c", baseRefName: "main" })).toBeNull();
 });
 
 test("a review running against another base is not the review of a retargeted pull request", async () => {
   const { bb, store } = host({ r1: { status: "active" } });
-  await linkThread(bb, store, REF, {
+  await linkThread(bb, store, KEY, {
     threadId: "r1",
     kind: "review",
     headRefOid: "c",
     baseRefName: "main",
   });
 
-  expect(await runningReview(bb, store, REF, { headRefOid: "c", baseRefName: "main" })).toBe("r1");
+  expect(await runningReview(bb, store, KEY, { headRefOid: "c", baseRefName: "main" })).toBe("r1");
   expect(
-    await runningReview(bb, store, REF, { headRefOid: "c", baseRefName: "release" }),
+    await runningReview(bb, store, KEY, { headRefOid: "c", baseRefName: "release" }),
   ).toBeNull();
 });

@@ -8,8 +8,9 @@ import type { CodeReviewContext } from "../lib/context.ts";
 const line = z.number().int().positive();
 
 /**
- * How a bb review hands its findings to the panel. Only threads the
- * panel started as reviews get it: their bb metadata says which pull request.
+ * How a bb review hands its findings to the panel. Only threads the panel
+ * started as reviews get it: their bb metadata says which pull request or
+ * unpublished branch.
  */
 export const reportFindings = defineTool({
   presentation: {
@@ -32,10 +33,8 @@ export const reportFindings = defineTool({
       .max(50),
   }),
   enabled(_ctx, session) {
-    return (
-      session.pluginMetadata["kind"] === "review" &&
-      typeof session.pluginMetadata["pr"] === "string"
-    );
+    const { kind, pr, branch } = session.pluginMetadata;
+    return kind === "review" && (typeof pr === "string" || typeof branch === "string");
   },
   async execute(ctx: ToolContext<CodeReviewContext>, { summary, findings }) {
     const linked = await ctx.store.linkForThread(ctx.tool.threadId);

@@ -13,11 +13,17 @@ test("writes a draft reply into the pending review", async () => {
     },
   });
   expect(
-    await callProcedure(replyDraft, ctx, { pullRequestId: "PR_1", threadId: "T1", body: "Done." }),
+    await callProcedure(replyDraft, ctx, {
+      account: "octocat",
+      pullRequestId: "PR_1",
+      threadId: "T1",
+      body: "Done.",
+    }),
   ).toEqual({ commentId: "C2" });
   expect(calls[1]).toEqual({
     kind: "graphql",
     operation: "ReplyDraft",
+    account: "octocat",
     variables: {
       input: { pullRequestReviewId: "PRR_1", pullRequestReviewThreadId: "T1", body: "Done." },
     },

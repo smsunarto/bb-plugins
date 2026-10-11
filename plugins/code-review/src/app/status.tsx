@@ -149,6 +149,72 @@ export function PrStateBadge({
   );
 }
 
+const BRANCH_LOOK: Readonly<Partial<Record<string, Look & { detail: string }>>> = {
+  unpushed: {
+    icon: "GitBranch",
+    tone: "text-muted-foreground",
+    label: "Unpushed",
+    detail: "Not on any remote yet",
+  },
+  pushed: {
+    icon: "GitBranch",
+    tone: "text-primary",
+    label: "Pushed",
+    detail: "Pushed, with no pull request yet",
+  },
+  ahead: {
+    icon: "ArrowUp",
+    tone: "text-primary",
+    label: "Ahead",
+    detail: "Has commits not pushed yet",
+  },
+  behind: {
+    icon: "ArrowDown",
+    tone: "text-primary",
+    label: "Behind",
+    detail: "The remote branch has commits this one lacks",
+  },
+  diverged: {
+    icon: "ArrowUpDown",
+    tone: "text-warning-text",
+    label: "Diverged",
+    detail: "The branch and its remote each have commits the other lacks",
+  },
+  integrated: {
+    icon: "GitMerge",
+    tone: "text-pr-merged",
+    label: "Integrated",
+    detail: "Already in the target branch",
+  },
+  conflicted: {
+    icon: "AlertTriangle",
+    tone: "text-destructive-text",
+    label: "Conflicted",
+    detail: "Has conflicted commits",
+  },
+};
+
+/**
+ * GitButler's push status for an unpublished branch. A status it has no word
+ * for here shows as GitButler says it; one it does not know, not at all.
+ */
+export function BranchStatusChip({ status, className }: { status: string; className?: string }) {
+  const look = Object.hasOwn(BRANCH_LOOK, status) ? BRANCH_LOOK[status] : undefined;
+  if (look) {
+    return (
+      <Chip icon={look.icon} tone={look.tone} title={look.detail} className={className}>
+        {look.label}
+      </Chip>
+    );
+  }
+  if (status === "" || status === "unknown") return null;
+  return (
+    <Chip tone="text-muted-foreground" className={className}>
+      {status}
+    </Chip>
+  );
+}
+
 /** A GitHub avatar, or its initial when there is none. Decorative: the login sits beside it. */
 export function Avatar({
   login,
@@ -171,6 +237,17 @@ export function Avatar({
     );
   }
   return <img src={url} alt="" className={box} loading="lazy" />;
+}
+
+/** A signed-in account's GitHub avatar. GitHub serves any login's at a fixed URL. */
+export function AccountAvatar({ login, className }: { login: string; className?: string }) {
+  return (
+    <Avatar
+      login={login}
+      url={`https://github.com/${encodeURIComponent(login)}.png?size=40`}
+      className={className}
+    />
+  );
 }
 
 /** How long ago, with the full date and time on hover. */

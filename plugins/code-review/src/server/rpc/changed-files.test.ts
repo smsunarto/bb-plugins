@@ -26,6 +26,7 @@ test("answers recorded changed files in the shared schema", async () => {
   });
 
   const result = (await callProcedure(changedFiles, ctx, {
+    account: "octocat",
     ref: { owner: "cli", repo: "cli", number: 9000 },
   })) as { baseRefName: string; files: { path: string }[] };
 

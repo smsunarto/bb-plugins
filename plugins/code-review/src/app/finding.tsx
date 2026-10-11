@@ -120,8 +120,9 @@ export function hasDraftFor(pr: PullRequest, finding: Finding): boolean {
  * Keyed by the pull request's node id, which stays the same however its URL
  * is cased.
  */
-function draftKey(pullRequestId: string): MutationKey {
-  return ["addDraftComment", pullRequestId];
+/** A finding's draft goes into the acting account's pending review, so its key names the account. */
+function draftKey(pr: PullRequest): MutationKey {
+  return ["addDraftComment", pr.account.toLowerCase(), pr.id];
 }
 
 function writesFinding(finding: Finding, mutation: Mutation<unknown, Error, unknown>): boolean {
@@ -194,7 +195,8 @@ const ACTION = "h-6 gap-1.5 px-2 text-xs font-normal [&_[data-icon-root]]:size-3
  * One bb finding: priority, title, where it is, and why. `onReveal` adds
  * "Show in Changes". With `pr`, the finding can also become a draft comment
  * in the viewer's pending review, unless the review ran on another head or
- * base, whose line numbers may not match the diff any more.
+ * base, whose line numbers may not match the diff any more. An unpublished
+ * branch has no pull request to comment on.
  */
 export function FindingCard({
   finding,
@@ -211,7 +213,7 @@ export function FindingCard({
    */
   reviewed?: DiffRevision;
   onReveal?: () => void;
-  pr?: PullRequest;
+  pr?: PullRequest | null;
 }) {
   const titleId = useId();
   return (
@@ -263,8 +265,8 @@ function DraftCommentButton({
   reviewed: DiffRevision;
   stale: boolean;
 }) {
-  const mutationKey = draftKey(pr.id);
-  const pullRequestKey = rpc.pullRequest.queryKey({ ref: pr.ref });
+  const mutationKey = draftKey(pr);
+  const pullRequestKey = rpc.pullRequest.queryKey({ account: pr.account, ref: pr.ref });
   const add = rpc.addDraftComment.useMutation({
     mutationKey,
     async onSuccess(saved, draft) {
@@ -327,6 +329,7 @@ function DraftCommentButton({
         });
         if (out > 0 || hasDraftFor(latest, finding)) return;
         add.mutate({
+          account: pr.account,
           pullRequestId: pr.id,
           headRefOid: reviewed.headRefOid,
           baseRefName: reviewed.baseRefName,

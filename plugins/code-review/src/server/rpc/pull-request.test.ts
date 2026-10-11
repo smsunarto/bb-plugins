@@ -12,6 +12,7 @@ test("answers a recorded pull request in the shared schema", async () => {
   });
 
   const pr = (await callProcedure(pullRequest, ctx, {
+    account: "octocat",
     ref: { owner: "cli", repo: "cli", number: 14572 },
   })) as { title: string; stack: { parent: { number: number } | null } };
 
@@ -24,6 +25,9 @@ test("answers a recorded pull request in the shared schema", async () => {
 test("rejects a reference that is not a pull request", async () => {
   const { ctx } = fakeContext();
   await expect(
-    callProcedure(pullRequest, ctx, { ref: { owner: "cli", repo: "cli", number: 0 } }),
+    callProcedure(pullRequest, ctx, {
+      account: "octocat",
+      ref: { owner: "cli", repo: "cli", number: 0 },
+    }),
   ).rejects.toBeInstanceOf(RPCValidationError);
 });

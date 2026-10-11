@@ -1,11 +1,26 @@
 import { useEffect, useId, useRef, useState } from "react";
 import type { ClipboardEvent, KeyboardEvent, ReactNode } from "react";
 import { experimental_Icon as Icon, useBbNavigate } from "@get-bb/plugin-sdk/app";
-import { INBOX_SECTIONS, parsePrReference, prKey, prSubPath, sameRef } from "../shared/schema.ts";
-import type { Inbox as InboxData, InboxPr, InboxSection, PrRef } from "../shared/schema.ts";
+import {
+  INBOX_SECTIONS,
+  branchSubPath,
+  parsePrReference,
+  prKey,
+  prSubPath,
+  sameAccount,
+  sameRef,
+} from "../shared/schema.ts";
+import type {
+  Inbox as InboxData,
+  InboxPr,
+  InboxSection,
+  LocalBranch,
+  PrRef,
+} from "../shared/schema.ts";
 import { Button } from "./components/ui/button.tsx";
 import { COARSE_POINTER_COMPACT_ICON_BUTTON_CLASS } from "./components/ui/coarse-pointer-sizing.ts";
 import { Input } from "./components/ui/input.tsx";
+import { Popover, PopoverContent, PopoverTrigger } from "./components/ui/popover.tsx";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "./components/ui/tabs.tsx";
 import { PANEL_PATH, absoluteTime, plural, relativeTime } from "./format.ts";
 import { useStoredChoice } from "./hooks/useStoredChoice.ts";
@@ -13,7 +28,9 @@ import { cn, keepInView } from "./lib/utils.ts";
 import { Loading, Notice, RetryButton, Tip, errorText } from "./notice.tsx";
 import { rpc } from "./rpc.ts";
 import {
+  AccountAvatar,
   Avatar,
+  BranchStatusChip,
   ChecksStateIcon,
   PrStateBadge,
   ReviewDecisionBadge,
@@ -29,6 +46,20 @@ export const INBOX_QUERY = { staleTime: 30_000, refetchInterval: INBOX_REFRESH_M
 export function useInbox() {
   return rpc.inbox.useQuery(INBOX_QUERY);
 }
+
+/**
+ * Unpublished branches take seconds to read, as every machine is asked, so
+ * the inbox and a branch's page share one read, polled like the inbox.
+ */
+const LOCAL_BRANCHES_QUERY = { staleTime: 30_000, refetchInterval: INBOX_REFRESH_MS } as const;
+
+export function useLocalBranches() {
+  return rpc.localBranches.useQuery({}, LOCAL_BRANCHES_QUERY);
+}
+
+/** The inbox's tabs: the pull request queues, then branches with no pull request yet. */
+const INBOX_TABS = [...INBOX_SECTIONS, "unpublished"] as const;
+type InboxTab = (typeof INBOX_TABS)[number];
 
 const SECTIONS: readonly {
   id: InboxSection;
@@ -89,40 +120,118 @@ export function NeedsReviewCount() {
   );
 }
 
-function useOpenPr(): (ref: PrRef) => void {
+/** Opens a pull request as `account`, or as whichever account the page picks when none is given. */
+function useOpenPr(): (ref: PrRef, account?: string) => void {
   const navigate = useBbNavigate();
-  return (ref) => navigate.toPluginPanel(PANEL_PATH, { subPath: prSubPath(ref) });
+  return (ref, account) =>
+    navigate.toPluginPanel(PANEL_PATH, { subPath: prSubPath(ref, "summary", account) });
 }
 
-/** The Inbox tab: a box to open any pull request by link, then the viewer's queues. */
-export function Inbox({ selected }: { selected: PrRef | null }) {
+const ALL_ACCOUNTS = "all";
+
+/**
+ * The inbox as one account sees it, or every account's when `account` is
+ * {@link ALL_ACCOUNTS}: then a pull request waiting on several accounts is
+ * listed once, as the first of them in gh's order, and one assigned to any
+ * account is not repeated under My team.
+ */
+export function inboxFor(inbox: InboxData, account: string): InboxData {
+  if (account === ALL_ACCOUNTS) {
+    const rank = (pr: InboxPr) => inbox.accounts.findIndex((a) => sameAccount(a, pr.account));
+    const key = (pr: InboxPr) => prKey(pr.ref).toLowerCase();
+    const once = (prs: InboxPr[], skip = new Set<string>()) => {
+      const first = new Map<string, InboxPr>();
+      for (const pr of prs) {
+        const held = first.get(key(pr));
+        if (!held || rank(pr) < rank(held)) first.set(key(pr), pr);
+      }
+      return prs.filter((pr) => first.get(key(pr)) === pr && !skip.has(key(pr)));
+    };
+    const assigned = once(inbox.assigned);
+    return {
+      ...inbox,
+      assigned,
+      team: once(inbox.team, new Set(assigned.map(key))),
+      authored: once(inbox.authored),
+    };
+  }
+  const mine = (prs: InboxPr[]) => prs.filter((pr) => sameAccount(pr.account, account));
+  return {
+    ...inbox,
+    assigned: mine(inbox.assigned),
+    team: mine(inbox.team),
+    authored: mine(inbox.authored),
+    pinned: mine(inbox.pinned),
+  };
+}
+
+/**
+ * The Inbox tab: a box to open any pull request by link, then the viewer's
+ * queues, and the unpublished branches once GitButler can list them.
+ */
+export function Inbox({
+  selected,
+  selectedBranch,
+}: {
+  selected: PrRef | null;
+  /** The unpublished branch the page shows, by id. */
+  selectedBranch: string | null;
+}) {
   const inbox = useInbox();
-  // The tab the reader last chose, kept across visits.
-  const [section, setSection] = useStoredChoice("inbox-section", INBOX_SECTIONS, "assigned");
+  const branches = useLocalBranches();
+  const { section, setTab, unpublished } = useInboxTab(branches);
+  const accounts = inbox.data?.accounts ?? [];
+  // The account the reader last chose, kept across visits.
+  const [chosenAccount, setAccount] = useStoredChoice(
+    "inbox-account",
+    [ALL_ACCOUNTS, ...accounts],
+    ALL_ACCOUNTS,
+  );
+  // A choice of an account gh has since signed out of reads as every account,
+  // and comes back if it signs in again.
+  const account = accounts.length > 1 ? chosenAccount : ALL_ACCOUNTS;
+  const shown = inbox.data ? inboxFor(inbox.data, account) : undefined;
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <header className="flex shrink-0 items-center gap-2 px-2.5 pt-2">
         <h2 className="min-w-0 flex-1 truncate font-semibold text-foreground">Pull requests</h2>
+        {accounts.length > 1 ? (
+          <AccountFilter accounts={accounts} value={account} onChange={setAccount} />
+        ) : null}
         <Tip label="Refresh">
           <Button
             variant="ghost"
             size="icon"
             className={cn(COARSE_POINTER_COMPACT_ICON_BUTTON_CLASS, "text-muted-foreground")}
             aria-label="Refresh pull requests"
-            onClick={() => void inbox.refetch()}
+            onClick={() => {
+              void inbox.refetch();
+              void branches.refetch();
+            }}
           >
             <Icon
               name="RotateCcw"
-              className={cn(inbox.isFetching && "motion-safe:animate-spin")}
+              className={cn(
+                (inbox.isFetching || branches.isFetching) && "motion-safe:animate-spin",
+              )}
               aria-hidden
             />
           </Button>
         </Tip>
       </header>
       <PasteLink />
+      {inbox.data && inbox.data.unavailable.length > 0 ? (
+        <Notice tone="error" className="mx-2.5 mt-2" title="Some accounts could not load">
+          {inbox.data.unavailable.map(({ account: login, message }) => (
+            <p key={login}>
+              <span className="font-medium text-foreground">{login}</span>: {message}
+            </p>
+          ))}
+        </Notice>
+      ) : null}
       <Tabs
         value={section}
-        onValueChange={(value) => setSection(value as InboxSection)}
+        onValueChange={(value) => setTab(value as InboxTab)}
         className="flex min-h-0 flex-1 flex-col"
       >
         <TabsList
@@ -130,50 +239,193 @@ export function Inbox({ selected }: { selected: PrRef | null }) {
           className="mx-2.5 mt-2 flex h-auto shrink-0 justify-stretch gap-0.5 rounded-md p-0.5"
         >
           {SECTIONS.map(({ id, label }) => (
-            <TabsTrigger
+            <InboxTabTrigger
               key={id}
               value={id}
+              label={label}
               title={label}
-              className="h-6 min-w-0 flex-auto gap-1 px-1.5 text-[11px] font-medium"
-            >
-              <span className="truncate">{label}</span>
-              {inbox.data ? (
-                <span className="shrink-0 text-subtle-foreground tabular-nums">
-                  {inbox.data[id].length}
-                </span>
-              ) : null}
-            </TabsTrigger>
+              count={shown?.[id].length}
+            />
           ))}
+          {unpublished ? (
+            <InboxTabTrigger
+              value="unpublished"
+              label="Unpublished"
+              title="Unpublished branches"
+              count={branches.data?.available ? branches.data.branches.length : undefined}
+            />
+          ) : null}
         </TabsList>
         <div data-inbox-scroll className="min-h-0 flex-1 overflow-y-auto px-1.5 pt-1 pb-6">
-          {inbox.data ? (
-            SECTIONS.map(({ id, label, empty }) => (
-              <TabsContent key={id} value={id} className="mt-0 focus-visible:ring-0">
-                <PinnedGroup inbox={inbox.data} selected={selected} />
-                <SectionRows
-                  label={label}
-                  section={id}
-                  inbox={inbox.data}
-                  selected={selected}
-                  empty={empty}
-                />
-              </TabsContent>
-            ))
-          ) : inbox.isError ? (
-            <Notice
-              tone="error"
-              title="Could not load your pull requests"
-              className="mx-1 mt-2"
-              action={<RetryButton onRetry={() => void inbox.refetch()} />}
-            >
-              {errorText(inbox.error)}
-            </Notice>
-          ) : (
-            <Loading label="Loading pull requests…" rows={6} className="px-1 pt-3" />
+          {/* The Unpublished tab says its own state, so the pull requests' waits for theirs. */}
+          {section === "unpublished" && !shown ? null : (
+            <SectionPanes inbox={inbox} shown={shown} selected={selected} />
           )}
+          {unpublished ? (
+            <TabsContent value="unpublished" className="mt-0 focus-visible:ring-0">
+              <Unpublished query={branches} selected={selectedBranch} />
+            </TabsContent>
+          ) : null}
         </div>
       </Tabs>
     </div>
+  );
+}
+
+/**
+ * The open tab, as the reader last chose it, kept across visits. Unpublished
+ * shows once GitButler answers. A reader who left it open keeps it while the
+ * first read is out, instead of seeing it jump in later.
+ */
+function useInboxTab(branches: ReturnType<typeof useLocalBranches>) {
+  const [chosen, setTab] = useStoredChoice("inbox-section", INBOX_TABS, "assigned");
+  const unpublished =
+    branches.data?.available === true ||
+    branches.isError ||
+    (branches.isPending && chosen === "unpublished");
+  const section = chosen === "unpublished" && !unpublished ? "assigned" : chosen;
+  return { section, setTab, unpublished };
+}
+
+function InboxTabTrigger({
+  value,
+  label,
+  title,
+  count,
+}: {
+  value: InboxTab;
+  label: string;
+  title: string;
+  /** Left out until the list is read. */
+  count: number | undefined;
+}) {
+  return (
+    <TabsTrigger
+      value={value}
+      title={title}
+      className="h-6 min-w-0 flex-auto gap-1 px-1.5 text-[11px] font-medium"
+    >
+      <span className="truncate">{label}</span>
+      {count === undefined ? null : (
+        <span className="shrink-0 text-subtle-foreground tabular-nums">{count}</span>
+      )}
+    </TabsTrigger>
+  );
+}
+
+/** Each pull request tab's list, once the inbox is read, or why it is not yet. */
+function SectionPanes({
+  inbox,
+  shown,
+  selected,
+}: {
+  inbox: ReturnType<typeof useInbox>;
+  /** The inbox as the chosen account sees it. */
+  shown: InboxData | undefined;
+  selected: PrRef | null;
+}) {
+  if (shown) {
+    return SECTIONS.map(({ id, label, empty }) => (
+      <TabsContent key={id} value={id} className="mt-0 focus-visible:ring-0">
+        <PinnedGroup inbox={shown} selected={selected} />
+        <SectionRows label={label} section={id} inbox={shown} selected={selected} empty={empty} />
+      </TabsContent>
+    ));
+  }
+  return inbox.isError ? (
+    <Notice
+      tone="error"
+      title="Could not load your pull requests"
+      className="mx-1 mt-2"
+      action={<RetryButton onRetry={() => void inbox.refetch()} />}
+    >
+      {errorText(inbox.error)}
+    </Notice>
+  ) : (
+    <Loading label="Loading pull requests…" rows={6} className="px-1 pt-3" />
+  );
+}
+
+/**
+ * Narrows the inbox to one signed-in account, or shows every account's.
+ * Only there when gh is signed in to more than one.
+ */
+function AccountFilter({
+  accounts,
+  value,
+  onChange,
+}: {
+  accounts: string[];
+  value: string;
+  onChange: (account: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const name = useId();
+  // Arrow keys walk a radio group, choosing as they go, so only a click or Space closes it.
+  const walking = useRef(false);
+  const choices = [ALL_ACCOUNTS, ...accounts];
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          aria-label={`Accounts: ${value === ALL_ACCOUNTS ? "all" : value}`}
+          className="flex h-6 min-w-0 shrink items-center gap-1 rounded-md px-1.5 text-[11px] text-muted-foreground hover:bg-state-hover hover:text-foreground focus-visible:ring-1 focus-visible:ring-ring focus-visible:outline-none"
+        >
+          {value === ALL_ACCOUNTS ? (
+            <span className="flex shrink-0 -space-x-1">
+              {accounts.slice(0, 3).map((login) => (
+                <AccountAvatar
+                  key={login}
+                  login={login}
+                  className="size-3.5 ring-1 ring-background"
+                />
+              ))}
+            </span>
+          ) : (
+            <AccountAvatar login={value} className="size-3.5" />
+          )}
+          <span className="truncate">{value === ALL_ACCOUNTS ? "All accounts" : value}</span>
+          <Icon name="ChevronDown" className="size-3 shrink-0" aria-hidden />
+        </button>
+      </PopoverTrigger>
+      <PopoverContent align="end" mobileTitle="Accounts" className="w-52 p-1 text-xs">
+        <fieldset>
+          <legend className="sr-only">Show pull requests for</legend>
+          {choices.map((choice) => (
+            <label
+              key={choice}
+              className="flex w-full cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-left hover:bg-secondary has-[:focus-visible]:bg-secondary"
+            >
+              <input
+                type="radio"
+                name={name}
+                value={choice}
+                checked={choice === value}
+                className="sr-only"
+                onKeyDown={(event) => {
+                  walking.current = event.key.startsWith("Arrow");
+                }}
+                onChange={() => onChange(choice)}
+                onClick={() => {
+                  if (!walking.current) setOpen(false);
+                  walking.current = false;
+                }}
+              />
+              {choice === ALL_ACCOUNTS ? (
+                <Icon name="Users" className="size-4 text-muted-foreground" aria-hidden />
+              ) : (
+                <AccountAvatar login={choice} className="size-4" />
+              )}
+              <span className="min-w-0 flex-1 truncate">
+                {choice === ALL_ACCOUNTS ? "All accounts" : choice}
+              </span>
+              {choice === value ? <Icon name="Check" className="size-3.5" aria-hidden /> : null}
+            </label>
+          ))}
+        </fieldset>
+      </PopoverContent>
+    </Popover>
   );
 }
 
@@ -248,7 +500,7 @@ function PinnedGroup({ inbox, selected }: { inbox: InboxData; selected: PrRef | 
   if (inbox.pinned.length === 0) return null;
   return (
     <Group label="Pinned" icon="Pin">
-      <Rows prs={inbox.pinned} viewer={inbox.viewer} selected={selected} pinned={inbox.pinned} />
+      <Rows inbox={inbox} prs={inbox.pinned} selected={selected} />
     </Group>
   );
 }
@@ -280,7 +532,7 @@ function SectionRows({
   // group's sake: without one the two lists would run together.
   return (
     <Group label={label} hidden={inbox.pinned.length === 0}>
-      <Rows prs={prs} viewer={inbox.viewer} selected={selected} pinned={inbox.pinned} />
+      <Rows inbox={inbox} prs={prs} selected={selected} />
     </Group>
   );
 }
@@ -335,15 +587,13 @@ function moveFocus(event: KeyboardEvent<HTMLElement>) {
 }
 
 function Rows({
+  inbox,
   prs,
-  viewer,
   selected,
-  pinned,
 }: {
+  inbox: InboxData;
   prs: readonly InboxPr[];
-  viewer: string;
   selected: PrRef | null;
-  pinned: readonly InboxPr[];
 }) {
   return (
     <ul className="flex flex-col gap-px">
@@ -351,9 +601,9 @@ function Rows({
         <li key={prKey(pr.ref)}>
           <Row
             pr={pr}
-            viewer={viewer}
             selected={selected !== null && sameRef(selected, pr.ref)}
-            pinned={pinned.some((item) => sameRef(item.ref, pr.ref))}
+            pinned={inbox.pinned.some((item) => sameRef(item.ref, pr.ref))}
+            showAccount={inbox.accounts.length > 1}
           />
         </li>
       ))}
@@ -361,27 +611,25 @@ function Rows({
   );
 }
 
-/** What the row says about review: the verdict on the viewer's own work, or the viewer's part in someone else's. */
-function RowReview({ pr, viewer }: { pr: InboxPr; viewer: string }) {
-  if (pr.author?.login === viewer) {
+/** What the row says about review: the verdict on the account's own work, or its part in someone else's. */
+function RowReview({ pr }: { pr: InboxPr }) {
+  if (pr.author && sameAccount(pr.author.login, pr.account)) {
     return pr.reviewDecision ? <ReviewDecisionBadge decision={pr.reviewDecision} /> : null;
   }
   if (pr.viewerReview) return <ReviewStateBadge state={pr.viewerReview} />;
   return pr.reviewRequestedFromViewer ? <ReviewStateBadge state="requested" /> : null;
 }
 
-function Row({
-  pr,
-  viewer,
+/** One inbox row: opens what it lists, walks with the arrow keys, and stays in view while the page shows it. */
+function RowButton({
   selected,
-  pinned,
+  onOpen,
+  children,
 }: {
-  pr: InboxPr;
-  viewer: string;
   selected: boolean;
-  pinned: boolean;
+  onOpen: () => void;
+  children: ReactNode;
 }) {
-  const open = useOpenPr();
   const ref = useRef<HTMLButtonElement>(null);
   // A deep link opens with its row possibly far down the list.
   useEffect(() => {
@@ -395,7 +643,7 @@ function Row({
       type="button"
       data-inbox-row
       aria-current={selected ? "page" : undefined}
-      onClick={() => open(pr.ref)}
+      onClick={onOpen}
       onKeyDown={moveFocus}
       className={cn(
         "flex w-full cursor-pointer flex-col gap-1 rounded-md px-2 py-2 text-left outline-none",
@@ -403,7 +651,33 @@ function Row({
         selected && "bg-surface-selected hover:bg-surface-selected",
       )}
     >
+      {children}
+    </button>
+  );
+}
+
+function Row({
+  pr,
+  selected,
+  pinned,
+  showAccount,
+}: {
+  pr: InboxPr;
+  selected: boolean;
+  pinned: boolean;
+  /** gh has several accounts, so the row says which one it waits on. */
+  showAccount: boolean;
+}) {
+  const open = useOpenPr();
+  return (
+    <RowButton selected={selected} onOpen={() => open(pr.ref, pr.account)}>
       <span className="flex w-full items-center gap-1 text-[11px] text-muted-foreground">
+        {showAccount ? (
+          <span className="inline-flex shrink-0" title={`As ${pr.account}`}>
+            <AccountAvatar login={pr.account} className="size-3" />
+            <span className="sr-only">As {pr.account}, </span>
+          </span>
+        ) : null}
         <span className="min-w-0 truncate">
           {pr.ref.owner}/{pr.ref.repo}
         </span>
@@ -440,9 +714,122 @@ function Row({
             state={pr.checks}
             label={pr.checks ? `Checks: ${checksLabel(pr.checks)}` : undefined}
           />
-          <RowReview pr={pr} viewer={viewer} />
+          <RowReview pr={pr} />
         </span>
       </span>
-    </button>
+    </RowButton>
+  );
+}
+
+// ── Unpublished branches ─────────────────────────────────────────────────
+
+/**
+ * The Unpublished tab: GitButler branches with commits and no pull request,
+ * from every machine, newest commit first. Not narrowed by account: a local
+ * branch belongs to no GitHub account.
+ */
+function Unpublished({
+  query,
+  selected,
+}: {
+  query: ReturnType<typeof useLocalBranches>;
+  selected: string | null;
+}) {
+  const branches = query.data;
+  if (branches?.available) {
+    if (branches.branches.length === 0) {
+      return (
+        <div className="flex flex-col items-center px-4 py-10 text-center text-muted-foreground">
+          <Icon name="GitBranch" className="mb-2 size-5 text-subtle-foreground" aria-hidden />
+          <p className="font-medium text-foreground">No unpublished branches</p>
+          <p className="mt-1 max-w-56 leading-normal">
+            GitButler branches with commits and no pull request show up here, from every machine.
+          </p>
+        </div>
+      );
+    }
+    return (
+      <ul className="mt-1.5 flex flex-col gap-px">
+        {branches.branches.map((branch) => (
+          <li key={branch.id}>
+            <BranchRow branch={branch} selected={branch.id === selected} />
+          </li>
+        ))}
+      </ul>
+    );
+  }
+  if (query.isError) {
+    return (
+      <Notice
+        tone="error"
+        title="Could not load unpublished branches"
+        className="mx-1 mt-2"
+        action={<RetryButton onRetry={() => void query.refetch()} />}
+      >
+        {errorText(query.error)}
+      </Notice>
+    );
+  }
+  return <Loading label="Loading unpublished branches…" rows={4} className="px-1 pt-3" />;
+}
+
+/**
+ * The unpublished branches alone, for when gh cannot list pull requests:
+ * reading and reviewing a local branch needs no GitHub account. Nothing
+ * without the GitButler plugin.
+ */
+export function UnpublishedOnly({ selected }: { selected: string | null }) {
+  const query = useLocalBranches();
+  if (query.data && !query.data.available) return null;
+  return (
+    <section aria-label="Unpublished branches" className="flex min-h-0 flex-col px-1.5">
+      <h2 className="px-1 pt-1 font-semibold text-foreground">Unpublished branches</h2>
+      <Unpublished query={query} selected={selected} />
+    </section>
+  );
+}
+
+function BranchRow({ branch, selected }: { branch: LocalBranch; selected: boolean }) {
+  const navigate = useBbNavigate();
+  const newest = branch.commits[0]?.createdAt ?? "";
+  return (
+    <RowButton
+      selected={selected}
+      onOpen={() => navigate.toPluginPanel(PANEL_PATH, { subPath: branchSubPath(branch.id) })}
+    >
+      <span className="flex w-full items-center gap-1 text-[11px] text-muted-foreground">
+        <span className="min-w-0 truncate">{branch.repoName}</span>
+        <span aria-hidden>·</span>
+        <span className="min-w-0 shrink-[2] truncate" title={`${branch.machine}:${branch.path}`}>
+          {branch.machine}
+        </span>
+        <time
+          dateTime={newest}
+          title={`Last commit ${absoluteTime(newest)}`}
+          className="ms-auto shrink-0 ps-2 text-subtle-foreground"
+        >
+          {relativeTime(newest)}
+        </time>
+      </span>
+      <span
+        className="truncate font-mono leading-snug font-medium text-foreground"
+        translate="no"
+        title={branch.branch}
+      >
+        {branch.branch}
+      </span>
+      <span className="flex w-full items-center gap-1.5 text-[11px] text-muted-foreground">
+        <span className="shrink-0 tabular-nums">{plural(branch.commits.length, "commit")}</span>
+        {branch.parent ? (
+          <span className="min-w-0 truncate" title={`Stacked on ${branch.parent}`}>
+            on{" "}
+            <span className="font-mono" translate="no">
+              {branch.parent}
+            </span>
+          </span>
+        ) : null}
+        <BranchStatusChip status={branch.status} className="ms-auto" />
+      </span>
+    </RowButton>
   );
 }

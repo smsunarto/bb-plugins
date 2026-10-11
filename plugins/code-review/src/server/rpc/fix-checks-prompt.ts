@@ -1,8 +1,9 @@
 import { defineQuery } from "@bb-kit/core/rpc";
 import { z } from "zod";
-import { type Check, type PrRef, prRefSchema } from "../../shared/schema.ts";
+import { type Check, type PrRef, accountSchema, prRefSchema } from "../../shared/schema.ts";
 import { jobLogTail, loadChecks } from "../lib/checks.ts";
 import type { CodeReviewContext } from "../lib/context.ts";
+import type { Gh } from "../lib/gh.ts";
 import { findProject, freshWorktree } from "../lib/projects.ts";
 import { type FailedCheck, fixChecksPrompt as fixPrompt } from "../lib/prompts.ts";
 import { loadPrHead } from "../lib/pull-request.ts";
@@ -14,7 +15,7 @@ const MAX_LOGS = 3;
 const hasLog = (check: Check) => check.state === "failure" && check.jobId !== null;
 
 async function logOf(
-  ctx: CodeReviewContext,
+  gh: Gh,
   ref: PrRef,
   check: Check,
   fetched: Set<Check>,
@@ -23,7 +24,7 @@ async function logOf(
   if (check.jobId === null) return { missing: "not a GitHub Actions job." };
   if (!fetched.has(check)) return { missing: "not fetched; open the URL." };
   try {
-    return { text: await jobLogTail(ctx.gh, ref, check.jobId) };
+    return { text: await jobLogTail(gh, ref, check.jobId) };
   } catch (error) {
     return { missing: error instanceof Error ? error.message : String(error) };
   }
@@ -35,7 +36,11 @@ async function logOf(
  * worktree in it, if there is a project.
  */
 export const fixChecksPrompt = defineQuery({
-  input: z.strictObject({ ref: prRefSchema, checkIds: z.array(z.string().min(1)).min(1).max(10) }),
+  input: z.strictObject({
+    account: accountSchema,
+    ref: prRefSchema,
+    checkIds: z.array(z.string().min(1)).min(1).max(10),
+  }),
   output: z.strictObject({
     prompt: z.string(),
     projectId: z.string().nullable(),
@@ -50,10 +55,11 @@ export const fixChecksPrompt = defineQuery({
       })
       .nullable(),
   }),
-  async execute(ctx: CodeReviewContext, { ref, checkIds }) {
+  async execute(ctx: CodeReviewContext, { account, ref, checkIds }) {
+    const gh = ctx.github.as(account);
     const [pr, { checks }, project] = await Promise.all([
-      loadPrHead(ctx.gh, ref),
-      loadChecks(ctx.gh, ref),
+      loadPrHead(gh, ref),
+      loadChecks(gh, ref),
       findProject(ctx.bb, ref.owner, ref.repo),
     ]);
     const wanted = new Set(checkIds);
@@ -63,7 +69,7 @@ export const fixChecksPrompt = defineQuery({
     }
     const fetched = new Set(selected.filter(hasLog).slice(0, MAX_LOGS));
     const failed = await Promise.all(
-      selected.map(async (check) => ({ check, log: await logOf(ctx, ref, check, fetched) })),
+      selected.map(async (check) => ({ check, log: await logOf(gh, ref, check, fetched) })),
     );
     return {
       prompt: fixPrompt(pr, failed),

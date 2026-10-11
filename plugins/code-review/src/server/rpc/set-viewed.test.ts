@@ -7,7 +7,12 @@ test("marks the file on GitHub and answers its new state", async () => {
     graphql: { MarkViewed: { markFileAsViewed: { clientMutationId: null } } },
   });
   expect(
-    await setViewed.execute(ctx, { pullRequestId: "PR_1", path: "a.ts", viewed: true }),
+    await setViewed.execute(ctx, {
+      account: "octocat",
+      pullRequestId: "PR_1",
+      path: "a.ts",
+      viewed: true,
+    }),
   ).toEqual({ viewed: "viewed" });
   expect(operations()).toEqual(["MarkViewed"]);
 });

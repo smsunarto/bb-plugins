@@ -53,6 +53,7 @@ test("fills the prompt with each selected failure and the end of its job log", a
   );
 
   const { prompt, projectId, environment } = (await callProcedure(fixChecksPrompt, ctx, {
+    account: "octocat",
     ref: REF,
     checkIds: ["run:110959498696", "run:110959498281", "run:110960956479", "run:gone"],
   })) as { prompt: string; projectId: string | null; environment: unknown };
@@ -106,6 +107,7 @@ test("fetches at most three logs, and has no project for a repository bb does no
   );
 
   const result = (await callProcedure(fixChecksPrompt, ctx, {
+    account: "octocat",
     ref: REF,
     checkIds: jobs.map((id) => `run:${id}`),
   })) as { prompt: string; projectId: string | null; environment: unknown };
@@ -119,6 +121,6 @@ test("fetches at most three logs, and has no project for a repository bb does no
 test("checks that are gone from the head commit are refused", async () => {
   const { ctx } = context({});
   await expect(
-    callProcedure(fixChecksPrompt, ctx, { ref: REF, checkIds: ["run:1"] }),
+    callProcedure(fixChecksPrompt, ctx, { account: "octocat", ref: REF, checkIds: ["run:1"] }),
   ).rejects.toThrow("Those checks are no longer on the latest commit. Refresh and try again.");
 });

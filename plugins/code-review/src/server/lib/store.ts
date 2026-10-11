@@ -1,12 +1,12 @@
 import type { PluginKvStorage } from "@get-bb/plugin-sdk";
 import { z } from "zod";
 import {
+  type Pin,
   type PrRef,
   type ReviewRun,
-  parsePrReference,
-  prKey,
-  prRefSchema,
+  pinSchema,
   reviewRunSchema,
+  sameAccount,
   sameRef,
 } from "../../shared/schema.ts";
 import { createLocks } from "./lock.ts";
@@ -15,16 +15,17 @@ import { createLocks } from "./lock.ts";
  * Everything the plugin remembers lives in bb's plugin KV. GitHub holds the
  * review itself (drafts sit in the viewer's pending review), so this is only
  * what GitHub has no place for: pins, the reviewer's standing instructions,
- * and which bb threads were started for which pull request.
+ * and which bb threads were started for which subject: a pull request or an
+ * unpublished branch (see `subjectKey`).
  *
- *   pins                 PrRef[], pin order, at most MAX_PINS
+ *   pins                 Pin[], pin order, at most MAX_PINS
  *   instructions         string
- *   links:<pr>           Link[], newest first, at most MAX_LINKS
- *   thread:<threadId>    the prKey a linked thread works on
+ *   links:<subject>      Link[], newest first, at most MAX_LINKS
+ *   thread:<threadId>    the subject a linked thread works on
  *   run:<threadId>       the ReviewRun a review thread reported
  *
- * `<pr>` is lowercased: GitHub owners and repositories are case-insensitive,
- * so `Cli/CLI#1` and `cli/cli#1` share their threads.
+ * `<subject>` is lowercased: GitHub owners and repositories are
+ * case-insensitive, so `Cli/CLI#1` and `cli/cli#1` share their threads.
  *
  * Writes that read the list they change hold the list's key, so two quick
  * pins, or two threads linked at once, both land.
@@ -59,19 +60,23 @@ function parsedList<T>(schema: z.ZodType<T>, stored: unknown): T[] {
 
 export type Store = ReturnType<typeof createStore>;
 
-const linksKey = (ref: PrRef) => `links:${prKey(ref).toLowerCase()}`;
+const linksKey = (subject: string) => `links:${subject.toLowerCase()}`;
 const threadKey = (threadId: string) => `thread:${threadId}`;
 const runKey = (threadId: string) => `run:${threadId}`;
 
 export function createStore(kv: PluginKvStorage) {
   const withLock = createLocks();
   return {
-    async pins(): Promise<PrRef[]> {
-      return parsedList(prRefSchema, await kv.get("pins"));
+    async pins(): Promise<Pin[]> {
+      return parsedList(pinSchema, await kv.get("pins"));
     },
 
-    /** Pins go to the end of the list; pinning twice or unpinning a stranger is a no-op. */
-    async setPinned(ref: PrRef, pinned: boolean): Promise<PrRef[]> {
+    /**
+     * Pins go to the end of the list, as `account`; pinning twice or
+     * unpinning a stranger is a no-op. A pull request is pinned once,
+     * whichever account pinned it.
+     */
+    async setPinned(ref: PrRef, pinned: boolean, account: string): Promise<Pin[]> {
       return withLock("pins", async () => {
         const pins = await this.pins();
         const others = pins.filter((pin) => !sameRef(pin, ref));
@@ -79,11 +84,18 @@ export function createStore(kv: PluginKvStorage) {
           if (others.length !== pins.length) await kv.set("pins", others);
           return others;
         }
-        if (others.length !== pins.length) return pins;
+        const held = pins.find((pin) => sameRef(pin, ref));
+        if (held) {
+          // Pinned again as another account, say after the first signed out: it moves to this one.
+          if (held.account !== undefined && sameAccount(held.account, account)) return pins;
+          const next = pins.map((pin) => (pin === held ? { ...pin, account } : pin));
+          await kv.set("pins", next);
+          return next;
+        }
         if (pins.length >= MAX_PINS) {
           throw new Error(`You can pin up to ${MAX_PINS} pull requests. Unpin one first.`);
         }
-        const next = [...pins, { owner: ref.owner, repo: ref.repo, number: ref.number }];
+        const next = [...pins, { owner: ref.owner, repo: ref.repo, number: ref.number, account }];
         await kv.set("pins", next);
         return next;
       });
@@ -100,23 +112,23 @@ export function createStore(kv: PluginKvStorage) {
       return trimmed;
     },
 
-    /** Threads started for the pull request, newest first. */
-    async links(ref: PrRef): Promise<Link[]> {
-      return parsedList(linkSchema, await kv.get(linksKey(ref)));
+    /** Threads started for the subject, newest first. */
+    async links(subject: string): Promise<Link[]> {
+      return parsedList(linkSchema, await kv.get(linksKey(subject)));
     },
 
     /**
-     * Remembers a thread started for the pull request. The oldest links past
+     * Remembers a thread started for the subject. The oldest links past
      * MAX_LINKS are forgotten along with their reverse lookup and review run.
      */
-    async addLink(ref: PrRef, link: Link): Promise<void> {
-      await withLock(linksKey(ref), async () => {
+    async addLink(subject: string, link: Link): Promise<void> {
+      await withLock(linksKey(subject), async () => {
         const links = [
           link,
-          ...(await this.links(ref)).filter((l) => l.threadId !== link.threadId),
+          ...(await this.links(subject)).filter((l) => l.threadId !== link.threadId),
         ];
-        await kv.set(linksKey(ref), links.slice(0, MAX_LINKS));
-        await kv.set(threadKey(link.threadId), prKey(ref));
+        await kv.set(linksKey(subject), links.slice(0, MAX_LINKS));
+        await kv.set(threadKey(link.threadId), subject);
         await Promise.all(
           links
             .slice(MAX_LINKS)
@@ -128,13 +140,12 @@ export function createStore(kv: PluginKvStorage) {
       });
     },
 
-    /** The pull request a linked thread works on, and its link. Null for any other thread. */
-    async linkForThread(threadId: string): Promise<{ key: string; ref: PrRef; link: Link } | null> {
+    /** The subject a linked thread works on, and its link. Null for any other thread. */
+    async linkForThread(threadId: string): Promise<{ key: string; link: Link } | null> {
       const key = await kv.get<string>(threadKey(threadId));
-      const ref = key === undefined ? null : parsePrReference(key);
-      if (!key || !ref) return null;
-      const link = (await this.links(ref)).find((l) => l.threadId === threadId);
-      return link ? { key, ref, link } : null;
+      if (typeof key !== "string" || key === "") return null;
+      const link = (await this.links(key)).find((l) => l.threadId === threadId);
+      return link ? { key, link } : null;
     },
 
     async run(threadId: string): Promise<ReviewRun | null> {

@@ -16,6 +16,7 @@ test("submits the pending review and answers its URL", async () => {
   });
   expect(
     await callProcedure(submitReview, ctx, {
+      account: "octocat",
       pullRequestId: "PR_1",
       headRefOid: "abc",
       event: "COMMENT",
@@ -25,6 +26,7 @@ test("submits the pending review and answers its URL", async () => {
   expect(calls[1]).toEqual({
     kind: "graphql",
     operation: "SubmitReview",
+    account: "octocat",
     variables: { input: { pullRequestReviewId: "PRR_1", event: "COMMENT", body: "A few notes." } },
   });
 });
@@ -33,6 +35,7 @@ test("rejects an event GitHub does not have", async () => {
   const { ctx } = fakeContext();
   await expect(
     callProcedure(submitReview, ctx, {
+      account: "octocat",
       pullRequestId: "PR_1",
       headRefOid: "abc",
       event: "MERGE",

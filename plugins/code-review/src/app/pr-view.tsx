@@ -1,19 +1,28 @@
 import { UrlLink, experimental_Icon as Icon, useBbNavigate } from "@get-bb/plugin-sdk/app";
 import { pluginQueryClient } from "@bb-kit/core/rpc/query";
-import { PR_TABS, prKey, prSubPath, sameRef } from "../shared/schema.ts";
+import { useState } from "react";
+import { PR_TABS, prKey, prSubPath, sameAccount, sameRef } from "../shared/schema.ts";
 import type { Checks, Inbox, InboxPr, PrRef, PrTab, PullRequest } from "../shared/schema.ts";
 import { ChangesTab } from "./changes.tsx";
 import { ChecksTab, useChecks } from "./checks.tsx";
 import { ReviewWithBbButton } from "./bb-review.tsx";
 import { Button, buttonVariants } from "./components/ui/button.tsx";
 import { COARSE_POINTER_COMPACT_ICON_BUTTON_CLASS } from "./components/ui/coarse-pointer-sizing.ts";
+import { Popover, PopoverContent, PopoverTrigger } from "./components/ui/popover.tsx";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "./components/ui/tabs.tsx";
 import { PANEL_PATH, plural } from "./format.ts";
 import { useInbox } from "./inbox.tsx";
 import { cn } from "./lib/utils.ts";
 import { Loading, Notice, RetryButton, Tip, errorText } from "./notice.tsx";
 import { rpc } from "./rpc.ts";
-import { Avatar, ChecksStateIcon, PrStateBadge, Timestamp, checksLabel } from "./status.tsx";
+import {
+  AccountAvatar,
+  Avatar,
+  ChecksStateIcon,
+  PrStateBadge,
+  Timestamp,
+  checksLabel,
+} from "./status.tsx";
 import { SubmitReviewButton } from "./submit-review.tsx";
 import { SummaryTab } from "./summary.tsx";
 
@@ -34,9 +43,9 @@ function useBackToInbox(): () => void {
 }
 
 /** One pull request's header, toolbar, and tabs. The tab lives in the URL. */
-export function PrView({ prRef, tab }: { prRef: PrRef; tab: PrTab }) {
+export function PrView({ prRef, account, tab }: { prRef: PrRef; account: string; tab: PrTab }) {
   const pullRequest = rpc.pullRequest.useQuery(
-    { ref: prRef },
+    { account, ref: prRef },
     { staleTime: 15_000, refetchInterval: PR_REFRESH_MS },
   );
   const back = useBackToInbox();
@@ -46,6 +55,8 @@ export function PrView({ prRef, tab }: { prRef: PrRef; tab: PrTab }) {
       <div className="flex min-h-0 flex-1 flex-col">
         <div className="flex items-center gap-1 border-b border-border px-3 py-2">
           <span className="truncate text-muted-foreground">{prKey(prRef)}</span>
+          {/* Another account may see what this one cannot. */}
+          {pullRequest.isError ? <AccountSwitch prRef={prRef} account={account} tab={tab} /> : null}
         </div>
         <div className="p-4">
           {pullRequest.isError ? (
@@ -80,12 +91,14 @@ export function PrView({ prRef, tab }: { prRef: PrRef; tab: PrTab }) {
 
 function Loaded({ pr, tab }: { pr: PullRequest; tab: PrTab }) {
   const navigate = useBbNavigate();
-  const checks = useChecks(pr.ref, pr.headRefOid);
+  const checks = useChecks(pr);
   return (
     <Tabs
       value={tab}
       onValueChange={(value) =>
-        navigate.toPluginPanel(PANEL_PATH, { subPath: prSubPath(pr.ref, value as PrTab) })
+        navigate.toPluginPanel(PANEL_PATH, {
+          subPath: prSubPath(pr.ref, value as PrTab, pr.account),
+        })
       }
       // The tab is in the URL, so arrow keys only move focus: each selection is a history entry.
       activationMode="manual"
@@ -103,20 +116,10 @@ function Loaded({ pr, tab }: { pr: PullRequest; tab: PrTab }) {
           </div>
           <Toolbar pr={pr} />
         </div>
-        <Meta pr={pr} />
-        <TabsList
-          aria-label="View"
-          className="mt-2 -mb-px h-auto justify-start gap-3 rounded-none bg-transparent p-0"
-        >
+        <Meta pr={pr} tab={tab} />
+        <TabsList aria-label="View" className={TAB_LIST}>
           {PR_TABS.map((value) => (
-            <TabsTrigger
-              key={value}
-              value={value}
-              className={cn(
-                "h-8 gap-1.5 rounded-none border-b-2 border-transparent px-0.5 py-0 text-xs font-medium text-muted-foreground",
-                "hover:text-foreground data-[state=active]:border-foreground data-[state=active]:bg-transparent data-[state=active]:shadow-none",
-              )}
-            >
+            <TabsTrigger key={value} value={value} className={TAB_TRIGGER}>
               {TAB_LABEL[value]}
               {value === "changes" ? (
                 <span className="text-subtle-foreground tabular-nums">{pr.changedFiles}</span>
@@ -145,15 +148,23 @@ function Loaded({ pr, tab }: { pr: PullRequest; tab: PrTab }) {
   );
 }
 
+// The page's tabs sit under its header as underlined labels. An unpublished
+// branch's page shares them.
+export const TAB_LIST = "mt-2 -mb-px h-auto justify-start gap-3 rounded-none bg-transparent p-0";
+export const TAB_TRIGGER = cn(
+  "h-8 gap-1.5 rounded-none border-b-2 border-transparent px-0.5 py-0 text-xs font-medium text-muted-foreground",
+  "hover:text-foreground data-[state=active]:border-foreground data-[state=active]:bg-transparent data-[state=active]:shadow-none",
+);
+
 // Summary and Checks scroll on their own below the header, which stays put.
 // The gutter is reserved so a tab that grows a scrollbar does not shift
 // sideways. Changes lays out its own file list and scroll area, so it gets
 // the whole space, unpadded.
 const TAB_PANE = "mt-0 min-h-0 flex-1 focus-visible:ring-0 focus-visible:ring-offset-0";
-const PANE = `${TAB_PANE} overflow-y-auto p-3 pb-8 [scrollbar-gutter:stable]`;
-const FILL = `${TAB_PANE} flex flex-col overflow-hidden`;
+export const PANE = `${TAB_PANE} overflow-y-auto p-3 pb-8 [scrollbar-gutter:stable]`;
+export const FILL = `${TAB_PANE} flex flex-col overflow-hidden`;
 
-function Meta({ pr }: { pr: PullRequest }) {
+function Meta({ pr, tab }: { pr: PullRequest; tab: PrTab }) {
   const sameRepo =
     !pr.headRepository ||
     pr.headRepository.toLowerCase() === `${pr.ref.owner}/${pr.ref.repo}`.toLowerCase();
@@ -198,7 +209,66 @@ function Meta({ pr }: { pr: PullRequest }) {
         </span>
         <span>{plural(pr.changedFiles, "file")}</span>
       </span>
+      <AccountSwitch prRef={pr.ref} account={pr.account} tab={tab} />
     </div>
+  );
+}
+
+/**
+ * Which signed-in account the page reads and writes as, shown only when gh
+ * has more than one. Drafts, viewed marks, and the review all belong to it,
+ * so switching opens the same pull request as the other account.
+ */
+function AccountSwitch({
+  prRef,
+  account: acting,
+  tab,
+}: {
+  prRef: PrRef;
+  account: string;
+  tab: PrTab;
+}) {
+  const navigate = useBbNavigate();
+  const status = rpc.status.useQuery({ staleTime: 5 * 60_000 });
+  const [open, setOpen] = useState(false);
+  const accounts = status.data?.ok ? status.data.accounts : [];
+  if (accounts.length < 2) return null;
+  const others = accounts.filter((account) => !sameAccount(account, acting));
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          className="ml-auto flex items-center gap-1 rounded px-1 py-0.5 hover:bg-secondary hover:text-foreground focus-visible:ring-1 focus-visible:ring-ring focus-visible:outline-none"
+          aria-label={`Acting as ${acting}. Switch account`}
+        >
+          <AccountAvatar login={acting} className="size-3.5" />
+          <span>
+            as <span className="text-foreground">{acting}</span>
+          </span>
+          <Icon name="ChevronDown" className="size-3" aria-hidden />
+        </button>
+      </PopoverTrigger>
+      <PopoverContent align="end" mobileTitle="Switch account" className="w-56 p-1 text-xs">
+        <p className="px-2 pt-1 pb-1.5 text-[11px] text-muted-foreground">
+          Your drafts and review belong to the account you act as.
+        </p>
+        {others.map((account) => (
+          <button
+            key={account}
+            type="button"
+            className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left hover:bg-secondary focus-visible:bg-secondary focus-visible:outline-none"
+            onClick={() => {
+              setOpen(false);
+              navigate.toPluginPanel(PANEL_PATH, { subPath: prSubPath(prRef, tab, account) });
+            }}
+          >
+            <AccountAvatar login={account} className="size-4" />
+            Act as <span className="font-medium">{account}</span>
+          </button>
+        ))}
+      </PopoverContent>
+    </Popover>
   );
 }
 
@@ -232,6 +302,7 @@ function inboxEntry(pr: PullRequest, checks: Checks | undefined): InboxPr {
   );
   return {
     ref: pr.ref,
+    account: pr.account,
     title: pr.title,
     url: pr.url,
     state: pr.state,
@@ -269,7 +340,9 @@ function PinButton({ pr }: { pr: PullRequest }) {
     const next = !pinned;
     void pluginQueryClient.cancelQueries({ queryKey: key });
     if (previous) {
-      const checks = pluginQueryClient.getQueryData<Checks>(rpc.checks.queryKey({ ref: pr.ref }));
+      const checks = pluginQueryClient.getQueryData<Checks>(
+        rpc.checks.queryKey({ account: pr.account, ref: pr.ref }),
+      );
       pluginQueryClient.setQueryData<Inbox>(key, {
         ...previous,
         pinned: next
@@ -278,7 +351,7 @@ function PinButton({ pr }: { pr: PullRequest }) {
       });
     }
     setPinned.mutate(
-      { ref: pr.ref, pinned: next },
+      { account: pr.account, ref: pr.ref, pinned: next },
       {
         onError: () => {
           if (previous) pluginQueryClient.setQueryData(key, previous);

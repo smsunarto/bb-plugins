@@ -19,7 +19,7 @@ test("lists the threads started for the pull request with their live status", as
     },
   );
   const ref = { owner: "cli", repo: "cli", number: 9000 };
-  await ctx.store.addLink(ref, {
+  await ctx.store.addLink("cli/cli#9000", {
     threadId: "t1",
     kind: "review",
     createdAt: "2026-10-01T00:00:00.000Z",

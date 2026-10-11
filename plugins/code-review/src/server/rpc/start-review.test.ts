@@ -55,7 +55,9 @@ test("starts a high-effort bb review in a fresh worktree and links it to the pul
   const { ctx, harness } = context();
   await ctx.store.setInstructions("Watch the auth paths.");
 
-  expect(await startReview.execute(ctx, { ref: REF })).toEqual({ threadId: "thr_1" });
+  expect(await startReview.execute(ctx, { account: "octocat", ref: REF })).toEqual({
+    threadId: "thr_1",
+  });
 
   const [[spawn]] = harness.sdk.callsTo("threads.spawn") as [[Record<string, unknown>]];
   const { prompt, ...args } = spawn;
@@ -95,13 +97,17 @@ test("starts a high-effort bb review in a fresh worktree and links it to the pul
 
 test("asking again while the review of this commit runs returns that review", async () => {
   const { ctx, harness, status } = context();
-  await startReview.execute(ctx, { ref: REF });
+  await startReview.execute(ctx, { account: "octocat", ref: REF });
 
-  expect(await startReview.execute(ctx, { ref: REF })).toEqual({ threadId: "thr_1" });
+  expect(await startReview.execute(ctx, { account: "octocat", ref: REF })).toEqual({
+    threadId: "thr_1",
+  });
   expect(harness.sdk.callsTo("threads.spawn")).toHaveLength(1);
 
   status.set("thr_1", "idle");
-  expect(await startReview.execute(ctx, { ref: REF })).toEqual({ threadId: "thr_2" });
+  expect(await startReview.execute(ctx, { account: "octocat", ref: REF })).toEqual({
+    threadId: "thr_2",
+  });
 });
 
 test("after a retarget, asking again starts a review against the new base", async () => {
@@ -111,11 +117,13 @@ test("after a retarget, asking again starts a review against the new base", asyn
       repository: { pullRequest: { ...HEAD.repository.pullRequest, baseRefName } },
     }),
   });
-  await startReview.execute(ctx, { ref: REF });
+  await startReview.execute(ctx, { account: "octocat", ref: REF });
 
   // Same head, so only the base says the running review read another diff.
   baseRefName = "release";
-  expect(await startReview.execute(ctx, { ref: REF })).toEqual({ threadId: "thr_2" });
+  expect(await startReview.execute(ctx, { account: "octocat", ref: REF })).toEqual({
+    threadId: "thr_2",
+  });
   expect(harness.sdk.callsTo("threads.spawn")).toHaveLength(2);
   expect(await ctx.store.linkForThread("thr_2")).toMatchObject({
     link: { baseRefName: "release" },
@@ -126,8 +134,8 @@ test("two requests at once start one review and both answer it", async () => {
   const { ctx, harness } = context();
 
   const answers = await Promise.all([
-    startReview.execute(ctx, { ref: REF }),
-    startReview.execute(ctx, { ref: { ...REF, owner: "cli" } }),
+    startReview.execute(ctx, { account: "octocat", ref: REF }),
+    startReview.execute(ctx, { account: "octocat", ref: { ...REF, owner: "cli" } }),
   ]);
 
   expect(answers).toEqual([{ threadId: "thr_1" }, { threadId: "thr_1" }]);
@@ -141,7 +149,7 @@ test("reviews in the environment already on the branch, leaving its working tree
     ],
   });
 
-  await startReview.execute(ctx, { ref: REF });
+  await startReview.execute(ctx, { account: "octocat", ref: REF });
 
   const [[spawn]] = harness.sdk.callsTo("threads.spawn") as [
     [{ environment: unknown; prompt: string }],
@@ -152,7 +160,7 @@ test("reviews in the environment already on the branch, leaving its working tree
 
 test("a repository that is not a bb project is named in the error", async () => {
   const { ctx, harness } = context({ projects: [] });
-  await expect(startReview.execute(ctx, { ref: REF })).rejects.toThrow(
+  await expect(startReview.execute(ctx, { account: "octocat", ref: REF })).rejects.toThrow(
     "Add Cli/cli as a bb project to review it with bb.",
   );
   expect(harness.sdk.callsTo("threads.spawn")).toEqual([]);

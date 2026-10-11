@@ -4,6 +4,7 @@ import { fakeContext } from "../../../test/fake-gh.ts";
 import { addDraftComment } from "./add-draft-comment.ts";
 
 const DRAFT = {
+  account: "octocat",
   pullRequestId: "PR_1",
   headRefOid: "abc",
   baseRefName: "main",
@@ -104,6 +105,7 @@ test("a range from base line 40 to head line 12 is written as picked", async () 
   expect(calls[2]).toEqual({
     kind: "graphql",
     operation: "AddDraftThread",
+    account: "octocat",
     variables: {
       input: {
         pullRequestReviewId: "PRR_1",

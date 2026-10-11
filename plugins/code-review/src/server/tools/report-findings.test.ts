@@ -3,13 +3,12 @@ import { makePluginAgentConfigurationContext } from "@get-bb/plugin-sdk/testing"
 import { fakeContext } from "../../../test/fake-gh.ts";
 import { reportFindings } from "./report-findings.ts";
 
-const REF = { owner: "cli", repo: "cli", number: 9000 };
-
 test("only review threads the panel started get the tool", () => {
   const { ctx } = fakeContext();
   const enabled = (pluginMetadata: Record<string, string>) =>
     reportFindings.enabled!(ctx, makePluginAgentConfigurationContext({ pluginMetadata }));
   expect(enabled({ kind: "review", pr: "cli/cli#9000" })).toBe(true);
+  expect(enabled({ kind: "review", branch: "0a1b2c3d4e5f" })).toBe(true);
   expect(enabled({ kind: "fix", pr: "cli/cli#9000" })).toBe(false);
   expect(enabled({ kind: "review" })).toBe(false);
   expect(enabled({})).toBe(false);
@@ -17,7 +16,7 @@ test("only review threads the panel started get the tool", () => {
 
 test("stores the findings against the reviewed commit and base, and tells open panels", async () => {
   const { ctx, harness } = fakeContext();
-  await ctx.store.addLink(REF, {
+  await ctx.store.addLink("cli/cli#9000", {
     threadId: "thr_review",
     kind: "review",
     createdAt: "2026-10-01T00:00:00.000Z",

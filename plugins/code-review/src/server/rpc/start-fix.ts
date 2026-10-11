@@ -1,7 +1,7 @@
 import { defineMutation } from "@bb-kit/core/rpc";
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import { z } from "zod";
-import { prKey, prRefSchema } from "../../shared/schema.ts";
+import { accountSchema, prKey, prRefSchema } from "../../shared/schema.ts";
 import { linkThread } from "../lib/activity.ts";
 import type { CodeReviewContext } from "../lib/context.ts";
 import { loadPrHead } from "../lib/pull-request.ts";
@@ -22,22 +22,23 @@ const newThreadRequest = z.looseObject({
 /** Starts the thread the reader composed to fix failing checks, linked to the pull request. */
 export const startFix = defineMutation({
   input: z.strictObject({
+    account: accountSchema,
     ref: prRefSchema,
     headRefOid: z.string().min(1),
     request: newThreadRequest,
   }),
   output: z.strictObject({ threadId: z.string() }),
-  async execute(ctx: CodeReviewContext, { ref, headRefOid, request }) {
+  async execute(ctx: CodeReviewContext, { account, ref, headRefOid, request }) {
     // `headRefOid` is the commit the failing checks ran on. Only GitHub knows
     // the base, so it is read before anything starts.
-    const { baseRefName } = await loadPrHead(ctx.gh, ref);
+    const { baseRefName } = await loadPrHead(ctx.github.as(account), ref);
     const thread = await ctx.bb.sdk.threads.spawn({
       ...request,
       title: `Fix checks on ${prKey(ref)}`,
       visibility: "visible",
       pluginMetadata: { kind: "fix", pr: prKey(ref) },
     } as SpawnArgs);
-    await linkThread(ctx.bb, ctx.store, ref, {
+    await linkThread(ctx.bb, ctx.store, prKey(ref), {
       threadId: thread.id,
       kind: "fix",
       headRefOid,

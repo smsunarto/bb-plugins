@@ -7,14 +7,23 @@ import {
   useRealtime,
 } from "@get-bb/plugin-sdk/app";
 import { pluginQueryClient } from "@bb-kit/core/rpc/query";
+import { useMutation, useQuery } from "@tanstack/react-query";
+import type { QueryKey } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { AGENT_ACTIVITY_CHANNEL, prKey, prSubPath, sameRevision } from "../shared/schema.ts";
+import {
+  AGENT_ACTIVITY_CHANNEL,
+  branchKey,
+  branchSubPath,
+  prKey,
+  prSubPath,
+  sameRevision,
+} from "../shared/schema.ts";
 import type {
   AgentActivity,
   DiffRevision,
   Finding,
   LinkedThread,
-  PrRef,
+  LocalBranch,
   PullRequest,
   ReviewRun,
 } from "../shared/schema.ts";
@@ -69,27 +78,87 @@ export function activeReview(
 }
 
 /**
- * Threads linked to a pull request, kept current. The server publishes on
- * `AGENT_ACTIVITY_CHANNEL` when a thread goes idle or fails, or a review
- * reports. The poll covers signals missed while the connection was down.
+ * What a bb review reads: a pull request, or an unpublished branch. Every
+ * part below takes one, as its `pr` or its `branch` prop.
  */
-export function useAgentActivity(ref: PrRef) {
-  // GitHub owners and repositories are case-insensitive, and the server
-  // publishes the key in whatever case the thread was started with.
-  const key = prKey(ref).toLowerCase();
-  const activity = rpc.agentActivity.useQuery(
-    { ref },
-    {
-      refetchInterval: (query) =>
-        query.state.data?.threads.some(isBusy) ? ACTIVITY_POLL_MS : false,
-    },
-  );
+export type ReviewTarget =
+  | { pr: PullRequest; branch?: undefined }
+  | { branch: LocalBranch; pr?: undefined };
+
+type Client = ReturnType<typeof rpc.useClient>;
+
+/** Everything a pull request and a branch differ in, for the parts that show bb's work. */
+export type ReviewSubject = {
+  /** The diff a review started now reads, and findings are current against. */
+  revision: DiffRevision;
+  /** What bb is said to be reviewing: `#42`, or the branch's name. */
+  name: string;
+  noun: "pull request" | "branch";
+  /** The page's subPath of its Changes tab. */
+  changesPath: string;
+  /** The pull request findings can become draft comments on. A branch has none. */
+  pr: PullRequest | null;
+  /** What the server publishes on `AGENT_ACTIVITY_CHANNEL` for it, lowercased. */
+  key: string;
+  activityKey: QueryKey;
+  readActivity: (client: Client) => Promise<AgentActivity>;
+  startReview: (client: Client) => Promise<{ threadId: string }>;
+};
+
+/** The one place that tells a pull request's bb review from a branch's. */
+export function reviewSubject(target: ReviewTarget): ReviewSubject {
+  if (target.pr) {
+    const { pr } = target;
+    return {
+      revision: { headRefOid: pr.headRefOid, baseRefName: pr.baseRefName },
+      name: `#${pr.ref.number}`,
+      noun: "pull request",
+      changesPath: prSubPath(pr.ref, "changes", pr.account),
+      pr,
+      // GitHub owners and repositories are case-insensitive, and the server
+      // publishes the key in whatever case the thread was started with.
+      key: prKey(pr.ref).toLowerCase(),
+      activityKey: rpc.agentActivity.queryKey({ ref: pr.ref }),
+      readActivity: (client) => client.agentActivity({ ref: pr.ref }),
+      startReview: (client) => client.startReview({ account: pr.account, ref: pr.ref }),
+    };
+  }
+  const { branch } = target;
+  return {
+    // The base is a commit, so a rebase reads as another revision too.
+    revision: { headRefOid: branch.head, baseRefName: branch.base },
+    name: branch.branch,
+    noun: "branch",
+    changesPath: branchSubPath(branch.id, "changes"),
+    pr: null,
+    key: branchKey(branch.id),
+    activityKey: rpc.branchActivity.queryKey({ id: branch.id }),
+    readActivity: (client) => client.branchActivity({ id: branch.id }),
+    startReview: (client) => client.startLocalReview({ id: branch.id }),
+  };
+}
+
+/**
+ * Threads linked to a pull request or branch, kept current. The server
+ * publishes on `AGENT_ACTIVITY_CHANNEL` when a thread goes idle or fails, or
+ * a review reports. The poll covers signals missed while the connection was
+ * down.
+ */
+export function useAgentActivity(target: ReviewTarget) {
+  const subject = reviewSubject(target);
+  const client = rpc.useClient();
+  // Read through the client, so one hook serves either rpc. The cache key is the rpc's own.
+  const activity = useQuery({
+    queryKey: subject.activityKey,
+    queryFn: () => subject.readActivity(client),
+    refetchInterval: (query) => (query.state.data?.threads.some(isBusy) ? ACTIVITY_POLL_MS : false),
+  });
   useRealtime(AGENT_ACTIVITY_CHANNEL, (payload) => {
-    if (isActivityPayload(payload) && payload.key.toLowerCase() === key) {
+    if (isActivityPayload(payload) && payload.key.toLowerCase() === subject.key) {
       // Every part of the page that shows activity hears the same signal.
       // The first starts the read, and the rest join it instead of restarting it.
       void pluginQueryClient.invalidateQueries(
-        { queryKey: rpc.agentActivity.queryKey({ ref }) },
+        { queryKey: subject.activityKey },
         { cancelRefetch: false },
       );
     }
@@ -109,8 +178,8 @@ function isActivityPayload(payload: unknown): payload is { key: string } {
  * Adds a just-started thread to the cached activity, so the button reads
  * "Reviewing…" at once instead of offering a second review until the refetch.
  */
-function recordStarted(ref: PrRef, thread: LinkedThread): void {
-  const queryKey = rpc.agentActivity.queryKey({ ref });
+function recordStarted(subject: ReviewSubject, thread: LinkedThread): void {
+  const queryKey = subject.activityKey;
   pluginQueryClient.setQueryData<AgentActivity>(queryKey, (current) =>
     // Asked again while a review of this head runs, the server returns that review.
     current && !current.threads.some((linked) => linked.threadId === thread.threadId)
@@ -131,27 +200,30 @@ export function ReviewMark({ className }: { className?: string }) {
 const SPLIT = "h-7 text-xs max-md:pointer-coarse:h-9 [&_[data-icon-root]]:size-3.5";
 
 /**
- * Starts a read-only review of the pull request's head on bb's default
- * agent. While one is running on this head, the button opens it instead of
- * starting another. The gear edits the instructions every review gets.
+ * Starts a read-only review of the pull request's or branch's head on bb's
+ * default agent. While one is running on this head, the button opens it
+ * instead of starting another. The gear edits the instructions every review
+ * gets.
  */
-export function ReviewWithBbButton({ pr }: { pr: PullRequest }) {
+export function ReviewWithBbButton(target: ReviewTarget) {
+  const subject = reviewSubject(target);
   const navigate = useBbNavigate();
-  const activity = useAgentActivity(pr.ref);
-  const running = activeReview(activity.data, pr);
+  const client = rpc.useClient();
+  const activity = useAgentActivity(target);
+  const running = activeReview(activity.data, subject.revision);
   const [editing, setEditing] = useState(false);
-  const start = rpc.startReview.useMutation({
+  const start = useMutation({
+    mutationFn: () => subject.startReview(client),
     onSuccess({ threadId }) {
-      recordStarted(pr.ref, {
+      recordStarted(subject, {
         threadId,
         kind: "review",
         title: null,
         status: "pending",
         createdAt: new Date().toISOString(),
-        headRefOid: pr.headRefOid,
-        baseRefName: pr.baseRefName,
+        ...subject.revision,
       });
-      toast(`bb is reviewing #${pr.ref.number}`, {
+      toast(`bb is reviewing ${subject.name}`, {
         action: { label: "Open thread", onClick: () => navigate.toThread(threadId) },
       });
     },
@@ -170,7 +242,7 @@ export function ReviewWithBbButton({ pr }: { pr: PullRequest }) {
         aria-busy={start.isPending}
         onClick={() => {
           if (running) navigate.toThread(running.threadId);
-          else start.mutate({ ref: pr.ref });
+          else start.mutate();
         }}
       >
         {running || start.isPending ? (
@@ -303,11 +375,11 @@ function InstructionsEditor({ initial, onDone }: { initial: string; onDone: () =
 
 const SECTION_LINK = "ms-auto h-auto gap-1 p-0 text-[11px] font-normal [&_[data-icon-root]]:size-3";
 
-/** Opens the Changes tab and asks it to scroll to the finding. */
-function useRevealFinding(pr: PullRequest): (finding: Finding) => void {
+/** Opens the Changes tab at `changesPath` and asks it to scroll to the finding. */
+function useRevealFinding(changesPath: string): (finding: Finding) => void {
   const navigate = useBbNavigate();
   return (finding) => {
-    navigate.toPluginPanel(PANEL_PATH, { subPath: prSubPath(pr.ref, "changes") });
+    navigate.toPluginPanel(PANEL_PATH, { subPath: changesPath });
     const detail: RevealDetail = { path: finding.path, line: finding.line, side: finding.side };
     // Navigation renders the Changes tab on a later frame. Two frames on,
     // it has mounted and is listening.
@@ -322,26 +394,27 @@ function useRevealFinding(pr: PullRequest): (finding: Finding) => void {
 /**
  * The latest bb review: its summary and findings, most urgent first. A
  * review still running on the head is said above them. Nothing at all until
- * the pull request has had a review.
+ * the pull request or branch has had a review.
  */
-export function FindingsCard({ pr }: { pr: PullRequest }) {
-  const activity = useAgentActivity(pr.ref);
-  const reveal = useRevealFinding(pr);
+export function FindingsCard(target: ReviewTarget) {
+  const subject = reviewSubject(target);
+  const activity = useAgentActivity(target);
+  const reveal = useRevealFinding(subject.changesPath);
   const run = activity.data?.latestReview ?? null;
-  const running = activeReview(activity.data, pr);
+  const running = activeReview(activity.data, subject.revision);
   if (!run && !running) return null;
   const runThread = run
     ? activity.data?.threads.find((linked) => linked.threadId === run.threadId)
     : undefined;
   // A retarget changes the diff the reviewer read as surely as a push does.
-  const stale = run !== null && !sameRevision(run, pr);
+  const stale = run !== null && !sameRevision(run, subject.revision);
 
   return (
     <Section
       title="bb review"
       aside={
         <>
-          {run ? <ReviewMeta run={run} stale={stale} pr={pr} /> : null}
+          {run ? <ReviewMeta run={run} stale={stale} subject={subject} /> : null}
           {/* The review on the head is the one to open, when there is one. */}
           <OpenThreadLink thread={running ?? runThread ?? null} />
         </>
@@ -349,14 +422,14 @@ export function FindingsCard({ pr }: { pr: PullRequest }) {
     >
       <div className="flex flex-col gap-2.5 rounded-lg border border-border bg-card px-3.5 py-3">
         {running && running.threadId !== run?.threadId ? (
-          <Reviewing headRefOid={pr.headRefOid} />
+          <Reviewing headRefOid={subject.revision.headRefOid} />
         ) : null}
         {run ? (
           <ReviewBody
             run={run}
             busy={runThread ? isBusy(runThread) : false}
             stale={stale}
-            pr={pr}
+            pr={subject.pr}
             onReveal={reveal}
           />
         ) : null}
@@ -403,13 +476,25 @@ function Reviewing({ headRefOid }: { headRefOid?: string }) {
 }
 
 /** Why a review's findings may not match the diff any more. */
-function staleReason(run: ReviewRun, pr: DiffRevision): string {
-  return run.headRefOid === pr.headRefOid
-    ? `bb reviewed the changes against ${run.baseRefName}. The pull request now targets ${pr.baseRefName}.`
-    : `bb reviewed ${shortSha(run.headRefOid)}. The pull request is now at ${shortSha(pr.headRefOid)}.`;
+function staleReason(run: ReviewRun, { revision, noun, pr }: ReviewSubject): string {
+  if (run.headRefOid !== revision.headRefOid) {
+    return `bb reviewed ${shortSha(run.headRefOid)}. The ${noun} is now at ${shortSha(revision.headRefOid)}.`;
+  }
+  // A pull request's base is the branch it targets; a branch's, the commit it starts from.
+  return pr
+    ? `bb reviewed the changes against ${run.baseRefName}. The pull request now targets ${revision.baseRefName}.`
+    : `bb reviewed the changes from ${shortSha(run.baseRefName)}. The branch now starts from ${shortSha(revision.baseRefName)}.`;
 }
 
-function ReviewMeta({ run, stale, pr }: { run: ReviewRun; stale: boolean; pr: DiffRevision }) {
+function ReviewMeta({
+  run,
+  stale,
+  subject,
+}: {
+  run: ReviewRun;
+  stale: boolean;
+  subject: ReviewSubject;
+}) {
   return (
     <span className="flex min-w-0 items-center gap-1.5 text-[11px] text-muted-foreground">
       <span translate="no" className="font-mono" title="The commit bb reviewed">
@@ -424,7 +509,7 @@ function ReviewMeta({ run, stale, pr }: { run: ReviewRun; stale: boolean; pr: Di
       {stale ? (
         <span
           className="inline-flex h-4.5 items-center rounded-full bg-surface-attention px-1.5 text-[11px] font-semibold text-warning-text"
-          title={staleReason(run, pr)}
+          title={staleReason(run, subject)}
         >
           Stale
         </span>
@@ -444,7 +529,8 @@ function ReviewBody({
   /** The run's own thread is still working. */
   busy: boolean;
   stale: boolean;
-  pr: PullRequest;
+  /** The pull request findings can be drafted on. None for a branch. */
+  pr: PullRequest | null;
   onReveal: (finding: Finding) => void;
 }) {
   if (run.reportedAt === null) {
@@ -513,9 +599,10 @@ export function linkedThreadTitle(thread: LinkedThread): string {
   return thread.kind === "review" ? "bb review" : "Fix checks";
 }
 
-/** Agent threads started from this pull request, newest first. Nothing when there are none. */
-export function LinkedThreads({ pr }: { pr: PullRequest }) {
-  const activity = useAgentActivity(pr.ref);
+/** Agent threads started from this pull request or branch, newest first. Nothing when there are none. */
+export function LinkedThreads(target: ReviewTarget) {
+  const { revision } = reviewSubject(target);
+  const activity = useAgentActivity(target);
   const navigate = useBbNavigate();
   const threads = activity.data?.threads ?? [];
   if (!activity.isError && threads.length === 0) return null;
@@ -533,7 +620,7 @@ export function LinkedThreads({ pr }: { pr: PullRequest }) {
             <li key={thread.threadId}>
               <LinkedThreadRow
                 thread={thread}
-                current={thread.headRefOid === pr.headRefOid}
+                current={thread.headRefOid === revision.headRefOid}
                 onOpen={() => navigate.toThread(thread.threadId)}
               />
             </li>

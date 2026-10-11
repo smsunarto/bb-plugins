@@ -9,10 +9,21 @@ test("rewrites the draft's body", async () => {
       EditDraft: { updatePullRequestReviewComment: { pullRequestReviewComment: { id: "C1" } } },
     },
   });
-  expect(await callProcedure(editDraft, ctx, { commentId: "C1", body: "Rename it." })).toEqual({
+  expect(
+    await callProcedure(editDraft, ctx, {
+      account: "octocat",
+      commentId: "C1",
+      body: "Rename it.",
+    }),
+  ).toEqual({
     ok: true,
   });
   expect(calls).toEqual([
-    { kind: "graphql", operation: "EditDraft", variables: { id: "C1", body: "Rename it." } },
+    {
+      kind: "graphql",
+      operation: "EditDraft",
+      variables: { id: "C1", body: "Rename it." },
+      account: "octocat",
+    },
   ]);
 });

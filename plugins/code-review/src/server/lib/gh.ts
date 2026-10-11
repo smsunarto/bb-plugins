@@ -1,8 +1,11 @@
 import { type ExecFileException, execFile } from "node:child_process";
+import { accountSchema } from "../../shared/schema.ts";
 
 /*
  * Every GitHub call goes through the `gh` CLI on the bb server's machine, so
- * the plugin stores no token and uses whatever account `gh auth login` set up.
+ * the plugin stores no token. `gh` can be signed in to several github.com
+ * accounts at once; a call acts as one of them by running `gh` with that
+ * account's token in `GH_TOKEN`, which leaves gh's active account alone.
  * GraphQL bodies travel on stdin (`gh api graphql --input -`), which keeps
  * variable types intact and needs no flag escaping.
  */
@@ -29,8 +32,15 @@ export type RunFailure = "timeout" | "too-large";
 
 export type RunResult = { code: number; stdout: string; stderr: string; failure?: RunFailure };
 
-/** Runs `gh` with `args`, writing `stdin` when given. Never throws for a non-zero exit. */
-export type GhRunner = (args: string[], stdin?: string) => Promise<RunResult>;
+/**
+ * Runs `gh` with `args`, writing `stdin` when given and adding `env` to its
+ * environment. Never throws for a non-zero exit.
+ */
+export type GhRunner = (
+  args: string[],
+  stdin?: string,
+  env?: Record<string, string>,
+) => Promise<RunResult>;
 
 export type GraphqlOptions = {
   /**
@@ -123,7 +133,7 @@ export function runResult(
 }
 
 /** The real runner: `execFile` with stdin, a timeout, and a large buffer. */
-export const execGh: GhRunner = (args, stdin) =>
+export const execGh: GhRunner = (args, stdin, env = {}) =>
   new Promise((resolve) => {
     const child = execFile(
       "gh",
@@ -131,7 +141,13 @@ export const execGh: GhRunner = (args, stdin) =>
       {
         timeout: TIMEOUT_MS,
         maxBuffer: MAX_BUFFER,
-        env: { ...process.env, GH_PROMPT_DISABLED: "1", GH_NO_UPDATE_NOTIFIER: "1", NO_COLOR: "1" },
+        env: {
+          ...process.env,
+          GH_PROMPT_DISABLED: "1",
+          GH_NO_UPDATE_NOTIFIER: "1",
+          NO_COLOR: "1",
+          ...env,
+        },
       },
       (error, stdout, stderr) => resolve(runResult(error, String(stdout), String(stderr))),
     );
@@ -183,18 +199,20 @@ function dropListHoles(holes: readonly Hole[]): void {
   }
 }
 
-export function createGh(run: GhRunner = execGh): Gh {
-  async function call(args: string[], stdin?: string): Promise<RunResult> {
-    const result = await run(args, stdin);
-    if (result.code === 127 && /ENOENT/.test(result.stderr)) {
-      throw new GhError(
-        "gh-missing",
-        "GitHub CLI (gh) is not installed on the bb server's machine. Install it from https://cli.github.com.",
-      );
-    }
-    if (result.failure) throw new GhError("failed", LIMIT_MESSAGES[result.failure]);
-    return result;
+/** The result, unless `gh` is missing or the runner cut it short. */
+function checked(result: RunResult): RunResult {
+  if (result.code === 127 && /ENOENT/.test(result.stderr)) {
+    throw new GhError(
+      "gh-missing",
+      "GitHub CLI (gh) is not installed on the bb server's machine. Install it from https://cli.github.com.",
+    );
   }
+  if (result.failure) throw new GhError("failed", LIMIT_MESSAGES[result.failure]);
+  return result;
+}
+
+export function createGh(run: GhRunner = execGh): Gh {
+  const call = async (args: string[], stdin?: string) => checked(await run(args, stdin));
 
   return {
     async graphql(query, variables = {}, options = {}) {
@@ -261,6 +279,151 @@ export function createGh(run: GhRunner = execGh): Gh {
       const result = await call(args);
       if (result.code !== 0) throw classifyFailure(result.stderr, result.stdout);
       return result.stdout;
+    },
+  };
+}
+
+/** How long a read of the signed-in accounts holds. `gh auth status` asks GitHub about each. */
+const ACCOUNTS_TTL_MS = 60_000;
+
+/** The line that opens each account's block, whether its token works or not. */
+const ACCOUNT =
+  /(Logged|Failed to log) in to github\.com (?:account|as) ([A-Za-z0-9][A-Za-z0-9_-]*)(?: \(([^)]*)\))?/;
+const ACTIVE = /Active account: (true|false)/;
+/** gh reads a token from these variables before any account it stores. */
+const ENV_TOKEN = /^(?:GH_TOKEN|GITHUB_TOKEN)$/;
+
+/**
+ * A signed-in github.com account. `env` when its token is the bb server's
+ * own `GH_TOKEN`: gh stores nothing for it, so it has no `--user` token.
+ */
+export type GhAccount = { login: string; env: boolean };
+
+/**
+ * The github.com accounts in `gh auth status` output, the active one first.
+ * gh before 2.40 knew one account and printed no "Active account" line, and
+ * an account whose token stopped working is "Failed to log in", not listed.
+ */
+export function parseAuthStatus(text: string): GhAccount[] {
+  const accounts: (GhAccount & { active: boolean })[] = [];
+  // The account the following detail lines belong to. Null under a failed one.
+  let current: (GhAccount & { active: boolean }) | null = null;
+  for (const line of text.split("\n")) {
+    const opened = ACCOUNT.exec(line);
+    if (opened) {
+      current =
+        opened[1] === "Logged"
+          ? { login: opened[2] ?? "", env: ENV_TOKEN.test(opened[3] ?? ""), active: true }
+          : null;
+      if (current) accounts.push(current);
+    }
+    const active = ACTIVE.exec(line)?.[1];
+    if (active && current) current.active = active === "true";
+  }
+  return accounts
+    .toSorted((a, b) => Number(b.active) - Number(a.active))
+    .map(({ login, env }) => ({ login, env }));
+}
+
+export type GitHub = {
+  /** The signed-in github.com accounts, the active one first. */
+  accounts(): Promise<string[]>;
+  /** gh acting as `login`, one of `accounts()`. */
+  as(login: string): Gh;
+};
+
+/**
+ * Every signed-in `gh` account, each reached with its own token in
+ * `GH_TOKEN`, so one bb server reads and writes as several people. A call
+ * checks its account is still signed in first, so a token read before a
+ * logout is never used after it.
+ */
+export function createGitHub(run: GhRunner = execGh, now = Date.now): GitHub {
+  let accounts: { at: number; read: Promise<GhAccount[]> } | null = null;
+  const tokens = new Map<string, Promise<string>>();
+
+  async function readAccounts(): Promise<GhAccount[]> {
+    const result = checked(await run(["auth", "status", "--hostname", "github.com"]));
+    // gh exits non-zero when any account fails, and older versions print to stderr.
+    const found = parseAuthStatus(`${result.stdout}\n${result.stderr}`);
+    // Tokens are read again with the accounts: one that signed out goes, and
+    // one signed in again with a new token is used from then on.
+    tokens.clear();
+    if (found.length > 0) return found;
+    if (result.code !== 0 && !NO_CREDENTIALS.test(`${result.stderr}\n${result.stdout}`)) {
+      throw classifyFailure(result.stderr, result.stdout);
+    }
+    throw new GhError("unauthenticated", "GitHub CLI is not signed in. Run `gh auth login`.");
+  }
+
+  function listAccounts(): Promise<GhAccount[]> {
+    if (!accounts || now() - accounts.at >= ACCOUNTS_TTL_MS) {
+      const read = readAccounts();
+      accounts = { at: now(), read };
+      read.catch(() => {
+        if (accounts?.read === read) accounts = null;
+      });
+    }
+    return accounts.read;
+  }
+
+  /** The signed-in account `login` names, in gh's spelling: GitHub logins ignore case. */
+  async function account(login: string): Promise<GhAccount> {
+    const key = login.toLowerCase();
+    const signedIn = (await listAccounts()).find((a) => a.login.toLowerCase() === key);
+    if (signedIn) return signedIn;
+    accounts = null;
+    tokens.delete(key);
+    throw new GhError(
+      "unauthenticated",
+      `@${login} is not signed in to GitHub CLI on the bb server. Run \`gh auth login\`.`,
+    );
+  }
+
+  async function readToken(name: string): Promise<string> {
+    const result = checked(
+      await run(["auth", "token", "--hostname", "github.com", "--user", name]),
+    );
+    const token = result.stdout.trim();
+    if (result.code !== 0 || token === "") {
+      throw new GhError(
+        "unauthenticated",
+        `GitHub CLI has no token for @${name}. Run \`gh auth login\`.`,
+      );
+    }
+    return token;
+  }
+
+  /** What a call as `login` adds to gh's environment. Nothing for the server's own `GH_TOKEN`. */
+  async function environment(login: string): Promise<Record<string, string>> {
+    const signedIn = await account(login);
+    if (signedIn.env) return {};
+    const key = signedIn.login.toLowerCase();
+    let read = tokens.get(key);
+    if (!read) {
+      read = readToken(signedIn.login);
+      tokens.set(key, read);
+      read.catch(() => {
+        if (tokens.get(key) === read) tokens.delete(key);
+      });
+    }
+    return { GH_TOKEN: await read };
+  }
+
+  return {
+    accounts: async () => (await listAccounts()).map((a) => a.login),
+    as(login) {
+      // A login reaches `gh auth token --user`: one that could read as a flag stops here.
+      if (!accountSchema.safeParse(login).success) {
+        throw new GhError("failed", `${login} is not a GitHub login.`);
+      }
+      return createGh(async (args, stdin) => {
+        const result = await run(args, stdin, await environment(login));
+        if (result.code !== 0 && NO_CREDENTIALS.test(`${result.stderr}\n${result.stdout}`)) {
+          tokens.delete(login.toLowerCase());
+        }
+        return result;
+      });
     },
   };
 }

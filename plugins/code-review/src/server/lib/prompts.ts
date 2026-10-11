@@ -1,5 +1,5 @@
 import { instructionFiles } from "@bb-kit/core/instructions";
-import type { Check } from "../../shared/schema.ts";
+import type { Check, LocalBranch } from "../../shared/schema.ts";
 import type { PrHead } from "./pull-request.ts";
 
 /*
@@ -44,8 +44,40 @@ export function reviewPrompt(
       ].join("\n"),
     ),
     workspace,
-    reviewInstructions: instructions.trim() || "None.",
+    criteria: criteria(instructions),
   });
+}
+
+/**
+ * The prompt of a bb review of an unpublished branch. It runs in the
+ * GitButler workspace that holds the branch, which is someone's working
+ * tree, so it reads the branch from git and touches nothing.
+ */
+export function localReviewPrompt(branch: LocalBranch, instructions: string): string {
+  return files.read("review-local-branch", {
+    branch: inlineCode(branch.branch),
+    repoName: inlineCode(branch.repoName),
+    path: inlineCode(branch.path),
+    machine: branch.machine,
+    base: branch.base,
+    head: branch.head,
+    parent: branch.parent ? `, the head of ${inlineCode(branch.parent)}` : "",
+    commits: branch.commits
+      .map((commit) => `- \`${commit.commitId.slice(0, 7)}\` ${commitTitle(commit.message)}`)
+      .join("\n"),
+    criteria: criteria(instructions),
+  });
+}
+
+/** What every review checks, how it reports, and the reviewer's standing instructions. */
+function criteria(instructions: string): string {
+  return files.read("review-criteria", { reviewInstructions: instructions.trim() || "None." });
+}
+
+/** A commit message's first line, flattened so it cannot start a Markdown block. */
+function commitTitle(message: string): string {
+  const title = message.split("\n", 1)[0]?.trim() ?? "";
+  return title === "" ? "(no message)" : title;
 }
 
 /** A failing check and the end of its log, or why there is no log. */

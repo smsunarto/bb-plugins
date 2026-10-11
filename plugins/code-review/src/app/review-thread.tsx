@@ -107,7 +107,7 @@ function Comment({ pr, comment }: { pr: PullRequest; comment: ThreadComment }) {
           onCancel={stopEditing}
           onSubmit={() =>
             edit.mutate(
-              { commentId: comment.id, body: text.trim() },
+              { account: pr.account, commentId: comment.id, body: text.trim() },
               {
                 onSuccess: () => {
                   setText("");
@@ -149,7 +149,7 @@ function Comment({ pr, comment }: { pr: PullRequest; comment: ThreadComment }) {
             // The Delete that asked is gone, so the focus lands on its answer.
             // oxlint-disable-next-line jsx-a11y/no-autofocus
             autoFocus
-            onClick={() => remove.mutate({ commentId: comment.id })}
+            onClick={() => remove.mutate({ account: pr.account, commentId: comment.id })}
           >
             {remove.isPending ? (
               <Icon name="Loading" className="motion-safe:animate-spin" aria-hidden />
@@ -164,13 +164,15 @@ function Comment({ pr, comment }: { pr: PullRequest; comment: ThreadComment }) {
 
 /** The reply box: a closed prompt until clicked, then a form that adds a draft reply. */
 function Reply({ pr, thread }: { pr: PullRequest; thread: ReviewThread }) {
-  const [text, setText] = useDraftText(`reply:${thread.id}`);
+  // Text typed as one account never opens in the form of another.
+  const key = `reply:${pr.account.toLowerCase()}:${thread.id}`;
+  const [text, setText] = useDraftText(key);
   // A reply typed before the card last unmounted opens with it.
   const [open, setOpen] = useState(text !== "");
   const reply = rpc.replyDraft.useMutation({
     onSuccess: async () => {
       await refreshAfterDraft(pr);
-      forgetDraftText(`reply:${thread.id}`);
+      forgetDraftText(key);
     },
   });
 
@@ -205,7 +207,12 @@ function Reply({ pr, thread }: { pr: PullRequest; thread: ReviewThread }) {
       }}
       onSubmit={() =>
         reply.mutate(
-          { pullRequestId: pr.id, threadId: thread.id, body: text.trim() },
+          {
+            account: pr.account,
+            pullRequestId: pr.id,
+            threadId: thread.id,
+            body: text.trim(),
+          },
           {
             onSuccess: () => {
               setText("");

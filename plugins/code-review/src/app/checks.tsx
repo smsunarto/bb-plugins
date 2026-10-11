@@ -1,7 +1,7 @@
 import { useEffect, useId, useState } from "react";
 import type { ReactNode } from "react";
 import { UrlLink, experimental_Icon as Icon } from "@get-bb/plugin-sdk/app";
-import type { Check, Checks, PrRef, PullRequest } from "../shared/schema.ts";
+import type { Check, Checks, PullRequest } from "../shared/schema.ts";
 import { Button } from "./components/ui/button.tsx";
 import { Skeleton } from "./components/ui/skeleton.tsx";
 import { CONTROL_HOVER_TRANSITION } from "./components/ui/motion.ts";
@@ -72,9 +72,13 @@ export function checkDuration(check: Pick<Check, "startedAt" | "completedAt">): 
  * earlier head are read again at once, since settled checks are otherwise
  * read only every two minutes and a push would leave the old ones up.
  */
-export function useChecks(ref: PrRef, headRefOid?: string) {
+export function useChecks({
+  ref,
+  account,
+  headRefOid,
+}: Pick<PullRequest, "ref" | "account" | "headRefOid">) {
   const checks = rpc.checks.useQuery(
-    { ref },
+    { account, ref },
     {
       staleTime: 10_000,
       refetchInterval: (query) =>
@@ -86,14 +90,14 @@ export function useChecks(ref: PrRef, headRefOid?: string) {
   useEffect(() => {
     // Every part that shows checks notices the push. The first starts the
     // read, and the rest join it instead of restarting it.
-    if (headRefOid && readFor && readFor !== headRefOid) void refetch({ cancelRefetch: false });
+    if (readFor && readFor !== headRefOid) void refetch({ cancelRefetch: false });
   }, [headRefOid, readFor, refetch]);
   return checks;
 }
 
 /** The pull request's checks, worst first, and the way to hand failures to an agent. */
 export function ChecksTab({ pr }: { pr: PullRequest }) {
-  const checks = useChecks(pr.ref, pr.headRefOid);
+  const checks = useChecks(pr);
   if (checks.isPending) return <ChecksSkeleton />;
   if (checks.isLoadingError) {
     return (

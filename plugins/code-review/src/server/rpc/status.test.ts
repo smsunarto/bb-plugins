@@ -1,23 +1,22 @@
 import { expect, test } from "bun:test";
-import { GhFailure, fakeContext } from "../../../test/fake-gh.ts";
+import { fakeContext } from "../../../test/fake-gh.ts";
+import { type GhRunner, createGitHub } from "../lib/gh.ts";
 import { status } from "./status.ts";
 
-test("names the signed-in account", async () => {
-  const { ctx } = fakeContext({ rest: { user: { login: "sms-yui" } } });
-  expect(await status.execute(ctx)).toEqual({ ok: true, login: "sms-yui" });
+test("names every signed-in account, the active one first", async () => {
+  const { ctx } = fakeContext({ accounts: ["sms-yui", "smsunarto"] });
+  expect(await status.execute(ctx)).toEqual({
+    ok: true,
+    login: "sms-yui",
+    accounts: ["sms-yui", "smsunarto"],
+  });
 });
 
 test("says what is wrong instead of throwing", async () => {
-  const answer = (stderr: string, code?: number) =>
-    status.execute(
-      fakeContext({
-        rest: {
-          user: () => {
-            throw new GhFailure(stderr, code);
-          },
-        },
-      }).ctx,
-    );
+  const answer = (stderr: string, code?: number) => {
+    const fail: GhRunner = async () => ({ code: code ?? 1, stdout: "", stderr });
+    return status.execute({ ...fakeContext().ctx, github: createGitHub(fail) });
+  };
 
   expect(await answer("ENOENT: gh not found", 127)).toEqual({
     ok: false,

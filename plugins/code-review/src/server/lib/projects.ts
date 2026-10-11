@@ -79,3 +79,59 @@ export function freshWorktree(project: Project) {
     workspace: { type: "managed-worktree" as const, baseBranch: { kind: "default" as const } },
   };
 }
+
+/**
+ * Whether the checkout at `path` is `root` itself or one of the repositories
+ * under its `repos/`, the two places the GitButler plugin looks.
+ */
+function holds(root: string | null, path: string): boolean {
+  if (root === null) return false;
+  const base = root.replace(/\/+$/, "");
+  return path === base || path.startsWith(`${base}/repos/`);
+}
+
+/**
+ * Where a review of an unpublished branch runs: in the checkout that holds
+ * it, since its commits are nowhere else. The ready environment holding that
+ * checkout is reused when there is one. The project is that environment's,
+ * else the one whose source holds the checkout, else the one whose remote is
+ * the branch's repository.
+ */
+export async function localReviewTarget(
+  bb: BbPluginApi,
+  branch: { hostId: string; path: string; repoName: string; repository: string | null },
+): Promise<{ projectId: string; environment: SpawnEnvironment }> {
+  const [projects, ready] = await Promise.all([
+    bb.sdk.projects.list(),
+    bb.sdk.environments.list({ status: "ready" }),
+  ]);
+  const here = ready.find(
+    (environment) =>
+      environment.status === "ready" &&
+      environment.hostId === branch.hostId &&
+      holds(environment.path, branch.path),
+  );
+  const project =
+    projects.find((p) => p.id === here?.projectId) ??
+    projects.find((p) =>
+      p.sources.some((s) => s.hostId === branch.hostId && holds(s.path, branch.path)),
+    ) ??
+    projects.find(
+      (p) =>
+        branch.repository !== null &&
+        p.gitRemoteUrl !== null &&
+        gitHubRepository(p.gitRemoteUrl) === branch.repository,
+    );
+  if (!project) throw new Error(`Add ${branch.repoName} as a bb project to review it with bb.`);
+  if (here && here.projectId === project.id) {
+    return { projectId: project.id, environment: { type: "reuse", environmentId: here.id } };
+  }
+  return {
+    projectId: project.id,
+    environment: {
+      type: "host",
+      hostId: branch.hostId,
+      workspace: { type: "unmanaged", path: branch.path },
+    },
+  };
+}

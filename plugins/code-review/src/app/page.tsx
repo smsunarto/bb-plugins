@@ -1,13 +1,14 @@
 import type { ReactNode } from "react";
 import { UrlLink, experimental_Icon as Icon, useBbNavigate } from "@get-bb/plugin-sdk/app";
 import type { PluginNavPanelProps } from "@get-bb/plugin-sdk/app";
-import { PluginQueryBoundary } from "@bb-kit/core/rpc/query";
-import { parsePrSubPath, prKey } from "../shared/schema.ts";
-import type { Status } from "../shared/schema.ts";
+import { PluginQueryBoundary, pluginQueryClient } from "@bb-kit/core/rpc/query";
+import { parseBranchSubPath, parsePrSubPath, prKey, sameRef } from "../shared/schema.ts";
+import type { Inbox as InboxData, PrRoute, Status } from "../shared/schema.ts";
 import { Button } from "./components/ui/button.tsx";
 import { TooltipProvider } from "./components/ui/tooltip.tsx";
 import { PANEL_PATH } from "./format.ts";
-import { Inbox } from "./inbox.tsx";
+import { Inbox, UnpublishedOnly } from "./inbox.tsx";
+import { LocalBranchView } from "./local-branch.tsx";
 import { cn } from "./lib/utils.ts";
 import { Loading, Notice, RetryButton, errorText } from "./notice.tsx";
 import { PrView } from "./pr-view.tsx";
@@ -21,8 +22,8 @@ const STATUS_QUERY = { staleTime: 5 * 60_000 } as const;
 
 /**
  * The Code Review page. The URL is the state: `subPath` is empty when no pull
- * request is open, or names a pull request and its tab. The inbox lives in the
- * page's Inbox tab, which reads the same URL.
+ * request is open, or names a pull request or an unpublished branch, and its
+ * tab. The inbox lives in the page's Inbox tab, which reads the same URL.
  */
 export function CodeReviewPage({ subPath }: PluginNavPanelProps) {
   return (
@@ -36,6 +37,15 @@ export function CodeReviewPage({ subPath }: PluginNavPanelProps) {
 
 function Page({ subPath }: { subPath: string }) {
   const status = rpc.status.useQuery(STATUS_QUERY);
+  const branch = parseBranchSubPath(subPath);
+  // A local branch is read and reviewed without GitHub, so gh does not gate it.
+  if (branch) {
+    return (
+      <section aria-label="Unpublished branch" className={cn(SHELL, "flex-col")}>
+        <LocalBranchView key={branch.id} id={branch.id} tab={branch.tab} />
+      </section>
+    );
+  }
   if (!status.data) {
     return (
       <div className={cn(SHELL, "flex-col p-4")}>
@@ -66,11 +76,18 @@ function Page({ subPath }: { subPath: string }) {
   }
 
   const route = parsePrSubPath(subPath);
+  const account = route ? routeAccount(route, status.data.login) : null;
   return (
     <section aria-label="Pull request" className={cn(SHELL, "flex-col")}>
-      {route ? (
-        // Keyed, so a different pull request starts from its own scroll and drafts.
-        <PrView key={prKey(route.ref)} prRef={route.ref} tab={route.tab} />
+      {route && account ? (
+        // Keyed, so a different pull request, or the same one as another
+        // account, starts from its own scroll and drafts.
+        <PrView
+          key={`${account}:${prKey(route.ref)}`}
+          prRef={route.ref}
+          account={account}
+          tab={route.tab}
+        />
       ) : subPath.replace(/^\/+|\/+$/g, "") !== "" ? (
         <UnknownPage />
       ) : (
@@ -78,6 +95,22 @@ function Page({ subPath }: { subPath: string }) {
       )}
     </section>
   );
+}
+
+/**
+ * The account a pull request opens as: the one its URL names, else the
+ * account whose inbox lists it, else gh's active account. A pasted link has
+ * no account, and usually waits on someone in particular.
+ */
+function routeAccount(route: PrRoute, active: string): string {
+  if (route.account) return route.account;
+  const inbox = pluginQueryClient.getQueryData<InboxData>(rpc.inbox.queryKey());
+  const listed = inbox
+    ? [...inbox.assigned, ...inbox.team, ...inbox.authored, ...inbox.pinned].find((pr) =>
+        sameRef(pr.ref, route.ref),
+      )
+    : undefined;
+  return listed?.account ?? active;
 }
 
 /** The Inbox tab in the page's right panel: the viewer's queues, once gh can answer. */
@@ -96,15 +129,22 @@ function InboxTabBody({ subPath }: { subPath: string }) {
   if (status.data?.ok) {
     return (
       <nav aria-label="Pull request inbox" className={cn(SHELL, "flex-col")}>
-        <Inbox selected={parsePrSubPath(subPath)?.ref ?? null} />
+        <Inbox
+          selected={parsePrSubPath(subPath)?.ref ?? null}
+          selectedBranch={parseBranchSubPath(subPath)?.id ?? null}
+        />
       </nav>
     );
   }
-  // The page explains what gh needs; the inbox waits until gh can answer it.
+  // The page explains what gh needs. Pull requests wait until gh can answer;
+  // unpublished branches need no GitHub, so they still list.
   return (
-    <div className={cn(SHELL, "flex-col p-3 text-muted-foreground")}>
+    <div className={cn(SHELL, "flex-col gap-3 p-3 text-muted-foreground")}>
       {status.data || status.isError ? (
-        <p>GitHub is unavailable. The page says how to fix it.</p>
+        <>
+          <p>GitHub is unavailable. The page says how to fix it.</p>
+          <UnpublishedOnly selected={parseBranchSubPath(subPath)?.id ?? null} />
+        </>
       ) : (
         <Loading label="Connecting to GitHub…" />
       )}

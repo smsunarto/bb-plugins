@@ -28,6 +28,18 @@ There is no local copy of a draft to fall out of step with GitHub.
 The sidebar badge counts the pull requests in the first two sections that
 you have not reviewed yet.
 
+With more than one account signed in to `gh`, the inbox merges every
+account's pull requests, and **Accounts** narrows it to one. A pull request
+is read, drafted, and reviewed as one account: the one whose inbox listed
+it, shown in its URL (`@login/owner/repo/pull/1`). **as login** in its header
+switches account. An account whose token fails is named above the inbox,
+and the rest still load.
+
+**Unpublished** lists GitButler branches that have commits and no pull
+request yet, from every connected machine, when the
+[GitButler plugin](../gitbutler) is on. A branch opens to its commits and its
+diff, and **Review with bb** reviews it like a pull request.
+
 ## A pull request
 
 - **Summary**: the description, labels, reviewers and where each stands,
@@ -56,23 +68,30 @@ branch when there is one, and then leaves its working tree alone. Otherwise
 it gets a fresh worktree on the project's default machine. **Review
 instructions** sets what every later review should pay attention to.
 
-The prompt lives in [`instructions/review-with-bb.md`](instructions/review-with-bb.md),
-adapted from Codex's own review agent, and the Prompt Editor plugin can edit
-it.
+An unpublished branch is reviewed in the GitButler workspace that holds it,
+since its commits are nowhere else. That review reads the branch with
+`git diff` and `git show` and changes nothing in the workspace.
+
+The prompts live in [`instructions/review-with-bb.md`](instructions/review-with-bb.md)
+and [`instructions/review-local-branch.md`](instructions/review-local-branch.md),
+which share [`instructions/review-criteria.md`](instructions/review-criteria.md),
+adapted from Codex's own review agent. The Prompt Editor plugin can edit them.
 
 ## Requirements
 
 - The GitHub CLI (`gh`) installed and signed in (`gh auth login`) on the
-  machine running the bb server. Every GitHub call goes through it, so the
-  plugin stores no token.
+  machine running the bb server, with one account or several. Every GitHub
+  call goes through it, so the plugin stores no token.
+- For **Unpublished**: the GitButler plugin, and the repository's checkout
+  known to bb as a project source or environment. It needs no `gh`.
 - For reviews and fixes: the repository added as a bb project whose git
   remote is the GitHub repository.
 
 ## What it stores
 
-In bb's plugin storage: your pins, your review instructions, and which bb
-threads were started for which pull request, with each review's
-findings. Everything else is read from GitHub when you open it.
+In bb's plugin storage: your pins and the account that pinned each, your
+review instructions, and which bb threads were started for which pull
+request or unpublished branch, with each review's findings. Everything else is read from GitHub when you open it.
 
 ## Development
 

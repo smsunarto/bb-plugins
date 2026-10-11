@@ -26,7 +26,9 @@ const EVENTS: readonly { id: ReviewEvent; label: string; detail: string }[] = [
 /** A review changes the pull request and the viewer's place in the inbox. */
 function refreshAfterReview(pr: PullRequest): Promise<unknown> {
   return Promise.all([
-    pluginQueryClient.invalidateQueries({ queryKey: rpc.pullRequest.queryKey({ ref: pr.ref }) }),
+    pluginQueryClient.invalidateQueries({
+      queryKey: rpc.pullRequest.queryKey({ account: pr.account, ref: pr.ref }),
+    }),
     pluginQueryClient.invalidateQueries({ queryKey: rpc.inbox.queryKey() }),
   ]);
 }
@@ -35,10 +37,15 @@ function refreshAfterReview(pr: PullRequest): Promise<unknown> {
  * One pull request's review requests in the mutation cache. The cache
  * outlives the popover and the button, so every mount sees a request that is
  * out, whichever mount sent it. The key is GitHub's id, not the ref: a URL
- * names the same pull request in any casing.
+ * names the same pull request in any casing. Each account has its own
+ * pending review, so its own requests.
  */
 function reviewKeys(pr: PullRequest): { submit: MutationKey; discard: MutationKey } {
-  return { submit: ["submitReview", pr.id], discard: ["discardReview", pr.id] };
+  const account = pr.account.toLowerCase();
+  return {
+    submit: ["submitReview", account, pr.id],
+    discard: ["discardReview", account, pr.id],
+  };
 }
 
 /**
@@ -250,6 +257,7 @@ function ReviewForm({
     // Submitting while the drafts are being deleted would race the deletion.
     if (empty || isOut(keys.submit) || isOut(keys.discard)) return;
     submit.mutate({
+      account: pr.account,
       pullRequestId: pr.id,
       headRefOid: pr.headRefOid,
       event: chosen,
@@ -452,7 +460,7 @@ function ConfirmDiscard({
           onClick={() => {
             // Deleting the drafts while they are being submitted would race the review.
             if (isOut(keys.discard) || isOut(keys.submit)) return;
-            discard.mutate({ pullRequestId: pr.id });
+            discard.mutate({ account: pr.account, pullRequestId: pr.id });
           }}
         >
           {discarding ? "Discarding…" : "Discard"}

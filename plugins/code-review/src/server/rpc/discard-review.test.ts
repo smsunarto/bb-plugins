@@ -12,6 +12,8 @@ test("deletes the pending review with its drafts", async () => {
       DiscardReview: { deletePullRequestReview: { clientMutationId: null } },
     },
   });
-  expect(await callProcedure(discardReview, ctx, { pullRequestId: "PR_1" })).toEqual({ ok: true });
+  expect(
+    await callProcedure(discardReview, ctx, { account: "octocat", pullRequestId: "PR_1" }),
+  ).toEqual({ ok: true });
   expect(operations()).toEqual(["PendingReview", "DiscardReview"]);
 });

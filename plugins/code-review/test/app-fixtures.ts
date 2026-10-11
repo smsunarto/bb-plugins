@@ -1,4 +1,13 @@
-import type { AgentActivity, Checks, Inbox, InboxPr, PullRequest } from "../src/shared/schema.ts";
+import type {
+  AgentActivity,
+  ChangedFiles,
+  Checks,
+  Inbox,
+  InboxPr,
+  LocalBranch,
+  LocalBranches,
+  PullRequest,
+} from "../src/shared/schema.ts";
 
 /*
  * What the server answers the app with, in the shapes `schema.ts` defines.
@@ -11,6 +20,7 @@ const VIEWER = { login: "scott", avatarUrl: null };
 
 function inboxPr(overrides: Partial<InboxPr> & Pick<InboxPr, "ref" | "title">): InboxPr {
   return {
+    account: VIEWER.login,
     url: `https://github.com/${overrides.ref.owner}/${overrides.ref.repo}/pull/${overrides.ref.number}`,
     state: "open",
     isDraft: false,
@@ -53,7 +63,8 @@ export const authoredPr = inboxPr({
 });
 
 export const inbox: Inbox = {
-  viewer: VIEWER.login,
+  accounts: [VIEWER.login],
+  unavailable: [],
   // Reviewed already, so it no longer waits on the viewer.
   assigned: [
     assignedPr,
@@ -70,6 +81,7 @@ export const inbox: Inbox = {
 
 export const pullRequest: PullRequest = {
   ref: assignedPr.ref,
+  account: VIEWER.login,
   id: "PR_kwDOA42",
   title: assignedPr.title,
   body: "Adds a **token bucket** in front of `/login`.",
@@ -166,3 +178,74 @@ export const checks: Checks = {
 };
 
 export const agentActivity: AgentActivity = { threads: [], latestReview: null };
+
+/** `scott/rate-limit`, two commits stacked on `scott/login-copy`, in a checkout on cardinal. */
+export const localBranch: LocalBranch = {
+  id: "a1b2c3d4e5f6",
+  hostId: "host-1",
+  machine: "cardinal",
+  path: "/home/scott/git/api",
+  repoName: "api",
+  repository: "acme/api",
+  branch: "scott/rate-limit",
+  status: "ahead",
+  head: "cc36d32a212a2b8b6611fb73549fe6d04fb6ec38",
+  base: "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
+  parent: "scott/login-copy",
+  commits: [
+    {
+      commitId: "cc36d32a212a2b8b6611fb73549fe6d04fb6ec38",
+      message: "Rate-limit the login endpoint\n\nA token bucket per address.",
+      authorName: "Scott",
+      createdAt: "2026-01-02T09:00:00Z",
+    },
+    {
+      commitId: "5d1a8e0b9c2f4a6e8d0b1c3e5f7a9b2d4c6e8f0a",
+      message: "Add a bucket type",
+      authorName: "Ada",
+      createdAt: "2026-01-01T09:00:00Z",
+    },
+  ],
+};
+
+export const localBranches: LocalBranches = {
+  available: true,
+  branches: [
+    localBranch,
+    {
+      ...localBranch,
+      id: "0f1e2d3c4b5a",
+      branch: "scott/login-copy",
+      status: "unpushed",
+      head: localBranch.base,
+      base: "28c4d3075b5916acdb6974a7e4f5c49d2c274a86",
+      parent: null,
+      commits: [
+        {
+          commitId: localBranch.base,
+          message: "Reword the login error",
+          authorName: "Scott",
+          createdAt: "2026-01-01T08:00:00Z",
+        },
+      ],
+    },
+  ],
+};
+
+/** What `scott/rate-limit` changes, `base..head`. */
+export const localChanges: ChangedFiles = {
+  headRefOid: localBranch.head,
+  baseRefName: localBranch.base,
+  files: [
+    {
+      path: "src/limit.ts",
+      previousPath: null,
+      status: "added",
+      additions: 3,
+      deletions: 0,
+      patch: "@@ -0,0 +1,3 @@\n+export function limit() {\n+  return 3;\n+}",
+      viewed: "unviewed",
+      generated: false,
+    },
+  ],
+};

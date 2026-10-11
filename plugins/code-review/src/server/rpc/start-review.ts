@@ -1,6 +1,6 @@
 import { defineMutation } from "@bb-kit/core/rpc";
 import { z } from "zod";
-import { prKey, prRefSchema } from "../../shared/schema.ts";
+import { accountSchema, prKey, prRefSchema } from "../../shared/schema.ts";
 import { linkThread, runningReview } from "../lib/activity.ts";
 import type { CodeReviewContext } from "../lib/context.ts";
 import { createLocks } from "../lib/lock.ts";
@@ -21,12 +21,12 @@ const withLock = createLocks();
  * while a review of the same commit and base runs returns that review.
  */
 export const startReview = defineMutation({
-  input: z.strictObject({ ref: prRefSchema }),
+  input: z.strictObject({ account: accountSchema, ref: prRefSchema }),
   output: z.strictObject({ threadId: z.string() }),
-  async execute(ctx: CodeReviewContext, { ref }) {
-    const pr = await loadPrHead(ctx.gh, ref);
+  async execute(ctx: CodeReviewContext, { account, ref }) {
+    const pr = await loadPrHead(ctx.github.as(account), ref);
     return withLock(prKey(ref).toLowerCase(), async () => {
-      const running = await runningReview(ctx.bb, ctx.store, ref, pr);
+      const running = await runningReview(ctx.bb, ctx.store, prKey(ref), pr);
       if (running) return { threadId: running };
 
       const project = await requireProject(ctx.bb, ref.owner, ref.repo);
@@ -40,7 +40,7 @@ export const startReview = defineMutation({
         pluginMetadata: { kind: "review", pr: prKey(ref), headRefOid: pr.headRefOid },
         prompt: reviewPrompt(pr, { reused, instructions: await ctx.store.instructions() }),
       });
-      await linkThread(ctx.bb, ctx.store, ref, {
+      await linkThread(ctx.bb, ctx.store, prKey(ref), {
         threadId: thread.id,
         kind: "review",
         headRefOid: pr.headRefOid,

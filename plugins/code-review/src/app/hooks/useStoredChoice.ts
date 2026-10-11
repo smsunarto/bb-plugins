@@ -4,7 +4,8 @@ import { useState } from "react";
  * A choice the reader makes once and expects kept across visits, like the
  * inbox tab or the diff layout. Stored in the window's localStorage under
  * `bb-plugin-code-review:<key>`. A stored value that is not one of `choices`
- * reads as `fallback`.
+ * reads as `fallback`, checked on every render: choices that load later, like
+ * the signed-in accounts, bring the stored value back once it is one of them.
  */
 export function useStoredChoice<T extends string>(
   key: string,
@@ -12,14 +13,14 @@ export function useStoredChoice<T extends string>(
   fallback: T,
 ): [T, (next: T) => void] {
   const storageKey = `bb-plugin-code-review:${key}`;
-  const [choice, setChoice] = useState<T>(() => {
+  const [stored, setChoice] = useState<string | null>(() => {
     try {
-      const stored = window.localStorage.getItem(storageKey);
-      return choices.find((each) => each === stored) ?? fallback;
+      return window.localStorage.getItem(storageKey);
     } catch {
-      return fallback;
+      return null;
     }
   });
+  const choice = choices.find((each) => each === stored) ?? fallback;
   const choose = (next: T) => {
     setChoice(next);
     try {

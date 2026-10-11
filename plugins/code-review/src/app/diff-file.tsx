@@ -99,10 +99,14 @@ function useNearView(ref: RefObject<HTMLElement | null>): boolean {
   return near;
 }
 
-/** The file on GitHub, anchored once its hash is in. The pull request's Files tab until then. */
-function useGithubFileUrl(prUrl: string, path: string): string {
-  const [url, setUrl] = useState(`${prUrl}/files`);
+/**
+ * The file on GitHub, anchored once its hash is in. The pull request's Files
+ * tab until then. None without a pull request.
+ */
+function useGithubFileUrl(prUrl: string | null, path: string): string | null {
+  const [url, setUrl] = useState(prUrl === null ? null : `${prUrl}/files`);
   useEffect(() => {
+    if (prUrl === null) return;
     let live = true;
     void (async () => {
       try {
@@ -132,9 +136,10 @@ function FileHeader({
   open: boolean;
   bodyId: string;
   threadCount: number;
-  githubUrl: string;
+  githubUrl: string | null;
   onToggle: () => void;
-  onViewedChange: (viewed: boolean) => void;
+  /** Null where there is no Viewed mark to set: an unpublished branch. */
+  onViewedChange: ((viewed: boolean) => void) | null;
 }) {
   const status = STATUS_LOOK[file.status];
   const shown = file.previousPath ? `${file.previousPath} → ${file.path}` : file.path;
@@ -211,39 +216,43 @@ function FileHeader({
       </span>
       {/* A bordered pill with its own box, as in Pierre's diff header. Checked,
           it takes the accent, so the files left to read stand out down the list. */}
-      <label
-        className={cn(
-          "inline-flex h-6 shrink-0 cursor-pointer items-center gap-1.5 rounded-md border px-1.5 text-xs select-none has-[:focus-visible]:ring-1 has-[:focus-visible]:ring-ring",
-          viewed
-            ? "border-primary/40 bg-primary/10 text-foreground"
-            : "border-border text-muted-foreground hover:bg-state-hover hover:text-foreground",
-          CONTROL_HOVER_TRANSITION,
-        )}
-      >
-        <span className="relative grid size-3.5 shrink-0 place-items-center">
-          <input
-            type="checkbox"
-            className="peer size-3.5 cursor-pointer appearance-none rounded-[3px] border border-muted-foreground/60 bg-background outline-none checked:border-primary checked:bg-primary"
-            checked={viewed}
-            onChange={(event) => onViewedChange(event.target.checked)}
-          />
-          <Icon
-            name="Check"
-            className="pointer-events-none absolute size-2.5 text-primary-foreground opacity-0 peer-checked:opacity-100"
-            aria-hidden
-          />
-        </span>
-        Viewed
-        <span className="sr-only"> {file.path}</span>
-      </label>
-      <UrlLink
-        href={githubUrl}
-        className={ICON_BUTTON}
-        aria-label={`Open ${file.path} on GitHub`}
-        title="Open on GitHub"
-      >
-        <Icon name="ExternalLink" className="size-3.5" aria-hidden />
-      </UrlLink>
+      {onViewedChange ? (
+        <label
+          className={cn(
+            "inline-flex h-6 shrink-0 cursor-pointer items-center gap-1.5 rounded-md border px-1.5 text-xs select-none has-[:focus-visible]:ring-1 has-[:focus-visible]:ring-ring",
+            viewed
+              ? "border-primary/40 bg-primary/10 text-foreground"
+              : "border-border text-muted-foreground hover:bg-state-hover hover:text-foreground",
+            CONTROL_HOVER_TRANSITION,
+          )}
+        >
+          <span className="relative grid size-3.5 shrink-0 place-items-center">
+            <input
+              type="checkbox"
+              className="peer size-3.5 cursor-pointer appearance-none rounded-[3px] border border-muted-foreground/60 bg-background outline-none checked:border-primary checked:bg-primary"
+              checked={viewed}
+              onChange={(event) => onViewedChange(event.target.checked)}
+            />
+            <Icon
+              name="Check"
+              className="pointer-events-none absolute size-2.5 text-primary-foreground opacity-0 peer-checked:opacity-100"
+              aria-hidden
+            />
+          </span>
+          Viewed
+          <span className="sr-only"> {file.path}</span>
+        </label>
+      ) : null}
+      {githubUrl ? (
+        <UrlLink
+          href={githubUrl}
+          className={ICON_BUTTON}
+          aria-label={`Open ${file.path} on GitHub`}
+          title="Open on GitHub"
+        >
+          <Icon name="ExternalLink" className="size-3.5" aria-hidden />
+        </UrlLink>
+      ) : null}
     </div>
   );
 }
@@ -252,20 +261,27 @@ function FileHeader({
  * Why there is no diff to draw, and where to read the file instead. GitHub
  * counts no lines and sends no hunks both for a pure rename and for a binary
  * file renamed and changed, and says nothing that tells the two apart, so a
- * rename without hunks keeps the link too.
+ * rename without hunks keeps the link too. An unpublished branch's diff
+ * comes from git, with nowhere else to read it.
  */
-function NoDiff({ file, githubUrl }: { file: ChangedFile; githubUrl: string }) {
+function NoDiff({ file, githubUrl }: { file: ChangedFile; githubUrl: string | null }) {
+  const source = githubUrl ? "GitHub sends" : "Git shows";
   const text = file.patch
     ? "This diff could not be read."
     : file.status === "renamed" && file.additions + file.deletions === 0
-      ? `Renamed from ${file.previousPath ?? "another path"}. GitHub sends no diff for it, so only its name changed, or it is binary.`
-      : "GitHub sends no diff for this file. It is binary, or too large to show here.";
+      ? `Renamed from ${file.previousPath ?? "another path"}. ${source} no diff for it, so only its name changed, or it is binary.`
+      : `${source} no diff for this file. It is binary, or too large to show here.`;
   return (
     <p className="px-3 py-2.5 leading-normal text-muted-foreground">
-      {text}{" "}
-      <UrlLink href={githubUrl} className="text-primary underline-offset-2 hover:underline">
-        View on GitHub
-      </UrlLink>
+      {text}
+      {githubUrl ? (
+        <>
+          {" "}
+          <UrlLink href={githubUrl} className="text-primary underline-offset-2 hover:underline">
+            View on GitHub
+          </UrlLink>
+        </>
+      ) : null}
     </p>
   );
 }
@@ -279,7 +295,7 @@ function Detached({
   findingsStale,
   revision,
 }: {
-  pr: PullRequest;
+  pr: PullRequest | null;
   heading: string;
   threads: readonly ReviewThread[];
   findings: readonly Finding[];
@@ -293,9 +309,11 @@ function Detached({
       className="flex flex-col gap-2 border-b border-border px-3 py-2.5"
     >
       <h4 className="font-medium text-muted-foreground">{heading}</h4>
-      {threads.map((thread) => (
-        <ReviewThreadView key={thread.id} pr={pr} thread={thread} showContext />
-      ))}
+      {pr
+        ? threads.map((thread) => (
+            <ReviewThreadView key={thread.id} pr={pr} thread={thread} showContext />
+          ))
+        : null}
       {findings.map((finding) => (
         <InlineFinding
           key={finding.id}
@@ -354,7 +372,7 @@ function InlineFinding({
   stale,
   revision,
 }: {
-  pr: PullRequest;
+  pr: PullRequest | null;
   finding: Finding;
   stale: boolean;
   /** The diff on screen. */
@@ -383,12 +401,14 @@ function AnnotationRow({
   findingsStale,
 }: {
   data: Exclude<AnnotationData, { kind: "composer" }>;
-  pr: PullRequest;
+  pr: PullRequest | null;
   /** The diff on screen. */
   revision: DiffRevision;
   findingsStale: boolean;
 }) {
-  if (data.kind === "thread") return <ReviewThreadView pr={pr} thread={data.thread} />;
+  if (data.kind === "thread") {
+    return pr ? <ReviewThreadView pr={pr} thread={data.thread} /> : null;
+  }
   return <InlineFinding pr={pr} finding={data.finding} stale={findingsStale} revision={revision} />;
 }
 
@@ -400,9 +420,10 @@ function annotationKey(data: AnnotationData): string {
 }
 
 /**
- * The diff itself, with threads and findings inline. The gutter's "+" opens
- * a comment form on that line; dragging it, or selecting line numbers first,
- * comments on a range. Pierre mounts only once the card nears the viewport.
+ * The diff itself, with threads and findings inline. On a pull request, the
+ * gutter's "+" opens a comment form on that line; dragging it, or selecting
+ * line numbers first, comments on a range. Pierre mounts only once the card
+ * nears the viewport.
  */
 function Diff({
   pr,
@@ -415,7 +436,7 @@ function Diff({
   diffStyle,
   focus,
 }: {
-  pr: PullRequest;
+  pr: PullRequest | null;
   file: ChangedFile;
   parsed: FileDiffMetadata;
   lines: DiffLines;
@@ -487,32 +508,35 @@ function Diff({
   const composerSaved = useStableCallback((threadId: string) => {
     setComposer((current) => current && { ...current, saved: threadId });
   });
+  // A branch has no pull request to hold a comment.
+  const commentable = pr !== null;
   const options = useMemo(
     () => ({
       disableFileHeader: true,
       diffStyle,
       theme: name,
       themeType: mode,
-      enableGutterUtility: true,
+      enableGutterUtility: commentable,
       enableLineSelection: true,
       onGutterUtilityClick,
       onLineSelectionEnd,
     }),
-    [diffStyle, mode, name, onGutterUtilityClick, onLineSelectionEnd],
+    [diffStyle, mode, name, commentable, onGutterUtilityClick, onLineSelectionEnd],
   );
 
-  const form = composer ? (
-    <NewCommentForm
-      pr={pr}
-      headRefOid={composer.picked.headRefOid}
-      baseRefName={composer.picked.baseRefName}
-      linesMoved={!sameRevision(composer.picked, revision)}
-      path={file.path}
-      target={composer.target}
-      onSaved={composerSaved}
-      onClose={closeComposer}
-    />
-  ) : null;
+  const form =
+    composer && pr ? (
+      <NewCommentForm
+        pr={pr}
+        headRefOid={composer.picked.headRefOid}
+        baseRefName={composer.picked.baseRefName}
+        linesMoved={!sameRevision(composer.picked, revision)}
+        path={file.path}
+        target={composer.target}
+        onSaved={composerSaved}
+        onClose={closeComposer}
+      />
+    ) : null;
 
   const drawn = drawnRows(parsed, diffStyle);
   return (
@@ -565,7 +589,7 @@ function FileBody({
   focus,
   githubUrl,
 }: {
-  pr: PullRequest;
+  pr: PullRequest | null;
   file: ChangedFile;
   threads: readonly ReviewThread[];
   findings: readonly Finding[];
@@ -573,7 +597,7 @@ function FileBody({
   revision: DiffRevision;
   diffStyle: DiffStyle;
   focus: { line: number; side: DiffSide } | null;
-  githubUrl: string;
+  githubUrl: string | null;
 }) {
   const parsed = useMemo(() => parseFilePatch(file), [file]);
   const lines = useMemo(() => (parsed ? diffLines(parsed) : NO_LINES), [parsed]);
@@ -612,7 +636,7 @@ function FileBody({
         findingsStale={findingsStale}
         revision={revision}
       />
-      <Outdated pr={pr} threads={placedThreads.outdated} />
+      {pr ? <Outdated pr={pr} threads={placedThreads.outdated} /> : null}
       <Diff
         pr={pr}
         file={file}
@@ -650,7 +674,9 @@ function FoldedDiffHint({ file, onShow }: { file: ChangedFile; onShow: () => voi
 
 /**
  * One changed file: a sticky header with its Viewed box, and the body below
- * it while the card is open.
+ * it while the card is open. Without a pull request (an unpublished branch)
+ * there are no threads, comments, or Viewed marks: only the diff and bb's
+ * findings.
  */
 export const DiffFile = memo(function DiffFile({
   pr,
@@ -666,7 +692,7 @@ export const DiffFile = memo(function DiffFile({
   onOpenChange,
   onViewedChange,
 }: {
-  pr: PullRequest;
+  pr: PullRequest | null;
   file: ChangedFile;
   /** The head these patches belong to. New comments are counted against it. */
   headRefOid: string;
@@ -681,10 +707,10 @@ export const DiffFile = memo(function DiffFile({
   /** A line to select and bring into view. A new object for each reveal. */
   focus: { line: number; side: DiffSide } | null;
   onOpenChange: (path: string, open: boolean) => void;
-  onViewedChange: (file: ChangedFile, viewed: boolean) => void;
+  onViewedChange: ((file: ChangedFile, viewed: boolean) => void) | null;
 }) {
   const bodyId = useId();
-  const githubUrl = useGithubFileUrl(pr.url, file.path);
+  const githubUrl = useGithubFileUrl(pr?.url ?? null, file.path);
   const folded = !open && startsFolded(file);
   const revision = useMemo(() => ({ headRefOid, baseRefName }), [headRefOid, baseRefName]);
 
@@ -704,7 +730,7 @@ export const DiffFile = memo(function DiffFile({
         threadCount={threads.length}
         githubUrl={githubUrl}
         onToggle={() => onOpenChange(file.path, !open)}
-        onViewedChange={(viewed) => onViewedChange(file, viewed)}
+        onViewedChange={onViewedChange ? (viewed) => onViewedChange(file, viewed) : null}
       />
       {folded ? <FoldedDiffHint file={file} onShow={() => onOpenChange(file.path, true)} /> : null}
       <div id={bodyId} hidden={!open}>

@@ -9,6 +9,24 @@ import { z } from "zod";
  * the same drafts, and nothing is posted until the review is submitted.
  */
 
+// ── Accounts ─────────────────────────────────────────────────────────────
+
+/**
+ * A github.com login `gh` is signed in to on the bb server. Every GitHub read
+ * and write names the account it acts as: drafts, viewed marks, and review
+ * requests all belong to one person.
+ */
+export const accountSchema = z
+  .string()
+  // Enterprise Managed Users add `_<shortcode>`, e.g. `mona-cat_octo`. Never a leading dash.
+  .regex(/^[A-Za-z0-9][A-Za-z0-9_-]{0,99}$/, "Not a GitHub login.");
+export type Account = z.infer<typeof accountSchema>;
+
+/** `login` and `other` are one GitHub account: logins ignore case. */
+export function sameAccount(login: string, other: string): boolean {
+  return login.toLowerCase() === other.toLowerCase();
+}
+
 // ── Pull request identity ────────────────────────────────────────────────
 
 export const prRefSchema = z.strictObject({
@@ -18,9 +36,25 @@ export const prRefSchema = z.strictObject({
 });
 export type PrRef = z.infer<typeof prRefSchema>;
 
+/**
+ * A pinned pull request and the account it was pinned as, which the inbox
+ * reads it with. Pins saved before accounts existed have none and read as
+ * gh's active account.
+ */
+export const pinSchema = prRefSchema.extend({ account: accountSchema.optional() });
+export type Pin = z.infer<typeof pinSchema>;
+
 /** `owner/repo#123`. Stable storage and query key for one pull request. */
 export function prKey(ref: PrRef): string {
   return `${ref.owner}/${ref.repo}#${ref.number}`;
+}
+
+/**
+ * What a bb review or fix works on, as storage and realtime name it: a pull
+ * request's {@link prKey}, or `branch:<id>` for an unpublished branch.
+ */
+export function branchKey(id: string): string {
+  return `branch:${id}`;
 }
 
 export function sameRef(a: PrRef, b: PrRef): boolean {
@@ -52,20 +86,56 @@ export function parsePrReference(text: string): PrRef | null {
 export const PR_TABS = ["summary", "changes", "checks"] as const;
 export type PrTab = (typeof PR_TABS)[number];
 
-/** The page's subPath for a pull request tab: `owner/repo/pull/123[/changes|/checks]`. */
-export function prSubPath(ref: PrRef, tab: PrTab = "summary"): string {
-  const base = `${ref.owner}/${ref.repo}/pull/${ref.number}`;
+export type PrRoute = { ref: PrRef; tab: PrTab; account: Account | null };
+
+/**
+ * The page's subPath for a pull request tab read as `account`:
+ * `@login/owner/repo/pull/123[/changes|/checks]`. Without an account the
+ * page picks one, so a pasted link still opens.
+ */
+export function prSubPath(ref: PrRef, tab: PrTab = "summary", account?: Account | null): string {
+  const pull = `${ref.owner}/${ref.repo}/pull/${ref.number}`;
+  const base = account ? `@${account}/${pull}` : pull;
   return tab === "summary" ? base : `${base}/${tab}`;
 }
 
 /** Inverse of {@link prSubPath}. Null for the inbox (`""`) and anything unknown. */
-export function parsePrSubPath(subPath: string): { ref: PrRef; tab: PrTab } | null {
-  const parts = subPath.replace(/^\/+|\/+$/g, "").split("/");
+export function parsePrSubPath(subPath: string): PrRoute | null {
+  const all = subPath.replace(/^\/+|\/+$/g, "").split("/");
+  // A login never holds `@`, and an owner never starts with one.
+  const login = all[0]?.startsWith("@") ? all[0].slice(1) : null;
+  const account = login === null ? null : accountSchema.safeParse(login);
+  if (account && !account.success) return null;
+  const parts = login === null ? all : all.slice(1);
   if (parts.length < 4 || parts.length > 5 || parts[2] !== "pull") return null;
   const ref = parsePrReference(`${parts[0]}/${parts[1]}#${parts[3]}`);
   if (!ref) return null;
   const tab = parts[4] ?? "summary";
-  return (PR_TABS as readonly string[]).includes(tab) ? { ref, tab: tab as PrTab } : null;
+  if (!(PR_TABS as readonly string[]).includes(tab)) return null;
+  return { ref, tab: tab as PrTab, account: account?.data ?? null };
+}
+
+export const BRANCH_TABS = ["summary", "changes"] as const;
+export type BranchTab = (typeof BRANCH_TABS)[number];
+
+/** An unpublished branch's id: hex, from its machine, checkout, and name. */
+export const branchIdSchema = z.string().regex(/^[0-9a-f]{12}$/, "Not a branch id.");
+
+export type BranchRoute = { id: string; tab: BranchTab };
+
+/** The page's subPath for an unpublished branch tab: `branch/<id>[/changes]`. */
+export function branchSubPath(id: string, tab: BranchTab = "summary"): string {
+  return tab === "summary" ? `branch/${id}` : `branch/${id}/${tab}`;
+}
+
+/** Inverse of {@link branchSubPath}. Null for anything else. */
+export function parseBranchSubPath(subPath: string): BranchRoute | null {
+  const parts = subPath.replace(/^\/+|\/+$/g, "").split("/");
+  if (parts.length < 2 || parts.length > 3 || parts[0] !== "branch") return null;
+  const id = branchIdSchema.safeParse(parts[1]);
+  const tab = parts[2] ?? "summary";
+  if (!id.success || !(BRANCH_TABS as readonly string[]).includes(tab)) return null;
+  return { id: id.data, tab: tab as BranchTab };
 }
 
 // ── Shared vocabulary ────────────────────────────────────────────────────
@@ -103,9 +173,15 @@ export type ReviewEvent = z.infer<typeof reviewEventSchema>;
 
 // ── Status ───────────────────────────────────────────────────────────────
 
-/** Whether the server can reach GitHub through the `gh` CLI. */
+/** Whether the server can reach GitHub through the `gh` CLI, and as whom. */
 export const statusSchema = z.discriminatedUnion("ok", [
-  z.object({ ok: z.literal(true), login: z.string() }),
+  z.object({
+    ok: z.literal(true),
+    /** gh's active account: the one a pull request opens as when nothing says otherwise. */
+    login: accountSchema,
+    /** Every signed-in github.com account, the active one first. */
+    accounts: z.array(accountSchema).min(1),
+  }),
   z.object({
     ok: z.literal(false),
     reason: z.enum(["gh-missing", "unauthenticated", "failed"]),
@@ -118,6 +194,8 @@ export type Status = z.infer<typeof statusSchema>;
 
 export const inboxPrSchema = z.object({
   ref: prRefSchema,
+  /** The signed-in account this pull request waits on, or was pinned as. Its page acts as it. */
+  account: accountSchema,
   title: z.string(),
   url: z.string(),
   state: prStateSchema,
@@ -141,8 +219,18 @@ export type InboxPr = z.infer<typeof inboxPrSchema>;
 export const INBOX_SECTIONS = ["assigned", "team", "authored"] as const;
 export type InboxSection = (typeof INBOX_SECTIONS)[number];
 
+/** A signed-in account whose queues could not be read, and why. */
+export const unavailableAccountSchema = z.object({ account: accountSchema, message: z.string() });
+
+/**
+ * Every signed-in account's queues, merged. A pull request shows once per
+ * section, as the first account (active first) it waits on.
+ */
 export const inboxSchema = z.object({
-  viewer: z.string(),
+  /** Every signed-in account, the active one first. */
+  accounts: z.array(accountSchema),
+  /** Accounts whose queues failed to load. The rest still show. */
+  unavailable: z.array(unavailableAccountSchema),
   /** Review requested from the viewer directly, or assigned to the viewer. */
   assigned: z.array(inboxPrSchema),
   /** Review requested from one of the viewer's teams, and not the viewer directly. */
@@ -250,6 +338,8 @@ export type StackPr = z.infer<typeof stackPrSchema>;
 
 export const pullRequestSchema = z.object({
   ref: prRefSchema,
+  /** The signed-in account this was read as. Every later read and write on it names the same one. */
+  account: accountSchema,
   /** GraphQL node id. Every review mutation takes it. */
   id: z.string(),
   title: z.string(),
@@ -344,6 +434,49 @@ export const changedFilesSchema = z.object({
   files: z.array(changedFileSchema),
 });
 export type ChangedFiles = z.infer<typeof changedFilesSchema>;
+
+// ── Unpublished branches ─────────────────────────────────────────────────
+
+export const localCommitSchema = z.object({
+  commitId: z.string(),
+  message: z.string(),
+  authorName: z.string(),
+  createdAt: z.string(),
+});
+export type LocalCommit = z.infer<typeof localCommitSchema>;
+
+/**
+ * A GitButler branch with commits and no pull request, in a checkout on a
+ * machine bb knows. The GitButler plugin reads them; see `lib/gitbutler.ts`.
+ */
+export const localBranchSchema = z.object({
+  id: branchIdSchema,
+  hostId: z.string(),
+  machine: z.string(),
+  /** The checkout's path on its machine. */
+  path: z.string(),
+  repoName: z.string(),
+  /** `owner/repo` on github.com. Null for a checkout with no GitHub origin. */
+  repository: z.string().nullable(),
+  branch: z.string(),
+  /** GitButler's push status: `unpushed`, `ahead`, `pushed`, … */
+  status: z.string(),
+  head: z.string(),
+  /** The commit the branch starts from. `base..head` is the branch. */
+  base: z.string(),
+  /** The branch it is stacked on, or null at the bottom of its stack. */
+  parent: z.string().nullable(),
+  /** Newest first. */
+  commits: z.array(localCommitSchema).min(1),
+});
+export type LocalBranch = z.infer<typeof localBranchSchema>;
+
+/** Unpublished branches, or why there are none to read: the GitButler plugin is not on. */
+export const localBranchesSchema = z.discriminatedUnion("available", [
+  z.object({ available: z.literal(true), branches: z.array(localBranchSchema) }),
+  z.object({ available: z.literal(false), reason: z.string() }),
+]);
+export type LocalBranches = z.infer<typeof localBranchesSchema>;
 
 // ── Checks ───────────────────────────────────────────────────────────────
 

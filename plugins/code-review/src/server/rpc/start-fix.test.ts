@@ -37,7 +37,14 @@ test("spawns the composed thread, titled and linked to the pull request and its 
   );
   const ref = { owner: "acme", repo: "api", number: 1034 };
 
-  expect(await callProcedure(startFix, ctx, { ref, headRefOid: "abc", request: REQUEST })).toEqual({
+  expect(
+    await callProcedure(startFix, ctx, {
+      account: "octocat",
+      ref,
+      headRefOid: "abc",
+      request: REQUEST,
+    }),
+  ).toEqual({
     threadId: "thr_fix",
   });
 
@@ -59,6 +66,7 @@ test("refuses something that is not a new-thread request", async () => {
   const { ctx } = fakeContext();
   await expect(
     callProcedure(startFix, ctx, {
+      account: "octocat",
       ref: { owner: "acme", repo: "api", number: 1 },
       headRefOid: "abc",
       request: { prompt: "hi" },

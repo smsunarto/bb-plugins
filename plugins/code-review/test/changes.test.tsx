@@ -116,7 +116,7 @@ function handlers(calls: Call[]) {
       return result(input);
     };
   return {
-    status: () => ({ ok: true, login: "scott" }),
+    status: () => ({ ok: true, login: "scott", accounts: ["scott"] }),
     inbox: () => inbox,
     pullRequest: () => pr,
     checks: () => checks,
@@ -220,7 +220,7 @@ test("marking a file viewed tells GitHub and folds its card", async () => {
   expect(calls).toEqual([
     {
       method: "setViewed",
-      input: { pullRequestId: "PR_kwDOA42", path: "src/login.ts", viewed: true },
+      input: { account: "scott", pullRequestId: "PR_kwDOA42", path: "src/login.ts", viewed: true },
     },
   ]);
   expect(slot.getByRole("button", { name: "Expand src/login.ts" })).toBeTruthy();
@@ -252,7 +252,7 @@ test("quick Viewed clicks reach GitHub one at a time, and it ends at the last cl
     }) as HTMLInputElement;
   const write = (viewed: boolean) => ({
     method: "setViewed",
-    input: { pullRequestId: "PR_kwDOA42", path: "src/login.ts", viewed },
+    input: { account: "scott", pullRequestId: "PR_kwDOA42", path: "src/login.ts", viewed },
   });
 
   fireEvent.click(box());
@@ -296,7 +296,7 @@ test("a Viewed click after leaving the tab and coming back waits for the one bef
     }) as HTMLInputElement;
   const write = (viewed: boolean) => ({
     method: "setViewed",
-    input: { pullRequestId: "PR_kwDOA42", path: "src/login.ts", viewed },
+    input: { account: "scott", pullRequestId: "PR_kwDOA42", path: "src/login.ts", viewed },
   });
 
   const first = render();
@@ -424,7 +424,12 @@ test("a reply on an outdated thread goes into the pending review", async () => {
     expect(calls).toEqual([
       {
         method: "replyDraft",
-        input: { pullRequestId: "PR_kwDOA42", threadId: "T2", body: "Still true after the push." },
+        input: {
+          account: "scott",
+          pullRequestId: "PR_kwDOA42",
+          threadId: "T2",
+          body: "Still true after the push.",
+        },
       },
     ]),
   );
@@ -442,7 +447,9 @@ test("deleting a draft asks first, then deletes only that comment", async () => 
   fireEvent.click(slot.getByRole("button", { name: "Delete" }));
 
   await waitFor(() =>
-    expect(calls).toEqual([{ method: "deleteDraft", input: { commentId: "C2" } }]),
+    expect(calls).toEqual([
+      { method: "deleteDraft", input: { account: "scott", commentId: "C2" } },
+    ]),
   );
   slot.lifecycle.unmount();
 });
@@ -541,7 +548,9 @@ test("a thread on a file no longer in the diff is listed below the files, drafts
   fireEvent.click(reverted.getByRole("button", { name: "Delete draft comment" }));
   fireEvent.click(reverted.getByRole("button", { name: "Delete" }));
   await waitFor(() =>
-    expect(calls).toEqual([{ method: "deleteDraft", input: { commentId: "C3" } }]),
+    expect(calls).toEqual([
+      { method: "deleteDraft", input: { account: "scott", commentId: "C3" } },
+    ]),
   );
   slot.lifecycle.unmount();
 });
@@ -565,7 +574,9 @@ test("when a push reverts every file, its drafts are still listed to delete", as
   fireEvent.click(reverted.getByRole("button", { name: "Delete draft comment" }));
   fireEvent.click(reverted.getByRole("button", { name: "Delete" }));
   await waitFor(() =>
-    expect(calls).toEqual([{ method: "deleteDraft", input: { commentId: "C3" } }]),
+    expect(calls).toEqual([
+      { method: "deleteDraft", input: { account: "scott", commentId: "C3" } },
+    ]),
   );
   slot.lifecycle.unmount();
 });
@@ -687,7 +698,7 @@ test("files still behind after a read are read again later, then offer a refresh
   // A later read that slips back behind gets fresh tries, not the spent ones.
   act(() => {
     void pluginQueryClient.invalidateQueries({
-      queryKey: rpc.changedFiles.queryKey({ ref: pr.ref }),
+      queryKey: rpc.changedFiles.queryKey({ account: pr.account, ref: pr.ref }),
     });
   });
   await waitFor(() => expect(held).toHaveLength(6));
@@ -738,7 +749,7 @@ test("a push to the pull request starts its spent tries over", async () => {
     current = { ...pr, headRefOid: "5".repeat(40) };
     await act(async () => {
       await pluginQueryClient.invalidateQueries({
-        queryKey: rpc.pullRequest.queryKey({ ref: pr.ref }),
+        queryKey: rpc.pullRequest.queryKey({ account: pr.account, ref: pr.ref }),
       });
     });
     await tick(0);
@@ -802,6 +813,7 @@ test("a new comment on a range is one addDraftComment, then the form reports the
     {
       method: "addDraftComment",
       input: {
+        account: "scott",
         pullRequestId: "PR_kwDOA42",
         headRefOid: "abc123",
         baseRefName: "main",
@@ -817,4 +829,66 @@ test("a new comment on a range is one addDraftComment, then the form reports the
   fireEvent.click(await slot.findByRole("button", { name: "Close" }));
   expect(closed).toBe(1);
   slot.lifecycle.unmount();
+});
+
+test("a Viewed error belongs to the account that wrote it, not to another reading the same pull request", async () => {
+  const { panel } = await changesTab();
+  const rpc = {
+    ...handlers([]),
+    status: () => ({ ok: true, login: "scott", accounts: ["scott", "scott-work"] }),
+    pullRequest: (input: { account: string }) => ({ ...pr, account: input.account }),
+    setViewed: () => Promise.reject(new Error("GitHub is down.")),
+  } as never;
+  const failure = "Could not mark src/login.ts as viewed. GitHub is down.";
+  const open = (account: string) =>
+    renderSlot(panel, { subPath: `@${account}/${CHANGES}` }, { rpc });
+
+  const scott = open("scott");
+  await scott.findByText("1 of 3 files viewed");
+  const card = scott.getByRole("article", { name: "src/login.ts" });
+  fireEvent.click(within(card).getByRole("checkbox", { name: "Viewed src/login.ts" }));
+  await scott.findByText(failure);
+  scott.lifecycle.unmount();
+
+  const work = open("scott-work");
+  await work.findByText("1 of 3 files viewed");
+  expect(work.queryByText(failure)).toBeNull();
+  work.lifecycle.unmount();
+
+  const again = open("scott");
+  expect(await again.findByText(failure)).toBeTruthy();
+  fireEvent.click(again.getByRole("button", { name: "Dismiss" }));
+  again.lifecycle.unmount();
+});
+
+test("comment text typed as one account does not open in the form of another", () => {
+  const Form = ({ account }: { account: string }) => (
+    <PluginQueryBoundary>
+      <NewCommentForm
+        pr={{ ...pr, account }}
+        headRefOid="abc123"
+        baseRefName="main"
+        path="src/login.ts"
+        target={{ line: 5, side: "RIGHT", startLine: null, startSide: null }}
+        onSaved={() => {}}
+        onClose={() => {}}
+      />
+    </PluginQueryBoundary>
+  );
+  const name = "Comment on line 5 of src/login.ts";
+  const typed = renderSlot({ component: () => <Form account="scott" /> }, {}, { rpc: {} as never });
+  fireEvent.change(typed.getByRole("textbox", { name }), { target: { value: "Needs a test" } });
+  typed.lifecycle.unmount();
+
+  const other = renderSlot(
+    { component: () => <Form account="scott-work" /> },
+    {},
+    { rpc: {} as never },
+  );
+  expect((other.getByRole("textbox", { name }) as HTMLTextAreaElement).value).toBe("");
+  other.lifecycle.unmount();
+
+  const again = renderSlot({ component: () => <Form account="Scott" /> }, {}, { rpc: {} as never });
+  expect((again.getByRole("textbox", { name }) as HTMLTextAreaElement).value).toBe("Needs a test");
+  again.lifecycle.unmount();
 });

@@ -9,19 +9,28 @@ function store() {
 
 test("pins keep their order, ignore case, and stop at the limit", async () => {
   const { store: s } = store();
-  await s.setPinned({ owner: "cli", repo: "cli", number: 1 }, true);
-  await s.setPinned({ owner: "acme", repo: "api", number: 2 }, true);
-  expect(await s.setPinned({ owner: "CLI", repo: "CLI", number: 1 }, true)).toEqual([
-    { owner: "cli", repo: "cli", number: 1 },
-    { owner: "acme", repo: "api", number: 2 },
+  await s.setPinned({ owner: "cli", repo: "cli", number: 1 }, true, "work");
+  await s.setPinned({ owner: "acme", repo: "api", number: 2 }, true, "home");
+  // Pinned once: pinned again as the same account it stays, as another it moves there.
+  expect(await s.setPinned({ owner: "CLI", repo: "CLI", number: 1 }, true, "WORK")).toEqual([
+    { owner: "cli", repo: "cli", number: 1, account: "work" },
+    { owner: "acme", repo: "api", number: 2, account: "home" },
   ]);
-  expect(await s.setPinned({ owner: "Cli", repo: "cli", number: 1 }, false)).toEqual([
-    { owner: "acme", repo: "api", number: 2 },
+  expect(await s.setPinned({ owner: "CLI", repo: "CLI", number: 1 }, true, "home")).toEqual([
+    { owner: "cli", repo: "cli", number: 1, account: "home" },
+    { owner: "acme", repo: "api", number: 2, account: "home" },
+  ]);
+  expect(await s.pins()).toEqual([
+    { owner: "cli", repo: "cli", number: 1, account: "home" },
+    { owner: "acme", repo: "api", number: 2, account: "home" },
+  ]);
+  expect(await s.setPinned({ owner: "Cli", repo: "cli", number: 1 }, false, "home")).toEqual([
+    { owner: "acme", repo: "api", number: 2, account: "home" },
   ]);
 
   for (let n = 3; n <= MAX_PINS + 1; n++)
-    await s.setPinned({ owner: "o", repo: "r", number: n }, true);
-  await expect(s.setPinned({ owner: "o", repo: "r", number: 999 }, true)).rejects.toThrow(
+    await s.setPinned({ owner: "o", repo: "r", number: n }, true, "work");
+  await expect(s.setPinned({ owner: "o", repo: "r", number: 999 }, true, "work")).rejects.toThrow(
     "You can pin up to 50 pull requests. Unpin one first.",
   );
 });
@@ -34,11 +43,10 @@ test("instructions are trimmed, and blank clears them", async () => {
   expect(await kv.list()).toEqual([]);
 });
 
-test("links are newest first per pull request, shared across case, and the oldest are forgotten", async () => {
+test("links are newest first per subject, shared across case, and the oldest are forgotten", async () => {
   const { store: s, kv } = store();
-  const ref = { owner: "Cli", repo: "CLI", number: 7 };
   for (let n = 1; n <= MAX_LINKS + 1; n++) {
-    await s.addLink(ref, {
+    await s.addLink("Cli/CLI#7", {
       threadId: `t${n}`,
       kind: "review",
       createdAt: `${n}`,
@@ -55,14 +63,13 @@ test("links are newest first per pull request, shared across case, and the oldes
     findings: [],
   });
 
-  const links = await s.links({ owner: "cli", repo: "cli", number: 7 });
+  const links = await s.links("cli/cli#7");
   expect(links).toHaveLength(MAX_LINKS);
   expect(links[0]?.threadId).toBe("t21");
   expect(links.at(-1)?.threadId).toBe("t2");
   expect(await s.linkForThread("t1")).toBeNull();
   expect(await s.linkForThread("t21")).toEqual({
     key: "Cli/CLI#7",
-    ref: { owner: "Cli", repo: "CLI", number: 7 },
     link: {
       threadId: "t21",
       kind: "review",
@@ -73,7 +80,7 @@ test("links are newest first per pull request, shared across case, and the oldes
   });
 
   // One more pushes t2 out, with its run.
-  await s.addLink(ref, {
+  await s.addLink("Cli/CLI#7", {
     threadId: "t22",
     kind: "fix",
     createdAt: "22",
@@ -89,24 +96,27 @@ test("pins made at once both land", async () => {
   const a = { owner: "cli", repo: "cli", number: 1 };
   const b = { owner: "acme", repo: "api", number: 2 };
 
-  await Promise.all([s.setPinned(a, true), s.setPinned(b, true)]);
+  await Promise.all([s.setPinned(a, true, "work"), s.setPinned(b, true, "work")]);
 
-  expect(await s.pins()).toEqual([a, b]);
+  expect(await s.pins()).toEqual([
+    { ...a, account: "work" },
+    { ...b, account: "work" },
+  ]);
 });
 
 test("threads linked at once are both remembered", async () => {
   const { store: s } = store();
-  const ref = { owner: "cli", repo: "cli", number: 7 };
+  const key = "branch:0a1b2c3d4e5f";
 
   await Promise.all([
-    s.addLink(ref, {
+    s.addLink(key, {
       threadId: "t1",
       kind: "review",
       createdAt: "1",
       headRefOid: "abc",
       baseRefName: "main",
     }),
-    s.addLink(ref, {
+    s.addLink(key, {
       threadId: "t2",
       kind: "fix",
       createdAt: "2",
@@ -115,7 +125,8 @@ test("threads linked at once are both remembered", async () => {
     }),
   ]);
 
-  expect((await s.links(ref)).map((link) => link.threadId)).toEqual(["t2", "t1"]);
+  expect((await s.links(key)).map((link) => link.threadId)).toEqual(["t2", "t1"]);
+  expect((await s.linkForThread("t1"))?.key).toBe(key);
 });
 
 test("a record saved before a field existed is skipped, and the rest still read", async () => {
@@ -133,7 +144,7 @@ test("a record saved before a field existed is skipped, and the rest still read"
   await kv.set("run:thr_old", { threadId: "thr_old", headRefOid: "abc", reportedAt: null });
   await kv.set("pins", [{ owner: "cli", repo: "cli", number: 7 }, { owner: "cli" }]);
 
-  expect(await s.links(ref)).toEqual([current]);
+  expect(await s.links("cli/cli#7")).toEqual([current]);
   expect(await s.run("thr_old")).toBeNull();
   expect(await s.pins()).toEqual([ref]);
 });

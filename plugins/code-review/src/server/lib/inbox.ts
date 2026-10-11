@@ -1,5 +1,12 @@
-import { type Inbox, type InboxPr, type PrRef, prKey } from "../../shared/schema.ts";
-import type { Gh } from "./gh.ts";
+import {
+  type Inbox,
+  type InboxPr,
+  type Pin,
+  type PrRef,
+  prKey,
+  sameAccount,
+} from "../../shared/schema.ts";
+import type { Gh, GitHub } from "./gh.ts";
 import {
   type GqlActor,
   actor,
@@ -10,10 +17,11 @@ import {
 } from "./github.ts";
 
 /*
- * The inbox is one GraphQL request: four searches and one `resource(url:)`
- * lookup per pin. `resource` answers null for a pull request that no longer
- * exists or that the viewer lost access to, where `repository(...)` would
- * fail the whole request, so a stale pin drops out instead.
+ * Each signed-in account's inbox is one GraphQL request: four searches and
+ * one `resource(url:)` lookup per pin. `resource` answers null for a pull
+ * request that no longer exists or that the viewer lost access to, where
+ * `repository(...)` would fail the whole request, so a stale pin drops out
+ * instead. The accounts' inboxes are read side by side and merged.
  */
 
 const OPEN = "is:pr is:open archived:false";
@@ -97,10 +105,11 @@ export type GqlInbox = {
   authored: Search;
 } & Record<`p${number}`, GqlInboxPr | Record<string, never> | null>;
 
-export function mapInboxPr(node: GqlInboxPr, viewer: string): InboxPr {
+export function mapInboxPr(node: GqlInboxPr, viewer: string, account: string): InboxPr {
   const rollup = node.commits.nodes[0]?.commit.statusCheckRollup;
   return {
     ref: { owner: node.repository.owner.login, repo: node.repository.name, number: node.number },
+    account,
     title: node.title,
     url: node.url,
     state: prState(node.state),
@@ -133,16 +142,20 @@ function pullRequests(nodes: readonly (GqlInboxPr | Record<string, never> | null
 
 const newestFirst = (a: InboxPr, b: InboxPr) => b.updatedAt.localeCompare(a.updatedAt);
 
+/** One account's sections, before they merge with the other accounts'. */
+export type AccountInbox = Pick<Inbox, "assigned" | "team" | "authored" | "pinned">;
+
 /**
- * Sorts the searches into sections. A pull request appears in one review
- * section at most: requested from the viewer or assigned to them first,
- * then through a team. The viewer's own pull requests are under Authored
- * only, even when they assigned themselves.
+ * Sorts one account's searches into sections. A pull request appears in one
+ * review section at most: requested from the viewer or assigned to them
+ * first, then through a team. The viewer's own pull requests are under
+ * Authored only, even when they assigned themselves.
  */
-export function mapInbox(data: GqlInbox, pinCount: number): Inbox {
+export function mapInbox(data: GqlInbox, pinCount: number, account: string): AccountInbox {
   const viewer = data.viewer.login;
   const mine = (pr: InboxPr) => pr.author?.login.toLowerCase() === viewer.toLowerCase();
-  const map = (nodes: Search["nodes"]) => pullRequests(nodes).map((n) => mapInboxPr(n, viewer));
+  const map = (nodes: Search["nodes"]) =>
+    pullRequests(nodes).map((n) => mapInboxPr(n, viewer, account));
 
   const assigned = new Map<string, InboxPr>();
   for (const pr of [...map(data.requested.nodes), ...map(data.assignee.nodes)]) {
@@ -152,18 +165,98 @@ export function mapInbox(data: GqlInbox, pinCount: number): Inbox {
   const pinned = pullRequests(Array.from({ length: pinCount }, (_, i) => data[`p${i}`] ?? null));
 
   return {
-    viewer,
     assigned: [...assigned.values()].sort(newestFirst),
     team: team.sort(newestFirst),
     authored: map(data.authored.nodes).sort(newestFirst),
-    pinned: pinned.map((node) => mapInboxPr(node, viewer)),
+    pinned: pinned.map((node) => mapInboxPr(node, viewer, account)),
   };
 }
 
-export async function loadInbox(gh: Gh, pins: PrRef[]): Promise<Inbox> {
+/** One account's inbox, read as `account` through `gh`. */
+export async function loadInbox(gh: Gh, pins: PrRef[], account: string): Promise<AccountInbox> {
   const data = (await gh.graphql(inboxQuery(pins.length), inboxVariables(pins), {
     // A pin in an org that now enforces SAML answers FORBIDDEN: it drops out like a deleted one.
     optionalRoot: (name) => /^p\d+$/.test(name),
   })) as GqlInbox;
-  return mapInbox(data, pins.length);
+  return mapInbox(data, pins.length, account);
+}
+
+/** The signed-in account a pin reads as. A pin from before accounts reads as the active one. */
+function pinAccount(pin: Pin, accounts: readonly string[]): string | null {
+  if (pin.account === undefined) return accounts[0] ?? null;
+  return accounts.find((account) => sameAccount(account, pin.account ?? "")) ?? null;
+}
+
+/**
+ * Merges the accounts' inboxes. Each account keeps its own entries, so
+ * filtering to one account shows all it waits on; a pull request waiting on
+ * an account directly is not repeated under that account's My team. The
+ * page shows one entry per pull request across accounts (`inboxFor`). Pins
+ * keep their saved order.
+ */
+export function mergeInboxes(
+  accounts: string[],
+  inboxes: (AccountInbox | null)[],
+  pins: Pin[],
+): Omit<Inbox, "accounts" | "unavailable"> {
+  const loaded = inboxes.filter((inbox) => inbox !== null);
+  const key = (pr: InboxPr) => `${pr.account.toLowerCase()}:${prKey(pr.ref).toLowerCase()}`;
+  const merge = (prs: InboxPr[], skip = new Set<string>()) => {
+    const seen = new Map<string, InboxPr>();
+    for (const pr of prs) if (!skip.has(key(pr)) && !seen.has(key(pr))) seen.set(key(pr), pr);
+    return [...seen.values()].sort(newestFirst);
+  };
+  const assigned = merge(loaded.flatMap((inbox) => inbox.assigned));
+  const assignedKeys = new Set(assigned.map(key));
+
+  const pinnedByKey = new Map<string, InboxPr>();
+  for (const pr of loaded.flatMap((inbox) => inbox.pinned)) {
+    pinnedByKey.set(prKey(pr.ref).toLowerCase(), pr);
+  }
+  const pinned = pins.flatMap((pin) => {
+    const pr = pinnedByKey.get(prKey(pin).toLowerCase());
+    const account = pinAccount(pin, accounts);
+    return pr && account !== null && sameAccount(pr.account, account) ? [pr] : [];
+  });
+
+  return {
+    assigned,
+    team: merge(
+      loaded.flatMap((inbox) => inbox.team),
+      assignedKeys,
+    ),
+    authored: merge(loaded.flatMap((inbox) => inbox.authored)),
+    pinned,
+  };
+}
+
+/**
+ * Every signed-in account's inbox, merged. An account that fails is listed
+ * as unavailable and the rest still show; when every account fails, so does
+ * the inbox.
+ */
+export async function loadInboxes(github: GitHub, pins: Pin[]): Promise<Inbox> {
+  const accounts = await github.accounts();
+  const results = await Promise.allSettled(
+    accounts.map((account) =>
+      loadInbox(
+        github.as(account),
+        pins.filter((pin) => pinAccount(pin, accounts) === account),
+        account,
+      ),
+    ),
+  );
+  const failures = results.flatMap((result, i) =>
+    result.status === "rejected" ? [{ account: accounts[i] ?? "", error: result.reason }] : [],
+  );
+  if (failures.length === accounts.length && failures[0]) throw failures[0].error;
+  const inboxes = results.map((result) => (result.status === "fulfilled" ? result.value : null));
+  return {
+    accounts,
+    unavailable: failures.map(({ account, error }) => ({
+      account,
+      message: error instanceof Error ? error.message : String(error),
+    })),
+    ...mergeInboxes(accounts, inboxes, pins),
+  };
 }

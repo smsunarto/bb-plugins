@@ -7,6 +7,10 @@ test("deletes the draft", async () => {
   const { ctx, calls } = fakeContext({
     graphql: { DeleteDraft: { deletePullRequestReviewComment: { clientMutationId: null } } },
   });
-  expect(await callProcedure(deleteDraft, ctx, { commentId: "C1" })).toEqual({ ok: true });
-  expect(calls).toEqual([{ kind: "graphql", operation: "DeleteDraft", variables: { id: "C1" } }]);
+  expect(await callProcedure(deleteDraft, ctx, { account: "octocat", commentId: "C1" })).toEqual({
+    ok: true,
+  });
+  expect(calls).toEqual([
+    { kind: "graphql", operation: "DeleteDraft", variables: { id: "C1" }, account: "octocat" },
+  ]);
 });

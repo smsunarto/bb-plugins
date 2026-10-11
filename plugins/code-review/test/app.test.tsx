@@ -1,8 +1,9 @@
 import "./dom.ts";
 import { beforeEach, expect, test } from "bun:test";
 import { pluginQueryClient } from "@bb-kit/core/rpc/query";
-import type { PrRef, PullRequest } from "../src/shared/schema.ts";
-import { agentActivity, checks, inbox, pullRequest } from "./app-fixtures.ts";
+import { inboxFor } from "../src/app/inbox.tsx";
+import type { Inbox, PrRef, PullRequest } from "../src/shared/schema.ts";
+import { agentActivity, assignedPr, checks, inbox, pullRequest } from "./app-fixtures.ts";
 
 const { fireEvent, waitFor, within } = await import("@testing-library/react");
 const { loadPluginApp, renderSlot } = await import("@get-bb/plugin-sdk/testing/app");
@@ -17,12 +18,14 @@ beforeEach(() => {
 type Handlers = Record<string, (input: never) => unknown>;
 
 const baseRpc: Handlers = {
-  status: () => ({ ok: true, login: "scott" }),
+  status: () => ({ ok: true, login: "scott", accounts: ["scott"] }),
   inbox: () => inbox,
   pullRequest: () => pullRequest,
   checks: () => checks,
   agentActivity: () => agentActivity,
   reviewInstructions: () => ({ instructions: "" }),
+  // Without the GitButler plugin, so the inbox has no Unpublished tab.
+  localBranches: () => ({ available: false, reason: "No GitButler plugin." }),
 };
 
 async function registration() {
@@ -150,12 +153,180 @@ test("an empty tab says what would show up there", async () => {
   slot.lifecycle.unmount();
 });
 
-test("a row opens its pull request in the page's URL", async () => {
+test("a row opens its pull request in the page's URL, as the account it waits on", async () => {
   const slot = await inboxTab("");
   fireEvent.click(await slot.findByRole("button", { name: /Rate-limit the login endpoint/ }));
   expect(slot.navigateCalls).toEqual([
-    { method: "toPluginPanel", path: "code-review", options: { subPath: PR_PATH } },
+    { method: "toPluginPanel", path: "code-review", options: { subPath: `@scott/${PR_PATH}` } },
   ]);
+  slot.lifecycle.unmount();
+});
+
+/** gh signed in to `scott` (active) and `scott-work`, each with its own queue. */
+const twoAccounts: Handlers = {
+  ...baseRpc,
+  status: () => ({ ok: true, login: "scott", accounts: ["scott", "scott-work"] }),
+  inbox: () => ({
+    ...inbox,
+    accounts: ["scott", "scott-work"],
+    team: [{ ...inbox.team[0]!, account: "scott-work" }],
+  }),
+};
+
+test("with several accounts, each row names its account and the inbox narrows to one", async () => {
+  const slot = await inboxTab("", twoAccounts);
+  await slot.findByText("Rate-limit the login endpoint");
+  expect(
+    within(slot.getByRole("button", { name: /Rate-limit/ })).getByText("As scott,"),
+  ).toBeTruthy();
+
+  fireEvent.click(slot.getByRole("button", { name: "Accounts: all" }));
+  fireEvent.click(await slot.findByRole("radio", { name: "scott-work" }));
+
+  await waitFor(() =>
+    expect(slot.getAllByRole("tab").map((tab) => tab.textContent)).toEqual([
+      "Assigned to me0",
+      "My team1",
+      "Authored by me0",
+    ]),
+  );
+  expect(window.localStorage.getItem("bb-plugin-code-review:inbox-account")).toBe("scott-work");
+  slot.lifecycle.unmount();
+});
+
+test("the account the reader chose last time is still chosen once the accounts load", async () => {
+  window.localStorage.setItem("bb-plugin-code-review:inbox-account", "scott-work");
+  const slot = await inboxTab("", twoAccounts);
+
+  expect(await slot.findByRole("button", { name: "Accounts: scott-work" })).toBeTruthy();
+  expect(slot.getAllByRole("tab").map((tab) => tab.textContent)).toEqual([
+    "Assigned to me0",
+    "My team1",
+    "Authored by me0",
+  ]);
+  slot.lifecycle.unmount();
+});
+
+test("a chosen account gh signed out of reads as every account", async () => {
+  window.localStorage.setItem("bb-plugin-code-review:inbox-account", "old-login");
+  const slot = await inboxTab("", twoAccounts);
+
+  expect(await slot.findByRole("button", { name: "Accounts: all" })).toBeTruthy();
+  slot.lifecycle.unmount();
+});
+
+test("one account that failed is named above the rest of the inbox", async () => {
+  const slot = await inboxTab("", {
+    ...twoAccounts,
+    inbox: () => ({
+      ...inbox,
+      accounts: ["scott", "scott-work"],
+      unavailable: [{ account: "scott-work", message: "Resource protected by SAML." }],
+    }),
+  });
+  const alert = await slot.findByRole("alert");
+  expect(alert.textContent).toContain("Some accounts could not load");
+  expect(alert.textContent).toContain("scott-work: Resource protected by SAML.");
+  expect(slot.getByText("Rate-limit the login endpoint")).toBeTruthy();
+  slot.lifecycle.unmount();
+});
+
+test("a pull request opens as the account its URL names, and every read names it", async () => {
+  const slot = await page(`@scott-work/${PR_PATH}`, {
+    ...twoAccounts,
+    pullRequest: () => ({ ...pullRequest, account: "scott-work" }),
+  });
+  await slot.findByRole("heading", { level: 1 });
+  await waitFor(() =>
+    expect(slot.rpcCalls.filter((call) => call.method !== "status")).toEqual(
+      expect.arrayContaining([
+        { method: "pullRequest", input: { account: "scott-work", ref: pullRequest.ref } },
+        { method: "checks", input: { account: "scott-work", ref: pullRequest.ref } },
+      ]),
+    ),
+  );
+  slot.lifecycle.unmount();
+});
+
+test("a link with no account opens as the account whose inbox lists it, else the active one", async () => {
+  // Reading the inbox caches it; #7 is listed under scott-work.
+  const tab = await inboxTab("", twoAccounts);
+  await tab.findByText("Rate-limit the login endpoint");
+  tab.lifecycle.unmount();
+
+  const listed = await page("acme/web/pull/7", twoAccounts);
+  await listed.findByRole("heading", { level: 1 });
+  expect(listed.rpcCalls).toContainEqual({
+    method: "pullRequest",
+    input: { account: "scott-work", ref: { owner: "acme", repo: "web", number: 7 } },
+  });
+  listed.lifecycle.unmount();
+
+  const unlisted = await page("acme/web/pull/99", twoAccounts);
+  await unlisted.findByRole("heading", { level: 1 });
+  expect(unlisted.rpcCalls).toContainEqual({
+    method: "pullRequest",
+    input: { account: "scott", ref: { owner: "acme", repo: "web", number: 99 } },
+  });
+  unlisted.lifecycle.unmount();
+});
+
+test("the account switch opens the same pull request and tab as another account", async () => {
+  const slot = await page(`@scott/${PR_PATH}/checks`, twoAccounts);
+  fireEvent.click(await slot.findByRole("button", { name: "Acting as scott. Switch account" }));
+  fireEvent.click(await slot.findByRole("button", { name: /Act as scott-work/ }));
+  expect(slot.navigateCalls).toEqual([
+    {
+      method: "toPluginPanel",
+      path: "code-review",
+      options: { subPath: `@scott-work/${PR_PATH}/checks` },
+    },
+  ]);
+  slot.lifecycle.unmount();
+});
+
+test("a pull request this account cannot open offers the other accounts", async () => {
+  const slot = await page(`@scott-work/${PR_PATH}`, {
+    ...twoAccounts,
+    pullRequest: ({ account }: { account: string }) => {
+      if (account === "scott-work") throw new Error("Could not resolve to a PullRequest.");
+      return pullRequest;
+    },
+  });
+  expect(await slot.findByText(/Could not open acme\/api#42/, {}, { timeout: 5_000 })).toBeTruthy();
+  fireEvent.click(slot.getByRole("button", { name: "Acting as scott-work. Switch account" }));
+  fireEvent.click(await slot.findByRole("button", { name: /Act as scott$/ }));
+  expect(slot.navigateCalls).toEqual([
+    { method: "toPluginPanel", path: "code-review", options: { subPath: `@scott/${PR_PATH}` } },
+  ]);
+  slot.lifecycle.unmount();
+});
+
+test("every account's queue lists its own pull requests, and all accounts list each once", () => {
+  const shared = assignedPr;
+  const data: Inbox = {
+    ...inbox,
+    accounts: ["scott", "scott-work"],
+    assigned: [
+      { ...shared, account: "scott-work" },
+      { ...shared, account: "scott" },
+    ],
+    team: [{ ...shared, account: "scott-work" }],
+    authored: [],
+    pinned: [],
+  };
+
+  expect(inboxFor(data, "scott-work").assigned.map((pr) => pr.account)).toEqual(["scott-work"]);
+  expect(inboxFor(data, "scott-work").team.map((pr) => pr.account)).toEqual(["scott-work"]);
+  const all = inboxFor(data, "all");
+  expect(all.assigned.map((pr) => pr.account)).toEqual(["scott"]);
+  expect(all.team).toEqual([]);
+});
+
+test("with one account, nothing on the page talks about accounts", async () => {
+  const slot = await page(PR_PATH);
+  await slot.findByRole("heading", { level: 1 });
+  expect(slot.queryByRole("button", { name: /Switch account/ })).toBeNull();
   slot.lifecycle.unmount();
 });
 
@@ -221,7 +392,11 @@ test("without a signed-in gh, the Inbox tab defers to the page and asks for no i
     status: () => ({ ok: false, reason: "unauthenticated", message: "" }),
   });
   expect(await tab.findByText("GitHub is unavailable. The page says how to fix it.")).toBeTruthy();
-  expect(tab.rpcCalls.map((call) => call.method)).toEqual(["status"]);
+  // Unpublished branches need no GitHub; here there is no GitButler plugin to list them.
+  await waitFor(() =>
+    expect(tab.rpcCalls.map((call) => call.method)).toEqual(["status", "localBranches"]),
+  );
+  expect(tab.queryByRole("region", { name: "Unpublished branches" })).toBeNull();
   tab.lifecycle.unmount();
 });
 
@@ -285,8 +460,16 @@ test("the tabs and View all change the URL, not local state", async () => {
   const viewAll = await slot.findByRole("button", { name: "View all 2" });
   fireEvent.click(viewAll);
   expect(slot.navigateCalls).toEqual([
-    { method: "toPluginPanel", path: "code-review", options: { subPath: `${PR_PATH}/changes` } },
-    { method: "toPluginPanel", path: "code-review", options: { subPath: `${PR_PATH}/checks` } },
+    {
+      method: "toPluginPanel",
+      path: "code-review",
+      options: { subPath: `@scott/${PR_PATH}/changes` },
+    },
+    {
+      method: "toPluginPanel",
+      path: "code-review",
+      options: { subPath: `@scott/${PR_PATH}/checks` },
+    },
   ]);
   slot.lifecycle.unmount();
 });
@@ -338,7 +521,7 @@ test("pinning shows the pull request in the inbox before the server answers", as
   const pinned = within(await tab.findByRole("region", { name: "Pinned" }));
   expect(pinned.getByText("Rate-limit the login endpoint")).toBeTruthy();
   expect(pin.getAttribute("aria-pressed")).toBe("true");
-  expect(pins).toEqual([{ ref: pullRequest.ref, pinned: true }]);
+  expect(pins).toEqual([{ account: "scott", ref: pullRequest.ref, pinned: true }]);
   answer();
   tab.lifecycle.unmount();
   slot.lifecycle.unmount();
@@ -393,6 +576,7 @@ test("submits an approval with its summary and the drafts, then confirms it", as
   expect(await dialog.findByText("Your review is on GitHub.")).toBeTruthy();
   expect(submitted).toEqual([
     {
+      account: "scott",
       pullRequestId: "PR_kwDOA42",
       headRefOid: pullRequest.headRefOid,
       event: "APPROVE",
@@ -498,6 +682,7 @@ test("reopened while the review is out, the form stays busy and sends it only on
   expect(await reopened.findByText("Your review is on GitHub.")).toBeTruthy();
   expect(submitted).toEqual([
     {
+      account: "scott",
       pullRequestId: "PR_kwDOA42",
       headRefOid: pullRequest.headRefOid,
       event: "COMMENT",
@@ -538,7 +723,7 @@ test("reopened while drafts are being discarded, the form stays busy and discard
 
   answer();
   await gone(() => slot.queryByRole("dialog"));
-  expect(discarded).toEqual([{ pullRequestId: "PR_kwDOA42" }]);
+  expect(discarded).toEqual([{ account: "scott", pullRequestId: "PR_kwDOA42" }]);
   expect(submitted).toEqual([]);
   slot.lifecycle.unmount();
 });
@@ -571,6 +756,7 @@ test("a review closed before the form shows it busy is still sent only once", as
   expect(await reopened.findByText("Your review is on GitHub.")).toBeTruthy();
   expect(submitted).toEqual([
     {
+      account: "scott",
       pullRequestId: "PR_kwDOA42",
       headRefOid: pullRequest.headRefOid,
       event: "COMMENT",
@@ -642,6 +828,7 @@ test("the pull request opened under another casing of its URL does not send the 
   await dialog.findByRole("button", { name: "Submit review" });
   expect(submitted).toEqual([
     {
+      account: "scott",
       pullRequestId: "PR_kwDOA42",
       headRefOid: pullRequest.headRefOid,
       event: "COMMENT",
@@ -777,7 +964,7 @@ test("drafts discarded and closed before the form shows it busy are discarded on
 
   for (const answer of answers) answer();
   await gone(() => slot.queryByRole("dialog"));
-  expect(discarded).toEqual([{ pullRequestId: "PR_kwDOA42" }]);
+  expect(discarded).toEqual([{ account: "scott", pullRequestId: "PR_kwDOA42" }]);
   slot.lifecycle.unmount();
 });
 
@@ -877,7 +1064,9 @@ test("discarding drafts asks first, then deletes the pending review", async () =
   ).toBeTruthy();
   expect(discarded).toEqual([]);
   fireEvent.click(dialog.getByRole("button", { name: "Discard" }));
-  await waitFor(() => expect(discarded).toEqual([{ pullRequestId: "PR_kwDOA42" }]));
+  await waitFor(() =>
+    expect(discarded).toEqual([{ account: "scott", pullRequestId: "PR_kwDOA42" }]),
+  );
   await gone(() => slot.queryByRole("dialog"));
   slot.lifecycle.unmount();
 });

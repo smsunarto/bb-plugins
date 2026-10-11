@@ -11,18 +11,20 @@ import {
 import type { KeyboardEvent, RefObject } from "react";
 import { experimental_Icon as Icon } from "@get-bb/plugin-sdk/app";
 import { pluginQueryClient } from "@bb-kit/core/rpc/query";
+import type { UseQueryResult } from "@tanstack/react-query";
 import { prKey, sameRevision } from "../shared/schema.ts";
 import type {
   ChangedFile,
   ChangedFiles,
   DiffSide,
   Finding,
-  PrRef,
+  LocalBranch,
   PullRequest,
   ReviewThread,
   ViewedState,
 } from "../shared/schema.ts";
-import { useAgentActivity } from "./bb-review.tsx";
+import { reviewSubject, useAgentActivity } from "./bb-review.tsx";
+import type { ReviewTarget } from "./bb-review.tsx";
 import { Button } from "./components/ui/button.tsx";
 import { CONTROL_HOVER_TRANSITION } from "./components/ui/motion.ts";
 import { Input } from "./components/ui/input.tsx";
@@ -41,7 +43,8 @@ import { rpc } from "./rpc.ts";
  * The Changes tab: every changed file's diff, with review threads and bb
  * findings inline, a file list to jump around in, and GitHub's per-viewer
  * "Viewed" marks. It scrolls on its own, so the file list and the summary
- * bar stay put while the diffs move.
+ * bar stay put while the diffs move. An unpublished branch's tab is the same
+ * without what only a pull request has: threads, comments, and Viewed marks.
  */
 
 /** Room left above a card or line the tab scrolls to. */
@@ -159,17 +162,25 @@ type Focus = { path: string; line: LineFocus | null };
  * One file's Viewed writes: its newest click, so an older answer never lands
  * over it, and its last queued write, which the next one waits for. Kept here,
  * not in the tab, so a click after leaving the tab and coming back still waits
- * for the one before. Keyed by pull request and path, and dropped once the
- * last write settles.
+ * for the one before. Keyed by {@link viewedKey} and path, and dropped once
+ * the last write settles.
  */
 type ViewedQueue = { latest: symbol; tail: Promise<void> };
 const viewedQueues = new Map<string, ViewedQueue>();
 
 /**
- * Each pull request's Viewed failures, by path. Kept here with the queues, not
- * in the tab, so a write that fails after the tab was left and opened again
- * still says why its box went back. A path's error goes once a write for it
- * succeeds, and a pull request's entry once its last error goes.
+ * Viewed marks are GitHub's per user, so one pull request read as two
+ * accounts keeps two sets of them, each with its own writes and errors.
+ */
+function viewedKey(pr: Pick<PullRequest, "account" | "ref">): string {
+  return `${pr.account.toLowerCase()}:${prKey(pr.ref)}`;
+}
+
+/**
+ * Each pull request's Viewed failures as one account, by path. Kept here
+ * with the queues, not in the tab, so a write that fails after the tab was
+ * left and opened again still says why its box went back. A path's error
+ * goes once a write for it succeeds, and the entry once its last error goes.
  */
 const viewedErrors = new Map<string, ReadonlyMap<string, string>>();
 const viewedErrorListeners = new Set<() => void>();
@@ -201,17 +212,22 @@ function useViewedErrors(pull: string): ReadonlyMap<string, string> | undefined 
 /**
  * Marks a file viewed or not on GitHub. The mark shows at once and the card
  * folds with it, as on GitHub. The answer, GitHub's own state, replaces the
- * guess, and a failure puts the old mark back and says why.
+ * guess, and a failure puts the old mark back and says why. Null without a
+ * pull request: an unpublished branch has no Viewed marks.
  *
  * A file's writes go one at a time. Two in flight could reach GitHub out of
  * order and leave it opposite to the box, so each click waits for the write
  * before it, and one a newer click has overtaken is never sent.
  */
-function useViewedToggle(pr: PullRequest, setOpen: (path: string, open: boolean) => void) {
+function useViewedToggle(pr: PullRequest | null, setOpen: (path: string, open: boolean) => void) {
   const client = rpc.useClient();
-  return useCallback(
-    (file: ChangedFile, viewed: boolean) => {
-      const queryKey = rpc.changedFiles.queryKey({ ref: pr.ref });
+  const account = pr?.account;
+  const id = pr?.id;
+  const ref = pr?.ref;
+  return useMemo(() => {
+    if (account === undefined || id === undefined || ref === undefined) return null;
+    return (file: ChangedFile, viewed: boolean) => {
+      const queryKey = rpc.changedFiles.queryKey({ account, ref });
       const write = (state: ViewedState) =>
         pluginQueryClient.setQueryData<ChangedFiles>(queryKey, (current) =>
           current
@@ -223,7 +239,7 @@ function useViewedToggle(pr: PullRequest, setOpen: (path: string, open: boolean)
               }
             : current,
         );
-      const pull = prKey(pr.ref);
+      const pull = viewedKey({ account, ref });
       const key = `${pull}:${file.path}`;
       const click = Symbol(file.path);
       const latest = () => viewedQueues.get(key)?.latest === click;
@@ -235,7 +251,12 @@ function useViewedToggle(pr: PullRequest, setOpen: (path: string, open: boolean)
       const send = async () => {
         if (!latest()) return;
         try {
-          const result = await client.setViewed({ pullRequestId: pr.id, path: file.path, viewed });
+          const result = await client.setViewed({
+            account,
+            pullRequestId: id,
+            path: file.path,
+            viewed,
+          });
           setViewedError(pull, file.path, null);
           if (latest()) write(result.viewed);
         } catch (error) {
@@ -259,9 +280,8 @@ function useViewedToggle(pr: PullRequest, setOpen: (path: string, open: boolean)
       void queued.tail.finally(() => {
         if (viewedQueues.get(key) === queued) viewedQueues.delete(key);
       });
-    },
-    [client, pr.id, pr.ref, setOpen],
-  );
+    };
+  }, [client, account, id, ref, setOpen]);
 }
 
 /**
@@ -422,7 +442,7 @@ function useCatchUp(pr: PullRequest, changed: ChangedFiles | undefined): boolean
     let live = true;
     const timer = window.setTimeout(async () => {
       await pluginQueryClient.invalidateQueries({
-        queryKey: rpc.changedFiles.queryKey({ ref: pr.ref }),
+        queryKey: rpc.changedFiles.queryKey({ account: pr.account, ref: pr.ref }),
       });
       if (live) setTries({ target, count: count + 1 });
     }, CATCH_UP_DELAYS_MS[count]);
@@ -430,7 +450,7 @@ function useCatchUp(pr: PullRequest, changed: ChangedFiles | undefined): boolean
       live = false;
       window.clearTimeout(timer);
     };
-  }, [target, behind, count, pr.ref]);
+  }, [target, behind, count, pr.account, pr.ref]);
   return behind && count >= CATCH_UP_DELAYS_MS.length;
 }
 
@@ -438,10 +458,10 @@ function useCatchUp(pr: PullRequest, changed: ChangedFiles | undefined): boolean
  * Reads the pull request and its files again. A read already on its way is
  * joined, not restarted, so a second click before the first lands adds none.
  */
-function refreshDiff(ref: PrRef): Promise<unknown> {
+function refreshDiff({ account, ref }: Pick<PullRequest, "account" | "ref">): Promise<unknown> {
   return Promise.all(
-    [rpc.pullRequest.queryKey({ ref }), rpc.changedFiles.queryKey({ ref })].map((queryKey) =>
-      pluginQueryClient.invalidateQueries({ queryKey }, { cancelRefetch: false }),
+    [rpc.pullRequest.queryKey({ account, ref }), rpc.changedFiles.queryKey({ account, ref })].map(
+      (queryKey) => pluginQueryClient.invalidateQueries({ queryKey }, { cancelRefetch: false }),
     ),
   );
 }
@@ -450,13 +470,39 @@ function refreshDiff(ref: PrRef): Promise<unknown> {
 
 export function ChangesTab({ pr }: { pr: PullRequest }) {
   // Filter, folds, and focus belong to one pull request.
-  return <Changes key={prKey(pr.ref)} pr={pr} />;
+  return <PrChanges key={prKey(pr.ref)} pr={pr} />;
 }
 
-function Changes({ pr }: { pr: PullRequest }) {
-  const files = rpc.changedFiles.useQuery({ ref: pr.ref }, { staleTime: 30_000 });
-  const [revealRequest, releaseReveal] = useClaimedReveal();
+function PrChanges({ pr }: { pr: PullRequest }) {
+  const files = rpc.changedFiles.useQuery(
+    { account: pr.account, ref: pr.ref },
+    { staleTime: 30_000 },
+  );
   const behind = useCatchUp(pr, files.data);
+  return <Changes target={{ pr }} files={files} behind={behind} />;
+}
+
+/** An unpublished branch's Changes tab: everything `base..head` changes, read in its checkout. */
+export function BranchChangesTab({ branch }: { branch: LocalBranch }) {
+  const files = rpc.localChanges.useQuery(
+    { hostId: branch.hostId, path: branch.path, base: branch.base, head: branch.head },
+    { staleTime: 30_000 },
+  );
+  return <Changes target={{ branch }} files={files} behind={false} />;
+}
+
+function Changes({
+  target,
+  files,
+  behind,
+}: {
+  target: ReviewTarget;
+  files: UseQueryResult<ChangedFiles, Error>;
+  /** The files are still of an older revision than the pull request. */
+  behind: boolean;
+}) {
+  const [revealRequest, releaseReveal] = useClaimedReveal();
+  const { pr, noun } = reviewSubject(target);
 
   if (files.isPending) {
     return <Loading label="Loading changed files…" rows={6} className="p-3" />;
@@ -479,17 +525,17 @@ function Changes({ pr }: { pr: PullRequest }) {
     // with no card to show them on.
     return (
       <div className="h-full min-h-0 overflow-y-auto p-3 [scrollbar-gutter:stable]">
-        {behind ? <BehindNotice pr={pr} className="mb-2" /> : null}
+        {pr && behind ? <BehindNotice pr={pr} className="mb-2" /> : null}
         <Notice tone="info" title="No changed files">
-          This pull request does not change any files.
+          {`This ${noun} does not change any files.`}
         </Notice>
-        <OrphanThreads pr={pr} groups={[...groupByPath(pr.threads)]} />
+        <OrphanThreads pr={pr} groups={[...groupByPath(pr?.threads ?? EMPTY_THREADS)]} />
       </div>
     );
   }
   return (
     <ChangesView
-      pr={pr}
+      target={target}
       changed={files.data}
       behind={behind}
       revealRequest={revealRequest}
@@ -499,20 +545,21 @@ function Changes({ pr }: { pr: PullRequest }) {
 }
 
 function ChangesView({
-  pr,
+  target,
   changed,
   behind,
   revealRequest,
   releaseReveal,
 }: {
-  pr: PullRequest;
+  target: ReviewTarget;
   changed: ChangedFiles;
   /** The files are still of an older revision than the pull request. */
   behind: boolean;
   revealRequest: RevealRequest | null;
   releaseReveal: () => void;
 }) {
-  const activity = useAgentActivity(pr.ref);
+  const { pr, noun } = reviewSubject(target);
+  const activity = useAgentActivity(target);
   const [filter, setFilter] = useState("");
   const [openState, setOpenState] = useState<Readonly<Record<string, boolean>>>({});
   const [focus, setFocus] = useState<Focus | null>(null);
@@ -525,7 +572,8 @@ function ChangesView({
   const all = useMemo(() => readingOrder(changed.files), [changed.files]);
   const shown = useMemo(() => all.filter((file) => matches(file, filter)), [all, filter]);
   const shownPaths = useMemo(() => shown.map((file) => file.path), [shown]);
-  const threadsByPath = useMemo(() => groupByPath(pr.threads), [pr.threads]);
+  const threads = pr?.threads ?? EMPTY_THREADS;
+  const threadsByPath = useMemo(() => groupByPath(threads), [threads]);
   // Threads on a path no card has: a later push reverted or renamed the file.
   const orphans = useMemo(() => {
     const changedPaths = new Set(all.map((file) => file.path));
@@ -583,7 +631,7 @@ function ChangesView({
         <Toolbar
           railOpen={railOpen}
           onToggleRail={() => setRailOpen((open) => !open)}
-          viewed={all.filter((file) => file.viewed === "viewed").length}
+          viewed={pr ? all.filter((file) => file.viewed === "viewed").length : null}
           total={all.length}
           findingsStale={findingsStale}
           diffStyle={diffStyle}
@@ -599,12 +647,7 @@ function ChangesView({
                   }))
           }
         />
-        {behind ? (
-          <div className="shrink-0 px-2 pt-2">
-            <BehindNotice pr={pr} />
-          </div>
-        ) : null}
-        <ViewedErrors pull={prKey(pr.ref)} />
+        <PullRequestNotices pr={pr} behind={behind} />
         <div
           ref={scroller}
           data-cr-scroll
@@ -613,7 +656,7 @@ function ChangesView({
           <div ref={list} className="flex flex-col gap-2 p-2 pb-8">
             {shown.length === 0 ? (
               <Notice tone="info" title="No files match">
-                {`Nothing in this pull request matches “${filter.trim()}”.`}
+                {`Nothing in this ${noun} matches “${filter.trim()}”.`}
               </Notice>
             ) : null}
             {shown.map((file) => (
@@ -656,7 +699,7 @@ function BehindNotice({ pr, className }: { pr: PullRequest; className?: string }
           variant="outline"
           size="sm"
           className="h-6 px-2.5 text-xs font-normal"
-          onClick={() => void refreshDiff(pr.ref)}
+          onClick={() => void refreshDiff(pr)}
         >
           Refresh
         </Button>
@@ -665,6 +708,21 @@ function BehindNotice({ pr, className }: { pr: PullRequest; className?: string }
       GitHub still sends the files from before the latest push or base change, so new comments on
       them would not be saved.
     </Notice>
+  );
+}
+
+/** Above a pull request's diffs: that they lag it, and why Viewed boxes went back. */
+function PullRequestNotices({ pr, behind }: { pr: PullRequest | null; behind: boolean }) {
+  if (!pr) return null;
+  return (
+    <>
+      {behind ? (
+        <div className="shrink-0 px-2 pt-2">
+          <BehindNotice pr={pr} />
+        </div>
+      ) : null}
+      <ViewedErrors pull={viewedKey(pr)} />
+    </>
   );
 }
 
@@ -712,7 +770,7 @@ function FilePanel({
   current: string | null;
   threadsByPath: ReadonlyMap<string, readonly ReviewThread[]>;
   onSelect: (path: string, line: null) => void;
-  onViewedChange: (file: ChangedFile, viewed: boolean) => void;
+  onViewedChange: ((file: ChangedFile, viewed: boolean) => void) | null;
 }) {
   return (
     <nav
@@ -742,7 +800,7 @@ function FilePanel({
   );
 }
 
-/** Above the diffs: the file list's toggle, progress, layout, and fold-all. */
+/** Above the diffs: the file list's toggle, progress (or the file count), layout, and fold-all. */
 function Toolbar({
   railOpen,
   onToggleRail,
@@ -756,7 +814,8 @@ function Toolbar({
 }: {
   railOpen: boolean;
   onToggleRail: () => void;
-  viewed: number;
+  /** How many files are marked viewed. Null where there are no marks: an unpublished branch. */
+  viewed: number | null;
   total: number;
   findingsStale: boolean;
   diffStyle: DiffStyle;
@@ -780,17 +839,21 @@ function Toolbar({
       >
         <Icon name="PanelLeft" className="size-3.5" aria-hidden />
       </button>
-      <span className="flex items-center gap-2 tabular-nums">
-        <span>
-          {viewed} of {plural(total, "file")} viewed
+      {viewed === null ? (
+        <span className="tabular-nums">{plural(total, "file")}</span>
+      ) : (
+        <span className="flex items-center gap-2 tabular-nums">
+          <span>
+            {viewed} of {plural(total, "file")} viewed
+          </span>
+          <span aria-hidden className="h-1 w-20 overflow-hidden rounded-full bg-secondary">
+            <span
+              className="block h-full rounded-full bg-success transition-[width] duration-200 motion-reduce:transition-none"
+              style={{ width: `${(viewed / total) * 100}%` }}
+            />
+          </span>
         </span>
-        <span aria-hidden className="h-1 w-20 overflow-hidden rounded-full bg-secondary">
-          <span
-            className="block h-full rounded-full bg-success transition-[width] duration-200 motion-reduce:transition-none"
-            style={{ width: `${(viewed / total) * 100}%` }}
-          />
-        </span>
-      </span>
+      )}
       {findingsStale ? (
         <span className="text-[11px] text-warning-text">
           bb findings are from an older version of this diff
@@ -838,11 +901,12 @@ function OrphanThreads({
   pr,
   groups,
 }: {
-  pr: PullRequest;
+  /** None for an unpublished branch, which has no threads. */
+  pr: PullRequest | null;
   groups: readonly (readonly [string, readonly ReviewThread[]])[];
 }) {
   const headingId = useId();
-  if (groups.length === 0) return null;
+  if (!pr || groups.length === 0) return null;
   return (
     <section aria-labelledby={headingId} className="flex flex-col gap-2 pt-2">
       <h3 id={headingId} className="px-0.5 font-medium text-muted-foreground">
@@ -891,8 +955,9 @@ function walkRows(event: KeyboardEvent<HTMLButtonElement>): void {
 }
 
 /**
- * Every shown file: its Viewed box, name, comment count, and line counts. A
- * row scrolls the diff to its file, and the current file's row stays in view.
+ * Every shown file: its Viewed box (on a pull request), name, comment count,
+ * and line counts. A row scrolls the diff to its file, and the current
+ * file's row stays in view.
  */
 function FileRail({
   files,
@@ -905,7 +970,7 @@ function FileRail({
   current: string | null;
   threadsByPath: ReadonlyMap<string, readonly ReviewThread[]>;
   onSelect: (path: string, line: null) => void;
-  onViewedChange: (file: ChangedFile, viewed: boolean) => void;
+  onViewedChange: ((file: ChangedFile, viewed: boolean) => void) | null;
 }) {
   const list = useRef<HTMLUListElement>(null);
   useEffect(() => {
@@ -932,13 +997,15 @@ function FileRail({
               isCurrent && "bg-surface-selected hover:bg-surface-selected",
             )}
           >
-            <input
-              type="checkbox"
-              className="size-3.5 shrink-0 cursor-pointer accent-primary"
-              checked={viewed}
-              aria-label={`Viewed ${file.path}`}
-              onChange={(event) => onViewedChange(file, event.target.checked)}
-            />
+            {onViewedChange ? (
+              <input
+                type="checkbox"
+                className="size-3.5 shrink-0 cursor-pointer accent-primary"
+                checked={viewed}
+                aria-label={`Viewed ${file.path}`}
+                onChange={(event) => onViewedChange(file, event.target.checked)}
+              />
+            ) : null}
             <button
               type="button"
               data-rail-path={file.path}

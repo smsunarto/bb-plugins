@@ -117,10 +117,10 @@ function Reviewers({ pr }: { pr: PullRequest }) {
 
 function ChecksSummary({ pr }: { pr: PullRequest }) {
   const navigate = useBbNavigate();
-  const checks = useChecks(pr.ref, pr.headRefOid);
+  const checks = useChecks(pr);
   const all = checks.data?.checks ?? [];
   const openChecks = () =>
-    navigate.toPluginPanel(PANEL_PATH, { subPath: prSubPath(pr.ref, "checks") });
+    navigate.toPluginPanel(PANEL_PATH, { subPath: prSubPath(pr.ref, "checks", pr.account) });
   return (
     <Section
       title="Checks"
@@ -206,7 +206,7 @@ function Stack({ pr }: { pr: PullRequest }) {
   return (
     <Section title="Stack">
       <ol className="flex flex-col gap-0.5">
-        {parent ? <StackRow owner={pr.ref.owner} repo={pr.ref.repo} item={parent} /> : null}
+        {parent ? <StackRow pr={pr} item={parent} /> : null}
         <li
           aria-current="page"
           className="flex min-w-0 items-center gap-1.5 rounded-md bg-surface-selected px-1.5 py-1"
@@ -215,14 +215,16 @@ function Stack({ pr }: { pr: PullRequest }) {
           <span className="min-w-0 truncate font-medium">{pr.title}</span>
         </li>
         {children.map((child) => (
-          <StackRow key={child.number} owner={pr.ref.owner} repo={pr.ref.repo} item={child} />
+          <StackRow key={child.number} pr={pr} item={child} />
         ))}
       </ol>
     </Section>
   );
 }
 
-function StackRow({ owner, repo, item }: { owner: string; repo: string; item: StackPr }) {
+/** A stacked pull request, opened as the account this one is read as. */
+function StackRow({ pr, item }: { pr: PullRequest; item: StackPr }) {
+  const { owner, repo } = pr.ref;
   const navigate = useBbNavigate();
   return (
     <li>
@@ -231,7 +233,7 @@ function StackRow({ owner, repo, item }: { owner: string; repo: string; item: St
         className="flex w-full min-w-0 cursor-pointer items-center gap-1.5 rounded-md px-1.5 py-1 text-left outline-none hover:bg-state-hover focus-visible:ring-1 focus-visible:ring-ring"
         onClick={() =>
           navigate.toPluginPanel(PANEL_PATH, {
-            subPath: prSubPath({ owner, repo, number: item.number }),
+            subPath: prSubPath({ owner, repo, number: item.number }, "summary", pr.account),
           })
         }
       >
@@ -337,23 +339,12 @@ function TimelineEntry({ item }: { item: TimelineItem }) {
     }
     case "commit":
       return (
-        <p className="flex min-w-0 items-center gap-1.5 px-1 text-muted-foreground">
-          <Icon name="GitBranch" className="size-3 shrink-0 text-subtle-foreground" aria-hidden />
-          <code className="shrink-0 font-mono text-[11px] text-subtle-foreground" translate="no">
-            {shortSha(item.oid)}
-          </code>
-          <span className="min-w-0 truncate text-foreground" title={item.message}>
-            {subject(item.message)}
-          </span>
-          {item.author ? (
-            <span className="max-w-24 shrink-0 truncate text-subtle-foreground">
-              {item.author.login}
-            </span>
-          ) : null}
-          <span className="ms-auto shrink-0">
-            <When at={item.createdAt} />
-          </span>
-        </p>
+        <CommitLine
+          oid={item.oid}
+          message={item.message}
+          author={item.author?.login ?? null}
+          createdAt={item.createdAt}
+        />
       );
     case "event":
       return (
@@ -369,4 +360,35 @@ function TimelineEntry({ item }: { item: TimelineItem }) {
         </p>
       );
   }
+}
+
+/** One commit as a quiet line: its short sha, first line, author, and when. */
+export function CommitLine({
+  oid,
+  message,
+  author,
+  createdAt,
+}: {
+  oid: string;
+  message: string;
+  author: string | null;
+  createdAt: string;
+}) {
+  return (
+    <p className="flex min-w-0 items-center gap-1.5 px-1 text-muted-foreground">
+      <Icon name="GitBranch" className="size-3 shrink-0 text-subtle-foreground" aria-hidden />
+      <code className="shrink-0 font-mono text-[11px] text-subtle-foreground" translate="no">
+        {shortSha(oid)}
+      </code>
+      <span className="min-w-0 truncate text-foreground" title={message}>
+        {subject(message)}
+      </span>
+      {author ? (
+        <span className="max-w-24 shrink-0 truncate text-subtle-foreground">{author}</span>
+      ) : null}
+      <span className="ms-auto shrink-0">
+        <When at={createdAt} />
+      </span>
+    </p>
+  );
 }

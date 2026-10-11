@@ -393,7 +393,7 @@ export function mapPullRequest(
   ref: PrRef,
   data: GqlPullRequest,
   threads: GqlThread[],
-): Omit<PullRequest, "stack"> {
+): Omit<PullRequest, "stack" | "account"> {
   const pr = data.repository.pullRequest;
   const viewer = data.viewer.login;
   const isAuthor = pr.author?.login.toLowerCase() === viewer.toLowerCase();
@@ -457,7 +457,7 @@ export function mapStack(data: GqlStack, number: number): PullRequest["stack"] {
 
 const NO_STACK: PullRequest["stack"] = { parent: null, children: [] };
 
-export async function loadPullRequest(gh: Gh, ref: PrRef): Promise<PullRequest> {
+export async function loadPullRequest(gh: Gh, ref: PrRef): Promise<Omit<PullRequest, "account">> {
   const data = (await gh.graphql(PULL_REQUEST_QUERY, {
     owner: ref.owner,
     name: ref.repo,

@@ -11,7 +11,7 @@ test("asks GitHub for the stored pins and answers a valid inbox", async () => {
     { owner: "nope-nope-xyz", repo: "none", number: 1 },
     { owner: "cli", repo: "cli", number: 9001 },
   ]) {
-    await setPinned.execute(ctx, { ref, pinned: true });
+    await setPinned.execute(ctx, { account: "octocat", ref, pinned: true });
   }
 
   const result = (await callProcedure(inbox, ctx, null)) as { pinned: { url: string }[] };

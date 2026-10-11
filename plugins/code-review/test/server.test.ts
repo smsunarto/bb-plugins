@@ -24,7 +24,10 @@ beforeAll(() => {
   writeFileSync(
     join(bin, "gh"),
     `#!/usr/bin/env bash
-if [ "$1 $2" = "api user" ]; then echo '{"login":"octocat"}'; exit 0; fi
+if [ "$1 $2" = "auth status" ]; then
+  printf 'github.com\n  \xe2\x9c\x93 Logged in to github.com account octocat (keyring)\n  - Active account: true\n'
+  exit 0
+fi
 echo "gh: unexpected $*" >&2; exit 1
 `,
   );
@@ -64,6 +67,7 @@ test("registers every RPC and answers them over the host boundary", async () => 
   expect(harness.inspection.registrations.rpcMethods.toSorted()).toEqual([
     "addDraftComment",
     "agentActivity",
+    "branchActivity",
     "changedFiles",
     "checks",
     "deleteDraft",
@@ -71,6 +75,8 @@ test("registers every RPC and answers them over the host boundary", async () => 
     "editDraft",
     "fixChecksPrompt",
     "inbox",
+    "localBranches",
+    "localChanges",
     "pullRequest",
     "replyDraft",
     "reviewInstructions",
@@ -78,14 +84,19 @@ test("registers every RPC and answers them over the host boundary", async () => 
     "setReviewInstructions",
     "setViewed",
     "startFix",
+    "startLocalReview",
     "startReview",
     "status",
     "submitReview",
   ]);
-  expect(await harness.behavior.callRpc("status")).toEqual({ ok: true, login: "octocat" });
-  expect(await harness.behavior.callRpc("setPinned", { ref: REF, pinned: true })).toEqual({
-    pinned: [REF],
+  expect(await harness.behavior.callRpc("status")).toEqual({
+    ok: true,
+    login: "octocat",
+    accounts: ["octocat"],
   });
+  expect(
+    await harness.behavior.callRpc("setPinned", { account: "octocat", ref: REF, pinned: true }),
+  ).toEqual({ pinned: [{ ...REF, account: "octocat" }] });
   await harness.behavior.callRpc("setReviewInstructions", { instructions: "Check auth." });
   expect(await harness.behavior.callRpc("reviewInstructions")).toEqual({
     instructions: "Check auth.",
@@ -110,10 +121,10 @@ test("only a review thread gets the findings tool, and its report reaches the pa
   ]);
   expect(await tools({})).toEqual([]);
   expect(harness.inspection.registrations.agentTools[0]?.description).toStartWith(
-    "Report the findings of a Code Review pull request review",
+    "Report the findings of a Code Review review, of a pull request or an unpublished branch",
   );
 
-  await createStore(bb.storage.kv).addLink(REF, {
+  await createStore(bb.storage.kv).addLink("cli/cli#9000", {
     threadId: "thr_review",
     kind: "review",
     createdAt: "2026-10-01T00:00:00.000Z",
@@ -149,7 +160,7 @@ test("only a review thread gets the findings tool, and its report reaches the pa
 
 test("a linked thread that stops working tells open panels; any other thread does not", async () => {
   const { bb, harness } = await load();
-  await createStore(bb.storage.kv).addLink(REF, {
+  await createStore(bb.storage.kv).addLink("cli/cli#9000", {
     threadId: "thr_fix",
     kind: "fix",
     createdAt: "2026-10-01T00:00:00.000Z",

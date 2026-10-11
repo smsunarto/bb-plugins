@@ -4,14 +4,13 @@ import {
   type AgentActivity,
   type DiffRevision,
   type LinkedThread,
-  type PrRef,
-  prKey,
   sameRevision,
 } from "../../shared/schema.ts";
 import type { Link, Store } from "./store.ts";
 
 /*
- * The bb threads started for a pull request: bb reviews and check fixes.
+ * The bb threads started for a subject (a pull request, or an unpublished
+ * branch): bb reviews and check fixes.
  * Their status is read live from bb, so a thread the reader stopped,
  * archived, or deleted shows as it is now.
  */
@@ -48,9 +47,9 @@ async function linkedThread(bb: BbPluginApi, link: Link): Promise<LinkedThread> 
 export async function agentActivity(
   bb: BbPluginApi,
   store: Store,
-  ref: PrRef,
+  subject: string,
 ): Promise<AgentActivity> {
-  const links = await store.links(ref);
+  const links = await store.links(subject);
   const threads = await Promise.all(links.map((link) => linkedThread(bb, link)));
   for (const thread of threads) {
     if (thread.kind !== "review") continue;
@@ -75,25 +74,25 @@ export function publishActivity(bb: BbPluginApi, key: string): void {
   bb.realtime.publish(AGENT_ACTIVITY_CHANNEL, { key });
 }
 
-/** Records a thread started for `ref` and tells open panels. */
+/** Records a thread started for `subject` and tells open panels. */
 export async function linkThread(
   bb: BbPluginApi,
   store: Store,
-  ref: PrRef,
+  subject: string,
   link: Omit<Link, "createdAt">,
 ): Promise<void> {
-  await store.addLink(ref, { ...link, createdAt: new Date().toISOString() });
-  publishActivity(bb, prKey(ref));
+  await store.addLink(subject, { ...link, createdAt: new Date().toISOString() });
+  publishActivity(bb, subject);
 }
 
 /** The running review of `revision`, if one was already started. */
 export async function runningReview(
   bb: BbPluginApi,
   store: Store,
-  ref: PrRef,
+  subject: string,
   revision: DiffRevision,
 ): Promise<string | null> {
-  const link = (await store.links(ref)).find(
+  const link = (await store.links(subject)).find(
     (l) => l.kind === "review" && sameRevision(l, revision),
   );
   if (!link || (await store.run(link.threadId))) return null;

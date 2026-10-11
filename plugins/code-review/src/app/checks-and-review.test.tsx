@@ -44,7 +44,10 @@ function mount(Part: ComponentType<{ pr: PullRequest }>, rpc: Handlers) {
  */
 function live(Part: ComponentType<{ pr: PullRequest }>, options: { staleTime?: number } = {}) {
   return function Live({ pr: first }: { pr: PullRequest }) {
-    const read = pluginRpc.pullRequest.useQuery({ ref: first.ref }, options);
+    const read = pluginRpc.pullRequest.useQuery(
+      { account: first.account, ref: first.ref },
+      options,
+    );
     return read.data ? <Part pr={read.data} /> : null;
   };
 }
@@ -62,7 +65,10 @@ function gone(query: () => HTMLElement | null) {
 
 function readPullRequestAgain() {
   return pluginQueryClient.invalidateQueries({
-    queryKey: pluginRpc.pullRequest.queryKey({ ref: pullRequest.ref }),
+    queryKey: pluginRpc.pullRequest.queryKey({
+      account: pullRequest.account,
+      ref: pullRequest.ref,
+    }),
   });
 }
 
@@ -239,6 +245,7 @@ test("Fix opens a composer seeded with the prompt for the selected failures", as
 
   const composer = await slot.findByTestId("bb-new-thread-composer");
   expect(slot.rpcCalls.find((call) => call.method === "fixChecksPrompt")?.input).toEqual({
+    account: "scott",
     ref: { owner: "acme", repo: "api", number: 42 },
     checkIds: ["run:2"],
   });
@@ -307,7 +314,10 @@ test("Review with bb starts one review, then opens it instead of starting anothe
   fireEvent.click(await slot.findByRole("button", { name: "Review with bb" }));
   const reviewing = await slot.findByRole("button", { name: "Reviewing…" });
   expect(slot.rpcCalls.filter((call) => call.method === "startReview")).toEqual([
-    { method: "startReview", input: { ref: { owner: "acme", repo: "api", number: 42 } } },
+    {
+      method: "startReview",
+      input: { account: "scott", ref: { owner: "acme", repo: "api", number: 42 } },
+    },
   ]);
 
   fireEvent.click(reviewing);
@@ -433,7 +443,7 @@ test("findings read most urgent first and reveal their line in Changes", async (
     {
       method: "toPluginPanel",
       path: "code-review",
-      options: { subPath: "acme/api/pull/42/changes" },
+      options: { subPath: "@scott/acme/api/pull/42/changes" },
     },
   ]);
   await waitFor(() =>
@@ -458,6 +468,7 @@ test("a finding becomes a draft comment in the pending review", async () => {
 
   expect(await slot.findByText("In your pending review")).toBeTruthy();
   expect(slot.rpcCalls.find((call) => call.method === "addDraftComment")?.input).toEqual({
+    account: "scott",
     pullRequestId: "PR_kwDOA42",
     headRefOid: HEAD,
     baseRefName: "main",
@@ -470,7 +481,7 @@ test("a finding becomes a draft comment in the pending review", async () => {
   });
   // The summary typed so far stays, and the count is the server's.
   const cached = pluginQueryClient.getQueryData<PullRequest>(
-    pluginRpc.pullRequest.queryKey({ ref: pr.ref }),
+    pluginRpc.pullRequest.queryKey({ account: pr.account, ref: pr.ref }),
   );
   expect(cached?.pendingReview).toEqual({
     id: "PRR_pending",
@@ -523,7 +534,7 @@ test("a finding can be drafted again once its draft leaves the pending review", 
   expect(await slot.findByText("In your pending review")).toBeTruthy();
   // The read after adding it lands, with the draft in it.
   await pluginQueryClient.refetchQueries(
-    { queryKey: pluginRpc.pullRequest.queryKey({ ref: pr.ref }) },
+    { queryKey: pluginRpc.pullRequest.queryKey({ account: pr.account, ref: pr.ref }) },
     { cancelRefetch: false },
   );
   expect(slot.getByText("In your pending review")).toBeTruthy();
@@ -694,7 +705,7 @@ test("the first draft starts a pending review that can be submitted or discarded
   fireEvent.click(await slot.findByRole("button", { name: "Add as draft comment" }));
   expect(await slot.findByText("In your pending review")).toBeTruthy();
   const cached = pluginQueryClient.getQueryData<PullRequest>(
-    pluginRpc.pullRequest.queryKey({ ref: pr.ref }),
+    pluginRpc.pullRequest.queryKey({ account: pr.account, ref: pr.ref }),
   );
   expect(cached?.pendingReview).toEqual({ id: "PRR_new", body: "", draftCount: 1 });
 

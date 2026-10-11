@@ -48,7 +48,9 @@ export function forgetDraftText(key: string): void {
  */
 export function refreshAfterDraft(pr: PullRequest): Promise<unknown> {
   return Promise.all([
-    pluginQueryClient.invalidateQueries({ queryKey: rpc.pullRequest.queryKey({ ref: pr.ref }) }),
+    pluginQueryClient.invalidateQueries({
+      queryKey: rpc.pullRequest.queryKey({ account: pr.account, ref: pr.ref }),
+    }),
     pr.pendingReview
       ? null
       : pluginQueryClient.invalidateQueries({ queryKey: rpc.inbox.queryKey() }),
@@ -206,7 +208,8 @@ export function NewCommentForm({
   onSaved: (threadId: string) => void;
   onClose: () => void;
 }) {
-  const key = `new:${pr.id}:${path}`;
+  // Text typed as one account never opens in the form of another.
+  const key = `new:${pr.account.toLowerCase()}:${pr.id}:${path}`;
   const [text, setText] = useDraftText(key);
   const add = rpc.addDraftComment.useMutation({
     onSuccess: async ({ threadId }) => {
@@ -255,6 +258,7 @@ export function NewCommentForm({
             }}
             onSubmit={() =>
               add.mutate({
+                account: pr.account,
                 pullRequestId: pr.id,
                 headRefOid,
                 baseRefName,

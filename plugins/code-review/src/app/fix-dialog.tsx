@@ -93,7 +93,7 @@ function FixComposer({
   const navigate = useBbNavigate();
   const checkIds = checks.map((check) => check.id);
   const prompt = rpc.fixChecksPrompt.useQuery(
-    { ref: pr.ref, checkIds },
+    { account: pr.account, ref: pr.ref, checkIds },
     { staleTime: PROMPT_STALE_MS, refetchOnWindowFocus: false },
   );
   const start = rpc.startFix.useMutation();
@@ -152,6 +152,7 @@ function FixComposer({
   const submit = async (request: NewThreadRequest) => {
     try {
       const { threadId } = await start.mutateAsync({
+        account: pr.account,
         ref: pr.ref,
         headRefOid: pr.headRefOid,
         request: { ...request },

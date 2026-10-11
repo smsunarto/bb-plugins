@@ -1,6 +1,6 @@
 import { defineMutation } from "@bb-kit/core/rpc";
 import { z } from "zod";
-import { diffSideSchema } from "../../shared/schema.ts";
+import { accountSchema, diffSideSchema } from "../../shared/schema.ts";
 import type { CodeReviewContext } from "../lib/context.ts";
 import { addDraftComment as writeDraft } from "../lib/drafts.ts";
 
@@ -15,6 +15,7 @@ const line = z.number().int().positive();
 export const addDraftComment = defineMutation({
   input: z
     .strictObject({
+      account: accountSchema,
       pullRequestId: z.string().min(1),
       headRefOid: z.string().min(1),
       baseRefName: z.string().min(1),
@@ -41,7 +42,7 @@ export const addDraftComment = defineMutation({
     commentId: z.string(),
     pendingReview: z.strictObject({ id: z.string(), draftCount: z.number().int().nonnegative() }),
   }),
-  async execute(ctx: CodeReviewContext, draft) {
-    return writeDraft(ctx.gh, draft);
+  async execute(ctx: CodeReviewContext, { account, ...draft }) {
+    return writeDraft(ctx.github.as(account), draft);
   },
 });

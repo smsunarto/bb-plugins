@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import type { Check } from "../../shared/schema.ts";
-import { fixChecksPrompt, reviewPrompt } from "./prompts.ts";
+import { fixChecksPrompt, localReviewPrompt, reviewPrompt } from "./prompts.ts";
 import type { PrHead } from "./pull-request.ts";
 
 const PR: PrHead = {
@@ -112,4 +112,47 @@ test("a branch name with backticks stays inside its inline code", () => {
   expect(fixChecksPrompt({ ...pr, headRefName: "x``y`" }, [])).toContain(
     "The pull request's branch is ``` x``y` ```, at",
   );
+});
+
+test("a branch review reads the branch from git and leaves the GitButler workspace alone", () => {
+  const prompt = localReviewPrompt(
+    {
+      id: "16ea307183d0",
+      hostId: "host-1",
+      machine: "cardinal",
+      path: "/home/scott/git/api",
+      repoName: "api",
+      repository: "acme/api",
+      branch: "scott/it's;`ok`",
+      status: "ahead",
+      head: "cc36d32a212a2b8b6611fb73549fe6d04fb6ec38",
+      base: "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
+      parent: "scott/login-copy",
+      commits: [
+        {
+          commitId: "cc36d32a212a2b8b6611fb73549fe6d04fb6ec38",
+          message: "Rate-limit the login endpoint\n\n{{criteria}} stays as written.",
+          authorName: "Scott",
+          createdAt: "2026-10-10T09:00:00Z",
+        },
+      ],
+    },
+    "Watch the auth paths.",
+  );
+
+  expect(prompt).toStartWith(
+    "Review the unpublished branch `` scott/it's;`ok` `` in `api` and report every actionable finding",
+  );
+  expect(prompt).toContain("- Checkout: `/home/scott/git/api` on cardinal");
+  expect(prompt).toContain(
+    "- Base: `4b825dc642cb6eb9a060e54bf8d69288fbee4904`, the head of `scott/login-copy`",
+  );
+  expect(prompt).toContain("- `cc36d32` Rate-limit the login endpoint\n");
+  expect(prompt).toContain(
+    "Review `git diff 4b825dc642cb6eb9a060e54bf8d69288fbee4904 cc36d32a212a2b8b6611fb73549fe6d04fb6ec38`",
+  );
+  expect(prompt).toContain("`git show cc36d32a212a2b8b6611fb73549fe6d04fb6ec38:<path>`");
+  expect(prompt).toContain("- It was introduced by the change under review.");
+  expect(prompt).toContain("## The reviewer's instructions\n\nWatch the auth paths.\n");
+  expect(prompt).not.toContain("{{");
 });

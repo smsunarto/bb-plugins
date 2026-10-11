@@ -98,6 +98,7 @@ test("a new comment is sent with the head and base its lines were picked in", as
       {
         method: "addDraftComment",
         input: {
+          account: "scott",
           pullRequestId: "PR_kwDOA42",
           headRefOid: "h1",
           baseRefName: "main",
