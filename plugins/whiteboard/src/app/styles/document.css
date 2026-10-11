@@ -117,16 +117,6 @@
   font: 11px/1.4 var(--wb-font-mono);
 }
 
-/* Upstream spaces consecutive peeks as siblings (styles.css), but the API
-   document wraps every block in `.api-document-node`, so its peeks touched. */
-.review-canvas-root[data-review-theme]
-  .review-document
-  .api-document-node:has(> .code-peek)
-  + .api-document-node
-  > .code-peek {
-  margin-block-start: 14px;
-}
-
 /*
  * Prose. Markdown runs sit in a `.bb-markdown-prose` wrapper, so the vendored
  * direct-child measure (api-document.css) misses their paragraphs and tables.
@@ -136,6 +126,247 @@
   width: min(100%, var(--review-prose-max-width));
   max-width: calc(100cqi - 2 * var(--review-document-padding-inline));
   margin-inline: auto;
+}
+
+/*
+ * Document type and rhythm. The prose wrapper also matches bb's light chat
+ * sheet (13px) and, while bb is dark, Monokai's agent-message rules (14px,
+ * weight 430, chat margins), so these pin one scale whatever bb's appearance.
+ * Sizes step 28 / 20 / 17 / 16 / 15 / 14. Running text keeps a 38em measure,
+ * about 75 characters; headings, tables, code and diagrams use the full
+ * column. bb's Inter has no optical size axis, so headings take Inter's own
+ * tracking for their size.
+ */
+.review-canvas-root[data-review-theme] .review-document {
+  --wb-measure: 38em;
+  --wb-block-gap: 16px;
+  --wb-node-gap: 24px;
+}
+
+.review-canvas-root[data-review-theme] .review-document h1:not(.bb-markdown-prose *) {
+  font-size: 28px;
+  font-weight: 600;
+  line-height: 34px;
+  letter-spacing: -0.021em;
+  text-wrap: balance;
+}
+
+.review-canvas-root[data-review-theme] .review-section-header {
+  margin-block: 48px 12px;
+}
+
+/* Restates upstream's headroom under the title (whiteboard.css), which the
+   rule above would otherwise replace. */
+.review-canvas-root[data-review-theme]
+  .review-document-header
+  + .api-document-node
+  .review-section-header {
+  margin-block-start: 40px;
+}
+
+.review-canvas-root[data-review-theme] .review-section-heading h2 {
+  font-size: 20px;
+  font-weight: 600;
+  line-height: 28px;
+  letter-spacing: -0.017em;
+  text-wrap: balance;
+}
+
+/* Blocks are separate nodes, and the nodes own the space between them: a
+   gap above each node that follows another, none on the block inside. So
+   prose, peeks and diagrams sit the same distance apart, and a section's
+   heading stays closer to its first block than any gap. */
+.review-canvas-root[data-review-theme] .review-document .api-document-node > * {
+  margin-block: 0;
+}
+
+.review-canvas-root[data-review-theme] .review-document .api-document-node + .api-document-node {
+  margin-block-start: var(--wb-node-gap);
+}
+
+/* Erasing. Upstream's collapse (whiteboard.css `wb-collapse`) zeroes the
+   margins from the start of its delay, which would drop the gap above an
+   erased block at once; these keep the timing and close the gap with the
+   block. A leading block has no gap above it, so it pulls its follower's
+   gap shut with a negative margin instead: the follower is about to lead. */
+.review-canvas-root[data-review-theme] .review-document .api-document-node[data-motion="erasing"] {
+  animation-name: wb-node-collapse;
+}
+
+.review-canvas-root[data-review-theme]
+  .review-document
+  .api-document-node[data-motion="erasing"]:not(.api-document-node + *):has(+ .api-document-node) {
+  animation-name: wb-node-collapse-leading;
+}
+
+@keyframes wb-node-collapse {
+  from {
+    height: auto;
+  }
+  to {
+    height: 0;
+    margin-block: 0;
+  }
+}
+
+@keyframes wb-node-collapse-leading {
+  from {
+    height: auto;
+  }
+  to {
+    height: 0;
+    margin-block: 0 calc(-1 * var(--wb-node-gap));
+  }
+}
+
+/* Reduced motion hides an erased block at once (whiteboard.css). */
+@media (prefers-reduced-motion: reduce) {
+  .review-canvas-root[data-review-theme]
+    .review-document
+    .api-document-node[data-motion="erasing"]:not(.api-document-node + *)
+    + .api-document-node {
+    margin-block-start: 0;
+  }
+}
+
+.review-canvas-root[data-review-theme] .review-document .bb-markdown-prose:not(.agent-markdown) {
+  font-size: 15px;
+  font-weight: 400;
+  line-height: 1.6;
+}
+
+.review-canvas-root[data-review-theme]
+  .review-document
+  .bb-markdown-prose:not(.agent-markdown)
+  :is(p, li) {
+  font-size: inherit;
+  line-height: inherit;
+  text-wrap: pretty;
+}
+
+.review-canvas-root[data-review-theme]
+  .review-document
+  .bb-markdown-prose:not(.agent-markdown)
+  > * {
+  margin-block: 0;
+}
+
+.review-canvas-root[data-review-theme]
+  .review-document
+  .bb-markdown-prose:not(.agent-markdown)
+  > :is(p, ul, ol, blockquote) {
+  max-inline-size: var(--wb-measure);
+}
+
+.review-canvas-root[data-review-theme]
+  .review-document
+  .bb-markdown-prose:not(.agent-markdown)
+  > *
+  + * {
+  margin-block-start: var(--wb-block-gap);
+}
+
+.review-canvas-root[data-review-theme]
+  .review-document
+  .bb-markdown-prose:not(.agent-markdown)
+  :is(h1, h2, h3, h4, h5, h6) {
+  font-weight: 600;
+  letter-spacing: normal;
+  text-transform: none;
+  text-wrap: balance;
+}
+
+.review-canvas-root[data-review-theme]
+  .review-document
+  .bb-markdown-prose:not(.agent-markdown)
+  > *
+  + :is(h1, h2, h3, h4, h5, h6) {
+  margin-block-start: 28px;
+}
+
+.review-canvas-root[data-review-theme]
+  .review-document
+  .bb-markdown-prose:not(.agent-markdown)
+  > :is(h1, h2, h3, h4, h5, h6)
+  + * {
+  margin-block-start: 8px;
+}
+
+.review-canvas-root[data-review-theme]
+  .review-document
+  .bb-markdown-prose:not(.agent-markdown)
+  :is(h1, h2) {
+  font-size: 17px;
+  line-height: 24px;
+  letter-spacing: -0.013em;
+}
+
+.review-canvas-root[data-review-theme] .review-document .bb-markdown-prose:not(.agent-markdown) h3 {
+  font-size: 16px;
+  line-height: 24px;
+  letter-spacing: -0.011em;
+}
+
+.review-canvas-root[data-review-theme]
+  .review-document
+  .bb-markdown-prose:not(.agent-markdown)
+  :is(h4, h5, h6) {
+  font-size: 15px;
+  line-height: 24px;
+}
+
+.review-canvas-root[data-review-theme]
+  .review-document
+  .bb-markdown-prose:not(.agent-markdown)
+  :is(strong, b) {
+  font-weight: 600;
+}
+
+.review-canvas-root[data-review-theme]
+  .review-document
+  .bb-markdown-prose:not(.agent-markdown)
+  :is(ul, ol) {
+  padding-inline-start: 1.5em;
+}
+
+.review-canvas-root[data-review-theme] .review-document .bb-markdown-prose:not(.agent-markdown) li {
+  margin: 0;
+  padding-inline-start: 0.25em;
+}
+
+.review-canvas-root[data-review-theme]
+  .review-document
+  .bb-markdown-prose:not(.agent-markdown)
+  :is(li + li, li > :is(ul, ol)) {
+  margin-block-start: 6px;
+}
+
+.review-canvas-root[data-review-theme]
+  .review-document
+  .bb-markdown-prose:not(.agent-markdown)
+  :not(pre)
+  > code {
+  font-size: 0.875em;
+}
+
+.review-canvas-root[data-review-theme]
+  .review-document
+  .bb-markdown-prose:not(.agent-markdown)
+  table {
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+  line-height: 20px;
+}
+
+.review-canvas-root[data-review-theme]
+  .review-document
+  .bb-markdown-prose:not(.agent-markdown)
+  :is(th, td) {
+  line-height: inherit;
+}
+
+.review-canvas-root[data-review-theme] .review-document .bb-markdown-prose:not(.agent-markdown) th {
+  font-weight: 600;
 }
 
 /* bb prose lays tables out automatically, where upstream's `anywhere` lets a
