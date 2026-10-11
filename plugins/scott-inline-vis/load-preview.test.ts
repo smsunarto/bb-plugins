@@ -124,3 +124,95 @@ test("maps missing files and rejects binary or oversized content before creating
     expect(createPreview).not.toHaveBeenCalled();
   }
 });
+
+describe("lease reuse", () => {
+  function leasing() {
+    let leases = 0;
+    const { client, createPreview } = sdk();
+    createPreview.mockImplementation(async () => ({
+      baseUrl: `/api/v1/file-previews/lease-${++leases}`,
+      expiresAtMs: Date.now() + 3_600_000,
+    }));
+    return { client, createPreview };
+  }
+
+  test("reopening a preview keeps the directory's asset URLs while the server still honors them", async () => {
+    const head = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(null));
+    const { client, createPreview } = leasing();
+    const first = await loadPreview(client, "thread-1", "/charts/a.html");
+    const second = await loadPreview(client, "thread-1", "/charts/b.html");
+    expect([first.url, second.url]).toEqual([
+      "/api/v1/file-previews/lease-1/a.html",
+      "/api/v1/file-previews/lease-1/b.html",
+    ]);
+    expect(createPreview).toHaveBeenCalledTimes(1);
+    expect(head.mock.calls.map(([url, init]) => [url, init?.method])).toEqual([
+      ["/api/v1/file-previews/lease-1/b.html", "HEAD"],
+    ]);
+    // Another directory gets its own lease.
+    const other = await loadPreview(client, "thread-1", "/reports/c.html");
+    expect(other.url).toBe("/api/v1/file-previews/lease-2/c.html");
+    head.mockRestore();
+  });
+
+  test("replaces a lease the server forgot, for example after a restart", async () => {
+    const head = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(new Response("File preview expired", { status: 404 }));
+    const { client, createPreview } = leasing();
+    await loadPreview(client, "thread-1", "/charts/a.html");
+    const reopened = await loadPreview(client, "thread-1", "/charts/a.html");
+    expect(reopened.url).toBe("/api/v1/file-previews/lease-2/a.html");
+    expect(createPreview).toHaveBeenCalledTimes(2);
+    head.mockRestore();
+  });
+
+  test("Markdown previews always take a fresh lease", async () => {
+    const head = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(null));
+    const { client, createPreview } = leasing();
+    const first = await loadPreview(client, "thread-1", "/notes/a.md");
+    const second = await loadPreview(client, "thread-1", "/notes/a.md");
+    expect([first.url, second.url]).toEqual([
+      "/api/v1/file-previews/lease-1/a.md",
+      "/api/v1/file-previews/lease-2/a.md",
+    ]);
+    expect(createPreview).toHaveBeenCalledTimes(2);
+    expect(head).not.toHaveBeenCalled();
+    head.mockRestore();
+  });
+
+  test("replaces a lease that runs short while the file read is pending", async () => {
+    let now = 1_000_000;
+    const clock = vi.spyOn(Date, "now").mockImplementation(() => now);
+    const head = vi.spyOn(globalThis, "fetch").mockImplementation(async () => {
+      now += 12 * 60_000;
+      return new Response(null);
+    });
+    const { client, createPreview } = sdk();
+    let leases = 0;
+    createPreview.mockImplementation(async () => ({
+      baseUrl: `/api/v1/file-previews/lease-${++leases}`,
+      expiresAtMs: now + 11 * 60_000,
+    }));
+    await loadPreview(client, "thread-1", "/charts/a.html");
+    const reopened = await loadPreview(client, "thread-1", "/charts/a.html");
+    expect(head).toHaveBeenCalledTimes(1);
+    expect(reopened.url).toBe("/api/v1/file-previews/lease-2/a.html");
+    clock.mockRestore();
+    head.mockRestore();
+  });
+
+  test("does not reuse a lease close to expiry", async () => {
+    const head = vi.spyOn(globalThis, "fetch");
+    const { client, createPreview } = sdk();
+    createPreview.mockImplementation(async () => ({
+      baseUrl: "/api/v1/file-previews/lease",
+      expiresAtMs: Date.now() + 60_000,
+    }));
+    await loadPreview(client, "thread-1", "/charts/a.html");
+    await loadPreview(client, "thread-1", "/charts/a.html");
+    expect(createPreview).toHaveBeenCalledTimes(2);
+    expect(head).not.toHaveBeenCalled();
+    head.mockRestore();
+  });
+});
