@@ -21,8 +21,10 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import "./app.css";
 import {
-  INLINE_ASSET_MESSAGE,
+  fetchInlineAsset,
+  INLINE_ASSET_READY,
   prepareInlineAssets,
+  type InlineAssetResult,
   type InlinePreviewAsset,
 } from "./inline-assets.ts";
 import {
@@ -345,6 +347,7 @@ function useFragmentBridge(
     window.addEventListener("message", deliver);
     return () => window.removeEventListener("message", deliver);
   }, [state, frame]);
+  const [assetError, setAssetError] = useState<string | null>(null);
   useLayoutEffect(() => {
     if (
       state.status !== "ready" ||
@@ -353,21 +356,62 @@ function useFragmentBridge(
       state.assets.length === 0
     )
       return;
-    const deliver = (event: MessageEvent) => {
+    const token = state.token;
+    const controller = new AbortController();
+    // Media downloads while the frame loads, and each asset goes to the frame
+    // as soon as it settles. Images take the link first: they show on arrival,
+    // while a video cannot play until its whole file is here anyway.
+    const settled: InlineAssetResult[] = [];
+    let served: Window | null = null;
+    let port: MessagePort | null = null;
+    const settle = (result: InlineAssetResult) => {
+      if (controller.signal.aborted) return;
+      settled.push(result);
+      port?.postMessage(result);
+    };
+    const load = (asset: InlinePreviewAsset) =>
+      fetchInlineAsset(asset, controller.signal).then(
+        (blob) => settle({ key: asset.key, blob }),
+        (error: unknown) => {
+          if (controller.signal.aborted) return;
+          setAssetError(
+            (current) => current ?? (error instanceof Error ? error.message : String(error)),
+          );
+          settle({ key: asset.key, failed: true });
+        },
+      );
+    const { assets } = state;
+    void (async () => {
+      await Promise.all(assets.filter((asset) => asset.image).map(load));
+      if (!controller.signal.aborted)
+        await Promise.all(assets.filter((asset) => !asset.image).map(load));
+    })();
+    // Each frame window gets one port, from its first document. A replacement
+    // frame announces itself again and gets everything settled so far.
+    const ready = (event: MessageEvent) => {
+      const source = frame.current?.contentWindow;
+      const [next] = event.ports;
       if (
-        event.source !== frame.current?.contentWindow ||
-        event.data?.type !== "bb:inline-preview-ready" ||
-        event.data.token !== state.token
+        !source ||
+        !next ||
+        source === served ||
+        event.source !== source ||
+        event.data?.type !== INLINE_ASSET_READY ||
+        event.data.token !== token
       )
         return;
-      window.removeEventListener("message", deliver);
-      frame.current?.contentWindow?.postMessage(
-        { type: INLINE_ASSET_MESSAGE, token: state.token, assets: state.assets },
-        "*",
-      );
+      served = source;
+      port?.close();
+      port = next;
+      for (const result of settled) port.postMessage(result);
     };
-    window.addEventListener("message", deliver);
-    return () => window.removeEventListener("message", deliver);
+    window.addEventListener("message", ready);
+    return () => {
+      window.removeEventListener("message", ready);
+      controller.abort();
+      port?.close();
+      setAssetError(null);
+    };
   }, [state, frame]);
 
   useEffect(() => {
@@ -404,7 +448,7 @@ function useFragmentBridge(
     };
   }, [state, frame]);
 
-  return { contentHeight, tweaks, frameKey };
+  return { contentHeight, tweaks, frameKey, assetError };
 }
 
 function PreviewActions({
@@ -524,7 +568,7 @@ function ExpandedPreview({
     // An inline preview must not take focus from the composer on load.
     else element.setAttribute("open", "");
   }, [wide, state.status]);
-  const { contentHeight, tweaks, frameKey } = useFragmentBridge(
+  const { contentHeight, tweaks, frameKey, assetError } = useFragmentBridge(
     state,
     frame,
     updateState,
@@ -555,10 +599,9 @@ function ExpandedPreview({
         const fragment = isFragment(result.html);
         const widget = fragment ? await restore(controller.signal) : null;
         if (cancelled) return;
-        const prepared = await prepareInlineAssets(
+        const prepared = prepareInlineAssets(
           result.html,
           result.url,
-          controller.signal,
           fragment
             ? (document, token) =>
                 injectFragmentRuntime(document, {
@@ -687,6 +730,11 @@ function ExpandedPreview({
           saveError={saveError}
           onRetry={() => setRestoreRevision((value) => value + 1)}
         />
+        {assetError && (
+          <Alert source={source} error>
+            Some media in {state.file} did not load: {assetError}
+          </Alert>
+        )}
         <div
           className={`inline-vis-workspace${tweakOpen && tweaks.groups.length > 0 ? " inline-vis-with-tweaks" : ""}`}
         >

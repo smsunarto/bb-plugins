@@ -21,53 +21,88 @@ export function resolvePreviewAssetUrl(src: string, documentUrl: URL, rootUrl: U
  */
 export interface InlinePreviewAsset {
   key: string;
-  blob: Blob;
-  hash: string;
+  url: string;
+  image: boolean;
 }
 
+/** One asset's outcome, sent to the frame as soon as it settles. */
+export type InlineAssetResult = { key: string; blob: Blob } | { key: string; failed: true };
+
 // Blob URLs are storage-partitioned. Create them inside the opaque frame from
-// structured-cloned Blobs, never in the authenticated parent origin.
-export const INLINE_ASSET_MESSAGE = "bb:inline-preview-assets";
+// structured-cloned Blobs, never in the authenticated parent origin. Results
+// travel over a port the frame document creates, so they die with that
+// document instead of following the frame window to wherever it navigates.
+export const INLINE_ASSET_READY = "bb:inline-preview-ready";
 const ASSET_ATTRIBUTE = "data-bb-inline-preview";
+const HASH_ATTRIBUTE = "data-bb-inline-preview-hash";
 const ASSET_BRIDGE = `(() => {
   const token = "BB_ASSET_TOKEN";
   const urls = [];
-  let received = false;
-  addEventListener("message", (event) => {
-    if (event.source !== parent || received || event.data?.type !== "bb:inline-preview-assets" || event.data.token !== token) return;
-    received = true;
-    const players = new Set();
-    for (const asset of event.data.assets) {
-      const url = URL.createObjectURL(asset.blob);
-      urls.push(url);
-      for (const element of document.querySelectorAll("[data-bb-inline-preview]")) {
-        if (element.getAttribute("data-bb-inline-preview") !== asset.key) continue;
-        element.src = url + asset.hash;
-        element.removeAttribute("data-bb-inline-preview");
-        const player = element.closest("video");
-        if (player) players.add(player);
+  const statuses = new Map();
+  const cannotPlay = "This browser cannot play this video. Try a compatible MP4 copy.";
+  const report = (player, text) => {
+    const status = statuses.get(player);
+    status.setAttribute("role", "alert");
+    status.textContent = text;
+    status.hidden = false;
+  };
+  // Every candidate has arrived, the browser tried them all, and none loaded.
+  const exhausted = (player) =>
+    !player.querySelector("[data-bb-inline-preview]") &&
+    player.networkState === HTMLMediaElement.NETWORK_NO_SOURCE &&
+    player.readyState === HTMLMediaElement.HAVE_NOTHING;
+  const watch = (player) => {
+    const status = document.createElement("p");
+    status.setAttribute("role", "status");
+    status.style.cssText = "position:fixed;inset:auto 0 0;margin:0;padding:12px;background:Canvas;color:CanvasText;z-index:2147483647;font:14px system-ui";
+    status.textContent = "Loading video…";
+    player.after(status);
+    statuses.set(player, status);
+    // Media errors do not bubble. Capture sees the player's own error and each
+    // <source> candidate's, including failures only a device's decoder hits.
+    player.addEventListener("error", (event) => {
+      if (event.target !== player) {
+        if (exhausted(player)) report(player, cannotPlay);
+        return;
       }
+      const code = player.error?.code;
+      report(player, code === 3 || code === 4 ? cannotPlay : "Video playback failed. Reload the preview to try again.");
+    }, true);
+    player.addEventListener("loadeddata", () => { status.hidden = true; });
+  };
+  const receive = ({ key, blob }) => {
+    const elements = [...document.querySelectorAll("[data-bb-inline-preview]")]
+      .filter((element) => element.getAttribute("data-bb-inline-preview") === key);
+    if (elements.length === 0) return;
+    const url = blob ? URL.createObjectURL(blob) : null;
+    if (url) urls.push(url);
+    const players = new Set();
+    for (const element of elements) {
+      if (url) element.src = url + (element.getAttribute("data-bb-inline-preview-hash") ?? "");
+      element.removeAttribute("data-bb-inline-preview");
+      element.removeAttribute("data-bb-inline-preview-hash");
+      const player = element.closest("video");
+      if (player) players.add(player);
     }
     for (const player of players) {
-      // Media errors do not bubble. Report them next to the affected player,
-      // including failures that only occur on a device's hardware decoder.
-      const error = document.createElement("p");
-      error.setAttribute("role", "alert");
-      error.style.cssText = "position:fixed;inset:auto 0 0;margin:0;padding:12px;background:Canvas;color:CanvasText;z-index:2147483647;font:14px system-ui";
-      error.hidden = true;
-      player.after(error);
-      player.addEventListener("error", () => {
-        const code = player.error?.code;
-        error.textContent = code === 3 || code === 4
-          ? "This browser cannot play this video. Try a compatible MP4 copy."
-          : "Video playback failed. Reload the preview to try again.";
-        error.hidden = false;
-      });
-      player.addEventListener("loadeddata", () => { error.hidden = true; });
-      player.load();
+      // A late <source> must not restart a player that already chose another.
+      const choosing = player.networkState === HTMLMediaElement.NETWORK_EMPTY || player.networkState === HTMLMediaElement.NETWORK_NO_SOURCE;
+      if (url) {
+        if (choosing) player.load();
+      } else if (!player.querySelector("source") || exhausted(player)) {
+        report(player, "Video failed to load.");
+      }
     }
+  };
+  addEventListener("DOMContentLoaded", () => {
+    for (const element of document.querySelectorAll("[data-bb-inline-preview]")) {
+      const player = element.closest("video");
+      if (player && !statuses.has(player)) watch(player);
+    }
+    const channel = new MessageChannel();
+    channel.port1.onmessage = (event) => receive(event.data);
+    parent.postMessage({ type: "bb:inline-preview-ready", token }, "*", [channel.port2]);
   });
-  addEventListener("DOMContentLoaded", () => parent.postMessage({ type: "bb:inline-preview-ready", token }, "*"));
   addEventListener("pagehide", () => { for (const url of urls) URL.revokeObjectURL(url); });
 })();`;
 
@@ -88,16 +123,16 @@ export function injectWideEscapeBridge(document: Document, token: string) {
 }
 
 /**
- * Build the frame document. Local media becomes Blob assets, and `prepare`
- * (the fragment runtime) gets the parsed document plus the message token.
- * Without either, the caller loads the leased URL directly.
+ * Build the frame document. Local media becomes keyed placeholders that the
+ * frame fills from `fetchInlineAsset` Blobs, so the document renders before
+ * any media arrives. `prepare` (the fragment runtime) gets the parsed document
+ * plus the message token. Without either, the caller loads the leased URL directly.
  */
-export async function prepareInlineAssets(
+export function prepareInlineAssets(
   html: string,
   previewUrl: string,
-  signal: AbortSignal,
   prepare?: (document: Document, token: string) => void,
-): Promise<{ html?: string; assets: InlinePreviewAsset[]; token?: string }> {
+): { html?: string; assets: InlinePreviewAsset[]; token?: string } {
   const documentUrl = new URL(previewUrl, window.location.href);
   const rootUrl = new URL("./", documentUrl);
   const document = new DOMParser().parseFromString(html, "text/html");
@@ -109,42 +144,26 @@ export async function prepareInlineAssets(
   const sources = localBase
     ? [...document.querySelectorAll("img[src], video[src], video source[src]")]
     : [];
-  const videos = sources.flatMap((element) => {
+  const media = sources.flatMap((element) => {
     const url = resolvePreviewAssetUrl(element.getAttribute("src")!, assetBase, rootUrl);
     return url ? [{ element, url }] : [];
   });
-  if (videos.length === 0 && !prepare) return { assets: [] };
-  const blobs = new Map<string, Blob>();
-  const assets: InlinePreviewAsset[] = [];
-  // Sequential reads keep peak transport memory bounded to one asset at a time.
-  for (const { element, url } of videos) {
-    signal.throwIfAborted();
+  if (media.length === 0 && !prepare) return { assets: [] };
+  const assets = new Map<string, InlinePreviewAsset>();
+  for (const { element, url } of media) {
     const hash = url.hash;
     url.hash = "";
-    let blob = blobs.get(url.href);
-    if (!blob) {
-      const response = await fetch(url, { credentials: "same-origin", redirect: "error", signal });
-      if (!response.ok)
-        throw new Error(`Failed to load asset ${url.pathname}: HTTP ${response.status}`);
-      blob = await response.blob();
-      signal.throwIfAborted();
-      blobs.set(url.href, blob);
-    }
     const image = element.tagName === "IMG";
-    const compatibleType = image
-      ? blob.type.startsWith("image/")
-      : blob.type.startsWith("video/") || blob.type === "application/ogg";
-    if (!compatibleType) {
-      throw new Error(`Preview asset has unsupported MIME type: ${blob.type || "unknown"}`);
-    }
-    const key = String(assets.length);
-    assets.push({ key, blob, hash });
+    const id = `${image}:${url.href}`;
+    const asset = assets.get(id) ?? { key: String(assets.size), url: url.href, image };
+    assets.set(id, asset);
     element.removeAttribute("src");
-    element.setAttribute(ASSET_ATTRIBUTE, key);
+    element.setAttribute(ASSET_ATTRIBUTE, asset.key);
+    if (hash) element.setAttribute(HASH_ATTRIBUTE, hash);
   }
   const token = crypto.randomUUID();
   (prepare ?? injectWideEscapeBridge)(document, token);
-  if (assets.length > 0) {
+  if (assets.size > 0) {
     const bridge = document.createElement("script");
     bridge.textContent = ASSET_BRIDGE.replace("BB_ASSET_TOKEN", token);
     document.head.prepend(bridge);
@@ -155,5 +174,31 @@ export async function prepareInlineAssets(
     base.href = assetBase.href;
     document.head.prepend(base);
   }
-  return { html: `<!doctype html>\n${document.documentElement.outerHTML}`, assets, token };
+  return {
+    html: `<!doctype html>\n${document.documentElement.outerHTML}`,
+    assets: [...assets.values()],
+    token,
+  };
+}
+
+/** Read one declared asset through the authenticated app origin. */
+export async function fetchInlineAsset(
+  asset: InlinePreviewAsset,
+  signal: AbortSignal,
+): Promise<Blob> {
+  const response = await fetch(asset.url, {
+    credentials: "same-origin",
+    redirect: "error",
+    signal,
+  });
+  if (!response.ok)
+    throw new Error(`Failed to load asset ${new URL(asset.url).pathname}: HTTP ${response.status}`);
+  const blob = await response.blob();
+  const compatibleType = asset.image
+    ? blob.type.startsWith("image/")
+    : blob.type.startsWith("video/") || blob.type === "application/ogg";
+  if (!compatibleType) {
+    throw new Error(`Preview asset has unsupported MIME type: ${blob.type || "unknown"}`);
+  }
+  return blob;
 }

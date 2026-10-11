@@ -313,11 +313,96 @@ test("inline-vis loads a full HTML document from the SDK preview URL with an opa
   slot.unmount();
 });
 
-test("inline-vis sends assets once only to the prepared opaque frame and stops on collapse", async () => {
-  const fetchVideo = vi
-    .spyOn(globalThis, "fetch")
-    .mockResolvedValue(new Response("video", { headers: { "content-type": "video/mp4" } }));
+/** The frame's readiness handshake, carrying the port its document created. */
+function announce(source: Window | null, token: string) {
+  const port = { postMessage: vi.fn(), close: vi.fn() };
+  const event = new window.MessageEvent("message", {
+    source,
+    data: { type: "bb:inline-preview-ready", token },
+  });
+  // jsdom has no MessagePort, and its MessageEvent rejects stand-ins.
+  Object.defineProperty(event, "ports", { value: [port] });
+  window.dispatchEvent(event);
+  return port;
+}
 
+function deferredFetch() {
+  const pending: { url: string; signal: AbortSignal; resolve: (response: Response) => void }[] = [];
+  const fetch = vi
+    .spyOn(globalThis, "fetch")
+    .mockImplementation(
+      (url, init) =>
+        new Promise<Response>((resolve) =>
+          pending.push({ url: String(url), signal: init!.signal!, resolve }),
+        ),
+    );
+  return { fetch, pending };
+}
+
+test("inline-vis renders before media downloads and streams each asset to the opaque frame", async () => {
+  const { fetch, pending } = deferredFetch();
+  const slot = renderSlot(
+    await inlineVisDirective(),
+    {
+      attributes: { file: "/tmp/charts/player.html" },
+      source: '::inline-vis{file="/tmp/charts/player.html"}',
+      message: inlineVisMessage,
+      openWorkspaceFile: null,
+    },
+    {
+      sdk: previewSdk(() => '<img src="still.png"><video controls src="clip.mp4"></video>'),
+      pluginId: "scott-inline-vis",
+    },
+  );
+  try {
+    // The frame mounts while both downloads are still in flight.
+    const html = await waitFor(() => {
+      const value = frameDocument(slot.container.querySelector("iframe"));
+      expect(value).toContain("bb:inline-preview-ready");
+      return value!;
+    });
+    // Images download first. The video waits for them, since it plays only once complete.
+    expect(pending.map(({ url }) => url)).toEqual([`http://localhost:3000${LEASE_URL}/still.png`]);
+    const iframe = slot.container.querySelector("iframe")!;
+    expect(iframe.getAttribute("sandbox")).toBe("allow-scripts");
+    expect(iframe.getAttribute("src")).toBe(FRAME_URL);
+    const post = vi.spyOn(iframe.contentWindow!, "postMessage").mockImplementation(() => {});
+    const token = html.match(/const token = "([^"]+)"/)![1]!;
+    const stranger = announce(window, token);
+    const forged = announce(iframe.contentWindow, "wrong-token");
+    const port = announce(iframe.contentWindow, token);
+    // The image goes straight to the frame document's port, then the video starts downloading.
+    pending[0]!.resolve(new Response("image", { headers: { "content-type": "image/png" } }));
+    await waitFor(() => expect(port.postMessage).toHaveBeenCalledTimes(1));
+    const [message] = port.postMessage.mock.calls[0]! as [{ key: string; blob: Blob }];
+    expect(message.key).toBe("0");
+    expect(await message.blob.text()).toBe("image");
+    await waitFor(() => expect(pending).toHaveLength(2));
+    expect(pending[1]!.url).toBe(`http://localhost:3000${LEASE_URL}/clip.mp4`);
+    // A document that later takes over the same frame window, for example
+    // after a link navigates it, cannot claim the remaining downloads.
+    const navigated = announce(iframe.contentWindow, token);
+    fireEvent.click(
+      slot.getByRole("button", { name: "Collapse visualization /tmp/charts/player.html" }),
+    );
+    expect(slot.container.querySelector("iframe")).toBeNull();
+    expect(pending[1]!.signal.aborted).toBe(true);
+    expect(port.close).toHaveBeenCalled();
+    pending[1]!.resolve(new Response("video", { headers: { "content-type": "video/mp4" } }));
+    await Promise.resolve();
+    expect(port.postMessage).toHaveBeenCalledTimes(1);
+    for (const other of [stranger, forged, navigated])
+      expect(other.postMessage).not.toHaveBeenCalled();
+    expect(post).not.toHaveBeenCalled();
+    post.mockRestore();
+  } finally {
+    slot.unmount();
+    fetch.mockRestore();
+  }
+});
+
+test("inline-vis keeps the preview and reports media that failed to download", async () => {
+  const { fetch, pending } = deferredFetch();
   const slot = renderSlot(
     await inlineVisDirective(),
     {
@@ -338,35 +423,17 @@ test("inline-vis sends assets once only to the prepared opaque frame and stops o
       return value!;
     });
     const iframe = slot.container.querySelector("iframe")!;
-    expect(iframe.getAttribute("sandbox")).toBe("allow-scripts");
-    expect(iframe.getAttribute("src")).toBe(FRAME_URL);
-    const post = vi.spyOn(iframe.contentWindow!, "postMessage").mockImplementation(() => {});
-    const token = html.match(/const token = "([^"]+)"/)![1];
-    const ready = (source: Window | null, value: string) =>
-      window.dispatchEvent(
-        new window.MessageEvent("message", {
-          source,
-          data: { type: "bb:inline-preview-ready", token: value },
-        }),
-      );
-    ready(window, token!);
-    ready(iframe.contentWindow, "wrong-token");
-    expect(post).not.toHaveBeenCalled();
-    ready(iframe.contentWindow, token!);
-    expect(post).toHaveBeenCalledTimes(1);
-    expect(post.mock.calls[0]?.[0].assets[0].blob.type).toBe("video/mp4");
-    ready(iframe.contentWindow, token!);
-    expect(post).toHaveBeenCalledTimes(1);
-    fireEvent.click(
-      slot.getByRole("button", { name: "Collapse visualization /tmp/charts/player.html" }),
-    );
-    expect(slot.container.querySelector("iframe")).toBeNull();
-    ready(iframe.contentWindow, token!);
-    expect(post).toHaveBeenCalledTimes(1);
-    post.mockRestore();
+    pending[0]!.resolve(new Response("missing", { status: 404 }));
+    const alert = await slot.findByText(/Some media in \/tmp\/charts\/player\.html did not load/);
+    expect(alert.textContent).toContain("HTTP 404");
+    expect(slot.container.querySelector("iframe")).toBe(iframe);
+    // A frame that announces itself after the failure still learns about it.
+    const token = html.match(/const token = "([^"]+)"/)![1]!;
+    const port = announce(iframe.contentWindow, token);
+    expect(port.postMessage.mock.calls).toEqual([[{ key: "0", failed: true }]]);
   } finally {
     slot.unmount();
-    fetchVideo.mockRestore();
+    fetch.mockRestore();
   }
 });
 
