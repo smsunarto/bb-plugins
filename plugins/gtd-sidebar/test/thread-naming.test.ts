@@ -75,8 +75,8 @@ describe("renderThreadNamingPrompt", () => {
       currentTitle: "Fix authentication",
       allowKeep: true,
     });
-    assert.match(prompt, /^Keep the current thread title/u);
-    assert.match(prompt, /When uncertain, keep it/u);
+    assert.match(prompt, /^Reply with exactly KEEP/u);
+    assert.match(prompt, /When uncertain, reply with exactly KEEP/u);
     assert.match(prompt, /Current title:\nFix authentication/u);
     assert.match(prompt, /Project title rules:\nKeep ticket IDs\.\nUse \[Auth\]\./u);
     assert.doesNotMatch(prompt, /first user request|forced mode|Mode:/u);
@@ -329,7 +329,7 @@ describe("planThreadNaming", () => {
     assert.equal(followup.kind, "run");
     if (followup.kind === "run") {
       assert.equal(followup.allowKeep, true);
-      assert.match(followup.prompt, /^Keep the current thread title/u);
+      assert.match(followup.prompt, /^Reply with exactly KEEP/u);
       assert.match(followup.prompt, /Current title:\nGTD title/u);
     }
   });

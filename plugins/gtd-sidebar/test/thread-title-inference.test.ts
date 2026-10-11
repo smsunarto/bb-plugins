@@ -157,4 +157,49 @@ describe("readTitleReply", () => {
     }
     assert.throws(() => readTitleReply(" \n``` \n", false), /returned no title/u);
   });
+
+  test("treats a prose keep decision as unchanged, never as a replacement title", () => {
+    for (const reply of [
+      "keep the current title.",
+      "Keep current title",
+      "Keep the current title (though “Continue prior thread work” is too generic).",
+      "Keep the current title — same task.",
+      "Keep the current title: [Accounts] Pool affinity",
+      "Keep the current title. The task is unchanged.",
+      "KEEP (same task)",
+      "KEEP — same task",
+      "GTD Sidebar: KEEP",
+      "GTD Sidebar: [Accounts] KEEP",
+      "[Accounts] Keep the current title.",
+      "🛠️ Keep the current title.",
+      "📝 KEEP",
+      "Keep  the current title.",
+      "Keep the current thread title",
+      "KEEP THE EXISTING TITLE!",
+      'Title: "Keep the current title."',
+      "```\nKeep the current title.\n```",
+      "<think>The task is unchanged.</think>\nKeep the current title.",
+    ]) {
+      assert.equal(readTitleReply(reply, true), null, reply);
+    }
+    assert.equal(
+      readTitleReply("Keep the current title editable", true),
+      "Keep the current title editable",
+    );
+    assert.equal(readTitleReply("Keep connections alive", true), "Keep connections alive");
+    assert.equal(readTitleReply("Keep activity title stable", true), "Keep activity title stable");
+    assert.equal(readTitleReply("Keep-alive timeout fix", true), "Keep-alive timeout fix");
+  });
+
+  test("generation accepts literal keep-title tasks but rejects KEEP control replies", () => {
+    for (const title of ["Keep existing thread title", "Keep existing title (GTD Sidebar)"]) {
+      assert.equal(readTitleReply(title, false), title);
+    }
+    for (const reply of ["KEEP", "KEEP (same task)", "GTD Sidebar: KEEP", "📝 KEEP"]) {
+      assert.throws(
+        () => readTitleReply(reply, false),
+        /kept the title when a new name was requested/u,
+      );
+    }
+  });
 });

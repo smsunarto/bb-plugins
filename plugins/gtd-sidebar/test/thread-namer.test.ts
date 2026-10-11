@@ -3,6 +3,7 @@ import { describe, expect, mock, test } from "bun:test";
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import { createFakePluginHost, makeThreadResponse } from "@get-bb/plugin-sdk/testing";
 import { createThreadNamer, subscribeToThreadNaming } from "../thread-namer.ts";
+import { readTitleReply } from "../thread-title-inference.ts";
 
 const THREAD_ID = "thr_target";
 
@@ -338,6 +339,20 @@ describe("createThreadNamer", () => {
       title: "[Accounts] Pool affinity",
       inferenceOutput: null,
       events: [requested(), requested(3, "add test", "new-turn")],
+    });
+    assert.deepEqual(await namer.nameThread(THREAD_ID, { kind: "automatic" }), {
+      ok: true,
+      title: "[Accounts] Pool affinity",
+    });
+    assert.deepEqual(updates, []);
+  });
+
+  test("preserves the existing title when the model replies with a prose keep decision", async () => {
+    const { namer, updates } = createHost({
+      title: "[Accounts] Pool affinity",
+      events: [requested(), requested(3, "add test", "new-turn")],
+      inferenceComplete: async (input) =>
+        readTitleReply("keep the current title.", (input as { allowKeep: boolean }).allowKeep),
     });
     assert.deepEqual(await namer.nameThread(THREAD_ID, { kind: "automatic" }), {
       ok: true,

@@ -265,11 +265,29 @@ export function planThreadNaming({
   };
 }
 
-export function sanitizeGeneratedTitle(value: string): string | null {
-  const normalized = value
+function normalizeGeneratedTitle(value: string): string {
+  return value
     .replace(/^(?:\s*(?:📝|🛠️?|🐛|🧪|📦|⚙️?|♻️?|🔎|🚀|☑️?))+/u, "")
     .trim()
     .replace(/\s+/gu, " ");
+}
+
+// A separator can introduce commentary; another task word cannot.
+const KEEP_TITLE_REPLY =
+  /^keep( (?:the )?(?:(?:current|existing) )?(?:thread )?title)?(?=[.!]?$|[.!:;,]?\s+[(—–-]|[.!:;]\s)/iu;
+
+export function isKeepTitleReply(value: string, allowProse = true): boolean {
+  const normalized = normalizeGeneratedTitle(value);
+  const candidates = [normalized, normalized.replace(/^[^:]+:\s*/u, "")];
+  return candidates.some((candidate) => {
+    const match = KEEP_TITLE_REPLY.exec(candidate.replace(/^(?:\[[^\]]*\]\s*)+/u, ""));
+    // In generation mode, prose can be a literal task name. Bare KEEP is reserved.
+    return match !== null && (allowProse || match[1] === undefined);
+  });
+}
+
+export function sanitizeGeneratedTitle(value: string): string | null {
+  const normalized = normalizeGeneratedTitle(value);
   const title = Array.from(titleSegmenter.segment(normalized), ({ segment }) => segment)
     .slice(0, MAX_GENERATED_TITLE_LENGTH)
     .join("")

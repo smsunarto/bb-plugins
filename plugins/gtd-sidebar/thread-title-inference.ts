@@ -1,5 +1,6 @@
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import type { GtdSidebarCodexResult, GtdSidebarHostClient } from "./lib/host-contract.ts";
+import { isKeepTitleReply } from "./lib/thread-naming.ts";
 
 // The models of bb's own Codex AI service (plugins/provider-codex/src/ai-service.ts).
 export const TITLE_MODELS = ["gpt-6-luna", "gpt-5.6-luna"] as const;
@@ -13,9 +14,6 @@ const RETRY_WITH_NEXT_MODEL = new Set([
   "service_unavailable",
   "invalid_response",
 ]);
-
-/** The review prompt asks for this exact reply when the current title still fits. */
-export const KEEP_REPLY = "KEEP";
 
 const THINK_BLOCK = /<think(?:ing)?>[\s\S]*?(?:<\/think(?:ing)?>|$)/giu;
 const CODE_FENCE_LINE = /^```[\w-]*$/u;
@@ -45,7 +43,7 @@ export function readTitleReply(raw: string, allowKeep: boolean): string | null {
     .map((candidate) => candidate.trim())
     .find((candidate) => candidate !== "" && !CODE_FENCE_LINE.test(candidate));
   const title = unwrap(unwrap(line ?? "").replace(LEADING_LABEL, ""));
-  if (title.replace(/[.!]$/u, "").toUpperCase() === KEEP_REPLY) {
+  if (isKeepTitleReply(title, allowKeep)) {
     if (allowKeep) return null;
     throw new Error("The inference service kept the title when a new name was requested.");
   }
