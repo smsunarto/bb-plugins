@@ -26,8 +26,8 @@
   "type": "module",
   "private": true,
   "engines": {
-    "bb": ">=0.41.0 <1.0.0",
-    "bbPluginSdk": ">=0.5.16"
+    "bb": ">=0.44.0 <1.0.0",
+    "bbPluginSdk": ">=0.5.26"
   },
   "bb": {
     "name": "Kitchen Sink",
@@ -43,7 +43,8 @@
     "app": "./src/app/app.tsx",
     "skills": [
       "skills"
-    ]
+    ],
+    "host": "./src/host/host.ts"
   },
   "files": [
     "dist/server.js",
@@ -58,7 +59,10 @@
     "src/app/",
     "src/shared/",
     "skills/",
-    "instructions/"
+    "instructions/",
+    "dist/host.js",
+    "dist/host.meta.json",
+    "src/host/"
   ],
   "dependencies": {
     "@bb-kit/core": "0.2.0",

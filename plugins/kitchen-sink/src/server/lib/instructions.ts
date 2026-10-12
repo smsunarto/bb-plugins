@@ -5,7 +5,7 @@ import { dirname, join } from "node:path";
 // so resolve the plugin root instead of hardcoding a relative path.
 function pluginRoot(): string {
   let dir = import.meta.dirname;
-  while (!existsSync(join(dir, "package.json"))) {
+  while (!existsSync(join(dir, "package.json")) || !existsSync(join(dir, "instructions"))) {
     const parent = dirname(dir);
     if (parent === dir) throw new Error("kitchen-sink: plugin root not found");
     dir = parent;

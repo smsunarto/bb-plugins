@@ -1,3 +1,6 @@
+import { editors as editorCommand } from "./command/editors.ts";
+import { editors as editorTool } from "./tools/editors.ts";
+import { createUnityEditors } from "./lib/unity-editors.ts";
 import { definePlugin } from "@bb-kit/core/plugin";
 import { readInstructions } from "./lib/instructions.ts";
 
@@ -18,6 +21,10 @@ export default definePlugin({
     discoverable: true,
     description: "Smart Embed citations.",
   },
+  command: { editors: editorCommand },
+  services(bb) {
+    return { unityEditors: createUnityEditors(bb) };
+  },
   setup({ bb }) {
     registerTimelineMotionSettings(bb);
     for (const provider of mentionProviders) {
@@ -27,7 +34,7 @@ export default definePlugin({
     registerCompletionSound(bb);
   },
   agents: {
-    tools: {},
+    tools: { editors: editorTool },
     instructions: () => SMART_EMBED_INSTRUCTIONS,
   },
 });
