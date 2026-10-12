@@ -832,6 +832,13 @@ enum UsageBarApp {
             }
             exit(0)
         }
+        // One menu per Mac: a second bb on this Mac (another server or a dev instance)
+        // also runs a helper. The kernel drops the lock when this process exits.
+        let lock = open(NSHomeDirectory() + "/Library/Caches/bb-usage-bar/menu-bar.lock", O_CREAT | O_RDWR, 0o644)
+        if lock < 0 || flock(lock, LOCK_EX | LOCK_NB) != 0 {
+            // src/host/host.ts: LOCKED_EXIT.
+            exit(3)
+        }
         let app = NSApplication.shared
         app.setActivationPolicy(.accessory)
         let delegate = AppDelegate(nativeDir: CommandLine.arguments[1])

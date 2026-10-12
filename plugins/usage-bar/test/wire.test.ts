@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
 import { builtinAccount, measurementSchema } from "../src/server/lib/builtin.ts";
 import { type ExtrasUpdate, NO_EXTRAS } from "../src/server/lib/extras.ts";
-import { buildHelper } from "../src/server/lib/helper.ts";
+import { buildHelper } from "../src/host/helper.ts";
 import { createMenuState } from "../src/server/lib/menu-state.ts";
 import { accountListSchema, type MenuSnapshot, poolProviders } from "../src/server/lib/pool.ts";
 import type { Source } from "../src/server/lib/sources.ts";
@@ -36,9 +36,9 @@ function summary(overrides: Record<string, unknown>) {
   };
 }
 
-/** Send one snapshot exactly as menu-bar.ts does and let the helper decode it. */
+/** Send one snapshot exactly as the host entry does and let the helper decode it. */
 async function decode(snapshot: MenuSnapshot) {
-  const binary = await buildHelper(AbortSignal.timeout(110_000));
+  const { binary } = await buildHelper(AbortSignal.timeout(110_000));
   const { status, stderr } = spawnSync(binary, ["--check-snapshot"], {
     input: `${JSON.stringify({ type: "snapshot", ...snapshot })}\n`,
     encoding: "utf8",

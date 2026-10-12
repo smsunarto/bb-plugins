@@ -26,12 +26,14 @@ CodexBar-style macOS menu bar meters for your Codex and Claude accounts. It read
 
 ## How it works
 
-- A small AppKit helper, [`native/UsageBar.swift`](native/UsageBar.swift), draws the items. The plugin compiles it with `swiftc` on first start and caches the binary under `~/Library/Caches/bb-usage-bar/<source hash>/`.
-- The helper talks to the server over stdin and stdout and exits when bb stops.
-- Only the bb instance using `~/.bb` draws items, so dev instances do not add duplicates. Set `BB_USAGE_BAR_ANY_INSTANCE=1` on a dev server to draw from it anyway.
+- The server reads quota and pushes the menu to every connected bb host. On each Mac, the plugin's host entry draws it. Other hosts decline. So the items appear on the Mac you use, even when the bb server runs on another machine.
+- A small AppKit helper, [`native/UsageBar.swift`](native/UsageBar.swift), draws the items. The host entry compiles it with `swiftc` on first start and caches the binary under `~/Library/Caches/bb-usage-bar/<source hash>/`.
+- The helper talks to the host entry over stdin and stdout and exits when bb stops.
+- One helper runs per Mac. When two bb servers reach the same Mac, the first helper keeps the menu bar and the second waits.
+- Dev bb instances (data directories under `~/.bb-dev`) do not draw items. Set `BB_USAGE_BAR_ANY_INSTANCE=1` on a dev server to draw from it anyway.
 
 ## Requirements
 
 - macOS 13 or later with the Xcode command line tools (`xcode-select --install`), for `swiftc`. Without them, bb lists Usage Bar as needing configuration. On other platforms the plugin idles.
-- The bb server must run on the Mac whose menu bar should show the items, as the desktop app's bundled server does.
+- The Mac must be connected to bb as a host, as the desktop app's own Mac is. Fallback credentials and the CodexBar CLI are read on the machine running the bb server.
 - Account Pooler accounts, or a signed-in Codex or Claude Code CLI. With neither, no items appear.

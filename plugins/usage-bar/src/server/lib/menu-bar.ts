@@ -1,29 +1,15 @@
-import { spawn } from "node:child_process";
-import { homedir } from "node:os";
-import { join, resolve } from "node:path";
-import { createInterface } from "node:readline";
+import { sep } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import { z } from "zod";
-import { buildHelper, nativeDir } from "./helper.ts";
+import { menuHostContract, menuHostSignals } from "../../shared/host-contract.ts";
 import { createMenuState } from "./menu-state.ts";
-import type { MenuSnapshot } from "./pool.ts";
 import { POOL_PLUGIN_ID, createSourceReader } from "./sources.ts";
 
 /** Reading the pool is a local store read; quota itself moves on proxied traffic. */
 const POLL_MS = 15_000;
-const BB_BUNDLE_ID = "dev.bb.desktop";
-
-/** Messages the helper writes to stdout, one JSON object per line. */
-const helperMessageSchema = z.discriminatedUnion("type", [
-  z.object({ type: z.literal("menuOpened") }),
-  z.object({ type: z.literal("refresh") }),
-  z.object({ type: z.literal("openBb") }),
-  z.object({ type: z.literal("quit") }),
-]);
-
-/** Messages the helper reads from stdin. */
-type HelperInput = ({ type: "snapshot" } & MenuSnapshot) | { type: "refreshing"; value: boolean };
+/** The first render on a Mac compiles the helper, which can take a minute. */
+const RENDER_TIMEOUT_MS = 5 * 60_000;
 
 /** Unlike `once(signal, "abort")`, this also settles for an already-aborted signal. */
 function untilAborted(signal: AbortSignal): Promise<void> {
@@ -34,75 +20,86 @@ function untilAborted(signal: AbortSignal): Promise<void> {
 }
 
 /**
- * Own one helper process for the lifetime of the background service: feed it pool
- * snapshots and act on its menu commands. Resolves when the service is stopped or
- * the user quits from the menu. Throws when the helper dies on its own, so the
- * service restarts it with backoff.
+ * Read quota for the lifetime of the background service and push the menu to
+ * every connected host. Each Mac's host entry draws it in that Mac's menu bar,
+ * so the items appear on the Mac you use even when the bb server runs elsewhere.
  */
 export async function runMenuBar(bb: BbPluginApi, signal: AbortSignal): Promise<void> {
-  if (process.platform !== "darwin") {
-    bb.log.info("usage-bar: the menu bar item is macOS only; idling.");
-    await untilAborted(signal);
-    return;
-  }
-
   // Dev bb instances auto-install workspace plugins and would each draw duplicate items.
-  const defaultDataDir = join(homedir(), ".bb");
   if (
-    resolve(bb.server.experimental_dataDir) !== defaultDataDir &&
+    bb.server.experimental_dataDir.split(sep).includes(".bb-dev") &&
     process.env.BB_USAGE_BAR_ANY_INSTANCE !== "1"
   ) {
-    bb.log.info(`usage-bar: only the bb instance at ${defaultDataDir} draws the menu bar; idling.`);
+    bb.log.info("usage-bar: dev bb instances do not draw the menu bar; idling.");
     await untilAborted(signal);
     return;
   }
 
-  const binary = await buildHelper(signal);
-  const helperGone = new AbortController();
-  const live = AbortSignal.any([signal, helperGone.signal]);
-  const child = spawn(binary, [nativeDir()], { stdio: ["pipe", "pipe", "pipe"], signal });
-  child.on("error", (error) => {
-    if (!signal.aborted) bb.log.warn(`usage-bar: helper error: ${error.message}`);
+  const client = bb.hosts.experimental_client({
+    contract: menuHostContract,
+    experimental_signals: menuHostSignals,
   });
-  createInterface({ input: child.stderr }).on("line", (line) => {
-    bb.log.warn(`usage-bar helper: ${line}`);
-  });
-  // A write after the helper exits raises EPIPE here; the exit path handles it.
-  child.stdin.on("error", () => {});
-  // `close`, not `exit`: it waits for stdout to drain, so a final "quit" line is read first.
-  const exited = new Promise<number | null>((resolve) => {
-    child.once("close", (code) => {
-      helperGone.abort();
-      resolve(code);
-    });
-    child.once("error", () => {
-      helperGone.abort();
-      resolve(null);
-    });
-  });
+  let refreshing = false;
+  let hostIds: string[] = [];
+  /** Hosts whose entry answered that it cannot draw a menu bar. */
+  const unsupported = new Set<string>();
+  const problems = new Map<string, string>();
+  /** One render in flight per host; a newer menu waits for it, then goes out. */
+  const inFlight = new Set<string>();
+  const pending = new Set<string>();
 
-  const send = (message: HelperInput) => {
-    if (child.stdin.writable) child.stdin.write(`${JSON.stringify(message)}\n`);
+  const renderOn = (hostId: string) => {
+    if (inFlight.has(hostId)) {
+      pending.add(hostId);
+      return;
+    }
+    inFlight.add(hostId);
+    void (async () => {
+      try {
+        const result = await client.call(
+          "render",
+          { snapshot: state.snapshot(), refreshing },
+          { hostId, signal, timeoutMs: RENDER_TIMEOUT_MS },
+        );
+        if (result.status === "unsupported") unsupported.add(hostId);
+        const problem = result.status === "needs-configuration" ? result.message : undefined;
+        if (problem !== undefined && problems.get(hostId) !== problem) {
+          bb.log.warn(`usage-bar: host ${hostId}: ${problem}`);
+          // Other Macs keep drawing, so mark the plugin instead of stopping the service.
+          bb.status.needsConfiguration(`Host ${hostId}: ${problem}`);
+        }
+        if (problem === undefined) problems.delete(hostId);
+        else problems.set(hostId, problem);
+      } catch (error) {
+        if (!signal.aborted)
+          bb.log.debug(`usage-bar: render on host ${hostId} failed: ${String(error)}`);
+      } finally {
+        inFlight.delete(hostId);
+        if (pending.delete(hostId) && !signal.aborted) renderOn(hostId);
+      }
+    })();
   };
-
-  let lastSent = "";
   const render = () => {
-    const last = state.snapshot();
-    const body = JSON.stringify(last);
-    if (body === lastSent) return;
-    lastSent = body;
-    send({ type: "snapshot", ...last });
+    for (const hostId of hostIds) if (!unsupported.has(hostId)) renderOn(hostId);
   };
-  const state = createMenuState(live, render);
+  const listHosts = async () => {
+    try {
+      const hosts = await bb.sdk.hosts.list({ signal });
+      hostIds = hosts.filter((host) => host.status === "connected").map((host) => host.id);
+    } catch (error) {
+      if (!signal.aborted) bb.log.debug(`usage-bar: listing hosts failed: ${String(error)}`);
+    }
+  };
+
+  const state = createMenuState(signal, render);
   const readSource = createSourceReader(bb);
 
-  const publish = (refresh = false) => state.publish(() => readSource(live, refresh), refresh);
+  const publish = (refresh = false) => state.publish(() => readSource(signal, refresh), refresh);
 
-  let refreshing = false;
   const refreshAll = async () => {
     if (refreshing) return;
     refreshing = true;
-    send({ type: "refreshing", value: true });
+    render();
     try {
       if (state.source?.kind === "pool") {
         await Promise.allSettled(
@@ -115,7 +112,7 @@ export async function runMenuBar(bb: BbPluginApi, signal: AbortSignal): Promise<
                   method: "account.refreshUsage",
                   input: { accountId: account.id },
                   outputSchema: z.unknown(),
-                  signal: live,
+                  signal,
                 }),
               ),
           ),
@@ -126,52 +123,31 @@ export async function runMenuBar(bb: BbPluginApi, signal: AbortSignal): Promise<
         await publish(true);
       } finally {
         refreshing = false;
-        send({ type: "refreshing", value: false });
+        render();
       }
     }
   };
 
-  let quit = false;
-  createInterface({ input: child.stdout }).on("line", (line) => {
-    let message: unknown;
-    try {
-      message = JSON.parse(line);
-    } catch {
-      return;
-    }
-    const parsed = helperMessageSchema.safeParse(message);
-    if (!parsed.success) return;
-    switch (parsed.data.type) {
-      case "menuOpened":
-        void publish();
-        break;
-      case "refresh":
-        void refreshAll();
-        break;
-      case "openBb":
-        spawn("open", ["-b", BB_BUNDLE_ID], { stdio: "ignore" }).on("error", () => {});
-        break;
-      case "quit":
-        quit = true;
-        child.kill();
-        break;
-    }
+  const stopSignals = client.experimental_onSignal("menu", ({ payload }) => {
+    if (payload.type === "refresh") void refreshAll();
+    else void publish();
   });
-
-  await Promise.race([publish(), exited]);
-  const poll = (async () => {
-    while (!live.aborted) {
-      await sleep(POLL_MS, undefined, { signal: live }).catch(() => {});
-      if (!live.aborted) await Promise.race([publish(), exited]);
+  // A source read that ignores the signal must not keep the service from stopping.
+  const stopped = untilAborted(signal);
+  try {
+    await listHosts();
+    await Promise.race([publish(), stopped]);
+    while (!signal.aborted) {
+      await sleep(POLL_MS, undefined, { signal }).catch(() => {});
+      if (signal.aborted) break;
+      await listHosts();
+      // Unchanged quota publishes nothing, so render here too: a host that just
+      // connected or restarted its worker gets the menu, and each host skips
+      // redrawing what it already shows.
+      render();
+      await Promise.race([publish(), stopped]);
     }
-  })();
-
-  const code = await Promise.race([exited, untilAborted(signal).then(() => null)]);
-  helperGone.abort();
-  child.kill();
-  await poll;
-  if (signal.aborted) return;
-  // Quit from the menu hides the item until bb restarts or the plugin reloads.
-  if (quit) return untilAborted(signal);
-  throw new Error(`usage-bar: helper exited with code ${String(code)}`);
+  } finally {
+    stopSignals();
+  }
 }

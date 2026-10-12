@@ -26,16 +26,19 @@
         "dark": "./assets/logo-dark.svg"
       }
     },
-    "server": "./src/server/server.ts"
+    "server": "./src/server/server.ts",
+    "host": "./src/host/host.ts"
   },
   "files": [
     "dist/server.js",
     "dist/server.meta.json",
+    "dist/host.js",
+    "dist/host.meta.json",
     "native/",
     "assets/",
     "README.md",
     "LICENSE",
-    "src/server/"
+    "src/"
   ],
   "dependencies": {
     "@bb-kit/core": "0.2.0",
