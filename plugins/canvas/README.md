@@ -101,7 +101,7 @@ A canvas link opens a Canvas file tab beside the chat. Canvas registers the file
 - **YAML frontmatter.** A leading YAML mapping stays out of the editor and is saved byte-for-byte.
 - **Canvas widgets.** Known components in `.canvas.mdx`, or in any `.mdx` that uses them, render with their persisted state. Comments and suggested edits appear in the review sidebar.
 - **Safe saves.** Saves are compare-and-swap against the version last read. A clean document refreshes after an external write. A pending draft shows **Reload** and **Overwrite** instead.
-- **Relative assets.** Images and `::html{src="./page.html"}` embeds resolve from the file's directory through a short-lived preview lease. Embedded HTML runs in an opaque-origin iframe.
+- **Relative assets.** Images and `::html{src="./page.html"}` embeds resolve from the file's directory through an hour-long preview lease, renewed when an external write reloads the editor. Embedded HTML runs in an opaque-origin iframe. The iframe loads the plugin's `/frame` page, which writes the prepared document into itself. Do not switch back to `srcdoc`: bb mobile's WebView cancels `about:srcdoc` frames. The app fetches the page and inlines its local stylesheets, scripts, and media files of up to 8 MiB, so the embed also works through bb Connect, where the sandboxed frame cannot send the session cookie. Anything else the page loads, such as `fetch()` calls, module imports, and CSS `url()` or `@import` targets, still loads from the frame and fails through Connect.
 
 Other plugins can reuse the editor: `import { MarkdownEditor } from "@smsunarto/bb-plugin-canvas/editor"`.
 

@@ -54,6 +54,14 @@
   background: white;
 }
 
+.canvas-html-embed-status {
+  margin: 0;
+  overflow: auto;
+  padding: 0.7rem;
+  color: var(--muted-foreground);
+  font: 11px var(--font-mono);
+}
+
 @media (max-width: 47.999rem) {
   .canvas-mdx-prose {
     padding-inline: 1.25rem;

@@ -57,6 +57,7 @@ import {
   canvasDescriptors,
   usesCanvasWidgets,
 } from "./editor.tsx";
+import { HtmlEmbed } from "./html-embed.tsx";
 import { parseMarkdownDocument } from "./markdown-document.ts";
 import { preserveEsmPlugin } from "./mdx-esm.tsx";
 import { softBreakPlugin } from "./soft-break.ts";
@@ -216,11 +217,11 @@ function EditorSession(
         return (
           <section className="canvas-html-embed" contentEditable={false}>
             <div className="canvas-html-embed-header">{source}</div>
-            <iframe
+            <HtmlEmbed
               title={`Embedded HTML: ${source}`}
-              sandbox="allow-scripts"
-              style={{ height }}
               src={previewUrl(previewBaseUrl, notePath, source)}
+              rootUrl={previewBaseUrl}
+              height={height}
             />
           </section>
         );

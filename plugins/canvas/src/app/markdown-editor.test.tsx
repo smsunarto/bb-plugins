@@ -1,4 +1,4 @@
-import { afterEach, expect, it, mock } from "bun:test";
+import { afterEach, expect, it, mock, spyOn } from "bun:test";
 import { installDom } from "@bb-kit/core/testing";
 import type { RenderSlotOptions } from "@get-bb/plugin-sdk/testing/app";
 
@@ -505,6 +505,45 @@ it("resolves attachments from the document directory without changing stored pat
   expect(previewUrl("/preview", "notes/file.md", "https://example.com/image.png")).toBe(
     "https://example.com/image.png",
   );
+});
+
+it("renders an HTML embed from the page the app fetched, styles inlined", async () => {
+  const realFetch = globalThis.fetch;
+  const served: Record<string, string> = {
+    "/preview/notes/page.html":
+      '<html><head><link rel="stylesheet" href="page.css"></head><body>Hi</body></html>',
+    "/preview/notes/page.css": "body { color: red; }",
+  };
+  globalThis.fetch = (async (input: URL | RequestInfo) => {
+    const body = served[new URL(String(input)).pathname];
+    return body === undefined ? new Response("", { status: 401 }) : new Response(body);
+  }) as typeof fetch;
+  try {
+    const { slot } = open('::html{src="./page.html"}\n', "notes/guide.mdx");
+    const frame = await slot.findByTitle("Embedded HTML: ./page.html");
+    expect(frame.getAttribute("src")).toBe("/api/v1/plugins/canvas/http/frame");
+    expect(frame.getAttribute("sandbox")).toBe("allow-scripts");
+    expect(frame.hasAttribute("srcdoc")).toBe(false);
+    // The frame page asks its parent for the document once it loads.
+    const frameWindow = (frame as HTMLIFrameElement).contentWindow!;
+    const delivered: unknown[] = [];
+    spyOn(frameWindow, "postMessage").mockImplementation((data: unknown) => {
+      delivered.push(data);
+    });
+    window.dispatchEvent(
+      new window.MessageEvent("message", {
+        source: frameWindow,
+        data: { type: "bb:canvas:frame-ready" },
+      }),
+    );
+    expect(delivered).toHaveLength(1);
+    const { html } = delivered[0] as { html: string };
+    expect(delivered[0]).toEqual({ type: "bb:canvas:document", html });
+    expect(html).toContain("<style>body { color: red; }</style>");
+    expect(html).not.toContain('href="page.css"');
+  } finally {
+    globalThis.fetch = realFetch;
+  }
 });
 
 it.each([
