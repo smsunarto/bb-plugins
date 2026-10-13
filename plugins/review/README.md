@@ -10,7 +10,9 @@ Independent design and implementation reviews by the other model family, with fi
 | Standard | High    | Stable implementation checkpoints and consequential design choices           |
 | Deep     | Maximum | Material failure analysis; required before shipping or opening/updating a PR |
 
-Reviews do not trigger just because a turn ends. During user iteration, agents prefer focused checks and a reviewable preview. Consequential architecture and plans should be reviewed before expensive dependent implementation. A Deep design review does not replace final Deep implementation review. Complete review coverage applies only to its exact candidate; blocking findings must still be resolved and limits reported. This plugin supplies instructions and revision-bound results, not an interceptor for external publication commands.
+Reviews do not trigger just because a turn ends. During user iteration, agents prefer focused checks and a reviewable preview. Consequential architecture and plans should be reviewed before expensive dependent implementation. Review a publication candidate once and reuse its completed run at push, PR update, and merge while the candidate is unchanged. A Deep design review does not replace final Deep implementation review. Complete review coverage applies only to its exact candidate; blocking findings must still be resolved and limits reported. This plugin supplies instructions and revision-bound results, not an interceptor for external publication commands.
+
+Review criteria follow the actionable-bug focus of [Codex’s review rubric](https://github.com/openai/codex/blob/669449b02c4b58de4bcd22485eb60c98a6e38a54/codex-rs/prompts/templates/review/rubric.md) and [Claude Code’s code-review plugin](https://github.com/anthropics/claude-code/blob/main/plugins/code-review/commands/code-review.md). This plugin supplies a short shared prompt with BB target, read-only, and result contracts; it does not invoke either native review workflow. Modes select effort without adding audit checklists.
 
 ## Manual commands
 
@@ -20,9 +22,9 @@ Users can invoke `/review-quick`, `/review-standard`, or `/review-deep` with an 
 
 `review_start({kind?, mode?, summary, scope?, target?, brief?, evidence?, workstream?, reuse?})` starts a run. Defaults: implementation, standard, reuse:auto. Implementation requires a target: `{branch}` or `{base, head, upstream?}`. Design can use an immutable inline proposal without repository context. Keep the summary short; the optional brief and captured UTF-8 evidence `{label,path}` are disclosed lazily. Evidence files are read on the calling host, limited to eight references of 12 KiB each, and retain a content hash. State the revision or combined-workspace state that produced tests/captures.
 
-`review_context({runId, section, path?, side?, offset?})` reads bounded pages of brief, evidence, diff, tree, file, or completed report. Follow `nextOffset` for complete content. Applicable repository instructions are pinned files; reviewers read relevant principle leaf skills before applying them. Deep implementation review reads the complete scoped diff.
+`review_context({runId, section, path?, side?, offset?})` reads bounded pages of brief, evidence, diff, tree, file, or completed report. Follow `nextOffset` for complete content. Applicable repository instructions are available as pinned files. Deep implementation review reads the complete scoped diff.
 
-`review_result({runId, waitSeconds?})` waits at most 60 seconds and reads only the successfully completed turn associated with this run. Failed, unfinished, redirected, or unstructured responses cannot clear the candidate. `current` checks whether the target still resolves to the same base/head. `deepImplementationCovered` requires publication scope, complete diff coverage, a current Deep implementation result with matching execution, and no P0/P1 findings. Descendant helper threads in the same project and environment may read and inherit an unchanged completed publication assessment; a changed candidate needs a new run. It does not authorize publication or replace resolving valid findings.
+BB notifies the parent when the reviewer completes or fails. Retrieve the result once with `review_result({runId, waitSeconds:0})` after notification; do not poll. The tool reads only the successfully completed turn associated with this run. Failed, unfinished, redirected, or unstructured responses cannot clear the candidate. `current` checks whether the target still resolves to the same base/head. `deepImplementationCovered` requires publication scope, complete diff coverage, a current Deep implementation result with matching execution, and no P0/P1 findings. Descendant helper threads in the same project and environment may read and inherit an unchanged completed publication assessment; a changed candidate needs a new run. It does not authorize publication or replace resolving valid findings.
 
 ## GitButler targets
 
@@ -40,7 +42,7 @@ Each assessment has a new run ID. Auto reuse in every mode requires the same par
 bb review start --mode standard --branch scott/feature --prompt 'Check the new routing behavior'
 bb review start --kind design --mode quick --file /absolute/plan.md
 bb review start --mode deep --scope publication --base <base> --head <head> --prompt 'Final implementation review' --json
-bb review result <run-id> --wait 60s
+bb review result <run-id>
 bb review context <run-id> --section diff
 ```
 

@@ -9,18 +9,12 @@ export type ReviewerModels = { claudeModel: string; codexModel: string };
 export const MODES = {
   quick: {
     reasoningLevel: "medium",
-    scope:
-      "Check the changed behavior and immediate contracts. Use supplied evidence and the smallest checks that resolve concrete risks. Do not start a broad audit or exhaustive sweep.",
   },
   standard: {
     reasoningLevel: "high",
-    scope:
-      "Check the changed behavior, relevant callers and consumers, and material failure paths. Expand only when a concrete failure hypothesis requires it.",
   },
   deep: {
     reasoningLevel: "max",
-    scope:
-      "Read the complete scoped diff and examine material correctness, compatibility, security, concurrency, persistence, and dependency risks that apply. Verify candidate findings and state meaningful verification limits. Do not stop at the first finding; avoid unrelated audits.",
   },
 } as const;
 export type Reviewer = {
@@ -55,19 +49,13 @@ export function reviewerPrompt(run: ReviewRun): string {
     kind: request.kind,
     mode: request.mode,
     summary: request.summary,
-    target: target
-      ? `Pinned ${request.scope} scope: ${JSON.stringify(target)}. The base contains dependency context; review only the base-to-head delta.`
-      : "Design proposal is the immutable summary and optional brief of this run. No repository target was supplied.",
-    modeScope: MODES[request.mode].scope,
-    kindScope:
-      request.kind === "design"
-        ? "Challenge the goal, constraints, alternatives, unsupported assumptions, ownership, dependency ordering, compatibility, reversibility, and validation strategy. Suggest the cheapest useful experiment. Cite a decision or plan section; do not invent changed-code line numbers. Distinguish tradeoffs from demonstrated defects."
-        : "Flag regressions introduced by the scoped diff, with a concrete failure scenario and evidence. Identify provably affected consumers rather than speculating. Read relevant unchanged code and tests when needed. Cite pinned file:line ranges. Skip pre-existing defects, style nits, and intentional changes.",
+    scope: request.scope,
+    target: JSON.stringify(target ?? null),
   });
   return [
     `Review run ${run.id}: ${request.kind}, ${request.mode}.`,
     body,
-    `Return only JSON: {"runId":"${run.id}","status":"complete"|"incomplete","findings":[{"priority":0|1|2|3,"title":"...","body":"scenario, evidence, suggested fix","location":"pinned file:line or plan section"}],"coverage":"brief checked scope","limitations":["unresolved risk or verification limit"]}. No Markdown fence. A timeout, missing source, or unfinished verification must not become complete clearance.`,
+    files.read("report", { runId: run.id }),
   ].join("\n\n");
 }
 
