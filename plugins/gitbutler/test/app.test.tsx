@@ -2803,7 +2803,7 @@ test("shows each other machine's applied branches, open, and Refresh reads them 
     },
   });
   const laptop = within(await slot.findByRole("region", { name: "On Personal Mac" }));
-  const toggle = laptop.getByRole("button", { name: "Personal Mac 2" });
+  const toggle = laptop.getByRole("button", { name: "Personal Mac 2 /Users/me/git/bb-plugins" });
   expect(toggle.getAttribute("aria-expanded")).toBe("true");
   const top = within(laptop.getByRole("listitem", { name: "Branch scott/top" }));
   expect(top.getByText("1 commit")).toBeTruthy();
@@ -2834,6 +2834,92 @@ const laptopCheckout = {
   reason: null,
   stacks: workspace.stacks.slice(0, 1),
 };
+
+test("shows an isolated checkout's actual branch, path, and latest commit without workspace actions", async () => {
+  const checkout = {
+    hostId: "laptop",
+    machine: "Personal Mac",
+    path: "/Users/me/git/bb-plugins-isolated",
+    state: "ready",
+    reason: null,
+    stacks: [],
+    gitBranch: {
+      name: "scott/isolated-feature",
+      head: {
+        commitId: "a".repeat(40),
+        message: "feat: show isolated branches\n\nKeep checkout identity visible.",
+        authorName: "Scott",
+        createdAt: "2026-10-15T12:00:00.000Z",
+      },
+    },
+  };
+  const slot = await panel({
+    ...baseRpc,
+    otherMachines: () => ({ checkouts: [checkout], reason: null, environmentId: "env-1" }),
+  });
+  const card = within(await slot.findByRole("region", { name: "On Personal Mac" }));
+  expect(card.getByText("/Users/me/git/bb-plugins-isolated").title).toBe(checkout.path);
+  const branch = within(card.getByRole("listitem", { name: "Branch scott/isolated-feature" }));
+  expect(branch.getByText("Latest commit · feat: show isolated branches")).toBeTruthy();
+  expect(branch.getByText("Latest commit · feat: show isolated branches").title).toBe(
+    checkout.gitBranch.head.message,
+  );
+  expect(
+    branch.getByText((_, element) => element?.tagName === "TIME").getAttribute("datetime"),
+  ).toBe("2026-10-15T12:00:00.000Z");
+  expect(card.queryByText(/\d+ commits?/)).toBeNull();
+  expect(card.queryByText(/Unpushed|Pushed|Ahead|Behind|Diverged/)).toBeNull();
+  expect(card.queryByRole("button", { name: /Push|Land|Delete/ })).toBeNull();
+  expect(card.getAllByRole("button")).toHaveLength(1);
+  expect(slot.inspection.composer.quotes).toEqual([]);
+
+  const toggle = card.getByRole("button");
+  fireEvent.click(toggle);
+  expect(toggle.getAttribute("aria-expanded")).toBe("false");
+  expect(card.queryByText("scott/isolated-feature")).toBeNull();
+  expect(card.getByText(checkout.path)).toBeTruthy();
+  fireEvent.click(toggle);
+  expect(toggle.getAttribute("aria-expanded")).toBe("true");
+  expect(card.getByText("scott/isolated-feature")).toBeTruthy();
+  slot.lifecycle.unmount();
+});
+
+test("keeps checkouts with the same branch on one machine distinct and does not invent missing history", async () => {
+  const slot = await panel({
+    ...baseRpc,
+    otherMachines: () => ({
+      checkouts: ["/Users/me/git/first/bb-plugins", "/Users/me/git/second/bb-plugins"].map(
+        (path) => ({
+          hostId: "laptop",
+          machine: "Personal Mac",
+          path,
+          state: "ready",
+          reason: null,
+          stacks: [],
+          gitBranch: { name: "scott/same-name", head: null },
+        }),
+      ),
+      reason: null,
+      environmentId: "env-1",
+    }),
+  });
+  const cards = await slot.findAllByRole("region", { name: "On Personal Mac" });
+  expect(cards).toHaveLength(2);
+  const first = within(cards[0]!);
+  const second = within(cards[1]!);
+  expect(first.getByText("/Users/me/git/first/bb-plugins")).toBeTruthy();
+  expect(second.getByText("/Users/me/git/second/bb-plugins")).toBeTruthy();
+  for (const card of [first, second]) {
+    expect(card.getByText("scott/same-name")).toBeTruthy();
+    expect(card.getByText("Latest commit unavailable")).toBeTruthy();
+    expect(card.queryByText(/\d+ commits?|No commits|No applied branches/)).toBeNull();
+    expect(card.queryByRole("button", { name: /Push|Land|Delete/ })).toBeNull();
+  }
+  fireEvent.click(first.getByRole("button"));
+  expect(first.queryByText("scott/same-name")).toBeNull();
+  expect(second.getByText("scott/same-name")).toBeTruthy();
+  slot.lifecycle.unmount();
+});
 
 test("shows other machines' branches where this checkout is not a GitButler workspace", async () => {
   const slot = await panel({

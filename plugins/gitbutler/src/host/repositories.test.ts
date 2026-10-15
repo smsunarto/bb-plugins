@@ -1,9 +1,16 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
-import { mkdir, mkdtemp, realpath, rm, symlink } from "node:fs/promises";
+import { mkdir, mkdtemp, realpath, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import { runGit } from "./cli.ts";
-import { listRepositories, NoRepositoryError, resolveRepository } from "./repositories.ts";
+import {
+  findBranchCheckouts,
+  findCheckouts,
+  isKnownWorkspace,
+  listRepositories,
+  NoRepositoryError,
+  resolveRepository,
+} from "./repositories.ts";
 
 const signal = new AbortController().signal;
 let scratch = "";
@@ -47,4 +54,64 @@ test("a key that leads outside the environment is refused", async () => {
   );
   expect(failure).toBeInstanceOf(NoRepositoryError);
   expect((failure as Error).message).toBe("That repository is no longer available.");
+});
+
+test("machine discovery follows registered named worktrees outside known environments only", async () => {
+  const root = join(scratch, "registered", "main");
+  await mkdir(root, { recursive: true });
+  await runGit(root, ["init", "--quiet", "--initial-branch=gitbutler/workspace", "."], signal);
+  await runGit(root, ["config", "user.email", "test@example.com"], signal);
+  await runGit(root, ["config", "user.name", "Test Person"], signal);
+  await runGit(root, ["config", "commit.gpgsign", "false"], signal);
+  await runGit(root, ["remote", "add", "origin", "git@github.com:Acme/App.git"], signal);
+  await writeFile(join(root, "base.txt"), "base\n");
+  await runGit(root, ["add", "base.txt"], signal);
+  await runGit(root, ["commit", "--quiet", "-m", "base"], signal);
+
+  const linked = join(scratch, "external", "performance\ncheckout");
+  const detached = join(scratch, "external", "detached");
+  const stale = join(scratch, "external", "stale");
+  const foreign = join(scratch, "external", "foreign");
+  await runGit(root, ["worktree", "add", "--quiet", "-b", "scott/performance", linked], signal);
+  await runGit(root, ["worktree", "add", "--quiet", "--detach", detached], signal);
+  await runGit(root, ["worktree", "add", "--quiet", "-b", "scott/stale", stale], signal);
+  await runGit(root, ["worktree", "add", "--quiet", "-b", "scott/foreign", foreign], signal);
+  await rm(stale, { recursive: true });
+  await runGit(root, ["config", "extensions.worktreeConfig", "true"], signal);
+  await runGit(
+    foreign,
+    ["config", "--worktree", "remote.origin.url", "git@github.com:Acme/Other.git"],
+    signal,
+  );
+  const unrelated = join(scratch, "external", "unregistered-sibling");
+  await runGit(root, ["init", "--quiet", "--initial-branch=main", unrelated], signal);
+  await runGit(unrelated, ["remote", "add", "origin", "git@github.com:Acme/App.git"], signal);
+  const bare = join(scratch, "external", "bare.git");
+  await runGit(root, ["init", "--quiet", "--bare", bare], signal);
+  const alias = join(scratch, "registered", "alias");
+  await symlink(root, alias);
+  const realRoot = await realpath(root);
+  const realLinked = await realpath(linked);
+
+  const summarize = async (known: string[]) =>
+    (await findBranchCheckouts(known, "github.com/acme/app", signal)).map((repository) => ({
+      path: repository.path,
+      kind: repository.kind,
+      branch: repository.kind === "git" ? repository.branch : null,
+    }));
+  const expected = [
+    { path: realLinked, kind: "git" as const, branch: "scott/performance" },
+    { path: realRoot, kind: "gitbutler" as const, branch: null },
+  ].sort((a, b) => a.path.localeCompare(b.path));
+
+  // The linked path itself is not registered with bb.
+  expect(await summarize([root, alias, join(root, "nested"), bare])).toEqual(expected);
+  // Reaching it through several known paths still gives one row.
+  expect(await summarize([root, alias, linked, root])).toEqual(expected);
+  // Review authorization remains limited to known GitButler workspaces.
+  expect(
+    (await findCheckouts([root, linked], "github.com/acme/app", signal)).map(({ path }) => path),
+  ).toEqual([realRoot]);
+  expect(await isKnownWorkspace([root, linked], realRoot, signal)).toBe(true);
+  expect(await isKnownWorkspace([root, linked], realLinked, signal)).toBe(false);
 });

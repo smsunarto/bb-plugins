@@ -1,10 +1,10 @@
 import { experimental_defineHostEntry } from "@get-bb/plugin-sdk/host";
 import { gitbutlerHostContract } from "../shared/host-contract.ts";
-import type { HostWorkspace, WorkspaceState } from "../shared/schema.ts";
+import type { HostCheckout, HostWorkspace, WorkspaceState } from "../shared/schema.ts";
 import { runAction } from "./actions.ts";
 import { readParkedBranches } from "./branches.ts";
 import { ButFailedError, ButMissingError, ButSetupRequiredError, runBut, runGit } from "./cli.ts";
-import { readBaseHistory } from "./history.ts";
+import { readBaseHistory, readCheckoutHead } from "./history.ts";
 import { readOrigin } from "./origin.ts";
 import { readUnpublished } from "./unpublished.ts";
 import { compareWithRemotes } from "./upstream.ts";
@@ -19,6 +19,8 @@ import {
 } from "./parse.ts";
 import {
   findCheckouts,
+  findBranchCheckouts,
+  inBatches,
   isKnownWorkspace,
   listRepositories,
   NoRepositoryError,
@@ -185,13 +187,28 @@ export default experimental_defineHostEntry({
     },
 
     async checkouts({ paths, origin }, context) {
-      const repositories = await findCheckouts(paths, origin, context.signal);
-      const checkouts = await Promise.all(
-        repositories.map(async (repository) => {
-          const { state, reason, stacks } = await readWorkspace(repository, context.signal);
-          return { path: repository.path, state, reason, stacks };
-        }),
-      );
+      const repositories = await findBranchCheckouts(paths, origin, context.signal);
+      const checkouts = await inBatches(repositories, async (repository): Promise<HostCheckout> => {
+        if (repository.kind === "git") {
+          try {
+            return {
+              path: repository.path,
+              state: "ready",
+              reason: null,
+              stacks: [],
+              gitBranch: {
+                name: repository.branch,
+                head: await readCheckoutHead(repository.path, repository.branch, context.signal),
+              },
+            };
+          } catch (error) {
+            if (context.signal.aborted) throw error;
+            return { path: repository.path, ...unavailable(error), stacks: [] };
+          }
+        }
+        const { state, reason, stacks } = await readWorkspace(repository, context.signal);
+        return { path: repository.path, state, reason, stacks };
+      });
       return { checkouts };
     },
 

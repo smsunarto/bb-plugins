@@ -124,15 +124,17 @@ again instead of starting a second one. Archive it to start fresh.
 
 ## Other machines
 
-Below the board, each other connected machine that has this repository applied
-in GitButler gets a card with its branches: status, PR number, commit count,
-and newest commit. The cards are read only. To change a branch there, use a
-thread on that machine.
+Below the board, other checkouts of this repository get read-only cards showing
+their machine and path. GitButler workspaces show their applied branches: status,
+PR number, commit count, and newest commit. Ordinary Git checkouts show the
+checked-out branch and latest commit, without GitButler setup. To change a branch,
+use a thread in that checkout.
 
 The panel finds them through bb: every project source and ready environment on
-each connected machine. A checkout counts when its `origin` is this one's, in
-any spelling (SSH or HTTPS), and its HEAD is on `gitbutler/workspace`. A plain
-clone, a linked worktree, or a repository without an `origin` does not count.
+each connected machine, plus the linked worktrees Git registers for those
+repositories. This includes worktrees that have no separate BB environment.
+A checkout counts when its `origin` is this one's, in any spelling (SSH or HTTPS).
+Detached worktrees and repositories without an `origin` are omitted.
 An offline machine is left out until it reconnects. The cards refresh every 30
 seconds and on the header's **Refresh**.
 

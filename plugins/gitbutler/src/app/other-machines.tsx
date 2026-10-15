@@ -78,7 +78,51 @@ function BranchRow({ branch }: { branch: Branch }) {
   );
 }
 
+function GitBranchRow({ branch }: { branch: NonNullable<Checkout["gitBranch"]> }) {
+  const look = BRANCH_LOOK.unknown;
+  return (
+    <li
+      className="flex min-w-0 items-start gap-2 px-2.5 py-1.5"
+      aria-label={`Branch ${branch.name}`}
+    >
+      <span
+        className={cn(
+          "mt-px flex size-4 shrink-0 items-center justify-center rounded",
+          TONE[look.tone],
+          "bg-current",
+        )}
+        aria-hidden
+      >
+        <Icon name={look.icon} className="size-3 text-background" />
+      </span>
+      <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+        <span className="truncate font-medium" title={branch.name} translate="no">
+          {branch.name}
+        </span>
+        <span className="truncate text-[11px] text-muted-foreground" title={branch.head?.message}>
+          {branch.head
+            ? `Latest commit · ${subject(branch.head.message)}`
+            : "Latest commit unavailable"}
+        </span>
+      </span>
+      {branch.head ? (
+        <When
+          value={branch.head.createdAt}
+          className="shrink-0 text-[11px] tabular-nums text-muted-foreground"
+        />
+      ) : null}
+    </li>
+  );
+}
+
 function MachineBody({ checkout }: { checkout: Checkout }) {
+  if (checkout.state === "ready" && checkout.gitBranch) {
+    return (
+      <ul className="list-none border-t border-border">
+        <GitBranchRow branch={checkout.gitBranch} />
+      </ul>
+    );
+  }
   if (checkout.state !== "ready" || checkout.stacks.length === 0) {
     return (
       <p className="border-t border-border px-2.5 py-1.5 text-[11px] text-muted-foreground">
@@ -104,7 +148,9 @@ function MachineBody({ checkout }: { checkout: Checkout }) {
 
 function MachineCard({ checkout }: { checkout: Checkout }) {
   const [open, setOpen] = useState(true);
-  const branches = checkout.stacks.reduce((count, stack) => count + stack.branches.length, 0);
+  const branches = checkout.gitBranch
+    ? 1
+    : checkout.stacks.reduce((count, stack) => count + stack.branches.length, 0);
   return (
     <section
       className="overflow-hidden rounded-lg border border-border bg-card"
@@ -112,7 +158,7 @@ function MachineCard({ checkout }: { checkout: Checkout }) {
     >
       <button
         type="button"
-        className="flex h-9 w-full min-w-0 cursor-pointer items-center gap-2 px-2.5 text-start focus-visible:-outline-offset-2"
+        className="flex min-h-9 w-full min-w-0 cursor-pointer items-center gap-2 px-2.5 py-1.5 text-start focus-visible:-outline-offset-2"
         onClick={() => setOpen((current) => !current)}
         aria-expanded={open}
         title={checkout.path}
@@ -126,8 +172,19 @@ function MachineCard({ checkout }: { checkout: Checkout }) {
           aria-hidden
         />
         <Icon name="Laptop" className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />
-        <span className="truncate text-sm font-semibold">{checkout.machine}</span>
-        {branches > 0 ? <Count>{branches}</Count> : null}
+        <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+          <span className="flex min-w-0 items-center gap-2">
+            <span className="truncate text-sm font-semibold">{checkout.machine}</span>
+            {branches > 0 ? <Count>{branches}</Count> : null}
+          </span>
+          <span
+            className="truncate text-[11px] text-muted-foreground"
+            title={checkout.path}
+            translate="no"
+          >
+            {checkout.path}
+          </span>
+        </span>
       </button>
       {open ? <MachineBody checkout={checkout} /> : null}
     </section>
@@ -135,8 +192,8 @@ function MachineCard({ checkout }: { checkout: Checkout }) {
 }
 
 /**
- * The same repository's applied branches on every other connected machine,
- * one card each, read only. Writes belong to a thread on that machine. Like
+ * The same repository's branches in every other checkout, one card each,
+ * read only. Writes belong to a thread in that checkout. Like
  * the parked list, nothing shows while loading or after a failure: the board
  * above is what the panel is for.
  */

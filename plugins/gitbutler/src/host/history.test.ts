@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { experimental_createHostEntryHarness } from "@get-bb/plugin-sdk/testing/host";
 import { fakeBut } from "../../test/fake-but.ts";
 import { runGit } from "./cli.ts";
-import { readBaseHistory } from "./history.ts";
+import { readBaseHistory, readCheckoutHead } from "./history.ts";
 import hostEntry from "./host.ts";
 
 const signal = new AbortController().signal;
@@ -38,6 +38,17 @@ test("history starts below the base, which already has its own row", async () =>
   const page = await readBaseHistory(repository, "HEAD", 0, 10, signal);
   expect(page.commits.map((commit) => commit.message)).toEqual(["third", "", "second", "first"]);
   expect(page.hasMore).toBe(false);
+});
+
+test("a plain checkout starts at HEAD, with the complete commit message", async () => {
+  const head = await readCheckoutHead(repository, "main", signal);
+  expect(head?.message).toBe("fourth");
+  expect(head?.authorName).toBe("Test Person");
+  expect(head?.commitId).toBe((await runGit(repository, ["rev-parse", "HEAD"], signal)).trim());
+
+  const unborn = join(repository, "unborn");
+  await runGit(repository, ["init", "--quiet", "--initial-branch=main", unborn], signal);
+  expect(await readCheckoutHead(unborn, "main", signal)).toBeNull();
 });
 
 test("paging walks further down without repeating a commit", async () => {

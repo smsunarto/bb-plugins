@@ -167,6 +167,69 @@ test("a repository with no origin asks no other machine", async () => {
   expect(calls.map((call) => call.method)).toEqual(["origin"]);
 });
 
+test("keeps isolated branch snapshots distinct by checkout on the same machine", async () => {
+  const { ctx } = machines({
+    cardinal: {
+      checkouts: [
+        { path: "/real/work/app", state: "ready", reason: null, stacks: [stack] },
+        {
+          path: "/work/app-performance",
+          state: "ready",
+          reason: null,
+          stacks: [],
+          gitBranch: {
+            name: "scott/performance",
+            head: {
+              commitId: "a".repeat(40),
+              message: "fix: preserve connection attempts",
+              authorName: "Scott",
+              createdAt: "2026-10-15T10:00:00Z",
+            },
+          },
+        },
+        {
+          path: "/work/app-review",
+          state: "ready",
+          reason: null,
+          stacks: [],
+          gitBranch: { name: "scott/performance", head: null },
+        },
+      ],
+    },
+  });
+  const result = await otherMachines.execute(ctx, { threadId: "t1" });
+  expect(result.environmentId).toBe("env-1");
+  expect(result.reason).toBeNull();
+  expect(result.checkouts).toEqual([
+    {
+      path: "/work/app-performance",
+      state: "ready",
+      reason: null,
+      stacks: [],
+      gitBranch: {
+        name: "scott/performance",
+        head: {
+          commitId: "a".repeat(40),
+          message: "fix: preserve connection attempts",
+          authorName: "Scott",
+          createdAt: "2026-10-15T10:00:00Z",
+        },
+      },
+      hostId: "cardinal",
+      machine: "codex@cardinal",
+    },
+    {
+      path: "/work/app-review",
+      state: "ready",
+      reason: null,
+      stacks: [],
+      gitBranch: { name: "scott/performance", head: null },
+      hostId: "cardinal",
+      machine: "codex@cardinal",
+    },
+  ]);
+});
+
 test("a repository the thread's machine cannot read is a reason, not a failure", async () => {
   const { ctx, calls } = machines({}, "unreadable");
 

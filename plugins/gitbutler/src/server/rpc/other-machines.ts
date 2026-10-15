@@ -12,7 +12,9 @@ const MACHINE_TIMEOUT_MS = 30_000;
  * knows where checkouts live, as project sources and environments, but not
  * which repository each one holds: a project's source on one machine can be
  * another repository entirely. So every machine is handed every path bb knows
- * there, and keeps the GitButler workspaces whose origin matches this one.
+ * there, and keeps checkouts whose origin matches this one. Each host also
+ * discovers Git's registered linked worktrees, including ones without a BB
+ * environment. Ordinary branches are read-only Git snapshots.
  * A machine that is offline or fails to answer is left out.
  */
 export const otherMachines = defineQuery({

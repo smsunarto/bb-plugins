@@ -233,7 +233,7 @@ async function checkout(path: string, head: string, origin: string) {
   await runGit(path, ["remote", "add", "origin", origin], signal);
 }
 
-test("checkouts keeps the GitButler workspaces of one origin, each once", async () => {
+test("checkouts keeps GitButler workspaces and named clones of one origin, each once", async () => {
   await answering({});
   const machine = join(scratch, "machine");
   await checkout(join(machine, "app"), "gitbutler/workspace", "git@github.com:o/app.git");
@@ -243,7 +243,7 @@ test("checkouts keeps the GitButler workspaces of one origin, each once", async 
     "gitbutler/workspace",
     "https://github.com/O/app",
   );
-  // A plain clone and a worktree-style checkout sit on a branch of their own.
+  // An unborn plain clone still has a named branch, without an invented commit.
   await checkout(join(machine, "clone"), "main", "git@github.com:o/app.git");
   await checkout(join(machine, "other"), "gitbutler/workspace", "git@github.com:o/other.git");
   await symlink(join(machine, "app"), join(machine, "alias"));
@@ -255,10 +255,12 @@ test("checkouts keeps the GitButler workspaces of one origin, each once", async 
 
   const real = await realpath(machine);
   expect(
-    answer.checkouts.map(({ path, state, stacks }) => ({
+    answer.checkouts.map(({ path, state, stacks, gitBranch }) => ({
       path,
       state,
-      branches: stacks.flatMap((stack) => stack.branches.map((branch) => branch.name)),
+      branches: gitBranch
+        ? [gitBranch.name]
+        : stacks.flatMap((stack) => stack.branches.map((branch) => branch.name)),
     })),
   ).toEqual([
     {
@@ -267,13 +269,81 @@ test("checkouts keeps the GitButler workspaces of one origin, each once", async 
       branches: ["scott/top", "scott/bottom", "scott/experimental"],
     },
     {
+      path: join(real, "clone"),
+      state: "ready",
+      branches: ["main"],
+    },
+    {
       path: join(real, "env", "repos", "app"),
       state: "ready",
       branches: ["scott/top", "scott/bottom", "scott/experimental"],
     },
   ]);
+  expect(answer.checkouts.find(({ path }) => path === join(real, "clone"))).toEqual({
+    path: join(real, "clone"),
+    state: "ready",
+    reason: null,
+    stacks: [],
+    gitBranch: { name: "main", head: null },
+  });
   // The clone, the other repository, and the missing path never reach `but`.
   expect(await butCalls()).toEqual(["status -u --json", "status -u --json"]);
+});
+
+test("an unregistered linked checkout shows its actual branch and commit without running but there", async () => {
+  await answering({});
+  const main = join(scratch, "linked-machine", "main");
+  await checkout(main, "gitbutler/workspace", "git@github.com:Acme/App.git");
+  await runGit(main, ["config", "user.email", "test@example.com"], signal);
+  await runGit(main, ["config", "user.name", "Test Person"], signal);
+  await runGit(main, ["config", "commit.gpgsign", "false"], signal);
+  await runGit(main, ["commit", "--quiet", "--allow-empty", "-m", "chore: base"], signal);
+  const isolated = join(scratch, "isolated-checkouts", "performance");
+  await runGit(main, ["worktree", "add", "--quiet", "-b", "scott/performance", isolated], signal);
+  await runGit(
+    isolated,
+    ["commit", "--quiet", "--allow-empty", "-m", "perf: measure connection\n\nPreserve this body."],
+    signal,
+  );
+  const head = (await runGit(isolated, ["rev-parse", "HEAD"], signal)).trim();
+  const answer = await host.experimental_call("checkouts", {
+    paths: [main],
+    origin: "github.com/acme/app",
+  });
+  expect(answer.checkouts.find(({ path }) => path === isolated)).toEqual({
+    path: isolated,
+    state: "ready",
+    reason: null,
+    stacks: [],
+    gitBranch: {
+      name: "scott/performance",
+      head: {
+        commitId: head,
+        message: "perf: measure connection\n\nPreserve this body.",
+        authorName: "Test Person",
+        createdAt: (await runGit(isolated, ["show", "-s", "--format=%aI", "HEAD"], signal)).trim(),
+      },
+    },
+  });
+  expect(answer.checkouts.find(({ path }) => path === main)?.stacks).toHaveLength(2);
+  expect(await butCalls()).toEqual(["status -u --json"]);
+
+  // A broken GitButler workspace leaves the healthy Git-only checkout visible.
+  await restore?.();
+  restore = await fakeBut(`echo "Error: Broken workspace" >&2; exit 1`);
+  const partial = await host.experimental_call("checkouts", {
+    paths: [main],
+    origin: "github.com/acme/app",
+  });
+  expect(partial.checkouts.find(({ path }) => path === main)).toEqual({
+    path: main,
+    state: "error",
+    reason: "Error: Broken workspace",
+    stacks: [],
+  });
+  expect(partial.checkouts.find(({ path }) => path === isolated)?.gitBranch?.head?.message).toBe(
+    "perf: measure connection\n\nPreserve this body.",
+  );
 });
 
 /**

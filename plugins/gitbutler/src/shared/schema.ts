@@ -1,9 +1,9 @@
 import { z } from "zod";
 
 /**
- * The wire model. `but --json` is the only source for workspace shape, so
- * every field here is something the CLI already knows; the host narrows the
- * CLI's freeform strings to these unions and never invents a value.
+ * The wire model. `but --json` owns workspace shape; plain checkouts carry
+ * only their actual Git branch and latest commit. The host narrows the
+ * CLIs' freeform strings to these unions and never invents a value.
  */
 
 export const environmentPathSchema = z.string().min(1).max(16_384);
@@ -353,13 +353,18 @@ export const repositoryOriginSchema = z
   .object({ path: z.string(), origin: originSchema.nullable() })
   .strict();
 
-/** A GitButler workspace on some machine, read by that machine's host. */
+/** A GitButler workspace or named Git checkout, read by that machine's host. */
 export const hostCheckoutSchema = z
   .object({
     path: z.string(),
     state: workspaceStateSchema,
     reason: z.string().nullable(),
     stacks: z.array(stackSchema),
+    /** Read-only Git facts for a checkout that is not a GitButler workspace. */
+    gitBranch: z
+      .object({ name: z.string(), head: baseCommitSchema.nullable() })
+      .strict()
+      .optional(),
   })
   .strict();
 

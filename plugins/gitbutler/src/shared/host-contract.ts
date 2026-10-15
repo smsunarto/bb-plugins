@@ -63,9 +63,9 @@ export const gitbutlerHostContract = defineRpcContract({
   parkedBranches: { input: target.strict(), output: parkedBranchesSchema },
   origin: { input: target.strict(), output: repositoryOriginSchema },
   /**
-   * The GitButler workspaces among `paths` whose origin is `origin`. The
-   * paths are every checkout bb knows on this machine, so most are other
-   * repositories and drop out.
+   * Matching-origin checkouts among bb's known paths and their registered
+   * linked worktrees. GitButler workspaces retain their stacks; other named
+   * Git checkouts expose only a read-only branch and latest commit.
    */
   checkouts: {
     input: z

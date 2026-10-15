@@ -106,7 +106,10 @@ export async function resolveRepository(
 const CHECKS_AT_ONCE = 16;
 
 /** `map` over `items`, at most `CHECKS_AT_ONCE` at a time, in order. */
-async function inBatches<T, R>(items: readonly T[], map: (item: T) => Promise<R>): Promise<R[]> {
+export async function inBatches<T, R>(
+  items: readonly T[],
+  map: (item: T) => Promise<R>,
+): Promise<R[]> {
   const results: R[] = [];
   for (let start = 0; start < items.length; start += CHECKS_AT_ONCE) {
     results.push(...(await Promise.all(items.slice(start, start + CHECKS_AT_ONCE).map(map))));
@@ -116,6 +119,107 @@ async function inBatches<T, R>(items: readonly T[], map: (item: T) => Promise<R>
 
 /** GitButler keeps a workspace's HEAD on its own branch, and nothing else does. */
 const WORKSPACE_HEAD = "refs/heads/gitbutler/workspace";
+
+/** Expanded worktree discovery never scans arbitrary neighboring directories. */
+const MAX_LINKED_CHECKOUTS = 1000;
+
+type BranchCheckout = Discovery[number] & { origin: string | null } & (
+    | { kind: "gitbutler" }
+    | { kind: "git"; branch: string }
+  );
+
+/** NUL fields preserve worktree paths containing whitespace or newlines. */
+function registeredWorktrees(output: string): string[] {
+  const paths: string[] = [];
+  for (const record of output.split("\0\0")) {
+    const fields = record.split("\0");
+    const path = fields.find((field) => field.startsWith("worktree "))?.slice(9);
+    if (
+      path &&
+      isAbsolute(path) &&
+      fields.some((field) => field.startsWith("branch refs/heads/")) &&
+      !fields.some((field) => field === "bare" || field.startsWith("prunable"))
+    ) {
+      paths.push(path);
+      if (paths.length === MAX_LINKED_CHECKOUTS) break;
+    }
+  }
+  return paths;
+}
+
+/**
+ * Named checkouts for the read-only machine list. Alongside bb's known
+ * repositories, Git's own worktree registry can name isolated checkouts
+ * outside bb environments. Review and mutation callers keep findCheckouts.
+ */
+export async function findBranchCheckouts(
+  paths: readonly string[],
+  origin: string,
+  signal: AbortSignal,
+): Promise<BranchCheckout[]> {
+  const found = await inBatches(paths, (path) =>
+    discover(path, signal).catch((error: unknown) => {
+      if (signal.aborted) throw error;
+      return [];
+    }),
+  );
+  const known = new Map(found.flat().map((repository) => [repository.path, repository]));
+  const sameOrigin = await inBatches([...known.values()], async (repository) =>
+    (await readOrigin(repository.path, signal)) === origin ? repository : undefined,
+  );
+  const roots = sameOrigin.filter((repository) => repository !== undefined);
+  const linked = new Set<string>();
+  for (
+    let start = 0;
+    start < roots.length && linked.size < MAX_LINKED_CHECKOUTS;
+    start += CHECKS_AT_ONCE
+  ) {
+    const registered = await inBatches(roots.slice(start, start + CHECKS_AT_ONCE), (repository) =>
+      runGit(repository.path, ["worktree", "list", "--porcelain", "-z"], signal)
+        .then(registeredWorktrees)
+        .catch((error: unknown) => {
+          if (signal.aborted) throw error;
+          return [];
+        }),
+    );
+    for (const path of registered.flat()) {
+      linked.add(path);
+      if (linked.size === MAX_LINKED_CHECKOUTS) break;
+    }
+  }
+  const expanded = await inBatches([...linked], async (path) => {
+    const canonical = await gitTopLevel(path, signal);
+    // A stale registry entry must not resolve to a parent repository instead.
+    if (!canonical || (await realpath(path).catch(() => undefined)) !== canonical) return undefined;
+    return { key: ".", name: basename(canonical), path: canonical };
+  });
+  const unique = new Map(
+    [...roots, ...expanded.filter((repository) => repository !== undefined)].map((repository) => [
+      repository.path,
+      repository,
+    ]),
+  );
+  const matched = await inBatches(
+    [...unique.values()],
+    async (repository): Promise<BranchCheckout | undefined> => {
+      const [head, own] = await Promise.all([
+        runGit(repository.path, ["symbolic-ref", "-q", "HEAD"], signal).catch((error: unknown) => {
+          if (signal.aborted) throw error;
+          return "";
+        }),
+        readOrigin(repository.path, signal),
+      ]);
+      const ref = head.trim();
+      if (own !== origin || !ref.startsWith("refs/heads/")) return undefined;
+      return ref === WORKSPACE_HEAD
+        ? { ...repository, origin: own, kind: "gitbutler" }
+        : { ...repository, origin: own, kind: "git", branch: ref.slice(11) };
+    },
+  );
+  return matched
+    .filter((repository) => repository !== undefined)
+    .sort((a, b) => a.path.localeCompare(b.path));
+}
 
 /**
  * The GitButler workspaces among `paths` whose origin is `origin`, or any
