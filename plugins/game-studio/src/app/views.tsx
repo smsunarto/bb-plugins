@@ -520,6 +520,22 @@ function RunEvidence({
                 : "Design changed since this run"
               : "Design document unavailable"}
           </p>
+          {experiment.definition ? (
+            <details className="gs-run-revisions">
+              <summary>Tested question and criterion</summary>
+              <p>
+                <strong>Question:</strong> {experiment.definition.question}
+              </p>
+              <p>
+                <strong>Criterion:</strong> {experiment.definition.criterion}
+              </p>
+              <p>
+                <strong>Setup:</strong> {experiment.definition.setup}
+              </p>
+            </details>
+          ) : (
+            <p className="gs-muted">Test definition not recorded</p>
+          )}
           <details className="gs-run-revisions gs-muted">
             <summary>Recorded design revision</summary>
             <code>{experiment.documentRevision}</code>

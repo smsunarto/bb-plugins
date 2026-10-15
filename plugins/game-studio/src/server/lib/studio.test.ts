@@ -1459,6 +1459,105 @@ test("playtest evidence preserves tested builds and historical experiment proven
   assert.equal(workspace.documents[0]!.id, "design");
 });
 
+test("recorded experiment definitions survive GDD edits and removal while retests use the saved document", async () => {
+  const f = fake();
+  const game = await create.execute({ bb: f.bb }, input);
+  f.seed("host", "/games/orbit/canvas/evidence/dash.png", "image");
+  f.seed(
+    "host",
+    "/games/orbit/canvas/evidence/index.json",
+    JSON.stringify({
+      version: 1,
+      runs: [
+        {
+          id: "dash-v1",
+          capturedAtMs: 1735689600000,
+          testedRevision: "build-a41f",
+          experiment: {
+            documentId: "design",
+            documentRevision: "tested-design-revision",
+            experimentId: "dash-gap",
+            definition: {
+              question: "  Can players read the landing zone before dashing?  ",
+              criterion: "  Four of five new players land safely on their first attempt.  ",
+              setup: "  Start at the marked gap; show the landing ring; allow one dash.  ",
+            },
+          },
+          files: ["canvas/evidence/dash.png"],
+        },
+      ],
+    }),
+  );
+  const initial = await get.execute({ bb: f.bb }, { gameId: game.id });
+  assert.deepEqual(initial.evidenceRuns?.[0]?.experiment, {
+    documentId: "design",
+    documentRevision: "tested-design-revision",
+    experimentId: "dash-gap",
+    definition: {
+      question: "Can players read the landing zone before dashing?",
+      criterion: "Four of five new players land safely on their first attempt.",
+      setup: "Start at the marked gap; show the landing ring; allow one dash.",
+    },
+  });
+
+  const saved = await saveDocument.execute(
+    { bb: f.bb },
+    {
+      gameId: game.id,
+      documentId: "design",
+      revision: initial.documents[0]!.revision,
+      markdown:
+        "# New dash experiment\n\nQuestion: Can players chain two dashes?\nCriterion: Finish in ten seconds.\nSetup: Remove the landing ring and use two gaps.",
+    },
+  );
+  const retest = requestPayload(
+    (
+      await prompt.execute(
+        { bb: f.bb },
+        { gameId: game.id, action: "playtest", documentId: "design", experimentId: "dash-gap" },
+      )
+    ).context,
+  );
+  assert.deepEqual(retest.experiment, {
+    documentId: "design",
+    documentRevision: saved.revision,
+    experimentId: "dash-gap",
+  });
+  assert.notEqual(retest.documentRevision, "tested-design-revision");
+  assert.deepEqual(retest.evidence.runs[0].experiment, {
+    documentId: "design",
+    documentRevision: "tested-design-revision",
+    experimentId: "dash-gap",
+    definition: {
+      question: "Can players read the landing zone before dashing?",
+      criterion: "Four of five new players land safely on their first attempt.",
+      setup: "Start at the marked gap; show the landing ring; allow one dash.",
+    },
+  });
+
+  f.seed(
+    "host",
+    "/games/orbit/canvas/index.json",
+    JSON.stringify({
+      version: 1,
+      boards: [{ id: "main", name: "Design board" }],
+      documents: [],
+    }),
+  );
+  const archived = await get.execute({ bb: f.bb }, { gameId: game.id });
+  assert.deepEqual(archived.documents, []);
+  assert.deepEqual(archived.evidenceRuns?.[0]?.experiment, {
+    documentId: "design",
+    documentRevision: "tested-design-revision",
+    experimentId: "dash-gap",
+    definition: {
+      question: "Can players read the landing zone before dashing?",
+      criterion: "Four of five new players land safely on their first attempt.",
+      setup: "Start at the marked gap; show the landing ring; allow one dash.",
+    },
+  });
+});
+
 test("evidence rejects incomplete or malformed experiment provenance and accepts legacy runs", async () => {
   const f = fake();
   const game = await create.execute({ bb: f.bb }, input);
@@ -1467,6 +1566,11 @@ test("evidence rejects incomplete or malformed experiment provenance and accepts
     documentId: "design",
     documentRevision: "historical-revision",
     experimentId: "dash-gap",
+  };
+  const definition = {
+    question: "Can players clear the gap?",
+    criterion: "Four of five new players land safely.",
+    setup: "Start at the marked gap with one dash.",
   };
   for (const metadata of [
     { testedRevision: " " },
@@ -1483,6 +1587,22 @@ test("evidence rejects incomplete or malformed experiment provenance and accepts
     { experiment: { ...valid, documentRevision: " " } },
     { experiment: { ...valid, documentRevision: "a".repeat(201) } },
     { experiment: { ...valid, unexpected: "ignored" } },
+    ...[
+      null,
+      "current GDD",
+      {},
+      { criterion: definition.criterion, setup: definition.setup },
+      { question: definition.question, setup: definition.setup },
+      { question: definition.question, criterion: definition.criterion },
+      { ...definition, question: " " },
+      { ...definition, criterion: "\n\t" },
+      { ...definition, setup: " " },
+      { ...definition, question: "q".repeat(501) },
+      { ...definition, criterion: "c".repeat(1001) },
+      { ...definition, setup: "s".repeat(2001) },
+      { ...definition, question: 12 },
+      { ...definition, outcome: "pass" },
+    ].map((definition) => ({ experiment: { ...valid, definition } })),
   ]) {
     f.seed(
       "host",
@@ -1516,15 +1636,27 @@ test("evidence rejects incomplete or malformed experiment provenance and accepts
           capturedAtMs: 1735689600000,
           files: ["canvas/evidence/dash.png"],
         },
+        {
+          id: "provenance-only",
+          capturedAtMs: 1735689600001,
+          experiment: valid,
+          files: ["canvas/evidence/dash.png"],
+        },
       ],
     }),
   );
-  const legacy = (await get.execute({ bb: f.bb }, { gameId: game.id })).evidenceRuns?.[0];
+  const workspace = await get.execute({ bb: f.bb }, { gameId: game.id });
+  const legacy = workspace.evidenceRuns?.find(({ id }) => id === "legacy");
   assert.ok(legacy);
   assert.equal(legacy.id, "legacy");
   assert.equal(legacy.files[0]!.path, "canvas/evidence/dash.png");
   assert.equal(legacy.testedRevision, undefined);
   assert.equal(legacy.experiment, undefined);
+  assert.deepEqual(workspace.evidenceRuns?.[0]?.experiment, {
+    documentId: "design",
+    documentRevision: "historical-revision",
+    experimentId: "dash-gap",
+  });
 });
 
 test("experiment requests summarize the latest matching evidence without rewriting reported revisions", async () => {

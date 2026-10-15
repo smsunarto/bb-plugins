@@ -24,6 +24,7 @@ For each consequential unknown, propose the smallest playable experiment and
 an observable success criterion. Give it a stable experiment ID such as
 `EXP-dash-readability`, keeping its question, criterion, evidence, interpretation,
 and next decision together in the GDD. Keep the ID when revisiting the same question.
+Use a new ID for a different question; keep earlier results under the definition tested.
 Include enough timing, sound, and visual feedback
 to test the intended experience. Record observations separately from interpretation;
 build success or screenshots alone do not prove that a design works in play.
@@ -36,6 +37,9 @@ Record changed decisions and their reasons where they belong in the GDD.
 Link observed evidence run IDs to the experiment. Recorded document revisions are
 historical provenance; inspect the captures and tested revision before treating
 an earlier outcome as evidence for the current design.
+Preserve each run's recorded question, criterion, and setup when the GDD changes.
+If an older run lacks that definition, report the gap instead of reconstructing
+it from today's document.
 
 Use the skill's required design owner for visual judgment and Game Studio tools
 for generation. Ask for authentication when a required service needs it. Keep

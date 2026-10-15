@@ -41,9 +41,13 @@ being tested next; leave later experiments brief:
 - **Experiment ID:** [stable ID using letters, numbers, underscores, or hyphens]
 - **Question:** [the important, answerable uncertainty]
 - **Playable test:** [smallest intervention and the state or controls to exercise]
+- **Observation setup:** [who or what plays, starting state, prior exposure, allowed help, and what counts as an attempt]
 - **Criterion:** [observable behavior that would support or contradict the design]
 - **Observed evidence:** [actual run IDs, tested build or revision, and capture links]
 - **Interpretation:** [what the observations suggest, with uncertainty]
 - **Next decision:** [keep, change, or test again, and why]
 
-Record playtest evidence only after observing a real run.
+Record playtest evidence only after observing a real run. Preserve the tested
+question, criterion, and setup with each run, even when this document changes.
+Keep unexpected observations separate from the selected criterion. If the test
+could not answer the question, record the limitation and next test without a verdict.

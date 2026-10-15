@@ -47,7 +47,9 @@ creation tooling. Leave the version unset to let the agent choose through Hub.
   record the tested build and experiment's design revision. Evidence shows
   whether that design has changed and can prepare a retest against the current
   saved document in the native composer. Historical and unlinked captures stay
-  available.
+  available. Experiment runs can retain their tested question, criterion, and
+  observation setup, so the original definition remains readable after GDD edits.
+  Older runs without a definition remain available and are labeled accordingly.
 
 Panel requests add a native Game Studio context mention to the composer. The
 mention resolves workflow instructions and saved workspace references when sent.

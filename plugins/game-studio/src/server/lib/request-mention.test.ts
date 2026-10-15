@@ -229,15 +229,44 @@ test("context pills resolve the selected document's current revision at send tim
   assert.doesNotMatch(after.context, /combat-before/);
 });
 
-test("experiment context refreshes the saved document revision while retaining the experiment and request identity", async (t) => {
+test("retest context refreshes the saved document while preserving the historical tested definition", async (t) => {
   const { files, harness, provider } = await fixture();
   t.after(() => harness.lifecycle.dispose());
+  files.set("/games/fern/canvas/evidence/parry.png", {
+    content: "recorded-parry",
+    sha256: "capture-revision",
+  });
+  files.set("/games/fern/canvas/evidence/index.json", {
+    content: JSON.stringify({
+      version: 1,
+      runs: [
+        {
+          id: "parry-old",
+          capturedAtMs: 10,
+          outcome: "fail",
+          testedRevision: "prototype-before",
+          experiment: {
+            documentId: "combat",
+            documentRevision: "combat-tested",
+            experimentId: "thorn-parry",
+            definition: {
+              question: "Can players recognize the parry window?",
+              criterion: "Three of four new players parry the first thorn.",
+              setup: "Use the original red flash and one slow thorn.",
+            },
+          },
+          files: ["canvas/evidence/parry.png"],
+        },
+      ],
+    }),
+    sha256: "evidence-revision",
+  });
   const id = JSON.stringify({
     gameId: "fern",
-    action: "design",
+    action: "playtest",
     documentId: "combat",
     experimentId: "thorn-parry",
-    request,
+    request: { ...request, action: "playtest" },
   });
 
   const before = requestPayload((await provider.resolve(id)).context);
@@ -248,17 +277,36 @@ test("experiment context refreshes the saved document revision while retaining t
   });
   assert.deepEqual(before.request, {
     id: "prepared-request",
-    action: "design",
+    action: "playtest",
     createdAt: 17,
   });
   assert.deepEqual(before.evidence, {
     manifestPath: "canvas/evidence/index.json",
-    matchingRunCount: 0,
-    runs: [],
+    matchingRunCount: 1,
+    runs: [
+      {
+        id: "parry-old",
+        capturedAtMs: 10,
+        outcome: "fail",
+        testedRevision: "prototype-before",
+        experiment: {
+          documentId: "combat",
+          documentRevision: "combat-tested",
+          experimentId: "thorn-parry",
+          definition: {
+            question: "Can players recognize the parry window?",
+            criterion: "Three of four new players parry the first thorn.",
+            setup: "Use the original red flash and one slow thorn.",
+          },
+        },
+        captureCount: 1,
+      },
+    ],
   });
 
   files.set("/games/fern/canvas/documents/combat.md", {
-    content: "# Combat\n\nParry only when the thorns flash.",
+    content:
+      "# Combat\n\nQuestion: Can players parry two thorns?\nCriterion: Parry both within one second.\nSetup: Use a new blue flash and two fast thorns.",
     sha256: "combat-after",
   });
   const after = requestPayload((await provider.resolve(id)).context);
@@ -271,8 +319,18 @@ test("experiment context refreshes the saved document revision while retaining t
   });
   assert.deepEqual(after.request, {
     id: "prepared-request",
-    action: "design",
+    action: "playtest",
     createdAt: 17,
+  });
+  assert.deepEqual(after.evidence.runs[0].experiment, {
+    documentId: "combat",
+    documentRevision: "combat-tested",
+    experimentId: "thorn-parry",
+    definition: {
+      question: "Can players recognize the parry window?",
+      criterion: "Three of four new players parry the first thorn.",
+      setup: "Use the original red flash and one slow thorn.",
+    },
   });
 });
 

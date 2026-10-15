@@ -128,6 +128,13 @@ export const evidenceRunSchema = z.object({
       documentId: idSchema,
       documentRevision: z.string().trim().min(1).max(200),
       experimentId: idSchema,
+      definition: z
+        .strictObject({
+          question: z.string().trim().min(1).max(500),
+          criterion: z.string().trim().min(1).max(1000),
+          setup: z.string().trim().min(1).max(2000),
+        })
+        .optional(),
     })
     .optional(),
   files: z.array(assetSchema).min(1).max(100),
