@@ -1,4 +1,8 @@
-import type { BbPluginApi } from "@get-bb/plugin-sdk";
+import type {
+  BbPluginApi,
+  PluginThreadEventPayloads,
+  PluginTurnFailedEvent,
+} from "@get-bb/plugin-sdk";
 import { createHash, randomUUID } from "node:crypto";
 import { z } from "zod";
 import { reviewHostContract } from "../../shared/host-contract.ts";
@@ -12,7 +16,13 @@ import type {
   Seat,
 } from "../../shared/schema.ts";
 import { bindAssessment } from "./assessment.ts";
-import { blocksPublication, pickReviewers, reviewerPrompt, type ReviewerModels } from "./review.ts";
+import {
+  blocksPublication,
+  fallbackReviewer,
+  pickReviewers,
+  reviewerPrompt,
+  type ReviewerModels,
+} from "./review.ts";
 
 const reportSchema = z
   .object({
@@ -68,6 +78,58 @@ const publicationIdentity = (run: ReviewRun) =>
   ]);
 const family = (reviewer: Reviewer) => (reviewer.providerId === "claude-code" ? "Claude" : "Codex");
 const identity = ({ providerId, model }: Reviewer) => ({ providerId, model });
+/** A transport failure may still have delivered; the reservation stays for child adoption. */
+const uncertain = (message: string) => /timeout|timed out|abort|fetch failed|ECONN/i.test(message);
+/** Returns a seat whose usage-limit fallback never started to its failed assessment. */
+const restore = (seat: Seat) => {
+  Object.assign(seat, seat.fallback!.from);
+  delete seat.fallback;
+  delete seat.queuedMessageId;
+};
+/** Records the exhausted assessment and points the seat at its replacement; returns whether it moved. */
+function reserveFallback(seat: Seat, reviewer: Reviewer, requestId: string, lastSeq?: number) {
+  const { threadId, afterSeq } = seat;
+  const moved = reviewer.providerId !== seat.reviewer.providerId;
+  seat.fallback = {
+    from: { reviewer: seat.reviewer, threadId: threadId!, afterSeq },
+    requestId,
+    at: Date.now(),
+  };
+  seat.reviewer = reviewer;
+  // A moved seat starts a new child; the same thread continues after the failed turn.
+  seat.threadId = moved ? null : threadId;
+  seat.afterSeq = moved ? 0 : (lastSeq ?? afterSeq);
+  delete seat.queuedMessageId;
+  return moved;
+}
+/** The run's root request, when the failed request is that root or one of BB's retries of it. */
+function failedRoot(runId: string, events: Events, requestId: string) {
+  const latest = events.findLast((event) => event.type === "client/turn/requested");
+  const root = events.find(
+    (event) =>
+      event.type === "client/turn/requested" &&
+      !event.data.retryOfRequestId &&
+      event.data.input.some(
+        (item) => item.type === "text" && item.text.startsWith(`Review run ${runId}:`),
+      ),
+  );
+  if (
+    latest?.type !== "client/turn/requested" ||
+    root?.type !== "client/turn/requested" ||
+    latest.data.requestId !== requestId
+  )
+    return null;
+  return latest === root || latest.data.retryOfRequestId === root.data.requestId ? root : null;
+}
+const fallbackNote = ({ reviewer, fallback }: Seat) =>
+  fallback && {
+    from: identity(fallback.from.reviewer),
+    threadId: fallback.from.threadId,
+    note:
+      fallback.from.reviewer.providerId === reviewer.providerId
+        ? `${fallback.from.reviewer.model} hit a usage limit; this review reran on ${reviewer.model}.`
+        : `${family(fallback.from.reviewer)} hit a usage limit; this seat reran on ${family(reviewer)}, so the panel ran on one family.`,
+  };
 // Turn ids are only meaningful within their thread; contract 3 runs recorded bare turn ids.
 const readKey = (run: ReviewRun, threadId: string, turnId: string) =>
   run.contractVersion < 4 ? turnId : `${threadId}:${turnId}`;
@@ -382,6 +444,132 @@ export class ReviewService {
       throw error;
     }
   }
+  /** Reload recovery: usage failures and fallback dispatches that no live event will finish. */
+  async reconcileFailures(signal: AbortSignal) {
+    const rows = this.db
+      .prepare<[], { payload: string }>(
+        "SELECT payload FROM review_runs WHERE status IN ('starting','running')",
+      )
+      .all();
+    for (const row of rows) {
+      if (signal.aborted) return;
+      const { id, parentThreadId, status } = parseRun(row.payload);
+      try {
+        if (status === "starting")
+          await this.serial(parentThreadId, async () => {
+            const current = this.stored(id)!;
+            if (current.status === "starting") await this.recoverDispatch(current);
+          });
+        const run = this.stored(id)!;
+        for (const seat of run.seats) await this.reconcileSeat(run, seat, signal);
+      } catch (error) {
+        if (signal.aborted) return;
+        this.bb.log.warn(`Reviewer fallback recovery failed for ${id}: ${String(error)}`);
+      }
+    }
+  }
+  private async reconcileSeat(run: ReviewRun, seat: Seat, signal: AbortSignal) {
+    if (!seat.threadId || seat.fallback) return;
+    const thread = await this.reviewerThread(seat.threadId);
+    if (thread?.status !== "error") return;
+    const events = await this.readResultEvents(seat.threadId, seat.afterSeq, signal);
+    const request = events.findLast((event) => event.type === "client/turn/requested");
+    const failure = events.findLast((event) => event.type === "provider/error");
+    if (
+      request?.type === "client/turn/requested" &&
+      failure?.type === "provider/error" &&
+      failure.seq > request.seq
+    )
+      await this.reviewerFailed({
+        threadId: thread.id,
+        requestId: request.data.requestId,
+        errorInfo: failure.data.errorInfo ?? null,
+      });
+  }
+
+  /**
+   * A seat whose reviewer hit a usage limit gets one new assessment of the same candidate.
+   * A panel seat moves to the panel's other family; Quick switches model family on its provider.
+   */
+  async reviewerFailed(event: Pick<PluginTurnFailedEvent, "threadId" | "requestId" | "errorInfo">) {
+    if (event.errorInfo?.category !== "rate-limit") return;
+    const child = await this.reviewerThread(event.threadId);
+    if (child?.originPluginId !== "review") return;
+    const seed = await this.bb.sdk.threads.getPluginMetadata({ threadId: event.threadId });
+    const id = (seed as { reviewRun?: { id?: string } }).reviewRun?.id;
+    const initial = typeof id === "string" ? this.stored(id) : undefined;
+    if (!initial) return;
+    return this.serial(initial.parentThreadId, () => this.fallBack(initial.id, event));
+  }
+  private async fallBack(
+    id: string,
+    { threadId, requestId }: { threadId: string; requestId: string },
+  ) {
+    const run = this.stored(id)!;
+    const index = run.seats.findIndex((seat) => seat.threadId === threadId);
+    const seat = run.seats[index];
+    if (run.status === "completed" || !seat || seat.fallback) return;
+    const thread = await this.reviewerThread(threadId);
+    if (!thread || thread.status !== "error" || thread.archivedAt) return;
+    const events = await this.readResultEvents(
+      threadId,
+      seat.afterSeq,
+      new AbortController().signal,
+    );
+    const root = failedRoot(run.id, events, requestId);
+    const reviewer = root && (await this.fallbackFor(run, seat));
+    if (!root || !reviewer) return;
+    const retired = metadata(run, index).reviewRun;
+    // Save the reservation before dispatch: duplicate events and reloads cannot bounce back.
+    const moved = reserveFallback(seat, reviewer, root.data.requestId, events.at(-1)?.seq);
+    delete run.error;
+    run.status = "starting";
+    await this.save(run);
+    for (const entry of await this.bb.sdk.threads.queuedMessages.list({ threadId }))
+      await this.cancelObsoleteRetry(entry);
+    // The exhausted child leaves the panel; settle its metadata so the banner stops polling it.
+    if (moved)
+      await this.bb.sdk.threads
+        .updatePluginMetadata({ threadId, set: { reviewRun: { ...retired, status: "failed" } } })
+        .catch((error) => {
+          if (!missing(error)) throw error;
+        });
+    const started: string[] = [];
+    try {
+      // A full new assessment gets its own request and diff reads.
+      await this.dispatchSeat(run, index, moved ? undefined : thread, started);
+    } catch (error) {
+      run.error = error instanceof Error ? error.message : String(error);
+      if (uncertain(run.error)) return await this.save(run);
+      await this.stopSeats(run, started);
+      restore(seat);
+    }
+    // A seat whose initial dispatch is still unresolved keeps the run recovering.
+    if (run.seats.every((seat) => seat.threadId)) run.status = "running";
+    await this.save(run);
+  }
+  private async fallbackFor(run: ReviewRun, { reviewer }: Seat) {
+    if (run.seats.length > 1) {
+      const other = run.seats.find((seat) => seat.reviewer.providerId !== reviewer.providerId);
+      return other ? { ...other.reviewer } : null;
+    }
+    const catalog = await this.bb.sdk.providers.models({
+      providerId: reviewer.providerId,
+      environmentId: run.environmentId,
+    });
+    return fallbackReviewer(reviewer, catalog.models);
+  }
+  /** BB keeps retrying a turn that hit a usage limit; a seat that fell back must not rerun it. */
+  async cancelObsoleteRetry(entry: PluginThreadEventPayloads["message.queued"]["entry"]) {
+    if (entry.payload?.kind !== "retry") return;
+    const { retryOfTurnRequestId } = entry.payload;
+    const run = await this.lastRunOf(entry.threadId);
+    if (!run?.seats.some((seat) => seat.fallback?.requestId === retryOfTurnRequestId)) return;
+    await this.bb.sdk.threads.queuedMessages.delete({
+      threadId: entry.threadId,
+      queuedMessageId: entry.id,
+    });
+  }
   private async queued(run: ReviewRun, seat: Seat) {
     if (!seat.threadId) return false;
     // A deleted reviewer has no queue; readSeat reports it as deleted.
@@ -439,7 +627,7 @@ export class ReviewService {
     run: ReviewRun,
     child: Pick<
       ThreadResponse,
-      "id" | "parentThreadId" | "originPluginId" | "projectId" | "environmentId"
+      "id" | "parentThreadId" | "originPluginId" | "projectId" | "environmentId" | "providerId"
     >,
   ) {
     if (
@@ -454,7 +642,13 @@ export class ReviewService {
     };
     if (seed.reviewRun?.id !== run.id) return null;
     const seat = seed.reviewRun.seat ?? 0;
-    return Number.isInteger(seat) && seat >= 0 && seat < run.seats.length ? seat : null;
+    // A seat that moved family never readopts its exhausted thread.
+    return Number.isInteger(seat) &&
+      seat >= 0 &&
+      seat < run.seats.length &&
+      run.seats[seat]!.reviewer.providerId === child.providerId
+      ? seat
+      : null;
   }
   /**
    * Stop reviewers this run already started and cancel its queued prompts, so a
@@ -486,8 +680,14 @@ export class ReviewService {
       adopted = true;
       await this.bb.storage.kv.set(reviewerKey(child.id), run.id);
     }
+    // A moved seat whose child never appeared returns to its failed assessment.
+    for (const seat of run.seats)
+      if (!seat.threadId && seat.fallback && Date.now() - seat.fallback.at > 120000) restore(seat);
     if (run.seats.every((seat) => seat.threadId)) run.status = "running";
-    else if (Date.now() - run.startedAt > 120000) {
+    else if (
+      Date.now() - run.startedAt > 120000 &&
+      run.seats.some((seat) => !seat.threadId && !seat.fallback)
+    ) {
       run.status = "failed";
       run.error = "Dispatch expired without a child for every reviewer";
       await this.stopSeats(
@@ -646,45 +846,8 @@ export class ReviewService {
   private async dispatch(run: ReviewRun, reuse: (ThreadResponse | undefined)[]) {
     const started: string[] = [];
     try {
-      const prompt = reviewerPrompt(run);
-      const mode = `${run.request.mode[0]!.toUpperCase()}${run.request.mode.slice(1)}`;
-      for (const [index, seat] of run.seats.entries()) {
-        const { reviewer } = seat;
-        const thread = reuse[index];
-        if (thread) {
-          await this.bb.storage.kv.set(reviewerKey(thread.id), run.id);
-          await this.bb.sdk.threads.updatePluginMetadata({
-            threadId: thread.id,
-            set: metadata(run, index),
-          });
-          const delivery = await this.bb.sdk.threads.send({
-            threadId: thread.id,
-            input: [{ type: "text", text: prompt, mentions: [] }],
-            mode: "start",
-            model: reviewer.model,
-            reasoningLevel: reviewer.reasoningLevel,
-            serviceTier: reviewer.serviceTier,
-          });
-          started.push(thread.id);
-          if (delivery.delivery === "queued") seat.queuedMessageId = delivery.queuedMessage.id;
-        } else {
-          const child = await this.bb.sdk.threads.spawn({
-            projectId: run.projectId,
-            environment: { type: "reuse", environmentId: run.environmentId },
-            parentThreadId: run.parentThreadId,
-            visibility: "hidden",
-            title: `${mode} ${run.request.kind} review (${family(reviewer)})`,
-            providerId: reviewer.providerId,
-            model: reviewer.model,
-            reasoningLevel: reviewer.reasoningLevel,
-            serviceTier: reviewer.serviceTier,
-            pluginMetadata: metadata(run, index),
-            prompt,
-          });
-          started.push(child.id);
-          seat.threadId = child.id;
-          await this.bb.storage.kv.set(reviewerKey(child.id), run.id);
-        }
+      for (const index of run.seats.keys()) {
+        await this.dispatchSeat(run, index, reuse[index], started);
         // Persist each child before the next spawn so a crash cannot orphan it.
         await this.save(run);
       }
@@ -695,14 +858,60 @@ export class ReviewService {
       run.error = error instanceof Error ? error.message : String(error);
       // Definite dispatch rejection can be retried. Ambiguous transport errors
       // retain the reservation for child adoption, preventing a duplicate spawn.
-      const uncertain = /timeout|timed out|abort|fetch failed|ECONN/i.test(run.error);
-      if (run.status === "starting" && !uncertain) {
+      if (run.status === "starting" && !uncertain(run.error)) {
         run.status = "failed";
         await this.stopSeats(run, started);
       }
       await this.save(run);
       throw error;
     }
+  }
+  /** Sends the run's prompt to a reused reviewer or spawns the seat's child. */
+  private async dispatchSeat(
+    run: ReviewRun,
+    index: number,
+    thread: ThreadResponse | undefined,
+    started: string[],
+  ) {
+    const seat = run.seats[index]!;
+    const { reviewer } = seat;
+    // Every seat, including one that falls back later, gets the identical prompt.
+    const prompt = reviewerPrompt(run);
+    if (thread) {
+      await this.bb.storage.kv.set(reviewerKey(thread.id), run.id);
+      await this.bb.sdk.threads.updatePluginMetadata({
+        threadId: thread.id,
+        set: metadata(run, index),
+      });
+      const delivery = await this.bb.sdk.threads.send({
+        threadId: thread.id,
+        input: [{ type: "text", text: prompt, mentions: [] }],
+        mode: "start",
+        model: reviewer.model,
+        reasoningLevel: reviewer.reasoningLevel,
+        serviceTier: reviewer.serviceTier,
+      });
+      started.push(thread.id);
+      if (delivery.delivery === "queued") seat.queuedMessageId = delivery.queuedMessage.id;
+      return;
+    }
+    const mode = `${run.request.mode[0]!.toUpperCase()}${run.request.mode.slice(1)}`;
+    const child = await this.bb.sdk.threads.spawn({
+      projectId: run.projectId,
+      environment: { type: "reuse", environmentId: run.environmentId },
+      parentThreadId: run.parentThreadId,
+      visibility: "hidden",
+      title: `${mode} ${run.request.kind} review (${family(reviewer)})`,
+      providerId: reviewer.providerId,
+      model: reviewer.model,
+      reasoningLevel: reviewer.reasoningLevel,
+      serviceTier: reviewer.serviceTier,
+      pluginMetadata: metadata(run, index),
+      prompt,
+    });
+    started.push(child.id);
+    seat.threadId = child.id;
+    await this.bb.storage.kv.set(reviewerKey(child.id), run.id);
   }
   private receipt(run: ReviewRun, reused: boolean) {
     return {
@@ -773,10 +982,19 @@ export class ReviewService {
   /** One key per seat: each report may approach BB's KV value limit on its own. */
   private async storeReports(
     run: ReviewRun,
-    reviews: { reviewer: ReturnType<typeof identity>; report: Report | null }[],
+    reviews: {
+      reviewer: ReturnType<typeof identity>;
+      report: Report | null;
+      fallback: ReturnType<typeof fallbackNote>;
+    }[],
   ) {
-    for (const [index, { reviewer, report }] of reviews.entries())
-      if (report) await this.bb.storage.kv.set(reportKey(run.id, index), { reviewer, report });
+    for (const [index, { reviewer, report, fallback }] of reviews.entries())
+      if (report)
+        await this.bb.storage.kv.set(reportKey(run.id, index), {
+          reviewer,
+          report,
+          ...(fallback ? { fallback } : {}),
+        });
   }
   /** Seat reports in panel order; runs finished before per-seat keys kept one value under `report:<id>`. */
   private async storedReports(run: ReviewRun) {
@@ -819,24 +1037,22 @@ export class ReviewService {
     }
     return false;
   }
-  private async readResultEvents(
-    threadId: string,
-    afterSeq: number,
-    waitSeconds: number,
-    signal: AbortSignal,
-  ) {
+  private async waitIdle(threadId: string, waitSeconds: number, signal: AbortSignal) {
     const reviewer = await this.reviewerThread(threadId);
-    if (waitSeconds && reviewer?.status !== "error")
-      await this.bb.sdk.threads
-        .wait({ threadId, status: "idle", timeoutMs: waitSeconds * 1000, signal })
-        .catch(async (error) => {
-          if (signal.aborted) throw error;
-          if (/timeout|timed out/i.test(error instanceof Error ? error.message : String(error)))
-            return;
-          const current = await this.reviewerThread(threadId);
-          if (current?.status === "error" || !current) return;
-          throw error;
-        });
+    if (!reviewer || reviewer.status === "error") return;
+    await this.bb.sdk.threads
+      .wait({ threadId, status: "idle", timeoutMs: waitSeconds * 1000, signal })
+      .catch(async (error) => {
+        if (signal.aborted) throw error;
+        if (/timeout|timed out/i.test(error instanceof Error ? error.message : String(error)))
+          return;
+        const current = await this.reviewerThread(threadId);
+        if (current?.status === "error" || !current) return;
+        throw error;
+      });
+  }
+  private async readResultEvents(threadId: string, afterSeq: number, signal: AbortSignal) {
+    signal.throwIfAborted();
     const events = [];
     for (;;) {
       const page = await this.bb.sdk.threads.events.list({
@@ -848,6 +1064,7 @@ export class ReviewService {
           "item/completed",
           "turn/completed",
           "provider/modelFallback",
+          "provider/error",
         ],
         afterSeq: String(afterSeq),
         order: "asc",
@@ -860,11 +1077,11 @@ export class ReviewService {
     return events;
   }
   /** Reads one seat's bound turn; a deleted thread finishes without a report. */
-  private async readSeat(run: ReviewRun, seat: Seat, waitSeconds: number, signal: AbortSignal) {
+  private async readSeat(run: ReviewRun, seat: Seat, signal: AbortSignal) {
     const threadId = seat.threadId!;
     if (!(await this.reviewerThread(threadId)))
       return { running: false, deleted: true, report: null, text: "", turnId: "" };
-    const events = await this.readResultEvents(threadId, seat.afterSeq, waitSeconds, signal);
+    const events = await this.readResultEvents(threadId, seat.afterSeq, signal);
     const { report, finished, text, turnId } = this.assessment(run, seat, events);
     const thread = await this.reviewerThread(threadId);
     return {
@@ -876,7 +1093,19 @@ export class ReviewService {
     };
   }
   async result(caller: string, input: ResultRequest, signal: AbortSignal) {
-    const run = await this.authorize(input.runId, caller);
+    const authorized = await this.authorize(input.runId, caller);
+    // Wait outside the parent's lock; settling is serialized with dispatch and usage fallback.
+    if (input.waitSeconds)
+      await Promise.all(
+        authorized.seats.map(
+          (seat) => seat.threadId && this.waitIdle(seat.threadId, input.waitSeconds, signal),
+        ),
+      );
+    return this.serial(authorized.parentThreadId, () => this.settle(authorized.id, signal));
+  }
+  private async settle(id: string, signal: AbortSignal) {
+    const run = this.stored(id)!;
+    if (run.status === "starting") await this.recoverDispatch(run);
     if (run.seats.some((seat) => !seat.threadId))
       return {
         ...this.receipt(run, false),
@@ -885,9 +1114,7 @@ export class ReviewService {
     for (const seat of run.seats)
       if (await this.queued(run, seat))
         return { ...this.receipt(run, false), status: "queued", deepImplementationCovered: false };
-    const reads = await Promise.all(
-      run.seats.map((seat) => this.readSeat(run, seat, input.waitSeconds, signal)),
-    );
+    const reads = await Promise.all(run.seats.map((seat) => this.readSeat(run, seat, signal)));
     if (reads.some((read) => read.running))
       return {
         ...this.receipt(run, false),
@@ -896,6 +1123,7 @@ export class ReviewService {
           reviewer: identity(run.seats[index]!.reviewer),
           threadId: run.seats[index]!.threadId!,
           status: read.running ? ("running" as const) : ("finished" as const),
+          fallback: fallbackNote(run.seats[index]!),
         })),
       };
     const reviews = reads.map((read, index) => this.review(run, run.seats[index]!, read));
@@ -949,6 +1177,7 @@ export class ReviewService {
       report,
       error,
       rawOutput: report ? undefined : text.slice(0, 4000),
+      fallback: fallbackNote(seat),
     };
   }
   /** Publication clears only when every reviewer covered the current candidate without a blocker. */

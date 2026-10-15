@@ -18,20 +18,23 @@ export const result = defineTool({
           "deepImplementationCovered" in value && value.deepImplementationCovered,
         reviews:
           "current" in value
-            ? value.reviews.map(({ reviewer, threadId, status, diffCoverage, report, error }) => ({
-                reviewer,
-                threadId,
-                status,
-                findings: report?.findings.length ?? null,
-                blocking: report?.findings.filter(blocksPublication).length ?? null,
-                diffCoverage: {
-                  complete: diffCoverage.complete,
-                  consistent: diffCoverage.consistent,
-                  totalLength: diffCoverage.totalLength,
-                  unreadCount: diffCoverage.unread.length,
-                },
-                error,
-              }))
+            ? value.reviews.map(
+                ({ reviewer, threadId, status, fallback, diffCoverage, report, error }) => ({
+                  reviewer,
+                  threadId,
+                  status,
+                  fallback,
+                  findings: report?.findings.length ?? null,
+                  blocking: report?.findings.filter(blocksPublication).length ?? null,
+                  diffCoverage: {
+                    complete: diffCoverage.complete,
+                    consistent: diffCoverage.consistent,
+                    totalLength: diffCoverage.totalLength,
+                    unreadCount: diffCoverage.unread.length,
+                  },
+                  error,
+                }),
+              )
             : null,
         message: "Read every reviewer's full report with review_context section=report",
         nextOffset: 0,

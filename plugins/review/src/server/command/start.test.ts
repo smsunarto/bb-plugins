@@ -1,5 +1,10 @@
 import { expect, test } from "bun:test";
-import { createFakePluginHost, makeThreadResponse } from "@get-bb/plugin-sdk/testing";
+import {
+  createFakePluginHost,
+  makeQueueEntry,
+  makeThreadResponse,
+  makeTurnFailedEvent,
+} from "@get-bb/plugin-sdk/testing";
 import plugin from "../server.ts";
 import { cp, copyFile, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -47,6 +52,21 @@ function fixtureControls(state: {
     },
   };
 }
+const reviewerCatalog = [
+  "gpt-6-astra",
+  "gpt-6-sol",
+  "claude-opus-5-5[1m]",
+  "claude-sonnet-5-5[1m]",
+].map((model) => ({
+  id: model,
+  model,
+  supportedReasoningEfforts: ["medium", "high", "max"].map((reasoningEffort) => ({
+    reasoningEffort,
+    description: "",
+  })),
+}));
+const catalog = async () => ({ models: reviewerCatalog }) as never;
+
 async function load(
   providerId = "codex",
   model = "gpt-6-astra",
@@ -73,7 +93,11 @@ async function load(
   };
   const queued = new Map<
     string,
-    { id: string; content: unknown[]; payload?: { kind: "retry"; retryOfTurnRequestId: string } }[]
+    {
+      id: string;
+      content: unknown[];
+      payload?: { kind: "retry"; retryOfTurnRequestId: string } | { kind: "inline" };
+    }[]
   >();
   const authorEvents = [
     {
@@ -131,6 +155,7 @@ async function load(
       };
     },
     sdk: {
+      providers: { models: catalog },
       threads: {
         list: async () => [...records.values()],
         get: async ({ threadId }) => {
@@ -184,7 +209,9 @@ async function load(
         queuedMessages: {
           list: async ({ threadId }) => {
             if (!records.has(threadId)) throw new Error("Thread not found (404)");
-            return (queued.get(threadId) ?? []) as never;
+            return (queued.get(threadId) ?? []).map((entry) =>
+              Object.assign({ threadId }, entry),
+            ) as never;
           },
           delete: async ({ threadId, queuedMessageId }) => {
             queued.set(
@@ -1901,4 +1928,624 @@ test("explicit reviewer selection starts a new assessment even for the identical
   await expect(f.start({ ...request, reuse: { threadId: "thr_author" } })).rejects.toThrow(
     "is not a reviewer from an earlier run",
   );
+});
+
+function failReviewer(f: Fixture, threadId: string, category = "rate-limit") {
+  const events = f.logs.get(threadId)! as {
+    seq: number;
+    type: string;
+    scope: { kind: string; turnId?: string };
+    data: { requestId?: string };
+  }[];
+  const request = events.findLast((event) => event.type === "client/turn/requested")!;
+  const turnId = events.findLast((event) => event.type === "turn/input/accepted")!.scope.turnId!;
+  events.push({
+    seq: events.length + 1,
+    type: "turn/completed",
+    scope: { kind: "turn", turnId },
+    data: { status: "failed" },
+  } as never);
+  f.records.get(threadId)!.status = "error";
+  return makeTurnFailedEvent({
+    threadId,
+    requestId: request.data.requestId!,
+    turnId,
+    errorInfo: {
+      category: category as "rate-limit",
+      providerCode: "usage_limit_reached",
+      httpStatusCode: 429,
+    },
+  });
+}
+const failed = (f: Fixture, event: ReturnType<typeof failReviewer>) =>
+  f.host.harness.behavior.emitThreadEvent("turn.failed", event);
+const sends = (f: Fixture) =>
+  f.host.harness.inspection.sdk.callsTo("threads.send").map(([args]) => args);
+const spawns = (f: Fixture) =>
+  f.host.harness.inspection.sdk
+    .callsTo("threads.spawn")
+    .map(([args]) => args as Record<string, unknown>);
+
+for (const [original, replacement] of [
+  ["gpt-6-astra", "gpt-6-sol"],
+  ["gpt-6-sol", "gpt-6-astra"],
+] as const) {
+  test(`Quick usage limit falls back from ${original} to ${replacement} and validates the new assessment`, async () => {
+    const f = await load("claude-code");
+    await f.host.harness.behavior.setSettings({ codexModel: original });
+    const run = await f.start({
+      mode: "quick",
+      summary: "Check",
+      target: { branch: "scott/camera" },
+    });
+    const [reviewer] = run.threadIds;
+    await f.tool("review_context", { runId: run.runId, section: "diff" }, reviewer);
+    const failure = failReviewer(f, reviewer);
+    await Promise.all([failed(f, failure), failed(f, failure)]);
+    expect(sends(f)).toEqual([
+      expect.objectContaining({
+        threadId: reviewer,
+        model: replacement,
+        reasoningLevel: "medium",
+        serviceTier: "fast",
+      }),
+    ]);
+    expect(f.records.get(reviewer)?.providerId).toBe("codex");
+    expect(await f.tool("review_result", { runId: run.runId })).toMatchObject({
+      status: "running",
+      target: { base, head },
+    });
+    await f.tool("review_context", { runId: run.runId, section: "diff" }, reviewer);
+    f.finish(reviewer, run.runId);
+    expect(await f.tool("review_result", { runId: run.runId })).toMatchObject({
+      status: "complete",
+      reviews: [
+        {
+          reviewer: { providerId: "codex", model: replacement },
+          threadId: reviewer,
+          status: "complete",
+          diffCoverage: { complete: true },
+          fallback: {
+            from: { providerId: "codex", model: original },
+            threadId: reviewer,
+            note: `${original} hit a usage limit; this review reran on ${replacement}.`,
+          },
+        },
+      ],
+    });
+    await f.host.harness.lifecycle.dispose();
+  });
+}
+
+test("a panel seat that hits a usage limit reruns on the other family while the other keeps its own", async () => {
+  const f = await load();
+  const run = await f.start({
+    mode: "deep",
+    scope: "publication",
+    summary: "Publish",
+    target: { branch: "scott/camera" },
+  });
+  const [claude, codex] = run.threadIds;
+  await readDiff(f, run);
+  const failure = failReviewer(f, claude);
+  await Promise.all([failed(f, failure), failed(f, failure)]);
+  expect(sends(f)).toEqual([]);
+  expect(spawns(f)).toHaveLength(3);
+  expect(spawns(f)[2]).toMatchObject({
+    providerId: "codex",
+    model: "gpt-6-astra",
+    reasoningLevel: "max",
+    serviceTier: "fast",
+    title: "Deep implementation review (Codex)",
+    pluginMetadata: {
+      reviewRun: {
+        id: run.runId,
+        seat: 0,
+        reviewer: { providerId: "codex", model: "gpt-6-astra" },
+      },
+    },
+  });
+  expect(new Set(spawns(f).map((spawn) => spawn.prompt)).size).toBe(1);
+  expect(f.metadata.get(claude)).toMatchObject({
+    reviewRun: {
+      id: run.runId,
+      seat: 0,
+      status: "failed",
+      reviewer: { providerId: "claude-code", model: "claude-opus-5-5[1m]" },
+    },
+  });
+  const moved = await f.tool("review_result", { runId: run.runId });
+  expect(moved).toMatchObject({
+    status: "running",
+    threadIds: ["thr_reviewer_3", codex],
+    reviewers: [
+      { providerId: "codex", model: "gpt-6-astra" },
+      { providerId: "codex", model: "gpt-6-astra" },
+    ],
+  });
+  await f.tool("review_context", { runId: run.runId, section: "diff" }, "thr_reviewer_3");
+  finishAll(f, moved);
+  const done = await f.tool("review_result", { runId: run.runId });
+  expect(done).toMatchObject({
+    status: "complete",
+    deepImplementationCovered: true,
+    reviews: [
+      {
+        reviewer: { providerId: "codex", model: "gpt-6-astra" },
+        threadId: "thr_reviewer_3",
+        status: "complete",
+        fallback: {
+          from: { providerId: "claude-code", model: "claude-opus-5-5[1m]" },
+          threadId: claude,
+          note: "Claude hit a usage limit; this seat reran on Codex, so the panel ran on one family.",
+        },
+      },
+      {
+        reviewer: { providerId: "codex", model: "gpt-6-astra" },
+        threadId: codex,
+        status: "complete",
+      },
+    ],
+  });
+  expect(done.reviews[1]).not.toHaveProperty("fallback");
+});
+
+for (const mode of ["quick", "deep"] as const)
+  test(`a ${mode} fallback cannot use the exhausted assessment's diff reads`, async () => {
+    const f = await load("claude-code");
+    const run = await f.start({
+      mode,
+      scope: "publication",
+      summary: "Publish",
+      target: { branch: "scott/camera" },
+    });
+    await readDiff(f, run);
+    await failed(f, failReviewer(f, run.threadIds[0]));
+    // The exhausted thread keeps reading, but it no longer holds a seat.
+    await f.tool("review_context", { runId: run.runId, section: "diff" }, run.threadIds[0]);
+    const after = await f.tool("review_result", { runId: run.runId });
+    if (mode === "deep") expect(after.threadIds[0]).not.toBe(run.threadIds[0]);
+    finishAll(f, after);
+    const result = await f.tool("review_result", { runId: run.runId });
+    expect(result).toMatchObject({ deepImplementationCovered: false });
+    expect(
+      result.reviews.map((review: { diffCoverage: { complete: boolean } }) => [
+        review.diffCoverage.complete,
+        Boolean((review as { fallback?: unknown }).fallback),
+      ]),
+    ).toEqual(
+      mode === "quick"
+        ? [[true, true]]
+        : [
+            [false, true],
+            [true, false],
+          ],
+    );
+  });
+
+test("Quick fallback stays on Claude and stops after a second usage limit", async () => {
+  const f = await load();
+  const run = await f.start({ kind: "design", mode: "quick", summary: "Choose a queue" });
+  const [reviewer] = run.threadIds;
+  await failed(f, failReviewer(f, reviewer));
+  expect(sends(f)[0]).toMatchObject({ model: "claude-sonnet-5-5[1m]", reasoningLevel: "medium" });
+  expect(f.records.get(reviewer)?.providerId).toBe("claude-code");
+  await failed(f, failReviewer(f, reviewer));
+  expect(await f.tool("review_result", { runId: run.runId })).toMatchObject({
+    status: "incomplete",
+    deepImplementationCovered: false,
+  });
+  expect(sends(f)).toHaveLength(1);
+});
+
+test("a panel seat falls back once, and a panel on one family has nowhere left to move", async () => {
+  const f = await load();
+  const run = await f.start({ kind: "design", summary: "Plan" });
+  const [claude, codex] = run.threadIds;
+  await failed(f, failReviewer(f, claude));
+  await failed(f, failReviewer(f, "thr_reviewer_3"));
+  await failed(f, failReviewer(f, codex));
+  expect(spawns(f)).toHaveLength(3);
+  expect(sends(f)).toHaveLength(0);
+  expect(await f.tool("review_result", { runId: run.runId })).toMatchObject({
+    status: "incomplete",
+    threadIds: ["thr_reviewer_3", codex],
+    reviews: [
+      { threadId: "thr_reviewer_3", status: "failed", fallback: { threadId: claude } },
+      { threadId: codex, status: "failed" },
+    ],
+  });
+});
+
+test("a rejected fallback spawn returns the seat to its failed assessment", async () => {
+  const f = await load();
+  const run = await f.start({ kind: "design", summary: "Plan" });
+  const [claude, codex] = run.threadIds;
+  f.setSpawnFailure("Model is not available");
+  await failed(f, failReviewer(f, claude));
+  f.finish(codex, run.runId);
+  const result = await f.tool("review_result", { runId: run.runId });
+  expect(result).toMatchObject({
+    status: "incomplete",
+    threadIds: [claude, codex],
+    reviewers: [
+      { providerId: "claude-code", model: "claude-opus-5-5[1m]" },
+      { providerId: "codex", model: "gpt-6-astra" },
+    ],
+    reviews: [
+      { threadId: claude, status: "failed" },
+      { threadId: codex, status: "complete" },
+    ],
+  });
+  expect(result.reviews[0]).not.toHaveProperty("fallback");
+});
+
+test("an ambiguous fallback spawn adopts the seat's new child, never its exhausted thread", async () => {
+  const f = await load();
+  const run = await f.start({ kind: "design", summary: "Plan" });
+  const [claude, codex] = run.threadIds;
+  f.setBeforeSpawnReturn(async () => {
+    throw new Error("Gateway timeout");
+  });
+  await failed(f, failReviewer(f, claude));
+  f.setBeforeSpawnReturn(async () => {});
+  const moved = await f.tool("review_result", { runId: run.runId });
+  expect(moved).toMatchObject({ status: "running", threadIds: ["thr_reviewer_3", codex] });
+  finishAll(f, moved);
+  expect(await f.tool("review_result", { runId: run.runId })).toMatchObject({
+    status: "complete",
+    reviews: [{ threadId: "thr_reviewer_3", fallback: { threadId: claude } }, { threadId: codex }],
+  });
+});
+
+test("a fallback child that never appears expires back to the failed assessment", async () => {
+  const f = await load();
+  const run = await f.start({ kind: "design", summary: "Plan" });
+  const [claude, codex] = run.threadIds;
+  f.setSpawnFailure("Gateway timeout");
+  await failed(f, failReviewer(f, claude));
+  expect(await f.tool("review_result", { runId: run.runId })).toMatchObject({
+    status: "starting",
+    threadIds: [null, codex],
+    error: "Gateway timeout",
+  });
+  const db = f.host.bb.storage.database();
+  const row = db
+    .prepare<[string], { payload: string }>("SELECT payload FROM review_runs WHERE id=?")
+    .get(run.runId)!;
+  const stored = JSON.parse(row.payload);
+  stored.seats[0].fallback.at -= 121000;
+  db.prepare("UPDATE review_runs SET payload=? WHERE id=?").run(JSON.stringify(stored), run.runId);
+  f.finish(codex, run.runId);
+  expect(await f.tool("review_result", { runId: run.runId })).toMatchObject({
+    status: "incomplete",
+    threadIds: [claude, codex],
+    reviews: [
+      { threadId: claude, status: "failed" },
+      { threadId: codex, status: "complete" },
+    ],
+  });
+  expect(f.host.harness.inspection.sdk.callsTo("threads.stop")).toHaveLength(0);
+});
+
+test("unrelated failures do not fall back, but a later usage limit does", async () => {
+  const f = await load("claude-code");
+  const run = await f.start({ kind: "design", mode: "quick", summary: "Choose a queue" });
+  const failure = failReviewer(f, run.threadIds[0], "unauthorized");
+  await failed(f, failure);
+  expect(await f.tool("review_result", { runId: run.runId })).toMatchObject({
+    status: "incomplete",
+  });
+  expect(sends(f)).toHaveLength(0);
+  await failed(f, { ...failure, errorInfo: { ...failure.errorInfo!, category: "rate-limit" } });
+  expect(await f.tool("review_result", { runId: run.runId })).toMatchObject({ status: "running" });
+});
+
+test("unavailable or insufficient-effort Quick fallback models leave the review incomplete", async () => {
+  for (const models of [
+    [],
+    reviewerCatalog
+      .filter((m) => m.model === "gpt-6-sol")
+      .map((m) =>
+        Object.assign({}, m, {
+          supportedReasoningEfforts: [{ reasoningEffort: "max", description: "" }],
+        }),
+      ),
+  ]) {
+    const f = await load("claude-code");
+    f.host.harness.inspection.sdk.stub("providers.models", async () => ({ models }) as never);
+    const run = await f.start({
+      mode: "quick",
+      summary: "Check",
+      target: { branch: "scott/camera" },
+    });
+    await failed(f, failReviewer(f, run.threadIds[0]));
+    expect(await f.tool("review_result", { runId: run.runId })).toMatchObject({
+      status: "incomplete",
+      deepImplementationCovered: false,
+    });
+    expect(sends(f)).toHaveLength(0);
+  }
+});
+
+for (const mode of ["quick", "standard"] as const)
+  test(`${mode} fallback removes scheduled retries of the exhausted model, including ones queued late`, async () => {
+    const f = await load("claude-code");
+    const run = await f.start({ kind: "design", mode, summary: "Choose a queue" });
+    const [reviewer] = run.threadIds;
+    const failure = failReviewer(f, reviewer);
+    const retry = (id: string) =>
+      makeQueueEntry({
+        id,
+        threadId: reviewer,
+        model: "gpt-6-astra",
+        payload: {
+          kind: "retry",
+          retryOfTurnRequestId: failure.requestId,
+          attempt: 2,
+          reason: "Usage limit",
+        },
+      });
+    f.queued.set(reviewer, [retry("early")]);
+    await failed(f, failure);
+    expect(f.queued.get(reviewer)).toEqual([]);
+    const late = retry("late");
+    f.queued.set(reviewer, [late]);
+    await f.host.harness.behavior.emitThreadEvent("message.queued", { entry: late });
+    expect(f.queued.get(reviewer)).toEqual([]);
+    const after = await f.tool("review_result", { runId: run.runId });
+    expect(after).toMatchObject({ status: "running" });
+    finishAll(f, after);
+    expect(await f.tool("review_result", { runId: run.runId })).toMatchObject({
+      status: "complete",
+    });
+  });
+
+for (const mode of ["quick", "standard"] as const)
+  test(`reload recovers an unobserved ${mode} usage failure without duplicating its fallback`, async () => {
+    const f = await load("claude-code");
+    const run = await f.start({ kind: "design", mode, summary: "Choose a queue" });
+    const [reviewer] = run.threadIds;
+    const failure = failReviewer(f, reviewer);
+    f.logs.get(reviewer)!.push({
+      seq: f.logs.get(reviewer)!.length + 1,
+      type: "provider/error",
+      scope: { kind: "turn", turnId: failure.turnId },
+      data: { errorInfo: failure.errorInfo, message: "Usage limit reached" },
+    });
+    const { ReviewService } = await import("../lib/service.ts");
+    const restored = new ReviewService(f.host.bb, async () => ({
+      claudeModel: "claude-opus-5-5[1m]",
+      codexModel: "gpt-6-astra",
+    }));
+    await restored.reconcileFailures(new AbortController().signal);
+    const after = await f.tool("review_result", { runId: run.runId });
+    expect(after).toMatchObject({ status: "running" });
+    await restored.reconcileFailures(new AbortController().signal);
+    await restored.reviewerFailed(failure);
+    finishAll(f, after);
+    expect(await f.tool("review_result", { runId: run.runId })).toMatchObject({
+      status: "complete",
+    });
+    expect([sends(f).length, spawns(f).length]).toEqual(mode === "quick" ? [1, 1] : [0, 3]);
+  });
+
+test("usage failures from an unrelated manual turn never restart the review", async () => {
+  const f = await load("claude-code");
+  const run = await f.start({ kind: "design", mode: "quick", summary: "Choose a queue" });
+  const [reviewer] = run.threadIds;
+  const events = f.logs.get(reviewer)!;
+  events.push({
+    seq: events.length + 1,
+    type: "client/turn/requested",
+    data: { requestId: "manual", input: [{ type: "text", text: "A different task" }] },
+    scope: { kind: "thread" },
+  });
+  await failed(f, failReviewer(f, reviewer));
+  expect(await f.tool("review_result", { runId: run.runId })).toMatchObject({
+    status: "incomplete",
+  });
+  expect(sends(f)).toHaveLength(0);
+});
+
+for (const [original, available, expected] of [
+  ["gpt-6.1-sol", ["gpt-5.6-astra", "gpt-6-astra"], "gpt-6-astra"],
+  ["claude-sonnet-5-5[1m]", ["claude-opus-5-5[1m]"], "claude-opus-5-5[1m]"],
+] as const) {
+  test(`Quick fallback selects an available alternate family for ${original}`, async () => {
+    const f = await load(original.startsWith("gpt") ? "claude-code" : "codex");
+    await f.host.harness.behavior.setSettings(
+      original.startsWith("gpt") ? { codexModel: original } : { claudeModel: original },
+    );
+    const models = available.map((model) => ({
+      model,
+      supportedReasoningEfforts: [{ reasoningEffort: "medium" }],
+    }));
+    f.host.harness.inspection.sdk.stub("providers.models", async () => ({ models }) as never);
+    const run = await f.start({ kind: "design", mode: "quick", summary: "Choose a queue" });
+    await failed(f, failReviewer(f, run.threadIds[0]));
+    expect(sends(f)[0]).toMatchObject({ model: expected });
+    f.finish(run.threadIds[0], run.runId);
+    expect(await f.tool("review_result", { runId: run.runId })).toMatchObject({
+      status: "complete",
+    });
+  });
+}
+
+test("Quick fallback never selects a catalog model routed to a different provider", async () => {
+  const f = await load("claude-code");
+  f.host.harness.inspection.sdk.stub(
+    "providers.models",
+    async () =>
+      ({
+        models: reviewerCatalog.map((model) =>
+          Object.assign({}, model, { routeProviderId: "other-provider" }),
+        ),
+      }) as never,
+  );
+  const run = await f.start({ kind: "design", mode: "quick", summary: "Choose a queue" });
+  await failed(f, failReviewer(f, run.threadIds[0]));
+  expect(await f.tool("review_result", { runId: run.runId })).toMatchObject({
+    status: "incomplete",
+  });
+  expect(sends(f)).toHaveLength(0);
+});
+
+for (const mode of ["quick", "standard"] as const)
+  test(`a ${mode} usage failure before spawn returns still starts the fallback`, async () => {
+    const f = await load("claude-code");
+    let fallback: Promise<unknown> | undefined;
+    f.setBeforeSpawnReturn(async (threadId) => {
+      fallback ??= failed(f, failReviewer(f, threadId));
+    });
+    const run = await f.start({ kind: "design", mode, summary: "Choose a queue" });
+    await fallback;
+    const after = await f.tool("review_result", { runId: run.runId });
+    finishAll(f, after);
+    expect(await f.tool("review_result", { runId: run.runId })).toMatchObject({
+      status: "complete",
+      reviews: [
+        {
+          reviewer:
+            mode === "quick"
+              ? { providerId: "codex", model: "gpt-6-sol" }
+              : { providerId: "claude-code", model: "claude-opus-5-5[1m]" },
+          fallback: { from: { providerId: "codex", model: "gpt-6-astra" } },
+        },
+        ...(mode === "quick" ? [] : [{ reviewer: { providerId: "claude-code" } }]),
+      ],
+    });
+  });
+
+for (const late of [true, false])
+  test(`a fallback during a partial dispatch keeps ${late ? "adopting" : "expiring"} the missing seat`, async () => {
+    const f = await load();
+    f.setBeforeSpawnReturn(async () => f.setSpawnFailure("Gateway timeout"));
+    await expect(f.start({ kind: "design", summary: "Plan" })).rejects.toThrow("Gateway timeout");
+    f.setSpawnFailure(undefined);
+    f.setBeforeSpawnReturn(async () => {});
+    const db = f.host.bb.storage.database();
+    const runId = db.prepare<[], { id: string }>("SELECT id FROM review_runs").get()!.id;
+    await failed(f, failReviewer(f, "thr_reviewer_1"));
+    expect(await f.tool("review_result", { runId })).toMatchObject({
+      status: "starting",
+      threadIds: ["thr_reviewer_2", null],
+    });
+    if (late) {
+      const child = makeThreadResponse({
+        id: "thr_late",
+        parentThreadId: "thr_author",
+        projectId: "proj_1",
+        environmentId: "env_1",
+        providerId: "codex",
+        originPluginId: "review",
+        status: "active",
+      });
+      f.records.set(child.id, child);
+      f.metadata.set(child.id, { reviewRun: { id: runId, seat: 1, status: "starting" } });
+      const adopted = await f.tool("review_result", { runId });
+      expect(adopted).toMatchObject({
+        status: "running",
+        threadIds: ["thr_reviewer_2", "thr_late"],
+      });
+      f.finish("thr_reviewer_2", runId);
+      f.records.get("thr_late")!.status = "idle";
+      return;
+    }
+    const row = db.prepare<[], { payload: string }>("SELECT payload FROM review_runs").get()!;
+    const stored = JSON.parse(row.payload);
+    stored.startedAt -= 121000;
+    db.prepare("UPDATE review_runs SET payload=? WHERE id=?").run(JSON.stringify(stored), runId);
+    expect(await f.tool("review_result", { runId })).toMatchObject({
+      status: "failed",
+      error: "Dispatch expired without a child for every reviewer",
+    });
+  });
+
+test("reload adopts a starting run's children and still falls back a seat that hit its limit", async () => {
+  const f = await load();
+  let spawned = 0;
+  f.setBeforeSpawnReturn(async () => {
+    if (++spawned === 2) throw new Error("Gateway timeout");
+  });
+  await expect(f.start({ kind: "design", summary: "Plan" })).rejects.toThrow("Gateway timeout");
+  f.setBeforeSpawnReturn(async () => {});
+  const runId = f.host.bb.storage
+    .database()
+    .prepare<[], { id: string }>("SELECT id FROM review_runs")
+    .get()!.id;
+  const failure = failReviewer(f, "thr_reviewer_1");
+  f.logs.get("thr_reviewer_1")!.push({
+    seq: f.logs.get("thr_reviewer_1")!.length + 1,
+    type: "provider/error",
+    scope: { kind: "turn", turnId: failure.turnId },
+    data: { errorInfo: failure.errorInfo, message: "Usage limit reached" },
+  });
+  const { ReviewService } = await import("../lib/service.ts");
+  await new ReviewService(f.host.bb, async () => ({
+    claudeModel: "claude-opus-5-5[1m]",
+    codexModel: "gpt-6-astra",
+  })).reconcileFailures(new AbortController().signal);
+  const after = await f.tool("review_result", { runId });
+  expect(after).toMatchObject({
+    status: "running",
+    threadIds: ["thr_reviewer_3", "thr_reviewer_2"],
+    reviewers: [{ providerId: "codex" }, { providerId: "codex" }],
+  });
+  finishAll(f, after);
+  expect(await f.tool("review_result", { runId })).toMatchObject({ status: "complete" });
+});
+
+test("a large result keeps each seat's fallback provenance, also in the paged reports", async () => {
+  const f = await load();
+  const run = await f.start({
+    mode: "deep",
+    scope: "publication",
+    summary: "Publish",
+    target: { branch: "scott/camera" },
+  });
+  const [claude, codex] = run.threadIds;
+  await failed(f, failReviewer(f, claude));
+  const moved = await f.tool("review_result", { runId: run.runId });
+  await readDiff(f, moved);
+  finishAll(f, moved);
+  const message = f.logs
+    .get("thr_reviewer_3")!
+    .find((event) => (event as { type: string }).type === "item/completed") as {
+    data: { item: { text: string } };
+  };
+  const report = JSON.parse(message.data.item.text);
+  report.findings = Array.from({ length: 9 }, () => ({
+    priority: 3,
+    title: "Minor",
+    body: "x".repeat(7900),
+    location: "a.ts:1",
+  }));
+  message.data.item.text = JSON.stringify(report);
+  const result = await f.tool("review_result", { runId: run.runId });
+  expect(result).toMatchObject({
+    deepImplementationCovered: true,
+    nextOffset: 0,
+    reviews: [
+      {
+        threadId: "thr_reviewer_3",
+        findings: 9,
+        fallback: { from: { providerId: "claude-code" }, threadId: claude },
+      },
+      { threadId: codex, findings: 0 },
+    ],
+  });
+  expect(result.reviews[1]).not.toHaveProperty("fallback");
+  let text = "";
+  for (let offset: number | null = 0; offset !== null;) {
+    const page = await f.tool("review_context", { runId: run.runId, section: "report", offset });
+    text += page.text;
+    offset = page.nextOffset;
+  }
+  const reports = JSON.parse(text);
+  expect(reports).toMatchObject([
+    { fallback: { threadId: claude }, report: { findings: { length: 9 } } },
+    { reviewer: { providerId: "codex" } },
+  ]);
+  expect(reports[1]).not.toHaveProperty("fallback");
 });

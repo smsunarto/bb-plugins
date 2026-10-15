@@ -77,6 +77,14 @@ export type Seat = {
   threadId: string | null;
   afterSeq: number;
   queuedMessageId?: string;
+  /** Set when a usage limit moved this seat, which then never falls back again. */
+  fallback?: SeatFallback;
+};
+/** The exhausted assessment a seat left; BB's scheduled retries of `requestId` are cancelled. */
+export type SeatFallback = {
+  from: { reviewer: Reviewer; threadId: string; afterSeq: number };
+  requestId: string;
+  at: number;
 };
 export type ReviewRun = {
   id: string;

@@ -1,3 +1,4 @@
+import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import type { Reviewer, ReviewMode, ReviewRun } from "../../shared/schema.ts";
 
 import { instructionFiles } from "@bb-kit/core/instructions";
@@ -34,6 +35,36 @@ export function pickReviewers(
   });
   const opposite = seat(openai ? "claude-code" : "codex");
   return MODES[mode].panel ? [opposite, seat(openai ? "codex" : "claude-code")] : [opposite];
+}
+
+type Model = Awaited<ReturnType<BbPluginApi["sdk"]["providers"]["models"]>>["models"][number];
+
+const modelFamily = /(?:^|-)(astra|sol|opus|sonnet)(?=-|$|\[)/;
+const alternateFamilies = new Map([
+  ["astra", "sol"],
+  ["sol", "astra"],
+  ["opus", "sonnet"],
+  ["sonnet", "opus"],
+]);
+
+/** Quick's single reviewer stays on its provider, using its available catalog and the same effort. */
+export function fallbackReviewer(reviewer: Reviewer, models: Model[]): Reviewer | null {
+  const family = reviewer.model.match(modelFamily)?.[1];
+  const other = alternateFamilies.get(family ?? "");
+  if (!family || !other) return null;
+  const preferred = reviewer.model.replace(family, other);
+  const candidates = models
+    .filter(
+      (model) =>
+        (!model.routeProviderId || model.routeProviderId === reviewer.providerId) &&
+        model.model.match(modelFamily)?.[1] === other &&
+        model.supportedReasoningEfforts.some(
+          (effort) => effort.reasoningEffort === reviewer.reasoningLevel,
+        ),
+    )
+    .sort((a, b) => b.model.localeCompare(a.model, undefined, { numeric: true }));
+  const model = candidates.find((model) => model.model === preferred) ?? candidates[0];
+  return model ? { ...reviewer, model: model.model } : null;
 }
 
 export function reviewerPrompt(run: ReviewRun): string {

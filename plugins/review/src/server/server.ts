@@ -34,6 +34,11 @@ export default definePlugin({
   agents: { files, tools: { start: startTool, result: resultTool, context: contextTool } },
   setup(ctx) {
     const { bb } = ctx;
+    bb.events.on("turn.failed", (event) => ctx.reviews.reviewerFailed(event));
+    bb.events.on("message.queued", ({ entry }) => ctx.reviews.cancelObsoleteRetry(entry));
+    bb.background.service("review-fallback", {
+      start: (signal) => ctx.reviews.reconcileFailures(signal),
+    });
     bb.agents.configure((session) => {
       const reviewer = session.origin.pluginId === bb.pluginId;
       const sideChat = session.origin.pluginId === "side-chat";
