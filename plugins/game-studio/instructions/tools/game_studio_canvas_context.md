@@ -1,0 +1,1 @@
+Read the current main design document, semantic canvas nodes, board revisions, assets, and supported generation providers for a connected Game Studio project. Call before design or asset work; reread after disk changes. User layout positions are excluded. Generation must use the game thread checkout and an owned Rampage slot when registered.

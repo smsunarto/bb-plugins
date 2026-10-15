@@ -236,3 +236,36 @@
     height: 55%;
   }
 }
+
+.gs-canvas-card[data-generation="pending"] .gs-node-content {
+  background: repeating-linear-gradient(
+    135deg,
+    var(--surface-recessed-solid),
+    var(--surface-recessed-solid) 10px,
+    var(--state-hover) 10px,
+    var(--state-hover) 20px
+  );
+}
+.gs-canvas-card[data-generation="failed"],
+.gs-canvas-card[data-generation="auth-required"] {
+  border-color: var(--surface-destructive-border);
+}
+.gs-canvas-card[data-generation="uncertain"] {
+  border-color: var(--warning-text);
+}
+.gs-generation-progress {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 10px;
+  color: var(--muted-foreground);
+  font-size: 11px;
+}
+.gs-generation-progress small {
+  flex-basis: 100%;
+  overflow-wrap: anywhere;
+}
+.gs-generation-progress button {
+  margin-left: auto;
+}

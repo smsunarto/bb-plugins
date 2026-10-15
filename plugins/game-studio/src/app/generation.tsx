@@ -9,7 +9,9 @@ const recipes: {
   billing: "plan" | "paid";
 }[] = [
   { id: "concept-art", label: "Concept art", provider: "Midjourney", billing: "plan" },
-  { id: "precise-edit", label: "Precise edit", provider: "GPT Image 2", billing: "plan" },
+  { id: "nano-banana", label: "Image / edit", provider: "Nano Banana 2.1", billing: "paid" },
+  { id: "omni-video", label: "Video", provider: "Gemini Omni", billing: "paid" },
+  { id: "fal-video", label: "Video", provider: "Fal H3 Max", billing: "paid" },
   { id: "model-3d", label: "3D model", provider: "Tripo P2", billing: "paid" },
   { id: "voice-sfx", label: "Voice/SFX", provider: "ElevenLabs", billing: "paid" },
   { id: "music", label: "Music", provider: "Suno", billing: "plan" },
@@ -29,8 +31,20 @@ export function GenerationOptions({
   const id = useId();
   const [expanded, setExpanded] = useState(false);
   const [recipe, setRecipe] = useState<GenerationRecipe>(
-    kind === "model-3d" ? "model-3d" : kind === "asset" ? "voice-sfx" : "concept-art",
+    kind === "model-3d"
+      ? "model-3d"
+      : kind === "asset"
+        ? "voice-sfx"
+        : kind === "video"
+          ? "omni-video"
+          : "nano-banana",
   );
+  const visibleRecipes = recipes.filter((option) => {
+    if (kind === "video") return ["omni-video", "fal-video"].includes(option.id);
+    if (kind === "model-3d") return option.id === "model-3d";
+    if (kind === "asset") return ["voice-sfx", "music"].includes(option.id);
+    return ["nano-banana", "concept-art"].includes(option.id);
+  });
   const blocked = disabled || (recipe === "model-3d" && !hasImageReference);
   return (
     <div className="gs-generation">
@@ -46,7 +60,7 @@ export function GenerationOptions({
         <div id={id} className="gs-generation-options">
           <fieldset>
             <legend>Generate</legend>
-            {recipes.map((option) => {
+            {visibleRecipes.map((option) => {
               const needsImage = option.id === "model-3d" && !hasImageReference;
               return (
                 <label
@@ -74,7 +88,9 @@ export function GenerationOptions({
             })}
           </fieldset>
           <footer>
-            <span>1 output · sent to agent thread</span>
+            <span>
+              {recipe === "concept-art" ? "4 candidates" : "1 output"} · sent to agent thread
+            </span>
             <button
               type="button"
               className="gs-primary"

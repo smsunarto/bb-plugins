@@ -31,11 +31,31 @@ creation tooling. Leave the version unset to let the agent choose through Hub.
 - **Evidence:** screenshots and recordings saved under `canvas/evidence`. Unity
   WebGL builds can also be opened through BB's leased file preview.
 
-The agent uses `scott-engineering:game-dev`: Midjourney for visual exploration,
-GPT Image 2 for precise image work, Tripo Studio P2 for 3D geometry, ElevenLabs
-for speech and SFX, and Suno for music. The selected tool handles authentication
-when needed. Asset buttons prepare a request for you to review and send to your
-BB agent; they do not submit generation jobs themselves.
+Image, video, and 3D generation use native agent tools: `game_studio_generate_image`,
+`game_studio_generate_video`, and `game_studio_generate_3d_asset`. Read
+`game_studio_canvas_context` first; `game_studio_generate_canvas_media` consumes a
+saved node and its exact board revision. Defaults are Google Nano Banana 2.1
+for images and Gemini Omni 1.1 Flash for video. Fal H3 Max remains an alternate
+video provider; Midjourney supports images/video and Tripo P2 handles approved
+image-to-geometry work. ElevenLabs and Suno remain agent workflows for audio.
+
+Set the **Google Gemini API key** and optional **Fal API key** in Game Studio's
+secret settings. Keys never belong in game files or the browser bundle. Native
+Google/Fal adapters use their APIs; Midjourney/Tripo adapters run the installed
+workflow CLIs on the project's host, with fixed argument lists and no shell.
+
+Generation returns an asynchronous job in `canvas/jobs/<requestId>.json`.
+Preserve `requestId` on retries. `game_studio_generation` reads status, resumes
+a confirmed provider task, or stops local waiting without resubmitting it.
+Stopping local waiting does not cancel a paid provider task. Unknown submission
+outcomes require reconciliation before a new request. Collect status before
+releasing a registered checkout; unresolved dispatches keep it reserved.
+Successful outputs stay in `canvas/staging` and are cataloged when collected.
+They attach to their source node only while its brief and connected design
+sources are unchanged; otherwise they remain staged candidates for review.
+Midjourney standard jobs yield four image candidates; the other image/video
+models yield one. Asset buttons prepare a request in native BB chat for review
+and do not directly start generation.
 
 Game Studio includes Editor discovery, managed ownership, and persistent Rampage
 checkout slots. Use `game_studio_manage` and `game_studio_slots`, or

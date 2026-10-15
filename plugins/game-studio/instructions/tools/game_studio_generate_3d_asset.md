@@ -1,0 +1,1 @@
+Generate one geometry-only GLB with Tripo P2 from a visually approved project-relative image. Requires an approved image and an authorized paid-job scope. Returns a persisted asynchronous job. No text-to-model, texturing, or rigging. Collect with game_studio_generation and review the solid mesh and wireframe before Unity import.

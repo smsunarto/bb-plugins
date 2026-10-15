@@ -5,8 +5,7 @@ WhiteTowerAI/ohmygame. The workspace is ordinary files: keep them useful outside
 
 Use `scott-engineering:game-dev` for game planning, implementation, asset work,
 and playtesting. Follow its asset inventory, contracts, parallel workers, and
-acceptance process. Use Midjourney for visual exploration, GPT Image 2 for precise
-image work, Tripo Studio P2 Clean Topology for 3D geometry, ElevenLabs for speech
+acceptance process. Use Midjourney for visual exploration, Google Nano Banana 2.1 for image generation and edits, Gemini Omni for video, Fal H3 Max as an alternate video provider, Tripo Studio P2 Clean Topology for 3D geometry, ElevenLabs for speech
 and sound effects, and the authenticated Suno browser for music. Request
 authentication when the selected tool requires it. Never place credentials in
 the game files, canvas, or browser bundle. Do not start paid jobs beyond the

@@ -2,6 +2,7 @@
 // Modified for BB: Zod boundaries, native project identity, no provider credentials.
 // Original source is licensed under Apache-2.0; see ../../LICENSE and attribution.
 import { z } from "zod";
+import { generationJob } from "./generation.ts";
 
 export const idSchema = z.string().regex(/^[a-zA-Z0-9_-]{1,100}$/);
 const position = z.object({ x: z.number().finite(), y: z.number().finite() });
@@ -133,6 +134,7 @@ export const workspaceSchema = z.object({
   evidence: z.array(assetSchema).default([]),
   evidenceRuns: z.array(evidenceRunSchema).default([]),
   requests: z.array(unityRequestSchema).default([]),
+  generationJobs: z.array(generationJob).default([]),
   unityVersion: z.string().nullable().optional(),
 });
 export const gameInput = z.object({ gameId: idSchema });
@@ -191,7 +193,9 @@ export const uploadAssetInput = gameInput
   .strict();
 export const generationRecipeSchema = z.enum([
   "concept-art",
-  "precise-edit",
+  "nano-banana",
+  "omni-video",
+  "fal-video",
   "model-3d",
   "voice-sfx",
   "music",

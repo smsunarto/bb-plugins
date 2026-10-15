@@ -455,6 +455,7 @@ function Workbench({ gameId, tab }: { gameId: string; tab: Tab }) {
                     revision={board.revision}
                     documents={workspace.documents}
                     assets={workspace.assets}
+                    generationJobs={workspace.generationJobs}
                     previewBaseUrl={lease?.baseUrl}
                     onSave={saveBoard}
                     onGenerate={(nodeId, recipe) => void request("asset", nodeId, recipe)}

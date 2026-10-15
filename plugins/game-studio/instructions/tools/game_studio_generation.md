@@ -1,0 +1,3 @@
+Read, resume, or stop waiting for a generation job. Status catalogs successful outputs in canvas/assets.json and attaches candidates to the unchanged source node. Resume only polls/downloads the existing provider task; it never submits a replacement. Cancel stops local waiting and does not cancel a paid provider task. An uncertain job without a taskId needs provider-side reconciliation before any new request.
+Finish status collection before releasing a registered Rampage checkout. An unresolved dispatch holds the checkout until its saved job is accounted for.
+If a failed dispatch has no host job, status safely retires that request ID and returns job:null with status:not-submitted, releasing its checkout reservation. Use a new request ID only after that confirmation.

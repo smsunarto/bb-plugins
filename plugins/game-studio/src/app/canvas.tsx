@@ -1,3 +1,9 @@
+import {
+  useBbNavigate,
+  Markdown,
+  experimental_useCodeTheme as useCodeTheme,
+} from "@get-bb/plugin-sdk/app";
+import type { GenerationJob } from "../shared/generation.ts";
 import { Icon } from "./icons.tsx";
 // Canvas model and layout adapted from OhMyGame; modified for BB. Apache-2.0.
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -12,7 +18,6 @@ import {
   useEdgesState,
 } from "@xyflow/react";
 import type { Node, NodeProps, Connection, Viewport, Edge, ReactFlowInstance } from "@xyflow/react";
-import { Markdown, experimental_useCodeTheme as useCodeTheme } from "@get-bb/plugin-sdk/app";
 import type {
   Board,
   CanvasNode,
@@ -30,6 +35,7 @@ type CardData = {
   documents: StudioDocument[];
   assets: Asset[];
   baseUrl?: string;
+  job?: GenerationJob;
 };
 type Card = Node<CardData, "studio">;
 const kinds: { kind: NodeKind; label: string; icon: string }[] = [
@@ -45,6 +51,8 @@ const kindInfo = (kind: NodeKind) =>
   kinds.find((item) => item.kind === kind) ?? { label: kind, icon: "Box" };
 function CanvasCard({ data, selected }: NodeProps<Card>) {
   const node = data.source;
+  const navigate = useBbNavigate();
+  const pending = data.job && ["queued", "running"].includes(data.job.status);
   const asset = data.assets.find((item) => item.id === node.data.assetId);
   const document = data.documents.find((item) => item.id === node.data.documentId);
   const url =
@@ -52,7 +60,11 @@ function CanvasCard({ data, selected }: NodeProps<Card>) {
       ? `${data.baseUrl.replace(/\/$/, "")}/${asset.path.split("/").map(encodeURIComponent).join("/")}`
       : undefined;
   return (
-    <div className="gs-canvas-card" data-selected={selected || undefined}>
+    <div
+      className="gs-canvas-card"
+      data-selected={selected || undefined}
+      data-generation={pending ? "pending" : data.job?.status}
+    >
       <Handle type="target" position={Position.Left} />
       <header>
         <Icon name={kindInfo(node.type).icon} />
@@ -90,6 +102,23 @@ function CanvasCard({ data, selected }: NodeProps<Card>) {
           </>
         )}
       </div>
+      {data.job && (
+        <div className="gs-generation-progress nodrag nopan">
+          <span>
+            {pending
+              ? "Generating…"
+              : data.job.status === "auth-required"
+                ? "Sign in required"
+                : data.job.status === "succeeded"
+                  ? "Ready for review"
+                  : data.job.status}
+          </span>
+          <button type="button" onClick={() => navigate.toThread(data.job!.threadId)}>
+            View in thread ↗
+          </button>
+          {data.job.detail && <small>{data.job.detail}</small>}
+        </div>
+      )}
       <Handle type="source" position={Position.Right} />
     </div>
   );
@@ -115,11 +144,13 @@ const initialData = (kind: NodeKind, documents: StudioDocument[]): CanvasNode["d
       return { tableId: "" };
   }
 };
+const noGenerationJobs: GenerationJob[] = [];
 export function StudioCanvas({
   board,
   revision,
   documents,
   assets,
+  generationJobs = noGenerationJobs,
   previewBaseUrl,
   onSave,
   onGenerate,
@@ -131,6 +162,7 @@ export function StudioCanvas({
   revision: string;
   documents: StudioDocument[];
   assets: Asset[];
+  generationJobs?: GenerationJob[];
   previewBaseUrl?: string;
   onSave: (board: Board, expectedRevision: string) => Promise<{ revision: string }>;
   onGenerate: (nodeId: string, recipe: GenerationRecipe) => void;
@@ -410,7 +442,15 @@ export function StudioCanvas({
           nodeTypes={nodeTypes}
           nodes={nodes.map((node) => ({
             ...node,
-            data: { ...node.data, assets, documents, baseUrl: previewBaseUrl },
+            data: {
+              ...node.data,
+              assets,
+              documents,
+              baseUrl: previewBaseUrl,
+              job: generationJobs.find(
+                (job) => job.target?.boardId === board.id && job.target.nodeId === node.id,
+              ),
+            },
           }))}
           edges={edges}
           defaultViewport={board.editorLayout.viewport}

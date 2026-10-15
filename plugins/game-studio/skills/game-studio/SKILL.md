@@ -10,6 +10,13 @@ design document. Use `scott-engineering:game-dev` for production, tool selection
 parallel asset work, and playtesting. Authenticate with the selected service only
 when needed; keep credentials outside the game workspace and browser bundle.
 
+Read `game_studio_canvas_context` before design or media work. Use the native
+`game_studio_generate_image`, `game_studio_generate_video`, or
+`game_studio_generate_3d_asset` tools, or `game_studio_generate_canvas_media` for
+a saved node. Provider CLI commands and credentials are internal details. Keep
+a stable requestId and poll `game_studio_generation` to collect outputs. Resume
+only a confirmed existing task; never resubmit an uncertain paid request.
+
 Run `bb game-studio rpc overview` to list registered games. The plugin's RPCs are
 also available through `bb plugin rpc game-studio`. Query `get` with
 `{"gameId":"..."}` for the current canvas, design documents, and asset paths.

@@ -1,0 +1,1 @@
+Generate from a saved image, video, or 3D canvas node and its saved references, using the exact board revision returned by game_studio_canvas_context. For 3D explicitly name the approved reference path. Returns a persisted asynchronous job; collect with game_studio_generation. Outputs attach only while the saved source brief is unchanged. Unsaved UI drafts are never submitted.

@@ -319,6 +319,18 @@ export class SlotStore {
   }
 
   private noEditorClaims(slot: Slot) {
+    const generations = this.db
+      .prepare(
+        "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'studio_generation_work'",
+      )
+      .get();
+    if (
+      generations &&
+      this.db
+        .prepare("SELECT 1 FROM studio_generation_work WHERE host = ? AND workspace = ? LIMIT 1")
+        .get(slot.hostId, slot.workspacePath)
+    )
+      throw new Error("Finish or reconcile Game Studio generation jobs for this checkout first");
     const exists = this.db
       .prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'unity_editor_claims'")
       .get();

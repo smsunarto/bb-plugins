@@ -1,4 +1,4 @@
-Generate 1 concept art image (Midjourney) for {{title}} on {{board}}.
+Generate 4 concept art candidates (Midjourney) for {{title}} on {{board}}.
 
 {{brief}}
 

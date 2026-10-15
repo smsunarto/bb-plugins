@@ -1,4 +1,4 @@
-The user selected 3D model · Tripo P2 for one output. Follow the Tripo Studio
+The user selected 3D model · Tripo P2 for one output. Use game_studio_generate_3d_asset or game_studio_generate_canvas_media, then poll game_studio_generation. Follow the Tripo Studio
 workflow in `scott-engineering:game-dev` and inspect the selected node's image
 references. Require an approved reference image; a connected image alone does
 not establish visual approval. Use P2 Clean Topology and never text-to-model.

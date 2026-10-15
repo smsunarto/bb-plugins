@@ -1,3 +1,10 @@
+import { canvasContext } from "./tools/canvas-context.ts";
+import { generation } from "./tools/generation.ts";
+import { generateCanvasMedia } from "./tools/generate-canvas-media.ts";
+import { generate3dAsset } from "./tools/generate-3d-asset.ts";
+import { generateVideo } from "./tools/generate-video.ts";
+import { generateImage } from "./tools/generate-image.ts";
+import { Generations } from "./lib/generations.ts";
 import { instructionFiles } from "@bb-kit/core/instructions";
 import { manage as manageCommand } from "./command/manage.ts";
 import { manage as manageTool } from "./tools/manage.ts";
@@ -51,7 +58,23 @@ export default definePlugin({
     const unityEditors = createUnityEditors(bb, slotStore);
     const ensureLegacyClaims = legacyClaimsGuard(bb, unityEditors.claims.db);
     const unitySlots = new UnitySlots(bb, slotStore, ensureLegacyClaims);
+    const generationSettings = bb.settings.define({
+      googleApiKey: {
+        type: "string",
+        label: "Google Gemini API key",
+        secret: true,
+        description:
+          "Service-account-bound key restricted to the Gemini API. Used for Nano Banana 2.1 and Gemini Omni.",
+      },
+      falApiKey: {
+        type: "string",
+        label: "Fal API key",
+        secret: true,
+        description: "Used only for Fal H3 Max video generation.",
+      },
+    });
     return {
+      generations: new Generations(bb, () => generationSettings.get(), slotStore),
       unityEditors,
       unitySlots,
       slotProvisioning: new SlotProvisioning(bb, unitySlots),
@@ -63,7 +86,16 @@ export default definePlugin({
   },
   agents: {
     files: instructionFiles(import.meta.url),
-    tools: { manage: manageTool, slots: slotsTool },
+    tools: {
+      manage: manageTool,
+      slots: slotsTool,
+      generate_image: generateImage,
+      generate_video: generateVideo,
+      generate_3d_asset: generate3dAsset,
+      generate_canvas_media: generateCanvasMedia,
+      generation,
+      canvas_context: canvasContext,
+    },
     skills: ["game-studio", "unity-editors"],
   },
 });

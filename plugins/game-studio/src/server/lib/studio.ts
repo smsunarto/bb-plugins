@@ -1,3 +1,5 @@
+import { generationJob, type GenerationJob } from "../../shared/generation.ts";
+import { nodeFingerprint } from "./canvas-generation.ts";
 import { createHash, randomUUID } from "node:crypto";
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import { z } from "zod";
@@ -508,6 +510,7 @@ export async function loadWorkspace(bb: BbPluginApi, gameId: string): Promise<Wo
     evidence,
     evidenceRuns,
     requests,
+    generationJobs: await readGenerationJobs(bb, game),
     ...(game.kind === "unity" ? { unityVersion: await unityVersion(bb, game, false) } : {}),
   };
 }
@@ -851,6 +854,7 @@ export async function prompt(bb: BbPluginApi, input: z.infer<typeof promptInput>
     })
     .replace(/\n{3,}/g, "\n\n");
   const references = {
+    gameId: workspace.game.id,
     hostId: workspace.game.hostId,
     rootPath: workspace.game.rootPath,
     request: descriptor,
@@ -863,7 +867,9 @@ export async function prompt(bb: BbPluginApi, input: z.infer<typeof promptInput>
       : {}),
     ...(target ? { boardPath: `canvas/boards/${target.board.id}.json` } : {}),
     ...(node ? { nodeId: node.id } : {}),
-    ...(recipe ? { generationRequest: { recipe, outputCount: 1 } } : {}),
+    ...(recipe
+      ? { generationRequest: { recipe, outputCount: recipe === "concept-art" ? 4 : 1 } }
+      : {}),
   };
   return {
     prompt: `${request}\n\n${instructions.read("requests/progress")}\n\n\`\`\`json\n${JSON.stringify(references, null, 2)}\n\`\`\``,
@@ -875,4 +881,98 @@ export async function prompt(bb: BbPluginApi, input: z.infer<typeof promptInput>
     ].join("\n\n"),
     request: descriptor,
   };
+}
+
+/** Catalog all candidates, then attach only to the still-current saved brief. */
+export async function adoptGeneration(bb: BbPluginApi, game: Game, job: GenerationJob) {
+  return serialized(bb, game.id, async () => {
+    const manifestPath = "canvas/assets.json";
+    const file = await readOptional(bb, game, manifestPath);
+    const manifest = file
+      ? parse(manifestSchema, file, manifestPath)
+      : { version: 1 as const, assets: {} as Record<string, { name: string; path: string }> };
+    const ids = job.outputs.map((output) => {
+      if (!output.path.startsWith(`canvas/staging/${job.id}/`))
+        throw new Error("Generation outputs must stay in their staging directory.");
+      const existing = Object.entries(manifest.assets).find(
+        ([, entry]) => entry.path === output.path,
+      )?.[0];
+      const id = existing ?? createHash("sha256").update(output.path).digest("hex").slice(0, 32);
+      if (!existing)
+        manifest.assets[id] = { name: output.path.split("/").pop()!, path: output.path };
+      return id;
+    });
+    if (
+      !file ||
+      JSON.stringify(parse(manifestSchema, file, manifestPath)) !== JSON.stringify(manifest)
+    )
+      await write(bb, game, manifestPath, json(manifest), file?.sha256 ?? null);
+    if (!job.target) return { candidateAssetIds: ids, attached: false };
+    const workspace = await loadWorkspace(bb, game.id);
+    const board = workspace.boards.find((item) => item.board.id === job.target!.boardId)?.board;
+    if (!board) return { candidateAssetIds: ids, attached: false };
+    const node = board.nodes.find(({ id }) => id === job.target!.nodeId);
+    if (!node || nodeFingerprint(node, board, workspace) !== job.target.fingerprint)
+      return {
+        candidateAssetIds: ids,
+        attached: false,
+        detail:
+          "The source node changed. Outputs are staged for review; its newer brief was preserved.",
+      };
+    if (node.data.generationJobId === job.id) return { candidateAssetIds: ids, attached: true };
+    const path = `canvas/boards/${board.id}.json`;
+    const contentFile = await readRequired(bb, game, path);
+    const content = parse(persistedBoardSchema, contentFile, path);
+    const saved = content.nodes.find(({ id }) => id === node.id);
+    if (!saved) return { candidateAssetIds: ids, attached: false };
+    const current = { ...node, ...saved };
+    if (
+      nodeFingerprint(
+        current,
+        { ...board, nodes: content.nodes.map((item) => ({ ...item, position: { x: 0, y: 0 } })) },
+        workspace,
+      ) !== job.target.fingerprint
+    )
+      return { candidateAssetIds: ids, attached: false };
+    saved.data = {
+      ...saved.data,
+      assetId: ids[0]!,
+      candidateAssetIds: ids,
+      generationJobId: job.id,
+    };
+    await write(bb, game, path, json(content), contentFile.sha256);
+    return { candidateAssetIds: ids, attached: true };
+  });
+}
+
+async function readGenerationJobs(bb: BbPluginApi, game: Game): Promise<GenerationJob[]> {
+  let listing;
+  try {
+    listing = await bb.sdk.files.list({
+      hostId: game.hostId,
+      path: projectFile(game.rootPath, "canvas/jobs"),
+      limit: 1000,
+    });
+  } catch (error) {
+    if (missing(error)) return [];
+    throw error;
+  }
+  const jobs = await Promise.all(
+    listing.files.slice(0, 1000).map(async (entry) => {
+      try {
+        const path = listedPath(game.rootPath, "canvas/jobs", entry.path);
+        if (!/^canvas\/jobs\/[a-zA-Z0-9_-]{1,100}\.json$/.test(path)) return [];
+        const file = await readOptional(bb, game, path);
+        if (!file) return [];
+        const job = parse(generationJob, file, path);
+        return path === `canvas/jobs/${job.id}.json` ? [job] : [];
+      } catch {
+        return [];
+      }
+    }),
+  );
+  return jobs
+    .flat()
+    .sort((a, b) => b.createdAt - a.createdAt)
+    .slice(0, 100);
 }

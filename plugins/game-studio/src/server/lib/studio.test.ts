@@ -524,18 +524,19 @@ test("generation requests show the selected brief and provider while keeping pol
   );
   assert.equal(
     result.prompt.split("\n")[0],
-    "Generate 1 concept art image (Midjourney) for Dragon concept on Design board.",
+    "Generate 4 concept art candidates (Midjourney) for Dragon concept on Design board.",
   );
   assert.match(result.prompt, /Brief: A green dragon/);
   const payload = result.prompt.match(/```json\n([\s\S]+)\n```$/)?.[1];
   const { request, requestPath, ...references } = JSON.parse(payload ?? "null");
   assert.deepEqual(references, {
+    gameId: game.id,
     hostId: "host",
     rootPath: "/games/orbit",
     documentPath: "canvas/documents/design.md",
     boardPath: "canvas/boards/main.json",
     nodeId: "sprite",
-    generationRequest: { recipe: "concept-art", outputCount: 1 },
+    generationRequest: { recipe: "concept-art", outputCount: 4 },
   });
   assert.deepEqual(request, result.request);
   assert.equal(request.action, "asset");
@@ -934,4 +935,125 @@ test("evidence manifests reject traversal, external paths, missing captures and 
       /segments|under canvas\/evidence|missing or unsupported media/,
     );
   }
+});
+
+test("generation candidates attach only to the current brief and preserve the user's editor layout", async () => {
+  const { adoptGeneration } = await import("./studio.ts");
+  const { canvasRequest } = await import("./canvas-generation.ts");
+  const { gameSchema, workspaceSchema } = await import("../../shared/schema.ts");
+  const { generationJob } = await import("../../shared/generation.ts");
+  const f = fake(),
+    game = gameSchema.parse(await create.execute({ bb: f.bb }, input));
+  const original = (await get.execute({ bb: f.bb }, { gameId: game.id })).boards[0]!;
+  await saveBoard.execute(
+    { bb: f.bb },
+    {
+      gameId: game.id,
+      revision: original.revision,
+      board: {
+        ...original.board,
+        nodes: [
+          {
+            id: "image",
+            type: "image",
+            title: "Key",
+            position: { x: 860, y: 200 },
+            data: { prompt: "A brass key" },
+          },
+        ],
+      },
+    },
+  );
+  const workspace = workspaceSchema.parse(await get.execute({ bb: f.bb }, { gameId: game.id }));
+  const request = canvasRequest(workspace, {
+    gameId: game.id,
+    boardId: "main",
+    nodeId: "image",
+    revision: workspace.boards[0]!.revision,
+    requestId: "generation",
+  });
+  const layoutBefore = f.contents("host", "/games/orbit/canvas/editor/main.json");
+  const path = "canvas/staging/generation/key.png";
+  f.seed("host", `/games/orbit/${path}`, "image", "base64");
+  const job = generationJob.parse({
+    version: 1,
+    id: "generation",
+    threadId: "thread",
+    createdAt: 1,
+    updatedAt: 2,
+    status: "succeeded",
+    ...request,
+    outputs: [{ path, type: "image", sizeBytes: 4, sha256: "a".repeat(64) }],
+  });
+  const adopted = await adoptGeneration(f.bb, game, job);
+  assert.equal(adopted.attached, true);
+  const updated = await get.execute({ bb: f.bb }, { gameId: game.id });
+  assert.equal(updated.boards[0]!.board.nodes[0]!.data.assetId, adopted.candidateAssetIds[0]);
+  assert.equal(
+    updated.assets.find((asset) => asset.id === adopted.candidateAssetIds[0])?.path,
+    path,
+  );
+  assert.equal(f.contents("host", "/games/orbit/canvas/editor/main.json"), layoutBefore);
+  const catalog = JSON.parse(f.contents("host", "/games/orbit/canvas/assets.json")!);
+  catalog.assets[adopted.candidateAssetIds[0]!].name = "Approved key";
+  catalog.assets[adopted.candidateAssetIds[0]!].license = "Project license";
+  f.seed("host", "/games/orbit/canvas/assets.json", JSON.stringify(catalog));
+  await adoptGeneration(f.bb, game, job);
+  assert.deepEqual(
+    JSON.parse(f.contents("host", "/games/orbit/canvas/assets.json")!).assets[
+      adopted.candidateAssetIds[0]!
+    ],
+    { name: "Approved key", path, license: "Project license" },
+  );
+  await saveBoard.execute(
+    { bb: f.bb },
+    {
+      gameId: game.id,
+      revision: updated.boards[0]!.revision,
+      board: {
+        ...updated.boards[0]!.board,
+        nodes: [{ ...updated.boards[0]!.board.nodes[0]!, data: { prompt: "A silver key" } }],
+      },
+    },
+  );
+  const stale = await adoptGeneration(f.bb, game, job);
+  assert.equal(stale.attached, false);
+  const final = await get.execute({ bb: f.bb }, { gameId: game.id });
+  assert.equal(final.boards[0]!.board.nodes[0]!.data.prompt, "A silver key");
+  assert.equal(final.boards[0]!.board.nodes[0]!.data.assetId, undefined);
+  assert.equal(final.assets.find((asset) => asset.path === path)?.id, adopted.candidateAssetIds[0]);
+});
+
+test("a generation status service outage preserves the workspace and marks pending jobs uncertain", async () => {
+  const f = fake(),
+    game = await create.execute({ bb: f.bb }, input);
+  f.seed(
+    "host",
+    "/games/orbit/canvas/jobs/pending.json",
+    JSON.stringify({
+      version: 1,
+      id: "pending",
+      threadId: "thread",
+      createdAt: 1,
+      updatedAt: 1,
+      status: "running",
+      request: { kind: "image", prompt: "A key", model: { provider: "google" } },
+      outputs: [],
+    }),
+  );
+  const workspace = await get.execute(
+    {
+      bb: f.bb,
+      generations: {
+        list: async () => {
+          throw new Error("Host unavailable");
+        },
+      } as never,
+    },
+    { gameId: game.id },
+  );
+  assert.equal(workspace.game.id, game.id);
+  assert.equal(workspace.boards[0]!.board.id, "main");
+  assert.equal(workspace.generationJobs![0]!.status, "uncertain");
+  assert.match(workspace.generationJobs![0]!.detail!, /Could not refresh/);
 });

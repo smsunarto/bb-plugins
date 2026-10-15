@@ -1,0 +1,1 @@
+Generate video from a creative brief and optional start/end images. Default Gemini Omni 1.1 Flash; Fal H3 Max and Midjourney are supported alternatives. Returns a persisted asynchronous job. Use a stable requestId and inspect status with game_studio_generation. Do not silently change providers or submit again after an uncertain response.
