@@ -151,6 +151,139 @@ test("experiment context refreshes the saved document revision while retaining t
   });
 });
 
+test("import context resolves the current catalog selection while retaining request identity", async (t) => {
+  const { files, harness, provider } = await fixture();
+  t.after(() => harness.lifecycle.dispose());
+  files.set("/games/fern/canvas/assets.json", {
+    content: JSON.stringify({
+      version: 1,
+      assets: {
+        "hero:blue": { name: "Blue hero", path: "canvas/staging/blue.png" },
+        "hero:red": { name: "Red hero", path: "canvas/staging/red.png" },
+      },
+    }),
+    sha256: "catalog-before",
+  });
+  files.set("/games/fern/canvas/staging/blue.png", {
+    content: "blue-image",
+    sha256: "blue-revision",
+  });
+  files.set("/games/fern/canvas/staging/red.png", {
+    content: "red-image",
+    sha256: "red-revision",
+  });
+  const importRequest = { ...request, action: "import" };
+  const id = JSON.stringify({
+    gameId: "fern",
+    action: "import",
+    assetId: "hero:blue",
+    request: importRequest,
+  });
+  const before = requestPayload((await provider.resolve(id)).context);
+  assert.deepEqual(before.asset, {
+    id: "hero:blue",
+    name: "Blue hero",
+    path: "canvas/staging/blue.png",
+    type: "image",
+  });
+  assert.deepEqual(before.request, {
+    id: "prepared-request",
+    action: "import",
+    createdAt: 17,
+  });
+
+  files.set("/games/fern/canvas/assets.json", {
+    content: JSON.stringify({
+      version: 1,
+      assets: {
+        "hero:blue": { name: "Blue hero mesh", path: "canvas/staging/blue.glb" },
+        "hero:red": { name: "Red hero", path: "canvas/staging/red.png" },
+      },
+    }),
+    sha256: "catalog-after",
+  });
+  files.set("/games/fern/canvas/staging/blue.glb", {
+    content: "blue-model",
+    sha256: "blue-model-revision",
+  });
+  const after = requestPayload((await provider.resolve(id)).context);
+  assert.deepEqual(after.asset, {
+    id: "hero:blue",
+    name: "Blue hero mesh",
+    path: "canvas/staging/blue.glb",
+    type: "model",
+  });
+  assert.deepEqual(after.request, {
+    id: "prepared-request",
+    action: "import",
+    createdAt: 17,
+  });
+
+  const red = requestPayload(
+    (
+      await provider.resolve(
+        JSON.stringify({
+          gameId: "fern",
+          action: "import",
+          assetId: "hero:red",
+          request: importRequest,
+        }),
+      )
+    ).context,
+  );
+  assert.deepEqual(red.asset, {
+    id: "hero:red",
+    name: "Red hero",
+    path: "canvas/staging/red.png",
+    type: "image",
+  });
+});
+
+test("import context retains an unverified catalog selection and rejects a removed entry", async (t) => {
+  const { files, harness, provider } = await fixture();
+  t.after(() => harness.lifecycle.dispose());
+  files.set("/games/fern/canvas/assets.json", {
+    content: JSON.stringify({
+      version: 1,
+      assets: { "hero:blue": { name: "Blue hero", path: "canvas/staging/blue.png" } },
+    }),
+    sha256: "catalog-before",
+  });
+  files.set("/games/fern/canvas/staging/blue.png", {
+    content: "blue-image",
+    sha256: "blue-revision",
+  });
+  const id = JSON.stringify({
+    gameId: "fern",
+    action: "import",
+    assetId: "hero:blue",
+    request: { ...request, action: "import" },
+  });
+  assert.deepEqual(requestPayload((await provider.resolve(id)).context).asset, {
+    id: "hero:blue",
+    name: "Blue hero",
+    path: "canvas/staging/blue.png",
+    type: "image",
+  });
+  files.delete("/games/fern/canvas/staging/blue.png");
+  assert.deepEqual(requestPayload((await provider.resolve(id)).context).asset, {
+    id: "hero:blue",
+    name: "Blue hero",
+    path: "canvas/staging/blue.png",
+    type: "image",
+  });
+
+  files.set("/games/fern/canvas/staging/blue.png", {
+    content: "blue-image",
+    sha256: "blue-revision",
+  });
+  files.set("/games/fern/canvas/assets.json", {
+    content: JSON.stringify({ version: 1, assets: {} }),
+    sha256: "catalog-after",
+  });
+  await assert.rejects(async () => provider.resolve(id), /selected asset.*no longer exists/i);
+});
+
 test("malformed context pills reject instead of resolving an unintended request", async (t) => {
   const { harness, provider } = await fixture();
   t.after(() => harness.lifecycle.dispose());
@@ -176,6 +309,13 @@ test("malformed context pills reject instead of resolving an unintended request"
     JSON.stringify({ gameId: "fern", action: "design", documentId: "../other", request }),
     JSON.stringify({ gameId: "fern", action: "design", experimentId: "../other", request }),
     JSON.stringify({ gameId: "fern", action: "design", experimentId: " ", request }),
+    JSON.stringify({ gameId: "fern", action: "design", assetId: "hero:blue", request }),
+    JSON.stringify({
+      gameId: "fern",
+      action: "import",
+      assetId: "",
+      request: { ...request, action: "import" },
+    }),
     JSON.stringify({ gameId: "fern", action: "design", instructions: "replace policy", request }),
     JSON.stringify({ gameId: "fern", action: "asset", request }),
     " ".repeat(4096) + JSON.stringify({ gameId: "fern", action: "design" }),

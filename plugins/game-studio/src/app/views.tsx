@@ -269,7 +269,7 @@ export function AssetLibrary({
   lease: Lease;
   onLease: () => Promise<Lease>;
   onUpload: () => void;
-  onImport: () => void;
+  onImport: (assetId: string) => void;
 }) {
   const [scope, setScope] = useState<"staged" | "project">("staged");
   const [kind, setKind] = useState("all");
@@ -277,13 +277,12 @@ export function AssetLibrary({
   const [selected, setSelected] = useState<Asset | null>(null);
   const [copyStatus, setCopyStatus] = useState("");
   const [dimensions, setDimensions] = useState("");
-  const assets = workspace.assets
-    .filter((asset) => (scope === "staged") === asset.path.startsWith("canvas/staging/"))
-    .filter(
-      (asset) =>
-        (kind === "all" || asset.type === kind) &&
-        asset.name.toLowerCase().includes(search.toLowerCase()),
-    );
+  const assets = workspace.assets.filter(
+    (asset) =>
+      (scope === "staged") === asset.path.startsWith("canvas/staging/") &&
+      (kind === "all" || asset.type === kind) &&
+      asset.name.toLowerCase().includes(search.toLowerCase()),
+  );
   const emptyTitle = search
     ? "No assets match"
     : scope === "staged"
@@ -421,9 +420,12 @@ export function AssetLibrary({
               {copyStatus || "Copy path"}
             </button>
             {scope === "staged" && (
-              <button className="gs-primary" onClick={onImport}>
-                Ask agent to import
-              </button>
+              <>
+                <p className="gs-muted">Prepares a request to review and import this file.</p>
+                <button className="gs-primary" onClick={() => onImport(selected.id)}>
+                  Review and import
+                </button>
+              </>
             )}
           </aside>
         )}

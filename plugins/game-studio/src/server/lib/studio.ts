@@ -838,6 +838,20 @@ export async function prompt(
   preparedRequest?: z.infer<typeof requestDescriptorSchema>,
 ) {
   const workspace = await loadWorkspace(bb, input.gameId);
+  const asset = input.assetId
+    ? workspace.assets.find((entry) => entry.id === input.assetId)
+    : undefined;
+  if (input.assetId && !asset)
+    throw new Error(
+      "The selected asset no longer exists. Reload the workspace and select it again.",
+    );
+  if (asset && !asset.path.startsWith("canvas/staging/"))
+    throw new Error("Select a staged asset to review and import.");
+  const generation = asset
+    ? workspace.generationJobs.find((job) =>
+        job.outputs.some((output) => output.path === asset.path),
+      )
+    : undefined;
   const target = input.nodeId
     ? workspace.boards.find(({ board }) => board.nodes.some(({ id }) => id === input.nodeId))
     : workspace.boards[0];
@@ -872,9 +886,14 @@ export async function prompt(
   };
   const requestPath = `canvas/requests/${descriptor.id}.json`;
   const unitySetup = unitySetupLabels(workspace.game.unitySetup);
+  const requestInstruction = recipe
+    ? `requests/generation/${recipe}`
+    : asset
+      ? "requests/import-selected"
+      : `requests/${input.action}`;
   const request = instructions
-    .read(recipe ? `requests/generation/${recipe}` : `requests/${input.action}`, {
-      title: node?.title?.trim() || node?.id || workspace.game.name,
+    .read(requestInstruction, {
+      title: asset?.name || node?.title?.trim() || node?.id || workspace.game.name,
       board:
         target?.board.name ||
         workspace.index.boards.find(({ id }) => id === target?.board.id)?.name ||
@@ -889,6 +908,17 @@ export async function prompt(
     rootPath: workspace.game.rootPath,
     request: descriptor,
     requestPath,
+    ...(asset ? { asset } : {}),
+    ...(generation && asset
+      ? {
+          generation: {
+            jobId: generation.id,
+            status: generation.status,
+            requestPath: `canvas/jobs/${generation.id}.json`,
+            output: generation.outputs.find((output) => output.path === asset.path),
+          },
+        }
+      : {}),
     ...(input.action === "new-unity" && workspace.game.unitySetup
       ? { unitySetup: workspace.game.unitySetup }
       : {}),

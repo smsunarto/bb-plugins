@@ -254,7 +254,7 @@ function Workbench({ gameId, tab }: { gameId: string; tab: Tab }) {
       action: StudioAction,
       nodeId?: string,
       recipe?: GenerationRecipe,
-      designTarget?: { documentId: string; experimentId?: string },
+      target?: { assetId: string } | { documentId: string; experimentId?: string },
     ) => {
       setError("");
       try {
@@ -263,7 +263,7 @@ function Workbench({ gameId, tab }: { gameId: string; tab: Tab }) {
           action,
           nodeId,
           recipe,
-          ...designTarget,
+          ...target,
         };
         const result = await client.prompt(input);
         const game = query.data?.game;
@@ -546,7 +546,7 @@ function Workbench({ gameId, tab }: { gameId: string; tab: Tab }) {
                 lease={lease}
                 onLease={ensurePreview}
                 onUpload={() => upload.current?.click()}
-                onImport={() => void request("import")}
+                onImport={(assetId) => void request("import", undefined, undefined, { assetId })}
               />
             )}
             {tab === "evidence" && (

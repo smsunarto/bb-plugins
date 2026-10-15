@@ -214,9 +214,14 @@ export const promptInput = gameInput
     nodeId: idSchema.optional(),
     documentId: idSchema.optional(),
     experimentId: idSchema.optional(),
+    assetId: z.string().min(1).max(1000).optional(),
     recipe: generationRecipeSchema.optional(),
   })
-  .strict();
+  .strict()
+  .refine(({ action, assetId }) => assetId === undefined || action === "import", {
+    path: ["assetId"],
+    error: "Select an asset only for an import request.",
+  });
 export const promptSchema = z.object({
   prompt: z.string(),
   context: z.string(),

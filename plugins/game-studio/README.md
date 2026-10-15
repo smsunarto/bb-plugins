@@ -36,7 +36,9 @@ creation tooling. Leave the version unset to let the agent choose through Hub.
   to an existing draft. Replace bracketed guidance before generating.
 - **Assets:** upload to `canvas/staging`; browse imported media under
   `Assets/GameStudio`. The agent verifies and imports staged files using the
-  project's established asset structure.
+  project's established asset structure. Select a file and choose **Review and
+  import** to prepare a request for that asset. Its native context resolves the
+  current catalog entry and links a recorded generation receipt when available.
 - **Evidence:** screenshots and recordings saved under `canvas/evidence`. Unity
   WebGL builds can also be opened through BB's leased file preview. Runs can
   record the tested build and experiment's design revision. Evidence shows

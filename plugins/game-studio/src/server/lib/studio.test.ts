@@ -469,6 +469,192 @@ test("Unity uploads stay in staging and externally imported assets appear after 
   );
 });
 
+test("import requests target the exact staged catalog selection without recording progress", async () => {
+  const f = fake();
+  const game = await create.execute({ bb: f.bb }, input);
+  f.seed(
+    "host",
+    "/games/orbit/canvas/assets.json",
+    JSON.stringify({
+      version: 1,
+      assets: {
+        "hero:blue": { name: "Blue hero", path: "canvas/staging/heroes/blue.png" },
+        "hero:red": { name: "Red hero", path: "canvas/staging/heroes/red.glb" },
+      },
+    }),
+  );
+  f.seed("host", "/games/orbit/canvas/staging/heroes/blue.png", "blue-image");
+  f.seed("host", "/games/orbit/canvas/staging/heroes/red.glb", "red-model");
+  const writesBefore = f.writes.length;
+  const blue = await prompt.execute(
+    { bb: f.bb },
+    { gameId: game.id, action: "import", assetId: "hero:blue" },
+  );
+  const red = await prompt.execute(
+    { bb: f.bb },
+    { gameId: game.id, action: "import", assetId: "hero:red" },
+  );
+  assert.deepEqual(requestPayload(blue.context).asset, {
+    id: "hero:blue",
+    name: "Blue hero",
+    path: "canvas/staging/heroes/blue.png",
+    type: "image",
+  });
+  assert.deepEqual(requestPayload(red.context).asset, {
+    id: "hero:red",
+    name: "Red hero",
+    path: "canvas/staging/heroes/red.glb",
+    type: "model",
+  });
+  assert.match(blue.prompt, /Blue hero/);
+  assert.doesNotMatch(blue.prompt, /Red hero/);
+  assert.match(red.prompt, /Red hero/);
+  assert.equal(requestPayload(blue.context).request.action, "import");
+  assert.equal(requestPayload(blue.context).request.id, blue.request.id);
+
+  const generic = await prompt.execute({ bb: f.bb }, { gameId: game.id, action: "import" });
+  assert.match(generic.prompt, /Orbit Garden/);
+  assert.equal(requestPayload(generic.context).asset, undefined);
+  assert.equal(requestPayload(generic.context).generation, undefined);
+  assert.equal(f.writes.length, writesBefore);
+  assert.deepEqual((await get.execute({ bb: f.bb }, { gameId: game.id })).requests, []);
+});
+
+test("targeted import rejects removed and non-staged assets", async () => {
+  const f = fake();
+  const game = await create.execute({ bb: f.bb }, input);
+  f.seed(
+    "host",
+    "/games/orbit/canvas/assets.json",
+    JSON.stringify({
+      version: 1,
+      assets: {
+        imported: { name: "Imported hero", path: "Assets/GameStudio/hero.png" },
+        nearStaging: { name: "Unstaged hero", path: "canvas/staging-copy/hero.png" },
+      },
+    }),
+  );
+  f.seed("host", "/games/orbit/Assets/GameStudio/hero.png", "imported-image");
+  f.seed("host", "/games/orbit/canvas/staging-copy/hero.png", "unstaged-image");
+  const writesBefore = f.writes.length;
+  for (const assetId of ["removed", "imported", "nearStaging"]) {
+    await assert.rejects(
+      async () => prompt.execute({ bb: f.bb }, { gameId: game.id, action: "import", assetId }),
+      /selected asset|staging|staged asset|does not exist/i,
+    );
+  }
+  assert.equal(f.writes.length, writesBefore);
+  assert.deepEqual((await get.execute({ bb: f.bb }, { gameId: game.id })).requests, []);
+});
+
+test("import preparation resolves large catalog models without reading their bytes", async () => {
+  const f = fake();
+  const game = await create.execute({ bb: f.bb }, input);
+  f.seed(
+    "host",
+    "/games/orbit/canvas/assets.json",
+    JSON.stringify({
+      version: 1,
+      assets: { "hero:large": { name: "Large hero", path: "canvas/staging/large.glb" } },
+    }),
+  );
+  const read = f.bb.sdk.files.read;
+  f.bb.sdk.files.read = async (args) => {
+    if (args.path.endsWith("/large.glb")) throw new Error("Model exceeds the read limit.");
+    return read(args);
+  };
+  const result = await prompt.execute(
+    { bb: f.bb },
+    { gameId: game.id, action: "import", assetId: "hero:large" },
+  );
+  assert.deepEqual(requestPayload(result.context).asset, {
+    id: "hero:large",
+    name: "Large hero",
+    path: "canvas/staging/large.glb",
+    type: "model",
+  });
+});
+
+test("targeted import includes the newest matching output receipt without claiming current file verification", async () => {
+  const f = fake();
+  const game = await create.execute({ bb: f.bb }, input);
+  const path = "canvas/staging/hero/blue.png";
+  f.seed(
+    "host",
+    "/games/orbit/canvas/assets.json",
+    JSON.stringify({
+      version: 1,
+      assets: {
+        "hero:blue": { name: "Blue hero", path },
+        "hero:red": { name: "Red hero", path: "canvas/staging/hero/red.png" },
+      },
+    }),
+  );
+  f.seed("host", `/games/orbit/${path}`, "changed-after-generation");
+  const receipt = { path, type: "image", sizeBytes: 42, sha256: "b".repeat(64) };
+  for (const [id, createdAt, outputs] of [
+    ["older", 10, [{ ...receipt, sizeBytes: 24, sha256: "a".repeat(64) }]],
+    ["matching", 20, [receipt]],
+    ["unrelated", 30, [{ ...receipt, path: "canvas/staging/other/blue.png" }]],
+  ] as const) {
+    f.seed(
+      "host",
+      `/games/orbit/canvas/jobs/${id}.json`,
+      JSON.stringify({
+        version: 1,
+        id,
+        threadId: "generation-thread",
+        createdAt,
+        updatedAt: createdAt + 1,
+        status: "succeeded",
+        request: { kind: "image", prompt: "A blue hero" },
+        outputs,
+      }),
+    );
+  }
+  const selected = await prompt.execute(
+    { bb: f.bb },
+    { gameId: game.id, action: "import", assetId: "hero:blue" },
+  );
+  assert.deepEqual(requestPayload(selected.context).generation, {
+    jobId: "matching",
+    status: "succeeded",
+    requestPath: "canvas/jobs/matching.json",
+    output: {
+      path: "canvas/staging/hero/blue.png",
+      type: "image",
+      sizeBytes: 42,
+      sha256: "b".repeat(64),
+    },
+  });
+  const unmatched = await prompt.execute(
+    { bb: f.bb },
+    { gameId: game.id, action: "import", assetId: "hero:red" },
+  );
+  assert.deepEqual(requestPayload(unmatched.context).asset, {
+    id: "hero:red",
+    name: "Red hero",
+    path: "canvas/staging/hero/red.png",
+    type: "image",
+  });
+  assert.equal(requestPayload(unmatched.context).generation, undefined);
+});
+
+test("asset targets are accepted only for import requests", async () => {
+  const { promptInput } = await import("../../shared/schema.ts");
+  assert.deepEqual(promptInput.parse({ gameId: "orbit", action: "import", assetId: "hero:blue" }), {
+    gameId: "orbit",
+    action: "import",
+    assetId: "hero:blue",
+  });
+  for (const action of ["design", "playtest", "asset", "build"]) {
+    assert.throws(() => promptInput.parse({ gameId: "orbit", action, assetId: "hero:blue" }));
+  }
+  for (const assetId of ["", null, 17, "a".repeat(1001)]) {
+    assert.throws(() => promptInput.parse({ gameId: "orbit", action: "import", assetId }));
+  }
+});
+
 test("preview paths reject traversal across POSIX and Windows roots", async () => {
   assert.equal(
     projectFile("C:\\Games\\Orbit", "dist/index.html"),
