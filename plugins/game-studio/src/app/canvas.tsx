@@ -12,6 +12,7 @@ import {
   ReactFlow,
   Background,
   Controls,
+  ControlButton,
   Handle,
   Position,
   addEdge,
@@ -36,7 +37,7 @@ import type {
   GenerationRecipe,
 } from "../shared/schema.ts";
 import { GenerationOptions } from "./generation.tsx";
-import { newNodePosition, revealNode } from "./canvas-layout.ts";
+import { arrangeNodes, newNodePosition, revealNode } from "./canvas-layout.ts";
 import { boardSnapshot } from "./canvas-board.ts";
 import "@xyflow/react/dist/style.css";
 import "./canvas.css";
@@ -265,6 +266,14 @@ export function StudioCanvas({
     setNodes((current) => current.map((node) => ({ ...node, selected: false })));
     setEdges((current) => current.map((edge) => ({ ...edge, selected: false })));
     setSelected(null);
+  };
+  const arrange = () => {
+    setNodes(arrangeNodes(nodes, edges));
+    clearSelection();
+    focusNode.current = null;
+    needsInitialFit.current = true;
+    scheduleFit();
+    change();
   };
   const hasImageReference = selected
     ? [selected.data.source.data.images, selected.data.source.data.references]
@@ -578,11 +587,16 @@ export function StudioCanvas({
           proOptions={{ hideAttribution: true }}
         >
           <Background gap={16} size={1} />
-          <Controls
-            showInteractive={false}
-            position="bottom-right"
-            fitViewOptions={{ maxZoom: 1 }}
-          />
+          <Controls showInteractive={false} position="bottom-right" fitViewOptions={{ maxZoom: 1 }}>
+            <ControlButton
+              title="Arrange nodes"
+              aria-label="Arrange nodes"
+              disabled={nodes.length < 2}
+              onClick={arrange}
+            >
+              <Icon name="Workflow" />
+            </ControlButton>
+          </Controls>
         </ReactFlow>
         {!nodes.length && (
           <div className="gs-canvas-empty">

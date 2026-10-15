@@ -1,5 +1,83 @@
 import { describe, expect, it } from "bun:test";
-import { newNodePosition, revealNode } from "./canvas-layout.ts";
+import { arrangeNodes, newNodePosition, revealNode } from "./canvas-layout.ts";
+
+describe("arrange canvas nodes", () => {
+  it("handles empty boards and positions a single card", () => {
+    expect(arrangeNodes([], [])).toEqual([]);
+    expect(arrangeNodes([{ id: "one", position: { x: -100, y: 900 } }], [])).toEqual([
+      { id: "one", position: { x: 40, y: 40 } },
+    ]);
+  });
+
+  it("puts disconnected cards in a compact grid without changing the draft data", () => {
+    const nodes = ["a", "b", "c", "d"].map((id) => ({
+      id,
+      position: { x: 10, y: 10 },
+      measured: { width: 280, height: 140 },
+      data: { text: id },
+    }));
+    const arranged = arrangeNodes(nodes, []);
+    expect(arranged.map((node) => node.position)).toEqual([
+      { x: 40, y: 40 },
+      { x: 360, y: 40 },
+      { x: 40, y: 220 },
+      { x: 360, y: 220 },
+    ]);
+    expect(nodes.map((node) => node.position)).toEqual([
+      { x: 10, y: 10 },
+      { x: 10, y: 10 },
+      { x: 10, y: 10 },
+      { x: 10, y: 10 },
+    ]);
+    expect(arranged.map((node) => node.data)).toEqual([
+      { text: "a" },
+      { text: "b" },
+      { text: "c" },
+      { text: "d" },
+    ]);
+  });
+
+  it("orders connected cards left to right and keeps loose cards below the flow", () => {
+    const nodes = ["output", "input", "loose", "middle"].map((id) => ({
+      id,
+      position: { x: 10, y: 10 },
+      measured: { width: 280, height: 140 },
+    }));
+    const edges = [
+      { source: "input", target: "middle" },
+      { source: "middle", target: "output" },
+    ];
+    expect(arrangeNodes(nodes, edges).map(({ id, position }) => ({ id, position }))).toEqual([
+      { id: "output", position: { x: 760, y: 40 } },
+      { id: "input", position: { x: 40, y: 40 } },
+      { id: "loose", position: { x: 40, y: 260 } },
+      { id: "middle", position: { x: 400, y: 40 } },
+    ]);
+  });
+
+  it("spaces variable-size cards even when their connections form a cycle", () => {
+    const nodes = [
+      { id: "a", position: { x: 0, y: 0 }, measured: { width: 400, height: 500 } },
+      { id: "b", position: { x: 0, y: 0 }, measured: { width: 280, height: 140 } },
+      { id: "c", position: { x: 0, y: 0 }, measured: { width: 280, height: 280 } },
+    ];
+    const arranged = arrangeNodes(nodes, [
+      { source: "a", target: "b" },
+      { source: "b", target: "c" },
+      { source: "c", target: "a" },
+    ]);
+    expect(arranged.map((node) => node.id)).toEqual(["a", "b", "c"]);
+    for (const [index, a] of arranged.entries())
+      for (const b of arranged.slice(index + 1)) {
+        expect(
+          a.position.x + a.measured.width + 40 <= b.position.x ||
+            b.position.x + b.measured.width + 40 <= a.position.x ||
+            a.position.y + a.measured.height + 40 <= b.position.y ||
+            b.position.y + b.measured.height + 40 <= a.position.y,
+        ).toBe(true);
+      }
+  });
+});
 
 describe("canvas placement", () => {
   it("adds in the current part of a panned board", () => {
