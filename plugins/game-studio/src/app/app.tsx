@@ -14,12 +14,14 @@ import type {
 } from "@get-bb/plugin-sdk/app";
 import { PluginQueryBoundary } from "@bb-kit/core/rpc/query";
 import { rpc } from "./rpc.ts";
+import { selectGameCheckout, selectGameRequestCheckout } from "./game-checkout-selection.ts";
 import { ConnectDialog } from "./connect.tsx";
 import type { GenerationRecipe, Game } from "../shared/schema.ts";
 import { REQUEST_MENTION_PROVIDER } from "../shared/request-mention.ts";
 import { StudioCanvas } from "./canvas.tsx";
 import { DesignEditor, AssetLibrary, Evidence } from "./views.tsx";
 import { UnityPanel, useUnityEditors, editorLabel } from "./unity.tsx";
+import { UnitySlotInputs } from "./unity-slot-inputs.tsx";
 import { Icon, Joystick } from "./icons.tsx";
 import "./studio.css";
 
@@ -101,16 +103,7 @@ function NativeComposerBridge() {
       return;
     pendingOpen = null;
     if (scope.kind === "new-thread") {
-      void composer
-        .experimental_setSelection({
-          projectId: pending.game.projectId,
-          environment: {
-            type: "host",
-            hostId: pending.game.hostId,
-            workspace: { type: "unmanaged", path: pending.game.rootPath },
-          },
-        })
-        .catch((cause) => setError(message(cause)));
+      void selectGameCheckout(composer, pending.game).catch((cause) => setError(message(cause)));
     }
   }, [composer, navigate, scopeKey, scope]);
   return error ? <Notice>{error}</Notice> : null;
@@ -268,22 +261,17 @@ function Workbench({ gameId, tab }: { gameId: string; tab: Tab }) {
           recipe,
           ...target,
         };
-        const result = await client.prompt(input);
         const game = query.data?.game;
         if (!game) throw new Error("Project unavailable. Reload the workspace.");
         if (composer.scope.kind === "thread") {
           // The server verifies the main thread's project, host, and exact checkout.
           await client.updateGame({ gameId, threadId: composer.scope.threadId });
         } else if (composer.scope.kind === "new-thread") {
-          await composer.experimental_setSelection({
-            projectId: game.projectId,
-            environment: {
-              type: "host",
-              hostId: game.hostId,
-              workspace: { type: "unmanaged", path: game.rootPath },
-            },
-          });
+          await selectGameRequestCheckout(composer, game, (input) =>
+            client.listUnityEditors(input),
+          );
         } else throw new Error("Open Studio beside the main BB thread to prepare a request.");
+        const result = await client.prompt(input);
         composer.updateText((current) =>
           current.trim() ? `${current}\n\n${result.prompt}` : result.prompt,
         );
@@ -757,6 +745,10 @@ function StudioHeader() {
   );
 }
 export default definePluginApp((app) => {
+  app.slots.experimental_environmentProviderInputs({
+    environmentProviderId: "unity-rampage-slot",
+    component: UnitySlotInputs,
+  });
   app.composer.customize({
     id: "studio-native-composer",
     scopes: ["new-thread", "thread"],
