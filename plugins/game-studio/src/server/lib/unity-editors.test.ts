@@ -343,9 +343,16 @@ test("background work retains ownership after the native job finishes", async ()
   const { service, transport } = setup();
   const claim = await service.claim("host", "main", "alice", "authoring");
   await service.command("host", "main", "alice", claim.claimId, "build", {});
-  transport.quiet = async () => ({ quiet: false });
+  transport.quiet = async () => ({
+    quiet: false,
+    blocking: { source: "recompile_status", status: "triggered" },
+  });
   const status = await service.status("host", "main", "alice", claim.claimId);
   expect(status.job?.state).toBe("completed");
+  expect(status.background).toEqual({
+    quiet: false,
+    blocking: { source: "recompile_status", status: "triggered" },
+  });
   expect(status.claim.jobId).toBe("job-1");
   await expect(service.release("host", "main", "alice", claim.claimId)).rejects.toThrow("pending");
   transport.quiet = async () => ({ quiet: true });

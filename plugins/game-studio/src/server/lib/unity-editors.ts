@@ -5,6 +5,7 @@ import type {
   CommandParameters,
   CommandSubmission,
   EditorInstance,
+  EditorQuietStatus,
   PipelineJob,
   VisibleEditorClaim,
 } from "../../shared/unity-editor-contract.ts";
@@ -51,7 +52,7 @@ export interface EditorTransport {
   ): Promise<{ instances: EditorInstance[]; warnings: string[] }>;
   probe(host: string, instance: EditorInstance, signal?: AbortSignal): Promise<{ pid: number }>;
   alive(host: string, instance: EditorInstance): Promise<{ alive: boolean }>;
-  quiet(host: string, instance: EditorInstance, signal?: AbortSignal): Promise<{ quiet: boolean }>;
+  quiet(host: string, instance: EditorInstance, signal?: AbortSignal): Promise<EditorQuietStatus>;
   execute(
     host: string,
     instance: EditorInstance,
@@ -134,10 +135,12 @@ export class UnityEditors {
     if (!claim.jobId || ["verifying", "submitting", "uncertain"].includes(claim.jobId))
       return { claim, job: null };
     const job = await this.transport.job(host, claim.instance, claim.jobId, signal);
-    if (
-      ["completed", "failed", "canceled"].includes(job.state) &&
-      (uncertainJob(job) || (await this.transport.quiet(host, claim.instance, signal)).quiet)
-    ) {
+    const terminal = ["completed", "failed", "canceled"].includes(job.state);
+    const background =
+      terminal && !uncertainJob(job)
+        ? await this.transport.quiet(host, claim.instance, signal)
+        : null;
+    if (terminal && (uncertainJob(job) || background?.quiet)) {
       claim = this.claims.job(
         host,
         id,
@@ -147,7 +150,7 @@ export class UnityEditors {
         claim.jobId,
       );
     }
-    return { claim, job };
+    return { claim, job, background };
   }
   async command(
     host: string,

@@ -397,20 +397,33 @@ export async function quiet(instance: EditorInstance, signal?: AbortSignal) {
   const dialog = z
     .object({ active: z.boolean() })
     .parse(await request(instance, "/api/dialog", signal));
-  if (progress.active || dialog.active) return { quiet: false };
+  if (progress.active) return { quiet: false, blocking: { source: "progress", status: "active" } };
+  if (dialog.active) return { quiet: false, blocking: { source: "dialog", status: "active" } };
   for (const command of backgroundStatuses) {
     const result = await inspectStatus(instance, command, signal);
     if (command === "test_status" && result == null) continue;
     const status = z.object({ status: z.string() }).parse(result);
-    if (!settledStates.has(status.status)) return { quiet: false };
+    if (!settledStates.has(status.status))
+      return { quiet: false, blocking: { source: command, status: status.status.slice(0, 128) } };
   }
   const editor = z
     .object({ status: z.string(), compiling: z.boolean(), domainReloadInProgress: z.boolean() })
     .parse(await inspectStatus(instance, "editor_status", signal));
-  return {
-    quiet:
-      ["ready", "playing"].includes(editor.status) &&
-      !editor.compiling &&
-      !editor.domainReloadInProgress,
-  };
+  const idle =
+    ["ready", "playing"].includes(editor.status) &&
+    !editor.compiling &&
+    !editor.domainReloadInProgress;
+  return idle
+    ? { quiet: true }
+    : {
+        quiet: false,
+        blocking: {
+          source: "editor_status",
+          status: editor.compiling
+            ? "compiling"
+            : editor.domainReloadInProgress
+              ? "reloading"
+              : editor.status.slice(0, 128),
+        },
+      };
 }

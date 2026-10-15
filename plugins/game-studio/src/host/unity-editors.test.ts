@@ -173,7 +173,10 @@ test("owner reconciliation checks both native readiness and covered progress", a
   const f = await fixture((path) =>
     Response.json(path === "/api/status" ? { status: "ready" } : { active: true }),
   );
-  expect(await quiet(f.instance)).toEqual({ quiet: false });
+  expect(await quiet(f.instance)).toEqual({
+    quiet: false,
+    blocking: { source: "progress", status: "active" },
+  });
 });
 
 test("host timezone changes cannot make a live Editor look orphaned", async () => {
@@ -208,10 +211,16 @@ test("compile, background builds and queued recompiles block handoff even when c
       result: JSON.stringify({ status: body.command === "build_status" ? background : "idle" }),
     });
   });
-  expect(await quiet(f.instance)).toEqual({ quiet: false });
+  expect(await quiet(f.instance)).toEqual({
+    quiet: false,
+    blocking: { source: "editor_status", status: "compiling" },
+  });
   compiling = false;
   background = "building";
-  expect(await quiet(f.instance)).toEqual({ quiet: false });
+  expect(await quiet(f.instance)).toEqual({
+    quiet: false,
+    blocking: { source: "build_status", status: "building" },
+  });
   background = "completed";
   expect(await quiet(f.instance)).toEqual({ quiet: true });
 });
@@ -285,4 +294,20 @@ test("Linux process identity uses monotonic start ticks and boot identity", () =
   expect(linuxProcessIdentity(stat, "boot-A\n")).toBe("boot-A:654321");
   expect(linuxProcessIdentity(stat, "boot-B")).toBe("boot-B:654321");
   expect(() => linuxProcessIdentity("malformed", "boot-A")).toThrow("Linux process identity");
+});
+
+test("queued recompiles identify the pending gate without treating the Editor as idle", async () => {
+  const f = await fixture((path, body) => {
+    if (path === "/api/progress" || path === "/api/dialog") return Response.json({ active: false });
+    return Response.json({
+      success: true,
+      result: JSON.stringify({
+        status: body.command === "recompile_status" ? "triggered" : "idle",
+      }),
+    });
+  });
+  expect(await quiet(f.instance)).toEqual({
+    quiet: false,
+    blocking: { source: "recompile_status", status: "triggered" },
+  });
 });

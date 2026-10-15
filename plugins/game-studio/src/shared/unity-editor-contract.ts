@@ -63,6 +63,16 @@ export type PipelineJob = z.infer<typeof pipelineJobSchema>;
 export type CommandSubmission = { jobId: string } | { rejected: true; error: string };
 export const jsonParametersSchema = z.record(z.string(), z.json());
 export type CommandParameters = z.infer<typeof jsonParametersSchema>;
+export const editorQuietSchema = z
+  .object({
+    quiet: z.boolean(),
+    blocking: z
+      .object({ source: z.string().max(64), status: z.string().max(128) })
+      .strict()
+      .optional(),
+  })
+  .strict();
+export type EditorQuietStatus = z.infer<typeof editorQuietSchema>;
 export const unityHostContract = defineRpcContract({
   planSlotDestination: {
     input: z.object({ path: z.string().min(1) }).strict(),
@@ -98,7 +108,7 @@ export const unityHostContract = defineRpcContract({
   },
   quiet: {
     input: z.object({ instance: editorSchema }).strict(),
-    output: z.object({ quiet: z.boolean() }).strict(),
+    output: editorQuietSchema,
   },
   execute: {
     input: z
