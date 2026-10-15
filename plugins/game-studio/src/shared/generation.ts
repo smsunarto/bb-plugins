@@ -76,6 +76,11 @@ export const generationTarget = z.strictObject({
   boardId: generationId,
   nodeId: generationId,
   fingerprint: z.string(),
+  imageRevisions: z
+    .array(z.strictObject({ path: mediaPath, sha256: z.string().regex(/^[a-f0-9]{64}$/) }))
+    .min(1)
+    .max(14)
+    .optional(),
 });
 export const generatedOutput = z.strictObject({
   path: mediaPath,

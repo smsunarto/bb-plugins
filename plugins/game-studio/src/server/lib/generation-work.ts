@@ -10,7 +10,7 @@ export class GenerationWork {
       PRIMARY KEY (host, workspace, job))`);
   }
   reserve(host: string, workspace: string, job: string, owner: string) {
-    this.slots.db
+    return this.slots.db
       .transaction(() => {
         this.slots.editorAccess(host, workspace, owner);
         const existing = this.slots.db
@@ -20,11 +20,13 @@ export class GenerationWork {
           .get(host, workspace, job) as { owner: string } | undefined;
         if (existing && existing.owner !== owner)
           throw new Error("This generation request belongs to another thread.");
-        this.slots.db
-          .prepare(
-            "INSERT OR IGNORE INTO studio_generation_work (host, workspace, job, owner) VALUES (?, ?, ?, ?)",
-          )
-          .run(host, workspace, job, owner);
+        return (
+          this.slots.db
+            .prepare(
+              "INSERT OR IGNORE INTO studio_generation_work (host, workspace, job, owner) VALUES (?, ?, ?, ?)",
+            )
+            .run(host, workspace, job, owner).changes !== 0
+        );
       })
       .immediate();
   }

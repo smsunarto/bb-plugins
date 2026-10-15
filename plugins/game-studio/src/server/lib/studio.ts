@@ -1,5 +1,6 @@
 import { generationJob, type GenerationJob } from "../../shared/generation.ts";
 import { nodeFingerprint } from "./canvas-generation.ts";
+import { generationImagePaths } from "./generation-inputs.ts";
 import { createHash, randomUUID } from "node:crypto";
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import { z } from "zod";
@@ -979,6 +980,22 @@ export async function adoptGeneration(bb: BbPluginApi, game: Game, job: Generati
     if (textFile && (textFile.contentEncoding !== "utf8" || textFile.content.length > 100000))
       throw new Error("Generated text must be UTF-8 and under 100,000 characters.");
     const generatedText = textFile?.content;
+    const images = generationImagePaths(job.request);
+    if (images.length && !job.target.imageRevisions)
+      return {
+        candidateAssetIds: ids,
+        attached: false,
+        detail: "This older job has no image revision record. Outputs are staged for review.",
+      };
+    for (const input of job.target.imageRevisions ?? []) {
+      const image = await readOptional(bb, game, input.path);
+      if (image?.sha256 !== input.sha256)
+        return {
+          candidateAssetIds: ids,
+          attached: false,
+          detail: "A source image changed or was removed. Outputs are staged for review.",
+        };
+    }
     saved.data = {
       ...saved.data,
       ...(generatedText !== undefined

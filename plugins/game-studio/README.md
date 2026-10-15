@@ -67,9 +67,12 @@ a confirmed provider task, or stops local waiting without resubmitting it.
 Stopping local waiting does not cancel a paid provider task. Unknown submission
 outcomes require reconciliation before a new request. Collect status before
 releasing a registered checkout; unresolved dispatches keep it reserved.
+Canvas generation captures selected image bytes in `canvas/inputs/<sha256>.<ext>`
+before dispatch. These saved inputs stay outside the asset catalog.
 Successful outputs stay in `canvas/staging` and are cataloged when collected.
 They attach to their source node only while its brief and connected design
-sources are unchanged; otherwise they remain staged candidates for review.
+sources, including original image bytes, are unchanged. Other results remain
+staged candidates for review, including older jobs without image revision records.
 Midjourney standard jobs yield four image candidates; the other image/video
 models yield one. Image nodes offer **Generate image**; text nodes offer
 **Generate text**, using the provider and model currently selected in BB.

@@ -16,6 +16,7 @@ import {
 import { getGame, loadWorkspace, adoptGeneration } from "./studio.ts";
 import type { SlotStore } from "./slot-store.ts";
 import { canvasRequest } from "./canvas-generation.ts";
+import { captureCanvasInputs } from "./generation-inputs.ts";
 import { CanvasText } from "./canvas-text.ts";
 
 type Credentials = { googleApiKey?: string; falAccessToken?: string };
@@ -33,6 +34,7 @@ export class Generations {
   private readonly work: GenerationWork;
   private readonly text: CanvasText;
   private readonly adoptions = new Map<string, Promise<AdoptionResult>>();
+  private readonly jobOperations = new Map<string, Promise<unknown>>();
   constructor(
     bb: BbPluginApi,
     settings: (provider: MediaRequest["model"]["provider"]) => Promise<Credentials>,
@@ -99,24 +101,42 @@ export class Generations {
     return jobs;
   }
   private async refreshCanvasJob(game: Game, job: GenerationJob) {
-    if (job.request.kind === "text") {
-      const slot = this.slots.find(game.hostId, game.rootPath);
-      if (slot && (slot.state !== "leased" || slot.ownerThreadId !== job.threadId)) return job;
-      try {
-        job = await this.text.status(game, job.id);
-      } catch {
-        return {
-          ...job,
-          status: "uncertain" as const,
-          detail: "Could not refresh this BB text run. Check its status before retrying.",
-        };
+    const key = this.jobKey(game, job.id);
+    if (this.jobOperations.has(key)) return job;
+    const owner = await this.serialJob(key, async () => {
+      if (job.request.kind === "text") {
+        const slot = this.slots.find(game.hostId, game.rootPath);
+        if (slot && (slot.state !== "leased" || slot.ownerThreadId !== job.threadId)) return null;
+        try {
+          job = await this.text.status(game, job.id);
+        } catch {
+          job = {
+            ...job,
+            status: "uncertain" as const,
+            detail: "Could not refresh this BB text run. Check its status before retrying.",
+          };
+          return null;
+        }
+      } else if (
+        this.work.owner(game.hostId, game.rootPath, job.id) &&
+        !["queued", "running"].includes(job.status)
+      ) {
+        // The list response may predate a queued retry or resume.
+        const client = this.bb.hosts.experimental_client({ contract: studioHostContract });
+        job = await client.call(
+          "status",
+          { rootPath: game.rootPath, jobId: job.id },
+          { hostId: game.hostId },
+        );
       }
-    }
-    const owner = this.work.owner(game.hostId, game.rootPath, job.id);
-    if (owner && !["queued", "running"].includes(job.status)) {
-      if (job.status === "succeeded") await this.adopt(game, job, owner);
-      else this.work.settled(game.hostId, game.rootPath, job.id);
-    }
+      const owner = this.work.owner(game.hostId, game.rootPath, job.id);
+      if (owner && !["queued", "running"].includes(job.status)) {
+        if (job.status === "succeeded") return owner;
+        else this.work.settled(game.hostId, game.rootPath, job.id);
+      }
+      return null;
+    });
+    if (owner) await this.adopt(game, job, owner);
     return job;
   }
   private async canvasGame(gameId: string, threadId: string | null, writable = true) {
@@ -136,10 +156,10 @@ export class Generations {
   async direct(input: z.output<typeof canvasDirectInput>) {
     const game = await this.canvasGame(input.gameId, input.threadId);
     const workspace = await loadWorkspace(this.bb, input.gameId);
-    const { request, target } = canvasRequest(workspace, input);
-    if (!["image", "text"].includes(request.kind))
+    const prepared = canvasRequest(workspace, input);
+    if (!["image", "text"].includes(prepared.request.kind))
       throw new Error("Direct canvas generation supports image and text nodes.");
-    return this.dispatch(game, input.requestId, request, input.threadId, target, {
+    return this.dispatch(game, input.requestId, prepared.request, input.threadId, prepared.target, {
       kind: "canvas",
       gameId: game.id,
     });
@@ -198,49 +218,80 @@ export class Generations {
     target: GenerationJob["target"] | undefined,
     origin: GenerationJob["origin"],
   ) {
-    const client = this.bb.hosts.experimental_client({ contract: studioHostContract });
-    const normalized = mediaRequest.parse(
-      JSON.parse(JSON.stringify(normalizeMediaRequest(request))),
-    );
-    const credentials =
-      normalized.kind === "text" ? {} : await this.credentials(normalized.model.provider);
-    this.work.reserve(game.hostId, game.rootPath, requestId, threadId ?? `canvas:${game.id}`);
-    if (normalized.kind === "text") {
-      const result = await this.text.start(game, {
-        version: 1,
-        id: requestId,
-        threadId,
-        origin,
-        createdAt: Date.now(),
-        updatedAt: Date.now(),
-        status: "queued",
-        request: normalized,
-        target,
-        outputs: [],
-      });
-      if (!["queued", "running"].includes(result.job.status))
+    return this.serialJob(this.jobKey(game, requestId), async () => {
+      const client = this.bb.hosts.experimental_client({ contract: studioHostContract });
+      let normalized = mediaRequest.parse(
+        JSON.parse(JSON.stringify(normalizeMediaRequest(request))),
+      );
+      const credentials =
+        normalized.kind === "text" ? {} : await this.credentials(normalized.model.provider);
+      const reserved = this.work.reserve(
+        game.hostId,
+        game.rootPath,
+        requestId,
+        threadId ?? `canvas:${game.id}`,
+      );
+      if (target) {
+        try {
+          const captured = await captureCanvasInputs(this.bb, game, {
+            request: normalized,
+            target,
+          });
+          normalized = captured.request;
+          target = captured.target;
+        } catch (error) {
+          if (reserved) this.work.settled(game.hostId, game.rootPath, requestId);
+          throw error;
+        }
+      }
+      if (normalized.kind === "text") {
+        const result = await this.text.start(game, {
+          version: 1,
+          id: requestId,
+          threadId,
+          origin,
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+          status: "queued",
+          request: normalized,
+          target,
+          outputs: [],
+        });
+        if (!["queued", "running"].includes(result.job.status))
+          this.work.settled(game.hostId, game.rootPath, requestId);
+        return result;
+      }
+      const result = await client.call(
+        "start",
+        {
+          rootPath: game.rootPath,
+          jobId: requestId,
+          threadId,
+          origin,
+          request: normalized,
+          credentials,
+          ...(target ? { target } : {}),
+        },
+        { hostId: game.hostId },
+      );
+      if (
+        !["queued", "running"].includes(result.job.status) &&
+        !this.adoptions.has(this.jobKey(game, requestId))
+      )
         this.work.settled(game.hostId, game.rootPath, requestId);
       return result;
+    });
+  }
+  private async serialJob<T>(key: string, action: () => Promise<T>) {
+    const next = (this.jobOperations.get(key) ?? Promise.resolve())
+      .catch(() => undefined)
+      .then(action);
+    this.jobOperations.set(key, next);
+    try {
+      return await next;
+    } finally {
+      if (this.jobOperations.get(key) === next) this.jobOperations.delete(key);
     }
-    const result = await client.call(
-      "start",
-      {
-        rootPath: game.rootPath,
-        jobId: requestId,
-        threadId,
-        origin,
-        request: normalized,
-        credentials,
-        ...(target ? { target } : {}),
-      },
-      { hostId: game.hostId },
-    );
-    if (
-      !["queued", "running"].includes(result.job.status) &&
-      !this.adoptions.has(this.jobKey(game, requestId))
-    )
-      this.work.settled(game.hostId, game.rootPath, requestId);
-    return result;
   }
   async canvas(input: z.output<typeof canvasGenerationInput>, threadId?: string) {
     await this.game(input.gameId, threadId);
@@ -270,17 +321,19 @@ export class Generations {
     } catch (error) {
       if (!(error instanceof Error) || !/ENOENT|no such file or directory/i.test(error.message))
         throw error;
-      const owner = this.work.owner(game.hostId, game.rootPath, jobId);
-      if (owner && owner !== threadId)
-        throw new Error("Only the requesting thread can reconcile this missing job.", {
-          cause: error,
-        });
-      const result = await client.call("reconcileMissing", target, { hostId: game.hostId });
-      if (result.missing) {
-        this.work.settled(game.hostId, game.rootPath, jobId);
-        return null;
-      }
-      return client.call("status", target, { hostId: game.hostId });
+      return this.serialJob(this.jobKey(game, jobId), async () => {
+        const owner = this.work.owner(game.hostId, game.rootPath, jobId);
+        if (owner && owner !== threadId)
+          throw new Error("Only the requesting thread can reconcile this missing job.", {
+            cause: error,
+          });
+        const result = await client.call("reconcileMissing", target, { hostId: game.hostId });
+        if (result.missing) {
+          this.work.settled(game.hostId, game.rootPath, jobId);
+          return null;
+        }
+        return client.call("status", target, { hostId: game.hostId });
+      });
     }
   }
   private async runControl(
@@ -289,25 +342,31 @@ export class Generations {
     action: "status" | "resume" | "cancel",
     threadId: string,
   ) {
-    if (before.request.kind === "text")
-      this.slots.editorAccess(game.hostId, game.rootPath, threadId);
-    if (action === "resume") this.work.reserve(game.hostId, game.rootPath, before.id, threadId);
-    const client = this.bb.hosts.experimental_client({ contract: studioHostContract });
-    const target = { rootPath: game.rootPath, jobId: before.id };
-    let job = before;
-    if (before.request.kind === "text")
-      job = await this.text.status(game, before.id, action === "cancel");
-    else if (action === "resume")
-      job = await client.call(
-        "resume",
-        { ...target, credentials: await this.credentials(before.request.model.provider) },
-        { hostId: game.hostId },
-      );
-    else if (action === "cancel")
-      job = await client.call("cancel", target, { hostId: game.hostId });
+    if (before.status === "succeeded" && action === "status")
+      return this.adopt(game, before, threadId);
+    const job = await this.serialJob(this.jobKey(game, before.id), async () => {
+      if (before.request.kind === "text")
+        this.slots.editorAccess(game.hostId, game.rootPath, threadId);
+      if (action === "resume") this.work.reserve(game.hostId, game.rootPath, before.id, threadId);
+      const client = this.bb.hosts.experimental_client({ contract: studioHostContract });
+      const target = { rootPath: game.rootPath, jobId: before.id };
+      let job = before;
+      if (before.request.kind === "text")
+        job = await this.text.status(game, before.id, action === "cancel");
+      else if (action === "resume")
+        job = await client.call(
+          "resume",
+          { ...target, credentials: await this.credentials(before.request.model.provider) },
+          { hostId: game.hostId },
+        );
+      else if (action === "cancel")
+        job = await client.call("cancel", target, { hostId: game.hostId });
+      else job = await client.call("status", target, { hostId: game.hostId });
+      if (!["queued", "running", "succeeded"].includes(job.status))
+        this.work.settled(game.hostId, game.rootPath, job.id);
+      return job;
+    });
     if (job.status === "succeeded") return this.adopt(game, job, threadId);
-    if (!["queued", "running"].includes(job.status))
-      this.work.settled(game.hostId, game.rootPath, job.id);
     return { job };
   }
   private jobKey(game: Game, jobId: string) {
@@ -317,7 +376,7 @@ export class Generations {
     const key = this.jobKey(game, job.id);
     const existing = this.adoptions.get(key);
     if (existing) return existing;
-    const pending = (async (): Promise<AdoptionResult> => {
+    const pending = this.serialJob(key, async (): Promise<AdoptionResult> => {
       const slot = this.slots.find(game.hostId, game.rootPath);
       if (slot && (slot.state !== "leased" || slot.ownerThreadId !== threadId)) {
         this.work.settled(game.hostId, game.rootPath, job.id);
@@ -337,7 +396,7 @@ export class Generations {
       } finally {
         this.work.settled(game.hostId, game.rootPath, job.id);
       }
-    })();
+    });
     this.adoptions.set(key, pending);
     try {
       return await pending;
