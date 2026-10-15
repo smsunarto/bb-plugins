@@ -42,6 +42,17 @@ test("asking again while the child works returns it instead of spawning another"
   expect(spawned).toHaveLength(2);
 });
 
+test("PR status remains readable without another full workspace read", async () => {
+  const { ctx, hostMethods } = context();
+  await requestReview.execute(ctx, { threadId: "t1", branch: "scott/top" });
+  hostMethods.length = 0;
+
+  expect(await reviewRequests.execute(ctx, { threadId: "t1" })).toEqual({
+    requests: [{ branch: "scott/top", threadId: "child-1", running: true }],
+  });
+  expect(hostMethods).toEqual(["checkoutIdentity"]);
+});
+
 test("overlapping requests for the same branch return one PR subthread", async () => {
   const { ctx, spawned } = context();
 
@@ -65,11 +76,11 @@ test("overlapping requests preserve every branch and repository's PR subthread",
   expect(await reviewRequests.execute(ctx, { threadId: "t1" })).toEqual({
     requests: [
       { branch: "scott/top", threadId: "child-1", running: true },
-      { branch: "scott/bottom", threadId: "child-2", running: true },
+      { branch: "scott/bottom", threadId: "child-3", running: true },
     ],
   });
   expect(await reviewRequests.execute(ctx, { threadId: "t1", repositoryKey: "." })).toEqual({
-    requests: [{ branch: "scott/top", threadId: "child-3", running: true }],
+    requests: [{ branch: "scott/top", threadId: "child-2", running: true }],
   });
 });
 

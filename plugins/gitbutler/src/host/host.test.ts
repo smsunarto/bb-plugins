@@ -97,6 +97,7 @@ beforeAll(async () => {
     await runGit(repository, ["commit", "--quiet", "-am", subject], signal);
   }
   await runGit(repository, ["switch", "--quiet", "main"], signal);
+  await runGit(repository, ["switch", "--quiet", "-c", "gitbutler/workspace"], signal);
 });
 
 afterEach(async () => {
@@ -117,6 +118,22 @@ test("workspace names the repository it resolved, and leaves the environment to 
   expect(workspace.repositoryKey).toBe(".");
   expect("environmentId" in workspace).toBe(false);
   expect(workspace.upstream?.latest?.subject).toBe("chore: upstream tip");
+});
+
+test("checkout identity resolves without GitButler status or remote comparison", async () => {
+  restore = await fakeBut("printf 'Error: status unavailable\\n' >&2; exit 1");
+  const located = await host.experimental_call("checkoutIdentity", { environmentPath: repository });
+  expect(located).toEqual({
+    key: ".",
+    identity: {
+      path: await realpath(repository),
+      branch: "gitbutler/workspace",
+      head: (await runGit(repository, ["rev-parse", "HEAD"], signal)).trim(),
+      origin: null,
+      commonDir: await realpath(join(repository, ".git")),
+      kind: "gitbutler",
+    },
+  });
 });
 
 test("workspace names no repository when there is none", async () => {
@@ -498,10 +515,12 @@ test("a range is read only in a GitButler workspace among the checkouts bb knows
     }),
   ).rejects.toThrow("That is not a GitButler workspace bb knows on this machine.");
   // A plain clone bb knows is still not a workspace.
+  const plain = join(scratch, "range-known", "plain");
+  await checkout(plain, "main", "git@github.com:Acme/App.git");
   await expect(
     host.experimental_call("patches", {
-      environmentPath: repository,
-      source: { ...range, within: [repository] },
+      environmentPath: plain,
+      source: { ...range, within: [plain] },
     }),
   ).rejects.toThrow("That is not a GitButler workspace bb knows on this machine.");
 });
@@ -552,7 +571,7 @@ test("two actions on one repository run one after the other, checks included", a
 test("actions on different repositories run at the same time", async () => {
   await slowActions();
   const other = join(scratch, "other");
-  await runGit(scratch, ["init", "--quiet", other], signal);
+  await runGit(scratch, ["init", "--quiet", "--initial-branch=gitbutler/workspace", other], signal);
   await Promise.all(
     [repository, other].map((environmentPath) =>
       host.experimental_call("butAction", { environmentPath, action: updateWorkspace }),

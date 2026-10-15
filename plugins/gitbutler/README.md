@@ -6,8 +6,9 @@ uncommitted work, and the target history below the common base.
 
 Plain `git log` is misleading inside a GitButler project — it shows the
 `gitbutler/workspace` merge commit and every branch at once, which is not the
-model you work in. This panel reads `but --json` instead, so what it shows is
-what `but status` shows.
+model you work in. This panel reads `but --json` for GitButler workspaces.
+Ordinary checkouts use Git directly to show their checked-out branch, changes,
+and history.
 
 ## What it shows
 
@@ -27,8 +28,8 @@ what `but status` shows.
 - Per-file diffs rendered by bb's own diff viewer, for any commit, the target
   history included. The diff screen opens over the workspace, and Back or
   Escape returns to the same scroll position
-- The same repository's applied branches on your other machines, one card
-  per machine. See [Other machines](#other-machines)
+- The same repository's branches in other checkouts, with their machine and
+  path. See [Other machines](#other-machines)
 - Branches GitButler knows that the workspace does not apply, under
   **Not applied**, closed until opened
 - GitButler's operation history (`but oplog`), from the header's
@@ -44,6 +45,9 @@ what `but status` shows.
   added to its side panel without taking focus. A closed tab stays closed.
 
 ## Branch actions
+
+The commands below describe GitButler workspaces. Ordinary Git checkouts expose
+the same controls through checkout-scoped Git operations; see [Other machines](#other-machines).
 
 The header's **Pull** fetches, then rebases every applied branch onto the
 target branch (`but pull`). It asks first when that would leave conflicted
@@ -124,11 +128,22 @@ again instead of starting a second one. Archive it to start fresh.
 
 ## Other machines
 
-Below the board, other checkouts of this repository get read-only cards showing
-their machine and path. GitButler workspaces show their applied branches: status,
-PR number, commit count, and newest commit. Ordinary Git checkouts show the
-checked-out branch and latest commit, without GitButler setup. To change a branch,
-use a thread in that checkout.
+Below the board, other checkouts of this repository get cards showing their
+machine, path, branches, and newest commit. **Open checkout** opens that checkout
+in the full board, including diffs, Rename, Pull, Push, Create PR, Land, and Delete.
+**Back to main checkout** returns to the thread's workspace.
+
+Ordinary Git checkouts need no GitButler setup. Their header's Pull updates the
+checked-out branch from its target; the branch's Pull integrates its upstream.
+Land publishes one commit on the target and requires a clean checkout. Delete
+detaches the checkout at its current commit before removing the local branch,
+preserving its files. PR and conflict subthreads run in the selected checkout.
+
+Writes recheck the checkout and refuse stale branch snapshots, branches tracked
+by a shared GitButler workspace, and checkouts another BB thread is actively
+using. Linked checkouts share a host-side write queue because they share Git refs.
+Native writes also refuse custom GitButler metadata storage that the panel cannot
+inspect safely.
 
 The panel finds them through bb: every project source and ready environment on
 each connected machine, plus the linked worktrees Git registers for those
@@ -154,11 +169,13 @@ inbox.
 
 ## Requirements
 
-- The GitButler CLI (`but`) installed on the machine hosting the thread's
-  environment. The panel looks on `PATH` and in `/opt/homebrew/bin`,
+- Git installed on each checkout's host.
+- For GitButler workspaces, the GitButler CLI (`but`) installed on that host.
+  The panel looks on `PATH` and in `/opt/homebrew/bin`,
   `/usr/local/bin`, `~/.local/bin`, and `~/.cargo/bin`.
-- The repository set up as a GitButler project (`but setup`). The panel says so
-  and names the command when it is not.
+- Ordinary checkouts work without `but setup`; linked worktrees are never
+  converted into GitButler workspaces by the panel.
+- Create PR in ordinary checkouts requires an authenticated forge CLI on that host.
 
 ## Repository selection
 

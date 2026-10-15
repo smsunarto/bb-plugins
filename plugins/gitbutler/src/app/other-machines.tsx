@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { experimental_Icon as Icon } from "@get-bb/plugin-sdk/app";
 import type { Branch, Checkout } from "../shared/schema.ts";
+import { Button } from "./components/ui/button.tsx";
 import type { WorkspaceTarget } from "./branch-actions.tsx";
 import { Count } from "./file-list.tsx";
 import { subject } from "./format.ts";
@@ -146,7 +147,13 @@ function MachineBody({ checkout }: { checkout: Checkout }) {
   );
 }
 
-function MachineCard({ checkout }: { checkout: Checkout }) {
+function MachineCard({
+  checkout,
+  onOpen,
+}: {
+  checkout: Checkout;
+  onOpen?: ((checkout: Checkout) => void) | undefined;
+}) {
   const [open, setOpen] = useState(true);
   const branches = checkout.gitBranch
     ? 1
@@ -186,24 +193,44 @@ function MachineCard({ checkout }: { checkout: Checkout }) {
           </span>
         </span>
       </button>
-      {open ? <MachineBody checkout={checkout} /> : null}
+      {open ? (
+        <>
+          <MachineBody checkout={checkout} />
+          {onOpen && checkout.state === "ready" ? (
+            <div className="flex justify-end border-t border-border px-2.5 py-1.5">
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-6 gap-1 px-2 text-xs font-normal"
+                onClick={() => onOpen(checkout)}
+                aria-label={`Open checkout ${checkout.path}`}
+              >
+                Open checkout
+                <Icon name="ChevronRight" className="size-3" aria-hidden />
+              </Button>
+            </div>
+          ) : null}
+        </>
+      ) : null}
     </section>
   );
 }
 
 /**
  * The same repository's branches in every other checkout, one card each,
- * read only. Writes belong to a thread in that checkout. Like
+ * with a control to open its full workspace. Like
  * the parked list, nothing shows while loading or after a failure: the board
  * above is what the panel is for.
  */
 export function OtherMachines({
   target,
   environmentId,
+  onOpen,
 }: {
   target: WorkspaceTarget;
   /** The board's environment. An answer read for another one is not shown. */
   environmentId: string | null;
+  onOpen?: ((checkout: Checkout) => void) | undefined;
 }) {
   const query = rpc.otherMachines.useQuery(target, {
     ...storedAnswer("otherMachines", target),
@@ -214,6 +241,6 @@ export function OtherMachines({
     query.data?.reason === null && query.data.environmentId === environmentId ? query.data : null;
   if (!data) return null;
   return data.checkouts.map((checkout) => (
-    <MachineCard key={`${checkout.hostId}:${checkout.path}`} checkout={checkout} />
+    <MachineCard key={`${checkout.hostId}:${checkout.path}`} checkout={checkout} onOpen={onOpen} />
   ));
 }

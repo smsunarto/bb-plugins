@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState } from "react";
+import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import type { Query, QueryKey } from "@tanstack/react-query";
 import { experimental_Icon as Icon, useBbNavigate } from "@get-bb/plugin-sdk/app";
@@ -9,6 +9,7 @@ import type {
   Branch,
   ButAction,
   ButActionResult,
+  CheckoutSelection,
   PatchSource,
   PushMode,
   ReviewRequest,
@@ -22,6 +23,7 @@ import {
   useFocusAfterWrite,
   useWriteBusy,
   sameScope,
+  sameObservation,
   writeScope,
 } from "./board-context.tsx";
 import type { WorkspaceIdentity, WriteFailure, WriteScope } from "./board-context.tsx";
@@ -39,7 +41,11 @@ import { rpc } from "./rpc.ts";
  * the branch to a subthread instead.
  */
 
-export type WorkspaceTarget = { threadId: string; repositoryKey: string | undefined };
+export type WorkspaceTarget = {
+  threadId: string;
+  repositoryKey: string | undefined;
+  checkout?: CheckoutSelection | undefined;
+};
 
 /**
  * Where a write goes. `workspace` is the board's, which a caller inside the
@@ -85,11 +91,17 @@ function useFooterFocus(...busy: boolean[]) {
 }
 
 /** Whether a cached read is `method`'s answer for this thread. */
-function readOf(method: { queryKey: () => QueryKey }, threadId: string) {
+function readOf(
+  method: { queryKey: () => QueryKey },
+  target: Pick<WorkspaceTarget, "threadId" | "checkout">,
+) {
   const [name] = method.queryKey();
   return (query: Query) =>
     query.queryKey[0] === name &&
-    (query.queryKey[1] as { threadId?: unknown } | undefined)?.threadId === threadId;
+    (query.queryKey[1] as WorkspaceTarget | undefined)?.threadId === target.threadId &&
+    (query.queryKey[1] as WorkspaceTarget | undefined)?.checkout?.hostId ===
+      target.checkout?.hostId &&
+    (query.queryKey[1] as WorkspaceTarget | undefined)?.checkout?.path === target.checkout?.path;
 }
 
 /**
@@ -100,8 +112,16 @@ function readOf(method: { queryKey: () => QueryKey }, threadId: string) {
  * promise is the board's, so a request's spinner ends when the board shows
  * its result and not a moment before.
  */
-export function refreshWorkspace(threadId: string): Promise<void> {
-  const uncommitted = readOf(rpc.patches, threadId);
+export function refreshWorkspace(
+  aim: string | Pick<WorkspaceTarget, "threadId" | "checkout">,
+): Promise<void> {
+  const target = typeof aim === "string" ? { threadId: aim } : aim;
+  if (target.checkout) {
+    void pluginQueryClient.invalidateQueries({
+      predicate: readOf(rpc.otherMachines, { threadId: target.threadId }),
+    });
+  }
+  const uncommitted = readOf(rpc.patches, target);
   void pluginQueryClient.invalidateQueries({
     predicate: (query) =>
       uncommitted(query) &&
@@ -114,9 +134,9 @@ export function refreshWorkspace(threadId: string): Promise<void> {
     rpc.parkedBranches,
     rpc.oplog,
   ]) {
-    void pluginQueryClient.invalidateQueries({ predicate: readOf(method, threadId) });
+    void pluginQueryClient.invalidateQueries({ predicate: readOf(method, target) });
   }
-  return pluginQueryClient.invalidateQueries({ predicate: readOf(rpc.workspace, threadId) });
+  return pluginQueryClient.invalidateQueries({ predicate: readOf(rpc.workspace, target) });
 }
 
 /** What the status line says once a card's write is through. The header's Pull says its own. */
@@ -172,13 +192,19 @@ export function useButAction(
   const [cleared, setCleared] = useState<number | null>(null);
   const announce = useAnnounce();
   const focusAfterWrite = useFocusAfterWrite();
+  const aim = writeScope(target, workspace);
+  const currentAim = useRef(aim);
+  useLayoutEffect(() => {
+    currentAim.current = aim;
+  }, [aim]);
   const mutation = rpc.butAction.useMutation({
     mutationKey: butWriteKey(scope),
     // Reported here, once the board shows the result, and not in `run`'s
     // callback: Delete and Land take the card, and that callback, away first.
     onSettled: async (result, error, sent) => {
-      await refreshWorkspace(target.threadId);
+      await refreshWorkspace(sent);
       onSettled?.(result, error, sent);
+      if (!sameScope(sent, currentAim.current)) return;
       if (!result) return;
       const { action } = sent;
       if (result.status === "done" && (action.kind === "delete" || action.kind === "land")) {
@@ -193,7 +219,6 @@ export function useButAction(
   });
   // A request about another repository is not this one's to show, even
   // while it is still running after the reader switched.
-  const aim = writeScope(target, workspace);
   const sent = mutation.variables;
   const mine = sent !== undefined && sameScope(sent, aim);
   const pending = mine && mutation.isPending;
@@ -389,7 +414,7 @@ function useReviewRequest(target: WorkspaceTarget, branch: string) {
       query.state.data?.requests.some((request) => request.running) ? REVIEW_POLL_MS : false,
   });
   const mutation = rpc.requestReview.useMutation({
-    onSettled: () => refreshWorkspace(target.threadId),
+    onSettled: (_result, _error, sent) => refreshWorkspace(sent),
   });
   return {
     request: () => mutation.mutate({ ...writeScope(target, board), branch }),
@@ -635,6 +660,7 @@ export function Confirm({
 export function pullRiskPrompt(
   { conflicted, overlapsUncommitted }: ActionRisk,
   branch?: string,
+  native = false,
 ): ReactNode {
   const name = branch ? <span className="font-semibold text-foreground">{branch}</span> : null;
   // Conflicted commits block a push. Markers in uncommitted files only need
@@ -643,7 +669,8 @@ export function pullRiskPrompt(
     <>
       {conflicted.length > 0 ? (
         <>
-          Pulling{name ? <> {name}</> : null} leaves conflicted commits in {listNames(conflicted)}.
+          Pulling{name ? <> {name}</> : null}{" "}
+          {native ? "may leave conflicts" : "leaves conflicted commits"} in {listNames(conflicted)}.
           Resolve them before pushing.
         </>
       ) : null}
@@ -722,27 +749,32 @@ type Confirmation = {
 };
 
 /**
- * Land's question. A branch of several commits is squashed into one first,
- * and a branch behind the target is pulled up to it first, so the question
- * says so: the pull rebases every applied branch, not only this one.
+ * Land's question describes publication, squashing, and how the checkout's
+ * driver handles a newer target.
  */
 function landConfirmation(
   mode: Extract<Mode, { kind: "land" }>,
   branch: Branch,
   behind: number,
+  native: boolean,
 ): Confirmation {
   const name = <span className="font-semibold text-foreground">{branch.name}</span>;
   const count = branch.commits.length;
   const squash = count > 1;
-  const pull = mode.risk ? (
-    <> Landing pulls the workspace first. {pullRiskPrompt(mode.risk)}</>
-  ) : behind > 0 ? (
-    <>
-      {" "}
-      The target has {behind === 1 ? "a new commit" : `${behind} new commits`}, so this pulls the
-      workspace first, which rebases every applied branch.
-    </>
-  ) : null;
+  const newerTargetAction = native
+    ? "creates the landing commit on top of the newer target."
+    : "pulls the workspace first, which rebases every applied branch.";
+  const pull =
+    mode.risk && !native ? (
+      <> Landing pulls the workspace first. {pullRiskPrompt(mode.risk, undefined, native)}</>
+    ) : behind > 0 ? (
+      <>
+        {" "}
+        The target has {behind === 1 ? "a new commit" : `${behind} new commits`}, so this{" "}
+        {newerTargetAction}
+      </>
+    ) : null;
+  const rewritesCommits = squash || pull !== null;
   const message = mode.message.trim();
   return {
     prompt: (
@@ -757,8 +789,11 @@ function landConfirmation(
         on the target branch? This pushes it to the remote without a PR and can't easily be undone.
         {pull}
         {/* The forge closes a review only once its own commits land, which a squash or a pull rewrites. */}
-        {(squash || pull !== null) && branch.reviewId !== null ? (
+        {rewritesCommits && branch.reviewId !== null ? (
           <> Its PR {branch.reviewId} stays open.</>
+        ) : null}
+        {native && rewritesCommits && branch.reviewId === null ? (
+          <> An existing PR may remain open after these commits are rewritten.</>
         ) : null}
       </>
     ),
@@ -784,14 +819,20 @@ function confirmationFor(
   branchesAbove: number,
   /** Commits the target has that the workspace lacks, as GitButler last fetched it. */
   behind: number,
+  native: boolean,
 ): Confirmation {
   const name = <span className="font-semibold text-foreground">{branch.name}</span>;
   switch (mode.kind) {
     case "land":
-      return landConfirmation(mode, branch, behind);
+      return landConfirmation(mode, branch, behind, native);
     case "delete":
       return {
-        prompt: mode.risk ? (
+        prompt: native ? (
+          <>
+            Delete {name}? This removes the local branch. The checkout stays at its current commit
+            with a detached HEAD, and its files are preserved. The remote branch and any PR stay.
+          </>
+        ) : mode.risk ? (
           <>
             Your uncommitted changes touch files {name} changed, so deleting it can write conflict
             markers into them.
@@ -805,7 +846,7 @@ function confirmationFor(
       };
     case "pull":
       return {
-        prompt: pullRiskPrompt(mode.risk, branch.name),
+        prompt: pullRiskPrompt(mode.risk, branch.name, native),
         label: "Pull anyway",
         action: { kind: "pull", branch: branch.name, accepted: mode.risk },
         tone: "default",
@@ -956,6 +997,53 @@ function ActionRow({
   );
 }
 
+/** Keeps a draft visible while requiring a fresh acknowledgement of a changed branch. */
+function BranchConfirmation({
+  mode,
+  branch,
+  confirmation,
+  observed,
+  confirmed,
+  pending,
+  blocked,
+  onCancel,
+  onReview,
+  onConfirm,
+  onMessage,
+}: {
+  mode: Mode;
+  branch: Branch;
+  confirmation: Confirmation;
+  observed: WriteScope["observed"];
+  confirmed: WriteScope["observed"];
+  pending: boolean;
+  blocked: string | null | undefined;
+  onCancel: () => void;
+  onReview: () => void;
+  onConfirm: () => void;
+  onMessage: (message: string) => void;
+}) {
+  const changed = !sameObservation(confirmed, observed);
+  return (
+    <Confirm
+      key={JSON.stringify([questionKey(mode), confirmed])}
+      prompt={
+        changed
+          ? "This branch changed while the confirmation was open. Review the updated branch before continuing."
+          : confirmation.prompt
+      }
+      label={changed ? "Review updated branch" : confirmation.label}
+      pending={pending}
+      blocked={blocked ?? confirmation.blocked}
+      tone={confirmation.tone}
+      onCancel={onCancel}
+      onConfirm={changed ? onReview : onConfirm}
+    >
+      <SquashMessage mode={mode} branch={branch} pending={pending} onChange={onMessage} />
+    </Confirm>
+  );
+}
+
 /**
  * The footer under a branch header. Every branch can at least be deleted,
  * so every card has one.
@@ -983,6 +1071,7 @@ export function BranchActions({
   behind: number;
 }) {
   const [mode, setMode] = useState<Mode>(IDLE);
+  const [confirmed, setConfirmed] = useState<WriteScope["observed"]>();
   const [refocus, setRefocus] = useState<ModeKind>("idle");
   // For one render only: the button takes the focus as it mounts, and a poll
   // that later drops and restores it must not pull the focus there again.
@@ -990,6 +1079,9 @@ export function BranchActions({
     if (refocus !== "idle") setRefocus("idle");
   }, [refocus]);
   const action = useButAction(target);
+  const board = useBoardWorkspace();
+  const observed = writeScope(target, board).observed;
+  const native = board?.checkoutIdentity?.kind === "git";
   const review = useReviewRequest(target, branch.name);
   const footer = useFooterFocus(action.pending, review.pending);
   const available = availableFor(branch, landable, pushedWith);
@@ -999,6 +1091,7 @@ export function BranchActions({
     review.reset();
     // Back from a confirmation, focus returns to the button that opened it.
     setRefocus(next.kind === "idle" ? mode.kind : "idle");
+    setConfirmed(observed);
     setMode(next);
   };
   const run = (next: ButAction) => {
@@ -1006,7 +1099,10 @@ export function BranchActions({
     // How it went, "Already up to date." too, goes to the board's status line.
     action.run(
       next,
-      (result) => setMode(result.status === "confirm" ? askAbout(next, result.risk) : IDLE),
+      (result) => {
+        setConfirmed(observed);
+        setMode(result.status === "confirm" ? askAbout(next, result.risk) : IDLE);
+      },
       // The pull a land asked about may have run before it failed, so the
       // question is asked again from the board the failure leaves.
       () => setMode((current) => (current.kind === "land" ? { ...current, risk: null } : current)),
@@ -1026,7 +1122,7 @@ export function BranchActions({
   const confirmation =
     mode.kind === "idle"
       ? null
-      : confirmationFor(mode, branch, atRisk, force, branchesAbove, behind);
+      : confirmationFor(mode, branch, atRisk, force, branchesAbove, behind, native);
 
   return (
     <div
@@ -1034,27 +1130,21 @@ export function BranchActions({
       className="flex flex-col gap-1.5 border-t border-border bg-secondary/40 px-2.5 py-2"
     >
       {confirmation ? (
-        <Confirm
-          // A new question mounts afresh, so focus starts on its Cancel, not
-          // on the button that was just clicked and now answers something else.
-          key={questionKey(mode)}
-          prompt={confirmation.prompt}
-          label={confirmation.label}
+        <BranchConfirmation
+          mode={mode}
+          branch={branch}
+          confirmation={confirmation}
+          observed={observed}
+          confirmed={confirmed}
           pending={action.pending}
-          blocked={action.blocked ?? confirmation.blocked}
-          tone={confirmation.tone}
+          blocked={action.blocked}
           onCancel={() => choose(IDLE)}
+          onReview={() => setConfirmed(observed)}
           onConfirm={() => run(confirmation.action)}
-        >
-          <SquashMessage
-            mode={mode}
-            branch={branch}
-            pending={action.pending}
-            onChange={(message) =>
-              setMode((current) => (current.kind === "land" ? { ...current, message } : current))
-            }
-          />
-        </Confirm>
+          onMessage={(message) =>
+            setMode((current) => (current.kind === "land" ? { ...current, message } : current))
+          }
+        />
       ) : (
         <ActionRow
           branch={branch.name}

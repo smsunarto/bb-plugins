@@ -2,6 +2,7 @@ import { useState } from "react";
 import { experimental_Icon as Icon } from "@get-bb/plugin-sdk/app";
 import type { ParkedBranch } from "../shared/schema.ts";
 import { AskAgentButton } from "./ask-agent.tsx";
+import { useBoardWorkspace } from "./board-context.tsx";
 import type { WorkspaceTarget } from "./branch-actions.tsx";
 import { Count } from "./file-list.tsx";
 import { cn } from "./lib/utils.ts";
@@ -12,6 +13,7 @@ import { When } from "./when.tsx";
 const PARKED_POLL_MS = 60_000;
 
 function ParkedRow({ branch }: { branch: ParkedBranch }) {
+  const native = useBoardWorkspace()?.checkoutIdentity?.kind === "git";
   return (
     <li className="flex min-w-0 items-center gap-2 px-2.5 py-1.5">
       <span className="flex min-w-0 flex-1 flex-col">
@@ -30,10 +32,12 @@ function ParkedRow({ branch }: { branch: ParkedBranch }) {
           className="shrink-0 text-[11px] tabular-nums text-muted-foreground"
         />
       ) : null}
-      <AskAgentButton
-        text={`Apply branch ${branch.name} to the workspace with but.`}
-        label={`Ask agent to apply ${branch.name}`}
-      />
+      {!native ? (
+        <AskAgentButton
+          text={`Apply branch ${branch.name} to the workspace with but.`}
+          label={`Ask agent to apply ${branch.name}`}
+        />
+      ) : null}
     </li>
   );
 }

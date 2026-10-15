@@ -1,0 +1,1 @@
+Squash the selected commit into its parent using native Git. Combine their messages into an accurate description, preserve the resulting changes, and keep the order and contents of all other commits. Stop if it has no parent or the intended parent is ambiguous.

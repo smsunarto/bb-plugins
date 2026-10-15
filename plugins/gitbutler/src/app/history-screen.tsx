@@ -1,5 +1,6 @@
 import type { OplogEntry } from "../shared/schema.ts";
 import { AskAgentButton } from "./ask-agent.tsx";
+import { useBoardWorkspace } from "./board-context.tsx";
 import type { WorkspaceTarget } from "./branch-actions.tsx";
 import { CopyButton } from "./copy-button.tsx";
 import { shortId } from "./format.ts";
@@ -24,6 +25,7 @@ function restoreRequest(entry: OplogEntry, title: string): string {
 }
 
 function OperationRow({ entry }: { entry: OplogEntry }) {
+  const native = useBoardWorkspace()?.checkoutIdentity?.kind === "git";
   const title = operationTitle(entry.title);
   const short = shortId(entry.id);
   return (
@@ -46,10 +48,12 @@ function OperationRow({ entry }: { entry: OplogEntry }) {
         {short}
       </code>
       <CopyButton value={entry.id} label={`Copy snapshot id ${short}`} />
-      <AskAgentButton
-        text={restoreRequest(entry, title)}
-        label={`Ask agent to restore snapshot ${short}`}
-      />
+      {!native ? (
+        <AskAgentButton
+          text={restoreRequest(entry, title)}
+          label={`Ask agent to restore snapshot ${short}`}
+        />
+      ) : null}
     </li>
   );
 }

@@ -1,0 +1,1 @@
+Commit the selected uncommitted files using native Git. Review their diffs, write a concise message describing the change, and include only the selected files. Preserve unrelated staged and unstaged work. If HEAD is detached, establish the intended branch before writing.

@@ -2,6 +2,7 @@ import { readdir, realpath } from "node:fs/promises";
 import { basename, dirname, isAbsolute, relative, resolve, sep } from "node:path";
 import type { Repository } from "../shared/schema.ts";
 import { runGit } from "./cli.ts";
+import { isGitButlerHead } from "./git-workspace.ts";
 import { readOrigin } from "./origin.ts";
 
 /**
@@ -117,9 +118,6 @@ export async function inBatches<T, R>(
   return results;
 }
 
-/** GitButler keeps a workspace's HEAD on its own branch, and nothing else does. */
-const WORKSPACE_HEAD = "refs/heads/gitbutler/workspace";
-
 /** Expanded worktree discovery never scans arbitrary neighboring directories. */
 const MAX_LINKED_CHECKOUTS = 1000;
 
@@ -129,7 +127,7 @@ type BranchCheckout = Discovery[number] & { origin: string | null } & (
   );
 
 /** NUL fields preserve worktree paths containing whitespace or newlines. */
-function registeredWorktrees(output: string): string[] {
+function registeredWorktrees(output: string, namedOnly = true): string[] {
   const paths: string[] = [];
   for (const record of output.split("\0\0")) {
     const fields = record.split("\0");
@@ -137,14 +135,67 @@ function registeredWorktrees(output: string): string[] {
     if (
       path &&
       isAbsolute(path) &&
-      fields.some((field) => field.startsWith("branch refs/heads/")) &&
+      (!namedOnly || fields.some((field) => field.startsWith("branch refs/heads/"))) &&
       !fields.some((field) => field === "bare" || field.startsWith("prunable"))
     ) {
       paths.push(path);
-      if (paths.length === MAX_LINKED_CHECKOUTS) break;
+      if (namedOnly && paths.length === MAX_LINKED_CHECKOUTS) break;
     }
   }
   return paths;
+}
+
+/** Keep bb's root-or-repos-child grammar while filtering unrelated environments without Git. */
+async function knownRegistryRoots(
+  paths: readonly string[],
+  registered: ReadonlySet<string>,
+): Promise<Set<string>> {
+  const possibleRoots = new Set(registered);
+  for (const checkout of registered) {
+    const parent = dirname(checkout);
+    if (basename(parent) === REPOS_DIRECTORY) possibleRoots.add(dirname(parent));
+  }
+  const known = (
+    await inBatches(paths, (candidate) => realpath(candidate).catch(() => null))
+  ).filter((candidate): candidate is string => candidate !== null && possibleRoots.has(candidate));
+  return new Set(known);
+}
+
+/** Validate one selected path directly against known roots and Git's registry. */
+export async function resolveKnownCheckout(
+  path: string,
+  selection: { paths: readonly string[]; origin: string },
+  signal: AbortSignal,
+): Promise<Discovery[number]> {
+  const canonical = await realpath(path);
+  const refuse = () =>
+    new NoRepositoryError(
+      "That checkout is no longer registered for this repository. Refresh the board.",
+    );
+  if ((await gitTopLevel(canonical, signal)) !== canonical) throw refuse();
+  const listed = await runGit(canonical, ["worktree", "list", "--porcelain", "-z"], signal);
+  const registered = new Set(
+    (
+      await inBatches(registeredWorktrees(listed, false), (candidate) =>
+        realpath(candidate).catch(() => null),
+      )
+    ).filter((candidate) => candidate !== null),
+  );
+  if (!registered.has(canonical) || (await readOrigin(canonical, signal)) !== selection.origin)
+    throw refuse();
+  const ownCommon = await runGit(canonical, ["rev-parse", "--git-common-dir"], signal);
+  const commonDir = await realpath(resolve(canonical, ownCommon.trim()));
+  for (const candidate of await knownRegistryRoots(selection.paths, registered)) {
+    const roots = await discover(candidate, signal);
+    for (const root of roots) {
+      if (!registered.has(root.path) || (await readOrigin(root.path, signal)) !== selection.origin)
+        continue;
+      const common = await runGit(root.path, ["rev-parse", "--git-common-dir"], signal);
+      if ((await realpath(resolve(root.path, common.trim()))) === commonDir)
+        return { key: ".", name: basename(canonical), path: canonical };
+    }
+  }
+  throw refuse();
 }
 
 /**
@@ -211,7 +262,7 @@ export async function findBranchCheckouts(
       ]);
       const ref = head.trim();
       if (own !== origin || !ref.startsWith("refs/heads/")) return undefined;
-      return ref === WORKSPACE_HEAD
+      return isGitButlerHead(ref)
         ? { ...repository, origin: own, kind: "gitbutler" }
         : { ...repository, origin: own, kind: "git", branch: ref.slice(11) };
     },
@@ -249,7 +300,7 @@ export async function findCheckouts(
       readOrigin(repository.path, signal),
     ]);
     const wanted = origin === null || own === origin;
-    return head.trim() === WORKSPACE_HEAD && wanted ? { ...repository, origin: own } : undefined;
+    return isGitButlerHead(head.trim()) && wanted ? { ...repository, origin: own } : undefined;
   });
   return matched
     .filter((repository) => repository !== undefined)
@@ -278,5 +329,5 @@ export async function isKnownWorkspace(
       return "";
     },
   );
-  return head.trim() === WORKSPACE_HEAD;
+  return isGitButlerHead(head.trim());
 }

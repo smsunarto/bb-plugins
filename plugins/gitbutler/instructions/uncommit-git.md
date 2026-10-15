@@ -1,0 +1,1 @@
+Uncommit the selected commit using native Git, leaving its changes available as uncommitted work in this checkout. Preserve existing uncommitted changes and all other commits; do not discard files or changes.

@@ -1,5 +1,7 @@
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import { gitbutlerHostContract } from "../../shared/host-contract.ts";
+import type { CheckoutSelection } from "../../shared/schema.ts";
+import { knownCheckoutPaths } from "./checkout-paths.ts";
 
 /** bb lost the machine a call was for, named the way the reader knows it. */
 export class HostOffline extends Error {
@@ -33,10 +35,20 @@ export function hostClient(bb: BbPluginApi) {
  * for ordinary, explainable reasons — a thread with no project, an
  * environment still starting — so it returns a reason instead of throwing.
  */
-export type Target = { hostId: string; environmentPath: string; environmentId: string };
+export type Target = {
+  hostId: string;
+  environmentPath: string;
+  environmentId: string;
+  checkout?: { paths: string[]; origin: string };
+};
 export type TargetResult = { target: Target; reason: null } | { target: null; reason: string };
 
-export async function resolveTarget(bb: BbPluginApi, threadId: string): Promise<TargetResult> {
+export async function resolveTarget(
+  bb: BbPluginApi,
+  threadId: string,
+  checkout?: CheckoutSelection,
+  repositoryKey?: string,
+): Promise<TargetResult> {
   const thread = await bb.sdk.threads.get({ threadId, include: "environment" });
   const environment = "environment" in thread ? thread.environment : undefined;
   if (!environment) {
@@ -48,13 +60,47 @@ export async function resolveTarget(bb: BbPluginApi, threadId: string): Promise<
   if (environment.status !== "ready") {
     return { target: null, reason: `This thread's environment is ${environment.status}.` };
   }
+  const main: Target = {
+    hostId: environment.hostId,
+    environmentPath: environment.path,
+    environmentId: environment.id,
+  };
+  if (!checkout) return { target: main, reason: null };
+  return { target: await selectedTarget(bb, main, checkout, repositoryKey), reason: null };
+}
+
+async function selectedTarget(
+  bb: BbPluginApi,
+  main: Target,
+  checkout: CheckoutSelection,
+  repositoryKey?: string,
+): Promise<Target> {
+  const machines = await knownCheckoutPaths(bb);
+  const machine = machines.find(({ host }) => host.id === checkout.hostId);
+  if (!machine)
+    throw new Error("This checkout's machine is not connected or has no known checkouts.");
+  const own = await hostClient(bb).call("origin", repositoryTarget(main, repositoryKey), {
+    hostId: main.hostId,
+  });
+  if (!own.origin)
+    throw new Error("This repository has no origin to identify its other checkouts.");
   return {
-    target: {
-      hostId: environment.hostId,
-      environmentPath: environment.path,
-      environmentId: environment.id,
-    },
-    reason: null,
+    ...main,
+    hostId: checkout.hostId,
+    environmentPath: checkout.path,
+    checkout: { paths: machine.paths, origin: own.origin },
+  };
+}
+
+/** A selected checkout already names its repository root; main boards may select a nested repo. */
+export function repositoryTarget(target: Target, repositoryKey?: string) {
+  return {
+    environmentPath: target.environmentPath,
+    ...(target.checkout
+      ? { checkout: target.checkout, repositoryKey: "." }
+      : repositoryKey
+        ? { repositoryKey }
+        : {}),
   };
 }
 
@@ -71,10 +117,22 @@ export async function writeTarget(
   bb: BbPluginApi,
   threadId: string,
   environmentId: string | undefined,
+  checkout?: CheckoutSelection,
+  repositoryKey?: string,
 ): Promise<Target> {
-  const { target, reason } = await resolveTarget(bb, threadId);
-  if (!target) throw new Error(reason);
-  if (environmentId && environmentId !== target.environmentId) {
+  // Pin the thread before any selected-machine or origin lookup.
+  const { target: main, reason } = await resolveTarget(bb, threadId);
+  if (!main) throw new Error(reason);
+  if (environmentId && environmentId !== main.environmentId) throw new Error(MOVED);
+  if (!checkout) return main;
+  const target = await selectedTarget(bb, main, checkout, repositoryKey);
+  const { target: current } = await resolveTarget(bb, threadId);
+  if (
+    !current ||
+    current.environmentId !== main.environmentId ||
+    current.hostId !== main.hostId ||
+    current.environmentPath !== main.environmentPath
+  ) {
     throw new Error(MOVED);
   }
   return target;

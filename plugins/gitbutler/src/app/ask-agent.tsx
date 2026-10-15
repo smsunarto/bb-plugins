@@ -1,6 +1,6 @@
 import { useCallback } from "react";
 import { experimental_Icon as Icon, useComposer } from "@get-bb/plugin-sdk/app";
-import { useBoardRepository } from "./board-context.tsx";
+import { useBoardRepository, useBoardWorkspace, useNativeAgentPrompts } from "./board-context.tsx";
 import { CONTROL_HOVER_TRANSITION } from "./components/ui/motion.ts";
 import { cn } from "./lib/utils.ts";
 
@@ -19,11 +19,27 @@ import { cn } from "./lib/utils.ts";
 export function useAskAgent(): ((text: string) => void) | null {
   const composer = useComposer();
   const repository = useBoardRepository();
+  const board = useBoardWorkspace();
+  const checkout = board?.checkout;
+  const native = board?.checkoutIdentity?.kind === "git";
+  const prompts = useNativeAgentPrompts();
+  const versionControl = native ? "Git" : "GitButler";
   const ask = useCallback(
-    (text: string) => composer.addQuote(repository ? `${text}\n\nRepository: ${repository}` : text),
-    [composer, repository],
+    (text: string) => {
+      const context = [
+        repository ? `Repository: ${repository}` : "",
+        checkout
+          ? `Checkout: ${native ? JSON.stringify(checkout.path) : checkout.path}\nMachine: ${checkout.hostId}\nVersion control: ${versionControl}`
+          : "",
+        native ? (prompts?.guidance ?? "") : "",
+      ]
+        .filter(Boolean)
+        .join("\n");
+      composer.addQuote(context ? `${text}\n\n${context}` : text);
+    },
+    [composer, repository, checkout, versionControl, native, prompts],
   );
-  return composer.scope.kind === "new-thread" ? null : ask;
+  return composer.scope.kind === "new-thread" || (native && !prompts) ? null : ask;
 }
 
 /** An icon button that quotes `text` to the agent. Hidden when there is no thread to ask. */

@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test";
 import { reviewContext as context } from "../../../test/review-stub.ts";
+import { conflictResolution } from "./conflict-resolution.ts";
 import { resolveConflicts } from "./resolve-conflicts.ts";
 
 test("spawns a visible child on the same environment, pointed at the repository path", async () => {
@@ -15,6 +16,17 @@ test("spawns a visible child on the same environment, pointed at the repository 
   });
   // No key means the panel's default repository, and the child gets its path.
   expect(spawned[0]!["prompt"]).toContain("cd '/work/repos/api'\nbut status");
+});
+
+test("conflict status remains readable without another full workspace read", async () => {
+  const { ctx, hostMethods } = context();
+  await resolveConflicts.execute(ctx, { threadId: "t1" });
+  hostMethods.length = 0;
+
+  expect(await conflictResolution.execute(ctx, { threadId: "t1" })).toEqual({
+    subthread: { threadId: "child-1", running: true },
+  });
+  expect(hostMethods).toEqual(["checkoutIdentity"]);
 });
 
 test("one subthread per repository: asking again returns it, and resumes it once stopped", async () => {

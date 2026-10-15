@@ -6,11 +6,13 @@ import {
   butActionResultSchema,
   butActionSchema,
   commitIdSchema,
+  checkoutIdentitySchema,
   environmentPathSchema,
   hostCheckoutSchema,
   hostUnpublishedBranchesSchema,
   hostWorkspaceSchema,
   oplogSchema,
+  observedCheckoutSchema,
   originSchema,
   parkedBranchesSchema,
   patchesSchema,
@@ -27,14 +29,23 @@ import {
 const target = z.object({
   environmentPath: environmentPathSchema,
   repositoryKey: repositoryKeySchema.optional(),
+  /** The server's current known paths and main origin, never supplied by the browser. */
+  checkout: z
+    .object({ paths: z.array(environmentPathSchema).max(100_000), origin: originSchema })
+    .strict()
+    .optional(),
 });
 
 export const gitbutlerHostContract = defineRpcContract({
   repositories: {
-    input: z.object({ environmentPath: environmentPathSchema }).strict(),
+    input: target.strict(),
     output: repositoriesSchema,
   },
   repository: { input: target.strict(), output: resolvedRepositorySchema },
+  checkoutIdentity: {
+    input: target.strict(),
+    output: z.object({ key: z.string(), identity: checkoutIdentitySchema }).strict(),
+  },
   workspace: { input: target.strict(), output: hostWorkspaceSchema },
   baseHistory: {
     input: target
@@ -51,8 +62,16 @@ export const gitbutlerHostContract = defineRpcContract({
     output: patchesSchema,
   },
   butAction: {
-    input: target.extend({ action: butActionSchema }).strict(),
+    input: target
+      .extend({ action: butActionSchema, observed: observedCheckoutSchema.optional() })
+      .strict(),
     output: butActionResultSchema,
+  },
+  prepareCheckoutChild: {
+    input: target
+      .extend({ observed: observedCheckoutSchema, kind: z.enum(["review", "conflicts"]) })
+      .strict(),
+    output: checkoutIdentitySchema,
   },
   reviewUrl: {
     input: target.extend({ branch: branchNameSchema }).strict(),

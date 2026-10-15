@@ -115,3 +115,19 @@ test("machine discovery follows registered named worktrees outside known environ
   expect(await isKnownWorkspace([root, linked], realRoot, signal)).toBe(true);
   expect(await isKnownWorkspace([root, linked], realLinked, signal)).toBe(false);
 });
+
+test("GitButler resolution checkouts remain managed in discovery and authorization", async () => {
+  const root = join(scratch, "resolving");
+  await mkdir(root);
+  await runGit(root, ["init", "--quiet", "--initial-branch=gitbutler/edit", "."], signal);
+  await runGit(root, ["remote", "add", "origin", "git@github.com:Acme/App.git"], signal);
+  const path = await realpath(root);
+
+  expect(await findBranchCheckouts([root], "github.com/acme/app", signal)).toEqual([
+    { key: ".", name: "resolving", path, origin: "github.com/acme/app", kind: "gitbutler" },
+  ]);
+  expect(await findCheckouts([root], "github.com/acme/app", signal)).toEqual([
+    { key: ".", name: "resolving", path, origin: "github.com/acme/app" },
+  ]);
+  expect(await isKnownWorkspace([root], path, signal)).toBe(true);
+});

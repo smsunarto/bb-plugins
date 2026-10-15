@@ -15,6 +15,7 @@ export function reviewContext(
   const spawned: Record<string, unknown>[] = [];
   const sent: Record<string, unknown>[] = [];
   const hostInputs: unknown[] = [];
+  const hostMethods: string[] = [];
   const kv = new Map<string, unknown>();
   const children = new Map<
     string,
@@ -61,14 +62,29 @@ export function reviewContext(
     hosts: {
       experimental_client: () => ({
         call: async (
-          _method: string,
+          method: string,
           input: { environmentPath: string; repositoryKey?: string },
         ) => {
           hostInputs.push(input);
+          hostMethods.push(method);
           options.onLocate?.();
           const key = input.repositoryKey ?? "repos/api";
           const root = input.environmentPath;
-          return { key, path: key === "." ? root : `${root}/${key}` };
+          const path = key === "." ? root : `${root}/${key}`;
+          if (method === "checkoutIdentity")
+            return {
+              key,
+              identity: {
+                path,
+                branch: "gitbutler/workspace",
+                head: "a".repeat(40),
+                origin: "github.com/acme/api",
+                commonDir: `${path}/.git`,
+                kind: "gitbutler",
+              },
+            };
+          if (method === "workspace") throw new Error("The full workspace read is unavailable.");
+          return { key, path };
         },
       }),
     },
@@ -84,5 +100,14 @@ export function reviewContext(
     parent.environmentId = "env-2";
     parent.environment = { id: "env-2", hostId: "host-2", path: "/other", status: "ready" };
   };
-  return { ctx: { bb } as never, spawned, sent, hostInputs, children, lookupFailures, move };
+  return {
+    ctx: { bb } as never,
+    spawned,
+    sent,
+    hostInputs,
+    hostMethods,
+    children,
+    lookupFailures,
+    move,
+  };
 }

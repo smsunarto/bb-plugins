@@ -1,17 +1,23 @@
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
-import type { Subthread } from "../../shared/schema.ts";
-import { hostClient, MOVED, writeTarget } from "./target.ts";
+import type {
+  CheckoutIdentity,
+  CheckoutSelection,
+  ObservedCheckout,
+  Subthread,
+} from "../../shared/schema.ts";
+import { assertCheckoutIdle, inCheckout } from "./checkout-ownership.ts";
+import { hostClient, MOVED, repositoryTarget, writeTarget } from "./target.ts";
 
 /**
  * The subthreads the panel hands work to: Create PR and Resolve conflicts.
- * Each is a visible child of the reader's thread on the same environment, so
- * it runs `but` on the same workspace and the reader can watch and answer it.
+ * Each is visible beneath the reader's thread. Main checkouts reuse its
+ * environment; selected checkouts get their own exact host and repository path.
  */
 
 const RUNNING = new Set(["pending", "starting", "active", "stopping"]);
 
 /**
- * A repository on a host: where a subthread runs `but`, what it is called,
+ * A repository on a host: where a subthread runs its checkout's Git driver,
  * and the environment it was found in, which a subthread must start on.
  */
 export type LocatedRepository = {
@@ -19,6 +25,9 @@ export type LocatedRepository = {
   environmentId: string;
   key: string;
   path: string;
+  checkout?: CheckoutSelection;
+  repositoryKey?: string;
+  identity?: CheckoutIdentity;
 };
 
 /**
@@ -32,14 +41,69 @@ export async function locateRepository(
   repositoryKey: string | undefined,
   /** For a write: the environment of the board the reader acted on. */
   environmentId?: string,
+  checkout?: CheckoutSelection,
+  observed?: ObservedCheckout,
+  requireObserved = false,
 ): Promise<LocatedRepository> {
-  const target = await writeTarget(bb, threadId, environmentId);
-  const repository = await hostClient(bb).call(
-    "repository",
-    { environmentPath: target.environmentPath, ...(repositoryKey ? { repositoryKey } : {}) },
+  const target = await writeTarget(bb, threadId, environmentId, checkout, repositoryKey);
+  const { key, identity } = await hostClient(bb).call(
+    "checkoutIdentity",
+    repositoryTarget(target, repositoryKey),
     { hostId: target.hostId },
   );
-  return { hostId: target.hostId, environmentId: target.environmentId, ...repository };
+  if (requireObserved && identity.kind === "git" && !observed) {
+    throw new Error("Refresh this checkout before starting work so its branch and tip are known.");
+  }
+  if (
+    observed &&
+    (observed.branch !== identity.branch ||
+      observed.head !== identity.head ||
+      observed.origin !== identity.origin)
+  ) {
+    throw new Error("This checkout changed since the board was read. Refresh and try again.");
+  }
+  return {
+    hostId: target.hostId,
+    environmentId: target.environmentId,
+    key,
+    path: identity.path,
+    ...(checkout ? { checkout } : {}),
+    repositoryKey,
+    identity,
+  };
+}
+
+/** Native child commands need the same observed-state and applied-branch guards as panel writes. */
+export async function prepareCheckoutChild(
+  bb: BbPluginApi,
+  parentId: string,
+  repository: LocatedRepository,
+  kind: "review" | "conflicts",
+): Promise<void> {
+  if (repository.identity?.kind !== "git") return;
+  const target = await writeTarget(
+    bb,
+    parentId,
+    repository.environmentId,
+    repository.checkout,
+    repository.repositoryKey,
+  );
+  const identity = await hostClient(bb).call(
+    "prepareCheckoutChild",
+    {
+      ...repositoryTarget(target, repository.repositoryKey),
+      kind,
+      observed: {
+        branch: repository.identity.branch,
+        head: repository.identity.head,
+        origin: repository.identity.origin,
+      },
+    },
+    { hostId: target.hostId },
+  );
+  if (identity.path !== repository.path || identity.commonDir !== repository.identity.commonDir) {
+    throw new Error("This checkout changed since the board was read. Refresh and try again.");
+  }
 }
 
 /**
@@ -77,17 +141,62 @@ export async function spawnSubthread(
   bb: BbPluginApi,
   parentId: string,
   repository: LocatedRepository,
-  { title, prompt }: { title: string; prompt: string },
+  {
+    title,
+    prompt,
+    operation,
+  }: { title: string; prompt: string; operation: "review" | "conflicts" },
 ): Promise<string> {
   const parent = await bb.sdk.threads.get({ threadId: parentId });
   if (parent.environmentId !== repository.environmentId) throw new Error(MOVED);
-  const child = await bb.sdk.threads.spawn({
-    projectId: parent.projectId,
-    environment: { type: "reuse", environmentId: repository.environmentId },
-    providerId: parent.providerId,
-    parentThreadId: parentId,
-    title,
-    prompt,
-  });
-  return child.id;
+  const selected =
+    repository.checkout || repository.identity?.kind === "git"
+      ? await locateRepository(
+          bb,
+          parentId,
+          repository.repositoryKey,
+          repository.environmentId,
+          repository.checkout,
+          repository.identity
+            ? {
+                branch: repository.identity.branch,
+                head: repository.identity.head,
+                origin: repository.identity.origin,
+              }
+            : undefined,
+          true,
+        )
+      : null;
+  if (selected && !selected.identity?.branch && operation !== "conflicts") {
+    throw new Error("This checkout has no checked-out branch. Refresh and try again.");
+  }
+  const start = async () => {
+    if (selected) {
+      await assertCheckoutIdle(bb, parentId, selected);
+      await prepareCheckoutChild(bb, parentId, selected, operation);
+      await writeTarget(bb, parentId, repository.environmentId);
+    }
+    const child = await bb.sdk.threads.spawn({
+      projectId: parent.projectId,
+      environment: selected?.checkout
+        ? {
+            type: "host",
+            hostId: selected.hostId,
+            workspace: {
+              type: "unmanaged",
+              path: selected.path,
+              ...(selected.identity?.branch
+                ? { branch: { kind: "existing", name: selected.identity.branch } }
+                : {}),
+            },
+          }
+        : { type: "reuse", environmentId: repository.environmentId },
+      providerId: parent.providerId,
+      parentThreadId: parentId,
+      title,
+      prompt,
+    });
+    return child.id;
+  };
+  return selected ? inCheckout(bb, selected, start) : start();
 }

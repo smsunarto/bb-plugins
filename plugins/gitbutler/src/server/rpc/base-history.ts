@@ -1,12 +1,18 @@
 import { defineQuery } from "@bb-kit/core/rpc";
 import { z } from "zod";
-import { baseHistorySchema, commitIdSchema, repositoryKeySchema } from "../../shared/schema.ts";
-import { hostClient, resolveTarget } from "../lib/target.ts";
+import {
+  checkoutSelectionSchema,
+  baseHistorySchema,
+  commitIdSchema,
+  repositoryKeySchema,
+} from "../../shared/schema.ts";
+import { hostClient, repositoryTarget, resolveTarget } from "../lib/target.ts";
 
 export const baseHistory = defineQuery({
   input: z
     .object({
       threadId: z.string().min(1),
+      checkout: checkoutSelectionSchema.optional(),
       repositoryKey: repositoryKeySchema.optional(),
       from: commitIdSchema,
       offset: z.number().int().nonnegative().max(100_000),
@@ -14,14 +20,13 @@ export const baseHistory = defineQuery({
     })
     .strict(),
   output: baseHistorySchema,
-  async execute(ctx, { threadId, repositoryKey, from, offset, limit }) {
-    const { target, reason } = await resolveTarget(ctx.bb, threadId);
+  async execute(ctx, { threadId, checkout, repositoryKey, from, offset, limit }) {
+    const { target, reason } = await resolveTarget(ctx.bb, threadId, checkout, repositoryKey);
     if (!target) return { commits: [], hasMore: false, reason };
     return hostClient(ctx.bb).call(
       "baseHistory",
       {
-        environmentPath: target.environmentPath,
-        ...(repositoryKey ? { repositoryKey } : {}),
+        ...repositoryTarget(target, repositoryKey),
         from,
         offset,
         limit,

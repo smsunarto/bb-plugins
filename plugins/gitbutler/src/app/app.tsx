@@ -31,6 +31,8 @@ import {
 import type { WorkspaceChanged } from "../shared/panel.ts";
 import type {
   ActionRisk,
+  Checkout,
+  CheckoutSelection,
   PatchSource,
   Repository,
   Stack,
@@ -49,13 +51,17 @@ import {
   useFocusAfter,
   writeBlocked,
 } from "./branch-actions.tsx";
-import type { WriteTarget } from "./branch-actions.tsx";
+import type { WorkspaceTarget, WriteTarget } from "./branch-actions.tsx";
 import { AskAgentButton, useAskAgent } from "./ask-agent.tsx";
 import {
   BoardProvider,
   StatusLine,
   sameScope,
+  sameObservation,
+  workspaceScopeKey,
   useTransientStatus,
+  useBoardWorkspace,
+  useNativeAgentPrompts,
   useWriteBusy,
   writeScope,
 } from "./board-context.tsx";
@@ -386,22 +392,38 @@ function commitName(commit: CommitRef): string {
  * History edits the reader can ask for. The panel never rewrites history, so
  * each one quotes the commit to the agent, which runs the `but` command.
  */
-const COMMIT_ASKS: readonly { label: string; text: (name: string) => string }[] = [
-  { label: "Reword", text: (name) => `Reword commit ${name} with \`but reword\`.` },
+const COMMIT_ASKS: readonly {
+  label: string;
+  native: "reword" | "squash" | "move" | "uncommit";
+  text: (name: string) => string;
+}[] = [
+  {
+    label: "Reword",
+    native: "reword",
+    text: (name) => `Reword commit ${name} with \`but reword\`.`,
+  },
   {
     label: "Squash into parent",
+    native: "squash",
     text: (name) => `Squash commit ${name} into its parent with \`but squash\`.`,
   },
   {
     label: "Move to another branch",
+    native: "move",
     text: (name) => `Move commit ${name} to another branch with \`but move\`.`,
   },
-  { label: "Uncommit", text: (name) => `Uncommit ${name} with \`but uncommit\`.` },
+  {
+    label: "Uncommit",
+    native: "uncommit",
+    text: (name) => `Uncommit ${name} with \`but uncommit\`.`,
+  },
 ];
 
 /** The history edits for a commit in the workspace, each one a quote to the agent. */
 function CommitAsks({ commit }: { commit: CommitRef }) {
   const ask = useAskAgent();
+  const native = useBoardWorkspace()?.checkoutIdentity?.kind === "git";
+  const prompts = useNativeAgentPrompts();
   // A commit on the target or a branch's remote is not the workspace's to rewrite.
   if (!ask || commit.where) return null;
   const name = commitName(commit);
@@ -417,7 +439,13 @@ function CommitAsks({ commit }: { commit: CommitRef }) {
           variant="outline"
           size="sm"
           className="h-6 px-2 text-xs font-normal"
-          onClick={() => ask(preset.text(name))}
+          onClick={() =>
+            ask(
+              native && prompts
+                ? `${prompts[preset.native]}\n\nCommit: ${commit.commitId}\nSubject: ${JSON.stringify(subject(commit.message))}`
+                : preset.text(name),
+            )
+          }
         >
           {preset.label}
         </Button>
@@ -497,16 +525,20 @@ function CommitDetail({
 function DetailContent({
   threadId,
   repositoryKey,
+  checkout,
   workspace,
   selection,
 }: {
   threadId: string;
   repositoryKey: string | undefined;
+  checkout?: CheckoutSelection | undefined;
   workspace: Workspace | undefined;
   selection: Selection;
 }) {
   if (selection.kind === "history")
-    return <OperationHistory target={{ threadId, repositoryKey }} />;
+    return (
+      <OperationHistory target={{ threadId, repositoryKey, ...(checkout ? { checkout } : {}) }} />
+    );
   if (selection.kind === "commit") {
     return (
       <CommitDetail
@@ -540,12 +572,14 @@ function DetailContent({
 function DetailScreen({
   threadId,
   repositoryKey,
+  checkout,
   workspace,
   selection,
   onBack,
 }: {
   threadId: string;
   repositoryKey: string | undefined;
+  checkout?: CheckoutSelection | undefined;
   workspace: Workspace | undefined;
   selection: Selection;
   onBack: () => void;
@@ -582,11 +616,21 @@ function DetailScreen({
             Esc
           </kbd>
         </Button>
+        {checkout ? (
+          <span
+            className="min-w-0 flex-1 truncate text-[11px] text-muted-foreground"
+            title={checkout.path}
+            translate="no"
+          >
+            {checkout.path}
+          </span>
+        ) : null}
       </header>
       <ScrollArea>
         <DetailContent
           threadId={threadId}
           repositoryKey={repositoryKey}
+          checkout={checkout}
           workspace={workspace}
           selection={selection}
         />
@@ -598,6 +642,8 @@ function DetailScreen({
 function WorkspaceBody({
   threadId,
   repositoryKey,
+  checkout,
+  onOpenCheckout,
   data,
   turnLeftWork,
   onOpenFile,
@@ -606,6 +652,8 @@ function WorkspaceBody({
 }: {
   threadId: string;
   repositoryKey: string | undefined;
+  checkout?: CheckoutSelection | undefined;
+  onOpenCheckout: (checkout: Checkout) => void;
   data: Workspace;
   /** An agent's turn ended since the uncommitted files were last cleared. */
   turnLeftWork: boolean;
@@ -614,13 +662,20 @@ function WorkspaceBody({
   onOpenAssigned: (stack: Stack, path: string) => void;
   onRetry: () => void;
 }) {
-  const target = { threadId, repositoryKey };
+  const target = { threadId, repositoryKey, ...(checkout ? { checkout } : {}) };
+  const native = data.checkoutIdentity?.kind === "git";
   if (data.state !== "ready") {
     // Another machine's branches are worth seeing even where GitButler is not set up.
     return (
       <div className="flex flex-col gap-4">
         <UnavailableWorkspace workspace={data} onRetry={onRetry} />
-        <OtherMachines target={target} environmentId={data.environmentId} />
+        {!checkout ? (
+          <OtherMachines
+            target={target}
+            environmentId={data.environmentId}
+            onOpen={onOpenCheckout}
+          />
+        ) : null}
       </div>
     );
   }
@@ -646,11 +701,21 @@ function WorkspaceBody({
         {data.stacks.length === 0 ? (
           <Notice
             icon="GitBranch"
-            title="No applied branches"
-            detail="Apply a branch in GitButler, or ask the agent to start one. Applied branches show up here as stacks, with their commits."
+            title={native ? "No checked-out branch" : "No applied branches"}
+            detail={
+              native
+                ? "This checkout has a detached HEAD. Ask the agent to create or check out a branch."
+                : "Apply a branch in GitButler, or ask the agent to start one. Applied branches show up here as stacks, with their commits."
+            }
           />
         ) : null}
-        <OtherMachines target={target} environmentId={data.environmentId} />
+        {!checkout ? (
+          <OtherMachines
+            target={target}
+            environmentId={data.environmentId}
+            onOpen={onOpenCheckout}
+          />
+        ) : null}
         <ParkedBranches target={target} />
         {data.base ? (
           <BaseCard
@@ -672,6 +737,11 @@ function WorkspaceBody({
  * conflicts, and says what happened in the status line.
  */
 function useWorkspacePull(target: WriteTarget, behind: number, announce: (text: string) => void) {
+  const aim = writeScope(target, target.workspace ?? null);
+  const currentAim = useRef(aim);
+  useLayoutEffect(() => {
+    currentAim.current = aim;
+  }, [aim]);
   // The question or the refusal, tagged with the workspace it is about, so it
   // shows only there, and is still there when the reader comes back to it.
   // Not once the thread has moved to another environment: "Pull anyway"
@@ -687,10 +757,15 @@ function useWorkspacePull(target: WriteTarget, behind: number, announce: (text: 
     if (error) setOutcome({ scope, question: null, error });
     else if (result?.status === "confirm")
       setOutcome({ scope, question: result.risk, error: null });
-    else if (result) announce(result.status === "upToDate" ? "Already up to date." : "Pulled");
+    else if (result && sameScope(scope, currentAim.current))
+      announce(result.status === "upToDate" ? "Already up to date." : "Pulled");
   });
-  const aim = writeScope(target, target.workspace ?? null);
-  const shown = outcome && sameScope(outcome.scope, aim) ? outcome : null;
+  const shown =
+    outcome &&
+    sameScope(outcome.scope, aim) &&
+    sameObservation(outcome.scope.observed, aim.observed)
+      ? outcome
+      : null;
   const start = (accepted: ActionRisk | null) => {
     setOutcome(null);
     action.run({ kind: "updateWorkspace", accepted });
@@ -765,11 +840,13 @@ function WorkspacePullStatus({
   pull,
   pullButton,
   blocked,
+  native,
 }: {
   pull: ReturnType<typeof useWorkspacePull>;
   /** Where the focus goes back to when the reader backs out. */
   pullButton: RefObject<HTMLButtonElement | null>;
   blocked: string | null;
+  native: boolean;
 }) {
   const onCancel = () => {
     pull.cancel();
@@ -781,7 +858,7 @@ function WorkspacePullStatus({
       {pull.question ? (
         <div className={row}>
           <Confirm
-            prompt={pullRiskPrompt(pull.question)}
+            prompt={pullRiskPrompt(pull.question, undefined, native)}
             label="Pull anyway"
             pending={pull.pending}
             blocked={blocked}
@@ -892,6 +969,7 @@ function useShownWorkspace(
   workspace: UseQueryResult<Workspace, Error>,
   threadId: string,
   repositoryKey: string | undefined,
+  checkout: CheckoutSelection | undefined,
 ): ShownWorkspace {
   const latest = workspace.data;
   const read = workspace.isFetchedAfterMount && !workspace.isRefetchError;
@@ -899,8 +977,11 @@ function useShownWorkspace(
   const failed = latest?.state === "error" || (latest === undefined && workspace.isError);
   const fromStorage = failed && kept === null;
   const stored = useMemo(
-    () => (fromStorage ? readStored("workspace", { threadId, repositoryKey }) : undefined),
-    [fromStorage, threadId, repositoryKey],
+    () =>
+      fromStorage
+        ? readStored("workspace", { threadId, repositoryKey, ...(checkout ? { checkout } : {}) })
+        : undefined,
+    [fromStorage, threadId, repositoryKey, checkout],
   );
   const reason = latest?.state === "error" ? (latest.reason ?? "") : errorText(workspace.error);
   const keptLive = kept !== null && kept.data === latest && kept.live;
@@ -928,14 +1009,14 @@ function checkingFirst(workspace: UseQueryResult<Workspace, Error>): boolean {
  * the connection was down are lost, so a reconnect reads it again too.
  */
 function useWorkspaceSignals(
-  threadId: string,
+  target: WorkspaceTarget,
   environmentId: string | null | undefined,
   onTurnEnded: (signal: WorkspaceChanged) => void,
 ): void {
   useRealtime(WORKSPACE_CHANGED_CHANNEL, (payload) => {
     const signal = workspaceChangedSchema.safeParse(payload);
     if (signal.success && environmentId && signal.data.environmentId === environmentId) {
-      void refreshWorkspace(threadId).then(() => onTurnEnded(signal.data));
+      void refreshWorkspace(target).then(() => onTurnEnded(signal.data));
     }
   });
   const connection = useRealtimeConnectionState();
@@ -944,8 +1025,8 @@ function useWorkspaceSignals(
     const was = previous.current;
     previous.current = connection;
     // The first connection comes from "connecting", which is not a reconnect.
-    if (was === "reconnecting" && connection === "connected") void refreshWorkspace(threadId);
-  }, [connection, threadId]);
+    if (was === "reconnecting" && connection === "connected") void refreshWorkspace(target);
+  }, [connection, target]);
 }
 
 /**
@@ -956,13 +1037,13 @@ function useWorkspaceSignals(
  * have touched nothing here, and the files may be the reader's own.
  */
 function useTurnLeftWork(
-  threadId: string,
+  target: WorkspaceTarget,
   repositoryKey: string | undefined,
   data: Workspace | undefined,
 ): boolean {
   const [flagged, setFlagged] = useState<{ repositoryKey: string | undefined } | null>(null);
-  useWorkspaceSignals(threadId, data?.environmentId, (signal) => {
-    if (signal.threadId === threadId || signal.parentThreadId === threadId) {
+  useWorkspaceSignals(target, data?.environmentId, (signal) => {
+    if (signal.threadId === target.threadId || signal.parentThreadId === target.threadId) {
       setFlagged({ repositoryKey });
     }
   });
@@ -982,6 +1063,7 @@ function behindTitle(upstream: Upstream): string {
 
 function WorkspaceHeader({
   choices,
+  isolated,
   repositoryKey,
   onChoose,
   data,
@@ -993,6 +1075,7 @@ function WorkspaceHeader({
   onHistory,
 }: {
   choices: readonly Repository[] | undefined;
+  isolated: boolean;
   repositoryKey: string | undefined;
   onChoose: (key: string) => void;
   data: Workspace | undefined;
@@ -1008,7 +1091,7 @@ function WorkspaceHeader({
   const upstream = data?.upstream ?? null;
   return (
     <header className={HEADER}>
-      {choices && choices.length > 1 ? (
+      {!isolated && choices && choices.length > 1 ? (
         <RepositoryPicker repositories={choices} value={repositoryKey} onChange={onChoose} />
       ) : (
         <span className="min-w-0 flex-1 truncate font-semibold" title={data?.repoName || undefined}>
@@ -1067,16 +1150,73 @@ function useBoardTarget(
   threadId: string,
   repositoryKey: string | undefined,
   data: Workspace | undefined,
+  checkout: CheckoutSelection | undefined,
 ) {
   const environmentId = data?.environmentId ?? null;
   const resolvedKey = data?.repositoryKey ?? null;
+  const checkoutIdentity = data?.checkoutIdentity;
   return useMemo(() => {
-    const identity = environmentId ? { environmentId, repositoryKey: resolvedKey } : null;
-    return { identity, target: { threadId, repositoryKey, workspace: identity } };
-  }, [environmentId, resolvedKey, threadId, repositoryKey]);
+    const identity = environmentId
+      ? {
+          environmentId,
+          repositoryKey: resolvedKey,
+          ...(checkout ? { checkout } : {}),
+          ...(checkoutIdentity ? { checkoutIdentity } : {}),
+        }
+      : null;
+    return {
+      identity,
+      target: { threadId, repositoryKey, ...(checkout ? { checkout } : {}), workspace: identity },
+    };
+  }, [environmentId, resolvedKey, threadId, repositoryKey, checkout, checkoutIdentity]);
 }
 
-function WorkspacePanel({ threadId }: { threadId: string }) {
+function CheckoutLocation({
+  selected,
+  onMainCheckout,
+}: {
+  selected: Checkout | null;
+  onMainCheckout: () => void;
+}) {
+  if (!selected) return null;
+  return (
+    <div className="shrink-0 border-b border-border bg-card px-2.5 py-1.5">
+      <Button
+        variant="ghost"
+        size="sm"
+        className="mb-1 h-6 gap-1 px-1.5 text-xs font-normal text-muted-foreground"
+        onClick={onMainCheckout}
+      >
+        <Icon name="ChevronLeft" className="size-3" aria-hidden />
+        Back to main checkout
+      </Button>
+      <p className="truncate font-medium" title={selected.machine}>
+        {selected.machine}
+      </p>
+      <p
+        className="truncate text-[11px] text-muted-foreground"
+        title={selected.path}
+        translate="no"
+      >
+        {selected.path}
+      </p>
+    </div>
+  );
+}
+
+function WorkspaceBoard({
+  threadId,
+  selected,
+  checkout,
+  onOpenCheckout,
+  onMainCheckout,
+}: {
+  threadId: string;
+  selected: Checkout | null;
+  checkout: CheckoutSelection | undefined;
+  onOpenCheckout: (checkout: Checkout) => void;
+  onMainCheckout: () => void;
+}) {
   const [repositoryKey, setRepositoryKey] = useState<string | undefined>(
     () => readRepository(threadId) ?? undefined,
   );
@@ -1094,17 +1234,18 @@ function WorkspacePanel({ threadId }: { threadId: string }) {
     { threadId },
     { ...storedAnswer("repositories", { threadId }), staleTime: 60_000 },
   );
-  const workspace = rpc.workspace.useQuery(
-    { threadId, repositoryKey },
-    {
-      ...storedAnswer("workspace", { threadId, repositoryKey }),
-      refetchInterval: REFRESH_INTERVAL_MS,
-      refetchOnWindowFocus: true,
-    },
+  const readTarget = useMemo(
+    () => ({ threadId, repositoryKey, checkout }),
+    [threadId, repositoryKey, checkout],
   );
-  const { data, stale, live } = useShownWorkspace(workspace, threadId, repositoryKey);
-  const turnLeftWork = useTurnLeftWork(threadId, repositoryKey, data);
-  const { identity, target } = useBoardTarget(threadId, repositoryKey, data);
+  const workspace = rpc.workspace.useQuery(readTarget, {
+    ...storedAnswer("workspace", readTarget),
+    refetchInterval: REFRESH_INTERVAL_MS,
+    refetchOnWindowFocus: true,
+  });
+  const { data, stale, live } = useShownWorkspace(workspace, threadId, repositoryKey, checkout);
+  const turnLeftWork = useTurnLeftWork(readTarget, repositoryKey, data);
+  const { identity, target } = useBoardTarget(threadId, repositoryKey, data, checkout);
   const scope = writeScope(target, identity);
   const [navigationScope, setNavigationScope] = useState(scope);
   // Reset before the new board renders its children: an old selection must
@@ -1148,11 +1289,12 @@ function WorkspacePanel({ threadId }: { threadId: string }) {
     () => ({
       threadId,
       repositoryKey,
+      checkout,
       expanded: expandedCommit,
       onToggle: (key) => setExpandedCommit((current) => (current === key ? null : key)),
       onOpenFile: (commit, path) => open({ kind: "commit", commit, path }),
     }),
-    [expandedCommit, open, repositoryKey, threadId],
+    [expandedCommit, open, repositoryKey, threadId, checkout],
   );
 
   const openUncommittedFile = useCallback(
@@ -1197,7 +1339,7 @@ function WorkspacePanel({ threadId }: { threadId: string }) {
     // Not part of refreshWorkspace, which every turn's end runs: no turn here
     // changes another machine, and the read reaches all of them.
     void pluginQueryClient.invalidateQueries({ queryKey: rpc.otherMachines.queryKey() });
-    void refreshWorkspace(threadId).finally(() => setRefreshing(false));
+    void refreshWorkspace(readTarget).finally(() => setRefreshing(false));
   };
   const syncing = refreshing || checkingFirst(workspace);
 
@@ -1207,7 +1349,13 @@ function WorkspacePanel({ threadId }: { threadId: string }) {
    * reader needed it and left the failure with no way out of itself.
    */
   return (
-    <BoardProvider live={live} workspace={identity} root={board} status={status}>
+    <BoardProvider
+      live={live}
+      workspace={identity}
+      root={board}
+      status={status}
+      nativeAgentPrompts={data?.nativeAgentPrompts}
+    >
       <div className="relative h-full">
         <div
           ref={board}
@@ -1215,8 +1363,10 @@ function WorkspacePanel({ threadId }: { threadId: string }) {
           tabIndex={-1}
           inert={selection !== null}
         >
+          <CheckoutLocation selected={selected} onMainCheckout={onMainCheckout} />
           <WorkspaceHeader
             choices={repositories.data?.repositories}
+            isolated={selected !== null}
             repositoryKey={repositoryKey}
             onChoose={chooseRepository}
             data={data}
@@ -1229,7 +1379,12 @@ function WorkspacePanel({ threadId }: { threadId: string }) {
             onRefresh={refresh}
             onHistory={() => open({ kind: "history" })}
           />
-          <WorkspacePullStatus pull={pull} pullButton={pullButton} blocked={pullBlocked} />
+          <WorkspacePullStatus
+            pull={pull}
+            pullButton={pullButton}
+            blocked={pullBlocked}
+            native={data?.checkoutIdentity?.kind === "git"}
+          />
           <StaleNote reason={stale} onRetry={refresh} />
           <ScrollArea>
             {data ? (
@@ -1241,9 +1396,11 @@ function WorkspacePanel({ threadId }: { threadId: string }) {
                  * branch of the next one.
                  */}
                 <WorkspaceBody
-                  key={JSON.stringify(scope)}
+                  key={workspaceScopeKey(scope)}
                   threadId={threadId}
                   repositoryKey={repositoryKey}
+                  checkout={checkout}
+                  onOpenCheckout={onOpenCheckout}
                   data={data}
                   turnLeftWork={turnLeftWork}
                   onOpenFile={openUncommittedFile}
@@ -1284,6 +1441,7 @@ function WorkspacePanel({ threadId }: { threadId: string }) {
             <DetailScreen
               threadId={threadId}
               repositoryKey={repositoryKey}
+              checkout={checkout}
               workspace={data}
               selection={selection}
               onBack={back}
@@ -1292,6 +1450,25 @@ function WorkspacePanel({ threadId }: { threadId: string }) {
         ) : null}
       </div>
     </BoardProvider>
+  );
+}
+
+function WorkspacePanel({ threadId }: { threadId: string }) {
+  const [selected, setSelected] = useState<Checkout | null>(null);
+  const main = useCallback(() => setSelected(null), []);
+  const checkout = useMemo(
+    () => (selected ? { hostId: selected.hostId, path: selected.path } : undefined),
+    [selected],
+  );
+  return (
+    <WorkspaceBoard
+      key={selected ? `${selected.hostId}:${selected.path}` : "main"}
+      threadId={threadId}
+      selected={selected}
+      checkout={checkout}
+      onOpenCheckout={setSelected}
+      onMainCheckout={main}
+    />
   );
 }
 

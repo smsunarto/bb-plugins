@@ -27,6 +27,7 @@ import { BranchActions, BranchName } from "./branch-actions.tsx";
 import { usePatches, usePatchesIntent } from "./file-cards.tsx";
 import { ChangedFilesCard, Count, FileList, LineStats, useListMode } from "./file-list.tsx";
 import type { WorkspaceTarget } from "./branch-actions.tsx";
+import { useBoardWorkspace, useNativeAgentPrompts } from "./board-context.tsx";
 
 /**
  * The workspace drawn the way GitButler desktop draws a stack lane: branch
@@ -343,10 +344,12 @@ function ChangesCard({
 const QUOTED_PATHS_MAX = 20;
 
 /** What the reader asks the agent when a turn left files uncommitted. */
-function commitRequest(changes: readonly FileChange[]): string {
+function commitRequest(changes: readonly FileChange[], nativePrompt?: string): string {
   const paths = changes.slice(0, QUOTED_PATHS_MAX).map((change) => change.path);
   const rest = changes.length - paths.length;
   const list = rest > 0 ? `${paths.join(", ")} and ${rest} more` : paths.join(", ");
+  if (nativePrompt !== undefined)
+    return `${nativePrompt}\n\nFiles: ${JSON.stringify(paths)}${rest > 0 ? `\nAdditional files: ${rest}` : ""}`;
   return changes.length === 1
     ? `This file is uncommitted: ${list}. Commit it to the right branch with but.`
     : `These ${changes.length} files are uncommitted: ${list}. Commit them to the right branch with but.`;
@@ -368,6 +371,8 @@ export function UncommittedCard({
   attention?: boolean;
 }) {
   const ask = useAskAgent();
+  const native = useBoardWorkspace()?.checkoutIdentity?.kind === "git";
+  const prompts = useNativeAgentPrompts();
   const flagged = attention && changes.length > 0;
   return (
     <ChangesCard
@@ -381,7 +386,7 @@ export function UncommittedCard({
             variant="outline"
             size="sm"
             className="h-6 gap-1 px-2 text-xs font-normal"
-            onClick={() => ask(commitRequest(changes))}
+            onClick={() => ask(commitRequest(changes, native ? prompts?.commit : undefined))}
           >
             <Icon name="MessageSquarePlus" className="size-3" aria-hidden />
             Ask agent to commit
@@ -876,8 +881,15 @@ export function BaseCard({
   upstream?: Upstream | null;
 }) {
   const { limit, grow } = useHistoryWindow(base.commitId);
-
-  const input = { threadId, repositoryKey, from: base.commitId, offset: 0, limit };
+  const checkout = useBoardWorkspace()?.checkout;
+  const input = {
+    threadId,
+    repositoryKey,
+    from: base.commitId,
+    offset: 0,
+    limit,
+    checkout,
+  };
   const history = rpc.baseHistory.useQuery(input, {
     ...storedAnswer("baseHistory", input),
     // History under a commit id never changes, so it is read once per base.

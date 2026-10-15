@@ -5,6 +5,8 @@ import { runAction } from "./actions.ts";
 import { readParkedBranches } from "./branches.ts";
 import { ButFailedError, ButMissingError, ButSetupRequiredError, runBut, runGit } from "./cli.ts";
 import { readBaseHistory, readCheckoutHead } from "./history.ts";
+import { prepareGitCheckoutChild, runGitAction } from "./git-actions.ts";
+import { readGitCheckout, readGitPatches, readGitWorkspace } from "./git-workspace.ts";
 import { readOrigin } from "./origin.ts";
 import { readUnpublished } from "./unpublished.ts";
 import { compareWithRemotes } from "./upstream.ts";
@@ -25,9 +27,25 @@ import {
   listRepositories,
   NoRepositoryError,
   resolveRepository,
+  resolveKnownCheckout,
 } from "./repositories.ts";
 
 const MAX_PATCH_CHARS = 1_500_000;
+
+type HostTarget = {
+  environmentPath: string;
+  repositoryKey?: string;
+  checkout?: { paths: string[]; origin: string };
+};
+
+async function resolveHostRepository(input: HostTarget, signal: AbortSignal) {
+  if (input.checkout) {
+    if (input.repositoryKey && input.repositoryKey !== ".")
+      throw new NoRepositoryError("Choose a repository within the selected checkout again.");
+    return resolveKnownCheckout(input.environmentPath, input.checkout, signal);
+  }
+  return resolveRepository(input.environmentPath, input.repositoryKey, signal);
+}
 
 /** Classify a failure so the panel can explain it instead of showing a stack. */
 function unavailable(error: unknown): { state: WorkspaceState; reason: string } {
@@ -63,10 +81,15 @@ async function readWorkspace(
   signal: AbortSignal,
 ): Promise<HostWorkspace> {
   try {
+    const identity = await readGitCheckout(repository.path, signal);
+    if (identity.kind === "git") return await readGitWorkspace(repository, signal);
     // One call carries the whole panel. `-u` attaches the upstream commits
     // that are not integrated yet; per-commit files come from `patches`.
     const payload = await runBut(repository.path, ["status", "-u"], signal);
-    const workspace = parseWorkspace(payload, repository.name, repository.key);
+    const workspace = {
+      ...parseWorkspace(payload, repository.name, repository.key),
+      checkoutIdentity: identity,
+    };
     // Without the comparison the cards keep GitButler's own labels.
     return await compareWithRemotes(repository.path, workspace, signal).catch((error: unknown) => {
       if (signal.aborted) throw error;
@@ -131,7 +154,8 @@ function diffRange(repositoryPath: string, base: string, head: string, signal: A
 }
 
 /**
- * The last action queued on each repository, by its real path. An action's
+ * The last action queued on each shared Git directory. Linked checkouts and
+ * the main GitButler workspace share refs, so they share this queue. An action's
  * checks (the fetch, a dry run, the upstream-loss check) only hold until
  * another write lands, and separate panels and browsers each send their own,
  * so the host runs one repository's actions one at a time, checks included.
@@ -153,10 +177,14 @@ function oneAtATime<T>(repositoryPath: string, action: () => Promise<T>): Promis
 export default experimental_defineHostEntry({
   contract: gitbutlerHostContract,
   handlers: {
-    async repositories({ environmentPath }, context) {
+    async repositories(input, context) {
       try {
+        if (input.checkout) {
+          const repository = await resolveHostRepository(input, context.signal);
+          return { repositories: [{ key: repository.key, name: repository.name }], reason: null };
+        }
         return {
-          repositories: await listRepositories(environmentPath, context.signal),
+          repositories: await listRepositories(input.environmentPath, context.signal),
           reason: null,
         };
       } catch (error) {
@@ -164,15 +192,20 @@ export default experimental_defineHostEntry({
       }
     },
 
-    async repository({ environmentPath, repositoryKey }, context) {
-      const { key, path } = await resolveRepository(environmentPath, repositoryKey, context.signal);
+    async repository(input, context) {
+      const { key, path } = await resolveHostRepository(input, context.signal);
       return { key, path };
     },
 
-    async workspace({ environmentPath, repositoryKey }, context) {
+    async checkoutIdentity(input, context) {
+      const { key, path } = await resolveHostRepository(input, context.signal);
+      return { key, identity: await readGitCheckout(path, context.signal) };
+    },
+
+    async workspace(input, context) {
       let repository;
       try {
-        repository = await resolveRepository(environmentPath, repositoryKey, context.signal);
+        repository = await resolveHostRepository(input, context.signal);
       } catch (error) {
         if (context.signal.aborted) throw error;
         const { state, reason } = unavailable(error);
@@ -181,8 +214,8 @@ export default experimental_defineHostEntry({
       return readWorkspace(repository, context.signal);
     },
 
-    async origin({ environmentPath, repositoryKey }, context) {
-      const { path } = await resolveRepository(environmentPath, repositoryKey, context.signal);
+    async origin(input, context) {
+      const { path } = await resolveHostRepository(input, context.signal);
       return { path, origin: await readOrigin(path, context.signal) };
     },
 
@@ -226,9 +259,10 @@ export default experimental_defineHostEntry({
       return { branches: found.flat() };
     },
 
-    async baseHistory({ environmentPath, repositoryKey, from, offset, limit }, context) {
+    async baseHistory(input, context) {
+      const { from, offset, limit } = input;
       try {
-        const repository = await resolveRepository(environmentPath, repositoryKey, context.signal);
+        const repository = await resolveHostRepository(input, context.signal);
         const page = await readBaseHistory(repository.path, from, offset, limit, context.signal);
         return { ...page, reason: null };
       } catch (error) {
@@ -237,8 +271,9 @@ export default experimental_defineHostEntry({
       }
     },
 
-    async patches({ environmentPath, repositoryKey, source }, context) {
-      const repository = await resolveRepository(environmentPath, repositoryKey, context.signal);
+    async patches(input, context) {
+      const { source } = input;
+      const repository = await resolveHostRepository(input, context.signal);
       if (source.kind === "range") {
         // Another plugin names the path, so only a workspace bb knows here is read.
         if (!(await isKnownWorkspace(source.within, repository.path, context.signal))) {
@@ -248,6 +283,9 @@ export default experimental_defineHostEntry({
         }
         const output = await diffRange(repository.path, source.base, source.head, context.signal);
         return patchesFromGit(output, MAX_PATCH_CHARS);
+      }
+      if ((await readGitCheckout(repository.path, context.signal)).kind === "git") {
+        return readGitPatches(repository.path, source, context.signal);
       }
       if (source.kind === "uncommitted") {
         const [payload, status] = await Promise.all([
@@ -272,14 +310,51 @@ export default experimental_defineHostEntry({
       return patchesFromGit(output, MAX_PATCH_CHARS);
     },
 
-    async butAction({ environmentPath, repositoryKey, action }, context) {
-      // The path is the real one, so every spelling of one repository shares a queue.
-      const repository = await resolveRepository(environmentPath, repositoryKey, context.signal);
-      return oneAtATime(repository.path, () => runAction(repository.path, action, context.signal));
+    async prepareCheckoutChild(input, context) {
+      const repository = await resolveHostRepository(input, context.signal);
+      const initial = await readGitCheckout(repository.path, context.signal);
+      return oneAtATime(initial.commonDir, async () => {
+        const current = await resolveHostRepository(input, context.signal);
+        const identity = await readGitCheckout(current.path, context.signal);
+        if (
+          identity.commonDir !== initial.commonDir ||
+          identity.kind !== initial.kind ||
+          identity.origin !== initial.origin
+        ) {
+          throw new NoRepositoryError("The checkout changed while waiting. Refresh the board.");
+        }
+        return prepareGitCheckoutChild(current.path, input.kind, input.observed, context.signal);
+      });
     },
 
-    async reviewUrl({ environmentPath, repositoryKey, branch }, context) {
-      const repository = await resolveRepository(environmentPath, repositoryKey, context.signal);
+    async butAction(input, context) {
+      const { action } = input;
+      const repository = await resolveHostRepository(input, context.signal);
+      const initial = await readGitCheckout(repository.path, context.signal);
+      return oneAtATime(initial.commonDir, async () => {
+        const current = await resolveHostRepository(input, context.signal);
+        const identity = await readGitCheckout(current.path, context.signal);
+        if (
+          identity.commonDir !== initial.commonDir ||
+          identity.kind !== initial.kind ||
+          identity.origin !== initial.origin
+        ) {
+          throw new NoRepositoryError("The checkout changed while waiting. Refresh the board.");
+        }
+        if (identity.kind === "git") {
+          if (!input.observed)
+            throw new NoRepositoryError("Refresh the isolated checkout before running an action.");
+          return runGitAction(current.path, action, context.signal, input.observed);
+        }
+        return runAction(current.path, action, context.signal);
+      });
+    },
+
+    async reviewUrl(input, context) {
+      const { branch } = input;
+      const repository = await resolveHostRepository(input, context.signal);
+      if ((await readGitCheckout(repository.path, context.signal)).kind === "git")
+        return { url: null };
       // `-r` asks the forge, so this runs when the reader opens a review, never on a poll.
       const payload = await runBut(
         repository.path,
@@ -289,9 +364,11 @@ export default experimental_defineHostEntry({
       return { url: reviewUrl(payload) };
     },
 
-    async reviews({ environmentPath, repositoryKey }, context) {
+    async reviews(input, context) {
       try {
-        const repository = await resolveRepository(environmentPath, repositoryKey, context.signal);
+        const repository = await resolveHostRepository(input, context.signal);
+        if ((await readGitCheckout(repository.path, context.signal)).kind === "git")
+          return { reviews: [], reason: null };
         // `--review` can ask the forge, so this is read apart from the
         // workspace and never holds it up. Checks and counts are skipped.
         const payload = await runBut(
@@ -306,9 +383,11 @@ export default experimental_defineHostEntry({
       }
     },
 
-    async oplog({ environmentPath, repositoryKey }, context) {
+    async oplog(input, context) {
       try {
-        const repository = await resolveRepository(environmentPath, repositoryKey, context.signal);
+        const repository = await resolveHostRepository(input, context.signal);
+        if ((await readGitCheckout(repository.path, context.signal)).kind === "git")
+          return { entries: [], reason: null };
         const payload = await runBut(repository.path, ["oplog", "list"], context.signal);
         return { entries: parseOplog(payload), reason: null };
       } catch (error) {
@@ -317,9 +396,11 @@ export default experimental_defineHostEntry({
       }
     },
 
-    async parkedBranches({ environmentPath, repositoryKey }, context) {
+    async parkedBranches(input, context) {
       try {
-        const repository = await resolveRepository(environmentPath, repositoryKey, context.signal);
+        const repository = await resolveHostRepository(input, context.signal);
+        if ((await readGitCheckout(repository.path, context.signal)).kind === "git")
+          return { branches: [], hasMore: false, reason: null };
         const parked = await readParkedBranches(repository.path, context.signal);
         return { ...parked, reason: null };
       } catch (error) {

@@ -47,9 +47,11 @@ function run(
   args: readonly string[],
   cwd: string,
   signal: AbortSignal,
+  input?: string,
+  environment: NodeJS.ProcessEnv = process.env,
 ): Promise<RunResult> {
   return new Promise((settle) => {
-    execFile(
+    const child = execFile(
       command,
       args,
       {
@@ -58,7 +60,11 @@ function run(
         maxBuffer: MAX_OUTPUT_BYTES,
         signal,
         windowsHide: true,
-        env: { ...process.env, PATH: searchPath(process.env) },
+        env: {
+          ...environment,
+          PATH: searchPath(environment),
+          ...(command === "git" ? { GIT_TERMINAL_PROMPT: "0" } : {}),
+        },
       },
       (error, stdout, stderr) => {
         const code = error && typeof error.code === "number" ? error.code : error ? null : 0;
@@ -71,6 +77,11 @@ function run(
         });
       },
     );
+    // A short-lived command can close its pipe before Node closes our end.
+    // Its exit callback owns the result, including any refusal on stderr.
+    child.stdin?.on("error", () => undefined);
+    if (input === undefined) child.stdin?.end();
+    else child.stdin?.end(input);
   });
 }
 
@@ -205,14 +216,49 @@ export async function runGit(
   cwd: string,
   args: readonly string[],
   signal: AbortSignal,
+  input?: string,
+  env?: NodeJS.ProcessEnv,
 ): Promise<string> {
-  const result = await run("git", args, cwd, signal);
-  if (signal.aborted) throw new Error("aborted");
-  if (result.spawnFailed) throw await spawnFailure("git", cwd);
-  // History is read a page at a time, so only a diff grows this large.
-  if (result.overflowed) throw new ButFailedError("This diff is too large to show.");
+  const result = await runGitCommand(cwd, args, signal, input, env);
   if (result.code !== 0) {
     throw new ButFailedError(firstLine(result.stderr) || "git failed.");
   }
   return result.stdout;
+}
+
+/** Git plumbing such as diff and merge-tree uses exit 1 for a meaningful result. */
+export async function runGitCommand(
+  cwd: string,
+  args: readonly string[],
+  signal: AbortSignal,
+  input?: string,
+  env?: NodeJS.ProcessEnv,
+): Promise<{ stdout: string; stderr: string; code: number | null }> {
+  const environment = { ...process.env, ...env };
+  // Configured SSH commands can be wrappers or PuTTY, and must retain Git's
+  // own precedence and arguments. Use stock SSH's noninteractive mode only
+  // when the network command has no custom SSH configuration.
+  let commandIndex = 0;
+  while (args[commandIndex] === "-c" || args[commandIndex] === "-C") commandIndex += 2;
+  if (
+    ["fetch", "push", "pull", "clone", "ls-remote"].includes(args[commandIndex] ?? "") &&
+    environment["GIT_SSH_COMMAND"] === undefined &&
+    environment["GIT_SSH"] === undefined
+  ) {
+    const configured = await run(
+      "git",
+      [...args.slice(0, commandIndex), "config", "--get", "core.sshCommand"],
+      cwd,
+      signal,
+      undefined,
+      environment,
+    );
+    if (configured.code === 1) environment["GIT_SSH_COMMAND"] = "ssh -oBatchMode=yes";
+  }
+  const result = await run("git", args, cwd, signal, input, environment);
+  if (signal.aborted) throw new Error("aborted");
+  if (result.spawnFailed) throw await spawnFailure("git", cwd);
+  // History is read a page at a time, so only a diff grows this large.
+  if (result.overflowed) throw new ButFailedError("This diff is too large to show.");
+  return result;
 }

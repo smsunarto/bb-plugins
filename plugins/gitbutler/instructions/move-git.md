@@ -1,0 +1,1 @@
+Move the selected commit to another branch using native Git. Establish the intended destination before writing. Preserve the commit's changes and author, unrelated commits, and any checkout using the destination branch.

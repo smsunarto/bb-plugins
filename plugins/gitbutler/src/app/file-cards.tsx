@@ -18,7 +18,13 @@ import type { ExperimentalFileOpenOptions } from "@get-bb/plugin-sdk/app";
 import { getSingularPatch } from "@pierre/diffs";
 import { FileDiff } from "@pierre/diffs/react";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
-import type { ChangeKind, FilePatch, PatchSource, Workspace } from "../shared/schema.ts";
+import type {
+  ChangeKind,
+  CheckoutSelection,
+  FilePatch,
+  PatchSource,
+  Workspace,
+} from "../shared/schema.ts";
 import { AskAgentButton } from "./ask-agent.tsx";
 import { useBoardWorkspace } from "./board-context.tsx";
 import { CONTROL_HOVER_TRANSITION } from "./components/ui/motion.ts";
@@ -94,7 +100,17 @@ export type OpenFile = (path: string, line: number | null) => void;
  */
 export function filePreview(
   workspace: FileWorkspace | undefined,
+  checkout?: CheckoutSelection,
 ): ((path: string, line: number | null) => ExperimentalFileOpenOptions) | null {
+  if (checkout)
+    return (path, line) => ({
+      target: {
+        kind: "host",
+        hostId: checkout.hostId,
+        path: `${checkout.path.replace(/[\\/]$/, "")}/${path}`,
+      },
+      location: line === null ? null : { kind: "line", line, column: null },
+    });
   const environmentId = workspace?.environmentId;
   const repositoryKey = workspace?.repositoryKey;
   if (!environmentId || !repositoryKey) return null;
@@ -115,16 +131,17 @@ export function filePreview(
  */
 export function useOpenFile(workspace: FileWorkspace | undefined): OpenFile | null {
   const navigate = useBbNavigate();
+  const checkout = useBoardWorkspace()?.checkout;
   const environmentId = workspace?.environmentId ?? null;
   const repositoryKey = workspace?.repositoryKey ?? null;
   return useMemo(() => {
-    const preview = filePreview({ environmentId, repositoryKey });
+    const preview = filePreview({ environmentId, repositoryKey }, checkout);
     // bb hosts from before the preview have no such method.
     if (!preview || typeof navigate.experimental_openFilePreview !== "function") return null;
     return (path, line) => {
       navigate.experimental_openFilePreview(preview(path, line));
     };
-  }, [navigate, environmentId, repositoryKey]);
+  }, [navigate, environmentId, repositoryKey, checkout]);
 }
 
 const ICON_BUTTON = cn(
@@ -394,7 +411,12 @@ const WORKTREE_PATCHES = { staleTime: REFRESH_INTERVAL_MS } as const;
 function usePatchesQuery(threadId: string, repositoryKey: string | undefined, source: PatchSource) {
   const client = rpc.useClient();
   const workspace = useBoardWorkspace();
-  const input = { threadId, repositoryKey, source };
+  const input = {
+    threadId,
+    repositoryKey,
+    source,
+    ...(workspace?.checkout ? { checkout: workspace.checkout } : {}),
+  };
   return {
     // A thread can move while a request is in flight, and a commit cached in
     // one checkout may not exist in the next. Keep the RPC prefix for refresh.

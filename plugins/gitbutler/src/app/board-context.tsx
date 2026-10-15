@@ -4,6 +4,7 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -12,7 +13,7 @@ import type { ReactNode, RefObject } from "react";
 import { useIsMutating, useMutationState } from "@tanstack/react-query";
 import { experimental_Icon as Icon } from "@get-bb/plugin-sdk/app";
 import { pluginQueryClient } from "@bb-kit/core/rpc/query";
-import type { ButAction } from "../shared/schema.ts";
+import type { ButAction, CheckoutSelection, Workspace } from "../shared/schema.ts";
 import { cn } from "./lib/utils.ts";
 
 /*
@@ -30,11 +31,17 @@ import { cn } from "./lib/utils.ts";
  * the reader's choice resolved to. Two threads on one environment, or the
  * default repository and the same one chosen by name, are one workspace.
  */
-export type WorkspaceIdentity = { environmentId: string; repositoryKey: string | null };
+export type WorkspaceIdentity = {
+  environmentId: string;
+  repositoryKey: string | null;
+  checkout?: CheckoutSelection;
+  checkoutIdentity?: Workspace["checkoutIdentity"];
+};
 
 type Target = {
   threadId: string;
   repositoryKey?: string | undefined;
+  checkout?: CheckoutSelection;
   /** The workspace of the board on screen. Absent or null before one is read. */
   workspace?: WorkspaceIdentity | null | undefined;
 };
@@ -46,6 +53,24 @@ type Target = {
  */
 export function butWriteKey(target: Target) {
   const { workspace } = target;
+  if (workspace?.checkoutIdentity?.kind === "git") {
+    return [
+      "but-write",
+      "git",
+      workspace.checkout?.hostId ?? workspace.environmentId,
+      workspace.checkoutIdentity.commonDir,
+      workspace.checkoutIdentity.origin,
+    ] as const;
+  }
+  if (workspace?.checkout) {
+    return [
+      "but-write",
+      "checkout",
+      workspace.checkout.hostId,
+      workspace.checkoutIdentity?.commonDir ?? workspace.checkout.path,
+      workspace.checkoutIdentity?.origin ?? null,
+    ] as const;
+  }
   return workspace
     ? (["but-write", "environment", workspace.environmentId, workspace.repositoryKey] as const)
     : (["but-write", "thread", target.threadId, target.repositoryKey ?? null] as const);
@@ -65,9 +90,21 @@ export type WriteFailure = { id: number; action: ButAction; error: Error };
  * commit, still hears why.
  */
 export function useLastWriteFailure(target: Target): WriteFailure | null {
+  const aim = writeScope(target, target.workspace ?? null);
   const writes = useMutationState(
     {
-      filters: { mutationKey: butWriteKey(target) },
+      filters: {
+        mutationKey: butWriteKey(target),
+        predicate: (mutation) => {
+          const sent = mutation.state.variables as WriteScope | undefined;
+          return (
+            sent !== undefined &&
+            sent.checkout?.hostId === aim.checkout?.hostId &&
+            sent.checkout?.path === aim.checkout?.path &&
+            sent.observed?.origin === aim.observed?.origin
+          );
+        },
+      },
       select: (mutation) => ({
         id: mutation.mutationId,
         error: mutation.state.status === "error" ? mutation.state.error : null,
@@ -249,6 +286,8 @@ function useWriteFocus(root: RefObject<HTMLElement | null>) {
 type Board = {
   live: boolean;
   workspace: WorkspaceIdentity | null;
+  currentWorkspace: RefObject<WorkspaceIdentity | null>;
+  nativeAgentPrompts: Workspace["nativeAgentPrompts"];
   announce: (text: string) => void;
   focusAfterWrite: (kind: FocusRequest["kind"], branchName: string) => void;
 };
@@ -256,6 +295,8 @@ type Board = {
 const BoardContext = createContext<Board>({
   live: true,
   workspace: null,
+  currentWorkspace: { current: null },
+  nativeAgentPrompts: undefined,
   announce: () => {},
   focusAfterWrite: () => {},
 });
@@ -273,6 +314,7 @@ export function BoardProvider({
   workspace,
   root,
   status,
+  nativeAgentPrompts,
   children,
 }: {
   /** False while the board on screen came from storage and has not been read again. */
@@ -282,14 +324,19 @@ export function BoardProvider({
   /** The element holding the branch cards and the Refresh button. */
   root: RefObject<HTMLElement | null>;
   status?: TransientStatus;
+  nativeAgentPrompts?: Workspace["nativeAgentPrompts"];
   children: ReactNode;
 }) {
   const own = useTransientStatus();
+  const currentWorkspace = useRef(workspace);
+  useLayoutEffect(() => {
+    currentWorkspace.current = workspace;
+  }, [workspace]);
   const { message, announce } = status ?? own;
   const focusAfterWrite = useWriteFocus(root);
   const board = useMemo(
-    () => ({ live, workspace, announce, focusAfterWrite }),
-    [live, workspace, announce, focusAfterWrite],
+    () => ({ live, workspace, currentWorkspace, nativeAgentPrompts, announce, focusAfterWrite }),
+    [live, workspace, nativeAgentPrompts, announce, focusAfterWrite],
   );
   return (
     <BoardContext.Provider value={board}>
@@ -309,7 +356,20 @@ export function useBoardLive(): boolean {
 
 /** Says a line in the board's status line. Does nothing outside a board. */
 export function useAnnounce(): (text: string) => void {
-  return useContext(BoardContext).announce;
+  const board = useContext(BoardContext);
+  return (text) => {
+    if (sameBoard(board.workspace, board.currentWorkspace.current)) board.announce(text);
+  };
+}
+
+function sameBoard(a: WorkspaceIdentity | null, b: WorkspaceIdentity | null): boolean {
+  return (
+    a?.environmentId === b?.environmentId &&
+    a?.repositoryKey === b?.repositoryKey &&
+    a?.checkout?.hostId === b?.checkout?.hostId &&
+    a?.checkout?.path === b?.checkout?.path &&
+    a?.checkoutIdentity?.origin === b?.checkoutIdentity?.origin
+  );
 }
 
 /** The workspace of the board on screen, or null before one is read and outside a board. */
@@ -317,11 +377,17 @@ export function useBoardWorkspace(): WorkspaceIdentity | null {
   return useContext(BoardContext).workspace;
 }
 
+export function useNativeAgentPrompts(): Workspace["nativeAgentPrompts"] {
+  return useContext(BoardContext).nativeAgentPrompts;
+}
+
 /** What aims a write: the thread, its repository, and the environment the board was read in. */
 export type WriteScope = {
   threadId: string;
   repositoryKey?: string | undefined;
   environmentId?: string;
+  checkout?: CheckoutSelection;
+  observed?: { branch: string | null; head: string | null; origin: string | null };
 };
 
 /**
@@ -334,14 +400,31 @@ export type WriteScope = {
  * what the reader chose.
  */
 export function writeScope(
-  target: { threadId: string; repositoryKey?: string | undefined },
+  target: { threadId: string; repositoryKey?: string | undefined; checkout?: CheckoutSelection },
   workspace: WorkspaceIdentity | null,
 ): WriteScope {
-  if (!workspace) return { threadId: target.threadId, repositoryKey: target.repositoryKey };
+  if (!workspace)
+    return {
+      threadId: target.threadId,
+      repositoryKey: target.repositoryKey,
+      ...(target.checkout ? { checkout: target.checkout } : {}),
+    };
   return {
     threadId: target.threadId,
-    repositoryKey: workspace.repositoryKey ?? target.repositoryKey,
+    repositoryKey: target.checkout
+      ? target.repositoryKey
+      : (workspace.repositoryKey ?? target.repositoryKey),
     environmentId: workspace.environmentId,
+    ...(target.checkout ? { checkout: target.checkout } : {}),
+    ...(workspace.checkoutIdentity?.kind === "git"
+      ? {
+          observed: {
+            branch: workspace.checkoutIdentity.branch,
+            head: workspace.checkoutIdentity.head,
+            origin: workspace.checkoutIdentity.origin,
+          },
+        }
+      : {}),
   };
 }
 
@@ -350,8 +433,29 @@ export function sameScope(a: WriteScope, b: WriteScope): boolean {
   return (
     a.threadId === b.threadId &&
     a.repositoryKey === b.repositoryKey &&
-    a.environmentId === b.environmentId
+    a.environmentId === b.environmentId &&
+    a.checkout?.hostId === b.checkout?.hostId &&
+    a.checkout?.path === b.checkout?.path &&
+    a.observed?.origin === b.observed?.origin
   );
+}
+
+/** The board's identity stays the same as commits arrive within that checkout. */
+export function workspaceScopeKey(scope: WriteScope): string {
+  return JSON.stringify([
+    scope.threadId,
+    scope.repositoryKey,
+    scope.environmentId,
+    scope.checkout?.hostId,
+    scope.checkout?.path,
+    scope.observed !== undefined,
+    scope.observed?.origin,
+  ]);
+}
+
+/** A confirmation belongs to the branch and tip the reader saw when it opened. */
+export function sameObservation(a: WriteScope["observed"], b: WriteScope["observed"]): boolean {
+  return a?.branch === b?.branch && a?.head === b?.head && a?.origin === b?.origin;
 }
 
 /**
@@ -371,7 +475,11 @@ export function useBoardRepository(): string | null {
  * if the redraw dropped it. Does nothing outside a board.
  */
 export function useFocusAfterWrite(): (kind: "removed" | "renamed", branchName: string) => void {
-  return useContext(BoardContext).focusAfterWrite;
+  const board = useContext(BoardContext);
+  return (kind, branchName) => {
+    if (sameBoard(board.workspace, board.currentWorkspace.current))
+      board.focusAfterWrite(kind, branchName);
+  };
 }
 
 /**

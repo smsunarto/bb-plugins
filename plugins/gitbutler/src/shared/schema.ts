@@ -9,6 +9,28 @@ import { z } from "zod";
 export const environmentPathSchema = z.string().min(1).max(16_384);
 /** Relative to the environment root, or "." for the root repository itself. */
 export const repositoryKeySchema = z.string().min(1).max(1024);
+/** A checkout selected from the matching-repository cards. Hosts validate its provenance again. */
+export const checkoutSelectionSchema = z.strictObject({
+  hostId: z.string().min(1),
+  path: environmentPathSchema,
+});
+
+/** The branch and tip the reader saw before an ordinary Git checkout write. */
+export const observedCheckoutSchema = z.strictObject({
+  branch: z.string().min(1).nullable(),
+  head: z.string().nullable(),
+  origin: z.string().nullable(),
+});
+
+export const checkoutIdentitySchema = z.strictObject({
+  path: environmentPathSchema,
+  branch: z.string().nullable(),
+  head: z.string().nullable(),
+  origin: z.string().nullable(),
+  commonDir: environmentPathSchema,
+  kind: z.enum(["git", "gitbutler"]),
+});
+
 export const commitIdSchema = z.string().regex(/^[0-9a-fA-F]{4,64}$/);
 
 export const changeKindSchema = z.enum(["added", "modified", "deleted", "renamed", "copied"]);
@@ -102,9 +124,21 @@ export const workspaceStateSchema = z.enum([
   "error",
 ]);
 
+/** Server-rendered requests for an ordinary Git checkout's agent controls. */
+export const nativeAgentPromptsSchema = z.strictObject({
+  guidance: z.string().min(1),
+  reword: z.string().min(1),
+  squash: z.string().min(1),
+  move: z.string().min(1),
+  uncommit: z.string().min(1),
+  commit: z.string().min(1),
+});
+
 export const workspaceSchema = z
   .object({
     state: workspaceStateSchema,
+    checkoutIdentity: checkoutIdentitySchema.optional(),
+    nativeAgentPrompts: nativeAgentPromptsSchema.optional(),
     reason: z.string().nullable(),
     /**
      * The thread's environment, so a panel can tell which workspace-changed
@@ -126,8 +160,11 @@ export const workspaceSchema = z
   })
   .strict();
 
-/** What the host reads. The server knows the environment and adds it. */
-export const hostWorkspaceSchema = workspaceSchema.omit({ environmentId: true });
+/** What the host reads. The server adds environment identity and agent text. */
+export const hostWorkspaceSchema = workspaceSchema.omit({
+  environmentId: true,
+  nativeAgentPrompts: true,
+});
 
 export const repositorySchema = z.object({ key: z.string(), name: z.string() }).strict();
 
@@ -361,10 +398,7 @@ export const hostCheckoutSchema = z
     reason: z.string().nullable(),
     stacks: z.array(stackSchema),
     /** Read-only Git facts for a checkout that is not a GitButler workspace. */
-    gitBranch: z
-      .object({ name: z.string(), head: baseCommitSchema.nullable() })
-      .strict()
-      .optional(),
+    gitBranch: z.strictObject({ name: z.string(), head: baseCommitSchema.nullable() }).optional(),
   })
   .strict();
 
@@ -449,6 +483,7 @@ export type Stack = z.infer<typeof stackSchema>;
 export type BaseCommit = z.infer<typeof baseCommitSchema>;
 export type Upstream = z.infer<typeof upstreamSchema>;
 export type Workspace = z.infer<typeof workspaceSchema>;
+export type NativeAgentPrompts = z.infer<typeof nativeAgentPromptsSchema>;
 export type HostWorkspace = z.infer<typeof hostWorkspaceSchema>;
 export type WorkspaceState = z.infer<typeof workspaceStateSchema>;
 export type Repository = z.infer<typeof repositorySchema>;
@@ -473,3 +508,7 @@ export type ParkedBranches = z.infer<typeof parkedBranchesSchema>;
 export type HostCheckout = z.infer<typeof hostCheckoutSchema>;
 export type Checkout = z.infer<typeof checkoutSchema>;
 export type OtherMachines = z.infer<typeof otherMachinesSchema>;
+
+export type CheckoutSelection = z.infer<typeof checkoutSelectionSchema>;
+export type CheckoutIdentity = z.infer<typeof checkoutIdentitySchema>;
+export type ObservedCheckout = z.infer<typeof observedCheckoutSchema>;

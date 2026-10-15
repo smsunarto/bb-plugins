@@ -24,6 +24,43 @@ test("forwards the environment path and host to the host entry, and names the en
   ]);
 });
 
+test("adds server-owned native agent requests to the exact checkout snapshot", async () => {
+  const checkoutIdentity = {
+    kind: "git" as const,
+    path: "/work/it's isolated",
+    branch: "scott/isolated",
+    head: "a".repeat(40),
+    origin: "github.com/owner/project",
+    commonDir: "/work/main/.git",
+  };
+  const { ctx } = harness({ result: { ...ready, checkoutIdentity } });
+  const result = await workspace.execute(ctx, { threadId: "t1" });
+
+  expect(result.nativeAgentPrompts?.guidance).toContain('"machine": "host-1"');
+  expect(result.nativeAgentPrompts?.guidance).toContain('"path": "/work/it\'s isolated"');
+  expect(result.nativeAgentPrompts?.guidance).toContain('"branch": "scott/isolated"');
+  expect(result.nativeAgentPrompts?.guidance).toContain('"origin": "github.com/owner/project"');
+  expect(result.nativeAgentPrompts?.guidance).toContain("cd '/work/it'\\''s isolated'");
+  expect(result.nativeAgentPrompts?.reword).toStartWith(
+    "Reword the selected commit using native Git.",
+  );
+  expect(Object.keys(result.nativeAgentPrompts ?? {})).toEqual([
+    "guidance",
+    "reword",
+    "squash",
+    "move",
+    "uncommit",
+    "commit",
+  ]);
+
+  const managed = harness({
+    result: { ...ready, checkoutIdentity: { ...checkoutIdentity, kind: "gitbutler" } },
+  });
+  expect(await workspace.execute(managed.ctx, { threadId: "t1" })).not.toHaveProperty(
+    "nativeAgentPrompts",
+  );
+});
+
 test("forwards a chosen repository and omits the key when there is none", async () => {
   const chosen = harness({ result: ready });
   await workspace.execute(chosen.ctx, { threadId: "t1", repositoryKey: "repos/app" });

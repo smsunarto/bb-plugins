@@ -4,7 +4,7 @@ import { pluginQueryClient } from "@bb-kit/core/rpc/query";
 import { installDom } from "@bb-kit/core/testing";
 import type { RenderSlotOptions } from "@get-bb/plugin-sdk/testing/app";
 import { parseOplog, parseWorkspace } from "../src/host/parse.ts";
-import type { Workspace } from "../src/shared/schema.ts";
+import type { Checkout, CheckoutSelection, Workspace } from "../src/shared/schema.ts";
 import { oplogPayload, statusPayload } from "./fixtures.ts";
 
 installDom();
@@ -2835,7 +2835,7 @@ const laptopCheckout = {
   stacks: workspace.stacks.slice(0, 1),
 };
 
-test("shows an isolated checkout's actual branch, path, and latest commit without workspace actions", async () => {
+test("shows an isolated checkout's actual branch, path, and latest commit with a control to open its workspace", async () => {
   const checkout = {
     hostId: "laptop",
     machine: "Personal Mac",
@@ -2870,10 +2870,10 @@ test("shows an isolated checkout's actual branch, path, and latest commit withou
   expect(card.queryByText(/\d+ commits?/)).toBeNull();
   expect(card.queryByText(/Unpushed|Pushed|Ahead|Behind|Diverged/)).toBeNull();
   expect(card.queryByRole("button", { name: /Push|Land|Delete/ })).toBeNull();
-  expect(card.getAllByRole("button")).toHaveLength(1);
+  expect(card.getByRole("button", { name: `Open checkout ${checkout.path}` })).toBeTruthy();
   expect(slot.inspection.composer.quotes).toEqual([]);
 
-  const toggle = card.getByRole("button");
+  const toggle = card.getByRole("button", { expanded: true });
   fireEvent.click(toggle);
   expect(toggle.getAttribute("aria-expanded")).toBe("false");
   expect(card.queryByText("scott/isolated-feature")).toBeNull();
@@ -2915,7 +2915,7 @@ test("keeps checkouts with the same branch on one machine distinct and does not 
     expect(card.queryByText(/\d+ commits?|No commits|No applied branches/)).toBeNull();
     expect(card.queryByRole("button", { name: /Push|Land|Delete/ })).toBeNull();
   }
-  fireEvent.click(first.getByRole("button"));
+  fireEvent.click(first.getByRole("button", { expanded: true }));
   expect(first.queryByText("scott/same-name")).toBeNull();
   expect(second.getByText("scott/same-name")).toBeTruthy();
   slot.lifecycle.unmount();
@@ -3023,3 +3023,628 @@ for (const clipboard of ["unavailable", "denied"] as const) {
     expect(written).toEqual(["curl -fsSL https://gitbutler.com/install.sh | sh"]);
   });
 }
+
+const isolatedCheckout: Checkout = {
+  ...laptopCheckout,
+  state: "ready",
+  path: "/Users/me/git/bb-plugins-isolated",
+  stacks: [],
+  gitBranch: { name: "scott/bottom", head: null },
+};
+const selectedCheckout: CheckoutSelection = {
+  hostId: isolatedCheckout.hostId,
+  path: isolatedCheckout.path,
+};
+
+function isolatedBoard(): Workspace {
+  return {
+    ...workspace,
+    nativeAgentPrompts: {
+      guidance: "Use native Git on this checkout. Do not run `but` or `but setup`.",
+      reword: "Reword the selected commit's message.",
+      squash: "Squash the selected commit into its parent.",
+      move: "Move the selected commit to another branch.",
+      uncommit: "Remove the selected commit from branch history and keep its changes uncommitted.",
+      commit: "Commit these uncommitted files to the intended branch.",
+    },
+    upstream: workspace.upstream ? { ...workspace.upstream, behind: 0 } : null,
+    stacks: [
+      { ...workspace.stacks[0]!, branches: [structuredClone(workspace.stacks[0]!.branches[1]!)] },
+    ],
+    checkoutIdentity: {
+      path: isolatedCheckout.path,
+      branch: "scott/bottom",
+      head: "a".repeat(40),
+      origin: "github.com/scott/bb-plugins",
+      commonDir: "/Users/me/git/bb-plugins/.git",
+      kind: "git",
+    },
+  };
+}
+
+async function openIsolated(slot: Awaited<ReturnType<typeof panel>>, checkout = isolatedCheckout) {
+  fireEvent.click(await slot.findByRole("button", { name: `Open checkout ${checkout.path}` }));
+  await slot.findByRole("button", { name: "Back to main checkout" });
+  return within(await slot.findByRole("article", { name: "Branch scott/bottom" }));
+}
+
+test("opens an isolated checkout with the main branch operations and routes push, rename, and PR to it", async () => {
+  const actions: unknown[] = [];
+  const requests: unknown[] = [];
+  const selected = isolatedBoard();
+  const slot = await panel({
+    ...baseRpc,
+    workspace: (input: { checkout?: CheckoutSelection }) => (input.checkout ? selected : workspace),
+    otherMachines: () => ({ checkouts: [isolatedCheckout], reason: null, environmentId: "env-1" }),
+    butAction: (input: { action: { kind: string; name?: string } }) => {
+      actions.push(input);
+      if (input.action.kind === "rename") {
+        selected.stacks[0]!.branches[0]!.name = input.action.name!;
+        selected.checkoutIdentity!.branch = input.action.name!;
+      }
+      return { status: "done" };
+    },
+    requestReview: (input: unknown) => {
+      requests.push(input);
+      return { threadId: "isolated-pr" };
+    },
+  });
+  const card = await openIsolated(slot);
+  expect(slot.getByText(isolatedCheckout.path)).toBeTruthy();
+  for (const name of ["Push", "Create PR", "Land", "Delete scott/bottom"]) {
+    expect(card.getByRole("button", { name })).toBeTruthy();
+  }
+  fireEvent.click(card.getByRole("button", { name: "Push" }));
+  await waitFor(() => expect(actions).toHaveLength(1));
+  expect(actions[0]).toEqual({
+    threadId: "thread-1",
+    environmentId: "env-1",
+    checkout: selectedCheckout,
+    observed: {
+      branch: "scott/bottom",
+      head: "a".repeat(40),
+      origin: "github.com/scott/bb-plugins",
+    },
+    action: { kind: "push", branch: "scott/bottom", force: false, acceptedLoss: [] },
+  });
+  await waitFor(() =>
+    expect(
+      card.getByRole("button", { name: "Rename branch scott/bottom" }).hasAttribute("disabled"),
+    ).toBe(false),
+  );
+  fireEvent.click(card.getByRole("button", { name: "Rename branch scott/bottom" }));
+  const field = card.getByRole("textbox");
+  fireEvent.change(field, { target: { value: "scott/isolated-renamed" } });
+  fireEvent.keyDown(field, { key: "Enter" });
+  await waitFor(() => expect(actions).toHaveLength(2));
+  expect(actions[1]).toEqual({
+    threadId: "thread-1",
+    environmentId: "env-1",
+    checkout: selectedCheckout,
+    observed: {
+      branch: "scott/bottom",
+      head: "a".repeat(40),
+      origin: "github.com/scott/bb-plugins",
+    },
+    action: { kind: "rename", branch: "scott/bottom", name: "scott/isolated-renamed" },
+  });
+  const renamed = within(
+    await slot.findByRole("article", { name: "Branch scott/isolated-renamed" }),
+  );
+  fireEvent.click(renamed.getByRole("button", { name: "Create PR" }));
+  await waitFor(() => expect(requests).toHaveLength(1));
+  expect(requests[0]).toEqual({
+    threadId: "thread-1",
+    environmentId: "env-1",
+    checkout: selectedCheckout,
+    observed: {
+      branch: "scott/isolated-renamed",
+      head: "a".repeat(40),
+      origin: "github.com/scott/bb-plugins",
+    },
+    branch: "scott/isolated-renamed",
+  });
+  fireEvent.click(slot.getByRole("button", { name: "Back to main checkout" }));
+  expect(await slot.findByRole("article", { name: "Branch scott/bottom" })).toBeTruthy();
+  expect(slot.queryByRole("article", { name: "Branch scott/isolated-renamed" })).toBeNull();
+  slot.lifecycle.unmount();
+});
+
+test("isolated checkout diffs, file preview, history and agent quotes use its path and host", async () => {
+  const slot = await panel({
+    ...baseRpc,
+    workspace: (input: { checkout?: CheckoutSelection }) =>
+      input.checkout ? isolatedBoard() : workspace,
+    otherMachines: () => ({ checkouts: [isolatedCheckout], reason: null, environmentId: "env-1" }),
+    patches: () => ({ files: [patch("bun.lock")], truncated: false }),
+  });
+  await openIsolated(slot);
+  fireEvent.click(slot.getByText("fix(bottom): repair it"));
+  const files = await slot.findByRole("region", { name: "Changed files" });
+  fireEvent.click(within(files).getByTitle("bun.lock"));
+  fireEvent.click(await slot.findByRole("button", { name: "Open current version of bun.lock" }));
+  expect(slot.inspection.navigateCalls).toEqual([
+    {
+      method: "experimental_openFilePreview",
+      options: {
+        target: { kind: "host", hostId: "laptop", path: `${isolatedCheckout.path}/bun.lock` },
+        location: null,
+      },
+    },
+  ]);
+  const calls = slot.inspection.rpcCalls;
+  expect(
+    calls
+      .filter((call) => call.method === "patches")
+      .every(
+        (call) =>
+          (call.input as { checkout?: CheckoutSelection }).checkout?.path === isolatedCheckout.path,
+      ),
+  ).toBe(true);
+  fireEvent.click(slot.getByRole("button", { name: "Ask agent about commit 730b2a1" }));
+  expect(slot.inspection.composer.quotes.at(-1)).toContain(
+    `Checkout: ${JSON.stringify(isolatedCheckout.path)}\nMachine: laptop\nVersion control: Git`,
+  );
+  fireEvent.click(slot.getByRole("button", { name: "Back to workspace" }));
+  fireEvent.click(slot.getByRole("button", { name: "Operation history" }));
+  await waitFor(() =>
+    expect(
+      calls.some(
+        (call) =>
+          call.method === "oplog" &&
+          (call.input as { checkout?: CheckoutSelection }).checkout?.path === isolatedCheckout.path,
+      ),
+    ).toBe(true),
+  );
+  slot.lifecycle.unmount();
+});
+
+test("returning from a checkout clears its delete confirmation and late writes cannot refresh the main board", async () => {
+  let mainReads = 0;
+  let finish: (result: unknown) => void = () => {};
+  const slot = await panel({
+    ...baseRpc,
+    workspace: (input: { checkout?: CheckoutSelection }) => {
+      if (input.checkout) return isolatedBoard();
+      mainReads += 1;
+      return workspace;
+    },
+    otherMachines: () => ({ checkouts: [isolatedCheckout], reason: null, environmentId: "env-1" }),
+    butAction: () =>
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+  });
+  let card = await openIsolated(slot);
+  fireEvent.click(card.getByRole("button", { name: "Delete scott/bottom" }));
+  expect(card.getByText(/detached HEAD/)).toBeTruthy();
+  expect(card.getByText(/removes the local branch/)).toBeTruthy();
+  expect(card.getByText(/files are preserved/)).toBeTruthy();
+  expect(card.getByText(/remote branch and any PR stay/)).toBeTruthy();
+  expect(card.queryByText(/GitButler.s undo history/)).toBeNull();
+  fireEvent.click(slot.getByRole("button", { name: "Back to main checkout" }));
+  await slot.findByRole("article", { name: "Branch scott/top" });
+  card = await openIsolated(slot);
+  expect(card.queryByRole("button", { name: "Cancel" })).toBeNull();
+  fireEvent.click(card.getByRole("button", { name: "Push" }));
+  await waitFor(() =>
+    expect(slot.inspection.rpcCalls.some((call) => call.method === "butAction")).toBe(true),
+  );
+  fireEvent.click(slot.getByRole("button", { name: "Back to main checkout" }));
+  await slot.findByRole("article", { name: "Branch scott/top" });
+  await waitFor(() => expect(mainReads).toBe(3));
+  finish({ status: "done" });
+  await waitFor(() => expect(pluginQueryClient.isMutating()).toBe(0));
+  expect(mainReads).toBe(3);
+  expect(slot.queryByText("Pushed scott/bottom")).toBeNull();
+  slot.lifecycle.unmount();
+});
+
+test("switching between isolated checkouts with the same branch clears confirmations and targets new reads", async () => {
+  const second = { ...isolatedCheckout, path: "/Users/me/git/bb-plugins-second" };
+  const calls: unknown[] = [];
+  const slot = await panel({
+    ...baseRpc,
+    workspace: (input: { checkout?: CheckoutSelection }) => {
+      if (!input.checkout) return workspace;
+      const board = isolatedBoard();
+      board.checkoutIdentity!.path = input.checkout.path;
+      return board;
+    },
+    otherMachines: () => ({
+      checkouts: [isolatedCheckout, second],
+      reason: null,
+      environmentId: "env-1",
+    }),
+    butAction: (input: { checkout?: CheckoutSelection }) => {
+      calls.push(input);
+      if (input.checkout?.path === isolatedCheckout.path)
+        throw new Error("First checkout push failed");
+      return { status: "done" };
+    },
+  });
+  const first = await openIsolated(slot);
+  fireEvent.click(first.getByRole("button", { name: "Push" }));
+  await first.findByText("First checkout push failed");
+  fireEvent.click(first.getByRole("button", { name: "Land" }));
+  expect(first.getByRole("button", { name: "Cancel" })).toBeTruthy();
+  fireEvent.click(slot.getByRole("button", { name: "Back to main checkout" }));
+  const next = await openIsolated(slot, second);
+  expect(next.queryByRole("button", { name: "Cancel" })).toBeNull();
+  expect(next.queryByText("First checkout push failed")).toBeNull();
+  expect(slot.getByText(second.path)).toBeTruthy();
+  fireEvent.click(next.getByRole("button", { name: "Push" }));
+  await waitFor(() => expect(calls).toHaveLength(2));
+  expect(calls[1]).toMatchObject({
+    checkout: { hostId: "laptop", path: second.path },
+    action: { kind: "push", branch: "scott/bottom" },
+  });
+  slot.lifecycle.unmount();
+});
+
+test("changing a selected checkout origin clears confirmations and ignores an old origin's completed write", async () => {
+  let origin: string | null = "github.com/scott/bb-plugins";
+  let finish: (result: unknown) => void = () => {};
+  const sent: unknown[] = [];
+  const slot = await panel({
+    ...baseRpc,
+    workspace: (input: { checkout?: CheckoutSelection }) => {
+      if (!input.checkout) return workspace;
+      const board = isolatedBoard();
+      board.checkoutIdentity!.origin = origin;
+      return board;
+    },
+    otherMachines: () => ({ checkouts: [isolatedCheckout], reason: null, environmentId: "env-1" }),
+    butAction: (input: unknown) => {
+      sent.push(input);
+      return new Promise((resolve) => {
+        finish = resolve;
+      });
+    },
+  });
+  let card = await openIsolated(slot);
+  fireEvent.click(card.getByRole("button", { name: "Push" }));
+  await waitFor(() => expect(sent).toHaveLength(1));
+  origin = "github.com/scott/repointed";
+  fireEvent.click(slot.getByRole("button", { name: "Refresh" }));
+  await waitFor(() =>
+    expect(
+      (
+        pluginQueryClient.getQueryData([
+          "workspace",
+          { threadId: "thread-1", checkout: selectedCheckout },
+        ]) as Workspace | undefined
+      )?.checkoutIdentity?.origin,
+    ).toBe(origin),
+  );
+  finish({ status: "done" });
+  await waitFor(() => expect(pluginQueryClient.isMutating()).toBe(0));
+  expect(slot.queryByText("Pushed scott/bottom")).toBeNull();
+  card = within(slot.getByRole("article", { name: "Branch scott/bottom" }));
+  fireEvent.click(card.getByRole("button", { name: "Land" }));
+  expect(card.getByRole("button", { name: "Cancel" })).toBeTruthy();
+  origin = null;
+  fireEvent.click(slot.getByRole("button", { name: "Refresh" }));
+  await waitFor(() => expect(slot.queryByRole("button", { name: "Cancel" })).toBeNull());
+  card = within(slot.getByRole("article", { name: "Branch scott/bottom" }));
+  fireEvent.click(card.getByRole("button", { name: "Push" }));
+  await waitFor(() => expect(sent).toHaveLength(2));
+  expect(sent[1]).toMatchObject({
+    checkout: selectedCheckout,
+    observed: { branch: "scott/bottom", head: "a".repeat(40), origin: null },
+  });
+  finish({ status: "done" });
+  await waitFor(() => expect(pluginQueryClient.isMutating()).toBe(0));
+  slot.lifecycle.unmount();
+});
+
+test("native detached conflict resolution includes its observed null branch and origin", async () => {
+  const selected = isolatedBoard();
+  selected.stacks = [];
+  selected.checkoutIdentity!.branch = null;
+  selected.conflictedFiles = ["README.md"];
+  const requests: unknown[] = [];
+  const slot = await panel({
+    ...baseRpc,
+    workspace: (input: { checkout?: CheckoutSelection }) => (input.checkout ? selected : workspace),
+    otherMachines: () => ({ checkouts: [isolatedCheckout], reason: null, environmentId: "env-1" }),
+    resolveConflicts: (input: unknown) => {
+      requests.push(input);
+      return { threadId: "native-resolver" };
+    },
+  });
+  fireEvent.click(
+    await slot.findByRole("button", { name: `Open checkout ${isolatedCheckout.path}` }),
+  );
+  fireEvent.click(await slot.findByRole("button", { name: "Resolve conflicts" }));
+  await waitFor(() => expect(requests).toHaveLength(1));
+  expect(requests[0]).toEqual({
+    threadId: "thread-1",
+    environmentId: "env-1",
+    checkout: selectedCheckout,
+    observed: { branch: null, head: "a".repeat(40), origin: "github.com/scott/bb-plugins" },
+  });
+  slot.lifecycle.unmount();
+});
+
+test("native history asks use the saved Git intents and exact checkout guidance instead of But commands", async () => {
+  const selected = isolatedBoard();
+  const slot = await panel({
+    ...baseRpc,
+    workspace: (input: { checkout?: CheckoutSelection }) => (input.checkout ? selected : workspace),
+    otherMachines: () => ({ checkouts: [isolatedCheckout], reason: null, environmentId: "env-1" }),
+    patches: () => ({ files: [patch("bun.lock")], truncated: false }),
+  });
+  await openIsolated(slot);
+  fireEvent.click(slot.getByText("fix(bottom): repair it"));
+  const files = await slot.findByRole("region", { name: "Changed files" });
+  fireEvent.click(within(files).getByTitle("bun.lock"));
+  const cases = [
+    ["Reword", "Reword the selected commit's message."],
+    ["Squash into parent", "Squash the selected commit into its parent."],
+    ["Move to another branch", "Move the selected commit to another branch."],
+    [
+      "Uncommit",
+      "Remove the selected commit from branch history and keep its changes uncommitted.",
+    ],
+  ];
+  for (const [label, intent] of cases) {
+    fireEvent.click(await slot.findByRole("button", { name: label }));
+    const quote = slot.inspection.composer.quotes.at(-1)!;
+    expect(quote).toBe(
+      `${intent}\n\nCommit: 730b2a16bda1bd8bdc4572bd9f4df70f50505f90\nSubject: "fix(bottom): repair it"\n\nCheckout: ${JSON.stringify(isolatedCheckout.path)}\nMachine: laptop\nVersion control: Git\nUse native Git on this checkout. Do not run \`but\` or \`but setup\`.`,
+    );
+    expect(quote).not.toMatch(/but (?:reword|squash|move|uncommit)/);
+    expect(quote).not.toContain("(change ");
+  }
+  slot.lifecycle.unmount();
+});
+
+test("native cached boards without current prompts hide agent asks until refreshed and never offer But apply or restore", async () => {
+  const selected = isolatedBoard();
+  const currentPrompts = selected.nativeAgentPrompts;
+  delete selected.nativeAgentPrompts;
+  const slot = await panel({
+    ...baseRpc,
+    workspace: (input: { checkout?: CheckoutSelection }) =>
+      input.checkout ? { ...selected } : workspace,
+    otherMachines: () => ({ checkouts: [isolatedCheckout], reason: null, environmentId: "env-1" }),
+    patches: () => ({ files: [patch("bun.lock")], truncated: false }),
+    parkedBranches: () => ({
+      branches: [{ name: "scott/parked", subject: "Older work", updatedAt: null }],
+      hasMore: false,
+      reason: null,
+    }),
+    oplog: () => ({ entries: parseOplog(oplogPayload), reason: null }),
+  });
+  const card = await openIsolated(slot);
+  expect(card.getByRole("button", { name: "Push" })).toBeTruthy();
+  expect(slot.queryByRole("button", { name: "Ask agent about scott/bottom" })).toBeNull();
+  selected.nativeAgentPrompts = currentPrompts;
+  fireEvent.click(slot.getByRole("button", { name: "Refresh" }));
+  await slot.findByRole("button", { name: "Ask agent about scott/bottom" });
+  fireEvent.click(await slot.findByRole("button", { name: /^Not applied/ }));
+  expect(await slot.findByText("scott/parked")).toBeTruthy();
+  expect(slot.queryByRole("button", { name: "Ask agent to apply scott/parked" })).toBeNull();
+  fireEvent.click(slot.getByRole("button", { name: "Operation history" }));
+  await slot.findByText("Create commit");
+  expect(slot.queryByRole("button", { name: /Ask agent to restore snapshot/ })).toBeNull();
+  slot.lifecycle.unmount();
+});
+
+test("native uncommitted asks quote a Git commit intent with the selected files and checkout", async () => {
+  const selected = isolatedBoard();
+  selected.unassignedChanges = [{ path: "native.ts", kind: "modified" }];
+  const slot = await panel({
+    ...baseRpc,
+    workspace: (input: { checkout?: CheckoutSelection }) => (input.checkout ? selected : workspace),
+    otherMachines: () => ({ checkouts: [isolatedCheckout], reason: null, environmentId: "env-1" }),
+  });
+  await openIsolated(slot);
+  await slot.emitRealtime("workspace-changed", {
+    environmentId: "env-1",
+    threadId: "child-native",
+    parentThreadId: "thread-1",
+  });
+  fireEvent.click(await slot.findByRole("button", { name: "Ask agent to commit" }));
+  expect(slot.inspection.composer.quotes.at(-1)).toBe(
+    `Commit these uncommitted files to the intended branch.\n\nFiles: ["native.ts"]\n\nCheckout: ${JSON.stringify(isolatedCheckout.path)}\nMachine: laptop\nVersion control: Git\nUse native Git on this checkout. Do not run \`but\` or \`but setup\`.`,
+  );
+  expect(slot.inspection.composer.quotes.at(-1)).not.toContain("with but");
+  slot.lifecycle.unmount();
+});
+
+function appendNativeCommit(board: Workspace, tip = "b".repeat(40)): Workspace {
+  const next = structuredClone(board);
+  const branch = next.stacks[0]!.branches[0]!;
+  branch.commits = branch.commits.map((commit) => ({ ...commit, changeId: null }));
+  branch.commits.unshift({
+    ...branch.commits[0]!,
+    commitId: tip,
+    changeId: null,
+    message: "feat: a new native commit",
+  });
+  next.checkoutIdentity!.head = tip;
+  return next;
+}
+
+test("native commit polls preserve a rename draft, focus, and an unrelated open commit", async () => {
+  let selected = isolatedBoard();
+  for (const commit of selected.stacks[0]!.branches[0]!.commits) commit.changeId = null;
+  const actions: unknown[] = [];
+  const slot = await panel({
+    ...baseRpc,
+    workspace: (input: { checkout?: CheckoutSelection }) => (input.checkout ? selected : workspace),
+    otherMachines: () => ({ checkouts: [isolatedCheckout], reason: null, environmentId: "env-1" }),
+    patches: () => ({ files: [patch("bun.lock")], truncated: false }),
+    butAction: (input: unknown) => {
+      actions.push(input);
+      return { status: "done" };
+    },
+  });
+  const card = await openIsolated(slot);
+  fireEvent.click(slot.getByText("fix(bottom): repair it"));
+  await slot.findByRole("region", { name: "Changed files" });
+  fireEvent.click(card.getByRole("button", { name: "Rename branch scott/bottom" }));
+  const field = card.getByRole("textbox") as HTMLInputElement;
+  fireEvent.change(field, { target: { value: "scott/draft-to-keep" } });
+  field.focus();
+  selected = appendNativeCommit(selected);
+  await pluginQueryClient.invalidateQueries();
+  expect(await slot.findByText("feat: a new native commit")).toBeTruthy();
+  expect(card.getByRole("textbox")).toBe(field);
+  expect(field.value).toBe("scott/draft-to-keep");
+  expect(document.activeElement).toBe(field);
+  expect(slot.getByRole("region", { name: "Changed files" })).toBeTruthy();
+  expect(actions).toEqual([]);
+  slot.lifecycle.unmount();
+});
+
+test("native Land preserves its squash draft on a new commit and requires review before a fresh confirmation", async () => {
+  let selected = appendNativeCommit(isolatedBoard(), "c".repeat(40));
+  const actions: unknown[] = [];
+  const slot = await panel({
+    ...baseRpc,
+    workspace: (input: { checkout?: CheckoutSelection }) => (input.checkout ? selected : workspace),
+    otherMachines: () => ({ checkouts: [isolatedCheckout], reason: null, environmentId: "env-1" }),
+    butAction: (input: unknown) => {
+      actions.push(input);
+      return { status: "done" };
+    },
+  });
+  const card = await openIsolated(slot);
+  fireEvent.click(card.getByRole("button", { name: "Land" }));
+  const draft = card.getByRole("textbox", {
+    name: "Squashed commit message",
+  }) as HTMLTextAreaElement;
+  expect(
+    card.getByText(/An existing PR may remain open after these commits are rewritten/),
+  ).toBeTruthy();
+  fireEvent.change(draft, { target: { value: "Player-reviewed squash message" } });
+  draft.focus();
+  selected = appendNativeCommit(selected);
+  await pluginQueryClient.invalidateQueries();
+  const review = await card.findByRole("button", { name: "Review updated branch" });
+  expect(draft.isConnected).toBe(true);
+  expect(draft.value).toBe("Player-reviewed squash message");
+  expect(document.activeElement).toBe(draft);
+  expect(card.queryByRole("button", { name: "Squash and land" })).toBeNull();
+  expect(actions).toEqual([]);
+  fireEvent.click(review);
+  expect(actions).toEqual([]);
+  fireEvent.click(card.getByRole("button", { name: "Squash and land" }));
+  await waitFor(() => expect(actions).toHaveLength(1));
+  expect(actions[0]).toMatchObject({
+    observed: {
+      branch: "scott/bottom",
+      head: "b".repeat(40),
+      origin: "github.com/scott/bb-plugins",
+    },
+    action: { kind: "land", message: "Player-reviewed squash message" },
+  });
+  slot.lifecycle.unmount();
+});
+
+for (const operation of ["Delete", "Force push"] as const) {
+  test(`a native ${operation} confirmation cannot apply to a new tip until reviewed and confirmed again`, async () => {
+    let selected = isolatedBoard();
+    const branch = selected.stacks[0]!.branches[0]!;
+    branch.commits = branch.commits.map((commit) => ({ ...commit, changeId: null }));
+    if (operation === "Force push") {
+      branch.status = "diverged";
+      branch.push = "force";
+      branch.newUpstream = 1;
+      branch.upstreamCommits = structuredClone(workspace.stacks[0]!.branches[0]!.upstreamCommits);
+    }
+    const actions: unknown[] = [];
+    const slot = await panel({
+      ...baseRpc,
+      workspace: (input: { checkout?: CheckoutSelection }) =>
+        input.checkout ? selected : workspace,
+      otherMachines: () => ({
+        checkouts: [isolatedCheckout],
+        reason: null,
+        environmentId: "env-1",
+      }),
+      butAction: (input: unknown) => {
+        actions.push(input);
+        return { status: "done" };
+      },
+    });
+    const card = await openIsolated(slot);
+    fireEvent.click(
+      card.getByRole("button", {
+        name: operation === "Delete" ? "Delete scott/bottom" : operation,
+      }),
+    );
+    selected = appendNativeCommit(selected);
+    await pluginQueryClient.invalidateQueries();
+    fireEvent.click(await card.findByRole("button", { name: "Review updated branch" }));
+    expect(actions).toEqual([]);
+    fireEvent.click(card.getByRole("button", { name: operation }));
+    await waitFor(() => expect(actions).toHaveLength(1));
+    expect(actions[0]).toMatchObject({
+      observed: {
+        branch: "scott/bottom",
+        head: "b".repeat(40),
+        origin: "github.com/scott/bb-plugins",
+      },
+      action: { kind: operation === "Delete" ? "delete" : "push" },
+    });
+    slot.lifecycle.unmount();
+  });
+}
+
+test("a native header Pull risk question is discarded when its observed tip changes", async () => {
+  let selected = isolatedBoard();
+  selected.stacks[0]!.branches[0]!.commits[0]!.changeId = null;
+  const actions: unknown[] = [];
+  const slot = await panel({
+    ...baseRpc,
+    workspace: (input: { checkout?: CheckoutSelection }) => (input.checkout ? selected : workspace),
+    otherMachines: () => ({ checkouts: [isolatedCheckout], reason: null, environmentId: "env-1" }),
+    butAction: (input: unknown) => {
+      actions.push(input);
+      return actions.length === 1
+        ? { status: "confirm", risk: { conflicted: ["scott/bottom"], overlapsUncommitted: false } }
+        : { status: "done" };
+    },
+  });
+  await openIsolated(slot);
+  fireEvent.click(slot.getByRole("button", HEADER_PULL));
+  await slot.findByRole("button", { name: "Pull anyway" });
+  selected = appendNativeCommit(selected);
+  await pluginQueryClient.invalidateQueries();
+  await waitFor(() => expect(slot.queryByRole("button", { name: "Pull anyway" })).toBeNull());
+  fireEvent.click(slot.getByRole("button", HEADER_PULL));
+  await waitFor(() => expect(actions).toHaveLength(2));
+  expect(actions[1]).toMatchObject({
+    observed: { head: "b".repeat(40) },
+    action: { kind: "updateWorkspace", accepted: null },
+  });
+  slot.lifecycle.unmount();
+});
+
+test("native Land warns about an unknown existing PR only when its commits will be rewritten", async () => {
+  let selected = isolatedBoard();
+  const slot = await panel({
+    ...baseRpc,
+    workspace: (input: { checkout?: CheckoutSelection }) => (input.checkout ? selected : workspace),
+    otherMachines: () => ({ checkouts: [isolatedCheckout], reason: null, environmentId: "env-1" }),
+  });
+  const card = await openIsolated(slot);
+  fireEvent.click(card.getByRole("button", { name: "Land" }));
+  expect(card.queryByText(/An existing PR may remain open/)).toBeNull();
+  fireEvent.click(card.getByRole("button", { name: "Cancel" }));
+  selected = structuredClone(selected);
+  selected.upstream!.behind = 2;
+  await pluginQueryClient.invalidateQueries();
+  await slot.findByText("2 behind");
+  fireEvent.click(card.getByRole("button", { name: "Land" }));
+  expect(card.getByText(/creates the landing commit on top of the newer target/)).toBeTruthy();
+  expect(card.queryByText(/rebases every applied branch/)).toBeNull();
+  expect(
+    card.getByText(/An existing PR may remain open after these commits are rewritten/),
+  ).toBeTruthy();
+  slot.lifecycle.unmount();
+});
