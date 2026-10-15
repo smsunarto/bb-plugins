@@ -267,3 +267,41 @@ test.skipIf(process.platform !== "linux")(
     await assertWorkspaceStopped(path);
   },
 );
+
+test.skipIf(process.platform !== "linux")(
+  "CLI service modes do not reserve a checkout, but Editor arguments still do",
+  async () => {
+    const path = await fixture();
+    const binary = join(path, "unity");
+    await writeFile(binary, "#!/bin/sh\nwhile :; do sleep 1; done\n", { mode: 0o700 });
+    for (const args of [
+      ["--internal-identity-serve", "--cloudEnvironment", "production"],
+      ["--internal-auth-broker-serve"],
+      ["--internal-identity-serve-extra"],
+      ["--internal-auth-broker-serve-extra"],
+      ["--internal-identity-serve", "-projectPath", path],
+      ["--internal-auth-broker-serve", "-projectPath", path],
+    ]) {
+      const child = spawn(binary, args, { stdio: "ignore" });
+      await new Promise<void>((resolve, reject) => {
+        child.once("spawn", resolve);
+        child.once("error", reject);
+      });
+      try {
+        if (
+          args[1] === "--cloudEnvironment" ||
+          (args.length === 1 && args[0] === "--internal-auth-broker-serve")
+        ) {
+          await assertWorkspaceStopped(path);
+        } else {
+          await expect(assertWorkspaceStopped(path)).rejects.toThrow(`Unity Editor ${child.pid}`);
+        }
+      } finally {
+        const exit = new Promise<void>((resolve) => child.once("exit", () => resolve()));
+        child.kill();
+        await exit;
+      }
+    }
+    await assertWorkspaceStopped(path);
+  },
+);

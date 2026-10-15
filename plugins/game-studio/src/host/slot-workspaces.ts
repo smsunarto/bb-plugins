@@ -219,12 +219,21 @@ async function listEditors(signal?: AbortSignal): Promise<WorkspaceEditorProcess
                 maxBuffer: 1024 * 1024,
               })
             ).stdout;
+      const argv = process.platform === "linux" ? command.split("\0").filter(Boolean) : [];
+      // Unity CLI's Linux identity/auth services also run as `unity`; they own no project.
+      // A project argument keeps the process subject to Editor ownership checks.
+      if (
+        process.platform === "linux" &&
+        argv.some(
+          (arg) => arg === "--internal-identity-serve" || arg === "--internal-auth-broker-serve",
+        ) &&
+        !argv.some((arg) => /^-projectpath(?:=|$)/i.test(arg))
+      )
+        continue;
       editors.push({
         pid,
         projectPath:
-          process.platform === "linux"
-            ? projectArgument(command.split("\0").filter(Boolean))
-            : flattenedProjectArgument(command),
+          process.platform === "linux" ? projectArgument(argv) : flattenedProjectArgument(command),
       });
     } catch (error) {
       // The Editor may have exited between snapshots. Retrying is safe; guessing is not.
