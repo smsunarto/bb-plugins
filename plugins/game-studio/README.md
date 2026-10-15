@@ -23,16 +23,26 @@ creation tooling. Leave the version unset to let the agent choose through Hub.
   file-backed Queued, Running, Done, Failed, or Uncertain progress reported by
   the agent; a thread becoming idle does not mark work done.
 - **Design:** editable Markdown documents with explicit saves and disk-conflict
-  handling.
+  handling. New workspaces start with a living GDD: vision, pillars, core loop,
+  current slice, constraints, and experiments. Save before asking the agent;
+  requests identify the selected document and its revision.
 - **Canvas:** boards with draggable notes, documents, image/video/3D requests,
   audio assets, and reference connections. Select text, document or image nodes
   as generation inputs, or connect their handles. Text and image generation
   saves the current board first and returns the result to its node.
+  Brief starters cover concept exploration, isolated 3D references, focused edits,
+  motion, geometry contracts, and design experiments. Inserting a starter appends
+  to an existing draft. Replace bracketed guidance before generating.
 - **Assets:** upload to `canvas/staging`; browse imported media under
   `Assets/GameStudio`. The agent verifies and imports staged files using the
   project's established asset structure.
 - **Evidence:** screenshots and recordings saved under `canvas/evidence`. Unity
   WebGL builds can also be opened through BB's leased file preview.
+
+Panel requests add a native Game Studio context mention to the composer. The
+mention resolves workflow instructions and saved workspace references when sent.
+It also preserves the prepared request identity and keeps technical metadata out
+of the visible prompt. Keep it attached so the agent receives the selected action's guidance.
 
 Image, video, and 3D generation use native agent tools: `game_studio_generate_image`,
 `game_studio_generate_video`, and `game_studio_generate_3d_asset`. Read

@@ -78,7 +78,19 @@ function DocumentDraft({
             {saving ? "Saving…" : "Save"}
           </button>
         )}
-        <button onClick={onRequest}>Ask agent</button>
+        <button
+          disabled={dirty || saving || changed}
+          title={
+            dirty || saving
+              ? "Save this document before asking the agent"
+              : changed
+                ? "Reload the current file before asking the agent"
+                : undefined
+          }
+          onClick={onRequest}
+        >
+          Ask agent
+        </button>
       </header>
       {changed && (
         <div className="gs-disk-notice">
@@ -128,7 +140,7 @@ export function DesignEditor({
   selectedId: string;
   onSelect: (id: string) => void;
   onRefresh: () => Promise<void>;
-  onRequest: () => void;
+  onRequest: (documentId?: string) => void;
 }) {
   const client = rpc.useClient();
   const [error, setError] = useState("");
@@ -172,7 +184,7 @@ export function DesignEditor({
             active={item.id === document.id}
             gameId={workspace.game.id}
             onSaved={onRefresh}
-            onRequest={onRequest}
+            onRequest={() => onRequest(item.id)}
             controls={
               <select
                 aria-label="Design document selection"
@@ -197,7 +209,7 @@ export function DesignEditor({
           <Icon name="FileText" />
           <h2>No design doc yet</h2>
           <div className="gs-toolbar">
-            <button className="gs-primary" onClick={onRequest}>
+            <button className="gs-primary" onClick={() => onRequest()}>
               Draft with agent
             </button>
             <button onClick={() => void add()} disabled={creating}>

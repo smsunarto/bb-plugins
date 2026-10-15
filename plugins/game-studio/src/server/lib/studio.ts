@@ -23,6 +23,7 @@ import {
   type createDocumentInput,
   type createGameInput,
   type promptInput,
+  type requestDescriptorSchema,
   type recordRequestInput,
   type saveBoardInput,
   type saveDocumentInput,
@@ -243,7 +244,7 @@ async function initializeCanvas(
     bb,
     game,
     "canvas/documents/design.md",
-    `# ${game.name}\n\n## Game concept\n\n## Player experience\n\n## Visual direction\n\n## Asset inventory\n\n## Acceptance criteria\n`,
+    `${instructions.read("templates/game-design", { title: game.name })}\n`,
   );
   await initializeFile(bb, game, "canvas/assets.json", json({ version: 1, assets: {} }));
   await initializeFile(
@@ -830,7 +831,11 @@ function unitySetupLabels(setup: Game["unitySetup"]) {
   };
 }
 
-export async function prompt(bb: BbPluginApi, input: z.infer<typeof promptInput>) {
+export async function prompt(
+  bb: BbPluginApi,
+  input: z.infer<typeof promptInput>,
+  preparedRequest?: z.infer<typeof requestDescriptorSchema>,
+) {
   const workspace = await loadWorkspace(bb, input.gameId);
   const target = input.nodeId
     ? workspace.boards.find(({ board }) => board.nodes.some(({ id }) => id === input.nodeId))
@@ -838,8 +843,16 @@ export async function prompt(bb: BbPluginApi, input: z.infer<typeof promptInput>
   const node = input.nodeId ? target?.board.nodes.find(({ id }) => id === input.nodeId) : undefined;
   if (input.nodeId && !node)
     throw new Error("The selected canvas node no longer exists. Reload the workspace.");
+  const documentId = input.documentId ?? workspace.index.mainDocumentId;
+  const document = workspace.documents.find((item) => item.id === documentId);
+  if (input.documentId && !document)
+    throw new Error("The selected design document no longer exists. Reload the workspace.");
   const recipe = input.action === "asset" ? input.recipe : undefined;
-  const descriptor = { id: randomUUID(), action: input.action, createdAt: Date.now() };
+  const descriptor = preparedRequest ?? {
+    id: randomUUID(),
+    action: input.action,
+    createdAt: Date.now(),
+  };
   const requestPath = `canvas/requests/${descriptor.id}.json`;
   const unitySetup = unitySetupLabels(workspace.game.unitySetup);
   const request = instructions
@@ -862,22 +875,38 @@ export async function prompt(bb: BbPluginApi, input: z.infer<typeof promptInput>
     ...(input.action === "new-unity" && workspace.game.unitySetup
       ? { unitySetup: workspace.game.unitySetup }
       : {}),
-    ...(workspace.index.mainDocumentId
-      ? { documentPath: `canvas/documents/${workspace.index.mainDocumentId}.md` }
+    ...(document
+      ? { documentPath: `canvas/documents/${document.id}.md`, documentRevision: document.revision }
       : {}),
-    ...(target ? { boardPath: `canvas/boards/${target.board.id}.json` } : {}),
-    ...(node ? { nodeId: node.id } : {}),
+    ...(target
+      ? { boardPath: `canvas/boards/${target.board.id}.json`, boardRevision: target.revision }
+      : {}),
+    ...(node
+      ? {
+          nodeId: node.id,
+          nodeBrief: requestBrief(node),
+          nodeInputs: {
+            images: node.data.images ?? [],
+            references: node.data.references ?? [],
+            ...(node.data.promptSource ? { promptSource: node.data.promptSource } : {}),
+          },
+        }
+      : {}),
     ...(recipe
       ? { generationRequest: { recipe, outputCount: recipe === "concept-art" ? 4 : 1 } }
       : {}),
   };
   return {
-    prompt: `${request}\n\n${instructions.read("requests/progress")}\n\n\`\`\`json\n${JSON.stringify(references, null, 2)}\n\`\`\``,
+    prompt: request.trim(),
     context: [
       instructions.read("workspace"),
       instructions.read("request-progress"),
       instructions.read(input.action, unitySetup),
       ...(recipe ? [instructions.read(`generation/${recipe}`)] : []),
+      instructions.read("requests/progress"),
+      instructions.read("requests/context", {
+        references: JSON.stringify(references, null, 2),
+      }),
     ].join("\n\n"),
     request: descriptor,
   };

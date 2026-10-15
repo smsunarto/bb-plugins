@@ -8,3 +8,25 @@ when necessary. Do not submit a paid job without an authorized output scope and
 budget. Save accepted outputs in `canvas/staging/`, outside Unity Assets, and update the catalog entry and
 canvas asset reference, and verify the integrated consumer. Keep pending or
 failed generation visible; do not claim success from a submitted job alone.
+
+Build the art brief from the current design decisions:
+
+- Purpose: gameplay role and deliverable, such as concept, production reference,
+  sprite, motion study, or geometry
+- Subject: identity, silhouette, proportions, materials, and defining details
+- View: game camera, framing, pose, and intended screen size
+- Art direction: shape language, palette, surface treatment, and lighting
+- References: label each input's role, such as identity, style, composition, or pose
+- Revision: what to preserve, one requested change, and observable acceptance checks
+
+Keep concept exploration distinct from a production reference. Compare concepts
+for gameplay readability and consistency with the art direction. A 3D source needs
+one complete, isolated subject, clear margins, even lighting, and minimal occlusion.
+Do not convert a scenic concept or contact sheet into a single asset.
+
+Review results at the intended game camera and screen size. For motion, inspect
+continuity, camera behavior, action timing, and the loop seam when requested.
+Review 3D shape and topology in solid and wireframe views before engine integration.
+Then verify scale, orientation, pivot, materials, budget, and gameplay readability
+in the consumer. Visual approval alone does not prove engine fit. Record the
+selected candidate, reference paths, revision reason, and remaining cleanup.

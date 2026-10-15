@@ -38,6 +38,7 @@ import type {
 } from "../shared/schema.ts";
 import { CanvasInputs } from "./canvas-inputs.tsx";
 import { GenerationOptions } from "./generation.tsx";
+import { BriefStarters } from "./brief-starters.tsx";
 import { arrangeNodes, newNodePosition, revealNode } from "./canvas-layout.ts";
 import { boardSnapshot } from "./canvas-board.ts";
 import "@xyflow/react/dist/style.css";
@@ -826,6 +827,24 @@ export function StudioCanvas({
                 placeholder="Describe the asset and its Unity consumer…"
               />
             </label>
+          )}
+          {["text", "image", "video", "model-3d"].includes(selected.data.source.type) && (
+            <BriefStarters
+              key={selected.id}
+              kind={selected.data.source.type}
+              hasDraft={Boolean(
+                String(
+                  selected.data.source.data[
+                    selected.data.source.type === "text" ? "instruction" : "prompt"
+                  ] ?? "",
+                ).trim(),
+              )}
+              onInsert={(text) => {
+                const field = selected.data.source.type === "text" ? "instruction" : "prompt";
+                const current = String(selected.data.source.data[field] ?? "").trimEnd();
+                updateData(field, current ? `${current}\n\n${text}` : text);
+              }}
+            />
           )}
           {["text", "image"].includes(selected.data.source.type) && (
             <>

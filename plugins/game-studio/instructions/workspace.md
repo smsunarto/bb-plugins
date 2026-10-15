@@ -38,6 +38,17 @@ other nodes with `{type:"node",nodeId}` and library assets with
 `{type:"library",assetId}`. An image prompt is a request, not a finished asset.
 Keep work in progress distinct from verified output.
 
+## Art briefs and review
+
+Connect each asset to its gameplay role and acceptance checks. Include subject,
+silhouette, game camera, screen size, palette, materials, and lighting in the
+brief. Label references by identity, style, composition, or pose. For revisions,
+state what to preserve and the targeted change. Compare concepts before preparing
+an isolated production reference for 3D. Review motion continuity and loop seams
+when requested. Review solid geometry and wireframe before checking scale, pivot,
+orientation, budget, and readability in the game. Record the selected candidate
+and remaining cleanup; generation success alone does not establish acceptance.
+
 ## Unity ownership and integration
 
 Discover and claim an exact Unity Editor through `unity-editors` before control.

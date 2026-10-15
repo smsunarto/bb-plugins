@@ -16,6 +16,7 @@ import { PluginQueryBoundary } from "@bb-kit/core/rpc/query";
 import { rpc } from "./rpc.ts";
 import { ConnectDialog } from "./connect.tsx";
 import type { GenerationRecipe, Game } from "../shared/schema.ts";
+import { REQUEST_MENTION_PROVIDER } from "../shared/request-mention.ts";
 import { StudioCanvas } from "./canvas.tsx";
 import { DesignEditor, AssetLibrary, Evidence } from "./views.tsx";
 import { UnityPanel, useUnityEditors, editorLabel } from "./unity.tsx";
@@ -249,10 +250,22 @@ function Workbench({ gameId, tab }: { gameId: string; tab: Tab }) {
   const upload = useRef<HTMLInputElement>(null);
   const editors = useUnityEditors(query.data?.game.hostId);
   const request = useCallback(
-    async (action: StudioAction, nodeId?: string, recipe?: GenerationRecipe) => {
+    async (
+      action: StudioAction,
+      nodeId?: string,
+      recipe?: GenerationRecipe,
+      requestedDocumentId?: string,
+    ) => {
       setError("");
       try {
-        const result = await client.prompt({ gameId, action, nodeId, recipe });
+        const input = {
+          gameId,
+          action,
+          nodeId,
+          recipe,
+          ...(requestedDocumentId ? { documentId: requestedDocumentId } : {}),
+        };
+        const result = await client.prompt(input);
         const game = query.data?.game;
         if (!game) throw new Error("Project unavailable. Reload the workspace.");
         if (composer.scope.kind === "thread") {
@@ -271,6 +284,11 @@ function Workbench({ gameId, tab }: { gameId: string; tab: Tab }) {
         composer.updateText((current) =>
           current.trim() ? `${current}\n\n${result.prompt}` : result.prompt,
         );
+        composer.insertMention({
+          provider: REQUEST_MENTION_PROVIDER,
+          id: JSON.stringify({ ...input, request: result.request }),
+          label: `Game Studio · ${action}`,
+        });
         composer.focus();
       } catch (cause) {
         setError(message(cause));
@@ -422,7 +440,7 @@ function Workbench({ gameId, tab }: { gameId: string; tab: Tab }) {
                   selectedId={documentId}
                   onSelect={setDocumentId}
                   onRefresh={refetch}
-                  onRequest={() => void request("design")}
+                  onRequest={(id) => void request("design", undefined, undefined, id)}
                 />
               </div>
             )}

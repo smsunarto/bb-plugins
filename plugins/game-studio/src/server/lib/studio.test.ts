@@ -213,6 +213,10 @@ const input = {
   kind: "unity" as const,
 };
 
+function requestPayload(context: string) {
+  return JSON.parse([...context.matchAll(/```json\n([\s\S]*?)\n```/g)].at(-1)?.[1] ?? "null");
+}
+
 test("Unity design workspace reopens persisted Markdown and BB project identity", async () => {
   const f = fake();
   const game = await create.execute({ bb: f.bb }, input);
@@ -527,15 +531,19 @@ test("generation requests show the selected brief and provider while keeping pol
     "Generate 4 concept art candidates (Midjourney) for Dragon concept on Design board.",
   );
   assert.match(result.prompt, /Brief: A green dragon/);
-  const payload = result.prompt.match(/```json\n([\s\S]+)\n```$/)?.[1];
-  const { request, requestPath, ...references } = JSON.parse(payload ?? "null");
+  const { request, requestPath, ...references } = requestPayload(result.context);
+  const current = await get.execute({ bb: f.bb }, { gameId: game.id });
   assert.deepEqual(references, {
     gameId: game.id,
     hostId: "host",
     rootPath: "/games/orbit",
     documentPath: "canvas/documents/design.md",
+    documentRevision: current.documents[0]!.revision,
     boardPath: "canvas/boards/main.json",
+    boardRevision: current.boards[0]!.revision,
     nodeId: "sprite",
+    nodeBrief: "Brief: A green dragon",
+    nodeInputs: { images: [], references: [] },
     generationRequest: { recipe: "concept-art", outputCount: 4 },
   });
   assert.deepEqual(request, result.request);
@@ -546,12 +554,45 @@ test("generation requests show the selected brief and provider while keeping pol
   assert.match(result.context, /Concept art · Midjourney/);
   assert.doesNotMatch(
     result.prompt,
-    /scott-engineering:game-dev|authoring claim|selectedNode|position/,
+    /scott-engineering:game-dev|authoring claim|selectedNode|position|requestPath|documentRevision|```json/,
   );
   await assert.rejects(
     async () =>
       prompt.execute({ bb: f.bb }, { gameId: game.id, action: "asset", nodeId: "missing" }),
     /no longer exists/,
+  );
+});
+
+test("design requests use the selected document and its saved revision", async () => {
+  const f = fake();
+  const game = await create.execute({ bb: f.bb }, input);
+  const workspace = await createDocument.execute(
+    { bb: f.bb },
+    { gameId: game.id, title: "Movement experiment" },
+  );
+  const document = workspace.documents.find((item) => item.id !== "design")!;
+  const saved = await saveDocument.execute(
+    { bb: f.bb },
+    {
+      gameId: game.id,
+      documentId: document.id,
+      revision: document.revision,
+      markdown: "# Movement experiment\nTest whether the dash clears the gap.",
+    },
+  );
+  const result = await prompt.execute(
+    { bb: f.bb },
+    { gameId: game.id, action: "design", documentId: document.id },
+  );
+  const payload = requestPayload(result.context);
+  assert.equal(payload.documentPath, `canvas/documents/${document.id}.md`);
+  assert.equal(payload.documentRevision, saved.revision);
+  assert.match(result.context, new RegExp(saved.revision));
+  assert.equal(payload.request.id, result.request.id);
+  await assert.rejects(
+    async () =>
+      prompt.execute({ bb: f.bb }, { gameId: game.id, action: "design", documentId: "missing" }),
+    /selected design document no longer exists/,
   );
 });
 
@@ -565,7 +606,7 @@ test("Unity setup selections survive reopen and appear only in new-project reque
   assert.deepEqual(workspace.game.unitySetup, { version: "6000.3.4f1", template: "2d-urp" });
   const writeCount = f.writes.length;
   const result = await prompt.execute({ bb: f.bb }, { gameId: game.id, action: "new-unity" });
-  const payload = JSON.parse(result.prompt.match(/```json\n([\s\S]+)\n```$/)![1]!);
+  const payload = requestPayload(result.context);
   assert.deepEqual(payload.unitySetup, { version: "6000.3.4f1", template: "2d-urp" });
   assert.match(result.prompt, /Editor version: 6000\.3\.4f1\. Template: 2D URP\./);
   assert.match(result.context, /Requested Editor: 6000\.3\.4f1\./);
@@ -575,7 +616,7 @@ test("Unity setup selections survive reopen and appear only in new-project reque
   assert.equal(f.writes.length, writeCount);
   assert.deepEqual((await get.execute({ bb: f.bb }, { gameId: game.id })).requests, []);
   const followup = await prompt.execute({ bb: f.bb }, { gameId: game.id, action: "build" });
-  const references = JSON.parse(followup.prompt.match(/```json\n([\s\S]+)\n```$/)![1]!);
+  const references = requestPayload(followup.context);
   assert.equal(references.request.action, "build");
   assert.equal(references.unitySetup, undefined);
   const automatic = await create.execute(

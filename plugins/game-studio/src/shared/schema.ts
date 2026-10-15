@@ -204,6 +204,7 @@ export const promptInput = gameInput
   .extend({
     action: requestActionSchema,
     nodeId: idSchema.optional(),
+    documentId: idSchema.optional(),
     recipe: generationRecipeSchema.optional(),
   })
   .strict();

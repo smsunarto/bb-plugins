@@ -212,6 +212,18 @@
   min-height: 130px;
   resize: vertical;
 }
+.gs-brief-starters > summary {
+  cursor: pointer;
+}
+.gs-brief-starters[open] {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.gs-brief-starters p {
+  margin: 0;
+  font-size: 12px;
+}
 .gs-node-inspector .gs-danger {
   margin-top: auto;
   color: var(--destructive-text);

@@ -36,10 +36,13 @@ import { falAuth } from "./rpc/fal-auth.ts";
 import { auth } from "./command/auth.ts";
 import { generateCanvas } from "./rpc/generate-canvas.ts";
 import { canvasGenerationStatus } from "./rpc/canvas-generation-status.ts";
+import { briefTemplates } from "./rpc/brief-templates.ts";
+import { registerRequestMention } from "./lib/request-mention.ts";
 
 export default definePlugin({
   pluginId: "game-studio",
   rpc: {
+    briefTemplates,
     generateCanvas,
     canvasGenerationStatus,
     falAuth,
@@ -104,7 +107,8 @@ export default definePlugin({
       ensureLegacyClaims,
     };
   },
-  setup({ unitySlots }) {
+  setup({ bb, unitySlots }) {
+    registerRequestMention(bb);
     unitySlots.install();
   },
   agents: {

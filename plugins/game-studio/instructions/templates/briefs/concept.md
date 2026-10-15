@@ -1,0 +1,7 @@
+Purpose: [gameplay role and intended use of this concept]
+Subject: [identity, silhouette, proportions, defining shapes and materials]
+View: [camera angle, framing, projected gameplay size]
+Art direction: [shape language, palette, material treatment, lighting]
+References: [name each connected image and its role: identity, style, pose, or composition]
+Explore: [one design variable to vary while preserving the approved anchors]
+Acceptance: [recognizable silhouette, visual hierarchy, contrast at the intended camera]

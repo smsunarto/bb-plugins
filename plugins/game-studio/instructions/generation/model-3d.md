@@ -6,3 +6,13 @@ Confirm the asset contract and authorized paid-job budget before submitting.
 Request authentication when required. Save geometry in `canvas/staging/`,
 review the solid mesh and wireframe, and report its path and remaining cleanup.
 This request does not authorize texture generation or additional outputs.
+
+Use a production reference with one complete subject, a plain white or light-gray
+background, even diffuse lighting, and minimal occlusion. Aim for 70–85% frame
+occupancy with clear margins; use a neutral A-pose or T-pose for characters when
+the contract requires rigging. Do not use a scenic concept or contact sheet as
+the single-image source. Preserve the approved silhouette and defining shapes.
+Check solid and wireframe views for proportions, hidden-side artifacts, merged
+parts, thin features, and topology. Assess engine scale, pivot, orientation,
+budget, and game-camera readability separately; a generated mesh is not proof
+of engine fit. Report which checks passed and what remains unverified.
