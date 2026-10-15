@@ -18,11 +18,19 @@ const model = z.strictObject({
   id: z.string().min(1).max(100).optional(),
 });
 const brief = z.string().trim().min(1).max(12000);
+const imageReferenceKey = z
+  .string()
+  .min(1)
+  .max(32000, {
+    message: "Image reference labels exceed 32,000 characters. Shorten names or remove aliases.",
+  })
+  .optional();
 export const imageRequest = z.strictObject({
   kind: z.literal("image"),
   prompt: brief,
   model: model.default({ provider: "google", id: "gemini-nano-banana-2.1" }),
   images: z.array(mediaPath).max(14).default([]),
+  imageReferenceKey,
   outputCount: z.union([z.literal(1), z.literal(4)]).optional(),
   aspectRatio: z.enum(["1:1", "16:9", "9:16", "4:3", "3:4", "3:2", "2:3"]).default("1:1"),
   transparentBackground: z.boolean().default(false),
@@ -34,6 +42,7 @@ export const textRequest = z.strictObject({
   model: model.default({ provider: "bb" }),
   providerId: z.string().min(1).max(100).optional(),
   images: z.array(mediaPath).max(14).default([]),
+  imageReferenceKey,
   outputCount: z.literal(1).default(1),
 });
 export const videoRequest = z.strictObject({
@@ -185,7 +194,11 @@ const policies: Record<
 function normalizeMidjourney(request: MediaRequest): MediaRequest {
   if (request.kind === "model-3d" || request.kind === "text")
     throw new Error("Midjourney supports only images and video.");
-  if (/(?:^|\s)--[a-z]|\{[^{}]*,[^{}]*\}/i.test(request.prompt))
+  const promptParts = [
+    request.prompt,
+    ...(request.kind === "image" && request.imageReferenceKey ? [request.imageReferenceKey] : []),
+  ];
+  if (promptParts.some((part) => /(?:^|\s)--[a-z]|\{[^{}]*,[^{}]*\}/i.test(part)))
     throw new Error("Use a plain creative brief. Put generation settings in the tool parameters.");
   if (request.kind === "image") {
     if (request.outputCount !== undefined && request.outputCount !== 4)

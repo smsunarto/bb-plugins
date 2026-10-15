@@ -1065,6 +1065,114 @@ test("generation candidates attach only to the current brief and preserve the us
   assert.equal(final.assets.find((asset) => asset.path === path)?.id, adopted.candidateAssetIds[0]);
 });
 
+for (const referenceType of ["library", "node"] as const) {
+  for (const change of ["replace-reference", "remove-reference", "add-unrelated"] as const) {
+    test(`generation attachment follows ${referenceType} catalog inputs after ${change}`, async () => {
+      const { adoptGeneration } = await import("./studio.ts");
+      const { canvasRequest } = await import("./canvas-generation.ts");
+      const { gameSchema, workspaceSchema } = await import("../../shared/schema.ts");
+      const { generationJob } = await import("../../shared/generation.ts");
+      const f = fake(),
+        game = gameSchema.parse(await create.execute({ bb: f.bb }, input));
+      const sourcePath = "canvas/staging/reference/brass.png";
+      const replacementPath = "canvas/staging/reference/silver.png";
+      f.seed("host", `/games/orbit/${sourcePath}`, "brass", "base64");
+      f.seed("host", `/games/orbit/${replacementPath}`, "silver", "base64");
+      const manifest = {
+        version: 1,
+        assets: { reference: { name: "Key reference", path: sourcePath } },
+      };
+      f.seed("host", "/games/orbit/canvas/assets.json", JSON.stringify(manifest));
+      const original = (await get.execute({ bb: f.bb }, { gameId: game.id })).boards[0]!;
+      const references =
+        referenceType === "library"
+          ? [{ type: "library", assetId: "reference" }]
+          : [{ type: "node", nodeId: "reference-node" }];
+      await saveBoard.execute(
+        { bb: f.bb },
+        {
+          gameId: game.id,
+          revision: original.revision,
+          board: {
+            ...original.board,
+            nodes: [
+              {
+                id: "image",
+                type: "image",
+                title: "Key variation",
+                position: { x: 600, y: 200 },
+                data: { prompt: "Add a crescent-shaped handle", references },
+              },
+              {
+                id: "reference-node",
+                type: "image",
+                title: "Key reference",
+                position: { x: 200, y: 200 },
+                data: { assetId: "reference" },
+              },
+            ],
+          },
+        },
+      );
+      const workspace = workspaceSchema.parse(await get.execute({ bb: f.bb }, { gameId: game.id }));
+      const request = canvasRequest(workspace, {
+        gameId: game.id,
+        boardId: "main",
+        nodeId: "image",
+        revision: workspace.boards[0]!.revision,
+        requestId: "reference-generation",
+      });
+      assert.equal(request.request.kind, "image");
+      if (request.request.kind !== "image") throw new Error("Expected an image request");
+      assert.deepEqual(request.request.images, [sourcePath]);
+      if (change === "replace-reference") manifest.assets.reference.path = replacementPath;
+      else if (change === "remove-reference") Reflect.deleteProperty(manifest.assets, "reference");
+      else
+        Object.assign(manifest.assets, { unrelated: { name: "Other key", path: replacementPath } });
+      f.seed("host", "/games/orbit/canvas/assets.json", JSON.stringify(manifest));
+      const path = "canvas/staging/reference-generation/key.png";
+      f.seed("host", `/games/orbit/${path}`, "output", "base64");
+      const job = generationJob.parse({
+        version: 1,
+        id: "reference-generation",
+        threadId: "thread",
+        createdAt: 1,
+        updatedAt: 2,
+        status: "succeeded",
+        ...request,
+        outputs: [{ path, type: "image", sizeBytes: 6, sha256: "a".repeat(64) }],
+      });
+      const adopted = await adoptGeneration(f.bb, game, job);
+      assert.equal(adopted.attached, change === "add-unrelated");
+      const final = await get.execute({ bb: f.bb }, { gameId: game.id });
+      const generated = final.assets.find((asset) => asset.path === path);
+      assert.equal(generated?.id, adopted.candidateAssetIds[0]);
+      assert.equal(generated?.type, "image");
+      const expectedReferencePath = {
+        "replace-reference": replacementPath,
+        "remove-reference": undefined,
+        "add-unrelated": sourcePath,
+      }[change];
+      assert.equal(
+        final.assets.find((asset) => asset.id === "reference")?.path,
+        expectedReferencePath,
+      );
+      const target = final.boards[0]!.board.nodes.find((node) => node.id === "image")!;
+      assert.equal(target.data.prompt, "Add a crescent-shaped handle");
+      assert.deepEqual(target.data.references, references);
+      assert.equal(target.data.assetId, change === "add-unrelated" ? generated!.id : undefined);
+      assert.equal(
+        target.data.generationJobId,
+        change === "add-unrelated" ? "reference-generation" : undefined,
+      );
+      assert.equal(
+        final.boards[0]!.board.nodes.find((node) => node.id === "reference-node")!.data.assetId,
+        "reference",
+      );
+    });
+  }
+}
+
 test("a generation status service outage preserves the workspace and marks pending jobs uncertain", async () => {
   const f = fake(),
     game = await create.execute({ bb: f.bb }, input);

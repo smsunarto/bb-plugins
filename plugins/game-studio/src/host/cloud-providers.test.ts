@@ -1,5 +1,5 @@
 import { afterEach, expect, test } from "bun:test";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { cloudProviders } from "./cloud-providers.ts";
@@ -73,6 +73,45 @@ test("Nano Banana uses the Interactions REST shape and authenticated headers", a
   });
   expect(await readFile(join(ctx.outputPath, "output.png"), "utf8")).toBe("image-output");
   expect(calls.map((call) => call.options?.method)).toEqual(["POST", "GET"]);
+});
+
+test("Google receives ordered reference labels alongside the corresponding image bytes", async () => {
+  const { ctx, recorded } = await context({
+    kind: "image",
+    prompt: "Refine the key silhouette using the palette.",
+    images: ["references/shape.png", "references/palette.webp"],
+    imageReferenceKey: `Attached image references (in attachment order):
+1. ["Key shape (node: shape)", "Handle silhouette"]
+2. ["Blue palette (asset: palette)"]`,
+  });
+  const shape = join(ctx.rootPath, "shape.png"),
+    palette = join(ctx.rootPath, "palette.webp");
+  await writeFile(shape, "shape-image");
+  await writeFile(palette, "palette-image");
+  ctx.imagePaths = [shape, palette];
+  const calls: { url: string; options?: RequestInit }[] = [];
+  globalThis.fetch = (async (url, options) => {
+    calls.push({ url: String(url), options });
+    return response({ id: "labelled-job", status: "in_progress" });
+  }) as typeof fetch;
+  const id = await cloudProviders({ googleApiKey: "test-google-secret" }).google!.submit(ctx);
+  expect(id).toBe("labelled-job");
+  expect(recorded).toEqual(["labelled-job"]);
+  expect(calls.map((call) => ({ url: call.url, method: call.options?.method }))).toEqual([
+    { url: "https://generativelanguage.googleapis.com/v1beta/interactions", method: "POST" },
+  ]);
+  expect(JSON.parse(String(calls[0]!.options?.body)).input).toEqual([
+    { type: "image", data: "c2hhcGUtaW1hZ2U=", mime_type: "image/png" },
+    { type: "image", data: "cGFsZXR0ZS1pbWFnZQ==", mime_type: "image/webp" },
+    {
+      type: "text",
+      text: `Refine the key silhouette using the palette.
+
+Attached image references (in attachment order):
+1. ["Key shape (node: shape)", "Handle silhouette"]
+2. ["Blue palette (asset: palette)"]`,
+    },
+  ]);
 });
 
 test("Omni downloads a Google file with credentials kept off the CDN redirect", async () => {

@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import { instructionFiles } from "@bb-kit/core/instructions";
 import { generationJob, type GenerationJob } from "../../shared/generation.ts";
+import { generationPrompt } from "../../shared/generation-prompt.ts";
 import type { Game } from "../../shared/schema.ts";
 import { projectFile } from "./paths.ts";
 import { studioHostContract } from "../../shared/host-contract.ts";
@@ -99,7 +100,7 @@ export class CanvasText {
             {
               type: "text",
               mentions: [],
-              text: `${instructions.read("canvas-text")}\n\n${job.request.prompt}`,
+              text: `${instructions.read("canvas-text")}\n\n${generationPrompt(job.request)}`,
             },
             ...images,
           ],

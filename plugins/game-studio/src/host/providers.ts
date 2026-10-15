@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { experimental_sanitizeInheritedChildProcessEnv } from "@get-bb/plugin-sdk/host";
 import { z } from "zod";
 import type { MediaRequest } from "../shared/generation.ts";
+import { generationPrompt } from "../shared/generation-prompt.ts";
 
 export type Command = { executable: string; args: string[]; cwd: string; signal: AbortSignal };
 export type CommandResult = { code: number; stdout: string; stderr: string };
@@ -104,7 +105,7 @@ const midjourney: MediaProvider = {
     if (request.kind === "image") {
       args = [
         "imagine",
-        request.prompt,
+        generationPrompt(request),
         "--model",
         "midjourney",
         "--speed",

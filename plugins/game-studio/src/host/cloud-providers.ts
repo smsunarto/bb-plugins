@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { setTimeout } from "node:timers/promises";
 import { z } from "zod";
 import { ProviderFailure, type MediaProvider, type ProviderContext } from "./providers.ts";
+import { generationPrompt } from "../shared/generation-prompt.ts";
 
 export type Credentials = { googleApiKey?: string; falAccessToken?: string };
 const googleRoot = "https://generativelanguage.googleapis.com/v1beta/interactions";
@@ -157,7 +158,7 @@ export function cloudProviders(credentials: Credentials): Readonly<Record<string
           : "";
       const input = [
         ...(await Promise.all(context.imagePaths.map(image))),
-        { type: "text", text: frameRoles + request.prompt },
+        { type: "text", text: frameRoles + generationPrompt(request) },
       ];
       const result = interaction.parse(
         await jsonRequest(googleRoot, headers, context.signal, {

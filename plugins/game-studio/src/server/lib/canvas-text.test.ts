@@ -148,6 +148,38 @@ test("inline text uses the selected BB provider/model and image input in an isol
   expect((await text.start(f.game, f.job)).created).toBe(false);
   expect(f.starts).toHaveLength(1);
 });
+test("BB text receives ordered reference labels with both image inputs", async () => {
+  const f = await setup();
+  await writeFile(join(f.game.rootPath, "canvas/staging/palette.png"), "palette-image");
+  const job = generationJob.parse({
+    ...f.job,
+    request: {
+      ...f.job.request,
+      images: ["canvas/staging/ref.png", "canvas/staging/palette.png"],
+      imageReferenceKey: `Attached image references (in attachment order):
+1. ["Key shape (node: shape)", "Handle silhouette"]
+2. ["Blue palette (asset: palette)"]`,
+    },
+  });
+  expect((await new CanvasText(f.bb).start(f.game, job)).job.status).toBe("running");
+  expect(f.starts).toHaveLength(1);
+  expect(f.starts[0]).toMatchObject({
+    providerId: "selected-provider",
+    model: "selected-model",
+    input: [
+      {
+        type: "text",
+        text: expect.stringContaining(`Write item lore
+
+Attached image references (in attachment order):
+1. ["Key shape (node: shape)", "Handle silhouette"]
+2. ["Blue palette (asset: palette)"]`),
+      },
+      { type: "image", url: "data:image/png;base64,cG5nLWltYWdl" },
+      { type: "image", url: "data:image/png;base64,cGFsZXR0ZS1pbWFnZQ==" },
+    ],
+  });
+});
 test("lost BB spawn reply stays uncertain without a second submission, and retirement fences late starts", async () => {
   const f = await setup();
   f.loseReply();

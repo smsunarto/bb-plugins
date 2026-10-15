@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { z } from "zod";
 import { mediaRequest, type canvasGenerationInput } from "../../shared/generation.ts";
 import type { Workspace, Board, CanvasNode } from "../../shared/schema.ts";
+import { files as instructions } from "./instructions.ts";
 
 const reference = z.discriminatedUnion("type", [
   z.object({ type: z.literal("node"), nodeId: z.string() }),
@@ -21,13 +22,15 @@ function semantic(node: CanvasNode) {
   } = node.data;
   return { type: node.type, title: node.title, description: node.description, data };
 }
-/** Includes connected briefs and their document revisions, while ignoring presentation-only layout. */
+/** Includes connected briefs and resolved catalog inputs, ignoring presentation-only layout. */
 export function nodeFingerprint(
   node: CanvasNode,
   board: Board,
-  workspace: Pick<Workspace, "documents">,
+  workspace: Pick<Workspace, "documents" | "assets">,
 ) {
-  const dependencies = references(node).flatMap((ref) => (ref.type === "node" ? [ref.nodeId] : []));
+  const refs = references(node);
+  const assetIds = new Set(refs.flatMap((ref) => (ref.type === "library" ? [ref.assetId] : [])));
+  const dependencies = refs.flatMap((ref) => (ref.type === "node" ? [ref.nodeId] : []));
   const source = z
     .object({ type: z.literal("node"), nodeId: z.string() })
     .optional()
@@ -36,6 +39,12 @@ export function nodeFingerprint(
   const sources = [...new Set(dependencies)].sort().map((id) => {
     const other = board.nodes.find((item) => item.id === id);
     if (!other) return { id, missing: true };
+    if (
+      other.type !== "text" &&
+      other.type !== "document" &&
+      typeof other.data.assetId === "string"
+    )
+      assetIds.add(other.data.assetId);
     const doc = workspace.documents.find((item) => item.id === other.data.documentId);
     return Object.assign(
       {},
@@ -45,8 +54,14 @@ export function nodeFingerprint(
       doc ? { documentRevision: doc.revision } : {},
     );
   });
+  const assets = [...assetIds].sort().map((id) => {
+    const asset = workspace.assets.find((item) => item.id === id);
+    return asset
+      ? { id, name: asset.name, path: asset.path, type: asset.type }
+      : { id, missing: true };
+  });
   return createHash("sha256")
-    .update(JSON.stringify({ node: semantic(node), sources }))
+    .update(JSON.stringify({ node: semantic(node), sources, ...(assets.length ? { assets } : {}) }))
     .digest("hex");
 }
 export function canvasRequest(workspace: Workspace, input: z.output<typeof canvasGenerationInput>) {
@@ -60,6 +75,7 @@ export function canvasRequest(workspace: Workspace, input: z.output<typeof canva
   if (!node) throw new Error("The canvas node no longer exists.");
   const paths: string[] = [],
     linkedText: string[] = [];
+  const imageLabels = new Map<string, Set<string>>();
   const visited = new Set<string>();
   const addNode = (id: string, promptOnly = false) => {
     if (id === node.id) throw new Error("A node cannot use itself as an input.");
@@ -78,13 +94,20 @@ export function canvasRequest(workspace: Workspace, input: z.output<typeof canva
       return;
     }
     if (promptOnly) throw new Error("promptSource must refer to a text or document node.");
-    addAsset(other.data.assetId);
+    addAsset(other.data.assetId, other);
   };
-  const addAsset = (id: unknown) => {
+  const addAsset = (id: unknown, sourceNode?: CanvasNode) => {
     const asset = workspace.assets.find((item) => item.id === id);
     if (!asset || asset.type !== "image")
       throw new Error("Every image reference needs an existing image output.");
     paths.push(asset.path);
+    const labels = imageLabels.get(asset.path) ?? new Set<string>();
+    labels.add(
+      sourceNode
+        ? `${sourceNode.title || asset.name} (node: ${sourceNode.id})`
+        : `${asset.name} (asset: ${asset.id})`,
+    );
+    imageLabels.set(asset.path, labels);
   };
   const source = z
     .object({ type: z.literal("node"), nodeId: z.string() })
@@ -95,16 +118,25 @@ export function canvasRequest(workspace: Workspace, input: z.output<typeof canva
     if (ref.type === "node") addNode(ref.nodeId);
     else addAsset(ref.assetId);
   }
-  const prompt = [
+  const promptSections = [
     node.type === "text"
       ? String(node.data.instruction ?? "")
       : typeof node.data.prompt === "string"
         ? node.data.prompt
         : (node.description ?? ""),
     ...linkedText,
-  ]
-    .filter(Boolean)
-    .join("\n\n");
+  ];
+  const prompt = promptSections.filter(Boolean).join("\n\n");
+  const labels =
+    (node.type === "image" || node.type === "text") && imageLabels.size
+      ? {
+          imageReferenceKey: instructions.read("generation/reference-key", {
+            references: [...imageLabels.values()]
+              .map((names, index) => `${index + 1}. ${JSON.stringify(Array.from(names))}`)
+              .join("\n"),
+          }),
+        }
+      : {};
   const kind =
     node.type === "text"
       ? "text"
@@ -124,6 +156,7 @@ export function canvasRequest(workspace: Workspace, input: z.output<typeof canva
           providerId: input.textProviderId,
           ...(input.model ? { model: input.model } : {}),
           images: [...new Set(paths)],
+          ...labels,
         }
       : kind === "model-3d"
         ? {
@@ -147,6 +180,7 @@ export function canvasRequest(workspace: Workspace, input: z.output<typeof canva
               prompt,
               ...(input.model ? { model: input.model } : {}),
               images: [...new Set(paths)],
+              ...labels,
               aspectRatio: node.data.aspectRatio,
               resolution: node.data.resolution,
             },

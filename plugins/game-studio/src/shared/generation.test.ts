@@ -51,3 +51,48 @@ test("provider constraints prevent hidden batches, unsupported alpha, and unsafe
     ),
   ).toThrow("not supported");
 });
+
+test("reference keys preserve the brief with a separate bounded metadata budget", () => {
+  const request = mediaRequest.parse({
+    kind: "image",
+    prompt: "Keep Hero's shape and Palette's colors",
+    images: ["hero.png", "palette.png"],
+    imageReferenceKey: '1. ["Hero", "Shape study"]\n2. ["Palette"]',
+  });
+  expect(normalizeMediaRequest(request)).toMatchObject({
+    images: ["hero.png", "palette.png"],
+    imageReferenceKey: '1. ["Hero", "Shape study"]\n2. ["Palette"]',
+    prompt: "Keep Hero's shape and Palette's colors",
+  });
+  expect(normalizeMediaRequest({ ...request, model: { provider: "midjourney" } })).toMatchObject({
+    outputCount: 4,
+    imageReferenceKey: '1. ["Hero", "Shape study"]\n2. ["Palette"]',
+  });
+  expect(() =>
+    mediaRequest.parse({
+      kind: "image",
+      prompt: "A key",
+      images: ["hero.png", "palette.png"],
+      imageReferenceKey: "",
+    }),
+  ).toThrow();
+  expect(() =>
+    mediaRequest.parse({
+      kind: "text",
+      prompt: "Describe the key",
+      images: ["hero.png"],
+      imageReferenceKey: "x".repeat(32001),
+    }),
+  ).toThrow("Shorten names or remove aliases");
+  expect(() =>
+    normalizeMediaRequest(
+      mediaRequest.parse({
+        kind: "image",
+        prompt: "A key",
+        model: { provider: "midjourney" },
+        images: ["hero.png"],
+        imageReferenceKey: '1. ["Hero --repeat 8"]',
+      }),
+    ),
+  ).toThrow("plain creative brief");
+});

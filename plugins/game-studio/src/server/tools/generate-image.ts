@@ -3,7 +3,7 @@ import { imageRequest, generationId } from "../../shared/generation.ts";
 import type { GenerationContext } from "../lib/generations.ts";
 export const generateImage = defineTool({
   parameters: imageRequest
-    .omit({ kind: true })
+    .omit({ kind: true, imageReferenceKey: true })
     .extend({ gameId: generationId, requestId: generationId }),
   async execute(ctx: ToolContext<GenerationContext>, input) {
     const { gameId, requestId, ...request } = input;
