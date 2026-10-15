@@ -131,12 +131,15 @@ function Gallery() {
           <p className="gs-muted">Your Unity project, design, and agent in one workspace.</p>
         </div>
         <div className="gs-toolbar">
-          <input
-            aria-label="Search games"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search projects"
-          />
+          <label className="gs-search">
+            <Icon name="Search" />
+            <input
+              aria-label="Search games"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search projects"
+            />
+          </label>
           <button
             onClick={() => setConnect("new")}
             disabled={!overview.data?.hosts.some((h) => h.online)}
@@ -325,6 +328,31 @@ function Workbench({ gameId, tab }: { gameId: string; tab: Tab }) {
     <main className="gs-app gs-workbench">
       <div className="gs-workspace">
         <section className="gs-viewer">
+          <div className="gs-project-context">
+            <Icon name="Boxes" />
+            <strong className="gs-truncate" title={workspace.game.name}>
+              {workspace.game.name}
+            </strong>
+            <span className="gs-spacer" />
+            <button
+              className="gs-editor-chip"
+              onClick={() => go("unity")}
+              title="Unity Editor status"
+            >
+              <span className="gs-status-dot" />
+              <span className="gs-truncate">
+                {editorLabel(editors.data, workspace.game, workspace.game.threadId)}
+              </span>
+            </button>
+            <button
+              className="gs-icon"
+              aria-label="Refresh workspace"
+              title="Refresh workspace"
+              onClick={() => void refetch()}
+            >
+              <Icon name="RefreshCw" />
+            </button>
+          </div>
           <header className="gs-pane-header">
             <button
               className="gs-icon"
@@ -341,6 +369,7 @@ function Workbench({ gameId, tab }: { gameId: string; tab: Tab }) {
                   aria-current={tab === item.id ? "page" : undefined}
                   onClick={() => go(item.id)}
                   title={item.title}
+                  aria-label={item.title}
                 >
                   <Icon name={item.icon} />
                   <span>{item.title}</span>
@@ -348,14 +377,6 @@ function Workbench({ gameId, tab }: { gameId: string; tab: Tab }) {
               ))}
             </nav>
             <span className="gs-spacer" />
-            <button
-              className="gs-editor-chip"
-              onClick={() => go("unity")}
-              title="Unity Editor status"
-            >
-              <span className="gs-status-dot" />
-              {editorLabel(editors.data, workspace.game, workspace.game.threadId)}
-            </button>
             {tab === "canvas" && (
               <output className="gs-save-state">
                 {canvasStatus === "error"
@@ -367,14 +388,6 @@ function Workbench({ gameId, tab }: { gameId: string; tab: Tab }) {
                       : "Saved"}
               </output>
             )}
-            <button
-              className="gs-icon"
-              aria-label="Refresh workspace"
-              title="Refresh workspace"
-              onClick={() => void refetch()}
-            >
-              <Icon name="RefreshCw" />
-            </button>
           </header>
           {error && <Notice>{error}</Notice>}
           {query.error && (

@@ -272,6 +272,15 @@ export function AssetLibrary({
         (kind === "all" || asset.type === kind) &&
         asset.name.toLowerCase().includes(search.toLowerCase()),
     );
+  const emptyTitle = search
+    ? "No assets match"
+    : scope === "staged"
+      ? "No staged assets"
+      : "No imported media";
+  const emptyDescription =
+    scope === "staged"
+      ? "Generated and uploaded files land in canvas/staging."
+      : "Imported media in Assets/GameStudio appears here.";
   return (
     <section className="gs-assets">
       <header className="gs-asset-toolbar">
@@ -316,27 +325,36 @@ export function AssetLibrary({
         </button>
       </header>
       <div className="gs-asset-body">
-        <div className="gs-asset-grid">
-          {assets.map((asset) => (
-            <button
-              className="gs-asset-tile"
-              key={asset.id}
-              aria-pressed={selected?.id === asset.id}
-              onClick={() => {
-                setSelected(asset);
-                setCopyStatus("");
-                setDimensions("");
-                if (!lease) void onLease();
-              }}
-            >
-              <div className="gs-asset-thumbnail">
-                <Media asset={asset} baseUrl={lease?.baseUrl} />
-              </div>
-              <span>{asset.name}</span>
-              <small>{scope === "staged" ? "Staged" : "In Assets"}</small>
-            </button>
-          ))}
-        </div>
+        {assets.length ? (
+          <div className="gs-asset-grid">
+            {assets.map((asset) => (
+              <button
+                className="gs-asset-tile"
+                key={asset.id}
+                aria-pressed={selected?.id === asset.id}
+                onClick={() => {
+                  setSelected(asset);
+                  setCopyStatus("");
+                  setDimensions("");
+                  if (!lease) void onLease();
+                }}
+              >
+                <div className="gs-asset-thumbnail">
+                  <Media asset={asset} baseUrl={lease?.baseUrl} />
+                </div>
+                <span>{asset.name}</span>
+                <small>{scope === "staged" ? "Staged" : "In Assets"}</small>
+              </button>
+            ))}
+          </div>
+        ) : (
+          <div className="gs-empty">
+            <Icon name="Layers" />
+            <h2>{emptyTitle}</h2>
+            <p className="gs-muted">{emptyDescription}</p>
+            <button onClick={onUpload}>Stage files</button>
+          </div>
+        )}
         {selected && (
           <aside className="gs-asset-inspector">
             <header>
@@ -398,24 +416,6 @@ export function AssetLibrary({
           </aside>
         )}
       </div>
-      {!assets.length && (
-        <div className="gs-empty">
-          <Icon name="Layers" />
-          <h2>
-            {search
-              ? "No assets match"
-              : scope === "staged"
-                ? "No staged assets"
-                : "No imported media"}
-          </h2>
-          <p className="gs-muted">
-            {scope === "staged"
-              ? "Generated and uploaded files land in canvas/staging."
-              : "Imported media in Assets/GameStudio appears here."}
-          </p>
-          <button onClick={onUpload}>Stage files</button>
-        </div>
-      )}
     </section>
   );
 }

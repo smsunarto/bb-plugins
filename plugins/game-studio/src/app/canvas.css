@@ -212,7 +212,7 @@
 .gs-canvas-notice button {
   margin-left: 8px;
 }
-@media (max-width: 720px) {
+@container studio (max-width: 560px) {
   .gs-canvas-dock {
     max-width: calc(100% - 24px);
     overflow: auto;

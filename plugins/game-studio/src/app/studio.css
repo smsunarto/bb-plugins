@@ -1,6 +1,9 @@
 /* Workspace layout adapted from OhMyGame; modified for BB and Unity. Apache-2.0. */
 .gs-app {
+  container: studio / inline-size;
+  width: 100%;
   height: 100%;
+  min-width: 0;
   min-height: 0;
   color: var(--foreground);
   background: var(--background);
@@ -26,13 +29,16 @@
   align-items: center;
   justify-content: center;
   gap: 6px;
-  min-height: 30px;
-  padding: 5px 10px;
+  min-height: 32px;
+  padding: 6px 10px;
   background: var(--surface-raised);
   border: 1px solid var(--border);
   border-radius: 6px;
+  transition:
+    background-color 120ms ease-out,
+    border-color 120ms ease-out;
 }
-.gs-app button:hover {
+.gs-app button:hover:not(:disabled) {
   background: var(--state-hover);
 }
 .gs-app button:disabled {
@@ -54,7 +60,7 @@
   border-radius: 6px;
   background: var(--surface-recessed);
   padding: 7px 9px;
-  outline: none;
+  caret-color: var(--primary);
 }
 .gs-app textarea {
   line-height: 1.6;
@@ -101,7 +107,7 @@
   border-color: var(--primary);
   color: var(--primary-foreground);
 }
-.gs-app .gs-primary:hover {
+.gs-app .gs-primary:hover:not(:disabled) {
   background: var(--primary);
   color: var(--primary-foreground);
   filter: brightness(1.06);
@@ -122,9 +128,10 @@
   text-overflow: ellipsis;
 }
 .gs-app .gs-icon {
-  width: 28px;
-  height: 28px;
-  min-height: 28px;
+  width: 32px;
+  height: 32px;
+  min-height: 32px;
+  flex-shrink: 0;
   padding: 5px;
   background: transparent;
   border: 0;
@@ -187,39 +194,60 @@
 }
 .gs-gallery {
   overflow: auto;
-  padding: 32px 40px;
+  padding: 32px;
 }
 .gs-gallery-header {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
+  flex-direction: column;
+  align-items: stretch;
   gap: 24px;
-  margin-bottom: 32px;
+  max-width: 1120px;
+  margin: 0 auto 24px;
 }
 .gs-gallery-header p {
   margin-top: 6px;
 }
-.gs-gallery-header input {
-  width: 240px;
+.gs-gallery-header .gs-toolbar {
+  gap: 10px;
+}
+.gs-app .gs-search {
+  position: relative;
+  flex: 1;
+  min-width: 180px;
+}
+.gs-search > svg {
+  position: absolute;
+  left: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--muted-foreground);
+  pointer-events: none;
+}
+.gs-app .gs-search input {
+  width: 100%;
+  padding-left: 34px;
 }
 .gs-project-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
-  gap: 28px 20px;
+  grid-template-columns: repeat(auto-fill, minmax(min(240px, 100%), 1fr));
+  gap: 24px;
+  max-width: 1120px;
+  margin: 0 auto;
 }
 .gs-app .gs-project-card {
   align-items: stretch;
   justify-content: flex-start;
   flex-direction: column;
   background: transparent;
-  padding: 0;
-  border: 0;
+  padding: 8px;
+  border: 1px solid transparent;
   text-align: left;
   gap: 8px;
 }
 .gs-project-card strong {
   font-size: 13px;
-  font-weight: 500;
+  font-weight: 600;
+  overflow-wrap: anywhere;
 }
 .gs-project-card > span {
   font-size: 11px;
@@ -229,7 +257,7 @@
   width: 100%;
   border: 1px solid var(--border);
   border-radius: 8px;
-  background: linear-gradient(145deg, var(--surface-raised-solid), var(--surface-recessed-solid));
+  background: var(--surface-recessed-solid);
   display: grid;
   place-items: center;
 }
@@ -244,6 +272,7 @@
 .gs-app .gs-new-card {
   aspect-ratio: 252/142;
   align-self: start;
+  margin: 8px;
   flex-direction: column;
   gap: 12px;
   min-height: 135px;
@@ -267,11 +296,12 @@
   background: var(--popover);
   border: 1px solid var(--border);
   border-radius: var(--radius, 8px);
-  box-shadow:
-    0 0 0 100vmax color-mix(in srgb, var(--background) 80%, transparent),
-    var(--shadow-md);
+  box-shadow: var(--shadow-md);
   max-height: 90vh;
   overflow: auto;
+}
+.gs-dialog::backdrop {
+  background: color-mix(in srgb, var(--background) 80%, transparent);
 }
 .gs-dialog form {
   display: flex;
@@ -334,14 +364,33 @@
   overflow: hidden;
 }
 .gs-pane-header {
-  height: 48px;
   min-height: 48px;
+  flex-shrink: 0;
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 0 10px;
+  padding: 6px 12px;
   border-bottom: 1px solid var(--border-hairline);
   overflow: hidden;
+}
+.gs-project-context {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 6px 12px 0;
+  flex-shrink: 0;
+}
+.gs-project-context > svg {
+  color: var(--muted-foreground);
+}
+.gs-project-context > strong {
+  min-width: 0;
+  font-size: 12px;
+  font-weight: 600;
+}
+.gs-project-context .gs-editor-chip {
+  flex-shrink: 0;
 }
 .gs-pane-header > strong {
   font-weight: 500;
@@ -354,7 +403,7 @@
 .gs-tabs {
   display: flex;
   align-items: center;
-  height: 30px;
+  min-height: 34px;
   padding: 2px;
   border: 1px solid var(--border-hairline);
   border-radius: 7px;
@@ -366,14 +415,13 @@
   border: 0;
   background: transparent;
   min-width: 30px;
-  height: 24px;
-  min-height: 24px;
-  padding: 3px 7px;
+  min-height: 28px;
+  padding: 5px 9px;
   color: var(--muted-foreground);
   font-size: 11px;
 }
 .gs-tabs button span {
-  display: none;
+  display: inline;
 }
 .gs-app .gs-tabs button[aria-current="page"] {
   background: var(--surface-selected);
@@ -389,10 +437,10 @@
 .gs-app .gs-editor-chip {
   background: transparent;
   border: 1px solid var(--border-hairline);
-  font-size: 10px;
-  padding: 3px 7px;
+  font-size: 11px;
+  padding: 4px 8px;
   min-height: 26px;
-  max-width: 190px;
+  max-width: min(190px, 45cqi);
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
@@ -411,6 +459,7 @@
 }
 .gs-unity-page,
 .gs-evidence {
+  width: 100%;
   max-width: 920px;
   margin: 0 auto;
   padding: 28px 20px;
@@ -418,19 +467,25 @@
   overflow: auto;
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 20px;
 }
 .gs-page-title {
   display: flex;
   align-items: center;
   gap: 12px;
-  margin-bottom: 5px;
+  flex-wrap: wrap;
+  margin-bottom: 4px;
   flex-shrink: 0;
 }
 .gs-page-title > svg {
   width: 30px;
   height: 30px;
   color: var(--muted-foreground);
+}
+.gs-page-title > div {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 .gs-page-title h1 {
   font-size: 20px;
@@ -439,9 +494,9 @@
   margin-top: 4px;
 }
 .gs-card {
-  padding: 18px;
-  background: var(--surface-raised-solid, var(--background));
-  border: 1px solid var(--border);
+  padding: 20px;
+  background: var(--background);
+  border: 1px solid var(--border-hairline);
   border-radius: var(--radius, 8px);
   display: flex;
   flex-direction: column;
@@ -470,9 +525,15 @@
   padding: 10px 0;
   border-bottom: 1px solid var(--border-hairline);
 }
+.gs-editor-row:last-child {
+  border-bottom: 0;
+  padding-bottom: 0;
+}
 .gs-editor-row > div {
   display: flex;
   flex-direction: column;
+  min-width: 0;
+  overflow-wrap: anywhere;
   gap: 4px;
 }
 .gs-editor-row > div:last-child {
@@ -480,7 +541,7 @@
 }
 .gs-action-grid {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(auto-fit, minmax(min(180px, 100%), 1fr));
   gap: 8px;
 }
 .gs-app .gs-action-grid button {
@@ -556,13 +617,16 @@
   padding: 7px 12px;
   border-bottom: 1px solid var(--border-hairline);
   flex-shrink: 0;
-  min-height: 42px;
+  min-height: 46px;
+  flex-wrap: wrap;
 }
 .gs-document-picker select {
   max-width: 220px;
 }
 .gs-document-toolbar select {
-  max-width: min(220px, 30%);
+  flex: 1 1 180px;
+  min-width: min(180px, 100%);
+  max-width: 220px;
 }
 .gs-markdown :is(h1, h2, h3, h4) {
   margin-top: 1.2em;
@@ -583,13 +647,13 @@
 }
 .gs-document-body {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   flex: 1;
   min-height: 0;
 }
 .gs-document-body[data-mode="edit"],
 .gs-document-body[data-mode="read"] {
-  grid-template-columns: 1fr;
+  grid-template-columns: minmax(0, 1fr);
 }
 .gs-document-body > textarea {
   width: 100%;
@@ -622,7 +686,7 @@
   height: 100%;
   display: flex;
   flex-direction: column;
-  overflow: auto;
+  overflow: hidden;
 }
 .gs-asset-toolbar {
   display: flex;
@@ -643,7 +707,8 @@
 }
 .gs-asset-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(140px, 100%), 1fr));
+  min-width: 0;
   align-content: start;
   gap: 16px;
   padding: 20px;
@@ -652,15 +717,18 @@
 .gs-app .gs-asset-tile {
   background: transparent;
   border: 1px solid transparent;
-  padding: 5px;
+  padding: 6px;
+  gap: 8px;
+  align-self: start;
   display: flex;
   align-items: stretch;
   flex-direction: column;
   text-align: left;
   overflow: hidden;
 }
-.gs-asset-tile[aria-pressed="true"] {
+.gs-app .gs-asset-tile[aria-pressed="true"] {
   border-color: var(--primary);
+  background: var(--surface-selected);
 }
 .gs-asset-thumbnail {
   aspect-ratio: 1;
@@ -707,6 +775,14 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
+  gap: 8px;
+}
+.gs-asset-inspector header strong {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.gs-asset-body > .gs-empty {
+  flex: 1;
 }
 .gs-asset-inspector code {
   overflow-wrap: anywhere;
@@ -780,84 +856,94 @@
   border-radius: 6px;
   background: var(--background);
 }
-@media (min-width: 721px) and (max-width: 1099px) {
-  .gs-editor-chip {
-    max-width: 120px !important;
-  }
-  .gs-pane-header {
-    padding: 0 7px;
-  }
-  .gs-save-state {
-    display: none;
-  }
-}
-@media (max-width: 720px) {
-  .gs-gallery {
-    padding: 24px 16px;
-  }
-  .gs-gallery-header {
-    flex-direction: column;
-    align-items: stretch;
-    gap: 16px;
-  }
-  .gs-gallery-header input {
-    width: 100%;
-  }
+@container studio (max-width: 560px) {
   .gs-gallery-header .gs-toolbar {
-    align-items: stretch;
-    flex-direction: column;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
   }
   .gs-project-grid {
-    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(min(200px, 100%), 1fr));
+    gap: 16px;
   }
   .gs-tabs button span {
-    display: none !important;
-  }
-  .gs-editor-chip {
-    max-width: 125px !important;
-  }
-  .gs-save-state {
     display: none;
+  }
+  .gs-tabs button[aria-current="page"] span {
+    display: inline;
   }
   .gs-unity-page,
   .gs-evidence {
-    padding: 18px 12px calc(88px + env(safe-area-inset-bottom));
+    padding: 20px 16px max(24px, env(safe-area-inset-bottom));
+    gap: 16px;
+  }
+  .gs-card {
+    padding: 16px;
   }
   .gs-action-grid {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
-  .gs-action-grid button {
-    display: grid !important;
-    grid-template-columns: 20px 1fr;
-    gap: 5px 10px !important;
+  .gs-app .gs-action-grid button {
+    display: grid;
+    grid-template-columns: 20px minmax(0, 1fr);
+    gap: 4px 10px;
+    align-items: center;
   }
   .gs-action-grid span {
     grid-column: 2;
   }
   .gs-document-body[data-mode="split"] {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
   .gs-document-body[data-mode="split"] > .gs-markdown {
     display: none;
   }
-  .gs-document-picker {
-    flex-wrap: wrap;
-  }
-  .gs-document-toolbar strong {
-    max-width: 100px;
-    overflow: hidden;
-    text-overflow: ellipsis;
+  .gs-asset-body {
+    flex-direction: column;
   }
   .gs-asset-inspector {
-    width: 230px;
+    order: -1;
+    width: 100%;
+    overflow: visible;
+    border-left: 0;
+    border-bottom: 1px solid var(--border-hairline);
   }
   .gs-asset-grid {
+    flex: none;
     padding: 12px;
     gap: 8px;
-    grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(min(120px, 100%), 1fr));
+  }
+  .gs-asset-toolbar input {
+    flex: 1 1 160px;
+    min-width: 120px;
+    width: auto;
   }
   .gs-page-title h1 {
     font-size: 18px;
+  }
+}
+@container studio (max-width: 380px) {
+  .gs-pane-header {
+    gap: 4px;
+    padding-inline: 8px;
+  }
+  .gs-tabs button[aria-current="page"] span {
+    display: none;
+  }
+  .gs-save-state {
+    display: none;
+  }
+}
+@media (pointer: coarse) {
+  .gs-app button,
+  .gs-app .gs-icon,
+  .gs-app .gs-tabs button,
+  .gs-app .gs-segment button {
+    min-height: 44px;
+  }
+  .gs-app .gs-icon {
+    width: 44px;
+    height: 44px;
   }
 }
 @media (prefers-reduced-motion: reduce) {
