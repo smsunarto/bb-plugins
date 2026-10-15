@@ -31,10 +31,14 @@ import { uploadAsset } from "./rpc/upload-asset.ts";
 import { prompt } from "./rpc/prompt.ts";
 import { inspectUnity } from "./rpc/inspect-unity.ts";
 import { recordRequest } from "./rpc/record-request.ts";
+import { FalOAuth } from "./lib/fal-oauth.ts";
+import { falAuth } from "./rpc/fal-auth.ts";
+import { auth } from "./command/auth.ts";
 
 export default definePlugin({
   pluginId: "game-studio",
   rpc: {
+    falAuth,
     listUnityEditors,
     overview,
     create,
@@ -52,7 +56,7 @@ export default definePlugin({
     recordRequest,
   },
   rpcPublication: { discoverable: true },
-  command: { manage: manageCommand, slots: slotsCommand },
+  command: { manage: manageCommand, slots: slotsCommand, auth },
   services(bb) {
     const slotStore = new SlotStore(bb.storage.database());
     const unityEditors = createUnityEditors(bb, slotStore);
@@ -66,15 +70,30 @@ export default definePlugin({
         description:
           "Service-account-bound key restricted to the Gemini API. Used for Nano Banana 2.1 and Gemini Omni.",
       },
-      falApiKey: {
+      falOAuthCredentials: {
         type: "string",
-        label: "Fal API key",
+        label: "Fal OAuth session (managed)",
         secret: true,
-        description: "Used only for Fal H3 Max video generation.",
+        description: "Managed by browser sign-in. Stores refresh authorization for Fal H3 Max.",
       },
     });
+    const falOAuth = new FalOAuth({
+      read: async () => (await generationSettings.get()).falOAuthCredentials,
+      save: async (value) => {
+        await generationSettings.experimental_set({ falOAuthCredentials: value });
+      },
+    });
+    bb.onDispose(() => falOAuth.dispose());
     return {
-      generations: new Generations(bb, () => generationSettings.get(), slotStore),
+      falOAuth,
+      generations: new Generations(
+        bb,
+        async (provider) => ({
+          googleApiKey: (await generationSettings.get()).googleApiKey,
+          ...(provider === "fal" ? { falAccessToken: await falOAuth.accessToken() } : {}),
+        }),
+        slotStore,
+      ),
       unityEditors,
       unitySlots,
       slotProvisioning: new SlotProvisioning(bb, unitySlots),

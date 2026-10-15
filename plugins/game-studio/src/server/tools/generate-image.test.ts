@@ -18,6 +18,14 @@ test("native generation tools dispatch typed requests to the game's host and kee
   };
   const { bb, harness } = createFakePluginHost({
     pluginId: "game-studio",
+    settings: {
+      falOAuthCredentials: JSON.stringify({
+        accessToken: "test-fal-access",
+        refreshToken: "test-fal-refresh",
+        expiresAt: Date.now() + 3600000,
+        account: "test@example.com",
+      }),
+    },
     sdk: {
       threads: {
         get: async () =>

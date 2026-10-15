@@ -6,7 +6,7 @@ import { unityHostContract } from "./unity-editor-contract.ts";
 
 const credentials = z.strictObject({
   googleApiKey: z.string().optional(),
-  falApiKey: z.string().optional(),
+  falAccessToken: z.string().optional(),
 });
 const target = z.strictObject({ rootPath: z.string().min(1), jobId: generationId });
 export const studioHostContract = defineRpcContract({

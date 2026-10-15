@@ -39,8 +39,12 @@ for images and Gemini Omni 1.1 Flash for video. Fal H3 Max remains an alternate
 video provider; Midjourney supports images/video and Tripo P2 handles approved
 image-to-geometry work. ElevenLabs and Suno remain agent workflows for audio.
 
-Set the **Google Gemini API key** and optional **Fal API key** in Game Studio's
-secret settings. Keys never belong in game files or the browser bundle. Native
+Set the **Google Gemini API key** in Game Studio's secret settings. Connect Fal
+with browser OAuth: `bb game-studio auth connect` returns a verification URL and
+code; `bb game-studio auth poll` completes sign-in after approval. Use `status` to
+inspect the account and `disconnect` to revoke authorization. Refresh tokens stay
+in BB secret settings; access tokens refresh automatically before Fal work and
+never belong in game files or the browser bundle. Native
 Google/Fal adapters use their APIs; Midjourney/Tripo adapters run the installed
 workflow CLIs on the project's host, with fixed argument lists and no shell.
 

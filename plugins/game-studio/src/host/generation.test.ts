@@ -190,7 +190,7 @@ test("missing Google credentials fail before network submission and are not save
     ...target,
     threadId: "thread",
     request: mediaRequest.parse({ kind: "image", prompt: "A key" }),
-    credentials: { falApiKey: "test-private-fal" },
+    credentials: { falAccessToken: "test-private-fal" },
   });
   const result = await settled(runner, target);
   expect(result.status).toBe("auth-required");

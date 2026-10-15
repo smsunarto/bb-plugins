@@ -15,7 +15,7 @@ import { getGame, loadWorkspace, adoptGeneration } from "./studio.ts";
 import type { SlotStore } from "./slot-store.ts";
 import { canvasRequest } from "./canvas-generation.ts";
 
-type Credentials = { googleApiKey?: string; falApiKey?: string };
+type Credentials = { googleApiKey?: string; falAccessToken?: string };
 type Game = Awaited<ReturnType<typeof getGame>>;
 type AdoptionResult = {
   job: GenerationJob;
@@ -25,21 +25,25 @@ export type GenerationContext = { bb: BbPluginApi; generations: Generations };
 
 export class Generations {
   private readonly bb: BbPluginApi;
-  private readonly settings: () => Promise<Credentials>;
+  private readonly settings: (provider: MediaRequest["model"]["provider"]) => Promise<Credentials>;
   private readonly slots: SlotStore;
   private readonly work: GenerationWork;
   private readonly adoptions = new Map<string, Promise<AdoptionResult>>();
-  constructor(bb: BbPluginApi, settings: () => Promise<Credentials>, slots: SlotStore) {
+  constructor(
+    bb: BbPluginApi,
+    settings: (provider: MediaRequest["model"]["provider"]) => Promise<Credentials>,
+    slots: SlotStore,
+  ) {
     this.bb = bb;
     this.settings = settings;
     this.slots = slots;
     this.work = new GenerationWork(slots);
   }
-  private async credentials(): Promise<Credentials> {
-    const settings = await this.settings();
+  private async credentials(provider: MediaRequest["model"]["provider"]): Promise<Credentials> {
+    const settings = await this.settings(provider);
     return {
       ...(settings.googleApiKey ? { googleApiKey: settings.googleApiKey } : {}),
-      ...(settings.falApiKey ? { falApiKey: settings.falApiKey } : {}),
+      ...(settings.falAccessToken ? { falAccessToken: settings.falAccessToken } : {}),
     };
   }
   private async game(gameId: string, threadId: string | undefined, writable = true) {
@@ -109,7 +113,7 @@ export class Generations {
     const normalized = mediaRequest.parse(
         JSON.parse(JSON.stringify(normalizeMediaRequest(request))),
       ),
-      credentials = await this.credentials();
+      credentials = await this.credentials(normalized.model.provider);
     this.work.reserve(game.hostId, game.rootPath, requestId, threadId!);
     const result = await client.call(
       "start",
@@ -169,7 +173,7 @@ export class Generations {
       input.action === "resume"
         ? await client.call(
             "resume",
-            { ...target, credentials: await this.credentials() },
+            { ...target, credentials: await this.credentials(before.request.model.provider) },
             { hostId: game.hostId },
           )
         : input.action === "cancel"

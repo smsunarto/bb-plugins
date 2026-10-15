@@ -130,7 +130,7 @@ test("Omni downloads a Google file with credentials kept off the CDN redirect", 
   expect(headers[3]).toBeUndefined();
 });
 
-test("Fal preserves server queue URLs, submits H3 Max once, and downloads without leaking the key", async () => {
+test("Fal preserves server queue URLs, submits H3 Max once, and downloads without leaking the OAuth token", async () => {
   const { ctx, recorded } = await context({
     kind: "video",
     prompt: "A coin",
@@ -144,6 +144,8 @@ test("Fal preserves server queue URLs, submits H3 Max once, and downloads withou
   globalThis.fetch = (async (url, options) => {
     const path = String(url);
     urls.push(path);
+    if (path.startsWith("https://queue.fal.run/"))
+      expect(new Headers(options?.headers).get("Authorization")).toBe("Bearer test-fal-secret");
     if (options?.method === "POST") {
       expect(JSON.parse(String(options.body))).toMatchObject({
         prompt: "A coin",
@@ -158,7 +160,7 @@ test("Fal preserves server queue URLs, submits H3 Max once, and downloads withou
     expect(options?.headers).toBeUndefined();
     return new Response("fal-video");
   }) as typeof fetch;
-  const provider = cloudProviders({ falApiKey: "test-fal-secret" }).fal!;
+  const provider = cloudProviders({ falAccessToken: "test-fal-secret" }).fal!;
   const taskId = await provider.submit(ctx);
   await provider.collect(ctx, taskId);
   expect(recorded).toEqual([id]);

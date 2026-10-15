@@ -4,7 +4,7 @@ import { setTimeout } from "node:timers/promises";
 import { z } from "zod";
 import { ProviderFailure, type MediaProvider, type ProviderContext } from "./providers.ts";
 
-export type Credentials = { googleApiKey?: string; falApiKey?: string };
+export type Credentials = { googleApiKey?: string; falAccessToken?: string };
 const googleRoot = "https://generativelanguage.googleapis.com/v1beta/interactions";
 const falRoot = "https://queue.fal.run/minimax/h3-max/reference-to-video";
 const content = z.object({
@@ -122,6 +122,14 @@ function requireKey(key: string | undefined, provider: string): string {
     );
   return key;
 }
+function falAuthorization(credentials: Credentials): string {
+  if (!credentials.falAccessToken)
+    throw new ProviderFailure(
+      "Connect Fal through Game Studio browser sign-in. No request was submitted.",
+      "auth-required",
+    );
+  return `Bearer ${credentials.falAccessToken}`;
+}
 function queueUrl(url: string) {
   const parsed = new URL(url);
   if (
@@ -209,7 +217,7 @@ export function cloudProviders(credentials: Credentials): Readonly<Record<string
       const result = falReceipt.parse(
         await jsonRequest(
           falRoot,
-          { Authorization: `Key ${requireKey(credentials.falApiKey, "Fal")}` },
+          { Authorization: falAuthorization(credentials) },
           context.signal,
           {
             prompt: request.prompt,
@@ -229,7 +237,7 @@ export function cloudProviders(credentials: Credentials): Readonly<Record<string
       return result.request_id;
     },
     async collect(context, taskId) {
-      const headers = { Authorization: `Key ${requireKey(credentials.falApiKey, "Fal")}` };
+      const headers = { Authorization: falAuthorization(credentials) };
       const statusUrl = queueUrl(
         context.providerData?.statusUrl ??
           `${falRoot}/requests/${encodeURIComponent(taskId)}/status`,
