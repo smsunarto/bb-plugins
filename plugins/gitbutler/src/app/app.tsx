@@ -1102,6 +1102,18 @@ function WorkspacePanel({ threadId }: { threadId: string }) {
       refetchOnWindowFocus: true,
     },
   );
+  const { data, stale, live } = useShownWorkspace(workspace, threadId, repositoryKey);
+  const turnLeftWork = useTurnLeftWork(threadId, repositoryKey, data);
+  const { identity, target } = useBoardTarget(threadId, repositoryKey, data);
+  const scope = writeScope(target, identity);
+  const [navigationScope, setNavigationScope] = useState(scope);
+  // Reset before the new board renders its children: an old selection must
+  // never read its diff from the thread's new workspace, even for one render.
+  if (!sameScope(navigationScope, scope)) {
+    setNavigationScope(scope);
+    setSelection(null);
+    setExpandedCommit(null);
+  }
 
   const chooseRepository = useCallback(
     (key: string | undefined) => {
@@ -1173,9 +1185,6 @@ function WorkspacePanel({ threadId }: { threadId: string }) {
     (opener.isConnected ? opener : board.current)?.focus();
   }, [selection]);
 
-  const { data, stale, live } = useShownWorkspace(workspace, threadId, repositoryKey);
-  const turnLeftWork = useTurnLeftWork(threadId, repositoryKey, data);
-  const { identity, target } = useBoardTarget(threadId, repositoryKey, data);
   const pull = useWorkspacePull(target, data?.upstream?.behind ?? 0, status.announce);
   const pullButton = usePullFocus(pull);
   const busy = useWriteBusy(target);
@@ -1232,7 +1241,7 @@ function WorkspacePanel({ threadId }: { threadId: string }) {
                  * branch of the next one.
                  */}
                 <WorkspaceBody
-                  key={`${data.environmentId ?? ""}\n${data.repositoryKey ?? repositoryKey ?? ""}`}
+                  key={JSON.stringify(scope)}
                   threadId={threadId}
                   repositoryKey={repositoryKey}
                   data={data}

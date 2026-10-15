@@ -429,6 +429,92 @@ const patch = (path: string, kind = "modified") => ({
   truncated: false,
 });
 
+for (const kind of ["commit", "uncommitted"] as const) {
+  for (const transition of ["environment", "default repository"] as const) {
+    test(`an open ${kind} diff closes when the thread changes ${transition}, and reopening reads the new workspace`, async () => {
+      let board = workspace;
+      const reads: string[] = [];
+      const slot = await panel({
+        ...baseRpc,
+        workspace: () => board,
+        patches: () => {
+          reads.push(`${board.environmentId}:${board.repositoryKey}`);
+          return {
+            files: [
+              patch("bun.lock"),
+              patch(board === workspace ? "old-workspace.ts" : "new-workspace.ts"),
+            ],
+            truncated: false,
+          };
+        },
+      });
+      const open = async () => {
+        if (kind === "commit") {
+          fireEvent.click(await slot.findByText("feat(top): add the thing"));
+          const files = await slot.findByRole("region", { name: "Changed files" });
+          fireEvent.click(within(files).getByTitle("bun.lock"));
+        } else {
+          fireEvent.click(await slot.findByText("Uncommitted changes"));
+          fireEvent.click(await slot.findByTitle("bun.lock"));
+        }
+        return within(await slot.findByRole("region", { name: "Changes" }));
+      };
+
+      const original = await open();
+      expect(await original.findByRole("option", { name: /old-workspace\.ts/ })).toBeTruthy();
+      expect(reads).toEqual(["env-1:."]);
+
+      board =
+        transition === "environment"
+          ? { ...workspace, environmentId: "env-2" }
+          : { ...workspace, repositoryKey: "repos/api" };
+      await pluginQueryClient.invalidateQueries({ queryKey: ["workspace"] });
+      await waitFor(() =>
+        expect(slot.queryByRole("button", { name: "Back to workspace" })).toBeNull(),
+      );
+      expect(slot.getByRole("button", { name: "Refresh" }).closest("[inert]")).toBeNull();
+      expect(reads).toEqual(["env-1:."]);
+
+      const moved = await open();
+      expect(await moved.findByRole("option", { name: /new-workspace\.ts/ })).toBeTruthy();
+      expect(moved.queryByRole("option", { name: /old-workspace\.ts/ })).toBeNull();
+      expect(reads).toEqual([
+        "env-1:.",
+        transition === "environment" ? "env-2:." : "env-1:repos/api",
+      ]);
+      slot.lifecycle.unmount();
+    });
+  }
+
+  test(`an open ${kind} diff stays open across a refresh and a failed workspace poll`, async () => {
+    let board = workspace;
+    const slot = await panel({
+      ...baseRpc,
+      workspace: () => board,
+      patches: () => ({ files: [patch("bun.lock")], truncated: false }),
+    });
+    if (kind === "commit") {
+      fireEvent.click(await slot.findByText("feat(top): add the thing"));
+      const files = await slot.findByRole("region", { name: "Changed files" });
+      fireEvent.click(within(files).getByTitle("bun.lock"));
+    } else {
+      fireEvent.click(await slot.findByText("Uncommitted changes"));
+      fireEvent.click(await slot.findByTitle("bun.lock"));
+    }
+    expect(await slot.findByRole("button", { name: "Collapse bun.lock" })).toBeTruthy();
+
+    board = { ...workspace };
+    await pluginQueryClient.invalidateQueries({ queryKey: ["workspace"] });
+    expect(slot.getByRole("button", { name: "Back to workspace" })).toBeTruthy();
+
+    board = { ...workspace, state: "error", reason: "Host is offline" };
+    await pluginQueryClient.invalidateQueries({ queryKey: ["workspace"] });
+    expect(slot.getByRole("button", { name: "Back to workspace" })).toBeTruthy();
+    expect(slot.getByRole("button", { name: "Collapse bun.lock" })).toBeTruthy();
+    slot.lifecycle.unmount();
+  });
+}
+
 const threeFiles = {
   ...baseRpc,
   workspace: () => ({

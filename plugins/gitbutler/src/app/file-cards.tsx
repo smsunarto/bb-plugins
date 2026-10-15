@@ -17,9 +17,10 @@ import {
 import type { ExperimentalFileOpenOptions } from "@get-bb/plugin-sdk/app";
 import { getSingularPatch } from "@pierre/diffs";
 import { FileDiff } from "@pierre/diffs/react";
-import { keepPreviousData } from "@tanstack/react-query";
+import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import type { ChangeKind, FilePatch, PatchSource, Workspace } from "../shared/schema.ts";
 import { AskAgentButton } from "./ask-agent.tsx";
+import { useBoardWorkspace } from "./board-context.tsx";
 import { CONTROL_HOVER_TRANSITION } from "./components/ui/motion.ts";
 import { CopyButton } from "./copy-button.tsx";
 import { ChangedFilesCard, FileList, LineStats, fileOrder, useListMode } from "./file-list.tsx";
@@ -389,6 +390,20 @@ const FileCard = memo(function FileCard({
 // is refreshed on the panel's usual cadence.
 const WORKTREE_PATCHES = { staleTime: REFRESH_INTERVAL_MS } as const;
 
+/** Shared by intent prefetch and visible diffs, including the workspace read. */
+function usePatchesQuery(threadId: string, repositoryKey: string | undefined, source: PatchSource) {
+  const client = rpc.useClient();
+  const workspace = useBoardWorkspace();
+  const input = { threadId, repositoryKey, source };
+  return {
+    // A thread can move while a request is in flight, and a commit cached in
+    // one checkout may not exist in the next. Keep the RPC prefix for refresh.
+    queryKey: [...rpc.patches.queryKey(input), workspace],
+    queryFn: () => client.patches(input),
+    ...(source.kind === "commit" ? COMMIT_QUERY : WORKTREE_PATCHES),
+  };
+}
+
 /** Long enough that a pointer sweeping down the list does not fetch every row it crosses. */
 const INTENT_DELAY_MS = 75;
 
@@ -402,18 +417,13 @@ export function usePatchesIntent(
   repositoryKey: string | undefined,
   source: PatchSource,
 ) {
-  const client = rpc.useClient();
+  const query = usePatchesQuery(threadId, repositoryKey, source);
   const timer = useRef<number | undefined>(undefined);
   useEffect(() => () => window.clearTimeout(timer.current), []);
   const start = () => {
     window.clearTimeout(timer.current);
     timer.current = window.setTimeout(() => {
-      const input = { threadId, repositoryKey, source };
-      void pluginQueryClient.prefetchQuery({
-        queryKey: rpc.patches.queryKey(input),
-        queryFn: () => client.patches(input),
-        ...(source.kind === "commit" ? COMMIT_QUERY : WORKTREE_PATCHES),
-      });
+      void pluginQueryClient.prefetchQuery(query);
     }, INTENT_DELAY_MS);
   };
   const stop = () => window.clearTimeout(timer.current);
@@ -437,12 +447,13 @@ export function usePatches(
   options: { keepPrevious?: boolean; paths?: readonly string[] } = {},
 ) {
   const { keepPrevious = false, paths } = options;
-  const patches = rpc.patches.useQuery(
-    { threadId, repositoryKey, source },
-    source.kind === "commit"
-      ? { ...COMMIT_QUERY, placeholderData: keepPrevious ? keepPreviousData : undefined }
-      : { ...WORKTREE_PATCHES, refetchInterval: REFRESH_INTERVAL_MS },
-  );
+  const query = usePatchesQuery(threadId, repositoryKey, source);
+  const patches = useQuery({
+    ...query,
+    ...(source.kind === "commit"
+      ? { placeholderData: keepPrevious ? keepPreviousData : undefined }
+      : { refetchInterval: REFRESH_INTERVAL_MS }),
+  });
   const all = patches.data?.files;
   const files = useMemo(() => {
     if (!all || !paths) return all;
