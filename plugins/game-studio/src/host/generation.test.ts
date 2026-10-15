@@ -1,5 +1,5 @@
 import { afterEach, expect, test } from "bun:test";
-import { mkdtemp, readFile, writeFile, rm, symlink, mkdir } from "node:fs/promises";
+import { mkdtemp, readFile, writeFile, rm, symlink, mkdir, rename } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { GenerationRunner } from "./generation.ts";
@@ -291,4 +291,84 @@ test("independent workers publish one complete initial record before submitting"
     "exclusive",
   );
   expect(submissions).toBe(1);
+});
+
+test("job readers retain complete receipts while another worker atomically replaces them", async () => {
+  const rootPath = await root(),
+    runner = new GenerationRunner();
+  runners.push(runner);
+  await mkdir(join(rootPath, "canvas/jobs"), { recursive: true });
+  const target = { rootPath, jobId: "replaced" };
+  const path = join(rootPath, "canvas/jobs/replaced.json");
+  const receipt = {
+    version: 1,
+    id: "replaced",
+    threadId: "thread",
+    createdAt: 1,
+    updatedAt: 1,
+    status: "succeeded",
+    request: mediaRequest.parse({ kind: "text", prompt: "Describe a key" }),
+    outputs: [],
+  };
+  await writeFile(path, JSON.stringify({ ...receipt, detail: "old receipt" }));
+  const replacement = (async () => {
+    for (let index = 0; index < 24; index++) {
+      const temporary = `${path}.${index}.tmp`;
+      await writeFile(
+        temporary,
+        JSON.stringify({ ...receipt, detail: index % 2 ? "new receipt" : "old receipt" }),
+      );
+      await rename(temporary, path);
+    }
+  })();
+  const outcomes = await Promise.allSettled([
+    replacement,
+    ...Array.from({ length: 8 }, async () => {
+      const jobs = [];
+      for (let index = 0; index < 8; index++) jobs.push(await runner.status(target));
+      return jobs;
+    }),
+  ]);
+  for (const outcome of outcomes) {
+    if (outcome.status === "rejected") throw outcome.reason;
+    for (const job of outcome.value ?? []) {
+      expect(job.id).toBe("replaced");
+      expect(job.status).toBe("succeeded");
+      expect(["old receipt", "new receipt"]).toContain(job.detail ?? "missing receipt");
+    }
+  }
+  expect((await runner.status(target)).detail).toBe("new receipt");
+});
+
+test("job reads reject escaped directories, symbolic links and nonfiles while preserving missing receipts", async () => {
+  const rootPath = await root(),
+    outside = await root(),
+    runner = new GenerationRunner();
+  runners.push(runner);
+  const target = { rootPath, jobId: "healthy" };
+  await runner.start({
+    ...target,
+    threadId: "thread",
+    request: mediaRequest.parse({ kind: "text", prompt: "Describe a key" }),
+  });
+  expect((await runner.status(target)).id).toBe("healthy");
+  expect(await runner.reconcileMissing(target)).toEqual({ missing: false });
+
+  await writeFile(
+    join(outside, "healthy.json"),
+    await readFile(join(rootPath, "canvas/jobs/healthy.json")),
+  );
+  await symlink(join(outside, "healthy.json"), join(rootPath, "canvas/jobs/linked.json"));
+  await expect(runner.status({ rootPath, jobId: "linked" })).rejects.toThrow("symbolic links");
+  await mkdir(join(rootPath, "canvas/jobs/directory.json"));
+  await expect(runner.status({ rootPath, jobId: "directory" })).rejects.toThrow("regular files");
+  await expect(runner.status({ rootPath, jobId: "../healthy" })).rejects.toThrow("pattern");
+  await expect(runner.status({ rootPath, jobId: "missing" })).rejects.toThrow("ENOENT");
+  expect(await runner.reconcileMissing({ rootPath, jobId: "missing" })).toEqual({
+    missing: true,
+  });
+
+  await rm(join(rootPath, "canvas/jobs"), { recursive: true });
+  await symlink(outside, join(rootPath, "canvas/jobs"));
+  await expect(runner.status(target)).rejects.toThrow("inside the project");
 });

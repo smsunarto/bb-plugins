@@ -1,11 +1,11 @@
 import { isDeepStrictEqual } from "node:util";
 import { createHash, randomUUID } from "node:crypto";
+import { constants } from "node:fs";
 import {
   lstat,
   link,
   mkdir,
   open,
-  readFile,
   readdir,
   realpath,
   rename,
@@ -86,14 +86,22 @@ export class GenerationRunner {
     return join(target.rootPath, "canvas", "jobs", `${target.jobId}.json`);
   }
   private async read(target: Target) {
-    return generationJob.parse(
-      JSON.parse(
-        await readFile(
-          await this.file(target.rootPath, `canvas/jobs/${target.jobId}.json`),
-          "utf8",
-        ),
-      ),
+    const jobId = generationJob.shape.id.parse(target.jobId);
+    const path = join(await this.fileDirectory(target.rootPath, "canvas/jobs"), `${jobId}.json`);
+    if (!(await lstat(path)).isFile())
+      throw new Error("Generation job records must be regular files, without symbolic links.");
+    const handle = await open(
+      path,
+      constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0) | (constants.O_NONBLOCK ?? 0),
     );
+    try {
+      if (!(await handle.stat()).isFile())
+        throw new Error("A generation job record must be a file inside the project.");
+      // Atomic saves replace the pathname; keep reading the same opened receipt.
+      return generationJob.parse(JSON.parse(await handle.readFile("utf8")));
+    } finally {
+      await handle.close();
+    }
   }
   private async save(target: Target, job: GenerationJob) {
     job.updatedAt = Date.now();
@@ -316,12 +324,10 @@ export class GenerationRunner {
   async status(input: Target): Promise<GenerationJob> {
     const target = { ...input, rootPath: await this.root(input.rootPath) };
     return this.locked(this.key(target), async () => {
+      const active = this.active.has(this.key(target));
       const job = await this.read(target);
       if (job.request.kind === "text") return job;
-      if (
-        (job.status === "queued" || job.status === "running") &&
-        !this.active.has(this.key(target))
-      ) {
+      if ((job.status === "queued" || job.status === "running") && !active) {
         job.status = "uncertain";
         job.detail =
           "Generation was interrupted. Resume the saved task; a new submission will not be made.";
