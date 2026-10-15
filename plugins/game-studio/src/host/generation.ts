@@ -21,7 +21,8 @@ import { cloudProviders, type Credentials } from "./cloud-providers.ts";
 type Start = {
   rootPath: string;
   jobId: string;
-  threadId: string;
+  threadId: string | null;
+  origin?: GenerationJob["origin"];
   request: GenerationJob["request"];
   target?: GenerationJob["target"];
   credentials?: Credentials;
@@ -118,6 +119,7 @@ export class GenerationRunner {
         version: 1,
         id: input.jobId,
         threadId: input.threadId,
+        origin: input.origin ?? { kind: "agent" },
         createdAt: Date.now(),
         updatedAt: Date.now(),
         status: "queued",
@@ -142,7 +144,8 @@ export class GenerationRunner {
         if (
           !isDeepStrictEqual(existing.request, request) ||
           !isDeepStrictEqual(existing.target, job.target) ||
-          existing.threadId !== input.threadId
+          existing.threadId !== input.threadId ||
+          !isDeepStrictEqual(existing.origin, job.origin)
         )
           throw new Error(
             "This request ID already belongs to a different generation. Use its status or choose a new request ID.",
@@ -152,7 +155,8 @@ export class GenerationRunner {
       } finally {
         await unlink(temporary).catch(() => undefined);
       }
-      this.launch(target, job, false, input.credentials ?? {});
+      // BB text runs are executed by the server, but use the same durable reservation fence.
+      if (job.request.kind !== "text") this.launch(target, job, false, input.credentials ?? {});
       return { created: true, job: structuredClone(job) };
     });
   }
@@ -176,7 +180,7 @@ export class GenerationRunner {
       const outputPath = await this.directory(target.rootPath, ["canvas", "staging", job.id]);
       const request = job.request;
       const paths =
-        request.kind === "image"
+        request.kind === "image" || request.kind === "text"
           ? request.images
           : request.kind === "video"
             ? [
@@ -253,9 +257,11 @@ export class GenerationRunner {
         else if (
           (job.request.kind === "image"
             ? /\.(png|jpe?g|webp)$/i
-            : job.request.kind === "video"
-              ? /\.(mp4|webm)$/i
-              : /\.glb$/i
+            : job.request.kind === "text"
+              ? /\.md$/i
+              : job.request.kind === "video"
+                ? /\.(mp4|webm)$/i
+                : /\.glb$/i
           ).test(entry.name)
         )
           matches.push(path);
@@ -311,6 +317,7 @@ export class GenerationRunner {
     const target = { ...input, rootPath: await this.root(input.rootPath) };
     return this.locked(this.key(target), async () => {
       const job = await this.read(target);
+      if (job.request.kind === "text") return job;
       if (
         (job.status === "queued" || job.status === "running") &&
         !this.active.has(this.key(target))

@@ -13,7 +13,8 @@ export const studioHostContract = defineRpcContract({
   ...unityHostContract,
   start: {
     input: target.extend({
-      threadId: z.string(),
+      threadId: z.string().nullable(),
+      origin: generationJob.shape.origin.optional(),
       request: mediaRequest,
       credentials: credentials.optional(),
       target: generationTarget.optional(),

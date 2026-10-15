@@ -36,6 +36,7 @@ import type {
   Asset,
   GenerationRecipe,
 } from "../shared/schema.ts";
+import { CanvasInputs } from "./canvas-inputs.tsx";
 import { GenerationOptions } from "./generation.tsx";
 import { arrangeNodes, newNodePosition, revealNode } from "./canvas-layout.ts";
 import { boardSnapshot } from "./canvas-board.ts";
@@ -125,7 +126,7 @@ function CanvasCard({ data, selected }: NodeProps<Card>) {
                   ? "Ready for review"
                   : data.job.status}
           </span>
-          {data.job.threadId && (
+          {data.job.origin.kind === "agent" && data.job.threadId && (
             <button type="button" onClick={() => navigate.toThread(data.job!.threadId!)}>
               View in thread ↗
             </button>
@@ -160,6 +161,7 @@ const initialData = (kind: NodeKind, documents: StudioDocument[]): CanvasNode["d
 };
 const noGenerationJobs: GenerationJob[] = [];
 export function StudioCanvas({
+  gameId,
   active = true,
   board,
   revision,
@@ -169,10 +171,13 @@ export function StudioCanvas({
   previewBaseUrl,
   onSave,
   onGenerate,
+  onGenerateDirect,
+  onGenerationControl,
   onOpenDocument,
   onUpload,
   onStatus,
 }: {
+  gameId: string;
   active?: boolean;
   board: Board;
   revision: string;
@@ -182,29 +187,77 @@ export function StudioCanvas({
   previewBaseUrl?: string;
   onSave: (board: Board, expectedRevision: string) => Promise<{ revision: string }>;
   onGenerate: (nodeId: string, recipe: GenerationRecipe) => void;
+  onGenerateDirect: (
+    nodeId: string,
+    revision: string,
+    requestId: string,
+    model: { provider: string; id?: string },
+  ) => Promise<void>;
+  onGenerationControl: (
+    jobId: string,
+    action: "status" | "resume" | "cancel",
+  ) => Promise<{ missing: boolean }>;
   onOpenDocument: (id: string) => void;
   onUpload: () => void;
   onStatus?: (status: "saved" | "saving" | "dirty" | "error") => void;
 }) {
   const { mode: colorMode } = useCodeTheme();
-  const cards = (source: Board): Card[] =>
-    source.nodes.map((node) => ({
-      id: node.id,
-      type: "studio",
-      dragHandle: ".gs-canvas-card > header",
-      position: source.editorLayout.nodes[node.id] ?? node.position,
-      data: { source: node, documents, assets, baseUrl: previewBaseUrl },
-    }));
+  const cards = useCallback(
+    (source: Board): Card[] =>
+      source.nodes.map((node) => ({
+        id: node.id,
+        type: "studio",
+        dragHandle: ".gs-canvas-card > header",
+        position: source.editorLayout.nodes[node.id] ?? node.position,
+        data: { source: node, documents, assets, baseUrl: previewBaseUrl },
+      })),
+    [documents, assets, previewBaseUrl],
+  );
   const [nodes, setNodes, onNodesChange] = useNodesState<Card>(cards(board));
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>(board.edges);
   const [selectedId, setSelected] = useState<string | null>(null);
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [starting, setStarting] = useState<string | null>(null);
+  const startingRef = useRef(false);
+  const requestKey = `game-studio:canvas-requests:${gameId}:${board.id}`;
+  const [requestIds] = useState(() => {
+    try {
+      const entries: unknown = JSON.parse(sessionStorage.getItem(requestKey) ?? "[]");
+      if (Array.isArray(entries))
+        return new Map<string, string>(
+          entries.filter(
+            (entry) =>
+              Array.isArray(entry) &&
+              entry.length === 2 &&
+              entry.every((value) => typeof value === "string"),
+          ),
+        );
+    } catch {
+      /* Private browser sessions can disable storage. */
+    }
+    return new Map<string, string>();
+  });
+  const rememberRequest = (nodeId: string, requestId?: string) => {
+    if (requestId) requestIds.set(nodeId, requestId);
+    else requestIds.delete(nodeId);
+    try {
+      sessionStorage.setItem(requestKey, JSON.stringify([...requestIds]));
+    } catch {
+      /* The current tab still retains its in-memory request identity. */
+    }
+  };
   const [error, setError] = useState("");
   const baseline = useRef(revision);
   const editVersion = useRef(0);
   const viewport = useRef<Viewport>(board.editorLayout.viewport);
   const selected = nodes.find((node) => node.id === selectedId);
+  const selectedJob = generationJobs.find(
+    (job) => job.target?.boardId === board.id && job.target.nodeId === selectedId,
+  );
+  const generating =
+    starting === selectedId ||
+    (!!selectedJob && ["queued", "running"].includes(selectedJob.status));
   const root = useRef<HTMLDivElement>(null);
   const inspector = useRef<HTMLElement>(null);
   const stage = useRef<HTMLDivElement>(null);
@@ -307,6 +360,38 @@ export function StudioCanvas({
   const updateData = (key: string, value: string) => {
     if (selected) updateSelected({ data: { ...selected.data.source.data, [key]: value } });
   };
+  const toggleInput = (sourceId: string, enabled: boolean) => {
+    if (!selected) return;
+    if (enabled) {
+      connect({ source: sourceId, target: selected.id, sourceHandle: null, targetHandle: null });
+      return;
+    }
+    setEdges((current) =>
+      current.filter((edge) => !(edge.source === sourceId && edge.target === selected.id)),
+    );
+    const data = { ...selected.data.source.data };
+    for (const key of ["images", "references"])
+      if (Array.isArray(data[key]))
+        data[key] = data[key].filter(
+          (ref) =>
+            !(
+              typeof ref === "object" &&
+              ref !== null &&
+              !Array.isArray(ref) &&
+              ref.type === "node" &&
+              ref.nodeId === sourceId
+            ),
+        );
+    const source = data.promptSource;
+    if (
+      typeof source === "object" &&
+      source !== null &&
+      !Array.isArray(source) &&
+      source.nodeId === sourceId
+    )
+      delete data.promptSource;
+    updateSelected({ data });
+  };
   const add = (kind: NodeKind) => {
     const instance = flow.current;
     const bounds = stage.current?.getBoundingClientRect();
@@ -342,6 +427,7 @@ export function StudioCanvas({
     change();
   };
   const connect = (connection: Connection) => {
+    if (connection.source === connection.target) return;
     if (
       edges.some(
         (edge) =>
@@ -391,7 +477,7 @@ export function StudioCanvas({
     change();
   };
   const save = async () => {
-    if (saving) return;
+    if (saving) return undefined;
     setSaving(true);
     setError("");
     onStatus?.("saving");
@@ -408,11 +494,46 @@ export function StudioCanvas({
       const clean = editVersion.current === savedVersion;
       setDirty(!clean);
       onStatus?.(clean ? "saved" : "dirty");
+      return clean ? result.revision : undefined;
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
+      setError(
+        `Could not save. Draft kept. ${cause instanceof Error ? cause.message : String(cause)}`,
+      );
       onStatus?.("error");
+      return undefined;
     } finally {
       setSaving(false);
+    }
+  };
+  useEffect(() => {
+    if (revision === baseline.current || dirty || saving) return;
+    setNodes((current) =>
+      cards(board).map((node) => ({
+        ...node,
+        selected: current.some((old) => old.id === node.id && old.selected),
+      })),
+    );
+    setEdges(board.edges);
+    baseline.current = revision;
+  }, [board, cards, revision, dirty, saving, setNodes, setEdges]);
+  const generate = async (model: { provider: string; id?: string }) => {
+    if (!selected || startingRef.current || generating) return;
+    const id = selected.id;
+    startingRef.current = true;
+    setStarting(id);
+    setError("");
+    try {
+      const saved = dirty ? await save() : baseline.current;
+      if (!saved) throw new Error("Save the current edits before generating.");
+      const requestId = requestIds.get(id) ?? crypto.randomUUID();
+      rememberRequest(id, requestId);
+      await onGenerateDirect(id, saved, requestId, model);
+      rememberRequest(id);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      startingRef.current = false;
+      setStarting(null);
     }
   };
   const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
@@ -490,7 +611,7 @@ export function StudioCanvas({
         )}
         {error && (
           <div className="gs-canvas-notice gs-notice" role="alert">
-            Could not save. Draft kept. {error}
+            {error}
           </div>
         )}
         <ReactFlow<Card>
@@ -655,13 +776,24 @@ export function StudioCanvas({
             />
           </label>
           {selected.data.source.type === "text" ? (
-            <label>
-              Note
-              <textarea
-                value={String(selected.data.source.data.text ?? "")}
-                onChange={(e) => updateData("text", e.target.value)}
-              />
-            </label>
+            <>
+              <label>
+                Note
+                <textarea
+                  value={String(selected.data.source.data.text ?? "")}
+                  onChange={(e) => updateData("text", e.target.value)}
+                />
+              </label>
+              <label>
+                Generation instruction
+                <textarea
+                  value={String(selected.data.source.data.instruction ?? "")}
+                  placeholder="Describe the text to write…"
+                  onChange={(e) => updateData("instruction", e.target.value)}
+                />
+              </label>
+              <small className="gs-muted">Uses the provider and model selected in BB.</small>
+            </>
           ) : selected.data.source.type === "document" ? (
             <>
               <label>
@@ -695,16 +827,103 @@ export function StudioCanvas({
               />
             </label>
           )}
+          {["text", "image"].includes(selected.data.source.type) && (
+            <>
+              <CanvasInputs
+                node={selected.data.source}
+                nodes={nodes.map((node) => node.data.source)}
+                assets={assets}
+                onToggle={toggleInput}
+              />
+              {selected.data.source.type === "text" && (
+                <button
+                  className="gs-primary"
+                  disabled={
+                    generating ||
+                    saving ||
+                    !String(selected.data.source.data.instruction ?? "").trim()
+                  }
+                  onClick={() => void generate({ provider: "bb" })}
+                >
+                  {generating ? "Generating…" : "Generate text"}
+                </button>
+              )}
+              {requestIds.has(selected.id) && !starting && (
+                <button
+                  onClick={() => {
+                    const id = selected.id;
+                    const requestId = requestIds.get(id)!;
+                    void onGenerationControl(requestId, "status")
+                      .then((result) => {
+                        if (result.missing) rememberRequest(id);
+                        setError(
+                          result.missing ? "No submission was made. You can generate again." : "",
+                        );
+                      })
+                      .catch((cause) => setError(String(cause)));
+                  }}
+                >
+                  Check saved request
+                </button>
+              )}
+              {selectedJob?.origin.kind === "canvas" && (
+                <div className="gs-inline-job" role="status">
+                  <span>
+                    {generating
+                      ? "Generating…"
+                      : selectedJob.status === "succeeded"
+                        ? "Generated"
+                        : selectedJob.status}
+                  </span>
+                  {selectedJob.detail && <small>{selectedJob.detail}</small>}
+                  {["queued", "running"].includes(selectedJob.status) && (
+                    <button
+                      onClick={() =>
+                        void onGenerationControl(selectedJob.id, "cancel").catch((cause) =>
+                          setError(String(cause)),
+                        )
+                      }
+                    >
+                      Cancel generation
+                    </button>
+                  )}
+                  {!["queued", "running", "succeeded"].includes(selectedJob.status) &&
+                    selectedJob.taskId && (
+                      <button
+                        onClick={() =>
+                          void onGenerationControl(selectedJob.id, "resume").catch((cause) =>
+                            setError(String(cause)),
+                          )
+                        }
+                      >
+                        {selectedJob.request.kind === "text" ? "Check BB run" : "Resume saved job"}
+                      </button>
+                    )}
+                </div>
+              )}
+            </>
+          )}
           {!["text", "document", "table"].includes(selected.data.source.type) && (
             <>
               <GenerationOptions
                 key={selected.id}
                 kind={selected.data.source.type}
                 hasImageReference={hasImageReference}
-                disabled={dirty || saving}
+                disabled={selected.data.source.type === "image" ? saving : dirty || saving}
+                busy={generating}
+                onGenerate={
+                  selected.data.source.type === "image"
+                    ? (recipe) =>
+                        void generate(
+                          recipe === "concept-art"
+                            ? { provider: "midjourney" }
+                            : { provider: "google", id: "gemini-nano-banana-2.1" },
+                        )
+                    : undefined
+                }
                 onSend={(recipe) => onGenerate(selected.id, recipe)}
               />
-              {dirty && (
+              {dirty && selected.data.source.type !== "image" && (
                 <small className="gs-muted">Save this board before requesting an asset.</small>
               )}
               <label>

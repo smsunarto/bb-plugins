@@ -34,10 +34,14 @@ import { recordRequest } from "./rpc/record-request.ts";
 import { FalOAuth } from "./lib/fal-oauth.ts";
 import { falAuth } from "./rpc/fal-auth.ts";
 import { auth } from "./command/auth.ts";
+import { generateCanvas } from "./rpc/generate-canvas.ts";
+import { canvasGenerationStatus } from "./rpc/canvas-generation-status.ts";
 
 export default definePlugin({
   pluginId: "game-studio",
   rpc: {
+    generateCanvas,
+    canvasGenerationStatus,
     falAuth,
     listUnityEditors,
     overview,

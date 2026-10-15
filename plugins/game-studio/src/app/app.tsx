@@ -206,7 +206,18 @@ function Gallery() {
 
 function Workbench({ gameId, tab }: { gameId: string; tab: Tab }) {
   const client = rpc.useClient();
-  const query = rpc.get.useQuery({ gameId }, { refetchInterval: 10_000, retry: false });
+  const query = rpc.get.useQuery(
+    { gameId },
+    {
+      refetchInterval: (current) =>
+        current.state.data?.generationJobs?.some((job) =>
+          ["queued", "running"].includes(job.status),
+        )
+          ? 2000
+          : 10_000,
+      retry: false,
+    },
+  );
   const openGame = useContext(StudioLocation);
   const composer = useComposer();
   const [visitedTabs, setVisitedTabs] = useState(() => new Set<Tab>([tab]));
@@ -451,6 +462,7 @@ function Workbench({ gameId, tab }: { gameId: string; tab: Tab }) {
                 </div>
                 {board ? (
                   <StudioCanvas
+                    gameId={gameId}
                     key={`${gameId}:${board.board.id}`}
                     active={tab === "canvas"}
                     board={board.board}
@@ -461,6 +473,33 @@ function Workbench({ gameId, tab }: { gameId: string; tab: Tab }) {
                     previewBaseUrl={lease?.baseUrl}
                     onSave={saveBoard}
                     onGenerate={(nodeId, recipe) => void request("asset", nodeId, recipe)}
+                    onGenerateDirect={async (nodeId, revision, requestId, model) => {
+                      const selection =
+                        model.provider === "bb"
+                          ? await composer.experimental_setSelection({})
+                          : undefined;
+                      await client.generateCanvas({
+                        gameId,
+                        boardId: board.board.id,
+                        nodeId,
+                        revision,
+                        requestId,
+                        threadId: composer.scope.kind === "thread" ? composer.scope.threadId : null,
+                        model: selection?.model ? { ...model, id: selection.model } : model,
+                        ...(selection?.providerId ? { textProviderId: selection.providerId } : {}),
+                      });
+                      await refetch();
+                    }}
+                    onGenerationControl={async (jobId, action) => {
+                      const result = await client.canvasGenerationStatus({
+                        gameId,
+                        jobId,
+                        action,
+                        threadId: composer.scope.kind === "thread" ? composer.scope.threadId : null,
+                      });
+                      await refetch();
+                      return { missing: result.job === null };
+                    }}
                     onOpenDocument={(id) => {
                       setDocumentId(id);
                       go("design");

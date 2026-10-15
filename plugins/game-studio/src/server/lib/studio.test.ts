@@ -1057,3 +1057,77 @@ test("a generation status service outage preserves the workspace and marks pendi
   assert.equal(workspace.generationJobs![0]!.status, "uncertain");
   assert.match(workspace.generationJobs![0]!.detail!, /Could not refresh/);
 });
+
+test("generated text returns to its node without cataloging media or changing layout, and keeps newer drafts", async () => {
+  const { adoptGeneration } = await import("./studio.ts");
+  const { canvasRequest } = await import("./canvas-generation.ts");
+  const { gameSchema, workspaceSchema } = await import("../../shared/schema.ts");
+  const { generationJob } = await import("../../shared/generation.ts");
+  const f = fake(),
+    game = gameSchema.parse(await create.execute({ bb: f.bb }, input));
+  const original = (await get.execute({ bb: f.bb }, { gameId: game.id })).boards[0]!;
+  await saveBoard.execute(
+    { bb: f.bb },
+    {
+      gameId: game.id,
+      revision: original.revision,
+      board: {
+        ...original.board,
+        nodes: [
+          {
+            id: "text",
+            type: "text",
+            position: { x: 300, y: 200 },
+            data: { instruction: "Write key lore", text: "Original" },
+          },
+        ],
+      },
+    },
+  );
+  const workspace = workspaceSchema.parse(await get.execute({ bb: f.bb }, { gameId: game.id }));
+  const request = canvasRequest(workspace, {
+    gameId: game.id,
+    boardId: "main",
+    nodeId: "text",
+    revision: workspace.boards[0]!.revision,
+    requestId: "text-run",
+  });
+  const path = "canvas/staging/text-run/output.md";
+  f.seed("host", `/games/orbit/${path}`, "A brass key to the observatory.");
+  const layout = f.contents("host", "/games/orbit/canvas/editor/main.json");
+  const job = generationJob.parse({
+    version: 1,
+    id: "text-run",
+    threadId: null,
+    origin: { kind: "canvas", gameId: game.id },
+    createdAt: 1,
+    updatedAt: 2,
+    status: "succeeded",
+    ...request,
+    outputs: [{ path, type: "text", sizeBytes: 30, sha256: "a".repeat(64) }],
+  });
+  assert.equal((await adoptGeneration(f.bb, game, job)).attached, true);
+  const updated = await get.execute({ bb: f.bb }, { gameId: game.id });
+  assert.equal(updated.boards[0]!.board.nodes[0]!.data.text, "A brass key to the observatory.");
+  assert.equal(
+    updated.assets.some((asset) => asset.type !== "file"),
+    false,
+  );
+  assert.equal(f.contents("host", "/games/orbit/canvas/editor/main.json"), layout);
+  const edited = {
+    ...updated.boards[0]!.board,
+    nodes: [
+      {
+        ...updated.boards[0]!.board.nodes[0]!,
+        data: { instruction: "Write key lore", text: "My newer draft" },
+      },
+    ],
+  };
+  await saveBoard.execute(
+    { bb: f.bb },
+    { gameId: game.id, revision: updated.boards[0]!.revision, board: edited },
+  );
+  assert.equal((await adoptGeneration(f.bb, game, job)).attached, false);
+  const final = await get.execute({ bb: f.bb }, { gameId: game.id });
+  assert.equal(final.boards[0]!.board.nodes[0]!.data.text, "My newer draft");
+});

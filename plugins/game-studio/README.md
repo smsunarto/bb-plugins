@@ -9,6 +9,7 @@ Open **Game Studio** from a thread’s panel launcher or header button.
 The navigation gallery opens projects beside their native BB thread. Studio
 contains no embedded chat or composer. Actions add a request to the main chat’s
 native composer for you to review and send; BB owns the agent and its settings.
+Canvas text and image generation runs directly from the selected node.
 Select its enrolled machine and enter the absolute Unity project directory. The
 connection checks `ProjectSettings/ProjectVersion.txt` and `Assets`. **New
 project** creates a design workspace with your selected Editor version and
@@ -24,7 +25,9 @@ creation tooling. Leave the version unset to let the agent choose through Hub.
 - **Design:** editable Markdown documents with explicit saves and disk-conflict
   handling.
 - **Canvas:** boards with draggable notes, documents, image/video/3D requests,
-  audio assets, and reference connections. Save a board before requesting assets.
+  audio assets, and reference connections. Select text, document or image nodes
+  as generation inputs, or connect their handles. Text and image generation
+  saves the current board first and returns the result to its node.
 - **Assets:** upload to `canvas/staging`; browse imported media under
   `Assets/GameStudio`. The agent verifies and imports staged files using the
   project's established asset structure.
@@ -58,8 +61,10 @@ Successful outputs stay in `canvas/staging` and are cataloged when collected.
 They attach to their source node only while its brief and connected design
 sources are unchanged; otherwise they remain staged candidates for review.
 Midjourney standard jobs yield four image candidates; the other image/video
-models yield one. Asset buttons prepare a request in native BB chat for review
-and do not directly start generation.
+models yield one. Image nodes offer **Generate image**; text nodes offer
+**Generate text**, using the provider and model currently selected in BB.
+Text runs in a hidden BB personal workspace and leaves the main conversation
+unchanged. Other asset actions still prepare requests in native BB chat.
 
 Game Studio includes Editor discovery, managed ownership, and persistent Rampage
 checkout slots. Use `game_studio_manage` and `game_studio_slots`, or

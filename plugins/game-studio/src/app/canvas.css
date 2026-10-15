@@ -294,3 +294,50 @@
 .gs-generation-progress button {
   margin-left: auto;
 }
+
+.gs-canvas-inputs {
+  display: flex;
+  flex-shrink: 0;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  max-height: 230px;
+  overflow: auto;
+}
+.gs-canvas-inputs legend {
+  padding: 0 4px;
+  font-size: 12px;
+}
+.gs-node-inspector .gs-canvas-inputs label {
+  display: flex;
+  flex-direction: row;
+  align-items: flex-start;
+  gap: 8px;
+}
+.gs-node-inspector .gs-canvas-inputs input {
+  width: auto;
+  margin: 3px 0 0;
+}
+.gs-canvas-inputs label span {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.gs-canvas-inputs small,
+.gs-inline-job small {
+  font-size: 11px;
+  color: var(--muted-foreground);
+}
+.gs-inline-job {
+  display: flex;
+  flex-shrink: 0;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}

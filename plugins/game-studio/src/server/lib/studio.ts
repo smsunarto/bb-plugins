@@ -891,20 +891,27 @@ export async function adoptGeneration(bb: BbPluginApi, game: Game, job: Generati
     const manifest = file
       ? parse(manifestSchema, file, manifestPath)
       : { version: 1 as const, assets: {} as Record<string, { name: string; path: string }> };
-    const ids = job.outputs.map((output) => {
+    for (const output of job.outputs) {
       if (!output.path.startsWith(`canvas/staging/${job.id}/`))
         throw new Error("Generation outputs must stay in their staging directory.");
-      const existing = Object.entries(manifest.assets).find(
-        ([, entry]) => entry.path === output.path,
-      )?.[0];
-      const id = existing ?? createHash("sha256").update(output.path).digest("hex").slice(0, 32);
-      if (!existing)
-        manifest.assets[id] = { name: output.path.split("/").pop()!, path: output.path };
-      return id;
-    });
+    }
+    const ids = job.outputs
+      .filter((output) => output.type !== "text")
+      .map((output) => {
+        if (!output.path.startsWith(`canvas/staging/${job.id}/`))
+          throw new Error("Generation outputs must stay in their staging directory.");
+        const existing = Object.entries(manifest.assets).find(
+          ([, entry]) => entry.path === output.path,
+        )?.[0];
+        const id = existing ?? createHash("sha256").update(output.path).digest("hex").slice(0, 32);
+        if (!existing)
+          manifest.assets[id] = { name: output.path.split("/").pop()!, path: output.path };
+        return id;
+      });
     if (
-      !file ||
-      JSON.stringify(parse(manifestSchema, file, manifestPath)) !== JSON.stringify(manifest)
+      job.request.kind !== "text" &&
+      (!file ||
+        JSON.stringify(parse(manifestSchema, file, manifestPath)) !== JSON.stringify(manifest))
     )
       await write(bb, game, manifestPath, json(manifest), file?.sha256 ?? null);
     if (!job.target) return { candidateAssetIds: ids, attached: false };
@@ -912,6 +919,7 @@ export async function adoptGeneration(bb: BbPluginApi, game: Game, job: Generati
     const board = workspace.boards.find((item) => item.board.id === job.target!.boardId)?.board;
     if (!board) return { candidateAssetIds: ids, attached: false };
     const node = board.nodes.find(({ id }) => id === job.target!.nodeId);
+    if (node?.data.generationJobId === job.id) return { candidateAssetIds: ids, attached: true };
     if (!node || nodeFingerprint(node, board, workspace) !== job.target.fingerprint)
       return {
         candidateAssetIds: ids,
@@ -919,7 +927,6 @@ export async function adoptGeneration(bb: BbPluginApi, game: Game, job: Generati
         detail:
           "The source node changed. Outputs are staged for review; its newer brief was preserved.",
       };
-    if (node.data.generationJobId === job.id) return { candidateAssetIds: ids, attached: true };
     const path = `canvas/boards/${board.id}.json`;
     const contentFile = await readRequired(bb, game, path);
     const content = parse(persistedBoardSchema, contentFile, path);
@@ -934,10 +941,20 @@ export async function adoptGeneration(bb: BbPluginApi, game: Game, job: Generati
       ) !== job.target.fingerprint
     )
       return { candidateAssetIds: ids, attached: false };
+    const textOutput =
+      job.request.kind === "text"
+        ? job.outputs.find((output) => output.type === "text")
+        : undefined;
+    if (job.request.kind === "text" && !textOutput) throw new Error("The text job has no output.");
+    const textFile = textOutput ? await readRequired(bb, game, textOutput.path) : undefined;
+    if (textFile && (textFile.contentEncoding !== "utf8" || textFile.content.length > 100000))
+      throw new Error("Generated text must be UTF-8 and under 100,000 characters.");
+    const generatedText = textFile?.content;
     saved.data = {
       ...saved.data,
-      assetId: ids[0]!,
-      candidateAssetIds: ids,
+      ...(generatedText !== undefined
+        ? { text: generatedText, generatedTextPath: textOutput!.path }
+        : { assetId: ids[0]!, candidateAssetIds: ids }),
       generationJobId: job.id,
     };
     await write(bb, game, path, json(content), contentFile.sha256);

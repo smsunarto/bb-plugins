@@ -22,11 +22,15 @@ export function GenerationOptions({
   hasImageReference,
   disabled,
   onSend,
+  onGenerate,
+  busy = false,
 }: {
   kind: NodeKind;
   hasImageReference: boolean;
   disabled: boolean;
   onSend: (recipe: GenerationRecipe) => void;
+  onGenerate?: (recipe: GenerationRecipe) => void;
+  busy?: boolean;
 }) {
   const id = useId();
   const [expanded, setExpanded] = useState(false);
@@ -45,7 +49,7 @@ export function GenerationOptions({
     if (kind === "asset") return ["voice-sfx", "music"].includes(option.id);
     return ["nano-banana", "concept-art"].includes(option.id);
   });
-  const blocked = disabled || (recipe === "model-3d" && !hasImageReference);
+  const blocked = disabled || busy || (recipe === "model-3d" && !hasImageReference);
   return (
     <div className="gs-generation">
       <button
@@ -89,15 +93,16 @@ export function GenerationOptions({
           </fieldset>
           <footer>
             <span>
-              {recipe === "concept-art" ? "4 candidates" : "1 output"} · sent to agent thread
+              {recipe === "concept-art" ? "4 candidates" : "1 output"} ·{" "}
+              {onGenerate ? "generated on canvas" : "sent to agent thread"}
             </span>
             <button
               type="button"
               className="gs-primary"
               disabled={blocked}
-              onClick={() => onSend(recipe)}
+              onClick={() => (onGenerate ?? onSend)(recipe)}
             >
-              Send to agent
+              {busy ? "Generating…" : onGenerate ? "Generate image" : "Send to agent"}
             </button>
           </footer>
         </div>

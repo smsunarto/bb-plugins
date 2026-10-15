@@ -148,7 +148,7 @@ export function cloudProviders(credentials: Credentials): Readonly<Record<string
   const google: MediaProvider = {
     async submit(context) {
       const request = context.request;
-      if (request.kind === "model-3d")
+      if (request.kind === "model-3d" || request.kind === "text")
         throw new Error("Google does not generate 3D models through this adapter.");
       const headers = { "x-goog-api-key": requireKey(credentials.googleApiKey, "Google Gemini") };
       const frameRoles =

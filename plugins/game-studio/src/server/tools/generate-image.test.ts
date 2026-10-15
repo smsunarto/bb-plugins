@@ -327,3 +327,72 @@ test("another thread can read a completed job and adopt it without replacing its
   expect(catalog).toContain("canvas/staging/finished/moon.png");
   expect(work.owner("remote", "/game", "finished")).toBeNull();
 });
+
+test("canvas job controls work without a main chat thread and cannot control agent-origin work", async () => {
+  const { Generations } = await import("../lib/generations.ts");
+  const { SlotStore } = await import("../lib/slot-store.ts");
+  const { GenerationWork } = await import("../lib/generation-work.ts");
+  let missing = false,
+    agentOrigin = false;
+  const calls: string[] = [];
+  const job = generationJob.parse({
+    version: 1,
+    id: "direct-job",
+    threadId: null,
+    origin: { kind: "canvas", gameId: "game" },
+    createdAt: 1,
+    updatedAt: 1,
+    status: "running",
+    request: { kind: "image", prompt: "A key" },
+    outputs: [],
+  });
+  const { bb } = createFakePluginHost({
+    pluginId: "game-studio",
+    experimental_callHostRpc: ({ method }) => {
+      calls.push(method);
+      if (method === "resolveWorkspace") return { workspacePath: "/game" };
+      if (method === "status") {
+        if (missing) throw new Error("ENOENT: no such file or directory");
+        return { ...job, origin: agentOrigin ? { kind: "agent" } : job.origin };
+      }
+      if (method === "cancel") return { ...job, status: "cancelled" };
+      if (method === "reconcileMissing") return { missing: true };
+      throw new Error(`Unexpected ${method}`);
+    },
+  });
+  await bb.storage.kv.set("game:game", {
+    id: "game",
+    name: "Orbit",
+    projectId: "project",
+    hostId: "host",
+    rootPath: "/game",
+    kind: "unity",
+    createdAt: 0,
+    threadId: null,
+  });
+  const slots = new SlotStore(bb.storage.database()),
+    work = new GenerationWork(slots);
+  const service = new Generations(
+    bb,
+    async () => {
+      throw new Error("Status must not request provider credentials");
+    },
+    slots,
+  );
+  const input = { gameId: "game", jobId: "direct-job", threadId: null, action: "status" as const };
+  expect((await service.directControl(input)).job?.status).toBe("running");
+  agentOrigin = true;
+  await expect(service.directControl({ ...input, action: "cancel" })).rejects.toThrow(
+    "not started from this canvas",
+  );
+  expect(calls.filter((method) => method === "cancel")).toEqual([]);
+  agentOrigin = false;
+  expect((await service.directControl({ ...input, action: "cancel" })).job?.status).toBe(
+    "cancelled",
+  );
+  work.reserve("host", "/game", "missing", "canvas:game");
+  missing = true;
+  expect((await service.directControl({ ...input, jobId: "missing" })).job).toBeNull();
+  expect(work.owner("host", "/game", "missing")).toBeNull();
+  expect(calls.filter((method) => method === "reconcileMissing")).toEqual(["reconcileMissing"]);
+});

@@ -108,3 +108,62 @@ test("3D requires the explicitly approved path to be one of the saved node's ima
     }),
   ).toThrow("saved references");
 });
+test("text and image node inputs resolve current outputs while text uses BB's selected provider", () => {
+  const state = workspace(),
+    board = state.boards[0]!.board;
+  board.nodes.push({
+    id: "lore",
+    type: "text",
+    position: { x: 0, y: 300 },
+    data: { text: "An observatory key" },
+  });
+  board.nodes.push({
+    id: "reference-image",
+    type: "image",
+    position: { x: 300, y: 300 },
+    data: { assetId: "ref" },
+  });
+  board.nodes.push({
+    id: "generated-text",
+    type: "text",
+    position: { x: 600, y: 300 },
+    data: {
+      instruction: "Write an item description",
+      text: "Old output",
+      references: [
+        { type: "node", nodeId: "lore" },
+        { type: "node", nodeId: "reference-image" },
+      ],
+    },
+  });
+  const request = canvasRequest(state, {
+    ...input,
+    nodeId: "generated-text",
+    textProviderId: "my-bb-provider",
+    model: { provider: "bb", id: "selected-model" },
+  });
+  expect(request.request).toEqual({
+    kind: "text",
+    prompt: "Write an item description\n\nAn observatory key",
+    model: { provider: "bb", id: "selected-model" },
+    providerId: "my-bb-provider",
+    outputCount: 1,
+    images: ["canvas/staging/key.png"],
+  });
+  board.nodes.find((node) => node.id === "lore")!.data.text = "A broken observatory key";
+  expect(canvasRequest(state, { ...input, nodeId: "generated-text" }).target.fingerprint).not.toBe(
+    request.target.fingerprint,
+  );
+  board.nodes.find((node) => node.id === "image")!.data = {
+    prompt: "Illustrate this item",
+    references: [
+      { type: "node", nodeId: "generated-text" },
+      { type: "node", nodeId: "reference-image" },
+    ],
+  };
+  expect(canvasRequest(state, input).request).toMatchObject({
+    kind: "image",
+    prompt: "Illustrate this item\n\nOld output",
+    images: ["canvas/staging/key.png"],
+  });
+});

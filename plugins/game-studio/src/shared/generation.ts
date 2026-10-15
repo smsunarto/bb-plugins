@@ -28,6 +28,14 @@ export const imageRequest = z.strictObject({
   transparentBackground: z.boolean().default(false),
   resolution: z.enum(["1K", "2K", "4K"]).default("1K"),
 });
+export const textRequest = z.strictObject({
+  kind: z.literal("text"),
+  prompt: brief,
+  model: model.default({ provider: "bb" }),
+  providerId: z.string().min(1).max(100).optional(),
+  images: z.array(mediaPath).max(14).default([]),
+  outputCount: z.literal(1).default(1),
+});
 export const videoRequest = z.strictObject({
   kind: z.literal("video"),
   prompt: brief,
@@ -50,6 +58,7 @@ export const modelRequest = z.strictObject({
 });
 export const mediaRequest = z.discriminatedUnion("kind", [
   imageRequest,
+  textRequest,
   videoRequest,
   modelRequest,
 ]);
@@ -61,14 +70,20 @@ export const generationTarget = z.strictObject({
 });
 export const generatedOutput = z.strictObject({
   path: mediaPath,
-  type: z.enum(["image", "video", "model"]),
+  type: z.enum(["image", "video", "model", "text"]),
   sizeBytes: z.number().int().positive(),
   sha256: z.string().regex(/^[a-f0-9]{64}$/),
 });
 export const generationJob = z.strictObject({
   version: z.literal(1),
   id: generationId,
-  threadId: z.string(),
+  threadId: z.string().nullable(),
+  origin: z
+    .discriminatedUnion("kind", [
+      z.strictObject({ kind: z.literal("agent") }),
+      z.strictObject({ kind: z.literal("canvas"), gameId: generationId }),
+    ])
+    .default({ kind: "agent" }),
   createdAt: z.number(),
   updatedAt: z.number(),
   status: z.enum([
@@ -83,6 +98,7 @@ export const generationJob = z.strictObject({
   request: mediaRequest,
   target: generationTarget.optional(),
   taskId: z.string().max(200).optional(),
+  cancelRequested: z.boolean().optional(),
   providerData: z.record(z.string(), z.string()).optional(),
   detail: z.string().max(2000).optional(),
   outputs: z.array(generatedOutput).max(20),
@@ -101,6 +117,7 @@ export const canvasGenerationInput = z.strictObject({
   revision: z.string().min(1),
   model: model.optional(),
   approvedImagePath: mediaPath.optional(),
+  textProviderId: z.string().min(1).max(100).optional(),
 });
 export const generationControlInput = z.strictObject({
   gameId: generationId,
@@ -144,6 +161,11 @@ export const providerCapabilities = [
 
 /** Provider policy belongs here, not in agent-authored CLI flags. */
 export function normalizeMediaRequest(request: MediaRequest): MediaRequest {
+  if (request.kind === "text") {
+    if (request.model.provider !== "bb")
+      throw new Error("Text generation uses the selected BB provider.");
+    return request;
+  }
   const provider = providerCapabilities.find((item) => item.provider === request.model.provider);
   if (!provider || !provider.kinds.some((kind) => kind === request.kind))
     throw new Error(`Provider ${request.model.provider} does not support ${request.kind}.`);
@@ -161,7 +183,8 @@ const policies: Record<
   tripo: (request) => request,
 };
 function normalizeMidjourney(request: MediaRequest): MediaRequest {
-  if (request.kind === "model-3d") throw new Error("Midjourney does not support 3D geometry.");
+  if (request.kind === "model-3d" || request.kind === "text")
+    throw new Error("Midjourney supports only images and video.");
   if (/(?:^|\s)--[a-z]|\{[^{}]*,[^{}]*\}/i.test(request.prompt))
     throw new Error("Use a plain creative brief. Put generation settings in the tool parameters.");
   if (request.kind === "image") {
@@ -221,3 +244,10 @@ function normalizeVideo(
     throw new Error(`Resolution ${resolution} is not supported by this video model.`);
   return { ...request, resolution };
 }
+
+export const canvasDirectInput = canvasGenerationInput.extend({
+  threadId: z.string().nullable(),
+});
+export const canvasDirectControl = generationControlInput.extend({
+  threadId: z.string().nullable(),
+});

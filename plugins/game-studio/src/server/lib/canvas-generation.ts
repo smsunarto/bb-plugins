@@ -60,9 +60,13 @@ export function canvasRequest(workspace: Workspace, input: z.output<typeof canva
   if (!node) throw new Error("The canvas node no longer exists.");
   const paths: string[] = [],
     linkedText: string[] = [];
+  const visited = new Set<string>();
   const addNode = (id: string, promptOnly = false) => {
+    if (id === node.id) throw new Error("A node cannot use itself as an input.");
     const other = board.nodes.find((item) => item.id === id);
     if (!other) throw new Error(`Reference node ${id} no longer exists.`);
+    if (visited.has(id)) return;
+    visited.add(id);
     if (other.type === "text") {
       linkedText.push(String(other.data.text ?? ""));
       return;
@@ -92,46 +96,60 @@ export function canvasRequest(workspace: Workspace, input: z.output<typeof canva
     else addAsset(ref.assetId);
   }
   const prompt = [
-    typeof node.data.prompt === "string" ? node.data.prompt : (node.description ?? ""),
+    node.type === "text"
+      ? String(node.data.instruction ?? "")
+      : typeof node.data.prompt === "string"
+        ? node.data.prompt
+        : (node.description ?? ""),
     ...linkedText,
   ]
     .filter(Boolean)
     .join("\n\n");
   const kind =
-    node.type === "model-3d"
-      ? "model-3d"
-      : node.type === "video"
-        ? "video"
-        : node.type === "image"
-          ? "image"
-          : undefined;
-  if (!kind) throw new Error("Select an image, video, or 3D node.");
+    node.type === "text"
+      ? "text"
+      : node.type === "model-3d"
+        ? "model-3d"
+        : node.type === "video"
+          ? "video"
+          : node.type === "image"
+            ? "image"
+            : undefined;
+  if (!kind) throw new Error("Select a text, image, video, or 3D node.");
   const request = mediaRequest.parse(
-    kind === "model-3d"
+    kind === "text"
       ? {
           kind,
+          prompt,
+          providerId: input.textProviderId,
           ...(input.model ? { model: input.model } : {}),
-          approvedImagePath: input.approvedImagePath,
-          targetPolycount: node.data.targetPolycount,
+          images: [...new Set(paths)],
         }
-      : kind === "video"
+      : kind === "model-3d"
         ? {
             kind,
-            prompt,
             ...(input.model ? { model: input.model } : {}),
-            imagePath: paths[0],
-            endImagePath: paths[1],
-            duration: node.data.duration,
-            aspectRatio: node.data.aspectRatio,
+            approvedImagePath: input.approvedImagePath,
+            targetPolycount: node.data.targetPolycount,
           }
-        : {
-            kind,
-            prompt,
-            ...(input.model ? { model: input.model } : {}),
-            images: [...new Set(paths)],
-            aspectRatio: node.data.aspectRatio,
-            resolution: node.data.resolution,
-          },
+        : kind === "video"
+          ? {
+              kind,
+              prompt,
+              ...(input.model ? { model: input.model } : {}),
+              imagePath: paths[0],
+              endImagePath: paths[1],
+              duration: node.data.duration,
+              aspectRatio: node.data.aspectRatio,
+            }
+          : {
+              kind,
+              prompt,
+              ...(input.model ? { model: input.model } : {}),
+              images: [...new Set(paths)],
+              aspectRatio: node.data.aspectRatio,
+              resolution: node.data.resolution,
+            },
   );
   if (kind === "model-3d" && !paths.includes(input.approvedImagePath ?? ""))
     throw new Error("The approved image must be one of this node's saved references.");
