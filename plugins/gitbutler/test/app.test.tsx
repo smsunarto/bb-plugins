@@ -2897,3 +2897,43 @@ test("lists the branches the workspace does not apply, closed until asked", asyn
   ]);
   slot.lifecycle.unmount();
 });
+
+for (const clipboard of ["unavailable", "denied"] as const) {
+  test(`copy reports when the clipboard is ${clipboard} and succeeds when retried`, async () => {
+    const previous = Object.getOwnPropertyDescriptor(navigator, "clipboard");
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value:
+        clipboard === "unavailable"
+          ? undefined
+          : { writeText: async () => Promise.reject(new Error("Clipboard permission denied")) },
+    });
+    onTestFinished(() => {
+      if (previous) Object.defineProperty(navigator, "clipboard", previous);
+      else Reflect.deleteProperty(navigator, "clipboard");
+    });
+    const slot = await panel({
+      ...baseRpc,
+      workspace: () => ({ ...workspace, state: "cliMissing", reason: "Install GitButler." }),
+    });
+    onTestFinished(() => slot.lifecycle.unmount());
+    const copy = await slot.findByRole("button", { name: "Copy command" });
+    fireEvent.click(copy);
+    const feedback = "Couldn't copy. Try again or select and copy the text.";
+    await waitFor(() => expect(copy.getAttribute("title")).toBe(feedback));
+    expect(within(copy).getByRole("status").textContent).toBe(feedback);
+    expect(slot.getByText("The GitButler CLI is not installed here").textContent).toBe(
+      "The GitButler CLI is not installed here",
+    );
+
+    const written: string[] = [];
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { writeText: async (value: string) => void written.push(value) },
+    });
+    fireEvent.click(copy);
+    await waitFor(() => expect(copy.getAttribute("title")).toBe("Copied"));
+    expect(within(copy).getByRole("status").textContent).toBe("Copied");
+    expect(written).toEqual(["curl -fsSL https://gitbutler.com/install.sh | sh"]);
+  });
+}
