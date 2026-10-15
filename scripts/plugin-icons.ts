@@ -11,10 +11,10 @@ import {
   CheckmarkCircle02Icon,
   CloudServerIcon,
   DashboardSpeed02Icon,
-  ComputerIcon,
   Doc01Icon,
   FileEditIcon,
   KeyboardIcon,
+  Joystick01Icon,
   GitBranchIcon,
   GitPullRequestIcon,
   KitchenUtensilsIcon,
@@ -206,9 +206,9 @@ const customIcons = {
     name: "Whiteboard",
     nodes: WhiteboardIcon,
   },
-  unity: {
-    name: "Computer",
-    nodes: ComputerIcon,
+  "game-studio": {
+    name: "Joystick",
+    nodes: Joystick01Icon,
   },
   "kitchen-sink": {
     name: "KitchenUtensils",

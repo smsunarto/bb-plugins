@@ -1,36 +1,13 @@
+import { rpc } from "./rpc.ts";
 import { Icon } from "./icons.tsx";
 import { useQuery } from "@tanstack/react-query";
 import { z } from "zod";
-import { experimental_FileLink as FileLink, useSdk, useBbNavigate } from "@get-bb/plugin-sdk/app";
+import { experimental_FileLink as FileLink, useBbNavigate } from "@get-bb/plugin-sdk/app";
 import type { Game, Workspace } from "../shared/schema.ts";
 import type { StudioAction } from "./app.tsx";
 
-const editor = z.object({
-  id: z.string(),
-  projectPath: z.string(),
-  workspacePath: z.string(),
-  pid: z.number(),
-  port: z.number(),
-  version: z.string(),
-  startedAt: z.string(),
-  clone: z.boolean(),
-});
-export const editorListSchema = z.object({
-  hostId: z.string(),
-  instances: z.array(editor),
-  warnings: z.array(z.string()),
-  claims: z.array(
-    z.object({
-      instance: editor,
-      hostId: z.string(),
-      ownerThreadId: z.string(),
-      mode: z.enum(["runtime", "authoring"]),
-      jobId: z.string().nullable(),
-      claimedAt: z.string(),
-      orphaned: z.boolean().optional(),
-    }),
-  ),
-});
+export { editorInventorySchema as editorListSchema } from "../shared/unity-editor-contract.ts";
+import { editorInventorySchema as editorListSchema } from "../shared/unity-editor-contract.ts";
 export type EditorList = z.infer<typeof editorListSchema>;
 const canonical = (path: string) => {
   const normalized = path.replaceAll("\\", "/").replace(/\/$/, "");
@@ -56,17 +33,11 @@ export function editorLabel(data: EditorList | undefined, game: Game, threadId: 
   return instances.length ? "Editor found" : "No Editor";
 }
 export function useUnityEditors(hostId?: string) {
-  const sdk = useSdk();
+  const client = rpc.useClient();
   return useQuery({
     queryKey: ["game-studio", "unity-editors", hostId],
     enabled: Boolean(hostId),
-    queryFn: () =>
-      sdk.plugins.callRpc({
-        pluginId: "unity",
-        method: "listUnityEditors",
-        input: { hostId: hostId! },
-        outputSchema: editorListSchema,
-      }),
+    queryFn: () => client.listUnityEditors({ hostId: hostId! }),
     refetchInterval: 5000,
     retry: false,
   });

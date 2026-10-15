@@ -68,10 +68,6 @@
       "source": "./plugins/my-stack"
     },
     {
-      "name": "unity",
-      "source": "./plugins/unity"
-    },
-    {
       "name": "usage-bar",
       "source": "./plugins/usage-bar"
     },

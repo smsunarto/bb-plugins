@@ -1,3 +1,14 @@
+import { instructionFiles } from "@bb-kit/core/instructions";
+import { manage as manageCommand } from "./command/manage.ts";
+import { manage as manageTool } from "./tools/manage.ts";
+import { createUnityEditors } from "./lib/unity-editors.ts";
+import { listUnityEditors } from "./rpc/list-unity-editors.ts";
+import { legacyClaimsGuard } from "./lib/legacy-claims.ts";
+import { slots as slotsCommand } from "./command/slots.ts";
+import { slots as slotsTool } from "./tools/slots.ts";
+import { SlotStore } from "./lib/slot-store.ts";
+import { UnitySlots } from "./lib/unity-slots.ts";
+import { SlotProvisioning } from "./lib/slot-provisioning.ts";
 import { definePlugin } from "@bb-kit/core/plugin";
 import { overview } from "./rpc/overview.ts";
 import { create } from "./rpc/create.ts";
@@ -17,6 +28,7 @@ import { recordRequest } from "./rpc/record-request.ts";
 export default definePlugin({
   pluginId: "game-studio",
   rpc: {
+    listUnityEditors,
     overview,
     create,
     attach,
@@ -33,4 +45,25 @@ export default definePlugin({
     recordRequest,
   },
   rpcPublication: { discoverable: true },
+  command: { manage: manageCommand, slots: slotsCommand },
+  services(bb) {
+    const slotStore = new SlotStore(bb.storage.database());
+    const unityEditors = createUnityEditors(bb, slotStore);
+    const ensureLegacyClaims = legacyClaimsGuard(bb, unityEditors.claims.db);
+    const unitySlots = new UnitySlots(bb, slotStore, ensureLegacyClaims);
+    return {
+      unityEditors,
+      unitySlots,
+      slotProvisioning: new SlotProvisioning(bb, unitySlots),
+      ensureLegacyClaims,
+    };
+  },
+  setup({ unitySlots }) {
+    unitySlots.install();
+  },
+  agents: {
+    files: instructionFiles(import.meta.url),
+    tools: { manage: manageTool, slots: slotsTool },
+    skills: ["game-studio", "unity-editors"],
+  },
 });
