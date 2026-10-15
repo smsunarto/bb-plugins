@@ -1,7 +1,16 @@
 import { expect, test } from "bun:test";
+import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import { reviewContext as context } from "../../../test/review-stub.ts";
 import { requestReview } from "./request-review.ts";
 import { reviewRequests } from "./review-requests.ts";
+
+function deferred() {
+  let resolve = () => {};
+  const promise = new Promise<void>((done) => {
+    resolve = done;
+  });
+  return { promise, resolve };
+}
 
 test("spawns a visible child on the same environment, pointed at the repository path", async () => {
   const { ctx, spawned } = context();
@@ -31,6 +40,101 @@ test("asking again while the child works returns it instead of spawning another"
   // The same branch name in another repository is another PR.
   await requestReview.execute(ctx, { threadId: "t1", repositoryKey: ".", branch: "scott/top" });
   expect(spawned).toHaveLength(2);
+});
+
+test("overlapping requests for the same branch return one PR subthread", async () => {
+  const { ctx, spawned } = context();
+
+  expect(
+    await Promise.all([
+      requestReview.execute(ctx, { threadId: "t1", branch: "scott/top" }),
+      requestReview.execute(ctx, { threadId: "t1", branch: "scott/top" }),
+    ]),
+  ).toEqual([{ threadId: "child-1" }, { threadId: "child-1" }]);
+  expect(spawned.map((child) => child["title"])).toEqual(["Create PR for scott/top"]);
+});
+
+test("overlapping requests preserve every branch and repository's PR subthread", async () => {
+  const { ctx } = context();
+  await Promise.all([
+    requestReview.execute(ctx, { threadId: "t1", branch: "scott/top" }),
+    requestReview.execute(ctx, { threadId: "t1", branch: "scott/bottom" }),
+    requestReview.execute(ctx, { threadId: "t1", repositoryKey: ".", branch: "scott/top" }),
+  ]);
+
+  expect(await reviewRequests.execute(ctx, { threadId: "t1" })).toEqual({
+    requests: [
+      { branch: "scott/top", threadId: "child-1", running: true },
+      { branch: "scott/bottom", threadId: "child-2", running: true },
+    ],
+  });
+  expect(await reviewRequests.execute(ctx, { threadId: "t1", repositoryKey: "." })).toEqual({
+    requests: [{ branch: "scott/top", threadId: "child-3", running: true }],
+  });
+});
+
+test("a failed child lookup releases queued requests and later retries", async () => {
+  const { ctx } = context();
+  await requestReview.execute(ctx, { threadId: "t1", branch: "scott/top" });
+  const bb = (ctx as { bb: BbPluginApi }).bb;
+  const get = bb.sdk.threads.get.bind(bb.sdk.threads);
+  let fail = true;
+  bb.sdk.threads.get = async (input) => {
+    if (input.threadId === "child-1" && fail) {
+      fail = false;
+      throw new Error("The child lookup failed.");
+    }
+    return get(input);
+  };
+
+  const failed = requestReview.execute(ctx, { threadId: "t1", branch: "scott/top" });
+  const retried = requestReview.execute(ctx, { threadId: "t1", branch: "scott/top" });
+  await expect(failed).rejects.toThrow("The child lookup failed.");
+  expect(await retried).toEqual({ threadId: "child-1" });
+  expect(await requestReview.execute(ctx, { threadId: "t1", branch: "scott/top" })).toEqual({
+    threadId: "child-1",
+  });
+});
+
+test("a request queued before an environment move cannot reuse the old PR subthread", async () => {
+  const located = deferred();
+  let locations = 0;
+  const { ctx, spawned, move } = context({
+    onLocate: () => {
+      if (++locations === 2) located.resolve();
+    },
+  });
+  const bb = (ctx as { bb: BbPluginApi }).bb;
+  const set = bb.storage.kv.set.bind(bb.storage.kv);
+  const recording = deferred();
+  const release = deferred();
+  bb.storage.kv.set = async (...args) => {
+    const result = await set(...args);
+    recording.resolve();
+    await release.promise;
+    return result;
+  };
+
+  const first = requestReview.execute(ctx, {
+    threadId: "t1",
+    environmentId: "env-1",
+    branch: "scott/top",
+  });
+  await recording.promise;
+  const queued = requestReview.execute(ctx, {
+    threadId: "t1",
+    environmentId: "env-1",
+    branch: "scott/top",
+  });
+  await located.promise;
+  move();
+  release.resolve();
+
+  expect(await first).toEqual({ threadId: "child-1" });
+  await expect(queued).rejects.toThrow(
+    "This thread moved to another environment since the board was read.",
+  );
+  expect(spawned.map((child) => child["title"])).toEqual(["Create PR for scott/top"]);
 });
 
 test("spawns nothing for a thread without an environment", async () => {

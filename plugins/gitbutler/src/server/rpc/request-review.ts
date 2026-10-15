@@ -2,7 +2,7 @@ import { defineMutation } from "@bb-kit/core/rpc";
 import { z } from "zod";
 import { branchNameSchema, repositoryKeySchema } from "../../shared/schema.ts";
 import { reviewPrompt } from "../lib/prompts.ts";
-import { readReviewRequests, recordReviewRequest } from "../lib/review-requests.ts";
+import { claimReviewRequest } from "../lib/review-requests.ts";
 import { locateRepository, spawnSubthread } from "../lib/subthreads.ts";
 
 /**
@@ -23,17 +23,12 @@ export const requestReview = defineMutation({
   output: z.object({ threadId: z.string() }).strict(),
   async execute(ctx, { threadId, repositoryKey, environmentId, branch }) {
     const repository = await locateRepository(ctx.bb, threadId, repositoryKey, environmentId);
-    // One subthread per branch: asking again while it works returns the same one.
-    const running = (await readReviewRequests(ctx.bb, threadId, repository)).find(
-      (request) => request.branch === branch && request.running,
+    const childId = await claimReviewRequest(ctx.bb, threadId, repository, branch, () =>
+      spawnSubthread(ctx.bb, threadId, repository, {
+        title: `Create PR for ${branch}`,
+        prompt: reviewPrompt(branch, repository.path),
+      }),
     );
-    if (running) return { threadId: running.threadId };
-
-    const childId = await spawnSubthread(ctx.bb, threadId, repository, {
-      title: `Create PR for ${branch}`,
-      prompt: reviewPrompt(branch, repository.path),
-    });
-    await recordReviewRequest(ctx.bb, threadId, repository, { branch, threadId: childId });
     return { threadId: childId };
   },
 });

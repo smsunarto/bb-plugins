@@ -2,6 +2,7 @@ import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import type { ReviewRequest } from "../../shared/schema.ts";
 import { liveSubthread } from "./subthreads.ts";
 import type { LocatedRepository } from "./subthreads.ts";
+import { writeTarget } from "./target.ts";
 
 /**
  * Which branch each Create PR subthread is for. bb threads carry no metadata,
@@ -16,6 +17,9 @@ import type { LocatedRepository } from "./subthreads.ts";
 type Entry = { hostId: string; path: string; branch: string; threadId: string };
 
 const kvKey = (threadId: string) => `review-requests:${threadId}`;
+
+/** Each parent's requests share one KV array, including its other repositories. */
+const claims = new WeakMap<BbPluginApi, Map<string, Promise<string>>>();
 
 const inRepository = (entry: Partial<Entry>, { hostId, path }: LocatedRepository) =>
   entry.hostId === hostId && entry.path === path;
@@ -38,8 +42,49 @@ export async function readReviewRequests(
   return requests.filter((request) => request !== null);
 }
 
+/**
+ * Claims one PR subthread, with the lookup, spawn, and record kept together.
+ * Requests for different branches also take turns: their records share the
+ * parent's KV array. A failed claim frees the next request to retry.
+ */
+export function claimReviewRequest(
+  bb: BbPluginApi,
+  threadId: string,
+  repository: LocatedRepository,
+  branch: string,
+  start: () => Promise<string>,
+): Promise<string> {
+  let parentClaims = claims.get(bb);
+  if (!parentClaims) {
+    parentClaims = new Map();
+    claims.set(bb, parentClaims);
+  }
+  const queue = parentClaims;
+  const claim = (queue.get(threadId) ?? Promise.resolve(""))
+    .catch(() => "")
+    .then(async () => {
+      // The parent may have moved while this request waited behind another.
+      await writeTarget(bb, threadId, repository.environmentId);
+      const running = (await readReviewRequests(bb, threadId, repository)).find(
+        (request) => request.branch === branch && request.running,
+      );
+      if (running) return running.threadId;
+      const childId = await start();
+      await recordReviewRequest(bb, threadId, repository, { branch, threadId: childId });
+      return childId;
+    });
+  queue.set(threadId, claim);
+  const release = () => {
+    if (queue.get(threadId) !== claim) return;
+    queue.delete(threadId);
+    if (queue.size === 0) claims.delete(bb);
+  };
+  claim.then(release, release);
+  return claim;
+}
+
 /** A branch has one subthread at a time, so a new one replaces the old entry. */
-export async function recordReviewRequest(
+async function recordReviewRequest(
   bb: BbPluginApi,
   threadId: string,
   repository: LocatedRepository,
