@@ -39,13 +39,31 @@ The old `bb kitchen-sink editors` command and `kitchen_sink_editors` tool move t
 
 [Popbot's durable slot design](https://github.com/proofofplay/popbot-tool/blob/main/docs/adr/0003-slot-as-durable-unit.md) keeps a checkout, its private Library cache, Editor and services together. Adopt that lifetime when preparing Unity environments: reuse a stable checkout and its cache across tasks. Keep each slot's services, ports, logs and test accounts separate. MPPM clients share a slot because they share Assets.
 
-This plugin inventories existing slots and guards Editor operations. It does not create checkouts, switch branches, launch Editors, allocate ports or budget RAM. BB already exposes environment providers for future provisioning, so checkout lifecycle can use the SDK rather than a second environment registry.
+The `unity-rampage-slot` BB environment provider adopts existing independent **Rampage client** checkouts. Registration verifies the Rampage package and assembly markers, Unity version, private Git metadata, and isolated source/cache directories. It refuses linked worktrees and paths managed by another environment provider.
 
-Use existing BB environments as durable checkout identities today. New threads can reuse an environment with `threads.spawn({ environment: { type: "reuse", environmentId }, ... })`. Prefer persistent Project checkout environments for adopted warm directories: native managed worktrees can retire after their last active thread.
+Register a stopped checkout against its Rampage BB project:
 
-For automatic preparation, register a custom provider with `bb.experimental_environments.register`. Its `create`, `restore` and `remove` hooks support checkout lifecycle, cancellation and progress. Set `policy.retireGraceMs` to `null` to retain warm environments after threads archive. Explicit deletion still requests removal.
+```sh
+bb unity slots register --host host_id --project rampage_project_id \
+  --path /absolute/path/to/rampage-client
+bb unity slots list --host host_id
+```
 
-Keep editor claims separate. `experimental_claimPath` protects provisioning, then releases preparation ownership once the environment is reusable. `experimental_existingPath` can reuse an environment without running `create`. Neither grants exclusive Editor access. Keep stable slot identity in provider inputs or durable slot records: `pathKey` changes on restoration, and successful removal clears provider `resource`. Refuse explicit retirement while owned Editor work remains. These APIs exist in the repository SDK 0.5.29; lifecycle behavior was checked against the running BB 0.46.0 / SDK 0.6.37 implementation.
+Select `unity-rampage-slot` when creating a BB thread and supply `{"slotId":"slot_id"}` as its environment inputs. The provider reserves the checkout before checking readiness. Its persistent lease prevents other threads from acquiring Editors or starting turns in that slot, including ordinary environment reuse. An existing thread attached to the checkout can use `bb unity slots acquire --slot slot_id`.
+
+Keep both capabilities: the slot lease protects the checkout across tasks and Editor restarts; an Editor claim protects its exact process and native jobs. Leases survive idle turns, failures, archive/delete events and plugin reloads. They never expire automatically. BB's dispatch policy remains cooperative: explicit Send-now, edited-message resend and manual compaction bypass admission hooks. Direct filesystem access and physical input cannot be intercepted; managed Editor claims still enforce slot ownership.
+
+For handoff, finish native jobs, release every Editor claim, and close the main Editor and its MPPM clients. Preserve dirty scenes before closing. Then release the slot:
+
+```sh
+bb unity slots release --slot slot_id --lease lease_id
+```
+
+Release preserves the checkout, Library cache, dirty files and GitButler state. Any failed or interrupted readiness check quarantines the slot. Close remaining Editors and verify completion, then use `bb unity slots recover --slot slot_id --confirm --note 'Observed completion evidence'`. Another caller can recover ownership only after its owning thread is archived or deleted. An unverifiable Unity process or a remaining Unity lock blocks handoff; the plugin never kills processes or removes locks.
+
+Use `bb unity slots retire --slot slot_id` to retire an available slot. Provider removal performs the same checks. Retirement preserves all checkout files and prevents further leases until explicit registration. The provider uses `retireGraceMs: null` and `ownsPath: false`, so BB keeps warm environments and does not run destructive checkout teardown. It does not clone repositories, switch branches, launch Editors, or manage Jetstream services.
+
+If you explicitly deleted its BB environment, re-register the slot and restore an existing owning thread's environment before starting another task. Registration does not revive a destroyed BB environment record.
 
 Keep GitButler for source control. Its [parallel-agent documentation](https://docs.gitbutler.com/ai-agents/parallel-agents) explicitly distinguishes shared branches from worktrees with isolated runtimes:
 

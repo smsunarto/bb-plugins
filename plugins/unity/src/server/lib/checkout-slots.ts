@@ -1,4 +1,6 @@
 import { createHash } from "node:crypto";
+import type { z } from "zod";
+import type { slotSchema } from "../../shared/slot-contract.ts";
 import type {
   CheckoutSlot,
   EditorInstance,
@@ -10,6 +12,7 @@ export function checkoutSlots(
   hostId: string,
   instances: EditorInstance[],
   claims: VisibleEditorClaim[],
+  registered: z.infer<typeof slotSchema>[] = [],
 ): CheckoutSlot[] {
   const slots = new Map<string, CheckoutSlot>();
   const slotFor = (workspacePath: string) => {
@@ -36,6 +39,7 @@ export function checkoutSlots(
   }
   // An undiscovered Editor's durable claim still occupies its checkout until recovery.
   for (const claim of claims) slotFor(claim.instance.workspacePath).claims.push(claim);
+  for (const slot of registered) slotFor(slot.workspacePath).lifecycle = slot;
   for (const slot of slots.values()) {
     slot.mainEditors.sort((a, b) => a.id.localeCompare(b.id));
     slot.mppmEditors.sort((a, b) => a.id.localeCompare(b.id));

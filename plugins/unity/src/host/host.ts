@@ -1,10 +1,21 @@
 import { experimental_defineHostEntry } from "@get-bb/plugin-sdk/host";
 import { unityHostContract } from "../shared/unity-editor-contract.ts";
 import { discover, probe, alive, execute, job, quiet } from "./unity-editors.ts";
+import {
+  inspectRampageWorkspace,
+  assertWorkspaceStopped,
+  resolveWorkspacePath,
+} from "./slot-workspaces.ts";
 
 export default experimental_defineHostEntry({
   contract: unityHostContract,
   handlers: {
+    resolveWorkspace: ({ path }) => resolveWorkspacePath(path),
+    inspectWorkspace: ({ path }, ctx) => inspectRampageWorkspace(path, ctx.signal),
+    workspaceStopped: async ({ path }, ctx) => {
+      await assertWorkspaceStopped(path, ctx.signal);
+      return { stopped: true as const };
+    },
     discover: (_, ctx) => discover(ctx.signal),
     probe: ({ instance }, ctx) => probe(instance, ctx.signal),
     alive: async ({ pid, startedAt }) => ({ alive: await alive(pid, startedAt) }),

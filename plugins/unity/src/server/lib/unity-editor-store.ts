@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import type { EditorInstance } from "../../shared/unity-editor-contract.ts";
+import type { SlotStore } from "./slot-store.ts";
 
 export type EditorMode = "runtime" | "authoring";
 export interface EditorClaim {
@@ -18,7 +19,10 @@ type Db = ReturnType<BbPluginApi["storage"]["database"]>;
 const table = "unity_editor_claims";
 export class EditorClaims {
   private readonly loadId = randomUUID();
-  constructor(readonly db: Db) {
+  constructor(
+    readonly db: Db,
+    readonly slots?: SlotStore,
+  ) {
     db.exec(
       `CREATE TABLE IF NOT EXISTS ${table} (key TEXT PRIMARY KEY, host TEXT NOT NULL, workspace TEXT NOT NULL, record TEXT NOT NULL)`,
     );
@@ -81,6 +85,7 @@ export class EditorClaims {
   ): { claim: EditorClaim; created: boolean } {
     return this.db
       .transaction(() => {
+        this.slots?.editorAccess(hostId, instance.workspacePath, ownerThreadId);
         const current = this.get(hostId, instance.id);
         if (current) {
           if (current.ownerThreadId !== ownerThreadId)
@@ -146,6 +151,7 @@ export class EditorClaims {
           throw new Error(
             "An Editor operation is pending. Check its status before another command or release.",
           );
+        this.slots?.editorAccess(hostId, claim.instance.workspacePath, owner);
         this.save({ ...claim, jobId: "submitting", operationLoadId: this.loadId });
         return claim;
       })

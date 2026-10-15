@@ -10,6 +10,8 @@ import type {
 } from "../../shared/unity-editor-contract.ts";
 import { EditorClaims, type EditorMode, type EditorClaim } from "./unity-editor-store.ts";
 import { checkoutSlots } from "./checkout-slots.ts";
+import type { SlotStore } from "./slot-store.ts";
+import { visibleSlot } from "./unity-slots.ts";
 
 const runtimeCommands = new Set([
   "editor_status",
@@ -94,7 +96,12 @@ export class UnityEditors {
       hostId: host,
       ...discovered,
       claims,
-      slots: checkoutSlots(host, discovered.instances, claims),
+      slots: checkoutSlots(
+        host,
+        discovered.instances,
+        claims,
+        this.claims.slots?.list(host).map((slot) => visibleSlot(slot, owner)),
+      ),
     };
   }
   async claim(host: string, id: string, owner: string, mode: EditorMode, signal?: AbortSignal) {
@@ -241,10 +248,10 @@ export class UnityEditors {
     return { recovered: true, evidence: confirmation?.note };
   }
 }
-export function createUnityEditors(bb: BbPluginApi) {
+export function createUnityEditors(bb: BbPluginApi, slots?: SlotStore) {
   const host = bb.hosts.experimental_client({ contract: unityHostContract });
   const service = new UnityEditors(
-    new EditorClaims(bb.storage.database()),
+    new EditorClaims(bb.storage.database(), slots),
     {
       discover: (hostId, signal) => host.call("discover", {}, { hostId, signal }),
       probe: (hostId, instance, signal) => host.call("probe", { instance }, { hostId, signal }),

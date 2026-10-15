@@ -5,6 +5,23 @@ description: Discover Unity Editor checkout slots, claim an exact instance for a
 
 # Unity Editor ownership and checkout slots
 
+For registered Rampage checkouts, use `unity_slots` or `bb unity slots` first.
+Register an existing independent clone with `register --host host_id --project
+project_id --path /absolute/rampage-client`. New threads can select the
+`unity-rampage-slot` environment provider with inputs `{"slotId":"slot_id"}`.
+An attached thread can `acquire --slot slot_id`; keep its lease ID. Hold this
+lease across idle turns, failures, and Editor restarts, then claim the exact
+Editor as below. Source control remains GitButler within each independent clone.
+
+For handoff, finish all native jobs, release Editor claims, preserve dirty scenes,
+and close Unity plus its MPPM clients. Then `release --slot slot_id --lease
+lease_id` and stop using the checkout. Verification failures or interruptions
+quarantine the slot. Recovery requires `recover --slot slot_id --confirm --note
+'Observed completion evidence'`; a different caller needs an archived or deleted
+owner. Never bypass an occupied slot with direct environment reuse or CLI calls.
+Retirement preserves checkout files and Library caches; explicit registration
+is required before reusing a retired slot. No automatic checkout cleanup occurs.
+
 Use `bb unity manage list` or the `unity_manage` agent tool.
 The inventory includes `slots`, grouped by the host's canonical shared Assets
 checkout (`workspacePath`), with a stable host-scoped id, main Editors, MPPM

@@ -5,6 +5,10 @@ import { manage as manageTool } from "./tools/manage.ts";
 import { createUnityEditors } from "./lib/unity-editors.ts";
 import { listUnityEditors } from "./rpc/list-unity-editors.ts";
 import { legacyClaimsGuard } from "./lib/legacy-claims.ts";
+import { slots as slotsCommand } from "./command/slots.ts";
+import { slots as slotsTool } from "./tools/slots.ts";
+import { SlotStore } from "./lib/slot-store.ts";
+import { UnitySlots } from "./lib/unity-slots.ts";
 
 export default definePlugin({
   pluginId: "unity",
@@ -13,17 +17,23 @@ export default definePlugin({
     discoverable: true,
     description: "Unity Editor discovery, checkout slots and public ownership information.",
   },
-  command: { manage: manageCommand },
+  command: { manage: manageCommand, slots: slotsCommand },
   services(bb) {
-    const unityEditors = createUnityEditors(bb);
+    const slotStore = new SlotStore(bb.storage.database());
+    const unityEditors = createUnityEditors(bb, slotStore);
+    const ensureLegacyClaims = legacyClaimsGuard(bb, unityEditors.claims.db);
     return {
       unityEditors,
-      ensureLegacyClaims: legacyClaimsGuard(bb, unityEditors.claims.db),
+      unitySlots: new UnitySlots(bb, slotStore, ensureLegacyClaims),
+      ensureLegacyClaims,
     };
+  },
+  setup({ unitySlots }) {
+    unitySlots.install();
   },
   agents: {
     files: instructionFiles(import.meta.url),
-    tools: { manage: manageTool },
+    tools: { manage: manageTool, slots: slotsTool },
     skills: ["unity-editors"],
   },
 });

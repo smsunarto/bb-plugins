@@ -1,5 +1,6 @@
 import { defineRpcContract } from "@get-bb/plugin-sdk";
 import { z } from "zod";
+import { slotSchema } from "./slot-contract.ts";
 
 export const editorSchema = z
   .object({
@@ -36,6 +37,7 @@ export const checkoutSlotSchema = z
     mainEditors: z.array(editorSchema),
     mppmEditors: z.array(editorSchema),
     claims: z.array(visibleClaimSchema),
+    lifecycle: slotSchema.optional(),
   })
   .strict();
 export type CheckoutSlot = z.infer<typeof checkoutSlotSchema>;
@@ -62,6 +64,18 @@ export type CommandSubmission = { jobId: string } | { rejected: true; error: str
 export const jsonParametersSchema = z.record(z.string(), z.json());
 export type CommandParameters = z.infer<typeof jsonParametersSchema>;
 export const unityHostContract = defineRpcContract({
+  resolveWorkspace: {
+    input: z.object({ path: z.string().min(1) }).strict(),
+    output: z.object({ workspacePath: z.string().nullable() }).strict(),
+  },
+  inspectWorkspace: {
+    input: z.object({ path: z.string().min(1) }).strict(),
+    output: z.object({ workspacePath: z.string(), projectVersion: z.string() }).strict(),
+  },
+  workspaceStopped: {
+    input: z.object({ path: z.string().min(1) }).strict(),
+    output: z.object({ stopped: z.literal(true) }).strict(),
+  },
   discover: {
     input: z.object({}).strict(),
     output: z.object({ instances: z.array(editorSchema), warnings: z.array(z.string()) }).strict(),
