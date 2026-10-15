@@ -3,10 +3,12 @@ import type { z } from "zod";
 import type { slotActionSchema } from "../../shared/slot-contract.ts";
 import { editorHost } from "./unity-editors.ts";
 import { UnitySlots, visibleSlot } from "./unity-slots.ts";
+import type { SlotProvisioning } from "./slot-provisioning.ts";
 
 export type SlotsContext = Readonly<{
   bb: BbPluginApi;
   unitySlots: UnitySlots;
+  slotProvisioning: SlotProvisioning;
   ensureLegacyClaims: () => Promise<void>;
 }>;
 
@@ -19,6 +21,7 @@ export async function slotAction(
   await ctx.ensureLegacyClaims();
   const hostId = await editorHost(ctx.bb, threadId, input.hostId);
   const service = ctx.unitySlots;
+  if (input.action === "create") return createSlot(ctx, input, hostId, threadId, signal);
   if (input.action === "list")
     return {
       slots: service.store
@@ -64,4 +67,24 @@ async function registrationProject(bb: BbPluginApi, projectId?: string, threadId
   if (projectId) return projectId;
   if (!threadId) throw new Error("Registration requires path and projectId");
   return (await bb.sdk.threads.get({ threadId })).projectId;
+}
+
+async function createSlot(
+  ctx: SlotsContext,
+  input: z.infer<typeof slotActionSchema>,
+  hostId: string,
+  threadId?: string,
+  signal?: AbortSignal,
+) {
+  if (!threadId) throw new Error("Slot creation requires an actual BB thread context");
+  if (!input.sourceSlotId || !input.path)
+    throw new Error("Slot creation requires a registered source slot and destination path");
+  return ctx.slotProvisioning.create(
+    hostId,
+    input.sourceSlotId,
+    input.path,
+    input.branch ?? "scott/unity-slot",
+    threadId,
+    signal,
+  );
 }

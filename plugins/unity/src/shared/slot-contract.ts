@@ -6,7 +6,15 @@ export const slotSchema = z
     hostId: z.string(),
     workspacePath: z.string(),
     projectId: z.string(),
-    state: z.enum(["available", "preparing", "leased", "releasing", "quarantined", "retired"]),
+    state: z.enum([
+      "available",
+      "preparing",
+      "leased",
+      "seeding",
+      "releasing",
+      "quarantined",
+      "retired",
+    ]),
     ownerThreadId: z.string().nullable(),
     leaseId: z.string().nullable().optional(),
     reason: z.string().nullable(),
@@ -14,7 +22,25 @@ export const slotSchema = z
   })
   .strict();
 
-export const slotInputs = z.object({ slotId: z.string().min(1) }).strict();
+export const slotInputs = z.object({ slotId: z.string().min(1).optional() }).strict();
+
+export const slotProvisionInput = z
+  .object({
+    sourcePath: z.string().min(1),
+    path: z.string().min(1),
+    branch: z.string().regex(/^scott\/[a-zA-Z0-9][a-zA-Z0-9/_-]*$/),
+    operationId: z.string().regex(/^[a-f0-9]{64}$/),
+  })
+  .strict();
+export const slotProvisionResult = z
+  .object({
+    workspacePath: z.string(),
+    projectVersion: z.string(),
+    sourceCommit: z.string().regex(/^[a-f0-9]{40,64}$/),
+    branch: z.string(),
+    cacheSeed: z.literal("copy-on-write"),
+  })
+  .strict();
 export const slotResource = z
   .object({
     slotId: z.string().min(1),
@@ -25,10 +51,15 @@ export const slotResource = z
 
 export const slotActionSchema = z
   .object({
-    action: z.enum(["list", "register", "acquire", "release", "recover", "retire"]),
+    action: z.enum(["list", "create", "register", "acquire", "release", "recover", "retire"]),
     hostId: z.string().optional(),
     projectId: z.string().optional(),
     path: z.string().optional(),
+    sourceSlotId: z.string().optional(),
+    branch: z
+      .string()
+      .regex(/^scott\/[a-zA-Z0-9][a-zA-Z0-9/_-]*$/)
+      .optional(),
     slotId: z.string().optional(),
     leaseId: z.string().optional(),
     note: z.string().optional(),

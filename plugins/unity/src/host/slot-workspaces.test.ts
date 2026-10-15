@@ -7,6 +7,7 @@ import {
   assertWorkspaceStopped,
   inspectRampageWorkspace,
   resolveWorkspacePath,
+  planSlotDestination,
 } from "./slot-workspaces.ts";
 
 const paths: string[] = [];
@@ -41,6 +42,22 @@ async function fixture() {
 }
 
 const stopped = { listEditors: async () => [] };
+
+test("creation planning canonicalizes the parent and never overwrites existing paths", async () => {
+  const parent = await fixture();
+  const alias = `${parent}-parent-alias`;
+  paths.push(alias);
+  await symlink(parent, alias);
+  expect(await planSlotDestination(join(alias, "new-slot"))).toEqual({
+    workspacePath: join(parent, "new-slot"),
+  });
+  await expect(planSlotDestination("relative/new-slot")).rejects.toThrow("absolute");
+  await expect(planSlotDestination(parent)).rejects.toThrow("already exists");
+  await expect(planSlotDestination(alias)).rejects.toThrow("already exists");
+  expect(JSON.parse(await readFile(join(parent, "package.json"), "utf8")).name).toBe(
+    "rampage-client",
+  );
+});
 
 test("workspace resolution maps directory aliases and an MPPM clone's shared Assets to the main checkout", async () => {
   const main = await fixture();

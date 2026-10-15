@@ -226,3 +226,58 @@ test("retirement reserves an unowned checkout and cannot retire an owner's relea
   expect(store.completeRetire(slot.id, retiring.leaseId!).state).toBe("retired");
   expect(store.beginRetire(slot.id, "host", "/rampage").state).toBe("retired");
 });
+
+test("cache seeding excludes the owner and a reload quarantines the unfinished snapshot", () => {
+  const { db, store, slot } = setup();
+  const reserved = store.acquire(slot.id, "host", "project", "alice");
+  const lease = store.completeAcquire(slot.id, reserved.leaseId!);
+  expect(store.beginSeed(slot.id, "alice", lease.leaseId!).state).toBe("seeding");
+  expect(() => store.editorAccess("host", "/rampage", "alice")).toThrow("seeding");
+  expect(() => store.beginRelease(slot.id, "alice", lease.leaseId!)).toThrow("seeding");
+  expect(() => store.acquire(slot.id, "host", "project", "alice")).toThrow("seeding");
+  expect(store.completeSeed(slot.id, lease.leaseId!, true)).toMatchObject({
+    state: "leased",
+    ownerThreadId: "alice",
+    leaseId: lease.leaseId,
+  });
+  store.beginSeed(slot.id, "alice", lease.leaseId!);
+  expect(new SlotStore(db).get(slot.id)).toMatchObject({
+    state: "quarantined",
+    ownerThreadId: "alice",
+    leaseId: lease.leaseId,
+  });
+  expect(() => store.completeSeed(slot.id, lease.leaseId!, false)).toThrow("changed");
+});
+
+test("upgrading existing checkout records preserves owner capabilities while enabling seeding", () => {
+  const db = database();
+  db.exec(`CREATE TABLE unity_checkout_slots (
+    id TEXT PRIMARY KEY, host TEXT NOT NULL, workspace TEXT NOT NULL, project TEXT NOT NULL,
+    state TEXT CHECK(state IN ('available','preparing','leased','releasing','quarantined','retired')),
+    owner TEXT, lease TEXT, reason TEXT, updated TEXT NOT NULL, UNIQUE(host, workspace)
+  )`);
+  db.prepare("INSERT INTO unity_checkout_slots VALUES (?,?,?,?,?,?,?,?,?)").run(
+    "existing",
+    "host",
+    "/rampage",
+    "project",
+    "leased",
+    "alice",
+    "existing-token",
+    null,
+    "before",
+  );
+  const store = new SlotStore(db);
+  expect(store.get("existing")).toMatchObject({
+    state: "leased",
+    ownerThreadId: "alice",
+    leaseId: "existing-token",
+    updatedAt: "before",
+  });
+  store.beginSeed("existing", "alice", "existing-token");
+  expect(store.completeSeed("existing", "existing-token", true)).toMatchObject({
+    state: "leased",
+    ownerThreadId: "alice",
+    leaseId: "existing-token",
+  });
+});

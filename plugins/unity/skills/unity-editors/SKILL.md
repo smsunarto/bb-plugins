@@ -9,6 +9,14 @@ For registered Rampage checkouts, use `unity_slots` or `bb unity slots` first.
 Register an existing independent clone with `register --host host_id --project
 project_id --path /absolute/rampage-client`. New threads can select the
 `unity-rampage-slot` environment provider with inputs `{"slotId":"slot_id"}`.
+Create additional warm slots once with `bb unity slots create --host host_id
+--source master_slot_id --path /absolute/rampage-slot-1 --branch scott/slot-1`.
+The source must be clean, hydrated and stopped. Its lease is frozen during the
+native copy-on-write Library seed. macOS requires Python 3 for APFS clonefile;
+Linux requires reflink support. There is no full-copy fallback. New threads can
+use empty provider inputs `{}` for atomic automatic allocation from these slots.
+Adopted Project Checkout environments require an explicit slotId. Completed
+creation retries preserve later work; failed partial destinations stay fenced.
 An attached thread can `acquire --slot slot_id`; keep its lease ID. Hold this
 lease across idle turns, failures, and Editor restarts, then claim the exact
 Editor as below. Source control remains GitButler within each independent clone.

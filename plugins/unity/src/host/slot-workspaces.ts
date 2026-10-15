@@ -24,6 +24,19 @@ export async function resolveWorkspacePath(
   }
 }
 
+/** Reserve only a new directory under an existing, canonical parent. */
+export async function planSlotDestination(path: string) {
+  if (!isAbsolute(path)) throw new Error("A new slot requires an absolute destination path");
+  const workspacePath = join(await realpath(dirname(path)), basename(path));
+  try {
+    await lstat(workspacePath);
+  } catch (error) {
+    if (missing(error)) return { workspacePath };
+    throw error;
+  }
+  throw new Error("The destination already exists; slot creation never overwrites directories");
+}
+
 function inside(root: string, path: string): boolean {
   const rel = relative(root, path);
   return rel === "" || (rel !== ".." && !rel.startsWith(`..${sep}`) && !isAbsolute(rel));

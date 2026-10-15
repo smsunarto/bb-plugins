@@ -39,7 +39,7 @@ The old `bb kitchen-sink editors` command and `kitchen_sink_editors` tool move t
 
 [Popbot's durable slot design](https://github.com/proofofplay/popbot-tool/blob/main/docs/adr/0003-slot-as-durable-unit.md) keeps a checkout, its private Library cache, Editor and services together. Adopt that lifetime when preparing Unity environments: reuse a stable checkout and its cache across tasks. Keep each slot's services, ports, logs and test accounts separate. MPPM clients share a slot because they share Assets.
 
-The `unity-rampage-slot` BB environment provider adopts existing independent **Rampage client** checkouts. Registration verifies the Rampage package and assembly markers, Unity version, private Git metadata, and isolated source/cache directories. It refuses linked worktrees and paths managed by another environment provider.
+The `unity-rampage-slot` BB environment provider reserves persistent **Rampage client** checkouts. Create warm slots from a master checkout, or register an existing independent clone. Registration verifies the Rampage markers, Unity version, private Git metadata and isolated source/cache directories.
 
 Register a stopped checkout against its Rampage BB project:
 
@@ -49,7 +49,22 @@ bb unity slots register --host host_id --project rampage_project_id \
 bb unity slots list --host host_id
 ```
 
-Select `unity-rampage-slot` when creating a BB thread and supply `{"slotId":"slot_id"}` as its environment inputs. The provider reserves the checkout before checking readiness. Its persistent lease prevents other threads from acquiring Editors or starting turns in that slot, including ordinary environment reuse. An existing thread attached to the checkout can use `bb unity slots acquire --slot slot_id`.
+Create the pool once from that registered master. Run creation inside a BB thread, with Unity closed and the master checkout clean:
+
+```sh
+bb unity slots create --host host_id --source master_slot_id \
+  --path /absolute/path/to/rampage-slot-1 --branch scott/slot-1
+bb unity slots create --host host_id --source master_slot_id \
+  --path /absolute/path/to/rampage-slot-2 --branch scott/slot-2
+```
+
+Each creation makes independent Git metadata and seeds `Library` using native copy-on-write. macOS uses APFS `clonefile` through Python 3; Linux requires native reflink support. Source and destination must support cloning on the same filesystem. Unsupported cloning fails; it never falls back to a full copy or hard links. Git LFS assets hydrate from the master's local objects without network fetches. Commit and hydrate the master before seeding.
+
+The source lease is frozen during seeding, including against its owner. Unity must remain closed throughout. The clone excludes source GitButler state, Pipeline credentials, MPPM clones, Temp and Logs. Completed creation retries preserve the slot's changed files and cache. Failed creation leaves its partial directory and a fenced host receipt for inspection; recover the source lease explicitly and choose a new destination after a partial failure.
+
+Select `unity-rampage-slot` when creating a BB thread. Empty inputs `{}` choose an available warm slot on that host and project. Allocation reserves it atomically before readiness checks; retries keep the same slot. Released slots keep their branch, work and Library for reuse. GitButler owns later branch changes; the slot manager never stashes or resets them.
+
+Supply `{"slotId":"slot_id"}` to select a particular slot. Adopted Project Checkout environments require this explicit selection because BB retains their existing provider identity. New slots and environments already owned by Unity support automatic selection. An attached thread can use `bb unity slots acquire --slot slot_id`.
 
 Keep both capabilities: the slot lease protects the checkout across tasks and Editor restarts; an Editor claim protects its exact process and native jobs. Leases survive idle turns, failures, archive/delete events and plugin reloads. They never expire automatically. BB's dispatch policy remains cooperative: explicit Send-now, edited-message resend and manual compaction bypass admission hooks. Direct filesystem access and physical input cannot be intercepted; managed Editor claims still enforce slot ownership.
 
@@ -61,7 +76,7 @@ bb unity slots release --slot slot_id --lease lease_id
 
 Release preserves the checkout, Library cache, dirty files and GitButler state. Any failed or interrupted readiness check quarantines the slot. Close remaining Editors and verify completion, then use `bb unity slots recover --slot slot_id --confirm --note 'Observed completion evidence'`. Another caller can recover ownership only after its owning thread is archived or deleted. An unverifiable Unity process or a remaining Unity lock blocks handoff; the plugin never kills processes or removes locks.
 
-Use `bb unity slots retire --slot slot_id` to retire an available slot. Provider removal performs the same checks. Retirement preserves all checkout files and prevents further leases until explicit registration. The provider uses `retireGraceMs: null` and `ownsPath: false`, so BB keeps warm environments and does not run destructive checkout teardown. It does not clone repositories, switch branches, launch Editors, or manage Jetstream services.
+Use `bb unity slots retire --slot slot_id` to retire an available slot. Provider removal performs the same checks. Retirement preserves all checkout files and prevents further leases until explicit registration. The provider uses `retireGraceMs: null` and `ownsPath: false`, so BB keeps warm environments and does not run destructive checkout teardown. Editor launch and Jetstream services remain outside this lifecycle.
 
 If you explicitly deleted its BB environment, re-register the slot and restore an existing owning thread's environment before starting another task. Registration does not revive a destroyed BB environment record.
 

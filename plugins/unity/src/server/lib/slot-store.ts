@@ -6,6 +6,7 @@ export type SlotState =
   | "available"
   | "preparing"
   | "leased"
+  | "seeding"
   | "releasing"
   | "quarantined"
   | "retired";
@@ -24,28 +25,31 @@ export interface Slot {
 const table = "unity_checkout_slots";
 const columns = `id, host AS hostId, workspace AS workspacePath, project AS projectId,
   state, owner AS ownerThreadId, lease AS leaseId, reason, updated AS updatedAt`;
+const createTable = `CREATE TABLE IF NOT EXISTS ${table} (
+  id TEXT PRIMARY KEY, host TEXT NOT NULL, workspace TEXT NOT NULL, project TEXT NOT NULL,
+  state TEXT NOT NULL CHECK(state IN ('available','preparing','leased','seeding','releasing','quarantined','retired')),
+  owner TEXT, lease TEXT, reason TEXT, updated TEXT NOT NULL,
+  UNIQUE(host, workspace),
+  CHECK((state IN ('available','retired') AND owner IS NULL AND lease IS NULL)
+    OR (state IN ('preparing','leased','seeding') AND owner IS NOT NULL AND lease IS NOT NULL)
+    OR (state IN ('releasing','quarantined') AND lease IS NOT NULL))
+)`;
 
 /** Durable checkout ownership; an Editor claim protects a process inside this lease. */
 export class SlotStore {
   constructor(readonly db: Db) {
-    db.exec(`CREATE TABLE IF NOT EXISTS ${table} (
-      id TEXT PRIMARY KEY,
-      host TEXT NOT NULL,
-      workspace TEXT NOT NULL,
-      project TEXT NOT NULL,
-      state TEXT NOT NULL CHECK(state IN ('available','preparing','leased','releasing','quarantined','retired')),
-      owner TEXT,
-      lease TEXT,
-      reason TEXT,
-      updated TEXT NOT NULL,
-      UNIQUE(host, workspace),
-      CHECK((state IN ('available','retired') AND owner IS NULL AND lease IS NULL)
-        OR (state IN ('preparing','leased') AND owner IS NOT NULL AND lease IS NOT NULL)
-        OR (state IN ('releasing','quarantined') AND lease IS NOT NULL))
-    )`);
     db.transaction(() => {
+      const previous = db
+        .prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = ?")
+        .get(table) as { sql: string } | undefined;
+      if (previous && !previous.sql.includes("'seeding'")) {
+        db.exec(`ALTER TABLE ${table} RENAME TO unity_checkout_slots_legacy`);
+        db.exec(createTable);
+        db.exec(`INSERT INTO ${table} SELECT * FROM unity_checkout_slots_legacy`);
+        db.exec("DROP TABLE unity_checkout_slots_legacy");
+      } else db.exec(createTable);
       db.prepare(
-        `UPDATE ${table} SET state = 'quarantined', reason = ?, updated = ? WHERE state IN ('preparing','releasing')`,
+        `UPDATE ${table} SET state = 'quarantined', reason = ?, updated = ? WHERE state IN ('preparing','seeding','releasing')`,
       ).run("Checkout verification was interrupted; explicit recovery is required", this.now());
     }).immediate();
   }
@@ -160,6 +164,36 @@ export class SlotStore {
       .immediate();
   }
 
+  /** Freeze the source even against its owner until the cache snapshot is complete. */
+  beginSeed(id: string, ownerThreadId: string, leaseId: string): Slot {
+    return this.db
+      .transaction(() => {
+        const slot = this.required(id);
+        this.owned(slot, ownerThreadId, leaseId);
+        if (slot.state !== "leased") this.unavailable(slot);
+        this.noEditorClaims(slot);
+        return this.save({ ...slot, state: "seeding" });
+      })
+      .immediate();
+  }
+
+  completeSeed(id: string, leaseId: string, keepLease: boolean): Slot {
+    return this.db
+      .transaction(() => {
+        const slot = this.required(id);
+        if (slot.state !== "seeding" || slot.leaseId !== leaseId)
+          throw new Error("Checkout lease changed during cache seeding");
+        this.noEditorClaims(slot);
+        return this.save({
+          ...slot,
+          state: keepLease ? "leased" : "available",
+          ownerThreadId: keepLease ? slot.ownerThreadId : null,
+          leaseId: keepLease ? slot.leaseId : null,
+        });
+      })
+      .immediate();
+  }
+
   completeRelease(id: string, leaseId: string): Slot {
     return this.db
       .transaction(() => {
@@ -185,6 +219,7 @@ export class SlotStore {
         if (
           slot.leaseId !== leaseId ||
           (slot.state !== "preparing" &&
+            slot.state !== "seeding" &&
             slot.state !== "leased" &&
             slot.state !== "releasing" &&
             slot.state !== "quarantined")

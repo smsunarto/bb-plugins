@@ -46,7 +46,7 @@ export class UnitySlots {
     return (await this.host.call("resolveWorkspace", { path }, { hostId, signal })).workspacePath;
   }
 
-  private async stopped(
+  async verifyStopped(
     slot: Pick<Slot, "hostId" | "workspacePath" | "projectId">,
     owner?: string,
     signal?: AbortSignal,
@@ -125,7 +125,7 @@ export class UnitySlots {
       })
       .immediate();
     try {
-      await this.stopped(slot, undefined, signal);
+      await this.verifyStopped(slot, undefined, signal);
       return this.store.completeRelease(slot.id, slot.leaseId!);
     } catch (error) {
       this.store.quarantine(slot.id, slot.leaseId!, errorMessage(error));
@@ -145,13 +145,73 @@ export class UnitySlots {
     const previous = this.required(id, hostId);
     const slot = this.store.acquire(id, hostId, projectId, owner);
     if (previous.state === "leased" && previous.ownerThreadId === owner) return slot;
+    return this.finishAcquisition(slot, owner, signal);
+  }
+
+  private async finishAcquisition(slot: Slot, owner: string, signal?: AbortSignal) {
     try {
-      await this.stopped(slot, owner, signal);
-      return this.store.completeAcquire(id, slot.leaseId!);
+      await this.verifyStopped(slot, owner, signal);
+      return this.store.completeAcquire(slot.id, slot.leaseId!);
     } catch (error) {
-      this.store.quarantine(id, slot.leaseId!, errorMessage(error));
+      this.store.quarantine(slot.id, slot.leaseId!, errorMessage(error));
       throw error;
     }
+  }
+
+  private async excludedAutomaticPaths(hostId: string, projectId: string, signal?: AbortSignal) {
+    const excluded = new Set<string>();
+    // BB cannot adopt another provider's environment through create. Explicit slot
+    // selection can reuse project-checkout environments through existingPath instead.
+    for (let offset = 0; ; offset += 100) {
+      const environments = await this.bb.sdk.environments.list({
+        hostId,
+        limit: 100,
+        offset,
+        signal,
+      });
+      const foreign = environments.filter(
+        (environment) =>
+          environment.path &&
+          environment.status !== "destroyed" &&
+          (environment.projectId !== projectId ||
+            ![null, slotProviderId].includes(environment.environmentProviderId)),
+      );
+      for (const environment of foreign) {
+        const path = await this.resolve(hostId, environment.path!, signal);
+        if (path) excluded.add(path);
+      }
+      if (environments.length < 100) return excluded;
+    }
+  }
+
+  /** Select and reserve one warm checkout; retries keep their existing slot. */
+  async acquireFree(hostId: string, projectId: string, owner: string, signal?: AbortSignal) {
+    await this.ensureLegacyClaims();
+    signal?.throwIfAborted();
+    const excluded = await this.excludedAutomaticPaths(hostId, projectId, signal);
+    signal?.throwIfAborted();
+    // Read ownership and reserve together, including across SQLite connections.
+    // Host inspection starts only after this transaction has excluded other callers.
+    const { slot, ready } = this.store.db
+      .transaction(() => {
+        const candidates = this.store
+          .list(hostId)
+          .filter((slot) => slot.projectId === projectId && !excluded.has(slot.workspacePath));
+        const owned = candidates.find(
+          (slot) => slot.ownerThreadId === owner && slot.state !== "retired",
+        );
+        const candidate = owned ?? candidates.find((slot) => slot.state === "available");
+        if (!candidate)
+          throw new Error(
+            "No warm Rampage slot is available on this host and BB project. Create a slot or release one; adopted project checkouts require an explicit slotId.",
+          );
+        return {
+          slot: this.store.acquire(candidate.id, hostId, projectId, owner),
+          ready: candidate.state === "leased" && candidate.ownerThreadId === owner,
+        };
+      })
+      .immediate();
+    return ready ? slot : this.finishAcquisition(slot, owner, signal);
   }
 
   async release(id: string, owner: string, leaseId: string, signal?: AbortSignal) {
@@ -160,7 +220,7 @@ export class UnitySlots {
     if (current.state === "available") return current;
     const slot = this.store.beginRelease(id, owner, leaseId);
     try {
-      await this.stopped(slot, owner, signal);
+      await this.verifyStopped(slot, owner, signal);
       return this.store.completeRelease(id, leaseId);
     } catch (error) {
       this.store.quarantine(id, leaseId, errorMessage(error));
@@ -190,7 +250,7 @@ export class UnitySlots {
       throw new Error(`Ask @thread:${original.ownerThreadId} to release its slot`);
     const slot = this.store.beginRecovery(id, original.leaseId);
     try {
-      await this.stopped(slot, caller, signal);
+      await this.verifyStopped(slot, caller, signal);
       if (
         original.ownerThreadId &&
         original.ownerThreadId !== caller &&
@@ -209,7 +269,7 @@ export class UnitySlots {
     const slot = this.store.beginRetire(id, hostId, path);
     if (slot.state === "retired") return slot;
     try {
-      await this.stopped(slot, undefined, signal);
+      await this.verifyStopped(slot, undefined, signal);
       return this.store.completeRetire(id, slot.leaseId!);
     } catch (error) {
       this.store.quarantine(id, slot.leaseId!, errorMessage(error));
@@ -226,16 +286,43 @@ export class UnitySlots {
       signal: AbortSignal;
       experimental_claimPath(path: string): Promise<boolean>;
       report: { step(message: string): void };
+      previous?: { environment: { path: string | null }; resource: unknown };
     }) => {
       try {
         context.report.step("Reserving the Rampage checkout");
-        const slot = await this.acquire(
-          context.inputs.slotId,
-          context.host.id,
-          context.project.id,
-          context.thread.id,
-          context.signal,
-        );
+        let slotId = context.inputs.slotId;
+        if (context.previous) {
+          const previous = context.previous;
+          const resource =
+            previous.resource === null ? null : slotResource.parse(previous.resource);
+          const pinned = resource
+            ? this.required(resource.slotId, context.host.id)
+            : previous.environment.path
+              ? this.store.find(context.host.id, previous.environment.path)
+              : null;
+          if (!pinned || (slotId && slotId !== pinned.id))
+            throw new Error("Restore requires the original Rampage slot to remain registered");
+          if (
+            resource &&
+            (resource.path !== pinned.workspacePath || resource.hostId !== pinned.hostId)
+          )
+            throw new Error("The environment resource does not match its original Rampage slot");
+          slotId = pinned.id;
+        }
+        const slot = slotId
+          ? await this.acquire(
+              slotId,
+              context.host.id,
+              context.project.id,
+              context.thread.id,
+              context.signal,
+            )
+          : await this.acquireFree(
+              context.host.id,
+              context.project.id,
+              context.thread.id,
+              context.signal,
+            );
         if (!(await context.experimental_claimPath(slot.workspacePath)))
           throw new Error("Another BB environment launch reserved this checkout path");
         return {
@@ -251,14 +338,14 @@ export class UnitySlots {
     this.bb.experimental_environments.register({
       id: slotProviderId,
       displayName: "Rampage Unity slot",
-      description: "Reuse a registered Rampage checkout and its private Unity Library cache",
+      description: "Reserve an available warm Rampage checkout and its private Unity Library cache",
       icon: "Folder",
       requires: { projectCheckout: true },
       inputs: slotInputs,
       policy: { retireGraceMs: null },
       validate: ({ inputs, host, project }) => {
-        const slot = this.store.get(inputs.slotId);
-        if (!slot || slot.hostId !== host.id || slot.projectId !== project.id)
+        const slots = inputs.slotId ? [this.store.get(inputs.slotId)] : this.store.list(host.id);
+        if (!slots.some((slot) => slot?.hostId === host.id && slot.projectId === project.id))
           return {
             action: "refuse",
             message: "Select a registered Rampage slot on this host and BB project",
@@ -267,7 +354,8 @@ export class UnitySlots {
       },
       // Existing project-checkout environments keep their persistent identity.
       // Admission below acquires the lease before a turn, even when create is skipped.
-      experimental_existingPath: ({ slotId }) => this.store.get(slotId)?.workspacePath ?? null,
+      experimental_existingPath: ({ slotId }) =>
+        slotId ? (this.store.get(slotId)?.workspacePath ?? null) : null,
       create: prepare,
       restore: prepare,
       remove: async (context) => {
@@ -305,7 +393,14 @@ export class UnitySlots {
         environmentIntent?.kind === "provider" &&
         environmentIntent.environmentProviderId === slotProviderId
       ) {
-        slot = this.required(slotInputs.parse(environmentIntent.inputs).slotId, context.host?.id);
+        const { slotId } = slotInputs.parse(environmentIntent.inputs);
+        if (slotId) {
+          slot = this.required(slotId, context.host?.id);
+        } else {
+          if (!context.host?.id) throw new Error("Select an existing host for a Rampage slot");
+          await this.acquireFree(context.host.id, context.project.id, thread.id, signal);
+          return { action: "proceed" as const };
+        }
       }
       if (!slot) return { action: "proceed" as const };
       const hostId = environment?.hostId ?? context.host?.id;

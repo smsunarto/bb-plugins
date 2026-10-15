@@ -1,5 +1,6 @@
 import { afterEach, expect, test } from "bun:test";
 import {
+  createFakePluginHost,
   makeHostResponse,
   makeMessageDispatchHookContext,
   makeThreadResponse,
@@ -411,4 +412,277 @@ test("registration refuses a path managed by another BB environment provider", a
     workspacePath: "/rampage",
     projectId: "project",
   });
+});
+
+async function warmPool() {
+  const state = {
+    environments: [] as (typeof environment)[],
+    stopped: null as null | ((path: string) => Promise<void>),
+  };
+  const { bb, harness } = createFakePluginHost({
+    pluginId: "unity",
+    sdk: {
+      plugins: { list: async () => ({ plugins: [] }) },
+      projects: { get: async ({ projectId }) => ({ ...project, id: projectId, sources: [] }) },
+      environments: {
+        list: async ({ offset = 0, limit = 100 } = {}) =>
+          state.environments.slice(offset, offset + limit),
+      },
+      threads: { list: async () => [] },
+    },
+    experimental_callHostRpc: async ({ method, input }) => {
+      const { path } = input as { path: string };
+      if (method === "resolveWorkspace") return { workspacePath: path.replace("-alias", "") };
+      if (method === "inspectWorkspace")
+        return { workspacePath: path, projectVersion: "6000.3.10f1" };
+      if (method === "workspaceStopped") {
+        await state.stopped?.(path);
+        return { stopped: true };
+      }
+      throw new Error(`Unexpected pool host method: ${method}`);
+    },
+  });
+  trackHarness(harness);
+  await plugin(bb);
+  const register = (path: string, hostId = "host", projectId = "project") =>
+    cliSlot(harness, [
+      "slots",
+      "register",
+      "--host",
+      hostId,
+      "--project",
+      projectId,
+      "--path",
+      path,
+    ]);
+  const first = await register("/pool/a");
+  const second = await register("/pool/b");
+  const provider = harness.registrations.environmentProviders.get("unity-rampage-slot")!;
+  function provision(owner: string): Parameters<typeof provider.create>[0] {
+    return {
+      project,
+      host: makeHostResponse({ id: "host" }),
+      projectCheckout: { path: "/rampage", experimental_ownsPath: false },
+      gitRemote: null,
+      inputs: {},
+      thread: makeThreadResponse({ id: owner, projectId: "project" }),
+      suggestedBranchName: `scott/${owner}`,
+      attempt: 1,
+      pathKey: `launch-${owner}`,
+      experimental_claimPath: async () => true,
+      report: { step() {}, log() {} },
+      signal: new AbortController().signal,
+    };
+  }
+  return { state, harness, first, second, provider, provision, register };
+}
+
+test("automatic allocation reserves distinct warm slots and keeps retries on the same lease", async () => {
+  const { state, harness, first, second, provider, provision } = await warmPool();
+  const entered = deferred();
+  const finish = deferred();
+  state.stopped = async (path) => {
+    if (path !== "/pool/a") return;
+    entered.resolve();
+    await finish.promise;
+  };
+  const pending = provider.create(provision("alice"));
+  await entered.promise;
+  expect(await provider.create(provision("bob"))).toEqual({
+    status: "created",
+    path: "/pool/b",
+    ownsPath: false,
+    resource: { slotId: second.id, hostId: "host", path: "/pool/b" },
+  });
+  expect(await provider.create(provision("alice"))).toMatchObject({
+    status: "failed",
+    message: expect.stringContaining("preparing"),
+  });
+  finish.resolve();
+  const created = await pending;
+  expect(created).toEqual({
+    status: "created",
+    path: "/pool/a",
+    ownsPath: false,
+    resource: { slotId: first.id, hostId: "host", path: "/pool/a" },
+  });
+  const lease = (await list(harness, "alice")).find((slot) => slot.id === first.id)!;
+  expect(await provider.create({ ...provision("alice"), attempt: 2 })).toEqual(created);
+  expect((await list(harness, "alice")).find((slot) => slot.id === first.id)!.leaseId).toBe(
+    lease.leaseId,
+  );
+  expect(await provider.create(provision("charlie"))).toMatchObject({
+    status: "failed",
+    message: expect.stringContaining("No warm Rampage slot is available"),
+  });
+  await harness.behavior.emitThreadEvent("thread.archived", {
+    thread: makeThreadResponse({ id: "alice", projectId: "project", archivedAt: 1 }),
+  });
+  expect((await list(harness, "alice")).find((slot) => slot.id === first.id)).toMatchObject({
+    state: "leased",
+    ownerThreadId: "alice",
+    leaseId: lease.leaseId,
+  });
+});
+
+test("automatic selection excludes adopted provider paths and foreign host or project slots", async () => {
+  const { state, harness, first, second, provider, provision, register } = await warmPool();
+  await register("/foreign-host", "another-host");
+  await register("/foreign-project", "host", "another-project");
+  state.environments = [
+    {
+      ...environment,
+      id: "adopted-source",
+      path: "/pool/a-alias",
+      environmentProviderId: "project-checkout",
+    },
+  ];
+  expect(provider.experimental_existingPath!({})).toBeNull();
+  expect(provider.experimental_existingPath!({ slotId: first.id })).toBe("/pool/a");
+  expect(await provider.create(provision("alice"))).toMatchObject({
+    status: "created",
+    path: "/pool/b",
+    resource: { slotId: second.id, path: "/pool/b" },
+  });
+  expect(await provider.create(provision("bob"))).toMatchObject({
+    status: "failed",
+    message: expect.stringContaining("No warm Rampage slot is available"),
+  });
+  expect(
+    (await list(harness)).map(({ workspacePath, state }) => ({ workspacePath, state })),
+  ).toEqual([
+    { workspacePath: "/foreign-project", state: "available" },
+    { workspacePath: "/pool/a", state: "available" },
+    { workspacePath: "/pool/b", state: "leased" },
+  ]);
+});
+
+test("automatic dispatch and provider creation share one reservation while same-provider environments remain reusable", async () => {
+  const { state, harness, first, provider, provision } = await warmPool();
+  state.environments = [
+    {
+      ...environment,
+      path: "/pool/a",
+      environmentProviderId: "unity-rampage-slot",
+    },
+  ];
+  const dispatch = harness.registrations.hooks["message.dispatch"]!;
+  const context = makeMessageDispatchHookContext({
+    thread: { id: "alice", projectId: "project", environmentId: null },
+    project,
+    environment: null,
+    host: makeHostResponse({ id: "host" }),
+    environmentIntent: {
+      kind: "provider",
+      environmentProviderId: "unity-rampage-slot",
+      machine: { type: "existing", hostId: "host" },
+      inputs: {},
+    },
+  });
+  expect(await dispatch(context)).toEqual({ action: "proceed" });
+  const lease = (await list(harness, "alice")).find((slot) => slot.id === first.id)!;
+  expect(await provider.create(provision("alice"))).toMatchObject({
+    status: "created",
+    path: "/pool/a",
+    resource: { slotId: first.id },
+  });
+  expect((await list(harness, "alice")).find((slot) => slot.id === first.id)!.leaseId).toBe(
+    lease.leaseId,
+  );
+});
+
+test("automatic restore stays pinned to its original checkout and refuses missing registration", async () => {
+  const { harness, first, second, provider, provision } = await warmPool();
+  const created = await provider.create(provision("alice"));
+  if (created.status !== "created") throw new Error(created.message);
+  const restore = {
+    ...provision("alice"),
+    previous: { environment: { ...environment, path: "/pool/a" }, resource: created.resource! },
+  };
+  expect(await provider.restore!(restore)).toEqual(created);
+  expect(
+    await provider.restore!({
+      ...restore,
+      previous: { environment: { ...environment, path: "/pool/a" }, resource: null },
+    }),
+  ).toEqual(created);
+  const lease = (await list(harness, "alice")).find((slot) => slot.id === first.id)!;
+  await cliSlot(
+    harness,
+    ["slots", "release", "--host", "host", "--slot", first.id, "--lease", lease.leaseId!],
+    "alice",
+  );
+  expect(
+    await provider.create({ ...provision("bob"), inputs: { slotId: first.id } }),
+  ).toMatchObject({
+    status: "created",
+    path: "/pool/a",
+  });
+  expect(await provider.restore!(restore)).toMatchObject({
+    status: "failed",
+    message: expect.stringContaining("@thread:bob"),
+  });
+  expect((await list(harness)).find((slot) => slot.id === second.id)).toMatchObject({
+    state: "available",
+    ownerThreadId: null,
+  });
+  expect(
+    await provider.restore!({
+      ...restore,
+      previous: { environment: { ...environment, path: "/missing" }, resource: null },
+    }),
+  ).toMatchObject({
+    status: "failed",
+    message: "Restore requires the original Rampage slot to remain registered",
+  });
+});
+
+test("a failed warm-slot inspection quarantines its lease instead of silently assigning another checkout", async () => {
+  const { state, harness, first, second, provider, provision } = await warmPool();
+  state.stopped = async (path) => {
+    if (path === "/pool/a") throw new Error("Source Editor is still open");
+  };
+  expect(await provider.create(provision("alice"))).toEqual({
+    status: "failed",
+    message: "Source Editor is still open",
+  });
+  expect(await provider.create(provision("alice"))).toMatchObject({
+    status: "failed",
+    message: expect.stringContaining("quarantined"),
+  });
+  expect(
+    (await list(harness, "alice")).map(({ id, state, ownerThreadId }) => ({
+      id,
+      state,
+      ownerThreadId,
+    })),
+  ).toEqual([
+    { id: first.id, state: "quarantined", ownerThreadId: "alice" },
+    { id: second.id, state: "available", ownerThreadId: null },
+  ]);
+});
+
+test("simultaneous automatic retries cannot reserve two checkouts for one owner", async () => {
+  const { state, harness, first, second, provider, provision } = await warmPool();
+  const entered = deferred();
+  const finish = deferred();
+  state.stopped = async () => {
+    entered.resolve();
+    await finish.promise;
+  };
+  const pending = provider.create(provision("alice"));
+  const duplicate = provider.create(provision("alice"));
+  await entered.promise;
+  expect(await duplicate).toMatchObject({
+    status: "failed",
+    message: expect.stringContaining("preparing"),
+  });
+  finish.resolve();
+  expect(await pending).toMatchObject({ status: "created", path: "/pool/a" });
+  expect(
+    (await list(harness)).map(({ id, state, ownerThreadId }) => ({ id, state, ownerThreadId })),
+  ).toEqual([
+    { id: first.id, state: "leased", ownerThreadId: "alice" },
+    { id: second.id, state: "available", ownerThreadId: null },
+  ]);
 });

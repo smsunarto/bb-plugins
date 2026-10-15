@@ -9,6 +9,7 @@ import { slots as slotsCommand } from "./command/slots.ts";
 import { slots as slotsTool } from "./tools/slots.ts";
 import { SlotStore } from "./lib/slot-store.ts";
 import { UnitySlots } from "./lib/unity-slots.ts";
+import { SlotProvisioning } from "./lib/slot-provisioning.ts";
 
 export default definePlugin({
   pluginId: "unity",
@@ -22,9 +23,11 @@ export default definePlugin({
     const slotStore = new SlotStore(bb.storage.database());
     const unityEditors = createUnityEditors(bb, slotStore);
     const ensureLegacyClaims = legacyClaimsGuard(bb, unityEditors.claims.db);
+    const unitySlots = new UnitySlots(bb, slotStore, ensureLegacyClaims);
     return {
       unityEditors,
-      unitySlots: new UnitySlots(bb, slotStore, ensureLegacyClaims),
+      unitySlots,
+      slotProvisioning: new SlotProvisioning(bb, unitySlots),
       ensureLegacyClaims,
     };
   },

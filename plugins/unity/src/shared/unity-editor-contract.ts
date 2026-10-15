@@ -1,6 +1,6 @@
 import { defineRpcContract } from "@get-bb/plugin-sdk";
 import { z } from "zod";
-import { slotSchema } from "./slot-contract.ts";
+import { slotSchema, slotProvisionInput, slotProvisionResult } from "./slot-contract.ts";
 
 export const editorSchema = z
   .object({
@@ -64,6 +64,14 @@ export type CommandSubmission = { jobId: string } | { rejected: true; error: str
 export const jsonParametersSchema = z.record(z.string(), z.json());
 export type CommandParameters = z.infer<typeof jsonParametersSchema>;
 export const unityHostContract = defineRpcContract({
+  planSlotDestination: {
+    input: z.object({ path: z.string().min(1) }).strict(),
+    output: z.object({ workspacePath: z.string() }).strict(),
+  },
+  provisionSlot: {
+    input: slotProvisionInput,
+    output: slotProvisionResult,
+  },
   resolveWorkspace: {
     input: z.object({ path: z.string().min(1) }).strict(),
     output: z.object({ workspacePath: z.string().nullable() }).strict(),
