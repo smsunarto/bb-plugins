@@ -85,10 +85,14 @@ sidebar.
 
 ## Settings
 
-| Setting      | Default | Effect                                                                                   |
-| ------------ | ------- | ---------------------------------------------------------------------------------------- |
-| Scratchpad   | off     | Shows the experimental scratchpad on Home. Changing it reloads the plugin's agent tools. |
-| Software Map | off     | Shows the experimental Software Map view in Whiteboards.                                 |
+| Setting      | Default | Effect                                                                                 |
+| ------------ | ------- | -------------------------------------------------------------------------------------- |
+| Scratchpad   | off     | Gives each BB thread its own scratchpad. Changing it reloads the plugin's agent tools. |
+| Software Map | off     | Shows the experimental Software Map view in Whiteboards.                               |
+
+The `scratchpad` alias resolves within the calling BB thread. Older shared
+content stays in a read-only archive on Whiteboard Home and is not copied
+into a thread's pad.
 
 ## Layout
 

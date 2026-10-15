@@ -154,12 +154,12 @@ export function createReviewApi(
   // preference is on. Headless servers never make one, and a pad made earlier
   // stays in the store while it is off.
   const ensureScratchpad = async (id?: string) => {
-    if (open && scratchpadEnabled() && (!id || id === SCRATCHPAD_ID))
+    if (open && scratchpadEnabled() && store.scratchpadId() && (!id || id === SCRATCHPAD_ID || id === store.scratchpadId()))
       await store.ensureScratchpad();
   };
 
   const refuseDisabledScratchpad = (id?: string) => {
-    if (id === SCRATCHPAD_ID && !scratchpadEnabled())
+    if (id && (id === SCRATCHPAD_ID || id === store.scratchpadId()) && !scratchpadEnabled())
       throw new ReviewInputError(SCRATCHPAD_DISABLED, 409);
   };
 
@@ -212,11 +212,11 @@ export function createReviewApi(
 
   const catalog = (mode: "structural" | "textual" = "structural") => {
     const local = store.list(mode);
+    const scratchpadId = store.scratchpadId();
 
     return [
-      ...(scratchpadEnabled()
-        ? local
-        : local.filter((summary) => summary.kind !== "scratchpad")),
+      ...local.filter((summary) => summary.kind !== "scratchpad" || (scratchpadEnabled() && summary.reviewId === (scratchpadId ?? SCRATCHPAD_ID)))
+        .map((summary) => summary.reviewId === SCRATCHPAD_ID && !scratchpadId ? {...summary, title: "Legacy shared scratchpad (read-only)"} : summary),
       ...(shared?.list(mode) ?? []),
     ];
   };
@@ -403,6 +403,7 @@ export function createReviewApi(
     return context.json(store.activity.update(id, input));
   });
   app.get("/watch", async (context) => {
+    await ensureScratchpad();
     const query = context.req.query("subscriptions");
 
     if (query !== undefined) {

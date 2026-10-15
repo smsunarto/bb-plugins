@@ -7,6 +7,7 @@ import type { BbPluginApi } from "@get-bb/plugin-sdk";
 export const MIGRATIONS: readonly string[] = [
   "CREATE TABLE IF NOT EXISTS repository_hosts(repository_id TEXT PRIMARY KEY, host_id TEXT NOT NULL)",
   "CREATE TABLE IF NOT EXISTS session_threads(session_id TEXT NOT NULL, thread_id TEXT NOT NULL, PRIMARY KEY(session_id, thread_id))",
+  "CREATE TABLE IF NOT EXISTS thread_scratchpads(thread_id TEXT PRIMARY KEY, session_id TEXT NOT NULL UNIQUE)",
 ];
 
 /** Run the plugin migrations on the plugin database. Idempotent across loads. */

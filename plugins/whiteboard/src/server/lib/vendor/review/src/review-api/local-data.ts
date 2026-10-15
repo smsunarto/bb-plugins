@@ -1713,9 +1713,11 @@ export function openLocalReviewStore(
     manageWorkspaces?: boolean;
     watch?: typeof watch;
     pullRequests?: PullRequestDeps;
+    scratchpadId?: () => string | undefined;
   } = {},
 ) {
   const store: ReviewStore = new ReviewStore(databasePath, {
+    scratchpadId: options.scratchpadId,
     projectSource: (snapshot, pins) => data.projectSource(snapshot, pins),
     resolveTarget: (target) => data.resolveTarget(target),
     resolvePullRequest: (url, repository) =>

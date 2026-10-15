@@ -15,6 +15,7 @@ import type { Engine, WhiteboardSettings } from "../../shared/contracts/engine.t
 import { panelParamsJson, panelTabId } from "../../shared/contracts/panel.ts";
 import { ReviewStore } from "./vendor/review/src/review-api/store.ts";
 import { createEngine, collectApiResponse } from "./engine.ts";
+import { BB_PLUGIN_DATABASE } from "./sqlite.ts";
 import { forgetExists } from "./host-io/fs.ts";
 import { forgetRepoContext } from "./host-io/local-vcs.ts";
 import { gitFixture, type GitFixture } from "./host-io/testing/git-fixture.ts";
@@ -38,8 +39,9 @@ let repositoryId: string;
 const tabs = new Map<string, { revision: number; tabs: Array<Record<string, unknown>> }>();
 /** Background services by name. A reload re-registers them, as a new plugin load would. */
 const services = new Map<string, { start(signal: AbortSignal): void | Promise<void> }>();
+let scratchpadEnabled = false;
 const settings: WhiteboardSettings = {
-  scratchpadEnabled: () => false,
+  scratchpadEnabled: () => scratchpadEnabled,
   softwareMapEnabled: () => false,
   subscribe: () => () => {},
 };
@@ -52,8 +54,8 @@ const post = async (path: string, body: unknown, threadId?: string) => {
   });
   return { status: response.status, body: JSON.parse(response.body) };
 };
-const get = async (path: string) => {
-  const response = await engine.request({ method: "GET", path });
+const get = async (path: string, threadId?: string) => {
+  const response = await engine.request({ method: "GET", path, threadId });
   return { status: response.status, body: JSON.parse(response.body) };
 };
 const create = async (threadId?: string, live = false) => {
@@ -76,6 +78,7 @@ const create = async (threadId?: string, live = false) => {
 };
 
 beforeEach(async () => {
+  scratchpadEnabled = false;
   repo = gitFixture("whiteboard-engine-");
   host = createFakePluginHost({ pluginId: "whiteboard" });
   client = createInProcessHostClient();
@@ -1053,3 +1056,162 @@ test.skipIf(!HAS_DIFFR)(
     expect(events.at(-1)).toEqual({ type: "complete", succeeded: 0, failed: 0 });
   },
 );
+
+test("scratchpad aliases isolate each thread's document, leases, catalog, and restored tab", async () => {
+  scratchpadEnabled = true;
+  const [first, second] = await Promise.all([
+    get("/scratchpad?full=true", "t1"),
+    get("/scratchpad?full=true", "t2"),
+  ]);
+  expect(first.status).toBe(200);
+  expect(second.status).toBe(200);
+  expect(first.body).toMatchObject({
+    kind: "scratchpad",
+    title: "Scratchpad",
+    document: [],
+  });
+  expect(second.body).toMatchObject({
+    kind: "scratchpad",
+    title: "Scratchpad",
+    document: [],
+  });
+  expect(first.body.reviewId).not.toBe(second.body.reviewId);
+  const lease1 = randomUUID();
+  const lease2 = randomUUID();
+  expect(
+    (await post("/scratchpad/activity", { action: "begin", leaseId: lease1 }, "t1")).status,
+  ).toBe(200);
+  expect(
+    (await post("/scratchpad/activity", { action: "begin", leaseId: lease2 }, "t2")).status,
+  ).toBe(200);
+  expect(
+    (
+      await post(
+        "/commands",
+        {
+          commandId: randomUUID(),
+          leaseId: lease1,
+          operation: {
+            type: "edit",
+            reviewId: "scratchpad",
+            edit: {
+              type: "insert",
+              content: { type: "markdown", markdown: "Only thread one's design" },
+            },
+          },
+        },
+        "t1",
+      )
+    ).status,
+  ).toBe(200);
+  expect((await get("/scratchpad?full=true", "t1")).body.document).toEqual([
+    expect.objectContaining({ type: "markdown", markdown: "Only thread one's design" }),
+  ]);
+  expect((await get("/scratchpad?full=true", "t2")).body.document).toEqual([]);
+  expect((await get("", "t1")).body.map((r: { reviewId: string }) => r.reviewId)).toEqual([
+    first.body.reviewId,
+  ]);
+  expect((await get("", "t2")).body.map((r: { reviewId: string }) => r.reviewId)).toEqual([
+    second.body.reviewId,
+  ]);
+  expect(await engine.info({ threadId: "t2", sessionId: "scratchpad" })).toMatchObject({
+    sessionId: second.body.reviewId,
+  });
+  await engine.dispose();
+  engine = createEngine(bb, settings);
+  expect((await get("/scratchpad?full=true", "t1")).body).toMatchObject({
+    reviewId: first.body.reviewId,
+    document: [expect.objectContaining({ markdown: "Only thread one's design" })],
+  });
+  expect((await get("/scratchpad?full=true", "t2")).body).toMatchObject({
+    reviewId: second.body.reviewId,
+    document: [],
+  });
+});
+
+test("another thread cannot read, open, lease, edit, or restore a scratchpad by its canonical id", async () => {
+  scratchpadEnabled = true;
+  const own = await get("/scratchpad?full=true", "t1");
+  expect(own.status).toBe(200);
+  const id = own.body.reviewId;
+  const ownVersion = own.body.version;
+  for (const suffix of ["", "/history", "/watch"])
+    expect((await get(`/${id}${suffix}`, "t2")).status).toBe(404);
+  expect(
+    (await post(`/${id}/activity`, { action: "begin", leaseId: randomUUID() }, "t2")).status,
+  ).toBe(404);
+  expect((await post(`/${id}/open`, {}, "t2")).status).toBe(404);
+  const subscriptions = encodeURIComponent(JSON.stringify([{ reviewId: id, mode: "structural" }]));
+  expect((await get(`/watch?subscriptions=${subscriptions}`, "t2")).status).toBe(404);
+  for (const operation of [
+    {
+      type: "edit",
+      reviewId: id,
+      edit: { type: "insert", content: { type: "markdown", markdown: "Wrong thread" } },
+    },
+    { type: "restore", reviewId: id, version: ownVersion },
+  ])
+    expect((await post("/commands", { commandId: randomUUID(), operation }, "t2")).status).toBe(
+      404,
+    );
+  await expect(engine.info({ threadId: "t2", sessionId: id })).rejects.toThrow("another BB thread");
+  expect((await get("/scratchpad?full=true", "t1")).body.document).toEqual([]);
+  expect((await get("/scratchpad?full=true")).status).toBe(409);
+  expect((await get("")).body).toEqual([]);
+});
+
+test("legacy shared scratchpad content is preserved but never seeds or lists in a thread", async () => {
+  const legacy = new ReviewStore(BB_PLUGIN_DATABASE, {
+    validatePins: async () => {},
+    validateSource: async () => {},
+    validateResource: async () => {},
+  });
+  await legacy.ensureScratchpad();
+  await legacy.execute({
+    commandId: randomUUID(),
+    operation: {
+      type: "edit",
+      reviewId: "scratchpad",
+      edit: {
+        type: "insert",
+        content: { type: "markdown", markdown: "Old shared JetStream explanation" },
+      },
+    },
+  });
+  scratchpadEnabled = true;
+  const fresh = await get("/scratchpad?full=true", "t1");
+  expect(fresh.body).toMatchObject({ title: "Scratchpad", kind: "scratchpad", document: [] });
+  expect((await get("", "t1")).body.map((row: { reviewId: string }) => row.reviewId)).toEqual([
+    fresh.body.reviewId,
+  ]);
+  expect(legacy.read("scratchpad").document).toEqual([
+    expect.objectContaining({ markdown: "Old shared JetStream explanation" }),
+  ]);
+  expect((await get("")).body).toEqual([
+    expect.objectContaining({
+      reviewId: "scratchpad",
+      title: "Legacy shared scratchpad (read-only)",
+    }),
+  ]);
+  expect((await get("/scratchpad?full=true")).body.document).toEqual([
+    expect.objectContaining({ markdown: "Old shared JetStream explanation" }),
+  ]);
+  expect(
+    (
+      await post("/commands", {
+        commandId: randomUUID(),
+        operation: {
+          type: "edit",
+          reviewId: "scratchpad",
+          edit: {
+            type: "insert",
+            content: { type: "markdown", markdown: "Do not change old content" },
+          },
+        },
+      })
+    ).status,
+  ).toBe(409);
+  await legacy.close();
+  scratchpadEnabled = false;
+  expect((await get(`/${fresh.body.reviewId}?full=true`, "t1")).status).toBe(409);
+});

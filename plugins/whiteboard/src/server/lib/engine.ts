@@ -24,6 +24,8 @@ import { forgetProbes, probeHost } from "./host-io/probe.ts";
 import { migrate } from "./migrations.ts";
 import { createOpenPanel } from "./open-panel.ts";
 import { createRealtime, publishEngineChanges } from "./realtime.ts";
+import { createScratchpads } from "./scratchpads.ts";
+import { ReviewInputError } from "../../shared/vendor/review/src/review-api/input-error.ts";
 import { createSessionTabs } from "./session-tabs.ts";
 import { whenSettingsLoaded } from "./settings.ts";
 import { installDatabase } from "./sqlite.ts";
@@ -126,8 +128,10 @@ export function createEngine(bb: BbPluginApi, settings: WhiteboardSettings): Eng
   const resolver = createHostResolver(bb);
   const uninstallHost = installHostIo(bb, resolver);
   const stopExistsMemo = memoizeExists();
+  const scratchpads = createScratchpads(bb);
   const { store, data } = openLocalReviewStore(database, {
     pullRequests: defaultPullRequestDeps,
+    scratchpadId: scratchpads.currentId,
   });
   const register = data.register.bind(data);
   data.register = async (root) => {
@@ -205,7 +209,14 @@ export function createEngine(bb: BbPluginApi, settings: WhiteboardSettings): Eng
     );
     const signal = AbortSignal.any(signals);
     signal.throwIfAborted();
-    const pending = Promise.resolve(app.fetch(new Request(url, { ...init, signal })));
+    let scoped;
+    try {
+      scoped = scratchpads.request(url, init);
+    } catch (error) {
+      if (!(error instanceof ReviewInputError)) throw error;
+      return Response.json({ error: error.message }, { status: error.status });
+    }
+    const pending = Promise.resolve(app.fetch(new Request(scoped.url, { ...scoped.init, signal })));
     activeRequests.add(pending);
     try {
       return cancellableResponse(await pending, signal);
@@ -233,9 +244,12 @@ export function createEngine(bb: BbPluginApi, settings: WhiteboardSettings): Eng
       return runWithThread({ threadId: input.threadId }, async () => {
         await ready;
         if (disposed) throw new Error("Whiteboard is shutting down.");
-        const snapshot = input.sessionId ? store.read(input.sessionId) : undefined;
+        const sessionId = input.sessionId ? scratchpads.resolve(input.sessionId) : undefined;
+        if (sessionId && sessionId === scratchpads.currentId() && settings.scratchpadEnabled())
+          await store.ensureScratchpad();
+        const snapshot = sessionId ? store.read(sessionId) : undefined;
         // Home rows, verbs and restored tabs open without the agent's `open`.
-        if (input.threadId && input.sessionId) tabs.track(input.threadId, input.sessionId);
+        if (input.threadId && sessionId) tabs.track(input.threadId, sessionId);
         // diffr runs on the repository's host. Home (no pinned session) lists
         // every repository, so it asks every host that holds one. The first
         // host with diffr decides, so a silent host does not hold Home up.
@@ -261,6 +275,7 @@ export function createEngine(bb: BbPluginApi, settings: WhiteboardSettings): Eng
           void Promise.all(answers).then(() => resolve(false));
         });
         return {
+          ...(sessionId ? { sessionId } : {}),
           appVersion: PLUGIN_VERSION,
           softwareMapEnabled: settings.softwareMapEnabled(),
           scratchpadEnabled: settings.scratchpadEnabled(),

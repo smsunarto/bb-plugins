@@ -47,7 +47,7 @@ describe("settings", () => {
         type: "boolean",
         label: "Scratchpad",
         description:
-          "Show the experimental scratchpad on Home. Agents draw on it through Whiteboard's MCP tools.",
+          "Give each BB thread its own scratchpad. Agents draw on it through Whiteboard's MCP tools.",
         default: false,
       },
     });

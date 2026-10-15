@@ -21,10 +21,10 @@ export function SessionPanel({ threadId, params }: PluginThreadPanelProps) {
       <WhiteboardInfo threadId={threadId} {...(sessionId ? { sessionId } : {})}>
         {(info) => (
           <WhiteboardMount
-            key={sessionId ?? ""}
+            key={`${threadId}:${info.sessionId ?? sessionId ?? ""}`}
             threadId={threadId}
             info={info}
-            {...(sessionId ? { sessionId } : {})}
+            {...((info.sessionId ?? sessionId) ? { sessionId: info.sessionId ?? sessionId } : {})}
           />
         )}
       </WhiteboardInfo>

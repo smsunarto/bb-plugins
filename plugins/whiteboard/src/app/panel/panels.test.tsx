@@ -2,6 +2,8 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+const serverInfo = vi.hoisted(() => ({ value: {} as { sessionId?: string } }));
+
 const navigate = vi.hoisted(() => ({ toPluginPanel: vi.fn(), toCompose: vi.fn() }));
 
 vi.mock("@get-bb/plugin-sdk/app", () => ({
@@ -15,7 +17,8 @@ vi.mock("./mount.tsx", () => ({
   ),
 }));
 vi.mock("../lib/whiteboard-info.tsx", () => ({
-  WhiteboardInfo: ({ children }: { children: (info: object) => unknown }) => children({}),
+  WhiteboardInfo: ({ children }: { children: (info: object) => unknown }) =>
+    children(serverInfo.value),
 }));
 
 const { SessionPanel, panelSessionId } = await import("./session-panel.tsx");
@@ -24,7 +27,10 @@ const { HomeHeader } = await import("./home-header.tsx");
 const { NO_WHITEBOARDS_DESCRIPTION, NO_WHITEBOARDS_TITLE, WelcomePage } =
   await import("../stubs/welcome-page.tsx");
 
-beforeEach(() => vi.clearAllMocks());
+beforeEach(() => {
+  vi.clearAllMocks();
+  serverInfo.value = {};
+});
 afterEach(cleanup);
 
 const mountProps = () => JSON.parse(screen.getByTestId("mount").textContent!);
@@ -49,6 +55,23 @@ describe("routeSessionId", () => {
 });
 
 describe("SessionPanel", () => {
+  it("restores the alias as the current thread's canonical document when switching threads", () => {
+    serverInfo.value = { sessionId: "pad-for-one" };
+    const view = render(<SessionPanel threadId="thread-1" params={{ sessionId: "scratchpad" }} />);
+    expect(mountProps()).toEqual({
+      threadId: "thread-1",
+      info: { sessionId: "pad-for-one" },
+      sessionId: "pad-for-one",
+    });
+    serverInfo.value = { sessionId: "pad-for-two" };
+    view.rerender(<SessionPanel threadId="thread-2" params={{ sessionId: "scratchpad" }} />);
+    expect(mountProps()).toEqual({
+      threadId: "thread-2",
+      info: { sessionId: "pad-for-two" },
+      sessionId: "pad-for-two",
+    });
+  });
+
   it("mounts the session named by the tab params", () => {
     render(<SessionPanel threadId="thread-1" params={{ sessionId: "s1" }} />);
     expect(mountProps()).toEqual({ threadId: "thread-1", info: {}, sessionId: "s1" });

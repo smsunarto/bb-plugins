@@ -41,6 +41,8 @@ export const infoInput = z.strictObject({
 export type InfoInput = z.infer<typeof infoInput>;
 
 export const infoOutput = z.object({
+  /** Canonical identity for a thread-scoped alias, including restored legacy tabs. */
+  sessionId: z.string().optional(),
   appVersion: z.string(),
   softwareMapEnabled: z.boolean(),
   scratchpadEnabled: z.boolean(),

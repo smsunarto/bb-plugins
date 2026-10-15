@@ -223,6 +223,8 @@ export interface ResolvedPullRequest {
 }
 
 export interface ReviewProviders {
+  /** Host-scoped identity; undefined means this surface has no scratchpad. */
+  scratchpadId?(): string | undefined;
   headBranch?(pins: Pins, headRef?: string): Promise<string | undefined>;
   projectSource?(snapshot: Snapshot, pins: Pins): Promise<Snapshot>;
   /** Fetch a PR into a registered checkout: the named one, else the first
@@ -859,7 +861,7 @@ export class ReviewStore {
         };
 
         if (summary.kind === "scratchpad")
-          listed.contents = this.scratchpadContents();
+          listed.contents = this.scratchpadContents(summary.reviewId);
 
         return listed;
       });
@@ -894,8 +896,8 @@ export class ReviewStore {
   }
 
   /** What the pad holds, for its Home card: blocks, and the diagrams among them. */
-  private scratchpadContents(): NonNullable<ReviewApiSummary["contents"]> {
-    const blocks = elements(this.read(SCRATCHPAD_ID).document).filter(
+  private scratchpadContents(id: string): NonNullable<ReviewApiSummary["contents"]> {
+    const blocks = elements(this.read(id).document).filter(
       (element) => !isUnit(element),
     );
 
@@ -906,12 +908,16 @@ export class ReviewStore {
   }
   /** The one scratchpad, made on first use. The fixed command id makes a
    * repeat, even from another host on the same home, find its receipt. */
+  scratchpadId(): string | undefined {
+    return this.providers.scratchpadId ? this.providers.scratchpadId() : SCRATCHPAD_ID;
+  }
   async ensureScratchpad(): Promise<void> {
-    if (this.has(SCRATCHPAD_ID)) return;
+    const id = this.scratchpadId();
+    if (!id || this.has(id)) return;
 
     try {
       await this.execute({
-        commandId: SCRATCHPAD_COMMAND_ID,
+        commandId: id === SCRATCHPAD_ID ? SCRATCHPAD_COMMAND_ID : randomUUID(),
         operation: {
           type: "create",
           title: SCRATCHPAD_TITLE,
@@ -919,7 +925,7 @@ export class ReviewStore {
         },
       });
     } catch (error) {
-      if (!this.has(SCRATCHPAD_ID)) throw error;
+      if (!this.has(id)) throw error;
     }
   }
   history(id: string) {
@@ -980,7 +986,10 @@ export class ReviewStore {
           );
 
         // SAFETY: receipts store only Results this method built, never caller-provided JSON.
-        return JSON.parse(String(receipt.response)) as Result;
+        const result = JSON.parse(String(receipt.response)) as Result;
+        if (command.operation.type === "create" && command.operation.kind === "scratchpad" && result.reviewId !== this.scratchpadId())
+          throw new ReviewInputError("Command ID belongs to another thread’s scratchpad.", 409);
+        return result;
       }
 
       const op = command.operation;
@@ -1008,7 +1017,9 @@ export class ReviewStore {
             "A scratchpad has no target or pins of its own.",
           );
 
-        if (this.has(SCRATCHPAD_ID))
+        const id = this.scratchpadId();
+        if (!id) throw new ReviewInputError("Open the scratchpad from a BB thread.", 409);
+        if (this.has(id))
           throw new ReviewInputError("The scratchpad already exists.", 409);
       } else if (op.type === "create") {
         if (op.pins && op.target)
@@ -1148,7 +1159,7 @@ export class ReviewStore {
         op.type !== "create"
           ? op.reviewId
           : op.kind === "scratchpad"
-            ? SCRATCHPAD_ID
+            ? this.scratchpadId()!
             : randomUUID();
 
       const previous = op.type === "create" ? undefined : this.read(id);

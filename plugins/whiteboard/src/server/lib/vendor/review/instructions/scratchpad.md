@@ -1,8 +1,8 @@
 # Scratchpad
 
-The scratchpad is one document in Whiteboard that is not a session for any change. It has no target, base, head or lifecycle. You draw on it the way you would sketch an explanation on a whiteboard: a short paragraph, a sequence or flow diagram, a call tree, a code peek, and the smallest view that makes the point. The user reads it in the app and copies blocks back to you.
+The scratchpad is one document per BB thread in Whiteboard that is not a session for any change. It has no target, base, head or lifecycle. You draw on it the way you would sketch an explanation on a whiteboard: a short paragraph, a sequence or flow diagram, a call tree, a code peek, and the smallest view that makes the point. The user reads it in the app and copies blocks back to you.
 
-Its id is fixed: `scratchpad`. While it is turned on in Whiteboard Settings it always exists; never create, rename, delete, dismiss or share it.
+Use `scratchpad` as a thread-local alias. The host resolves it to this BB thread’s own document. Never copy a scratchpad session id from another thread or reuse an unrelated earlier explanation. While it is turned on in Whiteboard Settings it always exists; never create, rename, delete, dismiss or share it.
 
 ## When to draw here
 
