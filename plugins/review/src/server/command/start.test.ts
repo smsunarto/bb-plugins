@@ -459,7 +459,7 @@ test("result stays running until every reviewer finishes, then returns one repor
       { reviewer: { providerId: "codex" }, threadId: codex, status: "running" },
     ],
   });
-  expect(await f.start({ kind: "design", summary: "Next", reuse: "new" })).toMatchObject({
+  expect(await f.start({ kind: "design", summary: "Plan", reuse: "new" })).toMatchObject({
     runId: r.runId,
     busy: true,
   });
@@ -580,7 +580,9 @@ test("a run stored by contract 3 stays busy and readable after upgrade", async (
     afterSeq: seats[0].afterSeq,
   };
   db.prepare("UPDATE review_runs SET payload=? WHERE id=?").run(JSON.stringify(legacy), r.runId);
-  expect(await f.start({ kind: "design", summary: "Next", reuse: "new" })).toMatchObject({
+  expect(
+    await f.start({ kind: "design", mode: "quick", summary: "Plan", workstream: "plan" }),
+  ).toMatchObject({
     runId: r.runId,
     threadIds: ["thr_reviewer_1"],
     reviewers: [{ providerId: "claude-code", model: "claude-opus-5-5[1m]" }],
@@ -644,7 +646,7 @@ test("an interrupted panel dispatch adopts nothing twice and expires as before",
   await expect(f.start({ kind: "design", summary: "Plan" })).rejects.toThrow("Gateway timeout");
   f.setSpawnFailure(undefined);
   f.setBeforeSpawnReturn(async () => {});
-  expect(await f.start({ kind: "design", summary: "Retry" })).toMatchObject({
+  expect(await f.start({ kind: "design", summary: "Plan" })).toMatchObject({
     status: "starting",
     threadIds: ["thr_reviewer_1", null],
     busy: true,
@@ -705,18 +707,48 @@ test("missing implementation target and moving workspace selectors do not launch
   expect(valid.target.head).toBe(head);
 });
 
-test("concurrent starts preserve the active candidate and return the same run", async () => {
+test("distinct concurrent starts run side by side with their own reviewers", async () => {
   const f = await load();
-  const [a, b] = await Promise.all([
+  const [a, b, c] = await Promise.all([
     f.start({ summary: "First", target: { branch: "scott/camera" } }),
     f.start({ summary: "Second", target: { branch: "scott/camera" } }),
+    f.start({ kind: "design", mode: "deep", summary: "Plan" }),
   ]);
-  expect(a.runId).toBe(b.runId);
-  expect(b.busy).toBe(true);
-  expect(await f.tool("review_context", { runId: a.runId, section: "brief" })).toEqual({
-    text: "First",
+  expect(new Set([a.runId, b.runId, c.runId]).size).toBe(3);
+  expect(new Set([...a.threadIds, ...b.threadIds, ...c.threadIds]).size).toBe(6);
+  expect([a.status, b.status, c.status]).toEqual(["running", "running", "running"]);
+  expect(await f.tool("review_context", { runId: b.runId, section: "brief" })).toEqual({
+    text: "Second",
     nextOffset: null,
   });
+  finishAll(f, a);
+  f.finish(b.threadIds[0], b.runId);
+  expect(await f.tool("review_result", { runId: a.runId })).toMatchObject({
+    status: "complete",
+    reviews: [{ report: { runId: a.runId } }, { report: { runId: a.runId } }],
+  });
+  expect(await f.tool("review_result", { runId: b.runId })).toMatchObject({
+    status: "running",
+    reviews: [{ status: "finished" }, { status: "running" }],
+  });
+});
+
+test("identical concurrent starts share one run", async () => {
+  const f = await load();
+  const request = { summary: "First", target: { branch: "scott/camera" } };
+  const [a, b] = await Promise.all([f.start(request), f.start(request)]);
+  expect(b).toMatchObject({ runId: a.runId, threadIds: a.threadIds, busy: true });
+  expect(f.host.harness.inspection.sdk.callsTo("threads.spawn")).toHaveLength(2);
+});
+
+test("a follow-up reuses an idle reviewer while another in its workstream is busy", async () => {
+  const f = await load();
+  const idle = await f.start({ kind: "design", summary: "One", workstream: "plan" });
+  const busy = await f.start({ kind: "design", summary: "Two", workstream: "plan" });
+  expect(busy.threadIds).toEqual(["thr_reviewer_3", "thr_reviewer_4"]);
+  finishAll(f, idle);
+  const next = await f.start({ kind: "design", summary: "Three", workstream: "plan" });
+  expect(next).toMatchObject({ threadIds: idle.threadIds, reused: true, status: "running" });
 });
 
 test("idle reviewer is reused with a fresh run and per-turn effort; old output never clears it", async () => {
@@ -939,7 +971,7 @@ test("persistent reservations prevent a second service instance from spawning ov
   }));
   const next = await afterReload.start(
     "thr_author",
-    requestSchema.parse({ summary: "Retry", target: { branch: "scott/camera" } }),
+    requestSchema.parse({ summary: "First", target: { branch: "scott/camera" } }),
     new AbortController().signal,
   );
   expect(next.runId).toBe(r.runId);
@@ -992,7 +1024,7 @@ test("an ambiguous dispatch timeout retains a reservation across service reload"
   }));
   const next = await afterReload.start(
     "thr_author",
-    requestSchema.parse({ kind: "design", summary: "Retry" }),
+    requestSchema.parse({ kind: "design", summary: "Plan" }),
     new AbortController().signal,
   );
   expect(next).toMatchObject({ status: "starting", busy: true });
@@ -1171,7 +1203,7 @@ test("expired orphan dispatch releases its reservation", async () => {
   run.startedAt = Date.now() - 121000;
   db.prepare("UPDATE review_runs SET payload=? WHERE id=?").run(JSON.stringify(run), row.id);
   f.setSpawnFailure(undefined);
-  expect(await f.start({ kind: "design", summary: "Retry" })).toMatchObject({ status: "running" });
+  expect(await f.start({ kind: "design", summary: "Plan" })).toMatchObject({ status: "running" });
 });
 
 test("BB fast-tier demotion does not invalidate a complete Deep assessment", async () => {
@@ -1292,7 +1324,7 @@ test("only the successful retry's own diff reads establish coverage", async () =
   });
 });
 
-test("queued reuse reserves the author until dispatch or cancellation", async () => {
+test("queued reuse holds its reviewer until dispatch or cancellation", async () => {
   const f = await load();
   const first = await f.start({ kind: "design", summary: "Initial", workstream: "plan" });
   finishAll(f, first);
@@ -1303,9 +1335,13 @@ test("queued reuse reserves the author until dispatch or cancellation", async ()
     status: "queued",
     deepImplementationCovered: false,
   });
-  expect(
-    await f.start({ kind: "design", summary: "Another", workstream: "plan", reuse: "new" }),
-  ).toMatchObject({ runId: queued.runId, busy: true });
+  expect(await f.start({ kind: "design", summary: "Next", workstream: "plan" })).toMatchObject({
+    runId: queued.runId,
+    busy: true,
+  });
+  const another = await f.start({ kind: "design", summary: "Another", workstream: "plan" });
+  expect(another).toMatchObject({ reused: false, status: "running" });
+  expect(another.threadIds).toEqual(["thr_reviewer_3", "thr_reviewer_4"]);
   f.queued.clear();
   expect(await f.tool("review_result", { runId: queued.runId })).toMatchObject({
     status: "incomplete",
@@ -1526,7 +1562,7 @@ test("a retry cannot clear a review whose earlier attempt was steered", async ()
   expect((await f.tool("review_result", { runId: r.runId })).deepImplementationCovered).toBe(false);
 });
 
-test("queued continuation retry remains pending instead of releasing the author reservation", async () => {
+test("queued continuation retry keeps the identical run pending", async () => {
   const f = await load();
   const r = await f.start({ kind: "design", summary: "Plan" });
   f.records.get(r.threadIds[0])!.status = "error";
@@ -1541,7 +1577,7 @@ test("queued continuation retry remains pending instead of releasing the author 
     status: "queued",
     deepImplementationCovered: false,
   });
-  expect(await f.start({ kind: "design", summary: "Next", reuse: "new" })).toMatchObject({
+  expect(await f.start({ kind: "design", summary: "Plan", reuse: "new" })).toMatchObject({
     runId: r.runId,
     busy: true,
   });
@@ -1655,15 +1691,16 @@ test("descendants in another environment cannot inherit a parent's assessment", 
   ).rejects.toThrow("not available");
 });
 
-test("superseding an unread reviewer updates its metadata to incomplete", async () => {
+test("a later review leaves an unread result awaiting its author", async () => {
   const f = await load();
   const r = await f.start({ mode: "deep", kind: "design", summary: "Initial" });
   finishAll(f, r);
   await f.start({ mode: "deep", kind: "design", summary: "Replacement", reuse: "new" });
   expect(r.threadIds.map((id: string) => f.metadata.get(id))).toMatchObject([
-    { reviewRun: { seat: 0, status: "incomplete" } },
-    { reviewRun: { seat: 1, status: "incomplete" } },
+    { reviewRun: { seat: 0, status: "running" } },
+    { reviewRun: { seat: 1, status: "running" } },
   ]);
+  expect(await f.tool("review_result", { runId: r.runId })).toMatchObject({ status: "complete" });
 });
 
 test("CLI durations are milliseconds at the SDK wait boundary", async () => {
@@ -1737,13 +1774,85 @@ test("adopted dispatch reconciles its metadata before returning busy", async () 
     f.metadata.set(child.id, { reviewRun: { id: run.id, seat, status: "starting" } });
   }
   f.setSpawnFailure(undefined);
-  expect(await f.start({ kind: "design", summary: "Retry" })).toMatchObject({
+  expect(await f.start({ kind: "design", summary: "Plan" })).toMatchObject({
     runId: run.id,
     threadIds: ["thr_adopted_0", "thr_adopted_1"],
     busy: true,
   });
   expect(f.metadata.get("thr_adopted_1")).toMatchObject({
     reviewRun: { id: run.id, seat: 1, status: "running" },
+  });
+});
+
+test("recovery adopts each interrupted panel's children by run and seat", async () => {
+  const f = await load();
+  f.setSpawnFailure("Gateway timeout");
+  await expect(f.start({ kind: "design", summary: "One" })).rejects.toThrow();
+  await expect(f.start({ kind: "design", summary: "Two" })).rejects.toThrow();
+  const runs = f.host.bb.storage
+    .database()
+    .prepare<[], { payload: string }>("SELECT payload FROM review_runs ORDER BY rowid")
+    .all()
+    .map((row) => JSON.parse(row.payload) as { id: string });
+  // Listed newest run and last seat first, so adoption cannot lean on spawn order.
+  for (const [index, run] of [...runs.entries()].reverse())
+    for (const [seat, providerId] of [...["claude-code", "codex"].entries()].reverse()) {
+      const child = makeThreadResponse({
+        id: `thr_${index}_${seat}`,
+        parentThreadId: "thr_author",
+        projectId: "proj_1",
+        environmentId: "env_1",
+        providerId,
+        originPluginId: "review",
+        status: "active",
+      });
+      f.records.set(child.id, child);
+      f.metadata.set(child.id, { reviewRun: { id: run.id, seat, status: "starting" } });
+    }
+  f.setSpawnFailure(undefined);
+  expect(await f.start({ kind: "design", summary: "Two" })).toMatchObject({
+    runId: runs[1]!.id,
+    threadIds: ["thr_1_0", "thr_1_1"],
+    busy: true,
+  });
+  expect(await f.tool("review_result", { runId: runs[0]!.id })).toMatchObject({
+    status: "running",
+    threadIds: ["thr_0_0", "thr_0_1"],
+  });
+  expect(f.host.harness.inspection.sdk.callsTo("threads.spawn")).toHaveLength(2);
+});
+
+test("a partial dispatch keeps its reviewer from other runs until it settles", async () => {
+  const f = await load();
+  f.setBeforeSpawnReturn(async () => f.setSpawnFailure("Gateway timeout"));
+  await expect(f.start({ kind: "design", summary: "One", workstream: "plan" })).rejects.toThrow(
+    "Gateway timeout",
+  );
+  f.setSpawnFailure(undefined);
+  f.setBeforeSpawnReturn(async () => {});
+  const db = f.host.bb.storage.database();
+  const partial = JSON.parse(
+    db.prepare<[], { payload: string }>("SELECT payload FROM review_runs").get()!.payload,
+  );
+  f.finish("thr_reviewer_1", partial.id);
+  const other = await f.start({ kind: "design", summary: "Two", workstream: "plan" });
+  expect(other).toMatchObject({
+    status: "running",
+    reused: false,
+    threadIds: ["thr_reviewer_2", "thr_reviewer_3"],
+  });
+  partial.startedAt = Date.now() - 121000;
+  db.prepare("UPDATE review_runs SET payload=? WHERE id=?").run(
+    JSON.stringify(partial),
+    partial.id,
+  );
+  await f.start({ kind: "design", summary: "Three", workstream: "plan" });
+  expect(f.host.harness.inspection.sdk.callsTo("threads.stop").map(([args]) => args)).toEqual([
+    { threadId: "thr_reviewer_1" },
+  ]);
+  finishAll(f, other);
+  expect(await f.tool("review_result", { runId: other.runId })).toMatchObject({
+    status: "complete",
   });
 });
 
@@ -1917,6 +2026,8 @@ test("explicit reviewer selection starts a new assessment even for the identical
     reused: true,
   });
   finishAll(f, next);
+  // An identical request answers with its unread run until the author settles it.
+  await f.tool("review_result", { runId: next.runId });
   await expect(
     f.start({
       ...request,

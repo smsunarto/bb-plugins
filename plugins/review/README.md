@@ -36,7 +36,7 @@ Checkpoint only owned or otherwise authorized files/hunks before implementation 
 
 ## Reuse
 
-Each assessment has a new run ID. Reuse is per reviewer. Auto reuse in every mode requires the same parent, environment, reviewer provider/model, and workstream, an idle unarchived reviewer, and context below 60% of its model window. The branch identifies the workstream by default; an explicit workstream label supports design-to-implementation reuse. Busy reviewers are not redirected. Choose `reuse:new` for fresh judgment or `{threadId}` for a specific eligible reviewer; it takes the panel seat with the same provider/model, and the other seats start fresh. Previous knowledge is useful; previous approval does not cover a new candidate.
+Each assessment has a new run ID. Reuse is per reviewer. Auto reuse in every mode requires the same parent, environment, reviewer provider/model, and workstream, an idle unarchived reviewer, and context below 60% of its model window. The branch identifies the workstream by default; an explicit workstream label supports design-to-implementation reuse. Busy reviewers are not redirected. Reviews run concurrently: each distinct request gets its own run, and each seat continues an idle eligible reviewer or starts a new one, while repeating an identical request whose run is unsettled returns that run. Choose `reuse:new` for fresh judgment or `{threadId}` for a specific eligible reviewer; it takes the panel seat with the same provider/model, and the other seats start fresh. Previous knowledge is useful; previous approval does not cover a new candidate.
 
 ## CLI
 

@@ -10,7 +10,7 @@ Implementation targets are `{branch}` for a checkpointed GitButler branch or `{b
 
 For the publication candidate, use `kind: "implementation", mode: "deep", scope: "publication"`. Branch publication scope includes ancestors back to the merge base; segment scope reviews the branch's owned commits. Explicit publication comparisons must cover that full delta. Outside GitButler, supply `upstream` and use its merge base with head as `base`.
 
-`reuse:auto` preserves an eligible reviewer's context; `reuse:new` requests fresh judgment. Reuse the completed run at push, PR update, and merge when the candidate is unchanged; retrieve its result rather than starting another review. A changed candidate needs a new assessment. Descendant helpers in the same environment can inherit the assessment.
+Distinct reviews can run concurrently; repeating an identical request while its run is unsettled returns that run. `reuse:auto` preserves an idle eligible reviewer's context; `reuse:new` requests fresh judgment. Reuse the completed run at push, PR update, and merge when the candidate is unchanged; retrieve its result rather than starting another review. A changed candidate needs a new assessment. Descendant helpers in the same environment can inherit the assessment.
 
 BB sends completion and failure notifications to the parent, one per reviewer for a panel. Continue other work or yield, then call `review_result({runId, waitSeconds:0})` after a notification, or immediately for an already-completed run; expect `running` until every reviewer finishes. Do not poll. The result validates execution, candidate freshness, and complete diff reads for Deep implementation reviews; notification text alone is not publication clearance.
 

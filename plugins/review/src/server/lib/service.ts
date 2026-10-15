@@ -57,7 +57,6 @@ const hash = (value: unknown) =>
     .digest("hex");
 const CONTRACT_VERSION = 4;
 const reviewerKey = (id: string) => `reviewer:${id}`;
-const parentKey = (id: string) => `latest:${id}`;
 const reportKey = (id: string, seat: number) => `report:${id}:${seat}`;
 const scope = (run: ReviewRun) =>
   run.request.workstream ??
@@ -179,6 +178,7 @@ export class ReviewService {
       `CREATE TABLE review_reads (run_id TEXT NOT NULL, section TEXT NOT NULL, path TEXT NOT NULL, side TEXT NOT NULL, start INTEGER NOT NULL, end INTEGER NOT NULL, total INTEGER NOT NULL, PRIMARY KEY(run_id,section,path,side,start))`,
       `CREATE TABLE review_turn_reads (run_id TEXT NOT NULL, turn_id TEXT NOT NULL, section TEXT NOT NULL, path TEXT NOT NULL, side TEXT NOT NULL, start INTEGER NOT NULL, end INTEGER NOT NULL, total INTEGER NOT NULL, PRIMARY KEY(run_id,turn_id,section,path,side,start))`,
       `ALTER TABLE review_turn_reads ADD COLUMN digest TEXT NOT NULL DEFAULT ''`,
+      `DROP INDEX IF EXISTS review_active_parent`,
     ]);
   }
 
@@ -219,13 +219,14 @@ export class ReviewService {
       .get(id);
     return row ? parseRun(row.payload) : undefined;
   }
-  private reservation(parent: string): ReviewRun | undefined {
-    const row = this.db
+  /** Newest first. */
+  private runs(parent: string) {
+    return this.db
       .prepare<[string], { payload: string }>(
-        "SELECT payload FROM review_runs WHERE parent = ? AND status IN ('starting','running')",
+        "SELECT payload FROM review_runs WHERE parent = ? ORDER BY rowid DESC",
       )
-      .get(parent);
-    return row ? parseRun(row.payload) : undefined;
+      .all(parent)
+      .map((row) => parseRun(row.payload));
   }
   private diffCoverage(id: string, turnId: string) {
     const reads = this.db
@@ -376,8 +377,8 @@ export class ReviewService {
         throw new Error(
           "Implementation review needs a GitButler branch checkpoint or explicit base/head. Uncommitted workspace changes are not a fixed target",
         );
-      const { prior: last, busy } = await this.previous(caller);
-      if (busy) return busy;
+      for (const run of this.runs(caller))
+        if (run.status === "starting") await this.recoverDispatch(run);
       const target = request.target
         ? await this.readHost().call(
             "snapshot",
@@ -392,12 +393,11 @@ export class ReviewService {
       );
       const evidence = await this.captureEvidence(environment.hostId, request.evidence, signal);
       const fingerprint = hash({ request: { ...request, reuse: undefined }, target, evidence });
-      if (
-        request.reuse === "auto" &&
-        last?.fingerprint === fingerprint &&
-        last.status === "completed"
-      )
-        return this.receipt(last, true);
+      const identical = this.runs(caller).find((run) => run.fingerprint === fingerprint);
+      const held = identical && (await this.held(identical));
+      if (held) return held;
+      if (request.reuse === "auto" && identical?.status === "completed")
+        return this.receipt(identical, true);
       const run: ReviewRun = {
         id: randomUUID(),
         contractVersion: CONTRACT_VERSION,
@@ -421,18 +421,11 @@ export class ReviewService {
       if (inherited) return inherited;
       if (Buffer.byteLength(JSON.stringify(run), "utf8") > 220000)
         throw new Error("Review context is too large; shorten the brief and evidence");
-      const reuse = await this.assignReuse(run, last);
-      try {
-        this.db
-          .prepare("INSERT INTO review_runs(id,parent,status,payload) VALUES (?,?,?,?)")
-          .run(run.id, caller, run.status, JSON.stringify(run));
-      } catch (error) {
-        const reserved = this.reservation(caller);
-        if (reserved) return { ...this.receipt(reserved, true), busy: true };
-        throw error;
-      }
+      const reuse = await this.assignReuse(run);
+      this.db
+        .prepare("INSERT INTO review_runs(id,parent,status,payload) VALUES (?,?,?,?)")
+        .run(run.id, caller, run.status, JSON.stringify(run));
       await this.save(run);
-      await this.bb.storage.kv.set(parentKey(caller), run.id);
       return this.dispatch(run, reuse);
     });
   }
@@ -690,51 +683,38 @@ export class ReviewService {
     ) {
       run.status = "failed";
       run.error = "Dispatch expired without a child for every reviewer";
-      await this.stopSeats(
-        run,
-        run.seats.flatMap((seat) => (seat.threadId ? [seat.threadId] : [])),
-      );
+      // Stop only reviewers this run still holds; another run may have taken one since.
+      const owned: string[] = [];
+      for (const { threadId } of run.seats)
+        if (threadId && (await this.bb.storage.kv.get<string>(reviewerKey(threadId))) === run.id)
+          owned.push(threadId);
+      await this.stopSeats(run, owned);
     } else if (!adopted) return;
     await this.save(run);
   }
-  private async previous(caller: string) {
-    const lastId = await this.bb.storage.kv.get<string>(parentKey(caller));
-    const last = this.reservation(caller) ?? (lastId ? this.stored(lastId) : undefined);
-    if (last?.status === "starting") {
-      await this.recoverDispatch(last);
-      if (last.status === "starting")
-        return {
-          prior: last,
-          busy: {
-            ...this.receipt(last, true),
-            busy: true,
-            message:
-              "Dispatch is pending or was interrupted. No duplicate will be spawned and this run cannot clear a candidate.",
-          },
-        };
-    }
-    const dispatched = last?.seats.filter((seat) => seat.threadId) ?? [];
-    if (last && dispatched.length) {
-      const threads = await Promise.all(
-        dispatched.map((seat) => this.reviewerThread(seat.threadId!)),
-      );
-      for (const [index, thread] of threads.entries())
-        if (thread && (active.has(thread.status) || (await this.queued(last, dispatched[index]!))))
-          return {
-            prior: last,
-            busy: {
-              ...this.receipt(last, true),
-              busy: true,
-              message:
-                "A review is still running. Its candidate remains fixed; wait before submitting the next candidate.",
-            },
-          };
-      if (last.status === "running" || threads.some((thread) => !thread)) {
-        last.status = "incomplete";
-        await this.save(last);
+  /** An unsettled run of the identical request answers a repeat instead of a duplicate panel. */
+  private async held(run: ReviewRun) {
+    if (run.status === "starting")
+      return {
+        ...this.receipt(run, true),
+        busy: true,
+        message:
+          "Dispatch is pending or was interrupted. No duplicate will be spawned and this run cannot clear a candidate.",
+      };
+    if (run.status !== "running") return null;
+    // A panel that lost a reviewer cannot complete, so a repeat starts over.
+    for (const seat of run.seats)
+      if (!seat.threadId || !(await this.reviewerThread(seat.threadId))) {
+        run.status = "incomplete";
+        await this.save(run);
+        return null;
       }
-    }
-    return { prior: last, busy: null };
+    return {
+      ...this.receipt(run, true),
+      busy: true,
+      message:
+        "This identical review already has a run. Wait for BB's notification, then call review_result with this run ID.",
+    };
   }
   private async captureEvidence(
     hostId: string,
@@ -782,7 +762,12 @@ export class ReviewService {
   }
   private async eligible(threadId: string, run: ReviewRun, reviewer: Reviewer) {
     const candidate = await this.reviewerThread(threadId);
-    if (!candidate || !this.compatible(candidate, await this.lastRunOf(threadId), run, reviewer))
+    const previousRun = await this.lastRunOf(threadId);
+    if (!candidate || !previousRun || !this.compatible(candidate, previousRun, run, reviewer))
+      return undefined;
+    // An idle reviewer can still belong to an unsettled dispatch or hold another run's queued turn.
+    const seat = previousRun.seats.find((seat) => seat.threadId === threadId)!;
+    if (previousRun.status === "starting" || (await this.queued(previousRun, seat)))
       return undefined;
     const { usage } = await this.bb.sdk.threads.context({ threadId });
     return usage &&
@@ -794,8 +779,8 @@ export class ReviewService {
       : undefined;
   }
   /** Binds each seat to the thread it continues; undefined entries spawn fresh. */
-  private async assignReuse(run: ReviewRun, last: ReviewRun | undefined) {
-    const reuse = await this.reusable(run, last);
+  private async assignReuse(run: ReviewRun) {
+    const reuse = await this.reusable(run);
     for (const [index, thread] of reuse.entries()) {
       if (!thread) continue;
       const [latest] = await this.bb.sdk.threads.events.list({
@@ -808,7 +793,7 @@ export class ReviewService {
     }
     return reuse;
   }
-  private async reusable(run: ReviewRun, last: ReviewRun | undefined) {
+  private async reusable(run: ReviewRun) {
     const reuse: (ThreadResponse | undefined)[] = run.seats.map(() => undefined);
     const { reuse: wanted } = run.request;
     if (wanted === "new") return reuse;
@@ -832,16 +817,34 @@ export class ReviewService {
         );
       return reuse;
     }
-    for (const [index, { reviewer }] of run.seats.entries()) {
-      const previous = last?.seats.find(
-        (seat) =>
-          seat.threadId &&
-          seat.reviewer.providerId === reviewer.providerId &&
-          seat.reviewer.model === reviewer.model,
-      );
-      if (previous?.threadId) reuse[index] = await this.eligible(previous.threadId, run, reviewer);
-    }
+    // Concurrent runs each hold reviewers; each seat takes the newest idle one in this workstream.
+    const prior = this.runs(run.parentThreadId)
+      .filter((previous) => scope(previous) === scope(run))
+      .flatMap((previous) => previous.seats);
+    const tried = new Set<string>();
+    for (const [index, { reviewer }] of run.seats.entries())
+      reuse[index] = await this.idleReviewer(run, reviewer, prior, tried);
     return reuse;
+  }
+  private async idleReviewer(
+    run: ReviewRun,
+    reviewer: Reviewer,
+    prior: Seat[],
+    tried: Set<string>,
+  ) {
+    for (const { threadId, reviewer: used } of prior) {
+      if (
+        !threadId ||
+        tried.has(threadId) ||
+        used.providerId !== reviewer.providerId ||
+        used.model !== reviewer.model
+      )
+        continue;
+      tried.add(threadId);
+      const thread = await this.eligible(threadId, run, reviewer);
+      if (thread) return thread;
+    }
+    return undefined;
   }
   private async dispatch(run: ReviewRun, reuse: (ThreadResponse | undefined)[]) {
     const started: string[] = [];
