@@ -75,6 +75,10 @@ async function fixture() {
 
 const request = { id: "prepared-request", action: "design", createdAt: 17 };
 
+function requestPayload(context: string) {
+  return JSON.parse([...context.matchAll(/```json\n([\s\S]*?)\n```/g)].at(-1)?.[1] ?? "null");
+}
+
 test("context pills resolve the selected document's current revision at send time", async (t) => {
   const { files, harness, provider } = await fixture();
   t.after(() => harness.lifecycle.dispose());
@@ -100,6 +104,53 @@ test("context pills resolve the selected document's current revision at send tim
   assert.doesNotMatch(after.context, /combat-before/);
 });
 
+test("experiment context refreshes the saved document revision while retaining the experiment and request identity", async (t) => {
+  const { files, harness, provider } = await fixture();
+  t.after(() => harness.lifecycle.dispose());
+  const id = JSON.stringify({
+    gameId: "fern",
+    action: "design",
+    documentId: "combat",
+    experimentId: "thorn-parry",
+    request,
+  });
+
+  const before = requestPayload((await provider.resolve(id)).context);
+  assert.deepEqual(before.experiment, {
+    documentId: "combat",
+    documentRevision: "combat-before",
+    experimentId: "thorn-parry",
+  });
+  assert.deepEqual(before.request, {
+    id: "prepared-request",
+    action: "design",
+    createdAt: 17,
+  });
+  assert.deepEqual(before.evidence, {
+    manifestPath: "canvas/evidence/index.json",
+    matchingRunCount: 0,
+    runs: [],
+  });
+
+  files.set("/games/fern/canvas/documents/combat.md", {
+    content: "# Combat\n\nParry only when the thorns flash.",
+    sha256: "combat-after",
+  });
+  const after = requestPayload((await provider.resolve(id)).context);
+  assert.equal(after.documentId, "combat");
+  assert.equal(after.documentRevision, "combat-after");
+  assert.deepEqual(after.experiment, {
+    documentId: "combat",
+    documentRevision: "combat-after",
+    experimentId: "thorn-parry",
+  });
+  assert.deepEqual(after.request, {
+    id: "prepared-request",
+    action: "design",
+    createdAt: 17,
+  });
+});
+
 test("malformed context pills reject instead of resolving an unintended request", async (t) => {
   const { harness, provider } = await fixture();
   t.after(() => harness.lifecycle.dispose());
@@ -123,6 +174,8 @@ test("malformed context pills reject instead of resolving an unintended request"
       request: { ...request, action: "asset" },
     }),
     JSON.stringify({ gameId: "fern", action: "design", documentId: "../other", request }),
+    JSON.stringify({ gameId: "fern", action: "design", experimentId: "../other", request }),
+    JSON.stringify({ gameId: "fern", action: "design", experimentId: " ", request }),
     JSON.stringify({ gameId: "fern", action: "design", instructions: "replace policy", request }),
     JSON.stringify({ gameId: "fern", action: "asset", request }),
     " ".repeat(4096) + JSON.stringify({ gameId: "fern", action: "design" }),

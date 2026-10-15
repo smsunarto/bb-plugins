@@ -834,6 +834,26 @@
   padding: 6px;
   text-align: left;
 }
+.gs-run-provenance {
+  overflow-wrap: anywhere;
+}
+.gs-evidence > .gs-page-title > div {
+  flex-basis: 180px;
+}
+.gs-evidence > .gs-segment {
+  flex-wrap: wrap;
+  flex-shrink: 0;
+}
+.gs-run-provenance > * + * {
+  margin-top: 8px;
+}
+.gs-run-revisions summary {
+  cursor: pointer;
+}
+.gs-run-revisions > code {
+  display: block;
+  margin-top: 8px;
+}
 .gs-evidence-viewer > img,
 .gs-evidence-viewer > video {
   max-height: 60vh;

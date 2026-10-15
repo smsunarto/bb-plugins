@@ -538,6 +538,7 @@ test("generation requests show the selected brief and provider while keeping pol
     gameId: game.id,
     hostId: "host",
     rootPath: "/games/orbit",
+    documentId: "design",
     documentPath: "canvas/documents/design.md",
     documentRevision: current.documents[0]!.revision,
     boardPath: "canvas/boards/main.json",
@@ -586,6 +587,7 @@ test("design requests use the selected document and its saved revision", async (
     { gameId: game.id, action: "design", documentId: document.id },
   );
   const payload = requestPayload(result.context);
+  assert.equal(payload.documentId, document.id);
   assert.equal(payload.documentPath, `canvas/documents/${document.id}.md`);
   assert.equal(payload.documentRevision, saved.revision);
   assert.match(result.context, new RegExp(saved.revision));
@@ -951,6 +953,297 @@ test("provided playtest runs resolve real captures and retain their reported tim
     workspace.evidence?.map(({ path }) => path),
     ["canvas/evidence/combat.webm", "canvas/evidence/menu.png"],
   );
+});
+
+test("playtest evidence preserves tested builds and historical experiment provenance", async () => {
+  const f = fake();
+  const game = await create.execute({ bb: f.bb }, input);
+  f.seed("host", "/games/orbit/canvas/evidence/dash.png", "image");
+  f.seed(
+    "host",
+    "/games/orbit/canvas/evidence/index.json",
+    JSON.stringify({
+      version: 1,
+      runs: [
+        {
+          id: "dash-v1",
+          capturedAtMs: 1735689600000,
+          testedRevision: "  build-a41f  ",
+          experiment: {
+            documentId: "design",
+            documentRevision: " historical-design-revision ",
+            experimentId: "dash-gap",
+          },
+          files: ["canvas/evidence/dash.png"],
+        },
+        {
+          id: "archived-experiment",
+          capturedAtMs: 1735776000000,
+          testedRevision: "prototype-2025-01-02",
+          experiment: {
+            documentId: "removed-document",
+            documentRevision: "removed-document-revision",
+            experimentId: "dash-gap",
+          },
+          files: ["canvas/evidence/dash.png"],
+        },
+      ],
+    }),
+  );
+
+  const workspace = await get.execute({ bb: f.bb }, { gameId: game.id });
+  assert.ok(workspace.evidenceRuns);
+  assert.deepEqual(
+    workspace.evidenceRuns.map(({ id, testedRevision, experiment }) => ({
+      id,
+      testedRevision,
+      experiment,
+    })),
+    [
+      {
+        id: "archived-experiment",
+        testedRevision: "prototype-2025-01-02",
+        experiment: {
+          documentId: "removed-document",
+          documentRevision: "removed-document-revision",
+          experimentId: "dash-gap",
+        },
+      },
+      {
+        id: "dash-v1",
+        testedRevision: "build-a41f",
+        experiment: {
+          documentId: "design",
+          documentRevision: "historical-design-revision",
+          experimentId: "dash-gap",
+        },
+      },
+    ],
+  );
+  assert.equal(workspace.documents[0]!.id, "design");
+});
+
+test("evidence rejects incomplete or malformed experiment provenance and accepts legacy runs", async () => {
+  const f = fake();
+  const game = await create.execute({ bb: f.bb }, input);
+  f.seed("host", "/games/orbit/canvas/evidence/dash.png", "image");
+  const valid = {
+    documentId: "design",
+    documentRevision: "historical-revision",
+    experimentId: "dash-gap",
+  };
+  for (const metadata of [
+    { testedRevision: " " },
+    { testedRevision: "a".repeat(201) },
+    { experiment: null },
+    { experiment: {} },
+    { experiment: { documentId: "design", experimentId: "dash-gap" } },
+    { experiment: { documentRevision: "old", experimentId: "dash-gap" } },
+    { experiment: { documentId: "design", documentRevision: "old" } },
+    { experiment: { ...valid, documentId: "../design" } },
+    { experiment: { ...valid, documentId: "" } },
+    { experiment: { ...valid, experimentId: "../dash-gap" } },
+    { experiment: { ...valid, experimentId: " " } },
+    { experiment: { ...valid, documentRevision: " " } },
+    { experiment: { ...valid, documentRevision: "a".repeat(201) } },
+    { experiment: { ...valid, unexpected: "ignored" } },
+  ]) {
+    f.seed(
+      "host",
+      "/games/orbit/canvas/evidence/index.json",
+      JSON.stringify({
+        version: 1,
+        runs: [
+          {
+            id: "invalid",
+            capturedAtMs: 1735689600000,
+            files: ["canvas/evidence/dash.png"],
+            ...metadata,
+          },
+        ],
+      }),
+    );
+    await assert.rejects(
+      async () => get.execute({ bb: f.bb }, { gameId: game.id }),
+      /canvas\/evidence\/index\.json/,
+    );
+  }
+
+  f.seed(
+    "host",
+    "/games/orbit/canvas/evidence/index.json",
+    JSON.stringify({
+      version: 1,
+      runs: [
+        {
+          id: "legacy",
+          capturedAtMs: 1735689600000,
+          files: ["canvas/evidence/dash.png"],
+        },
+      ],
+    }),
+  );
+  const legacy = (await get.execute({ bb: f.bb }, { gameId: game.id })).evidenceRuns?.[0];
+  assert.ok(legacy);
+  assert.equal(legacy.id, "legacy");
+  assert.equal(legacy.files[0]!.path, "canvas/evidence/dash.png");
+  assert.equal(legacy.testedRevision, undefined);
+  assert.equal(legacy.experiment, undefined);
+});
+
+test("experiment requests summarize the latest matching evidence without rewriting reported revisions", async () => {
+  const f = fake();
+  const game = await create.execute({ bb: f.bb }, input);
+  f.seed("host", "/games/orbit/canvas/evidence/dash.png", "image");
+  const experiment = {
+    documentId: "design",
+    documentRevision: "tested-design-revision",
+    experimentId: "dash-gap",
+  };
+  f.seed(
+    "host",
+    "/games/orbit/canvas/evidence/index.json",
+    JSON.stringify({
+      version: 1,
+      runs: [
+        ...Array.from({ length: 12 }, (_, index) => ({
+          id: `dash-${index + 1}`,
+          capturedAtMs: 1735689600000 + index,
+          scene: "GapCourse",
+          outcome: "fail",
+          threadId: "thr_dash",
+          testedRevision: "prototype-a41f",
+          experiment,
+          files: ["canvas/evidence/dash.png"],
+        })),
+        {
+          id: "other-experiment",
+          capturedAtMs: 1735776000000,
+          experiment: { ...experiment, experimentId: "jump-height" },
+          files: ["canvas/evidence/dash.png"],
+        },
+        {
+          id: "other-document",
+          capturedAtMs: 1735776000001,
+          experiment: { ...experiment, documentId: "removed-document" },
+          files: ["canvas/evidence/dash.png"],
+        },
+        {
+          id: "legacy",
+          capturedAtMs: 1735776000002,
+          files: ["canvas/evidence/dash.png"],
+        },
+      ],
+    }),
+  );
+  const workspace = await get.execute({ bb: f.bb }, { gameId: game.id });
+  const result = await prompt.execute(
+    { bb: f.bb },
+    { gameId: game.id, action: "playtest", documentId: "design", experimentId: "dash-gap" },
+  );
+  const payload = requestPayload(result.context);
+  assert.deepEqual(payload.experiment, {
+    documentId: "design",
+    documentRevision: workspace.documents[0]!.revision,
+    experimentId: "dash-gap",
+  });
+  assert.equal(payload.evidence.manifestPath, "canvas/evidence/index.json");
+  assert.equal(payload.evidence.matchingRunCount, 12);
+  assert.deepEqual(
+    payload.evidence.runs.map(({ id }: { id: string }) => id),
+    [
+      "dash-12",
+      "dash-11",
+      "dash-10",
+      "dash-9",
+      "dash-8",
+      "dash-7",
+      "dash-6",
+      "dash-5",
+      "dash-4",
+      "dash-3",
+    ],
+  );
+  assert.deepEqual(payload.evidence.runs[0], {
+    id: "dash-12",
+    capturedAtMs: 1735689600011,
+    scene: "GapCourse",
+    outcome: "fail",
+    threadId: "thr_dash",
+    testedRevision: "prototype-a41f",
+    experiment: {
+      documentId: "design",
+      documentRevision: "tested-design-revision",
+      experimentId: "dash-gap",
+    },
+    captureCount: 1,
+  });
+
+  const design = requestPayload(
+    (
+      await prompt.execute(
+        { bb: f.bb },
+        { gameId: game.id, action: "design", documentId: "design" },
+      )
+    ).context,
+  );
+  assert.equal(design.evidence.matchingRunCount, 14);
+  assert.deepEqual(
+    design.evidence.runs.map(({ id }: { id: string }) => id),
+    [
+      "legacy",
+      "other-experiment",
+      "dash-12",
+      "dash-11",
+      "dash-10",
+      "dash-9",
+      "dash-8",
+      "dash-7",
+      "dash-6",
+      "dash-5",
+    ],
+  );
+  assert.equal(design.experiment, undefined);
+
+  const build = requestPayload(
+    (
+      await prompt.execute(
+        { bb: f.bb },
+        { gameId: game.id, action: "build", documentId: "design", experimentId: "dash-gap" },
+      )
+    ).context,
+  );
+  assert.equal(build.evidence.matchingRunCount, 12);
+  assert.equal(build.evidence.runs[0].id, "dash-12");
+  const generalBuild = requestPayload(
+    (await prompt.execute({ bb: f.bb }, { gameId: game.id, action: "build" })).context,
+  );
+  assert.equal(generalBuild.gameId, game.id);
+  assert.equal(generalBuild.evidence, undefined);
+});
+
+test("experiment requests require a saved document", async () => {
+  const f = fake();
+  const game = await create.execute({ bb: f.bb }, input);
+  f.seed(
+    "host",
+    "/games/orbit/canvas/index.json",
+    JSON.stringify({
+      version: 1,
+      boards: [{ id: "main", name: "Design board" }],
+      documents: [],
+    }),
+  );
+  await assert.rejects(
+    async () =>
+      prompt.execute(
+        { bb: f.bb },
+        { gameId: game.id, action: "playtest", experimentId: "dash-gap" },
+      ),
+    /saved design document/,
+  );
+  const result = await prompt.execute({ bb: f.bb }, { gameId: game.id, action: "playtest" });
+  assert.equal(requestPayload(result.context).gameId, game.id);
 });
 
 test("evidence manifests reject traversal, external paths, missing captures and nonmedia files", async () => {

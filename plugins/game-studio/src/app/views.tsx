@@ -464,16 +464,27 @@ function CaptureGrid({
 
 function RunEvidence({
   run,
+  documents,
   lease,
   onSelect,
+  onOpenDocument,
+  onPlaytestExperiment,
 }: {
   run: EvidenceRun;
+  documents: StudioDocument[];
   lease: Lease;
   onSelect: (asset: Asset) => void;
+  onOpenDocument: (documentId: string) => void;
+  onPlaytestExperiment: (experiment: NonNullable<EvidenceRun["experiment"]>) => void;
 }) {
   const navigate = useBbNavigate();
   const date = new Date(run.capturedAtMs);
   const threadId = run.threadId;
+  const experiment = run.experiment;
+  const document = experiment
+    ? documents.find((item) => item.id === experiment.documentId)
+    : undefined;
+  const designMatches = document?.revision === experiment?.documentRevision;
   return (
     <article className="gs-card">
       <header className="gs-toolbar">
@@ -489,6 +500,42 @@ function RunEvidence({
       <p className="gs-muted">
         Captured <time dateTime={date.toISOString()}>{date.toLocaleString()}</time> · Run {run.id}
       </p>
+      {run.testedRevision && (
+        <p className="gs-muted gs-run-provenance">
+          Tested revision <code>{run.testedRevision}</code>
+        </p>
+      )}
+      {experiment && (
+        <div className="gs-run-provenance">
+          <p>
+            Experiment <strong>{experiment.experimentId}</strong> ·{" "}
+            {document?.title ?? experiment.documentId}
+          </p>
+          <p className={document && designMatches ? "gs-success" : "gs-warning"}>
+            {document
+              ? designMatches
+                ? "Matches saved design"
+                : "Design changed since this run"
+              : "Design document unavailable"}
+          </p>
+          <details className="gs-run-revisions gs-muted">
+            <summary>Recorded design revision</summary>
+            <code>{experiment.documentRevision}</code>
+            <p>Document: {experiment.documentId}</p>
+          </details>
+          {document && (
+            <div className="gs-toolbar">
+              <button onClick={() => onOpenDocument(document.id)}>Open current design</button>
+              <button
+                title="Prepare a playtest using the current saved design in the composer"
+                onClick={() => onPlaytestExperiment(experiment)}
+              >
+                Retest saved experiment
+              </button>
+            </div>
+          )}
+        </div>
+      )}
       <CaptureGrid captures={run.files} lease={lease} onSelect={onSelect} />
     </article>
   );
@@ -577,11 +624,15 @@ export function Evidence({
   lease,
   onLease,
   onPlaytest,
+  onOpenDocument,
+  onPlaytestExperiment,
 }: {
   workspace: Workspace;
   lease: Lease;
   onLease: () => Promise<Lease>;
   onPlaytest: () => void;
+  onOpenDocument: (documentId: string) => void;
+  onPlaytestExperiment: (experiment: NonNullable<EvidenceRun["experiment"]>) => void;
 }) {
   const navigate = useBbNavigate();
   const [selected, setSelected] = useState<Asset | null>(null);
@@ -610,7 +661,6 @@ export function Evidence({
           <h1>Evidence</h1>
           <p className="gs-muted">Playtest runs and captures from canvas/evidence.</p>
         </div>
-        <span className="gs-spacer" />
         {threadId && <button onClick={() => navigate.toThread(threadId)}>View agent thread</button>}
         <button className="gs-primary" onClick={onPlaytest}>
           Playtest with agent
@@ -631,7 +681,15 @@ export function Evidence({
         ))}
       </div>
       {filteredRuns.map((run) => (
-        <RunEvidence key={run.id} run={run} lease={lease} onSelect={select} />
+        <RunEvidence
+          key={run.id}
+          run={run}
+          documents={workspace.documents}
+          lease={lease}
+          onSelect={select}
+          onOpenDocument={onOpenDocument}
+          onPlaytestExperiment={onPlaytestExperiment}
+        />
       ))}
       {ungrouped.length > 0 && (
         <div>

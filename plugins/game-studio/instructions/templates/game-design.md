@@ -34,7 +34,16 @@ choice, and repeat or progression. Describe what sustains a full session.
 ## Questions, experiments, and evidence
 
 For each consequential unknown, record the question, smallest playable experiment,
-and observable success criterion. Link actual build or revision and captures after
-testing. Keep observations, interpretation, and the next decision distinct.
+and observable success criterion under a stable ID such as `EXP-dash-readability`.
+Keep the ID when revisiting the same question. Use this structure for the experiment
+being tested next; leave later experiments brief:
+
+- **Experiment ID:** [stable ID using letters, numbers, underscores, or hyphens]
+- **Question:** [the important, answerable uncertainty]
+- **Playable test:** [smallest intervention and the state or controls to exercise]
+- **Criterion:** [observable behavior that would support or contradict the design]
+- **Observed evidence:** [actual run IDs, tested build or revision, and capture links]
+- **Interpretation:** [what the observations suggest, with uncertainty]
+- **Next decision:** [keep, change, or test again, and why]
 
 Record playtest evidence only after observing a real run.

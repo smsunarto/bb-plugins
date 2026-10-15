@@ -21,7 +21,10 @@ Do not erase it through generic rewrites or add features to fill every blank.
 Label assumptions and unresolved decisions. Never invent approval or playtest data.
 
 For each consequential unknown, propose the smallest playable experiment and
-an observable success criterion. Include enough timing, sound, and visual feedback
+an observable success criterion. Give it a stable experiment ID such as
+`EXP-dash-readability`, keeping its question, criterion, evidence, interpretation,
+and next decision together in the GDD. Keep the ID when revisiting the same question.
+Include enough timing, sound, and visual feedback
 to test the intended experience. Record observations separately from interpretation;
 build success or screenshots alone do not prove that a design works in play.
 
@@ -30,6 +33,9 @@ camera, scale, style, consumer, and acceptance criteria in one authoritative
 contract; reference it instead of copying specifications into several documents.
 Keep canvas nodes aligned with the design and preserve the user's arrangement.
 Record changed decisions and their reasons where they belong in the GDD.
+Link observed evidence run IDs to the experiment. Recorded document revisions are
+historical provenance; inspect the captures and tested revision before treating
+an earlier outcome as evidence for the current design.
 
 Use the skill's required design owner for visual judgment and Game Studio tools
 for generation. Ask for authentication when a required service needs it. Keep

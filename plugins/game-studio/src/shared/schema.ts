@@ -122,6 +122,14 @@ export const evidenceRunSchema = z.object({
   scene: z.string().min(1).max(200).optional(),
   outcome: z.enum(["pass", "fail"]).optional(),
   threadId: z.string().min(1).max(200).optional(),
+  testedRevision: z.string().trim().min(1).max(200).optional(),
+  experiment: z
+    .strictObject({
+      documentId: idSchema,
+      documentRevision: z.string().trim().min(1).max(200),
+      experimentId: idSchema,
+    })
+    .optional(),
   files: z.array(assetSchema).min(1).max(100),
 });
 export const workspaceSchema = z.object({
@@ -205,6 +213,7 @@ export const promptInput = gameInput
     action: requestActionSchema,
     nodeId: idSchema.optional(),
     documentId: idSchema.optional(),
+    experimentId: idSchema.optional(),
     recipe: generationRecipeSchema.optional(),
   })
   .strict();

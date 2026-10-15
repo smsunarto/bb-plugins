@@ -848,6 +848,22 @@ export async function prompt(
   const document = workspace.documents.find((item) => item.id === documentId);
   if (input.documentId && !document)
     throw new Error("The selected design document no longer exists. Reload the workspace.");
+  if (input.experimentId && !document)
+    throw new Error("Select a saved design document for this experiment.");
+  const experiment =
+    input.experimentId && document
+      ? {
+          documentId: document.id,
+          documentRevision: document.revision,
+          experimentId: input.experimentId,
+        }
+      : undefined;
+  const relatedEvidence = workspace.evidenceRuns.filter((run) =>
+    experiment
+      ? run.experiment?.documentId === experiment.documentId &&
+        run.experiment.experimentId === experiment.experimentId
+      : !run.experiment || run.experiment.documentId === document?.id,
+  );
   const recipe = input.action === "asset" ? input.recipe : undefined;
   const descriptor = preparedRequest ?? {
     id: randomUUID(),
@@ -877,7 +893,23 @@ export async function prompt(
       ? { unitySetup: workspace.game.unitySetup }
       : {}),
     ...(document
-      ? { documentPath: `canvas/documents/${document.id}.md`, documentRevision: document.revision }
+      ? {
+          documentId: document.id,
+          documentPath: `canvas/documents/${document.id}.md`,
+          documentRevision: document.revision,
+        }
+      : {}),
+    ...(experiment ? { experiment } : {}),
+    ...(["design", "playtest"].includes(input.action) || experiment
+      ? {
+          evidence: {
+            manifestPath: "canvas/evidence/index.json",
+            matchingRunCount: relatedEvidence.length,
+            runs: relatedEvidence
+              .slice(0, 10)
+              .map(({ files, ...run }) => Object.assign(run, { captureCount: files.length })),
+          },
+        }
       : {}),
     ...(target
       ? { boardPath: `canvas/boards/${target.board.id}.json`, boardRevision: target.revision }
@@ -898,7 +930,17 @@ export async function prompt(
       : {}),
   };
   return {
-    prompt: request.trim(),
+    prompt: [
+      request.trim(),
+      ...(experiment && document
+        ? [
+            instructions.read("requests/experiment", {
+              experimentId: experiment.experimentId,
+              documentTitle: document.title,
+            }),
+          ]
+        : []),
+    ].join("\n\n"),
     context: [
       instructions.read("workspace"),
       instructions.read("request-progress"),

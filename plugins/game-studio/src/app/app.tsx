@@ -254,7 +254,7 @@ function Workbench({ gameId, tab }: { gameId: string; tab: Tab }) {
       action: StudioAction,
       nodeId?: string,
       recipe?: GenerationRecipe,
-      requestedDocumentId?: string,
+      designTarget?: { documentId: string; experimentId?: string },
     ) => {
       setError("");
       try {
@@ -263,7 +263,7 @@ function Workbench({ gameId, tab }: { gameId: string; tab: Tab }) {
           action,
           nodeId,
           recipe,
-          ...(requestedDocumentId ? { documentId: requestedDocumentId } : {}),
+          ...designTarget,
         };
         const result = await client.prompt(input);
         const game = query.data?.game;
@@ -440,7 +440,14 @@ function Workbench({ gameId, tab }: { gameId: string; tab: Tab }) {
                   selectedId={documentId}
                   onSelect={setDocumentId}
                   onRefresh={refetch}
-                  onRequest={(id) => void request("design", undefined, undefined, id)}
+                  onRequest={(id) =>
+                    void request(
+                      "design",
+                      undefined,
+                      undefined,
+                      id ? { documentId: id } : undefined,
+                    )
+                  }
                 />
               </div>
             )}
@@ -548,6 +555,16 @@ function Workbench({ gameId, tab }: { gameId: string; tab: Tab }) {
                 lease={lease}
                 onLease={ensurePreview}
                 onPlaytest={() => void request("playtest")}
+                onOpenDocument={(id) => {
+                  setDocumentId(id);
+                  go("design");
+                }}
+                onPlaytestExperiment={(experiment) =>
+                  void request("playtest", undefined, undefined, {
+                    documentId: experiment.documentId,
+                    experimentId: experiment.experimentId,
+                  })
+                }
               />
             )}
           </div>

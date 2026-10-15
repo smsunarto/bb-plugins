@@ -24,7 +24,8 @@ creation tooling. Leave the version unset to let the agent choose through Hub.
   the agent; a thread becoming idle does not mark work done.
 - **Design:** editable Markdown documents with explicit saves and disk-conflict
   handling. New workspaces start with a living GDD: vision, pillars, core loop,
-  current slice, constraints, and experiments. Save before asking the agent;
+  current slice, constraints, and experiments with stable IDs, test criteria,
+  observations, and next decisions. Save before asking the agent;
   requests identify the selected document and its revision.
 - **Canvas:** boards with draggable notes, documents, image/video/3D requests,
   audio assets, and reference connections. Select text, document or image nodes
@@ -37,7 +38,11 @@ creation tooling. Leave the version unset to let the agent choose through Hub.
   `Assets/GameStudio`. The agent verifies and imports staged files using the
   project's established asset structure.
 - **Evidence:** screenshots and recordings saved under `canvas/evidence`. Unity
-  WebGL builds can also be opened through BB's leased file preview.
+  WebGL builds can also be opened through BB's leased file preview. Runs can
+  record the tested build and experiment's design revision. Evidence shows
+  whether that design has changed and can prepare a retest against the current
+  saved document in the native composer. Historical and unlinked captures stay
+  available.
 
 Panel requests add a native Game Studio context mention to the composer. The
 mention resolves workflow instructions and saved workspace references when sent.
