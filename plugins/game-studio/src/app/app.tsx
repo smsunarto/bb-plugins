@@ -421,6 +421,7 @@ function Workbench({ gameId, tab }: { gameId: string; tab: Tab }) {
                   <Icon name="Layers" />
                   <select
                     aria-label="Canvas board"
+                    disabled={canvasStatus === "saving"}
                     value={board?.board.id ?? ""}
                     onChange={(e) => {
                       if (
@@ -451,6 +452,7 @@ function Workbench({ gameId, tab }: { gameId: string; tab: Tab }) {
                 {board ? (
                   <StudioCanvas
                     key={`${gameId}:${board.board.id}`}
+                    active={tab === "canvas"}
                     board={board.board}
                     revision={board.revision}
                     documents={workspace.documents}

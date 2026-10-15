@@ -20,6 +20,10 @@
   min-width: 0;
   min-height: 0;
 }
+.gs-canvas-root:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: -2px;
+}
 .gs-canvas-root[data-inspecting] .gs-canvas-stage {
   width: calc(100% - 284px);
 }
@@ -37,6 +41,8 @@
   box-shadow: 0 0 0 1px var(--primary);
 }
 .gs-canvas-card > header {
+  cursor: grab;
+  user-select: none;
   height: 32px;
   display: flex;
   align-items: center;
@@ -48,6 +54,9 @@
 .gs-canvas-card > header > svg {
   width: 14px;
   height: 14px;
+}
+.react-flow__node.dragging .gs-canvas-card > header {
+  cursor: grabbing;
 }
 .gs-canvas-card strong {
   overflow: hidden;
@@ -65,7 +74,8 @@
   padding: 10px;
   min-height: 100px;
   max-height: 250px;
-  overflow: hidden;
+  overflow: auto;
+  user-select: text;
   background: var(--surface-recessed-solid, var(--surface-recessed));
   border-radius: 6px;
   font-size: 12px;
@@ -131,6 +141,15 @@
 .gs-canvas-dock svg {
   width: 17px;
   height: 17px;
+}
+.gs-canvas-help {
+  position: absolute;
+  bottom: calc(82px + env(safe-area-inset-bottom));
+  left: 12px;
+  margin: 0;
+  color: var(--muted-foreground);
+  font-size: 10px;
+  pointer-events: none;
 }
 .gs-canvas-root .react-flow__controls {
   bottom: calc(68px + env(safe-area-inset-bottom));
@@ -213,6 +232,12 @@
   margin-left: 8px;
 }
 @container studio (max-width: 560px) {
+  .gs-canvas-save {
+    padding: 3px;
+  }
+  .gs-canvas-save > span {
+    display: none;
+  }
   .gs-canvas-dock {
     max-width: calc(100% - 24px);
     overflow: auto;

@@ -7,6 +7,7 @@ import type { GenerationJob } from "../shared/generation.ts";
 import { Icon } from "./icons.tsx";
 // Canvas model and layout adapted from OhMyGame; modified for BB. Apache-2.0.
 import { useCallback, useEffect, useRef, useState } from "react";
+import type { KeyboardEvent } from "react";
 import {
   ReactFlow,
   Background,
@@ -17,7 +18,15 @@ import {
   useNodesState,
   useEdgesState,
 } from "@xyflow/react";
-import type { Node, NodeProps, Connection, Viewport, Edge, ReactFlowInstance } from "@xyflow/react";
+import type {
+  Node,
+  NodeProps,
+  Connection,
+  Viewport,
+  Edge,
+  ReactFlowInstance,
+  OnSelectionChangeParams,
+} from "@xyflow/react";
 import type {
   Board,
   CanvasNode,
@@ -27,6 +36,8 @@ import type {
   GenerationRecipe,
 } from "../shared/schema.ts";
 import { GenerationOptions } from "./generation.tsx";
+import { newNodePosition, revealNode } from "./canvas-layout.ts";
+import { boardSnapshot } from "./canvas-board.ts";
 import "@xyflow/react/dist/style.css";
 import "./canvas.css";
 
@@ -66,7 +77,7 @@ function CanvasCard({ data, selected }: NodeProps<Card>) {
       data-generation={pending ? "pending" : data.job?.status}
     >
       <Handle type="target" position={Position.Left} />
-      <header>
+      <header title="Drag to move">
         <Icon name={kindInfo(node.type).icon} />
         <strong>{node.title || kindInfo(node.type).label}</strong>
         {asset && (
@@ -76,7 +87,7 @@ function CanvasCard({ data, selected }: NodeProps<Card>) {
         )}
       </header>
       <div
-        className="gs-node-content"
+        className="gs-node-content nodrag nopan nowheel"
         data-empty-image={(node.type === "image" && !asset) || undefined}
       >
         {asset?.type === "image" && url ? (
@@ -113,9 +124,11 @@ function CanvasCard({ data, selected }: NodeProps<Card>) {
                   ? "Ready for review"
                   : data.job.status}
           </span>
-          <button type="button" onClick={() => navigate.toThread(data.job!.threadId)}>
-            View in thread ↗
-          </button>
+          {data.job.threadId && (
+            <button type="button" onClick={() => navigate.toThread(data.job!.threadId!)}>
+              View in thread ↗
+            </button>
+          )}
           {data.job.detail && <small>{data.job.detail}</small>}
         </div>
       )}
@@ -146,6 +159,7 @@ const initialData = (kind: NodeKind, documents: StudioDocument[]): CanvasNode["d
 };
 const noGenerationJobs: GenerationJob[] = [];
 export function StudioCanvas({
+  active = true,
   board,
   revision,
   documents,
@@ -158,6 +172,7 @@ export function StudioCanvas({
   onUpload,
   onStatus,
 }: {
+  active?: boolean;
   board: Board;
   revision: string;
   documents: StudioDocument[];
@@ -175,6 +190,7 @@ export function StudioCanvas({
     source.nodes.map((node) => ({
       id: node.id,
       type: "studio",
+      dragHandle: ".gs-canvas-card > header",
       position: source.editorLayout.nodes[node.id] ?? node.position,
       data: { source: node, documents, assets, baseUrl: previewBaseUrl },
     }));
@@ -188,53 +204,48 @@ export function StudioCanvas({
   const editVersion = useRef(0);
   const viewport = useRef<Viewport>(board.editorLayout.viewport);
   const selected = nodes.find((node) => node.id === selectedId);
+  const root = useRef<HTMLDivElement>(null);
+  const inspector = useRef<HTMLElement>(null);
   const stage = useRef<HTMLDivElement>(null);
   const flow = useRef<ReactFlowInstance<Card>>(null);
   const focusNode = useRef<string | null>(selected?.id ?? null);
-  const firstFit = useRef(false);
+  const needsInitialFit = useRef(board.editorLayout.fitView !== false);
   const frame = useRef(0);
   useEffect(() => {
     focusNode.current = selected?.id ?? null;
   }, [selected?.id]);
-  const recoverViewport = useCallback((force = false) => {
+  const recoverViewport = useCallback(() => {
     const instance = flow.current;
     const bounds = stage.current?.getBoundingClientRect();
     if (!instance || !bounds?.width || !bounds.height || !instance.getNodes().length) return;
     const view = instance.getViewport();
-    const visible = instance.getIntersectingNodes(
-      {
-        x: -view.x / view.zoom,
-        y: -view.y / view.zoom,
-        width: bounds.width / view.zoom,
-        height: bounds.height / view.zoom,
-      },
-      true,
-    );
-    if (force || !firstFit.current || visible.length === 0) {
+    if (needsInitialFit.current) {
+      needsInitialFit.current = false;
       void instance
         .fitView({
-          ...(focusNode.current ? { nodes: [{ id: focusNode.current }] } : {}),
           maxZoom: 1,
           minZoom: 0.15,
           padding: 0.15,
         })
         .then((fitted) => {
-          if (fitted) firstFit.current = true;
+          if (!fitted) needsInitialFit.current = true;
           return fitted;
         });
+      return;
     }
+    const node = focusNode.current ? instance.getNode(focusNode.current) : undefined;
+    if (!node?.measured?.width || !node.measured.height || node.dragging) return;
+    const next = revealNode(view, bounds, instance.getNodesBounds([node]));
+    if (next.x !== view.x || next.y !== view.y) void instance.setViewport(next);
   }, []);
-  const scheduleFit = useCallback(
-    (force = false) => {
-      cancelAnimationFrame(frame.current);
-      frame.current = requestAnimationFrame(() => recoverViewport(force));
-    },
-    [recoverViewport],
-  );
+  const scheduleFit = useCallback(() => {
+    cancelAnimationFrame(frame.current);
+    frame.current = requestAnimationFrame(recoverViewport);
+  }, [recoverViewport]);
   useEffect(() => {
     const element = stage.current;
     if (!element) return;
-    const observer = new ResizeObserver(() => scheduleFit(Boolean(focusNode.current)));
+    const observer = new ResizeObserver(scheduleFit);
     observer.observe(element);
     return () => {
       observer.disconnect();
@@ -242,8 +253,19 @@ export function StudioCanvas({
     };
   }, [scheduleFit]);
   useEffect(() => {
-    scheduleFit(Boolean(selected?.id));
+    scheduleFit();
   }, [selected?.id, scheduleFit]);
+  const selectionChanged = useCallback(
+    ({ nodes: selectedNodes }: OnSelectionChangeParams<Card>) => {
+      setSelected(selectedNodes.length === 1 ? selectedNodes[0]!.id : null);
+    },
+    [],
+  );
+  const clearSelection = () => {
+    setNodes((current) => current.map((node) => ({ ...node, selected: false })));
+    setEdges((current) => current.map((edge) => ({ ...edge, selected: false })));
+    setSelected(null);
+  };
   const hasImageReference = selected
     ? [selected.data.source.data.images, selected.data.source.data.references]
         .flatMap((refs) => (Array.isArray(refs) ? refs : []))
@@ -277,11 +299,17 @@ export function StudioCanvas({
     if (selected) updateSelected({ data: { ...selected.data.source.data, [key]: value } });
   };
   const add = (kind: NodeKind) => {
+    const instance = flow.current;
+    const bounds = stage.current?.getBoundingClientRect();
+    if (!instance || !bounds?.width || !bounds.height) return;
     const id = crypto.randomUUID();
-    const position = {
-      x: 80 + (nodes.length % 3) * 340,
-      y: 100 + Math.floor(nodes.length / 3) * 260,
-    };
+    const position = newNodePosition(
+      instance.screenToFlowPosition({
+        x: bounds.left + bounds.width / 2,
+        y: bounds.top + bounds.height / 2,
+      }),
+      nodes,
+    );
     const source: CanvasNode = {
       id,
       type: kind,
@@ -290,14 +318,17 @@ export function StudioCanvas({
       data: initialData(kind, documents),
     };
     setNodes((current) => [
-      ...current,
+      ...current.map((node) => ({ ...node, selected: false })),
       {
         id,
         type: "studio",
+        dragHandle: ".gs-canvas-card > header",
+        selected: true,
         position,
         data: { source, documents, assets, baseUrl: previewBaseUrl },
       },
     ]);
+    setEdges((current) => current.map((edge) => ({ ...edge, selected: false })));
     setSelected(id);
     change();
   };
@@ -356,44 +387,12 @@ export function StudioCanvas({
     setError("");
     onStatus?.("saving");
     const savedVersion = editVersion.current;
-    const ids = new Set(nodes.map((node) => node.id));
-    const nextNodes = nodes.map((node) => {
-      const data = { ...node.data.source.data };
-      for (const key of ["images", "references"])
-        if (Array.isArray(data[key]))
-          data[key] = data[key].filter(
-            (ref) =>
-              typeof ref !== "object" ||
-              ref === null ||
-              Array.isArray(ref) ||
-              ref.type !== "node" ||
-              ids.has(String(ref.nodeId)),
-          );
-      return Object.assign({}, node.data.source, { position: node.position, data });
-    });
-    const next: Board = {
-      ...board,
-      nodes: nextNodes,
-      edges: edges
-        .filter((edge) => ids.has(edge.source) && ids.has(edge.target))
-        .map(({ id, source, target, sourceHandle }) => ({
-          id,
-          source,
-          target,
-          sourceHandle: sourceHandle || undefined,
-        })),
-      editorLayout: {
-        ...board.editorLayout,
-        fitView: false,
-        viewport: viewport.current,
-        nodes: Object.fromEntries(
-          nodes.map((node) => [
-            node.id,
-            { ...board.editorLayout.nodes[node.id], ...node.position },
-          ]),
-        ),
-      },
-    };
+    const next = boardSnapshot(
+      board,
+      nodes.map((node) => ({ ...node.data.source, position: node.position })),
+      edges,
+      viewport.current,
+    );
     try {
       const result = await onSave(next, baseline.current);
       baseline.current = result.revision;
@@ -407,8 +406,56 @@ export function StudioCanvas({
       setSaving(false);
     }
   };
+  const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (!active) return;
+    if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "s") {
+      event.preventDefault();
+      event.stopPropagation();
+      if (dirty) void save();
+      return;
+    }
+    if (event.key === "Escape") {
+      event.preventDefault();
+      event.stopPropagation();
+      clearSelection();
+      root.current?.focus();
+      return;
+    }
+    const target = event.target as HTMLElement;
+    if (
+      target.closest("input, textarea, select, [contenteditable]") ||
+      window.getSelection()?.isCollapsed === false
+    )
+      return;
+    if (
+      (event.key === "Delete" || event.key === "Backspace") &&
+      !event.metaKey &&
+      !event.ctrlKey &&
+      !event.altKey
+    ) {
+      event.preventDefault();
+      event.stopPropagation();
+      const instance = flow.current;
+      if (instance)
+        void instance.deleteElements({
+          nodes: instance.getNodes().filter((node) => node.selected),
+          edges: instance.getEdges().filter((edge) => edge.selected),
+        });
+    }
+  };
+  // This graphics application owns scoped save, delete, and selection shortcuts.
+  /* oxlint-disable jsx-a11y/no-noninteractive-element-interactions, jsx-a11y/no-noninteractive-tabindex */
   return (
-    <div className="gs-canvas-root" data-inspecting={selected ? true : undefined}>
+    <div
+      className="gs-canvas-root"
+      ref={root}
+      role="application"
+      aria-label="Game canvas"
+      tabIndex={0}
+      onKeyDown={handleKeyDown}
+      data-inspecting={selected ? true : undefined}
+    >
+      {/* oxlint-enable jsx-a11y/no-noninteractive-element-interactions, jsx-a11y/no-noninteractive-tabindex */}
       <div className="gs-canvas-stage" ref={stage}>
         {revision !== baseline.current && (
           <div className="gs-canvas-notice">
@@ -417,11 +464,15 @@ export function StudioCanvas({
               onClick={() => {
                 setNodes(cards(board));
                 setEdges(board.edges);
+                setSelected(null);
                 baseline.current = revision;
                 setDirty(false);
                 setError("");
                 onStatus?.("saved");
-                scheduleFit(true);
+                viewport.current = board.editorLayout.viewport;
+                needsInitialFit.current = board.editorLayout.fitView !== false;
+                void flow.current?.setViewport(board.editorLayout.viewport);
+                scheduleFit();
               }}
             >
               Reload disk version
@@ -436,7 +487,7 @@ export function StudioCanvas({
         <ReactFlow<Card>
           onInit={(instance) => {
             flow.current = instance;
-            scheduleFit(true);
+            scheduleFit();
           }}
           colorMode={colorMode}
           nodeTypes={nodeTypes}
@@ -454,12 +505,16 @@ export function StudioCanvas({
           }))}
           edges={edges}
           defaultViewport={board.editorLayout.viewport}
-          fitView={board.nodes.length > 0}
-          fitViewOptions={{ maxZoom: 1 }}
           onNodesChange={(changes) => {
             onNodesChange(changes);
-            if (changes.some((item) => item.type === "dimensions"))
-              scheduleFit(Boolean(focusNode.current));
+            if (
+              changes.some(
+                (item) =>
+                  item.type === "dimensions" &&
+                  (needsInitialFit.current || item.id === focusNode.current),
+              )
+            )
+              scheduleFit();
             if (changes.some((item) => item.type !== "select" && item.type !== "dimensions"))
               change();
           }}
@@ -502,8 +557,12 @@ export function StudioCanvas({
             if (changes.some((item) => item.type !== "select")) change();
           }}
           onConnect={connect}
-          onNodeClick={(_, node) => setSelected(node.id)}
-          onPaneClick={() => setSelected(null)}
+          onSelectionChange={selectionChanged}
+          onNodeDoubleClick={() => inspector.current?.querySelector("input")?.focus()}
+          onPaneClick={() => {
+            clearSelection();
+            root.current?.focus();
+          }}
           onMoveEnd={(event, view) => {
             const before = viewport.current;
             viewport.current = view;
@@ -512,7 +571,10 @@ export function StudioCanvas({
           }}
           minZoom={0.15}
           maxZoom={2.5}
-          deleteKeyCode={["Backspace", "Delete"]}
+          deleteKeyCode={null}
+          panOnScroll
+          zoomOnScroll={false}
+          zoomOnDoubleClick={false}
           proOptions={{ hideAttribution: true }}
         >
           <Background gap={16} size={1} />
@@ -546,12 +608,14 @@ export function StudioCanvas({
             <span>Upload</span>
           </button>
         </div>
+        <p className="gs-canvas-help">Scroll to pan · Pinch to zoom</p>
         {dirty && (
           <div className="gs-canvas-save">
             <span>Unsaved changes ·</span>
             <button
               className="gs-primary"
               aria-label="Save board"
+              title="Save board (Ctrl/⌘+S)"
               onClick={() => void save()}
               disabled={saving}
             >
@@ -561,20 +625,17 @@ export function StudioCanvas({
         )}
       </div>
       {selected && (
-        <aside className="gs-node-inspector">
+        <aside className="gs-node-inspector" ref={inspector}>
           <header>
             <strong>{kindInfo(selected.data.source.type).label}</strong>
-            <button
-              className="gs-icon"
-              aria-label="Close node inspector"
-              onClick={() => setSelected(null)}
-            >
+            <button className="gs-icon" aria-label="Close node inspector" onClick={clearSelection}>
               <Icon name="X" />
             </button>
           </header>
           <label>
             Title
             <input
+              maxLength={200}
               value={selected.data.source.title ?? ""}
               onChange={(e) => updateSelected({ title: e.target.value })}
             />
@@ -651,12 +712,7 @@ export function StudioCanvas({
           <button
             className="gs-danger"
             onClick={() => {
-              setNodes((current) => current.filter((node) => node.id !== selectedId));
-              setEdges((current) =>
-                current.filter((edge) => edge.source !== selectedId && edge.target !== selectedId),
-              );
-              setSelected(null);
-              change();
+              void flow.current?.deleteElements({ nodes: [{ id: selected.id }] });
             }}
           >
             Remove node
