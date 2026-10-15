@@ -51,8 +51,14 @@ async function fixture() {
           if (!file) throw new Error(`ENOENT: ${path}`);
           return { ...file, path, contentEncoding: "utf8", sizeBytes: file.content.length };
         },
-        async list() {
-          return { files: [], truncated: false };
+        async list({ path }) {
+          const prefix = `${path}/`;
+          return {
+            files: [...files.keys()]
+              .filter((filePath) => filePath.startsWith(prefix))
+              .map((filePath) => ({ path: filePath, name: filePath.split("/").at(-1)! })),
+            truncated: false,
+          };
         },
       },
     },
@@ -78,6 +84,125 @@ const request = { id: "prepared-request", action: "design", createdAt: 17 };
 function requestPayload(context: string) {
   return JSON.parse([...context.matchAll(/```json\n([\s\S]*?)\n```/g)].at(-1)?.[1] ?? "null");
 }
+
+test("asset context retains its selected board while refreshing that board and recorded job status", async (t) => {
+  const { files, harness, provider } = await fixture();
+  t.after(() => harness.lifecycle.dispose());
+  const index = JSON.parse(files.get("/games/fern/canvas/index.json")!.content);
+  index.boards.push({ id: "characters", name: "Character studies" });
+  files.set("/games/fern/canvas/index.json", {
+    content: JSON.stringify(index),
+    sha256: "two-boards-index",
+  });
+  const board = {
+    version: 1,
+    id: "characters",
+    viewport: { width: 1280, height: 720 },
+    nodes: [
+      {
+        id: "hero",
+        type: "image",
+        title: "Fern hero",
+        position: { x: 0, y: 0 },
+        data: { prompt: "A leafy forest hero" },
+      },
+    ],
+    edges: [],
+  };
+  files.set("/games/fern/canvas/boards/characters.json", {
+    content: JSON.stringify(board),
+    sha256: "character-board-before",
+  });
+  files.set("/games/fern/canvas/boards/main.json", {
+    content: JSON.stringify({
+      ...board,
+      id: "main",
+      nodes: [{ ...board.nodes[0], data: { prompt: "An unrelated blue hero" } }],
+    }),
+    sha256: "main-board-revision",
+  });
+  const job = {
+    version: 1,
+    id: "hero-generation",
+    threadId: "generation-thread",
+    createdAt: 40,
+    updatedAt: 41,
+    status: "running",
+    request: { kind: "image", prompt: "A leafy forest hero" },
+    target: { boardId: "characters", nodeId: "hero", fingerprint: "saved-hero-brief" },
+    outputs: [],
+  };
+  files.set("/games/fern/canvas/jobs/hero-generation.json", {
+    content: JSON.stringify(job),
+    sha256: "job-before",
+  });
+  const assetRequest = { ...request, action: "asset" };
+  const id = JSON.stringify({
+    gameId: "fern",
+    action: "asset",
+    boardId: "characters",
+    nodeId: "hero",
+    request: assetRequest,
+  });
+  const before = requestPayload((await provider.resolve(id)).context);
+  assert.equal(before.boardId, "characters");
+  assert.equal(before.boardPath, "canvas/boards/characters.json");
+  assert.deepEqual(JSON.parse(before.boardRevision), {
+    content: "character-board-before",
+    layout: null,
+  });
+  assert.equal(before.nodeId, "hero");
+  assert.equal(before.nodeBrief, "Brief: A leafy forest hero");
+  assert.deepEqual(before.recentNodeJobs, [
+    {
+      id: "hero-generation",
+      status: "running",
+      createdAt: 40,
+      jobPath: "canvas/jobs/hero-generation.json",
+      boardId: "characters",
+      nodeId: "hero",
+    },
+  ]);
+  assert.deepEqual(before.request, { id: "prepared-request", action: "asset", createdAt: 17 });
+
+  files.set("/games/fern/canvas/jobs/hero-generation.json", {
+    content: JSON.stringify({ ...job, updatedAt: 48, status: "uncertain" }),
+    sha256: "job-after",
+  });
+  files.set("/games/fern/canvas/boards/characters.json", {
+    content: JSON.stringify({
+      ...board,
+      nodes: [{ ...board.nodes[0], data: { prompt: "A golden forest hero" } }],
+    }),
+    sha256: "character-board-after",
+  });
+  const after = requestPayload((await provider.resolve(id)).context);
+  assert.equal(after.boardId, "characters");
+  assert.equal(after.boardPath, "canvas/boards/characters.json");
+  assert.deepEqual(JSON.parse(after.boardRevision), {
+    content: "character-board-after",
+    layout: null,
+  });
+  assert.equal(after.nodeId, "hero");
+  assert.equal(after.nodeBrief, "Brief: A golden forest hero");
+  assert.deepEqual(after.recentNodeJobs, [
+    {
+      id: "hero-generation",
+      status: "uncertain",
+      createdAt: 40,
+      jobPath: "canvas/jobs/hero-generation.json",
+      boardId: "characters",
+      nodeId: "hero",
+    },
+  ]);
+  assert.deepEqual(after.request, { id: "prepared-request", action: "asset", createdAt: 17 });
+
+  const { boardId: _boardId, ...legacy } = JSON.parse(id);
+  await assert.rejects(
+    async () => provider.resolve(JSON.stringify(legacy)),
+    /ambiguous|more than one board|multiple boards/i,
+  );
+});
 
 test("context pills resolve the selected document's current revision at send time", async (t) => {
   const { files, harness, provider } = await fixture();

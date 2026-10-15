@@ -727,11 +727,13 @@ test("generation requests show the selected brief and provider while keeping pol
     documentId: "design",
     documentPath: "canvas/documents/design.md",
     documentRevision: current.documents[0]!.revision,
+    boardId: "main",
     boardPath: "canvas/boards/main.json",
     boardRevision: current.boards[0]!.revision,
     nodeId: "sprite",
     nodeBrief: "Brief: A green dragon",
     nodeInputs: { images: [], references: [] },
+    recentNodeJobs: [],
     generationRequest: { recipe: "concept-art", outputCount: 4 },
   });
   assert.deepEqual(request, result.request);
@@ -749,6 +751,254 @@ test("generation requests show the selected brief and provider while keeping pol
       prompt.execute({ bb: f.bb }, { gameId: game.id, action: "asset", nodeId: "missing" }),
     /no longer exists/,
   );
+});
+
+test("asset request context includes only the newest five recorded jobs for its selected node", async () => {
+  const f = fake();
+  const game = await create.execute({ bb: f.bb }, { ...input, kind: "web" });
+  const detail = (await get.execute({ bb: f.bb }, { gameId: game.id })).boards[0]!;
+  await saveBoard.execute(
+    { bb: f.bb },
+    {
+      gameId: game.id,
+      revision: detail.revision,
+      board: {
+        ...detail.board,
+        nodes: [
+          {
+            id: "sprite",
+            type: "image",
+            title: "Dragon concept",
+            position: { x: 0, y: 0 },
+            data: { prompt: "A green dragon", generationJobId: "legacy-linked" },
+          },
+          {
+            id: "untested",
+            type: "image",
+            title: "Forest concept",
+            position: { x: 200, y: 0 },
+            data: { prompt: "A green forest" },
+          },
+        ],
+      },
+    },
+  );
+  const selectedTarget = { boardId: "main", nodeId: "sprite", fingerprint: "older-brief" };
+  for (const [id, createdAt, status, target] of [
+    ["oldest", 10, "failed", selectedTarget],
+    ["older", 20, "succeeded", selectedTarget],
+    ["third", 30, "failed", selectedTarget],
+    ["fourth", 40, "succeeded", selectedTarget],
+    ["fifth", 50, "running", selectedTarget],
+    ["sixth", 60, "uncertain", selectedTarget],
+    ["legacy-linked", 70, "succeeded", undefined],
+    ["unlinked", 80, "queued", undefined],
+    ["other-board", 90, "queued", { ...selectedTarget, boardId: "moodboard" }],
+    ["other-node", 95, "running", { ...selectedTarget, nodeId: "another-sprite" }],
+  ] as const) {
+    f.seed(
+      "host",
+      `/games/orbit/canvas/jobs/${id}.json`,
+      JSON.stringify({
+        version: 1,
+        id,
+        threadId: "generation-thread",
+        createdAt,
+        updatedAt: createdAt + 1,
+        status,
+        request: { kind: "image", prompt: "A previous dragon brief" },
+        ...(target ? { target } : {}),
+        outputs: [],
+      }),
+    );
+  }
+  const writesBefore = f.writes.length;
+  const selected = await prompt.execute(
+    { bb: f.bb },
+    { gameId: game.id, action: "asset", nodeId: "sprite" },
+  );
+  assert.deepEqual(requestPayload(selected.context).recentNodeJobs, [
+    {
+      id: "legacy-linked",
+      status: "succeeded",
+      createdAt: 70,
+      jobPath: "canvas/jobs/legacy-linked.json",
+    },
+    {
+      id: "sixth",
+      status: "uncertain",
+      createdAt: 60,
+      jobPath: "canvas/jobs/sixth.json",
+      boardId: "main",
+      nodeId: "sprite",
+    },
+    {
+      id: "fifth",
+      status: "running",
+      createdAt: 50,
+      jobPath: "canvas/jobs/fifth.json",
+      boardId: "main",
+      nodeId: "sprite",
+    },
+    {
+      id: "fourth",
+      status: "succeeded",
+      createdAt: 40,
+      jobPath: "canvas/jobs/fourth.json",
+      boardId: "main",
+      nodeId: "sprite",
+    },
+    {
+      id: "third",
+      status: "failed",
+      createdAt: 30,
+      jobPath: "canvas/jobs/third.json",
+      boardId: "main",
+      nodeId: "sprite",
+    },
+  ]);
+  assert.equal(requestPayload(selected.context).nodeId, "sprite");
+
+  const noJobs = await prompt.execute(
+    { bb: f.bb },
+    { gameId: game.id, action: "asset", nodeId: "untested" },
+  );
+  assert.equal(requestPayload(noJobs.context).nodeId, "untested");
+  assert.deepEqual(requestPayload(noJobs.context).recentNodeJobs, []);
+
+  for (const action of ["design", "playtest", "build"] as const) {
+    const unrelated = await prompt.execute(
+      { bb: f.bb },
+      { gameId: game.id, action, nodeId: "sprite" },
+    );
+    assert.equal(requestPayload(unrelated.context).request.action, action);
+    assert.equal(requestPayload(unrelated.context).recentNodeJobs, undefined);
+  }
+  const noSelection = await prompt.execute({ bb: f.bb }, { gameId: game.id, action: "asset" });
+  assert.equal(requestPayload(noSelection.context).request.action, "asset");
+  assert.equal(requestPayload(noSelection.context).recentNodeJobs, undefined);
+  assert.equal(f.writes.length, writesBefore);
+  assert.deepEqual((await get.execute({ bb: f.bb }, { gameId: game.id })).requests, []);
+});
+
+test("board-scoped asset requests resolve duplicate node ids without falling back to another board", async () => {
+  const f = fake();
+  const game = await create.execute({ bb: f.bb }, { ...input, kind: "web" });
+  const workspace = await createBoard.execute(
+    { bb: f.bb },
+    { gameId: game.id, name: "Character studies" },
+  );
+  const second = workspace.boards.find(({ board }) => board.id !== "main")!;
+  for (const detail of workspace.boards) {
+    const isSecond = detail.board.id === second.board.id;
+    await saveBoard.execute(
+      { bb: f.bb },
+      {
+        gameId: game.id,
+        revision: detail.revision,
+        board: {
+          ...detail.board,
+          nodes: [
+            {
+              id: "hero",
+              type: "image",
+              title: isSecond ? "Red hero" : "Green hero",
+              position: { x: 0, y: 0 },
+              data: {
+                prompt: isSecond ? "A red fox hero" : "A green forest hero",
+                references: [
+                  { type: "library", assetId: isSecond ? "fox-reference" : "forest-reference" },
+                ],
+              },
+            },
+            ...(isSecond
+              ? [
+                  {
+                    id: "banner",
+                    type: "image" as const,
+                    position: { x: 200, y: 0 },
+                    data: { prompt: "A golden banner" },
+                  },
+                ]
+              : []),
+          ],
+        },
+      },
+    );
+  }
+  for (const [id, boardId, createdAt] of [
+    ["forest-job", "main", 90],
+    ["fox-job", second.board.id, 50],
+  ] as const) {
+    f.seed(
+      "host",
+      `/games/orbit/canvas/jobs/${id}.json`,
+      JSON.stringify({
+        version: 1,
+        id,
+        threadId: null,
+        createdAt,
+        updatedAt: createdAt,
+        status: "running",
+        request: { kind: "image", prompt: "A hero" },
+        target: { boardId, nodeId: "hero", fingerprint: "saved-brief" },
+        outputs: [],
+      }),
+    );
+  }
+  const writesBefore = f.writes.length;
+  const selected = await prompt.execute(
+    { bb: f.bb },
+    { gameId: game.id, action: "asset", boardId: second.board.id, nodeId: "hero" },
+  );
+  const payload = requestPayload(selected.context);
+  assert.equal(payload.boardId, second.board.id);
+  assert.equal(payload.boardPath, `canvas/boards/${second.board.id}.json`);
+  assert.equal(payload.nodeId, "hero");
+  assert.equal(payload.nodeBrief, "Brief: A red fox hero");
+  assert.deepEqual(payload.nodeInputs, {
+    images: [],
+    references: [{ type: "library", assetId: "fox-reference" }],
+  });
+  assert.deepEqual(payload.recentNodeJobs, [
+    {
+      id: "fox-job",
+      status: "running",
+      createdAt: 50,
+      jobPath: "canvas/jobs/fox-job.json",
+      boardId: second.board.id,
+      nodeId: "hero",
+    },
+  ]);
+  const current = await get.execute({ bb: f.bb }, { gameId: game.id });
+  assert.equal(
+    payload.boardRevision,
+    current.boards.find(({ board }) => board.id === second.board.id)!.revision,
+  );
+
+  await assert.rejects(
+    async () => prompt.execute({ bb: f.bb }, { gameId: game.id, action: "asset", nodeId: "hero" }),
+    /ambiguous|more than one board|multiple boards/i,
+  );
+  for (const [boardId, nodeId] of [
+    ["missing-board", "hero"],
+    ["main", "banner"],
+    [second.board.id, "missing-node"],
+  ]) {
+    await assert.rejects(
+      async () =>
+        prompt.execute({ bb: f.bb }, { gameId: game.id, action: "asset", boardId, nodeId }),
+      /no longer exists|selected board|selected canvas/i,
+    );
+  }
+  const legacyUnique = requestPayload(
+    (await prompt.execute({ bb: f.bb }, { gameId: game.id, action: "asset", nodeId: "banner" }))
+      .context,
+  );
+  assert.equal(legacyUnique.boardId, second.board.id);
+  assert.equal(legacyUnique.nodeBrief, "Brief: A golden banner");
+  assert.equal(f.writes.length, writesBefore);
+  assert.deepEqual(current.requests, []);
 });
 
 test("design requests use the selected document and its saved revision", async () => {

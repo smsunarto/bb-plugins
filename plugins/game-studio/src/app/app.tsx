@@ -254,7 +254,10 @@ function Workbench({ gameId, tab }: { gameId: string; tab: Tab }) {
       action: StudioAction,
       nodeId?: string,
       recipe?: GenerationRecipe,
-      target?: { assetId: string } | { documentId: string; experimentId?: string },
+      target?:
+        | { assetId: string }
+        | { boardId: string }
+        | { documentId: string; experimentId?: string },
     ) => {
       setError("");
       try {
@@ -497,7 +500,9 @@ function Workbench({ gameId, tab }: { gameId: string; tab: Tab }) {
                     generationJobs={workspace.generationJobs}
                     previewBaseUrl={lease?.baseUrl}
                     onSave={saveBoard}
-                    onGenerate={(nodeId, recipe) => void request("asset", nodeId, recipe)}
+                    onGenerate={(nodeId, recipe) =>
+                      void request("asset", nodeId, recipe, { boardId: board.board.id })
+                    }
                     onGenerateDirect={async (nodeId, revision, requestId, model) => {
                       const selection =
                         model.provider === "bb"

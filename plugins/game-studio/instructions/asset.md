@@ -9,6 +9,17 @@ budget. Save accepted outputs in `canvas/staging/`, outside Unity Assets, and up
 canvas asset reference, and verify the integrated consumer. Keep pending or
 failed generation visible; do not claim success from a submitted job alone.
 
+Before a paid submission, inspect the saved node and its existing generation
+receipts. `recentNodeJobs` lists recent recorded jobs for this node or its linked
+output. It is neither a complete history nor a live provider check. Read those
+receipts and use `game_studio_generation` to reconcile an existing job by ID.
+Queued, running, uncertain, auth-required, and locally cancelled jobs can still
+represent provider work. Resume only a confirmed task; do not submit again just
+because local waiting ended or a new composer request was prepared. Preserve the
+existing request ID on retries. Review completed candidates against the current
+brief before deciding whether another authorized output is needed. A changed
+brief does not change an existing job's inputs; new work needs its own request ID.
+
 Build the art brief from the current design decisions:
 
 - Purpose: gameplay role and deliverable, such as concept, production reference,

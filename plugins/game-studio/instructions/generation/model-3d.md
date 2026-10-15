@@ -7,11 +7,23 @@ Request authentication when required. Save geometry in `canvas/staging/`,
 review the solid mesh and wireframe, and report its path and remaining cleanup.
 This request does not authorize texture generation or additional outputs.
 
+This adapter submits one approved image and the polygon target to Tripo.
+The written model brief and other connected views guide reference selection and
+review; they are not text or multiview geometry constraints. Required forms must
+be visible in the chosen image. Record unseen side and back requirements as
+inferred, then inspect them on the mesh.
+
 Use a production reference with one complete subject, a plain white or light-gray
 background, even diffuse lighting, and minimal occlusion. Aim for 70–85% frame
 occupancy with clear margins; use a neutral A-pose or T-pose for characters when
 the contract requires rigging. Do not use a scenic concept or contact sheet as
 the single-image source. Preserve the approved silhouette and defining shapes.
+Prefer an existing sharp reference around 1024 pixels square or larger as a
+quality target, not an upload minimum. Check useful subject detail; enlarging a
+blurred image does not recover missing forms. Reflections, transparency, and
+baked shadows can hide geometry. Prefer an already-approved opaque or matte
+reference when available, and retain the intended final materials separately.
+
 Check solid and wireframe views for proportions, hidden-side artifacts, merged
 parts, thin features, and topology. Assess engine scale, pivot, orientation,
 budget, and game-camera readability separately; a generated mesh is not proof

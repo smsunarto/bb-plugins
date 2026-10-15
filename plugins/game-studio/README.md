@@ -10,6 +10,9 @@ The navigation gallery opens projects beside their native BB thread. Studio
 contains no embedded chat or composer. Actions add a request to the main chat’s
 native composer for you to review and send; BB owns the agent and its settings.
 Canvas text and image generation runs directly from the selected node.
+Other generation choices use **Prepare request** so you can review the native
+composer before sending. A 3D request uses one approved image for geometry; the
+written brief guides reference selection and review.
 Select its enrolled machine and enter the absolute Unity project directory. The
 connection checks `ProjectSettings/ProjectVersion.txt` and `Assets`. **New
 project** creates a design workspace with your selected Editor version and
@@ -48,8 +51,12 @@ creation tooling. Leave the version unset to let the agent choose through Hub.
 
 Panel requests add a native Game Studio context mention to the composer. The
 mention resolves workflow instructions and saved workspace references when sent.
+Canvas requests identify both the board and node, preserving the intended brief
+when separate boards reuse a template's node IDs.
 It also preserves the prepared request identity and keeps technical metadata out
 of the visible prompt. Keep it attached so the agent receives the selected action's guidance.
+Asset requests include recent recorded jobs for the node or its linked output.
+The agent checks existing work before submitting another paid generation.
 
 Image, video, and 3D generation use native agent tools: `game_studio_generate_image`,
 `game_studio_generate_video`, and `game_studio_generate_3d_asset`. Read

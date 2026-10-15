@@ -852,12 +852,42 @@ export async function prompt(
         job.outputs.some((output) => output.path === asset.path),
       )
     : undefined;
-  const target = input.nodeId
-    ? workspace.boards.find(({ board }) => board.nodes.some(({ id }) => id === input.nodeId))
-    : workspace.boards[0];
+  const targets = input.boardId
+    ? workspace.boards.filter(({ board }) => board.id === input.boardId)
+    : input.nodeId
+      ? workspace.boards.filter(({ board }) => board.nodes.some(({ id }) => id === input.nodeId))
+      : workspace.boards.slice(0, 1);
+  if (input.boardId && !targets.length)
+    throw new Error("The selected canvas board no longer exists. Reload the workspace.");
+  if (input.nodeId && targets.length > 1)
+    throw new Error(
+      "This node ID appears on multiple boards. Add its Game Studio context again from the intended board.",
+    );
+  const target = targets[0];
   const node = input.nodeId ? target?.board.nodes.find(({ id }) => id === input.nodeId) : undefined;
   if (input.nodeId && !node)
     throw new Error("The selected canvas node no longer exists. Reload the workspace.");
+  const recentNodeJobs =
+    input.action === "asset" && node
+      ? workspace.generationJobs
+          .filter(
+            (job) =>
+              job.id === node.data.generationJobId ||
+              (job.target?.boardId === target?.board.id && job.target?.nodeId === node.id),
+          )
+          .slice(0, 5)
+          .map((job) =>
+            Object.assign(
+              {
+                id: job.id,
+                status: job.status,
+                createdAt: job.createdAt,
+                jobPath: `canvas/jobs/${job.id}.json`,
+              },
+              job.target ? { boardId: job.target.boardId, nodeId: job.target.nodeId } : {},
+            ),
+          )
+      : undefined;
   const documentId = input.documentId ?? workspace.index.mainDocumentId;
   const document = workspace.documents.find((item) => item.id === documentId);
   if (input.documentId && !document)
@@ -909,6 +939,7 @@ export async function prompt(
     request: descriptor,
     requestPath,
     ...(asset ? { asset } : {}),
+    ...(recentNodeJobs ? { recentNodeJobs } : {}),
     ...(generation && asset
       ? {
           generation: {
@@ -942,7 +973,11 @@ export async function prompt(
         }
       : {}),
     ...(target
-      ? { boardPath: `canvas/boards/${target.board.id}.json`, boardRevision: target.revision }
+      ? {
+          boardId: target.board.id,
+          boardPath: `canvas/boards/${target.board.id}.json`,
+          boardRevision: target.revision,
+        }
       : {}),
     ...(node
       ? {

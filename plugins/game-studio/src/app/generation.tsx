@@ -84,17 +84,23 @@ export function GenerationOptions({
                     <span className="gs-generation-label">
                       {option.label} <span aria-hidden="true">·</span> {option.provider}
                     </span>
-                    {needsImage && <small>Needs an approved image</small>}
+                    {needsImage && <small>Connect an image reference first</small>}
                   </span>
                   <span className="gs-generation-badge">{option.billing}</span>
                 </label>
               );
             })}
           </fieldset>
+          {recipe === "model-3d" && (
+            <p className="gs-muted">
+              Tripo uses one approved image. The brief guides review; change the source image to
+              change the model.
+            </p>
+          )}
           <footer>
             <span>
               {recipe === "concept-art" ? "4 candidates" : "1 output"} ·{" "}
-              {onGenerate ? "generated on canvas" : "sent to agent thread"}
+              {onGenerate ? "generated on canvas" : "review in composer"}
             </span>
             <button
               type="button"
@@ -102,7 +108,7 @@ export function GenerationOptions({
               disabled={blocked}
               onClick={() => (onGenerate ?? onSend)(recipe)}
             >
-              {busy ? "Generating…" : onGenerate ? "Generate image" : "Send to agent"}
+              {busy ? "Generating…" : onGenerate ? "Generate image" : "Prepare request"}
             </button>
           </footer>
         </div>

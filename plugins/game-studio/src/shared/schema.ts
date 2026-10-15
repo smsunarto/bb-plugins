@@ -211,6 +211,7 @@ export const generationRecipeSchema = z.enum([
 export const promptInput = gameInput
   .extend({
     action: requestActionSchema,
+    boardId: idSchema.optional(),
     nodeId: idSchema.optional(),
     documentId: idSchema.optional(),
     experimentId: idSchema.optional(),
