@@ -2,14 +2,41 @@ import { describe, expect, it } from "bun:test";
 import { newNodePosition, revealNode } from "./canvas-layout.ts";
 
 describe("canvas placement", () => {
-  it("adds in the current part of a panned board and offsets repeated additions", () => {
-    expect(newNodePosition({ x: 1200, y: -300 }, [])).toEqual({ x: 1060, y: -390 });
+  it("adds in the current part of a panned board", () => {
+    expect(newNodePosition({ x: 1200, y: -300 }, [])).toEqual({ x: 1060, y: -450 });
+  });
+
+  it("aligns repeated additions beside existing cards with room between them", () => {
     expect(
       newNodePosition({ x: 1200, y: -300 }, [
-        { position: { x: 1060, y: -390 } },
-        { position: { x: 1092, y: -358 } },
+        { position: { x: 1060, y: -450 } },
+        { position: { x: 1380, y: -450 } },
       ]),
-    ).toEqual({ x: 1124, y: -326 });
+    ).toEqual({ x: 740, y: -450 });
+  });
+
+  it("avoids the whole measured card even when its corner is far away", () => {
+    expect(
+      newNodePosition({ x: 140, y: 150 }, [
+        { position: { x: -500, y: -200 }, measured: { width: 1000, height: 800 } },
+      ]),
+    ).toEqual({ x: 540, y: -200 });
+  });
+
+  it("rejects a nearby slot blocked by another card", () => {
+    expect(
+      newNodePosition({ x: 140, y: 150 }, [
+        { position: { x: 0, y: 0 } },
+        { position: { x: 310, y: 20 } },
+        { position: { x: -310, y: -20 } },
+      ]),
+    ).toEqual({ x: 310, y: 360 });
+  });
+
+  it("leaves an open view and manually positioned cards alone", () => {
+    const nodes = [{ position: { x: 2000, y: 2000 } }];
+    expect(newNodePosition({ x: -500, y: -500 }, nodes)).toEqual({ x: -640, y: -650 });
+    expect(nodes).toEqual([{ position: { x: 2000, y: 2000 } }]);
   });
 });
 
