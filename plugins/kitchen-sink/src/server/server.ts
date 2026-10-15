@@ -1,6 +1,4 @@
-import { editors as editorCommand } from "./command/editors.ts";
-import { editors as editorTool } from "./tools/editors.ts";
-import { createUnityEditors } from "./lib/unity-editors.ts";
+import { registerLegacyUnityClaims } from "./lib/legacy-unity-claims.ts";
 import { definePlugin } from "@bb-kit/core/plugin";
 import { files } from "./lib/instructions.ts";
 
@@ -19,11 +17,8 @@ export default definePlugin({
     discoverable: true,
     description: "Smart Embed citations.",
   },
-  command: { editors: editorCommand },
-  services(bb) {
-    return { unityEditors: createUnityEditors(bb) };
-  },
   setup({ bb }) {
+    registerLegacyUnityClaims(bb);
     registerTimelineMotionSettings(bb);
     for (const provider of mentionProviders) {
       bb.ui.registerMentionProvider(provider);
@@ -33,7 +28,7 @@ export default definePlugin({
   },
   agents: {
     files,
-    tools: { editors: editorTool },
+    tools: {},
     instructions: () => files.read("smart-embeds"),
   },
 });

@@ -6,7 +6,7 @@ import {
   type EditorsContext,
 } from "../lib/unity-editor-action.ts";
 
-export const editors = defineCommand({
+export const manage = defineCommand({
   summary: "Discover, claim, control and release Unity Editors by BB thread",
   positionals: [
     {

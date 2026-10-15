@@ -5,7 +5,7 @@ import {
   type EditorsContext,
 } from "../lib/unity-editor-action.ts";
 
-export const editors = defineTool({
+export const manage = defineTool({
   parameters: editorActionSchema,
   async execute(ctx: ToolContext<EditorsContext>, input) {
     return JSON.stringify(

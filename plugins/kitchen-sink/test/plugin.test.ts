@@ -18,7 +18,7 @@ test("the plugin loads against the fake host and registers every mention provide
   const { bb, harness } = createFakePluginHost({ pluginId: "kitchen-sink" });
   await plugin(bb);
 
-  expect(harness.registrations.rpcMethods).toEqual(["renderEmbed"]);
+  expect(harness.registrations.rpcMethods).toEqual(["renderEmbed", "exportUnityClaims"]);
   expect(
     harness.registrations.experimental_publishedRpcMethods.map((entry) => [
       entry.method,
@@ -51,14 +51,7 @@ test("the manifest declares the skills root that holds every composer command", 
 
 test("each skill directory carries a SKILL.md whose frontmatter name matches the directory", async () => {
   const directories = (await readdir(skillsRoot)).sort();
-  expect(directories).toEqual([
-    "ship-it",
-    "smart-embeds",
-    "subthread",
-    "sync",
-    "test-remotely",
-    "unity-editors",
-  ]);
+  expect(directories).toEqual(["ship-it", "smart-embeds", "subthread", "sync", "test-remotely"]);
   for (const directory of directories) {
     const path = join(skillsRoot, directory, "SKILL.md");
     expect((await stat(path)).isFile()).toBe(true);

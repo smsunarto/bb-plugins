@@ -14,6 +14,40 @@ export const editorSchema = z
   })
   .strict();
 export type EditorInstance = z.infer<typeof editorSchema>;
+export const visibleClaimSchema = z
+  .object({
+    instance: editorSchema,
+    hostId: z.string(),
+    ownerThreadId: z.string(),
+    claimId: z.string().optional(),
+    mode: z.enum(["runtime", "authoring"]),
+    jobId: z.string().nullable(),
+    claimedAt: z.string(),
+    operationLoadId: z.string().optional(),
+    orphaned: z.boolean().optional(),
+  })
+  .strict();
+export type VisibleEditorClaim = z.infer<typeof visibleClaimSchema>;
+export const checkoutSlotSchema = z
+  .object({
+    id: z.string(),
+    hostId: z.string(),
+    workspacePath: z.string(),
+    mainEditors: z.array(editorSchema),
+    mppmEditors: z.array(editorSchema),
+    claims: z.array(visibleClaimSchema),
+  })
+  .strict();
+export type CheckoutSlot = z.infer<typeof checkoutSlotSchema>;
+export const editorInventorySchema = z
+  .object({
+    hostId: z.string(),
+    instances: z.array(editorSchema),
+    warnings: z.array(z.string()),
+    claims: z.array(visibleClaimSchema),
+    slots: z.array(checkoutSlotSchema),
+  })
+  .strict();
 export const pipelineJobSchema = z
   .object({
     jobId: z.string(),

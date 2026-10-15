@@ -11,6 +11,7 @@ import {
   CheckmarkCircle02Icon,
   CloudServerIcon,
   DashboardSpeed02Icon,
+  ComputerIcon,
   Doc01Icon,
   FileEditIcon,
   KeyboardIcon,
@@ -204,6 +205,10 @@ const customIcons = {
   whiteboard: {
     name: "Whiteboard",
     nodes: WhiteboardIcon,
+  },
+  unity: {
+    name: "Computer",
+    nodes: ComputerIcon,
   },
   "kitchen-sink": {
     name: "KitchenUtensils",

@@ -3,7 +3,11 @@ import { z } from "zod";
 import { jsonParametersSchema } from "../../shared/unity-editor-contract.ts";
 import { editorHost, type UnityEditors } from "./unity-editors.ts";
 
-export type EditorsContext = Readonly<{ bb: BbPluginApi; unityEditors: UnityEditors }>;
+export type EditorsContext = Readonly<{
+  bb: BbPluginApi;
+  unityEditors: UnityEditors;
+  ensureLegacyClaims: () => Promise<void>;
+}>;
 export const editorActionSchema = z
   .object({
     action: z.enum(["list", "claim", "status", "command", "release", "recover", "reconcile"]),
@@ -26,6 +30,7 @@ export async function editorAction(
   threadId?: string,
   signal?: AbortSignal,
 ) {
+  await ctx.ensureLegacyClaims();
   const host = await editorHost(ctx.bb, threadId, input.hostId),
     service = ctx.unityEditors;
   if (input.action === "list") return service.list(host, signal, threadId);

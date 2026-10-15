@@ -15,10 +15,10 @@ export interface EditorClaim {
   orphaned?: boolean;
 }
 type Db = ReturnType<BbPluginApi["storage"]["database"]>;
-const table = "kitchen_sink_unity_editor_claims";
+const table = "unity_editor_claims";
 export class EditorClaims {
   private readonly loadId = randomUUID();
-  constructor(private db: Db) {
+  constructor(readonly db: Db) {
     db.exec(
       `CREATE TABLE IF NOT EXISTS ${table} (key TEXT PRIMARY KEY, host TEXT NOT NULL, workspace TEXT NOT NULL, record TEXT NOT NULL)`,
     );

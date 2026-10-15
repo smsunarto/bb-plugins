@@ -15,7 +15,8 @@ test("Editor CLI binds ownership to the calling thread and blocks another caller
   };
   const executed: unknown[] = [];
   const { bb, harness } = createFakePluginHost({
-    pluginId: "kitchen-sink",
+    pluginId: "unity",
+    sdk: { plugins: { list: async () => ({ plugins: [] }) } },
     experimental_callHostRpc: ({ method, input }) => {
       if (method === "discover") return { instances: [instance], warnings: [] };
       if (method === "probe") return { pid: 101 };
@@ -30,7 +31,7 @@ test("Editor CLI binds ownership to the calling thread and blocks another caller
     },
   });
   await plugin(bb);
-  const claimArgs = ["editors", "claim", "--host", "host", "--instance", "main-1"];
+  const claimArgs = ["manage", "claim", "--host", "host", "--instance", "main-1"];
   expect((await harness.runCli(claimArgs)).exitCode).toBe(1);
   const first = await harness.runCli(claimArgs, { threadId: "alice" });
   expect(first.exitCode).toBe(0);
@@ -40,7 +41,7 @@ test("Editor CLI binds ownership to the calling thread and blocks another caller
   expect(conflict.exitCode).toBe(1);
   expect(conflict.stderr).toContain("owned by @thread:alice");
   const command = [
-    "editors",
+    "manage",
     "command",
     "--host",
     "host",
@@ -55,19 +56,17 @@ test("Editor CLI binds ownership to the calling thread and blocks another caller
   expect((await harness.runCli(command, { threadId: "alice" })).exitCode).toBe(0);
   expect(executed).toEqual([{ instance, command: "editor_status", parameters: {} }]);
   const status = await harness.runCli(
-    ["editors", "status", "--host", "host", "--instance", "main-1", "--claim", claim.claimId],
+    ["manage", "status", "--host", "host", "--instance", "main-1", "--claim", claim.claimId],
     { threadId: "alice" },
   );
   expect(JSON.parse(status.stdout!).job.result).toEqual({ playMode: "stopped" });
   expect(
     (
       await harness.runCli(
-        ["editors", "release", "--host", "host", "--instance", "main-1", "--claim", claim.claimId],
+        ["manage", "release", "--host", "host", "--instance", "main-1", "--claim", claim.claimId],
         { threadId: "alice" },
       )
     ).exitCode,
   ).toBe(0);
-  expect(harness.registrations.agentTools.map((tool) => tool.name)).toContain(
-    "kitchen_sink_editors",
-  );
+  expect(harness.registrations.agentTools.map((tool) => tool.name)).toContain("unity_manage");
 });

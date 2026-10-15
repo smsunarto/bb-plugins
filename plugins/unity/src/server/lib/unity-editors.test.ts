@@ -91,6 +91,69 @@ test("main authoring blocks another client's runtime claim on the same workspace
     "Shared project is owned by @thread:alice",
   );
 });
+test("separate physical checkouts allow simultaneous authoring and report separate slots", async () => {
+  const other = {
+    ...main,
+    id: "worktree-main",
+    projectPath: "/game-worktree",
+    workspacePath: "/game-worktree",
+    pid: 103,
+    port: 7802,
+  };
+  const { service } = setup({
+    discover: async () => ({ instances: [main, client, other], warnings: [] }),
+  });
+  await Promise.all([
+    service.claim("host", "main", "alice", "authoring"),
+    service.claim("host", "worktree-main", "bob", "authoring"),
+  ]);
+  const inventory = await service.list("host", undefined, "alice");
+  expect(
+    inventory.slots.map((slot) => ({
+      workspacePath: slot.workspacePath,
+      mainEditors: slot.mainEditors.map((editor) => editor.id),
+      mppmEditors: slot.mppmEditors.map((editor) => editor.id),
+      owners: slot.claims.map((claim) => [claim.ownerThreadId, claim.mode]),
+    })),
+  ).toEqual([
+    {
+      workspacePath: "/game",
+      mainEditors: ["main"],
+      mppmEditors: ["client"],
+      owners: [["alice", "authoring"]],
+    },
+    {
+      workspacePath: "/game-worktree",
+      mainEditors: ["worktree-main"],
+      mppmEditors: [],
+      owners: [["bob", "authoring"]],
+    },
+  ]);
+  expect(inventory.slots[0]?.claims[0]?.claimId).toBe(inventory.claims[0]?.claimId);
+  expect(inventory.slots[1]?.claims[0]).not.toHaveProperty("claimId");
+  await expect(service.claim("host", "client", "charlie", "runtime")).rejects.toThrow(
+    "Shared project is owned by @thread:alice",
+  );
+});
+test("an undiscovered owner's claim keeps its checkout slot occupied without exposing its token", async () => {
+  const { service, transport } = setup();
+  await service.claim("host", "main", "alice", "authoring");
+  transport.discover = async () => ({
+    instances: [],
+    warnings: ["Editor not currently discovered"],
+  });
+  const inventory = await service.list("host", undefined, "bob");
+  expect(inventory.instances).toEqual([]);
+  expect(
+    inventory.slots.map((slot) => ({
+      workspacePath: slot.workspacePath,
+      mainEditors: slot.mainEditors,
+      mppmEditors: slot.mppmEditors,
+      owners: slot.claims.map((claim) => claim.ownerThreadId),
+    })),
+  ).toEqual([{ workspacePath: "/game", mainEditors: [], mppmEditors: [], owners: ["alice"] }]);
+  expect(inventory.slots[0]?.claims[0]).not.toHaveProperty("claimId");
+});
 test("repeat claims are idempotent and a reload preserves the owner", async () => {
   const { service, db, transport } = setup();
   const first = await service.claim("host", "main", "alice", "runtime");

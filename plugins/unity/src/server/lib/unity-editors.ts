@@ -6,8 +6,10 @@ import type {
   CommandSubmission,
   EditorInstance,
   PipelineJob,
+  VisibleEditorClaim,
 } from "../../shared/unity-editor-contract.ts";
 import { EditorClaims, type EditorMode, type EditorClaim } from "./unity-editor-store.ts";
+import { checkoutSlots } from "./checkout-slots.ts";
 
 const runtimeCommands = new Set([
   "editor_status",
@@ -84,13 +86,15 @@ export class UnityEditors {
   }
   async list(host: string, signal?: AbortSignal, owner?: string) {
     const discovered = await this.transport.discover(host, signal);
+    const claims: VisibleEditorClaim[] = this.claims.list(host).map((claim) => {
+      const { claimId: _claimId, ...publicClaim } = claim;
+      return claim.ownerThreadId === owner ? claim : publicClaim;
+    });
     return {
       hostId: host,
       ...discovered,
-      claims: this.claims.list(host).map((claim) => {
-        const { claimId: _claimId, ...publicClaim } = claim;
-        return claim.ownerThreadId === owner ? claim : publicClaim;
-      }),
+      claims,
+      slots: checkoutSlots(host, discovered.instances, claims),
     };
   }
   async claim(host: string, id: string, owner: string, mode: EditorMode, signal?: AbortSignal) {

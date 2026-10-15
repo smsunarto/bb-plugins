@@ -43,8 +43,7 @@
     "app": "./src/app/app.tsx",
     "skills": [
       "skills"
-    ],
-    "host": "./src/host/host.ts"
+    ]
   },
   "files": [
     "dist/server.js",
@@ -59,10 +58,7 @@
     "src/app/",
     "src/shared/",
     "skills/",
-    "instructions/",
-    "dist/host.js",
-    "dist/host.meta.json",
-    "src/host/"
+    "instructions/"
   ],
   "dependencies": {
     "@bb-kit/core": "0.2.0",
