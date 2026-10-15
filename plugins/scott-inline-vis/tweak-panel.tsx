@@ -27,7 +27,16 @@ export function TweakPanel({
       <div className="inline-vis-tweak-heading">
         <h3>Tweak</h3>
         <button type="button" onClick={onClose} aria-label="Close Tweak panel">
-          ×
+          <svg
+            aria-hidden="true"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+          >
+            <path d="m6 6 12 12M6 18 18 6" />
+          </svg>
         </button>
       </div>
       <p>Adjust the preview, then add your changes to chat.</p>
@@ -84,6 +93,7 @@ function DesignControl({
   onChange: (value: string | number | boolean) => void;
 }) {
   const id = useId();
+  const descriptionId = control.reference ? `${id}-reference` : undefined;
   return (
     <div className="inline-vis-tweak-control">
       <label htmlFor={id}>
@@ -95,7 +105,7 @@ function DesignControl({
           </output>
         )}
       </label>
-      {control.reference && <small>{control.reference}</small>}
+      {control.reference && <small id={descriptionId}>{control.reference}</small>}
       {control.type === "slider" ? (
         <input
           id={id}
@@ -104,6 +114,8 @@ function DesignControl({
           max={control.max}
           step={control.step}
           value={control.value}
+          aria-valuetext={control.unit ? `${control.value}${control.unit}` : undefined}
+          aria-describedby={descriptionId}
           onChange={(event) => onChange(Number(event.target.value))}
         />
       ) : control.type === "color" ? (
@@ -111,6 +123,7 @@ function DesignControl({
           id={id}
           type="color"
           value={control.value}
+          aria-describedby={descriptionId}
           onChange={(event) => onChange(event.target.value)}
         />
       ) : control.type === "toggle" ? (
@@ -118,10 +131,16 @@ function DesignControl({
           id={id}
           type="checkbox"
           checked={control.value}
+          aria-describedby={descriptionId}
           onChange={(event) => onChange(event.target.checked)}
         />
       ) : (
-        <select id={id} value={control.value} onChange={(event) => onChange(event.target.value)}>
+        <select
+          id={id}
+          value={control.value}
+          aria-describedby={descriptionId}
+          onChange={(event) => onChange(event.target.value)}
+        >
           {control.options.map((option) => (
             <option key={option.value} value={option.value}>
               {option.label}

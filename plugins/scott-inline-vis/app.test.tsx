@@ -110,6 +110,12 @@ async function inlineVisDirective() {
   return directive!;
 }
 
+async function shareSavedState(slot: ReturnType<typeof renderSlot>) {
+  const button = await slot.findByRole("button", { name: "Use saved state" });
+  await waitFor(() => expect(button.hasAttribute("disabled")).toBe(false));
+  fireEvent.click(button);
+}
+
 type SdkFakes = NonNullable<
   NonNullable<Parameters<typeof import("@get-bb/plugin-sdk/testing/app").renderSlot>[2]>["sdk"]
 >;
@@ -570,6 +576,69 @@ test("inline-vis reports read failures without mounting an iframe", async () => 
   slot.unmount();
 });
 
+test("a failed preview can retry loading without collapsing the card", async () => {
+  let available = false;
+  const slot = renderSlot(
+    await inlineVisDirective(),
+    {
+      attributes: { file: "/tmp/retry.html" },
+      source: '::inline-vis{file="/tmp/retry.html"}',
+      message: inlineVisMessage,
+      openWorkspaceFile: null,
+    },
+    {
+      sdk: previewSdk(() => {
+        if (!available) throw new Error("Host disconnected");
+        return "<p>Host reconnected</p>";
+      }),
+    },
+  );
+  expect((await slot.findByRole("alert")).textContent).toContain("Host disconnected");
+  available = true;
+  fireEvent.click(slot.getByRole("button", { name: "Retry preview" }));
+  await waitFor(() =>
+    expect(frameDocument(slot.container.querySelector("iframe"))).toContain("Host reconnected"),
+  );
+  expect(slot.queryByRole("alert")).toBeNull();
+  expect(slot.getByRole("button", { name: "Wide view" }).getAttribute("title")).toBe("Wide view");
+  slot.unmount();
+});
+
+test("inline sharing is disabled while state is saving", async () => {
+  let release!: () => void;
+  let writes = 0;
+  const { slot, send } = await renderFragment("<p>Selection</p>", {
+    rpc: {
+      saveState: async (input: unknown) => {
+        if (++writes === 1)
+          await new Promise<void>((resolve) => {
+            release = resolve;
+          });
+        return stateRpc.saveState(input);
+      },
+    },
+  });
+  send({ type: "bb:inline-vis:state", state: '{"selected":2}' });
+  await waitFor(() => expect(release).toBeTypeOf("function"));
+  const share = slot.getByRole("button", { name: "Use saved state" });
+  expect(share.hasAttribute("disabled")).toBe(true);
+  await act(async () => {
+    release();
+  });
+  await waitFor(() => expect(share.hasAttribute("disabled")).toBe(false));
+  fireEvent.click(share);
+  await waitFor(() =>
+    expect(slot.inspection.composer.mentions).toEqual([
+      {
+        provider: "widget-state",
+        id: '["thread-inline-vis","message-inline-vis","/tmp/viz/chart.html"]',
+        label: "State: chart.html",
+      },
+    ]),
+  );
+  slot.unmount();
+});
+
 test("inline-vis opens only the final two occurrences and unloads manually collapsed frames", async () => {
   const directive = await inlineVisDirective();
   const Component = directive.component;
@@ -1001,7 +1070,7 @@ test("saved state reaches a fresh native mention without exposing it in the draf
     state: '{"tab":"latency","internal":8}',
     modelContent: '{"selectedTab":"latency"}',
   });
-  fireEvent.click(await slot.findByRole("button", { name: "Use saved state" }));
+  await shareSavedState(slot);
   await waitFor(() =>
     expect(slot.inspection.composer.mentions).toEqual([
       {
@@ -1027,7 +1096,7 @@ test("a failed save stays visible and does not attach stale model context", asyn
     },
   });
   send({ type: "bb:inline-vis:state", state: '{"selected":2}' });
-  fireEvent.click(await slot.findByRole("button", { name: "Use saved state" }));
+  await shareSavedState(slot);
   await waitFor(() => expect(slot.getByRole("alert").textContent).toContain("Storage unavailable"));
   expect(slot.inspection.composer.text).toBe("My draft");
   expect(slot.inspection.composer.mentions).toEqual([]);
@@ -1053,6 +1122,7 @@ test("Tweak controls route edits to their frame and keep hidden designs out of t
           max: 40,
           step: 1,
           unit: "px",
+          reference: "Match the card corners",
         },
       ],
     },
@@ -1061,6 +1131,10 @@ test("Tweak controls route edits to their frame and keep hidden designs out of t
   send({ type: "bb:inline-vis:tweak", groups, original: false, changed: false });
   fireEvent.click(slot.getByRole("button", { name: "Tweak" }));
   const slider = slot.getByRole("slider", { name: "Corner radius" });
+  expect(slider.getAttribute("aria-valuetext")).toBe("18px");
+  expect(document.getElementById(slider.getAttribute("aria-describedby")!)?.textContent).toBe(
+    "Match the card corners",
+  );
   const post = vi.spyOn(iframe.contentWindow!, "postMessage");
   fireEvent.change(slider, { target: { value: "8" } });
   expect(post).toHaveBeenLastCalledWith(
@@ -1102,6 +1176,7 @@ test("Tweak controls route edits to their frame and keep hidden designs out of t
       value: 8,
       initialValue: 18,
       unit: "px",
+      reference: "Match the card corners",
     },
   ]);
   expect(slot.inspection.composer.mentions[0]?.provider).toBe("widget-state");
@@ -1148,14 +1223,14 @@ test("an edit removes previously shared context until current state is added aga
     },
   });
   send({ type: "bb:inline-vis:state", state: '{"radius":18}' });
-  fireEvent.click(await slot.findByRole("button", { name: "Use saved state" }));
+  await shareSavedState(slot);
   await waitFor(() => expect(slot.inspection.composer.mentions).toHaveLength(1));
   fail = true;
   send({ type: "bb:inline-vis:state", state: '{"radius":7}' });
   expect(slot.inspection.composer.mentions).toEqual([]);
   await waitFor(() => expect(slot.getByRole("alert").textContent).toContain("Storage unavailable"));
   fail = false;
-  fireEvent.click(slot.getByRole("button", { name: "Use saved state" }));
+  await shareSavedState(slot);
   await waitFor(() => expect(slot.inspection.composer.mentions).toHaveLength(1));
   expect([...snapshots.values()][0]?.state).toBe('{"radius":7}');
   slot.unmount();
@@ -1237,7 +1312,7 @@ test("unchanged frame publications preserve an attached context chip", async () 
   ];
   send(state);
   send({ type: "bb:inline-vis:tweak", groups, original: false, changed: false });
-  fireEvent.click(await slot.findByRole("button", { name: "Use saved state" }));
+  await shareSavedState(slot);
   await waitFor(() => expect(slot.inspection.composer.mentions).toHaveLength(1));
   const count = save.mock.calls.length;
   send(state);
@@ -1288,7 +1363,7 @@ test("late and partial control registration preserves saved edits and attached c
     changed: true,
   });
   await first.slot.findByRole("button", { name: "Use saved state" });
-  fireEvent.click(first.slot.getByRole("button", { name: "Use saved state" }));
+  await shareSavedState(first.slot);
   await waitFor(() => expect(first.slot.inspection.composer.mentions).toHaveLength(1));
   fireEvent.click(
     first.slot.getByRole("button", { name: "Collapse visualization /tmp/viz/chart.html" }),
@@ -1462,7 +1537,7 @@ test("a successful tweak save does not hide an unsaved widget-state failure", as
   expect(slot.getByRole("alert").textContent).toContain("State write failed");
   expect([...snapshots.values()][0]?.state).toBe("null");
   failState = false;
-  fireEvent.click(slot.getByRole("button", { name: "Use saved state" }));
+  await shareSavedState(slot);
   await waitFor(() => expect(slot.inspection.composer.mentions).toHaveLength(1));
   expect(slot.queryByRole("alert")).toBeNull();
   expect([...snapshots.values()][0]?.state).toBe('{"selected":"studio"}');
@@ -1500,7 +1575,7 @@ test("unsaved widget state keeps its retry action after the last Tweak adjustmen
   await act(async () => {});
   expect(slot.getByRole("alert").textContent).toContain("State write failed");
   failState = false;
-  fireEvent.click(slot.getByRole("button", { name: "Use saved state" }));
+  await shareSavedState(slot);
   await waitFor(() => expect(slot.inspection.composer.mentions).toHaveLength(1));
   expect([...snapshots.values()][0]?.state).toBe('{"selected":"studio"}');
   expect(slot.queryByRole("alert")).toBeNull();
@@ -1620,7 +1695,7 @@ test("oversized tweaks leave state saves and follow-up prompts usable", async ()
   // Resetting adjustments removes the budget error and makes current context shareable.
   send({ type: "bb:inline-vis:tweak", groups: [], original: false, changed: true, reset: null });
   await waitFor(() => expect(slot.queryByRole("alert")).toBeNull());
-  fireEvent.click(slot.getByRole("button", { name: "Use saved state" }));
+  await shareSavedState(slot);
   await waitFor(() => expect(slot.inspection.composer.mentions).toHaveLength(1));
   expect([...snapshots.values()][0]?.tweaks).toBe("[]");
   slot.unmount();
@@ -1719,15 +1794,13 @@ test("a successful field save clears an earlier context-only error", async () =>
       },
     },
   });
-  fireEvent.click(await slot.findByRole("button", { name: "Use saved state" }));
+  await shareSavedState(slot);
   await waitFor(() =>
     expect(slot.getByRole("alert").textContent).toContain("Transient context failure"),
   );
   failContext = false;
-  await act(async () => {
-    send({ type: "bb:inline-vis:state", state: '{"selected":2}' });
-    fireEvent.click(slot.getByRole("button", { name: "Use saved state" }));
-  });
+  send({ type: "bb:inline-vis:state", state: '{"selected":2}' });
+  await shareSavedState(slot);
   await waitFor(() => expect(slot.inspection.composer.mentions).toHaveLength(1));
   expect([...snapshots.values()][0]?.state).toBe('{"selected":2}');
   expect(slot.queryByRole("alert")).toBeNull();

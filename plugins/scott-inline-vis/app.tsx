@@ -646,6 +646,9 @@ function ExpandedPreview({
         <PreviewHeader file={file} expanded onToggle={onToggle} onOpen={null} />
         <Alert source={source} error>
           Failed to load {file}: {state.message}
+          <button type="button" onClick={() => setRestoreRevision((value) => value + 1)}>
+            Retry preview
+          </button>
         </Alert>
       </>
     );
@@ -678,7 +681,7 @@ function ExpandedPreview({
       hasTweaks={hasTweaks}
       canShareState={canShareState}
       tweakOpen={tweakOpen}
-      saving={wide && saving}
+      saving={saving}
       onTweak={() => setTweakOpen(!tweakOpen)}
       onShare={() => void addContext()}
     />
