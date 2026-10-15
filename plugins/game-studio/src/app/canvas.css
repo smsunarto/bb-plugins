@@ -1,0 +1,238 @@
+.gs-canvas-root {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  min-height: 360px;
+  background: var(--background);
+  --xy-background-color: var(--background);
+  --xy-background-pattern-color: var(--border);
+  --xy-edge-stroke: var(--surface-selected-border);
+  --xy-handle-background-color: var(--muted-foreground);
+  --xy-controls-button-background-color: var(--popover);
+  --xy-controls-button-background-color-hover: var(--state-hover);
+  --xy-controls-button-color: var(--foreground);
+  --xy-controls-button-border-color: var(--border);
+}
+.gs-canvas-stage {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+}
+.gs-canvas-root[data-inspecting] .gs-canvas-stage {
+  width: calc(100% - 284px);
+}
+.gs-canvas-card {
+  width: 280px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-raised-solid, var(--background));
+  color: var(--foreground);
+  overflow: hidden;
+  box-shadow: var(--shadow-sm);
+}
+.gs-canvas-card[data-selected] {
+  border-color: color-mix(in srgb, var(--primary) 55%, var(--border));
+  box-shadow: 0 0 0 1px var(--primary);
+}
+.gs-canvas-card > header {
+  height: 32px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 0 10px;
+  font-size: 12px;
+  color: var(--muted-foreground);
+}
+.gs-canvas-card > header > svg {
+  width: 14px;
+  height: 14px;
+}
+.gs-canvas-card strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 500;
+}
+.gs-node-badge {
+  font-size: 10px;
+  margin-left: auto;
+  white-space: nowrap;
+}
+.gs-node-content {
+  margin: 0 8px 8px;
+  padding: 10px;
+  min-height: 100px;
+  max-height: 250px;
+  overflow: hidden;
+  background: var(--surface-recessed-solid, var(--surface-recessed));
+  border-radius: 6px;
+  font-size: 12px;
+}
+.gs-node-content img,
+.gs-node-content video {
+  width: 100%;
+  height: 160px;
+  object-fit: contain;
+}
+.gs-node-content[data-empty-image] {
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 8px;
+  height: 150px;
+  color: var(--muted-foreground);
+}
+.gs-node-content > svg {
+  width: 32px;
+  height: 32px;
+  color: var(--muted-foreground);
+}
+.gs-node-content p {
+  margin: 8px 0;
+  white-space: pre-wrap;
+}
+.gs-node-content h1,
+.gs-node-content h2,
+.gs-node-content h3 {
+  font-size: 14px;
+}
+.gs-canvas-dock {
+  position: absolute;
+  bottom: max(20px, env(safe-area-inset-bottom));
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 2px;
+  padding: 5px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--popover);
+  box-shadow: var(--shadow-md);
+  z-index: 5;
+  max-width: calc(100% - 24px);
+  overflow-x: auto;
+}
+.gs-canvas-dock button {
+  display: flex !important;
+  flex-direction: column;
+  gap: 3px !important;
+  font-size: 10px !important;
+  min-width: 44px;
+  min-height: 44px;
+  padding: 6px !important;
+  border: 0 !important;
+  background: transparent !important;
+}
+.gs-canvas-dock button:hover {
+  background: var(--state-hover) !important;
+}
+.gs-canvas-dock svg {
+  width: 17px;
+  height: 17px;
+}
+.gs-canvas-root .react-flow__controls {
+  bottom: calc(68px + env(safe-area-inset-bottom));
+}
+.gs-canvas-save {
+  position: absolute;
+  right: 12px;
+  top: 12px;
+  z-index: 6;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 3px 3px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--muted-foreground);
+  background: var(--popover);
+  font-size: 11px;
+}
+.gs-canvas-empty {
+  position: absolute;
+  inset: 30% 20% auto;
+  text-align: center;
+  pointer-events: none;
+}
+.gs-canvas-empty h2 {
+  font-size: 18px;
+  font-weight: 500;
+}
+.gs-canvas-empty p {
+  color: var(--muted-foreground);
+  font-size: 12px;
+}
+.gs-canvas-empty button {
+  pointer-events: auto;
+}
+.gs-node-inspector {
+  position: absolute;
+  right: 12px;
+  top: 55px;
+  bottom: 85px;
+  z-index: 7;
+  width: 260px;
+  padding: 12px;
+  background: var(--popover);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: var(--shadow-md);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  overflow: auto;
+}
+.gs-node-inspector > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.gs-node-inspector textarea {
+  min-height: 130px;
+  resize: vertical;
+}
+.gs-node-inspector .gs-danger {
+  margin-top: auto;
+  color: var(--destructive-text);
+}
+.gs-canvas-notice {
+  position: absolute;
+  z-index: 9;
+  left: 12px;
+  top: 54px;
+  max-width: 500px;
+  background: var(--popover);
+  border: 1px solid var(--border);
+  padding: 10px;
+  border-radius: 6px;
+  font-size: 12px;
+}
+.gs-canvas-notice button {
+  margin-left: 8px;
+}
+@media (max-width: 720px) {
+  .gs-canvas-dock {
+    max-width: calc(100% - 24px);
+    overflow: auto;
+    left: 12px;
+    transform: none;
+  }
+  .gs-canvas-dock span {
+    display: none;
+  }
+  .gs-canvas-dock button {
+    min-width: 36px;
+  }
+  .gs-node-inspector {
+    top: 55%;
+    bottom: max(12px, env(safe-area-inset-bottom));
+    left: 12px;
+    width: auto;
+  }
+  .gs-canvas-root[data-inspecting] .gs-canvas-stage {
+    width: 100%;
+    height: 55%;
+  }
+}

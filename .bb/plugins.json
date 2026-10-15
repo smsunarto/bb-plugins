@@ -32,6 +32,10 @@
       "source": "./plugins/dotfiles"
     },
     {
+      "name": "game-studio",
+      "source": "./plugins/game-studio"
+    },
+    {
       "name": "gh-stack",
       "source": "./plugins/gh-stack"
     },

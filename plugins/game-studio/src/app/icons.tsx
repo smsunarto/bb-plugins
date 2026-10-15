@@ -1,0 +1,56 @@
+import {
+  ArrowLeft,
+  Box,
+  Boxes,
+  Camera,
+  ExternalLink,
+  FileText,
+  Hammer,
+  Image,
+  Joystick,
+  Layers3,
+  Music,
+  Play,
+  Plug,
+  Plus,
+  RefreshCw,
+  Table,
+  Type,
+  Upload,
+  Video,
+  Workflow,
+  X,
+} from "lucide-react";
+import type { ExperimentalIconProps } from "@get-bb/plugin-sdk/app";
+
+// BB's built-in icon vocabulary is smaller than Lucide's. Keep the studio's
+// requested glyphs local rather than silently falling back to the host Zap.
+const icons = {
+  ArrowLeft,
+  Box,
+  Boxes,
+  Camera,
+  ExternalLink,
+  FileText,
+  Hammer,
+  Image,
+  Joystick,
+  Layers: Layers3,
+  Music,
+  Play,
+  Plug,
+  Plus,
+  RefreshCw,
+  Table,
+  Type,
+  Upload,
+  Video,
+  Workflow,
+  X,
+};
+
+export { Joystick };
+export function Icon({ name, fallback, ...props }: ExperimentalIconProps) {
+  const Glyph = icons[name as keyof typeof icons] ?? icons[fallback as keyof typeof icons] ?? Box;
+  return <Glyph {...props} size={16} strokeWidth={1.75} />;
+}

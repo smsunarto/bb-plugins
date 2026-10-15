@@ -1,0 +1,51 @@
+{
+  "name": "@smsunarto/bb-plugin-game-studio",
+  "version": "0.1.0",
+  "description": "A native BB game studio adapted from OhMyGame, with a design canvas, assets, agent threads, and playable previews.",
+  "license": "Apache-2.0",
+  "author": "Scott Sunarto",
+  "type": "module",
+  "private": true,
+  "engines": {
+    "bb": ">=0.46",
+    "bbPluginSdk": ">=0.5.29 <0.7"
+  },
+  "bb": {
+    "name": "Game Studio",
+    "description": "Design and build games with a canvas, your BB agents, and your game development tools.",
+    "branding": {
+      "icon": "./assets/icon.svg"
+    },
+    "server": "./src/server/server.ts",
+    "app": "./src/app/app.tsx",
+    "skills": [
+      "skills"
+    ]
+  },
+  "dependencies": {
+    "@bb-kit/core": "0.2.0",
+    "@tanstack/react-query": "^5.101.4",
+    "@xyflow/react": "12.11.3",
+    "lucide-react": "1.57.0",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@get-bb/plugin-sdk": "0.5.29",
+    "@types/node": "^22.0.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "bun-types": "^1.4.0",
+    "react": "19.2.8",
+    "react-dom": "19.2.8",
+    "tsx": "4.23.12",
+    "typescript": "^6.0.0"
+  },
+  "scripts": {
+    "build": "bb plugin build .",
+    "dev": "\"${BB_CLI:?Run bun run dev from the repository root}\" plugin dev .",
+    "typecheck": "tsc --noEmit",
+    "check": "node --import tsx ../../packages/bb-kit-dev/src/bin.ts check",
+    "test": "node --import tsx --test 'src/**/*.test.ts'",
+    "clean": "rm -rf dist"
+  }
+}
