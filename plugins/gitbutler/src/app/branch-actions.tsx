@@ -53,7 +53,7 @@ export type WorkspaceTarget = {
  */
 export type WriteTarget = WorkspaceTarget & { workspace?: WorkspaceIdentity | null };
 
-const ACTION = "h-6 gap-1 px-2 text-xs font-normal";
+const ACTION = "h-7 gap-1.5 px-2.5 text-xs font-normal";
 const FIELD =
   "w-full min-w-0 rounded-md border border-border bg-background px-2 py-1 text-xs text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring";
 
@@ -378,7 +378,7 @@ function NameButton({
       <button
         type="button"
         data-branch-name={name}
-        className="group -mx-1 flex min-w-0 cursor-pointer items-center gap-1 rounded-sm px-1 text-start enabled:hover:bg-state-hover disabled:cursor-default"
+        className="group -mx-1 flex min-w-0 cursor-pointer items-center gap-1.5 rounded-md px-1 py-0.5 text-start transition-colors duration-150 enabled:hover:bg-state-hover disabled:cursor-default motion-reduce:transition-none"
         title={blocked ?? `${name} (click to rename)`}
         aria-label={`Rename branch ${name}`}
         disabled={blocked !== null}
@@ -511,8 +511,15 @@ function questionKey(mode: Mode): string {
 }
 
 function Pending({ pending, icon }: { pending: boolean; icon?: string }) {
-  if (pending) return <Icon name="Spinner" className="size-3 animate-spin" aria-hidden />;
-  return icon ? <Icon name={icon} className="size-3" aria-hidden /> : null;
+  if (pending)
+    return (
+      <Icon
+        name="Spinner"
+        className="size-3.5 animate-spin motion-reduce:animate-none"
+        aria-hidden
+      />
+    );
+  return icon ? <Icon name={icon} className="size-3.5" aria-hidden /> : null;
 }
 
 function ActionButton({
@@ -601,14 +608,14 @@ export function Confirm({
     // oxlint-disable-next-line jsx-a11y/no-static-element-interactions
     <div
       className={cn(
-        "flex flex-wrap items-center gap-1.5",
-        look && cn("rounded-md border px-2 py-1.5", look.box),
+        "flex flex-wrap items-center gap-2",
+        look && cn("rounded-md border px-2.5 py-2", look.box),
       )}
       onKeyDown={(event) => {
         if (event.key === "Escape" && !pending) onCancel();
       }}
     >
-      <p id={promptId} className="me-auto min-w-0 text-muted-foreground">
+      <p id={promptId} className="me-auto min-w-0 basis-full leading-relaxed text-muted-foreground">
         {look ? (
           <Icon
             name="AlertTriangle"
@@ -938,52 +945,54 @@ function ActionRow({
   const busy = running !== null || requesting || blocked !== null;
   return (
     // A disabled button takes no hover, so the row says why its buttons are off.
-    <div className="flex flex-wrap items-center gap-1.5" title={blocked ?? undefined}>
-      {/* First: on a branch behind its remote, pulling is the safe way forward. */}
-      {available.pull ? (
-        <ActionButton
-          icon="ArrowDown"
-          busy={running === "pull"}
-          disabled={busy}
-          takeFocus={refocus === "pull"}
-          onClick={onPull}
-        >
-          Pull
-        </ActionButton>
-      ) : null}
-      {available.push === "none" ? null : (
-        <ActionButton
-          icon="ArrowUp"
-          busy={running === "push"}
-          disabled={busy}
-          takeFocus={refocus === "push"}
-          onClick={onPush}
-        >
-          {/* Rewritten commits replace the remote branch, so the label says so. */}
-          {available.push === "force" ? "Force push" : "Push"}
-        </ActionButton>
-      )}
-      {available.review ? (
-        <ActionButton icon="GitPullRequest" busy={requesting} disabled={busy} onClick={onReview}>
-          Create PR
-        </ActionButton>
-      ) : null}
-      {available.land ? (
-        <ActionButton
-          icon="GitMerge"
-          busy={running === "land"}
-          disabled={busy}
-          takeFocus={refocus === "land"}
-          onClick={onLand}
-        >
-          Land
-        </ActionButton>
-      ) : null}
+    <div className="flex flex-wrap items-start gap-2" title={blocked ?? undefined}>
+      <div className="flex min-w-0 flex-[1_1_12rem] flex-wrap items-center gap-1">
+        {/* First: on a branch behind its remote, pulling is the safe way forward. */}
+        {available.pull ? (
+          <ActionButton
+            icon="ArrowDown"
+            busy={running === "pull"}
+            disabled={busy}
+            takeFocus={refocus === "pull"}
+            onClick={onPull}
+          >
+            Pull
+          </ActionButton>
+        ) : null}
+        {available.push === "none" ? null : (
+          <ActionButton
+            icon="ArrowUp"
+            busy={running === "push"}
+            disabled={busy}
+            takeFocus={refocus === "push"}
+            onClick={onPush}
+          >
+            {/* Rewritten commits replace the remote branch, so the label says so. */}
+            {available.push === "force" ? "Force push" : "Push"}
+          </ActionButton>
+        )}
+        {available.review ? (
+          <ActionButton icon="GitPullRequest" busy={requesting} disabled={busy} onClick={onReview}>
+            Create PR
+          </ActionButton>
+        ) : null}
+        {available.land ? (
+          <ActionButton
+            icon="GitMerge"
+            busy={running === "land"}
+            disabled={busy}
+            takeFocus={refocus === "land"}
+            onClick={onLand}
+          >
+            Land
+          </ActionButton>
+        ) : null}
+      </div>
       {/* Apart from the rest and quiet, so it is never the button a hand drifts to. */}
       <Button
         variant="ghost"
         size="sm"
-        className={cn(ACTION, "ms-auto text-muted-foreground hover:text-destructive-text")}
+        className={cn(ACTION, "ms-auto shrink-0 text-muted-foreground hover:text-destructive-text")}
         disabled={busy}
         aria-label={`Delete ${branch}`}
         // oxlint-disable-next-line jsx-a11y/no-autofocus
@@ -1125,10 +1134,7 @@ export function BranchActions({
       : confirmationFor(mode, branch, atRisk, force, branchesAbove, behind, native);
 
   return (
-    <div
-      ref={footer}
-      className="flex flex-col gap-1.5 border-t border-border bg-secondary/40 px-2.5 py-2"
-    >
+    <div ref={footer} className="flex flex-col gap-2 border-t border-border bg-muted/20 px-3 py-2">
       {confirmation ? (
         <BranchConfirmation
           mode={mode}

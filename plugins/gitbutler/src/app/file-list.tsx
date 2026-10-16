@@ -130,7 +130,7 @@ export function ListModeToggle() {
     <button
       type="button"
       className={cn(
-        "inline-flex size-5 cursor-pointer items-center justify-center rounded-[4px] text-muted-foreground transition-colors hover:text-foreground",
+        "inline-flex size-6 cursor-pointer items-center justify-center rounded-[4px] text-muted-foreground transition-colors duration-150 hover:text-foreground motion-reduce:transition-none",
         mode === value && "bg-background text-foreground shadow-xs",
       )}
       aria-label={label}
@@ -281,7 +281,7 @@ function FileName({ path, showDirectory }: { path: string; showDirectory: boolea
 // bb's own focus outline, drawn inside the row: the card clips anything
 // outside it, and a fill alone would read the same as the selected row.
 const ROW =
-  "flex h-7.5 w-full min-w-0 cursor-pointer items-center gap-2 ps-3.5 pe-2 text-start -outline-offset-2 hover:bg-state-hover aria-selected:bg-state-active";
+  "flex h-8 w-full min-w-0 cursor-pointer items-center gap-2 ps-3.5 pe-3 text-start -outline-offset-2 transition-colors duration-150 hover:bg-state-hover aria-selected:bg-state-active motion-reduce:transition-none";
 
 /**
  * The rows themselves. A click or Enter on a file calls `onSelect` with it.
@@ -492,13 +492,13 @@ export function ChangedFilesCard({
     <section className="overflow-hidden rounded-lg border border-border bg-card" aria-label={title}>
       <header
         className={cn(
-          "flex h-9 min-w-0 items-center gap-2 pe-2",
+          "flex min-h-10 min-w-0 flex-wrap items-center gap-x-2 gap-y-1.5 px-3 py-2",
           attention && "bg-surface-attention",
         )}
       >
         <button
           type="button"
-          className="flex h-full min-w-0 flex-1 cursor-pointer items-center gap-2 ps-2.5 text-start focus-visible:-outline-offset-2 disabled:cursor-default"
+          className="flex min-h-6 min-w-0 flex-[1_1_11rem] cursor-pointer items-center gap-2 rounded-sm text-start focus-visible:-outline-offset-2 disabled:cursor-default"
           onClick={onToggle}
           aria-expanded={open && !empty}
           disabled={empty}
@@ -516,8 +516,10 @@ export function ChangedFilesCard({
           <Count>{count}</Count>
           {stats}
         </button>
-        {actions}
-        {open && !empty ? <ListModeToggle /> : null}
+        <div className="ms-auto flex flex-wrap items-center justify-end gap-2">
+          {actions}
+          {open && !empty ? <ListModeToggle /> : null}
+        </div>
       </header>
       {open && !empty ? <div className="border-t border-border">{children}</div> : null}
     </section>

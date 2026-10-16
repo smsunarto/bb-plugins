@@ -29,8 +29,8 @@ function OperationRow({ entry }: { entry: OplogEntry }) {
   const title = operationTitle(entry.title);
   const short = shortId(entry.id);
   return (
-    <li className="flex min-w-0 items-center gap-2 px-2.5 py-1.5">
-      <span className="flex min-w-0 flex-1 flex-col">
+    <li className="flex min-w-0 items-start gap-2 px-3 py-2.5">
+      <span className="flex min-w-0 flex-1 flex-col gap-1">
         <span className="truncate font-medium" title={title}>
           {title}
         </span>
@@ -39,21 +39,22 @@ function OperationRow({ entry }: { entry: OplogEntry }) {
             {entry.body}
           </span>
         ) : null}
+        <span className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-muted-foreground">
+          <code className="font-mono tabular-nums" translate="no">
+            {short}
+          </code>
+          <When value={entry.createdAt} className="tabular-nums" />
+        </span>
       </span>
-      <When
-        value={entry.createdAt}
-        className="shrink-0 text-[11px] tabular-nums text-muted-foreground"
-      />
-      <code className="shrink-0 font-mono text-[11px] text-muted-foreground" translate="no">
-        {short}
-      </code>
-      <CopyButton value={entry.id} label={`Copy snapshot id ${short}`} />
-      {!native ? (
-        <AskAgentButton
-          text={restoreRequest(entry, title)}
-          label={`Ask agent to restore snapshot ${short}`}
-        />
-      ) : null}
+      <span className="flex shrink-0 items-center gap-1">
+        <CopyButton value={entry.id} label={`Copy snapshot id ${short}`} />
+        {!native ? (
+          <AskAgentButton
+            text={restoreRequest(entry, title)}
+            label={`Ask agent to restore snapshot ${short}`}
+          />
+        ) : null}
+      </span>
     </li>
   );
 }
@@ -98,7 +99,7 @@ function Operations({ target }: { target: WorkspaceTarget }) {
     );
   }
   return (
-    <ol className="mt-2.5 list-none divide-y divide-border overflow-hidden rounded-lg border border-border bg-card">
+    <ol className="mt-3 list-none divide-y divide-border overflow-hidden rounded-lg border border-border bg-card">
       {data.entries.map((entry) => (
         <OperationRow key={entry.id} entry={entry} />
       ))}

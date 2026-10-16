@@ -2159,7 +2159,7 @@ test("a board drawn from storage takes no writes until it has been read again", 
   const card = within(slot.getByRole("article", { name: "Branch scott/bottom" }));
   const push = card.getByRole("button", { name: "Push" }) as HTMLButtonElement;
   expect(push.disabled).toBe(true);
-  expect(push.parentElement?.title).toBe(checking);
+  expect(push.closest<HTMLElement>("[title]")?.title).toBe(checking);
   const rename = card.getByRole("button", { name: "Rename branch scott/bottom" });
   expect(rename.title).toBe(checking);
   const pull = slot.getByRole("button", HEADER_PULL) as HTMLButtonElement;
@@ -2170,7 +2170,7 @@ test("a board drawn from storage takes no writes until it has been read again", 
 
   release();
   await waitFor(() => expect(push.disabled).toBe(false));
-  expect(push.parentElement?.title).toBe("");
+  expect(push.closest<HTMLElement>("[title]")?.title ?? "").toBe("");
   expect(rename.title).toBe("scott/bottom (click to rename)");
   expect(pull.disabled).toBe(false);
   fireEvent.click(push);

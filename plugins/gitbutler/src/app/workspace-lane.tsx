@@ -58,7 +58,7 @@ export type CommitRef = {
 const CARD = "overflow-hidden rounded-lg border border-border bg-card";
 // Inside a card: a divider and a muted label, as GitButler heads a sub-list.
 const CARD_LABEL =
-  "flex items-center gap-1.5 border-t border-border px-2.5 py-1.5 text-[11px] font-medium text-muted-foreground";
+  "flex items-center gap-1.5 border-t border-border px-3 py-2 text-[11px] font-medium text-muted-foreground";
 
 /*
  * GitButler's commit states, in bb's palette. Text colour, not background, so
@@ -188,8 +188,8 @@ function CommitRow({
         type="button"
         className={cn(
           // The card clips outside the row, so the focus outline is drawn inside it.
-          "relative flex w-full min-w-0 cursor-pointer items-stretch text-start hover:bg-state-hover focus-visible:-outline-offset-2",
-          commit.conflicted && "bg-surface-destructive",
+          "group relative flex w-full min-w-0 cursor-pointer items-stretch text-start hover:bg-state-hover focus-visible:-outline-offset-2 aria-expanded:bg-state-hover",
+          commit.conflicted && "bg-surface-destructive aria-expanded:bg-surface-destructive",
         )}
         onClick={() => expansion.onToggle(key)}
         {...(open ? {} : intent)}
@@ -207,35 +207,46 @@ function CommitRow({
         {/* The rule stops at the rail, so the graph line never breaks. */}
         <span
           className={cn(
-            "flex min-w-0 flex-1 items-center gap-2 py-2 pe-2.5",
+            "flex min-w-0 flex-1 flex-col gap-1 py-2.5 pe-3",
             !last && !open && "border-b border-border",
           )}
         >
-          {commit.conflicted ? (
+          <span className="flex min-w-0 items-center gap-1.5">
+            {commit.conflicted ? (
+              <Icon
+                name="AlertTriangle"
+                className="size-3.5 shrink-0 text-destructive-text"
+                aria-label="Conflicted"
+              />
+            ) : null}
+            <span
+              className={cn(
+                "min-w-0 flex-1 truncate font-medium",
+                commit.conflicted && "text-destructive-text",
+                !title && "font-normal italic text-muted-foreground",
+              )}
+            >
+              {title || "No commit message"}
+            </span>
             <Icon
-              name="AlertTriangle"
-              className="size-3.5 shrink-0 text-destructive-text"
-              aria-label="Conflicted"
+              name="ChevronDown"
+              className="size-3 shrink-0 -rotate-90 text-muted-foreground transition-transform duration-150 group-aria-expanded:rotate-0 motion-reduce:transition-none"
+              aria-hidden
             />
-          ) : null}
-          <span
-            className={cn(
-              "min-w-0 flex-1 truncate font-medium",
-              commit.conflicted && "text-destructive-text",
-              !title && "font-normal italic text-muted-foreground",
-            )}
-          >
-            {title || "No commit message"}
           </span>
-          <span className="flex shrink-0 gap-1.5 text-[11px] tabular-nums text-muted-foreground">
-            {meta}
+          <span className="flex min-w-0 items-center gap-1.5 text-[11px] text-muted-foreground">
+            <span className="shrink-0 font-mono tabular-nums">{shortId(commit.commitId)}</span>
+            <span aria-hidden>·</span>
+            <span className="min-w-0 truncate">{meta ?? commit.authorName}</span>
             {/* Rewrites itself as the panel ticks, so tabular digits stop the row twitching. */}
-            <When value={commit.createdAt} />
+            <span className="ms-auto shrink-0 ps-1 tabular-nums">
+              <When value={commit.createdAt} />
+            </span>
           </span>
         </span>
       </button>
       {open ? (
-        <div className="relative px-2.5 pt-0.5 pb-2.5">
+        <div className="relative px-3 pt-0.5 pb-3">
           {/* The rail runs on behind the card, so the graph reads unbroken. */}
           <span
             className={cn(
@@ -291,7 +302,10 @@ function CommitFiles({
   }
   return (
     <div
-      className={cn("transition-opacity", patches.isPlaceholderData && "opacity-70")}
+      className={cn(
+        "transition-opacity duration-150 motion-reduce:transition-none",
+        patches.isPlaceholderData && "opacity-70",
+      )}
       aria-busy={patches.isPlaceholderData}
     >
       <ChangesCard
@@ -385,7 +399,7 @@ export function UncommittedCard({
           <Button
             variant="outline"
             size="sm"
-            className="h-6 gap-1 px-2 text-xs font-normal"
+            className="h-7 gap-1.5 px-2.5 text-xs font-normal"
             onClick={() => ask(commitRequest(changes, native ? prompts?.commit : undefined))}
           >
             <Icon name="MessageSquarePlus" className="size-3" aria-hidden />
@@ -413,33 +427,35 @@ function CardHeader({
   trailing?: ReactNode;
 }) {
   return (
-    <header className="flex min-w-0 flex-col gap-1.5 px-2.5 py-2">
+    <header className="flex min-w-0 flex-col gap-2 px-3 py-2.5">
       {/*
        * The chips once shared one line with the name at any width, and on a
        * narrow panel they squeezed it to a few letters. The name keeps room
        * to be read, and the chips wrap to a line of their own when it runs out.
        */}
       <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1.5">
-        <div className="flex min-w-0 flex-[1_1_10rem] items-center gap-2">
+        <div className="flex min-w-0 flex-[1_1_12rem] items-center gap-2">
           {/* The square's centre sits on the commit rail's axis below it. */}
           <span
             className={cn(
-              "flex size-5 shrink-0 items-center justify-center rounded-md",
+              "flex size-4 shrink-0 items-center justify-center rounded",
               TONE[tone],
               "bg-current",
             )}
             aria-hidden
           >
-            <Icon name={icon} className="size-3.5 text-background" />
+            <Icon name={icon} className="size-3 text-background" />
           </span>
           {heading}
         </div>
         {trailing ? (
-          <div className="ms-auto flex flex-wrap items-center justify-end gap-1.5">{trailing}</div>
+          <div className="ms-auto flex min-w-0 max-w-full flex-wrap items-center justify-end gap-1.5">
+            {trailing}
+          </div>
         ) : null}
       </div>
       {details ? (
-        <p className="flex min-w-0 items-center gap-1.5 overflow-hidden whitespace-nowrap text-[11px] text-muted-foreground">
+        <p className="flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-0.5 text-[11px] text-muted-foreground">
           {details}
         </p>
       ) : null}
@@ -448,7 +464,7 @@ function CardHeader({
 }
 
 const CHIP =
-  "inline-flex h-4.5 shrink-0 items-center gap-1 rounded-full bg-secondary px-1.5 text-[11px] font-semibold whitespace-nowrap text-secondary-foreground";
+  "inline-flex h-5 shrink-0 items-center gap-1 rounded-full bg-secondary px-1.5 text-[11px] font-medium whitespace-nowrap text-secondary-foreground";
 
 /** A small pill beside the branch name, so status costs no row of its own. */
 export function Chip({
@@ -566,7 +582,7 @@ function ReviewChip({
     <>
       <Icon
         name={opening ? "Spinner" : (look?.icon ?? "GitPullRequest")}
-        className={cn("size-3", look?.tone, opening && "animate-spin")}
+        className={cn("size-3", look?.tone, opening && "animate-spin motion-reduce:animate-none")}
         aria-hidden
       />
       {look ? `${look.label} ${id}` : `PR ${id}`}
@@ -728,7 +744,7 @@ function BranchCard({
         </>
       ) : null}
       {branch.commits.length === 0 && upstream.length === 0 ? (
-        <p className="border-t border-border px-2.5 py-2 italic text-muted-foreground">
+        <p className="border-t border-border px-3 py-3 text-xs text-muted-foreground">
           No commits yet. Commit on this branch and they appear here.
         </p>
       ) : null}
@@ -942,7 +958,7 @@ export function BaseCard({
       {history.isPending ? (
         <CommitRowsSkeleton label="Loading history…" rows={4} />
       ) : history.isError || history.data.reason ? (
-        <div className="px-2.5">
+        <div className="px-3">
           <Notice
             title={history.isError ? "History failed to load" : "History unavailable"}
             detail={history.isError ? errorText(history.error) : history.data.reason}
@@ -981,16 +997,22 @@ function LoadMore({
   onLoad: () => void;
 }) {
   return (
-    <footer className="border-t border-border bg-secondary/40 px-2.5 py-2">
+    <footer className="border-t border-border bg-secondary/20 px-3 py-2.5">
       <Button
         variant="outline"
         size="sm"
-        className="h-6 gap-1 px-2.5 text-xs font-normal"
+        className="h-7 gap-1.5 px-2.5 text-xs font-normal"
         disabled={disabled}
         aria-busy={loading}
         onClick={onLoad}
       >
-        {loading ? <Icon name="Spinner" className="size-3 animate-spin" aria-hidden /> : null}
+        {loading ? (
+          <Icon
+            name="Spinner"
+            className="size-3 animate-spin motion-reduce:animate-none"
+            aria-hidden
+          />
+        ) : null}
         {/* Names what is hidden without claiming a count the CLI has not sent. */}
         Load more commits
       </Button>

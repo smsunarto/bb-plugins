@@ -238,14 +238,21 @@ export function OtherMachines({
   });
   const data =
     query.data?.reason === null && query.data.environmentId === environmentId ? query.data : null;
-  if (!data) return null;
-  return data.checkouts.map((checkout) => (
-    <MachineCard
-      key={`${checkout.hostId}:${checkout.path}`}
-      checkout={checkout}
-      target={target}
-      environmentId={environmentId}
-      onOpen={onOpen}
-    />
-  ));
+  if (!data || data.checkouts.length === 0) return null;
+  return (
+    <section className="space-y-2" aria-label="Other checkouts">
+      <h2 className="m-0 px-0.5 text-[11px] font-medium text-muted-foreground">Other checkouts</h2>
+      <div className="flex flex-col gap-3">
+        {data.checkouts.map((checkout) => (
+          <MachineCard
+            key={`${checkout.hostId}:${checkout.path}`}
+            checkout={checkout}
+            target={target}
+            environmentId={environmentId}
+            onOpen={onOpen}
+          />
+        ))}
+      </div>
+    </section>
+  );
 }

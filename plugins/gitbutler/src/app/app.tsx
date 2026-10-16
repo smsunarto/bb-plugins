@@ -105,7 +105,7 @@ const SHELL = "flex h-full min-w-0 flex-col overflow-hidden bg-background text-f
 const GUTTER = "[scrollbar-gutter:stable_both-edges]";
 // Hidden overflow is what lets a header that never scrolls reserve the same
 // gutters, so its text starts where the rows below it do.
-const HEADER = `flex shrink-0 items-center gap-2 overflow-hidden border-b border-border bg-card px-2.5 py-1.5 ${GUTTER}`;
+const HEADER = `flex shrink-0 items-center gap-2 overflow-hidden border-b border-border bg-card px-3 py-2.5 ${GUTTER}`;
 /** What the detail screen is showing, and the file it opened on. */
 type Selection =
   | { kind: "commit"; commit: CommitRef; path: string }
@@ -206,7 +206,7 @@ function ScrollArea({ children }: { children: ReactNode }) {
         ref={ref}
         data-scroll-area
         className={cn(
-          "min-h-0 flex-1 overflow-auto px-2.5 pb-6 pt-[calc(--spacing(2.5)+var(--gutter,0px))]",
+          "min-h-0 flex-1 overflow-auto px-3 pb-8 pt-[calc(--spacing(3)+var(--gutter,0px))]",
           GUTTER,
         )}
       >
@@ -370,7 +370,7 @@ function RepositoryPicker({
 }) {
   return (
     <select
-      className="min-w-0 flex-1 cursor-pointer truncate rounded-md border border-border bg-background px-1 py-0.5 text-xs text-foreground"
+      className="h-7 min-w-0 flex-1 cursor-pointer truncate rounded-md border border-border bg-background px-2 text-xs text-foreground"
       value={value ?? repositories[0]?.key ?? ""}
       onChange={(event) => onChange(event.target.value)}
       aria-label="Repository"
@@ -601,7 +601,7 @@ function DetailScreen({
         <Button
           variant="ghost"
           size="sm"
-          className="h-6 gap-1 px-1.5 text-xs font-normal text-muted-foreground"
+          className="h-7 gap-1.5 px-2 text-xs font-normal text-muted-foreground"
           aria-label="Back to workspace"
           aria-keyshortcuts="Escape"
           // The workspace under this screen goes inert and drops the focus,
@@ -691,15 +691,22 @@ function WorkspaceBody({
           onOpenFile={onOpenFile}
           attention={turnLeftWork}
         />
-        {data.stacks.map((stack, index) => (
-          <StackLane
-            key={keys[index]}
-            target={target}
-            stack={stack}
-            behind={data.upstream?.behind ?? 0}
-            onOpenFile={(path) => onOpenAssigned(stack, path)}
-          />
-        ))}
+        {data.stacks.length > 0 ? (
+          <section className="space-y-2" aria-label="Branches">
+            <h2 className="m-0 px-0.5 text-[11px] font-medium text-muted-foreground">Branches</h2>
+            <div className="flex flex-col gap-3">
+              {data.stacks.map((stack, index) => (
+                <StackLane
+                  key={keys[index]}
+                  target={target}
+                  stack={stack}
+                  behind={data.upstream?.behind ?? 0}
+                  onOpenFile={(path) => onOpenAssigned(stack, path)}
+                />
+              ))}
+            </div>
+          </section>
+        ) : null}
         {data.stacks.length === 0 ? (
           <Notice
             icon="GitBranch"
@@ -812,7 +819,7 @@ const PullButton = forwardRef<
         ref={ref}
         variant="outline"
         size="sm"
-        className={cn("h-6 gap-1 px-2 text-xs font-normal", !shown && "invisible")}
+        className={cn("h-7 gap-1.5 px-2.5 text-xs font-normal", !shown && "invisible")}
         aria-label="Pull the target branch into the workspace"
         aria-hidden={shown ? undefined : true}
         tabIndex={shown ? undefined : -1}
@@ -821,7 +828,7 @@ const PullButton = forwardRef<
       >
         <Icon
           name={pull.pending ? "Spinner" : "ArrowDown"}
-          className={cn("size-3", pull.pending && "animate-spin")}
+          className={cn("size-3.5", pull.pending && "animate-spin motion-reduce:animate-none")}
           aria-hidden
         />
         Pull
@@ -1092,53 +1099,64 @@ function WorkspaceHeader({
   const ready = data?.state === "ready";
   const upstream = data?.upstream ?? null;
   return (
-    <header className={HEADER}>
-      {!isolated && choices && choices.length > 1 ? (
-        <RepositoryPicker repositories={choices} value={repositoryKey} onChange={onChoose} />
-      ) : (
-        <span className="min-w-0 flex-1 truncate font-semibold" title={data?.repoName || undefined}>
-          {data?.repoName || "GitButler"}
-        </span>
-      )}
-      {upstream && upstream.behind > 0 ? (
-        <Pill tone="text-warning-text" title={behindTitle(upstream)}>
-          {`${upstream.behind} behind`}
-        </Pill>
-      ) : null}
-      <PullButton ref={pullButton} pull={pull} shown={ready} blocked={pullBlocked} />
-      {/* Kept in place unseen like Pull, for the same reason. */}
-      <Button
-        variant="ghost"
-        size="icon"
-        className={cn("size-6 text-muted-foreground", !ready && "invisible")}
-        aria-label="Operation history"
-        aria-hidden={ready ? undefined : true}
-        tabIndex={ready ? undefined : -1}
-        disabled={!ready}
-        onClick={onHistory}
-      >
-        <Icon name="Clock" className="size-3.5" aria-hidden />
-      </Button>
-      <Button
-        variant="ghost"
-        size="icon"
-        className="size-6 text-muted-foreground"
-        onClick={onRefresh}
-        aria-label="Refresh"
-        aria-busy={syncing}
-        data-board-refresh
-      >
-        {/*
-         * The spinner tracks the click and the first check, not
-         * `isFetching`: the panel polls every ten seconds, so tying it to
-         * the query made the icon blink six times a minute on its own.
-         */}
-        <Icon
-          name={syncing ? "Spinner" : "RotateCcw"}
-          className={cn("size-3.5", syncing && "animate-spin")}
-          aria-hidden
-        />
-      </Button>
+    <header className={cn(HEADER, "flex-wrap gap-y-2")}>
+      <div className="flex min-w-0 flex-[1_1_8rem] items-center gap-2">
+        <GitButlerMark className="size-4 shrink-0 text-muted-foreground" />
+        {!isolated && choices && choices.length > 1 ? (
+          <RepositoryPicker repositories={choices} value={repositoryKey} onChange={onChoose} />
+        ) : (
+          <span
+            className="min-w-0 flex-1 truncate text-sm font-semibold"
+            title={data?.repoName || undefined}
+          >
+            {data?.repoName || "GitButler"}
+          </span>
+        )}
+        {upstream && upstream.behind > 0 ? (
+          <Pill tone="text-warning-text" title={behindTitle(upstream)}>
+            {`${upstream.behind} behind`}
+          </Pill>
+        ) : null}
+      </div>
+      <div className="ms-auto flex shrink-0 items-center gap-1">
+        <PullButton ref={pullButton} pull={pull} shown={ready} blocked={pullBlocked} />
+        {/* Kept in place unseen like Pull, for the same reason. */}
+        <Button
+          variant="ghost"
+          size="icon"
+          className={cn(
+            "size-7 text-muted-foreground hover:text-foreground",
+            !ready && "invisible",
+          )}
+          aria-label="Operation history"
+          aria-hidden={ready ? undefined : true}
+          tabIndex={ready ? undefined : -1}
+          disabled={!ready}
+          onClick={onHistory}
+        >
+          <Icon name="Clock" className="size-3.5" aria-hidden />
+        </Button>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="size-7 text-muted-foreground hover:text-foreground"
+          onClick={onRefresh}
+          aria-label="Refresh"
+          aria-busy={syncing}
+          data-board-refresh
+        >
+          {/*
+           * The spinner tracks the click and the first check, not
+           * `isFetching`: the panel polls every ten seconds, so tying it to
+           * the query made the icon blink six times a minute on its own.
+           */}
+          <Icon
+            name={syncing ? "Spinner" : "RotateCcw"}
+            className={cn("size-3.5", syncing && "animate-spin motion-reduce:animate-none")}
+            aria-hidden
+          />
+        </Button>
+      </div>
     </header>
   );
 }
