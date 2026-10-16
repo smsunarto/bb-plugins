@@ -3,7 +3,9 @@ import { spawnSync } from "node:child_process";
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 import { afterAll, afterEach, beforeEach, describe, it, jest } from "bun:test";
-import type { PluginSidebarThread } from "@get-bb/plugin-sdk/app";
+import type { PluginBrowserBbSdk, PluginSidebarThread } from "@get-bb/plugin-sdk/app";
+
+type Reviews = Awaited<ReturnType<PluginBrowserBbSdk["threads"]["list"]>>;
 
 if (process.env.GTD_LIFECYCLE_TEST_CHILD !== "1") {
   it("useLifecycle passes the isolated React suite", () => {
@@ -44,6 +46,9 @@ if (process.env.GTD_LIFECYCLE_TEST_CHILD !== "1") {
   const { createElement, Fragment } = await import("react");
   const { Toaster } = await import("sonner");
   const { useLifecycle } = await import("../hooks/use-lifecycle.ts");
+  const { useReviewActivity } = await import("../hooks/use-review-activity.ts");
+  const { buildInboxTree } = await import("../lib/inbox-tree.ts");
+  const { makeThreadResponse } = await import("@get-bb/plugin-sdk/testing");
   const { snoozeUntilTomorrow } = await import("../lib/lifecycle.ts");
 
   interface LifecycleRow {
@@ -164,6 +169,196 @@ if (process.env.GTD_LIFECYCLE_TEST_CHILD !== "1") {
 
   afterAll(() => {
     dom.window.close();
+  });
+
+  describe("review activity", () => {
+    const review = (
+      id = "review",
+      status = "active" as "active" | "idle" | "error",
+    ): Reviews[number] => ({
+      ...makeThreadResponse({
+        id,
+        parentThreadId: "parent",
+        originPluginId: "review",
+        visibility: "hidden",
+        status,
+      }),
+      activity: {
+        activeBackgroundAgentCount: 0,
+        activeBackgroundCommandCount: 0,
+        activeGoalCount: 0,
+        activePlanModeCount: 0,
+        activeWorkflowCount: 0,
+      },
+      environmentBranchName: null,
+      environmentHostId: null,
+      environmentIsWorktree: null,
+      environmentName: null,
+      environmentPath: null,
+      environmentProviderId: null,
+      environmentWorkspaceDisplayKind: "other",
+      hasPendingInteraction: false,
+      pinSortKey: null,
+      queuedWork: "none",
+    });
+
+    function ReviewProbe({ subjects }: { subjects: PluginSidebarThread[] }) {
+      const threads = useReviewActivity(subjects);
+      const lifecycle = useLifecycle();
+      const tree = buildInboxTree(threads, (thread) => lifecycle.shelfFor(thread));
+      return createElement(
+        "output",
+        null,
+        tree
+          .map((node) => `${node.thread.id}:${node.shelf}:${lifecycle.canPark(node.thread)}`)
+          .join(","),
+      );
+    }
+
+    async function mountReviews(
+      list: PluginBrowserBbSdk["threads"]["list"],
+      subjects = [thread("parent"), thread("other")],
+      snoozed = false,
+    ) {
+      let notify = (_change: string) => {};
+      const slot = renderSlot(
+        { component: ReviewProbe },
+        { subjects },
+        {
+          sdk: {
+            threads: { list },
+            subscribe: ({ callback }) => {
+              notify = (change) => callback({ id: "review", changes: [change] } as never);
+              return () => {
+                notify = () => {};
+              };
+            },
+          },
+          rpc: {
+            listLifecycle: () => ({
+              rows: snoozed
+                ? [
+                    {
+                      threadId: "parent",
+                      snoozedAt: Date.now(),
+                      snoozedUntil: Date.now() + 60_000,
+                    },
+                  ]
+                : [],
+            }),
+          } as never,
+        },
+      );
+      await act(async () => {});
+      return {
+        slot,
+        change: async (kind = "status-changed") => {
+          await act(async () => notify(kind));
+        },
+      };
+    }
+
+    it("keeps an idle parent waiting until every hidden review finishes", async () => {
+      let reviews = [review(), review("second")];
+      const { slot, change } = await mountReviews(async () => reviews);
+      assert.equal(slot.container.textContent, "other:nextAction:true,parent:waiting:false");
+      reviews = [review("review", "idle"), review("second")];
+      await change();
+      assert.equal(slot.container.textContent, "other:nextAction:true,parent:waiting:false");
+      reviews = [review("review", "idle"), review("second", "error")];
+      await change();
+      assert.equal(slot.container.textContent, "other:nextAction:true,parent:nextAction:true");
+    });
+
+    it("keeps questions actionable and pinned threads pinned during a review", async () => {
+      const { slot } = await mountReviews(
+        async () => [review(), { ...review("pinned-review"), parentThreadId: "pinned" }],
+        [
+          { ...thread("parent"), hasPendingInteraction: true },
+          { ...thread("pinned"), isPinned: true },
+        ],
+      );
+      assert.equal(slot.container.textContent, "pinned:pinned:false,parent:nextAction:false");
+    });
+
+    it("wakes a snoozed parent when a hidden review starts", async () => {
+      let reviews: Reviews = [];
+      const { slot, change } = await mountReviews(async () => reviews, [thread("parent")], true);
+      assert.equal(slot.container.textContent, "parent:snoozed:true");
+      reviews = [review()];
+      await change("thread-created");
+      assert.equal(slot.container.textContent, "parent:waiting:false");
+    });
+
+    it("moves review activity with its parent and clears it when removed", async () => {
+      let reviews = [review()];
+      const { slot, change } = await mountReviews(async () => reviews);
+      assert.equal(slot.container.textContent, "other:nextAction:true,parent:waiting:false");
+      reviews = [{ ...review(), parentThreadId: "other" }];
+      await change("parent-changed");
+      assert.equal(slot.container.textContent, "parent:nextAction:true,other:waiting:false");
+      reviews = [];
+      await change("thread-deleted");
+      assert.equal(slot.container.textContent, "other:nextAction:true,parent:nextAction:true");
+    });
+
+    it("ignores an older response that arrives after completion", async () => {
+      let resolve!: (reviews: Reviews) => void;
+      let response = new Promise<Reviews>((done) => {
+        resolve = done;
+      });
+      const { slot, change } = await mountReviews(() => response);
+      response = Promise.resolve([review("review", "idle")]);
+      await change();
+      await act(async () => resolve([review()]));
+      assert.equal(slot.container.textContent, "other:nextAction:true,parent:nextAction:true");
+      response = Promise.resolve([review()]);
+      await change();
+      assert.equal(slot.container.textContent, "other:nextAction:true,parent:waiting:false");
+    });
+
+    it("preserves Waiting across a read failure and retries completion", async () => {
+      let response = () => Promise.resolve([review()]);
+      const { slot, change } = await mountReviews(() => response());
+      response = () => Promise.reject(new Error("offline"));
+      await change();
+      assert.equal(slot.container.textContent, "other:nextAction:true,parent:waiting:false");
+      response = () => Promise.resolve([review("review", "idle")]);
+      await act(async () => {
+        jest.advanceTimersByTime(1000);
+      });
+      assert.equal(slot.container.textContent, "other:nextAction:true,parent:nextAction:true");
+    });
+
+    it("reconciles missed completion after reconnect", async () => {
+      let reviews = [review()];
+      const { slot } = await mountReviews(async () => reviews);
+      assert.equal(slot.container.textContent, "other:nextAction:true,parent:waiting:false");
+      await slot.behavior.setRealtimeConnectionState("reconnecting");
+      reviews = [];
+      await slot.behavior.setRealtimeConnectionState("connected");
+      assert.equal(slot.container.textContent, "other:nextAction:true,parent:nextAction:true");
+      slot.lifecycle.unmount();
+      assert.equal(jest.getTimerCount(), 0);
+    });
+
+    it("cancels a scheduled retry and its lookup signal on unmount", async () => {
+      let fail = false;
+      let signal: AbortSignal | undefined;
+      const { slot, change } = await mountReviews(async (args) => {
+        signal = args?.signal;
+        if (fail) throw new Error("offline");
+        return [review()];
+      });
+      assert.equal(slot.container.textContent, "other:nextAction:true,parent:waiting:false");
+      fail = true;
+      await change();
+      assert.equal(jest.getTimerCount(), 1);
+      assert.equal(signal?.aborted, false);
+      slot.lifecycle.unmount();
+      assert.equal(signal?.aborted, true);
+      assert.equal(jest.getTimerCount(), 0);
+    });
   });
 
   describe("useLifecycle", () => {

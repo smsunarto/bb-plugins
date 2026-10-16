@@ -128,7 +128,8 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
       const { unarchive, primaryHostId } = useHost();
       return useMemo(
         () => ({
-          threads: { unarchive },
+          threads: { unarchive, list: async () => [] },
+          subscribe: () => () => {},
           system: {
             config: () =>
               primaryHostId === undefined
