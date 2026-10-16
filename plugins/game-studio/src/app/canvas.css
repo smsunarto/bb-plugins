@@ -210,8 +210,69 @@
   color: var(--subtle-foreground, var(--muted-foreground));
   font-size: 10px;
 }
-.gs-node-prompt small {
+.gs-node-prompt footer > small {
   margin-right: auto;
+}
+.gs-brief-starters {
+  position: relative;
+}
+.gs-canvas-root .gs-brief-starters-trigger {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 0;
+  height: 26px;
+  padding: 0 8px 0 6px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted-foreground);
+  font-size: 11px;
+}
+.gs-canvas-root .gs-brief-starters-trigger svg {
+  width: 13px;
+  height: 13px;
+}
+.gs-app .gs-brief-starters-trigger:hover:not(:disabled),
+.gs-app .gs-brief-starters-trigger[aria-expanded="true"] {
+  background: var(--state-hover);
+  color: var(--foreground);
+}
+.gs-brief-starters-menu {
+  position: absolute;
+  z-index: 10;
+  bottom: calc(100% + 6px);
+  left: -6px;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  width: 220px;
+  padding: 5px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--popover);
+  box-shadow: var(--shadow-md);
+  animation: gs-menu-in 140ms cubic-bezier(0.2, 0.9, 0.3, 1);
+  transform-origin: bottom left;
+}
+.gs-brief-starters-menu > small {
+  padding: 4px 8px;
+}
+.gs-canvas-root .gs-brief-starters-menu button {
+  justify-content: flex-start;
+  min-height: 0;
+  height: 30px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--foreground);
+  font-size: 12px;
+}
+.gs-app .gs-brief-starters-menu button:hover,
+.gs-app .gs-brief-starters-menu button:focus-visible {
+  outline: none;
+  background: var(--state-hover);
 }
 .gs-canvas-root .gs-node-brief-write {
   display: grid;
@@ -745,56 +806,6 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-.gs-brief-starters {
-  padding: 0 14px;
-  border-bottom: 1px solid var(--border-hairline);
-}
-.gs-brief-starters > summary {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  height: 42px;
-  cursor: pointer;
-  list-style: none;
-  color: var(--muted-foreground);
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-}
-.gs-brief-starters > summary::-webkit-details-marker {
-  display: none;
-}
-.gs-brief-starters > summary:hover {
-  color: var(--foreground);
-}
-.gs-brief-starters > summary svg {
-  width: 14px;
-  height: 14px;
-  transition: transform 160ms ease;
-}
-.gs-brief-starters[open] > summary svg {
-  transform: rotate(180deg);
-}
-.gs-brief-starters[open] {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding-bottom: 14px;
-}
-.gs-brief-starters > label {
-  color: var(--muted-foreground);
-}
-.gs-brief-starters p {
-  margin: 0;
-  font-size: 12px;
-}
-.gs-app .gs-brief-starters button {
-  min-height: 30px;
-  padding: 0 10px;
-  border-radius: 7px;
-  font-size: 12px;
 }
 .gs-app .gs-node-inspector .gs-inspector-remove {
   position: sticky;

@@ -44,9 +44,10 @@ creation tooling. Leave the version unset to let the agent choose through Hub.
   resolution, or duration. Add nodes from the **+** menu or press `T`, `I`, `V`,
   or `A`; `H` toggles the hand tool. `+`/`-` zoom, `Shift+0` resets to 100%, and
   `Shift+1` fits the board.
-  Brief starters cover concept exploration, isolated 3D references, focused edits,
-  motion, geometry contracts, and design experiments. Inserting a starter appends
-  to an existing draft. Replace bracketed guidance before generating.
+  The **Starters** menu in the node's brief editor covers concept exploration,
+  isolated 3D references, focused edits, motion, geometry contracts, and design
+  experiments. Inserting a starter appends to an existing draft. Replace
+  bracketed guidance before generating.
 - **Assets:** upload to `canvas/staging`; browse imported media under
   `Assets/GameStudio`. The agent verifies and imports staged files using the
   project's established asset structure. Select a file and choose **Review and

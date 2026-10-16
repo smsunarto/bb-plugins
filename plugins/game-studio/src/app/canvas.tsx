@@ -202,6 +202,15 @@ function CanvasCard({ id, data, selected }: NodeProps<Card>) {
                   }}
                 />
                 <footer>
+                  <BriefStarters
+                    kind={node.type}
+                    hasDraft={!!prompt.trim()}
+                    onInsert={(text) =>
+                      actions.edit(id, {
+                        [field]: prompt.trimEnd() ? `${prompt.trimEnd()}\n\n${text}` : text,
+                      })
+                    }
+                  />
                   <small>{runsDirectly(node) ? "⌘↵ to run" : "Prepares a composer request"}</small>
                   {briefModel && (
                     <button
@@ -1297,24 +1306,6 @@ export function StudioCanvas({
                   </button>
                 </>
               )
-            )}
-            {["text", "image", "video", "model-3d"].includes(selected.data.source.type) && (
-              <BriefStarters
-                key={selected.id}
-                kind={selected.data.source.type}
-                hasDraft={Boolean(
-                  String(
-                    selected.data.source.data[
-                      selected.data.source.type === "text" ? "instruction" : "prompt"
-                    ] ?? "",
-                  ).trim(),
-                )}
-                onInsert={(text) => {
-                  const field = selected.data.source.type === "text" ? "instruction" : "prompt";
-                  const current = String(selected.data.source.data[field] ?? "").trimEnd();
-                  updateData(field, current ? `${current}\n\n${text}` : text);
-                }}
-              />
             )}
             {["text", "image"].includes(selected.data.source.type) && (
               <>
