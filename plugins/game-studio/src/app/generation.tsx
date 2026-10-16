@@ -13,6 +13,7 @@ const settings: Partial<
       options: ["1:1", "16:9", "9:16", "4:3", "3:4", "3:2", "2:3"],
     },
     { key: "resolution", label: "Resolution", options: ["1K", "2K", "4K"] },
+    { key: "batch", label: "Images", options: [1, 2, 4] },
   ],
   video: [
     { key: "aspectRatio", label: "Aspect ratio", options: ["16:9", "9:16"] },
@@ -20,6 +21,12 @@ const settings: Partial<
   ],
 };
 
+const numeric = new Set(["duration", "batch"]);
+/** Images per Nano Banana run; each image is its own request. */
+export const nodeBatch = (node: CanvasNode) =>
+  nodeRecipe(node)?.id === "nano-banana" && [2, 4].includes(Number(node.data.batch))
+    ? Number(node.data.batch)
+    : 1;
 export const nodeModelLabel = (node: CanvasNode) =>
   node.type === "text" ? "BB model" : nodeRecipe(node)?.label;
 /** The field holding a node's brief, when it can generate. */
@@ -53,15 +60,23 @@ export function GenerationSettings({
           },
         ]
       : []),
-    ...(settings[node.type] ?? []).map((field) => ({
-      key: field.key,
-      label: field.label,
-      value: String(node.data[field.key] ?? field.options[0]),
-      options: field.options.map((option) => ({
-        value: String(option),
-        label: field.key === "duration" ? `${option}s` : String(option),
+    ...(settings[node.type] ?? [])
+      // Midjourney always returns four images per run.
+      .filter((field) => field.key !== "batch" || current?.id === "nano-banana")
+      .map((field) => ({
+        key: field.key,
+        label: field.label,
+        value: String(node.data[field.key] ?? field.options[0]),
+        options: field.options.map((option) => ({
+          value: String(option),
+          label:
+            field.key === "duration"
+              ? `${option}s`
+              : field.key === "batch"
+                ? `×${option}`
+                : String(option),
+        })),
       })),
-    })),
   ];
   if (!fields.length) return null;
   return (
@@ -73,8 +88,9 @@ export function GenerationSettings({
             value={field.value}
             onChange={(event) =>
               onChange({
-                [field.key]:
-                  field.key === "duration" ? Number(event.target.value) : event.target.value,
+                [field.key]: numeric.has(field.key)
+                  ? Number(event.target.value)
+                  : event.target.value,
               })
             }
           >

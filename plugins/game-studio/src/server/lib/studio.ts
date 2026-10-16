@@ -1,5 +1,6 @@
 import { briefRecipe, generationJob, type GenerationJob } from "../../shared/generation.ts";
 import { nodeFingerprint } from "./canvas-generation.ts";
+import { nodeTakes } from "../../shared/takes.ts";
 import { generationImagePaths } from "./generation-inputs.ts";
 import { createHash, randomUUID } from "node:crypto";
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
@@ -1063,7 +1064,8 @@ export async function adoptGeneration(bb: BbPluginApi, game: Game, job: Generati
     const board = workspace.boards.find((item) => item.board.id === job.target!.boardId)?.board;
     if (!board) return { candidateAssetIds: ids, attached: false };
     const node = board.nodes.find(({ id }) => id === job.target!.nodeId);
-    if (node?.data.generationJobId === job.id || node?.data.briefJobId === job.id)
+    if (job.request.kind !== "text") return attachTakes(bb, game, board.id, job, ids);
+    if (node?.data.briefJobId === job.id || node?.data.generationJobId === job.id)
       return { candidateAssetIds: ids, attached: true };
     if (!node || nodeFingerprint(node, board, workspace) !== job.target.fingerprint)
       return {
@@ -1115,13 +1117,44 @@ export async function adoptGeneration(bb: BbPluginApi, game: Game, job: Generati
       ...saved.data,
       ...(job.request.kind === "text" && job.request.briefFor
         ? { prompt: generatedText!, briefJobId: job.id }
-        : generatedText !== undefined
-          ? { text: generatedText, generatedTextPath: textOutput!.path, generationJobId: job.id }
-          : { assetId: ids[0]!, candidateAssetIds: ids, generationJobId: job.id }),
+        : { text: generatedText!, generatedTextPath: textOutput!.path, generationJobId: job.id }),
     };
     await write(bb, game, path, json(content), contentFile.sha256);
     return { candidateAssetIds: ids, attached: true };
   });
+}
+
+/**
+ * Media outputs join the node's takes. They never replace its brief or its pick, so results
+ * from earlier briefs, rerolls in parallel and changed references are all kept for review.
+ */
+async function attachTakes(
+  bb: BbPluginApi,
+  game: Game,
+  boardId: string,
+  job: GenerationJob,
+  ids: string[],
+) {
+  const path = `canvas/boards/${boardId}.json`;
+  const contentFile = await readRequired(bb, game, path);
+  const content = parse(persistedBoardSchema, contentFile, path);
+  const saved = content.nodes.find(({ id }) => id === job.target!.nodeId);
+  if (!saved) return { candidateAssetIds: ids, attached: false };
+  const takes = nodeTakes(saved);
+  const fresh = ids.filter((id) => !takes.some((take) => take.assetId === id));
+  if (!fresh.length) return { candidateAssetIds: ids, attached: true };
+  const { candidateAssetIds: _legacy, ...data } = saved.data;
+  saved.data = {
+    ...data,
+    takes: [...takes, ...fresh.map((assetId) => ({ assetId, jobId: job.id }))],
+    // The first output becomes the pick only when the node has none.
+    assetId: takes.some((take) => take.assetId === data.assetId)
+      ? (data.assetId as string)
+      : (takes[0]?.assetId ?? fresh[0]!),
+    generationJobId: job.id,
+  };
+  await write(bb, game, path, json(content), contentFile.sha256);
+  return { candidateAssetIds: ids, attached: true };
 }
 
 async function readGenerationJobs(bb: BbPluginApi, game: Game): Promise<GenerationJob[]> {

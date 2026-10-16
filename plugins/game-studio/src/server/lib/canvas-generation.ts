@@ -19,6 +19,8 @@ function semantic(node: CanvasNode) {
     assetId: _assetId,
     generationJobId: _jobId,
     candidateAssetIds: _candidates,
+    takes: _takes,
+    briefJobId: _briefJobId,
     ...data
   } = node.data;
   return { type: node.type, title: node.title, description: node.description, data };

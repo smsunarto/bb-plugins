@@ -117,6 +117,10 @@
   color: var(--foreground);
   font-size: 10px;
 }
+.gs-node-badge[data-takes] {
+  left: auto;
+  right: 8px;
+}
 .gs-node-text {
   padding: 12px 14px;
   max-height: 260px;
@@ -311,7 +315,7 @@
   background: var(--surface-raised-solid, var(--muted));
   color: var(--subtle-foreground, var(--muted-foreground));
 }
-.gs-node[data-generation="pending"] .gs-node-run svg {
+.gs-node-run[data-busy] svg {
   animation: gs-spin 900ms linear infinite;
 }
 @keyframes gs-spin {
@@ -738,7 +742,8 @@
   border-radius: 0;
 }
 .gs-node-inspector .gs-inspector-section > h3,
-.gs-node-inspector .gs-inspector-section > legend {
+.gs-node-inspector .gs-inspector-section > legend,
+.gs-node-inspector .gs-takes > header > h3 {
   float: left;
   width: 100%;
   margin: 0 0 2px;
@@ -947,4 +952,196 @@
   padding: 10px;
   border: 1px solid var(--border);
   border-radius: var(--radius);
+}
+
+/* Takes: the inspector section that reviews a media node's runs. */
+.gs-takes > header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.gs-node-inspector .gs-takes > header > h3 {
+  float: none;
+  width: auto;
+  margin: 0;
+}
+.gs-takes .gs-takes-reroll {
+  padding: 3px 8px;
+  font-size: 12px;
+}
+.gs-takes > header > span {
+  color: var(--muted-foreground);
+  font-size: 11px;
+}
+.gs-takes button {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+.gs-takes button:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+.gs-takes-filter {
+  display: inline-flex;
+  min-width: 0;
+  margin: 0;
+  border: 0;
+  order: 3;
+  width: 100%;
+  padding: 2px;
+  border-radius: 8px;
+  background: var(--surface-recessed-solid, var(--muted));
+}
+.gs-takes-filter > button {
+  flex: 1;
+  justify-content: center;
+  padding: 4px 8px;
+  color: var(--muted-foreground);
+}
+.gs-takes-filter > button[aria-pressed="true"] {
+  background: var(--surface-raised-solid, var(--background));
+  color: var(--foreground);
+  box-shadow: 0 1px 2px color-mix(in srgb, black 20%, transparent);
+}
+.gs-takes-reroll {
+  margin-left: auto;
+  padding: 4px 8px;
+  background: var(--gs-accent) !important;
+  color: var(--primary-foreground, #181818) !important;
+  font-weight: 600 !important;
+}
+.gs-takes-reroll svg {
+  width: 13px;
+  height: 13px;
+}
+.gs-takes-body {
+  display: flex;
+  flex-direction: column;
+}
+.gs-takes-run > h4 {
+  margin: 6px 0;
+  color: var(--muted-foreground);
+  font-size: 11px;
+  font-weight: 600;
+}
+.gs-takes-run > h4 > span {
+  font-weight: 400;
+}
+.gs-takes-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+}
+.gs-take {
+  position: relative;
+  aspect-ratio: 1;
+  overflow: hidden;
+  border-radius: 8px;
+  outline: 1px solid var(--border);
+  outline-offset: -1px;
+  background: var(--surface-recessed-solid, var(--muted));
+}
+.gs-take[data-picked] {
+  outline: 2px solid var(--gs-accent);
+  outline-offset: -2px;
+}
+.gs-take[data-pending] {
+  background: repeating-linear-gradient(
+    135deg,
+    var(--surface-recessed-solid),
+    var(--surface-recessed-solid) 10px,
+    var(--state-hover) 10px,
+    var(--state-hover) 20px
+  );
+  background-size: 200% 200%;
+  animation: gs-takes-pending 1.6s linear infinite;
+}
+@keyframes gs-takes-pending {
+  to {
+    background-position: 56px 0;
+  }
+}
+.gs-take > img,
+.gs-take > video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.gs-take-missing {
+  display: grid;
+  place-items: center;
+  height: 100%;
+  padding: 6px;
+  color: var(--muted-foreground);
+  text-align: center;
+}
+.gs-takes .gs-take-star {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--background) 75%, transparent);
+  color: var(--muted-foreground);
+  font-size: 13px;
+}
+.gs-takes .gs-take-star[aria-pressed="true"] {
+  color: var(--ansi-11, #f7d05c);
+}
+.gs-takes .gs-take-use {
+  position: absolute;
+  right: 4px;
+  bottom: 4px;
+  left: 4px;
+  justify-content: center;
+  padding: 4px;
+  background: color-mix(in srgb, var(--background) 82%, transparent);
+  font-weight: 600;
+  opacity: 0;
+  transition: opacity 120ms;
+}
+.gs-take:hover .gs-take-use,
+.gs-take:focus-within .gs-take-use,
+.gs-takes .gs-take-use[aria-pressed="true"] {
+  opacity: 1;
+}
+.gs-takes .gs-take-use[aria-pressed="true"] {
+  background: var(--gs-accent);
+  color: var(--primary-foreground, #181818);
+}
+.gs-takes .gs-take-use:disabled {
+  opacity: 1;
+  cursor: default;
+}
+.gs-takes-empty {
+  margin: 16px 0 4px;
+  color: var(--muted-foreground);
+  text-align: center;
+}
+.gs-takes > footer {
+  display: flex;
+}
+.gs-takes > footer > button {
+  margin-left: -6px;
+  padding: 4px 6px;
+  color: var(--muted-foreground);
+}
+.gs-takes > footer > button:hover {
+  background: var(--state-hover);
+  color: var(--foreground);
+}
+@media (hover: none) {
+  .gs-takes .gs-take-use {
+    opacity: 1;
+  }
 }

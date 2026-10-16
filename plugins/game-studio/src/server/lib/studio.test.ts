@@ -1921,12 +1921,118 @@ test("generation candidates attach only to the current brief and preserve the us
       },
     },
   );
+  // An edited brief keeps its text; the earlier run's output stays available as a take.
   const stale = await adoptGeneration(f.bb, game, job);
-  assert.equal(stale.attached, false);
+  assert.equal(stale.attached, true);
   const final = await get.execute({ bb: f.bb }, { gameId: game.id });
-  assert.equal(final.boards[0]!.board.nodes[0]!.data.prompt, "A silver key");
-  assert.equal(final.boards[0]!.board.nodes[0]!.data.assetId, undefined);
+  assert.deepEqual(final.boards[0]!.board.nodes[0]!.data, {
+    prompt: "A silver key",
+    takes: [{ assetId: adopted.candidateAssetIds[0], jobId: "generation" }],
+    assetId: adopted.candidateAssetIds[0],
+    generationJobId: "generation",
+  });
   assert.equal(final.assets.find((asset) => asset.path === path)?.id, adopted.candidateAssetIds[0]);
+});
+
+test("rerolls add takes beside earlier ones without replacing the pick or shortlist", async () => {
+  const { adoptGeneration } = await import("./studio.ts");
+  const { gameSchema } = await import("../../shared/schema.ts");
+  const { generationJob } = await import("../../shared/generation.ts");
+  const f = fake(),
+    game = gameSchema.parse(await create.execute({ bb: f.bb }, input));
+  const original = (await get.execute({ bb: f.bb }, { gameId: game.id })).boards[0]!;
+  await saveBoard.execute(
+    { bb: f.bb },
+    {
+      gameId: game.id,
+      revision: original.revision,
+      board: {
+        ...original.board,
+        nodes: [
+          {
+            id: "coin",
+            type: "image",
+            position: { x: 0, y: 0 },
+            // A node from before takes: its output and the old candidate list.
+            data: { prompt: "Coin", assetId: "old", candidateAssetIds: ["old"] },
+          },
+        ],
+      },
+    },
+  );
+  const run = (id: string, files: string[]) => {
+    for (const file of files)
+      f.seed("host", `/games/orbit/canvas/staging/${id}/${file}`, "png", "base64");
+    return generationJob.parse({
+      version: 1,
+      id,
+      threadId: null,
+      origin: { kind: "canvas", gameId: game.id },
+      createdAt: 1,
+      updatedAt: 2,
+      status: "succeeded",
+      request: { kind: "image", prompt: "Coin", model: { provider: "midjourney" }, outputCount: 4 },
+      target: { boardId: "main", nodeId: "coin", fingerprint: "any" },
+      outputs: files.map((file) => ({
+        path: `canvas/staging/${id}/${file}`,
+        type: "image",
+        sizeBytes: 3,
+        sha256: "a".repeat(64),
+      })),
+    });
+  };
+  const first = await adoptGeneration(f.bb, game, run("run-1", ["a.png", "b.png"]));
+  const node = async () =>
+    (await get.execute({ bb: f.bb }, { gameId: game.id })).boards[0]!.board.nodes[0]!;
+  const [a, b] = first.candidateAssetIds;
+  assert.deepEqual((await node()).data, {
+    prompt: "Coin",
+    assetId: "old",
+    takes: [
+      { assetId: "old", jobId: "" },
+      { assetId: a, jobId: "run-1" },
+      { assetId: b, jobId: "run-1" },
+    ],
+    generationJobId: "run-1",
+  });
+  // The user shortlists b and picks it, then rerolls.
+  const picked = await get.execute({ bb: f.bb }, { gameId: game.id });
+  const board = picked.boards[0]!;
+  await saveBoard.execute(
+    { bb: f.bb },
+    {
+      gameId: game.id,
+      revision: board.revision,
+      board: {
+        ...board.board,
+        nodes: [
+          {
+            ...board.board.nodes[0]!,
+            data: {
+              ...board.board.nodes[0]!.data,
+              assetId: b!,
+              takes: [
+                { assetId: "old", jobId: "" },
+                { assetId: a!, jobId: "run-1" },
+                { assetId: b!, jobId: "run-1", star: true },
+              ],
+            },
+          },
+        ],
+      },
+    },
+  );
+  const second = await adoptGeneration(f.bb, game, run("run-2", ["c.png"]));
+  const after = await node();
+  assert.equal(after.data.assetId, b);
+  assert.deepEqual(after.data.takes, [
+    { assetId: "old", jobId: "" },
+    { assetId: a, jobId: "run-1" },
+    { assetId: b, jobId: "run-1", star: true },
+    { assetId: second.candidateAssetIds[0], jobId: "run-2" },
+  ]);
+  assert.equal((await adoptGeneration(f.bb, game, run("run-2", ["c.png"]))).attached, true);
+  assert.equal(((await node()).data.takes as unknown[]).length, 4);
 });
 
 for (const referenceType of ["library", "node"] as const) {
@@ -2028,8 +2134,8 @@ for (const referenceType of ["library", "node"] as const) {
         outputs: [{ path, type: "image", sizeBytes: 6, sha256: "a".repeat(64) }],
       });
       const adopted = await adoptGeneration(f.bb, game, job);
-      const shouldAttach = change === "add-unrelated" || change === "restore-bytes";
-      assert.equal(adopted.attached, shouldAttach);
+      // Takes record what each run produced, so changed references never discard the output.
+      assert.equal(adopted.attached, true);
       const final = await get.execute({ bb: f.bb }, { gameId: game.id });
       const generated = final.assets.find((asset) => asset.path === path);
       assert.equal(generated?.id, adopted.candidateAssetIds[0]);
@@ -2050,8 +2156,10 @@ for (const referenceType of ["library", "node"] as const) {
       const target = final.boards[0]!.board.nodes.find((node) => node.id === "image")!;
       assert.equal(target.data.prompt, "Add a crescent-shaped handle");
       assert.deepEqual(target.data.references, references);
-      assert.equal(target.data.assetId, shouldAttach ? generated!.id : undefined);
-      assert.equal(target.data.generationJobId, shouldAttach ? "reference-generation" : undefined);
+      assert.equal(target.data.assetId, generated!.id);
+      assert.deepEqual(target.data.takes, [
+        { assetId: generated!.id, jobId: "reference-generation" },
+      ]);
       assert.equal(
         final.boards[0]!.board.nodes.find((node) => node.id === "reference-node")!.data.assetId,
         "reference",

@@ -40,9 +40,17 @@ import type {
 } from "../shared/schema.ts";
 import { nodeBriefRecipe, nodeRecipe } from "../shared/recipes.ts";
 import { CanvasInputs } from "./canvas-inputs.tsx";
-import { GenerationSettings, nodeModelLabel, promptField, runsDirectly } from "./generation.tsx";
+import {
+  GenerationSettings,
+  nodeBatch,
+  nodeModelLabel,
+  promptField,
+  runsDirectly,
+} from "./generation.tsx";
 import type { NodePatch } from "./generation.tsx";
 import { BriefStarters } from "./brief-starters.tsx";
+import { Takes, hasTakes } from "./takes.tsx";
+import { batchRequestId, nodeTakes, type Take } from "../shared/takes.ts";
 import { arrangeNodes, newNodePosition, revealNode } from "./canvas-layout.ts";
 import { boardSnapshot, rebaseBoard } from "./canvas-board.ts";
 import "@xyflow/react/dist/style.css";
@@ -53,6 +61,8 @@ type CardData = {
   documents: StudioDocument[];
   assets: Asset[];
   baseUrl?: string;
+  /** Jobs targeting this node, newest first; `job` is the newest. */
+  jobs?: GenerationJob[];
   job?: GenerationJob;
   busy?: boolean;
   /** A BB model is writing this media node's brief. */
@@ -88,6 +98,7 @@ const CardActions = createContext<CardActionsValue>({
   run: () => {},
   brief: () => {},
 });
+const running = (job: GenerationJob) => job.status === "queued" || job.status === "running";
 const isBrief = (job: GenerationJob | undefined) =>
   job?.request.kind === "text" && !!job.request.briefFor;
 function CanvasCard({ id, data, selected }: NodeProps<Card>) {
@@ -96,7 +107,12 @@ function CanvasCard({ id, data, selected }: NodeProps<Card>) {
   const actions = useContext(CardActions);
   const navigate = useBbNavigate();
   const briefing = !!data.briefing;
-  const pending = data.busy && !briefing;
+  const jobs = data.jobs ?? [];
+  const media = node.type === "image" || node.type === "video";
+  // Image runs keep the node usable, so "generating" comes from its jobs rather than `busy`.
+  const pending =
+    (data.busy && !briefing) || jobs.some((job) => running(job) && job.request.kind !== "text");
+  const takes = media ? nodeTakes(node) : [];
   const briefModel = nodeBriefRecipe(node);
   const hasInputs =
     !!node.data.promptSource ||
@@ -114,7 +130,7 @@ function CanvasCard({ id, data, selected }: NodeProps<Card>) {
       className="gs-node"
       data-kind={node.type}
       data-selected={selected || undefined}
-      data-generation={pending ? "pending" : data.job?.status}
+      data-generation={pending ? (asset ? "pending-more" : "pending") : data.job?.status}
       style={{ "--gs-kind": info.color } as CSSProperties}
     >
       {field && node.type !== "text" && (
@@ -156,6 +172,7 @@ function CanvasCard({ id, data, selected }: NodeProps<Card>) {
           url={url}
           placeholder={!prompt}
           pending={pending}
+          takes={takes.length > 1 ? takes : undefined}
         />
         {data.job && !(isBrief(data.job) && data.job.status === "succeeded") && (
           <div className="gs-generation-progress nodrag nopan">
@@ -227,12 +244,13 @@ function CanvasCard({ id, data, selected }: NodeProps<Card>) {
                   <button
                     type="button"
                     className="gs-node-run"
+                    data-busy={(data.busy && !briefing) || undefined}
                     title={runsDirectly(node) ? "Run node" : "Prepare request"}
                     aria-label={runsDirectly(node) ? "Run node" : "Prepare request"}
                     disabled={data.busy || (!prompt.trim() && node.type !== "model-3d")}
                     onClick={() => actions.run(id)}
                   >
-                    <Icon name={pending ? "LoaderCircle" : "ArrowUp"} />
+                    <Icon name={data.busy && !briefing ? "LoaderCircle" : "ArrowUp"} />
                   </button>
                 </footer>
               </div>
@@ -258,6 +276,7 @@ function NodePreview({
   url,
   placeholder,
   pending,
+  takes,
 }: {
   node: CanvasNode;
   asset?: Asset;
@@ -265,6 +284,7 @@ function NodePreview({
   url?: string;
   placeholder: boolean;
   pending?: boolean;
+  takes?: Take[];
 }) {
   const info = kindInfo(node.type);
   const aspectRatio =
@@ -282,6 +302,12 @@ function NodePreview({
         <span className="gs-node-badge">
           {asset.path.startsWith("Assets/") ? "In Assets" : "Staged"}
         </span>
+        {takes && (
+          <span className="gs-node-badge" data-takes>
+            {takes.length} takes
+            {takes.some((take) => take.star) && ` · ${takes.filter((take) => take.star).length} ★`}
+          </span>
+        )}
       </div>
     );
   if (node.type === "image" || node.type === "video")
@@ -641,23 +667,20 @@ export function StudioCanvas({
   const selectedJob = generationJobs.find(
     (job) => job.target?.boardId === board.id && job.target.nodeId === selectedId,
   );
-  const runningJob = (id: string) =>
-    generationJobs.find(
-      (job) =>
-        job.target?.boardId === board.id &&
-        job.target.nodeId === id &&
-        ["queued", "running"].includes(job.status),
-    );
-  const briefing = (id: string) => startingBrief === id || isBrief(runningJob(id));
+  const nodeJobs = (id: string | null) =>
+    generationJobs.filter((job) => job.target?.boardId === board.id && job.target.nodeId === id);
+  const briefing = (id: string) =>
+    startingBrief === id || nodeJobs(id).some((job) => running(job) && isBrief(job));
+  /** Image runs become takes, so rerolls start while earlier runs generate. */
+  const selectedMedia =
+    selected?.data.source.type === "image" || selected?.data.source.type === "video";
+  // Takes choose a media node's output, so the asset picker only links outputs by hand.
+  const takesShown =
+    !!selected && selectedMedia && hasTakes(selected.data.source, nodeJobs(selected.id));
   const busy = (id: string | null) =>
     starting === id ||
     startingBrief === id ||
-    generationJobs.some(
-      (job) =>
-        job.target?.boardId === board.id &&
-        job.target.nodeId === id &&
-        ["queued", "running"].includes(job.status),
-    );
+    nodeJobs(id).some((job) => running(job) && job.request.kind !== "image");
   const generating = busy(selectedId);
   const root = useRef<HTMLDivElement>(null);
   const inspector = useRef<HTMLElement>(null);
@@ -971,7 +994,12 @@ export function StudioCanvas({
   }, [edits, dirty, saving, revision]);
   // Leaving the board (switching boards or tabs) saves the pending draft.
   useEffect(() => () => void latestSave.current(), []);
-  const generate = async (id: string, model: { provider: string; id?: string }, brief?: true) => {
+  const generate = async (
+    id: string,
+    model: { provider: string; id?: string },
+    brief?: true,
+    batch = 1,
+  ) => {
     if (startingRef.current || busy(id)) return;
     startingRef.current = true;
     (brief ? setStartingBrief : setStarting)(id);
@@ -983,7 +1011,18 @@ export function StudioCanvas({
       if (!saved) throw new Error("Save the current edits before generating.");
       const requestId = requestIds.get(key) ?? crypto.randomUUID();
       rememberRequest(key, requestId);
-      await onGenerateDirect(id, saved, requestId, model, brief);
+      // A batch is separate requests; a retry reuses their identities.
+      await Promise.all(
+        Array.from({ length: batch }, (_, index) =>
+          onGenerateDirect(
+            id,
+            saved,
+            batch > 1 ? batchRequestId(requestId, index) : requestId,
+            model,
+            brief,
+          ),
+        ),
+      );
       rememberRequest(key);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
@@ -1004,6 +1043,8 @@ export function StudioCanvas({
           : recipe?.id === "concept-art"
             ? { provider: "midjourney" }
             : { provider: "google", id: "gemini-nano-banana-2.1" },
+        undefined,
+        nodeBatch(source),
       );
     if (!recipe) return;
     if (recipe.id === "model-3d" && !hasImageReference(source)) {
@@ -1108,9 +1149,8 @@ export function StudioCanvas({
                 assets,
                 documents,
                 baseUrl: previewBaseUrl,
-                job: generationJobs.find(
-                  (job) => job.target?.boardId === board.id && job.target.nodeId === node.id,
-                ),
+                jobs: nodeJobs(node.id),
+                job: nodeJobs(node.id)[0],
                 busy: busy(node.id),
                 briefing: briefing(node.id),
               },
@@ -1376,23 +1416,39 @@ export function StudioCanvas({
                 )}
               </>
             )}
+            {takesShown && (
+              <Takes
+                node={selected.data.source}
+                assets={assets}
+                baseUrl={previewBaseUrl}
+                jobs={nodeJobs(selected.id)}
+                batch={nodeBatch(selected.data.source)}
+                canReroll={
+                  !busy(selected.id) && !!String(selected.data.source.data.prompt ?? "").trim()
+                }
+                onChange={(patch) => editData(selected.id, patch)}
+                onReroll={() => void run(selected.id)}
+              />
+            )}
             {!["text", "document", "table"].includes(selected.data.source.type) && (
               <section className="gs-inspector-section">
                 <h3>Output</h3>
-                <label className="gs-inspector-row">
-                  <span>Asset</span>
-                  <select
-                    value={String(selected.data.source.data.assetId ?? "")}
-                    onChange={(e) => updateData("assetId", e.target.value)}
-                  >
-                    <option value="">No output yet</option>
-                    {assets.map((asset) => (
-                      <option key={asset.id} value={asset.id}>
-                        {asset.name}
-                      </option>
-                    ))}
-                  </select>
-                </label>
+                {!takesShown && (
+                  <label className="gs-inspector-row">
+                    <span>Asset</span>
+                    <select
+                      value={String(selected.data.source.data.assetId ?? "")}
+                      onChange={(e) => updateData("assetId", e.target.value)}
+                    >
+                      <option value="">No output yet</option>
+                      {assets.map((asset) => (
+                        <option key={asset.id} value={asset.id}>
+                          {asset.name}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                )}
                 {selectedAsset && (
                   <dl className="gs-inspector-facts">
                     <div>

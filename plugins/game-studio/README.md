@@ -44,6 +44,11 @@ creation tooling. Leave the version unset to let the agent choose through Hub.
   resolution, or duration. Add nodes from the **+** menu or press `T`, `I`, `V`,
   or `A`; `H` toggles the hand tool. `+`/`-` zoom, `Shift+0` resets to 100%, and
   `Shift+1` fits the board.
+  Every image or video run adds **takes** to its node. The node inspector lists
+  them under **Takes**, grouped by run: star takes to shortlist them, choose
+  **Use** to set the node's output, and **Reroll** to run the brief again while
+  earlier runs generate. Nano Banana runs make ×1, ×2, or ×4 images per run.
+  **Clear unstarred** removes takes from the node; their files stay staged.
   The **Starters** menu in the node's brief editor covers concept exploration,
   isolated 3D references, focused edits, motion, geometry contracts, and design
   experiments. Inserting a starter appends to an existing draft. Replace
@@ -101,9 +106,10 @@ releasing a registered checkout; unresolved dispatches keep it reserved.
 Canvas generation captures selected image bytes in `canvas/inputs/<sha256>.<ext>`
 before dispatch. These saved inputs stay outside the asset catalog.
 Successful outputs stay in `canvas/staging` and are cataloged when collected.
-They attach to their source node only while its brief and connected design
-sources, including original image bytes, are unchanged. Other results remain
-staged candidates for review, including older jobs without image revision records.
+Image and video outputs attach to their source node as takes even after its
+brief changes; a new take never replaces the node's chosen output. Text results
+attach only while the brief and connected design sources, including original
+image bytes, are unchanged.
 Midjourney standard jobs yield four image candidates; the other image/video
 models yield one. Image nodes run with their selected model (Nano Banana 2.1
 or Midjourney); text nodes run with the provider and model currently selected in BB.
