@@ -15,6 +15,25 @@ export const checkoutSelectionSchema = z.strictObject({
   path: environmentPathSchema,
 });
 
+/** A native New thread draft can reuse only an exact, still-selectable BB environment. */
+export const checkoutChatTargetInputSchema = z.strictObject({
+  threadId: z.string().min(1),
+  environmentId: z.string().min(1).optional(),
+  checkout: checkoutSelectionSchema,
+  repositoryKey: repositoryKeySchema.optional(),
+});
+
+export const checkoutChatTargetSchema = z.discriminatedUnion("state", [
+  z.strictObject({
+    state: z.literal("ready"),
+    projectId: z.string().min(1),
+    hostId: z.string().min(1),
+    environmentId: z.string().min(1),
+    path: environmentPathSchema,
+  }),
+  z.strictObject({ state: z.literal("unavailable"), reason: z.string().min(1) }),
+]);
+
 /** The branch and tip the reader saw before an ordinary Git checkout write. */
 export const observedCheckoutSchema = z.strictObject({
   branch: z.string().min(1).nullable(),
@@ -512,3 +531,4 @@ export type OtherMachines = z.infer<typeof otherMachinesSchema>;
 export type CheckoutSelection = z.infer<typeof checkoutSelectionSchema>;
 export type CheckoutIdentity = z.infer<typeof checkoutIdentitySchema>;
 export type ObservedCheckout = z.infer<typeof observedCheckoutSchema>;
+export type CheckoutChatTarget = z.infer<typeof checkoutChatTargetSchema>;

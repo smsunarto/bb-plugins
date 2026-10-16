@@ -133,6 +133,12 @@ machine, path, branches, and newest commit. **Open checkout** opens that checkou
 in the full board, including diffs, Rename, Pull, Push, Create PR, Land, and Delete.
 **Back to main checkout** returns to the thread's workspace.
 
+**New chat** opens BB's native New thread screen with that checkout already
+selected. It is available on each checkout card and above an opened checkout.
+Choose your agent and write the first message there. The checkout must have a
+ready BB environment with an unarchived visible thread; discovered Git worktrees
+without one show why chat cannot start there yet.
+
 Ordinary Git checkouts need no GitButler setup. Their header's Pull updates the
 checked-out branch from its target; the branch's Pull integrates its upstream.
 Land publishes one commit on the target and requires a clean checkout. Delete

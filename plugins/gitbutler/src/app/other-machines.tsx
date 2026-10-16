@@ -2,6 +2,7 @@ import { useState } from "react";
 import { experimental_Icon as Icon } from "@get-bb/plugin-sdk/app";
 import type { Branch, Checkout } from "../shared/schema.ts";
 import { Button } from "./components/ui/button.tsx";
+import { CheckoutChatButton } from "./checkout-chat.tsx";
 import type { WorkspaceTarget } from "./branch-actions.tsx";
 import { Count } from "./file-list.tsx";
 import { subject } from "./format.ts";
@@ -149,9 +150,13 @@ function MachineBody({ checkout }: { checkout: Checkout }) {
 
 function MachineCard({
   checkout,
+  target,
+  environmentId,
   onOpen,
 }: {
   checkout: Checkout;
+  target: WorkspaceTarget;
+  environmentId: string | null;
   onOpen?: ((checkout: Checkout) => void) | undefined;
 }) {
   const [open, setOpen] = useState(true);
@@ -197,7 +202,11 @@ function MachineCard({
         <>
           <MachineBody checkout={checkout} />
           {onOpen && checkout.state === "ready" ? (
-            <div className="flex justify-end border-t border-border px-2.5 py-1.5">
+            <div className="flex flex-wrap items-start justify-end gap-1.5 border-t border-border px-2.5 py-1.5">
+              <CheckoutChatButton
+                target={{ ...target, checkout: { hostId: checkout.hostId, path: checkout.path } }}
+                environmentId={environmentId}
+              />
               <Button
                 variant="outline"
                 size="sm"
@@ -241,6 +250,12 @@ export function OtherMachines({
     query.data?.reason === null && query.data.environmentId === environmentId ? query.data : null;
   if (!data) return null;
   return data.checkouts.map((checkout) => (
-    <MachineCard key={`${checkout.hostId}:${checkout.path}`} checkout={checkout} onOpen={onOpen} />
+    <MachineCard
+      key={`${checkout.hostId}:${checkout.path}`}
+      checkout={checkout}
+      target={target}
+      environmentId={environmentId}
+      onOpen={onOpen}
+    />
   ));
 }

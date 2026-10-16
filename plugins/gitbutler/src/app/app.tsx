@@ -72,6 +72,7 @@ import { FileCards } from "./file-cards.tsx";
 import { GitButlerMark } from "./gitbutler-mark.tsx";
 import { OperationHistory } from "./history-screen.tsx";
 import { OtherMachines } from "./other-machines.tsx";
+import { CheckoutChatButton } from "./checkout-chat.tsx";
 import { ParkedBranches } from "./parked-branches.tsx";
 import { REFRESH_INTERVAL_MS } from "./query-client.ts";
 import { rpc } from "./rpc.ts";
@@ -1173,9 +1174,13 @@ function useBoardTarget(
 
 function CheckoutLocation({
   selected,
+  target,
+  environmentId,
   onMainCheckout,
 }: {
   selected: Checkout | null;
+  target: WorkspaceTarget;
+  environmentId: string | null | undefined;
   onMainCheckout: () => void;
 }) {
   if (!selected) return null;
@@ -1190,9 +1195,15 @@ function CheckoutLocation({
         <Icon name="ChevronLeft" className="size-3" aria-hidden />
         Back to main checkout
       </Button>
-      <p className="truncate font-medium" title={selected.machine}>
-        {selected.machine}
-      </p>
+      <div className="flex min-w-0 flex-wrap items-start justify-between gap-2">
+        <p className="min-w-0 flex-1 truncate font-medium" title={selected.machine}>
+          {selected.machine}
+        </p>
+        <CheckoutChatButton
+          target={{ ...target, checkout: { hostId: selected.hostId, path: selected.path } }}
+          environmentId={environmentId ?? null}
+        />
+      </div>
       <p
         className="truncate text-[11px] text-muted-foreground"
         title={selected.path}
@@ -1339,6 +1350,7 @@ function WorkspaceBoard({
     // Not part of refreshWorkspace, which every turn's end runs: no turn here
     // changes another machine, and the read reaches all of them.
     void pluginQueryClient.invalidateQueries({ queryKey: rpc.otherMachines.queryKey() });
+    void pluginQueryClient.invalidateQueries({ queryKey: rpc.checkoutChatTarget.queryKey() });
     void refreshWorkspace(readTarget).finally(() => setRefreshing(false));
   };
   const syncing = refreshing || checkingFirst(workspace);
@@ -1363,7 +1375,12 @@ function WorkspaceBoard({
           tabIndex={-1}
           inert={selection !== null}
         >
-          <CheckoutLocation selected={selected} onMainCheckout={onMainCheckout} />
+          <CheckoutLocation
+            selected={selected}
+            target={readTarget}
+            environmentId={data?.environmentId}
+            onMainCheckout={onMainCheckout}
+          />
           <WorkspaceHeader
             choices={repositories.data?.repositories}
             isolated={selected !== null}

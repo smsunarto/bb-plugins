@@ -79,6 +79,10 @@ const baseRpc = {
   oplog: () => ({ entries: [], reason: null }),
   parkedBranches: () => ({ branches: [], hasMore: false, reason: null }),
   otherMachines: () => ({ checkouts: [], reason: null, environmentId: "env-1" }),
+  checkoutChatTarget: () => ({
+    state: "unavailable",
+    reason: "This checkout is not connected to BB.",
+  }),
   baseHistory: () => ({
     commits: [
       {
@@ -3646,5 +3650,186 @@ test("native Land warns about an unknown existing PR only when its commits will 
   expect(
     card.getByText(/An existing PR may remain open after these commits are rewritten/),
   ).toBeTruthy();
+  slot.lifecycle.unmount();
+});
+
+function checkoutChatRpc() {
+  return {
+    ...baseRpc,
+    workspace: (input: { checkout?: CheckoutSelection }) =>
+      input.checkout ? isolatedBoard() : workspace,
+    otherMachines: () => ({ checkouts: [isolatedCheckout], reason: null, environmentId: "env-1" }),
+    checkoutChatTarget: () => ({
+      state: "ready",
+      projectId: "project-1",
+      hostId: "laptop",
+      environmentId: "env-isolated",
+      path: isolatedCheckout.path,
+    }),
+  };
+}
+
+const newCheckoutChat = {
+  method: "openNewThread",
+  options: {
+    projectId: "project-1",
+    environmentId: "env-isolated",
+    hostId: "laptop",
+    focusPrompt: true,
+  },
+} as const;
+
+test("checkout cards and the opened checkout launch native New thread in the exact environment", async () => {
+  const slot = await panel(checkoutChatRpc());
+  const label = `New agent chat in ${isolatedCheckout.path}`;
+  const button = await slot.findByRole("button", { name: label });
+  await waitFor(() => expect(button.hasAttribute("disabled")).toBe(false));
+  fireEvent.click(button);
+  await waitFor(() => expect(slot.inspection.sidebarActionCalls).toEqual([newCheckoutChat]));
+  expect(
+    slot.inspection.rpcCalls.filter((call) => call.method === "checkoutChatTarget").at(-1)?.input,
+  ).toEqual({
+    threadId: "thread-1",
+    environmentId: "env-1",
+    checkout: selectedCheckout,
+  });
+
+  await openIsolated(slot);
+  const header = slot.getByRole("button", { name: label });
+  await waitFor(() => expect(header.hasAttribute("disabled")).toBe(false));
+  fireEvent.click(header);
+  await waitFor(() =>
+    expect(slot.inspection.sidebarActionCalls).toEqual([newCheckoutChat, newCheckoutChat]),
+  );
+  slot.lifecycle.unmount();
+});
+
+test("Git-only checkouts explain why New chat is unavailable while Open checkout still works", async () => {
+  const slot = await panel({
+    ...checkoutChatRpc(),
+    checkoutChatTarget: () => ({
+      state: "unavailable",
+      reason: "Connect this checkout to a BB environment before starting a chat here.",
+    }),
+  });
+  const button = await slot.findByRole("button", {
+    name: `New agent chat in ${isolatedCheckout.path}`,
+  });
+  await slot.findByText("Connect this checkout to a BB environment before starting a chat here.");
+  expect(button.hasAttribute("disabled")).toBe(true);
+  await openIsolated(slot);
+  expect(slot.getByText(isolatedCheckout.path)).toBeTruthy();
+  expect(slot.getByRole("button", { name: "Back to main checkout" })).toBeTruthy();
+  expect(slot.inspection.sidebarActionCalls).toEqual([]);
+  slot.lifecycle.unmount();
+});
+
+test("New chat rechecks a checkout that lost its reusable environment after discovery", async () => {
+  let ready = true;
+  const fixture = checkoutChatRpc();
+  const slot = await panel({
+    ...fixture,
+    checkoutChatTarget: () =>
+      ready
+        ? fixture.checkoutChatTarget()
+        : { state: "unavailable", reason: "The checkout's BB environment is no longer ready." },
+  });
+  const button = await slot.findByRole("button", {
+    name: `New agent chat in ${isolatedCheckout.path}`,
+  });
+  await waitFor(() => expect(button.hasAttribute("disabled")).toBe(false));
+  ready = false;
+  fireEvent.click(button);
+  await slot.findByText("The checkout's BB environment is no longer ready.");
+  expect(button.hasAttribute("disabled")).toBe(true);
+  expect(slot.inspection.sidebarActionCalls).toEqual([]);
+  slot.lifecycle.unmount();
+});
+
+test("New chat keeps the checkout visible after a network failure and can retry", async () => {
+  let fail = false;
+  const fixture = checkoutChatRpc();
+  const slot = await panel({
+    ...fixture,
+    checkoutChatTarget: () => {
+      if (fail) throw new Error("The checkout machine is disconnected.");
+      return fixture.checkoutChatTarget();
+    },
+  });
+  const button = await slot.findByRole("button", {
+    name: `New agent chat in ${isolatedCheckout.path}`,
+  });
+  await waitFor(() => expect(button.hasAttribute("disabled")).toBe(false));
+  fail = true;
+  fireEvent.click(button);
+  await slot.findByText("The checkout machine is disconnected.");
+  expect(slot.getByRole("button", { name: `Open checkout ${isolatedCheckout.path}` })).toBeTruthy();
+  fail = false;
+  fireEvent.click(button);
+  await waitFor(() => expect(slot.inspection.sidebarActionCalls).toEqual([newCheckoutChat]));
+  slot.lifecycle.unmount();
+});
+
+test("a late New chat preflight cannot navigate after the reader opens another board", async () => {
+  const fixture = checkoutChatRpc();
+  let calls = 0;
+  let finish!: (value: ReturnType<typeof fixture.checkoutChatTarget>) => void;
+  const slot = await panel({
+    ...fixture,
+    checkoutChatTarget: () => {
+      calls += 1;
+      return calls === 2
+        ? new Promise((resolve) => {
+            finish = resolve;
+          })
+        : fixture.checkoutChatTarget();
+    },
+  });
+  const label = `New agent chat in ${isolatedCheckout.path}`;
+  const button = await slot.findByRole("button", { name: label });
+  await waitFor(() => expect(button.hasAttribute("disabled")).toBe(false));
+  fireEvent.click(button);
+  await waitFor(() => expect(button.textContent).toContain("Opening"));
+  await openIsolated(slot);
+  finish(fixture.checkoutChatTarget());
+  await waitFor(() =>
+    expect(slot.getByRole("button", { name: label }).textContent).toContain("New chat"),
+  );
+  expect(slot.inspection.sidebarActionCalls).toEqual([]);
+  fireEvent.click(slot.getByRole("button", { name: label }));
+  await waitFor(() => expect(slot.inspection.sidebarActionCalls).toEqual([newCheckoutChat]));
+  slot.lifecycle.unmount();
+});
+
+test("New chat background results replace an earlier failed click's error", async () => {
+  let state = "ready";
+  const fixture = checkoutChatRpc();
+  const slot = await panel({
+    ...fixture,
+    checkoutChatTarget: () => {
+      if (state === "offline") throw new Error("The checkout machine is disconnected.");
+      if (state === "unavailable")
+        return { state: "unavailable", reason: "Restore this checkout's existing BB thread." };
+      return fixture.checkoutChatTarget();
+    },
+  });
+  const button = await slot.findByRole("button", {
+    name: `New agent chat in ${isolatedCheckout.path}`,
+  });
+  await waitFor(() => expect(button.hasAttribute("disabled")).toBe(false));
+  state = "offline";
+  fireEvent.click(button);
+  await slot.findByText("The checkout machine is disconnected.");
+  state = "unavailable";
+  await pluginQueryClient.invalidateQueries();
+  await slot.findByText("Restore this checkout's existing BB thread.");
+  expect(button.hasAttribute("disabled")).toBe(true);
+  expect(slot.queryByText("The checkout machine is disconnected.")).toBeNull();
+  state = "ready";
+  await pluginQueryClient.invalidateQueries();
+  await waitFor(() => expect(button.hasAttribute("disabled")).toBe(false));
+  expect(slot.queryByText("Restore this checkout's existing BB thread.")).toBeNull();
+  fireEvent.click(button);
+  await waitFor(() => expect(slot.inspection.sidebarActionCalls).toEqual([newCheckoutChat]));
   slot.lifecycle.unmount();
 });

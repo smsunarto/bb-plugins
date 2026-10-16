@@ -4,6 +4,7 @@ import { publishWorkspaceChanged } from "./lib/workspace-signal.ts";
 import { baseHistory } from "./rpc/base-history.ts";
 import { branchPatches } from "./rpc/branch-patches.ts";
 import { butAction } from "./rpc/but-action.ts";
+import { checkoutChatTarget } from "./rpc/checkout-chat-target.ts";
 import { conflictResolution } from "./rpc/conflict-resolution.ts";
 import { oplog } from "./rpc/oplog.ts";
 import { otherMachines } from "./rpc/other-machines.ts";
@@ -26,6 +27,7 @@ export default definePlugin({
     baseHistory,
     patches,
     butAction,
+    checkoutChatTarget,
     requestReview,
     reviewRequests,
     reviewUrl,
