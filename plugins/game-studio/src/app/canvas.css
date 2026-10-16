@@ -7,11 +7,15 @@
   --xy-background-color: var(--background);
   --xy-background-pattern-color: var(--border);
   --xy-edge-stroke: var(--surface-selected-border);
-  --xy-handle-background-color: var(--muted-foreground);
-  --xy-controls-button-background-color: var(--popover);
-  --xy-controls-button-background-color-hover: var(--state-hover);
-  --xy-controls-button-color: var(--foreground);
-  --xy-controls-button-border-color: var(--border);
+  --xy-selection-background-color: color-mix(in srgb, var(--gs-accent) 8%, transparent);
+  --xy-selection-border: 1px solid color-mix(in srgb, var(--gs-accent) 60%, transparent);
+  /* Melius's warm selection accent, from the theme's ANSI palette. */
+  --gs-accent: var(--ansi-3, #f1b467);
+  --gs-node-surface: var(--surface-recessed-solid, var(--background));
+  --gs-chrome: color-mix(in srgb, var(--popover) 92%, transparent);
+}
+.gs-canvas-root .react-flow[data-tool="hand"] .react-flow__pane {
+  cursor: grab;
 }
 .gs-canvas-stage {
   position: relative;
@@ -27,132 +31,445 @@
 .gs-canvas-root[data-inspecting] .gs-canvas-stage {
   width: calc(100% - 284px);
 }
-.gs-canvas-card {
-  width: 280px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: var(--surface-raised-solid, var(--background));
+.gs-node {
+  width: 300px;
   color: var(--foreground);
-  overflow: hidden;
-  box-shadow: var(--shadow-sm);
 }
-.gs-canvas-card[data-selected] {
-  border-color: color-mix(in srgb, var(--primary) 55%, var(--border));
-  box-shadow: 0 0 0 1px var(--primary);
+.gs-node[data-kind="text"],
+.gs-node[data-kind="document"] {
+  width: 280px;
 }
-.gs-canvas-card > header {
+.gs-node-label {
   cursor: grab;
   user-select: none;
-  height: 32px;
   display: flex;
   align-items: center;
-  gap: 7px;
-  padding: 0 10px;
+  gap: 6px;
+  padding: 0 4px 6px;
   font-size: 12px;
   color: var(--muted-foreground);
 }
-.gs-canvas-card > header > svg {
-  width: 14px;
-  height: 14px;
+.gs-node-label > svg {
+  width: 13px;
+  height: 13px;
+  flex-shrink: 0;
 }
-.react-flow__node.dragging .gs-canvas-card > header {
-  cursor: grabbing;
-}
-.gs-canvas-card strong {
+.gs-node-label strong {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-weight: 500;
+  font-weight: 400;
 }
-.gs-node-badge {
-  font-size: 10px;
+.gs-node-label span {
   margin-left: auto;
-  white-space: nowrap;
+  flex-shrink: 0;
+  font-size: 11px;
+  color: var(--readback-foreground, var(--muted-foreground));
 }
-.gs-node-content {
-  margin: 0 8px 8px;
-  padding: 10px;
-  min-height: 100px;
-  max-height: 250px;
-  overflow: auto;
-  user-select: text;
-  background: var(--surface-recessed-solid, var(--surface-recessed));
-  border-radius: 6px;
-  font-size: 12px;
+.react-flow__node.dragging .gs-node-label {
+  cursor: grabbing;
 }
-.gs-node-content img,
-.gs-node-content video {
-  width: 100%;
-  height: 160px;
-  object-fit: contain;
+.gs-node[data-selected] .gs-node-label {
+  color: var(--foreground);
 }
-.gs-node-content[data-empty-image] {
+.gs-node-body {
+  position: relative;
+  border: 2px solid var(--border);
+  border-radius: 12px;
+  background: var(--gs-node-surface);
+  transition: border-color 120ms ease;
+}
+.gs-node:hover .gs-node-body {
+  border-color: var(--surface-selected-border);
+}
+.gs-node[data-selected] .gs-node-body {
+  border-color: var(--gs-accent);
+}
+.gs-node-media {
+  position: relative;
   display: grid;
   place-content: center;
   justify-items: center;
   gap: 8px;
-  height: 150px;
-  color: var(--muted-foreground);
+  min-height: 120px;
+  aspect-ratio: 1;
+  overflow: hidden;
+  border-radius: 10px;
+  color: var(--subtle-foreground, var(--muted-foreground));
+  font-size: 12px;
 }
-.gs-node-content > svg {
-  width: 32px;
-  height: 32px;
-  color: var(--muted-foreground);
+.gs-node-media img,
+.gs-node-media video {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
 }
-.gs-node-content p {
-  margin: 8px 0;
+.gs-node-media[data-empty] > svg {
+  width: 28px;
+  height: 28px;
+}
+.gs-node-media + .gs-node-prompt,
+.gs-node-media + .gs-node-brief {
+  border-top: 1px solid var(--border-hairline);
+}
+.gs-node-badge {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  padding: 2px 6px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--background) 75%, transparent);
+  color: var(--foreground);
+  font-size: 10px;
+}
+.gs-node-text {
+  padding: 12px 14px;
+  max-height: 260px;
+  overflow: auto;
+  user-select: text;
+  font-size: 12px;
+  line-height: 1.5;
+}
+.gs-node-text h1,
+.gs-node-text h2,
+.gs-node-text h3 {
+  font-size: 13px;
+}
+.gs-node-placeholder {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  padding: 14px;
+  color: var(--readback-foreground, var(--muted-foreground));
+  font-size: 12px;
   white-space: pre-wrap;
 }
-.gs-node-content h1,
-.gs-node-content h2,
-.gs-node-content h3 {
-  font-size: 14px;
+.gs-node-placeholder > svg {
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+  color: var(--gs-kind);
 }
-.gs-canvas-dock {
-  position: absolute;
-  bottom: max(20px, env(safe-area-inset-bottom));
-  left: 50%;
-  transform: translateX(-50%);
+.gs-node-brief {
+  display: -webkit-box;
+  margin: 0;
+  padding: 10px 14px 12px;
+  overflow: hidden;
+  -webkit-line-clamp: 4;
+  -webkit-box-orient: vertical;
+  color: var(--muted-foreground);
+  font-size: 12px;
+  white-space: pre-wrap;
+}
+.gs-node-text + .gs-node-brief,
+.gs-node-text + .gs-node-prompt,
+.gs-node-placeholder + .gs-node-prompt,
+.gs-node-placeholder + .gs-node-brief {
+  border-top: 1px solid var(--border-hairline);
+}
+.gs-node-prompt {
   display: flex;
-  gap: 2px;
-  padding: 5px;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 10px 8px 14px;
+  cursor: auto;
+}
+.gs-canvas-root .gs-node-prompt textarea {
+  width: 100%;
+  min-height: 72px;
+  max-height: 220px;
+  padding: 0;
+  border: 0;
+  outline: 0;
+  resize: vertical;
+  background: transparent;
+  box-shadow: none;
+  color: var(--foreground);
+  font: inherit;
+  font-size: 12px;
+  line-height: 1.5;
+  field-sizing: content;
+}
+.gs-node-prompt footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.gs-node-prompt small {
+  color: var(--subtle-foreground, var(--muted-foreground));
+  font-size: 10px;
+}
+.gs-canvas-root .gs-node-run {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: var(--gs-accent);
+  color: var(--primary-foreground, #181818);
+}
+.gs-app .gs-node-run:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--gs-accent) 85%, var(--foreground));
+}
+.gs-canvas-root .gs-node-run:disabled {
+  background: var(--surface-raised-solid, var(--muted));
+  color: var(--subtle-foreground, var(--muted-foreground));
+}
+.gs-node[data-generation="pending"] .gs-node-run svg {
+  animation: gs-spin 900ms linear infinite;
+}
+@keyframes gs-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.gs-canvas-root .react-flow__handle.gs-port {
+  width: 14px;
+  height: 14px;
+  border: 3px solid var(--gs-node-surface);
+  background: var(--gs-kind);
+  box-shadow: 0 0 0 1.5px var(--gs-kind);
+}
+.gs-canvas-root .react-flow__handle-left.gs-port {
+  left: -8px;
+  background: var(--gs-node-surface);
+  box-shadow: 0 0 0 1.5px var(--surface-selected-border);
+}
+.gs-canvas-root .react-flow__handle-right.gs-port {
+  right: -8px;
+}
+.gs-canvas-root .react-flow__handle.gs-port:hover,
+.gs-canvas-root .react-flow__handle.connectingto {
+  box-shadow: 0 0 0 3px var(--gs-kind);
+}
+.gs-port-label {
+  position: absolute;
+  top: 50%;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 7px;
+  transform: translateY(-50%);
+  border-radius: 999px;
+  background: var(--popover);
   border: 1px solid var(--border);
-  border-radius: 10px;
+  color: var(--muted-foreground);
+  font-size: 10px;
+  white-space: nowrap;
+  pointer-events: none;
+}
+.gs-port-label svg {
+  width: 11px;
+  height: 11px;
+}
+.gs-port-label[data-side="in"] {
+  right: 18px;
+}
+.gs-port-label[data-side="out"] {
+  left: 18px;
+  color: var(--gs-kind);
+  border-color: color-mix(in srgb, var(--gs-kind) 40%, transparent);
+}
+.gs-node-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
   background: var(--popover);
   box-shadow: var(--shadow-md);
-  z-index: 5;
-  max-width: calc(100% - 24px);
-  overflow-x: auto;
 }
-.gs-canvas-dock button {
-  display: flex !important;
+.gs-node-toolbar > a {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-left: 1px solid var(--border-hairline);
+  color: var(--muted-foreground);
+}
+.gs-node-toolbar > a:hover {
+  color: var(--foreground);
+}
+.gs-generation-settings {
+  display: flex;
   flex-direction: column;
-  gap: 3px !important;
-  font-size: 10px !important;
-  min-width: 44px;
-  min-height: 44px;
-  padding: 6px !important;
-  border: 0 !important;
-  background: transparent !important;
+  gap: 10px;
 }
-.gs-canvas-dock button:hover {
-  background: var(--state-hover) !important;
+.gs-generation-settings label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
 }
-.gs-canvas-dock svg {
+.gs-generation-settings[data-compact] {
+  flex-direction: row;
+  gap: 0;
+}
+.gs-generation-settings[data-compact] label {
+  flex-direction: row;
+  align-items: center;
+  gap: 4px;
+  padding: 0 6px;
+  font-size: 12px;
+  color: var(--muted-foreground);
+}
+.gs-generation-settings[data-compact] label + label {
+  border-left: 1px solid var(--border-hairline);
+}
+.gs-generation-settings[data-compact] label:not(:first-child) > span {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+}
+.gs-generation-settings[data-compact] select {
+  width: auto;
+  min-height: 28px;
+  padding: 0 4px;
+  border: 0;
+  background: transparent;
+  color: var(--foreground);
+  font-size: 12px;
+}
+.gs-generation-settings[data-compact] select:hover {
+  background: var(--state-hover);
+}
+.gs-canvas-toolbar-panel.react-flow__panel {
+  margin-bottom: max(16px, env(safe-area-inset-bottom));
+}
+.gs-canvas-toolbar {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--gs-chrome);
+  backdrop-filter: blur(12px);
+  box-shadow: var(--shadow-md);
+}
+.gs-app .gs-canvas-toolbar button {
+  display: grid;
+  place-items: center;
+  min-width: 34px;
+  height: 34px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--muted-foreground);
+}
+.gs-app .gs-canvas-toolbar button:hover:not(:disabled) {
+  background: var(--state-hover);
+  color: var(--foreground);
+}
+.gs-app .gs-canvas-toolbar button[aria-pressed="true"] {
+  background: var(--surface-selected);
+  color: var(--foreground);
+}
+.gs-app .gs-canvas-toolbar .gs-canvas-add,
+.gs-app .gs-canvas-toolbar .gs-canvas-add:hover:not(:disabled) {
+  background: var(--gs-accent);
+  color: var(--primary-foreground, #181818);
+}
+.gs-canvas-toolbar svg {
   width: 17px;
   height: 17px;
 }
-.gs-canvas-help {
-  position: absolute;
-  bottom: calc(82px + env(safe-area-inset-bottom));
-  left: 12px;
-  margin: 0;
-  color: var(--muted-foreground);
-  font-size: 10px;
-  pointer-events: none;
+.gs-canvas-segment {
+  display: flex;
+  gap: 2px;
+  padding: 2px;
+  border-radius: 11px;
+  background: var(--surface-recessed);
 }
-.gs-canvas-root .react-flow__controls {
-  bottom: calc(68px + env(safe-area-inset-bottom));
+.gs-app .gs-canvas-segment button {
+  height: 30px;
+}
+.gs-canvas-divider {
+  width: 1px;
+  height: 20px;
+  margin: 0 4px;
+  background: var(--border);
+}
+.gs-app .gs-canvas-toolbar .gs-canvas-zoom {
+  min-width: 56px;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+.gs-canvas-menu {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 220px;
+  padding: 6px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--popover);
+  box-shadow: var(--shadow-md);
+}
+.gs-canvas-menu[data-align="start"] {
+  left: 0;
+}
+.gs-canvas-menu[data-align="end"] {
+  right: 0;
+}
+.gs-app .gs-canvas-menu button,
+.gs-canvas-utilities summary {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 10px;
+  width: 100%;
+  height: 36px;
+  padding: 0 10px;
+  color: var(--foreground);
+  font-size: 13px;
+}
+.gs-canvas-menu button > svg {
+  color: var(--gs-kind, var(--muted-foreground));
+}
+.gs-canvas-menu kbd {
+  margin-left: auto;
+  min-width: 20px;
+  padding: 1px 5px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  color: var(--muted-foreground);
+  font: 11px var(--font-mono);
+}
+.gs-canvas-utilities {
+  margin-top: 4px;
+  padding-top: 4px;
+  border-top: 1px solid var(--border-hairline);
+}
+.gs-canvas-utilities summary {
+  cursor: pointer;
+  border-radius: 9px;
+  list-style: none;
+}
+.gs-canvas-utilities summary::-webkit-details-marker {
+  display: none;
+}
+.gs-canvas-utilities summary:hover {
+  background: var(--state-hover);
+}
+.gs-canvas-utilities summary > svg:last-child {
+  margin-left: auto;
+  transition: transform 120ms ease;
+}
+.gs-canvas-utilities[open] summary > svg:last-child {
+  transform: rotate(180deg);
 }
 .gs-canvas-save {
   position: absolute;
@@ -183,8 +500,11 @@
   color: var(--muted-foreground);
   font-size: 12px;
 }
-.gs-canvas-empty button {
-  pointer-events: auto;
+.gs-canvas-empty kbd {
+  padding: 1px 5px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  font: 11px var(--font-mono);
 }
 .gs-node-inspector {
   position: absolute;
@@ -193,10 +513,11 @@
   bottom: 85px;
   z-index: 7;
   width: 260px;
-  padding: 12px;
-  background: var(--popover);
+  padding: 14px;
+  background: var(--gs-chrome);
+  backdrop-filter: blur(12px);
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: 14px;
   box-shadow: var(--shadow-md);
   display: flex;
   flex-direction: column;
@@ -206,7 +527,53 @@
 .gs-node-inspector > header {
   display: flex;
   align-items: center;
+  gap: 6px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--border-hairline);
+}
+.gs-node-inspector .gs-inspector-title {
+  flex: 1;
+  min-width: 0;
+  padding: 2px 4px;
+  border-color: transparent;
+  background: transparent;
+  font-size: 14px;
+}
+.gs-node-inspector .gs-inspector-title:hover {
+  border-color: var(--border);
+}
+.gs-inspector-facts {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  font-size: 12px;
+}
+.gs-inspector-facts div {
+  display: flex;
   justify-content: space-between;
+  gap: 12px;
+}
+.gs-inspector-facts dt {
+  color: var(--muted-foreground);
+}
+.gs-inspector-facts dd {
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.gs-inspector-section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border-hairline);
+}
+.gs-inspector-section > summary {
+  cursor: pointer;
+  margin-bottom: 10px;
+  font-size: 13px;
 }
 .gs-node-inspector textarea {
   min-height: 130px;
@@ -250,18 +617,6 @@
   .gs-canvas-save > span {
     display: none;
   }
-  .gs-canvas-dock {
-    max-width: calc(100% - 24px);
-    overflow: auto;
-    left: 12px;
-    transform: none;
-  }
-  .gs-canvas-dock span {
-    display: none;
-  }
-  .gs-canvas-dock button {
-    min-width: 36px;
-  }
   .gs-node-inspector {
     top: 55%;
     bottom: max(12px, env(safe-area-inset-bottom));
@@ -274,7 +629,7 @@
   }
 }
 
-.gs-canvas-card[data-generation="pending"] .gs-node-content {
+.gs-node[data-generation="pending"] .gs-node-media {
   background: repeating-linear-gradient(
     135deg,
     var(--surface-recessed-solid),
@@ -283,12 +638,12 @@
     var(--state-hover) 20px
   );
 }
-.gs-canvas-card[data-generation="failed"],
-.gs-canvas-card[data-generation="auth-required"] {
+.gs-node[data-generation="failed"] .gs-node-body,
+.gs-node[data-generation="auth-required"] .gs-node-body {
   border-color: var(--surface-destructive-border);
 }
-.gs-canvas-card[data-generation="uncertain"] {
-  border-color: var(--warning-text);
+.gs-node[data-generation="uncertain"] .gs-node-body {
+  border-style: dashed;
 }
 .gs-generation-progress {
   display: flex;

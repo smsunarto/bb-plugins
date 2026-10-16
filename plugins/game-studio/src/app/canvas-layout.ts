@@ -102,9 +102,10 @@ export function revealNode(
     if (length * view.zoom > available - before - after) return leading;
     return Math.max(leading, Math.min(offset, available - after - (start + length) * view.zoom));
   };
+  // Leave room for the selected node's floating toolbar above and beside it.
   return {
-    x: reveal(view.x, node.x, node.width, size.width, 20, 20),
-    y: reveal(view.y, node.y, node.height, size.height, 60, 88),
+    x: reveal(view.x, node.x, node.width, size.width, 96, 96),
+    y: reveal(view.y, node.y, node.height, size.height, 120, 88),
     zoom: view.zoom,
   };
 }

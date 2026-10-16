@@ -122,7 +122,7 @@ describe("canvas camera", () => {
   it("does not move or zoom a card that is already visible", () => {
     expect(
       revealNode(
-        { x: 40, y: 100, zoom: 0.5 },
+        { x: 100, y: 140, zoom: 0.5 },
         { width: 800, height: 600 },
         {
           x: 0,
@@ -131,14 +131,14 @@ describe("canvas camera", () => {
           height: 180,
         },
       ),
-    ).toEqual({ x: 40, y: 100, zoom: 0.5 });
+    ).toEqual({ x: 100, y: 140, zoom: 0.5 });
   });
 
   it("pans just enough to reveal a card when the inspector narrows the canvas", () => {
     expect(
       revealNode(
-        { x: 40, y: 100, zoom: 0.5 },
-        { width: 320, height: 600 },
+        { x: 40, y: 140, zoom: 0.5 },
+        { width: 400, height: 600 },
         {
           x: 500,
           y: 0,
@@ -146,7 +146,7 @@ describe("canvas camera", () => {
           height: 180,
         },
       ),
-    ).toEqual({ x: -90, y: 100, zoom: 0.5 });
+    ).toEqual({ x: -86, y: 140, zoom: 0.5 });
   });
 
   it("keeps a card above the dock in a short mobile stage", () => {
@@ -161,7 +161,7 @@ describe("canvas camera", () => {
           height: 180,
         },
       ),
-    ).toEqual({ x: 20, y: 132, zoom: 1 });
+    ).toEqual({ x: 96, y: 132, zoom: 1 });
   });
 
   it("keeps the header reachable when a card is larger than the available stage", () => {
@@ -176,6 +176,6 @@ describe("canvas camera", () => {
           height: 400,
         },
       ),
-    ).toEqual({ x: -80, y: -80, zoom: 2 });
+    ).toEqual({ x: -4, y: -20, zoom: 2 });
   });
 });

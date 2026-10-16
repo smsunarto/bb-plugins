@@ -34,6 +34,10 @@ creation tooling. Leave the version unset to let the agent choose through Hub.
   audio assets, and reference connections. Select text, document or image nodes
   as generation inputs, or connect their handles. Text and image generation
   saves the current board first and returns the result to its node.
+  Write a node's brief inside the selected node and run it with its send button
+  or ⌘/Ctrl+Enter. The floating bar above it sets the model, aspect ratio,
+  resolution, or duration. Add nodes from the **+** menu or press `T`, `I`, `V`,
+  or `A`; `H` toggles the hand tool.
   Brief starters cover concept exploration, isolated 3D references, focused edits,
   motion, geometry contracts, and design experiments. Inserting a starter appends
   to an existing draft. Replace bracketed guidance before generating.
@@ -90,8 +94,8 @@ They attach to their source node only while its brief and connected design
 sources, including original image bytes, are unchanged. Other results remain
 staged candidates for review, including older jobs without image revision records.
 Midjourney standard jobs yield four image candidates; the other image/video
-models yield one. Image nodes offer **Generate image**; text nodes offer
-**Generate text**, using the provider and model currently selected in BB.
+models yield one. Image nodes run with their selected model (Nano Banana 2.1
+or Midjourney); text nodes run with the provider and model currently selected in BB.
 Text runs in a hidden BB personal workspace and leaves the main conversation
 unchanged. Other asset actions still prepare requests in native BB chat.
 
