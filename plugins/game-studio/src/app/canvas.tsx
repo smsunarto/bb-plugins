@@ -274,6 +274,15 @@ function NodePreview({
   );
 }
 /** Melius-style bottom bar: add menu, pointer tools, layout, and zoom. Lives inside React Flow. */
+const fitOptions = { maxZoom: 1, minZoom: 0.15, padding: 0.15 };
+/** Figma-style zoom keys; shifted digits match by physical key. */
+const zoomKeys: Record<string, (flow: ReactFlowInstance<Card>) => unknown> = {
+  "+": (flow) => flow.zoomIn(),
+  "=": (flow) => flow.zoomIn(),
+  "-": (flow) => flow.zoomOut(),
+  Digit0: (flow) => flow.zoomTo(1),
+  Digit1: (flow) => flow.fitView(fitOptions),
+};
 function CanvasToolbar({
   tool,
   onTool,
@@ -290,21 +299,33 @@ function CanvasToolbar({
   canArrange: boolean;
 }) {
   const [menu, setMenu] = useState<"add" | "zoom" | null>(null);
+  const [utilities, setUtilities] = useState(false);
   const bar = useRef<HTMLDivElement>(null);
   const { zoom } = useViewport();
   const flow = useReactFlow();
   useEffect(() => {
     if (!menu) return;
+    bar.current?.querySelector<HTMLElement>('[role="menuitem"]')?.focus();
     const close = (event: PointerEvent) => {
       if (!bar.current?.contains(event.target as globalThis.Node)) setMenu(null);
     };
     window.addEventListener("pointerdown", close);
     return () => window.removeEventListener("pointerdown", close);
   }, [menu]);
+  const toggle = (next: "add" | "zoom") => {
+    setUtilities(false);
+    setMenu(menu === next ? null : next);
+  };
   const choose = (action: () => unknown) => () => {
     setMenu(null);
     void action();
   };
+  const zoomItems = [
+    { label: "Zoom in", keys: "+", action: () => flow.zoomIn() },
+    { label: "Zoom out", keys: "−", action: () => flow.zoomOut() },
+    { label: "Zoom to 100%", keys: "⇧0", action: () => flow.zoomTo(1) },
+    { label: "Zoom to fit", keys: "⇧1", action: () => flow.fitView(fitOptions) },
+  ];
   return (
     <Panel position="bottom-center" className="gs-canvas-toolbar-panel">
       <div
@@ -314,10 +335,22 @@ function CanvasToolbar({
         tabIndex={-1}
         ref={bar}
         onKeyDown={(event) => {
-          if (event.key === "Escape" && menu) {
+          if (!menu) return;
+          if (event.key === "Escape") {
             event.stopPropagation();
             setMenu(null);
+            bar.current?.querySelector<HTMLElement>(`[data-menu="${menu}"]`)?.focus();
+            return;
           }
+          const step = { ArrowDown: 1, ArrowUp: -1 }[event.key];
+          if (!step) return;
+          event.preventDefault();
+          event.stopPropagation();
+          const items = [
+            ...(bar.current?.querySelectorAll<HTMLElement>('[role="menuitem"]') ?? []),
+          ];
+          const index = items.indexOf(document.activeElement as HTMLElement);
+          items.at(index < 0 ? Math.min(step, 0) : (index + step) % items.length)?.focus();
         }}
       >
         {menu === "add" && (
@@ -336,74 +369,74 @@ function CanvasToolbar({
                   <kbd>{item.key!.toUpperCase()}</kbd>
                 </button>
               ))}
-            <details className="gs-canvas-utilities">
-              <summary>
-                <Icon name="Wrench" />
-                <span>Utilities</span>
-                <Icon name="ChevronDown" />
-              </summary>
-              {kinds
-                .filter((item) => !item.key)
-                .map((item) => (
-                  <button key={item.kind} role="menuitem" onClick={choose(() => onAdd(item.kind))}>
-                    <Icon name={item.icon} />
-                    <span>{item.label}</span>
-                  </button>
-                ))}
-              <button role="menuitem" onClick={choose(onUpload)}>
-                <Icon name="Upload" />
-                <span>Upload to staging</span>
-              </button>
-            </details>
+            <hr />
+            <button
+              role="menuitem"
+              className="gs-canvas-utilities"
+              aria-expanded={utilities}
+              onClick={() => setUtilities(!utilities)}
+            >
+              <Icon name="Wrench" />
+              <span>Utilities</span>
+              <Icon name="ChevronDown" />
+            </button>
+            {utilities &&
+              [
+                ...kinds
+                  .filter((item) => !item.key)
+                  .map((item) => ({
+                    id: item.kind,
+                    icon: item.icon,
+                    label: item.label,
+                    action: () => onAdd(item.kind),
+                  })),
+                { id: "upload", icon: "Upload", label: "Upload to staging", action: onUpload },
+              ].map((item) => (
+                <button key={item.id} role="menuitem" data-nested onClick={choose(item.action)}>
+                  <Icon name={item.icon} />
+                  <span>{item.label}</span>
+                </button>
+              ))}
           </div>
         )}
         {menu === "zoom" && (
           <div className="gs-canvas-menu" role="menu" aria-label="Zoom" data-align="end">
-            <button role="menuitem" onClick={choose(() => flow.zoomIn())}>
-              <span>Zoom in</span>
-            </button>
-            <button role="menuitem" onClick={choose(() => flow.zoomOut())}>
-              <span>Zoom out</span>
-            </button>
-            <button role="menuitem" onClick={choose(() => flow.zoomTo(1))}>
-              <span>Zoom to 100%</span>
-            </button>
-            <button
-              role="menuitem"
-              onClick={choose(() => flow.fitView({ maxZoom: 1, minZoom: 0.15, padding: 0.15 }))}
-            >
-              <span>Zoom to fit</span>
-            </button>
+            {zoomItems.map((item) => (
+              <button key={item.label} role="menuitem" onClick={choose(item.action)}>
+                <span>{item.label}</span>
+                <kbd>{item.keys}</kbd>
+              </button>
+            ))}
           </div>
         )}
         <button
           className="gs-canvas-add"
+          data-menu="add"
           title="Add node"
           aria-label="Add node"
           aria-haspopup="menu"
           aria-expanded={menu === "add"}
-          onClick={() => setMenu(menu === "add" ? null : "add")}
+          onClick={() => toggle("add")}
         >
           <Icon name="Plus" />
         </button>
-        <div className="gs-canvas-segment">
-          <button
-            title="Select"
-            aria-label="Select tool"
-            aria-pressed={tool === "select"}
-            onClick={() => onTool("select")}
-          >
-            <Icon name="MousePointer2" />
-          </button>
-          <button
-            title="Hand (H)"
-            aria-label="Hand tool"
-            aria-pressed={tool === "hand"}
-            onClick={() => onTool("hand")}
-          >
-            <Icon name="Hand" />
-          </button>
-        </div>
+        <span className="gs-canvas-divider" />
+        <button
+          title="Select"
+          aria-label="Select tool"
+          aria-pressed={tool === "select"}
+          onClick={() => onTool("select")}
+        >
+          <Icon name="MousePointer2" />
+        </button>
+        <button
+          title="Hand (H)"
+          aria-label="Hand tool"
+          aria-pressed={tool === "hand"}
+          onClick={() => onTool("hand")}
+        >
+          <Icon name="Hand" />
+        </button>
         <span className="gs-canvas-divider" />
         <button
           title="Arrange nodes"
@@ -414,21 +447,23 @@ function CanvasToolbar({
           <Icon name="Workflow" />
         </button>
         <button
-          title="Zoom to fit"
+          title="Zoom to fit (⇧1)"
           aria-label="Zoom to fit"
-          onClick={() => void flow.fitView({ maxZoom: 1, minZoom: 0.15, padding: 0.15 })}
+          onClick={() => void flow.fitView(fitOptions)}
         >
           <Icon name="Scan" />
         </button>
-        <span className="gs-canvas-divider" />
         <button
           className="gs-canvas-zoom"
+          data-menu="zoom"
+          title="Zoom options"
           aria-label="Zoom options"
           aria-haspopup="menu"
           aria-expanded={menu === "zoom"}
-          onClick={() => setMenu(menu === "zoom" ? null : "zoom")}
+          onClick={() => toggle("zoom")}
         >
-          {Math.round(zoom * 100)}%
+          <span>{Math.round(zoom * 100)}%</span>
+          <Icon name="ChevronDown" />
         </button>
       </div>
     </Panel>
@@ -907,6 +942,7 @@ export function StudioCanvas({
     )
       return;
     const shortcut = kinds.find((item) => item.key === event.key.toLowerCase());
+    const zoomKey = zoomKeys[event.key] ?? (event.shiftKey ? zoomKeys[event.code] : undefined);
     if (event.metaKey || event.ctrlKey || event.altKey) {
       // Leave modified keys to the browser and BB.
     } else if (shortcut) {
@@ -916,6 +952,10 @@ export function StudioCanvas({
     } else if (event.key.toLowerCase() === "h") {
       event.preventDefault();
       setTool(tool === "hand" ? "select" : "hand");
+      return;
+    } else if (zoomKey) {
+      event.preventDefault();
+      if (flow.current) void zoomKey(flow.current);
       return;
     }
     if (

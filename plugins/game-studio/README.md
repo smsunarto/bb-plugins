@@ -37,7 +37,8 @@ creation tooling. Leave the version unset to let the agent choose through Hub.
   Write a node's brief inside the selected node and run it with its send button
   or ⌘/Ctrl+Enter. The floating bar above it sets the model, aspect ratio,
   resolution, or duration. Add nodes from the **+** menu or press `T`, `I`, `V`,
-  or `A`; `H` toggles the hand tool.
+  or `A`; `H` toggles the hand tool. `+`/`-` zoom, `Shift+0` resets to 100%, and
+  `Shift+1` fits the board.
   Brief starters cover concept exploration, isolated 3D references, focused edits,
   motion, geometry contracts, and design experiments. Inserting a starter appends
   to an existing draft. Replace bracketed guidance before generating.
