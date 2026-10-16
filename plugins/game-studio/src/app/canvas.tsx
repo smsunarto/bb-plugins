@@ -1169,59 +1169,47 @@ export function StudioCanvas({
         </div>
         {selected && (
           <aside className="gs-node-inspector" ref={inspector} aria-label="Node inspector">
-            <header>
-              <input
-                className="gs-inspector-title"
-                aria-label="Node title"
-                maxLength={200}
-                placeholder={kindInfo(selected.data.source.type).label}
-                value={selected.data.source.title ?? ""}
-                onChange={(e) => updateSelected({ title: e.target.value })}
-              />
+            <header
+              style={{ "--gs-kind": kindInfo(selected.data.source.type).color } as CSSProperties}
+            >
+              <span className="gs-inspector-kind">
+                <Icon name={kindInfo(selected.data.source.type).icon} />
+              </span>
+              <div>
+                <input
+                  className="gs-inspector-title"
+                  aria-label="Node title"
+                  maxLength={200}
+                  placeholder={kindInfo(selected.data.source.type).label}
+                  value={selected.data.source.title ?? ""}
+                  onChange={(e) => updateSelected({ title: e.target.value })}
+                />
+                <small>
+                  {kindInfo(selected.data.source.type).label}
+                  {selected.data.source.type === "text" ? " · BB model" : ""}
+                </small>
+              </div>
               <button
-                className="gs-icon"
+                className="gs-inspector-close"
                 aria-label="Close node inspector"
+                title="Close (Esc)"
                 onClick={clearSelection}
               >
                 <Icon name="X" />
               </button>
             </header>
-            <dl className="gs-inspector-facts">
-              <div>
-                <dt>Type</dt>
-                <dd>{kindInfo(selected.data.source.type).label}</dd>
-              </div>
-              {promptField(selected.data.source.type) && (
-                <div>
-                  <dt>Model</dt>
-                  <dd>{nodeModelLabel(selected.data.source)}</dd>
-                </div>
-              )}
-              {selectedAsset && (
-                <>
-                  <div>
-                    <dt>Output</dt>
-                    <dd title={selectedAsset.path}>{selectedAsset.name}</dd>
-                  </div>
-                  <div>
-                    <dt>Location</dt>
-                    <dd>{selectedAsset.path.startsWith("Assets/") ? "In Assets" : "Staged"}</dd>
-                  </div>
-                </>
-              )}
-            </dl>
             {promptField(selected.data.source.type) && selected.data.source.type !== "text" && (
-              <details className="gs-inspector-section" open>
-                <summary>Generation settings</summary>
+              <section className="gs-inspector-section">
+                <h3>Generation</h3>
                 <GenerationSettings
                   node={selected.data.source}
                   onChange={(patch) => editData(selected.id, patch)}
                 />
-              </details>
+              </section>
             )}
             {selected.data.source.type === "text" ? (
-              <label>
-                Note
+              <label className="gs-inspector-section">
+                <h3>Note</h3>
                 <textarea
                   value={String(selected.data.source.data.text ?? "")}
                   placeholder="Write or generate the note…"
@@ -1338,9 +1326,10 @@ export function StudioCanvas({
               </>
             )}
             {!["text", "document", "table"].includes(selected.data.source.type) && (
-              <>
-                <label>
-                  Existing output
+              <section className="gs-inspector-section">
+                <h3>Output</h3>
+                <label className="gs-inspector-row">
+                  <span>Asset</span>
                   <select
                     value={String(selected.data.source.data.assetId ?? "")}
                     onChange={(e) => updateData("assetId", e.target.value)}
@@ -1353,14 +1342,23 @@ export function StudioCanvas({
                     ))}
                   </select>
                 </label>
-              </>
+                {selectedAsset && (
+                  <dl className="gs-inspector-facts">
+                    <div>
+                      <dt>Location</dt>
+                      <dd>{selectedAsset.path.startsWith("Assets/") ? "In Assets" : "Staged"}</dd>
+                    </div>
+                  </dl>
+                )}
+              </section>
             )}
             <button
-              className="gs-danger"
+              className="gs-danger gs-inspector-remove"
               onClick={() => {
                 void flow.current?.deleteElements({ nodes: [{ id: selected.id }] });
               }}
             >
+              <Icon name="Trash2" />
               Remove node
             </button>
           </aside>

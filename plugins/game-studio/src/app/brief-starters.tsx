@@ -1,5 +1,6 @@
 import { useId, useState } from "react";
 import type { NodeKind } from "../shared/schema.ts";
+import { Icon } from "./icons.tsx";
 import { rpc } from "./rpc.ts";
 
 export function BriefStarters({
@@ -27,7 +28,10 @@ export function BriefStarters({
   if (!selected) return null;
   return (
     <details className="gs-brief-starters">
-      <summary>Brief starters</summary>
+      <summary>
+        Brief starters
+        <Icon name="ChevronDown" />
+      </summary>
       <label htmlFor={id}>Start with a purpose</label>
       <select id={id} value={selected.id} onChange={(event) => setSelectedId(event.target.value)}>
         {templates.data?.templates.map((template) => (

@@ -36,11 +36,9 @@ export function CanvasInputs({
     (other) => other.id !== node.id && ["text", "document", "image"].includes(other.type),
   );
   return (
-    <fieldset className="gs-canvas-inputs">
-      <legend>Inputs from other nodes</legend>
-      <small className="gs-muted">
-        Connect handles or select inputs below. Text adds context; images add visual references.
-      </small>
+    <fieldset className="gs-inspector-section gs-canvas-inputs">
+      <legend>Inputs</legend>
+      <small className="gs-muted">Text adds context; images add visual references.</small>
       {candidates.length ? (
         candidates.map((other) => {
           const missing =
