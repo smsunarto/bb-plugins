@@ -28,9 +28,6 @@
   outline: 2px solid var(--primary);
   outline-offset: -2px;
 }
-.gs-canvas-root[data-inspecting] .gs-canvas-stage {
-  width: calc(100% - 284px);
-}
 .gs-node {
   width: 300px;
   color: var(--foreground);
