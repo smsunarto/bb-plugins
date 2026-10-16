@@ -110,8 +110,7 @@ const midjourney: MediaProvider = {
         "midjourney",
         "--speed",
         "fast",
-        "--batch-size",
-        "4",
+        // A standard 8.2 job already yields four images; an explicit --bs 4 is rejected.
         "--ar",
         request.aspectRatio,
       ];

@@ -71,8 +71,6 @@ test("one request identity submits once, stages all candidates, and survives a r
     "midjourney",
     "--speed",
     "fast",
-    "--batch-size",
-    "4",
     "--ar",
     "1:1",
     "--no-wait",
