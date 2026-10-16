@@ -93,7 +93,7 @@ Keep local assets beside the preview or in child directories:
 
 Read [video delivery](references/video.md) before embedding recordings, creating a video player, or diagnosing playback. Keep videos separate from HTML. The conversion helper remains in `scripts/mobile-video.sh`. Existing data URI videos work, but their encoded bytes count toward the document limit.
 
-On BB 0.42.1, the host file API limits each external video to 25 MiB. A fragmented MP4 from the conversion helper starts playing while it downloads. Other videos wait for the whole download. Seeking past the downloaded part waits for it to arrive. HTTP range streaming and larger video delivery require bb core support. On BB 0.43.3, separate raster images have a 10 MiB limit. Check current host limits before relying on larger assets.
+On BB 0.42.1, the host file API limits each external video to 25 MiB. An MP4 whose index precedes its media, such as the conversion helper's output, starts playing while it downloads. Other videos wait for the whole download. Seeking past the downloaded part waits for it to arrive. HTTP range streaming and larger video delivery require bb core support. On BB 0.43.3, separate raster images have a 10 MiB limit. Check current host limits before relying on larger assets.
 
 Markdown previews use bb's renderer and sanitize raw HTML. Write local images as `![Label](image.png)`. Raw HTML paths do not receive Markdown path resolution. Use HTML for image sizing or local video. Markdown links and images resolve from the document directory. Links outside that directory stay as written and do not abort rendering, but the lease does not serve them.
 

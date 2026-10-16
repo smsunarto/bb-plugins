@@ -1,3 +1,18 @@
+import {
+  AppendOnlyStreamTarget,
+  EncodedAudioPacketSource,
+  EncodedPacketSink,
+  EncodedVideoPacketSource,
+  Input,
+  MP4,
+  Mp4OutputFormat,
+  Output,
+  QTFF,
+  ReadableStreamSource,
+  type EncodedPacket,
+  type InputTrack,
+} from "mediabunny";
+
 export function resolvePreviewAssetUrl(src: string, documentUrl: URL, rootUrl: URL): URL | null {
   const value = src.trim();
   // Remote/data/blob URLs and root-relative URLs retain their existing browser behavior.
@@ -28,10 +43,14 @@ export interface InlinePreviewAsset {
 /** One asset's outcome, sent to the frame as soon as it settles. */
 export type InlineAssetResult = { key: string; blob: Blob } | { key: string; failed: true };
 /**
- * A fragmented MP4 starts playing before its Blob arrives: its MediaSource
- * type first, then its bytes in order. The Blob still follows as the fallback.
+ * A video starts playing before its Blob arrives: the MediaSource type of its
+ * fragmented MP4 copy first, then that copy's bytes in order, or a failure
+ * part way. The Blob still follows as the fallback.
  */
-export type InlineAssetChunk = { key: string; stream: string } | { key: string; chunk: Uint8Array };
+export type InlineAssetChunk =
+  | { key: string; stream: string }
+  | { key: string; chunk: Uint8Array }
+  | { key: string; streamFailed: true };
 export type InlineAssetMessage = InlineAssetResult | InlineAssetChunk;
 
 // Blob URLs are storage-partitioned. Create them inside the opaque frame from
@@ -104,8 +123,8 @@ const ASSET_BRIDGE = `(() => {
       }
     }
   };
-  // A fragmented MP4 plays through MediaSource while it downloads. Its Blob
-  // still arrives last, and any MediaSource failure falls back to that Blob.
+  // A video plays its fragmented MP4 copy through MediaSource while it
+  // downloads. Its Blob arrives last, and any failure falls back to that Blob.
   const MediaSourceType = self.ManagedMediaSource ?? self.MediaSource;
   const streams = new Map();
   const fallback = (stream) => {
@@ -177,6 +196,7 @@ const ASSET_BRIDGE = `(() => {
   const receive = (message) => {
     const stream = streams.get(message.key);
     if (message.stream) return startStream(message.key, message.stream);
+    if (message.streamFailed) return stream && fail(stream);
     if (message.chunk) {
       if (stream && !stream.failed) {
         stream.queue.push(message.chunk);
@@ -282,8 +302,9 @@ export function prepareInlineAssets(
 }
 
 /**
- * Read one declared asset through the authenticated app origin. A fragmented
- * MP4 also goes to `onChunk` as it downloads, so the frame can play it early.
+ * Read one declared asset through the authenticated app origin. A video also
+ * goes to `onChunk` as fragmented MP4 while it downloads, so the frame can
+ * play it early. Its Blob arrives only after the stream ends or fails.
  */
 export async function fetchInlineAsset(
   asset: InlinePreviewAsset,
@@ -306,142 +327,97 @@ export async function fetchInlineAsset(
     throw new Error(`Preview asset has unsupported MIME type: ${type || "unknown"}`);
   }
   if (asset.image || !onChunk || !response.body) return response.blob();
-  const chunks: Uint8Array[] = [];
-  // Bytes read before the init segment decides whether the file streams.
-  let head: Uint8Array | null = new Uint8Array(0);
-  let streaming = false;
-  const reader = response.body.getReader();
-  for (let read = await reader.read(); !read.done; read = await reader.read()) {
-    chunks.push(read.value);
-    if (streaming) onChunk({ key: asset.key, chunk: read.value });
-    if (!head) continue;
-    head = concat(head, read.value);
-    const streamType = fragmentedMp4Type(head);
-    if (streamType === undefined) continue;
-    head = null;
-    if (streamType === null) continue;
-    streaming = true;
-    onChunk({ key: asset.key, stream: streamType });
-    for (const chunk of chunks) onChunk({ key: asset.key, chunk });
-  }
-  return new Blob(chunks as BlobPart[], { type });
+  const [download, remux] = response.body.tee();
+  const streaming = streamFragments(remux, (message) => onChunk({ key: asset.key, ...message }));
+  const blob = await new Response(download).blob();
+  await streaming;
+  return blob.slice(0, blob.size, type);
 }
 
-function concat(first: Uint8Array, second: Uint8Array): Uint8Array {
-  const bytes = new Uint8Array(first.length + second.length);
-  bytes.set(first);
-  bytes.set(second, first.length);
-  return bytes;
-}
-
-type Box = { type: string; start: number; end: number };
-
-/** Boxes that may precede `moov` in a streamable file. */
-const PREFIX_BOXES = new Set(["ftyp", "free", "skip", "wide", "pdin", "uuid"]);
-const MAX_INIT_BYTES = 4 * 1024 * 1024;
-
-/** The ISO BMFF box at `offset`, undefined when its header is not here yet. */
-function boxAt(view: DataView, offset: number): Box | null | undefined {
-  if (offset + 8 > view.byteLength) return undefined;
-  let size = view.getUint32(offset);
-  let start = offset + 8;
-  if (size === 1) {
-    if (offset + 16 > view.byteLength) return undefined;
-    size = Number(view.getBigUint64(offset + 8));
-    start = offset + 16;
-  }
-  const end = size === 0 ? Infinity : offset + size;
-  const type = String.fromCharCode(...new Uint8Array(view.buffer, view.byteOffset + offset + 4, 4));
-  return end < start ? null : { type, start, end };
-}
-
-function children(view: DataView, start: number, end: number): Box[] {
-  const boxes: Box[] = [];
-  for (let offset = start; ;) {
-    const box = boxAt(view, offset);
-    if (!box || box.end > end) return boxes;
-    boxes.push(box);
-    offset = box.end;
-  }
-}
-
-const child = (view: DataView, parent: Box | undefined, type: string, skip = 0) =>
-  parent && children(view, parent.start + skip, parent.end).find((box) => box.type === type);
+type StreamMessage = { stream: string } | { chunk: Uint8Array } | { streamFailed: true };
 
 /**
- * The MediaSource type of a fragmented MP4 that MediaSource can play as it
- * downloads, such as `video/mp4; codecs="avc1.640029,mp4a.40.2"`. Null means
- * the file must arrive whole. Undefined means its init segment is not here yet.
+ * Rewrap an MP4 or QuickTime video as fragmented MP4 while it downloads,
+ * copying its encoded packets. A file whose index trails its media starts
+ * only once whole. Never rejects: other files simply wait for their Blob.
  */
-export function fragmentedMp4Type(bytes: Uint8Array): string | null | undefined {
-  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
-  const more = bytes.length < MAX_INIT_BYTES ? undefined : null;
+async function streamFragments(
+  bytes: ReadableStream<Uint8Array>,
+  send: (message: StreamMessage) => void,
+): Promise<void> {
+  const input = new Input({
+    source: new ReadableStreamSource(bytes, { handleUnhandledError: () => {} }),
+    formats: [MP4, QTFF],
+  });
+  // Fragments wait until the MIME type, which needs each track's first packet, is known.
+  let pending: Uint8Array[] | null = [];
+  const output = new Output({
+    format: new Mp4OutputFormat({ fastStart: "fragmented" }),
+    target: new AppendOnlyStreamTarget(
+      new WritableStream({
+        write: (chunk) => (pending ? void pending.push(chunk) : send({ chunk })),
+      }),
+    ),
+  });
   try {
-    for (let offset = 0; ;) {
-      const box = boxAt(view, offset);
-      if (box === undefined) return more;
-      if (box === null || (offset === 0 && box.type !== "ftyp")) return null;
-      if (box.type === "moov") return box.end > bytes.length ? more : moovType(view, box);
-      if (!PREFIX_BOXES.has(box.type)) return null;
-      offset = box.end;
-    }
+    const tracks = await input.getTracks();
+    const copies = await Promise.all(tracks.map((track) => addCopy(output, track)));
+    await output.start();
+    const announce = async () => {
+      const stream = await output.getMimeType();
+      if (!pending) return;
+      send({ stream });
+      for (const chunk of pending) send({ chunk });
+      pending = null;
+    };
+    void announce().catch(() => {});
+    await Promise.all(copies.map((copy) => copy?.()));
+    await output.finalize();
   } catch {
-    // A truncated or malformed box inside a complete moov.
-    return null;
+    // Before the MIME type, the frame has nothing to undo and waits for the Blob.
+    if (!pending) send({ streamFailed: true });
+    pending = null;
+    void output.cancel();
+  } finally {
+    // Stop reading, so the tee stops buffering this branch.
+    input.dispose();
   }
 }
 
-function moovType(view: DataView, moov: Box): string | null {
-  const boxes = children(view, moov.start, moov.end);
-  // Only a fragmented file's moov extends into later movie fragments.
-  if (!boxes.some((box) => box.type === "mvex")) return null;
-  const codecs: string[] = [];
-  for (const trak of boxes.filter((box) => box.type === "trak")) {
-    const stbl = child(view, child(view, child(view, trak, "mdia"), "minf"), "stbl");
-    const stsd = child(view, stbl, "stsd");
-    // The full box header and entry count precede the first sample entry.
-    const [entry] = stsd ? children(view, stsd.start + 8, stsd.end) : [];
-    const codec = entry && sampleCodec(view, entry);
-    if (!codec) return null;
-    codecs.push(codec);
+/** Add a track that copies `track`'s packets, and return the copy to run once the output starts. */
+async function addCopy(output: Output, track: InputTrack): Promise<(() => Promise<void>) | null> {
+  if (track.isVideoTrack()) {
+    if (!track.codec) throw new Error("Unknown video codec");
+    const source = new EncodedVideoPacketSource(track.codec);
+    output.addVideoTrack(source, { rotation: await track.getRotation() });
+    const decoderConfig = (await track.getDecoderConfig()) ?? undefined;
+    return () =>
+      copyPackets(track, source, (packet, first) =>
+        source.add(packet, first ? { decoderConfig } : undefined),
+      );
   }
-  return codecs.length > 0 ? `video/mp4; codecs="${codecs.join(",")}"` : null;
+  if (track.isAudioTrack()) {
+    if (!track.codec) throw new Error("Unknown audio codec");
+    const source = new EncodedAudioPacketSource(track.codec);
+    output.addAudioTrack(source);
+    const decoderConfig = (await track.getDecoderConfig()) ?? undefined;
+    return () =>
+      copyPackets(track, source, (packet, first) =>
+        source.add(packet, first ? { decoderConfig } : undefined),
+      );
+  }
+  return null;
 }
 
-function sampleCodec(view: DataView, entry: Box): string | null {
-  const hex = (offset: number) => view.getUint8(offset).toString(16).padStart(2, "0");
-  if (entry.type === "avc1" || entry.type === "avc3") {
-    // A visual sample entry's fixed fields take 78 bytes.
-    const avcC = child(view, entry, "avcC", 78);
-    return avcC
-      ? `${entry.type}.${hex(avcC.start + 1)}${hex(avcC.start + 2)}${hex(avcC.start + 3)}`
-      : null;
+async function copyPackets(
+  track: InputTrack,
+  source: { close(): void },
+  add: (packet: EncodedPacket, first: boolean) => Promise<void>,
+) {
+  let first = true;
+  for await (const packet of new EncodedPacketSink(track).packets()) {
+    await add(packet, first);
+    first = false;
   }
-  if (entry.type !== "mp4a") return null;
-  // An audio sample entry's fixed fields take 28 bytes, plus more in QuickTime versions 1 and 2.
-  const version = view.getUint16(entry.start + 8);
-  const esds = child(view, entry, "esds", 28 + (version === 1 ? 16 : version === 2 ? 36 : 0));
-  return esds ? audioCodec(view, esds) : null;
-}
-
-/** RFC 6381 names AAC by its decoder config: `mp4a.40.<audio object type>`. */
-function audioCodec(view: DataView, esds: Box): string | null {
-  let offset = esds.start + 4;
-  const descriptor = (tag: number) => {
-    if (view.getUint8(offset++) !== tag) return false;
-    // Each length byte carries 7 bits, and its high bit marks another byte.
-    for (let i = 0; i < 4 && view.getUint8(offset++) & 0x80; i++);
-    return true;
-  };
-  if (!descriptor(0x03)) return null;
-  const flags = view.getUint8(offset + 2);
-  offset += 3;
-  if (flags & 0x80) offset += 2;
-  if (flags & 0x40) offset += 1 + view.getUint8(offset);
-  if (flags & 0x20) offset += 2;
-  if (!descriptor(0x04)) return null;
-  const objectType = view.getUint8(offset);
-  if (objectType !== 0x40) return `mp4a.${objectType.toString(16)}`;
-  offset += 13;
-  return descriptor(0x05) ? `mp4a.40.${view.getUint8(offset) >> 3}` : "mp4a.40.2";
+  source.close();
 }

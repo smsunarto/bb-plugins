@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { StrictMode, useState } from "react";
 import { afterEach, expect, test, vi } from "vitest";
 import { loadPluginApp, renderSlot as sdkRenderSlot } from "@get-bb/plugin-sdk/testing/app";
-import { ascii, bytes, mp4Init, STREAM_TYPE } from "./mp4-fixture.ts";
+import { mp4File, STREAM_TYPE } from "./mp4-fixture.ts";
 import {
   widgetIdentitySchema,
   saveWidgetStateSchema,
@@ -438,7 +438,7 @@ test("inline-vis keeps the preview and reports media that failed to download", a
   }
 });
 
-test("inline-vis streams a fragmented MP4 to the frame and replays its bytes to a late frame", async () => {
+test("inline-vis streams a video to the frame and replays its bytes to a late frame", async () => {
   const { fetch, pending } = deferredFetch();
   const slot = renderSlot(
     await inlineVisDirective(),
@@ -460,7 +460,7 @@ test("inline-vis streams a fragmented MP4 to the frame and replays its bytes to 
       return value!;
     });
     const iframe = slot.container.querySelector("iframe")!;
-    const init = mp4Init();
+    const file = await mp4File("in-memory");
     let body!: ReadableStreamDefaultController<Uint8Array>;
     const response = new Response(
       new ReadableStream<Uint8Array>({ start: (controller) => void (body = controller) }),
@@ -468,23 +468,23 @@ test("inline-vis streams a fragmented MP4 to the frame and replays its bytes to 
     );
     await waitFor(() => expect(pending).toHaveLength(1));
     pending[0]!.resolve(response);
-    body.enqueue(init);
-    // The frame announces itself after the first bytes, and catches up on them.
-    await new Promise((resolve) => setTimeout(resolve, 10));
+    // Every byte has arrived, but the download has not ended.
+    body.enqueue(file);
+    // The frame announces itself late, and catches up on the stream so far.
+    await new Promise((resolve) => setTimeout(resolve, 300));
     const token = html.match(/const token = "([^"]+)"/)![1]!;
     const port = announce(iframe.contentWindow, token);
-    expect(port.postMessage.mock.calls).toEqual([
-      [{ key: "0", stream: STREAM_TYPE }],
-      [{ key: "0", chunk: init }],
-    ]);
-    const fragment = bytes(ascii("moof"));
-    body.enqueue(fragment);
+    expect(port.postMessage.mock.calls.length).toBeGreaterThan(1);
+    const streamed = port.postMessage.mock.calls.map(
+      ([message]) => message as Record<string, unknown>,
+    );
+    expect(streamed[0]).toEqual({ key: "0", stream: STREAM_TYPE });
+    expect(streamed.slice(1).every((message) => message.chunk instanceof Uint8Array)).toBe(true);
     body.close();
-    await waitFor(() => expect(port.postMessage).toHaveBeenCalledTimes(4));
-    expect(port.postMessage.mock.calls[2]).toEqual([{ key: "0", chunk: fragment }]);
-    const [last] = port.postMessage.mock.calls[3]! as [{ key: string; blob: Blob }];
+    await waitFor(() => expect(port.postMessage.mock.lastCall?.[0]).toHaveProperty("blob"));
+    const [last] = port.postMessage.mock.lastCall! as [{ key: string; blob: Blob }];
     expect(last.key).toBe("0");
-    expect(last.blob.size).toBe(init.length + fragment.length);
+    expect(last.blob.size).toBe(file.length);
   } finally {
     slot.unmount();
     fetch.mockRestore();

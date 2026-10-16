@@ -46,25 +46,21 @@ Resolve `scripts/mobile-video.sh` from the skill root, one directory above this
 reference. It requires FFmpeg with
 libx264 and refuses to overwrite existing files. The delivery copy uses H.264
 High level 4.1, 8-bit yuv420p, at most 1920x1080, even dimensions, 30 fps,
-at most 6 Mbit/s, AAC when audio exists, and two-second MP4 fragments. It
+at most 6 Mbit/s, AAC when audio exists, a keyframe every two seconds, and
+fast-start metadata. It
 preserves aspect ratio and does not upscale. Check the output remains below
 the host's 25 MiB limit. The original stays unchanged.
 
 ## Streaming playback
 
-A fragmented H.264/AAC MP4 plays through MediaSource while it downloads, so a
-remote client starts after the first fragment instead of the whole file. Every
-other video, including a fast-start MP4 or WebM, plays once its download
-completes. Streaming applies when the video has one local candidate, either
+An MP4 or QuickTime video starts playing while it downloads when its index
+precedes its media: a fast-start or fragmented file. The app copies its
+packets into fragments and the frame plays them through MediaSource.
+Playback starts after the first keyframe interval arrives, so frequent
+keyframes start sooner. A file whose index trails its media, such as a raw
+`agent-browser record` MP4, and WebM play once the download completes.
+Streaming applies when the video has one local candidate, either
 `<video src>` or a single `<source>`. Several `<source>` candidates wait for
 their downloads so the browser can choose between them. Any MediaSource
-failure falls back to the downloaded file. Run the helper on any recording
-that should stream, including an existing MP4.
-
-For a playback report, inspect the actual MP4 with ffprobe (profile, level,
-pixel format, frame rate, dimensions) and inspect the player's MediaError,
-readyState, currentSrc, and authenticated network response. Do not diagnose
-autoplay from a blank player alone. Keep controls and playsinline so playback
-can start with a tap when autoplay is unavailable. Test playback and seeking
-through the actual inline iframe. Desktop WebKit or an iPhone viewport does
-not establish physical iPhone Safari playback.
+failure falls back to the downloaded file. Run the helper on recordings that
+should stream.

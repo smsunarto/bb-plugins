@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Produce a delivery copy. Never overwrite a capture or an existing output.
-# Two-second fragments let inline-vis start playback before the download ends.
+# A leading index and two-second keyframes let inline-vis start playback before the download ends.
 set -euo pipefail
 if [[ $# != 2 ]]; then
   echo 'Usage: mobile-video.sh <capture> <delivery.mp4>' >&2
@@ -10,4 +10,4 @@ ffmpeg -hide_banner -n -i "$1" -map 0:v:0 -map '0:a:0?' \
   -vf 'scale=w=min(1920\,iw):h=min(1080\,ih):force_original_aspect_ratio=decrease:force_divisible_by=2:reset_sar=1:out_range=tv,fps=30,format=yuv420p' \
   -color_range tv -c:v libx264 -preset slow -crf 18 -profile:v high -level:v 4.1 \
   -maxrate 6M -bufsize 12M -g 60 -keyint_min 60 -sc_threshold 0 -c:a aac -b:a 128k \
-  -movflags +frag_keyframe+empty_moov+default_base_moof "$2"
+  -movflags +faststart "$2"

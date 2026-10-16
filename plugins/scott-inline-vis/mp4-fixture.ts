@@ -1,38 +1,52 @@
-/** Byte-level MP4 fixtures for the media streaming tests. */
-export const STREAM_TYPE = 'video/mp4; codecs="avc1.640029,mp4a.40.2"';
-export const ascii = (text: string) => [...text].map((character) => character.charCodeAt(0));
-export const zeros = (length: number) => Array<number>(length).fill(0);
-export const bytes = (...parts: ArrayLike<number>[]) =>
-  Uint8Array.from(parts.flatMap((part) => Array.from(part)));
-export function box(type: string, ...payload: ArrayLike<number>[]) {
-  const body = bytes(...payload);
-  const size = new DataView(new ArrayBuffer(4));
-  size.setUint32(0, 8 + body.length);
-  return bytes(new Uint8Array(size.buffer), ascii(type), body);
-}
-/** An ffmpeg-shaped init segment with H.264 High 4.1 video and AAC-LC audio. */
-export function mp4Init({ fragmented = true } = {}) {
-  const avc1 = box("avc1", zeros(78), box("avcC", [1, 0x64, 0x00, 0x29]));
-  // ES descriptor > decoder config (MPEG-4 audio) > decoder specific info (object type 2).
-  const esds = box(
-    "esds",
-    zeros(4),
-    [0x03, 0x16, 0, 1, 0, 0x04, 0x11, 0x40, 0x15],
-    zeros(11),
-    [0x05, 0x02, 0x12, 0x10],
-  );
-  const trak = (entry: Uint8Array) =>
-    box("trak", box("mdia", box("minf", box("stbl", box("stsd", zeros(4), [0, 0, 0, 1], entry)))));
-  return bytes(
-    box("ftyp", ascii("isom"), zeros(4)),
-    box(
-      "moov",
-      box("mvhd", zeros(100)),
-      trak(avc1),
-      trak(box("mp4a", zeros(28), esds)),
-      fragmented ? box("mvex", box("trex", zeros(24))) : [],
-    ),
-  );
+/** Small MP4 files for the media streaming tests. Remuxing copies packets, so they need no real video. */
+import {
+  BufferTarget,
+  EncodedPacket,
+  EncodedVideoPacketSource,
+  Mp4OutputFormat,
+  Output,
+} from "mediabunny";
+
+export const STREAM_TYPE = 'video/mp4; codecs="avc1.640029"';
+// The avcC record ffmpeg writes for a 64x64 H.264 High 4.1 clip.
+const AVCC = Uint8Array.from(
+  "01640029ffe1001867640029acd94426c044000003000400000300183c60c65801000668ebe3cb22c0fdf8f800".match(
+    /../g,
+  )!,
+  (byte) => Number.parseInt(byte, 16),
+);
+
+/** Six packets, a key frame every three. `fastStart: false` puts the index after the media. */
+export async function mp4File(fastStart: false | "in-memory" | "fragmented"): Promise<Uint8Array> {
+  const target = new BufferTarget();
+  const output = new Output({ format: new Mp4OutputFormat({ fastStart }), target });
+  const source = new EncodedVideoPacketSource("avc");
+  output.addVideoTrack(source);
+  await output.start();
+  for (let index = 0; index < 6; index++) {
+    const packet = new EncodedPacket(
+      Uint8Array.from([0, 0, 0, 1, index]),
+      index % 3 === 0 ? "key" : "delta",
+      index / 3,
+      1 / 3,
+    );
+    await source.add(
+      packet,
+      index === 0
+        ? {
+            decoderConfig: {
+              codec: "avc1.640029",
+              codedWidth: 64,
+              codedHeight: 64,
+              description: AVCC,
+            },
+          }
+        : undefined,
+    );
+  }
+  source.close();
+  await output.finalize();
+  return new Uint8Array(target.buffer!);
 }
 
 export function chunkedResponse(chunks: Uint8Array[], type = "video/mp4") {

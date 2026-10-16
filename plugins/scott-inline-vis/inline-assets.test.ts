@@ -2,14 +2,16 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
 import {
   fetchInlineAsset,
-  fragmentedMp4Type,
+  type InlineAssetChunk,
   injectWideEscapeBridge,
   prepareInlineAssets,
   resolvePreviewAssetUrl,
 } from "./inline-assets.ts";
-import { ascii, box, bytes, chunkedResponse, mp4Init, STREAM_TYPE, zeros } from "./mp4-fixture.ts";
+import { BufferSource, EncodedPacketSink, Input, MP4 } from "mediabunny";
+import { chunkedResponse, mp4File, STREAM_TYPE } from "./mp4-fixture.ts";
 
 afterEach(() => vi.restoreAllMocks());
+const text = (value: string) => new TextEncoder().encode(value);
 const root = new URL("https://scott.getbb.app/api/v1/file-previews/lease/");
 const documentUrl = new URL("player.html", root);
 
@@ -286,37 +288,61 @@ test("reports a failed download and decoder failures inside the opaque frame", a
   win.close();
 });
 
-test("names a fragmented MP4's MediaSource type once its whole init segment arrives", () => {
-  const init = mp4Init();
-  expect(fragmentedMp4Type(init)).toBe(STREAM_TYPE);
-  expect(fragmentedMp4Type(init.subarray(0, init.length - 1))).toBeUndefined();
-  expect(fragmentedMp4Type(mp4Init({ fragmented: false }))).toBeNull();
-  // A file whose media precedes its moov, and WebM, must arrive whole.
-  expect(fragmentedMp4Type(bytes(box("ftyp", ascii("isom")), box("mdat", zeros(16))))).toBeNull();
-  expect(fragmentedMp4Type(bytes([0x1a, 0x45, 0xdf, 0xa3], zeros(12)))).toBeNull();
-});
+const concat = (chunks: Uint8Array[]) => {
+  const bytes = new Uint8Array(chunks.reduce((size, chunk) => size + chunk.length, 0));
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.length;
+  }
+  return bytes;
+};
 
-test("hands a fragmented MP4's bytes to the frame while it downloads", async () => {
+/** Read a file back the way a player would: its layout and every video packet. */
+async function readBack(bytes: Uint8Array) {
+  const input = new Input({ source: new BufferSource(bytes), formats: [MP4] });
+  const [track] = await input.getVideoTracks();
+  const packets: number[] = [];
+  for await (const packet of new EncodedPacketSink(track!).packets())
+    packets.push(packet.data.at(-1)!);
+  const latin1 = new TextDecoder("latin1").decode(bytes);
+  return { fragmented: latin1.includes("moof"), packets };
+}
+
+test.each(["in-memory", false, "fragmented"] as const)(
+  "streams an MP4 with fastStart %s to the frame as fragmented MP4",
+  async (fastStart) => {
+    const { fetch } = transport();
+    const file = await mp4File(fastStart);
+    fetch.mockResolvedValueOnce(chunkedResponse([file.subarray(0, 100), file.subarray(100)]));
+    const [asset] = prepareInlineAssets('<video src="clip.mp4"></video>', documentUrl.href).assets;
+    const messages: InlineAssetChunk[] = [];
+    const blob = await fetchInlineAsset(asset!, new AbortController().signal, (message) =>
+      messages.push(message),
+    );
+    expect(messages[0]).toEqual({ key: "0", stream: STREAM_TYPE });
+    const chunks = messages.slice(1).map((message) => ("chunk" in message ? message.chunk : null));
+    expect(chunks.length).toBeGreaterThan(0);
+    expect(chunks).not.toContain(null);
+    expect(await readBack(concat(chunks as Uint8Array[]))).toEqual({
+      fragmented: true,
+      packets: [0, 1, 2, 3, 4, 5],
+    });
+    // The frame's fallback is the original file, untouched.
+    expect(blob.type).toBe("video/mp4");
+    expect(blob.size).toBe(file.length);
+  },
+);
+
+test("leaves a video it cannot rewrap to its Blob", async () => {
   const { fetch } = transport();
-  const init = mp4Init();
-  const first = init.subarray(0, 10);
-  const second = bytes(init.subarray(10), ascii("moof"));
-  fetch.mockResolvedValueOnce(chunkedResponse([first, second]));
-  const [asset] = prepareInlineAssets('<video src="clip.mp4"></video>', documentUrl.href).assets;
+  fetch.mockResolvedValueOnce(chunkedResponse([text("not an mp4")], "video/webm"));
+  const [asset] = prepareInlineAssets('<video src="clip.webm"></video>', documentUrl.href).assets;
   const onChunk = vi.fn();
   const blob = await fetchInlineAsset(asset!, new AbortController().signal, onChunk);
-  expect(onChunk.mock.calls).toEqual([
-    [{ key: "0", stream: STREAM_TYPE }],
-    [{ key: "0", chunk: first }],
-    [{ key: "0", chunk: second }],
-  ]);
-  expect(blob.type).toBe("video/mp4");
-  expect(blob.size).toBe(first.length + second.length);
-
-  fetch.mockResolvedValueOnce(chunkedResponse([mp4Init({ fragmented: false })]));
-  const plain = vi.fn();
-  await fetchInlineAsset(asset!, new AbortController().signal, plain);
-  expect(plain).not.toHaveBeenCalled();
+  expect(onChunk).not.toHaveBeenCalled();
+  expect(await blob.text()).toBe("not an mp4");
+  expect(blob.type).toBe("video/webm");
 });
 
 function fakeMediaSource(supported = true) {
@@ -359,8 +385,6 @@ function fakeMediaSource(supported = true) {
   }
   return { FakeMediaSource, sources };
 }
-
-const text = (value: string) => new TextEncoder().encode(value);
 
 test("plays a fragmented MP4 through MediaSource before its Blob arrives", async () => {
   const { FakeMediaSource, sources } = fakeMediaSource();
@@ -424,6 +448,22 @@ test("falls back to the Blob when the decoder rejects a stream", async () => {
   expect(video.hasAttribute("src")).toBe(false);
   expect(video.querySelector("source")?.getAttribute("src")).toBe("blob:null/2");
   expect(load).toHaveBeenCalledTimes(1);
+  win.close();
+});
+
+test("falls back to the Blob when the stream fails part way", async () => {
+  const { FakeMediaSource, sources } = fakeMediaSource();
+  const { win, deliver } = await frame('<video src="clip.mp4"></video>', FakeMediaSource);
+  const video = win.document.querySelector("video")!;
+  deliver({ key: "0", stream: STREAM_TYPE });
+  sources[0]!.open();
+  deliver({ key: "0", chunk: text("init") });
+  sources[0]!.buffer!.finish();
+  deliver({ key: "0", streamFailed: true });
+  deliver({ key: "0", blob: new win.Blob(["whole file"]) });
+  // A truncated stream must not end as if it were complete.
+  expect(sources[0]!.endOfStream).not.toHaveBeenCalled();
+  expect(video.getAttribute("src")).toBe("blob:null/2");
   win.close();
 });
 

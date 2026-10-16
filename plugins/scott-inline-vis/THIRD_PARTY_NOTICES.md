@@ -27,3 +27,11 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+
+## Mediabunny
+
+The built `dist/app.js` bundles unmodified code from
+[Mediabunny](https://github.com/Vanilagy/mediabunny) 1.61.5, copyright (c)
+Vanilagy, under the Mozilla Public License 2.0. Its source is available at
+<https://github.com/Vanilagy/mediabunny>, and the license text at
+<https://mozilla.org/MPL/2.0/>.
