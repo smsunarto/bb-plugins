@@ -1,23 +1,43 @@
-import { readFile, writeFile, stat, rename } from "node:fs/promises";
+import { readFile, readdir, writeFile, stat, rename } from "node:fs/promises";
 import { join } from "node:path";
 import { setTimeout } from "node:timers/promises";
 import { z } from "zod";
 import { ProviderFailure, type MediaProvider, type ProviderContext } from "./providers.ts";
 import { generationPrompt } from "../shared/generation-prompt.ts";
 
-export type Credentials = { googleApiKey?: string; falAccessToken?: string };
-const googleRoot = "https://generativelanguage.googleapis.com/v1beta/interactions";
+export type Credentials = { vertexProject?: string; falAccessToken?: string };
+const vertexRoot = "https://aiplatform.googleapis.com";
 const falRoot = "https://queue.fal.run/minimax/h3-max/reference-to-video";
 const content = z.object({
   type: z.string(),
   data: z.string().optional(),
   mime_type: z.string().optional(),
-  uri: z.string().optional(),
 });
 const interaction = z.object({
   id: z.string().min(1).max(200),
   status: z.string(),
   steps: z.array(z.object({ type: z.string(), content: z.array(content).optional() })).default([]),
+});
+const generatedContent = z.object({
+  responseId: z.string().min(1).max(200),
+  candidates: z
+    .array(
+      z.object({
+        finishReason: z.string().optional(),
+        content: z
+          .object({
+            parts: z
+              .array(
+                z.object({
+                  inlineData: z.object({ mimeType: z.string(), data: z.string() }).optional(),
+                }),
+              )
+              .default([]),
+          })
+          .optional(),
+      }),
+    )
+    .default([]),
 });
 const falReceipt = z.object({ request_id: z.uuid(), status_url: z.url(), response_url: z.url() });
 const falStatus = z.object({
@@ -86,8 +106,7 @@ async function download(url: string, destination: string, signal: AbortSignal) {
     !(
       parsed.hostname.endsWith(".fal.media") ||
       parsed.hostname === "fal.media" ||
-      parsed.hostname.endsWith(".fal.ai") ||
-      parsed.hostname === "storage.googleapis.com"
+      parsed.hostname.endsWith(".fal.ai")
     )
   )
     throw new Error("The provider returned an unsupported media download origin.");
@@ -115,13 +134,36 @@ async function saveOutput(path: string, bytes: Buffer) {
   await rename(`${path}.part`, path);
 }
 
-function requireKey(key: string | undefined, provider: string): string {
-  if (!key)
+/** Vertex AI requires Application Default Credentials from the project's host. */
+async function vertexAccess(credentials: Credentials, context: ProviderContext) {
+  const project = credentials.vertexProject;
+  if (!project)
     throw new ProviderFailure(
-      `Configure ${provider}'s API key in Game Studio settings. No request was submitted.`,
+      "Set the Google Cloud project for Vertex AI in Game Studio settings.",
       "auth-required",
     );
-  return key;
+  const signIn =
+    "Sign in on this project's host with `gcloud auth application-default login`, then retry.";
+  let result: Awaited<ReturnType<ProviderContext["run"]>>;
+  try {
+    result = await context.run({
+      executable: "gcloud",
+      args: ["auth", "application-default", "print-access-token"],
+      cwd: context.rootPath,
+      signal: context.signal,
+    });
+  } catch {
+    context.signal.throwIfAborted();
+    throw new ProviderFailure(`Install the Google Cloud CLI. ${signIn}`, "auth-required");
+  }
+  const token = result.stdout.trim();
+  if (result.code !== 0 || !/^[\w.~+/-]+=*$/.test(token))
+    throw new ProviderFailure(signIn, "auth-required");
+  return {
+    project,
+    interactions: `${vertexRoot}/v1beta1/projects/${project}/locations/global/interactions`,
+    headers: { Authorization: `Bearer ${token}`, "x-goog-user-project": project },
+  };
 }
 function falAuthorization(credentials: Credentials): string {
   if (!credentials.falAccessToken)
@@ -151,47 +193,102 @@ export function cloudProviders(credentials: Credentials): Readonly<Record<string
       const request = context.request;
       if (request.kind === "model-3d" || request.kind === "text")
         throw new Error("Google does not generate 3D models through this adapter.");
-      const headers = { "x-goog-api-key": requireKey(credentials.googleApiKey, "Google Gemini") };
-      const frameRoles =
-        request.kind === "video" && context.imagePaths.length
-          ? `${context.imagePaths[1] ? "<FIRST_FRAME> <LAST_FRAME>" : "<FIRST_FRAME>"} `
-          : "";
-      const input = [
-        ...(await Promise.all(context.imagePaths.map(image))),
-        { type: "text", text: frameRoles + generationPrompt(request) },
-      ];
-      const result = interaction.parse(
-        await jsonRequest(googleRoot, headers, context.signal, {
-          model:
-            request.model.id ??
-            (request.kind === "image" ? "gemini-nano-banana-2.1" : "gemini-omni-1.1-flash"),
-          input,
-          store: true,
-          response_format:
-            request.kind === "image"
-              ? { type: "image", aspect_ratio: request.aspectRatio, image_size: request.resolution }
-              : {
-                  type: "video",
-                  delivery: "uri",
-                  aspect_ratio: request.aspectRatio,
-                  duration: `${request.duration}s`,
-                  resolution: request.resolution,
+      const vertex = await vertexAccess(credentials, context);
+      const refs = await Promise.all(context.imagePaths.map(image));
+      if (request.kind === "image") {
+        const result = generatedContent.parse(
+          await jsonRequest(
+            `${vertexRoot}/v1/projects/${vertex.project}/locations/global/publishers/google/models/gemini-nano-banana-2.1:generateContent`,
+            vertex.headers,
+            context.signal,
+            {
+              contents: [
+                {
+                  role: "user",
+                  parts: [
+                    ...refs.map((ref) => ({
+                      inlineData: { mimeType: ref.mime_type, data: ref.data },
+                    })),
+                    { text: generationPrompt(request) },
+                  ],
                 },
+              ],
+              generationConfig: {
+                responseModalities: ["IMAGE"],
+                imageConfig: { aspectRatio: request.aspectRatio, imageSize: request.resolution },
+              },
+            },
+          ),
+        );
+        await context.recordTask(result.responseId);
+        const images = result.candidates
+          .flatMap((candidate) => candidate.content?.parts ?? [])
+          .flatMap((part) => (part.inlineData ? [part.inlineData] : []));
+        if (images.length !== 1)
+          throw new ProviderFailure(
+            `Nano Banana returned no single image (${result.candidates[0]?.finishReason ?? "no candidate"}).`,
+            "failed",
+            result.responseId,
+          );
+        await saveGoogleMedia(context, images[0]!.mimeType, images[0]!.data);
+        return result.responseId;
+      }
+      const frameRoles = refs.length
+        ? `${refs[1] ? "<FIRST_FRAME> <LAST_FRAME>" : "<FIRST_FRAME>"} `
+        : "";
+      const result = interaction.parse(
+        await jsonRequest(vertex.interactions, vertex.headers, context.signal, {
+          model: "gemini-omni-1.1-flash-preview",
+          input: [...refs, { type: "text", text: frameRoles + generationPrompt(request) }],
+          background: true,
+          store: true,
+          response_format: [
+            {
+              type: "video",
+              aspect_ratio: request.aspectRatio,
+              duration: `${request.duration}s`,
+              resolution: request.resolution,
+            },
+          ],
+          generation_config: {
+            video_config: { task: refs.length ? "image_to_video" : "text_to_video" },
+          },
         }),
       );
       await context.recordTask(result.id);
-      if (result.status === "completed")
-        await saveGoogleMedia(context, result, headers["x-goog-api-key"]);
       return result.id;
     },
     async collect(context, taskId) {
-      const headers = { "x-goog-api-key": requireKey(credentials.googleApiKey, "Google Gemini") };
+      // Images are saved by their synchronous request; only video interactions poll.
+      if (context.request.kind === "image") {
+        if (await hasOutput(context.outputPath)) return;
+        throw new ProviderFailure(
+          "This Nano Banana image was not saved and cannot be recovered. Generate it again.",
+          "failed",
+          taskId,
+        );
+      }
+      const vertex = await vertexAccess(credentials, context);
       for (let attempt = 0; attempt < 120; attempt++) {
         const result = interaction.parse(
-          await jsonRequest(`${googleRoot}/${encodeURIComponent(taskId)}`, headers, context.signal),
+          await jsonRequest(
+            `${vertex.interactions}/${encodeURIComponent(taskId)}`,
+            vertex.headers,
+            context.signal,
+          ),
         );
         if (result.status === "completed") {
-          await saveGoogleMedia(context, result, headers["x-goog-api-key"]);
+          const videos = result.steps
+            .filter((step) => step.type === "model_output")
+            .flatMap((step) => step.content ?? [])
+            .filter((part) => part.type === "video");
+          if (videos.length !== 1 || !videos[0]!.data)
+            throw new ProviderFailure(
+              "Google returned no single complete video. Its interaction identity was saved.",
+              "uncertain",
+              taskId,
+            );
+          await saveGoogleMedia(context, "video/mp4", videos[0]!.data);
           return;
         }
         if (result.status !== "in_progress")
@@ -271,83 +368,17 @@ export function cloudProviders(credentials: Credentials): Readonly<Record<string
   };
   return { google, fal };
 }
-async function saveGoogleMedia(
-  context: ProviderContext,
-  result: z.output<typeof interaction>,
-  key: string,
-) {
-  const wanted = context.request.kind === "image" ? "image" : "video";
-  const outputs = result.steps
-    .filter((step) => step.type === "model_output")
-    .flatMap((step) => step.content ?? [])
-    .filter((part) => part.type === wanted);
-  if (outputs.length !== 1)
-    throw new ProviderFailure(
-      "Google returned no single complete media output. Its interaction identity was saved.",
-      "uncertain",
-      result.id,
-    );
-  const output = outputs[0]!;
+async function saveGoogleMedia(context: ProviderContext, mime: string, data: string) {
   const extension =
-    wanted === "video"
+    mime === "video/mp4"
       ? "mp4"
-      : output.mime_type === "image/jpeg"
+      : mime === "image/jpeg"
         ? "jpg"
-        : output.mime_type === "image/webp"
+        : mime === "image/webp"
           ? "webp"
           : "png";
-  const path = join(context.outputPath, `output.${extension}`);
-  if (output.data) await saveOutput(path, Buffer.from(output.data, "base64"));
-  else if (output.uri) await downloadGoogle(output.uri, path, context.signal, key);
-  else
-    throw new ProviderFailure(
-      "Google returned an incomplete media output.",
-      "uncertain",
-      result.id,
-    );
+  await saveOutput(join(context.outputPath, `output.${extension}`), Buffer.from(data, "base64"));
 }
-
-async function downloadGoogle(uri: string, path: string, signal: AbortSignal, key: string) {
-  const url = new URL(uri);
-  const match = /^\/v1beta\/files\/([a-zA-Z0-9_-]+)(?::download)?$/.exec(url.pathname);
-  if (
-    url.origin !== "https://generativelanguage.googleapis.com" ||
-    !match ||
-    url.username ||
-    url.password
-  )
-    throw new Error("Google returned an unexpected media URI.");
-  const fileUrl = `https://generativelanguage.googleapis.com/v1beta/files/${match[1]}`;
-  const headers = { "x-goog-api-key": key };
-  for (let attempt = 0; attempt < 120; attempt++) {
-    const file = z
-      .object({ state: z.enum(["ACTIVE", "PROCESSING", "FAILED"]) })
-      .parse(await jsonRequest(fileUrl, headers, signal));
-    if (file.state === "FAILED")
-      throw new ProviderFailure("Google could not process the generated video.", "failed");
-    if (file.state === "ACTIVE") {
-      // Never forward credentials to redirected download origins.
-      const response = await fetch(`${fileUrl}:download?alt=media`, {
-        headers,
-        signal,
-        redirect: "manual",
-      });
-      if (response.status >= 300 && response.status < 400) {
-        const location = response.headers.get("location");
-        await response.body?.cancel();
-        if (!location) throw new Error("Google returned an empty download redirect.");
-        await download(location, path, signal);
-        return;
-      }
-      if (!response.ok)
-        throw new ProviderFailure(
-          "Google media download failed. Resume the saved job.",
-          "uncertain",
-        );
-      await saveOutput(path, await boundedBody(response, 512 * 1024 * 1024));
-      return;
-    }
-    await setTimeout(5000, undefined, { signal });
-  }
-  throw new ProviderFailure("Google media is still processing. Resume the saved job.", "uncertain");
+async function hasOutput(path: string) {
+  return (await readdir(path)).some((name) => name.startsWith("output."));
 }

@@ -6,7 +6,7 @@ test("model defaults and supported alternatives reflect the enabled providers", 
   ).toEqual({ provider: "google", id: "gemini-nano-banana-2.1" });
   expect(
     normalizeMediaRequest(mediaRequest.parse({ kind: "video", prompt: "Coin" })).model.id,
-  ).toBe("gemini-omni-1.1-flash");
+  ).toBe("gemini-omni-1.1-flash-preview");
   expect(
     normalizeMediaRequest(
       mediaRequest.parse({ kind: "video", prompt: "Coin", model: { provider: "fal" } }),

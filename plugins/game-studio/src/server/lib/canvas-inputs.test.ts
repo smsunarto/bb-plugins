@@ -154,7 +154,11 @@ async function fixture() {
   const registered = slots.register("host", rootPath, "project");
   const acquiring = slots.acquire(registered.id, "host", "project", "thread");
   const leased = slots.completeAcquire(registered.id, acquiring.leaseId!);
-  const generations = new Generations(bb, async () => ({ googleApiKey: "test-key" }), slots);
+  const generations = new Generations(
+    bb,
+    async () => ({ vertexProject: "studio-test-project" }),
+    slots,
+  );
   const work = new GenerationWork(slots);
   captureGuard = (phase) => {
     expect(() => slots.beginRelease(leased.id, "thread", leased.leaseId!)).toThrow(

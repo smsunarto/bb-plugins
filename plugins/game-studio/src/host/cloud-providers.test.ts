@@ -37,46 +37,65 @@ async function context(request: unknown) {
 }
 const response = (body: unknown) => Response.json(body);
 
-test("Nano Banana uses the Interactions REST shape and authenticated headers", async () => {
+const vertex = { vertexProject: "studio-test-project" };
+const signedIn = (ctx: ProviderContext, commands: string[][] = []) => {
+  ctx.run = async (command) => {
+    commands.push([command.executable, ...command.args]);
+    return { code: 0, stdout: "ya29.test-token\n", stderr: "" };
+  };
+  return commands;
+};
+
+test("Nano Banana generates on Vertex AI with the host's ADC token and saves the image", async () => {
   const { ctx, recorded } = await context({ kind: "image", prompt: "An icon" });
+  const commands = signedIn(ctx);
   const calls: { url: string; options?: RequestInit }[] = [];
   globalThis.fetch = (async (url, options) => {
     calls.push({ url: String(url), options });
     return response({
-      id: "interaction-1",
-      status: "completed",
-      steps: [
+      responseId: "response-1",
+      candidates: [
         {
-          type: "model_output",
-          content: [
-            {
-              type: "image",
-              mime_type: "image/png",
-              data: Buffer.from("image-output").toString("base64"),
-            },
-          ],
+          finishReason: "STOP",
+          content: {
+            parts: [
+              {
+                inlineData: {
+                  mimeType: "image/png",
+                  data: Buffer.from("image-output").toString("base64"),
+                },
+              },
+            ],
+          },
         },
       ],
     });
   }) as typeof fetch;
-  const provider = cloudProviders({ googleApiKey: "test-google-secret" }).google!;
+  const provider = cloudProviders(vertex).google!;
   const id = await provider.submit(ctx);
   await provider.collect(ctx, id);
-  expect(recorded).toEqual(["interaction-1"]);
-  expect(calls[0]!.url).toBe("https://generativelanguage.googleapis.com/v1beta/interactions");
-  expect(calls[0]!.options?.headers).toMatchObject({ "x-goog-api-key": "test-google-secret" });
+  expect(id).toBe("response-1");
+  expect(recorded).toEqual(["response-1"]);
+  expect(commands).toEqual([["gcloud", "auth", "application-default", "print-access-token"]]);
+  expect(calls.map((call) => call.url)).toEqual([
+    "https://aiplatform.googleapis.com/v1/projects/studio-test-project/locations/global/publishers/google/models/gemini-nano-banana-2.1:generateContent",
+  ]);
+  expect(calls[0]!.options?.headers).toMatchObject({
+    Authorization: "Bearer ya29.test-token",
+    "x-goog-user-project": "studio-test-project",
+  });
   expect(JSON.parse(String(calls[0]!.options?.body))).toEqual({
-    model: "gemini-nano-banana-2.1",
-    input: [{ type: "text", text: "An icon" }],
-    store: true,
-    response_format: { type: "image", aspect_ratio: "1:1", image_size: "1K" },
+    contents: [{ role: "user", parts: [{ text: "An icon" }] }],
+    generationConfig: {
+      responseModalities: ["IMAGE"],
+      imageConfig: { aspectRatio: "1:1", imageSize: "1K" },
+    },
   });
   expect(await readFile(join(ctx.outputPath, "output.png"), "utf8")).toBe("image-output");
-  expect(calls.map((call) => call.options?.method)).toEqual(["POST", "GET"]);
 });
 
 test("Google receives ordered reference labels alongside the corresponding image bytes", async () => {
-  const { ctx, recorded } = await context({
+  const { ctx } = await context({
     kind: "image",
     prompt: "Refine the key silhouette using the palette.",
     images: ["references/shape.png", "references/palette.webp"],
@@ -84,27 +103,24 @@ test("Google receives ordered reference labels alongside the corresponding image
 1. ["Key shape (node: shape)", "Handle silhouette"]
 2. ["Blue palette (asset: palette)"]`,
   });
+  signedIn(ctx);
   const shape = join(ctx.rootPath, "shape.png"),
     palette = join(ctx.rootPath, "palette.webp");
   await writeFile(shape, "shape-image");
   await writeFile(palette, "palette-image");
   ctx.imagePaths = [shape, palette];
-  const calls: { url: string; options?: RequestInit }[] = [];
-  globalThis.fetch = (async (url, options) => {
-    calls.push({ url: String(url), options });
-    return response({ id: "labelled-job", status: "in_progress" });
+  let body: { contents: { parts: unknown[] }[] } | undefined;
+  globalThis.fetch = (async (_url, options) => {
+    body = JSON.parse(String(options?.body));
+    return response({ responseId: "labelled", candidates: [{ finishReason: "IMAGE_SAFETY" }] });
   }) as typeof fetch;
-  const id = await cloudProviders({ googleApiKey: "test-google-secret" }).google!.submit(ctx);
-  expect(id).toBe("labelled-job");
-  expect(recorded).toEqual(["labelled-job"]);
-  expect(calls.map((call) => ({ url: call.url, method: call.options?.method }))).toEqual([
-    { url: "https://generativelanguage.googleapis.com/v1beta/interactions", method: "POST" },
-  ]);
-  expect(JSON.parse(String(calls[0]!.options?.body)).input).toEqual([
-    { type: "image", data: "c2hhcGUtaW1hZ2U=", mime_type: "image/png" },
-    { type: "image", data: "cGFsZXR0ZS1pbWFnZQ==", mime_type: "image/webp" },
+  await expect(cloudProviders(vertex).google!.submit(ctx)).rejects.toThrow(
+    "Nano Banana returned no single image (IMAGE_SAFETY).",
+  );
+  expect(body!.contents[0]!.parts).toEqual([
+    { inlineData: { mimeType: "image/png", data: "c2hhcGUtaW1hZ2U=" } },
+    { inlineData: { mimeType: "image/webp", data: "cGFsZXR0ZS1pbWFnZQ==" } },
     {
-      type: "text",
       text: `Refine the key silhouette using the palette.
 
 Attached image references (in attachment order):
@@ -114,59 +130,80 @@ Attached image references (in attachment order):
   ]);
 });
 
-test("Omni downloads a Google file with credentials kept off the CDN redirect", async () => {
-  const { ctx } = await context({
+test("Omni submits a background Vertex interaction and saves the polled inline video", async () => {
+  const { ctx, recorded } = await context({
     kind: "video",
     prompt: "A spinning coin",
-    duration: 3,
+    duration: 5,
     resolution: "360p",
   });
-  const urls: string[] = [];
-  const headers: unknown[] = [];
+  signedIn(ctx);
+  const calls: { url: string; method?: string; body?: unknown }[] = [];
+  const interactions =
+    "https://aiplatform.googleapis.com/v1beta1/projects/studio-test-project/locations/global/interactions";
   globalThis.fetch = (async (url, options) => {
-    const path = String(url);
-    urls.push(path);
-    headers.push(options?.headers);
-    if (path.endsWith("/interactions")) {
-      expect(JSON.parse(String(options?.body)).response_format).toEqual({
-        type: "video",
-        delivery: "uri",
-        aspect_ratio: "16:9",
-        duration: "3s",
-        resolution: "360p",
-      });
-      return response({
-        id: "video-job",
-        status: "completed",
-        steps: [
-          {
-            type: "model_output",
-            content: [
-              {
-                type: "video",
-                mime_type: "video/mp4",
-                uri: "https://generativelanguage.googleapis.com/v1beta/files/video1:download?alt=media",
-              },
-            ],
-          },
-        ],
-      });
-    }
-    if (path.endsWith("/files/video1")) return response({ state: "ACTIVE" });
-    if (path.includes(":download"))
-      return new Response(null, {
-        status: 302,
-        headers: {
-          location: "https://storage.googleapis.com/generated/video.mp4?signature=example",
+    calls.push({
+      url: String(url),
+      method: options?.method,
+      body: options?.body ? JSON.parse(String(options.body)) : undefined,
+    });
+    if (options?.method === "POST") return response({ id: "video-job", status: "in_progress" });
+    return response({
+      id: "video-job",
+      status: "completed",
+      steps: [
+        {
+          type: "model_output",
+          content: [
+            {
+              type: "video",
+              mime_type: "video/mp4",
+              data: Buffer.from("video-output").toString("base64"),
+            },
+          ],
         },
-      });
-    if (path.startsWith("https://storage.googleapis.com/")) return new Response("video-output");
-    throw new Error("Unexpected endpoint");
+      ],
+    });
   }) as typeof fetch;
-  await cloudProviders({ googleApiKey: "test-google-secret" }).google!.submit(ctx);
+  const provider = cloudProviders(vertex).google!;
+  const id = await provider.submit(ctx);
+  await provider.collect(ctx, id);
+  expect(recorded).toEqual(["video-job"]);
+  expect(calls).toEqual([
+    {
+      url: interactions,
+      method: "POST",
+      body: {
+        model: "gemini-omni-1.1-flash-preview",
+        input: [{ type: "text", text: "A spinning coin" }],
+        background: true,
+        store: true,
+        response_format: [
+          { type: "video", aspect_ratio: "16:9", duration: "5s", resolution: "360p" },
+        ],
+        generation_config: { video_config: { task: "text_to_video" } },
+      },
+    },
+    { url: `${interactions}/video-job`, method: "GET", body: undefined },
+  ]);
   expect(await readFile(join(ctx.outputPath, "output.mp4"), "utf8")).toBe("video-output");
-  expect(urls).toHaveLength(4);
-  expect(headers[3]).toBeUndefined();
+});
+
+test("Google requires a Vertex project and a host ADC sign-in before any request", async () => {
+  const { ctx } = await context({ kind: "image", prompt: "An icon" });
+  globalThis.fetch = (async () => {
+    throw new Error("No network before authentication");
+  }) as typeof fetch;
+  await expect(cloudProviders({}).google!.submit(ctx)).rejects.toMatchObject({
+    status: "auth-required",
+    message: "Set the Google Cloud project for Vertex AI in Game Studio settings.",
+  });
+  ctx.run = async () => ({ code: 1, stdout: "", stderr: "Reauthentication required" });
+  await expect(cloudProviders(vertex).google!.submit(ctx)).rejects.toMatchObject({
+    status: "auth-required",
+    message:
+      "Sign in on this project's host with `gcloud auth application-default login`, then retry.",
+  });
 });
 
 test("Fal preserves server queue URLs, submits H3 Max once, and downloads without leaking the OAuth token", async () => {
@@ -214,13 +251,12 @@ test("Fal preserves server queue URLs, submits H3 Max once, and downloads withou
 
 test("a failed API request never exposes its raw error body or retries the paid POST", async () => {
   const { ctx } = await context({ kind: "image", prompt: "An icon" });
+  signedIn(ctx);
   let count = 0;
   globalThis.fetch = (async () => {
     count++;
     return new Response("secret-in-provider-error", { status: 403 });
   }) as typeof fetch;
-  await expect(
-    cloudProviders({ googleApiKey: "test-private-key" }).google!.submit(ctx),
-  ).rejects.toThrow("HTTP 403");
+  await expect(cloudProviders(vertex).google!.submit(ctx)).rejects.toThrow("HTTP 403");
   expect(count).toBe(1);
 });

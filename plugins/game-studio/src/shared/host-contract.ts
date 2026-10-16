@@ -5,7 +5,10 @@ import { generationId, generationJob, generationTarget, mediaRequest } from "./g
 import { unityHostContract } from "./unity-editor-contract.ts";
 
 const credentials = z.strictObject({
-  googleApiKey: z.string().optional(),
+  vertexProject: z
+    .string()
+    .regex(/^[a-z][a-z0-9-]{4,28}[a-z0-9]$/)
+    .optional(),
   falAccessToken: z.string().optional(),
 });
 const target = z.strictObject({ rootPath: z.string().min(1), jobId: generationId });

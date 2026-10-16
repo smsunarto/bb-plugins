@@ -31,7 +31,7 @@ const settings: Partial<
   ],
   video: [
     { key: "aspectRatio", label: "Aspect ratio", options: ["16:9", "9:16"] },
-    { key: "duration", label: "Duration", options: [5, 8, 10, 15] },
+    { key: "duration", label: "Duration", options: [5, 8, 10] },
   ],
 };
 

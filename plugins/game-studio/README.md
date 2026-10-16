@@ -72,7 +72,11 @@ for images and Gemini Omni 1.1 Flash for video. Fal H3 Max remains an alternate
 video provider; Midjourney supports images/video and Tripo P2 handles approved
 image-to-geometry work. ElevenLabs and Suno remain agent workflows for audio.
 
-Set the **Google Gemini API key** in Game Studio's secret settings. Connect Fal
+Nano Banana and Gemini Omni run on Google Vertex AI. Set **Google Cloud project
+(Vertex AI)** in Game Studio settings to a project with the Vertex AI API enabled,
+and sign in on each project host with `gcloud auth application-default login`.
+The host mints a short-lived token from those credentials for every request;
+Game Studio stores no Google secret. Connect Fal
 with browser OAuth: `bb game-studio auth connect` returns a verification URL and
 code; `bb game-studio auth poll` completes sign-in after approval. Use `status` to
 inspect the account and `disconnect` to revoke authorization. Refresh tokens stay

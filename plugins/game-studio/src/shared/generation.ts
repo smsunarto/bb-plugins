@@ -48,7 +48,7 @@ export const textRequest = z.strictObject({
 export const videoRequest = z.strictObject({
   kind: z.literal("video"),
   prompt: brief,
-  model: model.default({ provider: "google", id: "gemini-omni-1.1-flash" }),
+  model: model.default({ provider: "google", id: "gemini-omni-1.1-flash-preview" }),
   imagePath: mediaPath.optional(),
   endImagePath: mediaPath.optional(),
   outputCount: z.union([z.literal(1), z.literal(2), z.literal(4)]).default(1),
@@ -149,7 +149,7 @@ export const providerCapabilities = [
   },
   {
     provider: "google",
-    models: ["gemini-nano-banana-2.1", "gemini-omni-1.1-flash"],
+    models: ["gemini-nano-banana-2.1", "gemini-omni-1.1-flash-preview"],
     kinds: ["image", "video"],
     imageOutputs: [1],
     videoOutputs: [1],
@@ -239,7 +239,10 @@ function normalizeGoogle(request: MediaRequest): MediaRequest {
     return { ...request, outputCount: 1 };
   }
   if (request.kind !== "video") throw new Error("Google does not support 3D geometry.");
-  if ((request.model.id && request.model.id !== "gemini-omni-1.1-flash") || request.duration > 10)
+  if (
+    (request.model.id && request.model.id !== "gemini-omni-1.1-flash-preview") ||
+    request.duration > 10
+  )
     throw new Error("Use Gemini Omni 1.1 Flash with a duration from three to ten seconds.");
   return normalizeVideo(request, "720p", ["360p", "720p", "1080p", "4k"]);
 }

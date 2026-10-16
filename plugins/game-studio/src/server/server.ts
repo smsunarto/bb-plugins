@@ -70,12 +70,11 @@ export default definePlugin({
     const ensureLegacyClaims = legacyClaimsGuard(bb, unityEditors.claims.db);
     const unitySlots = new UnitySlots(bb, slotStore, ensureLegacyClaims);
     const generationSettings = bb.settings.define({
-      googleApiKey: {
+      vertexProject: {
         type: "string",
-        label: "Google Gemini API key",
-        secret: true,
+        label: "Google Cloud project (Vertex AI)",
         description:
-          "Service-account-bound key restricted to the Gemini API. Used for Nano Banana 2.1 and Gemini Omni.",
+          "Project ID billed for Nano Banana 2.1 and Gemini Omni. Each project host signs in with `gcloud auth application-default login`.",
       },
       falOAuthCredentials: {
         type: "string",
@@ -96,7 +95,7 @@ export default definePlugin({
       generations: new Generations(
         bb,
         async (provider) => ({
-          googleApiKey: (await generationSettings.get()).googleApiKey,
+          vertexProject: (await generationSettings.get()).vertexProject?.trim() || undefined,
           ...(provider === "fal" ? { falAccessToken: await falOAuth.accessToken() } : {}),
         }),
         slotStore,

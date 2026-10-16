@@ -19,7 +19,7 @@ import { canvasRequest } from "./canvas-generation.ts";
 import { captureCanvasInputs } from "./generation-inputs.ts";
 import { CanvasText } from "./canvas-text.ts";
 
-type Credentials = { googleApiKey?: string; falAccessToken?: string };
+type Credentials = { vertexProject?: string; falAccessToken?: string };
 type Game = Awaited<ReturnType<typeof getGame>>;
 type AdoptionResult = {
   job: GenerationJob;
@@ -49,7 +49,7 @@ export class Generations {
   private async credentials(provider: MediaRequest["model"]["provider"]): Promise<Credentials> {
     const settings = await this.settings(provider);
     return {
-      ...(settings.googleApiKey ? { googleApiKey: settings.googleApiKey } : {}),
+      ...(settings.vertexProject ? { vertexProject: settings.vertexProject } : {}),
       ...(settings.falAccessToken ? { falAccessToken: settings.falAccessToken } : {}),
     };
   }
