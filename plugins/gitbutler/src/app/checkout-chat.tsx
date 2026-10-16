@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import {
   experimental_Icon as Icon,
   experimental_useSidebarThreadActions as useThreadActions,
@@ -8,14 +8,16 @@ import type { WorkspaceTarget } from "./branch-actions.tsx";
 import { Button } from "./components/ui/button.tsx";
 import { errorText } from "./notice.tsx";
 import { rpc } from "./rpc.ts";
+import { cn } from "./lib/utils.ts";
 
 type Props = {
   target: WorkspaceTarget & { checkout: CheckoutSelection };
   environmentId: string | null;
+  children?: ReactNode;
 };
 
 /** Changing the board cancels a pending navigation to its previous checkout. */
-export function CheckoutChatButton(props: Props) {
+export function CheckoutChatActions(props: Props) {
   const { target, environmentId } = props;
   const scope = JSON.stringify([
     target.threadId,
@@ -27,8 +29,9 @@ export function CheckoutChatButton(props: Props) {
   return <CheckoutChatControl key={scope} {...props} />;
 }
 
-function CheckoutChatControl({ target, environmentId }: Props) {
+function CheckoutChatControl({ target, environmentId, children }: Props) {
   const threads = useThreadActions();
+  const descriptionId = useId();
   const mounted = useRef(true);
   useEffect(() => {
     mounted.current = true;
@@ -48,6 +51,9 @@ function CheckoutChatControl({ target, environmentId }: Props) {
       : null;
   const disabled =
     !environmentId || query.isPending || opening || query.data?.state === "unavailable";
+  const checking = Boolean(environmentId) && query.isPending;
+  const progress = opening ? "Opening…" : checking ? "Checking…" : null;
+  const busy = progress !== null;
 
   const open = async () => {
     if (disabled) return;
@@ -69,30 +75,62 @@ function CheckoutChatControl({ target, environmentId }: Props) {
   };
 
   return (
-    <span
-      className="inline-flex max-w-full min-w-0 flex-col items-end gap-1"
-      title={reason ?? `Start a new agent chat in ${target.checkout.path}`}
-    >
-      <Button
-        variant="outline"
-        size="sm"
-        className="h-6 shrink-0 gap-1 px-2 text-xs font-normal"
-        aria-label={`New agent chat in ${target.checkout.path}`}
-        aria-busy={query.isPending || opening}
-        disabled={disabled}
-        onClick={() => void open()}
+    <div className="flex min-w-0 flex-wrap items-center justify-end gap-x-2 gap-y-2">
+      {children}
+      <span
+        className="shrink-0"
+        title={reason ?? `Start a new agent chat in ${target.checkout.path}`}
       >
-        <Icon name="MessageSquarePlus" className="size-3" aria-hidden />
-        {opening ? "Opening…" : "New chat"}
-      </Button>
-      {reason ? (
-        <span
-          role={query.error ? "alert" : "status"}
-          className="max-w-64 text-right text-[11px] break-words text-muted-foreground"
+        <Button
+          size="sm"
+          className="h-7 min-w-24 gap-1.5 px-2.5 text-xs"
+          aria-label={`New agent chat in ${target.checkout.path}`}
+          aria-describedby={descriptionId}
+          aria-busy={busy}
+          disabled={disabled}
+          onClick={() => void open()}
         >
-          {reason}
-        </span>
-      ) : null}
+          <Icon
+            name={busy ? "Spinner" : "MessageSquarePlus"}
+            className={cn("size-3.5", busy && "animate-spin motion-reduce:animate-none")}
+            aria-hidden
+          />
+          {progress ?? "New chat"}
+        </Button>
+      </span>
+      <ChatStatus
+        id={descriptionId}
+        reason={reason}
+        progress={progress}
+        error={Boolean(query.error)}
+      />
+    </div>
+  );
+}
+
+function ChatStatus({
+  id,
+  reason,
+  progress,
+  error,
+}: {
+  id: string;
+  reason: string | null;
+  progress: string | null;
+  error: boolean;
+}) {
+  return (
+    <span
+      id={id}
+      role={error ? "alert" : "status"}
+      className={
+        reason
+          ? "flex basis-full items-start gap-1.5 text-[11px] leading-relaxed break-words text-muted-foreground"
+          : "sr-only"
+      }
+    >
+      <Icon name="Info" className="mt-0.5 size-3 shrink-0" aria-hidden />
+      <span className="min-w-0 flex-1">{reason ?? progress}</span>
     </span>
   );
 }

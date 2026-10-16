@@ -72,7 +72,8 @@ import { FileCards } from "./file-cards.tsx";
 import { GitButlerMark } from "./gitbutler-mark.tsx";
 import { OperationHistory } from "./history-screen.tsx";
 import { OtherMachines } from "./other-machines.tsx";
-import { CheckoutChatButton } from "./checkout-chat.tsx";
+import { CheckoutChatActions } from "./checkout-chat.tsx";
+import { CheckoutLabel } from "./checkout-label.tsx";
 import { ParkedBranches } from "./parked-branches.tsx";
 import { REFRESH_INTERVAL_MS } from "./query-client.ts";
 import { rpc } from "./rpc.ts";
@@ -1185,32 +1186,25 @@ function CheckoutLocation({
 }) {
   if (!selected) return null;
   return (
-    <div className="shrink-0 border-b border-border bg-card px-2.5 py-1.5">
-      <Button
-        variant="ghost"
-        size="sm"
-        className="mb-1 h-6 gap-1 px-1.5 text-xs font-normal text-muted-foreground"
-        onClick={onMainCheckout}
-      >
-        <Icon name="ChevronLeft" className="size-3" aria-hidden />
-        Back to main checkout
-      </Button>
-      <div className="flex min-w-0 flex-wrap items-start justify-between gap-2">
-        <p className="min-w-0 flex-1 truncate font-medium" title={selected.machine}>
-          {selected.machine}
-        </p>
-        <CheckoutChatButton
-          target={{ ...target, checkout: { hostId: selected.hostId, path: selected.path } }}
-          environmentId={environmentId ?? null}
-        />
+    <div className="shrink-0 space-y-2.5 border-b border-border bg-card px-3 py-2.5">
+      <div className="flex min-w-0 items-center gap-2">
+        <Icon name="FolderOpen" className="size-4 shrink-0 text-muted-foreground" aria-hidden />
+        <CheckoutLabel path={selected.path} machine={selected.machine} />
       </div>
-      <p
-        className="truncate text-[11px] text-muted-foreground"
-        title={selected.path}
-        translate="no"
+      <CheckoutChatActions
+        target={{ ...target, checkout: { hostId: selected.hostId, path: selected.path } }}
+        environmentId={environmentId ?? null}
       >
-        {selected.path}
-      </p>
+        <Button
+          variant="ghost"
+          size="sm"
+          className="mr-auto h-7 gap-1 px-1.5 text-xs font-normal text-muted-foreground"
+          onClick={onMainCheckout}
+        >
+          <Icon name="ChevronLeft" className="size-3" aria-hidden />
+          Back to main checkout
+        </Button>
+      </CheckoutChatActions>
     </div>
   );
 }

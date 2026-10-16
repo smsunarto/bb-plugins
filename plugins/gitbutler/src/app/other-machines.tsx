@@ -2,7 +2,8 @@ import { useState } from "react";
 import { experimental_Icon as Icon } from "@get-bb/plugin-sdk/app";
 import type { Branch, Checkout } from "../shared/schema.ts";
 import { Button } from "./components/ui/button.tsx";
-import { CheckoutChatButton } from "./checkout-chat.tsx";
+import { CheckoutChatActions } from "./checkout-chat.tsx";
+import { CheckoutLabel } from "./checkout-label.tsx";
 import type { WorkspaceTarget } from "./branch-actions.tsx";
 import { Count } from "./file-list.tsx";
 import { subject } from "./format.ts";
@@ -170,7 +171,7 @@ function MachineCard({
     >
       <button
         type="button"
-        className="flex min-h-9 w-full min-w-0 cursor-pointer items-center gap-2 px-2.5 py-1.5 text-start focus-visible:-outline-offset-2"
+        className="flex min-h-9 w-full min-w-0 cursor-pointer items-center gap-2 px-3 py-2.5 text-start transition-colors duration-150 hover:bg-muted/40 focus-visible:-outline-offset-2 motion-reduce:transition-none"
         onClick={() => setOpen((current) => !current)}
         aria-expanded={open}
         title={checkout.path}
@@ -183,40 +184,29 @@ function MachineCard({
           )}
           aria-hidden
         />
-        <Icon name="Laptop" className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />
-        <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-          <span className="flex min-w-0 items-center gap-2">
-            <span className="truncate text-sm font-semibold">{checkout.machine}</span>
-            {branches > 0 ? <Count>{branches}</Count> : null}
-          </span>
-          <span
-            className="truncate text-[11px] text-muted-foreground"
-            title={checkout.path}
-            translate="no"
-          >
-            {checkout.path}
-          </span>
-        </span>
+        <CheckoutLabel path={checkout.path} machine={checkout.machine} />
+        {branches > 0 ? <Count>{branches}</Count> : null}
       </button>
       {open ? (
         <>
           <MachineBody checkout={checkout} />
           {onOpen && checkout.state === "ready" ? (
-            <div className="flex flex-wrap items-start justify-end gap-1.5 border-t border-border px-2.5 py-1.5">
-              <CheckoutChatButton
+            <div className="border-t border-border px-3 py-2">
+              <CheckoutChatActions
                 target={{ ...target, checkout: { hostId: checkout.hostId, path: checkout.path } }}
                 environmentId={environmentId}
-              />
-              <Button
-                variant="outline"
-                size="sm"
-                className="h-6 gap-1 px-2 text-xs font-normal"
-                onClick={() => onOpen(checkout)}
-                aria-label={`Open checkout ${checkout.path}`}
               >
-                Open checkout
-                <Icon name="ChevronRight" className="size-3" aria-hidden />
-              </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 gap-1 px-2 text-xs font-normal text-muted-foreground"
+                  onClick={() => onOpen(checkout)}
+                  aria-label={`Open checkout ${checkout.path}`}
+                >
+                  Open checkout
+                  <Icon name="ChevronRight" className="size-3" aria-hidden />
+                </Button>
+              </CheckoutChatActions>
             </div>
           ) : null}
         </>

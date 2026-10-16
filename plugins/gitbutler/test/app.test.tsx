@@ -2807,7 +2807,9 @@ test("shows each other machine's applied branches, open, and Refresh reads them 
     },
   });
   const laptop = within(await slot.findByRole("region", { name: "On Personal Mac" }));
-  const toggle = laptop.getByRole("button", { name: "Personal Mac 2 /Users/me/git/bb-plugins" });
+  const toggle = laptop.getByRole("button", {
+    name: "bb-plugins Personal Mac /Users/me/git/bb-plugins 2",
+  });
   expect(toggle.getAttribute("aria-expanded")).toBe("true");
   const top = within(laptop.getByRole("listitem", { name: "Branch scott/top" }));
   expect(top.getByText("1 commit")).toBeTruthy();
@@ -3679,6 +3681,50 @@ const newCheckoutChat = {
   },
 } as const;
 
+test("New chat shows checking and opening progress until the checkout preflight is ready", async () => {
+  const fixture = checkoutChatRpc();
+  type ChatTarget = ReturnType<typeof fixture.checkoutChatTarget>;
+  let finishChecking!: (target: ChatTarget) => void;
+  const checking = new Promise<ChatTarget>((resolve) => {
+    finishChecking = resolve;
+  });
+  let finishOpening!: (target: ChatTarget) => void;
+  const opening = new Promise<ChatTarget>((resolve) => {
+    finishOpening = resolve;
+  });
+  let calls = 0;
+  const slot = await panel({
+    ...fixture,
+    checkoutChatTarget: () => (++calls === 1 ? checking : opening),
+  });
+  onTestFinished(() => slot.lifecycle.unmount());
+  const button = await slot.findByRole("button", {
+    name: `New agent chat in ${isolatedCheckout.path}`,
+  });
+  expect(button.textContent).toContain("Checking…");
+  expect(button.hasAttribute("disabled")).toBe(true);
+  expect(button.getAttribute("aria-busy")).toBe("true");
+  fireEvent.click(button);
+  expect(slot.inspection.sidebarActionCalls).toEqual([]);
+
+  finishChecking(fixture.checkoutChatTarget());
+  await waitFor(() => expect(button.hasAttribute("disabled")).toBe(false));
+  expect(button.textContent).toContain("New chat");
+  expect(button.getAttribute("aria-busy")).toBe("false");
+
+  fireEvent.click(button);
+  await waitFor(() => expect(button.textContent).toContain("Opening…"));
+  expect(button.hasAttribute("disabled")).toBe(true);
+  expect(button.getAttribute("aria-busy")).toBe("true");
+  expect(slot.inspection.sidebarActionCalls).toEqual([]);
+
+  finishOpening(fixture.checkoutChatTarget());
+  await waitFor(() => expect(slot.inspection.sidebarActionCalls).toEqual([newCheckoutChat]));
+  await waitFor(() => expect(button.hasAttribute("disabled")).toBe(false));
+  expect(button.textContent).toContain("New chat");
+  expect(button.getAttribute("aria-busy")).toBe("false");
+});
+
 test("checkout cards and the opened checkout launch native New thread in the exact environment", async () => {
   const slot = await panel(checkoutChatRpc());
   const label = `New agent chat in ${isolatedCheckout.path}`;
@@ -3687,7 +3733,7 @@ test("checkout cards and the opened checkout launch native New thread in the exa
   fireEvent.click(button);
   await waitFor(() => expect(slot.inspection.sidebarActionCalls).toEqual([newCheckoutChat]));
   expect(
-    slot.inspection.rpcCalls.filter((call) => call.method === "checkoutChatTarget").at(-1)?.input,
+    slot.inspection.rpcCalls.findLast((call) => call.method === "checkoutChatTarget")?.input,
   ).toEqual({
     threadId: "thread-1",
     environmentId: "env-1",
