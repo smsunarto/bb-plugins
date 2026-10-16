@@ -2,10 +2,12 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
 import {
   fetchInlineAsset,
+  fragmentedMp4Type,
   injectWideEscapeBridge,
   prepareInlineAssets,
   resolvePreviewAssetUrl,
 } from "./inline-assets.ts";
+import { ascii, box, bytes, chunkedResponse, mp4Init, STREAM_TYPE, zeros } from "./mp4-fixture.ts";
 
 afterEach(() => vi.restoreAllMocks());
 const root = new URL("https://scott.getbb.app/api/v1/file-previews/lease/");
@@ -134,7 +136,12 @@ test("honors an explicit local base and leaves remote-base embeds alone", () => 
   expect(remote).toEqual({ assets: [] });
 });
 
-async function frame(html: string) {
+/** Chromium attaches a MediaSource only by URL. WebKit, in an opaque frame, only by srcObject. */
+async function frame(
+  html: string,
+  mediaSource?: unknown,
+  engine: "chromium" | "webkit" = "chromium",
+) {
   const { JSDOM } = await import("jsdom");
   const result = prepareInlineAssets(html, documentUrl.href);
   let blobs = 0;
@@ -145,6 +152,17 @@ async function frame(html: string) {
     beforeParse(window) {
       window.URL.createObjectURL = vi.fn(() => `blob:null/${++blobs}`);
       window.HTMLMediaElement.prototype.load = load;
+      Object.assign(window, { MediaSource: mediaSource });
+      const attached = new WeakMap<object, unknown>();
+      Object.defineProperty(window.HTMLMediaElement.prototype, "srcObject", {
+        get() {
+          return attached.get(this) ?? null;
+        },
+        set(value: unknown) {
+          if (value !== null && engine === "chromium") throw new TypeError("Not a MediaStream");
+          attached.set(this, value);
+        },
+      });
       // jsdom has no MessageChannel. The parent end only needs a transferable marker.
       Object.assign(window, {
         MessageChannel: class {
@@ -266,6 +284,171 @@ test("reports a failed download and decoder failures inside the opaque frame", a
   video.dispatchEvent(new win.Event("loadeddata"));
   expect(status().hidden).toBe(true);
   win.close();
+});
+
+test("names a fragmented MP4's MediaSource type once its whole init segment arrives", () => {
+  const init = mp4Init();
+  expect(fragmentedMp4Type(init)).toBe(STREAM_TYPE);
+  expect(fragmentedMp4Type(init.subarray(0, init.length - 1))).toBeUndefined();
+  expect(fragmentedMp4Type(mp4Init({ fragmented: false }))).toBeNull();
+  // A file whose media precedes its moov, and WebM, must arrive whole.
+  expect(fragmentedMp4Type(bytes(box("ftyp", ascii("isom")), box("mdat", zeros(16))))).toBeNull();
+  expect(fragmentedMp4Type(bytes([0x1a, 0x45, 0xdf, 0xa3], zeros(12)))).toBeNull();
+});
+
+test("hands a fragmented MP4's bytes to the frame while it downloads", async () => {
+  const { fetch } = transport();
+  const init = mp4Init();
+  const first = init.subarray(0, 10);
+  const second = bytes(init.subarray(10), ascii("moof"));
+  fetch.mockResolvedValueOnce(chunkedResponse([first, second]));
+  const [asset] = prepareInlineAssets('<video src="clip.mp4"></video>', documentUrl.href).assets;
+  const onChunk = vi.fn();
+  const blob = await fetchInlineAsset(asset!, new AbortController().signal, onChunk);
+  expect(onChunk.mock.calls).toEqual([
+    [{ key: "0", stream: STREAM_TYPE }],
+    [{ key: "0", chunk: first }],
+    [{ key: "0", chunk: second }],
+  ]);
+  expect(blob.type).toBe("video/mp4");
+  expect(blob.size).toBe(first.length + second.length);
+
+  fetch.mockResolvedValueOnce(chunkedResponse([mp4Init({ fragmented: false })]));
+  const plain = vi.fn();
+  await fetchInlineAsset(asset!, new AbortController().signal, plain);
+  expect(plain).not.toHaveBeenCalled();
+});
+
+function fakeMediaSource(supported = true) {
+  class FakeSourceBuffer {
+    updating = false;
+    appended: string[] = [];
+    listeners = new Map<string, () => void>();
+    addEventListener(type: string, listener: () => void) {
+      this.listeners.set(type, listener);
+    }
+    appendBuffer(chunk: Uint8Array) {
+      this.appended.push(new TextDecoder().decode(chunk));
+      this.updating = true;
+    }
+    finish() {
+      this.updating = false;
+      this.listeners.get("updateend")!();
+    }
+  }
+  const sources: FakeMediaSource[] = [];
+  class FakeMediaSource {
+    static isTypeSupported = vi.fn(() => supported);
+    listeners = new Map<string, () => void>();
+    type?: string;
+    buffer?: FakeSourceBuffer;
+    endOfStream = vi.fn();
+    constructor() {
+      sources.push(this);
+    }
+    addEventListener(type: string, listener: () => void) {
+      this.listeners.set(type, listener);
+    }
+    addSourceBuffer(type: string) {
+      this.type = type;
+      return (this.buffer = new FakeSourceBuffer());
+    }
+    open() {
+      this.listeners.get("sourceopen")!();
+    }
+  }
+  return { FakeMediaSource, sources };
+}
+
+const text = (value: string) => new TextEncoder().encode(value);
+
+test("plays a fragmented MP4 through MediaSource before its Blob arrives", async () => {
+  const { FakeMediaSource, sources } = fakeMediaSource();
+  const { win, deliver, status } = await frame(
+    '<video src="clip.mp4#t=2"></video>',
+    FakeMediaSource,
+  );
+  const video = win.document.querySelector("video")!;
+  deliver({ key: "0", stream: STREAM_TYPE });
+  expect(FakeMediaSource.isTypeSupported).toHaveBeenCalledWith(STREAM_TYPE);
+  expect(video.getAttribute("src")).toBe("blob:null/1#t=2");
+  deliver({ key: "0", chunk: text("init") });
+  const [source] = sources;
+  source!.open();
+  expect(source!.type).toBe(STREAM_TYPE);
+  deliver({ key: "0", chunk: text("fragment") });
+  // One append at a time: the second waits for the first to finish.
+  expect(source!.buffer!.appended).toEqual(["init"]);
+  source!.buffer!.finish();
+  expect(source!.buffer!.appended).toEqual(["init", "fragment"]);
+  deliver({ key: "0", blob: new win.Blob(["init", "fragment"]) });
+  expect(source!.endOfStream).not.toHaveBeenCalled();
+  source!.buffer!.finish();
+  expect(source!.endOfStream).toHaveBeenCalledTimes(1);
+  // The stream keeps playing. The Blob stays in reserve.
+  expect(video.getAttribute("src")).toBe("blob:null/1#t=2");
+  video.dispatchEvent(new win.Event("loadeddata"));
+  expect(status().hidden).toBe(true);
+  win.close();
+});
+
+test("attaches the MediaSource as srcObject where WebKit requires it", async () => {
+  const { FakeMediaSource, sources } = fakeMediaSource();
+  const { win, deliver } = await frame('<video src="clip.mp4"></video>', FakeMediaSource, "webkit");
+  const video = win.document.querySelector("video")!;
+  deliver({ key: "0", stream: STREAM_TYPE });
+  expect(video.srcObject).toBe(sources[0]);
+  expect(video.hasAttribute("src")).toBe(false);
+  // A stream that never opened, as with preload="none", hands over the Blob.
+  deliver({ key: "0", blob: new win.Blob(["video"]) });
+  expect(video.srcObject).toBeNull();
+  expect(video.getAttribute("src")).toBe("blob:null/1");
+  win.close();
+});
+
+test("falls back to the Blob when the decoder rejects a stream", async () => {
+  const { FakeMediaSource, sources } = fakeMediaSource();
+  const { win, deliver, status, load } = await frame(
+    '<video><source src="clip.mp4"></video>',
+    FakeMediaSource,
+  );
+  const video = win.document.querySelector("video")!;
+  deliver({ key: "0", stream: STREAM_TYPE });
+  expect(video.getAttribute("src")).toBe("blob:null/1");
+  sources[0]!.open();
+  deliver({ key: "0", chunk: text("corrupt") });
+  video.dispatchEvent(new win.Event("error"));
+  // The Blob is still coming, so the frame does not report a failure yet.
+  expect(status().textContent).toBe("Loading video…");
+  deliver({ key: "0", blob: new win.Blob(["corrupt"]) });
+  expect(video.hasAttribute("src")).toBe(false);
+  expect(video.querySelector("source")?.getAttribute("src")).toBe("blob:null/2");
+  expect(load).toHaveBeenCalledTimes(1);
+  win.close();
+});
+
+test("waits for the Blob without a supported MediaSource or with several candidates", async () => {
+  const unsupported = await frame(
+    '<video src="clip.mp4"></video>',
+    fakeMediaSource(false).FakeMediaSource,
+  );
+  unsupported.deliver({ key: "0", stream: STREAM_TYPE });
+  unsupported.deliver({ key: "0", chunk: text("init") });
+  const video = unsupported.win.document.querySelector("video")!;
+  expect(video.hasAttribute("src")).toBe(false);
+  unsupported.deliver({ key: "0", blob: new unsupported.win.Blob(["init"]) });
+  expect(video.getAttribute("src")).toBe("blob:null/1");
+  unsupported.win.close();
+
+  const { FakeMediaSource, sources } = fakeMediaSource();
+  const candidates = await frame(
+    '<video><source src="a.mp4"><source src="b.mp4"></video>',
+    FakeMediaSource,
+  );
+  candidates.deliver({ key: "1", stream: STREAM_TYPE });
+  expect(sources).toHaveLength(0);
+  expect(candidates.win.document.querySelector("video")!.hasAttribute("src")).toBe(false);
+  candidates.win.close();
 });
 
 test("loads sibling images through the same opaque-frame bridge", async () => {

@@ -23,8 +23,8 @@ import "./app.css";
 import {
   fetchInlineAsset,
   INLINE_ASSET_READY,
+  type InlineAssetMessage,
   prepareInlineAssets,
-  type InlineAssetResult,
   type InlinePreviewAsset,
 } from "./inline-assets.ts";
 import {
@@ -359,25 +359,28 @@ function useFragmentBridge(
     const token = state.token;
     const controller = new AbortController();
     // Media downloads while the frame loads, and each asset goes to the frame
-    // as soon as it settles. Images take the link first: they show on arrival,
-    // while a video cannot play until its whole file is here anyway.
-    const settled: InlineAssetResult[] = [];
+    // as soon as it settles. A fragmented MP4 also streams while it downloads.
+    // Images take the link first: they are small and show on arrival.
+    const sent = new Map<string, InlineAssetMessage[]>();
     let served: Window | null = null;
     let port: MessagePort | null = null;
-    const settle = (result: InlineAssetResult) => {
+    const send = (message: InlineAssetMessage) => {
       if (controller.signal.aborted) return;
-      settled.push(result);
-      port?.postMessage(result);
+      // A replacement frame needs a settled asset's outcome, or a streaming one's bytes so far.
+      const log = "stream" in message || "chunk" in message ? (sent.get(message.key) ?? []) : [];
+      log.push(message);
+      sent.set(message.key, log);
+      port?.postMessage(message);
     };
     const load = (asset: InlinePreviewAsset) =>
-      fetchInlineAsset(asset, controller.signal).then(
-        (blob) => settle({ key: asset.key, blob }),
+      fetchInlineAsset(asset, controller.signal, send).then(
+        (blob) => send({ key: asset.key, blob }),
         (error: unknown) => {
           if (controller.signal.aborted) return;
           setAssetError(
             (current) => current ?? (error instanceof Error ? error.message : String(error)),
           );
-          settle({ key: asset.key, failed: true });
+          send({ key: asset.key, failed: true });
         },
       );
     const { assets } = state;
@@ -403,7 +406,7 @@ function useFragmentBridge(
       served = source;
       port?.close();
       port = next;
-      for (const result of settled) port.postMessage(result);
+      for (const log of sent.values()) for (const message of log) port.postMessage(message);
     };
     window.addEventListener("message", ready);
     return () => {

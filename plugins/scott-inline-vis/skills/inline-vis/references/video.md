@@ -34,8 +34,9 @@ spaces (`%20`), `#` (`%23`), and `?` (`%3F`).
 
 ## Mobile video delivery
 
-Preserve native captures. Point the player at a separate delivery MP4 when
-recordings exceed a mobile decoder's capabilities. Use the bundled helper:
+Preserve native captures. Point the player at a separate delivery MP4 made by
+the bundled helper. Its output plays on mobile decoders and starts playing
+before the download finishes:
 
 ```bash
 bash scripts/mobile-video.sh capture.mp4 clip-mobile.mp4
@@ -45,9 +46,20 @@ Resolve `scripts/mobile-video.sh` from the skill root, one directory above this
 reference. It requires FFmpeg with
 libx264 and refuses to overwrite existing files. The delivery copy uses H.264
 High level 4.1, 8-bit yuv420p, at most 1920x1080, even dimensions, 30 fps,
-bounded bitrate, AAC when audio exists, and fast-start metadata. It preserves
-aspect ratio and does not upscale. Check the output remains below the host's
-25 MiB limit. The original stays unchanged.
+at most 6 Mbit/s, AAC when audio exists, and two-second MP4 fragments. It
+preserves aspect ratio and does not upscale. Check the output remains below
+the host's 25 MiB limit. The original stays unchanged.
+
+## Streaming playback
+
+A fragmented H.264/AAC MP4 plays through MediaSource while it downloads, so a
+remote client starts after the first fragment instead of the whole file. Every
+other video, including a fast-start MP4 or WebM, plays once its download
+completes. Streaming applies when the video has one local candidate, either
+`<video src>` or a single `<source>`. Several `<source>` candidates wait for
+their downloads so the browser can choose between them. Any MediaSource
+failure falls back to the downloaded file. Run the helper on any recording
+that should stream, including an existing MP4.
 
 For a playback report, inspect the actual MP4 with ffprobe (profile, level,
 pixel format, frame rate, dimensions) and inspect the player's MediaError,

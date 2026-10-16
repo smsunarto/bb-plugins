@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { StrictMode, useState } from "react";
 import { afterEach, expect, test, vi } from "vitest";
 import { loadPluginApp, renderSlot as sdkRenderSlot } from "@get-bb/plugin-sdk/testing/app";
+import { ascii, bytes, mp4Init, STREAM_TYPE } from "./mp4-fixture.ts";
 import {
   widgetIdentitySchema,
   saveWidgetStateSchema,
@@ -361,7 +362,7 @@ test("inline-vis renders before media downloads and streams each asset to the op
       expect(value).toContain("bb:inline-preview-ready");
       return value!;
     });
-    // Images download first. The video waits for them, since it plays only once complete.
+    // Images download first. They are small and show on arrival.
     expect(pending.map(({ url }) => url)).toEqual([`http://localhost:3000${LEASE_URL}/still.png`]);
     const iframe = slot.container.querySelector("iframe")!;
     expect(iframe.getAttribute("sandbox")).toBe("allow-scripts");
@@ -431,6 +432,59 @@ test("inline-vis keeps the preview and reports media that failed to download", a
     const token = html.match(/const token = "([^"]+)"/)![1]!;
     const port = announce(iframe.contentWindow, token);
     expect(port.postMessage.mock.calls).toEqual([[{ key: "0", failed: true }]]);
+  } finally {
+    slot.unmount();
+    fetch.mockRestore();
+  }
+});
+
+test("inline-vis streams a fragmented MP4 to the frame and replays its bytes to a late frame", async () => {
+  const { fetch, pending } = deferredFetch();
+  const slot = renderSlot(
+    await inlineVisDirective(),
+    {
+      attributes: { file: "/tmp/charts/player.html" },
+      source: '::inline-vis{file="/tmp/charts/player.html"}',
+      message: inlineVisMessage,
+      openWorkspaceFile: null,
+    },
+    {
+      sdk: previewSdk(() => '<video controls src="clip.mp4"></video>'),
+      pluginId: "scott-inline-vis",
+    },
+  );
+  try {
+    const html = await waitFor(() => {
+      const value = frameDocument(slot.container.querySelector("iframe"));
+      expect(value).toContain("bb:inline-preview-ready");
+      return value!;
+    });
+    const iframe = slot.container.querySelector("iframe")!;
+    const init = mp4Init();
+    let body!: ReadableStreamDefaultController<Uint8Array>;
+    const response = new Response(
+      new ReadableStream<Uint8Array>({ start: (controller) => void (body = controller) }),
+      { headers: { "content-type": "video/mp4" } },
+    );
+    await waitFor(() => expect(pending).toHaveLength(1));
+    pending[0]!.resolve(response);
+    body.enqueue(init);
+    // The frame announces itself after the first bytes, and catches up on them.
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    const token = html.match(/const token = "([^"]+)"/)![1]!;
+    const port = announce(iframe.contentWindow, token);
+    expect(port.postMessage.mock.calls).toEqual([
+      [{ key: "0", stream: STREAM_TYPE }],
+      [{ key: "0", chunk: init }],
+    ]);
+    const fragment = bytes(ascii("moof"));
+    body.enqueue(fragment);
+    body.close();
+    await waitFor(() => expect(port.postMessage).toHaveBeenCalledTimes(4));
+    expect(port.postMessage.mock.calls[2]).toEqual([{ key: "0", chunk: fragment }]);
+    const [last] = port.postMessage.mock.calls[3]! as [{ key: string; blob: Blob }];
+    expect(last.key).toBe("0");
+    expect(last.blob.size).toBe(init.length + fragment.length);
   } finally {
     slot.unmount();
     fetch.mockRestore();
