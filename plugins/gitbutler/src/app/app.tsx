@@ -693,7 +693,6 @@ function WorkspaceBody({
         />
         {data.stacks.length > 0 ? (
           <section className="space-y-2" aria-label="Branches">
-            <h2 className="m-0 px-0.5 text-[11px] font-medium text-muted-foreground">Branches</h2>
             <div className="flex flex-col gap-3">
               {data.stacks.map((stack, index) => (
                 <StackLane
@@ -1207,7 +1206,7 @@ function CheckoutLocation({
     <div className="shrink-0 space-y-2.5 border-b border-border bg-card px-3 py-2.5">
       <div className="flex min-w-0 items-center gap-2">
         <Icon name="FolderOpen" className="size-4 shrink-0 text-muted-foreground" aria-hidden />
-        <CheckoutLabel path={selected.path} machine={selected.machine} />
+        <CheckoutLabel path={selected.path} machine={selected.machine} hostId={selected.hostId} />
       </div>
       <CheckoutChatActions
         target={{ ...target, checkout: { hostId: selected.hostId, path: selected.path } }}

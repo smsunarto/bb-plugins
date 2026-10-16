@@ -75,7 +75,7 @@ function CheckoutChatControl({ target, environmentId, children }: Props) {
   };
 
   return (
-    <div className="flex min-w-0 flex-wrap items-center justify-end gap-x-2 gap-y-2">
+    <div className="flex min-w-0 flex-wrap items-center justify-end gap-x-1 gap-y-2">
       {children}
       <span
         className="shrink-0"
@@ -123,14 +123,15 @@ function ChatStatus({
     <span
       id={id}
       role={error ? "alert" : "status"}
+      title={reason ?? undefined}
       className={
         reason
-          ? "flex basis-full items-start gap-1.5 text-[11px] leading-relaxed break-words text-muted-foreground"
+          ? "inline-flex size-5 shrink-0 items-center justify-center text-muted-foreground"
           : "sr-only"
       }
     >
-      <Icon name="Info" className="mt-0.5 size-3 shrink-0" aria-hidden />
-      <span className="min-w-0 flex-1">{reason ?? progress}</span>
+      <Icon name="Info" className="size-3 shrink-0" aria-hidden />
+      <span className="sr-only">{reason ?? progress}</span>
     </span>
   );
 }

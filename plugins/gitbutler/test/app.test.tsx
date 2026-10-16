@@ -3,6 +3,7 @@ import { environmentManager } from "@tanstack/react-query";
 import { pluginQueryClient } from "@bb-kit/core/rpc/query";
 import { installDom } from "@bb-kit/core/testing";
 import type { RenderSlotOptions } from "@get-bb/plugin-sdk/testing/app";
+import { machineColor as sidebarMachineColor } from "../../gtd-sidebar/lib/machines.ts";
 import { parseOplog, parseWorkspace } from "../src/host/parse.ts";
 import type { Checkout, CheckoutSelection, Workspace } from "../src/shared/schema.ts";
 import { oplogPayload, statusPayload } from "./fixtures.ts";
@@ -2863,8 +2864,13 @@ test("shows an isolated checkout's actual branch, path, and latest commit with a
     ...baseRpc,
     otherMachines: () => ({ checkouts: [checkout], reason: null, environmentId: "env-1" }),
   });
-  const card = within(await slot.findByRole("region", { name: "On Personal Mac" }));
-  expect(card.getByText("/Users/me/git/bb-plugins-isolated").title).toBe(checkout.path);
+  const region = await slot.findByRole("region", { name: "On Personal Mac" });
+  const card = within(region);
+  const machine = region.querySelector<HTMLElement>("[data-machine-id]");
+  expect(machine?.getAttribute("data-machine-id")).toBe("laptop");
+  expect(machine?.style.color).toBe(sidebarMachineColor("laptop"));
+  expect(card.getByText("bb-plugins-isolated").title).toBe(checkout.path);
+  expect(card.getByText(checkout.path).textContent).toBe(checkout.path);
   const branch = within(card.getByRole("listitem", { name: "Branch scott/isolated-feature" }));
   expect(branch.getByText("Latest commit · feat: show isolated branches")).toBeTruthy();
   expect(branch.getByText("Latest commit · feat: show isolated branches").title).toBe(
@@ -3741,6 +3747,11 @@ test("checkout cards and the opened checkout launch native New thread in the exa
   });
 
   await openIsolated(slot);
+  const machine = slot
+    .getByText("Personal Mac")
+    .parentElement?.querySelector<HTMLElement>("[data-machine-id]");
+  expect(machine?.getAttribute("data-machine-id")).toBe("laptop");
+  expect(machine?.style.color).toBe(sidebarMachineColor("laptop"));
   const header = slot.getByRole("button", { name: label });
   await waitFor(() => expect(header.hasAttribute("disabled")).toBe(false));
   fireEvent.click(header);
@@ -3751,19 +3762,29 @@ test("checkout cards and the opened checkout launch native New thread in the exa
 });
 
 test("Git-only checkouts explain why New chat is unavailable while Open checkout still works", async () => {
+  const reason = "Connect this checkout to a BB environment before starting a chat here.";
   const slot = await panel({
     ...checkoutChatRpc(),
     checkoutChatTarget: () => ({
       state: "unavailable",
-      reason: "Connect this checkout to a BB environment before starting a chat here.",
+      reason,
     }),
   });
   const button = await slot.findByRole("button", {
     name: `New agent chat in ${isolatedCheckout.path}`,
   });
-  await slot.findByText("Connect this checkout to a BB environment before starting a chat here.");
+  await slot.findByText(reason);
+  const description = document.getElementById(button.getAttribute("aria-describedby")!);
+  expect(description?.textContent).toBe(reason);
+  expect(description?.getAttribute("title")).toBe(reason);
   expect(button.hasAttribute("disabled")).toBe(true);
   await openIsolated(slot);
+  const header = slot.getByRole("button", {
+    name: `New agent chat in ${isolatedCheckout.path}`,
+  });
+  const headerDescription = document.getElementById(header.getAttribute("aria-describedby")!);
+  expect(headerDescription?.textContent).toBe(reason);
+  expect(headerDescription?.getAttribute("title")).toBe(reason);
   expect(slot.getByText(isolatedCheckout.path)).toBeTruthy();
   expect(slot.getByRole("button", { name: "Back to main checkout" })).toBeTruthy();
   expect(slot.inspection.sidebarActionCalls).toEqual([]);

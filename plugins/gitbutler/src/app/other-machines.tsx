@@ -171,7 +171,7 @@ function MachineCard({
     >
       <button
         type="button"
-        className="flex min-h-9 w-full min-w-0 cursor-pointer items-center gap-2 px-3 py-2.5 text-start transition-colors duration-150 hover:bg-muted/40 focus-visible:-outline-offset-2 motion-reduce:transition-none"
+        className="flex min-h-9 w-full min-w-0 cursor-pointer items-center gap-2 px-3 py-1.5 text-start transition-colors duration-150 hover:bg-muted/40 focus-visible:-outline-offset-2 motion-reduce:transition-none"
         onClick={() => setOpen((current) => !current)}
         aria-expanded={open}
         title={checkout.path}
@@ -184,7 +184,7 @@ function MachineCard({
           )}
           aria-hidden
         />
-        <CheckoutLabel path={checkout.path} machine={checkout.machine} />
+        <CheckoutLabel path={checkout.path} machine={checkout.machine} hostId={checkout.hostId} />
         {branches > 0 ? <Count>{branches}</Count> : null}
       </button>
       {open ? (
@@ -240,7 +240,7 @@ export function OtherMachines({
     query.data?.reason === null && query.data.environmentId === environmentId ? query.data : null;
   if (!data || data.checkouts.length === 0) return null;
   return (
-    <section className="space-y-2" aria-label="Other checkouts">
+    <section className="flex flex-col gap-2" aria-label="Other checkouts">
       <h2 className="m-0 px-0.5 text-[11px] font-medium text-muted-foreground">Other checkouts</h2>
       <div className="flex flex-col gap-3">
         {data.checkouts.map((checkout) => (

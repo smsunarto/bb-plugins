@@ -20,7 +20,7 @@ import { CommitRowsSkeleton, FileRowsSkeleton, Notice, errorText } from "./notic
 import { BASE_HISTORY_PAGE, COMMIT_QUERY } from "./query-client.ts";
 import { rpc } from "./rpc.ts";
 import { storedAnswer } from "./stored-queries.ts";
-import { shortId, subject } from "./format.ts";
+import { subject } from "./format.ts";
 import { When } from "./when.tsx";
 import { AskAgentButton, useAskAgent } from "./ask-agent.tsx";
 import { BranchActions, BranchName } from "./branch-actions.tsx";
@@ -159,7 +159,6 @@ function CommitRow({
   diamond,
   bottom,
   last,
-  meta,
 }: {
   commit: CommitRef & { conflicted?: boolean };
   /** Where a commit off the workspace sits, so its diff goes straight to git. */
@@ -168,7 +167,6 @@ function CommitRow({
   diamond: boolean;
   bottom?: Segment;
   last: boolean;
-  meta?: ReactNode;
 }) {
   const expansion = useContext(CommitExpansionContext)!;
   // By change id, so an open commit stays open when GitButler rewrites it.
@@ -194,7 +192,7 @@ function CommitRow({
         onClick={() => expansion.onToggle(key)}
         {...(open ? {} : intent)}
         aria-expanded={open}
-        title={`${shortId(commit.commitId)} ${title}`}
+        title={title || "No commit message"}
       >
         {/* GitButler's marker for the open commit, on the card's edge. */}
         {open ? (
@@ -207,42 +205,35 @@ function CommitRow({
         {/* The rule stops at the rail, so the graph line never breaks. */}
         <span
           className={cn(
-            "flex min-w-0 flex-1 flex-col gap-1 py-2.5 pe-3",
+            "flex min-w-0 flex-1 items-center gap-2 py-2 pe-3",
             !last && !open && "border-b border-border",
           )}
         >
-          <span className="flex min-w-0 items-center gap-1.5">
-            {commit.conflicted ? (
-              <Icon
-                name="AlertTriangle"
-                className="size-3.5 shrink-0 text-destructive-text"
-                aria-label="Conflicted"
-              />
-            ) : null}
-            <span
-              className={cn(
-                "min-w-0 flex-1 truncate font-medium",
-                commit.conflicted && "text-destructive-text",
-                !title && "font-normal italic text-muted-foreground",
-              )}
-            >
-              {title || "No commit message"}
-            </span>
+          {commit.conflicted ? (
             <Icon
-              name="ChevronDown"
-              className="size-3 shrink-0 -rotate-90 text-muted-foreground transition-transform duration-150 group-aria-expanded:rotate-0 motion-reduce:transition-none"
-              aria-hidden
+              name="AlertTriangle"
+              className="size-3.5 shrink-0 text-destructive-text"
+              aria-label="Conflicted"
             />
+          ) : null}
+          <span
+            className={cn(
+              "min-w-0 flex-1 truncate font-medium",
+              commit.conflicted && "text-destructive-text",
+              !title && "font-normal italic text-muted-foreground",
+            )}
+          >
+            {title || "No commit message"}
           </span>
-          <span className="flex min-w-0 items-center gap-1.5 text-[11px] text-muted-foreground">
-            <span className="shrink-0 font-mono tabular-nums">{shortId(commit.commitId)}</span>
-            <span aria-hidden>·</span>
-            <span className="min-w-0 truncate">{meta ?? commit.authorName}</span>
-            {/* Rewrites itself as the panel ticks, so tabular digits stop the row twitching. */}
-            <span className="ms-auto shrink-0 ps-1 tabular-nums">
-              <When value={commit.createdAt} />
-            </span>
+          {/* Rewrites itself as the panel ticks, so tabular digits stop the row twitching. */}
+          <span className="shrink-0 text-[11px] text-muted-foreground tabular-nums">
+            <When value={commit.createdAt} />
           </span>
+          <Icon
+            name="ChevronDown"
+            className="size-3 shrink-0 -rotate-90 text-muted-foreground transition-transform duration-150 group-aria-expanded:rotate-0 motion-reduce:transition-none"
+            aria-hidden
+          />
         </span>
       </button>
       {open ? (
@@ -427,14 +418,13 @@ function CardHeader({
   trailing?: ReactNode;
 }) {
   return (
-    <header className="flex min-w-0 flex-col gap-2 px-3 py-2.5">
+    <header className="flex min-w-0 flex-col gap-2 px-3 py-2">
       {/*
-       * The chips once shared one line with the name at any width, and on a
-       * narrow panel they squeezed it to a few letters. The name keeps room
-       * to be read, and the chips wrap to a line of their own when it runs out.
+       * Compact review and check chips keep the branch and its state on one
+       * line. The name truncates while its button keeps the full label.
        */}
-      <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1.5">
-        <div className="flex min-w-0 flex-[1_1_12rem] items-center gap-2">
+      <div className="flex min-w-0 flex-nowrap items-center gap-2">
+        <div className="flex min-w-0 flex-1 items-center gap-2">
           {/* The square's centre sits on the commit rail's axis below it. */}
           <span
             className={cn(
@@ -449,9 +439,7 @@ function CardHeader({
           {heading}
         </div>
         {trailing ? (
-          <div className="ms-auto flex min-w-0 max-w-full flex-wrap items-center justify-end gap-1.5">
-            {trailing}
-          </div>
+          <div className="flex shrink-0 flex-nowrap items-center gap-1">{trailing}</div>
         ) : null}
       </div>
       {details ? (
@@ -484,8 +472,8 @@ export function Chip({
 }
 
 /**
- * The review's checks overall, in bb's feedback colours. Said in words too:
- * an icon alone left the reader to guess what the green tick was about.
+ * The review's checks overall, in bb's feedback colours. Compact icons retain
+ * their full status in accessible text and a title.
  */
 const CI_LOOK: Readonly<
   Record<NonNullable<Branch["ci"]>, { icon: string; tone: string; label: string }>
@@ -499,9 +487,8 @@ const OUTLINE_CHIP = "bg-transparent ring-1 ring-border ring-inset";
 
 /**
  * The checks chip. Failing checks are a job for the agent, so that chip asks
- * it to find and fix them. The panel itself never pushes a fix. Its name and
- * the ask icon say so, since a title is out of reach on touch and to a
- * screen reader.
+ * it to find and fix them. The panel itself never pushes a fix. Its accessible
+ * name describes that action while the status icon keeps the header compact.
  */
 function ChecksChip({ branch, review }: { branch: Branch; review: string | null }) {
   const ask = useAskAgent();
@@ -510,11 +497,15 @@ function ChecksChip({ branch, review }: { branch: Branch; review: string | null 
   const content = (
     <>
       <Icon name={look.icon} className="size-3" aria-hidden />
-      {look.label}
+      <span className="sr-only">{look.label}</span>
     </>
   );
   if (branch.ci !== "failure" || !ask) {
-    return <Chip className={cn(OUTLINE_CHIP, look.tone)}>{content}</Chip>;
+    return (
+      <Chip className={cn(OUTLINE_CHIP, look.tone)} title={look.label}>
+        {content}
+      </Chip>
+    );
   }
   return (
     <button
@@ -535,7 +526,6 @@ function ChecksChip({ branch, review }: { branch: Branch; review: string | null 
       }
     >
       {content}
-      <Icon name="MessageSquarePlus" className="size-3" aria-hidden />
     </button>
   );
 }
@@ -585,7 +575,8 @@ function ReviewChip({
         className={cn("size-3", look?.tone, opening && "animate-spin motion-reduce:animate-none")}
         aria-hidden
       />
-      {look ? `${look.label} ${id}` : `PR ${id}`}
+      <span className="sr-only">{look ? look.label : "PR"} </span>
+      {id}
     </>
   );
   const className = cn(CHIP, "cursor-pointer hover:bg-secondary/80");
@@ -950,7 +941,6 @@ export function BaseCard({
           bottom={commits.length > 0 ? "solid" : "dashed"}
           // A labelled section always follows, and its label draws the rule.
           last
-          meta={<span className="max-w-24 truncate">{base.authorName}</span>}
         />
       </ul>
       {/* The list below carried no label once, so it read as commits from nowhere. */}
@@ -976,7 +966,6 @@ export function BaseCard({
               diamond
               bottom={index === commits.length - 1 ? "dashed" : "solid"}
               last={index === commits.length - 1}
-              meta={<span className="max-w-24 truncate">{commit.authorName}</span>}
             />
           ))}
         </ul>
