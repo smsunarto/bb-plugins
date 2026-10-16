@@ -1,7 +1,7 @@
 import { expect, it } from "bun:test";
 import { z } from "zod";
 import type { Board } from "../shared/schema.ts";
-import { boardSnapshot } from "./canvas-board.ts";
+import { boardSnapshot, rebaseBoard } from "./canvas-board.ts";
 
 const board: Board = {
   version: 1,
@@ -70,4 +70,78 @@ it("removes deleted-node connections and references while preserving library ass
   expect(saved.edges).toStrictEqual([]);
   expect(saved.editorLayout.nodes).toStrictEqual({ image: { x: 450, y: 260 } });
   expect(board.nodes[1]!.data.images).toHaveLength(2);
+});
+
+it("rebases a local draft onto a generation result without losing either side", () => {
+  const base: Board = {
+    ...board,
+    nodes: [
+      { id: "note", type: "text", position: { x: 0, y: 0 }, data: { text: "Core loop" } },
+      { id: "image", type: "image", position: { x: 300, y: 0 }, data: { prompt: "A key" } },
+      { id: "old", type: "text", position: { x: 0, y: 200 }, data: {} },
+    ],
+    editorLayout: {
+      ...board.editorLayout,
+      nodes: { note: { x: 0, y: 0 }, image: { x: 300, y: 0 }, old: { x: 0, y: 200 } },
+    },
+  };
+  // The draft moved the note, edited its text, deleted "old" and added "new".
+  const local: Board = {
+    ...base,
+    nodes: [
+      { id: "note", type: "text", position: { x: 40, y: 0 }, data: { text: "Combat loop" } },
+      base.nodes[1]!,
+      { id: "new", type: "video", position: { x: 600, y: 0 }, data: { prompt: "" } },
+    ],
+    editorLayout: {
+      ...base.editorLayout,
+      viewport: { x: 10, y: 20, zoom: 0.8 },
+      nodes: { note: { x: 40, y: 0 }, image: { x: 300, y: 0 }, new: { x: 600, y: 0 } },
+    },
+  };
+  // Meanwhile a generation attached an output and rewrote the image brief on disk.
+  const remote: Board = {
+    ...base,
+    nodes: [
+      base.nodes[0]!,
+      {
+        id: "image",
+        type: "image",
+        position: { x: 300, y: 0 },
+        data: { prompt: "A brass key", assetId: "key", generationJobId: "job" },
+      },
+      base.nodes[2]!,
+    ],
+  };
+  expect(rebaseBoard(base, local, remote)).toStrictEqual({
+    ...base,
+    nodes: [
+      { id: "note", type: "text", position: { x: 40, y: 0 }, data: { text: "Combat loop" } },
+      {
+        id: "image",
+        type: "image",
+        position: { x: 300, y: 0 },
+        data: { prompt: "A brass key", assetId: "key", generationJobId: "job" },
+      },
+      { id: "new", type: "video", position: { x: 600, y: 0 }, data: { prompt: "" } },
+    ],
+    editorLayout: {
+      ...base.editorLayout,
+      viewport: { x: 10, y: 20, zoom: 0.8 },
+      nodes: { note: { x: 40, y: 0 }, image: { x: 300, y: 0 }, new: { x: 600, y: 0 } },
+    },
+  });
+});
+
+it("keeps the draft's own edit to a field the disk also changed", () => {
+  const base: Board = { ...board, nodes: [{ ...board.nodes[1]!, data: { prompt: "A key" } }] };
+  const local: Board = { ...base, nodes: [{ ...base.nodes[0]!, data: { prompt: "My key" } }] };
+  const remote: Board = {
+    ...base,
+    nodes: [{ ...base.nodes[0]!, data: { prompt: "Their key", assetId: "art" } }],
+  };
+  expect(rebaseBoard(base, local, remote).nodes[0]!.data).toStrictEqual({
+    prompt: "My key",
+    assetId: "art",
+  });
 });

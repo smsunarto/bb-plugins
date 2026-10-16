@@ -44,7 +44,7 @@ import { GenerationSettings, nodeModelLabel, promptField, runsDirectly } from ".
 import type { NodePatch } from "./generation.tsx";
 import { BriefStarters } from "./brief-starters.tsx";
 import { arrangeNodes, newNodePosition, revealNode } from "./canvas-layout.ts";
-import { boardSnapshot } from "./canvas-board.ts";
+import { boardSnapshot, rebaseBoard } from "./canvas-board.ts";
 import "@xyflow/react/dist/style.css";
 import "./canvas.css";
 
@@ -154,58 +154,9 @@ function CanvasCard({ id, data, selected }: NodeProps<Card>) {
           asset={asset}
           document={document}
           url={url}
-          placeholder={!selected && !prompt}
+          placeholder={!prompt}
           pending={pending}
         />
-        {field &&
-          (selected ? (
-            <div className="gs-node-prompt nodrag nopan nowheel">
-              <textarea
-                aria-label={`${info.label} brief`}
-                readOnly={briefing}
-                placeholder={
-                  node.type === "text"
-                    ? "Write your text instruction…"
-                    : `Describe the ${info.label.toLowerCase()} and its Unity consumer…`
-                }
-                value={prompt}
-                onChange={(event) => actions.edit(id, { [field]: event.target.value })}
-                onKeyDown={(event) => {
-                  if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
-                    event.preventDefault();
-                    actions.run(id);
-                  }
-                }}
-              />
-              <footer>
-                <small>{runsDirectly(node) ? "⌘↵ to run" : "Prepares a composer request"}</small>
-                {briefModel && (
-                  <button
-                    type="button"
-                    className="gs-node-brief-write"
-                    title={`Write a ${briefModel.label} brief with the BB model`}
-                    aria-label={`Write a ${briefModel.label} brief with the BB model`}
-                    disabled={data.busy || (!prompt.trim() && !hasInputs)}
-                    onClick={() => actions.brief(id)}
-                  >
-                    <Icon name={briefing ? "LoaderCircle" : "Sparkles"} />
-                  </button>
-                )}
-                <button
-                  type="button"
-                  className="gs-node-run"
-                  title={runsDirectly(node) ? "Run node" : "Prepare request"}
-                  aria-label={runsDirectly(node) ? "Run node" : "Prepare request"}
-                  disabled={data.busy || (!prompt.trim() && node.type !== "model-3d")}
-                  onClick={() => actions.run(id)}
-                >
-                  <Icon name={pending ? "LoaderCircle" : "ArrowUp"} />
-                </button>
-              </footer>
-            </div>
-          ) : (
-            prompt.trim() && <p className="gs-node-brief">{prompt}</p>
-          ))}
         {data.job && !(isBrief(data.job) && data.job.status === "succeeded") && (
           <div className="gs-generation-progress nodrag nopan">
             <span>
@@ -225,6 +176,58 @@ function CanvasCard({ id, data, selected }: NodeProps<Card>) {
               </button>
             )}
             {data.job.detail && <small>{data.job.detail}</small>}
+          </div>
+        )}
+        {/* The editor overlays the brief, so selecting a node never resizes or moves it. */}
+        {field && (
+          <div className="gs-node-brief-slot">
+            {prompt.trim() && <p className="gs-node-brief">{prompt}</p>}
+            {selected && (
+              <div className="gs-node-prompt nodrag nopan nowheel">
+                <textarea
+                  aria-label={`${info.label} brief`}
+                  readOnly={briefing}
+                  placeholder={
+                    node.type === "text"
+                      ? "Write your text instruction…"
+                      : `Describe the ${info.label.toLowerCase()} and its Unity consumer…`
+                  }
+                  value={prompt}
+                  onChange={(event) => actions.edit(id, { [field]: event.target.value })}
+                  onKeyDown={(event) => {
+                    if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
+                      event.preventDefault();
+                      actions.run(id);
+                    }
+                  }}
+                />
+                <footer>
+                  <small>{runsDirectly(node) ? "⌘↵ to run" : "Prepares a composer request"}</small>
+                  {briefModel && (
+                    <button
+                      type="button"
+                      className="gs-node-brief-write"
+                      title={`Write a ${briefModel.label} brief with the BB model`}
+                      aria-label={`Write a ${briefModel.label} brief with the BB model`}
+                      disabled={data.busy || (!prompt.trim() && !hasInputs)}
+                      onClick={() => actions.brief(id)}
+                    >
+                      <Icon name={briefing ? "LoaderCircle" : "Sparkles"} />
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    className="gs-node-run"
+                    title={runsDirectly(node) ? "Run node" : "Prepare request"}
+                    aria-label={runsDirectly(node) ? "Run node" : "Prepare request"}
+                    disabled={data.busy || (!prompt.trim() && node.type !== "model-3d")}
+                    onClick={() => actions.run(id)}
+                  >
+                    <Icon name={pending ? "LoaderCircle" : "ArrowUp"} />
+                  </button>
+                </footer>
+              </div>
+            )}
           </div>
         )}
         <Handle type="source" position={Position.Right} className="gs-port">
@@ -617,7 +620,12 @@ export function StudioCanvas({
   };
   const [error, setError] = useState("");
   const baseline = useRef(revision);
+  /** The saved board the local draft is based on, for rebasing onto newer disk versions. */
+  const synced = useRef(board);
   const editVersion = useRef(0);
+  const [edits, setEdits] = useState(0);
+  const savedEdits = useRef(0);
+  const inflight = useRef<Promise<string | undefined> | null>(null);
   const viewport = useRef<Viewport>(board.editorLayout.viewport);
   const selected = nodes.find((node) => node.id === selectedId);
   const selectedAsset = assets.find((asset) => asset.id === selected?.data.source.data.assetId);
@@ -646,12 +654,10 @@ export function StudioCanvas({
   const inspector = useRef<HTMLElement>(null);
   const stage = useRef<HTMLDivElement>(null);
   const flow = useRef<ReactFlowInstance<Card>>(null);
-  const focusNode = useRef<string | null>(selected?.id ?? null);
+  /** A newly added node to keep in view while it first renders; selection never pans. */
+  const focusNode = useRef<string | null>(null);
   const needsInitialFit = useRef(board.editorLayout.fitView !== false);
   const frame = useRef(0);
-  useEffect(() => {
-    focusNode.current = selected?.id ?? null;
-  }, [selected?.id]);
   const recoverViewport = useCallback(() => {
     const instance = flow.current;
     const bounds = stage.current?.getBoundingClientRect();
@@ -690,12 +696,11 @@ export function StudioCanvas({
       cancelAnimationFrame(frame.current);
     };
   }, [scheduleFit]);
-  useEffect(() => {
-    scheduleFit();
-  }, [selected?.id, scheduleFit]);
   const selectionChanged = useCallback(
     ({ nodes: selectedNodes }: OnSelectionChangeParams<Card>) => {
-      setSelected(selectedNodes.length === 1 ? selectedNodes[0]!.id : null);
+      const id = selectedNodes.length === 1 ? selectedNodes[0]!.id : null;
+      if (id !== focusNode.current) focusNode.current = null;
+      setSelected(id);
     },
     [],
   );
@@ -727,6 +732,7 @@ export function StudioCanvas({
       });
   const change = useCallback(() => {
     editVersion.current += 1;
+    setEdits(editVersion.current);
     setDirty(true);
     onStatus?.("dirty");
   }, [onStatus]);
@@ -824,6 +830,7 @@ export function StudioCanvas({
       },
     ]);
     setEdges((current) => current.map((edge) => ({ ...edge, selected: false })));
+    focusNode.current = id;
     setSelected(id);
     change();
   };
@@ -877,46 +884,84 @@ export function StudioCanvas({
     );
     change();
   };
-  const save = async () => {
-    if (saving) return undefined;
-    setSaving(true);
-    setError("");
-    onStatus?.("saving");
-    const savedVersion = editVersion.current;
-    const next = boardSnapshot(
+  const snapshot = () =>
+    boardSnapshot(
       board,
       nodes.map((node) => ({ ...node.data.source, position: node.position })),
       edges,
       viewport.current,
     );
+  /** Saves the draft; concurrent callers wait for the save in flight, then save what remains. */
+  const save = async (): Promise<string | undefined> => {
+    if (inflight.current) await inflight.current;
+    if (editVersion.current === savedEdits.current) return baseline.current;
+    const run = (async () => {
+      setSaving(true);
+      setError("");
+      onStatus?.("saving");
+      const savedVersion = editVersion.current;
+      const next = snapshot();
+      try {
+        const result = await onSave(next, baseline.current);
+        baseline.current = result.revision;
+        synced.current = next;
+        savedEdits.current = savedVersion;
+        const clean = editVersion.current === savedVersion;
+        setDirty(!clean);
+        onStatus?.(clean ? "saved" : "dirty");
+        return clean ? result.revision : undefined;
+      } catch (cause) {
+        const message = cause instanceof Error ? cause.message : String(cause);
+        // A newer disk version arrives through refetch; the draft rebases and saves again.
+        if (message.includes("changed on disk")) onStatus?.("dirty");
+        else {
+          setError(`Could not save. Draft kept. ${message}`);
+          onStatus?.("error");
+        }
+        return undefined;
+      } finally {
+        setSaving(false);
+      }
+    })();
+    inflight.current = run;
     try {
-      const result = await onSave(next, baseline.current);
-      baseline.current = result.revision;
-      const clean = editVersion.current === savedVersion;
-      setDirty(!clean);
-      onStatus?.(clean ? "saved" : "dirty");
-      return clean ? result.revision : undefined;
-    } catch (cause) {
-      setError(
-        `Could not save. Draft kept. ${cause instanceof Error ? cause.message : String(cause)}`,
-      );
-      onStatus?.("error");
-      return undefined;
+      return await run;
     } finally {
-      setSaving(false);
+      if (inflight.current === run) inflight.current = null;
     }
   };
+  const latestSave = useRef(save);
+  latestSave.current = save;
+  // Disk changes (generation results, agents, other tabs) apply automatically. A local
+  // draft rebases onto them and autosaves; nothing waits for a manual reload.
   useEffect(() => {
-    if (revision === baseline.current || dirty || saving) return;
+    if (revision === baseline.current || saving) return;
+    const next = dirty ? rebaseBoard(synced.current, snapshot(), board) : board;
     setNodes((current) =>
-      cards(board).map((node) => ({
-        ...node,
-        selected: current.some((old) => old.id === node.id && old.selected),
-      })),
+      cards(next).map((node) =>
+        Object.assign(node, {
+          selected: current.some((old) => old.id === node.id && old.selected),
+        }),
+      ),
     );
-    setEdges(board.edges);
+    setEdges((current) =>
+      next.edges.map((edge) =>
+        Object.assign({}, edge, {
+          selected: current.some((old) => old.id === edge.id && old.selected),
+        }),
+      ),
+    );
     baseline.current = revision;
+    synced.current = board;
+    // oxlint-disable-next-line react-hooks/exhaustive-deps -- snapshot reads this render's draft.
   }, [board, cards, revision, dirty, saving, setNodes, setEdges]);
+  useEffect(() => {
+    if (!dirty || saving || revision !== baseline.current) return;
+    const timer = setTimeout(() => void latestSave.current(), 600);
+    return () => clearTimeout(timer);
+  }, [edits, dirty, saving, revision]);
+  // Leaving the board (switching boards or tabs) saves the pending draft.
+  useEffect(() => () => void latestSave.current(), []);
   const generate = async (id: string, model: { provider: string; id?: string }, brief?: true) => {
     if (startingRef.current || busy(id)) return;
     startingRef.current = true;
@@ -1035,28 +1080,6 @@ export function StudioCanvas({
       >
         {/* oxlint-enable jsx-a11y/no-noninteractive-element-interactions, jsx-a11y/no-noninteractive-tabindex */}
         <div className="gs-canvas-stage" ref={stage}>
-          {revision !== baseline.current && (
-            <div className="gs-canvas-notice">
-              Board changed on disk. Local draft kept.
-              <button
-                onClick={() => {
-                  setNodes(cards(board));
-                  setEdges(board.edges);
-                  setSelected(null);
-                  baseline.current = revision;
-                  setDirty(false);
-                  setError("");
-                  onStatus?.("saved");
-                  viewport.current = board.editorLayout.viewport;
-                  needsInitialFit.current = board.editorLayout.fitView !== false;
-                  void flow.current?.setViewport(board.editorLayout.viewport);
-                  scheduleFit();
-                }}
-              >
-                Reload disk version
-              </button>
-            </div>
-          )}
           {error && (
             <div className="gs-canvas-notice gs-notice" role="alert">
               {error}
@@ -1197,20 +1220,6 @@ export function StudioCanvas({
                 Press <kbd>T</kbd> for text, <kbd>I</kbd> for image, <kbd>V</kbd> for video, or{" "}
                 <kbd>A</kbd> for audio.
               </p>
-            </div>
-          )}
-          {dirty && (
-            <div className="gs-canvas-save">
-              <span>Unsaved changes ·</span>
-              <button
-                className="gs-primary"
-                aria-label="Save board"
-                title="Save board (Ctrl/⌘+S)"
-                onClick={() => void save()}
-                disabled={saving}
-              >
-                {saving ? "Saving…" : "Save"}
-              </button>
             </div>
           )}
         </div>

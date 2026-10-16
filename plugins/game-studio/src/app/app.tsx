@@ -323,9 +323,12 @@ function Workbench({ gameId, tab }: { gameId: string; tab: Tab }) {
     openGame(gameId, next);
   };
   const saveBoard = async (next: NonNullable<typeof board>["board"], expectedRevision: string) => {
-    const result = await client.saveBoard({ gameId, board: next, revision: expectedRevision });
-    await refetch();
-    return result;
+    // Refetch even after a conflict: the canvas rebases its draft onto the newer board.
+    try {
+      return await client.saveBoard({ gameId, board: next, revision: expectedRevision });
+    } finally {
+      await refetch();
+    }
   };
   const onUpload = async (file: File) => {
     setError("");
@@ -402,7 +405,7 @@ function Workbench({ gameId, tab }: { gameId: string; tab: Tab }) {
                 {canvasStatus === "error"
                   ? "Could not save. Draft kept."
                   : canvasStatus === "dirty"
-                    ? "Unsaved"
+                    ? "Saving…"
                     : canvasStatus === "saving"
                       ? "Saving…"
                       : "Saved"}
@@ -451,11 +454,10 @@ function Workbench({ gameId, tab }: { gameId: string; tab: Tab }) {
                     disabled={canvasStatus === "saving"}
                     value={board?.board.id ?? ""}
                     onChange={(e) => {
+                      // A pending draft saves as the canvas leaves; only a failing save can lose it.
                       if (
-                        (canvasStatus === "dirty" || canvasStatus === "error") &&
-                        !window.confirm(
-                          "This board has unsaved changes. Discard them and switch boards?",
-                        )
+                        canvasStatus === "error" &&
+                        !window.confirm("This board could not be saved. Switch boards anyway?")
                       )
                         return;
                       setBoardId(e.target.value);

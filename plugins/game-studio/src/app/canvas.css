@@ -110,10 +110,6 @@
   width: 28px;
   height: 28px;
 }
-.gs-node-media + .gs-node-prompt,
-.gs-node-media + .gs-node-brief {
-  border-top: 1px solid var(--border-hairline);
-}
 .gs-node-badge {
   position: absolute;
   top: 8px;
@@ -164,11 +160,25 @@
   font-size: 12px;
   white-space: pre-wrap;
 }
-.gs-node-text + .gs-node-brief,
-.gs-node-text + .gs-node-prompt,
-.gs-node-placeholder + .gs-node-prompt,
-.gs-node-placeholder + .gs-node-brief {
+.gs-node-brief-slot {
+  position: relative;
+}
+.gs-node-brief-slot:has(> .gs-node-brief),
+.gs-generation-progress {
   border-top: 1px solid var(--border-hairline);
+}
+/* Overlays the brief and extends below the node, so selection never changes its size. */
+.gs-node-brief-slot > .gs-node-prompt {
+  position: absolute;
+  z-index: 5;
+  top: -1px;
+  left: -2px;
+  right: -2px;
+  border: 2px solid var(--gs-accent);
+  border-top: 1px solid var(--border-hairline);
+  border-radius: 0 0 12px 12px;
+  background: var(--gs-node-surface);
+  box-shadow: var(--shadow-md);
 }
 .gs-node-prompt {
   display: flex;

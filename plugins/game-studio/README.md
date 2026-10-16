@@ -32,8 +32,9 @@ creation tooling. Leave the version unset to let the agent choose through Hub.
   requests identify the selected document and its revision.
 - **Canvas:** boards with draggable notes, documents, image/video/3D requests,
   audio assets, and reference connections. Select text, document or image nodes
-  as generation inputs, or connect their handles. Text and image generation
-  saves the current board first and returns the result to its node.
+  as generation inputs, or connect their handles. Boards save automatically
+  shortly after each edit (⌘/Ctrl+S saves at once). Generation results and other
+  writers update the open board live; unsaved local edits rebase onto them.
   Write a node's brief inside the selected node and run it with its send button
   or ⌘/Ctrl+Enter. On image and video nodes, the sparkle button has the composer's
   BB model rewrite the draft and connected inputs into a final prompt for the
@@ -127,7 +128,8 @@ Design files use the upstream canvas workspace layout: `canvas/index.json`,
 `canvas/boards/*.json`, `canvas/editor/*.json`, `canvas/documents/*.md`, and
 `canvas/assets.json`. Editor layout stays separate from board content. Existing
 project files, including `AGENTS.md`, are preserved. Save operations compare
-file hashes and reject stale writes, retaining the editor draft.
+file hashes and reject stale writes; the canvas then rebases its draft onto the
+newer board and saves again.
 Agents keep independent progress files for accepted requests at
 `canvas/requests/<id>.json`; drafts create no request history. The studio reads
 up to 1,000 request files and shows the newest five valid records.
