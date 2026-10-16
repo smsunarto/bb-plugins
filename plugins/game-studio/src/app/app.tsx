@@ -491,7 +491,7 @@ function Workbench({ gameId, tab }: { gameId: string; tab: Tab }) {
                     onGenerate={(nodeId, recipe) =>
                       void request("asset", nodeId, recipe, { boardId: board.board.id })
                     }
-                    onGenerateDirect={async (nodeId, revision, requestId, model) => {
+                    onGenerateDirect={async (nodeId, revision, requestId, model, brief) => {
                       const selection =
                         model.provider === "bb"
                           ? await composer.experimental_setSelection({})
@@ -505,6 +505,7 @@ function Workbench({ gameId, tab }: { gameId: string; tab: Tab }) {
                         threadId: composer.scope.kind === "thread" ? composer.scope.threadId : null,
                         model: selection?.model ? { ...model, id: selection.model } : model,
                         ...(selection?.providerId ? { textProviderId: selection.providerId } : {}),
+                        ...(brief ? { brief } : {}),
                       });
                       await refetch();
                     }}

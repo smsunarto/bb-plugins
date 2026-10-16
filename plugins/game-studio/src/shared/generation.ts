@@ -36,11 +36,16 @@ export const imageRequest = z.strictObject({
   transparentBackground: z.boolean().default(false),
   resolution: z.enum(["1K", "2K", "4K"]).default("1K"),
 });
+/** Media models whose prompts a BB model can write from a prompting guide. */
+export const briefRecipe = z.enum(["nano-banana", "concept-art", "omni-video", "fal-video"]);
+export type BriefRecipe = z.output<typeof briefRecipe>;
 export const textRequest = z.strictObject({
   kind: z.literal("text"),
   prompt: brief,
   model: model.default({ provider: "bb" }),
   providerId: z.string().min(1).max(100).optional(),
+  /** Writes the target media node's prompt for this model instead of text. */
+  briefFor: briefRecipe.optional(),
   images: z.array(mediaPath).max(14).default([]),
   imageReferenceKey,
   outputCount: z.literal(1).default(1),
@@ -132,6 +137,8 @@ export const canvasGenerationInput = z.strictObject({
   model: model.optional(),
   approvedImagePath: mediaPath.optional(),
   textProviderId: z.string().min(1).max(100).optional(),
+  /** Write an image or video node's prompt with a BB model instead of generating media. */
+  brief: z.literal(true).optional(),
 });
 export const generationControlInput = z.strictObject({
   gameId: generationId,

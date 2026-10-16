@@ -742,6 +742,8 @@ test("generation requests show the selected brief and provider while keeping pol
   assert.equal(requestPath, `canvas/requests/${request.id}.json`);
   assert.match(result.context, /scott-engineering:game-dev/);
   assert.match(result.context, /Concept art · Midjourney/);
+  const { files } = await import("./instructions.ts");
+  assert.ok(result.context.includes(files.read("prompting/concept-art")));
   assert.doesNotMatch(
     result.prompt,
     /scott-engineering:game-dev|authoring claim|selectedNode|position|requestPath|documentRevision|```json/,
@@ -2092,6 +2094,65 @@ test("a generation status service outage preserves the workspace and marks pendi
   assert.match(workspace.generationJobs![0]!.detail!, /Could not refresh/);
 });
 
+test("a BB-written brief replaces the media node's prompt and keeps its output", async () => {
+  const { adoptGeneration } = await import("./studio.ts");
+  const { canvasRequest } = await import("./canvas-generation.ts");
+  const { gameSchema, workspaceSchema } = await import("../../shared/schema.ts");
+  const { generationJob } = await import("../../shared/generation.ts");
+  const f = fake(),
+    game = gameSchema.parse(await create.execute({ bb: f.bb }, input));
+  const original = (await get.execute({ bb: f.bb }, { gameId: game.id })).boards[0]!;
+  await saveBoard.execute(
+    { bb: f.bb },
+    {
+      gameId: game.id,
+      revision: original.revision,
+      board: {
+        ...original.board,
+        nodes: [
+          {
+            id: "shot",
+            type: "video",
+            position: { x: 300, y: 200 },
+            data: { prompt: "coin spins", recipe: "fal-video", generationJobId: "earlier" },
+          },
+        ],
+      },
+    },
+  );
+  const workspace = workspaceSchema.parse(await get.execute({ bb: f.bb }, { gameId: game.id }));
+  const request = canvasRequest(workspace, {
+    gameId: game.id,
+    boardId: "main",
+    nodeId: "shot",
+    revision: workspace.boards[0]!.revision,
+    requestId: "brief-run",
+    brief: true,
+  });
+  assert.equal(request.request.kind === "text" && request.request.briefFor, "fal-video");
+  const path = "canvas/staging/brief-run/output.md";
+  f.seed("host", `/games/orbit/${path}`, "A gold coin spins on black velvet. [Truck left]");
+  const job = generationJob.parse({
+    version: 1,
+    id: "brief-run",
+    threadId: null,
+    origin: { kind: "canvas", gameId: game.id },
+    createdAt: 1,
+    updatedAt: 2,
+    status: "succeeded",
+    ...request,
+    outputs: [{ path, type: "text", sizeBytes: 47, sha256: "a".repeat(64) }],
+  });
+  assert.equal((await adoptGeneration(f.bb, game, job)).attached, true);
+  const node = (await get.execute({ bb: f.bb }, { gameId: game.id })).boards[0]!.board.nodes[0]!;
+  assert.deepEqual(node.data, {
+    prompt: "A gold coin spins on black velvet. [Truck left]",
+    recipe: "fal-video",
+    generationJobId: "earlier",
+    briefJobId: "brief-run",
+  });
+  assert.equal((await adoptGeneration(f.bb, game, job)).attached, true);
+});
 test("generated text returns to its node without cataloging media or changing layout, and keeps newer drafts", async () => {
   const { adoptGeneration } = await import("./studio.ts");
   const { canvasRequest } = await import("./canvas-generation.ts");

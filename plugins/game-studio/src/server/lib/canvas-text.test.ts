@@ -205,3 +205,19 @@ test("cancellation waits for BB to stop and never adopts a partial response", as
     "ENOENT",
   );
 });
+
+test("a brief run follows the target model's prompting guide and returns only the prompt", async () => {
+  const f = await setup();
+  const { files } = await import("./instructions.ts");
+  const job = generationJob.parse({
+    ...f.job,
+    request: { ...f.job.request, briefFor: "omni-video", prompt: "Draft brief:\ncoin spins" },
+  });
+  await new CanvasText(f.bb).start(f.game, job);
+  expect(f.starts[0]).toMatchObject({ title: "Canvas brief · request" });
+  const text = (f.starts[0] as { input: { text?: string }[] }).input[0]!.text!;
+  expect(text.startsWith("Write the final generation prompt for Gemini Omni")).toBe(true);
+  expect(text).toContain(files.read("prompting/omni-video"));
+  expect(text).not.toContain(files.read("canvas-text"));
+  expect(text.endsWith("Draft brief:\ncoin spins")).toBe(true);
+});

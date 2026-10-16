@@ -38,14 +38,9 @@ import type {
   Asset,
   GenerationRecipe,
 } from "../shared/schema.ts";
+import { nodeBriefRecipe, nodeRecipe } from "../shared/recipes.ts";
 import { CanvasInputs } from "./canvas-inputs.tsx";
-import {
-  GenerationSettings,
-  nodeModelLabel,
-  nodeRecipe,
-  promptField,
-  runsDirectly,
-} from "./generation.tsx";
+import { GenerationSettings, nodeModelLabel, promptField, runsDirectly } from "./generation.tsx";
 import type { NodePatch } from "./generation.tsx";
 import { BriefStarters } from "./brief-starters.tsx";
 import { arrangeNodes, newNodePosition, revealNode } from "./canvas-layout.ts";
@@ -60,6 +55,8 @@ type CardData = {
   baseUrl?: string;
   job?: GenerationJob;
   busy?: boolean;
+  /** A BB model is writing this media node's brief. */
+  briefing?: boolean;
 };
 type Card = Node<CardData, "studio">;
 type Tool = "select" | "hand";
@@ -84,14 +81,26 @@ const kindInfo = (kind: NodeKind | undefined) =>
 type CardActionsValue = {
   edit: (id: string, patch: NodePatch) => void;
   run: (id: string) => void;
+  brief: (id: string) => void;
 };
-const CardActions = createContext<CardActionsValue>({ edit: () => {}, run: () => {} });
+const CardActions = createContext<CardActionsValue>({
+  edit: () => {},
+  run: () => {},
+  brief: () => {},
+});
+const isBrief = (job: GenerationJob | undefined) =>
+  job?.request.kind === "text" && !!job.request.briefFor;
 function CanvasCard({ id, data, selected }: NodeProps<Card>) {
   const node = data.source;
   const info = kindInfo(node.type);
   const actions = useContext(CardActions);
   const navigate = useBbNavigate();
-  const pending = data.busy;
+  const briefing = !!data.briefing;
+  const pending = data.busy && !briefing;
+  const briefModel = nodeBriefRecipe(node);
+  const hasInputs =
+    !!node.data.promptSource ||
+    [node.data.images, node.data.references].some((refs) => Array.isArray(refs) && refs.length);
   const asset = data.assets.find((item) => item.id === node.data.assetId);
   const document = data.documents.find((item) => item.id === node.data.documentId);
   const url =
@@ -153,6 +162,7 @@ function CanvasCard({ id, data, selected }: NodeProps<Card>) {
             <div className="gs-node-prompt nodrag nopan nowheel">
               <textarea
                 aria-label={`${info.label} brief`}
+                readOnly={briefing}
                 placeholder={
                   node.type === "text"
                     ? "Write your text instruction…"
@@ -169,12 +179,24 @@ function CanvasCard({ id, data, selected }: NodeProps<Card>) {
               />
               <footer>
                 <small>{runsDirectly(node) ? "⌘↵ to run" : "Prepares a composer request"}</small>
+                {briefModel && (
+                  <button
+                    type="button"
+                    className="gs-node-brief-write"
+                    title={`Write a ${briefModel.label} brief with the BB model`}
+                    aria-label={`Write a ${briefModel.label} brief with the BB model`}
+                    disabled={data.busy || (!prompt.trim() && !hasInputs)}
+                    onClick={() => actions.brief(id)}
+                  >
+                    <Icon name={briefing ? "LoaderCircle" : "Sparkles"} />
+                  </button>
+                )}
                 <button
                   type="button"
                   className="gs-node-run"
                   title={runsDirectly(node) ? "Run node" : "Prepare request"}
                   aria-label={runsDirectly(node) ? "Run node" : "Prepare request"}
-                  disabled={pending || (!prompt.trim() && node.type !== "model-3d")}
+                  disabled={data.busy || (!prompt.trim() && node.type !== "model-3d")}
                   onClick={() => actions.run(id)}
                 >
                   <Icon name={pending ? "LoaderCircle" : "ArrowUp"} />
@@ -184,16 +206,18 @@ function CanvasCard({ id, data, selected }: NodeProps<Card>) {
           ) : (
             prompt.trim() && <p className="gs-node-brief">{prompt}</p>
           ))}
-        {data.job && (
+        {data.job && !(isBrief(data.job) && data.job.status === "succeeded") && (
           <div className="gs-generation-progress nodrag nopan">
             <span>
-              {pending
-                ? "Generating…"
-                : data.job.status === "auth-required"
-                  ? "Sign in required"
-                  : data.job.status === "succeeded"
-                    ? "Ready for review"
-                    : data.job.status}
+              {briefing
+                ? "Writing brief…"
+                : pending
+                  ? "Generating…"
+                  : data.job.status === "auth-required"
+                    ? "Sign in required"
+                    : data.job.status === "succeeded"
+                      ? "Ready for review"
+                      : data.job.status}
             </span>
             {data.job.origin.kind === "agent" && data.job.threadId && (
               <button type="button" onClick={() => navigate.toThread(data.job!.threadId!)}>
@@ -523,6 +547,7 @@ export function StudioCanvas({
     revision: string,
     requestId: string,
     model: { provider: string; id?: string },
+    brief?: true,
   ) => Promise<void>;
   onGenerationControl: (
     jobId: string,
@@ -548,14 +573,20 @@ export function StudioCanvas({
   const [selectedId, setSelected] = useState<string | null>(null);
   const [tool, setTool] = useState<Tool>("select");
   // Cards read the latest handlers through a stable context value.
-  const latestActions = useRef<CardActionsValue>({ edit: () => {}, run: () => {} });
+  const latestActions = useRef<CardActionsValue>({
+    edit: () => {},
+    run: () => {},
+    brief: () => {},
+  });
   const [cardActions] = useState<CardActionsValue>(() => ({
     edit: (id, patch) => latestActions.current.edit(id, patch),
     run: (id) => latestActions.current.run(id),
+    brief: (id) => latestActions.current.brief(id),
   }));
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
   const [starting, setStarting] = useState<string | null>(null);
+  const [startingBrief, setStartingBrief] = useState<string | null>(null);
   const startingRef = useRef(false);
   const requestKey = `game-studio:canvas-requests:${gameId}:${board.id}`;
   const [requestIds] = useState(() => {
@@ -593,8 +624,17 @@ export function StudioCanvas({
   const selectedJob = generationJobs.find(
     (job) => job.target?.boardId === board.id && job.target.nodeId === selectedId,
   );
+  const runningJob = (id: string) =>
+    generationJobs.find(
+      (job) =>
+        job.target?.boardId === board.id &&
+        job.target.nodeId === id &&
+        ["queued", "running"].includes(job.status),
+    );
+  const briefing = (id: string) => startingBrief === id || isBrief(runningJob(id));
   const busy = (id: string | null) =>
     starting === id ||
+    startingBrief === id ||
     generationJobs.some(
       (job) =>
         job.target?.boardId === board.id &&
@@ -877,23 +917,25 @@ export function StudioCanvas({
     setEdges(board.edges);
     baseline.current = revision;
   }, [board, cards, revision, dirty, saving, setNodes, setEdges]);
-  const generate = async (id: string, model: { provider: string; id?: string }) => {
+  const generate = async (id: string, model: { provider: string; id?: string }, brief?: true) => {
     if (startingRef.current || busy(id)) return;
     startingRef.current = true;
-    setStarting(id);
+    (brief ? setStartingBrief : setStarting)(id);
     setError("");
+    // A brief and a media run on one node keep separate retry identities.
+    const key = brief ? `${id}#brief` : id;
     try {
       const saved = dirty ? await save() : baseline.current;
       if (!saved) throw new Error("Save the current edits before generating.");
-      const requestId = requestIds.get(id) ?? crypto.randomUUID();
-      rememberRequest(id, requestId);
-      await onGenerateDirect(id, saved, requestId, model);
-      rememberRequest(id);
+      const requestId = requestIds.get(key) ?? crypto.randomUUID();
+      rememberRequest(key, requestId);
+      await onGenerateDirect(id, saved, requestId, model, brief);
+      rememberRequest(key);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
     } finally {
       startingRef.current = false;
-      setStarting(null);
+      (brief ? setStartingBrief : setStarting)(null);
     }
   };
   const run = async (id: string) => {
@@ -918,7 +960,11 @@ export function StudioCanvas({
     onGenerate(id, recipe.id);
   };
   useEffect(() => {
-    latestActions.current = { edit: editData, run: (id) => void run(id) };
+    latestActions.current = {
+      edit: editData,
+      run: (id) => void run(id),
+      brief: (id) => void generate(id, { provider: "bb" }, true),
+    };
   });
   const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     if (!active) return;
@@ -1034,6 +1080,7 @@ export function StudioCanvas({
                   (job) => job.target?.boardId === board.id && job.target.nodeId === node.id,
                 ),
                 busy: busy(node.id),
+                briefing: briefing(node.id),
               },
             }))}
             edges={edges.map((edge) => ({
@@ -1290,9 +1337,13 @@ export function StudioCanvas({
                   <div className="gs-inline-job" role="status">
                     <span>
                       {generating
-                        ? "Generating…"
+                        ? isBrief(selectedJob)
+                          ? "Writing brief…"
+                          : "Generating…"
                         : selectedJob.status === "succeeded"
-                          ? "Generated"
+                          ? isBrief(selectedJob)
+                            ? "Brief written"
+                            : "Generated"
                           : selectedJob.status}
                     </span>
                     {selectedJob.detail && <small>{selectedJob.detail}</small>}

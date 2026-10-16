@@ -3,6 +3,7 @@ import { z } from "zod";
 import { mediaRequest, type canvasGenerationInput } from "../../shared/generation.ts";
 import type { Workspace, Board, CanvasNode } from "../../shared/schema.ts";
 import { files as instructions } from "./instructions.ts";
+import { nodeBriefRecipe } from "../../shared/recipes.ts";
 
 const reference = z.discriminatedUnion("type", [
   z.object({ type: z.literal("node"), nodeId: z.string() }),
@@ -127,16 +128,54 @@ export function canvasRequest(workspace: Workspace, input: z.output<typeof canva
     ...linkedText,
   ];
   const prompt = promptSections.filter(Boolean).join("\n\n");
-  const labels =
-    (node.type === "image" || node.type === "text") && imageLabels.size
-      ? {
-          imageReferenceKey: instructions.read("generation/reference-key", {
-            references: [...imageLabels.values()]
-              .map((names, index) => `${index + 1}. ${JSON.stringify(Array.from(names))}`)
-              .join("\n"),
-          }),
-        }
-      : {};
+  const referenceKey = imageLabels.size
+    ? {
+        imageReferenceKey: instructions.read("generation/reference-key", {
+          references: [...imageLabels.values()]
+            .map((names, index) => `${index + 1}. ${JSON.stringify(Array.from(names))}`)
+            .join("\n"),
+        }),
+      }
+    : {};
+  const target = {
+    boardId: input.boardId,
+    nodeId: input.nodeId,
+    fingerprint: nodeFingerprint(node, board, workspace),
+  };
+  if (input.brief) {
+    const recipe = nodeBriefRecipe(node);
+    if (!recipe) throw new Error("Select an image or video node to write its brief.");
+    const draft = typeof node.data.prompt === "string" ? node.data.prompt.trim() : "";
+    if (!draft && !linkedText.length && !paths.length)
+      throw new Error("Write a rough idea or connect inputs before writing the brief.");
+    const settings =
+      node.type === "video"
+        ? `${String(node.data.aspectRatio ?? "16:9")}, ${String(node.data.duration ?? 5)} seconds${
+            [
+              "",
+              "; image 1 is the start frame",
+              "; image 1 is the start frame and image 2 the end frame",
+            ][Math.min(paths.length, 2)]
+          }`
+        : `${String(node.data.aspectRatio ?? "1:1")}, ${String(node.data.resolution ?? "1K")}`;
+    return {
+      request: mediaRequest.parse({
+        kind: "text",
+        briefFor: recipe.id,
+        prompt: instructions.read("brief-input", {
+          draft: draft || "(none: write it from the connected context)",
+          context: linkedText.filter(Boolean).join("\n\n") || "(none)",
+          settings,
+        }),
+        providerId: input.textProviderId,
+        ...(input.model ? { model: input.model } : {}),
+        images: [...new Set(paths)],
+        ...referenceKey,
+      }),
+      target,
+    };
+  }
+  const labels = node.type === "image" || node.type === "text" ? referenceKey : {};
   const kind =
     node.type === "text"
       ? "text"
@@ -189,12 +228,5 @@ export function canvasRequest(workspace: Workspace, input: z.output<typeof canva
     throw new Error("The approved image must be one of this node's saved references.");
   if (kind === "video" && paths.length > 2)
     throw new Error("This video tool accepts at most a start image and an end image.");
-  return {
-    request,
-    target: {
-      boardId: input.boardId,
-      nodeId: input.nodeId,
-      fingerprint: nodeFingerprint(node, board, workspace),
-    },
-  };
+  return { request, target };
 }

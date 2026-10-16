@@ -1,4 +1,4 @@
-import { generationJob, type GenerationJob } from "../../shared/generation.ts";
+import { briefRecipe, generationJob, type GenerationJob } from "../../shared/generation.ts";
 import { nodeFingerprint } from "./canvas-generation.ts";
 import { generationImagePaths } from "./generation-inputs.ts";
 import { createHash, randomUUID } from "node:crypto";
@@ -1011,6 +1011,13 @@ export async function prompt(
       instructions.read("request-progress"),
       instructions.read(input.action, unitySetup),
       ...(recipe ? [instructions.read(`generation/${recipe}`)] : []),
+      ...(briefRecipe.safeParse(recipe).success
+        ? [
+            instructions.read("requests/prompting", {
+              guide: instructions.read(`prompting/${recipe}`),
+            }),
+          ]
+        : []),
       instructions.read("requests/progress"),
       instructions.read("requests/context", {
         references: JSON.stringify(references, null, 2),
@@ -1056,7 +1063,8 @@ export async function adoptGeneration(bb: BbPluginApi, game: Game, job: Generati
     const board = workspace.boards.find((item) => item.board.id === job.target!.boardId)?.board;
     if (!board) return { candidateAssetIds: ids, attached: false };
     const node = board.nodes.find(({ id }) => id === job.target!.nodeId);
-    if (node?.data.generationJobId === job.id) return { candidateAssetIds: ids, attached: true };
+    if (node?.data.generationJobId === job.id || node?.data.briefJobId === job.id)
+      return { candidateAssetIds: ids, attached: true };
     if (!node || nodeFingerprint(node, board, workspace) !== job.target.fingerprint)
       return {
         candidateAssetIds: ids,
@@ -1105,10 +1113,11 @@ export async function adoptGeneration(bb: BbPluginApi, game: Game, job: Generati
     }
     saved.data = {
       ...saved.data,
-      ...(generatedText !== undefined
-        ? { text: generatedText, generatedTextPath: textOutput!.path }
-        : { assetId: ids[0]!, candidateAssetIds: ids }),
-      generationJobId: job.id,
+      ...(job.request.kind === "text" && job.request.briefFor
+        ? { prompt: generatedText!, briefJobId: job.id }
+        : generatedText !== undefined
+          ? { text: generatedText, generatedTextPath: textOutput!.path, generationJobId: job.id }
+          : { assetId: ids[0]!, candidateAssetIds: ids, generationJobId: job.id }),
     };
     await write(bb, game, path, json(content), contentFile.sha256);
     return { candidateAssetIds: ids, attached: true };

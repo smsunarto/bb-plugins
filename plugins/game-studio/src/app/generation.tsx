@@ -1,23 +1,8 @@
-import { generationRecipeSchema } from "../shared/schema.ts";
-import type { CanvasNode, GenerationRecipe, NodeKind } from "../shared/schema.ts";
+import { nodeRecipe, recipes } from "../shared/recipes.ts";
+import type { CanvasNode, NodeKind } from "../shared/schema.ts";
 
 export type NodePatch = Record<string, CanvasNode["data"][string]>;
 
-const recipes: {
-  id: GenerationRecipe;
-  kind: NodeKind;
-  label: string;
-  /** Generated on the canvas; otherwise prepared as a native composer request. */
-  direct?: boolean;
-}[] = [
-  { id: "nano-banana", kind: "image", label: "Nano Banana 2.1", direct: true },
-  { id: "concept-art", kind: "image", label: "Midjourney", direct: true },
-  { id: "omni-video", kind: "video", label: "Gemini Omni" },
-  { id: "fal-video", kind: "video", label: "Fal H3 Max" },
-  { id: "model-3d", kind: "model-3d", label: "Tripo P2" },
-  { id: "voice-sfx", kind: "asset", label: "ElevenLabs" },
-  { id: "music", kind: "asset", label: "Suno" },
-];
 const settings: Partial<
   Record<NodeKind, { key: string; label: string; options: (string | number)[] }[]>
 > = {
@@ -35,12 +20,6 @@ const settings: Partial<
   ],
 };
 
-/** The node's saved model choice, or the kind's default. */
-export function nodeRecipe(node: CanvasNode) {
-  const saved = generationRecipeSchema.safeParse(node.data.recipe);
-  const options = recipes.filter((recipe) => recipe.kind === node.type);
-  return options.find((recipe) => saved.success && recipe.id === saved.data) ?? options[0];
-}
 export const nodeModelLabel = (node: CanvasNode) =>
   node.type === "text" ? "BB model" : nodeRecipe(node)?.label;
 /** The field holding a node's brief, when it can generate. */

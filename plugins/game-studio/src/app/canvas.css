@@ -203,6 +203,28 @@
   color: var(--subtle-foreground, var(--muted-foreground));
   font-size: 10px;
 }
+.gs-node-prompt small {
+  margin-right: auto;
+}
+.gs-canvas-root .gs-node-brief-write {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted-foreground);
+}
+.gs-app .gs-node-brief-write:hover:not(:disabled) {
+  background: var(--state-hover);
+  color: var(--gs-accent);
+}
+.gs-node-brief-write svg[class*="loader"] {
+  animation: gs-spin 900ms linear infinite;
+}
 .gs-canvas-root .gs-node-run {
   display: grid;
   place-items: center;

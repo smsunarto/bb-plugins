@@ -304,3 +304,54 @@ test("reference labels preserve the authored brief limits and cannot replace an 
   node.data.prompt = "x".repeat(12001);
   expect(() => canvasRequest(state, input)).toThrow();
 });
+
+test("a brief request asks the BB model to write the node's prompt for its selected model", () => {
+  const state = workspace();
+  const result = canvasRequest(state, { ...input, brief: true, textProviderId: "provider" });
+  expect(result.request).toEqual({
+    kind: "text",
+    briefFor: "nano-banana",
+    providerId: "provider",
+    model: { provider: "bb" },
+    outputCount: 1,
+    images: ["canvas/staging/key.png"],
+    imageReferenceKey: 'Attached image references (in attachment order):\n1. ["Key (asset: ref)"]',
+    prompt: `Draft brief:
+A key icon
+
+Connected context:
+Brass and teal
+
+Game Studio applies these output settings separately: 1:1, 1K.`,
+  });
+  expect(result.target).toEqual(canvasRequest(state, input).target);
+  state.boards[0]!.board.nodes[1]!.data.recipe = "concept-art";
+  expect(canvasRequest(state, { ...input, brief: true }).request).toMatchObject({
+    briefFor: "concept-art",
+  });
+  expect(() => canvasRequest(state, { ...input, nodeId: "model", brief: true })).toThrow(
+    "Select an image or video node",
+  );
+});
+test("a video brief names its frame images and duration", () => {
+  const state = workspace();
+  state.boards[0]!.board.nodes.push({
+    id: "shot",
+    type: "video",
+    position: { x: 0, y: 300 },
+    data: { prompt: "", duration: 8, references: [{ type: "library", assetId: "ref" }] },
+  });
+  const result = canvasRequest(state, { ...input, nodeId: "shot", brief: true });
+  expect(result.request).toMatchObject({ kind: "text", briefFor: "omni-video" });
+  expect(result.request.kind === "text" && result.request.prompt).toBe(`Draft brief:
+(none: write it from the connected context)
+
+Connected context:
+(none)
+
+Game Studio applies these output settings separately: 16:9, 8 seconds; image 1 is the start frame.`);
+  state.boards[0]!.board.nodes.at(-1)!.data.references = [];
+  expect(() => canvasRequest(state, { ...input, nodeId: "shot", brief: true })).toThrow(
+    "rough idea",
+  );
+});

@@ -4,10 +4,20 @@ import { instructionFiles } from "@bb-kit/core/instructions";
 import { generationJob, type GenerationJob } from "../../shared/generation.ts";
 import { generationPrompt } from "../../shared/generation-prompt.ts";
 import type { Game } from "../../shared/schema.ts";
+import { recipes } from "../../shared/recipes.ts";
 import { projectFile } from "./paths.ts";
 import { studioHostContract } from "../../shared/host-contract.ts";
 
 const instructions = instructionFiles(import.meta.url);
+/** Briefs follow the target model's prompting guide; other runs produce node text. */
+function taskInstructions(request: Extract<GenerationJob["request"], { kind: "text" }>) {
+  if (!request.briefFor) return instructions.read("canvas-text");
+  const model = recipes.find((recipe) => recipe.id === request.briefFor)!.label;
+  return instructions.read("canvas-brief", {
+    model,
+    guide: instructions.read(`prompting/${request.briefFor}`),
+  });
+}
 /** BB owns provider discovery, authentication and execution; this owns the canvas job record. */
 export class CanvasText {
   private readonly queues = new Map<string, Promise<unknown>>();
@@ -94,13 +104,13 @@ export class CanvasText {
           visibility: "hidden",
           origin: "plugin",
           originPluginId: "game-studio",
-          title: `Canvas text · ${job.id}`,
+          title: `${job.request.briefFor ? "Canvas brief" : "Canvas text"} · ${job.id}`,
           pluginMetadata: { gameStudioJobId: job.id, gameStudioGameId: game.id },
           input: [
             {
               type: "text",
               mentions: [],
-              text: `${instructions.read("canvas-text")}\n\n${generationPrompt(job.request)}`,
+              text: `${taskInstructions(job.request)}\n\n${generationPrompt(job.request)}`,
             },
             ...images,
           ],

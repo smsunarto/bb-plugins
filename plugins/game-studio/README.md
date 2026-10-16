@@ -35,7 +35,11 @@ creation tooling. Leave the version unset to let the agent choose through Hub.
   as generation inputs, or connect their handles. Text and image generation
   saves the current board first and returns the result to its node.
   Write a node's brief inside the selected node and run it with its send button
-  or ⌘/Ctrl+Enter. The floating bar above it sets the model, aspect ratio,
+  or ⌘/Ctrl+Enter. On image and video nodes, the sparkle button has the composer's
+  BB model rewrite the draft and connected inputs into a final prompt for the
+  node's model, following that model's guide in `instructions/prompting/`. Agent
+  requests for those models receive the same guide.
+  The floating bar above it sets the model, aspect ratio,
   resolution, or duration. Add nodes from the **+** menu or press `T`, `I`, `V`,
   or `A`; `H` toggles the hand tool. `+`/`-` zoom, `Shift+0` resets to 100%, and
   `Shift+1` fits the board.
