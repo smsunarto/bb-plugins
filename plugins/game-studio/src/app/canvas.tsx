@@ -49,7 +49,7 @@ import {
 } from "./generation.tsx";
 import type { NodePatch } from "./generation.tsx";
 import { BriefStarters } from "./brief-starters.tsx";
-import { Takes, hasTakes } from "./takes.tsx";
+import { GenerationSection } from "./takes.tsx";
 import { batchRequestId, nodeTakes, type Take } from "../shared/takes.ts";
 import { arrangeNodes, newNodePosition, revealNode } from "./canvas-layout.ts";
 import { boardSnapshot, rebaseBoard } from "./canvas-board.ts";
@@ -675,8 +675,7 @@ export function StudioCanvas({
   const selectedMedia =
     selected?.data.source.type === "image" || selected?.data.source.type === "video";
   // Takes choose a media node's output, so the asset picker only links outputs by hand.
-  const takesShown =
-    !!selected && selectedMedia && hasTakes(selected.data.source, nodeJobs(selected.id));
+  const takesShown = !!selected && selectedMedia && nodeTakes(selected.data.source).length > 0;
   const busy = (id: string | null) =>
     starting === id ||
     startingBrief === id ||
@@ -1303,15 +1302,17 @@ export function StudioCanvas({
                 <Icon name="X" />
               </button>
             </header>
-            {promptField(selected.data.source.type) && selected.data.source.type !== "text" && (
-              <section className="gs-inspector-section">
-                <h3>Generation</h3>
-                <GenerationSettings
-                  node={selected.data.source}
-                  onChange={(patch) => editData(selected.id, patch)}
-                />
-              </section>
-            )}
+            {promptField(selected.data.source.type) &&
+              selected.data.source.type !== "text" &&
+              !selectedMedia && (
+                <section className="gs-inspector-section">
+                  <h3>Generation</h3>
+                  <GenerationSettings
+                    node={selected.data.source}
+                    onChange={(patch) => editData(selected.id, patch)}
+                  />
+                </section>
+              )}
             {selected.data.source.type === "text" ? (
               <label className="gs-inspector-section">
                 <h3>Note</h3>
@@ -1373,7 +1374,7 @@ export function StudioCanvas({
                     Check saved request
                   </button>
                 )}
-                {selectedJob?.origin.kind === "canvas" && (
+                {selectedJob?.origin.kind === "canvas" && !selectedMedia && (
                   <div className="gs-inline-job" role="status">
                     <span>
                       {generating
@@ -1416,18 +1417,27 @@ export function StudioCanvas({
                 )}
               </>
             )}
-            {takesShown && (
-              <Takes
+            {selectedMedia && (
+              <GenerationSection
                 node={selected.data.source}
                 assets={assets}
                 baseUrl={previewBaseUrl}
                 jobs={nodeJobs(selected.id)}
                 batch={nodeBatch(selected.data.source)}
-                canReroll={
+                canRun={
                   !busy(selected.id) && !!String(selected.data.source.data.prompt ?? "").trim()
                 }
+                settings={
+                  <GenerationSettings
+                    node={selected.data.source}
+                    onChange={(patch) => editData(selected.id, patch)}
+                  />
+                }
                 onChange={(patch) => editData(selected.id, patch)}
-                onReroll={() => void run(selected.id)}
+                onRun={() => void run(selected.id)}
+                onControl={(jobId, action) =>
+                  void onGenerationControl(jobId, action).catch((cause) => setError(String(cause)))
+                }
               />
             )}
             {!["text", "document", "table"].includes(selected.data.source.type) && (

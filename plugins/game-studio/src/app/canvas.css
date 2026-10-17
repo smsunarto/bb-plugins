@@ -742,8 +742,7 @@
   border-radius: 0;
 }
 .gs-node-inspector .gs-inspector-section > h3,
-.gs-node-inspector .gs-inspector-section > legend,
-.gs-node-inspector .gs-takes > header > h3 {
+.gs-node-inspector .gs-inspector-section > legend {
   float: left;
   width: 100%;
   margin: 0 0 2px;
@@ -957,14 +956,12 @@
 /* Takes: the inspector section that reviews a media node's runs. */
 .gs-takes > header {
   display: flex;
-  flex-wrap: wrap;
   align-items: center;
+  justify-content: space-between;
   gap: 8px;
-}
-.gs-node-inspector .gs-takes > header > h3 {
-  float: none;
-  width: auto;
-  margin: 0;
+  margin-top: 4px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border-hairline);
 }
 .gs-takes .gs-takes-reroll {
   padding: 3px 8px;
@@ -994,7 +991,6 @@
   min-width: 0;
   margin: 0;
   border: 0;
-  order: 3;
   width: 100%;
   padding: 2px;
   border-radius: 8px;
@@ -1031,6 +1027,42 @@
   color: var(--muted-foreground);
   font-size: 11px;
   font-weight: 600;
+}
+.gs-takes-run > h4 {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.gs-takes-run > h4 > button {
+  margin-left: auto;
+  padding: 2px 6px;
+  color: var(--muted-foreground);
+  font-weight: 500;
+}
+.gs-takes-run > h4 > button:hover {
+  background: var(--state-hover);
+  color: var(--foreground);
+}
+.gs-takes-failure {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 6px;
+  padding: 6px 8px;
+  border: 1px solid var(--surface-destructive-border);
+  border-radius: 8px;
+  color: var(--muted-foreground);
+  font-size: 11px;
+}
+.gs-takes-failure > span {
+  flex: 1;
+  min-width: 0;
+}
+.gs-takes-failure > button {
+  padding: 2px 6px;
+  background: var(--state-hover) !important;
+  color: var(--foreground);
+  font-weight: 500;
 }
 .gs-takes-run > h4 > span {
   font-weight: 400;

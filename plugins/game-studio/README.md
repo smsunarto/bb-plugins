@@ -44,8 +44,8 @@ creation tooling. Leave the version unset to let the agent choose through Hub.
   resolution, or duration. Add nodes from the **+** menu or press `T`, `I`, `V`,
   or `A`; `H` toggles the hand tool. `+`/`-` zoom, `Shift+0` resets to 100%, and
   `Shift+1` fits the board.
-  Every image or video run adds **takes** to its node. The node inspector lists
-  them under **Takes**, grouped by run: star takes to shortlist them, choose
+  Every image or video run adds **takes** to its node. The inspector's
+  **Generation** section lists them under the model settings, grouped by run: star takes to shortlist them, choose
   **Use** to set the node's output, and **Reroll** to run the brief again while
   earlier runs generate. Nano Banana runs make ×1, ×2, or ×4 images per run.
   **Clear unstarred** removes takes from the node; their files stay staged.
