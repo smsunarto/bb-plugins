@@ -62,6 +62,9 @@ repository. The software map uses it for edge routing.
 Bundled into `dist/app.js` for software-map layout. Source:
 `https://github.com/kieler/elkjs`.
 
-## `@speed-highlight/core` 1.2.15 (CC0-1.0)
+## `shiki` 4.4.3 (MIT)
 
-Bundled into `dist/app.js` for `code` blocks.
+Bundled into `dist/app.js` to highlight code blocks and markdown fences, with
+the TextMate grammars it ships, each under its upstream license. Source:
+`https://github.com/shikijs/shiki`. Grammar licenses:
+`https://github.com/shikijs/textmate-grammars-themes`.

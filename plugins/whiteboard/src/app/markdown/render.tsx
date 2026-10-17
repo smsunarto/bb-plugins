@@ -6,6 +6,7 @@ import {
   type ReactNode,
   createElement,
 } from "react";
+import { useHighlightedCode } from "../lib/highlight.tsx";
 import { HighlightedText } from "../vendor/review/app/src/highlighted-text.tsx";
 import { type LinkRenderer, MarkdownLink, scrollToFragment, urlProtocol } from "./link.tsx";
 import { type LinkTarget, placeholderIndex } from "./preprocess.ts";
@@ -86,10 +87,9 @@ function renderNode(
   )
     return null;
 
-  const inner =
-    node.type.name === "codeBlock" || node.type.name === "table"
-      ? { ...context, highlight: false }
-      : context;
+  if (node.type.name === "codeBlock") return <CodeFence key={key} node={node} />;
+
+  const inner = node.type.name === "table" ? { ...context, highlight: false } : context;
 
   const element = fromSpec(node.type.spec.toDOM!(node), renderContent(node, inner), key, extra);
   // Cells keep words whole (document.css), so a table can outgrow its column.
@@ -101,6 +101,16 @@ function renderNode(
   ) : (
     element
   );
+}
+
+/** A fence: syntax highlighting instead of quote highlighting, as upstream, in the schema's markup. */
+function CodeFence({ node }: { node: ProseMirrorNode }) {
+  const { content, style } = useHighlightedCode(
+    node.textContent,
+    node.attrs.language as string | null,
+  );
+
+  return fromSpec(node.type.spec.toDOM!(node), content, undefined, style && { style });
 }
 
 /** TipTap `TaskItem`'s node view (`@tiptap/extension-task-item` `addNodeView`). */

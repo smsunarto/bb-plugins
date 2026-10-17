@@ -1,18 +1,7 @@
 // Vendored from dev.fast review/app/src/code-block.tsx @4ecc570 (MIT).
-import { isNumberValue, isStringValue } from "../../../../../shared/vendor/review-protocol/src/index.ts";
-import {
-  type ShjLanguage,
-  type ShjToken,
-  tokenize,
-} from "@speed-highlight/core";
-import {
-  type ComponentProps,
-  type ReactElement,
-  type ReactNode,
-  isValidElement,
-  useEffect,
-  useState,
-} from "react";
+import { type ComponentProps, type ReactElement } from "react";
+
+import { useHighlightedCode } from "../../../../lib/highlight.tsx";
 
 import { CopyButton } from "./copy-text.tsx";
 import { DiagramHeader } from "./diagram-header.tsx";
@@ -40,46 +29,22 @@ export function RenderedCodeBlock({
   className,
   ...props
 }: RenderedCodeBlockProps): ReactElement {
-  const normalizedLanguage = normalizeMarkdownCodeLanguage(language ?? "");
-
-  const [highlightedTokens, setHighlightedTokens] = useState<
-    HighlightedToken[] | null
-  >(null);
-
-  useEffect(() => {
-    let cancelled = false;
-
-    if (!normalizedLanguage) {
-      setHighlightedTokens(null);
-
-      return;
-    }
-
-    const tokens: HighlightedToken[] = [];
-    tokenize(code, normalizedLanguage, (text, token) => {
-      tokens.push({ text, token });
-    })
-      .then(() => {
-        if (!cancelled) setHighlightedTokens(tokens);
-      })
-      .catch(() => {
-        if (!cancelled) setHighlightedTokens(null);
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [code, normalizedLanguage]);
+  const highlighted = useHighlightedCode(code, language);
 
   const figureClassName = ["rendered-code-block", className]
     .filter(Boolean)
     .join(" ");
 
-  const displayLanguage = normalizedLanguage ?? language?.trim() ?? undefined;
+  const displayLanguage = language?.trim() || undefined;
   const lineCount = countLines(code);
 
   return (
-    <figure className={figureClassName} data-language={displayLanguage}>
+    <figure
+      className={figureClassName}
+      data-language={displayLanguage}
+      data-code-theme={highlighted.style ? "" : undefined}
+      style={highlighted.style}
+    >
       <DiagramHeader
         kind={displayLanguage || "code"}
         title={caption}
@@ -101,17 +66,7 @@ export function RenderedCodeBlock({
           className={codeClassName}
           data-review-copy-prose
         >
-          {normalizedLanguage && highlightedTokens
-            ? highlightedTokens.map((item, index) =>
-                item.token ? (
-                  <span className={`shj-syn-${item.token}`} key={index}>
-                    {item.text}
-                  </span>
-                ) : (
-                  item.text
-                ),
-              )
-            : code}
+          {highlighted.content}
         </code>
       </pre>
     </figure>
@@ -125,122 +80,4 @@ function countLines(code: string): number {
   return lines.length > 1 && lines.at(-1) === ""
     ? lines.length - 1
     : lines.length;
-}
-
-interface HighlightedToken {
-  text: string;
-  token: ShjToken | undefined;
-}
-
-export function MarkdownCodeBlock({
-  children,
-  className,
-  ...props
-}: ComponentProps<"pre">): ReactElement {
-  const codeElement = isValidElement<ComponentProps<"code">>(children)
-    ? children
-    : null;
-
-  const codeClassName = codeElement?.props.className ?? "";
-
-  const language = codeClassName
-    .split(/\s+/)
-    .find((name) => name.startsWith("language-"))
-    ?.slice("language-".length);
-
-  const code = reactTextContent(codeElement?.props.children ?? children);
-
-  const preClassName = ["markdown-code-block", className]
-    .filter(Boolean)
-    .join(" ");
-
-  return (
-    <RenderedCodeBlock
-      {...props}
-      className={preClassName}
-      code={code}
-      language={language}
-      codeClassName={codeClassName}
-    />
-  );
-}
-
-function normalizeMarkdownCodeLanguage(language: string): ShjLanguage | null {
-  const normalized = language.trim().toLowerCase();
-
-  switch (normalized) {
-    case "asm":
-    case "bash":
-    case "bf":
-    case "c":
-    case "css":
-    case "csv":
-    case "diff":
-    case "docker":
-    case "git":
-    case "go":
-    case "html":
-    case "http":
-    case "ini":
-    case "java":
-    case "js":
-    case "jsdoc":
-    case "json":
-    case "leanpub-md":
-    case "log":
-    case "lua":
-    case "make":
-    case "md":
-    case "pl":
-    case "plain":
-    case "py":
-    case "regex":
-    case "rs":
-    case "sql":
-    case "todo":
-    case "toml":
-    case "ts":
-    case "uri":
-    case "xml":
-    case "yaml":
-      return normalized;
-    case "javascript":
-    case "jsx":
-      return "js";
-    case "typescript":
-    case "tsx":
-      return "ts";
-    case "python":
-      return "py";
-    case "rust":
-      return "rs";
-    case "markdown":
-    case "mdx":
-      return "md";
-    case "shell":
-    case "sh":
-    case "zsh":
-      return "bash";
-    case "yml":
-      return "yaml";
-    case "text":
-      return "plain";
-    default:
-      return null;
-  }
-}
-
-function reactTextContent(node: ReactNode): string {
-  if (Array.isArray(node)) return node.map(reactTextContent).join("");
-
-  if (isValidElement<{ children?: ReactNode }>(node)) {
-    return reactTextContent(node.props.children);
-  }
-
-  return isReactText(node) ? String(node) : "";
-}
-
-/** Text React renders verbatim; booleans, null and undefined render nothing. */
-function isReactText(node: ReactNode): node is string | number {
-  return isStringValue(node) || isNumberValue(node);
 }

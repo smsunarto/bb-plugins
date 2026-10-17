@@ -44,6 +44,7 @@ vi.mock("@get-bb/plugin-sdk/app", () => ({
   },
   useRealtimeConnectionState: () => sdk.connection,
   useComposer: () => sdk.composer,
+  experimental_useCodeTheme: () => ({ mode: "light", name: "light", theme: null }),
   experimental_Icon: ({ name }: { name: string }) => <svg data-icon={name} />,
   useSdk: () => ({
     threads: { get: async () => ({ environment: { hostId: "host-1" } }) },

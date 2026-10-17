@@ -16,6 +16,7 @@ import {
   useState,
 } from "react";
 import { toast } from "sonner";
+import { CodeThemeProvider } from "../lib/highlight.tsx";
 import type { InfoOutput } from "../../shared/contracts/api-tunnel.ts";
 import { CHANNELS, changedPayload } from "../../shared/contracts/channels.ts";
 import { NAV_PANEL_PATH, PANEL_ACTION_ID } from "../../shared/contracts/panel.ts";
@@ -439,7 +440,9 @@ export function WhiteboardMount({
       >
         <div className="review-theme-host review-app--theme-light">
           {container ? (
-            <ReviewContainerProvider container={container}>{body}</ReviewContainerProvider>
+            <ReviewContainerProvider container={container}>
+              <CodeThemeProvider>{body}</CodeThemeProvider>
+            </ReviewContainerProvider>
           ) : null}
         </div>
         <PortalHost portals={portals} />
