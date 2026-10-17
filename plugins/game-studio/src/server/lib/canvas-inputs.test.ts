@@ -17,7 +17,7 @@ const reference = "references/hero.png";
 const snapshot = `canvas/inputs/${shaA}.png`;
 const hash = (bytes: Buffer) => createHash("sha256").update(bytes).digest("hex");
 
-async function fixture() {
+async function fixture({ registered = true } = {}) {
   const rootPath = await mkdtemp(join(tmpdir(), "studio-canvas-inputs-"));
   const starts: { input: Start; images: string[] }[] = [];
   const capturePhases: string[] = [];
@@ -30,8 +30,12 @@ async function fixture() {
     pluginId: "game-studio",
     sdk: {
       threads: {
-        get: async () =>
-          makeThreadResponse({ id: "thread", projectId: "project", environmentId: "environment" }),
+        get: async ({ threadId }) =>
+          makeThreadResponse({
+            id: threadId,
+            projectId: threadId === "thread" ? "project" : "elsewhere",
+            environmentId: "environment",
+          }),
       },
       environments: {
         get: async () => ({ id: "environment", hostId: "host", path: rootPath }) as never,
@@ -151,9 +155,9 @@ async function fixture() {
     edges: [],
   });
   const slots = new SlotStore(bb.storage.database());
-  const registered = slots.register("host", rootPath, "project");
-  const acquiring = slots.acquire(registered.id, "host", "project", "thread");
-  const leased = slots.completeAcquire(registered.id, acquiring.leaseId!);
+  const slot = registered ? slots.register("host", rootPath, "project") : undefined;
+  const acquiring = slot && slots.acquire(slot.id, "host", "project", "thread");
+  const leased = slot ? slots.completeAcquire(slot.id, acquiring!.leaseId!) : undefined;
   const generations = new Generations(
     bb,
     async () => ({ vertexProject: "studio-test-project" }),
@@ -161,9 +165,10 @@ async function fixture() {
   );
   const work = new GenerationWork(slots);
   captureGuard = (phase) => {
-    expect(() => slots.beginRelease(leased.id, "thread", leased.leaseId!)).toThrow(
-      "generation jobs",
-    );
+    if (leased)
+      expect(() => slots.beginRelease(leased.id, "thread", leased.leaseId!)).toThrow(
+        "generation jobs",
+      );
     capturePhases.push(phase);
   };
   return {
@@ -174,7 +179,7 @@ async function fixture() {
     hostCalls,
     generations,
     slots,
-    leased,
+    leased: leased!,
     work,
     failSourceRead() {
       failSourceRead = true;
@@ -383,3 +388,30 @@ for (const existing of [false, true]) {
     }
   });
 }
+
+test("canvas runs ignore a thread from another project unless it holds the checkout lease", async () => {
+  const input = async (f: Awaited<ReturnType<typeof fixture>>) => ({
+    gameId: "orbit",
+    boardId: "main",
+    nodeId: "variation",
+    revision: (await loadWorkspace(f.bb, "orbit")).boards[0]!.revision,
+    requestId: "variation-request",
+    threadId: "other",
+  });
+  const open = await fixture({ registered: false });
+  try {
+    const result = await open.generations.direct(await input(open));
+    expect([result.created, result.job.threadId]).toEqual([true, null]);
+  } finally {
+    await open.dispose();
+  }
+  const leased = await fixture();
+  try {
+    await expect(leased.generations.direct(await input(leased))).rejects.toThrow(
+      "Checkout is leased by @thread:thread",
+    );
+    expect(leased.starts).toEqual([]);
+  } finally {
+    await leased.dispose();
+  }
+});

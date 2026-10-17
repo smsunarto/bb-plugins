@@ -139,8 +139,11 @@ export class Generations {
     if (owner) await this.adopt(game, job, owner);
     return job;
   }
+  /**
+   * Canvas runs belong to the canvas, whichever thread sits beside it. The open thread only
+   * matters when it holds the lease on a registered checkout, which only its owner may write.
+   */
   private async canvasGame(gameId: string, threadId: string | null, writable = true) {
-    if (threadId) return this.game(gameId, threadId, writable);
     const game = await getGame(this.bb, gameId);
     const client = this.bb.hosts.experimental_client({ contract: studioHostContract });
     const resolved = await client.call(
@@ -149,24 +152,30 @@ export class Generations {
       { hostId: game.hostId },
     );
     if (!resolved?.workspacePath) throw new Error("The project's checkout is unavailable.");
-    // Unregistered projects need no agent thread. Registered slots require their real owner.
+    const slot = this.slots.find(game.hostId, resolved.workspacePath);
+    if (threadId && slot?.state === "leased" && slot.ownerThreadId === threadId)
+      return { game: await this.game(gameId, threadId, writable), thread: threadId };
     this.slots.editorAccess(game.hostId, resolved.workspacePath, `canvas:${game.id}`);
-    return { ...game, rootPath: resolved.workspacePath };
+    return { game: { ...game, rootPath: resolved.workspacePath }, thread: null };
   }
   async direct(input: z.output<typeof canvasDirectInput>) {
-    const game = await this.canvasGame(input.gameId, input.threadId);
+    const { game, thread } = await this.canvasGame(input.gameId, input.threadId);
     const workspace = await loadWorkspace(this.bb, input.gameId);
     const prepared = canvasRequest(workspace, input);
     if (!["image", "text"].includes(prepared.request.kind))
       throw new Error("Direct canvas generation supports image and text nodes.");
-    return this.dispatch(game, input.requestId, prepared.request, input.threadId, prepared.target, {
+    return this.dispatch(game, input.requestId, prepared.request, thread, prepared.target, {
       kind: "canvas",
       gameId: game.id,
     });
   }
   async directControl(input: z.output<typeof canvasDirectControl>) {
-    const game = await this.canvasGame(input.gameId, input.threadId, input.action === "resume");
-    const owner = input.threadId ?? `canvas:${game.id}`;
+    const { game, thread } = await this.canvasGame(
+      input.gameId,
+      input.threadId,
+      input.action === "resume",
+    );
+    const owner = thread ?? `canvas:${game.id}`;
     const before = await this.readJob(game, input.jobId, owner);
     if (!before)
       return {
@@ -175,7 +184,8 @@ export class Generations {
       };
     if (before.origin.kind !== "canvas" || before.origin.gameId !== input.gameId)
       throw new Error("This job was not started from this canvas.");
-    if (input.action !== "status" && before.threadId !== input.threadId)
+    // Only a leased checkout has a requester to protect; other canvas jobs belong to the canvas.
+    if (input.action !== "status" && thread && before.threadId !== thread)
       throw new Error("Only the requester can resume or stop this job.");
     return this.runControl(game, before, input.action, owner);
   }
