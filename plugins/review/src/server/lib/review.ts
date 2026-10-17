@@ -52,9 +52,12 @@ export function reviewerPrompt(run: ReviewRun): string {
     scope: request.scope,
     target: JSON.stringify(target ?? null),
   });
+  const lenses =
+    request.kind === "implementation" ? [files.read("rubric"), files.read("code-quality")] : [];
   return [
     `Review run ${run.id}: ${request.kind}, ${request.mode}.`,
     body,
+    ...lenses,
     files.read("report", { runId: run.id }),
   ].join("\n\n");
 }

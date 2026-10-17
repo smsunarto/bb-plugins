@@ -1271,6 +1271,43 @@ test("editing the reviewer persona cannot change the run binding or output contr
   }
 });
 
+test("implementation reviewers get the rubric and code-quality lens; design reviewers do not", async () => {
+  const instruction = (name: string) =>
+    readFile(new URL(`../../../instructions/${name}.md`, import.meta.url), "utf8").then((text) =>
+      text.trim(),
+    );
+  const [rubric, codeQuality] = await Promise.all([
+    instruction("rubric"),
+    instruction("code-quality"),
+  ]);
+  const promptFor = async (request: Record<string, unknown>) => {
+    const f = await load();
+    const run = await f.start(request);
+    const [spawn] = f.host.harness.inspection.sdk.callsTo("threads.spawn")[0] as [
+      { prompt: string },
+    ];
+    await f.host.harness.lifecycle.dispose();
+    return { runId: run.runId, prompt: spawn.prompt };
+  };
+
+  const impl = await promptFor({ summary: "Check the camera", target: { branch: "scott/camera" } });
+  expect(impl.prompt.slice(0, impl.prompt.indexOf("\n"))).toBe(
+    `Review run ${impl.runId}: implementation, standard.`,
+  );
+  const contract = impl.prompt.indexOf(`Return only JSON: {"runId":"${impl.runId}"`);
+  expect(impl.prompt.indexOf(rubric)).toBeGreaterThan(0);
+  expect(impl.prompt.indexOf(codeQuality)).toBeGreaterThan(impl.prompt.indexOf(rubric));
+  expect(contract).toBeGreaterThan(impl.prompt.indexOf(codeQuality));
+
+  const design = await promptFor({ kind: "design", summary: "Choose a queue boundary" });
+  expect(design.prompt.slice(0, design.prompt.indexOf("\n"))).toBe(
+    `Review run ${design.runId}: design, standard.`,
+  );
+  expect(design.prompt).toContain(`Return only JSON: {"runId":"${design.runId}"`);
+  expect(design.prompt).not.toContain(rubric);
+  expect(design.prompt).not.toContain(codeQuality);
+});
+
 test("reading beyond EOF cannot invalidate complete Deep diff coverage", async () => {
   const f = await load();
   const run = await f.start({
