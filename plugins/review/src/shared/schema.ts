@@ -65,6 +65,19 @@ export type PinnedTarget = z.infer<typeof pinnedTargetSchema>;
 export type ContextRequest = z.infer<typeof contextSchema>;
 export type ResultRequest = z.infer<typeof resultSchema>;
 export type Evidence = { label: string; path: string; text: string; sha256: string };
+export type Reviewer = {
+  providerId: "claude-code" | "codex";
+  model: string;
+  reasoningLevel: "medium" | "high" | "max";
+  serviceTier: "fast";
+};
+/** One reviewer on the run's panel; turn ids and reads are scoped to its thread. */
+export type Seat = {
+  reviewer: Reviewer;
+  threadId: string | null;
+  afterSeq: number;
+  queuedMessageId?: string;
+};
 export type ReviewRun = {
   id: string;
   contractVersion: number;
@@ -73,20 +86,12 @@ export type ReviewRun = {
   environmentId: string;
   hostId: string;
   environmentPath: string;
-  reviewerThreadId: string | null;
-  reviewer: {
-    providerId: "claude-code" | "codex";
-    model: string;
-    reasoningLevel: "medium" | "high" | "max";
-    serviceTier: "fast";
-  };
+  seats: [Seat, ...Seat[]];
   request: ReviewRequest;
   target: PinnedTarget | null;
   evidence: Evidence[];
   fingerprint: string;
   startedAt: number;
-  afterSeq: number;
   status: "starting" | "running" | "completed" | "incomplete" | "failed";
   error?: string;
-  queuedMessageId?: string;
 };

@@ -24,6 +24,7 @@ const RELEVANT_CHANGES = new Set([
 ]);
 
 type RunDisplay = {
+  id?: string;
   mode: "quick" | "standard" | "deep";
   kind: "design" | "implementation";
   startedAt: number;
@@ -227,7 +228,8 @@ type Navigation =
       target: string;
       label: string;
       phase: keyof typeof PHASES;
-      running: number;
+      runs: number;
+      reviewers: number;
       startedAt: number;
       providerId: string;
       title: string;
@@ -254,14 +256,21 @@ function reviewNavigation(parent: ReviewParent, reviews: Review[] | null): Navig
   const title = review.run
     ? `${review.run.mode[0]!.toUpperCase()}${review.run.mode.slice(1)} ${review.run.kind} review`
     : "Adversarial review";
+  // A panel run has one child per reviewer, all carrying the same run id.
+  const runs = new Set(running.map((child) => child.run?.id ?? child.id)).size;
   const label =
-    running.length > 1 ? `${running.length} adversarial reviews running` : `${title} ${phase}`;
+    runs > 1
+      ? `${runs} adversarial reviews running`
+      : running.length > 1
+        ? `${title} running · ${running.length} reviewers`
+        : `${title} ${phase}`;
   return {
     back: false,
     target: review.id,
     label,
     phase,
-    running: running.length,
+    runs,
+    reviewers: running.length,
     startedAt: review.run?.startedAt ?? review.createdAt,
     providerId: review.providerId,
     title,
@@ -353,9 +362,10 @@ function ReviewRow({ threadId }: { threadId: string }) {
         <span
           className={`shrink-0 whitespace-nowrap ${running ? "text-muted-foreground" : phase.tone}`}
         >
-          {navigation.running > 1 ? `${navigation.running} running` : phase.status}
-          {running && navigation.running === 1 && (
+          {navigation.runs > 1 ? `${navigation.runs} running` : phase.status}
+          {running && navigation.runs === 1 && (
             <>
+              {navigation.reviewers > 1 && ` · ${navigation.reviewers} reviewers`}
               {" · "}
               <Elapsed since={navigation.startedAt} />
             </>

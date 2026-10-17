@@ -1,4 +1,4 @@
-import type { ReviewMode, ReviewRun } from "../../shared/schema.ts";
+import type { Reviewer, ReviewMode, ReviewRun } from "../../shared/schema.ts";
 
 import { instructionFiles } from "@bb-kit/core/instructions";
 
@@ -6,40 +6,34 @@ import { instructionFiles } from "@bb-kit/core/instructions";
 export const files = instructionFiles(import.meta.url);
 
 export type ReviewerModels = { claudeModel: string; codexModel: string };
+// Panel modes add a reviewer from the author's own family beside the opposite one.
 export const MODES = {
-  quick: {
-    reasoningLevel: "medium",
-  },
-  standard: {
-    reasoningLevel: "high",
-  },
-  deep: {
-    reasoningLevel: "max",
-  },
+  quick: { reasoningLevel: "medium", panel: false },
+  standard: { reasoningLevel: "high", panel: true },
+  deep: { reasoningLevel: "max", panel: true },
 } as const;
-export type Reviewer = {
-  providerId: "claude-code" | "codex";
-  model: string;
-  reasoningLevel: "medium" | "high" | "max";
-  serviceTier: "fast";
-};
 export const REVIEW_TITLE = "Independent review";
+/** Any one reviewer's P0 or P1 finding blocks publication. */
+export const blocksPublication = (finding: { priority: number }) => finding.priority <= 1;
 export const MANUAL_SKILLS = ["review-quick", "review-standard", "review-deep"];
 
-export function pickReviewer(
+/** The opposite model family reviews first; panel modes add the author's family second. */
+export function pickReviewers(
   author: { providerId: string; model: string | null },
   models: ReviewerModels,
   mode: ReviewMode = "standard",
-): Reviewer {
+): [Reviewer, ...Reviewer[]] {
   const openai =
     author.providerId === "codex" ||
     /(?:^|[/:._-])(?:gpt|chatgpt|o\d|codex)(?![a-z])/i.test(author.model ?? "");
-  return {
-    providerId: openai ? "claude-code" : "codex",
-    model: openai ? models.claudeModel : models.codexModel,
+  const seat = (providerId: Reviewer["providerId"]): Reviewer => ({
+    providerId,
+    model: providerId === "claude-code" ? models.claudeModel : models.codexModel,
     reasoningLevel: MODES[mode].reasoningLevel,
     serviceTier: "fast",
-  };
+  });
+  const opposite = seat(openai ? "claude-code" : "codex");
+  return MODES[mode].panel ? [opposite, seat(openai ? "codex" : "claude-code")] : [opposite];
 }
 
 export function reviewerPrompt(run: ReviewRun): string {

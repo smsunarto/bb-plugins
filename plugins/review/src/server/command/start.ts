@@ -35,9 +35,10 @@ function targetFromOptions(options: {
   return undefined;
 }
 function receiptText(receipt: Awaited<ReturnType<ReviewService["start"]>>) {
-  const lines = [
-    `Review run ${receipt.runId} (${receipt.mode} ${receipt.kind}): ${receipt.threadId ?? "dispatching"}.`,
-  ];
+  const reviewers = receipt.reviewers
+    .map((reviewer, index) => `${reviewer.model} ${receipt.threadIds[index] ?? "dispatching"}`)
+    .join(", ");
+  const lines = [`Review run ${receipt.runId} (${receipt.mode} ${receipt.kind}): ${reviewers}.`];
   if (receipt.reused) lines.push("Reused an existing run/reviewer.");
   lines.push(`Result: bb review result ${receipt.runId} --wait 60s`);
   if ("message" in receipt && typeof receipt.message === "string") lines.push(receipt.message);

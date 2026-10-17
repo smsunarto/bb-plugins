@@ -7,4 +7,4 @@ argument-hint: "[branch, plan, or review focus]"
 
 The user requested a **deep** review. Use `review_start` with `mode: "deep"`, the intended design or implementation, and a short summary. Follow the review-workflow skill for pinned targets and result retrieval.
 
-BB notifies the parent when the reviewer finishes; retrieve that run with `review_result` after notification rather than polling.
+BB notifies the parent as each reviewer finishes; retrieve that run with `review_result` after notification rather than polling.

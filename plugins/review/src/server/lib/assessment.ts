@@ -1,5 +1,5 @@
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
-import type { ReviewRun } from "../../shared/schema.ts";
+import type { Reviewer } from "../../shared/schema.ts";
 
 type Events = Awaited<ReturnType<BbPluginApi["sdk"]["threads"]["events"]["list"]>>;
 type Request = Extract<Events[number], { type: "client/turn/requested" }>;
@@ -64,11 +64,11 @@ function cleanTurns(requests: Request[], events: Events) {
   });
 }
 /** A retry replaces a failed attempt; only its own output and context reads count. */
-export function bindAssessment(run: ReviewRun, events: Events) {
+export function bindAssessment(runId: string, reviewer: Reviewer, events: Events) {
   const all = events.filter((event): event is Request => event.type === "client/turn/requested");
   const hasHeader = (request: Request) =>
     request.data.input.some(
-      (item) => item.type === "text" && item.text.startsWith(`Review run ${run.id}:`),
+      (item) => item.type === "text" && item.text.startsWith(`Review run ${runId}:`),
     );
   const root = all.find((request) => hasHeader(request) && !request.data.retryOfRequestId);
   const requests = all.filter(
@@ -97,8 +97,8 @@ export function bindAssessment(run: ReviewRun, events: Events) {
   );
   // BB may demote a requested fast tier when its global switch is disabled.
   const executionMatches =
-    latest?.data.execution.model === run.reviewer.model &&
-    latest.data.execution.reasoningLevel === run.reviewer.reasoningLevel;
+    latest?.data.execution.model === reviewer.model &&
+    latest.data.execution.reasoningLevel === reviewer.reasoningLevel;
   return {
     text,
     finished,

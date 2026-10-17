@@ -17,13 +17,14 @@ export default definePlugin({
       claudeModel: {
         type: "string",
         label: "Claude reviewer model",
-        description: "Reviews OpenAI authors at the selected mode's effort.",
+        description:
+          "Claude seat on Standard and Deep panels; Quick's reviewer for OpenAI authors.",
         default: "claude-opus-5-5[1m]",
       },
       codexModel: {
         type: "string",
         label: "Codex reviewer model",
-        description: "Reviews other authors at the selected mode's effort.",
+        description: "Codex seat on Standard and Deep panels; Quick's reviewer for other authors.",
         default: "gpt-6-astra",
       },
     });

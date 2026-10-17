@@ -1043,6 +1043,48 @@ test("reused reviewers display the latest run mode and elapsed time rather than 
   }
 });
 
+test("a panel run reads as one review with its reviewer count; separate runs stay distinct", async () => {
+  setSystemTime(new Date(200000));
+  let runOf = (_threadId: string) => "run_panel";
+  const { slot, change } = await renderBanner(
+    async () => [
+      child({ id: "thr_claude", status: "active" }),
+      child({ id: "thr_codex", status: "active" }),
+    ],
+    undefined,
+    undefined,
+    "connected",
+    undefined,
+    async ({ threadId }) => ({
+      reviewRun: {
+        id: runOf(threadId),
+        mode: "deep",
+        kind: "implementation",
+        startedAt: 180000,
+        status: "running",
+      },
+    }),
+  );
+  try {
+    const panel = await slot.findByRole("button", {
+      name: "Deep implementation review running · 2 reviewers. Open the review thread.",
+    });
+    expect(panel.textContent).toContain("Running · 2 reviewers · 20s");
+    runOf = (threadId) => `run_${threadId}`;
+    await change("thr_codex", ["status-changed"]);
+    expect(
+      (
+        await slot.findByRole("button", {
+          name: "2 adversarial reviews running. Open the review thread.",
+        })
+      ).textContent,
+    ).toContain("2 running");
+  } finally {
+    slot.unmount();
+    setSystemTime();
+  }
+});
+
 test("review banners order reused runs by assessment date and show incomplete explicitly", async () => {
   const { slot } = await renderBanner(
     async () => [

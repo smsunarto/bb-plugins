@@ -1,7 +1,7 @@
 {
   "name": "@smsunarto/bb-plugin-review",
   "version": "0.1.0",
-  "description": "Adversarial review of an agent's work by the other model family, in a hidden subthread with a composer banner.",
+  "description": "Adversarial review of an agent's work by a Claude and Codex panel, in hidden subthreads with a composer banner.",
   "license": "MIT",
   "author": "Scott Sunarto",
   "homepage": "https://github.com/smsunarto/bb-plugins/tree/main/plugins/review",

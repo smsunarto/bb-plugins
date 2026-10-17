@@ -1,6 +1,7 @@
 import { defineTool, type ToolContext } from "@bb-kit/core/tools";
 import { resultSchema } from "../../shared/schema.ts";
 import type { ReviewContext } from "../command/start.ts";
+import { blocksPublication } from "../lib/review.ts";
 
 export const result = defineTool({
   parameters: resultSchema,
@@ -15,16 +16,24 @@ export const result = defineTool({
         current: "current" in value ? value.current : null,
         deepImplementationCovered:
           "deepImplementationCovered" in value && value.deepImplementationCovered,
-        diffCoverage:
-          "diffCoverage" in value
-            ? {
-                complete: value.diffCoverage.complete,
-                consistent: value.diffCoverage.consistent,
-                totalLength: value.diffCoverage.totalLength,
-                unreadCount: value.diffCoverage.unread.length,
-              }
+        reviews:
+          "current" in value
+            ? value.reviews.map(({ reviewer, threadId, status, diffCoverage, report, error }) => ({
+                reviewer,
+                threadId,
+                status,
+                findings: report?.findings.length ?? null,
+                blocking: report?.findings.filter(blocksPublication).length ?? null,
+                diffCoverage: {
+                  complete: diffCoverage.complete,
+                  consistent: diffCoverage.consistent,
+                  totalLength: diffCoverage.totalLength,
+                  unreadCount: diffCoverage.unread.length,
+                },
+                error,
+              }))
             : null,
-        message: "Read the full report with review_context section=report",
+        message: "Read every reviewer's full report with review_context section=report",
         nextOffset: 0,
       });
     return { content: [{ type: "text" as const, text }] };
