@@ -116,16 +116,22 @@ export class UnityEditors {
     const { instances } = await this.transport.discover(host, signal);
     const instance = instances.find((i) => i.id === id);
     if (!instance) throw new Error("Editor is not in current discovery. List instances again.");
+    if (instance.port === null && mode !== "authoring")
+      throw new Error("A startup Editor needs an authoring claim for its own startup dialog");
     const { claim, created } = this.claims.claim(host, instance, owner, mode);
-    if (created) {
+    const promoting = !created && claim.instance.port === null && instance.port !== null;
+    if (promoting && claim.jobId) return this.owned(host, id, owner, claim.claimId);
+    if (created || promoting) {
+      if (promoting) this.claims.job(host, id, owner, claim.claimId, "verifying", null);
       try {
         if ((await this.transport.probe(host, instance, signal)).pid !== instance.pid)
           throw new Error("Editor PID verification failed");
       } catch (error) {
         this.claims.job(host, id, owner, claim.claimId, null, "verifying");
-        this.claims.release(host, id, owner, claim.claimId);
+        if (created) this.claims.release(host, id, owner, claim.claimId);
         throw error;
       }
+      if (promoting) this.claims.promote(host, id, owner, claim.claimId, instance);
       return this.claims.job(host, id, owner, claim.claimId, null, "verifying");
     }
     return this.owned(host, id, owner, claim.claimId);
@@ -162,6 +168,10 @@ export class UnityEditors {
     signal?: AbortSignal,
   ) {
     const claim = this.owned(host, id, owner, claimId);
+    if (claim.instance.port === null)
+      throw new Error(
+        "A startup claim only covers its startup dialog. Rediscover and claim again after Pipeline starts.",
+      );
     if (!runtimeCommands.has(command) && claim.mode !== "authoring")
       throw new Error(
         "This command needs an authoring claim on the main Editor; runtime claims permit inspection only",

@@ -274,6 +274,77 @@ test("dispatch admission protects an adopted path even when BB directly reuses i
   expect((await list(harness, "bob"))[0]).toMatchObject({ state: "leased", ownerThreadId: "bob" });
 });
 
+test("immutable review dispatch leaves an author's slot lease unchanged", async () => {
+  const { harness, slot } = await setup();
+  const lease = await acquire(harness, slot.id);
+  const dispatch = harness.registrations.hooks["message.dispatch"]!;
+  const context = makeMessageDispatchHookContext({
+    thread: {
+      id: "reviewer",
+      projectId: "project",
+      environmentId: "environment",
+      parentThreadId: "alice",
+      originPluginId: "review",
+    },
+    project,
+    environment,
+    host: makeHostResponse({ id: "host" }),
+  });
+  expect(await dispatch(context)).toEqual({ action: "proceed" });
+  expect((await list(harness, "alice"))[0]).toMatchObject({
+    state: "leased",
+    ownerThreadId: "alice",
+    leaseId: lease.leaseId,
+  });
+});
+
+test("active immutable reviewers do not block author acquisition or release", async () => {
+  const { state, harness, slot } = await setup();
+  state.environments = [environment];
+  state.threads = [
+    makeThreadResponse({
+      id: "reviewer",
+      projectId: "project",
+      environmentId: "environment",
+      status: "active",
+      parentThreadId: "alice",
+      originPluginId: "review",
+    }),
+  ];
+  const lease = await acquire(harness, slot.id);
+  expect(
+    await cliSlot(
+      harness,
+      ["slots", "release", "--host", "host", "--slot", slot.id, "--lease", lease.leaseId!],
+      "alice",
+    ),
+  ).toMatchObject({ state: "available", ownerThreadId: null });
+});
+
+test("a review title or another plugin's origin cannot bypass author admission", async () => {
+  const { harness, slot } = await setup();
+  await acquire(harness, slot.id);
+  const dispatch = harness.registrations.hooks["message.dispatch"]!;
+  for (const originPluginId of [null, "another-plugin"]) {
+    const context = makeMessageDispatchHookContext({
+      thread: {
+        id: "bob",
+        projectId: "project",
+        environmentId: "environment",
+        title: "Deep implementation review",
+        originPluginId,
+      },
+      project,
+      environment,
+      host: makeHostResponse({ id: "host" }),
+    });
+    expect(await dispatch(context)).toMatchObject({
+      action: "reject",
+      message: expect.stringContaining("@thread:alice"),
+    });
+  }
+});
+
 test("provider-intent dispatch leases an adopted path before core can reuse its environment", async () => {
   const { harness, provider, slot } = await setup();
   const dispatch = harness.registrations.hooks["message.dispatch"]!;

@@ -509,3 +509,56 @@ test("serialized nested timeout errors remain uncertain when details are null", 
     "uncertain",
   );
 });
+
+test("startup ownership is authoring only and cannot submit Pipeline work", async () => {
+  const startup = { ...main, port: null };
+  const { service, issued, claims } = setup({
+    discover: async () => ({ instances: [startup], warnings: [] }),
+  });
+  await expect(service.claim("host", "main", "alice", "runtime")).rejects.toThrow("startup");
+  const claim = await service.claim("host", "main", "alice", "authoring");
+  expect(claim.instance.port).toBeNull();
+  await expect(
+    service.command("host", "main", "alice", claim.claimId, "editor_status", {}),
+  ).rejects.toThrow("startup");
+  expect(issued).toEqual([]);
+  expect(claims.get("host", "main")?.jobId).toBeNull();
+  await expect(service.claim("host", "main", "bob", "authoring")).rejects.toThrow("owned");
+});
+
+test("a startup claim promotes the same process only after its Pipeline PID probe", async () => {
+  let ready = false;
+  const probed: Array<number | null> = [];
+  const { service } = setup({
+    discover: async () => ({ instances: [{ ...main, port: ready ? 7800 : null }], warnings: [] }),
+    probe: async (_, instance) => {
+      probed.push(instance.port);
+      return { pid: instance.pid };
+    },
+  });
+  const startup = await service.claim("host", "main", "alice", "authoring");
+  ready = true;
+  const promoted = await service.claim("host", "main", "alice", "authoring");
+  expect(promoted.claimId).toBe(startup.claimId);
+  expect(promoted.instance.port).toBe(7800);
+  expect(probed).toEqual([null, 7800]);
+  await service.command("host", "main", "alice", promoted.claimId, "editor_status", {});
+});
+
+test("failed Pipeline promotion retains startup ownership and blocks commands", async () => {
+  let ready = false;
+  const { service, claims, issued } = setup({
+    discover: async () => ({ instances: [{ ...main, port: ready ? 7800 : null }], warnings: [] }),
+    probe: async (_, instance) => ({ pid: instance.port === null ? instance.pid : 999 }),
+  });
+  const startup = await service.claim("host", "main", "alice", "authoring");
+  ready = true;
+  await expect(service.claim("host", "main", "alice", "authoring")).rejects.toThrow("PID");
+  expect(claims.get("host", "main")?.claimId).toBe(startup.claimId);
+  expect(claims.get("host", "main")?.instance.port).toBeNull();
+  expect(claims.get("host", "main")?.jobId).toBeNull();
+  await expect(
+    service.command("host", "main", "alice", startup.claimId, "editor_status", {}),
+  ).rejects.toThrow("startup");
+  expect(issued).toEqual([]);
+});

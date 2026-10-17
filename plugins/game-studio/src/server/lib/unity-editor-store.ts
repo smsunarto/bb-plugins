@@ -120,6 +120,27 @@ export class EditorClaims {
       })
       .immediate();
   }
+  promote(hostId: string, id: string, owner: string, claimId: string, instance: EditorInstance) {
+    return this.db
+      .transaction(() => {
+        const claim = this.owned(hostId, id, owner, claimId);
+        if (
+          claim.jobId !== "verifying" ||
+          claim.instance.port !== null ||
+          instance.port === null ||
+          instance.id !== id ||
+          instance.pid !== claim.instance.pid ||
+          instance.startedAt !== claim.instance.startedAt ||
+          instance.projectPath !== claim.instance.projectPath ||
+          instance.workspacePath !== claim.instance.workspacePath
+        )
+          throw new Error("Startup promotion must preserve the verified Editor identity");
+        const updated = { ...claim, instance };
+        this.save(updated);
+        return updated;
+      })
+      .immediate();
+  }
   owned(hostId: string, id: string, owner: string, claimId: string): EditorClaim {
     const claim = this.get(hostId, id);
     if (!claim || claim.ownerThreadId !== owner || claim.claimId !== claimId)

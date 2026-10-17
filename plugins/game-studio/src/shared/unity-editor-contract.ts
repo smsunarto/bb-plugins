@@ -8,7 +8,7 @@ export const editorSchema = z
     projectPath: z.string(),
     workspacePath: z.string(),
     pid: z.number().int().positive(),
-    port: z.number().int().min(1).max(65535),
+    port: z.number().int().min(1).max(65535).nullable(),
     version: z.string(),
     startedAt: z.string(),
     clone: z.boolean(),

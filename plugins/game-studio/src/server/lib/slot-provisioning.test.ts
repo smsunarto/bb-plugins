@@ -346,7 +346,9 @@ test("a copied destination stays unavailable until checkout readiness verificati
 
 test("creation rejects caller-forged ownership and requires an actual BB thread", async () => {
   const { harness, source, copies, create } = await setup();
-  const tool = harness.registrations.agentTools.find((entry) => entry.name === "game_studio_slots")!;
+  const tool = harness.registrations.agentTools.find(
+    (entry) => entry.name === "game_studio_slots",
+  )!;
   expect(
     tool.parse({
       action: "create",

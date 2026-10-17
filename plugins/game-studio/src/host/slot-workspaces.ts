@@ -162,7 +162,15 @@ function flattenedProjectArgument(commandLine: string): string | null {
   return isAbsolute(path) ? path : null;
 }
 
-async function listEditors(signal?: AbortSignal): Promise<WorkspaceEditorProcess[]> {
+function cliServiceWithoutProject(argv: string[]): boolean {
+  return (
+    argv.some(
+      (arg) => arg === "--internal-identity-serve" || arg === "--internal-auth-broker-serve",
+    ) && !argv.some((arg) => /^-projectpath(?:=|$)/i.test(arg))
+  );
+}
+
+export async function listEditors(signal?: AbortSignal): Promise<WorkspaceEditorProcess[]> {
   if (process.platform === "win32") {
     const { stdout } = await exec(
       "powershell.exe",
@@ -222,14 +230,7 @@ async function listEditors(signal?: AbortSignal): Promise<WorkspaceEditorProcess
       const argv = process.platform === "linux" ? command.split("\0").filter(Boolean) : [];
       // Unity CLI's Linux identity/auth services also run as `unity`; they own no project.
       // A project argument keeps the process subject to Editor ownership checks.
-      if (
-        process.platform === "linux" &&
-        argv.some(
-          (arg) => arg === "--internal-identity-serve" || arg === "--internal-auth-broker-serve",
-        ) &&
-        !argv.some((arg) => /^-projectpath(?:=|$)/i.test(arg))
-      )
-        continue;
+      if (process.platform === "linux" && cliServiceWithoutProject(argv)) continue;
       editors.push({
         pid,
         projectPath:

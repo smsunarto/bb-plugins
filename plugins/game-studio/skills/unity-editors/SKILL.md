@@ -45,6 +45,17 @@ GitButler branches applied in one workspace still share one authoring slot.
 Use GitButler within a checkout when its branch workflow suits the project;
 changing branches does not create isolation or release an Editor claim.
 
+On Linux, an interactive Editor blocked before Pipeline startup is listed with
+port:null. Claim that exact instance in authoring mode under the existing
+checkout lease before handling only its startup dialog. Native discovery and
+the claim recheck its executable, project path, shared Assets root, PID and OS
+start identity; batch/import workers and CLI services are excluded. Pipeline
+commands remain blocked. Preserve crash backups outside Assets before declining
+an optional recovery import. Once Pipeline starts, list and claim the same
+instance again: promotion retains the claim token only after the normal served
+PID probe succeeds. Do not author shared assets or run scenario setup until that
+promotion. If startup exits, recover the dead claim normally.
+
 Select an exact discovered instance id. Discovery shows its PID, canonical
 project path, shared workspace and owner. Never guess clone paths.
 Claim with `bb game-studio manage claim --instance ID --mode runtime` for

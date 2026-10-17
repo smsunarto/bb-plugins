@@ -12,6 +12,11 @@ export function visibleSlot(slot: Slot, owner?: string) {
   return owner && slot.ownerThreadId === owner ? slot : publicSlot;
 }
 
+// Trusted review-plugin threads read immutable review_context snapshots, not Unity state.
+function isSnapshotReviewer(thread: { originPluginId: string | null }) {
+  return thread.originPluginId === "review";
+}
+
 /** Adopted Rampage checkouts survive releases, failed turns and environment retirement. */
 export class UnitySlots {
   private readonly host;
@@ -104,7 +109,9 @@ export class UnitySlots {
       });
       const active = threads.find(
         (thread) =>
-          thread.id !== owner && ["active", "starting", "stopping"].includes(thread.status),
+          thread.id !== owner &&
+          !isSnapshotReviewer(thread) &&
+          ["active", "starting", "stopping"].includes(thread.status),
       );
       if (active) throw new Error(`Checkout still has an active agent: @thread:${active.id}`);
       if (threads.length < 100) return;
@@ -389,6 +396,8 @@ export class UnitySlots {
 
   async admit(context: MessageDispatchHookContext) {
     const { environment, thread, environmentIntent } = context;
+    // Reviews need no authoring lease; Editor commands still enforce their own claims.
+    if (isSnapshotReviewer(thread)) return { action: "proceed" as const };
     // BB gives hooks ten seconds; abort host/SDK inspection before that deadline.
     const signal = AbortSignal.timeout(7000);
     try {

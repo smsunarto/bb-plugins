@@ -249,8 +249,8 @@ test.skipIf(process.platform !== "linux")(
     const path = await fixture();
     // This harmless shell fixture is named Unity so it exercises real ps + /proc inspection.
     const binary = join(path, "Unity");
-    await writeFile(binary, "#!/bin/sh\nwhile :; do sleep 1; done\n", { mode: 0o700 });
-    const child = spawn(binary, ["-projectPath", path], { stdio: "ignore" });
+    await writeFile(binary, "#!/bin/sh\nread -r fixture_input\n", { mode: 0o700 });
+    const child = spawn(binary, ["-projectPath", path], { stdio: ["pipe", "ignore", "ignore"] });
     await new Promise<void>((resolve, reject) => {
       child.once("spawn", resolve);
       child.once("error", reject);
@@ -273,7 +273,7 @@ test.skipIf(process.platform !== "linux")(
   async () => {
     const path = await fixture();
     const binary = join(path, "unity");
-    await writeFile(binary, "#!/bin/sh\nwhile :; do sleep 1; done\n", { mode: 0o700 });
+    await writeFile(binary, "#!/bin/sh\nread -r fixture_input\n", { mode: 0o700 });
     for (const args of [
       ["--internal-identity-serve", "--cloudEnvironment", "production"],
       ["--internal-auth-broker-serve"],
@@ -282,7 +282,7 @@ test.skipIf(process.platform !== "linux")(
       ["--internal-identity-serve", "-projectPath", path],
       ["--internal-auth-broker-serve", "-projectPath", path],
     ]) {
-      const child = spawn(binary, args, { stdio: "ignore" });
+      const child = spawn(binary, args, { stdio: ["pipe", "ignore", "ignore"] });
       await new Promise<void>((resolve, reject) => {
         child.once("spawn", resolve);
         child.once("error", reject);

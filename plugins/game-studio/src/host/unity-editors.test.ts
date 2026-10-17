@@ -11,6 +11,8 @@ import {
   quiet,
   instanceWorkspace,
   linuxProcessIdentity,
+  discoverStartupEditors,
+  interactiveEditorArgs,
 } from "./unity-editors.ts";
 import type { EditorInstance } from "../shared/unity-editor-contract.ts";
 
@@ -310,4 +312,74 @@ test("queued recompiles identify the pending gate without treating the Editor as
     quiet: false,
     blocking: { source: "recompile_status", status: "triggered" },
   });
+});
+
+test("startup discovery rejects noninteractive worker command lines", () => {
+  expect(interactiveEditorArgs(["Unity", "-projectPath", "/game"])).toBe(true);
+  expect(interactiveEditorArgs(["Unity", "-batchMode", "-projectPath", "/game"])).toBe(false);
+  expect(interactiveEditorArgs(["Unity", "-assetImportWorker"])).toBe(false);
+  expect(interactiveEditorArgs(["Unity", "-name", "AssetImportWorker0"])).toBe(false);
+});
+test.skipIf(process.platform !== "linux")(
+  "startup discovery and claim verify native process identity before Pipeline exists",
+  async () => {
+    const { copyFile, chmod } = await import("node:fs/promises");
+    const project = await realpath(await mkdtemp(join(tmpdir(), "bb-startup-editor-")));
+    await mkdir(join(project, "Assets"));
+    await mkdir(join(project, "ProjectSettings"));
+    await writeFile(
+      join(project, "ProjectSettings/ProjectVersion.txt"),
+      "m_EditorVersion: 6000.3.10f1\n",
+    );
+    const binary = join(project, "Unity"),
+      script = join(project, "idle.js");
+    await copyFile(process.execPath, binary);
+    await chmod(binary, 0o700);
+    await writeFile(script, "setInterval(() => {}, 1000);");
+    const child = spawn(binary, [script, "-projectPath", project], { stdio: "ignore" });
+    cleanup.push(async () => {
+      if (child.exitCode === null && child.signalCode === null) {
+        child.kill();
+        await new Promise<void>((resolve) => child.once("exit", () => resolve()));
+      }
+      await rm(project, { recursive: true, force: true });
+    });
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    expect(child.exitCode).toBeNull();
+    const inventory = async () => [{ pid: child.pid!, projectPath: project }];
+    const found = await discoverStartupEditors(undefined, inventory);
+    expect(found.warnings).toEqual([]);
+    expect(found.instances).toHaveLength(1);
+    const instance = found.instances[0]!;
+    expect(instance.port).toBeNull();
+    expect(instance.workspacePath).toBe(project);
+    expect(await probe(instance)).toEqual({ pid: child.pid! });
+    await expect(probe({ ...instance, startedAt: "different-process" })).rejects.toThrow(
+      "identity",
+    );
+    await mkdir(join(project, "Library/Pipeline"), { recursive: true });
+    await writeFile(
+      join(project, "Library/Pipeline/.unity-pipeline-port"),
+      JSON.stringify({
+        pid: child.pid,
+        port: 7800,
+        projectPath: project,
+        unityVersion: "6000.3.10f1",
+        startedAt: "epoch",
+        evalToken: "fixture-only",
+      }),
+    );
+    expect((await discoverStartupEditors(undefined, inventory)).instances).toEqual([]);
+    await expect(probe(instance)).rejects.toThrow("identity");
+  },
+);
+
+test("startup instances cannot submit host requests even if a ready descriptor exists", async () => {
+  const f = await fixture();
+  const result = await execute({ ...f.instance, port: null }, "editor_status", {});
+  expect(result).toEqual({
+    rejected: true,
+    error: "Startup ownership cannot submit Pipeline requests. Reclaim after Pipeline starts.",
+  });
+  expect(f.requests).toEqual([]);
 });

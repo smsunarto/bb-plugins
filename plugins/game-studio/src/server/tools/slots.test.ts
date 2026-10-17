@@ -5,7 +5,9 @@ afterEach(cleanupSlots);
 
 test("slot tools bind leases to the actual caller and refuse forged owners and capabilities", async () => {
   const { harness, slot } = await setup();
-  const tool = harness.registrations.agentTools.find((entry) => entry.name === "game_studio_slots")!;
+  const tool = harness.registrations.agentTools.find(
+    (entry) => entry.name === "game_studio_slots",
+  )!;
   expect(
     tool.parse({
       action: "acquire",

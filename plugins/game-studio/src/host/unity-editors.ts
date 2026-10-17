@@ -1,7 +1,8 @@
 import { execFile } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
 import { mkdir, readFile, realpath, rm, writeFile } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { basename, dirname, join } from "node:path";
+import { listEditors as listWorkspaceEditors } from "./slot-workspaces.ts";
 import { promisify } from "node:util";
 import { z } from "zod";
 import { uncertainJob, pipelineJobSchema } from "../shared/unity-editor-contract.ts";
@@ -167,6 +168,88 @@ export async function instanceWorkspace(projectPath: string, pid: number) {
   const clone = /(?:^|\s)(?:-readonly|--virtual-project-clone)(?:=|\s|$)/.test(stdout);
   return { workspacePath, clone };
 }
+
+// Startup dialogs precede Pipeline. port:null retains the same exact OS identity.
+export function interactiveEditorArgs(argv: string[]): boolean {
+  return !argv.some(
+    (arg, index) =>
+      /^-(?:batchmode|assetimportworker)$/i.test(arg) ||
+      (/^-name$/i.test(arg) && /^AssetImportWorker/i.test(argv[index + 1] ?? "")),
+  );
+}
+async function startupInstance(project: string, pid: number): Promise<EditorInstance | null> {
+  if (process.platform !== "linux") return null;
+  const argv = (await readFile("/proc/" + pid + "/cmdline", "utf8")).split("\0").filter(Boolean);
+  const executable = await realpath("/proc/" + pid + "/exe");
+  if (basename(executable) !== "Unity" || !interactiveEditorArgs(argv)) return null;
+  const projectPath = await realpath(project);
+  // Never fall back from a live or malformed descriptor to weaker verification.
+  try {
+    const d = await descriptor(projectPath);
+    if (d.pid === pid || processAlive(d.pid)) return null;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+  }
+  const { workspacePath, clone } = await instanceWorkspace(projectPath, pid);
+  const startedAt = await processStartedAt(pid);
+  const version = /^m_EditorVersion:\s*(\S+)/m.exec(
+    await readFile(join(projectPath, "ProjectSettings/ProjectVersion.txt"), "utf8"),
+  )?.[1];
+  if (!version) throw new Error("Cannot verify startup Editor project version");
+  if (!(await alive(pid, startedAt))) throw new Error("Startup Editor identity changed");
+  return {
+    id: createHash("sha256")
+      .update(projectPath + "\0" + pid + "\0" + startedAt)
+      .digest("hex")
+      .slice(0, 24),
+    projectPath,
+    workspacePath,
+    pid,
+    startedAt,
+    version,
+    clone,
+    port: null,
+  };
+}
+export async function discoverStartupEditors(
+  signal?: AbortSignal,
+  inventory = listWorkspaceEditors,
+) {
+  const instances: EditorInstance[] = [],
+    warnings: string[] = [];
+  if (process.platform !== "linux") return { instances, warnings };
+  for (const editor of (await inventory(signal)).slice(0, 64)) {
+    if (!editor.projectPath) continue;
+    try {
+      const instance = await startupInstance(editor.projectPath, editor.pid);
+      if (instance) instances.push(instance);
+    } catch (error) {
+      warnings.push(
+        "Startup Editor " +
+          editor.pid +
+          ": " +
+          (error instanceof Error ? error.message : "Identity verification failed"),
+      );
+    }
+  }
+  return { instances, warnings };
+}
+async function probeStartup(instance: EditorInstance) {
+  const editor = (await listWorkspaceEditors()).find((entry) => entry.pid === instance.pid);
+  const current = editor?.projectPath
+    ? await startupInstance(editor.projectPath, editor.pid)
+    : null;
+  if (
+    !current ||
+    current.id !== instance.id ||
+    current.startedAt !== instance.startedAt ||
+    current.projectPath !== instance.projectPath ||
+    current.workspacePath !== instance.workspacePath
+  )
+    throw new Error("Startup Editor identity changed. Rediscover before controlling its dialog.");
+  return { pid: current.pid };
+}
+
 export async function discover(signal?: AbortSignal) {
   const response = await discoveryResponse(signal);
   if (response.success !== true || !response.data)
@@ -215,6 +298,11 @@ export async function discover(signal?: AbortSignal) {
       );
     }
   }
+  const startup = await discoverStartupEditors(signal);
+  instances.push(
+    ...startup.instances.filter((entry) => !instances.some((ready) => ready.pid === entry.pid)),
+  );
+  warnings.push(...startup.warnings);
   return { instances, warnings };
 }
 async function verifiedDescriptor(instance: EditorInstance) {
@@ -235,6 +323,10 @@ async function request(
   signal?: AbortSignal,
   body?: unknown,
 ): Promise<unknown> {
+  if (instance.port === null)
+    throw new RejectedCommand(
+      "Startup ownership cannot submit Pipeline requests. Reclaim after Pipeline starts.",
+    );
   let d;
   try {
     d = await verifiedDescriptor(instance);
@@ -269,6 +361,7 @@ async function request(
   return value;
 }
 export async function probe(instance: EditorInstance, signal?: AbortSignal) {
+  if (instance.port === null) return probeStartup(instance);
   const dir = join(instance.workspacePath, "Logs/agent-scripts", `bb-editor-${randomUUID()}`);
   await mkdir(dir, { recursive: true });
   const file = join(dir, "Identity.cs");
