@@ -181,7 +181,19 @@ async function load(
           );
           return records.get(id)!;
         },
-        queuedMessages: { list: async ({ threadId }) => (queued.get(threadId) ?? []) as never },
+        queuedMessages: {
+          list: async ({ threadId }) => {
+            if (!records.has(threadId)) throw new Error("Thread not found (404)");
+            return (queued.get(threadId) ?? []) as never;
+          },
+          delete: async ({ threadId, queuedMessageId }) => {
+            queued.set(
+              threadId,
+              (queued.get(threadId) ?? []).filter((message) => message.id !== queuedMessageId),
+            );
+            return { ok: true } as const;
+          },
+        },
         send: async ({ threadId, input, model, reasoningLevel, serviceTier }) => {
           if (state.sendFailure) throw new Error(state.sendFailure);
           if (state.queuedSend) {
@@ -1031,6 +1043,95 @@ test("deleted reviewers do not block results or replacement reviews", async () =
   ).toMatchObject({ status: "running" });
 });
 
+for (const seat of [0, 1])
+  test(`deleting reviewer ${seat + 1} returns the surviving report as an incomplete assessment`, async () => {
+    const f = await load();
+    const r = await f.start({ kind: "design", summary: "Plan" });
+    const survivor = r.threadIds[1 - seat];
+    f.records.delete(r.threadIds[seat]);
+    f.finish(survivor, r.runId);
+    const result = await f.tool("review_result", { runId: r.runId });
+    expect(result).toMatchObject({
+      status: "incomplete",
+      error: "1 of 2 reviewers did not complete; see reviews[].error",
+    });
+    expect(
+      result.reviews.map((review: { threadId: string; status: string }) => [
+        review.threadId,
+        review.status,
+      ]),
+    ).toEqual([
+      [r.threadIds[0], seat === 0 ? "failed" : "complete"],
+      [r.threadIds[1], seat === 1 ? "failed" : "complete"],
+    ]);
+    const stored = await f.tool("review_context", { runId: r.runId, section: "report" });
+    expect(
+      JSON.parse(stored.text).map((entry: { report: { runId: string } }) => entry.report.runId),
+    ).toEqual([r.runId]);
+  });
+
+test("two reports that together exceed one KV value are both stored and readable", async () => {
+  const f = await load();
+  const r = await f.start({ kind: "design", summary: "Plan" });
+  finishAll(f, r);
+  for (const id of r.threadIds) {
+    const message = f.logs
+      .get(id)!
+      .find((event) => (event as { type: string }).type === "item/completed") as {
+      data: { item: { text: string } };
+    };
+    const report = JSON.parse(message.data.item.text);
+    report.findings = Array.from({ length: 19 }, () => ({
+      priority: 3,
+      title: "Minor",
+      body: "x".repeat(8000),
+      location: "a.ts:1",
+    }));
+    message.data.item.text = JSON.stringify(report);
+    expect(Buffer.byteLength(message.data.item.text, "utf8")).toBeGreaterThan(152000);
+  }
+  expect(await f.tool("review_result", { runId: r.runId })).toMatchObject({
+    status: "complete",
+    reviews: [
+      { status: "complete", findings: 19 },
+      { status: "complete", findings: 19 },
+    ],
+  });
+  let text = "";
+  for (let offset: number | null = 0; offset !== null;) {
+    const page = await f.tool("review_context", { runId: r.runId, section: "report", offset });
+    text += page.text;
+    offset = page.nextOffset;
+  }
+  expect(Buffer.byteLength(text, "utf8")).toBeGreaterThan(256 * 1024);
+  expect(
+    JSON.parse(text).map(
+      (entry: { reviewer: { providerId: string }; report: { findings: unknown[] } }) => [
+        entry.reviewer.providerId,
+        entry.report.findings.length,
+      ],
+    ),
+  ).toEqual([
+    ["claude-code", 19],
+    ["codex", 19],
+  ]);
+});
+
+for (const [contract, stored] of [
+  [3, { status: "complete", findings: [] }],
+  [
+    4,
+    [{ reviewer: { providerId: "codex", model: "gpt-6-astra" }, report: { status: "complete" } }],
+  ],
+] as const)
+  test(`a contract-${contract} report stored under the run's single key stays readable`, async () => {
+    const f = await load();
+    const r = await f.start({ kind: "design", summary: "Plan" });
+    await f.host.bb.storage.kv.set(`report:${r.runId}`, stored);
+    const page = await f.tool("review_context", { runId: r.runId, section: "report" });
+    expect(JSON.parse(page.text)).toEqual(stored);
+  });
+
 test("expired orphan dispatch releases its reservation", async () => {
   const f = await load();
   f.setSpawnFailure("Gateway timeout");
@@ -1561,6 +1662,30 @@ test("failed reused dispatch projects failed metadata and allows a corrected ret
   f.setSendFailure(undefined);
   expect(await f.start({ kind: "design", summary: "Corrected", workstream: "plan" })).toMatchObject(
     { status: "running" },
+  );
+});
+
+test("a failed dispatch cancels a reused reviewer's queued prompt so a corrected retry is not busy", async () => {
+  const f = await load();
+  const first = await f.start({ kind: "design", summary: "Initial", workstream: "plan" });
+  finishAll(f, first);
+  const [queuedReviewer, archivedReviewer] = first.threadIds;
+  f.records.get(archivedReviewer)!.archivedAt = Date.now();
+  f.setQueuedSend(true);
+  f.setSpawnFailure("Unknown reviewer model");
+  await expect(
+    f.start({ kind: "design", summary: "Follow-up", workstream: "plan" }),
+  ).rejects.toThrow("Unknown reviewer model");
+  const failed = f.host.bb.storage
+    .database()
+    .prepare<[], { status: string }>("SELECT status FROM review_runs ORDER BY rowid DESC")
+    .get()!;
+  expect(failed.status).toBe("failed");
+  expect(f.queued.get(queuedReviewer)).toEqual([]);
+  f.setQueuedSend(false);
+  f.setSpawnFailure(undefined);
+  expect(await f.start({ kind: "design", summary: "Corrected", workstream: "plan" })).toMatchObject(
+    { status: "running", reused: true },
   );
 });
 

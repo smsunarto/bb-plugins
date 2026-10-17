@@ -38,6 +38,9 @@ type Report = z.infer<typeof reportSchema>;
 type Events = Awaited<ReturnType<BbPluginApi["sdk"]["threads"]["events"]["list"]>>;
 type ThreadResponse = Awaited<ReturnType<BbPluginApi["sdk"]["threads"]["get"]>>;
 const active = new Set(["pending", "starting", "active", "stopping"]);
+/** BB reports a deleted thread as not found on every thread-scoped endpoint. */
+const missing = (error: unknown) =>
+  error instanceof Error && /thread.*not found|404/i.test(error.message);
 const hash = (value: unknown) =>
   createHash("sha256")
     .update(typeof value === "string" ? value : JSON.stringify(value))
@@ -45,6 +48,7 @@ const hash = (value: unknown) =>
 const CONTRACT_VERSION = 4;
 const reviewerKey = (id: string) => `reviewer:${id}`;
 const parentKey = (id: string) => `latest:${id}`;
+const reportKey = (id: string, seat: number) => `report:${id}:${seat}`;
 const scope = (run: ReviewRun) =>
   run.request.workstream ??
   (run.target
@@ -144,8 +148,7 @@ export class ReviewService {
         await this.bb.sdk.threads
           .updatePluginMetadata({ threadId: seat.threadId, set: metadata(run, index) })
           .catch((error) => {
-            if (!(error instanceof Error && /thread.*not found|404/i.test(error.message)))
-              throw error;
+            if (!missing(error)) throw error;
           });
   }
   private stored(id: string): ReviewRun | undefined {
@@ -375,13 +378,19 @@ export class ReviewService {
     try {
       return await this.bb.sdk.threads.get({ threadId: id });
     } catch (error) {
-      if (error instanceof Error && /thread.*not found|404/i.test(error.message)) return null;
+      if (missing(error)) return null;
       throw error;
     }
   }
   private async queued(run: ReviewRun, seat: Seat) {
     if (!seat.threadId) return false;
-    const messages = await this.bb.sdk.threads.queuedMessages.list({ threadId: seat.threadId });
+    // A deleted reviewer has no queue; readSeat reports it as deleted.
+    const messages = await this.bb.sdk.threads.queuedMessages
+      .list({ threadId: seat.threadId })
+      .catch((error) => {
+        if (missing(error)) return [];
+        throw error;
+      });
     if (
       messages.some(
         (message) =>
@@ -447,12 +456,21 @@ export class ReviewService {
     const seat = seed.reviewRun.seat ?? 0;
     return Number.isInteger(seat) && seat >= 0 && seat < run.seats.length ? seat : null;
   }
-  /** Stop reviewers this run already started, so a failed dispatch leaves nothing running. */
+  /**
+   * Stop reviewers this run already started and cancel its queued prompts, so a
+   * failed dispatch leaves nothing running or waiting to run. BB's stop keeps queued messages.
+   */
   private async stopSeats(run: ReviewRun, threadIds: string[]) {
-    const unstopped: string[] = [];
-    for (const threadId of threadIds)
-      await this.bb.sdk.threads.stop({ threadId }).catch(() => unstopped.push(threadId));
-    if (unstopped.length) run.error = `${run.error} Could not stop ${unstopped.join(", ")}.`;
+    const unstopped = new Set<string>();
+    for (const threadId of threadIds) {
+      const queuedMessageId = run.seats.find((seat) => seat.threadId === threadId)?.queuedMessageId;
+      if (queuedMessageId)
+        await this.bb.sdk.threads.queuedMessages
+          .delete({ threadId, queuedMessageId })
+          .catch(() => unstopped.add(threadId));
+      await this.bb.sdk.threads.stop({ threadId }).catch(() => unstopped.add(threadId));
+    }
+    if (unstopped.size) run.error = `${run.error} Could not stop ${[...unstopped].join(", ")}.`;
   }
   private async recoverDispatch(run: ReviewRun) {
     const children = await this.bb.sdk.threads.list({
@@ -747,10 +765,27 @@ export class ReviewService {
       input.section === "brief"
         ? (run.request.brief ?? run.request.summary)
         : input.section === "report"
-          ? JSON.stringify((await this.bb.storage.kv.get(`report:${run.id}`)) ?? null)
+          ? JSON.stringify(await this.storedReports(run))
           : JSON.stringify(run.evidence);
     const end = Math.min(input.offset + 16000, text.length);
     return { text: text.slice(input.offset, end), nextOffset: end < text.length ? end : null };
+  }
+  /** One key per seat: each report may approach BB's KV value limit on its own. */
+  private async storeReports(
+    run: ReviewRun,
+    reviews: { reviewer: ReturnType<typeof identity>; report: Report | null }[],
+  ) {
+    for (const [index, { reviewer, report }] of reviews.entries())
+      if (report) await this.bb.storage.kv.set(reportKey(run.id, index), { reviewer, report });
+  }
+  /** Seat reports in panel order; runs finished before per-seat keys kept one value under `report:<id>`. */
+  private async storedReports(run: ReviewRun) {
+    const reports = [];
+    for (const index of run.seats.keys()) {
+      const entry = await this.bb.storage.kv.get(reportKey(run.id, index));
+      if (entry) reports.push(entry);
+    }
+    return reports.length ? reports : ((await this.bb.storage.kv.get(`report:${run.id}`)) ?? null);
   }
   private parseReport(text: string, id: string) {
     try {
@@ -864,13 +899,10 @@ export class ReviewService {
         })),
       };
     const reviews = reads.map((read, index) => this.review(run, run.seats[index]!, read));
-    const reports = reviews.flatMap(({ reviewer, report }) =>
-      report ? [{ reviewer, report }] : [],
-    );
-    if (reports.length) await this.bb.storage.kv.set(`report:${run.id}`, reports);
+    await this.storeReports(run, reviews);
     run.status = reviews.every((review) => review.status === "complete")
       ? "completed"
-      : reports.length
+      : reviews.some((review) => review.report)
         ? "incomplete"
         : "failed";
     await this.save(run);
