@@ -105,26 +105,59 @@ test("saved document sources and image references become a typed request without
   expect(canvasRequest(state, input).target.fingerprint).not.toBe(result.target.fingerprint);
   expect(() => canvasRequest(state, { ...input, revision: "stale" })).toThrow("board changed");
 });
-test("3D requires the explicitly approved path to be one of the saved node's image references", () => {
+test("3D sends its Front input as the approved image and other views by name", () => {
   const state = workspace();
-  expect(() => canvasRequest(state, { ...input, nodeId: "model" })).toThrow();
-  const result = canvasRequest(state, {
-    ...input,
-    nodeId: "model",
-    approvedImagePath: "canvas/staging/key.png",
-  });
-  expect(result.request).toMatchObject({
-    kind: "model-3d",
-    approvedImagePath: "canvas/staging/key.png",
-    targetPolycount: 20000,
-  });
-  expect(() =>
+  state.assets.push({ id: "side", name: "Side", path: "canvas/staging/side.png", type: "image" });
+  const model = state.boards[0]!.board.nodes[2]!;
+  const run = (approvedImagePath?: string) =>
     canvasRequest(state, {
       ...input,
       nodeId: "model",
-      approvedImagePath: "canvas/staging/unrelated.png",
-    }),
-  ).toThrow("saved references");
+      ...(approvedImagePath ? { approvedImagePath } : {}),
+    }).request;
+  // An input saved before ports existed fills the first open view.
+  expect(run()).toEqual({
+    kind: "model-3d",
+    model: { provider: "tripo", id: "tripo-p2" },
+    approvedImagePath: "canvas/staging/key.png",
+    outputCount: 1,
+    targetPolycount: 20000,
+  });
+  expect(() => run("canvas/staging/unrelated.png")).toThrow("Front view input");
+  model.data.images = [
+    { type: "library", assetId: "side", port: "back" },
+    { type: "library", assetId: "ref", port: "front" },
+  ];
+  expect(run("canvas/staging/key.png")).toMatchObject({
+    approvedImagePath: "canvas/staging/key.png",
+    views: { back: "canvas/staging/side.png" },
+  });
+  model.data.images = [{ type: "library", assetId: "side", port: "left" }];
+  expect(() => run()).toThrow("Connect a Front view image");
+  model.data.images = [{ type: "library", assetId: "ref" }];
+  model.data.references = [{ type: "node", nodeId: "design-node" }];
+  expect(() => run()).toThrow("This model does not take text inputs");
+});
+test("video frames follow their Start and End inputs, not connection order", () => {
+  const state = workspace();
+  state.assets.push({ id: "last", name: "Last", path: "canvas/staging/last.png", type: "image" });
+  state.boards[0]!.board.nodes.push({
+    id: "shot",
+    type: "video",
+    position: { x: 0, y: 300 },
+    data: {
+      prompt: "Fly past",
+      references: [
+        { type: "library", assetId: "last", port: "end" },
+        { type: "library", assetId: "ref" },
+      ],
+    },
+  });
+  expect(canvasRequest(state, { ...input, nodeId: "shot" }).request).toMatchObject({
+    kind: "video",
+    imagePath: "canvas/staging/key.png",
+    endImagePath: "canvas/staging/last.png",
+  });
 });
 test("text and image node inputs resolve current outputs while text uses BB's selected provider", () => {
   const state = workspace(),

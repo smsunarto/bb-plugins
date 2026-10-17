@@ -1,7 +1,11 @@
-import { briefRecipe, generationJob, type GenerationJob } from "../../shared/generation.ts";
+import {
+  briefRecipe,
+  generationImagePaths,
+  generationJob,
+  type GenerationJob,
+} from "../../shared/generation.ts";
 import { nodeFingerprint } from "./canvas-generation.ts";
 import { nodeTakes } from "../../shared/takes.ts";
-import { generationImagePaths } from "./generation-inputs.ts";
 import { createHash, randomUUID } from "node:crypto";
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import { z } from "zod";

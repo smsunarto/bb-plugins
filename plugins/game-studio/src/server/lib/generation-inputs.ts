@@ -1,18 +1,10 @@
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
+import { generationImagePaths } from "../../shared/generation.ts";
 import type { GenerationJob, MediaRequest } from "../../shared/generation.ts";
 import type { Game } from "../../shared/schema.ts";
 import { projectFile } from "./paths.ts";
 
 type Prepared = { request: MediaRequest; target: NonNullable<GenerationJob["target"]> };
-
-export function generationImagePaths(request: MediaRequest): string[] {
-  if (request.kind === "image" || request.kind === "text") return request.images;
-  if (request.kind === "video")
-    return [request.imagePath, request.endImagePath].filter(
-      (path): path is string => path !== undefined,
-    );
-  return [request.approvedImagePath];
-}
 
 function snapshotRequest(source: MediaRequest, snapshots: Map<string, string>): MediaRequest {
   if (source.kind === "image" || source.kind === "text")
@@ -23,7 +15,17 @@ function snapshotRequest(source: MediaRequest, snapshots: Map<string, string>): 
       ...(source.imagePath ? { imagePath: snapshots.get(source.imagePath)! } : {}),
       ...(source.endImagePath ? { endImagePath: snapshots.get(source.endImagePath)! } : {}),
     };
-  return { ...source, approvedImagePath: snapshots.get(source.approvedImagePath)! };
+  return {
+    ...source,
+    approvedImagePath: snapshots.get(source.approvedImagePath)!,
+    ...(source.views
+      ? {
+          views: Object.fromEntries(
+            Object.entries(source.views).map(([view, path]) => [view, snapshots.get(path!)!]),
+          ),
+        }
+      : {}),
+  };
 }
 
 /** Freeze the selected image bytes before dispatch while retaining their source revisions. */

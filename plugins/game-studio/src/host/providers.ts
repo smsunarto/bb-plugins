@@ -3,7 +3,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { experimental_sanitizeInheritedChildProcessEnv } from "@get-bb/plugin-sdk/host";
 import { z } from "zod";
-import type { MediaRequest } from "../shared/generation.ts";
+import { modelViewPaths, type MediaRequest } from "../shared/generation.ts";
 import { generationPrompt } from "../shared/generation-prompt.ts";
 
 export type Command = { executable: string; args: string[]; cwd: string; signal: AbortSignal };
@@ -166,16 +166,22 @@ const midjourney: MediaProvider = {
 const tripo: MediaProvider = {
   async submit(context) {
     await authenticated(context, "tripo");
-    if (context.request.kind !== "model-3d")
+    const request = context.request;
+    if (request.kind !== "model-3d")
       throw new ProviderFailure("Tripo requires an approved image-to-model request.", "failed");
+    const views = modelViewPaths(request);
     const result = await command(context, "tripo", [
       "generate",
-      "image-to-model",
-      context.imagePaths[0]!,
+      ...(views.length > 1
+        ? [
+            "multiview-to-model",
+            ...views.flatMap(([view], index) => [`--${view}`, context.imagePaths[index]!]),
+          ]
+        : ["image-to-model", context.imagePaths[0]!]),
       "--model",
       "tripo-p2",
       "--param",
-      `face_limit=${context.request.targetPolycount}`,
+      `face_limit=${request.targetPolycount}`,
       "--no-wait",
       "--no-open",
     ]);

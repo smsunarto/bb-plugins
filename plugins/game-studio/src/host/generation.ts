@@ -14,7 +14,12 @@ import {
   writeFile,
 } from "node:fs/promises";
 import { isAbsolute, join, relative, sep } from "node:path";
-import { generationJob, normalizeMediaRequest, type GenerationJob } from "../shared/generation.ts";
+import {
+  generationImagePaths,
+  generationJob,
+  normalizeMediaRequest,
+  type GenerationJob,
+} from "../shared/generation.ts";
 import { cliProviders, ProviderFailure, runCommand, type RunCommand } from "./providers.ts";
 import { cloudProviders, type Credentials } from "./cloud-providers.ts";
 
@@ -187,16 +192,9 @@ export class GenerationRunner {
     try {
       const outputPath = await this.directory(target.rootPath, ["canvas", "staging", job.id]);
       const request = job.request;
-      const paths =
-        request.kind === "image" || request.kind === "text"
-          ? request.images
-          : request.kind === "video"
-            ? [
-                ...(request.imagePath ? [request.imagePath] : []),
-                ...(request.endImagePath ? [request.endImagePath] : []),
-              ]
-            : [request.approvedImagePath];
-      const imagePaths = await Promise.all(paths.map((path) => this.file(target.rootPath, path)));
+      const imagePaths = await Promise.all(
+        generationImagePaths(request).map((path) => this.file(target.rootPath, path)),
+      );
       for (const path of imagePaths) {
         if (!/\.(png|jpe?g|webp)$/i.test(path))
           throw new Error("Generation references must be PNG, JPEG, or WebP images.");

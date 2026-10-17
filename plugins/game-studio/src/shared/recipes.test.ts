@@ -1,19 +1,54 @@
 import { expect, test } from "bun:test";
-import { nodeInputPorts, outputPort } from "./recipes.ts";
+import { nodeInputPorts, nodeInputs } from "./recipes.ts";
+import type { CanvasNode } from "./schema.ts";
 
-test("each node accepts the inputs its model reads", () => {
-  const ports = (type: Parameters<typeof nodeInputPorts>[0]["type"], recipe?: string) =>
-    nodeInputPorts({ type, data: recipe ? { recipe } : {} });
-  expect(ports("text")).toEqual({ text: Infinity, image: 14 });
-  expect(ports("image")).toEqual({ text: Infinity, image: 14 });
-  expect(ports("video", "fal-video")).toEqual({ text: Infinity, image: 2 });
-  expect(ports("model-3d")).toEqual({ image: 14 });
-  expect(ports("asset", "music")).toEqual({ text: Infinity });
-  expect(ports("document")).toEqual({});
+test("each node offers the inputs its model reads", () => {
+  const ports = (type: CanvasNode["type"], recipe?: string) =>
+    nodeInputPorts({ type, data: recipe ? { recipe } : {} }).map(
+      ({ label, max, required }) => `${label}${required ? "*" : ""} ${max}`,
+    );
+  expect(ports("text")).toEqual(["Text Infinity", "Image 14"]);
+  expect(ports("image", "concept-art")).toEqual(["Text Infinity", "Image 14"]);
+  expect(ports("video", "fal-video")).toEqual(["Text Infinity", "Start 1", "End 1"]);
+  expect(ports("model-3d")).toEqual(["Front* 1", "Left 1", "Back 1", "Right 1"]);
+  expect(ports("asset", "music")).toEqual(["Text Infinity"]);
+  expect(ports("document")).toEqual([]);
 });
 
-test("text and documents feed text ports; images feed image ports", () => {
+test("saved ports win, older inputs fill open ports in order, and extras stay visible", () => {
+  const kinds: Record<string, CanvasNode["type"]> = {
+    a: "image",
+    b: "image",
+    c: "image",
+    t: "text",
+  };
+  const placed = nodeInputs(
+    {
+      type: "video",
+      data: {
+        references: [
+          { type: "node", nodeId: "a" },
+          { type: "node", nodeId: "b", port: "start" },
+          { type: "node", nodeId: "c" },
+          { type: "node", nodeId: "t" },
+          { type: "node", nodeId: "gone" },
+        ],
+      },
+    },
+    (id) => kinds[id],
+  ).map(({ port, refs }) => [port.id, refs.map((ref) => ref.nodeId)]);
+  expect(placed).toEqual([
+    ["text", ["t"]],
+    ["start", ["b"]],
+    ["end", ["a", "c"]],
+  ]);
   expect(
-    ["text", "document", "image", "video", "model-3d"].map((kind) => outputPort(kind as never)),
-  ).toEqual(["text", "text", "image", undefined, undefined]);
+    nodeInputs(
+      { type: "asset", data: { references: [{ type: "library", assetId: "x" }] } },
+      () => undefined,
+    ).map(({ port, refs }) => [port.id, port.max, refs.length]),
+  ).toEqual([
+    ["text", Infinity, 0],
+    ["image", 0, 1],
+  ]);
 });

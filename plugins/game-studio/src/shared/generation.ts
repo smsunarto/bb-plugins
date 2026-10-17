@@ -63,10 +63,20 @@ export const videoRequest = z.strictObject({
   motion: z.enum(["low", "high"]).default("low"),
   loop: z.boolean().default(false),
 });
+export const modelViews = ["front", "left", "back", "right"] as const;
 export const modelRequest = z.strictObject({
   kind: z.literal("model-3d"),
   model: model.default({ provider: "tripo", id: "tripo-p2" }),
+  /** The front view. */
   approvedImagePath: mediaPath,
+  /** Further views of the same subject; any of them makes this a multiview request. */
+  views: z
+    .strictObject({
+      left: mediaPath.optional(),
+      back: mediaPath.optional(),
+      right: mediaPath.optional(),
+    })
+    .optional(),
   outputCount: z.literal(1).default(1),
   targetPolycount: z.number().int().min(1000).max(200000).default(20000),
 });
@@ -77,6 +87,20 @@ export const mediaRequest = z.discriminatedUnion("kind", [
   modelRequest,
 ]);
 export type MediaRequest = z.output<typeof mediaRequest>;
+/** A 3D request's images by view, front first. */
+export function modelViewPaths(request: z.output<typeof modelRequest>) {
+  const views = { ...request.views, front: request.approvedImagePath };
+  return modelViews.flatMap((view) => (views[view] ? [[view, views[view]] as const] : []));
+}
+/** Every image a request reads, in the order providers receive them. */
+export function generationImagePaths(request: MediaRequest): string[] {
+  if (request.kind === "image" || request.kind === "text") return request.images;
+  if (request.kind === "video")
+    return [request.imagePath, request.endImagePath].filter(
+      (path): path is string => path !== undefined,
+    );
+  return modelViewPaths(request).map(([, path]) => path);
+}
 export const generationTarget = z.strictObject({
   boardId: generationId,
   nodeId: generationId,

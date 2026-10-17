@@ -3,11 +3,12 @@ import { z } from "zod";
 import { mediaRequest, type canvasGenerationInput } from "../../shared/generation.ts";
 import type { Workspace, Board, CanvasNode } from "../../shared/schema.ts";
 import { files as instructions } from "./instructions.ts";
-import { nodeBriefRecipe } from "../../shared/recipes.ts";
+import { nodeBriefRecipe, nodeInputs } from "../../shared/recipes.ts";
+import type { InputRef } from "../../shared/inputs.ts";
 
 const reference = z.discriminatedUnion("type", [
-  z.object({ type: z.literal("node"), nodeId: z.string() }),
-  z.object({ type: z.literal("library"), assetId: z.string() }),
+  z.object({ type: z.literal("node"), nodeId: z.string(), port: z.string().optional() }),
+  z.object({ type: z.literal("library"), assetId: z.string(), port: z.string().optional() }),
 ]);
 function references(node: CanvasNode) {
   return [node.data.images, node.data.references].flatMap((raw) =>
@@ -121,6 +122,25 @@ export function canvasRequest(workspace: Workspace, input: z.output<typeof canva
     if (ref.type === "node") addNode(ref.nodeId);
     else addAsset(ref.assetId);
   }
+  const kindOf = (id: string) => board.nodes.find((item) => item.id === id)?.type;
+  const ports = nodeInputs(node, kindOf);
+  const over = ports.find(({ port, refs }) => refs.length > port.max);
+  if (over)
+    throw new Error(
+      over.port.max
+        ? `${over.port.label} takes ${over.port.max} input${over.port.max === 1 ? "" : "s"}. Remove the extra connection.`
+        : `This model does not take ${over.port.type} inputs. Remove that connection.`,
+    );
+  /** The image connected to a single-image port such as a start frame or front view. */
+  const slotPath = (id: string) => {
+    const ref: InputRef | undefined = ports.find(({ port }) => port.id === id)?.refs[0];
+    const assetId =
+      ref?.type === "library"
+        ? ref.assetId
+        : board.nodes.find((item) => item.id === ref?.nodeId)?.data.assetId;
+    return workspace.assets.find((asset) => asset.id === assetId)?.path;
+  };
+  const frames = node.type === "video" ? [slotPath("start"), slotPath("end")] : [];
   const promptSections = [
     node.type === "text"
       ? String(node.data.instruction ?? "")
@@ -153,11 +173,9 @@ export function canvasRequest(workspace: Workspace, input: z.output<typeof canva
     const settings =
       node.type === "video"
         ? `${String(node.data.aspectRatio ?? "16:9")}, ${String(node.data.duration ?? 5)} seconds${
-            [
-              "",
-              "; image 1 is the start frame",
-              "; image 1 is the start frame and image 2 the end frame",
-            ][Math.min(paths.length, 2)]
+            frames[0]
+              ? `; image 1 is the start frame${frames[1] ? " and image 2 the end frame" : ""}`
+              : ""
           }`
         : `${String(node.data.aspectRatio ?? "1:1")}, ${String(node.data.resolution ?? "1K")}`;
     return {
@@ -171,7 +189,7 @@ export function canvasRequest(workspace: Workspace, input: z.output<typeof canva
         }),
         providerId: input.textProviderId,
         ...(input.model ? { model: input.model } : {}),
-        images: [...new Set(paths)],
+        images: node.type === "video" ? frames.filter(Boolean) : [...new Set(paths)],
         ...referenceKey,
       }),
       target,
@@ -189,6 +207,25 @@ export function canvasRequest(workspace: Workspace, input: z.output<typeof canva
             ? "image"
             : undefined;
   if (!kind) throw new Error("Select a text, image, video, or 3D node.");
+  const modelInput = () => {
+    const front = slotPath("front");
+    if (!front) throw new Error("Connect a Front view image before generating the 3D model.");
+    if (input.approvedImagePath && input.approvedImagePath !== front)
+      throw new Error("The approved image must be this node's Front view input.");
+    const views = Object.fromEntries(
+      (["left", "back", "right"] as const).flatMap((view) => {
+        const path = slotPath(view);
+        return path ? [[view, path]] : [];
+      }),
+    );
+    return {
+      kind,
+      ...(input.model ? { model: input.model } : {}),
+      approvedImagePath: front,
+      ...(Object.keys(views).length ? { views } : {}),
+      targetPolycount: node.data.targetPolycount,
+    };
+  };
   const request = mediaRequest.parse(
     kind === "text"
       ? {
@@ -200,19 +237,14 @@ export function canvasRequest(workspace: Workspace, input: z.output<typeof canva
           ...labels,
         }
       : kind === "model-3d"
-        ? {
-            kind,
-            ...(input.model ? { model: input.model } : {}),
-            approvedImagePath: input.approvedImagePath,
-            targetPolycount: node.data.targetPolycount,
-          }
+        ? modelInput()
         : kind === "video"
           ? {
               kind,
               prompt,
               ...(input.model ? { model: input.model } : {}),
-              imagePath: paths[0],
-              endImagePath: paths[1],
+              imagePath: frames[0],
+              endImagePath: frames[1],
               duration: node.data.duration,
               aspectRatio: node.data.aspectRatio,
             }
@@ -226,9 +258,5 @@ export function canvasRequest(workspace: Workspace, input: z.output<typeof canva
               resolution: node.data.resolution,
             },
   );
-  if (kind === "model-3d" && !paths.includes(input.approvedImagePath ?? ""))
-    throw new Error("The approved image must be one of this node's saved references.");
-  if (kind === "video" && paths.length > 2)
-    throw new Error("This video tool accepts at most a start image and an end image.");
   return { request, target };
 }

@@ -7,11 +7,12 @@ Request authentication when required. Save geometry in `canvas/staging/`,
 review the solid mesh and wireframe, and report its path and remaining cleanup.
 This request does not authorize texture generation or additional outputs.
 
-This adapter submits one approved image and the polygon target to Tripo.
-The written model brief and other connected views guide reference selection and
-review; they are not text or multiview geometry constraints. Required forms must
-be visible in the chosen image. Record unseen side and back requirements as
-inferred, then inspect them on the mesh.
+This adapter submits the node's Front input as the approved image, any connected
+Left, Back and Right inputs as further multiview views, and the polygon target to
+Tripo. Views must show one consistent subject at the same pose, scale and
+lighting. The written model brief guides reference selection and review; it is
+not a geometry constraint. Required forms must be visible in some view. Record
+unseen requirements as inferred, then inspect them on the mesh.
 
 Use a production reference with one complete subject, a plain white or light-gray
 background, even diffuse lighting, and minimal occlusion. Aim for 70–85% frame

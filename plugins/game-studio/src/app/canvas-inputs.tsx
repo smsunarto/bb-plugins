@@ -1,4 +1,5 @@
-import { nodeInputPorts, outputPort } from "../shared/recipes.ts";
+import { outputType } from "../shared/inputs.ts";
+import { nodeInputs } from "../shared/recipes.ts";
 import type { Asset, CanvasNode } from "../shared/schema.ts";
 export function inputNodeIds(node: CanvasNode): string[] {
   return [
@@ -33,17 +34,12 @@ export function CanvasInputs({
   onToggle: (id: string, enabled: boolean) => void;
 }) {
   const selected = inputNodeIds(node);
-  const accepts = nodeInputPorts(node);
-  const portOf = (other: CanvasNode) => outputPort(other.type);
-  const candidates = nodes.filter((other) => {
-    const port = portOf(other);
-    return other.id !== node.id && port !== undefined && port in accepts;
-  });
-  const full = (other: CanvasNode) => {
-    const port = portOf(other)!;
-    const used = nodes.filter((item) => selected.includes(item.id) && portOf(item) === port);
-    return used.length >= (accepts[port] ?? 0);
-  };
+  const ports = nodeInputs(node, (id) => nodes.find((other) => other.id === id)?.type);
+  const typed = (other: CanvasNode) =>
+    ports.filter(({ port }) => port.type === outputType(other.type));
+  const candidates = nodes.filter((other) => other.id !== node.id && typed(other).length);
+  const full = (other: CanvasNode) =>
+    typed(other).every(({ port, refs }) => refs.length >= port.max);
   return (
     <fieldset className="gs-inspector-section gs-canvas-inputs">
       <legend>Inputs</legend>

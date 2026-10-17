@@ -3,7 +3,8 @@ import { createHash } from "node:crypto";
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import { mediaRequest } from "../../shared/generation.ts";
 import { gameSchema } from "../../shared/schema.ts";
-import { captureCanvasInputs, generationImagePaths } from "./generation-inputs.ts";
+import { generationImagePaths } from "../../shared/generation.ts";
+import { captureCanvasInputs } from "./generation-inputs.ts";
 
 const shaA = "559aead08264d5795d3909718cdd05abd49572e84fe55590eef31a88a08fdffd";
 const shaB = "df7e70e5021544f4834bbee64a9e3789febc4be81470df629cad6ddb03320a5c";
@@ -172,22 +173,24 @@ const variants = [
   { kind: "text", prompt: "Critique", images: ["first.JPEG", "last.webp"] },
   { kind: "video", prompt: "Animate", imagePath: "first.JPEG", endImagePath: "last.webp" },
   { kind: "model-3d", approvedImagePath: "first.JPEG" },
+  { kind: "model-3d", approvedImagePath: "first.JPEG", views: { back: "last.webp" } },
 ] as const;
 for (const request of variants) {
-  test(`${request.kind} snapshots only its effective image paths`, async () => {
+  const single = request.kind === "model-3d" && !("views" in request);
+  test(`${request.kind}${"views" in request ? " multiview" : ""} snapshots only its effective image paths`, async () => {
     const f = fake();
     f.seed("first.JPEG", "A");
     f.seed("last.webp", "B");
     const result = await captureCanvasInputs(f.bb, game, prepared(request));
     const expected = [
       `canvas/inputs/${shaA}.jpg`,
-      ...(request.kind === "model-3d" ? [] : [`canvas/inputs/${shaB}.webp`]),
+      ...(single ? [] : [`canvas/inputs/${shaB}.webp`]),
     ];
     expect(generationImagePaths(result.request)).toEqual(expected);
     expect(result.request.kind).toBe(request.kind);
     expect(result.target.imageRevisions).toEqual([
       { path: "first.JPEG", sha256: shaA },
-      ...(request.kind === "model-3d" ? [] : [{ path: "last.webp", sha256: shaB }]),
+      ...(single ? [] : [{ path: "last.webp", sha256: shaB }]),
     ]);
     expect(f.successfulWrites).toEqual(expected.map((path) => `/games/orbit/${path}`));
   });

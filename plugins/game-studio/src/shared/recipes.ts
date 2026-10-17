@@ -1,19 +1,33 @@
 import { generationRecipeSchema } from "./schema.ts";
 import type { CanvasNode, GenerationRecipe, NodeKind } from "./schema.ts";
 import { briefRecipe } from "./generation.ts";
+import {
+  assignInputs,
+  imageSlot,
+  imagesPort,
+  nodeRefs,
+  refType,
+  textPort,
+  type InputPort,
+} from "./inputs.ts";
 
-/** A typed input on a canvas node. Edges join an output to the port of the same type. */
-export type InputPort = "text" | "image";
-/** The ports a model accepts, each with the most connections it uses. */
-export type InputPorts = Partial<Record<InputPort, number>>;
-const anyText = Number.POSITIVE_INFINITY;
+const textAndImages = [textPort, imagesPort(14)];
+// Video models animate from a start frame, optionally toward an end frame.
+const frames = [textPort, imageSlot("start", "Start"), imageSlot("end", "End")];
+// Tripo builds geometry from a front view, optionally with further views of the same subject.
+const views = [
+  imageSlot("front", "Front", true),
+  imageSlot("left", "Left"),
+  imageSlot("back", "Back"),
+  imageSlot("right", "Right"),
+];
 
 /** Canvas models per node kind; the first entry of a kind is its default. */
 export const recipes: {
   id: GenerationRecipe;
   kind: NodeKind;
   label: string;
-  inputs: InputPorts;
+  inputs: InputPort[];
   /** Generated on the canvas; otherwise prepared as a native composer request. */
   direct?: boolean;
 }[] = [
@@ -21,23 +35,21 @@ export const recipes: {
     id: "nano-banana",
     kind: "image",
     label: "Nano Banana 2.1",
-    inputs: { text: anyText, image: 14 },
+    inputs: textAndImages,
     direct: true,
   },
   {
     id: "concept-art",
     kind: "image",
     label: "Midjourney",
-    inputs: { text: anyText, image: 14 },
+    inputs: textAndImages,
     direct: true,
   },
-  // Video models take a start frame and an optional end frame.
-  { id: "omni-video", kind: "video", label: "Gemini Omni", inputs: { text: anyText, image: 2 } },
-  { id: "fal-video", kind: "video", label: "Fal H3 Max", inputs: { text: anyText, image: 2 } },
-  // Tripo builds geometry from one approved image chosen among the connected ones.
-  { id: "model-3d", kind: "model-3d", label: "Tripo P2", inputs: { image: 14 } },
-  { id: "voice-sfx", kind: "asset", label: "ElevenLabs", inputs: { text: anyText } },
-  { id: "music", kind: "asset", label: "Suno", inputs: { text: anyText } },
+  { id: "omni-video", kind: "video", label: "Gemini Omni", inputs: frames },
+  { id: "fal-video", kind: "video", label: "Fal H3 Max", inputs: frames },
+  { id: "model-3d", kind: "model-3d", label: "Tripo P2", inputs: views },
+  { id: "voice-sfx", kind: "asset", label: "ElevenLabs", inputs: [textPort] },
+  { id: "music", kind: "asset", label: "Suno", inputs: [textPort] },
 ];
 
 /** The node's saved model choice, or the kind's default. */
@@ -55,14 +67,21 @@ export function nodeBriefRecipe(node: Pick<CanvasNode, "type" | "data">) {
 }
 
 /** The ports the node's model accepts. Text nodes run on the BB model, which reads both. */
-export function nodeInputPorts(node: Pick<CanvasNode, "type" | "data">): InputPorts {
-  if (node.type === "text") return { text: anyText, image: 14 };
-  return nodeRecipe(node)?.inputs ?? {};
+export function nodeInputPorts(node: Pick<CanvasNode, "type" | "data">): InputPort[] {
+  if (node.type === "text") return textAndImages;
+  return nodeRecipe(node)?.inputs ?? [];
 }
 
-/** The port a node's output feeds, when generation can consume it. */
-export function outputPort(kind: NodeKind | undefined): InputPort | undefined {
-  if (kind === "text" || kind === "document") return "text";
-  if (kind === "image") return "image";
-  return undefined;
+/** The node's saved inputs placed on its model's ports. */
+export function nodeInputs(
+  node: Pick<CanvasNode, "type" | "data">,
+  kindOf: (nodeId: string) => NodeKind | undefined,
+) {
+  return assignInputs(
+    nodeInputPorts(node),
+    nodeRefs(node).flatMap((ref) => {
+      const type = refType(ref, kindOf);
+      return type ? [{ ref, type }] : [];
+    }),
+  );
 }

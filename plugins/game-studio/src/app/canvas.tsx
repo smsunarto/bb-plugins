@@ -39,8 +39,9 @@ import type {
   Asset,
   GenerationRecipe,
 } from "../shared/schema.ts";
-import { nodeBriefRecipe, nodeInputPorts, nodeRecipe, outputPort } from "../shared/recipes.ts";
-import type { InputPort } from "../shared/recipes.ts";
+import { nodeBriefRecipe, nodeInputs, nodeRecipe } from "../shared/recipes.ts";
+import { outputType } from "../shared/inputs.ts";
+import type { InputRef, InputType, PortInputs } from "../shared/inputs.ts";
 import { CanvasInputs } from "./canvas-inputs.tsx";
 import {
   GenerationSettings,
@@ -69,8 +70,8 @@ type CardData = {
   busy?: boolean;
   /** A BB model is writing this media node's brief. */
   briefing?: boolean;
-  /** Connected edges per input port. */
-  inputs?: Partial<Record<InputPort, number>>;
+  /** The node's inputs placed on its model's ports. */
+  inputs?: PortInputs<InputRef>[];
 };
 type Card = Node<CardData, "studio">;
 type Tool = "select" | "hand";
@@ -92,11 +93,8 @@ const kindInfo = (kind: NodeKind | undefined) =>
     key: undefined,
     color: "var(--muted-foreground)",
   };
-// Each input port takes the color and icon of the node kind that feeds it.
-const inputPorts = [
-  { port: "text", ...kindInfo("text") },
-  { port: "image", ...kindInfo("image") },
-] as const;
+// Each input type takes the color and icon of the node kind that feeds it.
+const inputTypes = { text: kindInfo("text"), image: kindInfo("image") };
 type CardActionsValue = {
   edit: (id: string, patch: NodePatch) => void;
   run: (id: string) => void;
@@ -140,7 +138,7 @@ function CanvasCard({ id, data, selected }: NodeProps<Card>) {
       data-kind={node.type}
       data-selected={selected || undefined}
       data-generation={pending ? (asset ? "pending-more" : "pending") : data.job?.status}
-      style={{ "--gs-kind": info.color } as CSSProperties}
+      style={{ "--gs-kind": info.color, "--gs-ports": data.inputs?.length ?? 0 } as CSSProperties}
     >
       {field && node.type !== "text" && (
         <NodeToolbar isVisible={selected} position={Position.Top} offset={30}>
@@ -166,7 +164,7 @@ function CanvasCard({ id, data, selected }: NodeProps<Card>) {
         {field && <span>{nodeModelLabel(node)}</span>}
       </header>
       <div className="gs-node-body">
-        <InputPorts node={node} inputs={data.inputs} selected={!!selected} />
+        <InputPorts inputs={data.inputs ?? []} selected={!!selected} />
         <NodePreview
           node={node}
           asset={asset}
@@ -271,50 +269,41 @@ function CanvasCard({ id, data, selected }: NodeProps<Card>) {
     </div>
   );
 }
-/** One input port per type the node's model accepts, stacked on the card's left edge. */
-function InputPorts({
-  node,
-  inputs = {},
-  selected,
-}: {
-  node: CanvasNode;
-  inputs?: CardData["inputs"];
-  selected: boolean;
-}) {
-  const accepts = nodeInputPorts(node);
-  // Ports the model dropped stay visible while connected, so those edges can be removed.
-  const ports = inputPorts.filter(({ port }) => port in accepts || inputs[port]);
+/** The node model's input ports, stacked on the card's left edge. */
+function InputPorts({ inputs, selected }: { inputs: PortInputs<InputRef>[]; selected: boolean }) {
   // While an output is dragged, every card shows which of its ports can take it.
-  const dragging = useConnection<Card, InputPort | null>((connection) =>
+  const dragging = useConnection<Card, InputType | null>((connection) =>
     connection.inProgress && connection.fromHandle.type === "source"
-      ? (outputPort(connection.fromNode.data.source.type) ?? null)
+      ? (outputType(connection.fromNode.data.source.type) ?? null)
       : null,
   );
-  return ports.map(({ port, label, icon, color }, index) => {
-    const count = inputs[port] ?? 0;
-    const limit = accepts[port];
+  return inputs.map(({ port, refs }, index) => {
+    const { icon, color } = inputTypes[port.type];
     return (
       <Handle
-        key={port}
-        id={port}
+        key={port.id}
+        id={port.id}
         type="target"
         position={Position.Left}
         className="gs-port"
-        data-filled={count > 0 || undefined}
-        data-invalid={limit === undefined || count > limit || undefined}
-        data-dimmed={(dragging && dragging !== port) || undefined}
+        data-filled={refs.length > 0 || undefined}
+        data-invalid={refs.length > port.max || undefined}
+        data-dimmed={(dragging && (dragging !== port.type || refs.length >= port.max)) || undefined}
         style={
           {
             "--gs-port": color,
-            top: `calc(50% + ${(index - (ports.length - 1) / 2) * 36}px)`,
+            top: `calc(50% + ${(index - (inputs.length - 1) / 2) * 28}px)`,
           } as CSSProperties
         }
       >
         {(selected || dragging) && (
           <span className="gs-port-label" data-side="in">
             <Icon name={icon} />
-            {label}
-            {count > 0 && <b>{limit && Number.isFinite(limit) ? `${count}/${limit}` : count}</b>}
+            {port.label}
+            {port.required && !refs.length && <i>required</i>}
+            {port.max > 1 && refs.length > 0 && (
+              <b>{Number.isFinite(port.max) ? `${refs.length}/${port.max}` : refs.length}</b>
+            )}
           </span>
         )}
       </Handle>
@@ -800,19 +789,6 @@ export function StudioCanvas({
     scheduleFit();
     change();
   };
-  const hasImageReference = (source: CanvasNode) =>
-    [source.data.images, source.data.references]
-      .flatMap((refs) => (Array.isArray(refs) ? refs : []))
-      .some((ref) => {
-        if (typeof ref !== "object" || ref === null || Array.isArray(ref)) return false;
-        const assetId =
-          ref.type === "library"
-            ? ref.assetId
-            : ref.type === "node"
-              ? nodes.find((node) => node.id === ref.nodeId)?.data.source.data.assetId
-              : undefined;
-        return assets.some((asset) => asset.id === assetId && asset.type === "image");
-      });
   const change = useCallback(() => {
     editVersion.current += 1;
     setEdits(editVersion.current);
@@ -858,8 +834,7 @@ export function StudioCanvas({
         source: sourceId,
         target: selected.id,
         sourceHandle: null,
-        targetHandle:
-          outputPort(nodes.find((node) => node.id === sourceId)?.data.source.type) ?? null,
+        targetHandle: null,
       });
       return;
     }
@@ -923,31 +898,43 @@ export function StudioCanvas({
     setSelected(id);
     change();
   };
-  const kindOf = (id: string) => nodes.find((node) => node.id === id)?.data.source.type;
-  /** Edges per node and port. An edge's port follows from its source, so it is not stored. */
-  const inputCounts = new Map<string, Partial<Record<InputPort, number>>>();
-  for (const edge of edges) {
-    const port = outputPort(kindOf(edge.source));
-    if (!port) continue;
-    const counts = inputCounts.get(edge.target) ?? {};
-    counts[port] = (counts[port] ?? 0) + 1;
-    inputCounts.set(edge.target, counts);
-  }
-  /** An output joins the input port of its type while the target's model has room for it. */
-  const canConnect = (connection: Connection | Edge) => {
-    const port = outputPort(kindOf(connection.source));
-    const target = nodes.find((node) => node.id === connection.target)?.data.source;
-    if (!port || !target || connection.source === connection.target) return false;
-    if ((connection.targetHandle ?? port) !== port) return false;
-    if (edges.some((edge) => edge.source === connection.source && edge.target === target.id))
-      return false;
-    const limit = nodeInputPorts(target)[port];
-    return limit !== undefined && (inputCounts.get(target.id)?.[port] ?? 0) < limit;
+  const nodeKinds = new Map(nodes.map((node) => [node.id, node.data.source.type]));
+  const kindOf = (id: string) => nodeKinds.get(id);
+  const nodePorts = new Map(nodes.map((node) => [node.id, nodeInputs(node.data.source, kindOf)]));
+  /** The port an edge lands on: the one holding its saved input, else one of its type. */
+  const edgePort = (edge: Edge) => {
+    const ports = nodePorts.get(edge.target) ?? [];
+    const holding = (match: (ref: InputRef) => boolean) =>
+      ports.find(({ refs }) => refs.some(match))?.port.id;
+    return (
+      holding((ref) => ref.studioEdgeId === edge.id) ??
+      holding((ref) => ref.nodeId === edge.source) ??
+      ports.find(({ port }) => port.type === outputType(kindOf(edge.source)))?.port.id ??
+      null
+    );
+  };
+  /** The port a connection fills: the requested one, or the first open port of its type. */
+  const openPort = (connection: Connection | Edge) => {
+    const type = outputType(kindOf(connection.source));
+    if (!type || connection.source === connection.target) return undefined;
+    if (
+      edges.some((edge) => edge.source === connection.source && edge.target === connection.target)
+    )
+      return undefined;
+    return nodePorts
+      .get(connection.target)
+      ?.find(
+        ({ port, refs }) =>
+          port.type === type &&
+          (!connection.targetHandle || port.id === connection.targetHandle) &&
+          refs.length < port.max,
+      )?.port;
   };
   const connect = (connection: Connection) => {
-    if (!canConnect(connection)) return;
+    const port = openPort(connection);
+    if (!port) return;
     const edgeId = crypto.randomUUID();
-    setEdges((current) => addEdge({ ...connection, id: edgeId }, current));
+    setEdges((current) => addEdge({ ...connection, targetHandle: port.id, id: edgeId }, current));
     setNodes((current) =>
       current.map((node) => {
         if (node.id !== connection.target) return node;
@@ -975,7 +962,10 @@ export function StudioCanvas({
               ...source,
               data: {
                 ...source.data,
-                [key]: [...refs, { type: "node", nodeId: connection.source, studioEdgeId: edgeId }],
+                [key]: [
+                  ...refs,
+                  { type: "node", nodeId: connection.source, studioEdgeId: edgeId, port: port.id },
+                ],
               },
             },
           },
@@ -1115,8 +1105,9 @@ export function StudioCanvas({
         nodeBatch(source),
       );
     if (!recipe) return;
-    if (recipe.id === "model-3d" && !hasImageReference(source)) {
-      setError("Connect an approved image before requesting a 3D model.");
+    const missing = nodePorts.get(id)?.find(({ port, refs }) => port.required && !refs.length);
+    if (missing) {
+      setError(`Connect an image to the ${missing.port.label} input first.`);
       return;
     }
     if (dirty && !(await save())) return;
@@ -1221,12 +1212,12 @@ export function StudioCanvas({
                 job: nodeJobs(node.id)[0],
                 busy: busy(node.id),
                 briefing: briefing(node.id),
-                inputs: inputCounts.get(node.id),
+                inputs: nodePorts.get(node.id),
               },
             }))}
             edges={edges.map((edge) => ({
               ...edge,
-              targetHandle: outputPort(kindOf(edge.source)) ?? null,
+              targetHandle: edgePort(edge),
               style: {
                 stroke: kindInfo(nodes.find((node) => node.id === edge.source)?.data.source.type)
                   .color,
@@ -1289,7 +1280,7 @@ export function StudioCanvas({
               if (changes.some((item) => item.type !== "select")) change();
             }}
             onConnect={connect}
-            isValidConnection={canConnect}
+            isValidConnection={(connection) => !!openPort(connection)}
             onSelectionChange={selectionChanged}
             onNodeDoubleClick={(event) => {
               const brief = (event.target as HTMLElement)
