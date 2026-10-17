@@ -1,3 +1,4 @@
+import { nodeInputPorts, outputPort } from "../shared/recipes.ts";
 import type { Asset, CanvasNode } from "../shared/schema.ts";
 export function inputNodeIds(node: CanvasNode): string[] {
   return [
@@ -32,9 +33,17 @@ export function CanvasInputs({
   onToggle: (id: string, enabled: boolean) => void;
 }) {
   const selected = inputNodeIds(node);
-  const candidates = nodes.filter(
-    (other) => other.id !== node.id && ["text", "document", "image"].includes(other.type),
-  );
+  const accepts = nodeInputPorts(node);
+  const portOf = (other: CanvasNode) => outputPort(other.type);
+  const candidates = nodes.filter((other) => {
+    const port = portOf(other);
+    return other.id !== node.id && port !== undefined && port in accepts;
+  });
+  const full = (other: CanvasNode) => {
+    const port = portOf(other)!;
+    const used = nodes.filter((item) => selected.includes(item.id) && portOf(item) === port);
+    return used.length >= (accepts[port] ?? 0);
+  };
   return (
     <fieldset className="gs-inspector-section gs-canvas-inputs">
       <legend>Inputs</legend>
@@ -44,12 +53,13 @@ export function CanvasInputs({
           const missing =
             other.type === "image" &&
             !assets.some((asset) => asset.id === other.data.assetId && asset.type === "image");
+          const checked = selected.includes(other.id);
           return (
             <label key={other.id}>
               <input
                 type="checkbox"
-                checked={selected.includes(other.id)}
-                disabled={missing && !selected.includes(other.id)}
+                checked={checked}
+                disabled={!checked && (missing || full(other))}
                 onChange={(event) => onToggle(other.id, event.target.checked)}
               />
               <span>

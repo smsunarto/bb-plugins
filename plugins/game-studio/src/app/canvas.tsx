@@ -18,6 +18,7 @@ import {
   addEdge,
   useNodesState,
   useEdgesState,
+  useConnection,
   useReactFlow,
   useViewport,
 } from "@xyflow/react";
@@ -38,7 +39,8 @@ import type {
   Asset,
   GenerationRecipe,
 } from "../shared/schema.ts";
-import { nodeBriefRecipe, nodeRecipe } from "../shared/recipes.ts";
+import { nodeBriefRecipe, nodeInputPorts, nodeRecipe, outputPort } from "../shared/recipes.ts";
+import type { InputPort } from "../shared/recipes.ts";
 import { CanvasInputs } from "./canvas-inputs.tsx";
 import {
   GenerationSettings,
@@ -67,6 +69,8 @@ type CardData = {
   busy?: boolean;
   /** A BB model is writing this media node's brief. */
   briefing?: boolean;
+  /** Connected edges per input port. */
+  inputs?: Partial<Record<InputPort, number>>;
 };
 type Card = Node<CardData, "studio">;
 type Tool = "select" | "hand";
@@ -88,6 +92,11 @@ const kindInfo = (kind: NodeKind | undefined) =>
     key: undefined,
     color: "var(--muted-foreground)",
   };
+// Each input port takes the color and icon of the node kind that feeds it.
+const inputPorts = [
+  { port: "text", ...kindInfo("text") },
+  { port: "image", ...kindInfo("image") },
+] as const;
 type CardActionsValue = {
   edit: (id: string, patch: NodePatch) => void;
   run: (id: string) => void;
@@ -157,14 +166,7 @@ function CanvasCard({ id, data, selected }: NodeProps<Card>) {
         {field && <span>{nodeModelLabel(node)}</span>}
       </header>
       <div className="gs-node-body">
-        <Handle type="target" position={Position.Left} className="gs-port">
-          {selected && (
-            <span className="gs-port-label" data-side="in">
-              <Icon name="ArrowRightToLine" />
-              Inputs
-            </span>
-          )}
-        </Handle>
+        <InputPorts node={node} inputs={data.inputs} selected={!!selected} />
         <NodePreview
           node={node}
           asset={asset}
@@ -268,6 +270,56 @@ function CanvasCard({ id, data, selected }: NodeProps<Card>) {
       </div>
     </div>
   );
+}
+/** One input port per type the node's model accepts, stacked on the card's left edge. */
+function InputPorts({
+  node,
+  inputs = {},
+  selected,
+}: {
+  node: CanvasNode;
+  inputs?: CardData["inputs"];
+  selected: boolean;
+}) {
+  const accepts = nodeInputPorts(node);
+  // Ports the model dropped stay visible while connected, so those edges can be removed.
+  const ports = inputPorts.filter(({ port }) => port in accepts || inputs[port]);
+  // While an output is dragged, every card shows which of its ports can take it.
+  const dragging = useConnection<Card, InputPort | null>((connection) =>
+    connection.inProgress && connection.fromHandle.type === "source"
+      ? (outputPort(connection.fromNode.data.source.type) ?? null)
+      : null,
+  );
+  return ports.map(({ port, label, icon, color }, index) => {
+    const count = inputs[port] ?? 0;
+    const limit = accepts[port];
+    return (
+      <Handle
+        key={port}
+        id={port}
+        type="target"
+        position={Position.Left}
+        className="gs-port"
+        data-filled={count > 0 || undefined}
+        data-invalid={limit === undefined || count > limit || undefined}
+        data-dimmed={(dragging && dragging !== port) || undefined}
+        style={
+          {
+            "--gs-port": color,
+            top: `calc(50% + ${(index - (ports.length - 1) / 2) * 36}px)`,
+          } as CSSProperties
+        }
+      >
+        {(selected || dragging) && (
+          <span className="gs-port-label" data-side="in">
+            <Icon name={icon} />
+            {label}
+            {count > 0 && <b>{limit && Number.isFinite(limit) ? `${count}/${limit}` : count}</b>}
+          </span>
+        )}
+      </Handle>
+    );
+  });
 }
 function NodePreview({
   node,
@@ -802,7 +854,13 @@ export function StudioCanvas({
   const toggleInput = (sourceId: string, enabled: boolean) => {
     if (!selected) return;
     if (enabled) {
-      connect({ source: sourceId, target: selected.id, sourceHandle: null, targetHandle: null });
+      connect({
+        source: sourceId,
+        target: selected.id,
+        sourceHandle: null,
+        targetHandle:
+          outputPort(nodes.find((node) => node.id === sourceId)?.data.source.type) ?? null,
+      });
       return;
     }
     setEdges((current) =>
@@ -865,18 +923,29 @@ export function StudioCanvas({
     setSelected(id);
     change();
   };
+  const kindOf = (id: string) => nodes.find((node) => node.id === id)?.data.source.type;
+  /** Edges per node and port. An edge's port follows from its source, so it is not stored. */
+  const inputCounts = new Map<string, Partial<Record<InputPort, number>>>();
+  for (const edge of edges) {
+    const port = outputPort(kindOf(edge.source));
+    if (!port) continue;
+    const counts = inputCounts.get(edge.target) ?? {};
+    counts[port] = (counts[port] ?? 0) + 1;
+    inputCounts.set(edge.target, counts);
+  }
+  /** An output joins the input port of its type while the target's model has room for it. */
+  const canConnect = (connection: Connection | Edge) => {
+    const port = outputPort(kindOf(connection.source));
+    const target = nodes.find((node) => node.id === connection.target)?.data.source;
+    if (!port || !target || connection.source === connection.target) return false;
+    if ((connection.targetHandle ?? port) !== port) return false;
+    if (edges.some((edge) => edge.source === connection.source && edge.target === target.id))
+      return false;
+    const limit = nodeInputPorts(target)[port];
+    return limit !== undefined && (inputCounts.get(target.id)?.[port] ?? 0) < limit;
+  };
   const connect = (connection: Connection) => {
-    if (connection.source === connection.target) return;
-    if (
-      edges.some(
-        (edge) =>
-          edge.source === connection.source &&
-          edge.target === connection.target &&
-          (edge.sourceHandle || null) === (connection.sourceHandle || null) &&
-          (edge.targetHandle || null) === (connection.targetHandle || null),
-      )
-    )
-      return;
+    if (!canConnect(connection)) return;
     const edgeId = crypto.randomUUID();
     setEdges((current) => addEdge({ ...connection, id: edgeId }, current));
     setNodes((current) =>
@@ -1152,10 +1221,12 @@ export function StudioCanvas({
                 job: nodeJobs(node.id)[0],
                 busy: busy(node.id),
                 briefing: briefing(node.id),
+                inputs: inputCounts.get(node.id),
               },
             }))}
             edges={edges.map((edge) => ({
               ...edge,
+              targetHandle: outputPort(kindOf(edge.source)) ?? null,
               style: {
                 stroke: kindInfo(nodes.find((node) => node.id === edge.source)?.data.source.type)
                   .color,
@@ -1218,6 +1289,7 @@ export function StudioCanvas({
               if (changes.some((item) => item.type !== "select")) change();
             }}
             onConnect={connect}
+            isValidConnection={canConnect}
             onSelectionChange={selectionChanged}
             onNodeDoubleClick={(event) => {
               const brief = (event.target as HTMLElement)

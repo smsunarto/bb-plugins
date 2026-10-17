@@ -330,10 +330,21 @@
   background: var(--gs-kind);
   box-shadow: 0 0 0 1.5px var(--gs-kind);
 }
+/* Input ports wear the color of the kind they accept and fill once connected. */
 .gs-canvas-root .react-flow__handle-left.gs-port {
   left: -8px;
   background: var(--gs-node-surface);
-  box-shadow: 0 0 0 1.5px var(--surface-selected-border);
+  box-shadow: 0 0 0 1.5px var(--gs-port);
+  transition: opacity 120ms ease;
+}
+.gs-canvas-root .react-flow__handle-left.gs-port[data-filled] {
+  background: var(--gs-port);
+}
+.gs-canvas-root .react-flow__handle-left.gs-port[data-invalid] {
+  --gs-port: var(--destructive-text);
+}
+.gs-canvas-root .react-flow__handle-left.gs-port[data-dimmed] {
+  opacity: 0.3;
 }
 .gs-canvas-root .react-flow__handle-right.gs-port {
   right: -8px;
@@ -341,6 +352,10 @@
 .gs-canvas-root .react-flow__handle.gs-port:hover,
 .gs-canvas-root .react-flow__handle.connectingto {
   box-shadow: 0 0 0 3px var(--gs-kind);
+}
+.gs-canvas-root .react-flow__handle-left.gs-port:hover,
+.gs-canvas-root .react-flow__handle-left.connectingto {
+  box-shadow: 0 0 0 3px var(--gs-port);
 }
 .gs-port-label {
   position: absolute;
@@ -364,6 +379,12 @@
 }
 .gs-port-label[data-side="in"] {
   right: 18px;
+  color: var(--gs-port);
+  border-color: color-mix(in srgb, var(--gs-port) 40%, transparent);
+}
+.gs-port-label b {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
 }
 .gs-port-label[data-side="out"] {
   left: 18px;
