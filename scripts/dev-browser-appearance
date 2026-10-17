@@ -14,9 +14,15 @@ wait_for_menu() {
 
 browser set viewport 1728 1117 2
 browser set media dark
+# Fresh isolated instances can be gated by onboarding before plugins mount.
+browser open "${url%/}/"
+browser wait --fn 'Boolean([...document.querySelectorAll("button")].find(button => button.textContent.trim() === "Skip setup")) || getComputedStyle(document.documentElement).getPropertyValue("--bb-monokai-ui-font").includes("Inter")' --timeout 60000
+if [[ "$(browser eval 'Boolean([...document.querySelectorAll("button")].find(button => button.textContent.trim() === "Skip setup"))')" == "true" ]]; then
+  browser find role button click --name 'Skip setup' --exact
+fi
 browser open "${url%/}/settings/appearance"
 browser wait --load networkidle
-browser wait --fn 'document.fonts.status === "loaded" && getComputedStyle(document.documentElement).getPropertyValue("--bb-monokai-ui-font").includes("Inter")'
+browser wait --fn 'document.fonts.status === "loaded" && getComputedStyle(document.documentElement).getPropertyValue("--bb-monokai-ui-font").includes("Inter")' --timeout 60000
 browser wait --fn 'document.querySelector("button[aria-label=Theme]") !== null'
 browser find role button click --name Theme --exact
 browser wait --text Dark
