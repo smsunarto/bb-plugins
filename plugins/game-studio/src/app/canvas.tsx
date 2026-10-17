@@ -1438,7 +1438,7 @@ export function StudioCanvas({
                   </button>
                 )}
                 {selectedJob?.origin.kind === "canvas" && !selectedMedia && (
-                  <div className="gs-inline-job" role="status">
+                  <output className="gs-inline-job">
                     <span>
                       {generating
                         ? isBrief(selectedJob)
@@ -1476,7 +1476,7 @@ export function StudioCanvas({
                             : "Resume saved job"}
                         </button>
                       )}
-                  </div>
+                  </output>
                 )}
               </>
             )}
