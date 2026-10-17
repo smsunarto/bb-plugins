@@ -298,6 +298,11 @@
   background-color: var(--surface-recessed);
 }
 
+/* bb's light --primary is neutral; prose links use its chromatic accent. */
+.review-canvas-root[data-review-theme] .bb-markdown-prose a {
+  color: var(--timeline-accent);
+}
+
 @media (hover: hover) {
   .review-canvas-root[data-review-theme] .bb-markdown-prose a:hover {
     background-color: color-mix(in oklab, var(--timeline-accent) 15%, transparent);
