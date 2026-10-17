@@ -1,6 +1,6 @@
 // Canvas file shapes adapted from WhiteTowerAI/ohmygame at 2cec05e4af5c.
 // Modified for BB: Zod boundaries, native project identity, no provider credentials.
-// Original source is licensed under Apache-2.0; see ../../LICENSE and attribution.
+// Original source is licensed under Apache-2.0; see ../../THIRD_PARTY_NOTICES.md.
 import { z } from "zod";
 import { generationJob } from "./generation.ts";
 

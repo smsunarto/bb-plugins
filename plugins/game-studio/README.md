@@ -151,8 +151,9 @@ From this repository, use the workspace dev loop and isolated verification
 workflow. This plugin's checks are `bun run typecheck`, `bun run test`,
 `bun run check`, and `bun run build` from its directory.
 
-See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for the pinned upstream source
-and [LICENSE](LICENSE) for Apache-2.0 terms.
+Game Studio is MIT licensed; see [LICENSE](LICENSE). The adapted OhMyGame source
+stays under Apache-2.0; see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for
+the pinned upstream source and its licence text.
 
 ## Editor ownership and checkout slots
 
