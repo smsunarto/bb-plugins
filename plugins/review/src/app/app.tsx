@@ -29,6 +29,7 @@ type RunDisplay = {
   kind: "design" | "implementation";
   startedAt: number;
   status: string;
+  summary?: string;
 };
 type Review = Pick<
   Awaited<ReturnType<PluginBrowserBbSdk["threads"]["get"]>>,
@@ -142,7 +143,7 @@ function useReviews(threadId: string): Review[] | null {
                 typeof run.startedAt === "number" &&
                 ["quick", "standard", "deep"].includes(run.mode) &&
                 ["design", "implementation"].includes(run.kind)
-                  ? run
+                  ? { ...run, summary: typeof run.summary === "string" ? run.summary : undefined }
                   : undefined,
             };
           } catch {
@@ -221,19 +222,19 @@ const PHASES = {
   incomplete: { icon: "AlertCircle", tone: "text-muted-foreground", status: "Incomplete" },
 } as const;
 
+type RunRow = {
+  target: string;
+  label: string;
+  phase: keyof typeof PHASES;
+  reviewers: number;
+  startedAt: number;
+  providerId: string;
+  title: string;
+  summary?: string;
+};
 type Navigation =
   | { back: true; target: string; label: string }
-  | {
-      back: false;
-      target: string;
-      label: string;
-      phase: keyof typeof PHASES;
-      runs: number;
-      reviewers: number;
-      startedAt: number;
-      providerId: string;
-      title: string;
-    };
+  | { back: false; rows: [RunRow, ...RunRow[]] };
 
 function reviewPhase(review: Review): keyof typeof PHASES {
   if (review.status === "error" || review.run?.status === "failed") return "failed";
@@ -242,39 +243,47 @@ function reviewPhase(review: Review): keyof typeof PHASES {
   return "complete";
 }
 
-/** Select one navigation target before rendering either direction in the same row. */
+/** One row per run; `children` are its reviewer threads, newest first. */
+function runRow(children: [Review, ...Review[]]): RunRow {
+  const running = children.filter((review) => RUNNING.has(review.status));
+  const review = running[0] ?? children[0];
+  const phase = running.length > 0 ? "running" : reviewPhase(review);
+  const title = review.run
+    ? `${review.run.mode[0]!.toUpperCase()}${review.run.mode.slice(1)} ${review.run.kind} review`
+    : "Adversarial review";
+  return {
+    target: review.id,
+    label:
+      running.length > 1 ? `${title} running · ${running.length} reviewers` : `${title} ${phase}`,
+    phase,
+    reviewers: running.length,
+    startedAt: review.run?.startedAt ?? review.createdAt,
+    providerId: review.providerId,
+    title,
+    summary: review.run?.summary,
+  };
+}
+
+/** Select the back target or the run rows before rendering either direction. */
 function reviewNavigation(parent: ReviewParent, reviews: Review[] | null): Navigation | null {
   if (parent.isReview) {
     return parent.parentThreadId
       ? { back: true, target: parent.parentThreadId, label: "Back to main thread" }
       : null;
   }
-  const running = reviews?.filter((review) => RUNNING.has(review.status)) ?? [];
-  const review = running[0] ?? reviews?.[0];
-  if (!review) return null;
-  const phase = running.length > 0 ? "running" : reviewPhase(review);
-  const title = review.run
-    ? `${review.run.mode[0]!.toUpperCase()}${review.run.mode.slice(1)} ${review.run.kind} review`
-    : "Adversarial review";
   // A panel run has one child per reviewer, all carrying the same run id.
-  const runs = new Set(running.map((child) => child.run?.id ?? child.id)).size;
-  const label =
-    runs > 1
-      ? `${runs} adversarial reviews running`
-      : running.length > 1
-        ? `${title} running · ${running.length} reviewers`
-        : `${title} ${phase}`;
-  return {
-    back: false,
-    target: review.id,
-    label,
-    phase,
-    runs,
-    reviewers: running.length,
-    startedAt: review.run?.startedAt ?? review.createdAt,
-    providerId: review.providerId,
-    title,
-  };
+  const runs = new Map<string, [Review, ...Review[]]>();
+  for (const review of reviews ?? []) {
+    const id = review.run?.id ?? review.id;
+    const children = runs.get(id);
+    if (children) children.push(review);
+    else runs.set(id, [review]);
+  }
+  const rows = [...runs.values()].map(runRow);
+  // Concurrent runs each get a row; otherwise keep the newest finished run reachable.
+  const running = rows.filter((row) => row.phase === "running");
+  const [first, ...rest] = running.length > 0 ? running : rows.slice(0, 1);
+  return first ? { back: false, rows: [first, ...rest] } : null;
 }
 
 function formatElapsed(ms: number) {
@@ -326,14 +335,14 @@ function ReviewRow({ threadId }: { threadId: string }) {
   }
   const navigation = reviewNavigation(parent, reviews);
   if (!navigation) return null;
-  const open = () => navigate.toThread(navigation.target);
 
   if (navigation.back) {
+    const { target } = navigation;
     return (
       <button
         type="button"
         data-review-navigation
-        onClick={open}
+        onClick={() => navigate.toThread(target)}
         aria-label={navigation.label}
         className={`${ROW} text-muted-foreground hover:text-foreground`}
       >
@@ -343,36 +352,53 @@ function ReviewRow({ threadId }: { threadId: string }) {
     );
   }
 
-  const phase = PHASES[navigation.phase];
-  const running = navigation.phase === "running";
+  return (
+    <div className="flex w-full min-w-0 flex-col">
+      {navigation.rows.map((row) => (
+        <RunButton key={row.target} row={row} onOpen={() => navigate.toThread(row.target)} />
+      ))}
+    </div>
+  );
+}
+
+function RunButton({ row, onOpen }: { row: RunRow; onOpen: () => void }) {
+  const phase = PHASES[row.phase];
+  const running = row.phase === "running";
   return (
     <button
       type="button"
       data-review-navigation
-      data-review-phase={navigation.phase}
-      onClick={open}
-      aria-label={`${navigation.label}. Open the review thread.`}
+      data-review-phase={row.phase}
+      onClick={onOpen}
+      aria-label={`${row.label}. Open the review thread.`}
+      title={row.summary}
       className={`${ROW} text-foreground`}
     >
       <Icon name={phase.icon} className={`size-3.5 shrink-0 ${phase.tone}`} aria-hidden />
       <span className="flex min-w-0 flex-1 items-baseline gap-1.5 text-left">
         <span className={`${running ? "animate-shine " : ""}min-w-0 truncate font-medium`}>
-          {navigation.title}
+          {row.title}
         </span>
         <span
           className={`shrink-0 whitespace-nowrap ${running ? "text-muted-foreground" : phase.tone}`}
         >
-          {navigation.runs > 1 ? `${navigation.runs} running` : phase.status}
-          {running && navigation.runs === 1 && (
+          {phase.status}
+          {running && (
             <>
-              {navigation.reviewers > 1 && ` · ${navigation.reviewers} reviewers`}
+              {row.reviewers > 1 && ` · ${row.reviewers} reviewers`}
               {" · "}
-              <Elapsed since={navigation.startedAt} />
+              <Elapsed since={row.startedAt} />
             </>
           )}
         </span>
+        {row.summary && (
+          // Basis 0 yields to the title and status, so only spare width shows the summary.
+          <span className="hidden min-w-0 flex-1 basis-0 truncate text-muted-foreground @md:block">
+            {row.summary}
+          </span>
+        )}
       </span>
-      <Reviewer providerId={navigation.providerId} />
+      <Reviewer providerId={row.providerId} />
       <span className="flex shrink-0 items-center text-muted-foreground transition-colors group-hover:text-foreground">
         Open
         <Icon name="ChevronRight" className="size-3.5" aria-hidden />

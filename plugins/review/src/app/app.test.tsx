@@ -1043,7 +1043,7 @@ test("reused reviewers display the latest run mode and elapsed time rather than 
   }
 });
 
-test("a panel run reads as one review with its reviewer count; separate runs stay distinct", async () => {
+test("a panel run reads as one review with its reviewer count; concurrent runs each get a row", async () => {
   setSystemTime(new Date(200000));
   let runOf = (_threadId: string) => "run_panel";
   const { slot, change } = await renderBanner(
@@ -1055,30 +1055,40 @@ test("a panel run reads as one review with its reviewer count; separate runs sta
     undefined,
     "connected",
     undefined,
-    async ({ threadId }) => ({
-      reviewRun: {
-        id: runOf(threadId),
-        mode: "deep",
-        kind: "implementation",
-        startedAt: 180000,
-        status: "running",
-      },
-    }),
+    async ({ threadId }) => {
+      const id = runOf(threadId);
+      const quick = id === "run_thr_codex";
+      return {
+        reviewRun: {
+          id,
+          mode: quick ? "quick" : "deep",
+          kind: "implementation",
+          startedAt: quick ? 190000 : 180000,
+          status: "running",
+          summary: `Summary for ${id}`,
+        },
+      };
+    },
   );
   try {
     const panel = await slot.findByRole("button", {
       name: "Deep implementation review running · 2 reviewers. Open the review thread.",
     });
     expect(panel.textContent).toContain("Running · 2 reviewers · 20s");
+    expect(slot.getAllByRole("button")).toHaveLength(1);
     runOf = (threadId) => `run_${threadId}`;
     await change("thr_codex", ["status-changed"]);
-    expect(
-      (
-        await slot.findByRole("button", {
-          name: "2 adversarial reviews running. Open the review thread.",
-        })
-      ).textContent,
-    ).toContain("2 running");
+    const quick = await slot.findByRole("button", {
+      name: "Quick implementation review running. Open the review thread.",
+    });
+    const deep = slot.getByRole("button", {
+      name: "Deep implementation review running. Open the review thread.",
+    });
+    expect(slot.getAllByRole("button")).toEqual([quick, deep]);
+    expect(quick.textContent).toContain("Running · 10sSummary for run_thr_codex");
+    expect(deep.textContent).toContain("Running · 20sSummary for run_thr_claude");
+    fireEvent.click(deep);
+    expect(slot.inspection.navigateCalls).toEqual([{ method: "toThread", threadId: "thr_claude" }]);
   } finally {
     slot.unmount();
     setSystemTime();
