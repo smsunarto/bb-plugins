@@ -1,5 +1,18 @@
 # @smsunarto/bb-plugin-amp
 
+## [0.6.0](https://github.com/smsunarto/bb-plugins/compare/amp/v0.5.0...amp/v0.6.0) (2026-10-17)
+
+
+### Features
+
+* **amp:** adopt defineCli and discoverable RPC ([fc54f88](https://github.com/smsunarto/bb-plugins/commit/fc54f886d417d392a136db4cd5b6c5aec958c165))
+* **amp:** offer Install when the Amp CLI is missing ([1235e98](https://github.com/smsunarto/bb-plugins/commit/1235e989bfd14e55749f56806e3134c66ad8e047))
+
+
+### Bug Fixes
+
+* **amp:** read Oracle reports and route Orb and CLI lookups on the thread's host ([f4ae658](https://github.com/smsunarto/bb-plugins/commit/f4ae658f67d47caf74917995043829b34b4638aa))
+
 ## [0.5.0](https://github.com/smsunarto/bb-plugins/compare/amp/v0.4.1...amp/v0.5.0) (2026-09-15)
 
 
