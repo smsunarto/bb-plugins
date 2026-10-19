@@ -1,0 +1,28 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "target": "es2023",
+    "lib": [
+      "es2023",
+      "dom",
+      "dom.iterable"
+    ],
+    "types": [
+      "node",
+      "bun-types/test"
+    ],
+    "jsx": "react-jsx",
+    "erasableSyntaxOnly": true,
+    "noUncheckedIndexedAccess": true,
+    "useUnknownInCatchVariables": true,
+    "noImplicitOverride": true,
+    "noFallthroughCasesInSwitch": true,
+    "noImplicitReturns": true,
+    "paths": {
+      "@get-bb/plugin-sdk": [
+        "./node_modules/@get-bb/plugin-sdk",
+        "../../node_modules/@get-bb/plugin-sdk"
+      ]
+    }
+  }
+}

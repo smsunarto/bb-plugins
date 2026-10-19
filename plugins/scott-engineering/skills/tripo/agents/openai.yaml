@@ -1,0 +1,4 @@
+interface:
+  display_name: "Tripo"
+  short_description: "Generate 3D assets through Tripo Studio"
+  default_prompt: "Use $tripo to generate or process assets through the local Studio CLI."

@@ -1,0 +1,3 @@
+Produce the artifact requested by task in your own current checkout. Read repository instructions and ground the affected code. Each contender gets this same task and instructions. Work independently; do not read another candidate's checkout or output. Do not edit the source checkout named root.
+
+Implement the complete solution in your checkout. You may run appropriate local checks. Leave your changes uncommitted; the plugin pins your output after your turn ends. Your candidate report contains summary and tradeoff. Name the approach, the alternatives considered, and what you rejected. Keep the summary short enough to scan in an embedded message.

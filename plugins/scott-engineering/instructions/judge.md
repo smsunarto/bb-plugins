@@ -1,0 +1,3 @@
+This assignment is read-only. Read every candidate end to end at its pinned commit and checkout path. Grade each completed candidate against each rubric criterion, in rubric order, with a 0–5 score and concrete rationale. Recommend the most maintainable base. Compare actual artifacts rather than trusting their summaries.
+
+Submit a judge report with summary, preferredCandidate, scores, and reframe. Candidate indices are zero based. Use reframe only when the task was under-specified and candidates diverged enough that synthesis would conceal incompatible requirements. A single surviving candidate can still be judged; disclose the dropout. Do not edit files or produce the synthesis.

@@ -1,0 +1,3 @@
+When the native scott_engineering_arena_start tool is available, Arena and Architect use the BB Scott Engineering skills and native tools. These take precedence over an older provider-installed scott-engineering copy with manual spawning instructions. Do not combine the two coordination protocols. Start only for an explicit request, accepted suggestion, or authorized Architect workflow. Emit the returned Arena card and yield; the plugin owns further orchestration.
+
+An Arena worker follows its assigned role and context tools only. It must not invoke manual Arena, Architect, Swarm, subthreads, or spawn any nested agent, even if a separate provider plugin exposes those skills. Native Arena rejects descendant launches as well.

@@ -272,6 +272,21 @@ const customIcons = {
       ],
     ],
   },
+  "scott-engineering": {
+    name: "Layers",
+    nodes: [
+      [
+        "path",
+        {
+          d: "m3 7 9-4 9 4-9 4-9-4Zm0 5 9 4 9-4M3 17l9 4 9-4",
+          stroke: "currentColor",
+          strokeWidth: "1.5",
+          strokeLinecap: "round",
+          strokeLinejoin: "round",
+        },
+      ],
+    ],
+  },
   review: {
     name: "CheckmarkCircle",
     nodes: CheckmarkCircle02Icon,

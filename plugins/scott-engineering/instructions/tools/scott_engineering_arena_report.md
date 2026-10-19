@@ -1,0 +1,1 @@
+Submit your one final typed report for the Arena assignment, then end your turn immediately. The plugin advances only after the worker becomes idle. Summaries must describe the real artifact. Do not report another worker's assignment or change files after reporting.

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Reflect"
+policy:
+  allow_implicit_invocation: false
