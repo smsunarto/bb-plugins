@@ -3,6 +3,7 @@ import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import { toast } from "sonner";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ApiRequest, ApiResponse } from "../../shared/contracts/api-tunnel.ts";
+import { pluginQueryClient } from "@bb-kit/core/rpc/query";
 import type {
   ReviewCanvasContent,
   ReviewSourceView,
@@ -29,6 +30,7 @@ const rpcState = vi.hoisted(() => ({
   catalog: [] as Array<{ reviewId: string; title: string; dismissedAt: string | null }>,
   calls: [] as ApiRequest[],
   failCommands: false,
+  readGate: undefined as (() => Promise<void>) | undefined,
 }));
 const find = vi.hoisted(() => ({ showFind: (_seed?: string) => true as boolean }));
 const canvas = vi.hoisted(() => ({
@@ -55,11 +57,13 @@ vi.mock("@get-bb/plugin-sdk/app", () => ({
 vi.mock("../rpc.ts", () => {
   const api = async (request: ApiRequest): Promise<ApiResponse> => {
     rpcState.calls.push(request);
+    const catalog = rpcState.catalog;
+    if (request.path.startsWith("/watch")) await rpcState.readGate?.();
     if (rpcState.failCommands && request.path === "/commands") {
       return { status: 500, contentType: "application/json", encoding: "utf8", body: "{}" };
     }
     const body = request.path.startsWith("/watch")
-      ? `${JSON.stringify([{ value: rpcState.catalog }])}\n`
+      ? `${JSON.stringify([{ value: catalog }])}\n`
       : "{}";
     return { status: 200, contentType: "application/json", encoding: "utf8", body };
   };
@@ -114,6 +118,8 @@ beforeEach(() => {
   rpcState.catalog = [{ reviewId: SESSION, title: "Auth walkthrough", dismissedAt: null }];
   rpcState.calls = [];
   rpcState.failCommands = false;
+  rpcState.readGate = undefined;
+  pluginQueryClient.removeQueries({ queryKey: ["whiteboard", "catalog"] });
   sdk.realtime.clear();
   sdk.connection = "connected";
   sdk.context = { projectId: null, threadId: null };
@@ -143,6 +149,54 @@ const catalogEntry = (dismissedAt: string | null) => [
 const settle = () => new Promise((resolve) => setTimeout(resolve, 10));
 
 describe("WhiteboardMount", () => {
+  it("shows the previous Home list immediately while a return visit refreshes it", async () => {
+    const first = render(<WhiteboardMount info={INFO} />);
+    await screen.findByText("Auth walkthrough");
+    first.unmount();
+
+    let release!: () => void;
+    rpcState.readGate = () => new Promise<void>((resolve) => (release = resolve));
+    rpcState.catalog = [{ reviewId: SESSION, title: "Updated walkthrough", dismissedAt: null }];
+    render(<WhiteboardMount info={INFO} />);
+    expect(screen.getByText("Auth walkthrough")).toBeTruthy();
+    await waitFor(() => expect(release).toBeTypeOf("function"));
+    await act(async () => release());
+    expect(await screen.findByText("Updated walkthrough")).toBeTruthy();
+    expect(screen.queryByText("Auth walkthrough")).toBeNull();
+  });
+
+  it("does not reuse another thread's Home list while its own read is pending", async () => {
+    const first = render(<WhiteboardMount threadId="thread-1" info={INFO} />);
+    await screen.findByText("Auth walkthrough");
+    first.unmount();
+
+    let release!: () => void;
+    rpcState.readGate = () => new Promise<void>((resolve) => (release = resolve));
+    rpcState.catalog = [{ reviewId: SESSION, title: "Another thread's pad", dismissedAt: null }];
+    render(<WhiteboardMount threadId="thread-2" info={INFO} />);
+    expect(screen.queryByText("Auth walkthrough")).toBeNull();
+    await waitFor(() => expect(release).toBeTypeOf("function"));
+    await act(async () => release());
+    expect(await screen.findByText("Another thread's pad")).toBeTruthy();
+  });
+
+  it("does not let an unmounted Home's late read replace a newer cached list", async () => {
+    let release!: () => void;
+    rpcState.readGate = () => new Promise<void>((resolve) => (release = resolve));
+    const previous = render(<WhiteboardMount info={INFO} />);
+    await waitFor(() => expect(release).toBeTypeOf("function"));
+    previous.unmount();
+
+    rpcState.readGate = undefined;
+    rpcState.catalog = [{ reviewId: SESSION, title: "Newer walkthrough", dismissedAt: null }];
+    render(<WhiteboardMount info={INFO} />);
+    await screen.findByText("Newer walkthrough");
+    await act(async () => release());
+    await settle();
+    expect(screen.getByText("Newer walkthrough")).toBeTruthy();
+    expect(screen.queryByText("Auth walkthrough")).toBeNull();
+  });
+
   it("preserves current source generation and strips it for a historical address", async () => {
     render(<WhiteboardMount sessionId={SESSION} threadId="thread-1" info={INFO} />);
     await screen.findByTestId("api-canvas");

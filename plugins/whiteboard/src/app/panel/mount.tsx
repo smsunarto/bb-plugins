@@ -6,6 +6,8 @@ import {
   useRealtime,
   useRealtimeConnectionState,
 } from "@get-bb/plugin-sdk/app";
+import { pluginQueryClient } from "@bb-kit/core/rpc/query";
+import { useQuery } from "@tanstack/react-query";
 import {
   type ReactNode,
   useCallback,
@@ -269,28 +271,39 @@ function HomeView({
   client,
   info,
   onOpen,
+  threadId,
 }: {
   client: ReviewApiClient;
   info: InfoOutput;
   onOpen(review: ReviewApiSummary): void;
+  threadId: string | undefined;
 }) {
-  const [reviews, setReviews] = useState<readonly ReviewApiSummary[]>();
   const [error, setError] = useState<string>();
   const mode = catalogMode(info);
+  // The live stream refreshes this cache. Keep its last result across page
+  // navigation, scoped to the thread whose scratchpad the server includes.
+  const queryKey = useMemo(
+    () => ["whiteboard", "catalog", threadId ?? null, mode],
+    [threadId, mode],
+  );
+  const { data: reviews } = useQuery<readonly ReviewApiSummary[]>(
+    { queryKey, enabled: false },
+    pluginQueryClient,
+  );
   useEffect(() => {
     const abort = new AbortController();
     void client.follow<ReviewApiSummary[]>(
       null,
       abort.signal,
       (next) => {
-        setReviews(next);
+        pluginQueryClient.setQueryData(queryKey, next);
         setError(undefined);
       },
       (cause) => setError(cause instanceof Error ? cause.message : String(cause)),
       mode,
     );
     return () => abort.abort();
-  }, [client, mode]);
+  }, [client, mode, queryKey]);
   const command = useCallback(
     async (operation: Record<string, string>) => {
       await client.post("/commands", { commandId: crypto.randomUUID(), operation });
@@ -422,7 +435,7 @@ export function WhiteboardMount({
         setSourceView={setSourceView}
       />
     ) : (
-      <HomeView client={client} info={info} onOpen={openSession} />
+      <HomeView client={client} info={info} onOpen={openSession} threadId={threadId} />
     );
   }
 

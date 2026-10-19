@@ -2346,15 +2346,11 @@
   overflow: hidden;
 }
 
-/* Keep the full diff alive while another view is selected. It initializes in
- * the review page's loading window, then the first Diff click and every return
- * reuse the same file tree, editor models, selection, and scroll state. */
+/* Keep the full diff mounted while another view is selected, preserving its
+ * file tree, editor models, selection, and scroll state. Remove it from layout
+ * so its viewport observers do not load and highlight hidden source files. */
 :where(.review-canvas-root) .review-diff-view--preloaded {
-  position: absolute;
-  inset: 0;
-  opacity: 0;
-  visibility: hidden;
-  pointer-events: none;
+  display: none;
 }
 
 :where(.review-canvas-root) .review-diff-view--scoped {
