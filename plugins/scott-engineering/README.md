@@ -23,7 +23,7 @@ Outputs remain uncommitted. Candidate worktrees and private `refs/arena/` snapsh
 - `bb scott-engineering start --task '...' --request-id <stable-id>` launches or recovers a launch.
 - `bb scott-engineering status --run <id>` reads an owned run.
 - `bb scott-engineering stop --run <id>` stops it.
-- `bb scott-engineering principle` lists shared principles; add `--name grug-brain` to read one.
+- `bb scott-engineering principle` lists shared principles; add `--name grug-brain` to read one or `--name index` for workflow routing and principle triggers.
 - `claudeModel` and `codexModel` select the two model seats. Defaults follow the fork. Both use xhigh reasoning; Codex uses fast service.
 
-The tools and prompts are editable under `instructions/`. Other skills and their references are bundled under `skills/` and `references/`. Engineering principles live in the shared `references/principles/` directory. The `principle` command reads them from the installed plugin, independently of any workflow skill or checkout path, without adding skill catalog entries. The overlapping dotfiles package has been removed.
+The tools and prompts are editable under `instructions/`. Other skills and their references are bundled under `skills/` and `references/`. Engineering principles live in the shared `references/principles/` directory. The `principle` command reads them from the installed plugin, independently of any workflow skill or checkout path, without adding skill catalog entries. The plugin owns workflow routing and principle triggers in `instructions/engineering-guidance.md`; shared dotfiles agent instructions no longer carry these rules. The overlapping dotfiles package has been removed.

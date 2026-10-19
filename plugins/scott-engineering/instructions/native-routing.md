@@ -2,4 +2,4 @@ When the native scott_engineering_arena_start tool is available, Arena and Archi
 
 An Arena worker follows its assigned role and context tools only. It must not invoke manual Arena, Architect, Swarm, subthreads, or spawn any nested agent, even if a separate provider plugin exposes those skills. Native Arena rejects descendant launches as well.
 
-Engineering principles are shared plugin references. Read one with `bb scott-engineering principle --name <name>`; omit `--name` to list the available names. Read only the principles relevant to the task.
+Before engineering work, game development, Go work, GitHub issues/workflows, or visual explanations, read `bb scott-engineering principle --name index`. This plugin-owned guide routes workflows and states when each engineering principle applies. Follow its applicable references; read a principle with `--name <name>`, or omit `--name` to list names.

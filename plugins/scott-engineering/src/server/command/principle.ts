@@ -12,6 +12,9 @@ export const principle = defineCommand({
     name: { type: "string", description: files.read("commands/principle-name") },
   },
   execute(_ctx, { options }) {
+    if (options.name === "index") {
+      return { exitCode: 0, stdout: files.read("engineering-guidance") + "\n" };
+    }
     const names = readdirSync(directory)
       .filter((name) => name.endsWith(".md"))
       .map((name) => name.slice(0, -3))
