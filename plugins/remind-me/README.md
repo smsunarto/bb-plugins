@@ -1,9 +1,9 @@
-# Save work for later
+# Remind Me
 
-Type `/remind-me` in a BB conversation to ask the agent to save the relevant unfinished work in BB Tasks. Add a hint, such as `/remind-me revisit the retry edge case`, to narrow the subject.
+Type `/remind-me` in a conversation to save unfinished work for later. Add an optional hint to choose the subject; otherwise, the agent infers it from the recent conversation and stops after saving.
 
-The agent records the context, next step, completion criteria, and source thread. It reuses an existing task for the same work or creates a backlog task, then replies with a task card. It does not start the work or schedule a notification.
+Reminders live in the plugin’s own persistent database, separately from BB Tasks and your repository. Open **Reminders** from the navigation rail or a conversation’s panel launcher. Expand a reminder to read its context, next step, and source thread.
 
-Requires BB Tasks (`bb tasks`). If saving is unavailable, the agent returns the reminder text and explains that it was not saved.
+Hover over a reminder (or focus it with the keyboard) and choose **Add to composer**. On touch screens the button stays visible. The Reminders page appends to the new-thread draft and opens it; a conversation panel or reminder card appends to that conversation’s draft. Existing text and attachments are preserved. Nothing is sent, started, or removed automatically.
 
-The user-only slash command is declared in `skills/remind-me/SKILL.md`. `bb remind-me prompt` reads `instructions/remind-me.md` on each invocation, so its workflow can be edited in Prompt Editor. The plugin uses `@bb-kit/core` and BB's native skill discovery; it has no separate task store or UI.
+The agent workflow is in `instructions/remind-me.md`, exposed through `bb remind-me prompt`. `bb remind-me rpc list`, `save`, and `get` read and write the same store. Saves use a caller-generated UUID: retrying the same ID and payload returns the existing reminder; different content with that ID is rejected. Reminders survive plugin reloads. This plugin does not schedule notification alerts or migrate previously created BB tasks.

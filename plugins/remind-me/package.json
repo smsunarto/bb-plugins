@@ -12,7 +12,7 @@
   },
   "bb": {
     "name": "Remind Me",
-    "description": "Turn unfinished work from a conversation into a task for later.",
+    "description": "Keep deferred work in a separate reminders list and add it to a composer when ready.",
     "branding": {
       "icon": "./assets/icon.svg",
       "logo": {
@@ -21,6 +21,7 @@
       }
     },
     "server": "./src/server/server.ts",
+    "app": "./src/app/app.tsx",
     "skills": [
       "skills"
     ]
@@ -31,20 +32,32 @@
     "src/",
     "instructions/",
     "skills/",
-    "README.md"
+    "README.md",
+    "LICENSE"
   ],
   "dependencies": {
-    "@bb-kit/core": "0.2.0"
+    "@bb-kit/core": "0.2.0",
+    "@tanstack/react-query": "^5.101.4",
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "@get-bb/plugin-sdk": "0.6.37",
     "@types/node": "^22.0.0",
-    "typescript": "^6.0.0"
+    "@testing-library/react": "16.3.2",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "bun-types": "^1.4.0",
+    "jsdom": "25.0.1",
+    "react": "19.2.8",
+    "react-dom": "19.2.8",
+    "typescript": "^6.0.0",
+    "tsx": "4.23.12"
   },
   "scripts": {
     "dev": "\"${BB_CLI:?Run bun run dev from the repository root}\" plugin dev .",
     "build": "bb plugin build .",
     "typecheck": "tsc --noEmit",
+    "test": "bun test src/app --timeout=30000 && node --import tsx --test src/server/rpc/*.test.ts",
     "check": "bun ../../packages/bb-kit-dev/src/bin.ts check"
   }
 }
