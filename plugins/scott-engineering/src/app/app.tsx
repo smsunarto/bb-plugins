@@ -11,9 +11,17 @@ import {
   type PluginMessageDirectiveProps,
   type PluginThreadHeaderActionProps,
 } from "@get-bb/plugin-sdk/app";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { z } from "zod";
-import { MAX_ROUNDS, roleLabel, terminal, type ArenaRun, type Job } from "../shared/arena.ts";
+import {
+  MAX_ROUNDS,
+  roleLabel,
+  terminal,
+  type ArenaRun,
+  type Digest,
+  type Job,
+  type Readable,
+} from "../shared/arena.ts";
 import type { rpcContract } from "../shared/rpc.ts";
 import "./arena.css";
 
@@ -181,12 +189,54 @@ function standing(run: ArenaRun, candidate: number) {
   return { mean, badges };
 }
 
-function CandidateBody({ job, active }: { job: Job; active: boolean }) {
-  if (job.report)
+/** A rewrite stops reading as "in progress" after this long, even if it never lands. */
+const REWRITE_PATIENCE_MS = 120_000;
+
+/** The plain-language rewrite of a job's result, with a switch back to the worker's own words. */
+function useReadable<K extends Readable["kind"]>(
+  digests: readonly Digest[],
+  job: Job,
+  kind: K,
+): { result: Extract<Readable, { kind: K }> | null; note: ReactNode } {
+  const [original, setOriginal] = useState(false);
+  const digest = digests.find((item) => item.jobKey === job.key);
+  const result =
+    digest?.status === "done" && digest.result?.kind === kind
+      ? (digest.result as Extract<Readable, { kind: K }>)
+      : null;
+  if (result)
+    return {
+      result: original ? null : result,
+      note: (
+        <button type="button" className="arena-link" onClick={() => setOriginal(!original)}>
+          {original ? "Show rewrite" : "Show original"}
+        </button>
+      ),
+    };
+  const rewriting =
+    digest?.status === "running" && Date.now() - digest.startedAt < REWRITE_PATIENCE_MS;
+  return {
+    result: null,
+    note: rewriting ? (
+      <span className="arena-muted arena-shimmer">Rewriting for readability…</span>
+    ) : null,
+  };
+}
+
+function CandidateBody({
+  job,
+  active,
+  readable,
+}: {
+  job: Job;
+  active: boolean;
+  readable: Extract<Readable, { kind: "candidate" }> | null;
+}) {
+  if (job.report?.kind === "candidate")
     return (
       <>
-        <p>{job.report.summary}</p>
-        {job.report.kind === "candidate" && <p className="arena-muted">{job.report.tradeoff}</p>}
+        <p>{readable?.summary ?? job.report.summary}</p>
+        <p className="arena-muted">{readable?.tradeoff ?? job.report.tradeoff}</p>
       </>
     );
   if (job.error) return <p className="arena-error">{job.error}</p>;
@@ -197,8 +247,9 @@ function CandidateBody({ job, active }: { job: Job; active: boolean }) {
   );
 }
 
-function Candidate({ job, run }: { job: Job; run: ArenaRun }) {
+function Candidate({ job, run, digests }: { job: Job; run: ArenaRun; digests: readonly Digest[] }) {
   const { mean, badges } = standing(run, job.candidate ?? 0);
+  const readable = useReadable(digests, job, "candidate");
   const state =
     job.outcome === "running" ? (terminal.has(run.phase) ? "halted" : "active") : job.outcome;
   return (
@@ -222,17 +273,20 @@ function Candidate({ job, run }: { job: Job; run: ArenaRun }) {
           ))}
         </div>
       )}
-      <CandidateBody job={job} active={state === "active"} />
+      <CandidateBody job={job} active={state === "active"} readable={readable.result} />
       <footer>
         <WorkerLink job={job} />
+        {readable.note}
       </footer>
     </section>
   );
 }
 
-function Synthesis({ job }: { job: Job }) {
+function Synthesis({ job, digests }: { job: Job; digests: readonly Digest[] }) {
+  const readable = useReadable(digests, job, "synthesis");
   const report = job.report?.kind === "synthesis" ? job.report : null;
   if (!report) return null;
+  const text = readable.result;
   return (
     <section className="arena-section" aria-label="Combined result">
       <header>
@@ -241,20 +295,21 @@ function Synthesis({ job }: { job: Job }) {
         <Provider job={job} />
         <WorkerLink job={job} />
       </header>
-      <p>{report.summary}</p>
+      <p>{text?.summary ?? report.summary}</p>
       <p className="arena-muted">
-        Built on Candidate {report.baseCandidate + 1}. {report.rationale}
+        Built on Candidate {report.baseCandidate + 1}. {text?.rationale ?? report.rationale}
       </p>
       {report.grafts.length > 0 && (
         <ul className="arena-grafts">
-          {report.grafts.map((graft) => (
+          {report.grafts.map((graft, index) => (
             <li key={`${graft.candidate}:${graft.change}`}>
               <span className="arena-badge">From Candidate {graft.candidate + 1}</span>
-              <span>{graft.change}</span>
+              <span>{text?.grafts[index] ?? graft.change}</span>
             </li>
           ))}
         </ul>
       )}
+      {readable.note && <div className="arena-note">{readable.note}</div>}
     </section>
   );
 }
@@ -290,11 +345,14 @@ function Verification({ integration }: { integration: NonNullable<ArenaRun["inte
   );
 }
 
-function Details({ run }: { run: ArenaRun }) {
+function Details({ run, digests }: { run: ArenaRun; digests: readonly Digest[] }) {
   const jobs = run.jobs.filter((job) => job.round === run.round);
   const frame = jobs.find((job) => job.role === "frame")?.report;
   const judge = jobs.find((job) => job.role === "judge");
-  const synthesis = jobs.find((job) => job.role === "synthesis")?.report;
+  const synthesisJob = jobs.find((job) => job.role === "synthesis");
+  const synthesis = synthesisJob?.report;
+  const rewrite = digests.find((item) => item.jobKey === synthesisJob?.key)?.result;
+  const rejected = rewrite?.kind === "synthesis" ? rewrite.rejected : null;
   const scores = judge?.report?.kind === "judge" ? judge.report.scores : [];
   return (
     <details className="arena-details">
@@ -343,8 +401,8 @@ function Details({ run }: { run: ArenaRun }) {
           <div>
             <h3>Not included</h3>
             <ul>
-              {synthesis.rejected.map((item) => (
-                <li key={item}>{item}</li>
+              {synthesis.rejected.map((item, index) => (
+                <li key={item}>{rejected?.[index] ?? item}</li>
               ))}
             </ul>
           </div>
@@ -368,12 +426,16 @@ function Details({ run }: { run: ArenaRun }) {
   );
 }
 
+const NO_DIGESTS: readonly Digest[] = [];
+
 export function ArenaSummary({
   run,
+  digests = NO_DIGESTS,
   onStop,
   stopping,
 }: {
   run: ArenaRun;
+  digests?: readonly Digest[];
   onStop: () => void;
   stopping: boolean;
 }) {
@@ -417,18 +479,18 @@ export function ArenaSummary({
       {candidates.length > 0 && (
         <div className="arena-candidates">
           {candidates.map((job) => (
-            <Candidate key={job.key} job={job} run={run} />
+            <Candidate key={job.key} job={job} run={run} digests={digests} />
           ))}
         </div>
       )}
-      {synthesis && <Synthesis job={synthesis} />}
+      {synthesis && <Synthesis job={synthesis} digests={digests} />}
       {run.integration && <Verification integration={run.integration} />}
       {error && (
         <output className="arena-alert" role="alert">
           {error}
         </output>
       )}
-      <Details run={run} />
+      <Details run={run} digests={digests} />
     </article>
   );
 }
@@ -437,6 +499,7 @@ function RunCard({ runId, threadId }: { runId: string; threadId: string }) {
   const rpc = useRpc<typeof rpcContract>();
   const connection = useRealtimeConnectionState();
   const [run, setRun] = useState<ArenaRun | null>(null);
+  const [digests, setDigests] = useState<readonly Digest[]>([]);
   const [error, setError] = useState("");
   const [stopping, setStopping] = useState(false);
   const sequence = useRef(0);
@@ -448,6 +511,7 @@ function RunCard({ runId, threadId }: { runId: string; threadId: string }) {
         setRun((current) =>
           !current || result.run.updatedAt >= current.updatedAt ? result.run : current,
         );
+        setDigests(result.digests ?? []);
         setError("");
       }
     } catch (cause) {
@@ -494,7 +558,7 @@ function RunCard({ runId, threadId }: { runId: string; threadId: string }) {
         </div>
       )}
       {run ? (
-        <ArenaSummary run={run} onStop={() => void stop()} stopping={stopping} />
+        <ArenaSummary run={run} digests={digests} onStop={() => void stop()} stopping={stopping} />
       ) : (
         !error && <output className="arena-loading">Loading Arena…</output>
       )}

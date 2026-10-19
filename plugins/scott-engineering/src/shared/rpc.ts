@@ -1,7 +1,7 @@
 import { defineRpcContract } from "@get-bb/plugin-sdk";
-import { scopedLookupSchema, runOutputSchema } from "./arena.ts";
+import { cardOutputSchema, scopedLookupSchema, runOutputSchema } from "./arena.ts";
 
 export const rpcContract = defineRpcContract({
-  get: { input: scopedLookupSchema, output: runOutputSchema },
+  get: { input: scopedLookupSchema, output: cardOutputSchema },
   stop: { input: scopedLookupSchema, output: runOutputSchema },
 });

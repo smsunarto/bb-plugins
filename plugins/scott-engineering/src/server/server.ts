@@ -2,6 +2,7 @@ import { definePlugin } from "@bb-kit/core/plugin";
 import { start } from "./command/start.ts";
 import { status } from "./command/status.ts";
 import { stop } from "./command/stop.ts";
+import { ArenaDigests } from "./lib/digests.ts";
 import { ArenaService, files } from "./lib/service.ts";
 import { rpcContract } from "../shared/rpc.ts";
 import { arenaStart } from "./tools/arena-start.ts";
@@ -34,13 +35,27 @@ export default definePlugin({
     const settings = bb.settings.define({
       claudeModel: { type: "string", label: "Claude Arena model", default: "claude-opus-5-5" },
       codexModel: { type: "string", label: "Codex Arena model", default: "gpt-6.1-sol" },
+      digestModel: {
+        type: "string",
+        label: "Model that rewrites results for the card (Codex, fast tier)",
+        default: "gpt-6-luna",
+      },
     });
-    return { arena: new ArenaService(bb, () => settings.get()) };
+    const digests = new ArenaDigests(bb, async () => (await settings.get()).digestModel);
+    const arena = new ArenaService(
+      bb,
+      () => settings.get(),
+      (run, job) => digests.start(run, job),
+    );
+    return { arena, digests };
   },
-  setup({ bb, arena }) {
+  setup({ bb, arena, digests }) {
     bb.onDispose(() => arena.dispose());
     bb.rpc.register(rpcContract, {
-      get: async ({ runId, threadId }) => ({ run: await arena.owner(runId, threadId) }),
+      get: async ({ runId, threadId }) => ({
+        run: await arena.owner(runId, threadId),
+        digests: await digests.forRun(runId),
+      }),
       stop: async ({ runId, threadId }) => ({ run: await arena.stop(runId, threadId) }),
     });
     for (const event of [
@@ -51,13 +66,16 @@ export default definePlugin({
       "thread.archived",
     ] as const) {
       bb.events.on(event, async ({ thread }) => {
-        if (thread.originPluginId === bb.pluginId) await arena.threadChanged(thread.id);
+        if (thread.originPluginId !== bb.pluginId) return;
+        await arena.threadChanged(thread.id);
+        await digests.threadChanged(thread.id);
       });
     }
     bb.background.service("arena-recovery", {
       async start(signal) {
         await arena.recover(signal);
         if (signal.aborted) return;
+        await digests.recover();
         await new Promise<void>((resolve) =>
           signal.addEventListener("abort", () => resolve(), { once: true }),
         );

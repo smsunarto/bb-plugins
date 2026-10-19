@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { installDom } from "@bb-kit/core/testing";
-import { runSchema, type ArenaRun } from "../shared/arena.ts";
+import { runSchema, type ArenaRun, type Digest } from "../shared/arena.ts";
 
 installDom();
 const { loadPluginApp, renderSlot } = await import("@get-bb/plugin-sdk/testing/app");
@@ -63,10 +63,11 @@ async function mount() {
   if (!directive) throw new Error("Arena directive is not registered");
   const state: {
     run: ArenaRun;
+    digests: Digest[];
     stops: number;
     reads: number;
     stopResponse?: Promise<{ run: ArenaRun }>;
-  } = { run: fixture(), stops: 0, reads: 0 };
+  } = { run: fixture(), digests: [], stops: 0, reads: 0 };
   const slot = renderSlot(
     directive,
     {
@@ -80,7 +81,7 @@ async function mount() {
       rpc: {
         get: () => {
           state.reads += 1;
-          return { run: state.run };
+          return { run: state.run, digests: state.digests };
         },
         stop: () => {
           state.stops += 1;
@@ -252,6 +253,45 @@ test("threads Arena did not launch get no Back link", async () => {
   const slot = await mountHeader({ originPluginId: "review", owner: "parent" });
   try {
     expect(slot.queryByRole("button", { name: "Back to main thread" })).toBeNull();
+  } finally {
+    slot.lifecycle.unmount();
+  }
+});
+
+test("a candidate's result shows the readable rewrite, with the original one click away", async () => {
+  const { state, slot } = await mount();
+  try {
+    state.digests = [
+      {
+        jobKey: "candidate",
+        threadId: "digest",
+        status: "running",
+        result: null,
+        startedAt: Date.now(),
+      },
+    ];
+    await slot.behavior.emitRealtime("arena.changed", { runId: id });
+    await slot.findByText("Rewriting for readability…");
+    expect(slot.getByText("Keep cancellation under one owner")).toBeTruthy();
+    state.digests = [
+      {
+        jobKey: "candidate",
+        threadId: "digest",
+        status: "done",
+        result: {
+          kind: "candidate",
+          summary: "One part of the code decides when work stops.",
+          tradeoff: "The API stays small, but you can extend it in fewer ways.",
+        },
+        startedAt: Date.now(),
+      },
+    ];
+    await slot.behavior.emitRealtime("arena.changed", { runId: id });
+    await slot.findByText("One part of the code decides when work stops.");
+    expect(slot.queryByText("Keep cancellation under one owner")).toBeNull();
+    fireEvent.click(slot.getByRole("button", { name: "Show original" }));
+    expect(slot.getByText("Keep cancellation under one owner")).toBeTruthy();
+    expect(slot.getByRole("button", { name: "Show rewrite" })).toBeTruthy();
   } finally {
     slot.lifecycle.unmount();
   }

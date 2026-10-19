@@ -237,8 +237,16 @@
     min-width: 0;
   }
   & .arena-candidate footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
     margin-top: auto;
     padding-top: 2px;
+    font-size: 12px;
+  }
+  & .arena-note {
+    font-size: 12px;
   }
   & .arena-provider {
     display: inline-flex;

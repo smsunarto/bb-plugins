@@ -46,6 +46,7 @@ const synthesis: Report = {
 };
 
 async function fixture() {
+  const results: string[] = [];
   type Environment = Awaited<ReturnType<BbPluginApi["sdk"]["environments"]["get"]>>;
   type Spawn = Parameters<BbPluginApi["sdk"]["threads"]["spawn"]>[0];
   const environment: Environment = {
@@ -202,10 +203,14 @@ async function fixture() {
       },
     },
   });
-  let service = new ArenaService(f.bb, async () => ({
-    claudeModel: "claude",
-    codexModel: "codex",
-  }));
+  const onResult = async (_run: unknown, job: Job) => {
+    results.push(`${job.role}${job.candidate === null ? "" : ` ${job.candidate + 1}`}`);
+  };
+  let service = new ArenaService(
+    f.bb,
+    async () => ({ claudeModel: "claude", codexModel: "codex" }),
+    onResult,
+  );
   cleanups.push(async () => {
     await service.dispose();
     await f.harness.lifecycle.dispose();
@@ -260,15 +265,17 @@ async function fixture() {
       }
       return service.get(id);
     },
+    results,
     get service() {
       return service;
     },
     async restart() {
       await service.dispose();
-      service = new ArenaService(f.bb, async () => ({
-        claudeModel: "claude",
-        codexModel: "codex",
-      }));
+      service = new ArenaService(
+        f.bb,
+        async () => ({ claudeModel: "claude", codexModel: "codex" }),
+        onResult,
+      );
       await service.recover(new AbortController().signal);
     },
   };
@@ -291,6 +298,7 @@ test("runs both candidates before judging and integrates after synthesis", async
   assert.equal(result.phase, "completed");
   assert.equal(result.integration?.status, "integrated");
   assert.equal(f.parent.status, "active");
+  assert.deepEqual(f.results, ["candidate 1", "candidate 2", "synthesis"]);
 });
 
 test("repeated launches reuse their stable request identity", async () => {

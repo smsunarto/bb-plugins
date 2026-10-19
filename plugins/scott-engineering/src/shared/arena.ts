@@ -174,3 +174,26 @@ export const runSchema = z.object({
 });
 export type ArenaRun = z.infer<typeof runSchema>;
 export const runOutputSchema = z.object({ run: runSchema });
+/** A plain-language rewrite of a candidate's or the synthesis's result, shown on the card. */
+export const readableSchema = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("candidate"), summary: text, tradeoff: text }).strict(),
+  z
+    .object({
+      kind: z.literal("synthesis"),
+      summary: text,
+      rationale: text,
+      grafts: z.array(text).max(8),
+      rejected: z.array(text).max(8),
+    })
+    .strict(),
+]);
+export type Readable = z.infer<typeof readableSchema>;
+export const digestSchema = z.object({
+  jobKey: z.string(),
+  threadId: z.string().nullable(),
+  status: z.enum(["running", "done", "failed"]),
+  result: readableSchema.nullable(),
+  startedAt: z.number(),
+});
+export type Digest = z.infer<typeof digestSchema>;
+export const cardOutputSchema = runOutputSchema.extend({ digests: z.array(digestSchema) });

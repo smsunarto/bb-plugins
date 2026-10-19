@@ -53,10 +53,17 @@ export class ArenaService {
   private lifecycle: AbortSignal = new AbortController().signal;
   private readonly bb: ArenaApi;
   private readonly models: () => Promise<Models>;
+  /** Called once a candidate or synthesis report is accepted; never blocks the run. */
+  private readonly onResult: (run: ArenaRun, job: Job) => Promise<void>;
 
-  constructor(bb: ArenaApi, models: () => Promise<Models>) {
+  constructor(
+    bb: ArenaApi,
+    models: () => Promise<Models>,
+    onResult: (run: ArenaRun, job: Job) => Promise<void> = async () => {},
+  ) {
     this.bb = bb;
     this.models = models;
+    this.onResult = onResult;
     this.db = bb.storage.database();
     bb.storage.migrate(this.db, [
       "CREATE TABLE arena_runs (id TEXT PRIMARY KEY, parent TEXT NOT NULL, request_id TEXT NOT NULL, phase TEXT NOT NULL, payload TEXT NOT NULL, UNIQUE(parent, request_id))",
@@ -375,6 +382,10 @@ export class ArenaService {
       }
       job.report = report;
       this.save(run);
+      if (report.kind === "candidate" || report.kind === "synthesis")
+        void this.onResult(run, job).catch((error) =>
+          this.bb.log.warn(`Arena ${id}: result rewrite failed: ${String(error)}`),
+        );
       return { accepted: true };
     });
   }

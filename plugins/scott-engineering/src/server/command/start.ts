@@ -1,9 +1,10 @@
 import { defineCommand, type CommandContext } from "@bb-kit/core/command";
 import type { Context } from "@bb-kit/core/rpc";
 import { startSchema } from "../../shared/arena.ts";
+import type { ArenaDigests } from "../lib/digests.ts";
 import type { ArenaService } from "../lib/service.ts";
 
-export type ArenaContext = Context<{ arena: ArenaService }>;
+export type ArenaContext = Context<{ arena: ArenaService; digests: ArenaDigests }>;
 export const start = defineCommand({
   summary: "Launch a background Arena run",
   options: {
