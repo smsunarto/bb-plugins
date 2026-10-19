@@ -146,7 +146,8 @@ test("realtime completion replaces progress with synthesis and verification", as
     await slot.behavior.emitRealtime("arena.changed", { runId: id });
     await slot.findByText("One owner, clearer errors");
     expect(slot.getByText("Integrated")).toBeTruthy();
-    expect(slot.getByText("From Candidate 2: Better failure messages")).toBeTruthy();
+    expect(slot.getByText("Better failure messages")).toBeTruthy();
+    expect(slot.getByText("Base")).toBeTruthy();
     expect(slot.getByText("Passed")).toBeTruthy();
     expect(slot.queryByRole("button", { name: "Stop Arena" })).toBeNull();
     const reads = state.reads;
@@ -189,6 +190,68 @@ test("a delayed Stop response cannot replace a newer stopped state", async () =>
     });
     expect(slot.getByText("Stopped")).toBeTruthy();
     expect(slot.queryByText("Stopping")).toBeNull();
+  } finally {
+    slot.lifecycle.unmount();
+  }
+});
+
+test("the progress steps follow the current round's stages", async () => {
+  const { slot } = await mount();
+  try {
+    const steps = slot.getByRole("list", { name: "Arena progress" });
+    const states = [...steps.querySelectorAll("li")].map(
+      (step) => `${step.textContent}:${step.getAttribute("data-state")}`,
+    );
+    expect(states).toEqual([
+      "Frame:pending",
+      "Compete:done",
+      "Judge:pending",
+      "Synthesize:pending",
+      "Verify:pending",
+    ]);
+  } finally {
+    slot.lifecycle.unmount();
+  }
+});
+
+async function mountHeader(thread: { originPluginId: string | null; owner: string | null }) {
+  const app = await loadPluginApp(() => import("./app.tsx"));
+  const action = app.threadHeaderActions[0];
+  if (!action) throw new Error("Arena header action is not registered");
+  const slot = renderSlot(
+    action,
+    { threadId: "worker", projectId: "project", isCompactViewport: false },
+    {
+      pluginId: "scott-engineering",
+      sdk: {
+        threads: {
+          get: async () => ({
+            id: "worker",
+            originPluginId: thread.originPluginId,
+            lifecycleOwnerThreadId: thread.owner,
+          }),
+        },
+      } as never,
+    },
+  );
+  await act(async () => {});
+  return slot;
+}
+
+test("a hidden Arena worker links back to the thread that launched it", async () => {
+  const slot = await mountHeader({ originPluginId: "scott-engineering", owner: "parent" });
+  try {
+    fireEvent.click(slot.getByRole("button", { name: "Back to main thread" }));
+    expect(slot.inspection.navigateCalls).toEqual([{ method: "toThread", threadId: "parent" }]);
+  } finally {
+    slot.lifecycle.unmount();
+  }
+});
+
+test("threads Arena did not launch get no Back link", async () => {
+  const slot = await mountHeader({ originPluginId: "review", owner: "parent" });
+  try {
+    expect(slot.queryByRole("button", { name: "Back to main thread" })).toBeNull();
   } finally {
     slot.lifecycle.unmount();
   }

@@ -34,6 +34,12 @@ const stages: Partial<Record<ArenaRun["phase"], Stage>> = {
   judging: { role: "judge", next: "synthesizing" },
   synthesizing: { role: "synthesis", next: "integrating" },
 };
+/** Names a hidden worker in its thread header, e.g. "Arena candidate 2 (Codex)". */
+function workerTitle(run: ArenaRun, job: Job) {
+  const role = job.candidate === null ? job.role : `${job.role} ${job.candidate + 1}`;
+  const family = job.model.providerId === "codex" ? "Codex" : "Claude";
+  return `Arena ${role} (${family})${run.round > 1 ? ` · round ${run.round}/${MAX_ROUNDS}` : ""}`;
+}
 export type Models = { claudeModel: string; codexModel: string };
 type ArenaApi = Pick<Context["bb"], "pluginId" | "storage" | "log" | "sdk" | "hosts" | "realtime">;
 
@@ -457,7 +463,7 @@ export class ArenaService {
               },
             }
           : { type: "reuse", environmentId: run.environmentId },
-        title: `Arena ${run.round}/${MAX_ROUNDS}: ${job.role}${job.candidate === null ? "" : ` ${job.candidate + 1}`}`,
+        title: workerTitle(run, job),
         ...job.model,
         pluginMetadata: { arena: { runId: run.id, jobKey: job.key } },
         prompt:

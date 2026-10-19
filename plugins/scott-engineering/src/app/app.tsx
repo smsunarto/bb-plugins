@@ -1,15 +1,19 @@
 import {
   definePluginApp,
   experimental_Icon as Icon,
+  experimental_ProviderIcon as ProviderIcon,
+  experimental_useProviders,
   useBbNavigate,
   useRealtime,
   useRealtimeConnectionState,
   useRpc,
+  useSdk,
   type PluginMessageDirectiveProps,
+  type PluginThreadHeaderActionProps,
 } from "@get-bb/plugin-sdk/app";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { z } from "zod";
-import { terminal, type ArenaRun, type Job } from "../shared/arena.ts";
+import { MAX_ROUNDS, terminal, type ArenaRun, type Job } from "../shared/arena.ts";
 import type { rpcContract } from "../shared/rpc.ts";
 import "./arena.css";
 
@@ -27,15 +31,341 @@ const phaseNames: Record<ArenaRun["phase"], string> = {
   failed: "Needs attention",
   stopped: "Stopped",
 };
+const STAGES = [
+  { role: "frame", label: "Frame" },
+  { role: "candidate", label: "Compete" },
+  { role: "judge", label: "Judge" },
+  { role: "synthesis", label: "Synthesize" },
+  { role: "verify", label: "Verify" },
+] as const;
+type Step = "pending" | "active" | "done" | "failed" | "halted";
+const STEP_ICONS: Record<Exclude<Step, "pending">, string> = {
+  active: "Spinner",
+  done: "Check",
+  failed: "X",
+  halted: "Square",
+};
+
+/** Each stage's state in the current round, read from its jobs. */
+function stepState(run: ArenaRun, role: (typeof STAGES)[number]["role"]): Step {
+  if (role === "verify") {
+    if (run.integration) return run.integration.status === "integrated" ? "done" : "failed";
+    return run.phase === "integrating" ? "active" : "pending";
+  }
+  const jobs = run.jobs.filter((job) => job.round === run.round && job.role === role);
+  if (jobs.length === 0) return "pending";
+  if (jobs.some((job) => job.outcome === "running"))
+    return terminal.has(run.phase) ? "halted" : "active";
+  return jobs.some((job) => job.outcome === "completed") ? "done" : "failed";
+}
+
+function formatDuration(ms: number) {
+  const seconds = Math.max(0, Math.floor(ms / 1000));
+  if (seconds < 60) return `${seconds}s`;
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}m ${String(seconds % 60).padStart(2, "0")}s`;
+  return `${Math.floor(minutes / 60)}h ${String(minutes % 60).padStart(2, "0")}m`;
+}
+
+/** Ticks while the run is live so a quiet stage still reads as alive. */
+function Duration({ run }: { run: ArenaRun }) {
+  const live = !terminal.has(run.phase);
+  const [now, setNow] = useState(Date.now);
+  useEffect(() => {
+    if (!live) return;
+    const timer = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, [live]);
+  return (
+    <span className="arena-duration">
+      {formatDuration((live ? now : run.updatedAt) - run.startedAt)}
+    </span>
+  );
+}
+
+function roleName(job: Job) {
+  if (job.role === "candidate") return `Candidate ${(job.candidate ?? 0) + 1}`;
+  return job.role === "frame" ? "Framing" : job.role === "judge" ? "Judge" : "Synthesis";
+}
+
+function Provider({ job }: { job: Job }) {
+  const { providers } = experimental_useProviders();
+  const id = job.model.providerId;
+  const provider = providers.find((candidate) => candidate.id === id);
+  return (
+    <span className="arena-provider" title={job.model.model}>
+      <ProviderIcon
+        providerKind="agent"
+        provider={provider ?? { id }}
+        className="arena-provider-icon"
+        aria-hidden
+      />
+      {provider?.displayName ?? (id === "codex" ? "Codex" : "Claude")}
+    </span>
+  );
+}
 
 function WorkerLink({ job }: { job: Job }) {
   const navigate = useBbNavigate();
   const threadId = job.threadId;
-  if (!threadId) return <span className="arena-muted">Waiting to launch</span>;
+  if (!threadId) return <span className="arena-muted">Launching…</span>;
   return (
-    <button type="button" className="arena-worker-link" onClick={() => navigate.toThread(threadId)}>
-      Open {job.role === "candidate" ? `Candidate ${(job.candidate ?? 0) + 1}` : job.role} thread
+    <button
+      type="button"
+      className="arena-link"
+      aria-label={`Open ${roleName(job)} thread`}
+      onClick={() => navigate.toThread(threadId)}
+    >
+      Open thread
+      <Icon name="ChevronRight" aria-hidden />
     </button>
+  );
+}
+
+function Steps({ run }: { run: ArenaRun }) {
+  return (
+    <ol className="arena-steps" aria-label="Arena progress">
+      {STAGES.map((stage) => {
+        const state = stepState(run, stage.role);
+        return (
+          <li
+            key={stage.role}
+            data-state={state}
+            aria-current={state === "active" ? "step" : undefined}
+          >
+            {state === "pending" ? (
+              <span className="arena-step-dot" aria-hidden />
+            ) : (
+              <Icon name={STEP_ICONS[state]} aria-hidden />
+            )}
+            <span className="arena-step-label">{stage.label}</span>
+          </li>
+        );
+      })}
+    </ol>
+  );
+}
+
+function Task({ text }: { text: string }) {
+  const [open, setOpen] = useState(false);
+  const long = text.length > 240 || text.split("\n").length > 3;
+  return (
+    <div className="arena-task">
+      <p data-open={open || !long}>{text}</p>
+      {long && (
+        <button type="button" className="arena-link" onClick={() => setOpen(!open)}>
+          {open ? "Show less" : "Show full task"}
+        </button>
+      )}
+    </div>
+  );
+}
+
+/** The judge's mean rubric score (0–5) and the verdict badges for one candidate. */
+function standing(run: ArenaRun, candidate: number) {
+  const jobs = run.jobs.filter((item) => item.round === run.round);
+  const judge = jobs.find((item) => item.role === "judge")?.report;
+  const synthesis = jobs.find((item) => item.role === "synthesis")?.report;
+  const badges: string[] = [];
+  let mean: number | null = null;
+  if (judge?.kind === "judge") {
+    const criteria = judge.scores.find((item) => item.candidate === candidate)?.criteria ?? [];
+    if (criteria.length)
+      mean = criteria.reduce((sum, item) => sum + item.score, 0) / criteria.length;
+    if (judge.preferredCandidate === candidate) badges.push("Judge’s pick");
+  }
+  if (synthesis?.kind === "synthesis") {
+    if (synthesis.baseCandidate === candidate) badges.push("Base");
+    else if (synthesis.grafts.some((graft) => graft.candidate === candidate))
+      badges.push("Grafted");
+  }
+  return { mean, badges };
+}
+
+function CandidateBody({ job, active }: { job: Job; active: boolean }) {
+  if (job.report)
+    return (
+      <>
+        <p>{job.report.summary}</p>
+        {job.report.kind === "candidate" && <p className="arena-muted">{job.report.tradeoff}</p>}
+      </>
+    );
+  if (job.error) return <p className="arena-error">{job.error}</p>;
+  return active ? (
+    <p className="arena-muted arena-shimmer">Working independently on the same task…</p>
+  ) : (
+    <p className="arena-muted">Stopped before reporting.</p>
+  );
+}
+
+function Candidate({ job, run }: { job: Job; run: ArenaRun }) {
+  const { mean, badges } = standing(run, job.candidate ?? 0);
+  const state =
+    job.outcome === "running" ? (terminal.has(run.phase) ? "halted" : "active") : job.outcome;
+  return (
+    <section className="arena-candidate" data-state={state} aria-label={roleName(job)}>
+      <header>
+        <strong>{roleName(job)}</strong>
+        <Provider job={job} />
+        {mean !== null && (
+          <span className="arena-score" title="Mean rubric score from the judge">
+            {mean.toFixed(1)}
+            <span className="arena-muted">/5</span>
+          </span>
+        )}
+      </header>
+      {badges.length > 0 && (
+        <div className="arena-badges">
+          {badges.map((badge) => (
+            <span key={badge} className="arena-badge" data-kind={badge}>
+              {badge}
+            </span>
+          ))}
+        </div>
+      )}
+      <CandidateBody job={job} active={state === "active"} />
+      <footer>
+        <WorkerLink job={job} />
+      </footer>
+    </section>
+  );
+}
+
+function Synthesis({ job }: { job: Job }) {
+  const report = job.report?.kind === "synthesis" ? job.report : null;
+  if (!report) return null;
+  return (
+    <section className="arena-section" aria-label="Synthesis">
+      <header>
+        <Icon name="GitMerge" aria-hidden />
+        <h3>Synthesis</h3>
+        <Provider job={job} />
+        <WorkerLink job={job} />
+      </header>
+      <p>{report.summary}</p>
+      <p className="arena-muted">
+        Built on Candidate {report.baseCandidate + 1}. {report.rationale}
+      </p>
+      {report.grafts.length > 0 && (
+        <ul className="arena-grafts">
+          {report.grafts.map((graft) => (
+            <li key={`${graft.candidate}:${graft.change}`}>
+              <span className="arena-badge">From Candidate {graft.candidate + 1}</span>
+              <span>{graft.change}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  );
+}
+
+function Verification({ integration }: { integration: NonNullable<ArenaRun["integration"]> }) {
+  const passed = integration.status === "integrated";
+  return (
+    <section className="arena-section" data-passed={passed} aria-label="Verification">
+      <header>
+        <Icon name={passed ? "CircleCheck" : "CircleX"} aria-hidden />
+        <h3>Verification</h3>
+      </header>
+      <p className={passed ? undefined : "arena-error"}>{integration.summary}</p>
+      {integration.checks.length > 0 && (
+        <ul className="arena-checks">
+          {integration.checks.map((check) => (
+            <li key={check.command}>
+              <details>
+                <summary data-passed={check.exitCode === 0}>
+                  <Icon name={check.exitCode === 0 ? "Check" : "X"} aria-hidden />
+                  <span className="arena-check-status">
+                    {check.exitCode === 0 ? "Passed" : "Failed"}
+                  </span>
+                  <code>{check.command}</code>
+                </summary>
+                <pre>{check.output || "Command completed without output."}</pre>
+              </details>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  );
+}
+
+function Details({ run }: { run: ArenaRun }) {
+  const jobs = run.jobs.filter((job) => job.round === run.round);
+  const frame = jobs.find((job) => job.role === "frame")?.report;
+  const judge = jobs.find((job) => job.role === "judge");
+  const synthesis = jobs.find((job) => job.role === "synthesis")?.report;
+  const scores = judge?.report?.kind === "judge" ? judge.report.scores : [];
+  return (
+    <details className="arena-details">
+      <summary>
+        <Icon name="ChevronRight" aria-hidden />
+        Rubric, judgment, and history
+      </summary>
+      <div className="arena-details-body">
+        {frame?.kind === "frame" && (
+          <table className="arena-rubric">
+            <thead>
+              <tr>
+                <th scope="col">Criterion</th>
+                {scores.map((item) => (
+                  <th scope="col" key={item.candidate}>
+                    C{item.candidate + 1}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {frame.rubric.map((criterion, index) => (
+                <tr key={criterion}>
+                  <td>{criterion}</td>
+                  {scores.map((item) => (
+                    <td key={item.candidate} title={item.criteria[index]?.rationale}>
+                      {item.criteria[index]?.score ?? "–"}
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+        {judge && (
+          <div className="arena-judge">
+            <header>
+              <h3>Judge</h3>
+              <Provider job={judge} />
+              <WorkerLink job={judge} />
+            </header>
+            <p>{judge.report?.summary ?? judge.error ?? "Judgment pending."}</p>
+          </div>
+        )}
+        {synthesis?.kind === "synthesis" && synthesis.rejected.length > 0 && (
+          <div>
+            <h3>Not incorporated</h3>
+            <ul>
+              {synthesis.rejected.map((item) => (
+                <li key={item}>{item}</li>
+              ))}
+            </ul>
+          </div>
+        )}
+        <div className="arena-history">
+          {Array.from({ length: run.round }, (_, index) => index + 1).map((round) => (
+            <p key={round}>
+              <strong>Round {round}</strong>
+              {run.jobs
+                .filter((job) => job.round === round)
+                .map((job) => (
+                  <span key={job.key} data-outcome={job.outcome} title={job.error ?? undefined}>
+                    {roleName(job)}
+                  </span>
+                ))}
+            </p>
+          ))}
+        </div>
+      </div>
+    </details>
   );
 }
 
@@ -51,24 +381,28 @@ export function ArenaSummary({
   const jobs = run.jobs.filter((job) => job.round === run.round);
   const candidates = jobs.filter((job) => job.role === "candidate");
   const synthesis = jobs.find((job) => job.role === "synthesis");
-  const report = synthesis?.report?.kind === "synthesis" ? synthesis.report : null;
-  const judge = jobs.find((job) => job.role === "judge");
-  const frame = jobs.find((job) => job.role === "frame")?.report;
-  const completed = run.phase === "completed";
+  const live = !terminal.has(run.phase);
+  // A rerun keeps its reason in both fields until the next stage clears the error.
+  const error = run.error && run.error !== run.feedback?.summary ? run.error : null;
   return (
-    <article className="arena-summary" aria-label="Arena run summary">
+    <article className="arena-summary" data-phase={run.phase} aria-label="Arena run summary">
       <header className="arena-header">
-        <div className="arena-heading">
-          <Icon name="GitCompareArrows" aria-hidden />
+        <div className="arena-title">
+          <Icon name="Fork" aria-hidden />
           <strong>Arena</strong>
-          <span className="arena-muted">Round {run.round} of 3</span>
+          <span className="arena-round">
+            Round {run.round} of {MAX_ROUNDS}
+          </span>
         </div>
         <div className="arena-actions">
-          <span className={completed ? "arena-success" : "arena-state"}>
+          <span className="arena-phase">
+            {live && <span className="arena-pulse" aria-hidden />}
             {phaseNames[run.phase]}
           </span>
-          {!terminal.has(run.phase) && (
-            <button type="button" onClick={onStop} disabled={stopping}>
+          <Duration run={run} />
+          {live && (
+            <button type="button" className="arena-stop" onClick={onStop} disabled={stopping}>
+              <Icon name="Square" aria-hidden />
               {stopping
                 ? "Stopping…"
                 : run.phase === "stopping"
@@ -78,107 +412,28 @@ export function ArenaSummary({
           )}
         </div>
       </header>
-      <p className="arena-task">{run.task}</p>
+      <Steps run={run} />
+      <Task text={run.task} />
+      {run.feedback && run.round > 1 && (
+        <p className="arena-callout">
+          <strong>Round {run.round - 1} did not pass.</strong> {run.feedback.summary}
+        </p>
+      )}
       {candidates.length > 0 && (
-        <section aria-label="Candidates" className="arena-candidates">
+        <div className="arena-candidates">
           {candidates.map((job) => (
-            <div key={job.key} className="arena-candidate">
-              <div className="arena-candidate-label">
-                <strong>Candidate {(job.candidate ?? 0) + 1}</strong>
-                <span className="arena-muted">
-                  {job.model.providerId === "codex" ? "Codex" : "Claude"}
-                </span>
-              </div>
-              <div>
-                <p>
-                  {job.report?.summary ?? job.error ?? "Working independently on the same task…"}
-                </p>
-                {job.report?.kind === "candidate" && (
-                  <p className="arena-muted">{job.report.tradeoff}</p>
-                )}
-                <WorkerLink job={job} />
-              </div>
-            </div>
+            <Candidate key={job.key} job={job} run={run} />
           ))}
-        </section>
+        </div>
       )}
-      {report && (
-        <section className="arena-synthesis" aria-label="Synthesis">
-          <h3>Synthesis</h3>
-          <p>{report.summary}</p>
-          <p className="arena-muted">
-            Base: Candidate {report.baseCandidate + 1}. {report.rationale}
-          </p>
-          {report.grafts.length > 0 && (
-            <ul>
-              {report.grafts.map((graft) => (
-                <li key={`${graft.candidate}:${graft.change}`}>
-                  From Candidate {graft.candidate + 1}: {graft.change}
-                </li>
-              ))}
-            </ul>
-          )}
-          {synthesis && <WorkerLink job={synthesis} />}
-        </section>
+      {synthesis && <Synthesis job={synthesis} />}
+      {run.integration && <Verification integration={run.integration} />}
+      {error && (
+        <output className="arena-alert" role="alert">
+          {error}
+        </output>
       )}
-      {run.integration && (
-        <section aria-label="Verification" className="arena-verification">
-          <h3>Verification</h3>
-          <p>{run.integration.summary}</p>
-          {run.integration.checks.map((check) => (
-            <details key={check.command}>
-              <summary>
-                <span className={check.exitCode === 0 ? "arena-success" : "arena-error"}>
-                  {check.exitCode === 0 ? "Passed" : "Failed"}
-                </span>{" "}
-                <code>{check.command}</code>
-              </summary>
-              <pre>{check.output || "Command completed without output."}</pre>
-            </details>
-          ))}
-        </section>
-      )}
-      {run.error && <output className="arena-error">{run.error}</output>}
-      <details className="arena-details">
-        <summary>Judgment and round history</summary>
-        {frame?.kind === "frame" && (
-          <ol>
-            {frame.rubric.map((criterion) => (
-              <li key={criterion}>{criterion}</li>
-            ))}
-          </ol>
-        )}
-        {judge && (
-          <div>
-            <p>{judge.report?.summary ?? judge.error ?? "Judgment pending."}</p>
-            <WorkerLink job={judge} />
-          </div>
-        )}
-        {report && report.rejected.length > 0 && (
-          <div>
-            <h3>Not incorporated</h3>
-            <ul>
-              {report.rejected.map((item) => (
-                <li key={item}>{item}</li>
-              ))}
-            </ul>
-          </div>
-        )}
-        {Array.from({ length: run.round }, (_, index) => index + 1).map((round) => (
-          <div key={round} className="arena-round">
-            <strong>Round {round}</strong>
-            {run.jobs
-              .filter((job) => job.round === round)
-              .map((job) => (
-                <p key={job.key}>
-                  {job.role}
-                  {job.candidate === null ? "" : ` ${job.candidate + 1}`} · {job.outcome}
-                  {job.error ? ` · ${job.error}` : ""}
-                </p>
-              ))}
-          </div>
-        ))}
-      </details>
+      <Details run={run} />
     </article>
   );
 }
@@ -232,9 +487,9 @@ function RunCard({ runId, threadId }: { runId: string; threadId: string }) {
   return (
     <div>
       {error && (
-        <div role="alert" className="arena-load-error">
+        <div role="alert" className="arena-alert arena-load-error">
           {error}{" "}
-          <button type="button" onClick={() => void refresh()}>
+          <button type="button" className="arena-link" onClick={() => void refresh()}>
             Retry
           </button>
         </div>
@@ -242,7 +497,7 @@ function RunCard({ runId, threadId }: { runId: string; threadId: string }) {
       {run ? (
         <ArenaSummary run={run} onStop={() => void stop()} stopping={stopping} />
       ) : (
-        !error && <output>Loading Arena…</output>
+        !error && <output className="arena-loading">Loading Arena…</output>
       )}
     </div>
   );
@@ -261,6 +516,44 @@ function ArenaDirective({ attributes, message, source }: PluginMessageDirectiveP
   );
 }
 
+/** Hidden workers have no sidebar row, so their header links back to the launching chat. */
+function BackToMainThread({ threadId, isCompactViewport }: PluginThreadHeaderActionProps) {
+  const sdk = useSdk();
+  const navigate = useBbNavigate();
+  const [owner, setOwner] = useState<{ threadId: string; owner: string | null } | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      const thread = await sdk.threads.get({ threadId }).catch(() => null);
+      if (cancelled || !thread) return;
+      const worker = thread.originPluginId === "scott-engineering";
+      setOwner({ threadId, owner: worker ? thread.lifecycleOwnerThreadId : null });
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [sdk, threadId]);
+  const target = owner?.threadId === threadId ? owner.owner : null;
+  if (!target) return null;
+  return (
+    <button
+      type="button"
+      className="arena-back"
+      onClick={() => navigate.toThread(target)}
+      aria-label="Back to main thread"
+      title="Back to the thread that launched this Arena"
+    >
+      <Icon name="ChevronLeft" aria-hidden />
+      {!isCompactViewport && <span>Back to main thread</span>}
+    </button>
+  );
+}
+
 export default definePluginApp((app) => {
   app.slots.messageDirective({ id: "arena", component: ArenaDirective });
+  app.slots.experimental_threadHeaderAction({
+    id: "arena-back-to-main-thread",
+    title: "Arena navigation",
+    component: BackToMainThread,
+  });
 });

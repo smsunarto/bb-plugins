@@ -2,7 +2,7 @@
 
 Scott's engineering workflows, derived from his pstack fork, with native Arena execution in BB. The plugin bundles the fork's 38 skills; Arena is the first workflow whose lifecycle is owned by the plugin.
 
-Ask for Arena in a BB thread. The agent calls `scott_engineering_arena_start` and emits an embedded summary showing candidates, the judge, synthesis, verification, and round history. Clicking a worker opens its BB thread. Stop Arena cancels the run independently of the main chat.
+Ask for Arena in a BB thread. The agent calls `scott_engineering_arena_start` and emits an embedded summary showing candidates, the judge, synthesis, verification, and round history. Workers run in hidden threads, like Review's reviewers; clicking one opens it, and its header links back to the main thread. Stop Arena cancels the run independently of the main chat.
 
 A run frames the task, launches one Claude and one Codex candidate on identical prompts, cross-judges their completed outputs, synthesizes the best parts, and verifies the combined result before automatically integrating it. There are at most three total rounds. Host-disconnection recovery permits three consecutive retries with increasing delays; checks run in the synthesis worker using its inherited execution permissions. Runs and round counts survive restarts; the plugin reconciles existing workers rather than launching duplicates.
 
