@@ -46,7 +46,7 @@ if (process.env.GTD_LIFECYCLE_TEST_CHILD !== "1") {
   const { createElement, Fragment } = await import("react");
   const { Toaster } = await import("sonner");
   const { useLifecycle } = await import("../hooks/use-lifecycle.ts");
-  const { useReviewActivity } = await import("../hooks/use-review-activity.ts");
+  const { useHiddenWorkerActivity } = await import("../hooks/use-hidden-worker-activity.ts");
   const { buildInboxTree } = await import("../lib/inbox-tree.ts");
   const { makeThreadResponse } = await import("@get-bb/plugin-sdk/testing");
   const { snoozeUntilTomorrow } = await import("../lib/lifecycle.ts");
@@ -203,7 +203,7 @@ if (process.env.GTD_LIFECYCLE_TEST_CHILD !== "1") {
     });
 
     function ReviewProbe({ subjects }: { subjects: PluginSidebarThread[] }) {
-      const threads = useReviewActivity(subjects);
+      const threads = useHiddenWorkerActivity(subjects);
       const lifecycle = useLifecycle();
       const tree = buildInboxTree(threads, (thread) => lifecycle.shelfFor(thread));
       return createElement(
@@ -279,6 +279,23 @@ if (process.env.GTD_LIFECYCLE_TEST_CHILD !== "1") {
         ],
       );
       assert.equal(slot.container.textContent, "pinned:pinned:false,parent:nextAction:false");
+    });
+
+    it("keeps the launching thread waiting while hidden Arena workers run", async () => {
+      const arena = (status: "active" | "idle") => ({
+        ...review("arena-worker", status),
+        parentThreadId: null,
+        lifecycleOwnerThreadId: "parent",
+        originPluginId: "scott-engineering",
+      });
+      let workers = [arena("active")];
+      const { slot, change } = await mountReviews(async (args) =>
+        args?.originPluginId === "scott-engineering" ? workers : [],
+      );
+      assert.equal(slot.container.textContent, "other:nextAction:true,parent:waiting:false");
+      workers = [arena("idle")];
+      await change();
+      assert.equal(slot.container.textContent, "other:nextAction:true,parent:nextAction:true");
     });
 
     it("wakes a snoozed parent when a hidden review starts", async () => {

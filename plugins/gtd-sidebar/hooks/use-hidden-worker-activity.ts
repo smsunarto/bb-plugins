@@ -6,7 +6,9 @@ import {
 } from "@get-bb/plugin-sdk/app";
 
 const RUNNING = new Set(["pending", "starting", "active", "stopping"]);
-const REVIEW_CHANGES = new Set([
+/** Plugins whose workers run hidden under the thread that launched them. */
+const WORKER_PLUGINS = ["review", "scott-engineering"];
+const WORKER_CHANGES = new Set([
   "thread-created",
   "parent-changed",
   "status-changed",
@@ -14,8 +16,12 @@ const REVIEW_CHANGES = new Set([
   "thread-deleted",
 ]);
 
-/** Hidden reviewers are absent from the sidebar roster; their parents still have live work. */
-export function useReviewActivity(
+/**
+ * Hidden Review and Arena workers are absent from the sidebar roster; the
+ * thread that launched them still has live work. Reviewers are children of
+ * that thread, while Arena workers only follow its lifecycle.
+ */
+export function useHiddenWorkerActivity(
   threads: readonly PluginSidebarThread[],
 ): readonly PluginSidebarThread[] {
   const sdk = useSdk();
@@ -32,17 +38,23 @@ export function useReviewActivity(
       clearTimeout(retry);
       const request = ++revision;
       try {
-        const reviews = await sdk.threads.list({
-          originPluginId: "review",
-          includeHidden: true,
-          archived: false,
-          signal: controller.signal,
-        });
+        const lists = await Promise.all(
+          WORKER_PLUGINS.map((originPluginId) =>
+            sdk.threads.list({
+              originPluginId,
+              includeHidden: true,
+              archived: false,
+              signal: controller.signal,
+            }),
+          ),
+        );
         if (controller.signal.aborted || request !== revision) return;
         const next = new Map<string, number>();
-        for (const review of reviews) {
-          if (review.parentThreadId && RUNNING.has(review.status)) {
-            next.set(review.parentThreadId, (next.get(review.parentThreadId) ?? 0) + 1);
+        const workers = new Map(lists.flat().map((worker) => [worker.id, worker]));
+        for (const worker of workers.values()) {
+          const owner = worker.parentThreadId ?? worker.lifecycleOwnerThreadId;
+          if (owner && worker.visibility === "hidden" && RUNNING.has(worker.status)) {
+            next.set(owner, (next.get(owner) ?? 0) + 1);
           }
         }
         retryDelay = 1000;
@@ -61,7 +73,7 @@ export function useReviewActivity(
     const unsubscribe = sdk.subscribe({
       event: "thread:changed",
       callback: (event) => {
-        if (event.changes.some((change) => REVIEW_CHANGES.has(change))) void refresh();
+        if (event.changes.some((change) => WORKER_CHANGES.has(change))) void refresh();
       },
     });
     void refresh();
@@ -75,13 +87,13 @@ export function useReviewActivity(
   return useMemo(
     () =>
       threads.map((thread) => {
-        const reviews = counts.get(thread.id) ?? 0;
-        if (reviews === 0) return thread;
+        const workers = counts.get(thread.id) ?? 0;
+        if (workers === 0) return thread;
         return {
           ...thread,
           activity: {
             ...thread.activity,
-            backgroundAgents: thread.activity.backgroundAgents + reviews,
+            backgroundAgents: thread.activity.backgroundAgents + workers,
           },
         };
       }),

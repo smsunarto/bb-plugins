@@ -31,7 +31,7 @@ import {
 } from "../../hooks/use-nest-drag";
 import { usePortalScopeProps } from "../../lib/portal-scope";
 import { useLifecycle, type LifecycleApi } from "../../hooks/use-lifecycle";
-import { useReviewActivity } from "../../hooks/use-review-activity";
+import { useHiddenWorkerActivity } from "../../hooks/use-hidden-worker-activity";
 import { useSettledArchivePaging, useUnsettle } from "../../hooks/use-settled-threads";
 import { useCommittedEvent } from "../../hooks/use-committed-event";
 import { forgetSidebarActions, publishSidebarActions } from "../../lib/sidebar-actions-bridge";
@@ -116,7 +116,7 @@ function InboxList({
 }: PluginThreadListProps & { threadActions: PluginSidebarThreadActions }) {
   const sidebar = useSidebarThreads({ experimental_lifecycles: SIDEBAR_LIFECYCLES });
   const { status, projects } = sidebar;
-  const sidebarThreads = useStableThreads(useReviewActivity(sidebar.threads));
+  const sidebarThreads = useStableThreads(useHiddenWorkerActivity(sidebar.threads));
   const now = useMinuteClock();
   const lifecycle = useLifecycle();
   const namingThreads = useNamingThreads();
