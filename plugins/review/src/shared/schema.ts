@@ -13,9 +13,7 @@ export const revisionSchema = z
   );
 export const targetSchema = z.union([
   z.object({ branch: revisionSchema }).strict(),
-  z
-    .object({ base: revisionSchema, head: revisionSchema, upstream: revisionSchema.optional() })
-    .strict(),
+  z.object({ base: revisionSchema, head: revisionSchema }).strict(),
 ]);
 export const pinnedTargetSchema = z.object({
   repositoryPath: z.string().min(1),
@@ -28,7 +26,6 @@ export const requestSchema = z
     kind: kindSchema.default("implementation"),
     mode: modeSchema.default("standard"),
     workstream: z.string().trim().min(1).max(120).optional(),
-    scope: z.enum(["segment", "publication"]).default("segment"),
     summary: z.string().trim().min(1).max(2000),
     target: targetSchema.optional(),
     brief: z.string().max(32768).optional(),

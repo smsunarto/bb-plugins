@@ -1,59 +1,52 @@
 # Review
 
-Independent design and implementation reviews by a panel of Claude and Codex reviewers, with fixed source targets and a composer banner.
+Ask independent reviewers to challenge a change, then synthesize a verdict. The workflow follows [pstack's interrogate skill](https://github.com/cursor/plugins/tree/main/pstack/skills/interrogate): scope, intent, independent reviews, synthesis, and lead judgment.
 
-## Modes and triggers
+## Workflow
 
-| Mode     | Effort  | Reviewers                  | Scope                                                                        |
-| -------- | ------- | -------------------------- | ---------------------------------------------------------------------------- |
-| Quick    | Medium  | One, from the other family | Bounded adjustments and checking fixes                                       |
-| Standard | High    | Claude and Codex (panel)   | Stable implementation checkpoints and consequential design choices           |
-| Deep     | Maximum | Claude and Codex (panel)   | Material failure analysis; required before shipping or opening/updating a PR |
+1. Identify the change and state what it should achieve.
+2. Start a review with the intent and source target.
+3. Wait for BB's notifications and collect each reviewer's report.
+4. Merge duplicate findings, note disagreements, and classify each finding with a reason: **Act on**, **Consider**, **Noted**, or **Dismissed**.
 
-A panel sends the same prompt to the other family's reviewer first and the author's family second, each in its own hidden child. Each reviewer reads context and reports independently; the result returns one report per model in `reviews` for the author to synthesize. Independent agreement is the strongest signal.
+A review request produces a verdict. It does not authorize fixes or publication. The lead reviewer weighs evidence and decides which findings warrant action; severity labels do not automatically veto publication. Review again when it would resolve a material uncertainty.
 
-Reviews do not trigger just because a turn ends. During user iteration, agents prefer focused checks and a reviewable preview. Consequential architecture and plans should be reviewed before expensive dependent implementation. Review a publication candidate once and reuse its completed run at push, PR update, and merge while the candidate is unchanged. A Deep design review does not replace final Deep implementation review. Complete review coverage applies only to its exact candidate; blocking findings must still be resolved and limits reported. This plugin supplies instructions and revision-bound results, not an interceptor for external publication commands.
+## Start a review
 
-Review criteria draw on [Codex’s review rubric](https://github.com/openai/codex/blob/669449b02c4b58de4bcd22485eb60c98a6e38a54/codex-rs/prompts/templates/review/rubric.md) and [Claude Code’s code-review plugin](https://github.com/anthropics/claude-code/blob/main/plugins/code-review/commands/code-review.md). This plugin supplies a short shared prompt with BB target, read-only, and result contracts; it does not invoke either native review workflow. Implementation reviews also receive an adversarial rubric (correctness, root causes, structural integrity, verification, complexity, security) and a code-quality lens adapted from [pstack’s interrogate skill](https://github.com/cursor/plugins/tree/ac4e25a0064cd600afdd605208bad72748cb019a/pstack/skills/interrogate); structural findings default to P2 and block publication only when they cause incorrect behavior, data loss, or security exposure. Design reviews use the shared prompt alone.
+Use `/review-standard` with a branch, proposal, or focus. These user-only shortcuts select effort:
 
-## Manual commands
+| Shortcut           | Effort  | Reviewers                                |
+| ------------------ | ------- | ---------------------------------------- |
+| `/review-quick`    | Medium  | One reviewer from the other model family |
+| `/review-standard` | High    | Claude and Codex                         |
+| `/review-deep`     | Maximum | Claude and Codex                         |
 
-Users can invoke `/review-quick`, `/review-standard`, or `/review-deep` with an optional branch, plan, or focus. Claude skills disable model invocation; their Codex policy disables implicit invocation. Agents use the native tools or CLI directly.
+Each reviewer receives the same intent and rubric in a hidden child thread. The composer banner shows progress and links to the reviewers. Settings `claudeModel` and `codexModel` select their models.
 
-## Agent tools
-
-`review_start({kind?, mode?, summary, scope?, target?, brief?, evidence?, workstream?, reuse?})` starts a run. Defaults: implementation, standard, reuse:auto. Implementation requires a target: `{branch}` or `{base, head, upstream?}`. Design can use an immutable inline proposal without repository context. Keep the summary short; the optional brief and captured UTF-8 evidence `{label,path}` are disclosed lazily. Evidence files are read on the calling host, limited to eight references of 12 KiB each, and retain a content hash. State the revision or combined-workspace state that produced tests/captures.
-
-`review_context({runId, section, path?, side?, offset?})` reads bounded pages of brief, evidence, diff, tree, file, or completed report. Follow `nextOffset` for complete content. Applicable repository instructions are available as pinned files. Deep implementation review reads the complete scoped diff.
-
-BB notifies the parent when each reviewer completes or fails. Retrieve the result with `review_result({runId, waitSeconds:0})` after notification; it reports `running` until every reviewer finishes. Do not poll. The tool reads only each reviewer's successfully completed turn associated with this run. Failed, unfinished, redirected, or unstructured responses cannot clear the candidate. `current` checks whether the target still resolves to the same base/head. `deepImplementationCovered` requires publication scope, a current Deep implementation candidate, and, from every reviewer, complete diff coverage, matching execution, and no P0/P1 findings. Descendant helper threads in the same project and environment may read and inherit an unchanged completed publication assessment; a changed candidate needs a new run. It does not authorize publication or replace resolving valid findings.
-
-## GitButler targets
-
-Implementation targets require Git 2.41 or newer for pinned attribute handling; the snapshot checks this before dispatching a reviewer. The host entry uses `but status --json` to select only the named applied branch's owned commits. Its oldest commit's parent is the review base, preserving lower stack commits as dependency context. The branch ref must match its newest owned commit. Empty, unapplied, or conflicted branches require a suitable checkpoint or explicit base/head. Raw HEAD and gitbutler/workspace selectors are rejected. Source is read from immutable Git objects; no checkout, unapply, commit, or workspace mutation is performed.
-
-Checkpoint only owned or otherwise authorized files/hunks before implementation review. Other agents may continue working in the same checkout. Unrelated workspace changes do not invalidate an unchanged reviewed candidate. Unchanged source, scoped diffs, and dependency context are read at the pinned commits rather than from the mutable workspace.
-
-## Reuse
-
-Each assessment has a new run ID. Reuse is per reviewer. Auto reuse in every mode requires the same parent, environment, reviewer provider/model, and workstream, an idle unarchived reviewer, and context below 60% of its model window. The branch identifies the workstream by default; an explicit workstream label supports design-to-implementation reuse. Busy reviewers are not redirected. Reviews run concurrently: each distinct request gets its own run, and each seat continues an idle eligible reviewer or starts a new one, while repeating an identical request whose run is unsettled returns that run. Choose `reuse:new` for fresh judgment or `{threadId}` for a specific eligible reviewer; it takes the panel seat with the same provider/model, and the other seats start fresh. Previous knowledge is useful; previous approval does not cover a new candidate.
-
-## CLI
+Agents call `review_start({summary, target})`. The default is a Standard implementation review. For a proposal, use `kind: "design"` with `brief`; a repository target is optional.
 
 ```sh
-bb review start --mode standard --branch scott/feature --prompt 'Check the new routing behavior'
-bb review start --kind design --mode quick --file /absolute/plan.md
-bb review start --mode deep --scope publication --base <base> --head <head> --prompt 'Final implementation review' --json
+bb review start --branch scott/feature --prompt 'Check the new routing behavior'
+bb review start --kind design --file /absolute/plan.md
 bb review result <run-id>
-bb review context <run-id> --section diff
 ```
 
-Use exactly one of `--prompt` or `--file`. File paths name files on the calling host. `--review-thread` chooses a reviewer explicitly; `--reuse new` requests a fresh one.
+## Source and results
 
-When a reviewer turn hits a usage/rate limit, that seat makes one fallback attempt: a new assessment of the same pinned candidate, where only that assessment's output and diff reads count. A Standard or Deep seat reruns in a new child with the panel's other-family reviewer, so that panel ran on one family; its `reviews[]` entry records the `fallback`. Quick's single reviewer stays on its provider and switches Astra ↔ Sol or Opus ↔ Sonnet, which must be in that environment's model catalog and support the selected effort. After a second limit, or when no fallback is available, the seat waits on BB's own scheduled retry and `review_result` reports `queued`; without a retry the review is incomplete.
+For implementation, `target: {branch}` selects the named GitButler branch's tip and reviews from the workspace merge base to that tip. This includes its ancestor branches, but excludes other applied stacks, branches above it, and uncommitted files. The checkout can remain on `gitbutler/workspace`; its combined tree is never the review target. Use `{base, head}` for a narrower comparison. Only checkpoint authorized changes. `HEAD`, `gitbutler/workspace`, and workspace commits are rejected because they combine unrelated work.
 
-Settings `claudeModel` and `codexModel` choose the reviewing models for both panel seats and Quick's single reviewer. Effort is selected by mode. The banner shows the latest run's mode, purpose, and elapsed time, and preserves navigation back to the main thread.
+Both reviewers read immutable Git objects, so concurrent workspace edits cannot change their source. The host requires Git 2.41 or newer for pinned attributes. No checkout or workspace mutation occurs during review.
 
-For shipping or opening/updating a PR, request a **Deep implementation** run with `scope: "publication"` (`--scope publication` in the CLI). Branch publication scope pins merge-base to that branch tip, including its ancestor stack segments and excluding other applied stacks. Explicit publication base/head must start at the current GitButler workspace merge base; Outside GitButler, publication scope requires `{base,head,upstream}` (CLI `--upstream origin/main`), with base equal to the merge base of the candidate and the declared destination branch. Deep can reuse an eligible idle reviewer for a follow-up, with a new maximum-effort turn and complete reads of the new candidate. Identical completed requests may return their unchanged result; `reuse:new` forces fresh judgment. The result gate requires a current candidate and, from every reviewer, matching execution, every diff page served, complete output, and no P0/P1 findings.
+Optional `brief` and `evidence: [{label, path}]` provide context. Evidence is captured from the calling host: up to eight UTF-8 files of 12 KiB each. State which revision or workspace produced test results.
 
-Context pages are 16,000 characters; each pinned Git read is limited to 8 MiB and fails explicitly above that limit. A failed or partial Deep read cannot clear publication. The banner shows Awaiting result until the author reads the assessment; metadata polling stops when it is assessed.
+BB notifies the parent when each reviewer finishes. Call `review_result({runId})` after notification; it stays `running` until every reviewer finishes. The result returns one report per model in `reviews`, and `current` indicates whether the source target still matches. Failed or incomplete reviews remain visible as limitations. There is no publication-clearance flag or diff-read ledger.
+
+`review_context({runId, section, path?, side?, offset?})` reads the brief, evidence, diff, tree, pinned file, or full reports. Follow `nextOffset` for additional pages. Pages contain up to 16,000 characters; individual Git reads have an 8 MiB limit. The author, its descendants in the same environment, and the reviewers can read the run.
+
+## Follow-ups
+
+The plugin manages reuse. Repeating an identical request while it is unsettled returns the existing run; an unchanged completed request can return its existing result. Distinct requests can run concurrently. `reuse: "new"` requests fresh judgment. An optional `workstream` label associates a proposal and its implementation; `{threadId}` selects an eligible reviewer explicitly.
+
+A usage-limited reviewer gets one fallback attempt, recorded in its result. A panel seat can move to the other model family; a Quick reviewer switches models on its provider. If no fallback is available, BB's scheduled retry keeps the run queued. Without a retry, the result reports an incomplete review.
+
+Review criteria draw on [Codex's rubric](https://github.com/openai/codex/blob/669449b02c4b58de4bcd22485eb60c98a6e38a54/codex-rs/prompts/templates/review/rubric.md), [Claude Code's code-review plugin](https://github.com/anthropics/claude-code/blob/main/plugins/code-review/commands/code-review.md), and [pstack's code-quality lens](https://github.com/cursor/plugins/tree/main/pstack/skills/interrogate). Implementation reviewers check correctness, root causes, structure, verification, complexity, and security. Design reviewers assess the supplied proposal.

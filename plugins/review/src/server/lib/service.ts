@@ -16,13 +16,7 @@ import type {
   Seat,
 } from "../../shared/schema.ts";
 import { bindAssessment } from "./assessment.ts";
-import {
-  blocksPublication,
-  fallbackReviewer,
-  pickReviewers,
-  reviewerPrompt,
-  type ReviewerModels,
-} from "./review.ts";
+import { fallbackReviewer, pickReviewers, reviewerPrompt, type ReviewerModels } from "./review.ts";
 
 const reportSchema = z
   .object({
@@ -55,7 +49,7 @@ const hash = (value: unknown) =>
   createHash("sha256")
     .update(typeof value === "string" ? value : JSON.stringify(value))
     .digest("hex");
-const CONTRACT_VERSION = 4;
+const CONTRACT_VERSION = 5;
 const reviewerKey = (id: string) => `reviewer:${id}`;
 const reportKey = (id: string, seat: number) => `report:${id}:${seat}`;
 const scope = (run: ReviewRun) =>
@@ -63,18 +57,6 @@ const scope = (run: ReviewRun) =>
   (run.target
     ? `${run.target.repositoryPath}:${run.target.branch ?? run.target.base}`
     : run.request.summary);
-const publicationIdentity = (run: ReviewRun) =>
-  hash([
-    run.projectId,
-    run.environmentId,
-    run.hostId,
-    run.target?.repositoryPath,
-    run.target?.base,
-    run.target?.head,
-    run.request.mode,
-    run.request.kind,
-    run.request.scope,
-  ]);
 const family = (reviewer: Reviewer) => (reviewer.providerId === "claude-code" ? "Claude" : "Codex");
 const identity = ({ providerId, model }: Reviewer) => ({ providerId, model });
 /** A transport failure may still have delivered; the reservation stays for child adoption. */
@@ -129,9 +111,6 @@ const fallbackNote = ({ reviewer, fallback }: Seat) =>
         ? `${fallback.from.reviewer.model} hit a usage limit; this review reran on ${reviewer.model}.`
         : `${family(fallback.from.reviewer)} hit a usage limit; this seat reran on ${family(reviewer)}, so the panel ran on one family.`,
   };
-// Turn ids are only meaningful within their thread; contract 3 runs recorded bare turn ids.
-const readKey = (run: ReviewRun, threadId: string, turnId: string) =>
-  run.contractVersion < 4 ? turnId : `${threadId}:${turnId}`;
 const metadata = (run: ReviewRun, seat: number) => ({
   reviewRun: {
     contractVersion: run.contractVersion,
@@ -156,6 +135,9 @@ type StoredV3Run = Omit<ReviewRun, "seats"> & {
 /** Every stored payload enters here; contract 3 runs had one reviewer and become one seat. */
 export function parseRun(payload: string): ReviewRun {
   const value = JSON.parse(payload) as ReviewRun | StoredV3Run;
+  // Older explicit targets also stored a publication destination. Source identity needs only these commits.
+  const target = value.request.target;
+  if (target && "base" in target) value.request.target = { base: target.base, head: target.head };
   if ("seats" in value) return value;
   const { reviewer, reviewerThreadId, afterSeq, queuedMessageId, ...run } = value;
   const seat: Seat = { reviewer, threadId: reviewerThreadId, afterSeq };
@@ -179,6 +161,8 @@ export class ReviewService {
       `CREATE TABLE review_turn_reads (run_id TEXT NOT NULL, turn_id TEXT NOT NULL, section TEXT NOT NULL, path TEXT NOT NULL, side TEXT NOT NULL, start INTEGER NOT NULL, end INTEGER NOT NULL, total INTEGER NOT NULL, PRIMARY KEY(run_id,turn_id,section,path,side,start))`,
       `ALTER TABLE review_turn_reads ADD COLUMN digest TEXT NOT NULL DEFAULT ''`,
       `DROP INDEX IF EXISTS review_active_parent`,
+      `DROP TABLE IF EXISTS review_reads`,
+      `DROP TABLE IF EXISTS review_turn_reads`,
     ]);
   }
 
@@ -228,34 +212,6 @@ export class ReviewService {
       .all(parent)
       .map((row) => parseRun(row.payload));
   }
-  private diffCoverage(id: string, turnId: string) {
-    const reads = this.db
-      .prepare<[string, string], { start: number; end: number; total: number; digest: string }>(
-        "SELECT start,end,total,digest FROM review_turn_reads WHERE run_id = ? AND turn_id = ? AND section = 'diff' ORDER BY start",
-      )
-      .all(id, turnId);
-    let end = 0;
-    const total = reads[0]?.total ?? null;
-    const unread: { start: number; end: number }[] = [];
-    for (const read of reads) {
-      const start = Math.min(read.start, read.total);
-      if (start > end) unread.push({ start: end, end: start });
-      end = Math.max(end, read.end);
-    }
-    if (total !== null && end < total) unread.push({ start: end, end: total });
-    const consistent =
-      reads.length > 0 &&
-      reads.every(
-        (read) =>
-          read.total === total && read.digest === reads[0]!.digest && read.digest.length === 64,
-      );
-    return {
-      complete: total !== null && unread.length === 0 && consistent,
-      consistent,
-      totalLength: total,
-      unread,
-    };
-  }
   private async lineage(caller: string) {
     const ids: string[] = [];
     let current: string | null = caller;
@@ -285,40 +241,6 @@ export class ReviewService {
     )
       return run;
     throw new Error("Review run is not available to this thread");
-  }
-  private async inheritedPublication(run: ReviewRun, signal: AbortSignal) {
-    if (
-      run.request.reuse !== "auto" ||
-      run.request.kind !== "implementation" ||
-      run.request.mode !== "deep" ||
-      run.request.scope !== "publication" ||
-      !run.target
-    )
-      return null;
-    const { ids } = await this.lineage(run.parentThreadId);
-    for (const parent of ids.slice(1)) {
-      const rows = this.db
-        .prepare<[string], { payload: string }>(
-          "SELECT payload FROM review_runs WHERE parent = ? AND status = 'completed' ORDER BY rowid DESC",
-        )
-        .all(parent);
-      for (const row of rows) {
-        const prior = parseRun(row.payload);
-        if (publicationIdentity(prior) !== publicationIdentity(run)) continue;
-        const result = await this.result(
-          run.parentThreadId,
-          { runId: prior.id, waitSeconds: 0 },
-          signal,
-        );
-        if (
-          "current" in result &&
-          result.current &&
-          result.reviews.every((review) => review.status === "complete")
-        )
-          return { ...this.receipt(prior, true), cached: true };
-      }
-    }
-    return null;
   }
   private readHost() {
     return this.bb.hosts.experimental_client({ contract: reviewHostContract });
@@ -382,7 +304,7 @@ export class ReviewService {
       const target = request.target
         ? await this.readHost().call(
             "snapshot",
-            { environmentPath: environment.path, target: request.target, scope: request.scope },
+            { environmentPath: environment.path, target: request.target },
             { hostId: environment.hostId, signal },
           )
         : null;
@@ -417,8 +339,6 @@ export class ReviewService {
         startedAt: Date.now(),
         status: "starting",
       };
-      const inherited = await this.inheritedPublication(run, signal);
-      if (inherited) return inherited;
       if (Buffer.byteLength(JSON.stringify(run), "utf8") > 220000)
         throw new Error("Review context is too large; shorten the brief and evidence");
       const reuse = await this.assignReuse(run);
@@ -529,7 +449,7 @@ export class ReviewService {
         });
     const started: string[] = [];
     try {
-      // A full new assessment gets its own request and diff reads.
+      // A new assessment gets its own request and output.
       await this.dispatchSeat(run, index, moved ? undefined : thread, started);
     } catch (error) {
       run.error = error instanceof Error ? error.message : String(error);
@@ -607,15 +527,6 @@ export class ReviewService {
     );
   }
 
-  /** The seat a reviewer thread occupies, including a child whose spawn has not returned. */
-  private async callerSeat(run: ReviewRun, caller: string) {
-    const bound = run.seats.find((seat) => seat.threadId === caller);
-    if (bound) return bound;
-    if (run.seats.every((seat) => seat.threadId)) return null;
-    const child = await this.reviewerThread(caller);
-    const index = child ? await this.childSeat(run, child) : null;
-    return index !== null && !run.seats[index]!.threadId ? run.seats[index]! : null;
-  }
   private async childSeat(
     run: ReviewRun,
     child: Pick<
@@ -698,8 +609,7 @@ export class ReviewService {
       return {
         ...this.receipt(run, true),
         busy: true,
-        message:
-          "Dispatch is pending or was interrupted. No duplicate will be spawned and this run cannot clear a candidate.",
+        message: "Dispatch is pending or was interrupted. No duplicate will be spawned.",
       };
     if (run.status !== "running") return null;
     // A panel that lost a reviewer cannot complete, so a repeat starts over.
@@ -924,7 +834,6 @@ export class ReviewService {
       reused,
       kind: run.request.kind,
       mode: run.request.mode,
-      scope: run.request.scope,
       status: run.status,
       target: run.target,
     };
@@ -945,32 +854,6 @@ export class ReviewService {
         },
         { hostId: run.hostId, signal },
       );
-      const seat = await this.callerSeat(run, caller);
-      if (seat) {
-        const [accepted] = await this.bb.sdk.threads.events.list({
-          threadId: caller,
-          types: ["turn/input/accepted"],
-          afterSeq: String(seat.afterSeq),
-          order: "desc",
-          limit: "1",
-        });
-        const turnId = accepted?.scope.kind === "turn" ? accepted.scope.turnId : "";
-        this.db
-          .prepare(
-            "INSERT OR REPLACE INTO review_turn_reads(run_id,turn_id,section,path,side,start,end,total,digest) VALUES (?,?,?,?,?,?,?,?,?)",
-          )
-          .run(
-            run.id,
-            readKey(run, caller, turnId),
-            input.section,
-            input.path ?? "",
-            input.side,
-            Math.min(input.offset, result.totalLength),
-            Math.min(input.offset + result.text.length, result.totalLength),
-            result.totalLength,
-            result.sha256,
-          );
-      }
       return result;
     }
     const text =
@@ -1029,7 +912,6 @@ export class ReviewService {
           {
             environmentPath: run.environmentPath,
             target: run.request.target,
-            scope: run.request.scope,
           },
           { hostId: run.hostId, signal },
         );
@@ -1083,16 +965,15 @@ export class ReviewService {
   private async readSeat(run: ReviewRun, seat: Seat, signal: AbortSignal) {
     const threadId = seat.threadId!;
     if (!(await this.reviewerThread(threadId)))
-      return { running: false, deleted: true, report: null, text: "", turnId: "" };
+      return { running: false, deleted: true, report: null, text: "" };
     const events = await this.readResultEvents(threadId, seat.afterSeq, signal);
-    const { report, finished, text, turnId } = this.assessment(run, seat, events);
+    const { report, finished, text } = this.assessment(run, seat, events);
     const thread = await this.reviewerThread(threadId);
     return {
       running: !finished && Boolean(thread && active.has(thread.status)),
       deleted: false,
       report: report && Buffer.byteLength(JSON.stringify(report), "utf8") <= 220000 ? report : null,
       text,
-      turnId,
     };
   }
   async result(caller: string, input: ResultRequest, signal: AbortSignal) {
@@ -1115,8 +996,7 @@ export class ReviewService {
         error: run.error ?? "Review dispatch has not completed",
       };
     for (const seat of run.seats)
-      if (await this.queued(run, seat))
-        return { ...this.receipt(run, false), status: "queued", deepImplementationCovered: false };
+      if (await this.queued(run, seat)) return { ...this.receipt(run, false), status: "queued" };
     const reads = await Promise.all(run.seats.map((seat) => this.readSeat(run, seat, signal)));
     if (reads.some((read) => read.running))
       return {
@@ -1129,7 +1009,7 @@ export class ReviewService {
           fallback: fallbackNote(run.seats[index]!),
         })),
       };
-    const reviews = reads.map((read, index) => this.review(run, run.seats[index]!, read));
+    const reviews = reads.map((read, index) => this.review(run.seats[index]!, read));
     await this.storeReports(run, reviews);
     run.status = reviews.every((review) => review.status === "complete")
       ? "completed"
@@ -1143,7 +1023,6 @@ export class ReviewService {
       ...this.receipt(run, false),
       status: run.status === "completed" ? ("complete" as const) : ("incomplete" as const),
       current,
-      deepImplementationCovered: this.clearsPublication(run, reviews, current),
       reviews,
       error: unfinished
         ? `${unfinished} of ${reviews.length} reviewers did not complete; see reviews[].error`
@@ -1151,56 +1030,27 @@ export class ReviewService {
     };
   }
   private review(
-    run: ReviewRun,
     seat: Seat,
-    { report, deleted, text, turnId }: Awaited<ReturnType<ReviewService["readSeat"]>>,
+    { report, deleted, text }: Awaited<ReturnType<ReviewService["readSeat"]>>,
   ) {
-    const diffCoverage = this.diffCoverage(run.id, readKey(run, seat.threadId!, turnId));
-    const unread =
-      run.request.kind === "implementation" &&
-      run.request.mode === "deep" &&
-      !diffCoverage.complete;
     let status: "complete" | "incomplete" | "failed" = "complete";
     let error: string | null = null;
     if (!report) {
       status = "failed";
       error = deleted
         ? "Reviewer thread was deleted; start a new assessment"
-        : "No completed, uncontaminated response matched this run. It does not clear the candidate";
-    } else if (report.status === "incomplete" || unread) {
+        : "No completed, uncontaminated response matched this run";
+    } else if (report.status === "incomplete") {
       status = "incomplete";
-      if (unread)
-        error = "Deep assessment is incomplete: the reviewer did not read every pinned diff page";
     }
     return {
       reviewer: identity(seat.reviewer),
       threadId: seat.threadId!,
       status,
-      diffCoverage,
       report,
       error,
       rawOutput: report ? undefined : text.slice(0, 4000),
       fallback: fallbackNote(seat),
     };
-  }
-  /** Publication clears only when every reviewer covered the current candidate without a blocker. */
-  private clearsPublication(
-    run: ReviewRun,
-    reviews: { status: string; diffCoverage: { complete: boolean }; report: Report | null }[],
-    current: boolean,
-  ) {
-    return (
-      current &&
-      run.request.kind === "implementation" &&
-      run.request.mode === "deep" &&
-      run.request.scope === "publication" &&
-      reviews.every(
-        (review) =>
-          review.status === "complete" &&
-          review.diffCoverage.complete &&
-          review.report?.status === "complete" &&
-          !review.report.findings.some(blocksPublication),
-      )
-    );
   }
 }

@@ -13,6 +13,6 @@ Dimensions, in priority order:
 - Orchestration: independent work serialized for no reason, or related updates that can leave state half-applied when a more atomic structure is obvious. Do not chase micro-optimizations.
 - File growth: a change that pushes a file from under 1,000 lines to over 1,000 lines is a smell. Ask whether it should be decomposed first, unless the result stays clearly organized for a compelling structural reason.
 
-Priority: these are P2 findings worth raising. Raise one to P0 or P1 only when it causes incorrect behavior, data loss, or security exposure, and show that consequence. Working behavior does not excuse a structural regression, but structure alone does not block publication.
+Priority: these are P2 findings worth raising. Raise one to P0 or P1 only when it causes incorrect behavior, data loss, or security exposure, and show that consequence. Working behavior does not excuse a structural regression; explain its concrete maintenance cost.
 
 Tone: be direct, serious, and demanding about quality. Do not be rude, and do not soften a major maintainability problem into a mild suggestion. If the change makes the codebase messier, or missed an obvious dramatic simplification, say so. Do not settle for "maybe rename this" when the real issue is structural.

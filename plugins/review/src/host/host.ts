@@ -1,4 +1,3 @@
-import { createHash } from "node:crypto";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { delimiter, join } from "node:path";
@@ -56,7 +55,6 @@ export function page(text: string, offset: number) {
     text: text.slice(offset, end),
     nextOffset: end < text.length ? end : null,
     totalLength: text.length,
-    sha256: createHash("sha256").update(text).digest("hex"),
   };
 }
 const workspaceSchema = z.object({
@@ -76,7 +74,7 @@ const workspaceSchema = z.object({
     }),
   ),
 });
-export function branchCommits(payload: unknown, branch: string) {
+export function branchHead(payload: unknown, branch: string) {
   const state = workspaceSchema.parse(payload);
   const selected = state.stacks
     .flatMap((stack) => stack.branches)
@@ -89,73 +87,17 @@ export function branchCommits(payload: unknown, branch: string) {
     );
   if (selected.commits.some((item) => item.conflicted))
     throw new Error("Resolve this branch's conflicted commits before review");
-  return { newest: selected.commits[0]!.commitId, oldest: selected.commits.at(-1)!.commitId };
+  return selected.commits[0]!.commitId;
 }
-export function publicationBase(payload: unknown) {
+export function branchBase(payload: unknown) {
   return z
     .object({ mergeBase: z.object({ commitId: z.string().regex(/^[a-f0-9]{40,64}$/) }) })
     .parse(payload).mergeBase.commitId;
-}
-export function validatePublicationBase(payload: unknown, base: string) {
-  if (base !== publicationBase(payload))
-    throw new Error(
-      "Publication review must start at the GitButler workspace merge base to cover the entire selected chain; use segment scope for a narrower range",
-    );
-}
-function unavailableGitButler(error: unknown) {
-  const value = error as { code?: unknown; stdout?: unknown; stderr?: unknown };
-  return (
-    value?.code === "ENOENT" ||
-    [value?.stdout, value?.stderr].some(
-      (text) => typeof text === "string" && text.includes("setup_required"),
-    )
-  );
-}
-async function explicitPublicationBase(
-  repositoryPath: string,
-  target: { base: string; head: string; upstream?: string },
-  base: string,
-  head: string,
-  signal: AbortSignal,
-) {
-  let state: unknown;
-  try {
-    state = JSON.parse(await command(repositoryPath, "but", ["status", "--json"], signal));
-  } catch (error) {
-    if (!unavailableGitButler(error)) throw error;
-    state = null;
-  }
-  if (state === null) {
-    if (!target.upstream)
-      throw new Error(
-        "Plain Git publication review requires a declared upstream ref, for example --upstream origin/main, with --base and --head",
-      );
-    const ref = (
-      await git(
-        repositoryPath,
-        ["rev-parse", "--symbolic-full-name", "--verify", "--end-of-options", target.upstream],
-        signal,
-      )
-    ).trim();
-    if (!/^refs\/(heads|remotes)\//.test(ref))
-      throw new Error(
-        "Publication upstream must name a branch or remote-tracking ref, not a commit",
-      );
-    const upstream = await commit(repositoryPath, target.upstream, signal);
-    const expected = (await git(repositoryPath, ["merge-base", upstream, head], signal)).trim();
-    if (base !== expected || base === head)
-      throw new Error(
-        "Publication base must be the merge base with the declared destination, and the candidate must introduce changes",
-      );
-    return;
-  }
-  validatePublicationBase(state, base);
 }
 export async function snapshot(
   environmentPath: string,
   target: NonNullable<ReviewRequest["target"]>,
   signal: AbortSignal,
-  scope: "segment" | "publication" = "segment",
 ): Promise<PinnedTarget> {
   requireSupportedGit(await git(environmentPath, ["--version"], signal));
   const repositoryPath = (
@@ -167,22 +109,16 @@ export async function snapshot(
   if ("branch" in target) {
     branch = target.branch;
     const state = JSON.parse(await command(repositoryPath, "but", ["status", "--json"], signal));
-    const selected = branchCommits(state, branch);
+    const expectedHead = branchHead(state, branch);
     head = await commit(repositoryPath, `refs/heads/${branch}`, signal);
-    if (head !== selected.newest)
+    if (head !== expectedHead)
       throw new Error("Branch changed during target resolution. Retry with its new checkpoint");
-    base =
-      scope === "publication"
-        ? await commit(repositoryPath, publicationBase(state), signal)
-        : await commit(repositoryPath, `${selected.oldest}^`, signal);
+    base = await commit(repositoryPath, branchBase(state), signal);
   } else {
     [base, head] = await Promise.all([
       commit(repositoryPath, target.base, signal),
       commit(repositoryPath, target.head, signal),
     ]);
-  }
-  if (scope === "publication" && !("branch" in target)) {
-    await explicitPublicationBase(repositoryPath, target, base, head, signal);
   }
   await git(repositoryPath, ["merge-base", "--is-ancestor", base, head], signal);
   const identities = await git(
@@ -201,8 +137,8 @@ export async function snapshot(
 export default experimental_defineHostEntry({
   contract: reviewHostContract,
   handlers: {
-    snapshot: ({ environmentPath, target, scope }, { signal }) =>
-      snapshot(environmentPath, target, signal, scope),
+    snapshot: ({ environmentPath, target }, { signal }) =>
+      snapshot(environmentPath, target, signal),
     async read({ target, section, path, side, offset }, { signal }) {
       let text: string;
       if (section === "diff")

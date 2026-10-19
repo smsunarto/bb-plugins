@@ -15,23 +15,15 @@ async function readBrief(ctx: CommandContext<ReviewContext>, path: string | unde
     throw new PluginCliError("Brief must be UTF-8 text", { code: "binary_brief" });
   return file.content;
 }
-function targetFromOptions(options: {
-  branch?: string;
-  base?: string;
-  head?: string;
-  upstream?: string;
-}) {
-  if (options.branch && (options.base || options.head || options.upstream))
+function targetFromOptions(options: { branch?: string; base?: string; head?: string }) {
+  if (options.branch && (options.base || options.head))
     throw new PluginCliError("Choose --branch or --base with --head", { code: "invalid_target" });
   if (Boolean(options.base) !== Boolean(options.head))
     throw new PluginCliError("--base and --head must be supplied together", {
       code: "invalid_target",
     });
-  if (options.upstream && !options.base)
-    throw new PluginCliError("--upstream requires --base and --head", { code: "invalid_target" });
   if (options.branch) return { branch: options.branch };
-  if (options.base && options.head)
-    return { base: options.base, head: options.head, upstream: options.upstream };
+  if (options.base && options.head) return { base: options.base, head: options.head };
   return undefined;
 }
 function receiptText(receipt: Awaited<ReturnType<ReviewService["start"]>>) {
@@ -40,7 +32,7 @@ function receiptText(receipt: Awaited<ReturnType<ReviewService["start"]>>) {
     .join(", ");
   const lines = [`Review run ${receipt.runId} (${receipt.mode} ${receipt.kind}): ${reviewers}.`];
   if (receipt.reused) lines.push("Reused an existing run/reviewer.");
-  lines.push(`Result: bb review result ${receipt.runId} --wait 60s`);
+  lines.push(`Result: bb review result ${receipt.runId}`);
   if ("message" in receipt && typeof receipt.message === "string") lines.push(receipt.message);
   return lines.join("\n") + "\n";
 }
@@ -68,18 +60,12 @@ export const start = defineCommand({
       type: "enum",
       values: ["quick", "standard", "deep"],
       default: "standard",
-      description: "Quick medium, Standard high, Deep max (required before ship/PR)",
-    },
-    scope: {
-      type: "enum",
-      values: ["segment", "publication"],
-      default: "segment",
-      description:
-        "Publication reviews cover the selected stack from its merge base; required for the ship gate",
+      description: "Quick medium, Standard high, Deep max",
     },
     branch: {
       type: "string",
-      description: "Applied GitButler branch containing only the intended checkpointed work",
+      description:
+        "Applied GitButler branch; reviews its full changeset from the workspace merge base",
     },
     base: {
       type: "string",
@@ -88,11 +74,6 @@ export const start = defineCommand({
     head: {
       type: "string",
       description: "Explicit head commit/ref, with --base; excludes HEAD/workspace",
-    },
-    upstream: {
-      type: "string",
-      description:
-        "Declared publication destination ref for plain Git, with --base/--head (for example origin/main)",
     },
     reuse: {
       type: "enum",
@@ -121,7 +102,6 @@ export const start = defineCommand({
     const parsed = requestSchema.safeParse({
       kind: options.kind,
       mode: options.mode,
-      scope: options.scope,
       summary: options.prompt ?? brief?.trim().split("\n")[0]?.slice(0, 2000),
       brief,
       workstream: options.workstream,

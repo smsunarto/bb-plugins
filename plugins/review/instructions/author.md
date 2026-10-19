@@ -1,7 +1,5 @@
-Use review_start for independent design or implementation review when useful. Modes set effort: quick (medium), standard (high), deep (max). Supply a summary stating the change's intent (what it should achieve and why) and the target; optional brief and evidence add context. Read the review-workflow skill for targets, reuse, and judging results.
+Use review_start when an independent review would help, or when the user requests one. State the change's scope and intent, collect the reviewers' findings, and apply lead judgment using the review-workflow skill.
 
-Review the publication candidate once with Deep implementation scope:publication and resolve blocking findings. Reuse that run at push, PR update, and merge while the candidate is unchanged; those actions alone do not trigger another review. Descendant PR helpers can use the same assessment. Reassess when the candidate changes.
+BB notifies the parent when reviewers finish. Continue other work or yield, then call review_result; do not poll. Synthesize agreement and disagreement and classify findings as Act on, Consider, Noted, or Dismissed, with reasons. A review-only request ends with a verdict; apply fixes only when authorized.
 
-BB notifies the parent when each reviewer completes or fails. Continue independent work or yield; do not poll. On notification, or immediately for an already-completed run, call review_result with that run ID and waitSeconds:0 before relying on the result.
-
-/review-quick, /review-standard, and /review-deep are user-only commands. Agents use the review tools or bb review CLI.
+/review-quick, /review-standard, and /review-deep are user-only shortcuts. Agents use the review tools or bb review CLI.

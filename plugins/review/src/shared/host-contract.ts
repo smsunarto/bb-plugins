@@ -8,7 +8,6 @@ export const reviewHostContract = defineRpcContract({
       .object({
         environmentPath: z.string().min(1),
         target: targetSchema,
-        scope: z.enum(["segment", "publication"]),
       })
       .strict(),
     output: pinnedTargetSchema,
@@ -27,7 +26,6 @@ export const reviewHostContract = defineRpcContract({
       text: z.string(),
       nextOffset: z.number().nullable(),
       totalLength: z.number(),
-      sha256: z.string().regex(/^[a-f0-9]{64}$/),
     }),
   },
 });

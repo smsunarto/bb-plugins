@@ -63,7 +63,7 @@ function cleanTurns(requests: Request[], events: Events) {
     );
   });
 }
-/** A retry replaces a failed attempt; only its own output and context reads count. */
+/** A retry replaces a failed attempt; only its own output counts. */
 export function bindAssessment(runId: string, reviewer: Reviewer, events: Events) {
   const all = events.filter((event): event is Request => event.type === "client/turn/requested");
   const hasHeader = (request: Request) =>
@@ -102,7 +102,6 @@ export function bindAssessment(runId: string, reviewer: Reviewer, events: Events
   return {
     text,
     finished,
-    turnId: turnId ?? "",
     valid: Boolean(
       turnId &&
       retryChain(requests, events) &&

@@ -1,23 +1,50 @@
 ---
 name: review-workflow
-description: Start independent reviews with pinned targets and retrieve their results.
+description: Ask independent reviewers to challenge a change, then synthesize a verdict.
 user-invocable: false
 ---
 
-Use `review_start` with a summary stating the change's intent (what it should achieve and why). `kind` is implementation (default) or design. Modes select reasoning effort: quick (medium), standard (high, default), deep (max). Quick asks one reviewer from the other model family; Standard and Deep ask a panel of one Claude and one Codex reviewer with the same prompt. Optional `brief` and `evidence: [{label, path}]` supply context; evidence is captured from the calling host. Identify the revision or workspace state behind test results.
+# Review workflow
 
-Implementation targets are `{branch}` for a checkpointed GitButler branch or `{base, head, upstream?}` for explicit revisions. Checkpoint only authorized changes. `HEAD` and `gitbutler/workspace` are combined state, not review targets. Design reviews can use just a summary and optional brief.
+Use independent reviewers to find blind spots. The deliverable is a reasoned verdict. A review request does not authorize applying fixes or publishing changes.
 
-For the publication candidate, use `kind: "implementation", mode: "deep", scope: "publication"`. Branch publication scope includes ancestors back to the merge base; segment scope reviews the branch's owned commits. Explicit publication comparisons must cover that full delta. Outside GitButler, supply `upstream` and use its merge base with head as `base`.
+## 1. Scope and intent
 
-Distinct reviews can run concurrently; repeating an identical request while its run is unsettled returns that run. `reuse:auto` preserves an idle eligible reviewer's context; `reuse:new` requests fresh judgment. Reuse the completed run at push, PR update, and merge when the candidate is unchanged; retrieve its result rather than starting another review. A changed candidate needs a new assessment. Descendant helpers in the same environment can inherit the assessment.
+Identify the change from the user's request. State what it should achieve and why in one paragraph.
 
-BB sends completion and failure notifications to the parent, one per reviewer for a panel. Continue other work or yield, then call `review_result({runId, waitSeconds:0})` after a notification, or immediately for an already-completed run; expect `running` until every reviewer finishes. Do not poll. The result validates execution, candidate freshness, and complete diff reads for Deep implementation reviews; notification text alone is not publication clearance.
+For implementation, pass `target: {branch}` with the specific GitButler branch that owns the work. The review includes that branch and its ancestors, excluding other applied stacks, branches above it, and uncommitted files. Use `{base, head}` for a specific comparison. Checkpoint only authorized changes. Never infer the review target from the checked-out branch: `HEAD` and `gitbutler/workspace` combine other work and are rejected. For a proposal, use `kind: "design"` and put the proposal in `brief`.
 
-The result has one report per model in `reviews`. Synthesize them before judging: merge findings that describe the same issue, note which models raised each, treat independent agreement as the strongest signal, weigh a finding from one model alone on its evidence, and note disagreements. Publication clears only when every reviewer's report clears: any single reviewer's P0 or P1 blocks publication by design, and a rerun reviews with the full panel again.
+## 2. Ask reviewers
 
-Judge the findings as a pragmatic lead, not an aggregator. Classify each as Act on (real correctness, security, or maintainability issue for the actual goal), Consider (legitimate, but its cost now is uncertain), Noted (valid, not actionable yet), or Dismissed, each with a one-line reason. Structural regressions the code-quality lens lists (missed simplification, a file pushed past 1k lines, ad-hoc branching, duplicated helpers, logic in the wrong layer) default to Act on unless justified; they still do not block publication on their own. Filters: a review of only nits means the code is probably fine; a hypothetical input is a finding only if a caller can produce it, so trace the call site; an abstraction for code that has no second use is premature; "I would have done it differently" without a concrete problem is not a finding; dismiss findings that show missing context, such as code the change did not touch or patterns consistent with the codebase. Scrutinize correctness and security findings harder before dismissing them. Dismissing a P0 or P1 does not clear the publication gate: fix it, or rerun the review with evidence or a brief explaining why it is not an issue. When reporting to the user, surface Consider items and say in one sentence where the models agreed and disagreed.
+Call `review_start({summary, target})`. The default Standard review asks one Claude and one Codex reviewer, independently, with the same intent and rubric. Model diversity supplies the different perspectives; do not assign personas.
 
-`review_context` exposes the brief, evidence, diff, tree, pinned files, and report. Its `nextOffset` continues paginated content.
+Use `mode: "quick"` for one reviewer from the other model family, or `mode: "deep"` for a panel with more reasoning effort. Add `brief` or `evidence: [{label, path}]` when needed. Name the revision or workspace state behind test results.
 
-CLI equivalents: `bb review start --mode <mode> --branch <branch> --prompt <summary>`, `bb review result <run-id>`, and `bb review context <run-id> --section <section>`. Use `--scope publication` for publication and `--base`, `--head`, `--upstream` for explicit targets. Manual `/review-quick`, `/review-standard`, and `/review-deep` are user-only.
+## 3. Collect and synthesize
+
+Wait for BB's completion notifications, then call `review_result({runId})`. Continue other work while reviewers run; do not poll. The result stays `running` until every reviewer finishes. Read large reports through `review_context({runId, section: "report"})`, following `nextOffset`.
+
+Merge duplicate findings, attribute them to the models that raised them, and note disagreements. Independent agreement is a strong signal, not a vote. A lone correctness or security finding still deserves scrutiny. Report missing reviews and verification limits; `current: false` means the target changed after review.
+
+## 4. Lead judgment
+
+Judge each finding against the actual goal and code. Trace alleged failures through callers. Dismiss impossible inputs, personal preferences, premature abstractions, and claims that miss the surrounding context. Treat structural maintainability problems seriously when they impose a concrete cost.
+
+Classify findings with a one-line reason:
+
+- **Act on**: a real correctness, security, or maintainability issue worth fixing.
+- **Consider**: a legitimate concern whose benefit may not justify its cost now.
+- **Noted**: valid context with no useful action at this stage.
+- **Dismissed**: wrong, speculative, or missing context.
+
+Give the intent, reviewer names, classified findings, and a short account of agreement or disagreement. Omit empty buckets. If there are no actionable findings, say so. Severity labels inform judgment; they do not create an automatic veto or require a rerun to dismiss a finding.
+
+Stop at the verdict for a review-only request. When fixes are already authorized, address accepted findings and verify the changes. Request another review when it would resolve a material uncertainty. Reviews are not mandatory at every checkpoint, push, PR update, or merge.
+
+## Reference
+
+`review_context` reads the brief, captured evidence, pinned diff, tree, files, and reports. Reviewers stay read-only and use those pinned sources.
+
+Repeating an identical unsettled request returns its existing run. The plugin manages reviewer reuse; `reuse: "new"` requests fresh judgment. Distinct requests can run concurrently.
+
+CLI: `bb review start --branch scott/feature --prompt 'Intent'`, then `bb review result <run-id>` after notification. Use `--base` and `--head` for an explicit comparison. `/review-quick`, `/review-standard`, and `/review-deep` are user-only shortcuts.

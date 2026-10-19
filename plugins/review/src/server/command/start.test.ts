@@ -6,6 +6,7 @@ import {
   makeTurnFailedEvent,
 } from "@get-bb/plugin-sdk/testing";
 import plugin from "../server.ts";
+import { targetSchema } from "../../shared/schema.ts";
 import { cp, copyFile, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -16,7 +17,6 @@ const base = "a".repeat(40),
   head = "b".repeat(40);
 type ContextUsage = { usedTokens: number; modelContextWindow: number; estimated: boolean } | null;
 function fixtureControls(state: {
-  digest: string;
   spawnFailure: string | undefined;
   sendFailure: string | undefined;
   queuedSend: boolean;
@@ -37,9 +37,6 @@ function fixtureControls(state: {
     },
     setQueuedSend: (value: boolean) => {
       state.queuedSend = value;
-    },
-    setDigest: (value: string) => {
-      state.digest = value;
     },
     setSpawnFailure: (value: string | undefined) => {
       state.spawnFailure = value;
@@ -78,7 +75,6 @@ async function load(
   const logs = new Map<string, unknown[]>();
   let n = 0;
   const state = {
-    digest: "a".repeat(64),
     spawnFailure: undefined as string | undefined,
     sendFailure: undefined as string | undefined,
     queuedSend: false,
@@ -139,19 +135,20 @@ async function load(
     pluginId: "review",
     agentSkillIds: skills,
     experimental_callHostRpc: async ({ method, input }) => {
-      if (method === "snapshot")
+      if (method === "snapshot") {
+        targetSchema.parse((input as { target: unknown }).target);
         return {
           repositoryPath: "/work/repo",
           branch: (input as { target: { branch?: string } }).target.branch ?? null,
           base,
           head: state.snapshotHead,
         };
+      }
       const offset = (input as { offset: number }).offset;
       return {
         text: "Pinned source from bbbb".slice(offset, offset + 16000),
         nextOffset: null,
         totalLength: 23,
-        sha256: state.digest,
       };
     },
     sdk: {
@@ -468,7 +465,7 @@ test("result stays running until every reviewer finishes, then returns one repor
   expect(done).toMatchObject({
     status: "complete",
     current: true,
-    deepImplementationCovered: false,
+
     error: null,
     reviews: [
       {
@@ -498,11 +495,11 @@ test("result stays running until every reviewer finishes, then returns one repor
 });
 
 for (const seat of [0, 1])
-  test(`a P1 from reviewer ${seat + 1} blocks Deep publication`, async () => {
+  test(`a P1 from reviewer ${seat + 1} is returned for lead judgment`, async () => {
     const f = await load();
     const r = await f.start({
       mode: "deep",
-      scope: "publication",
+
       summary: "Publish",
       target: { branch: "scott/camera" },
     });
@@ -517,52 +514,14 @@ for (const seat of [0, 1])
     report.findings = [{ priority: 1, title: "Broken publish", body: "Evidence", location: "x:1" }];
     message.data.item.text = JSON.stringify(report);
     const result = await f.tool("review_result", { runId: r.runId });
-    expect(result).toMatchObject({ status: "complete", deepImplementationCovered: false });
+    expect(result).toMatchObject({ status: "complete" });
+    expect(result).not.toHaveProperty("deepImplementationCovered");
     expect(
       result.reviews.map(
         (review: { report: { findings: unknown[] } }) => review.report.findings.length,
       ),
     ).toEqual(seat ? [0, 1] : [1, 0]);
   });
-
-test("Deep publication clears only when every reviewer reads every diff page", async () => {
-  const f = await load();
-  const r = await f.start({
-    mode: "deep",
-    scope: "publication",
-    summary: "Publish",
-    target: { branch: "scott/camera" },
-  });
-  await f.tool("review_context", { runId: r.runId, section: "diff" }, r.threadIds[0]);
-  finishAll(f, r);
-  expect(await f.tool("review_result", { runId: r.runId })).toMatchObject({
-    status: "incomplete",
-    deepImplementationCovered: false,
-    error: "1 of 2 reviewers did not complete; see reviews[].error",
-    reviews: [
-      { status: "complete", diffCoverage: { complete: true }, error: null },
-      {
-        status: "incomplete",
-        diffCoverage: { complete: false },
-        error: "Deep assessment is incomplete: the reviewer did not read every pinned diff page",
-      },
-    ],
-  });
-  const both = await f.start({
-    mode: "deep",
-    scope: "publication",
-    summary: "Publish again",
-    target: { branch: "scott/camera" },
-    reuse: "new",
-  });
-  await readDiff(f, both);
-  finishAll(f, both);
-  expect(await f.tool("review_result", { runId: both.runId })).toMatchObject({
-    status: "complete",
-    deepImplementationCovered: true,
-    reviews: [{ status: "complete" }, { status: "complete" }],
-  });
-});
 
 test("a run stored by contract 3 stays busy and readable after upgrade", async () => {
   const f = await load();
@@ -594,7 +553,7 @@ test("a run stored by contract 3 stays busy and readable after upgrade", async (
     status: "complete",
     reviews: [{ threadId: "thr_reviewer_1", status: "complete", report: { runId: r.runId } }],
   });
-  // A contract-3 reviewer is never auto-reused by a contract-4 run.
+  // A contract-3 reviewer is never auto-reused by a new run.
   const next = await f.start({
     kind: "design",
     mode: "quick",
@@ -602,42 +561,6 @@ test("a run stored by contract 3 stays busy and readable after upgrade", async (
     workstream: "plan",
   });
   expect(next).toMatchObject({ threadIds: ["thr_reviewer_2"], reused: false });
-});
-
-test("a contract-3 Deep publication run keeps its diff coverage recorded under bare turn ids", async () => {
-  const f = await load();
-  const r = await f.start({
-    mode: "deep",
-    scope: "publication",
-    summary: "Publish",
-    target: { branch: "scott/camera" },
-  });
-  const [reviewer] = r.threadIds as [string];
-  await f.tool("review_context", { runId: r.runId, section: "diff" }, reviewer);
-  const db = f.host.bb.storage.database();
-  db.prepare("UPDATE review_turn_reads SET turn_id=replace(turn_id, ?, '') WHERE run_id=?").run(
-    `${reviewer}:`,
-    r.runId,
-  );
-  const row = db
-    .prepare<[string], { payload: string }>("SELECT payload FROM review_runs WHERE id=?")
-    .get(r.runId)!;
-  const { seats, ...rest } = JSON.parse(row.payload);
-  const legacy = {
-    ...rest,
-    contractVersion: 3,
-    reviewer: seats[0].reviewer,
-    reviewerThreadId: seats[0].threadId,
-    afterSeq: seats[0].afterSeq,
-  };
-  db.prepare("UPDATE review_runs SET payload=? WHERE id=?").run(JSON.stringify(legacy), r.runId);
-  f.finish(reviewer, r.runId);
-  expect(await f.tool("review_result", { runId: r.runId })).toMatchObject({
-    status: "complete",
-    current: true,
-    deepImplementationCovered: true,
-    reviews: [{ threadId: reviewer, status: "complete", diffCoverage: { complete: true } }],
-  });
 });
 
 test("an interrupted panel dispatch adopts nothing twice and expires as before", async () => {
@@ -778,7 +701,7 @@ test("idle reviewer is reused with a fresh run and per-turn effort; old output n
   expect(done).toMatchObject({
     status: "complete",
     current: true,
-    deepImplementationCovered: false,
+
     reviews: [{ report: { runId: second.runId } }],
   });
   const old = await f.tool("review_result", { runId: first.runId });
@@ -786,14 +709,14 @@ test("idle reviewer is reused with a fresh run and per-turn effort; old output n
     first.runId,
     first.runId,
   ]);
-  expect(old.deepImplementationCovered).toBe(false);
+  expect(old.status).toBe("complete");
 });
 
-test("changed target makes Deep results stale, while unrelated workspace changes leave coverage valid", async () => {
+test("changed target is reported as stale without hiding completed findings", async () => {
   const f = await load();
   const r = await f.start({
     mode: "deep",
-    scope: "publication",
+
     summary: "Final",
     target: { branch: "scott/camera" },
   });
@@ -802,32 +725,29 @@ test("changed target makes Deep results stale, while unrelated workspace changes
   expect(await f.tool("review_result", { runId: r.runId })).toMatchObject({
     status: "complete",
     current: true,
-    deepImplementationCovered: true,
   });
   f.setHead("c".repeat(40));
   expect(await f.tool("review_result", { runId: r.runId })).toMatchObject({
     status: "complete",
     current: false,
-    deepImplementationCovered: false,
   });
 });
 
-test("incomplete and steered reviews never satisfy Deep coverage", async () => {
+test("incomplete and steered reviews report their limitations", async () => {
   const f = await load();
   const r = await f.start({
     mode: "deep",
-    scope: "publication",
+
     summary: "Final",
     target: { branch: "scott/camera" },
   });
   finishAll(f, r, "incomplete");
   expect(await f.tool("review_result", { runId: r.runId })).toMatchObject({
     status: "incomplete",
-    deepImplementationCovered: false,
   });
   const s = await f.start({
     mode: "deep",
-    scope: "publication",
+
     summary: "New check",
     target: { branch: "scott/camera" },
     reuse: "new",
@@ -837,7 +757,6 @@ test("incomplete and steered reviews never satisfy Deep coverage", async () => {
   f.finish(s.threadIds[1], s.runId);
   expect(await f.tool("review_result", { runId: s.runId })).toMatchObject({
     status: "incomplete",
-    deepImplementationCovered: false,
   });
 });
 
@@ -899,34 +818,34 @@ test("mixed-family author selection uses accepted turn rather than later prefere
   });
 });
 
-test("reuse:new starts fresh and partial diff reads never clear the publication candidate", async () => {
+test("reuse:new starts fresh and returns findings without a diff-read gate", async () => {
   const f = await load();
   const first = await f.start({ summary: "Earlier", target: { branch: "scott/camera" } });
   finishAll(f, first);
   const run = await f.start({
     mode: "deep",
-    scope: "publication",
+
     summary: "Publish",
     target: { branch: "scott/camera" },
     reuse: "new",
   });
   expect(run.threadIds).not.toContain(first.threadIds[0]);
   expect(run.threadIds).not.toContain(first.threadIds[1]);
-  await f.tool("review_context", { runId: run.runId, section: "diff" }); // Author preview is not reviewer coverage.
+  await f.tool("review_context", { runId: run.runId, section: "diff" }); // Authors can preview the same pinned source.
   await readDiff(f, run, 10);
   finishAll(f, run);
   expect(await f.tool("review_result", { runId: run.runId })).toMatchObject({
-    deepImplementationCovered: false,
-    reviews: [{ diffCoverage: { complete: false } }, { diffCoverage: { complete: false } }],
+    status: "complete",
+    reviews: [{ status: "complete" }, { status: "complete" }],
   });
 });
 
-test("execution downgrade, model fallback, and unresolved blockers prevent Deep clearance", async () => {
+test("execution downgrade and model fallback mark reports incomplete, while findings remain reviewable", async () => {
   for (const reason of ["effort", "fallback", "finding"]) {
     const f = await load();
     const r = await f.start({
       mode: "deep",
-      scope: "publication",
+
       summary: "Publish",
       target: { branch: "scott/camera" },
     });
@@ -954,8 +873,8 @@ test("execution downgrade, model fallback, and unresolved blockers prevent Deep 
       ];
       message.data.item.text = JSON.stringify(report);
     }
-    expect((await f.tool("review_result", { runId: r.runId })).deepImplementationCovered).toBe(
-      false,
+    expect((await f.tool("review_result", { runId: r.runId })).status).toBe(
+      reason === "finding" ? "complete" : "incomplete",
     );
   }
 });
@@ -1031,52 +950,6 @@ test("an ambiguous dispatch timeout retains a reservation across service reload"
   expect(f.host.harness.inspection.sdk.callsTo("threads.spawn")).toHaveLength(1);
 });
 
-test("reads from a later unrelated reviewer turn cannot clear an earlier partial Deep assessment", async () => {
-  const f = await load();
-  const r = await f.start({
-    mode: "deep",
-    scope: "publication",
-    summary: "Publish",
-    target: { branch: "scott/camera" },
-  });
-  finishAll(f, r);
-  for (const id of r.threadIds)
-    f.logs.get(id)!.push({
-      seq: 100,
-      type: "turn/input/accepted",
-      scope: { kind: "turn", turnId: "later-turn" },
-      data: { clientRequestId: "unrelated-request" },
-    });
-  await readDiff(f, r);
-  expect(await f.tool("review_result", { runId: r.runId })).toMatchObject({
-    status: "incomplete",
-    deepImplementationCovered: false,
-    reviews: [{ diffCoverage: { complete: false } }, { diffCoverage: { complete: false } }],
-  });
-});
-
-test("mixed diff representations never establish complete Deep coverage", async () => {
-  const f = await load();
-  const r = await f.start({
-    mode: "deep",
-    scope: "publication",
-    summary: "Publish",
-    target: { branch: "scott/camera" },
-  });
-  await readDiff(f, r);
-  f.setDigest("b".repeat(64));
-  await f.tool("review_context", { runId: r.runId, section: "diff", offset: 10 }, r.threadIds[0]);
-  finishAll(f, r);
-  expect(await f.tool("review_result", { runId: r.runId })).toMatchObject({
-    status: "incomplete",
-    deepImplementationCovered: false,
-    reviews: [
-      { status: "incomplete", diffCoverage: { consistent: false } },
-      { status: "complete", diffCoverage: { consistent: true } },
-    ],
-  });
-});
-
 test("deleted reviewers do not block results or replacement reviews", async () => {
   const f = await load();
   const r = await f.start({ kind: "design", summary: "Plan" });
@@ -1084,7 +957,7 @@ test("deleted reviewers do not block results or replacement reviews", async () =
   f.finish(r.threadIds[1], r.runId);
   expect(await f.tool("review_result", { runId: r.runId })).toMatchObject({
     status: "incomplete",
-    deepImplementationCovered: false,
+
     reviews: [
       {
         status: "failed",
@@ -1210,7 +1083,7 @@ test("BB fast-tier demotion does not invalidate a complete Deep assessment", asy
   const f = await load();
   const r = await f.start({
     mode: "deep",
-    scope: "publication",
+
     summary: "Publish",
     target: { branch: "scott/camera" },
   });
@@ -1222,7 +1095,6 @@ test("BB fast-tier demotion does not invalidate a complete Deep assessment", asy
   finishAll(f, r);
   expect(await f.tool("review_result", { runId: r.runId })).toMatchObject({
     status: "complete",
-    deepImplementationCovered: true,
   });
 });
 
@@ -1232,7 +1104,6 @@ test("a failed reviewer returns an incomplete result without waiting for unreach
   for (const id of r.threadIds) f.records.get(id)!.status = "error";
   expect(await f.tool("review_result", { runId: r.runId, waitSeconds: 1 })).toMatchObject({
     status: "incomplete",
-    deepImplementationCovered: false,
   });
   expect(f.host.harness.inspection.sdk.callsTo("threads.wait")).toHaveLength(0);
 });
@@ -1242,7 +1113,7 @@ for (const retryOfFailed of [true, false])
     const f = await load();
     const r = await f.start({
       mode: "deep",
-      scope: "publication",
+
       summary: "Publish",
       target: { branch: "scott/camera" },
     });
@@ -1275,54 +1146,10 @@ for (const retryOfFailed of [true, false])
     );
     await readDiff(f, r);
     finishAll(f, r);
-    expect((await f.tool("review_result", { runId: r.runId })).deepImplementationCovered).toBe(
-      retryOfFailed,
+    expect((await f.tool("review_result", { runId: r.runId })).status).toBe(
+      retryOfFailed ? "complete" : "incomplete",
     );
   });
-
-test("only the successful retry's own diff reads establish coverage", async () => {
-  const f = await load();
-  const r = await f.start({
-    mode: "deep",
-    scope: "publication",
-    summary: "Publish",
-    target: { branch: "scott/camera" },
-  });
-  await readDiff(f, r);
-  const log = f.logs.get(r.threadIds[0])! as {
-    seq: number;
-    type: string;
-    scope: { kind: string; turnId?: string };
-    data: Record<string, unknown>;
-  }[];
-  const original = log[0]!;
-  log.push(
-    {
-      seq: 3,
-      type: "turn/completed",
-      scope: { kind: "turn", turnId: "turn-1" },
-      data: { status: "failed" },
-    },
-    {
-      seq: 4,
-      type: "client/turn/requested",
-      scope: { kind: "thread" },
-      data: { ...original.data, requestId: "retry-1", retryOfRequestId: original.data.requestId },
-    },
-    {
-      seq: 5,
-      type: "turn/input/accepted",
-      scope: { kind: "turn", turnId: "retry-turn" },
-      data: { clientRequestId: "retry-1" },
-    },
-  );
-  finishAll(f, r);
-  expect(await f.tool("review_result", { runId: r.runId })).toMatchObject({
-    status: "incomplete",
-    deepImplementationCovered: false,
-    reviews: [{ status: "incomplete" }, { status: "complete" }],
-  });
-});
 
 test("queued reuse holds its reviewer until dispatch or cancellation", async () => {
   const f = await load();
@@ -1333,7 +1160,6 @@ test("queued reuse holds its reviewer until dispatch or cancellation", async () 
   expect(queued.reused).toBe(true);
   expect(await f.tool("review_result", { runId: queued.runId })).toMatchObject({
     status: "queued",
-    deepImplementationCovered: false,
   });
   expect(await f.start({ kind: "design", summary: "Next", workstream: "plan" })).toMatchObject({
     runId: queued.runId,
@@ -1345,7 +1171,6 @@ test("queued reuse holds its reviewer until dispatch or cancellation", async () 
   f.queued.clear();
   expect(await f.tool("review_result", { runId: queued.runId })).toMatchObject({
     status: "incomplete",
-    deepImplementationCovered: false,
   });
   f.setQueuedSend(false);
   expect(
@@ -1353,11 +1178,11 @@ test("queued reuse holds its reviewer until dispatch or cancellation", async () 
   ).toMatchObject({ status: "running" });
 });
 
-test("large result preserves its clearance flag and paged-report pointer", async () => {
+test("large result preserves findings and a paged-report pointer", async () => {
   const f = await load();
   const r = await f.start({
     mode: "deep",
-    scope: "publication",
+
     summary: "Publish",
     target: { branch: "scott/camera" },
   });
@@ -1378,19 +1203,15 @@ test("large result preserves its clearance flag and paged-report pointer", async
   message.data.item.text = JSON.stringify(report);
   expect(await f.tool("review_result", { runId: r.runId })).toMatchObject({
     status: "complete",
-    deepImplementationCovered: true,
+
     reviews: [
       {
         status: "complete",
         findings: 9,
-        blocking: 0,
-        diffCoverage: { complete: true, unreadCount: 0 },
       },
       {
         status: "complete",
         findings: 0,
-        blocking: 0,
-        diffCoverage: { complete: true, unreadCount: 0 },
       },
     ],
     nextOffset: 0,
@@ -1408,7 +1229,7 @@ test("result pagination finds assessment output beyond the first SDK event page"
       scope: { kind: "turn", turnId: "turn-1" },
       data: { item: { type: "agentMessage", text: "intermediate" } },
     });
-  // finish uses the last event's turn; only the final structured message clears.
+  // finish uses the last event's turn; the final message is the report.
   finishAll(f, r);
   expect(await f.tool("review_result", { runId: r.runId })).toMatchObject({
     status: "complete",
@@ -1420,7 +1241,7 @@ test("multiple BB continuation retries bind to their original request and latest
   const f = await load();
   const r = await f.start({
     mode: "deep",
-    scope: "publication",
+
     summary: "Publish",
     target: { branch: "scott/camera" },
   });
@@ -1462,7 +1283,6 @@ test("multiple BB continuation retries bind to their original request and latest
   finishAll(f, r);
   expect(await f.tool("review_result", { runId: r.runId })).toMatchObject({
     status: "complete",
-    deepImplementationCovered: true,
   });
 });
 
@@ -1515,7 +1335,7 @@ test("a retry cannot clear a review whose earlier attempt was steered", async ()
   const f = await load();
   const r = await f.start({
     mode: "deep",
-    scope: "publication",
+
     summary: "Publish",
     target: { branch: "scott/camera" },
   });
@@ -1559,7 +1379,7 @@ test("a retry cannot clear a review whose earlier attempt was steered", async ()
   );
   await readDiff(f, r);
   finishAll(f, r);
-  expect((await f.tool("review_result", { runId: r.runId })).deepImplementationCovered).toBe(false);
+  expect((await f.tool("review_result", { runId: r.runId })).status).toBe("incomplete");
 });
 
 test("queued continuation retry keeps the identical run pending", async () => {
@@ -1575,7 +1395,6 @@ test("queued continuation retry keeps the identical run pending", async () => {
   ]);
   expect(await f.tool("review_result", { runId: r.runId })).toMatchObject({
     status: "queued",
-    deepImplementationCovered: false,
   });
   expect(await f.start({ kind: "design", summary: "Plan", reuse: "new" })).toMatchObject({
     runId: r.runId,
@@ -1587,7 +1406,7 @@ test("Deep fix verification reuses an eligible reviewer with a new maximum-effor
   const f = await load();
   const first = await f.start({
     mode: "deep",
-    scope: "publication",
+
     summary: "Initial",
     target: { branch: "scott/camera" },
   });
@@ -1596,7 +1415,7 @@ test("Deep fix verification reuses an eligible reviewer with a new maximum-effor
   f.setHead("c".repeat(40));
   const next = await f.start({
     mode: "deep",
-    scope: "publication",
+
     summary: "Verify fixes",
     target: { branch: "scott/camera" },
     reuse: { threadId: first.threadIds[0] },
@@ -1611,10 +1430,7 @@ test("Deep fix verification reuses an eligible reviewer with a new maximum-effor
     reasoningLevel: "max",
   });
   finishAll(f, next);
-  expect((await f.tool("review_result", { runId: next.runId })).deepImplementationCovered).toBe(
-    false,
-  );
-  // Older full coverage cannot replace this new candidate's reads.
+  expect((await f.tool("review_result", { runId: next.runId })).status).toBe("complete");
 });
 
 for (const usage of [null, { usedTokens: 60000, modelContextWindow: 100000, estimated: true }])
@@ -1633,11 +1449,11 @@ for (const usage of [null, { usedTokens: 60000, modelContextWindow: 100000, esti
     expect(next.reused).toBe(false);
   });
 
-test("a publication helper inherits an unchanged parent's Deep assessment without spawning again", async () => {
+test("a descendant can read its parent's report but starts its own requested review", async () => {
   const f = await load();
   const request = {
     mode: "deep",
-    scope: "publication",
+
     summary: "Publish",
     target: { branch: "scott/camera" },
   };
@@ -1656,14 +1472,16 @@ test("a publication helper inherits an unchanged parent's Deep assessment withou
     { environment: { id: "env_1", hostId: "host_laptop", path: "/work/repo", status: "ready" } },
   );
   f.records.set(helper.id, helper);
-  expect(
-    await f.tool("review_start", { ...request, summary: "Create PR" }, helper.id),
-  ).toMatchObject({ runId: run.runId, cached: true, reused: true });
+  const independent = await f.tool(
+    "review_start",
+    { ...request, summary: "Review for PR" },
+    helper.id,
+  );
+  expect(independent.runId).not.toBe(run.runId);
   expect(await f.tool("review_result", { runId: run.runId }, helper.id)).toMatchObject({
     current: true,
-    deepImplementationCovered: true,
   });
-  expect(f.host.harness.inspection.sdk.callsTo("threads.spawn")).toHaveLength(2);
+  expect(f.host.harness.inspection.sdk.callsTo("threads.spawn")).toHaveLength(4);
   f.setHead("c".repeat(40));
   const changed = await f.tool(
     "review_start",
@@ -1671,7 +1489,7 @@ test("a publication helper inherits an unchanged parent's Deep assessment withou
     helper.id,
   );
   expect(changed.runId).not.toBe(run.runId);
-  expect(f.host.harness.inspection.sdk.callsTo("threads.spawn")).toHaveLength(4);
+  expect(f.host.harness.inspection.sdk.callsTo("threads.spawn")).toHaveLength(6);
 });
 
 test("descendants in another environment cannot inherit a parent's assessment", async () => {
@@ -1933,54 +1751,30 @@ test("implementation reviewers get the rubric and code-quality lens; design revi
   expect(design.prompt).not.toContain(codeQuality);
 });
 
-test("reading beyond EOF cannot invalidate complete Deep diff coverage", async () => {
-  const f = await load();
-  const run = await f.start({
-    mode: "deep",
-    scope: "publication",
-    summary: "Publish",
-    target: { branch: "scott/camera" },
-  });
-  await readDiff(f, run);
-  await readDiff(f, run, 1000);
-  finishAll(f, run);
-  expect(await f.tool("review_result", { runId: run.runId })).toMatchObject({
-    status: "complete",
-    deepImplementationCovered: true,
-    reviews: [
-      { diffCoverage: { complete: true, unread: [] } },
-      { diffCoverage: { complete: true, unread: [] } },
-    ],
-  });
-});
-
-test("reviewer reads before spawn returns count toward its Deep assessment", async () => {
+test("reviewers can read pinned context before spawn returns", async () => {
   const f = await load();
   f.setBeforeSpawnReturn(async (threadId, runId) => {
     await f.tool("review_context", { runId, section: "diff" }, threadId);
   });
   const run = await f.start({
     mode: "deep",
-    scope: "publication",
+
     summary: "Publish",
     target: { branch: "scott/camera" },
   });
   finishAll(f, run);
   expect(await f.tool("review_result", { runId: run.runId })).toMatchObject({
     status: "complete",
-    deepImplementationCovered: true,
-    reviews: [
-      { diffCoverage: { complete: true, totalLength: 23 } },
-      { diffCoverage: { complete: true, totalLength: 23 } },
-    ],
+
+    reviews: [{ status: "complete" }, { status: "complete" }],
   });
 });
 
-test("an author's new publication evidence is assessed rather than inherited", async () => {
+test("new evidence starts another assessment", async () => {
   const f = await load();
   const request = {
     mode: "deep",
-    scope: "publication",
+
     summary: "Publish",
     target: { branch: "scott/camera" },
   };
@@ -2006,11 +1800,11 @@ test("an author's new publication evidence is assessed rather than inherited", a
   ]);
 });
 
-test("explicit reviewer selection starts a new assessment even for the identical publication request", async () => {
+test("explicit reviewer selection starts a new assessment even for an identical request", async () => {
   const f = await load();
   const request = {
     mode: "deep",
-    scope: "publication",
+
     summary: "Publish",
     target: { branch: "scott/camera" },
   };
@@ -2115,7 +1909,6 @@ for (const [original, replacement] of [
           reviewer: { providerId: "codex", model: replacement },
           threadId: reviewer,
           status: "complete",
-          diffCoverage: { complete: true },
           fallback: {
             from: { providerId: "codex", model: original },
             threadId: reviewer,
@@ -2132,7 +1925,7 @@ test("a panel seat that hits a usage limit reruns on the other family while the 
   const f = await load();
   const run = await f.start({
     mode: "deep",
-    scope: "publication",
+
     summary: "Publish",
     target: { branch: "scott/camera" },
   });
@@ -2179,7 +1972,7 @@ test("a panel seat that hits a usage limit reruns on the other family while the 
   const done = await f.tool("review_result", { runId: run.runId });
   expect(done).toMatchObject({
     status: "complete",
-    deepImplementationCovered: true,
+
     reviews: [
       {
         reviewer: { providerId: "codex", model: "gpt-6-astra" },
@@ -2201,39 +1994,6 @@ test("a panel seat that hits a usage limit reruns on the other family while the 
   expect(done.reviews[1]).not.toHaveProperty("fallback");
 });
 
-for (const mode of ["quick", "deep"] as const)
-  test(`a ${mode} fallback cannot use the exhausted assessment's diff reads`, async () => {
-    const f = await load("claude-code");
-    const run = await f.start({
-      mode,
-      scope: "publication",
-      summary: "Publish",
-      target: { branch: "scott/camera" },
-    });
-    await readDiff(f, run);
-    await failed(f, failReviewer(f, run.threadIds[0]));
-    // The exhausted thread keeps reading, but it no longer holds a seat.
-    await f.tool("review_context", { runId: run.runId, section: "diff" }, run.threadIds[0]);
-    const after = await f.tool("review_result", { runId: run.runId });
-    if (mode === "deep") expect(after.threadIds[0]).not.toBe(run.threadIds[0]);
-    finishAll(f, after);
-    const result = await f.tool("review_result", { runId: run.runId });
-    expect(result).toMatchObject({ deepImplementationCovered: false });
-    expect(
-      result.reviews.map((review: { diffCoverage: { complete: boolean } }) => [
-        review.diffCoverage.complete,
-        Boolean((review as { fallback?: unknown }).fallback),
-      ]),
-    ).toEqual(
-      mode === "quick"
-        ? [[true, true]]
-        : [
-            [false, true],
-            [true, false],
-          ],
-    );
-  });
-
 test("Quick fallback stays on Claude and stops after a second usage limit", async () => {
   const f = await load();
   const run = await f.start({ kind: "design", mode: "quick", summary: "Choose a queue" });
@@ -2244,7 +2004,6 @@ test("Quick fallback stays on Claude and stops after a second usage limit", asyn
   await failed(f, failReviewer(f, reviewer));
   expect(await f.tool("review_result", { runId: run.runId })).toMatchObject({
     status: "incomplete",
-    deepImplementationCovered: false,
   });
   expect(sends(f)).toHaveLength(1);
 });
@@ -2373,7 +2132,6 @@ test("unavailable or insufficient-effort Quick fallback models leave the review 
     await failed(f, failReviewer(f, run.threadIds[0]));
     expect(await f.tool("review_result", { runId: run.runId })).toMatchObject({
       status: "incomplete",
-      deepImplementationCovered: false,
     });
     expect(sends(f)).toHaveLength(0);
   }
@@ -2611,7 +2369,7 @@ test("a large result keeps each seat's fallback provenance, also in the paged re
   const f = await load();
   const run = await f.start({
     mode: "deep",
-    scope: "publication",
+
     summary: "Publish",
     target: { branch: "scott/camera" },
   });
@@ -2635,7 +2393,6 @@ test("a large result keeps each seat's fallback provenance, also in the paged re
   message.data.item.text = JSON.stringify(report);
   const result = await f.tool("review_result", { runId: run.runId });
   expect(result).toMatchObject({
-    deepImplementationCovered: true,
     nextOffset: 0,
     reviews: [
       {
@@ -2659,4 +2416,24 @@ test("a large result keeps each seat's fallback provenance, also in the paged re
     { reviewer: { providerId: "codex" } },
   ]);
   expect(reports[1]).not.toHaveProperty("fallback");
+});
+
+test("saved explicit reviews remain current after publication destination removal", async () => {
+  const f = await load();
+  const run = await f.start({ summary: "Existing review", target: { base, head } });
+  const db = f.host.bb.storage.database();
+  const row = db
+    .prepare<[string], { payload: string }>("SELECT payload FROM review_runs WHERE id=?")
+    .get(run.runId)!;
+  const legacy = JSON.parse(row.payload);
+  legacy.contractVersion = 4;
+  legacy.request.scope = "publication";
+  legacy.request.target.upstream = "origin/main";
+  db.prepare("UPDATE review_runs SET payload=? WHERE id=?").run(JSON.stringify(legacy), run.runId);
+  finishAll(f, run);
+  expect(await f.tool("review_result", { runId: run.runId })).toMatchObject({
+    status: "complete",
+    current: true,
+    reviews: [{ report: { runId: run.runId } }, { report: { runId: run.runId } }],
+  });
 });

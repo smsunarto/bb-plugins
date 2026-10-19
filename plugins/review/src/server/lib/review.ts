@@ -14,8 +14,6 @@ export const MODES = {
   deep: { reasoningLevel: "max", panel: true },
 } as const;
 export const REVIEW_TITLE = "Independent review";
-/** Any one reviewer's P0 or P1 finding blocks publication. */
-export const blocksPublication = (finding: { priority: number }) => finding.priority <= 1;
 export const MANUAL_SKILLS = ["review-quick", "review-standard", "review-deep"];
 
 /** The opposite model family reviews first; panel modes add the author's family second. */
@@ -74,7 +72,6 @@ export function reviewerPrompt(run: ReviewRun): string {
     kind: request.kind,
     mode: request.mode,
     summary: request.summary,
-    scope: request.scope,
     target: JSON.stringify(target ?? null),
   });
   const lenses =
