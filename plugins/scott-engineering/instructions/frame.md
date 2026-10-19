@@ -2,4 +2,4 @@ Read the task and source checkout. This assignment is read-only. Ground the rele
 
 Read repository instructions, including AGENTS.md. If repository policy forbids worktrees or requires an exclusive editor/checkout lease unavailable to this run, do not continue; explain the unsupported environment in your final reply.
 
-Submit a frame report with summary, rubric, and verification. On a repeated round, use the feedback to correct the framing. Candidates receive the original task; your rubric stays out of their prompts.
+Submit a frame report with summary, rubric, and verification. Write each rubric criterion as a short, observable goal of at most 12 words, such as "Stops every worker after a restart." The card shows criteria beside the judge's scores. On a repeated round, use the feedback to correct the framing. Candidates receive the original task; your rubric stays out of their prompts.

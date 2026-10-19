@@ -1,6 +1,14 @@
 import { z } from "zod";
 
 export const MAX_ROUNDS = 3;
+/** One name per worker role, shared by the card and worker thread titles. */
+export function roleLabel(
+  role: "frame" | "candidate" | "judge" | "synthesis",
+  candidate: number | null,
+) {
+  if (role === "candidate") return `Candidate ${(candidate ?? 0) + 1}`;
+  return role === "frame" ? "Plan" : role === "judge" ? "Review" : "Combine";
+}
 export const terminal = new Set(["completed", "failed", "stopped"]);
 const text = z.string().min(1).max(8000);
 export const startSchema = z

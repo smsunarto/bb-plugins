@@ -13,30 +13,30 @@ import {
 } from "@get-bb/plugin-sdk/app";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { z } from "zod";
-import { MAX_ROUNDS, terminal, type ArenaRun, type Job } from "../shared/arena.ts";
+import { MAX_ROUNDS, roleLabel, terminal, type ArenaRun, type Job } from "../shared/arena.ts";
 import type { rpcContract } from "../shared/rpc.ts";
 import "./arena.css";
 
 const changed = z.object({ runId: z.uuid() });
 const phaseNames: Record<ArenaRun["phase"], string> = {
-  snapshot: "Preparing",
-  framing: "Framing",
-  candidates: "Candidates running",
-  judging: "Judging",
-  synthesizing: "Synthesizing",
-  integrating: "Verifying and integrating",
+  snapshot: "Getting ready",
+  framing: "Setting criteria",
+  candidates: "Building solutions",
+  judging: "Reviewing solutions",
+  synthesizing: "Combining changes",
+  integrating: "Checking the result",
   stopping: "Stopping",
-  failing: "Stopping failed run",
-  completed: "Integrated",
+  failing: "Cleaning up",
+  completed: "Applied",
   failed: "Needs attention",
   stopped: "Stopped",
 };
 const STAGES = [
-  { role: "frame", label: "Frame" },
-  { role: "candidate", label: "Compete" },
-  { role: "judge", label: "Judge" },
-  { role: "synthesis", label: "Synthesize" },
-  { role: "verify", label: "Verify" },
+  { role: "frame", label: "Plan" },
+  { role: "candidate", label: "Build" },
+  { role: "judge", label: "Review" },
+  { role: "synthesis", label: "Combine" },
+  { role: "verify", label: "Check" },
 ] as const;
 type Step = "pending" | "active" | "done" | "failed" | "halted";
 const STEP_ICONS: Record<Exclude<Step, "pending">, string> = {
@@ -84,8 +84,7 @@ function Duration({ run }: { run: ArenaRun }) {
 }
 
 function roleName(job: Job) {
-  if (job.role === "candidate") return `Candidate ${(job.candidate ?? 0) + 1}`;
-  return job.role === "frame" ? "Framing" : job.role === "judge" ? "Judge" : "Synthesis";
+  return roleLabel(job.role, job.candidate);
 }
 
 function Provider({ job }: { job: Job }) {
@@ -108,7 +107,7 @@ function Provider({ job }: { job: Job }) {
 function WorkerLink({ job }: { job: Job }) {
   const navigate = useBbNavigate();
   const threadId = job.threadId;
-  if (!threadId) return <span className="arena-muted">Launching…</span>;
+  if (!threadId) return <span className="arena-muted">Starting…</span>;
   return (
     <button
       type="button"
@@ -172,12 +171,12 @@ function standing(run: ArenaRun, candidate: number) {
     const criteria = judge.scores.find((item) => item.candidate === candidate)?.criteria ?? [];
     if (criteria.length)
       mean = criteria.reduce((sum, item) => sum + item.score, 0) / criteria.length;
-    if (judge.preferredCandidate === candidate) badges.push("Judge’s pick");
+    if (judge.preferredCandidate === candidate) badges.push("Top rated");
   }
   if (synthesis?.kind === "synthesis") {
-    if (synthesis.baseCandidate === candidate) badges.push("Base");
+    if (synthesis.baseCandidate === candidate) badges.push("Starting point");
     else if (synthesis.grafts.some((graft) => graft.candidate === candidate))
-      badges.push("Grafted");
+      badges.push("Parts used");
   }
   return { mean, badges };
 }
@@ -192,9 +191,9 @@ function CandidateBody({ job, active }: { job: Job; active: boolean }) {
     );
   if (job.error) return <p className="arena-error">{job.error}</p>;
   return active ? (
-    <p className="arena-muted arena-shimmer">Working independently on the same task…</p>
+    <p className="arena-muted arena-shimmer">Working on the task…</p>
   ) : (
-    <p className="arena-muted">Stopped before reporting.</p>
+    <p className="arena-muted">Stopped before sharing a result.</p>
   );
 }
 
@@ -208,7 +207,7 @@ function Candidate({ job, run }: { job: Job; run: ArenaRun }) {
         <strong>{roleName(job)}</strong>
         <Provider job={job} />
         {mean !== null && (
-          <span className="arena-score" title="Mean rubric score from the judge">
+          <span className="arena-score" title="Average review score (0–5)">
             {mean.toFixed(1)}
             <span className="arena-muted">/5</span>
           </span>
@@ -235,10 +234,10 @@ function Synthesis({ job }: { job: Job }) {
   const report = job.report?.kind === "synthesis" ? job.report : null;
   if (!report) return null;
   return (
-    <section className="arena-section" aria-label="Synthesis">
+    <section className="arena-section" aria-label="Combined result">
       <header>
         <Icon name="GitMerge" aria-hidden />
-        <h3>Synthesis</h3>
+        <h3>Combined result</h3>
         <Provider job={job} />
         <WorkerLink job={job} />
       </header>
@@ -263,10 +262,10 @@ function Synthesis({ job }: { job: Job }) {
 function Verification({ integration }: { integration: NonNullable<ArenaRun["integration"]> }) {
   const passed = integration.status === "integrated";
   return (
-    <section className="arena-section" data-passed={passed} aria-label="Verification">
+    <section className="arena-section" data-passed={passed} aria-label="Checks">
       <header>
         <Icon name={passed ? "CircleCheck" : "CircleX"} aria-hidden />
-        <h3>Verification</h3>
+        <h3>Checks</h3>
       </header>
       <p className={passed ? undefined : "arena-error"}>{integration.summary}</p>
       {integration.checks.length > 0 && (
@@ -281,7 +280,7 @@ function Verification({ integration }: { integration: NonNullable<ArenaRun["inte
                   </span>
                   <code>{check.command}</code>
                 </summary>
-                <pre>{check.output || "Command completed without output."}</pre>
+                <pre>{check.output || "The command finished without output."}</pre>
               </details>
             </li>
           ))}
@@ -301,17 +300,17 @@ function Details({ run }: { run: ArenaRun }) {
     <details className="arena-details">
       <summary>
         <Icon name="ChevronRight" aria-hidden />
-        Rubric, judgment, and history
+        Scores, review, and history
       </summary>
       <div className="arena-details-body">
         {frame?.kind === "frame" && (
           <table className="arena-rubric">
             <thead>
               <tr>
-                <th scope="col">Criterion</th>
+                <th scope="col">Goal</th>
                 {scores.map((item) => (
                   <th scope="col" key={item.candidate}>
-                    C{item.candidate + 1}
+                    Candidate {item.candidate + 1}
                   </th>
                 ))}
               </tr>
@@ -333,16 +332,16 @@ function Details({ run }: { run: ArenaRun }) {
         {judge && (
           <div className="arena-judge">
             <header>
-              <h3>Judge</h3>
+              <h3>Review</h3>
               <Provider job={judge} />
               <WorkerLink job={judge} />
             </header>
-            <p>{judge.report?.summary ?? judge.error ?? "Judgment pending."}</p>
+            <p>{judge.report?.summary ?? judge.error ?? "Review is still running."}</p>
           </div>
         )}
         {synthesis?.kind === "synthesis" && synthesis.rejected.length > 0 && (
           <div>
-            <h3>Not incorporated</h3>
+            <h3>Not included</h3>
             <ul>
               {synthesis.rejected.map((item) => (
                 <li key={item}>{item}</li>
@@ -403,11 +402,7 @@ export function ArenaSummary({
           {live && (
             <button type="button" className="arena-stop" onClick={onStop} disabled={stopping}>
               <Icon name="Square" aria-hidden />
-              {stopping
-                ? "Stopping…"
-                : run.phase === "stopping"
-                  ? "Retry Stop Arena"
-                  : "Stop Arena"}
+              {stopping ? "Stopping…" : run.phase === "stopping" ? "Retry stop" : "Stop Arena"}
             </button>
           )}
         </div>
@@ -416,7 +411,7 @@ export function ArenaSummary({
       <Task text={run.task} />
       {run.feedback && run.round > 1 && (
         <p className="arena-callout">
-          <strong>Round {run.round - 1} did not pass.</strong> {run.feedback.summary}
+          <strong>Trying again after round {run.round - 1}.</strong> {run.feedback.summary}
         </p>
       )}
       {candidates.length > 0 && (
@@ -457,7 +452,11 @@ function RunCard({ runId, threadId }: { runId: string; threadId: string }) {
       }
     } catch (cause) {
       if (request === sequence.current)
-        setError(cause instanceof Error ? cause.message : "Could not load Arena.");
+        setError(
+          cause instanceof Error
+            ? cause.message
+            : "Could not load this Arena. Retry to refresh it.",
+        );
     }
   }, [rpc, runId, threadId]);
   useEffect(() => {
@@ -479,7 +478,7 @@ function RunCard({ runId, threadId }: { runId: string; threadId: string }) {
         !current || result.run.updatedAt >= current.updatedAt ? result.run : current,
       );
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Could not stop Arena. Retry Stop Arena.");
+      setError(cause instanceof Error ? cause.message : "Could not stop Arena. Try again.");
     } finally {
       setStopping(false);
     }
@@ -508,7 +507,7 @@ function ArenaDirective({ attributes, message, source }: PluginMessageDirectiveP
   if (!id.success)
     return (
       <p role="alert">
-        Invalid Arena run reference. <code>{source}</code>
+        Can’t show this Arena: the run ID is invalid. <code>{source}</code>
       </p>
     );
   return (
@@ -541,7 +540,7 @@ function BackToMainThread({ threadId, isCompactViewport }: PluginThreadHeaderAct
       className="arena-back"
       onClick={() => navigate.toThread(target)}
       aria-label="Back to main thread"
-      title="Back to the thread that launched this Arena"
+      title="Back to the thread that started this Arena"
     >
       <Icon name="ChevronLeft" aria-hidden />
       {!isCompactViewport && <span>Back to main thread</span>}
@@ -553,7 +552,7 @@ export default definePluginApp((app) => {
   app.slots.messageDirective({ id: "arena", component: ArenaDirective });
   app.slots.experimental_threadHeaderAction({
     id: "arena-back-to-main-thread",
-    title: "Arena navigation",
+    title: "Back to main thread",
     component: BackToMainThread,
   });
 });

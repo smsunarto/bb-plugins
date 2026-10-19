@@ -241,7 +241,7 @@ export class ArenaGit {
         return {
           status: "conflict" as const,
           summary:
-            "The synthesis conflicts with ongoing work. Existing source files were preserved.",
+            "The combined result conflicts with newer work in your checkout. Your files were left unchanged.",
           checks: [
             {
               command: "git merge-tree",
@@ -282,13 +282,13 @@ export class ArenaGit {
       current === journal.prepared.combinedTree
         ? {
             status: "integrated",
-            summary: "Verified integration was recovered from its apply journal.",
+            summary: "Checks passed. Arena finished applying the changes after a restart.",
             checks: journal.checks,
           }
         : {
             status: "interrupted",
             summary:
-              "Integration was interrupted at its commit point. Inspect the working checkout before starting another run.",
+              "Applying the changes stopped partway. Review your working checkout before starting another Arena.",
             checks: journal.checks,
           };
     await this.save(this.path(input), receipt);
@@ -310,21 +310,20 @@ export class ArenaGit {
       if (checks.some((check) => check.exitCode !== 0))
         return {
           status: "verification-failed",
-          summary: "Worker verification failed. No synthesis was integrated.",
+          summary: "Checks failed, so no changes were applied.",
           checks,
         };
       if ((await this.tree(prepared.synthesisPath, signal)) !== prepared.combinedTree)
         return {
           status: "verification-failed",
-          summary:
-            "Verification changed source files. The modified result needs another verification round.",
+          summary: "The checks changed source files, so the result needs another round.",
           checks,
         };
       if ((await this.tree(prepared.root, signal)) !== prepared.sourceTree)
         return {
           status: "changed",
           summary:
-            "The working checkout changed during verification. The next round will use a fresh snapshot.",
+            "Your checkout changed while checks ran. The next round starts from your latest files.",
           checks,
         };
       const patch = this.path(input, `.${randomUUID()}.patch`);
@@ -353,8 +352,7 @@ export class ArenaGit {
           await this.git(prepared.root, ["apply", "--whitespace=nowarn", patch], commitSignal);
         const receipt: Integration = {
           status: "integrated",
-          summary:
-            "Worker checks passed and the synthesis was integrated into the working checkout.",
+          summary: "Checks passed. The changes are in your working checkout, uncommitted.",
           checks,
         };
         await this.save(this.path(input), receipt);

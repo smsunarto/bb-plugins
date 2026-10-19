@@ -277,7 +277,7 @@
     font-size: 11px;
     white-space: nowrap;
   }
-  & .arena-badge[data-kind="Base"] {
+  & .arena-badge[data-kind="Starting point"] {
     border-color: transparent;
     color: var(--primary-foreground, var(--background));
     background: var(--primary);
@@ -407,7 +407,9 @@
     vertical-align: top;
   }
   & :is(.arena-rubric th, .arena-rubric td):not(:first-child) {
-    width: 3.5em;
+    width: 1%;
+    padding-left: 12px;
+    white-space: nowrap;
     text-align: right;
     font-variant-numeric: tabular-nums;
     color: var(--foreground);

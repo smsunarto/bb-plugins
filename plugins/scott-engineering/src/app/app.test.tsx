@@ -145,9 +145,9 @@ test("realtime completion replaces progress with synthesis and verification", as
     };
     await slot.behavior.emitRealtime("arena.changed", { runId: id });
     await slot.findByText("One owner, clearer errors");
-    expect(slot.getByText("Integrated")).toBeTruthy();
+    expect(slot.getByText("Applied")).toBeTruthy();
     expect(slot.getByText("Better failure messages")).toBeTruthy();
-    expect(slot.getByText("Base")).toBeTruthy();
+    expect(slot.getByText("Starting point")).toBeTruthy();
     expect(slot.getByText("Passed")).toBeTruthy();
     expect(slot.queryByRole("button", { name: "Stop Arena" })).toBeNull();
     const reads = state.reads;
@@ -166,7 +166,7 @@ test("reconnecting refreshes a completion missed while disconnected", async () =
     await slot.behavior.setRealtimeConnectionState("reconnecting");
     state.run = { ...state.run, phase: "completed" };
     await slot.behavior.setRealtimeConnectionState("connected");
-    await slot.findByText("Integrated");
+    await slot.findByText("Applied");
     expect(slot.queryByRole("button", { name: "Stop Arena" })).toBeNull();
   } finally {
     slot.lifecycle.unmount();
@@ -203,11 +203,11 @@ test("the progress steps follow the current round's stages", async () => {
       (step) => `${step.textContent}:${step.getAttribute("data-state")}`,
     );
     expect(states).toEqual([
-      "Frame:pending",
-      "Compete:done",
-      "Judge:pending",
-      "Synthesize:pending",
-      "Verify:pending",
+      "Plan:pending",
+      "Build:done",
+      "Review:pending",
+      "Combine:pending",
+      "Check:pending",
     ]);
   } finally {
     slot.lifecycle.unmount();

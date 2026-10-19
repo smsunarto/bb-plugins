@@ -5,6 +5,7 @@ import { instructionFiles } from "@bb-kit/core/instructions";
 import { z } from "zod";
 import {
   MAX_ROUNDS,
+  roleLabel,
   runSchema,
   terminal,
   type ArenaRun,
@@ -36,7 +37,7 @@ const stages: Partial<Record<ArenaRun["phase"], Stage>> = {
 };
 /** Names a hidden worker in its thread header, e.g. "Arena candidate 2 (Codex)". */
 function workerTitle(run: ArenaRun, job: Job) {
-  const role = job.candidate === null ? job.role : `${job.role} ${job.candidate + 1}`;
+  const role = roleLabel(job.role, job.candidate).toLowerCase();
   const family = job.model.providerId === "codex" ? "Codex" : "Claude";
   return `Arena ${role} (${family})${run.round > 1 ? ` · round ${run.round}/${MAX_ROUNDS}` : ""}`;
 }
@@ -477,7 +478,7 @@ export class ArenaService {
       this.save(run);
     } catch (error) {
       // Any failed response can follow a committed thread creation.
-      run.error = `Reconciling ${job.role} dispatch: ${String(error)}`;
+      run.error = `Checking whether ${roleLabel(job.role, job.candidate)} started: ${String(error)}`;
       this.save(run);
     }
   }
@@ -490,7 +491,7 @@ export class ArenaService {
     } catch (error) {
       if (!(error instanceof Error && /not found|404/i.test(error.message))) throw error;
       job.outcome = "failed";
-      job.error = "Worker was deleted";
+      job.error = "Its thread was deleted.";
       this.save(run);
       return;
     }
@@ -503,7 +504,7 @@ export class ArenaService {
     }
     if (child.status !== "idle" || !job.report) {
       job.outcome = "failed";
-      job.error = "Worker ended without a valid final report";
+      job.error = "Finished without a usable result.";
       this.save(run);
       return;
     }
@@ -516,7 +517,7 @@ export class ArenaService {
         (!env.path || env.status !== "ready" || env.hostId !== run.hostId)
       ) {
         job.outcome = "failed";
-        job.error = "Worker has no ready artifact checkout on the run host";
+        job.error = "Its checkout is not ready on this machine.";
         this.save(run);
         return;
       }
@@ -562,11 +563,13 @@ export class ArenaService {
     for (const job of jobs) await this.settle(run, job, signal);
     if (jobs.some((job) => job.outcome === "running")) return false;
     const completed = jobs.filter((job) => job.outcome === "completed");
-    if (!completed.length)
-      return !this.rerun(
-        run,
-        `${stage.role} produced no usable output. ${jobs.map((job) => job.error ?? "").join(" ")}`,
-      );
+    if (!completed.length) {
+      const nothing =
+        stage.role === "candidate"
+          ? "Neither candidate produced a usable result."
+          : `${roleLabel(stage.role, null)} produced no usable result.`;
+      return !this.rerun(run, `${nothing} ${jobs.map((job) => job.error ?? "").join(" ")}`);
+    }
     const report = completed[0]?.report;
     if (report?.kind === "judge" && report.reframe) return !this.rerun(run, report.summary);
     run.phase = stage.next;
@@ -702,7 +705,7 @@ export class ArenaService {
         if (job.dispatch === "dispatching" && !job.threadId) {
           job.dispatch = "retired";
           job.outcome = "failed";
-          job.error = "Dispatch was not found during recovery; reservation retired";
+          job.error = "It had not started before a restart, so Arena skipped it.";
         }
       }
     }
@@ -767,7 +770,7 @@ export class ArenaService {
     try {
       await this.stopOwned(run, finalPhase);
     } catch (error) {
-      run.error = `${run.error ?? "Worker cleanup is pending"}: ${String(error)}${run.recoveryAttempts >= 3 ? ". Automatic recovery limit reached. Retry Stop Arena." : ""}`;
+      run.error = `${run.error ?? "Still stopping workers"}: ${String(error)}${run.recoveryAttempts >= 3 ? ". Automatic retries are used up. Select Retry stop." : ""}`;
       this.save(run);
       this.retryLater(run.id);
     }
@@ -779,7 +782,7 @@ export class ArenaService {
       if (job.outcome !== "running") continue;
       if (job.dispatch === "reserved") {
         job.outcome = "failed";
-        job.error = "Stopped before dispatch";
+        job.error = "Stopped before it started.";
       } else
         await this.stopWorker(
           job,
