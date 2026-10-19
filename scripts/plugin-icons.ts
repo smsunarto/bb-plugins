@@ -257,6 +257,21 @@ const customIcons = {
     name: "CheckList",
     nodes: CheckListIcon,
   },
+  "remind-me": {
+    name: "Bookmark",
+    nodes: [
+      [
+        "path",
+        {
+          d: "M6 21V5a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v16l-6-4-6 4Z",
+          stroke: "currentColor",
+          strokeWidth: "1.5",
+          strokeLinecap: "round",
+          strokeLinejoin: "round",
+        },
+      ],
+    ],
+  },
   review: {
     name: "CheckmarkCircle",
     nodes: CheckmarkCircle02Icon,

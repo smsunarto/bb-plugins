@@ -1,0 +1,50 @@
+{
+  "name": "@smsunarto/bb-plugin-remind-me",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Save deferred work from the current conversation with /remind-me.",
+  "license": "MIT",
+  "author": "Scott Sunarto",
+  "type": "module",
+  "engines": {
+    "bb": ">=0.46.0 <1.0.0",
+    "bbPluginSdk": ">=0.6.37"
+  },
+  "bb": {
+    "name": "Remind Me",
+    "description": "Turn unfinished work from a conversation into a task for later.",
+    "branding": {
+      "icon": "./assets/icon.svg",
+      "logo": {
+        "light": "./assets/logo.svg",
+        "dark": "./assets/logo-dark.svg"
+      }
+    },
+    "server": "./src/server/server.ts",
+    "skills": [
+      "skills"
+    ]
+  },
+  "files": [
+    "dist/",
+    "assets/",
+    "src/",
+    "instructions/",
+    "skills/",
+    "README.md"
+  ],
+  "dependencies": {
+    "@bb-kit/core": "0.2.0"
+  },
+  "devDependencies": {
+    "@get-bb/plugin-sdk": "0.6.37",
+    "@types/node": "^22.0.0",
+    "typescript": "^6.0.0"
+  },
+  "scripts": {
+    "dev": "\"${BB_CLI:?Run bun run dev from the repository root}\" plugin dev .",
+    "build": "bb plugin build .",
+    "typecheck": "tsc --noEmit",
+    "check": "bun ../../packages/bb-kit-dev/src/bin.ts check"
+  }
+}

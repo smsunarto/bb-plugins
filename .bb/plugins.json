@@ -60,6 +60,10 @@
       "source": "./plugins/prompt-editor"
     },
     {
+      "name": "remind-me",
+      "source": "./plugins/remind-me"
+    },
+    {
       "name": "review",
       "source": "./plugins/review"
     },
