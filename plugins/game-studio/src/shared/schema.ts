@@ -15,6 +15,7 @@ export const nodeKindSchema = z.enum([
   "asset",
   "document",
   "table",
+  "review",
 ]);
 export const nodeSchema = z.object({
   id: idSchema,

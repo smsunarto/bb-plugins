@@ -17,6 +17,7 @@ import { rpc } from "./rpc.ts";
 import { selectGameCheckout, selectGameRequestCheckout } from "./game-checkout-selection.ts";
 import { ConnectDialog } from "./connect.tsx";
 import type { GenerationRecipe, Game } from "../shared/schema.ts";
+import type { AgentSelection } from "../shared/generation.ts";
 import { REQUEST_MENTION_PROVIDER } from "../shared/request-mention.ts";
 import { StudioCanvas } from "./canvas.tsx";
 import { DesignEditor, AssetLibrary, Evidence } from "./views.tsx";
@@ -52,6 +53,12 @@ export type StudioAction =
   | "import"
   | "new-unity";
 const panelActionId = "studio";
+/** Used when the composer reports no agent, as on surfaces outside a composer. */
+const fallbackAgent: AgentSelection = {
+  providerId: "codex",
+  model: "gpt-6.1-sol",
+  reasoningLevel: "high",
+};
 const StudioLocation = createContext<(gameId?: string, tab?: Tab) => void>(() => {});
 let pendingOpen: { game: Game; threadId: string | null } | null = null;
 
@@ -214,6 +221,31 @@ function Workbench({ gameId, tab }: { gameId: string; tab: Tab }) {
   );
   const openGame = useContext(StudioLocation);
   const composer = useComposer();
+  // Text and review nodes start on the composer's agent; each node's composer can change it.
+  const [defaultAgent, setDefaultAgent] = useState<AgentSelection>(fallbackAgent);
+  useEffect(() => {
+    let live = true;
+    const resolve = async () => {
+      const { providerId, model, reasoningLevel, serviceTier } = await composer
+        .experimental_setSelection({})
+        // Surfaces outside a composer keep the fallback agent.
+        .catch(() => ({}) as Awaited<ReturnType<typeof composer.experimental_setSelection>>);
+      if (!live || !providerId || !model) return;
+      const next: AgentSelection = {
+        providerId,
+        model,
+        reasoningLevel: reasoningLevel ?? fallbackAgent.reasoningLevel,
+        ...(serviceTier ? { serviceTier } : {}),
+      };
+      setDefaultAgent((current) =>
+        JSON.stringify(current) === JSON.stringify(next) ? current : next,
+      );
+    };
+    void resolve();
+    return () => {
+      live = false;
+    };
+  }, [composer]);
   const [visitedTabs, setVisitedTabs] = useState(() => new Set<Tab>([tab]));
   useEffect(() => {
     setVisitedTabs((previous) => (previous.has(tab) ? previous : new Set([...previous, tab])));
@@ -481,6 +513,8 @@ function Workbench({ gameId, tab }: { gameId: string; tab: Tab }) {
                 {board ? (
                   <StudioCanvas
                     gameId={gameId}
+                    hostId={workspace.game.hostId}
+                    defaultAgent={defaultAgent}
                     key={`${gameId}:${board.board.id}`}
                     active={tab === "canvas"}
                     board={board.board}
@@ -493,11 +527,12 @@ function Workbench({ gameId, tab }: { gameId: string; tab: Tab }) {
                     onGenerate={(nodeId, recipe) =>
                       void request("asset", nodeId, recipe, { boardId: board.board.id })
                     }
-                    onGenerateDirect={async (nodeId, revision, requestId, model, brief) => {
+                    onGenerateDirect={async (nodeId, revision, requestId, model, brief, agent) => {
                       const selection =
-                        model.provider === "bb"
+                        agent ??
+                        (model.provider === "bb"
                           ? await composer.experimental_setSelection({})
-                          : undefined;
+                          : undefined);
                       await client.generateCanvas({
                         gameId,
                         boardId: board.board.id,
@@ -507,6 +542,8 @@ function Workbench({ gameId, tab }: { gameId: string; tab: Tab }) {
                         threadId: composer.scope.kind === "thread" ? composer.scope.threadId : null,
                         model: selection?.model ? { ...model, id: selection.model } : model,
                         ...(selection?.providerId ? { textProviderId: selection.providerId } : {}),
+                        ...(agent?.reasoningLevel ? { reasoningLevel: agent.reasoningLevel } : {}),
+                        ...(agent?.serviceTier ? { serviceTier: agent.serviceTier } : {}),
                         ...(brief ? { brief } : {}),
                       });
                       await refetch();

@@ -1,9 +1,8 @@
 import { expect, test } from "bun:test";
 import { createHash } from "node:crypto";
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
-import { mediaRequest } from "../../shared/generation.ts";
+import { mediaRequest, generationImagePaths } from "../../shared/generation.ts";
 import { gameSchema } from "../../shared/schema.ts";
-import { generationImagePaths } from "../../shared/generation.ts";
 import { captureCanvasInputs } from "./generation-inputs.ts";
 
 const shaA = "559aead08264d5795d3909718cdd05abd49572e84fe55590eef31a88a08fdffd";

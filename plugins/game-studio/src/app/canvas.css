@@ -136,6 +136,55 @@
 .gs-node-text h3 {
   font-size: 13px;
 }
+/* A selected note edits in place, matching the rendered note's box. */
+.gs-canvas-root .gs-node-note {
+  display: block;
+  width: 100%;
+  min-height: 96px;
+  margin: 0;
+  border: 0;
+  border-radius: 10px;
+  outline: 0;
+  resize: none;
+  field-sizing: content;
+  background: transparent;
+  box-shadow: none;
+  color: var(--foreground);
+  font: inherit;
+  font-size: 12px;
+  line-height: 1.5;
+}
+.gs-model-preview {
+  position: absolute;
+  inset: 0;
+  margin: 0;
+  display: grid;
+  place-items: center;
+  cursor: grab;
+}
+.gs-model-preview:active {
+  cursor: grabbing;
+}
+.gs-model-preview > canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+.gs-model-preview[data-state="ready"] > span {
+  display: none;
+}
+.gs-node-media[data-model] .gs-node-badge {
+  pointer-events: none;
+}
+/* The review composer holds the agent picker, so its node is wider than a note. */
+.gs-node[data-kind="review"] {
+  width: 340px;
+}
+.gs-node-prompt .gs-node-agent {
+  min-width: 0;
+  margin-right: auto;
+}
 .gs-node-placeholder {
   display: flex;
   align-items: center;

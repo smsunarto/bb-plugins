@@ -39,14 +39,39 @@ export const imageRequest = z.strictObject({
 /** Media models whose prompts a BB model can write from a prompting guide. */
 export const briefRecipe = z.enum(["nano-banana", "concept-art", "omni-video", "fal-video"]);
 export type BriefRecipe = z.output<typeof briefRecipe>;
+export const reasoningLevel = z.enum([
+  "none",
+  "low",
+  "medium",
+  "high",
+  "xhigh",
+  "ultracode",
+  "max",
+  "ultra",
+]);
+export const serviceTier = z.enum(["default", "fast"]);
+/** The BB agent a text or review node runs on, as `experimental_ProviderModelPicker` resolves it. */
+export const agentSelection = z.strictObject({
+  providerId: z.string().min(1).max(100),
+  model: z.string().min(1).max(100),
+  reasoningLevel,
+  serviceTier: serviceTier.optional(),
+});
+export type AgentSelection = z.output<typeof agentSelection>;
 export const textRequest = z.strictObject({
   kind: z.literal("text"),
   prompt: brief,
   model: model.default({ provider: "bb" }),
   providerId: z.string().min(1).max(100).optional(),
+  reasoningLevel: reasoningLevel.optional(),
+  serviceTier: serviceTier.optional(),
   /** Writes the target media node's prompt for this model instead of text. */
   briefFor: briefRecipe.optional(),
+  /** Reviews the connected outputs instead of writing free text. */
+  review: z.literal(true).optional(),
   images: z.array(mediaPath).max(14).default([]),
+  /** Project files the reviewer inspects on disk, such as 3D models. */
+  files: z.array(mediaPath).min(1).max(8).optional(),
   imageReferenceKey,
   outputCount: z.literal(1).default(1),
 });
@@ -161,6 +186,8 @@ export const canvasGenerationInput = z.strictObject({
   model: model.optional(),
   approvedImagePath: mediaPath.optional(),
   textProviderId: z.string().min(1).max(100).optional(),
+  reasoningLevel: reasoningLevel.optional(),
+  serviceTier: serviceTier.optional(),
   /** Write an image or video node's prompt with a BB model instead of generating media. */
   brief: z.literal(true).optional(),
 });

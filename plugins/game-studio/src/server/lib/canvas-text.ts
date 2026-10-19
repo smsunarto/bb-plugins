@@ -9,8 +9,15 @@ import { projectFile } from "./paths.ts";
 import { studioHostContract } from "../../shared/host-contract.ts";
 
 const instructions = instructionFiles(import.meta.url);
-/** Briefs follow the target model's prompting guide; other runs produce node text. */
-function taskInstructions(request: Extract<GenerationJob["request"], { kind: "text" }>) {
+type TextRequest = Extract<GenerationJob["request"], { kind: "text" }>;
+/** Briefs follow the target model's prompting guide; reviews judge inputs; others write node text. */
+function taskInstructions(request: TextRequest, game: Game) {
+  if (request.review)
+    return instructions.read("canvas-review", {
+      files: request.files
+        ? request.files.map((path) => `- ${projectFile(game.rootPath, path)}`).join("\n")
+        : "(none)",
+    });
   if (!request.briefFor) return instructions.read("canvas-text");
   const model = recipes.find((recipe) => recipe.id === request.briefFor)!.label;
   return instructions.read("canvas-brief", {
@@ -101,16 +108,18 @@ export class CanvasText {
           environment: { type: "host", hostId: game.hostId, workspace: { type: "personal" } },
           providerId: job.request.providerId,
           model: job.request.model.id,
+          ...(job.request.reasoningLevel ? { reasoningLevel: job.request.reasoningLevel } : {}),
+          ...(job.request.serviceTier ? { serviceTier: job.request.serviceTier } : {}),
           visibility: "hidden",
           origin: "plugin",
           originPluginId: "game-studio",
-          title: `${job.request.briefFor ? "Canvas brief" : "Canvas text"} · ${job.id}`,
+          title: `${job.request.review ? "Canvas review" : job.request.briefFor ? "Canvas brief" : "Canvas text"} · ${job.id}`,
           pluginMetadata: { gameStudioJobId: job.id, gameStudioGameId: game.id },
           input: [
             {
               type: "text",
               mentions: [],
-              text: `${taskInstructions(job.request)}\n\n${generationPrompt(job.request)}`,
+              text: `${taskInstructions(job.request, game)}\n\n${generationPrompt(job.request)}`,
             },
             ...images,
           ],

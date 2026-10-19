@@ -78,6 +78,7 @@ export function canvasRequest(workspace: Workspace, input: z.output<typeof canva
     node = board.nodes.find(({ id }) => id === input.nodeId);
   if (!node) throw new Error("The canvas node no longer exists.");
   const paths: string[] = [],
+    files: string[] = [],
     linkedText: string[] = [];
   const imageLabels = new Map<string, Set<string>>();
   const visited = new Set<string>();
@@ -87,7 +88,7 @@ export function canvasRequest(workspace: Workspace, input: z.output<typeof canva
     if (!other) throw new Error(`Reference node ${id} no longer exists.`);
     if (visited.has(id)) return;
     visited.add(id);
-    if (other.type === "text") {
+    if (other.type === "text" || other.type === "review") {
       linkedText.push(String(other.data.text ?? ""));
       return;
     }
@@ -98,6 +99,12 @@ export function canvasRequest(workspace: Workspace, input: z.output<typeof canva
       return;
     }
     if (promptOnly) throw new Error("promptSource must refer to a text or document node.");
+    if (other.type === "model-3d") {
+      const asset = workspace.assets.find((item) => item.id === other.data.assetId);
+      if (asset?.type !== "model") throw new Error("Every 3D model input needs a generated model.");
+      files.push(asset.path);
+      return;
+    }
     addAsset(other.data.assetId, other);
   };
   const addAsset = (id: unknown, sourceNode?: CanvasNode) => {
@@ -142,7 +149,7 @@ export function canvasRequest(workspace: Workspace, input: z.output<typeof canva
   };
   const frames = node.type === "video" ? [slotPath("start"), slotPath("end")] : [];
   const promptSections = [
-    node.type === "text"
+    node.type === "text" || node.type === "review"
       ? String(node.data.instruction ?? "")
       : typeof node.data.prompt === "string"
         ? node.data.prompt
@@ -195,9 +202,9 @@ export function canvasRequest(workspace: Workspace, input: z.output<typeof canva
       target,
     };
   }
-  const labels = node.type === "image" || node.type === "text" ? referenceKey : {};
+  const labels = ["image", "text", "review"].includes(node.type) ? referenceKey : {};
   const kind =
-    node.type === "text"
+    node.type === "text" || node.type === "review"
       ? "text"
       : node.type === "model-3d"
         ? "model-3d"
@@ -206,7 +213,12 @@ export function canvasRequest(workspace: Workspace, input: z.output<typeof canva
           : node.type === "image"
             ? "image"
             : undefined;
-  if (!kind) throw new Error("Select a text, image, video, or 3D node.");
+  if (!kind) throw new Error("Select a text, review, image, video, or 3D node.");
+  const agent = {
+    providerId: input.textProviderId,
+    ...(input.reasoningLevel ? { reasoningLevel: input.reasoningLevel } : {}),
+    ...(input.serviceTier ? { serviceTier: input.serviceTier } : {}),
+  };
   const modelInput = () => {
     const front = slotPath("front");
     if (!front) throw new Error("Connect a Front view image before generating the 3D model.");
@@ -230,10 +242,13 @@ export function canvasRequest(workspace: Workspace, input: z.output<typeof canva
     kind === "text"
       ? {
           kind,
-          prompt,
-          providerId: input.textProviderId,
+          // A review without written criteria judges its inputs against the review guide alone.
+          prompt: node.type === "review" ? prompt || "Review the connected outputs." : prompt,
+          ...agent,
           ...(input.model ? { model: input.model } : {}),
           images: [...new Set(paths)],
+          ...(node.type === "review" ? { review: true } : {}),
+          ...(files.length ? { files: [...new Set(files)] } : {}),
           ...labels,
         }
       : kind === "model-3d"

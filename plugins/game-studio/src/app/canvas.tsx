@@ -1,12 +1,21 @@
 import {
   useBbNavigate,
   Markdown,
+  experimental_ProviderModelPicker as ProviderModelPicker,
   experimental_useCodeTheme as useCodeTheme,
 } from "@get-bb/plugin-sdk/app";
-import type { GenerationJob } from "../shared/generation.ts";
+import type { AgentSelection, GenerationJob } from "../shared/generation.ts";
 import { Icon } from "./icons.tsx";
 // Canvas model and layout adapted from OhMyGame; modified for BB. Apache-2.0.
-import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import type { CSSProperties, KeyboardEvent } from "react";
 import {
   ReactFlow,
@@ -45,11 +54,14 @@ import type { InputRef, InputType, PortInputs } from "../shared/inputs.ts";
 import { CanvasInputs } from "./canvas-inputs.tsx";
 import {
   GenerationSettings,
+  nodeAgent,
   nodeBatch,
   nodeModelLabel,
   promptField,
   runsDirectly,
+  runsOnAgent,
 } from "./generation.tsx";
+import { ModelPreview } from "./model-preview.tsx";
 import type { NodePatch } from "./generation.tsx";
 import { BriefStarters } from "./brief-starters.tsx";
 import { GenerationSection } from "./takes.tsx";
@@ -84,6 +96,13 @@ const kinds: { kind: NodeKind; label: string; icon: string; key?: string; color:
   { kind: "model-3d", label: "3D", icon: "Box", color: "var(--ansi-9, #fe5d86)" },
   { kind: "document", label: "Document", icon: "FileText", color: "var(--ansi-12, #7cacfe)" },
   { kind: "table", label: "Table", icon: "Table", color: "var(--ansi-11, #f7d05c)" },
+  {
+    kind: "review",
+    label: "Review",
+    icon: "ClipboardCheck",
+    key: "r",
+    color: "var(--ansi-2, #3fa266)",
+  },
 ];
 const kindInfo = (kind: NodeKind | undefined) =>
   kinds.find((item) => item.kind === kind) ?? {
@@ -94,7 +113,11 @@ const kindInfo = (kind: NodeKind | undefined) =>
     color: "var(--muted-foreground)",
   };
 // Each input type takes the color and icon of the node kind that feeds it.
-const inputTypes = { text: kindInfo("text"), image: kindInfo("image") };
+const inputTypes = {
+  text: kindInfo("text"),
+  image: kindInfo("image"),
+  model: kindInfo("model-3d"),
+};
 type CardActionsValue = {
   edit: (id: string, patch: NodePatch) => void;
   run: (id: string) => void;
@@ -105,6 +128,8 @@ const CardActions = createContext<CardActionsValue>({
   run: () => {},
   brief: () => {},
 });
+/** Where text and review nodes run, and the agent they use until one is chosen. */
+const AgentDefaults = createContext<{ hostId: string; agent: AgentSelection } | null>(null);
 const running = (job: GenerationJob) => job.status === "queued" || job.status === "running";
 const isBrief = (job: GenerationJob | undefined) =>
   job?.request.kind === "text" && !!job.request.briefFor;
@@ -112,6 +137,7 @@ function CanvasCard({ id, data, selected }: NodeProps<Card>) {
   const node = data.source;
   const info = kindInfo(node.type);
   const actions = useContext(CardActions);
+  const defaults = useContext(AgentDefaults);
   const navigate = useBbNavigate();
   const briefing = !!data.briefing;
   const jobs = data.jobs ?? [];
@@ -119,7 +145,7 @@ function CanvasCard({ id, data, selected }: NodeProps<Card>) {
   // Image runs keep the node usable, so "generating" comes from its jobs rather than `busy`.
   const pending =
     (data.busy && !briefing) || jobs.some((job) => running(job) && job.request.kind !== "text");
-  const takes = media ? nodeTakes(node) : [];
+  const takes = media || node.type === "model-3d" ? nodeTakes(node) : [];
   const briefModel = nodeBriefRecipe(node);
   const hasInputs =
     !!node.data.promptSource ||
@@ -132,6 +158,14 @@ function CanvasCard({ id, data, selected }: NodeProps<Card>) {
       : undefined;
   const field = promptField(node.type);
   const prompt = field ? String(node.data[field] ?? "") : "";
+  const modelLabel = nodeModelLabel(node, defaults?.agent);
+  const agent = runsOnAgent(node.type) ? (nodeAgent(node) ?? defaults?.agent) : undefined;
+  const placeholder =
+    node.type === "text"
+      ? "Ask an agent to write this note…"
+      : node.type === "review"
+        ? "What should the review check? Leave empty for a general game-readiness review."
+        : `Describe the ${info.label.toLowerCase()} and its Unity consumer…`;
   return (
     <div
       className="gs-node"
@@ -140,7 +174,7 @@ function CanvasCard({ id, data, selected }: NodeProps<Card>) {
       data-generation={pending ? (asset ? "pending-more" : "pending") : data.job?.status}
       style={{ "--gs-kind": info.color, "--gs-ports": data.inputs?.length ?? 0 } as CSSProperties}
     >
-      {field && node.type !== "text" && (
+      {field && !runsOnAgent(node.type) && (
         <NodeToolbar isVisible={selected} position={Position.Top} offset={30}>
           <div className="gs-node-toolbar">
             <GenerationSettings node={node} compact onChange={(patch) => actions.edit(id, patch)} />
@@ -161,19 +195,30 @@ function CanvasCard({ id, data, selected }: NodeProps<Card>) {
       <header className="gs-node-label" title="Drag to move">
         <Icon name={info.icon} />
         <strong>{node.title || info.label}</strong>
-        {field && <span>{nodeModelLabel(node)}</span>}
+        {modelLabel && <span>{modelLabel}</span>}
       </header>
       <div className="gs-node-body">
         <InputPorts inputs={data.inputs ?? []} selected={!!selected} />
-        <NodePreview
-          node={node}
-          asset={asset}
-          document={document}
-          url={url}
-          placeholder={!prompt}
-          pending={pending}
-          takes={takes.length > 1 ? takes : undefined}
-        />
+        {/* A note is the user's own text, so a selected note edits in place. */}
+        {node.type === "text" && selected ? (
+          <textarea
+            className="gs-node-text gs-node-note nodrag nopan nowheel"
+            aria-label="Note"
+            placeholder="Write a design note…"
+            readOnly={data.busy}
+            value={String(node.data.text ?? "")}
+            onChange={(event) => actions.edit(id, { text: event.target.value })}
+          />
+        ) : (
+          <NodePreview
+            node={node}
+            asset={asset}
+            document={document}
+            url={url}
+            pending={pending}
+            takes={takes.length > 1 ? takes : undefined}
+          />
+        )}
         {data.job && !(isBrief(data.job) && data.job.status === "succeeded") && (
           <div className="gs-generation-progress nodrag nopan">
             <span>
@@ -198,17 +243,14 @@ function CanvasCard({ id, data, selected }: NodeProps<Card>) {
         {/* The editor overlays the brief, so selecting a node never resizes or moves it. */}
         {field && (
           <div className="gs-node-brief-slot">
-            {prompt.trim() && <p className="gs-node-brief">{prompt}</p>}
+            {/* A note's ask is spent once its text is written; only inputs to a run stay on show. */}
+            {prompt.trim() && node.type !== "text" && <p className="gs-node-brief">{prompt}</p>}
             {selected && (
               <div className="gs-node-prompt nodrag nopan nowheel">
                 <textarea
                   aria-label={`${info.label} brief`}
                   readOnly={briefing}
-                  placeholder={
-                    node.type === "text"
-                      ? "Write your text instruction…"
-                      : `Describe the ${info.label.toLowerCase()} and its Unity consumer…`
-                  }
+                  placeholder={placeholder}
                   value={prompt}
                   onChange={(event) => actions.edit(id, { [field]: event.target.value })}
                   onKeyDown={(event) => {
@@ -228,7 +270,28 @@ function CanvasCard({ id, data, selected }: NodeProps<Card>) {
                       })
                     }
                   />
-                  <small>{runsDirectly(node) ? "⌘↵ to run" : "Prepares a composer request"}</small>
+                  {agent && defaults ? (
+                    <ProviderModelPicker
+                      className="gs-node-agent"
+                      value={agent}
+                      onChange={(value) =>
+                        actions.edit(id, {
+                          agent: {
+                            providerId: value.providerId,
+                            model: value.model,
+                            reasoningLevel: value.reasoningLevel,
+                            ...(value.serviceTier ? { serviceTier: value.serviceTier } : {}),
+                          },
+                        })
+                      }
+                      routing={{ kind: "host", hostId: defaults.hostId }}
+                      disabled={data.busy}
+                    />
+                  ) : (
+                    <small>
+                      {runsDirectly(node) ? "⌘↵ to run" : "Prepares a composer request"}
+                    </small>
+                  )}
                   {briefModel && (
                     <button
                       type="button"
@@ -247,7 +310,12 @@ function CanvasCard({ id, data, selected }: NodeProps<Card>) {
                     data-busy={(data.busy && !briefing) || undefined}
                     title={runsDirectly(node) ? "Run node" : "Prepare request"}
                     aria-label={runsDirectly(node) ? "Run node" : "Prepare request"}
-                    disabled={data.busy || (!prompt.trim() && node.type !== "model-3d")}
+                    disabled={
+                      data.busy ||
+                      (!prompt.trim() &&
+                        node.type !== "model-3d" &&
+                        !(node.type === "review" && hasInputs))
+                    }
                     onClick={() => actions.run(id)}
                   >
                     <Icon name={data.busy && !briefing ? "LoaderCircle" : "ArrowUp"} />
@@ -315,7 +383,6 @@ function NodePreview({
   asset,
   document,
   url,
-  placeholder,
   pending,
   takes,
 }: {
@@ -323,7 +390,6 @@ function NodePreview({
   asset?: Asset;
   document?: StudioDocument;
   url?: string;
-  placeholder: boolean;
   pending?: boolean;
   takes?: Take[];
 }) {
@@ -351,6 +417,20 @@ function NodePreview({
         )}
       </div>
     );
+  if (url && asset?.type === "model" && /\.(glb|gltf)$/i.test(asset.path))
+    return (
+      <div className="gs-node-media" data-model>
+        <ModelPreview url={url} name={asset.name} />
+        <span className="gs-node-badge">
+          {asset.path.startsWith("Assets/") ? "In Assets" : "Staged"}
+        </span>
+        {takes && (
+          <span className="gs-node-badge" data-takes>
+            {takes.length} takes
+          </span>
+        )}
+      </div>
+    );
   if (node.type === "image" || node.type === "video")
     return (
       <div className="gs-node-media" data-empty style={{ aspectRatio }}>
@@ -365,8 +445,14 @@ function NodePreview({
         <Markdown content={String(markdown)} />
       </div>
     );
-  if (node.type === "text")
-    return placeholder ? <p className="gs-node-placeholder">Add a design note…</p> : null;
+  if (node.type === "text") return <p className="gs-node-placeholder">Add a design note…</p>;
+  if (node.type === "review")
+    return (
+      <p className="gs-node-placeholder">
+        <Icon name={info.icon} />
+        {pending ? "Reviewing…" : "No review yet"}
+      </p>
+    );
   return (
     <p className="gs-node-placeholder">
       <Icon name={info.icon} />
@@ -591,11 +677,15 @@ const initialData = (kind: NodeKind, documents: StudioDocument[]): CanvasNode["d
       return { assetId: "", mediaType: "audio" };
     case "table":
       return { tableId: "" };
+    case "review":
+      return { instruction: "", text: "", references: [] };
   }
 };
 const noGenerationJobs: GenerationJob[] = [];
 export function StudioCanvas({
   gameId,
+  hostId,
+  defaultAgent,
   active = true,
   board,
   revision,
@@ -612,6 +702,9 @@ export function StudioCanvas({
   onStatus,
 }: {
   gameId: string;
+  hostId: string;
+  /** The agent text and review nodes run on until their composer picks another. */
+  defaultAgent: AgentSelection;
   active?: boolean;
   board: Board;
   revision: string;
@@ -627,6 +720,7 @@ export function StudioCanvas({
     requestId: string,
     model: { provider: string; id?: string },
     brief?: true,
+    agent?: AgentSelection,
   ) => Promise<void>;
   onGenerationControl: (
     jobId: string,
@@ -637,6 +731,7 @@ export function StudioCanvas({
   onStatus?: (status: "saved" | "saving" | "dirty" | "error") => void;
 }) {
   const { mode: colorMode } = useCodeTheme();
+  const agentDefaults = useMemo(() => ({ hostId, agent: defaultAgent }), [hostId, defaultAgent]);
   const cards = useCallback(
     (source: Board): Card[] =>
       source.nodes.map((node) => ({
@@ -1057,6 +1152,7 @@ export function StudioCanvas({
     model: { provider: string; id?: string },
     brief?: true,
     batch = 1,
+    agent?: AgentSelection,
   ) => {
     if (startingRef.current || busy(id)) return;
     startingRef.current = true;
@@ -1078,6 +1174,7 @@ export function StudioCanvas({
             batch > 1 ? batchRequestId(requestId, index) : requestId,
             model,
             brief,
+            agent,
           ),
         ),
       );
@@ -1093,14 +1190,14 @@ export function StudioCanvas({
     const source = nodes.find((node) => node.id === id)?.data.source;
     const recipe = source && nodeRecipe(source);
     if (!source || busy(id)) return;
+    if (runsOnAgent(source.type))
+      return generate(id, { provider: "bb" }, undefined, 1, nodeAgent(source) ?? defaultAgent);
     if (runsDirectly(source))
       return generate(
         id,
-        source.type === "text"
-          ? { provider: "bb" }
-          : recipe?.id === "concept-art"
-            ? { provider: "midjourney" }
-            : { provider: "google", id: "gemini-nano-banana-2.1" },
+        recipe?.id === "concept-art"
+          ? { provider: "midjourney" }
+          : { provider: "google", id: "gemini-nano-banana-2.1" },
         undefined,
         nodeBatch(source),
       );
@@ -1178,215 +1275,204 @@ export function StudioCanvas({
   /* oxlint-disable jsx-a11y/no-noninteractive-element-interactions, jsx-a11y/no-noninteractive-tabindex */
   return (
     <CardActions.Provider value={cardActions}>
-      <div
-        className="gs-canvas-root"
-        ref={root}
-        role="application"
-        aria-label="Game canvas"
-        tabIndex={0}
-        onKeyDown={handleKeyDown}
-        data-inspecting={selected ? true : undefined}
-      >
-        {/* oxlint-enable jsx-a11y/no-noninteractive-element-interactions, jsx-a11y/no-noninteractive-tabindex */}
-        <div className="gs-canvas-stage" ref={stage}>
-          {error && (
-            <div className="gs-canvas-notice gs-notice" role="alert">
-              {error}
-            </div>
-          )}
-          <ReactFlow<Card>
-            onInit={(instance) => {
-              flow.current = instance;
-              scheduleFit();
-            }}
-            colorMode={colorMode}
-            nodeTypes={nodeTypes}
-            nodes={nodes.map((node) => ({
-              ...node,
-              data: {
-                ...node.data,
-                assets,
-                documents,
-                baseUrl: previewBaseUrl,
-                jobs: nodeJobs(node.id),
-                job: nodeJobs(node.id)[0],
-                busy: busy(node.id),
-                briefing: briefing(node.id),
-                inputs: nodePorts.get(node.id),
-              },
-            }))}
-            edges={edges.map((edge) => ({
-              ...edge,
-              targetHandle: edgePort(edge),
-              style: {
-                stroke: kindInfo(nodes.find((node) => node.id === edge.source)?.data.source.type)
-                  .color,
-                strokeWidth: edge.selected ? 3 : 2,
-              },
-            }))}
-            defaultViewport={board.editorLayout.viewport}
-            onNodesChange={(changes) => {
-              onNodesChange(changes);
-              if (
-                changes.some(
-                  (item) =>
-                    item.type === "dimensions" &&
-                    (needsInitialFit.current || item.id === focusNode.current),
-                )
-              )
-                scheduleFit();
-              if (changes.some((item) => item.type !== "select" && item.type !== "dimensions"))
-                change();
-            }}
-            onEdgesChange={(changes) => {
-              const removedIds = new Set(
-                changes.filter((item) => item.type === "remove").map((item) => item.id),
-              );
-              if (removedIds.size > 0) {
-                const removed = new Map(
-                  edges.filter((edge) => removedIds.has(edge.id)).map((edge) => [edge.id, edge]),
-                );
-                const remaining = edges.filter((edge) => !removedIds.has(edge.id));
-                setNodes((current) =>
-                  current.map((node) => {
-                    const data = { ...node.data.source.data };
-                    for (const key of ["images", "references"])
-                      if (Array.isArray(data[key]))
-                        data[key] = data[key].flatMap((ref) => {
-                          if (
-                            typeof ref !== "object" ||
-                            ref === null ||
-                            Array.isArray(ref) ||
-                            ref.type !== "node" ||
-                            typeof ref.studioEdgeId !== "string"
-                          )
-                            return [ref];
-                          const edge = removed.get(ref.studioEdgeId);
-                          if (!edge || edge.target !== node.id || edge.source !== ref.nodeId)
-                            return [ref];
-                          const replacement = remaining.find(
-                            (other) => other.source === edge.source && other.target === edge.target,
-                          );
-                          return replacement ? [{ ...ref, studioEdgeId: replacement.id }] : [];
-                        });
-                    return {
-                      ...node,
-                      data: { ...node.data, source: { ...node.data.source, data } },
-                    };
-                  }),
-                );
-              }
-              onEdgesChange(changes);
-              if (changes.some((item) => item.type !== "select")) change();
-            }}
-            onConnect={connect}
-            isValidConnection={(connection) => !!openPort(connection)}
-            onSelectionChange={selectionChanged}
-            onNodeDoubleClick={(event) => {
-              const brief = (event.target as HTMLElement)
-                .closest(".react-flow__node")
-                ?.querySelector("textarea");
-              (brief ?? inspector.current?.querySelector("input"))?.focus();
-            }}
-            onPaneClick={() => {
-              clearSelection();
-              root.current?.focus();
-            }}
-            onMoveEnd={(event, view) => {
-              const before = viewport.current;
-              viewport.current = view;
-              if (
-                event &&
-                (before.x !== view.x || before.y !== view.y || before.zoom !== view.zoom)
-              )
-                change();
-            }}
-            minZoom={0.15}
-            maxZoom={2.5}
-            deleteKeyCode={null}
-            panOnScroll
-            panOnDrag={tool === "hand" ? true : [1, 2]}
-            selectionOnDrag={tool === "select"}
-            nodesDraggable={tool === "select"}
-            zoomOnScroll={false}
-            zoomOnDoubleClick={false}
-            proOptions={{ hideAttribution: true }}
-            data-tool={tool}
-          >
-            <Background gap={20} size={1.5} />
-            <CanvasToolbar
-              tool={tool}
-              onTool={setTool}
-              onAdd={add}
-              onUpload={onUpload}
-              onArrange={arrange}
-              canArrange={nodes.length > 1}
-            />
-          </ReactFlow>
-          {!nodes.length && (
-            <div className="gs-canvas-empty">
-              <h2>Start imagining</h2>
-              <p>Connect design notes, reference art, and Unity assets.</p>
-              <p>
-                Press <kbd>T</kbd> for text, <kbd>I</kbd> for image, <kbd>V</kbd> for video, or{" "}
-                <kbd>A</kbd> for audio.
-              </p>
-            </div>
-          )}
-        </div>
-        {selected && (
-          <aside className="gs-node-inspector" ref={inspector} aria-label="Node inspector">
-            <header
-              style={{ "--gs-kind": kindInfo(selected.data.source.type).color } as CSSProperties}
-            >
-              <span className="gs-inspector-kind">
-                <Icon name={kindInfo(selected.data.source.type).icon} />
-              </span>
-              <div>
-                <input
-                  className="gs-inspector-title"
-                  aria-label="Node title"
-                  maxLength={200}
-                  placeholder={kindInfo(selected.data.source.type).label}
-                  value={selected.data.source.title ?? ""}
-                  onChange={(e) => updateSelected({ title: e.target.value })}
-                />
-                <small>
-                  {kindInfo(selected.data.source.type).label}
-                  {selected.data.source.type === "text" ? " · BB model" : ""}
-                </small>
+      <AgentDefaults.Provider value={agentDefaults}>
+        <div
+          className="gs-canvas-root"
+          ref={root}
+          role="application"
+          aria-label="Game canvas"
+          tabIndex={0}
+          onKeyDown={handleKeyDown}
+          data-inspecting={selected ? true : undefined}
+        >
+          {/* oxlint-enable jsx-a11y/no-noninteractive-element-interactions, jsx-a11y/no-noninteractive-tabindex */}
+          <div className="gs-canvas-stage" ref={stage}>
+            {error && (
+              <div className="gs-canvas-notice gs-notice" role="alert">
+                {error}
               </div>
-              <button
-                className="gs-inspector-close"
-                aria-label="Close node inspector"
-                title="Close (Esc)"
-                onClick={clearSelection}
+            )}
+            <ReactFlow<Card>
+              onInit={(instance) => {
+                flow.current = instance;
+                scheduleFit();
+              }}
+              colorMode={colorMode}
+              nodeTypes={nodeTypes}
+              nodes={nodes.map((node) => ({
+                ...node,
+                data: {
+                  ...node.data,
+                  assets,
+                  documents,
+                  baseUrl: previewBaseUrl,
+                  jobs: nodeJobs(node.id),
+                  job: nodeJobs(node.id)[0],
+                  busy: busy(node.id),
+                  briefing: briefing(node.id),
+                  inputs: nodePorts.get(node.id),
+                },
+              }))}
+              edges={edges.map((edge) => ({
+                ...edge,
+                targetHandle: edgePort(edge),
+                style: {
+                  stroke: kindInfo(nodes.find((node) => node.id === edge.source)?.data.source.type)
+                    .color,
+                  strokeWidth: edge.selected ? 3 : 2,
+                },
+              }))}
+              defaultViewport={board.editorLayout.viewport}
+              onNodesChange={(changes) => {
+                onNodesChange(changes);
+                if (
+                  changes.some(
+                    (item) =>
+                      item.type === "dimensions" &&
+                      (needsInitialFit.current || item.id === focusNode.current),
+                  )
+                )
+                  scheduleFit();
+                if (changes.some((item) => item.type !== "select" && item.type !== "dimensions"))
+                  change();
+              }}
+              onEdgesChange={(changes) => {
+                const removedIds = new Set(
+                  changes.filter((item) => item.type === "remove").map((item) => item.id),
+                );
+                if (removedIds.size > 0) {
+                  const removed = new Map(
+                    edges.filter((edge) => removedIds.has(edge.id)).map((edge) => [edge.id, edge]),
+                  );
+                  const remaining = edges.filter((edge) => !removedIds.has(edge.id));
+                  setNodes((current) =>
+                    current.map((node) => {
+                      const data = { ...node.data.source.data };
+                      for (const key of ["images", "references"])
+                        if (Array.isArray(data[key]))
+                          data[key] = data[key].flatMap((ref) => {
+                            if (
+                              typeof ref !== "object" ||
+                              ref === null ||
+                              Array.isArray(ref) ||
+                              ref.type !== "node" ||
+                              typeof ref.studioEdgeId !== "string"
+                            )
+                              return [ref];
+                            const edge = removed.get(ref.studioEdgeId);
+                            if (!edge || edge.target !== node.id || edge.source !== ref.nodeId)
+                              return [ref];
+                            const replacement = remaining.find(
+                              (other) =>
+                                other.source === edge.source && other.target === edge.target,
+                            );
+                            return replacement ? [{ ...ref, studioEdgeId: replacement.id }] : [];
+                          });
+                      return {
+                        ...node,
+                        data: { ...node.data, source: { ...node.data.source, data } },
+                      };
+                    }),
+                  );
+                }
+                onEdgesChange(changes);
+                if (changes.some((item) => item.type !== "select")) change();
+              }}
+              onConnect={connect}
+              isValidConnection={(connection) => !!openPort(connection)}
+              onSelectionChange={selectionChanged}
+              onNodeDoubleClick={(event) => {
+                const brief = (event.target as HTMLElement)
+                  .closest(".react-flow__node")
+                  ?.querySelector("textarea");
+                (brief ?? inspector.current?.querySelector("input"))?.focus();
+              }}
+              onPaneClick={() => {
+                clearSelection();
+                root.current?.focus();
+              }}
+              onMoveEnd={(event, view) => {
+                const before = viewport.current;
+                viewport.current = view;
+                if (
+                  event &&
+                  (before.x !== view.x || before.y !== view.y || before.zoom !== view.zoom)
+                )
+                  change();
+              }}
+              minZoom={0.15}
+              maxZoom={2.5}
+              deleteKeyCode={null}
+              panOnScroll
+              panOnDrag={tool === "hand" ? true : [1, 2]}
+              selectionOnDrag={tool === "select"}
+              nodesDraggable={tool === "select"}
+              zoomOnScroll={false}
+              zoomOnDoubleClick={false}
+              proOptions={{ hideAttribution: true }}
+              data-tool={tool}
+            >
+              <Background gap={20} size={1.5} />
+              <CanvasToolbar
+                tool={tool}
+                onTool={setTool}
+                onAdd={add}
+                onUpload={onUpload}
+                onArrange={arrange}
+                canArrange={nodes.length > 1}
+              />
+            </ReactFlow>
+            {!nodes.length && (
+              <div className="gs-canvas-empty">
+                <h2>Start imagining</h2>
+                <p>Connect design notes, reference art, and Unity assets.</p>
+                <p>
+                  Press <kbd>T</kbd> for text, <kbd>I</kbd> for image, <kbd>V</kbd> for video, or{" "}
+                  <kbd>A</kbd> for audio.
+                </p>
+              </div>
+            )}
+          </div>
+          {selected && (
+            <aside className="gs-node-inspector" ref={inspector} aria-label="Node inspector">
+              <header
+                style={{ "--gs-kind": kindInfo(selected.data.source.type).color } as CSSProperties}
               >
-                <Icon name="X" />
-              </button>
-            </header>
-            {promptField(selected.data.source.type) &&
-              selected.data.source.type !== "text" &&
-              !selectedMedia && (
-                <section className="gs-inspector-section">
-                  <h3>Generation</h3>
-                  <GenerationSettings
-                    node={selected.data.source}
-                    onChange={(patch) => editData(selected.id, patch)}
+                <span className="gs-inspector-kind">
+                  <Icon name={kindInfo(selected.data.source.type).icon} />
+                </span>
+                <div>
+                  <input
+                    className="gs-inspector-title"
+                    aria-label="Node title"
+                    maxLength={200}
+                    placeholder={kindInfo(selected.data.source.type).label}
+                    value={selected.data.source.title ?? ""}
+                    onChange={(e) => updateSelected({ title: e.target.value })}
                   />
-                </section>
-              )}
-            {selected.data.source.type === "text" ? (
-              <label className="gs-inspector-section">
-                <h3>Note</h3>
-                <textarea
-                  value={String(selected.data.source.data.text ?? "")}
-                  placeholder="Write or generate the note…"
-                  onChange={(e) => updateData("text", e.target.value)}
-                />
-              </label>
-            ) : (
-              selected.data.source.type === "document" && (
+                  <small>{kindInfo(selected.data.source.type).label}</small>
+                </div>
+                <button
+                  className="gs-inspector-close"
+                  aria-label="Close node inspector"
+                  title="Close (Esc)"
+                  onClick={clearSelection}
+                >
+                  <Icon name="X" />
+                </button>
+              </header>
+              {promptField(selected.data.source.type) &&
+                !runsOnAgent(selected.data.source.type) &&
+                !selectedMedia && (
+                  <section className="gs-inspector-section">
+                    <h3>Generation</h3>
+                    <GenerationSettings
+                      node={selected.data.source}
+                      onChange={(patch) => editData(selected.id, patch)}
+                    />
+                  </section>
+                )}
+              {selected.data.source.type === "document" && (
                 <>
                   <label>
                     Document
@@ -1409,141 +1495,147 @@ export function StudioCanvas({
                     Open document
                   </button>
                 </>
-              )
-            )}
-            {["text", "image"].includes(selected.data.source.type) && (
-              <>
-                <CanvasInputs
-                  node={selected.data.source}
-                  nodes={nodes.map((node) => node.data.source)}
-                  assets={assets}
-                  onToggle={toggleInput}
-                />
-                {requestIds.has(selected.id) && !starting && (
-                  <button
-                    onClick={() => {
-                      const id = selected.id;
-                      const requestId = requestIds.get(id)!;
-                      void onGenerationControl(requestId, "status")
-                        .then((result) => {
-                          if (result.missing) rememberRequest(id);
-                          setError(
-                            result.missing ? "No submission was made. You can generate again." : "",
-                          );
-                        })
-                        .catch((cause) => setError(String(cause)));
-                    }}
-                  >
-                    Check saved request
-                  </button>
-                )}
-                {selectedJob?.origin.kind === "canvas" && !selectedMedia && (
-                  <output className="gs-inline-job">
-                    <span>
-                      {generating
-                        ? isBrief(selectedJob)
-                          ? "Writing brief…"
-                          : "Generating…"
-                        : selectedJob.status === "succeeded"
+              )}
+              {["text", "image", "review"].includes(selected.data.source.type) && (
+                <>
+                  <CanvasInputs
+                    node={selected.data.source}
+                    nodes={nodes.map((node) => node.data.source)}
+                    assets={assets}
+                    onToggle={toggleInput}
+                  />
+                  {requestIds.has(selected.id) && !starting && (
+                    <button
+                      onClick={() => {
+                        const id = selected.id;
+                        const requestId = requestIds.get(id)!;
+                        void onGenerationControl(requestId, "status")
+                          .then((result) => {
+                            if (result.missing) rememberRequest(id);
+                            setError(
+                              result.missing
+                                ? "No submission was made. You can generate again."
+                                : "",
+                            );
+                          })
+                          .catch((cause) => setError(String(cause)));
+                      }}
+                    >
+                      Check saved request
+                    </button>
+                  )}
+                  {selectedJob?.origin.kind === "canvas" && !selectedMedia && (
+                    <output className="gs-inline-job">
+                      <span>
+                        {generating
                           ? isBrief(selectedJob)
-                            ? "Brief written"
-                            : "Generated"
-                          : selectedJob.status}
-                    </span>
-                    {selectedJob.detail && <small>{selectedJob.detail}</small>}
-                    {["queued", "running"].includes(selectedJob.status) && (
-                      <button
-                        onClick={() =>
-                          void onGenerationControl(selectedJob.id, "cancel").catch((cause) =>
-                            setError(String(cause)),
-                          )
-                        }
-                      >
-                        Cancel generation
-                      </button>
-                    )}
-                    {!["queued", "running", "succeeded"].includes(selectedJob.status) &&
-                      selectedJob.taskId && (
+                            ? "Writing brief…"
+                            : "Generating…"
+                          : selectedJob.status === "succeeded"
+                            ? isBrief(selectedJob)
+                              ? "Brief written"
+                              : selected.data.source.type === "review"
+                                ? "Reviewed"
+                                : "Generated"
+                            : selectedJob.status}
+                      </span>
+                      {selectedJob.detail && <small>{selectedJob.detail}</small>}
+                      {["queued", "running"].includes(selectedJob.status) && (
                         <button
                           onClick={() =>
-                            void onGenerationControl(selectedJob.id, "resume").catch((cause) =>
+                            void onGenerationControl(selectedJob.id, "cancel").catch((cause) =>
                               setError(String(cause)),
                             )
                           }
                         >
-                          {selectedJob.request.kind === "text"
-                            ? "Check BB run"
-                            : "Resume saved job"}
+                          Cancel generation
                         </button>
                       )}
-                  </output>
-                )}
-              </>
-            )}
-            {selectedMedia && (
-              <GenerationSection
-                node={selected.data.source}
-                assets={assets}
-                baseUrl={previewBaseUrl}
-                jobs={nodeJobs(selected.id)}
-                batch={nodeBatch(selected.data.source)}
-                canRun={
-                  !busy(selected.id) && !!String(selected.data.source.data.prompt ?? "").trim()
-                }
-                settings={
-                  <GenerationSettings
-                    node={selected.data.source}
-                    onChange={(patch) => editData(selected.id, patch)}
-                  />
-                }
-                onChange={(patch) => editData(selected.id, patch)}
-                onRun={() => void run(selected.id)}
-                onControl={(jobId, action) =>
-                  void onGenerationControl(jobId, action).catch((cause) => setError(String(cause)))
-                }
-              />
-            )}
-            {!["text", "document", "table"].includes(selected.data.source.type) && (
-              <section className="gs-inspector-section">
-                <h3>Output</h3>
-                {!takesShown && (
-                  <label className="gs-inspector-row">
-                    <span>Asset</span>
-                    <select
-                      value={String(selected.data.source.data.assetId ?? "")}
-                      onChange={(e) => updateData("assetId", e.target.value)}
-                    >
-                      <option value="">No output yet</option>
-                      {assets.map((asset) => (
-                        <option key={asset.id} value={asset.id}>
-                          {asset.name}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                )}
-                {selectedAsset && (
-                  <dl className="gs-inspector-facts">
-                    <div>
-                      <dt>Location</dt>
-                      <dd>{selectedAsset.path.startsWith("Assets/") ? "In Assets" : "Staged"}</dd>
-                    </div>
-                  </dl>
-                )}
-              </section>
-            )}
-            <button
-              className="gs-danger gs-inspector-remove"
-              onClick={() => {
-                void flow.current?.deleteElements({ nodes: [{ id: selected.id }] });
-              }}
-            >
-              <Icon name="Trash2" />
-              Remove node
-            </button>
-          </aside>
-        )}
-      </div>
+                      {!["queued", "running", "succeeded"].includes(selectedJob.status) &&
+                        selectedJob.taskId && (
+                          <button
+                            onClick={() =>
+                              void onGenerationControl(selectedJob.id, "resume").catch((cause) =>
+                                setError(String(cause)),
+                              )
+                            }
+                          >
+                            {selectedJob.request.kind === "text"
+                              ? "Check BB run"
+                              : "Resume saved job"}
+                          </button>
+                        )}
+                    </output>
+                  )}
+                </>
+              )}
+              {selectedMedia && (
+                <GenerationSection
+                  node={selected.data.source}
+                  assets={assets}
+                  baseUrl={previewBaseUrl}
+                  jobs={nodeJobs(selected.id)}
+                  batch={nodeBatch(selected.data.source)}
+                  canRun={
+                    !busy(selected.id) && !!String(selected.data.source.data.prompt ?? "").trim()
+                  }
+                  settings={
+                    <GenerationSettings
+                      node={selected.data.source}
+                      onChange={(patch) => editData(selected.id, patch)}
+                    />
+                  }
+                  onChange={(patch) => editData(selected.id, patch)}
+                  onRun={() => void run(selected.id)}
+                  onControl={(jobId, action) =>
+                    void onGenerationControl(jobId, action).catch((cause) =>
+                      setError(String(cause)),
+                    )
+                  }
+                />
+              )}
+              {!["text", "document", "table", "review"].includes(selected.data.source.type) && (
+                <section className="gs-inspector-section">
+                  <h3>Output</h3>
+                  {!takesShown && (
+                    <label className="gs-inspector-row">
+                      <span>Asset</span>
+                      <select
+                        value={String(selected.data.source.data.assetId ?? "")}
+                        onChange={(e) => updateData("assetId", e.target.value)}
+                      >
+                        <option value="">No output yet</option>
+                        {assets.map((asset) => (
+                          <option key={asset.id} value={asset.id}>
+                            {asset.name}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  )}
+                  {selectedAsset && (
+                    <dl className="gs-inspector-facts">
+                      <div>
+                        <dt>Location</dt>
+                        <dd>{selectedAsset.path.startsWith("Assets/") ? "In Assets" : "Staged"}</dd>
+                      </div>
+                    </dl>
+                  )}
+                </section>
+              )}
+              <button
+                className="gs-danger gs-inspector-remove"
+                onClick={() => {
+                  void flow.current?.deleteElements({ nodes: [{ id: selected.id }] });
+                }}
+              >
+                <Icon name="Trash2" />
+                Remove node
+              </button>
+            </aside>
+          )}
+        </div>
+      </AgentDefaults.Provider>
     </CardActions.Provider>
   );
 }

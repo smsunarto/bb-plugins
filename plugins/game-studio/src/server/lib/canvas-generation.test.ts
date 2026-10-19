@@ -388,3 +388,82 @@ Game Studio applies these output settings separately: 16:9, 8 seconds; image 1 i
     "rough idea",
   );
 });
+test("a review reads its criteria, images and 3D models on the agent its composer chose", () => {
+  const state = workspace(),
+    board = state.boards[0]!.board;
+  state.assets.push({
+    id: "mesh",
+    name: "hammerhead.glb",
+    path: "canvas/staging/tripo/hammerhead.glb",
+    type: "model",
+  });
+  board.nodes.push(
+    {
+      id: "criteria",
+      type: "text",
+      position: { x: 0, y: 300 },
+      data: { text: "Under 20k triangles" },
+    },
+    {
+      id: "front",
+      type: "image",
+      position: { x: 300, y: 300 },
+      data: { assetId: "ref" },
+    },
+    {
+      id: "mesh-node",
+      type: "model-3d",
+      position: { x: 600, y: 300 },
+      data: { assetId: "mesh" },
+    },
+    {
+      id: "review",
+      type: "review",
+      position: { x: 900, y: 300 },
+      data: {
+        instruction: "",
+        references: [
+          { type: "node", nodeId: "criteria" },
+          { type: "node", nodeId: "front" },
+          { type: "node", nodeId: "mesh-node" },
+        ],
+      },
+    },
+  );
+  const request = canvasRequest(state, {
+    ...input,
+    nodeId: "review",
+    textProviderId: "codex",
+    model: { provider: "bb", id: "gpt-6.1-sol" },
+    reasoningLevel: "xhigh",
+    serviceTier: "fast",
+  }).request;
+  expect(request).toMatchObject({
+    kind: "text",
+    review: true,
+    providerId: "codex",
+    model: { provider: "bb", id: "gpt-6.1-sol" },
+    reasoningLevel: "xhigh",
+    serviceTier: "fast",
+    images: ["canvas/staging/key.png"],
+    files: ["canvas/staging/tripo/hammerhead.glb"],
+    prompt: "Under 20k triangles",
+  });
+});
+test("a 3D model cannot feed a node that does not review it", () => {
+  const state = workspace(),
+    board = state.boards[0]!.board;
+  state.assets.push({ id: "mesh", name: "a.glb", path: "canvas/staging/a.glb", type: "model" });
+  board.nodes.push(
+    { id: "mesh-node", type: "model-3d", position: { x: 0, y: 300 }, data: { assetId: "mesh" } },
+    {
+      id: "note",
+      type: "text",
+      position: { x: 300, y: 300 },
+      data: { instruction: "Describe it", references: [{ type: "node", nodeId: "mesh-node" }] },
+    },
+  );
+  expect(() => canvasRequest(state, { ...input, nodeId: "note" })).toThrow(
+    "This model does not take model inputs",
+  );
+});

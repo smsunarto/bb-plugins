@@ -1,5 +1,6 @@
 import { nodeRecipe, recipes } from "../shared/recipes.ts";
 import type { CanvasNode, NodeKind } from "../shared/schema.ts";
+import { agentSelection, type AgentSelection } from "../shared/generation.ts";
 
 export type NodePatch = Record<string, CanvasNode["data"][string]>;
 
@@ -27,11 +28,26 @@ export const nodeBatch = (node: CanvasNode) =>
   nodeRecipe(node)?.id === "nano-banana" && [2, 4].includes(Number(node.data.batch))
     ? Number(node.data.batch)
     : 1;
-export const nodeModelLabel = (node: CanvasNode) =>
-  node.type === "text" ? "BB model" : nodeRecipe(node)?.label;
+/** The model a node's output comes from. Text is the user's own, so it names none. */
+export const nodeModelLabel = (node: CanvasNode, defaultAgent?: AgentSelection) => {
+  if (node.type === "text") return undefined;
+  if (node.type !== "review") return nodeRecipe(node)?.label;
+  const agent = nodeAgent(node) ?? defaultAgent;
+  return (
+    agent &&
+    [agent.model, agent.reasoningLevel, agent.serviceTier === "fast" && "fast"]
+      .filter(Boolean)
+      .join(" · ")
+  );
+};
+/** The BB agent saved on a text or review node, when one was chosen. */
+export const nodeAgent = (node: CanvasNode): AgentSelection | undefined => {
+  const parsed = agentSelection.safeParse(node.data.agent);
+  return parsed.success ? parsed.data : undefined;
+};
 /** The field holding a node's brief, when it can generate. */
 export const promptField = (kind: NodeKind) =>
-  kind === "text"
+  kind === "text" || kind === "review"
     ? "instruction"
     : ["image", "video", "model-3d", "asset"].includes(kind)
       ? "prompt"
@@ -108,4 +124,6 @@ export function GenerationSettings({
 
 /** Whether running the node generates on the canvas instead of preparing a request. */
 export const runsDirectly = (node: CanvasNode) =>
-  node.type === "text" || !!nodeRecipe(node)?.direct;
+  node.type === "text" || node.type === "review" || !!nodeRecipe(node)?.direct;
+/** Whether a node runs on a BB agent chosen in its composer. */
+export const runsOnAgent = (kind: NodeKind) => kind === "text" || kind === "review";

@@ -51,21 +51,23 @@
     "@dagrejs/dagre": "3.1.1",
     "@tanstack/react-query": "^5.101.4",
     "@xyflow/react": "12.11.3",
+    "better-sqlite3": "^12.0.0",
     "lucide-react": "1.57.0",
-    "zod": "^4.4.3",
-    "better-sqlite3": "^12.0.0"
+    "three": "0.186.1",
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "@get-bb/plugin-sdk": "0.5.29",
+    "@types/better-sqlite3": "^7.6.12",
     "@types/node": "^22.0.0",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
+    "@types/three": "0.186.0",
     "bun-types": "^1.4.0",
     "react": "19.2.8",
     "react-dom": "19.2.8",
     "tsx": "4.23.12",
-    "typescript": "^6.0.0",
-    "@types/better-sqlite3": "^7.6.12"
+    "typescript": "^6.0.0"
   },
   "scripts": {
     "build": "bb plugin build .",
