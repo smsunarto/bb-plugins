@@ -24,7 +24,8 @@ test("authors get launch controls and the migrated skill catalog", async () => {
         "scott_engineering_arena_stop",
       ],
     );
-    assert.equal(result.skills.length, 38);
+    assert.equal(result.skills.length, 16);
+    assert.ok(result.skills.every((name) => !name.startsWith("principle-")));
     assert.ok(result.skills.includes("arena"));
     assert.ok(result.skills.includes("architect"));
   } finally {

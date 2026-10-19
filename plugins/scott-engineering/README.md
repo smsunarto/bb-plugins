@@ -1,6 +1,6 @@
 # Scott Engineering
 
-Scott's engineering workflows, derived from his pstack fork, with native Arena execution in BB. The plugin bundles the fork's 38 skills; Arena is the first workflow whose lifecycle is owned by the plugin.
+Scott's engineering workflows, derived from his pstack fork, with native Arena execution in BB. The plugin bundles 16 workflow skills and 22 engineering principle references; Arena is the first workflow whose lifecycle is owned by the plugin.
 
 Ask for Arena in a BB thread. The agent calls `scott_engineering_arena_start` and emits an embedded summary showing candidates, the judge, synthesis, verification, and round history. Workers run in hidden threads, like Review's reviewers; clicking one opens it, and its header links back to the main thread. Stop Arena cancels the run independently of the main chat.
 
@@ -8,7 +8,7 @@ A run frames the task, launches one Claude and one Codex candidate on identical 
 
 ## Requirements
 
-Native Arena currently needs a ready Git project that allows BB-managed worktrees and has both Claude Code and Codex configured. Repositories requiring a canonical checkout or exclusive Unity/editor leases should continue using their existing authorized workflow. Architect and Blast Radius route to the native contract when its tools are available; native routing instructions take precedence over an older provider-installed copy. The separate CLI plugin can remain available outside BB. Other bundled skills retain their original behavior.
+Native Arena currently needs a ready Git project that allows BB-managed worktrees and has both Claude Code and Codex configured. Repositories requiring a canonical checkout or exclusive Unity/editor leases should continue using their existing authorized workflow. Architect and Blast Radius route to the native contract when its tools are available; native routing instructions take precedence over an older provider-installed copy. Other bundled skills retain their original behavior.
 
 Source checkouts may contain uncommitted work. Arena snapshots that work using a private Git index. Candidate and synthesis worktrees start from the same pinned snapshot. Preparation merges against ongoing work. The synthesis worker runs the framing commands on that combined tree through its normal execution tools. Checks must leave nonignored files unchanged (use check-only lint and format modes); ignored build output is allowed. Integration checks both trees again and applies only a passing result. Conflicts and concurrent edits preserve the working files and consume a round rather than overwriting them.
 
@@ -23,6 +23,7 @@ Outputs remain uncommitted. Candidate worktrees and private `refs/arena/` snapsh
 - `bb scott-engineering start --task '...' --request-id <stable-id>` launches or recovers a launch.
 - `bb scott-engineering status --run <id>` reads an owned run.
 - `bb scott-engineering stop --run <id>` stops it.
+- `bb scott-engineering principle` lists shared principles; add `--name grug-brain` to read one.
 - `claudeModel` and `codexModel` select the two model seats. Defaults follow the fork. Both use xhigh reasoning; Codex uses fast service.
 
-The tools and prompts are editable under `instructions/`. Other skills and their references are bundled under `skills/` and `references/`. The source fork lives in Scott's dotfiles; this package contains the migrated skills as of the initial port.
+The tools and prompts are editable under `instructions/`. Other skills and their references are bundled under `skills/` and `references/`. Engineering principles live in the shared `references/principles/` directory. The `principle` command reads them from the installed plugin, independently of any workflow skill or checkout path, without adding skill catalog entries. The overlapping dotfiles package has been removed.

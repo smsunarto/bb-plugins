@@ -11,11 +11,12 @@ import { arenaContext } from "./tools/arena-context.ts";
 import { arenaPrepare } from "./tools/arena-prepare.ts";
 import { arenaReport } from "./tools/arena-report.ts";
 import { skills } from "./lib/scope.ts";
+import { principle } from "./command/principle.ts";
 
 export default definePlugin({
   pluginId: "scott-engineering",
   rpc: {},
-  command: { start, status, stop },
+  command: { start, status, stop, principle },
   agents: {
     files,
     instructions: () => files.read("native-routing"),

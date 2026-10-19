@@ -6,6 +6,8 @@ disable-model-invocation: true
 
 # Reflect
 
+Read shared engineering principle references with `bb scott-engineering principle --name <name>`. Omit `--name` to list the available names.
+
 Mine the current conversation for durable learnings, then route them into skill edits.
 
 Invoke when the user says "reflect" or "/reflect". Skip when the conversation is trivial, off-topic, or already covered by an existing skill the parent followed correctly. One-offs are not learnings.
@@ -41,7 +43,7 @@ Once all three have reported, copy `references/synthesizer.md` to the run direct
 
 ## 4. Structural enforcement check
 
-Move any Accepted item that a lint rule, script, metadata flag, or runtime check would enforce more reliably to Backlog. See the **encode-lessons-in-structure** principle skill.
+Move any Accepted item that a lint rule, script, metadata flag, or runtime check would enforce more reliably to Backlog. See the `encode-lessons-in-structure` principle reference.
 
 ## 5. Apply
 
