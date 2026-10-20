@@ -25,6 +25,7 @@ import {
   annotationMentionLabelParts,
   annotationSourceLabel,
 } from "@/lib/staging-display.ts";
+import { broadcastType, sharedRequest } from "@/lib/shared-request.ts";
 import type { rpcContract } from "@/server.ts";
 
 function StagedAnnotations({ threadId }: { threadId: string }) {
@@ -46,7 +47,11 @@ function StagedAnnotations({ threadId }: { threadId: string }) {
   const refresh = useCallback(async () => {
     const sequence = ++refreshSequence.current;
     try {
-      const result = await rpc.call("listStagedAnnotations");
+      // Every thread composer in every pane shows this banner; they share
+      // one request per change.
+      const result = await sharedRequest("listStagedAnnotations", () =>
+        rpc.call("listStagedAnnotations"),
+      );
       if (sequence !== refreshSequence.current) return;
       setAnnotations(result.annotations);
       setThreadTitles(result.threadTitles);
@@ -67,11 +72,15 @@ function StagedAnnotations({ threadId }: { threadId: string }) {
     void refresh();
   }, [refresh]);
 
+  // The toolbar's show/hide setting does not touch staging.
   useRealtime(
     "annotations",
-    useCallback(() => {
-      void refresh();
-    }, [refresh]),
+    useCallback(
+      (payload: unknown) => {
+        if (broadcastType(payload) !== "config") void refresh();
+      },
+      [refresh],
+    ),
   );
 
   // A submitted draft consumes its annotation pills; the server assigns those

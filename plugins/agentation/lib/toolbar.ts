@@ -11,6 +11,7 @@ import {
 
 import type { BbContext, StoredAnnotation } from "./afs.ts";
 import { selectOrphans, withoutBundleSource } from "./annotation-hygiene.ts";
+import { changeConcernsSession, STREAM_RETRY_MS, STREAM_SILENCE_MS } from "./event-stream.ts";
 import { createRpcClient } from "./plugin-rpc.ts";
 import { labelForRoute, projectIdFromRoute, threadIdFromRoute } from "./route.ts";
 import { pluginUiSurfaceFor } from "./plugin-ui-surface.ts";
@@ -35,10 +36,15 @@ import type { rpcContract } from "../server.ts";
 const ROUTE_POLL_MS = 400;
 /** Coalesce a burst of toolbar callbacks into one write. */
 const FLUSH_DEBOUNCE_MS = 250;
-/** Safety-net poll interval while the event stream is healthy. */
-const IDLE_POLL_MS = 30_000;
+/** Safety-net poll interval while the event stream is healthy. Every (re)open
+ *  pulls on `hello`, so this only covers a change frame lost in transit. */
+const IDLE_POLL_MS = 300_000;
 /** Poll interval when the event stream is unavailable. */
 const FALLBACK_POLL_MS = 4_000;
+/** Longest wait between attempts to reopen a stream that closed for good. */
+const STREAM_REOPEN_MAX_MS = 60_000;
+/** `EventSource.CLOSED`: the stream gave up and will not reconnect itself. */
+const EVENT_SOURCE_CLOSED = 2;
 /** Delay before retrying a write that failed, so a down backend is not hammered. */
 const RETRY_DELAY_MS = 4_000;
 
@@ -189,6 +195,9 @@ export function startAnnotationToolbar(
   let pollTimer: ReturnType<typeof setTimeout> | null = null;
   let routeTimer: ReturnType<typeof setInterval> | null = null;
   let stream: EventSource | null = null;
+  let streamWatchdog: ReturnType<typeof setTimeout> | null = null;
+  let reopenTimer: ReturnType<typeof setTimeout> | null = null;
+  let reopenDelay = STREAM_RETRY_MS;
 
   function contextForNewAnnotation(): BbContext {
     const { pluginId, surface, surfaceId, navigationItemId } = pluginUiSurfaceFor(
@@ -631,7 +640,7 @@ export function startAnnotationToolbar(
       if (disposed) return;
       applyConfig(result.config.toolbarEnabled);
       if (route !== meta.route || activeSessionId !== sessionId) return;
-      if (!result.changed) {
+      if (!result.changed || result.annotations === undefined) {
         reconcileDeferred = false;
         return;
       }
@@ -661,31 +670,85 @@ export function startAnnotationToolbar(
     }, delay);
   }
 
+  /** Restart the silence watchdog. A relay can hold a dead stream open, and
+   *  a stream that never says hello may be buffered whole, so a stream that
+   *  stays quiet past two heartbeats is reopened. */
+  function watchStream(): void {
+    if (streamWatchdog !== null) clearTimeout(streamWatchdog);
+    streamWatchdog = setTimeout(() => {
+      streamWatchdog = null;
+      reopenStream();
+    }, STREAM_SILENCE_MS);
+  }
+
+  function closeStream(): void {
+    stream?.close();
+    stream = null;
+    if (streamWatchdog !== null) clearTimeout(streamWatchdog);
+    streamWatchdog = null;
+  }
+
+  /** Drop the stream, poll quickly meanwhile, and open a fresh one after a
+   *  delay that doubles while attempts keep failing. */
+  function reopenStream(): void {
+    if (disposed) return;
+    closeStream();
+    streamHealthy = false;
+    schedulePoll();
+    if (reopenTimer !== null) return;
+    const delay = reopenDelay;
+    reopenDelay = Math.min(reopenDelay * 2, STREAM_REOPEN_MAX_MS);
+    reopenTimer = setTimeout(() => {
+      reopenTimer = null;
+      connectStream();
+    }, delay);
+  }
+
   function connectStream(): void {
     if (disposed) return;
+    let source: EventSource;
     try {
-      stream = new EventSource(`/api/v1/plugins/${encodeURIComponent(pluginId)}/http/events`);
+      source = new EventSource(`/api/v1/plugins/${encodeURIComponent(pluginId)}/http/events`);
     } catch (error) {
       report("Event stream unavailable, falling back to polling", error);
       return;
     }
+    stream = source;
+    watchStream();
 
-    stream.addEventListener("hello", () => {
-      if (disposed) return;
+    const alive = (): boolean => {
+      if (disposed || stream !== source) return false;
       streamHealthy = true;
-      void pullQueue.request();
+      reopenDelay = STREAM_RETRY_MS;
+      watchStream();
+      return true;
+    };
+    source.addEventListener("hello", () => {
+      // Changes sent while the stream was down arrive with this pull.
+      if (alive()) void pullQueue.request();
     });
-    stream.addEventListener("change", () => {
-      if (disposed) return;
-      streamHealthy = true;
-      void pullQueue.request();
+    source.addEventListener("ping", () => {
+      alive();
     });
-    stream.addEventListener("error", () => {
-      if (disposed) return;
-      // EventSource reconnects on its own; the poll interval tightens until it
-      // does, so a rejected or blocked stream degrades instead of going quiet.
+    source.addEventListener("change", (event) => {
+      if (!alive()) return;
+      let change: unknown = null;
+      try {
+        change = JSON.parse((event as MessageEvent<string>).data);
+      } catch {
+        // An unreadable frame still means something changed.
+      }
+      if (changeConcernsSession(change, sessionId)) void pullQueue.request();
+    });
+    source.addEventListener("error", () => {
+      if (disposed || stream !== source) return;
       streamHealthy = false;
-      schedulePoll();
+      // EventSource reconnects a dropped connection on its own, but an answer
+      // that is not a stream (the plugin reloading, the server restarting,
+      // the tunnel's offline page) closes it for good. Reopen that one, or
+      // the toolbar polls at the fallback rate until the page reloads.
+      if (source.readyState === EVENT_SOURCE_CLOSED) reopenStream();
+      else schedulePoll();
     });
   }
 
@@ -741,8 +804,8 @@ export function startAnnotationToolbar(
     if (flushTimer !== null) clearTimeout(flushTimer);
     if (pollTimer !== null) clearTimeout(pollTimer);
     if (routeTimer !== null) clearInterval(routeTimer);
-    stream?.close();
-    stream = null;
+    if (reopenTimer !== null) clearTimeout(reopenTimer);
+    closeStream();
   }
 
   async function initialize(): Promise<void> {

@@ -32,6 +32,7 @@ import {
   sessionSummarySchema,
   storedAnnotationSchema,
 } from "./lib/afs.ts";
+import { STREAM_HEARTBEAT_MS, STREAM_RETRY_MS } from "./lib/event-stream.ts";
 import { projectIdFromRoute, threadIdFromRoute } from "./lib/route.ts";
 import {
   annotationMentionItemId,
@@ -136,12 +137,12 @@ export const rpcContract = defineRpcContract({
   },
   pullSession: {
     experimental_description:
-      "Return a session's annotations and config when the cursor moved past the caller's.",
+      "Return a session's config, and its annotations only when the cursor moved past the caller's.",
     input: z.object({ sessionId: z.string(), cursor: z.number().int() }).strict(),
     output: z.object({
       cursor: z.number().int(),
       changed: z.boolean(),
-      annotations: z.array(storedAnnotationSchema),
+      annotations: z.array(storedAnnotationSchema).optional(),
       config: configSchema,
     }),
   },
@@ -513,21 +514,26 @@ export default async function plugin(bb: BbPluginApi) {
       start(controller) {
         self = controller;
         streams.add(controller);
+        // `retry` sets how soon EventSource reconnects after a dropped stream.
         controller.enqueue(
-          encoder.encode(`event: hello\ndata: ${JSON.stringify({ cursor: currentSeq(db) })}\n\n`),
+          encoder.encode(
+            `retry: ${STREAM_RETRY_MS}\nevent: hello\ndata: ${JSON.stringify({ cursor: currentSeq(db) })}\n\n`,
+          ),
         );
         // An idle stream gets dropped by proxies and by the tunnel used for
-        // remote bb access; a comment frame is the cheapest thing that keeps
-        // it open and costs the client nothing to parse.
+        // remote bb access, and a relay can also hold a dead one open. The
+        // heartbeat is a named event, not a comment, because EventSource hides
+        // comments from the page: the toolbar reads its silence as a dead
+        // stream and reopens it (lib/toolbar.ts).
         heartbeats.set(
           controller,
           setInterval(() => {
             try {
-              controller.enqueue(encoder.encode(`: ping\n\n`));
+              controller.enqueue(encoder.encode(`event: ping\ndata: {}\n\n`));
             } catch {
               dropStream(controller);
             }
-          }, 25_000),
+          }, STREAM_HEARTBEAT_MS),
         );
       },
       cancel() {
@@ -708,14 +714,18 @@ export default async function plugin(bb: BbPluginApi) {
 
       async pullSession(input) {
         const cursor = sessionCursor(db, input.sessionId);
+        const config = await readConfig();
+        // Every open toolbar asks on each change and on its safety-net timer,
+        // and most asks find nothing new. Those carry no list.
+        if (cursor <= input.cursor) return { cursor, changed: false, config };
         return sanitizeJson({
           cursor,
-          changed: cursor > input.cursor,
+          changed: true,
           annotations: listAnnotations(db, {
             sessionId: input.sessionId,
             limit: null,
           }),
-          config: await readConfig(),
+          config,
         });
       },
 

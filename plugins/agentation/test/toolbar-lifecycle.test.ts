@@ -64,14 +64,21 @@ if (!process.env.BB_AGENTATION_LIFECYCLE_CHILD) {
       throw new Error(`Unexpected RPC ${method}`);
     });
     class FakeEventSource extends EventTarget {
+      readyState = 1;
       constructor() {
         super();
         streams.add(this);
+        opened.push(this);
       }
       close() {
+        this.readyState = 2;
         streams.delete(this);
       }
+      emit(type: string, data: unknown = {}) {
+        this.dispatchEvent(new MessageEvent(type, { data: JSON.stringify(data) }));
+      }
     }
+    const opened: FakeEventSource[] = [];
     const document = {
       title: "Test page",
       hidden: false,
@@ -111,8 +118,10 @@ if (!process.env.BB_AGENTATION_LIFECYCLE_CHILD) {
       annotations,
       listeners,
       streams,
+      opened,
       timers,
       call,
+      pulls: () => call.mock.calls.filter(([method]) => method === "pullSession").length,
       setView: mock((snapshot: ToolbarView) => {
         view = snapshot?.props ?? null;
       }),
@@ -243,10 +252,73 @@ if (!process.env.BB_AGENTATION_LIFECYCLE_CHILD) {
     expect(typeof active.view()?.onAnnotationAdd).toBe("function");
     expect(active.streams.size).toBe(1);
     expect(active.listeners.size).toBe(2);
-    expect(active.timers.size).toBe(2);
+    // The poll, the route watcher, and the stream's silence watchdog.
+    expect(active.timers.size).toBe(3);
     await disposeSecond();
     expect(active.streams.size).toBe(0);
     expect(active.listeners.size).toBe(0);
     expect(active.timers.size).toBe(0);
+  });
+
+  test("a stream that closes for good is reopened instead of polling every 4 s", async () => {
+    active = harness();
+    const dispose = await mount();
+    await active.advance(0);
+    const [first] = active.opened;
+    first!.emit("hello", { cursor: 1 });
+    await active.advance(0);
+    const afterHello = active.pulls();
+
+    // A plugin reload answers the reconnect with JSON, which closes the stream.
+    first!.readyState = 2;
+    first!.emit("error");
+    await active.advance(3_000);
+    expect(active.opened.length).toBe(2);
+    active.opened[1]!.emit("hello", { cursor: 1 });
+    await active.advance(0);
+    const afterReopen = active.pulls();
+    expect(afterReopen).toBeGreaterThan(afterHello);
+
+    // Healthy again: a minute passes without a pull, though pings keep coming.
+    for (let tick = 0; tick < 3; tick++) {
+      await active.advance(25_000);
+      active.opened[1]!.emit("ping");
+    }
+    expect(active.pulls()).toBe(afterReopen);
+    await dispose();
+    expect(active.timers.size).toBe(0);
+  });
+
+  test("a stream that goes silent is reopened", async () => {
+    active = harness();
+    const dispose = await mount();
+    await active.advance(0);
+    active.opened[0]!.emit("hello", { cursor: 1 });
+    await active.advance(60_000);
+    expect(active.opened[0]!.readyState).toBe(2);
+    await active.advance(3_000);
+    expect(active.opened.length).toBe(2);
+    expect(active.streams.size).toBe(1);
+    await dispose();
+  });
+
+  test("a change on another page's session pulls nothing", async () => {
+    active = harness();
+    const dispose = await mount();
+    await active.advance(0);
+    const stream = active.opened[0]!;
+    stream.emit("hello", { cursor: 1 });
+    await active.advance(0);
+    const before = active.pulls();
+    stream.emit("change", { type: "annotations", sessionId: "session:/other", cursor: 2 });
+    await active.advance(0);
+    expect(active.pulls()).toBe(before);
+    stream.emit("change", { type: "annotations", sessionId: "session:/a", cursor: 3 });
+    await active.advance(0);
+    expect(active.pulls()).toBe(before + 1);
+    stream.emit("change", { type: "config", sessionId: null, cursor: 3 });
+    await active.advance(0);
+    expect(active.pulls()).toBe(before + 2);
+    await dispose();
   });
 }

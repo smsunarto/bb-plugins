@@ -4,13 +4,19 @@
 // the panel owns the other half — triage across pages, assignment state, and
 // the reply thread associated with each annotation.
 
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { useBbNavigate, useRealtime, useRpc } from "@get-bb/plugin-sdk/app";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useBbNavigate,
+  useRealtime,
+  useRealtimeConnectionState,
+  useRpc,
+} from "@get-bb/plugin-sdk/app";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
+import { broadcastType, sharedRequest } from "@/lib/shared-request.ts";
 import type { rpcContract } from "@/server.ts";
 import type {
   AnnotationRouting,
@@ -66,12 +72,14 @@ function useAnnotations(filter: FilterId) {
   const refresh = useCallback(async () => {
     try {
       const [annotationResult, sessionResult] = await Promise.all([
-        rpc.call("listAnnotations", {
-          sessionId: null,
-          statuses: statuses ? [...statuses] : null,
-          pluginId: null,
-        }),
-        rpc.call("listSessions", { status: null }),
+        sharedRequest(`listAnnotations:${statuses?.join(",") ?? "all"}`, () =>
+          rpc.call("listAnnotations", {
+            sessionId: null,
+            statuses: statuses ? [...statuses] : null,
+            pluginId: null,
+          }),
+        ),
+        sharedRequest("listSessions", () => rpc.call("listSessions", { status: null })),
       ]);
       setAnnotations(annotationResult.annotations);
       setRoutings(annotationResult.routings);
@@ -88,14 +96,64 @@ function useAnnotations(filter: FilterId) {
     void refresh();
   }, [refresh]);
 
+  // The toolbar's show/hide setting changes nothing listed here.
   useRealtime(
     "annotations",
-    useCallback(() => {
-      void refresh();
-    }, [refresh]),
+    useCallback(
+      (payload: unknown) => {
+        if (broadcastType(payload) !== "config") void refresh();
+      },
+      [refresh],
+    ),
+  );
+  useReconnectRefresh(refresh);
+
+  /** Show a card's own change at once. The broadcast that change sends
+   *  refreshes the list again, which settles anything this misses. */
+  const apply = useCallback(
+    ({ annotationId, annotation, deleted, routing }: CardUpdate) => {
+      const filtered: readonly string[] | null = statuses;
+      const hidden =
+        deleted === true ||
+        (annotation !== undefined && filtered !== null && !filtered.includes(annotation.status));
+      if (hidden) {
+        setAnnotations((current) => current.filter((entry) => entry.id !== annotationId));
+      } else if (annotation !== undefined) {
+        setAnnotations((current) =>
+          current.map((entry) => (entry.id === annotationId ? annotation : entry)),
+        );
+      }
+      if (routing !== undefined) {
+        setRoutings((current) => {
+          const next = { ...current };
+          if (routing === null) delete next[annotationId];
+          else next[annotationId] = routing;
+          return next;
+        });
+      }
+    },
+    [statuses],
   );
 
-  return { annotations, routings, sessions, isLoading, error, refresh };
+  return { annotations, routings, sessions, isLoading, error, apply };
+}
+
+/** What one card's action changed, from that action's own answer. */
+type CardUpdate = {
+  annotationId: string;
+  annotation?: StoredAnnotation;
+  deleted?: true;
+  routing?: AnnotationRouting | null;
+};
+
+/** Broadcasts sent while realtime was down are lost, so re-read on reconnect. */
+function useReconnectRefresh(refresh: () => Promise<void>): void {
+  const connection = useRealtimeConnectionState();
+  const previous = useRef(connection);
+  useEffect(() => {
+    if (previous.current !== "connected" && connection === "connected") void refresh();
+    previous.current = connection;
+  }, [connection, refresh]);
 }
 
 function AnnotationCard({
@@ -107,17 +165,16 @@ function AnnotationCard({
   annotation: StoredAnnotation;
   routing: AnnotationRouting | undefined;
   rpc: Rpc;
-  onChanged: () => void;
+  onChanged: (update: CardUpdate) => void;
 }) {
   const navigate = useBbNavigate();
   const [reply, setReply] = useState("");
   const [isBusy, setIsBusy] = useState(false);
 
-  const run = async (work: () => Promise<unknown>, failure: string) => {
+  const run = async (work: () => Promise<Omit<CardUpdate, "annotationId">>, failure: string) => {
     setIsBusy(true);
     try {
-      await work();
-      onChanged();
+      onChanged({ annotationId: annotation.id, ...(await work()) });
     } catch (cause) {
       toast.error(failure, {
         description: cause instanceof Error ? cause.message : String(cause),
@@ -127,16 +184,16 @@ function AnnotationCard({
     }
   };
 
-  const mutate = (action: "acknowledge" | "resolve" | "dismiss" | "delete") =>
-    run(
-      () =>
-        rpc.call("mutateAnnotation", {
-          annotationId: annotation.id,
-          action,
-          note: null,
-        }),
-      `Could not ${action} the annotation`,
-    );
+  const mutate = (action: "acknowledge" | "resolve" | "dismiss" | "reopen" | "delete") =>
+    run(async () => {
+      const result = await rpc.call("mutateAnnotation", {
+        annotationId: annotation.id,
+        action,
+        note: null,
+      });
+      if (result.deleted) return { deleted: true as const };
+      return result.annotation ? { annotation: result.annotation } : {};
+    }, `Could not ${action} the annotation`);
 
   const isClosed = annotation.status === "resolved" || annotation.status === "dismissed";
   const isAssigned = routing?.state === "assigned" && routing.assignedThreadId !== null;
@@ -233,17 +290,7 @@ function AnnotationCard({
             size="sm"
             variant="outline"
             disabled={isBusy}
-            onClick={() =>
-              void run(
-                () =>
-                  rpc.call("mutateAnnotation", {
-                    annotationId: annotation.id,
-                    action: "reopen",
-                    note: null,
-                  }),
-                "Could not reopen the annotation",
-              )
-            }
+            onClick={() => void mutate("reopen")}
           >
             Reopen
           </Button>
@@ -275,13 +322,12 @@ function AnnotationCard({
             variant="ghost"
             disabled={isBusy}
             onClick={() =>
-              void run(
-                () =>
-                  rpc.call("restageAnnotation", {
-                    annotationId: annotation.id,
-                  }),
-                "Could not stage the annotation again",
-              )
+              void run(async () => {
+                const result = await rpc.call("restageAnnotation", {
+                  annotationId: annotation.id,
+                });
+                return { routing: result.routing };
+              }, "Could not stage the annotation again")
             }
           >
             Stage again
@@ -295,16 +341,14 @@ function AnnotationCard({
           event.preventDefault();
           const message = reply.trim();
           if (message.length === 0) return;
-          void run(
-            () =>
-              rpc
-                .call("replyToAnnotation", {
-                  annotationId: annotation.id,
-                  message,
-                })
-                .then(() => setReply("")),
-            "Could not post the reply",
-          );
+          void run(async () => {
+            const result = await rpc.call("replyToAnnotation", {
+              annotationId: annotation.id,
+              message,
+            });
+            setReply("");
+            return result.annotation ? { annotation: result.annotation } : {};
+          }, "Could not post the reply");
         }}
       >
         <Input
@@ -334,7 +378,7 @@ function AnnotationCard({
 export function AnnotationPanel() {
   const rpc = useRpc<typeof rpcContract>();
   const [filter, setFilter] = useState<FilterId>("open");
-  const { annotations, routings, sessions, isLoading, error, refresh } = useAnnotations(filter);
+  const { annotations, routings, sessions, isLoading, error, apply } = useAnnotations(filter);
 
   const grouped = useMemo(() => {
     const bySession = new Map<string, StoredAnnotation[]>();
@@ -400,7 +444,7 @@ export function AnnotationPanel() {
                       annotation={annotation}
                       routing={routings[annotation.id]}
                       rpc={rpc}
-                      onChanged={() => void refresh()}
+                      onChanged={apply}
                     />
                   ))}
                 </div>
@@ -421,7 +465,7 @@ export function AnnotationPanelHeader() {
 
   const load = useCallback(async () => {
     try {
-      const result = await rpc.call("getConfig");
+      const result = await sharedRequest("getConfig", () => rpc.call("getConfig"));
       setEnabled(result.config.toolbarEnabled);
       setPending(result.counts.pending);
     } catch {
@@ -433,12 +477,17 @@ export function AnnotationPanelHeader() {
     void load();
   }, [load]);
 
+  // Routing moves annotations between threads but changes no status count.
   useRealtime(
     "annotations",
-    useCallback(() => {
-      void load();
-    }, [load]),
+    useCallback(
+      (payload: unknown) => {
+        if (broadcastType(payload) !== "routing") void load();
+      },
+      [load],
+    ),
   );
+  useReconnectRefresh(load);
 
   return (
     <div className="flex items-center gap-2">
