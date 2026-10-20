@@ -1,6 +1,7 @@
 import { ModelPreview } from "./model-review/index.tsx";
 import { Icon } from "./icons.tsx";
-import { useState } from "react";
+import { ago } from "./time.ts";
+import { Fragment, useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { Markdown, experimental_FileLink as FileLink, useBbNavigate } from "@get-bb/plugin-sdk/app";
 import type { Workspace, StudioDocument, Asset, EvidenceRun } from "../shared/schema.ts";
@@ -356,8 +357,8 @@ export function AssetLibrary({
                 <div className="gs-asset-thumbnail">
                   <Media asset={asset} baseUrl={lease?.baseUrl} />
                 </div>
-                <span>{asset.name}</span>
-                <small>{scope === "staged" ? "Staged" : "In Assets"}</small>
+                <span title={asset.name}>{asset.name}</span>
+                <small>{assetDescription(asset)}</small>
               </button>
             ))}
           </div>
@@ -437,6 +438,18 @@ export function AssetLibrary({
   );
 }
 type EvidenceFilter = "all" | "image" | "video" | "webgl";
+const assetKinds: Record<Asset["type"], string> = {
+  image: "Image",
+  video: "Video",
+  audio: "Audio",
+  model: "3D model",
+  file: "File",
+};
+/** "3D model · GLB": the kind, then the extension that decides which tools can open it. */
+function assetDescription(asset: Asset) {
+  const extension = /\.([a-z0-9]{1,8})$/i.exec(asset.path)?.[1]?.toUpperCase();
+  return extension ? `${assetKinds[asset.type]} · ${extension}` : assetKinds[asset.type];
+}
 const evidenceFilters: { id: EvidenceFilter; label: string }[] = [
   { id: "all", label: "All" },
   { id: "image", label: "Screenshots" },
@@ -503,7 +516,11 @@ function RunEvidence({
         {threadId && <button onClick={() => navigate.toThread(threadId)}>View in thread</button>}
       </header>
       <p className="gs-muted">
-        Captured <time dateTime={date.toISOString()}>{date.toLocaleString()}</time> · Run {run.id}
+        Captured{" "}
+        <time dateTime={date.toISOString()} title={date.toLocaleString()}>
+          {ago(run.capturedAtMs)}
+        </time>{" "}
+        · Run <code title={run.id}>{run.id.slice(0, 8)}</code>
       </p>
       {run.testedRevision && (
         <p className="gs-muted gs-run-provenance">
@@ -656,7 +673,8 @@ export function Evidence({
   onPlaytestExperiment: (experiment: NonNullable<EvidenceRun["experiment"]>) => void;
 }) {
   const navigate = useBbNavigate();
-  const [selected, setSelected] = useState<Asset | null>(null);
+  // The run is part of the selection: several runs may list the same capture file.
+  const [selected, setSelected] = useState<{ runId: string | null; asset: Asset } | null>(null);
   const [filter, setFilter] = useState<EvidenceFilter>("all");
   const runs = [...(workspace.evidenceRuns ?? [])].sort((a, b) => b.capturedAtMs - a.capturedAtMs);
   const reported = new Set(runs.flatMap((run) => run.files.map((asset) => asset.path)));
@@ -670,70 +688,80 @@ export function Evidence({
   const hasCaptures = filteredRuns.length > 0 || ungrouped.length > 0;
   const showWebgl = filter === "all" || filter === "webgl";
   const threadId = workspace.game.threadId;
-  function select(asset: Asset) {
-    setSelected(asset);
+  function select(asset: Asset, runId: string | null) {
+    setSelected({ runId, asset });
     if (!lease) void onLease();
   }
+  const viewerRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (selected) viewerRef.current?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  }, [selected]);
+  // The viewer opens under the run it came from rather than below every run.
+  const viewer = selected && (
+    <div ref={viewerRef} className="gs-card gs-evidence-viewer">
+      <header>
+        <strong>{selected.asset.name}</strong>
+        <button onClick={() => setSelected(null)}>Close</button>
+      </header>
+      <Media asset={selected.asset} baseUrl={lease?.baseUrl} large />
+      <code>{selected.asset.path}</code>
+    </div>
+  );
   return (
     <section className="gs-evidence">
-      <header className="gs-page-title">
-        <Icon name="Camera" />
-        <div>
-          <h1>Evidence</h1>
-          <p className="gs-muted">Playtest runs and captures from canvas/evidence.</p>
+      <header className="gs-evidence-toolbar">
+        <div className="gs-segment" aria-label="Evidence type">
+          {evidenceFilters.map((item) => (
+            <button
+              key={item.id}
+              aria-pressed={filter === item.id}
+              onClick={() => {
+                setFilter(item.id);
+                setSelected(null);
+              }}
+            >
+              {item.label}
+            </button>
+          ))}
         </div>
+        <span className="gs-spacer" />
         {threadId && <button onClick={() => navigate.toThread(threadId)}>View agent thread</button>}
         <button className="gs-primary" onClick={onPlaytest}>
           Playtest with agent
         </button>
       </header>
-      <div className="gs-segment" aria-label="Evidence type">
-        {evidenceFilters.map((item) => (
-          <button
-            key={item.id}
-            aria-pressed={filter === item.id}
-            onClick={() => {
-              setFilter(item.id);
-              setSelected(null);
-            }}
-          >
-            {item.label}
-          </button>
-        ))}
-      </div>
       {filteredRuns.map((run) => (
-        <RunEvidence
-          key={run.id}
-          run={run}
-          documents={workspace.documents}
-          lease={lease}
-          onSelect={select}
-          onOpenDocument={onOpenDocument}
-          onPlaytestExperiment={onPlaytestExperiment}
-        />
+        <Fragment key={run.id}>
+          <RunEvidence
+            run={run}
+            documents={workspace.documents}
+            lease={lease}
+            onSelect={(asset) => select(asset, run.id)}
+            onOpenDocument={onOpenDocument}
+            onPlaytestExperiment={onPlaytestExperiment}
+          />
+          {selected?.runId === run.id && viewer}
+        </Fragment>
       ))}
       {ungrouped.length > 0 && (
         <div>
           <h2>Ungrouped captures</h2>
           <p className="gs-muted">No run metadata supplied.</p>
-          <CaptureGrid captures={ungrouped} lease={lease} onSelect={select} />
+          <CaptureGrid
+            captures={ungrouped}
+            lease={lease}
+            onSelect={(asset) => select(asset, null)}
+          />
         </div>
       )}
-      {selected && (
-        <div className="gs-card gs-evidence-viewer">
-          <header>
-            <strong>{selected.name}</strong>
-            <button onClick={() => setSelected(null)}>Close</button>
-          </header>
-          <Media asset={selected} baseUrl={lease?.baseUrl} large />
-          <code>{selected.path}</code>
-        </div>
-      )}
+      {selected?.runId === null && viewer}
       {!hasCaptures && filter !== "webgl" && (
         <div className="gs-empty">
           <Icon name="Camera" />
           <h2>No evidence yet</h2>
-          <p className="gs-muted">Captures from Unity playtests land here.</p>
+          <p className="gs-muted">
+            Playtest runs and captures from <code>canvas/evidence</code> land here.
+          </p>
         </div>
       )}
       {showWebgl && (

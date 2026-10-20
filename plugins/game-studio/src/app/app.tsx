@@ -25,6 +25,8 @@ import { DesignEditor, AssetLibrary, Evidence } from "./views.tsx";
 import { UnityPanel, useUnityEditors, editorLabel } from "./unity.tsx";
 import { UnitySlotInputs } from "./unity-slot-inputs.tsx";
 import { Icon, Joystick } from "./icons.tsx";
+import { createTabRequests } from "./tab-request.ts";
+import { ago } from "./time.ts";
 import "./studio.css";
 
 type Tab = "unity" | "design" | "canvas" | "assets" | "evidence";
@@ -62,18 +64,7 @@ const fallbackAgent: AgentSelection = {
 };
 const StudioLocation = createContext<(gameId?: string, tab?: Tab) => void>(() => {});
 let pendingOpen: { game: Game; threadId: string | null; tab?: Tab } | null = null;
-/**
- * The tab a launcher asked the game's panel to show. It travels beside the panel params, because
- * BB opens a separate panel tab for each distinct params value.
- */
-let requestedTab: { gameId: string; tab: Tab } | null = null;
-const tabRequests = new EventTarget();
-function takeRequestedTab(gameId: string | undefined) {
-  if (!gameId || requestedTab?.gameId !== gameId) return undefined;
-  const { tab } = requestedTab;
-  requestedTab = null;
-  return tab;
-}
+const tabRequests = createTabRequests<Tab>();
 
 export function Notice({ children }: { children: ReactNode }) {
   return (
@@ -122,10 +113,7 @@ function NativeComposerBridge() {
     if (!navigate.openThreadPanel({ actionId: panelActionId, params: { gameId: pending.game.id } }))
       return;
     pendingOpen = null;
-    if (pending.tab) {
-      requestedTab = { gameId: pending.game.id, tab: pending.tab };
-      tabRequests.dispatchEvent(new Event("change"));
-    }
+    tabRequests.request(pending.game.id, pending.tab);
     if (scope.kind === "new-thread") {
       void selectGameCheckout(composer, pending.game).catch((cause) => setError(message(cause)));
     }
@@ -133,6 +121,12 @@ function NativeComposerBridge() {
   return error ? <Notice>{error}</Notice> : null;
 }
 
+const kindLabels: Record<Game["kind"], string> = {
+  unity: "Unity",
+  web: "Web",
+  story: "Story",
+  general: "Game",
+};
 function Gallery() {
   const overview = rpc.overview.useQuery({}, { refetchInterval: 15_000 });
   const openGame = useContext(StudioLocation);
@@ -184,23 +178,30 @@ function Gallery() {
         <Empty title="Loading your projects…" />
       ) : (
         <div className="gs-project-grid">
-          <button
-            className="gs-new-card"
-            onClick={() => setConnect("connect")}
-            disabled={!overview.data?.hosts.some((h) => h.online)}
-          >
-            <Icon name="Plus" />
-            <span>Connect Unity project</span>
-          </button>
+          {/* The header already offers Connect; the tile only stands in for an empty list. */}
+          {!overview.data?.games.length && (
+            <button
+              className="gs-new-card"
+              onClick={() => setConnect("connect")}
+              disabled={!overview.data?.hosts.some((h) => h.online)}
+            >
+              <Icon name="Plus" />
+              <span>Connect Unity project</span>
+            </button>
+          )}
           {games.map((game) => (
             <button key={game.id} className="gs-project-card" onClick={() => openGame(game.id)}>
               <div className="gs-cover">
                 <Icon name="Boxes" />
               </div>
-              <strong>{game.name}</strong>
-              <span className="gs-muted">
-                {game.kind === "unity" ? "Unity" : game.kind} ·{" "}
-                {new Date(game.createdAt).toLocaleDateString()}
+              <strong className="gs-truncate" title={game.name}>
+                {game.name}
+              </strong>
+              <span
+                className="gs-muted"
+                title={`Created ${new Date(game.createdAt).toLocaleString()}`}
+              >
+                {kindLabels[game.kind]} · Created {ago(game.createdAt)}
               </span>
             </button>
           ))}
@@ -401,6 +402,14 @@ function Workbench({ gameId, tab }: { gameId: string; tab: Tab }) {
       <div className="gs-workspace">
         <section className="gs-viewer">
           <div className="gs-project-context">
+            <button
+              className="gs-icon"
+              aria-label="All projects"
+              title="All projects"
+              onClick={() => openGame()}
+            >
+              <Icon name="ArrowLeft" />
+            </button>
             <Icon name="Boxes" />
             <strong className="gs-truncate" title={workspace.game.name}>
               {workspace.game.name}
@@ -426,14 +435,6 @@ function Workbench({ gameId, tab }: { gameId: string; tab: Tab }) {
             </button>
           </div>
           <header className="gs-pane-header">
-            <button
-              className="gs-icon"
-              aria-label="All projects"
-              title="All projects"
-              onClick={() => openGame()}
-            >
-              <Icon name="ArrowLeft" />
-            </button>
             <nav className="gs-tabs" aria-label="Studio views">
               {tabs.map((item) => (
                 <button
@@ -474,6 +475,7 @@ function Workbench({ gameId, tab }: { gameId: string; tab: Tab }) {
                 workspace={workspace}
                 editors={editors}
                 onRequest={(action) => void request(action)}
+                onOpenAssets={() => go("assets")}
               />
             )}
             {(visitedTabs.has("design") || tab === "design") && (
@@ -720,24 +722,18 @@ function StudioPanel({
     ) ?? overview.data?.games.find((game) => game.projectId === projectId);
   const [location, setLocation] = useState<{ gameId?: string; tab?: Tab } | null>(
     // Peek only: the effect below consumes the request, so a double-run initializer cannot lose it.
-    paramGame
-      ? {
-          gameId: paramGame,
-          tab: requestedTab?.gameId === paramGame ? requestedTab.tab : undefined,
-        }
-      : null,
+    paramGame ? { gameId: paramGame, tab: tabRequests.peek(paramGame)?.tab } : null,
   );
   const gameId = location ? location.gameId : matchingGame?.id;
   // An already-open panel follows a later request, such as Open Evidence from the viewer.
   useEffect(() => {
     const follow = () => {
-      const tab = takeRequestedTab(gameId);
-      if (tab) setLocation({ gameId, tab });
+      const found = tabRequests.take(paramGame);
+      if (found) setLocation(found);
     };
     follow();
-    tabRequests.addEventListener("change", follow);
-    return () => tabRequests.removeEventListener("change", follow);
-  }, [gameId]);
+    return tabRequests.subscribe(follow);
+  }, [paramGame]);
   const tab = location?.tab ?? (gameId ? lastTab(gameId) : "unity");
   const openGame = useCallback(
     (id?: string, next?: Tab) => setLocation({ gameId: id, tab: next }),
@@ -804,14 +800,14 @@ function StudioLauncher({ subPath }: PluginNavPanelProps) {
     [client, sidebar.threads, navigate],
   );
   const [requestedGame, section] = subPath.split("/").filter(Boolean);
-  const requestedTab = tabs.find((entry) => entry.id === section)?.id;
+  const sectionTab = tabs.find((entry) => entry.id === section)?.id;
   const opening = useRef(false);
   useEffect(() => {
     if (requestedGame && !opening.current) {
       opening.current = true;
-      void open(requestedGame, requestedTab);
+      void open(requestedGame, sectionTab);
     }
-  }, [requestedGame, requestedTab, open]);
+  }, [requestedGame, sectionTab, open]);
   const openGame = useCallback((gameId?: string) => void open(gameId), [open]);
   return (
     <StudioLocation.Provider value={openGame}>

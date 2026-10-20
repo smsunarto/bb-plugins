@@ -6,6 +6,7 @@ import type { NodePatch } from "./generation.tsx";
 import { Icon } from "./icons.tsx";
 import { VerdictBadge, outputReviewState } from "./review.tsx";
 import { nodeJudgements } from "../shared/judge.ts";
+import { ago } from "./time.ts";
 
 const noJobs: GenerationJob[] = [];
 const media = (job: GenerationJob) => job.request.kind !== "text";
@@ -15,14 +16,6 @@ const failed = (job: GenerationJob) =>
   !["queued", "running", "succeeded"].includes(job.status) && media(job);
 const outputCount = (job: GenerationJob) =>
   job.request.kind === "image" ? (job.request.outputCount ?? 1) : 1;
-const ago = (time: number) => {
-  const minutes = Math.round((Date.now() - time) / 60_000);
-  return minutes < 1
-    ? "just now"
-    : minutes < 60
-      ? `${minutes} min ago`
-      : `${Math.round(minutes / 60)} h ago`;
-};
 
 type Run = {
   key: string;

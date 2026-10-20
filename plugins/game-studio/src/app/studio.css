@@ -534,30 +534,6 @@
   flex-direction: column;
   gap: 20px;
 }
-.gs-page-title {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  flex-wrap: wrap;
-  margin-bottom: 4px;
-  flex-shrink: 0;
-}
-.gs-page-title > svg {
-  width: 30px;
-  height: 30px;
-  color: var(--muted-foreground);
-}
-.gs-page-title > div {
-  flex: 1;
-  min-width: 0;
-  overflow-wrap: anywhere;
-}
-.gs-page-title h1 {
-  font-size: 20px;
-}
-.gs-page-title p {
-  margin-top: 4px;
-}
 .gs-card {
   padding: 20px;
   background: var(--background);
@@ -613,6 +589,8 @@
   display: flex;
   flex-direction: column;
   align-items: flex-start;
+  /* Icons share a top line even when one description wraps. */
+  justify-content: flex-start;
   padding: 14px;
   gap: 10px;
   text-align: left;
@@ -902,12 +880,19 @@
 .gs-run-provenance {
   overflow-wrap: anywhere;
 }
-.gs-evidence > .gs-page-title > div {
-  flex-basis: 180px;
-}
-.gs-evidence > .gs-segment {
+.gs-evidence-toolbar {
+  display: flex;
+  align-items: center;
   flex-wrap: wrap;
+  gap: 8px;
   flex-shrink: 0;
+}
+.gs-evidence-toolbar > .gs-segment {
+  flex-wrap: wrap;
+}
+/* Stays at the trailing edge when a narrow panel wraps it, like Stage files in Assets. */
+.gs-evidence-toolbar > .gs-primary {
+  margin-left: auto;
 }
 .gs-run-provenance > * + * {
   margin-top: 8px;
@@ -1002,9 +987,6 @@
     flex: 1 1 160px;
     min-width: 120px;
     width: auto;
-  }
-  .gs-page-title h1 {
-    font-size: 18px;
   }
 }
 @container studio (max-width: 380px) {

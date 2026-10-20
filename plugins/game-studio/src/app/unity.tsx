@@ -1,5 +1,6 @@
 import { rpc } from "./rpc.ts";
 import { Icon } from "./icons.tsx";
+import { ago } from "./time.ts";
 import { useQuery } from "@tanstack/react-query";
 import { z } from "zod";
 import { experimental_FileLink as FileLink, useBbNavigate } from "@get-bb/plugin-sdk/app";
@@ -63,10 +64,12 @@ export function UnityPanel({
   workspace,
   editors,
   onRequest,
+  onOpenAssets,
 }: {
   workspace: Workspace;
   editors: ReturnType<typeof useUnityEditors>;
   onRequest: (action: StudioAction) => void;
+  onOpenAssets: () => void;
 }) {
   const navigate = useBbNavigate();
   const { game } = workspace;
@@ -88,13 +91,6 @@ export function UnityPanel({
   const staged = workspace.assets.filter((asset) => asset.path.startsWith("canvas/staging/"));
   return (
     <div className="gs-unity-page">
-      <header className="gs-page-title">
-        <Icon name="Boxes" />
-        <div>
-          <h1>{game.name}</h1>
-          <p className="gs-muted">Design, build, and playtest in Unity.</p>
-        </div>
-      </header>
       <section className="gs-card">
         <header>
           <h2>Unity project</h2>
@@ -283,15 +279,20 @@ export function UnityPanel({
                 </li>
               ))}
             </ul>
-            <button
-              disabled={Boolean(blockedReason) || instances.length === 0}
-              onClick={() => onRequest("import")}
-            >
-              Ask agent to import
-            </button>
-            {(blockedReason || instances.length === 0) && (
-              <small className="gs-muted">{blockedReason || "Needs a running Editor"}</small>
-            )}
+            <div className="gs-toolbar">
+              <button
+                disabled={Boolean(blockedReason) || instances.length === 0}
+                onClick={() => onRequest("import")}
+              >
+                Ask agent to import
+              </button>
+              {staged.length > 8 && (
+                <button onClick={onOpenAssets}>View all {staged.length} in Assets</button>
+              )}
+              {(blockedReason || instances.length === 0) && (
+                <small className="gs-muted">{blockedReason || "Needs a running Editor"}</small>
+              )}
+            </div>
           </>
         )}
       </section>
@@ -302,12 +303,13 @@ export function UnityPanel({
             <div className="gs-editor-row" key={request.id}>
               <div>
                 <strong>{requestLabels[request.action]}</strong>
-                <span className="gs-muted">
-                  {new Date(request.createdAt).toLocaleTimeString([], {
-                    hour: "2-digit",
-                    minute: "2-digit",
-                  })}
-                </span>
+                <time
+                  className="gs-muted"
+                  dateTime={new Date(request.createdAt).toISOString()}
+                  title={new Date(request.createdAt).toLocaleString()}
+                >
+                  {ago(request.createdAt)}
+                </time>
                 {request.detail && <span className="gs-muted">{request.detail}</span>}
               </div>
               <div>

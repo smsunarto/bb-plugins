@@ -590,7 +590,8 @@
   min-height: 100px;
   margin: 0;
   overflow: hidden;
-  background: var(--background);
+  /* Recessed like the viewer stage, so an untextured white model still reads in light mode. */
+  background: var(--surface-recessed-solid, var(--background));
   cursor: grab;
 }
 .gs-review-preview:active {
