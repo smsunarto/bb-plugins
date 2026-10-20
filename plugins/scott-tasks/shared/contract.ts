@@ -150,13 +150,6 @@ const commentProviderSchema = z
   })
   .strict();
 
-const displayCommentSchema = commentSchema
-  .extend({
-    threadTitle: z.string().nullable(),
-    provider: commentProviderSchema.nullable(),
-  })
-  .strict();
-
 const attachmentSchema = z
   .object({
     id: idSchema,
@@ -167,6 +160,15 @@ const attachmentSchema = z
     sizeBytes: z.number().int().nonnegative(),
     isImage: z.boolean(),
     createdAt: z.string(),
+  })
+  .strict();
+
+// A comment's attachments ride with it so the activity feed is one read.
+const displayCommentSchema = commentSchema
+  .extend({
+    threadTitle: z.string().nullable(),
+    provider: commentProviderSchema.nullable(),
+    attachments: z.array(attachmentSchema),
   })
   .strict();
 
@@ -540,10 +542,7 @@ export const tasksRpcContract = defineRpcContract({
     output: z.object({ comments: z.array(displayCommentSchema) }).strict(),
   },
   listAttachments: {
-    input: z.union([
-      z.object({ taskId: idSchema }).strict(),
-      z.object({ commentId: idSchema }).strict(),
-    ]),
+    input: z.object({ taskId: idSchema }).strict(),
     output: z.object({ attachments: z.array(attachmentSchema) }).strict(),
   },
   deleteAttachment: {

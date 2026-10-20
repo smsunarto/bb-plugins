@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { HugeiconsIcon } from "@hugeicons/react";
 import SmilePlusIcon from "@hugeicons/core-free-icons/SmilePlusIcon";
 import type { Task } from "../../shared/contract.js";
@@ -13,6 +13,8 @@ import { AttachmentsGrid, uploadAttachment } from "./attachments.js";
 import { createDescriptionSaver, type DescriptionSaver } from "./description-save.js";
 import { StatusIcon } from "./meta.js";
 import { STATUS_LABELS } from "../list/lib.js";
+import { applyEdit } from "../list/optimistic.js";
+import { useTaskEdits } from "../list/use-task-edits.js";
 import { InlineProperties, PropertiesRail, type TaskPropertyUpdate } from "./rail.js";
 import { ThreadsSection } from "./threads.js";
 import { DetailToasts, useDetailToasts } from "./toast.js";
@@ -166,11 +168,18 @@ function DetailSkeleton() {
   );
 }
 
-function TaskDetail({ task }: { task: Task }) {
+function TaskDetail({ task: serverTask }: { task: Task }) {
   const rpc = useTasksRpc();
   const delegationRpc = useRpc<DelegationRpcContract>();
   const navigation = useTasksNavigation();
   const { toasts, push, dismiss } = useDetailToasts();
+  // Title and property edits draw on the click, the same way the list's do,
+  // and roll back with a toast when the write fails.
+  const edits = useTaskEdits(
+    useMemo(() => [serverTask], [serverTask]),
+    (message) => push(message),
+  );
+  const task = applyEdit(serverTask, edits.entries.get(serverTask.id)?.edit);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const subtasksRef = useRef<HTMLElement>(null);
 
@@ -247,19 +256,8 @@ function TaskDetail({ task }: { task: Task }) {
     return () => window.clearInterval(timer);
   }, [hasActivePullRequest, refreshPullRequests]);
 
-  const updateTask = async (
-    input: TaskPropertyUpdate & { title?: string; description?: string },
-  ) => {
-    try {
-      const result = await rpc.call("updateTask", {
-        taskId: task.id,
-        ...input,
-      });
-      if (!result.ok) push(result.error.message);
-    } catch (error) {
-      push(errorMessage(error));
-    }
-  };
+  const updateTask = (input: TaskPropertyUpdate & { title?: string }) =>
+    edits.edit(serverTask, input);
 
   const onDescriptionChange = (markdown: string) => {
     setDraft({ taskId: task.id, markdown });
@@ -343,13 +341,13 @@ function TaskDetail({ task }: { task: Task }) {
             </div>
           ) : null}
 
-          <EditableTitle task={task} onSave={(title) => void updateTask({ title })} />
+          <EditableTitle task={task} onSave={(title) => updateTask({ title })} />
 
           <InlineProperties
             task={task}
             labels={labels.data}
             presets={presets.data}
-            onUpdate={(update) => void updateTask(update)}
+            onUpdate={updateTask}
             onError={(message) => push(message)}
             className="mb-4 @[45rem]:hidden"
           />
@@ -446,7 +444,7 @@ function TaskDetail({ task }: { task: Task }) {
           labels={labels.data}
           threads={threads.data ?? []}
           presets={presets.data}
-          onUpdate={(update) => void updateTask(update)}
+          onUpdate={updateTask}
           onError={(message) => push(message)}
           className="hidden @[45rem]:block"
         />

@@ -23,6 +23,9 @@ function task(overrides: Partial<Task> & Pick<Task, "id">): Task {
 }
 
 const empty: TaskEntries = new Map();
+const T0 = "2026-07-01T00:00:00.000Z";
+const T1 = "2026-07-01T00:00:01.000Z";
+const T2 = "2026-07-01T00:00:02.000Z";
 
 describe("applyEdit / editedTasks", () => {
   it("overlays only the edited fields, including dueDate:null and position", () => {
@@ -147,9 +150,11 @@ describe("reconcileEntries", () => {
       "T1",
       { status: "done", priority: "high" },
       1,
-      task({ id: "T1", status: "done", position: 50 }),
+      task({ id: "T1", status: "done", position: 50, updatedAt: T1 }),
     );
-    const server = [task({ id: "T1", status: "done", priority: "low", position: 50 })];
+    const server = [
+      task({ id: "T1", status: "done", priority: "low", position: 50, updatedAt: T0 }),
+    ];
     expect(reconcileEntries(e, server).get("T1")?.edit).toEqual({
       priority: "high",
     });
@@ -159,5 +164,63 @@ describe("reconcileEntries", () => {
   it("returns the same reference when nothing settles and keeps in-flight entries", () => {
     const e = beginEdit(empty, "T1", { status: "done" }, 1);
     expect(reconcileEntries(e, [task({ id: "T1", status: "todo" })])).toBe(e);
+  });
+});
+
+describe("confirmed edits against later server changes", () => {
+  function confirmedTitle(): TaskEntries {
+    const e = beginEdit(empty, "T1", { title: "B" }, 1);
+    return settleSuccess(e, "T1", { title: "B" }, 1, task({ id: "T1", title: "B", updatedAt: T1 }));
+  }
+
+  it("shows a newer server value instead of the confirmed edit", () => {
+    const e = confirmedTitle();
+    for (const updatedAt of [T1, T2]) {
+      const server = [task({ id: "T1", title: "C", updatedAt })];
+      const next = reconcileEntries(e, server);
+      expect(next.has("T1")).toBe(false);
+      expect(editedTasks(server, next)[0]?.title).toBe("C");
+      expect(reconcileEntries(next, server)).toBe(next);
+    }
+  });
+
+  it("keeps the confirmed edit over a fetch older than its write", () => {
+    const e = confirmedTitle();
+    const stale = [task({ id: "T1", title: "A", updatedAt: T0 })];
+    expect(reconcileEntries(e, stale)).toBe(e);
+    expect(editedTasks(stale, e)[0]?.title).toBe("B");
+  });
+
+  it("retires an older confirmed field but keeps a newer pending one", () => {
+    let e = beginEdit(confirmedTitle(), "T1", { status: "done" }, 2);
+    e = beginEdit(e, "T1", { priority: "high" }, 3);
+    e = settleSuccess(e, "T1", { priority: "high" }, 3, task({ id: "T1", updatedAt: T1 }));
+    const server = [task({ id: "T1", title: "C", status: "todo", priority: "low", updatedAt: T2 })];
+    const next = reconcileEntries(e, server);
+    expect(next.get("T1")?.edit).toEqual({ status: "done" });
+    expect(editedTasks(server, next)[0]).toMatchObject({
+      title: "C",
+      status: "done",
+      priority: "low",
+    });
+  });
+
+  it("keeps a newer pending write to a field an older write confirmed", () => {
+    const e = beginEdit(confirmedTitle(), "T1", { title: "D" }, 2);
+    const server = [task({ id: "T1", title: "C", updatedAt: T2 })];
+    expect(reconcileEntries(e, server).get("T1")?.edit).toEqual({ title: "D" });
+  });
+
+  it("retires the captured position with its status once the server moves on", () => {
+    let e = beginEdit(empty, "T1", { status: "done" }, 1);
+    e = settleSuccess(
+      e,
+      "T1",
+      { status: "done" },
+      1,
+      task({ id: "T1", status: "done", position: 50, updatedAt: T1 }),
+    );
+    const moved = [task({ id: "T1", status: "in_progress", position: 70, updatedAt: T2 })];
+    expect(reconcileEntries(e, moved).has("T1")).toBe(false);
   });
 });

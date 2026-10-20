@@ -297,7 +297,7 @@ function attachmentMetadata(attachment: StoredAttachment): AttachmentMetadata {
 function attachmentsForTasks(store: TasksStore, taskIds: readonly string[]): StoredAttachment[] {
   return taskIds.flatMap((taskId) => [
     ...store.listAttachmentsForTask(taskId),
-    ...store.listComments(taskId).flatMap((comment) => store.listAttachmentsForComment(comment.id)),
+    ...store.listCommentAttachmentsForTask(taskId),
   ]);
 }
 
@@ -787,6 +787,13 @@ export function registerHandlers(
     },
     async listComments(input) {
       const comments = store.tasks.listComments(input.taskId);
+      const attachmentsByComment = new Map<string, AttachmentMetadata[]>();
+      for (const attachment of store.tasks.listCommentAttachmentsForTask(input.taskId)) {
+        if (attachment.commentId === null) continue;
+        const list = attachmentsByComment.get(attachment.commentId) ?? [];
+        list.push(attachmentMetadata(attachment));
+        attachmentsByComment.set(attachment.commentId, list);
+      }
       const threadInfo = await resolveAgentThreadInfo(bb, comments);
       const providerBadges = await resolveProviderBadges(bb, threadInfo);
       return {
@@ -797,6 +804,8 @@ export function registerHandlers(
               : undefined;
           return {
             ...comment,
+            attachments:
+              comment.kind === "system" ? [] : (attachmentsByComment.get(comment.id) ?? []),
             threadTitle: info?.title ?? null,
             provider:
               info === undefined
@@ -813,12 +822,8 @@ export function registerHandlers(
       };
     },
     listAttachments(input) {
-      const attachments =
-        "taskId" in input
-          ? store.tasks.listAttachmentsForTask(input.taskId)
-          : store.tasks.listAttachmentsForComment(input.commentId);
       return {
-        attachments: attachments.map(attachmentMetadata),
+        attachments: store.tasks.listAttachmentsForTask(input.taskId).map(attachmentMetadata),
       };
     },
     async deleteAttachment(input) {

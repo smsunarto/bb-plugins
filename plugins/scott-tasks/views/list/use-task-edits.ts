@@ -12,16 +12,22 @@ import {
   type TaskEntries,
 } from "./optimistic.js";
 
-interface ListTaskEditController {
+interface TaskEditController {
   entries: TaskEntries;
   pending: ReadonlySet<string>;
   edit: (task: Task, patch: TaskEdit) => void;
 }
 
-export function useListTaskEdits(
+/**
+ * Optimistic task edits for any view that draws server tasks: an edit shows on
+ * the click, settles once the server's task carries it or is at least as new as
+ * the write that confirmed it, and rolls back when the write fails. The list
+ * passes its page; task detail passes its one task.
+ */
+export function useTaskEdits(
   serverTasks: readonly Task[] | undefined,
   onError: (message: string) => void,
-): ListTaskEditController {
+): TaskEditController {
   const rpc = useTasksRpc();
   const [entries, setEntries] = useState<TaskEntries>(() => new Map());
   const genRef = useRef(0);

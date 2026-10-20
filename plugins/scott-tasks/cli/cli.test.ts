@@ -1497,6 +1497,18 @@ describe("bb tasks CLI", () => {
           expect.objectContaining({ id: commentAttachment.id }),
         ]),
       );
+      const shownWithCommentAttachment = JSON.parse(
+        stdout(await harness.runCli(["show", "FILE-1", "--json"])),
+      );
+      expect(
+        shownWithCommentAttachment.attachments.map((entry: { id: string }) => entry.id).sort(),
+      ).toEqual([attachment.id, pngAttachment.id].sort());
+      expect(shownWithCommentAttachment.comments).toContainEqual(
+        expect.objectContaining({
+          id: comment.id,
+          attachments: [expect.objectContaining({ id: commentAttachment.id })],
+        }),
+      );
 
       stdout(
         await harness.runCli(

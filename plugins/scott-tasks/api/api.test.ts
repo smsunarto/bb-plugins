@@ -8,6 +8,67 @@ import { tasksRpcContract } from "../shared/contract";
 import { createComment, createStore, registerTasksApi } from ".";
 
 describe("Tasks RPC domain API", () => {
+  it("returns each comment's attachment metadata in the comments response", async () => {
+    const { bb, harness } = createFakePluginHost({ pluginId: "tasks" });
+    const store = createStore(bb);
+    registerTasksApi(bb, store);
+    const project = store.tasks.createProject({ name: "Activity", prefix: "ACT", color: "blue" });
+    const task = store.tasks.createTask({ projectId: project.id, title: "Activity attachments" });
+    const comment = store.tasks.createComment({
+      taskId: task.id,
+      kind: "user",
+      authorName: "You",
+      threadId: null,
+      body: "See sketch",
+      notifiedCount: 0,
+    });
+    const attachment = store.tasks.createAttachment({
+      commentId: comment.id,
+      fileName: "sketch.png",
+      mime: "image/png",
+      sizeBytes: 42,
+      blobPath: "blobs/sketch.png",
+      isImage: true,
+    });
+    store.tasks.createComment({
+      taskId: task.id,
+      kind: "user",
+      authorName: "You",
+      threadId: null,
+      body: "No files here",
+      notifiedCount: 0,
+    });
+    const otherTask = store.tasks.createTask({ projectId: project.id, title: "Other task" });
+    const otherComment = store.tasks.createComment({
+      taskId: otherTask.id,
+      kind: "user",
+      authorName: "You",
+      threadId: null,
+      body: "Another task's file",
+      notifiedCount: 0,
+    });
+    store.tasks.createAttachment({
+      commentId: otherComment.id,
+      fileName: "other.png",
+      mime: "image/png",
+      sizeBytes: 7,
+      blobPath: "blobs/other.png",
+      isImage: true,
+    });
+    const result = tasksRpcContract.listComments.output.parse(
+      await harness.callRpc("listComments", { taskId: task.id }),
+    );
+    expect(result.comments.map((entry) => entry.attachments.map((file) => file.id))).toEqual([
+      [attachment.id],
+      [],
+    ]);
+    expect(result.comments[0]?.attachments).toEqual([
+      expect.objectContaining({ id: attachment.id, fileName: "sketch.png", sizeBytes: 42 }),
+    ]);
+    expect(result.comments[0]?.attachments[0]).not.toHaveProperty("blobPath");
+    await harness.dispose();
+  });
+
   it("deletes through the typed RPC policy and rejects saved-description references", async () => {
     const { bb, harness } = createFakePluginHost({ pluginId: "tasks" });
     const store = createStore(bb);

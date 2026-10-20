@@ -471,28 +471,18 @@ function resolvePreset(presets: readonly Preset[], address: string): Preset {
   return matches[0]!;
 }
 
+// The task's own files, then each comment's, which listComments already carries.
 async function listTaskAttachments(
   domain: TasksDomain,
   taskId: string,
-  comments: readonly { id: string }[],
+  comments: readonly { attachments: readonly Attachment[] }[],
 ): Promise<Attachment[]> {
-  const attachments = [
+  return [
     ...tasksRpcContract.listAttachments.output.parse(
       await domain.listAttachments(tasksRpcContract.listAttachments.input.parse({ taskId })),
     ).attachments,
+    ...comments.flatMap((comment) => comment.attachments),
   ];
-  for (const comment of comments) {
-    attachments.push(
-      ...tasksRpcContract.listAttachments.output.parse(
-        await domain.listAttachments(
-          tasksRpcContract.listAttachments.input.parse({
-            commentId: comment.id,
-          }),
-        ),
-      ).attachments,
-    );
-  }
-  return attachments;
 }
 
 async function listPresets(domain: TasksDomain): Promise<Preset[]> {
@@ -1395,7 +1385,8 @@ export function registerTasksCli(
                   project,
                   labels,
                   subtasks,
-                  attachments,
+                  // Comment files stay under their comment, so each appears once.
+                  attachments: attachments.filter((attachment) => attachment.commentId === null),
                   taskThreads,
                   pullRequests,
                   pullRequestUnavailableThreadIds: unavailableThreadIds,

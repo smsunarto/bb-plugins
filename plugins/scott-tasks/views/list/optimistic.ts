@@ -1,6 +1,7 @@
 import type { Task, TaskPriority, TaskStatus } from "../../shared/contract.js";
 
 export interface TaskEdit {
+  title?: string;
   status?: TaskStatus;
   priority?: TaskPriority;
   dueDate?: string | null;
@@ -9,11 +10,21 @@ export interface TaskEdit {
 }
 
 type EditField = keyof TaskEdit;
-const EDIT_FIELDS: readonly EditField[] = ["status", "priority", "dueDate", "labelIds", "position"];
+const EDIT_FIELDS: readonly EditField[] = [
+  "title",
+  "status",
+  "priority",
+  "dueDate",
+  "labelIds",
+  "position",
+];
 
 interface TaskEntry {
   edit: TaskEdit;
   gens: Partial<Record<EditField, number>>;
+  // The server's updatedAt (ms) from the write that confirmed each field. A
+  // field without one is still in flight.
+  confirmedAt: Partial<Record<EditField, number>>;
   inFlight: number;
 }
 
@@ -34,15 +45,23 @@ function hasFields(edit: TaskEdit): boolean {
   return EDIT_FIELDS.some((field) => edit[field] !== undefined);
 }
 
-function fieldSettled(task: Task, field: EditField, edit: TaskEdit): boolean {
-  if (field === "labelIds") return sameIds(edit.labelIds, task.labelIds);
-  return task[field] === edit[field];
+function fieldSettled(task: Task, fetchedAt: number, field: EditField, entry: TaskEntry): boolean {
+  const carried =
+    field === "labelIds"
+      ? sameIds(entry.edit.labelIds, task.labelIds)
+      : task[field] === entry.edit[field];
+  if (carried) return true;
+  // A confirmed field also settles once the fetched task is at or past the
+  // write that confirmed it, so a later change by someone else shows through.
+  const confirmedAt = entry.confirmedAt[field];
+  return confirmedAt !== undefined && fetchedAt >= confirmedAt;
 }
 
 export function applyEdit(task: Task, edit: TaskEdit | undefined): Task {
   if (edit === undefined || !hasFields(edit)) return task;
   return {
     ...task,
+    ...(edit.title !== undefined ? { title: edit.title } : {}),
     ...(edit.status !== undefined ? { status: edit.status } : {}),
     ...(edit.priority !== undefined ? { priority: edit.priority } : {}),
     ...(edit.dueDate !== undefined ? { dueDate: edit.dueDate } : {}),
@@ -69,11 +88,12 @@ export function matchesFilters(
   );
 }
 
-function makeEntry(prev: TaskEntry | undefined): {
-  edit: TaskEdit;
-  gens: Partial<Record<EditField, number>>;
-} {
-  return { edit: { ...prev?.edit }, gens: { ...prev?.gens } };
+function makeEntry(prev: TaskEntry | undefined): Omit<TaskEntry, "inFlight"> {
+  return {
+    edit: { ...prev?.edit },
+    gens: { ...prev?.gens },
+    confirmedAt: { ...prev?.confirmedAt },
+  };
 }
 
 export function beginEdit(
@@ -83,26 +103,27 @@ export function beginEdit(
   gen: number,
 ): TaskEntries {
   const prev = entries.get(taskId);
+  const { gens, confirmedAt } = makeEntry(prev);
   const edit: TaskEdit = { ...prev?.edit, ...patch };
-  const gens = { ...prev?.gens };
   for (const field of EDIT_FIELDS) {
-    if (patch[field] !== undefined) gens[field] = gen;
+    if (patch[field] === undefined) continue;
+    gens[field] = gen;
+    delete confirmedAt[field];
   }
   const next = new Map(entries);
-  next.set(taskId, { edit, gens, inFlight: (prev?.inFlight ?? 0) + 1 });
+  next.set(taskId, { edit, gens, confirmedAt, inFlight: (prev?.inFlight ?? 0) + 1 });
   return next;
 }
 
 function finalize(
   entries: TaskEntries,
   taskId: string,
-  edit: TaskEdit,
-  gens: Partial<Record<EditField, number>>,
+  { edit, gens, confirmedAt }: Omit<TaskEntry, "inFlight">,
   inFlight: number,
 ): TaskEntries {
   const next = new Map(entries);
   if (!hasFields(edit) && inFlight <= 0) next.delete(taskId);
-  else next.set(taskId, { edit, gens, inFlight: Math.max(0, inFlight) });
+  else next.set(taskId, { edit, gens, confirmedAt, inFlight: Math.max(0, inFlight) });
   return next;
 }
 
@@ -115,12 +136,21 @@ export function settleSuccess(
 ): TaskEntries {
   const prev = entries.get(taskId);
   if (prev === undefined) return entries;
-  const { edit, gens } = makeEntry(prev);
+  const next = makeEntry(prev);
+  const { edit, gens, confirmedAt } = next;
   if (patch.status !== undefined && gens.status === gen) {
     edit.position = serverTask.position;
     gens.position = gen;
   }
-  return finalize(entries, taskId, edit, gens, prev.inFlight - 1);
+  // Fields a newer write took over stay in flight; the rest keep showing
+  // until a fetched task carries them or moves past this write.
+  const stamp = Date.parse(serverTask.updatedAt);
+  if (!Number.isNaN(stamp)) {
+    for (const field of EDIT_FIELDS) {
+      if (gens[field] === gen) confirmedAt[field] = stamp;
+    }
+  }
+  return finalize(entries, taskId, next, prev.inFlight - 1);
 }
 
 export function settleFailure(
@@ -131,20 +161,22 @@ export function settleFailure(
 ): TaskEntries {
   const prev = entries.get(taskId);
   if (prev === undefined) return entries;
-  const { edit, gens } = makeEntry(prev);
+  const next = makeEntry(prev);
   for (const field of EDIT_FIELDS) {
-    if (patch[field] !== undefined && gens[field] === gen) {
-      delete edit[field];
-      delete gens[field];
+    if (patch[field] !== undefined && next.gens[field] === gen) {
+      delete next.edit[field];
+      delete next.gens[field];
+      delete next.confirmedAt[field];
     }
   }
-  return finalize(entries, taskId, edit, gens, prev.inFlight - 1);
+  return finalize(entries, taskId, next, prev.inFlight - 1);
 }
 
 function sameEntry(a: TaskEntry, b: TaskEntry): boolean {
   if (a.inFlight !== b.inFlight) return false;
   for (const field of EDIT_FIELDS) {
     if (a.gens[field] !== b.gens[field]) return false;
+    if (a.confirmedAt[field] !== b.confirmedAt[field]) return false;
     if (field === "labelIds") {
       if (!sameIds(a.edit.labelIds, b.edit.labelIds)) return false;
     } else if (a.edit[field] !== b.edit[field]) {
@@ -170,16 +202,19 @@ export function reconcileEntries(entries: TaskEntries, tasks: readonly Task[]): 
   for (const [id, entry] of entries) {
     const task = byId.get(id);
     if (task === undefined) continue;
+    const fetchedAt = Date.parse(task.updatedAt);
     const edit: TaskEdit = {};
     const gens: Partial<Record<EditField, number>> = {};
+    const confirmedAt: Partial<Record<EditField, number>> = {};
     for (const field of EDIT_FIELDS) {
       const value = entry.edit[field];
-      if (value === undefined || fieldSettled(task, field, entry.edit)) continue;
+      if (value === undefined || fieldSettled(task, fetchedAt, field, entry)) continue;
       Object.assign(edit, { [field]: value });
       gens[field] = entry.gens[field];
+      if (entry.confirmedAt[field] !== undefined) confirmedAt[field] = entry.confirmedAt[field];
     }
     if (hasFields(edit) || entry.inFlight > 0) {
-      next.set(id, { edit, gens, inFlight: entry.inFlight });
+      next.set(id, { edit, gens, confirmedAt, inFlight: entry.inFlight });
     }
   }
   return sameEntries(entries, next) ? entries : next;

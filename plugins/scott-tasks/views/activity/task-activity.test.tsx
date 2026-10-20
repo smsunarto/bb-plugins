@@ -67,6 +67,7 @@ function comment(
     notifiedCount: 0,
     createdAt: "2026-07-15T00:00:00.000Z",
     provider: null,
+    attachments: [],
   };
 }
 

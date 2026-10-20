@@ -24,6 +24,7 @@ const base: DisplayComment = {
   body: "Done",
   notifiedCount: 0,
   createdAt: "2026-07-15T00:00:00.000Z",
+  attachments: [],
 };
 
 describe("CommentAuthor", () => {

@@ -27,29 +27,9 @@ import { formatFileSize, formatRelativeTime, splitSystemBody, useNowTick } from 
 import { CommentAuthor } from "./comment-author.js";
 import { CommentProviderAvatar } from "./provider-logo.js";
 
-interface FeedEntry {
-  comment: DisplayComment;
-  attachments: Attachment[];
-}
-
 function useActivityFeed(taskId: string) {
-  return useTasksQuery<FeedEntry[]>(
-    async (rpc) => {
-      const { comments } = await rpc.call("listComments", { taskId });
-      const attachments = await Promise.all(
-        comments.map((comment) =>
-          comment.kind === "system"
-            ? Promise.resolve<Attachment[]>([])
-            : rpc
-                .call("listAttachments", { commentId: comment.id })
-                .then((result) => result.attachments),
-        ),
-      );
-      return comments.map((comment, index) => ({
-        comment,
-        attachments: attachments[index] ?? [],
-      }));
-    },
+  return useTasksQuery<DisplayComment[]>(
+    async (rpc) => (await rpc.call("listComments", { taskId })).comments,
     ["comments:changed", "tasks:changed"],
     [taskId],
   );
@@ -204,8 +184,8 @@ function SystemEvent({ comment, nowMs }: { comment: Comment; nowMs: number }) {
   );
 }
 
-function CommentCard({ entry, nowMs }: { entry: FeedEntry; nowMs: number }) {
-  const { comment, attachments } = entry;
+function CommentCard({ comment, nowMs }: { comment: DisplayComment; nowMs: number }) {
+  const { attachments } = comment;
   const agent = comment.kind === "agent";
   const navigate = useBbNavigate();
   const [lightbox, setLightbox] = useState<Attachment | null>(null);
@@ -433,11 +413,8 @@ interface TaskActivityProps {
 export function TaskActivity({ taskId }: TaskActivityProps) {
   const feed = useActivityFeed(taskId);
   const nowMs = useNowTick();
-  const entries = useMemo(() => feed.data ?? [], [feed.data]);
-  const notificationTarget = useMemo(
-    () => agentNotificationTarget(entries.map((entry) => entry.comment)),
-    [entries],
-  );
+  const comments = useMemo(() => feed.data ?? [], [feed.data]);
+  const notificationTarget = useMemo(() => agentNotificationTarget(comments), [comments]);
 
   return (
     <section aria-label="Activity">
@@ -446,19 +423,19 @@ export function TaskActivity({ taskId }: TaskActivityProps) {
       <div
         className={cn(
           "relative",
-          entries.length > 0 &&
+          comments.length > 0 &&
             "before:absolute before:bottom-1.5 before:left-[11px] before:top-1.5 before:w-px before:bg-border-hairline",
         )}
       >
         {feed.error ? <div className="text-xs text-destructive">{feed.error}</div> : null}
-        {entries.length === 0 && !feed.isLoading && !feed.error ? (
+        {comments.length === 0 && !feed.isLoading && !feed.error ? (
           <div className="text-xs text-muted-foreground">No activity yet.</div>
         ) : null}
-        {entries.map((entry) =>
-          entry.comment.kind === "system" ? (
-            <SystemEvent key={entry.comment.id} comment={entry.comment} nowMs={nowMs} />
+        {comments.map((comment) =>
+          comment.kind === "system" ? (
+            <SystemEvent key={comment.id} comment={comment} nowMs={nowMs} />
           ) : (
-            <CommentCard key={entry.comment.id} entry={entry} nowMs={nowMs} />
+            <CommentCard key={comment.id} comment={comment} nowMs={nowMs} />
           ),
         )}
       </div>

@@ -28,7 +28,7 @@ import { StatusIcon } from "./icons.js";
 import { listScrollScopeKey, useListScrollRestoration } from "./scroll-restoration.js";
 import { groupTasksByStatus, labelFilterOptions, selectedLabelIds, STATUS_LABELS } from "./lib.js";
 import { editedTasks, matchesFilters } from "./optimistic.js";
-import { useListTaskEdits } from "./use-task-edits.js";
+import { useTaskEdits } from "./use-task-edits.js";
 import { TaskRow } from "./row.js";
 import { rowWindows, useRowWindowViewport } from "./row-window.js";
 
@@ -111,7 +111,7 @@ export function ListView({ projectId, activeOnly = false }: ListViewProps) {
     labelIds,
   });
   const meta = useTaskListMeta(projectId);
-  const edits = useListTaskEdits(tasksQuery.data, (message) => push(message));
+  const edits = useTaskEdits(tasksQuery.data, (message) => push(message));
 
   const labelsById = useMemo(
     () => new Map((labels.data ?? []).map((label) => [label.id, label])),
