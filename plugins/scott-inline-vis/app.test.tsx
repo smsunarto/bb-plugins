@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { StrictMode, useState } from "react";
 import { afterEach, expect, test, vi } from "vitest";
 import { loadPluginApp, renderSlot as sdkRenderSlot } from "@get-bb/plugin-sdk/testing/app";
-import { mp4File, STREAM_TYPE } from "./mp4-fixture.ts";
+import { chunkedResponse, mp4File, STREAM_TYPE } from "./mp4-fixture.ts";
 import {
   widgetIdentitySchema,
   saveWidgetStateSchema,
@@ -484,13 +484,75 @@ test("inline-vis streams a video to the frame and replays its bytes to a late fr
     const streamed = port.postMessage.mock.calls.map(
       ([message]) => message as Record<string, unknown>,
     );
-    expect(streamed[0]).toEqual({ key: "0", stream: STREAM_TYPE });
-    expect(streamed.slice(1).every((message) => message.chunk instanceof Uint8Array)).toBe(true);
+    expect(streamed.slice(0, 2)).toEqual([
+      { key: "0", size: { width: 64, height: 64 } },
+      { key: "0", stream: STREAM_TYPE },
+    ]);
+    expect(streamed.slice(2).every((message) => message.chunk instanceof Uint8Array)).toBe(true);
     body.close();
     await waitFor(() => expect(port.postMessage.mock.lastCall?.[0]).toHaveProperty("blob"));
     const [last] = port.postMessage.mock.lastCall! as [{ key: string; blob: Blob }];
     expect(last.key).toBe("0");
     expect(last.blob.size).toBe(file.length);
+    // Reopened, the player starts at the size the stream reported.
+    const again = renderSlot(
+      await inlineVisDirective(),
+      {
+        attributes: { file: "/tmp/charts/player.html" },
+        source: '::inline-vis{file="/tmp/charts/player.html"}',
+        message: inlineVisMessage,
+        openWorkspaceFile: null,
+      },
+      {
+        sdk: previewSdk(() => '<video controls src="clip.mp4"></video>'),
+        pluginId: "scott-inline-vis",
+      },
+    );
+    const reopened = await waitFor(() => {
+      const value = frameDocument(again.container.querySelector("iframe"));
+      expect(value).toContain("bb:inline-preview-ready");
+      return value!;
+    });
+    expect(reopened).toContain("--bb-inline-preview-ratio: 64 / 64");
+    again.unmount();
+  } finally {
+    slot.unmount();
+    fetch.mockRestore();
+  }
+});
+
+test("inline-vis sends a frame that announces after the download its video's size first", async () => {
+  const { fetch, pending } = deferredFetch();
+  const slot = renderSlot(
+    await inlineVisDirective(),
+    {
+      attributes: { file: "/tmp/charts/player.html" },
+      source: '::inline-vis{file="/tmp/charts/player.html"}',
+      message: inlineVisMessage,
+      openWorkspaceFile: null,
+    },
+    {
+      sdk: previewSdk(() => '<video controls src="clip.mp4"></video>'),
+      pluginId: "scott-inline-vis",
+    },
+  );
+  try {
+    const html = await waitFor(() => {
+      const value = frameDocument(slot.container.querySelector("iframe"));
+      expect(value).toContain("bb:inline-preview-ready");
+      return value!;
+    });
+    const iframe = slot.container.querySelector("iframe")!;
+    await waitFor(() => expect(pending).toHaveLength(1));
+    pending[0]!.resolve(chunkedResponse([await mp4File("in-memory")]));
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    const token = html.match(/const token = "([^"]+)"/)![1]!;
+    const port = announce(iframe.contentWindow, token);
+    const replayed = port.postMessage.mock.calls.map(([message]) => Object.keys(message as object));
+    expect(replayed).toEqual([
+      ["key", "size"],
+      ["key", "blob"],
+    ]);
   } finally {
     slot.unmount();
     fetch.mockRestore();
@@ -953,6 +1015,22 @@ test("inline-vis sizes a fragment to its content within the height limits", asyn
   });
   expect(iframe.style.height).toBe("40px");
   slot.unmount();
+});
+
+test("inline-vis reopens a fragment at its last height", async () => {
+  const first = await renderFragment("<p>Recording</p>");
+  first.send({ type: "bb:inline-vis:resize", height: 452 });
+  // Unmounting saves the height without waiting for the save delay.
+  first.slot.unmount();
+
+  const second = await renderFragment("<p>Recording</p>");
+  expect(second.iframe.style.height).toBe("452px");
+  second.slot.unmount();
+
+  // Each message keeps its own height.
+  const other = await renderFragment("<p>Recording</p>", { messageId: "message-other" });
+  expect(other.iframe.style.height).toBe("224px");
+  other.slot.unmount();
 });
 
 test("inline-vis sends theme changes when bb rewrites its theme stylesheet", async () => {

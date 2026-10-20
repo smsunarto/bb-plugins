@@ -39,6 +39,7 @@ import { previewMarkdown } from "./preview-markdown.ts";
 import { PREVIEW_FRAME_MESSAGES, previewFrameUrl } from "./preview-frame.ts";
 import { createPreviewExpansion } from "./inline-vis-expansion.ts";
 import { loadPreview } from "./load-preview.ts";
+import { useRememberedHeight, videoSizes } from "./preview-sizes.ts";
 import { TweakPanel } from "./tweak-panel.tsx";
 import type { TweakGroup } from "./tweak-contract.ts";
 import { useWidgetState } from "./use-widget-state.ts";
@@ -71,6 +72,13 @@ export const MIN_HEIGHT_PX = 120;
 export const MAX_HEIGHT_PX = 1_200;
 /** Smallest content-sized fragment, so an empty one still shows its frame. */
 const MIN_FRAGMENT_HEIGHT_PX = 40;
+
+const fragmentHeight = (contentHeight: number) =>
+  Math.min(MAX_HEIGHT_PX, Math.max(MIN_FRAGMENT_HEIGHT_PX, contentHeight));
+
+const videoSizeStore = (pluginId: string) => videoSizes(`${pluginId}.inline-vis.video-sizes`);
+const videoSizeKey = (preview: { hostId: string; file: string }, path: string) =>
+  `${preview.hostId}\n${preview.file}\n${path}`;
 
 export function parsePreviewHeight(value: string | undefined): number | null {
   const normalized = value?.trim() ?? "";
@@ -113,9 +121,12 @@ function PreviewHeader({
         <span className="inline-vis-path" title={file}>
           <bdi>{file}</bdi>
         </span>
+        {/* Sized attributes keep icons small if they render before app.css applies. */}
         <svg
           aria-hidden="true"
           className="inline-vis-chevron"
+          width="10"
+          height="16"
           viewBox="0 0 10 16"
           fill="currentColor"
         >
@@ -133,6 +144,8 @@ function PreviewHeader({
         >
           <svg
             aria-hidden="true"
+            width="14"
+            height="14"
             viewBox="0 0 24 24"
             fill="none"
             stroke="currentColor"
@@ -159,6 +172,8 @@ function PreviewHeader({
         >
           <svg
             aria-hidden="true"
+            width="14"
+            height="14"
             viewBox="0 0 24 24"
             fill="none"
             stroke="currentColor"
@@ -297,6 +312,7 @@ function useFragmentBridge(
   addContext: (prompt?: string) => Promise<void>,
   leaveWide: () => void,
 ) {
+  const pluginId = experimental_usePluginId();
   const [contentHeight, setContentHeight] = useState<number | null>(null);
   const [tweaks, setTweaks] = useState<{ groups: TweakGroup[]; original: boolean }>({
     groups: [],
@@ -366,14 +382,23 @@ function useFragmentBridge(
     let port: MessagePort | null = null;
     const send = (message: InlineAssetMessage) => {
       if (controller.signal.aborted) return;
-      // A replacement frame needs a settled asset's outcome, or a streaming one's bytes so far.
-      const log = "stream" in message || "chunk" in message ? (sent.get(message.key) ?? []) : [];
+      // A replacement frame needs a settled asset's outcome, or a streaming
+      // one's bytes so far. Either way it needs the video's size first.
+      const earlier = sent.get(message.key) ?? [];
+      const log =
+        "size" in message || "stream" in message || "chunk" in message
+          ? earlier
+          : earlier.filter((logged) => "size" in logged);
       log.push(message);
       sent.set(message.key, log);
       port?.postMessage(message);
     };
+    const sizes = videoSizeStore(pluginId);
     const load = (asset: InlinePreviewAsset) =>
-      fetchInlineAsset(asset, controller.signal, send).then(
+      fetchInlineAsset(asset, controller.signal, (message) => {
+        if ("size" in message) sizes.write(videoSizeKey(state, asset.path), message.size);
+        send(message);
+      }).then(
         (blob) => send({ key: asset.key, blob }),
         (error: unknown) => {
           if (controller.signal.aborted) return;
@@ -415,7 +440,7 @@ function useFragmentBridge(
       port?.close();
       setAssetError(null);
     };
-  }, [state, frame]);
+  }, [state, frame, pluginId]);
 
   useEffect(() => {
     if (state.status !== "ready" || state.kind !== "html" || !state.token) return;
@@ -526,6 +551,11 @@ function ExpandedPreview({
   const file = attributes.file?.trim() ?? "";
   const previewHeight = parsePreviewHeight(attributes.height);
   const fixedHeight = Boolean(attributes.height?.trim());
+  // Only content-sized fragments are remembered, so a hit implies one.
+  const [rememberedHeight, rememberHeight] = useRememberedHeight(
+    `${pluginId}.inline-vis.heights`,
+    `${message.threadId}:${message.id}:${file}`,
+  );
   const [state, setState] = useState<LoadState>({ status: "loading" });
   const frame = useRef<HTMLIFrameElement>(null);
   const surface = useRef<HTMLDialogElement>(null);
@@ -579,6 +609,11 @@ function ExpandedPreview({
     addContext,
     leaveWide,
   );
+  useEffect(() => {
+    // Wide view lays the fragment out at another width.
+    if (contentHeight !== null && !fixedHeight && !wide)
+      rememberHeight(fragmentHeight(contentHeight));
+  }, [contentHeight, fixedHeight, wide, rememberHeight]);
 
   useEffect(() => {
     let cancelled = false;
@@ -602,6 +637,7 @@ function ExpandedPreview({
         const fragment = isFragment(result.html);
         const widget = fragment ? await restore(controller.signal) : null;
         if (cancelled) return;
+        const sizes = videoSizeStore(pluginId);
         const prepared = prepareInlineAssets(
           result.html,
           result.url,
@@ -614,6 +650,7 @@ function ExpandedPreview({
                   tweaks: widget?.tweaks ?? null,
                 })
             : undefined,
+          (path) => sizes.read(videoSizeKey(result, path)),
         );
         if (!cancelled)
           setState({
@@ -638,7 +675,7 @@ function ExpandedPreview({
       cancelled = true;
       controller.abort();
     };
-  }, [file, message.threadId, sdk, restore, restoreRevision]);
+  }, [file, message.threadId, sdk, restore, restoreRevision, pluginId]);
 
   if (state.status === "error") {
     return (
@@ -661,7 +698,9 @@ function ExpandedPreview({
         <output
           aria-busy="true"
           aria-label={`Loading visualization ${file}`}
-          style={{ height: previewHeight ?? DEFAULT_HEIGHT_PX }}
+          style={{
+            height: (fixedHeight ? previewHeight : rememberedHeight) ?? DEFAULT_HEIGHT_PX,
+          }}
           className="block w-full p-3"
         >
           <Skeleton className="size-full" />
@@ -673,9 +712,11 @@ function ExpandedPreview({
   const hasTweaks = state.kind === "html" && state.fragment && tweaks.groups.length > 0;
   const canShareState = state.kind === "html" && state.fragment && hasSavedState;
   const height =
-    state.kind === "html" && state.fragment && !fixedHeight && contentHeight !== null
-      ? Math.min(MAX_HEIGHT_PX, Math.max(MIN_FRAGMENT_HEIGHT_PX, contentHeight))
-      : (previewHeight ?? DEFAULT_HEIGHT_PX);
+    state.kind !== "html" || !state.fragment || fixedHeight
+      ? (previewHeight ?? DEFAULT_HEIGHT_PX)
+      : contentHeight !== null
+        ? fragmentHeight(contentHeight)
+        : (rememberedHeight ?? DEFAULT_HEIGHT_PX);
   const actions = (
     <PreviewActions
       hasTweaks={hasTweaks}

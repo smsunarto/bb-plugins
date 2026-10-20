@@ -65,7 +65,9 @@ test("marks local video and source src once without fetching or serializing vide
     documentUrl.href,
   );
   expect(fetch).not.toHaveBeenCalled();
-  expect(result.assets).toEqual([{ key: "0", url: `${root.href}media/a.mp4`, image: false }]);
+  expect(result.assets).toEqual([
+    { key: "0", url: `${root.href}media/a.mp4`, path: "media/a.mp4", image: false },
+  ]);
   const doc = new DOMParser().parseFromString(result.html!, "text/html");
   expect(doc.querySelector("base")?.href).toMatch(/\/file-previews\/lease\/player\.html$/);
   const [first, second, data] = doc.querySelectorAll("video");
@@ -130,7 +132,9 @@ test("honors an explicit local base and leaves remote-base embeds alone", () => 
     '<base href="media/"><video src="a.mp4"></video>',
     documentUrl.href,
   );
-  expect(local.assets).toEqual([{ key: "0", url: `${root.href}media/a.mp4`, image: false }]);
+  expect(local.assets).toEqual([
+    { key: "0", url: `${root.href}media/a.mp4`, path: "media/a.mp4", image: false },
+  ]);
   const remote = prepareInlineAssets(
     '<base href="https://example.com/"><video src="a.mp4"></video>',
     documentUrl.href,
@@ -143,9 +147,10 @@ async function frame(
   html: string,
   mediaSource?: unknown,
   engine: "chromium" | "webkit" = "chromium",
+  videoSize?: Parameters<typeof prepareInlineAssets>[3],
 ) {
   const { JSDOM } = await import("jsdom");
-  const result = prepareInlineAssets(html, documentUrl.href);
+  const result = prepareInlineAssets(html, documentUrl.href, undefined, videoSize);
   let blobs = 0;
   const port = { onmessage: null as ((event: { data: unknown }) => void) | null };
   const load = vi.fn();
@@ -211,6 +216,68 @@ test("shows a loading video and fills each asset as it arrives over the frame's 
   expect(win.document.querySelector("img")?.getAttribute("src")).toBe("blob:null/2");
   win.document.querySelector("video")!.dispatchEvent(new win.Event("loadeddata"));
   expect(status().hidden).toBe(true);
+  win.close();
+});
+
+const ratio = (video: Element) =>
+  (video as HTMLElement).style.getPropertyValue("--bb-inline-preview-ratio");
+
+test("holds a video's box at 16:9 until its real size is known", async () => {
+  const { win, deliver } = await frame('<video src="clip.mp4"></video>');
+  const video = win.document.querySelector("video")!;
+  // Without this, a player with no metadata is 150px tall and jumps when media arrives.
+  expect(ratio(video)).toBe("16 / 9");
+  // A zero-specificity rule applies it, so any author rule wins.
+  expect(win.document.head.querySelector("style")?.textContent).toBe(
+    ":where(video[data-bb-inline-preview-ratio]) { aspect-ratio: var(--bb-inline-preview-ratio); }",
+  );
+  // The app reads the display size from the file's index before any media plays.
+  deliver({ key: "0", size: { width: 720, height: 1280 } });
+  expect(ratio(video)).toBe("720 / 1280");
+  // A file the app cannot read is sized by the decoder.
+  Object.defineProperty(video, "videoWidth", { value: 640 });
+  Object.defineProperty(video, "videoHeight", { value: 480 });
+  video.dispatchEvent(new win.Event("loadedmetadata"));
+  expect(ratio(video)).toBe("640 / 480");
+  win.close();
+});
+
+test("starts a video at the size the app saw before", async () => {
+  const { win } = await frame(
+    '<video src="media/clip.mp4"></video>',
+    undefined,
+    "chromium",
+    (path) => (path === "media/clip.mp4" ? { width: 720, height: 1280 } : undefined),
+  );
+  expect(ratio(win.document.querySelector("video")!)).toBe("720 / 1280");
+  win.close();
+});
+
+test("a candidate's late size does not resize a player that already decoded", async () => {
+  const { win, deliver } = await frame(
+    '<video><source src="wide.webm"><source src="tall.mp4"></video>',
+  );
+  const video = win.document.querySelector("video")!;
+  deliver({ key: "0", size: { width: 1920, height: 1080 } });
+  Object.defineProperty(video, "videoWidth", { value: 1920 });
+  Object.defineProperty(video, "videoHeight", { value: 1080 });
+  video.dispatchEvent(new win.Event("loadedmetadata"));
+  deliver({ key: "1", size: { width: 720, height: 1280 } });
+  expect(ratio(video)).toBe("1920 / 1080");
+  win.close();
+});
+
+test("leaves the box of a video whose size attributes or poster set it", async () => {
+  const { win, deliver } = await frame(
+    '<video width="400" height="300" src="a.mp4"></video><video poster="https://example.com/p.png" src="b.mp4"></video><video style="aspect-ratio: 1" src="c.mp4"></video>',
+  );
+  const [sized, poster, square] = win.document.querySelectorAll("video");
+  for (const key of ["0", "1", "2"]) deliver({ key, size: { width: 1920, height: 1080 } });
+  expect(sized!.hasAttribute("data-bb-inline-preview-ratio")).toBe(false);
+  expect(ratio(sized!)).toBe("");
+  expect(ratio(poster!)).toBe("");
+  // An author's own ratio stays in charge; the held ratio sits below it in the cascade.
+  expect(square!.style.aspectRatio).toBe("1");
   win.close();
 });
 
@@ -320,8 +387,12 @@ test.each(["in-memory", false, "fragmented"] as const)(
     const blob = await fetchInlineAsset(asset!, new AbortController().signal, (message) =>
       messages.push(message),
     );
-    expect(messages[0]).toEqual({ key: "0", stream: STREAM_TYPE });
-    const chunks = messages.slice(1).map((message) => ("chunk" in message ? message.chunk : null));
+    // The frame sizes the player before the stream starts.
+    expect(messages.slice(0, 2)).toEqual([
+      { key: "0", size: { width: 64, height: 64 } },
+      { key: "0", stream: STREAM_TYPE },
+    ]);
+    const chunks = messages.slice(2).map((message) => ("chunk" in message ? message.chunk : null));
     expect(chunks.length).toBeGreaterThan(0);
     expect(chunks).not.toContain(null);
     expect(await readBack(concat(chunks as Uint8Array[]))).toEqual({
@@ -495,7 +566,9 @@ test("loads sibling images through the same opaque-frame bridge", async () => {
   const { fetch } = transport();
   fetch.mockResolvedValueOnce(new Response("image", { headers: { "content-type": "image/png" } }));
   const result = prepareInlineAssets('<img src="before.png">', documentUrl.href);
-  expect(result.assets).toEqual([{ key: "0", url: `${root.href}before.png`, image: true }]);
+  expect(result.assets).toEqual([
+    { key: "0", url: `${root.href}before.png`, path: "before.png", image: true },
+  ]);
   expect(result.html).toContain('data-bb-inline-preview="0"');
   const blob = await fetchInlineAsset(result.assets[0]!, new AbortController().signal);
   expect(blob.type).toBe("image/png");

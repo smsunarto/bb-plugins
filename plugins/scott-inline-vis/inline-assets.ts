@@ -37,17 +37,23 @@ export function resolvePreviewAssetUrl(src: string, documentUrl: URL, rootUrl: U
 export interface InlinePreviewAsset {
   key: string;
   url: string;
+  /** Relative to the preview directory, so it outlives the lease in `url`. */
+  path: string;
   image: boolean;
 }
+
+export type VideoSize = { width: number; height: number };
 
 /** One asset's outcome, sent to the frame as soon as it settles. */
 export type InlineAssetResult = { key: string; blob: Blob } | { key: string; failed: true };
 /**
- * A video starts playing before its Blob arrives: the MediaSource type of its
- * fragmented MP4 copy first, then that copy's bytes in order, or a failure
- * part way. The Blob still follows as the fallback.
+ * A video starts playing before its Blob arrives: its display size as soon as
+ * its index is read, the MediaSource type of its fragmented MP4 copy, then
+ * that copy's bytes in order, or a failure part way. The Blob still follows
+ * as the fallback.
  */
 export type InlineAssetChunk =
+  | { key: string; size: VideoSize }
   | { key: string; stream: string }
   | { key: string; chunk: Uint8Array }
   | { key: string; streamFailed: true };
@@ -60,6 +66,10 @@ export type InlineAssetMessage = InlineAssetResult | InlineAssetChunk;
 export const INLINE_ASSET_READY = "bb:inline-preview-ready";
 const ASSET_ATTRIBUTE = "data-bb-inline-preview";
 const HASH_ATTRIBUTE = "data-bb-inline-preview-hash";
+const RATIO_ATTRIBUTE = "data-bb-inline-preview-ratio";
+const RATIO_PROPERTY = "--bb-inline-preview-ratio";
+// Zero specificity, so any author rule on the player wins, however late it loads.
+const RATIO_STYLE = `:where(video[${RATIO_ATTRIBUTE}]) { aspect-ratio: var(${RATIO_PROPERTY}); }`;
 const ASSET_BRIDGE = `(() => {
   const token = "BB_ASSET_TOKEN";
   const urls = [];
@@ -76,7 +86,21 @@ const ASSET_BRIDGE = `(() => {
     !player.querySelector("[data-bb-inline-preview]") &&
     player.networkState === HTMLMediaElement.NETWORK_NO_SOURCE &&
     player.readyState === HTMLMediaElement.HAVE_NOTHING;
+  // A held player's box follows the size the app or the decoder reports.
+  // Once a player decodes a source, that source's size wins over any
+  // candidate's reported size, including one it never plays.
+  const decoded = new WeakSet();
+  const shape = (player, width, height) => {
+    if (player.hasAttribute("${RATIO_ATTRIBUTE}") && width > 0 && height > 0)
+      player.style.setProperty("${RATIO_PROPERTY}", width + " / " + height);
+  };
   const watch = (player) => {
+    // Keep the decoded ratio, so a fallback from the stream to the Blob, which
+    // empties the player for a moment, holds the box too.
+    player.addEventListener("loadedmetadata", () => {
+      decoded.add(player);
+      shape(player, player.videoWidth, player.videoHeight);
+    });
     const status = document.createElement("p");
     status.setAttribute("role", "status");
     status.style.cssText = "position:fixed;inset:auto 0 0;margin:0;padding:12px;background:Canvas;color:CanvasText;z-index:2147483647;font:14px system-ui";
@@ -195,6 +219,13 @@ const ASSET_BRIDGE = `(() => {
   };
   const receive = (message) => {
     const stream = streams.get(message.key);
+    if (message.size) {
+      for (const element of assets(message.key)) {
+        const player = element.closest("video");
+        if (player && !decoded.has(player)) shape(player, message.size.width, message.size.height);
+      }
+      return;
+    }
     if (message.stream) return startStream(message.key, message.stream);
     if (message.streamFailed) return stream && fail(stream);
     if (message.chunk) {
@@ -247,11 +278,14 @@ export function injectWideEscapeBridge(document: Document, token: string) {
  * frame fills from `fetchInlineAsset` Blobs, so the document renders before
  * any media arrives. `prepare` (the fragment runtime) gets the parsed document
  * plus the message token. Without either, the caller loads the leased URL directly.
+ * `videoSize` returns a size seen before for a video path relative to the
+ * preview directory, so its player starts at that size.
  */
 export function prepareInlineAssets(
   html: string,
   previewUrl: string,
   prepare?: (document: Document, token: string) => void,
+  videoSize?: (path: string) => VideoSize | undefined,
 ): { html?: string; assets: InlinePreviewAsset[]; token?: string } {
   const documentUrl = new URL(previewUrl, window.location.href);
   const rootUrl = new URL("./", documentUrl);
@@ -275,11 +309,17 @@ export function prepareInlineAssets(
     url.hash = "";
     const image = element.tagName === "IMG";
     const id = `${image}:${url.href}`;
-    const asset = assets.get(id) ?? { key: String(assets.size), url: url.href, image };
+    const asset = assets.get(id) ?? {
+      key: String(assets.size),
+      url: url.href,
+      path: url.href.slice(rootUrl.href.length),
+      image,
+    };
     assets.set(id, asset);
     element.removeAttribute("src");
     element.setAttribute(ASSET_ATTRIBUTE, asset.key);
     if (hash) element.setAttribute(HASH_ATTRIBUTE, hash);
+    if (!image) holdVideoBox(element.closest("video")!, videoSize?.(asset.path));
   }
   const token = crypto.randomUUID();
   (prepare ?? injectWideEscapeBridge)(document, token);
@@ -287,6 +327,11 @@ export function prepareInlineAssets(
     const bridge = document.createElement("script");
     bridge.textContent = ASSET_BRIDGE.replace("BB_ASSET_TOKEN", token);
     document.head.prepend(bridge);
+  }
+  if (document.querySelector(`video[${RATIO_ATTRIBUTE}]`)) {
+    const style = document.createElement("style");
+    style.textContent = RATIO_STYLE;
+    document.head.prepend(style);
   }
   if (localBase) {
     // The frame page's URL is the plugin route. Keep other relative assets at the HTML directory.
@@ -299,6 +344,18 @@ export function prepareInlineAssets(
     assets: [...assets.values()],
     token,
   };
+}
+
+/**
+ * A <video> without metadata is 150px tall at any width, then jumps to its
+ * real height. Hold the size the app saw before, or 16:9, the usual recording
+ * shape, until the app or the decoder reports the real size. Width and height
+ * attributes and a poster already size the box, so those players keep theirs.
+ */
+function holdVideoBox(player: HTMLVideoElement, size: VideoSize | undefined) {
+  if (["width", "height", "poster"].some((name) => player.hasAttribute(name))) return;
+  player.setAttribute(RATIO_ATTRIBUTE, "");
+  player.style.setProperty(RATIO_PROPERTY, size ? `${size.width} / ${size.height}` : "16 / 9");
 }
 
 /**
@@ -334,7 +391,11 @@ export async function fetchInlineAsset(
   return blob.slice(0, blob.size, type);
 }
 
-type StreamMessage = { stream: string } | { chunk: Uint8Array } | { streamFailed: true };
+type StreamMessage =
+  | { size: VideoSize }
+  | { stream: string }
+  | { chunk: Uint8Array }
+  | { streamFailed: true };
 
 /**
  * Rewrap an MP4 or QuickTime video as fragmented MP4 while it downloads,
@@ -361,6 +422,15 @@ async function streamFragments(
   });
   try {
     const tracks = await input.getTracks();
+    // The frame sizes the player from this before any media plays.
+    const video = await input.getPrimaryVideoTrack();
+    if (video) {
+      const [width, height] = await Promise.all([
+        video.getDisplayWidth(),
+        video.getDisplayHeight(),
+      ]);
+      send({ size: { width, height } });
+    }
     const copies = await Promise.all(tracks.map((track) => addCopy(output, track)));
     await output.start();
     const announce = async () => {
