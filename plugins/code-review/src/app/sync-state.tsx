@@ -6,6 +6,34 @@ import { absoluteTime, relativeTime } from "./format.ts";
 import { errorText } from "./notice.tsx";
 import { rpc } from "./rpc.ts";
 import { LOCAL_READS } from "./local-cache.ts";
+import { cn } from "./lib/utils.ts";
+
+/** What SyncState reads from a TanStack query. */
+export type SyncQuery = {
+  dataUpdatedAt: number;
+  isFetching: boolean;
+  isError: boolean;
+  error: Error | null;
+  refetch: () => unknown;
+};
+
+/**
+ * A page's freshness from its own read and the open tab's: as old as the
+ * oldest, syncing while either is. Only `own`'s failure is reported here; a
+ * tab reports its own failure where its data is.
+ */
+export function pageSync(own: SyncQuery, tab: SyncQuery | null): SyncQuery {
+  if (!tab?.dataUpdatedAt) return own;
+  return {
+    dataUpdatedAt: own.dataUpdatedAt
+      ? Math.min(own.dataUpdatedAt, tab.dataUpdatedAt)
+      : tab.dataUpdatedAt,
+    isFetching: own.isFetching || tab.isFetching,
+    isError: own.isError,
+    error: own.error,
+    refetch: () => Promise.all([own.refetch(), tab.refetch()]),
+  };
+}
 
 /** How often "Updated 2m ago" moves on. */
 const TICK_MS = 30_000;
@@ -25,14 +53,17 @@ function useNow(): number {
  */
 export function SyncState({
   query,
+  errorsOnly = false,
+  className,
 }: {
-  query: {
-    dataUpdatedAt: number;
-    isFetching: boolean;
-    isError: boolean;
-    error: Error | null;
-    refetch: () => unknown;
-  };
+  query: SyncQuery;
+  /**
+   * Shows only a failed refresh: for a tab whose age and syncing the page
+   * header already reports (`pageSync`), so nothing shifts on each poll.
+   */
+  errorsOnly?: boolean;
+  /** Placement, such as padding; each caller sets its own. */
+  className?: string;
 }) {
   const now = useNow();
   if (!query.dataUpdatedAt) return null;
@@ -42,7 +73,7 @@ export function SyncState({
   if (query.isError && !query.isFetching) {
     return (
       <output
-        className="flex items-center gap-1 px-3 pt-1 text-[11px] text-warning-text"
+        className={cn("flex min-w-0 items-center gap-1 text-[11px] text-warning-text", className)}
         title={errorText(query.error)}
       >
         <Icon name="AlertTriangle" className="size-3 shrink-0" aria-hidden />
@@ -57,9 +88,10 @@ export function SyncState({
       </output>
     );
   }
+  if (errorsOnly) return null;
   return (
     <output
-      className="px-3 pt-1 text-[11px] text-subtle-foreground"
+      className={cn("text-[11px] text-subtle-foreground", className)}
       title={`Read from GitHub ${absoluteTime(at)}`}
     >
       {query.isFetching ? "Syncing with GitHub…" : `Updated ${age}`}

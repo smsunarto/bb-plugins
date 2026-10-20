@@ -221,7 +221,7 @@ export function Inbox({
           </Button>
         </Tip>
       </header>
-      <SyncState query={inbox} />
+      <SyncState query={inbox} className="px-3 pt-1" />
       <PasteLink />
       {inbox.data && inbox.data.unavailable.length > 0 ? (
         <Notice tone="error" className="mx-2.5 mt-2" title="Some accounts could not load">
@@ -736,6 +736,19 @@ function Row({
       onOpen={() => open(pr.ref, pr.account)}
       onInterest={() => prefetch(pr)}
     >
+      {/* Title first, as the thing to recognise; when it changed sits beside it. */}
+      <span className="flex w-full items-start gap-2">
+        <span className="line-clamp-2 min-w-0 flex-1 leading-snug font-medium text-foreground [overflow-wrap:anywhere]">
+          {pr.title}
+        </span>
+        <time
+          dateTime={pr.updatedAt}
+          title={`Updated ${absoluteTime(pr.updatedAt)}`}
+          className="shrink-0 pt-px text-[11px] text-subtle-foreground"
+        >
+          {relativeTime(pr.updatedAt)}
+        </time>
+      </span>
       <span className="flex w-full items-center gap-1 text-[11px] text-muted-foreground">
         {showAccount ? (
           <span className="inline-flex shrink-0" title={`As ${pr.account}`}>
@@ -753,25 +766,17 @@ function Row({
             <span className="sr-only">Pinned</span>
           </span>
         ) : null}
-        <time
-          dateTime={pr.updatedAt}
-          title={`Updated ${absoluteTime(pr.updatedAt)}`}
-          className="ms-auto shrink-0 ps-2 text-subtle-foreground"
-        >
-          {relativeTime(pr.updatedAt)}
-        </time>
-      </span>
-      <span className="line-clamp-2 leading-snug font-medium text-foreground [overflow-wrap:anywhere]">
-        {pr.title}
-      </span>
-      <span className="flex w-full items-center gap-1.5 text-[11px] text-muted-foreground">
         {pr.author ? (
-          <span className="flex min-w-0 items-center gap-1">
+          // The repo tells same-titled pull requests apart, so the author gives way first.
+          <span className="flex min-w-0 shrink-[3] items-center gap-1">
+            <span className="text-subtle-foreground" aria-hidden>
+              ·
+            </span>
             <Avatar login={pr.author.login} url={pr.author.avatarUrl} className="size-3.5" />
             <span className="truncate">{pr.author.login}</span>
           </span>
         ) : null}
-        <span className="ms-auto flex shrink-0 items-center gap-1.5">
+        <span className="ms-auto flex shrink-0 items-center gap-1.5 ps-2">
           {pr.isDraft || pr.state !== "open" ? (
             <PrStateBadge state={pr.state} isDraft={pr.isDraft} />
           ) : null}
@@ -862,26 +867,29 @@ function BranchRow({ branch, selected }: { branch: LocalBranch; selected: boolea
       selected={selected}
       onOpen={() => navigate.toPluginPanel(PANEL_PATH, { subPath: branchSubPath(branch.id) })}
     >
+      {/* Laid out like a pull request row: what it is first, when beside it. */}
+      <span className="flex w-full items-start gap-2">
+        <span
+          className="min-w-0 flex-1 truncate font-mono leading-snug font-medium text-foreground"
+          translate="no"
+          title={branch.branch}
+        >
+          {branch.branch}
+        </span>
+        <time
+          dateTime={newest}
+          title={`Last commit ${absoluteTime(newest)}`}
+          className="shrink-0 pt-px text-[11px] text-subtle-foreground"
+        >
+          {relativeTime(newest)}
+        </time>
+      </span>
       <span className="flex w-full items-center gap-1 text-[11px] text-muted-foreground">
         <span className="min-w-0 truncate">{branch.repoName}</span>
         <span aria-hidden>·</span>
         <span className="min-w-0 shrink-[2] truncate" title={`${branch.machine}:${branch.path}`}>
           {branch.machine}
         </span>
-        <time
-          dateTime={newest}
-          title={`Last commit ${absoluteTime(newest)}`}
-          className="ms-auto shrink-0 ps-2 text-subtle-foreground"
-        >
-          {relativeTime(newest)}
-        </time>
-      </span>
-      <span
-        className="truncate font-mono leading-snug font-medium text-foreground"
-        translate="no"
-        title={branch.branch}
-      >
-        {branch.branch}
       </span>
       <span className="flex w-full items-center gap-1.5 text-[11px] text-muted-foreground">
         <span className="shrink-0 tabular-nums">{plural(branch.commits.length, "commit")}</span>

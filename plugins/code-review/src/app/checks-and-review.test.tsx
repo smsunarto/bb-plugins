@@ -180,6 +180,27 @@ test("a commit with no checks says so", async () => {
   slot.lifecycle.unmount();
 });
 
+test("a background poll leaves the checks where they are: the page header reports syncing", async () => {
+  let release!: () => void;
+  let slow = false;
+  const slot = mount(ChecksTab, {
+    checks: () =>
+      slow
+        ? new Promise((resolve) => {
+            release = () => resolve(checks);
+          })
+        : checks,
+  });
+  await slot.findByText("test");
+  slow = true;
+  const poll = pluginQueryClient.refetchQueries();
+  await waitFor(() => expect(release).toBeDefined());
+  expect(slot.queryByText("Syncing with GitHub…")).toBeNull();
+  release();
+  await poll;
+  slot.lifecycle.unmount();
+});
+
 test("a failed background read keeps the checks and the selection, and says so", async () => {
   let failing = false;
   const slot = mount(ChecksTab, {

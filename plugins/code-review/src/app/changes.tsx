@@ -482,7 +482,7 @@ function PrChanges({ pr }: { pr: PullRequest }) {
   const behind = useCatchUp(pr, files.data);
   return (
     <>
-      <SyncState query={files} />
+      <SyncState query={files} errorsOnly className="px-3 pt-1" />
       <Changes target={{ pr }} files={files} behind={behind} />
     </>
   );

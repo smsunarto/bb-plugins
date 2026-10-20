@@ -16,7 +16,8 @@ import { cn } from "./lib/utils.ts";
 import { Loading, Notice, RetryButton, Tip, errorText } from "./notice.tsx";
 import { rpc } from "./rpc.ts";
 import { DraftSyncNotice, useDraftPreview } from "./draft-sync.tsx";
-import { SyncState, useReconcile, usePrPrefetch } from "./sync-state.tsx";
+import { SyncState, pageSync, useReconcile, usePrPrefetch } from "./sync-state.tsx";
+import type { SyncQuery } from "./sync-state.tsx";
 import {
   AccountAvatar,
   Avatar,
@@ -91,16 +92,21 @@ export function PrView({ prRef, account, tab }: { prRef: PrRef; account: string;
   }
   return (
     <>
-      <SyncState query={pullRequest} />
       <DraftSyncNotice pr={pr} />
-      <Loaded pr={pr} tab={tab} />
+      <Loaded pr={pr} tab={tab} pullRequest={pullRequest} />
     </>
   );
 }
 
-function Loaded({ pr, tab }: { pr: PullRequest; tab: PrTab }) {
+function Loaded({ pr, tab, pullRequest }: { pr: PullRequest; tab: PrTab; pullRequest: SyncQuery }) {
   const navigate = useBbNavigate();
   const checks = useChecks(pr);
+  // Observes the Changes tab's read, with its options, to report its age in the header.
+  const files = rpc.changedFiles.useQuery(
+    { account: pr.account, ref: pr.ref },
+    { staleTime: 30_000, enabled: tab === "changes" },
+  );
+  const sync = pageSync(pullRequest, tab === "checks" ? checks : tab === "changes" ? files : null);
   const prefetch = usePrPrefetch();
   return (
     <Tabs
@@ -126,7 +132,7 @@ function Loaded({ pr, tab }: { pr: PullRequest; tab: PrTab }) {
           </div>
           <Toolbar pr={pr} />
         </div>
-        <Meta pr={pr} tab={tab} />
+        <Meta pr={pr} tab={tab} sync={sync} />
         <TabsList aria-label="View" className={TAB_LIST}>
           {PR_TABS.map((value) => (
             <TabsTrigger
@@ -180,7 +186,8 @@ const TAB_PANE = "mt-0 min-h-0 flex-1 focus-visible:ring-0 focus-visible:ring-of
 export const PANE = `${TAB_PANE} overflow-y-auto p-3 pb-8 [scrollbar-gutter:stable]`;
 export const FILL = `${TAB_PANE} flex flex-col overflow-hidden`;
 
-function Meta({ pr, tab }: { pr: PullRequest; tab: PrTab }) {
+/** The PR's state, branches, author, and size, with how fresh the copy is at the end. */
+function Meta({ pr, tab, sync }: { pr: PullRequest; tab: PrTab; sync: SyncQuery }) {
   const sameRepo =
     !pr.headRepository ||
     pr.headRepository.toLowerCase() === `${pr.ref.owner}/${pr.ref.repo}`.toLowerCase();
@@ -225,7 +232,10 @@ function Meta({ pr, tab }: { pr: PullRequest; tab: PrTab }) {
         </span>
         <span>{plural(pr.changedFiles, "file")}</span>
       </span>
-      <AccountSwitch prRef={pr.ref} account={pr.account} tab={tab} />
+      <span className="ms-auto flex min-w-0 items-center gap-2.5">
+        <SyncState query={sync} />
+        <AccountSwitch prRef={pr.ref} account={pr.account} tab={tab} />
+      </span>
     </div>
   );
 }

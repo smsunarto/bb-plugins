@@ -104,7 +104,10 @@ test("lists what is assigned to the viewer, with a count on every tab", async ()
 
   const tabs = slot.getAllByRole("tab").map((tab) => tab.textContent);
   expect(tabs).toEqual(["Assigned to me2", "My team1", "Authored by me1"]);
-  const rows = slot.getAllByRole("button", { name: /^acme\// });
+  // A row is announced title first, as it reads.
+  const rows = slot.getAllByRole("button", {
+    name: /^(Rate-limit the login endpoint|Log slow queries)/,
+  });
   expect(rows.map((row) => row.textContent)).toEqual([
     expect.stringContaining("Rate-limit the login endpoint"),
     expect.stringContaining("Log slow queries"),
