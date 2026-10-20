@@ -4,12 +4,14 @@ Ask independent reviewers to challenge a change, then synthesize a verdict. The 
 
 ## Workflow
 
+Agents start reviews automatically when implementation is ready for handoff, after relevant checks and checkpointing authorized changes, and before dependent implementation of consequential designs. Automatic reviews use the default mode unless the user requests another. An explicit request to skip review is respected. These triggers are agent instructions, not a server hook on every turn or commit.
+
 1. Identify the change and state what it should achieve.
 2. Start a review with the intent and source target.
-3. Wait for BB's notifications and collect each reviewer's report.
+3. Collect a cached completed result immediately; otherwise wait for BB's notifications and collect each reviewer's report.
 4. Merge duplicate findings, note disagreements, and classify each finding with a reason: **Act on**, **Consider**, **Noted**, or **Dismissed**.
 
-A review request produces a verdict. It does not authorize fixes or publication. The lead reviewer weighs evidence and decides which findings warrant action; severity labels do not automatically veto publication. Review again when it would resolve a material uncertainty.
+A review request produces a verdict. It does not authorize fixes or publication. The lead reviewer weighs evidence and decides which findings warrant action; severity labels do not automatically veto publication. Reuse a completed, current review for unchanged work. A turn ending, push, PR update, or merge alone does not trigger another review. After addressing findings, review again when it would resolve a material uncertainty.
 
 ## Start a review
 
@@ -26,10 +28,12 @@ Each reviewer receives the same intent and rubric in a hidden child thread. The 
 Agents call `review_start({summary, target})`. The default is a Standard implementation review. For a proposal, use `kind: "design"` with `brief`; a repository target is optional.
 
 ```sh
-bb review start --branch scott/feature --prompt 'Check the new routing behavior'
-bb review start --kind design --file /absolute/plan.md
+bb review start --branch scott/feature --prompt 'Check the new routing behavior' --json
+bb review start --kind design --file /absolute/plan.md --json
 bb review result <run-id>
 ```
+
+Use `--json` to read the receipt's status and distinguish a completed cached run from a running review.
 
 ## Source and results
 
@@ -39,7 +43,7 @@ Both reviewers read immutable Git objects, so concurrent workspace edits cannot 
 
 Optional `brief` and `evidence: [{label, path}]` provide context. Evidence is captured from the calling host: up to eight UTF-8 files of 12 KiB each. State which revision or workspace produced test results.
 
-BB notifies the parent when each reviewer finishes. Call `review_result({runId})` after notification; it stays `running` until every reviewer finishes. The result returns one report per model in `reviews`, and `current` indicates whether the source target still matches. Failed or incomplete reviews remain visible as limitations. There is no publication-clearance flag or diff-read ledger.
+If `review_start` returns `status: "completed"`, call `review_result({runId})` immediately; cached runs send no new notification. Otherwise BB notifies the parent when each reviewer finishes. Call `review_result({runId})` after notification; it stays `running` until every reviewer finishes. The result returns one report per model in `reviews`, and `current` indicates whether the source target still matches. Failed or incomplete reviews remain visible as limitations. There is no publication-clearance flag or diff-read ledger.
 
 `review_context({runId, section, path?, side?, offset?})` reads the brief, evidence, diff, tree, pinned file, or full reports. Follow `nextOffset` for additional pages. Pages contain up to 16,000 characters; individual Git reads have an 8 MiB limit. The author, its descendants in the same environment, and the reviewers can read the run.
 
