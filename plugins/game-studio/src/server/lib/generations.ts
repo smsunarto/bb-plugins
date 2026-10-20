@@ -15,7 +15,7 @@ import {
 } from "../../shared/generation.ts";
 import { getGame, loadWorkspace, adoptGeneration } from "./studio.ts";
 import type { SlotStore } from "./slot-store.ts";
-import { canvasRequest, reviewRequest } from "./canvas-generation.ts";
+import { canvasRequest, retryRequest, reviewRequest } from "./canvas-generation.ts";
 import { nodeReviewSettings, reviewRequestId } from "../../shared/review.ts";
 import { captureCanvasInputs } from "./generation-inputs.ts";
 import { CanvasText } from "./canvas-text.ts";
@@ -409,6 +409,22 @@ export class Generations {
       );
     }
   }
+  /** Runs a generation again when its automatic review rejects it and the node allows a retry. */
+  private async retryRun(game: Game, review: GenerationJob) {
+    try {
+      const retry = retryRequest(await loadWorkspace(this.bb, game.id), review);
+      if (!retry) return;
+      // Retries belong to the canvas, like the reviews that call for them.
+      await this.dispatch(game, retry.requestId, retry.request, null, retry.target, {
+        kind: "canvas",
+        gameId: game.id,
+      });
+    } catch (error) {
+      this.bb.log.warn(
+        `Could not retry the run ${review.id} judged: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+  }
   private jobKey(game: Game, jobId: string) {
     return JSON.stringify([game.hostId, game.rootPath, jobId]);
   }
@@ -433,7 +449,10 @@ export class Generations {
       this.work.reserve(game.hostId, game.rootPath, job.id, owner);
       try {
         const adoption = await adoptGeneration(this.bb, game, job);
-        if (adoption.attached) await this.reviewRun(game, job, adoption.candidateAssetIds);
+        if (adoption.attached)
+          await (job.request.kind === "text"
+            ? this.retryRun(game, job)
+            : this.reviewRun(game, job, adoption.candidateAssetIds));
         return { job, adoption };
       } finally {
         this.work.settled(game.hostId, game.rootPath, job.id);

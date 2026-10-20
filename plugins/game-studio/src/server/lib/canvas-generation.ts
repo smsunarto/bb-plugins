@@ -3,10 +3,20 @@ import { z } from "zod";
 import {
   mediaRequest,
   modelViewPaths,
+  type GenerationJob,
   type MediaRequest,
   type canvasGenerationInput,
 } from "../../shared/generation.ts";
-import { nodeReviewSettings, reviewable } from "../../shared/review.ts";
+import {
+  nodeReviewSettings,
+  nodeReviews,
+  retryLineage,
+  retryRequestId,
+  retryWanted,
+  reviewable,
+  reviewedJobId,
+  reviewVerdict,
+} from "../../shared/review.ts";
 import { nodeTakes } from "../../shared/takes.ts";
 import type { Workspace, Board, CanvasNode } from "../../shared/schema.ts";
 import { files as instructions } from "./instructions.ts";
@@ -374,4 +384,24 @@ export function reviewRequest(
     request,
     target: { boardId, nodeId, fingerprint: nodeFingerprint(node, selected.board, workspace) },
   };
+}
+
+/**
+ * The run an automatic review asks for: the judged run again, with the same snapshotted brief
+ * and inputs, when the node's retry setting covers the verdict and the chain has retries left.
+ */
+export function retryRequest(workspace: Workspace, review: GenerationJob) {
+  const sourceId = reviewedJobId(review.id);
+  if (review.request.kind !== "text" || !review.request.reviewOf || !review.target || !sourceId)
+    return undefined;
+  const node = workspace.boards
+    .find(({ board }) => board.id === review.target!.boardId)
+    ?.board.nodes.find(({ id }) => id === review.target!.nodeId);
+  const settings = node && nodeReviewSettings(node);
+  const record = node && nodeReviews(node).find(({ jobId }) => jobId === review.id);
+  const source = workspace.generationJobs.find(({ id }) => id === sourceId);
+  if (!settings || !record || !source?.target || source.request.kind === "text") return undefined;
+  if (!retryWanted(settings, reviewVerdict(record.text), retryLineage(source.id).attempt))
+    return undefined;
+  return { requestId: retryRequestId(source.id), request: source.request, target: source.target };
 }

@@ -5,11 +5,19 @@ import type { CanvasNode } from "./schema.ts";
 /** The node kinds whose outputs a review can judge. */
 export const reviewable = (kind: CanvasNode["type"]) => kind === "image" || kind === "model-3d";
 
-/** A node's review setting: off, or on with the agent and extra criteria it reviews with. */
+/** The most automatic retries one generation run may lead to. */
+export const retryLimit = 5;
+/**
+ * A node's review setting: off, or on with the agent and extra criteria it reviews with, and how
+ * many times a run its review rejects is repeated.
+ */
 export const reviewSettings = z.object({
   enabled: z.boolean(),
   agent: agentSelection.optional(),
   criteria: z.string().max(4000).optional(),
+  retries: z.number().int().min(0).max(retryLimit).optional(),
+  /** Which verdicts a retry follows: Fail only (the default), or also Pass with fixes. */
+  retryOn: z.enum(["fail", "fixes"]).optional(),
 });
 export type ReviewSettings = z.output<typeof reviewSettings>;
 
@@ -53,3 +61,26 @@ export function reviewVerdict(text: string): Verdict | undefined {
 
 /** The request id of the review that follows a generation run, so retries never review twice. */
 export const reviewRequestId = (jobId: string) => `${jobId.slice(0, 92)}-review`;
+/** The generation run an automatic review judged; manual reviews have none. */
+export const reviewedJobId = (reviewId: string) =>
+  reviewId.endsWith("-review") ? reviewId.slice(0, -"-review".length) : undefined;
+
+/** The run a chain of retries began with, and how many retries led to this one. */
+export function retryLineage(jobId: string) {
+  const match = /^(.+)-retry-(\d+)$/.exec(jobId);
+  return match ? { root: match[1]!, attempt: Number(match[2]) } : { root: jobId, attempt: 0 };
+}
+/** The request id of the retry that follows a run, so a repeated adoption never runs it twice. */
+export function retryRequestId(jobId: string) {
+  const { root, attempt } = retryLineage(jobId);
+  return `${root.slice(0, 80)}-retry-${attempt + 1}`;
+}
+/** Whether a run with this many retries before it should run again after this verdict. */
+export function retryWanted(
+  settings: ReviewSettings,
+  verdict: Verdict | undefined,
+  attempt: number,
+) {
+  if (!settings.enabled || attempt >= (settings.retries ?? 0)) return false;
+  return verdict === "fail" || (verdict === "fixes" && settings.retryOn === "fixes");
+}

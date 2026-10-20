@@ -1288,8 +1288,9 @@
   display: grid;
   gap: 10px;
 }
-.gs-review-toggle {
+.gs-app .gs-review-toggle {
   display: flex;
+  flex-direction: row;
   align-items: flex-start;
   gap: 8px;
 }
@@ -1298,7 +1299,8 @@
   gap: 2px;
 }
 .gs-review-toggle small,
-.gs-review-result small {
+.gs-review-result small,
+.gs-review-attempt {
   color: var(--muted-foreground);
   font-size: 11px;
 }
@@ -1317,6 +1319,37 @@
   min-height: 56px;
   resize: vertical;
 }
+.gs-review-retry {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.gs-review-retry:disabled {
+  opacity: 0.55;
+}
+.gs-review-retry > legend {
+  margin-bottom: 4px;
+  padding: 0;
+  font-size: 12px;
+}
+.gs-app .gs-review-retry > label {
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.gs-app .gs-node-inspector .gs-review-retry select {
+  width: auto;
+  min-width: 190px;
+}
+.gs-review-retry > label > span,
+.gs-review-retry > small {
+  color: var(--muted-foreground);
+  font-size: 11px;
+}
 .gs-review-result {
   display: grid;
   gap: 8px;
@@ -1330,6 +1363,7 @@
 }
 .gs-review-result > header > button {
   margin-left: auto;
+  white-space: nowrap;
 }
 .gs-review-verdict {
   padding: 2px 8px;

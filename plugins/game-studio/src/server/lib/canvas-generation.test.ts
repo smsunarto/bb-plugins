@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { canvasRequest, reviewRequest } from "./canvas-generation.ts";
+import { canvasRequest, retryRequest, reviewRequest } from "./canvas-generation.ts";
 import { workspaceSchema } from "../../shared/schema.ts";
 import { generationPrompt } from "../../shared/generation-prompt.ts";
 import { generationJob } from "../../shared/generation.ts";
@@ -481,4 +481,55 @@ test("a 3D review reads the GLB from disk and the views as images", () => {
   expect(() => reviewRequest(state, "board", "design-node", ["mesh"])).toThrow(
     "Only image and 3D nodes",
   );
+});
+
+test("a rejected run runs again with its own request until the node's retries run out", () => {
+  const state = workspace();
+  const job = (id: string, request: unknown, target?: unknown) =>
+    generationJob.parse({
+      version: 1,
+      id,
+      threadId: null,
+      origin: { kind: "canvas", gameId: "game" },
+      createdAt: 1,
+      updatedAt: 2,
+      status: "succeeded",
+      request,
+      ...(target ? { target } : {}),
+      outputs: [],
+    });
+  const target = { boardId: "board", nodeId: "image", fingerprint: "then" };
+  const image = { kind: "image", prompt: "A key icon", images: ["canvas/inputs/key.png"] };
+  const review = (id: string) =>
+    job(
+      id,
+      { kind: "text", prompt: "Review", reviewOf: ["take"] },
+      { ...target, fingerprint: "now" },
+    );
+  state.generationJobs.push(job("run", image, target), job("run-retry-1", image, target));
+  const node = state.boards[0]!.board.nodes.find(({ id }) => id === "image")!;
+  node.data = {
+    ...node.data,
+    review: { enabled: true, retries: 2 },
+    reviews: [
+      { assetIds: ["take"], jobId: "run-review", text: "**Fail** — two subjects." },
+      { assetIds: ["take"], jobId: "run-retry-1-review", text: "**Pass with fixes** — eyes." },
+    ],
+  };
+  const retry = retryRequest(state, review("run-review"));
+  expect(retry?.requestId).toBe("run-retry-1");
+  expect(retry?.request as unknown).toBe(
+    state.generationJobs.find(({ id }) => id === "run")!.request,
+  );
+  expect(retry?.target).toEqual(target);
+  // Pass with fixes retries only when the node asks for it, and never past its retry count.
+  expect(retryRequest(state, review("run-retry-1-review"))).toBeUndefined();
+  node.data.review = { enabled: true, retries: 2, retryOn: "fixes" };
+  expect(retryRequest(state, review("run-retry-1-review"))?.requestId).toBe("run-retry-2");
+  node.data.review = { enabled: true, retries: 1, retryOn: "fixes" };
+  expect(retryRequest(state, review("run-retry-1-review"))).toBeUndefined();
+  // A manual review never starts a paid run.
+  node.data.review = { enabled: true, retries: 2 };
+  node.data.reviews = [{ assetIds: ["take"], jobId: "manual", text: "**Fail**" }];
+  expect(retryRequest(state, review("manual"))).toBeUndefined();
 });
