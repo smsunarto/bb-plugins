@@ -61,11 +61,7 @@ export default definePlugin({
       },
     });
     const digests = new ArenaDigests(bb, async () => (await settings.get()).digestModel);
-    const arena = new ArenaService(
-      bb,
-      () => settings.get(),
-      (run, job) => digests.start(run, job),
-    );
+    const arena = new ArenaService(bb, () => settings.get(), digests);
     const reviews = new ReviewService(bb, async () => {
       const values = await settings.get();
       return { claudeModel: values.reviewClaudeModel, codexModel: values.reviewCodexModel };
@@ -94,14 +90,11 @@ export default definePlugin({
       bb.events.on(event, async ({ thread }) => {
         if (thread.originPluginId !== bb.pluginId) return;
         await arena.threadChanged(thread.id);
-        await digests.threadChanged(thread.id);
       });
     }
     bb.background.service("arena-recovery", {
       async start(signal) {
         await arena.recover(signal);
-        if (signal.aborted) return;
-        await digests.recover();
         await new Promise<void>((resolve) =>
           signal.addEventListener("abort", () => resolve(), { once: true }),
         );

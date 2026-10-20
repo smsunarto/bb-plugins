@@ -2,7 +2,8 @@ import { afterEach, test } from "node:test";
 import assert from "node:assert/strict";
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import { createFakePluginHost, makeThreadResponse } from "@get-bb/plugin-sdk/testing";
-import { ArenaService } from "./service.ts";
+import { ArenaService, type Rewrites } from "./service.ts";
+import { ArenaDigests } from "./digests.ts";
 import { hostContract } from "../../shared/host-contract.ts";
 import type { Integration, Job, Report } from "../../shared/arena.ts";
 
@@ -45,7 +46,7 @@ const synthesis: Report = {
   checks: [{ command: "bun test", exitCode: 0, output: "Tests passed" }],
 };
 
-async function fixture() {
+async function fixture(withDigests = false) {
   const results: string[] = [];
   type Environment = Awaited<ReturnType<BbPluginApi["sdk"]["environments"]["get"]>>;
   type Spawn = Parameters<BbPluginApi["sdk"]["threads"]["spawn"]>[0];
@@ -83,6 +84,8 @@ async function fixture() {
   const environments = new Map([[environment.id, environment]]);
   const metadata = new Map<string, NonNullable<Spawn["pluginMetadata"]>>();
   const spawned: Spawn[] = [];
+  const lateWorkers: (() => void)[] = [];
+  const outputs = new Map<string, string>();
   const receipts = new Map<string, Integration>();
   const snapshots: unknown[] = [];
   const ancestors: string[] = [];
@@ -92,6 +95,12 @@ async function fixture() {
     snapshotError: boolean;
     offline: boolean;
     spawnError: string;
+    /** Holds result rewrite spawns, as a slow BB response would. */
+    rewriteGate?: Promise<void>;
+    /** Rewrite spawns create their worker, then lose the response. */
+    rewriteUncertain: boolean;
+    /** Rewrite spawns lose the response and BB creates the worker only when `late()` runs. */
+    rewriteLate: boolean;
     integrationWait?: Promise<Integration>;
     fatalPin: boolean;
     integration: Integration;
@@ -101,6 +110,8 @@ async function fixture() {
     snapshotError: false,
     offline: false,
     spawnError: "timeout after dispatch",
+    rewriteUncertain: false,
+    rewriteLate: false,
     fatalPin: false,
     integration: {
       status: "integrated",
@@ -161,8 +172,29 @@ async function fixture() {
         list: async () =>
           [...threads.values()].filter((thread) => thread.originPluginId === "scott-engineering"),
         getPluginMetadata: async ({ threadId }) => metadata.get(threadId) ?? {},
+        output: async ({ threadId }) => ({ output: outputs.get(threadId) ?? null }),
         spawn: async (input) => {
           spawned.push(input);
+          const rewrite = "arenaDigest" in (input.pluginMetadata ?? {});
+          if (rewrite) await state.rewriteGate;
+          if (rewrite && state.rewriteLate) {
+            const id = `worker_${spawned.length}`;
+            lateWorkers.push(() => {
+              threads.set(
+                id,
+                makeThreadResponse({
+                  id,
+                  projectId: "project",
+                  environmentId: environment.id,
+                  providerId: input.providerId,
+                  originPluginId: "scott-engineering",
+                  status: "active",
+                }),
+              );
+              metadata.set(id, input.pluginMetadata ?? {});
+            });
+            throw new Error("timeout before the rewrite was created");
+          }
           if (state.noDispatch) {
             state.noDispatch = false;
             throw new Error("timeout before submission");
@@ -188,6 +220,7 @@ async function fixture() {
           });
           threads.set(id, thread);
           metadata.set(id, input.pluginMetadata ?? {});
+          if (rewrite && state.rewriteUncertain) throw new Error("timeout after creating rewrite");
           if (state.uncertain) {
             state.uncertain = false;
             throw new Error(state.spawnError);
@@ -203,14 +236,22 @@ async function fixture() {
       },
     },
   });
-  const onResult = async (_run: unknown, job: Job) => {
-    results.push(`${job.role}${job.candidate === null ? "" : ` ${job.candidate + 1}`}`);
+  const recorder: Rewrites = {
+    start: async (_run, job) => {
+      results.push(`${job.role}${job.candidate === null ? "" : ` ${job.candidate + 1}`}`);
+    },
+    sync: async () => true,
+    owner: () => null,
+    pending: async () => [],
   };
-  let service = new ArenaService(
-    f.bb,
-    async () => ({ claudeModel: "claude", codexModel: "codex" }),
-    onResult,
-  );
+  const digests = new ArenaDigests(f.bb, async () => "digest-model");
+  const create = () =>
+    new ArenaService(
+      f.bb,
+      async () => ({ claudeModel: "claude", codexModel: "codex" }),
+      withDigests ? digests : recorder,
+    );
+  let service = create();
   cleanups.push(async () => {
     await service.dispose();
     await f.harness.lifecycle.dispose();
@@ -249,6 +290,7 @@ async function fixture() {
     parent,
     threads,
     metadata,
+    outputs,
     spawned,
     snapshots,
     ancestors,
@@ -266,16 +308,24 @@ async function fixture() {
       return service.get(id);
     },
     results,
+    digests,
+    /** BB creates every rewrite worker whose launch response was lost. */
+    late() {
+      for (const create of lateWorkers.splice(0)) create();
+    },
+    /** Finishes a worker as BB's idle event would. */
+    async idle(threadId: string) {
+      const child = threads.get(threadId);
+      assert.ok(child);
+      child.status = "idle";
+      await service.threadChanged(threadId);
+    },
     get service() {
       return service;
     },
     async restart() {
       await service.dispose();
-      service = new ArenaService(
-        f.bb,
-        async () => ({ claudeModel: "claude", codexModel: "codex" }),
-        onResult,
-      );
+      service = create();
       await service.recover(new AbortController().signal);
     },
   };
@@ -298,7 +348,8 @@ test("runs both candidates before judging and integrates after synthesis", async
   assert.equal(result.phase, "completed");
   assert.equal(result.integration?.status, "integrated");
   assert.equal(f.parent.status, "active");
-  assert.deepEqual(f.results, ["candidate 1", "candidate 2", "synthesis"]);
+  // Every accepted result reaches the rewrites, which decide what to rewrite.
+  assert.deepEqual(f.results, ["frame", "candidate 1", "candidate 2", "judge", "synthesis"]);
 });
 
 test("repeated launches reuse their stable request identity", async () => {
@@ -382,6 +433,88 @@ test("Stop Arena cancels its workers and does not stop the main chat", async () 
   await f.restart();
   assert.equal(f.spawned.length, 3);
   assert.equal(f.service.get(run.id).phase, "stopped");
+});
+
+test("Arena remains stopping until its result rewrite has stopped", async () => {
+  const f = await fixture(true);
+  const run = await f.start();
+  await f.finish(run.id, "frame", frame);
+  await f.finish(run.id, "candidate", candidate, 0);
+  const [digest] = await f.digests.forRun(run.id);
+  assert.ok(digest?.threadId);
+  const digestThreadId = digest.threadId;
+  f.f.harness.sdk.stub("threads.stop", async ({ threadId }) => {
+    const child = f.threads.get(threadId);
+    if (child) child.status = threadId === digestThreadId ? "stopping" : "idle";
+    return { ok: true };
+  });
+  assert.equal((await f.stop(run.id)).phase, "stopping");
+  f.f.harness.sdk.stub("threads.stop", async ({ threadId }) => {
+    const child = f.threads.get(threadId);
+    if (child) child.status = "idle";
+    return { ok: true };
+  });
+  await f.service.threadChanged(digestThreadId);
+  assert.equal(f.service.get(run.id).phase, "stopped");
+  assert.equal(f.parent.status, "active");
+});
+
+test("fatal Arena failure also stops its result rewrites", async () => {
+  const f = await fixture(true);
+  const run = await f.start();
+  await f.finish(run.id, "frame", frame);
+  f.state.fatalPin = true;
+  await f.finish(run.id, "candidate", candidate, 0);
+  assert.equal(f.service.get(run.id).phase, "failed");
+  const [digest] = await f.digests.forRun(run.id);
+  assert.equal(digest?.status, "failed");
+  assert.equal(digest?.threadId && f.threads.get(digest.threadId)?.status, "idle");
+});
+
+test("exhausting Arena rounds drains the rewrites from every round", async () => {
+  const f = await fixture(true);
+  f.state.integration = {
+    status: "verification-failed",
+    summary: "The check failed",
+    checks: [{ command: "bun test", exitCode: 1, output: "Failure" }],
+  };
+  const run = await f.start();
+  for (let round = 1; round <= 3; round++) {
+    await f.candidates(run.id);
+    await f.finish(run.id, "judge", judge);
+    await f.finish(run.id, "synthesis", synthesis);
+  }
+  assert.equal(f.service.get(run.id).phase, "failed");
+  const digests = await f.digests.forRun(run.id);
+  assert.equal(digests.length, 9);
+  assert.ok(digests.every((digest) => digest.status === "failed"));
+  assert.ok(
+    digests.every((digest) => digest.threadId && f.threads.get(digest.threadId)?.status === "idle"),
+  );
+});
+
+test("routine events and confirmed launches recover without listing historical threads", async () => {
+  const f = await fixture(true);
+  f.f.harness.sdk.stub("threads.list", async () => {
+    throw new Error("Routine processing must not scan thread history");
+  });
+  const run = await f.start();
+  await f.restart();
+  await f.candidates(run.id);
+  await f.finish(run.id, "judge", judge);
+  await f.finish(run.id, "synthesis", synthesis);
+  assert.equal(f.service.get(run.id).phase, "completed");
+  for (const job of f.service.get(run.id).jobs) {
+    assert.ok(job.threadId);
+    await f.service.threadChanged(job.threadId);
+  }
+  const [first, ...rest] = await f.digests.forRun(run.id);
+  assert.ok(first?.threadId);
+  await f.idle(first.threadId);
+  await f.restart();
+  assert.equal(f.service.get(run.id).phase, "completed");
+  assert.equal(rest.length, 2);
+  assert.ok(rest.every((digest) => digest.threadId));
 });
 
 test("verification failures consume rounds and never report integration", async () => {
@@ -469,7 +602,14 @@ test("a worker arriving for a retired reservation is stopped", async () => {
   f.metadata.set(late.id, input.pluginMetadata ?? {});
   await f.service.threadChanged(late.id);
   assert.equal(late.status, "idle");
+  assert.equal(f.service.get(run.id).jobs[0]?.stopConfirmed, true);
   assert.equal(f.service.get(run.id).round, 2);
+  await f.stop(run.id);
+  f.f.harness.sdk.stub("threads.list", async () => {
+    throw new Error("A confirmed retired worker must not trigger startup scans");
+  });
+  await f.restart();
+  assert.equal(f.service.get(run.id).phase, "stopped");
 });
 
 test("Stop uses fresh run state after authorization yields", async () => {
@@ -715,4 +855,270 @@ test("successful progress resets recovery for separate transient episodes", asyn
   await f.finish(run.id, "synthesis", synthesis);
   await recover();
   assert.equal(f.service.get(run.id).phase, "completed");
+});
+
+/** Waits for the run to leave `stopping`, as the card's poll would. */
+async function settled(f: Awaited<ReturnType<typeof fixture>>, id: string) {
+  for (let i = 0; i < 40 && f.service.get(id).phase === "stopping"; i++) await tick();
+  return f.service.get(id);
+}
+const rewriteSpawns = (f: Awaited<ReturnType<typeof fixture>>) =>
+  f.spawned.filter((input) => "arenaDigest" in (input.pluginMetadata ?? {}));
+
+test("Stop waits for a rewrite launch in flight, then stops that worker", async () => {
+  const f = await fixture(true);
+  const run = await f.start();
+  await f.finish(run.id, "frame", frame);
+  let release = () => {};
+  f.state.rewriteGate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const worker = f.service.get(run.id).jobs.find((job) => job.candidate === 0)?.threadId;
+  assert.ok(worker);
+  await f.service.report(run.id, worker, candidate);
+  while (!rewriteSpawns(f).length) await tick();
+  assert.equal((await f.service.stop(run.id, f.parent.id)).phase, "stopping");
+  for (let i = 0; i < 10; i++) await tick();
+  assert.equal(f.service.get(run.id).phase, "stopping");
+  release();
+  assert.equal((await settled(f, run.id)).phase, "stopped");
+  const [digest] = await f.digests.forRun(run.id);
+  assert.equal(digest?.status, "failed");
+  assert.equal(digest?.threadId && f.threads.get(digest.threadId)?.status, "idle");
+  assert.equal(f.parent.status, "active");
+  assert.equal(rewriteSpawns(f).length, 1);
+});
+
+test("Stop adopts a rewrite whose launch response was lost and stops it", async () => {
+  const f = await fixture(true);
+  const run = await f.start();
+  await f.finish(run.id, "frame", frame);
+  f.state.rewriteUncertain = true;
+  await f.finish(run.id, "candidate", candidate, 0);
+  assert.equal((await f.digests.forRun(run.id))[0]?.threadId, null);
+  assert.equal((await f.stop(run.id)).phase, "stopped");
+  const [digest] = await f.digests.forRun(run.id);
+  assert.ok(digest?.threadId);
+  assert.equal(digest.status, "failed");
+  assert.equal(f.threads.get(digest.threadId)?.status, "idle");
+  assert.equal(f.parent.status, "active");
+});
+
+test("a rewrite worker that appears after Stop is stopped by its own event", async () => {
+  const f = await fixture(true);
+  const run = await f.start();
+  await f.finish(run.id, "frame", frame);
+  f.state.rewriteLate = true;
+  await f.finish(run.id, "candidate", candidate, 0);
+  assert.equal((await f.stop(run.id)).phase, "stopped");
+  f.late();
+  const late = [...f.threads.values()].find(
+    (thread) => thread.status === "active" && "arenaDigest" in (f.metadata.get(thread.id) ?? {}),
+  );
+  assert.ok(late);
+  await f.service.threadChanged(late.id);
+  assert.equal(late.status, "idle");
+  const [digest] = await f.digests.forRun(run.id);
+  assert.equal(digest?.threadId, late.id);
+  assert.equal(digest?.status, "failed");
+  assert.equal(f.service.get(run.id).phase, "stopped");
+});
+
+test("a rewrite worker that appears while the plugin is down after Stop is stopped on restart", async () => {
+  const f = await fixture(true);
+  const run = await f.start();
+  await f.finish(run.id, "frame", frame);
+  f.state.rewriteLate = true;
+  await f.finish(run.id, "candidate", candidate, 0);
+  assert.equal((await f.stop(run.id)).phase, "stopped");
+  f.late();
+  await f.restart();
+  const [digest] = await f.digests.forRun(run.id);
+  assert.ok(digest?.threadId);
+  assert.equal(f.threads.get(digest.threadId)?.status, "idle");
+  assert.equal(digest.status, "failed");
+  f.f.harness.sdk.stub("threads.list", async () => {
+    throw new Error("A settled rewrite must not trigger startup scans");
+  });
+  await f.restart();
+  assert.equal(f.service.get(run.id).phase, "stopped");
+});
+
+test("a restart looks for a lost rewrite once and then stops searching history", async () => {
+  const f = await fixture(true);
+  const run = await f.start();
+  await f.finish(run.id, "frame", frame);
+  f.state.rewriteLate = true;
+  await f.finish(run.id, "candidate", candidate, 0);
+  await f.restart();
+  assert.equal((await f.digests.forRun(run.id))[0]?.status, "failed");
+  f.f.harness.sdk.stub("threads.list", async () => {
+    throw new Error("An abandoned rewrite must not trigger startup scans");
+  });
+  await f.restart();
+  f.late();
+  const late = [...f.threads.values()].find(
+    (thread) => thread.status === "active" && "arenaDigest" in (f.metadata.get(thread.id) ?? {}),
+  );
+  assert.ok(late);
+  f.outputs.set(late.id, '{"summary":"Plain words.","tradeoff":"Costs a little."}');
+  await f.idle(late.id);
+  const [digest] = await f.digests.forRun(run.id);
+  assert.equal(digest?.status, "done");
+  assert.equal(digest?.result?.summary, "Plain words.");
+});
+
+test("a restart resumes a stop that was waiting on a rewrite worker", async () => {
+  const f = await fixture(true);
+  const run = await f.start();
+  await f.finish(run.id, "frame", frame);
+  await f.finish(run.id, "candidate", candidate, 0);
+  const [digest] = await f.digests.forRun(run.id);
+  assert.ok(digest?.threadId);
+  const digestThreadId = digest.threadId;
+  f.f.harness.sdk.stub("threads.stop", async ({ threadId }) => {
+    const child = f.threads.get(threadId);
+    if (child) child.status = threadId === digestThreadId ? "stopping" : "idle";
+    return { ok: true };
+  });
+  assert.equal((await f.stop(run.id)).phase, "stopping");
+  f.f.harness.sdk.stub("threads.stop", async ({ threadId }) => {
+    const child = f.threads.get(threadId);
+    if (child) child.status = "idle";
+    return { ok: true };
+  });
+  await f.restart();
+  assert.equal(f.service.get(run.id).phase, "stopped");
+  assert.equal((await f.digests.forRun(run.id))[0]?.status, "failed");
+  assert.equal(f.parent.status, "active");
+});
+
+test("a completed run lets its rewrites finish", async () => {
+  const f = await fixture(true);
+  const run = await f.start();
+  await f.candidates(run.id);
+  await f.finish(run.id, "judge", judge);
+  await f.finish(run.id, "synthesis", synthesis);
+  assert.equal(f.service.get(run.id).phase, "completed");
+  const synthesisKey = f.service.get(run.id).jobs.find((job) => job.role === "synthesis")?.key;
+  const rewrite = (await f.digests.forRun(run.id)).find((item) => item.jobKey === synthesisKey);
+  assert.ok(rewrite?.threadId);
+  assert.equal(f.threads.get(rewrite.threadId)?.status, "active");
+  f.outputs.set(
+    rewrite.threadId,
+    '{"summary":"Combined.","rationale":"One owner.","grafts":["Errors."],"rejected":[]}',
+  );
+  await f.idle(rewrite.threadId);
+  const done = (await f.digests.forRun(run.id)).find((item) => item.jobKey === synthesisKey);
+  assert.equal(done?.status, "done");
+  assert.equal(f.service.get(run.id).phase, "completed");
+});
+
+test("an interrupted integration drains its rewrites before failing", async () => {
+  const f = await fixture(true);
+  f.state.integration = { status: "interrupted", summary: "Host restarted", checks: [] };
+  const run = await f.start();
+  await f.candidates(run.id);
+  await f.finish(run.id, "judge", judge);
+  await f.finish(run.id, "synthesis", synthesis);
+  const failed = f.service.get(run.id);
+  assert.equal(failed.phase, "failed");
+  assert.equal(failed.error, "Host restarted");
+  const digests = await f.digests.forRun(run.id);
+  assert.equal(digests.length, 3);
+  assert.ok(digests.every((digest) => digest.status === "failed"));
+  assert.ok(
+    digests.every((digest) => digest.threadId && f.threads.get(digest.threadId)?.status === "idle"),
+  );
+});
+
+test("a retired launch is looked for after one restart, not on every restart", async () => {
+  const f = await fixture();
+  f.state.noDispatch = true;
+  const run = await f.start();
+  await f.restart();
+  assert.equal(f.service.get(run.id).jobs[0]?.stopConfirmed, true);
+  f.f.harness.sdk.stub("threads.list", async () => {
+    throw new Error("A searched launch must not trigger startup scans");
+  });
+  await f.restart();
+  await f.stop(run.id);
+  await f.restart();
+  assert.equal(f.service.get(run.id).phase, "stopped");
+});
+
+test("Stop waits for a retired worker before accepting an integration receipt", async () => {
+  const f = await fixture();
+  f.state.noDispatch = true;
+  const run = await f.start();
+  await f.candidates(run.id);
+  await f.finish(run.id, "judge", judge);
+  const synthesis = f.service.get(run.id).jobs.find((job) => job.role === "synthesis");
+  assert.ok(synthesis?.threadId);
+  await f.service.prepare(run.id, synthesis.threadId);
+  f.receipts.set(run.id, f.state.integration);
+  const input = f.spawned[0];
+  assert.ok(input);
+  const late = makeThreadResponse({
+    id: "retired-stopping",
+    projectId: "project",
+    originPluginId: "scott-engineering",
+    providerId: input.providerId,
+    status: "active",
+  });
+  f.threads.set(late.id, late);
+  f.metadata.set(late.id, input.pluginMetadata ?? {});
+  f.f.harness.sdk.stub("threads.stop", async ({ threadId }) => {
+    const child = f.threads.get(threadId);
+    if (child) child.status = threadId === late.id ? "stopping" : "idle";
+    return { ok: true };
+  });
+  assert.equal((await f.stop(run.id)).phase, "stopping");
+  assert.equal(f.service.get(run.id).integration, null);
+  assert.equal(f.service.get(run.id).jobs[0]?.stopConfirmed, undefined);
+  f.f.harness.sdk.stub("threads.stop", async ({ threadId }) => {
+    const child = f.threads.get(threadId);
+    if (child) child.status = "idle";
+    return { ok: true };
+  });
+  await f.service.threadChanged(late.id);
+  assert.equal(f.service.get(run.id).phase, "completed");
+  assert.equal(f.service.get(run.id).jobs[0]?.stopConfirmed, true);
+  assert.equal(f.parent.status, "active");
+});
+
+test("fatal failure waits for a retired worker and its idle event finishes the drain", async () => {
+  const f = await fixture();
+  f.state.noDispatch = true;
+  const run = await f.start();
+  const input = f.spawned[0];
+  assert.ok(input);
+  const late = makeThreadResponse({
+    id: "retired-failing",
+    projectId: "project",
+    originPluginId: "scott-engineering",
+    providerId: input.providerId,
+    status: "active",
+  });
+  f.threads.set(late.id, late);
+  f.metadata.set(late.id, input.pluginMetadata ?? {});
+  f.f.harness.sdk.stub("threads.stop", async ({ threadId }) => {
+    const child = f.threads.get(threadId);
+    if (child) child.status = threadId === late.id ? "stopping" : "idle";
+    return { ok: true };
+  });
+  await f.service.threadChanged(late.id);
+  await f.finish(run.id, "frame", frame);
+  f.state.fatalPin = true;
+  await f.finish(run.id, "candidate", candidate, 0);
+  assert.equal(f.service.get(run.id).phase, "failing");
+  f.f.harness.sdk.stub("threads.stop", async ({ threadId }) => {
+    const child = f.threads.get(threadId);
+    if (child) child.status = "idle";
+    return { ok: true };
+  });
+  await f.service.threadChanged(late.id);
+  assert.equal(f.service.get(run.id).phase, "failed");
+  assert.equal(f.service.get(run.id).jobs[0]?.stopConfirmed, true);
+  assert.equal(f.parent.status, "active");
 });

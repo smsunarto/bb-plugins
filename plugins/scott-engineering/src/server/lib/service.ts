@@ -28,7 +28,9 @@ const transientError = z.union([
   }),
 ]);
 const recoveryDelays = [5000, 10000, 20000];
-const busy = new Set(["pending", "starting", "active", "stopping"]);
+/** Thread statuses in which a worker can still act. */
+export const busy = new Set(["pending", "starting", "active", "stopping"]);
+const missing = (error: unknown) => error instanceof Error && /not found|404/i.test(error.message);
 type Stage = { role: Job["role"]; next: ArenaRun["phase"] };
 const stages: Partial<Record<ArenaRun["phase"], Stage>> = {
   framing: { role: "frame", next: "candidates" },
@@ -44,6 +46,64 @@ function workerTitle(run: ArenaRun, job: Job) {
 }
 export type Models = { claudeModel: string; codexModel: string };
 type ArenaApi = Pick<Context["bb"], "pluginId" | "storage" | "log" | "sdk" | "hosts" | "realtime">;
+type Thread = Awaited<ReturnType<ArenaApi["sdk"]["threads"]["list"]>>[number];
+
+/**
+ * The workers a run launches beside its jobs to rewrite results for the card. ArenaService calls
+ * every method under the run's gate, and the run's phase alone decides when they must stop.
+ */
+export interface Rewrites {
+  /** Launches one rewrite for an accepted candidate or synthesis result, unless the run is cancelled. */
+  start(run: ArenaRun, job: Job): Promise<void>;
+  /**
+   * Brings the run's rewrites in line with it: stops them once the run is cancelled, otherwise
+   * settles finished replies. An event names its worker. A drain or restart also looks for lost
+   * launches, and a restart abandons the ones it cannot find. Resolves false while a stopped
+   * worker is still active.
+   */
+  sync(
+    run: ArenaRun,
+    change: "drain" | "restart" | { jobKey: string; threadId: string },
+  ): Promise<boolean>;
+  /** The rewrite a worker thread runs, read from its plugin metadata. */
+  owner(metadata: unknown): { runId: string; jobKey: string } | null;
+  /** Runs whose rewrites a restart must sync. */
+  pending(): Promise<string[]>;
+}
+
+/** Drops a hidden worker's queued turns and stops it. True once it is idle or gone. */
+export async function stopThread(sdk: ArenaApi["sdk"], threadId: string) {
+  try {
+    for (const entry of await sdk.threads.queuedMessages.list({ threadId }))
+      await sdk.threads.queuedMessages.delete({ threadId, queuedMessageId: entry.id });
+    await sdk.threads.stop({ threadId });
+    return !busy.has((await sdk.threads.get({ threadId })).status);
+  } catch (error) {
+    if (!missing(error)) throw error;
+    return true;
+  }
+}
+
+/**
+ * Reads this plugin's thread history until `visit` reports that it found every lost launch.
+ * Only a launch whose response was lost needs this; events name every other worker directly.
+ */
+export async function scanWorkers(
+  bb: Pick<ArenaApi, "pluginId" | "sdk">,
+  visit: (thread: Thread, metadata: unknown) => boolean,
+) {
+  for (let offset = 0; ; offset += 100) {
+    const page = await bb.sdk.threads.list({
+      originPluginId: bb.pluginId,
+      includeHidden: true,
+      limit: 100,
+      offset,
+    });
+    for (const thread of page)
+      if (visit(thread, await bb.sdk.threads.getPluginMetadata({ threadId: thread.id }))) return;
+    if (page.length < 100) return;
+  }
+}
 
 export class ArenaService {
   private readonly db: ReturnType<BbPluginApi["storage"]["database"]>;
@@ -54,17 +114,12 @@ export class ArenaService {
   private lifecycle: AbortSignal = new AbortController().signal;
   private readonly bb: ArenaApi;
   private readonly models: () => Promise<Models>;
-  /** Called once a candidate or synthesis report is accepted; never blocks the run. */
-  private readonly onResult: (run: ArenaRun, job: Job) => Promise<void>;
+  private readonly rewrites: Rewrites;
 
-  constructor(
-    bb: ArenaApi,
-    models: () => Promise<Models>,
-    onResult: (run: ArenaRun, job: Job) => Promise<void> = async () => {},
-  ) {
+  constructor(bb: ArenaApi, models: () => Promise<Models>, rewrites: Rewrites) {
     this.bb = bb;
     this.models = models;
-    this.onResult = onResult;
+    this.rewrites = rewrites;
     this.db = database(bb);
   }
 
@@ -86,7 +141,9 @@ export class ArenaService {
       .all()
       .map((row) => runSchema.parse(JSON.parse(row.payload)))
       .filter(
-        (run) => !terminal.has(run.phase) || run.jobs.some((job) => job.dispatch === "retired"),
+        (run) =>
+          !terminal.has(run.phase) ||
+          run.jobs.some((job) => job.dispatch === "retired" && !job.stopConfirmed),
       );
   }
 
@@ -383,10 +440,13 @@ export class ArenaService {
       }
       job.report = report;
       this.save(run);
-      if (report.kind === "candidate" || report.kind === "synthesis")
-        void this.onResult(run, job).catch((error) =>
-          this.bb.log.warn(`Arena ${id}: result rewrite failed: ${String(error)}`),
-        );
+      // Queued on the run gate: Stop either finds this launch or prevents it, never misses it.
+      const key = job.key;
+      void this.serial(id, async () => {
+        const fresh = this.get(id);
+        const accepted = fresh.jobs.find((item) => item.key === key);
+        if (accepted) await this.rewrites.start(fresh, accepted);
+      }).catch((error) => this.bb.log.warn(`Arena ${id}: result rewrite failed: ${String(error)}`));
       return { accepted: true };
     });
   }
@@ -398,24 +458,36 @@ export class ArenaService {
     });
   }
 
+  /** The one entry for lifecycle events of any worker this plugin launched. */
   async threadChanged(threadId: string) {
-    const known = this.all().find((run) => run.jobs.some((job) => job.threadId === threadId));
-    if (known) {
-      await this.serial(known.id, () => this.advance(known.id));
-      return;
-    }
-    const metadata = metadataSchema.safeParse(
-      await this.bb.sdk.threads.getPluginMetadata({ threadId }),
-    );
-    if (!metadata.success) return;
-    const id = metadata.data.arena.runId;
+    const metadata = await this.bb.sdk.threads.getPluginMetadata({ threadId });
+    const worker = metadataSchema.safeParse(metadata);
+    const rewrite = worker.success ? null : this.rewrites.owner(metadata);
+    const id = worker.success ? worker.data.arena.runId : rewrite?.runId;
+    if (!id) return;
     await this.serial(id, async () => {
       const run = this.get(id);
-      await this.reconcile(run);
-      const job = run.jobs.find((job) => job.threadId === threadId);
-      if (job?.dispatch === "retired") {
-        await this.stopWorker(job, "Launch reservation was retired");
+      if (rewrite) {
+        await this.rewrites.sync(run, { jobKey: rewrite.jobKey, threadId });
+        if (run.phase === "stopping" || run.phase === "failing") await this.advance(id);
+        return;
+      }
+      if (!worker.success) return;
+      const job = run.jobs.find((job) => job.key === worker.data.arena.jobKey);
+      if (!job || (job.threadId && job.threadId !== threadId)) return;
+      if (!job.threadId) {
+        const child = await this.bb.sdk.threads.get({ threadId });
+        if (child.projectId !== run.projectId || child.providerId !== job.model.providerId) return;
+        job.threadId = child.id;
+        job.environmentId = child.environmentId;
+        if (job.dispatch === "retired") job.stopConfirmed = false;
+        else job.dispatch = "started";
         this.save(run);
+      }
+      if (job.dispatch === "retired") {
+        if (!job.stopConfirmed) await this.stopWorker(job, "Launch reservation was retired");
+        this.save(run);
+        if (run.phase === "stopping" || run.phase === "failing") await this.advance(id);
         return;
       }
       if (!terminal.has(run.phase)) await this.advance(id);
@@ -550,7 +622,7 @@ export class ArenaService {
   private rerun(run: ArenaRun, reason: string) {
     run.error = reason;
     run.feedback = { summary: reason, integration: run.integration };
-    if (run.round >= MAX_ROUNDS) run.phase = "failed";
+    if (run.round >= MAX_ROUNDS) run.phase = "failing";
     else {
       run.round += 1;
       run.snapshotId = randomUUID();
@@ -561,7 +633,7 @@ export class ArenaService {
       run.phase = "snapshot";
     }
     this.save(run);
-    return run.phase === "failed";
+    return run.phase === "failing";
   }
 
   private async processStage(run: ArenaRun, stage: Stage, signal: AbortSignal) {
@@ -571,7 +643,7 @@ export class ArenaService {
         : [this.reserve(run, stage.role)];
     await Promise.all(jobs.map((job) => this.dispatch(run, job)));
     if (jobs.some((job) => job.dispatch === "dispatching" && !job.threadId))
-      await this.reconcile(run, true);
+      await this.reconcile(run);
     for (const job of jobs) await this.settle(run, job, signal);
     if (jobs.some((job) => job.outcome === "running")) return false;
     const completed = jobs.filter((job) => job.outcome === "completed");
@@ -608,7 +680,7 @@ export class ArenaService {
     });
     signal.throwIfAborted();
     if (run.integration.status === "interrupted") {
-      run.phase = "failed";
+      run.phase = "failing";
       run.error = run.integration.summary;
       this.save(run);
       return false;
@@ -666,6 +738,7 @@ export class ArenaService {
     } finally {
       this.lifecycle.removeEventListener("abort", dispose);
       if (this.controllers.get(id) === controller) this.controllers.delete(id);
+      if (this.get(id).phase === "failing") await this.drain(this.get(id), "failed");
     }
   }
 
@@ -683,43 +756,45 @@ export class ArenaService {
     return this.get(id);
   }
 
-  private async reconcile(run: ArenaRun, retireMissing = false) {
-    for (let offset = 0; ; offset += 100) {
-      const children = await this.bb.sdk.threads.list({
-        originPluginId: this.bb.pluginId,
-        includeHidden: true,
-        limit: 100,
-        offset,
-      });
-      for (const child of children) {
-        const metadata = metadataSchema.safeParse(
-          await this.bb.sdk.threads.getPluginMetadata({ threadId: child.id }),
-        );
-        if (!metadata.success || metadata.data.arena.runId !== run.id) continue;
-        const job = run.jobs.find((job) => job.key === metadata.data.arena.jobKey);
-        if (
-          job &&
-          !job.threadId &&
-          child.projectId === run.projectId &&
-          child.providerId === job.model.providerId
-        ) {
+  /**
+   * Binds lost launches to the workers BB created for them, retires the ones with no worker, and
+   * stops workers of retired launches. Only lost launches read thread history. A restart's read
+   * covers the downtime, and every later worker raises its own event, so a retired launch that a
+   * restart cannot find is settled and never searched again.
+   */
+  private async reconcile(run: ArenaRun, restart = false) {
+    const lost = run.jobs.filter(
+      (job) =>
+        !job.threadId &&
+        (job.dispatch === "dispatching" || (job.dispatch === "retired" && !job.stopConfirmed)),
+    );
+    const retired = run.jobs.filter(
+      (job) => job.dispatch === "retired" && job.threadId && !job.stopConfirmed,
+    );
+    if (!lost.length && !retired.length) return;
+    if (lost.length)
+      await scanWorkers(this.bb, (child, metadata) => {
+        const parsed = metadataSchema.safeParse(metadata);
+        const job =
+          parsed.success && parsed.data.arena.runId === run.id
+            ? lost.find((job) => job.key === parsed.data.arena.jobKey && !job.threadId)
+            : undefined;
+        if (job && child.projectId === run.projectId && child.providerId === job.model.providerId) {
           job.threadId = child.id;
           job.environmentId = child.environmentId;
           if (job.dispatch !== "retired") job.dispatch = "started";
         }
-        if (job?.dispatch === "retired" && job.threadId)
-          await this.stopWorker(job, "Launch reservation was retired");
+        return lost.every((job) => job.threadId);
+      });
+    for (const job of run.jobs) {
+      if (job.dispatch === "retired" && job.threadId && !job.stopConfirmed)
+        await this.stopWorker(job, "Launch reservation was retired");
+      if (job.dispatch === "dispatching" && !job.threadId) {
+        job.dispatch = "retired";
+        job.outcome = "failed";
+        job.error = "It had not started before a restart, so Arena skipped it.";
       }
-      if (children.length < 100) break;
-    }
-    if (retireMissing) {
-      for (const job of run.jobs) {
-        if (job.dispatch === "dispatching" && !job.threadId) {
-          job.dispatch = "retired";
-          job.outcome = "failed";
-          job.error = "It had not started before a restart, so Arena skipped it.";
-        }
-      }
+      if (restart && job.dispatch === "retired" && !job.threadId) job.stopConfirmed = true;
     }
     this.save(run);
   }
@@ -748,7 +823,7 @@ export class ArenaService {
         run.recoveryAttempts += 1;
         this.save(run);
         try {
-          await this.reconcile(run, true);
+          await this.reconcile(run);
           await this.advance(id);
         } catch (error) {
           await this.handleFailure(this.get(id), error);
@@ -760,22 +835,10 @@ export class ArenaService {
   }
 
   private async stopWorker(job: Job, reason: string) {
-    if (!job.threadId) return;
-    try {
-      const queued = await this.bb.sdk.threads.queuedMessages.list({ threadId: job.threadId });
-      for (const entry of queued)
-        await this.bb.sdk.threads.queuedMessages.delete({
-          threadId: job.threadId,
-          queuedMessageId: entry.id,
-        });
-      await this.bb.sdk.threads.stop({ threadId: job.threadId });
-      const child = await this.bb.sdk.threads.get({ threadId: job.threadId });
-      if (busy.has(child.status)) return;
-    } catch (error) {
-      if (!(error instanceof Error && /not found|404/i.test(error.message))) throw error;
-    }
+    if (!job.threadId || !(await stopThread(this.bb.sdk, job.threadId))) return;
     job.outcome = "failed";
     job.error = reason;
+    if (job.dispatch === "retired") job.stopConfirmed = true;
   }
 
   private async drain(run: ArenaRun, finalPhase: "failed" | "stopped") {
@@ -789,7 +852,7 @@ export class ArenaService {
   }
 
   private async stopOwned(run: ArenaRun, finalPhase: "stopped" | "failed" = "stopped") {
-    await this.reconcile(run, true);
+    await this.reconcile(run);
     for (const job of run.jobs) {
       if (job.outcome !== "running") continue;
       if (job.dispatch === "reserved") {
@@ -800,6 +863,23 @@ export class ArenaService {
           job,
           finalPhase === "failed" ? "Cancelled after Arena failure" : "Stopped by user",
         );
+    }
+    if (!(await this.rewrites.sync(run, "drain"))) {
+      run.error = "Waiting to confirm that result rewrite workers stopped";
+      this.save(run);
+      return;
+    }
+    if (
+      run.jobs.some(
+        (job) =>
+          job.outcome === "running" ||
+          (job.dispatch === "retired" && job.threadId && !job.stopConfirmed),
+      )
+    ) {
+      if (finalPhase === "stopped")
+        run.error = "Waiting to reconcile dispatch or confirm that workers stopped";
+      this.save(run);
+      return;
     }
     if (run.preparation) {
       const receipt = await this.host().call(
@@ -815,28 +895,36 @@ export class ArenaService {
         return;
       }
     }
-    if (run.jobs.some((job) => job.outcome === "running")) {
-      if (finalPhase === "stopped")
-        run.error = "Waiting to reconcile dispatch or confirm that workers stopped";
-    } else {
-      run.phase = finalPhase;
-      if (finalPhase === "stopped") run.error = null;
-    }
+    run.phase = finalPhase;
+    if (finalPhase === "stopped") run.error = null;
     this.save(run);
   }
 
+  /** The one startup entry: settles every run and rewrite that changed while the plugin was down. */
   async recover(signal: AbortSignal) {
     this.lifecycle = signal;
+    const ids = new Set([
+      ...this.all(true).map((run) => run.id),
+      ...(await this.rewrites.pending()),
+    ]);
     await Promise.all(
-      this.all(true).map((saved) =>
-        this.serial(saved.id, async () => {
+      [...ids].map((id) =>
+        this.serial(id, async () => {
           if (signal.aborted) return;
-          const run = this.get(saved.id);
+          // Rewrites never fail a run; a stopping run's drain retries their stop.
+          await this.rewrites
+            .sync(this.get(id), "restart")
+            .catch((error) =>
+              this.bb.log.warn(`Arena ${id}: rewrites did not recover: ${String(error)}`),
+            );
+          const run = this.get(id);
           try {
             await this.reconcile(run, true);
             if (!terminal.has(run.phase)) await this.advance(run.id);
           } catch (error) {
-            await this.handleFailure(this.get(run.id), error);
+            if (terminal.has(this.get(id).phase))
+              this.bb.log.warn(`Arena ${id}: late workers did not recover: ${String(error)}`);
+            else await this.handleFailure(this.get(id), error);
           }
         }),
       ),

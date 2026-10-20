@@ -10,6 +10,8 @@ export function roleLabel(
   return role === "frame" ? "Plan" : role === "judge" ? "Review" : "Combine";
 }
 export const terminal = new Set(["completed", "failed", "stopped"]);
+/** Phases in which every worker of the run, result rewrites included, must stop and stay stopped. */
+export const cancelled = new Set(["stopping", "failing", "stopped", "failed"]);
 const text = z.string().min(1).max(8000);
 export const startSchema = z
   .object({
@@ -102,6 +104,8 @@ export const jobSchema = z.object({
   candidate: z.number().int().min(0).max(1).nullable(),
   model: modelSchema,
   dispatch: z.enum(["reserved", "dispatching", "started", "retired"]),
+  /** A retired launch has no worker left to stop: its worker stopped, or a restart found none. */
+  stopConfirmed: z.boolean().optional(),
   threadId: z.string().nullable(),
   environmentId: z.string().nullable(),
   path: z.string().nullable(),

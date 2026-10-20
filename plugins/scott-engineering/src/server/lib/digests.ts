@@ -2,6 +2,7 @@ import type { Context } from "@bb-kit/core/rpc";
 import { instructionFiles } from "@bb-kit/core/instructions";
 import { z } from "zod";
 import {
+  cancelled,
   digestSchema,
   readableSchema,
   roleLabel,
@@ -10,9 +11,9 @@ import {
   type Job,
   type Readable,
 } from "../../shared/arena.ts";
+import { busy, scanWorkers, stopThread, type Rewrites } from "./service.ts";
 
 const files = instructionFiles(import.meta.url);
-const busy = new Set(["pending", "starting", "active", "stopping"]);
 const metadataSchema = z.object({ arenaDigest: z.object({ runId: z.uuid(), jobKey: z.uuid() }) });
 /** What the server keeps beside the card's view: the shape the rewrite must match. */
 const storedSchema = digestSchema.extend({
@@ -20,19 +21,25 @@ const storedSchema = digestSchema.extend({
   kind: z.enum(["candidate", "synthesis"]),
   grafts: z.number().int(),
   rejected: z.number().int(),
+  /** A restart found no worker for this lost launch; only the worker's own event can bind it now. */
+  abandoned: z.boolean().optional(),
+  /** A worker's stop receipt, independent of whether its readable result already landed. */
+  stopConfirmed: z.boolean().optional(),
 });
 type Stored = z.infer<typeof storedSchema>;
-type DigestApi = Pick<Context["bb"], "storage" | "log" | "sdk" | "realtime">;
+type DigestApi = Pick<Context["bb"], "pluginId" | "storage" | "log" | "sdk" | "realtime">;
 const key = (runId: string, jobKey: string) => `digest:${runId}:${jobKey}`;
+/** A launch whose spawn response was lost and whose worker is still worth looking for. */
+const lost = (stored: Stored) => !stored.threadId && stored.status !== "done" && !stored.abandoned;
 
 /**
  * Rewrites candidate and synthesis results into plain language for the card.
  * Each rewrite runs in a hidden worker on a small fast model and never blocks
  * the run: the card shows the worker's own text until a valid rewrite lands.
- * Records live in plugin KV, apart from the run state machine.
+ * Records live in plugin KV, apart from the run state machine. ArenaService
+ * drives every transition under the run's gate and its phase decides cancellation.
  */
-export class ArenaDigests {
-  private readonly gates = new Map<string, Promise<unknown>>();
+export class ArenaDigests implements Rewrites {
   private readonly bb: DigestApi;
   private readonly model: () => Promise<string>;
 
@@ -41,91 +48,128 @@ export class ArenaDigests {
     this.model = model;
   }
 
-  /** Starts one rewrite per finished candidate or synthesis; repeat calls are no-ops. */
   async start(run: ArenaRun, job: Job) {
     const report = job.report;
+    if (cancelled.has(run.phase)) return;
     if (report?.kind !== "candidate" && report?.kind !== "synthesis") return;
-    const id = key(run.id, job.key);
-    await this.serial(id, async () => {
-      if (await this.bb.storage.kv.get(id)) return;
-      const stored: Stored = {
-        runId: run.id,
-        jobKey: job.key,
-        threadId: null,
-        status: "running",
-        result: null,
-        startedAt: Date.now(),
-        kind: report.kind,
-        grafts: report.kind === "synthesis" ? report.grafts.length : 0,
-        rejected: report.kind === "synthesis" ? report.rejected.length : 0,
-      };
-      await this.write(id, stored);
-      try {
-        const thread = await this.bb.sdk.threads.spawn({
-          projectId: run.projectId,
-          lifecycleOwnerThreadId: run.parentThreadId,
-          visibility: "hidden",
-          permissionMode: "accept-edits",
-          environment: { type: "reuse", environmentId: run.environmentId },
-          title: `Arena rewrite: ${roleLabel(job.role, job.candidate).toLowerCase()}`,
-          providerId: "codex",
-          model: await this.model(),
-          reasoningLevel: "low",
-          serviceTier: "fast",
-          pluginMetadata: { arenaDigest: { runId: run.id, jobKey: job.key } },
-          prompt: digestPrompt(run, job),
-        });
-        stored.threadId = thread.id;
-      } catch (error) {
-        stored.status = "failed";
-        this.bb.log.warn(`Arena rewrite for ${job.key} did not start: ${String(error)}`);
-      }
-      await this.write(id, stored);
-    });
-  }
-
-  async threadChanged(threadId: string) {
-    const metadata = metadataSchema.safeParse(
-      await this.bb.sdk.threads.getPluginMetadata({ threadId }),
-    );
-    if (!metadata.success) return;
-    const { runId, jobKey } = metadata.data.arenaDigest;
-    await this.finish(key(runId, jobKey), threadId);
-  }
-
-  async forRun(runId: string): Promise<Digest[]> {
-    const records = await Promise.all(
-      (await this.bb.storage.kv.list(`digest:${runId}:`)).map((id) => this.read(id)),
-    );
-    return records.filter((record) => record !== null).map((record) => digestSchema.parse(record));
-  }
-
-  /** Settles rewrites that finished, failed, or never launched while the plugin was down. */
-  async recover() {
-    for (const id of await this.bb.storage.kv.list("digest:")) {
-      const stored = await this.read(id);
-      if (stored?.status !== "running") continue;
-      if (stored.threadId) await this.finish(id, stored.threadId);
-      else await this.serial(id, () => this.write(id, { ...stored, status: "failed" }));
+    if (await this.bb.storage.kv.get(key(run.id, job.key))) return;
+    const stored: Stored = {
+      runId: run.id,
+      jobKey: job.key,
+      threadId: null,
+      status: "running",
+      result: null,
+      startedAt: Date.now(),
+      kind: report.kind,
+      grafts: report.kind === "synthesis" ? report.grafts.length : 0,
+      rejected: report.kind === "synthesis" ? report.rejected.length : 0,
+    };
+    // Saved before the spawn: if its response is lost, sync looks for the worker by metadata.
+    await this.write(stored);
+    try {
+      const thread = await this.bb.sdk.threads.spawn({
+        projectId: run.projectId,
+        lifecycleOwnerThreadId: run.parentThreadId,
+        visibility: "hidden",
+        permissionMode: "accept-edits",
+        environment: { type: "reuse", environmentId: run.environmentId },
+        title: `Arena rewrite: ${roleLabel(job.role, job.candidate).toLowerCase()}`,
+        providerId: "codex",
+        model: await this.model(),
+        reasoningLevel: "low",
+        serviceTier: "fast",
+        pluginMetadata: { arenaDigest: { runId: run.id, jobKey: job.key } },
+        prompt: digestPrompt(run, job),
+      });
+      await this.write({ ...stored, threadId: thread.id });
+    } catch (error) {
+      this.bb.log.warn(`Arena rewrite for ${job.key} did not start: ${String(error)}`);
     }
   }
 
-  private finish(id: string, threadId: string) {
-    return this.serial(id, async () => {
-      const stored = await this.read(id);
-      if (stored?.status !== "running") return;
-      const thread = await this.bb.sdk.threads.get({ threadId }).catch(() => null);
-      if (thread && busy.has(thread.status)) return;
-      const output =
-        thread?.status === "idle" ? (await this.bb.sdk.threads.output({ threadId })).output : null;
-      const result = output ? parseReply(output, stored) : null;
-      await this.write(id, {
-        ...stored,
-        threadId,
-        result,
-        status: result ? "done" : "failed",
+  owner(metadata: unknown) {
+    const parsed = metadataSchema.safeParse(metadata);
+    return parsed.success ? parsed.data.arenaDigest : null;
+  }
+
+  async sync(run: ArenaRun, change: "drain" | "restart" | { jobKey: string; threadId: string }) {
+    const stop = cancelled.has(run.phase);
+    if (typeof change === "object") {
+      const stored = await this.read(key(run.id, change.jobKey));
+      if (!stored || (stored.threadId && stored.threadId !== change.threadId)) return true;
+      if (!stored.threadId) await this.write(bind(stored, change.threadId));
+      return this.settle(stored, stop);
+    }
+    const records = await this.records(run.id);
+    const missing = records.filter(lost);
+    if (missing.length)
+      await scanWorkers(this.bb, (thread, metadata) => {
+        const owner = this.owner(metadata);
+        const stored =
+          owner?.runId === run.id &&
+          missing.find((item) => item.jobKey === owner.jobKey && !item.threadId);
+        if (stored) bind(stored, thread.id);
+        return missing.every((item) => item.threadId);
       });
+    let quiet = true;
+    for (const stored of records) {
+      if (stored.threadId) {
+        if (missing.includes(stored)) await this.write(stored);
+        if (!(stop && stored.stopConfirmed) && !(await this.settle(stored, stop))) quiet = false;
+      } else if (missing.includes(stored))
+        // Nothing to wait for. A drain leaves it for the next restart to look for once more.
+        await this.write({ ...stored, status: "failed", abandoned: change === "restart" });
+    }
+    return quiet;
+  }
+
+  async pending() {
+    const runs = new Set<string>();
+    for (const id of await this.bb.storage.kv.list("digest:")) {
+      const stored = await this.read(id);
+      if (stored && (stored.status === "running" || stored.stopConfirmed === false || lost(stored)))
+        runs.add(stored.runId);
+    }
+    return [...runs];
+  }
+
+  async forRun(runId: string): Promise<Digest[]> {
+    return (await this.records(runId)).map((record) => digestSchema.parse(record));
+  }
+
+  /** A cancelled run stops the worker; any other run takes its reply once it is idle. */
+  private async settle(stored: Stored, stop: boolean) {
+    const threadId = stored.threadId;
+    if (!threadId) return true;
+    if (stop) {
+      // Persist the obligation before I/O, including when a settled worker has resumed.
+      await this.write({ ...stored, stopConfirmed: false });
+      const stopped = await stopThread(this.bb.sdk, threadId);
+      await this.write({
+        ...stored,
+        stopConfirmed: stopped,
+        status: stored.status === "done" ? "done" : stopped ? "failed" : "running",
+      });
+      return stopped;
+    }
+    if (stored.status !== "running") return true;
+    const thread = await this.bb.sdk.threads.get({ threadId }).catch((error: unknown) => {
+      if (!(error instanceof Error && /not found|404/i.test(error.message))) throw error;
+      return null;
     });
+    if (thread && busy.has(thread.status)) return true;
+    const output =
+      thread?.status === "idle" ? (await this.bb.sdk.threads.output({ threadId })).output : null;
+    const result = output ? parseReply(output, stored) : null;
+    await this.write({ ...stored, result, status: result ? "done" : "failed" });
+    return true;
+  }
+
+  private async records(runId: string) {
+    const records = await Promise.all(
+      (await this.bb.storage.kv.list(`digest:${runId}:`)).map((id) => this.read(id)),
+    );
+    return records.filter((record) => record !== null);
   }
 
   private async read(id: string) {
@@ -133,21 +177,18 @@ export class ArenaDigests {
     return parsed.success ? parsed.data : null;
   }
 
-  private async write(id: string, stored: Stored) {
-    await this.bb.storage.kv.set(id, stored);
+  private async write(stored: Stored) {
+    await this.bb.storage.kv.set(key(stored.runId, stored.jobKey), stored);
     this.bb.realtime.publish("arena.changed", { runId: stored.runId });
   }
+}
 
-  private serial(id: string, work: () => Promise<void>) {
-    const next = (this.gates.get(id) ?? Promise.resolve()).catch(() => {}).then(work);
-    this.gates.set(id, next);
-    void next
-      .finally(() => {
-        if (this.gates.get(id) === next) this.gates.delete(id);
-      })
-      .catch(() => {});
-    return next;
-  }
+/** A worker turned up for a launch: it is live again, whatever was given up on before. */
+function bind(stored: Stored, threadId: string) {
+  stored.threadId = threadId;
+  stored.status = "running";
+  stored.abandoned = false;
+  return stored;
 }
 
 /** The rewrite worker's whole prompt: the instructions plus the result as JSON. */
