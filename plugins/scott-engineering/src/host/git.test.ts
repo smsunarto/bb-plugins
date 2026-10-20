@@ -206,8 +206,10 @@ test("Stop after the apply journal preserves a successful receipt", async () => 
   await writeFile(join(f.worktree, "large.txt"), "big patch contents\n".repeat(700000));
   await f.arena.prepare(f.input, f.signal);
   const controller = new AbortController();
+  // The journal is written to a temporary file and renamed into place. Bun's
+  // fs.watch on Linux reports only the temporary name, so match its prefix.
   const watcher = watch(f.state, (_event, filename) => {
-    if (filename === `${f.runId}-1.json`) controller.abort();
+    if (filename?.startsWith(`${f.runId}-1.json`)) controller.abort();
   });
   try {
     const result = await f.arena.integrate(
