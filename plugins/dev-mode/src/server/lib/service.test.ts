@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import { createFakePluginHost, makeThreadResponse } from "@get-bb/plugin-sdk/testing";
 import { ArenaService, type Rewrites } from "./service.ts";
+import plugin from "../server.ts";
 import { ArenaDigests } from "./digests.ts";
 import { hostContract } from "../../shared/host-contract.ts";
 import type { Integration, Job, Report } from "../../shared/arena.ts";
@@ -1121,4 +1122,53 @@ test("fatal failure waits for a retired worker and its idle event finishes the d
   assert.equal(f.service.get(run.id).phase, "failed");
   assert.equal(f.service.get(run.id).jobs[0]?.stopConfirmed, true);
   assert.equal(f.parent.status, "active");
+});
+
+test("canonical and legacy Arena tools share SDK schemas and authorization on an existing run", async () => {
+  const f = await fixture();
+  const started = await f.start();
+  await f.candidates(started.id);
+  const run = await f.finish(started.id, "judge", judge);
+  const worker = run.jobs.find((job) => job.role === "synthesis");
+  assert.ok(worker?.threadId);
+  f.threads.set("stranger", makeThreadResponse({ id: "stranger", projectId: "project" }));
+  const otherRun = await f.start("other-request");
+  const otherWorker = otherRun.jobs.find((job) => job.role === "frame");
+  assert.ok(otherWorker?.threadId);
+  await plugin(f.f.bb);
+  const { harness } = f.f;
+  const records = harness.inspection.registrations.agentTools;
+  for (const operation of ["context", "prepare", "report"]) {
+    const canonical = records.find(({ name }) => name === `dev_mode_arena_${operation}`);
+    const alias = records.find(({ name }) => name === `scott_engineering_arena_${operation}`);
+    assert.ok(canonical && alias);
+    assert.deepEqual(alias.inputSchema, canonical.inputSchema);
+    assert.equal(alias.description, canonical.description);
+    assert.equal(alias.instructions, null);
+    const input = operation === "report" ? { runId: run.id, report: synthesis } : { runId: run.id };
+    for (const name of [canonical.name, alias.name]) {
+      await assert.rejects(
+        harness.behavior.callAgentTool(name, input, { threadId: "stranger" }),
+        /This thread does not own the Arena run/,
+      );
+      await assert.rejects(
+        harness.behavior.callAgentTool(name, input, { threadId: otherWorker.threadId }),
+        /This thread has no reserved Arena assignment/,
+      );
+      const result = JSON.parse(
+        (await harness.behavior.callAgentTool(name, input, {
+          threadId: worker.threadId,
+        })) as string,
+      );
+      if (operation === "context") {
+        assert.equal(result.task, run.task);
+        assert.equal(result.base, run.base);
+      } else if (operation === "prepare") {
+        assert.equal(result.preparation.status, "prepared");
+        assert.deepEqual(result.verification, frame.verification);
+      } else {
+        assert.deepEqual(result, { accepted: true });
+      }
+    }
+  }
 });

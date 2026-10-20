@@ -146,6 +146,44 @@ test("definePlugin rejects invalid ids, RPC keys, command keys, and tool keys", 
   );
 });
 
+test("definePlugin rejects an invalid public name and invalid tool aliases", () => {
+  for (const publicName of ["", "Demo NS", "bad.name", null, 123, false]) {
+    assert.throws(
+      () => definePlugin({ pluginId: "demo", publicName: publicName as never, rpc: {} }),
+      /invalid public name/,
+    );
+  }
+  assert.throws(() => definePlugin({ pluginId: true as never, rpc: {} }), /invalid plugin id/);
+  assert.throws(
+    () =>
+      definePlugin({
+        pluginId: "demo",
+        rpc: {},
+        agents: { files, tools: { greet }, aliases: { "bad.name": "greet" } },
+      }),
+    /invalid tool alias "bad.name"/,
+  );
+  assert.throws(
+    () =>
+      definePlugin({
+        pluginId: "demo",
+        rpc: {},
+        // @ts-expect-error -- an alias must target an agents.tools key.
+        agents: { files, tools: { greet }, aliases: { old_missing: "missing" } },
+      }),
+    /tool alias "old_missing" targets "missing", which is not an agents.tools key/,
+  );
+  assert.throws(
+    () =>
+      definePlugin({
+        pluginId: "demo",
+        rpc: {},
+        agents: { files, tools: { greet }, aliases: { demo_greet: "greet" } },
+      }),
+    /tool alias "demo_greet" collides with a tool of the same name/,
+  );
+});
+
 test("a handler demanding a service the plugin does not provide is a type error", () => {
   // @ts-expect-error -- `bump` needs ctx.counter and there are no services.
   definePlugin({ pluginId: "demo", rpc: { bump } });
@@ -354,6 +392,152 @@ test("tools register under the plugin-prefixed name and get the tool context", a
   assert.equal(
     await harness.callAgentTool("demo_ns_greet", { name: "ada" }, { threadId: "thr_1" }),
     "hello ada from thr_1",
+  );
+});
+
+test("publicName names the CLI and tools while reporters keep the plugin id", async () => {
+  const reporterIds: string[] = [];
+  const host = createFakePluginHost({ pluginId: "demo" });
+  await definePlugin({
+    pluginId: "demo",
+    publicName: "demo-ns",
+    rpc: { ping },
+    command: { status },
+    agents: { files, tools: { greet } },
+    errorReporter: ({ pluginId }) => {
+      reporterIds.push(pluginId);
+      return undefined;
+    },
+    performanceReporter: ({ pluginId }) => {
+      reporterIds.push(pluginId);
+      return undefined;
+    },
+    setup(ctx) {
+      assert.equal(ctx.bb.pluginId, "demo");
+    },
+  })(host.bb);
+  const { cli, agentTools } = host.harness.inspection.registrations;
+  assert.equal(cli?.name, "demo-ns");
+  assert.equal(cli?.summary, "CLI for the demo-ns plugin");
+  assert.deepEqual(
+    agentTools.map((tool) => tool.name),
+    ["demo_ns_greet"],
+  );
+  assert.equal(agentTools[0]?.description, "Greet someone");
+  assert.deepEqual(reporterIds, ["demo", "demo"]);
+  assert.deepEqual(await host.harness.callRpc("ping"), { pong: true });
+  assert.match((await host.harness.runCli(["status"])).stdout, /pong=true/);
+
+  const unnamed = await load(definePlugin({ pluginId: "demo", rpc: {} }));
+  assert.equal(unnamed.harness.inspection.registrations.cli?.name, "demo");
+});
+
+test("aliases share SDK input schemas, defaults, presentation, text, execution, and tracing", async () => {
+  const boom = new Error("tool failed");
+  const calls: unknown[] = [];
+  const described = pluginFiles({
+    demo_greet: "Greet using the shared schema.",
+    "demo_greet.instructions": "Use this tool for greetings.",
+  });
+  const { failures, reporter: errors } = recordingReporter();
+  const { traces, reporter: performance } = recordingTraces();
+  const tool = defineTool({
+    parameters: z.object({ name: z.string(), offset: z.number().default(0) }).strict(),
+    presentation: { icon: { glyph: "Workflow" }, suppress: true },
+    execute(ctx, input) {
+      assert.equal(Object.isFrozen(ctx), true);
+      calls.push(input);
+      if (input.name === "fail") throw boom;
+      if (ctx.tool.signal.aborted) throw ctx.tool.signal.reason;
+      return `${input.name}:${input.offset}`;
+    },
+  });
+  const { harness } = await load(
+    definePlugin({
+      pluginId: "demo",
+      rpc: {},
+      errorReporter: () => errors,
+      performanceReporter: () => performance,
+      agents: { files: described, tools: { greet: tool }, aliases: { old_greet: "greet" } },
+    }),
+  );
+  try {
+    const [canonical, alias] = harness.inspection.registrations.agentTools;
+    assert.ok(canonical && alias);
+    assert.deepEqual(alias.inputSchema, canonical.inputSchema);
+    assert.deepEqual((canonical.inputSchema as { required: string[] }).required, ["name"]);
+    assert.deepEqual(alias.presentation, canonical.presentation);
+    assert.equal(alias.description, canonical.description);
+    assert.equal(alias.instructions, null);
+    assert.ok(canonical.presentation);
+    assert.equal(canonical.instructions, "Use this tool for greetings.");
+    for (const name of ["demo_greet", "old_greet"]) {
+      assert.equal(await harness.callAgentTool(name, { name: "ada" }), "ada:0");
+      assert.equal(await harness.callAgentTool(name, { name: "ada", offset: 2 }), "ada:2");
+      await assert.rejects(harness.callAgentTool(name, { name: "ada", offset: "bad" }));
+      await assert.rejects(harness.callAgentTool(name, { name: "fail" }), /tool failed/);
+      const controller = new AbortController();
+      controller.abort(new DOMException("cancelled", "AbortError"));
+      await assert.rejects(
+        harness.callAgentTool(name, { name: "ada" }, { signal: controller.signal }),
+      );
+    }
+    assert.deepEqual(calls.slice(0, 2), [
+      { name: "ada", offset: 0 },
+      { name: "ada", offset: 2 },
+    ]);
+    assert.deepEqual(
+      failures,
+      ["demo_greet", "old_greet"].map((operation) => ({
+        boundary: "agent.tool",
+        operation,
+        error: boom,
+      })),
+    );
+    assert.deepEqual(
+      traces
+        .filter(({ operation }) => operation !== "plugin.startup")
+        .map(({ operation, outcome }) => [operation, outcome]),
+      ["ok", "ok", "error", "cancelled", "ok", "ok", "error", "cancelled"].map((outcome) => [
+        "tool.greet",
+        outcome,
+      ]),
+    );
+  } finally {
+    await harness.lifecycle.dispose();
+  }
+});
+
+test("an alias follows its tool's gate in the synthesized configure", async () => {
+  const gated = defineTool({
+    parameters: z.object({}),
+    enabled: (_ctx, session) => session.project.id === "p",
+    execute: () => "ok",
+  });
+  const host = createFakePluginHost({ pluginId: "demo" });
+  await definePlugin({
+    pluginId: "demo",
+    rpc: {},
+    agents: {
+      files,
+      tools: { greet, gated },
+      aliases: { old_gated: "gated", old_greet: "greet" },
+      skills: [],
+    },
+  })(host.bb);
+  const inProject = await host.harness.resolveAgentConfiguration(
+    makePluginAgentConfigurationContext({ project: { id: "p" } }),
+  );
+  assert.deepEqual(
+    inProject.tools.map((tool) => tool.name),
+    ["demo_greet", "demo_gated", "old_gated", "old_greet"],
+  );
+  const elsewhere = await host.harness.resolveAgentConfiguration(
+    makePluginAgentConfigurationContext({ project: { id: "q" } }),
+  );
+  assert.deepEqual(
+    elsewhere.tools.map((tool) => tool.name),
+    ["demo_greet", "old_greet"],
   );
 });
 

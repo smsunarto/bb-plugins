@@ -6,6 +6,8 @@ import {
   PLUGIN_ID_PATTERN,
   RESERVED_COMMAND_KEYS,
   TOOL_KEY_PATTERN,
+  toolRegistrations,
+  type ToolRegistration,
   toolName,
 } from "../names/names.ts";
 import type { RPCContext, RPCProcedures, RuntimeProcedure, StandardSchemaV1 } from "../rpc/rpc.ts";
@@ -77,6 +79,12 @@ type Reporters = {
  * default-exports. The returned factory also carries the RPC map as
  * `.rpc`, so app/ can type-only import it.
  *
+ * Identity: `pluginId` is the id bb derives from package.json `name`, the
+ * one routes, storage, settings, and reporters key on. `publicName` is
+ * what users and agents type: the `bb <publicName>` CLI and the
+ * `<public_name>_<key>` tool names. It defaults to `pluginId`; set it only
+ * when a plugin is renamed but must keep its stored identity.
+ *
  * Load order: services → RPC → CLI → agents → setup. `services(bb)`
  * runs once per load. A service that holds resources registers its own
  * cleanup with `bb.onDispose`.
@@ -96,6 +104,8 @@ export function definePlugin<
 >(
   definition: {
     pluginId: string;
+    /** The CLI name and tool-name prefix. Defaults to `pluginId`. */
+    publicName?: string;
     /**
      * Build the plugin's long-lived collaborators once per load. Keep it
      * synchronous and free of host and SDK calls: it runs before bb
@@ -116,6 +126,14 @@ export function definePlugin<
        */
       files: InstructionFiles;
       tools: T;
+      /**
+       * Extra complete names for existing tools, `{ old_name: "key" }`,
+       * for callers that still hold a retired name. An alias shares its
+       * tool's parameters, description, presentation, `enabled` gate,
+       * tracing, and error reporting. Its tool's thread snippet stays on
+       * the canonical name, so a session holding both reads it once.
+       */
+      aliases?: Readonly<Record<string, keyof NoInfer<T> & string>>;
       skills?: string[] | ((ctx: Context<S>, session: Session) => string[]);
       instructions?(
         ctx: Context<S>,
@@ -132,8 +150,12 @@ export function definePlugin<
   } & RequireServices<NoInfer<R>, NoInfer<M>, NoInfer<T>>,
 ): DefinedPlugin<R> {
   const { pluginId, rpc } = definition;
-  if (!PLUGIN_ID_PATTERN.test(pluginId)) {
+  if (typeof pluginId !== "string" || !PLUGIN_ID_PATTERN.test(pluginId)) {
     throw new Error(`invalid plugin id "${pluginId}": must match ${PLUGIN_ID_PATTERN}`);
+  }
+  const publicName = definition.publicName === undefined ? pluginId : definition.publicName;
+  if (typeof publicName !== "string" || !PLUGIN_ID_PATTERN.test(publicName)) {
+    throw new Error(`invalid public name "${publicName}": must match ${PLUGIN_ID_PATTERN}`);
   }
   assertRPCKeys(rpc);
   const commands = definition.command ?? {};
@@ -148,6 +170,11 @@ export function definePlugin<
       throw new Error(`invalid tool key "${key}": must match ${TOOL_KEY_PATTERN}`);
     }
   }
+  const registrations = toolRegistrations(
+    publicName,
+    Object.keys(tools),
+    definition.agents?.aliases,
+  );
 
   const factory = async (bb: BbPluginApi): Promise<void> => {
     const reporters: Reporters = {
@@ -183,8 +210,8 @@ export function definePlugin<
       registerRPC(bb, ctx, rpc, definition.rpcPublication, reporters);
       bb.cli.register(
         defineCli({
-          name: pluginId,
-          summary: `CLI for the ${pluginId} plugin`,
+          name: publicName,
+          summary: `CLI for the ${publicName} plugin`,
           commands: {
             ...cliCommands(ctx, commands, reporters.errors),
             ...rpcCommands(ctx, rpc, reporters.errors),
@@ -192,7 +219,7 @@ export function definePlugin<
         }),
       );
       if (definition.agents) {
-        registerAgents(bb, ctx, pluginId, tools, definition.agents, reporters);
+        registerAgents(bb, ctx, publicName, tools, registrations, definition.agents, reporters);
       }
       startupTrace?.checkpoint("registered");
     } catch (error) {
@@ -349,8 +376,9 @@ function rpcCommands(
 function registerAgents(
   bb: BbPluginApi,
   ctx: Context,
-  pluginId: string,
+  publicName: string,
   tools: Record<string, RuntimeTool>,
+  registrations: ToolRegistration[],
   agents: {
     files: InstructionFiles;
     skills?: string[] | ((ctx: never, session: Session) => string[]);
@@ -359,12 +387,13 @@ function registerAgents(
   reporters: Reporters,
 ): void {
   const keys = Object.keys(tools);
-  for (const [key, tool] of Object.entries(tools)) {
-    const operation = toolName(pluginId, key);
+  for (const { name, key, alias } of registrations) {
+    const tool = tools[key] as RuntimeTool;
+    const text = agents.files.tool(toolName(publicName, key));
     const traceOperation = toolTraceOperation(key);
     bb.agents.registerTool({
-      name: operation,
-      ...agents.files.tool(operation),
+      name,
+      ...(alias ? { description: text.description } : text),
       ...(tool.presentation === undefined ? {} : { presentation: tool.presentation }),
       // A zod object schema at runtime. The SDK's overloads name zod's
       // types, which bb-kit does not import.
@@ -382,7 +411,12 @@ function registerAgents(
               return;
             }
             trace?.finish("error");
-            capturePluginFailure(reporters.errors, { boundary: "agent.tool", operation, error });
+            // The called name, so a report shows whether a retired alias still has callers.
+            capturePluginFailure(reporters.errors, {
+              boundary: "agent.tool",
+              operation: name,
+              error,
+            });
           },
         );
       },
@@ -398,12 +432,17 @@ function registerAgents(
   if (gated || skills !== undefined) {
     bb.agents.configure((session) =>
       observePluginFailure(
-        () => ({
-          tools: keys
-            .filter((key) => tools[key]?.enabled?.(ctx, session) ?? true)
-            .map((key) => toolName(pluginId, key)),
-          skills: skills === undefined ? [] : Array.isArray(skills) ? skills : skills(ctx, session),
-        }),
+        () => {
+          const enabled = new Set(
+            keys.filter((key) => tools[key]?.enabled?.(ctx, session) ?? true),
+          );
+          return {
+            // An alias follows its tool's gate.
+            tools: registrations.filter(({ key }) => enabled.has(key)).map(({ name }) => name),
+            skills:
+              skills === undefined ? [] : Array.isArray(skills) ? skills : skills(ctx, session),
+          };
+        },
         (error) => {
           capturePluginFailure(reporters.errors, { boundary: "agent.configure", error });
         },

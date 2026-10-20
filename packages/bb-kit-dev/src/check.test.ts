@@ -215,6 +215,61 @@ test("a definePlugin id that is not the derived plugin id fails rule 2", async (
   assert.match(result.stderr, /plugin id "other" must equal derivePluginID.* = "notes" — rule 2/);
 });
 
+test("a publicName renames the CLI and tools while rule 2 still pins pluginId", async () => {
+  const root = makeFixture();
+  addToolUnit(root, "beacon", { pluginId: "field-notes" });
+  wireAgents(root, "beacon", "{ tools: { beacon } }");
+  edit(
+    root,
+    "src/server/server.ts",
+    'pluginId: "notes",',
+    'pluginId: "notes",\n  publicName: "field-notes",',
+  );
+  const passing = await runCheck({ cwd: root });
+  assert.equal(passing.stderr, "");
+  assert.equal(passing.exitCode, 0);
+  assert.match(passing.stdout, /Tool names:\n {2}field_notes_beacon\n/);
+
+  edit(root, "src/server/server.ts", 'pluginId: "notes",', 'pluginId: "field-notes",');
+  const renamedId = await runCheck({ cwd: root });
+  assert.equal(renamedId.exitCode, 1);
+  assert.match(
+    renamedId.stderr,
+    /plugin id "field-notes" must equal derivePluginID.* = "notes" — rule 2/,
+  );
+});
+
+test("a publicName check cannot read or bb would reject fails rule 2", async () => {
+  for (const [value, message] of [
+    ["NAME", /publicName must be a string literal for check to verify it — rule 2/],
+    ['"Field Notes"', /publicName "Field Notes" must match .* — rule 2/],
+  ] as const) {
+    const root = makeFixture();
+    edit(
+      root,
+      "src/server/server.ts",
+      'pluginId: "notes",',
+      `pluginId: "notes",\n  publicName: ${value},`,
+    );
+    const result = await runCheck({ cwd: root });
+    assert.equal(result.exitCode, 1);
+    assert.match(result.stderr, message);
+  }
+});
+
+test("a reserved publicName fails rule 5 as the CLI name", async () => {
+  const root = makeFixture();
+  edit(
+    root,
+    "src/server/server.ts",
+    'pluginId: "notes",',
+    'pluginId: "notes",\n  publicName: "status",',
+  );
+  const result = await runCheck({ cwd: root });
+  assert.equal(result.exitCode, 1);
+  assert.match(result.stderr, /plugin CLI name "status" is reserved by bb — rule 5/);
+});
+
 test("a manifest path that does not exist fails rule 4", async () => {
   const root = makeFixture();
   edit(
@@ -488,6 +543,47 @@ test("tool text that no tool reads, or a snippet the host would reject, fails ru
   assert.match(result.stderr, /instructions\/tools\/notes\.txt is not a tool description/);
 });
 
+test("tool aliases pass and print beside the canonical name they reach", async () => {
+  const root = makeFixture();
+  addToolUnit(root, "beacon");
+  wireAgents(root, "beacon", '{ tools: { beacon }, aliases: { old_beacon: "beacon" } }');
+  const result = await runCheck({ cwd: root });
+  assert.equal(result.stderr, "");
+  assert.equal(result.exitCode, 0);
+  assert.match(result.stdout, /Tool aliases:\n {2}old_beacon → notes_beacon\n/);
+});
+
+test("an alias check cannot read, or one definePlugin would reject, fails rule 3", async () => {
+  const root = makeFixture();
+  addToolUnit(root, "beacon");
+  wireAgents(
+    root,
+    "beacon",
+    '{ tools: { beacon }, aliases: { old_gone: "gone", notes_beacon: "beacon", "bad.name": "beacon", old_dynamic: KEY } }',
+  );
+  writeFileSync(join(root, "instructions", "tools", "old_beacon.md"), "alias text\n");
+  const result = await runCheck({ cwd: root });
+  assert.equal(result.exitCode, 1);
+  assert.match(
+    result.stderr,
+    /tool alias "old_gone" targets "gone", which is not an agents\.tools key — rule 3/,
+  );
+  assert.match(
+    result.stderr,
+    /tool alias "notes_beacon" collides with a tool of the same name — rule 3/,
+  );
+  assert.match(result.stderr, /invalid tool alias "bad\.name": must match .* — rule 3/);
+  assert.match(
+    result.stderr,
+    /an agents\.aliases entry must map a literal tool name to a literal agents\.tools key — rule 3/,
+  );
+  // An alias reads its tool's text; a file of its own is never read.
+  assert.match(
+    result.stderr,
+    /instructions\/tools\/old_beacon\.md describes no registered tool — rule 9/,
+  );
+});
+
 test("an agents.tools key that is not the underscored basename fails rule 1", async () => {
   const root = makeFixture();
   addToolUnit(root, "two-word");
@@ -657,3 +753,54 @@ test("an agent tool name outside the host pattern fails rule 7", async () => {
     /agent tool name "no\.tes_beacon" does not match the host's .* — rule 7/,
   );
 });
+
+for (const [declaration, expected] of [
+  ['{ old_beacon: "beacon", old_beacon: "beacon" }', /duplicate tool alias/],
+  ["{ ...aliases }", /literal tool name to a literal agents\.tools key/],
+  ["dynamicAliases", /aliases.*object literal/],
+] as const) {
+  test(`check rejects unverified tool aliases ${declaration}`, async () => {
+    const root = makeFixture();
+    addToolUnit(root, "beacon");
+    wireAgents(root, "beacon", `{ tools: { beacon }, aliases: ${declaration} }`);
+    const result = await runCheck({ cwd: root });
+    assert.equal(result.exitCode, 1);
+    assert.match(result.stderr, expected);
+  });
+}
+
+test("invalid aliases retain source locations and do not hide canonical host-policy errors", async () => {
+  const root = makeFixture();
+  addToolUnit(root, "beacon");
+  wireAgents(
+    root,
+    "beacon",
+    '{ tools: { beacon }, aliases: { old_gone: "gone", "bad.name": "beacon" } }',
+  );
+  edit(root, "src/server/server.ts", 'pluginId: "notes",', 'pluginId: "no.tes",');
+  const result = await runCheck({ cwd: root });
+  assert.equal(result.exitCode, 1);
+  assert.match(result.stderr, /server\.ts:\d+ — tool alias "old_gone" targets/);
+  assert.match(result.stderr, /server\.ts:\d+ — invalid tool alias "bad\.name"/);
+  assert.match(
+    result.stderr,
+    /agent tool name "no\.tes_beacon" does not match the host's .* — rule 7/,
+  );
+});
+
+test(
+  "an alias reserved by the installed host fails rule 7",
+  { skip: !reservedAgentToolNames?.length },
+  async () => {
+    const root = makeFixture();
+    addToolUnit(root, "beacon");
+    const name = reservedAgentToolNames![0]!;
+    wireAgents(root, "beacon", `{ tools: { beacon }, aliases: { "${name}": "beacon" } }`);
+    const result = await runCheck({ cwd: root });
+    assert.equal(result.exitCode, 1);
+    assert.ok(
+      result.stderr.includes(`agent tool name "${name}" is reserved by bb — rule 7`),
+      result.stderr,
+    );
+  },
+);

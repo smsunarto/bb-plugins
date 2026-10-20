@@ -1,8 +1,18 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
+import { execFileSync } from "node:child_process";
+import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { runAdd } from "./add.ts";
 
 function pluginRoot(
@@ -11,6 +21,12 @@ function pluginRoot(
 ): string {
   const cwd = mkdtempSync(join(tmpdir(), "bb-kit-add-"));
   writeFileSync(join(cwd, "package.json"), `${JSON.stringify({ name, bb })}\n`);
+  mkdirSync(join(cwd, "node_modules"));
+  symlinkSync(
+    dirname(createRequire(import.meta.url).resolve("typescript/package.json")),
+    join(cwd, "node_modules/typescript"),
+    "dir",
+  );
   return cwd;
 }
 
@@ -129,4 +145,90 @@ test("add tool pins the underscored key when the name is hyphenated", () => {
   assert.match(result.stdout, /\n {2}two_word: twoWord,\n/);
   assert.match(result.stdout, /must stay "two_word"/);
   assert.match(result.stdout, /name: notes_two_word/);
+});
+
+for (const [label, source] of [
+  [
+    "inline",
+    'export default definePlugin({ pluginId: "notes", publicName: "field-notes", rpc: {} });',
+  ],
+  [
+    "named definition",
+    'import { definePlugin as plugin } from "@bb-kit/core/plugin"; const config = { pluginId: "notes", publicName: "field-notes", rpc: {} }; const entry = plugin(config); export default entry;',
+  ],
+] as const) {
+  test(`add tool uses the ${label} public name for its contract and instruction file`, () => {
+    const cwd = pluginRoot();
+    mkdirSync(join(cwd, "src/server"), { recursive: true });
+    writeFileSync(join(cwd, "src/server/server.ts"), source);
+    const result = runAdd("tool", "beacon", { cwd });
+    assert.equal(result.exitCode, 0, result.stderr);
+    assert.match(result.stdout, /name: field_notes_beacon/);
+    assert.ok(existsSync(join(cwd, "instructions/tools/field_notes_beacon.md")));
+    assert.ok(!existsSync(join(cwd, "instructions/tools/notes_beacon.md")));
+    assert.equal(readFileSync(join(cwd, "src/server/server.ts"), "utf8"), source);
+  });
+}
+
+test("add tool refuses an unreadable public name before writing files", () => {
+  const cwd = pluginRoot();
+  mkdirSync(join(cwd, "src/server"), { recursive: true });
+  writeFileSync(
+    join(cwd, "src/server/server.ts"),
+    'export default definePlugin({ pluginId: "notes", publicName: NAME, rpc: {} });',
+  );
+  const result = runAdd("tool", "beacon", { cwd });
+  assert.equal(result.exitCode, 1);
+  assert.match(result.stderr, /publicName must be a valid string literal/);
+  assert.ok(!existsSync(join(cwd, "src/server/tools/beacon.ts")));
+  assert.ok(!existsSync(join(cwd, "instructions/tools/notes_beacon.md")));
+});
+
+test("an isolated CLI reads TypeScript from the target plugin for renamed and ordinary tools", () => {
+  const cliRoot = mkdtempSync(join(tmpdir(), "bb-kit-cli-"));
+  const cli = join(cliRoot, "bb-kit.mjs");
+  assert.throws(() => createRequire(cli).resolve("typescript"));
+  execFileSync(
+    "bun",
+    [
+      "build",
+      fileURLToPath(new URL("./bin.ts", import.meta.url)),
+      "--target=node",
+      "--outfile",
+      cli,
+    ],
+    { stdio: "pipe" },
+  );
+  for (const publicName of [undefined, "field-notes"]) {
+    const cwd = pluginRoot();
+    mkdirSync(join(cwd, "src/server"), { recursive: true });
+    writeFileSync(
+      join(cwd, "src/server/server.ts"),
+      `export default definePlugin({ pluginId: "notes", ${publicName ? `publicName: "${publicName}",` : ""} rpc: {} });`,
+    );
+    const stdout = execFileSync("node", [cli, "add", "tool", "beacon"], { cwd, encoding: "utf8" });
+    const name = `${(publicName ?? "notes").replaceAll("-", "_")}_beacon`;
+    assert.ok(stdout.includes(`name: ${name}`));
+    assert.ok(existsSync(join(cwd, `instructions/tools/${name}.md`)));
+  }
+});
+
+test("add tool explains missing plugin TypeScript before generating files", () => {
+  const cwd = mkdtempSync(join(tmpdir(), "bb-kit-add-no-compiler-"));
+  writeFileSync(
+    join(cwd, "package.json"),
+    JSON.stringify({ name: "bb-plugin-notes", bb: { server: "./src/server/server.ts" } }),
+  );
+  mkdirSync(join(cwd, "src/server"), { recursive: true });
+  writeFileSync(
+    join(cwd, "src/server/server.ts"),
+    'export default definePlugin({ pluginId: "notes", rpc: {} });',
+  );
+  const result = runAdd("tool", "beacon", { cwd });
+  assert.equal(result.exitCode, 1);
+  assert.match(
+    result.stderr,
+    /could not resolve TypeScript from the plugin.*install devDependencies first/,
+  );
+  assert.ok(!existsSync(join(cwd, "src/server/tools/beacon.ts")));
 });

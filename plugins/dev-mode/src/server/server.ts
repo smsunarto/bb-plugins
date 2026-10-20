@@ -1,5 +1,4 @@
 import { definePlugin } from "@bb-kit/core/plugin";
-import { z } from "zod";
 import { start } from "./command/start.ts";
 import { status } from "./command/status.ts";
 import { stop } from "./command/stop.ts";
@@ -21,7 +20,9 @@ import { ReviewService } from "./lib/review-service.ts";
 import { principle } from "./command/principle.ts";
 
 export default definePlugin({
-  pluginId: "dev-mode",
+  // The stored identity predates the rename; users and agents see Dev Mode.
+  pluginId: "scott-engineering",
+  publicName: "dev-mode",
   rpc: {},
   command: {
     start,
@@ -43,6 +44,13 @@ export default definePlugin({
       arena_prepare: arenaPrepare,
       review_start: reviewStartTool,
       review_context: reviewContextTool,
+    },
+    // Pre-rename workers still call these. README "Legacy tool names" says when to remove them.
+    aliases: {
+      scott_engineering_arena_context: "arena_context",
+      scott_engineering_arena_report: "arena_report",
+      scott_engineering_arena_prepare: "arena_prepare",
+      scott_engineering_review_context: "review_context",
     },
   },
   services(bb) {
@@ -72,35 +80,6 @@ export default definePlugin({
   setup(ctx) {
     const { bb, arena, digests } = ctx;
     // No enabled predicates or agents.skills: bb-kit does not synthesize another configure.
-    // In-flight workers still carry pre-rename tool names in their provider context.
-    bb.agents.registerTool({
-      name: "scott_engineering_arena_context",
-      ...files.tool("dev_mode_arena_context"),
-      parameters: z.toJSONSchema(arenaContext.parameters),
-      execute: (input, tool) =>
-        arenaContext.execute({ ...ctx, tool }, arenaContext.parameters.parse(input)),
-    });
-    bb.agents.registerTool({
-      name: "scott_engineering_arena_report",
-      ...files.tool("dev_mode_arena_report"),
-      parameters: z.toJSONSchema(arenaReport.parameters),
-      execute: (input, tool) =>
-        arenaReport.execute({ ...ctx, tool }, arenaReport.parameters.parse(input)),
-    });
-    bb.agents.registerTool({
-      name: "scott_engineering_arena_prepare",
-      ...files.tool("dev_mode_arena_prepare"),
-      parameters: z.toJSONSchema(arenaPrepare.parameters),
-      execute: (input, tool) =>
-        arenaPrepare.execute({ ...ctx, tool }, arenaPrepare.parameters.parse(input)),
-    });
-    bb.agents.registerTool({
-      name: "scott_engineering_review_context",
-      ...files.tool("dev_mode_review_context"),
-      parameters: z.toJSONSchema(reviewContextTool.parameters),
-      execute: (input, tool) =>
-        reviewContextTool.execute({ ...ctx, tool }, reviewContextTool.parameters.parse(input)),
-    });
     bb.agents.configure(configuration);
     bb.onDispose(() => arena.dispose());
     bb.rpc.register(rpcContract, {

@@ -208,7 +208,7 @@ test("designs need no source target and use the same independent reviewers", asy
   ).rejects.toThrow("no repository target");
 });
 
-test("CLI points to native BB output and reviewers can read their pinned context", async () => {
+test("canonical and legacy review tools publish input defaults and enforce the existing review boundary", async () => {
   const f = fixture();
   await plugin(f.bb);
   try {
@@ -218,13 +218,40 @@ test("CLI points to native BB output and reviewers can read their pinned context
     );
     expect(started.exitCode).toBe(0);
     expect(started.stdout).toContain("bb thread output reviewer-1");
-    for (const name of ["dev_mode_review_context", "scott_engineering_review_context"]) {
+    const tools = f.harness.inspection.registrations.agentTools;
+    const canonical = tools.find(({ name }) => name === "dev_mode_review_context")!;
+    const alias = tools.find(({ name }) => name === "scott_engineering_review_context")!;
+    expect(alias.inputSchema).toEqual(canonical.inputSchema);
+    expect(canonical.inputSchema).toMatchObject({
+      required: ["section"],
+      properties: { side: { default: "head" }, offset: { default: 0 } },
+    });
+    for (const name of [canonical.name, alias.name]) {
       const context = await f.harness.behavior.callAgentTool(
         name,
         { section: "diff" },
         { threadId: "reviewer-1" },
       );
       expect(JSON.stringify(context)).toContain("pinned source");
+      expect(f.hostCalls.at(-1)).toEqual({
+        method: "reviewRead",
+        input: { target: pinned, section: "diff", side: "head", offset: 0 },
+      });
+      await f.harness.behavior.callAgentTool(
+        name,
+        { section: "diff", side: "base", offset: 9 },
+        { threadId: "reviewer-1" },
+      );
+      expect(f.hostCalls.at(-1)!.input).toMatchObject({ side: "base", offset: 9 });
+      for (const caller of ["stranger", "reviewer-2"]) {
+        await expect(
+          f.harness.behavior.callAgentTool(
+            name,
+            { threadId: "reviewer-1", section: "diff" },
+            { threadId: caller },
+          ),
+        ).rejects.toThrow("Only the reviewer and its parent");
+      }
     }
   } finally {
     await f.harness.lifecycle.dispose();

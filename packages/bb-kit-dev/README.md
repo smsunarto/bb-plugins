@@ -15,6 +15,14 @@ npm test
 | `bb-kit add query\|mutation\|command\|tool <name>` | Write one unit and its test, print the wiring lines |
 | `bb-kit check`                                     | Verify file names, keys, and wiring match           |
 
+`check` always verifies `pluginId` against the package-derived identity. An
+optional literal `publicName` controls CLI/tool naming and tool instruction
+filenames. Literal `agents.aliases` map full compatibility names to tool
+keys; the checker validates targets, collisions, and host name policy while
+requiring instruction files only for canonical names.
+`add tool` reads that same literal `publicName` when generating the tool name
+and instruction file, without executing the plugin.
+
 ## Build, watch, and test
 
 Use BB's own plugin commands for the live development loop:

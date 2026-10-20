@@ -72,6 +72,34 @@ Every RPC is also callable from the terminal:
 `bb <plugin> rpc <method> ['{"json":"object"}']` validates the input
 in-process and prints the result as JSON.
 
+## Renaming a plugin
+
+`pluginId` stays the id bb derives from package.json `name`; storage,
+settings, routes, and reporters key on it. To give users a new name
+without moving that data, set `publicName`. It becomes the `bb <name>`
+CLI and the tool prefix (`dev-mode` → `dev_mode_<key>`), and tool
+descriptions are read from `instructions/tools/<new name>.md`.
+
+Callers that still hold a retired tool name can reach the same tool
+through `agents.aliases`:
+
+```ts
+export default definePlugin({
+  pluginId: "scott-engineering",
+  publicName: "dev-mode",
+  rpc: {},
+  agents: {
+    files,
+    tools: { arena_context: arenaContext },
+    aliases: { scott_engineering_arena_context: "arena_context" },
+  },
+});
+```
+
+An alias registers the tool again under the old name, with the same
+parameters, description, presentation, gate, tracing, and error
+reporting. The tool's thread snippet stays on the canonical name.
+
 ## Getting started
 
 Scaffolding, `add`, `check`, and isolated bb dev instances live in

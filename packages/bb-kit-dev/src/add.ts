@@ -1,10 +1,19 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { createRequire } from "node:module";
 import { join } from "node:path";
+import type * as TS from "typescript";
 import type { BinResult } from "./shared.ts";
-import { camelName, toolDescriptionFile, toolName, unitKey } from "@bb-kit/core/names";
+import {
+  PLUGIN_ID_PATTERN,
+  camelName,
+  toolDescriptionFile,
+  toolName,
+  unitKey,
+} from "@bb-kit/core/names";
 import { UNIT_NAME_PATTERN, relativeImport } from "./shared.ts";
 import { defaultLayout, parseLayout, unitDir, unitFile, type SrcLayout } from "./layout.ts";
 import { derivePluginID } from "./derive-plugin-id.ts";
+import { compositionSyntax } from "./composition.ts";
 
 /**
  * `bb-kit add <query|mutation|command|tool> <name>` (§8): write one unit file
@@ -18,6 +27,48 @@ export type AddOptions = { cwd: string };
 
 const ADD_KINDS = ["query", "mutation", "command", "tool"] as const;
 export type AddKind = (typeof ADD_KINDS)[number];
+
+/** Read naming without importing the plugin or running its factory. */
+function toolNamespace({
+  serverPath,
+  packageJsonPath,
+  storedId,
+}: {
+  serverPath: string;
+  packageJsonPath: string;
+  storedId: string;
+}): string {
+  if (!existsSync(serverPath)) return storedId;
+  let ts: typeof TS;
+  try {
+    ts = createRequire(packageJsonPath)("typescript");
+  } catch {
+    throw new Error("could not resolve TypeScript from the plugin — install devDependencies first");
+  }
+  const source = ts.createSourceFile(
+    serverPath,
+    readFileSync(serverPath, "utf8"),
+    ts.ScriptTarget.Latest,
+    true,
+  );
+  const { resolveCall, resolveObjectLiteral, getProperty, propertyValue, stringText, unwrap } =
+    compositionSyntax(ts, source);
+  const exported = source.statements.find(ts.isExportAssignment);
+  const call = resolveCall(exported?.expression, "definePlugin");
+  const definition = call ? resolveObjectLiteral(call.arguments[0]) : undefined;
+  if (!definition) {
+    throw new Error("cannot read definePlugin naming; run bb-kit check before adding a tool");
+  }
+  const property = getProperty(definition, "publicName");
+  if (!property) return storedId;
+  const value = stringText(unwrap(propertyValue(property)));
+  if (value === undefined || !PLUGIN_ID_PATTERN.test(value)) {
+    throw new Error(
+      "publicName must be a valid string literal; run bb-kit check before adding a tool",
+    );
+  }
+  return value;
+}
 
 function queryTemplate(exportName: string): string {
   return [
@@ -183,10 +234,29 @@ export function runAdd(kind: string, name: string, options: AddOptions): BinResu
 
   let publicToolName: string | undefined;
   if (isTool && packageName !== undefined) {
+    let storedId: string | undefined;
     try {
-      publicToolName = toolName(derivePluginID(packageName), unitKey("tools", name));
+      storedId = derivePluginID(packageName);
     } catch {
       // An underivable package name — check rule 2 reports it.
+    }
+    if (storedId !== undefined) {
+      try {
+        publicToolName = toolName(
+          toolNamespace({
+            serverPath: join(options.cwd, layout.compositionRoot),
+            packageJsonPath,
+            storedId,
+          }),
+          unitKey("tools", name),
+        );
+      } catch (error) {
+        return {
+          exitCode: 1,
+          stdout: "",
+          stderr: `${error instanceof Error ? error.message : String(error)}\n`,
+        };
+      }
     }
   }
   const dir = unitDir(layout, unitKind);

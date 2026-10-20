@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 import {
   createFakePluginHost,
   makePluginAgentConfigurationContext,
+  makeThreadResponse,
 } from "@get-bb/plugin-sdk/testing";
 import plugin from "./server.ts";
 
@@ -104,12 +105,90 @@ for (const [origin, metadata, tools] of [
   });
 }
 
-test("pre-rename Arena worker tools still reach the same run boundary", async () => {
+const legacy = [
+  ["scott_engineering_arena_context", "dev_mode_arena_context"],
+  ["scott_engineering_arena_report", "dev_mode_arena_report"],
+  ["scott_engineering_arena_prepare", "dev_mode_arena_prepare"],
+  ["scott_engineering_review_context", "dev_mode_review_context"],
+] as const;
+
+test("Dev Mode keeps its stored id behind the dev-mode CLI and tool names", async () => {
   const f = createFakePluginHost({ pluginId: "scott-engineering", agentSkillIds: skills });
   try {
     await plugin(f.bb);
-    const runId = "00000000-0000-4000-8000-000000000001";
+    const { cli, agentTools } = f.harness.inspection.registrations;
+    assert.equal(cli?.name, "dev-mode");
+    const byName = new Map(agentTools.map((tool) => [tool.name, tool]));
+    for (const [alias, canonical] of legacy) {
+      const [old, current] = [byName.get(alias), byName.get(canonical)];
+      assert.ok(old && current, `${alias} and ${canonical} are registered`);
+      assert.deepEqual(old.inputSchema, current.inputSchema);
+      assert.equal(old.description, current.description);
+      assert.deepEqual(old.presentation, current.presentation);
+    }
+    // Defaulted fields stay optional, so a worker may send only the section.
+    const review = byName.get("scott_engineering_review_context")?.inputSchema as {
+      required?: string[];
+    };
+    assert.deepEqual(review.required, ["section"]);
+  } finally {
+    await f.harness.lifecycle.dispose();
+  }
+});
+
+/** A host where `parent` can launch Arena and `intruder` is an unrelated thread. */
+function arenaHost() {
+  const environment = { id: "env", hostId: "host", path: "/work/source", status: "ready" };
+  const threads = new Map(
+    ["parent", "intruder"].map((id) => [
+      id,
+      makeThreadResponse({ id, projectId: "project", environmentId: "env", providerId: "codex" }),
+    ]),
+  );
+  return createFakePluginHost({
+    pluginId: "scott-engineering",
+    agentSkillIds: skills,
+    // The run host is offline, so the live run waits in its snapshot phase for a retry.
+    experimental_callHostRpc: () => {
+      throw Object.assign(new Error("host offline"), { body: { code: "host_unavailable" } });
+    },
+    sdk: {
+      threads: {
+        get: async ({ threadId }) => {
+          const thread = threads.get(threadId);
+          if (!thread) throw new Error("Thread not found");
+          return { ...thread, environment } as never;
+        },
+        experimental_listAncestors: async ({ threadIds }) => ({
+          threads: threadIds.map((threadId) => ({ threadId, ancestorIds: [] })),
+        }),
+        defaultExecutionOptions: async () => ({ permissionMode: "auto" }) as never,
+        getPluginMetadata: async () => ({}),
+      },
+    },
+  });
+}
+
+test("canonical and pre-rename Arena tools guard the same live run", async () => {
+  const f = arenaHost();
+  try {
+    await plugin(f.bb);
+    const { runId } = JSON.parse(
+      (await f.harness.behavior.callAgentTool(
+        "dev_mode_arena_start",
+        { task: "Implement the task", requestId: "request" },
+        { threadId: "parent" },
+      )) as string,
+    ) as { runId: string };
     for (const prefix of ["dev_mode", "scott_engineering"]) {
+      const owned = JSON.parse(
+        (await f.harness.behavior.callAgentTool(
+          `${prefix}_arena_context`,
+          { runId },
+          { threadId: "parent" },
+        )) as string,
+      ) as { id: string };
+      assert.equal(owned.id, runId);
       for (const operation of ["context", "prepare", "report"]) {
         const input =
           operation === "report"
@@ -117,9 +196,9 @@ test("pre-rename Arena worker tools still reach the same run boundary", async ()
             : { runId };
         await assert.rejects(
           f.harness.behavior.callAgentTool(`${prefix}_arena_${operation}`, input, {
-            threadId: "worker",
+            threadId: "intruder",
           }),
-          /Arena run not found/,
+          /This thread does not own the Arena run/,
         );
       }
     }

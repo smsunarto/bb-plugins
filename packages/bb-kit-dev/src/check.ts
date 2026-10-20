@@ -5,11 +5,13 @@ import { pathToFileURL } from "node:url";
 import type * as TS from "typescript";
 import type { BinResult } from "./shared.ts";
 import {
+  PLUGIN_ID_PATTERN,
   RESERVED_COMMAND_KEYS,
   TOOL_KEY_PATTERN,
   camelName,
   toolDescriptionFile,
   toolName,
+  toolRegistrations,
   unitKey,
 } from "@bb-kit/core/names";
 import { TOOL_INSTRUCTIONS_MAX_CHARS } from "@bb-kit/core/instructions";
@@ -24,11 +26,13 @@ import {
   type SrcLayout,
 } from "./layout.ts";
 import { derivePluginID } from "./derive-plugin-id.ts";
+import { compositionSyntax } from "./composition.ts";
 
 /**
  * `bb-kit check` (§8): static verification of the nine rules — wiring
- * bijection and naming (1), definePlugin id = derived plugin id (2), the name
- * table (3), manifest paths and engines (4),
+ * bijection and naming (1), definePlugin id = derived plugin id and a
+ * literal publicName (2), the name table with tool aliases (3), manifest
+ * paths and engines (4),
  * composition and host CLI policy (5), sibling tests (warn-only, 6),
  * agent tool names and skills selection against the host policy (7),
  * runtime ownership boundaries (8), and tool text in instructions/ (9).
@@ -438,7 +442,11 @@ export async function runCheck(options: CheckOptions): Promise<BinResult> {
   }
 
   let pluginId: string | undefined;
+  // publicName names the CLI and prefixes tools; undefined means pluginId.
+  let publicName: string | undefined;
+  let publicNameRead = true;
   const derivedToolNames: { name: string; line: number }[] = [];
+  const aliasToolNames: { name: string; line: number }[] = [];
   let toolNamesKnown = false;
   if (project) {
     const ts = project.ts;
@@ -571,7 +579,7 @@ export async function runCheck(options: CheckOptions): Promise<BinResult> {
     const procedureEntries: { key: string; line: number; valueName?: string }[] = [];
     const commandEntries: { key: string; line: number; valueName?: string }[] = [];
     const toolEntries: { key: string; line: number; valueName?: string }[] = [];
-    const imports = new Map<string, { specifier: string; imported: string; line: number }>();
+    const aliasEntries: { name: string; key: string; line: number }[] = [];
     const wired = new Set<string>();
 
     if (serverRelative === undefined) {
@@ -581,139 +589,16 @@ export async function runCheck(options: CheckOptions): Promise<BinResult> {
     } else {
       const sourceFile = parseChecked(serverRelative);
       if (sourceFile) {
-        // Value imports: local name → specifier + imported name.
-        for (const statement of sourceFile.statements) {
-          if (!ts.isImportDeclaration(statement)) {
-            continue;
-          }
-          const specifier = stringText(statement.moduleSpecifier);
-          const clause = statement.importClause;
-          if (specifier === undefined || clause === undefined || clause.isTypeOnly) {
-            continue;
-          }
-          const line = lineOfNode(sourceFile, statement);
-          const defaultLocal = clause.name?.text;
-          if (defaultLocal !== undefined) {
-            imports.set(defaultLocal, { specifier, imported: "default", line });
-          }
-          const bindings = clause.namedBindings;
-          if (bindings !== undefined && ts.isNamedImports(bindings)) {
-            for (const element of bindings.elements) {
-              if (element.isTypeOnly) {
-                continue;
-              }
-              const local = element.name.text;
-              imports.set(local, {
-                specifier,
-                imported: element.propertyName?.text ?? local,
-                line: lineOfNode(sourceFile, element),
-              });
-            }
-          }
-        }
-        // Top-level initializers, to chase `const rpc = { ping }`.
-        const topInitializers = new Map<string, TS.Expression>();
-        for (const statement of sourceFile.statements) {
-          if (!ts.isVariableStatement(statement)) {
-            continue;
-          }
-          for (const declaration of statement.declarationList.declarations) {
-            if (ts.isIdentifier(declaration.name) && declaration.initializer !== undefined) {
-              topInitializers.set(declaration.name.text, declaration.initializer);
-            }
-          }
-        }
-        const unwrap = (node: TS.Node | undefined): TS.Node | undefined => {
-          let current = node;
-          while (
-            current !== undefined &&
-            (ts.isParenthesizedExpression(current) ||
-              ts.isAsExpression(current) ||
-              ts.isSatisfiesExpression(current))
-          ) {
-            current = current.expression;
-          }
-          return current;
-        };
-        const namesCalling = (calleeName: string): Set<string> => {
-          const names = new Set([calleeName]);
-          for (const [local, binding] of imports) {
-            if (binding.imported === calleeName) {
-              names.add(local);
-            }
-          }
-          return names;
-        };
-        const resolveCall = (
-          node: TS.Node | undefined,
-          calleeName: string,
-          depth = 0,
-        ): TS.CallExpression | undefined => {
-          const expression = unwrap(node);
-          if (expression === undefined || depth > 5) {
-            return undefined;
-          }
-          if (ts.isCallExpression(expression)) {
-            const callee = unwrap(expression.expression);
-            return callee !== undefined &&
-              ts.isIdentifier(callee) &&
-              namesCalling(calleeName).has(callee.text)
-              ? expression
-              : undefined;
-          }
-          if (ts.isIdentifier(expression)) {
-            const initializer = topInitializers.get(expression.text);
-            return initializer !== undefined
-              ? resolveCall(initializer, calleeName, depth + 1)
-              : undefined;
-          }
-          return undefined;
-        };
-        const resolveObjectLiteral = (
-          node: TS.Node | undefined,
-          depth = 0,
-        ): TS.ObjectLiteralExpression | undefined => {
-          const expression = unwrap(node);
-          if (expression === undefined || depth > 5) {
-            return undefined;
-          }
-          if (ts.isObjectLiteralExpression(expression)) {
-            return expression;
-          }
-          if (ts.isIdentifier(expression)) {
-            const initializer = topInitializers.get(expression.text);
-            return initializer !== undefined
-              ? resolveObjectLiteral(initializer, depth + 1)
-              : undefined;
-          }
-          return undefined;
-        };
-        const propertyKeyOf = (property: TS.ObjectLiteralElementLike): string | undefined => {
-          const name = property.name;
-          if (name === undefined) {
-            return undefined;
-          }
-          return ts.isIdentifier(name) ? name.text : stringText(name);
-        };
-        const getProperty = (
-          objectLiteral: TS.ObjectLiteralExpression,
-          key: string,
-        ): TS.ObjectLiteralElementLike | undefined =>
-          objectLiteral.properties.find((property) => propertyKeyOf(property) === key);
-        const propertyValue = (
-          property: TS.ObjectLiteralElementLike | undefined,
-        ): TS.Node | undefined => {
-          if (property === undefined) {
-            return undefined;
-          }
-          if (ts.isShorthandPropertyAssignment(property)) {
-            return property.name;
-          }
-          if (ts.isPropertyAssignment(property)) {
-            return property.initializer;
-          }
-          return undefined;
-        };
+        const {
+          imports,
+          topInitializers,
+          unwrap,
+          resolveCall,
+          resolveObjectLiteral,
+          propertyKeyOf,
+          getProperty,
+          propertyValue,
+        } = compositionSyntax(ts, sourceFile);
         const collectEntries = (
           objectLiteral: TS.ObjectLiteralExpression,
           into: { key: string; line: number; valueName?: string }[],
@@ -787,6 +672,26 @@ export async function runCheck(options: CheckOptions): Promise<BinResult> {
                 lineOfNode(sourceFile, idProperty ?? argument),
               );
             }
+            const publicNameProperty = getProperty(argument, "publicName");
+            if (publicNameProperty !== undefined) {
+              publicName = stringText(unwrap(propertyValue(publicNameProperty)));
+              const line = lineOfNode(sourceFile, publicNameProperty);
+              if (publicName === undefined) {
+                publicNameRead = false;
+                fail(
+                  "definePlugin's publicName must be a string literal for check to verify it — rule 2",
+                  serverRelative,
+                  line,
+                );
+              } else if (!PLUGIN_ID_PATTERN.test(publicName)) {
+                publicNameRead = false;
+                fail(
+                  `publicName "${publicName}" must match ${PLUGIN_ID_PATTERN} — rule 2`,
+                  serverRelative,
+                  line,
+                );
+              }
+            }
             // rpc → object literal (inline or `const rpc = { ... }`)
             const rpcValue = propertyValue(getProperty(argument, "rpc"));
             const rpcObject = resolveObjectLiteral(rpcValue);
@@ -858,6 +763,41 @@ export async function runCheck(options: CheckOptions): Promise<BinResult> {
                 } else {
                   collectEntries(toolsObject, toolEntries, "tools");
                   toolsRead = true;
+                }
+                const aliasesProperty = getProperty(agentsObject, "aliases");
+                if (aliasesProperty !== undefined) {
+                  const aliasesObject = resolveObjectLiteral(propertyValue(aliasesProperty));
+                  if (aliasesObject === undefined) {
+                    fail(
+                      'the agents "aliases" entry must resolve to an object literal — rule 3',
+                      serverRelative,
+                      lineOfNode(sourceFile, aliasesProperty),
+                    );
+                  }
+                  const seen = new Set<string>();
+                  for (const property of aliasesObject?.properties ?? []) {
+                    const name = ts.isPropertyAssignment(property)
+                      ? propertyKeyOf(property)
+                      : undefined;
+                    const key = ts.isPropertyAssignment(property)
+                      ? stringText(unwrap(property.initializer))
+                      : undefined;
+                    const line = lineOfNode(sourceFile, property);
+                    if (name === undefined || key === undefined) {
+                      fail(
+                        "an agents.aliases entry must map a literal tool name to a literal agents.tools key — rule 3",
+                        serverRelative,
+                        line,
+                      );
+                      continue;
+                    }
+                    if (seen.has(name)) {
+                      fail(`duplicate tool alias "${name}" — rule 3`, serverRelative, line);
+                      continue;
+                    }
+                    seen.add(name);
+                    aliasEntries.push({ name, key, line });
+                  }
                 }
                 skillsProperty = getProperty(agentsObject, "skills");
                 if (getProperty(agentsObject, "files") === undefined) {
@@ -1037,14 +977,39 @@ export async function runCheck(options: CheckOptions): Promise<BinResult> {
         }
         // rule 3: tool names — derived by the same toolName the factory
         // registers with, so the printed contract IS the registered name.
-        const namePluginId = pluginId ?? id;
-        toolNamesKnown = toolsRead && namePluginId !== undefined;
-        if (toolsRead && namePluginId !== undefined && toolEntries.length > 0) {
+        const namePrefix = publicNameRead ? (publicName ?? pluginId ?? id) : undefined;
+        toolNamesKnown = toolsRead && namePrefix !== undefined;
+        if (toolsRead && namePrefix !== undefined && toolEntries.length > 0) {
           for (const entry of toolEntries) {
-            derivedToolNames.push({ name: toolName(namePluginId, entry.key), line: entry.line });
+            derivedToolNames.push({ name: toolName(namePrefix, entry.key), line: entry.line });
           }
           const rows = derivedToolNames.map((row) => `  ${row.name}`);
           table += `${table === "" ? "" : "\n"}Tool names:\n${rows.join("\n")}\n`;
+        }
+        // rule 3: aliases — definePlugin rejects the same shapes at load.
+        if (toolNamesKnown && namePrefix !== undefined) {
+          const rows = toolRegistrations(
+            namePrefix,
+            toolEntries.map((entry) => entry.key),
+            Object.fromEntries(aliasEntries.map(({ name, key }) => [name, key])),
+            (message, name) =>
+              fail(
+                `${message} — rule 3`,
+                serverRelative,
+                aliasEntries.find((entry) => entry.name === name)!.line,
+              ),
+          )
+            .filter((entry) => entry.alias)
+            .map(({ name, key }) => ({
+              name,
+              line: aliasEntries.find((entry) => entry.name === name)!.line,
+              target: toolName(namePrefix, key),
+            }));
+          aliasToolNames.push(...rows);
+          if (rows.length > 0) {
+            const lines = rows.map((row) => `  ${row.name} → ${row.target}`);
+            table += `${table === "" ? "" : "\n"}Tool aliases:\n${lines.join("\n")}\n`;
+          }
         }
         // rule 7b (ADR-0017 fail-closed): a gated tool synthesizes
         // configure, and with agents.skills absent that configure sends
@@ -1135,7 +1100,7 @@ export async function runCheck(options: CheckOptions): Promise<BinResult> {
   // fallbacks keep both rules running when the export is absent.
   const CLI_COMMAND_NAME_FALLBACK = /^[a-z0-9-]+$/;
   const AGENT_TOOL_NAME_FALLBACK = /^[a-zA-Z0-9_-]+$/;
-  const cliName = pluginId ?? id;
+  const cliName = publicNameRead ? (publicName ?? pluginId ?? id) : undefined;
   if (cliName !== undefined) {
     try {
       const policyPath = requireFromPlugin.resolve("@get-bb/plugin-sdk/internal/host-policy");
@@ -1163,7 +1128,8 @@ export async function runCheck(options: CheckOptions): Promise<BinResult> {
   }
 
   // ---- rule 7a: host agent-tool policy, from the plugin's own SDK ---
-  if (derivedToolNames.length > 0) {
+  const registeredToolNames = [...derivedToolNames, ...aliasToolNames];
+  if (registeredToolNames.length > 0) {
     try {
       const policyPath = requireFromPlugin.resolve("@get-bb/plugin-sdk/internal/host-policy");
       const policy = (await import(pathToFileURL(policyPath).href)) as {
@@ -1175,7 +1141,7 @@ export async function runCheck(options: CheckOptions): Promise<BinResult> {
           ? policy.AGENT_TOOL_NAME_PATTERN
           : AGENT_TOOL_NAME_FALLBACK;
       const reserved = policy.RESERVED_AGENT_TOOL_NAMES;
-      for (const { name, line } of derivedToolNames) {
+      for (const { name, line } of registeredToolNames) {
         if (!pattern.test(name)) {
           fail(
             `agent tool name "${name}" does not match the host's ${String(pattern)} — rule 7`,
