@@ -1,9 +1,11 @@
 import { defineRpcContract } from "@get-bb/plugin-sdk";
+import { reviewHostContract } from "./review-host-contract.ts";
 import { z } from "zod";
 import { integrationSchema, preparationResultSchema, commandResultSchema } from "./arena.ts";
 const directory = z.string().min(1).max(16000);
 const identity = z.object({ runId: z.uuid(), round: z.number().int().min(1).max(3) });
 export const hostContract = defineRpcContract({
+  ...reviewHostContract,
   snapshot: {
     input: z.object({ runId: z.uuid(), path: directory }).strict(),
     output: z.object({ root: directory, base: z.string().regex(/^[a-f0-9]{40,64}$/) }).strict(),

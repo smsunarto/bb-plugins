@@ -1,10 +1,24 @@
 # Scott Engineering
 
-Scott's engineering workflows, derived from his pstack fork, with native Arena execution in BB. The plugin bundles 16 workflow skills and 22 engineering principle references; Arena is the first workflow whose lifecycle is owned by the plugin.
+Scott's engineering workflows, derived from his pstack fork, with native Arena and independent review in BB. One plugin owns the tools, worker routing, composer banner, 20 workflow skills, and shared engineering principles.
 
-Ask for Arena in a BB thread. The agent calls `scott_engineering_arena_start` and emits an embedded summary showing candidates, the judge, synthesis, verification, and round history. Workers run in hidden threads, like Review's reviewers; clicking one opens it, and its header links back to the main thread. Stop Arena cancels the run independently of the main chat.
+Ask for Arena in a BB thread. The agent calls `scott_engineering_arena_start` and emits an embedded summary showing candidates, the judge, synthesis, verification, and round history. Workers and reviewers run in hidden threads; clicking one opens it, and its header links back to the main thread. Stop Arena cancels the run independently of the main chat.
 
 A run frames the task, launches one Claude and one Codex candidate on identical prompts, cross-judges their completed outputs, synthesizes the best parts, and verifies the combined result before automatically integrating it. There are at most three total rounds. Host-disconnection recovery permits three consecutive retries with increasing delays; checks run in the synthesis worker using its inherited execution permissions. Runs and round counts survive restarts; the plugin reconciles existing workers rather than launching duplicates.
+
+## Independent review
+
+Reviews run automatically at implementation handoff and before consequential design decisions, unless the user skips them. The default panel asks Claude and Codex independently. Findings inform the lead's judgment; they do not gate publication. The [review workflow](skills/review-workflow/SKILL.md) owns the trigger, scope, reuse, and synthesis policy.
+
+Use `scott_engineering_review_start`, `scott_engineering_review_result`, and `scott_engineering_review_context`. The CLI equivalents are `bb scott-engineering review-start`, `review-result`, and `review-context`. Pin implementation reviews to a named GitButler branch or explicit base/head; combined workspace commits are rejected. The composer banner shows current and finished reviews, with navigation to each reviewer and back to the main thread.
+
+Reviewers receive pinned-context tools only. Arena workers receive their Arena assignment tools only. Neither can launch nested workflows. Arena continues to require an explicit request or an authorized Architect workflow.
+
+Existing Review installations upgrade through the [migration bridge](../../packages/review-migration): install the bridge over Review, then reload Scott Engineering. Saved runs, reports, reviewer links, thread metadata, and model settings are copied before Review is disabled. Its original data remains intact. New installations need only Scott Engineering. The legacy `review_context` tool remains available to previously spawned reviewers.
+
+The handoff blocks review operations until the bridge has imported every saved run and retired the old plugin. If Review was disabled, install and enable the bridge first. An unreadable saved run must be repaired before retrying; the importer never silently drops it. Arena remains available during the handoff.
+
+For integrations such as Game Studio, a snapshot reviewer has origin `scott-engineering` and `reviewRun` metadata in that plugin's namespace. Arena workers use `arena` metadata and do not qualify for reviewer-only exemptions. Legacy `review` origins remain compatible during migration.
 
 ## Requirements
 
@@ -24,6 +38,7 @@ Outputs remain uncommitted. Candidate worktrees and private `refs/arena/` snapsh
 - `bb scott-engineering status --run <id>` reads an owned run.
 - `bb scott-engineering stop --run <id>` stops it.
 - `bb scott-engineering principle` lists shared principles; add `--name grug-brain` to read one or `--name index` for workflow routing and principle triggers.
-- `claudeModel` and `codexModel` select the two model seats. Defaults follow the fork. Both use xhigh reasoning; Codex uses fast service.
+- `reviewClaudeModel` and `reviewCodexModel` select reviewers, preserving the former Review settings on upgrade.
+- `claudeModel` and `codexModel` select the two Arena model seats. Defaults follow the fork. Both use xhigh reasoning; Codex uses fast service.
 
 The tools and prompts are editable under `instructions/`. Other skills and their references are bundled under `skills/` and `references/`. Engineering principles live in the shared `references/principles/` directory. The `principle` command reads them from the installed plugin, independently of any workflow skill or checkout path, without adding skill catalog entries. The plugin owns workflow routing and principle triggers in `instructions/engineering-guidance.md`; shared dotfiles agent instructions no longer carry these rules. The overlapping dotfiles package has been removed.

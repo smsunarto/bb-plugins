@@ -757,3 +757,71 @@ test("simultaneous automatic retries cannot reserve two checkouts for one owner"
     { id: second.id, state: "available", ownerThreadId: null },
   ]);
 });
+
+test("reviewer metadata lookup is scoped to slots and fails within admission", async () => {
+  let calls = 0;
+  const { harness } = await setup({
+    resolve: (path) => path,
+    metadata: async (_id, signal) => {
+      calls += 1;
+      expect(signal).toBeInstanceOf(AbortSignal);
+      throw new Error("Metadata unavailable");
+    },
+  });
+  const dispatch = harness.registrations.hooks["message.dispatch"]!;
+  const context = (path: string) =>
+    makeMessageDispatchHookContext({
+      thread: { id: "worker", projectId: "project", originPluginId: "scott-engineering" },
+      project,
+      environment: { ...environment, path },
+      host: makeHostResponse({ id: "host" }),
+    });
+  expect(await dispatch(context("/other-project"))).toEqual({ action: "proceed" });
+  expect(calls).toBe(0);
+  expect(await dispatch(context("/rampage"))).toEqual({
+    action: "reject",
+    message: "Metadata unavailable",
+  });
+  expect(calls).toBe(1);
+});
+
+test("Scott Engineering exempts snapshot reviewers but still fences Arena workers", async () => {
+  const { state, harness, slot } = await setup();
+  await acquire(harness, slot.id);
+  state.metadata.set("reviewer", { reviewRun: { id: "run" } });
+  state.metadata.set("arena", { arena: { runId: "run" } });
+  const dispatch = harness.registrations.hooks["message.dispatch"]!;
+  const context = (id: string) =>
+    makeMessageDispatchHookContext({
+      thread: {
+        id,
+        projectId: "project",
+        environmentId: "environment",
+        originPluginId: "scott-engineering",
+      },
+      project,
+      environment,
+      host: makeHostResponse({ id: "host" }),
+    });
+  expect(await dispatch(context("reviewer"))).toEqual({ action: "proceed" });
+  expect(await dispatch(context("arena"))).toMatchObject({ action: "reject" });
+  expect(await dispatch(context("unknown"))).toMatchObject({ action: "reject" });
+  state.environments = [environment];
+  state.threads = [
+    makeThreadResponse({
+      id: "reviewer",
+      projectId: "project",
+      environmentId: "environment",
+      status: "active",
+      originPluginId: "scott-engineering",
+    }),
+  ];
+  const lease = (await list(harness, "alice"))[0]!;
+  expect(
+    await cliSlot(
+      harness,
+      ["slots", "release", "--host", "host", "--slot", slot.id, "--lease", lease.leaseId!],
+      "alice",
+    ),
+  ).toMatchObject({ state: "available" });
+});

@@ -125,6 +125,21 @@
       "name": "@bb-plugins/markdown-prose",
       "version": "0.1.0",
     },
+    "packages/review-migration": {
+      "name": "@smsunarto/bb-plugin-review",
+      "version": "0.1.0",
+      "dependencies": {
+        "@bb-kit/core": "0.2.0",
+        "zod": "^4.4.3",
+      },
+      "devDependencies": {
+        "@get-bb/plugin-sdk": "0.5.29",
+        "@types/node": "^22.0.0",
+        "bun-types": "^1.4.0",
+        "tsx": "4.23.12",
+        "typescript": "^6.0.0",
+      },
+    },
     "packages/unity-inspector": {
       "name": "@bb-plugins/unity-inspector",
       "version": "0.1.0",
@@ -677,27 +692,6 @@
       },
       "devDependencies": {
         "@get-bb/plugin-sdk": "0.6.37",
-        "@testing-library/react": "16.3.2",
-        "@types/node": "^22.0.0",
-        "@types/react": "^19.0.0",
-        "@types/react-dom": "^19.0.0",
-        "bun-types": "^1.4.0",
-        "jsdom": "25.0.1",
-        "react": "19.2.8",
-        "react-dom": "19.2.8",
-        "tsx": "4.23.12",
-        "typescript": "^6.0.0",
-      },
-    },
-    "plugins/review": {
-      "name": "@smsunarto/bb-plugin-review",
-      "version": "0.1.0",
-      "dependencies": {
-        "@bb-kit/core": "0.2.0",
-        "zod": "^4.4.3",
-      },
-      "devDependencies": {
-        "@get-bb/plugin-sdk": "0.5.29",
         "@testing-library/react": "16.3.2",
         "@types/node": "^22.0.0",
         "@types/react": "^19.0.0",
@@ -1841,7 +1835,7 @@
 
     "@smsunarto/bb-plugin-remind-me": ["@smsunarto/bb-plugin-remind-me@workspace:plugins/remind-me"],
 
-    "@smsunarto/bb-plugin-review": ["@smsunarto/bb-plugin-review@workspace:plugins/review"],
+    "@smsunarto/bb-plugin-review": ["@smsunarto/bb-plugin-review@workspace:packages/review-migration"],
 
     "@smsunarto/bb-plugin-scott-docs": ["@smsunarto/bb-plugin-scott-docs@workspace:plugins/scott-docs"],
 
@@ -3350,8 +3344,6 @@
     "@smsunarto/bb-plugin-scott-tasks/jsdom": ["jsdom@29.1.1", "", { "dependencies": { "@asamuzakjp/css-color": "^5.1.11", "@asamuzakjp/dom-selector": "^7.1.1", "@bramus/specificity": "^2.4.2", "@csstools/css-syntax-patches-for-csstree": "^1.1.3", "@exodus/bytes": "^1.15.0", "css-tree": "^3.2.1", "data-urls": "^7.0.0", "decimal.js": "^10.6.0", "html-encoding-sniffer": "^6.0.0", "is-potential-custom-element-name": "^1.0.1", "lru-cache": "^11.3.5", "parse5": "^8.0.1", "saxes": "^6.0.0", "symbol-tree": "^3.2.4", "tough-cookie": "^6.0.1", "undici": "^7.25.0", "w3c-xmlserializer": "^5.0.0", "webidl-conversions": "^8.0.1", "whatwg-mimetype": "^5.0.0", "whatwg-url": "^16.0.1", "xml-name-validator": "^5.0.0" }, "peerDependencies": { "canvas": "^3.0.0" }, "optionalPeers": ["canvas"] }, "sha512-ECi4Fi2f7BdJtUKTflYRTiaMxIB0O6zfR1fX0GXpUrf6flp8QIYn1UT20YQqdSOfk2dfkCwS8LAFoJDEppNK5Q=="],
 
     "@smsunarto/bb-plugin-whiteboard/@xyflow/react": ["@xyflow/react@12.10.2", "", { "dependencies": { "@xyflow/system": "0.0.76", "classcat": "^5.0.3", "zustand": "^4.4.0" }, "peerDependencies": { "react": ">=17", "react-dom": ">=17" } }, "sha512-CgIi6HwlcHXwlkTpr0fxLv/0sRVNZ8IdwKLzzeCscaYBwpvfcH1QFOCeaTCuEn1FQEs/B8CjnTSjhs8udgmBgQ=="],
-
-    "@smsunarto/bb-plugin-whiteboard/zod": ["zod@4.4.3", "", {}, "sha512-ytENFjIJFl2UwYglde2jchW2Hwm4GJFLDiSXWdTrJQBIN9Fcyp7n4DhxJEiWNAJMV1/BqWfW/kkg71UDcHJyTQ=="],
 
     "@testing-library/jest-dom/aria-query": ["aria-query@5.3.2", "", {}, "sha512-COROpnaoap1E2F000S62r6A60uHZnmlvomhfyT2DlTcrY1OrBKn2UhH7qn5wTC9zMvD0AY7csdPSNwKP+7WiQw=="],
 

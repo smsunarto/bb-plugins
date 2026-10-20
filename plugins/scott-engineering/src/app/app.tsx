@@ -1,3 +1,4 @@
+import { registerReview } from "./review.tsx";
 import {
   definePluginApp,
   experimental_Icon as Icon,
@@ -619,4 +620,5 @@ export default definePluginApp((app) => {
     title: "Back to main thread",
     component: BackToMainThread,
   });
+  registerReview(app);
 });

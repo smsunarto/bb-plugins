@@ -64,10 +64,6 @@
       "source": "./plugins/remind-me"
     },
     {
-      "name": "review",
-      "source": "./plugins/review"
-    },
-    {
       "name": "my-stack",
       "source": "./plugins/my-stack"
     },

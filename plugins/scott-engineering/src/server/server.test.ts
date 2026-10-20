@@ -22,9 +22,12 @@ test("authors get launch controls and the migrated skill catalog", async () => {
         "scott_engineering_arena_start",
         "scott_engineering_arena_status",
         "scott_engineering_arena_stop",
+        "scott_engineering_review_start",
+        "scott_engineering_review_result",
+        "scott_engineering_review_context",
       ],
     );
-    assert.equal(result.skills.length, 16);
+    assert.equal(result.skills.length, 20);
     assert.ok(result.skills.every((name) => !name.startsWith("principle-")));
     assert.ok(result.skills.includes("arena"));
     assert.ok(result.skills.includes("architect"));
@@ -46,6 +49,7 @@ test("workers get report/context tools and cannot recursively launch Arena", asy
     const result = await f.harness.behavior.resolveAgentConfiguration(
       makePluginAgentConfigurationContext({
         origin: { kind: null, pluginId: "scott-engineering" },
+        pluginMetadata: { arena: { runId: "run", jobKey: "job" } },
       }),
     );
     assert.deepEqual(
@@ -61,3 +65,32 @@ test("workers get report/context tools and cannot recursively launch Arena", asy
     await f.harness.lifecycle.dispose();
   }
 });
+
+for (const [origin, metadata, tools] of [
+  ["scott-engineering", { reviewRun: { id: "run" } }, ["scott_engineering_review_context"]],
+  ["review", {}, ["scott_engineering_review_context", "review_context"]],
+  ["scott-engineering", { arenaDigest: { runId: "run" } }, []],
+  ["scott-engineering", {}, []],
+  ["side-chat", {}, []],
+] as const) {
+  test(`worker routing isolates ${origin} ${JSON.stringify(metadata)}`, async () => {
+    const f = createFakePluginHost({ pluginId: "scott-engineering", agentSkillIds: skills });
+    try {
+      await plugin(f.bb);
+      const result = await f.harness.behavior.resolveAgentConfiguration(
+        makePluginAgentConfigurationContext({
+          origin: { kind: null, pluginId: origin },
+          pluginMetadata: metadata,
+        }),
+      );
+      assert.deepEqual(
+        result.tools.map((tool) => tool.name),
+        tools,
+      );
+      assert.deepEqual(result.skills, []);
+      assert.equal(result.instructions, null);
+    } finally {
+      await f.harness.lifecycle.dispose();
+    }
+  });
+}

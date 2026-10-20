@@ -1,7 +1,7 @@
 {
   "name": "@smsunarto/bb-plugin-scott-engineering",
   "version": "0.1.0",
-  "description": "Scott\u2019s engineering skills with native, durable Arena runs in BB.",
+  "description": "Scott\u2019s engineering workflows with native Arena and independent review in BB.",
   "license": "MIT",
   "author": "Scott Sunarto",
   "homepage": "https://github.com/smsunarto/bb-plugins/tree/main/plugins/scott-engineering",
@@ -17,7 +17,7 @@
   },
   "bb": {
     "name": "Scott Engineering",
-    "description": "Parallel candidates, independent judging, synthesis, verified integration, and an embedded run summary.",
+    "description": "Arena, independent design and implementation reviews, engineering skills, and shared principles.",
     "branding": {
       "icon": "./assets/icon.svg",
       "logo": {
@@ -69,7 +69,7 @@
     "build": "bb plugin build .",
     "lint": "oxlint",
     "typecheck": "tsc --noEmit",
-    "test": "node --import tsx --test src/server/server.test.ts src/server/command/*.test.ts src/server/lib/*.test.ts && bun test src/host src/app --timeout=30000",
+    "test": "node --import tsx --test src/server/server.test.ts src/server/command/principle.test.ts src/server/lib/*.test.ts && bun test --preload ./test/sqlite-preload.js src/server/command/review-start.test.ts src/host src/app --timeout=30000",
     "check": "node --import tsx ../../packages/bb-kit-dev/src/bin.ts check",
     "clean": "rm -rf dist"
   },

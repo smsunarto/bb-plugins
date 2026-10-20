@@ -14,6 +14,7 @@ import {
   type Report,
 } from "../../shared/arena.ts";
 import { hostContract } from "../../shared/host-contract.ts";
+import { database } from "./database.ts";
 
 export const files = instructionFiles(import.meta.url);
 const metadataSchema = z.object({ arena: z.object({ runId: z.uuid(), jobKey: z.uuid() }) });
@@ -64,11 +65,7 @@ export class ArenaService {
     this.bb = bb;
     this.models = models;
     this.onResult = onResult;
-    this.db = bb.storage.database();
-    bb.storage.migrate(this.db, [
-      "CREATE TABLE arena_runs (id TEXT PRIMARY KEY, parent TEXT NOT NULL, request_id TEXT NOT NULL, phase TEXT NOT NULL, payload TEXT NOT NULL, UNIQUE(parent, request_id))",
-      "CREATE INDEX arena_runs_parent ON arena_runs(parent)",
-    ]);
+    this.db = database(bb);
   }
 
   get(id: string): ArenaRun {
@@ -149,7 +146,7 @@ export class ArenaService {
         return prior;
       }
       const parent = await this.bb.sdk.threads.get({ threadId: caller, include: "environment" });
-      if (parent.originPluginId === this.bb.pluginId)
+      if ([this.bb.pluginId, "review"].includes(parent.originPluginId ?? ""))
         throw new Error("Arena workers cannot launch nested runs");
       const ancestry = await this.bb.sdk.threads.experimental_listAncestors({
         threadIds: [caller],
@@ -159,7 +156,11 @@ export class ArenaService {
           (threadId) => this.bb.sdk.threads.get({ threadId }),
         ),
       );
-      if (ancestors.some((thread) => thread.originPluginId === this.bb.pluginId))
+      if (
+        ancestors.some((thread) =>
+          [this.bb.pluginId, "review"].includes(thread.originPluginId ?? ""),
+        )
+      )
         throw new Error("Descendants of Arena workers cannot launch nested runs");
       const environment = "environment" in parent ? parent.environment : null;
       if (!environment || !environment.path || environment.status !== "ready")

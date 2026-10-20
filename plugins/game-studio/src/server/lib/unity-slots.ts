@@ -12,11 +12,6 @@ export function visibleSlot(slot: Slot, owner?: string) {
   return owner && slot.ownerThreadId === owner ? slot : publicSlot;
 }
 
-// Trusted review-plugin threads read immutable review_context snapshots, not Unity state.
-function isSnapshotReviewer(thread: { originPluginId: string | null }) {
-  return thread.originPluginId === "review";
-}
-
 /** Adopted Rampage checkouts survive releases, failed turns and environment retirement. */
 export class UnitySlots {
   private readonly host;
@@ -28,6 +23,21 @@ export class UnitySlots {
     this.store = store;
     this.ensureLegacyClaims = ensureLegacyClaims;
     this.host = bb.hosts.experimental_client({ contract: unityHostContract });
+  }
+
+  // Only snapshot review workers are exempt; Arena workers still need a lease.
+  private async isSnapshotReviewer(
+    thread: { id: string; originPluginId: string | null },
+    signal?: AbortSignal,
+  ) {
+    if (thread.originPluginId === "review") return true;
+    if (thread.originPluginId !== "scott-engineering") return false;
+    const metadata = await this.bb.sdk.threads.getPluginMetadata({
+      threadId: thread.id,
+      pluginId: "scott-engineering",
+      signal,
+    });
+    return Boolean(metadata.reviewRun);
   }
 
   required(id: string, hostId?: string) {
@@ -107,13 +117,16 @@ export class UnitySlots {
         offset,
         signal,
       });
-      const active = threads.find(
+      const active = threads.filter(
         (thread) =>
-          thread.id !== owner &&
-          !isSnapshotReviewer(thread) &&
-          ["active", "starting", "stopping"].includes(thread.status),
+          thread.id !== owner && ["active", "starting", "stopping"].includes(thread.status),
       );
-      if (active) throw new Error(`Checkout still has an active agent: @thread:${active.id}`);
+      await Promise.all(
+        active.map(async (thread) => {
+          if (!(await this.isSnapshotReviewer(thread, signal)))
+            throw new Error(`Checkout still has an active agent: @thread:${thread.id}`);
+        }),
+      );
       if (threads.length < 100) return;
     }
   }
@@ -396,8 +409,6 @@ export class UnitySlots {
 
   async admit(context: MessageDispatchHookContext) {
     const { environment, thread, environmentIntent } = context;
-    // Reviews need no authoring lease; Editor commands still enforce their own claims.
-    if (isSnapshotReviewer(thread)) return { action: "proceed" as const };
     // BB gives hooks ten seconds; abort host/SDK inspection before that deadline.
     const signal = AbortSignal.timeout(7000);
     try {
@@ -409,13 +420,16 @@ export class UnitySlots {
         ]);
         if (!workspaces.size) return { action: "proceed" as const };
         const path = await this.resolve(environment.hostId, environment.path, signal);
-        if (!path || !workspaces.has(path)) return { action: "proceed" as const };
+        if (!workspaces.has(path ?? "")) return { action: "proceed" as const };
+        // Only slot-bound dispatch needs this exemption; Editor commands keep their own claims.
+        if (await this.isSnapshotReviewer(thread, signal)) return { action: "proceed" as const };
         await this.ensureLegacyClaims();
         slot = this.store.find(environment.hostId, path);
       } else if (
         environmentIntent?.kind === "provider" &&
         environmentIntent.environmentProviderId === slotProviderId
       ) {
+        if (await this.isSnapshotReviewer(thread, signal)) return { action: "proceed" as const };
         await this.ensureLegacyClaims();
         const { slotId } = slotInputs.parse(environmentIntent.inputs);
         if (slotId) {
