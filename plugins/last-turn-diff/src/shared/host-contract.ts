@@ -71,28 +71,52 @@ const pinSchema = z.object({
 });
 export type Pin = z.infer<typeof pinSchema>;
 
+/** Durable server-clock mutations, acknowledged individually and safe to replay. */
+export const operationSchema = z.discriminatedUnion("method", [
+  z.object({
+    id: z.string(),
+    method: z.literal("pin"),
+    input: z.object({ ...target, captures: z.array(pinSchema).min(1).max(4) }),
+  }),
+  z.object({
+    id: z.string(),
+    method: z.literal("forget"),
+    input: z.object({ ...target, at: time }),
+  }),
+]);
+export type HostOperation = z.infer<typeof operationSchema>;
+const candidateSchema = z.object({
+  /** Other-agent changes can retain a turn only when it ran a writer. */
+  canWrite: z.boolean().optional(),
+  window: windowSchema,
+  recordedPaths: z.array(z.string().max(4096)).max(1000),
+  known: attributionSchema.optional(),
+});
+export type SnapshotCandidate = z.infer<typeof candidateSchema>;
+/** Candidate windows per scan. A long chat-only stretch continues in further scans. */
+export const MAX_SCAN_CANDIDATES = 20;
+
 export const snapshotHostContract = defineRpcContract({
-  /** Record the checkout's files as a commit. Pins nothing: the server decides what it proves. */
-  snapshot: {
-    input: z.object({ environmentPath: target.environmentPath }).strict(),
-    output: z.object({ commit: commit.nullable() }),
-  },
-  pin: {
-    input: z.object({ ...target, captures: z.array(pinSchema).min(1).max(4) }).strict(),
-    output: z.object({}),
-  },
-  turnPatch: {
+  sync: {
     input: z
       .object({
-        ...target,
-        window: windowSchema,
-        /** File paths the provider recorded editing, absolute or environment-relative. */
-        recordedPaths: z.array(z.string().max(4096)).max(1000),
-        /** A previous answer for this turn. Reused when its capture pair still matches. */
-        known: attributionSchema.optional(),
+        operations: z.array(operationSchema).max(100),
+        job: z.discriminatedUnion("kind", [
+          z.object({ kind: z.literal("settle") }),
+          z.object({ kind: z.literal("capture"), environmentPath: target.environmentPath }),
+          z.object({
+            kind: z.literal("scan"),
+            ...target,
+            candidates: z.array(candidateSchema).max(MAX_SCAN_CANDIDATES),
+          }),
+        ]),
       })
       .strict(),
-    output: z.object({ snapshot: snapshotPatchSchema.nullable() }),
+    output: z.object({
+      applied: z.array(z.string()),
+      error: z.string().optional(),
+      commit: commit.nullable().optional(),
+      snapshots: z.array(snapshotPatchSchema.nullable()).optional(),
+    }),
   },
-  forget: { input: z.object({ ...target, at: time }).strict(), output: z.object({}) },
 });

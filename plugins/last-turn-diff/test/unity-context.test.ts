@@ -1,6 +1,6 @@
 import { expect, mock, test } from "bun:test";
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
-import { addUnityContext, recordedUnityDiff } from "../src/server/lib/unity-context.ts";
+import { loadUnityContext, recordedUnityDiff } from "../src/server/lib/unity-context.ts";
 const current = "--- !u!1 &1\nGameObject:\n  m_Name: Player\n  m_IsActive: 0\n";
 const patch =
   "diff --git a/Hero.prefab b/Hero.prefab\n--- a/Hero.prefab\n+++ b/Hero.prefab\n@@ -3,2 +3,2 @@\n   m_Name: Player\n-  m_IsActive: 1\n+  m_IsActive: 0\n";
@@ -15,12 +15,14 @@ function host(content = current) {
   } as unknown as BbPluginApi;
   return { bb, read };
 }
-const turn = { turnId: "t", anchorId: "a", patch, changes: [], limited: false };
 test("Last Turn reconstructs only recorded values and fences workspace context reads", async () => {
   const { bb, read } = host();
-  const result = await addUnityContext(bb, "thread", turn);
-  expect(result.patch).toBe(patch);
-  expect(result.unity?.["0"]?.groups[0]).toMatchObject({
+  const result = await loadUnityContext(
+    bb,
+    { hostId: "h", path: "/workspace" },
+    { id: "0", path: "Hero.prefab", patch, added: 1, removed: 1 },
+  );
+  expect(result?.groups[0]).toMatchObject({
     name: "Player",
     components: [{ properties: [{ path: "m_IsActive", before: "1", after: "0" }] }],
   });
@@ -37,11 +39,23 @@ test("mismatched, missing and malformed context keep the original turn patch", a
     "--- !u!1 &1\nGameObject: [bad",
   ]) {
     const { bb } = host(content);
-    expect(await addUnityContext(bb, "thread", turn)).toEqual(turn);
+    expect(
+      await loadUnityContext(
+        bb,
+        { hostId: "h", path: "/workspace" },
+        { id: "0", path: "Hero.prefab", patch, added: 1, removed: 1 },
+      ),
+    ).toBeNull();
   }
   const { bb, read } = host();
   read.mockRejectedValue(new Error("missing"));
-  expect(await addUnityContext(bb, "thread", turn)).toEqual(turn);
+  expect(
+    await loadUnityContext(
+      bb,
+      { hostId: "h", path: "/workspace" },
+      { id: "0", path: "Hero.prefab", patch, added: 1, removed: 1 },
+    ),
+  ).toBeNull();
 });
 test("new and deleted Unity assets need no current file and preserve null sides", () => {
   const added =
@@ -66,11 +80,11 @@ test("new and deleted Unity assets need no current file and preserve null sides"
 test("escaping recorded paths and non-Unity changes cause no file reads", async () => {
   for (const path of ["../Hero.prefab", "/Hero.prefab", "src/a.ts"]) {
     const { bb, read } = host();
-    await addUnityContext(bb, "thread", {
-      ...turn,
-      patch: null,
-      changes: [{ id: "c", path, patch, added: 1, removed: 1 }],
-    });
+    await loadUnityContext(
+      bb,
+      { hostId: "h", path: "/workspace" },
+      { id: "c", path, patch, added: 1, removed: 1 },
+    );
     expect(read).not.toHaveBeenCalled();
   }
 });

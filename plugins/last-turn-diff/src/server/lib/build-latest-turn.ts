@@ -7,6 +7,16 @@ export type TurnRow = Awaited<
 >["rows"][number];
 export const MAX_PATCH_CHARS = 1_000_000;
 const MAX_CHANGES = 200;
+type FileChangeRow = Extract<TurnRow, { workKind: "file-change" }>;
+
+export function isFileChangeRow(row: TurnRow): row is FileChangeRow {
+  return (
+    row.kind === "work" &&
+    row.workKind === "file-change" &&
+    row.status === "completed" &&
+    row.approvalStatus !== "denied"
+  );
+}
 
 export function buildLatestTurn(
   turnId: string,
@@ -29,13 +39,7 @@ export function buildLatestTurn(
   let remaining = MAX_PATCH_CHARS;
   // Keep successive edits distinct. Concatenating them would invent a net patch.
   for (const row of rows) {
-    if (
-      row.kind !== "work" ||
-      row.workKind !== "file-change" ||
-      row.status !== "completed" ||
-      row.approvalStatus === "denied"
-    )
-      continue;
+    if (!isFileChangeRow(row)) continue;
     const path =
       row.change.movePath && keepPath(row.change.movePath) ? row.change.movePath : row.change.path;
     if (!keepPath(path)) continue;

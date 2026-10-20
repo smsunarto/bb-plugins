@@ -8,6 +8,7 @@ import type {
   CaptureKind,
   Pin,
   SnapshotPatch,
+  SnapshotCandidate,
   TurnWindow,
 } from "../shared/host-contract.ts";
 
@@ -43,6 +44,8 @@ const MAX_TURN_MS = 6 * 60 * 60 * 1000;
  */
 const MAX_IDLE_MS = 30 * 24 * 60 * 60 * 1000;
 const MAX_PATCH_BYTES = 1_000_000;
+/** How long one scan may run before returning the windows it finished. */
+const SCAN_DEADLINE_MS = 10_000;
 const MAX_OUTPUT_BYTES = 32 * 1024 * 1024;
 const IDENTITY = {
   GIT_AUTHOR_NAME: "bb last-turn-diff",
@@ -224,6 +227,11 @@ async function checkout(path: string, signal: AbortSignal): Promise<Checkout | n
   const [top = "", prefix = ""] = out.split("\n");
   const key = checkoutKey(top);
   return { top, prefix, key, refPrefix: `${NAMESPACE}/${key}/` };
+}
+
+/** The checkout's ref namespace key, or null outside Git. Spellings of one worktree share it. */
+export async function checkoutId(path: string, signal: AbortSignal): Promise<string | null> {
+  return (await checkout(path, signal))?.key ?? null;
 }
 
 function threadPrefix(target: Checkout, threadId: string): string {
@@ -716,13 +724,46 @@ async function knownPair(target: Checkout, known: Attribution | undefined, signa
 }
 
 /**
- * The diff between the captures bracketing a turn, or null when this thread
- * has no valid pair of captures around it. Paths are relative to
- * `environmentPath`. `recordedPaths` are the files the provider recorded
- * editing, as it reported them. `known` reuses an earlier attribution for the
- * same capture pair, which losing other threads' captures must not change.
+ * Scan the candidate windows in one host call, sharing checkout and ref
+ * discovery. Past `deadlineMs` it returns the windows it finished, always at
+ * least one, well inside the host call timeout; the server continues from there.
  */
-export async function turnPatch(
+export async function turnPatches(
+  environmentPath: string,
+  threadId: string,
+  candidates: readonly SnapshotCandidate[],
+  signal: AbortSignal,
+  deadlineMs = SCAN_DEADLINE_MS,
+): Promise<(SnapshotPatch | null)[]> {
+  const deadline = Date.now() + deadlineMs;
+  const target = await checkout(environmentPath, signal);
+  if (!target) return candidates.map(() => null);
+  const all = (await listRefs(target, target.refPrefix, signal)).captures;
+  const results: (SnapshotPatch | null)[] = [];
+  for (const { window, recordedPaths, known, canWrite } of candidates) {
+    if (results.length > 0 && Date.now() >= deadline) break;
+    results.push(
+      await patchForPair(
+        target,
+        all,
+        environmentPath,
+        threadId,
+        window,
+        recordedPaths,
+        known,
+        signal,
+      ),
+    );
+    const latest = results.at(-1);
+    if (latest && (latest.limited || latest.patch?.trim() || (latest.otherPatch && canWrite)))
+      break;
+  }
+  return results;
+}
+
+async function patchForPair(
+  target: Checkout,
+  all: Capture[],
   environmentPath: string,
   threadId: string,
   window: TurnWindow,
@@ -730,9 +771,6 @@ export async function turnPatch(
   known: Attribution | undefined,
   signal: AbortSignal,
 ): Promise<SnapshotPatch | null> {
-  const target = await checkout(environmentPath, signal);
-  if (!target) return null;
-  const all = (await listRefs(target, target.refPrefix, signal)).captures;
   // A pair proven once stays proven, even after a later Send-now turn
   // leaves nothing to prove its end by.
   const remembered = await knownPair(target, known, signal);
@@ -756,7 +794,13 @@ export async function turnPatch(
     ? await contestedPaths(target, all, threadId, proven.start, proven.end, signal)
     : known!.contested;
   const foreign = contested.filter((path) => !own.has(path));
-  const roots = await submodules(target, end, signal);
+  // Coverage only decides which recorded edits to keep, so a turn without any
+  // skips listing the whole end tree.
+  const uncovered = async () => {
+    if (recordedPaths.length === 0) return [];
+    const roots = await submodules(target, end, signal);
+    return inEnvironment(target, [...roots, ...(await ignored(target, own, roots, signal))]);
+  };
   const diff = (from: string, to: string, limit: number) =>
     gitCapped(
       target.top,
@@ -772,7 +816,7 @@ export async function turnPatch(
   const base = {
     root: join(target.top, target.prefix).replace(/\/$/, ""),
     path: environmentPath.replace(/\/+$/, ""),
-    uncovered: inEnvironment(target, [...roots, ...(await ignored(target, own, roots, signal))]),
+    uncovered: await uncovered(),
     attribution: {
       start,
       end,

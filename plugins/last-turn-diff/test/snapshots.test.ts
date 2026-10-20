@@ -3,9 +3,11 @@ import { execFileSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { forget, pin, preview, snapshot, turnPatch } from "../src/host/snapshots.ts";
+import { experimental_createHostEntryHarness } from "@get-bb/plugin-sdk/testing/host";
+import hostEntry from "../src/host/host.ts";
+import { forget, pin, preview, snapshot, turnPatches } from "../src/host/snapshots.ts";
 import { turnChanges } from "../src/shared/patches.ts";
-import type { CaptureKind, TurnWindow } from "../src/shared/host-contract.ts";
+import type { Attribution, CaptureKind, TurnWindow } from "../src/shared/host-contract.ts";
 
 const signal = new AbortController().signal;
 const repos: string[] = [];
@@ -50,6 +52,25 @@ async function snap(dir: string, thread: string, at: number, kind: CaptureKind) 
 }
 const refs = (dir: string) =>
   sh(dir, "for-each-ref", "--format=%(refname)", "refs/bb-last-turn").split("\n").filter(Boolean);
+async function turnPatch(
+  environmentPath: string,
+  threadId: string,
+  window: TurnWindow,
+  recordedPaths: readonly string[],
+  known: Attribution | undefined,
+  signal: AbortSignal,
+) {
+  return (
+    (
+      await turnPatches(
+        environmentPath,
+        threadId,
+        [{ window, recordedPaths: [...recordedPaths], known }],
+        signal,
+      )
+    )[0] ?? null
+  );
+}
 const diff = (dir: string, thread: string, window: TurnWindow, recorded: string[] = []) =>
   turnPatch(dir, thread, window, recorded, undefined, signal);
 
@@ -431,10 +452,12 @@ test("submodule roots are reported as outside snapshot coverage", async () => {
   writeFileSync(join(dir, "vendor/inner/a.ts"), "edited inside the submodule\n");
   await snap(dir, "thr_a", 3, "end");
 
-  expect(await diff(dir, "thr_a", turn(2, 2.5))).toMatchObject({
+  expect(await diff(dir, "thr_a", turn(2, 2.5), ["vendor/inner/a.ts"])).toMatchObject({
     patch: "",
     uncovered: ["vendor/inner"],
   });
+  // Coverage only keeps recorded edits, so a turn without any skips listing the tree.
+  expect(await diff(dir, "thr_a", turn(2, 2.5))).toMatchObject({ patch: "", uncovered: [] });
 });
 
 test("recorded files Git ignores are reported as outside snapshot coverage", async () => {
@@ -614,4 +637,130 @@ test("a preview past the limit keeps whole metadata-only changes and drops only 
   expect(preview(big + mode + huge)).toBe(
     `${big}${mode}diff --git a/huge.txt b/huge.txt\nindex 1..2 100644\n--- a/huge.txt\n+++ b/huge.txt\n`,
   );
+});
+
+test("host exchanges replay exact server-clock pins and scan multiple windows together", async () => {
+  const dir = repo();
+  const host = experimental_createHostEntryHarness(hostEntry);
+  try {
+    const start = await host.experimental_call("sync", {
+      operations: [],
+      job: { kind: "capture", environmentPath: dir },
+    });
+    writeFileSync(join(dir, "a.ts"), "from the turn\n");
+    const end = await host.experimental_call("sync", {
+      operations: [
+        {
+          id: "start",
+          method: "pin",
+          input: {
+            environmentPath: dir,
+            threadId: "thr_a",
+            captures: [{ kind: "start", at: T(1), finishedAt: T(1) + 7, commit: start.commit! }],
+          },
+        },
+      ],
+      job: { kind: "capture", environmentPath: dir },
+    });
+    const input = {
+      operations: [
+        {
+          id: "end",
+          method: "pin" as const,
+          input: {
+            environmentPath: dir,
+            threadId: "thr_a",
+            captures: [
+              { kind: "end" as const, at: T(3), finishedAt: T(3) + 99, commit: end.commit! },
+            ],
+          },
+        },
+      ],
+      job: {
+        kind: "scan" as const,
+        environmentPath: dir,
+        threadId: "thr_a",
+        candidates: [
+          { window: turn(4, 5), recordedPaths: [] },
+          { window: turn(2, 2.5), recordedPaths: [] },
+        ],
+      },
+    };
+    const first = await host.experimental_call("sync", input);
+    expect(first.applied).toEqual(["end"]);
+    expect(first.snapshots?.[0]).toBeNull();
+    expect(first.snapshots?.[1]?.patch).toContain("+from the turn");
+    const before = refs(dir);
+    expect(await host.experimental_call("sync", input)).toEqual(first);
+    expect(refs(dir)).toEqual(before);
+    expect(
+      before.some((ref) =>
+        ref.includes(
+          `${String(T(3)).padStart(15, "0")}-${String(T(3) + 99).padStart(15, "0")}-end`,
+        ),
+      ),
+    ).toBe(true);
+  } finally {
+    await host.experimental_dispose();
+  }
+});
+
+test("a marker the host refuses holds back scans of its own checkout only, never captures", async () => {
+  const here = repo();
+  const elsewhere = repo();
+  const host = experimental_createHostEntryHarness(hostEntry);
+  try {
+    // A pin to a commit that no longer exists is refused on every replay.
+    const refused = {
+      id: "refused",
+      method: "pin" as const,
+      input: {
+        environmentPath: here,
+        threadId: "thr_gone",
+        captures: [
+          { kind: "end" as const, at: T(1), finishedAt: T(1) + 1, commit: "f".repeat(40) },
+        ],
+      },
+    };
+    const scan = (dir: string) => ({
+      operations: [refused],
+      job: {
+        kind: "scan" as const,
+        environmentPath: dir,
+        threadId: "thr_a",
+        candidates: [{ window: turn(2, 3), recordedPaths: [] }],
+      },
+    });
+    const capture = await host.experimental_call("sync", {
+      operations: [refused],
+      job: { kind: "capture", environmentPath: here },
+    });
+    expect(capture).toMatchObject({ applied: [], commit: expect.stringMatching(/^[0-9a-f]{40}/) });
+    expect(capture.error).toBeUndefined();
+    expect(await host.experimental_call("sync", scan(here))).toEqual({
+      applied: [],
+      error: "Workspace markers remain owed",
+    });
+    const other = await host.experimental_call("sync", scan(elsewhere));
+    expect(other.error).toBeUndefined();
+    expect(other.snapshots).toEqual([null]);
+  } finally {
+    await host.experimental_dispose();
+  }
+});
+
+test("a scan past its deadline returns the windows it finished, always at least one", async () => {
+  const dir = repo();
+  await snap(dir, "thr_a", 1, "start");
+  writeFileSync(join(dir, "a.ts"), "from the turn\n");
+  await snap(dir, "thr_a", 3, "end");
+  // The newer window has no captures; only the older one holds the patch.
+  const candidates = [
+    { window: turn(4, 5), recordedPaths: [] },
+    { window: turn(2, 2.5), recordedPaths: [] },
+  ];
+  expect(await turnPatches(dir, "thr_a", candidates, signal, 0)).toEqual([null]);
+  const whole = await turnPatches(dir, "thr_a", candidates, signal);
+  expect(whole).toHaveLength(2);
+  expect(whole[1]?.patch).toContain("+from the turn");
 });

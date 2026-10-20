@@ -1,4 +1,3 @@
-import { unityDiffSchema } from "@bb-plugins/unity-inspector/model";
 import { z } from "zod";
 
 export const CHANGED_CHANNEL = "latest-turn-changed";
@@ -20,6 +19,8 @@ export const changeSchema = z.object({
 export const latestTurnSchema = z
   .object({
     turnId: z.string(),
+    /** Identity of the completed evidence and capture generation, for lazy context reads. */
+    revision: z.string().optional(),
     anchorId: z.string().nullable(),
     patch: z.string().nullable(),
     /** Snapshot changes attributed to other agents sharing this checkout. */
@@ -30,7 +31,6 @@ export const latestTurnSchema = z
     workspace: z.string().optional(),
     /** Known project roots, so checkouts in /tmp retain their own files. */
     projectRoots: z.array(z.string()).optional(),
-    unity: z.record(z.string(), unityDiffSchema).optional(),
   })
   .nullable();
 export type LatestTurn = NonNullable<z.infer<typeof latestTurnSchema>>;

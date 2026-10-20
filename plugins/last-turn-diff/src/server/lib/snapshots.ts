@@ -1,25 +1,35 @@
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
+import { randomUUID } from "node:crypto";
 import {
+  MAX_SCAN_CANDIDATES,
   attributionSchema,
   snapshotHostContract,
   type Attribution,
+  type HostOperation,
   type Pin,
+  type SnapshotCandidate,
   type SnapshotPatch,
   type TurnWindow,
 } from "../../shared/host-contract.ts";
 import { z } from "zod";
-import type { TurnRow } from "./build-latest-turn.ts";
-import { isFileChangeRow } from "./workspace-attribution.ts";
+import { isFileChangeRow, type TurnRow } from "./build-latest-turn.ts";
 
 type Thread = Awaited<ReturnType<BbPluginApi["sdk"]["threads"]["get"]>>;
 export type Target = { hostId: string; environmentPath: string };
 export type { TurnWindow };
-/** Attributions kept per thread; only the latest turns are ever displayed. */
 const KEEP_ATTRIBUTIONS = 4;
-
-function client(bb: BbPluginApi) {
-  return bb.hosts.experimental_client({ contract: snapshotHostContract });
-}
+const OWED_PREFIX = "owed:";
+const OWED_MS = 7 * 24 * 60 * 60 * 1000;
+const MAX_OWED = 100;
+/**
+ * A marker the host refused this often, at least a minute apart, can never
+ * land: its commit was pruned or its path now holds another repository. Until
+ * then it holds back scans of its own checkout. The spacing keeps a burst of
+ * transient ref-lock failures from counting as permanent.
+ */
+const MAX_REFUSALS = 3;
+const REFUSAL_SPACING_MS = 60_000;
+const SETTLE_CONCURRENCY = 4;
 
 /** The thread's checkout, or null when it has none yet. */
 export async function resolveTarget(
@@ -38,46 +48,240 @@ export interface Shot {
   at: number;
   finishedAt: number;
 }
+type Owed = { hostId: string; at: number; refusals?: number; refusedAt?: number } & (
+  | { method: "pin"; input: { environmentPath: string; threadId: string; captures: Pin[] } }
+  | { method: "forget"; input: { environmentPath: string; threadId: string; at: number } }
+);
+type SyncInput = z.input<typeof snapshotHostContract.sync.input>;
+type SyncOutput = z.infer<typeof snapshotHostContract.sync.output>;
 
-/**
- * Snapshot the checkout without pinning it. `at` and `finishedAt` bracket the
- * whole host call on the server clock, the one that stamps turn events.
- */
-export async function snapshotWorkspace(bb: BbPluginApi, target: Target): Promise<Shot | null> {
-  const at = Date.now();
-  const { commit } = await client(bb).call(
-    "snapshot",
-    { environmentPath: target.environmentPath },
-    { hostId: target.hostId },
+/** Pins are durable before the next host call. Replays use the original server times. */
+let operationSequence = 0;
+async function owe(bb: BbPluginApi, owed: Owed) {
+  const prefix = `${OWED_PREFIX}${owed.hostId}:`;
+  await bb.storage.kv.set(
+    `${prefix}${String(owed.at).padStart(15, "0")}:${String(operationSequence++).padStart(12, "0")}:${randomUUID()}`,
+    owed,
   );
-  return commit ? { commit, at, finishedAt: Date.now() } : null;
+  const keys = (await bb.storage.kv.list(prefix)).sort();
+  for (const stale of keys.slice(0, -MAX_OWED)) await bb.storage.kv.delete(stale);
 }
 
+/**
+ * A capture cannot pin its own server-clock return time until it has returned.
+ * Journal it here and piggyback it on the next scan or settle, rather than
+ * making a second WAN call. A crash or sleeping laptop leaves replayable markers.
+ */
 export async function pinWorkspace(
   bb: BbPluginApi,
   target: Target,
   threadId: string,
   captures: Pin[],
-): Promise<void> {
-  await deliver(bb, {
+) {
+  await owe(bb, {
     hostId: target.hostId,
-    at: Math.max(...captures.map((capture) => capture.at)),
+    at: Math.max(...captures.map((c) => c.at)),
     method: "pin",
     input: { environmentPath: target.environmentPath, threadId, captures },
   });
 }
 
-export async function forgetWorkspace(
+const retryAfter = new WeakMap<BbPluginApi, Map<string, number>>();
+const replyListeners = new WeakMap<BbPluginApi, Set<(hostId: string) => void>>();
+
+/** Whether the host's last call outlasted a transport timeout, so another would too. */
+export function hostStalled(bb: BbPluginApi, hostId: string): boolean {
+  return (retryAfter.get(bb)?.get(hostId) ?? 0) > Date.now();
+}
+
+/** Observe each successful host reply, such as to retry reads that fell back while it was away. */
+export function onHostReply(bb: BbPluginApi, listener: (hostId: string) => void) {
+  let listeners = replyListeners.get(bb);
+  if (!listeners) replyListeners.set(bb, (listeners = new Set()));
+  listeners.add(listener);
+}
+
+async function callHost(
+  bb: BbPluginApi,
+  hostId: string,
+  input: SyncInput,
+  signal?: AbortSignal,
+): Promise<SyncOutput> {
+  if (hostStalled(bb, hostId)) throw new Error(`host ${hostId} recently timed out`);
+  const began = Date.now();
+  const result = await bb.hosts
+    .experimental_client({ contract: snapshotHostContract })
+    .call("sync", input, { hostId, ...(signal ? { signal } : {}) })
+    .catch((error) => {
+      // A half-open laptop socket may still be listed as connected. Do not
+      // wait out another transport timeout for its queued work or fallback scan.
+      if (Date.now() - began >= 5_000) {
+        let hosts = retryAfter.get(bb);
+        if (!hosts) retryAfter.set(bb, (hosts = new Map()));
+        hosts.set(hostId, Date.now() + 30_000);
+      }
+      throw error;
+    });
+  if (!result.error) {
+    for (const listener of replyListeners.get(bb) ?? []) {
+      try {
+        listener(hostId);
+      } catch {
+        // An observer never fails the call it observed.
+      }
+    }
+  }
+  return result;
+}
+
+/** Captures still journaling their pins, per host. A scan waits for them, never the reverse. */
+const journaling = new WeakMap<BbPluginApi, Map<string, Set<Promise<unknown>>>>();
+function trackJournal(bb: BbPluginApi, hostId: string, work: Promise<unknown>) {
+  let hosts = journaling.get(bb);
+  if (!hosts) journaling.set(bb, (hosts = new Map()));
+  let pending = hosts.get(hostId);
+  if (!pending) hosts.set(hostId, (pending = new Set()));
+  pending.add(work);
+  const untrack = () => {
+    pending.delete(work);
+    if (pending.size === 0 && hosts.get(hostId) === pending) hosts.delete(hostId);
+  };
+  work.then(untrack, untrack);
+}
+
+/** Count refusals of operations the host answered without applying; drop hopeless ones. */
+async function settleReplies(bb: BbPluginApi, sent: string[], applied: readonly string[]) {
+  const acknowledged = new Set(applied);
+  for (const id of sent) {
+    if (acknowledged.has(id)) {
+      await bb.storage.kv.delete(id);
+      continue;
+    }
+    const owed = await bb.storage.kv.get<Owed>(id);
+    const now = Date.now();
+    if (!owed || (owed.refusedAt !== undefined && now - owed.refusedAt < REFUSAL_SPACING_MS))
+      continue;
+    const refusals = (owed.refusals ?? 0) + 1;
+    if (refusals < MAX_REFUSALS) {
+      await bb.storage.kv.set(id, { ...owed, refusals, refusedAt: now });
+      continue;
+    }
+    await bb.storage.kv.delete(id);
+    bb.log.warn(
+      `dropped a workspace ${owed.method} marker for thread ${owed.input.threadId} in ${owed.input.environmentPath} after ${refusals} refusals`,
+    );
+  }
+}
+
+// Serialize a host's journal exchanges, so acknowledgements never race a second replay.
+const exchanges = new WeakMap<BbPluginApi, Map<string, Promise<unknown>>>();
+async function exchange(bb: BbPluginApi, hostId: string, job: SyncInput["job"]) {
+  let hosts = exchanges.get(bb);
+  if (!hosts) exchanges.set(bb, (hosts = new Map()));
+  const previous = hosts.get(hostId) ?? Promise.resolve();
+  const run = previous
+    .catch(() => {})
+    .then(async () => {
+      // A lifecycle capture already under way journals its pin before this
+      // reads the journal, so a scan sees every capture that preceded it.
+      await Promise.allSettled(journaling.get(bb)?.get(hostId) ?? []);
+      const operations: HostOperation[] = [];
+      for (const key of (await bb.storage.kv.list(`${OWED_PREFIX}${hostId}:`)).sort()) {
+        const owed = await bb.storage.kv.get<Owed>(key);
+        if (!owed || owed.at < Date.now() - OWED_MS) {
+          await bb.storage.kv.delete(key);
+          continue;
+        }
+        operations.push({ id: key, method: owed.method, input: owed.input } as HostOperation);
+      }
+      if (!operations.length && job.kind === "settle") return { applied: [] };
+      const result = await callHost(bb, hostId, { job, operations });
+      await settleReplies(
+        bb,
+        operations.map((o) => o.id),
+        result.applied,
+      );
+      if (result.error) throw new Error(result.error);
+      return result;
+    });
+  hosts.set(hostId, run);
+  try {
+    return await run;
+  } finally {
+    if (hosts.get(hostId) === run) hosts.delete(hostId);
+  }
+}
+
+/**
+ * One bare snapshot, stamped by the server, never the host clock. It writes no
+ * refs, so it replays nothing and skips the host's journal queue: neither owed
+ * markers nor another thread's scan can delay it. The dispatch baseline and
+ * both lifecycle captures use it.
+ */
+export async function snapshotWorkspace(
+  bb: BbPluginApi,
+  target: Target,
+  signal?: AbortSignal,
+): Promise<Shot | null> {
+  if (hostStalled(bb, target.hostId)) return null;
+  const at = Date.now();
+  const { commit, error } = await callHost(
+    bb,
+    target.hostId,
+    { operations: [], job: { kind: "capture", environmentPath: target.environmentPath } },
+    signal,
+  );
+  if (error) throw new Error(error);
+  return commit ? { commit, at, finishedAt: Date.now() } : null;
+}
+
+/**
+ * A lifecycle capture, journaled before any later scan on its host reads the
+ * journal. A failed snapshot still leaves a marker.
+ */
+export async function captureWorkspace(
   bb: BbPluginApi,
   target: Target,
   threadId: string,
+  kind: "open" | "end",
+  baseline?: Shot,
 ): Promise<void> {
-  // The server's own records go first: they never depend on reaching the host.
-  for (const key of await bb.storage.kv.list(attributionPrefix(threadId))) {
+  const work = (async () => {
+    let shot: Shot | null = null;
+    let failure: { error: unknown } | null = null;
+    try {
+      shot = await snapshotWorkspace(bb, target);
+    } catch (error) {
+      failure = { error };
+    }
+    const finishedAt = Date.now();
+    const capture: Pin = shot
+      ? { kind, ...shot }
+      : { kind: kind === "open" ? "run" : "stop", at: finishedAt, finishedAt, commit: null };
+    const starts: Pin[] = baseline
+      ? [
+          {
+            kind: "start",
+            at: baseline.at,
+            finishedAt: baseline.finishedAt,
+            commit: baseline.commit,
+          },
+        ]
+      : [];
+    await pinWorkspace(bb, target, threadId, [...starts, capture]);
+    return failure;
+  })();
+  trackJournal(bb, target.hostId, work);
+  const failure = await work;
+  if (failure) throw failure.error;
+}
+
+/** Journal the thread's forget. The next scan or settle on its host delivers it. */
+export async function forgetWorkspace(bb: BbPluginApi, target: Target, threadId: string) {
+  for (const key of await bb.storage.kv.list(attributionPrefix(threadId)))
     await bb.storage.kv.delete(key);
-  }
   const at = Date.now();
-  await deliver(bb, {
+  await owe(bb, {
     hostId: target.hostId,
     at,
     method: "forget",
@@ -85,123 +289,20 @@ export async function forgetWorkspace(
   });
 }
 
-/**
- * A pin or forget the thread's host has not taken yet. The host is often a
- * laptop that sleeps while the server runs on, and a lost `stop` leaves its
- * thread looking mid-turn to every other thread in the checkout for hours.
- * Replaying one late is safe: its refs are named for its original
- * server-clock times, so it lands where it would have.
- */
-type Owed = { hostId: string; at: number } & (
-  | { method: "pin"; input: { environmentPath: string; threadId: string; captures: Pin[] } }
-  | { method: "forget"; input: { environmentPath: string; threadId: string; at: number } }
-);
-const OWED_PREFIX = "owed:";
-/** A host away this long is likely removed. What it is owed stops retrying. */
-const OWED_MS = 7 * 24 * 60 * 60 * 1000;
-/**
- * Debts kept per host; the oldest go first. The host already reads an `open`
- * with no `end` hours old as a lost capture, not a running turn.
- */
-const MAX_OWED = 100;
-/** Hosts replayed at once, so one that times out holds up only its own slot. */
-const SETTLE_CONCURRENCY = 4;
-/**
- * A failed call this slow timed out. bb lists a host whose socket went
- * half-open, like a Mac asleep, as connected, and each call to it waits out
- * the full host-call timeout. A refusal is a ref write failing in milliseconds.
- */
-const TIMED_OUT_MS = 5_000;
-
-function send(bb: BbPluginApi, owed: Owed) {
-  const options = { hostId: owed.hostId };
-  return owed.method === "pin"
-    ? client(bb).call("pin", owed.input, options)
-    : client(bb).call("forget", owed.input, options);
+/** Deliver what one host is owed; a no-op when it is owed nothing. */
+export async function settleHost(bb: BbPluginApi, hostId: string) {
+  await exchange(bb, hostId, { kind: "settle" });
 }
 
-/** Send after whatever the host is still owed, and keep it owed if the host cannot take it. */
-async function deliver(bb: BbPluginApi, owed: Owed): Promise<void> {
-  try {
-    // A host its replay just failed to reach would only time out again.
-    if (!(await settle(bb, owed.hostId))) throw new Error(`host ${owed.hostId} is unreachable`);
-    await send(bb, owed);
-  } catch (error) {
-    // Keys sort by time within a host, so replays go oldest first.
-    const prefix = `${OWED_PREFIX}${owed.hostId}:`;
-    const at = String(owed.at).padStart(15, "0");
-    await bb.storage.kv.set(`${prefix}${at}:${owed.input.threadId}:${owed.method}`, owed);
-    const keys = (await bb.storage.kv.list(prefix)).sort();
-    for (const stale of keys.slice(0, -MAX_OWED)) await bb.storage.kv.delete(stale);
-    throw error;
-  }
-}
-
-/** A host's replay, and whether it has listed the debts yet. */
-type Replay = { listed: boolean; reachable: Promise<boolean> };
-/**
- * Each host's newest replay. A caller joins it until it lists the debts, then
- * queues the next, which starts once it ends. So replays never overlap, at
- * most one waits, and every caller's replay sees each debt written before it
- * asked.
- */
-const replays = new WeakMap<BbPluginApi, Map<string, Replay>>();
-
-/**
- * Replay what a host is owed, oldest first. Runs before every call that reads
- * or writes the host's refs, so no read sees a thread mid-turn whose end is
- * still waiting here. One the host refuses stays for the next try. False when
- * the host cannot be reached, so the caller skips it too.
- */
-function settle(bb: BbPluginApi, hostId: string): Promise<boolean> {
-  const hosts = replays.get(bb) ?? new Map<string, Replay>();
-  replays.set(bb, hosts);
-  const last = hosts.get(hostId);
-  if (last && !last.listed) return last.reachable;
-  const replay: Replay = { listed: false, reachable: Promise.resolve(true) };
-  replay.reachable = (last?.reachable ?? Promise.resolve(true))
-    .then((reachable) => {
-      if (!reachable) return false; // The replay before this one just failed to reach it.
-      replay.listed = true;
-      return replayOwed(bb, hostId);
-    })
-    .finally(() => {
-      if (hosts.get(hostId) === replay) hosts.delete(hostId);
-    });
-  hosts.set(hostId, replay);
-  return replay.reachable;
-}
-
-async function replayOwed(bb: BbPluginApi, hostId: string): Promise<boolean> {
-  for (const key of (await bb.storage.kv.list(`${OWED_PREFIX}${hostId}:`)).sort()) {
-    const owed = await bb.storage.kv.get<Owed>(key);
-    if (owed?.hostId !== hostId) continue;
-    if (owed.at >= Date.now() - OWED_MS) {
-      const began = Date.now();
-      try {
-        await send(bb, owed);
-      } catch {
-        // A host that cannot answer fails the rest the same way, each after its own timeout.
-        if (Date.now() - began >= TIMED_OUT_MS) return false;
-        const host = await bb.sdk.hosts.get({ hostId }).catch(() => null);
-        if (host?.status !== "connected") return false;
-        continue; // The host refused this one alone. Still owed.
-      }
-    }
-    await bb.storage.kv.delete(key);
-  }
-  return true;
-}
-
-/** Replay every host's debts, so a checkout no thread touches again still heals. */
-export async function settleOwed(bb: BbPluginApi): Promise<void> {
-  const owed = await Promise.all(
+/** One exchange per host, so an offline host never causes one timeout per debt. */
+export async function settleOwed(bb: BbPluginApi) {
+  const records = await Promise.all(
     (await bb.storage.kv.list(OWED_PREFIX)).map((key) => bb.storage.kv.get<Owed>(key)),
   );
-  const hosts = [...new Set(owed.flatMap((entry) => (entry ? [entry.hostId] : [])))];
+  const hosts = [...new Set(records.flatMap((r) => (r ? [r.hostId] : [])))];
   const worker = async () => {
-    for (let hostId = hosts.shift(); hostId !== undefined; hostId = hosts.shift()) {
-      await settle(bb, hostId);
+    for (let id = hosts.shift(); id !== undefined; id = hosts.shift()) {
+      await settleHost(bb, id).catch(() => {});
     }
   };
   await Promise.all(Array.from({ length: SETTLE_CONCURRENCY }, worker));
@@ -256,34 +357,42 @@ const storedAttribution = z.union([
     .transform(({ foreign, ...a }) => ({ ...a, contested: foreign, owned: [] })),
 ]);
 
-/** The diff between the workspace captures bracketing a turn, when both exist. */
-export async function snapshotPatch(
+/**
+ * Up to MAX_SCAN_CANDIDATES windows share one host hop; empty candidates do not
+ * add roundtrips. Fewer results than candidates means the scan stopped early.
+ */
+export async function snapshotPatches(
   bb: BbPluginApi,
   target: Target,
   threadId: string,
-  window: TurnWindow,
-  rows: TurnRow[],
-): Promise<SnapshotPatch | null> {
-  const key = attributionKey(threadId, window);
-  const known = storedAttribution.safeParse(await bb.storage.kv.get(key)).data;
-  if (!(await settle(bb, target.hostId))) throw new Error(`host ${target.hostId} is unreachable`);
-  const { snapshot } = await client(bb).call(
-    "turnPatch",
-    {
-      environmentPath: target.environmentPath,
-      threadId,
-      window,
-      recordedPaths: recordedPaths(rows),
-      ...(known ? { known } : {}),
-    },
-    { hostId: target.hostId },
+  candidates: { window: TurnWindow; rows: TurnRow[]; canWrite: boolean }[],
+): Promise<(SnapshotPatch | null)[]> {
+  const inputs = await Promise.all(
+    candidates.slice(0, MAX_SCAN_CANDIDATES).map(async ({ window, rows, canWrite }) => {
+      const known = storedAttribution.safeParse(
+        await bb.storage.kv.get(attributionKey(threadId, window)),
+      ).data;
+      const input: SnapshotCandidate = { window, canWrite, recordedPaths: recordedPaths(rows) };
+      if (known) input.known = known;
+      return input;
+    }),
   );
-  // Ownership can grow on later reads, so compare the whole answer. A turn
-  // with nothing to show is skipped, so it never evicts the card on screen.
-  const fresh =
-    snapshot &&
-    (snapshot.patch !== "" || snapshot.attribution.contested.length > 0) &&
-    JSON.stringify(known) !== JSON.stringify(snapshot.attribution);
-  if (fresh) await remember(bb, threadId, key, snapshot.attribution);
-  return snapshot;
+  const { snapshots = [] } = await exchange(bb, target.hostId, {
+    kind: "scan",
+    environmentPath: target.environmentPath,
+    threadId,
+    candidates: inputs,
+  });
+  for (const [i, snapshot] of snapshots.entries()) {
+    const input = inputs[i];
+    if (
+      input &&
+      snapshot &&
+      (snapshot.patch !== "" || snapshot.attribution.contested.length > 0) &&
+      JSON.stringify(input.known) !== JSON.stringify(snapshot.attribution)
+    ) {
+      await remember(bb, threadId, attributionKey(threadId, input.window), snapshot.attribution);
+    }
+  }
+  return snapshots;
 }

@@ -1,8 +1,12 @@
-import { expect, test } from "bun:test";
+import { afterEach, beforeEach, expect, spyOn, test } from "bun:test";
 import { installDom } from "@bb-kit/core/testing";
 import { fireEvent, waitFor, within } from "@testing-library/react";
+import { act } from "react";
 import { CHANGED_CHANNEL, type LatestTurn } from "../src/shared/contract.ts";
 installDom();
+const { pluginQueryClient } = await import("@bb-kit/core/rpc/query");
+beforeEach(() => pluginQueryClient.clear());
+afterEach(() => pluginQueryClient.clear());
 // jsdom has no constructable stylesheets. Exercise Pierre's real components without CSS layout.
 if (typeof CSSStyleSheet.prototype.replaceSync !== "function") {
   Object.defineProperty(CSSStyleSheet.prototype, "replaceSync", {
@@ -465,6 +469,7 @@ test("a grouped Unity file keeps context and raw YAML on the matching edit", asy
   document.body.append(host);
   const turn: LatestTurn = {
     ...first,
+    revision: "a".repeat(64),
     changes: [
       {
         id: "first",
@@ -481,40 +486,47 @@ test("a grouped Unity file keeps context and raw YAML on the matching edit", asy
         removed: 1,
       },
     ],
-    unity: {
-      second: {
-        groups: [
+  };
+  const diff = {
+    groups: [
+      {
+        id: "hero",
+        name: "Hero",
+        hierarchy: "",
+        status: "modified",
+        components: [
           {
-            id: "hero",
-            name: "Hero",
-            hierarchy: "",
+            id: "object",
+            type: "GameObject",
             status: "modified",
-            components: [
-              {
-                id: "object",
-                type: "GameObject",
-                status: "modified",
-                properties: [{ path: "m_IsActive", before: "1", after: "0" }],
-              },
-            ],
+            properties: [{ path: "m_IsActive", before: "1", after: "0" }],
           },
         ],
-        propertyCount: 1,
       },
-    },
+    ],
+    propertyCount: 1,
   };
+
   const slot = renderSlot(
     captured.threadHeaderActions[0]!,
     { threadId: "thread-unity-edits", projectId: "p", isCompactViewport: false },
-    { rpc: { latestTurn: async () => ({ turn }) } },
+    {
+      rpc: {
+        latestTurn: async () => ({ turn }),
+        unityContext: async (input) => ({
+          diff: (input as { changeId: string }).changeId === "second" ? diff : null,
+        }),
+      },
+    },
   );
   try {
     const ui = within(host);
     fireEvent.click(await ui.findByRole("button", { name: "Expand Hero.prefab" }));
+    await ui.findByRole("region", { name: "Unity changes in Hero.prefab" });
     expect(ui.getAllByTestId("bb-diff").map((diff) => diff.textContent)).toEqual([
       "@@ -1 +1 @@\n-old\n+middle\n",
     ]);
-    const unity = within(ui.getByRole("region", { name: "Unity changes in Hero.prefab" }));
+    const unity = within(await ui.findByRole("region", { name: "Unity changes in Hero.prefab" }));
     expect(unity.getByText("Hero").textContent).toBe("Hero");
     expect(unity.getByText("1").textContent).toBe("1");
     expect(unity.getByText("0").textContent).toBe("0");
@@ -675,6 +687,173 @@ test("a rename announces its source path as shown", async () => {
     expect(document.getElementById(toggle.getAttribute("aria-describedby")!)?.textContent).toBe(
       "Renamed from a/source.ts",
     );
+  } finally {
+    slot.unmount();
+    host.remove();
+  }
+});
+
+test("connected realtime has no polling timer and reconnect reconciles once", async () => {
+  const captured = await loadPluginApp(() => import("../src/app/app.tsx"));
+  let calls = 0;
+  const intervals = new Map<ReturnType<typeof setInterval>, { callback: () => void; ms: number }>();
+  const set = globalThis.setInterval;
+  const clear = globalThis.clearInterval;
+  const setSpy = spyOn(globalThis, "setInterval").mockImplementation(((
+    callback: () => void,
+    ms: number,
+  ) => {
+    const id = set(callback, ms);
+    intervals.set(id, { callback, ms });
+    return id;
+  }) as typeof setInterval);
+  const clearSpy = spyOn(globalThis, "clearInterval").mockImplementation(((
+    id: ReturnType<typeof setInterval>,
+  ) => {
+    intervals.delete(id);
+    clear(id);
+  }) as typeof clearInterval);
+  const slot = renderSlot(
+    captured.threadHeaderActions[0]!,
+    { threadId: "timer", projectId: "p", isCompactViewport: false },
+    {
+      rpc: {
+        latestTurn: async () => {
+          calls++;
+          return { turn: null };
+        },
+      },
+    },
+  );
+  try {
+    await waitFor(() => expect(calls).toBe(1));
+    expect([...intervals.values()].filter((i) => i.ms >= 15_000)).toHaveLength(0);
+    await slot.behavior.setRealtimeConnectionState("reconnecting");
+    await waitFor(() => expect([...intervals.values()].some((i) => i.ms === 30_000)).toBe(true));
+    await act(async () => {
+      for (const timer of intervals.values()) if (timer.ms === 30_000) timer.callback();
+    });
+    await waitFor(() => expect(calls).toBe(2));
+    await slot.behavior.setRealtimeConnectionState("connected");
+    await waitFor(() => expect(calls).toBe(3));
+    expect([...intervals.values()].filter((i) => i.ms >= 15_000)).toHaveLength(0);
+  } finally {
+    slot.unmount();
+    setSpy.mockRestore();
+    clearSpy.mockRestore();
+  }
+});
+
+test("reopening a thread renders its cached anchor while reconciliation is pending", async () => {
+  const captured = await loadPluginApp(() => import("../src/app/app.tsx"));
+  const host = document.createElement("div");
+  host.innerHTML = '<div data-timeline-row-id="message-1"><p>Answer.</p></div>';
+  document.body.append(host);
+  const props = { threadId: "cached", projectId: "p", isCompactViewport: false };
+  const one = renderSlot(captured.threadHeaderActions[0]!, props, {
+    rpc: { latestTurn: async () => ({ turn: first }) },
+  });
+  await within(host).findByText("1 file changed");
+  one.unmount();
+  let finish = (_value: { turn: LatestTurn | null }) => {};
+  const pending = new Promise<{ turn: LatestTurn | null }>((resolve) => {
+    finish = resolve;
+  });
+  let calls = 0;
+  const two = renderSlot(captured.threadHeaderActions[0]!, props, {
+    rpc: {
+      latestTurn: async () => {
+        calls++;
+        return pending;
+      },
+    },
+  });
+  try {
+    await within(host).findByText("1 file changed");
+    expect(calls).toBe(1);
+    await act(async () => {
+      finish({ turn: null });
+    });
+    await waitFor(() => expect(host.querySelector("[data-last-turn-id]")).toBeNull());
+  } finally {
+    two.unmount();
+    host.remove();
+  }
+});
+
+test("Unity context is fetched only when expanded and reused after collapse", async () => {
+  const captured = await loadPluginApp(() => import("../src/app/app.tsx"));
+  const host = document.createElement("div");
+  host.innerHTML = '<div data-timeline-row-id="message-1"><p>Answer.</p></div>';
+  document.body.append(host);
+  let reads = 0;
+  const turn = {
+    ...first,
+    revision: "a".repeat(64),
+    changes: [{ ...first.changes[0]!, path: "Hero.prefab" }],
+  };
+  const slot = renderSlot(
+    captured.threadHeaderActions[0]!,
+    { threadId: "lazy-unity", projectId: "p", isCompactViewport: false },
+    {
+      rpc: {
+        latestTurn: async () => ({ turn }),
+        unityContext: async () => {
+          reads++;
+          return { diff: null };
+        },
+      },
+    },
+  );
+  try {
+    const toggle = await within(host).findByRole("button", { name: "Expand Hero.prefab" });
+    expect(reads).toBe(0);
+    fireEvent.click(toggle);
+    await waitFor(() => expect(reads).toBe(1));
+    fireEvent.click(toggle);
+    fireEvent.click(toggle);
+    expect(reads).toBe(1);
+  } finally {
+    slot.unmount();
+    host.remove();
+  }
+});
+
+test("a transport failure keeps the cached card; a server-answered error removes it", async () => {
+  const captured = await loadPluginApp(() => import("../src/app/app.tsx"));
+  const host = document.createElement("div");
+  host.innerHTML = '<div data-timeline-row-id="message-1"><p>Answer.</p></div>';
+  document.body.append(host);
+  let failure: Error | null = null;
+  let failed = 0;
+  const slot = renderSlot(
+    captured.threadHeaderActions[0]!,
+    { threadId: "errors", projectId: "p", isCompactViewport: false },
+    {
+      rpc: {
+        latestTurn: async () => {
+          if (!failure) return { turn: first };
+          failed++;
+          throw failure;
+        },
+      },
+    },
+  );
+  try {
+    await within(host).findByText("1 file changed");
+    failure = new TypeError("Failed to fetch");
+    await slot.behavior.emitRealtime(CHANGED_CHANNEL, { threadId: "errors" });
+    // The attempt and its one retry fail; the query settles in error with its cached data.
+    await waitFor(() => expect(failed).toBe(2), { timeout: 3_000 });
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    });
+    expect(within(host).queryByText("1 file changed")).not.toBeNull();
+    failure = Object.assign(new Error("turn replaced"), { code: "handler_error" });
+    await slot.behavior.emitRealtime(CHANGED_CHANNEL, { threadId: "errors" });
+    await waitFor(() => expect(host.querySelector("[data-last-turn-id]")).toBeNull(), {
+      timeout: 3_000,
+    });
   } finally {
     slot.unmount();
     host.remove();

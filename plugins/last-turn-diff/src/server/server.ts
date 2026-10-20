@@ -1,17 +1,20 @@
 import { definePlugin } from "@bb-kit/core/plugin";
 import { CHANGED_CHANNEL } from "../shared/contract.ts";
-import type { Pin } from "../shared/host-contract.ts";
-import { loadLatestTurn } from "./lib/read-latest-turn.ts";
+import { latestTurnStore } from "./lib/latest-turn-store.ts";
 import {
+  captureWorkspace,
   forgetWorkspace,
+  hostStalled,
   pinWorkspace,
   resolveTarget,
+  settleHost,
   settleOwed,
   snapshotWorkspace,
   type Shot,
   type Target,
 } from "./lib/snapshots.ts";
 import { latestTurn } from "./rpc/latest-turn.ts";
+import { unityContext } from "./rpc/unity-context.ts";
 
 /**
  * The dispatch hook holds bb's server-wide dispatch lock; never hold it longer
@@ -43,17 +46,29 @@ function entryText(content: readonly { type: string; text?: string }[]): string 
 
 export default definePlugin({
   pluginId: "last-turn-diff",
-  rpc: { latestTurn },
+  rpc: { latestTurn, unityContext },
   setup({ bb }) {
+    const turns = latestTurnStore(bb);
     const publish = (threadId: string) => bb.realtime.publish(CHANGED_CHANNEL, { threadId });
     const warn = (error: unknown) => bb.log.warn(`workspace snapshot failed: ${String(error)}`);
 
     // Snapshot operations for one thread run in order, from the moment their
     // event arrives. A turn's dispatch waits for every earlier operation, so
-    // a baseline that finished in time proves the previous end did too.
+    // a baseline that finished in time proves the previous end did too. Each
+    // is a bare host call or local bookkeeping, never another thread's work.
     const queues = new Map<string, Promise<void>>();
+    /** When each thread's running operation began. */
+    const busySince = new Map<string, number>();
     const enqueue = (threadId: string, operation: () => Promise<void>) => {
-      const next = (queues.get(threadId) ?? Promise.resolve()).then(operation).catch(warn);
+      const run = async () => {
+        busySince.set(threadId, Date.now());
+        try {
+          await operation();
+        } finally {
+          busySince.delete(threadId);
+        }
+      };
+      const next = (queues.get(threadId) ?? Promise.resolve()).then(run).catch(warn);
       queues.set(threadId, next);
       void next.finally(() => {
         if (queues.get(threadId) === next) queues.delete(threadId);
@@ -64,21 +79,22 @@ export default definePlugin({
     const pending = new Map<string, Baseline>();
     /** When each thread's current turn opened, or that its end is already pinned. */
     const phase = new Map<string, { openedAt: number } | "ended">();
-    const snap = (target: Target) => snapshotWorkspace(bb, target).catch(warn);
+    const snap = (target: Target, signal?: AbortSignal) =>
+      snapshotWorkspace(bb, target, signal).catch(warn);
     const checkoutOf = (thread: { environmentId: string | null }) =>
       resolveTarget(bb, thread).catch(() => null);
-    // Pins, forgets, and turn reads replay what their host is owed first.
-    // This reaches the hosts whose checkouts no thread touches again.
-    bb.background.schedule("settle-owed", "*/5 * * * *", () => settleOwed(bb));
+    // Scans and settles carry what their host is owed. This reaches the hosts
+    // whose checkouts no thread reads again, then retries reads that fell back.
+    bb.background.schedule("settle-owed", "*/5 * * * *", async () => {
+      await settleOwed(bb);
+      await turns.recover();
+    });
 
-    /** Pin the turn's end; a lifecycle marker even when the snapshot failed. */
-    const finish = (threadId: string, target: Target, shot: Shot | null | void) => {
+    /** A proven dispatch baseline also ends the preceding turn. */
+    const finish = async (threadId: string, target: Target, shot: Shot) => {
       phase.set(threadId, "ended");
-      const now = Date.now();
-      const pin: Pin = shot
-        ? { kind: "end", ...shot }
-        : { kind: "stop", at: now, finishedAt: now, commit: null };
-      return pinWorkspace(bb, target, threadId, [pin]);
+      await pinWorkspace(bb, target, threadId, [{ kind: "end", ...shot }]);
+      turns.invalidate(threadId);
     };
 
     // Baseline the checkout while the dispatch is held, so edits made between
@@ -95,12 +111,30 @@ export default definePlugin({
       }
       const target = { hostId: environment.hostId, environmentPath: environment.path };
       const began = Date.now();
+      // An earlier operation that already outlasted the budget, or a host whose
+      // last call timed out, leaves no time for a baseline. Let the message go
+      // now instead of holding bb's dispatch lock for nothing.
+      const since = busySince.get(thread.id);
+      if (
+        hostStalled(bb, target.hostId) ||
+        (since !== undefined && began - since >= DISPATCH_BUDGET_MS)
+      ) {
+        void enqueue(thread.id, async () => {
+          pending.delete(thread.id); // This pass leaves an earlier baseline unclaimable.
+        });
+        return { action: "proceed" };
+      }
       let held = true;
+      const controller = new AbortController();
       let timer: ReturnType<typeof setTimeout> | undefined;
       const baseline = enqueue(thread.id, async () => {
+        if (!held) {
+          pending.delete(thread.id); // This pass leaves an earlier baseline unclaimable.
+          return;
+        }
         const prior = pending.get(thread.id);
         pending.delete(thread.id);
-        const shot = await snap(target);
+        const shot = await snap(target, controller.signal);
         if (!held || !shot) return; // The dispatch went ahead without it.
         const current = phase.get(thread.id);
         const opened = typeof current === "object" ? current.openedAt : null;
@@ -119,6 +153,7 @@ export default definePlugin({
       const budget = new Promise<void>((resolve) => {
         timer = setTimeout(() => {
           held = false;
+          controller.abort();
           resolve();
         }, DISPATCH_BUDGET_MS);
       });
@@ -146,57 +181,61 @@ export default definePlugin({
       }),
     );
 
+    // The latest completed turn stays the same while a turn runs, so there is
+    // nothing to publish; idle refreshes the card.
     bb.events.on("thread.active", async ({ thread }) => {
+      turns.invalidate(thread.id);
       await enqueue(thread.id, async () => {
         const baseline = pending.get(thread.id);
         pending.delete(thread.id);
         phase.set(thread.id, { openedAt: Date.now() });
         const target = await checkoutOf(thread);
         if (!target) return;
-        const shot = await snap(target);
-        const now = Date.now();
-        const pins: Pin[] = [
-          ...(baseline
-            ? [
-                {
-                  kind: "start" as const,
-                  at: baseline.at,
-                  finishedAt: baseline.finishedAt,
-                  commit: baseline.commit,
-                },
-              ]
-            : []),
-          // Without a snapshot, still mark the thread as running for others.
-          shot
-            ? { kind: "open", ...shot }
-            : { kind: "run", at: now, finishedAt: now, commit: null },
-        ];
-        await pinWorkspace(bb, target, thread.id, pins);
+        await captureWorkspace(bb, target, thread.id, "open", baseline).catch(warn);
+        turns.invalidate(thread.id);
       });
-      publish(thread.id);
     });
 
     for (const event of ["thread.idle", "thread.failed"] as const) {
       bb.events.on(event, async ({ thread }) => {
+        turns.invalidate(thread.id);
         await enqueue(thread.id, async () => {
-          if (phase.get(thread.id) === "ended") return; // The next dispatch already pinned it.
-          const target = await checkoutOf(thread);
-          if (target) await finish(thread.id, target, await snap(target));
+          if (phase.get(thread.id) !== "ended") {
+            const target = await checkoutOf(thread);
+            if (target) {
+              await captureWorkspace(bb, target, thread.id, "end").catch(warn);
+              phase.set(thread.id, "ended");
+              turns.invalidate(thread.id);
+            }
+          }
         });
-        // Attribute now, while other threads' captures still bound this turn.
-        await loadLatestTurn(bb, thread.id).catch(warn);
+        // Attribute now, while other threads' captures still bound this turn;
+        // RPCs share this result. Outside the queue, so a queued follow-up's
+        // dispatch waits only for the bare end capture, never for this scan.
+        await turns.read(thread.id).catch(warn);
         publish(thread.id);
       });
     }
 
+    bb.events.on("experimental_thread.events", ({ thread }) => {
+      if (thread.status !== "active") publish(thread.id);
+    });
+
     for (const event of ["thread.archived", "thread.deleted"] as const) {
       bb.events.on(event, async ({ thread }) => {
+        const forgotten: Target[] = [];
         await enqueue(thread.id, async () => {
           pending.delete(thread.id);
           phase.delete(thread.id);
+          turns.invalidate(thread.id);
           const target = await checkoutOf(thread);
-          if (target) await forgetWorkspace(bb, target, thread.id);
+          if (!target) return;
+          await forgetWorkspace(bb, target, thread.id);
+          forgotten.push(target);
         });
+        // Delivered outside the thread's queue: a settle waits behind other
+        // threads' scans, which a later dispatch must never do.
+        for (const { hostId } of forgotten) await settleHost(bb, hostId).catch(() => {});
         publish(thread.id);
       });
     }

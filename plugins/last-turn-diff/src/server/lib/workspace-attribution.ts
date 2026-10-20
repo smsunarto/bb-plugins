@@ -1,13 +1,12 @@
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import { join } from "node:path";
-import { MAX_PATCH_CHARS, type TurnRow } from "./build-latest-turn.ts";
+import { MAX_PATCH_CHARS, isFileChangeRow, type TurnRow } from "./build-latest-turn.ts";
 import type { Change, LatestTurn } from "../../shared/contract.ts";
 import type { Coverage } from "./read-latest-turn.ts";
 import { isTemporaryPath } from "../../shared/patches.ts";
 
 type Environment = Awaited<ReturnType<BbPluginApi["sdk"]["environments"]["get"]>>;
 type Project = Awaited<ReturnType<BbPluginApi["sdk"]["projects"]["list"]>>[number];
-type FileChangeRow = Extract<TurnRow, { workKind: "file-change" }>;
 
 interface SourceRoot {
   root: string;
@@ -55,15 +54,6 @@ function projectSources(projects: Project[], hostId: string | undefined): Source
         .map((source) => ({ root: stripTrailingSeparators(source.path), label: project.name })),
     )
     .sort((a, b) => b.root.length - a.root.length);
-}
-
-export function isFileChangeRow(row: TurnRow): row is FileChangeRow {
-  return (
-    row.kind === "work" &&
-    row.workKind === "file-change" &&
-    row.status === "completed" &&
-    row.approvalStatus !== "denied"
-  );
 }
 
 function insideAny(roots: readonly string[], path: string | undefined): boolean {
@@ -118,13 +108,45 @@ export interface Attributor {
   keepPath: (path: string, coverage?: Coverage) => boolean;
 }
 
-async function loadContext(bb: BbPluginApi, threadId: string) {
-  const thread = await bb.sdk.threads.get({ threadId });
-  const environment: Environment | null = thread.environmentId
-    ? await bb.sdk.environments.get({ environmentId: thread.environmentId })
-    : null;
+export interface WorkspaceContext {
+  environment: Environment | null;
+  projects: Project[];
+}
+
+/**
+ * One server-side lookup supplies target resolution, attribution, and the memo
+ * identity. A failed lookup still yields a usable context (null without the
+ * thread or environment, no projects without the list), flagged `degraded` so
+ * the result is retried rather than kept.
+ */
+export async function loadWorkspaceContext(
+  bb: BbPluginApi,
+  threadId: string,
+): Promise<{ workspace: WorkspaceContext | null; degraded: boolean }> {
+  let degraded = false;
+  const [workspace, projects] = await Promise.all([
+    (async () => {
+      const thread = await bb.sdk.threads.get({ threadId });
+      return thread.environmentId
+        ? bb.sdk.environments.get({ environmentId: thread.environmentId })
+        : null;
+    })().then(
+      (environment) => ({ environment }),
+      () => {
+        degraded = true;
+        return null;
+      },
+    ),
+    (async () => bb.sdk.projects.list({ includePersonal: true }))().catch(() => {
+      degraded = true;
+      return [];
+    }),
+  ]);
+  return { workspace: workspace && { ...workspace, projects }, degraded };
+}
+
+function loadContext({ environment, projects }: WorkspaceContext) {
   const root = environment?.path ? stripTrailingSeparators(environment.path) : null;
-  const projects = await bb.sdk.projects.list({ includePersonal: true }).catch(() => []);
   const sources = projectSources(projects, environment?.hostId);
   const own = root ? sources.find((source) => source.root === root) : undefined;
   return {
@@ -146,8 +168,8 @@ async function loadContext(bb: BbPluginApi, threadId: string) {
  * `changes` alongside it. Never throws. Without the thread's environment,
  * labels are missing, but rows a snapshot covers are still dropped.
  */
-export async function workspaceAttributor(bb: BbPluginApi, threadId: string): Promise<Attributor> {
-  const context = await loadContext(bb, threadId).catch(() => null);
+export function workspaceAttributor(workspace: WorkspaceContext | null): Attributor {
+  const context = workspace ? loadContext(workspace) : null;
   const sources = context?.sources ?? [];
   const ownLabel = context?.ownLabel;
   const attribution = (path: string, coverage?: Coverage): Attribution => {

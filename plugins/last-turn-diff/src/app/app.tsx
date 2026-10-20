@@ -1,3 +1,4 @@
+import { isUnityAsset } from "@bb-plugins/unity-inspector/model";
 import { UnityDiffView } from "@bb-plugins/unity-inspector/app";
 import { PluginQueryBoundary } from "@bb-kit/core/rpc/query";
 import {
@@ -89,7 +90,7 @@ function turnTotals(groups: { other: boolean; files: FileEntry[] }[]) {
   };
 }
 
-function TurnDiff({ turn }: { turn: LatestTurn }) {
+function TurnDiff({ turn, threadId }: { turn: LatestTurn; threadId: string }) {
   const bodyIdPrefix = useId();
   const changes = useMemo(() => turnChanges(turn), [turn]);
   const groups = useMemo(
@@ -203,7 +204,7 @@ function TurnDiff({ turn }: { turn: LatestTurn }) {
                     {/* Mounted while closed so the toggle's aria-controls resolves. */}
                     <div id={`${bodyIdPrefix}-${change.id}`} hidden={!expanded.has(change.id)}>
                       {expanded.has(change.id) ? (
-                        <FileEdits edits={edits} unity={turn.unity} />
+                        <FileEdits edits={edits} turn={turn} threadId={threadId} />
                       ) : null}
                     </div>
                   </div>
@@ -216,10 +217,17 @@ function TurnDiff({ turn }: { turn: LatestTurn }) {
 }
 
 /** An expanded file: each recorded edit's diff, captioned when there are several. */
-function FileEdits({ edits, unity }: { edits: Change[]; unity: LatestTurn["unity"] }) {
+function FileEdits({
+  edits,
+  turn,
+  threadId,
+}: {
+  edits: Change[];
+  turn: LatestTurn;
+  threadId: string;
+}) {
   return edits.map((edit, index) => {
     const path = edit.relPath ?? edit.path;
-    const diff = unity?.[edit.id];
     const raw = edit.patch ? (
       <Diff
         patch={edit.patch}
@@ -242,26 +250,56 @@ function FileEdits({ edits, unity }: { edits: Change[]; unity: LatestTurn["unity
           </p>
         ) : null}
         <div className="last-turn-diff-body">
-          {diff ? <UnityDiffView diff={diff} path={path} raw={raw} /> : raw}
+          <EditDiff edit={edit} turn={turn} threadId={threadId} raw={raw} />
         </div>
       </div>
     );
   });
 }
 
+/** Only mounted for expanded files; the server validates the edit against this revision. */
+function EditDiff({
+  edit,
+  turn,
+  threadId,
+  raw,
+}: {
+  edit: Change;
+  turn: LatestTurn;
+  threadId: string;
+  raw: React.ReactNode;
+}) {
+  const query = rpc.unityContext.useQuery(
+    { threadId, revision: turn.revision ?? "", changeId: edit.id },
+    {
+      enabled: !!turn.revision && !!edit.patch && isUnityAsset(edit.path),
+      staleTime: Infinity,
+      gcTime: 30 * 60_000,
+      retry: false,
+    },
+  );
+  const diff = query.data?.diff;
+  return diff ? <UnityDiffView diff={diff} path={edit.relPath ?? edit.path} raw={raw} /> : raw;
+}
+
 function LatestDiff({ threadId }: { threadId: string }) {
   const owner = useRef<HTMLSpanElement>(null);
   const [target, setTarget] = useState<HTMLElement | null>(null);
+  const connection = useRealtimeConnectionState();
+  const previousConnection = useRef(connection);
   const query = rpc.latestTurn.useQuery(
     { threadId },
     {
-      refetchInterval: 15_000,
+      refetchInterval: connection === "connected" ? false : 30_000,
       refetchIntervalInBackground: false,
-      gcTime: 0,
+      staleTime: 30_000,
+      gcTime: 30 * 60_000,
+      refetchOnMount: "always",
+      refetchOnWindowFocus: false,
+      refetchOnReconnect: false,
     },
   );
   const { refetch } = query;
-  const connection = useRealtimeConnectionState();
   useRealtime(CHANGED_CHANNEL, (payload) => {
     if (
       typeof payload === "object" &&
@@ -272,9 +310,13 @@ function LatestDiff({ threadId }: { threadId: string }) {
       void refetch();
   });
   useEffect(() => {
-    if (connection === "connected") void refetch();
+    if (connection === "connected" && previousConnection.current !== "connected") void refetch();
+    previousConnection.current = connection;
   }, [connection, refetch]);
-  const turn = query.isError ? null : query.data?.turn;
+  // A transport failure keeps the cached turn. A server that answered with an
+  // error (for example after compaction replaced the turn) no longer vouches for it.
+  const answered = query.isError && typeof Reflect.get(query.error, "code") === "string";
+  const turn = answered ? null : query.data?.turn;
   const anchorId = turn?.anchorId;
   useEffect(() => {
     if (!anchorId) return;
@@ -290,7 +332,7 @@ function LatestDiff({ threadId }: { threadId: string }) {
         data-last-turn-diff-current={turn?.turnId}
       />
       {target && anchorId && turn
-        ? createPortal(<TurnDiff key={turn.turnId} turn={turn} />, target)
+        ? createPortal(<TurnDiff key={turn.turnId} turn={turn} threadId={threadId} />, target)
         : null}
     </>
   );

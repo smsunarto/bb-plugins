@@ -1,16 +1,25 @@
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import { buildLatestTurn, findTurnAnchor, type TurnRow } from "./build-latest-turn.ts";
 import type { LatestTurn } from "../../shared/contract.ts";
-import type { SnapshotPatch, TurnWindow } from "../../shared/host-contract.ts";
-import { resolveTarget, snapshotPatch } from "./snapshots.ts";
-import { workspaceAttributor, type Attributor } from "./workspace-attribution.ts";
+import {
+  MAX_SCAN_CANDIDATES,
+  type SnapshotPatch,
+  type TurnWindow,
+} from "../../shared/host-contract.ts";
+import { type Attributor } from "./workspace-attribution.ts";
 import { isTemporaryPath, turnChanges } from "../../shared/patches.ts";
 
 type Threads = BbPluginApi["sdk"]["threads"];
 type Event = Awaited<ReturnType<Threads["events"]["list"]>>[number];
 /** Reads the workspace snapshot diff for a turn; null when it has none. */
-export type ReadSnapshot = (window: TurnWindow, rows: TurnRow[]) => Promise<SnapshotPatch | null>;
+export type ReadSnapshots = (
+  candidates: { window: TurnWindow; rows: TurnRow[]; canWrite: boolean }[],
+) => Promise<(SnapshotPatch | null)[]>;
 const PAGE_SIZE = 20;
+const RECORDED_ATTRIBUTOR: Attributor = {
+  apply: (turn) => turn,
+  keepPath: (path) => !isTemporaryPath(path),
+};
 /** Work that can write files without the provider recording a file change. */
 const UNRECORDED_WRITERS = new Set(["command", "tool", "extension", "delegation", "workflow"]);
 
@@ -21,21 +30,6 @@ export interface Coverage {
   uncovered: string[];
 }
 
-/** The latest turn with workspace snapshots and attribution, falling back to provider data. */
-export async function loadLatestTurn(bb: BbPluginApi, threadId: string) {
-  const [target, attribute] = await Promise.all([
-    // No checkout: fall back to the provider's recorded changes.
-    (async () => resolveTarget(bb, await bb.sdk.threads.get({ threadId })))().catch(() => null),
-    workspaceAttributor(bb, threadId),
-  ]);
-  return readLatestTurn(
-    bb.sdk.threads,
-    threadId,
-    target ? (window, rows) => snapshotPatch(bb, target, threadId, window, rows) : undefined,
-    attribute,
-  );
-}
-
 /**
  * Select the newest completed turn with changes to show, including after
  * no-edit replies. Each candidate is attributed before that decision, so a
@@ -44,50 +38,110 @@ export async function loadLatestTurn(bb: BbPluginApi, threadId: string) {
 export async function readLatestTurn(
   threads: Threads,
   threadId: string,
-  readSnapshot?: ReadSnapshot,
-  attribute: Attributor = { apply: (turn) => turn, keepPath: (path) => !isTemporaryPath(path) },
-): Promise<LatestTurn | null> {
-  const timeline = await threads.timeline({ threadId, segmentLimit: "2" });
-  const boundary = timeline.contextBoundarySeq;
+  readSnapshots?: ReadSnapshots,
+  attribute: Attributor = RECORDED_ATTRIBUTOR,
+  initialTimeline?: Awaited<ReturnType<Threads["timeline"]>>,
+): Promise<{ turn: LatestTurn | null; reliable: boolean }> {
+  let reliable = true;
+  const timeline = initialTimeline ?? (await threads.timeline({ threadId, segmentLimit: "2" }));
   let beforeSeq = String(timeline.maxSeq + 1);
   while (true) {
-    const completedTurns = await threads.events.list({
+    const batch = await readCandidateBatch(
+      threads,
       threadId,
-      types: ["turn/completed"],
-      order: "desc",
-      limit: String(PAGE_SIZE),
+      timeline,
       beforeSeq,
-      ...(boundary !== null ? { afterSeq: String(boundary) } : {}),
-    });
-    for (const completed of completedTurns) {
-      const candidate = await readCandidate(
-        threads,
-        threadId,
-        completed,
-        boundary,
-        timeline,
-        readSnapshot,
-        attribute,
-      );
-      if (!candidate) continue;
-      return resolveAnchor(threads, threadId, candidate, timeline);
+      !!readSnapshots,
+      attribute,
+    );
+    const { candidates, done } = batch;
+    beforeSeq = batch.beforeSeq;
+    const snapshots =
+      readSnapshots && candidates.length
+        ? await readSnapshots(
+            candidates.map((c) => ({
+              window: c.window!,
+              rows: c.ownRows,
+              canWrite: c.ownRows.some(isUnrecordedWriter),
+            })),
+          ).catch(() => [])
+        : [];
+    const scanned =
+      snapshots.length && snapshots.length < candidates.length
+        ? candidates.slice(0, snapshots.length)
+        : candidates;
+    for (const [i, candidate] of scanned.entries()) {
+      const built = buildCandidate(candidate, timeline, snapshots[i] ?? null, attribute);
+      reliable &&= candidate.reliable;
+      if (built) return { turn: await resolveAnchor(threads, threadId, built, timeline), reliable };
     }
-    if (completedTurns.length < PAGE_SIZE) return null;
-    const oldest = completedTurns.at(-1)!;
-    if (oldest.seq >= Number(beforeSeq)) return null;
-    beforeSeq = String(oldest.seq);
+    if (scanned.length < candidates.length) {
+      beforeSeq = String(scanned.at(-1)!.completedSeq);
+    } else if (done) return { turn: null, reliable };
+    // A provider edit that the snapshot proves reverted may require an older page.
   }
 }
 
-async function readCandidate(
+/**
+ * Stop metadata reads at a page with provider evidence; collect empty pages
+ * into one host scan of at most MAX_SCAN_CANDIDATES windows. Pages shrink to
+ * the room left, so no candidate is prepared beyond the batch.
+ */
+async function readCandidateBatch(
+  threads: Threads,
+  threadId: string,
+  timeline: Awaited<ReturnType<Threads["timeline"]>>,
+  beforeSeq: string,
+  needsWindow: boolean,
+  attribute: Attributor,
+) {
+  const candidates: PreparedCandidate[] = [];
+  const boundary = timeline.contextBoundarySeq;
+  while (true) {
+    const limit = Math.min(PAGE_SIZE, MAX_SCAN_CANDIDATES - candidates.length);
+    const completed = await threads.events.list({
+      threadId,
+      types: ["turn/completed"],
+      order: "desc",
+      limit: String(limit),
+      beforeSeq,
+      ...(boundary !== null ? { afterSeq: String(boundary) } : {}),
+    });
+    const page = await Promise.all(
+      completed.map((event) => prepareCandidate(threads, threadId, event, boundary, needsWindow)),
+    );
+    candidates.push(...page.filter((c): c is PreparedCandidate => c !== null));
+    const oldest = completed.at(-1);
+    const done = completed.length < limit || !oldest || oldest.seq >= Number(beforeSeq);
+    if (oldest) beforeSeq = String(oldest.seq);
+    if (
+      done ||
+      candidates.length >= MAX_SCAN_CANDIDATES ||
+      page.some((c) => c && buildCandidate(c, timeline, null, attribute))
+    ) {
+      return { candidates, done, beforeSeq };
+    }
+  }
+}
+
+type PreparedCandidate = {
+  turnId: string;
+  startedSeq: number;
+  completedSeq: number;
+  rows: TurnRow[];
+  ownRows: TurnRow[];
+  patch: string | null;
+  window: TurnWindow | null;
+  reliable: boolean;
+};
+
+async function prepareCandidate(
   threads: Threads,
   threadId: string,
   completed: Event,
   boundary: number | null,
-  timeline: Awaited<ReturnType<Threads["timeline"]>>,
-  readSnapshot: ReadSnapshot | undefined,
-  attribute: Attributor,
-): Promise<{ turn: LatestTurn; startedSeq: number } | null> {
+  needsWindow: boolean,
+): Promise<PreparedCandidate | null> {
   if (completed.scope.kind !== "turn") return null;
   const turnId = completed.scope.turnId;
   const [started] = await threads.events.list({
@@ -99,6 +153,7 @@ async function readCandidate(
     ...(boundary !== null ? { afterSeq: String(boundary) } : {}),
   });
   if (!started || started.scope.kind !== "turn" || started.scope.turnId !== turnId) return null;
+  let reliable = true;
   const [details, diffs] = await Promise.all([
     // Some historical timelines cannot reconstruct this summary window. The
     // independently recorded aggregate patch is still valid and renderable.
@@ -109,7 +164,10 @@ async function readCandidate(
         sourceSeqStart: String(started.seq),
         sourceSeqEnd: String(completed.seq),
       })
-      .catch(() => ({ rows: [] })),
+      .catch(() => {
+        reliable = false;
+        return { rows: [] };
+      }),
     threads.events.list({
       threadId,
       types: ["turn/diff/updated"],
@@ -125,31 +183,38 @@ async function readCandidate(
       ? (diff.data.diff ?? null)
       : null;
   const ownRows = details.rows.filter((row) => row.turnId === turnId);
-  // The workspace snapshot sees every write, including shell and formatter
-  // edits the provider never reports, so it outranks the provider's patch.
-  const snapshot = readSnapshot
-    ? await turnWindow(threads, threadId, started, completed)
-        .then((window) => readSnapshot(window, ownRows))
-        .catch(() => null)
-    : null;
+  return {
+    turnId,
+    reliable,
+    startedSeq: started.seq,
+    completedSeq: completed.seq,
+    rows: details.rows,
+    ownRows,
+    patch,
+    window: needsWindow ? await turnWindow(threads, threadId, started, completed) : null,
+  };
+}
+
+function buildCandidate(
+  { turnId, startedSeq, rows, ownRows, patch }: PreparedCandidate,
+  timeline: Awaited<ReturnType<Threads["timeline"]>>,
+  snapshot: SnapshotPatch | null,
+  attribute: Attributor,
+): { turn: LatestTurn; startedSeq: number } | null {
   const coverage = snapshot
     ? { roots: [snapshot.path, snapshot.root], uncovered: snapshot.uncovered }
     : undefined;
-  const built = buildLatestTurn(
-    turnId,
-    details.rows,
-    snapshot?.patch ?? patch,
-    timeline.rows,
-    (path) => attribute.keepPath(path, coverage),
+  const built = buildLatestTurn(turnId, rows, snapshot?.patch ?? patch, timeline.rows, (path) =>
+    attribute.keepPath(path, coverage),
   );
   // An empty snapshot proves the checkout ended where it began: edits the
   // provider recorded there were reverted. Attribution keeps rows only for
   // paths the snapshot cannot see.
   if (snapshot?.patch === "") built.patch = "";
   if (snapshot?.limited) built.limited = true;
-  const turn = attribute.apply(built, details.rows, coverage);
+  const turn = attribute.apply(built, rows, coverage);
   if (!addOthers(turn, snapshot, ownRows)) return null;
-  return { turn, startedSeq: started.seq };
+  return { turn, startedSeq };
 }
 
 /** bb's boundaries around the turn, which a capture pair must fit inside. */
