@@ -81,11 +81,20 @@ test("the Cloud banner shows the session once the bridge reports it", async () =
   derive("thr_cloud");
   derive("thr_local");
   const events: unknown[] = [];
-  harness.sdk.stub("threads.get", () => ({ providerId: "devin" }));
+  harness.sdk.stub("threads.get", ({ threadId }: { threadId: string }) => ({
+    providerId: threadId === "thr_codex" ? "codex" : "devin",
+  }));
   harness.sdk.stub("threads.events.list", () => events);
 
+  // Hidden is final; unclaimed can still become Cloud at the first command.
   assert.deepEqual(await harness.callRpc("cloudSession", { threadId: "thr_local" }), {
     state: "hidden",
+  });
+  assert.deepEqual(await harness.callRpc("cloudSession", { threadId: "thr_codex" }), {
+    state: "hidden",
+  });
+  assert.deepEqual(await harness.callRpc("cloudSession", { threadId: "thr_new" }), {
+    state: "unclaimed",
   });
   assert.deepEqual(await harness.callRpc("cloudSession", { threadId: "thr_cloud" }), {
     state: "starting",

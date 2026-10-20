@@ -47,6 +47,7 @@
     "instructions/",
     "src/",
     "!src/**/*.test.ts",
+    "!src/**/*.test.tsx",
     "README.md",
     "LICENSE"
   ],
@@ -71,7 +72,7 @@
     "build": "bb plugin build .",
     "lint": "oxlint",
     "typecheck": "tsc --noEmit",
-    "test": "node --test --import tsx 'src/**/*.test.ts'",
+    "test": "node --test --import tsx 'src/**/*.test.ts' && bun test src/app --timeout=30000",
     "check": "node --import tsx ../../packages/bb-kit-dev/src/bin.ts check",
     "clean": "rm -rf dist"
   }
