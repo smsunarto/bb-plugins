@@ -78,6 +78,204 @@ test("snapshots dirty and untracked files without changing the source index", as
   expect((await f.git(["show", `${pinned.base}:untracked.txt`])).stdout).toBe("preserve\n");
   expect((await f.git(["diff", "--cached", "--binary"])).stdout).toBe(before);
   expect(await readFile(join(f.root, "result.txt"), "utf8")).toBe("local edit\n");
+  expect((await f.git(["rev-parse", `${pinned.base}^`])).stdout).toBe(
+    (await f.git(["rev-parse", "HEAD"])).stdout,
+  );
+});
+
+// Simulates what GitButler leaves in a repository: stacks on the target, an octopus workspace
+// commit on gitbutler/workspace checked out through HEAD, and the target recorded in git config.
+async function gitbutler() {
+  const directory = await mkdtemp(join(tmpdir(), "arena-gitbutler-"));
+  directories.push(directory);
+  const root = join(directory, "workspace");
+  await mkdir(root);
+  const signal = new AbortController().signal;
+  const git = async (args: string[], cwd = root) =>
+    (await command(cwd, ["git", ...args], signal)).stdout.trim();
+  await git(["init", "--quiet", "--initial-branch=main"]);
+  await git(["config", "user.name", "Arena test"]);
+  await git(["config", "user.email", "arena-test@localhost"]);
+  await writeFile(join(root, "a.txt"), "a1\n");
+  await writeFile(join(root, "b.txt"), "b1\n");
+  await writeFile(join(root, ".gitignore"), "ignored.txt\n");
+  await git(["add", "."]);
+  await git(["commit", "--quiet", "-m", "target"]);
+  const target = await git(["rev-parse", "HEAD"]);
+  await git(["update-ref", "refs/remotes/origin/main", target]);
+  const stack = async (name: string, file: string) => {
+    await git(["checkout", "--quiet", "-b", name, target]);
+    await writeFile(join(root, file), `${name}\n`);
+    await git(["commit", "--quiet", "-am", name]);
+    return git(["rev-parse", "HEAD"]);
+  };
+  const stacks = [await stack("stack-a", "a.txt"), await stack("stack-b", "b.txt")];
+  const tree = (await git(["merge-tree", "--write-tree", ...stacks])).split("\n")[0]!;
+  const workspace = (
+    await command(
+      root,
+      ["git", "commit-tree", tree, ...stacks.flatMap((commit) => ["-p", commit])],
+      signal,
+      {
+        input: "GitButler Workspace Commit\n",
+        env: {
+          GIT_AUTHOR_NAME: "GitButler",
+          GIT_AUTHOR_EMAIL: "gitbutler@gitbutler.com",
+          GIT_COMMITTER_NAME: "GitButler",
+          GIT_COMMITTER_EMAIL: "gitbutler@gitbutler.com",
+        },
+      },
+    )
+  ).stdout.trim();
+  await git(["update-ref", "refs/heads/gitbutler/workspace", workspace]);
+  await git(["symbolic-ref", "HEAD", "refs/heads/gitbutler/workspace"]);
+  await git(["reset", "--quiet", "--hard", workspace]);
+  await git(["config", "gitbutler.project.targetref", "refs/remotes/origin/main"]);
+  await git(["config", "gitbutler.project.targetcommitid", target]);
+  const managed = [workspace, ...stacks];
+  async function ancestry(commit: string) {
+    return (await git(["rev-list", commit])).split("\n");
+  }
+  return { directory, root, signal, git, target, managed, ancestry };
+}
+
+test("GitButler workspace snapshots branch from its target with the full working state", async () => {
+  const g = await gitbutler();
+  await writeFile(join(g.root, "a.txt"), "uncommitted\n");
+  await writeFile(join(g.root, "untracked.txt"), "preserve\n");
+  await writeFile(join(g.root, "ignored.txt"), "skip\n");
+  const index = await readFile(join(g.root, ".git", "index"));
+  const arena = new ArenaGit(join(g.directory, "state"));
+  const { base } = await arena.snapshot({ runId: randomUUID(), path: g.root }, g.signal);
+  expect(await g.git(["show", `${base}:a.txt`])).toBe("uncommitted");
+  expect(await g.git(["show", `${base}:b.txt`])).toBe("stack-b");
+  expect(await g.git(["show", `${base}:untracked.txt`])).toBe("preserve");
+  expect(await g.git(["ls-tree", "--name-only", base, "ignored.txt"])).toBe("");
+  expect(await readFile(join(g.root, ".git", "index"))).toEqual(index);
+  expect(await g.git(["rev-parse", `${base}^`])).toBe(g.target);
+  for (const commit of g.managed) expect(await g.ancestry(base)).not.toContain(commit);
+  expect(await g.git(["symbolic-ref", "HEAD"])).toBe("refs/heads/gitbutler/workspace");
+  expect(await readFile(join(g.root, "a.txt"), "utf8")).toBe("uncommitted\n");
+});
+
+test("a linked checkout of an applied stack branches from GitButler's target", async () => {
+  const g = await gitbutler();
+  const checkout = join(g.directory, "stack-a");
+  await g.git(["worktree", "add", "--quiet", checkout, "stack-a"]);
+  await writeFile(join(checkout, "b.txt"), "dirty\n");
+  const arena = new ArenaGit(join(g.directory, "state"));
+  const { base } = await arena.snapshot({ runId: randomUUID(), path: checkout }, g.signal);
+  expect(await g.git(["show", `${base}:a.txt`])).toBe("stack-a");
+  expect(await g.git(["show", `${base}:b.txt`])).toBe("dirty");
+  expect(await g.git(["rev-parse", `${base}^`])).toBe(g.target);
+  for (const commit of g.managed) expect(await g.ancestry(base)).not.toContain(commit);
+});
+
+test("a linked branch with its own commits branches from GitButler's target", async () => {
+  // The branch is outside the workspace today, but applying it later must not adopt workers.
+  const g = await gitbutler();
+  const checkout = join(g.directory, "feature");
+  await g.git(["worktree", "add", "--quiet", "-b", "feature", checkout, g.target]);
+  await writeFile(join(checkout, "feature.txt"), "feature\n");
+  await g.git(["add", "."], checkout);
+  await g.git(["commit", "--quiet", "-m", "feature"], checkout);
+  const head = await g.git(["rev-parse", "HEAD"], checkout);
+  const arena = new ArenaGit(join(g.directory, "state"));
+  const { base } = await arena.snapshot({ runId: randomUUID(), path: checkout }, g.signal);
+  expect(await g.git(["show", `${base}:feature.txt`])).toBe("feature");
+  expect(await g.git(["rev-parse", `${base}^`])).toBe(g.target);
+  expect(await g.ancestry(base)).not.toContain(head);
+});
+
+test("a worker checkout on an Arena base keeps its own history", async () => {
+  const g = await gitbutler();
+  const arena = new ArenaGit(join(g.directory, "state"));
+  const { base } = await arena.snapshot({ runId: randomUUID(), path: g.root }, g.signal);
+  const worker = join(g.directory, "worker");
+  await g.git(["worktree", "add", "--quiet", "-b", "arena-candidate", worker, base]);
+  await writeFile(join(worker, "worker.txt"), "worker\n");
+  await g.git(["add", "."], worker);
+  await g.git(["commit", "--quiet", "-m", "worker"], worker);
+  const head = await g.git(["rev-parse", "HEAD"], worker);
+  await writeFile(join(worker, "dirty.txt"), "dirty\n");
+  const pinned = await arena.snapshot({ runId: randomUUID(), path: worker }, g.signal);
+  expect(await g.git(["show", `${pinned.base}:dirty.txt`])).toBe("dirty");
+  expect(await g.git(["rev-parse", `${pinned.base}^`])).toBe(head);
+});
+
+test("a snapshot after leaving GitButler mode keeps its own history", async () => {
+  const g = await gitbutler();
+  // `but teardown` checks out a stack but leaves the workspace ref and target config behind.
+  await g.git(["checkout", "--quiet", "stack-a"]);
+  const arena = new ArenaGit(join(g.directory, "state"));
+  const { base } = await arena.snapshot({ runId: randomUUID(), path: g.root }, g.signal);
+  expect(await g.git(["rev-parse", `${base}^`])).toBe(g.managed[1]!);
+});
+
+test("a target ahead of the workspace falls back to their shared history", async () => {
+  const g = await gitbutler();
+  const tree = await g.git(["rev-parse", `${g.target}^{tree}`]);
+  const upstream = await g.git(["commit-tree", tree, "-p", g.target, "-m", "upstream"]);
+  await g.git(["update-ref", "refs/remotes/origin/main", upstream]);
+  await g.git(["config", "gitbutler.project.targetcommitid", upstream]);
+  const arena = new ArenaGit(join(g.directory, "state"));
+  const { base } = await arena.snapshot({ runId: randomUUID(), path: g.root }, g.signal);
+  expect(await g.git(["rev-parse", `${base}^`])).toBe(g.target);
+});
+
+test.each([
+  ["no target commit", ["--unset", "gitbutler.project.targetcommitid"]],
+  ["an unknown target commit", ["gitbutler.project.targetcommitid", "f".repeat(40)]],
+  ["a stack commit as its target", ["gitbutler.project.targetcommitid", "stack-a"]],
+  ["no target branch", ["--unset", "gitbutler.project.targetref"]],
+  ["a missing target branch", ["gitbutler.project.targetref", "refs/remotes/origin/missing"]],
+])("a GitButler workspace with %s fails without pinning a snapshot", async (_case, config) => {
+  const g = await gitbutler();
+  await g.git(["config", ...config]);
+  const arena = new ArenaGit(join(g.directory, "state"));
+  await expect(arena.snapshot({ runId: randomUUID(), path: g.root }, g.signal)).rejects.toThrow(
+    "GitButler's target commit",
+  );
+  expect(await g.git(["for-each-ref", "refs/arena/"])).toBe("");
+});
+
+test("GitButler edit mode fails without pinning a snapshot", async () => {
+  const g = await gitbutler();
+  await g.git(["checkout", "--quiet", "-b", "gitbutler/edit", "stack-a"]);
+  const arena = new ArenaGit(join(g.directory, "state"));
+  await expect(arena.snapshot({ runId: randomUUID(), path: g.root }, g.signal)).rejects.toThrow(
+    "Exit GitButler edit mode",
+  );
+  expect(await g.git(["for-each-ref", "refs/arena/"])).toBe("");
+});
+
+test("every Arena pin of a GitButler run stays outside the workspace and still integrates", async () => {
+  const g = await gitbutler();
+  await writeFile(join(g.root, "ongoing.txt"), "keep ongoing work\n");
+  const arena = new ArenaGit(join(g.directory, "state"));
+  const runId = randomUUID();
+  const { base } = await arena.snapshot({ runId, path: g.root }, g.signal);
+  const synthesis = join(g.directory, "synthesis");
+  await g.git(["worktree", "add", "--quiet", "-b", "arena-synthesis", synthesis, base]);
+  await writeFile(join(synthesis, "a.txt"), "synthesized\n");
+  const identity = { runId, round: 1 };
+  const prepared = await arena.prepare(
+    { ...identity, snapshotId: randomUUID(), root: g.root, base, synthesisPath: synthesis },
+    g.signal,
+  );
+  if (prepared.status !== "prepared") throw new Error(prepared.summary);
+  // The proposal pin keeps the synthesis HEAD, so it shows only the worker's change on the base.
+  expect(await g.git(["rev-parse", `${prepared.proposalCommit}^`])).toBe(base);
+  const checks = [{ command: "true", exitCode: 0, output: "" }];
+  expect((await arena.integrate({ ...identity, checks }, g.signal)).status).toBe("integrated");
+  expect(await readFile(join(g.root, "a.txt"), "utf8")).toBe("synthesized\n");
+  expect(await readFile(join(g.root, "ongoing.txt"), "utf8")).toBe("keep ongoing work\n");
+  const pins = (await g.git(["for-each-ref", "--format=%(objectname)", "refs/arena/"])).split("\n");
+  expect(pins).toHaveLength(3);
+  for (const pin of pins) {
+    expect(await g.ancestry(pin)).toContain(g.target);
+    for (const commit of g.managed) expect(await g.ancestry(pin)).not.toContain(commit);
+  }
 });
 
 test("integrates the verified combined tree and preserves ongoing source work", async () => {

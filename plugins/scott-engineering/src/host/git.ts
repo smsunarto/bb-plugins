@@ -133,6 +133,66 @@ export class ArenaGit {
     return args.includes("--binary") ? result.stdout : result.stdout.trim();
   }
 
+  private async optional(path: string, args: string[], signal: AbortSignal) {
+    const result = await command(path, ["git", ...args], signal, { acceptFailure: true });
+    return result.exitCode === 0 ? result.stdout.trim() : null;
+  }
+
+  // GitButler adopts every checked-out branch whose history shares a commit with its workspace
+  // beyond the target, then rebases it with the stacks, which breaks `but pull` and `but land`.
+  // Worker worktrees check out this parent and outlive the run, and any branch can be applied to
+  // the workspace later, so only integrated history or Arena's own pins are safe parents.
+  // GitButler keeps its target in git config.
+  private async parent(root: string, signal: AbortSignal) {
+    const head = await this.git(root, ["rev-parse", "--verify", "HEAD^{commit}"], signal);
+    const branch = await this.optional(root, ["symbolic-ref", "--quiet", "HEAD"], signal);
+    if (branch === "refs/heads/gitbutler/edit")
+      throw new Error("Exit GitButler edit mode before starting Arena.");
+    // `but teardown` leaves the workspace ref and config behind, so only a checkout on a GitButler
+    // branch means GitButler still manages this repository.
+    const checkouts = await this.git(root, ["worktree", "list", "--porcelain"], signal);
+    if (!/^branch refs\/heads\/gitbutler\/(?:workspace|edit)$/m.test(checkouts)) return head;
+    const [configured, targetRef] = await Promise.all([
+      this.optional(root, ["config", "--get", "gitbutler.project.targetcommitid"], signal),
+      this.optional(root, ["config", "--get", "gitbutler.project.targetref"], signal),
+    ]);
+    const target =
+      configured &&
+      (await this.optional(
+        root,
+        ["rev-parse", "--verify", "--quiet", `${configured}^{commit}`],
+        signal,
+      ));
+    // Only a target on GitButler's target branch is known to sit below every stack.
+    if (
+      !target ||
+      !targetRef ||
+      (await this.optional(root, ["merge-base", "--is-ancestor", target, targetRef], signal)) ===
+        null
+    )
+      throw new Error(
+        "GitButler's target commit is missing or not on its target branch, so Arena cannot start workers outside its workspace. Run `but pull` or repair the GitButler project, then try again.",
+      );
+    // A worker checkout's history beyond the target starts at the run's base pin under
+    // refs/arena/, so its pins keep HEAD and show only the worker's change.
+    const [first] = (
+      await this.git(root, ["rev-list", "--topo-order", "--reverse", `${target}..${head}`], signal)
+    ).split("\n");
+    if (
+      !first ||
+      (await this.git(
+        root,
+        ["for-each-ref", "--count=1", "--points-at", first, "refs/arena/"],
+        signal,
+      ))
+    )
+      return head;
+    const base = await this.optional(root, ["merge-base", head, target], signal);
+    if (!base)
+      throw new Error("Arena cannot find history this checkout shares with GitButler's target.");
+    return base;
+  }
+
   private async save(path: string, data: unknown) {
     await mkdir(this.dataDir, { recursive: true });
     const temporary = `${path}.${randomUUID()}.tmp`;
@@ -186,11 +246,10 @@ export class ArenaGit {
       await this.git(input.path, ["rev-parse", "--show-toplevel"], signal),
     );
     const ref = `refs/arena/${input.runId}/base`;
-    const prior = await command(root, ["git", "rev-parse", "--verify", ref], signal, {
-      acceptFailure: true,
-    });
-    if (prior.exitCode === 0) return { root, base: prior.stdout.trim() };
-    const base = await this.pin(root, await this.tree(root, signal), "HEAD", ref, signal);
+    const prior = await this.optional(root, ["rev-parse", "--verify", ref], signal);
+    if (prior) return { root, base: prior };
+    const parent = await this.parent(root, signal);
+    const base = await this.pin(root, await this.tree(root, signal), parent, ref, signal);
     return { root, base };
   }
 
