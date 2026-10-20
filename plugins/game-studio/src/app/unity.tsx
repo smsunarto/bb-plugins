@@ -33,13 +33,19 @@ export function editorLabel(data: EditorList | undefined, game: Game, threadId: 
   }
   return instances.length ? "Editor found" : "No Editor";
 }
-export function useUnityEditors(hostId?: string) {
+/** How often a view that shows the Editor inventory reads it again. */
+export const EDITOR_POLL_MS = 5000;
+/**
+ * The host's Unity Editors. Discovery runs `unity status` on the host, so
+ * only a view that shows the inventory live polls it.
+ */
+export function useUnityEditors(hostId?: string, { poll = false }: { poll?: boolean } = {}) {
   const client = rpc.useClient();
   return useQuery({
     queryKey: ["game-studio", "unity-editors", hostId],
     enabled: Boolean(hostId),
     queryFn: () => client.listUnityEditors({ hostId: hostId! }),
-    refetchInterval: 5000,
+    refetchInterval: poll ? EDITOR_POLL_MS : false,
     retry: false,
   });
 }

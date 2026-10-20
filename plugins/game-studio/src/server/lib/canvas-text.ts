@@ -196,6 +196,7 @@ export class CanvasText {
     return this.serial(game, id, async () => {
       const { job, revision } = await this.read(game, id);
       if (["succeeded", "failed", "cancelled"].includes(job.status)) return job;
+      const unchanged = JSON.stringify(job);
       if (!job.taskId) {
         job.status = "uncertain";
         job.detail =
@@ -263,6 +264,9 @@ export class CanvasText {
             "The selected BB provider could not complete the text run. Check its sign-in and availability.";
         }
       }
+      // A run still going changes nothing. Saving it anyway would wake every studio watching
+      // the canvas, whose next read would save it again.
+      if (!cancel && JSON.stringify(job) === unchanged) return job;
       await this.save(game, job, cancel ? (await this.read(game, id)).revision : revision);
       return job;
     });

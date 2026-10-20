@@ -14,7 +14,7 @@ import {
   type canvasDirectInput,
   type canvasDirectControl,
 } from "../../shared/generation.ts";
-import { getGame, loadWorkspace, adoptGeneration } from "./studio.ts";
+import { getGame, loadCanvas, loadWorkspace, adoptGeneration } from "./studio.ts";
 import type { SlotStore } from "./slot-store.ts";
 import { canvasRequest, judgeRequest, retryRequest, reviewRequest } from "./canvas-generation.ts";
 import {
@@ -104,27 +104,37 @@ export class Generations {
     }
     return { ...game, rootPath: expected.workspacePath };
   }
+  /** Every job in the game's checkout, with canvas runs refreshed and finished outputs adopted. */
   async list(gameId: string) {
-    let game = await getGame(this.bb, gameId);
-    const client = this.bb.hosts.experimental_client({ contract: studioHostContract });
-    const resolved = await client.call(
-      "resolveWorkspace",
-      { path: game.rootPath },
-      { hostId: game.hostId },
-    );
-    if (!resolved?.workspacePath) throw new Error("The project's checkout is unavailable.");
-    game = { ...game, rootPath: resolved.workspacePath };
-    const jobs = await client.call("list", { rootPath: game.rootPath }, { hostId: game.hostId });
+    const read = await loadCanvas(this.bb, gameId);
+    return (await this.refresh(read.workspace.game, read)).jobs;
+  }
+  /**
+   * Refreshes the canvas jobs a workspace read listed: a BB run's status, and
+   * the adoption of finished outputs. `changed` says the refresh moved a job
+   * or wrote to the canvas, which a later read shows.
+   */
+  async refresh(
+    game: Game,
+    read: { workspacePath: string | null; workspace: { generationJobs: GenerationJob[] } },
+  ) {
+    if (!read.workspacePath) throw new Error("The project's checkout is unavailable.");
+    const resolved = { ...game, rootPath: read.workspacePath };
+    const jobs = [...read.workspace.generationJobs];
+    let changed = false;
     for (let index = 0; index < jobs.length; index++) {
       const job = jobs[index]!;
-      if (job.origin.kind === "canvas" && job.origin.gameId === gameId)
-        jobs[index] = await this.refreshCanvasJob(game, job);
+      if (job.origin.kind !== "canvas" || job.origin.gameId !== game.id) continue;
+      const refreshed = await this.refreshCanvasJob(resolved, job);
+      if (refreshed.adopted || JSON.stringify(refreshed.job) !== JSON.stringify(job))
+        changed = true;
+      jobs[index] = refreshed.job;
     }
-    return jobs;
+    return { jobs, changed };
   }
   private async refreshCanvasJob(game: Game, job: GenerationJob) {
     const key = this.jobKey(game, job.id);
-    if (this.jobOperations.has(key)) return job;
+    if (this.jobOperations.has(key)) return { job, adopted: false };
     const owner = await this.serialJob(key, async () => {
       if (runsOnBb(job.request)) {
         const slot = this.slots.find(game.hostId, game.rootPath);
@@ -159,7 +169,7 @@ export class Generations {
       return null;
     });
     if (owner) await this.adopt(game, job, owner);
-    return job;
+    return { job, adopted: Boolean(owner) };
   }
   /**
    * Canvas runs belong to the canvas, whichever thread sits beside it. The open thread only

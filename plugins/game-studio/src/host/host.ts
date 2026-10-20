@@ -9,12 +9,33 @@ import { provisionRampageSlot, assertNoSlotPreparation } from "./slot-provisioni
 
 import { experimental_defineHostEntry } from "@get-bb/plugin-sdk/host";
 import { studioHostContract } from "../shared/host-contract.ts";
+import { studioHostSignals } from "../shared/canvas-contract.ts";
 import { GenerationRunner } from "./generation.ts";
+import { CanvasHost, nodeDisk, readJobFiles } from "./canvas.ts";
 
 const runner = new GenerationRunner();
+const canvas = new CanvasHost(nodeDisk, async (root) => {
+  try {
+    const { workspacePath } = await resolveWorkspacePath(root);
+    if (!workspacePath) throw new Error("The project's checkout is unavailable.");
+    // A read only reads: an interrupted job shows as uncertain without rewriting its receipt.
+    return {
+      workspacePath,
+      jobs: await runner.list(workspacePath, { persist: false }),
+      stale: false,
+    };
+  } catch {
+    // The saved records still show; the server marks the ones it cannot vouch for.
+    return { workspacePath: null, jobs: await readJobFiles(nodeDisk, root), stale: true };
+  }
+});
 export default experimental_defineHostEntry({
   contract: studioHostContract,
+  experimental_signals: studioHostSignals,
   handlers: {
+    readCanvas: (input, ctx) => canvas.read(input, ctx),
+    saveCanvasBoard: (input) => canvas.saveBoard(input),
+    captureCanvasInputs: (input) => canvas.captureInputs(input),
     planSlotDestination: ({ path }) => planSlotDestination(path),
     provisionSlot: (input, ctx) =>
       provisionRampageSlot(input, ctx.experimental_paths.dataDir, ctx.signal),
@@ -60,7 +81,10 @@ export default experimental_defineHostEntry({
       }
     },
   },
-  dispose: () => runner.dispose(),
+  dispose: async () => {
+    canvas.dispose();
+    await runner.dispose();
+  },
 });
 
 function retainUntilDone(

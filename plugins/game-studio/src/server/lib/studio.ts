@@ -1,9 +1,4 @@
-import {
-  briefRecipe,
-  generationImagePaths,
-  generationJob,
-  type GenerationJob,
-} from "../../shared/generation.ts";
+import { briefRecipe, generationImagePaths, type GenerationJob } from "../../shared/generation.ts";
 import { nodeFingerprint } from "./canvas-generation.ts";
 import { nodeTakes } from "../../shared/takes.ts";
 import { nodeReviews, reviewLimit } from "../../shared/review.ts";
@@ -42,9 +37,22 @@ import {
 import { files as instructions } from "./instructions.ts";
 import { absoluteRoot, pathTools, projectFile, relativeFile } from "./paths.ts";
 import { starterHtml } from "./starter.ts";
+import { studioHostContract } from "../../shared/host-contract.ts";
+import { canvasAssetRoots } from "../../shared/canvas-contract.ts";
+import { readCanvas, snapshotJobs, type CanvasSnapshot } from "./canvas-snapshot.ts";
 
 type Index = z.infer<typeof indexSchema>;
-type File = Awaited<ReturnType<BbPluginApi["sdk"]["files"]["read"]>>;
+type File = { content: string; contentEncoding: "utf8" | "base64"; sha256: string };
+type Listing = { files: { path: string; name: string }[]; truncated: boolean };
+/**
+ * Where workspace files are read: the host's snapshot for a workspace read,
+ * or BB's file API where a write checks the disk first.
+ */
+type Reader = {
+  read(path: string): Promise<File | null>;
+  /** The folder's files, recursively, or null when it does not exist. */
+  list(folder: string, limit: number): Promise<Listing | null>;
+};
 const prefix = "game:";
 const json = (value: unknown): string => `${JSON.stringify(value, null, 2)}\n`;
 const queues = new WeakMap<BbPluginApi, Map<string, Promise<unknown>>>();
@@ -115,13 +123,63 @@ export async function readOptional(
   }
 }
 
+function sdkReader(bb: BbPluginApi, game: Pick<Game, "hostId" | "rootPath">): Reader {
+  return {
+    read: (path) => readOptional(bb, game, path),
+    async list(folder, limit) {
+      try {
+        return await bb.sdk.files.list({
+          hostId: game.hostId,
+          path: projectFile(game.rootPath, folder),
+          limit,
+        });
+      } catch (error) {
+        if (missing(error)) return null;
+        throw error;
+      }
+    },
+  };
+}
+
+/**
+ * Reads from one host snapshot. A file too large to carry in it is read on
+ * its own, as every file was before, so a big board or document still opens.
+ * The host gathers only what these readers ask for (`CanvasHost.gather` in
+ * src/host/canvas.ts); a reader asking for anything else fails loudly here.
+ */
+function snapshotReader(snapshot: CanvasSnapshot, fallback: Reader): Reader {
+  const entry = (key: string) => {
+    const found = snapshot.entries.get(key);
+    if (!found)
+      throw new Error(
+        `The workspace read is missing ${key.slice(key.indexOf(":") + 1)}. Reload the workspace.`,
+      );
+    return found;
+  };
+  return {
+    async read(path) {
+      const found = entry(`file:${path}`);
+      if (found.kind === "oversized") return fallback.read(path);
+      return found.kind === "file" ? found.file : null;
+    },
+    async list(folder) {
+      const found = entry(`list:${folder}`);
+      if (found.kind !== "listing") return null;
+      return {
+        files: found.files.map((path) => ({ path, name: path.slice(path.lastIndexOf("/") + 1) })),
+        truncated: found.truncated,
+      };
+    },
+  };
+}
+
 function text(file: File, path: string): string {
   if (file.contentEncoding !== "utf8") throw new Error(`${path} must be a UTF-8 text file.`);
   return file.content;
 }
 
-async function readRequired(bb: BbPluginApi, game: Game, path: string): Promise<File> {
-  const file = await readOptional(bb, game, path);
+async function readRequired(files: Reader, path: string): Promise<File> {
+  const file = await files.read(path);
   if (!file)
     throw new Error(`${path} is missing from this game. Restore the file before reopening it.`);
   return file;
@@ -232,8 +290,8 @@ function checkBoard(board: Board): void {
   }
 }
 
-async function readIndex(bb: BbPluginApi, game: Game): Promise<{ index: Index; revision: string }> {
-  const file = await readRequired(bb, game, "canvas/index.json");
+async function readIndex(files: Reader): Promise<{ index: Index; revision: string }> {
+  const file = await readRequired(files, "canvas/index.json");
   return {
     index: checkIndex(parse(indexSchema, file, "canvas/index.json")),
     revision: file.sha256,
@@ -364,7 +422,8 @@ export async function attachGame(
     }
     // Listing verifies the directory exists on the intended host without creating it.
     await bb.sdk.files.list({ hostId: input.hostId, path: rootPath, limit: 1 });
-    if (input.kind === "unity") await unityVersion(bb, { hostId: input.hostId, rootPath }, true);
+    if (input.kind === "unity")
+      await checkedUnityVersion(bb, { hostId: input.hostId, rootPath }, true);
     const existing = await bb.storage.kv.get<Game>(`${prefix}${id}`);
     if (existing) {
       if (existing.projectId !== project.id)
@@ -383,7 +442,7 @@ export async function attachGame(
       previewPath: "index.html",
     };
     await initializeCanvas(bb, game, false);
-    await readIndex(bb, game);
+    await readIndex(sdkReader(bb, game));
     await bb.storage.kv.set(`${prefix}${id}`, game);
     return game;
   });
@@ -398,8 +457,8 @@ function assetType(path: string): Asset["type"] {
   return "file";
 }
 
-async function assetCatalog(bb: BbPluginApi, game: Game): Promise<Asset[]> {
-  const manifest = await readOptional(bb, game, "canvas/assets.json");
+async function assetCatalog(files: Reader, game: Game): Promise<Asset[]> {
+  const manifest = await files.read("canvas/assets.json");
   const entries = manifest ? parse(manifestSchema, manifest, "canvas/assets.json").assets : {};
   const assets = Object.entries(entries).map(([id, entry]) =>
     assetSchema.parse({
@@ -409,29 +468,19 @@ async function assetCatalog(bb: BbPluginApi, game: Game): Promise<Asset[]> {
       type: assetType(entry.path),
     }),
   );
-  const roots = game.kind === "unity" ? ["canvas/staging", "Assets/GameStudio"] : ["assets"];
-  return scanAssets(bb, game, roots, assets);
+  return scanAssets(files, game, canvasAssetRoots(game.kind), assets);
 }
 
 async function scanAssets(
-  bb: BbPluginApi,
+  files: Reader,
   game: Game,
   roots: string[],
   initial: Asset[] = [],
 ): Promise<Asset[]> {
   const assets = [...initial];
   for (const folder of roots) {
-    let listing: Awaited<ReturnType<BbPluginApi["sdk"]["files"]["list"]>>;
-    try {
-      listing = await bb.sdk.files.list({
-        hostId: game.hostId,
-        path: projectFile(game.rootPath, folder),
-        limit: 10000,
-      });
-    } catch (error) {
-      if (missing(error)) continue;
-      throw error;
-    }
+    const listing = await files.list(folder, 10000);
+    if (!listing) continue;
     if (listing.truncated) throw new Error(`${folder} exceeds the 10,000-file catalog limit.`);
     for (const file of listing.files) {
       if (file.name.endsWith(".meta")) continue;
@@ -456,16 +505,12 @@ function listedPath(rootPath: string, folder: string, path: string): string {
   return relativeFile(normalized.startsWith(`${folder}/`) ? normalized : `${folder}/${normalized}`);
 }
 
-async function loadBoard(
-  bb: BbPluginApi,
-  game: Game,
-  id: string,
-): Promise<{ board: Board; revision: string }> {
+async function loadBoard(files: Reader, id: string): Promise<{ board: Board; revision: string }> {
   const contentPath = `canvas/boards/${id}.json`;
   const layoutPath = `canvas/editor/${id}.json`;
   const [contentFile, layoutFile] = await Promise.all([
-    readRequired(bb, game, contentPath),
-    readOptional(bb, game, layoutPath),
+    readRequired(files, contentPath),
+    files.read(layoutPath),
   ]);
   const content = parse(persistedBoardSchema, contentFile, contentPath);
   if (content.id !== id) throw new Error(`${contentPath} has a different board ID.`);
@@ -492,52 +537,67 @@ async function loadBoard(
   };
 }
 
-export async function loadWorkspace(bb: BbPluginApi, gameId: string): Promise<Workspace> {
+/**
+ * Reads the workspace in one host call. The jobs come as the host's runner
+ * listed them, with the checkout it resolved and whether it could vouch for
+ * their status.
+ */
+export async function loadCanvas(
+  bb: BbPluginApi,
+  gameId: string,
+  options: { watch?: boolean } = {},
+): Promise<{ workspace: Workspace; workspacePath: string | null; stale: boolean }> {
   const game = await getGame(bb, gameId);
-  const { index, revision: indexRevision } = await readIndex(bb, game);
+  const snapshot = await readCanvas(bb, game, options);
+  const files = snapshotReader(snapshot, sdkReader(bb, game));
+  const { index, revision: indexRevision } = await readIndex(files);
   const [boards, documents, assets, captures, requests] = await Promise.all([
-    Promise.all(index.boards.map(({ id }) => loadBoard(bb, game, id))),
+    Promise.all(index.boards.map(({ id }) => loadBoard(files, id))),
     Promise.all(
       index.documents.map(async ({ id, title }) => {
         const path = `canvas/documents/${id}.md`;
-        const file = await readRequired(bb, game, path);
+        const file = await readRequired(files, path);
         return { id, title, markdown: text(file, path), revision: file.sha256 };
       }),
     ),
-    assetCatalog(bb, game),
-    scanAssets(bb, game, ["canvas/evidence"]),
-    readRequests(bb, game),
+    assetCatalog(files, game),
+    scanAssets(files, game, ["canvas/evidence"]),
+    readRequests(files, game),
   ]);
   const evidence = captures.filter(({ type }) => type === "image" || type === "video");
-  const evidenceRuns = await readEvidenceRuns(bb, game, evidence);
+  const evidenceRuns = await readEvidenceRuns(files, evidence);
+  const { jobs, workspacePath, stale } = snapshotJobs(snapshot);
   return {
-    game,
-    index,
-    indexRevision,
-    boards,
-    documents,
-    assets,
-    evidence,
-    evidenceRuns,
-    requests,
-    generationJobs: await readGenerationJobs(bb, game),
-    ...(game.kind === "unity" ? { unityVersion: await unityVersion(bb, game, false) } : {}),
+    workspace: {
+      game,
+      index,
+      indexRevision,
+      boards,
+      documents,
+      assets,
+      evidence,
+      evidenceRuns,
+      requests,
+      generationJobs: jobs,
+      ...(game.kind === "unity" ? { unityVersion: await unityVersion(files, false) } : {}),
+    },
+    workspacePath,
+    stale,
   };
 }
 
-async function readRequests(bb: BbPluginApi, game: Game): Promise<UnityRequest[]> {
+export async function loadWorkspace(
+  bb: BbPluginApi,
+  gameId: string,
+  options: { watch?: boolean } = {},
+): Promise<Workspace> {
+  return (await loadCanvas(bb, gameId, options)).workspace;
+}
+
+async function readRequests(files: Reader, game: Game): Promise<UnityRequest[]> {
   const folder = "canvas/requests";
-  let listing: Awaited<ReturnType<BbPluginApi["sdk"]["files"]["list"]>>;
-  try {
-    listing = await bb.sdk.files.list({
-      hostId: game.hostId,
-      path: projectFile(game.rootPath, folder),
-      limit: 10000,
-    });
-  } catch (error) {
-    if (missing(error)) return [];
-    throw error;
-  }
+  const listing = await files.list(folder, 10000);
+  if (!listing) return [];
   const paths = listing.files.flatMap((file) => {
     try {
       const path = listedPath(game.rootPath, folder, file.path);
@@ -552,7 +612,7 @@ async function readRequests(bb: BbPluginApi, game: Game): Promise<UnityRequest[]
     const batch = await Promise.all(
       paths.slice(offset, Math.min(offset + 20, 1000)).map(async (path) => {
         try {
-          const file = await readOptional(bb, game, path);
+          const file = await files.read(path);
           if (!file) return [];
           const request = parse(unityRequestSchema, file, path);
           return path === `${folder}/${request.id}.json` ? [request] : [];
@@ -566,13 +626,9 @@ async function readRequests(bb: BbPluginApi, game: Game): Promise<UnityRequest[]
   return requests.sort((a, b) => b.createdAt - a.createdAt || a.id.localeCompare(b.id)).slice(0, 5);
 }
 
-async function readEvidenceRuns(
-  bb: BbPluginApi,
-  game: Game,
-  captures: Asset[],
-): Promise<EvidenceRun[]> {
+async function readEvidenceRuns(files: Reader, captures: Asset[]): Promise<EvidenceRun[]> {
   const path = "canvas/evidence/index.json";
-  const file = await readOptional(bb, game, path);
+  const file = await files.read(path);
   if (!file) return [];
   const manifest = parse(evidenceManifestSchema, file, path);
   if (new Set(manifest.runs.map(({ id }) => id)).size !== manifest.runs.length) {
@@ -599,12 +655,8 @@ async function readEvidenceRuns(
     .sort((a, b) => b.capturedAtMs - a.capturedAtMs);
 }
 
-async function unityVersion(
-  bb: BbPluginApi,
-  game: Pick<Game, "hostId" | "rootPath">,
-  required: boolean,
-): Promise<string | null> {
-  const file = await readOptional(bb, game, "ProjectSettings/ProjectVersion.txt");
+async function unityVersion(files: Reader, required: boolean): Promise<string | null> {
+  const file = await files.read("ProjectSettings/ProjectVersion.txt");
   if (!file) {
     if (required)
       throw new Error(
@@ -617,17 +669,28 @@ async function unityVersion(
   )?.[1];
   if (!version)
     throw new Error("ProjectSettings/ProjectVersion.txt does not contain a Unity Editor version.");
-  await bb.sdk.files.list({
-    hostId: game.hostId,
-    path: projectFile(game.rootPath, "Assets"),
-    limit: 1,
-  });
+  return version;
+}
+
+/** The Unity version of a project being chosen, which must also have its Assets folder. */
+async function checkedUnityVersion(
+  bb: BbPluginApi,
+  game: Pick<Game, "hostId" | "rootPath">,
+  required: boolean,
+): Promise<string | null> {
+  const version = await unityVersion(sdkReader(bb, game), required);
+  if (version)
+    await bb.sdk.files.list({
+      hostId: game.hostId,
+      path: projectFile(game.rootPath, "Assets"),
+      limit: 1,
+    });
   return version;
 }
 
 export async function inspectUnity(bb: BbPluginApi, input: z.infer<typeof inspectUnityInput>) {
   return {
-    version: await unityVersion(
+    version: await checkedUnityVersion(
       bb,
       { hostId: input.hostId, rootPath: absoluteRoot(input.rootPath) },
       false,
@@ -635,12 +698,10 @@ export async function inspectUnity(bb: BbPluginApi, input: z.infer<typeof inspec
   };
 }
 
+/** One host call: the host compares and swaps the board's files where they live. */
 export async function saveBoard(bb: BbPluginApi, input: z.infer<typeof saveBoardInput>) {
   return serialized(bb, input.gameId, async () => {
     const game = await getGame(bb, input.gameId);
-    const { index } = await readIndex(bb, game);
-    if (!index.boards.some(({ id }) => id === input.board.id))
-      throw new Error("This board is not registered in the workspace.");
     checkBoard(input.board);
     let previous: z.infer<typeof boardRevisionSchema>;
     try {
@@ -648,33 +709,26 @@ export async function saveBoard(bb: BbPluginApi, input: z.infer<typeof saveBoard
     } catch {
       throw new Error("The board revision is invalid. Reload the workspace before saving.");
     }
-    const current = await loadBoard(bb, game, input.board.id);
-    if (current.revision !== input.revision)
-      throw new Error("This board changed on disk. Reload the workspace before saving again.");
     const { content, layout } = splitBoard(input.board);
-    // SDK CAS is per file. Layout first means a late content conflict never replaces external content.
-    const layoutRevision = await write(
-      bb,
-      game,
-      `canvas/editor/${input.board.id}.json`,
-      json(layout),
-      previous.layout,
+    const saved = await bb.hosts.experimental_client({ contract: studioHostContract }).call(
+      "saveCanvasBoard",
+      {
+        rootPath: game.rootPath,
+        boardId: input.board.id,
+        expected: previous,
+        content: json(content),
+        layout: json(layout),
+      },
+      { hostId: game.hostId },
     );
-    const contentRevision = await write(
-      bb,
-      game,
-      `canvas/boards/${input.board.id}.json`,
-      json(content),
-      previous.content,
-    );
-    return { revision: JSON.stringify({ content: contentRevision, layout: layoutRevision }) };
+    return { revision: JSON.stringify({ content: saved.content, layout: saved.layout }) };
   });
 }
 
 export async function saveDocument(bb: BbPluginApi, input: z.infer<typeof saveDocumentInput>) {
   return serialized(bb, input.gameId, async () => {
     const game = await getGame(bb, input.gameId);
-    const { index } = await readIndex(bb, game);
+    const { index } = await readIndex(sdkReader(bb, game));
     if (!index.documents.some(({ id }) => id === input.documentId))
       throw new Error("This document is not registered in the workspace.");
     return {
@@ -695,7 +749,7 @@ export async function createDocument(
 ): Promise<Workspace> {
   return serialized(bb, input.gameId, async () => {
     const game = await getGame(bb, input.gameId);
-    const { index, revision } = await readIndex(bb, game);
+    const { index, revision } = await readIndex(sdkReader(bb, game));
     if (index.documents.length >= 200) throw new Error("A workspace supports up to 200 documents.");
     const id = randomUUID();
     await write(bb, game, `canvas/documents/${id}.md`, `# ${input.title}\n`, null);
@@ -711,7 +765,7 @@ export async function createBoard(
 ): Promise<Workspace> {
   return serialized(bb, input.gameId, async () => {
     const game = await getGame(bb, input.gameId);
-    const { index, revision } = await readIndex(bb, game);
+    const { index, revision } = await readIndex(sdkReader(bb, game));
     if (index.boards.length >= 100) throw new Error("A workspace supports up to 100 boards.");
     const id = randomUUID();
     const { content, layout } = splitBoard(emptyBoard(id, input.name));
@@ -782,7 +836,7 @@ export async function recordRequest(
       path,
       json({ ...input.request, threadId: input.threadId, status: input.status }),
     );
-    const current = parse(unityRequestSchema, await readRequired(bb, game, path), path);
+    const current = parse(unityRequestSchema, await readRequired(sdkReader(bb, game), path), path);
     if (
       current.id !== input.request.id ||
       current.action !== input.request.action ||
@@ -1084,7 +1138,7 @@ export async function adoptGeneration(bb: BbPluginApi, game: Game, job: Generati
           "The source node changed. Outputs are staged for review; its newer brief was preserved.",
       };
     const path = `canvas/boards/${board.id}.json`;
-    const contentFile = await readRequired(bb, game, path);
+    const contentFile = await readRequired(sdkReader(bb, game), path);
     const content = parse(persistedBoardSchema, contentFile, path);
     const saved = content.nodes.find(({ id }) => id === node.id);
     if (!saved) return { candidateAssetIds: ids, attached: false };
@@ -1102,7 +1156,9 @@ export async function adoptGeneration(bb: BbPluginApi, game: Game, job: Generati
         ? job.outputs.find((output) => output.type === "text")
         : undefined;
     if (job.request.kind === "text" && !textOutput) throw new Error("The text job has no output.");
-    const textFile = textOutput ? await readRequired(bb, game, textOutput.path) : undefined;
+    const textFile = textOutput
+      ? await readRequired(sdkReader(bb, game), textOutput.path)
+      : undefined;
     if (textFile && (textFile.contentEncoding !== "utf8" || textFile.content.length > 100000))
       throw new Error("Generated text must be UTF-8 and under 100,000 characters.");
     const generatedText = textFile?.content;
@@ -1145,7 +1201,7 @@ async function attachTakes(
   ids: string[],
 ) {
   const path = `canvas/boards/${boardId}.json`;
-  const contentFile = await readRequired(bb, game, path);
+  const contentFile = await readRequired(sdkReader(bb, game), path);
   const content = parse(persistedBoardSchema, contentFile, path);
   const saved = content.nodes.find(({ id }) => id === job.target!.nodeId);
   if (!saved) return { candidateAssetIds: ids, attached: false };
@@ -1176,7 +1232,7 @@ async function attachReview(
 ) {
   const text = await runText(bb, game, job, "review");
   const path = `canvas/boards/${boardId}.json`;
-  const contentFile = await readRequired(bb, game, path);
+  const contentFile = await readRequired(sdkReader(bb, game), path);
   const content = parse(persistedBoardSchema, contentFile, path);
   const saved = content.nodes.find(({ id }) => id === job.target!.nodeId);
   if (!saved) return { candidateAssetIds: [], attached: false };
@@ -1204,7 +1260,7 @@ async function attachJudgement(
 ) {
   const text = await runText(bb, game, job, "judgement");
   const path = `canvas/boards/${boardId}.json`;
-  const contentFile = await readRequired(bb, game, path);
+  const contentFile = await readRequired(sdkReader(bb, game), path);
   const content = parse(persistedBoardSchema, contentFile, path);
   const saved = content.nodes.find(({ id }) => id === job.target!.nodeId);
   if (!saved) return { candidateAssetIds: [], attached: false };
@@ -1232,40 +1288,8 @@ async function attachJudgement(
 async function runText(bb: BbPluginApi, game: Game, job: GenerationJob, what: string) {
   const output = job.outputs.find((item) => item.type === "text");
   if (!output) throw new Error(`The ${what} job has no output.`);
-  const file = await readRequired(bb, game, output.path);
+  const file = await readRequired(sdkReader(bb, game), output.path);
   if (file.contentEncoding !== "utf8" || file.content.length > 100000)
     throw new Error(`A ${what} must be UTF-8 and under 100,000 characters.`);
   return file.content;
-}
-
-async function readGenerationJobs(bb: BbPluginApi, game: Game): Promise<GenerationJob[]> {
-  let listing;
-  try {
-    listing = await bb.sdk.files.list({
-      hostId: game.hostId,
-      path: projectFile(game.rootPath, "canvas/jobs"),
-      limit: 1000,
-    });
-  } catch (error) {
-    if (missing(error)) return [];
-    throw error;
-  }
-  const jobs = await Promise.all(
-    listing.files.slice(0, 1000).map(async (entry) => {
-      try {
-        const path = listedPath(game.rootPath, "canvas/jobs", entry.path);
-        if (!/^canvas\/jobs\/[a-zA-Z0-9_-]{1,100}\.json$/.test(path)) return [];
-        const file = await readOptional(bb, game, path);
-        if (!file) return [];
-        const job = parse(generationJob, file, path);
-        return path === `canvas/jobs/${job.id}.json` ? [job] : [];
-      } catch {
-        return [];
-      }
-    }),
-  );
-  return jobs
-    .flat()
-    .sort((a, b) => b.createdAt - a.createdAt)
-    .slice(0, 100);
 }

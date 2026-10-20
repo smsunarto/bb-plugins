@@ -32,7 +32,7 @@ async function setup() {
     throw new Error("Text must not use a provider CLI");
   });
   const hash = (content: string) => createHash("sha256").update(content).digest("hex");
-  const { bb } = createFakePluginHost({
+  const { bb, harness } = createFakePluginHost({
     pluginId: "game-studio",
     sdk: {
       projects: { list: async () => [{ id: "personal-project", kind: "personal" }] as never },
@@ -101,6 +101,7 @@ async function setup() {
   await writeFile(join(rootPath, "canvas/staging/ref.png"), "png-image");
   return {
     bb,
+    harness,
     game,
     job,
     starts,
@@ -282,4 +283,21 @@ test("3D reviewers receive the complete model capture recipe in their own game c
       expect(text).toContain(f.game.rootPath);
     } else expect(text).not.toContain("window.gameStudioModelReview.capture");
   }
+});
+
+test("checking a BB run that is still going writes nothing, so it never wakes a watching studio", async () => {
+  const f = await setup(),
+    text = new CanvasText(f.bb);
+  await text.start(f.game, f.job);
+  const path = join(f.game.rootPath, "canvas/jobs/request.json");
+  const before = await readFile(path, "utf8");
+  const writes = () => f.harness.inspection.sdk.callsTo("files.write").length;
+  const written = writes();
+  expect((await text.status(f.game, "request")).status).toBe("running");
+  expect((await text.status(f.game, "request")).status).toBe("running");
+  expect(writes()).toBe(written);
+  expect(await readFile(path, "utf8")).toBe(before);
+  f.setState("idle");
+  expect((await text.status(f.game, "request")).status).toBe("succeeded");
+  expect(writes()).toBeGreaterThan(written);
 });

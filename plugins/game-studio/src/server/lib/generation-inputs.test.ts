@@ -4,6 +4,7 @@ import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import { mediaRequest, generationImagePaths } from "../../shared/generation.ts";
 import { gameSchema } from "../../shared/schema.ts";
 import { captureCanvasInputs } from "./generation-inputs.ts";
+import { fakeCanvasHosts } from "../../../test/canvas-host.ts";
 
 const shaA = "559aead08264d5795d3909718cdd05abd49572e84fe55590eef31a88a08fdffd";
 const shaB = "df7e70e5021544f4834bbee64a9e3789febc4be81470df629cad6ddb03320a5c";
@@ -46,7 +47,8 @@ function fake() {
       ...overrides,
     });
   };
-  const bb = {
+  const bb: BbPluginApi = {
+    hosts: fakeCanvasHosts(() => bb),
     sdk: {
       files: {
         read: async (input: Location) => {

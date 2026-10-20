@@ -346,7 +346,11 @@ export class GenerationRunner {
       return { missing: true };
     });
   }
-  async status(input: Target): Promise<GenerationJob> {
+  /** `persist: false` reports an interrupted job without saving it, so a workspace read never writes. */
+  async status(
+    input: Target,
+    { persist = true }: { persist?: boolean } = {},
+  ): Promise<GenerationJob> {
     const target = { ...input, rootPath: await this.root(input.rootPath) };
     return this.locked(this.key(target), async () => {
       const active = this.active.has(this.key(target));
@@ -356,12 +360,12 @@ export class GenerationRunner {
         job.status = "uncertain";
         job.detail =
           "Generation was interrupted. Resume the saved task; a new submission will not be made.";
-        await this.save(target, job);
+        if (persist) await this.save(target, job);
       }
       return job;
     });
   }
-  async list(rootPath: string): Promise<GenerationJob[]> {
+  async list(rootPath: string, options: { persist?: boolean } = {}): Promise<GenerationJob[]> {
     const root = await this.root(rootPath);
     let entries;
     try {
@@ -373,7 +377,7 @@ export class GenerationRunner {
     const ids = entries.filter((name) => /^[a-zA-Z0-9_-]{1,100}\.json$/.test(name));
     if (ids.length > 1000) throw new Error("The project has more than 1000 generation jobs.");
     const results = await Promise.allSettled(
-      ids.map((name) => this.status({ rootPath: root, jobId: name.slice(0, -5) })),
+      ids.map((name) => this.status({ rootPath: root, jobId: name.slice(0, -5) }, options)),
     );
     const jobs = results.flatMap((result) => (result.status === "fulfilled" ? [result.value] : []));
     return jobs.sort((a, b) => b.createdAt - a.createdAt).slice(0, 100);

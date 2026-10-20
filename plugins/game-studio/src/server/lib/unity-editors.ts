@@ -67,9 +67,15 @@ export interface EditorTransport {
     signal?: AbortSignal,
   ): Promise<PipelineJob>;
 }
+/** How long one discovery answers inventory reads again. Each runs `unity status` on the host. */
+export const DISCOVERY_MEMO_MS = 3_000;
+type Discovery = Awaited<ReturnType<EditorTransport["discover"]>>;
+
 export class UnityEditors {
   readonly claims: EditorClaims;
   private transport: EditorTransport;
+  /** The latest inventory discovery per host, shared while it runs and for a few seconds after. */
+  private discoveries = new Map<string, { at: number | null; promise: Promise<Discovery> }>();
   private ownerIsOrphan: (owner: string) => Promise<boolean>;
   constructor(
     claims: EditorClaims,
@@ -94,8 +100,38 @@ export class UnityEditors {
     if (["queued", "running"].includes(job.state))
       throw new Error("The native job is still pending. Wait for it to finish.");
   }
+  /** Studios and slot pickers poll the inventory; their reads share one recent discovery. */
+  private recentDiscovery(host: string, signal?: AbortSignal): Promise<Discovery> {
+    const kept = this.discoveries.get(host);
+    let promise = kept?.promise;
+    if (!kept || (kept.at !== null && Date.now() - kept.at >= DISCOVERY_MEMO_MS)) {
+      const entry: { at: number | null; promise: Promise<Discovery> } = {
+        at: null,
+        // Shared by every caller, so no one caller's cancellation stops it.
+        promise: this.transport.discover(host),
+      };
+      entry.promise.then(
+        () => {
+          entry.at = Date.now();
+        },
+        () => {
+          if (this.discoveries.get(host) === entry) this.discoveries.delete(host);
+        },
+      );
+      this.discoveries.set(host, entry);
+      promise = entry.promise;
+    }
+    if (!signal) return promise!;
+    signal.throwIfAborted();
+    return Promise.race([
+      promise!,
+      new Promise<never>((_resolve, reject) =>
+        signal.addEventListener("abort", () => reject(signal.reason), { once: true }),
+      ),
+    ]);
+  }
   async list(host: string, signal?: AbortSignal, owner?: string) {
-    const discovered = await this.transport.discover(host, signal);
+    const discovered = await this.recentDiscovery(host, signal);
     const claims: VisibleEditorClaim[] = this.claims.list(host).map((claim) => {
       const { claimId: _claimId, ...publicClaim } = claim;
       return claim.ownerThreadId === owner ? claim : publicClaim;

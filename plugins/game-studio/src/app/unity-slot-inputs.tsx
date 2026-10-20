@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import type {
   PluginEnvironmentProviderInputsChange,
@@ -81,12 +81,13 @@ function UnitySlotInputsControl({
 }: PluginEnvironmentProviderInputsProps) {
   const hostId = target.kind === "existing-host" ? target.hostId : null;
   const client = rpc.useClient();
+  const [visible, setVisible] = useState(false);
   const inventory = useQuery({
     queryKey: ["game-studio", "unity-checkout-inputs", projectId, hostId],
     queryFn: () => client.listUnityEditors({ hostId: hostId! }),
     enabled: Boolean(projectId && hostId),
     retry: false,
-    refetchInterval: 5000,
+    refetchInterval: visible ? 5000 : false,
   });
   const choice = checkoutChoice(value, projectId, hostId, inventory.data);
   const { selectedId, available } = choice;
@@ -124,6 +125,7 @@ function UnitySlotInputsControl({
         reported.current = JSON.stringify([scope, next]);
         onChange(next);
       }}
+      onVisibilityChange={setVisible}
       onRefresh={() => void inventory.refetch()}
     />
   );
@@ -138,6 +140,7 @@ function CheckoutDisclosure({
   failed,
   onChoose,
   onRefresh,
+  onVisibilityChange,
 }: {
   choice: ReturnType<typeof checkoutChoice>;
   reason: string;
@@ -147,6 +150,7 @@ function CheckoutDisclosure({
   failed: boolean;
   onChoose: (slotId: string) => void;
   onRefresh: () => void;
+  onVisibilityChange: (visible: boolean) => void;
 }) {
   const id = useId();
   const { selectedId, slots, selected } = choice;
@@ -154,7 +158,10 @@ function CheckoutDisclosure({
   const caption = basename ?? (selectedId ? "Unavailable checkout" : "Choose checkout");
   const blockedSelection = Boolean(selectedId && reason);
   return (
-    <details className="gs-app gs-unity-checkout-inputs">
+    <details
+      className="gs-app gs-unity-checkout-inputs"
+      onToggle={(event) => onVisibilityChange(event.currentTarget.open)}
+    >
       <summary
         aria-label="Unity checkout"
         title={reason || selected?.workspacePath}

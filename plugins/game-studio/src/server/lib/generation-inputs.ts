@@ -2,7 +2,7 @@ import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import { generationImagePaths } from "../../shared/generation.ts";
 import type { GenerationJob, MediaRequest } from "../../shared/generation.ts";
 import type { Game } from "../../shared/schema.ts";
-import { projectFile } from "./paths.ts";
+import { studioHostContract } from "../../shared/host-contract.ts";
 
 type Prepared = { request: MediaRequest; target: NonNullable<GenerationJob["target"]> };
 
@@ -38,55 +38,30 @@ function snapshotRequest(source: MediaRequest, snapshots: Map<string, string>): 
   };
 }
 
-/** Freeze the selected image bytes before dispatch while retaining their source revisions. */
+/**
+ * Freeze the selected image bytes before dispatch while retaining their source revisions. The
+ * host copies each image beside the project, so its bytes never cross to the server and back.
+ */
 export async function captureCanvasInputs(bb: BbPluginApi, game: Game, prepared: Prepared) {
   const source = prepared.request;
   const paths = generationImagePaths(source);
   if (!paths.length) return prepared;
-  const snapshots = new Map<string, string>();
-  const written = new Set<string>();
-  const imageRevisions: { path: string; sha256: string }[] = [];
-  for (const path of new Set(paths)) {
-    const file = await bb.sdk.files.read({
-      hostId: game.hostId,
-      rootPath: game.rootPath,
-      path: projectFile(game.rootPath, path),
-    });
-    const extension = /\.(png|jpe?g|webp)$/i.exec(path)?.[1]?.toLowerCase();
-    if (
-      !extension ||
-      file.contentEncoding !== "base64" ||
-      file.sizeBytes > 14 * 1024 * 1024 ||
-      Buffer.byteLength(file.content, "base64") > 14 * 1024 * 1024
-    )
-      throw new Error("Generation image inputs must be PNG, JPEG or WebP files under 14 MiB.");
-    const snapshot = `canvas/inputs/${file.sha256}.${extension === "jpeg" ? "jpg" : extension}`;
-    if (!written.has(snapshot)) {
-      const location = {
-        hostId: game.hostId,
-        rootPath: game.rootPath,
-        path: projectFile(game.rootPath, snapshot),
-      };
-      const result = await bb.sdk.files.write({
-        ...location,
-        content: file.content,
-        contentEncoding: "base64",
-        expectedSha256: null,
-        createParents: true,
-      });
-      if (result.outcome === "conflict") {
-        const existing = await bb.sdk.files.read(location);
-        if (existing.sha256 !== file.sha256)
-          throw new Error("A saved generation input changed. No request was submitted.");
-      }
-      written.add(snapshot);
-    }
-    snapshots.set(path, snapshot);
-    imageRevisions.push({ path, sha256: file.sha256 });
-  }
+  const { inputs } = await bb.hosts
+    .experimental_client({ contract: studioHostContract })
+    .call(
+      "captureCanvasInputs",
+      { rootPath: game.rootPath, paths: [...new Set(paths)] },
+      { hostId: game.hostId },
+    );
+  const snapshots = new Map(inputs.map(({ path, snapshot }) => [path, snapshot]));
+  if (paths.some((path) => !snapshots.has(path)))
+    throw new Error("The host did not capture every generation input. No request was submitted.");
   return {
     ...prepared,
     request: snapshotRequest(source, snapshots),
-    target: { ...prepared.target, imageRevisions },
+    target: {
+      ...prepared.target,
+      imageRevisions: inputs.map(({ path, sha256 }) => ({ path, sha256 })),
+    },
   };
 }

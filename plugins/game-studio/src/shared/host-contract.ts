@@ -9,6 +9,7 @@ import {
 } from "./generation.ts";
 
 import { unityHostContract } from "./unity-editor-contract.ts";
+import { canvasHostContract } from "./canvas-contract.ts";
 
 const credentials = z.strictObject({
   vertexProject: z
@@ -20,6 +21,7 @@ const credentials = z.strictObject({
 const target = z.strictObject({ rootPath: z.string().min(1), jobId: generationId });
 export const studioHostContract = defineRpcContract({
   ...unityHostContract,
+  ...canvasHostContract,
   start: {
     input: target.extend({
       threadId: z.string().nullable(),

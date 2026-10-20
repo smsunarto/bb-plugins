@@ -322,3 +322,33 @@ test("new machines and projectless compose require an existing project checkout"
   });
   expect(newHost.rpcCalls).toEqual([]);
 });
+
+test("the checkout picker polls the Editor inventory only while it is open", async () => {
+  const result = renderSlot(
+    {
+      component: () => (
+        <UnitySlotInputs
+          projectId="project-1"
+          target={{ kind: "existing-host", hostId: "host-1" }}
+          value={null}
+          onChange={() => undefined}
+        />
+      ),
+    },
+    {},
+    { rpc: { listUnityEditors: (() => inventory([slot("warm-a")])) as never } },
+  );
+  const interval = () =>
+    pluginQueryClient
+      .getQueryCache()
+      .find({ queryKey: ["game-studio", "unity-checkout-inputs", "project-1", "host-1"] })
+      ?.observers[0]?.options.refetchInterval;
+  await waitFor(() => expect(result.rpcCalls).toHaveLength(1));
+  // Collapsed, it reads once for its caption and readiness.
+  expect(interval()).toBe(false);
+  const disclosure = result.getByLabelText("Unity checkout", { selector: "summary" });
+  fireEvent.click(disclosure);
+  await waitFor(() => expect(interval()).toBe(5000));
+  fireEvent.click(disclosure);
+  await waitFor(() => expect(interval()).toBe(false));
+});

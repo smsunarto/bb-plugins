@@ -24,6 +24,7 @@ import { ModelReviewLinks, ModelReviewPage } from "./model-review/index.tsx";
 import { DesignEditor, AssetLibrary, Evidence } from "./views.tsx";
 import { UnityPanel, useUnityEditors, editorLabel } from "./unity.tsx";
 import { UnitySlotInputs } from "./unity-slot-inputs.tsx";
+import { useStudioWorkspace } from "./workspace-sync.ts";
 import { Icon, Joystick } from "./icons.tsx";
 import { createTabRequests } from "./tab-request.ts";
 import { ago } from "./time.ts";
@@ -225,18 +226,7 @@ function Gallery() {
 
 function Workbench({ gameId, tab }: { gameId: string; tab: Tab }) {
   const client = rpc.useClient();
-  const query = rpc.get.useQuery(
-    { gameId },
-    {
-      refetchInterval: (current) =>
-        current.state.data?.generationJobs?.some((job) =>
-          ["queued", "running"].includes(job.status),
-        )
-          ? 2000
-          : 10_000,
-      retry: false,
-    },
-  );
+  const { query, saveBoard } = useStudioWorkspace(gameId);
   const openGame = useContext(StudioLocation);
   const composer = useComposer();
   // Text and review nodes start on the composer's agent; each node's composer can change it.
@@ -291,7 +281,8 @@ function Workbench({ gameId, tab }: { gameId: string; tab: Tab }) {
   );
   const lease = previewQuery.data ?? null;
   const upload = useRef<HTMLInputElement>(null);
-  const editors = useUnityEditors(query.data?.game.hostId);
+  // Only the Unity tab shows the inventory live; the header chip keeps the last answer.
+  const editors = useUnityEditors(query.data?.game.hostId, { poll: tab === "unity" });
   const request = useCallback(
     async (
       action: StudioAction,
@@ -371,14 +362,6 @@ function Workbench({ gameId, tab }: { gameId: string; tab: Tab }) {
   const go = (next: Tab) => {
     setVisitedTabs((previous) => new Set([...previous, next]));
     openGame(gameId, next);
-  };
-  const saveBoard = async (next: NonNullable<typeof board>["board"], expectedRevision: string) => {
-    // Refetch even after a conflict: the canvas rebases its draft onto the newer board.
-    try {
-      return await client.saveBoard({ gameId, board: next, revision: expectedRevision });
-    } finally {
-      await refetch();
-    }
   };
   const onUpload = async (file: File) => {
     setError("");

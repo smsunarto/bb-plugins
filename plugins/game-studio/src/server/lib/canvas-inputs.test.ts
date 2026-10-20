@@ -10,6 +10,8 @@ import { Generations } from "./generations.ts";
 import { GenerationWork } from "./generation-work.ts";
 import { SlotStore } from "./slot-store.ts";
 import { loadWorkspace } from "./studio.ts";
+import { nodeDisk } from "../../host/canvas.ts";
+import { canvasHostRouter } from "../../../test/canvas-host.ts";
 
 type Start = Parameters<GenerationRunner["start"]>[0];
 const shaA = "559aead08264d5795d3909718cdd05abd49572e84fe55590eef31a88a08fdffd";
@@ -26,6 +28,14 @@ async function fixture({ registered = true } = {}) {
   let failSourceRead = false;
   let hostJob: GenerationJob | undefined;
   let capturePause: { entered: () => void; released: Promise<void> } | undefined;
+  const canvas = canvasHostRouter(
+    () => nodeDisk,
+    async (root) => ({
+      workspacePath: root,
+      jobs: hostJob ? [structuredClone(hostJob)] : [],
+      stale: false,
+    }),
+  );
   const { bb, harness } = createFakePluginHost({
     pluginId: "game-studio",
     sdk: {
@@ -42,16 +52,6 @@ async function fixture({ registered = true } = {}) {
       },
       files: {
         read: async ({ path }) => {
-          if (path === join(rootPath, reference)) {
-            captureGuard?.("read");
-            if (capturePause) {
-              const pause = capturePause;
-              capturePause = undefined;
-              pause.entered();
-              await pause.released;
-            }
-            if (failSourceRead) throw new Error("Reference temporarily unavailable");
-          }
           const bytes = await readFile(path);
           const binary = /\.(png|jpe?g|webp)$/i.test(path);
           return {
@@ -63,7 +63,6 @@ async function fixture({ registered = true } = {}) {
           } as never;
         },
         write: async ({ path, content, contentEncoding, expectedSha256, createParents }) => {
-          if (path.startsWith(join(rootPath, "canvas/inputs/"))) captureGuard?.("write");
           const previous = await readFile(path).catch((error: NodeJS.ErrnoException) => {
             if (error.code === "ENOENT") return null;
             throw error;
@@ -81,8 +80,23 @@ async function fixture({ registered = true } = {}) {
         list: async () => ({ files: [], truncated: false }),
       },
     },
-    experimental_callHostRpc: async ({ method, input }) => {
+    experimental_callHostRpc: async ({ method, input, hostId }) => {
       hostCalls.push(method);
+      if (method === "captureCanvasInputs") {
+        // The host reads the selected source, then writes its snapshot beside it.
+        captureGuard?.("read");
+        if (capturePause) {
+          const pause = capturePause;
+          capturePause = undefined;
+          pause.entered();
+          await pause.released;
+        }
+        if (failSourceRead) throw new Error("Reference temporarily unavailable");
+        const captured = await canvas.call(method, input, hostId);
+        captureGuard?.("write");
+        return captured;
+      }
+      if (canvas.handles(method)) return canvas.call(method, input, hostId);
       if (method === "resolveWorkspace") return { workspacePath: rootPath };
       if (method === "status") {
         if (!hostJob) throw new Error("ENOENT: generation job has not been created");

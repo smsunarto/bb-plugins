@@ -21,6 +21,8 @@ import { overview } from "./rpc/overview.ts";
 import { create } from "./rpc/create.ts";
 import { attach } from "./rpc/attach.ts";
 import { get } from "./rpc/get.ts";
+import { syncWorkspace } from "./rpc/sync-workspace.ts";
+import { publishRunEnded, relayCanvasChanges } from "./lib/workspace-signal.ts";
 import { saveBoard } from "./rpc/save-board.ts";
 import { saveDocument } from "./rpc/save-document.ts";
 import { createDocument } from "./rpc/create-document.ts";
@@ -52,6 +54,7 @@ export default definePlugin({
     create,
     attach,
     get,
+    syncWorkspace,
     saveBoard,
     saveDocument,
     createDocument,
@@ -109,6 +112,9 @@ export default definePlugin({
     };
   },
   setup({ bb, unitySlots }) {
+    bb.onDispose(relayCanvasChanges(bb));
+    bb.events.on("thread.idle", ({ thread }) => publishRunEnded(bb, thread));
+    bb.events.on("thread.failed", ({ thread }) => publishRunEnded(bb, thread));
     registerRequestMention(bb);
     unitySlots.install();
   },

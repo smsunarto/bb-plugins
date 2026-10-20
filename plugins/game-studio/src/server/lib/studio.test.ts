@@ -18,6 +18,7 @@ import { prompt } from "../rpc/prompt.ts";
 import { inspectUnity } from "../rpc/inspect-unity.ts";
 import { recordRequest } from "../rpc/record-request.ts";
 import { projectFile, relativeFile } from "./paths.ts";
+import { fakeCanvasHosts } from "../../../test/canvas-host.ts";
 
 interface FakeFile {
   content: string;
@@ -58,7 +59,7 @@ function fake() {
     files.set(key(hostId, path), {
       content,
       contentEncoding,
-      sha256: createHash("sha256").update(`${contentEncoding}:${content}`).digest("hex"),
+      sha256: createHash("sha256").update(Buffer.from(content, contentEncoding)).digest("hex"),
     });
     const paths = win32.isAbsolute(path) && !posix.isAbsolute(path) ? win32 : posix;
     let dir = paths.dirname(path);
@@ -75,7 +76,8 @@ function fake() {
     if (relative.startsWith("..") || paths.isAbsolute(relative))
       throw new Error("outside rootPath");
   };
-  const bb = {
+  const bb: BbPluginApi = {
+    hosts: fakeCanvasHosts(() => bb),
     storage: {
       kv: {
         async get(k: string) {

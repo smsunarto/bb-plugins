@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { registerRequestMention } from "./request-mention.ts";
+import { canvasHostRouter, sdkDisk } from "../../../test/canvas-host.ts";
 
 async function fixture() {
   const files = new Map([
@@ -42,8 +43,13 @@ async function fixture() {
       { content: "# Combat\n\nDodge the thorns.", sha256: "combat-before" },
     ],
   ]);
+  const canvas = canvasHostRouter((hostId) => sdkDisk(bb.sdk.files, hostId));
   const { bb, harness } = createFakePluginHost({
     pluginId: "game-studio",
+    experimental_callHostRpc: ({ method, input, hostId }) => {
+      if (!canvas.handles(method)) throw new Error(`Unexpected host call: ${method}`);
+      return canvas.call(method, input, hostId);
+    },
     sdk: {
       files: {
         async read({ path }) {
