@@ -420,7 +420,7 @@ export class UnitySlots {
         ]);
         if (!workspaces.size) return { action: "proceed" as const };
         const path = await this.resolve(environment.hostId, environment.path, signal);
-        if (!workspaces.has(path ?? "")) return { action: "proceed" as const };
+        if (!path || !workspaces.has(path)) return { action: "proceed" as const };
         // Only slot-bound dispatch needs this exemption; Editor commands keep their own claims.
         if (await this.isSnapshotReviewer(thread, signal)) return { action: "proceed" as const };
         await this.ensureLegacyClaims();
