@@ -2,7 +2,7 @@
 
 ## Dev Commands
 
-- Start `bun run dev` if there isn't one running.
+- Use `bb plugin dev ./plugins/<id>` for the plugin you are changing; reuse its watcher if one is running.
 - Lint: `bunx oxlint --fix --format=agent`
 - Formatting: `bunx oxfmt`.
 
@@ -33,18 +33,18 @@ When you add, rename, or remove a catalog plugin, update both files in the same 
 ## Environment
 
 - By default, running `bb` commands points to the user's live bb instance. Run `bb --version` to see what bb version the user have installed.
-- Reuse the workspace development instance. Run `bun run dev:instance` if it is not prepared.
+- For plugin development, use BB's own `plugin build`, `plugin install`, and `plugin dev` commands.
+- If verification needs another BB build, follow that BB checkout's `docs/debugging-and-qa.md` and `scripts/bb-dev-app` launcher. This repository does not manage BB instances.
 
 ### Verification
 
 Use BB's bundled `bb-plugin-authoring` skill and its `references/testing.md` for SDK tests and the live plugin loop.
 
 - Run focused tests with `@get-bb/plugin-sdk/testing`, `/testing/app`, or `/testing/host` for the affected contracts.
-- Reuse the workspace development instance and its existing watcher. Do not launch a fresh BB stack for each verification run.
-- Read the instance's app URL, server URL, and data directory from `bb-kit dev-instance status --json`. Route CLI commands through `bb-kit dev-instance exec --` so they target that instance.
-- Use the routed `bb plugin dev` loop when the affected plugin is not already watched. Inspect its source, status, logs, or RPC with BB's plugin commands.
+- Use `bb plugin dev` when the affected plugin is not already watched. Inspect its source, status, logs, or RPC with BB's plugin commands.
+- When using another BB build, read its URLs and routing from BB's launcher. Use that checkout's `pnpm bb:dev` CLI against it.
 - Verify the changed user flow in a browser when rendering or host integration matters. Capture and inspect evidence, remove this run's test records, and close only its browser session.
-- Use an additional isolated instance only when a check needs separate state. Verify its processes and listeners stop after cleanup; leave the workspace instance running.
+- When a check needs separate state, use BB's own QA tooling. Stop only test resources that this task created.
 
 For plugin UI performance investigations, read `.agents/skills/bb-plugin-performance/SKILL.md`.
 

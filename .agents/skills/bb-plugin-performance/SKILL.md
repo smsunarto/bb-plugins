@@ -11,7 +11,7 @@ Read [the investigation findings](references/findings.md) when tracing thread sw
 
 ## Establish a comparable baseline
 
-Use BB's bundled `bb-plugin-authoring` skill and its `references/testing.md`, following the instance routing in [AGENTS.md](../../../AGENTS.md). Reuse the workspace development instance and watcher. Verify the affected plugin's source and running status through its routed CLI before measuring. Keep probes and traces in an ignored evidence directory. Use another instance only when the check needs separate state.
+Use BB's bundled `bb-plugin-authoring` skill and its `references/testing.md`, following [AGENTS.md](../../../AGENTS.md). Use BB's `plugin dev` loop and verify the affected plugin's source and running status before measuring. If a check needs another BB build or separate state, use BB's own checkout launcher and QA documentation. Keep probes and traces in an ignored evidence directory.
 
 Record the conditions that can change the result:
 
@@ -24,7 +24,7 @@ Measure cold and warm destinations separately. Define what you cleared for a col
 
 Compare closed-to-closed, closed-to-open, and open-to-open thread switches as separate cases. Keep the destination and starting state fixed within each comparison. Alternate baseline and changed runs when possible.
 
-Use realistic list sizes and persisted state. Empty localStorage and a small sidebar can hide costs that scale with saved layouts or threads. Create disposable fixtures in the development instance; use a separate instance if fixture setup would disturb another active check.
+Use realistic list sizes and persisted state. Empty localStorage and a small sidebar can hide costs that scale with saved layouts or threads. Use disposable fixtures; use BB's QA tooling when fixture setup would disturb existing data or another active check.
 
 For a reported slowdown in the live app, first record its version, plugin configuration, and affected path. Confirm the development reproduction matches those conditions. A source frontend against the same server can help identify component names, but its development timings are a separate result. Account for server caches and avoid HMR reloads during measurement.
 
@@ -92,4 +92,4 @@ For lifecycle or subscription changes, exercise the relevant failure paths:
 
 When adding a regression test, call the consumer path and assert visible behavior or literal work counts. For render isolation, resolve the panel request and assert that unchanged timeline content did not render again. Confirm the test fails when that isolation is deliberately removed.
 
-Report the consumer's changed behavior, the cause, the verified metrics, and any timing limitation. Separate direct source facts, previous observations, and hypotheses. Keep traces and probes in ignored evidence storage. Reload the live plugin as required by the repository handoff rules after verifying the affected flow in the development instance.
+Report the consumer's changed behavior, the cause, the verified metrics, and any timing limitation. Separate direct source facts, previous observations, and hypotheses. Keep traces and probes in ignored evidence storage. Follow the repository handoff rules after verifying the affected flow in the selected BB build.

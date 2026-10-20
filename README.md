@@ -95,55 +95,38 @@ bun run build                            # bb plugin build for every plugin
 bb plugin install ./plugins/<id>         # from the repo root
 ```
 
-## Develop bb plugins against an isolated bb
+## Develop a plugin
 
-| Goal                                        | Command                                         | bb source                               |
-| ------------------------------------------- | ----------------------------------------------- | --------------------------------------- |
-| Develop plugins against the current release | `bun run dev`                                   | Managed release checkout                |
-| Develop plugins against another revision    | `bun run dev:instance -- --revision <selector>` | Managed branch, tag, or commit checkout |
-| Develop bb with uncommitted source changes  | `bb-kit dev-instance start --attach .`          | Existing checkout in place              |
-| Run tools against the selected instance     | `bb-kit dev-instance run -- <program>`          | Current managed or attached source      |
-
-Start the latest bb release, build the workspace, apply the baseline, and run
-the plugin watchers:
+Use BB's own build-and-reload loop for the plugin you are changing:
 
 ```sh
-bun run dev
+bb plugin install ./plugins/monokai
+bb plugin dev ./plugins/monokai
 ```
 
-The command routes the build, baseline, and watchers through one managed bb
-instance.
+The watcher targets the running BB selected by the CLI. It rebuilds and reloads the plugin on save.
+Use `bb plugin source monokai`, `bb plugin list`, and `bb plugin logs monokai` to inspect it.
+Run focused tests with BB's SDK testing harnesses, then verify the changed user flow in the app.
 
-To prepare the fixture without starting watchers, run:
+## Test another BB build
 
-```sh
-bun run dev:instance
-```
-
-The prepare-only command installs workspace plugins, pins experiments, resets
-plugin settings, and selects the repository theme. It is safe to repeat. Pass
-any owned bb-kit start selector after `--` when you need another revision or a
-named instance:
-
-```sh
-bun run dev:instance -- --name my-branch \
-  --revision local:my-branch \
-  --repo ~/git/bb
-```
-
-Use `bb-kit dev-instance` directly when you need lifecycle control without the
-bb-plugins baseline. `bun run dev:instance` refuses `--attach` because the
-baseline resets instance plugin state.
-
-## Develop bb core from its checkout
-
-Attach bb-kit to the checkout that you are editing:
+Use BB's own launcher from the BB checkout, following its `docs/debugging-and-qa.md`:
 
 ```sh
 cd ~/git/bb
-bb-kit dev-instance start --attach .
-bb-kit dev-instance run -- pnpm test
+scripts/bb-dev-app current
+scripts/bb-dev-app status
+eval "$(scripts/bb-dev-app env)"
+pnpm bb:dev plugin install /absolute/path/to/bb-plugins/plugins/monokai
+pnpm bb:dev plugin dev /absolute/path/to/bb-plugins/plugins/monokai
 ```
 
-The attached instance uses that checkout in place. bb-kit preserves dirty
-files and never removes the checkout, its data directory, or its logs.
+The launcher reports the build's URLs, data directory, and logs. Use `scripts/bb-dev-app stop` when finished.
+This repository does not manage BB checkouts, ports, or server processes.
+
+## Documentation screenshots
+
+`bun run screenshots` renders static documentation heroes without a BB server.
+`bun run screenshots:fixtures` requires `BB_APP_URL`, set to the launcher's reported **App** URL, which differs from its API server URL in development.
+Prepare the affected plugin, GTD sidebar, and bb Monokai through BB before capturing live fixtures.
+Capture checks their source, running state, and selected palette without changing them.

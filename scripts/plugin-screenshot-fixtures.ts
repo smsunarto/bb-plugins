@@ -20,10 +20,7 @@ import {
   createScreenshotPage,
   launchScreenshotBrowser,
   parseScreenshotArguments,
-  prepareBbForScreenshots,
-  SCREENSHOT_PREFLIGHT_PLUGINS,
   SCREENSHOT_ROOT,
-  SCREENSHOT_THEME_ID,
   SIDEBAR_PROVIDER,
   SIDEBAR_PROVIDER_KEY,
   type ScreenshotBatch,
@@ -266,13 +263,63 @@ Options:
   --list              Print fixture ids and DPR-3 dimensions.
   --help              Show this help.
 
-The live bb URL comes from BB_SERVER_URL. Output density: DPR ${DPR}.`;
+Set BB_APP_URL to the selected build's App URL from BB's launcher status.
+Output density: DPR ${DPR}.`;
 }
 
-function appUrl(path: string): string {
-  const base = process.env.BB_SERVER_URL;
-  if (!base) throw new Error("BB_SERVER_URL is not set; run this inside a bb thread");
+export function appUrl(path: string, environment: NodeJS.ProcessEnv = process.env): string {
+  const base = environment.BB_APP_URL;
+  if (!base) {
+    throw new Error(
+      "Set BB_APP_URL to the build's App URL, not its Server URL, before capturing fixtures.",
+    );
+  }
   return new URL(path, base).href;
+}
+
+function record(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+export async function assertFixturePrerequisites(
+  base: string,
+  selected: readonly string[],
+): Promise<void> {
+  const read = async (path: string): Promise<unknown> => {
+    const response = await fetch(new URL(path, base), { signal: AbortSignal.timeout(10_000) });
+    if (!response.ok) throw new Error(`Screenshot prerequisite ${path}: HTTP ${response.status}`);
+    return response.json();
+  };
+  const [list, config] = await Promise.all([
+    read("/api/v1/plugins"),
+    read("/api/v1/system/config"),
+  ]);
+  if (
+    !record(config) ||
+    !record(config.appearance) ||
+    config.appearance.themeId !== "plugin:monokai:bb-monokai"
+  ) {
+    throw new Error(
+      "Select bb Monokai in the target BB before capturing fixtures (bb theme set plugin:monokai:bb-monokai).",
+    );
+  }
+  if (!record(list) || !Array.isArray(list.plugins))
+    throw new Error("Target BB returned no plugin list.");
+  const plugins: unknown[] = list.plugins;
+  for (const id of new Set([...selected, "monokai", "gtd-sidebar"])) {
+    const plugin = plugins.find((value) => record(value) && value.id === id);
+    const expected = join(ROOT, "plugins", id);
+    if (
+      !record(plugin) ||
+      plugin.rootDir !== expected ||
+      plugin.enabled !== true ||
+      plugin.status !== "running"
+    ) {
+      throw new Error(
+        `Fixture plugin ${id} must be running from ${expected}. Use bb plugin install ${expected} and bb plugin enable ${id} on the target BB.`,
+      );
+    }
+  }
 }
 
 function outputPath(spec: FixtureSpec, outputDir: string | null): string {
@@ -1488,10 +1535,7 @@ async function main(): Promise<void> {
   if (unknown.length > 0)
     throw new Error(`unknown plugin${unknown.length === 1 ? "" : "s"}: ${unknown.join(", ")}`);
 
-  await prepareBbForScreenshots();
-  console.log(
-    `bb preflight    ${SCREENSHOT_PREFLIGHT_PLUGINS.length} workspace plugins enabled · ${SCREENSHOT_THEME_ID}`,
-  );
+  await assertFixturePrerequisites(appUrl("/"), requested);
 
   const results = await withScreenshotBatch(async (batch) => {
     const browser = await launchScreenshotBrowser();

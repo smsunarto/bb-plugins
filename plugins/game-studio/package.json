@@ -71,7 +71,7 @@
   },
   "scripts": {
     "build": "bb plugin build .",
-    "dev": "\"${BB_CLI:?Run bun run dev from the repository root}\" plugin dev .",
+    "dev": "bb plugin dev .",
     "typecheck": "tsc --noEmit",
     "check": "node --import tsx ../../packages/bb-kit-dev/src/bin.ts check",
     "test": "bun test --preload ./test/sqlite-preload.js src --timeout=30000",

@@ -113,7 +113,7 @@
     "vaul": "^1.1.2"
   },
   "scripts": {
-    "dev": "\"${BB_CLI:?Run bun run dev from the repository root}\" plugin dev .",
+    "dev": "bb plugin dev .",
     "build": "bb plugin build .",
     "typecheck": "tsc --noEmit",
     "test": "bun test --timeout=30000 test/*.test.ts && node --experimental-strip-types --test test/feature-settings.node.ts test/snooze-family.node.ts test/deletion-refresh.node.ts test/cli.node.ts",

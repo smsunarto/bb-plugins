@@ -150,7 +150,7 @@ start-up errors cannot leak into the dirty list or the diff.
 
 ```sh
 bun install
-bun run dev        # watch + rebuild against the dev bb instance
+bun run dev        # watch + rebuild against the BB selected by the CLI
 bun run lint
 bun run typecheck
 bun run test       # node --test --import tsx

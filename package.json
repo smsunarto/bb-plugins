@@ -17,33 +17,14 @@
     "esbuild",
     "lefthook"
   ],
-  "bbKit": {
-    "devInstance": {
-      "schemaVersion": 1,
-      "pluginDirectory": "plugins",
-      "packageManager": "bun",
-      "beforeBuild": [
-        "build:framework"
-      ],
-      "watchExclude": [],
-      "experiments": {
-        "changelogPreview": false,
-        "mobileApp": false,
-        "timelineWindowing": false
-      },
-      "theme": "plugin:monokai:bb-monokai"
-    }
-  },
   "scripts": {
     "postinstall": "cd node_modules/better-sqlite3 && node ../.bin/prebuild-install",
     "build": "bun run build:framework && bun run --filter '@smsunarto/bb-plugin-*' --parallel build",
     "build:framework": "bun run --filter '@bb-kit/*' --parallel build",
-    "dev": "bun packages/bb-kit-dev/src/bin.ts dev-instance workspace --watch",
-    "dev:instance": "bun packages/bb-kit-dev/src/bin.ts dev-instance workspace",
     "icons": "bun scripts/plugin-icons.ts",
     "icons:check": "bun scripts/plugin-icons.ts --check",
-    "screenshots": "bun packages/bb-kit-dev/src/bin.ts dev-instance run -- bun scripts/plugin-screenshots.ts",
-    "screenshots:fixtures": "bun packages/bb-kit-dev/src/bin.ts dev-instance run -- bun scripts/plugin-screenshot-fixtures.ts",
+    "screenshots": "bun scripts/plugin-screenshots.ts",
+    "screenshots:fixtures": "bun scripts/plugin-screenshot-fixtures.ts",
     "lint": "oxlint",
     "lint:fix": "oxlint --fix",
     "fmt": "oxfmt",

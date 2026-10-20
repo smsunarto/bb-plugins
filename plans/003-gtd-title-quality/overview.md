@@ -91,8 +91,8 @@ Phases 4–7 supply opt-in candidates to the evaluator. Do not select them for l
 
 The [testing protocol](testing.md) defines proposed numerical gates, usage ceilings, and stop conditions. Freeze them before looking at candidate scores. No numerical improvement is claimed by this plan.
 
-Invoke `bb-plugin-authoring`, `control-cli`, and `agent-browser` for their corresponding implementation and runtime surfaces. Use `bb-cli` for thread context and `but` for version control. Reuse the workspace development instance and watcher, following `AGENTS.md`.
+Invoke `bb-plugin-authoring`, `control-cli`, and `agent-browser` for their corresponding implementation and runtime surfaces. Use `bb-cli` for thread context and `but` for version control. Use BB's `plugin dev` loop, following `AGENTS.md`.
 
 Apply pstack **how** to each unfamiliar subsystem, **interrogate** to contested designs, **deslop** before commits when installed, **unslop** to prose, and **show-me-your-work** to the experiment decision trail. Use the **Babysit** playbook only for an authorized PR follow-up. Domain ownership remains server-side. Preserve manual-title, archive, child-thread, disable-setting, and concurrency protections.
 
-After focused verification, run `bun run lint:fix && bun run fmt && bun run typecheck && bun run test`. Preserve unrelated work. Checkpoint only this task's accepted changes on `scott/gtd-title-quality`. Verify the affected flow in the workspace development instance before any authorized live plugin reload. Phase 10 describes rollback and the handoff evidence.
+After focused verification, run `bun run lint:fix && bun run fmt && bun run typecheck && bun run test`. Preserve unrelated work. Checkpoint only this task's accepted changes on `scott/gtd-title-quality`. Verify the affected flow in the selected BB build before any authorized live plugin reload. Phase 10 describes rollback and the handoff evidence.

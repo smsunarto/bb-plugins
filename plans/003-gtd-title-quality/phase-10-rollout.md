@@ -22,7 +22,7 @@ The only persistent configuration is the canonical naming-rule document. Local e
 
 Static: run the required repository lint, format, typecheck, and test gates. Validate documentation examples against the accepted formatter and rule loader. Preserve unrelated changes.
 
-Runtime: follow BB's bundled `bb-plugin-authoring` testing guidance in the workspace development instance. Check GTD cards and slim rows, including visible truncation, accessible labels, and search. Then inspect `bb plugin source gtd-sidebar`, ensure it resolves to this local checkout, and reload `gtd-sidebar` against the live instance. Verify a controlled rename and the plugin's running state. Do not reload agent-proxy.
+Runtime: follow BB's bundled `bb-plugin-authoring` testing guidance in the selected BB build. Check GTD cards and slim rows, including visible truncation, accessible labels, and search. Then inspect `bb plugin source gtd-sidebar`, ensure it resolves to this local checkout, and reload `gtd-sidebar` against the live instance. Verify a controlled rename and the plugin's running state. Do not reload agent-proxy.
 
 If the live check fails, restore only this task's last passing naming implementation and reload it. Retain the evidence and describe the failure. Do not batch rewrite historical thread titles.
 

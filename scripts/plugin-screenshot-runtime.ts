@@ -2,16 +2,12 @@ import { mkdir, readFile, rename, rm } from "node:fs/promises";
 import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { chromium, type Browser, type BrowserContext, type Page } from "playwright";
-import { loadWorkspaceDefinition } from "../packages/bb-kit-dev/src/dev/workspace.ts";
+import { workspacePlugins } from "./plugin-package";
 
 export const SCREENSHOT_ROOT = fileURLToPath(new URL("..", import.meta.url));
-const SCREENSHOT_WORKSPACE = loadWorkspaceDefinition(SCREENSHOT_ROOT);
-export const SCREENSHOT_THEME_ID = SCREENSHOT_WORKSPACE.profile.theme;
 export const SIDEBAR_PROVIDER_KEY = "bb.sidebar.threadListProvider";
 export const SIDEBAR_PROVIDER = "gtd-sidebar/inbox";
-export const SCREENSHOT_PREFLIGHT_PLUGINS = SCREENSHOT_WORKSPACE.plugins.map(
-  ({ id, directory }) => ({ id, directory }),
-);
+export const SCREENSHOT_PLUGINS = workspacePlugins(SCREENSHOT_ROOT);
 
 const BROWSER_LAUNCH_ARGS = [
   "--disable-gpu",
@@ -53,18 +49,6 @@ export interface ScreenshotBatch {
   capture(page: Pick<Page, "screenshot">, request: ScreenshotCaptureRequest): Promise<void>;
 }
 
-export type BbCommandRunner = (args: readonly string[]) => Promise<string>;
-
-export function routedBbCli(environment: NodeJS.ProcessEnv = process.env): string {
-  const executable = environment.BB_CLI;
-  if (!executable) {
-    throw new Error(
-      "BB_CLI is not set. Run bb-kit dev-instance workspace, then route this command through bb-kit dev-instance run.",
-    );
-  }
-  return executable;
-}
-
 export function parseScreenshotArguments(args: readonly string[]): ScreenshotOptions {
   const plugins: string[] = [];
   let outputDir: string | null = null;
@@ -95,166 +79,6 @@ export function parseScreenshotArguments(args: readonly string[]): ScreenshotOpt
     }
   }
   return { plugins: [...new Set(plugins)], outputDir, help, list };
-}
-
-function parseBbJson(output: string, args: readonly string[]): unknown {
-  try {
-    return JSON.parse(output) as unknown;
-  } catch {
-    throw new Error(`bb ${args.join(" ")} returned invalid JSON`);
-  }
-}
-
-interface PluginState {
-  enabled: boolean;
-  rootDir: string;
-  status: string;
-}
-
-function pluginStates(output: string, args: readonly string[]): Map<string, PluginState> {
-  const value = parseBbJson(output, args);
-  if (
-    typeof value !== "object" ||
-    value === null ||
-    !("plugins" in value) ||
-    !Array.isArray(value.plugins)
-  ) {
-    throw new Error(`bb ${args.join(" ")} returned no plugin list`);
-  }
-
-  const states = new Map<string, PluginState>();
-  for (const plugin of value.plugins) {
-    if (
-      typeof plugin !== "object" ||
-      plugin === null ||
-      !("id" in plugin) ||
-      typeof plugin.id !== "string" ||
-      !("enabled" in plugin) ||
-      typeof plugin.enabled !== "boolean" ||
-      !("rootDir" in plugin) ||
-      typeof plugin.rootDir !== "string" ||
-      !("status" in plugin) ||
-      typeof plugin.status !== "string"
-    ) {
-      throw new Error(`bb ${args.join(" ")} returned an invalid plugin entry`);
-    }
-    states.set(plugin.id, {
-      enabled: plugin.enabled,
-      rootDir: resolve(plugin.rootDir),
-      status: plugin.status,
-    });
-  }
-  return states;
-}
-
-function activeTheme(output: string, args: readonly string[]): string {
-  const value = parseBbJson(output, args);
-  if (
-    typeof value !== "object" ||
-    value === null ||
-    !("themeId" in value) ||
-    typeof value.themeId !== "string"
-  ) {
-    throw new Error(`bb ${args.join(" ")} returned no active theme`);
-  }
-  return value.themeId;
-}
-
-export async function runBbCommand(args: readonly string[]): Promise<string> {
-  const executable = routedBbCli();
-  const child = Bun.spawn([executable, ...args], {
-    cwd: SCREENSHOT_ROOT,
-    stdout: "pipe",
-    stderr: "pipe",
-  });
-  const [stdout, stderr, exitCode] = await Promise.all([
-    new Response(child.stdout).text(),
-    new Response(child.stderr).text(),
-    child.exited,
-  ]);
-  if (exitCode !== 0) {
-    const detail = stderr.trim() || stdout.trim() || `exit code ${exitCode}`;
-    throw new Error(`bb ${args.join(" ")} failed: ${detail}`);
-  }
-  return stdout;
-}
-
-/**
- * Enable every workspace plugin from this checkout and select bb Monokai.
- * One independent final read is the readiness barrier. Invalid installations
- * fail before any mutation.
- */
-export async function prepareBbForScreenshots(
-  runCommand: BbCommandRunner = runBbCommand,
-): Promise<void> {
-  const plugins = SCREENSHOT_PREFLIGHT_PLUGINS;
-  const listArgs = ["plugin", "list", "--json"] as const;
-  const initialPlugins = pluginStates(await runCommand(listArgs), listArgs);
-  const missing = plugins.filter((plugin) => !initialPlugins.has(plugin.id));
-  const wrongSources = plugins.filter((plugin) => {
-    const state = initialPlugins.get(plugin.id);
-    return state && state.rootDir !== join(SCREENSHOT_ROOT, "plugins", plugin.directory);
-  });
-  if (missing.length > 0 || wrongSources.length > 0) {
-    throw new Error(
-      [
-        "workspace plugins are not installed from this checkout:",
-        ...missing.map(
-          (plugin) => `  ${plugin.id}: bb plugin install ./plugins/${plugin.directory}`,
-        ),
-        ...wrongSources.map(
-          (plugin) =>
-            `  ${plugin.id}: expected ${join(SCREENSHOT_ROOT, "plugins", plugin.directory)}, found ${initialPlugins.get(plugin.id)!.rootDir}`,
-        ),
-        "Install or reinstall them from this checkout, then run the screenshot command again.",
-      ].join("\n"),
-    );
-  }
-
-  for (const plugin of plugins) {
-    if (initialPlugins.get(plugin.id)?.enabled === false) {
-      await runCommand(["plugin", "enable", plugin.id, "--json"]);
-    }
-  }
-
-  const themeArgs = ["theme", "show", "--json"] as const;
-  if (activeTheme(await runCommand(themeArgs), themeArgs) !== SCREENSHOT_THEME_ID) {
-    await runCommand(["theme", "set", SCREENSHOT_THEME_ID, "--json"]);
-  }
-
-  const finalPlugins = pluginStates(await runCommand(listArgs), listArgs);
-  const finalTheme = activeTheme(await runCommand(themeArgs), themeArgs);
-  const finalMissing = plugins.filter((plugin) => !finalPlugins.has(plugin.id));
-  const finalDisabled = plugins.filter(
-    (plugin) => finalPlugins.has(plugin.id) && finalPlugins.get(plugin.id)?.enabled !== true,
-  );
-  const finalWrongSources = plugins.filter((plugin) => {
-    const state = finalPlugins.get(plugin.id);
-    return state && state.rootDir !== join(SCREENSHOT_ROOT, "plugins", plugin.directory);
-  });
-  const finalNotRunning = plugins.filter(
-    (plugin) => finalPlugins.get(plugin.id)?.status !== "running",
-  );
-  const failures = [
-    finalMissing.length > 0
-      ? `not installed: ${finalMissing.map((plugin) => plugin.id).join(", ")}`
-      : "",
-    finalDisabled.length > 0
-      ? `not enabled: ${finalDisabled.map((plugin) => plugin.id).join(", ")}`
-      : "",
-    finalWrongSources.length > 0
-      ? `wrong source: ${finalWrongSources.map((plugin) => plugin.id).join(", ")}`
-      : "",
-    finalNotRunning.length > 0
-      ? `not running: ${finalNotRunning.map((plugin) => plugin.id).join(", ")}`
-      : "",
-    finalTheme !== SCREENSHOT_THEME_ID
-      ? `active theme is ${finalTheme}; expected ${SCREENSHOT_THEME_ID}`
-      : "",
-  ].filter(Boolean);
-  if (failures.length > 0) {
-    throw new Error(`bb screenshot preflight did not converge:\n  ${failures.join("\n  ")}`);
-  }
 }
 
 export async function launchScreenshotBrowser(): Promise<Browser> {

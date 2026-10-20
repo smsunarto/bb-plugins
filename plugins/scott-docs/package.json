@@ -69,7 +69,7 @@
     "monokai"
   ],
   "scripts": {
-    "dev": "\"${BB_CLI:?Run bun run dev from the repository root}\" plugin dev .",
+    "dev": "bb plugin dev .",
     "build": "bb plugin build .",
     "typecheck": "tsc --noEmit",
     "test": "vitest run --config vitest.config.ts"

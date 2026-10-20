@@ -61,7 +61,7 @@
     "react-dom": "19.2.8"
   },
   "scripts": {
-    "dev": "\"${BB_CLI:?Run bun run dev from the repository root}\" plugin dev .",
+    "dev": "bb plugin dev .",
     "build": "bb plugin build .",
     "lint": "oxlint",
     "typecheck": "tsc --noEmit",

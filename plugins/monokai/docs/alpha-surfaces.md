@@ -73,8 +73,8 @@ the nearest byte.
 
 ## Verification
 
-Reuse the workspace development instance following `AGENTS.md`. Set
-`BB_APP_URL` to its reported app URL, `BROWSER_SESSION` to your browser session,
+Use the BB build under test following `AGENTS.md`. Set
+`BB_APP_URL` to its app URL, `BROWSER_SESSION` to your browser session,
 and `ARTIFACT_DIR` to an ignored evidence directory. Select bb Monokai and Dark
 appearance in that browser, then run:
 

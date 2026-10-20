@@ -85,7 +85,7 @@ Use one local decision record per attempt with hypothesis, change, hashes, quali
 
 ## Runtime verification
 
-Follow BB's bundled `bb-plugin-authoring` testing guidance and this repository's `AGENTS.md`. Reuse the workspace development instance and watcher. Read its URLs from `bb-kit dev-instance status --json` and route commands through `bb-kit dev-instance exec --`.
+Follow BB's bundled `bb-plugin-authoring` testing guidance and this repository's `AGENTS.md`. Use BB's `plugin dev` loop. If the check needs another BB build, use BB's own checkout launcher and its reported CLI routing and URLs.
 
 Before the browser's first open, set viewport 1728 × 1117 at scale 2. Verify normal cards and slim rows at ordinary and narrow sidebar widths. Inspect screenshots, full accessible labels, search by distinguishing words, questions, multi-scope titles, and grapheme integrity. Capture before/after evidence on the same surface.
 

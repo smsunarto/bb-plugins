@@ -3,7 +3,6 @@ import process from "node:process";
 import { runAdd } from "./add.ts";
 import { runCheck } from "./check.ts";
 import { runCreate } from "./create.ts";
-import { DEV_USAGE, runDev } from "./dev/command.ts";
 import type { BinResult } from "./shared.ts";
 
 /**
@@ -19,7 +18,6 @@ const USAGE = [
   "  bb-kit add <query|mutation|command|tool> <kebab-name>",
   "                                      generate one unit + sibling test",
   "  bb-kit check                        verify wiring, naming, and manifest",
-  "  bb-kit dev-instance <command>       manage an isolated bb dev instance",
   "",
 ].join("\n");
 
@@ -51,16 +49,6 @@ async function main(argv: readonly string[]): Promise<BinResult> {
       return usageError("check takes no arguments — run it at the plugin root");
     }
     return runCheck({ cwd: process.cwd() });
-  }
-  if (command === "dev-instance") {
-    if (rest.length === 0) {
-      return { exitCode: 2, stdout: "", stderr: DEV_USAGE };
-    }
-    return runDev(rest, {
-      cwd: process.cwd(),
-      environment: process.env,
-      progress: (message) => process.stderr.write(`${message}\n`),
-    });
   }
   return usageError(`unknown command "${command}"`);
 }

@@ -19,10 +19,8 @@ import {
   createScreenshotPage,
   launchScreenshotBrowser,
   parseScreenshotArguments,
-  prepareBbForScreenshots,
-  SCREENSHOT_PREFLIGHT_PLUGINS,
+  SCREENSHOT_PLUGINS,
   SCREENSHOT_ROOT,
-  SCREENSHOT_THEME_ID,
   type ScreenshotOptions,
   withScreenshotBatch,
 } from "./plugin-screenshot-runtime";
@@ -376,7 +374,7 @@ Output: ${VIEWPORT.width * VIEWPORT.dpr}×${VIEWPORT.height * VIEWPORT.dpr} PNG 
 }
 
 function validateRecipes(): void {
-  const workspaceIds = new Set(SCREENSHOT_PREFLIGHT_PLUGINS.map((plugin) => plugin.id));
+  const workspaceIds = new Set(SCREENSHOT_PLUGINS.map((plugin) => plugin.id));
   const stale = PLUGIN_SCREENSHOTS.map((recipe) => recipe.id).filter((id) => !workspaceIds.has(id));
   if (stale.length) {
     throw new Error(`recipes without workspace plugins: ${stale.join(", ")}`);
@@ -438,11 +436,6 @@ async function main(): Promise<void> {
   if (unknown.length)
     throw new Error(`unknown plugin${unknown.length === 1 ? "" : "s"}: ${unknown.join(", ")}`);
   const recipes = requested.map((id) => recipeById.get(id)!);
-
-  await prepareBbForScreenshots();
-  console.log(
-    `bb preflight    ${SCREENSHOT_PREFLIGHT_PLUGINS.length} workspace plugins enabled · ${SCREENSHOT_THEME_ID}`,
-  );
 
   const routes = new Map<string, string>();
   for (const font of SCREENSHOT_FONT_ASSETS) {

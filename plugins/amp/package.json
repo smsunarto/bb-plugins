@@ -94,7 +94,7 @@
     "vaul": "^1.1.2"
   },
   "scripts": {
-    "dev": "\"${BB_CLI:?Run bun run dev from the repository root}\" plugin dev .",
+    "dev": "bb plugin dev .",
     "typecheck": "tsc --noEmit",
     "test": "bun test --timeout=30000 test/*.test.ts",
     "build": "bb plugin build .",

@@ -42,7 +42,7 @@ The query searches completed turns backward within the current context boundary.
 
 ## Develop
 
-Use the repository's `bun run dev`. From this directory: `bun run test`, `bun run typecheck`, `bun run check`, and `bun run build`.
+Use `bb plugin dev ./plugins/last-turn-diff` from the repository root. From this directory: `bun run test`, `bun run typecheck`, `bun run check`, and `bun run build`.
 
 ## Unity context
 

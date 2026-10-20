@@ -1,14 +1,10 @@
 import { describe, expect, test } from "bun:test";
-import { workspacePlugins } from "./plugin-package";
 import {
   PLUGIN_SCREENSHOTS,
   ROOT_SCREENSHOT,
   SCREENSHOT_EXCLUDED_PLUGINS,
   stageDocument,
 } from "./plugin-screenshots";
-import { SCREENSHOT_PREFLIGHT_PLUGINS } from "./plugin-screenshot-runtime";
-
-const ROOT = new URL("..", import.meta.url).pathname;
 
 describe("plugin screenshot recipes", () => {
   test("cover the approved plugin heroes exactly once", () => {
@@ -17,16 +13,6 @@ describe("plugin screenshot recipes", () => {
     expect([...SCREENSHOT_EXCLUDED_PLUGINS]).toEqual(["dotfiles"]);
     expect(recipeIds).toEqual(["agentation", "amp", "gh-stack", "gtd-sidebar", "monokai"]);
     expect(new Set(recipeIds).size).toBe(recipeIds.length);
-  });
-
-  test("preflights every workspace plugin, including hero exclusions", () => {
-    const workspaceIds = workspacePlugins(ROOT).map((plugin) => plugin.id);
-    const preflightIds = SCREENSHOT_PREFLIGHT_PLUGINS.map((plugin) => plugin.id);
-
-    expect(preflightIds).toEqual(workspaceIds);
-    for (const id of SCREENSHOT_EXCLUDED_PLUGINS) {
-      expect(preflightIds).toContain(id);
-    }
   });
 
   test("produce fixed stages with an explicit readiness signal", () => {
