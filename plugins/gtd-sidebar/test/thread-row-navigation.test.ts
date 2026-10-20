@@ -14,6 +14,8 @@ import type {
 import type { RenderedSlot } from "@get-bb/plugin-sdk/testing/app";
 import type { PointerEvent } from "react";
 import type { LifecycleApi } from "../hooks/use-lifecycle.ts";
+import { changeHiddenMachines } from "../lib/machine-visibility.ts";
+import { machineVisibilityChangeSchema } from "../lib/machine-visibility-store.ts";
 import { machineColors } from "../lib/machine-colors.ts";
 
 if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
@@ -108,6 +110,8 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
     focusedSplitThread?: string;
     splitEnabled: boolean;
     onSplitPointerDown: (threadId: string, event: PointerEvent<HTMLElement>) => void;
+    /** Hold the shelves until the saved machine choice loads, as bb does. */
+    awaitMachineVisibility?: boolean;
   }
 
   const HostContext = createContext<HostState | null>(null);
@@ -173,6 +177,16 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
   mock.module("../hooks/use-lifecycle.ts", () => ({ useLifecycle: () => useHost().lifecycle }));
   mock.module("../hooks/use-naming-threads.ts", () => ({
     useNamingThreads: () => useHost().naming ?? new Set(),
+  }));
+  // The real hook, captured before the mock replaces the module. Like the
+  // mocked lifecycle's `shelvesReady`, rows paint at mount unless a test asks
+  // for the real load gate.
+  const { useMachineVisibility } = await import("../hooks/use-machine-visibility.ts");
+  mock.module("../hooks/use-machine-visibility.ts", () => ({
+    useMachineVisibility: (machines: Parameters<typeof useMachineVisibility>[0]) => {
+      const visibility = useMachineVisibility(machines);
+      return useHost().awaitMachineVisibility ? visibility : { ...visibility, ready: true };
+    },
   }));
   const rowBodyRender = spyOn(
     await import("../components/inbox/row-context-menu.tsx"),
@@ -325,7 +339,22 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
       groupThreadsByProject: true,
       ...options.settings,
     };
-    const slot = renderSlot({ component: Inbox }, current, { ...options, settings });
+    let hiddenMachineIds: string[] = [];
+    const slot = renderSlot({ component: Inbox }, current, {
+      ...options,
+      settings,
+      rpc: {
+        listMachineVisibility: () => ({ hiddenMachineIds }),
+        changeMachineVisibility: (change: unknown) => {
+          hiddenMachineIds = changeHiddenMachines(
+            hiddenMachineIds,
+            machineVisibilityChangeSchema.parse(change),
+          );
+          return { hiddenMachineIds };
+        },
+        ...options.rpc,
+      },
+    });
     return {
       slot,
       setGrouping(enabled: boolean) {
@@ -1253,22 +1282,214 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
 
     it("preselects the scoped machine, including one with no threads yet", () => {
       const currentActions = actions();
-      const host = hostState([thread("a", { host: { id: "host-a", name: "Studio" } })]);
+      const host = hostState([
+        thread("a", { host: { id: "host-a", name: "Studio" } }),
+        thread("draft"),
+      ]);
       host.sidebar = { ...host.sidebar, experimental_hosts: [{ id: "host-b", name: "Empty" }] };
       host.actions = currentActions;
       const view = mount(host);
-      fireEvent.keyDown(view.slot.getByRole("combobox", { name: "Machine scope: All machines" }), {
+      fireEvent.keyDown(view.slot.getByRole("button", { name: "Visible machines: All machines" }), {
         key: "ArrowDown",
       });
       assert.deepEqual(
-        screen.getAllByRole("option").map((option) => option.textContent),
-        ["All machines", "Empty", "Studio"],
+        screen.getAllByRole("menuitemcheckbox").map((option) => option.textContent),
+        ["Empty", "Studio"],
       );
-      fireEvent.click(screen.getByRole("option", { name: "Studio" }));
+      fireEvent.click(screen.getByRole("menuitem", { name: "Only Studio" }));
       fireEvent.click(view.slot.getByRole("button", { name: "New thread in One" }));
       assert.deepEqual(currentActions.openNewThread.mock.calls, [
         [{ projectId: "one", hostId: "host-a", focusPrompt: true }],
       ]);
+      fireEvent.keyDown(view.slot.getByRole("button", { name: "Visible machines: Studio" }), {
+        key: "ArrowDown",
+      });
+      fireEvent.click(screen.getByRole("menuitem", { name: "Only Empty" }));
+      assert.deepEqual(rowIds(view.slot), ["draft"]);
+      fireEvent.click(view.slot.getByRole("button", { name: "New thread in One" }));
+      assert.deepEqual(currentActions.openNewThread.mock.calls[1], [
+        { projectId: "one", hostId: "host-b", focusPrompt: true },
+      ]);
+    });
+
+    it("keeps checkbox toggles open, guards the last machine, and resets all machines", async () => {
+      const currentActions = actions();
+      const host = hostState([
+        thread("studio", { host: { id: "a", name: "Studio" } }),
+        thread("server", { host: { id: "b", name: "Server" } }),
+        thread("laptop", { projectId: "two", host: { id: "c", name: "Laptop" } }),
+        thread("unknown"),
+      ]);
+      host.actions = currentActions;
+      const view = mount(host, { isCompactViewport: true });
+      await act(async () => {});
+      fireEvent.keyDown(view.slot.getByRole("button", { name: "Visible machines: All machines" }), {
+        key: "ArrowDown",
+      });
+      fireEvent.click(screen.getByRole("menuitemcheckbox", { name: "Laptop" }));
+      assert.ok(screen.getByRole("menu", { name: "Visible machines" }));
+      assert.deepEqual(new Set(rowIds(view.slot)), new Set(["studio", "server", "unknown"]));
+      assert.equal(
+        screen.getByRole("menuitemcheckbox", { name: "Laptop" }).getAttribute("aria-checked"),
+        "false",
+      );
+      assert.ok(
+        screen.getByRole("menuitemcheckbox", { name: "Server" }).classList.contains("min-h-10"),
+      );
+      // The menu is modal; the visible trigger is still named for the partial selection.
+      assert.equal(
+        view.slot.container.querySelector('[aria-label="Visible machines: 2 of 3"]')?.textContent,
+        "2/3",
+      );
+      fireEvent.click(screen.getByRole("menuitemcheckbox", { name: "Server" }));
+      const last = screen.getByRole("menuitemcheckbox", { name: "Studio" });
+      assert.equal(last.getAttribute("aria-disabled"), "true");
+      fireEvent.click(last);
+      assert.deepEqual(new Set(rowIds(view.slot)), new Set(["studio", "unknown"]));
+      fireEvent.click(screen.getByRole("menuitem", { name: "All machines" }));
+      assert.deepEqual(
+        new Set(rowIds(view.slot)),
+        new Set(["studio", "server", "laptop", "unknown"]),
+      );
+      fireEvent.click(view.slot.getByRole("button", { name: "New thread in One" }));
+      assert.deepEqual(currentActions.openNewThread.mock.calls, [
+        [{ projectId: "one", hostId: undefined, focusPrompt: true }],
+      ]);
+      await act(async () => {});
+    });
+
+    it("persists visibility across remounts and refreshes a second window on machine publishes", async () => {
+      const host = hostState([
+        thread("studio", { host: { id: "a", name: "Studio" } }),
+        thread("server", { host: { id: "b", name: "Server" } }),
+        thread("unknown"),
+      ]);
+      let hiddenMachineIds: string[] = [];
+      const options = {
+        rpc: {
+          listMachineVisibility: () => ({ hiddenMachineIds }),
+          changeMachineVisibility: (change: unknown) => {
+            hiddenMachineIds = changeHiddenMachines(
+              hiddenMachineIds,
+              machineVisibilityChangeSchema.parse(change),
+            );
+            return { hiddenMachineIds };
+          },
+        },
+      };
+      const first = mount(host, {}, false, "", options);
+      const second = mount(host, {}, false, "", options);
+      await act(async () => {});
+      fireEvent.keyDown(
+        within(first.slot.container).getByRole("button", {
+          name: "Visible machines: All machines",
+        }),
+        { key: "ArrowDown" },
+      );
+      fireEvent.click(screen.getByRole("menuitem", { name: "Only Studio" }));
+      await act(async () => {});
+      assert.deepEqual(new Set(rowIds(first.slot)), new Set(["studio", "unknown"]));
+      assert.deepEqual(new Set(rowIds(second.slot)), new Set(["studio", "server", "unknown"]));
+      await second.slot.behavior.emitRealtime("lifecycle", { kind: "machines" });
+      await waitFor(() =>
+        assert.deepEqual(new Set(rowIds(second.slot)), new Set(["studio", "unknown"])),
+      );
+      first.slot.lifecycle.unmount();
+      second.slot.lifecycle.unmount();
+      const remounted = mount(host, {}, false, "", options);
+      await waitFor(() =>
+        assert.deepEqual(new Set(rowIds(remounted.slot)), new Set(["studio", "unknown"])),
+      );
+      assert.ok(remounted.slot.getByRole("button", { name: "Visible machines: Studio" }));
+    });
+
+    it("never paints a hidden machine's rows before the saved choice loads", async () => {
+      const host = hostState([
+        thread("studio", { host: { id: "a", name: "Studio" } }),
+        thread("server", { host: { id: "b", name: "Server" } }),
+      ]);
+      host.awaitMachineVisibility = true;
+      let resolve!: (value: { hiddenMachineIds: string[] }) => void;
+      const saved = new Promise<{ hiddenMachineIds: string[] }>((done) => {
+        resolve = done;
+      });
+      const view = mount(host, {}, false, "", {
+        rpc: { listMachineVisibility: () => saved },
+      });
+      await act(async () => {});
+      assert.ok(!rowIds(view.slot).includes("server"));
+      await act(async () => {
+        resolve({ hiddenMachineIds: ["b"] });
+      });
+      await waitFor(() => assert.deepEqual(rowIds(view.slot), ["studio"]));
+    });
+
+    it("keeps an unsaved machine choice when a publish reads the older preference", async () => {
+      const host = hostState([
+        thread("studio", { host: { id: "a", name: "Studio" } }),
+        thread("server", { host: { id: "b", name: "Server" } }),
+      ]);
+      let savedIds: string[] = [];
+      let reads = 0;
+      let resolve!: (value: { hiddenMachineIds: string[] }) => void;
+      const write = new Promise<{ hiddenMachineIds: string[] }>((done) => {
+        resolve = done;
+      });
+      const view = mount(host, {}, false, "", {
+        rpc: {
+          listMachineVisibility: () => {
+            reads += 1;
+            return { hiddenMachineIds: savedIds };
+          },
+          changeMachineVisibility: () => write,
+        },
+      });
+      await act(async () => {});
+      fireEvent.keyDown(view.slot.getByRole("button", { name: "Visible machines: All machines" }), {
+        key: "ArrowDown",
+      });
+      fireEvent.click(screen.getByRole("menuitem", { name: "Only Studio" }));
+      const readsBefore = reads;
+      await view.slot.behavior.emitRealtime("lifecycle", { kind: "machines" });
+      await waitFor(() => assert.ok(reads > readsBefore, "the publish re-read the preference"));
+      await act(async () => {});
+      assert.deepEqual(rowIds(view.slot), ["studio"]);
+      await act(async () => {
+        savedIds = ["b"];
+        resolve({ hiddenMachineIds: savedIds });
+      });
+      await waitFor(() => assert.deepEqual(rowIds(view.slot), ["studio"]));
+      assert.ok(view.slot.getByRole("button", { name: "Visible machines: Studio" }));
+    });
+
+    it("reconciles a failed optimistic machine write with the saved preference", async () => {
+      const host = hostState([
+        thread("studio", { host: { id: "a", name: "Studio" } }),
+        thread("server", { host: { id: "b", name: "Server" } }),
+      ]);
+      let reject!: (error: Error) => void;
+      const pending = new Promise<never>((_, fail) => {
+        reject = fail;
+      });
+      const view = mount(host, {}, false, "", {
+        rpc: {
+          listMachineVisibility: () => ({ hiddenMachineIds: [] }),
+          changeMachineVisibility: () => pending,
+        },
+      });
+      await act(async () => {});
+      fireEvent.keyDown(view.slot.getByRole("button", { name: "Visible machines: All machines" }), {
+        key: "ArrowDown",
+      });
+      fireEvent.click(screen.getByRole("menuitem", { name: "Only Studio" }));
+      assert.deepEqual(rowIds(view.slot), ["studio"]);
+      await act(async () => {
+        reject(new Error("offline"));
+      });
+      await waitFor(() =>
+        assert.deepEqual(new Set(rowIds(view.slot)), new Set(["studio", "server"])),
+      );
+      assert.ok(view.slot.getByRole("button", { name: "Visible machines: All machines" }));
     });
 
     it.each([false, true])(
@@ -1298,12 +1519,12 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
           ),
         );
         fireEvent.keyDown(
-          view.slot.getByRole("combobox", { name: "Machine scope: All machines" }),
+          view.slot.getByRole("button", { name: "Visible machines: All machines" }),
           { key: "ArrowDown" },
         );
         assert.ok(
           screen
-            .getByRole("option", { name: "Local computer" })
+            .getByRole("menuitemcheckbox", { name: "Local computer" })
             .querySelector('[data-icon="Globe"]'),
         );
       },
@@ -1553,17 +1774,17 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
         assert.ok(globe);
         return globe;
       });
-      fireEvent.keyDown(view.slot.getByRole("combobox", { name: "Machine scope: All machines" }), {
+      fireEvent.keyDown(view.slot.getByRole("button", { name: "Visible machines: All machines" }), {
         key: "ArrowDown",
       });
-      const option = screen.getByRole("option", { name: "Studio" });
+      const option = screen.getByRole("menuitemcheckbox", { name: "Studio" });
       assert.equal(
         option.querySelector<HTMLElement>("[data-machine-id]")?.style.color,
         chipGlobe.style.color,
       );
-      fireEvent.click(option);
+      fireEvent.click(screen.getByRole("menuitem", { name: "Only Studio" }));
       assert.deepEqual(new Set(rowIds(view.slot)), new Set(["a", "c"]));
-      const trigger = view.slot.getByRole("combobox", { name: "Machine scope: Studio" });
+      const trigger = view.slot.getByRole("button", { name: "Visible machines: Studio" });
       assert.equal(
         trigger.querySelector<HTMLElement>("[data-machine-id]")?.style.color,
         chipGlobe.style.color,
@@ -1636,10 +1857,10 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
         }),
       ]);
       const view = mount(host);
-      fireEvent.keyDown(view.slot.getByRole("combobox", { name: "Machine scope: All machines" }), {
+      fireEvent.keyDown(view.slot.getByRole("button", { name: "Visible machines: All machines" }), {
         key: "ArrowDown",
       });
-      fireEvent.click(screen.getByRole("option", { name: "Studio" }));
+      fireEvent.click(screen.getByRole("menuitem", { name: "Only Studio" }));
 
       assert.deepEqual(rowIds(view.slot), ["studio"]);
       assert.ok(view.slot.getByRole("button", { name: "One project" }));

@@ -15,6 +15,10 @@ import { z } from "zod";
 // Relative, not the `@/` alias the frontend uses: bb loads this file directly
 // as a path source, so nothing rewrites tsconfig paths for it.
 import { gtdSidebarHostContract } from "./lib/host-contract.ts";
+import {
+  createMachineVisibilityStore,
+  machineVisibilityChangeSchema,
+} from "./lib/machine-visibility-store.ts";
 import { createCollapsedThreadsStore } from "./lib/collapsed-threads.ts";
 import { createThreadNester } from "./lib/nest-thread.ts";
 import { threadFamilyIds } from "./lib/thread-family.ts";
@@ -64,6 +68,19 @@ const FOLD_CHECK_MS = 2_000;
 const FOLD_CHECK_MAX_MS = 30_000;
 
 export const gtdSidebarRpcContract = defineRpcContract({
+  // Saving the hidden machines rather than the shown ones lets a machine bb
+  // adds later show. Changes are relayed on `LIFECYCLE_CHANNEL`.
+  listMachineVisibility: {
+    experimental_description: "Machines hidden from the thread list, as host IDs.",
+    input: z.object({}),
+    output: z.object({ hiddenMachineIds: z.array(z.string()) }),
+  },
+  changeMachineVisibility: {
+    experimental_description:
+      "Show or hide one machine's threads, show only one machine, or show every machine.",
+    input: machineVisibilityChangeSchema,
+    output: z.object({ hiddenMachineIds: z.array(z.string()) }),
+  },
   listNamingThreads: {
     experimental_description: "Threads whose title the plugin is currently generating.",
     input: z.object({}),
@@ -249,11 +266,18 @@ export default async function plugin(bb: BbPluginApi) {
     onChange: () => bb.realtime.publish(LIFECYCLE_CHANNEL, { kind: "collapsed" }),
   });
   const threadNester = createThreadNester(bb.sdk.threads);
+  const machineVisibility = createMachineVisibilityStore(bb.storage.kv, () =>
+    bb.realtime.publish(LIFECYCLE_CHANNEL, { kind: "machines" }),
+  );
 
   bb.rpc.register(
     gtdSidebarRpcContract,
     {
       listNamingThreads: threadNamer.listNamingThreads,
+      listMachineVisibility: async () => ({ hiddenMachineIds: await machineVisibility.read() }),
+      changeMachineVisibility: async (change) => ({
+        hiddenMachineIds: await machineVisibility.change(change),
+      }),
       async listCollapsedThreads() {
         return { threadIds: await collapsedThreads.list() };
       },

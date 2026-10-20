@@ -4,6 +4,10 @@
 
 ### Minor Changes
 
+- Choose visible machines from a persistent checkbox menu. Use **Only** to focus
+  one machine or **All machines** to reset; open windows stay in sync. New
+  machines and threads without a known host remain visible.
+
 - Remove Cursor Projects coordination, its sidebar rail and panels, shared-context
   tools, and subscriptions. Native threads remain in the ordinary inbox.
 

@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { PluginSidebarThread } from "@get-bb/plugin-sdk/app";
-import { filterByMachine, sidebarMachines } from "../lib/machines";
+import { filterHiddenMachines, machineVisibility, sidebarMachines } from "../lib/machines";
 import { filterByProject } from "../lib/inbox";
 
 const threads = [
@@ -31,17 +31,44 @@ describe("sidebar machines", () => {
     ]);
   });
 
-  test("filters machine and project together without treating unknown hosts as local", () => {
-    expect(filterByProject(filterByMachine(threads, "host-a"), "repo-a").map((t) => t.id)).toEqual([
-      "one",
-    ]);
-    expect(filterByMachine(threads, "host-b").map((t) => t.id)).toEqual(["three"]);
-    expect(filterByMachine(threads, "disconnected")).toEqual([]);
-    expect(filterByMachine(threads, null).map((t) => t.id)).toEqual([
-      "one",
-      "two",
+  test("hides selected machines while preserving threads without a known host", () => {
+    expect(
+      filterByProject(filterHiddenMachines(threads, new Set(["host-b"])), "repo-a").map(
+        (t) => t.id,
+      ),
+    ).toEqual(["one", "four"]);
+    expect(filterHiddenMachines(threads, new Set(["host-a"])).map((t) => t.id)).toEqual([
       "three",
       "four",
     ]);
+    expect(filterHiddenMachines(threads, new Set(["disconnected"]))).toEqual(threads);
+    expect(filterHiddenMachines(threads, new Set())).toBe(threads);
+  });
+
+  test("new machines are visible and absent hidden IDs do not activate filtering", () => {
+    const machines = sidebarMachines(threads);
+    const all = machineVisibility(machines, ["retired"]);
+    expect(all.active).toBe(false);
+    expect(all.composerHostId).toBeUndefined();
+    expect(all.visible).toEqual(machines);
+    const filtered = machineVisibility([...machines, { id: "new", name: "New" }], ["host-a"]);
+    expect(filtered.visible.map((machine) => machine.id)).toEqual(["host-b", "new"]);
+    expect(filtered.active).toBe(true);
+    expect(filtered.composerHostId).toBeUndefined();
+  });
+
+  test("only an active filter with one visible machine preselects the composer", () => {
+    const machines = sidebarMachines(threads);
+    expect(machineVisibility(machines, ["host-b"]).composerHostId).toBe("host-a");
+    expect(machineVisibility([machines[0]!], []).composerHostId).toBeUndefined();
+    expect(machineVisibility([], ["retired"]).active).toBe(false);
+  });
+
+  test("shows every machine rather than none when the saved list hides them all", () => {
+    const machines = sidebarMachines(threads);
+    const visibility = machineVisibility(machines, ["host-a", "host-b"]);
+    expect(visibility.active).toBe(false);
+    expect(visibility.visible).toEqual(machines);
+    expect(filterHiddenMachines(threads, visibility.hiddenMachineIds)).toBe(threads);
   });
 });
