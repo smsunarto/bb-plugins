@@ -2,7 +2,13 @@ import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import { instructionFiles } from "@bb-kit/core/instructions";
 import { z } from "zod";
 import { absoluteFileSchema, stateContract, widgetIdentitySchema } from "./state-contract.ts";
-import { PREVIEW_FRAME_HEADERS, PREVIEW_FRAME_HTML, PREVIEW_FRAME_PATH } from "./preview-frame.ts";
+import {
+  PREVIEW_FRAME_HEADERS,
+  PREVIEW_FRAME_HTML,
+  PREVIEW_FRAME_PATH,
+  VIDEO_PLAYER_PATH,
+} from "./preview-frame.ts";
+import videoPlayerSource, { VIDEO_PLAYER_ETAG } from "./vendor/video-player.ts";
 import {
   createWidgetStateStore,
   parseStateMentionId,
@@ -41,6 +47,14 @@ export default async function plugin(bb: BbPluginApi) {
     PREVIEW_FRAME_PATH,
     () => new Response(PREVIEW_FRAME_HTML, { headers: PREVIEW_FRAME_HEADERS }),
   );
+  bb.http.route("GET", VIDEO_PLAYER_PATH, (context) => {
+    const headers = { etag: VIDEO_PLAYER_ETAG, "cache-control": "no-cache" };
+    if (context.req.header("if-none-match") === VIDEO_PLAYER_ETAG)
+      return new Response(null, { status: 304, headers });
+    return new Response(videoPlayerSource, {
+      headers: { ...headers, "content-type": "text/javascript; charset=utf-8" },
+    });
+  });
 
   bb.rpc.register(stateContract, {
     async saveState(input) {

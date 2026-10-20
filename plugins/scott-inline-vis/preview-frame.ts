@@ -6,6 +6,8 @@
  * sandbox attribute.
  */
 export const PREVIEW_FRAME_PATH = "/frame";
+/** The Video.js bundle a fragment with a controlled video inlines. */
+export const VIDEO_PLAYER_PATH = "/video-player.js";
 
 export const PREVIEW_FRAME_MESSAGES = {
   ready: "bb:inline-vis:frame-ready",
@@ -28,6 +30,10 @@ addEventListener("message", function load(event) {
 });
 parent.postMessage({ type: ${JSON.stringify(PREVIEW_FRAME_MESSAGES.ready)} }, "*");
 </script>`;
+
+export function videoPlayerUrl(pluginId: string): string {
+  return `/api/v1/plugins/${encodeURIComponent(pluginId)}/http${VIDEO_PLAYER_PATH}`;
+}
 
 export function previewFrameUrl(pluginId: string): string {
   return `/api/v1/plugins/${encodeURIComponent(pluginId)}/http${PREVIEW_FRAME_PATH}`;

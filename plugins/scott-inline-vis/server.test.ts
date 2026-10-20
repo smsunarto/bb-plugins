@@ -6,6 +6,7 @@ import plugin, { files } from "./server.ts";
 import { PREVIEW_FRAME_HTML } from "./preview-frame.ts";
 import { widgetStateSnapshotSchema, type SaveWidgetState } from "./state-contract.ts";
 import { stateMigrations } from "./widget-state.ts";
+import videoPlayerSource, { VIDEO_PLAYER_ETAG } from "./vendor/video-player.ts";
 
 type FakeHost = ReturnType<typeof createFakePluginHost>;
 const stateHosts: FakeHost[] = [];
@@ -52,6 +53,19 @@ test("serves the preview frame page as an opaque sandbox", async () => {
   expect(response.headers.get("content-type")).toBe("text/html; charset=utf-8");
   expect(response.headers.get("content-security-policy")).toBe("sandbox allow-scripts");
   expect(await response.text()).toBe(PREVIEW_FRAME_HTML);
+});
+
+test("serves the Video.js bundle and revalidates it by its ETag", async () => {
+  const host = await stateHost();
+  const response = await host.harness.fetchHttp("GET", "/video-player.js");
+  expect(response.status).toBe(200);
+  expect(response.headers.get("content-type")).toBe("text/javascript; charset=utf-8");
+  expect(response.headers.get("etag")).toBe(VIDEO_PLAYER_ETAG);
+  expect(await response.text()).toBe(videoPlayerSource);
+  const cached = await host.harness.fetchHttp("GET", "/video-player.js", {
+    headers: { "if-none-match": VIDEO_PLAYER_ETAG },
+  });
+  expect(cached.status).toBe(304);
 });
 
 test("a fresh install disables bb's built-in inline-vis, which claims the same directive", async () => {

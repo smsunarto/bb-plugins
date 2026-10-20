@@ -105,7 +105,9 @@ const ASSET_BRIDGE = `(() => {
     status.setAttribute("role", "status");
     status.style.cssText = "position:fixed;inset:auto 0 0;margin:0;padding:12px;background:Canvas;color:CanvasText;z-index:2147483647;font:14px system-ui";
     status.textContent = "Loading video…";
-    player.after(status);
+    // A skinned player's control bar sits at the bottom, so the bar moves to the top.
+    if (player.closest("video-skin")) status.style.inset = "0 0 auto";
+    (player.closest("video-player") ?? player).after(status);
     statuses.set(player, status);
     // Media errors do not bubble. Capture sees the player's own error and each
     // <source> candidate's, including failures only a device's decoder hits.

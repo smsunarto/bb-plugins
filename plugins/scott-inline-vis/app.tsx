@@ -40,6 +40,7 @@ import { PREVIEW_FRAME_MESSAGES, previewFrameUrl } from "./preview-frame.ts";
 import { createPreviewExpansion } from "./inline-vis-expansion.ts";
 import { loadPreview } from "./load-preview.ts";
 import { useRememberedHeight, videoSizes } from "./preview-sizes.ts";
+import { loadVideoPlayer, mayNeedVideoPlayer, upgradeVideoPlayers } from "./video-player.ts";
 import { TweakPanel } from "./tweak-panel.tsx";
 import type { TweakGroup } from "./tweak-contract.ts";
 import { useWidgetState } from "./use-widget-state.ts";
@@ -298,6 +299,8 @@ function PreviewDocument({
       src={preview.html === undefined ? preview.url : previewFrameUrl(pluginId)}
       ref={frame}
       sandbox="allow-scripts"
+      // The opaque frame needs this for a video player's fullscreen button.
+      allow="fullscreen"
       style={{ height }}
       className="inline-vis-frame"
     />
@@ -635,20 +638,25 @@ function ExpandedPreview({
           return;
         }
         const fragment = isFragment(result.html);
-        const widget = fragment ? await restore(controller.signal) : null;
+        const [widget, videoPlayer] = await Promise.all([
+          fragment ? restore(controller.signal) : null,
+          fragment && mayNeedVideoPlayer(result.html) ? loadVideoPlayer(pluginId) : undefined,
+        ]);
         if (cancelled) return;
         const sizes = videoSizeStore(pluginId);
         const prepared = prepareInlineAssets(
           result.html,
           result.url,
           fragment
-            ? (document, token) =>
+            ? (document, token) => {
+                if (videoPlayer) upgradeVideoPlayers(document, videoPlayer);
                 injectFragmentRuntime(document, {
                   token,
                   theme: readHostTheme(window.document.documentElement),
                   state: widget?.state === "null" ? null : (widget?.state ?? null),
                   tweaks: widget?.tweaks ?? null,
-                })
+                });
+              }
             : undefined,
           (path) => sizes.read(videoSizeKey(result, path)),
         );

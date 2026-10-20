@@ -29,6 +29,13 @@ The frame follows the video's aspect ratio at the chat column width. The
 limit. Do not add a fixed `height`. It clips the runtime's padding or leaves
 empty space below the video.
 
+In a fragment, a `<video controls>` plays in the Video.js player, with the
+same controls, hotkeys, speed menu, fullscreen, and picture-in-picture in
+every browser. The player spans the video's container, so size it from a
+stylesheet as above. A video with `width`, `height`, or a `style` attribute
+keeps the browser's controls. Leave out `controls` for a video that should
+play without them, such as a looping background.
+
 Keep both files in place. Use URL encoding for filename characters such as
 spaces (`%20`), `#` (`%23`), and `?` (`%3F`).
 

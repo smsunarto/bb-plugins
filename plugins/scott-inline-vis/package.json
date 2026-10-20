@@ -55,6 +55,9 @@
     "fragment-runtime.ts",
     "fragment-styles.ts",
     "inline-vis-expansion.ts",
+    "preview-sizes.ts",
+    "video-player.ts",
+    "vendor/video-player.ts",
     "load-preview.ts",
     "preview-markdown.ts",
     "preview-frame.ts",
@@ -75,7 +78,8 @@
     "build": "bb plugin build .",
     "lint": "oxlint",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run --config vitest.config.ts"
+    "test": "vitest run --config vitest.config.ts",
+    "vendor:player": "bun vendor/build-video-player.ts"
   },
   "dependencies": {
     "@bb-kit/core": "0.2.0",
@@ -92,6 +96,7 @@
     "@types/node": "^22.0.0",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
+    "@videojs/html": "10.1.0",
     "clsx": "^2.1.1",
     "jsdom": "25.0.1",
     "react": "19.2.8",

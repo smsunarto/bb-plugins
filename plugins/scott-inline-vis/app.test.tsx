@@ -333,16 +333,18 @@ function announce(source: Window | null, token: string) {
   return port;
 }
 
+const VIDEO_PLAYER = "/* the Video.js bundle */";
+
 function deferredFetch() {
   const pending: { url: string; signal: AbortSignal; resolve: (response: Response) => void }[] = [];
-  const fetch = vi
-    .spyOn(globalThis, "fetch")
-    .mockImplementation(
-      (url, init) =>
-        new Promise<Response>((resolve) =>
+  const fetch = vi.spyOn(globalThis, "fetch").mockImplementation((url, init) =>
+    // A fragment with a controlled video first fetches the player bundle.
+    String(url).endsWith("/http/video-player.js")
+      ? Promise.resolve(new Response(VIDEO_PLAYER))
+      : new Promise<Response>((resolve) =>
           pending.push({ url: String(url), signal: init!.signal!, resolve }),
         ),
-    );
+  );
   return { fetch, pending };
 }
 
@@ -465,6 +467,9 @@ test("inline-vis streams a video to the frame and replays its bytes to a late fr
       expect(value).toContain("bb:inline-preview-ready");
       return value!;
     });
+    // A fragment's controlled video plays in the Video.js player.
+    expect(html).toContain(`<script type="module">${VIDEO_PLAYER}</script>`);
+    expect(html).toContain("<video-player><video-skin><video ");
     const iframe = slot.container.querySelector("iframe")!;
     const file = await mp4File("in-memory");
     let body!: ReadableStreamDefaultController<Uint8Array>;
@@ -963,6 +968,7 @@ test("inline-vis renders an HTML fragment inside the visualization runtime", asy
   expect(iframe.getAttribute("src")).toBe(FRAME_URL);
   expect(iframe.getAttribute("srcdoc")).toBeNull();
   expect(iframe.getAttribute("sandbox")).toBe("allow-scripts");
+  expect(iframe.getAttribute("allow")).toBe("fullscreen");
   const parsed = new DOMParser().parseFromString(html, "text/html");
   expect(parsed.querySelector("base")?.getAttribute("href")).toBe(
     "http://localhost:3000/api/v1/file-previews/lease/chart.html",
