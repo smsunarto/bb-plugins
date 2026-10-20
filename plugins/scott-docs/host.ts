@@ -1,11 +1,13 @@
-import { readdir, stat } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { watch as watchFolder, type FSWatcher } from "node:fs";
+import { readdir, readFile, stat } from "node:fs/promises";
 import path from "node:path";
 import {
   experimental_defineHostEntry,
   type ExperimentalHostRpcContext,
   type ExperimentalHostWatchSubscription,
 } from "@get-bb/plugin-sdk/host";
-import { docsHostContract, docsHostSignals } from "./host-contract.js";
+import { docsHostContract, docsHostSignals, VAULT_CHANGE_PATH_LIMIT } from "./host-contract.js";
 import { DOCS_WATCH_IGNORED_PATHS, isExcludedDocsPath } from "./path-policy.js";
 
 type ListedPath =
@@ -33,6 +35,44 @@ async function requireDirectory(rootPath: string): Promise<void> {
     throw error;
   }
   if (!isDirectory) throw new Error(`Not a folder: ${rootPath}`);
+}
+
+/** Largest opened file a change signal hashes; a bigger one reports no hash. */
+const MAX_HASHED_BYTES = 8 * 1024 * 1024;
+/**
+ * Largest vault file a change batch hashes. The hashes only let the server
+ * drop the echo of a note it saved, and a synced folder of attachments
+ * would otherwise be read whole. A bigger file reports no hash: a change.
+ */
+const MAX_VAULT_HASHED_BYTES = 1024 * 1024;
+/** How many of a change batch's files are hashed at once. */
+const VAULT_HASH_CONCURRENCY = 4;
+
+// The same hex digest of the raw bytes that bb's file reads report, computed
+// here so a change can be compared without moving the file off the host.
+async function fileSha256(fullPath: string, maxBytes = MAX_HASHED_BYTES): Promise<string | null> {
+  try {
+    const stats = await stat(fullPath);
+    if (!stats.isFile() || stats.size > maxBytes) return null;
+    return createHash("sha256")
+      .update(await readFile(fullPath))
+      .digest("hex");
+  } catch {
+    return null;
+  }
+}
+
+async function statOne(input: { path: string }) {
+  if (!path.isAbsolute(input.path)) throw new Error("Path must be absolute");
+  try {
+    const stats = await stat(input.path);
+    return {
+      file: stats.isFile() ? { modifiedAtMs: stats.mtimeMs, sizeBytes: stats.size } : null,
+    };
+  } catch (error) {
+    if (isMissingPath(error)) return { file: null };
+    throw error;
+  }
 }
 
 // A folder removed mid-walk drops only that subtree.
@@ -123,18 +163,43 @@ async function watchVault(
   const subscription = context.experimental_watch(
     { rootPath: input.rootPath, ignoredPaths: DOCS_WATCH_IGNORED_PATHS, debounceMs: 250 },
     async (event) => {
-      if (
-        event.kind === "changed" &&
-        event.changes.every((change) =>
-          isExcludedDocsPath(
-            path.isAbsolute(change.path) ? path.relative(input.rootPath, change.path) : change.path,
+      let changes: { path: string; sha256: string | null }[] | undefined;
+      if (event.kind === "changed") {
+        const paths = [
+          ...new Set(
+            event.changes.map((change) =>
+              (path.isAbsolute(change.path)
+                ? path.relative(input.rootPath, change.path)
+                : change.path
+              ).replace(/\\/g, "/"),
+            ),
           ),
-        )
-      ) {
-        return;
+        ].filter((relativePath) => !isExcludedDocsPath(relativePath));
+        if (paths.length === 0) return;
+        if (paths.length <= VAULT_CHANGE_PATH_LIMIT) {
+          const hashed: { path: string; sha256: string | null }[] = [];
+          let next = 0;
+          const hashNext = async (): Promise<void> => {
+            while (next < paths.length) {
+              const relativePath = paths[next++]!;
+              const fullPath = path.join(input.rootPath, relativePath);
+              hashed.push({
+                path: relativePath,
+                sha256: await fileSha256(fullPath, MAX_VAULT_HASHED_BYTES),
+              });
+            }
+          };
+          await Promise.all(Array.from({ length: VAULT_HASH_CONCURRENCY }, hashNext));
+          const order = new Map(paths.map((relativePath, index) => [relativePath, index]));
+          changes = hashed.sort((a, b) => order.get(a.path)! - order.get(b.path)!);
+        }
       }
       await context
-        .experimental_emitSignal("vaultChanged", { vaultId: input.vaultId, kind: event.kind })
+        .experimental_emitSignal("vaultChanged", {
+          vaultId: input.vaultId,
+          kind: event.kind,
+          ...(changes ? { changes } : {}),
+        })
         .catch(() => {});
     },
   );
@@ -167,6 +232,81 @@ async function watchAlive(input: { vaultIds: string[] }): Promise<{ live: string
   return { live };
 }
 
+/** Quiet period before an opened file's burst of writes, such as an atomic save, is one change. */
+const FILE_WATCH_DEBOUNCE_MS = 250;
+
+const fileWatches = new Map<
+  string,
+  { path: string; stop: () => Promise<void>; expiry: ReturnType<typeof setTimeout> }
+>();
+
+async function unwatchFile(watchId: string): Promise<void> {
+  const watch = fileWatches.get(watchId);
+  if (!watch) return;
+  fileWatches.delete(watchId);
+  clearTimeout(watch.expiry);
+  await watch.stop().catch(() => {});
+}
+
+// An open document outside every vault. The page renews the lease while it
+// shows the file, so a closed tab's watch lapses on its own. A failed watch
+// still answers the hash, and the next renewal tries to watch again.
+async function watchFile(
+  input: { watchId: string; path: string; leaseMs: number },
+  context: ExperimentalHostRpcContext<typeof docsHostSignals>,
+): Promise<{ sha256: string | null }> {
+  if (!path.isAbsolute(input.path)) throw new Error("Path must be absolute");
+  const { watchId, leaseMs } = input;
+  const filePath = path.normalize(input.path);
+  const expire = () => setTimeout(() => void unwatchFile(watchId), leaseMs);
+  const existing = fileWatches.get(watchId);
+  if (existing?.path === filePath) {
+    clearTimeout(existing.expiry);
+    existing.expiry = expire();
+  } else {
+    await unwatchFile(watchId);
+    // The file's own folder and not the folders under it: the daemon's
+    // watcher takes a whole tree, and an opened ~/AGENTS.md would watch $HOME.
+    const name = path.basename(filePath);
+    const lease = context.experimental_retainWorker();
+    let folder: FSWatcher | null = null;
+    let pending: ReturnType<typeof setTimeout> | null = null;
+    const watch = {
+      path: filePath,
+      stop: async () => {
+        if (pending) clearTimeout(pending);
+        folder?.close();
+        await lease.dispose();
+      },
+      expiry: expire(),
+    };
+    fileWatches.set(watchId, watch);
+    const report = async () => {
+      if (fileWatches.get(watchId) !== watch) return;
+      await context
+        .experimental_emitSignal("fileChanged", { watchId, sha256: await fileSha256(filePath) })
+        .catch(() => {});
+    };
+    try {
+      folder = watchFolder(path.dirname(filePath), { persistent: false }, (_kind, changed) => {
+        // A platform that names no file may mean this one.
+        if (changed !== null && changed.toString() !== name) return;
+        if (pending) clearTimeout(pending);
+        pending = setTimeout(() => {
+          pending = null;
+          void report();
+        }, FILE_WATCH_DEBOUNCE_MS);
+      });
+      folder.on("error", () => {
+        if (fileWatches.get(watchId) === watch) void unwatchFile(watchId);
+      });
+    } catch {
+      if (fileWatches.get(watchId) === watch) await unwatchFile(watchId);
+    }
+  }
+  return { sha256: await fileSha256(filePath) };
+}
+
 export default experimental_defineHostEntry({
   contract: docsHostContract,
   experimental_signals: docsHostSignals,
@@ -175,8 +315,13 @@ export default experimental_defineHostEntry({
     watchVault: (input, context) => watchVault(input, context),
     unwatchVault: (input) => unwatchVault(input),
     watchAlive: (input) => watchAlive(input),
+    statFile: (input) => statOne(input),
+    watchFile: (input, context) => watchFile(input, context),
   },
   dispose: async () => {
-    await Promise.all([...watches.keys()].map((vaultId) => unwatchVault({ vaultId })));
+    await Promise.all([
+      ...[...watches.keys()].map((vaultId) => unwatchVault({ vaultId })),
+      ...[...fileWatches.keys()].map((watchId) => unwatchFile(watchId)),
+    ]);
   },
 });

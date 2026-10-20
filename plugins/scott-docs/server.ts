@@ -1,4 +1,5 @@
 import { proposalSchema, type Proposal } from "./proposals.js";
+import { createHash } from "node:crypto";
 import os from "node:os";
 import path from "node:path";
 import { isRecord, parseMarkdownDocument } from "./markdown-document.js";
@@ -498,10 +499,17 @@ export const docsRpcContract = defineRpcContract({
       })
       .strict(),
   },
-  readOpenedFile: {
-    experimental_description: "Read a workspace, host, or thread-storage file.",
+  watchOpenedFile: {
+    experimental_description:
+      "Watch an opened workspace, host, or thread-storage file on its host and return its sha256. Renew within renewWithinMs; changes arrive on the opened-file-changed realtime channel.",
     input: z.object({ source: openerSourceSchema, path: z.string().min(1) }).strict(),
-    output: fileReadSchema,
+    output: z
+      .object({
+        watchId: z.string().min(1),
+        sha256: z.string().nullable(),
+        renewWithinMs: z.number().int().positive(),
+      })
+      .strict(),
   },
   saveOpenedFile: {
     experimental_description:
@@ -711,11 +719,58 @@ function waitForDelay(ms: number, signal: AbortSignal): Promise<void> {
   });
 }
 
+/** How long a host keeps watching an opened file without a renewal. */
+const OPENED_FILE_LEASE_MS = 180_000;
+
+/** How long after a save the host watcher's report of it counts as its echo. */
+const OWN_WRITE_ECHO_MS = 10_000;
+
 export default async function plugin(bb: BbPluginApi) {
   const hostFiles = bb.hosts.experimental_client({
     contract: docsHostContract,
     experimental_signals: docsHostSignals,
   });
+
+  // Opened files outside every vault, by watch id, with the host watching
+  // each. A page renews its watch while it shows the file; a change, or the
+  // loss of every watch on a restarted worker, reaches it as a realtime event.
+  const openedFileWatches = new Map<string, string>();
+  const offFileSignal = hostFiles.experimental_onSignal("fileChanged", ({ hostId, payload }) => {
+    if (openedFileWatches.get(payload.watchId) !== hostId) return;
+    bb.realtime.publish("opened-file-changed", payload);
+  });
+  const offFileExit = hostFiles.experimental_onWorkerExit(({ hostId }) => {
+    for (const [watchId, watchHostId] of openedFileWatches) {
+      if (watchHostId !== hostId) continue;
+      openedFileWatches.delete(watchId);
+      // No hash: the page renews at once, which re-arms and compares.
+      bb.realtime.publish("opened-file-changed", { watchId });
+    }
+  });
+  bb.onDispose(() => {
+    offFileSignal();
+    offFileExit();
+  });
+
+  // The hash of each vault file this server just wrote. The host watcher
+  // reports the same write about 250 ms later; announcing it again would make
+  // every open document in the vault re-read itself.
+  const ownWrites = new Map<string, { sha256: string; at: number }>();
+  const rememberWrite = (vaultId: string, relativePath: string, sha256: string) => {
+    const now = Date.now();
+    for (const [key, write] of ownWrites)
+      if (now - write.at > OWN_WRITE_ECHO_MS) ownWrites.delete(key);
+    ownWrites.set(`${vaultId}\0${relativePath}`, { sha256, at: now });
+  };
+  const isOwnEcho = (vaultId: string, change: { path: string; sha256: string | null }) => {
+    const key = `${vaultId}\0${change.path}`;
+    const write = ownWrites.get(key);
+    if (write === undefined || Date.now() - write.at > OWN_WRITE_ECHO_MS) return false;
+    if (write.sha256 === change.sha256) return true;
+    // Someone else wrote it since, so the same content again is theirs too.
+    ownWrites.delete(key);
+    return false;
+  };
   const db = bb.storage.database();
   bb.storage.migrate(db, [
     `CREATE TABLE IF NOT EXISTS vaults (
@@ -1098,9 +1153,12 @@ export default async function plugin(bb: BbPluginApi) {
     });
     if (result.outcome === "written") {
       mentionSummaries.delete(vault.id);
+      rememberWrite(vault.id, relativePath, result.sha256);
+      // The hash lets the session that saved skip re-reading its own write.
       bb.realtime.publish("vault-changed", {
         vaultId: vault.id,
         path: relativePath,
+        sha256: result.sha256,
         ...(args.proposalOnly ? { proposalOnly: true } : {}),
       });
     }
@@ -1999,11 +2057,13 @@ export default async function plugin(bb: BbPluginApi) {
     async preparePreview(input) {
       const vault = getVault(input.vaultId);
       const relativePath = requireVaultPath(input.path);
-      await bb.sdk.files.read({
-        ...hostArgs(vault),
-        path: absolutePath(vault, relativePath),
-        rootPath: vault.rootPath,
-      });
+      // Only existence matters here; the session reads the note itself.
+      const { file } = await hostFiles.call(
+        "statFile",
+        { path: absolutePath(vault, relativePath) },
+        hostArgs(vault),
+      );
+      if (file === null) throw new Error(`File not found: ${relativePath}`);
       return bb.sdk.files.createPreview({
         ...hostArgs(vault),
         rootPath: vault.rootPath,
@@ -2031,13 +2091,19 @@ export default async function plugin(bb: BbPluginApi) {
         hostId: target.hostId,
       };
     },
-    async readOpenedFile(input) {
+    async watchOpenedFile(input) {
       const target = await resolveOpenerFile(input.source, input.path);
-      return bb.sdk.files.read({
-        hostId: target.hostId,
-        path: target.path,
-        rootPath: target.rootPath,
-      });
+      const watchId = createHash("sha256")
+        .update(`${target.hostId}\0${target.path}`)
+        .digest("hex")
+        .slice(0, 32);
+      openedFileWatches.set(watchId, target.hostId);
+      const { sha256 } = await hostFiles.call(
+        "watchFile",
+        { watchId, path: target.path, leaseMs: OPENED_FILE_LEASE_MS },
+        { hostId: target.hostId },
+      );
+      return { watchId, sha256, renewWithinMs: OPENED_FILE_LEASE_MS / 3 };
     },
     async saveOpenedFile(input) {
       const target = await resolveOpenerFile(input.source, input.path);
@@ -3561,16 +3627,27 @@ export default async function plugin(bb: BbPluginApi) {
       const warned = new Set<string>();
       let setupWarning: string | null = null;
       let wake: (() => void) | null = null;
-      const changed = (vaultId: string) => {
+      // `paths` names what changed when the host could; without it, anything
+      // in the vault may have.
+      const changed = (vaultId: string, paths?: string[]) => {
         mentionSummaries.delete(vaultId);
-        bb.realtime.publish("vault-changed", { vaultId });
+        bb.realtime.publish("vault-changed", { vaultId, ...(paths ? { paths } : {}) });
       };
       // Re-arming publishes a change, since changes made while unwatched are unknown.
       const offSignal = hostFiles.experimental_onSignal("vaultChanged", ({ hostId, payload }) => {
         if (armed.get(payload.vaultId)?.hostId !== hostId) return;
-        if (payload.kind !== "watch-error") return changed(payload.vaultId);
-        armed.delete(payload.vaultId);
-        wake?.();
+        if (payload.kind === "watch-error") {
+          armed.delete(payload.vaultId);
+          wake?.();
+          return;
+        }
+        if (payload.changes === undefined) return changed(payload.vaultId);
+        const fresh = payload.changes.filter((change) => !isOwnEcho(payload.vaultId, change));
+        if (fresh.length > 0)
+          changed(
+            payload.vaultId,
+            fresh.map((change) => change.path),
+          );
       });
       // A restarted worker has lost its watches.
       const offExit = hostFiles.experimental_onWorkerExit(({ hostId }) => {

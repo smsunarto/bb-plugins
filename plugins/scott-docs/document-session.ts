@@ -187,6 +187,11 @@ function createSession(io: DocumentIO) {
       };
     },
     refresh,
+    /** Re-read unless the document already holds `sha256`. A save's own
+     *  announcement can arrive before the save answers, so compare once
+     *  pending work settles. */
+    refreshIfChanged: (sha256: string) =>
+      operations.then(() => (sha256 === state.sha256 ? undefined : refresh())),
     flush,
     edit,
     resolve,
@@ -268,9 +273,15 @@ export function useDocumentSession(vaultId: string, path: string) {
     (payload: unknown) => {
       if (!isRecord(payload)) return;
       if (typeof payload.vaultId === "string" && payload.vaultId !== vaultId) return;
-      if (typeof payload.path === "string" && payload.path !== path) return;
+      // A changed folder covers every note inside it.
+      const covers = (changed: unknown) =>
+        changed === path || (typeof changed === "string" && path.startsWith(`${changed}/`));
+      if (typeof payload.path === "string" && !covers(payload.path)) return;
+      if (Array.isArray(payload.paths) && !payload.paths.some(covers)) return;
       if (payload.proposalOnly === true) return;
-      void session.refresh();
+      // This session's own save announces the hash it already holds.
+      if (typeof payload.sha256 === "string") void session.refreshIfChanged(payload.sha256);
+      else void session.refresh();
     },
     [session, vaultId, path],
   );

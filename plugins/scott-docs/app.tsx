@@ -7,6 +7,7 @@ import {
   useComposer,
   useRpc,
   useRealtime,
+  useRealtimeConnectionState,
   useSdk,
   type PluginFileOpenerProps,
   type PluginMessageDirectiveProps,
@@ -505,10 +506,20 @@ interface NotebookStore {
   owner: symbol | null;
   pendingRefreshRpc: DocsRpcClient | null;
   requestId: number;
+  /** Nobody listened for a while: a change then went unheard. */
+  unheard: boolean;
   vaultId: string | null;
 }
 
+/** Notebook listings by vault id. A store outlives its last consumer, so a
+ *  remounted panel renders its vaults at once and revalidates. */
 const notebookStores = new Map<string | null, NotebookStore>();
+
+/** Forget every cached listing, for tests that need a cold start. */
+export function clearNotebookStores(): void {
+  for (const store of notebookStores.values()) store.requestId += 1;
+  notebookStores.clear();
+}
 
 function getNotebookStore(vaultId: string | null): NotebookStore {
   const existing = notebookStores.get(vaultId);
@@ -522,6 +533,7 @@ function getNotebookStore(vaultId: string | null): NotebookStore {
     owner: null,
     pendingRefreshRpc: null,
     requestId: 0,
+    unheard: false,
     vaultId,
   };
   notebookStores.set(vaultId, store);
@@ -537,7 +549,9 @@ function refreshNotebookStore(
   rpc: DocsRpcClient,
   { queueIfInFlight = true }: { queueIfInFlight?: boolean } = {},
 ): Promise<void> {
-  if (notebookStores.get(store.vaultId) !== store) return Promise.resolve();
+  // A store nobody shows waits for its next mount, which revalidates it.
+  if (notebookStores.get(store.vaultId) !== store || store.consumers.size === 0)
+    return Promise.resolve();
   if (store.inFlight) {
     if (queueIfInFlight) store.pendingRefreshRpc = rpc;
     return store.inFlight;
@@ -595,26 +609,31 @@ function useNotebook(vaultId: string | null) {
   useEffect(() => {
     const consumer = consumerRef.current;
     const listener = () => rerender((version) => version + 1);
+    const first = store.consumers.size === 0;
     store.consumers.add(consumer);
     store.listeners.add(listener);
     store.owner ??= consumer;
-    if (store.data === null) {
+    // A store outlives its consumers, so a remounted panel renders the last
+    // listing at once. Nothing listened while it had none: revalidate. A read
+    // still in flight from before may predate a change nobody heard, so one
+    // more follows it. Panels mounting together, and Strict Mode's replay,
+    // share one read.
+    if (store.data === null || first) {
       void refreshNotebookStore(store, rpcRef.current, {
-        queueIfInFlight: false,
+        queueIfInFlight: first && store.unheard,
       });
     }
+    store.unheard = false;
     return () => {
       store.consumers.delete(consumer);
       store.listeners.delete(listener);
       if (store.owner === consumer) store.owner = store.consumers.values().next().value ?? null;
-      if (store.consumers.size === 0) {
-        queueMicrotask(() => {
-          if (store.consumers.size !== 0 || notebookStores.get(store.vaultId) !== store) return;
-          store.requestId += 1;
-          store.pendingRefreshRpc = null;
-          notebookStores.delete(store.vaultId);
-        });
-      }
+      if (store.consumers.size > 0) return;
+      store.pendingRefreshRpc = null;
+      // Strict Mode remounts within the same task; a real unmount does not.
+      queueMicrotask(() => {
+        if (store.consumers.size === 0) store.unheard = true;
+      });
     };
   }, [store]);
 
@@ -1097,40 +1116,112 @@ function DocumentPanel({ params }: PluginThreadPanelProps) {
   );
 }
 
+type OpenedFileWatch = { watchId: string; sha256: string | null; renewWithinMs: number };
+
+/** Retry delay for a renewal that failed, such as a host that is away. */
+const OPENED_FILE_RETRY_MS = 60_000;
+
+/**
+ * Keep a host watch on a file Docs cannot watch as a vault while the editor
+ * shows it, and call `onChanged` with the file's hash when it moves off the loaded one.
+ * A change arrives as a realtime event; each renewal also answers the hash,
+ * which catches a change whose event was lost. A hidden page stops renewing
+ * and lets the host's lease lapse, then renews when it is shown again.
+ */
+function useOpenedFileWatch(
+  watch: (() => Promise<OpenedFileWatch>) | undefined,
+  loadedSha256: string | null,
+  onChanged: (sha256: string) => void,
+) {
+  const latest = useRef({ loadedSha256, onChanged });
+  latest.current = { loadedSha256, onChanged };
+  const watchId = useRef<string | null>(null);
+  const renewNow = useRef(() => {});
+  const loaded = loadedSha256 !== null;
+  const compare = useCallback((sha256: unknown) => {
+    // A missing or unhashable file keeps the editable document.
+    if (typeof sha256 === "string" && sha256 !== latest.current.loadedSha256) {
+      latest.current.onChanged(sha256);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!watch || !loaded) return;
+    let live = true;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const renew = () => {
+      if (timer) clearTimeout(timer);
+      timer = null;
+      if (document.visibilityState === "hidden") return;
+      watch()
+        .then((answer) => {
+          if (!live) return null;
+          watchId.current = answer.watchId;
+          compare(answer.sha256);
+          timer = setTimeout(renew, answer.renewWithinMs);
+          return null;
+        })
+        .catch(() => {
+          if (live) timer = setTimeout(renew, OPENED_FILE_RETRY_MS);
+        });
+    };
+    const onVisibility = () => {
+      if (document.visibilityState === "visible") renew();
+    };
+    renewNow.current = renew;
+    document.addEventListener("visibilitychange", onVisibility);
+    renew();
+    return () => {
+      live = false;
+      if (timer) clearTimeout(timer);
+      document.removeEventListener("visibilitychange", onVisibility);
+      renewNow.current = () => {};
+    };
+  }, [watch, loaded, compare]);
+
+  useRealtime(
+    "opened-file-changed",
+    useCallback(
+      (payload: unknown) => {
+        if (!isRecord(payload) || watchId.current === null || payload.watchId !== watchId.current)
+          return;
+        // No hash: the host lost its watch, so re-arm and compare.
+        if ("sha256" in payload) compare(payload.sha256);
+        else renewNow.current();
+      },
+      [compare],
+    ),
+  );
+
+  // Events sent while realtime was down are lost.
+  const connection = useRealtimeConnectionState();
+  const previousConnection = useRef(connection);
+  useEffect(() => {
+    if (previousConnection.current !== "connected" && connection === "connected") {
+      renewNow.current();
+    }
+    previousConnection.current = connection;
+  }, [connection]);
+}
+
 function SavedDocumentEditor({
   io,
   onUpload,
   onReload,
-  readSha256,
+  watchFile,
   errorHint = "",
 }: {
   io: DocumentIO;
   onUpload(file: File): Promise<{ markdownPath: string }>;
   onReload?(): void;
-  /** Polls files Docs cannot watch; a clean document refreshes, a dirty one reports a conflict. */
-  readSha256?(): Promise<string>;
+  /** Watches a file Docs cannot watch as a vault; a clean document refreshes, a dirty one reports a conflict. */
+  watchFile?(): Promise<OpenedFileWatch>;
   errorHint?: string;
 }) {
   const { state, session } = useSavedDocument(io);
   const loadedSha256 = state.loaded ? state.sha256 : null;
-  useEffect(() => {
-    if (!readSha256 || loadedSha256 === null) return;
-    let pending = false;
-    const timer = setInterval(() => {
-      if (pending || document.visibilityState === "hidden") return;
-      pending = true;
-      readSha256()
-        .then((sha256) => {
-          if (sha256 !== loadedSha256) void session.refresh();
-        })
-        // A temporary host disconnect keeps the editable document; the next poll retries.
-        .catch(() => undefined)
-        .finally(() => {
-          pending = false;
-        });
-    }, 1500);
-    return () => clearInterval(timer);
-  }, [loadedSha256, readSha256, session]);
+  // A save's own change can arrive before the save answers: compare once it settles.
+  useOpenedFileWatch(watchFile, loadedSha256, (sha256) => void session.refreshIfChanged(sha256));
   if (!state.loaded)
     return state.error ? (
       <div className="min-w-0 flex-1 p-6 text-sm text-destructive">
@@ -1310,8 +1401,8 @@ function DocsFileOpener({ path: filePath, source }: PluginFileOpenerProps) {
     }),
     [rpc, openerSource, filePath],
   );
-  const readSha256 = useCallback(
-    async () => (await rpc.call("readOpenedFile", { source: openerSource, path: filePath })).sha256,
+  const watchFile = useCallback(
+    () => rpc.call("watchOpenedFile", { source: openerSource, path: filePath }),
     [rpc, openerSource, filePath],
   );
   return (
@@ -1340,7 +1431,7 @@ function DocsFileOpener({ path: filePath, source }: PluginFileOpenerProps) {
       )}
       <SavedDocumentEditor
         io={io}
-        readSha256={readSha256}
+        watchFile={watchFile}
         errorHint=" — use the tab's Open with menu to choose another viewer."
         onUpload={async () => {
           throw new Error("Add this file to a Docs vault before uploading images");

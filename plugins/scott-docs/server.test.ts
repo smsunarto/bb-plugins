@@ -44,6 +44,14 @@ function createDocsHost(
       if (method === "watchAlive") {
         return { live: vaultIds!.filter((id) => watchesOn(hostId).has(id)) };
       }
+      if (method === "statFile") {
+        const stats = await stat((input as { path: string }).path).catch(() => null);
+        return { file: stats ? { modifiedAtMs: 1, sizeBytes: stats.size } : null };
+      }
+      if (method === "watchFile") {
+        const content = await readFile((input as { path: string }).path).catch(() => null);
+        return { sha256: content && createHash("sha256").update(content).digest("hex") };
+      }
       if (method !== "listPaths") throw new Error(`Unexpected host RPC: ${method}`);
       const {
         path: root,
@@ -1336,20 +1344,68 @@ describe("Docs vault operations", () => {
     const filePath = path.join(temporaryDirectories[0]!, "plan.md");
     const source = { kind: "host", threadId: "thread_1", environmentId: null, projectId: null };
 
+    // The opened file is watched on its host, which answers only its hash.
     await expect(
-      harness.callRpc("readOpenedFile", { source, path: filePath }),
-    ).resolves.toMatchObject({ content: "# Plan" });
-    expect(harness.sdk.callsTo("files.read")).toEqual([
-      [{ hostId: "host_mac", path: filePath, rootPath: temporaryDirectories[0] }],
-    ]);
+      harness.callRpc("watchOpenedFile", { source, path: filePath }),
+    ).resolves.toMatchObject({
+      sha256: createHash("sha256").update("# Plan").digest("hex"),
+      renewWithinMs: 60_000,
+    });
+    expect(
+      harness.experimental_hostRpcCalls
+        .filter((call) => call.method === "watchFile")
+        .map(({ hostId, input }) => ({ hostId, path: (input as { path: string }).path })),
+    ).toEqual([{ hostId: "host_mac", path: filePath }]);
+    expect(harness.sdk.callsTo("files.read")).toEqual([]);
 
     await expect(
-      harness.callRpc("readOpenedFile", {
+      harness.callRpc("watchOpenedFile", {
         source: { kind: "host", threadId: null, environmentId: null, projectId: null },
         path: filePath,
       }),
     ).rejects.toThrow("Cannot resolve the machine that holds this file");
-    expect(harness.sdk.callsTo("files.read")).toHaveLength(1);
+  });
+
+  it("relays an opened file's change from its host to the page watching it", async () => {
+    const { harness } = await loadNotebook({ "plan.md": "# Plan" });
+    harness.sdk.stub("threads.get", async () => ({ id: "thread_1", environmentId: "env_mac" }));
+    harness.sdk.stub("environments.get", async () => ({ id: "env_mac", hostId: "host_mac" }));
+    const filePath = path.join(temporaryDirectories[0]!, "plan.md");
+    const source = { kind: "host", threadId: "thread_1", environmentId: null, projectId: null };
+    const { watchId } = (await harness.callRpc("watchOpenedFile", { source, path: filePath })) as {
+      watchId: string;
+    };
+    const sha256 = "a".repeat(64);
+    const published = harness.realtimeSignals.length;
+
+    await harness.behavior.experimental_emitHostSignal("host_other", "fileChanged", {
+      watchId,
+      sha256,
+    });
+    await harness.behavior.experimental_emitHostSignal("host_mac", "fileChanged", {
+      watchId,
+      sha256,
+    });
+    // A restarted worker lost the watch; the page re-arms and compares.
+    await harness.behavior.experimental_emitHostWorkerExit("host_mac");
+    expect(harness.realtimeSignals.slice(published)).toEqual([
+      expect.objectContaining({ channel: "opened-file-changed", payload: { watchId, sha256 } }),
+      expect.objectContaining({ channel: "opened-file-changed", payload: { watchId } }),
+    ]);
+  });
+
+  it("checks that a previewed note exists on its host without reading it", async () => {
+    const { harness } = await loadNotebook({ "plan.md": "# Plan" });
+    await expect(
+      harness.callRpc("preparePreview", { vaultId: "personal", path: "plan.md" }),
+    ).resolves.toMatchObject({ baseUrl: "/api/v1/file-previews/test" });
+    await expect(
+      harness.callRpc("preparePreview", { vaultId: "personal", path: "missing.md" }),
+    ).rejects.toThrow("File not found: missing.md");
+    expect(harness.sdk.callsTo("files.read")).toEqual([]);
+    expect(
+      harness.experimental_hostRpcCalls.filter((call) => call.method === "statFile"),
+    ).toHaveLength(2);
   });
 
   it("routes explicit host opener reads, previews, and saves to that host", async () => {
@@ -1717,6 +1773,59 @@ describe("Docs vault operations", () => {
 
       await writeFile(path.join(rootPath, "plan.md"), "# Updated");
       expect(await provider.search(context)).toMatchObject([{ title: "Updated" }]);
+
+      // The watcher's report of this server's own save is its echo: the save
+      // already announced it, with the hash the saving document holds.
+      const savedSha = "b".repeat(64);
+      harness.sdk.stub("files.write", async () => ({
+        outcome: "written",
+        sha256: savedSha,
+        sizeBytes: 7,
+      }));
+      await harness.callRpc("saveNote", {
+        vaultId: "personal",
+        path: "plan.md",
+        content: "# Saved",
+      });
+      const afterSave = harness.realtimeSignals.length;
+      expect(harness.realtimeSignals.at(-1)).toMatchObject({
+        channel: "vault-changed",
+        payload: { vaultId: "personal", path: "plan.md", sha256: savedSha },
+      });
+      await harness.behavior.experimental_emitHostSignal("host_primary", "vaultChanged", {
+        vaultId: "personal",
+        kind: "changed",
+        changes: [{ path: "plan.md", sha256: savedSha }],
+      });
+      expect(harness.realtimeSignals.slice(afterSave)).toEqual([]);
+      await harness.behavior.experimental_emitHostSignal("host_primary", "vaultChanged", {
+        vaultId: "personal",
+        kind: "changed",
+        changes: [
+          { path: "plan.md", sha256: savedSha },
+          { path: "agent.md", sha256: "c".repeat(64) },
+        ],
+      });
+      expect(harness.realtimeSignals.slice(afterSave)).toEqual([
+        expect.objectContaining({
+          channel: "vault-changed",
+          payload: { vaultId: "personal", paths: ["agent.md"] },
+        }),
+      ]);
+
+      // Someone changes the note, then restores what was saved: that is theirs, not an echo.
+      const beforeRevert = harness.realtimeSignals.length;
+      for (const sha256 of ["d".repeat(64), savedSha]) {
+        await harness.behavior.experimental_emitHostSignal("host_primary", "vaultChanged", {
+          vaultId: "personal",
+          kind: "changed",
+          changes: [{ path: "plan.md", sha256 }],
+        });
+      }
+      expect(harness.realtimeSignals.slice(beforeRevert)).toEqual([
+        expect.objectContaining({ payload: { vaultId: "personal", paths: ["plan.md"] } }),
+        expect.objectContaining({ payload: { vaultId: "personal", paths: ["plan.md"] } }),
+      ]);
     } finally {
       service.controller.abort();
       await service.done;

@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 
 import { loadPluginApp, renderSlot, type RenderSlotOptions } from "@get-bb/plugin-sdk/testing/app";
 
 const app = await loadPluginApp(() => import("./app"));
+const { clearNotebookStores } = await import("./app");
 const docsRegistration = app.navPanels[0];
 if (!docsRegistration) throw new Error("Docs navigation panel was not registered");
 const navigationView = docsRegistration.fixedTabs?.[0];
@@ -25,6 +26,7 @@ const rangeGetClientRectsDescriptor = Object.getOwnPropertyDescriptor(
 
 beforeEach(() => {
   localStorage.clear();
+  clearNotebookStores();
   vi.stubGlobal(
     "ResizeObserver",
     class {
@@ -706,6 +708,41 @@ describe("Docs nav panel", () => {
 
     await findTreeItem(slot.container, "fresh.md");
     expect(queryTreeItem(slot.container, "stale.md")).toBeNull();
+  });
+
+  it("renders a remounted vault listing from cache while it revalidates", async () => {
+    const listNotes = vi
+      .fn<() => unknown>()
+      .mockReturnValueOnce(listNotesResultForVault("personal", "personal.md", "Personal note"))
+      // The revalidation never answers: whatever shows next came from cache.
+      .mockReturnValue(new Promise(() => {}));
+    const rpc = { listNotes, preparePreview: () => preview };
+    const first = renderSlot(navigationRegistration, { subPath: "personal" }, { rpc });
+    await findTreeItem(first.container, "personal.md");
+    first.unmount();
+
+    const second = renderSlot(navigationRegistration, { subPath: "personal" }, { rpc });
+    await findTreeItem(second.container, "personal.md");
+    expect(listNotes).toHaveBeenCalledTimes(2);
+  });
+
+  it("reads a remounted listing again when its old request may predate an unheard change", async () => {
+    const before = deferred<ReturnType<typeof listNotesResultForVault>>();
+    const listNotes = vi
+      .fn<() => unknown>()
+      .mockReturnValueOnce(before.promise)
+      .mockReturnValue(listNotesResultForVault("personal", "renamed.md", "Renamed note"));
+    const rpc = { listNotes, preparePreview: () => preview };
+    const first = renderSlot(navigationRegistration, { subPath: "personal" }, { rpc });
+    await waitFor(() => expect(listNotes).toHaveBeenCalledTimes(1));
+    first.unmount();
+    // Nobody listens while the note is renamed and the old answer is on its way.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    const second = renderSlot(navigationRegistration, { subPath: "personal" }, { rpc });
+    before.resolve(listNotesResultForVault("personal", "personal.md", "Personal note"));
+    await findTreeItem(second.container, "renamed.md");
+    expect(listNotes).toHaveBeenCalledTimes(2);
   });
 
   it("ignores an obsolete vault refresh and rename after a deferred save", async () => {
@@ -1446,6 +1483,43 @@ describe("Docs nav panel", () => {
     });
   });
 
+  it("skips its own save's echo and changes to other notes", async () => {
+    const readNote = vi
+      .fn<() => Promise<{ content: string; sha256: string }>>()
+      .mockResolvedValue({ content: "Original paragraph.", sha256: "original-sha" });
+    const slot = renderDocument("echo.md", "Echo", { rpc: { readNote } });
+    await slot.findByText("Original paragraph.");
+    const reads = () => readNote.mock.calls.length;
+    const before = reads();
+
+    await slot.emitRealtime("vault-changed", {
+      vaultId: "personal",
+      path: "echo.md",
+      sha256: "original-sha",
+    });
+    await slot.emitRealtime("vault-changed", { vaultId: "personal", paths: ["other.md"] });
+    expect(reads()).toBe(before);
+
+    await slot.emitRealtime("vault-changed", { vaultId: "personal", paths: ["echo.md"] });
+    await waitFor(() => expect(reads()).toBe(before + 1));
+  });
+
+  it("re-reads a note when a folder holding it changes", async () => {
+    const readNote = vi
+      .fn<() => Promise<{ content: string; sha256: string }>>()
+      .mockResolvedValue({ content: "Inside a folder.", sha256: "folder-sha" });
+    const slot = renderDocument("notes/plan.md", "Plan", { rpc: { readNote } });
+    await slot.findByText("Inside a folder.");
+    const reads = () => readNote.mock.calls.length;
+    const before = reads();
+
+    await slot.emitRealtime("vault-changed", { vaultId: "personal", paths: ["note"] });
+    expect(reads()).toBe(before);
+
+    await slot.emitRealtime("vault-changed", { vaultId: "personal", paths: ["notes"] });
+    await waitFor(() => expect(reads()).toBe(before + 1));
+  });
+
   it("shows cached document content immediately when returning to a thread", async () => {
     const file = { content: "Keep this draft visible.", sha256: "saved-sha" };
     const readNote = vi.fn<() => Promise<typeof file>>().mockResolvedValue(file);
@@ -2048,7 +2122,7 @@ describe("Docs nav panel", () => {
     });
   });
 
-  it("reloads an opened file when it changes on disk", async () => {
+  it("reloads an opened file when its host reports a new hash, without rereading on a timer", async () => {
     let disk = { content: "# Plan\n\nFirst draft", sha256: "sha-1" };
     const source = {
       kind: "host" as const,
@@ -2063,18 +2137,75 @@ describe("Docs nav panel", () => {
       {
         rpc: {
           openFile: () => ({ file: disk, preview, previewPath: "notes/plan.md" }),
-          readOpenedFile: () => disk,
+          watchOpenedFile: () => ({ watchId: "w1", sha256: disk.sha256, renewWithinMs: 60_000 }),
         },
       },
     );
 
     await slot.findByText("First draft");
+    await waitFor(() =>
+      expect(slot.rpcCalls).toContainEqual({
+        method: "watchOpenedFile",
+        input: { source, path: "/Users/shared/notes/plan.md" },
+      }),
+    );
+    const opens = () => slot.rpcCalls.filter((call) => call.method === "openFile").length;
     disk = { content: "# Plan\n\nAgent rewrite", sha256: "sha-2" };
-    await slot.findByText("Agent rewrite", undefined, { timeout: 4_000 });
-    expect(slot.rpcCalls).toContainEqual({
-      method: "readOpenedFile",
-      input: { source, path: "/Users/shared/notes/plan.md" },
+    // The old 1.5 s poll would have reread by now; nothing asks until the host says so.
+    await act(() => new Promise((resolve) => setTimeout(resolve, 1_700)));
+    expect(opens()).toBe(1);
+    // Another watch's change and an echo of the loaded hash change nothing.
+    await slot.emitRealtime("opened-file-changed", { watchId: "w2", sha256: "sha-2" });
+    await slot.emitRealtime("opened-file-changed", { watchId: "w1", sha256: "sha-1" });
+    expect(opens()).toBe(1);
+
+    await slot.emitRealtime("opened-file-changed", { watchId: "w1", sha256: "sha-2" });
+    await slot.findByText("Agent rewrite");
+    expect(opens()).toBe(2);
+    expect(slot.rpcCalls.filter((call) => call.method === "watchOpenedFile")).toHaveLength(1);
+  });
+
+  it("skips an opened file's own save echo even when it arrives before the save answers", async () => {
+    const source = {
+      kind: "host" as const,
+      threadId: "thr_1",
+      environmentId: null,
+      projectId: "project_1",
+      experimental_hostId: "host_remote",
+    };
+    const saved = deferred<{ outcome: "written"; sha256: string }>();
+    const slot = renderSlot(
+      app.fileOpeners[0]!,
+      { path: "/Users/shared/notes/plan.md", source, Original: () => null },
+      {
+        rpc: {
+          openFile: () => ({
+            file: { content: "# Plan\n\nFirst draft", sha256: "sha-1" },
+            preview,
+            previewPath: "notes/plan.md",
+          }),
+          watchOpenedFile: () => ({ watchId: "w1", sha256: "sha-1", renewWithinMs: 60_000 }),
+          saveOpenedFile: () => saved.promise,
+        },
+      },
+    );
+    const body = await slot.findByText("First draft");
+    await waitFor(() =>
+      expect(slot.rpcCalls.some((call) => call.method === "watchOpenedFile")).toBe(true),
+    );
+    body.textContent = "Edited draft";
+    fireEvent.input(body);
+    await waitFor(
+      () => expect(slot.rpcCalls.some((call) => call.method === "saveOpenedFile")).toBe(true),
+      { timeout: 2_000 },
+    );
+    // The host reports the write before the save's answer lands.
+    await slot.emitRealtime("opened-file-changed", { watchId: "w1", sha256: "sha-2" });
+    await act(async () => {
+      saved.resolve({ outcome: "written", sha256: "sha-2" });
+      await new Promise((resolve) => setTimeout(resolve, 50));
     });
+    expect(slot.rpcCalls.filter((call) => call.method === "openFile")).toHaveLength(1);
   });
 
   it("keeps Docs sibling order where Pierre's default sort disagrees", async () => {

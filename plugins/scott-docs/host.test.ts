@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { mkdir, mkdtemp, rm, symlink, utimes, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -10,6 +11,8 @@ import { experimental_createHostEntryHarness } from "@get-bb/plugin-sdk/testing/
 import hostEntry from "./host.js";
 
 const temporaryDirectories: string[] = [];
+
+const sha256 = (content: string) => createHash("sha256").update(content).digest("hex");
 
 afterEach(async () => {
   await Promise.all(
@@ -180,13 +183,34 @@ describe("Docs host vault watching", () => {
         { path: path.join(root, ".git", "index"), type: "update" },
       ],
     });
+    await mkdir(path.join(root, "notes"));
+    await writeFile(path.join(root, "notes", "plan.md"), "# Plan");
+    // An attachment is never a note this server saved, so it is not read to hash.
+    await writeFile(path.join(root, "notes", "scan.png"), Buffer.alloc(2 * 1024 * 1024));
     await listeners[0]!({
       kind: "changed",
-      changes: [{ path: path.join(root, "notes", "plan.md"), type: "update" }],
+      changes: [
+        { path: path.join(root, "notes", "plan.md"), type: "update" },
+        { path: path.join(root, "notes", "scan.png"), type: "create" },
+        { path: path.join(root, "notes", "gone.md"), type: "delete" },
+      ],
     });
     await listeners[0]!({ kind: "rescan-required" });
+    // Each change names its path and new hash, so the server can drop the
+    // echo of its own save and documents can skip unrelated paths.
     expect(host.experimental_getSignals()).toEqual([
-      { signal: "vaultChanged", payload: { vaultId: "obsidian", kind: "changed" } },
+      {
+        signal: "vaultChanged",
+        payload: {
+          vaultId: "obsidian",
+          kind: "changed",
+          changes: [
+            { path: "notes/plan.md", sha256: sha256("# Plan") },
+            { path: "notes/scan.png", sha256: null },
+            { path: "notes/gone.md", sha256: null },
+          ],
+        },
+      },
       { signal: "vaultChanged", payload: { vaultId: "obsidian", kind: "rescan-required" } },
     ]);
 
@@ -235,6 +259,82 @@ describe("Docs host vault watching", () => {
       host.experimental_call("watchAlive", { vaultIds: ["obsidian", "dotfiles"] }),
     ).resolves.toEqual({ live: ["obsidian"] });
     expect(disposed).toEqual([dotfiles]);
+    await host.experimental_dispose();
+  });
+});
+
+describe("Docs host opened-file watching", () => {
+  it("signals the watched file's new hash, ignores its siblings and subfolders, and answers the hash on renewal", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "bb-docs-host-"));
+    temporaryDirectories.push(root);
+    const filePath = path.join(root, "plan.md");
+    await writeFile(filePath, "# Plan");
+    await mkdir(path.join(root, "nested"));
+    const daemonWatch = vi.fn(() => ({ dispose: async () => {} }));
+    const host = experimental_createHostEntryHarness(hostEntry, {
+      experimental_watch: daemonWatch,
+    });
+    const watch = { watchId: "w1", path: filePath, leaseMs: 60_000 };
+
+    await expect(host.experimental_call("watchFile", watch)).resolves.toEqual({
+      sha256: sha256("# Plan"),
+    });
+    // One folder, watched in this worker: the daemon's watcher would take the
+    // whole tree under it, which for ~/AGENTS.md is $HOME.
+    expect(daemonWatch).not.toHaveBeenCalled();
+    expect(host.experimental_getRetainedWorkerLeaseCount()).toBe(1);
+
+    await writeFile(path.join(root, "other.md"), "# Other");
+    await writeFile(path.join(root, "nested", "plan.md"), "# Nested");
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    expect(host.experimental_getSignals()).toEqual([]);
+
+    await writeFile(filePath, "# Plan\n\nAgent rewrite");
+    await vi.waitFor(() =>
+      expect(host.experimental_getSignals()).toEqual([
+        {
+          signal: "fileChanged",
+          payload: { watchId: "w1", sha256: sha256("# Plan\n\nAgent rewrite") },
+        },
+      ]),
+    );
+
+    // Renewing keeps the one watch and answers the current hash.
+    await expect(host.experimental_call("watchFile", watch)).resolves.toEqual({
+      sha256: sha256("# Plan\n\nAgent rewrite"),
+    });
+    expect(host.experimental_getRetainedWorkerLeaseCount()).toBe(1);
+    await host.experimental_dispose();
+    expect(host.experimental_getRetainedWorkerLeaseCount()).toBe(0);
+  });
+
+  it("drops a watch whose lease lapses", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "bb-docs-host-"));
+    temporaryDirectories.push(root);
+    const filePath = path.join(root, "plan.md");
+    await writeFile(filePath, "# Plan");
+    const host = experimental_createHostEntryHarness(hostEntry);
+    await host.experimental_call("watchFile", { watchId: "w1", path: filePath, leaseMs: 1_000 });
+    expect(host.experimental_getRetainedWorkerLeaseCount()).toBe(1);
+    await new Promise((resolve) => setTimeout(resolve, 1_200));
+    expect(host.experimental_getRetainedWorkerLeaseCount()).toBe(0);
+    await writeFile(filePath, "# After");
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    expect(host.experimental_getSignals()).toEqual([]);
+    await host.experimental_dispose();
+  });
+
+  it("reports whether a file exists without reading it", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "bb-docs-host-"));
+    temporaryDirectories.push(root);
+    await writeFile(path.join(root, "plan.md"), "# Plan");
+    const host = experimental_createHostEntryHarness(hostEntry);
+    await expect(
+      host.experimental_call("statFile", { path: path.join(root, "plan.md") }),
+    ).resolves.toMatchObject({ file: { sizeBytes: 6 } });
+    await expect(
+      host.experimental_call("statFile", { path: path.join(root, "missing.md") }),
+    ).resolves.toEqual({ file: null });
     await host.experimental_dispose();
   });
 });

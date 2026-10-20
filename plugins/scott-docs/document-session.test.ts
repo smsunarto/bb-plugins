@@ -78,6 +78,21 @@ describe("Docs document sessions", () => {
     expect(session.getSnapshot().previewBaseUrl).toBe("/renewed-preview");
   });
 
+  it("skips its own save's echo even when the echo arrives before the save answers", async () => {
+    const { session, call } = await loadedSession();
+    const written = deferred<{ outcome: "written"; sha256: string; sizeBytes: number }>();
+    call.mockReturnValueOnce(written.promise);
+    session.edit("Saved");
+    const saving = session.flush();
+    await Promise.resolve();
+    const echo = session.refreshIfChanged("saved-sha");
+    written.resolve({ outcome: "written", sha256: "saved-sha", sizeBytes: 5 });
+    await saving;
+    await echo;
+    expect(call.mock.calls.map(([method]) => method)).toEqual(["saveNote"]);
+    expect(session.getSnapshot()).toMatchObject({ content: "Saved", sha256: "saved-sha" });
+  });
+
   it("drains edits made during a save using the returned file hash", async () => {
     const { session, call } = await loadedSession();
     const first = deferred<{
