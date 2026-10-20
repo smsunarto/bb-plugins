@@ -8,7 +8,6 @@ import {
   BrowserIcon,
   ChatFeedbackIcon,
   CheckListIcon,
-  CheckmarkCircle02Icon,
   CloudServerIcon,
   DashboardSpeed02Icon,
   Doc01Icon,
@@ -286,10 +285,6 @@ const customIcons = {
         },
       ],
     ],
-  },
-  review: {
-    name: "CheckmarkCircle",
-    nodes: CheckmarkCircle02Icon,
   },
   // Upstream bb inline-vis, which this plugin was forked from, declares BB's
   // named "AppWindow" icon, which bb maps to Hugeicons' Browser glyph.
