@@ -40,6 +40,7 @@ const telemetry = sentryPluginTelemetry({
 
 const orbUsageViewSchema = z.discriminatedUnion("state", [
   z.object({ state: z.literal("hidden") }).strict(),
+  z.object({ state: z.literal("unlinked") }).strict(),
   z.object({ state: z.literal("starting") }).strict(),
   z
     .object({
@@ -53,7 +54,7 @@ const orbUsageViewSchema = z.discriminatedUnion("state", [
 export const rpcContract = defineRpcContract({
   getOrbUsage: {
     experimental_description:
-      "Which Amp thread a bb thread maps to and whether it runs on an Orb machine; hidden for non-Amp threads.",
+      "Which Amp thread a bb thread maps to and whether it runs on an Orb machine; hidden for non-Amp and local threads, unlinked until the bridge links an Amp thread.",
     input: z.object({ threadId: z.string().min(1) }).strict(),
     output: orbUsageViewSchema,
   },
@@ -96,9 +97,11 @@ const HOST_BUNDLE = existsSync(join(MODULE_DIR, "host.js"))
  *  Other kinds may interleave; the thread-link row is normally first. */
 const THREAD_LINK_SCAN_LIMIT = 50;
 
-/** One call to a host entry. An Oracle card polls every 750 ms while its
- *  report runs, so a host that does not answer fails the poll fast. */
+/** One call to a host entry. An Oracle card waits on the answer, so a host
+ *  that does not answer fails the card fast. */
 const HOST_CALL_TIMEOUT_MS = 5_000;
+/** How many reports' hosts are remembered. */
+const MAX_REPORT_HOSTS = 4_096;
 
 const ORACLE_UNAVAILABLE =
   "The Oracle report is unavailable. Open the native tool call to view its output.";
@@ -148,19 +151,39 @@ async function registerPlugin(bb: BbPluginApi, reporter: SentryPluginReporter | 
     return ampHost.call("oracleReport", { reportId }, { hostId, timeoutMs: HOST_CALL_TIMEOUT_MS });
   }
 
+  /** Which host answered for each report. A report never leaves the host
+   *  that wrote it, so a later read goes straight there. The oldest go first
+   *  past the cap; a forgotten one is found again. */
+  const reportHosts = new Map<string, string>();
+  const rememberReportHost = (reportId: string, hostId: string) => {
+    reportHosts.delete(reportId);
+    reportHosts.set(reportId, hostId);
+    for (const oldest of reportHosts.keys()) {
+      if (reportHosts.size <= MAX_REPORT_HOSTS) break;
+      reportHosts.delete(oldest);
+    }
+  };
+
   /** The bridge wrote the report on the host that ran the thread at the time,
-   *  and it stays there. The thread's current host answers first, which
-   *  covers a running report. A thread that has moved since, or ACP-era
-   *  history with no environment, then asks every other connected host at
-   *  once, and the first that has the report answers. */
+   *  and it stays there. The host that answered before asks first, else the
+   *  thread's current host, which covers a running report. Only a miss there,
+   *  from a thread that has moved since or ACP-era history with no
+   *  environment, asks every other connected host at once, and the first
+   *  that has the report answers. */
   async function fetchOracleReport(reportId: string, threadId: string) {
-    const thread = await bb.sdk.threads.get({ threadId, include: "environment" });
-    const hostId = "environment" in thread ? thread.environment?.hostId : undefined;
+    let hostId = reportHosts.get(reportId);
+    if (hostId === undefined) {
+      const thread = await bb.sdk.threads.get({ threadId, include: "environment" });
+      hostId = "environment" in thread ? thread.environment?.hostId : undefined;
+    }
     let hostUnreachable = false;
     if (hostId !== undefined) {
       try {
         const { report } = await askHost(hostId, reportId);
-        if (report !== null) return { report, error: null };
+        if (report !== null) {
+          rememberReportHost(reportId, hostId);
+          return { report, error: null };
+        }
       } catch {
         hostUnreachable = true;
       }
@@ -172,6 +195,7 @@ async function registerPlugin(bb: BbPluginApi, reporter: SentryPluginReporter | 
       otherHosts.map(async (host) => {
         const { report } = await askHost(host.id, reportId);
         if (report === null) throw new Error(`no Oracle report on ${host.id}`);
+        rememberReportHost(reportId, host.id);
         return report;
       }),
     ).catch(() => null);
@@ -185,13 +209,27 @@ async function registerPlugin(bb: BbPluginApi, reporter: SentryPluginReporter | 
     return { report: null, error: ORACLE_UNAVAILABLE };
   }
 
+  /** Thread id → provider id. A thread's provider never changes, so a
+   *  banner on another provider's thread costs no bb read after the first. */
+  const threadProviders = new Map<string, string>();
+
+  async function providerOf(threadId: string): Promise<string> {
+    let providerId = threadProviders.get(threadId);
+    if (providerId === undefined) {
+      providerId = (await bb.sdk.threads.get({ threadId })).providerId;
+      threadProviders.set(threadId, providerId);
+    }
+    return providerId;
+  }
+
   bb.rpc.register(
     rpcContract,
     {
       async getOrbUsage({ threadId }) {
         return observeFailure(reporter, "rpc.execute", "getOrbUsage", async () => {
-          const thread = await bb.sdk.threads.get({ threadId });
-          if (thread.providerId !== AMP_AGENT.providerId) return { state: "hidden" as const };
+          if ((await providerOf(threadId)) !== AMP_AGENT.providerId) {
+            return { state: "hidden" as const };
+          }
           const rows = await bb.sdk.threads.events.list({
             threadId,
             types: ["thread/extensionState/updated"],
@@ -208,7 +246,7 @@ async function registerPlugin(bb: BbPluginApi, reporter: SentryPluginReporter | 
               ? threadLinkToOrbUsageView(link.data)
               : { state: "hidden" as const };
           }
-          return { state: "hidden" as const };
+          return { state: "unlinked" as const };
         });
       },
       // The Orb toggle arms the next thread here. The next Amp thread bb
@@ -409,6 +447,7 @@ async function registerPlugin(bb: BbPluginApi, reporter: SentryPluginReporter | 
   bb.events.on("thread.deleted", async ({ thread }) => {
     return observeFailure(reporter, "event.handler", "thread.deleted", async () => {
       orb.forget(thread.id);
+      threadProviders.delete(thread.id);
       await Promise.all([
         bb.storage.kv.delete(`amp-thread-link:${thread.id}`),
         bb.storage.kv.delete(`orb-usage:${thread.id}`),

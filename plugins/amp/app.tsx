@@ -1,5 +1,5 @@
 import "./app.css";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   definePluginApp,
   experimental_useProviders,
@@ -12,16 +12,12 @@ import {
 } from "@get-bb/plugin-sdk/app";
 import { sentryAppTelemetry } from "@bb-kit/sentry/app";
 import { PLUGIN_TELEMETRY } from "./shared/telemetry";
-import { isOracleReportId, ORACLE_DIRECTIVE_ID, type OracleReport } from "./src/oracle-directive";
+import { ORACLE_DIRECTIVE_ID, type OracleReport } from "./src/oracle-directive";
+import { useOracleReport } from "./src/oracle-report-cache";
+import { useOrbUsage } from "./src/orb-usage-store";
 import { AMP_LOGO_PATHS, AMP_LOGO_VIEW_BOX } from "./src/amp-brand";
 import { AMP_AGENT } from "./src/execution-target";
-import type { OrbUsageView } from "./src/orb-usage";
 import type { rpcContract } from "./server";
-
-type OracleState =
-  | { kind: "loading" }
-  | { kind: "error"; message: string }
-  | { kind: "ready"; report: OracleReport };
 
 function TraceList({ report }: { report: OracleReport }) {
   if (report.trace.length === 0) {
@@ -60,7 +56,8 @@ function TraceList({ report }: { report: OracleReport }) {
 /** The Oracle report card. Two surfaces share it: the `amp/oracle` timeline
  *  renderer (new threads) and the legacy message directive (ACP-era threads,
  *  whose directives stay in their message bodies). The report lives on the
- *  host that ran the thread, so the server needs the thread to find it. */
+ *  host that ran the thread, so the server needs the thread to find it, and
+ *  the thread's own changes say when a running report may have finished. */
 function OracleCard({
   reportId,
   threadId,
@@ -70,53 +67,7 @@ function OracleCard({
   threadId: string;
   question?: string;
 }) {
-  const rpc = useRpc<typeof rpcContract>();
-  const [state, setState] = useState<OracleState>({ kind: "loading" });
-
-  useEffect(() => {
-    if (!isOracleReportId(reportId)) {
-      setState({ kind: "error", message: "The Oracle report reference is invalid." });
-      return;
-    }
-    let cancelled = false;
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    let lastReport: OracleReport | null = null;
-    const pollAgain = () => {
-      if (!cancelled) timer = setTimeout(() => void load(), 750);
-    };
-    setState({ kind: "loading" });
-    const load = async () => {
-      try {
-        const result = await rpc.call("getOracleReport", { reportId, threadId });
-        if (cancelled) return;
-        if (result.report === null) {
-          if (lastReport?.status === "running") {
-            pollAgain();
-          } else {
-            setState({
-              kind: "error",
-              message: result.error ?? "The Oracle report is unavailable.",
-            });
-          }
-        } else {
-          lastReport = result.report;
-          setState({ kind: "ready", report: result.report });
-          if (result.report.status === "running") pollAgain();
-        }
-      } catch {
-        if (lastReport?.status === "running") {
-          pollAgain();
-        } else if (!cancelled) {
-          setState({ kind: "error", message: "The Oracle report request failed." });
-        }
-      }
-    };
-    void load();
-    return () => {
-      cancelled = true;
-      if (timer !== undefined) clearTimeout(timer);
-    };
-  }, [reportId, threadId, rpc]);
+  const state = useOracleReport(reportId, threadId);
 
   if (state.kind !== "ready") {
     return (
@@ -198,44 +149,14 @@ function OracleTimelineItem({ payload, thread }: PluginTimelineRendererProps) {
   );
 }
 
-/** The thread-link state has no push channel to the app, so the banner polls
- *  `getOrbUsage` while a thread composer is mounted. */
-const ORB_USAGE_POLL_MS = 5_000;
-
 function AmpOrbBanner() {
   const view = useComposerView();
-  const rpc = useRpc<typeof rpcContract>();
   const threadId = view.scope.kind === "thread" ? view.scope.threadId : null;
-  const [usage, setUsage] = useState<OrbUsageView>({ state: "hidden" });
+  const usage = useOrbUsage(threadId);
   const [copyState, setCopyState] = useState<"idle" | "copied" | "failed">("idle");
-  const refreshSequence = useRef(0);
   const copyResetTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const refresh = useCallback(async () => {
-    if (threadId === null) return;
-    const sequence = ++refreshSequence.current;
-    try {
-      const result = await rpc.call("getOrbUsage", { threadId });
-      if (sequence === refreshSequence.current) setUsage(result);
-    } catch {
-      if (sequence === refreshSequence.current) setUsage({ state: "hidden" });
-    }
-  }, [rpc, threadId]);
-
-  useEffect(() => {
-    setUsage({ state: "hidden" });
-    setCopyState("idle");
-    void refresh();
-    return () => {
-      refreshSequence.current += 1;
-    };
-  }, [refresh]);
-
-  useEffect(() => {
-    if (threadId === null) return;
-    const timer = setInterval(() => void refresh(), ORB_USAGE_POLL_MS);
-    return () => clearInterval(timer);
-  }, [refresh, threadId]);
+  useEffect(() => setCopyState("idle"), [threadId]);
 
   useEffect(
     () => () => {
@@ -244,7 +165,8 @@ function AmpOrbBanner() {
     [],
   );
 
-  if (threadId === null || usage.state === "hidden") return null;
+  if (threadId === null || usage === null) return null;
+  if (usage.state === "hidden" || usage.state === "unlinked") return null;
 
   const copySyncCommand = async () => {
     if (usage.state !== "active") return;

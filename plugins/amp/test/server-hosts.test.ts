@@ -57,10 +57,14 @@ function createdNow(threadId: string): { id: string; providerId: string; created
   return thread;
 }
 
+/** bb thread reads per thread id, so a test can pin what the server memoizes. */
+const threadReads = new Map<string, number>();
+
 const scratch: string[] = [];
 
 afterEach(() => {
   for (const dir of scratch.splice(0)) rmSync(dir, { recursive: true, force: true });
+  threadReads.clear();
 });
 
 function tempDir(prefix: string): string {
@@ -79,7 +83,13 @@ async function loadAmp(
   const { bb, harness } = createFakePluginHost({
     pluginId: "amp",
     sdk: {
-      threads: { get: async ({ threadId }: { threadId: string }) => THREADS[threadId] },
+      threads: {
+        get: async ({ threadId }: { threadId: string }) => {
+          threadReads.set(threadId, (threadReads.get(threadId) ?? 0) + 1);
+          return THREADS[threadId];
+        },
+        events: { list: async () => [] },
+      },
       hosts: {
         list: async () => HOSTS,
         get: async ({ hostId }: { hostId: string }) => HOSTS.find((host) => host.id === hostId),
@@ -160,6 +170,36 @@ test("a thread that moved hosts finds its report on the host that ran the Oracle
     hostCalls(harness).map((call) => call.hostId),
     ["host_server", "host_mac"],
   );
+});
+
+test("a report found by asking every host is read from that host next time", async () => {
+  const harness = await loadAmp((call) => ({
+    report: call.hostId === "host_mac" ? REPORT : null,
+  }));
+  const read = () =>
+    harness.behavior.callRpc("getOracleReport", { reportId: REPORT_ID, threadId: "thr_moved" });
+  assert.deepEqual(await read(), { report: REPORT, error: null });
+  assert.deepEqual(await read(), { report: REPORT, error: null });
+  assert.deepEqual(
+    hostCalls(harness).map((call) => call.hostId),
+    ["host_server", "host_mac", "host_mac"],
+  );
+  assert.equal(threadReads.get("thr_moved"), 1);
+});
+
+test("the Orb banner reads a thread's provider once, and an unlinked Amp thread is not hidden", async () => {
+  const harness = await loadAmp();
+  THREADS.thr_claude = { id: "thr_claude", providerId: "claude-code", createdAt: LONG_AGO };
+  assert.deepEqual(await harness.behavior.callRpc("getOrbUsage", { threadId: "thr_claude" }), {
+    state: "hidden",
+  });
+  assert.deepEqual(await harness.behavior.callRpc("getOrbUsage", { threadId: "thr_claude" }), {
+    state: "hidden",
+  });
+  assert.equal(threadReads.get("thr_claude"), 1);
+  assert.deepEqual(await harness.behavior.callRpc("getOrbUsage", { threadId: "thr_mac" }), {
+    state: "unlinked",
+  });
 });
 
 test("the first host that has the report answers without waiting for a slow one", async () => {
