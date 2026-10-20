@@ -14,6 +14,7 @@ import type {
 import type { RenderedSlot } from "@get-bb/plugin-sdk/testing/app";
 import type { PointerEvent } from "react";
 import type { LifecycleApi } from "../hooks/use-lifecycle.ts";
+import { machineColors } from "../lib/machine-colors.ts";
 
 if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
   it("thread row navigation passes the isolated React suite", () => {
@@ -1578,6 +1579,52 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
       assert.ok(view.slot.getByRole("combobox", { name: /Project scope:/ }));
       assert.ok(view.slot.getByRole("combobox", { name: "Project scope: One" }));
       assert.deepEqual(rowIds(view.slot), ["a"]);
+    });
+
+    function globeColors(view: ReturnType<typeof mount>, hostIds: readonly string[]) {
+      return waitFor(() => {
+        const globes = hostIds.map((id) =>
+          view.slot.container.querySelector<HTMLElement>(
+            `.gtd-host-lead [data-machine-id="${id}"]`,
+          ),
+        );
+        assert.ok(globes.every(Boolean));
+        return globes.map((globe) => globe!.style.color);
+      });
+    }
+
+    it("draws machines whose IDs hash alike in different colors", async () => {
+      const host = hostState([
+        thread("a", { host: { id: "host-a", name: "Studio" } }),
+        thread("g", { host: { id: "host-g", name: "Server" } }),
+      ]);
+      host.sidebar = {
+        ...host.sidebar,
+        experimental_hosts: [
+          { id: "host-a", name: "Studio" },
+          { id: "host-g", name: "Server" },
+        ],
+      };
+      host.primaryHostId = null;
+      const colors = await globeColors(mount(host, {}, true), ["host-a", "host-g"]);
+      assert.notEqual(colors[0], colors[1]);
+    });
+
+    it("colors machines from bb's machine list, as GitButler does", async () => {
+      // host-a sorts first and hashes onto host-g's slot. bb no longer knows
+      // host-a, so it must not push host-g off the color GitButler draws.
+      const host = hostState([
+        thread("a", { host: { id: "host-a", name: "Retired" } }),
+        thread("g", { host: { id: "host-g", name: "Server" } }),
+      ]);
+      host.sidebar = { ...host.sidebar, experimental_hosts: [{ id: "host-g", name: "Server" }] };
+      host.primaryHostId = null;
+      const [server] = await globeColors(mount(host, {}, true), ["host-g"]);
+      assert.notEqual(
+        machineColors(["host-a", "host-g"])("host-g"),
+        machineColors(["host-g"])("host-g"),
+      );
+      assert.equal(server, machineColors(["host-g"])("host-g"));
     });
 
     it("keeps repository context under a machine filter and lets plugin settings hide groups", () => {

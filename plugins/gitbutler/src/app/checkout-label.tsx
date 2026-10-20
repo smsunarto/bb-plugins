@@ -1,17 +1,16 @@
-import { experimental_Icon as Icon } from "@get-bb/plugin-sdk/app";
+import { createContext, useContext, type ReactNode } from "react";
+import {
+  experimental_Icon as Icon,
+  experimental_useSidebarThreads as useSidebarThreads,
+} from "@get-bb/plugin-sdk/app";
+import { machineColors, useRosterColors } from "./machine-colors.ts";
 
-// Match GTD Sidebar's host-ID palette, including its fallbacks for other themes.
-const MACHINE_COLORS = [
-  "var(--machine-1, color-mix(in oklab, var(--ansi-4) 88%, var(--foreground)))",
-  "var(--machine-2, var(--ansi-6))",
-  "var(--machine-3, color-mix(in oklab, var(--ansi-5) 88%, var(--foreground)))",
-  "var(--machine-4, color-mix(in oklab, var(--ansi-5) 52%, var(--foreground)))",
-] as const;
+const MachineColorContext = createContext(machineColors([]));
 
-function machineColor(hostId: string): string {
-  let hash = 0;
-  for (const character of hostId) hash = (Math.imul(hash, 31) + character.charCodeAt(0)) >>> 0;
-  return MACHINE_COLORS[hash % MACHINE_COLORS.length] ?? MACHINE_COLORS[0];
+/** Reads bb's machine list once per panel, the list GTD Sidebar colors from, so a globe matches there. */
+export function MachineColorProvider({ children }: { children: ReactNode }) {
+  const colorOf = useRosterColors(useSidebarThreads().experimental_hosts);
+  return <MachineColorContext.Provider value={colorOf}>{children}</MachineColorContext.Provider>;
 }
 
 /** Checkout and machine share a row; the full path stays available in the tooltip. */
@@ -25,6 +24,7 @@ export function CheckoutLabel({
   hostId: string;
 }) {
   const name = path.split(/[\\/]/).findLast(Boolean) ?? path;
+  const color = useContext(MachineColorContext)(hostId);
   return (
     <span className="flex min-w-0 flex-1 items-center gap-2">
       <span className="min-w-0 flex-1 truncate text-sm font-semibold" title={path} translate="no">
@@ -36,7 +36,7 @@ export function CheckoutLabel({
       >
         <span
           className="inline-flex shrink-0 items-center"
-          style={{ color: machineColor(hostId) }}
+          style={{ color }}
           data-machine-id={hostId}
           aria-hidden="true"
         >

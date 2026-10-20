@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { PluginSidebarThread } from "@get-bb/plugin-sdk/app";
-import { filterByMachine, machineColor, sidebarMachines } from "../lib/machines";
+import { filterByMachine, sidebarMachines } from "../lib/machines";
 import { filterByProject } from "../lib/inbox";
 
 const threads = [
@@ -42,27 +42,6 @@ describe("sidebar machines", () => {
       "two",
       "three",
       "four",
-    ]);
-  });
-
-  test("keeps machine colors stable when labels and roster order change", () => {
-    const renamed = sidebarMachines([
-      { ...threads[2]!, host: { id: "host-b", name: "Alpha" } },
-      { ...threads[0]!, host: { id: "host-a", name: "Zulu" } },
-    ]);
-    expect(renamed.map((host) => [host.id, machineColor(host.id)])).toEqual([
-      ["host-b", "var(--machine-2, var(--ansi-6))"],
-      ["host-a", "var(--machine-1, color-mix(in oklab, var(--ansi-4) 88%, var(--foreground)))"],
-    ]);
-  });
-
-  test("colors machines with identity hues, never the feedback slots", () => {
-    const colors = new Set(["host-a", "host-b", "host-c", "host-d", "host-e"].map(machineColor));
-    expect([...colors].sort()).toEqual([
-      "var(--machine-1, color-mix(in oklab, var(--ansi-4) 88%, var(--foreground)))",
-      "var(--machine-2, var(--ansi-6))",
-      "var(--machine-3, color-mix(in oklab, var(--ansi-5) 88%, var(--foreground)))",
-      "var(--machine-4, color-mix(in oklab, var(--ansi-5) 52%, var(--foreground)))",
     ]);
   });
 });
