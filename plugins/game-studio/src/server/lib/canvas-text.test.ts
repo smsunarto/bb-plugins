@@ -263,3 +263,23 @@ test("an agent run works in a visible thread in the game's folder and returns th
     ["canvas/staging/request/report.md", "text"],
   ]);
 });
+
+test("3D reviewers receive the complete model capture recipe in their own game context", async () => {
+  for (const extension of ["glb", "png"]) {
+    const f = await setup();
+    const path = `canvas/staging/review.${extension}`;
+    await writeFile(join(f.game.rootPath, path), "review output");
+    const job = generationJob.parse({
+      ...f.job,
+      request: { ...f.job.request, reviewOf: ["output"], files: [path] },
+    });
+    await new CanvasText(f.bb).start(f.game, job);
+    const text = (f.starts[0] as { input: { text?: string }[] }).input[0]!.text!;
+    expect(text).not.toContain("{{modelReview}}");
+    if (extension === "glb") {
+      expect(text).toContain("window.gameStudioModelReview.capture");
+      expect(text).toContain("/studio/game/viewer/");
+      expect(text).toContain(f.game.rootPath);
+    } else expect(text).not.toContain("window.gameStudioModelReview.capture");
+  }
+});

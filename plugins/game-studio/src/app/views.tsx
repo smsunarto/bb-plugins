@@ -1,3 +1,4 @@
+import { ModelPreview } from "./model-review/index.tsx";
 import { Icon } from "./icons.tsx";
 import { useState } from "react";
 import type { ReactNode } from "react";
@@ -231,6 +232,8 @@ function Media({
   large?: boolean;
 }) {
   const url = baseUrl ? assetUrl(baseUrl, asset.path) : undefined;
+  if (asset.type === "model" && url && /\.(glb|gltf)$/i.test(asset.path))
+    return <ModelPreview url={url} name={asset.name} path={asset.path} showOpen={large} />;
   if (asset.type === "image" && url) return <img src={url} alt={asset.name} loading="lazy" />;
   if (asset.type === "video" && url)
     return (

@@ -20,6 +20,7 @@ import type { GenerationRecipe, Game } from "../shared/schema.ts";
 import type { AgentSelection } from "../shared/generation.ts";
 import { REQUEST_MENTION_PROVIDER } from "../shared/request-mention.ts";
 import { StudioCanvas } from "./canvas.tsx";
+import { ModelReviewLinks, ModelReviewPage } from "./model-review/index.tsx";
 import { DesignEditor, AssetLibrary, Evidence } from "./views.tsx";
 import { UnityPanel, useUnityEditors, editorLabel } from "./unity.tsx";
 import { UnitySlotInputs } from "./unity-slot-inputs.tsx";
@@ -717,7 +718,9 @@ function StudioPanel({
   );
   return (
     <StudioLocation.Provider value={openGame}>
-      {gameId ? <Workbench key={gameId} gameId={gameId} tab={tab} /> : <Gallery />}
+      <ModelReviewLinks gameId={gameId ?? ""}>
+        {gameId ? <Workbench key={gameId} gameId={gameId} tab={tab} /> : <Gallery />}
+      </ModelReviewLinks>
     </StudioLocation.Provider>
   );
 }
@@ -789,10 +792,25 @@ function StudioLauncher({ subPath }: PluginNavPanelProps) {
     </StudioLocation.Provider>
   );
 }
+/** BB hands the panel its subPath still URL-encoded; a hand-typed stray `%` stays literal. */
+function decodedPath(segments: string[]) {
+  const path = segments.join("/");
+  try {
+    return decodeURIComponent(path);
+  } catch {
+    return path;
+  }
+}
 function StudioNavigation(props: PluginNavPanelProps) {
+  const [gameId, section, ...path] = props.subPath.split("/").filter(Boolean);
+  const viewer = gameId && section === "viewer" && path.length;
   return (
     <PluginQueryBoundary>
-      <StudioLauncher {...props} />
+      {viewer ? (
+        <ModelReviewPage gameId={gameId} path={decodedPath(path)} />
+      ) : (
+        <StudioLauncher {...props} />
+      )}
     </PluginQueryBoundary>
   );
 }

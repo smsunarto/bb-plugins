@@ -27,6 +27,9 @@ function taskInstructions(request: BbRequest, game: Game, jobId: string) {
     });
   if (request.reviewOf)
     return instructions.read("canvas-review", {
+      modelReview: request.files?.some((path) => /\.(glb|gltf)$/i.test(path))
+        ? instructions.read("model-review", { gameId: game.id, rootPath: game.rootPath })
+        : "",
       files: request.files
         ? request.files.map((path) => `- ${projectFile(game.rootPath, path)}`).join("\n")
         : "(none)",

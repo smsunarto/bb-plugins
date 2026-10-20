@@ -60,7 +60,7 @@ import {
   promptField,
   runsDirectly,
 } from "./generation.tsx";
-import { ModelPreview } from "./model-preview.tsx";
+import { ModelPreview } from "./model-review/index.tsx";
 import { ReviewSection, VerdictBadge, outputReviewState, pinnedAgent } from "./review.tsx";
 import { reviewable } from "../shared/review.ts";
 import { JudgeSection, isJudge } from "./judge.tsx";
@@ -451,7 +451,7 @@ function NodePreview({
   if (url && asset?.type === "model" && /\.(glb|gltf)$/i.test(asset.path))
     return (
       <div className="gs-node-media" data-model>
-        <ModelPreview url={url} name={asset.name} />
+        <ModelPreview url={url} name={asset.name} path={asset.path} />
         <span className="gs-node-badge">
           {asset.path.startsWith("Assets/") ? "In Assets" : "Staged"}
         </span>

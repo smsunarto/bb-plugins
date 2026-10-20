@@ -3,7 +3,7 @@ Review the outputs of one Game Studio generation run. Judge each output against 
 The attached images are the run's inputs and its outputs, in the order listed below. These project files are also under review; inspect them read-only with the tools available to you, such as a 3D tool that reports geometry, topology, scale, and materials:
 
 {{files}}
-
+{{modelReview}}
 Check fidelity to the brief, preservation of what the input images establish, visual and technical defects, and fitness for a game. When there are several outputs, compare them and name the strongest.
 
 Return only the review, in Markdown, for Game Studio to save on the node:

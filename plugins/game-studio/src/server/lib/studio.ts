@@ -57,7 +57,8 @@ const manifestSchema = z.object({
   assets: z.record(z.string(), z.object({ name: z.string(), path: z.string() }).passthrough()),
 });
 const boardRevisionSchema = z.object({ content: z.string(), layout: z.string().nullable() });
-const evidenceManifestSchema = z.object({
+/** The Evidence manifest as the Evidence tab reads it; writers must keep it readable. */
+export const evidenceManifestSchema = z.object({
   version: z.literal(1),
   runs: z
     .array(
@@ -96,12 +97,12 @@ function args(game: Pick<Game, "hostId" | "rootPath">, path: string) {
 function missing(error: unknown): boolean {
   return (
     error instanceof Error &&
-    (/ENOENT|no such file or directory/i.test(error.message) ||
+    (/ENOENT|no such file or directory|Path does not exist/i.test(error.message) ||
       ("code" in error && error.code === "ENOENT"))
   );
 }
 
-async function readOptional(
+export async function readOptional(
   bb: BbPluginApi,
   game: Pick<Game, "hostId" | "rootPath">,
   path: string,

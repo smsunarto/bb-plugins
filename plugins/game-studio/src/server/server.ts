@@ -26,6 +26,7 @@ import { saveDocument } from "./rpc/save-document.ts";
 import { createDocument } from "./rpc/create-document.ts";
 import { createBoard } from "./rpc/create-board.ts";
 import { preview } from "./rpc/preview.ts";
+import { modelEvidence } from "./rpc/model-evidence.ts";
 import { updateGame } from "./rpc/update-game.ts";
 import { uploadAsset } from "./rpc/upload-asset.ts";
 import { prompt } from "./rpc/prompt.ts";
@@ -56,6 +57,7 @@ export default definePlugin({
     createDocument,
     createBoard,
     preview,
+    modelEvidence,
     updateGame,
     uploadAsset,
     prompt,
