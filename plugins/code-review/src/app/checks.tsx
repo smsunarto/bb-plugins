@@ -10,6 +10,7 @@ import { shortSha } from "./format.ts";
 import { cn } from "./lib/utils.ts";
 import { InlineError, Notice, RetryButton, errorText } from "./notice.tsx";
 import { rpc } from "./rpc.ts";
+import { SyncState } from "./sync-state.tsx";
 import { ChecksStateIcon } from "./status.tsx";
 
 /** While a check runs, its state is read often; once all settle, now and then, for a new push. */
@@ -120,7 +121,9 @@ export function ChecksTab({ pr }: { pr: PullRequest }) {
           error={checks.error}
           onRetry={() => void checks.refetch()}
         />
-      ) : null}
+      ) : (
+        <SyncState query={checks} />
+      )}
       {checks.data.checks.length === 0 ? (
         <div className="flex flex-col items-center gap-1.5 py-10 text-center text-muted-foreground">
           <Icon name="CircleCheck" className="size-4 text-subtle-foreground" aria-hidden />

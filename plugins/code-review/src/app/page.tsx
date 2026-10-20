@@ -2,8 +2,14 @@ import type { ReactNode } from "react";
 import { UrlLink, experimental_Icon as Icon, useBbNavigate } from "@get-bb/plugin-sdk/app";
 import type { PluginNavPanelProps } from "@get-bb/plugin-sdk/app";
 import { PluginQueryBoundary, pluginQueryClient } from "@bb-kit/core/rpc/query";
-import { parseBranchSubPath, parsePrSubPath, prKey, sameRef } from "../shared/schema.ts";
-import type { Inbox as InboxData, PrRoute, Status } from "../shared/schema.ts";
+import {
+  parseBranchSubPath,
+  parsePrSubPath,
+  prKey,
+  sameRef,
+  sameAccount,
+} from "../shared/schema.ts";
+import type { Inbox as InboxData, PrRoute, Status, PullRequest } from "../shared/schema.ts";
 import { Button } from "./components/ui/button.tsx";
 import { TooltipProvider } from "./components/ui/tooltip.tsx";
 import { PANEL_PATH } from "./format.ts";
@@ -46,7 +52,9 @@ function Page({ subPath }: { subPath: string }) {
       </section>
     );
   }
-  if (!status.data) {
+  const route = parsePrSubPath(subPath);
+  const cachedLogin = signedOut(status.data) ? undefined : cachedLoginFor(route);
+  if (!status.data && !cachedLogin) {
     return (
       <div className={cn(SHELL, "flex-col p-4")}>
         {status.isError ? (
@@ -63,7 +71,7 @@ function Page({ subPath }: { subPath: string }) {
       </div>
     );
   }
-  if (!status.data.ok) {
+  if (status.data && !status.data.ok && !cachedLogin) {
     return (
       <div className={cn(SHELL, "items-center justify-center p-6")}>
         <GitHubUnavailable
@@ -75,8 +83,9 @@ function Page({ subPath }: { subPath: string }) {
     );
   }
 
-  const route = parsePrSubPath(subPath);
-  const account = route ? routeAccount(route, status.data.login) : null;
+  const account = route
+    ? routeAccount(route, status.data?.ok ? status.data.login : (cachedLogin ?? ""))
+    : null;
   return (
     <section aria-label="Pull request" className={cn(SHELL, "flex-col")}>
       {route && account ? (
@@ -95,6 +104,27 @@ function Page({ subPath }: { subPath: string }) {
       )}
     </section>
   );
+}
+
+/** gh has no account at all, so nothing read as one may show, kept locally or not. */
+function signedOut(status: Status | undefined): boolean {
+  return status?.ok === false && status.reason === "unauthenticated";
+}
+
+/** A restored PR can open even when its inbox was evicted or GitHub is offline. */
+function cachedLoginFor(route: PrRoute | null): string | undefined {
+  const inbox = pluginQueryClient.getQueryData<InboxData>(rpc.inbox.queryKey());
+  if (inbox?.accounts[0]) return inbox.accounts[0];
+  if (!route) return undefined;
+  return pluginQueryClient
+    .getQueriesData<PullRequest>({ queryKey: ["pullRequest"] })
+    .map(([, data]) => data)
+    .find(
+      (pr) =>
+        pr &&
+        sameRef(pr.ref, route.ref) &&
+        (!route.account || sameAccount(pr.account, route.account)),
+    )?.account;
 }
 
 /**
@@ -126,7 +156,10 @@ export function InboxTab({ subPath }: PluginNavPanelProps) {
 
 function InboxTabBody({ subPath }: { subPath: string }) {
   const status = rpc.status.useQuery(STATUS_QUERY);
-  if (status.data?.ok) {
+  if (
+    status.data?.ok ||
+    (!signedOut(status.data) && pluginQueryClient.getQueryData<InboxData>(rpc.inbox.queryKey()))
+  ) {
     return (
       <nav aria-label="Pull request inbox" className={cn(SHELL, "flex-col")}>
         <Inbox

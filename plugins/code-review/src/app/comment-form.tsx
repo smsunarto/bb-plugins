@@ -1,60 +1,23 @@
 import { useId, useState } from "react";
 import type { KeyboardEvent, ReactNode } from "react";
 import { experimental_Icon as Icon } from "@get-bb/plugin-sdk/app";
-import { pluginQueryClient } from "@bb-kit/core/rpc/query";
 import type { PullRequest, ReviewThread } from "../shared/schema.ts";
 import { Button } from "./components/ui/button.tsx";
 import { Textarea } from "./components/ui/textarea.tsx";
 import { threadLines } from "./format.ts";
 import { errorText } from "./notice.tsx";
-import { rpc } from "./rpc.ts";
+import { useAddDraft } from "./draft-sync.tsx";
+import { draftTextKey, readDraftText, writeDraftText } from "./local-cache.ts";
 
-/*
- * The forms that write review comments. Every write lands in the viewer's
- * pending review on GitHub, so each one is a draft until Submit review, and
- * each one ends by reading the pull request again: GitHub is the only record
- * of what the drafts say.
- */
-
-/**
- * Text typed into a form, kept by key for the life of the panel. An annotation
- * remounts when the diff above it changes, and a card unmounts when it is
- * collapsed or the tab changes. Neither should cost a half-written comment.
- * A saved form clears its text from the mutation's own `onSuccess`, which
- * runs even when the form unmounted on the way.
- */
-const drafts = new Map<string, string>();
-
-export function useDraftText(key: string): [string, (text: string) => void] {
-  const [text, setText] = useState(() => drafts.get(key) ?? "");
+/** Unsaved text is kept independently from GitHub snapshots, including across app reloads. */
+export function useDraftText(key: string, initial = ""): [string, (text: string) => void] {
+  const [text, setText] = useState(() => readDraftText(key, initial));
   const update = (next: string) => {
     setText(next);
-    if (next) drafts.set(key, next);
-    else drafts.delete(key);
+    // Clearing an old form must preserve a newer buffer in another mount.
+    if (next || readDraftText(key, initial) === text) writeDraftText(key, next, initial);
   };
   return [text, update];
-}
-
-/** Forgets a form's kept text once what it said is saved. */
-export function forgetDraftText(key: string): void {
-  drafts.delete(key);
-}
-
-/**
- * Reads the pull request again after a write, and the inbox too when the write
- * started the pending review, since the inbox shows who has one. Mutations
- * return this from `onSuccess`, so they stay pending until the new state is
- * on screen and a saved comment never blinks out in between.
- */
-export function refreshAfterDraft(pr: PullRequest): Promise<unknown> {
-  return Promise.all([
-    pluginQueryClient.invalidateQueries({
-      queryKey: rpc.pullRequest.queryKey({ account: pr.account, ref: pr.ref }),
-    }),
-    pr.pendingReview
-      ? null
-      : pluginQueryClient.invalidateQueries({ queryKey: rpc.inbox.queryKey() }),
-  ]);
 }
 
 const IS_MAC = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform);
@@ -174,9 +137,8 @@ export const DRAFT_NOTE = `Saved to your pending review. Nothing is posted until
  * to the viewer's pending review. Its text is kept per file, so it survives
  * the form moving to another line or remounting.
  *
- * Saving reports the new thread's id at once, and the form stays, saving,
- * until the pull request is read again. The diff then draws the new thread in
- * the form's place in one render, so the comment never blinks out.
+ * Saving previews the comment immediately. Once GitHub acknowledges it,
+ * the confirmed thread replaces the preview and the form closes.
  *
  * After a push or a retarget the picked line numbers may name other code, so
  * the form keeps its text but will not save until the lines are picked again.
@@ -209,15 +171,9 @@ export function NewCommentForm({
   onClose: () => void;
 }) {
   // Text typed as one account never opens in the form of another.
-  const key = `new:${pr.account.toLowerCase()}:${pr.id}:${path}`;
+  const key = draftTextKey.new(pr, path);
   const [text, setText] = useDraftText(key);
-  const add = rpc.addDraftComment.useMutation({
-    onSuccess: async ({ threadId }) => {
-      forgetDraftText(key);
-      onSaved(threadId);
-      await refreshAfterDraft(pr);
-    },
-  });
+  const add = useAddDraft(pr);
   const where = threadLines({ ...target, originalLine: null });
 
   return (
@@ -257,18 +213,25 @@ export function NewCommentForm({
               onClose();
             }}
             onSubmit={() =>
-              add.mutate({
-                account: pr.account,
-                pullRequestId: pr.id,
-                headRefOid,
-                baseRefName,
-                path,
-                body: text.trim(),
-                line: target.line,
-                startLine: target.startLine,
-                side: target.side,
-                startSide: target.startSide,
-              })
+              add.mutate(
+                {
+                  account: pr.account,
+                  pullRequestId: pr.id,
+                  headRefOid,
+                  baseRefName,
+                  path,
+                  body: text.trim(),
+                  line: target.line,
+                  startLine: target.startLine,
+                  side: target.side,
+                  startSide: target.startSide,
+                },
+                {
+                  onSuccess: ({ threadId }) => {
+                    onSaved(threadId);
+                  },
+                },
+              )
             }
           />
         </>

@@ -16,6 +16,7 @@ import { Button } from "./components/ui/button.tsx";
 import { cn } from "./lib/utils.ts";
 import { errorText } from "./notice.tsx";
 import { rpc } from "./rpc.ts";
+import { useAddDraft, draftKey as reviewDraftKey } from "./draft-sync.tsx";
 
 /**
  * Window event that asks the Changes tab to scroll a finding's line into
@@ -83,7 +84,6 @@ function findingLines(finding: Finding): {
 
 type DraftMutation = ReturnType<typeof rpc.addDraftComment.useMutation>;
 type DraftInput = Parameters<DraftMutation["mutate"]>[0];
-type SavedDraft = Awaited<ReturnType<DraftMutation["mutateAsync"]>>;
 type DraftLines = Pick<ReviewThread, "path" | "line" | "side" | "startLine" | "startSide">;
 
 /**
@@ -122,55 +122,12 @@ export function hasDraftFor(pr: PullRequest, finding: Finding): boolean {
  */
 /** A finding's draft goes into the acting account's pending review, so its key names the account. */
 function draftKey(pr: PullRequest): MutationKey {
-  return ["addDraftComment", pr.account.toLowerCase(), pr.id];
+  return [...reviewDraftKey(pr), "add"];
 }
 
 function writesFinding(finding: Finding, mutation: Mutation<unknown, Error, unknown>): boolean {
   const draft = mutation.state.variables as DraftInput | undefined;
   return draft !== undefined && isDraftOf(finding, draft, draft.body);
-}
-
-/**
- * The pull request with a draft just saved, as GitHub will list it. The next
- * read replaces it with GitHub's own record. A read that already shows it is
- * left as it is.
- */
-function withSavedDraft(pr: PullRequest, saved: SavedDraft, draft: DraftInput): PullRequest {
-  if (pr.threads.some((thread) => thread.id === saved.threadId)) return pr;
-  const thread: ReviewThread = {
-    id: saved.threadId,
-    path: draft.path,
-    line: draft.line,
-    startLine: draft.startLine,
-    startSide: draft.startSide,
-    side: draft.side,
-    originalLine: draft.line,
-    isResolved: false,
-    isOutdated: false,
-    isFileLevel: false,
-    diffHunk: "",
-    comments: [
-      {
-        id: saved.commentId,
-        author: { login: pr.viewer.login, avatarUrl: null },
-        body: draft.body,
-        createdAt: new Date().toISOString(),
-        url: "",
-        isDraft: true,
-      },
-    ],
-  };
-  return {
-    ...pr,
-    threads: [...pr.threads, thread],
-    // The pending review as the server left it. The first draft starts one,
-    // and Submit and Discard need it before the next read. A review just
-    // started has no summary yet.
-    pendingReview: {
-      ...saved.pendingReview,
-      body: pr.pendingReview?.id === saved.pendingReview.id ? pr.pendingReview.body : "",
-    },
-  };
 }
 
 export function PriorityBadge({ priority }: { priority: number }) {
@@ -267,34 +224,7 @@ function DraftCommentButton({
 }) {
   const mutationKey = draftKey(pr);
   const pullRequestKey = rpc.pullRequest.queryKey({ account: pr.account, ref: pr.ref });
-  const add = rpc.addDraftComment.useMutation({
-    mutationKey,
-    async onSuccess(saved, draft) {
-      // A read sent before the write would land after it without the draft,
-      // so it is dropped first.
-      await pluginQueryClient.cancelQueries({ queryKey: pullRequestKey });
-      // Until the read below lands, the cached pull request every card renders
-      // from holds the draft, so each shows the finding saved, also one
-      // mounted meanwhile. From that read on GitHub is the record, whether or
-      // not it shows the draft: a review submitted or discarded first leaves
-      // nothing, and the finding can be added again.
-      pluginQueryClient.setQueryData<PullRequest>(
-        pullRequestKey,
-        (cached) => cached && withSavedDraft(cached, saved, draft),
-      );
-      toast.success(`Added a draft comment on ${findingLocation(finding)}`);
-      // Read again also when the viewer left the page meanwhile, so the cache
-      // they come back to is GitHub's. The first draft also starts the
-      // pending review the inbox shows.
-      void pluginQueryClient.invalidateQueries({ queryKey: pullRequestKey, refetchType: "all" });
-      if (!pr.pendingReview) {
-        void pluginQueryClient.invalidateQueries({ queryKey: rpc.inbox.queryKey() });
-      }
-    },
-    onError(error) {
-      toast.error(errorText(error));
-    },
-  });
+  const add = useAddDraft(pr);
   // A write still out lives in the mutation cache, not in this card, so a
   // card mounted again meanwhile shows it too.
   const saving = useMutationState({
@@ -328,15 +258,21 @@ function DraftCommentButton({
           predicate: (mutation) => writesFinding(finding, mutation),
         });
         if (out > 0 || hasDraftFor(latest, finding)) return;
-        add.mutate({
-          account: pr.account,
-          pullRequestId: pr.id,
-          headRefOid: reviewed.headRefOid,
-          baseRefName: reviewed.baseRefName,
-          path: finding.path,
-          body: findingDraftBody(finding),
-          ...findingLines(finding),
-        });
+        add.mutate(
+          {
+            account: pr.account,
+            pullRequestId: pr.id,
+            headRefOid: reviewed.headRefOid,
+            baseRefName: reviewed.baseRefName,
+            path: finding.path,
+            body: findingDraftBody(finding),
+            ...findingLines(finding),
+          },
+          {
+            onSuccess: () => toast.success(`Added a draft comment on ${findingLocation(finding)}`),
+            onError: (error) => toast.error(errorText(error)),
+          },
+        );
       }}
     >
       <Icon

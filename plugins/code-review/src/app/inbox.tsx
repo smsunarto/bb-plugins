@@ -27,6 +27,7 @@ import { useStoredChoice } from "./hooks/useStoredChoice.ts";
 import { cn, keepInView } from "./lib/utils.ts";
 import { Loading, Notice, RetryButton, Tip, errorText } from "./notice.tsx";
 import { rpc } from "./rpc.ts";
+import { SyncState, useReconcile, usePrPrefetch } from "./sync-state.tsx";
 import {
   AccountAvatar,
   Avatar,
@@ -178,6 +179,7 @@ export function Inbox({
   selectedBranch: string | null;
 }) {
   const inbox = useInbox();
+  useReconcile();
   const branches = useLocalBranches();
   const { section, setTab, unpublished } = useInboxTab(branches);
   const accounts = inbox.data?.accounts ?? [];
@@ -219,6 +221,7 @@ export function Inbox({
           </Button>
         </Tip>
       </header>
+      <SyncState query={inbox} />
       <PasteLink />
       {inbox.data && inbox.data.unavailable.length > 0 ? (
         <Notice tone="error" className="mx-2.5 mt-2" title="Some accounts could not load">
@@ -624,10 +627,12 @@ function RowReview({ pr }: { pr: InboxPr }) {
 function RowButton({
   selected,
   onOpen,
+  onInterest,
   children,
 }: {
   selected: boolean;
   onOpen: () => void;
+  onInterest?: () => void;
   children: ReactNode;
 }) {
   const ref = useRef<HTMLButtonElement>(null);
@@ -644,6 +649,8 @@ function RowButton({
       data-inbox-row
       aria-current={selected ? "page" : undefined}
       onClick={onOpen}
+      onMouseEnter={onInterest}
+      onFocus={onInterest}
       onKeyDown={moveFocus}
       className={cn(
         "flex w-full cursor-pointer flex-col gap-1 rounded-md px-2 py-2 text-left outline-none",
@@ -669,8 +676,13 @@ function Row({
   showAccount: boolean;
 }) {
   const open = useOpenPr();
+  const prefetch = usePrPrefetch();
   return (
-    <RowButton selected={selected} onOpen={() => open(pr.ref, pr.account)}>
+    <RowButton
+      selected={selected}
+      onOpen={() => open(pr.ref, pr.account)}
+      onInterest={() => prefetch(pr)}
+    >
       <span className="flex w-full items-center gap-1 text-[11px] text-muted-foreground">
         {showAccount ? (
           <span className="inline-flex shrink-0" title={`As ${pr.account}`}>

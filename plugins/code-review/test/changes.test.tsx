@@ -126,7 +126,10 @@ function handlers(calls: Call[]) {
     setViewed: record("setViewed", (input: { viewed: boolean }) => ({
       viewed: input.viewed ? "viewed" : "unviewed",
     })),
-    replyDraft: record("replyDraft", () => ({ commentId: "C9" })),
+    replyDraft: record("replyDraft", () => ({
+      commentId: "C9",
+      pendingReview: { id: "PRR1", draftCount: 2 },
+    })),
     deleteDraft: record("deleteDraft", () => ({ ok: true })),
     addDraftComment: record("addDraftComment", () => ({
       threadId: "TNEW",
@@ -174,6 +177,25 @@ test("lists every changed file with its threads inline, and folds the viewed one
   ).toBeTruthy();
   expect(slot.getByRole("button", { name: "Expand docs/old.md" })).toBeTruthy();
   expect(slot.getByRole("button", { name: "Collapse src/login.ts" })).toBeTruthy();
+  slot.lifecycle.unmount();
+});
+
+test("a failed refresh keeps the files last read on screen and says they are not updated", async () => {
+  pluginQueryClient.setQueryData(
+    rpc.changedFiles.queryKey({ account: pr.account, ref: pr.ref }),
+    files,
+    { updatedAt: Date.now() - 60_000 },
+  );
+  const slot = (
+    await changesTab([], {
+      changedFiles: () => {
+        throw new Error("GitHub did not answer");
+      },
+    })
+  ).render();
+  expect(await slot.findByText(/^Not updated/, {}, { timeout: 5_000 })).toBeTruthy();
+  expect(slot.getByText("1 of 3 files viewed")).toBeTruthy();
+  expect(slot.queryByText("Changed files failed to load")).toBeNull();
   slot.lifecycle.unmount();
 });
 
@@ -451,6 +473,26 @@ test("deleting a draft asks first, then deletes only that comment", async () => 
       { method: "deleteDraft", input: { account: "scott", commentId: "C2" } },
     ]),
   );
+  slot.lifecycle.unmount();
+});
+
+test("a failed draft edit reopens with the text that was not saved", async () => {
+  const slot = (
+    await changesTab([], {
+      editDraft: () => {
+        throw new Error("GitHub refused the edit");
+      },
+    })
+  ).render();
+  fireEvent.click(await slot.findByRole("button", { name: "1 outdated comment" }));
+  fireEvent.click(await slot.findByRole("button", { name: "Edit draft comment" }));
+  const box = slot.getByRole("textbox", { name: "Edit draft comment" });
+  fireEvent.change(box, { target: { value: "My better wording" } });
+  fireEvent.click(slot.getByRole("button", { name: "Save" }));
+
+  const reopened = await slot.findByRole("textbox", { name: "Edit draft comment" });
+  await waitFor(() => expect((reopened as HTMLTextAreaElement).value).toBe("My better wording"));
+  expect(slot.getAllByText(/GitHub refused the edit/).length).toBeGreaterThan(0);
   slot.lifecycle.unmount();
 });
 

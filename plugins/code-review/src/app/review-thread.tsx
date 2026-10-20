@@ -1,19 +1,14 @@
 import { useId, useState } from "react";
 import { Markdown, UrlLink, experimental_Icon as Icon } from "@get-bb/plugin-sdk/app";
 import type { PullRequest, ReviewThread, ThreadComment } from "../shared/schema.ts";
-import {
-  CommentForm,
-  DRAFT_NOTE,
-  forgetDraftText,
-  refreshAfterDraft,
-  useDraftText,
-} from "./comment-form.tsx";
+import { CommentForm, DRAFT_NOTE, useDraftText } from "./comment-form.tsx";
+import { draftTextKey } from "./local-cache.ts";
 import { Button } from "./components/ui/button.tsx";
 import { CONTROL_HOVER_TRANSITION } from "./components/ui/motion.ts";
 import { plural, threadLines } from "./format.ts";
 import { cn } from "./lib/utils.ts";
 import { errorText } from "./notice.tsx";
-import { rpc } from "./rpc.ts";
+import { useEditDraft, useDeleteDraft, useReplyDraft } from "./draft-sync.tsx";
 import { Avatar, Chip, Timestamp } from "./status.tsx";
 
 /*
@@ -30,17 +25,12 @@ const ICON_BUTTON = cn(
 /** One comment. A draft can be edited or deleted; a posted one links to GitHub. */
 function Comment({ pr, comment }: { pr: PullRequest; comment: ThreadComment }) {
   // An edit in progress is kept like any other typed text, and reopens with it.
-  const [text, setText] = useDraftText(`edit:${comment.id}`);
+  const [text, setText] = useDraftText(draftTextKey.edit(pr, comment.id));
   const [editing, setEditing] = useState(text !== "");
   const [confirming, setConfirming] = useState(false);
   const author = comment.author?.login ?? "ghost";
-  const edit = rpc.editDraft.useMutation({
-    onSuccess: async () => {
-      await refreshAfterDraft(pr);
-      forgetDraftText(`edit:${comment.id}`);
-    },
-  });
-  const remove = rpc.deleteDraft.useMutation({ onSuccess: () => refreshAfterDraft(pr) });
+  const edit = useEditDraft(pr);
+  const remove = useDeleteDraft(pr);
 
   const stopEditing = () => {
     setText("");
@@ -70,7 +60,11 @@ function Comment({ pr, comment }: { pr: PullRequest; comment: ThreadComment }) {
             <Timestamp iso={comment.createdAt} />
           </UrlLink>
         )}
-        {comment.isDraft && !editing && !confirming ? (
+        {comment.isDraft &&
+        !comment.id.startsWith("local:") &&
+        !edit.isPending &&
+        !editing &&
+        !confirming ? (
           <span className="ml-auto flex shrink-0 items-center">
             <button
               type="button"
@@ -105,7 +99,8 @@ function Comment({ pr, comment }: { pr: PullRequest; comment: ThreadComment }) {
           pending={edit.isPending}
           error={edit.error ? errorText(edit.error) : null}
           onCancel={stopEditing}
-          onSubmit={() =>
+          onSubmit={() => {
+            setEditing(false);
             edit.mutate(
               { account: pr.account, commentId: comment.id, body: text.trim() },
               {
@@ -113,12 +108,21 @@ function Comment({ pr, comment }: { pr: PullRequest; comment: ThreadComment }) {
                   setText("");
                   setEditing(false);
                 },
+                // Reopen with the attempted text, so Edit cannot overwrite it with the old body.
+                onError: () => setEditing(true),
               },
-            )
-          }
+            );
+          }}
         />
       ) : (
-        <Markdown content={comment.body} className="min-w-0 text-xs [overflow-wrap:anywhere]" />
+        <>
+          <Markdown content={comment.body} className="min-w-0 text-xs [overflow-wrap:anywhere]" />
+          {edit.error ? (
+            <p role="alert" className="text-destructive-text">
+              {errorText(edit.error)}
+            </p>
+          ) : null}
+        </>
       )}
       {confirming ? (
         <div className="flex flex-wrap items-center gap-1.5 rounded-md bg-surface-destructive px-2 py-1.5">
@@ -165,17 +169,13 @@ function Comment({ pr, comment }: { pr: PullRequest; comment: ThreadComment }) {
 /** The reply box: a closed prompt until clicked, then a form that adds a draft reply. */
 function Reply({ pr, thread }: { pr: PullRequest; thread: ReviewThread }) {
   // Text typed as one account never opens in the form of another.
-  const key = `reply:${pr.account.toLowerCase()}:${thread.id}`;
+  const key = draftTextKey.reply(pr, thread.id);
   const [text, setText] = useDraftText(key);
   // A reply typed before the card last unmounted opens with it.
   const [open, setOpen] = useState(text !== "");
-  const reply = rpc.replyDraft.useMutation({
-    onSuccess: async () => {
-      await refreshAfterDraft(pr);
-      forgetDraftText(key);
-    },
-  });
+  const reply = useReplyDraft(pr);
 
+  if (thread.id.startsWith("local:")) return null;
   if (!open) {
     return (
       <button

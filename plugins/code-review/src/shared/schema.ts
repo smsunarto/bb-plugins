@@ -101,7 +101,16 @@ export function prSubPath(ref: PrRef, tab: PrTab = "summary", account?: Account 
 
 /** Inverse of {@link prSubPath}. Null for the inbox (`""`) and anything unknown. */
 export function parsePrSubPath(subPath: string): PrRoute | null {
-  const all = subPath.replace(/^\/+|\/+$/g, "").split("/");
+  let all: string[];
+  try {
+    // BB's URL router may pass encoded path segments (notably `%40login`).
+    all = subPath
+      .replace(/^\/+|\/+$/g, "")
+      .split("/")
+      .map((part) => decodeURIComponent(part));
+  } catch {
+    return null;
+  }
   // A login never holds `@`, and an owner never starts with one.
   const login = all[0]?.startsWith("@") ? all[0].slice(1) : null;
   const account = login === null ? null : accountSchema.safeParse(login);

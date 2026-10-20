@@ -3,6 +3,7 @@ import { PluginQueryBoundary } from "@bb-kit/core/rpc/query";
 import { NeedsReviewCount } from "./inbox.tsx";
 import { CodeReviewPage, InboxTab } from "./page.tsx";
 import { PANEL_PATH } from "./format.ts";
+import { mountLocalCache } from "./rpc.ts";
 import "./code-review.css";
 
 /** The sidebar row's count of pull requests waiting for the viewer's review. */
@@ -15,6 +16,7 @@ function SidebarAccessory() {
 }
 
 export default definePluginApp((app) => {
+  app.contentScripts.register({ id: "local-cache", mount: mountLocalCache });
   app.slots.navPanel({
     id: "code-review",
     title: "Code Review",

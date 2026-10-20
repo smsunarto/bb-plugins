@@ -12,7 +12,11 @@ export const replyDraft = defineMutation({
     threadId: z.string().min(1),
     body: z.string().regex(/\S/, "Write a reply first."),
   }),
-  output: z.strictObject({ commentId: z.string() }),
+  // The pending review after the write: a first reply starts one.
+  output: z.strictObject({
+    commentId: z.string(),
+    pendingReview: z.strictObject({ id: z.string(), draftCount: z.number().int().nonnegative() }),
+  }),
   async execute(ctx: CodeReviewContext, { account, ...reply }) {
     return writeReply(ctx.github.as(account), reply);
   },

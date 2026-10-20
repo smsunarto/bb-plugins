@@ -38,6 +38,7 @@ import { cn, keepInView } from "./lib/utils.ts";
 import { Loading, Notice, RetryButton, errorText } from "./notice.tsx";
 import { ReviewThreadView } from "./review-thread.tsx";
 import { rpc } from "./rpc.ts";
+import { SyncState } from "./sync-state.tsx";
 
 /*
  * The Changes tab: every changed file's diff, with review threads and bb
@@ -479,7 +480,12 @@ function PrChanges({ pr }: { pr: PullRequest }) {
     { staleTime: 30_000 },
   );
   const behind = useCatchUp(pr, files.data);
-  return <Changes target={{ pr }} files={files} behind={behind} />;
+  return (
+    <>
+      <SyncState query={files} />
+      <Changes target={{ pr }} files={files} behind={behind} />
+    </>
+  );
 }
 
 /** An unpublished branch's Changes tab: everything `base..head` changes, read in its checkout. */
@@ -507,7 +513,9 @@ function Changes({
   if (files.isPending) {
     return <Loading label="Loading changed files…" rows={6} className="p-3" />;
   }
-  if (files.isError) {
+  // A pull request's failed refresh keeps the files last read: they carry
+  // their own revision, and the freshness line above says the refresh failed.
+  if (files.isLoadingError || (files.isError && !pr)) {
     return (
       <div className="p-3">
         <Notice

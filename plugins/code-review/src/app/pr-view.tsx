@@ -15,6 +15,8 @@ import { useInbox } from "./inbox.tsx";
 import { cn } from "./lib/utils.ts";
 import { Loading, Notice, RetryButton, Tip, errorText } from "./notice.tsx";
 import { rpc } from "./rpc.ts";
+import { DraftSyncNotice, useDraftPreview } from "./draft-sync.tsx";
+import { SyncState, useReconcile, usePrPrefetch } from "./sync-state.tsx";
 import {
   AccountAvatar,
   Avatar,
@@ -49,7 +51,8 @@ export function PrView({ prRef, account, tab }: { prRef: PrRef; account: string;
     { staleTime: 15_000, refetchInterval: PR_REFRESH_MS },
   );
   const back = useBackToInbox();
-  const pr = pullRequest.data;
+  useReconcile();
+  const pr = useDraftPreview(pullRequest.data);
   if (!pr) {
     return (
       <div className="flex min-h-0 flex-1 flex-col">
@@ -86,12 +89,19 @@ export function PrView({ prRef, account, tab }: { prRef: PrRef; account: string;
       </div>
     );
   }
-  return <Loaded pr={pr} tab={tab} />;
+  return (
+    <>
+      <SyncState query={pullRequest} />
+      <DraftSyncNotice pr={pr} />
+      <Loaded pr={pr} tab={tab} />
+    </>
+  );
 }
 
 function Loaded({ pr, tab }: { pr: PullRequest; tab: PrTab }) {
   const navigate = useBbNavigate();
   const checks = useChecks(pr);
+  const prefetch = usePrPrefetch();
   return (
     <Tabs
       value={tab}
@@ -119,7 +129,13 @@ function Loaded({ pr, tab }: { pr: PullRequest; tab: PrTab }) {
         <Meta pr={pr} tab={tab} />
         <TabsList aria-label="View" className={TAB_LIST}>
           {PR_TABS.map((value) => (
-            <TabsTrigger key={value} value={value} className={TAB_TRIGGER}>
+            <TabsTrigger
+              key={value}
+              value={value}
+              className={TAB_TRIGGER}
+              onMouseEnter={() => prefetch(pr, value)}
+              onFocus={() => prefetch(pr, value)}
+            >
               {TAB_LABEL[value]}
               {value === "changes" ? (
                 <span className="text-subtle-foreground tabular-nums">{pr.changedFiles}</span>

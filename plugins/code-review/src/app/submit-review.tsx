@@ -2,7 +2,7 @@ import { useEffect, useId, useRef, useState } from "react";
 import type { RefObject } from "react";
 import { UrlLink, experimental_Icon as Icon } from "@get-bb/plugin-sdk/app";
 import { pluginQueryClient } from "@bb-kit/core/rpc/query";
-import { useMutationState } from "@tanstack/react-query";
+import { useIsMutating, useMutationState } from "@tanstack/react-query";
 import type { MutationKey } from "@tanstack/react-query";
 import type { PullRequest, ReviewEvent } from "../shared/schema.ts";
 import { Button } from "./components/ui/button.tsx";
@@ -12,6 +12,9 @@ import { plural } from "./format.ts";
 import { cn } from "./lib/utils.ts";
 import { Notice, errorText } from "./notice.tsx";
 import { rpc } from "./rpc.ts";
+import { draftKey, reviewScope, confirmReviewClosed } from "./draft-sync.tsx";
+import { useDraftText } from "./comment-form.tsx";
+import { draftTextKey } from "./local-cache.ts";
 
 const EVENTS: readonly { id: ReviewEvent; label: string; detail: string }[] = [
   { id: "COMMENT", label: "Comment", detail: "General feedback, without approving." },
@@ -54,6 +57,10 @@ function reviewKeys(pr: PullRequest): { submit: MutationKey; discard: MutationKe
  */
 function isOut(mutationKey: MutationKey): boolean {
   return pluginQueryClient.isMutating({ mutationKey }) > 0;
+}
+
+function reviewInFlight(keys: ReturnType<typeof reviewKeys>): boolean {
+  return isOut(keys.submit) || isOut(keys.discard);
 }
 
 /**
@@ -105,7 +112,7 @@ function forgetSettled(mutationKey: MutationKey): void {
 export function SubmitReviewButton({ pr }: { pr: PullRequest }) {
   const [open, setOpen] = useState(false);
   // Held here, not in the form, so closing the popover by accident keeps the text.
-  const [body, setBody] = useState(pr.pendingReview?.body ?? "");
+  const [body, setBody] = useDraftText(draftTextKey.review(pr), pr.pendingReview?.body ?? "");
   const [event, setEvent] = useState<ReviewEvent>("COMMENT");
   const [submitted, setSubmitted] = useState<{ url: string | null } | null>(null);
   const keys = reviewKeys(pr);
@@ -126,7 +133,9 @@ export function SubmitReviewButton({ pr }: { pr: PullRequest }) {
   // runs whether or not the popover is open when GitHub answers.
   const submit = rpc.submitReview.useMutation({
     mutationKey: keys.submit,
-    onSuccess: (result) => {
+    scope: reviewScope(pr),
+    onSuccess: async (result) => {
+      await confirmReviewClosed(pr);
       void refreshAfterReview(pr);
       setBody("");
       setEvent("COMMENT");
@@ -135,7 +144,9 @@ export function SubmitReviewButton({ pr }: { pr: PullRequest }) {
   });
   const discard = rpc.discardReview.useMutation({
     mutationKey: keys.discard,
-    onSuccess: () => {
+    scope: reviewScope(pr),
+    onSuccess: async () => {
+      await confirmReviewClosed(pr);
       void refreshAfterReview(pr);
       setBody("");
       changeOpen(false);
@@ -220,6 +231,10 @@ function Submitted({ url, onClose }: { url: string | null; onClose: () => void }
 type SubmitMutation = ReturnType<typeof rpc.submitReview.useMutation>;
 type DiscardMutation = ReturnType<typeof rpc.discardReview.useMutation>;
 
+function draftsUnconfirmed(pr: PullRequest, writes: number): boolean {
+  return writes > 0 || (pr.pendingReview?.id.startsWith("local:") ?? false);
+}
+
 function ReviewForm({
   pr,
   body,
@@ -243,7 +258,9 @@ function ReviewForm({
   const keys = reviewKeys(pr);
   const lastSubmit = useLatestRequest(keys.submit);
   const lastDiscard = useLatestRequest(keys.discard);
+  const draftWrites = useIsMutating({ mutationKey: draftKey(pr) });
   const submitting = lastSubmit.out;
+  const syncingDrafts = draftsUnconfirmed(pr, draftWrites);
   const bodyId = useId();
   const hintId = useId();
 
@@ -255,7 +272,13 @@ function ReviewForm({
 
   const send = () => {
     // Submitting while the drafts are being deleted would race the deletion.
-    if (empty || isOut(keys.submit) || isOut(keys.discard)) return;
+    if (
+      empty ||
+      syncingDrafts ||
+      pluginQueryClient.isMutating({ mutationKey: draftKey(pr) }) > 0 ||
+      reviewInFlight(keys)
+    )
+      return;
     submit.mutate({
       account: pr.account,
       pullRequestId: pr.id,
@@ -281,6 +304,7 @@ function ReviewForm({
           ref={textareaRef}
           id={bodyId}
           value={body}
+          readOnly={reviewInFlight(keys)}
           rows={4}
           placeholder="Leave a comment"
           className="min-h-20 resize-y text-xs"
@@ -345,7 +369,7 @@ function ReviewForm({
             type="submit"
             size="sm"
             className="h-7 px-3 text-xs"
-            disabled={empty || submitting}
+            disabled={empty || submitting || syncingDrafts}
           >
             {submitting ? "Submitting…" : "Submit review"}
           </Button>
@@ -459,7 +483,12 @@ function ConfirmDiscard({
           disabled={discarding}
           onClick={() => {
             // Deleting the drafts while they are being submitted would race the review.
-            if (isOut(keys.discard) || isOut(keys.submit)) return;
+            if (
+              pluginQueryClient.isMutating({ mutationKey: draftKey(pr) }) > 0 ||
+              isOut(keys.discard) ||
+              isOut(keys.submit)
+            )
+              return;
             discard.mutate({ account: pr.account, pullRequestId: pr.id });
           }}
         >

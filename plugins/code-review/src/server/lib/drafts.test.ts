@@ -469,6 +469,7 @@ test("a draft reply starts a pending review on the head when there is none", asy
 
   expect(await replyDraft(gh, { pullRequestId: PR, threadId: "PRRT_9", body: "Agreed." })).toEqual({
     commentId: "PRRC_reply",
+    pendingReview: { id: "PRR_new", draftCount: 1 },
   });
   expect(calls.slice(1)).toEqual([
     {

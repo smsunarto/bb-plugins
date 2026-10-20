@@ -19,7 +19,7 @@ test("writes a draft reply into the pending review", async () => {
       threadId: "T1",
       body: "Done.",
     }),
-  ).toEqual({ commentId: "C2" });
+  ).toEqual({ commentId: "C2", pendingReview: { id: "PRR_1", draftCount: 1 } });
   expect(calls[1]).toEqual({
     kind: "graphql",
     operation: "ReplyDraft",

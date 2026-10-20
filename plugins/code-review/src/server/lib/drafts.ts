@@ -314,7 +314,10 @@ export function replyDraft(
     })) as { addPullRequestReviewThreadReply: { comment: { id: string } | null } };
     const comment = data.addPullRequestReviewThreadReply.comment;
     if (!comment) throw new GhError("failed", "GitHub did not save the reply.");
-    return { commentId: comment.id };
+    return {
+      commentId: comment.id,
+      pendingReview: { id: reviewId, draftCount: (pending?.draftCount ?? 0) + 1 },
+    };
   });
 }
 
