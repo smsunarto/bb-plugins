@@ -244,6 +244,9 @@ async function fixture(withDigests = false) {
             state.sendError = false;
             throw new Error("socket hang up");
           }
+          // BB answers a missing or deleted sender with a 400.
+          if (input.senderThreadId && threads.get(input.senderThreadId)?.deletedAt !== null)
+            throw new Error("Sender thread is invalid");
           sent.push(input);
           return { ok: true as const, delivery: "sent" as const };
         },
@@ -849,9 +852,12 @@ test("Stop reconciles a successful host apply instead of reporting stopped", asy
 const owner = (f: Awaited<ReturnType<typeof fixture>>) =>
   f.sent.map((message) => ({
     threadId: message.threadId,
+    senderThreadId: message.senderThreadId,
     mode: message.mode,
     text: message.input[0]?.type === "text" ? message.input[0].text : "",
   }));
+const workerThread = (f: Awaited<ReturnType<typeof fixture>>, runId: string, role: string) =>
+  f.service.get(runId).jobs.findLast((job) => job.role === role)?.threadId;
 
 test("a completed run wakes its launching chat and a restart does not repeat it", async () => {
   const f = await fixture();
@@ -864,10 +870,50 @@ test("a completed run wakes its launching chat and a restart does not repeat it"
   const [message, ...rest] = owner(f);
   assert.deepEqual(rest, []);
   assert.equal(message?.threadId, f.parent.id);
+  assert.equal(message?.senderThreadId, workerThread(f, run.id, "synthesis"));
   assert.equal(message?.mode, "queue-if-active");
   assert.match(message?.text ?? "", new RegExp(`${run.id} completed: Verified and integrated`));
   await f.restart();
   assert.equal(f.sent.length, 1);
+});
+
+test("a wake comes from the newest Arena worker that still exists, never from the user", async () => {
+  const f = await fixture();
+  const run = await f.start();
+  await f.candidates(run.id);
+  await f.finish(run.id, "judge", judge);
+  let release: ((value: Integration) => void) | undefined;
+  f.state.integrationWait = new Promise((resolve) => {
+    release = resolve;
+  });
+  const pending = f.finish(run.id, "synthesis", synthesis);
+  await tick();
+  assert.equal(f.service.get(run.id).phase, "integrating");
+  f.threads.delete(workerThread(f, run.id, "synthesis") ?? "");
+  const judgeThread = f.threads.get(workerThread(f, run.id, "judge") ?? "");
+  if (judgeThread) judgeThread.deletedAt = Date.now();
+  release?.(f.state.integration);
+  await pending;
+  for (let i = 0; i < 5; i++) await tick();
+  const [message, ...rest] = owner(f);
+  assert.deepEqual(rest, []);
+  assert.equal(message?.senderThreadId, workerThread(f, run.id, "candidate"));
+});
+
+test("a run that fails before any worker starts still wakes its launching chat", async (ctx) => {
+  ctx.mock.timers.enable({ apis: ["setTimeout"] });
+  const f = await fixture();
+  f.state.offline = true;
+  const run = await f.start();
+  for (const delay of [5000, 10000, 20000]) {
+    ctx.mock.timers.tick(delay);
+    for (let i = 0; i < 10; i++) await tick();
+  }
+  assert.equal(f.service.get(run.id).phase, "failed");
+  assert.deepEqual(
+    owner(f).map((message) => message.senderThreadId),
+    [undefined],
+  );
 });
 
 test("a failed run wakes its launching chat and Stop does not", async () => {

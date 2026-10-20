@@ -194,9 +194,11 @@ export class ArenaService {
           run.integration?.summary ??
           "No reason was recorded.",
       });
+      const senderThreadId = await this.wakeSender(run);
       await this.bb.sdk.threads.send({
         threadId: run.parentThreadId,
         mode: "queue-if-active",
+        ...(senderThreadId && { senderThreadId }),
         input: [{ type: "text", text, mentions: [] }],
       });
     } catch (error) {
@@ -220,6 +222,23 @@ export class ArenaService {
     }
     run.ownerNotice = "sent";
     this.save(run);
+  }
+
+  /**
+   * BB shows a send without a sender as the user typing it. The newest live worker makes the wake
+   * an agent message instead. BB rejects a deleted sender, so deleted workers are skipped.
+   */
+  private async wakeSender(run: ArenaRun) {
+    for (const job of run.jobs.toReversed()) {
+      if (!job.threadId) continue;
+      try {
+        const thread = await this.bb.sdk.threads.get({ threadId: job.threadId });
+        if (thread.deletedAt === null) return thread.id;
+      } catch (error) {
+        if (!missing(error)) throw error;
+      }
+    }
+    return undefined;
   }
 
   private serial<T>(id: string, work: () => Promise<T>): Promise<T> {
