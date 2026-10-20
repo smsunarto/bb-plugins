@@ -61,7 +61,19 @@ const fallbackAgent: AgentSelection = {
   reasoningLevel: "high",
 };
 const StudioLocation = createContext<(gameId?: string, tab?: Tab) => void>(() => {});
-let pendingOpen: { game: Game; threadId: string | null } | null = null;
+let pendingOpen: { game: Game; threadId: string | null; tab?: Tab } | null = null;
+/**
+ * The tab a launcher asked the game's panel to show. It travels beside the panel params, because
+ * BB opens a separate panel tab for each distinct params value.
+ */
+let requestedTab: { gameId: string; tab: Tab } | null = null;
+const tabRequests = new EventTarget();
+function takeRequestedTab(gameId: string | undefined) {
+  if (!gameId || requestedTab?.gameId !== gameId) return undefined;
+  const { tab } = requestedTab;
+  requestedTab = null;
+  return tab;
+}
 
 export function Notice({ children }: { children: ReactNode }) {
   return (
@@ -110,6 +122,10 @@ function NativeComposerBridge() {
     if (!navigate.openThreadPanel({ actionId: panelActionId, params: { gameId: pending.game.id } }))
       return;
     pendingOpen = null;
+    if (pending.tab) {
+      requestedTab = { gameId: pending.game.id, tab: pending.tab };
+      tabRequests.dispatchEvent(new Event("change"));
+    }
     if (scope.kind === "new-thread") {
       void selectGameCheckout(composer, pending.game).catch((cause) => setError(message(cause)));
     }
@@ -696,21 +712,32 @@ function StudioPanel({
   const overview = rpc.overview.useQuery({}, { refetchInterval: 15_000 });
   const sidebar = useSidebarThreads();
   const thread = sidebar.threads.find((item) => item.id === threadId);
-  const paramGame =
-    params &&
-    typeof params === "object" &&
-    !Array.isArray(params) &&
-    typeof params.gameId === "string"
-      ? params.gameId
-      : undefined;
+  const record = params && typeof params === "object" && !Array.isArray(params) ? params : {};
+  const paramGame = typeof record.gameId === "string" ? record.gameId : undefined;
   const matchingGame =
     overview.data?.games.find(
       (game) => game.threadId === threadId || (thread && sameCheckout(game, thread)),
     ) ?? overview.data?.games.find((game) => game.projectId === projectId);
   const [location, setLocation] = useState<{ gameId?: string; tab?: Tab } | null>(
-    paramGame ? { gameId: paramGame } : null,
+    // Peek only: the effect below consumes the request, so a double-run initializer cannot lose it.
+    paramGame
+      ? {
+          gameId: paramGame,
+          tab: requestedTab?.gameId === paramGame ? requestedTab.tab : undefined,
+        }
+      : null,
   );
   const gameId = location ? location.gameId : matchingGame?.id;
+  // An already-open panel follows a later request, such as Open Evidence from the viewer.
+  useEffect(() => {
+    const follow = () => {
+      const tab = takeRequestedTab(gameId);
+      if (tab) setLocation({ gameId, tab });
+    };
+    follow();
+    tabRequests.addEventListener("change", follow);
+    return () => tabRequests.removeEventListener("change", follow);
+  }, [gameId]);
   const tab = location?.tab ?? (gameId ? lastTab(gameId) : "unity");
   const openGame = useCallback(
     (id?: string, next?: Tab) => setLocation({ gameId: id, tab: next }),
@@ -756,7 +783,7 @@ function StudioLauncher({ subPath }: PluginNavPanelProps) {
   const navigate = useBbNavigate();
   const [error, setError] = useState("");
   const open = useCallback(
-    async (gameId?: string) => {
+    async (gameId?: string, tab?: Tab) => {
       if (!gameId) return;
       try {
         const { game } = await client.get({ gameId });
@@ -767,7 +794,7 @@ function StudioLauncher({ subPath }: PluginNavPanelProps) {
             !item.isHidden &&
             sameCheckout(game, item),
         );
-        pendingOpen = { game, threadId: thread?.id ?? null };
+        pendingOpen = { game, threadId: thread?.id ?? null, tab };
         if (thread) navigate.toThread(thread.id);
         else navigate.toCompose({ focusPrompt: true });
       } catch (cause) {
@@ -776,14 +803,15 @@ function StudioLauncher({ subPath }: PluginNavPanelProps) {
     },
     [client, sidebar.threads, navigate],
   );
-  const requestedGame = subPath.split("/").find(Boolean);
+  const [requestedGame, section] = subPath.split("/").filter(Boolean);
+  const requestedTab = tabs.find((entry) => entry.id === section)?.id;
   const opening = useRef(false);
   useEffect(() => {
     if (requestedGame && !opening.current) {
       opening.current = true;
-      void open(requestedGame);
+      void open(requestedGame, requestedTab);
     }
-  }, [requestedGame, open]);
+  }, [requestedGame, requestedTab, open]);
   const openGame = useCallback((gameId?: string) => void open(gameId), [open]);
   return (
     <StudioLocation.Provider value={openGame}>

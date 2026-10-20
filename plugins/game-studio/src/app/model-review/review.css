@@ -1,3 +1,4 @@
+/* Full viewer */
 .gs-model-review-page {
   height: 100%;
   min-height: 0;
@@ -5,238 +6,591 @@
   flex-direction: column;
 }
 .gs-review-header {
+  min-height: 52px;
+  flex-shrink: 0;
   display: flex;
-  gap: 16px;
   align-items: center;
-  padding: 16px 20px;
-  border-bottom: 1px solid var(--border);
-  flex-wrap: wrap;
+  gap: 10px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border-hairline);
 }
-.gs-review-header h1 {
-  margin: 0;
-  font-size: 18px;
-}
-.gs-review-header small {
+.gs-app .gs-review-back {
+  background: transparent;
+  border-color: transparent;
   color: var(--muted-foreground);
-  overflow-wrap: anywhere;
+  padding: 4px 8px 4px 6px;
 }
-.gs-review-header > span {
-  margin-left: auto;
-  font-size: 12px;
+.gs-app .gs-review-back:hover:not(:disabled) {
+  color: var(--foreground);
+}
+.gs-review-title {
+  min-width: 0;
+  display: grid;
+  gap: 1px;
+}
+.gs-review-title h1 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.3;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.gs-review-title small {
+  color: var(--muted-foreground);
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.gs-review-title code,
+.gs-review-code code {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 11px;
 }
 .gs-review-layout {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 260px;
-  min-height: 0;
   flex: 1;
-  overflow: auto;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 272px;
 }
 .gs-review-workspace {
+  min-width: 0;
+  min-height: 0;
   display: flex;
   flex-direction: column;
-  min-width: 0;
-  min-height: 560px;
 }
+
+/* Toolbar */
 .gs-review-toolbar {
+  min-height: 46px;
+  flex-shrink: 0;
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 8px;
-  padding: 10px 14px;
-  border-bottom: 1px solid var(--border);
+  gap: 6px;
+  padding: 7px 10px;
+  border-bottom: 1px solid var(--border-hairline);
 }
-.gs-app .gs-review-toolbar label {
+.gs-app .gs-review-toolbar > button {
+  min-height: 30px;
+  padding: 4px 10px 4px 8px;
+  font-size: 12px;
+}
+.gs-review-toolbar svg,
+.gs-review-sidebar svg,
+.gs-review-notice svg,
+.gs-review-code svg {
+  width: 14px;
+  height: 14px;
+}
+.gs-app .gs-review-toolbar .gs-segment button {
+  min-width: 30px;
+  text-transform: none;
+}
+.gs-review-spacer {
+  flex: 1;
+}
+.gs-app .gs-review-toggle-button[aria-pressed="true"] {
+  background: var(--surface-selected);
+  border-color: var(--surface-selected-border, var(--border));
+}
+
+/* Stage: its background is the render's clear colour. */
+.gs-review-stage {
+  position: relative;
+  flex: 1;
+  min-height: 320px;
+  overflow: hidden;
+  background: var(--surface-recessed-solid, var(--background));
+}
+.gs-review-stage canvas {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+/* Recording frame, drawn above the canvas. */
+.gs-review-stage[data-capturing="true"]::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  border: 2px solid color-mix(in srgb, var(--ansi-1) 70%, transparent);
+  pointer-events: none;
+}
+.gs-review-overlay {
+  position: absolute;
+  z-index: 1;
+  font-size: 12px;
+}
+.gs-review-chip,
+.gs-review-capture,
+.gs-review-notice {
   display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 10px;
+  border: 1px solid var(--border-hairline);
+  border-radius: 8px;
+  background: var(--popover);
+  color: var(--foreground);
+}
+.gs-review-chip {
+  top: 12px;
+  left: 12px;
+  max-width: calc(100% - 24px);
+  flex-wrap: wrap;
+  pointer-events: none;
+}
+.gs-review-chip strong {
+  font-weight: 600;
+}
+.gs-review-chip > span {
+  color: var(--muted-foreground);
+  font-variant-numeric: tabular-nums;
+}
+.gs-review-legend {
+  display: inline-flex;
   align-items: center;
   gap: 6px;
 }
-.gs-review-stage {
-  flex: 1;
-  min-height: 360px;
-  position: relative;
-  background: var(--background);
-  overflow: hidden;
+.gs-review-legend small {
+  font-size: 11px;
 }
-.gs-review-stage canvas {
-  display: block;
+.gs-review-legend i {
+  width: 64px;
+  height: 6px;
+  border-radius: 3px;
+  /* Diagnostic channels render as raw values from 0 (black) to 1 (white). */
+  background: linear-gradient(90deg, #000, #fff);
+  border: 1px solid var(--border-hairline);
+}
+.gs-review-legend[data-scale="heat"] i {
+  background: linear-gradient(90deg, var(--ansi-4), var(--ansi-1));
+}
+.gs-review-capture {
+  top: 12px;
+  right: 12px;
+  overflow: hidden;
+  font-variant-numeric: tabular-nums;
+}
+.gs-review-progress {
+  position: absolute;
+  left: 0;
+  bottom: 0;
   width: 100%;
-  height: 100%;
+  height: 2px;
+  background: var(--ansi-1);
+  transform: scaleX(var(--done, 0));
+  transform-origin: left;
+  transition: transform 200ms ease-out;
+}
+.gs-app .gs-review-capture button,
+.gs-app .gs-review-notice button {
+  min-height: 26px;
+  padding: 2px 8px;
+  font-size: 12px;
+}
+.gs-review-rec {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--ansi-1);
+  animation: gs-review-rec 1.2s ease-in-out infinite alternate;
+}
+.gs-review-hint {
+  left: 12px;
+  bottom: 10px;
+  margin: 0;
+  color: var(--muted-foreground);
+  font-size: 11px;
+  pointer-events: none;
+}
+/* Bottom centre keeps clear of the hint and the UV layout inset. */
+.gs-review-notice {
+  left: 50%;
+  bottom: 12px;
+  max-width: calc(100% - 24px);
+  transform: translateX(-50%);
+}
+.gs-review-notice > span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.gs-review-notice[data-tone="error"] {
+  background: var(--surface-destructive, var(--popover));
+  border-color: var(--surface-destructive-border, var(--ansi-1));
+}
+.gs-review-center {
   position: absolute;
   inset: 0;
-}
-.gs-review-status {
-  min-height: 36px;
-  padding: 8px 14px;
   display: flex;
-  justify-content: space-between;
+  flex-direction: column;
   align-items: center;
-  color: var(--muted-foreground);
-  font-size: 12px;
-  border-top: 1px solid var(--border);
-}
-.gs-review-error {
-  color: var(--ansi-1);
-  padding: 8px 14px;
-}
-.gs-review-saved {
-  padding: 8px 14px;
-  color: var(--ansi-2);
-  overflow-wrap: anywhere;
-  font-size: 12px;
-}
-.gs-review-sidebar {
-  border-left: 1px solid var(--border);
-  padding: 14px;
-  overflow: auto;
-}
-.gs-review-sidebar h2 {
-  font-size: 13px;
-  margin: 18px 0 10px;
-}
-.gs-review-sidebar h2:first-child {
-  margin-top: 0;
-}
-.gs-review-sidebar h3 {
-  font-size: 12px;
-}
-.gs-review-modes {
-  display: grid;
-  gap: 3px;
-}
-.gs-app .gs-review-modes button {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 7px 9px;
-  text-align: left;
-  border: 1px solid transparent;
-}
-.gs-review-modes button[aria-pressed="true"] {
-  background: var(--accent);
-  border-color: var(--border);
-  color: var(--accent-foreground);
-}
-.gs-review-modes small {
-  color: var(--muted-foreground);
-  font-size: 10px;
-}
-.gs-review-animation {
-  border: 0;
-  padding: 0;
-  display: grid;
-  gap: 10px;
-  min-width: 0;
-}
-.gs-app .gs-review-sidebar label {
-  display: grid;
-  gap: 5px;
-  font-size: 12px;
-}
-.gs-review-sidebar select {
-  width: 100%;
-}
-.gs-review-animation input[type="range"] {
-  width: 100%;
-}
-.gs-review-stats {
-  display: grid;
-  grid-template-columns: auto 1fr;
+  justify-content: center;
   gap: 8px;
-  font-size: 11px;
-}
-.gs-review-stats dt {
+  padding: 24px;
   color: var(--muted-foreground);
+  text-align: center;
 }
-.gs-review-stats dd {
-  margin: 0;
-  text-align: right;
-  overflow-wrap: anywhere;
+.gs-review-center strong {
+  color: var(--foreground);
 }
-.gs-review-texture {
-  display: flex;
-  justify-content: space-between;
-  gap: 8px;
-  font-size: 11px;
-  overflow-wrap: anywhere;
+.gs-review-center > span {
+  max-width: 48ch;
 }
-.gs-review-texture small {
-  white-space: nowrap;
-  color: var(--muted-foreground);
+.gs-model-review-page > .gs-review-center {
+  position: static;
+  flex: 1;
 }
+.gs-review-spin {
+  animation: gs-review-spin 900ms linear infinite;
+}
+@keyframes gs-review-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@keyframes gs-review-rec {
+  to {
+    opacity: 0.35;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .gs-review-rec,
+  .gs-review-spin {
+    animation: none;
+  }
+}
+
+/* Shot script */
 .gs-review-code {
+  flex-shrink: 0;
   display: grid;
   gap: 10px;
-  padding: 14px;
-  border-top: 1px solid var(--border);
+  padding: 12px;
+  border-top: 1px solid var(--border-hairline);
 }
-.gs-review-code textarea {
-  width: 100%;
-  height: 230px;
-  font-family: monospace;
-  resize: vertical;
+.gs-review-code header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+.gs-review-code header > div {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
 }
 .gs-review-code small {
   color: var(--muted-foreground);
+  font-size: 12px;
 }
+.gs-app .gs-review-primary {
+  flex-shrink: 0;
+  background: var(--primary);
+  border-color: transparent;
+  color: var(--primary-foreground);
+}
+.gs-app .gs-review-primary:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--primary) 88%, var(--foreground));
+}
+.gs-app .gs-review-code textarea {
+  width: 100%;
+  height: 220px;
+  resize: vertical;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 12px;
+  line-height: 1.5;
+  tab-size: 2;
+}
+
+/* Sidebar */
+.gs-review-sidebar {
+  min-height: 0;
+  overflow: auto;
+  border-left: 1px solid var(--border-hairline);
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+}
+.gs-review-sidebar > section {
+  padding: 14px 12px 16px;
+}
+.gs-review-sidebar > section + section {
+  border-top: 1px solid var(--border-hairline);
+}
+/* Clears BB's floating action button over the panel's bottom corner. */
+.gs-review-sidebar > section:last-child {
+  padding-bottom: 72px;
+}
+.gs-review-sidebar h2 {
+  margin: 0 0 6px;
+  font-size: 13px;
+  font-weight: 600;
+}
+.gs-review-group {
+  display: grid;
+  gap: 1px;
+}
+.gs-review-group h3 {
+  margin: 12px 8px 4px;
+  color: var(--muted-foreground);
+  font-size: 11px;
+  font-weight: 500;
+}
+.gs-app .gs-review-mode {
+  justify-content: space-between;
+  min-height: 28px;
+  padding: 4px 8px;
+  border-color: transparent;
+  background: transparent;
+  font-size: 12px;
+  text-align: left;
+}
+.gs-app .gs-review-mode[aria-pressed="true"] {
+  background: var(--surface-selected);
+  border-color: var(--surface-selected-border, var(--border));
+  font-weight: 500;
+}
+.gs-app .gs-review-mode:disabled {
+  opacity: 1;
+  color: var(--muted-foreground);
+}
+.gs-review-mode small {
+  color: var(--muted-foreground);
+  font-size: 11px;
+  font-weight: 400;
+}
+.gs-review-mode kbd {
+  min-width: 18px;
+  padding: 0 4px;
+  border: 1px solid var(--border-hairline);
+  border-radius: 4px;
+  color: var(--muted-foreground);
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 10px;
+  line-height: 16px;
+  text-align: center;
+}
+.gs-app .gs-review-field {
+  display: grid;
+  gap: 4px;
+  margin: 8px 8px 2px;
+  color: var(--muted-foreground);
+  font-size: 11px;
+}
+.gs-app .gs-review-field select {
+  width: 100%;
+  color: var(--foreground);
+  font-size: 12px;
+}
+.gs-app .gs-review-icon {
+  width: 30px;
+  min-height: 30px;
+  flex-shrink: 0;
+  padding: 0;
+}
+
+/* Model facts beside the title */
+.gs-review-facts {
+  margin: 0 0 0 auto;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+  min-width: 0;
+}
+.gs-review-facts li {
+  padding: 3px 8px;
+  border: 1px solid var(--border-hairline);
+  border-radius: 6px;
+  background: var(--surface-recessed);
+  color: var(--muted-foreground);
+  font-size: 11px;
+  white-space: nowrap;
+}
+.gs-review-facts strong {
+  color: var(--foreground);
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Animation timeline under the stage */
+.gs-review-timeline {
+  flex-shrink: 0;
+  min-width: 0;
+  margin: 0;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 8px 10px 10px;
+  border: 0;
+  border-top: 1px solid var(--border-hairline);
+}
+.gs-app .gs-review-timeline select {
+  width: 200px;
+  max-width: 40%;
+  font-size: 12px;
+}
+.gs-review-scrub {
+  position: relative;
+  flex: 1 1 160px;
+  min-width: 120px;
+  display: grid;
+}
+.gs-app .gs-review-timeline input[type="range"] {
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  accent-color: var(--primary);
+}
+/* Ticks sit under the thumb's centre, which travels 8px inside each end of Chrome's track. */
+/* Hangs below the track so the slider stays on the row's centre line. */
+.gs-review-ruler {
+  position: absolute;
+  top: 100%;
+  left: 8px;
+  right: 8px;
+  height: 14px;
+}
+.gs-review-ruler span {
+  position: absolute;
+  top: 0;
+  left: calc(var(--at) * 100%);
+  padding-top: 4px;
+  color: var(--muted-foreground);
+  font-size: 10px;
+  line-height: 10px;
+  font-variant-numeric: tabular-nums;
+  transform: translateX(-50%);
+}
+.gs-review-ruler span::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 50%;
+  width: 1px;
+  height: 3px;
+  background: var(--border);
+}
+.gs-review-time {
+  min-width: 84px;
+  text-align: right;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.gs-review-time small {
+  color: var(--muted-foreground);
+}
+.gs-app .gs-review-timeline .gs-review-speed {
+  width: auto;
+  max-width: none;
+  padding: 5px 6px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Textures */
+.gs-review-textures h2 small {
+  margin-left: 4px;
+  color: var(--muted-foreground);
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
+}
+.gs-review-textures ul {
+  display: grid;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.gs-review-textures li {
+  display: grid;
+  grid-template-columns: 32px minmax(0, 1fr);
+  column-gap: 10px;
+  align-items: center;
+  padding: 4px 8px 4px 4px;
+}
+.gs-review-textures canvas {
+  grid-row: span 2;
+  width: 32px;
+  height: 32px;
+  border: 1px solid var(--border-hairline);
+  border-radius: 4px;
+  background: var(--surface-recessed);
+}
+.gs-review-textures canvas[data-empty="true"] {
+  opacity: 0;
+}
+.gs-review-textures li span {
+  overflow: hidden;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.gs-review-textures li small {
+  color: var(--muted-foreground);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Narrow panes stack the controls under the stage. */
+@container studio (max-width: 760px) {
+  .gs-review-layout {
+    display: block;
+    overflow: auto;
+  }
+  .gs-review-stage {
+    flex: none;
+    height: clamp(320px, 55vh, 520px);
+  }
+  .gs-review-sidebar {
+    overflow: visible;
+    border-left: 0;
+    border-top: 1px solid var(--border-hairline);
+  }
+  .gs-review-hint {
+    display: none;
+  }
+  /* Toolbar actions keep their names for assistive tech and tooltips, shown as icons only. */
+  .gs-review-toolbar .gs-review-label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+  .gs-app .gs-review-toolbar > button {
+    width: 30px;
+    padding: 0;
+  }
+  .gs-review-header {
+    flex-wrap: wrap;
+  }
+  .gs-review-facts {
+    width: 100%;
+    margin: 0;
+    justify-content: flex-start;
+  }
+}
+
+/* Canvas and Assets previews */
 .gs-review-preview {
   position: relative;
   width: 100%;
   height: 100%;
-  margin: 0;
   min-height: 100px;
-  background: var(--background);
-}
-.gs-review-preview > span {
-  position: absolute;
-  inset: 0;
-  display: grid;
-  place-items: center;
-  font-size: 11px;
-  padding: 15px;
-}
-.gs-review-preview .gs-open-model {
-  position: absolute;
-  right: 8px;
-  bottom: 8px;
-  z-index: 2;
-  font-size: 11px;
-  padding: 5px 8px;
-  background: var(--background);
-  color: var(--foreground);
-}
-.gs-review-preview canvas {
-  width: 100%;
-  height: 100%;
-  display: block;
-}
-@media (max-width: 800px) {
-  .gs-review-layout {
-    grid-template-columns: minmax(0, 1fr);
-  }
-  .gs-review-sidebar {
-    border-left: 0;
-    border-top: 1px solid var(--border);
-  }
-  .gs-review-modes {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-}
-
-.gs-app .gs-review-animation label:has(input[type="checkbox"]) {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-.gs-app .gs-review-animation input[type="checkbox"] {
-  width: auto;
-}
-
-.gs-node-media[data-model] .gs-review-preview {
-  position: absolute;
-  inset: 0;
-}
-.gs-review-preview {
+  margin: 0;
   overflow: hidden;
+  background: var(--background);
   cursor: grab;
 }
 .gs-review-preview:active {
@@ -245,7 +599,45 @@
 .gs-review-preview > canvas {
   position: absolute;
   inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+.gs-review-preview > span {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 15px;
+  color: var(--muted-foreground);
+  font-size: 11px;
+}
+.gs-app .gs-review-preview .gs-open-model {
+  position: absolute;
+  right: 8px;
+  bottom: 8px;
+  z-index: 2;
+  min-height: 26px;
+  padding: 3px 8px 3px 6px;
+  gap: 5px;
+  background: var(--popover);
+  border-color: var(--border-hairline);
+  color: var(--foreground);
+  font-size: 11px;
+}
+.gs-review-preview .gs-open-model svg {
+  width: 13px;
+  height: 13px;
+}
+.gs-node-media[data-model] .gs-review-preview {
+  position: absolute;
+  inset: 0;
 }
 .gs-asset-large .gs-review-preview {
   height: 240px;
+}
+.gs-review-toolbar fieldset.gs-segment,
+.gs-review-timeline fieldset.gs-segment {
+  min-width: 0;
+  margin: 0;
 }

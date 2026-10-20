@@ -63,3 +63,21 @@ test("a finish that fails once is retried for the same run instead of rendering 
   expect(saved.map((item) => item.action)).toEqual(["file", "finish", "finish"]);
   expect(new Set(saved.map((item) => item.runId))).toEqual(new Set([result.runId]));
 });
+
+test("progress only moves forward and reaches 1 once every shot is saved", async () => {
+  const shares: number[] = [];
+  const save = async (input: ModelEvidenceInput) => ({
+    runId: input.runId,
+    files: ["front.png", "top.png"],
+  });
+  await captureShots(
+    engine(true),
+    { ...script, shots: [script.shots[0]!, { name: "top", camera: "top" }] },
+    "canvas/model.glb",
+    "game",
+    save,
+    (_, done) => shares.push(done),
+    signal,
+  );
+  expect(shares).toEqual([0.5, 1, 1]);
+});

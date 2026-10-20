@@ -35,6 +35,11 @@ import {
   Workflow,
   Wrench,
   X,
+  Braces,
+  Maximize2,
+  Pause,
+  Repeat,
+  RotateCw,
 } from "lucide-react";
 import type { ExperimentalIconProps } from "@get-bb/plugin-sdk/app";
 
@@ -77,6 +82,11 @@ const icons = {
   Workflow,
   Wrench,
   X,
+  Braces,
+  Maximize2,
+  Pause,
+  Repeat,
+  RotateCw,
 };
 
 export { Joystick };

@@ -15,7 +15,8 @@ export async function captureShots(
   model: string,
   gameId: string,
   save: (input: ModelEvidenceInput) => Promise<CaptureResult>,
-  progress: (message: string) => void,
+  /** `done` is the share of the script rendered so far, from 0 to 1. */
+  progress: (message: string, done: number) => void,
   signal: AbortSignal,
 ): Promise<CaptureResult> {
   const script = parseShotScript(raw);
@@ -40,12 +41,18 @@ export async function captureShots(
   const runId = crypto.randomUUID();
   engine.resize(script.width, script.height);
   try {
-    for (const shot of script.shots) {
+    for (const [index, shot] of script.shots.entries()) {
       signal.throwIfAborted();
       engine.view(shot);
+      const share = (part: number) => (index + part) / script.shots.length;
       let blob: Blob;
       if (shot.video) {
-        blob = await encodeVideo(engine, { name: shot.name, video: shot.video }, progress, signal);
+        blob = await encodeVideo(
+          engine,
+          { name: shot.name, video: shot.video },
+          (message, part) => progress(message, share(part)),
+          signal,
+        );
       } else {
         engine.renderAt(0);
         blob = await engine.png();
@@ -55,7 +62,7 @@ export async function captureShots(
           "Capture exceeds 25 MiB. Reduce duration, resolution, or split the recording.",
         );
       signal.throwIfAborted();
-      progress(`Saving ${shot.name}…`);
+      progress(`Saving ${shot.name}…`, share(1));
       const content = await new Promise<string>((resolve, reject) => {
         const reader = new FileReader();
         reader.addEventListener("load", () => resolve(String(reader.result).split(",")[1]!), {
@@ -86,11 +93,11 @@ export async function captureShots(
     for (let attempt = 1; ; attempt++) {
       try {
         const result = await save(finish);
-        progress(`Saved ${result.files.length} captures to Evidence`);
+        progress(`Saved ${result.files.length} captures to Evidence`, 1);
         return result;
       } catch (error) {
         if (attempt === 3 || /Model changed|different/.test(String(error))) throw error;
-        progress("Retrying Evidence update…");
+        progress("Retrying Evidence update…", 1);
         await new Promise((resolve) => setTimeout(resolve, attempt * 500));
       }
     }
@@ -102,7 +109,7 @@ export async function captureShots(
 async function encodeVideo(
   engine: ReviewEngine,
   shot: { name: string; video: NonNullable<ShotScript["shots"][number]["video"]> },
-  progress: (message: string) => void,
+  progress: (message: string, done: number) => void,
   signal: AbortSignal,
 ): Promise<Blob> {
   const { fps, turntable } = shot.video;
@@ -121,9 +128,11 @@ async function encodeVideo(
     await output.start();
     for (let frame = 0; frame < count; frame++) {
       signal.throwIfAborted();
-      engine.renderAt(frameTime(frame, fps), turntable ? (frame / count) * Math.PI * 2 : 0);
+      engine.renderAt(frameTime(frame, fps), turntable ? (frame / count) * Math.PI * 2 : undefined);
       await video.add(frameTime(frame, fps), 1 / fps);
-      if (frame % fps === 0) progress(`${shot.name}: ${frame + 1}/${count} frames`);
+      // Four updates per second of video keep the progress bar moving without a render per frame.
+      if (frame % Math.ceil(fps / 4) === 0)
+        progress(`Recording ${shot.name} · frame ${frame + 1} of ${count}`, frame / count);
     }
     await output.finalize();
     if (!target.buffer) throw new Error("Video encoder returned no output");

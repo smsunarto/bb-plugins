@@ -253,12 +253,15 @@ export class ReviewEngine {
   private bones: T.Bone[] = [];
   private action: T.AnimationAction | null = null;
   private uv: T.CanvasTexture | null = null;
+  private textures = new Map<string, T.Texture>();
   private layout: ReturnType<typeof uvLayout> | null = null;
   private layoutShown = false;
   private environment: T.WebGLRenderTarget;
   private disposed = false;
   private fixedSize = false;
   private radius = 1;
+  /** The model's bind-pose bounds after centring. */
+  private box = new T.Box3();
   private viewState: View = { mode: "shaded" };
   private wireOverlay = false;
   private background: T.Color;
@@ -362,6 +365,7 @@ export class ReviewEngine {
     this.radius = Math.max(bounds.getSize(new T.Vector3()).length() / 2, 0.001);
     // Center in a parent, preserving animation tracks on the original scene root.
     this.model.position.sub(bounds.getCenter(new T.Vector3()));
+    this.box = bounds.clone().translate(this.model.position);
     this.model.updateMatrixWorld(true);
     const materials = new Set<T.Material>();
     const textures = new Set<T.Texture>();
@@ -392,6 +396,7 @@ export class ReviewEngine {
     if (!this.meshes.length) throw new Error("Model contains no meshes");
     this.stats.meshes = this.meshes.length;
     this.stats.materials = materials.size;
+    for (const texture of textures) this.textures.set(texture.uuid, texture);
     this.stats.textures = [...textures].map((texture) => ({
       id: texture.uuid,
       name: texture.name || texture.uuid.slice(0, 8),
@@ -538,16 +543,49 @@ export class ReviewEngine {
     });
     this.helpers.clear();
   }
-  private preset(preset: CameraPreset) {
-    const aspect = this.camera.aspect;
-    const distance =
-      (this.radius / Math.sin(T.MathUtils.degToRad(this.camera.fov / 2)) / Math.min(1, aspect)) *
-      1.15;
+  /**
+   * Fits the model's bind-pose box from a preset direction. A turntable or an animated view fits
+   * its sphere instead, so neither a turn nor a pose that leaves the bind box clips it.
+   */
+  private preset(preset: CameraPreset, turning = false) {
+    const half = T.MathUtils.degToRad(this.camera.fov / 2);
+    const tall = Math.tan(half);
+    const wide = tall * this.camera.aspect;
     this.controls.target.set(0, 0, 0);
-    this.camera.position.fromArray(directions[preset]).normalize().multiplyScalar(distance);
+    this.camera.position.fromArray(directions[preset]).normalize();
+    this.camera.lookAt(0, 0, 0);
+    let distance = (this.radius / Math.sin(half) / Math.min(1, this.camera.aspect)) * 1.05;
+    if (!turning && !this.viewState.animation) {
+      const toCamera = this.camera.quaternion.clone().invert();
+      const { min, max } = this.box;
+      distance = 0;
+      for (const x of [min.x, max.x])
+        for (const y of [min.y, max.y])
+          for (const z of [min.z, max.z]) {
+            const corner = new T.Vector3(x, y, z).applyQuaternion(toCamera);
+            distance = Math.max(
+              distance,
+              Math.abs(corner.x) / wide + corner.z,
+              Math.abs(corner.y) / tall + corner.z,
+            );
+          }
+      distance *= 1.12;
+    }
+    this.camera.position.multiplyScalar(distance);
     this.controls.update();
   }
-  renderAt(time: number, turn = 0) {
+  /** Backs the camera out along its view line until no turn about the target can clip the model. */
+  private clearTurn() {
+    const half = T.MathUtils.degToRad(this.camera.fov / 2);
+    // Every vertex lies within this reach of the target, wherever the view was panned.
+    const reach = this.radius + this.controls.target.length();
+    const safe = (reach / Math.sin(half) / Math.min(1, this.camera.aspect)) * 1.05;
+    const offset = this.camera.position.clone().sub(this.controls.target);
+    if (offset.length() < safe)
+      this.camera.position.copy(this.controls.target).addScaledVector(offset.normalize(), safe);
+  }
+  /** `turn` is a turntable's angle; any number, including 0, frames for a full turn. */
+  renderAt(time: number, turn?: number) {
     const animation = this.viewState.animation;
     if (animation) {
       const clip = this.clips.find((item) => item.name === animation.clip);
@@ -573,10 +611,12 @@ export class ReviewEngine {
     for (const helper of this.helpers.children)
       if (helper.userData.bone instanceof T.Bone)
         helper.position.copy(helper.userData.bone.getWorldPosition(new T.Vector3()));
-    if (turn) {
+    if (turn !== undefined) {
       const preset = this.viewState.camera ?? "three-quarter";
-      if (this.viewState.orbit) this.applyOrbit(this.viewState.orbit);
-      else this.preset(preset);
+      if (this.viewState.orbit) {
+        this.applyOrbit(this.viewState.orbit);
+        this.clearTurn();
+      } else this.preset(preset, true);
       this.camera.position
         .sub(this.controls.target)
         .applyAxisAngle(new T.Vector3(0, 1, 0), turn)
@@ -640,6 +680,18 @@ export class ReviewEngine {
     this.camera.updateProjectionMatrix();
     if (width) this.preset(this.viewState.camera ?? "three-quarter");
     this.render();
+  }
+  /** Draws a texture's source image stretched over `canvas`; false when it has no drawable image. */
+  drawTexture(id: string, canvas: HTMLCanvasElement) {
+    const image = this.textures.get(id)?.image as CanvasImageSource | undefined;
+    const context = canvas.getContext("2d");
+    if (!image || !context) return false;
+    try {
+      context.drawImage(image, 0, 0, canvas.width, canvas.height);
+      return true;
+    } catch {
+      return false;
+    }
   }
   async png() {
     this.render();

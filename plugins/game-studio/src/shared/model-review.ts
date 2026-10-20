@@ -1,11 +1,13 @@
 import { z } from "zod";
 
+/** Review modes in sidebar order, grouped by what they inspect. */
 export const reviewModes = [
-  { id: "shaded", label: "Shaded", key: "1", kind: "shaded", needs: null },
+  { id: "shaded", label: "Shaded", key: "1", group: "surface", kind: "shaded", needs: null },
   {
     id: "base-color",
     label: "Base color",
     key: "2",
+    group: "surface",
     kind: "color",
     map: "map",
     factor: "color",
@@ -15,6 +17,7 @@ export const reviewModes = [
     id: "normal-map",
     label: "Normal map",
     key: "3",
+    group: "surface",
     kind: "color",
     map: "normalMap",
     needs: "normalMap",
@@ -22,6 +25,7 @@ export const reviewModes = [
   {
     id: "metallic",
     label: "Metallic",
+    group: "surface",
     kind: "scalar",
     map: "metalnessMap",
     factor: "metalness",
@@ -31,30 +35,82 @@ export const reviewModes = [
   {
     id: "roughness",
     label: "Roughness",
+    group: "surface",
     kind: "scalar",
     map: "roughnessMap",
     factor: "roughness",
     channel: 1,
     needs: null,
   },
-  { id: "occlusion", label: "Occlusion", kind: "scalar", map: "aoMap", channel: 0, needs: "aoMap" },
+  {
+    id: "occlusion",
+    label: "Occlusion",
+    group: "surface",
+    kind: "scalar",
+    map: "aoMap",
+    channel: 0,
+    needs: "aoMap",
+  },
   {
     id: "emissive",
     label: "Emissive",
+    group: "surface",
     kind: "color",
     map: "emissiveMap",
     factor: "emissive",
     needs: null,
   },
-  { id: "normals", label: "Vertex normals", kind: "normals", flat: false, needs: "normals" },
-  { id: "geometric-normals", label: "Geometric normals", kind: "normals", flat: true, needs: null },
-  { id: "wireframe", label: "Wireframe", key: "4", kind: "wireframe", overlay: false, needs: null },
-  { id: "topology", label: "Topology overlay", kind: "wireframe", overlay: true, needs: null },
-  { id: "uv", label: "UV checker", key: "5", kind: "uv", layout: false, needs: "uv" },
-  { id: "uv-layout", label: "UV layout", kind: "uv", layout: true, needs: "uv" },
-  { id: "skeleton", label: "Skeleton", key: "6", kind: "skeleton", needs: "skin" },
-  { id: "weights", label: "Skin weights", key: "7", kind: "weights", needs: "skin" },
-  { id: "bounds", label: "Bounds / scale", key: "8", kind: "bounds", needs: null },
+  {
+    id: "wireframe",
+    label: "Wireframe",
+    key: "4",
+    group: "geometry",
+    kind: "wireframe",
+    overlay: false,
+    needs: null,
+  },
+  {
+    id: "topology",
+    label: "Topology overlay",
+    group: "geometry",
+    kind: "wireframe",
+    overlay: true,
+    needs: null,
+  },
+  {
+    id: "normals",
+    label: "Vertex normals",
+    group: "geometry",
+    kind: "normals",
+    flat: false,
+    needs: "normals",
+  },
+  {
+    id: "geometric-normals",
+    label: "Face normals",
+    group: "geometry",
+    kind: "normals",
+    flat: true,
+    needs: null,
+  },
+  {
+    id: "bounds",
+    label: "Bounds and scale",
+    key: "8",
+    group: "geometry",
+    kind: "bounds",
+    needs: null,
+  },
+  { id: "uv", label: "UV checker", key: "5", group: "uv", kind: "uv", layout: false, needs: "uv" },
+  { id: "uv-layout", label: "UV layout", group: "uv", kind: "uv", layout: true, needs: "uv" },
+  { id: "skeleton", label: "Skeleton", key: "6", group: "rig", kind: "skeleton", needs: "skin" },
+  { id: "weights", label: "Skin weights", key: "7", group: "rig", kind: "weights", needs: "skin" },
+] as const;
+export const modeGroups = [
+  { id: "surface", label: "Surface" },
+  { id: "geometry", label: "Geometry" },
+  { id: "uv", label: "UVs" },
+  { id: "rig", label: "Rig" },
 ] as const;
 export type ReviewMode = (typeof reviewModes)[number]["id"];
 export type ModelFacts = {
@@ -76,6 +132,15 @@ export function modeAvailability(facts: ModelFacts) {
     ...mode,
     reason: mode.needs && !facts[mode.needs] ? reasons[mode.needs] : null,
   }));
+}
+/** Labelled ruler times for a clip: fewer than seven, on a round step. */
+export function rulerTicks(duration: number) {
+  const step =
+    [0.1, 0.25, 0.5, 1, 2, 5, 10, 30, 60].find((value) => duration / value < 6) ??
+    Math.ceil(duration / 5);
+  return Array.from({ length: Math.floor(duration / step + 1e-6) + 1 }, (_, index) =>
+    Number((index * step).toFixed(2)),
+  );
 }
 export const cameras = ["front", "back", "left", "right", "top", "three-quarter"] as const;
 export type CameraPreset = (typeof cameras)[number];

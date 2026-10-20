@@ -1,16 +1,18 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
-import type { ReactNode } from "react";
+import type { CSSProperties, ReactNode, RefObject } from "react";
 import { useBbNavigate } from "@get-bb/plugin-sdk/app";
 import {
   animationTime,
-  cameras,
   modeAvailability,
+  modeGroups,
   parseShotScript,
   reviewModes,
+  rulerTicks,
   shotSchema,
   type CameraPreset,
   type ReviewMode,
 } from "../../shared/model-review.ts";
+import { Icon } from "../icons.tsx";
 import { rpc } from "../rpc.ts";
 import { captureShots, type CaptureResult } from "./capture.ts";
 import { ReviewEngine, type ModelStats, type View } from "./engine.ts";
@@ -109,7 +111,8 @@ export function ModelPreview({
             });
           }}
         >
-          Open in viewer ↗
+          <Icon name="Maximize2" />
+          Open in viewer
         </button>
       )}
     </figure>
@@ -139,12 +142,48 @@ declare global {
   }
 }
 const causeMessage = (error: unknown) => (error instanceof Error ? error.message : String(error));
+/** Toolbar order and labels; the record type makes a new preset in `cameras` fail to compile here. */
+const cameraLabels: Record<CameraPreset, string> = {
+  "three-quarter": "¾",
+  front: "Front",
+  back: "Back",
+  left: "Left",
+  right: "Right",
+  top: "Top",
+};
+const cameraPresets = Object.entries(cameraLabels) as [CameraPreset, string][];
+/** What a false-colour mode's dark and bright ends mean. */
+const legends: Partial<Record<ReviewMode, { low: string; high: string; scale: "grey" | "heat" }>> =
+  {
+    metallic: { low: "Dielectric", high: "Metal", scale: "grey" },
+    roughness: { low: "Smooth", high: "Rough", scale: "grey" },
+    occlusion: { low: "Occluded", high: "Open", scale: "grey" },
+    weights: { low: "No influence", high: "Full", scale: "heat" },
+  };
+const speeds = [0.25, 0.5, 1, 2, 4];
+function TextureThumb({ id, engine }: { id: string; engine: RefObject<ReviewEngine | null> }) {
+  const canvas = useRef<HTMLCanvasElement>(null);
+  const [drawn, setDrawn] = useState(true);
+  useEffect(() => {
+    if (canvas.current) setDrawn(engine.current?.drawTexture(id, canvas.current) ?? false);
+  }, [id, engine]);
+  return <canvas ref={canvas} width={64} height={64} data-empty={!drawn} aria-hidden />;
+}
+function counted(value: number, one: string, many = `${one}s`) {
+  return (
+    <>
+      <strong>{value.toLocaleString()}</strong> {value === 1 ? one : many}
+    </>
+  );
+}
 export function ModelReviewPage({ gameId, path }: { gameId: string; path: string }) {
   const preview = rpc.preview.useQuery(
     { gameId },
     { staleTime: 45 * 60_000, refetchInterval: 45 * 60_000 },
   );
   const game = rpc.get.useQuery({ gameId }, { retry: false });
+  const [loaded, setLoaded] = useState<{ model: string; stats: ModelStats } | null>(null);
+  const stats = loaded?.model === `${gameId}:${path}` ? loaded.stats : null;
   const navigate = useBbNavigate();
   const url = preview.data
     ? `${preview.data.baseUrl.replace(/\/$/, "")}/${path.split("/").map(encodeURIComponent).join("/")}`
@@ -159,22 +198,50 @@ export function ModelReviewPage({ gameId, path }: { gameId: string; path: string
   return (
     <main className="gs-app gs-model-review-page">
       <header className="gs-review-header">
-        <button onClick={() => navigate.toPluginPanel("studio", { subPath: gameId })}>
-          ← Studio
+        <button
+          className="gs-review-back"
+          onClick={() => navigate.toPluginPanel("studio", { subPath: gameId })}
+        >
+          <Icon name="ArrowLeft" />
+          Studio
         </button>
-        <div>
+        <div className="gs-review-title">
           <h1>{path.split("/").pop()}</h1>
           <small>
-            {game.data?.game.name ?? "Model review"} · {path}
+            {game.data ? `${game.data.game.name} · ` : ""}
+            <code>{path}</code>
           </small>
         </div>
-        <span className="gs-muted">Drag to orbit · Wheel to zoom · Right-drag to pan</span>
+        {stats && (
+          <ul className="gs-review-facts" aria-label="Model stats">
+            <li>{counted(stats.triangles, "triangle")}</li>
+            <li>{counted(stats.vertices, "vertex", "vertices")}</li>
+            <li>
+              {counted(stats.meshes, "mesh", "meshes")} · {counted(stats.materials, "material")}
+            </li>
+            <li>{counted(stats.joints.length, "joint")}</li>
+            <li>{counted(stats.clips.length, "clip")}</li>
+            <li>
+              <strong>{stats.dimensions.map((value) => value.toFixed(2)).join(" × ")}</strong> m ·
+              +Z forward
+            </li>
+          </ul>
+        )}
       </header>
       {url ? (
         // A refreshed lease must not reload a model that is already open, or abort its capture.
-        <FullViewer key={`${gameId}:${path}`} gameId={gameId} path={path} leasedUrl={url} />
+        <FullViewer
+          key={`${gameId}:${path}`}
+          gameId={gameId}
+          path={path}
+          leasedUrl={url}
+          onLoad={(stats) => setLoaded({ model: `${gameId}:${path}`, stats })}
+        />
       ) : (
-        <output>Opening model…</output>
+        <div className="gs-review-center">
+          <Icon name="LoaderCircle" className="gs-review-spin" />
+          Opening model…
+        </div>
       )}
     </main>
   );
@@ -183,18 +250,24 @@ function FullViewer({
   gameId,
   path,
   leasedUrl,
+  onLoad,
 }: {
   gameId: string;
   path: string;
   leasedUrl: string;
+  onLoad: (stats: ModelStats) => void;
 }) {
   // The model is read once; later leases only matter to a later viewer.
   const [url] = useState(leasedUrl);
+  // The page's callback changes each render; loading must still run once per model.
+  const reportLoad = useRef(onLoad);
+  reportLoad.current = onLoad;
   const host = useRef<HTMLDivElement>(null);
   const engine = useRef<ReviewEngine | null>(null);
   const [stats, setStats] = useState<ModelStats | null>(null);
   const [error, setError] = useState("");
-  const [status, setStatus] = useState("Loading model…");
+  const [captureStatus, setCaptureStatus] = useState("");
+  const [progress, setProgress] = useState(0);
   const [mode, setMode] = useState<ReviewMode>("shaded");
   const [camera, setCamera] = useState<CameraPreset>("three-quarter");
   const [joint, setJoint] = useState(0);
@@ -216,6 +289,7 @@ function FullViewer({
   const captureController = useRef<AbortController | null>(null);
   const life = useRef(true);
   const client = rpc.useClient();
+  const navigate = useBbNavigate();
   const currentView = useRef<View>({ mode });
   const previousCamera = useRef<CameraPreset>("three-quarter");
   currentView.current = {
@@ -233,7 +307,6 @@ function FullViewer({
       engine.current = loaded;
     } catch (error) {
       setError(causeMessage(error));
-      setStatus("");
       return;
     }
     void loaded
@@ -241,15 +314,12 @@ function FullViewer({
       .then((loadedStats) => {
         if (life.current && loadedStats) {
           setStats({ ...loadedStats });
-          setStatus("");
+          reportLoad.current(loadedStats);
         }
         return undefined;
       })
       .catch((error) => {
-        if (life.current) {
-          setError(causeMessage(error));
-          setStatus("");
-        }
+        if (life.current) setError(causeMessage(error));
       });
     return () => {
       life.current = false;
@@ -277,7 +347,10 @@ function FullViewer({
     const tick = (now: number) => {
       start ??= now;
       const elapsed = (now - start) / 1000;
-      engine.current?.renderAt(playing ? elapsed : 0, turntable ? (elapsed * Math.PI) / 5 : 0);
+      engine.current?.renderAt(
+        playing ? elapsed : 0,
+        turntable ? (elapsed * Math.PI) / 5 : undefined,
+      );
       if (playing && clip) {
         const duration = stats.clips.find((item) => item.name === clip)!.duration;
         playheadRef.current = animationTime(time + elapsed * speed, duration, loop);
@@ -305,7 +378,6 @@ function FullViewer({
         parsed = parseShotScript(raw);
       } catch (error) {
         setError(causeMessage(error));
-        setStatus("");
         throw error;
       }
       lock.current = true;
@@ -319,6 +391,8 @@ function FullViewer({
       setPlaying(false);
       setTurntable(false);
       setResult(null);
+      setCaptureStatus("");
+      setProgress(0);
       const controller = new AbortController();
       captureController.current = controller;
       const renderer = engine.current;
@@ -330,18 +404,17 @@ function FullViewer({
           path,
           gameId,
           (input) => client.modelEvidence(input),
-          (value) => {
-            if (life.current) setStatus(value);
+          (value, done) => {
+            if (!life.current) return;
+            setCaptureStatus(value);
+            setProgress(done);
           },
           controller.signal,
         );
         if (life.current) setResult(captured);
         return captured;
       } catch (error) {
-        if (life.current) {
-          setError(causeMessage(error));
-          setStatus("");
-        }
+        if (life.current) setError(causeMessage(error));
         throw error;
       } finally {
         lock.current = false;
@@ -402,7 +475,8 @@ function FullViewer({
         event.preventDefault();
         setMode(selected.id);
       }
-      if (event.code === "Space" && clip) {
+      // Space on a focused button is that button's own activation.
+      if (event.code === "Space" && clip && !(event.target instanceof HTMLButtonElement)) {
         event.preventDefault();
         setPlaying((value) => {
           if (value) setTime(playheadRef.current);
@@ -424,38 +498,61 @@ function FullViewer({
     void capture({ width: 1280, height: 720, shots: [shot] }).catch(() => {});
   };
   const duration = stats?.clips.find((item) => item.name === clip)?.duration ?? 0;
+  const shownTime = playing ? playhead : time;
+  const available = stats
+    ? modeAvailability(stats.facts)
+    : reviewModes.map((item) => Object.assign({}, item, { reason: null }));
+  const active = available.find((item) => item.id === mode)!;
+  const legend = legends[mode];
+  // A scripted view may set a speed outside the menu; keep it selectable rather than blank.
+  const speedOptions = speeds.includes(speed) ? speeds : [...speeds, speed].sort((a, b) => a - b);
+  const openEvidence = () => navigate.toPluginPanel("studio", { subPath: `${gameId}/evidence` });
   return (
     <div className="gs-review-layout">
       <section className="gs-review-workspace">
-        <div className="gs-review-toolbar">
-          <label>
-            Camera{" "}
-            <select
-              disabled={!stats || busy}
-              value={camera}
-              onChange={(event) => setCamera(event.target.value as CameraPreset)}
-            >
-              {cameras.map((item) => (
-                <option key={item}>{item}</option>
-              ))}
-            </select>
-          </label>
+        <div className="gs-review-toolbar" role="toolbar" aria-label="View and capture">
+          <fieldset className="gs-segment" aria-label="Camera">
+            {cameraPresets.map(([id, label]) => (
+              <button
+                key={id}
+                title={id === "three-quarter" ? "Three-quarter" : label}
+                aria-label={id === "three-quarter" ? "Three-quarter" : undefined}
+                aria-pressed={camera === id}
+                disabled={!stats || busy}
+                onClick={() => setCamera(id)}
+              >
+                {label}
+              </button>
+            ))}
+          </fieldset>
           <button
-            disabled={!stats || busy}
+            className="gs-review-toggle-button"
             aria-pressed={turntable}
+            title="Turntable"
+            disabled={!stats || busy}
             onClick={() => setTurntable((value) => !value)}
           >
-            Turntable
+            <Icon name="RotateCw" />
+            <span className="gs-review-label">Turntable</span>
           </button>
-          <span className="gs-spacer" />
-          <button disabled={!stats || busy} onClick={() => shoot()}>
-            Screenshot
+          <span className="gs-review-spacer" />
+          <button disabled={!stats || busy} title="Screenshot" onClick={() => shoot()}>
+            <Icon name="Camera" />
+            <span className="gs-review-label">Screenshot</span>
           </button>
-          <button disabled={!stats || busy} onClick={() => shoot(true)}>
-            Record turntable
+          <button disabled={!stats || busy} title="Record turntable" onClick={() => shoot(true)}>
+            <Icon name="Video" />
+            <span className="gs-review-label">Record turntable</span>
           </button>
-          <button aria-pressed={code} onClick={() => setCode((value) => !value)}>
-            Code
+          <button
+            className="gs-review-toggle-button"
+            aria-pressed={code}
+            aria-controls="gs-review-script"
+            title="Shot script"
+            onClick={() => setCode((value) => !value)}
+          >
+            <Icon name="Braces" />
+            <span className="gs-review-label">Shot script</span>
           </button>
         </div>
         <div
@@ -463,180 +560,258 @@ function FullViewer({
           className="gs-review-stage"
           aria-label="3D model review viewport"
           data-ready={!!stats}
-        />
-        {error && (
-          <p className="gs-review-error" role="alert">
-            {error}
-          </p>
-        )}
-        <output className="gs-review-status">
-          {status ||
-            (stats
-              ? `${stats.triangles.toLocaleString()} triangles · ${stats.vertices.toLocaleString()} vertices · +Z forward`
-              : "Loading model…")}
-          {busy && (
-            <button onClick={() => captureController.current?.abort()}>Cancel capture</button>
+          data-capturing={busy}
+        >
+          {stats && (
+            <div className="gs-review-overlay gs-review-chip">
+              <strong>{active.label}</strong>
+              {mode === "weights" && <span>{stats.joints[joint]}</span>}
+              {clip && (
+                <span>
+                  {clip} · {shownTime.toFixed(2)} s
+                </span>
+              )}
+              {legend && (
+                <span className="gs-review-legend" data-scale={legend.scale}>
+                  <small>{legend.low}</small>
+                  <i aria-hidden />
+                  <small>{legend.high}</small>
+                </span>
+              )}
+            </div>
           )}
-        </output>
-        {result && (
-          <p className="gs-review-saved">
-            Saved to Evidence: <code>{`canvas/evidence/${result.runId}/`}</code>
-            <br />
-            {result.files.map((file) => (
-              <span key={file}>{file.split("/").pop()} </span>
-            ))}
-          </p>
-        )}
-        {code && (
-          <section className="gs-review-code">
-            <label htmlFor="gs-shot-script">Shot script · fixed timesteps · PNG + MP4</label>
-            <textarea
-              id="gs-shot-script"
-              spellCheck={false}
-              disabled={busy}
-              value={script}
-              onChange={(event) => setScript(event.target.value)}
-            />
-            <button disabled={!stats || busy} onClick={() => void capture(script).catch(() => {})}>
-              Run shot script
-            </button>
-            <small>Agent API: await window.gameStudioModelReview.capture(script)</small>
-          </section>
-        )}
-      </section>
-      <aside className="gs-review-sidebar">
-        <h2>Review modes</h2>
-        <div className="gs-review-modes">
-          {(stats
-            ? modeAvailability(stats.facts)
-            : reviewModes.map((item) => Object.assign({}, item, { reason: "Loading model" }))
-          ).map((item) => (
-            <button
-              key={item.id}
-              title={item.reason ?? item.label}
-              disabled={!!item.reason || busy}
-              aria-pressed={item.id === mode}
-              onClick={() => setMode(item.id)}
+          {!stats && !error && (
+            <div className="gs-review-center">
+              <Icon name="LoaderCircle" className="gs-review-spin" />
+              Loading model…
+            </div>
+          )}
+          {!stats && error && (
+            <div className="gs-review-center" role="alert">
+              <strong>Could not open this model</strong>
+              <span>{error}</span>
+            </div>
+          )}
+          {busy && (
+            <output className="gs-review-overlay gs-review-capture">
+              <span className="gs-review-rec" aria-hidden />
+              <span>{captureStatus || "Capturing…"}</span>
+              <button onClick={() => captureController.current?.abort()}>Cancel</button>
+              <i
+                className="gs-review-progress"
+                aria-hidden
+                style={{ "--done": progress } as CSSProperties}
+              />
+            </output>
+          )}
+          {stats && !busy && (
+            <p className="gs-review-overlay gs-review-hint">
+              Drag to orbit · Scroll to zoom · Right-drag to pan
+            </p>
+          )}
+          {stats && (error || result) && (
+            <div
+              className="gs-review-overlay gs-review-notice"
+              data-tone={error ? "error" : "success"}
+              role={error ? "alert" : "status"}
             >
-              <span>{item.label}</span>
-              <small>{item.reason ?? ("key" in item ? item.key : "")}</small>
-            </button>
-          ))}
+              <span>
+                {error ||
+                  `Saved ${result!.files.length} ${result!.files.length === 1 ? "capture" : "captures"} to Evidence`}
+              </span>
+              {!error && result && (
+                <button onClick={openEvidence}>
+                  <Icon name="Image" />
+                  Open Evidence
+                </button>
+              )}
+              <button
+                className="gs-review-icon"
+                aria-label="Dismiss"
+                onClick={() => {
+                  setError("");
+                  setResult(null);
+                }}
+              >
+                <Icon name="X" />
+              </button>
+            </div>
+          )}
         </div>
-        {mode === "weights" && stats && (
-          <label>
-            Joint
+        {stats && stats.clips.length > 0 && (
+          <fieldset disabled={busy} className="gs-review-timeline" aria-label="Animation">
             <select
-              value={joint}
-              disabled={busy}
-              onChange={(event) => setJoint(Number(event.target.value))}
+              aria-label="Animation clip"
+              value={clip}
+              onChange={(event) => {
+                setClip(event.target.value);
+                setTime(0);
+                setPlaying(false);
+              }}
             >
-              {stats.joints.map((name, index) => (
-                <option key={name} value={index}>
-                  {name}
+              <option value="">Bind pose</option>
+              {stats.clips.map((item) => (
+                <option key={item.name} value={item.name}>
+                  {item.name} · {item.duration.toFixed(2)} s
                 </option>
               ))}
             </select>
-          </label>
-        )}
-        <h2>Animation</h2>
-        {stats?.clips.length ? (
-          <fieldset disabled={busy} className="gs-review-animation">
-            <label>
-              Clip
-              <select
-                value={clip}
-                onChange={(event) => {
-                  setClip(event.target.value);
-                  setTime(0);
-                  setPlaying(false);
-                }}
-              >
-                <option value="">Bind pose</option>
-                {stats.clips.map((item) => (
-                  <option key={item.name} value={item.name}>
-                    {item.name} · {item.duration.toFixed(2)}s
-                  </option>
-                ))}
-              </select>
-            </label>
             <button
+              className="gs-review-icon"
               disabled={!clip}
-              aria-pressed={playing}
+              aria-label={playing ? "Pause" : "Play"}
+              title={`${playing ? "Pause" : "Play"} (Space)`}
               onClick={() => {
                 if (playing) setTime(playheadRef.current);
                 setPlaying(!playing);
               }}
             >
-              {playing ? "Pause" : "Play"} · Space
+              <Icon name={playing ? "Pause" : "Play"} />
             </button>
-            <label>
-              Time {(playing ? playhead : time).toFixed(2)}s
+            <button
+              className="gs-review-icon gs-review-toggle-button"
+              disabled={!clip}
+              aria-label="Loop"
+              title="Loop"
+              aria-pressed={loop}
+              onClick={() => setLoop((value) => !value)}
+            >
+              <Icon name="Repeat" />
+            </button>
+            <div className="gs-review-scrub">
               <input
                 aria-label="Animation time"
                 type="range"
                 min={0}
                 max={duration}
                 step={0.01}
-                value={playing ? playhead : time}
+                value={shownTime}
                 disabled={!clip}
                 onChange={(event) => {
                   setPlaying(false);
                   setTime(Number(event.target.value));
                 }}
               />
-            </label>
-            <label>
-              Speed
-              <select value={speed} onChange={(event) => setSpeed(Number(event.target.value))}>
-                {[0.25, 0.5, 1, 2, 4].map((value) => (
-                  <option key={value} value={value}>
-                    {value}×
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label>
-              <input
-                type="checkbox"
-                checked={loop}
-                onChange={(event) => setLoop(event.target.checked)}
-              />
-              Loop
-            </label>
+              {clip && duration > 0 && (
+                <div className="gs-review-ruler" aria-hidden>
+                  {rulerTicks(duration).map((at) => (
+                    <span key={at} style={{ "--at": at / duration } as CSSProperties}>
+                      {at}s
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
+            <output className="gs-review-time">
+              {shownTime.toFixed(2)}
+              <small> / {duration.toFixed(2)} s</small>
+            </output>
+            <select
+              className="gs-review-speed"
+              aria-label="Playback speed"
+              title="Playback speed"
+              value={speed}
+              disabled={!clip}
+              onChange={(event) => setSpeed(Number(event.target.value))}
+            >
+              {speedOptions.map((value) => (
+                <option key={value} value={value}>
+                  {value}×
+                </option>
+              ))}
+            </select>
           </fieldset>
-        ) : (
-          <p className="gs-muted">No animation clips</p>
         )}
-        {stats && (
-          <>
-            <h2>Model stats</h2>
-            <dl className="gs-review-stats">
-              <dt>Triangles</dt>
-              <dd>{stats.triangles.toLocaleString()}</dd>
-              <dt>Vertices</dt>
-              <dd>{stats.vertices.toLocaleString()}</dd>
-              <dt>Meshes / materials</dt>
-              <dd>
-                {stats.meshes} / {stats.materials}
-              </dd>
-              <dt>Joints / clips</dt>
-              <dd>
-                {stats.joints.length} / {stats.clips.length}
-              </dd>
-              <dt>Size XYZ (m)</dt>
-              <dd>{stats.dimensions.map((value) => value.toFixed(3)).join(" × ")}</dd>
-            </dl>
-            <h3>Textures · {stats.textures.length}</h3>
-            {stats.textures.map((item) => (
-              <p className="gs-review-texture" key={item.id}>
-                {item.name}
+        {code && (
+          <section id="gs-review-script" className="gs-review-code" aria-label="Shot script">
+            <header>
+              <div>
+                <strong>Shot script</strong>
                 <small>
-                  {item.width} × {item.height}
+                  Renders each shot at fixed timesteps and saves PNG and MP4 files to Evidence.
+                  Agents call <code>window.gameStudioModelReview.capture(script)</code>.
                 </small>
-              </p>
-            ))}
-          </>
+              </div>
+              <button
+                className="gs-review-primary"
+                disabled={!stats || busy}
+                onClick={() => void capture(script).catch(() => {})}
+              >
+                <Icon name="Play" />
+                Run script
+              </button>
+            </header>
+            <textarea
+              aria-label="Shot script JSON"
+              spellCheck={false}
+              disabled={busy}
+              value={script}
+              onChange={(event) => setScript(event.target.value)}
+            />
+          </section>
+        )}
+      </section>
+      <aside className="gs-review-sidebar" aria-label="Review controls">
+        <section>
+          <h2>Review mode</h2>
+          {modeGroups.map((group) => (
+            <div className="gs-review-group" key={group.id}>
+              <h3>{group.label}</h3>
+              {available
+                .filter((item) => item.group === group.id)
+                .map((item) => (
+                  <button
+                    key={item.id}
+                    className="gs-review-mode"
+                    title={item.reason ?? undefined}
+                    disabled={!stats || !!item.reason || busy}
+                    aria-pressed={item.id === mode}
+                    onClick={() => setMode(item.id)}
+                  >
+                    <span>{item.label}</span>
+                    {item.reason ? (
+                      <small>{item.reason}</small>
+                    ) : "key" in item ? (
+                      <kbd>{item.key}</kbd>
+                    ) : null}
+                  </button>
+                ))}
+              {group.id === "rig" && mode === "weights" && stats && (
+                <label className="gs-review-field">
+                  Joint
+                  <select
+                    value={joint}
+                    disabled={busy}
+                    onChange={(event) => setJoint(Number(event.target.value))}
+                  >
+                    {stats.joints.map((name, index) => (
+                      <option key={name} value={index}>
+                        {name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
+            </div>
+          ))}
+        </section>
+        {stats && stats.textures.length > 0 && (
+          <section className="gs-review-textures">
+            <h2>
+              Textures <small>{stats.textures.length}</small>
+            </h2>
+            <ul>
+              {stats.textures.map((item) => (
+                <li key={item.id} title={item.name}>
+                  <TextureThumb id={item.id} engine={engine} />
+                  <span>{item.name}</span>
+                  <small>
+                    {item.width} × {item.height}
+                  </small>
+                </li>
+              ))}
+            </ul>
+          </section>
         )}
       </aside>
     </div>
