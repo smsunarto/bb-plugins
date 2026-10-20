@@ -194,6 +194,22 @@ test("with several accounts, each row names its account and the inbox narrows to
   slot.lifecycle.unmount();
 });
 
+test("the account menu says what waits on each account and which one gh uses", async () => {
+  const slot = await inboxTab("", twoAccounts);
+  fireEvent.click(await slot.findByRole("button", { name: "Accounts: all" }));
+  const active = await slot.findByRole("radio", { name: "scott" });
+  expect(active.getAttribute("aria-describedby")).toBeTruthy();
+  const describe = (radio: HTMLElement) =>
+    (radio.getAttribute("aria-describedby") ?? "")
+      .split(" ")
+      .map((id) => document.getElementById(id)?.textContent ?? "")
+      .join(" ")
+      .trim();
+  expect(describe(active)).toContain("Active gh account");
+  expect(describe(slot.getByRole("radio", { name: "scott-work" }))).toBe("1 waiting for review");
+  slot.lifecycle.unmount();
+});
+
 test("the account the reader chose last time is still chosen once the accounts load", async () => {
   window.localStorage.setItem("bb-plugin-code-review:inbox-account", "scott-work");
   const slot = await inboxTab("", twoAccounts);

@@ -197,8 +197,8 @@ export function Inbox({
     <div className="flex min-h-0 flex-1 flex-col">
       <header className="flex shrink-0 items-center gap-2 px-2.5 pt-2">
         <h2 className="min-w-0 flex-1 truncate font-semibold text-foreground">Pull requests</h2>
-        {accounts.length > 1 ? (
-          <AccountFilter accounts={accounts} value={account} onChange={setAccount} />
+        {inbox.data && accounts.length > 1 ? (
+          <AccountFilter inbox={inbox.data} value={account} onChange={setAccount} />
         ) : null}
         <Tip label="Refresh">
           <Button
@@ -354,11 +354,11 @@ function SectionPanes({
  * Only there when gh is signed in to more than one.
  */
 function AccountFilter({
-  accounts,
+  inbox,
   value,
   onChange,
 }: {
-  accounts: string[];
+  inbox: InboxData;
   value: string;
   onChange: (account: string) => void;
 }) {
@@ -366,16 +366,33 @@ function AccountFilter({
   const name = useId();
   // Arrow keys walk a radio group, choosing as they go, so only a click or Space closes it.
   const walking = useRef(false);
-  const choices = [ALL_ACCOUNTS, ...accounts];
+  const { accounts } = inbox;
+  const filtered = value !== ALL_ACCOUNTS;
+  const choices = [ALL_ACCOUNTS, ...accounts].map((choice) => ({
+    choice,
+    waiting: needsReviewCount(inboxFor(inbox, choice)),
+    // What sets the account apart: gh's active one opens pasted links; a failed one shows nothing.
+    detail: inbox.unavailable.some((each) => sameAccount(each.account, choice))
+      ? "Could not load"
+      : choice === accounts[0]
+        ? "Active gh account"
+        : null,
+  }));
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
         <button
           type="button"
-          aria-label={`Accounts: ${value === ALL_ACCOUNTS ? "all" : value}`}
-          className="flex h-6 min-w-0 shrink items-center gap-1 rounded-md px-1.5 text-[11px] text-muted-foreground hover:bg-state-hover hover:text-foreground focus-visible:ring-1 focus-visible:ring-ring focus-visible:outline-none"
+          aria-label={`Accounts: ${filtered ? value : "all"}`}
+          className={cn(
+            "flex h-6 min-w-0 shrink items-center gap-1 rounded-md px-1.5 text-[11px] hover:bg-state-hover hover:text-foreground focus-visible:ring-1 focus-visible:ring-ring focus-visible:outline-none",
+            // A narrowed inbox reads as a set filter, so it is never mistaken for everything.
+            filtered ? "bg-secondary text-foreground" : "text-muted-foreground",
+          )}
         >
-          {value === ALL_ACCOUNTS ? (
+          {filtered ? (
+            <AccountAvatar login={value} className="size-3.5" />
+          ) : (
             <span className="flex shrink-0 -space-x-1">
               {accounts.slice(0, 3).map((login) => (
                 <AccountAvatar
@@ -385,20 +402,24 @@ function AccountFilter({
                 />
               ))}
             </span>
-          ) : (
-            <AccountAvatar login={value} className="size-3.5" />
           )}
-          <span className="truncate">{value === ALL_ACCOUNTS ? "All accounts" : value}</span>
+          <span className="truncate">{filtered ? value : "All accounts"}</span>
           <Icon name="ChevronDown" className="size-3 shrink-0" aria-hidden />
         </button>
       </PopoverTrigger>
-      <PopoverContent align="end" mobileTitle="Accounts" className="w-52 p-1 text-xs">
+      <PopoverContent align="end" mobileTitle="Accounts" className="w-60 p-1 text-xs">
         <fieldset>
-          <legend className="sr-only">Show pull requests for</legend>
-          {choices.map((choice) => (
+          <legend className="px-2 pt-1 pb-1.5 text-[11px] text-muted-foreground">
+            Show pull requests for
+          </legend>
+          {choices.map(({ choice, waiting, detail }, i) => (
             <label
               key={choice}
-              className="flex w-full cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-left hover:bg-secondary has-[:focus-visible]:bg-secondary"
+              className={cn(
+                "flex w-full cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-left hover:bg-secondary has-[:focus-visible]:bg-secondary",
+                // A rule sets the whole apart from the single accounts.
+                choice === ALL_ACCOUNTS && "mb-1 rounded-b-none border-b border-border",
+              )}
             >
               <input
                 type="radio"
@@ -406,6 +427,9 @@ function AccountFilter({
                 value={choice}
                 checked={choice === value}
                 className="sr-only"
+                // The name stays the account; its note and count describe it.
+                aria-label={choice === ALL_ACCOUNTS ? "All accounts" : choice}
+                aria-describedby={`${name}-${i}-detail ${name}-${i}-count`}
                 onKeyDown={(event) => {
                   walking.current = event.key.startsWith("Arrow");
                 }}
@@ -416,14 +440,43 @@ function AccountFilter({
                 }}
               />
               {choice === ALL_ACCOUNTS ? (
-                <Icon name="Users" className="size-4 text-muted-foreground" aria-hidden />
+                <span className="flex size-5 shrink-0 items-center justify-center">
+                  <Icon name="Users" className="size-4 text-muted-foreground" aria-hidden />
+                </span>
               ) : (
-                <AccountAvatar login={choice} className="size-4" />
+                <AccountAvatar login={choice} className="size-5" />
               )}
-              <span className="min-w-0 flex-1 truncate">
-                {choice === ALL_ACCOUNTS ? "All accounts" : choice}
+              <span className="flex min-w-0 flex-1 flex-col">
+                <span className="truncate text-foreground">
+                  {choice === ALL_ACCOUNTS ? "All accounts" : choice}
+                </span>
+                {detail ? (
+                  <span
+                    id={`${name}-${i}-detail`}
+                    className={cn(
+                      "truncate text-[11px]",
+                      detail === "Could not load" ? "text-warning-text" : "text-muted-foreground",
+                    )}
+                  >
+                    {detail}
+                  </span>
+                ) : null}
               </span>
-              {choice === value ? <Icon name="Check" className="size-3.5" aria-hidden /> : null}
+              {waiting > 0 ? (
+                <span
+                  id={`${name}-${i}-count`}
+                  className="shrink-0 text-muted-foreground tabular-nums"
+                  title={`${plural(waiting, "pull request")} waiting for review`}
+                >
+                  {waiting}
+                  <span className="sr-only"> waiting for review</span>
+                </span>
+              ) : null}
+              <Icon
+                name="Check"
+                className={cn("size-3.5 shrink-0", choice !== value && "invisible")}
+                aria-hidden
+              />
             </label>
           ))}
         </fieldset>
