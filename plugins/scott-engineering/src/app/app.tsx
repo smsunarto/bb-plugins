@@ -12,7 +12,7 @@ import {
   type PluginMessageDirectiveProps,
   type PluginThreadHeaderActionProps,
 } from "@get-bb/plugin-sdk/app";
-import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { z } from "zod";
 import {
   MAX_ROUNDS,
@@ -193,35 +193,38 @@ function standing(run: ArenaRun, candidate: number) {
 /** A rewrite stops reading as "in progress" after this long, even if it never lands. */
 const REWRITE_PATIENCE_MS = 120_000;
 
-/** The plain-language rewrite of a job's result, with a switch back to the worker's own words. */
-function useReadable<K extends Readable["kind"]>(
+/** The plain-language rewrite of a job's result, if one has landed. */
+function rewrite<K extends Readable["kind"]>(
   digests: readonly Digest[],
-  job: Job,
+  job: Job | undefined,
   kind: K,
-): { result: Extract<Readable, { kind: K }> | null; note: ReactNode } {
-  const [original, setOriginal] = useState(false);
-  const digest = digests.find((item) => item.jobKey === job.key);
-  const result =
-    digest?.status === "done" && digest.result?.kind === kind
-      ? (digest.result as Extract<Readable, { kind: K }>)
-      : null;
-  if (result)
-    return {
-      result: original ? null : result,
-      note: (
-        <button type="button" className="arena-link" onClick={() => setOriginal(!original)}>
-          {original ? "Show rewrite" : "Show original"}
-        </button>
-      ),
-    };
-  const rewriting =
-    digest?.status === "running" && Date.now() - digest.startedAt < REWRITE_PATIENCE_MS;
-  return {
-    result: null,
-    note: rewriting ? (
-      <span className="arena-muted arena-shimmer">Rewriting for readability…</span>
-    ) : null,
-  };
+): Extract<Readable, { kind: K }> | null {
+  const result = digests.find((item) => item.jobKey === job?.key && item.status === "done")?.result;
+  return result?.kind === kind ? (result as Extract<Readable, { kind: K }>) : null;
+}
+
+/** One switch for every rewritten block, so the card never mixes the two voices by accident. */
+function Wording({
+  digests,
+  original,
+  onToggle,
+}: {
+  digests: readonly Digest[];
+  original: boolean;
+  onToggle: () => void;
+}) {
+  if (digests.some((item) => item.status === "done" && item.result))
+    return (
+      <button type="button" className="arena-link arena-wording" onClick={onToggle}>
+        {original ? "Show rewritten wording" : "Show original wording"}
+      </button>
+    );
+  const rewriting = digests.some(
+    (item) => item.status === "running" && Date.now() - item.startedAt < REWRITE_PATIENCE_MS,
+  );
+  return rewriting ? (
+    <span className="arena-muted arena-shimmer arena-wording">Rewriting for readability…</span>
+  ) : null;
 }
 
 function CandidateBody({
@@ -250,7 +253,6 @@ function CandidateBody({
 
 function Candidate({ job, run, digests }: { job: Job; run: ArenaRun; digests: readonly Digest[] }) {
   const { mean, badges } = standing(run, job.candidate ?? 0);
-  const readable = useReadable(digests, job, "candidate");
   const state =
     job.outcome === "running" ? (terminal.has(run.phase) ? "halted" : "active") : job.outcome;
   return (
@@ -274,43 +276,60 @@ function Candidate({ job, run, digests }: { job: Job; run: ArenaRun; digests: re
           ))}
         </div>
       )}
-      <CandidateBody job={job} active={state === "active"} readable={readable.result} />
+      <CandidateBody
+        job={job}
+        active={state === "active"}
+        readable={rewrite(digests, job, "candidate")}
+      />
       <footer>
         <WorkerLink job={job} />
-        {readable.note}
       </footer>
     </section>
   );
 }
 
-function Synthesis({ job, digests }: { job: Job; digests: readonly Digest[] }) {
-  const readable = useReadable(digests, job, "synthesis");
-  const report = job.report?.kind === "synthesis" ? job.report : null;
-  if (!report) return null;
-  const text = readable.result;
+/** What landed: the combined change, where its parts came from, and whether checks passed. */
+function Result({
+  job,
+  integration,
+  digests,
+}: {
+  job: Job | undefined;
+  integration: ArenaRun["integration"];
+  digests: readonly Digest[];
+}) {
+  const report = job?.report?.kind === "synthesis" ? job.report : null;
+  if (!job || !report) return integration ? <Verification integration={integration} /> : null;
+  const text = rewrite(digests, job, "synthesis");
+  const sources = [...new Set(report.grafts.map((graft) => graft.candidate))];
   return (
-    <section className="arena-section" aria-label="Combined result">
+    <section className="arena-result" aria-label="Combined result">
       <header>
         <Icon name="GitMerge" aria-hidden />
         <h3>Combined result</h3>
         <Provider job={job} />
         <WorkerLink job={job} />
       </header>
-      <p>{text?.summary ?? report.summary}</p>
+      <p className="arena-lead">{text?.summary ?? report.summary}</p>
       <p className="arena-muted">
         Built on Candidate {report.baseCandidate + 1}. {text?.rationale ?? report.rationale}
       </p>
-      {report.grafts.length > 0 && (
-        <ul className="arena-grafts">
-          {report.grafts.map((graft, index) => (
-            <li key={`${graft.candidate}:${graft.change}`}>
-              <span className="arena-badge">From Candidate {graft.candidate + 1}</span>
-              <span>{text?.grafts[index] ?? graft.change}</span>
-            </li>
-          ))}
-        </ul>
-      )}
-      {readable.note && <div className="arena-note">{readable.note}</div>}
+      {sources.map((source) => (
+        <div key={source} className="arena-grafts">
+          <p className="arena-label">From Candidate {source + 1}</p>
+          <ul>
+            {report.grafts.map((graft, index) =>
+              graft.candidate === source ? (
+                <li key={graft.change}>
+                  <Icon name="Plus" aria-hidden />
+                  <span>{text?.grafts[index] ?? graft.change}</span>
+                </li>
+              ) : null,
+            )}
+          </ul>
+        </div>
+      ))}
+      {integration && <Verification integration={integration} />}
     </section>
   );
 }
@@ -318,12 +337,11 @@ function Synthesis({ job, digests }: { job: Job; digests: readonly Digest[] }) {
 function Verification({ integration }: { integration: NonNullable<ArenaRun["integration"]> }) {
   const passed = integration.status === "integrated";
   return (
-    <section className="arena-section" data-passed={passed} aria-label="Checks">
-      <header>
+    <div className="arena-verification" data-passed={passed} aria-label="Checks">
+      <p className="arena-status">
         <Icon name={passed ? "CircleCheck" : "CircleX"} aria-hidden />
-        <h3>Checks</h3>
-      </header>
-      <p className={passed ? undefined : "arena-error"}>{integration.summary}</p>
+        <span>{integration.summary}</span>
+      </p>
       {integration.checks.length > 0 && (
         <ul className="arena-checks">
           {integration.checks.map((check) => (
@@ -331,10 +349,11 @@ function Verification({ integration }: { integration: NonNullable<ArenaRun["inte
               <details>
                 <summary data-passed={check.exitCode === 0}>
                   <Icon name={check.exitCode === 0 ? "Check" : "X"} aria-hidden />
-                  <span className="arena-check-status">
+                  <span className="arena-visually-hidden">
                     {check.exitCode === 0 ? "Passed" : "Failed"}
                   </span>
                   <code>{check.command}</code>
+                  <Icon name="ChevronRight" className="arena-disclosure" aria-hidden />
                 </summary>
                 <pre>{check.output || "The command finished without output."}</pre>
               </details>
@@ -342,7 +361,7 @@ function Verification({ integration }: { integration: NonNullable<ArenaRun["inte
           ))}
         </ul>
       )}
-    </section>
+    </div>
   );
 }
 
@@ -352,8 +371,7 @@ function Details({ run, digests }: { run: ArenaRun; digests: readonly Digest[] }
   const judge = jobs.find((job) => job.role === "judge");
   const synthesisJob = jobs.find((job) => job.role === "synthesis");
   const synthesis = synthesisJob?.report;
-  const rewrite = digests.find((item) => item.jobKey === synthesisJob?.key)?.result;
-  const rejected = rewrite?.kind === "synthesis" ? rewrite.rejected : null;
+  const rejected = rewrite(digests, synthesisJob, "synthesis")?.rejected;
   const scores = judge?.report?.kind === "judge" ? judge.report.scores : [];
   return (
     <details className="arena-details">
@@ -375,16 +393,26 @@ function Details({ run, digests }: { run: ArenaRun; digests: readonly Digest[] }
               </tr>
             </thead>
             <tbody>
-              {frame.rubric.map((criterion, index) => (
-                <tr key={criterion}>
-                  <td>{criterion}</td>
-                  {scores.map((item) => (
-                    <td key={item.candidate} title={item.criteria[index]?.rationale}>
-                      {item.criteria[index]?.score ?? "–"}
-                    </td>
-                  ))}
-                </tr>
-              ))}
+              {frame.rubric.map((criterion, index) => {
+                const best = Math.max(...scores.map((item) => item.criteria[index]?.score ?? 0));
+                return (
+                  <tr key={criterion}>
+                    <td>{criterion}</td>
+                    {scores.map((item) => {
+                      const score = item.criteria[index]?.score;
+                      return (
+                        <td
+                          key={item.candidate}
+                          title={item.criteria[index]?.rationale}
+                          data-best={scores.length > 1 && score === best}
+                        >
+                          {score ?? "–"}
+                        </td>
+                      );
+                    })}
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         )}
@@ -416,6 +444,7 @@ function Details({ run, digests }: { run: ArenaRun; digests: readonly Digest[] }
                 .filter((job) => job.round === round)
                 .map((job) => (
                   <span key={job.key} data-outcome={job.outcome} title={job.error ?? undefined}>
+                    <Icon name={OUTCOME_ICONS[job.outcome]} aria-hidden />
                     {roleName(job)}
                   </span>
                 ))}
@@ -427,6 +456,11 @@ function Details({ run, digests }: { run: ArenaRun; digests: readonly Digest[] }
   );
 }
 
+const OUTCOME_ICONS: Record<Job["outcome"], string> = {
+  running: "Dot",
+  completed: "Check",
+  failed: "X",
+};
 const NO_DIGESTS: readonly Digest[] = [];
 
 export function ArenaSummary({
@@ -440,6 +474,8 @@ export function ArenaSummary({
   onStop: () => void;
   stopping: boolean;
 }) {
+  const [original, setOriginal] = useState(false);
+  const rewrites = original ? NO_DIGESTS : digests;
   const jobs = run.jobs.filter((job) => job.round === run.round);
   const candidates = jobs.filter((job) => job.role === "candidate");
   const synthesis = jobs.find((job) => job.role === "synthesis");
@@ -452,9 +488,11 @@ export function ArenaSummary({
         <div className="arena-title">
           <Icon name="Fork" aria-hidden />
           <strong>Arena</strong>
-          <span className="arena-round">
-            Round {run.round} of {MAX_ROUNDS}
-          </span>
+          {(live || run.round > 1) && (
+            <span className="arena-round">
+              Round {run.round} of {MAX_ROUNDS}
+            </span>
+          )}
         </div>
         <div className="arena-actions">
           <span className="arena-phase">
@@ -470,28 +508,31 @@ export function ArenaSummary({
           )}
         </div>
       </header>
-      <Steps run={run} />
+      {/* Once applied, every step is a check mark; the result below says the same thing. */}
+      {run.phase !== "completed" && <Steps run={run} />}
       <Task text={run.task} />
       {run.feedback && run.round > 1 && (
         <p className="arena-callout">
           <strong>Trying again after round {run.round - 1}.</strong> {run.feedback.summary}
         </p>
       )}
-      {candidates.length > 0 && (
-        <div className="arena-candidates">
-          {candidates.map((job) => (
-            <Candidate key={job.key} job={job} run={run} digests={digests} />
-          ))}
-        </div>
-      )}
-      {synthesis && <Synthesis job={synthesis} digests={digests} />}
-      {run.integration && <Verification integration={run.integration} />}
       {error && (
         <output className="arena-alert" role="alert">
           {error}
         </output>
       )}
-      <Details run={run} digests={digests} />
+      <Result job={synthesis} integration={run.integration} digests={rewrites} />
+      {candidates.length > 0 && (
+        <div className="arena-candidates">
+          {candidates.map((job) => (
+            <Candidate key={job.key} job={job} run={run} digests={rewrites} />
+          ))}
+        </div>
+      )}
+      <footer className="arena-footer">
+        <Details run={run} digests={rewrites} />
+        <Wording digests={digests} original={original} onToggle={() => setOriginal(!original)} />
+      </footer>
     </article>
   );
 }

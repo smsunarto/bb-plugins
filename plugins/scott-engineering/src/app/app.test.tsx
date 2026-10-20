@@ -151,6 +151,8 @@ test("realtime completion replaces progress with synthesis and verification", as
     expect(slot.getByText("Starting point")).toBeTruthy();
     expect(slot.getByText("Passed")).toBeTruthy();
     expect(slot.queryByRole("button", { name: "Stop Arena" })).toBeNull();
+    expect(slot.queryByRole("list", { name: "Arena progress" })).toBeNull();
+    expect(slot.queryByText("Round 1 of 3")).toBeNull();
     const reads = state.reads;
     await slot.behavior.emitRealtime("arena.changed", {
       runId: "7ba0d685-1655-4dfc-8e44-16d5fdd87984",
@@ -289,9 +291,10 @@ test("a candidate's result shows the readable rewrite, with the original one cli
     await slot.behavior.emitRealtime("arena.changed", { runId: id });
     await slot.findByText("One part of the code decides when work stops.");
     expect(slot.queryByText("Keep cancellation under one owner")).toBeNull();
-    fireEvent.click(slot.getByRole("button", { name: "Show original" }));
+    fireEvent.click(slot.getByRole("button", { name: "Show original wording" }));
     expect(slot.getByText("Keep cancellation under one owner")).toBeTruthy();
-    expect(slot.getByRole("button", { name: "Show rewrite" })).toBeTruthy();
+    fireEvent.click(slot.getByRole("button", { name: "Show rewritten wording" }));
+    expect(slot.getByText("One part of the code decides when work stops.")).toBeTruthy();
   } finally {
     slot.lifecycle.unmount();
   }

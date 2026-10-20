@@ -187,8 +187,9 @@
   & .arena-task p {
     display: -webkit-box;
     -webkit-box-orient: vertical;
-    -webkit-line-clamp: 3;
+    -webkit-line-clamp: 2;
     overflow: hidden;
+    color: var(--muted-foreground);
     white-space: pre-wrap;
   }
   & .arena-task p[data-open="true"] {
@@ -216,37 +217,31 @@
   & .arena-candidates {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 10px;
+    border-top: 1px solid var(--arena-hairline);
+    padding-top: 12px;
   }
   & .arena-candidate {
     display: flex;
     flex-direction: column;
     gap: 6px;
-    border: 1px solid var(--arena-hairline);
-    border-radius: 10px;
-    padding: 10px 12px;
-    background: var(--arena-surface);
+    min-width: 0;
   }
-  & .arena-candidate[data-state="failed"] {
-    border-color: var(--surface-destructive-border, var(--border));
+  & .arena-candidate:first-child:not(:last-child) {
+    padding-right: 16px;
   }
-  & :is(.arena-candidate, .arena-section, .arena-judge) > header {
+  & .arena-candidate + .arena-candidate {
+    border-left: 1px solid var(--arena-hairline);
+    padding-left: 16px;
+  }
+  & :is(.arena-candidate, .arena-result, .arena-judge) > header {
     display: flex;
     align-items: center;
     gap: 8px;
     min-width: 0;
   }
   & .arena-candidate footer {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 8px;
     margin-top: auto;
     padding-top: 2px;
-    font-size: 12px;
-  }
-  & .arena-note {
-    font-size: 12px;
   }
   & .arena-provider {
     display: inline-flex;
@@ -286,65 +281,118 @@
     white-space: nowrap;
   }
   & .arena-badge[data-kind="Starting point"] {
-    border-color: transparent;
-    color: var(--primary-foreground, var(--background));
-    background: var(--primary);
+    border-color: color-mix(in oklab, var(--foreground) 40%, transparent);
+    color: var(--foreground);
+    font-weight: 500;
   }
   & .arena-shimmer {
     animation: arena-fade 1.8s ease-in-out infinite;
   }
 
-  /* Synthesis and verification */
-  & .arena-section {
+  /* Result: the combined change and its checks */
+  & .arena-result {
     display: flex;
     flex-direction: column;
     gap: 6px;
     border-top: 1px solid var(--arena-hairline);
     padding-top: 12px;
   }
-  & .arena-section > header > svg {
+  & .arena-result > header > svg {
     color: var(--muted-foreground);
   }
-  & .arena-section[data-passed="true"] > header > svg {
-    color: var(--arena-success);
-  }
-  & .arena-section[data-passed="false"] > header > svg {
-    color: var(--arena-danger);
-  }
-  & :is(.arena-section, .arena-judge) > header .arena-link {
+  & :is(.arena-result, .arena-judge) > header .arena-link {
     margin-left: auto;
   }
-  & :is(.arena-grafts, .arena-checks) {
+  & .arena-lead {
+    font-size: 14px;
+    text-wrap: pretty;
+  }
+  & .arena-label {
+    color: var(--muted-foreground);
+    font-size: 12px;
+    font-weight: 500;
+  }
+  & .arena-grafts {
     display: flex;
     flex-direction: column;
-    gap: 4px;
-    margin-top: 2px;
+    gap: 3px;
+    margin-top: 4px;
+  }
+  & .arena-grafts ul {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
   }
   & .arena-grafts li {
     display: flex;
     align-items: baseline;
-    gap: 8px;
+    gap: 6px;
+  }
+  & .arena-grafts li svg {
+    position: relative;
+    top: 2px;
+    color: var(--muted-foreground);
+  }
+  & .arena-verification {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    margin-top: 6px;
+  }
+  & .arena-status {
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+  }
+  & .arena-status svg {
+    position: relative;
+    top: 2px;
+    color: var(--arena-success);
+  }
+  & .arena-verification[data-passed="false"] .arena-status {
+    color: var(--arena-danger);
+  }
+  & .arena-verification[data-passed="false"] .arena-status svg {
+    color: var(--arena-danger);
+  }
+  & .arena-checks {
+    display: flex;
+    flex-direction: column;
+    padding-left: 20px;
   }
   & .arena-checks summary {
     display: flex;
     align-items: center;
     gap: 6px;
     min-width: 0;
-    padding: 3px 0;
+    padding: 2px 0;
+    color: var(--muted-foreground);
     cursor: pointer;
     list-style: none;
   }
   & .arena-checks summary::-webkit-details-marker {
     display: none;
   }
-  & :is(.arena-checks summary svg, .arena-check-status) {
+  & .arena-checks summary:hover {
+    color: var(--foreground);
+  }
+  & .arena-checks summary > svg:first-child {
     color: var(--arena-success);
   }
-  & .arena-checks summary[data-passed="false"] :is(svg, .arena-check-status) {
+  & .arena-checks summary[data-passed="false"] {
     color: var(--arena-danger);
   }
-  & .arena-check-status {
-    font-size: 12px;
+  & .arena-checks summary[data-passed="false"] > svg:first-child {
+    color: var(--arena-danger);
+  }
+  & .arena-checks .arena-disclosure {
+    width: 12px;
+    height: 12px;
+    opacity: 0.7;
+    transition: transform 120ms;
+  }
+  & .arena-checks details[open] .arena-disclosure {
+    transform: rotate(90deg);
   }
   & :is(code, pre) {
     font-family: var(--font-mono);
@@ -365,16 +413,26 @@
     background: var(--arena-surface);
   }
 
-  /* Details */
-  & .arena-details {
+  /* Footer and details */
+  & .arena-footer {
+    position: relative;
     border-top: 1px solid var(--arena-hairline);
     padding-top: 8px;
+  }
+  & .arena-wording {
+    position: absolute;
+    top: 8px;
+    right: 0;
+    line-height: 18px;
+  }
+  & .arena-details {
     color: var(--muted-foreground);
   }
   & .arena-details > summary {
     display: inline-flex;
     align-items: center;
     gap: 4px;
+    line-height: 18px;
     font-size: 12px;
     cursor: pointer;
     list-style: none;
@@ -422,6 +480,12 @@
     font-variant-numeric: tabular-nums;
     color: var(--foreground);
   }
+  & .arena-rubric td[data-best="false"] {
+    color: var(--muted-foreground);
+  }
+  & .arena-rubric td[data-best="true"] {
+    font-weight: 600;
+  }
   & .arena-rubric th {
     font-weight: 500;
   }
@@ -448,16 +512,20 @@
     color: var(--foreground);
     font-weight: 500;
   }
-  & .arena-history [data-outcome="completed"]::before {
-    content: "✓ ";
+  & .arena-history [data-outcome] {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+  }
+  & .arena-history [data-outcome] svg {
+    width: 12px;
+    height: 12px;
+  }
+  & .arena-history [data-outcome="completed"] svg {
     color: var(--arena-success);
   }
-  & .arena-history [data-outcome="failed"]::before {
-    content: "✕ ";
+  & .arena-history [data-outcome="failed"] svg {
     color: var(--arena-danger);
-  }
-  & .arena-history [data-outcome="running"]::before {
-    content: "• ";
   }
 
   /* Links and focus */
@@ -482,10 +550,26 @@
     outline: 2px solid var(--ring);
     outline-offset: 2px;
   }
+  & .arena-visually-hidden {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
 
   @container (max-width: 560px) {
     & .arena-candidates {
       grid-template-columns: minmax(0, 1fr);
+    }
+    & .arena-candidate:first-child:not(:last-child) {
+      padding: 0 0 12px;
+    }
+    & .arena-candidate + .arena-candidate {
+      border-top: 1px solid var(--arena-hairline);
+      border-left: 0;
+      padding: 12px 0 0;
     }
     & .arena-steps li:not([data-state="active"]) .arena-step-label {
       display: none;
