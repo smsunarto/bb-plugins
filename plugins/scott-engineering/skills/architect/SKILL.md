@@ -1,7 +1,6 @@
 ---
 name: architect
-description: "Sketch types, signatures, and module structure before code, then stay in the loop while implementation fills in. Use for /architect, 'architect this', 'design this', or non-trivial work where jumping to code would lock in the wrong shape."
-disable-model-invocation: true
+description: "In a user-driven coordinator session, run parallel design exploration before implementing or delegating code changes crossing a function boundary. Also use for /architect, 'architect this', or 'design this module/API'. Delegates run this workflow only when their assigned prompt requests it."
 ---
 
 # Architect
@@ -9,6 +8,11 @@ disable-model-invocation: true
 Read shared engineering principle references with `bb scott-engineering principle --name <name>`. Omit `--name` to list the available names.
 
 Sketch types, function signatures, class shapes, and module boundaries with `not implemented` bodies and pseudocode. Synthesize across multiple model perspectives, then fill in code against the chosen sketch.
+
+The `dev` skill invokes this workflow automatically in the coordinating author session before
+implementing or delegating code that crosses a function boundary. That invocation authorizes
+the native Arena route below. Delegates run Architect only when their assignment explicitly
+requests it; Arena workers stay within their assigned role and never launch nested workflows.
 
 ## Start
 

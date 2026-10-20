@@ -26,16 +26,18 @@ test("authors get launch controls and the migrated skill catalog", async () => {
         "scott_engineering_review_context",
       ],
     );
-    assert.equal(result.skills.length, 17);
+    assert.equal(result.skills.length, 18);
     assert.ok(result.skills.every((name) => !name.startsWith("principle-")));
     assert.ok(result.skills.includes("arena"));
     assert.ok(result.skills.includes("architect"));
     assert.ok(result.skills.includes("review"));
+    assert.ok(result.skills.includes("dev"));
     const instructions = f.harness.inspection.registrations.instructionProvider?.({
       threadId: "thread",
       projectId: "project",
     });
     assert.match(instructions ?? "", /bb scott-engineering principle --name index/);
+    assert.match(instructions ?? "", /read the `dev` skill/);
     assert.ok((instructions?.length ?? 0) <= 4096);
   } finally {
     await f.harness.lifecycle.dispose();

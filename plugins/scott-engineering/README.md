@@ -2,6 +2,10 @@
 
 Scott's engineering workflows, derived from his pstack fork, with native Arena and independent review in BB. One plugin owns the tools, worker routing, composer banner, workflow skills, and shared engineering principles.
 
+The [/dev skill](skills/dev/SKILL.md) is the engineering entrypoint. It preserves upstream poteto-mode wording for the supported behavior, with BB-specific routing kept in its own section. Engineering principles remain shared references loaded on demand.
+
+In the coordinating author session, `/dev` runs Architect automatically before implementing or delegating code that crosses a function boundary. This authorizes Architect's native Arena workflow. Delegates run Architect only when their assignment explicitly requests it. The BB plugin owns these rules; shared dotfiles instructions do not duplicate them.
+
 Ask for Arena in a BB thread. The agent calls `scott_engineering_arena_start` and emits an embedded summary showing candidates, the judge, synthesis, verification, and round history. Workers and reviewers run in hidden threads; clicking one opens it, and its header links back to the main thread. Stop Arena cancels the run independently of the main chat.
 
 A run frames the task, launches one Claude and one Codex candidate on identical prompts, cross-judges their completed outputs, synthesizes the best parts, and verifies the combined result before automatically integrating it. There are at most three total rounds. Host-disconnection recovery permits three consecutive retries with increasing delays; checks run in the synthesis worker using its inherited execution permissions. Runs and round counts survive restarts; the plugin reconciles existing workers rather than launching duplicates.
@@ -20,7 +24,7 @@ For integrations such as Game Studio, a snapshot reviewer has origin `scott-engi
 
 ## Requirements
 
-Native Arena currently needs a ready Git project that allows BB-managed worktrees and has both Claude Code and Codex configured. Repositories requiring a canonical checkout or exclusive Unity/editor leases should continue using their existing authorized workflow. Architect and Blast Radius route to the native contract when its tools are available; native routing instructions take precedence over an older provider-installed copy. Other bundled skills retain their original behavior.
+Native Arena currently needs a ready Git project that allows BB-managed worktrees and has both Claude Code and Codex configured. Repositories requiring a canonical checkout or exclusive Unity/editor leases should continue using their existing authorized workflow. Architect and Blast Radius route to the native contract when its tools are available; native routing instructions take precedence over an older provider-installed copy. Other bundled skills retain the fork's text apart from reference and integration changes.
 
 Source checkouts may contain uncommitted work. Arena snapshots that work using a private Git index. Candidate and synthesis worktrees start from the same pinned snapshot. Preparation merges against ongoing work. The synthesis worker runs the framing commands on that combined tree through its normal execution tools. Checks must leave nonignored files unchanged (use check-only lint and format modes); ignored build output is allowed. Integration checks both trees again and applies only a passing result. Conflicts and concurrent edits preserve the working files and consume a round rather than overwriting them.
 
@@ -35,8 +39,14 @@ Outputs remain uncommitted. Candidate worktrees and private `refs/arena/` snapsh
 - `bb scott-engineering start --task '...' --request-id <stable-id>` launches or recovers a launch.
 - `bb scott-engineering status --run <id>` reads an owned run.
 - `bb scott-engineering stop --run <id>` stops it.
-- `bb scott-engineering principle` lists shared principles; add `--name grug-brain` to read one or `--name index` for workflow routing and principle triggers.
+- `bb scott-engineering principle` lists shared principles; add `--name grug-brain` to read one or `--name index` for principle triggers.
 - `reviewClaudeModel` and `reviewCodexModel` select reviewers.
 - `claudeModel` and `codexModel` select the two Arena model seats. Defaults follow the fork. Both use xhigh reasoning; Codex uses fast service.
 
-The tools and prompts are editable under `instructions/`. Other skills and their references are bundled under `skills/` and `references/`. Engineering principles live in the shared `references/principles/` directory. The `principle` command reads them from the installed plugin, independently of any workflow skill or checkout path, without adding skill catalog entries. The plugin owns workflow routing and principle triggers in `instructions/engineering-guidance.md`; shared dotfiles agent instructions no longer carry these rules. The overlapping dotfiles package has been removed.
+The tools and prompts are editable under `instructions/`. Other skills and their references are bundled under `skills/` and `references/`. Engineering principles live in the shared `references/principles/` directory. The `principle` command reads them from the installed plugin, independently of any workflow skill or checkout path, without adding skill catalog entries. The `dev` skill owns workflow routing and principle triggers; `instructions/engineering-guidance.md` lists the shared principle names and files. Shared dotfiles agent instructions no longer carry these rules. The overlapping dotfiles package has been removed.
+
+## Maintaining imported prompts
+
+Preserve imported principles, workflows, skills, and supporting prompts verbatim wherever possible. Limit porting changes to requested renames, reference paths, unavailable integrations, and required BB tool or lifecycle adapters. Keep adapters separate from the source text where possible. Do not paraphrase, simplify, or change behavior as incidental cleanup; treat intentional prompt changes as behavior changes requiring explicit rationale and appropriate evaluation.
+
+The existing skills and principle references come from [Scott's dotfiles fork before migration](https://github.com/smsunarto/dotfiles/tree/9bd2820707a2a1f4525bccd32af9766cb98c1d6a/.dotfiles/.agents/plugins/scott-engineering). The `/dev` source is [upstream poteto-mode at `88d47514`](https://github.com/cursor/plugins/blob/88d47514b82e7c44f00f2b2a72ff6dd12158038c/pstack/skills/poteto-mode/SKILL.md). Preserve deliberate fork changes when comparing with newer upstream versions. Unsupported upstream skills, playbooks, Cursor-specific agents and model setup, and Bugbot integrations are omitted.

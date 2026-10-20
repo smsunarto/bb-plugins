@@ -22,8 +22,6 @@ test("shared principles can be listed and read without an Architect workflow", a
     assert.match(grug.stdout ?? "", /Consolidate duplicated knowledge/);
     const index = await f.harness.behavior.runCli(["principle", "--name", "index"]);
     assert.equal(index.exitCode, 0);
-    assert.match(index.stdout ?? "", /Read `game-dev`/);
-    assert.match(index.stdout ?? "", /Read the `show-me` skill/);
     assert.equal(index.stdout?.match(/\(`[^`]+\.md`\)/g)?.length, 22);
   } finally {
     await f.harness.lifecycle.dispose();
