@@ -11,7 +11,7 @@ Read [the investigation findings](references/findings.md) when tracing thread sw
 
 ## Establish a comparable baseline
 
-Use the repository's [verify-bb-plugins skill](../verify-bb-plugins/SKILL.md) to launch an isolated runtime and select the affected feature. Reuse its launch, doctor, browser, and cleanup procedures. Keep temporary probes and traces in that run's ignored evidence directory.
+Use BB's bundled `bb-plugin-authoring` skill and its `references/testing.md`, following the instance routing in [AGENTS.md](../../../AGENTS.md). Reuse the workspace development instance and watcher. Verify the affected plugin's source and running status through its routed CLI before measuring. Keep probes and traces in an ignored evidence directory. Use another instance only when the check needs separate state.
 
 Record the conditions that can change the result:
 
@@ -24,9 +24,9 @@ Measure cold and warm destinations separately. Define what you cleared for a col
 
 Compare closed-to-closed, closed-to-open, and open-to-open thread switches as separate cases. Keep the destination and starting state fixed within each comparison. Alternate baseline and changed runs when possible.
 
-Use realistic list sizes and persisted state. Empty localStorage and a small sidebar can hide costs that scale with saved layouts or threads. Create large fixtures only inside the isolated runtime.
+Use realistic list sizes and persisted state. Empty localStorage and a small sidebar can hide costs that scale with saved layouts or threads. Create disposable fixtures in the development instance; use a separate instance if fixture setup would disturb another active check.
 
-For a reported slowdown in the live app, first record its version, plugin configuration, and affected path. Confirm the isolated reproduction matches those conditions. A source frontend against the same server can help identify component names, but its development timings are a separate result. Account for server caches and avoid HMR reloads during measurement.
+For a reported slowdown in the live app, first record its version, plugin configuration, and affected path. Confirm the development reproduction matches those conditions. A source frontend against the same server can help identify component names, but its development timings are a separate result. Account for server caches and avoid HMR reloads during measurement.
 
 ## Measure the interaction's completion
 
@@ -92,4 +92,4 @@ For lifecycle or subscription changes, exercise the relevant failure paths:
 
 When adding a regression test, call the consumer path and assert visible behavior or literal work counts. For render isolation, resolve the panel request and assert that unchanged timeline content did not render again. Confirm the test fails when that isolation is deliberately removed.
 
-Report the consumer's changed behavior, the cause, the verified metrics, and any timing limitation. Separate direct source facts, previous observations, and hypotheses. Keep traces and probes in ignored evidence storage. Reload the live plugin only as required by the repository handoff rules, after isolated verification.
+Report the consumer's changed behavior, the cause, the verified metrics, and any timing limitation. Separate direct source facts, previous observations, and hypotheses. Keep traces and probes in ignored evidence storage. Reload the live plugin as required by the repository handoff rules after verifying the affected flow in the development instance.

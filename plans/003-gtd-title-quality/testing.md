@@ -85,7 +85,7 @@ Use one local decision record per attempt with hypothesis, change, hashes, quali
 
 ## Runtime verification
 
-Follow the installed `verify-bb-plugins` skill and its GTD feature guide. Start the watcher, launch an isolated run, use its emitted runtime configuration, and route at least one BB command through `bb-kit dev-instance exec --`. Do not guess app/server ports.
+Follow BB's bundled `bb-plugin-authoring` testing guidance and this repository's `AGENTS.md`. Reuse the workspace development instance and watcher. Read its URLs from `bb-kit dev-instance status --json` and route commands through `bb-kit dev-instance exec --`.
 
 Before the browser's first open, set viewport 1728 × 1117 at scale 2. Verify normal cards and slim rows at ordinary and narrow sidebar widths. Inspect screenshots, full accessible labels, search by distinguishing words, questions, multi-scope titles, and grapheme integrity. Capture before/after evidence on the same surface.
 

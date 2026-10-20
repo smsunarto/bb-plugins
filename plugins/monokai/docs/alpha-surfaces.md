@@ -73,8 +73,10 @@ the nearest byte.
 
 ## Verification
 
-Launch a run with `.agents/skills/verify-bb-plugins/scripts/control`, source its
-`run.env`, then run:
+Reuse the workspace development instance following `AGENTS.md`. Set
+`BB_APP_URL` to its reported app URL, `BROWSER_SESSION` to your browser session,
+and `ARTIFACT_DIR` to an ignored evidence directory. Select bb Monokai and Dark
+appearance in that browser, then run:
 
 ```sh
 bun plugins/monokai/scripts/audit-control-surfaces.ts \
@@ -91,7 +93,7 @@ its animation completes. It writes the measurements and a matrix screenshot.
 
 The matrix verifies the CSS composition contract, not arbitrary host component
 behavior. Real settings dropdown, input focus, mobile layout, and theme
-switching still need the isolated app checks. Text ratios are representative
+switching still need live app checks. Text ratios are representative
 measurements, not a blanket accessibility verdict.
 
 For the wider neutral surface contract, run:
