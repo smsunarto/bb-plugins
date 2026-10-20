@@ -122,7 +122,7 @@
     "build": "bb plugin build .",
     "lint": "oxlint",
     "typecheck": "tsc --noEmit",
-    "test": "bun test --timeout=30000",
+    "test": "bun test --conditions=development --timeout=30000",
     "check": "node --import tsx ../../packages/bb-kit-dev/src/bin.ts check",
     "reference": "bun scripts/reference.ts",
     "clean": "rm -rf dist"
