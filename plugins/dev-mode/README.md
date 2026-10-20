@@ -18,7 +18,7 @@ Use `/review`, or the `dev_mode_review_start` and `dev_mode_review_context` tool
 
 Reviewers receive pinned-context tools only. Arena workers receive their Arena assignment tools only. Neither can launch nested workflows. Arena continues to require an explicit request or an authorized Architect workflow.
 
-Reviews are ordinary BB subthreads. BB owns their lifecycle, retries, completion notifications, and conversation history. The plugin only launches reviewers, pins their source inputs, and displays their native status. It has no review result cache, recovery service, or data migration. Existing reviewer conversations remain available in BB. Disable the old Review plugin when using Dev Mode.
+Reviews are ordinary BB subthreads. BB owns their lifecycle, automatic provider retries, completion and failure notifications, and conversation history. The parent judges once every reviewer has finished or is missing, and recovers a failed or stalled reviewer once, as the review skill describes. The plugin only launches reviewers, pins their source inputs, and displays their native status. It has no review result cache, recovery service, or data migration. Existing reviewer conversations remain available in BB. Disable the old Review plugin when using Dev Mode.
 
 For integrations such as Game Studio, a snapshot reviewer has origin `scott-engineering` and `reviewRun` metadata in that plugin's namespace. Arena workers use `arena` metadata and do not qualify for reviewer-only exemptions. The banner also recognizes old `review` threads for navigation.
 
