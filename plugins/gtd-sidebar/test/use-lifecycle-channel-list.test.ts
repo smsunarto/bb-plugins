@@ -52,7 +52,7 @@ if (process.env.GTD_LIFECYCLE_HOOK_TEST_CHILD !== "1") {
 
   function List({ load, apply, refreshKinds }: ListProps) {
     const [value, setValue] = useState("visible rows");
-    const ready = useLifecycleChannelList(
+    const { ready } = useLifecycleChannelList(
       load,
       useCallback(
         (next) => {

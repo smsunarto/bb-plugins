@@ -26,18 +26,21 @@ describe("family snooze RPC", () => {
     await plugin(bb);
     try {
       const wakeAt = Date.now() + 86_400_000;
-      assert.deepEqual(
-        await harness.behavior.callRpc("snooze", { threadId: "root", snoozedUntil: wakeAt }),
-        { ok: true },
-      );
+      const written = (await harness.behavior.callRpc("snooze", {
+        threadId: "root",
+        snoozedUntil: wakeAt,
+      })) as { ok: boolean; rows: StoredLifecycleRow[] };
       const { rows } = (await harness.behavior.callRpc("listLifecycle", {})) as {
         rows: StoredLifecycleRow[];
       };
+      // The write answers with the same rows a re-read would.
+      assert.deepEqual(written, { ok: true, rows });
       assert.deepEqual(rows.map((row) => row.threadId).sort(), ["child", "grandchild", "root"]);
       assert.ok(rows.every((row) => row.snoozedUntil === wakeAt));
       assert.equal(new Set(rows.map((row) => row.snoozedAt)).size, 1);
       assert.deepEqual(await harness.behavior.callRpc("unsnooze", { threadId: "root" }), {
         ok: true,
+        rows: [],
       });
       assert.deepEqual(await harness.behavior.callRpc("listLifecycle", {}), { rows: [] });
       assert.equal(harness.inspection.sdk.callsTo("threads.update").length, 0);

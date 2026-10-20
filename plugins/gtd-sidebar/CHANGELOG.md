@@ -39,10 +39,11 @@
   the plugin's database keeps only snoozes, and rows without a snooze are removed on
   the next start. Snooze is unchanged.
 
-- Folding a family now writes bb's own `sidebar.collapsedThreads` preference
-  instead of session state, so a fold made here shows in bb's built-in sidebar,
-  a fold made there shows here, and both survive a reload. Folded project
-  groups stay session state: bb has no per-shelf project key.
+- Folding a family now writes the `collapsedThreads` preference of bb's
+  built-in Thread list plugin instead of session state, so a fold made here
+  shows in bb's built-in sidebar, a fold made there shows here within a few
+  seconds, and both survive a reload. Folded project groups stay session
+  state: bb has no per-shelf project key.
 - Drag a row onto another row to nest it there, or onto a project group header
   to lift it back to the top level. The drop is bb's own parent change
   (`threads.update({ parentThreadId })`), so bb's sidebar follows it, and a
@@ -62,6 +63,20 @@
   thread and a thread can never reorder a project. Desktop only.
 
 ### Patch Changes
+
+- Folds work again on bb 0.46, which moved the fold list out of bb's
+  `sidebar.collapsedThreads` UI preference. Reading the old key failed every
+  fold read and write, so folds did not persist and every window retried the
+  read after any UI preference change. With Thread list turned off, families
+  keep the folds read earlier in the same session, and the backend checks
+  Thread list less often, down to every 30 s, until it answers again.
+- Snooze, Wake, and the snooze toast's **Undo** now move the thread and its
+  subthreads on the click instead of after a backend round trip and a re-read.
+  Writes reach the backend in the order they were made, and a failed write
+  puts the family back and says why.
+- Hidden Review and Arena worker changes now share one read per 250ms instead
+  of one read each, at most 1 s behind a steady stream of changes, and only a
+  reconnect re-reads on a connection change.
 
 - The machine globe, and the machine name on a card's second line, now mark
   only threads on another machine. An empty **Local machine** setting means

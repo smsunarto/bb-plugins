@@ -24,3 +24,38 @@ export async function threadFamilyIds(
   }
   return ids;
 }
+
+/**
+ * The same family read from a roster already in hand — the sidebar's own
+ * threads — so a snooze can move it before the backend has walked bb's. The
+ * backend's answer still decides which rows were written.
+ */
+export function rosterFamilyIds(
+  threads: readonly {
+    id: string;
+    parentThreadId: string | null;
+    originKind: string | null;
+    isArchived: boolean;
+  }[],
+  rootId: string,
+): string[] {
+  const children = new Map<string, string[]>();
+  for (const thread of threads) {
+    if (thread.parentThreadId === null || thread.originKind === "fork" || thread.isArchived) {
+      continue;
+    }
+    const siblings = children.get(thread.parentThreadId);
+    if (siblings) siblings.push(thread.id);
+    else children.set(thread.parentThreadId, [thread.id]);
+  }
+  const ids = [rootId];
+  const seen = new Set(ids);
+  for (let index = 0; index < ids.length; index++) {
+    for (const childId of children.get(ids[index]!) ?? []) {
+      if (seen.has(childId)) continue;
+      seen.add(childId);
+      ids.push(childId);
+    }
+  }
+  return ids;
+}

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRealtime, useRealtimeConnectionState } from "@get-bb/plugin-sdk/app";
 import { refreshRetryDelayMs } from "../lib/lifecycle";
 
@@ -27,18 +27,32 @@ function refreshKind(payload: unknown): LifecycleRefreshKind | null {
   return kind === "collapsed" || kind === "lifecycle" || kind === "naming" ? kind : null;
 }
 
+export interface LifecycleChannelList {
+  /**
+   * Whether the list is worth painting yet: true once the first read resolves
+   * or rejects, or after 250 ms because `rpc.call` can stay pending
+   * indefinitely.
+   */
+  ready: boolean;
+  /**
+   * Starts a read now; an older read still in flight no longer applies. For
+   * a caller that dropped a read and needs one that starts after its own write.
+   */
+  refresh(): void;
+}
+
 /**
  * Keeps a list current across lifecycle publishes and socket reconnects.
- * Failed reads preserve visible rows. Readiness opens on the first answer or
- * after 250 ms because `rpc.call` can stay pending indefinitely.
+ * Failed reads preserve visible rows.
  */
 export function useLifecycleChannelList<T>(
   load: () => Promise<T>,
   apply: (result: T) => void,
   refreshKinds?: readonly LifecycleRefreshKind[],
-): boolean {
+): LifecycleChannelList {
   const [ready, setReady] = useState(false);
   const refresh = useRef<((mode: RefreshMode) => void) | null>(null);
+  const refreshNow = useCallback(() => refresh.current?.("immediate"), []);
 
   useEffect(() => {
     let state: RefreshState = { kind: "active", revision: 0, scheduled: null };
@@ -137,5 +151,5 @@ export function useLifecycleChannelList<T>(
     }
   }, [connectionState]);
 
-  return ready;
+  return useMemo(() => ({ ready, refresh: refreshNow }), [ready, refreshNow]);
 }

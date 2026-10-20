@@ -48,8 +48,20 @@ interface LifecycleDbRow {
 }
 
 const threadIdSchema = z.object({ threadId: z.string().trim().min(1) });
+const lifecycleRowsSchema = z.array(
+  z.object({
+    threadId: z.string(),
+    snoozedUntil: z.number().nullable(),
+    snoozedAt: z.number().nullable(),
+  }),
+);
+const lifecycleWriteSchema = z.object({ ok: z.boolean(), rows: lifecycleRowsSchema });
 /** The host's 5 s limit on `but status`, plus the trip to and from the machine. */
 const BRANCH_SUMMARY_TIMEOUT_MS = 8_000;
+/** How often the backend checks thread-list for folds made in bb's sidebar. */
+const FOLD_CHECK_MS = 2_000;
+/** The slowest check while thread-list keeps failing. */
+const FOLD_CHECK_MAX_MS = 30_000;
 
 export const gtdSidebarRpcContract = defineRpcContract({
   listNamingThreads: {
@@ -73,21 +85,11 @@ export const gtdSidebarRpcContract = defineRpcContract({
   listLifecycle: {
     experimental_description: "Every snoozed thread with its wake time.",
     input: z.object({}),
-    output: z.object({
-      rows: z.array(
-        z.object({
-          threadId: z.string(),
-          snoozedUntil: z.number().nullable(),
-          snoozedAt: z.number().nullable(),
-        }),
-      ),
-    }),
+    output: z.object({ rows: lifecycleRowsSchema }),
   },
   /**
-   * bb's `sidebar.collapsedThreads` preference: the families folded in the
-   * built-in sidebar, shared with it and kept across reloads. bb republishes
-   * `ui-preferences-changed` on every write, which the backend relays on
-   * `LIFECYCLE_CHANNEL`.
+   * The built-in thread-list plugin's persisted family folds, shared by both
+   * sidebars. Changes are relayed on `LIFECYCLE_CHANNEL`.
    */
   listCollapsedThreads: {
     experimental_description:
@@ -95,11 +97,13 @@ export const gtdSidebarRpcContract = defineRpcContract({
     input: z.object({}),
     output: z.object({ threadIds: z.array(z.string()) }),
   },
-  toggleCollapsedThread: {
+  setThreadCollapsed: {
     experimental_description: "Fold or unfold one thread family.",
-    input: threadIdSchema,
+    input: z.object({ threadId: z.string().trim().min(1), collapsed: z.boolean() }),
     output: z.object({ threadIds: z.array(z.string()) }),
   },
+  // Both writes answer with every row after the write, so the window that
+  // made it confirms without waiting for the publish and a re-read.
   snooze: {
     experimental_description: "Park a thread and its family until an absolute wake time.",
     input: z.object({
@@ -107,12 +111,12 @@ export const gtdSidebarRpcContract = defineRpcContract({
       // Absolute wake time, so a snooze means the same thing on every device.
       snoozedUntil: z.number().int().positive(),
     }),
-    output: z.object({ ok: z.boolean() }),
+    output: lifecycleWriteSchema,
   },
   unsnooze: {
     experimental_description: "Wake a snoozed thread and its family now.",
     input: threadIdSchema,
-    output: z.object({ ok: z.boolean() }),
+    output: lifecycleWriteSchema,
   },
   /**
    * bb's own re-parent, made by dropping one row onto another (nest) or onto
@@ -234,7 +238,16 @@ export default async function plugin(bb: BbPluginApi) {
       THREAD_PAGE_SIZE,
     );
 
-  const collapsedThreads = createCollapsedThreadsStore(bb.sdk.system.uiPreferences);
+  // Every thread-list call stops when the plugin unloads, so a hung one cannot
+  // outlive it.
+  const foldsLifetime = new AbortController();
+  bb.onDispose(() => foldsLifetime.abort());
+  const collapsedThreads = createCollapsedThreadsStore(bb.sdk.plugins, {
+    signal: foldsLifetime.signal,
+    // Whichever call saw the change, a window's fold or the check below,
+    // every window re-reads.
+    onChange: () => bb.realtime.publish(LIFECYCLE_CHANNEL, { kind: "collapsed" }),
+  });
   const threadNester = createThreadNester(bb.sdk.threads);
 
   bb.rpc.register(
@@ -244,8 +257,8 @@ export default async function plugin(bb: BbPluginApi) {
       async listCollapsedThreads() {
         return { threadIds: await collapsedThreads.list() };
       },
-      async toggleCollapsedThread({ threadId }) {
-        return { threadIds: await collapsedThreads.toggle(threadId) };
+      async setThreadCollapsed({ threadId, collapsed }) {
+        return { threadIds: await collapsedThreads.set(threadId, collapsed) };
       },
       async listEnvironmentBranches({ environmentIds }) {
         if (!(await settings.get()).gitButlerBranches) return { environments: [] };
@@ -299,7 +312,7 @@ export default async function plugin(bb: BbPluginApi) {
           for (const id of ids) writeSnooze.run(id, snoozedUntil, snoozedAt);
         })();
         bb.realtime.publish(LIFECYCLE_CHANNEL, { kind: "lifecycle", threadId });
-        return { ok: true };
+        return { ok: true, rows: readAll() };
       },
       async unsnooze({ threadId }) {
         const ids = await familyIds(threadId);
@@ -307,7 +320,7 @@ export default async function plugin(bb: BbPluginApi) {
           for (const id of ids) deleteSnooze.run(id);
         })();
         bb.realtime.publish(LIFECYCLE_CHANNEL, { kind: "lifecycle", threadId });
-        return { ok: true };
+        return { ok: true, rows: readAll() };
       },
       async nestThread({ threadId, parentThreadId }) {
         const result = await threadNester.nest(threadId, parentThreadId);
@@ -333,21 +346,38 @@ export default async function plugin(bb: BbPluginApi) {
     clear(thread.id);
   });
 
-  // A fold made in bb's own sidebar lands here through the same preference;
-  // the publish is so every window re-reads it.
-  bb.onDispose(
-    bb.sdk.subscribe({
-      event: "system:changed",
-      callback: (event) => {
-        if (event.changes.includes("ui-preferences-changed")) {
-          bb.realtime.publish(LIFECYCLE_CHANNEL, {
-            kind: "collapsed",
-            preference: "sidebar.collapsedThreads",
-          });
-        }
-      },
-    }),
-  );
+  // thread-list publishes its own `preferences` channel. SDK 0.5.29 only
+  // subscribes to the current plugin's signals, so check on the server rather
+  // than adding WAN polling in every window; the store publishes what changed.
+  // Checks never overlap. While thread-list cannot answer (turned off, missing,
+  // or hung) they back off to 30 s, and only the outage and the recovery log.
+  let foldTimer: ReturnType<typeof setTimeout> | undefined;
+  let foldCheckDelay = FOLD_CHECK_MS;
+  let foldsUnreadable = false;
+  const checkFolds = async () => {
+    try {
+      await collapsedThreads.read();
+      if (foldsUnreadable) bb.log.info("thread-list folds are readable again");
+      foldsUnreadable = false;
+      foldCheckDelay = FOLD_CHECK_MS;
+    } catch (error) {
+      if (foldsLifetime.signal.aborted) return;
+      if (!foldsUnreadable) {
+        bb.log.warn(
+          `cannot read thread-list folds, checking less often until it answers: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        );
+      }
+      foldsUnreadable = true;
+      foldCheckDelay = Math.min(foldCheckDelay * 2, FOLD_CHECK_MAX_MS);
+    }
+    if (foldsLifetime.signal.aborted) return;
+    foldTimer = setTimeout(() => void checkFolds(), foldCheckDelay);
+    foldTimer.unref?.();
+  };
+  void checkFolds();
+  bb.onDispose(() => clearTimeout(foldTimer));
 
   subscribeToThreadNaming(bb, threadNamer);
 

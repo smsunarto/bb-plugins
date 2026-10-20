@@ -118,7 +118,7 @@ function InboxList({
   const { status, projects } = sidebar;
   const sidebarThreads = useStableThreads(useHiddenWorkerActivity(sidebar.threads));
   const now = useMinuteClock();
-  const lifecycle = useLifecycle();
+  const lifecycle = useLifecycle(sidebarThreads);
   const namingThreads = useNamingThreads();
   // The cut is made against the list's own clock, so a row ages off the shelf
   // while the sidebar sits open rather than on the next unrelated refresh.

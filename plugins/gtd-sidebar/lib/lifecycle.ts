@@ -97,6 +97,36 @@ export function rowsMatch(
   });
 }
 
+/**
+ * A snooze or wake this window made that the backend has not answered yet.
+ * `snooze` null is a wake.
+ */
+export interface PendingLifecycleWrite {
+  id: number;
+  threadIds: readonly string[];
+  snooze: { snoozedUntil: number; snoozedAt: number } | null;
+}
+
+/**
+ * The stored rows as this window draws them: its unanswered writes on top,
+ * oldest first, so the row moves on the click. Dropping a write, answered or
+ * failed, is all a rollback needs.
+ */
+export function withPendingWrites(
+  rows: ReadonlyMap<string, ThreadLifecycleRow>,
+  pending: readonly PendingLifecycleWrite[],
+): ReadonlyMap<string, ThreadLifecycleRow> {
+  if (pending.length === 0) return rows;
+  const drawn = new Map(rows);
+  for (const write of pending) {
+    for (const threadId of write.threadIds) {
+      if (write.snooze === null) drawn.delete(threadId);
+      else drawn.set(threadId, { threadId, ...write.snooze });
+    }
+  }
+  return drawn;
+}
+
 const MINUTE_MS = 60_000;
 const HOUR_MS = 60 * MINUTE_MS;
 const DAY_MS = 24 * HOUR_MS;
