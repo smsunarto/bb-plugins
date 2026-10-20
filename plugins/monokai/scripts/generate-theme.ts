@@ -50,10 +50,16 @@ const palette = {
     purple: "#bdb2fe",
     cyan: "#75f0ff",
   },
-  // Machine identity reuses depth blue and two content tints. No registered
-  // pink sits clear of both error and merged, so rose is the one hue it adds.
+  // Machine identity: six hues no status glyph uses, blue through cyan plus
+  // pink, told apart by lightness where hues sit close. No pair falls under
+  // 0.15 in OKLab, and each clears 3:1 on the selected sidebar row.
   identity: {
-    rose: "#ee8fc8",
+    blue: "#2987f8",
+    cyan: "#07c3de",
+    mint: "#6dfee5",
+    pink: "#fd7ec8",
+    lavender: "#aaa0fb",
+    orchid: "#fec4ff",
   },
 } as const satisfies Record<string, unknown>;
 
@@ -139,7 +145,12 @@ export const roleValues = {
   "content.blue": palette.contentTint.blue,
   "content.purple": palette.contentTint.purple,
   "content.cyan": palette.contentTint.cyan,
-  "identity.rose": palette.identity.rose,
+  "identity.blue": palette.identity.blue,
+  "identity.cyan": palette.identity.cyan,
+  "identity.mint": palette.identity.mint,
+  "identity.pink": palette.identity.pink,
+  "identity.lavender": palette.identity.lavender,
+  "identity.orchid": palette.identity.orchid,
 } as const satisfies Record<string, string>;
 
 interface CssRule {
@@ -514,10 +525,12 @@ const darkExpected = declarationMap({
   "--sidebar-accent": roleValues["layer.hover"],
   "--sidebar-accent-foreground": palette.text.ink,
   "--sidebar-border": roleValues["layer.edge"],
-  "--machine-1": palette.depth.blue,
-  "--machine-2": palette.contentTint.cyan,
-  "--machine-3": palette.identity.rose,
-  "--machine-4": palette.contentTint.blue,
+  "--machine-1": palette.identity.blue,
+  "--machine-2": palette.identity.cyan,
+  "--machine-3": palette.identity.mint,
+  "--machine-4": palette.identity.pink,
+  "--machine-5": palette.identity.lavender,
+  "--machine-6": palette.identity.orchid,
   "--pill-surface": `linear-gradient(to bottom, ${roleValues["layer.control"]}, ${roleValues["layer.control"]})`,
   "--pill-surface-border": roleValues["layer.edge"],
   "--pill-foreground": palette.text.ink,
@@ -892,6 +905,8 @@ export function auditTheme(source: string): void {
     ["--machine-2", "--sidebar", 3],
     ["--machine-3", "--sidebar", 3],
     ["--machine-4", "--sidebar", 3],
+    ["--machine-5", "--sidebar", 3],
+    ["--machine-6", "--sidebar", 3],
   ] as const) {
     requireContrast(
       `${foreground} on ${background}`,
