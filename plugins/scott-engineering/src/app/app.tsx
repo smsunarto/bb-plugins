@@ -154,21 +154,6 @@ function Steps({ run }: { run: ArenaRun }) {
   );
 }
 
-function Task({ text }: { text: string }) {
-  const [open, setOpen] = useState(false);
-  const long = text.length > 240 || text.split("\n").length > 3;
-  return (
-    <div className="arena-task">
-      <p data-open={open || !long}>{text}</p>
-      {long && (
-        <button type="button" className="arena-link" onClick={() => setOpen(!open)}>
-          {open ? "Show less" : "Show full task"}
-        </button>
-      )}
-    </div>
-  );
-}
-
 /** The judge's mean rubric score (0–5) and the verdict badges for one candidate. */
 function standing(run: ArenaRun, candidate: number) {
   const jobs = run.jobs.filter((item) => item.round === run.round);
@@ -236,13 +221,7 @@ function CandidateBody({
   active: boolean;
   readable: Extract<Readable, { kind: "candidate" }> | null;
 }) {
-  if (job.report?.kind === "candidate")
-    return (
-      <>
-        <p>{readable?.summary ?? job.report.summary}</p>
-        <p className="arena-muted">{readable?.tradeoff ?? job.report.tradeoff}</p>
-      </>
-    );
+  if (job.report?.kind === "candidate") return <p>{readable?.summary ?? job.report.summary}</p>;
   if (job.error) return <p className="arena-error">{job.error}</p>;
   return active ? (
     <p className="arena-muted arena-shimmer">Working on the task…</p>
@@ -307,13 +286,10 @@ function Result({
       <header>
         <Icon name="GitMerge" aria-hidden />
         <h3>Combined result</h3>
-        <Provider job={job} />
+        <span className="arena-muted">Built on Candidate {report.baseCandidate + 1}</span>
         <WorkerLink job={job} />
       </header>
       <p className="arena-lead">{text?.summary ?? report.summary}</p>
-      <p className="arena-muted">
-        Built on Candidate {report.baseCandidate + 1}. {text?.rationale ?? report.rationale}
-      </p>
       {sources.map((source) => (
         <div key={source} className="arena-grafts">
           <p className="arena-label">From Candidate {source + 1}</p>
@@ -335,7 +311,9 @@ function Result({
 }
 
 function Verification({ integration }: { integration: NonNullable<ArenaRun["integration"]> }) {
+  const [open, setOpen] = useState<string | null>(null);
   const passed = integration.status === "integrated";
+  const shown = integration.checks.find((check) => check.command === open);
   return (
     <div className="arena-verification" data-passed={passed} aria-label="Checks">
       <p className="arena-status">
@@ -343,24 +321,27 @@ function Verification({ integration }: { integration: NonNullable<ArenaRun["inte
         <span>{integration.summary}</span>
       </p>
       {integration.checks.length > 0 && (
-        <ul className="arena-checks">
+        <div className="arena-checks">
           {integration.checks.map((check) => (
-            <li key={check.command}>
-              <details>
-                <summary data-passed={check.exitCode === 0}>
-                  <Icon name={check.exitCode === 0 ? "Check" : "X"} aria-hidden />
-                  <span className="arena-visually-hidden">
-                    {check.exitCode === 0 ? "Passed" : "Failed"}
-                  </span>
-                  <code>{check.command}</code>
-                  <Icon name="ChevronRight" className="arena-disclosure" aria-hidden />
-                </summary>
-                <pre>{check.output || "The command finished without output."}</pre>
-              </details>
-            </li>
+            <button
+              key={check.command}
+              type="button"
+              className="arena-check"
+              data-passed={check.exitCode === 0}
+              aria-expanded={open === check.command}
+              title="Show output"
+              onClick={() => setOpen(open === check.command ? null : check.command)}
+            >
+              <Icon name={check.exitCode === 0 ? "Check" : "X"} aria-hidden />
+              <span className="arena-visually-hidden">
+                {check.exitCode === 0 ? "Passed" : "Failed"}
+              </span>
+              <code>{check.command}</code>
+            </button>
           ))}
-        </ul>
+        </div>
       )}
+      {shown && <pre>{shown.output || "The command finished without output."}</pre>}
     </div>
   );
 }
@@ -371,13 +352,14 @@ function Details({ run, digests }: { run: ArenaRun; digests: readonly Digest[] }
   const judge = jobs.find((job) => job.role === "judge");
   const synthesisJob = jobs.find((job) => job.role === "synthesis");
   const synthesis = synthesisJob?.report;
-  const rejected = rewrite(digests, synthesisJob, "synthesis")?.rejected;
+  const combined = rewrite(digests, synthesisJob, "synthesis");
+  const candidates = jobs.filter((job) => job.role === "candidate");
   const scores = judge?.report?.kind === "judge" ? judge.report.scores : [];
   return (
     <details className="arena-details">
       <summary>
         <Icon name="ChevronRight" aria-hidden />
-        Scores, review, and history
+        Details
       </summary>
       <div className="arena-details-body">
         {frame?.kind === "frame" && (
@@ -426,12 +408,33 @@ function Details({ run, digests }: { run: ArenaRun; digests: readonly Digest[] }
             <p>{judge.report?.summary ?? judge.error ?? "Review is still running."}</p>
           </div>
         )}
+        {synthesis?.kind === "synthesis" && (
+          <div>
+            <h3>Why Candidate {synthesis.baseCandidate + 1}</h3>
+            <p>{combined?.rationale ?? synthesis.rationale}</p>
+          </div>
+        )}
+        {candidates.some((job) => job.report?.kind === "candidate") && (
+          <div>
+            <h3>Tradeoffs</h3>
+            <ul>
+              {candidates.map((job) =>
+                job.report?.kind === "candidate" ? (
+                  <li key={job.key}>
+                    <strong>{roleName(job)}:</strong>{" "}
+                    {rewrite(digests, job, "candidate")?.tradeoff ?? job.report.tradeoff}
+                  </li>
+                ) : null,
+              )}
+            </ul>
+          </div>
+        )}
         {synthesis?.kind === "synthesis" && synthesis.rejected.length > 0 && (
           <div>
             <h3>Not included</h3>
             <ul>
               {synthesis.rejected.map((item, index) => (
-                <li key={item}>{rejected?.[index] ?? item}</li>
+                <li key={item}>{combined?.rejected[index] ?? item}</li>
               ))}
             </ul>
           </div>
@@ -475,6 +478,7 @@ export function ArenaSummary({
   stopping: boolean;
 }) {
   const [original, setOriginal] = useState(false);
+  const [taskOpen, setTaskOpen] = useState(false);
   const rewrites = original ? NO_DIGESTS : digests;
   const jobs = run.jobs.filter((job) => job.round === run.round);
   const candidates = jobs.filter((job) => job.role === "candidate");
@@ -488,13 +492,22 @@ export function ArenaSummary({
         <div className="arena-title">
           <Icon name="Fork" aria-hidden />
           <strong>Arena</strong>
+          <button
+            type="button"
+            className="arena-task"
+            aria-expanded={taskOpen}
+            title={taskOpen ? "Hide the task" : run.task}
+            onClick={() => setTaskOpen(!taskOpen)}
+          >
+            {run.task}
+          </button>
+        </div>
+        <div className="arena-actions">
           {(live || run.round > 1) && (
             <span className="arena-round">
               Round {run.round} of {MAX_ROUNDS}
             </span>
           )}
-        </div>
-        <div className="arena-actions">
           <span className="arena-phase">
             {live && <span className="arena-pulse" aria-hidden />}
             {phaseNames[run.phase]}
@@ -509,8 +522,8 @@ export function ArenaSummary({
         </div>
       </header>
       {/* Once applied, every step is a check mark; the result below says the same thing. */}
+      {taskOpen && <p className="arena-task-full">{run.task}</p>}
       {run.phase !== "completed" && <Steps run={run} />}
-      <Task text={run.task} />
       {run.feedback && run.round > 1 && (
         <p className="arena-callout">
           <strong>Trying again after round {run.round - 1}.</strong> {run.feedback.summary}

@@ -62,10 +62,35 @@
     flex-wrap: wrap;
   }
   & .arena-title {
+    flex: 1 1 240px;
     gap: 8px;
   }
+  & .arena-task {
+    flex: 0 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    border: 0;
+    border-radius: 4px;
+    padding: 0;
+    font: inherit;
+    color: var(--muted-foreground);
+    background: none;
+    text-align: left;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    cursor: pointer;
+  }
+  & .arena-task:hover,
+  & .arena-task[aria-expanded="true"] {
+    color: var(--foreground);
+  }
   & .arena-title > strong {
+    flex-shrink: 0;
     font-size: 14px;
+  }
+  & :is(.arena-actions, .arena-round) {
+    flex-shrink: 0;
+    white-space: nowrap;
   }
   & :is(.arena-round, .arena-duration, .arena-phase) {
     color: var(--muted-foreground);
@@ -178,24 +203,11 @@
   }
 
   /* Task and notices */
-  & .arena-task {
-    display: flex;
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 2px;
-  }
-  & .arena-task p {
-    display: -webkit-box;
-    -webkit-box-orient: vertical;
-    -webkit-line-clamp: 2;
-    overflow: hidden;
-    color: var(--muted-foreground);
-    white-space: pre-wrap;
-  }
-  & .arena-task p[data-open="true"] {
-    display: block;
+  & .arena-task-full {
     max-height: 24em;
     overflow: auto;
+    color: var(--muted-foreground);
+    white-space: pre-wrap;
   }
   & :is(.arena-callout, .arena-alert) {
     border-radius: 8px;
@@ -357,51 +369,57 @@
   }
   & .arena-checks {
     display: flex;
-    flex-direction: column;
-    padding-left: 20px;
-  }
-  & .arena-checks summary {
-    display: flex;
-    align-items: center;
+    flex-wrap: wrap;
     gap: 6px;
+    padding: 4px 0 0 20px;
+  }
+  & .arena-check {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
     min-width: 0;
-    padding: 2px 0;
+    max-width: 100%;
+    height: 22px;
+    border: 1px solid var(--arena-hairline);
+    border-radius: 6px;
+    padding: 0 8px;
+    font: inherit;
     color: var(--muted-foreground);
+    background: none;
     cursor: pointer;
-    list-style: none;
+    transition:
+      color 120ms,
+      border-color 120ms,
+      background-color 120ms;
   }
-  & .arena-checks summary::-webkit-details-marker {
-    display: none;
-  }
-  & .arena-checks summary:hover {
+  & .arena-check:hover,
+  & .arena-check[aria-expanded="true"] {
+    border-color: var(--border);
     color: var(--foreground);
   }
-  & .arena-checks summary > svg:first-child {
+  & .arena-check[aria-expanded="true"] {
+    background: var(--arena-surface);
+  }
+  & .arena-check svg {
     color: var(--arena-success);
   }
-  & .arena-checks summary[data-passed="false"] {
+  & .arena-check[data-passed="false"] {
     color: var(--arena-danger);
   }
-  & .arena-checks summary[data-passed="false"] > svg:first-child {
+  & .arena-check[data-passed="false"] svg {
     color: var(--arena-danger);
   }
-  & .arena-checks .arena-disclosure {
-    width: 12px;
-    height: 12px;
-    opacity: 0.7;
-    transition: transform 120ms;
+  & .arena-check code {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
-  & .arena-checks details[open] .arena-disclosure {
-    transform: rotate(90deg);
+  & .arena-verification pre {
+    margin: 6px 0 0 20px;
   }
   & :is(code, pre) {
     font-family: var(--font-mono);
     font-size: 12px;
-  }
-  & .arena-checks code {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
   }
   & pre {
     overflow: auto;
@@ -494,8 +512,11 @@
     flex-direction: column;
     gap: 4px;
   }
-  & :is(.arena-judge p, .arena-details-body h3) {
+  & :is(.arena-judge p, .arena-details-body > div:not(.arena-history) :is(h3, p, li)) {
     color: var(--foreground);
+  }
+  & .arena-details-body li strong {
+    font-weight: 500;
   }
   & .arena-history {
     display: flex;
