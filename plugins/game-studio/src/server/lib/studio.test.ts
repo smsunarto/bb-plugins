@@ -2394,3 +2394,80 @@ test("a review joins the node's reviews once and never touches its outputs", asy
     ],
   });
 });
+
+test("a judgement makes its choice the pick unless the pick changed while it ran", async () => {
+  const { adoptGeneration } = await import("./studio.ts");
+  const { gameSchema } = await import("../../shared/schema.ts");
+  const { generationJob } = await import("../../shared/generation.ts");
+  const f = fake(),
+    game = gameSchema.parse(await create.execute({ bb: f.bb }, input));
+  const takes = [
+    { assetId: "coin-a", jobId: "run-1" },
+    { assetId: "coin-b", jobId: "run-2" },
+  ];
+  const seedNode = async (assetId: string) => {
+    const original = (await get.execute({ bb: f.bb }, { gameId: game.id })).boards[0]!;
+    await saveBoard.execute(
+      { bb: f.bb },
+      {
+        gameId: game.id,
+        revision: original.revision,
+        board: {
+          ...original.board,
+          nodes: [
+            { id: "coin", type: "image", position: { x: 0, y: 0 }, data: { assetId, takes } },
+          ],
+        },
+      },
+    );
+  };
+  const judge = (id: string) => {
+    f.seed("host", `/games/orbit/canvas/staging/${id}/output.md`, "**Pick: Candidate 2** — rim.");
+    return generationJob.parse({
+      version: 1,
+      id,
+      threadId: null,
+      origin: { kind: "canvas", gameId: game.id },
+      createdAt: 1,
+      updatedAt: 2,
+      status: "succeeded",
+      request: {
+        kind: "text",
+        prompt: "Judge",
+        judgeOf: ["coin-a", "coin-b"],
+        judgePick: "coin-a",
+      },
+      target: { boardId: "main", nodeId: "coin", fingerprint: "stale" },
+      outputs: [
+        {
+          path: `canvas/staging/${id}/output.md`,
+          type: "text",
+          sizeBytes: 3,
+          sha256: "a".repeat(64),
+        },
+      ],
+    });
+  };
+  const node = async () =>
+    (await get.execute({ bb: f.bb }, { gameId: game.id })).boards[0]!.board.nodes[0]!;
+  await seedNode("coin-a");
+  assert.equal((await adoptGeneration(f.bb, game, judge("run-2-judge"))).attached, true);
+  assert.equal((await adoptGeneration(f.bb, game, judge("run-2-judge"))).attached, true);
+  const judged = await node();
+  assert.equal(judged.data.assetId, "coin-b");
+  assert.deepEqual(judged.data.judgements, [
+    {
+      assetIds: ["coin-a", "coin-b"],
+      jobId: "run-2-judge",
+      text: "**Pick: Candidate 2** — rim.",
+      choice: "coin-b",
+      applied: true,
+    },
+  ]);
+  // Someone picked by hand while the next judge ran, so their pick stands.
+  await seedNode("coin-b");
+  await adoptGeneration(f.bb, game, judge("run-3-judge"));
+  const kept = await node();
+  assert.equal(kept.data.assetId, "coin-b");
+  assert.equal((kept.data.judgements as { applied: boolean }[]).at(-1)?.applied, false);
+});

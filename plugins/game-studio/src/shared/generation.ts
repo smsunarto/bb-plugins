@@ -69,6 +69,10 @@ export const textRequest = z.strictObject({
   briefFor: briefRecipe.optional(),
   /** Reviews these outputs of the target node against the inputs they were made from. */
   reviewOf: z.array(z.string().min(1).max(100)).min(1).max(8).optional(),
+  /** Chooses the best of these outputs of the target node, which then becomes its pick. */
+  judgeOf: z.array(z.string().min(1).max(100)).min(2).max(12).optional(),
+  /** The node's pick when the judge started; a judge never overrides a pick changed since. */
+  judgePick: z.string().min(1).max(100).optional(),
   // A review sends a run's inputs and its outputs together.
   images: z.array(mediaPath).max(20).default([]),
   /** Project files the reviewer inspects on disk, such as 3D models. */
@@ -106,13 +110,93 @@ export const modelRequest = z.strictObject({
   outputCount: z.literal(1).default(1),
   targetPolycount: z.number().int().min(1000).max(200000).default(20000),
 });
+/**
+ * A visible BB thread that does a step's work with its own tools, such as Blender cleanup. It
+ * reads the step's inputs from disk and writes what it makes into the run's staging directory.
+ */
+export const agentRequest = z.strictObject({
+  kind: z.literal("agent"),
+  prompt: brief,
+  model: model.default({ provider: "bb" }),
+  providerId: z.string().min(1).max(100).optional(),
+  reasoningLevel: reasoningLevel.optional(),
+  serviceTier: serviceTier.optional(),
+  images: z.array(mediaPath).max(14).default([]),
+  imageReferenceKey,
+  /** Project files the agent works from, such as 3D models. */
+  files: z.array(mediaPath).max(8).default([]),
+  outputCount: z.literal(1).default(1),
+});
+/** Tripo's processing steps for an existing model, in pipeline order. */
+export const modelOperations = ["texture", "pbr", "rig", "animate"] as const;
+export const rigTypes = [
+  "biped",
+  "quadruped",
+  "hexapod",
+  "octopod",
+  "avian",
+  "serpentine",
+  "aquatic",
+] as const;
+/** What a canvas Tripo node uses until its settings say otherwise; the inspector shows the same. */
+export const modelEditDefaults = {
+  textureQuality: "detailed",
+  rigType: "biped",
+  animation: "preset:idle",
+} as const;
+/** One Tripo processing step applied to a model a previous node made. */
+export const modelEditRequest = z.strictObject({
+  kind: z.literal("model-edit"),
+  model: model.default({ provider: "tripo", id: "tripo-p2" }),
+  operation: z.enum(modelOperations),
+  /** The model to process. */
+  sourcePath: mediaPath,
+  /**
+   * The Tripo task that made the source on the project's machine. Tripo processes tasks, not
+   * files, so a source without one is imported first; an animation needs its rig's task.
+   */
+  sourceTaskId: z.string().min(1).max(200).optional(),
+  /** Texturing references in front, left, back, right order. */
+  views: z
+    .strictObject({
+      front: mediaPath.optional(),
+      left: mediaPath.optional(),
+      back: mediaPath.optional(),
+      right: mediaPath.optional(),
+    })
+    .optional(),
+  /** What texturing paints when it has no reference views. */
+  prompt: z.string().trim().min(1).max(2000).optional(),
+  textureQuality: z.enum(["standard", "detailed", "extreme"]).optional(),
+  rigType: z.enum(rigTypes).optional(),
+  /** A retarget preset such as `preset:idle` or `preset:aquatic:march`. */
+  animation: z
+    .string()
+    .regex(/^preset:[a-z0-9_]+(:[a-z0-9_]+)?$/, "Use a Tripo preset such as preset:idle.")
+    .optional(),
+  outputCount: z.literal(1).default(1),
+});
 export const mediaRequest = z.discriminatedUnion("kind", [
   imageRequest,
   textRequest,
   videoRequest,
   modelRequest,
+  agentRequest,
+  modelEditRequest,
 ]);
 export type MediaRequest = z.output<typeof mediaRequest>;
+/** Runs BB executes as threads, rather than the host's media providers. */
+export function runsOnBb<T extends { kind: MediaRequest["kind"] }>(
+  request: T,
+): request is Extract<T, { kind: "text" | "agent" }> {
+  return request.kind === "text" || request.kind === "agent";
+}
+/** A texturing run's reference views, in Tripo's front, left, back, right order. */
+export function editViewPaths(request: z.output<typeof modelEditRequest>) {
+  return modelViews.flatMap((view) =>
+    request.views?.[view] ? [[view, request.views[view]] as const] : [],
+  );
+}
 /** A 3D request's images by view, front first. */
 export function modelViewPaths(request: z.output<typeof modelRequest>) {
   const views = { ...request.views, front: request.approvedImagePath };
@@ -120,7 +204,9 @@ export function modelViewPaths(request: z.output<typeof modelRequest>) {
 }
 /** Every image a request reads, in the order providers receive them. */
 export function generationImagePaths(request: MediaRequest): string[] {
-  if (request.kind === "image" || request.kind === "text") return request.images;
+  if (request.kind === "image" || request.kind === "text" || request.kind === "agent")
+    return request.images;
+  if (request.kind === "model-edit") return editViewPaths(request).map(([, path]) => path);
   if (request.kind === "video")
     return [request.imagePath, request.endImagePath].filter(
       (path): path is string => path !== undefined,
@@ -193,6 +279,8 @@ export const canvasGenerationInput = z.strictObject({
   brief: z.literal(true).optional(),
   /** Review this output of an image or 3D node instead of generating. */
   reviewAssetId: z.string().min(1).max(100).optional(),
+  /** Have an image node's judge choose between its shortlist, or its takes, instead. */
+  judge: z.literal(true).optional(),
 });
 export const generationControlInput = z.strictObject({
   gameId: generationId,
@@ -227,7 +315,7 @@ export const providerCapabilities = [
   {
     provider: "tripo",
     models: ["tripo-p2"],
-    kinds: ["model-3d"],
+    kinds: ["model-3d", "model-edit"],
     imageOutputs: [],
     videoOutputs: [],
     transparency: false,
@@ -236,9 +324,9 @@ export const providerCapabilities = [
 
 /** Provider policy belongs here, not in agent-authored CLI flags. */
 export function normalizeMediaRequest(request: MediaRequest): MediaRequest {
-  if (request.kind === "text") {
+  if (runsOnBb(request)) {
     if (request.model.provider !== "bb")
-      throw new Error("Text generation uses the selected BB provider.");
+      throw new Error("Text and agent runs use the selected BB provider.");
     return request;
   }
   const provider = providerCapabilities.find((item) => item.provider === request.model.provider);
@@ -255,10 +343,23 @@ const policies: Record<
   midjourney: normalizeMidjourney,
   google: normalizeGoogle,
   fal: normalizeFal,
-  tripo: (request) => request,
+  tripo: normalizeTripo,
 };
+function normalizeTripo(request: MediaRequest): MediaRequest {
+  if (request.kind !== "model-edit") return request;
+  const { operation } = request;
+  if (operation === "texture" && !request.prompt && !editViewPaths(request).length)
+    throw new Error("Texturing needs a texture prompt or at least one reference view.");
+  if (operation === "rig" && !request.rigType)
+    throw new Error("Choose the rig type, such as aquatic for a fish or shark.");
+  if (operation === "animate" && !request.animation)
+    throw new Error("Choose an animation preset, such as preset:idle.");
+  if (operation === "animate" && !request.sourceTaskId)
+    throw new Error("Animate a model rigged by a Tripo Rig node on this machine.");
+  return request;
+}
 function normalizeMidjourney(request: MediaRequest): MediaRequest {
-  if (request.kind === "model-3d" || request.kind === "text")
+  if (request.kind === "model-3d" || request.kind === "model-edit" || runsOnBb(request))
     throw new Error("Midjourney supports only images and video.");
   const promptParts = [
     request.prompt,
@@ -299,7 +400,7 @@ function normalizeGoogle(request: MediaRequest): MediaRequest {
       );
     return { ...request, outputCount: 1 };
   }
-  if (request.kind !== "video") throw new Error("Google does not support 3D geometry.");
+  if (request.kind !== "video") throw new Error("Google supports only images and video.");
   if (
     (request.model.id && request.model.id !== "gemini-omni-1.1-flash-preview") ||
     request.duration > 10

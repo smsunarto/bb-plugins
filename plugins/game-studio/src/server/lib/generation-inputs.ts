@@ -7,8 +7,18 @@ import { projectFile } from "./paths.ts";
 type Prepared = { request: MediaRequest; target: NonNullable<GenerationJob["target"]> };
 
 function snapshotRequest(source: MediaRequest, snapshots: Map<string, string>): MediaRequest {
-  if (source.kind === "image" || source.kind === "text")
-    return { ...source, images: source.images.map((path) => snapshots.get(path)!) };
+  const snapshot = (path: string) => snapshots.get(path)!;
+  if (source.kind === "image" || source.kind === "text" || source.kind === "agent")
+    return { ...source, images: source.images.map(snapshot) };
+  if (source.kind === "model-edit")
+    return source.views
+      ? {
+          ...source,
+          views: Object.fromEntries(
+            Object.entries(source.views).map(([view, path]) => [view, snapshot(path)]),
+          ),
+        }
+      : source;
   if (source.kind === "video")
     return {
       ...source,

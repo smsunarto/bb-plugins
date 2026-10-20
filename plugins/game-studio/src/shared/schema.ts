@@ -12,6 +12,7 @@ export const nodeKindSchema = z.enum([
   "video",
   "model-3d",
   "animate-3d",
+  "agent",
   "asset",
   "document",
   "table",
@@ -212,6 +213,10 @@ export const generationRecipeSchema = z.enum([
   "omni-video",
   "fal-video",
   "model-3d",
+  "tripo-texture",
+  "tripo-pbr",
+  "tripo-rig",
+  "tripo-animate",
   "voice-sfx",
   "music",
 ]);

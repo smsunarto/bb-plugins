@@ -39,6 +39,14 @@ export function outputReviewState(
   return { reviewing, record, verdict: record && reviewVerdict(record.text) };
 }
 
+/**
+ * The agent a node saves for its automatic runs. Saving it pins it, so they run on the agent the
+ * inspector shows even after BB's default changes.
+ */
+export function pinnedAgent({ providerId, model, reasoningLevel, serviceTier }: AgentSelection) {
+  return { providerId, model, reasoningLevel, ...(serviceTier ? { serviceTier } : {}) };
+}
+
 /** A small verdict chip for a node card or a take. */
 export function VerdictBadge({
   verdict,
@@ -85,12 +93,10 @@ export function ReviewSection({
   const settings = nodeReviewSettings(node) ?? { enabled: false };
   const agent = settings.agent ?? defaultAgent;
   const save = (next: ReviewSettings) => {
-    // Saving the agent pins it, so automatic reviews run on the agent shown here.
-    const { providerId, model, reasoningLevel, serviceTier } = next.agent ?? agent;
     onChange({
       review: {
         enabled: next.enabled,
-        agent: { providerId, model, reasoningLevel, ...(serviceTier ? { serviceTier } : {}) },
+        agent: pinnedAgent(next.agent ?? agent),
         ...(next.criteria?.trim() ? { criteria: next.criteria } : {}),
         ...(next.retries ? { retries: next.retries } : {}),
         ...(next.retryOn === "fixes" ? { retryOn: next.retryOn } : {}),

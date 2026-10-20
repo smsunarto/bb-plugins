@@ -560,6 +560,18 @@ function Workbench({ gameId, tab }: { gameId: string; tab: Tab }) {
                       });
                       await refetch();
                     }}
+                    onJudge={async (nodeId, revision, requestId) => {
+                      await client.generateCanvas({
+                        gameId,
+                        boardId: board.board.id,
+                        nodeId,
+                        revision,
+                        requestId,
+                        threadId: composer.scope.kind === "thread" ? composer.scope.threadId : null,
+                        judge: true,
+                      });
+                      await refetch();
+                    }}
                     onGenerationControl={async (jobId, action) => {
                       const result = await client.canvasGenerationStatus({
                         gameId,

@@ -6,6 +6,7 @@ import {
   mediaRequest,
   normalizeMediaRequest,
   providerCapabilities,
+  runsOnBb,
   type MediaRequest,
   type GenerationJob,
   type canvasGenerationInput,
@@ -15,7 +16,14 @@ import {
 } from "../../shared/generation.ts";
 import { getGame, loadWorkspace, adoptGeneration } from "./studio.ts";
 import type { SlotStore } from "./slot-store.ts";
-import { canvasRequest, retryRequest, reviewRequest } from "./canvas-generation.ts";
+import { canvasRequest, judgeRequest, retryRequest, reviewRequest } from "./canvas-generation.ts";
+import {
+  judgeRequestId,
+  manualCandidates,
+  nodeJudgeSettings,
+  runCandidates,
+} from "../../shared/judge.ts";
+import { nodeTakes, takeRun } from "../../shared/takes.ts";
 import { nodeReviewSettings, reviewRequestId } from "../../shared/review.ts";
 import { captureCanvasInputs } from "./generation-inputs.ts";
 import { CanvasText } from "./canvas-text.ts";
@@ -27,6 +35,19 @@ type AdoptionResult = {
   adoption: Awaited<ReturnType<typeof adoptGeneration>> | { deferred: true; reason: string };
 };
 export type GenerationContext = { bb: BbPluginApi; generations: Generations };
+
+/** A board's node, or an error naming what is gone. */
+function nodeOf(
+  workspace: Awaited<ReturnType<typeof loadWorkspace>>,
+  boardId: string,
+  nodeId: string,
+) {
+  const node = workspace.boards
+    .find(({ board }) => board.id === boardId)
+    ?.board.nodes.find(({ id }) => id === nodeId);
+  if (!node) throw new Error("The canvas node no longer exists.");
+  return node;
+}
 
 export class Generations {
   private readonly bb: BbPluginApi;
@@ -105,7 +126,7 @@ export class Generations {
     const key = this.jobKey(game, job.id);
     if (this.jobOperations.has(key)) return job;
     const owner = await this.serialJob(key, async () => {
-      if (job.request.kind === "text") {
+      if (runsOnBb(job.request)) {
         const slot = this.slots.find(game.hostId, game.rootPath);
         if (slot && (slot.state !== "leased" || slot.ownerThreadId !== job.threadId)) return null;
         try {
@@ -164,9 +185,16 @@ export class Generations {
     const workspace = await loadWorkspace(this.bb, input.gameId);
     const prepared = input.reviewAssetId
       ? reviewRequest(workspace, input.boardId, input.nodeId, [input.reviewAssetId])
-      : canvasRequest(workspace, input);
-    if (!["image", "text"].includes(prepared.request.kind))
-      throw new Error("Direct canvas generation supports image and text nodes.");
+      : input.judge
+        ? judgeRequest(
+            workspace,
+            input.boardId,
+            input.nodeId,
+            manualCandidates(nodeOf(workspace, input.boardId, input.nodeId)),
+          )
+        : canvasRequest(workspace, input);
+    if (!["image", "text", "agent", "model-edit"].includes(prepared.request.kind))
+      throw new Error("Direct canvas generation supports image, text, agent and Tripo nodes.");
     return this.dispatch(game, input.requestId, prepared.request, thread, prepared.target, {
       kind: "canvas",
       gameId: game.id,
@@ -236,8 +264,9 @@ export class Generations {
       let normalized = mediaRequest.parse(
         JSON.parse(JSON.stringify(normalizeMediaRequest(request))),
       );
-      const credentials =
-        normalized.kind === "text" ? {} : await this.credentials(normalized.model.provider);
+      const credentials = runsOnBb(normalized)
+        ? {}
+        : await this.credentials(normalized.model.provider);
       const reserved = this.work.reserve(
         game.hostId,
         game.rootPath,
@@ -257,7 +286,7 @@ export class Generations {
           throw error;
         }
       }
-      if (normalized.kind === "text") {
+      if (runsOnBb(normalized)) {
         const result = await this.text.start(game, {
           version: 1,
           id: requestId,
@@ -358,13 +387,12 @@ export class Generations {
     if (before.status === "succeeded" && action === "status")
       return this.adopt(game, before, threadId);
     const job = await this.serialJob(this.jobKey(game, before.id), async () => {
-      if (before.request.kind === "text")
-        this.slots.editorAccess(game.hostId, game.rootPath, threadId);
+      if (runsOnBb(before.request)) this.slots.editorAccess(game.hostId, game.rootPath, threadId);
       if (action === "resume") this.work.reserve(game.hostId, game.rootPath, before.id, threadId);
       const client = this.bb.hosts.experimental_client({ contract: studioHostContract });
       const target = { rootPath: game.rootPath, jobId: before.id };
       let job = before;
-      if (before.request.kind === "text")
+      if (runsOnBb(before.request))
         job = await this.text.status(game, before.id, action === "cancel");
       else if (action === "resume")
         job = await client.call(
@@ -409,6 +437,46 @@ export class Generations {
       );
     }
   }
+  /**
+   * Starts the node's judge over a finished run's outputs and its current pick. A batch is one
+   * run, so its last job to land starts the judge, once every output it made is on the node.
+   */
+  private async judgeRun(game: Game, job: GenerationJob) {
+    if (job.request.kind === "text" || !job.target) return;
+    try {
+      const workspace = await loadWorkspace(this.bb, game.id);
+      const node = nodeOf(workspace, job.target.boardId, job.target.nodeId);
+      if (!nodeJudgeSettings(node)?.enabled) return;
+      const run = takeRun(job.id);
+      const takes = nodeTakes(node);
+      const pending = workspace.generationJobs.some(
+        (other) =>
+          other.id !== job.id &&
+          takeRun(other.id) === run &&
+          (["queued", "running"].includes(other.status) ||
+            (other.status === "succeeded" &&
+              other.outputs.some(({ type }) => type !== "text") &&
+              !takes.some((take) => take.jobId === other.id))),
+      );
+      const candidates = runCandidates(node, run);
+      if (pending || candidates.length < 2) return;
+      const { request, target } = judgeRequest(
+        workspace,
+        job.target.boardId,
+        job.target.nodeId,
+        candidates,
+      );
+      await this.dispatch(game, judgeRequestId(run), request, null, target, {
+        kind: "canvas",
+        gameId: game.id,
+      });
+    } catch (error) {
+      // A failed judge leaves the pick as it was.
+      this.bb.log.warn(
+        `Could not start the judge of ${job.id}: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+  }
   /** Runs a generation again when its automatic review rejects it and the node allows a retry. */
   private async retryRun(game: Game, review: GenerationJob) {
     try {
@@ -449,10 +517,11 @@ export class Generations {
       this.work.reserve(game.hostId, game.rootPath, job.id, owner);
       try {
         const adoption = await adoptGeneration(this.bb, game, job);
-        if (adoption.attached)
-          await (job.request.kind === "text"
-            ? this.retryRun(game, job)
-            : this.reviewRun(game, job, adoption.candidateAssetIds));
+        if (adoption.attached && job.request.kind === "text") await this.retryRun(game, job);
+        else if (adoption.attached) {
+          await this.reviewRun(game, job, adoption.candidateAssetIds);
+          await this.judgeRun(game, job);
+        }
         return { job, adoption };
       } finally {
         this.work.settled(game.hostId, game.rootPath, job.id);

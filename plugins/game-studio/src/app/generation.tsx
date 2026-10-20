@@ -1,12 +1,15 @@
 import { nodeRecipe, recipes } from "../shared/recipes.ts";
-import type { CanvasNode, NodeKind } from "../shared/schema.ts";
-import { agentSelection, type AgentSelection } from "../shared/generation.ts";
+import type { CanvasNode, GenerationRecipe, NodeKind } from "../shared/schema.ts";
+import {
+  agentSelection,
+  modelEditDefaults,
+  rigTypes,
+  type AgentSelection,
+} from "../shared/generation.ts";
 
 export type NodePatch = Record<string, CanvasNode["data"][string]>;
 
-const settings: Partial<
-  Record<NodeKind, { key: string; label: string; options: (string | number)[] }[]>
-> = {
+const settings: Partial<Record<NodeKind, Field[]>> = {
   image: [
     {
       key: "aspectRatio",
@@ -22,6 +25,37 @@ const settings: Partial<
   ],
 };
 
+type Field = { key: string; label: string; options: (string | number)[] };
+/** Settings a model adds to its kind's own, such as Tripo's rig type. */
+const recipeSettings: Partial<Record<GenerationRecipe, Field[]>> = {
+  "tripo-texture": [
+    { key: "textureQuality", label: "Quality", options: ["detailed", "standard", "extreme"] },
+  ],
+  "tripo-rig": [{ key: "rigType", label: "Rig", options: [...rigTypes] }],
+  "tripo-animate": [
+    {
+      key: "animation",
+      label: "Animation",
+      // Tripo qualifies short biped names with the rig's type; creatures have their own.
+      options: [
+        "preset:idle",
+        "preset:walk",
+        "preset:run",
+        "preset:jump",
+        "preset:quadruped:walk",
+        "preset:hexapod:walk",
+        "preset:octopod:walk",
+        "preset:serpentine:march",
+        "preset:aquatic:march",
+      ],
+    },
+  ],
+};
+const optionLabels: Record<string, (option: string | number) => string> = {
+  duration: (option) => `${option}s`,
+  batch: (option) => `×${option}`,
+  animation: (option) => String(option).replace(/^preset:/, ""),
+};
 const numeric = new Set(["duration", "batch"]);
 /** Images per Nano Banana run; each image is its own request. */
 export const nodeBatch = (node: CanvasNode) =>
@@ -30,7 +64,7 @@ export const nodeBatch = (node: CanvasNode) =>
     : 1;
 /** The model a node's output comes from. Text is the user's own, so it names none. */
 export const nodeModelLabel = (node: CanvasNode) =>
-  node.type === "text" ? undefined : nodeRecipe(node)?.label;
+  node.type === "text" || node.type === "agent" ? undefined : nodeRecipe(node)?.label;
 /** A BB agent as the picker summarizes it. */
 export const agentLabel = (agent: AgentSelection) =>
   [agent.model, agent.reasoningLevel, agent.serviceTier === "fast" && "fast"]
@@ -43,7 +77,7 @@ export const nodeAgent = (node: CanvasNode): AgentSelection | undefined => {
 };
 /** The field holding a node's brief, when it can generate. */
 export const promptField = (kind: NodeKind) =>
-  kind === "text"
+  kind === "text" || kind === "agent"
     ? "instruction"
     : ["image", "video", "model-3d", "asset"].includes(kind)
       ? "prompt"
@@ -72,21 +106,20 @@ export function GenerationSettings({
           },
         ]
       : []),
-    ...(settings[node.type] ?? [])
+    ...[...(settings[node.type] ?? []), ...((current && recipeSettings[current.id]) ?? [])]
       // Midjourney always returns four images per run.
       .filter((field) => field.key !== "batch" || current?.id === "nano-banana")
       .map((field) => ({
         key: field.key,
         label: field.label,
-        value: String(node.data[field.key] ?? field.options[0]),
+        value: String(
+          node.data[field.key] ??
+            modelEditDefaults[field.key as keyof typeof modelEditDefaults] ??
+            field.options[0],
+        ),
         options: field.options.map((option) => ({
           value: String(option),
-          label:
-            field.key === "duration"
-              ? `${option}s`
-              : field.key === "batch"
-                ? `×${option}`
-                : String(option),
+          label: optionLabels[field.key]?.(option) ?? String(option),
         })),
       })),
   ];
@@ -120,4 +153,4 @@ export function GenerationSettings({
 
 /** Whether running the node generates on the canvas instead of preparing a request. */
 export const runsDirectly = (node: CanvasNode) =>
-  node.type === "text" || !!nodeRecipe(node)?.direct;
+  node.type === "text" || node.type === "agent" || !!nodeRecipe(node)?.direct;

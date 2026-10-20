@@ -45,6 +45,7 @@ export default experimental_defineHostEntry({
     },
     status: (input) => runner.status(input),
     reconcileMissing: (input) => runner.reconcileMissing(input),
+    stagedOutputs: (input) => runner.stagedOutputs(input),
     list: (input) => runner.list(input.rootPath),
     cancel: (input) => runner.cancel(input),
     async resume(input, context) {

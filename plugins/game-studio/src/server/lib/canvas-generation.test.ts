@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { canvasRequest, retryRequest, reviewRequest } from "./canvas-generation.ts";
+import { canvasRequest, judgeRequest, retryRequest, reviewRequest } from "./canvas-generation.ts";
 import { workspaceSchema } from "../../shared/schema.ts";
 import { generationPrompt } from "../../shared/generation-prompt.ts";
 import { generationJob } from "../../shared/generation.ts";
@@ -273,7 +273,11 @@ for (const kind of ["image", "text"] as const) {
       kind,
       images: ["canvas/staging/key.png", "canvas/staging/palette.png"],
     });
-    expect(promptParts(request.kind !== "model-3d" ? generationPrompt(request) : "")).toEqual({
+    expect(
+      promptParts(
+        request.kind === "image" || request.kind === "text" ? generationPrompt(request) : "",
+      ),
+    ).toEqual({
       brief: "Use Hero for shape and Palette for color",
       references: [
         {
@@ -302,7 +306,7 @@ test("reference fingerprints follow catalog replacements and labels, without fol
       .references,
   ).toEqual([{ image: 1, labels: ["Renamed key (asset: ref)"] }]);
   state.assets.splice(0, 1);
-  expect(() => canvasRequest(state, input)).toThrow("existing image output");
+  expect(() => canvasRequest(state, input)).toThrow("needs an existing output");
 });
 
 test("image requests without references preserve the brief verbatim", () => {
@@ -532,4 +536,159 @@ test("a rejected run runs again with its own request until the node's retries ru
   node.data.review = { enabled: true, retries: 2 };
   node.data.reviews = [{ assetIds: ["take"], jobId: "manual", text: "**Fail**" }];
   expect(retryRequest(state, review("manual"))).toBeUndefined();
+});
+
+test("a judge shows the run's inputs, then numbered candidates, on the node's judge agent", () => {
+  const state = workspace();
+  state.assets.push(
+    { id: "take-a", name: "a.png", path: "canvas/staging/run-b0/a.png", type: "image" },
+    { id: "take-b", name: "b.png", path: "canvas/staging/run-b1/b.png", type: "image" },
+  );
+  state.generationJobs.push(
+    generationJob.parse({
+      version: 1,
+      id: "run-b1",
+      threadId: null,
+      origin: { kind: "canvas", gameId: "game" },
+      createdAt: 1,
+      updatedAt: 2,
+      status: "succeeded",
+      request: {
+        kind: "image",
+        prompt: "A key icon on teal",
+        images: ["canvas/inputs/key.png"],
+        imageReferenceKey: "1. Key",
+      },
+      outputs: [],
+    }),
+  );
+  const node = state.boards[0]!.board.nodes.find(({ id }) => id === "image")!;
+  node.data = {
+    ...node.data,
+    assetId: "take-a",
+    takes: [
+      { assetId: "take-a", jobId: "run-b0" },
+      { assetId: "take-b", jobId: "run-b1" },
+    ],
+    judge: {
+      enabled: true,
+      agent: { providerId: "claude", model: "opus", reasoningLevel: "high" },
+      criteria: "Readable at 64 px",
+    },
+  };
+  const { request } = judgeRequest(state, "board", "image", ["take-a", "take-b"]);
+  if (request.kind !== "text") throw new Error("A judgement is a text request.");
+  expect(request).toMatchObject({
+    judgeOf: ["take-a", "take-b"],
+    judgePick: "take-a",
+    images: ["canvas/inputs/key.png", "canvas/staging/run-b0/a.png", "canvas/staging/run-b1/b.png"],
+    providerId: "claude",
+    reasoningLevel: "high",
+  });
+  expect(request.prompt).toContain("Readable at 64 px");
+  expect(request.prompt).toContain("A key icon on teal");
+  expect(request.prompt).toContain("Candidate 1 is image 2: a.png (the node's current pick)");
+  expect(request.prompt).toContain("Candidate 2 is image 3: b.png");
+  expect(() => judgeRequest(state, "board", "image", ["take-a"])).toThrow("at least two");
+});
+
+/** A Tripo P2 node whose GLB came from a recorded Tripo task, feeding the node under test. */
+function withMesh(state: ReturnType<typeof workspace>, node: Record<string, unknown>) {
+  state.assets.push({
+    id: "mesh",
+    name: "shark.glb",
+    path: "canvas/staging/tripo/shark.glb",
+    type: "model",
+  });
+  state.generationJobs.push(
+    generationJob.parse({
+      version: 1,
+      id: "tripo",
+      threadId: null,
+      createdAt: 1,
+      updatedAt: 2,
+      status: "succeeded",
+      taskId: "geometry-task",
+      request: { kind: "model-3d", approvedImagePath: "canvas/staging/key.png" },
+      outputs: [
+        {
+          path: "canvas/staging/tripo/shark.glb",
+          type: "model",
+          sizeBytes: 3,
+          sha256: "a".repeat(64),
+        },
+      ],
+    }),
+  );
+  const board = state.boards[0]!.board;
+  board.nodes.find(({ id }) => id === "model")!.data.assetId = "mesh";
+  board.nodes.push({ id: "step", position: { x: 700, y: 0 }, ...node } as never);
+}
+
+test("an agent step reads its instruction, notes, images and models from its inputs", () => {
+  const state = workspace();
+  withMesh(state, {
+    type: "agent",
+    data: {
+      instruction: "Clean up the mesh in Blender",
+      promptSource: { type: "node", nodeId: "design-node" },
+      references: [
+        { type: "node", nodeId: "model" },
+        { type: "library", assetId: "ref" },
+      ],
+    },
+  });
+  const { request } = canvasRequest(state, {
+    ...input,
+    nodeId: "step",
+    textProviderId: "codex",
+    model: { provider: "bb", id: "gpt-6.1-sol" },
+    reasoningLevel: "high",
+  });
+  expect(request).toMatchObject({
+    kind: "agent",
+    prompt: "Clean up the mesh in Blender\n\nBrass and teal",
+    files: ["canvas/staging/tripo/shark.glb"],
+    images: ["canvas/staging/key.png"],
+    providerId: "codex",
+    reasoningLevel: "high",
+  });
+});
+
+test("a Tripo step processes the task that made its model, with the node's settings", () => {
+  const state = workspace();
+  withMesh(state, {
+    type: "model-3d",
+    data: {
+      recipe: "tripo-rig",
+      rigType: "aquatic",
+      references: [{ type: "node", nodeId: "model", port: "model" }],
+    },
+  });
+  const step = { ...input, nodeId: "step" };
+  expect(canvasRequest(state, step).request).toEqual({
+    kind: "model-edit",
+    model: { provider: "tripo", id: "tripo-p2" },
+    operation: "rig",
+    sourcePath: "canvas/staging/tripo/shark.glb",
+    sourceTaskId: "geometry-task",
+    rigType: "aquatic",
+    outputCount: 1,
+  });
+  // A texture step reads its reference views and falls back to the shared default quality.
+  const node = state.boards[0]!.board.nodes.find(({ id }) => id === "step")!;
+  node.data = {
+    recipe: "tripo-texture",
+    references: [
+      { type: "node", nodeId: "model", port: "model" },
+      { type: "library", assetId: "ref", port: "front" },
+    ],
+  };
+  expect(canvasRequest(state, step).request).toMatchObject({
+    operation: "texture",
+    views: { front: "canvas/staging/key.png" },
+    textureQuality: "detailed",
+  });
+  node.data = { recipe: "tripo-pbr", references: [] };
+  expect(() => canvasRequest(state, step)).toThrow("Connect a 3D model");
 });

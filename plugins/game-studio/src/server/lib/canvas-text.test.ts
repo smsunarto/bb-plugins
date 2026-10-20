@@ -75,6 +75,8 @@ async function setup() {
     },
     experimental_callHostRpc: async ({ method, input }) => {
       if (method === "start") return runner.start(input as Parameters<typeof runner.start>[0]);
+      if (method === "stagedOutputs")
+        return runner.stagedOutputs(input as Parameters<typeof runner.stagedOutputs>[0]);
       throw new Error(`Unexpected ${method}`);
     },
   });
@@ -220,4 +222,44 @@ test("a brief run follows the target model's prompting guide and returns only th
   expect(text).toContain(files.read("prompting/omni-video"));
   expect(text).not.toContain(files.read("canvas-text"));
   expect(text.endsWith("Draft brief:\ncoin spins")).toBe(true);
+});
+
+test("an agent run works in a visible thread in the game's folder and returns the files it made", async () => {
+  const f = await setup();
+  const job = generationJob.parse({
+    ...f.job,
+    request: {
+      kind: "agent",
+      prompt: "## Mesh cleanup · **Blender**\nFix the mesh.",
+      providerId: "selected-provider",
+      model: { provider: "bb", id: "selected-model" },
+      files: ["canvas/staging/raw.glb"],
+    },
+  });
+  await writeFile(join(f.game.rootPath, "canvas/staging/raw.glb"), "raw-model");
+  const text = new CanvasText(f.bb);
+  await text.start(f.game, job);
+  expect(f.starts[0]).toMatchObject({
+    title: "Canvas agent: Mesh cleanup · Blender",
+    projectId: "project",
+    visibility: "visible",
+    environment: {
+      type: "host",
+      hostId: "host",
+      workspace: { type: "unmanaged", path: f.game.rootPath },
+    },
+  });
+  const brief = (f.starts[0] as { input: { text?: string }[] }).input[0]!.text!;
+  expect(brief).toContain(join(f.game.rootPath, "canvas/staging/raw.glb"));
+  expect(brief).toContain("Fix the mesh.");
+  await mkdir(join(f.game.rootPath, "canvas/staging/request/work"), { recursive: true });
+  await writeFile(join(f.game.rootPath, "canvas/staging/request/clean.glb"), "clean-model");
+  await writeFile(join(f.game.rootPath, "canvas/staging/request/work/scratch.glb"), "scratch");
+  f.setState("idle");
+  const finished = await text.status(f.game, "request");
+  expect(finished.status).toBe("succeeded");
+  expect(finished.outputs.map((output) => [output.path, output.type])).toEqual([
+    ["canvas/staging/request/clean.glb", "model"],
+    ["canvas/staging/request/report.md", "text"],
+  ]);
 });

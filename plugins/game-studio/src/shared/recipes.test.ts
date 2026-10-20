@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { nodeInputPorts, nodeInputs } from "./recipes.ts";
+import { nodeInputPorts, nodeInputs, nodeTakesBrief } from "./recipes.ts";
 import type { CanvasNode } from "./schema.ts";
 
 test("each node offers the inputs its model reads", () => {
@@ -13,6 +13,20 @@ test("each node offers the inputs its model reads", () => {
   expect(ports("model-3d")).toEqual(["Front* 1", "Left 1", "Back 1", "Right 1"]);
   expect(ports("asset", "music")).toEqual(["Text Infinity"]);
   expect(ports("document")).toEqual([]);
+});
+
+test("only a Tripo step without a text input runs without a brief", () => {
+  const briefed = (type: CanvasNode["type"], recipe?: string) =>
+    nodeTakesBrief({ type, data: recipe ? { recipe } : {} });
+  expect(briefed("agent")).toBe(true);
+  expect(briefed("image", "nano-banana")).toBe(true);
+  expect(briefed("model-3d")).toBe(true);
+  expect(briefed("model-3d", "tripo-texture")).toBe(true);
+  expect(["tripo-pbr", "tripo-rig", "tripo-animate"].map((id) => briefed("model-3d", id))).toEqual([
+    false,
+    false,
+    false,
+  ]);
 });
 
 test("saved ports win, older inputs fill open ports in order, and extras stay visible", () => {

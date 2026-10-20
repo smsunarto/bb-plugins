@@ -1,6 +1,12 @@
 import { defineRpcContract } from "@get-bb/plugin-sdk";
 import { z } from "zod";
-import { generationId, generationJob, generationTarget, mediaRequest } from "./generation.ts";
+import {
+  generatedOutput,
+  generationId,
+  generationJob,
+  generationTarget,
+  mediaRequest,
+} from "./generation.ts";
 
 import { unityHostContract } from "./unity-editor-contract.ts";
 
@@ -26,6 +32,7 @@ export const studioHostContract = defineRpcContract({
   },
   status: { input: target, output: generationJob },
   reconcileMissing: { input: target, output: z.strictObject({ missing: z.boolean() }) },
+  stagedOutputs: { input: target, output: z.array(generatedOutput).max(20) },
   list: {
     input: z.strictObject({ rootPath: z.string() }),
     output: z.array(generationJob).max(100),

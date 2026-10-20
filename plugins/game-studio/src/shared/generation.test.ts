@@ -96,3 +96,22 @@ test("reference keys preserve the brief with a separate bounded metadata budget"
     ),
   ).toThrow("plain creative brief");
 });
+
+test("Tripo steps reject requests the provider cannot run", () => {
+  const edit = (request: Record<string, unknown>) => () =>
+    normalizeMediaRequest(
+      mediaRequest.parse({ kind: "model-edit", sourcePath: "canvas/a.glb", ...request }),
+    );
+  expect(edit({ operation: "texture" })).toThrow("texture prompt or at least one reference view");
+  expect(edit({ operation: "rig" })).toThrow("rig type");
+  expect(edit({ operation: "animate", animation: "preset:idle" })).toThrow("rigged by a Tripo Rig");
+  expect(edit({ operation: "pbr" })).not.toThrow();
+  expect(() =>
+    mediaRequest.parse({
+      kind: "model-edit",
+      operation: "animate",
+      sourcePath: "canvas/a.glb",
+      animation: "idle --flag",
+    }),
+  ).toThrow("Tripo preset");
+});

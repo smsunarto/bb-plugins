@@ -191,7 +191,7 @@ export function cloudProviders(credentials: Credentials): Readonly<Record<string
   const google: MediaProvider = {
     async submit(context) {
       const request = context.request;
-      if (request.kind === "model-3d" || request.kind === "text")
+      if (request.kind !== "image" && request.kind !== "video")
         throw new Error("Google does not generate 3D models through this adapter.");
       const vertex = await vertexAccess(credentials, context);
       const refs = await Promise.all(context.imagePaths.map(image));

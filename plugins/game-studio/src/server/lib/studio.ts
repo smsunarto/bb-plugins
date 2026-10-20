@@ -7,6 +7,7 @@ import {
 import { nodeFingerprint } from "./canvas-generation.ts";
 import { nodeTakes } from "../../shared/takes.ts";
 import { nodeReviews, reviewLimit } from "../../shared/review.ts";
+import { judgeChoice, judgeLimit, nodeJudgements } from "../../shared/judge.ts";
 import { createHash, randomUUID } from "node:crypto";
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import { z } from "zod";
@@ -1071,6 +1072,7 @@ export async function adoptGeneration(bb: BbPluginApi, game: Game, job: Generati
     const node = board.nodes.find(({ id }) => id === job.target!.nodeId);
     if (job.request.kind !== "text") return attachTakes(bb, game, board.id, job, ids);
     if (job.request.reviewOf) return attachReview(bb, game, board.id, job, job.request.reviewOf);
+    if (job.request.judgeOf) return attachJudgement(bb, game, board.id, job, job.request.judgeOf);
     if (node?.data.briefJobId === job.id || node?.data.generationJobId === job.id)
       return { candidateAssetIds: ids, attached: true };
     if (!node || nodeFingerprint(node, board, workspace) !== job.target.fingerprint)
@@ -1171,11 +1173,7 @@ async function attachReview(
   job: GenerationJob,
   assetIds: string[],
 ) {
-  const output = job.outputs.find((item) => item.type === "text");
-  if (!output) throw new Error("The review job has no output.");
-  const file = await readRequired(bb, game, output.path);
-  if (file.contentEncoding !== "utf8" || file.content.length > 100000)
-    throw new Error("A review must be UTF-8 and under 100,000 characters.");
+  const text = await runText(bb, game, job, "review");
   const path = `canvas/boards/${boardId}.json`;
   const contentFile = await readRequired(bb, game, path);
   const content = parse(persistedBoardSchema, contentFile, path);
@@ -1186,10 +1184,57 @@ async function attachReview(
     return { candidateAssetIds: [], attached: true };
   saved.data = {
     ...saved.data,
-    reviews: [...reviews, { assetIds, jobId: job.id, text: file.content }].slice(-reviewLimit),
+    reviews: [...reviews, { assetIds, jobId: job.id, text }].slice(-reviewLimit),
   };
   await write(bb, game, path, json(content), contentFile.sha256);
   return { candidateAssetIds: [], attached: true };
+}
+
+/**
+ * A judgement joins the node's judgements, and its choice becomes the node's pick unless
+ * someone changed the pick while the judge ran.
+ */
+async function attachJudgement(
+  bb: BbPluginApi,
+  game: Game,
+  boardId: string,
+  job: GenerationJob,
+  candidates: string[],
+) {
+  const text = await runText(bb, game, job, "judgement");
+  const path = `canvas/boards/${boardId}.json`;
+  const contentFile = await readRequired(bb, game, path);
+  const content = parse(persistedBoardSchema, contentFile, path);
+  const saved = content.nodes.find(({ id }) => id === job.target!.nodeId);
+  if (!saved) return { candidateAssetIds: [], attached: false };
+  const judgements = nodeJudgements(saved);
+  if (judgements.some((record) => record.jobId === job.id))
+    return { candidateAssetIds: [], attached: true };
+  const choice = judgeChoice(text, candidates);
+  const pick = typeof saved.data.assetId === "string" ? saved.data.assetId : undefined;
+  const startedWith = job.request.kind === "text" ? job.request.judgePick : undefined;
+  const applied =
+    !!choice && pick === startedWith && nodeTakes(saved).some((take) => take.assetId === choice);
+  saved.data = {
+    ...saved.data,
+    ...(applied ? { assetId: choice } : {}),
+    judgements: [
+      ...judgements,
+      { assetIds: candidates, jobId: job.id, text, ...(choice ? { choice } : {}), applied },
+    ].slice(-judgeLimit),
+  };
+  await write(bb, game, path, json(content), contentFile.sha256);
+  return { candidateAssetIds: [], attached: true };
+}
+
+/** The Markdown a review or judge run wrote. */
+async function runText(bb: BbPluginApi, game: Game, job: GenerationJob, what: string) {
+  const output = job.outputs.find((item) => item.type === "text");
+  if (!output) throw new Error(`The ${what} job has no output.`);
+  const file = await readRequired(bb, game, output.path);
+  if (file.contentEncoding !== "utf8" || file.content.length > 100000)
+    throw new Error(`A ${what} must be UTF-8 and under 100,000 characters.`);
+  return file.content;
 }
 
 async function readGenerationJobs(bb: BbPluginApi, game: Game): Promise<GenerationJob[]> {

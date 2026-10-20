@@ -5,6 +5,8 @@ import {
   assignInputs,
   imageSlot,
   imagesPort,
+  modelSlot,
+  modelsPort,
   nodeRefs,
   refType,
   textPort,
@@ -21,6 +23,12 @@ const views = [
   imageSlot("back", "Back"),
   imageSlot("right", "Right"),
 ];
+
+// Tripo processes one model; texturing also reads reference views of the same subject.
+const model = modelSlot("model", "Model", true);
+const textureInputs = [model, textPort, ...views.map((port) => ({ ...port, required: undefined }))];
+/** An agent works from any mix of notes, images and models. */
+const agentInputs = [textPort, imagesPort(14), modelsPort(8)];
 
 /** Canvas models per node kind; the first entry of a kind is its default. */
 export const recipes: {
@@ -48,6 +56,16 @@ export const recipes: {
   { id: "omni-video", kind: "video", label: "Gemini Omni", inputs: frames },
   { id: "fal-video", kind: "video", label: "Fal H3 Max", inputs: frames },
   { id: "model-3d", kind: "model-3d", label: "Tripo P2", inputs: views },
+  {
+    id: "tripo-texture",
+    kind: "model-3d",
+    label: "Tripo Texture",
+    inputs: textureInputs,
+    direct: true,
+  },
+  { id: "tripo-pbr", kind: "model-3d", label: "Tripo PBR", inputs: [model], direct: true },
+  { id: "tripo-rig", kind: "model-3d", label: "Tripo Rig", inputs: [model], direct: true },
+  { id: "tripo-animate", kind: "model-3d", label: "Tripo Animate", inputs: [model], direct: true },
   { id: "voice-sfx", kind: "asset", label: "ElevenLabs", inputs: [textPort] },
   { id: "music", kind: "asset", label: "Suno", inputs: [textPort] },
 ];
@@ -69,7 +87,14 @@ export function nodeBriefRecipe(node: Pick<CanvasNode, "type" | "data">) {
 /** The ports the node's model accepts. Text nodes run on a BB agent, which reads both. */
 export function nodeInputPorts(node: Pick<CanvasNode, "type" | "data">): InputPort[] {
   if (node.type === "text") return textAndImages;
+  if (node.type === "agent") return agentInputs;
   return nodeRecipe(node)?.inputs ?? [];
+}
+
+/** Whether the node's run reads its brief. A canvas model with no text input ignores it. */
+export function nodeTakesBrief(node: Pick<CanvasNode, "type" | "data">) {
+  const recipe = nodeRecipe(node);
+  return !recipe?.direct || nodeInputPorts(node).some((port) => port.type === "text");
 }
 
 /** The node's saved inputs placed on its model's ports. */

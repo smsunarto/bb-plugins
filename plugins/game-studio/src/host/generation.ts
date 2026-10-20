@@ -18,7 +18,9 @@ import {
   generationImagePaths,
   generationJob,
   normalizeMediaRequest,
+  runsOnBb,
   type GenerationJob,
+  type MediaRequest,
 } from "../shared/generation.ts";
 import { cliProviders, ProviderFailure, runCommand, type RunCommand } from "./providers.ts";
 import { cloudProviders, type Credentials } from "./cloud-providers.ts";
@@ -33,6 +35,24 @@ type Start = {
   credentials?: Credentials;
 };
 type Target = { rootPath: string; jobId: string };
+
+/** The files a run of each kind leaves as outputs in its staging directory. */
+function outputPattern(kind: MediaRequest["kind"]) {
+  if (kind === "image") return /\.(png|jpe?g|webp)$/i;
+  if (kind === "text") return /\.md$/i;
+  if (kind === "video") return /\.(mp4|webm)$/i;
+  if (kind === "agent") return /\.(glb|png|jpe?g|webp|mp4|webm|md)$/i;
+  return /\.glb$/i;
+}
+/** What an output file is: a run's own kind, or for an agent, its file type. */
+function outputKind(kind: MediaRequest["kind"], file: string) {
+  if (kind === "image" || kind === "video" || kind === "text") return kind;
+  if (kind !== "agent" || /\.glb$/i.test(file)) return "model" as const;
+  if (/\.md$/i.test(file)) return "text" as const;
+  return /\.(mp4|webm)$/i.test(file) ? ("video" as const) : ("image" as const);
+}
+/** Agent outputs list models first, so a node's first pick is the model it exists to make. */
+const outputOrder = { model: 0, image: 1, video: 2, text: 3 } as const;
 type Work = { controller: AbortController; done: Promise<void> };
 
 /** All disk writes stay in canvas. A submitted identity is never retried as a new submission. */
@@ -168,8 +188,8 @@ export class GenerationRunner {
       } finally {
         await unlink(temporary).catch(() => undefined);
       }
-      // BB text runs are executed by the server, but use the same durable reservation fence.
-      if (job.request.kind !== "text") this.launch(target, job, false, input.credentials ?? {});
+      // BB text and agent runs are executed by the server, but use the same reservation fence.
+      if (!runsOnBb(job.request)) this.launch(target, job, false, input.credentials ?? {});
       return { created: true, job: structuredClone(job) };
     });
   }
@@ -253,30 +273,28 @@ export class GenerationRunner {
   private async outputs(target: Target, job: GenerationJob) {
     const root = await this.directory(target.rootPath, ["canvas", "staging", job.id]);
     const matches: string[] = [];
+    // An agent keeps scratch work in subfolders; only the files it leaves on top are outputs.
+    const maxDepth = job.request.kind === "agent" ? 0 : 4;
     const walk = async (dir: string, depth: number): Promise<void> => {
       if (depth > 4) throw new Error("Generation output exceeded the directory depth limit.");
       for (const entry of await readdir(dir, { withFileTypes: true })) {
         if (entry.isSymbolicLink())
           throw new Error("Generation output cannot contain symbolic links.");
         const path = join(dir, entry.name);
-        if (entry.isDirectory()) await walk(path, depth + 1);
-        else if (
-          (job.request.kind === "image"
-            ? /\.(png|jpe?g|webp)$/i
-            : job.request.kind === "text"
-              ? /\.md$/i
-              : job.request.kind === "video"
-                ? /\.(mp4|webm)$/i
-                : /\.glb$/i
-          ).test(entry.name)
-        )
-          matches.push(path);
+        if (entry.isDirectory()) {
+          if (depth < maxDepth) await walk(path, depth + 1);
+        } else if (outputPattern(job.request.kind).test(entry.name)) matches.push(path);
         if (matches.length > 20) throw new Error("Generation produced too many output files.");
       }
     };
     await walk(root, 0);
+    const kind = job.request.kind;
+    matches.sort(
+      (a, b) =>
+        outputOrder[outputKind(kind, a)] - outputOrder[outputKind(kind, b)] || a.localeCompare(b),
+    );
     return Promise.all(
-      matches.sort().map(async (file) => {
+      matches.map(async (file) => {
         const sizeBytes = (await stat(file)).size;
         if (sizeBytes === 0 || sizeBytes > 512 * 1024 * 1024)
           throw new Error("Generated output is empty or exceeds 512 MiB.");
@@ -289,12 +307,21 @@ export class GenerationRunner {
         }
         return {
           path: relative(target.rootPath, file).split(sep).join("/"),
-          type: job.request.kind === "model-3d" ? ("model" as const) : job.request.kind,
+          type: outputKind(kind, file),
           sizeBytes,
           sha256: hash.digest("hex"),
         };
       }),
     );
+  }
+  /** An agent run's outputs once its thread has finished: the files it left in its staging folder. */
+  async stagedOutputs(input: Target) {
+    const target = { ...input, rootPath: await this.root(input.rootPath) };
+    return this.locked(this.key(target), async () => {
+      const job = await this.read(target);
+      if (job.request.kind !== "agent") throw new Error("Only agent runs collect staged files.");
+      return this.outputs(target, job);
+    });
   }
   async reconcileMissing(input: Target) {
     const target = { ...input, rootPath: await this.root(input.rootPath) };
@@ -324,7 +351,7 @@ export class GenerationRunner {
     return this.locked(this.key(target), async () => {
       const active = this.active.has(this.key(target));
       const job = await this.read(target);
-      if (job.request.kind === "text") return job;
+      if (runsOnBb(job.request)) return job;
       if ((job.status === "queued" || job.status === "running") && !active) {
         job.status = "uncertain";
         job.detail =

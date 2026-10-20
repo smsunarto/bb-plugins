@@ -43,14 +43,23 @@ export function CanvasInputs({
   return (
     <fieldset className="gs-inspector-section gs-canvas-inputs">
       <legend>Inputs</legend>
-      <small className="gs-muted">Text adds context; images add visual references.</small>
+      <small className="gs-muted">
+        Text adds context; images add visual references; 3D inputs are models to work on.
+      </small>
       {candidates.length ? (
         candidates.map((other) => {
+          const output = outputType(other.type);
           const missing =
-            other.type === "image" &&
-            !assets.some((asset) => asset.id === other.data.assetId && asset.type === "image");
+            output !== "text" &&
+            !assets.some((asset) => asset.id === other.data.assetId && asset.type === output);
           const label =
-            other.type === "image" ? "Image" : other.type === "document" ? "Document" : "Text";
+            output === "image"
+              ? "Image"
+              : output === "model"
+                ? "3D"
+                : other.type === "document"
+                  ? "Document"
+                  : "Text";
           const checked = selected.includes(other.id);
           return (
             <label key={other.id}>
@@ -68,7 +77,7 @@ export function CanvasInputs({
           );
         })
       ) : (
-        <p className="gs-muted">Add a text, document or image node to use as input.</p>
+        <p className="gs-muted">Add a text, document, image or 3D node to use as input.</p>
       )}
     </fieldset>
   );

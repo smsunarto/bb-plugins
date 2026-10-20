@@ -5,6 +5,7 @@ import { nodeTakes, takeRun, type Take } from "../shared/takes.ts";
 import type { NodePatch } from "./generation.tsx";
 import { Icon } from "./icons.tsx";
 import { VerdictBadge, outputReviewState } from "./review.tsx";
+import { nodeJudgements } from "../shared/judge.ts";
 
 const noJobs: GenerationJob[] = [];
 const media = (job: GenerationJob) => job.request.kind !== "text";
@@ -94,6 +95,7 @@ export function GenerationSection({
   const [shortlist, setShortlist] = useState(false);
   const takes = nodeTakes(node);
   const pick = node.data.assetId;
+  const judged = nodeJudgements(node).at(-1)?.choice;
   const stars = takes.filter((take) => take.star).length;
   const setTakes = (next: Take[]) => onChange({ takes: next });
   const url = (asset: Asset) =>
@@ -195,10 +197,15 @@ export function GenerationSection({
                     const picked = take.assetId === pick;
                     return (
                       <div key={take.assetId} className="gs-take" data-picked={picked || undefined}>
-                        <VerdictBadge
-                          {...outputReviewState(node, take.assetId, reviewJobs)}
-                          className="gs-take-verdict"
-                        />
+                        <span className="gs-take-badges">
+                          <VerdictBadge
+                            {...outputReviewState(node, take.assetId, reviewJobs)}
+                            className="gs-take-verdict"
+                          />
+                          {take.assetId === judged && (
+                            <span className="gs-take-judged">Judge's pick</span>
+                          )}
+                        </span>
                         {src && asset.type === "video" ? (
                           <video src={src} muted preload="metadata" />
                         ) : src ? (

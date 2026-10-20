@@ -154,26 +154,6 @@
   font-size: 12px;
   line-height: 1.5;
 }
-.gs-model-preview {
-  position: absolute;
-  inset: 0;
-  margin: 0;
-  display: grid;
-  place-items: center;
-  cursor: grab;
-}
-.gs-model-preview:active {
-  cursor: grabbing;
-}
-.gs-model-preview > canvas {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-}
-.gs-model-preview[data-state="ready"] > span {
-  display: none;
-}
 .gs-node-media[data-model] .gs-node-badge {
   pointer-events: none;
 }
@@ -1273,11 +1253,18 @@
   top: auto;
   bottom: 8px;
 }
-.gs-take-verdict {
+.gs-take-badges {
   position: absolute;
   z-index: 1;
   top: 4px;
   left: 4px;
+  display: grid;
+  justify-items: start;
+  gap: 2px;
+  pointer-events: none;
+}
+.gs-take-verdict,
+.gs-take-judged {
   padding: 1px 6px;
   border-radius: 999px;
   background: color-mix(in srgb, var(--background) 82%, transparent);
@@ -1286,6 +1273,7 @@
 }
 .gs-review {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 10px;
 }
 .gs-app .gs-review-toggle {
@@ -1293,6 +1281,9 @@
   flex-direction: row;
   align-items: flex-start;
   gap: 8px;
+}
+.gs-review-toggle > input {
+  flex-shrink: 0;
 }
 .gs-review-toggle > span {
   display: grid;
@@ -1352,6 +1343,7 @@
 }
 .gs-review-result {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 8px;
   padding-top: 10px;
   border-top: 1px solid var(--border-hairline);
@@ -1369,6 +1361,21 @@
   padding: 2px 8px;
   border-radius: 999px;
   font-size: 11px;
+}
+.gs-take-judged {
+  border: 1px solid color-mix(in srgb, var(--ansi-4, #88c0d0) 60%, transparent);
+  color: var(--ansi-4, #88c0d0);
+  font-weight: 600;
+}
+.gs-judge-choice {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--ansi-4, #88c0d0);
+  font-size: 12px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .gs-review-failed {
   color: var(--destructive, var(--ansi-1, #fe5d86)) !important;

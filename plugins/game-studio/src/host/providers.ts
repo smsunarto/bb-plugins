@@ -3,9 +3,15 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { experimental_sanitizeInheritedChildProcessEnv } from "@get-bb/plugin-sdk/host";
 import { z } from "zod";
-import { modelViewPaths, type MediaRequest } from "../shared/generation.ts";
+import {
+  editViewPaths,
+  modelViewPaths,
+  modelViews,
+  type MediaRequest,
+} from "../shared/generation.ts";
 import { generationPrompt } from "../shared/generation-prompt.ts";
 
+type ModelEditRequest = Extract<MediaRequest, { kind: "model-edit" }>;
 export type Command = { executable: string; args: string[]; cwd: string; signal: AbortSignal };
 export type CommandResult = { code: number; stdout: string; stderr: string };
 export type RunCommand = (command: Command) => Promise<CommandResult>;
@@ -70,6 +76,23 @@ function payload(result: CommandResult): unknown {
   } catch {
     return null;
   }
+}
+const tripoError = z.object({ error: z.string().min(1) });
+/**
+ * Why Tripo refused a request before submitting it. The Tripo Studio CLI exits 2 only for requests
+ * it validates and rejects locally, so nothing reached Tripo and running the node again is safe.
+ */
+function tripoRejection(result: CommandResult) {
+  if (result.code !== 2) return undefined;
+  for (const line of `${result.stdout}\n${result.stderr}`.split("\n")) {
+    try {
+      const parsed = tripoError.safeParse(JSON.parse(line));
+      if (parsed.success) return parsed.data.error;
+    } catch {
+      // Progress and billing notes share the streams with the JSON error.
+    }
+  }
+  return "Tripo rejected the request. Nothing was submitted.";
 }
 const executable = (name: string) =>
   join(homedir(), ".local", "share", "cli-overrides", "bin", name);
@@ -163,10 +186,126 @@ const midjourney: MediaProvider = {
       );
   },
 };
+/** The Tripo task to process. Tripo works on its own tasks, so a model made elsewhere is imported. */
+async function sourceTask(context: ProviderContext, request: ModelEditRequest) {
+  if (request.sourceTaskId) return request.sourceTaskId;
+  const result = await command(context, "tripo", [
+    "model",
+    "import",
+    join(context.rootPath, request.sourcePath),
+    "--no-download",
+    "--timeout",
+    "600",
+    "--no-open",
+  ]);
+  const parsed = tripoSubmission.safeParse(payload(result));
+  if (result.code !== 0 || !parsed.success)
+    throw new ProviderFailure(
+      `Tripo could not import the source model. ${tripoRejection(result) ?? "Nothing was processed."}`,
+      "failed",
+    );
+  return parsed.data.task_id;
+}
+/** The CLI arguments for one processing step, after its input task. */
+function editArgs(context: ProviderContext, request: ModelEditRequest): string[] {
+  if (request.operation === "pbr") return ["model", "pbr"];
+  // Tripo Studio returns GLB and rejects output-format and in-place options on these steps.
+  if (request.operation === "rig") return ["anim", "rig", "--rig-type", request.rigType!];
+  if (request.operation === "animate")
+    return ["anim", "retarget", "--animation", request.animation!];
+  // Snapshotted reference views arrive in the order editViewPaths lists them.
+  const views = editViewPaths(request).map(([view], index) => [view, context.imagePaths[index]!]);
+  const byView = Object.fromEntries(views);
+  const reference = views.length
+    ? views.length === 1 && views[0]![0] === "front"
+      ? [`image=${views[0]![1]}`]
+      : [`images=${JSON.stringify(modelViews.map((view) => byView[view] ?? null))}`]
+    : [`prompt=${request.prompt}`];
+  return [
+    "model",
+    "texture",
+    ...reference.flatMap((param) => ["--param", param]),
+    ...(request.textureQuality ? ["--texture-quality", request.textureQuality] : []),
+  ];
+}
+
+/**
+ * The export that bakes a retarget's clip onto its rigged, textured model. Tripo's retarget
+ * yields only the clip, so an Animate step waits for it, then exports the model with it.
+ * The export is recorded before and after submission so a resumed job never submits it twice.
+ */
+async function animatedExport(context: ProviderContext, retargetTask: string) {
+  if (context.providerData?.exportTask) return context.providerData.exportTask;
+  if (context.providerData?.exportState === "submitting")
+    throw new ProviderFailure(
+      "Tripo export submission is uncertain. Inspect tripo task unresolved before running the node again. It will not be submitted again.",
+      "uncertain",
+      retargetTask,
+    );
+  const watched = await command(context, "tripo", [
+    "task",
+    "watch",
+    retargetTask,
+    "--timeout",
+    "600",
+    "--no-open",
+  ]);
+  if (watched.code !== 0)
+    throw new ProviderFailure(
+      "Tripo has a submitted task. Resume this job to continue waiting or downloading; do not submit it again.",
+      "uncertain",
+      retargetTask,
+    );
+  await context.recordTask(retargetTask, { exportState: "submitting" });
+  const result = await command(context, "tripo", [
+    "model",
+    "convert",
+    retargetTask,
+    "--format",
+    "GLTF",
+    "--no-wait",
+    "--no-open",
+  ]);
+  const rejected = tripoRejection(result);
+  if (rejected)
+    throw new ProviderFailure(`${rejected} Run the node again.`, "failed", retargetTask);
+  const parsed = tripoSubmission.safeParse(payload(result));
+  if (result.code !== 0 || !parsed.success)
+    throw new ProviderFailure(
+      "Tripo export submission is uncertain. Inspect tripo task unresolved before running the node again. It will not be submitted again.",
+      "uncertain",
+      retargetTask,
+    );
+  await context.recordTask(retargetTask, { exportTask: parsed.data.task_id });
+  return parsed.data.task_id;
+}
+
 const tripo: MediaProvider = {
   async submit(context) {
     await authenticated(context, "tripo");
     const request = context.request;
+    if (request.kind === "model-edit") {
+      const input = await sourceTask(context, request);
+      const [group, action, ...options] = editArgs(context, request);
+      const result = await command(context, "tripo", [
+        group!,
+        action!,
+        input,
+        ...options,
+        "--no-wait",
+        "--no-open",
+      ]);
+      const rejected = tripoRejection(result);
+      if (rejected)
+        throw new ProviderFailure(`${rejected} Change the node and run it again.`, "failed");
+      const parsed = tripoSubmission.safeParse(payload(result));
+      if (result.code !== 0 || !parsed.success)
+        throw new ProviderFailure(
+          "Tripo submission is uncertain. Inspect its unresolved tasks before trying a new request. This request will not be submitted again.",
+          "uncertain",
+        );
+      return parsed.data.task_id;
+    }
     if (request.kind !== "model-3d")
       throw new ProviderFailure("Tripo requires an approved image-to-model request.", "failed");
     const views = modelViewPaths(request);
@@ -194,10 +333,15 @@ const tripo: MediaProvider = {
     return parsed.data.task_id;
   },
   async collect(context, taskId) {
+    const request = context.request;
+    const download =
+      request.kind === "model-edit" && request.operation === "animate"
+        ? await animatedExport(context, taskId)
+        : taskId;
     const result = await command(context, "tripo", [
       "task",
       "watch",
-      taskId,
+      download,
       "--download",
       "--out",
       context.outputPath,

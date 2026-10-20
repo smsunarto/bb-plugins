@@ -2,7 +2,11 @@ import { createHash } from "node:crypto";
 import { z } from "zod";
 import {
   mediaRequest,
+  modelEditDefaults,
+  modelOperations,
   modelViewPaths,
+  modelViews,
+  type AgentSelection,
   type GenerationJob,
   type MediaRequest,
   type canvasGenerationInput,
@@ -18,9 +22,10 @@ import {
   reviewVerdict,
 } from "../../shared/review.ts";
 import { nodeTakes } from "../../shared/takes.ts";
+import { judgeCandidateLimit, judgeable, nodeJudgeSettings } from "../../shared/judge.ts";
 import type { Workspace, Board, CanvasNode } from "../../shared/schema.ts";
 import { files as instructions } from "./instructions.ts";
-import { nodeBriefRecipe, nodeInputs } from "../../shared/recipes.ts";
+import { nodeBriefRecipe, nodeInputs, nodeRecipe } from "../../shared/recipes.ts";
 import type { InputRef } from "../../shared/inputs.ts";
 
 const reference = z.discriminatedUnion("type", [
@@ -42,6 +47,9 @@ function semantic(node: CanvasNode) {
     // Reviews judge outputs; they never change what the node generates.
     review: _review,
     reviews: _reviews,
+    // A judge only moves the pick between outputs the node already made.
+    judge: _judge,
+    judgements: _judgements,
     ...data
   } = node.data;
   return { type: node.type, title: node.title, description: node.description, data };
@@ -98,6 +106,7 @@ export function canvasRequest(workspace: Workspace, input: z.output<typeof canva
     node = board.nodes.find(({ id }) => id === input.nodeId);
   if (!node) throw new Error("The canvas node no longer exists.");
   const paths: string[] = [],
+    modelPaths: string[] = [],
     linkedText: string[] = [];
   const imageLabels = new Map<string, Set<string>>();
   const visited = new Set<string>();
@@ -122,8 +131,12 @@ export function canvasRequest(workspace: Workspace, input: z.output<typeof canva
   };
   const addAsset = (id: unknown, sourceNode?: CanvasNode) => {
     const asset = workspace.assets.find((item) => item.id === id);
+    if (asset?.type === "model") {
+      modelPaths.push(asset.path);
+      return;
+    }
     if (!asset || asset.type !== "image")
-      throw new Error("Every image reference needs an existing image output.");
+      throw new Error("Every image or 3D reference needs an existing output.");
     paths.push(asset.path);
     const labels = imageLabels.get(asset.path) ?? new Set<string>();
     labels.add(
@@ -162,7 +175,7 @@ export function canvasRequest(workspace: Workspace, input: z.output<typeof canva
   };
   const frames = node.type === "video" ? [slotPath("start"), slotPath("end")] : [];
   const promptSections = [
-    node.type === "text"
+    node.type === "text" || node.type === "agent"
       ? String(node.data.instruction ?? "")
       : typeof node.data.prompt === "string"
         ? node.data.prompt
@@ -215,18 +228,24 @@ export function canvasRequest(workspace: Workspace, input: z.output<typeof canva
       target,
     };
   }
-  const labels = node.type === "image" || node.type === "text" ? referenceKey : {};
+  const labels =
+    node.type === "image" || node.type === "text" || node.type === "agent" ? referenceKey : {};
+  const operation = tripoOperations[nodeRecipe(node)?.id ?? ""];
   const kind =
     node.type === "text"
       ? "text"
-      : node.type === "model-3d"
-        ? "model-3d"
-        : node.type === "video"
-          ? "video"
-          : node.type === "image"
-            ? "image"
-            : undefined;
-  if (!kind) throw new Error("Select a text, image, video, or 3D node.");
+      : node.type === "agent"
+        ? "agent"
+        : node.type === "model-3d"
+          ? operation
+            ? "model-edit"
+            : "model-3d"
+          : node.type === "video"
+            ? "video"
+            : node.type === "image"
+              ? "image"
+              : undefined;
+  if (!kind) throw new Error("Select a text, agent, image, video, or 3D node.");
   const agent = {
     providerId: input.textProviderId,
     ...(input.reasoningLevel ? { reasoningLevel: input.reasoningLevel } : {}),
@@ -251,39 +270,89 @@ export function canvasRequest(workspace: Workspace, input: z.output<typeof canva
       targetPolycount: node.data.targetPolycount,
     };
   };
+  const editInput = () => {
+    const sourcePath = slotPath("model");
+    if (!sourcePath) throw new Error("Connect a 3D model to the Model input first.");
+    const views = Object.fromEntries(
+      modelViews.flatMap((view) => {
+        const path = slotPath(view);
+        return path ? [[view, path]] : [];
+      }),
+    );
+    const text = (key: keyof typeof modelEditDefaults) =>
+      typeof node.data[key] === "string" && node.data[key].trim()
+        ? node.data[key].trim()
+        : modelEditDefaults[key];
+    return {
+      kind,
+      operation,
+      sourcePath,
+      ...(sourceTask(workspace, sourcePath)
+        ? { sourceTaskId: sourceTask(workspace, sourcePath) }
+        : {}),
+      ...(operation === "texture" && Object.keys(views).length ? { views } : {}),
+      ...(operation === "texture" && prompt ? { prompt } : {}),
+      ...(operation === "texture" ? { textureQuality: text("textureQuality") } : {}),
+      ...(operation === "rig" ? { rigType: text("rigType") } : {}),
+      ...(operation === "animate" ? { animation: text("animation") } : {}),
+    };
+  };
   const request = mediaRequest.parse(
-    kind === "text"
+    kind === "text" || kind === "agent"
       ? {
           kind,
           prompt,
           ...agent,
           ...(input.model ? { model: input.model } : {}),
           images: [...new Set(paths)],
+          ...(kind === "agent" ? { files: [...new Set(modelPaths)] } : {}),
           ...labels,
         }
-      : kind === "model-3d"
-        ? modelInput()
-        : kind === "video"
-          ? {
-              kind,
-              prompt,
-              ...(input.model ? { model: input.model } : {}),
-              imagePath: frames[0],
-              endImagePath: frames[1],
-              duration: node.data.duration,
-              aspectRatio: node.data.aspectRatio,
-            }
-          : {
-              kind,
-              prompt,
-              ...(input.model ? { model: input.model } : {}),
-              images: [...new Set(paths)],
-              ...labels,
-              aspectRatio: node.data.aspectRatio,
-              resolution: node.data.resolution,
-            },
+      : kind === "model-edit"
+        ? editInput()
+        : kind === "model-3d"
+          ? modelInput()
+          : kind === "video"
+            ? {
+                kind,
+                prompt,
+                ...(input.model ? { model: input.model } : {}),
+                imagePath: frames[0],
+                endImagePath: frames[1],
+                duration: node.data.duration,
+                aspectRatio: node.data.aspectRatio,
+              }
+            : {
+                kind,
+                prompt,
+                ...(input.model ? { model: input.model } : {}),
+                images: [...new Set(paths)],
+                ...labels,
+                aspectRatio: node.data.aspectRatio,
+                resolution: node.data.resolution,
+              },
   );
   return { request, target };
+}
+
+/** The Tripo processing step each Tripo recipe runs. */
+const tripoOperations: Partial<Record<string, (typeof modelOperations)[number]>> = {
+  "tripo-texture": "texture",
+  "tripo-pbr": "pbr",
+  "tripo-rig": "rig",
+  "tripo-animate": "animate",
+};
+/**
+ * The Tripo task that made a model on this machine, so the next step processes that task
+ * directly. A rig only survives this way: an animation must start from its rig's own task.
+ */
+function sourceTask(workspace: Workspace, path: string) {
+  return workspace.generationJobs.find(
+    (job) =>
+      job.status === "succeeded" &&
+      job.request.model.provider === "tripo" &&
+      job.outputs.some((output) => output.path === path),
+  )?.taskId;
 }
 
 /** The inputs a run was made from: its brief, and its input images with their roles. */
@@ -330,28 +399,11 @@ export function reviewRequest(
       throw new Error("Review needs an existing image or 3D output.");
     return asset;
   });
-  const jobId = nodeTakes(node).find((take) => assetIds.includes(take.assetId))?.jobId;
-  let source: MediaRequest | undefined = workspace.generationJobs.find(
-    (job) => job.id === jobId,
-  )?.request;
-  if (!source)
-    try {
-      source = canvasRequest(workspace, {
-        gameId: workspace.game.id,
-        requestId: "review",
-        boardId,
-        nodeId,
-        revision: selected.revision,
-      }).request;
-    } catch {
-      // A hand-made output has no inputs on record; its review reads the output alone.
-    }
-  const inputs = runInputs(node, source);
+  const inputs = sourceInputs(workspace, selected, node, assetIds);
   const images = outputs.filter((asset) => asset.type === "image").map((asset) => asset.path);
   const files = outputs.filter((asset) => asset.type === "model").map((asset) => asset.path);
   const first = inputs.images.length + 1;
   const settings = nodeReviewSettings(node);
-  const agent = settings?.agent;
   const request = mediaRequest.parse({
     kind: "text",
     reviewOf: assetIds,
@@ -371,19 +423,113 @@ export function reviewRequest(
     }),
     images: [...inputs.images, ...images],
     ...(files.length ? { files } : {}),
-    ...(agent
-      ? {
-          providerId: agent.providerId,
-          model: { provider: "bb", id: agent.model },
-          reasoningLevel: agent.reasoningLevel,
-          ...(agent.serviceTier ? { serviceTier: agent.serviceTier } : {}),
-        }
-      : {}),
+    ...agentFields(settings?.agent),
   });
   return {
     request,
     target: { boardId, nodeId, fingerprint: nodeFingerprint(node, selected.board, workspace) },
   };
+}
+
+/**
+ * A judgement between some of an image node's outputs by its judge criteria. It reads the brief
+ * and inputs of the newest candidate's run, and sends those inputs only when every candidate
+ * still fits beside them.
+ */
+export function judgeRequest(
+  workspace: Workspace,
+  boardId: string,
+  nodeId: string,
+  assetIds: string[],
+) {
+  const selected = workspace.boards.find(({ board }) => board.id === boardId);
+  const node = selected?.board.nodes.find(({ id }) => id === nodeId);
+  if (!selected || !node) throw new Error("The canvas node no longer exists.");
+  if (!judgeable(node.type)) throw new Error("Only image nodes can judge their outputs.");
+  if (assetIds.length < 2) throw new Error("A judge needs at least two outputs to choose from.");
+  const candidates = assetIds.slice(-judgeCandidateLimit).map((id) => {
+    const asset = workspace.assets.find((item) => item.id === id);
+    if (asset?.type !== "image") throw new Error("A judge compares existing image outputs.");
+    return asset;
+  });
+  const runInput = sourceInputs(workspace, selected, node, [...assetIds].reverse());
+  const inputs =
+    runInput.images.length + candidates.length <= textImageLimit
+      ? runInput
+      : { ...runInput, images: [], roles: "" };
+  const first = inputs.images.length + 1;
+  const settings = nodeJudgeSettings(node);
+  const pick = typeof node.data.assetId === "string" ? node.data.assetId : undefined;
+  const request = mediaRequest.parse({
+    kind: "text",
+    judgeOf: candidates.map(({ id }) => id),
+    ...(pick ? { judgePick: pick } : {}),
+    prompt: instructions.read("judge-input", {
+      brief: inputs.brief,
+      inputs: inputs.images.length
+        ? `Images 1–${inputs.images.length} are the run's input images:\n${inputs.roles}`
+        : runInput.images.length
+          ? "The run's input images are left out so that every candidate fits."
+          : "The run had no input images.",
+      candidates: candidates
+        .map(
+          (asset, index) =>
+            `Candidate ${index + 1} is image ${first + index}: ${asset.name}${asset.id === pick ? " (the node's current pick)" : ""}`,
+        )
+        .join("\n"),
+      criteria: settings?.criteria?.trim() || "(none: choose the best fit for the brief)",
+    }),
+    images: [...inputs.images, ...candidates.map(({ path }) => path)],
+    ...agentFields(settings?.agent),
+  });
+  return {
+    request,
+    target: { boardId, nodeId, fingerprint: nodeFingerprint(node, selected.board, workspace) },
+  };
+}
+
+/** The most images one text run takes, per the text request schema. */
+const textImageLimit = 20;
+
+/** The run behind the first of these outputs still on record, else the node's current inputs. */
+function sourceInputs(
+  workspace: Workspace,
+  selected: Workspace["boards"][number],
+  node: CanvasNode,
+  assetIds: string[],
+) {
+  const takes = nodeTakes(node);
+  const jobId = assetIds
+    .map((id) => takes.find((take) => take.assetId === id)?.jobId)
+    .find((id) => id && workspace.generationJobs.some((job) => job.id === id));
+  let source: MediaRequest | undefined = workspace.generationJobs.find(
+    (job) => job.id === jobId,
+  )?.request;
+  if (!source)
+    try {
+      source = canvasRequest(workspace, {
+        gameId: workspace.game.id,
+        requestId: "review",
+        boardId: selected.board.id,
+        nodeId: node.id,
+        revision: selected.revision,
+      }).request;
+    } catch {
+      // A hand-made output has no inputs on record; it is judged on its own.
+    }
+  return runInputs(node, source);
+}
+
+/** The text run's agent, when the node pins one; else BB's default agent runs it. */
+function agentFields(agent: AgentSelection | undefined) {
+  return agent
+    ? {
+        providerId: agent.providerId,
+        model: { provider: "bb", id: agent.model },
+        reasoningLevel: agent.reasoningLevel,
+        ...(agent.serviceTier ? { serviceTier: agent.serviceTier } : {}),
+      }
+    : {};
 }
 
 /**

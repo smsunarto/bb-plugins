@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import { instructionFiles } from "@bb-kit/core/instructions";
-import { generationJob, type GenerationJob } from "../../shared/generation.ts";
+import { generationJob, runsOnBb, type GenerationJob } from "../../shared/generation.ts";
 import { generationPrompt } from "../../shared/generation-prompt.ts";
 import type { Game } from "../../shared/schema.ts";
 import { recipes } from "../../shared/recipes.ts";
@@ -9,21 +9,48 @@ import { projectFile } from "./paths.ts";
 import { studioHostContract } from "../../shared/host-contract.ts";
 
 const instructions = instructionFiles(import.meta.url);
-type TextRequest = Extract<GenerationJob["request"], { kind: "text" }>;
+type BbRequest = Extract<GenerationJob["request"], { kind: "text" | "agent" }>;
+const stagingDir = (jobId: string) => `canvas/staging/${jobId}`;
 /** Briefs follow the target model's prompting guide; reviews judge inputs; others write node text. */
-function taskInstructions(request: TextRequest, game: Game) {
+function taskInstructions(request: BbRequest, game: Game, jobId: string) {
+  if (request.kind === "agent")
+    return instructions.read("canvas-agent", {
+      inputs:
+        [
+          ...request.images.map(
+            (path, index) => `- Image ${index + 1}: ${projectFile(game.rootPath, path)}`,
+          ),
+          ...request.files.map((path) => `- File: ${projectFile(game.rootPath, path)}`),
+        ].join("\n") || "(none beyond the step itself)",
+      output: projectFile(game.rootPath, stagingDir(jobId)),
+      step: generationPrompt(request),
+    });
   if (request.reviewOf)
     return instructions.read("canvas-review", {
       files: request.files
         ? request.files.map((path) => `- ${projectFile(game.rootPath, path)}`).join("\n")
         : "(none)",
     });
+  if (request.judgeOf) return instructions.read("canvas-judge");
   if (!request.briefFor) return instructions.read("canvas-text");
   const model = recipes.find((recipe) => recipe.id === request.briefFor)!.label;
   return instructions.read("canvas-brief", {
     model,
     guide: instructions.read(`prompting/${request.briefFor}`),
   });
+}
+function runTitle(request: BbRequest) {
+  if (request.kind === "agent") {
+    // The instruction's first line, without the Markdown that would show raw in a thread title.
+    const line = request.prompt.trimStart().split("\n", 1)[0]!;
+    return `Canvas agent: ${line
+      .replace(/^(#{1,6}|[-*+]|\d+\.)\s+/, "")
+      .replace(/[*_`]/g, "")
+      .slice(0, 60)}`;
+  }
+  if (request.reviewOf) return "Canvas review";
+  if (request.judgeOf) return "Canvas judge";
+  return request.briefFor ? "Canvas brief" : "Canvas text";
 }
 /** BB owns provider discovery, authentication and execution; this owns the canvas job record. */
 export class CanvasText {
@@ -62,16 +89,18 @@ export class CanvasText {
   }
   async start(game: Game, job: GenerationJob) {
     return this.serial(game, job.id, async () => {
-      if (job.request.kind !== "text") throw new Error("A text request is required.");
+      if (!runsOnBb(job.request)) throw new Error("A text or agent request is required.");
+      const request = job.request;
       const providers = await this.bb.sdk.providers.list();
       const providerId = job.request.providerId;
       if (providerId && !providers.some((provider) => provider.id === providerId))
         throw new Error("The selected BB provider is unavailable.");
       const projects = await this.bb.sdk.projects.list({ includePersonal: true });
       const personal = projects.find((project) => project.kind === "personal");
-      if (!personal) throw new Error("BB's personal workspace is unavailable for text generation.");
+      if (!personal && request.kind === "text")
+        throw new Error("BB's personal workspace is unavailable for text generation.");
       const images = await Promise.all(
-        job.request.images.map(async (path) => {
+        request.images.map(async (path) => {
           const image = await this.bb.sdk.files.read(this.file(game, path));
           if (
             image.contentEncoding !== "base64" ||
@@ -103,23 +132,45 @@ export class CanvasText {
       if (!reservation.created) return reservation;
       const { revision } = await this.read(game, job.id);
       try {
+        // An agent works in the game's checkout, in a thread the person can watch and steer.
+        const place =
+          request.kind === "agent"
+            ? {
+                projectId: game.projectId,
+                environment: {
+                  type: "host" as const,
+                  hostId: game.hostId,
+                  workspace: { type: "unmanaged" as const, path: game.rootPath },
+                },
+                visibility: "visible" as const,
+              }
+            : {
+                projectId: personal!.id,
+                environment: {
+                  type: "host" as const,
+                  hostId: game.hostId,
+                  workspace: { type: "personal" as const },
+                },
+                visibility: "hidden" as const,
+              };
         const task = await this.bb.sdk.threads.spawn({
-          projectId: personal.id,
-          environment: { type: "host", hostId: game.hostId, workspace: { type: "personal" } },
-          providerId: job.request.providerId,
-          model: job.request.model.id,
-          ...(job.request.reasoningLevel ? { reasoningLevel: job.request.reasoningLevel } : {}),
-          ...(job.request.serviceTier ? { serviceTier: job.request.serviceTier } : {}),
-          visibility: "hidden",
+          ...place,
+          providerId: request.providerId,
+          model: request.model.id,
+          ...(request.reasoningLevel ? { reasoningLevel: request.reasoningLevel } : {}),
+          ...(request.serviceTier ? { serviceTier: request.serviceTier } : {}),
           origin: "plugin",
           originPluginId: "game-studio",
-          title: `${job.request.reviewOf ? "Canvas review" : job.request.briefFor ? "Canvas brief" : "Canvas text"} · ${job.id}`,
+          title: request.kind === "agent" ? runTitle(request) : `${runTitle(request)} · ${job.id}`,
           pluginMetadata: { gameStudioJobId: job.id, gameStudioGameId: game.id },
           input: [
             {
               type: "text",
               mentions: [],
-              text: `${taskInstructions(job.request, game)}\n\n${generationPrompt(job.request)}`,
+              text:
+                request.kind === "agent"
+                  ? taskInstructions(request, game, job.id)
+                  : `${taskInstructions(request, game, job.id)}\n\n${generationPrompt(request)}`,
             },
             ...images,
           ],
@@ -169,7 +220,8 @@ export class CanvasText {
             job.status = "failed";
             job.detail = "BB returned empty or oversized text.";
           } else {
-            const path = `canvas/staging/${job.id}/output.md`;
+            // An agent's report sits beside the files it made, which the host then collects.
+            const path = `${stagingDir(job.id)}/${job.request.kind === "agent" ? "report.md" : "output.md"}`;
             const written = await this.bb.sdk.files.write({
               ...this.file(game, path),
               content: text,
@@ -182,14 +234,23 @@ export class CanvasText {
               if (existing.content !== text)
                 throw new Error("The staged text was edited. Its newer content was preserved.");
             }
-            job.outputs = [
-              {
-                path,
-                type: "text",
-                sizeBytes: Buffer.byteLength(text),
-                sha256: createHash("sha256").update(text).digest("hex"),
-              },
-            ];
+            job.outputs =
+              job.request.kind === "agent"
+                ? await this.bb.hosts
+                    .experimental_client({ contract: studioHostContract })
+                    .call(
+                      "stagedOutputs",
+                      { rootPath: game.rootPath, jobId: job.id },
+                      { hostId: game.hostId },
+                    )
+                : [
+                    {
+                      path,
+                      type: "text",
+                      sizeBytes: Buffer.byteLength(text),
+                      sha256: createHash("sha256").update(text).digest("hex"),
+                    },
+                  ];
             job.status = "succeeded";
             delete job.detail;
           }

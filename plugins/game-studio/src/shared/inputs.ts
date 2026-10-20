@@ -1,7 +1,7 @@
 import type { CanvasNode, NodeKind } from "./schema.ts";
 
 /** What an output carries into another node's generation. */
-export type InputType = "text" | "image";
+export type InputType = "text" | "image" | "model";
 /** A typed input on a canvas node, holding at most `max` connections. */
 export type InputPort = {
   id: string;
@@ -31,10 +31,29 @@ export const imageSlot = (id: string, label: string, required?: true): InputPort
   ...(required ? { required } : {}),
 });
 
-/** The input type a node's output feeds, when generation can consume it. */
+/** One 3D model, such as the mesh a processing step works on. */
+export const modelSlot = (id: string, label: string, required?: true): InputPort => ({
+  id,
+  type: "model",
+  label,
+  max: 1,
+  ...(required ? { required } : {}),
+});
+export const modelsPort = (max: number): InputPort => ({
+  id: "model",
+  type: "model",
+  label: "3D",
+  max,
+});
+
+/**
+ * The input type a node's output feeds, when generation can consume it. Agent nodes exist to
+ * process models, such as a Blender cleanup, so their outputs connect as models.
+ */
 export function outputType(kind: NodeKind | undefined): InputType | undefined {
   if (kind === "text" || kind === "document") return "text";
   if (kind === "image") return "image";
+  if (kind === "model-3d" || kind === "agent") return "model";
   return undefined;
 }
 
@@ -82,7 +101,9 @@ export function assignInputs<T extends { port?: unknown }>(
     const typed = assigned.filter((item) => item.port.type === type);
     let item = typed.find(open) ?? typed.at(-1);
     if (!item) {
-      item = { port: { ...(type === "text" ? textPort : imagesPort(0)), max: 0 }, refs: [] };
+      const fallback =
+        type === "text" ? textPort : type === "model" ? modelsPort(0) : imagesPort(0);
+      item = { port: { ...fallback, max: 0 }, refs: [] };
       assigned.push(item);
     }
     item.refs.push(ref);

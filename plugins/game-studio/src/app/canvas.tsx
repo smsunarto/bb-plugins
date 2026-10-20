@@ -48,7 +48,7 @@ import type {
   Asset,
   GenerationRecipe,
 } from "../shared/schema.ts";
-import { nodeBriefRecipe, nodeInputs, nodeRecipe } from "../shared/recipes.ts";
+import { nodeBriefRecipe, nodeInputs, nodeRecipe, nodeTakesBrief } from "../shared/recipes.ts";
 import { outputType } from "../shared/inputs.ts";
 import type { InputRef, InputType, PortInputs } from "../shared/inputs.ts";
 import { CanvasInputs } from "./canvas-inputs.tsx";
@@ -61,8 +61,10 @@ import {
   runsDirectly,
 } from "./generation.tsx";
 import { ModelPreview } from "./model-preview.tsx";
-import { ReviewSection, VerdictBadge, outputReviewState } from "./review.tsx";
+import { ReviewSection, VerdictBadge, outputReviewState, pinnedAgent } from "./review.tsx";
 import { reviewable } from "../shared/review.ts";
+import { JudgeSection, isJudge } from "./judge.tsx";
+import { judgeable } from "../shared/judge.ts";
 import type { NodePatch } from "./generation.tsx";
 import { BriefStarters } from "./brief-starters.tsx";
 import { GenerationSection } from "./takes.tsx";
@@ -97,6 +99,7 @@ const kinds: { kind: NodeKind; label: string; icon: string; key?: string; color:
   { kind: "video", label: "Video", icon: "Video", key: "v", color: "var(--ansi-5, #a895fe)" },
   { kind: "asset", label: "Audio", icon: "Music", key: "a", color: "var(--ansi-10, #9ddd54)" },
   { kind: "model-3d", label: "3D", icon: "Box", color: "var(--ansi-9, #fe5d86)" },
+  { kind: "agent", label: "Agent", icon: "Bot", key: "g", color: "var(--ansi-13, #c4a7ff)" },
   { kind: "document", label: "Document", icon: "FileText", color: "var(--ansi-12, #7cacfe)" },
   { kind: "table", label: "Table", icon: "Table", color: "var(--ansi-11, #f7d05c)" },
 ];
@@ -109,7 +112,11 @@ const kindInfo = (kind: NodeKind | undefined) =>
     color: "var(--muted-foreground)",
   };
 // Each input type takes the color and icon of the node kind that feeds it.
-const inputTypes = { text: kindInfo("text"), image: kindInfo("image") };
+const inputTypes = {
+  text: kindInfo("text"),
+  image: kindInfo("image"),
+  model: kindInfo("model-3d"),
+};
 type CardActionsValue = {
   edit: (id: string, patch: NodePatch) => void;
   run: (id: string) => void;
@@ -138,7 +145,7 @@ function CanvasCard({ id, data, selected }: NodeProps<Card>) {
   // Image runs keep the node usable, so "generating" comes from its jobs rather than `busy`.
   const pending =
     (data.busy && !briefing) || jobs.some((job) => running(job) && job.request.kind !== "text");
-  const takes = media || node.type === "model-3d" ? nodeTakes(node) : [];
+  const takes = media || node.type === "model-3d" || node.type === "agent" ? nodeTakes(node) : [];
   const briefModel = nodeBriefRecipe(node);
   const hasInputs =
     !!node.data.promptSource ||
@@ -151,12 +158,22 @@ function CanvasCard({ id, data, selected }: NodeProps<Card>) {
       : undefined;
   const field = promptField(node.type);
   const prompt = field ? String(node.data[field] ?? "") : "";
+  // Steps such as Tripo Rig run from their inputs and settings alone, so they show no brief.
+  const briefed = !!field && nodeTakesBrief(node);
   const modelLabel = nodeModelLabel(node);
-  const agent = node.type === "text" ? (nodeAgent(node) ?? defaults?.agent) : undefined;
+  const agent =
+    node.type === "text" || node.type === "agent"
+      ? (nodeAgent(node) ?? defaults?.agent)
+      : undefined;
   const placeholder =
     node.type === "text"
       ? "Ask an agent to write this note…"
-      : `Describe the ${info.label.toLowerCase()} and its Unity consumer…`;
+      : node.type === "agent"
+        ? "Tell the agent what this step does, such as a Blender cleanup…"
+        : `Describe the ${info.label.toLowerCase()} and its Unity consumer…`;
+  // An agent's run is a BB thread the person can open and steer.
+  const agentThread =
+    data.job?.request.kind === "agent" && data.job.taskId ? data.job.taskId : undefined;
   return (
     <div
       className="gs-node"
@@ -228,10 +245,17 @@ function CanvasCard({ id, data, selected }: NodeProps<Card>) {
                       ? "Ready for review"
                       : data.job.status}
             </span>
-            {data.job.origin.kind === "agent" && data.job.threadId && (
-              <button type="button" onClick={() => navigate.toThread(data.job!.threadId!)}>
-                View in thread ↗
+            {agentThread ? (
+              <button type="button" onClick={() => navigate.toThread(agentThread)}>
+                Open agent thread ↗
               </button>
+            ) : (
+              data.job.origin.kind === "agent" &&
+              data.job.threadId && (
+                <button type="button" onClick={() => navigate.toThread(data.job!.threadId!)}>
+                  View in thread ↗
+                </button>
+              )
             )}
             {data.job.detail && <small>{data.job.detail}</small>}
           </div>
@@ -240,32 +264,38 @@ function CanvasCard({ id, data, selected }: NodeProps<Card>) {
         {field && (
           <div className="gs-node-brief-slot">
             {/* A note's ask is spent once its text is written; only inputs to a run stay on show. */}
-            {prompt.trim() && node.type !== "text" && <p className="gs-node-brief">{prompt}</p>}
+            {briefed && prompt.trim() && node.type !== "text" && (
+              <p className="gs-node-brief">{prompt}</p>
+            )}
             {selected && (
               <div className="gs-node-prompt nodrag nopan nowheel">
-                <textarea
-                  aria-label={`${info.label} brief`}
-                  readOnly={briefing}
-                  placeholder={placeholder}
-                  value={prompt}
-                  onChange={(event) => actions.edit(id, { [field]: event.target.value })}
-                  onKeyDown={(event) => {
-                    if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
-                      event.preventDefault();
-                      actions.run(id);
-                    }
-                  }}
-                />
-                <footer>
-                  <BriefStarters
-                    kind={node.type}
-                    hasDraft={!!prompt.trim()}
-                    onInsert={(text) =>
-                      actions.edit(id, {
-                        [field]: prompt.trimEnd() ? `${prompt.trimEnd()}\n\n${text}` : text,
-                      })
-                    }
+                {briefed && (
+                  <textarea
+                    aria-label={`${info.label} brief`}
+                    readOnly={briefing}
+                    placeholder={placeholder}
+                    value={prompt}
+                    onChange={(event) => actions.edit(id, { [field]: event.target.value })}
+                    onKeyDown={(event) => {
+                      if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
+                        event.preventDefault();
+                        actions.run(id);
+                      }
+                    }}
                   />
+                )}
+                <footer>
+                  {briefed && (
+                    <BriefStarters
+                      kind={node.type}
+                      hasDraft={!!prompt.trim()}
+                      onInsert={(text) =>
+                        actions.edit(id, {
+                          [field]: prompt.trimEnd() ? `${prompt.trimEnd()}\n\n${text}` : text,
+                        })
+                      }
+                    />
+                  )}
                   {agent && defaults ? (
                     <ProviderModelPicker
                       className="gs-node-agent"
@@ -285,7 +315,11 @@ function CanvasCard({ id, data, selected }: NodeProps<Card>) {
                     />
                   ) : (
                     <small>
-                      {runsDirectly(node) ? "⌘↵ to run" : "Prepares a composer request"}
+                      {runsDirectly(node)
+                        ? briefed
+                          ? "⌘↵ to run"
+                          : "Runs from its inputs and settings"
+                        : "Prepares a composer request"}
                     </small>
                   )}
                   {briefModel && (
@@ -429,11 +463,13 @@ function NodePreview({
         {verdict}
       </div>
     );
-  if (node.type === "image" || node.type === "video")
+  if (node.type === "image" || node.type === "video" || node.type === "agent")
     return (
       <div className="gs-node-media" data-empty style={{ aspectRatio }}>
         <Icon name={info.icon} />
-        <span>{pending ? "Generating…" : "No output yet"}</span>
+        <span>
+          {pending ? (node.type === "agent" ? "Agent working…" : "Generating…") : "No output yet"}
+        </span>
       </div>
     );
   const markdown = document ? document.markdown.slice(0, 800) || "Empty document" : node.data.text;
@@ -664,6 +700,8 @@ const initialData = (kind: NodeKind, documents: StudioDocument[]): CanvasNode["d
       return { prompt: "", images: [], targetPolycount: 20000, texture: false, pbr: false };
     case "animate-3d":
       return { heightMeters: 1.8, actionIds: [] };
+    case "agent":
+      return { instruction: "", references: [] };
     case "asset":
       return { assetId: "", mediaType: "audio" };
     case "table":
@@ -687,6 +725,7 @@ export function StudioCanvas({
   onGenerateDirect,
   onGenerationControl,
   onReview,
+  onJudge,
   onOpenDocument,
   onUpload,
   onStatus,
@@ -714,6 +753,8 @@ export function StudioCanvas({
   ) => Promise<void>;
   /** Reviews one output of an image or 3D node now. */
   onReview: (nodeId: string, revision: string, requestId: string, assetId: string) => Promise<void>;
+  /** Has an image node's judge choose between its shortlist, or its takes, now. */
+  onJudge: (nodeId: string, revision: string, requestId: string) => Promise<void>;
   onGenerationControl: (
     jobId: string,
     action: "status" | "resume" | "cancel",
@@ -795,8 +836,10 @@ export function StudioCanvas({
   const targetJobs = (id: string | null) =>
     generationJobs.filter((job) => job.target?.boardId === board.id && job.target.nodeId === id);
   // Reviews run beside a node's generations; they never make the node busy or replace its status.
-  const nodeJobs = (id: string | null) => targetJobs(id).filter((job) => !isReview(job));
+  const nodeJobs = (id: string | null) =>
+    targetJobs(id).filter((job) => !isReview(job) && !isJudge(job));
   const reviewJobs = (id: string | null) => targetJobs(id).filter(isReview);
+  const judgeJobs = (id: string | null) => targetJobs(id).filter(isJudge);
   const selectedJob = nodeJobs(selectedId)[0];
   const briefing = (id: string) =>
     startingBrief === id || nodeJobs(id).some((job) => running(job) && isBrief(job));
@@ -1180,27 +1223,37 @@ export function StudioCanvas({
     }
   };
   const [reviewing, setReviewing] = useState<string | null>(null);
-  const reviewOutput = async (id: string, assetId: string) => {
+  /** Starts a review or judgement, which reads the node's saved settings, so saves first. */
+  const check = async (id: string, start: (revision: string) => Promise<void>) => {
     if (reviewing) return;
     setReviewing(id);
     setError("");
     try {
-      // The review reads the node's saved agent and criteria, so save them first.
       const saved = dirty ? await save() : baseline.current;
-      if (!saved) throw new Error("Save the current edits before reviewing.");
-      await onReview(id, saved, crypto.randomUUID(), assetId);
+      if (!saved) throw new Error("Save the current edits first.");
+      await start(saved);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
     } finally {
       setReviewing(null);
     }
   };
+  const reviewOutput = (id: string, assetId: string) =>
+    check(id, (saved) => onReview(id, saved, crypto.randomUUID(), assetId));
+  const judgeOutputs = (id: string) =>
+    check(id, (saved) => onJudge(id, saved, crypto.randomUUID()));
   const run = async (id: string) => {
     const source = nodes.find((node) => node.id === id)?.data.source;
     const recipe = source && nodeRecipe(source);
     if (!source || busy(id)) return;
-    if (source.type === "text")
+    if (source.type === "text" || source.type === "agent")
       return generate(id, { provider: "bb" }, undefined, 1, nodeAgent(source) ?? defaultAgent);
+    const missing = nodePorts.get(id)?.find(({ port, refs }) => port.required && !refs.length);
+    if (missing) {
+      setError(`Connect an input to the ${missing.port.label} port first.`);
+      return;
+    }
+    if (recipe?.id.startsWith("tripo-")) return generate(id, { provider: "tripo", id: "tripo-p2" });
     if (runsDirectly(source))
       return generate(
         id,
@@ -1211,11 +1264,6 @@ export function StudioCanvas({
         nodeBatch(source),
       );
     if (!recipe) return;
-    const missing = nodePorts.get(id)?.find(({ port, refs }) => port.required && !refs.length);
-    if (missing) {
-      setError(`Connect an image to the ${missing.port.label} input first.`);
-      return;
-    }
     if (dirty && !(await save())) return;
     onGenerate(id, recipe.id);
   };
@@ -1476,10 +1524,21 @@ export function StudioCanvas({
                 !selectedMedia && (
                   <section className="gs-inspector-section">
                     <h3>Generation</h3>
-                    <GenerationSettings
-                      node={selected.data.source}
-                      onChange={(patch) => editData(selected.id, patch)}
-                    />
+                    {selected.data.source.type === "agent" ? (
+                      <div className="gs-review-agent">
+                        <span>Agent</span>
+                        <ProviderModelPicker
+                          value={nodeAgent(selected.data.source) ?? defaultAgent}
+                          onChange={(value) => editData(selected.id, { agent: pinnedAgent(value) })}
+                          routing={{ kind: "host", hostId }}
+                        />
+                      </div>
+                    ) : (
+                      <GenerationSettings
+                        node={selected.data.source}
+                        onChange={(patch) => editData(selected.id, patch)}
+                      />
+                    )}
                   </section>
                 )}
               {selected.data.source.type === "document" && (
@@ -1506,7 +1565,7 @@ export function StudioCanvas({
                   </button>
                 </>
               )}
-              {["text", "image"].includes(selected.data.source.type) && (
+              {["text", "image", "agent", "model-3d"].includes(selected.data.source.type) && (
                 <>
                   <CanvasInputs
                     node={selected.data.source}
@@ -1642,6 +1701,18 @@ export function StudioCanvas({
                   disabled={reviewing === selected.id}
                   onChange={(patch) => editData(selected.id, patch)}
                   onReview={(assetId) => void reviewOutput(selected.id, assetId)}
+                />
+              )}
+              {judgeable(selected.data.source.type) && (
+                <JudgeSection
+                  node={selected.data.source}
+                  assets={assets}
+                  hostId={hostId}
+                  defaultAgent={defaultAgent}
+                  jobs={judgeJobs(selected.id)}
+                  disabled={reviewing === selected.id}
+                  onChange={(patch) => editData(selected.id, patch)}
+                  onJudge={() => void judgeOutputs(selected.id)}
                 />
               )}
               <button

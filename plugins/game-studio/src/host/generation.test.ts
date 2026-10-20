@@ -370,3 +370,30 @@ test("job reads reject escaped directories, symbolic links and nonfiles while pr
   await symlink(outside, join(rootPath, "canvas/jobs"));
   await expect(runner.status(target)).rejects.toThrow("inside the project");
 });
+
+test("an agent run's outputs are the files it left on top of its folder, models first", async () => {
+  const rootPath = await root();
+  const runner = new GenerationRunner(async () => {
+    throw new Error("BB runs agents; the host never launches a provider for them");
+  });
+  runners.push(runner);
+  const target = { rootPath, jobId: "agent-run" };
+  await runner.start({
+    ...target,
+    threadId: null,
+    request: mediaRequest.parse({ kind: "agent", prompt: "Clean up the mesh in Blender" }),
+  });
+  const folder = join(rootPath, "canvas", "staging", "agent-run");
+  await mkdir(join(folder, "work"), { recursive: true });
+  await writeFile(join(folder, "after.png"), "png");
+  await writeFile(join(folder, "shark-clean.glb"), "glb");
+  await writeFile(join(folder, "report.md"), "Done.");
+  await writeFile(join(folder, "work", "scene.glb"), "scratch");
+  const outputs = await runner.stagedOutputs(target);
+  expect(outputs.map(({ path, type }) => [path, type])).toEqual([
+    ["canvas/staging/agent-run/shark-clean.glb", "model"],
+    ["canvas/staging/agent-run/after.png", "image"],
+    ["canvas/staging/agent-run/report.md", "text"],
+  ]);
+  expect((await runner.status(target)).status).toBe("queued");
+});
