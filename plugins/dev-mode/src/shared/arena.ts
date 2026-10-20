@@ -173,6 +173,10 @@ export const runSchema = z.object({
   jobs: z.array(jobSchema),
   integration: integrationSchema.nullable(),
   error: z.string().nullable(),
+  /** Why the run entered failing. Cleanup progress later rewrites `error`, never this. */
+  failure: z.string().optional(),
+  /** The launching chat's wake for a completion or failure. Absent on Stop and on older runs. */
+  ownerNotice: z.enum(["pending", "sent"]).optional(),
   startedAt: z.number(),
   updatedAt: z.number(),
 });

@@ -853,7 +853,7 @@ const owner = (f: Awaited<ReturnType<typeof fixture>>) =>
     text: message.input[0]?.type === "text" ? message.input[0].text : "",
   }));
 
-test("a completed run wakes its launching chat exactly once", async () => {
+test("a completed run wakes its launching chat and a restart does not repeat it", async () => {
   const f = await fixture();
   const run = await f.start();
   await f.candidates(run.id);
@@ -893,7 +893,8 @@ test("a failed run wakes its launching chat and Stop does not", async () => {
   assert.equal(f.sent.length, 1);
 });
 
-test("a wake lost to a failed send is delivered on restart", async () => {
+test("a failed wake retries with backoff, then falls back to restart", async (ctx) => {
+  ctx.mock.timers.enable({ apis: ["setTimeout"] });
   const f = await fixture();
   f.state.sendError = true;
   const run = await f.start();
@@ -903,10 +904,117 @@ test("a wake lost to a failed send is delivered on restart", async () => {
   for (let i = 0; i < 5; i++) await tick();
   assert.equal(f.service.get(run.id).phase, "completed");
   assert.deepEqual(f.sent, []);
-  await f.restart();
+  ctx.mock.timers.tick(5000);
+  for (let i = 0; i < 5; i++) await tick();
   assert.equal(owner(f).length, 1);
+  assert.equal(f.service.get(run.id).ownerNotice, "sent");
+
+  const lost = await f.start("lost");
+  f.f.harness.sdk.stub("threads.send", async () => {
+    throw new Error("socket hang up");
+  });
+  await f.candidates(lost.id);
+  await f.finish(lost.id, "judge", judge);
+  await f.finish(lost.id, "synthesis", synthesis);
+  for (const delay of [5000, 10000, 20000]) {
+    ctx.mock.timers.tick(delay);
+    for (let i = 0; i < 5; i++) await tick();
+  }
+  assert.equal(f.service.get(lost.id).ownerNotice, "pending");
+  f.f.harness.sdk.stub("threads.send", async (input) => {
+    f.sent.push(input);
+    return { ok: true as const, delivery: "sent" as const };
+  });
   await f.restart();
-  assert.equal(f.sent.length, 1);
+  assert.equal(owner(f).length, 2);
+  assert.match(owner(f)[1]?.text ?? "", new RegExp(`${lost.id} completed`));
+});
+
+test("Stop on a failing run keeps its failure and wakes the launching chat", async () => {
+  const f = await fixture();
+  const run = await f.start();
+  await f.finish(run.id, "frame", frame);
+  f.f.harness.sdk.stub("threads.stop", async ({ threadId }) => {
+    const child = f.threads.get(threadId);
+    if (child) child.status = "stopping";
+    return { ok: true };
+  });
+  f.state.fatalPin = true;
+  await f.finish(run.id, "candidate", candidate, 0);
+  assert.equal(f.service.get(run.id).phase, "failing");
+  assert.deepEqual(f.sent, []);
+  f.f.harness.sdk.stub("threads.stop", async ({ threadId }) => {
+    const child = f.threads.get(threadId);
+    if (child) child.status = "idle";
+    return { ok: true };
+  });
+  assert.equal((await f.service.stop(run.id, f.parent.id)).phase, "failing");
+  for (let i = 0; i < 20 && f.service.get(run.id).phase === "failing"; i++) await tick();
+  for (let i = 0; i < 5; i++) await tick();
+  assert.equal(f.service.get(run.id).phase, "failed");
+  assert.equal(owner(f).length, 1);
+  assert.match(owner(f)[0]?.text ?? "", new RegExp(`${run.id} failed: git add failed`));
+});
+
+test("a run that finishes during recovery keeps one wake retry chain that dispose clears", async (ctx) => {
+  ctx.mock.timers.enable({ apis: ["setTimeout"] });
+  const f = await fixture();
+  const run = await f.start();
+  await f.finish(run.id, "frame", frame);
+  f.f.harness.sdk.stub("threads.stop", async ({ threadId }) => {
+    const child = f.threads.get(threadId);
+    if (child) child.status = "stopping";
+    return { ok: true };
+  });
+  f.state.fatalPin = true;
+  await f.finish(run.id, "candidate", candidate, 0);
+  assert.equal(f.service.get(run.id).phase, "failing");
+  f.f.harness.sdk.stub("threads.stop", async ({ threadId }) => {
+    const child = f.threads.get(threadId);
+    if (child) child.status = "idle";
+    return { ok: true };
+  });
+  let attempts = 0;
+  f.f.harness.sdk.stub("threads.send", async () => {
+    attempts += 1;
+    throw new Error("socket hang up");
+  });
+  await f.restart();
+  for (let i = 0; i < 5; i++) await tick();
+  assert.equal(f.service.get(run.id).phase, "failed");
+  assert.equal(attempts, 1);
+  ctx.mock.timers.tick(5000);
+  for (let i = 0; i < 5; i++) await tick();
+  assert.equal(attempts, 2);
+  await f.service.dispose();
+  ctx.mock.timers.tick(3600000);
+  for (let i = 0; i < 5; i++) await tick();
+  assert.equal(attempts, 2);
+});
+
+test("a failed run's wake reports why it failed, not its cleanup progress", async () => {
+  const f = await fixture();
+  const run = await f.start();
+  await f.finish(run.id, "frame", frame);
+  f.f.harness.sdk.stub("threads.stop", async () => {
+    throw new Error("stop rejected");
+  });
+  f.state.fatalPin = true;
+  await f.finish(run.id, "candidate", candidate, 0);
+  assert.equal(f.service.get(run.id).phase, "failing");
+  assert.match(f.service.get(run.id).error ?? "", /stop rejected/);
+  f.f.harness.sdk.stub("threads.stop", async ({ threadId }) => {
+    const child = f.threads.get(threadId);
+    if (child) child.status = "idle";
+    return { ok: true };
+  });
+  await f.service.stop(run.id, f.parent.id);
+  for (let i = 0; i < 20 && f.service.get(run.id).phase === "failing"; i++) await tick();
+  for (let i = 0; i < 5; i++) await tick();
+  assert.equal(f.service.get(run.id).phase, "failed");
+  const text = owner(f)[0]?.text ?? "";
+  assert.match(text, new RegExp(`${run.id} failed: git add failed`));
+  assert.doesNotMatch(text, /stop rejected|Retry/);
 });
 
 test("successful progress resets recovery for separate transient episodes", async (ctx) => {

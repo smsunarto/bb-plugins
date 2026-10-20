@@ -516,7 +516,13 @@ export function ArenaSummary({
           {live && (
             <button type="button" className="arena-stop" onClick={onStop} disabled={stopping}>
               <Icon name="Square" aria-hidden />
-              {stopping ? "Stopping…" : run.phase === "stopping" ? "Retry stop" : "Stop Arena"}
+              {stopping
+                ? "Stopping…"
+                : run.phase === "stopping"
+                  ? "Retry stop"
+                  : run.phase === "failing"
+                    ? "Retry cleanup"
+                    : "Stop Arena"}
             </button>
           )}
         </div>

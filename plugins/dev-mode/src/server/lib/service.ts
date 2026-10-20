@@ -28,6 +28,8 @@ const transientError = z.union([
   }),
 ]);
 const recoveryDelays = [5000, 10000, 20000];
+/** About 50 minutes of owner wake retries before only a restart resends it. */
+const wakeDelays = [5000, 10000, 20000, 60000, 300000, 900000, 1800000];
 /** Thread statuses in which a worker can still act. */
 export const busy = new Set(["pending", "starting", "active", "stopping"]);
 const missing = (error: unknown) => error instanceof Error && /not found|404/i.test(error.message);
@@ -143,6 +145,7 @@ export class ArenaService {
       .filter(
         (run) =>
           !terminal.has(run.phase) ||
+          run.ownerNotice === "pending" ||
           run.jobs.some((job) => job.dispatch === "retired" && !job.stopConfirmed),
       );
   }
@@ -156,11 +159,67 @@ export class ArenaService {
       !(run.phase === "failed" && run.integration?.status === "interrupted")
     )
       throw new Error("Arena was stopped");
+    const finished =
+      !terminal.has(current.phase) && (run.phase === "completed" || run.phase === "failed");
+    if (finished) run.ownerNotice = "pending";
+    if (run.phase === "failing" && current.phase !== "failing")
+      run.failure = run.error ?? undefined;
     run.updatedAt = Math.max(Date.now(), current.updatedAt + 1);
     this.db
       .prepare("UPDATE arena_runs SET phase = ?, payload = ? WHERE id = ?")
       .run(run.phase, JSON.stringify(run), run.id);
     this.bb.realtime.publish("arena.changed", { runId: run.id, threadId: run.parentThreadId });
+    // Queued behind the gate holding this save, so the wake reads the run's final state.
+    if (finished)
+      void this.serial(run.id, () => this.notifyOwner(run.id)).catch((error) =>
+        this.bb.log.warn(`Arena ${run.id}: owner wake failed: ${String(error)}`),
+      );
+  }
+
+  /**
+   * The launching chat yields after launch, so a completion or failure must wake it. Delivery is
+   * at least once: failed sends retry with backoff, and a restart resends a pending wake,
+   * including one sent just before a crash.
+   */
+  private async notifyOwner(id: string, attempt = 0) {
+    const run = this.get(id);
+    // One retry chain per run: a scheduled retry already owns this wake.
+    if (this.disposed || run.ownerNotice !== "pending" || this.retries.has(`wake:${id}`)) return;
+    try {
+      const text = files.read("owner-notice", {
+        runId: run.id,
+        outcome: run.phase,
+        summary:
+          (run.phase === "completed" ? run.integration?.summary : (run.failure ?? run.error)) ??
+          run.integration?.summary ??
+          "No reason was recorded.",
+      });
+      await this.bb.sdk.threads.send({
+        threadId: run.parentThreadId,
+        mode: "queue-if-active",
+        input: [{ type: "text", text, mentions: [] }],
+      });
+    } catch (error) {
+      if (!missing(error)) {
+        const delay = wakeDelays[attempt];
+        this.bb.log.warn(
+          `Arena ${id}: owner wake failed, retrying ${delay === undefined ? "on restart" : `in ${delay} ms`}: ${String(error)}`,
+        );
+        if (delay !== undefined && !this.disposed) {
+          const timer = setTimeout(() => {
+            this.retries.delete(`wake:${id}`);
+            void this.serial(id, () => this.notifyOwner(id, attempt + 1)).catch((error) =>
+              this.bb.log.warn(`Arena ${id}: owner wake failed: ${String(error)}`),
+            );
+          }, delay);
+          timer.unref?.();
+          this.retries.set(`wake:${id}`, timer);
+        }
+        return;
+      }
+    }
+    run.ownerNotice = "sent";
+    this.save(run);
   }
 
   private serial<T>(id: string, work: () => Promise<T>): Promise<T> {
@@ -748,6 +807,18 @@ export class ArenaService {
       throw new Error("Only the launching thread can stop Arena");
     const run = this.get(id);
     if (terminal.has(run.phase)) return run;
+    if (run.phase === "failing") {
+      // Retries the drain, so the run still ends failed and wakes its owner. The reset runs under
+      // the gate so an in-flight drain cannot write back its spent retry budget.
+      void this.serial(id, async () => {
+        const fresh = this.get(id);
+        if (fresh.phase !== "failing") return;
+        fresh.recoveryAttempts = 0;
+        this.save(fresh);
+        await this.advance(id);
+      }).catch((error) => this.bb.log.error(`Arena ${id}: ${String(error)}`));
+      return run;
+    }
     run.phase = "stopping";
     run.recoveryAttempts = 0;
     this.save(run);
@@ -845,7 +916,7 @@ export class ArenaService {
     try {
       await this.stopOwned(run, finalPhase);
     } catch (error) {
-      run.error = `${run.error ?? "Still stopping workers"}: ${String(error)}${run.recoveryAttempts >= 3 ? ". Automatic retries are used up. Select Retry stop." : ""}`;
+      run.error = `${run.error ?? "Still stopping workers"}: ${String(error)}${run.recoveryAttempts >= 3 ? `. Automatic retries are used up. Select ${finalPhase === "failed" ? "Retry cleanup" : "Retry stop"}.` : ""}`;
       this.save(run);
       this.retryLater(run.id);
     }
@@ -926,6 +997,7 @@ export class ArenaService {
               this.bb.log.warn(`Arena ${id}: late workers did not recover: ${String(error)}`);
             else await this.handleFailure(this.get(id), error);
           }
+          await this.notifyOwner(id);
         }),
       ),
     );
