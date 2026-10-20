@@ -1,5 +1,5 @@
 The user selected Music · Suno for one output. Follow the Suno browser route
-in `scott-engineering:game-dev` using the user's authenticated session; request
+in `game-dev` using the user's authenticated session; request
 authentication when required. Establish mood, instruments, tempo, duration,
 and the Unity consumer from the selected node. Prefer instrumental BGM unless
 vocals were requested. Use the user's plan where available; this request does

@@ -6,7 +6,7 @@ description: Work with Game Studio canvas projects in BB, including design docum
 # Game Studio
 
 Use this skill when the user refers to a Game Studio project, canvas node, or
-design document. Use `scott-engineering:game-dev` for production, tool selection,
+design document. Use `game-dev` for production, tool selection,
 parallel asset work, and playtesting. Authenticate with the selected service only
 when needed; keep credentials outside the game workspace and browser bundle.
 

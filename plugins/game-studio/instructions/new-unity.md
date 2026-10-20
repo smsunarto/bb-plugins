@@ -1,4 +1,4 @@
-Create a Unity project for this game using `scott-engineering:game-dev` and the
+Create a Unity project for this game using `game-dev` and the
 Unity new-project workflow. Requested Editor: {{unityVersion}}.
 Requested template: {{unityTemplate}}.
 

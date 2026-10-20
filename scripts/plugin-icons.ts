@@ -271,7 +271,7 @@ const customIcons = {
       ],
     ],
   },
-  "scott-engineering": {
+  "dev-mode": {
     name: "Layers",
     nodes: [
       [

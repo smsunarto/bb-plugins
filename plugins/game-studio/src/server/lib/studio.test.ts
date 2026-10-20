@@ -742,13 +742,13 @@ test("generation requests show the selected brief and provider while keeping pol
   assert.equal(request.action, "asset");
   assert.match(request.id, /^[a-f0-9-]{36}$/);
   assert.equal(requestPath, `canvas/requests/${request.id}.json`);
-  assert.match(result.context, /scott-engineering:game-dev/);
+  assert.match(result.context, /game-dev/);
   assert.match(result.context, /Concept art · Midjourney/);
   const { files } = await import("./instructions.ts");
   assert.ok(result.context.includes(files.read("prompting/concept-art")));
   assert.doesNotMatch(
     result.prompt,
-    /scott-engineering:game-dev|authoring claim|selectedNode|position|requestPath|documentRevision|```json/,
+    /game-dev|authoring claim|selectedNode|position|requestPath|documentRevision|```json/,
   );
   await assert.rejects(
     async () =>

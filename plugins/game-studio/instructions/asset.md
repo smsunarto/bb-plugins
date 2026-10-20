@@ -1,4 +1,4 @@
-Use `scott-engineering:game-dev` to produce the selected canvas asset. Inspect its
+Use `game-dev` to produce the selected canvas asset. Inspect its
 prompt, connected reference nodes, and existing project assets. Establish the
 asset's contract and acceptance criteria before generation. Route visual
 exploration to Midjourney, image work to Nano Banana 2.1, video to Gemini Omni or Fal H3 Max,

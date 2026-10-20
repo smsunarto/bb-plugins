@@ -1,4 +1,4 @@
-Use `scott-engineering:game-dev` to inspect the files staged in `canvas/staging`.
+Use `game-dev` to inspect the files staged in `canvas/staging`.
 When the request identifies an asset, scope the import to that selected file.
 Read its generation receipt when supplied to recover the brief and references.
 The receipt describes the recorded output; it does not verify the current file's

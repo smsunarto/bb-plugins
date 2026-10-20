@@ -1,4 +1,4 @@
-Use `scott-engineering:game-dev` to implement this Unity game from its current design
+Use `game-dev` to implement this Unity game from its current design
 document and canvas. Inspect existing source and assets first. Inventory reusable,
 missing, and unfinished assets; freeze replacement contracts before production.
 Develop a functional core loop while independent asset work proceeds. Integrate

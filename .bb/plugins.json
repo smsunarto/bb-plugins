@@ -84,8 +84,8 @@
       "source": "./plugins/whiteboard"
     },
     {
-      "name": "scott-engineering",
-      "source": "./plugins/scott-engineering"
+      "name": "dev-mode",
+      "source": "./plugins/dev-mode"
     }
   ]
 }

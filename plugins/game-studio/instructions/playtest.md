@@ -1,4 +1,4 @@
-Use `scott-engineering:game-dev` and its game playtesting reference to verify this
+Use `game-dev` and its game playtesting reference to verify this
 game. Read the current GDD, its intended player experience and experiment questions,
 and the project's established runtime and QA instructions. Select the appropriate
 smoke, feature, regression, visual, or performance passes. State the question and

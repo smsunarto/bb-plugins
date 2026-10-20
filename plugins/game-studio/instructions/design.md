@@ -1,4 +1,4 @@
-Use `scott-engineering:game-dev` to develop this game's design. Read
+Use `game-dev` to develop this game's design. Read
 `game_studio_canvas_context`, then inspect the main design document, boards,
 and local assets. Preserve the user's distinctive choices and existing work.
 

@@ -352,6 +352,27 @@
         "typescript": "^6.0.0",
       },
     },
+    "plugins/dev-mode": {
+      "name": "@smsunarto/bb-plugin-scott-engineering",
+      "version": "0.1.0",
+      "dependencies": {
+        "@bb-kit/core": "0.2.0",
+        "zod": "^4.4.3",
+      },
+      "devDependencies": {
+        "@get-bb/plugin-sdk": "0.6.37",
+        "@testing-library/react": "16.3.2",
+        "@types/node": "^22.0.0",
+        "@types/react": "^19.0.0",
+        "@types/react-dom": "^19.0.0",
+        "bun-types": "^1.4.0",
+        "jsdom": "25.0.1",
+        "react": "19.2.8",
+        "react-dom": "19.2.8",
+        "tsx": "4.23.12",
+        "typescript": "^6.0.0",
+      },
+    },
     "plugins/devin": {
       "name": "@smsunarto/bb-plugin-devin",
       "version": "0.1.0",
@@ -739,27 +760,6 @@
         "sonner": "^1.7.4",
         "typescript": "^7.0.0",
         "vitest": "^4.1.1",
-      },
-    },
-    "plugins/scott-engineering": {
-      "name": "@smsunarto/bb-plugin-scott-engineering",
-      "version": "0.1.0",
-      "dependencies": {
-        "@bb-kit/core": "0.2.0",
-        "zod": "^4.4.3",
-      },
-      "devDependencies": {
-        "@get-bb/plugin-sdk": "0.6.37",
-        "@testing-library/react": "16.3.2",
-        "@types/node": "^22.0.0",
-        "@types/react": "^19.0.0",
-        "@types/react-dom": "^19.0.0",
-        "bun-types": "^1.4.0",
-        "jsdom": "25.0.1",
-        "react": "19.2.8",
-        "react-dom": "19.2.8",
-        "tsx": "4.23.12",
-        "typescript": "^6.0.0",
       },
     },
     "plugins/scott-inline-vis": {
@@ -1830,7 +1830,7 @@
 
     "@smsunarto/bb-plugin-scott-docs": ["@smsunarto/bb-plugin-scott-docs@workspace:plugins/scott-docs"],
 
-    "@smsunarto/bb-plugin-scott-engineering": ["@smsunarto/bb-plugin-scott-engineering@workspace:plugins/scott-engineering"],
+    "@smsunarto/bb-plugin-scott-engineering": ["@smsunarto/bb-plugin-scott-engineering@workspace:plugins/dev-mode"],
 
     "@smsunarto/bb-plugin-scott-inline-vis": ["@smsunarto/bb-plugin-scott-inline-vis@workspace:plugins/scott-inline-vis"],
 
