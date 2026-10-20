@@ -312,7 +312,7 @@ test("watch snapshots cancel their subscriptions and refetch fresh state", async
   await expect(engine.client().read("/capabilities")).rejects.toThrow(
     "Whiteboard is shutting down.",
   );
-  expect(UI_INTEREST_TTL_MS).toBe(90_000);
+  expect(UI_INTEREST_TTL_MS).toBe(150_000);
   spy.mockRestore();
 });
 
@@ -486,7 +486,7 @@ test("host watching eventually invalidates cached working state after a real com
   );
 });
 
-test("interest expires after 90 seconds and dispose leaves no engine timers", async () => {
+test("interest expires after 150 seconds and dispose leaves no engine timers", async () => {
   const created = await create();
   await engine.dispose();
   vi.useFakeTimers();
@@ -713,6 +713,27 @@ test("a thread-less stack read asks the host of the session's repository", async
   });
   expect(asked).toEqual([IN_PROCESS_HOST_ID]);
   vi.restoreAllMocks();
+});
+
+test("arms the checkout and its common directory with the repository's resolved common directory", async () => {
+  const live = await create(undefined, true);
+  await get(`/${live.reviewId}/diff?format=files`);
+  const common = path.join(repo.root, ".git");
+  await vi.waitFor(() =>
+    expect(
+      client.calls
+        .filter((entry) => entry.method === "watchWorktree")
+        .map((entry) => {
+          const { rootPath, gitCommonDir } = entry.input as Record<string, string>;
+          return { rootPath, gitCommonDir };
+        }),
+    ).toEqual(
+      expect.arrayContaining([
+        { rootPath: repo.root, gitCommonDir: common },
+        { rootPath: common, gitCommonDir: common },
+      ]),
+    ),
+  );
 });
 
 test("with no panel open, a watch the host dropped without a worker exit is armed again", async () => {

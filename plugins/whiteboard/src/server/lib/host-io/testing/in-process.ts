@@ -38,15 +38,21 @@ function transport(value: unknown, label: string): unknown {
   return JSON.parse(text);
 }
 
-/** `experimental_watch` over `fs.watch`, coalescing like the daemon (75 ms quiet period). */
+/**
+ * `experimental_watch` over `fs.watch`, coalescing like the daemon (75 ms
+ * quiet period) and dropping changes at or under an `ignoredPaths` entry.
+ */
 function nodeWatch(
   options: ExperimentalHostWatchOptions,
   listener: ExperimentalHostWatchListener,
 ): ExperimentalHostWatchSubscription {
   let timer: ReturnType<typeof setTimeout> | undefined;
   const changes = new Map<string, "update">();
+  const ignored = (options.ignoredPaths ?? []).map((entry) => path.join(options.rootPath, entry));
   const watcher = fsWatch(options.rootPath, { recursive: true }, (_event, filename) => {
-    changes.set(path.join(options.rootPath, String(filename ?? "")), "update");
+    const changed = path.join(options.rootPath, String(filename ?? ""));
+    if (ignored.some((entry) => changed === entry || changed.startsWith(entry + path.sep))) return;
+    changes.set(changed, "update");
     clearTimeout(timer);
     timer = setTimeout(() => {
       const batch = [...changes].map(([changed, type]) => ({ path: changed, type }));

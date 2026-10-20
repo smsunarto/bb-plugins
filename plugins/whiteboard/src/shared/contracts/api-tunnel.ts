@@ -52,9 +52,13 @@ export const infoOutput = z.object({
 export type InfoOutput = z.infer<typeof infoOutput>;
 
 /** A mounted panel renews the engine's worktree interest lease this often (`interest`)... */
-export const WATCH_HEARTBEAT_MS = 30_000;
-/** ...and the engine lets the lease lapse this long after the last renewal or watch read. */
-export const UI_INTEREST_TTL_MS = 90_000;
+export const WATCH_HEARTBEAT_MS = 60_000;
+/**
+ * ...and the engine lets the lease lapse this long after the last renewal or
+ * watch read: two beats and slack, so one failed renewal cannot let it lapse
+ * under an open panel.
+ */
+export const UI_INTEREST_TTL_MS = 2 * WATCH_HEARTBEAT_MS + 30_000;
 
 /** `interest` answers nothing; the call is the renewal. */
 export const interestOutput = z.object({});

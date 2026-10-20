@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { toast } from "sonner";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ApiRequest, ApiResponse } from "../../shared/contracts/api-tunnel.ts";
@@ -31,6 +31,7 @@ const rpcState = vi.hoisted(() => ({
   calls: [] as ApiRequest[],
   failCommands: false,
   readGate: undefined as (() => Promise<void>) | undefined,
+  commandGate: undefined as (() => Promise<void>) | undefined,
 }));
 const find = vi.hoisted(() => ({ showFind: (_seed?: string) => true as boolean }));
 const canvas = vi.hoisted(() => ({
@@ -59,6 +60,7 @@ vi.mock("../rpc.ts", () => {
     rpcState.calls.push(request);
     const catalog = rpcState.catalog;
     if (request.path.startsWith("/watch")) await rpcState.readGate?.();
+    if (request.path === "/commands") await rpcState.commandGate?.();
     if (rpcState.failCommands && request.path === "/commands") {
       return { status: 500, contentType: "application/json", encoding: "utf8", body: "{}" };
     }
@@ -77,15 +79,37 @@ vi.mock("../vendor/review/app/src/api-canvas.tsx", () => ({
     return <div data-testid="api-canvas">canvas {content.reviewId}</div>;
   },
 }));
-vi.mock("../vendor/review/app/src/review-home-view.tsx", () => ({
-  ReviewHome: ({ reviews }: { reviews: Array<{ title: string }> }) => (
-    <ul data-testid="review-home">
-      {reviews.map((review) => (
-        <li key={review.title}>{review.title}</li>
-      ))}
-    </ul>
-  ),
-}));
+/** Most specs list rows with every action; `home.real` renders vendored Home and its guards. */
+const home = vi.hoisted(() => ({ real: false }));
+vi.mock("../vendor/review/app/src/review-home-view.tsx", async (importOriginal) => {
+  const vendored =
+    await importOriginal<typeof import("../vendor/review/app/src/review-home-view.tsx")>();
+  return {
+    ReviewHome: (props: Parameters<typeof vendored.ReviewHome>[0]) => {
+      if (home.real) return <vendored.ReviewHome {...props} />;
+      const { reviews, onDismiss, onRestore, onDelete } = props;
+      return (
+        <ul data-testid="review-home">
+          {reviews.map((review) => (
+            <li key={review.title}>
+              <span>{review.title}</span>
+              <span>{review.dismissedAt ? "dismissed" : "active"}</span>
+              <button onClick={() => void onDismiss!(review).catch(() => {})}>
+                Dismiss {review.title}
+              </button>
+              <button onClick={() => void onRestore!(review).catch(() => {})}>
+                Restore {review.title}
+              </button>
+              <button onClick={() => void onDelete!(review).catch(() => {})}>
+                Delete {review.title}
+              </button>
+            </li>
+          ))}
+        </ul>
+      );
+    },
+  };
+});
 vi.mock("../vendor/review/app/src/review-find.tsx", () => ({
   createReviewFindHost: () => ({
     attach() {},
@@ -119,6 +143,8 @@ beforeEach(() => {
   rpcState.calls = [];
   rpcState.failCommands = false;
   rpcState.readGate = undefined;
+  rpcState.commandGate = undefined;
+  home.real = false;
   pluginQueryClient.removeQueries({ queryKey: ["whiteboard", "catalog"] });
   sdk.realtime.clear();
   sdk.connection = "connected";
@@ -147,6 +173,152 @@ const catalogEntry = (dismissedAt: string | null) => [
   { reviewId: SESSION, title: "Auth walkthrough", dismissedAt },
 ];
 const settle = () => new Promise((resolve) => setTimeout(resolve, 10));
+const OTHER = { reviewId: "22222222-2222-4222-8222-222222222222", title: "Other walkthrough" };
+/**
+ * Start a catalog read that answers today's catalog once released. Another
+ * session appears in it, so the bridge delivers it rather than dropping a
+ * line identical to the last one.
+ */
+async function holdCatalogRead() {
+  rpcState.catalog = [...rpcState.catalog, { ...OTHER, dismissedAt: null }];
+  let release: (() => void) | undefined;
+  rpcState.readGate = () =>
+    new Promise<void>((resolve) => {
+      release = resolve;
+    });
+  catalogChanged();
+  await waitFor(() => expect(release).toBeTypeOf("function"));
+  rpcState.readGate = undefined;
+  return () => act(async () => release!());
+}
+
+describe("WhiteboardMount Home actions", () => {
+  it("dismisses before POST resolves, survives a stale catalog, and rolls back failure", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    render(<WhiteboardMount info={INFO} />);
+    await screen.findByText("Auth walkthrough");
+    let release!: () => void;
+    rpcState.commandGate = () =>
+      new Promise<void>((resolve) => {
+        release = resolve;
+      });
+    fireEvent.click(screen.getByRole("button", { name: "Dismiss Auth walkthrough" }));
+    expect(await screen.findByText("dismissed")).toBeTruthy();
+    catalogChanged();
+    await act(settle);
+    expect(await screen.findByText("dismissed")).toBeTruthy();
+    rpcState.failCommands = true;
+    await waitFor(() => expect(release).toBeTypeOf("function"));
+    await act(async () => release());
+    await screen.findByText("active");
+  });
+
+  it("restores before POST resolves and rolls back failure with a toast", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    const error = vi.spyOn(toast, "error");
+    rpcState.catalog = catalogEntry("2026-10-19T00:00:00Z");
+    render(<WhiteboardMount info={INFO} />);
+    await screen.findByText("dismissed");
+    let release!: () => void;
+    rpcState.commandGate = () =>
+      new Promise<void>((resolve) => {
+        release = resolve;
+      });
+    fireEvent.click(screen.getByRole("button", { name: "Restore Auth walkthrough" }));
+    expect(await screen.findByText("active")).toBeTruthy();
+    rpcState.failCommands = true;
+    await waitFor(() => expect(release).toBeTypeOf("function"));
+    await act(async () => release());
+    await screen.findByText("dismissed");
+    expect(error.mock.calls).toEqual([["Could not restore the Whiteboard. Try again."]]);
+  });
+
+  it("deletes before POST resolves and restores the row on failure", async () => {
+    render(<WhiteboardMount info={INFO} />);
+    await screen.findByText("Auth walkthrough");
+    let release!: () => void;
+    rpcState.commandGate = () =>
+      new Promise<void>((resolve) => {
+        release = resolve;
+      });
+    fireEvent.click(screen.getByRole("button", { name: "Delete Auth walkthrough" }));
+    await waitFor(() => expect(screen.queryByText("Auth walkthrough")).toBeNull());
+    rpcState.failCommands = true;
+    await waitFor(() => expect(release).toBeTypeOf("function"));
+    await act(async () => release());
+    await screen.findByText("Auth walkthrough");
+  });
+
+  it("keeps a deleted row gone through Home's guard when an older catalog read lands", async () => {
+    home.real = true;
+    render(<WhiteboardMount info={INFO} />);
+    await screen.findByText("Auth walkthrough");
+    const releaseStale = await holdCatalogRead();
+    rpcState.catalog = [{ ...OTHER, dismissedAt: null }];
+    fireEvent.click(screen.getByRole("button", { name: "Actions for Auth walkthrough" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Delete Auth walkthrough" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Confirm delete Auth walkthrough" }));
+    await waitFor(() => expect(commands()).toEqual([{ type: "delete", reviewId: SESSION }]));
+    await act(settle);
+    expect(screen.queryByText("Auth walkthrough")).toBeNull();
+    await releaseStale();
+    await screen.findByText("Other walkthrough");
+    expect(screen.queryByText("Auth walkthrough")).toBeNull();
+    catalogChanged();
+    await act(settle);
+    expect(screen.queryByText("Auth walkthrough")).toBeNull();
+  });
+
+  it("keeps a restored row active when an older catalog read lands, then follows the server", async () => {
+    home.real = true;
+    rpcState.catalog = catalogEntry("2026-10-19T00:00:00Z");
+    render(<WhiteboardMount info={INFO} />);
+    fireEvent.click(await screen.findByRole("button", { name: /Dismissed/ }));
+    const releaseStale = await holdCatalogRead();
+    rpcState.catalog = [...catalogEntry(null), { ...OTHER, dismissedAt: null }];
+    fireEvent.click(screen.getByRole("button", { name: "Undo" }));
+    const actions = { name: "Actions for Auth walkthrough" };
+    await screen.findByRole("button", actions);
+    await waitFor(() =>
+      expect(commands()).toEqual([{ type: "attention", reviewId: SESSION, action: "restore" }]),
+    );
+    await act(settle);
+    await releaseStale();
+    await screen.findByText("Other walkthrough");
+    expect(screen.getByRole("button", actions)).toBeTruthy();
+    // A read after the restore agrees, so the next one shows another device's dismissal.
+    catalogChanged();
+    await act(settle);
+    rpcState.catalog = [...catalogEntry("2026-10-19T00:00:05Z"), { ...OTHER, dismissedAt: null }];
+    catalogChanged();
+    await waitFor(() => expect(screen.queryByRole("button", actions)).toBeNull());
+  });
+
+  it("shows no dismiss error when a queued restore supersedes the failed dismissal", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    const error = vi.spyOn(toast, "error");
+    render(<WhiteboardMount info={INFO} />);
+    await screen.findByText("Auth walkthrough");
+    let release: (() => void) | undefined;
+    rpcState.commandGate = async () => {
+      await new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      rpcState.failCommands = true;
+    };
+    fireEvent.click(screen.getByRole("button", { name: "Dismiss Auth walkthrough" }));
+    fireEvent.click(screen.getByRole("button", { name: "Restore Auth walkthrough" }));
+    await waitFor(() => expect(release).toBeTypeOf("function"));
+    rpcState.commandGate = async () => {
+      rpcState.failCommands = false;
+    };
+    await act(async () => release!());
+    await waitFor(() => expect(commands()).toHaveLength(2));
+    await act(settle);
+    expect(screen.getByText("active")).toBeTruthy();
+    expect(error).not.toHaveBeenCalled();
+  });
+});
 
 describe("WhiteboardMount", () => {
   it("shows the previous Home list immediately while a return visit refreshes it", async () => {
@@ -188,6 +360,7 @@ describe("WhiteboardMount", () => {
     previous.unmount();
 
     rpcState.readGate = undefined;
+    rpcState.commandGate = undefined;
     rpcState.catalog = [{ reviewId: SESSION, title: "Newer walkthrough", dismissedAt: null }];
     render(<WhiteboardMount info={INFO} />);
     await screen.findByText("Newer walkthrough");

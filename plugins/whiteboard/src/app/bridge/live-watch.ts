@@ -43,7 +43,7 @@ export function createLiveHub(rpc: InterestRpc): LiveHub {
     for (const listener of Array.from(listeners)) listener(change);
   };
   const renew = () => {
-    // A failed renewal waits for the next beat; the lease outlives two misses.
+    // A failed renewal waits for the next beat: the lease outlives one missed beat.
     rpc.interest().catch(() => {});
   };
   const renewIfVisible = () => {

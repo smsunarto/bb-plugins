@@ -186,6 +186,9 @@ These files have hand-edited (`edit`) rows in the vendoring map:
     skips a candidate whose host is unavailable. When nothing matched and a
     host was unavailable, that host's error is thrown instead of the
     "No registered checkout" 404.
+  - `review-api/local-data.ts`: each worktree watch passes the repository's
+    Git common directory, so the host skips Git bookkeeping without guessing
+    from a root's contents.
 - **Status.** `whiteboard_status` reports bb's public app URL as `instanceId`
   (null when none is configured) and `home: null`. The server's loopback URL
   and data directory mean nothing on the agent's machine (`status.ts`).

@@ -595,7 +595,7 @@ export class LocalReviewData {
         try {
           const watcher = (this.options.watch ?? watch)(
             root,
-            { recursive: true },
+            { recursive: true, gitCommonDir: common },
             () => {
               state.epoch++;
             },

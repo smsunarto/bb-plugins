@@ -49,6 +49,7 @@ class HostWatcher extends EventEmitter {
 
   constructor(
     private readonly rootPath: string,
+    private readonly gitCommonDir: string | undefined,
     private readonly listener: WatchListener<string>,
   ) {
     super();
@@ -91,7 +92,11 @@ class HostWatcher extends EventEmitter {
     try {
       await this.client!.call(
         "watchWorktree",
-        { watchId: this.watchId, rootPath: this.rootPath },
+        {
+          watchId: this.watchId,
+          rootPath: this.rootPath,
+          ...(this.gitCommonDir && { gitCommonDir: this.gitCommonDir }),
+        },
         { hostId: this.hostId! },
       );
       // Closed while the arm was in flight: close()'s unwatch may have landed first.
@@ -136,13 +141,21 @@ class HostWatcher extends EventEmitter {
   }
 }
 
-/** `fs.watch(root, { recursive: true }, listener)` on the host that owns `root`. */
+/**
+ * `fs.watch(root, { recursive: true }, listener)` on the host that owns `root`.
+ * `gitCommonDir` names the repository's Git common directory, which the
+ * caller watches as a root of its own: the host skips Git bookkeeping by it.
+ */
 export function watch(
   rootPath: string,
-  _options: { recursive?: boolean } | undefined,
+  options: { recursive?: boolean; gitCommonDir?: string | null } | undefined,
   listener: WatchListener<string>,
 ): FSWatcher {
-  return new HostWatcher(rootPath, listener) as unknown as FSWatcher;
+  return new HostWatcher(
+    rootPath,
+    options?.gitCommonDir ?? undefined,
+    listener,
+  ) as unknown as FSWatcher;
 }
 
 /**

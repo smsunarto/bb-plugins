@@ -7,7 +7,7 @@ import {
   useRealtimeConnectionState,
 } from "@get-bb/plugin-sdk/app";
 import { pluginQueryClient } from "@bb-kit/core/rpc/query";
-import { useQuery } from "@tanstack/react-query";
+import { skipToken, useQuery } from "@tanstack/react-query";
 import {
   type ReactNode,
   useCallback,
@@ -46,6 +46,7 @@ import { ApiCanvas } from "../vendor/review/app/src/api-canvas.tsx";
 import { createReviewFindHost } from "../vendor/review/app/src/review-find.tsx";
 import { ReviewHome } from "../vendor/review/app/src/review-home-view.tsx";
 import { ReviewContainerProvider } from "../vendor/review/app/src/review-root-context.tsx";
+import { createCatalogEdits } from "./catalog.ts";
 import { EmptyState } from "./empty-state.tsx";
 
 /**
@@ -286,8 +287,9 @@ function HomeView({
     () => ["whiteboard", "catalog", threadId ?? null, mode],
     [threadId, mode],
   );
+  const catalog = useMemo(() => createCatalogEdits(queryKey), [queryKey]);
   const { data: reviews } = useQuery<readonly ReviewApiSummary[]>(
-    { queryKey, enabled: false },
+    { queryKey, queryFn: skipToken },
     pluginQueryClient,
   );
   useEffect(() => {
@@ -296,32 +298,38 @@ function HomeView({
       null,
       abort.signal,
       (next) => {
-        pluginQueryClient.setQueryData(queryKey, next);
+        catalog.receive(next);
         setError(undefined);
       },
       (cause) => setError(cause instanceof Error ? cause.message : String(cause)),
       mode,
     );
     return () => abort.abort();
-  }, [client, mode, queryKey]);
-  const command = useCallback(
-    async (operation: Record<string, string>) => {
-      await client.post("/commands", { commandId: crypto.randomUUID(), operation });
-    },
-    [client],
-  );
+  }, [client, mode, catalog]);
+  const remove = (review: ReviewApiSummary) =>
+    catalog.command(review.reviewId, "delete", () =>
+      client.post("/commands", {
+        commandId: crypto.randomUUID(),
+        operation: { type: "delete", reviewId: review.reviewId },
+      }),
+    );
+  // ReviewHome reports a failed delete itself, and swallows the other two.
+  const attention = (review: ReviewApiSummary, action: "dismiss" | "restore") =>
+    catalog
+      .command(review.reviewId, action, () => postAttention(client, review.reviewId, action))
+      .catch((cause: unknown) => {
+        console.warn(`[whiteboard] Could not ${action} session:`, cause);
+        toast.error(`Could not ${action} the Whiteboard. Try again.`);
+        throw cause;
+      });
   if (!reviews) return error ? <EmptyState title={UNAVAILABLE_TITLE} description={error} /> : null;
   return (
     <ReviewHome
       reviews={reviews}
       onOpen={onOpen}
-      onDelete={(review) => command({ type: "delete", reviewId: review.reviewId })}
-      onDismiss={(review) =>
-        command({ type: "attention", reviewId: review.reviewId, action: "dismiss" })
-      }
-      onRestore={(review) =>
-        command({ type: "attention", reviewId: review.reviewId, action: "restore" })
-      }
+      onDelete={remove}
+      onDismiss={(review) => attention(review, "dismiss")}
+      onRestore={(review) => attention(review, "restore")}
     />
   );
 }

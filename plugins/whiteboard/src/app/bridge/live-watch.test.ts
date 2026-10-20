@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   type ApiRequest,
   type ApiResponse,
+  UI_INTEREST_TTL_MS,
   WATCH_HEARTBEAT_MS,
 } from "../../shared/contracts/api-tunnel.ts";
 import { ReviewApiClient } from "../../shared/vendor/review-protocol/src/index.ts";
@@ -341,15 +342,35 @@ describe("the hub's interest heartbeat", () => {
 
     vi.advanceTimersByTime(60_000);
 
-    expect(WATCH_HEARTBEAT_MS).toBe(30_000);
-    expect(interest).toHaveBeenCalledTimes(2);
+    expect(WATCH_HEARTBEAT_MS).toBe(60_000);
+    expect(interest).toHaveBeenCalledTimes(1);
     expect(first.calls).toHaveLength(1);
     expect(second.calls).toHaveLength(1);
 
     first.abort.abort();
     second.abort.abort();
     vi.advanceTimersByTime(60_000);
-    expect(interest).toHaveBeenCalledTimes(2);
+    expect(interest).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps the server's lease alive through one failed renewal", async () => {
+    vi.useFakeTimers();
+    // The stream's opening watch read starts the lease.
+    let leaseEnds = Date.now() + UI_INTEREST_TTL_MS;
+    let lapsed = false;
+    const interest = vi.fn(async () => {
+      if (Date.now() >= leaseEnds) lapsed = true;
+      if (interest.mock.calls.length === 1) throw new Error("offline");
+      leaseEnds = Date.now() + UI_INTEREST_TTL_MS;
+      return {};
+    });
+    const stream = await open("/a/watch", { version: 1 }, createLiveHub({ interest }));
+
+    await vi.advanceTimersByTimeAsync(4 * WATCH_HEARTBEAT_MS);
+
+    expect(interest).toHaveBeenCalledTimes(4);
+    expect(lapsed).toBe(false);
+    stream.abort.abort();
   });
 
   it("renews nothing while the document is hidden, and once when it shows again", async () => {

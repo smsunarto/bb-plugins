@@ -140,7 +140,16 @@ export const whiteboardHostContract = defineRpcContract({
     output: z.object({ ok: z.literal(true) }),
   },
   watchWorktree: {
-    input: z.strictObject({ watchId: z.string(), rootPath: z.string().min(1) }),
+    input: z.strictObject({
+      watchId: z.string(),
+      rootPath: z.string().min(1),
+      /**
+       * The repository's resolved Git common directory, which the server
+       * watches as a root of its own. The host derives the root's ignored Git
+       * bookkeeping from it (`ignoredGitPaths`). Absent, the host ignores nothing.
+       */
+      gitCommonDir: z.string().min(1).optional(),
+    }),
     output: z.object({ ok: z.literal(true) }),
   },
   unwatchWorktree: {
