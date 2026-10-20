@@ -6,7 +6,14 @@ import type {
   Subthread,
 } from "../../shared/schema.ts";
 import { assertCheckoutIdle, inCheckout } from "./checkout-ownership.ts";
-import { hostClient, MOVED, repositoryTarget, writeTarget } from "./target.ts";
+import {
+  hostClient,
+  locationOf,
+  MOVED,
+  repositoryTarget,
+  resolveTarget,
+  writeTarget,
+} from "./target.ts";
 
 /**
  * The subthreads the panel hands work to: Create PR and Resolve conflicts.
@@ -70,6 +77,30 @@ export async function locateRepository(
     ...(checkout ? { checkout } : {}),
     repositoryKey,
     identity,
+  };
+}
+
+/**
+ * The repository a read of subthread records means, without a host call
+ * once it is known. Writes use {@link locateRepository}, which reads the
+ * checkout again and pins the thread's environment.
+ */
+export async function locateForRead(
+  bb: BbPluginApi,
+  threadId: string,
+  repositoryKey: string | undefined,
+  checkout?: CheckoutSelection,
+): Promise<LocatedRepository> {
+  const { target, reason } = await resolveTarget(bb, threadId, checkout, repositoryKey);
+  if (!target) throw new Error(reason);
+  const { key, path } = await locationOf(bb, target, repositoryKey);
+  return {
+    hostId: target.hostId,
+    environmentId: target.environmentId,
+    key,
+    path,
+    ...(checkout ? { checkout } : {}),
+    repositoryKey,
   };
 }
 

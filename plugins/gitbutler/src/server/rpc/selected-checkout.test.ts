@@ -148,7 +148,7 @@ function context() {
           if (method === "repositories")
             return { repositories: [{ key: ".", name: "api" }], reason: null };
           if (method === "repository") return { key: "repos/api", path: "/main/repos/api" };
-          if (method === "butAction") return { status: "done" };
+          if (method === "butAction") return { result: { status: "done" }, board: board() };
           return {};
         },
       }),
@@ -229,7 +229,13 @@ test("selected reads all route through the selected host with server-owned prove
 
 test("selected write preserves parent environment pin, selected host and observed branch tip", async () => {
   const { ctx, calls } = context();
-  expect(await butAction.execute(ctx, { ...scope, action })).toEqual({ status: "done" });
+  expect(await butAction.execute(ctx, { ...scope, action })).toMatchObject({
+    result: { status: "done" },
+    // The board it left, drawn for the checkout's machine.
+    workspace: { state: "ready", environmentId: "env-1", hostId: "host-2" },
+  });
+  // Only the checkout's identity is read before the write, never its whole board.
+  expect(calls.map(({ method }) => method)).not.toContain("workspace");
   expect(calls.at(-1)).toEqual({
     method: "butAction",
     hostId: "host-2",
@@ -237,8 +243,22 @@ test("selected write preserves parent environment pin, selected host and observe
       ...target,
       action,
       observed,
+      // The host refuses the write if the checkout is no longer there.
+      expectedCheckout: { path: "/canonical/task", commonDir: "/canonical/main/.git" },
     },
   });
+});
+
+test("a selected board's read tells the next write where the checkout is: one host call", async () => {
+  const { ctx, calls } = context();
+  await workspace.execute(ctx, { threadId: "t1", repositoryKey: "repos/api", checkout });
+  calls.length = 0;
+  await butAction.execute(ctx, { ...scope, action });
+  expect(calls.map(({ method }) => method)).toEqual(["butAction"]);
+  // The subthread records of the board on screen need no host call either.
+  await reviewRequests.execute(ctx, { threadId: "t1", repositoryKey: "repos/api", checkout });
+  await conflictResolution.execute(ctx, { threadId: "t1", repositoryKey: "repos/api", checkout });
+  expect(calls.map(({ method }) => method)).toEqual(["butAction"]);
 });
 
 test("browser cannot supply authoritative roots or origin, unknown and offline machines cannot write", async () => {

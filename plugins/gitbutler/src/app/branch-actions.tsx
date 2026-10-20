@@ -8,11 +8,13 @@ import type {
   ActionRisk,
   Branch,
   ButAction,
+  ButActionResponse,
   ButActionResult,
   CheckoutSelection,
   PatchSource,
   PushMode,
   ReviewRequest,
+  Workspace,
 } from "../shared/schema.ts";
 import {
   butWriteKey,
@@ -36,7 +38,7 @@ import { rpc } from "./rpc.ts";
 /**
  * The branch card's write side: rename on the name, and Pull, Push, Create PR,
  * Land, and Delete in a footer, as GitButler desktop puts them. Each runs `but`
- * on the host; afterwards the whole cache is dropped, because any of them can
+ * on the host, which answers with the whole board, because any of them can
  * change every branch, the base, and the history below it. Create PR hands
  * the branch to a subthread instead.
  */
@@ -104,16 +106,31 @@ function readOf(
     (query.queryKey[1] as WorkspaceTarget | undefined)?.checkout?.path === target.checkout?.path;
 }
 
+/** What a change may have moved, beyond the worktree's diff, parked branches, and operation log. */
+export type Moved = {
+  /** The board. Not after a write, which hands back the board it left. */
+  board: boolean;
+  /** The forge's reviews, which only a push, a land, a PR, or an agent's turn moves. */
+  reviews: boolean;
+  /** The subthread records, which change as a subthread starts and ends. */
+  subthreads: boolean;
+};
+
+const EVERYTHING: Moved = { board: true, reviews: true, subthreads: true };
+
+/** A repository changed on disk: the forge and the subthread records did not. */
+export const ON_DISK: Moved = { board: true, reviews: false, subthreads: false };
+
 /**
- * Fetch again what a write or an agent's turn can change: the board, the
- * worktree's diff, the subthreads working on it, its reviews, its parked
- * branches, and the operation log. Diffs and history are keyed by commit id,
- * which a write cannot change, so open commits are not fetched again. The
- * promise is the board's, so a request's spinner ends when the board shows
- * its result and not a moment before.
+ * Fetch again what a change moved: by default everything, as after an
+ * agent's turn or a lost connection. Diffs and history are keyed by commit
+ * id, which a write cannot change, so open commits are not fetched again.
+ * The promise is the board's, so a request's spinner ends when the board
+ * shows its result and not a moment before.
  */
 export function refreshWorkspace(
   aim: string | Pick<WorkspaceTarget, "threadId" | "checkout">,
+  moved: Moved = EVERYTHING,
 ): Promise<void> {
   const target = typeof aim === "string" ? { threadId: aim } : aim;
   if (target.checkout) {
@@ -127,16 +144,102 @@ export function refreshWorkspace(
       uncommitted(query) &&
       (query.queryKey[1] as { source?: PatchSource }).source?.kind === "uncommitted",
   });
-  for (const method of [
-    rpc.reviewRequests,
-    rpc.conflictResolution,
-    rpc.reviews,
+  const methods = [
     rpc.parkedBranches,
     rpc.oplog,
-  ]) {
+    ...(moved.reviews ? [rpc.reviews] : []),
+    ...(moved.subthreads ? [rpc.reviewRequests, rpc.conflictResolution] : []),
+  ];
+  for (const method of methods) {
     void pluginQueryClient.invalidateQueries({ predicate: readOf(method, target) });
   }
+  if (!moved.board) return Promise.resolve();
   return pluginQueryClient.invalidateQueries({ predicate: readOf(rpc.workspace, target) });
+}
+
+/** Whether two boards are of one checkout, as its path, Git directory, and origin say. */
+function sameCheckout(shown: Workspace, board: Workspace): boolean {
+  const [a, b] = [shown.checkoutIdentity, board.checkoutIdentity];
+  return a?.path === b?.path && a?.commonDir === b?.commonDir && a?.origin === b?.origin;
+}
+
+/** Writes in flight, by their request, that a change seen meanwhile may have overtaken. */
+const overtaken = new WeakSet<object>();
+
+/**
+ * Notes that `target`'s board changed while a `but` write of this panel
+ * runs: the board that write hands back may predate the change, so it reads
+ * the board again once it lands. Whether such a write was running.
+ */
+export function changedDuringWrite(target: Pick<WorkspaceTarget, "threadId" | "checkout">) {
+  const writes = pluginQueryClient.getMutationCache().findAll({
+    mutationKey: ["but-write"],
+    status: "pending",
+    predicate: (write) => {
+      const sent = write.state.variables as WriteScope | undefined;
+      return (
+        sent?.threadId === target.threadId &&
+        sent.checkout?.hostId === target.checkout?.hostId &&
+        sent.checkout?.path === target.checkout?.path
+      );
+    },
+  });
+  for (const write of writes) overtaken.add(write.state.variables as object);
+  return writes.length > 0;
+}
+
+/**
+ * Draws the board a write handed back on every read of that board, and
+ * drops reads still in flight. A board nobody has drawn yet, or one of a
+ * checkout that has changed since, is read instead. Whether a read landed
+ * while the write ran, which may be newer than the write's board.
+ */
+async function showBoard(sent: WriteScope, board: Workspace, sentAt: number): Promise<boolean> {
+  const reads = pluginQueryClient
+    .getQueryCache()
+    .findAll({ predicate: readOf(rpc.workspace, sent) })
+    .filter((query) => {
+      const shown = query.state.data as Workspace | undefined;
+      return (
+        shown?.repositoryKey === board.repositoryKey && shown.environmentId === board.environmentId
+      );
+    });
+  if (reads.length === 0) {
+    await pluginQueryClient.invalidateQueries({ predicate: readOf(rpc.workspace, sent) });
+    return false;
+  }
+  let landed = false;
+  for (const read of reads) {
+    if (!sameCheckout(read.state.data as Workspace, board)) {
+      await pluginQueryClient.invalidateQueries({ queryKey: read.queryKey, exact: true });
+      continue;
+    }
+    landed ||= read.state.dataUpdatedAt > sentAt;
+    await pluginQueryClient.cancelQueries({ queryKey: read.queryKey, exact: true });
+    pluginQueryClient.setQueryData(read.queryKey, board);
+  }
+  return landed;
+}
+
+/**
+ * Reads again what a write moved, beyond the board it handed back. The
+ * write's board shows at once. When something else may have moved the
+ * board meanwhile, it is read again behind it.
+ */
+async function showWrite(sent: WriteScope & { action: ButAction }, response?: ButActionResponse) {
+  const changed = overtaken.has(sent);
+  overtaken.delete(sent);
+  // A failure may have changed anything.
+  if (!response) return refreshWorkspace(sent);
+  // A question changed nothing, though something else may have.
+  if (!response.workspace) return changed ? refreshWorkspace(sent, ON_DISK) : undefined;
+  const sentAt =
+    pluginQueryClient.getMutationCache().find({
+      predicate: (write) => write.state.variables === sent,
+    })?.state.submittedAt ?? 0;
+  const landed = await showBoard(sent, response.workspace, sentAt);
+  const reviews = sent.action.kind === "push" || sent.action.kind === "land";
+  await refreshWorkspace(sent, { board: changed || landed, reviews, subthreads: false });
 }
 
 /** What the status line says once a card's write is through. The header's Pull says its own. */
@@ -201,8 +304,9 @@ export function useButAction(
     mutationKey: butWriteKey(scope),
     // Reported here, once the board shows the result, and not in `run`'s
     // callback: Delete and Land take the card, and that callback, away first.
-    onSettled: async (result, error, sent) => {
-      await refreshWorkspace(sent);
+    onSettled: async (response, error, sent) => {
+      await showWrite(sent, response);
+      const result = response?.result;
       onSettled?.(result, error, sent);
       if (!sameScope(sent, currentAim.current)) return;
       if (!result) return;
@@ -226,7 +330,7 @@ export function useButAction(
     run: (action: ButAction, onResult?: (result: ButActionResult) => void, onError?: () => void) =>
       mutation.mutate(
         { ...aim, action },
-        { onSuccess: (result) => onResult?.(result), onError: () => onError?.() },
+        { onSuccess: ({ result }) => onResult?.(result), onError: () => onError?.() },
       ),
     pending,
     /** Which kind of request is in flight, so only its own button spins. */
@@ -413,13 +517,24 @@ function useReviewRequest(target: WorkspaceTarget, branch: string) {
     refetchInterval: (query) =>
       query.state.data?.requests.some((request) => request.running) ? REVIEW_POLL_MS : false,
   });
+  // Starting a subthread moves only its record. The PR it opens shows once it stops.
   const mutation = rpc.requestReview.useMutation({
-    onSettled: (_result, _error, sent) => refreshWorkspace(sent),
+    onSettled: (_result, _error, sent) =>
+      refreshWorkspace(sent, { board: false, reviews: false, subthreads: true }),
   });
+  const current = requests.data?.requests.find((request) => request.branch === branch) ?? null;
+  const running = current?.running ?? false;
+  const wasRunning = useRef(running);
+  useEffect(() => {
+    if (wasRunning.current && !running) {
+      void pluginQueryClient.invalidateQueries({ predicate: readOf(rpc.reviews, target) });
+    }
+    wasRunning.current = running;
+  }, [running, target]);
   return {
     request: () => mutation.mutate({ ...writeScope(target, board), branch }),
     pending: mutation.isPending,
-    current: requests.data?.requests.find((request) => request.branch === branch) ?? null,
+    current,
     error: mutation.error,
     reset: mutation.reset,
   };

@@ -14,11 +14,11 @@ const ready = {
   conflictedFiles: [],
 };
 
-test("forwards the environment path and host to the host entry, and names the environment", async () => {
+test("forwards the environment path and host to the host entry, and names the environment and machine", async () => {
   const { ctx, calls } = harness({ result: ready });
   const result = await workspace.execute(ctx, { threadId: "t1" });
 
-  expect(result).toEqual({ ...ready, environmentId: "env-1" });
+  expect(result).toEqual({ ...ready, environmentId: "env-1", hostId: "host-1" });
   expect(calls).toEqual([
     { method: "workspace", input: { environmentPath: "/work" }, options: { hostId: "host-1" } },
   ]);

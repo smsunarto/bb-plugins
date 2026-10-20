@@ -1,6 +1,6 @@
 import { definePlugin } from "@bb-kit/core/plugin";
 import { offerPanelTab } from "./lib/panel-tab.ts";
-import { publishWorkspaceChanged } from "./lib/workspace-signal.ts";
+import { publishWorkspaceChanged, relayRepositoryChanges } from "./lib/workspace-signal.ts";
 import { baseHistory } from "./rpc/base-history.ts";
 import { branchPatches } from "./rpc/branch-patches.ts";
 import { butAction } from "./rpc/but-action.ts";
@@ -42,6 +42,7 @@ export default definePlugin({
     branchPatches,
   },
   setup({ bb }) {
+    bb.onDispose(relayRepositoryChanges(bb));
     bb.events.on("thread.idle", ({ thread }) => publishWorkspaceChanged(bb, thread));
     bb.events.on("thread.failed", ({ thread }) => publishWorkspaceChanged(bb, thread));
     // `active` rather than `created`: a new thread's environment is still

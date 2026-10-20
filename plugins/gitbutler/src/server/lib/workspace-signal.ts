@@ -1,5 +1,10 @@
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
-import { WORKSPACE_CHANGED_CHANNEL, type WorkspaceChanged } from "../../shared/panel.ts";
+import { gitbutlerHostContract, gitbutlerHostSignals } from "../../shared/host-contract.ts";
+import {
+  WORKSPACE_CHANGED_CHANNEL,
+  type RepositoryChanged,
+  type TurnEnded,
+} from "../../shared/panel.ts";
 
 /**
  * An agent's writes come in a burst that ends with its turn. Saying so lets an
@@ -14,10 +19,27 @@ export function publishWorkspaceChanged(
   thread: { id: string; environmentId: string | null; parentThreadId: string | null },
 ): void {
   if (thread.environmentId === null) return;
-  const payload: WorkspaceChanged = {
+  const payload: TurnEnded = {
     environmentId: thread.environmentId,
     threadId: thread.id,
     parentThreadId: thread.parentThreadId,
   };
   bb.realtime.publish(WORKSPACE_CHANGED_CHANNEL, payload);
+}
+
+/**
+ * Passes on what the hosts see change in the repositories panels read
+ * lately: the reader's own commits in a terminal, GitButler desktop, another
+ * agent. The host names the repository by its path, so the machine rides
+ * along. Returns the unsubscribe.
+ */
+export function relayRepositoryChanges(bb: Pick<BbPluginApi, "hosts" | "realtime">): () => void {
+  const client = bb.hosts.experimental_client({
+    contract: gitbutlerHostContract,
+    experimental_signals: gitbutlerHostSignals,
+  });
+  return client.experimental_onSignal("repositoryChanged", ({ hostId, payload }) => {
+    const signal: RepositoryChanged = { hostId, ...payload };
+    bb.realtime.publish(WORKSPACE_CHANGED_CHANNEL, signal);
+  });
 }

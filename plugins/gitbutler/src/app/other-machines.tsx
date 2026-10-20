@@ -15,9 +15,10 @@ import { BRANCH_LOOK, Chip, TONE } from "./workspace-lane.tsx";
 
 /**
  * How often the other machines are read again. Each read reaches every
- * connected machine, and what changes there is seldom urgent here.
+ * connected machine and reads each checkout there, and what changes there
+ * is seldom urgent here. A write to one of them reads them again at once.
  */
-const OTHER_MACHINES_POLL_MS = 30_000;
+const OTHER_MACHINES_POLL_MS = 120_000;
 
 const STATUS_CHIP =
   "bg-transparent font-medium text-muted-foreground ring-1 ring-border ring-inset";

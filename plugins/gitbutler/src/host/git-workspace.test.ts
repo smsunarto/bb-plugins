@@ -241,7 +241,7 @@ test("delete preserves current files and leaves the detached checkout readable",
       observed: await observed(),
       action: { kind: "delete", branch: name, accepted: null },
     }),
-  ).toEqual({ status: "done" });
+  ).toMatchObject({ result: { status: "done" }, board: { state: "ready" } });
   expect(await readGitCheckout(isolated, signal)).toMatchObject({ branch: null, head: tip });
   expect(await readFile(join(isolated, "first.txt"), "utf8")).toBe("first\n");
   expect(
@@ -881,7 +881,7 @@ test("actions in separate linked worktrees serialize on the shared Git directory
         action: { kind: "rename", branch: "scott/second", name: "scott/renamed-second" },
       }),
     ]);
-    expect(answers).toEqual([{ status: "done" }, { status: "done" }]);
+    expect(answers.map(({ result }) => result)).toEqual([{ status: "done" }, { status: "done" }]);
     const lines = (await readFile(log, "utf8")).trim().split("\n");
     expect(lines.map((line) => line.split(" ")[0])).toEqual(["start", "end", "start", "end"]);
     expect((await readGitCheckout(isolated, signal)).branch).toBe("scott/renamed-first");

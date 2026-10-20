@@ -1,6 +1,12 @@
 import { experimental_defineHostEntry } from "@get-bb/plugin-sdk/host";
-import { gitbutlerHostContract } from "../shared/host-contract.ts";
-import type { HostCheckout, HostWorkspace, WorkspaceState } from "../shared/schema.ts";
+import type { ExperimentalHostRpcContext } from "@get-bb/plugin-sdk/host";
+import { gitbutlerHostContract, gitbutlerHostSignals } from "../shared/host-contract.ts";
+import type {
+  ButActionResult,
+  HostCheckout,
+  HostWorkspace,
+  WorkspaceState,
+} from "../shared/schema.ts";
 import { runAction } from "./actions.ts";
 import { readParkedBranches } from "./branches.ts";
 import { ButFailedError, ButMissingError, ButSetupRequiredError, runBut, runGit } from "./cli.ts";
@@ -8,6 +14,7 @@ import { readBaseHistory, readCheckoutHead } from "./history.ts";
 import { prepareGitCheckoutChild, runGitAction } from "./git-actions.ts";
 import { readGitCheckout, readGitPatches, readGitWorkspace } from "./git-workspace.ts";
 import { readOrigin } from "./origin.ts";
+import { changed, forget, keepWatching, remember, share } from "./repository-state.ts";
 import { readUnpublished } from "./unpublished.ts";
 import { compareWithRemotes } from "./upstream.ts";
 import {
@@ -47,6 +54,14 @@ async function resolveHostRepository(input: HostTarget, signal: AbortSignal) {
   return resolveRepository(input.environmentPath, input.repositoryKey, signal);
 }
 
+/**
+ * Which kind of checkout a read is in, remembered for a few seconds. Writes
+ * check a fresh one, and forget this.
+ */
+function checkoutOf(path: string, signal: AbortSignal) {
+  return remember(`checkout\0${path}`, signal, (shared) => readGitCheckout(path, shared));
+}
+
 /** Classify a failure so the panel can explain it instead of showing a stack. */
 function unavailable(error: unknown): { state: WorkspaceState; reason: string } {
   if (error instanceof ButMissingError) return { state: "cliMissing", reason: error.message };
@@ -81,7 +96,7 @@ async function readWorkspace(
   signal: AbortSignal,
 ): Promise<HostWorkspace> {
   try {
-    const identity = await readGitCheckout(repository.path, signal);
+    const identity = await checkoutOf(repository.path, signal);
     if (identity.kind === "git") return await readGitWorkspace(repository, signal);
     // One call carries the whole panel. `-u` attaches the upstream commits
     // that are not integrated yet; per-commit files come from `patches`.
@@ -100,6 +115,28 @@ async function readWorkspace(
     const { state, reason } = unavailable(error);
     return emptyWorkspace(state, reason, repository.key);
   }
+}
+
+type Repository = { key: string; name: string; path: string };
+
+/** A board, read once for every caller asking while it is read. */
+function boardOf(repository: Repository, signal: AbortSignal): Promise<HostWorkspace> {
+  const key = `board\0${repository.path}\0${repository.key}\0${repository.name}`;
+  return share(key, signal, (shared) => readWorkspace(repository, shared));
+}
+
+type Context = ExperimentalHostRpcContext<typeof gitbutlerHostSignals>;
+
+/**
+ * The board a panel is looking at. Reading it keeps its repository watched
+ * for a while, so the panel hears of the next change instead of polling.
+ */
+async function readBoard(repository: Repository, context: Context): Promise<HostWorkspace> {
+  const board = await boardOf(repository, context.signal);
+  if (board.checkoutIdentity) {
+    await keepWatching(board.checkoutIdentity, context).catch(() => undefined);
+  }
+  return board;
 }
 
 /**
@@ -174,8 +211,24 @@ function oneAtATime<T>(repositoryPath: string, action: () => Promise<T>): Promis
   return result;
 }
 
+/**
+ * Runs a write after the ones queued before it, on what is there then:
+ * nothing remembered from before the write is trusted, during it or after.
+ */
+function write<T>(commonDir: string, action: () => Promise<T>): Promise<T> {
+  return oneAtATime(commonDir, async () => {
+    forget();
+    try {
+      return await action();
+    } finally {
+      forget();
+    }
+  });
+}
+
 export default experimental_defineHostEntry({
   contract: gitbutlerHostContract,
+  experimental_signals: gitbutlerHostSignals,
   handlers: {
     async repositories(input, context) {
       try {
@@ -211,7 +264,7 @@ export default experimental_defineHostEntry({
         const { state, reason } = unavailable(error);
         return emptyWorkspace(state, reason, null);
       }
-      return readWorkspace(repository, context.signal);
+      return readBoard(repository, context);
     },
 
     async origin(input, context) {
@@ -239,7 +292,7 @@ export default experimental_defineHostEntry({
             return { path: repository.path, ...unavailable(error), stacks: [] };
           }
         }
-        const { state, reason, stacks } = await readWorkspace(repository, context.signal);
+        const { state, reason, stacks } = await boardOf(repository, context.signal);
         return { path: repository.path, state, reason, stacks };
       });
       return { checkouts };
@@ -284,7 +337,7 @@ export default experimental_defineHostEntry({
         const output = await diffRange(repository.path, source.base, source.head, context.signal);
         return patchesFromGit(output, MAX_PATCH_CHARS);
       }
-      if ((await readGitCheckout(repository.path, context.signal)).kind === "git") {
+      if ((await checkoutOf(repository.path, context.signal)).kind === "git") {
         return readGitPatches(repository.path, source, context.signal);
       }
       if (source.kind === "uncommitted") {
@@ -312,8 +365,8 @@ export default experimental_defineHostEntry({
 
     async prepareCheckoutChild(input, context) {
       const repository = await resolveHostRepository(input, context.signal);
-      const initial = await readGitCheckout(repository.path, context.signal);
-      return oneAtATime(initial.commonDir, async () => {
+      const initial = await checkoutOf(repository.path, context.signal);
+      return write(initial.commonDir, async () => {
         const current = await resolveHostRepository(input, context.signal);
         const identity = await readGitCheckout(current.path, context.signal);
         if (
@@ -330,8 +383,9 @@ export default experimental_defineHostEntry({
     async butAction(input, context) {
       const { action } = input;
       const repository = await resolveHostRepository(input, context.signal);
-      const initial = await readGitCheckout(repository.path, context.signal);
-      return oneAtATime(initial.commonDir, async () => {
+      const initial = await checkoutOf(repository.path, context.signal);
+      let outcome: ButActionResult | undefined;
+      const { current, result } = await write(initial.commonDir, async () => {
         const current = await resolveHostRepository(input, context.signal);
         const identity = await readGitCheckout(current.path, context.signal);
         if (
@@ -341,20 +395,39 @@ export default experimental_defineHostEntry({
         ) {
           throw new NoRepositoryError("The checkout changed while waiting. Refresh the board.");
         }
-        if (identity.kind === "git") {
-          if (!input.observed)
-            throw new NoRepositoryError("Refresh the isolated checkout before running an action.");
-          return runGitAction(current.path, action, context.signal, input.observed);
+        const expected = input.expectedCheckout;
+        if (
+          expected &&
+          (identity.path !== expected.path || identity.commonDir !== expected.commonDir)
+        ) {
+          throw new NoRepositoryError(
+            "The checkout moved since the board was read. Refresh the board.",
+          );
         }
-        return runAction(current.path, action, context.signal);
+        if (identity.kind === "git" && !input.observed)
+          throw new NoRepositoryError("Refresh the isolated checkout before running an action.");
+        try {
+          if (identity.kind === "git" && input.observed) {
+            outcome = await runGitAction(current.path, action, context.signal, input.observed);
+          } else {
+            outcome = await runAction(current.path, action, context.signal);
+          }
+          return { current, result: outcome };
+        } finally {
+          // Even a failed action may have written. A question wrote nothing.
+          if (outcome?.status !== "confirm") void changed(initial.commonDir, context);
+        }
       });
+      // A question changed nothing. Anything else hands back the board it
+      // left, read after the queue so the next write need not wait for it.
+      if (result.status === "confirm") return { result, board: null };
+      return { result, board: await readBoard(current, context) };
     },
 
     async reviewUrl(input, context) {
       const { branch } = input;
       const repository = await resolveHostRepository(input, context.signal);
-      if ((await readGitCheckout(repository.path, context.signal)).kind === "git")
-        return { url: null };
+      if ((await checkoutOf(repository.path, context.signal)).kind === "git") return { url: null };
       // `-r` asks the forge, so this runs when the reader opens a review, never on a poll.
       const payload = await runBut(
         repository.path,
@@ -367,7 +440,7 @@ export default experimental_defineHostEntry({
     async reviews(input, context) {
       try {
         const repository = await resolveHostRepository(input, context.signal);
-        if ((await readGitCheckout(repository.path, context.signal)).kind === "git")
+        if ((await checkoutOf(repository.path, context.signal)).kind === "git")
           return { reviews: [], reason: null };
         // `--review` can ask the forge, so this is read apart from the
         // workspace and never holds it up. Checks and counts are skipped.
@@ -386,7 +459,7 @@ export default experimental_defineHostEntry({
     async oplog(input, context) {
       try {
         const repository = await resolveHostRepository(input, context.signal);
-        if ((await readGitCheckout(repository.path, context.signal)).kind === "git")
+        if ((await checkoutOf(repository.path, context.signal)).kind === "git")
           return { entries: [], reason: null };
         const payload = await runBut(repository.path, ["oplog", "list"], context.signal);
         return { entries: parseOplog(payload), reason: null };
@@ -399,7 +472,7 @@ export default experimental_defineHostEntry({
     async parkedBranches(input, context) {
       try {
         const repository = await resolveHostRepository(input, context.signal);
-        if ((await readGitCheckout(repository.path, context.signal)).kind === "git")
+        if ((await checkoutOf(repository.path, context.signal)).kind === "git")
           return { branches: [], hasMore: false, reason: null };
         const parked = await readParkedBranches(repository.path, context.signal);
         return { ...parked, reason: null };

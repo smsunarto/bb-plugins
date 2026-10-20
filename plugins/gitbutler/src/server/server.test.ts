@@ -24,3 +24,16 @@ test("a turn that ends, idle or failed, tells the panels on its environment", as
   expect(harness.inspection.realtimeSignals).toEqual([signal, signal]);
   await harness.lifecycle.dispose();
 });
+
+test("a repository the host sees change on disk reaches the panels, with its machine", async () => {
+  const { bb, harness } = createFakePluginHost({ pluginId: "gitbutler" });
+  await plugin(bb);
+
+  const changed = { commonDir: "/work/.git", checkouts: ["/work"] };
+  await harness.behavior.experimental_emitHostSignal("host-1", "repositoryChanged", changed);
+
+  expect(harness.inspection.realtimeSignals).toEqual([
+    { channel: "workspace-changed", payload: { hostId: "host-1", ...changed } },
+  ]);
+  await harness.lifecycle.dispose();
+});

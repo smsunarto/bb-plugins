@@ -530,12 +530,17 @@ function ChecksChip({ branch, review }: { branch: Branch; review: string | null 
   );
 }
 
-/** How often review states are read again. The read can ask the forge, so not on the board's poll. */
-const REVIEWS_POLL_MS = 60_000;
+/**
+ * How often review states are read again. The read can ask the forge, which
+ * nothing on this machine hears from, so it is polled, slowly. A push, a
+ * land, a finished PR subthread, or an agent's turn reads it at once.
+ */
+const REVIEWS_POLL_MS = 5 * 60_000;
 
 /** A branch's review, from the one read every card of the repository shares. */
 function useBranchReview(target: WorkspaceTarget, branch: string): BranchReview | null {
   const reviews = rpc.reviews.useQuery(target, {
+    ...storedAnswer("reviews", target),
     staleTime: REVIEWS_POLL_MS,
     refetchInterval: REVIEWS_POLL_MS,
   });

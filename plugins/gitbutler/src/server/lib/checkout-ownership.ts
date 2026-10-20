@@ -47,14 +47,14 @@ export async function assertCheckoutIdle(
             hostId: repository.hostId,
           },
         );
+        // Read fresh, not through originOf's cache: an environment repointed
+        // since would otherwise still name the checkout it left as its own.
         const paths = await Promise.all(
           repositories.map(async ({ key }) => {
             const found = await client.call(
               "origin",
               { environmentPath, repositoryKey: key },
-              {
-                hostId: repository.hostId,
-              },
+              { hostId: repository.hostId },
             );
             return found.path;
           }),

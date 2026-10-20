@@ -1,4 +1,4 @@
-import { beforeEach, expect, onTestFinished, test } from "bun:test";
+import { beforeEach, expect, onTestFinished, setSystemTime, test } from "bun:test";
 import { environmentManager } from "@tanstack/react-query";
 import { pluginQueryClient } from "@bb-kit/core/rpc/query";
 import { installDom } from "@bb-kit/core/testing";
@@ -45,10 +45,34 @@ beforeEach(() => {
   window.localStorage.clear();
 });
 
-async function panel(
-  rpc: Record<string, (input: never) => unknown>,
-  options: Omit<RenderSlotOptions, "rpc" | "context"> = {},
-) {
+type Fakes = Record<string, (input: never) => unknown>;
+
+/**
+ * The server answers a write with the board it left. A fake that answers
+ * with the write's outcome alone gets that board from its own `workspace`,
+ * read for the board the write was aimed at.
+ */
+function answeringWithBoard(rpc: Fakes): Fakes {
+  const { butAction, workspace: read } = rpc as Record<string, (input: unknown) => unknown>;
+  if (!butAction) return rpc;
+  return {
+    ...rpc,
+    butAction: (async (input: {
+      threadId: string;
+      repositoryKey?: string;
+      checkout?: CheckoutSelection;
+    }) => {
+      const result = (await butAction(input)) as { status?: string } | undefined;
+      if (!result || !("status" in result)) return result;
+      if (result.status === "confirm") return { result, workspace: null };
+      const { threadId, repositoryKey, checkout } = input;
+      const board = await read?.({ threadId, repositoryKey, ...(checkout ? { checkout } : {}) });
+      return { result, workspace: board ?? null };
+    }) as never,
+  };
+}
+
+async function panel(rpc: Fakes, options: Omit<RenderSlotOptions, "rpc" | "context"> = {}) {
   const app = await loadPluginApp(() => import("../src/app/app.tsx"));
   const registration = app.threadPanelActions[0]!;
   expect(registration.id).toBe("gitbutler");
@@ -57,7 +81,7 @@ async function panel(
     { threadId: "thread-1", params: null },
     {
       ...options,
-      rpc: rpc as never,
+      rpc: answeringWithBoard(rpc) as never,
       context: { threadId: "thread-1", projectId: "project-1" },
     },
   );
@@ -770,9 +794,14 @@ test("pushes a branch by name from its card", async () => {
   slot.lifecycle.unmount();
 });
 
-test("a push refreshes the board but keeps an open commit's diff", async () => {
-  const { actions, rpc } = recordActions();
-  const reads = { workspace: 0, patches: 0 };
+test("a push draws the board it left without reading it again, and keeps an open commit's diff", async () => {
+  const pushed = structuredClone(workspace);
+  pushed.repoName = "bb-plugins after the push";
+  const reads = { workspace: 0, patches: 0, reviews: 0 };
+  const { actions, rpc } = recordActions(() => ({
+    result: { status: "done" },
+    workspace: pushed,
+  }));
   const { slot, card } = await bottomCard({
     ...rpc,
     workspace: () => {
@@ -783,16 +812,48 @@ test("a push refreshes the board but keeps an open commit's diff", async () => {
       reads.patches += 1;
       return { files: [], truncated: false };
     },
+    reviews: () => {
+      reads.reviews += 1;
+      return { reviews: [], reason: null };
+    },
   });
   fireEvent.click(slot.getByText("feat(top): add the thing"));
   await waitFor(() => expect(reads.patches).toBe(1));
+  await waitFor(() => expect(reads.reviews).toBe(1));
   const before = reads.workspace;
 
   fireEvent.click(card.getByRole("button", { name: "Push" }));
   await waitFor(() => expect(actions).toHaveLength(1));
-  await waitFor(() => expect(reads.workspace).toBe(before + 1));
+  await slot.findByText("bb-plugins after the push");
+  // A push moves the branch's review on the forge, so that is read again.
+  await waitFor(() => expect(reads.reviews).toBe(2));
+  expect(reads.workspace).toBe(before);
   // A commit's diff is fixed by its id, so a write has no reason to fetch it again.
   expect(reads.patches).toBe(1);
+  slot.lifecycle.unmount();
+});
+
+test("a rename draws the board it left and leaves the forge alone", async () => {
+  const renamed = structuredClone(workspace);
+  renamed.stacks[0]!.branches[1]!.name = "scott/renamed";
+  let reviews = 0;
+  const { rpc } = recordActions(() => ({ result: { status: "done" }, workspace: renamed }));
+  const { slot, card } = await bottomCard({
+    ...rpc,
+    reviews: () => {
+      reviews += 1;
+      return { reviews: [], reason: null };
+    },
+  });
+  await waitFor(() => expect(reviews).toBe(1));
+  fireEvent.click(card.getByRole("button", { name: "Rename branch scott/bottom" }));
+  const field = card.getByRole("textbox") as HTMLInputElement;
+  fireEvent.change(field, { target: { value: "scott/renamed" } });
+  fireEvent.keyDown(field, { key: "Enter" });
+  await slot.findByRole("article", { name: "Branch scott/renamed" });
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  expect(reviews).toBe(1);
+  expect(slot.inspection.rpcCalls.filter((call) => call.method === "workspace")).toHaveLength(1);
   slot.lifecycle.unmount();
 });
 
@@ -2276,6 +2337,156 @@ test("a turn ending reads the workspace again, and a turn of this thread's famil
   slot.lifecycle.unmount();
 });
 
+test("a change the host saw on disk reads this checkout's board again, and nothing else's", async () => {
+  const onDisk: Workspace = {
+    ...workspace,
+    hostId: "host-1",
+    checkoutIdentity: {
+      path: "/work/bb-plugins",
+      branch: "gitbutler/workspace",
+      head: "a".repeat(40),
+      origin: "github.com/scott/bb-plugins",
+      commonDir: "/work/bb-plugins/.git",
+      kind: "gitbutler",
+    },
+  };
+  const reads = { workspace: 0, reviews: 0 };
+  const slot = await panel({
+    ...baseRpc,
+    workspace: () => {
+      reads.workspace += 1;
+      return onDisk;
+    },
+    reviews: () => {
+      reads.reviews += 1;
+      return { reviews: [], reason: null };
+    },
+  });
+  await waitFor(() => expect(slot.getByText("scott/top")).toBeTruthy());
+  await waitFor(() => expect(reads.reviews).toBe(1));
+  const before = reads.workspace;
+
+  // Another checkout of the same repository, and the same path on another machine.
+  const changed = { hostId: "host-1", commonDir: "/work/bb-plugins/.git" };
+  await slot.emitRealtime("workspace-changed", { ...changed, checkouts: ["/work/other"] });
+  await slot.emitRealtime("workspace-changed", {
+    ...changed,
+    hostId: "host-2",
+    checkouts: ["/work/bb-plugins"],
+  });
+  await slot.emitRealtime("workspace-changed", { ...changed, checkouts: ["/work/bb-plugins"] });
+  await waitFor(() => expect(reads.workspace).toBe(before + 1));
+  // The forge heard nothing of a change on disk.
+  expect(reads.reviews).toBe(1);
+  slot.lifecycle.unmount();
+});
+
+test("a change seen on disk while the panel's write runs reads the board again once that write lands", async () => {
+  const behind: Workspace = {
+    ...structuredClone(workspace),
+    hostId: "host-1",
+    checkoutIdentity: {
+      path: "/work/bb-plugins",
+      branch: "gitbutler/workspace",
+      head: "a".repeat(40),
+      origin: "github.com/scott/bb-plugins",
+      commonDir: "/work/bb-plugins/.git",
+      kind: "gitbutler",
+    },
+  };
+  const top = behind.stacks[0]!.branches.find((branch) => branch.name === "scott/top")!;
+  Object.assign(top, { status: "behind", push: "none", newUpstream: 1 });
+  let reads = 0;
+  let finish = () => {};
+  const slot = await panel({
+    ...baseRpc,
+    workspace: () => {
+      reads += 1;
+      return behind;
+    },
+    butAction: () =>
+      new Promise((resolve) => {
+        finish = () => resolve({ status: "done" });
+      }),
+  });
+  await waitFor(() => expect(slot.getByText("scott/top")).toBeTruthy());
+  const pull = async () => {
+    fireEvent.click(topCard(slot).getByRole("button", { name: "Pull" }));
+    await waitFor(() => expect(slot.queryByText("Another GitButler action is running")).toBeNull());
+  };
+  const settle = () => new Promise((resolve) => setTimeout(resolve, 50));
+  const changed = {
+    hostId: "host-1",
+    commonDir: "/work/bb-plugins/.git",
+    checkouts: ["/work/bb-plugins"],
+  };
+
+  // Alone, the write's own board is all it reads.
+  let before = reads;
+  await pull();
+  finish();
+  await slot.findByText("Pulled scott/top");
+  await settle();
+  expect(reads).toBe(before + 1);
+
+  // A change seen meanwhile waits for the write, then reads the board once more.
+  before = reads;
+  await pull();
+  await slot.emitRealtime("workspace-changed", changed);
+  await settle();
+  expect(reads).toBe(before);
+  finish();
+  await waitFor(() => expect(reads).toBe(before + 2));
+  slot.lifecycle.unmount();
+});
+
+test("the header reads a thread outside GitButler again later, so a workspace made since shows", async () => {
+  let answer: unknown = { ...workspace, state: "noRepository", stacks: [] };
+  let reads = 0;
+  const read = () => {
+    reads += 1;
+    return answer;
+  };
+  const first = await header(read);
+  await waitFor(() => expect(reads).toBe(1));
+  expect(first.queryByRole("button", { name: "View in GitButler" })).toBeNull();
+  first.lifecycle.unmount();
+
+  // Its environment finishes, or someone runs `but setup`, a while later.
+  answer = workspace;
+  setSystemTime(new Date(Date.now() + 61_000));
+  onTestFinished(() => setSystemTime());
+  const later = await header(read);
+  await waitFor(() =>
+    expect(later.getByRole("button", { name: "View in GitButler" })).toBeTruthy(),
+  );
+  later.lifecycle.unmount();
+});
+
+test("the header reads nothing when a thread opens with its answer stored or in memory", async () => {
+  const first = await panel(baseRpc);
+  await waitFor(() => expect(first.getByText("scott/top")).toBeTruthy());
+  first.lifecycle.unmount();
+
+  let reads = 0;
+  const read = () => {
+    reads += 1;
+    return workspace;
+  };
+  // In memory, as when the reader moves between threads.
+  const warm = await header(read);
+  expect(warm.getByRole("button", { name: "View in GitButler" })).toBeTruthy();
+  warm.lifecycle.unmount();
+  // Stored, as after a reload.
+  pluginQueryClient.clear();
+  const cold = await header(read);
+  expect(cold.getByRole("button", { name: "View in GitButler" })).toBeTruthy();
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  expect(reads).toBe(0);
+  expect(cold.inspection.rpcCalls).toEqual([]);
+  cold.lifecycle.unmount();
+});
+
 test("runs one write at a time, and every other write control says why it waits", async () => {
   let finish: (result: unknown) => void = () => {};
   const { actions, rpc } = recordActions(
@@ -3350,6 +3561,46 @@ test("changing a selected checkout origin clears confirmations and ignores an ol
   slot.lifecycle.unmount();
 });
 
+test("a write's board of a checkout that changed since is read again, not drawn", async () => {
+  let origin: string | null = "github.com/scott/bb-plugins";
+  let finish: (result: unknown) => void = () => {};
+  let reads = 0;
+  const slot = await panel({
+    ...baseRpc,
+    workspace: (input: { checkout?: CheckoutSelection }) => {
+      if (!input.checkout) return workspace;
+      reads += 1;
+      const board = isolatedBoard();
+      board.checkoutIdentity!.origin = origin;
+      return board;
+    },
+    otherMachines: () => ({ checkouts: [isolatedCheckout], reason: null, environmentId: "env-1" }),
+    butAction: () =>
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+  });
+  const shown = () =>
+    pluginQueryClient.getQueryData([
+      "workspace",
+      { threadId: "thread-1", checkout: selectedCheckout },
+    ]) as Workspace | undefined;
+  const card = await openIsolated(slot);
+  fireEvent.click(card.getByRole("button", { name: "Push" }));
+  await waitFor(() => expect(pluginQueryClient.isMutating()).toBe(1));
+  origin = "github.com/scott/repointed";
+  fireEvent.click(slot.getByRole("button", { name: "Refresh" }));
+  await waitFor(() => expect(shown()?.checkoutIdentity?.origin).toBe(origin));
+  const before = reads;
+
+  // The board the push left was read before the checkout was repointed.
+  finish({ result: { status: "done" }, workspace: isolatedBoard() });
+  await waitFor(() => expect(pluginQueryClient.isMutating()).toBe(0));
+  await waitFor(() => expect(reads).toBe(before + 1));
+  expect(shown()?.checkoutIdentity?.origin).toBe("github.com/scott/repointed");
+  slot.lifecycle.unmount();
+});
+
 test("native detached conflict resolution includes its observed null branch and origin", async () => {
   const selected = isolatedBoard();
   selected.stacks = [];
@@ -3687,36 +3938,26 @@ const newCheckoutChat = {
   },
 } as const;
 
-test("New chat shows checking and opening progress until the checkout preflight is ready", async () => {
+test("New chat reads nothing until it is clicked, then shows opening progress until ready", async () => {
   const fixture = checkoutChatRpc();
   type ChatTarget = ReturnType<typeof fixture.checkoutChatTarget>;
-  let finishChecking!: (target: ChatTarget) => void;
-  const checking = new Promise<ChatTarget>((resolve) => {
-    finishChecking = resolve;
-  });
   let finishOpening!: (target: ChatTarget) => void;
   const opening = new Promise<ChatTarget>((resolve) => {
     finishOpening = resolve;
   });
-  let calls = 0;
-  const slot = await panel({
-    ...fixture,
-    checkoutChatTarget: () => (++calls === 1 ? checking : opening),
-  });
+  const slot = await panel({ ...fixture, checkoutChatTarget: () => opening });
   onTestFinished(() => slot.lifecycle.unmount());
   const button = await slot.findByRole("button", {
     name: `New agent chat in ${isolatedCheckout.path}`,
   });
-  expect(button.textContent).toContain("Checking…");
-  expect(button.hasAttribute("disabled")).toBe(true);
-  expect(button.getAttribute("aria-busy")).toBe("true");
-  fireEvent.click(button);
-  expect(slot.inspection.sidebarActionCalls).toEqual([]);
-
-  finishChecking(fixture.checkoutChatTarget());
-  await waitFor(() => expect(button.hasAttribute("disabled")).toBe(false));
+  const preflights = () =>
+    slot.inspection.rpcCalls.filter((call) => call.method === "checkoutChatTarget");
+  expect(button.hasAttribute("disabled")).toBe(false);
   expect(button.textContent).toContain("New chat");
-  expect(button.getAttribute("aria-busy")).toBe("false");
+  // A card on screen is not a reason to ask: neither a mount nor a refresh reads it.
+  await pluginQueryClient.invalidateQueries();
+  await waitFor(() => expect(slot.getByText("scott/top")).toBeTruthy());
+  expect(preflights()).toEqual([]);
 
   fireEvent.click(button);
   await waitFor(() => expect(button.textContent).toContain("Opening…"));
@@ -3729,6 +3970,7 @@ test("New chat shows checking and opening progress until the checkout preflight 
   await waitFor(() => expect(button.hasAttribute("disabled")).toBe(false));
   expect(button.textContent).toContain("New chat");
   expect(button.getAttribute("aria-busy")).toBe("false");
+  expect(preflights()).toHaveLength(1);
 });
 
 test("checkout cards and the opened checkout launch native New thread in the exact environment", async () => {
@@ -3761,7 +4003,7 @@ test("checkout cards and the opened checkout launch native New thread in the exa
   slot.lifecycle.unmount();
 });
 
-test("Git-only checkouts explain why New chat is unavailable while Open checkout still works", async () => {
+test("Git-only checkouts explain why New chat is unavailable once clicked, and Open checkout still works", async () => {
   const reason = "Connect this checkout to a BB environment before starting a chat here.";
   const slot = await panel({
     ...checkoutChatRpc(),
@@ -3773,11 +4015,13 @@ test("Git-only checkouts explain why New chat is unavailable while Open checkout
   const button = await slot.findByRole("button", {
     name: `New agent chat in ${isolatedCheckout.path}`,
   });
+  fireEvent.click(button);
   await slot.findByText(reason);
   const description = document.getElementById(button.getAttribute("aria-describedby")!);
   expect(description?.textContent).toBe(reason);
   expect(description?.getAttribute("title")).toBe(reason);
-  expect(button.hasAttribute("disabled")).toBe(true);
+  // The next click is how the reader checks again.
+  await waitFor(() => expect(button.hasAttribute("disabled")).toBe(false));
   await openIsolated(slot);
   const header = slot.getByRole("button", {
     name: `New agent chat in ${isolatedCheckout.path}`,
@@ -3792,7 +4036,7 @@ test("Git-only checkouts explain why New chat is unavailable while Open checkout
 });
 
 test("New chat rechecks a checkout that lost its reusable environment after discovery", async () => {
-  let ready = true;
+  let ready = false;
   const fixture = checkoutChatRpc();
   const slot = await panel({
     ...fixture,
@@ -3804,12 +4048,14 @@ test("New chat rechecks a checkout that lost its reusable environment after disc
   const button = await slot.findByRole("button", {
     name: `New agent chat in ${isolatedCheckout.path}`,
   });
-  await waitFor(() => expect(button.hasAttribute("disabled")).toBe(false));
-  ready = false;
   fireEvent.click(button);
   await slot.findByText("The checkout's BB environment is no longer ready.");
-  expect(button.hasAttribute("disabled")).toBe(true);
   expect(slot.inspection.sidebarActionCalls).toEqual([]);
+  ready = true;
+  await waitFor(() => expect(button.hasAttribute("disabled")).toBe(false));
+  fireEvent.click(button);
+  await waitFor(() => expect(slot.inspection.sidebarActionCalls).toEqual([newCheckoutChat]));
+  expect(slot.queryByText("The checkout's BB environment is no longer ready.")).toBeNull();
   slot.lifecycle.unmount();
 });
 
@@ -3826,7 +4072,6 @@ test("New chat keeps the checkout visible after a network failure and can retry"
   const button = await slot.findByRole("button", {
     name: `New agent chat in ${isolatedCheckout.path}`,
   });
-  await waitFor(() => expect(button.hasAttribute("disabled")).toBe(false));
   fail = true;
   fireEvent.click(button);
   await slot.findByText("The checkout machine is disconnected.");
@@ -3845,7 +4090,7 @@ test("a late New chat preflight cannot navigate after the reader opens another b
     ...fixture,
     checkoutChatTarget: () => {
       calls += 1;
-      return calls === 2
+      return calls === 1
         ? new Promise((resolve) => {
             finish = resolve;
           })
@@ -3854,7 +4099,6 @@ test("a late New chat preflight cannot navigate after the reader opens another b
   });
   const label = `New agent chat in ${isolatedCheckout.path}`;
   const button = await slot.findByRole("button", { name: label });
-  await waitFor(() => expect(button.hasAttribute("disabled")).toBe(false));
   fireEvent.click(button);
   await waitFor(() => expect(button.textContent).toContain("Opening"));
   await openIsolated(slot);
@@ -3868,8 +4112,8 @@ test("a late New chat preflight cannot navigate after the reader opens another b
   slot.lifecycle.unmount();
 });
 
-test("New chat background results replace an earlier failed click's error", async () => {
-  let state = "ready";
+test("A later New chat click's answer replaces an earlier failed click's error", async () => {
+  let state = "offline";
   const fixture = checkoutChatRpc();
   const slot = await panel({
     ...fixture,
@@ -3883,20 +4127,17 @@ test("New chat background results replace an earlier failed click's error", asyn
   const button = await slot.findByRole("button", {
     name: `New agent chat in ${isolatedCheckout.path}`,
   });
-  await waitFor(() => expect(button.hasAttribute("disabled")).toBe(false));
-  state = "offline";
   fireEvent.click(button);
   await slot.findByText("The checkout machine is disconnected.");
   state = "unavailable";
-  await pluginQueryClient.invalidateQueries();
+  await waitFor(() => expect(button.hasAttribute("disabled")).toBe(false));
+  fireEvent.click(button);
   await slot.findByText("Restore this checkout's existing BB thread.");
-  expect(button.hasAttribute("disabled")).toBe(true);
   expect(slot.queryByText("The checkout machine is disconnected.")).toBeNull();
   state = "ready";
-  await pluginQueryClient.invalidateQueries();
   await waitFor(() => expect(button.hasAttribute("disabled")).toBe(false));
-  expect(slot.queryByText("Restore this checkout's existing BB thread.")).toBeNull();
   fireEvent.click(button);
   await waitFor(() => expect(slot.inspection.sidebarActionCalls).toEqual([newCheckoutChat]));
+  expect(slot.queryByText("Restore this checkout's existing BB thread.")).toBeNull();
   slot.lifecycle.unmount();
 });

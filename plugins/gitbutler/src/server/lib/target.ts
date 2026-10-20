@@ -1,5 +1,6 @@
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import { gitbutlerHostContract } from "../../shared/host-contract.ts";
+import { createMemo, type Memo } from "../../shared/memo.ts";
 import type { CheckoutSelection } from "../../shared/schema.ts";
 import { knownCheckoutPaths } from "./checkout-paths.ts";
 
@@ -28,6 +29,89 @@ export function hostClient(bb: BbPluginApi) {
     }
   };
   return { call };
+}
+
+/**
+ * How long a repository's origin is trusted. It is how a selected checkout
+ * and the other machines' checkouts are recognized, and it rarely changes,
+ * so a read of either no longer starts with a call to the main machine.
+ */
+const ORIGIN_MS = 5 * 60_000;
+const origins = new WeakMap<BbPluginApi, Memo>();
+
+/** The canonical path and origin of the repository an environment path names, on its host. */
+export function originOf(
+  bb: BbPluginApi,
+  hostId: string,
+  target: { environmentPath: string; repositoryKey?: string },
+) {
+  let memo = origins.get(bb);
+  if (!memo) {
+    // A repository without an origin may get one any moment, so that answer is read again.
+    memo = createMemo({
+      ttlMs: ORIGIN_MS,
+      keep: (answer) => (answer as { origin: string | null }).origin !== null,
+    });
+    origins.set(bb, memo);
+  }
+  const key = JSON.stringify([hostId, target.environmentPath, target.repositoryKey ?? null]);
+  return memo.read(key, () => hostClient(bb).call("origin", target, { hostId }));
+}
+
+/** Where a repository is on its host: its key, its path, and its Git directory. */
+export type Location = { key: string; path: string; commonDir: string };
+
+/**
+ * How long a repository's place on its host is trusted. It rarely moves.
+ * Reads of subthread records are keyed by it, and a write that relies on
+ * it names it to the host, which refuses the write when the checkout is
+ * elsewhere.
+ */
+const LOCATION_MS = 5 * 60_000;
+const locations = new WeakMap<BbPluginApi, Memo>();
+
+function locationMemo(bb: BbPluginApi): Memo {
+  let memo = locations.get(bb);
+  if (!memo) {
+    memo = createMemo({ ttlMs: LOCATION_MS });
+    locations.set(bb, memo);
+  }
+  return memo;
+}
+
+function locationKey(target: Target, repositoryKey: string | undefined): string {
+  return JSON.stringify([
+    target.hostId,
+    target.environmentPath,
+    target.checkout ? "." : (repositoryKey ?? null),
+    target.checkout?.origin ?? null,
+  ]);
+}
+
+/** Where `target`'s repository is, without a host call once a read has found it. */
+export function locationOf(
+  bb: BbPluginApi,
+  target: Target,
+  repositoryKey: string | undefined,
+): Promise<Location> {
+  return locationMemo(bb).read(locationKey(target, repositoryKey), async () => {
+    const { key, identity } = await hostClient(bb).call(
+      "checkoutIdentity",
+      repositoryTarget(target, repositoryKey),
+      { hostId: target.hostId },
+    );
+    return { key, path: identity.path, commonDir: identity.commonDir };
+  });
+}
+
+/** Remembers where a board read found its repository, so the next read or write need not ask. */
+export function rememberLocation(
+  bb: BbPluginApi,
+  target: Target,
+  repositoryKey: string | undefined,
+  location: Location,
+): void {
+  locationMemo(bb).prime(locationKey(target, repositoryKey), location);
 }
 
 /**
@@ -79,9 +163,7 @@ async function selectedTarget(
   const machine = machines.find(({ host }) => host.id === checkout.hostId);
   if (!machine)
     throw new Error("This checkout's machine is not connected or has no known checkouts.");
-  const own = await hostClient(bb).call("origin", repositoryTarget(main, repositoryKey), {
-    hostId: main.hostId,
-  });
+  const own = await originOf(bb, main.hostId, repositoryTarget(main, repositoryKey));
   if (!own.origin)
     throw new Error("This repository has no origin to identify its other checkouts.");
   return {

@@ -564,8 +564,12 @@ test("two actions on one repository run one after the other, checks included", a
     ),
   );
 
-  expect(answers).toEqual([{ status: "done" }, { status: "done" }]);
-  expect(await butCalls()).toEqual([...updateCalls("repo"), ...updateCalls("repo")]);
+  expect(answers.map(({ result }) => result)).toEqual([{ status: "done" }, { status: "done" }]);
+  // Each hands back the board it left, read after the queue.
+  expect((await butCalls()).filter((call) => !call.includes("status -u"))).toEqual([
+    ...updateCalls("repo"),
+    ...updateCalls("repo"),
+  ]);
 });
 
 test("actions on different repositories run at the same time", async () => {
@@ -601,10 +605,13 @@ test("a failed action frees the repository for the next one", async () => {
   });
 
   await expect(failing).rejects.toThrow("Error: The status read failed");
-  expect(await next).toEqual({ status: "done" });
+  expect((await next).result).toEqual({ status: "done" });
   expect(await butCalls()).toEqual([
     "start repo status -u --json",
     "end repo status -u --json",
     ...updateCalls("repo"),
+    // The board the pull left.
+    "start repo status -u --json",
+    "end repo status -u --json",
   ]);
 });

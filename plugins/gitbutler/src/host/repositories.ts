@@ -4,6 +4,7 @@ import type { Repository } from "../shared/schema.ts";
 import { runGit } from "./cli.ts";
 import { isGitButlerHead } from "./git-workspace.ts";
 import { readOrigin } from "./origin.ts";
+import { remember } from "./repository-state.ts";
 
 /**
  * Repository discovery is deliberately shallow: the environment root when it
@@ -35,7 +36,17 @@ async function gitTopLevel(candidate: string, signal: AbortSignal): Promise<stri
 
 type Discovery = Array<Repository & { path: string }>;
 
-async function discover(environmentPath: string, signal: AbortSignal): Promise<Discovery> {
+/**
+ * Every handler starts here, and a panel's reads come together, so one scan
+ * answers them all for a few seconds. A write forgets it.
+ */
+function discover(environmentPath: string, signal: AbortSignal): Promise<Discovery> {
+  return remember(`discover\0${environmentPath}`, signal, (shared) =>
+    scan(environmentPath, shared),
+  );
+}
+
+async function scan(environmentPath: string, signal: AbortSignal): Promise<Discovery> {
   const root = await realpath(environmentPath);
   if ((await gitTopLevel(root, signal)) === root) {
     return [{ key: ".", name: basename(root), path: root }];
@@ -50,8 +61,8 @@ async function discover(environmentPath: string, signal: AbortSignal): Promise<D
     return [];
   }
 
-  // Every call rescans, so the entries are checked at once rather than one
-  // git spawn after another. Promise.all keeps the sorted order.
+  // The entries are checked at once rather than one git spawn after
+  // another. Promise.all keeps the sorted order.
   const checked = await Promise.all(
     entries.sort().map(async (entry) => {
       let candidate: string;
@@ -78,8 +89,8 @@ export async function listRepositories(
 
 /**
  * Resolve a caller-supplied key to a real repository path. The key comes from
- * the browser, so it is re-validated against a fresh scan every call rather
- * than trusted as a path.
+ * the browser, so it is checked against a scan of the environment, at most a
+ * few seconds old, rather than trusted as a path.
  */
 export async function resolveRepository(
   environmentPath: string,

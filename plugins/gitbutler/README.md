@@ -136,8 +136,8 @@ in the full board, including diffs, Rename, Pull, Push, Create PR, Land, and Del
 **New chat** opens BB's native New thread screen with that checkout already
 selected. It is available on each checkout card and above an opened checkout.
 Choose your agent and write the first message there. The checkout must have a
-ready BB environment with an unarchived visible thread; discovered Git worktrees
-without one show why chat cannot start there yet.
+ready BB environment with an unarchived visible thread; for discovered Git
+worktrees without one, the click says why chat cannot start there yet.
 
 Ordinary Git checkouts need no GitButler setup. Their header's Pull updates the
 checked-out branch from its target; the branch's Pull integrates its upstream.
@@ -156,8 +156,8 @@ each connected machine, plus the linked worktrees Git registers for those
 repositories. This includes worktrees that have no separate BB environment.
 A checkout counts when its `origin` is this one's, in any spelling (SSH or HTTPS).
 Detached worktrees and repositories without an `origin` are omitted.
-An offline machine is left out until it reconnects. The cards refresh every 30
-seconds and on the header's **Refresh**.
+An offline machine is left out until it reconnects. The cards refresh every two
+minutes, after a write to one of them, and on the header's **Refresh**.
 
 ## For other plugins
 

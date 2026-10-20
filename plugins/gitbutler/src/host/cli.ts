@@ -2,6 +2,7 @@ import { execFile } from "node:child_process";
 import { access } from "node:fs/promises";
 import { homedir } from "node:os";
 import { delimiter, join } from "node:path";
+import { ownProcess } from "./repository-state.ts";
 
 const MAX_OUTPUT_BYTES = 32 * 1024 * 1024;
 
@@ -50,7 +51,9 @@ function run(
   input?: string,
   environment: NodeJS.ProcessEnv = process.env,
 ): Promise<RunResult> {
-  return new Promise((settle) => {
+  // What it writes in a watched repository is ours, not a change to report.
+  const exited = ownProcess(cwd);
+  return new Promise<RunResult>((settle) => {
     const child = execFile(
       command,
       args,
@@ -67,6 +70,7 @@ function run(
         },
       },
       (error, stdout, stderr) => {
+        void exited();
         const code = error && typeof error.code === "number" ? error.code : error ? null : 0;
         settle({
           stdout,
@@ -82,6 +86,10 @@ function run(
     child.stdin?.on("error", () => undefined);
     if (input === undefined) child.stdin?.end();
     else child.stdin?.end(input);
+  }).catch((error: unknown) => {
+    // It never started, so it wrote nothing.
+    void exited();
+    throw error;
   });
 }
 

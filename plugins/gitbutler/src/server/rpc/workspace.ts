@@ -6,8 +6,14 @@ import {
   workspaceSchema,
   type Workspace,
 } from "../../shared/schema.ts";
-import { HostOffline, hostClient, repositoryTarget, resolveTarget } from "../lib/target.ts";
-import { nativeAgentPrompts } from "../lib/prompts.ts";
+import { boardFor } from "../lib/board.ts";
+import {
+  HostOffline,
+  hostClient,
+  rememberLocation,
+  repositoryTarget,
+  resolveTarget,
+} from "../lib/target.ts";
 
 export const workspace = defineQuery({
   input: z
@@ -27,13 +33,17 @@ export const workspace = defineQuery({
         repositoryTarget(target, repositoryKey),
         { hostId: target.hostId },
       );
-      return {
-        ...read,
-        environmentId: target.environmentId,
-        ...(read.checkoutIdentity?.kind === "git"
-          ? { nativeAgentPrompts: nativeAgentPrompts(read.checkoutIdentity, target.hostId) }
-          : {}),
-      };
+      // Where the board was read is where its subthread records and its
+      // selected checkout's next write look first.
+      if (read.repositoryKey !== null && read.checkoutIdentity) {
+        const { path, commonDir } = read.checkoutIdentity;
+        rememberLocation(ctx.bb, target, repositoryKey, {
+          key: read.repositoryKey,
+          path,
+          commonDir,
+        });
+      }
+      return boardFor(read, target);
     } catch (error) {
       // A laptop that sleeps is a passing state, not a failure. As an `error`
       // answer it keeps the last board on screen, without a retry or a server

@@ -28,7 +28,7 @@ import {
   WORKSPACE_CHANGED_CHANNEL,
   workspaceChangedSchema,
 } from "../shared/panel.ts";
-import type { WorkspaceChanged } from "../shared/panel.ts";
+import type { TurnEnded } from "../shared/panel.ts";
 import type {
   ActionRisk,
   Checkout,
@@ -45,6 +45,8 @@ import { cn } from "./lib/utils.ts";
 import { Notice, WorkspaceSkeleton, errorText } from "./notice.tsx";
 import {
   Confirm,
+  changedDuringWrite,
+  ON_DISK,
   pullRiskPrompt,
   refreshWorkspace,
   useButAction,
@@ -75,7 +77,7 @@ import { OtherMachines } from "./other-machines.tsx";
 import { CheckoutChatActions } from "./checkout-chat.tsx";
 import { CheckoutLabel } from "./checkout-label.tsx";
 import { ParkedBranches } from "./parked-branches.tsx";
-import { REFRESH_INTERVAL_MS } from "./query-client.ts";
+import { SAFETY_POLL_MS } from "./query-client.ts";
 import { rpc } from "./rpc.ts";
 import { readStored, storedAnswer } from "./stored-queries.ts";
 import { relativeTime, shortId, subject } from "./format.ts";
@@ -1011,21 +1013,36 @@ function checkingFirst(workspace: UseQueryResult<Workspace, Error>): boolean {
 }
 
 /**
- * Reads the board again when an agent's turn ends on this environment, which
- * is how a subthread's commits reach its parent's panel, then calls
- * `onTurnEnded` with the signal once the new board is in. Signals sent while
- * the connection was down are lost, so a reconnect reads it again too.
+ * Reads the board again when it may have changed, instead of polling: when
+ * an agent's turn ends on this environment, which is how a subthread's
+ * commits reach its parent's panel, and when the host sees this checkout's
+ * repository change on disk. `onTurnEnded` hears a turn's end once the new
+ * board is in. Signals sent while the connection was down are lost, so a
+ * reconnect reads it again too.
  */
 function useWorkspaceSignals(
   target: WorkspaceTarget,
-  environmentId: string | null | undefined,
-  onTurnEnded: (signal: WorkspaceChanged) => void,
+  board: Workspace | undefined,
+  onTurnEnded: (signal: TurnEnded) => void,
 ): void {
+  const environmentId = board?.environmentId;
+  const hostId = target.checkout?.hostId ?? board?.hostId;
+  const path = board?.checkoutIdentity?.path;
   useRealtime(WORKSPACE_CHANGED_CHANNEL, (payload) => {
-    const signal = workspaceChangedSchema.safeParse(payload);
-    if (signal.success && environmentId && signal.data.environmentId === environmentId) {
-      void refreshWorkspace(target).then(() => onTurnEnded(signal.data));
+    const parsed = workspaceChangedSchema.safeParse(payload);
+    if (!parsed.success) return;
+    const signal = parsed.data;
+    if ("environmentId" in signal) {
+      if (environmentId && signal.environmentId === environmentId) {
+        changedDuringWrite(target);
+        void refreshWorkspace(target).then(() => onTurnEnded(signal));
+      }
+      return;
     }
+    if (signal.hostId !== hostId || !path || !signal.checkouts.includes(path)) return;
+    // A write of this panel's hands back its board, and reads it again after if this came first.
+    if (changedDuringWrite(target)) return;
+    void refreshWorkspace(target, ON_DISK);
   });
   const connection = useRealtimeConnectionState();
   const previous = useRef(connection);
@@ -1050,7 +1067,7 @@ function useTurnLeftWork(
   data: Workspace | undefined,
 ): boolean {
   const [flagged, setFlagged] = useState<{ repositoryKey: string | undefined } | null>(null);
-  useWorkspaceSignals(target, data?.environmentId, (signal) => {
+  useWorkspaceSignals(target, data, (signal) => {
     if (signal.threadId === target.threadId || signal.parentThreadId === target.threadId) {
       setFlagged({ repositoryKey });
     }
@@ -1262,7 +1279,7 @@ function WorkspaceBoard({
   );
   const workspace = rpc.workspace.useQuery(readTarget, {
     ...storedAnswer("workspace", readTarget),
-    refetchInterval: REFRESH_INTERVAL_MS,
+    refetchInterval: SAFETY_POLL_MS,
     refetchOnWindowFocus: true,
   });
   const { data, stale, live } = useShownWorkspace(workspace, threadId, repositoryKey, checkout);
@@ -1361,7 +1378,6 @@ function WorkspaceBoard({
     // Not part of refreshWorkspace, which every turn's end runs: no turn here
     // changes another machine, and the read reaches all of them.
     void pluginQueryClient.invalidateQueries({ queryKey: rpc.otherMachines.queryKey() });
-    void pluginQueryClient.invalidateQueries({ queryKey: rpc.checkoutChatTarget.queryKey() });
     void refreshWorkspace(readTarget).finally(() => setRefreshing(false));
   };
   const syncing = refreshing || checkingFirst(workspace);
@@ -1520,16 +1536,27 @@ function GitButlerApp({ threadId }: { threadId?: string }) {
 /**
  * A button in the thread header that opens the GitButler tab, or focuses it
  * when it is already open. Draws nothing outside a GitButler workspace, so
- * threads in other repositories keep a clean header. It reads the same query
- * as the panel, so an open panel answers it from cache, and it follows the
- * panel's repository picker.
+ * threads in other repositories keep a clean header. It shares the panel's
+ * query, so an open panel answers it from cache, and it follows the panel's
+ * repository picker. Opening a thread reads nothing when the answer is
+ * stored or in memory: the panel reads the board when it opens.
  */
+/** How long the header trusts an answer that is not a GitButler board. */
+const NOT_READY_STALE_MS = 60_000;
+
 function HeaderButton({ threadId, isCompactViewport }: PluginThreadHeaderActionProps) {
   const navigate = useBbNavigate();
   const repositoryKey = useStoredRepository(threadId) ?? undefined;
   const workspace = rpc.workspace.useQuery(
     { threadId, repositoryKey },
-    { ...storedAnswer("workspace", { threadId, repositoryKey }), staleTime: 60_000 },
+    {
+      ...storedAnswer("workspace", { threadId, repositoryKey }),
+      // A GitButler board is read once a session, not on every visit. Any
+      // other answer, such as an environment still being made, may change.
+      staleTime: (query) =>
+        query.state.data?.state === "ready" ? Number.POSITIVE_INFINITY : NOT_READY_STALE_MS,
+      gcTime: Number.POSITIVE_INFINITY,
+    },
   );
   const state = workspace.data?.state;
   // A failed read is often a passing one. A workspace that has read cleanly

@@ -2,7 +2,7 @@ import { defineQuery } from "@bb-kit/core/rpc";
 import { z } from "zod";
 import { otherMachinesSchema, repositoryKeySchema, type Checkout } from "../../shared/schema.ts";
 import { knownCheckoutPaths } from "../lib/checkout-paths.ts";
-import { hostClient, resolveTarget } from "../lib/target.ts";
+import { hostClient, originOf, resolveTarget } from "../lib/target.ts";
 
 /** A machine reads one `but status` per checkout it holds, and a laptop can be slow to answer. */
 const MACHINE_TIMEOUT_MS = 30_000;
@@ -29,11 +29,10 @@ export const otherMachines = defineQuery({
     const client = hostClient(ctx.bb);
     let own;
     try {
-      own = await client.call(
-        "origin",
-        { environmentPath: target.environmentPath, ...(repositoryKey ? { repositoryKey } : {}) },
-        { hostId: target.hostId },
-      );
+      own = await originOf(ctx.bb, target.hostId, {
+        environmentPath: target.environmentPath,
+        ...(repositoryKey ? { repositoryKey } : {}),
+      });
     } catch (error) {
       // No repository, or its machine is offline. The board says which.
       return {

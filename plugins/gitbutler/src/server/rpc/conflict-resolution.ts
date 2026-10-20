@@ -6,7 +6,7 @@ import {
   repositoryKeySchema,
 } from "../../shared/schema.ts";
 import { readConflictResolution } from "../lib/conflict-resolution.ts";
-import { locateRepository } from "../lib/subthreads.ts";
+import { locateForRead } from "../lib/subthreads.ts";
 
 /** The Resolve conflicts subthread of the repository on screen, whichever thread started it. */
 export const conflictResolution = defineQuery({
@@ -19,7 +19,7 @@ export const conflictResolution = defineQuery({
     .strict(),
   output: conflictResolutionSchema,
   async execute(ctx, { threadId, checkout, repositoryKey }) {
-    const repository = await locateRepository(ctx.bb, threadId, repositoryKey, undefined, checkout);
+    const repository = await locateForRead(ctx.bb, threadId, repositoryKey, checkout);
     return { subthread: await readConflictResolution(ctx.bb, repository) };
   },
 });

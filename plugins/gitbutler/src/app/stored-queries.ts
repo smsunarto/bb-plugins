@@ -5,7 +5,9 @@ import type { z } from "zod";
 import {
   baseHistorySchema,
   otherMachinesSchema,
+  parkedBranchesSchema,
   repositoriesSchema,
+  reviewsSchema,
   workspaceSchema,
 } from "../shared/schema.ts";
 import { BASE_HISTORY_PAGE } from "./query-client.ts";
@@ -19,7 +21,8 @@ import { rpc } from "./rpc.ts";
  * straight away, so it is the first frame, never the last word.
  *
  * Only reads that are cheap to be briefly wrong about are kept: a board that
- * read cleanly, the repository list, the other machines' branches, and the first page of base history,
+ * read cleanly, the repository list, the other machines' branches, the
+ * branches' reviews and the parked ones, and the first page of base history,
  * which is addressed by commit and never changes. Diffs are not. They are
  * large, and memory already holds the ones opened this session.
  */
@@ -63,6 +66,18 @@ const RULES = {
     applies: () => true,
     keep: (data) => data.reason === null,
   } satisfies Rule<typeof otherMachinesSchema>,
+  // The forge's answer is the slowest read of all, and a PR chip that pops
+  // in late moves the card under the reader's pointer.
+  reviews: {
+    schema: reviewsSchema,
+    applies: () => true,
+    keep: (data) => data.reason === null,
+  } satisfies Rule<typeof reviewsSchema>,
+  parkedBranches: {
+    schema: parkedBranchesSchema,
+    applies: () => true,
+    keep: (data) => data.reason === null,
+  } satisfies Rule<typeof parkedBranchesSchema>,
   baseHistory: {
     schema: baseHistorySchema,
     // The first page only. "Load more" pages are a longer key each, and

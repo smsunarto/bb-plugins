@@ -3,8 +3,8 @@ import { z } from "zod";
 import {
   baseHistorySchema,
   branchNameSchema,
-  butActionResultSchema,
   butActionSchema,
+  hostButActionResponseSchema,
   commitIdSchema,
   checkoutIdentitySchema,
   environmentPathSchema,
@@ -63,9 +63,14 @@ export const gitbutlerHostContract = defineRpcContract({
   },
   butAction: {
     input: target
-      .extend({ action: butActionSchema, observed: observedCheckoutSchema.optional() })
+      .extend({
+        action: butActionSchema,
+        observed: observedCheckoutSchema.optional(),
+        /** Where the server last saw the checkout. The write is refused anywhere else. */
+        expectedCheckout: checkoutIdentitySchema.pick({ path: true, commonDir: true }).optional(),
+      })
       .strict(),
-    output: butActionResultSchema,
+    output: hostButActionResponseSchema,
   },
   prepareCheckoutChild: {
     input: target
@@ -98,3 +103,20 @@ export const gitbutlerHostContract = defineRpcContract({
     output: hostUnpublishedBranchesSchema,
   },
 });
+
+/**
+ * What the host says unasked. A repository a panel read lately is watched,
+ * and `repositoryChanged` names the viewed checkouts whose board a change on
+ * disk may have moved: all of them for a ref or GitButler's own state, one
+ * for its own HEAD or index.
+ */
+export const gitbutlerHostSignals = {
+  repositoryChanged: {
+    payload: z
+      .object({
+        commonDir: environmentPathSchema,
+        checkouts: z.array(environmentPathSchema).max(1_000),
+      })
+      .strict(),
+  },
+} as const;

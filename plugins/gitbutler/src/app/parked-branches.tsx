@@ -7,10 +7,16 @@ import type { WorkspaceTarget } from "./branch-actions.tsx";
 import { Count } from "./file-list.tsx";
 import { cn } from "./lib/utils.ts";
 import { rpc } from "./rpc.ts";
+import { storedAnswer } from "./stored-queries.ts";
 import { When } from "./when.tsx";
 
-/** How often the parked list is read again. A branch is parked or applied rarely. */
-const PARKED_POLL_MS = 60_000;
+/**
+ * How long the parked list is trusted. A branch is parked or applied
+ * rarely, and any change to the repository, a write, or an agent's turn
+ * reads it again. The slow poll catches a change made while the host's
+ * watch was down, which the next watch takes as its baseline.
+ */
+const PARKED_FRESH_MS = 5 * 60_000;
 
 function ParkedRow({ branch }: { branch: ParkedBranch }) {
   const native = useBoardWorkspace()?.checkoutIdentity?.kind === "git";
@@ -49,8 +55,9 @@ function ParkedRow({ branch }: { branch: ParkedBranch }) {
  */
 export function ParkedBranches({ target }: { target: WorkspaceTarget }) {
   const parked = rpc.parkedBranches.useQuery(target, {
-    staleTime: PARKED_POLL_MS,
-    refetchInterval: PARKED_POLL_MS,
+    ...storedAnswer("parkedBranches", target),
+    staleTime: PARKED_FRESH_MS,
+    refetchInterval: PARKED_FRESH_MS,
   });
   const [open, setOpen] = useState(false);
   // Nothing while loading or after a failure too: the list is context the

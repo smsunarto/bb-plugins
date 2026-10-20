@@ -40,27 +40,27 @@ function CheckoutChatControl({ target, environmentId, children }: Props) {
     };
   }, []);
   const [opening, setOpening] = useState(false);
+  // Read on click only. Each read walks the machine's environments and
+  // threads, and its answer can change any time before the click anyway.
   const query = rpc.checkoutChatTarget.useQuery(
     { ...target, ...(environmentId ? { environmentId } : {}) },
-    { enabled: Boolean(environmentId), staleTime: 10_000, refetchInterval: 30_000, retry: false },
+    { enabled: false, retry: false },
   );
   const reason = query.error
     ? errorText(query.error)
     : query.data?.state === "unavailable"
       ? query.data.reason
       : null;
-  const disabled =
-    !environmentId || query.isPending || opening || query.data?.state === "unavailable";
-  const checking = Boolean(environmentId) && query.isPending;
-  const progress = opening ? "Opening…" : checking ? "Checking…" : null;
+  // An unavailable answer stays clickable: the click is what checks again.
+  const disabled = !environmentId || opening;
+  const progress = opening ? "Opening…" : null;
   const busy = progress !== null;
 
   const open = async () => {
     if (disabled) return;
     setOpening(true);
     try {
-      // A displayed environment can have been archived or moved since the card loaded.
-      // Errors stay on the query so later background results can replace them.
+      // Errors stay on the query, so the next click's answer replaces them.
       const result = await query.refetch({ throwOnError: true }).catch(() => null);
       if (!mounted.current || result?.data?.state !== "ready") return;
       threads.openNewThread({

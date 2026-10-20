@@ -164,6 +164,12 @@ export const workspaceSchema = z
      * signals are about it. Null when the thread has no usable environment.
      */
     environmentId: z.string().nullable(),
+    /**
+     * The machine the board was read on, so a panel can tell which
+     * repository-changed signals are about it. Boards stored by older
+     * builds lack it.
+     */
+    hostId: z.string().optional(),
     /** The repository the host read, "." for the root. Null when it found none. */
     repositoryKey: z.string().nullable(),
     repoName: z.string(),
@@ -182,6 +188,7 @@ export const workspaceSchema = z
 /** What the host reads. The server adds environment identity and agent text. */
 export const hostWorkspaceSchema = workspaceSchema.omit({
   environmentId: true,
+  hostId: true,
   nativeAgentPrompts: true,
 });
 
@@ -330,6 +337,18 @@ export const butActionResultSchema = z.discriminatedUnion("status", [
   z.object({ status: z.literal("upToDate") }).strict(),
   z.object({ status: z.literal("confirm"), risk: actionRiskSchema }).strict(),
 ]);
+
+/**
+ * A write's outcome and the board it left, so the panel draws it without
+ * reading it again. No board when the write only asked a question.
+ */
+export const hostButActionResponseSchema = z
+  .object({ result: butActionResultSchema, board: hostWorkspaceSchema.nullable() })
+  .strict();
+
+export const butActionResponseSchema = z
+  .object({ result: butActionResultSchema, workspace: workspaceSchema.nullable() })
+  .strict();
 
 /** Where a branch's review lives on its forge, or null when it has none. */
 export const reviewUrlSchema = z.object({ url: z.string().nullable() }).strict();
@@ -514,6 +533,7 @@ export type BranchStatus = z.infer<typeof branchStatusSchema>;
 export type PushMode = z.infer<typeof pushModeSchema>;
 export type ButAction = z.infer<typeof butActionSchema>;
 export type ButActionResult = z.infer<typeof butActionResultSchema>;
+export type ButActionResponse = z.infer<typeof butActionResponseSchema>;
 export type ActionRisk = z.infer<typeof actionRiskSchema>;
 export type ReviewRequest = z.infer<typeof reviewRequestSchema>;
 export type Subthread = z.infer<typeof subthreadSchema>;
