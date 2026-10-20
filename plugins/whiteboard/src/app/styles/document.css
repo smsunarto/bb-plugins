@@ -130,23 +130,28 @@
 
 /*
  * Document type and rhythm. The prose wrapper also matches bb's light chat
- * sheet (13px) and, while bb is dark, Monokai's agent-message rules (14px,
- * weight 430, chat margins), so these pin one scale whatever bb's appearance.
- * Sizes step 28 / 20 / 17 / 16 / 15 / 14. Running text keeps a 38em measure,
+ * sheet (13px) and, while bb is dark, Monokai's agent-message rules (fluid
+ * size, weight 430, chat margins), so these pin one scale whatever bb's
+ * appearance.
+ * Sizes step 28 / 20 / 17 / 16 / 15 / 14 in `--wb-px`, a pixel of the 15px
+ * body `--wb-text`, so a theme can scale the ramp by setting `--wb-text`
+ * alone (Monokai makes it fluid). Running text keeps a 38em measure,
  * about 75 characters; headings, tables, code and diagrams use the full
  * column. bb's Inter has no optical size axis, so headings take Inter's own
  * tracking for their size.
  */
 .review-canvas-root[data-review-theme] .review-document {
+  --wb-text: 15px;
+  --wb-px: calc(var(--wb-text) / 15);
   --wb-measure: 38em;
   --wb-block-gap: 16px;
   --wb-node-gap: 24px;
 }
 
 .review-canvas-root[data-review-theme] .review-document h1:not(.bb-markdown-prose *) {
-  font-size: 28px;
+  font-size: calc(var(--wb-px) * 28);
   font-weight: 600;
-  line-height: 34px;
+  line-height: calc(var(--wb-px) * 34);
   letter-spacing: -0.021em;
   text-wrap: balance;
 }
@@ -165,9 +170,9 @@
 }
 
 .review-canvas-root[data-review-theme] .review-section-heading h2 {
-  font-size: 20px;
+  font-size: calc(var(--wb-px) * 20);
   font-weight: 600;
-  line-height: 28px;
+  line-height: calc(var(--wb-px) * 28);
   letter-spacing: -0.017em;
   text-wrap: balance;
 }
@@ -230,7 +235,7 @@
 }
 
 .review-canvas-root[data-review-theme] .review-document .bb-markdown-prose:not(.agent-markdown) {
-  font-size: 15px;
+  font-size: var(--wb-text);
   font-weight: 400;
   line-height: 1.6;
 }
@@ -296,14 +301,14 @@
   .review-document
   .bb-markdown-prose:not(.agent-markdown)
   :is(h1, h2) {
-  font-size: 17px;
-  line-height: 24px;
+  font-size: calc(var(--wb-px) * 17);
+  line-height: calc(var(--wb-px) * 24);
   letter-spacing: -0.013em;
 }
 
 .review-canvas-root[data-review-theme] .review-document .bb-markdown-prose:not(.agent-markdown) h3 {
-  font-size: 16px;
-  line-height: 24px;
+  font-size: calc(var(--wb-px) * 16);
+  line-height: calc(var(--wb-px) * 24);
   letter-spacing: -0.011em;
 }
 
@@ -311,8 +316,8 @@
   .review-document
   .bb-markdown-prose:not(.agent-markdown)
   :is(h4, h5, h6) {
-  font-size: 15px;
-  line-height: 24px;
+  font-size: var(--wb-text);
+  line-height: calc(var(--wb-px) * 24);
 }
 
 .review-canvas-root[data-review-theme]
@@ -353,9 +358,9 @@
   .review-document
   .bb-markdown-prose:not(.agent-markdown)
   table {
-  font-size: 14px;
+  font-size: calc(var(--wb-px) * 14);
   font-variant-numeric: tabular-nums;
-  line-height: 20px;
+  line-height: calc(var(--wb-px) * 20);
 }
 
 .review-canvas-root[data-review-theme]

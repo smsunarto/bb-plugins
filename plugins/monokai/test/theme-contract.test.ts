@@ -45,7 +45,7 @@ describe("bb Monokai surface palette", () => {
       ".dark code.bg-muted\\/70,\n.dark .bb-markdown-prose :not(pre) > code {\n  background-color: var(--accent);\n  color: #eed996;",
     );
     expect(theme).toContain(
-      ".dark [data-message-column].group\\/message [data-markdown-preview],\n.dark .bb-markdown-prose,\n.dark .canvas-prose [data-markdown-preview] {\n  font-size: max(14px, var(--text-sm))",
+      ".dark [data-message-column].group\\/message [data-markdown-preview],\n.dark .bb-markdown-prose,\n.dark .canvas-prose [data-markdown-preview] {\n  font-size: var(--agent-fluid-size)",
     );
     expect(theme).toContain("--terminal-background: #181818");
   });
@@ -234,7 +234,7 @@ describe("bb Monokai contract audit", () => {
   test("sets agent replies and trace rows on the Codex rhythm", () => {
     const agent = ".dark [data-message-column].group\\/message [data-markdown-preview]";
     expect(theme).toContain(
-      `${agent},\n.dark .bb-markdown-prose,\n.dark .canvas-prose [data-markdown-preview] {\n  --agent-md-space: calc(max(14px, var(--text-sm)) / 4);\n  font-weight: 430;`,
+      `${agent},\n.dark .bb-markdown-prose,\n.dark .canvas-prose [data-markdown-preview] {\n  --agent-md-space: calc(var(--agent-fluid-size) / 4);\n  font-weight: 430;`,
     );
     expect(theme).toContain(
       `${agent} h1,\n.dark .bb-markdown-prose h1 {\n  margin: calc(var(--agent-md-space) * 4) 0 8px;\n  font-size: calc(var(--agent-md-space) * 6);`,
@@ -268,7 +268,13 @@ describe("bb Monokai contract audit", () => {
       "a.underline code.bg-muted\\/70,\n.dark .bb-markdown-prose a :not(pre) > code {\n  color: inherit;",
     );
     expect(theme).toContain(
-      ".dark [data-timeline-row-list] span.text-sm.leading-5 {\n  font-size: max(14px, var(--text-sm));\n  line-height: 21px;",
+      ".dark [data-timeline-row-list] span.text-sm.leading-5 {\n  font-size: var(--agent-fluid-size);\n  line-height: 1.5;",
+    );
+    expect(theme).toContain(
+      ".dark .review-canvas-root[data-review-theme] .review-document {\n  --wb-text: calc(var(--agent-fluid-size) * 15 / 14);\n}",
+    );
+    expect(theme).toContain(
+      "@media (max-width: 767px) and (pointer: coarse) {\n  .dark .review-canvas-root[data-review-theme] .review-document {\n    --wb-text: 15px;",
     );
   });
 

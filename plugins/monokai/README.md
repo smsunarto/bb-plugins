@@ -145,7 +145,7 @@ ratio against the ground it sits on.
 | -------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
 | App chrome           | panes, panels, sidebar, menus, buttons, mention pills, focus rings                                                                 |
 | Conversation links   | medium-weight accent text with a globe glyph (an envelope for mail) and an alpha-derived rounded hover surface                     |
-| Agent replies        | 14px prose in the Codex app's markdown geometry, fenced blocks with a labeled header, task checkboxes, full-strength activity rows |
+| Agent replies        | Fluid prose (14px at 1512px, ~15px at 2560px) in the Codex app's markdown geometry, fenced blocks with a labeled header, task checkboxes, full-strength activity rows |
 | Terminal             | all 16 ANSI colors plus 16 companion foreground tokens, one per ANSI background                                                    |
 | Diff viewer          | addition / deletion / modified colors, gutter number grounds and role-colored numbers                                              |
 | Diff headers         | Diffs.com-style file headers with change-kind icons in the side panel. Open in editor is hidden there                              |

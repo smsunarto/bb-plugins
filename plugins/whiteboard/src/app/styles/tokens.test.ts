@@ -351,3 +351,13 @@ describe("authored sheets", () => {
     expect(literals).toEqual([]);
   });
 });
+
+describe("document.css", () => {
+  // Monokai scales the whole ramp by overriding `--wb-text` alone.
+  it("derives every document font size from --wb-text", () => {
+    const sheet = read("styles/document.css").replace(/\/\*[\s\S]*?\*\//g, "");
+    expect(sheet).toContain("--wb-text: 15px;");
+    const literal = [...sheet.matchAll(/font-size:\s*(\d[^;]*px)/g)].map((match) => match[1]);
+    expect(literal).toEqual([]);
+  });
+});

@@ -190,6 +190,13 @@
   --font-terminal: var(--terminal-font-family);
   --terminal-font-size: 13;
   --terminal-line-height: 1.4;
+
+  /* Reading text scales with the window instead of stepping at breakpoints,
+   * after stephango.com's calc(1.5rem + .25vw). It is 14px on a 1512px
+   * laptop and about 15px at 2560px. Agent prose and Whiteboard derive their
+   * sizes from it. The max() floor is bb's `text-sm`, which bb raises to
+   * 15px on phones on this same element, so every use inherits that size. */
+  --agent-fluid-size: max(calc(12.5px + 0.1vw), var(--text-sm));
   --bb-monokai-code-entity: #9ddd54;
 
   /* Opaque anchors occlude content. In-flow layers composite over their
@@ -1003,15 +1010,16 @@
   color: #eed996;
 }
 
-/* Agent message prose reads at 14px instead of bb's 13px `text-sm`. The
- * agent column carries `group/message` itself; the user column nests it in a
- * bubble, so this skips user requests. The markdown preview re-declares
- * `text-sm`, so it needs the size too. max() keeps bb's 15px phone size. */
+/* Agent message prose reads at the fluid size instead of bb's 13px
+ * `text-sm`. The agent column carries `group/message` itself; the user column
+ * nests it in a bubble, so this skips user requests. The markdown preview
+ * re-declares `text-sm`, so it needs the size too. max() keeps bb's 15px
+ * phone size. */
 .dark [data-message-column].group\/message,
 .dark [data-message-column].group\/message [data-markdown-preview],
 .dark .bb-markdown-prose,
 .dark .canvas-prose [data-markdown-preview] {
-  font-size: max(14px, var(--text-sm));
+  font-size: var(--agent-fluid-size);
 }
 
 /* Markdown line breaking and tracking. Paragraphs and list items avoid a
@@ -1036,15 +1044,6 @@
 .dark [data-markdown-preview] :is(h5, h6),
 .dark .bb-markdown-prose :is(h5, h6) {
   letter-spacing: 0.05em;
-}
-
-/* Agent message prose reads at 14px instead of bb's 13px `text-sm`. The
- * agent column carries `group/message` itself; the user column nests it in a
- * bubble, so this skips user requests. The markdown preview re-declares
- * `text-sm`, so it needs the size too. max() keeps bb's 15px phone size. */
-.dark [data-message-column].group\/message,
-.dark [data-message-column].group\/message [data-markdown-preview] {
-  font-size: max(14px, var(--text-sm));
 }
 
 .dark .bb-code-highlight.bb-code-highlight {
@@ -1182,6 +1181,21 @@ diffs-container {
 .dark .canvas-prose {
   --canvas-prose-rule: var(--border-hairline);
   --canvas-prose-code-well: #181818;
+}
+
+/* Whiteboard derives its whole type ramp from `--wb-text`, its 15px body.
+ * Keep that body one step above agent prose so it scales with the window.
+ * Phones keep Whiteboard's own 15px: the phone floor already raises agent
+ * prose to 15px, and the step above it would set a 30px title in a 390px
+ * column. The query matches bb's phone `text-sm` override. */
+.dark .review-canvas-root[data-review-theme] .review-document {
+  --wb-text: calc(var(--agent-fluid-size) * 15 / 14);
+}
+
+@media (max-width: 767px) and (pointer: coarse) {
+  .dark .review-canvas-root[data-review-theme] .review-document {
+    --wb-text: 15px;
+  }
 }
 
 /* Plugin marketplace category icons are decoration, not feedback. bb tints
@@ -1390,7 +1404,7 @@ diffs-container {
 .dark [data-message-column].group\/message [data-markdown-preview],
 .dark .bb-markdown-prose,
 .dark .canvas-prose [data-markdown-preview] {
-  --agent-md-space: calc(max(14px, var(--text-sm)) / 4);
+  --agent-md-space: calc(var(--agent-fluid-size) / 4);
   font-weight: 430;
 }
 
@@ -1879,8 +1893,8 @@ diffs-container {
 }
 
 .dark [data-timeline-row-list] span.text-sm.leading-5 {
-  font-size: max(14px, var(--text-sm));
-  line-height: 21px;
+  font-size: var(--agent-fluid-size);
+  line-height: 1.5;
 }
 
 /* Editable fenced blocks have their own controls and markup. Match the stream's

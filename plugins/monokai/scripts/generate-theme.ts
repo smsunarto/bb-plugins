@@ -508,6 +508,7 @@ const darkExpected = declarationMap({
   "--font-terminal": "var(--terminal-font-family)",
   "--terminal-font-size": "13",
   "--terminal-line-height": "1.4",
+  "--agent-fluid-size": "max(calc(12.5px + 0.1vw), var(--text-sm))",
   "--sidebar": palette.ground.content,
   "--sidebar-foreground": roleValues["text.ink74"],
   "--sidebar-accent": roleValues["layer.hover"],
