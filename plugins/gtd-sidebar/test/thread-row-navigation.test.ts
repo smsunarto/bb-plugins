@@ -600,7 +600,7 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
       fireEvent.keyDown(row(view.slot, "settled"), { key: "ContextMenu" });
       assert.ok(screen.getByRole("menuitem", { name: "Un-settle" }));
       fireEvent.keyDown(screen.getByRole("menu", { name: "Thread actions" }), { key: "Escape" });
-      await waitFor(() => assert.equal(screen.queryByRole("menu"), null));
+      await waitFor(() => assert.ok(screen.queryByRole("menu") === null));
 
       fireEvent.keyDown(view.slot.getAllByRole("button", { name: "One project" })[0]!, {
         key: "ContextMenu",
@@ -865,7 +865,7 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
         fireEvent.keyDown(screen.getByRole("menu", { name: "Thread actions" }), {
           key: "Escape",
         });
-        await waitFor(() => assert.equal(screen.queryByRole("menu"), null));
+        await waitFor(() => assert.ok(screen.queryByRole("menu") === null));
         return [content.style.paddingLeft, icons];
       };
       assert.deepEqual(
@@ -896,7 +896,7 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
         fireEvent.keyDown(screen.getByRole("menu", { name: "Thread actions" }), {
           key: "Escape",
         });
-        await waitFor(() => assert.equal(screen.queryByRole("menu"), null));
+        await waitFor(() => assert.ok(screen.queryByRole("menu") === null));
         return fill;
       };
       assert.deepEqual([await lifted("a"), await lifted("snoozed")], [ACTIVE_LIFT, RESTING_LIFT]);
@@ -1378,7 +1378,7 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
       act(() => anchor.focus());
       fireEvent.contextMenu(anchor);
       fireEvent.click(await screen.findByRole("menuitem", { name: "Mark unread" }));
-      await waitFor(() => assert.equal(document.activeElement, anchor));
+      await waitFor(() => assert.ok(document.activeElement === anchor));
       await act(async () => {});
       assert.equal(screen.queryByRole("tooltip"), null);
     });
@@ -2039,7 +2039,7 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
           );
         }
         const title = await screen.findByRole("textbox", { name: "Thread name" });
-        await waitFor(() => assert.equal(document.activeElement, title));
+        await waitFor(() => assert.ok(document.activeElement === title));
         fireEvent.change(title, { target: { value: "  New title  " } });
         if (isCompactViewport) await holdInRenameInput(title, "  New title  ");
         fireEvent.keyDown(title, { key: "Enter" });
@@ -2091,7 +2091,7 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
           );
         }
         const title = await screen.findByRole("textbox", { name: "Thread name" });
-        await waitFor(() => assert.equal(document.activeElement, title));
+        await waitFor(() => assert.ok(document.activeElement === title));
         fireEvent.change(title, { target: { value: "Unsaved title" } });
         if (isCompactViewport) await holdInRenameInput(title, "Unsaved title");
         fireEvent.keyDown(title, { key: "Escape" });
