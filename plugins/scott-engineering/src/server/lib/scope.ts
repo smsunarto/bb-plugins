@@ -8,8 +8,7 @@ const names = readdirSync(join(files.root, "skills"));
 export function configuration(session: Session) {
   const origin = session.origin.pluginId;
   if (origin === "side-chat") return { tools: [], skills: [] };
-  if (origin === "review")
-    return { tools: ["review_context", "scott_engineering_review_context"], skills: [] };
+  if (origin === "review") return { tools: [], skills: [] };
   if (origin === "scott-engineering") {
     const tools = session.pluginMetadata.reviewRun
       ? ["scott_engineering_review_context"]

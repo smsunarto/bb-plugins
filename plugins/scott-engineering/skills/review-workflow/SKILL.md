@@ -12,7 +12,7 @@ Use independent reviewers to find blind spots. The deliverable is a reasoned ver
 
 Start a review automatically when implementation is ready for handoff, after relevant checks and checkpointing only authorized changes. Review consequential designs before dependent implementation. Do not wait for the user to ask or request permission to start; honor an explicit request to skip review. Also review when the user asks.
 
-Review a completed unit of work once. Reuse a completed, current assessment for unchanged work; do not repeat it just because a turn ends, an intermediate checkpoint is saved, or the same work is pushed, added to a PR, or merged. After addressing findings, review again when it would resolve a material uncertainty.
+Review a completed unit of work once. Use an existing completed assessment for unchanged work; do not repeat it just because a turn ends, an intermediate checkpoint is saved, or the same work is pushed, added to a PR, or merged. After addressing findings, review again when it would resolve a material uncertainty.
 
 ## 1. Scope and intent
 
@@ -28,9 +28,9 @@ Add `brief` or `evidence: [{label, path}]` when needed. Name the revision or wor
 
 ## 3. Collect and synthesize
 
-If `scott_engineering_review_start` returns `status: "completed"`, call `scott_engineering_review_result({runId})` immediately; a cached run sends no new notification. Otherwise wait for BB's completion notifications, then call `scott_engineering_review_result({runId})`. Continue other work while reviewers run; do not poll. The result stays `running` until every reviewer finishes. Read large reports through `scott_engineering_review_context({runId, section: "report"})`, following `nextOffset`.
+BB sends each reviewer's final reply to the parent. Check the start receipt for launch errors and report any missing reviewers. If no reviewers started, do not wait for notifications. Continue other work or yield until all launched reviewers finish; do not poll. If you need to retrieve a reply, call `scott_engineering_review_result({threadId})` with the reviewer thread ID returned by start, following `nextOffset` for long outputs.
 
-Merge duplicate findings, attribute them to the models that raised them, and note disagreements. Independent agreement is a strong signal, not a vote. A lone correctness or security finding still deserves scrutiny. Report missing reviews and verification limits; `current: false` means the target changed after review.
+Merge duplicate findings, attribute them to the models that raised them, and note disagreements. Independent agreement is a strong signal, not a vote. A lone correctness or security finding still deserves scrutiny. Report missing reviews and verification limits. The review covers its original pinned target; compare it with the current change before relying on it.
 
 ## 4. Lead judgment
 
@@ -49,8 +49,8 @@ Stop at the verdict for a review-only request. When fixes are already authorized
 
 ## Reference
 
-`scott_engineering_review_context` reads the brief, captured evidence, pinned diff, tree, files, and reports. Reviewers stay read-only and use those pinned sources.
+`scott_engineering_review_context` reads pinned diffs, trees, and files. Reviewers receive the brief and evidence in their initial prompt, stay read-only, and use those pinned sources.
 
-Repeating an identical unsettled request returns its existing run. An unchanged completed request can return a completed receipt; collect its result immediately. The plugin manages reviewer reuse; `reuse: "new"` requests fresh judgment. Distinct requests can run concurrently.
+Each start launches new BB subthreads. Do not repeat a start while those reviewers are working. If a launch response is lost or contains errors, run `bb thread list --parent-thread <parent-id> --include-hidden --json` and inspect the review children before retrying. Use `bb thread show <id>` to inspect a child's origin when needed. A partial launch leaves the successful children running; do not restart the whole panel. Use BB's ordinary thread messaging to clarify findings about the original pinned candidate. To review code changed since that candidate, checkpoint the changes and call `scott_engineering_review_start` again; an existing reviewer's context remains pinned to its original commits. BB owns retries, notifications, status, and conversation history; there is no separate review database or result cache.
 
-CLI: `bb scott-engineering review-start --branch scott/feature --prompt 'Intent' --json`. Read the receipt's `status`: call `bb scott-engineering review-result <run-id>` immediately for `completed`, otherwise wait for notification. Use `--base` and `--head` for an explicit comparison. `/review-quick`, `/review-standard`, and `/review-deep` are user-only shortcuts.
+CLI: `bb scott-engineering review-start --branch scott/feature --prompt 'Intent' --json`. BB notifies the parent as reviewers finish; retrieve a reply with `bb scott-engineering review-result <thread-id>`. Use `--base` and `--head` for an explicit comparison. `/review-quick`, `/review-standard`, and `/review-deep` are user-only shortcuts.

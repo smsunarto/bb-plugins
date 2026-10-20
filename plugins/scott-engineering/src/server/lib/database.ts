@@ -1,6 +1,6 @@
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 
-// One append-only migration ledger for both workflows. The first two shipped with Arena.
+// Arena storage. Preserve the historical third migration so existing ledgers remain compatible.
 export function database(bb: Pick<BbPluginApi, "storage">) {
   const db = bb.storage.database();
   bb.storage.migrate(db, [

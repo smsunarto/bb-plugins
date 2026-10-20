@@ -11,7 +11,6 @@ on:
           - packages/bb-kit-core
           - packages/bb-kit-dev
           - packages/bb-kit-sentry
-          - packages/review-migration
           - plugins/agentation
           - plugins/amp
           - plugins/gh-stack
@@ -91,7 +90,7 @@ jobs:
           RELEASE_PATH: ${{ matrix.path }}
         run: |
           package_name="$(node -p "require('./$RELEASE_PATH/package.json').name")"
-          if [[ "$RELEASE_PATH" == plugins/* || "$RELEASE_PATH" == packages/review-migration ]]; then
+          if [[ "$RELEASE_PATH" == plugins/* ]]; then
             bun run build:framework
           fi
           bun run --filter "$package_name" build
@@ -120,7 +119,7 @@ jobs:
       # scoped package. This checkout is disposable, so the temporary manifest
       # rewrite needs no restoration machinery.
       - name: Publish unscoped plugin package
-        if: ${{ startsWith(matrix.path, 'plugins/') || matrix.path == 'packages/review-migration' }}
+        if: ${{ startsWith(matrix.path, 'plugins/') }}
         working-directory: ${{ matrix.path }}
         env:
           RELEASE_PATH: ${{ matrix.path }}

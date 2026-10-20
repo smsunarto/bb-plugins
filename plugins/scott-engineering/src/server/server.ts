@@ -1,4 +1,3 @@
-import { z } from "zod";
 import { definePlugin } from "@bb-kit/core/plugin";
 import { start } from "./command/start.ts";
 import { status } from "./command/status.ts";
@@ -20,7 +19,6 @@ import { reviewStart as reviewStartTool } from "./tools/review-start.ts";
 import { reviewResult as reviewResultTool } from "./tools/review-result.ts";
 import { reviewContext as reviewContextTool } from "./tools/review-context.ts";
 import { ReviewService } from "./lib/review-service.ts";
-import { reviewMigration } from "./lib/review-migration.ts";
 import { principle } from "./command/principle.ts";
 
 export default definePlugin({
@@ -72,36 +70,16 @@ export default definePlugin({
       () => settings.get(),
       (run, job) => digests.start(run, job),
     );
-    const migrate = reviewMigration(bb, ({ claudeModel, codexModel }) =>
-      settings.experimental_set({ reviewClaudeModel: claudeModel, reviewCodexModel: codexModel }),
-    );
-    const reviews = new ReviewService(
-      bb,
-      async () => {
-        const values = await settings.get();
-        return { claudeModel: values.reviewClaudeModel, codexModel: values.reviewCodexModel };
-      },
-      migrate,
-    );
+    const reviews = new ReviewService(bb, async () => {
+      const values = await settings.get();
+      return { claudeModel: values.reviewClaudeModel, codexModel: values.reviewCodexModel };
+    });
     return { arena, digests, reviews };
   },
   setup(ctx) {
-    const { bb, arena, digests, reviews } = ctx;
-    // Existing reviewer prompts can still call their original context tool after the handoff.
-    bb.agents.registerTool({
-      name: "review_context",
-      ...files.tool("scott_engineering_review_context"),
-      parameters: z.toJSONSchema(reviewContextTool.parameters),
-      execute: (input, tool) =>
-        reviewContextTool.execute({ ...ctx, tool }, reviewContextTool.parameters.parse(input)),
-    });
+    const { bb, arena, digests } = ctx;
     // No enabled predicates or agents.skills: bb-kit does not synthesize another configure.
     bb.agents.configure(configuration);
-    bb.events.on("turn.failed", (event) => reviews.reviewerFailed(event));
-    bb.events.on("message.queued", ({ entry }) => reviews.cancelObsoleteRetry(entry));
-    bb.background.service("review-recovery", {
-      start: (signal) => reviews.reconcileFailures(signal),
-    });
     bb.onDispose(() => arena.dispose());
     bb.rpc.register(rpcContract, {
       get: async ({ runId, threadId }) => ({

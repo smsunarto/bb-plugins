@@ -1023,44 +1023,13 @@ test("the banner shows each review's state, elapsed time, and reviewer by name",
   }
 });
 
-test("reused reviewers display the latest run mode and elapsed time rather than thread age", async () => {
-  setSystemTime(new Date(200000));
-  let run = { mode: "standard", kind: "implementation", startedAt: 180000, status: "running" };
-  const { slot, change } = await renderBanner(
-    async () => [child({ id: "thr_review", status: "active", createdAt: 1000 })],
-    undefined,
-    undefined,
-    "connected",
-    undefined,
-    async () => ({ reviewRun: run }),
-  );
-  try {
-    const banner = await slot.findByRole("button", {
-      name: "Standard implementation review running. Open the review thread.",
-    });
-    expect(banner.textContent).toContain("Running · 20s");
-    run = { mode: "quick", kind: "design", startedAt: 195000, status: "running" };
-    await change("thr_review", ["status-changed"]);
-    expect(
-      (
-        await slot.findByRole("button", {
-          name: "Quick design review running. Open the review thread.",
-        })
-      ).textContent,
-    ).toContain("Running · 5s");
-  } finally {
-    slot.unmount();
-    setSystemTime();
-  }
-});
-
 test("a panel run reads as one review with its reviewer count; concurrent runs each get a row", async () => {
   setSystemTime(new Date(200000));
   let runOf = (_threadId: string) => "run_panel";
   const { slot, change } = await renderBanner(
     async () => [
-      child({ id: "thr_claude", status: "active" }),
-      child({ id: "thr_codex", status: "active" }),
+      child({ id: "thr_claude", status: "active", createdAt: 180000 }),
+      child({ id: "thr_codex", status: "active", createdAt: 190000 }),
     ],
     undefined,
     undefined,
@@ -1085,7 +1054,7 @@ test("a panel run reads as one review with its reviewer count; concurrent runs e
     const panel = await slot.findByRole("button", {
       name: "Deep implementation review running · 2 reviewers. Open the review thread.",
     });
-    expect(panel.textContent).toContain("Running · 2 reviewers · 20s");
+    expect(panel.textContent).toContain("Running · 2 reviewers · 10s");
     expect(slot.getAllByRole("button")).toHaveLength(1);
     runOf = (threadId) => `run_${threadId}`;
     await change("thr_codex", ["status-changed"]);
@@ -1106,69 +1075,20 @@ test("a panel run reads as one review with its reviewer count; concurrent runs e
   }
 });
 
-test("review banners order reused runs by assessment date and show incomplete explicitly", async () => {
-  const { slot } = await renderBanner(
-    async () => [
-      child({ id: "old_thread", status: "idle", createdAt: 100 }),
-      child({ id: "new_thread", status: "idle", createdAt: 500 }),
-    ],
-    undefined,
-    undefined,
-    "connected",
-    undefined,
-    async ({ threadId }) => ({
-      reviewRun: {
-        mode: threadId === "old_thread" ? "deep" : "quick",
-        kind: "implementation",
-        startedAt: threadId === "old_thread" ? 900 : 500,
-        status: threadId === "old_thread" ? "incomplete" : "running",
-      },
-    }),
-  );
-  try {
-    await slot.findByRole("button", {
-      name: "Deep implementation review incomplete. Open the review thread.",
-    });
-    expect(slot.getAllByRole("button")[0]!.textContent).toContain(
-      "Deep implementation reviewIncomplete",
-    );
-  } finally {
-    slot.unmount();
-  }
-});
-
-test("finished review awaits assessment, then polls metadata without a realtime event", async () => {
-  let calls = 0;
-  let run = { mode: "quick", kind: "design", startedAt: Date.now(), status: "running" };
+test("finished reviewers show native BB status regardless of old assessment metadata", async () => {
   const { slot } = await renderBanner(
     async () => [child({ id: "thr_review", status: "idle" })],
     undefined,
     undefined,
     "connected",
     undefined,
-    async () => {
-      calls++;
-      return { reviewRun: run };
-    },
+    async () => ({ reviewRun: { mode: "quick", kind: "design", status: "running" } }),
   );
   try {
-    const awaiting = await slot.findByRole("button", {
-      name: "Quick design review awaiting. Open the review thread.",
+    const button = await slot.findByRole("button", {
+      name: "Quick design review complete. Open the review thread.",
     });
-    expect(awaiting.textContent).toContain("Awaiting result");
-    run = { ...run, status: "completed" };
-    await waitFor(
-      () =>
-        expect(
-          slot.getByRole("button", {
-            name: "Quick design review complete. Open the review thread.",
-          }).textContent,
-        ).toContain("Done"),
-      { timeout: 4500 },
-    );
-    const settledCalls = calls;
-    await new Promise((resolve) => setTimeout(resolve, 3100));
-    expect(calls).toBe(settledCalls);
+    expect(button.textContent).toContain("Done");
   } finally {
     slot.unmount();
   }

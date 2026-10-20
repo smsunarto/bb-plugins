@@ -6,11 +6,13 @@ export const reviewStart = defineTool({
   parameters: requestSchema,
   async execute(ctx: ToolContext<ReviewContext>, input) {
     const tool = ctx.tool;
+    const receipt = await ctx.reviews.start(tool.threadId, input, tool.signal);
     return {
+      isError: receipt.reviewers.length === 0,
       content: [
         {
           type: "text" as const,
-          text: JSON.stringify(await ctx.reviews.start(tool.threadId, input, tool.signal)),
+          text: JSON.stringify(receipt),
         },
       ],
     };

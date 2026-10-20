@@ -1,7 +1,6 @@
 import { expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { spawnSync } from "node:child_process";
 import { publishableWorkspacePlugins } from "./plugin-package";
 import { publishableWorkspacePackages } from "./workspace-package";
 
@@ -32,7 +31,7 @@ test("Release Please covers enabled publishable targets with the existing tag co
   const targets = [
     ...publishableWorkspacePackages(ROOT).map((candidate) => ({
       relativePath: `packages/${candidate.directory}`,
-      component: candidate.directory === "review-migration" ? "review" : candidate.directory,
+      component: candidate.directory,
       name: candidate.name,
       version: candidate.manifest.version,
     })),
@@ -66,42 +65,4 @@ test("Release Please covers enabled publishable targets with the existing tag co
     });
     expect(manifest[target.relativePath]).toBe(target.version);
   }
-});
-
-test("the Review migration bridge builds its framework and publishes both existing package names", () => {
-  const workflow = Bun.YAML.parse(
-    readFileSync(`${ROOT}/.github/workflows/release.yaml`, "utf8"),
-  ) as {
-    jobs: { publish: { steps: Array<{ name?: string; if?: string; run?: string }> } };
-  };
-  const steps = workflow.jobs.publish.steps;
-  const build = steps.find((step) => step.name === "Build released package")!;
-  const mirror = steps.find((step) => step.name === "Publish unscoped plugin package")!;
-  const execute = (script: string) => {
-    const result = spawnSync(
-      "bash",
-      [
-        "-eu",
-        "-c",
-        `
-      node() { printf '%s\\n' '@smsunarto/bb-plugin-review'; }
-      bun() { printf 'bun %s\\n' "$*"; }
-      npm() { printf 'npm %s\\n' "$*"; }
-      ${script}
-    `,
-      ],
-      { encoding: "utf8", env: { ...process.env, RELEASE_PATH: "packages/review-migration" } },
-    );
-    expect(result.status).toBe(0);
-    return result.stdout.trim().split("\n");
-  };
-  expect(execute(build.run!)).toEqual([
-    "bun run build:framework",
-    "bun run --filter @smsunarto/bb-plugin-review build",
-  ]);
-  expect(mirror.if).toContain("matrix.path == 'packages/review-migration'");
-  expect(execute(mirror.run!)).toEqual([
-    "npm pkg set name=bb-plugin-review",
-    "npm publish --access public",
-  ]);
 });

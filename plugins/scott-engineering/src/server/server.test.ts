@@ -68,7 +68,7 @@ test("workers get report/context tools and cannot recursively launch Arena", asy
 
 for (const [origin, metadata, tools] of [
   ["scott-engineering", { reviewRun: { id: "run" } }, ["scott_engineering_review_context"]],
-  ["review", {}, ["scott_engineering_review_context", "review_context"]],
+  ["review", {}, []],
   ["scott-engineering", { arenaDigest: { runId: "run" } }, []],
   ["scott-engineering", {}, []],
   ["side-chat", {}, []],

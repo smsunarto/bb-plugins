@@ -27,18 +27,16 @@ function targetFromOptions(options: { branch?: string; base?: string; head?: str
   return undefined;
 }
 function receiptText(receipt: Awaited<ReturnType<ReviewService["start"]>>) {
-  const reviewers = receipt.reviewers
-    .map((reviewer, index) => `${reviewer.model} ${receipt.threadIds[index] ?? "dispatching"}`)
-    .join(", ");
-  const lines = [`Review run ${receipt.runId} (${receipt.mode} ${receipt.kind}): ${reviewers}.`];
-  if (receipt.reused) lines.push("Reused an existing run/reviewer.");
-  lines.push(`Result: bb scott-engineering review-result ${receipt.runId}`);
-  if ("message" in receipt && typeof receipt.message === "string") lines.push(receipt.message);
+  const lines = receipt.reviewers.map(
+    ({ reviewer, threadId }) =>
+      `${reviewer.model}: ${threadId}\nResult after BB notifies: bb scott-engineering review-result ${threadId}`,
+  );
+  for (const { reviewer, error } of receipt.errors) lines.push(`${reviewer.model}: ${error}`);
   return lines.join("\n") + "\n";
 }
 
 export const reviewStart = defineCommand({
-  summary: "Start or reuse a scoped design or implementation review",
+  summary: "Start a scoped design or implementation review",
   options: {
     file: {
       type: "string",
@@ -47,7 +45,7 @@ export const reviewStart = defineCommand({
     },
     prompt: {
       type: "string",
-      description: "Short review summary; additional context is disclosed lazily",
+      description: "Short review summary",
       placeholder: "text",
     },
     kind: {
@@ -65,7 +63,7 @@ export const reviewStart = defineCommand({
     branch: {
       type: "string",
       description:
-        "Applied GitButler branch; reviews its full changeset from the workspace merge base",
+        "Named GitButler branch; reviews its changes and ancestors, excluding other stacks",
     },
     base: {
       type: "string",
@@ -75,21 +73,7 @@ export const reviewStart = defineCommand({
       type: "string",
       description: "Explicit head commit/ref, with --base; excludes HEAD/workspace",
     },
-    reuse: {
-      type: "enum",
-      values: ["auto", "new"],
-      default: "auto",
-      description: "Reuse an eligible idle reviewer or request fresh judgment",
-    },
-    "review-thread": {
-      type: "string",
-      description: "Reuse this eligible idle reviewer instead of automatic selection",
-    },
-    workstream: {
-      type: "string",
-      description: "Stable workstream label for design-to-implementation reuse",
-    },
-    json: { type: "boolean", description: "Return the run receipt as JSON" },
+    json: { type: "boolean", description: "Return reviewer thread IDs as JSON" },
   },
   constraints: [{ kind: "exactly-one", options: ["file", "prompt"] }],
   async execute(ctx: CommandContext<ReviewContext>, { options }) {
@@ -104,9 +88,7 @@ export const reviewStart = defineCommand({
       mode: options.mode,
       summary: options.prompt ?? brief?.trim().split("\n")[0]?.slice(0, 2000),
       brief,
-      workstream: options.workstream,
       target,
-      reuse: options["review-thread"] ? { threadId: options["review-thread"] } : options.reuse,
     });
     if (!parsed.success) throw new PluginCliError(parsed.error.message, { code: "invalid_brief" });
     try {
@@ -116,7 +98,7 @@ export const reviewStart = defineCommand({
         ctx.signal ?? new AbortController().signal,
       );
       return {
-        exitCode: 0,
+        exitCode: receipt.reviewers.length ? 0 : 1,
         stdout: options.json ? `${JSON.stringify(receipt)}\n` : receiptText(receipt),
       };
     } catch (error) {

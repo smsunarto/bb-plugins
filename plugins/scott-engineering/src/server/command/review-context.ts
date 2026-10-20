@@ -1,13 +1,19 @@
 import { defineCommand, PluginCliError, type CommandContext } from "@bb-kit/core/command";
 import type { ReviewContext } from "./review-start.ts";
 export const reviewContext = defineCommand({
-  summary: "Read bounded immutable context for a review run",
-  positionals: [{ name: "run-id", description: "Review run ID", required: true }],
+  summary: "Read bounded immutable context for a reviewer",
+  positionals: [
+    {
+      name: "thread-id",
+      description: "Reviewer thread ID; defaults to this thread",
+      required: false,
+    },
+  ],
   options: {
     section: {
       type: "enum",
-      values: ["brief", "evidence", "diff", "tree", "file", "report"],
-      default: "brief",
+      values: ["diff", "tree", "file"],
+      default: "diff",
       description: "Context to retrieve progressively",
     },
     path: { type: "string", description: "Repository-relative file path for section=file" },
@@ -31,7 +37,7 @@ export const reviewContext = defineCommand({
     const value = await ctx.reviews.context(
       ctx.threadId,
       {
-        runId: positionals["run-id"],
+        threadId: positionals["thread-id"],
         section: options.section,
         path: options.path,
         side: options.side,

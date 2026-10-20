@@ -125,21 +125,6 @@
       "name": "@bb-plugins/markdown-prose",
       "version": "0.1.0",
     },
-    "packages/review-migration": {
-      "name": "@smsunarto/bb-plugin-review",
-      "version": "0.1.0",
-      "dependencies": {
-        "@bb-kit/core": "0.2.0",
-        "zod": "^4.4.3",
-      },
-      "devDependencies": {
-        "@get-bb/plugin-sdk": "0.5.29",
-        "@types/node": "^22.0.0",
-        "bun-types": "^1.4.0",
-        "tsx": "4.23.12",
-        "typescript": "^6.0.0",
-      },
-    },
     "packages/unity-inspector": {
       "name": "@bb-plugins/unity-inspector",
       "version": "0.1.0",
@@ -1834,8 +1819,6 @@
     "@smsunarto/bb-plugin-prompt-editor": ["@smsunarto/bb-plugin-prompt-editor@workspace:plugins/prompt-editor"],
 
     "@smsunarto/bb-plugin-remind-me": ["@smsunarto/bb-plugin-remind-me@workspace:plugins/remind-me"],
-
-    "@smsunarto/bb-plugin-review": ["@smsunarto/bb-plugin-review@workspace:packages/review-migration"],
 
     "@smsunarto/bb-plugin-scott-docs": ["@smsunarto/bb-plugin-scott-docs@workspace:plugins/scott-docs"],
 

@@ -1,2630 +1,306 @@
-import { createHash } from "node:crypto";
 import { expect, test } from "bun:test";
-import {
-  createFakePluginHost,
-  makeQueueEntry,
-  makeThreadResponse,
-  makeTurnFailedEvent,
-} from "@get-bb/plugin-sdk/testing";
-import plugin from "../server.ts";
-import { targetSchema } from "../../shared/review.ts";
-import { readdir, cp, copyFile, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { createFakePluginHost, makeThreadResponse } from "@get-bb/plugin-sdk/testing";
+import type { BbPluginApi } from "@get-bb/plugin-sdk";
+import { readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
+import plugin from "../server.ts";
+import { requestSchema, resultSchema } from "../../shared/review.ts";
+import { ReviewService } from "../lib/review-service.ts";
 
-const skills = await readdir(fileURLToPath(new URL("../../../skills", import.meta.url)));
-const base = "a".repeat(40),
-  head = "b".repeat(40);
-type ContextUsage = { usedTokens: number; modelContextWindow: number; estimated: boolean } | null;
-function fixtureControls(state: {
-  spawnFailure: string | undefined;
-  sendFailure: string | undefined;
-  queuedSend: boolean;
-  snapshotHead: string;
-  body: string;
-  contextUsage: ContextUsage;
-  beforeSpawnReturn: ((id: string, runId: string) => Promise<void>) | null;
-}) {
-  return {
-    setBeforeSpawnReturn: (value: (id: string, runId: string) => Promise<void>) => {
-      state.beforeSpawnReturn = value;
-    },
-    setSendFailure: (value: string | undefined) => {
-      state.sendFailure = value;
-    },
-    setUsage: (value: ContextUsage) => {
-      state.contextUsage = value;
-    },
-    setQueuedSend: (value: boolean) => {
-      state.queuedSend = value;
-    },
-    setSpawnFailure: (value: string | undefined) => {
-      state.spawnFailure = value;
-    },
-    setHead: (value: string) => {
-      state.snapshotHead = value;
-    },
-    setEvidence: (value: string) => {
-      state.body = value;
-    },
-  };
-}
-const reviewerCatalog = [
-  "gpt-6-astra",
-  "gpt-6-sol",
-  "claude-opus-5-5[1m]",
-  "claude-sonnet-5-5[1m]",
-].map((model) => ({
-  id: model,
-  model,
-  supportedReasoningEfforts: ["medium", "high", "max"].map((reasoningEffort) => ({
-    reasoningEffort,
-    description: "",
-  })),
-}));
-const catalog = async () => ({ models: reviewerCatalog }) as never;
+const signal = new AbortController().signal;
+const models = async () => ({ claudeModel: "claude-test", codexModel: "gpt-test" });
+const pinned = {
+  repositoryPath: "/repo",
+  branch: "scott/feature",
+  base: "a".repeat(40),
+  head: "b".repeat(40),
+};
+const request = requestSchema.parse({
+  summary: "Simplify review",
+  target: { branch: "scott/feature" },
+});
+const environment = { id: "env", hostId: "host", path: "/repo", status: "ready" };
+type Spawn = Parameters<BbPluginApi["sdk"]["threads"]["spawn"]>[0];
 
-async function load(
-  providerId = "codex",
-  model = "gpt-6-astra",
-  originPluginId: string | null = null,
-  implementation: typeof plugin = plugin,
-) {
-  const records = new Map<string, ReturnType<typeof makeThreadResponse>>();
+function fixture() {
+  const threads = new Map([
+    [
+      "parent",
+      makeThreadResponse({
+        id: "parent",
+        projectId: "project",
+        environmentId: "env",
+        providerId: "codex",
+      }),
+    ],
+    [
+      "stranger",
+      makeThreadResponse({ id: "stranger", projectId: "project", environmentId: "env" }),
+    ],
+  ]);
   const metadata = new Map<string, Record<string, unknown>>();
-  const legacyMetadata = new Map<string, Record<string, unknown>>();
-  const logs = new Map<string, unknown[]>();
-  let n = 0;
+  const outputs = new Map<string, string>();
+  const spawns: Spawn[] = [];
+  const hostCalls: { method: string; input: unknown }[] = [];
   const state = {
-    spawnFailure: undefined as string | undefined,
-    sendFailure: undefined as string | undefined,
-    queuedSend: false,
-    beforeSpawnReturn: null as ((id: string, runId: string) => Promise<void>) | null,
-    snapshotHead: head,
-    body: "Evidence from candidate bbbb",
-    contextUsage: {
-      usedTokens: 10000,
-      modelContextWindow: 400000,
-      estimated: true,
-    } as ContextUsage,
+    failProvider: "",
+    evidence: "Tests passed for commit bbbb",
+    snapshot: pinned,
+    afterSpawn: undefined as (() => void) | undefined,
   };
-  const queued = new Map<
-    string,
-    {
-      id: string;
-      content: unknown[];
-      payload?: { kind: "retry"; retryOfTurnRequestId: string } | { kind: "inline" };
-    }[]
-  >();
-  const authorEvents = [
-    {
-      seq: 1,
-      type: "client/turn/requested",
-      data: { requestId: "author-request", execution: { model } },
-    },
-    { seq: 2, type: "turn/started", scope: { kind: "turn", turnId: "author-turn" }, data: {} },
-    {
-      seq: 3,
-      type: "turn/input/accepted",
-      scope: { kind: "turn", turnId: "author-turn" },
-      data: { clientRequestId: "author-request" },
-    },
-  ];
-  function dispatch(id: string, prompt: string, execution: unknown) {
-    const events = logs.get(id) ?? [];
-    const seq = events.length + 1,
-      requestId = `request-${seq}`,
-      turnId = `turn-${seq}`;
-    events.push(
-      {
-        seq,
-        type: "client/turn/requested",
-        scope: { kind: "thread" },
-        data: { requestId, execution, input: [{ type: "text", text: prompt }] },
-      },
-      {
-        seq: seq + 1,
-        type: "turn/input/accepted",
-        scope: { kind: "turn", turnId },
-        data: { clientRequestId: requestId },
-      },
-    );
-    logs.set(id, events);
-    records.get(id)!.status = "active";
-  }
   const host = createFakePluginHost({
     pluginId: "scott-engineering",
-    agentSkillIds: skills,
+    agentSkillIds: readdirSync(fileURLToPath(new URL("../../../skills", import.meta.url))),
     experimental_callHostRpc: async ({ method, input }) => {
-      if (method === "reviewSnapshot") {
-        targetSchema.parse((input as { target: unknown }).target);
-        return {
-          repositoryPath: "/work/repo",
-          branch: (input as { target: { branch?: string } }).target.branch ?? null,
-          base,
-          head: state.snapshotHead,
-        };
-      }
-      const offset = (input as { offset: number }).offset;
-      return {
-        text: "Pinned source from bbbb".slice(offset, offset + 16000),
-        nextOffset: null,
-        totalLength: 23,
-      };
+      hostCalls.push({ method, input });
+      if (method === "reviewSnapshot") return state.snapshot;
+      return { text: "pinned source", nextOffset: null, totalLength: 13 };
     },
     sdk: {
-      plugins: { list: async () => ({ plugins: [] }) },
-      providers: { models: catalog },
+      files: { read: async () => ({ content: state.evidence, contentEncoding: "utf8" }) as never },
       threads: {
-        list: async () => [...records.values()],
         get: async ({ threadId }) => {
-          if (threadId !== "thr_author" && !records.has(threadId))
-            throw new Error("Thread not found (404)");
-          return threadId === "thr_author"
-            ? ({
-                ...makeThreadResponse({
-                  id: "thr_author",
-                  projectId: "proj_1",
-                  environmentId: "env_1",
-                  providerId,
-                  originPluginId,
-                }),
-                environment: {
-                  id: "env_1",
-                  hostId: "host_laptop",
-                  path: "/work/repo",
-                  status: "ready",
-                },
-              } as never)
-            : records.get(threadId)!;
+          const thread = threads.get(threadId);
+          if (!thread) throw new Error("Thread not found");
+          return { ...thread, environment } as never;
         },
+        defaultExecutionOptions: async () => ({ model: "gpt-test" }) as never,
+        getPluginMetadata: async ({ threadId }) => metadata.get(threadId) ?? {},
+        output: async ({ threadId }) => ({ output: outputs.get(threadId) ?? null }),
         spawn: async (args) => {
-          if (state.spawnFailure) throw new Error(state.spawnFailure);
-          const id = `thr_reviewer_${++n}`;
-          records.set(
-            id,
-            makeThreadResponse({
-              id,
-              parentThreadId: "thr_author",
-              projectId: "proj_1",
-              environmentId: "env_1",
-              originPluginId: "scott-engineering",
-              providerId: args.providerId,
-              status: "active",
-            }),
-          );
-          metadata.set(id, args.pluginMetadata as Record<string, unknown>);
-          dispatch(id, args.prompt!, {
-            model: args.model,
-            reasoningLevel: args.reasoningLevel,
-            serviceTier: args.serviceTier,
+          spawns.push(args);
+          if (args.providerId === state.failProvider || state.failProvider === "all")
+            throw new Error("Transport timed out");
+          const thread = makeThreadResponse({
+            id: `reviewer-${spawns.length}`,
+            projectId: "project",
+            environmentId: "env",
+            parentThreadId: args.parentThreadId,
+            providerId: args.providerId,
+            originPluginId: "scott-engineering",
+            status: "active",
           });
-          await state.beforeSpawnReturn?.(
-            id,
-            (args.pluginMetadata as { reviewRun: { id: string } }).reviewRun.id,
-          );
-          return records.get(id)!;
+          threads.set(thread.id, thread);
+          metadata.set(thread.id, args.pluginMetadata as Record<string, unknown>);
+          state.afterSpawn?.();
+          return thread;
         },
-        queuedMessages: {
-          list: async ({ threadId }) => {
-            if (!records.has(threadId)) throw new Error("Thread not found (404)");
-            return (queued.get(threadId) ?? []).map((entry) =>
-              Object.assign({ threadId }, entry),
-            ) as never;
-          },
-          delete: async ({ threadId, queuedMessageId }) => {
-            queued.set(
-              threadId,
-              (queued.get(threadId) ?? []).filter((message) => message.id !== queuedMessageId),
-            );
-            return { ok: true } as const;
-          },
-        },
-        send: async ({ threadId, input, model, reasoningLevel, serviceTier }) => {
-          if (state.sendFailure) throw new Error(state.sendFailure);
-          if (state.queuedSend) {
-            queued.set(threadId, [{ id: "queue-1", content: input }]);
-            return {
-              ok: true,
-              delivery: "queued",
-              queuedMessage: { id: "queue-1", content: input },
-              sendAt: null,
-              waitingOn: { kind: "plugin", pluginId: "limiter", reason: "Quota" },
-            } as const;
-          }
-          dispatch(threadId, input[0]!.type === "text" ? input[0]!.text : "", {
-            model,
-            reasoningLevel,
-            serviceTier,
-          });
-          return { ok: true, delivery: "sent" } as const;
-        },
-        stop: async ({ threadId }) => {
-          const record = records.get(threadId);
-          if (record) record.status = "idle";
-          return { ok: true } as const;
-        },
-        getPluginMetadata: async ({ threadId, pluginId }) =>
-          (pluginId === "review" ? legacyMetadata : metadata).get(threadId) ?? {},
-        updatePluginMetadata: async ({ threadId, set }) => {
-          const next = { ...metadata.get(threadId), ...set };
-          metadata.set(threadId, next);
-          return next;
-        },
-        context: async () => ({
-          usage: state.contextUsage,
-        }),
-        wait: async () => {
-          throw new Error("wait timeout");
-        },
-        events: {
-          list: async ({ threadId, types, afterSeq, beforeSeq, order, limit }) => {
-            if (Number(limit) > 100) throw new Error("Thread event limit cannot exceed 100");
-            const events = (
-              threadId === "thr_author" ? authorEvents : (logs.get(threadId) ?? [])
-            ) as { seq: number; type: string }[];
-            return events
-              .filter(
-                (event) =>
-                  (!types || types.includes(event.type as never)) &&
-                  (!afterSeq || event.seq > Number(afterSeq)) &&
-                  (!beforeSeq || event.seq < Number(beforeSeq)),
-              )
-              .sort((a, b) => (order === "desc" ? b.seq - a.seq : a.seq - b.seq))
-              .slice(0, Number(limit ?? 100)) as never;
-          },
-        },
-        storageLocation: async () => ({ hostId: "host_laptop" }) as never,
       },
-      files: { read: async () => ({ content: state.body, contentEncoding: "utf8" }) as never },
     },
   });
-  await implementation(host.bb);
-  const cli = (args: string[]) =>
-    host.harness.behavior.runCli(args, {
-      threadId: "thr_author",
-      cwd: "/work/repo",
-      signal: new AbortController().signal,
-    });
-  const start = async (input: Record<string, unknown>) => {
-    const value = await host.harness.behavior.callAgentTool(
-      "scott_engineering_review_start",
-      input,
-      {
-        threadId: "thr_author",
-      },
-    );
-    if (typeof value === "string") return JSON.parse(value);
-    return JSON.parse(value.content[0]!.type === "text" ? value.content[0]!.text : "null");
-  };
-  const tool = async (name: string, input: Record<string, unknown>, caller = "thr_author") => {
-    const value = await host.harness.behavior.callAgentTool(name, input, { threadId: caller });
-    if (typeof value === "string") return JSON.parse(value);
-    return JSON.parse(value.content[0]!.type === "text" ? value.content[0]!.text : "null");
-  };
-  function finish(id: string, runId: string, status = "complete", contamination = false) {
-    const events = logs.get(id)! as {
-      seq: number;
-      type: string;
-      scope?: { kind: string; turnId?: string };
-      data: Record<string, unknown>;
-    }[];
-    const turnId = events.at(-1)!.scope!.turnId!;
-    let seq = events.length + 1;
-    if (contamination)
-      events.push({
-        seq: seq++,
-        type: "turn/input/accepted",
-        scope: { kind: "turn", turnId },
-        data: { clientRequestId: "other-steering" },
-      });
-    events.push(
-      {
-        seq: seq++,
-        type: "item/completed",
-        scope: { kind: "turn", turnId },
-        data: {
-          item: {
-            type: "agentMessage",
-            text: JSON.stringify({
-              runId,
-              status,
-              findings: [],
-              coverage: "Checked the complete fixed candidate",
-              limitations: [],
-            }),
-          },
-        },
-      },
-      {
-        seq,
-        type: "turn/completed",
-        scope: { kind: "turn", turnId },
-        data: { status: "completed" },
-      },
-    );
-    records.get(id)!.status = "idle";
-  }
+  // Review works without any plugin storage. Arena can still use its own database.
+  const bb = new Proxy(host.bb, {
+    get(target, key, receiver) {
+      if (key === "storage") throw new Error("Review must not use plugin storage");
+      return Reflect.get(target, key, receiver);
+    },
+  });
   return {
-    host,
-    cli,
-    start,
-    tool,
-    finish,
-    records,
-    logs,
+    ...host,
+    service: new ReviewService(bb, models),
+    bbWithoutStorage: bb,
+    threads,
     metadata,
-    legacyMetadata,
-    queued,
-    ...fixtureControls(state),
+    outputs,
+    spawns,
+    hostCalls,
+    state,
   };
 }
 
-type Fixture = Awaited<ReturnType<typeof load>>;
-type Run = { runId: string; threadIds: string[] };
-function finishAll(f: Fixture, run: Run, status = "complete") {
-  for (const id of run.threadIds) f.finish(id, run.runId, status);
-}
-async function readDiff(f: Fixture, run: Run, offset = 0) {
-  for (const id of run.threadIds)
-    await f.tool(
-      "scott_engineering_review_context",
-      { runId: run.runId, section: "diff", offset },
-      id,
-    );
-}
-
-for (const [mode, effort, title, panel] of [
-  ["quick", "medium", "Quick", [["claude-code", "claude-opus-5-5[1m]", "Claude"]]],
-  [
-    "standard",
-    "high",
-    "Standard",
-    [
-      ["claude-code", "claude-opus-5-5[1m]", "Claude"],
-      ["codex", "gpt-6-astra", "Codex"],
-    ],
-  ],
-  [
-    "deep",
-    "max",
-    "Deep",
-    [
-      ["claude-code", "claude-opus-5-5[1m]", "Claude"],
-      ["codex", "gpt-6-astra", "Codex"],
-    ],
-  ],
-] as const) {
-  test(`${mode} dispatches ${panel.length} reviewer(s) at ${effort} effort`, async () => {
-    const f = await load();
-    const r = await f.start({
-      mode,
-      summary: "Check the camera",
-      target: { branch: "scott/camera" },
-    });
-    expect(r).toMatchObject({
-      kind: "implementation",
-      mode,
-      status: "running",
-      target: { branch: "scott/camera", base, head },
-      threadIds: panel.map((_, index) => `thr_reviewer_${index + 1}`),
-      reviewers: panel.map(([providerId, model]) => ({ providerId, model })),
-    });
-    const spawns = f.host.harness.inspection.sdk
-      .callsTo("threads.spawn")
-      .map(([args]) => args as Record<string, unknown>);
-    expect(
-      spawns.map(({ providerId, model, reasoningLevel, serviceTier, visibility, title }) => ({
-        providerId,
-        model,
-        reasoningLevel,
-        serviceTier,
-        visibility,
-        title,
-      })),
-    ).toEqual(
-      panel.map(([providerId, model, family]) => ({
-        providerId,
-        model,
-        reasoningLevel: effort,
-        serviceTier: "fast",
-        visibility: "hidden",
-        title: `${title} implementation review (${family})`,
-      })),
-    );
-    expect(new Set(spawns.map((spawn) => spawn.prompt)).size).toBe(1);
-    expect(String(spawns[0]!.prompt)).toContain(`Review run ${r.runId}: implementation, ${mode}`);
-    expect(spawns.map((spawn) => spawn.pluginMetadata)).toMatchObject(
-      panel.map(([providerId, model], seat) => ({
-        reviewRun: { id: r.runId, seat, reviewer: { providerId, model } },
-      })),
-    );
-    await f.host.harness.lifecycle.dispose();
-  });
-}
-
-test("a Claude author's panel puts Codex first and Claude second", async () => {
-  const f = await load("claude-code", "claude-opus-5-5[1m]");
-  const r = await f.start({ kind: "design", mode: "deep", summary: "Plan" });
-  expect(r.reviewers).toEqual([
-    { providerId: "codex", model: "gpt-6-astra" },
-    { providerId: "claude-code", model: "claude-opus-5-5[1m]" },
-  ]);
-  const quick = await load("claude-code", "claude-opus-5-5[1m]");
-  expect((await quick.start({ kind: "design", mode: "quick", summary: "Plan" })).reviewers).toEqual(
-    [{ providerId: "codex", model: "gpt-6-astra" }],
+test("launches native Claude and Codex children with the same pinned inputs", async () => {
+  const f = fixture();
+  const receipt = await f.service.start(
+    "parent",
+    {
+      ...request,
+      brief: "Remove duplicate state",
+      evidence: [{ label: "Tests", path: "/tmp/tests.txt" }],
+    },
+    signal,
   );
-});
-
-test("result stays running until every reviewer finishes, then returns one report per model", async () => {
-  const f = await load();
-  const r = await f.start({ kind: "design", summary: "Plan" });
-  const [claude, codex] = r.threadIds;
-  f.finish(claude, r.runId);
-  expect(await f.tool("scott_engineering_review_result", { runId: r.runId })).toMatchObject({
-    status: "running",
-    reviews: [
-      { reviewer: { providerId: "claude-code" }, threadId: claude, status: "finished" },
-      { reviewer: { providerId: "codex" }, threadId: codex, status: "running" },
-    ],
-  });
-  expect(await f.start({ kind: "design", summary: "Plan", reuse: "new" })).toMatchObject({
-    runId: r.runId,
-    busy: true,
-  });
-  f.finish(codex, r.runId);
-  const done = await f.tool("scott_engineering_review_result", { runId: r.runId });
-  expect(done).toMatchObject({
-    status: "complete",
-    current: true,
-
-    error: null,
-    reviews: [
-      {
-        reviewer: { providerId: "claude-code", model: "claude-opus-5-5[1m]" },
-        threadId: claude,
-        status: "complete",
-        report: { runId: r.runId, status: "complete" },
-        error: null,
-      },
-      {
-        reviewer: { providerId: "codex", model: "gpt-6-astra" },
-        threadId: codex,
-        status: "complete",
-        report: { runId: r.runId, status: "complete" },
-        error: null,
-      },
-    ],
-  });
-  expect(done).not.toHaveProperty("report");
-  const stored = await f.tool("scott_engineering_review_context", {
-    runId: r.runId,
-    section: "report",
-  });
-  expect(
-    JSON.parse(stored.text).map((entry: { reviewer: { providerId: string } }) => entry.reviewer),
-  ).toEqual([
-    { providerId: "claude-code", model: "claude-opus-5-5[1m]" },
-    { providerId: "codex", model: "gpt-6-astra" },
-  ]);
-});
-
-for (const seat of [0, 1])
-  test(`a P1 from reviewer ${seat + 1} is returned for lead judgment`, async () => {
-    const f = await load();
-    const r = await f.start({
-      mode: "deep",
-
-      summary: "Publish",
-      target: { branch: "scott/camera" },
-    });
-    await readDiff(f, r);
-    finishAll(f, r);
-    const message = f.logs
-      .get(r.threadIds[seat])!
-      .find((event) => (event as { type: string }).type === "item/completed") as {
-      data: { item: { text: string } };
-    };
-    const report = JSON.parse(message.data.item.text);
-    report.findings = [{ priority: 1, title: "Broken publish", body: "Evidence", location: "x:1" }];
-    message.data.item.text = JSON.stringify(report);
-    const result = await f.tool("scott_engineering_review_result", { runId: r.runId });
-    expect(result).toMatchObject({ status: "complete" });
-    expect(result).not.toHaveProperty("deepImplementationCovered");
-    expect(
-      result.reviews.map(
-        (review: { report: { findings: unknown[] } }) => review.report.findings.length,
-      ),
-    ).toEqual(seat ? [0, 1] : [1, 0]);
-  });
-
-test("a run stored by contract 3 stays busy and readable after upgrade", async () => {
-  const f = await load();
-  const r = await f.start({ kind: "design", mode: "quick", summary: "Plan", workstream: "plan" });
-  const db = f.host.bb.storage.database();
-  const row = db
-    .prepare<[string], { payload: string }>("SELECT payload FROM review_runs WHERE id=?")
-    .get(r.runId)!;
-  const { seats, ...rest } = JSON.parse(row.payload);
-  const legacy = {
-    ...rest,
-    contractVersion: 3,
-    reviewer: seats[0].reviewer,
-    reviewerThreadId: seats[0].threadId,
-    afterSeq: seats[0].afterSeq,
-  };
-  db.prepare("UPDATE review_runs SET payload=? WHERE id=?").run(JSON.stringify(legacy), r.runId);
-  expect(
-    await f.start({ kind: "design", mode: "quick", summary: "Plan", workstream: "plan" }),
-  ).toMatchObject({
-    runId: r.runId,
-    threadIds: ["thr_reviewer_1"],
-    reviewers: [{ providerId: "claude-code", model: "claude-opus-5-5[1m]" }],
-    busy: true,
-  });
-  expect(await f.tool("scott_engineering_review_result", { runId: r.runId })).toMatchObject({
-    status: "running",
-  });
-  f.finish("thr_reviewer_1", r.runId);
-  expect(await f.tool("scott_engineering_review_result", { runId: r.runId })).toMatchObject({
-    status: "complete",
-    reviews: [{ threadId: "thr_reviewer_1", status: "complete", report: { runId: r.runId } }],
-  });
-  // A contract-3 reviewer is never auto-reused by a new run.
-  const next = await f.start({
-    kind: "design",
-    mode: "quick",
-    summary: "Plan v2",
-    workstream: "plan",
-  });
-  expect(next).toMatchObject({ threadIds: ["thr_reviewer_2"], reused: false });
-});
-
-test("an interrupted panel dispatch adopts nothing twice and expires as before", async () => {
-  const f = await load();
-  f.setBeforeSpawnReturn(async () => f.setSpawnFailure("Gateway timeout"));
-  await expect(f.start({ kind: "design", summary: "Plan" })).rejects.toThrow("Gateway timeout");
-  f.setSpawnFailure(undefined);
-  f.setBeforeSpawnReturn(async () => {});
-  expect(await f.start({ kind: "design", summary: "Plan" })).toMatchObject({
-    status: "starting",
-    threadIds: ["thr_reviewer_1", null],
-    busy: true,
-  });
-  expect(f.host.harness.inspection.sdk.callsTo("threads.spawn")).toHaveLength(2);
-  const db = f.host.bb.storage.database();
-  const row = db
-    .prepare<[], { id: string; payload: string }>("SELECT id,payload FROM review_runs")
-    .get()!;
-  const run = JSON.parse(row.payload);
-  run.startedAt = Date.now() - 121000;
-  db.prepare("UPDATE review_runs SET payload=? WHERE id=?").run(JSON.stringify(run), row.id);
-  const next = await f.start({ kind: "design", summary: "After expiry" });
-  expect(next).toMatchObject({
-    status: "running",
-    threadIds: ["thr_reviewer_2", "thr_reviewer_3"],
-  });
-  expect(f.host.harness.inspection.sdk.callsTo("threads.stop").map(([args]) => args)).toEqual([
-    { threadId: "thr_reviewer_1" },
-  ]);
-  expect(await f.tool("scott_engineering_review_result", { runId: row.id })).toMatchObject({
-    status: "failed",
-    error: "Dispatch expired without a child for every reviewer",
-  });
-});
-
-test("design starts from a concise immutable proposal without requiring a code diff", async () => {
-  const f = await load("claude-code", "claude-opus-5-5[1m]");
-  const r = await f.start({ kind: "design", summary: "Choose a queue boundary" });
-  expect(r).toMatchObject({ kind: "design", mode: "standard", target: null });
-  expect(f.host.harness.inspection.sdk.callsTo("threads.spawn")[0]?.[0]).toMatchObject({
-    providerId: "codex",
+  expect(receipt.errors).toEqual([]);
+  expect(receipt.reviewers.map((item) => item.threadId)).toEqual(["reviewer-1", "reviewer-2"]);
+  expect(f.spawns.map((item) => item.providerId)).toEqual(["claude-code", "codex"]);
+  expect(f.spawns[0]).toMatchObject({
+    parentThreadId: "parent",
+    environment: { type: "reuse", environmentId: "env" },
+    visibility: "hidden",
     reasoningLevel: "high",
   });
-  expect(
-    await f.tool(
-      "scott_engineering_review_context",
-      { runId: r.runId, section: "brief" },
-      r.threadIds[0],
-    ),
-  ).toEqual({
-    text: "Choose a queue boundary",
+  expect(f.spawns[0]!.prompt).toBe(f.spawns[1]!.prompt);
+  expect(f.spawns[0]!.prompt).toContain("Remove duplicate state");
+  expect(f.spawns[0]!.prompt).toContain("Tests passed for commit bbbb");
+  expect(f.metadata.get("reviewer-1")).toEqual(f.metadata.get("reviewer-2"));
+  expect(f.metadata.get("reviewer-1")!.reviewRun).toMatchObject({ target: pinned });
+  expect(f.metadata.get("reviewer-1")!.reviewRun).not.toHaveProperty("status");
+});
+
+test("a fresh service reads pinned source and native output after a reload", async () => {
+  const f = fixture();
+  await f.service.start("parent", request, signal);
+  f.threads.get("reviewer-1")!.status = "idle";
+  f.outputs.set("reviewer-1", "No actionable findings.");
+  f.state.snapshot = { ...pinned, head: "c".repeat(40) };
+  const reloaded = new ReviewService(f.bbWithoutStorage, models);
+  const result = await reloaded.result("parent", { threadId: "reviewer-1", offset: 0 }, signal);
+  expect(result).toEqual({
+    threadId: "reviewer-1",
+    status: "idle",
+    target: pinned,
+    output: "No actionable findings.",
     nextOffset: null,
   });
-});
-
-test("missing implementation target and moving workspace selectors do not launch reviews", async () => {
-  const f = await load();
-  await expect(f.start({ summary: "Review everything" })).rejects.toThrow(
-    "needs a GitButler branch checkpoint",
-  );
-  await expect(
-    f.start({ summary: "Review everything", target: { branch: "gitbutler/workspace" } }),
-  ).rejects.toThrow();
-  await expect(
-    f.start({ summary: "Review everything", target: { base: "main", head: "HEAD" } }),
-  ).rejects.toThrow();
-  const valid = await f.start({
-    summary: "Review intended work",
-    target: { branch: "scott/camera" },
-  });
-  expect(valid.target.head).toBe(head);
-});
-
-test("distinct concurrent starts run side by side with their own reviewers", async () => {
-  const f = await load();
-  const [a, b, c] = await Promise.all([
-    f.start({ summary: "First", target: { branch: "scott/camera" } }),
-    f.start({ summary: "Second", target: { branch: "scott/camera" } }),
-    f.start({ kind: "design", mode: "deep", summary: "Plan" }),
-  ]);
-  expect(new Set([a.runId, b.runId, c.runId]).size).toBe(3);
-  expect(new Set([...a.threadIds, ...b.threadIds, ...c.threadIds]).size).toBe(6);
-  expect([a.status, b.status, c.status]).toEqual(["running", "running", "running"]);
   expect(
-    await f.tool("scott_engineering_review_context", { runId: b.runId, section: "brief" }),
-  ).toEqual({
-    text: "Second",
-    nextOffset: null,
-  });
-  finishAll(f, a);
-  f.finish(b.threadIds[0], b.runId);
-  expect(await f.tool("scott_engineering_review_result", { runId: a.runId })).toMatchObject({
-    status: "complete",
-    reviews: [{ report: { runId: a.runId } }, { report: { runId: a.runId } }],
-  });
-  expect(await f.tool("scott_engineering_review_result", { runId: b.runId })).toMatchObject({
-    status: "running",
-    reviews: [{ status: "finished" }, { status: "running" }],
+    await reloaded.context("reviewer-1", { section: "diff", side: "head", offset: 0 }, signal),
+  ).toMatchObject({ text: "pinned source" });
+  expect(f.hostCalls.at(-1)).toEqual({
+    method: "reviewRead",
+    input: { target: pinned, section: "diff", side: "head", offset: 0 },
   });
 });
 
-test("identical concurrent starts share one run", async () => {
-  const f = await load();
-  const request = { summary: "First", target: { branch: "scott/camera" } };
-  const [a, b] = await Promise.all([f.start(request), f.start(request)]);
-  expect(b).toMatchObject({ runId: a.runId, threadIds: a.threadIds, busy: true });
-  expect(f.host.harness.inspection.sdk.callsTo("threads.spawn")).toHaveLength(2);
-});
-
-test("a follow-up reuses an idle reviewer while another in its workstream is busy", async () => {
-  const f = await load();
-  const idle = await f.start({ kind: "design", summary: "One", workstream: "plan" });
-  const busy = await f.start({ kind: "design", summary: "Two", workstream: "plan" });
-  expect(busy.threadIds).toEqual(["thr_reviewer_3", "thr_reviewer_4"]);
-  finishAll(f, idle);
-  const next = await f.start({ kind: "design", summary: "Three", workstream: "plan" });
-  expect(next).toMatchObject({ threadIds: idle.threadIds, reused: true, status: "running" });
-});
-
-test("idle reviewer is reused with a fresh run and per-turn effort; old output never clears it", async () => {
-  const f = await load();
-  const first = await f.start({
-    mode: "standard",
-    summary: "Initial",
-    target: { branch: "scott/camera" },
-  });
-  finishAll(f, first);
-  const second = await f.start({
-    mode: "quick",
-    summary: "Final candidate",
-    target: { branch: "scott/camera" },
-  });
-  expect(second.threadIds).toEqual([first.threadIds[0]]);
-  expect(second.runId).not.toBe(first.runId);
-  expect(second.reused).toBe(true);
-  expect(f.host.harness.inspection.sdk.callsTo("threads.send")[0]?.[0]).toMatchObject({
-    reasoningLevel: "medium",
-    mode: "start",
-  });
-  const pending = await f.tool("scott_engineering_review_result", { runId: second.runId });
-  expect(pending.status).toBe("running");
-  finishAll(f, second);
-  const done = await f.tool("scott_engineering_review_result", { runId: second.runId });
-  expect(done).toMatchObject({
-    status: "complete",
-    current: true,
-
-    reviews: [{ report: { runId: second.runId } }],
-  });
-  const old = await f.tool("scott_engineering_review_result", { runId: first.runId });
-  expect(old.reviews.map((review: { report: { runId: string } }) => review.report.runId)).toEqual([
-    first.runId,
-    first.runId,
-  ]);
-  expect(old.status).toBe("complete");
-});
-
-test("changed target is reported as stale without hiding completed findings", async () => {
-  const f = await load();
-  const r = await f.start({
-    mode: "deep",
-
-    summary: "Final",
-    target: { branch: "scott/camera" },
-  });
-  await readDiff(f, r);
-  finishAll(f, r);
-  expect(await f.tool("scott_engineering_review_result", { runId: r.runId })).toMatchObject({
-    status: "complete",
-    current: true,
-  });
-  f.setHead("c".repeat(40));
-  expect(await f.tool("scott_engineering_review_result", { runId: r.runId })).toMatchObject({
-    status: "complete",
-    current: false,
-  });
-});
-
-test("incomplete and steered reviews report their limitations", async () => {
-  const f = await load();
-  const r = await f.start({
-    mode: "deep",
-
-    summary: "Final",
-    target: { branch: "scott/camera" },
-  });
-  finishAll(f, r, "incomplete");
-  expect(await f.tool("scott_engineering_review_result", { runId: r.runId })).toMatchObject({
-    status: "incomplete",
-  });
-  const s = await f.start({
-    mode: "deep",
-
-    summary: "New check",
-    target: { branch: "scott/camera" },
-    reuse: "new",
-  });
-  await readDiff(f, s);
-  f.finish(s.threadIds[0], s.runId, "complete", true);
-  f.finish(s.threadIds[1], s.runId);
-  expect(await f.tool("scott_engineering_review_result", { runId: s.runId })).toMatchObject({
-    status: "incomplete",
-  });
-});
-
-test("context is captured on the invoking host and cannot be read by another thread", async () => {
-  const f = await load();
-  const r = await f.start({
-    kind: "design",
-    summary: "Plan",
-    evidence: [{ label: "Checks", path: "/work/result.txt" }],
-  });
-  f.setEvidence("changed later");
-  const evidence = await f.tool("scott_engineering_review_context", {
-    runId: r.runId,
-    section: "evidence",
-  });
-  expect(JSON.parse(evidence.text)[0]).toMatchObject({
-    label: "Checks",
-    text: "Evidence from candidate bbbb",
-  });
-  expect(f.host.harness.inspection.sdk.callsTo("files.read")[0]?.[0]).toMatchObject({
-    hostId: "host_laptop",
-    path: "/work/result.txt",
-  });
-  await expect(
-    f.tool("scott_engineering_review_context", { runId: r.runId, section: "brief" }, "thr_other"),
-  ).rejects.toThrow("not available");
-});
-
-test("CLI preserves --file on the calling host and emits a run receipt", async () => {
-  const f = await load();
-  const result = await f.cli([
-    "review-start",
-    "--kind",
-    "design",
-    "--file",
-    "brief.md",
-    "--mode",
-    "quick",
-    "--json",
-  ]);
-  expect(result.exitCode).toBe(0);
-  expect(JSON.parse(result.stdout!)).toMatchObject({ kind: "design", mode: "quick", target: null });
-  expect(f.host.harness.inspection.sdk.callsTo("files.read")[0]?.[0]).toMatchObject({
-    hostId: "host_laptop",
-    path: "/work/repo/brief.md",
-  });
-});
-
-test("reviewers cannot recurse even through CLI", async () => {
-  const f = await load("codex", "gpt-6-astra", "scott-engineering");
-  const result = await f.cli(["review-start", "--kind", "design", "--prompt", "Recurse"]);
-  expect(result.exitCode).toBe(1);
-  expect(result.stderr).toContain("cannot start another review");
-});
-
-test("mixed-family author selection uses accepted turn rather than later preferences", async () => {
-  const f = await load("agent-proxy", "openai/gpt-5.4");
-  const r = await f.start({ kind: "design", summary: "Plan" });
-  expect(r.status).toBe("running");
-  expect(f.host.harness.inspection.sdk.callsTo("threads.spawn")[0]?.[0]).toMatchObject({
-    providerId: "claude-code",
-  });
-});
-
-test("reuse:new starts fresh and returns findings without a diff-read gate", async () => {
-  const f = await load();
-  const first = await f.start({ summary: "Earlier", target: { branch: "scott/camera" } });
-  finishAll(f, first);
-  const run = await f.start({
-    mode: "deep",
-
-    summary: "Publish",
-    target: { branch: "scott/camera" },
-    reuse: "new",
-  });
-  expect(run.threadIds).not.toContain(first.threadIds[0]);
-  expect(run.threadIds).not.toContain(first.threadIds[1]);
-  await f.tool("scott_engineering_review_context", { runId: run.runId, section: "diff" }); // Authors can preview the same pinned source.
-  await readDiff(f, run, 10);
-  finishAll(f, run);
-  expect(await f.tool("scott_engineering_review_result", { runId: run.runId })).toMatchObject({
-    status: "complete",
-    reviews: [{ status: "complete" }, { status: "complete" }],
-  });
-});
-
-test("execution downgrade and model fallback mark reports incomplete, while findings remain reviewable", async () => {
-  for (const reason of ["effort", "fallback", "finding"]) {
-    const f = await load();
-    const r = await f.start({
-      mode: "deep",
-
-      summary: "Publish",
-      target: { branch: "scott/camera" },
-    });
-    await readDiff(f, r);
-    if (reason === "effort")
-      (
-        f.logs.get(r.threadIds[0])![0] as { data: { execution: { reasoningLevel: string } } }
-      ).data.execution.reasoningLevel = "high";
-    finishAll(f, r);
-    const log = f.logs.get(r.threadIds[0])!;
-    if (reason === "fallback")
-      log.push({
-        seq: 99,
-        type: "provider/modelFallback",
-        scope: { kind: "turn", turnId: "turn-1" },
-        data: {},
-      });
-    if (reason === "finding") {
-      const message = log.find(
-        (event) => (event as { type: string }).type === "item/completed",
-      ) as { data: { item: { text: string } } };
-      const report = JSON.parse(message.data.item.text);
-      report.findings = [
-        { priority: 1, title: "Broken publish", body: "Evidence", location: "x:1" },
-      ];
-      message.data.item.text = JSON.stringify(report);
-    }
-    expect((await f.tool("scott_engineering_review_result", { runId: r.runId })).status).toBe(
-      reason === "finding" ? "complete" : "incomplete",
-    );
-  }
-});
-
-test("persistent reservations prevent a second service instance from spawning over an active run", async () => {
-  const f = await load();
-  const r = await f.start({ summary: "First", target: { branch: "scott/camera" } });
-  const { ReviewService } = await import("../lib/review-service.ts");
-  const { requestSchema } = await import("../../shared/review.ts");
-  const afterReload = new ReviewService(f.host.bb, async () => ({
-    claudeModel: "claude-opus-5-5[1m]",
-    codexModel: "gpt-6-astra",
-  }));
-  const next = await afterReload.start(
-    "thr_author",
-    requestSchema.parse({ summary: "First", target: { branch: "scott/camera" } }),
-    new AbortController().signal,
-  );
-  expect(next.runId).toBe(r.runId);
-  expect(f.host.harness.inspection.sdk.callsTo("threads.spawn")).toHaveLength(2);
-});
-
-test("a definite dispatch rejection releases the reservation for a corrected retry", async () => {
-  const f = await load();
-  f.setSpawnFailure("Unknown reviewer model");
-  await expect(f.start({ kind: "design", summary: "Plan" })).rejects.toThrow(
-    "Unknown reviewer model",
-  );
-  f.setSpawnFailure(undefined);
-  expect(await f.start({ kind: "design", summary: "Plan" })).toMatchObject({
-    status: "running",
-    threadIds: ["thr_reviewer_1", "thr_reviewer_2"],
-  });
-});
-
-test("a definite rejection of the second reviewer stops the first and releases the reservation", async () => {
-  const f = await load();
-  f.setBeforeSpawnReturn(async () => f.setSpawnFailure("Unknown reviewer model"));
-  await expect(f.start({ kind: "design", summary: "Plan" })).rejects.toThrow(
-    "Unknown reviewer model",
-  );
-  expect(f.host.harness.inspection.sdk.callsTo("threads.stop").map(([args]) => args)).toEqual([
-    { threadId: "thr_reviewer_1" },
-  ]);
-  expect(f.metadata.get("thr_reviewer_1")).toMatchObject({
-    reviewRun: { seat: 0, status: "failed" },
-  });
-  f.setSpawnFailure(undefined);
-  f.setBeforeSpawnReturn(async () => {});
-  expect(await f.start({ kind: "design", summary: "Plan", reuse: "new" })).toMatchObject({
-    status: "running",
-    threadIds: ["thr_reviewer_2", "thr_reviewer_3"],
-  });
-});
-
-test("unrelated queue and failure events do not enter a failed migration", async () => {
-  const f = await load();
-  f.records.set("arena", makeThreadResponse({ id: "arena", originPluginId: "scott-engineering" }));
-  f.metadata.set("arena", { arena: { runId: "arena" } });
-  const { ReviewService } = await import("../lib/review-service.ts");
-  let attempts = 0;
-  const service = new ReviewService(
-    f.host.bb,
-    async () => ({
-      claudeModel: "claude-opus-5-5[1m]",
-      codexModel: "gpt-6-astra",
-    }),
-    async () => {
-      attempts += 1;
-      throw new Error("Migration unavailable");
-    },
-  );
-  for (const threadId of ["thr_author", "arena"]) {
-    await service.cancelObsoleteRetry(makeQueueEntry({ threadId }));
-    await service.cancelObsoleteRetry(
-      makeQueueEntry({
-        threadId,
-        payload: {
-          kind: "retry",
-          retryOfTurnRequestId: "request",
-          attempt: 2,
-          reason: "Usage limit",
-        },
-      }),
-    );
-    await service.reviewerFailed({
-      threadId,
-      requestId: "request",
-      errorInfo: { category: "rate-limit", httpStatusCode: null, providerCode: null },
-    });
-  }
-  expect(attempts).toBe(0);
-});
-
-test("an ambiguous dispatch timeout retains a reservation across service reload", async () => {
-  const f = await load();
-  f.setSpawnFailure("Gateway timeout");
-  await expect(f.start({ kind: "design", summary: "Plan" })).rejects.toThrow("Gateway timeout");
-  f.setSpawnFailure(undefined);
-  const { ReviewService } = await import("../lib/review-service.ts");
-  const { requestSchema } = await import("../../shared/review.ts");
-  const afterReload = new ReviewService(f.host.bb, async () => ({
-    claudeModel: "claude-opus-5-5[1m]",
-    codexModel: "gpt-6-astra",
-  }));
-  const next = await afterReload.start(
-    "thr_author",
-    requestSchema.parse({ kind: "design", summary: "Plan" }),
-    new AbortController().signal,
-  );
-  expect(next).toMatchObject({ status: "starting", busy: true });
-  expect(f.host.harness.inspection.sdk.callsTo("threads.spawn")).toHaveLength(1);
-});
-
-test("deleted reviewers do not block results or replacement reviews", async () => {
-  const f = await load();
-  const r = await f.start({ kind: "design", summary: "Plan" });
-  f.records.delete(r.threadIds[0]);
-  f.finish(r.threadIds[1], r.runId);
-  expect(await f.tool("scott_engineering_review_result", { runId: r.runId })).toMatchObject({
-    status: "incomplete",
-
-    reviews: [
-      {
-        status: "failed",
-        report: null,
-        error: "Reviewer thread was deleted; start a new assessment",
-      },
-      { status: "complete", report: { runId: r.runId } },
-    ],
-  });
-  const next = await f.start({ kind: "design", summary: "Replacement" });
-  expect(next.threadIds).not.toContain(r.threadIds[0]);
-  for (const id of next.threadIds) f.records.delete(id);
+test("result pages native output without caching it or interpreting the findings", async () => {
+  const f = fixture();
+  await f.service.start("parent", request, signal);
+  f.outputs.set("reviewer-1", "x".repeat(15000));
   expect(
-    await f.start({ kind: "design", summary: "New after deletion", reuse: "new" }),
-  ).toMatchObject({ status: "running" });
-});
-
-for (const seat of [0, 1])
-  test(`deleting reviewer ${seat + 1} returns the surviving report as an incomplete assessment`, async () => {
-    const f = await load();
-    const r = await f.start({ kind: "design", summary: "Plan" });
-    const survivor = r.threadIds[1 - seat];
-    f.records.delete(r.threadIds[seat]);
-    f.finish(survivor, r.runId);
-    const result = await f.tool("scott_engineering_review_result", { runId: r.runId });
-    expect(result).toMatchObject({
-      status: "incomplete",
-      error: "1 of 2 reviewers did not complete; see reviews[].error",
-    });
-    expect(
-      result.reviews.map((review: { threadId: string; status: string }) => [
-        review.threadId,
-        review.status,
-      ]),
-    ).toEqual([
-      [r.threadIds[0], seat === 0 ? "failed" : "complete"],
-      [r.threadIds[1], seat === 1 ? "failed" : "complete"],
-    ]);
-    const stored = await f.tool("scott_engineering_review_context", {
-      runId: r.runId,
-      section: "report",
-    });
-    expect(
-      JSON.parse(stored.text).map((entry: { report: { runId: string } }) => entry.report.runId),
-    ).toEqual([r.runId]);
-  });
-
-test("two reports that together exceed one KV value are both stored and readable", async () => {
-  const f = await load();
-  const r = await f.start({ kind: "design", summary: "Plan" });
-  finishAll(f, r);
-  for (const id of r.threadIds) {
-    const message = f.logs
-      .get(id)!
-      .find((event) => (event as { type: string }).type === "item/completed") as {
-      data: { item: { text: string } };
-    };
-    const report = JSON.parse(message.data.item.text);
-    report.findings = Array.from({ length: 19 }, () => ({
-      priority: 3,
-      title: "Minor",
-      body: "x".repeat(8000),
-      location: "a.ts:1",
-    }));
-    message.data.item.text = JSON.stringify(report);
-    expect(Buffer.byteLength(message.data.item.text, "utf8")).toBeGreaterThan(152000);
-  }
-  expect(await f.tool("scott_engineering_review_result", { runId: r.runId })).toMatchObject({
-    status: "complete",
-    reviews: [
-      { status: "complete", findings: 19 },
-      { status: "complete", findings: 19 },
-    ],
-  });
-  let text = "";
-  for (let offset: number | null = 0; offset !== null;) {
-    const page = await f.tool("scott_engineering_review_context", {
-      runId: r.runId,
-      section: "report",
-      offset,
-    });
-    text += page.text;
-    offset = page.nextOffset;
-  }
-  expect(Buffer.byteLength(text, "utf8")).toBeGreaterThan(256 * 1024);
+    await f.service.result("parent", { threadId: "reviewer-1", offset: 0 }, signal),
+  ).toMatchObject({ status: "active", output: "x".repeat(12000), nextOffset: 12000 });
   expect(
-    JSON.parse(text).map(
-      (entry: { reviewer: { providerId: string }; report: { findings: unknown[] } }) => [
-        entry.reviewer.providerId,
-        entry.report.findings.length,
-      ],
-    ),
-  ).toEqual([
-    ["claude-code", 19],
-    ["codex", 19],
-  ]);
-});
-
-for (const [contract, stored] of [
-  [3, { status: "complete", findings: [] }],
-  [
-    4,
-    [{ reviewer: { providerId: "codex", model: "gpt-6-astra" }, report: { status: "complete" } }],
-  ],
-] as const)
-  test(`a contract-${contract} report stored under the run's single key stays readable`, async () => {
-    const f = await load();
-    const r = await f.start({ kind: "design", summary: "Plan" });
-    await f.host.bb.storage.kv.set(`report:${r.runId}`, stored);
-    const page = await f.tool("scott_engineering_review_context", {
-      runId: r.runId,
-      section: "report",
-    });
-    expect(JSON.parse(page.text)).toEqual(stored);
-  });
-
-test("expired orphan dispatch releases its reservation", async () => {
-  const f = await load();
-  f.setSpawnFailure("Gateway timeout");
-  await expect(f.start({ kind: "design", summary: "Plan" })).rejects.toThrow();
-  const db = f.host.bb.storage.database();
-  const row = db
-    .prepare<[], { id: string; payload: string }>("SELECT id,payload FROM review_runs")
-    .get()!;
-  const run = JSON.parse(row.payload);
-  run.startedAt = Date.now() - 121000;
-  db.prepare("UPDATE review_runs SET payload=? WHERE id=?").run(JSON.stringify(run), row.id);
-  f.setSpawnFailure(undefined);
-  expect(await f.start({ kind: "design", summary: "Plan" })).toMatchObject({ status: "running" });
-});
-
-test("BB fast-tier demotion does not invalidate a complete Deep assessment", async () => {
-  const f = await load();
-  const r = await f.start({
-    mode: "deep",
-
-    summary: "Publish",
-    target: { branch: "scott/camera" },
-  });
-  for (const id of r.threadIds)
-    (
-      f.logs.get(id)![0] as { data: { execution: { serviceTier: string } } }
-    ).data.execution.serviceTier = "default";
-  await readDiff(f, r);
-  finishAll(f, r);
-  expect(await f.tool("scott_engineering_review_result", { runId: r.runId })).toMatchObject({
-    status: "complete",
-  });
-});
-
-test("a failed reviewer returns an incomplete result without waiting for unreachable idle", async () => {
-  const f = await load();
-  const r = await f.start({ kind: "design", summary: "Plan" });
-  for (const id of r.threadIds) f.records.get(id)!.status = "error";
+    await f.service.result("parent", { threadId: "reviewer-1", offset: 12000 }, signal),
+  ).toMatchObject({ output: "x".repeat(3000), nextOffset: null });
+  f.outputs.set("reviewer-1", "Follow-up reply");
   expect(
-    await f.tool("scott_engineering_review_result", { runId: r.runId, waitSeconds: 1 }),
-  ).toMatchObject({
-    status: "incomplete",
-  });
-  expect(f.host.harness.inspection.sdk.callsTo("threads.wait")).toHaveLength(0);
+    await f.service.result("parent", { threadId: "reviewer-1", offset: 0 }, signal),
+  ).toMatchObject({ output: "Follow-up reply" });
 });
 
-for (const retryOfFailed of [true, false])
-  test(`retry chain with earlier ${retryOfFailed ? "failed" : "completed"} attempt`, async () => {
-    const f = await load();
-    const r = await f.start({
-      mode: "deep",
-
-      summary: "Publish",
-      target: { branch: "scott/camera" },
-    });
-    const log = f.logs.get(r.threadIds[0])! as {
-      seq: number;
-      type: string;
-      scope: { kind: string; turnId?: string };
-      data: Record<string, unknown>;
-    }[];
-    const original = log[0]!;
-    log.push({
-      seq: 3,
-      type: "turn/completed",
-      scope: { kind: "turn", turnId: "turn-1" },
-      data: { status: retryOfFailed ? "failed" : "completed" },
-    });
-    log.push(
-      {
-        seq: 4,
-        type: "client/turn/requested",
-        scope: { kind: "thread" },
-        data: { ...original.data, requestId: "retry-1", retryOfRequestId: original.data.requestId },
-      },
-      {
-        seq: 5,
-        type: "turn/input/accepted",
-        scope: { kind: "turn", turnId: "retry-turn" },
-        data: { clientRequestId: "retry-1" },
-      },
-    );
-    await readDiff(f, r);
-    finishAll(f, r);
-    expect((await f.tool("scott_engineering_review_result", { runId: r.runId })).status).toBe(
-      retryOfFailed ? "complete" : "incomplete",
-    );
-  });
-
-test("queued reuse holds its reviewer until dispatch or cancellation", async () => {
-  const f = await load();
-  const first = await f.start({ kind: "design", summary: "Initial", workstream: "plan" });
-  finishAll(f, first);
-  f.setQueuedSend(true);
-  const queued = await f.start({ kind: "design", summary: "Next", workstream: "plan" });
-  expect(queued.reused).toBe(true);
-  expect(await f.tool("scott_engineering_review_result", { runId: queued.runId })).toMatchObject({
-    status: "queued",
-  });
-  expect(await f.start({ kind: "design", summary: "Next", workstream: "plan" })).toMatchObject({
-    runId: queued.runId,
-    busy: true,
-  });
-  const another = await f.start({ kind: "design", summary: "Another", workstream: "plan" });
-  expect(another).toMatchObject({ reused: false, status: "running" });
-  expect(another.threadIds).toEqual(["thr_reviewer_3", "thr_reviewer_4"]);
-  f.queued.clear();
-  expect(await f.tool("scott_engineering_review_result", { runId: queued.runId })).toMatchObject({
-    status: "incomplete",
-  });
-  f.setQueuedSend(false);
-  expect(
-    await f.start({ kind: "design", summary: "After cancel", workstream: "plan" }),
-  ).toMatchObject({ status: "running" });
-});
-
-test("large result preserves findings and a paged-report pointer", async () => {
-  const f = await load();
-  const r = await f.start({
-    mode: "deep",
-
-    summary: "Publish",
-    target: { branch: "scott/camera" },
-  });
-  await readDiff(f, r);
-  finishAll(f, r);
-  const message = f.logs
-    .get(r.threadIds[0])!
-    .find((event) => (event as { type: string }).type === "item/completed") as {
-    data: { item: { text: string } };
-  };
-  const report = JSON.parse(message.data.item.text);
-  report.findings = Array.from({ length: 9 }, () => ({
-    priority: 3,
-    title: "Minor",
-    body: "x".repeat(7900),
-    location: "a.ts:1",
-  }));
-  message.data.item.text = JSON.stringify(report);
-  expect(await f.tool("scott_engineering_review_result", { runId: r.runId })).toMatchObject({
-    status: "complete",
-
-    reviews: [
-      {
-        status: "complete",
-        findings: 9,
-      },
-      {
-        status: "complete",
-        findings: 0,
-      },
-    ],
-    nextOffset: 0,
-  });
-});
-
-test("result pagination finds assessment output beyond the first SDK event page", async () => {
-  const f = await load();
-  const r = await f.start({ kind: "design", summary: "Plan" });
-  const log = f.logs.get(r.threadIds[0])!;
-  for (let i = 0; i < 103; i++)
-    log.push({
-      seq: 3 + i,
-      type: "item/completed",
-      scope: { kind: "turn", turnId: "turn-1" },
-      data: { item: { type: "agentMessage", text: "intermediate" } },
-    });
-  // finish uses the last event's turn; the final message is the report.
-  finishAll(f, r);
-  expect(await f.tool("scott_engineering_review_result", { runId: r.runId })).toMatchObject({
-    status: "complete",
-    reviews: [{ report: { runId: r.runId } }, { report: { runId: r.runId } }],
-  });
-});
-
-test("multiple BB continuation retries bind to their original request and latest attempt", async () => {
-  const f = await load();
-  const r = await f.start({
-    mode: "deep",
-
-    summary: "Publish",
-    target: { branch: "scott/camera" },
-  });
-  const log = f.logs.get(r.threadIds[0])! as {
-    seq: number;
-    type: string;
-    scope: { kind: string; turnId?: string };
-    data: Record<string, unknown>;
-  }[];
-  const root = log[0]!;
-  for (let attempt = 2; attempt <= 3; attempt++) {
-    const previousTurn = attempt === 2 ? "turn-1" : "retry-2";
-    log.push({
-      seq: log.length + 1,
-      type: "turn/completed",
-      scope: { kind: "turn", turnId: previousTurn },
-      data: { status: "failed" },
-    });
-    log.push({
-      seq: log.length + 1,
-      type: "client/turn/requested",
-      scope: { kind: "thread" },
-      data: {
-        ...root.data,
-        requestId: `request-retry-${attempt}`,
-        retryOfRequestId: root.data.requestId,
-        retryAttempt: attempt,
-        input: [{ type: "text", text: "Please continue.", mentions: [], visibility: "agent-only" }],
-      },
-    });
-    log.push({
-      seq: log.length + 1,
-      type: "turn/input/accepted",
-      scope: { kind: "turn", turnId: `retry-${attempt}` },
-      data: { clientRequestId: `request-retry-${attempt}` },
-    });
-  }
-  await readDiff(f, r);
-  finishAll(f, r);
-  expect(await f.tool("scott_engineering_review_result", { runId: r.runId })).toMatchObject({
-    status: "complete",
-  });
-});
-
-test("a provider door rejection can be retried without an accepted turn", async () => {
-  const f = await load();
-  const r = await f.start({ kind: "design", summary: "Plan" });
-  const log = f.logs.get(r.threadIds[0])! as {
-    seq: number;
-    type: string;
-    scope: { kind: string; turnId?: string };
-    data: Record<string, unknown>;
-  }[];
-  const root = log[0]!;
-  log.splice(1);
-  log.push({
-    seq: 2,
-    type: "client/turn/rejected",
-    scope: { kind: "thread" },
-    data: { requestId: root.data.requestId, reason: "rate_limited" },
-  });
-  log.push(
-    {
-      seq: 3,
-      type: "client/turn/requested",
-      scope: { kind: "thread" },
-      data: {
-        ...root.data,
-        requestId: "door-retry",
-        retryOfRequestId: root.data.requestId,
-        input: (root.data.input as Record<string, unknown>[]).map((item) =>
-          Object.assign({}, item, { visibility: "agent-only" }),
-        ),
-      },
-    },
-    {
-      seq: 4,
-      type: "turn/input/accepted",
-      scope: { kind: "turn", turnId: "door-retry-turn" },
-      data: { clientRequestId: "door-retry" },
-    },
-  );
-  finishAll(f, r);
-  expect(await f.tool("scott_engineering_review_result", { runId: r.runId })).toMatchObject({
-    status: "complete",
-    reviews: [{ report: { runId: r.runId } }, { report: { runId: r.runId } }],
-  });
-});
-
-test("a retry cannot clear a review whose earlier attempt was steered", async () => {
-  const f = await load();
-  const r = await f.start({
-    mode: "deep",
-
-    summary: "Publish",
-    target: { branch: "scott/camera" },
-  });
-  const log = f.logs.get(r.threadIds[0])! as {
-    seq: number;
-    type: string;
-    scope: { kind: string; turnId?: string };
-    data: Record<string, unknown>;
-  }[];
-  const root = log[0]!;
-  log.push(
-    {
-      seq: 3,
-      type: "turn/input/accepted",
-      scope: { kind: "turn", turnId: "turn-1" },
-      data: { clientRequestId: "foreign-steering" },
-    },
-    {
-      seq: 4,
-      type: "turn/completed",
-      scope: { kind: "turn", turnId: "turn-1" },
-      data: { status: "failed" },
-    },
-    {
-      seq: 5,
-      type: "client/turn/requested",
-      scope: { kind: "thread" },
-      data: {
-        ...root.data,
-        requestId: "retry",
-        retryOfRequestId: root.data.requestId,
-        input: [{ type: "text", text: "Please continue.", visibility: "agent-only" }],
-      },
-    },
-    {
-      seq: 6,
-      type: "turn/input/accepted",
-      scope: { kind: "turn", turnId: "retry-turn" },
-      data: { clientRequestId: "retry" },
-    },
-  );
-  await readDiff(f, r);
-  finishAll(f, r);
-  expect((await f.tool("scott_engineering_review_result", { runId: r.runId })).status).toBe(
-    "incomplete",
-  );
-});
-
-test("queued continuation retry keeps the identical run pending", async () => {
-  const f = await load();
-  const r = await f.start({ kind: "design", summary: "Plan" });
-  f.records.get(r.threadIds[0])!.status = "error";
-  f.queued.set(r.threadIds[0], [
-    {
-      id: "retry-queue",
-      content: [{ type: "text", text: "Please continue.", visibility: "agent-only" }],
-      payload: { kind: "retry", retryOfTurnRequestId: "request-1" },
-    },
+test("each start launches new children and partial failures preserve returned thread IDs", async () => {
+  const f = fixture();
+  f.state.failProvider = "codex";
+  const first = await f.service.start("parent", request, signal);
+  expect(first.reviewers.map((item) => item.threadId)).toEqual(["reviewer-1"]);
+  expect(first.errors).toMatchObject([
+    { reviewer: { providerId: "codex" }, error: "Transport timed out" },
   ]);
-  expect(await f.tool("scott_engineering_review_result", { runId: r.runId })).toMatchObject({
-    status: "queued",
-  });
-  expect(await f.start({ kind: "design", summary: "Plan", reuse: "new" })).toMatchObject({
-    runId: r.runId,
-    busy: true,
-  });
+  f.state.failProvider = "";
+  const second = await f.service.start("parent", request, signal);
+  expect(second.reviewers.map((item) => item.threadId)).toEqual(["reviewer-3", "reviewer-4"]);
 });
 
-test("Deep fix verification reuses an eligible reviewer with a new maximum-effort turn", async () => {
-  const f = await load();
-  const first = await f.start({
-    mode: "deep",
-
-    summary: "Initial",
-    target: { branch: "scott/camera" },
-  });
-  await readDiff(f, first);
-  finishAll(f, first);
-  f.setHead("c".repeat(40));
-  const next = await f.start({
-    mode: "deep",
-
-    summary: "Verify fixes",
-    target: { branch: "scott/camera" },
-    reuse: { threadId: first.threadIds[0] },
-  });
-  expect(next).toMatchObject({
-    threadIds: [first.threadIds[0], "thr_reviewer_3"],
-    reused: true,
-    status: "running",
-  });
-  expect(next.runId).not.toBe(first.runId);
-  expect(f.host.harness.inspection.sdk.callsTo("threads.send")[0]?.[0]).toMatchObject({
-    reasoningLevel: "max",
-  });
-  finishAll(f, next);
-  expect((await f.tool("scott_engineering_review_result", { runId: next.runId })).status).toBe(
-    "complete",
-  );
-});
-
-for (const usage of [null, { usedTokens: 60000, modelContextWindow: 100000, estimated: true }])
-  test(`reuse starts fresh with ${usage ? "full" : "unknown"} context`, async () => {
-    const f = await load();
-    const first = await f.start({ kind: "design", summary: "Plan", workstream: "plan" });
-    finishAll(f, first);
-    f.setUsage(usage);
-    const next = await f.start({
-      kind: "design",
-      mode: "deep",
-      summary: "Follow-up",
-      workstream: "plan",
-    });
-    expect(next.threadIds).toEqual(["thr_reviewer_3", "thr_reviewer_4"]);
-    expect(next.reused).toBe(false);
-  });
-
-test("a descendant can read its parent's report but starts its own requested review", async () => {
-  const f = await load();
-  const request = {
-    mode: "deep",
-
-    summary: "Publish",
-    target: { branch: "scott/camera" },
-  };
-  const run = await f.start(request);
-  await readDiff(f, run);
-  finishAll(f, run);
-  await f.tool("scott_engineering_review_result", { runId: run.runId });
-  const helper = Object.assign(
-    makeThreadResponse({
-      id: "thr_helper",
-      parentThreadId: "thr_author",
-      projectId: "proj_1",
-      environmentId: "env_1",
-      providerId: "codex",
-    }),
-    { environment: { id: "env_1", hostId: "host_laptop", path: "/work/repo", status: "ready" } },
-  );
-  f.records.set(helper.id, helper);
-  const independent = await f.tool(
-    "scott_engineering_review_start",
-    { ...request, summary: "Review for PR" },
-    helper.id,
-  );
-  expect(independent.runId).not.toBe(run.runId);
-  expect(
-    await f.tool("scott_engineering_review_result", { runId: run.runId }, helper.id),
-  ).toMatchObject({
-    current: true,
-  });
-  expect(f.host.harness.inspection.sdk.callsTo("threads.spawn")).toHaveLength(4);
-  f.setHead("c".repeat(40));
-  const changed = await f.tool(
-    "scott_engineering_review_start",
-    { ...request, summary: "Changed candidate" },
-    helper.id,
-  );
-  expect(changed.runId).not.toBe(run.runId);
-  expect(f.host.harness.inspection.sdk.callsTo("threads.spawn")).toHaveLength(6);
-});
-
-test("descendants in another environment cannot inherit a parent's assessment", async () => {
-  const f = await load();
-  const r = await f.start({ kind: "design", summary: "Private plan" });
-  f.records.set(
-    "thr_other_env",
-    makeThreadResponse({
-      id: "thr_other_env",
-      parentThreadId: "thr_author",
-      projectId: "proj_1",
-      environmentId: "env_2",
-    }),
-  );
-  await expect(
-    f.tool(
-      "scott_engineering_review_context",
-      { runId: r.runId, section: "brief" },
-      "thr_other_env",
-    ),
-  ).rejects.toThrow("not available");
-});
-
-test("a later review leaves an unread result awaiting its author", async () => {
-  const f = await load();
-  const r = await f.start({ mode: "deep", kind: "design", summary: "Initial" });
-  finishAll(f, r);
-  await f.start({ mode: "deep", kind: "design", summary: "Replacement", reuse: "new" });
-  expect(r.threadIds.map((id: string) => f.metadata.get(id))).toMatchObject([
-    { reviewRun: { seat: 0, status: "running" } },
-    { reviewRun: { seat: 1, status: "running" } },
-  ]);
-  expect(await f.tool("scott_engineering_review_result", { runId: r.runId })).toMatchObject({
-    status: "complete",
-  });
-});
-
-test("CLI durations are milliseconds at the SDK wait boundary", async () => {
-  const f = await load();
-  const r = await f.start({ kind: "design", summary: "Plan" });
-  const result = await f.cli(["review-result", r.runId, "--wait", "2s"]);
-  expect(result.stderr).toBe("");
-  expect(result.exitCode).toBe(0);
-  expect(f.host.harness.inspection.sdk.callsTo("threads.wait")[0]?.[0]).toMatchObject({
-    timeoutMs: 2000,
-  });
-});
-
-test("failed reused dispatch projects failed metadata and allows a corrected retry", async () => {
-  const f = await load();
-  const first = await f.start({ kind: "design", summary: "Initial", workstream: "plan" });
-  finishAll(f, first);
-  f.setSendFailure("Invalid effort");
-  await expect(
-    f.start({ kind: "design", summary: "Follow-up", workstream: "plan" }),
-  ).rejects.toThrow("Invalid effort");
-  expect(f.metadata.get(first.threadIds[0])).toMatchObject({ reviewRun: { status: "failed" } });
-  f.setSendFailure(undefined);
-  expect(await f.start({ kind: "design", summary: "Corrected", workstream: "plan" })).toMatchObject(
-    { status: "running" },
-  );
-});
-
-test("a failed dispatch cancels a reused reviewer's queued prompt so a corrected retry is not busy", async () => {
-  const f = await load();
-  const first = await f.start({ kind: "design", summary: "Initial", workstream: "plan" });
-  finishAll(f, first);
-  const [queuedReviewer, archivedReviewer] = first.threadIds;
-  f.records.get(archivedReviewer)!.archivedAt = Date.now();
-  f.setQueuedSend(true);
-  f.setSpawnFailure("Unknown reviewer model");
-  await expect(
-    f.start({ kind: "design", summary: "Follow-up", workstream: "plan" }),
-  ).rejects.toThrow("Unknown reviewer model");
-  const failed = f.host.bb.storage
-    .database()
-    .prepare<[], { status: string }>("SELECT status FROM review_runs ORDER BY rowid DESC")
-    .get()!;
-  expect(failed.status).toBe("failed");
-  expect(f.queued.get(queuedReviewer)).toEqual([]);
-  f.setQueuedSend(false);
-  f.setSpawnFailure(undefined);
-  expect(await f.start({ kind: "design", summary: "Corrected", workstream: "plan" })).toMatchObject(
-    { status: "running", reused: true },
-  );
-});
-
-test("adopted dispatch reconciles its metadata before returning busy", async () => {
-  const f = await load();
-  f.setSpawnFailure("Gateway timeout");
-  await expect(f.start({ kind: "design", summary: "Plan" })).rejects.toThrow();
-  const db = f.host.bb.storage.database();
-  const row = db.prepare<[], { payload: string }>("SELECT payload FROM review_runs").get()!;
-  const run = JSON.parse(row.payload);
-  for (const [seat, providerId] of ["claude-code", "codex"].entries()) {
-    const child = makeThreadResponse({
-      id: `thr_adopted_${seat}`,
-      parentThreadId: "thr_author",
-      projectId: "proj_1",
-      environmentId: "env_1",
-      providerId,
-      originPluginId: "scott-engineering",
-      status: "active",
-    });
-    f.records.set(child.id, child);
-    f.metadata.set(child.id, { reviewRun: { id: run.id, seat, status: "starting" } });
-  }
-  f.setSpawnFailure(undefined);
-  expect(await f.start({ kind: "design", summary: "Plan" })).toMatchObject({
-    runId: run.id,
-    threadIds: ["thr_adopted_0", "thr_adopted_1"],
-    busy: true,
-  });
-  expect(f.metadata.get("thr_adopted_1")).toMatchObject({
-    reviewRun: { id: run.id, seat: 1, status: "running" },
-  });
-});
-
-test("upgrade recovery adopts a legacy child missing from the saved seat", async () => {
-  const f = await load();
-  f.setSpawnFailure("Gateway timeout");
-  await expect(f.start({ kind: "design", summary: "Plan" })).rejects.toThrow();
-  const db = f.host.bb.storage.database();
-  const run = JSON.parse(
-    db.prepare<[], { payload: string }>("SELECT payload FROM review_runs").get()!.payload,
-  );
-  // The bridge transfers this old run, but cannot copy metadata for unrecorded children.
-  run.contractVersion = 4;
-  run.request.scope = "segment";
-  run.fingerprint = createHash("sha256")
-    .update(
-      JSON.stringify({ request: { ...run.request, reuse: undefined }, target: null, evidence: [] }),
-    )
-    .digest("hex");
-  expect(run.seats.every((seat: { threadId: string | null }) => seat.threadId === null)).toBe(true);
-  db.prepare("UPDATE review_runs SET payload = ? WHERE id = ?").run(JSON.stringify(run), run.id);
-  for (const [seat, providerId] of ["claude-code", "codex"].entries()) {
-    const child = makeThreadResponse({
-      id: `thr_legacy_${seat}`,
-      parentThreadId: "thr_author",
-      projectId: "proj_1",
-      environmentId: "env_1",
-      providerId,
-      originPluginId: "review",
-      status: "active",
-    });
-    f.records.set(child.id, child);
-    f.legacyMetadata.set(child.id, { reviewRun: { id: run.id, seat, status: "starting" } });
-  }
-  f.setSpawnFailure(undefined);
-  expect(await f.start({ kind: "design", summary: "Plan" })).toMatchObject({
-    runId: run.id,
-    status: "running",
-    threadIds: ["thr_legacy_0", "thr_legacy_1"],
-    busy: true,
-  });
-  expect(f.metadata.get("thr_legacy_1")).toMatchObject({
-    reviewRun: { id: run.id, seat: 1, status: "running" },
-  });
-  expect(f.host.harness.inspection.sdk.callsTo("threads.spawn")).toHaveLength(1);
-});
-
-test("recovery adopts each interrupted panel's children by run and seat", async () => {
-  const f = await load();
-  f.setSpawnFailure("Gateway timeout");
-  await expect(f.start({ kind: "design", summary: "One" })).rejects.toThrow();
-  await expect(f.start({ kind: "design", summary: "Two" })).rejects.toThrow();
-  const runs = f.host.bb.storage
-    .database()
-    .prepare<[], { payload: string }>("SELECT payload FROM review_runs ORDER BY rowid")
-    .all()
-    .map((row) => JSON.parse(row.payload) as { id: string });
-  // Listed newest run and last seat first, so adoption cannot lean on spawn order.
-  for (const [index, run] of [...runs.entries()].reverse())
-    for (const [seat, providerId] of [...["claude-code", "codex"].entries()].reverse()) {
-      const child = makeThreadResponse({
-        id: `thr_${index}_${seat}`,
-        parentThreadId: "thr_author",
-        projectId: "proj_1",
-        environmentId: "env_1",
-        providerId,
-        originPluginId: "scott-engineering",
-        status: "active",
-      });
-      f.records.set(child.id, child);
-      f.metadata.set(child.id, { reviewRun: { id: run.id, seat, status: "starting" } });
-    }
-  f.setSpawnFailure(undefined);
-  expect(await f.start({ kind: "design", summary: "Two" })).toMatchObject({
-    runId: runs[1]!.id,
-    threadIds: ["thr_1_0", "thr_1_1"],
-    busy: true,
-  });
-  expect(await f.tool("scott_engineering_review_result", { runId: runs[0]!.id })).toMatchObject({
-    status: "running",
-    threadIds: ["thr_0_0", "thr_0_1"],
-  });
-  expect(f.host.harness.inspection.sdk.callsTo("threads.spawn")).toHaveLength(2);
-});
-
-test("a partial dispatch keeps its reviewer from other runs until it settles", async () => {
-  const f = await load();
-  f.setBeforeSpawnReturn(async () => f.setSpawnFailure("Gateway timeout"));
-  await expect(f.start({ kind: "design", summary: "One", workstream: "plan" })).rejects.toThrow(
-    "Gateway timeout",
-  );
-  f.setSpawnFailure(undefined);
-  f.setBeforeSpawnReturn(async () => {});
-  const db = f.host.bb.storage.database();
-  const partial = JSON.parse(
-    db.prepare<[], { payload: string }>("SELECT payload FROM review_runs").get()!.payload,
-  );
-  f.finish("thr_reviewer_1", partial.id);
-  const other = await f.start({ kind: "design", summary: "Two", workstream: "plan" });
-  expect(other).toMatchObject({
-    status: "running",
-    reused: false,
-    threadIds: ["thr_reviewer_2", "thr_reviewer_3"],
-  });
-  partial.startedAt = Date.now() - 121000;
-  db.prepare("UPDATE review_runs SET payload=? WHERE id=?").run(
-    JSON.stringify(partial),
-    partial.id,
-  );
-  await f.start({ kind: "design", summary: "Three", workstream: "plan" });
-  expect(f.host.harness.inspection.sdk.callsTo("threads.stop").map(([args]) => args)).toEqual([
-    { threadId: "thr_reviewer_1" },
-  ]);
-  finishAll(f, other);
-  expect(await f.tool("scott_engineering_review_result", { runId: other.runId })).toMatchObject({
-    status: "complete",
-  });
-});
-
-test("editing the reviewer persona cannot change the run binding or output contract", async () => {
-  const sourceRoot = fileURLToPath(new URL("../../../", import.meta.url));
-  const isolatedRoot = await mkdtemp(join(tmpdir(), "review-persona-"));
-  try {
-    await cp(join(sourceRoot, "src"), join(isolatedRoot, "src"), { recursive: true });
-    await cp(join(sourceRoot, "instructions"), join(isolatedRoot, "instructions"), {
-      recursive: true,
-    });
-    await cp(join(sourceRoot, "skills"), join(isolatedRoot, "skills"), { recursive: true });
-    await copyFile(join(sourceRoot, "package.json"), join(isolatedRoot, "package.json"));
-    await symlink(
-      join(sourceRoot, "../../node_modules"),
-      join(isolatedRoot, "node_modules"),
-      "dir",
-    );
-    const path = join(isolatedRoot, "instructions/review-reviewer.md");
-    await writeFile(path, "An editable persona preamble.\n\n" + (await readFile(path, "utf8")));
-    const isolatedPlugin = (await import(join(isolatedRoot, "src/server/server.ts"))).default;
-    const f = await load("codex", "gpt-6-astra", null, isolatedPlugin);
-    const run = await f.start({ kind: "design", summary: "Edited persona" });
-    finishAll(f, run);
-    expect(await f.tool("scott_engineering_review_result", { runId: run.runId })).toMatchObject({
-      status: "complete",
-      reviews: [
-        { report: { status: "complete", coverage: "Checked the complete fixed candidate" } },
-        { report: { status: "complete", coverage: "Checked the complete fixed candidate" } },
-      ],
-    });
-    const prompt = (
-      f.host.harness.inspection.sdk.callsTo("threads.spawn")[0]![0] as { prompt: string }
-    ).prompt;
-    expect(prompt.slice(0, prompt.indexOf("\n"))).toBe(
-      `Review run ${run.runId}: design, standard.`,
-    );
-    expect(prompt).toContain("An editable persona preamble.");
-    expect(prompt).toContain(`Return only JSON: {"runId":"${run.runId}"`);
-  } finally {
-    await rm(isolatedRoot, { recursive: true, force: true });
-  }
-});
-
-test("implementation reviewers get the rubric and code-quality lens; design reviewers do not", async () => {
-  const instruction = (name: string) =>
-    readFile(new URL(`../../../instructions/${name}.md`, import.meta.url), "utf8").then((text) =>
-      text.trim(),
-    );
-  const [rubric, codeQuality] = await Promise.all([
-    instruction("review-rubric"),
-    instruction("review-code-quality"),
-  ]);
-  const promptFor = async (request: Record<string, unknown>) => {
-    const f = await load();
-    const run = await f.start(request);
-    const [spawn] = f.host.harness.inspection.sdk.callsTo("threads.spawn")[0] as [
-      { prompt: string },
-    ];
-    await f.host.harness.lifecycle.dispose();
-    return { runId: run.runId, prompt: spawn.prompt };
-  };
-
-  const impl = await promptFor({ summary: "Check the camera", target: { branch: "scott/camera" } });
-  expect(impl.prompt.slice(0, impl.prompt.indexOf("\n"))).toBe(
-    `Review run ${impl.runId}: implementation, standard.`,
-  );
-  const contract = impl.prompt.indexOf(`Return only JSON: {"runId":"${impl.runId}"`);
-  expect(impl.prompt.indexOf(rubric)).toBeGreaterThan(0);
-  expect(impl.prompt.indexOf(codeQuality)).toBeGreaterThan(impl.prompt.indexOf(rubric));
-  expect(contract).toBeGreaterThan(impl.prompt.indexOf(codeQuality));
-
-  const design = await promptFor({ kind: "design", summary: "Choose a queue boundary" });
-  expect(design.prompt.slice(0, design.prompt.indexOf("\n"))).toBe(
-    `Review run ${design.runId}: design, standard.`,
-  );
-  expect(design.prompt).toContain(`Return only JSON: {"runId":"${design.runId}"`);
-  expect(design.prompt).not.toContain(rubric);
-  expect(design.prompt).not.toContain(codeQuality);
-});
-
-test("reviewers can read pinned context before spawn returns", async () => {
-  const f = await load();
-  f.setBeforeSpawnReturn(async (threadId, runId) => {
-    await f.tool("scott_engineering_review_context", { runId, section: "diff" }, threadId);
-  });
-  const run = await f.start({
-    mode: "deep",
-
-    summary: "Publish",
-    target: { branch: "scott/camera" },
-  });
-  finishAll(f, run);
-  expect(await f.tool("scott_engineering_review_result", { runId: run.runId })).toMatchObject({
-    status: "complete",
-
-    reviews: [{ status: "complete" }, { status: "complete" }],
-  });
-});
-
-test("new evidence starts another assessment", async () => {
-  const f = await load();
-  const request = {
-    mode: "deep",
-
-    summary: "Publish",
-    target: { branch: "scott/camera" },
-  };
-  const first = await f.start(request);
-  await readDiff(f, first);
-  finishAll(f, first);
-  await f.tool("scott_engineering_review_result", { runId: first.runId });
-  f.setEvidence("New candidate evidence to reconsider");
-  const next = await f.start({
-    ...request,
-    summary: "Reconsider new evidence",
-    evidence: [{ label: "New evidence", path: "/tmp/new-evidence.txt" }],
-  });
-  expect(next.runId).not.toBe(first.runId);
-  expect(next).toMatchObject({ threadIds: first.threadIds, status: "running", reused: true });
-  const evidence = await f.tool(
-    "scott_engineering_review_context",
-    { runId: next.runId, section: "evidence" },
-    next.threadIds[1],
-  );
-  expect(JSON.parse(evidence.text).map((item: { text: string }) => item.text)).toEqual([
-    "New candidate evidence to reconsider",
-  ]);
-});
-
-test("explicit reviewer selection starts a new assessment even for an identical request", async () => {
-  const f = await load();
-  const request = {
-    mode: "deep",
-
-    summary: "Publish",
-    target: { branch: "scott/camera" },
-  };
-  const first = await f.start(request);
-  await readDiff(f, first);
-  finishAll(f, first);
-  await f.tool("scott_engineering_review_result", { runId: first.runId });
-  const next = await f.start({ ...request, reuse: { threadId: first.threadIds[1] } });
-  expect(next.runId).not.toBe(first.runId);
-  expect(next).toMatchObject({
-    threadIds: ["thr_reviewer_3", first.threadIds[1]],
-    status: "running",
-    reused: true,
-  });
-  finishAll(f, next);
-  // An identical request answers with its unread run until the author settles it.
-  await f.tool("scott_engineering_review_result", { runId: next.runId });
-  await expect(
-    f.start({
-      ...request,
-      summary: "Quick check",
-      mode: "quick",
-      reuse: { threadId: first.threadIds[1] },
-    }),
-  ).rejects.toThrow("matches no reviewer model");
-  await expect(f.start({ ...request, reuse: { threadId: "thr_author" } })).rejects.toThrow(
-    "is not a reviewer from an earlier run",
-  );
-});
-
-function failReviewer(f: Fixture, threadId: string, category = "rate-limit") {
-  const events = f.logs.get(threadId)! as {
-    seq: number;
-    type: string;
-    scope: { kind: string; turnId?: string };
-    data: { requestId?: string };
-  }[];
-  const request = events.findLast((event) => event.type === "client/turn/requested")!;
-  const turnId = events.findLast((event) => event.type === "turn/input/accepted")!.scope.turnId!;
-  events.push({
-    seq: events.length + 1,
-    type: "turn/completed",
-    scope: { kind: "turn", turnId },
-    data: { status: "failed" },
-  } as never);
-  f.records.get(threadId)!.status = "error";
-  return makeTurnFailedEvent({
-    threadId,
-    requestId: request.data.requestId!,
-    turnId,
-    errorInfo: {
-      category: category as "rate-limit",
-      providerCode: "usage_limit_reached",
-      httpStatusCode: 429,
-    },
-  });
-}
-const failed = (f: Fixture, event: ReturnType<typeof failReviewer>) =>
-  f.host.harness.behavior.emitThreadEvent("turn.failed", event);
-const sends = (f: Fixture) =>
-  f.host.harness.inspection.sdk.callsTo("threads.send").map(([args]) => args);
-const spawns = (f: Fixture) =>
-  f.host.harness.inspection.sdk
-    .callsTo("threads.spawn")
-    .map(([args]) => args as Record<string, unknown>);
-
-for (const [original, replacement] of [
-  ["gpt-6-astra", "gpt-6-sol"],
-  ["gpt-6-sol", "gpt-6-astra"],
-] as const) {
-  test(`Quick usage limit falls back from ${original} to ${replacement} and validates the new assessment`, async () => {
-    const f = await load("claude-code");
-    await f.host.harness.behavior.setSettings({ reviewCodexModel: original });
-    const run = await f.start({
-      mode: "quick",
-      summary: "Check",
-      target: { branch: "scott/camera" },
-    });
-    const [reviewer] = run.threadIds;
-    await f.tool(
-      "scott_engineering_review_context",
-      { runId: run.runId, section: "diff" },
-      reviewer,
-    );
-    const failure = failReviewer(f, reviewer);
-    await Promise.all([failed(f, failure), failed(f, failure)]);
-    expect(sends(f)).toEqual([
-      expect.objectContaining({
-        threadId: reviewer,
-        model: replacement,
-        reasoningLevel: "medium",
-        serviceTier: "fast",
-      }),
-    ]);
-    expect(f.records.get(reviewer)?.providerId).toBe("codex");
-    expect(await f.tool("scott_engineering_review_result", { runId: run.runId })).toMatchObject({
-      status: "running",
-      target: { base, head },
-    });
-    await f.tool(
-      "scott_engineering_review_context",
-      { runId: run.runId, section: "diff" },
-      reviewer,
-    );
-    f.finish(reviewer, run.runId);
-    expect(await f.tool("scott_engineering_review_result", { runId: run.runId })).toMatchObject({
-      status: "complete",
-      reviews: [
-        {
-          reviewer: { providerId: "codex", model: replacement },
-          threadId: reviewer,
-          status: "complete",
-          fallback: {
-            from: { providerId: "codex", model: original },
-            threadId: reviewer,
-            note: `${original} hit a usage limit; this review reran on ${replacement}.`,
-          },
-        },
-      ],
-    });
-    await f.host.harness.lifecycle.dispose();
-  });
-}
-
-test("a panel seat that hits a usage limit reruns on the other family while the other keeps its own", async () => {
-  const f = await load();
-  const run = await f.start({
-    mode: "deep",
-
-    summary: "Publish",
-    target: { branch: "scott/camera" },
-  });
-  const [claude, codex] = run.threadIds;
-  await readDiff(f, run);
-  const failure = failReviewer(f, claude);
-  await Promise.all([failed(f, failure), failed(f, failure)]);
-  expect(sends(f)).toEqual([]);
-  expect(spawns(f)).toHaveLength(3);
-  expect(spawns(f)[2]).toMatchObject({
-    providerId: "codex",
-    model: "gpt-6-astra",
-    reasoningLevel: "max",
-    serviceTier: "fast",
-    title: "Deep implementation review (Codex)",
-    pluginMetadata: {
-      reviewRun: {
-        id: run.runId,
-        seat: 0,
-        reviewer: { providerId: "codex", model: "gpt-6-astra" },
-      },
-    },
-  });
-  expect(new Set(spawns(f).map((spawn) => spawn.prompt)).size).toBe(1);
-  expect(f.metadata.get(claude)).toMatchObject({
-    reviewRun: {
-      id: run.runId,
-      seat: 0,
-      status: "failed",
-      reviewer: { providerId: "claude-code", model: "claude-opus-5-5[1m]" },
-    },
-  });
-  const moved = await f.tool("scott_engineering_review_result", { runId: run.runId });
-  expect(moved).toMatchObject({
-    status: "running",
-    threadIds: ["thr_reviewer_3", codex],
-    reviewers: [
-      { providerId: "codex", model: "gpt-6-astra" },
-      { providerId: "codex", model: "gpt-6-astra" },
-    ],
-  });
-  await f.tool(
-    "scott_engineering_review_context",
-    { runId: run.runId, section: "diff" },
-    "thr_reviewer_3",
-  );
-  finishAll(f, moved);
-  const done = await f.tool("scott_engineering_review_result", { runId: run.runId });
-  expect(done).toMatchObject({
-    status: "complete",
-
-    reviews: [
-      {
-        reviewer: { providerId: "codex", model: "gpt-6-astra" },
-        threadId: "thr_reviewer_3",
-        status: "complete",
-        fallback: {
-          from: { providerId: "claude-code", model: "claude-opus-5-5[1m]" },
-          threadId: claude,
-          note: "Claude hit a usage limit; this seat reran on Codex, so the panel ran on one family.",
-        },
-      },
-      {
-        reviewer: { providerId: "codex", model: "gpt-6-astra" },
-        threadId: codex,
-        status: "complete",
-      },
-    ],
-  });
-  expect(done.reviews[1]).not.toHaveProperty("fallback");
-});
-
-test("Quick fallback stays on Claude and stops after a second usage limit", async () => {
-  const f = await load();
-  const run = await f.start({ kind: "design", mode: "quick", summary: "Choose a queue" });
-  const [reviewer] = run.threadIds;
-  await failed(f, failReviewer(f, reviewer));
-  expect(sends(f)[0]).toMatchObject({ model: "claude-sonnet-5-5[1m]", reasoningLevel: "medium" });
-  expect(f.records.get(reviewer)?.providerId).toBe("claude-code");
-  await failed(f, failReviewer(f, reviewer));
-  expect(await f.tool("scott_engineering_review_result", { runId: run.runId })).toMatchObject({
-    status: "incomplete",
-  });
-  expect(sends(f)).toHaveLength(1);
-});
-
-test("a panel seat falls back once, and a panel on one family has nowhere left to move", async () => {
-  const f = await load();
-  const run = await f.start({ kind: "design", summary: "Plan" });
-  const [claude, codex] = run.threadIds;
-  await failed(f, failReviewer(f, claude));
-  await failed(f, failReviewer(f, "thr_reviewer_3"));
-  await failed(f, failReviewer(f, codex));
-  expect(spawns(f)).toHaveLength(3);
-  expect(sends(f)).toHaveLength(0);
-  expect(await f.tool("scott_engineering_review_result", { runId: run.runId })).toMatchObject({
-    status: "incomplete",
-    threadIds: ["thr_reviewer_3", codex],
-    reviews: [
-      { threadId: "thr_reviewer_3", status: "failed", fallback: { threadId: claude } },
-      { threadId: codex, status: "failed" },
-    ],
-  });
-});
-
-test("a rejected fallback spawn returns the seat to its failed assessment", async () => {
-  const f = await load();
-  const run = await f.start({ kind: "design", summary: "Plan" });
-  const [claude, codex] = run.threadIds;
-  f.setSpawnFailure("Model is not available");
-  await failed(f, failReviewer(f, claude));
-  f.finish(codex, run.runId);
-  const result = await f.tool("scott_engineering_review_result", { runId: run.runId });
-  expect(result).toMatchObject({
-    status: "incomplete",
-    threadIds: [claude, codex],
-    reviewers: [
-      { providerId: "claude-code", model: "claude-opus-5-5[1m]" },
-      { providerId: "codex", model: "gpt-6-astra" },
-    ],
-    reviews: [
-      { threadId: claude, status: "failed" },
-      { threadId: codex, status: "complete" },
-    ],
-  });
-  expect(result.reviews[0]).not.toHaveProperty("fallback");
-});
-
-test("an ambiguous fallback spawn adopts the seat's new child, never its exhausted thread", async () => {
-  const f = await load();
-  const run = await f.start({ kind: "design", summary: "Plan" });
-  const [claude, codex] = run.threadIds;
-  f.setBeforeSpawnReturn(async () => {
-    throw new Error("Gateway timeout");
-  });
-  await failed(f, failReviewer(f, claude));
-  f.setBeforeSpawnReturn(async () => {});
-  const moved = await f.tool("scott_engineering_review_result", { runId: run.runId });
-  expect(moved).toMatchObject({ status: "running", threadIds: ["thr_reviewer_3", codex] });
-  finishAll(f, moved);
-  expect(await f.tool("scott_engineering_review_result", { runId: run.runId })).toMatchObject({
-    status: "complete",
-    reviews: [{ threadId: "thr_reviewer_3", fallback: { threadId: claude } }, { threadId: codex }],
-  });
-});
-
-test("a fallback child that never appears expires back to the failed assessment", async () => {
-  const f = await load();
-  const run = await f.start({ kind: "design", summary: "Plan" });
-  const [claude, codex] = run.threadIds;
-  f.setSpawnFailure("Gateway timeout");
-  await failed(f, failReviewer(f, claude));
-  expect(await f.tool("scott_engineering_review_result", { runId: run.runId })).toMatchObject({
-    status: "starting",
-    threadIds: [null, codex],
-    error: "Gateway timeout",
-  });
-  const db = f.host.bb.storage.database();
-  const row = db
-    .prepare<[string], { payload: string }>("SELECT payload FROM review_runs WHERE id=?")
-    .get(run.runId)!;
-  const stored = JSON.parse(row.payload);
-  stored.seats[0].fallback.at -= 121000;
-  db.prepare("UPDATE review_runs SET payload=? WHERE id=?").run(JSON.stringify(stored), run.runId);
-  f.finish(codex, run.runId);
-  expect(await f.tool("scott_engineering_review_result", { runId: run.runId })).toMatchObject({
-    status: "incomplete",
-    threadIds: [claude, codex],
-    reviews: [
-      { threadId: claude, status: "failed" },
-      { threadId: codex, status: "complete" },
-    ],
-  });
-  expect(f.host.harness.inspection.sdk.callsTo("threads.stop")).toHaveLength(0);
-});
-
-test("unrelated failures do not fall back, but a later usage limit does", async () => {
-  const f = await load("claude-code");
-  const run = await f.start({ kind: "design", mode: "quick", summary: "Choose a queue" });
-  const failure = failReviewer(f, run.threadIds[0], "unauthorized");
-  await failed(f, failure);
-  expect(await f.tool("scott_engineering_review_result", { runId: run.runId })).toMatchObject({
-    status: "incomplete",
-  });
-  expect(sends(f)).toHaveLength(0);
-  await failed(f, { ...failure, errorInfo: { ...failure.errorInfo!, category: "rate-limit" } });
-  expect(await f.tool("scott_engineering_review_result", { runId: run.runId })).toMatchObject({
-    status: "running",
-  });
-});
-
-test("unavailable or insufficient-effort Quick fallback models leave the review incomplete", async () => {
-  for (const models of [
-    [],
-    reviewerCatalog
-      .filter((m) => m.model === "gpt-6-sol")
-      .map((m) =>
-        Object.assign({}, m, {
-          supportedReasoningEfforts: [{ reasoningEffort: "max", description: "" }],
-        }),
+test("only a reviewer or its parent can read the assignment and reply", async () => {
+  const f = fixture();
+  await f.service.start("parent", request, signal);
+  for (const caller of ["stranger", "reviewer-2"]) {
+    await expect(
+      f.service.result(caller, { threadId: "reviewer-1", offset: 0 }, signal),
+    ).rejects.toThrow("Only the reviewer and its parent");
+    await expect(
+      f.service.context(
+        caller,
+        { threadId: "reviewer-1", section: "file", path: "secret.ts", side: "head", offset: 0 },
+        signal,
       ),
-  ]) {
-    const f = await load("claude-code");
-    f.host.harness.inspection.sdk.stub("providers.models", async () => ({ models }) as never);
-    const run = await f.start({
-      mode: "quick",
-      summary: "Check",
-      target: { branch: "scott/camera" },
-    });
-    await failed(f, failReviewer(f, run.threadIds[0]));
-    expect(await f.tool("scott_engineering_review_result", { runId: run.runId })).toMatchObject({
-      status: "incomplete",
-    });
-    expect(sends(f)).toHaveLength(0);
+    ).rejects.toThrow("Only the reviewer and its parent");
   }
+  expect(
+    await f.service.result("reviewer-1", { threadId: "reviewer-1", offset: 0 }, signal),
+  ).toMatchObject({ output: null });
 });
 
-for (const mode of ["quick", "standard"] as const)
-  test(`${mode} fallback removes scheduled retries of the exhausted model, including ones queued late`, async () => {
-    const f = await load("claude-code");
-    const run = await f.start({ kind: "design", mode, summary: "Choose a queue" });
-    const [reviewer] = run.threadIds;
-    const failure = failReviewer(f, reviewer);
-    const retry = (id: string) =>
-      makeQueueEntry({
-        id,
-        threadId: reviewer,
-        model: "gpt-6-astra",
-        payload: {
-          kind: "retry",
-          retryOfTurnRequestId: failure.requestId,
-          attempt: 2,
-          reason: "Usage limit",
-        },
-      });
-    f.queued.set(reviewer, [retry("early")]);
-    await failed(f, failure);
-    expect(f.queued.get(reviewer)).toEqual([]);
-    const late = retry("late");
-    f.queued.set(reviewer, [late]);
-    await f.host.harness.behavior.emitThreadEvent("message.queued", { entry: late });
-    expect(f.queued.get(reviewer)).toEqual([]);
-    const after = await f.tool("scott_engineering_review_result", { runId: run.runId });
-    expect(after).toMatchObject({ status: "running" });
-    finishAll(f, after);
-    expect(await f.tool("scott_engineering_review_result", { runId: run.runId })).toMatchObject({
-      status: "complete",
-    });
-  });
-
-for (const mode of ["quick", "standard"] as const)
-  test(`reload recovers an unobserved ${mode} usage failure without duplicating its fallback`, async () => {
-    const f = await load("claude-code");
-    const run = await f.start({ kind: "design", mode, summary: "Choose a queue" });
-    const [reviewer] = run.threadIds;
-    const failure = failReviewer(f, reviewer);
-    f.logs.get(reviewer)!.push({
-      seq: f.logs.get(reviewer)!.length + 1,
-      type: "provider/error",
-      scope: { kind: "turn", turnId: failure.turnId },
-      data: { errorInfo: failure.errorInfo, message: "Usage limit reached" },
-    });
-    const { ReviewService } = await import("../lib/review-service.ts");
-    const restored = new ReviewService(f.host.bb, async () => ({
-      claudeModel: "claude-opus-5-5[1m]",
-      codexModel: "gpt-6-astra",
-    }));
-    await restored.reconcileFailures(new AbortController().signal);
-    const after = await f.tool("scott_engineering_review_result", { runId: run.runId });
-    expect(after).toMatchObject({ status: "running" });
-    await restored.reconcileFailures(new AbortController().signal);
-    await restored.reviewerFailed(failure);
-    finishAll(f, after);
-    expect(await f.tool("scott_engineering_review_result", { runId: run.runId })).toMatchObject({
-      status: "complete",
-    });
-    expect([sends(f).length, spawns(f).length]).toEqual(mode === "quick" ? [1, 1] : [0, 3]);
-  });
-
-test("usage failures from an unrelated manual turn never restart the review", async () => {
-  const f = await load("claude-code");
-  const run = await f.start({ kind: "design", mode: "quick", summary: "Choose a queue" });
-  const [reviewer] = run.threadIds;
-  const events = f.logs.get(reviewer)!;
-  events.push({
-    seq: events.length + 1,
-    type: "client/turn/requested",
-    data: { requestId: "manual", input: [{ type: "text", text: "A different task" }] },
-    scope: { kind: "thread" },
-  });
-  await failed(f, failReviewer(f, reviewer));
-  expect(await f.tool("scott_engineering_review_result", { runId: run.runId })).toMatchObject({
-    status: "incomplete",
-  });
-  expect(sends(f)).toHaveLength(0);
+test("workers cannot recursively launch and implementation requires a fixed target", async () => {
+  const f = fixture();
+  await expect(
+    f.service.start("parent", { ...request, target: undefined }, signal),
+  ).rejects.toThrow("named GitButler branch");
+  await f.service.start("parent", request, signal);
+  await expect(f.service.start("reviewer-1", request, signal)).rejects.toThrow("Workers cannot");
+  for (const branch of ["HEAD", "HEAD~1", "gitbutler/workspace"])
+    expect(requestSchema.safeParse({ summary: "Review", target: { branch } }).success).toBe(false);
 });
 
-for (const [original, available, expected] of [
-  ["gpt-6.1-sol", ["gpt-5.6-astra", "gpt-6-astra"], "gpt-6-astra"],
-  ["claude-sonnet-5-5[1m]", ["claude-opus-5-5[1m]"], "claude-opus-5-5[1m]"],
-] as const) {
-  test(`Quick fallback selects an available alternate family for ${original}`, async () => {
-    const f = await load(original.startsWith("gpt") ? "claude-code" : "codex");
-    await f.host.harness.behavior.setSettings(
-      original.startsWith("gpt") ? { reviewCodexModel: original } : { reviewClaudeModel: original },
-    );
-    const models = available.map((model) => ({
-      model,
-      supportedReasoningEfforts: [{ reasoningEffort: "medium" }],
-    }));
-    f.host.harness.inspection.sdk.stub("providers.models", async () => ({ models }) as never);
-    const run = await f.start({ kind: "design", mode: "quick", summary: "Choose a queue" });
-    await failed(f, failReviewer(f, run.threadIds[0]));
-    expect(sends(f)[0]).toMatchObject({ model: expected });
-    f.finish(run.threadIds[0], run.runId);
-    expect(await f.tool("scott_engineering_review_result", { runId: run.runId })).toMatchObject({
-      status: "complete",
-    });
-  });
-}
-
-test("Quick fallback never selects a catalog model routed to a different provider", async () => {
-  const f = await load("claude-code");
-  f.host.harness.inspection.sdk.stub(
-    "providers.models",
-    async () =>
-      ({
-        models: reviewerCatalog.map((model) =>
-          Object.assign({}, model, { routeProviderId: "other-provider" }),
-        ),
-      }) as never,
+test("designs need no source target and explicit quick requests launch one reviewer", async () => {
+  const f = fixture();
+  const receipt = await f.service.start(
+    "parent",
+    requestSchema.parse({ summary: "Design", kind: "design", mode: "quick", brief: "Proposal" }),
+    signal,
   );
-  const run = await f.start({ kind: "design", mode: "quick", summary: "Choose a queue" });
-  await failed(f, failReviewer(f, run.threadIds[0]));
-  expect(await f.tool("scott_engineering_review_result", { runId: run.runId })).toMatchObject({
-    status: "incomplete",
-  });
-  expect(sends(f)).toHaveLength(0);
+  expect(receipt.target).toBeNull();
+  expect(receipt.reviewers).toHaveLength(1);
+  expect(f.spawns[0]!.reasoningLevel).toBe("medium");
+  await expect(
+    f.service.context("reviewer-1", { section: "diff", side: "head", offset: 0 }, signal),
+  ).rejects.toThrow("no repository target");
 });
 
-for (const mode of ["quick", "standard"] as const)
-  test(`a ${mode} usage failure before spawn returns still starts the fallback`, async () => {
-    const f = await load("claude-code");
-    let fallback: Promise<unknown> | undefined;
-    f.setBeforeSpawnReturn(async (threadId) => {
-      fallback ??= failed(f, failReviewer(f, threadId));
-    });
-    const run = await f.start({ kind: "design", mode, summary: "Choose a queue" });
-    await fallback;
-    const after = await f.tool("scott_engineering_review_result", { runId: run.runId });
-    finishAll(f, after);
-    expect(await f.tool("scott_engineering_review_result", { runId: run.runId })).toMatchObject({
-      status: "complete",
-      reviews: [
-        {
-          reviewer:
-            mode === "quick"
-              ? { providerId: "codex", model: "gpt-6-sol" }
-              : { providerId: "claude-code", model: "claude-opus-5-5[1m]" },
-          fallback: { from: { providerId: "codex", model: "gpt-6-astra" } },
-        },
-        ...(mode === "quick" ? [] : [{ reviewer: { providerId: "claude-code" } }]),
-      ],
-    });
-  });
-
-for (const late of [true, false])
-  test(`a fallback during a partial dispatch keeps ${late ? "adopting" : "expiring"} the missing seat`, async () => {
-    const f = await load();
-    f.setBeforeSpawnReturn(async () => f.setSpawnFailure("Gateway timeout"));
-    await expect(f.start({ kind: "design", summary: "Plan" })).rejects.toThrow("Gateway timeout");
-    f.setSpawnFailure(undefined);
-    f.setBeforeSpawnReturn(async () => {});
-    const db = f.host.bb.storage.database();
-    const runId = db.prepare<[], { id: string }>("SELECT id FROM review_runs").get()!.id;
-    await failed(f, failReviewer(f, "thr_reviewer_1"));
-    expect(await f.tool("scott_engineering_review_result", { runId })).toMatchObject({
-      status: "starting",
-      threadIds: ["thr_reviewer_2", null],
-    });
-    if (late) {
-      const child = makeThreadResponse({
-        id: "thr_late",
-        parentThreadId: "thr_author",
-        projectId: "proj_1",
-        environmentId: "env_1",
-        providerId: "codex",
-        originPluginId: "scott-engineering",
-        status: "active",
-      });
-      f.records.set(child.id, child);
-      f.metadata.set(child.id, { reviewRun: { id: runId, seat: 1, status: "starting" } });
-      const adopted = await f.tool("scott_engineering_review_result", { runId });
-      expect(adopted).toMatchObject({
-        status: "running",
-        threadIds: ["thr_reviewer_2", "thr_late"],
-      });
-      f.finish("thr_reviewer_2", runId);
-      f.records.get("thr_late")!.status = "idle";
-      return;
-    }
-    const row = db.prepare<[], { payload: string }>("SELECT payload FROM review_runs").get()!;
-    const stored = JSON.parse(row.payload);
-    stored.startedAt -= 121000;
-    db.prepare("UPDATE review_runs SET payload=? WHERE id=?").run(JSON.stringify(stored), runId);
-    expect(await f.tool("scott_engineering_review_result", { runId })).toMatchObject({
-      status: "failed",
-      error: "Dispatch expired without a child for every reviewer",
-    });
-  });
-
-test("reload adopts a starting run's children and still falls back a seat that hit its limit", async () => {
-  const f = await load();
-  let spawned = 0;
-  f.setBeforeSpawnReturn(async () => {
-    if (++spawned === 2) throw new Error("Gateway timeout");
-  });
-  await expect(f.start({ kind: "design", summary: "Plan" })).rejects.toThrow("Gateway timeout");
-  f.setBeforeSpawnReturn(async () => {});
-  const runId = f.host.bb.storage
-    .database()
-    .prepare<[], { id: string }>("SELECT id FROM review_runs")
-    .get()!.id;
-  const failure = failReviewer(f, "thr_reviewer_1");
-  f.logs.get("thr_reviewer_1")!.push({
-    seq: f.logs.get("thr_reviewer_1")!.length + 1,
-    type: "provider/error",
-    scope: { kind: "turn", turnId: failure.turnId },
-    data: { errorInfo: failure.errorInfo, message: "Usage limit reached" },
-  });
-  const { ReviewService } = await import("../lib/review-service.ts");
-  await new ReviewService(f.host.bb, async () => ({
-    claudeModel: "claude-opus-5-5[1m]",
-    codexModel: "gpt-6-astra",
-  })).reconcileFailures(new AbortController().signal);
-  const after = await f.tool("scott_engineering_review_result", { runId });
-  expect(after).toMatchObject({
-    status: "running",
-    threadIds: ["thr_reviewer_3", "thr_reviewer_2"],
-    reviewers: [{ providerId: "codex" }, { providerId: "codex" }],
-  });
-  finishAll(f, after);
-  expect(await f.tool("scott_engineering_review_result", { runId })).toMatchObject({
-    status: "complete",
-  });
-});
-
-test("a large result keeps each seat's fallback provenance, also in the paged reports", async () => {
-  const f = await load();
-  const run = await f.start({
-    mode: "deep",
-
-    summary: "Publish",
-    target: { branch: "scott/camera" },
-  });
-  const [claude, codex] = run.threadIds;
-  await failed(f, failReviewer(f, claude));
-  const moved = await f.tool("scott_engineering_review_result", { runId: run.runId });
-  await readDiff(f, moved);
-  finishAll(f, moved);
-  const message = f.logs
-    .get("thr_reviewer_3")!
-    .find((event) => (event as { type: string }).type === "item/completed") as {
-    data: { item: { text: string } };
-  };
-  const report = JSON.parse(message.data.item.text);
-  report.findings = Array.from({ length: 9 }, () => ({
-    priority: 3,
-    title: "Minor",
-    body: "x".repeat(7900),
-    location: "a.ts:1",
-  }));
-  message.data.item.text = JSON.stringify(report);
-  const result = await f.tool("scott_engineering_review_result", { runId: run.runId });
-  expect(result).toMatchObject({
-    nextOffset: 0,
-    reviews: [
-      {
-        threadId: "thr_reviewer_3",
-        findings: 9,
-        fallback: { from: { providerId: "claude-code" }, threadId: claude },
-      },
-      { threadId: codex, findings: 0 },
-    ],
-  });
-  expect(result.reviews[1]).not.toHaveProperty("fallback");
-  let text = "";
-  for (let offset: number | null = 0; offset !== null;) {
-    const page = await f.tool("scott_engineering_review_context", {
-      runId: run.runId,
-      section: "report",
-      offset,
-    });
-    text += page.text;
-    offset = page.nextOffset;
-  }
-  const reports = JSON.parse(text);
-  expect(reports).toMatchObject([
-    { fallback: { threadId: claude }, report: { findings: { length: 9 } } },
-    { reviewer: { providerId: "codex" } },
-  ]);
-  expect(reports[1]).not.toHaveProperty("fallback");
-});
-
-test("saved explicit reviews remain current after publication destination removal", async () => {
-  const f = await load();
-  const run = await f.start({ summary: "Existing review", target: { base, head } });
-  const db = f.host.bb.storage.database();
-  const row = db
-    .prepare<[string], { payload: string }>("SELECT payload FROM review_runs WHERE id=?")
-    .get(run.runId)!;
-  const legacy = JSON.parse(row.payload);
-  legacy.contractVersion = 4;
-  legacy.request.scope = "publication";
-  legacy.request.target.upstream = "origin/main";
-  db.prepare("UPDATE review_runs SET payload=? WHERE id=?").run(JSON.stringify(legacy), run.runId);
-  finishAll(f, run);
-  expect(await f.tool("scott_engineering_review_result", { runId: run.runId })).toMatchObject({
-    status: "complete",
-    current: true,
-    reviews: [{ report: { runId: run.runId } }, { report: { runId: run.runId } }],
-  });
-});
-
-for (const completed of [false, true]) {
-  test(`genuine old fingerprints preserve ${completed ? "completed reuse" : "in-flight deduplication"}`, async () => {
-    const f = await load();
-    const request = { kind: "design", summary: "Legacy request" };
-    const receipt = await f.start(request);
-    if (completed) {
-      finishAll(f, receipt);
-      await f.tool("scott_engineering_review_result", { runId: receipt.runId });
-    }
-    const db = f.host.bb.storage.database();
-    const row = db
-      .prepare<[string], { payload: string }>("SELECT payload FROM review_runs WHERE id = ?")
-      .get(receipt.runId)!;
-    const run = JSON.parse(row.payload);
-    run.contractVersion = 4;
-    run.request.scope = "segment";
-    run.fingerprint = createHash("sha256")
-      .update(
-        JSON.stringify({
-          request: { ...run.request, reuse: undefined },
-          target: run.target,
-          evidence: run.evidence,
-        }),
-      )
-      .digest("hex");
-    db.prepare("UPDATE review_runs SET payload = ? WHERE id = ?").run(
-      JSON.stringify(run),
-      receipt.runId,
+test("tools and CLI use reviewer thread IDs with BB's native result", async () => {
+  const f = fixture();
+  await plugin(f.bb);
+  try {
+    const started = await f.harness.behavior.runCli(
+      ["review-start", "--branch", "scott/feature", "--prompt", "Intent"],
+      { threadId: "parent", signal },
     );
-    const next = await f.start(request);
-    expect(next).toMatchObject({ runId: receipt.runId, reused: true });
-    if (completed) expect(next.status).toBe("completed");
-    expect(spawns(f)).toHaveLength(2);
+    expect(started.exitCode).toBe(0);
+    expect(started.stdout).toContain("review-result reviewer-1");
+    f.threads.get("reviewer-1")!.status = "idle";
+    f.outputs.set("reviewer-1", "Reviewer final response");
+    const result = await f.harness.behavior.runCli(["review-result", "reviewer-1"], {
+      threadId: "parent",
+      signal,
+    });
+    expect(JSON.parse(result.stdout!)).toMatchObject({
+      threadId: "reviewer-1",
+      status: "idle",
+      output: "Reviewer final response",
+    });
+    const context = await f.harness.behavior.callAgentTool(
+      "scott_engineering_review_context",
+      { section: "diff" },
+      { threadId: "reviewer-1" },
+    );
+    expect(JSON.stringify(context)).toContain("pinned source");
+    expect(resultSchema.safeParse({ runId: "obsolete-run" }).success).toBe(false);
+  } finally {
+    await f.harness.lifecycle.dispose();
+  }
+});
+
+for (const failure of ["codex", "all"]) {
+  test(`CLI and tool agree on a ${failure === "all" ? "failed" : "partial"} launch`, async () => {
+    const f = fixture();
+    f.state.failProvider = failure;
+    await plugin(f.bb);
+    try {
+      const cli = await f.harness.behavior.runCli(
+        ["review-start", "--branch", "scott/feature", "--prompt", "Intent", "--json"],
+        { threadId: "parent", signal },
+      );
+      expect(cli.exitCode).toBe(failure === "all" ? 1 : 0);
+      const receipt = JSON.parse(cli.stdout!);
+      expect(receipt.reviewers).toHaveLength(failure === "all" ? 0 : 1);
+      expect(receipt.errors.length).toBeGreaterThan(0);
+      const tool = await f.harness.behavior.callAgentTool(
+        "scott_engineering_review_start",
+        { summary: "Intent", target: { branch: "scott/feature" } },
+        { threadId: "parent" },
+      );
+      expect(tool).toMatchObject({ isError: failure === "all" });
+    } finally {
+      await f.harness.lifecycle.dispose();
+    }
   });
 }
+
+test("cancellation rejects instead of returning a successful launch receipt", async () => {
+  const f = fixture();
+  const controller = new AbortController();
+  f.state.afterSpawn = () => controller.abort(new Error("Launch cancelled"));
+  await expect(f.service.start("parent", request, controller.signal)).rejects.toThrow(
+    "Launch cancelled",
+  );
+  expect(f.spawns).toHaveLength(1);
+  expect(f.threads.has("reviewer-1")).toBe(true);
+});

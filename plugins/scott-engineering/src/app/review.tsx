@@ -27,8 +27,6 @@ type RunDisplay = {
   id?: string;
   mode: "quick" | "standard" | "deep";
   kind: "design" | "implementation";
-  startedAt: number;
-  status: string;
   summary?: string;
 };
 type Review = Pick<
@@ -106,8 +104,6 @@ function useReviews(threadId: string): Review[] | null {
     let discovered = false;
     let retry: ReturnType<typeof setTimeout> | undefined;
     let retryDelay = 1000;
-    let poll: ReturnType<typeof setTimeout> | undefined;
-    let pollDelay = 3000;
     const refresh = async () => {
       clearTimeout(retry);
       retry = undefined;
@@ -145,7 +141,6 @@ function useReviews(threadId: string): Review[] | null {
                 return Object.assign({}, child, {
                   run:
                     run &&
-                    typeof run.startedAt === "number" &&
                     ["quick", "standard", "deep"].includes(run.mode) &&
                     ["design", "implementation"].includes(run.kind)
                       ? {
@@ -173,20 +168,9 @@ function useReviews(threadId: string): Review[] | null {
       discovered = true;
       known = new Set(withRuns.map((child) => child.id));
       knownLayout(sdk).recordChildren(threadId, withRuns);
-      clearTimeout(poll);
-      if (
-        withRuns.some(
-          (child) =>
-            !RUNNING.has(child.status) &&
-            (child.run?.status === "running" || child.run?.status === "starting"),
-        )
-      ) {
-        poll = setTimeout(() => void refresh(), pollDelay);
-        pollDelay = Math.min(pollDelay * 2, 30000);
-      } else pollDelay = 3000;
       setReviews(
         withRuns
-          .sort((a, b) => (b.run?.startedAt ?? b.createdAt) - (a.run?.startedAt ?? a.createdAt))
+          .sort((a, b) => b.createdAt - a.createdAt)
           .map(({ id, providerId, status, createdAt, run }) => ({
             id,
             providerId,
@@ -212,7 +196,6 @@ function useReviews(threadId: string): Review[] | null {
           (created || reparented || ours || pending > 0 || !discovered) &&
           event.changes.some((change) => RELEVANT_CHANGES.has(change))
         ) {
-          pollDelay = 3000;
           void refresh();
         }
       },
@@ -221,7 +204,6 @@ function useReviews(threadId: string): Review[] | null {
     return () => {
       latest = -1;
       clearTimeout(retry);
-      clearTimeout(poll);
       unsubscribe();
     };
   }, [sdk, pluginId, threadId, connection]);
@@ -234,8 +216,6 @@ const PHASES = {
   running: { icon: "Spinner", tone: "text-muted-foreground animate-spin", status: "Running" },
   complete: { icon: "CircleCheck", tone: "text-success", status: "Done" },
   failed: { icon: "AlertCircle", tone: "text-destructive", status: "Failed" },
-  awaiting: { icon: "Clock", tone: "text-muted-foreground", status: "Awaiting result" },
-  incomplete: { icon: "AlertCircle", tone: "text-muted-foreground", status: "Incomplete" },
 } as const;
 
 type RunRow = {
@@ -252,18 +232,16 @@ type Navigation =
   | { back: true; target: string; label: string }
   | { back: false; rows: [RunRow, ...RunRow[]] };
 
-function reviewPhase(review: Review): keyof typeof PHASES {
-  if (review.status === "error" || review.run?.status === "failed") return "failed";
-  if (review.run?.status === "incomplete") return "incomplete";
-  if (review.run?.status === "running" || review.run?.status === "starting") return "awaiting";
-  return "complete";
-}
-
 /** One row per run; `children` are its reviewer threads, newest first. */
 function runRow(children: [Review, ...Review[]]): RunRow {
   const running = children.filter((review) => RUNNING.has(review.status));
   const review = running[0] ?? children[0];
-  const phase = running.length > 0 ? "running" : reviewPhase(review);
+  const phase =
+    running.length > 0
+      ? "running"
+      : children.some((child) => child.status === "error")
+        ? "failed"
+        : "complete";
   const title = review.run
     ? `${review.run.mode[0]!.toUpperCase()}${review.run.mode.slice(1)} ${review.run.kind} review`
     : "Adversarial review";
@@ -273,7 +251,7 @@ function runRow(children: [Review, ...Review[]]): RunRow {
       running.length > 1 ? `${title} running · ${running.length} reviewers` : `${title} ${phase}`,
     phase,
     reviewers: running.length,
-    startedAt: review.run?.startedAt ?? review.createdAt,
+    startedAt: review.createdAt,
     providerId: review.providerId,
     title,
     summary: review.run?.summary,
