@@ -177,10 +177,6 @@
 .gs-node-media[data-model] .gs-node-badge {
   pointer-events: none;
 }
-/* The review composer holds the agent picker, so its node is wider than a note. */
-.gs-node[data-kind="review"] {
-  width: 340px;
-}
 .gs-node-prompt .gs-node-agent {
   min-width: 0;
   margin-right: auto;
@@ -1252,4 +1248,100 @@
   .gs-takes .gs-take-use {
     opacity: 1;
   }
+}
+/* Review verdicts use the theme's status hues: green passes, yellow needs fixes, red fails. */
+[data-verdict="pass"] {
+  --gs-verdict: var(--ansi-2, #3fa266);
+}
+[data-verdict="fixes"] {
+  --gs-verdict: var(--ansi-3, #f1b467);
+}
+[data-verdict="fail"] {
+  --gs-verdict: var(--ansi-1, #fe5d86);
+}
+[data-verdict="reviewing"] {
+  --gs-verdict: var(--muted-foreground);
+}
+.gs-node-badge[data-verdict],
+.gs-take-verdict,
+.gs-review-verdict {
+  border: 1px solid color-mix(in srgb, var(--gs-verdict) 60%, transparent);
+  color: var(--gs-verdict);
+  font-weight: 600;
+}
+.gs-node-badge[data-verdict] {
+  top: auto;
+  bottom: 8px;
+}
+.gs-take-verdict {
+  position: absolute;
+  z-index: 1;
+  top: 4px;
+  left: 4px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--background) 82%, transparent);
+  font-size: 10px;
+  pointer-events: none;
+}
+.gs-review {
+  display: grid;
+  gap: 10px;
+}
+.gs-review-toggle {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+.gs-review-toggle > span {
+  display: grid;
+  gap: 2px;
+}
+.gs-review-toggle small,
+.gs-review-result small {
+  color: var(--muted-foreground);
+  font-size: 11px;
+}
+.gs-review-agent {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+}
+.gs-review-agent > span {
+  color: var(--muted-foreground);
+  font-size: 12px;
+}
+.gs-review textarea {
+  min-height: 56px;
+  resize: vertical;
+}
+.gs-review-result {
+  display: grid;
+  gap: 8px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border-hairline);
+}
+.gs-review-result > header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.gs-review-result > header > button {
+  margin-left: auto;
+}
+.gs-review-verdict {
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+}
+.gs-review-failed {
+  color: var(--destructive, var(--ansi-1, #fe5d86)) !important;
+}
+.gs-review-text {
+  max-height: 320px;
+  overflow: auto;
+  font-size: 12px;
+  line-height: 1.5;
 }

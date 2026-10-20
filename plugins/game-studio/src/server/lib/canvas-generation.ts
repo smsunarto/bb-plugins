@@ -1,6 +1,13 @@
 import { createHash } from "node:crypto";
 import { z } from "zod";
-import { mediaRequest, type canvasGenerationInput } from "../../shared/generation.ts";
+import {
+  mediaRequest,
+  modelViewPaths,
+  type MediaRequest,
+  type canvasGenerationInput,
+} from "../../shared/generation.ts";
+import { nodeReviewSettings, reviewable } from "../../shared/review.ts";
+import { nodeTakes } from "../../shared/takes.ts";
 import type { Workspace, Board, CanvasNode } from "../../shared/schema.ts";
 import { files as instructions } from "./instructions.ts";
 import { nodeBriefRecipe, nodeInputs } from "../../shared/recipes.ts";
@@ -22,6 +29,9 @@ function semantic(node: CanvasNode) {
     candidateAssetIds: _candidates,
     takes: _takes,
     briefJobId: _briefJobId,
+    // Reviews judge outputs; they never change what the node generates.
+    review: _review,
+    reviews: _reviews,
     ...data
   } = node.data;
   return { type: node.type, title: node.title, description: node.description, data };
@@ -78,7 +88,6 @@ export function canvasRequest(workspace: Workspace, input: z.output<typeof canva
     node = board.nodes.find(({ id }) => id === input.nodeId);
   if (!node) throw new Error("The canvas node no longer exists.");
   const paths: string[] = [],
-    files: string[] = [],
     linkedText: string[] = [];
   const imageLabels = new Map<string, Set<string>>();
   const visited = new Set<string>();
@@ -88,7 +97,7 @@ export function canvasRequest(workspace: Workspace, input: z.output<typeof canva
     if (!other) throw new Error(`Reference node ${id} no longer exists.`);
     if (visited.has(id)) return;
     visited.add(id);
-    if (other.type === "text" || other.type === "review") {
+    if (other.type === "text") {
       linkedText.push(String(other.data.text ?? ""));
       return;
     }
@@ -99,12 +108,6 @@ export function canvasRequest(workspace: Workspace, input: z.output<typeof canva
       return;
     }
     if (promptOnly) throw new Error("promptSource must refer to a text or document node.");
-    if (other.type === "model-3d") {
-      const asset = workspace.assets.find((item) => item.id === other.data.assetId);
-      if (asset?.type !== "model") throw new Error("Every 3D model input needs a generated model.");
-      files.push(asset.path);
-      return;
-    }
     addAsset(other.data.assetId, other);
   };
   const addAsset = (id: unknown, sourceNode?: CanvasNode) => {
@@ -149,7 +152,7 @@ export function canvasRequest(workspace: Workspace, input: z.output<typeof canva
   };
   const frames = node.type === "video" ? [slotPath("start"), slotPath("end")] : [];
   const promptSections = [
-    node.type === "text" || node.type === "review"
+    node.type === "text"
       ? String(node.data.instruction ?? "")
       : typeof node.data.prompt === "string"
         ? node.data.prompt
@@ -202,9 +205,9 @@ export function canvasRequest(workspace: Workspace, input: z.output<typeof canva
       target,
     };
   }
-  const labels = ["image", "text", "review"].includes(node.type) ? referenceKey : {};
+  const labels = node.type === "image" || node.type === "text" ? referenceKey : {};
   const kind =
-    node.type === "text" || node.type === "review"
+    node.type === "text"
       ? "text"
       : node.type === "model-3d"
         ? "model-3d"
@@ -213,7 +216,7 @@ export function canvasRequest(workspace: Workspace, input: z.output<typeof canva
           : node.type === "image"
             ? "image"
             : undefined;
-  if (!kind) throw new Error("Select a text, review, image, video, or 3D node.");
+  if (!kind) throw new Error("Select a text, image, video, or 3D node.");
   const agent = {
     providerId: input.textProviderId,
     ...(input.reasoningLevel ? { reasoningLevel: input.reasoningLevel } : {}),
@@ -242,13 +245,10 @@ export function canvasRequest(workspace: Workspace, input: z.output<typeof canva
     kind === "text"
       ? {
           kind,
-          // A review without written criteria judges its inputs against the review guide alone.
-          prompt: node.type === "review" ? prompt || "Review the connected outputs." : prompt,
+          prompt,
           ...agent,
           ...(input.model ? { model: input.model } : {}),
           images: [...new Set(paths)],
-          ...(node.type === "review" ? { review: true } : {}),
-          ...(files.length ? { files: [...new Set(files)] } : {}),
           ...labels,
         }
       : kind === "model-3d"
@@ -274,4 +274,104 @@ export function canvasRequest(workspace: Workspace, input: z.output<typeof canva
             },
   );
   return { request, target };
+}
+
+/** The inputs a run was made from: its brief, and its input images with their roles. */
+function runInputs(node: CanvasNode, request: MediaRequest | undefined) {
+  if (request?.kind === "image")
+    return {
+      brief: request.prompt,
+      images: request.images,
+      roles:
+        request.imageReferenceKey ??
+        request.images.map((_, index) => `${index + 1}. input`).join("\n"),
+    };
+  if (request?.kind === "model-3d") {
+    const views = modelViewPaths(request);
+    return {
+      brief:
+        typeof node.data.prompt === "string" && node.data.prompt.trim()
+          ? node.data.prompt
+          : "(none: the model was built from the views alone)",
+      images: views.map(([, path]) => path),
+      roles: views.map(([view], index) => `${index + 1}. ${view} view`).join("\n"),
+    };
+  }
+  return { brief: node.description || "(none)", images: [], roles: "" };
+}
+
+/**
+ * A review of some of a node's outputs against the inputs of the run that made them: its saved
+ * request when the run is still on record, else the node's current inputs.
+ */
+export function reviewRequest(
+  workspace: Workspace,
+  boardId: string,
+  nodeId: string,
+  assetIds: string[],
+) {
+  const selected = workspace.boards.find(({ board }) => board.id === boardId);
+  const node = selected?.board.nodes.find(({ id }) => id === nodeId);
+  if (!selected || !node) throw new Error("The canvas node no longer exists.");
+  if (!reviewable(node.type)) throw new Error("Only image and 3D nodes can review their outputs.");
+  const outputs = assetIds.map((id) => {
+    const asset = workspace.assets.find((item) => item.id === id);
+    if (!asset || (asset.type !== "image" && asset.type !== "model"))
+      throw new Error("Review needs an existing image or 3D output.");
+    return asset;
+  });
+  const jobId = nodeTakes(node).find((take) => assetIds.includes(take.assetId))?.jobId;
+  let source: MediaRequest | undefined = workspace.generationJobs.find(
+    (job) => job.id === jobId,
+  )?.request;
+  if (!source)
+    try {
+      source = canvasRequest(workspace, {
+        gameId: workspace.game.id,
+        requestId: "review",
+        boardId,
+        nodeId,
+        revision: selected.revision,
+      }).request;
+    } catch {
+      // A hand-made output has no inputs on record; its review reads the output alone.
+    }
+  const inputs = runInputs(node, source);
+  const images = outputs.filter((asset) => asset.type === "image").map((asset) => asset.path);
+  const files = outputs.filter((asset) => asset.type === "model").map((asset) => asset.path);
+  const first = inputs.images.length + 1;
+  const settings = nodeReviewSettings(node);
+  const agent = settings?.agent;
+  const request = mediaRequest.parse({
+    kind: "text",
+    reviewOf: assetIds,
+    prompt: instructions.read("review-input", {
+      brief: inputs.brief,
+      inputs: inputs.images.length
+        ? `Images 1–${inputs.images.length} are the run's input images:\n${inputs.roles}`
+        : "The run had no input images.",
+      outputs: [
+        ...images.map(
+          (path, index) =>
+            `Image ${first + index}: ${path.split("/").pop()} (output ${index + 1} of ${outputs.length})`,
+        ),
+        ...files.map((path) => `File: ${path}`),
+      ].join("\n"),
+      criteria: settings?.criteria?.trim() || "(none)",
+    }),
+    images: [...inputs.images, ...images],
+    ...(files.length ? { files } : {}),
+    ...(agent
+      ? {
+          providerId: agent.providerId,
+          model: { provider: "bb", id: agent.model },
+          reasoningLevel: agent.reasoningLevel,
+          ...(agent.serviceTier ? { serviceTier: agent.serviceTier } : {}),
+        }
+      : {}),
+  });
+  return {
+    request,
+    target: { boardId, nodeId, fingerprint: nodeFingerprint(node, selected.board, workspace) },
+  };
 }

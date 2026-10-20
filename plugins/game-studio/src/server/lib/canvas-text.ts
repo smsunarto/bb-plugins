@@ -12,7 +12,7 @@ const instructions = instructionFiles(import.meta.url);
 type TextRequest = Extract<GenerationJob["request"], { kind: "text" }>;
 /** Briefs follow the target model's prompting guide; reviews judge inputs; others write node text. */
 function taskInstructions(request: TextRequest, game: Game) {
-  if (request.review)
+  if (request.reviewOf)
     return instructions.read("canvas-review", {
       files: request.files
         ? request.files.map((path) => `- ${projectFile(game.rootPath, path)}`).join("\n")
@@ -113,7 +113,7 @@ export class CanvasText {
           visibility: "hidden",
           origin: "plugin",
           originPluginId: "game-studio",
-          title: `${job.request.review ? "Canvas review" : job.request.briefFor ? "Canvas brief" : "Canvas text"} · ${job.id}`,
+          title: `${job.request.reviewOf ? "Canvas review" : job.request.briefFor ? "Canvas brief" : "Canvas text"} · ${job.id}`,
           pluginMetadata: { gameStudioJobId: job.id, gameStudioGameId: game.id },
           input: [
             {

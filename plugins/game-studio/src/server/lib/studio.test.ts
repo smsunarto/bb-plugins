@@ -2334,3 +2334,63 @@ test("generated text returns to its node without cataloging media or changing la
   const final = await get.execute({ bb: f.bb }, { gameId: game.id });
   assert.equal(final.boards[0]!.board.nodes[0]!.data.text, "My newer draft");
 });
+
+test("a review joins the node's reviews once and never touches its outputs", async () => {
+  const { adoptGeneration } = await import("./studio.ts");
+  const { gameSchema } = await import("../../shared/schema.ts");
+  const { generationJob } = await import("../../shared/generation.ts");
+  const f = fake(),
+    game = gameSchema.parse(await create.execute({ bb: f.bb }, input));
+  const original = (await get.execute({ bb: f.bb }, { gameId: game.id })).boards[0]!;
+  const data = {
+    prompt: "Coin",
+    assetId: "coin-a",
+    takes: [{ assetId: "coin-a", jobId: "run-1" }],
+  };
+  await saveBoard.execute(
+    { bb: f.bb },
+    {
+      gameId: game.id,
+      revision: original.revision,
+      board: {
+        ...original.board,
+        nodes: [{ id: "coin", type: "image", position: { x: 0, y: 0 }, data }],
+      },
+    },
+  );
+  f.seed(
+    "host",
+    "/games/orbit/canvas/staging/run-1-review/output.md",
+    "**Fail** — the rim is cut off.",
+  );
+  const review = generationJob.parse({
+    version: 1,
+    id: "run-1-review",
+    threadId: null,
+    origin: { kind: "canvas", gameId: game.id },
+    createdAt: 1,
+    updatedAt: 2,
+    status: "succeeded",
+    request: { kind: "text", prompt: "Review", reviewOf: ["coin-a"] },
+    target: { boardId: "main", nodeId: "coin", fingerprint: "stale" },
+    outputs: [
+      {
+        path: "canvas/staging/run-1-review/output.md",
+        type: "text",
+        sizeBytes: 3,
+        sha256: "a".repeat(64),
+      },
+    ],
+  });
+  const node = async () =>
+    (await get.execute({ bb: f.bb }, { gameId: game.id })).boards[0]!.board.nodes[0]!;
+  // A stale fingerprint does not matter: a review judges outputs, not the current brief.
+  assert.equal((await adoptGeneration(f.bb, game, review)).attached, true);
+  assert.equal((await adoptGeneration(f.bb, game, review)).attached, true);
+  assert.deepEqual((await node()).data, {
+    ...data,
+    reviews: [
+      { assetIds: ["coin-a"], jobId: "run-1-review", text: "**Fail** — the rim is cut off." },
+    ],
+  });
+});

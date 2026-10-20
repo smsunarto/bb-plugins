@@ -4,7 +4,9 @@ import type { Asset, CanvasNode } from "../shared/schema.ts";
 import { nodeTakes, takeRun, type Take } from "../shared/takes.ts";
 import type { NodePatch } from "./generation.tsx";
 import { Icon } from "./icons.tsx";
+import { VerdictBadge, outputReviewState } from "./review.tsx";
 
+const noJobs: GenerationJob[] = [];
 const media = (job: GenerationJob) => job.request.kind !== "text";
 const generating = (job: GenerationJob) =>
   (job.status === "queued" || job.status === "running") && media(job);
@@ -61,6 +63,8 @@ type GenerationProps = {
   assets: Asset[];
   baseUrl?: string;
   jobs: GenerationJob[];
+  /** The node's review jobs, so each take shows its verdict. */
+  reviewJobs?: GenerationJob[];
   batch: number;
   canRun: boolean;
   /** The model and output settings. */
@@ -79,6 +83,7 @@ export function GenerationSection({
   assets,
   baseUrl,
   jobs,
+  reviewJobs = noJobs,
   batch,
   canRun,
   settings,
@@ -190,6 +195,10 @@ export function GenerationSection({
                     const picked = take.assetId === pick;
                     return (
                       <div key={take.assetId} className="gs-take" data-picked={picked || undefined}>
+                        <VerdictBadge
+                          {...outputReviewState(node, take.assetId, reviewJobs)}
+                          className="gs-take-verdict"
+                        />
                         {src && asset.type === "video" ? (
                           <video src={src} muted preload="metadata" />
                         ) : src ? (

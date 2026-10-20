@@ -50,7 +50,7 @@ export const reasoningLevel = z.enum([
   "ultra",
 ]);
 export const serviceTier = z.enum(["default", "fast"]);
-/** The BB agent a text or review node runs on, as `experimental_ProviderModelPicker` resolves it. */
+/** The BB agent a text node or a review runs on, as `experimental_ProviderModelPicker` resolves it. */
 export const agentSelection = z.strictObject({
   providerId: z.string().min(1).max(100),
   model: z.string().min(1).max(100),
@@ -67,9 +67,10 @@ export const textRequest = z.strictObject({
   serviceTier: serviceTier.optional(),
   /** Writes the target media node's prompt for this model instead of text. */
   briefFor: briefRecipe.optional(),
-  /** Reviews the connected outputs instead of writing free text. */
-  review: z.literal(true).optional(),
-  images: z.array(mediaPath).max(14).default([]),
+  /** Reviews these outputs of the target node against the inputs they were made from. */
+  reviewOf: z.array(z.string().min(1).max(100)).min(1).max(8).optional(),
+  // A review sends a run's inputs and its outputs together.
+  images: z.array(mediaPath).max(20).default([]),
   /** Project files the reviewer inspects on disk, such as 3D models. */
   files: z.array(mediaPath).min(1).max(8).optional(),
   imageReferenceKey,
@@ -190,6 +191,8 @@ export const canvasGenerationInput = z.strictObject({
   serviceTier: serviceTier.optional(),
   /** Write an image or video node's prompt with a BB model instead of generating media. */
   brief: z.literal(true).optional(),
+  /** Review this output of an image or 3D node instead of generating. */
+  reviewAssetId: z.string().min(1).max(100).optional(),
 });
 export const generationControlInput = z.strictObject({
   gameId: generationId,

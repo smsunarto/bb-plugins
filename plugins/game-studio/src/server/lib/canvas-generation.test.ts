@@ -1,7 +1,8 @@
 import { expect, test } from "bun:test";
-import { canvasRequest } from "./canvas-generation.ts";
+import { canvasRequest, reviewRequest } from "./canvas-generation.ts";
 import { workspaceSchema } from "../../shared/schema.ts";
 import { generationPrompt } from "../../shared/generation-prompt.ts";
+import { generationJob } from "../../shared/generation.ts";
 const workspace = () =>
   workspaceSchema.parse({
     game: {
@@ -388,82 +389,96 @@ Game Studio applies these output settings separately: 16:9, 8 seconds; image 1 i
     "rough idea",
   );
 });
-test("a review reads its criteria, images and 3D models on the agent its composer chose", () => {
+
+test("a review sends the run's own inputs, then its outputs, on the node's review agent", () => {
   const state = workspace(),
     board = state.boards[0]!.board;
+  state.assets.push(
+    { id: "take-a", name: "a.png", path: "canvas/staging/run/a.png", type: "image" },
+    { id: "take-b", name: "b.png", path: "canvas/staging/run/b.png", type: "image" },
+  );
+  state.generationJobs.push(
+    generationJob.parse({
+      version: 1,
+      id: "run",
+      threadId: null,
+      origin: { kind: "canvas", gameId: "game" },
+      createdAt: 1,
+      updatedAt: 2,
+      status: "succeeded",
+      // The brief and inputs the run was made from, which differ from the node's current ones.
+      request: {
+        kind: "image",
+        prompt: "A key icon on teal",
+        images: ["canvas/inputs/run/key.png"],
+        imageReferenceKey: "1. Key",
+      },
+      outputs: [],
+    }),
+  );
+  const node = board.nodes.find(({ id }) => id === "image")!;
+  node.data = {
+    ...node.data,
+    prompt: "Changed since the run",
+    assetId: "take-a",
+    takes: [
+      { assetId: "take-a", jobId: "run" },
+      { assetId: "take-b", jobId: "run" },
+    ],
+    review: {
+      enabled: true,
+      agent: { providerId: "claude", model: "opus", reasoningLevel: "high", serviceTier: "fast" },
+      criteria: "Readable at 64 px",
+    },
+  };
+  const { request } = reviewRequest(state, "board", "image", ["take-a", "take-b"]);
+  if (request.kind !== "text") throw new Error("A review is a text request.");
+  expect(request).toMatchObject({
+    reviewOf: ["take-a", "take-b"],
+    images: ["canvas/inputs/run/key.png", "canvas/staging/run/a.png", "canvas/staging/run/b.png"],
+    providerId: "claude",
+    model: { provider: "bb", id: "opus" },
+    reasoningLevel: "high",
+    serviceTier: "fast",
+  });
+  expect(request.prompt).toContain("A key icon on teal");
+  expect(request.prompt).not.toContain("Changed since the run");
+  expect(request.prompt).toContain("Images 1–1 are the run's input images:\n1. Key");
+  expect(request.prompt).toContain("Image 2: a.png (output 1 of 2)");
+  expect(request.prompt).toContain("Readable at 64 px");
+});
+test("a 3D review reads the GLB from disk and the views as images", () => {
+  const state = workspace();
   state.assets.push({
     id: "mesh",
-    name: "hammerhead.glb",
-    path: "canvas/staging/tripo/hammerhead.glb",
+    name: "m.glb",
+    path: "canvas/staging/tripo/m.glb",
     type: "model",
   });
-  board.nodes.push(
-    {
-      id: "criteria",
-      type: "text",
-      position: { x: 0, y: 300 },
-      data: { text: "Under 20k triangles" },
-    },
-    {
-      id: "front",
-      type: "image",
-      position: { x: 300, y: 300 },
-      data: { assetId: "ref" },
-    },
-    {
-      id: "mesh-node",
-      type: "model-3d",
-      position: { x: 600, y: 300 },
-      data: { assetId: "mesh" },
-    },
-    {
-      id: "review",
-      type: "review",
-      position: { x: 900, y: 300 },
-      data: {
-        instruction: "",
-        references: [
-          { type: "node", nodeId: "criteria" },
-          { type: "node", nodeId: "front" },
-          { type: "node", nodeId: "mesh-node" },
-        ],
+  state.generationJobs.push(
+    generationJob.parse({
+      version: 1,
+      id: "tripo",
+      threadId: null,
+      createdAt: 1,
+      updatedAt: 2,
+      status: "succeeded",
+      request: {
+        kind: "model-3d",
+        approvedImagePath: "canvas/inputs/tripo/front.png",
+        views: { left: "canvas/inputs/tripo/left.png" },
       },
-    },
+      outputs: [],
+    }),
   );
-  const request = canvasRequest(state, {
-    ...input,
-    nodeId: "review",
-    textProviderId: "codex",
-    model: { provider: "bb", id: "gpt-6.1-sol" },
-    reasoningLevel: "xhigh",
-    serviceTier: "fast",
-  }).request;
-  expect(request).toMatchObject({
-    kind: "text",
-    review: true,
-    providerId: "codex",
-    model: { provider: "bb", id: "gpt-6.1-sol" },
-    reasoningLevel: "xhigh",
-    serviceTier: "fast",
-    images: ["canvas/staging/key.png"],
-    files: ["canvas/staging/tripo/hammerhead.glb"],
-    prompt: "Under 20k triangles",
-  });
-});
-test("a 3D model cannot feed a node that does not review it", () => {
-  const state = workspace(),
-    board = state.boards[0]!.board;
-  state.assets.push({ id: "mesh", name: "a.glb", path: "canvas/staging/a.glb", type: "model" });
-  board.nodes.push(
-    { id: "mesh-node", type: "model-3d", position: { x: 0, y: 300 }, data: { assetId: "mesh" } },
-    {
-      id: "note",
-      type: "text",
-      position: { x: 300, y: 300 },
-      data: { instruction: "Describe it", references: [{ type: "node", nodeId: "mesh-node" }] },
-    },
-  );
-  expect(() => canvasRequest(state, { ...input, nodeId: "note" })).toThrow(
-    "This model does not take model inputs",
+  const node = state.boards[0]!.board.nodes.find(({ id }) => id === "model")!;
+  node.data = { ...node.data, assetId: "mesh", takes: [{ assetId: "mesh", jobId: "tripo" }] };
+  const { request } = reviewRequest(state, "board", "model", ["mesh"]);
+  if (request.kind !== "text") throw new Error("A review is a text request.");
+  expect(request.images).toEqual(["canvas/inputs/tripo/front.png", "canvas/inputs/tripo/left.png"]);
+  expect(request.files).toEqual(["canvas/staging/tripo/m.glb"]);
+  expect(request.prompt).toContain("1. front view\n2. left view");
+  expect(() => reviewRequest(state, "board", "design-node", ["mesh"])).toThrow(
+    "Only image and 3D nodes",
   );
 });

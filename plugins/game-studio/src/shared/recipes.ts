@@ -5,7 +5,6 @@ import {
   assignInputs,
   imageSlot,
   imagesPort,
-  modelsPort,
   nodeRefs,
   refType,
   textPort,
@@ -67,12 +66,9 @@ export function nodeBriefRecipe(node: Pick<CanvasNode, "type" | "data">) {
   return recipe && id.success ? { ...recipe, id: id.data } : undefined;
 }
 
-// A review reads criteria, images and 3D models, so it can judge any stage's output.
-const reviewed = [{ ...textPort, label: "Criteria" }, imagesPort(14), modelsPort(4)];
 /** The ports the node's model accepts. Text nodes run on a BB agent, which reads both. */
 export function nodeInputPorts(node: Pick<CanvasNode, "type" | "data">): InputPort[] {
   if (node.type === "text") return textAndImages;
-  if (node.type === "review") return reviewed;
   return nodeRecipe(node)?.inputs ?? [];
 }
 

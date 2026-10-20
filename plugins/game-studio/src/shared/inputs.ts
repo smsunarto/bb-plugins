@@ -1,7 +1,7 @@
 import type { CanvasNode, NodeKind } from "./schema.ts";
 
 /** What an output carries into another node's generation. */
-export type InputType = "text" | "image" | "model";
+export type InputType = "text" | "image";
 /** A typed input on a canvas node, holding at most `max` connections. */
 export type InputPort = {
   id: string;
@@ -22,12 +22,6 @@ export const imagesPort = (max: number): InputPort => ({
   label: "Image",
   max,
 });
-export const modelsPort = (max: number): InputPort => ({
-  id: "model",
-  type: "model",
-  label: "3D model",
-  max,
-});
 /** One image with a fixed role, such as a video's start frame or a 3D model's front view. */
 export const imageSlot = (id: string, label: string, required?: true): InputPort => ({
   id,
@@ -39,9 +33,8 @@ export const imageSlot = (id: string, label: string, required?: true): InputPort
 
 /** The input type a node's output feeds, when generation can consume it. */
 export function outputType(kind: NodeKind | undefined): InputType | undefined {
-  if (kind === "text" || kind === "document" || kind === "review") return "text";
+  if (kind === "text" || kind === "document") return "text";
   if (kind === "image") return "image";
-  if (kind === "model-3d") return "model";
   return undefined;
 }
 
@@ -89,8 +82,7 @@ export function assignInputs<T extends { port?: unknown }>(
     const typed = assigned.filter((item) => item.port.type === type);
     let item = typed.find(open) ?? typed.at(-1);
     if (!item) {
-      const port = { text: textPort, image: imagesPort(0), model: modelsPort(0) }[type];
-      item = { port: { ...port, max: 0 }, refs: [] };
+      item = { port: { ...(type === "text" ? textPort : imagesPort(0)), max: 0 }, refs: [] };
       assigned.push(item);
     }
     item.refs.push(ref);

@@ -15,7 +15,8 @@ import {
 } from "../../shared/generation.ts";
 import { getGame, loadWorkspace, adoptGeneration } from "./studio.ts";
 import type { SlotStore } from "./slot-store.ts";
-import { canvasRequest } from "./canvas-generation.ts";
+import { canvasRequest, reviewRequest } from "./canvas-generation.ts";
+import { nodeReviewSettings, reviewRequestId } from "../../shared/review.ts";
 import { captureCanvasInputs } from "./generation-inputs.ts";
 import { CanvasText } from "./canvas-text.ts";
 
@@ -161,7 +162,9 @@ export class Generations {
   async direct(input: z.output<typeof canvasDirectInput>) {
     const { game, thread } = await this.canvasGame(input.gameId, input.threadId);
     const workspace = await loadWorkspace(this.bb, input.gameId);
-    const prepared = canvasRequest(workspace, input);
+    const prepared = input.reviewAssetId
+      ? reviewRequest(workspace, input.boardId, input.nodeId, [input.reviewAssetId])
+      : canvasRequest(workspace, input);
     if (!["image", "text"].includes(prepared.request.kind))
       throw new Error("Direct canvas generation supports image and text nodes.");
     return this.dispatch(game, input.requestId, prepared.request, thread, prepared.target, {
@@ -379,6 +382,33 @@ export class Generations {
     if (job.status === "succeeded") return this.adopt(game, job, threadId);
     return { job };
   }
+  /** Starts the review of a finished run when its node reviews each output. */
+  private async reviewRun(game: Game, job: GenerationJob, assetIds: string[]) {
+    if (job.request.kind === "text" || !job.target || !assetIds.length) return;
+    try {
+      const workspace = await loadWorkspace(this.bb, game.id);
+      const node = workspace.boards
+        .find(({ board }) => board.id === job.target!.boardId)
+        ?.board.nodes.find(({ id }) => id === job.target!.nodeId);
+      if (!node || !nodeReviewSettings(node)?.enabled) return;
+      const { request, target } = reviewRequest(
+        workspace,
+        job.target.boardId,
+        job.target.nodeId,
+        assetIds,
+      );
+      // The run's id names its review, so a repeated adoption finds the review it started.
+      await this.dispatch(game, reviewRequestId(job.id), request, null, target, {
+        kind: "canvas",
+        gameId: game.id,
+      });
+    } catch (error) {
+      // A failed review never undoes the outputs it would have judged.
+      this.bb.log.warn(
+        `Could not start the review of ${job.id}: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+  }
   private jobKey(game: Game, jobId: string) {
     return JSON.stringify([game.hostId, game.rootPath, jobId]);
   }
@@ -402,7 +432,9 @@ export class Generations {
       const owner = this.work.owner(game.hostId, game.rootPath, job.id) ?? threadId;
       this.work.reserve(game.hostId, game.rootPath, job.id, owner);
       try {
-        return { job, adoption: await adoptGeneration(this.bb, game, job) };
+        const adoption = await adoptGeneration(this.bb, game, job);
+        if (adoption.attached) await this.reviewRun(game, job, adoption.candidateAssetIds);
+        return { job, adoption };
       } finally {
         this.work.settled(game.hostId, game.rootPath, job.id);
       }

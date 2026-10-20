@@ -59,9 +59,10 @@ import {
   nodeModelLabel,
   promptField,
   runsDirectly,
-  runsOnAgent,
 } from "./generation.tsx";
 import { ModelPreview } from "./model-preview.tsx";
+import { ReviewSection, VerdictBadge, outputReviewState } from "./review.tsx";
+import { reviewable } from "../shared/review.ts";
 import type { NodePatch } from "./generation.tsx";
 import { BriefStarters } from "./brief-starters.tsx";
 import { GenerationSection } from "./takes.tsx";
@@ -84,6 +85,8 @@ type CardData = {
   briefing?: boolean;
   /** The node's inputs placed on its model's ports. */
   inputs?: PortInputs<InputRef>[];
+  /** Reviews of this node's outputs, newest first; kept apart from its generation jobs. */
+  reviewJobs?: GenerationJob[];
 };
 type Card = Node<CardData, "studio">;
 type Tool = "select" | "hand";
@@ -96,13 +99,6 @@ const kinds: { kind: NodeKind; label: string; icon: string; key?: string; color:
   { kind: "model-3d", label: "3D", icon: "Box", color: "var(--ansi-9, #fe5d86)" },
   { kind: "document", label: "Document", icon: "FileText", color: "var(--ansi-12, #7cacfe)" },
   { kind: "table", label: "Table", icon: "Table", color: "var(--ansi-11, #f7d05c)" },
-  {
-    kind: "review",
-    label: "Review",
-    icon: "ClipboardCheck",
-    key: "r",
-    color: "var(--ansi-2, #3fa266)",
-  },
 ];
 const kindInfo = (kind: NodeKind | undefined) =>
   kinds.find((item) => item.kind === kind) ?? {
@@ -113,11 +109,7 @@ const kindInfo = (kind: NodeKind | undefined) =>
     color: "var(--muted-foreground)",
   };
 // Each input type takes the color and icon of the node kind that feeds it.
-const inputTypes = {
-  text: kindInfo("text"),
-  image: kindInfo("image"),
-  model: kindInfo("model-3d"),
-};
+const inputTypes = { text: kindInfo("text"), image: kindInfo("image") };
 type CardActionsValue = {
   edit: (id: string, patch: NodePatch) => void;
   run: (id: string) => void;
@@ -128,11 +120,12 @@ const CardActions = createContext<CardActionsValue>({
   run: () => {},
   brief: () => {},
 });
-/** Where text and review nodes run, and the agent they use until one is chosen. */
+/** Where BB agents run for this canvas, and the agent they use until a node picks another. */
 const AgentDefaults = createContext<{ hostId: string; agent: AgentSelection } | null>(null);
 const running = (job: GenerationJob) => job.status === "queued" || job.status === "running";
 const isBrief = (job: GenerationJob | undefined) =>
   job?.request.kind === "text" && !!job.request.briefFor;
+const isReview = (job: GenerationJob) => job.request.kind === "text" && !!job.request.reviewOf;
 function CanvasCard({ id, data, selected }: NodeProps<Card>) {
   const node = data.source;
   const info = kindInfo(node.type);
@@ -158,14 +151,12 @@ function CanvasCard({ id, data, selected }: NodeProps<Card>) {
       : undefined;
   const field = promptField(node.type);
   const prompt = field ? String(node.data[field] ?? "") : "";
-  const modelLabel = nodeModelLabel(node, defaults?.agent);
-  const agent = runsOnAgent(node.type) ? (nodeAgent(node) ?? defaults?.agent) : undefined;
+  const modelLabel = nodeModelLabel(node);
+  const agent = node.type === "text" ? (nodeAgent(node) ?? defaults?.agent) : undefined;
   const placeholder =
     node.type === "text"
       ? "Ask an agent to write this note…"
-      : node.type === "review"
-        ? "What should the review check? Leave empty for a general game-readiness review."
-        : `Describe the ${info.label.toLowerCase()} and its Unity consumer…`;
+      : `Describe the ${info.label.toLowerCase()} and its Unity consumer…`;
   return (
     <div
       className="gs-node"
@@ -174,7 +165,7 @@ function CanvasCard({ id, data, selected }: NodeProps<Card>) {
       data-generation={pending ? (asset ? "pending-more" : "pending") : data.job?.status}
       style={{ "--gs-kind": info.color, "--gs-ports": data.inputs?.length ?? 0 } as CSSProperties}
     >
-      {field && !runsOnAgent(node.type) && (
+      {field && node.type !== "text" && (
         <NodeToolbar isVisible={selected} position={Position.Top} offset={30}>
           <div className="gs-node-toolbar">
             <GenerationSettings node={node} compact onChange={(patch) => actions.edit(id, patch)} />
@@ -217,6 +208,11 @@ function CanvasCard({ id, data, selected }: NodeProps<Card>) {
             url={url}
             pending={pending}
             takes={takes.length > 1 ? takes : undefined}
+            review={
+              reviewable(node.type)
+                ? outputReviewState(node, asset?.id, data.reviewJobs ?? [])
+                : undefined
+            }
           />
         )}
         {data.job && !(isBrief(data.job) && data.job.status === "succeeded") && (
@@ -310,12 +306,7 @@ function CanvasCard({ id, data, selected }: NodeProps<Card>) {
                     data-busy={(data.busy && !briefing) || undefined}
                     title={runsDirectly(node) ? "Run node" : "Prepare request"}
                     aria-label={runsDirectly(node) ? "Run node" : "Prepare request"}
-                    disabled={
-                      data.busy ||
-                      (!prompt.trim() &&
-                        node.type !== "model-3d" &&
-                        !(node.type === "review" && hasInputs))
-                    }
+                    disabled={data.busy || (!prompt.trim() && node.type !== "model-3d")}
                     onClick={() => actions.run(id)}
                   >
                     <Icon name={data.busy && !briefing ? "LoaderCircle" : "ArrowUp"} />
@@ -385,6 +376,7 @@ function NodePreview({
   url,
   pending,
   takes,
+  review,
 }: {
   node: CanvasNode;
   asset?: Asset;
@@ -392,7 +384,11 @@ function NodePreview({
   url?: string;
   pending?: boolean;
   takes?: Take[];
+  review?: ReturnType<typeof outputReviewState>;
 }) {
+  const verdict = review && (
+    <VerdictBadge verdict={review.verdict} reviewing={review.reviewing} className="gs-node-badge" />
+  );
   const info = kindInfo(node.type);
   const aspectRatio =
     typeof node.data.aspectRatio === "string"
@@ -415,6 +411,7 @@ function NodePreview({
             {takes.some((take) => take.star) && ` · ${takes.filter((take) => take.star).length} ★`}
           </span>
         )}
+        {verdict}
       </div>
     );
   if (url && asset?.type === "model" && /\.(glb|gltf)$/i.test(asset.path))
@@ -429,6 +426,7 @@ function NodePreview({
             {takes.length} takes
           </span>
         )}
+        {verdict}
       </div>
     );
   if (node.type === "image" || node.type === "video")
@@ -446,13 +444,6 @@ function NodePreview({
       </div>
     );
   if (node.type === "text") return <p className="gs-node-placeholder">Add a design note…</p>;
-  if (node.type === "review")
-    return (
-      <p className="gs-node-placeholder">
-        <Icon name={info.icon} />
-        {pending ? "Reviewing…" : "No review yet"}
-      </p>
-    );
   return (
     <p className="gs-node-placeholder">
       <Icon name={info.icon} />
@@ -677,8 +668,6 @@ const initialData = (kind: NodeKind, documents: StudioDocument[]): CanvasNode["d
       return { assetId: "", mediaType: "audio" };
     case "table":
       return { tableId: "" };
-    case "review":
-      return { instruction: "", text: "", references: [] };
   }
 };
 const noGenerationJobs: GenerationJob[] = [];
@@ -697,13 +686,14 @@ export function StudioCanvas({
   onGenerate,
   onGenerateDirect,
   onGenerationControl,
+  onReview,
   onOpenDocument,
   onUpload,
   onStatus,
 }: {
   gameId: string;
   hostId: string;
-  /** The agent text and review nodes run on until their composer picks another. */
+  /** The agent text nodes and reviews run on until a node picks another. */
   defaultAgent: AgentSelection;
   active?: boolean;
   board: Board;
@@ -722,6 +712,8 @@ export function StudioCanvas({
     brief?: true,
     agent?: AgentSelection,
   ) => Promise<void>;
+  /** Reviews one output of an image or 3D node now. */
+  onReview: (nodeId: string, revision: string, requestId: string, assetId: string) => Promise<void>;
   onGenerationControl: (
     jobId: string,
     action: "status" | "resume" | "cancel",
@@ -800,11 +792,12 @@ export function StudioCanvas({
   const viewport = useRef<Viewport>(board.editorLayout.viewport);
   const selected = nodes.find((node) => node.id === selectedId);
   const selectedAsset = assets.find((asset) => asset.id === selected?.data.source.data.assetId);
-  const selectedJob = generationJobs.find(
-    (job) => job.target?.boardId === board.id && job.target.nodeId === selectedId,
-  );
-  const nodeJobs = (id: string | null) =>
+  const targetJobs = (id: string | null) =>
     generationJobs.filter((job) => job.target?.boardId === board.id && job.target.nodeId === id);
+  // Reviews run beside a node's generations; they never make the node busy or replace its status.
+  const nodeJobs = (id: string | null) => targetJobs(id).filter((job) => !isReview(job));
+  const reviewJobs = (id: string | null) => targetJobs(id).filter(isReview);
+  const selectedJob = nodeJobs(selectedId)[0];
   const briefing = (id: string) =>
     startingBrief === id || nodeJobs(id).some((job) => running(job) && isBrief(job));
   /** Image runs become takes, so rerolls start while earlier runs generate. */
@@ -1186,11 +1179,27 @@ export function StudioCanvas({
       (brief ? setStartingBrief : setStarting)(null);
     }
   };
+  const [reviewing, setReviewing] = useState<string | null>(null);
+  const reviewOutput = async (id: string, assetId: string) => {
+    if (reviewing) return;
+    setReviewing(id);
+    setError("");
+    try {
+      // The review reads the node's saved agent and criteria, so save them first.
+      const saved = dirty ? await save() : baseline.current;
+      if (!saved) throw new Error("Save the current edits before reviewing.");
+      await onReview(id, saved, crypto.randomUUID(), assetId);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setReviewing(null);
+    }
+  };
   const run = async (id: string) => {
     const source = nodes.find((node) => node.id === id)?.data.source;
     const recipe = source && nodeRecipe(source);
     if (!source || busy(id)) return;
-    if (runsOnAgent(source.type))
+    if (source.type === "text")
       return generate(id, { provider: "bb" }, undefined, 1, nodeAgent(source) ?? defaultAgent);
     if (runsDirectly(source))
       return generate(
@@ -1308,6 +1317,7 @@ export function StudioCanvas({
                   baseUrl: previewBaseUrl,
                   jobs: nodeJobs(node.id),
                   job: nodeJobs(node.id)[0],
+                  reviewJobs: reviewJobs(node.id),
                   busy: busy(node.id),
                   briefing: briefing(node.id),
                   inputs: nodePorts.get(node.id),
@@ -1462,7 +1472,7 @@ export function StudioCanvas({
                 </button>
               </header>
               {promptField(selected.data.source.type) &&
-                !runsOnAgent(selected.data.source.type) &&
+                selected.data.source.type !== "text" &&
                 !selectedMedia && (
                   <section className="gs-inspector-section">
                     <h3>Generation</h3>
@@ -1496,7 +1506,7 @@ export function StudioCanvas({
                   </button>
                 </>
               )}
-              {["text", "image", "review"].includes(selected.data.source.type) && (
+              {["text", "image"].includes(selected.data.source.type) && (
                 <>
                   <CanvasInputs
                     node={selected.data.source}
@@ -1534,9 +1544,7 @@ export function StudioCanvas({
                           : selectedJob.status === "succeeded"
                             ? isBrief(selectedJob)
                               ? "Brief written"
-                              : selected.data.source.type === "review"
-                                ? "Reviewed"
-                                : "Generated"
+                              : "Generated"
                             : selectedJob.status}
                       </span>
                       {selectedJob.detail && <small>{selectedJob.detail}</small>}
@@ -1585,6 +1593,7 @@ export function StudioCanvas({
                       onChange={(patch) => editData(selected.id, patch)}
                     />
                   }
+                  reviewJobs={reviewJobs(selected.id)}
                   onChange={(patch) => editData(selected.id, patch)}
                   onRun={() => void run(selected.id)}
                   onControl={(jobId, action) =>
@@ -1594,7 +1603,7 @@ export function StudioCanvas({
                   }
                 />
               )}
-              {!["text", "document", "table", "review"].includes(selected.data.source.type) && (
+              {!["text", "document", "table"].includes(selected.data.source.type) && (
                 <section className="gs-inspector-section">
                   <h3>Output</h3>
                   {!takesShown && (
@@ -1622,6 +1631,18 @@ export function StudioCanvas({
                     </dl>
                   )}
                 </section>
+              )}
+              {reviewable(selected.data.source.type) && (
+                <ReviewSection
+                  node={selected.data.source}
+                  assetId={selectedAsset?.id}
+                  hostId={hostId}
+                  defaultAgent={defaultAgent}
+                  jobs={reviewJobs(selected.id)}
+                  disabled={reviewing === selected.id}
+                  onChange={(patch) => editData(selected.id, patch)}
+                  onReview={(assetId) => void reviewOutput(selected.id, assetId)}
+                />
               )}
               <button
                 className="gs-danger gs-inspector-remove"

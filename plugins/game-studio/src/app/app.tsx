@@ -548,6 +548,18 @@ function Workbench({ gameId, tab }: { gameId: string; tab: Tab }) {
                       });
                       await refetch();
                     }}
+                    onReview={async (nodeId, revision, requestId, assetId) => {
+                      await client.generateCanvas({
+                        gameId,
+                        boardId: board.board.id,
+                        nodeId,
+                        revision,
+                        requestId,
+                        threadId: composer.scope.kind === "thread" ? composer.scope.threadId : null,
+                        reviewAssetId: assetId,
+                      });
+                      await refetch();
+                    }}
                     onGenerationControl={async (jobId, action) => {
                       const result = await client.canvasGenerationStatus({
                         gameId,

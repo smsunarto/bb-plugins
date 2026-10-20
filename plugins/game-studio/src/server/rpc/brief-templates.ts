@@ -10,7 +10,6 @@ const templates = [
   { id: "motion", label: "Motion study", kinds: ["video"] },
   { id: "model", label: "3D asset contract", kinds: ["model-3d"] },
   { id: "design-critique", label: "Design experiment", kinds: ["text"] },
-  { id: "asset-review", label: "Game-ready 3D asset", kinds: ["review"] },
 ] as const;
 
 export const briefTemplates = defineQuery({

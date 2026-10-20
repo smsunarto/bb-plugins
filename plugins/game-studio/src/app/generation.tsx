@@ -29,25 +29,21 @@ export const nodeBatch = (node: CanvasNode) =>
     ? Number(node.data.batch)
     : 1;
 /** The model a node's output comes from. Text is the user's own, so it names none. */
-export const nodeModelLabel = (node: CanvasNode, defaultAgent?: AgentSelection) => {
-  if (node.type === "text") return undefined;
-  if (node.type !== "review") return nodeRecipe(node)?.label;
-  const agent = nodeAgent(node) ?? defaultAgent;
-  return (
-    agent &&
-    [agent.model, agent.reasoningLevel, agent.serviceTier === "fast" && "fast"]
-      .filter(Boolean)
-      .join(" · ")
-  );
-};
-/** The BB agent saved on a text or review node, when one was chosen. */
+export const nodeModelLabel = (node: CanvasNode) =>
+  node.type === "text" ? undefined : nodeRecipe(node)?.label;
+/** A BB agent as the picker summarizes it. */
+export const agentLabel = (agent: AgentSelection) =>
+  [agent.model, agent.reasoningLevel, agent.serviceTier === "fast" && "fast"]
+    .filter(Boolean)
+    .join(" · ");
+/** The BB agent saved on a text node, when one was chosen. */
 export const nodeAgent = (node: CanvasNode): AgentSelection | undefined => {
   const parsed = agentSelection.safeParse(node.data.agent);
   return parsed.success ? parsed.data : undefined;
 };
 /** The field holding a node's brief, when it can generate. */
 export const promptField = (kind: NodeKind) =>
-  kind === "text" || kind === "review"
+  kind === "text"
     ? "instruction"
     : ["image", "video", "model-3d", "asset"].includes(kind)
       ? "prompt"
@@ -124,6 +120,4 @@ export function GenerationSettings({
 
 /** Whether running the node generates on the canvas instead of preparing a request. */
 export const runsDirectly = (node: CanvasNode) =>
-  node.type === "text" || node.type === "review" || !!nodeRecipe(node)?.direct;
-/** Whether a node runs on a BB agent chosen in its composer. */
-export const runsOnAgent = (kind: NodeKind) => kind === "text" || kind === "review";
+  node.type === "text" || !!nodeRecipe(node)?.direct;
