@@ -2,7 +2,6 @@ import { readdirSync } from "node:fs";
 import { join } from "node:path";
 import type { Session } from "@bb-kit/core/tools";
 import { files } from "./service.ts";
-import { authorInstructions } from "./review.ts";
 
 const names = readdirSync(join(files.root, "skills"));
 export function configuration(session: Session) {
@@ -27,10 +26,9 @@ export function configuration(session: Session) {
       "scott_engineering_arena_status",
       "scott_engineering_arena_stop",
       "scott_engineering_review_start",
-      "scott_engineering_review_result",
       "scott_engineering_review_context",
     ],
     skills: names,
-    instructions: authorInstructions(),
+    instructions: files.read("review-author"),
   };
 }

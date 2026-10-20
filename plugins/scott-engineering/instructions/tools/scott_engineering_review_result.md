@@ -1,1 +1,0 @@
-Read a reviewer thread's native BB status and latest output by threadId. Use after its completion notification when the reply is needed again; do not poll. Follow nextOffset for large outputs. The returned target is the original pinned comparison: judge whether it still covers the current change. BB owns the thread history and lifecycle.

@@ -1037,13 +1037,12 @@ test("a panel run reads as one review with its reviewer count; concurrent runs e
     undefined,
     async ({ threadId }) => {
       const id = runOf(threadId);
-      const quick = id === "run_thr_codex";
+      const design = id === "run_thr_codex";
       return {
         reviewRun: {
           id,
-          mode: quick ? "quick" : "deep",
-          kind: "implementation",
-          startedAt: quick ? 190000 : 180000,
+          kind: design ? "design" : "implementation",
+          startedAt: design ? 190000 : 180000,
           status: "running",
           summary: `Summary for ${id}`,
         },
@@ -1052,22 +1051,22 @@ test("a panel run reads as one review with its reviewer count; concurrent runs e
   );
   try {
     const panel = await slot.findByRole("button", {
-      name: "Deep implementation review running · 2 reviewers. Open the review thread.",
+      name: "Implementation review running · 2 reviewers. Open the review thread.",
     });
     expect(panel.textContent).toContain("Running · 2 reviewers · 10s");
     expect(slot.getAllByRole("button")).toHaveLength(1);
     runOf = (threadId) => `run_${threadId}`;
     await change("thr_codex", ["status-changed"]);
-    const quick = await slot.findByRole("button", {
-      name: "Quick implementation review running. Open the review thread.",
+    const design = await slot.findByRole("button", {
+      name: "Design review running. Open the review thread.",
     });
-    const deep = slot.getByRole("button", {
-      name: "Deep implementation review running. Open the review thread.",
+    const implementation = slot.getByRole("button", {
+      name: "Implementation review running. Open the review thread.",
     });
-    expect(slot.getAllByRole("button")).toEqual([quick, deep]);
-    expect(quick.textContent).toContain("Running · 10sSummary for run_thr_codex");
-    expect(deep.textContent).toContain("Running · 20sSummary for run_thr_claude");
-    fireEvent.click(deep);
+    expect(slot.getAllByRole("button")).toEqual([design, implementation]);
+    expect(design.textContent).toContain("Running · 10sSummary for run_thr_codex");
+    expect(implementation.textContent).toContain("Running · 20sSummary for run_thr_claude");
+    fireEvent.click(implementation);
     expect(slot.inspection.navigateCalls).toEqual([{ method: "toThread", threadId: "thr_claude" }]);
   } finally {
     slot.unmount();
@@ -1086,7 +1085,7 @@ test("finished reviewers show native BB status regardless of old assessment meta
   );
   try {
     const button = await slot.findByRole("button", {
-      name: "Quick design review complete. Open the review thread.",
+      name: "Design review complete. Open the review thread.",
     });
     expect(button.textContent).toContain("Done");
   } finally {
@@ -1106,7 +1105,6 @@ test("an active review uses status events instead of metadata polling", async ()
       calls++;
       return {
         reviewRun: {
-          mode: "deep",
           kind: "implementation",
           startedAt: Date.now(),
           status: "running",
@@ -1116,7 +1114,7 @@ test("an active review uses status events instead of metadata polling", async ()
   );
   try {
     await slot.findByRole("button", {
-      name: "Deep implementation review running. Open the review thread.",
+      name: "Implementation review running. Open the review thread.",
     });
     await new Promise((resolve) => setTimeout(resolve, 3200));
     expect(calls).toBe(1);
@@ -1155,7 +1153,6 @@ test("the merged banner selects review metadata and excludes Arena workers", asy
         ? {
             reviewRun: {
               id: "run",
-              mode: "standard",
               kind: "implementation",
               startedAt: Date.now(),
               summary: "Merged review",
@@ -1182,7 +1179,7 @@ for (const failedCall of [1, 2])
   test(`native review metadata failure on lookup ${failedCall} retries without losing navigation`, async () => {
     let calls = 0;
     let status: "active" | "idle" = "active";
-    const run = { mode: "standard", kind: "implementation", startedAt: 1000, status: "running" };
+    const run = { kind: "implementation", startedAt: 1000, status: "running" };
     const { slot, change } = await renderBanner(
       async () => [
         child({ id: "native-review", originPluginId: "scott-engineering", status }),

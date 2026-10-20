@@ -1,6 +1,6 @@
 # Scott Engineering
 
-Scott's engineering workflows, derived from his pstack fork, with native Arena and independent review in BB. One plugin owns the tools, worker routing, composer banner, 20 workflow skills, and shared engineering principles.
+Scott's engineering workflows, derived from his pstack fork, with native Arena and independent review in BB. One plugin owns the tools, worker routing, composer banner, workflow skills, and shared engineering principles.
 
 Ask for Arena in a BB thread. The agent calls `scott_engineering_arena_start` and emits an embedded summary showing candidates, the judge, synthesis, verification, and round history. Workers and reviewers run in hidden threads; clicking one opens it, and its header links back to the main thread. Stop Arena cancels the run independently of the main chat.
 
@@ -8,9 +8,9 @@ A run frames the task, launches one Claude and one Codex candidate on identical 
 
 ## Independent review
 
-Reviews run automatically at implementation handoff and before consequential design decisions, unless the user skips them. The default panel asks Claude and Codex independently. Findings inform the lead's judgment; they do not gate publication. The [review workflow](skills/review-workflow/SKILL.md) owns the trigger, scope, and synthesis policy.
+Reviews run automatically at implementation handoff and before consequential design decisions, unless the user skips them. Each review asks Claude and Codex independently; the parent fixes accepted findings and verifies the changes unless the user explicitly says not to modify. Findings inform the lead's judgment; they do not gate publication. The [review workflow](skills/review/SKILL.md) owns the trigger, scope, synthesis, and fix policy.
 
-Use `scott_engineering_review_start`, `scott_engineering_review_result`, and `scott_engineering_review_context`. The CLI equivalents are `bb scott-engineering review-start`, `review-result`, and `review-context`. Pin implementation reviews to a named GitButler branch or explicit base/head; combined workspace commits are rejected. The composer banner shows current and finished reviews, with navigation to each reviewer and back to the main thread.
+Use `/review`, or the `scott_engineering_review_start` and `scott_engineering_review_context` tools. The CLI equivalents are `bb scott-engineering review-start` and `review-context`. BB delivers plain-language findings to the parent; retrieve a reply with `bb thread output <thread-id>`. Pin implementation reviews to a named GitButler branch or explicit base/head; combined workspace commits are rejected. The composer banner shows current and finished reviews, with navigation to each reviewer and back to the main thread.
 
 Reviewers receive pinned-context tools only. Arena workers receive their Arena assignment tools only. Neither can launch nested workflows. Arena continues to require an explicit request or an authorized Architect workflow.
 

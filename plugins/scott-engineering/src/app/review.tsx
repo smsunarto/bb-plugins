@@ -25,7 +25,6 @@ const RELEVANT_CHANGES = new Set([
 
 type RunDisplay = {
   id?: string;
-  mode: "quick" | "standard" | "deep";
   kind: "design" | "implementation";
   summary?: string;
 };
@@ -140,9 +139,7 @@ function useReviews(threadId: string): Review[] | null {
                 const run = metadata.reviewRun as RunDisplay | undefined;
                 return Object.assign({}, child, {
                   run:
-                    run &&
-                    ["quick", "standard", "deep"].includes(run.mode) &&
-                    ["design", "implementation"].includes(run.kind)
+                    run && ["design", "implementation"].includes(run.kind)
                       ? {
                           ...run,
                           summary: typeof run.summary === "string" ? run.summary : undefined,
@@ -243,7 +240,7 @@ function runRow(children: [Review, ...Review[]]): RunRow {
         ? "failed"
         : "complete";
   const title = review.run
-    ? `${review.run.mode[0]!.toUpperCase()}${review.run.mode.slice(1)} ${review.run.kind} review`
+    ? `${review.run.kind === "design" ? "Design" : "Implementation"} review`
     : "Adversarial review";
   return {
     target: review.id,

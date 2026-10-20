@@ -29,7 +29,7 @@ function targetFromOptions(options: { branch?: string; base?: string; head?: str
 function receiptText(receipt: Awaited<ReturnType<ReviewService["start"]>>) {
   const lines = receipt.reviewers.map(
     ({ reviewer, threadId }) =>
-      `${reviewer.model}: ${threadId}\nResult after BB notifies: bb scott-engineering review-result ${threadId}`,
+      `${reviewer.model}: ${threadId}\nResult after BB notifies: bb thread output ${threadId}`,
   );
   for (const { reviewer, error } of receipt.errors) lines.push(`${reviewer.model}: ${error}`);
   return lines.join("\n") + "\n";
@@ -53,12 +53,6 @@ export const reviewStart = defineCommand({
       values: ["design", "implementation"],
       default: "implementation",
       description: "Design before consequential work, or implementation at a fixed checkpoint",
-    },
-    mode: {
-      type: "enum",
-      values: ["quick", "standard", "deep"],
-      default: "standard",
-      description: "Quick medium, Standard high, Deep max",
     },
     branch: {
       type: "string",
@@ -85,7 +79,6 @@ export const reviewStart = defineCommand({
     const brief = await readBrief(ctx, options.file);
     const parsed = requestSchema.safeParse({
       kind: options.kind,
-      mode: options.mode,
       summary: options.prompt ?? brief?.trim().split("\n")[0]?.slice(0, 2000),
       brief,
       target,

@@ -2,14 +2,8 @@ import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import { randomUUID } from "node:crypto";
 import { reviewHostContract } from "../../shared/review-host-contract.ts";
 import { assignmentSchema } from "../../shared/review.ts";
-import type {
-  ContextRequest,
-  Evidence,
-  ResultRequest,
-  ReviewRequest,
-  Reviewer,
-} from "../../shared/review.ts";
-import { pickReviewers, reviewerPrompt, type ReviewerModels } from "./review.ts";
+import type { ContextRequest, Evidence, ReviewRequest, Reviewer } from "../../shared/review.ts";
+import { reviewerPrompt, type ReviewerModels } from "./review.ts";
 
 /** Reviews are ordinary BB children. Only their immutable inputs live in thread metadata. */
 export class ReviewService {
@@ -44,21 +38,26 @@ export class ReviewService {
           { hostId: environment.hostId, signal },
         )
       : null;
-    const execution = await this.bb.sdk.threads.defaultExecutionOptions({
-      threadId: caller,
-      signal,
-    });
-    const reviewers = pickReviewers(
-      { providerId: thread.providerId, model: execution?.model ?? null },
-      await this.models(),
-      request.mode,
-    );
+    const models = await this.models();
+    const reviewers: Reviewer[] = [
+      {
+        providerId: "claude-code",
+        model: models.claudeModel,
+        reasoningLevel: "high",
+        serviceTier: "fast",
+      },
+      {
+        providerId: "codex",
+        model: models.codexModel,
+        reasoningLevel: "high",
+        serviceTier: "fast",
+      },
+    ];
     const evidence = await this.captureEvidence(environment.hostId, request.evidence, signal);
     const prompt = reviewerPrompt(request, target, evidence);
     const reviewRun = {
       id: randomUUID(),
       kind: request.kind,
-      mode: request.mode,
       summary: request.summary,
       target,
     };
@@ -138,18 +137,5 @@ export class ReviewService {
       },
       { hostId: environment.hostId, signal },
     );
-  }
-
-  async result(caller: string, input: ResultRequest, signal: AbortSignal) {
-    const { thread, assignment } = await this.assignment(caller, input.threadId, signal);
-    const { output } = await this.bb.sdk.threads.output({ threadId: thread.id, signal });
-    const end = input.offset + 12000;
-    return {
-      threadId: thread.id,
-      status: thread.status,
-      target: assignment.target,
-      output: output === null ? null : output.slice(input.offset, end),
-      nextOffset: output && end < output.length ? end : null,
-    };
   }
 }

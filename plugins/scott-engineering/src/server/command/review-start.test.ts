@@ -4,7 +4,7 @@ import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import { readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import plugin from "../server.ts";
-import { requestSchema, resultSchema } from "../../shared/review.ts";
+import { requestSchema } from "../../shared/review.ts";
 import { ReviewService } from "../lib/review-service.ts";
 
 const signal = new AbortController().signal;
@@ -39,7 +39,6 @@ function fixture() {
     ],
   ]);
   const metadata = new Map<string, Record<string, unknown>>();
-  const outputs = new Map<string, string>();
   const spawns: Spawn[] = [];
   const hostCalls: { method: string; input: unknown }[] = [];
   const state = {
@@ -64,9 +63,7 @@ function fixture() {
           if (!thread) throw new Error("Thread not found");
           return { ...thread, environment } as never;
         },
-        defaultExecutionOptions: async () => ({ model: "gpt-test" }) as never,
         getPluginMetadata: async ({ threadId }) => metadata.get(threadId) ?? {},
-        output: async ({ threadId }) => ({ output: outputs.get(threadId) ?? null }),
         spawn: async (args) => {
           spawns.push(args);
           if (args.providerId === state.failProvider || state.failProvider === "all")
@@ -101,7 +98,6 @@ function fixture() {
     bbWithoutStorage: bb,
     threads,
     metadata,
-    outputs,
     spawns,
     hostCalls,
     state,
@@ -136,21 +132,11 @@ test("launches native Claude and Codex children with the same pinned inputs", as
   expect(f.metadata.get("reviewer-1")!.reviewRun).not.toHaveProperty("status");
 });
 
-test("a fresh service reads pinned source and native output after a reload", async () => {
+test("a fresh service reads the original pinned source after a reload", async () => {
   const f = fixture();
   await f.service.start("parent", request, signal);
-  f.threads.get("reviewer-1")!.status = "idle";
-  f.outputs.set("reviewer-1", "No actionable findings.");
   f.state.snapshot = { ...pinned, head: "c".repeat(40) };
   const reloaded = new ReviewService(f.bbWithoutStorage, models);
-  const result = await reloaded.result("parent", { threadId: "reviewer-1", offset: 0 }, signal);
-  expect(result).toEqual({
-    threadId: "reviewer-1",
-    status: "idle",
-    target: pinned,
-    output: "No actionable findings.",
-    nextOffset: null,
-  });
   expect(
     await reloaded.context("reviewer-1", { section: "diff", side: "head", offset: 0 }, signal),
   ).toMatchObject({ text: "pinned source" });
@@ -158,22 +144,6 @@ test("a fresh service reads pinned source and native output after a reload", asy
     method: "reviewRead",
     input: { target: pinned, section: "diff", side: "head", offset: 0 },
   });
-});
-
-test("result pages native output without caching it or interpreting the findings", async () => {
-  const f = fixture();
-  await f.service.start("parent", request, signal);
-  f.outputs.set("reviewer-1", "x".repeat(15000));
-  expect(
-    await f.service.result("parent", { threadId: "reviewer-1", offset: 0 }, signal),
-  ).toMatchObject({ status: "active", output: "x".repeat(12000), nextOffset: 12000 });
-  expect(
-    await f.service.result("parent", { threadId: "reviewer-1", offset: 12000 }, signal),
-  ).toMatchObject({ output: "x".repeat(3000), nextOffset: null });
-  f.outputs.set("reviewer-1", "Follow-up reply");
-  expect(
-    await f.service.result("parent", { threadId: "reviewer-1", offset: 0 }, signal),
-  ).toMatchObject({ output: "Follow-up reply" });
 });
 
 test("each start launches new children and partial failures preserve returned thread IDs", async () => {
@@ -189,13 +159,10 @@ test("each start launches new children and partial failures preserve returned th
   expect(second.reviewers.map((item) => item.threadId)).toEqual(["reviewer-3", "reviewer-4"]);
 });
 
-test("only a reviewer or its parent can read the assignment and reply", async () => {
+test("only a reviewer or its parent can read pinned source", async () => {
   const f = fixture();
   await f.service.start("parent", request, signal);
   for (const caller of ["stranger", "reviewer-2"]) {
-    await expect(
-      f.service.result(caller, { threadId: "reviewer-1", offset: 0 }, signal),
-    ).rejects.toThrow("Only the reviewer and its parent");
     await expect(
       f.service.context(
         caller,
@@ -204,9 +171,15 @@ test("only a reviewer or its parent can read the assignment and reply", async ()
       ),
     ).rejects.toThrow("Only the reviewer and its parent");
   }
-  expect(
-    await f.service.result("reviewer-1", { threadId: "reviewer-1", offset: 0 }, signal),
-  ).toMatchObject({ output: null });
+  for (const caller of ["parent", "reviewer-1"]) {
+    expect(
+      await f.service.context(
+        caller,
+        { threadId: "reviewer-1", section: "diff", side: "head", offset: 0 },
+        signal,
+      ),
+    ).toMatchObject({ text: "pinned source" });
+  }
 });
 
 test("workers cannot recursively launch and implementation requires a fixed target", async () => {
@@ -220,22 +193,22 @@ test("workers cannot recursively launch and implementation requires a fixed targ
     expect(requestSchema.safeParse({ summary: "Review", target: { branch } }).success).toBe(false);
 });
 
-test("designs need no source target and explicit quick requests launch one reviewer", async () => {
+test("designs need no source target and use the same independent reviewers", async () => {
   const f = fixture();
   const receipt = await f.service.start(
     "parent",
-    requestSchema.parse({ summary: "Design", kind: "design", mode: "quick", brief: "Proposal" }),
+    requestSchema.parse({ summary: "Design", kind: "design", brief: "Proposal" }),
     signal,
   );
   expect(receipt.target).toBeNull();
-  expect(receipt.reviewers).toHaveLength(1);
-  expect(f.spawns[0]!.reasoningLevel).toBe("medium");
+  expect(receipt.reviewers).toHaveLength(2);
+  expect(f.spawns[0]!.reasoningLevel).toBe("high");
   await expect(
     f.service.context("reviewer-1", { section: "diff", side: "head", offset: 0 }, signal),
   ).rejects.toThrow("no repository target");
 });
 
-test("tools and CLI use reviewer thread IDs with BB's native result", async () => {
+test("CLI points to native BB output and reviewers can read their pinned context", async () => {
   const f = fixture();
   await plugin(f.bb);
   try {
@@ -244,25 +217,13 @@ test("tools and CLI use reviewer thread IDs with BB's native result", async () =
       { threadId: "parent", signal },
     );
     expect(started.exitCode).toBe(0);
-    expect(started.stdout).toContain("review-result reviewer-1");
-    f.threads.get("reviewer-1")!.status = "idle";
-    f.outputs.set("reviewer-1", "Reviewer final response");
-    const result = await f.harness.behavior.runCli(["review-result", "reviewer-1"], {
-      threadId: "parent",
-      signal,
-    });
-    expect(JSON.parse(result.stdout!)).toMatchObject({
-      threadId: "reviewer-1",
-      status: "idle",
-      output: "Reviewer final response",
-    });
+    expect(started.stdout).toContain("bb thread output reviewer-1");
     const context = await f.harness.behavior.callAgentTool(
       "scott_engineering_review_context",
       { section: "diff" },
       { threadId: "reviewer-1" },
     );
     expect(JSON.stringify(context)).toContain("pinned source");
-    expect(resultSchema.safeParse({ runId: "obsolete-run" }).success).toBe(false);
   } finally {
     await f.harness.lifecycle.dispose();
   }

@@ -1,6 +1,5 @@
 import { z } from "zod";
 
-export const modeSchema = z.enum(["quick", "standard", "deep"]);
 export const kindSchema = z.enum(["design", "implementation"]);
 export const revisionSchema = z
   .string()
@@ -24,7 +23,6 @@ export const pinnedTargetSchema = z.object({
 export const requestSchema = z
   .object({
     kind: kindSchema.default("implementation"),
-    mode: modeSchema.default("standard"),
     summary: z.string().trim().min(1).max(2000),
     target: targetSchema.optional(),
     brief: z.string().max(32768).optional(),
@@ -45,31 +43,21 @@ export const contextSchema = z
     offset: z.number().int().min(0).default(0),
   })
   .strict();
-export const resultSchema = z
-  .object({
-    threadId: z.string().min(1),
-    offset: z.number().int().min(0).default(0),
-  })
-  .strict();
-export type ReviewMode = z.infer<typeof modeSchema>;
 export type ReviewKind = z.infer<typeof kindSchema>;
 export type ReviewRequest = z.infer<typeof requestSchema>;
 export type PinnedTarget = z.infer<typeof pinnedTargetSchema>;
 export type ContextRequest = z.infer<typeof contextSchema>;
-export type ResultRequest = z.infer<typeof resultSchema>;
 export type Evidence = { label: string; path: string; text: string };
 export type Reviewer = {
   providerId: "claude-code" | "codex";
   model: string;
-  reasoningLevel: "medium" | "high" | "max";
+  reasoningLevel: "high";
   serviceTier: "fast";
 };
 // Static inputs attached to BB's reviewer thread; BB owns its lifecycle and output.
 export const assignmentSchema = z.object({
   id: z.string(),
-  mode: modeSchema,
   kind: kindSchema,
   summary: z.string(),
   target: pinnedTargetSchema.nullable(),
 });
-export type ReviewAssignment = z.infer<typeof assignmentSchema>;

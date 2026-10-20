@@ -52,7 +52,7 @@ Default: proceed directly to implementation with the synthesized design. No huma
 
 Opt in to a checkpoint when the invoker explicitly asks: "/architect with checkpoint," "stop and show me before implementing," or similar. Then surface the synthesized design and pause for sign-off.
 
-The synthesis can ship as its own commit either way, as the "scaffold first" mode of the `foundational-thinking` principle reference. Planned and scoped breakage during fill-in is fine, per the `outcome-oriented-execution` principle reference. For adversarial pressure on the design before implementing, start a design review of the synthesized sketch with `scott_engineering_review_start` and kind `design`. Use the default Claude and Codex panel unless the user requests another mode.
+The synthesis can ship as its own commit either way, as the "scaffold first" mode of the `foundational-thinking` principle reference. Planned and scoped breakage during fill-in is fine, per the `outcome-oriented-execution` principle reference. For adversarial pressure on the design before implementing, start a design review of the synthesized sketch with `scott_engineering_review_start` and kind `design`.
 
 If the human pushes back on the shape (in a checkpoint or after the fact), treat that as Phase A evidence. Re-ground and re-run Phase B before writing more code.
 

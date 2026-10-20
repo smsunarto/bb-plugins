@@ -13,10 +13,8 @@ import { arenaPrepare } from "./tools/arena-prepare.ts";
 import { arenaReport } from "./tools/arena-report.ts";
 import { configuration } from "./lib/scope.ts";
 import { reviewStart } from "./command/review-start.ts";
-import { reviewResult } from "./command/review-result.ts";
 import { reviewContext } from "./command/review-context.ts";
 import { reviewStart as reviewStartTool } from "./tools/review-start.ts";
-import { reviewResult as reviewResultTool } from "./tools/review-result.ts";
 import { reviewContext as reviewContextTool } from "./tools/review-context.ts";
 import { ReviewService } from "./lib/review-service.ts";
 import { principle } from "./command/principle.ts";
@@ -30,7 +28,6 @@ export default definePlugin({
     stop,
     principle,
     "review-start": reviewStart,
-    "review-result": reviewResult,
     "review-context": reviewContext,
   },
   agents: {
@@ -44,7 +41,6 @@ export default definePlugin({
       arena_report: arenaReport,
       arena_prepare: arenaPrepare,
       review_start: reviewStartTool,
-      review_result: reviewResultTool,
       review_context: reviewContextTool,
     },
   },
