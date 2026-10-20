@@ -181,12 +181,57 @@ export async function terminateOwnedProcessGroup(identity: ProcessIdentity): Pro
   if (!processMatches(identity)) {
     return;
   }
-  signalOwnedProcess(identity, "SIGTERM");
-  await waitForProcessExit(identity, 250);
-  if (processMatches(identity)) {
-    signalOwnedProcess(identity, "SIGKILL");
-    await waitForProcessExit(identity, 1_000);
+  // pnpm and Turbo put descendants in additional process groups. Capture
+  // their identities before stopping the launcher reparents those children.
+  let owned = [identity];
+  let snapshotFailure: unknown;
+  try {
+    owned = ownedProcessTree(identity);
+  } catch (error) {
+    snapshotFailure = error;
   }
+  signalOwnedProcess(identity, "SIGTERM");
+  for (const child of owned) {
+    signalOwnedProcess(child, "SIGTERM", false);
+  }
+  await waitForProcessExit(owned, 250);
+  signalOwnedProcess(identity, "SIGKILL");
+  for (const child of owned) {
+    signalOwnedProcess(child, "SIGKILL", false);
+  }
+  await waitForProcessExit(owned, 1_000);
+  if (snapshotFailure !== undefined) {
+    throw snapshotFailure;
+  }
+}
+
+function ownedProcessTree(identity: ProcessIdentity): ProcessIdentity[] {
+  if (process.platform === "win32") {
+    return [identity];
+  }
+  const result = runCommand("ps", ["-A", "-o", "pid=,ppid=,lstart="]);
+  if (result.status !== 0) {
+    throw new Error(`Could not enumerate the owned process tree: ${result.stderr}`);
+  }
+  const processes = result.stdout
+    .trim()
+    .split("\n")
+    .flatMap((line) => {
+      const fields = /^\s*(\d+)\s+(\d+)\s+(.+)$/u.exec(line);
+      const [, pid, parent, started] = fields ?? [];
+      return pid === undefined || parent === undefined || started === undefined
+        ? []
+        : [{ parent: Number(parent), identity: { pid: Number(pid), started: started.trim() } }];
+    });
+  const owned = [identity];
+  for (const parent of owned) {
+    for (const child of processes) {
+      if (child.parent === parent.pid) {
+        owned.push(child.identity);
+      }
+    }
+  }
+  return owned;
 }
 
 export function inheritProcess(command: string, args: readonly string[]): Promise<number> {
@@ -202,12 +247,12 @@ export function waitForChild(child: ReturnType<typeof spawn>): Promise<number> {
   });
 }
 
-function signalOwnedProcess(identity: ProcessIdentity, signal: NodeJS.Signals): void {
+function signalOwnedProcess(identity: ProcessIdentity, signal: NodeJS.Signals, group = true): void {
   if (!processMatches(identity)) {
     return;
   }
   try {
-    process.kill(process.platform === "win32" ? identity.pid : -identity.pid, signal);
+    process.kill(group && process.platform !== "win32" ? -identity.pid : identity.pid, signal);
   } catch (error) {
     if (!isMissingProcess(error)) {
       throw error;
@@ -215,9 +260,9 @@ function signalOwnedProcess(identity: ProcessIdentity, signal: NodeJS.Signals): 
   }
 }
 
-async function waitForProcessExit(identity: ProcessIdentity, timeoutMs: number): Promise<void> {
+async function waitForProcessExit(identities: ProcessIdentity[], timeoutMs: number): Promise<void> {
   const deadline = Date.now() + timeoutMs;
-  while (processMatches(identity) && Date.now() < deadline) {
+  while (identities.some(processMatches) && Date.now() < deadline) {
     await new Promise((resolve) => setTimeout(resolve, 25));
   }
 }
