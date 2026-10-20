@@ -51,6 +51,7 @@ async function fixture(withDigests = false) {
   const results: string[] = [];
   type Environment = Awaited<ReturnType<BbPluginApi["sdk"]["environments"]["get"]>>;
   type Spawn = Parameters<BbPluginApi["sdk"]["threads"]["spawn"]>[0];
+  type Send = Parameters<BbPluginApi["sdk"]["threads"]["send"]>[0];
   const environment: Environment = {
     id: "env_source",
     projectId: "project",
@@ -85,6 +86,7 @@ async function fixture(withDigests = false) {
   const environments = new Map([[environment.id, environment]]);
   const metadata = new Map<string, NonNullable<Spawn["pluginMetadata"]>>();
   const spawned: Spawn[] = [];
+  const sent: Send[] = [];
   const lateWorkers: (() => void)[] = [];
   const outputs = new Map<string, string>();
   const receipts = new Map<string, Integration>();
@@ -104,6 +106,8 @@ async function fixture(withDigests = false) {
     rewriteLate: boolean;
     integrationWait?: Promise<Integration>;
     fatalPin: boolean;
+    /** The next message to the launching chat fails, as an unreachable BB server would. */
+    sendError: boolean;
     integration: Integration;
   } = {
     uncertain: false,
@@ -114,6 +118,7 @@ async function fixture(withDigests = false) {
     rewriteUncertain: false,
     rewriteLate: false,
     fatalPin: false,
+    sendError: false,
     integration: {
       status: "integrated",
       summary: "Verified and integrated",
@@ -234,6 +239,14 @@ async function fixture(withDigests = false) {
           return { ok: true };
         },
         queuedMessages: { list: async () => [], delete: async () => ({ ok: true }) },
+        send: async (input) => {
+          if (state.sendError) {
+            state.sendError = false;
+            throw new Error("socket hang up");
+          }
+          sent.push(input);
+          return { ok: true as const, delivery: "sent" as const };
+        },
       },
     },
   });
@@ -293,6 +306,7 @@ async function fixture(withDigests = false) {
     metadata,
     outputs,
     spawned,
+    sent,
     snapshots,
     ancestors,
     receipts,
@@ -830,6 +844,69 @@ test("Stop reconciles a successful host apply instead of reporting stopped", asy
   for (let i = 0; i < 20; i++) await tick();
   assert.equal(f.service.get(run.id).phase, "completed");
   assert.equal(f.service.get(run.id).integration?.status, "integrated");
+});
+
+const owner = (f: Awaited<ReturnType<typeof fixture>>) =>
+  f.sent.map((message) => ({
+    threadId: message.threadId,
+    mode: message.mode,
+    text: message.input[0]?.type === "text" ? message.input[0].text : "",
+  }));
+
+test("a completed run wakes its launching chat exactly once", async () => {
+  const f = await fixture();
+  const run = await f.start();
+  await f.candidates(run.id);
+  await f.finish(run.id, "judge", judge);
+  assert.deepEqual(f.sent, []);
+  await f.finish(run.id, "synthesis", synthesis);
+  for (let i = 0; i < 5; i++) await tick();
+  const [message, ...rest] = owner(f);
+  assert.deepEqual(rest, []);
+  assert.equal(message?.threadId, f.parent.id);
+  assert.equal(message?.mode, "queue-if-active");
+  assert.match(message?.text ?? "", new RegExp(`${run.id} completed: Verified and integrated`));
+  await f.restart();
+  assert.equal(f.sent.length, 1);
+});
+
+test("a failed run wakes its launching chat and Stop does not", async () => {
+  const f = await fixture();
+  f.state.integration = {
+    status: "verification-failed",
+    summary: "Behavior check failed",
+    checks: [{ command: "bun test", exitCode: 1, output: "Expected the new behavior" }],
+  };
+  const run = await f.start();
+  for (let round = 1; round <= 3; round++) {
+    await f.candidates(run.id);
+    await f.finish(run.id, "judge", judge);
+    await f.finish(run.id, "synthesis", synthesis);
+  }
+  for (let i = 0; i < 5; i++) await tick();
+  assert.equal(f.service.get(run.id).phase, "failed");
+  assert.equal(owner(f).length, 1);
+  assert.match(owner(f)[0]?.text ?? "", new RegExp(`${run.id} failed: Behavior check failed`));
+  const stopped = await f.start("stopped");
+  await f.stop(stopped.id);
+  await f.restart();
+  assert.equal(f.sent.length, 1);
+});
+
+test("a wake lost to a failed send is delivered on restart", async () => {
+  const f = await fixture();
+  f.state.sendError = true;
+  const run = await f.start();
+  await f.candidates(run.id);
+  await f.finish(run.id, "judge", judge);
+  await f.finish(run.id, "synthesis", synthesis);
+  for (let i = 0; i < 5; i++) await tick();
+  assert.equal(f.service.get(run.id).phase, "completed");
+  assert.deepEqual(f.sent, []);
+  await f.restart();
+  assert.equal(owner(f).length, 1);
+  await f.restart();
+  assert.equal(f.sent.length, 1);
 });
 
 test("successful progress resets recovery for separate transient episodes", async (ctx) => {
