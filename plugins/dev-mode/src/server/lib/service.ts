@@ -146,7 +146,10 @@ export class ArenaService {
         (run) =>
           !terminal.has(run.phase) ||
           run.ownerNotice === "pending" ||
-          run.jobs.some((job) => job.dispatch === "retired" && !job.stopConfirmed),
+          run.jobs.some(
+            (job) =>
+              (job.dispatch === "retired" && !job.stopConfirmed) || (job.threadId && !job.archived),
+          ),
       );
   }
 
@@ -159,12 +162,14 @@ export class ArenaService {
       !(run.phase === "failed" && run.integration?.status === "interrupted")
     )
       throw new Error("Arena was stopped");
-    const finished =
-      !terminal.has(current.phase) && (run.phase === "completed" || run.phase === "failed");
+    const ended = !terminal.has(current.phase) && terminal.has(run.phase);
+    const finished = ended && run.phase !== "stopped";
     if (finished) run.ownerNotice = "pending";
     if (run.phase === "failing" && current.phase !== "failing")
       run.failure = run.error ?? undefined;
     run.updatedAt = Math.max(Date.now(), current.updatedAt + 1);
+    // Saves after the end, such as archiving workers, must not stretch the card's duration.
+    if (ended) run.endedAt = run.updatedAt;
     this.db
       .prepare("UPDATE arena_runs SET phase = ?, payload = ? WHERE id = ?")
       .run(run.phase, JSON.stringify(run), run.id);
@@ -173,6 +178,10 @@ export class ArenaService {
     if (finished)
       void this.serial(run.id, () => this.notifyOwner(run.id)).catch((error) =>
         this.bb.log.warn(`Arena ${run.id}: owner wake failed: ${String(error)}`),
+      );
+    if (ended)
+      void this.serial(run.id, () => this.archiveWorkers(run.id)).catch((error) =>
+        this.bb.log.warn(`Arena ${run.id}: archiving workers failed: ${String(error)}`),
       );
   }
 
@@ -566,6 +575,7 @@ export class ArenaService {
         if (!job.stopConfirmed) await this.stopWorker(job, "Launch reservation was retired");
         this.save(run);
         if (run.phase === "stopping" || run.phase === "failing") await this.advance(id);
+        await this.archiveWorkers(id);
         return;
       }
       if (!terminal.has(run.phase)) await this.advance(id);
@@ -931,6 +941,33 @@ export class ArenaService {
     if (job.dispatch === "retired") job.stopConfirmed = true;
   }
 
+  /**
+   * Archives an ended run's workers so BB removes their worktrees after its grace period. Their
+   * branches and Arena's pins keep the results. A failed archive retries on the next restart.
+   */
+  private async archiveWorkers(id: string) {
+    const run = this.get(id);
+    if (this.disposed || !terminal.has(run.phase)) return;
+    let archived = false;
+    for (const job of run.jobs) {
+      if (!job.threadId || job.archived) continue;
+      try {
+        await this.bb.sdk.threads.archive({ threadId: job.threadId });
+      } catch (error) {
+        if (!missing(error)) {
+          this.bb.log.warn(
+            `Arena ${id}: ${job.threadId} stays unarchived until restart: ${String(error)}`,
+          );
+          continue;
+        }
+      }
+      job.archived = archived = true;
+    }
+    // A run that ended before `endedAt` existed last saved when it ended.
+    run.endedAt ??= run.updatedAt;
+    if (archived) this.save(run);
+  }
+
   private async drain(run: ArenaRun, finalPhase: "failed" | "stopped") {
     try {
       await this.stopOwned(run, finalPhase);
@@ -1017,6 +1054,7 @@ export class ArenaService {
             else await this.handleFailure(this.get(id), error);
           }
           await this.notifyOwner(id);
+          await this.archiveWorkers(id);
         }),
       ),
     );

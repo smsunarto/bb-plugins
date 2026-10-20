@@ -238,6 +238,12 @@ async function fixture(withDigests = false) {
           if (thread) thread.status = "idle";
           return { ok: true };
         },
+        archive: async ({ threadId }) => {
+          const thread = threads.get(threadId);
+          if (!thread) throw new Error("Thread not found");
+          thread.archivedAt ??= Date.now();
+          return { ok: true, archivedThreadIds: [threadId] };
+        },
         queuedMessages: { list: async () => [], delete: async () => ({ ok: true }) },
         send: async (input) => {
           if (state.sendError) {
@@ -701,6 +707,7 @@ test("startup drains a late worker even after its run was stopped", async () => 
   f.metadata.set(late.id, input.pluginMetadata ?? {});
   await f.restart();
   assert.equal(late.status, "idle");
+  assert.notEqual(late.archivedAt, null);
   assert.equal(f.service.get(run.id).phase, "stopped");
 });
 
@@ -1353,6 +1360,109 @@ test("fatal failure waits for a retired worker and its idle event finishes the d
   assert.equal(f.service.get(run.id).phase, "failed");
   assert.equal(f.service.get(run.id).jobs[0]?.stopConfirmed, true);
   assert.equal(f.parent.status, "active");
+});
+
+const archived = (f: Awaited<ReturnType<typeof fixture>>, runId: string) =>
+  f.service
+    .get(runId)
+    .jobs.map((job) => (f.threads.get(job.threadId ?? "")?.archivedAt ?? null) !== null);
+
+test("an ended run archives its workers so BB removes their checkouts", async () => {
+  const f = await fixture();
+  const run = await f.start();
+  await f.candidates(run.id);
+  await f.finish(run.id, "judge", judge);
+  assert.deepEqual(archived(f, run.id), [false, false, false, false, false]);
+  await f.finish(run.id, "synthesis", synthesis);
+  for (let i = 0; i < 5; i++) await tick();
+  assert.equal(f.service.get(run.id).phase, "completed");
+  assert.deepEqual(archived(f, run.id), [true, true, true, true, true]);
+  const stopped = await f.start("stopped");
+  await f.finish(stopped.id, "frame", frame);
+  assert.equal((await f.stop(stopped.id)).phase, "stopped");
+  for (let i = 0; i < 5; i++) await tick();
+  assert.deepEqual(archived(f, stopped.id), [true, true, true]);
+});
+
+test("a restart archives the workers of a run that ended while archiving failed", async () => {
+  const f = await fixture();
+  const archive = async ({ threadId }: { threadId: string }) => {
+    const thread = f.threads.get(threadId);
+    if (thread) thread.archivedAt = Date.now();
+    return { ok: true as const, archivedThreadIds: [threadId] };
+  };
+  const run = await f.start();
+  const frameWorker = run.jobs[0]?.threadId;
+  f.f.harness.sdk.stub("threads.archive", async ({ threadId }) => {
+    if (threadId === frameWorker) throw new Error("socket hang up");
+    return archive({ threadId });
+  });
+  await f.candidates(run.id);
+  await f.finish(run.id, "judge", judge);
+  await f.finish(run.id, "synthesis", synthesis);
+  for (let i = 0; i < 5; i++) await tick();
+  assert.equal(f.service.get(run.id).phase, "completed");
+  assert.equal(f.service.get(run.id).ownerNotice, "sent");
+  assert.deepEqual(archived(f, run.id), [false, true, true, true, true]);
+  f.f.harness.sdk.stub("threads.archive", archive);
+  await f.restart();
+  assert.deepEqual(archived(f, run.id), [true, true, true, true, true]);
+});
+
+test("a worker that turns up after its run stopped is stopped and archived by its own event", async () => {
+  const f = await fixture();
+  f.state.noDispatch = true;
+  const run = await f.start();
+  assert.equal((await f.stop(run.id)).phase, "stopped");
+  const input = f.spawned[0];
+  assert.ok(input);
+  const late = makeThreadResponse({
+    id: "late-after-stop",
+    projectId: "project",
+    originPluginId: "scott-engineering",
+    providerId: input.providerId,
+    status: "active",
+  });
+  f.threads.set(late.id, late);
+  f.metadata.set(late.id, input.pluginMetadata ?? {});
+  await f.service.threadChanged(late.id);
+  assert.equal(late.status, "idle");
+  assert.notEqual(late.archivedAt, null);
+});
+
+test("archiving workers later keeps the time a run ended", async () => {
+  const f = await fixture();
+  const run = await f.start();
+  await f.candidates(run.id);
+  await f.finish(run.id, "judge", judge);
+  await f.finish(run.id, "synthesis", synthesis);
+  const endedAt = f.service.get(run.id).endedAt;
+  assert.ok(endedAt);
+  for (let i = 0; i < 5; i++) await tick();
+  assert.deepEqual(archived(f, run.id), [true, true, true, true, true]);
+  assert.equal(f.service.get(run.id).endedAt, endedAt);
+
+  // A run that ended before Arena archived workers has neither an end time nor archive marks.
+  const legacy = await f.start("legacy");
+  await f.finish(legacy.id, "frame", frame);
+  await f.stop(legacy.id);
+  for (let i = 0; i < 5; i++) await tick();
+  const db = f.f.bb.storage.database();
+  const row = db
+    .prepare<[string], { payload: string }>("SELECT payload FROM arena_runs WHERE id = ?")
+    .get(legacy.id);
+  assert.ok(row);
+  const stored = JSON.parse(row.payload);
+  delete stored.endedAt;
+  for (const job of stored.jobs) delete job.archived;
+  db.prepare("UPDATE arena_runs SET payload = ? WHERE id = ?").run(
+    JSON.stringify(stored),
+    legacy.id,
+  );
+  for (const thread of f.threads.values()) thread.archivedAt = null;
+  await f.restart();
+  assert.deepEqual(archived(f, legacy.id), [true, true, true]);
+  assert.equal(f.service.get(legacy.id).endedAt, stored.updatedAt);
 });
 
 test("canonical and legacy Arena tools share SDK schemas and authorization on an existing run", async () => {

@@ -106,6 +106,8 @@ export const jobSchema = z.object({
   dispatch: z.enum(["reserved", "dispatching", "started", "retired"]),
   /** A retired launch has no worker left to stop: its worker stopped, or a restart found none. */
   stopConfirmed: z.boolean().optional(),
+  /** Its worker was archived after the run ended, so BB removes the worker's worktree. */
+  archived: z.boolean().optional(),
   threadId: z.string().nullable(),
   environmentId: z.string().nullable(),
   path: z.string().nullable(),
@@ -177,6 +179,8 @@ export const runSchema = z.object({
   failure: z.string().optional(),
   /** The launching chat's wake for a completion or failure. Absent on Stop and on older runs. */
   ownerNotice: z.enum(["pending", "sent"]).optional(),
+  /** When the run reached its final phase. Older runs fall back to `updatedAt`. */
+  endedAt: z.number().optional(),
   startedAt: z.number(),
   updatedAt: z.number(),
 });

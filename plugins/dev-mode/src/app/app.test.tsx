@@ -163,6 +163,23 @@ test("realtime completion replaces progress with synthesis and verification", as
   }
 });
 
+test("a finished run's duration ends when the run ended, not at its last save", async () => {
+  const { state, slot } = await mount();
+  try {
+    state.run = {
+      ...state.run,
+      phase: "completed",
+      startedAt: 0,
+      endedAt: 9 * 60_000,
+      updatedAt: 72 * 3_600_000,
+    };
+    await slot.behavior.emitRealtime("arena.changed", { runId: id });
+    await slot.findByText("9m 00s");
+  } finally {
+    slot.lifecycle.unmount();
+  }
+});
+
 test("reconnecting refreshes a completion missed while disconnected", async () => {
   const { state, slot } = await mount();
   try {

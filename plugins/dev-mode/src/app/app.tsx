@@ -87,7 +87,7 @@ function Duration({ run }: { run: ArenaRun }) {
   }, [live]);
   return (
     <span className="arena-duration">
-      {formatDuration((live ? now : run.updatedAt) - run.startedAt)}
+      {formatDuration((live ? now : (run.endedAt ?? run.updatedAt)) - run.startedAt)}
     </span>
   );
 }

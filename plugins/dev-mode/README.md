@@ -32,7 +32,7 @@ Applying the patch and recording its receipt form a commit point: Stop cancels b
 
 The launching thread alone receives status and control tools. Worker tools expose only their assignment. The embedded controls run as the authenticated BB user; candidate blinding is workflow isolation, not a security boundary against that user or shared filesystem access.
 
-Outputs remain uncommitted. Candidate worktrees and private `refs/arena/` snapshots retain artifacts for inspection. The plugin does not push or open a PR. This first version does not automatically remove retained environments.
+Outputs remain uncommitted. The plugin does not push or open a PR. When a run completes, fails, or stops, Arena archives its workers, and BB removes their worktrees after its grace period. Worker branches and private `refs/arena/` snapshots keep finished results for inspection. A worker cancelled mid-task loses its unfinished edits.
 
 ## Commands and settings
 
