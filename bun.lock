@@ -540,7 +540,7 @@
     },
     "plugins/gtd-sidebar": {
       "name": "@smsunarto/bb-plugin-gtd-sidebar",
-      "version": "0.5.1",
+      "version": "0.6.0",
       "dependencies": {
         "@bb-kit/core": "0.2.0",
         "@dnd-kit/core": "6.3.1",
