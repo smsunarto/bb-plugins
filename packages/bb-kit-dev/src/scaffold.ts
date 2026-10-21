@@ -18,7 +18,7 @@ import { defaultLayout, typeEdgeSpecifier, unitFile, type SrcLayout } from "./la
  * and a devDependency pin would break an installed plugin.
  */
 export const SCAFFOLD_DEPENDENCIES: Readonly<Record<string, string>> = {
-  "@bb-kit/core": "0.2.0",
+  "@bb-kit/core": "1.0.0",
   zod: "4.4.3",
 };
 
