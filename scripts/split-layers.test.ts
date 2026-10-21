@@ -8,6 +8,12 @@ const SCRIPT = join(import.meta.dir, "split-layers.ts");
 
 const temporaryDirectories: string[] = [];
 
+// Git hooks export GIT_DIR and friends. Inherited from a linked worktree's pre-push hook, they point
+// these commands at the real repository instead of the temporary one.
+const env = Object.fromEntries(
+  Object.entries(process.env).filter(([name]) => !name.startsWith("GIT_")),
+);
+
 async function temporaryDirectory(): Promise<string> {
   const directory = await mkdtemp(join(tmpdir(), "bb-split-layers-test-"));
   temporaryDirectories.push(directory);
@@ -23,7 +29,7 @@ afterEach(async () => {
 });
 
 function git(cwd: string, args: string[]): string {
-  return execFileSync("git", args, { cwd, encoding: "utf8" });
+  return execFileSync("git", args, { cwd, encoding: "utf8", env });
 }
 
 async function repository(): Promise<string> {
@@ -77,6 +83,7 @@ function runScript(cwd: string, manifest: string): { code: number; output: strin
   try {
     const output = execFileSync("bun", [SCRIPT, manifest], {
       cwd,
+      env,
       encoding: "utf8",
       stdio: ["ignore", "pipe", "pipe"],
     });
