@@ -25,6 +25,14 @@ test("authors get the skills and the Arena and review prompts, with no tools", a
     assert.deepEqual(result.tools, []);
     assert.deepEqual([...result.skills].sort(), [...skills].sort());
     assert.ok(result.skills.includes("arena") && result.skills.includes("review"));
+    assert.match(
+      result.instructions ?? "",
+      /Before software engineering work .* read the `dev` skill/,
+    );
+    assert.match(
+      result.instructions ?? "",
+      /do not apply them to visual, UI, UX, product, or game design/,
+    );
     assert.match(result.instructions ?? "", /bb dev-mode principle --name <name>/);
     assert.match(result.instructions ?? "", /bb thread spawn --parent-self/);
     assert.equal(f.harness.inspection.registrations.agentTools.length, 0);

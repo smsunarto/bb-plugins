@@ -21,7 +21,7 @@ The injected prompt and the principle command text are editable under `instructi
 
 ## Maintaining imported prompts
 
-Preserve imported principles, skills, and supporting prompts verbatim wherever possible. The exception is the `dev` skill and its playbooks, which were deliberately rewritten from pstack as recommendations rather than required steps. Limit porting changes to requested renames, reference paths, unavailable integrations, and required BB adapters. Do not paraphrase, simplify, or change behavior as incidental cleanup; treat intentional prompt changes as behavior changes requiring explicit rationale.
+Preserve imported principles, skills, and supporting prompts verbatim wherever possible. The exceptions are deliberate: the `dev` skill and its playbooks were rewritten from pstack as recommendations rather than required steps, and `experience-first` and `exhaust-the-design-space` are scoped to engineering work, not visual, UI, product, or game design. Limit porting changes to requested renames, reference paths, unavailable integrations, and required BB adapters. Do not paraphrase, simplify, or change behavior as incidental cleanup; treat intentional prompt changes as behavior changes requiring explicit rationale.
 
 The existing skills and principle references come from [Scott's dotfiles fork before migration](https://github.com/smsunarto/dotfiles/tree/9bd2820707a2a1f4525bccd32af9766cb98c1d6a/.dotfiles/.agents/plugins/scott-engineering).
 

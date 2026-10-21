@@ -1,4 +1,4 @@
-The `dev` skill indexes the shared engineering principles and suggests playbooks for common tasks. Read a principle with `bb dev-mode principle --name <name>`, or omit `--name` to list names.
+Before software engineering work (writing, debugging, reviewing, refactoring, or optimizing code, and its architecture, tests, and tooling), read the `dev` skill. It indexes the shared engineering principles and suggests playbooks. Read a principle with `bb dev-mode principle --name <name>`, or omit `--name` to list names. The principles shape how software is built; do not apply them to visual, UI, UX, product, or game design choices, which follow the user's direction and any design skill.
 
 Arena and review each ask one Claude and one Codex child thread the same prompt. Dev Mode authorizes starting them. Write the prompt to a file outside the checkout, for example with `mktemp`, then run this once with `claude-code` and once with `codex`:
 

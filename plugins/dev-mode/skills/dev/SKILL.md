@@ -1,9 +1,11 @@
 ---
 name: dev
-description: Index of engineering principles and suggested playbooks for bug fixes, features, refactors, perf work, investigations, and other engineering tasks. Use for engineering work or /dev.
+description: Index of engineering principles and suggested playbooks for software engineering work, such as bug fixes, features, refactors, perf work, and investigations. Read it before software engineering work or on /dev. Not for visual, UI, product, or game design decisions.
 ---
 
 # Dev
+
+Use this for software engineering work: writing, debugging, reviewing, refactoring, or optimizing code, and the architecture, tests, and tooling around it. The principles shape how software is built. Visual, UI, UX, product, and game design choices are not engineering decisions, so leave the principles out of them and follow the user's direction and any design skill. When a task mixes both, such as building a designed screen, apply the principles to the code and leave the design choices to the design.
 
 These are recommendations, not rules. Session, user, and repository instructions come first. Take what fits the task, skip what doesn't, and mention a departure only when the reason is worth knowing.
 
@@ -22,8 +24,8 @@ Read one with `bb dev-mode principle --name <name>` when its situation comes up.
 - `subtract-before-you-add`. Sequencing an addition, refactor, or rewrite. Remove dead weight first.
 - `minimize-reader-load`. Code that is hard to trace. Count layers and hidden state, collapse one-caller wrappers, shrink mutable scope.
 - `outcome-oriented-execution`. Planned rewrites and migrations. Converge on the target instead of preserving throwaway compatibility states.
-- `experience-first`. Product, UX, or feature-scope tradeoffs. Favor the user's experience over implementation convenience.
-- `exhaust-the-design-space`. An architectural decision with no precedent. Sketch two or three designs and compare them before committing.
+- `experience-first`. An engineering tradeoff that changes what end users, API callers, or the next maintainer get. Favor their experience over implementation convenience.
+- `exhaust-the-design-space`. An architectural, API, or system-design decision with no precedent. Sketch two or three designs and compare them before committing.
 - `build-the-lever`. Non-trivial work. Build the tool that does or proves it (codemod, script, generator) instead of doing it by hand.
 
 **Architecture**
@@ -59,7 +61,7 @@ Suggested approaches for common kinds of work. Open the one that matches and ada
 - [Trace forensics](playbooks/trace-forensics.md). Diagnose an existing capture (cpuprofile, trace, spindump, heap snapshot).
 - [Feature](playbooks/feature.md). New or changed behavior.
 - [Refactoring](playbooks/refactoring.md). A behavior-preserving change to structure: rename, extract, inline, dedupe, or move.
-- [Prototype](playbooks/prototype.md). A throwaway sketch that settles a design or behavioral question cheaply.
+- [Prototype](playbooks/prototype.md). A throwaway sketch that settles an engineering question (behavior, timing, approach, interface) by observation.
 - [Visual parity](playbooks/visual-parity.md). Pixel-exact UI equivalence between two implementations or across a styling migration.
 - [Authoring a skill](playbooks/authoring-a-skill.md). Writing or editing a SKILL.md.
 - [Autonomous run](playbooks/autonomous-run.md). A long task to drive to completion without stopping.

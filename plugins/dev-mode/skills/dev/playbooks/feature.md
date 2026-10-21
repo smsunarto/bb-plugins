@@ -1,6 +1,6 @@
 # Feature
 
-New or changed behavior.
+New or changed behavior. The principles here shape the code; visual, UI, and product choices follow the user's direction or the design.
 
 What tends to work:
 
