@@ -758,65 +758,37 @@ test("simultaneous automatic retries cannot reserve two checkouts for one owner"
   ]);
 });
 
-test("reviewer metadata lookup is scoped to slots and fails within admission", async () => {
-  let calls = 0;
-  const { harness } = await setup({
-    resolve: (path) => path,
-    metadata: async (_id, signal) => {
-      calls += 1;
-      expect(signal).toBeInstanceOf(AbortSignal);
-      throw new Error("Metadata unavailable");
-    },
-  });
-  const dispatch = harness.registrations.hooks["message.dispatch"]!;
-  const context = (path: string) =>
-    makeMessageDispatchHookContext({
-      thread: { id: "worker", projectId: "project", originPluginId: "scott-engineering" },
-      project,
-      environment: { ...environment, path },
-      host: makeHostResponse({ id: "host" }),
-    });
-  expect(await dispatch(context("/other-project"))).toEqual({ action: "proceed" });
-  expect(calls).toBe(0);
-  expect(await dispatch(context("/rampage"))).toEqual({
-    action: "reject",
-    message: "Metadata unavailable",
-  });
-  expect(calls).toBe(1);
-});
-
-test("Scott Engineering exempts snapshot reviewers but still fences Arena workers", async () => {
+test("the lease holder's child threads work under its lease", async () => {
   const { state, harness, slot } = await setup();
-  await acquire(harness, slot.id);
-  state.metadata.set("reviewer", { reviewRun: { id: "run" } });
-  state.metadata.set("arena", { arena: { runId: "run" } });
+  const lease = await acquire(harness, slot.id);
   const dispatch = harness.registrations.hooks["message.dispatch"]!;
-  const context = (id: string) =>
+  const context = (id: string, parentThreadId: string) =>
     makeMessageDispatchHookContext({
-      thread: {
-        id,
-        projectId: "project",
-        environmentId: "environment",
-        originPluginId: "scott-engineering",
-      },
+      thread: { id, projectId: "project", environmentId: "environment", parentThreadId },
       project,
       environment,
       host: makeHostResponse({ id: "host" }),
     });
-  expect(await dispatch(context("reviewer"))).toEqual({ action: "proceed" });
-  expect(await dispatch(context("arena"))).toMatchObject({ action: "reject" });
-  expect(await dispatch(context("unknown"))).toMatchObject({ action: "reject" });
+  expect(await dispatch(context("arena", "alice"))).toEqual({ action: "proceed" });
+  expect(await dispatch(context("stranger", "bob"))).toMatchObject({
+    action: "reject",
+    message: expect.stringContaining("@thread:alice"),
+  });
+  expect((await list(harness, "alice"))[0]).toMatchObject({
+    state: "leased",
+    ownerThreadId: "alice",
+    leaseId: lease.leaseId,
+  });
   state.environments = [environment];
   state.threads = [
     makeThreadResponse({
-      id: "reviewer",
+      id: "arena",
       projectId: "project",
       environmentId: "environment",
       status: "active",
-      originPluginId: "scott-engineering",
+      parentThreadId: "alice",
     }),
   ];
-  const lease = (await list(harness, "alice"))[0]!;
   expect(
     await cliSlot(
       harness,
@@ -824,4 +796,10 @@ test("Scott Engineering exempts snapshot reviewers but still fences Arena worker
       "alice",
     ),
   ).toMatchObject({ state: "available" });
+  const result = await harness.behavior.runCli(
+    ["slots", "acquire", "--host", "host", "--slot", slot.id],
+    { threadId: "bob" },
+  );
+  expect(result).toMatchObject({ exitCode: 1 });
+  expect(result.stderr).toContain("active agent: @thread:arena");
 });

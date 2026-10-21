@@ -6,7 +6,6 @@ import {
   makeThreadResponse,
 } from "@get-bb/plugin-sdk/testing";
 import plugin from "../server.ts";
-import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import type { Slot } from "./slot-store.ts";
 
 export type Harness = ReturnType<typeof createFakePluginHost>["harness"];
@@ -54,10 +53,6 @@ export async function setup(
     environments?: (typeof environment)[];
     threads?: ReturnType<typeof makeThreadResponse>[];
     resolve?: (path: string) => string | null;
-    metadata?: (
-      threadId: string,
-      signal?: AbortSignal,
-    ) => ReturnType<BbPluginApi["sdk"]["threads"]["getPluginMetadata"]>;
   } = {},
 ) {
   const state = {
@@ -67,7 +62,6 @@ export async function setup(
     stopped: null as null | (() => Promise<void>),
     environments: options.environments ?? [],
     threads: options.threads ?? [],
-    metadata: new Map<string, { reviewRun?: { id: string }; arena?: { runId: string } }>(),
     resolve: options.resolve ?? (() => "/rampage"),
   };
   const { bb, harness } = createFakePluginHost({
@@ -76,10 +70,6 @@ export async function setup(
       plugins: { list: async () => ({ plugins: [] }) },
       projects: { get: async () => ({ ...project, sources: [] }) },
       threads: {
-        getPluginMetadata: async ({ threadId, signal }) =>
-          options.metadata
-            ? options.metadata(threadId, signal)
-            : (state.metadata.get(threadId) ?? {}),
         list: async ({ environmentId, offset = 0, limit = 100 } = {}) =>
           state.threads
             .filter((thread) => thread.environmentId === environmentId)

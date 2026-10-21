@@ -25,21 +25,6 @@ export class UnitySlots {
     this.host = bb.hosts.experimental_client({ contract: unityHostContract });
   }
 
-  // Only snapshot review workers are exempt; Arena workers still need a lease.
-  private async isSnapshotReviewer(
-    thread: { id: string; originPluginId: string | null },
-    signal?: AbortSignal,
-  ) {
-    if (thread.originPluginId === "review") return true;
-    if (thread.originPluginId !== "scott-engineering") return false;
-    const metadata = await this.bb.sdk.threads.getPluginMetadata({
-      threadId: thread.id,
-      pluginId: "scott-engineering",
-      signal,
-    });
-    return Boolean(metadata.reviewRun);
-  }
-
   required(id: string, hostId?: string) {
     const slot = this.store.get(id);
     if (!slot || (hostId && slot.hostId !== hostId))
@@ -117,16 +102,14 @@ export class UnitySlots {
         offset,
         signal,
       });
-      const active = threads.filter(
+      const active = threads.find(
         (thread) =>
-          thread.id !== owner && ["active", "starting", "stopping"].includes(thread.status),
+          thread.id !== owner &&
+          (!owner || thread.parentThreadId !== owner) &&
+          !snapshotReviewer(thread) &&
+          ["active", "starting", "stopping"].includes(thread.status),
       );
-      await Promise.all(
-        active.map(async (thread) => {
-          if (!(await this.isSnapshotReviewer(thread, signal)))
-            throw new Error(`Checkout still has an active agent: @thread:${thread.id}`);
-        }),
-      );
+      if (active) throw new Error(`Checkout still has an active agent: @thread:${active.id}`);
       if (threads.length < 100) return;
     }
   }
@@ -411,6 +394,8 @@ export class UnitySlots {
     const { environment, thread, environmentIntent } = context;
     // BB gives hooks ten seconds; abort host/SDK inspection before that deadline.
     const signal = AbortSignal.timeout(7000);
+    // Only slot-bound dispatch needs this exemption; Editor commands keep their own claims.
+    if (snapshotReviewer(thread)) return { action: "proceed" as const };
     try {
       let slot: Slot | null = null;
       if (environment?.path) {
@@ -421,15 +406,12 @@ export class UnitySlots {
         if (!workspaces.size) return { action: "proceed" as const };
         const path = await this.resolve(environment.hostId, environment.path, signal);
         if (!path || !workspaces.has(path)) return { action: "proceed" as const };
-        // Only slot-bound dispatch needs this exemption; Editor commands keep their own claims.
-        if (await this.isSnapshotReviewer(thread, signal)) return { action: "proceed" as const };
         await this.ensureLegacyClaims();
         slot = this.store.find(environment.hostId, path);
       } else if (
         environmentIntent?.kind === "provider" &&
         environmentIntent.environmentProviderId === slotProviderId
       ) {
-        if (await this.isSnapshotReviewer(thread, signal)) return { action: "proceed" as const };
         await this.ensureLegacyClaims();
         const { slotId } = slotInputs.parse(environmentIntent.inputs);
         if (slotId) {
@@ -443,7 +425,7 @@ export class UnitySlots {
       if (!slot) return { action: "proceed" as const };
       const hostId = environment?.hostId ?? context.host?.id;
       if (!hostId) throw new Error("Select the registered slot's existing host");
-      await this.acquire(slot.id, hostId, context.project.id, thread.id, signal);
+      await this.acquire(slot.id, hostId, context.project.id, holder(slot, thread), signal);
       if (
         environment?.path &&
         (await this.resolve(environment.hostId, environment.path, signal)) !== slot.workspacePath
@@ -455,6 +437,17 @@ export class UnitySlots {
       return { action: "reject" as const, message: errorMessage(error) };
     }
   }
+}
+
+// A lease covers its holder's child threads, such as Arena answers and reviewers.
+function holder(slot: Slot, thread: { id: string; parentThreadId: string | null }) {
+  const owner = slot.state === "leased" ? slot.ownerThreadId : null;
+  return owner && thread.parentThreadId === owner ? owner : thread.id;
+}
+
+// BB's review plugin reads an immutable snapshot, so it needs no lease.
+function snapshotReviewer(thread: { originPluginId: string | null }) {
+  return thread.originPluginId === "review";
 }
 
 function errorMessage(error: unknown) {
