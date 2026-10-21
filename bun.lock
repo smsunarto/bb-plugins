@@ -512,7 +512,7 @@
     },
     "plugins/gitbutler": {
       "name": "@smsunarto/bb-plugin-gitbutler",
-      "version": "0.1.0",
+      "version": "0.2.0",
       "dependencies": {
         "@bb-kit/core": "1.0.0",
         "@radix-ui/react-slot": "^1.3.0",
