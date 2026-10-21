@@ -52,7 +52,7 @@ describe("bb Monokai surface palette", () => {
 
   test("names remote machines with hues outside the feedback families", () => {
     expect(theme).toContain(
-      "--machine-1: #3093f4; /* 5.59:1 */\n  --machine-2: #75f0ff; /* 13.24:1 */\n  --machine-3: #ee8fc8; /* 7.95:1 */\n  --machine-4: #7cacfe; /* 7.77:1 */",
+      "--machine-1: #2987f8; /* 5.00:1 */\n  --machine-2: #07c3de; /* 8.35:1 */\n  --machine-3: #6dfee5; /* 14.34:1 */\n  --machine-4: #fd7ec8; /* 7.61:1 */\n  --machine-5: #aaa0fb; /* 7.72:1 */\n  --machine-6: #fec4ff; /* 12.31:1 */",
     );
   });
 
@@ -427,7 +427,7 @@ describe("bb Monokai contract audit", () => {
   });
 
   test("holds machine globes to the 3:1 non-text floor on the sidebar", () => {
-    const changed = theme.replace("--machine-1: #3093f4", "--machine-1: #e3e3dd1f");
+    const changed = theme.replace("--machine-1: #2987f8", "--machine-1: #e3e3dd1f");
     expect(() => auditTheme(changed)).toThrow("--machine-1 on --sidebar: 1.36:1 (needs 3.0:1)");
   });
 });

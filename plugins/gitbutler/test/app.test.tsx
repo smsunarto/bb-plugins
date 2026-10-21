@@ -3,7 +3,7 @@ import { environmentManager } from "@tanstack/react-query";
 import { pluginQueryClient } from "@bb-kit/core/rpc/query";
 import { installDom } from "@bb-kit/core/testing";
 import type { RenderSlotOptions } from "@get-bb/plugin-sdk/testing/app";
-import { machineColor as sidebarMachineColor } from "../../gtd-sidebar/lib/machines.ts";
+import { machineColors } from "../src/app/machine-colors.ts";
 import { parseOplog, parseWorkspace } from "../src/host/parse.ts";
 import type { Checkout, CheckoutSelection, Workspace } from "../src/shared/schema.ts";
 import { oplogPayload, statusPayload } from "./fixtures.ts";
@@ -3071,15 +3071,21 @@ test("shows an isolated checkout's actual branch, path, and latest commit with a
       },
     },
   };
-  const slot = await panel({
-    ...baseRpc,
-    otherMachines: () => ({ checkouts: [checkout], reason: null, environmentId: "env-1" }),
-  });
+  // build-box hashes to laptop's slot and sorts first, so only a roster-aware color moves laptop.
+  const roster = ["build-box", "laptop"];
+  const slot = await panel(
+    {
+      ...baseRpc,
+      otherMachines: () => ({ checkouts: [checkout], reason: null, environmentId: "env-1" }),
+    },
+    { sidebarThreads: { experimental_hosts: roster.map((id) => ({ id, name: id })) } },
+  );
   const region = await slot.findByRole("region", { name: "On Personal Mac" });
   const card = within(region);
   const machine = region.querySelector<HTMLElement>("[data-machine-id]");
   expect(machine?.getAttribute("data-machine-id")).toBe("laptop");
-  expect(machine?.style.color).toBe(sidebarMachineColor("laptop"));
+  expect(machine?.style.color).toBe(machineColors(roster)("laptop"));
+  expect(machine?.style.color).not.toBe(machineColors(roster)("build-box"));
   expect(card.getByText("bb-plugins-isolated").title).toBe(checkout.path);
   expect(card.getByText(checkout.path).textContent).toBe(checkout.path);
   const branch = within(card.getByRole("listitem", { name: "Branch scott/isolated-feature" }));
@@ -3993,7 +3999,7 @@ test("checkout cards and the opened checkout launch native New thread in the exa
     .getByText("Personal Mac")
     .parentElement?.querySelector<HTMLElement>("[data-machine-id]");
   expect(machine?.getAttribute("data-machine-id")).toBe("laptop");
-  expect(machine?.style.color).toBe(sidebarMachineColor("laptop"));
+  expect(machine?.style.color).toBe(machineColors([])("laptop"));
   const header = slot.getByRole("button", { name: label });
   await waitFor(() => expect(header.hasAttribute("disabled")).toBe(false));
   fireEvent.click(header);

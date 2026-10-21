@@ -136,9 +136,12 @@
   on hover or keyboard focus. A title that fits gets no tooltip.
 - Machine globes no longer take red, amber, green, or purple, which read as
   error, attention, success, or merged beside a status glyph. bb Monokai gives
-  them four identity hues (`--machine-1` to `--machine-4`). Other themes fall
-  back to four distinct ANSI blue, cyan, and magenta tones that keep 3:1
-  contrast on the selected row.
+  them six identity hues (`--machine-1` to `--machine-6`). Other themes fall
+  back to matching light and dark hues that keep 3:1 contrast on the selected
+  row.
+- No two machines share a globe color until there are more than six. Colors
+  are assigned across bb's whole machine list instead of hashed per machine,
+  and the GitButler panel colors its machine globes the same way.
 - Match the touch project header's corner radius to the 12px thread rows.
 
 - Machine-scoped inboxes now keep repository group headers visible even when

@@ -1,16 +1,26 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 import { useSdk, type PluginSidebarThread } from "@get-bb/plugin-sdk/app";
+import { machineColors, useRosterColors } from "../../lib/machine-colors";
+import type { SidebarMachine } from "../../lib/machines";
 
 /** The machine whose threads go unmarked; null while settings or bb's primary host load. */
 const LocalMachineContext = createContext<string | null>("");
+/** Globe colors, assigned across bb's machine list so no two share one. */
+const MachineColorContext = createContext(machineColors([]));
 
 export function MachineAppearanceProvider({
   localMachineId,
   settingsLoading,
+  knownMachines,
   children,
 }: {
   localMachineId: unknown;
   settingsLoading: boolean;
+  /**
+   * bb's machine list, not the picker's thread-derived roster, so a globe
+   * matches GitButler's even while a thread names a machine bb dropped.
+   */
+  knownMachines: readonly SidebarMachine[] | undefined;
   children: ReactNode;
 }) {
   const setting = typeof localMachineId === "string" ? localMachineId.trim() : "";
@@ -33,9 +43,10 @@ export function MachineAppearanceProvider({
     );
     return () => controller.abort();
   }, [sdk, setting]);
+  const colorOf = useRosterColors(knownMachines);
   return (
     <LocalMachineContext.Provider value={settingsLoading ? null : setting || primaryHostId}>
-      {children}
+      <MachineColorContext.Provider value={colorOf}>{children}</MachineColorContext.Provider>
     </LocalMachineContext.Provider>
   );
 }
@@ -43,4 +54,8 @@ export function MachineAppearanceProvider({
 export function useRemoteMachine(host: PluginSidebarThread["host"]): boolean {
   const localMachineId = useContext(LocalMachineContext);
   return host !== null && localMachineId !== null && host.id !== localMachineId;
+}
+
+export function useMachineColors(): (hostId: string) => string {
+  return useContext(MachineColorContext);
 }

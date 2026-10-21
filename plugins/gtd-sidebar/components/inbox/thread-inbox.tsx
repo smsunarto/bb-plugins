@@ -454,6 +454,7 @@ function InboxList({
     <MachineAppearanceProvider
       localMachineId={settingValues?.localMachineId}
       settingsLoading={settingsLoading}
+      knownMachines={sidebar.experimental_hosts}
     >
       <DndContext {...sidebarDrag.contextProps}>
         <div

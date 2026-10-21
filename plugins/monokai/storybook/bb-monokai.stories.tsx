@@ -312,8 +312,10 @@ export const ContentPalettes: Story = {
         <div className="sb-grid">
           <Swatch label="Blue" token="--machine-1" />
           <Swatch label="Cyan" token="--machine-2" />
-          <Swatch label="Rose" token="--machine-3" />
-          <Swatch label="Periwinkle" token="--machine-4" />
+          <Swatch label="Mint" token="--machine-3" />
+          <Swatch label="Pink" token="--machine-4" />
+          <Swatch label="Lavender" token="--machine-5" />
+          <Swatch label="Orchid" token="--machine-6" />
         </div>
       </section>
     </Page>

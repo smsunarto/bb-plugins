@@ -75,7 +75,7 @@ import { GitButlerMark } from "./gitbutler-mark.tsx";
 import { OperationHistory } from "./history-screen.tsx";
 import { OtherMachines } from "./other-machines.tsx";
 import { CheckoutChatActions } from "./checkout-chat.tsx";
-import { CheckoutLabel } from "./checkout-label.tsx";
+import { CheckoutLabel, MachineColorProvider } from "./checkout-label.tsx";
 import { ParkedBranches } from "./parked-branches.tsx";
 import { SAFETY_POLL_MS } from "./query-client.ts";
 import { rpc } from "./rpc.ts";
@@ -1528,7 +1528,9 @@ function GitButlerApp({ threadId }: { threadId?: string }) {
   }
   return (
     <PluginQueryBoundary>
-      <WorkspacePanel key={resolved} threadId={resolved} />
+      <MachineColorProvider>
+        <WorkspacePanel key={resolved} threadId={resolved} />
+      </MachineColorProvider>
     </PluginQueryBoundary>
   );
 }

@@ -1,6 +1,7 @@
 import { Icon } from "../ui/icon";
-import { machineColor, type SidebarMachine } from "../../lib/machines";
+import type { SidebarMachine } from "../../lib/machines";
 import { cn } from "../../lib/utils";
+import { useMachineColors } from "./machine-appearance";
 
 export function MachineGlobe({
   machine,
@@ -9,10 +10,11 @@ export function MachineGlobe({
   machine: SidebarMachine | null;
   className?: string;
 }) {
+  const colorOf = useMachineColors();
   return (
     <span
       className={cn("inline-flex shrink-0 items-center", className)}
-      style={machine ? { color: machineColor(machine.id) } : undefined}
+      style={machine ? { color: colorOf(machine.id) } : undefined}
       title={machine?.name}
       aria-hidden="true"
       data-machine-id={machine?.id}
