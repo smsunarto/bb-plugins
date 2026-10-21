@@ -1,1 +1,0 @@
-Read the task and authorized inputs for your Arena assignment. Candidate contexts hide the rubric and other candidates. Judge and synthesis contexts include completed candidate paths and pinned commits. Only the launching thread and assigned workers can read the run.

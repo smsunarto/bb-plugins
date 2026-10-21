@@ -1,6 +1,6 @@
 # Third-party notices
 
-The bundled engineering workflows and principles retain the upstream MIT notices below.
+The bundled engineering skills and principles retain the upstream MIT notices below.
 
 MIT License
 

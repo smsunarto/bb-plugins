@@ -11,7 +11,7 @@ Correctness: does the code do what the summary and brief say it should?
 
 When you find a potential bug, trace the execution path. Do not just say "this could be null"; show the call chain that makes it null.
 
-Root causes vs. symptoms: is the change fixing the actual problem or papering over it? Read beyond the changed lines: callers, callees, type definitions, and sibling modules in the pinned tree and files through dev_mode_review_context. Understand why the code exists before judging whether the change addresses the right layer.
+Root causes vs. symptoms: is the change fixing the actual problem or papering over it? Read beyond the changed lines: callers, callees, type definitions, and sibling modules at the head commit. Understand why the code exists before judging whether the change addresses the right layer.
 
 - Guard clauses that mask a deeper invariant violation.
 - Retries that hide a broken contract.

@@ -1,1 +1,0 @@
-Read a reviewer's pinned diff, tree, or source file. Omit threadId in the reviewer thread; the parent can pass a reviewer thread ID. Follow nextOffset for additional pages. Use these immutable sources instead of the shared GitButler workspace. The brief and captured evidence are in the reviewer's initial prompt.

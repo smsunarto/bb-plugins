@@ -1,7 +1,7 @@
 {
   "name": "@smsunarto/bb-plugin-scott-engineering",
   "version": "0.1.0",
-  "description": "Scott\u2019s engineering workflows with native Arena and independent review in BB.",
+  "description": "Arena, independent review, engineering skills, and shared principles for BB.",
   "license": "MIT",
   "author": "Scott Sunarto",
   "homepage": "https://github.com/smsunarto/bb-plugins/tree/main/plugins/dev-mode",
@@ -17,7 +17,7 @@
   },
   "bb": {
     "name": "Dev Mode",
-    "description": "Arena, independent design and implementation reviews, engineering skills, and shared principles.",
+    "description": "Arena and independent review as injected prompts, plus engineering skills and shared principles.",
     "branding": {
       "icon": "./assets/icon.svg",
       "logo": {
@@ -26,8 +26,6 @@
       }
     },
     "server": "./src/server/server.ts",
-    "app": "./src/app/app.tsx",
-    "host": "./src/host/host.ts",
     "skills": [
       "skills"
     ]
@@ -48,19 +46,12 @@
     "references/"
   ],
   "dependencies": {
-    "@bb-kit/core": "workspace:*",
-    "zod": "^4.4.3"
+    "@bb-kit/core": "workspace:*"
   },
   "devDependencies": {
     "@get-bb/plugin-sdk": "0.6.37",
-    "@testing-library/react": "16.3.2",
     "@types/node": "^22.0.0",
-    "@types/react": "^19.0.0",
-    "@types/react-dom": "^19.0.0",
     "bun-types": "^1.4.0",
-    "jsdom": "25.0.1",
-    "react": "19.2.8",
-    "react-dom": "19.2.8",
     "tsx": "4.23.12",
     "typescript": "^6.0.0"
   },
@@ -69,7 +60,7 @@
     "build": "bb plugin build .",
     "lint": "oxlint",
     "typecheck": "tsc --noEmit",
-    "test": "node --import tsx --test src/server/server.test.ts src/server/command/principle.test.ts src/server/lib/*.test.ts && bun test --preload ./test/sqlite-preload.js src/server/command/review-start.test.ts src/host src/app --timeout=30000",
+    "test": "node --import tsx --test src/server/server.test.ts src/server/command/principle.test.ts",
     "check": "node --import tsx ../../packages/bb-kit-dev/src/bin.ts check",
     "clean": "rm -rf dist"
   },

@@ -1,37 +1,18 @@
 import { readdirSync } from "node:fs";
 import { join } from "node:path";
+import { instructionFiles } from "@bb-kit/core/instructions";
 import type { Session } from "@bb-kit/core/tools";
-import { files } from "./service.ts";
 
+const files = instructionFiles(import.meta.url);
 const names = readdirSync(join(files.root, "skills"));
+// Side chats, BB's review plugin, and this plugin's pre-prompt workers get neither skills nor instructions.
+const quiet = new Set(["side-chat", "review", "scott-engineering"]);
+// The titles the arena and review skills give their children, which answer and never start more.
+const answering = /^(Arena|Review) \((Claude|Codex)\)$/;
+
 export function configuration(session: Session) {
-  const origin = session.origin.pluginId;
-  if (origin === "side-chat") return { tools: [], skills: [] };
-  if (origin === "review") return { tools: [], skills: [] };
-  if (origin === "scott-engineering") {
-    const tools = session.pluginMetadata.reviewRun
-      ? ["dev_mode_review_context", "scott_engineering_review_context"]
-      : session.pluginMetadata.arena
-        ? [
-            "dev_mode_arena_context",
-            "dev_mode_arena_report",
-            "dev_mode_arena_prepare",
-            "scott_engineering_arena_context",
-            "scott_engineering_arena_report",
-            "scott_engineering_arena_prepare",
-          ]
-        : [];
-    return { tools, skills: [] };
-  }
-  return {
-    tools: [
-      "dev_mode_arena_start",
-      "dev_mode_arena_status",
-      "dev_mode_arena_stop",
-      "dev_mode_review_start",
-      "dev_mode_review_context",
-    ],
-    skills: names,
-    instructions: files.read("review-author"),
-  };
+  const { parentThreadId, title } = session.thread;
+  if (quiet.has(session.origin.pluginId ?? "") || (parentThreadId && answering.test(title ?? "")))
+    return { tools: [], skills: [] };
+  return { tools: [], skills: names, instructions: files.read("author") };
 }
