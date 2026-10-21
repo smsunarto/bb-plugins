@@ -141,20 +141,20 @@ ratio against the ground it sits on.
 
 ## What it restyles
 
-| Surface              | Notes                                                                                                                              |
-| -------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
-| App chrome           | panes, panels, sidebar, menus, buttons, mention pills, focus rings                                                                 |
-| Conversation links   | medium-weight accent text with a globe glyph (an envelope for mail) and an alpha-derived rounded hover surface                     |
+| Surface              | Notes                                                                                                                                                                 |
+| -------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| App chrome           | panes, panels, sidebar, menus, buttons, mention pills, focus rings                                                                                                    |
+| Conversation links   | medium-weight accent text with a globe glyph (an envelope for mail) and an alpha-derived rounded hover surface                                                        |
 | Agent replies        | Fluid prose (14px at 1512px, ~15px at 2560px) in the Codex app's markdown geometry, fenced blocks with a labeled header, task checkboxes, full-strength activity rows |
-| Terminal             | all 16 ANSI colors plus 16 companion foreground tokens, one per ANSI background                                                    |
-| Diff viewer          | addition / deletion / modified colors, gutter number grounds and role-colored numbers                                              |
-| Diff headers         | Diffs.com-style file headers with change-kind icons in the side panel. Open in editor is hidden there                              |
-| Syntax tokens        | the Cursor Monokai TextMate layer, in diffs and file previews                                                                      |
-| Monaco editor        | the same code theme, plus JavaScript and TypeScript tokens for declarations, calls, types, and parameters                          |
-| File tree            | the git-status column — added, untracked, renamed, modified, deleted, ignored                                                      |
-| Inline code          | soft yellow `#EED996` on the 8% hover layer. Fenced blocks use the sugar-high token set on `#181818`                               |
-| Composer stop button | repainted to the danger hue                                                                                                        |
-| Notifications        | in-app history center and desktop transient toasts                                                                                 |
+| Terminal             | all 16 ANSI colors plus 16 companion foreground tokens, one per ANSI background                                                                                       |
+| Diff viewer          | addition / deletion / modified colors, gutter number grounds and role-colored numbers                                                                                 |
+| Diff headers         | Diffs.com-style file headers with change-kind icons in the side panel. Open in editor is hidden there                                                                 |
+| Syntax tokens        | the Cursor Monokai TextMate layer, in diffs and file previews                                                                                                         |
+| Monaco editor        | the same code theme, plus JavaScript and TypeScript tokens for declarations, calls, types, and parameters                                                             |
+| File tree            | the git-status column — added, untracked, renamed, modified, deleted, ignored                                                                                         |
+| Inline code          | soft yellow `#EED996` on the 8% hover layer. Fenced blocks use the sugar-high token set on `#181818`                                                                  |
+| Composer stop button | repainted to the danger hue                                                                                                                                           |
+| Notifications        | in-app history center and desktop transient toasts                                                                                                                    |
 
 ### Syntax tokens
 
