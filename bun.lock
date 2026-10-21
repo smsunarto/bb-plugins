@@ -54,7 +54,7 @@
         "bb-kit": "./bin/bb-kit.mjs",
       },
       "dependencies": {
-        "@bb-kit/core": "0.2.0",
+        "@bb-kit/core": "workspace:*",
       },
       "devDependencies": {
         "@get-bb/plugin-sdk": "0.5.29",
@@ -95,7 +95,7 @@
         "@sentry/node": "^10.72.0",
       },
       "devDependencies": {
-        "@bb-kit/core": "0.2.0",
+        "@bb-kit/core": "workspace:*",
         "@testing-library/react": "^16.3.0",
         "@types/node": "^22.0.0",
         "@types/react": "^19.2.0",
@@ -146,7 +146,7 @@
       "name": "@smsunarto/bb-plugin-agent-instructions",
       "version": "0.1.0",
       "dependencies": {
-        "@bb-kit/core": "0.2.0",
+        "@bb-kit/core": "workspace:*",
         "@tanstack/react-query": "^5.101.4",
         "zod": "^4.4.3",
       },
@@ -244,7 +244,7 @@
       "name": "@smsunarto/bb-plugin-canvas",
       "version": "0.1.0",
       "dependencies": {
-        "@bb-kit/core": "0.2.0",
+        "@bb-kit/core": "workspace:*",
         "@bb-plugins/markdown-prose": "workspace:*",
         "@codemirror/view": "^6.38.6",
         "@mdxeditor/editor": "^4.2.4",
@@ -302,7 +302,7 @@
       "name": "@smsunarto/bb-plugin-cloudflare",
       "version": "0.1.0",
       "dependencies": {
-        "@bb-kit/core": "0.2.0",
+        "@bb-kit/core": "workspace:*",
         "@tanstack/react-query": "^5.101.4",
         "zod": "^4.4.3",
       },
@@ -324,7 +324,7 @@
       "name": "@smsunarto/bb-plugin-code-review",
       "version": "0.1.0",
       "dependencies": {
-        "@bb-kit/core": "0.2.0",
+        "@bb-kit/core": "workspace:*",
         "@radix-ui/react-slot": "^1.3.0",
         "@radix-ui/react-tabs": "^1.1.17",
         "@tanstack/react-query": "^5.101.4",
@@ -356,7 +356,7 @@
       "name": "@smsunarto/bb-plugin-scott-engineering",
       "version": "0.1.0",
       "dependencies": {
-        "@bb-kit/core": "0.2.0",
+        "@bb-kit/core": "workspace:*",
         "zod": "^4.4.3",
       },
       "devDependencies": {
@@ -377,7 +377,7 @@
       "name": "@smsunarto/bb-plugin-devin",
       "version": "0.1.0",
       "dependencies": {
-        "@bb-kit/core": "0.2.0",
+        "@bb-kit/core": "workspace:*",
         "@tanstack/react-query": "^5.101.4",
         "zod": "^4.4.3",
       },
@@ -397,7 +397,7 @@
       "name": "@smsunarto/bb-plugin-dotfiles",
       "version": "0.1.0",
       "dependencies": {
-        "@bb-kit/core": "0.2.0",
+        "@bb-kit/core": "workspace:*",
         "@bb-kit/sentry": "0.2.0",
         "@bb-plugins/icons": "workspace:*",
         "@codemirror/language": "6.12.4",
@@ -448,7 +448,7 @@
       "name": "@smsunarto/bb-plugin-game-studio",
       "version": "0.1.0",
       "dependencies": {
-        "@bb-kit/core": "0.2.0",
+        "@bb-kit/core": "workspace:*",
         "@dagrejs/dagre": "3.1.1",
         "@tanstack/react-query": "^5.101.4",
         "@xyflow/react": "12.11.3",
@@ -476,7 +476,7 @@
       "name": "@smsunarto/bb-plugin-gh-stack",
       "version": "0.3.0",
       "dependencies": {
-        "@bb-kit/core": "0.2.0",
+        "@bb-kit/core": "workspace:*",
         "@pierre/trees": "^1.0.0-beta.6",
         "@radix-ui/react-slot": "^1.3.0",
         "zod": "^4.3.6",
@@ -586,7 +586,7 @@
       "name": "@smsunarto/bb-plugin-kitchen-sink",
       "version": "0.1.0",
       "dependencies": {
-        "@bb-kit/core": "0.2.0",
+        "@bb-kit/core": "workspace:*",
         "@bb-plugins/unity-inspector": "workspace:*",
         "lenis": "1.3.26",
         "react-compare-slider": "4.0.0",
@@ -611,7 +611,7 @@
       "name": "@smsunarto/bb-plugin-last-turn-diff",
       "version": "0.1.0",
       "dependencies": {
-        "@bb-kit/core": "0.2.0",
+        "@bb-kit/core": "workspace:*",
         "@bb-plugins/unity-inspector": "workspace:*",
         "zod": "^4.4.3",
       },
@@ -658,7 +658,7 @@
       "name": "@smsunarto/bb-plugin-my-stack",
       "version": "0.1.0",
       "dependencies": {
-        "@bb-kit/core": "0.2.0",
+        "@bb-kit/core": "workspace:*",
       },
       "devDependencies": {
         "@get-bb/plugin-sdk": "0.5.29",
@@ -671,7 +671,7 @@
       "name": "@smsunarto/bb-plugin-prompt-editor",
       "version": "0.1.0",
       "dependencies": {
-        "@bb-kit/core": "0.2.0",
+        "@bb-kit/core": "workspace:*",
         "@tanstack/react-query": "^5.101.4",
         "zod": "^4.4.3",
       },
@@ -693,7 +693,7 @@
       "name": "@smsunarto/bb-plugin-remind-me",
       "version": "0.1.0",
       "dependencies": {
-        "@bb-kit/core": "0.2.0",
+        "@bb-kit/core": "workspace:*",
         "@tanstack/react-query": "^5.101.4",
         "zod": "^4.4.3",
       },
@@ -766,7 +766,7 @@
       "name": "@smsunarto/bb-plugin-scott-inline-vis",
       "version": "0.1.0",
       "dependencies": {
-        "@bb-kit/core": "0.2.0",
+        "@bb-kit/core": "workspace:*",
         "mdast-util-from-markdown": "2.0.3",
         "mdast-util-gfm": "3.1.0",
         "mdast-util-to-markdown": "2.1.2",
@@ -849,7 +849,7 @@
       "name": "@smsunarto/bb-plugin-traces",
       "version": "0.1.0",
       "dependencies": {
-        "@bb-kit/core": "0.2.0",
+        "@bb-kit/core": "workspace:*",
         "@tanstack/react-query": "^5.101.4",
         "zod": "^4.4.3",
       },
@@ -871,7 +871,7 @@
       "name": "@smsunarto/bb-plugin-usage-bar",
       "version": "0.1.0",
       "dependencies": {
-        "@bb-kit/core": "0.2.0",
+        "@bb-kit/core": "workspace:*",
         "zod": "^4.4.3",
       },
       "devDependencies": {
@@ -886,7 +886,7 @@
       "name": "@smsunarto/bb-plugin-vimium",
       "version": "0.1.0",
       "dependencies": {
-        "@bb-kit/core": "0.2.0",
+        "@bb-kit/core": "workspace:*",
       },
       "devDependencies": {
         "@get-bb/plugin-sdk": "0.5.29",
@@ -919,7 +919,7 @@
       "name": "@smsunarto/bb-plugin-whiteboard",
       "version": "0.1.0",
       "dependencies": {
-        "@bb-kit/core": "0.2.0",
+        "@bb-kit/core": "workspace:*",
         "@bb-plugins/markdown-prose": "workspace:*",
         "@dev.fast/diffr": "0.1.3",
         "@hono/node-server": "2.0.12",
@@ -2226,7 +2226,7 @@
 
     "comma-separated-tokens": ["comma-separated-tokens@2.0.3", "", {}, "sha512-Fu4hJdvzeylCfQPp9SGWidpzrMs7tTrlu6Vb8XGaRGck8QSNZJJp538Wrb60Lax4fPwR64ViY468OIUTbRlGZg=="],
 
-    "commander": ["commander@13.1.0", "", {}, "sha512-/rFeCpNJQbhSZjGVwO9RFV3xPqbnERS8MmIQzCtD/zl6gpJuV/bMLuN92oG3F7d8oDEHHRrujSXNUr8fpjntKw=="],
+    "commander": ["commander@14.0.3", "", {}, "sha512-H+y0Jo/T1RZ9qPP4Eh1pkcQcLRglraJaSLoyOtHxu6AapkjWVCy2Sit1QQ4x3Dng8qDlSsZEet7g5Pq06MvTgw=="],
 
     "compute-scroll-into-view": ["compute-scroll-into-view@2.0.4", "", {}, "sha512-y/ZA3BGnxoM/QHHQ2Uy49CLtnWPbt4tTPpEEZiEmmiWBFKjej7nEyH8Ryz54jH0MLXflUYA3Er2zUxPSJu5R+g=="],
 
@@ -3308,10 +3308,6 @@
 
     "@babel/helper-compilation-targets/semver": ["semver@6.3.1", "", { "bin": { "semver": "bin/semver.js" } }, "sha512-BR7VvDCVHO+q2xBEWskxS6DJE1qRnb7DxzUrogb71CWoSficBxYsiAGd+Kl0mmq/MprG9yArRkyrQxTO6XjMzA=="],
 
-    "@bb-kit/dev/@bb-kit/core": ["@bb-kit/core@0.2.0", "", { "dependencies": { "commander": "^13.1.0" }, "peerDependencies": { "@get-bb/plugin-sdk": "0.x", "@tanstack/react-query": "^5.0.0", "jsdom": "*", "react": ">=19", "typescript": "*" }, "optionalPeers": ["@tanstack/react-query", "jsdom", "react", "typescript"], "bin": { "bb-kit": "bin/bb-kit.mjs" } }, "sha512-YZcIziTQiEsyWDEhPLFsMmCnFMk1qeoGDLyVQI1k7MBy1gVpC+KqOIS3oSi58A9bzxj7INwCA3AE4q2B1Zufkg=="],
-
-    "@bb-kit/sentry/@bb-kit/core": ["@bb-kit/core@0.2.0", "", { "dependencies": { "commander": "^13.1.0" }, "peerDependencies": { "@get-bb/plugin-sdk": "0.x", "@tanstack/react-query": "^5.0.0", "jsdom": "*", "react": ">=19", "typescript": "*" }, "optionalPeers": ["@tanstack/react-query", "jsdom", "react", "typescript"], "bin": { "bb-kit": "bin/bb-kit.mjs" } }, "sha512-YZcIziTQiEsyWDEhPLFsMmCnFMk1qeoGDLyVQI1k7MBy1gVpC+KqOIS3oSi58A9bzxj7INwCA3AE4q2B1Zufkg=="],
-
     "@bb-plugins/icons/@hugeicons/core-free-icons": ["@hugeicons/core-free-icons@4.3.5", "", {}, "sha512-Sv+NjHRPnQk+yZsGCMcGznCHdTfJR9PMMOEKcJYAQU4gy90dmlc9PwdtvYOImBZIjiheMsTLL5eMn2DmHxUiUg=="],
 
     "@eslint-community/eslint-utils/eslint-visitor-keys": ["eslint-visitor-keys@3.4.3", "", {}, "sha512-wpc+LXeiyiisxPlEkUzU6svyS1frIO3Mgxj1fdy7Pm8Ygzguax2N3Fa/D/ag1WqbOprdI+uY6wMUl8/a2G+iag=="],
@@ -3326,25 +3322,9 @@
 
     "@rollup/pluginutils/estree-walker": ["estree-walker@2.0.2", "", {}, "sha512-Rfkk/Mp/DL7JVje3u18FxFujQlTNR2q6QfMSMB7AvCBx91NGj/ba3kCfza0f6dVDbw7YlRf/nDrn7pQrCCyQ/w=="],
 
-    "@smsunarto/bb-plugin-agent-instructions/@bb-kit/core": ["@bb-kit/core@0.2.0", "", { "dependencies": { "commander": "^13.1.0" }, "peerDependencies": { "@get-bb/plugin-sdk": "0.x", "@tanstack/react-query": "^5.0.0", "jsdom": "*", "react": ">=19", "typescript": "*" }, "optionalPeers": ["@tanstack/react-query", "jsdom", "react", "typescript"], "bin": { "bb-kit": "bin/bb-kit.mjs" } }, "sha512-YZcIziTQiEsyWDEhPLFsMmCnFMk1qeoGDLyVQI1k7MBy1gVpC+KqOIS3oSi58A9bzxj7INwCA3AE4q2B1Zufkg=="],
-
     "@smsunarto/bb-plugin-agentation/typescript": ["typescript@7.0.2", "", { "optionalDependencies": { "@typescript/typescript-aix-ppc64": "7.0.2", "@typescript/typescript-darwin-arm64": "7.0.2", "@typescript/typescript-darwin-x64": "7.0.2", "@typescript/typescript-freebsd-arm64": "7.0.2", "@typescript/typescript-freebsd-x64": "7.0.2", "@typescript/typescript-linux-arm": "7.0.2", "@typescript/typescript-linux-arm64": "7.0.2", "@typescript/typescript-linux-loong64": "7.0.2", "@typescript/typescript-linux-mips64el": "7.0.2", "@typescript/typescript-linux-ppc64": "7.0.2", "@typescript/typescript-linux-riscv64": "7.0.2", "@typescript/typescript-linux-s390x": "7.0.2", "@typescript/typescript-linux-x64": "7.0.2", "@typescript/typescript-netbsd-arm64": "7.0.2", "@typescript/typescript-netbsd-x64": "7.0.2", "@typescript/typescript-openbsd-arm64": "7.0.2", "@typescript/typescript-openbsd-x64": "7.0.2", "@typescript/typescript-sunos-x64": "7.0.2", "@typescript/typescript-win32-arm64": "7.0.2", "@typescript/typescript-win32-x64": "7.0.2" }, "bin": { "tsc": "bin/tsc" } }, "sha512-8FYau96o3NKOhbjKi/qNvG/W5jhzxkbdm5sj9AbZ/5T5sWqn3hJgLfGx27sRKZWTvyzCP8dLRBTf5tBTSRVUNA=="],
 
     "@smsunarto/bb-plugin-amp/typescript": ["typescript@7.0.2", "", { "optionalDependencies": { "@typescript/typescript-aix-ppc64": "7.0.2", "@typescript/typescript-darwin-arm64": "7.0.2", "@typescript/typescript-darwin-x64": "7.0.2", "@typescript/typescript-freebsd-arm64": "7.0.2", "@typescript/typescript-freebsd-x64": "7.0.2", "@typescript/typescript-linux-arm": "7.0.2", "@typescript/typescript-linux-arm64": "7.0.2", "@typescript/typescript-linux-loong64": "7.0.2", "@typescript/typescript-linux-mips64el": "7.0.2", "@typescript/typescript-linux-ppc64": "7.0.2", "@typescript/typescript-linux-riscv64": "7.0.2", "@typescript/typescript-linux-s390x": "7.0.2", "@typescript/typescript-linux-x64": "7.0.2", "@typescript/typescript-netbsd-arm64": "7.0.2", "@typescript/typescript-netbsd-x64": "7.0.2", "@typescript/typescript-openbsd-arm64": "7.0.2", "@typescript/typescript-openbsd-x64": "7.0.2", "@typescript/typescript-sunos-x64": "7.0.2", "@typescript/typescript-win32-arm64": "7.0.2", "@typescript/typescript-win32-x64": "7.0.2" }, "bin": { "tsc": "bin/tsc" } }, "sha512-8FYau96o3NKOhbjKi/qNvG/W5jhzxkbdm5sj9AbZ/5T5sWqn3hJgLfGx27sRKZWTvyzCP8dLRBTf5tBTSRVUNA=="],
-
-    "@smsunarto/bb-plugin-canvas/@bb-kit/core": ["@bb-kit/core@0.2.0", "", { "dependencies": { "commander": "^13.1.0" }, "peerDependencies": { "@get-bb/plugin-sdk": "0.x", "@tanstack/react-query": "^5.0.0", "jsdom": "*", "react": ">=19", "typescript": "*" }, "optionalPeers": ["@tanstack/react-query", "jsdom", "react", "typescript"], "bin": { "bb-kit": "bin/bb-kit.mjs" } }, "sha512-YZcIziTQiEsyWDEhPLFsMmCnFMk1qeoGDLyVQI1k7MBy1gVpC+KqOIS3oSi58A9bzxj7INwCA3AE4q2B1Zufkg=="],
-
-    "@smsunarto/bb-plugin-cloudflare/@bb-kit/core": ["@bb-kit/core@0.2.0", "", { "dependencies": { "commander": "^13.1.0" }, "peerDependencies": { "@get-bb/plugin-sdk": "0.x", "@tanstack/react-query": "^5.0.0", "jsdom": "*", "react": ">=19", "typescript": "*" }, "optionalPeers": ["@tanstack/react-query", "jsdom", "react", "typescript"], "bin": { "bb-kit": "bin/bb-kit.mjs" } }, "sha512-YZcIziTQiEsyWDEhPLFsMmCnFMk1qeoGDLyVQI1k7MBy1gVpC+KqOIS3oSi58A9bzxj7INwCA3AE4q2B1Zufkg=="],
-
-    "@smsunarto/bb-plugin-code-review/@bb-kit/core": ["@bb-kit/core@0.2.0", "", { "dependencies": { "commander": "^13.1.0" }, "peerDependencies": { "@get-bb/plugin-sdk": "0.x", "@tanstack/react-query": "^5.0.0", "jsdom": "*", "react": ">=19", "typescript": "*" }, "optionalPeers": ["@tanstack/react-query", "jsdom", "react", "typescript"], "bin": { "bb-kit": "bin/bb-kit.mjs" } }, "sha512-YZcIziTQiEsyWDEhPLFsMmCnFMk1qeoGDLyVQI1k7MBy1gVpC+KqOIS3oSi58A9bzxj7INwCA3AE4q2B1Zufkg=="],
-
-    "@smsunarto/bb-plugin-devin/@bb-kit/core": ["@bb-kit/core@0.2.0", "", { "dependencies": { "commander": "^13.1.0" }, "peerDependencies": { "@get-bb/plugin-sdk": "0.x", "@tanstack/react-query": "^5.0.0", "jsdom": "*", "react": ">=19", "typescript": "*" }, "optionalPeers": ["@tanstack/react-query", "jsdom", "react", "typescript"], "bin": { "bb-kit": "bin/bb-kit.mjs" } }, "sha512-YZcIziTQiEsyWDEhPLFsMmCnFMk1qeoGDLyVQI1k7MBy1gVpC+KqOIS3oSi58A9bzxj7INwCA3AE4q2B1Zufkg=="],
-
-    "@smsunarto/bb-plugin-dotfiles/@bb-kit/core": ["@bb-kit/core@0.2.0", "", { "dependencies": { "commander": "^13.1.0" }, "peerDependencies": { "@get-bb/plugin-sdk": "0.x", "@tanstack/react-query": "^5.0.0", "jsdom": "*", "react": ">=19", "typescript": "*" }, "optionalPeers": ["@tanstack/react-query", "jsdom", "react", "typescript"], "bin": { "bb-kit": "bin/bb-kit.mjs" } }, "sha512-YZcIziTQiEsyWDEhPLFsMmCnFMk1qeoGDLyVQI1k7MBy1gVpC+KqOIS3oSi58A9bzxj7INwCA3AE4q2B1Zufkg=="],
-
-    "@smsunarto/bb-plugin-game-studio/@bb-kit/core": ["@bb-kit/core@0.2.0", "", { "dependencies": { "commander": "^13.1.0" }, "peerDependencies": { "@get-bb/plugin-sdk": "0.x", "@tanstack/react-query": "^5.0.0", "jsdom": "*", "react": ">=19", "typescript": "*" }, "optionalPeers": ["@tanstack/react-query", "jsdom", "react", "typescript"], "bin": { "bb-kit": "bin/bb-kit.mjs" } }, "sha512-YZcIziTQiEsyWDEhPLFsMmCnFMk1qeoGDLyVQI1k7MBy1gVpC+KqOIS3oSi58A9bzxj7INwCA3AE4q2B1Zufkg=="],
-
-    "@smsunarto/bb-plugin-gh-stack/@bb-kit/core": ["@bb-kit/core@0.2.0", "", { "dependencies": { "commander": "^13.1.0" }, "peerDependencies": { "@get-bb/plugin-sdk": "0.x", "@tanstack/react-query": "^5.0.0", "jsdom": "*", "react": ">=19", "typescript": "*" }, "optionalPeers": ["@tanstack/react-query", "jsdom", "react", "typescript"], "bin": { "bb-kit": "bin/bb-kit.mjs" } }, "sha512-YZcIziTQiEsyWDEhPLFsMmCnFMk1qeoGDLyVQI1k7MBy1gVpC+KqOIS3oSi58A9bzxj7INwCA3AE4q2B1Zufkg=="],
 
     "@smsunarto/bb-plugin-gh-stack/typescript": ["typescript@7.0.2", "", { "optionalDependencies": { "@typescript/typescript-aix-ppc64": "7.0.2", "@typescript/typescript-darwin-arm64": "7.0.2", "@typescript/typescript-darwin-x64": "7.0.2", "@typescript/typescript-freebsd-arm64": "7.0.2", "@typescript/typescript-freebsd-x64": "7.0.2", "@typescript/typescript-linux-arm": "7.0.2", "@typescript/typescript-linux-arm64": "7.0.2", "@typescript/typescript-linux-loong64": "7.0.2", "@typescript/typescript-linux-mips64el": "7.0.2", "@typescript/typescript-linux-ppc64": "7.0.2", "@typescript/typescript-linux-riscv64": "7.0.2", "@typescript/typescript-linux-s390x": "7.0.2", "@typescript/typescript-linux-x64": "7.0.2", "@typescript/typescript-netbsd-arm64": "7.0.2", "@typescript/typescript-netbsd-x64": "7.0.2", "@typescript/typescript-openbsd-arm64": "7.0.2", "@typescript/typescript-openbsd-x64": "7.0.2", "@typescript/typescript-sunos-x64": "7.0.2", "@typescript/typescript-win32-arm64": "7.0.2", "@typescript/typescript-win32-x64": "7.0.2" }, "bin": { "tsc": "bin/tsc" } }, "sha512-8FYau96o3NKOhbjKi/qNvG/W5jhzxkbdm5sj9AbZ/5T5sWqn3hJgLfGx27sRKZWTvyzCP8dLRBTf5tBTSRVUNA=="],
 
@@ -3352,17 +3332,7 @@
 
     "@smsunarto/bb-plugin-gtd-sidebar/typescript": ["typescript@7.0.2", "", { "optionalDependencies": { "@typescript/typescript-aix-ppc64": "7.0.2", "@typescript/typescript-darwin-arm64": "7.0.2", "@typescript/typescript-darwin-x64": "7.0.2", "@typescript/typescript-freebsd-arm64": "7.0.2", "@typescript/typescript-freebsd-x64": "7.0.2", "@typescript/typescript-linux-arm": "7.0.2", "@typescript/typescript-linux-arm64": "7.0.2", "@typescript/typescript-linux-loong64": "7.0.2", "@typescript/typescript-linux-mips64el": "7.0.2", "@typescript/typescript-linux-ppc64": "7.0.2", "@typescript/typescript-linux-riscv64": "7.0.2", "@typescript/typescript-linux-s390x": "7.0.2", "@typescript/typescript-linux-x64": "7.0.2", "@typescript/typescript-netbsd-arm64": "7.0.2", "@typescript/typescript-netbsd-x64": "7.0.2", "@typescript/typescript-openbsd-arm64": "7.0.2", "@typescript/typescript-openbsd-x64": "7.0.2", "@typescript/typescript-sunos-x64": "7.0.2", "@typescript/typescript-win32-arm64": "7.0.2", "@typescript/typescript-win32-x64": "7.0.2" }, "bin": { "tsc": "bin/tsc" } }, "sha512-8FYau96o3NKOhbjKi/qNvG/W5jhzxkbdm5sj9AbZ/5T5sWqn3hJgLfGx27sRKZWTvyzCP8dLRBTf5tBTSRVUNA=="],
 
-    "@smsunarto/bb-plugin-kitchen-sink/@bb-kit/core": ["@bb-kit/core@0.2.0", "", { "dependencies": { "commander": "^13.1.0" }, "peerDependencies": { "@get-bb/plugin-sdk": "0.x", "@tanstack/react-query": "^5.0.0", "jsdom": "*", "react": ">=19", "typescript": "*" }, "optionalPeers": ["@tanstack/react-query", "jsdom", "react", "typescript"], "bin": { "bb-kit": "bin/bb-kit.mjs" } }, "sha512-YZcIziTQiEsyWDEhPLFsMmCnFMk1qeoGDLyVQI1k7MBy1gVpC+KqOIS3oSi58A9bzxj7INwCA3AE4q2B1Zufkg=="],
-
-    "@smsunarto/bb-plugin-last-turn-diff/@bb-kit/core": ["@bb-kit/core@0.2.0", "", { "dependencies": { "commander": "^13.1.0" }, "peerDependencies": { "@get-bb/plugin-sdk": "0.x", "@tanstack/react-query": "^5.0.0", "jsdom": "*", "react": ">=19", "typescript": "*" }, "optionalPeers": ["@tanstack/react-query", "jsdom", "react", "typescript"], "bin": { "bb-kit": "bin/bb-kit.mjs" } }, "sha512-YZcIziTQiEsyWDEhPLFsMmCnFMk1qeoGDLyVQI1k7MBy1gVpC+KqOIS3oSi58A9bzxj7INwCA3AE4q2B1Zufkg=="],
-
     "@smsunarto/bb-plugin-monokai/typescript": ["typescript@7.0.2", "", { "optionalDependencies": { "@typescript/typescript-aix-ppc64": "7.0.2", "@typescript/typescript-darwin-arm64": "7.0.2", "@typescript/typescript-darwin-x64": "7.0.2", "@typescript/typescript-freebsd-arm64": "7.0.2", "@typescript/typescript-freebsd-x64": "7.0.2", "@typescript/typescript-linux-arm": "7.0.2", "@typescript/typescript-linux-arm64": "7.0.2", "@typescript/typescript-linux-loong64": "7.0.2", "@typescript/typescript-linux-mips64el": "7.0.2", "@typescript/typescript-linux-ppc64": "7.0.2", "@typescript/typescript-linux-riscv64": "7.0.2", "@typescript/typescript-linux-s390x": "7.0.2", "@typescript/typescript-linux-x64": "7.0.2", "@typescript/typescript-netbsd-arm64": "7.0.2", "@typescript/typescript-netbsd-x64": "7.0.2", "@typescript/typescript-openbsd-arm64": "7.0.2", "@typescript/typescript-openbsd-x64": "7.0.2", "@typescript/typescript-sunos-x64": "7.0.2", "@typescript/typescript-win32-arm64": "7.0.2", "@typescript/typescript-win32-x64": "7.0.2" }, "bin": { "tsc": "bin/tsc" } }, "sha512-8FYau96o3NKOhbjKi/qNvG/W5jhzxkbdm5sj9AbZ/5T5sWqn3hJgLfGx27sRKZWTvyzCP8dLRBTf5tBTSRVUNA=="],
-
-    "@smsunarto/bb-plugin-my-stack/@bb-kit/core": ["@bb-kit/core@0.2.0", "", { "dependencies": { "commander": "^13.1.0" }, "peerDependencies": { "@get-bb/plugin-sdk": "0.x", "@tanstack/react-query": "^5.0.0", "jsdom": "*", "react": ">=19", "typescript": "*" }, "optionalPeers": ["@tanstack/react-query", "jsdom", "react", "typescript"], "bin": { "bb-kit": "bin/bb-kit.mjs" } }, "sha512-YZcIziTQiEsyWDEhPLFsMmCnFMk1qeoGDLyVQI1k7MBy1gVpC+KqOIS3oSi58A9bzxj7INwCA3AE4q2B1Zufkg=="],
-
-    "@smsunarto/bb-plugin-prompt-editor/@bb-kit/core": ["@bb-kit/core@0.2.0", "", { "dependencies": { "commander": "^13.1.0" }, "peerDependencies": { "@get-bb/plugin-sdk": "0.x", "@tanstack/react-query": "^5.0.0", "jsdom": "*", "react": ">=19", "typescript": "*" }, "optionalPeers": ["@tanstack/react-query", "jsdom", "react", "typescript"], "bin": { "bb-kit": "bin/bb-kit.mjs" } }, "sha512-YZcIziTQiEsyWDEhPLFsMmCnFMk1qeoGDLyVQI1k7MBy1gVpC+KqOIS3oSi58A9bzxj7INwCA3AE4q2B1Zufkg=="],
-
-    "@smsunarto/bb-plugin-remind-me/@bb-kit/core": ["@bb-kit/core@0.2.0", "", { "dependencies": { "commander": "^13.1.0" }, "peerDependencies": { "@get-bb/plugin-sdk": "0.x", "@tanstack/react-query": "^5.0.0", "jsdom": "*", "react": ">=19", "typescript": "*" }, "optionalPeers": ["@tanstack/react-query", "jsdom", "react", "typescript"], "bin": { "bb-kit": "bin/bb-kit.mjs" } }, "sha512-YZcIziTQiEsyWDEhPLFsMmCnFMk1qeoGDLyVQI1k7MBy1gVpC+KqOIS3oSi58A9bzxj7INwCA3AE4q2B1Zufkg=="],
 
     "@smsunarto/bb-plugin-remind-me/@get-bb/plugin-sdk": ["@get-bb/plugin-sdk@0.6.37", "", { "dependencies": { "cross-spawn": "^7.0.6", "zod": "^4.6.5" }, "peerDependencies": { "@testing-library/react": "^16.3.2", "@types/better-sqlite3": "^7.6.12", "@types/react": "^19.0.0", "better-sqlite3": ">=12", "cron-parser": "^5.5.0", "hono": "^4.11.9", "react": "^19.0.0", "react-dom": "^19.0.0" }, "optionalPeers": ["@testing-library/react", "@types/better-sqlite3", "@types/react", "better-sqlite3", "cron-parser", "hono", "react", "react-dom"] }, "sha512-fltzoFz2DTSDo35tSMaDR/nlQeTE/WFO1BLUMD0LoJ+dbKsJBCloaK+Kl1BYXP+lABPBH7dgAAfKKKSIgCBzHA=="],
 
@@ -3370,11 +3340,7 @@
 
     "@smsunarto/bb-plugin-scott-docs/typescript": ["@typescript/typescript6@6.0.2", "", { "dependencies": { "@typescript/old": "npm:typescript@^6" }, "bin": { "tsc6": "bin/tsc6" } }, "sha512-mbCddXd+jm7hfx7w2YU64/Av4/NqqeG3GoRZgxPcgoTxYjhrcfJRw9ULch71SS4G+Q3bOXFhRvPqjguN0Hyp5w=="],
 
-    "@smsunarto/bb-plugin-scott-engineering/@bb-kit/core": ["@bb-kit/core@0.2.0", "", { "dependencies": { "commander": "^13.1.0" }, "peerDependencies": { "@get-bb/plugin-sdk": "0.x", "@tanstack/react-query": "^5.0.0", "jsdom": "*", "react": ">=19", "typescript": "*" }, "optionalPeers": ["@tanstack/react-query", "jsdom", "react", "typescript"], "bin": { "bb-kit": "bin/bb-kit.mjs" } }, "sha512-YZcIziTQiEsyWDEhPLFsMmCnFMk1qeoGDLyVQI1k7MBy1gVpC+KqOIS3oSi58A9bzxj7INwCA3AE4q2B1Zufkg=="],
-
     "@smsunarto/bb-plugin-scott-engineering/@get-bb/plugin-sdk": ["@get-bb/plugin-sdk@0.6.37", "", { "dependencies": { "cross-spawn": "^7.0.6", "zod": "^4.6.5" }, "peerDependencies": { "@testing-library/react": "^16.3.2", "@types/better-sqlite3": "^7.6.12", "@types/react": "^19.0.0", "better-sqlite3": ">=12", "cron-parser": "^5.5.0", "hono": "^4.11.9", "react": "^19.0.0", "react-dom": "^19.0.0" }, "optionalPeers": ["@testing-library/react", "@types/better-sqlite3", "@types/react", "better-sqlite3", "cron-parser", "hono", "react", "react-dom"] }, "sha512-fltzoFz2DTSDo35tSMaDR/nlQeTE/WFO1BLUMD0LoJ+dbKsJBCloaK+Kl1BYXP+lABPBH7dgAAfKKKSIgCBzHA=="],
-
-    "@smsunarto/bb-plugin-scott-inline-vis/@bb-kit/core": ["@bb-kit/core@0.2.0", "", { "dependencies": { "commander": "^13.1.0" }, "peerDependencies": { "@get-bb/plugin-sdk": "0.x", "@tanstack/react-query": "^5.0.0", "jsdom": "*", "react": ">=19", "typescript": "*" }, "optionalPeers": ["@tanstack/react-query", "jsdom", "react", "typescript"], "bin": { "bb-kit": "bin/bb-kit.mjs" } }, "sha512-YZcIziTQiEsyWDEhPLFsMmCnFMk1qeoGDLyVQI1k7MBy1gVpC+KqOIS3oSi58A9bzxj7INwCA3AE4q2B1Zufkg=="],
 
     "@smsunarto/bb-plugin-scott-tasks/@hugeicons/core-free-icons": ["@hugeicons/core-free-icons@4.3.5", "", {}, "sha512-Sv+NjHRPnQk+yZsGCMcGznCHdTfJR9PMMOEKcJYAQU4gy90dmlc9PwdtvYOImBZIjiheMsTLL5eMn2DmHxUiUg=="],
 
@@ -3383,14 +3349,6 @@
     "@smsunarto/bb-plugin-scott-tasks/hono": ["hono@4.11.9", "", {}, "sha512-Eaw2YTGM6WOxA6CXbckaEvslr2Ne4NFsKrvc0v97JD5awbmeBLO5w9Ho9L9kmKonrwF9RJlW6BxT1PVv/agBHQ=="],
 
     "@smsunarto/bb-plugin-scott-tasks/jsdom": ["jsdom@29.1.1", "", { "dependencies": { "@asamuzakjp/css-color": "^5.1.11", "@asamuzakjp/dom-selector": "^7.1.1", "@bramus/specificity": "^2.4.2", "@csstools/css-syntax-patches-for-csstree": "^1.1.3", "@exodus/bytes": "^1.15.0", "css-tree": "^3.2.1", "data-urls": "^7.0.0", "decimal.js": "^10.6.0", "html-encoding-sniffer": "^6.0.0", "is-potential-custom-element-name": "^1.0.1", "lru-cache": "^11.3.5", "parse5": "^8.0.1", "saxes": "^6.0.0", "symbol-tree": "^3.2.4", "tough-cookie": "^6.0.1", "undici": "^7.25.0", "w3c-xmlserializer": "^5.0.0", "webidl-conversions": "^8.0.1", "whatwg-mimetype": "^5.0.0", "whatwg-url": "^16.0.1", "xml-name-validator": "^5.0.0" }, "peerDependencies": { "canvas": "^3.0.0" }, "optionalPeers": ["canvas"] }, "sha512-ECi4Fi2f7BdJtUKTflYRTiaMxIB0O6zfR1fX0GXpUrf6flp8QIYn1UT20YQqdSOfk2dfkCwS8LAFoJDEppNK5Q=="],
-
-    "@smsunarto/bb-plugin-traces/@bb-kit/core": ["@bb-kit/core@0.2.0", "", { "dependencies": { "commander": "^13.1.0" }, "peerDependencies": { "@get-bb/plugin-sdk": "0.x", "@tanstack/react-query": "^5.0.0", "jsdom": "*", "react": ">=19", "typescript": "*" }, "optionalPeers": ["@tanstack/react-query", "jsdom", "react", "typescript"], "bin": { "bb-kit": "bin/bb-kit.mjs" } }, "sha512-YZcIziTQiEsyWDEhPLFsMmCnFMk1qeoGDLyVQI1k7MBy1gVpC+KqOIS3oSi58A9bzxj7INwCA3AE4q2B1Zufkg=="],
-
-    "@smsunarto/bb-plugin-usage-bar/@bb-kit/core": ["@bb-kit/core@0.2.0", "", { "dependencies": { "commander": "^13.1.0" }, "peerDependencies": { "@get-bb/plugin-sdk": "0.x", "@tanstack/react-query": "^5.0.0", "jsdom": "*", "react": ">=19", "typescript": "*" }, "optionalPeers": ["@tanstack/react-query", "jsdom", "react", "typescript"], "bin": { "bb-kit": "bin/bb-kit.mjs" } }, "sha512-YZcIziTQiEsyWDEhPLFsMmCnFMk1qeoGDLyVQI1k7MBy1gVpC+KqOIS3oSi58A9bzxj7INwCA3AE4q2B1Zufkg=="],
-
-    "@smsunarto/bb-plugin-vimium/@bb-kit/core": ["@bb-kit/core@0.2.0", "", { "dependencies": { "commander": "^13.1.0" }, "peerDependencies": { "@get-bb/plugin-sdk": "0.x", "@tanstack/react-query": "^5.0.0", "jsdom": "*", "react": ">=19", "typescript": "*" }, "optionalPeers": ["@tanstack/react-query", "jsdom", "react", "typescript"], "bin": { "bb-kit": "bin/bb-kit.mjs" } }, "sha512-YZcIziTQiEsyWDEhPLFsMmCnFMk1qeoGDLyVQI1k7MBy1gVpC+KqOIS3oSi58A9bzxj7INwCA3AE4q2B1Zufkg=="],
-
-    "@smsunarto/bb-plugin-whiteboard/@bb-kit/core": ["@bb-kit/core@0.2.0", "", { "dependencies": { "commander": "^13.1.0" }, "peerDependencies": { "@get-bb/plugin-sdk": "0.x", "@tanstack/react-query": "^5.0.0", "jsdom": "*", "react": ">=19", "typescript": "*" }, "optionalPeers": ["@tanstack/react-query", "jsdom", "react", "typescript"], "bin": { "bb-kit": "bin/bb-kit.mjs" } }, "sha512-YZcIziTQiEsyWDEhPLFsMmCnFMk1qeoGDLyVQI1k7MBy1gVpC+KqOIS3oSi58A9bzxj7INwCA3AE4q2B1Zufkg=="],
 
     "@smsunarto/bb-plugin-whiteboard/@xyflow/react": ["@xyflow/react@12.10.2", "", { "dependencies": { "@xyflow/system": "0.0.76", "classcat": "^5.0.3", "zustand": "^4.4.0" }, "peerDependencies": { "react": ">=17", "react-dom": ">=17" } }, "sha512-CgIi6HwlcHXwlkTpr0fxLv/0sRVNZ8IdwKLzzeCscaYBwpvfcH1QFOCeaTCuEn1FQEs/B8CjnTSjhs8udgmBgQ=="],
 
@@ -3401,8 +3359,6 @@
     "@types/bun/bun-types": ["bun-types@1.3.14", "", { "dependencies": { "@types/node": "*" } }, "sha512-4N0ig0fEomHt5R0KCFWjovxow98rIoRwKolrYdCcknNwMekCXRnWEUvgu5soYV8QXtVsrUD8B95MBOZGPvr6KQ=="],
 
     "accepts/mime-types": ["mime-types@3.0.2", "", { "dependencies": { "mime-db": "^1.54.0" } }, "sha512-Lbgzdk0h4juoQ9fCKXW4by0UJqj+nOOrI9MJ1sSj4nI8aI2eo1qmvQEie4VD1glsS250n15LsWsYtCugiStS5A=="],
-
-    "agent-install/commander": ["commander@14.0.3", "", {}, "sha512-H+y0Jo/T1RZ9qPP4Eh1pkcQcLRglraJaSLoyOtHxu6AapkjWVCy2Sit1QQ4x3Dng8qDlSsZEet7g5Pq06MvTgw=="],
 
     "body-parser/content-type": ["content-type@2.1.0", "", {}, "sha512-mj7UPXE0jaqaOsukNZRUEfEi2AcL7C/vwmwcHV0O97eO1E1pxBZuyjlZrx5seTaNBg1U6+o35wpa35Qfcc+7ag=="],
 

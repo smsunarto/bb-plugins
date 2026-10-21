@@ -48,7 +48,7 @@
     "references/"
   ],
   "dependencies": {
-    "@bb-kit/core": "0.2.0",
+    "@bb-kit/core": "workspace:*",
     "zod": "^4.4.3"
   },
   "devDependencies": {

@@ -36,7 +36,7 @@
     "LICENSE"
   ],
   "dependencies": {
-    "@bb-kit/core": "0.2.0",
+    "@bb-kit/core": "workspace:*",
     "@tanstack/react-query": "^5.101.4",
     "zod": "^4.4.3"
   },

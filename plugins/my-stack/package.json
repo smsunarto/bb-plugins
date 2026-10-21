@@ -37,7 +37,7 @@
     "LICENSE"
   ],
   "dependencies": {
-    "@bb-kit/core": "0.2.0"
+    "@bb-kit/core": "workspace:*"
   },
   "devDependencies": {
     "@get-bb/plugin-sdk": "0.5.29",
