@@ -172,7 +172,7 @@
       "name": "@smsunarto/bb-plugin-agentation",
       "version": "0.3.0",
       "dependencies": {
-        "@bb-kit/core": "0.2.0",
+        "@bb-kit/core": "workspace:*",
         "@radix-ui/react-slot": "^1.3.0",
         "zod": "^4.3.6",
       },
@@ -514,7 +514,7 @@
       "name": "@smsunarto/bb-plugin-gitbutler",
       "version": "0.2.0",
       "dependencies": {
-        "@bb-kit/core": "1.0.0",
+        "@bb-kit/core": "workspace:*",
         "@radix-ui/react-slot": "^1.3.0",
         "@tanstack/react-query": "^5.101.4",
         "smol-toml": "1.8.0",
@@ -542,7 +542,7 @@
       "name": "@smsunarto/bb-plugin-gtd-sidebar",
       "version": "0.6.0",
       "dependencies": {
-        "@bb-kit/core": "0.2.0",
+        "@bb-kit/core": "workspace:*",
         "@dnd-kit/core": "6.3.1",
         "@dnd-kit/sortable": "10.0.0",
         "@dnd-kit/utilities": "3.2.2",
@@ -3328,8 +3328,6 @@
 
     "@smsunarto/bb-plugin-agent-instructions/@bb-kit/core": ["@bb-kit/core@0.2.0", "", { "dependencies": { "commander": "^13.1.0" }, "peerDependencies": { "@get-bb/plugin-sdk": "0.x", "@tanstack/react-query": "^5.0.0", "jsdom": "*", "react": ">=19", "typescript": "*" }, "optionalPeers": ["@tanstack/react-query", "jsdom", "react", "typescript"], "bin": { "bb-kit": "bin/bb-kit.mjs" } }, "sha512-YZcIziTQiEsyWDEhPLFsMmCnFMk1qeoGDLyVQI1k7MBy1gVpC+KqOIS3oSi58A9bzxj7INwCA3AE4q2B1Zufkg=="],
 
-    "@smsunarto/bb-plugin-agentation/@bb-kit/core": ["@bb-kit/core@0.2.0", "", { "dependencies": { "commander": "^13.1.0" }, "peerDependencies": { "@get-bb/plugin-sdk": "0.x", "@tanstack/react-query": "^5.0.0", "jsdom": "*", "react": ">=19", "typescript": "*" }, "optionalPeers": ["@tanstack/react-query", "jsdom", "react", "typescript"], "bin": { "bb-kit": "bin/bb-kit.mjs" } }, "sha512-YZcIziTQiEsyWDEhPLFsMmCnFMk1qeoGDLyVQI1k7MBy1gVpC+KqOIS3oSi58A9bzxj7INwCA3AE4q2B1Zufkg=="],
-
     "@smsunarto/bb-plugin-agentation/typescript": ["typescript@7.0.2", "", { "optionalDependencies": { "@typescript/typescript-aix-ppc64": "7.0.2", "@typescript/typescript-darwin-arm64": "7.0.2", "@typescript/typescript-darwin-x64": "7.0.2", "@typescript/typescript-freebsd-arm64": "7.0.2", "@typescript/typescript-freebsd-x64": "7.0.2", "@typescript/typescript-linux-arm": "7.0.2", "@typescript/typescript-linux-arm64": "7.0.2", "@typescript/typescript-linux-loong64": "7.0.2", "@typescript/typescript-linux-mips64el": "7.0.2", "@typescript/typescript-linux-ppc64": "7.0.2", "@typescript/typescript-linux-riscv64": "7.0.2", "@typescript/typescript-linux-s390x": "7.0.2", "@typescript/typescript-linux-x64": "7.0.2", "@typescript/typescript-netbsd-arm64": "7.0.2", "@typescript/typescript-netbsd-x64": "7.0.2", "@typescript/typescript-openbsd-arm64": "7.0.2", "@typescript/typescript-openbsd-x64": "7.0.2", "@typescript/typescript-sunos-x64": "7.0.2", "@typescript/typescript-win32-arm64": "7.0.2", "@typescript/typescript-win32-x64": "7.0.2" }, "bin": { "tsc": "bin/tsc" } }, "sha512-8FYau96o3NKOhbjKi/qNvG/W5jhzxkbdm5sj9AbZ/5T5sWqn3hJgLfGx27sRKZWTvyzCP8dLRBTf5tBTSRVUNA=="],
 
     "@smsunarto/bb-plugin-amp/typescript": ["typescript@7.0.2", "", { "optionalDependencies": { "@typescript/typescript-aix-ppc64": "7.0.2", "@typescript/typescript-darwin-arm64": "7.0.2", "@typescript/typescript-darwin-x64": "7.0.2", "@typescript/typescript-freebsd-arm64": "7.0.2", "@typescript/typescript-freebsd-x64": "7.0.2", "@typescript/typescript-linux-arm": "7.0.2", "@typescript/typescript-linux-arm64": "7.0.2", "@typescript/typescript-linux-loong64": "7.0.2", "@typescript/typescript-linux-mips64el": "7.0.2", "@typescript/typescript-linux-ppc64": "7.0.2", "@typescript/typescript-linux-riscv64": "7.0.2", "@typescript/typescript-linux-s390x": "7.0.2", "@typescript/typescript-linux-x64": "7.0.2", "@typescript/typescript-netbsd-arm64": "7.0.2", "@typescript/typescript-netbsd-x64": "7.0.2", "@typescript/typescript-openbsd-arm64": "7.0.2", "@typescript/typescript-openbsd-x64": "7.0.2", "@typescript/typescript-sunos-x64": "7.0.2", "@typescript/typescript-win32-arm64": "7.0.2", "@typescript/typescript-win32-x64": "7.0.2" }, "bin": { "tsc": "bin/tsc" } }, "sha512-8FYau96o3NKOhbjKi/qNvG/W5jhzxkbdm5sj9AbZ/5T5sWqn3hJgLfGx27sRKZWTvyzCP8dLRBTf5tBTSRVUNA=="],
@@ -3349,8 +3347,6 @@
     "@smsunarto/bb-plugin-gh-stack/@bb-kit/core": ["@bb-kit/core@0.2.0", "", { "dependencies": { "commander": "^13.1.0" }, "peerDependencies": { "@get-bb/plugin-sdk": "0.x", "@tanstack/react-query": "^5.0.0", "jsdom": "*", "react": ">=19", "typescript": "*" }, "optionalPeers": ["@tanstack/react-query", "jsdom", "react", "typescript"], "bin": { "bb-kit": "bin/bb-kit.mjs" } }, "sha512-YZcIziTQiEsyWDEhPLFsMmCnFMk1qeoGDLyVQI1k7MBy1gVpC+KqOIS3oSi58A9bzxj7INwCA3AE4q2B1Zufkg=="],
 
     "@smsunarto/bb-plugin-gh-stack/typescript": ["typescript@7.0.2", "", { "optionalDependencies": { "@typescript/typescript-aix-ppc64": "7.0.2", "@typescript/typescript-darwin-arm64": "7.0.2", "@typescript/typescript-darwin-x64": "7.0.2", "@typescript/typescript-freebsd-arm64": "7.0.2", "@typescript/typescript-freebsd-x64": "7.0.2", "@typescript/typescript-linux-arm": "7.0.2", "@typescript/typescript-linux-arm64": "7.0.2", "@typescript/typescript-linux-loong64": "7.0.2", "@typescript/typescript-linux-mips64el": "7.0.2", "@typescript/typescript-linux-ppc64": "7.0.2", "@typescript/typescript-linux-riscv64": "7.0.2", "@typescript/typescript-linux-s390x": "7.0.2", "@typescript/typescript-linux-x64": "7.0.2", "@typescript/typescript-netbsd-arm64": "7.0.2", "@typescript/typescript-netbsd-x64": "7.0.2", "@typescript/typescript-openbsd-arm64": "7.0.2", "@typescript/typescript-openbsd-x64": "7.0.2", "@typescript/typescript-sunos-x64": "7.0.2", "@typescript/typescript-win32-arm64": "7.0.2", "@typescript/typescript-win32-x64": "7.0.2" }, "bin": { "tsc": "bin/tsc" } }, "sha512-8FYau96o3NKOhbjKi/qNvG/W5jhzxkbdm5sj9AbZ/5T5sWqn3hJgLfGx27sRKZWTvyzCP8dLRBTf5tBTSRVUNA=="],
-
-    "@smsunarto/bb-plugin-gtd-sidebar/@bb-kit/core": ["@bb-kit/core@0.2.0", "", { "dependencies": { "commander": "^13.1.0" }, "peerDependencies": { "@get-bb/plugin-sdk": "0.x", "@tanstack/react-query": "^5.0.0", "jsdom": "*", "react": ">=19", "typescript": "*" }, "optionalPeers": ["@tanstack/react-query", "jsdom", "react", "typescript"], "bin": { "bb-kit": "bin/bb-kit.mjs" } }, "sha512-YZcIziTQiEsyWDEhPLFsMmCnFMk1qeoGDLyVQI1k7MBy1gVpC+KqOIS3oSi58A9bzxj7INwCA3AE4q2B1Zufkg=="],
 
     "@smsunarto/bb-plugin-gtd-sidebar/@hugeicons/core-free-icons": ["@hugeicons/core-free-icons@4.3.5", "", {}, "sha512-Sv+NjHRPnQk+yZsGCMcGznCHdTfJR9PMMOEKcJYAQU4gy90dmlc9PwdtvYOImBZIjiheMsTLL5eMn2DmHxUiUg=="],
 

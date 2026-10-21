@@ -66,7 +66,7 @@
     "vendor/"
   ],
   "dependencies": {
-    "@bb-kit/core": "0.2.0",
+    "@bb-kit/core": "workspace:*",
     "@radix-ui/react-slot": "^1.3.0",
     "zod": "^4.3.6"
   },
