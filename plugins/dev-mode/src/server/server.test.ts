@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readdirSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import {
   createFakePluginHost,
@@ -75,6 +75,26 @@ test("the children the arena and review skills name get no skills or prompts", a
   } finally {
     await f.harness.lifecycle.dispose();
   }
+});
+
+test("the dev skill indexes every shared principle and links real playbooks", async () => {
+  const index = new URL("../../skills/dev/SKILL.md", import.meta.url);
+  const text = readFileSync(index, "utf8");
+  const f = await host();
+  try {
+    const listed = await f.harness.behavior.runCli(["principle"]);
+    const principles = listed.stdout?.trim().split("\n") ?? [];
+    const indexed = [...text.matchAll(/^- `([a-z-]+)`\./gm)].map((match) => match[1]);
+    assert.deepEqual(indexed.sort(), principles.sort());
+  } finally {
+    await f.harness.lifecycle.dispose();
+  }
+  const playbooks = [...text.matchAll(/\]\((playbooks\/[a-z-]+\.md)\)/g)].map((match) => match[1]!);
+  assert.deepEqual(
+    playbooks.map((path) => path.slice("playbooks/".length)).sort(),
+    readdirSync(new URL("../../skills/dev/playbooks", import.meta.url)).sort(),
+  );
+  for (const path of playbooks) assert.ok(existsSync(new URL(path, index)), path);
 });
 
 test("Dev Mode keeps its stored id behind the dev-mode CLI", async () => {

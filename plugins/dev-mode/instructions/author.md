@@ -1,4 +1,4 @@
-Read a shared engineering principle with `bb dev-mode principle --name <name>`, or omit `--name` to list names.
+The `dev` skill indexes the shared engineering principles and suggests playbooks for common tasks. Read a principle with `bb dev-mode principle --name <name>`, or omit `--name` to list names.
 
 Arena and review each ask one Claude and one Codex child thread the same prompt. Dev Mode authorizes starting them. Write the prompt to a file outside the checkout, for example with `mktemp`, then run this once with `claude-code` and once with `codex`:
 

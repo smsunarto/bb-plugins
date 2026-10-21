@@ -15,13 +15,13 @@ Side chats, BB's review plugin threads, and threads this plugin launched before 
 
 ## Commands
 
-- `bb dev-mode principle` lists shared principles; add `--name grug-brain` to read one.
+- `bb dev-mode principle` lists shared principles; add `--name grug-brain` to read one. The `dev` skill indexes them by when they apply, alongside suggested playbooks under `skills/dev/playbooks/`.
 
 The injected prompt and the principle command text are editable under `instructions/`. Skills and their references are bundled under `skills/`. Engineering principles live in `references/principles/`. The `principle` command reads them from the installed plugin without adding skill catalog entries.
 
 ## Maintaining imported prompts
 
-Preserve imported principles, skills, and supporting prompts verbatim wherever possible. Limit porting changes to requested renames, reference paths, unavailable integrations, and required BB adapters. Do not paraphrase, simplify, or change behavior as incidental cleanup; treat intentional prompt changes as behavior changes requiring explicit rationale.
+Preserve imported principles, skills, and supporting prompts verbatim wherever possible. The exception is the `dev` skill and its playbooks, which were deliberately rewritten from pstack as recommendations rather than required steps. Limit porting changes to requested renames, reference paths, unavailable integrations, and required BB adapters. Do not paraphrase, simplify, or change behavior as incidental cleanup; treat intentional prompt changes as behavior changes requiring explicit rationale.
 
 The existing skills and principle references come from [Scott's dotfiles fork before migration](https://github.com/smsunarto/dotfiles/tree/9bd2820707a2a1f4525bccd32af9766cb98c1d6a/.dotfiles/.agents/plugins/scott-engineering).
 
