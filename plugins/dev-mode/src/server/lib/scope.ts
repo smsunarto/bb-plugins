@@ -7,8 +7,8 @@ const files = instructionFiles(import.meta.url);
 const names = readdirSync(join(files.root, "skills"));
 // Side chats, BB's review plugin, and this plugin's pre-prompt workers get neither skills nor instructions.
 const quiet = new Set(["side-chat", "review", "scott-engineering"]);
-// The titles the arena and review skills give their children, which answer and never start more.
-const answering = /^(Arena|Review) \((Claude|Codex)\)$/;
+// Review children and legacy Arena children answer without starting more children.
+const answering = /^(Arena|Review) \((Claude|Codex)\)(?: — .+)?$/;
 
 export function configuration(session: Session) {
   const { parentThreadId, title } = session.thread;

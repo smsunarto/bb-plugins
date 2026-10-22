@@ -16,7 +16,7 @@ async function host() {
   return f;
 }
 
-test("authors get the skills and the Arena and review prompts, with no tools", async () => {
+test("authors get the engineering skills without Arena or tools", async () => {
   const f = await host();
   try {
     const result = await f.harness.behavior.resolveAgentConfiguration(
@@ -24,7 +24,8 @@ test("authors get the skills and the Arena and review prompts, with no tools", a
     );
     assert.deepEqual(result.tools, []);
     assert.deepEqual([...result.skills].sort(), [...skills].sort());
-    assert.ok(result.skills.includes("arena") && result.skills.includes("review"));
+    assert.ok(!result.skills.includes("arena"));
+    assert.ok(!result.skills.includes("review"));
     assert.match(
       result.instructions ?? "",
       /Before software engineering work .* read the `dev` skill/,
@@ -34,7 +35,7 @@ test("authors get the skills and the Arena and review prompts, with no tools", a
       /do not apply them to visual, UI, UX, product, or game design/,
     );
     assert.match(result.instructions ?? "", /bb dev-mode principle --name <name>/);
-    assert.match(result.instructions ?? "", /bb thread spawn --parent-self/);
+    assert.doesNotMatch(result.instructions ?? "", /Arena|bb thread spawn/);
     assert.equal(f.harness.inspection.registrations.agentTools.length, 0);
   } finally {
     await f.harness.lifecycle.dispose();
@@ -56,16 +57,14 @@ for (const origin of ["side-chat", "review", "scott-engineering"])
     }
   });
 
-const childTitles = ["arena", "review"].flatMap((skill) =>
-  [
-    ...readFileSync(new URL(`../../skills/${skill}/SKILL.md`, import.meta.url), "utf8").matchAll(
-      /`((?:Arena|Review) \((?:Claude|Codex)\))`/g,
-    ),
-  ].map((match) => match[1]!),
-);
-
-test("the children the arena and review skills name get no skills or prompts", async () => {
-  assert.deepEqual(childTitles.sort(), [
+test("Arena children and independent reviewers get no Dev Mode skills or prompts", async () => {
+  const review = readFileSync(
+    new URL("../../../code-review/skills/review/SKILL.md", import.meta.url),
+    "utf8",
+  );
+  const reviewTitles = [...review.matchAll(/--title "([^"\n]+)"/g)].map((match) => match[1]!);
+  assert.equal(reviewTitles.length, 2);
+  const childTitles = [
     "Arena (Claude)",
     "Arena (Codex)",
     "Review (Claude)",

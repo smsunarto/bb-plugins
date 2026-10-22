@@ -1,12 +1,8 @@
 # Dev Mode
 
-Arena, independent review, engineering skills, and shared engineering principles for BB. Arena and review are prompts, not tools: the plugin injects `instructions/author.md` into author threads and ships the `arena` and `review` skills.
+Engineering skills and shared engineering principles for BB. The plugin injects `instructions/author.md` into author threads and ships the `dev` skill and supporting engineering skills.
 
-## Arena and review
-
-Both ask one Claude and one Codex child thread the same prompt. The agent starts each child with the `bb thread spawn --parent-self` recipe in `instructions/author.md`. BB messages the parent as each child finishes, and the parent reads the answers with `bb thread output <thread-id>`.
-
-After consuming each answer and finishing any follow-up, the parent settles the child by archiving it, stopping its runtime, and verifying its state, as described in `instructions/author.md`.
+Side chats, independent reviewers, legacy Arena children, and this plugin's legacy workers receive no Dev Mode skills or instructions.
 
 - **Arena** asks a question when the user wants two independent answers. The parent weighs them.
 - **Review** runs at implementation handoff and before consequential designs. Reviewers read `git diff <base> <head>` in the parent's checkout and apply the lenses under `skills/review/references/`, which the parent pastes into their prompt. The parent judges the findings, fixes accepted ones, and reruns checks.

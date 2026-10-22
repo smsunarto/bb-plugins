@@ -1,7 +1,7 @@
 {
   "name": "@smsunarto/bb-plugin-scott-engineering",
   "version": "0.1.0",
-  "description": "Arena, independent review, engineering skills, and shared principles for BB.",
+  "description": "Engineering skills and shared principles for BB.",
   "license": "MIT",
   "author": "Scott Sunarto",
   "homepage": "https://github.com/smsunarto/bb-plugins/tree/main/plugins/dev-mode",
@@ -17,7 +17,7 @@
   },
   "bb": {
     "name": "Dev Mode",
-    "description": "Arena and independent review as injected prompts, plus engineering skills and shared principles.",
+    "description": "Engineering skills and shared principles.",
     "branding": {
       "icon": "./assets/icon.svg",
       "logo": {
