@@ -40,6 +40,23 @@ request yet, from every connected machine, when the
 [GitButler plugin](../gitbutler) is on. A branch opens to its commits and its
 diff, and **Review with bb** reviews it like a pull request.
 
+Tick **Reviewed** on each local file's diff or in the file list. Reviewed
+diffs collapse, and checking every file shows **Ready**. Untick a file to
+reopen it. These marks are saved in bb for that branch's exact base and head
+commits; a new commit or rebase starts a fresh review. bb keeps marks for
+the five most recently reviewed comparisons per branch. Pull requests keep
+GitHub's **Viewed** marks. **Ready** records reading progress and does not
+submit a GitHub review or merge changes.
+
+## Changes in chat
+
+Agents can call `code_review_share_changes` with a committed GitButler branch
+or GitHub pull request. Its returned `::code-review` directive renders a
+compact card in the reply: changed files, line counts, review progress, and
+**Review changes** to open the Changes tab. The card updates with your review
+marks. When the shared branch moves, it warns and offers **Review latest
+changes**.
+
 ## A pull request
 
 - **Summary**: the description, labels, reviewers and where each stands,
@@ -89,7 +106,7 @@ adapted from Codex's own review agent. The Prompt Editor plugin can edit them.
 
 ## What it stores
 
-In bb's plugin storage: your pins and the account that pinned each, your
+In bb's plugin storage: local file review marks by branch and comparison, your pins and the account that pinned each, your
 review instructions, and which bb threads were started for which pull
 request or unpublished branch, with each review's findings. Everything else is read from GitHub when you open it.
 

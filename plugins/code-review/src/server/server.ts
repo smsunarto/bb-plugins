@@ -6,6 +6,8 @@ import { createStore } from "./lib/store.ts";
 import { addDraftComment } from "./rpc/add-draft-comment.ts";
 import { agentActivity } from "./rpc/agent-activity.ts";
 import { branchActivity } from "./rpc/branch-activity.ts";
+import { branchReviewed } from "./rpc/branch-reviewed.ts";
+import { setBranchViewed } from "./rpc/set-branch-viewed.ts";
 import { changedFiles } from "./rpc/changed-files.ts";
 import { checks } from "./rpc/checks.ts";
 import { deleteDraft } from "./rpc/delete-draft.ts";
@@ -27,6 +29,7 @@ import { startReview } from "./rpc/start-review.ts";
 import { status } from "./rpc/status.ts";
 import { submitReview } from "./rpc/submit-review.ts";
 import { reportFindings } from "./tools/report-findings.ts";
+import { shareChanges } from "./tools/share-changes.ts";
 
 export default definePlugin({
   pluginId: "code-review",
@@ -56,9 +59,14 @@ export default definePlugin({
     localBranches,
     localChanges,
     branchActivity,
+    branchReviewed,
+    setBranchViewed,
     startLocalReview,
   },
-  agents: { files: instructionFiles(import.meta.url), tools: { report_findings: reportFindings } },
+  agents: {
+    files: instructionFiles(import.meta.url),
+    tools: { report_findings: reportFindings, share_changes: shareChanges },
+  },
   setup({ bb, store }) {
     // A review or fix that stops working changes what its pull request or branch shows.
     const settled = async ({ thread }: { thread: { id: string } }) => {

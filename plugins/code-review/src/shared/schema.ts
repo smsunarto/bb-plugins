@@ -4,7 +4,7 @@ import { z } from "zod";
  * The plugin's domain, shared by the server (which parses GitHub into it) and
  * the app (which renders it). Browser-safe: no node imports.
  *
- * GitHub is the only source of truth for review state. Draft comments live in
+ * GitHub is the source of truth for pull request review state. Draft comments live in
  * the viewer's PENDING review on GitHub, so github.com and this plugin show
  * the same drafts, and nothing is posted until the review is submitted.
  */
@@ -129,6 +129,23 @@ export type BranchTab = (typeof BRANCH_TABS)[number];
 
 /** An unpublished branch's id: hex, from its machine, checkout, and name. */
 export const branchIdSchema = z.string().regex(/^[0-9a-f]{12}$/, "Not a branch id.");
+
+/** Local review marks belong to one immutable comparison, including its base. */
+export const branchReviewRangeSchema = z.strictObject({
+  id: branchIdSchema,
+  base: z.string().regex(/^[0-9a-f]{40,64}$/),
+  head: z.string().regex(/^[0-9a-f]{40,64}$/),
+});
+export type BranchReviewRange = z.infer<typeof branchReviewRangeSchema>;
+export const branchReviewedSchema = z.strictObject({ paths: z.array(z.string()) });
+export type BranchReviewed = z.infer<typeof branchReviewedSchema>;
+export const BRANCH_REVIEW_CHANNEL = "branch-review";
+
+export function branchReviewRange(
+  branch: Pick<LocalBranch, "id" | "base" | "head">,
+): BranchReviewRange {
+  return { id: branch.id, base: branch.base, head: branch.head };
+}
 
 export type BranchRoute = { id: string; tab: BranchTab };
 

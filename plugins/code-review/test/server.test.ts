@@ -68,6 +68,7 @@ test("registers every RPC and answers them over the host boundary", async () => 
     "addDraftComment",
     "agentActivity",
     "branchActivity",
+    "branchReviewed",
     "changedFiles",
     "checks",
     "deleteDraft",
@@ -80,6 +81,7 @@ test("registers every RPC and answers them over the host boundary", async () => 
     "pullRequest",
     "replyDraft",
     "reviewInstructions",
+    "setBranchViewed",
     "setPinned",
     "setReviewInstructions",
     "setViewed",
@@ -118,8 +120,9 @@ test("only a review thread gets the findings tool, and its report reaches the pa
 
   expect(await tools({ kind: "review", pr: "cli/cli#9000" })).toEqual([
     "code_review_report_findings",
+    "code_review_share_changes",
   ]);
-  expect(await tools({})).toEqual([]);
+  expect(await tools({})).toEqual(["code_review_share_changes"]);
   expect(harness.inspection.registrations.agentTools[0]?.description).toStartWith(
     "Report the findings of a Code Review review, of a pull request or an unpublished branch",
   );

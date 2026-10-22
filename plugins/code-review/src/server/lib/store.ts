@@ -8,6 +8,9 @@ import {
   reviewRunSchema,
   sameAccount,
   sameRef,
+  type BranchReviewRange,
+  branchReviewedSchema,
+  branchReviewRangeSchema,
 } from "../../shared/schema.ts";
 import { createLocks } from "./lock.ts";
 
@@ -63,10 +66,42 @@ export type Store = ReturnType<typeof createStore>;
 const linksKey = (subject: string) => `links:${subject.toLowerCase()}`;
 const threadKey = (threadId: string) => `thread:${threadId}`;
 const runKey = (threadId: string) => `run:${threadId}`;
+const reviewedKey = ({ id }: BranchReviewRange) => `reviewed:${id}`;
+const reviewedRevisionSchema = branchReviewRangeSchema
+  .omit({ id: true })
+  .extend({ paths: branchReviewedSchema.shape.paths });
+const MAX_REVIEWED_REVISIONS = 5;
 
 export function createStore(kv: PluginKvStorage) {
   const withLock = createLocks();
   return {
+    async branchReviewed(range: BranchReviewRange): Promise<string[]> {
+      const revisions = parsedList(reviewedRevisionSchema, await kv.get(reviewedKey(range)));
+      return (
+        revisions.find((revision) => revision.base === range.base && revision.head === range.head)
+          ?.paths ?? []
+      );
+    },
+
+    async setBranchViewed(range: BranchReviewRange, path: string, viewed: boolean): Promise<void> {
+      const key = reviewedKey(range);
+      await withLock(key, async () => {
+        const revisions = parsedList(reviewedRevisionSchema, await kv.get(key));
+        const matches = (revision: z.infer<typeof reviewedRevisionSchema>) =>
+          revision.base === range.base && revision.head === range.head;
+        const paths = new Set(revisions.find(matches)?.paths);
+        if (viewed) paths.add(path);
+        else paths.delete(path);
+        const others = revisions.filter((revision) => !matches(revision));
+        const next =
+          paths.size > 0
+            ? [{ base: range.base, head: range.head, paths: [...paths] }, ...others]
+            : others;
+        if (next.length === 0) await kv.delete(key);
+        else await kv.set(key, next.slice(0, MAX_REVIEWED_REVISIONS));
+      });
+    },
+
     async pins(): Promise<Pin[]> {
       return parsedList(pinSchema, await kv.get("pins"));
     },

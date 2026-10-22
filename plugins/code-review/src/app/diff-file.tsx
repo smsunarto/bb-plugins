@@ -131,6 +131,7 @@ function FileHeader({
   githubUrl,
   onToggle,
   onViewedChange,
+  reviewLabel,
 }: {
   file: ChangedFile;
   open: boolean;
@@ -138,8 +139,9 @@ function FileHeader({
   threadCount: number;
   githubUrl: string | null;
   onToggle: () => void;
-  /** Null where there is no Viewed mark to set: an unpublished branch. */
+  /** Null until review marks are available. */
   onViewedChange: ((viewed: boolean) => void) | null;
+  reviewLabel: string;
 }) {
   const status = STATUS_LOOK[file.status];
   const shown = file.previousPath ? `${file.previousPath} → ${file.path}` : file.path;
@@ -239,7 +241,7 @@ function FileHeader({
               aria-hidden
             />
           </span>
-          Viewed
+          {reviewLabel}
           <span className="sr-only"> {file.path}</span>
         </label>
       ) : null}
@@ -691,6 +693,7 @@ export const DiffFile = memo(function DiffFile({
   focus,
   onOpenChange,
   onViewedChange,
+  reviewLabel = "Viewed",
 }: {
   pr: PullRequest | null;
   file: ChangedFile;
@@ -708,6 +711,7 @@ export const DiffFile = memo(function DiffFile({
   focus: { line: number; side: DiffSide } | null;
   onOpenChange: (path: string, open: boolean) => void;
   onViewedChange: ((file: ChangedFile, viewed: boolean) => void) | null;
+  reviewLabel?: string;
 }) {
   const bodyId = useId();
   const githubUrl = useGithubFileUrl(pr?.url ?? null, file.path);
@@ -729,6 +733,7 @@ export const DiffFile = memo(function DiffFile({
         bodyId={bodyId}
         threadCount={threads.length}
         githubUrl={githubUrl}
+        reviewLabel={reviewLabel}
         onToggle={() => onOpenChange(file.path, !open)}
         onViewedChange={onViewedChange ? (viewed) => onViewedChange(file, viewed) : null}
       />

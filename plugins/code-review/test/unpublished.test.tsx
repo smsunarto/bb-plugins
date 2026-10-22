@@ -1,7 +1,8 @@
 import "./dom.ts";
 import { beforeEach, expect, test } from "bun:test";
 import { pluginQueryClient } from "@bb-kit/core/rpc/query";
-import { AGENT_ACTIVITY_CHANNEL } from "../src/shared/schema.ts";
+import { AGENT_ACTIVITY_CHANNEL, branchReviewRange } from "../src/shared/schema.ts";
+import { rpc } from "../src/app/rpc.ts";
 import type { AgentActivity, LinkedThread } from "../src/shared/schema.ts";
 import { agentActivity, inbox, localBranch, localBranches, localChanges } from "./app-fixtures.ts";
 
@@ -22,6 +23,7 @@ const baseRpc: Handlers = {
   localBranches: () => localBranches,
   localChanges: () => localChanges,
   branchActivity: () => agentActivity,
+  branchReviewed: () => ({ paths: [] }),
   reviewInstructions: () => ({ instructions: "" }),
 };
 
@@ -128,7 +130,7 @@ test("a branch's page names it, and its summary lists its commits", async () => 
   slot.lifecycle.unmount();
 });
 
-test("a branch's Changes show its diff from its checkout, with nothing to mark viewed", async () => {
+test("a branch's Changes show its diff and allow reviewing each file", async () => {
   const slot = await page(`${BRANCH}/changes`);
   const card = await slot.findByRole("article", { name: "src/limit.ts" });
   expect(slot.rpcCalls.find((call) => call.method === "localChanges")?.input).toEqual({
@@ -137,12 +139,117 @@ test("a branch's Changes show its diff from its checkout, with nothing to mark v
     base: "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
     head: "cc36d32a212a2b8b6611fb73549fe6d04fb6ec38",
   });
-  expect(slot.getByText("1 file")).toBeTruthy();
-  expect(slot.queryByText(/viewed/)).toBeNull();
-  expect(slot.queryAllByRole("checkbox")).toEqual([]);
+  expect(await slot.findByText("0 of 1 file reviewed")).toBeTruthy();
+  expect(within(card).getByRole("checkbox", { name: "Reviewed src/limit.ts" })).toBeTruthy();
   expect(within(card).queryByRole("link", { name: /on GitHub/ })).toBeNull();
   expect(within(card).getByRole("button", { name: "Collapse src/limit.ts" })).toBeTruthy();
   slot.lifecycle.unmount();
+});
+
+test("local review progress survives remounts, is reversible, and reaches Ready", async () => {
+  let paths: string[] = [];
+  const handlers: Handlers = {
+    ...baseRpc,
+    branchReviewed: () => ({ paths }),
+    setBranchViewed: (input: { path: string; viewed: boolean }) => {
+      paths = input.viewed ? [input.path] : [];
+      return { viewed: input.viewed ? "viewed" : "unviewed" };
+    },
+  };
+  const first = await page(`${BRANCH}/changes`, handlers);
+  fireEvent.click(
+    within(await first.findByRole("article", { name: "src/limit.ts" })).getByRole("checkbox", {
+      name: "Reviewed src/limit.ts",
+    }),
+  );
+  await first.findByText("Ready");
+  await waitFor(() => expect(paths).toEqual(["src/limit.ts"]));
+  expect(first.rpcCalls.find((call) => call.method === "setBranchViewed")?.input).toEqual({
+    id: localBranch.id,
+    base: localBranch.base,
+    head: localBranch.head,
+    path: "src/limit.ts",
+    viewed: true,
+  });
+  first.lifecycle.unmount();
+  pluginQueryClient.clear();
+  const second = await page(`${BRANCH}/changes`, handlers);
+  const checked = within(await second.findByRole("article", { name: "src/limit.ts" })).getByRole(
+    "checkbox",
+    { name: "Reviewed src/limit.ts" },
+  );
+  await second.findByText("Ready");
+  expect((checked as HTMLInputElement).checked).toBe(true);
+  fireEvent.click(checked);
+  await second.findByText("0 of 1 file reviewed");
+  await waitFor(() => expect(paths).toEqual([]));
+  second.lifecycle.unmount();
+});
+
+test("failed local review saves restore the checkbox and explain the failure", async () => {
+  const slot = await page(`${BRANCH}/changes`, {
+    ...baseRpc,
+    setBranchViewed: () => {
+      throw new Error("Storage is unavailable");
+    },
+  });
+  const checkbox = within(await slot.findByRole("article", { name: "src/limit.ts" })).getByRole(
+    "checkbox",
+    { name: "Reviewed src/limit.ts" },
+  );
+  fireEvent.click(checkbox);
+  await slot.findByText(/Could not mark src\/limit.ts as reviewed/);
+  expect((checkbox as HTMLInputElement).checked).toBe(false);
+  expect(slot.queryByText("Ready")).toBeNull();
+  slot.lifecycle.unmount();
+});
+
+test("a cold branch waits for review marks before mounting its reviewed diffs", async () => {
+  let finish: ((value: { paths: string[] }) => void) | undefined;
+  const marks = new Promise<{ paths: string[] }>((resolve) => {
+    finish = resolve;
+  });
+  const slot = await page(`${BRANCH}/changes`, { ...baseRpc, branchReviewed: () => marks });
+  try {
+    await slot.findByText("Loading review progress…");
+    expect(slot.queryByRole("article", { name: "src/limit.ts" })).toBeNull();
+    expect(slot.rpcCalls.some((call) => call.method === "localChanges")).toBe(true);
+    finish?.({ paths: ["src/limit.ts"] });
+    const card = await slot.findByRole("article", { name: "src/limit.ts" });
+    expect(within(card).getByRole("button", { name: "Expand src/limit.ts" })).toBeTruthy();
+    await slot.findByText("Ready");
+  } finally {
+    finish?.({ paths: [] });
+    slot.lifecycle.unmount();
+  }
+});
+
+test("cached local checkboxes remain usable after a background read fails", async () => {
+  let failing = false;
+  let saved = false;
+  const slot = await page(`${BRANCH}/changes`, {
+    ...baseRpc,
+    branchReviewed: () => {
+      if (failing) throw new Error("Read unavailable");
+      return { paths: [] };
+    },
+    setBranchViewed: () => {
+      saved = true;
+      return { viewed: "viewed" };
+    },
+  });
+  try {
+    const card = await slot.findByRole("article", { name: "src/limit.ts" });
+    failing = true;
+    await pluginQueryClient.invalidateQueries({
+      queryKey: rpc.branchReviewed.queryKey(branchReviewRange(localBranch)),
+    });
+    await slot.findByText("Review progress could not load");
+    fireEvent.click(within(card).getByRole("checkbox", { name: "Reviewed src/limit.ts" }));
+    await waitFor(() => expect(saved).toBe(true));
+  } finally {
+    slot.lifecycle.unmount();
+  }
 });
 
 test("findings show on a branch's summary, with no draft comment to add, and reveal in Changes", async () => {

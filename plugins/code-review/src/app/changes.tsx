@@ -21,7 +21,6 @@ import type {
   LocalBranch,
   PullRequest,
   ReviewThread,
-  ViewedState,
 } from "../shared/schema.ts";
 import { reviewSubject, useAgentActivity } from "./bb-review.tsx";
 import type { ReviewTarget } from "./bb-review.tsx";
@@ -39,13 +38,22 @@ import { Loading, Notice, RetryButton, errorText } from "./notice.tsx";
 import { ReviewThreadView } from "./review-thread.tsx";
 import { rpc } from "./rpc.ts";
 import { SyncState } from "./sync-state.tsx";
+import { useBranchReviewed } from "./branch-review.ts";
+import {
+  dismissViewedErrors,
+  useViewedErrors,
+  useViewedToggle,
+  usePrMarks,
+  useBranchMarks,
+} from "./review-marks.ts";
+import type { ReviewMarks } from "./review-marks.ts";
 
 /*
  * The Changes tab: every changed file's diff, with review threads and bb
  * findings inline, a file list to jump around in, and GitHub's per-viewer
  * "Viewed" marks. It scrolls on its own, so the file list and the summary
  * bar stay put while the diffs move. An unpublished branch's tab is the same
- * without what only a pull request has: threads, comments, and Viewed marks.
+ * with local review marks and without GitHub threads or comments.
  */
 
 /** Room left above a card or line the tab scrolls to. */
@@ -158,132 +166,6 @@ function selectedLineIn(card: HTMLElement): Element | null {
 
 type LineFocus = { line: number; side: DiffSide };
 type Focus = { path: string; line: LineFocus | null };
-
-/**
- * One file's Viewed writes: its newest click, so an older answer never lands
- * over it, and its last queued write, which the next one waits for. Kept here,
- * not in the tab, so a click after leaving the tab and coming back still waits
- * for the one before. Keyed by {@link viewedKey} and path, and dropped once
- * the last write settles.
- */
-type ViewedQueue = { latest: symbol; tail: Promise<void> };
-const viewedQueues = new Map<string, ViewedQueue>();
-
-/**
- * Viewed marks are GitHub's per user, so one pull request read as two
- * accounts keeps two sets of them, each with its own writes and errors.
- */
-function viewedKey(pr: Pick<PullRequest, "account" | "ref">): string {
-  return `${pr.account.toLowerCase()}:${prKey(pr.ref)}`;
-}
-
-/**
- * Each pull request's Viewed failures as one account, by path. Kept here
- * with the queues, not in the tab, so a write that fails after the tab was
- * left and opened again still says why its box went back. A path's error
- * goes once a write for it succeeds, and the entry once its last error goes.
- */
-const viewedErrors = new Map<string, ReadonlyMap<string, string>>();
-const viewedErrorListeners = new Set<() => void>();
-
-/** Sets one file's Viewed error, or clears it with null. */
-function setViewedError(pull: string, path: string, error: string | null): void {
-  const errors = new Map(viewedErrors.get(pull));
-  if (error !== null) errors.set(path, error);
-  else if (!errors.delete(path)) return;
-  if (errors.size > 0) viewedErrors.set(pull, errors);
-  else viewedErrors.delete(pull);
-  for (const listener of viewedErrorListeners) listener();
-}
-
-function dismissViewedErrors(pull: string): void {
-  if (!viewedErrors.delete(pull)) return;
-  for (const listener of viewedErrorListeners) listener();
-}
-
-function subscribeViewedErrors(listener: () => void): () => void {
-  viewedErrorListeners.add(listener);
-  return () => viewedErrorListeners.delete(listener);
-}
-
-function useViewedErrors(pull: string): ReadonlyMap<string, string> | undefined {
-  return useSyncExternalStore(subscribeViewedErrors, () => viewedErrors.get(pull));
-}
-
-/**
- * Marks a file viewed or not on GitHub. The mark shows at once and the card
- * folds with it, as on GitHub. The answer, GitHub's own state, replaces the
- * guess, and a failure puts the old mark back and says why. Null without a
- * pull request: an unpublished branch has no Viewed marks.
- *
- * A file's writes go one at a time. Two in flight could reach GitHub out of
- * order and leave it opposite to the box, so each click waits for the write
- * before it, and one a newer click has overtaken is never sent.
- */
-function useViewedToggle(pr: PullRequest | null, setOpen: (path: string, open: boolean) => void) {
-  const client = rpc.useClient();
-  const account = pr?.account;
-  const id = pr?.id;
-  const ref = pr?.ref;
-  return useMemo(() => {
-    if (account === undefined || id === undefined || ref === undefined) return null;
-    return (file: ChangedFile, viewed: boolean) => {
-      const queryKey = rpc.changedFiles.queryKey({ account, ref });
-      const write = (state: ViewedState) =>
-        pluginQueryClient.setQueryData<ChangedFiles>(queryKey, (current) =>
-          current
-            ? {
-                ...current,
-                files: current.files.map((each) =>
-                  each.path === file.path ? { ...each, viewed: state } : each,
-                ),
-              }
-            : current,
-        );
-      const pull = viewedKey({ account, ref });
-      const key = `${pull}:${file.path}`;
-      const click = Symbol(file.path);
-      const latest = () => viewedQueues.get(key)?.latest === click;
-
-      // A refetch already in flight would land the old mark over this one.
-      void pluginQueryClient.cancelQueries({ queryKey });
-      write(viewed ? "viewed" : "unviewed");
-      setOpen(file.path, !viewed);
-      const send = async () => {
-        if (!latest()) return;
-        try {
-          const result = await client.setViewed({
-            account,
-            pullRequestId: id,
-            path: file.path,
-            viewed,
-          });
-          setViewedError(pull, file.path, null);
-          if (latest()) write(result.viewed);
-        } catch (error) {
-          if (!latest()) return;
-          write(file.viewed);
-          setOpen(file.path, viewed);
-          setViewedError(
-            pull,
-            file.path,
-            `Could not mark ${file.path} as ${viewed ? "viewed" : "not viewed"}. ${errorText(error)}`,
-          );
-          void pluginQueryClient.invalidateQueries({ queryKey });
-        }
-      };
-      // `send` never throws, so one failed write does not stop the queue.
-      const queued: ViewedQueue = {
-        latest: click,
-        tail: (viewedQueues.get(key)?.tail ?? Promise.resolve()).then(send),
-      };
-      viewedQueues.set(key, queued);
-      void queued.tail.finally(() => {
-        if (viewedQueues.get(key) === queued) viewedQueues.delete(key);
-      });
-    };
-  }, [client, account, id, ref, setOpen]);
-}
 
 /**
  * Takes a fresh "Show in Changes" request for this tab, the moment it mounts
@@ -480,10 +362,11 @@ function PrChanges({ pr }: { pr: PullRequest }) {
     { staleTime: 30_000 },
   );
   const behind = useCatchUp(pr, files.data);
+  const marks = usePrMarks(pr);
   return (
     <>
       <SyncState query={files} errorsOnly className="px-3 pt-1" />
-      <Changes target={{ pr }} files={files} behind={behind} />
+      <Changes target={{ pr }} files={files} behind={behind} marks={marks} />
     </>
   );
 }
@@ -494,16 +377,33 @@ export function BranchChangesTab({ branch }: { branch: LocalBranch }) {
     { hostId: branch.hostId, path: branch.path, base: branch.base, head: branch.head },
     { staleTime: 30_000 },
   );
-  return <Changes target={{ branch }} files={files} behind={false} />;
+  const review = useBranchReviewed(branch);
+  const marks = useBranchMarks(branch, review);
+  if (review.isPending)
+    return <Loading label="Loading review progress…" rows={6} className="p-3" />;
+  return (
+    <>
+      <LocalReviewNotices query={review} />
+      <Changes
+        key={`${branch.id}:${branch.base}:${branch.head}`}
+        target={{ branch }}
+        files={files}
+        behind={false}
+        marks={marks}
+      />
+    </>
+  );
 }
 
 function Changes({
   target,
   files,
   behind,
+  marks,
 }: {
   target: ReviewTarget;
   files: UseQueryResult<ChangedFiles, Error>;
+  marks: ReviewMarks | null;
   /** The files are still of an older revision than the pull request. */
   behind: boolean;
 }) {
@@ -545,6 +445,7 @@ function Changes({
     <ChangesView
       target={target}
       changed={files.data}
+      marks={marks}
       behind={behind}
       revealRequest={revealRequest}
       releaseReveal={releaseReveal}
@@ -555,12 +456,14 @@ function Changes({
 function ChangesView({
   target,
   changed,
+  marks,
   behind,
   revealRequest,
   releaseReveal,
 }: {
   target: ReviewTarget;
   changed: ChangedFiles;
+  marks: ReviewMarks | null;
   /** The files are still of an older revision than the pull request. */
   behind: boolean;
   revealRequest: RevealRequest | null;
@@ -576,8 +479,12 @@ function ChangesView({
   const [diffStyle, setDiffStyle] = useStoredChoice("diff-style", DIFF_STYLES, "unified");
   const scroller = useRef<HTMLDivElement>(null);
   const list = useRef<HTMLDivElement>(null);
+  const reviewLabel = marks?.label ?? "Reviewed";
 
-  const all = useMemo(() => readingOrder(changed.files), [changed.files]);
+  const all = useMemo(
+    () => readingOrder(marks ? marks.files(changed.files) : changed.files),
+    [changed.files, marks],
+  );
   const shown = useMemo(() => all.filter((file) => matches(file, filter)), [all, filter]);
   const shownPaths = useMemo(() => shown.map((file) => file.path), [shown]);
   const threads = pr?.threads ?? EMPTY_THREADS;
@@ -606,7 +513,7 @@ function ChangesView({
     },
     [holdFolding],
   );
-  const onViewedChange = useViewedToggle(pr, setOpen);
+  const onViewedChange = useViewedToggle(marks, setOpen);
   const reveal = useCallback(
     (path: string, line: LineFocus | null) => {
       const file = all.find((each) => each.path === path);
@@ -634,12 +541,15 @@ function ChangesView({
         threadsByPath={threadsByPath}
         onSelect={reveal}
         onViewedChange={onViewedChange}
+        reviewLabel={reviewLabel}
       />
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
         <Toolbar
           railOpen={railOpen}
           onToggleRail={() => setRailOpen((open) => !open)}
-          viewed={pr ? all.filter((file) => file.viewed === "viewed").length : null}
+          viewed={marks ? all.filter((file) => file.viewed === "viewed").length : null}
+          reviewLabel={reviewLabel}
+          fresh={!marks?.loadError}
           total={all.length}
           findingsStale={findingsStale}
           diffStyle={diffStyle}
@@ -656,17 +566,14 @@ function ChangesView({
           }
         />
         <PullRequestNotices pr={pr} behind={behind} />
+        {marks ? <ViewedErrors pull={marks.errorKey} /> : null}
         <div
           ref={scroller}
           data-cr-scroll
           className="min-h-0 flex-1 overflow-y-auto [scrollbar-gutter:stable]"
         >
           <div ref={list} className="flex flex-col gap-2 p-2 pb-8">
-            {shown.length === 0 ? (
-              <Notice tone="info" title="No files match">
-                {`Nothing in this ${noun} matches “${filter.trim()}”.`}
-              </Notice>
-            ) : null}
+            <MatchesNotice count={shown.length} noun={noun} filter={filter} />
             {shown.map((file) => (
               <DiffFile
                 key={file.path}
@@ -682,6 +589,7 @@ function ChangesView({
                 focus={focus?.path === file.path ? focus.line : null}
                 onOpenChange={setOpen}
                 onViewedChange={onViewedChange}
+                reviewLabel={reviewLabel}
               />
             ))}
             <OrphanThreads pr={pr} groups={orphans} />
@@ -692,10 +600,32 @@ function ChangesView({
   );
 }
 
-/**
- * Says the diff is of an older revision than the pull request, after every
- * try to read it again came back as old, and offers to read both once more.
- */
+function MatchesNotice({ count, noun, filter }: { count: number; noun: string; filter: string }) {
+  if (count > 0) return null;
+  return (
+    <Notice
+      tone="info"
+      title="No files match"
+    >{`Nothing in this ${noun} matches “${filter.trim()}”.`}</Notice>
+  );
+}
+
+function LocalReviewNotices({ query }: { query: ReturnType<typeof useBranchReviewed> }) {
+  if (!query.isError) return null;
+  return (
+    <div className="p-2">
+      <Notice
+        tone="error"
+        title="Review progress could not load"
+        action={<RetryButton onRetry={() => void query.refetch()} />}
+      >
+        {errorText(query.error)}
+      </Notice>
+    </div>
+  );
+}
+
+/** Offers a fresh read after every attempt to catch up to the PR failed. */
 function BehindNotice({ pr, className }: { pr: PullRequest; className?: string }) {
   return (
     <Notice
@@ -729,7 +659,6 @@ function PullRequestNotices({ pr, behind }: { pr: PullRequest | null; behind: bo
           <BehindNotice pr={pr} />
         </div>
       ) : null}
-      <ViewedErrors pull={viewedKey(pr)} />
     </>
   );
 }
@@ -775,6 +704,7 @@ function FilePanel({
   onFilter: (filter: string) => void;
   files: readonly ChangedFile[];
   total: number;
+  reviewLabel: string;
   current: string | null;
   threadsByPath: ReadonlyMap<string, readonly ReviewThread[]>;
   onSelect: (path: string, line: null) => void;
@@ -819,10 +749,12 @@ function Toolbar({
   onDiffStyle,
   anyOpen,
   onToggleAll,
+  reviewLabel,
+  fresh,
 }: {
   railOpen: boolean;
   onToggleRail: () => void;
-  /** How many files are marked viewed. Null where there are no marks: an unpublished branch. */
+  /** Null until review marks are available. */
   viewed: number | null;
   total: number;
   findingsStale: boolean;
@@ -831,6 +763,8 @@ function Toolbar({
   anyOpen: boolean;
   /** Null when no file is shown to fold or open. */
   onToggleAll: (() => void) | null;
+  reviewLabel: string;
+  fresh: boolean;
 }) {
   return (
     <div className="flex min-h-9 shrink-0 flex-wrap items-center gap-x-3 gap-y-1 border-b border-border px-2 py-1">
@@ -852,8 +786,11 @@ function Toolbar({
       ) : (
         <span className="flex items-center gap-2 tabular-nums">
           <span>
-            {viewed} of {plural(total, "file")} viewed
+            {viewed} of {plural(total, "file")} {reviewLabel.toLowerCase()}
           </span>
+          {fresh && viewed === total && total > 0 ? (
+            <span className="text-success">Ready</span>
+          ) : null}
           <span aria-hidden className="h-1 w-20 overflow-hidden rounded-full bg-secondary">
             <span
               className="block h-full rounded-full bg-success transition-[width] duration-200 motion-reduce:transition-none"
@@ -969,12 +906,14 @@ function walkRows(event: KeyboardEvent<HTMLButtonElement>): void {
  */
 function FileRail({
   files,
+  reviewLabel,
   current,
   threadsByPath,
   onSelect,
   onViewedChange,
 }: {
   files: readonly ChangedFile[];
+  reviewLabel: string;
   current: string | null;
   threadsByPath: ReadonlyMap<string, readonly ReviewThread[]>;
   onSelect: (path: string, line: null) => void;
@@ -1010,7 +949,7 @@ function FileRail({
                 type="checkbox"
                 className="size-3.5 shrink-0 cursor-pointer accent-primary"
                 checked={viewed}
-                aria-label={`Viewed ${file.path}`}
+                aria-label={`${reviewLabel} ${file.path}`}
                 onChange={(event) => onViewedChange(file, event.target.checked)}
               />
             ) : null}
