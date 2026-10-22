@@ -23,7 +23,7 @@ import type {
   DiffRevision,
   Finding,
   LinkedThread,
-  LocalBranch,
+  LocalComparison,
   PullRequest,
   ReviewRun,
 } from "../shared/schema.ts";
@@ -83,7 +83,7 @@ export function activeReview(
  */
 export type ReviewTarget =
   | { pr: PullRequest; branch?: undefined }
-  | { branch: LocalBranch; pr?: undefined };
+  | { branch: LocalComparison & { branch: string }; pr?: undefined };
 
 type Client = ReturnType<typeof rpc.useClient>;
 

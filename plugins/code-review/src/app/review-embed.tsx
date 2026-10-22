@@ -10,8 +10,15 @@ import {
   prKey,
   prSubPath,
   sameRevision,
+  sharedComparisonSubPath,
 } from "../shared/schema.ts";
-import type { ChangedFile, LocalBranch, PrRef } from "../shared/schema.ts";
+import type {
+  ChangedFile,
+  LocalBranch,
+  LocalComparison,
+  SharedComparisonInput,
+  PrRef,
+} from "../shared/schema.ts";
 import { useBranchReviewed, withReviewedFiles } from "./branch-review.ts";
 import { Button } from "./components/ui/button.tsx";
 import { PANEL_PATH, plural, shortSha } from "./format.ts";
@@ -77,12 +84,35 @@ function BranchEmbed({
         branch={branch}
         discoveryIssue={branches.isError ? errorText(branches.error) : undefined}
         onRetryDiscovery={() => void branches.refetch()}
+        original={base && head ? { id, base, head, threadId } : undefined}
         updated={
           (head !== undefined && head !== branch.head) ||
           (base !== undefined && base !== branch.base)
         }
       />
     );
+  if (base && head) {
+    const range = { id, base, head, threadId };
+    const branchCheck = {
+      pending: branches.isPending || branches.isFetching,
+      retry: () => void branches.refetch(),
+    };
+    // Keep the original reachable during slow discovery without speculatively
+    // fetching every historical card's patches on a normal thread open.
+    if (branches.isPending && !branches.errorUpdatedAt)
+      return (
+        <ReviewCard
+          title="Branch changes"
+          detail={`Original comparison · ${shortSha(base)} → ${shortSha(head)}`}
+          subPath={sharedComparisonSubPath(range)}
+          actionLabel="Review original comparison"
+          branchCheck={branchCheck}
+          loading
+          onRetry={branchCheck.retry}
+        />
+      );
+    return <SharedCard key={branches.errorUpdatedAt} range={range} branchCheck={branchCheck} />;
+  }
   const issue = branches.isError ? errorText(branches.error) : undefined;
   return (
     <ReviewCard
@@ -96,16 +126,89 @@ function BranchEmbed({
   );
 }
 
+type BranchCheck = { pending: boolean; retry: () => void };
+
+function SharedCard({
+  range,
+  branchCheck,
+}: {
+  range: SharedComparisonInput;
+  branchCheck: BranchCheck;
+}) {
+  const comparison = rpc.sharedComparison.useQuery(range, { staleTime: Infinity, retry: false });
+  if (comparison.data)
+    return <SharedFilesCard comparison={comparison.data} range={range} branchCheck={branchCheck} />;
+  return (
+    <ReviewCard
+      title={branchCheck.pending ? "Branch changes" : "Shared changes"}
+      subPath={sharedComparisonSubPath(range)}
+      actionLabel="Review original comparison"
+      branchCheck={branchCheck}
+      loading={!comparison.isError}
+      issue={comparison.isError ? errorText(comparison.error) : undefined}
+      onRetry={() => {
+        branchCheck.retry();
+        void comparison.refetch();
+      }}
+    />
+  );
+}
+
+function SharedFilesCard({
+  comparison,
+  range,
+  branchCheck,
+}: {
+  comparison: LocalComparison;
+  range: SharedComparisonInput;
+  branchCheck: BranchCheck;
+}) {
+  const { id: _id, ...location } = comparison;
+  // A discovery failure may mean the checkout disconnected. Verify the pinned
+  // range on each fallback entry, even if its cached files are still fresh.
+  const files = rpc.localChanges.useQuery(location, {
+    staleTime: 30_000,
+    refetchOnMount: "always",
+    retry: false,
+  });
+  const reviewed = useBranchReviewed(comparison);
+  return (
+    <ReviewCard
+      title={branchCheck.pending ? "Branch changes" : "Shared changes"}
+      detail={`Original comparison · ${shortSha(range.base)} → ${shortSha(range.head)}`}
+      subPath={sharedComparisonSubPath(range)}
+      actionLabel="Review original comparison"
+      branchCheck={branchCheck}
+      files={files.data ? withReviewedFiles(files.data.files, reviewed.data?.paths) : undefined}
+      loading={branchCheck.pending || !files.isFetchedAfterMount || !files.data || !reviewed.data}
+      issue={
+        files.isError
+          ? errorText(files.error)
+          : reviewed.isError
+            ? errorText(reviewed.error)
+            : undefined
+      }
+      onRetry={() => {
+        branchCheck.retry();
+        void files.refetch();
+        void reviewed.refetch();
+      }}
+    />
+  );
+}
+
 function LocalCard({
   branch,
   updated,
   discoveryIssue,
   onRetryDiscovery,
+  original,
 }: {
   branch: LocalBranch;
   updated: boolean;
   discoveryIssue?: string;
   onRetryDiscovery: () => void;
+  original?: SharedComparisonInput;
 }) {
   const files = rpc.localChanges.useQuery(
     { hostId: branch.hostId, path: branch.path, base: branch.base, head: branch.head },
@@ -130,6 +233,7 @@ function LocalCard({
       files={readyFiles}
       loading={!files.data || !reviewed.data}
       issue={issue}
+      fallbackSubPath={discoveryIssue && original ? sharedComparisonSubPath(original) : undefined}
       updated={updated}
       onRetry={() => {
         onRetryDiscovery();
@@ -196,6 +300,9 @@ function ReviewCard({
   updated = false,
   unavailable = false,
   onRetry,
+  actionLabel,
+  branchCheck,
+  fallbackSubPath,
 }: {
   title: string;
   detail?: string;
@@ -206,6 +313,9 @@ function ReviewCard({
   updated?: boolean;
   unavailable?: boolean;
   onRetry: () => void;
+  actionLabel?: string;
+  branchCheck?: BranchCheck;
+  fallbackSubPath?: string;
 }) {
   const navigate = useBbNavigate();
   const count = files?.filter((file) => file.viewed === "viewed").length ?? 0;
@@ -243,12 +353,39 @@ function ReviewCard({
           New changes since this card was shared.
         </p>
       ) : null}
+      {branchCheck ? (
+        <p className="m-0 border-t border-border px-3 py-2 text-[11px] text-muted-foreground">
+          {branchCheck.pending ? (
+            "Checking latest branch… Original comparison available below."
+          ) : (
+            <>
+              Latest branch unavailable. Showing the original comparison.{" "}
+              <button
+                type="button"
+                className="cursor-pointer underline"
+                onClick={branchCheck.retry}
+              >
+                Check latest branch
+              </button>
+            </>
+          )}
+        </p>
+      ) : null}
       {issue ? (
         <div role="alert" className="border-t border-border px-3 py-2 text-[11px] text-destructive">
           {issue}{" "}
           <button type="button" className="cursor-pointer underline" onClick={onRetry}>
             Retry
           </button>
+          {fallbackSubPath ? (
+            <button
+              type="button"
+              className="ms-2 cursor-pointer underline"
+              onClick={() => navigate.toPluginPanel(PANEL_PATH, { subPath: fallbackSubPath })}
+            >
+              Review original comparison
+            </button>
+          ) : null}
         </div>
       ) : null}
       <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border p-2.5">
@@ -261,7 +398,7 @@ function ReviewCard({
           className="h-7 gap-1.5 text-xs"
           onClick={() => navigate.toPluginPanel(PANEL_PATH, { subPath })}
         >
-          {labels.action}
+          {actionLabel ?? labels.action}
           <Icon name="ArrowUpRight" className="size-3" aria-hidden />
         </Button>
       </div>

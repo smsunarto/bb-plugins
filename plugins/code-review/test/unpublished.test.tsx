@@ -1,7 +1,12 @@
 import "./dom.ts";
 import { beforeEach, expect, test } from "bun:test";
 import { pluginQueryClient } from "@bb-kit/core/rpc/query";
-import { AGENT_ACTIVITY_CHANNEL, branchReviewRange } from "../src/shared/schema.ts";
+import {
+  AGENT_ACTIVITY_CHANNEL,
+  branchReviewRange,
+  sharedComparisonSubPath,
+  parseSharedComparisonSubPath,
+} from "../src/shared/schema.ts";
 import { rpc } from "../src/app/rpc.ts";
 import type { AgentActivity, LinkedThread } from "../src/shared/schema.ts";
 import { agentActivity, inbox, localBranch, localBranches, localChanges } from "./app-fixtures.ts";
@@ -56,6 +61,56 @@ function selectTab(tab: HTMLElement) {
 }
 
 const BRANCH = `branch/${localBranch.id}`;
+
+test("a shared comparison opens cold and records marks against its exact commits", async () => {
+  const range = {
+    ...branchReviewRange(localBranch),
+    base: "a".repeat(40),
+    threadId: "shipped-thread",
+  };
+  const route = sharedComparisonSubPath(range);
+  expect(parseSharedComparisonSubPath(route)).toEqual(range);
+  expect(parseSharedComparisonSubPath(route.replace(range.head, "main"))).toBeNull();
+  const writes: unknown[] = [];
+  const reads: unknown[] = [];
+  const slot = await page(route, {
+    ...baseRpc,
+    status: () => ({ ok: false, reason: "unauthenticated", message: "Sign in" }),
+    localBranch: () => {
+      throw new Error("Branch was published");
+    },
+    sharedComparison: () => ({
+      id: range.id,
+      base: range.base,
+      head: range.head,
+      hostId: localBranch.hostId,
+      path: localBranch.path,
+    }),
+    localChanges: (input) => {
+      reads.push(input);
+      return { ...localChanges, baseRefName: range.base };
+    },
+    branchActivity: () => ({ threads: [], latestReview: null }),
+    setBranchViewed: (input) => {
+      writes.push(input);
+      return { viewed: "viewed" };
+    },
+  });
+  try {
+    await slot.findByText("0 of 1 file reviewed");
+    fireEvent.click(slot.getByRole("checkbox", { name: "Reviewed src/limit.ts" }));
+    await slot.findByText("1 of 1 file reviewed");
+    expect(reads).toEqual([
+      { hostId: localBranch.hostId, path: localBranch.path, base: range.base, head: range.head },
+    ]);
+    expect(writes).toEqual([
+      { id: range.id, base: range.base, head: range.head, path: "src/limit.ts", viewed: true },
+    ]);
+    expect(slot.rpcCalls.some((call) => call.method === "localBranch")).toBe(false);
+  } finally {
+    slot.lifecycle.unmount();
+  }
+});
 
 const reviewed: AgentActivity = {
   threads: [],
@@ -409,4 +464,28 @@ test("with gh signed out, the inbox still lists unpublished branches", async () 
   expect(await within(list).findByRole("button", { name: /scott\/rate-limit/ })).toBeTruthy();
   expect(slot.getByText("GitHub is unavailable. The page says how to fix it.")).toBeTruthy();
   slot.lifecycle.unmount();
+});
+
+test("reconnection recovers a failed shared comparison page without a manual retry", async () => {
+  let recovered = false;
+  const slot = await page(sharedComparisonSubPath(branchReviewRange(localBranch)), {
+    ...baseRpc,
+    sharedComparison: () => {
+      if (!recovered) throw new Error("Checkout not ready");
+      return {
+        ...branchReviewRange(localBranch),
+        hostId: localBranch.hostId,
+        path: localBranch.path,
+      };
+    },
+  });
+  try {
+    await slot.findByText("Checkout not ready");
+    await slot.behavior.setRealtimeConnectionState("reconnecting");
+    recovered = true;
+    await slot.behavior.setRealtimeConnectionState("connected");
+    await slot.findByText("0 of 1 file reviewed");
+  } finally {
+    slot.lifecycle.unmount();
+  }
 });

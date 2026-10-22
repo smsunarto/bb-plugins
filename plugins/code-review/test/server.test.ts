@@ -87,6 +87,7 @@ test("registers every RPC and answers them over the host boundary", async () => 
     "setPinned",
     "setReviewInstructions",
     "setViewed",
+    "sharedComparison",
     "startFix",
     "startLocalReview",
     "startReview",

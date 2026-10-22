@@ -4,6 +4,7 @@ import type { PluginNavPanelProps } from "@get-bb/plugin-sdk/app";
 import { PluginQueryBoundary, pluginQueryClient } from "@bb-kit/core/rpc/query";
 import {
   parseBranchSubPath,
+  parseSharedComparisonSubPath,
   parsePrSubPath,
   prKey,
   sameRef,
@@ -15,6 +16,7 @@ import { TooltipProvider } from "./components/ui/tooltip.tsx";
 import { PANEL_PATH } from "./format.ts";
 import { Inbox, UnpublishedOnly } from "./inbox.tsx";
 import { LocalBranchView } from "./local-branch.tsx";
+import { SharedComparisonView } from "./shared-comparison.tsx";
 import { cn } from "./lib/utils.ts";
 import { Loading, Notice, RetryButton, errorText } from "./notice.tsx";
 import { PrView } from "./pr-view.tsx";
@@ -43,6 +45,16 @@ export function CodeReviewPage({ subPath }: PluginNavPanelProps) {
 
 function Page({ subPath }: { subPath: string }) {
   const status = rpc.status.useQuery(STATUS_QUERY);
+  const comparison = parseSharedComparisonSubPath(subPath);
+  if (comparison)
+    return (
+      <section aria-label="Shared changes" className={cn(SHELL, "flex-col")}>
+        <SharedComparisonView
+          key={`${comparison.id}:${comparison.base}:${comparison.head}`}
+          range={comparison}
+        />
+      </section>
+    );
   const branch = parseBranchSubPath(subPath);
   // A local branch is read and reviewed without GitHub, so gh does not gate it.
   if (branch) {
@@ -203,9 +215,8 @@ const UNAVAILABLE: Record<
     title: "Install the GitHub CLI",
     detail: (
       <>
-        Review reads GitHub through <Command>gh</Command> on the machine running bb, and it is
-        not installed there. Install it, sign in with <Command>gh auth login</Command>, then try
-        again.
+        Review reads GitHub through <Command>gh</Command> on the machine running bb, and it is not
+        installed there. Install it, sign in with <Command>gh auth login</Command>, then try again.
       </>
     ),
   },

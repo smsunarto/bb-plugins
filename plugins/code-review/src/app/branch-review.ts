@@ -6,7 +6,7 @@ import {
   branchReviewRange,
   branchReviewRangeSchema,
 } from "../shared/schema.ts";
-import type { ChangedFile, LocalBranch } from "../shared/schema.ts";
+import type { ChangedFile, BranchReviewRange } from "../shared/schema.ts";
 import { rpc } from "./rpc.ts";
 
 export function withReviewedFiles(
@@ -21,7 +21,7 @@ export function withReviewedFiles(
 }
 
 /** Shared by the chat card and Changes tab; reconnects also refetch through React Query. */
-export function useBranchReviewed(branch: LocalBranch) {
+export function useBranchReviewed(branch: BranchReviewRange) {
   const range = branchReviewRange(branch);
   const queryKey = rpc.branchReviewed.queryKey(range);
   const query = rpc.branchReviewed.useQuery(range, { refetchInterval: 30_000 });

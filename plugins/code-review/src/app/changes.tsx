@@ -18,7 +18,7 @@ import type {
   ChangedFiles,
   DiffSide,
   Finding,
-  LocalBranch,
+  LocalComparison,
   PullRequest,
   PrTab,
   ReviewThread,
@@ -400,7 +400,10 @@ function PrChanges({ pr, ...page }: { pr: PullRequest } & ReviewOverview) {
 }
 
 /** Everything `base..head` changes, alongside the branch's overview. */
-export function BranchReview({ branch, ...page }: { branch: LocalBranch } & ReviewOverview) {
+export function BranchReview({
+  branch,
+  ...page
+}: { branch: LocalComparison & { branch: string } } & ReviewOverview) {
   const files = rpc.localChanges.useQuery(
     { hostId: branch.hostId, path: branch.path, base: branch.base, head: branch.head },
     { staleTime: 30_000 },

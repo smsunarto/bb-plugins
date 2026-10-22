@@ -2,7 +2,7 @@ import "./dom.ts";
 import { beforeEach, expect, test } from "bun:test";
 import { pluginQueryClient } from "@bb-kit/core/rpc/query";
 import { timeoutManager } from "@tanstack/react-query";
-import { branchReviewRange } from "../src/shared/schema.ts";
+import { branchReviewRange, sharedComparisonSubPath } from "../src/shared/schema.ts";
 import { rpc } from "../src/app/rpc.ts";
 import { localBranch, localChanges, pullRequest } from "./app-fixtures.ts";
 
@@ -10,6 +10,103 @@ const { fireEvent, waitFor } = await import("@testing-library/react");
 const { loadPluginApp, renderSlot } = await import("@get-bb/plugin-sdk/testing/app");
 
 beforeEach(() => pluginQueryClient.clear());
+
+test("a pinned card stays usable while legacy branch discovery is still pending", async () => {
+  const slot = await card(
+    { branch: localBranch.id, base: localBranch.base, head: localBranch.head },
+    [],
+    {
+      localBranch: () => new Promise(() => {}),
+      sharedComparison: () => ({
+        ...branchReviewRange(localBranch),
+        hostId: localBranch.hostId,
+        path: localBranch.path,
+      }),
+    },
+  );
+  try {
+    await slot.findByText("Branch changes");
+    expect(slot.queryByText("Ready")).toBeNull();
+    expect(slot.queryByText("Shared changes")).toBeNull();
+    fireEvent.click(slot.getByRole("button", { name: "Review original comparison" }));
+    expect(slot.navigateCalls.at(-1)).toEqual({
+      method: "toPluginPanel",
+      path: "code-review",
+      options: {
+        subPath: sharedComparisonSubPath({
+          ...branchReviewRange(localBranch),
+          threadId: "thread-1",
+        }),
+      },
+    });
+    expect(
+      slot.rpcCalls.some((call) =>
+        ["sharedComparison", "localChanges", "branchReviewed"].includes(call.method),
+      ),
+    ).toBe(false);
+  } finally {
+    slot.lifecycle.unmount();
+  }
+});
+
+test("a shipped branch card opens its original comparison and preserves its review marks", async () => {
+  const range = { ...branchReviewRange(localBranch), threadId: "thread-1" };
+  const slot = await card(
+    { branch: range.id, base: range.base, head: range.head },
+    ["src/limit.ts"],
+    {
+      localBranch: () => {
+        throw new Error("This branch is no longer unpublished, or its machine is offline.");
+      },
+      sharedComparison: () => ({
+        ...branchReviewRange(localBranch),
+        hostId: localBranch.hostId,
+        path: localBranch.path,
+      }),
+    },
+  );
+  try {
+    await slot.findByText("1 of 1 file reviewed");
+    expect(slot.getByText("Shared changes")).toBeTruthy();
+    expect(slot.getByText("src/limit.ts")).toBeTruthy();
+    expect(slot.queryByRole("alert")).toBeNull();
+    fireEvent.click(slot.getByRole("button", { name: "Review original comparison" }));
+    expect(slot.navigateCalls.at(-1)).toEqual({
+      method: "toPluginPanel",
+      path: "code-review",
+      options: { subPath: sharedComparisonSubPath(range) },
+    });
+  } finally {
+    slot.lifecycle.unmount();
+  }
+});
+
+test("a shipped card with an offline checkout never reports cached review marks as Ready", async () => {
+  const slot = await card(
+    { branch: localBranch.id, base: localBranch.base, head: localBranch.head },
+    ["src/limit.ts"],
+    {
+      localBranch: () => {
+        throw new Error("No unpublished branches");
+      },
+      sharedComparison: () => ({
+        ...branchReviewRange(localBranch),
+        hostId: localBranch.hostId,
+        path: localBranch.path,
+      }),
+      localChanges: () => {
+        throw new Error("Checkout host is offline");
+      },
+    },
+  );
+  try {
+    await slot.findByText("Checkout host is offline");
+    expect(slot.queryByText("Ready")).toBeNull();
+    expect(slot.getByText("Progress unavailable")).toBeTruthy();
+  } finally {
+    slot.lifecycle.unmount();
+  }
+});
 
 async function card(
   attributes: Record<string, string>,
@@ -73,12 +170,16 @@ test("the branch card opens Changes and shares live review progress", async () =
 
 test("a failed branch-discovery refresh suppresses cached Ready and retries discovery", async () => {
   let failing = false;
-  const slot = await card({ branch: localBranch.id }, ["src/limit.ts"], {
-    localBranch: () => {
-      if (failing) throw new Error("Machine disconnected");
-      return localBranch;
+  const slot = await card(
+    { branch: localBranch.id, base: localBranch.base, head: localBranch.head },
+    ["src/limit.ts"],
+    {
+      localBranch: () => {
+        if (failing) throw new Error("Machine disconnected");
+        return localBranch;
+      },
     },
-  });
+  );
   try {
     await slot.findByText("Ready");
     failing = true;
@@ -88,6 +189,19 @@ test("a failed branch-discovery refresh suppresses cached Ready and retries disc
     await slot.findByRole("alert");
     expect(slot.queryByText("Ready")).toBeNull();
     expect(slot.getByText("Progress unavailable")).toBeTruthy();
+    expect(slot.getByText(localBranch.branch)).toBeTruthy();
+    expect(slot.queryByText("Shared changes")).toBeNull();
+    fireEvent.click(slot.getByRole("button", { name: "Review original comparison" }));
+    expect(slot.navigateCalls.at(-1)).toEqual({
+      method: "toPluginPanel",
+      path: "code-review",
+      options: {
+        subPath: sharedComparisonSubPath({
+          ...branchReviewRange(localBranch),
+          threadId: "thread-1",
+        }),
+      },
+    });
     failing = false;
     fireEvent.click(slot.getByRole("button", { name: "Retry" }));
     await slot.findByText("Ready");
@@ -325,5 +439,131 @@ test("a missing card does not retry or poll fleet discovery", async () => {
   } finally {
     slot.lifecycle.unmount();
     timeoutManager.setTimeoutProvider(timers);
+  }
+});
+
+test("a fresh cached original cannot report Ready when branch discovery and checkout reads fail", async () => {
+  const { hostId, path, base, head } = localBranch;
+  pluginQueryClient.setQueryData(
+    rpc.localChanges.queryKey({ hostId, path, base, head }),
+    localChanges,
+  );
+  let reads = 0;
+  const slot = await card({ branch: localBranch.id, base, head }, ["src/limit.ts"], {
+    localBranch: () => {
+      throw new Error("Machine disconnected");
+    },
+    sharedComparison: () => ({ ...branchReviewRange(localBranch), hostId, path }),
+    localChanges: () => {
+      reads++;
+      throw new Error("Checkout host is offline");
+    },
+  });
+  try {
+    await slot.findByText("Checkout host is offline");
+    expect(reads).toBeGreaterThan(0);
+    expect(slot.queryByText("Ready")).toBeNull();
+    expect(slot.getByText("src/limit.ts")).toBeTruthy();
+  } finally {
+    slot.lifecycle.unmount();
+  }
+});
+
+test("a pending original defers file reads and checks the checkout after discovery fails", async () => {
+  let failDiscovery: ((reason: Error) => void) | undefined;
+  const discovery = new Promise((_, reject) => {
+    failDiscovery = reject;
+  });
+  let offline = false;
+  const slot = await card(
+    { branch: localBranch.id, base: localBranch.base, head: localBranch.head },
+    ["src/limit.ts"],
+    {
+      localBranch: () => discovery,
+      sharedComparison: () => ({
+        ...branchReviewRange(localBranch),
+        hostId: localBranch.hostId,
+        path: localBranch.path,
+      }),
+      localChanges: () => {
+        if (offline) throw new Error("Checkout host is offline");
+        return localChanges;
+      },
+    },
+  );
+  try {
+    await slot.findByText("Branch changes");
+    expect(slot.queryByText("Ready")).toBeNull();
+    expect(slot.rpcCalls.some((call) => call.method === "localChanges")).toBe(false);
+    offline = true;
+    failDiscovery?.(new Error("Machine disconnected"));
+    await slot.findByText("Checkout host is offline");
+    expect(slot.queryByText("Ready")).toBeNull();
+  } finally {
+    slot.lifecycle.unmount();
+  }
+});
+
+test("a successful original comparison can retry discovery and restore a moved branch", async () => {
+  let recovered = false;
+  const slot = await card(
+    { branch: localBranch.id, base: localBranch.base, head: localBranch.head },
+    [],
+    {
+      localBranch: () => {
+        if (!recovered) throw new Error("Temporary branch lookup failure");
+        return { ...localBranch, head: "f".repeat(40) };
+      },
+      sharedComparison: () => ({
+        ...branchReviewRange(localBranch),
+        hostId: localBranch.hostId,
+        path: localBranch.path,
+      }),
+    },
+  );
+  try {
+    await slot.findByText("0 of 1 file reviewed");
+    recovered = true;
+    fireEvent.click(slot.getByRole("button", { name: "Check latest branch" }));
+    await slot.findByText(localBranch.branch);
+    await slot.findByText("New changes since this card was shared.");
+    fireEvent.click(slot.getByRole("button", { name: "Review latest changes" }));
+    expect(slot.navigateCalls.at(-1)).toEqual({
+      method: "toPluginPanel",
+      path: "code-review",
+      options: { subPath: `branch/${localBranch.id}/changes` },
+    });
+  } finally {
+    slot.lifecycle.unmount();
+  }
+});
+
+test("reconnection retries a failed shared checkout lookup on a card", async () => {
+  let recovered = false;
+  const slot = await card(
+    { branch: localBranch.id, base: localBranch.base, head: localBranch.head },
+    [],
+    {
+      localBranch: () => {
+        throw new Error("No unpublished branch");
+      },
+      sharedComparison: () => {
+        if (!recovered) throw new Error("Checkout not ready");
+        return {
+          ...branchReviewRange(localBranch),
+          hostId: localBranch.hostId,
+          path: localBranch.path,
+        };
+      },
+    },
+  );
+  try {
+    await slot.findByText("Checkout not ready");
+    await slot.behavior.setRealtimeConnectionState("reconnecting");
+    recovered = true;
+    await slot.behavior.setRealtimeConnectionState("connected");
+    await slot.findByText("0 of 1 file reviewed");
+  } finally {
+    slot.lifecycle.unmount();
   }
 });

@@ -6,7 +6,7 @@ import type {
   BranchReviewed,
   ChangedFile,
   ChangedFiles,
-  LocalBranch,
+  BranchReviewRange,
   PullRequest,
   ViewedState,
 } from "../shared/schema.ts";
@@ -54,7 +54,7 @@ export function usePrMarks(pr: PullRequest): ReviewMarks {
 }
 
 export function useBranchMarks(
-  branch: LocalBranch,
+  branch: BranchReviewRange,
   query: ReturnType<typeof useBranchReviewed>,
 ): ReviewMarks | null {
   const client = rpc.useClient();

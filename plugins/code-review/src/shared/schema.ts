@@ -137,6 +137,36 @@ export const branchReviewRangeSchema = z.strictObject({
   head: z.string().regex(/^[0-9a-f]{40,64}$/),
 });
 export type BranchReviewRange = z.infer<typeof branchReviewRangeSchema>;
+/** A shared comparison remains addressable after its branch leaves GitButler. */
+export const sharedComparisonInputSchema = branchReviewRangeSchema.extend({
+  threadId: z.string().min(1).optional(),
+});
+export type SharedComparisonInput = z.infer<typeof sharedComparisonInputSchema>;
+export const localComparisonSchema = branchReviewRangeSchema.extend({
+  hostId: z.string().min(1),
+  path: z.string().min(1),
+});
+export type LocalComparison = z.infer<typeof localComparisonSchema>;
+
+export function sharedComparisonSubPath(range: SharedComparisonInput): string {
+  return `shared/${range.id}/${range.base}/${range.head}${range.threadId ? `/${encodeURIComponent(range.threadId)}` : ""}`;
+}
+
+export function parseSharedComparisonSubPath(subPath: string): SharedComparisonInput | null {
+  const parts = subPath.replace(/^\/+|\/+$/g, "").split("/");
+  if (parts[0] !== "shared" || parts.length < 4 || parts.length > 5) return null;
+  try {
+    const parsed = sharedComparisonInputSchema.safeParse({
+      id: parts[1],
+      base: parts[2],
+      head: parts[3],
+      ...(parts[4] ? { threadId: decodeURIComponent(parts[4]) } : {}),
+    });
+    return parsed.success ? parsed.data : null;
+  } catch {
+    return null;
+  }
+}
 export const branchReviewedSchema = z.strictObject({ paths: z.array(z.string()) });
 export type BranchReviewed = z.infer<typeof branchReviewedSchema>;
 export const BRANCH_REVIEW_CHANNEL = "branch-review";

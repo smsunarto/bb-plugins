@@ -21,6 +21,7 @@ import { inbox } from "./rpc/inbox.ts";
 import { localBranch } from "./rpc/local-branch.ts";
 import { localBranches } from "./rpc/local-branches.ts";
 import { localChanges } from "./rpc/local-changes.ts";
+import { sharedComparison } from "./rpc/shared-comparison.ts";
 import { pullRequest } from "./rpc/pull-request.ts";
 import { replyDraft } from "./rpc/reply-draft.ts";
 import { reviewInstructions } from "./rpc/review-instructions.ts";
@@ -65,6 +66,7 @@ export default definePlugin({
     localBranch,
     localBranches,
     localChanges,
+    sharedComparison,
     branchActivity,
     branchReviewed,
     setBranchViewed,
