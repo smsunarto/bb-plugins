@@ -155,3 +155,5 @@ Review suggestions go here.
 Inside a BB thread, project files are read from that thread's checkout and machine. Outside a thread, pass `--machine <id> --directory <absolute-checkout>` to include project playbooks; without them the command lists globals and explains how to load project guidance. Missing project folders are empty; malformed playbooks and read failures produce diagnostics. Project listing failures leave globals available with a diagnostic. The host file API ignores symlinked entries. Index pages default to 50 entries; use `--offset` and `--limit` to page, or JSON `nextOffset` to continue. Pages shrink when necessary to fit the CLI byte limit.
 
 The CLI root is `review`; existing `code_review_*` agent tools retain their names.
+
+`bb review prompt --request <text>` prints the shared reviewer brief, including the playbook pointer, followed by your request. Pass multiline requests as one quoted argument and redirect stdout to a file for `bb thread spawn --prompt-file`. The command only formats the prompt; it launches no threads.
