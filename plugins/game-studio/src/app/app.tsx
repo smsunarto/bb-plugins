@@ -16,7 +16,7 @@ import { PluginQueryBoundary } from "@bb-kit/core/rpc/query";
 import { rpc } from "./rpc.ts";
 import { selectGameCheckout, selectGameRequestCheckout } from "./game-checkout-selection.ts";
 import { ConnectDialog } from "./connect.tsx";
-import type { GenerationRecipe, Game } from "../shared/schema.ts";
+import type { GenerationRecipe, Game, Workspace } from "../shared/schema.ts";
 import type { AgentSelection } from "../shared/generation.ts";
 import { REQUEST_MENTION_PROVIDER } from "../shared/request-mention.ts";
 import { StudioCanvas } from "./canvas.tsx";
@@ -47,6 +47,25 @@ function lastTab(gameId: string): Tab {
   } catch {
     return "unity";
   }
+}
+function useLastBoard(gameId: string, boards: Workspace["boards"] | undefined) {
+  const [selectedId, setSelectedId] = useState(() => {
+    try {
+      return localStorage.getItem(`game-studio:last-board:${gameId}`) ?? "";
+    } catch {
+      return "";
+    }
+  });
+  const board = boards?.find((entry) => entry.board.id === selectedId) ?? boards?.[0];
+  const selectBoard = (id: string) => {
+    setSelectedId(id);
+    try {
+      localStorage.setItem(`game-studio:last-board:${gameId}`, id);
+    } catch {
+      /* Keep the selection for this visit when storage is unavailable. */
+    }
+  };
+  return [board, selectBoard] as const;
 }
 export type StudioAction =
   | "design"
@@ -264,7 +283,7 @@ function Workbench({ gameId, tab }: { gameId: string; tab: Tab }) {
     }
   }, [gameId, tab]);
   const [error, setError] = useState("");
-  const [boardId, setBoardId] = useState("");
+  const [board, setBoardId] = useLastBoard(gameId, query.data?.boards);
   const [documentId, setDocumentId] = useState("");
   const [canvasStatus, setCanvasStatus] = useState("saved");
   const [boardDialog, setBoardDialog] = useState(false);
@@ -358,7 +377,6 @@ function Workbench({ gameId, tab }: { gameId: string; tab: Tab }) {
       </main>
     );
   const workspace = query.data;
-  const board = workspace.boards.find((entry) => entry.board.id === boardId) ?? workspace.boards[0];
   const go = (next: Tab) => {
     setVisitedTabs((previous) => new Set([...previous, next]));
     openGame(gameId, next);

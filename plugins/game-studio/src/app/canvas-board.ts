@@ -1,3 +1,4 @@
+import { filterNodeReferences } from "../shared/node-references.ts";
 import type { Edge, Viewport } from "@xyflow/react";
 import type { Board, CanvasNode } from "../shared/schema.ts";
 
@@ -12,19 +13,7 @@ export function boardSnapshot(
   return {
     ...board,
     nodes: nodes.map((node) => {
-      const data = { ...node.data };
-      for (const key of ["images", "references"]) {
-        if (Array.isArray(data[key])) {
-          data[key] = data[key].filter(
-            (ref) =>
-              typeof ref !== "object" ||
-              ref === null ||
-              Array.isArray(ref) ||
-              ref.type !== "node" ||
-              ids.has(String(ref.nodeId)),
-          );
-        }
-      }
+      const data = filterNodeReferences(node.data, (id) => ids.has(id));
       return Object.assign({}, node, { data });
     }),
     edges: edges

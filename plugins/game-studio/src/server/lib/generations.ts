@@ -5,7 +5,6 @@ import { studioHostContract } from "../../shared/host-contract.ts";
 import {
   mediaRequest,
   normalizeMediaRequest,
-  providerCapabilities,
   runsOnBb,
   type MediaRequest,
   type GenerationJob,
@@ -17,16 +16,14 @@ import {
 import { getGame, loadCanvas, loadWorkspace, adoptGeneration } from "./studio.ts";
 import type { SlotStore } from "./slot-store.ts";
 import { canvasRequest, judgeRequest, retryRequest, reviewRequest } from "./canvas-generation.ts";
-import {
-  judgeRequestId,
-  manualCandidates,
-  nodeJudgeSettings,
-  runCandidates,
-} from "../../shared/judge.ts";
+import { judgeRequestId, nodeJudgeSettings, runCandidates } from "../../shared/judge.ts";
 import { nodeTakes, takeRun } from "../../shared/takes.ts";
 import { nodeReviewSettings, reviewRequestId } from "../../shared/review.ts";
 import { captureCanvasInputs } from "./generation-inputs.ts";
 import { CanvasText } from "./canvas-text.ts";
+import { editCanvas } from "./canvas-edit.ts";
+import { readCanvasContext } from "./canvas-context.ts";
+import { canvasContextInput, canvasEditInput } from "../../shared/canvas-agent.ts";
 
 type Credentials = { vertexProject?: string; falAccessToken?: string };
 type Game = Awaited<ReturnType<typeof getGame>>;
@@ -75,7 +72,11 @@ export class Generations {
       ...(settings.falAccessToken ? { falAccessToken: settings.falAccessToken } : {}),
     };
   }
-  private async game(gameId: string, threadId: string | undefined, writable = true) {
+  private async game(
+    gameId: string,
+    threadId: string | undefined,
+    access: "write" | "reconcile" | "read" = "write",
+  ) {
     if (!threadId) throw new Error("Generation requires a BB thread.");
     const game = await getGame(this.bb, gameId);
     const thread = await this.bb.sdk.threads.get({ threadId });
@@ -96,8 +97,8 @@ export class Generations {
       actual.workspacePath !== expected.workspacePath
     )
       throw new Error("This thread is attached to another checkout.");
-    if (writable) this.slots.editorAccess(game.hostId, expected.workspacePath, threadId);
-    else {
+    if (access === "write") this.slots.editorAccess(game.hostId, expected.workspacePath, threadId);
+    else if (access === "reconcile") {
       const slot = this.slots.find(game.hostId, expected.workspacePath);
       if (slot && slot.ownerThreadId !== threadId)
         throw new Error("Only the checkout owner can reconcile generation jobs.");
@@ -186,23 +187,17 @@ export class Generations {
     if (!resolved?.workspacePath) throw new Error("The project's checkout is unavailable.");
     const slot = this.slots.find(game.hostId, resolved.workspacePath);
     if (threadId && slot?.state === "leased" && slot.ownerThreadId === threadId)
-      return { game: await this.game(gameId, threadId, writable), thread: threadId };
+      return {
+        game: await this.game(gameId, threadId, writable ? "write" : "reconcile"),
+        thread: threadId,
+      };
     this.slots.editorAccess(game.hostId, resolved.workspacePath, `canvas:${game.id}`);
     return { game: { ...game, rootPath: resolved.workspacePath }, thread: null };
   }
   async direct(input: z.output<typeof canvasDirectInput>) {
     const { game, thread } = await this.canvasGame(input.gameId, input.threadId);
     const workspace = await loadWorkspace(this.bb, input.gameId);
-    const prepared = input.reviewAssetId
-      ? reviewRequest(workspace, input.boardId, input.nodeId, [input.reviewAssetId])
-      : input.judge
-        ? judgeRequest(
-            workspace,
-            input.boardId,
-            input.nodeId,
-            manualCandidates(nodeOf(workspace, input.boardId, input.nodeId)),
-          )
-        : canvasRequest(workspace, input);
+    const prepared = canvasRequest(workspace, input);
     if (!["image", "text", "agent", "model-edit"].includes(prepared.request.kind))
       throw new Error("Direct canvas generation supports image, text, agent and Tripo nodes.");
     return this.dispatch(game, input.requestId, prepared.request, thread, prepared.target, {
@@ -230,26 +225,13 @@ export class Generations {
       throw new Error("Only the requester can resume or stop this job.");
     return this.runControl(game, before, input.action, owner);
   }
-  async context(gameId: string, threadId?: string) {
-    await this.game(gameId, threadId);
-    const workspace = await loadWorkspace(this.bb, gameId);
-    return {
-      game: workspace.game,
-      mainDocument:
-        workspace.documents.find((doc) => doc.id === workspace.index.mainDocumentId) ?? null,
-      boards: workspace.boards.map(({ board, revision }) => ({
-        id: board.id,
-        name: board.name,
-        revision,
-        nodes: board.nodes.map(
-          ({ position: _position, width: _width, height: _height, ...node }) => node,
-        ),
-        edges: board.edges,
-      })),
-      documents: workspace.documents.map(({ markdown: _markdown, ...doc }) => doc),
-      assets: workspace.assets,
-      providers: providerCapabilities,
-    };
+  async context(input: z.output<typeof canvasContextInput>, threadId?: string) {
+    await this.game(input.gameId, threadId, "read");
+    return readCanvasContext(this.bb, input);
+  }
+  async editCanvas(input: z.output<typeof canvasEditInput>, threadId?: string) {
+    await this.game(input.gameId, threadId);
+    return editCanvas(this.bb, input);
   }
   async start(
     gameId: string,
@@ -352,7 +334,11 @@ export class Generations {
     return this.start(input.gameId, input.requestId, request, threadId, target);
   }
   async control(input: z.output<typeof generationControlInput>, threadId?: string) {
-    const game = await this.game(input.gameId, threadId, input.action === "resume");
+    const game = await this.game(
+      input.gameId,
+      threadId,
+      input.action === "resume" ? "write" : "reconcile",
+    );
     const before = await this.readJob(game, input.jobId, threadId!);
     if (!before)
       return {

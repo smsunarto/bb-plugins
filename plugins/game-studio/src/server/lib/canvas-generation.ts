@@ -22,16 +22,18 @@ import {
   reviewVerdict,
 } from "../../shared/review.ts";
 import { nodeTakes } from "../../shared/takes.ts";
-import { judgeCandidateLimit, judgeable, nodeJudgeSettings } from "../../shared/judge.ts";
+import {
+  judgeCandidateLimit,
+  judgeable,
+  nodeJudgeSettings,
+  manualCandidates,
+} from "../../shared/judge.ts";
 import type { Workspace, Board, CanvasNode } from "../../shared/schema.ts";
 import { files as instructions } from "./instructions.ts";
 import { nodeBriefRecipe, nodeInputs, nodeRecipe } from "../../shared/recipes.ts";
 import type { InputRef } from "../../shared/inputs.ts";
 
-const reference = z.discriminatedUnion("type", [
-  z.object({ type: z.literal("node"), nodeId: z.string(), port: z.string().optional() }),
-  z.object({ type: z.literal("library"), assetId: z.string(), port: z.string().optional() }),
-]);
+import { inputReference as reference } from "../../shared/canvas-agent.ts";
 function references(node: CanvasNode) {
   return [node.data.images, node.data.references].flatMap((raw) =>
     raw === undefined ? [] : z.array(reference).parse(raw),
@@ -105,6 +107,22 @@ export function canvasRequest(workspace: Workspace, input: z.output<typeof canva
   const board = selected.board,
     node = board.nodes.find(({ id }) => id === input.nodeId);
   if (!node) throw new Error("The canvas node no longer exists.");
+  if ([input.brief, input.reviewAssetId, input.judge].filter(Boolean).length > 1)
+    throw new Error("Choose one action: generate, brief, reviewAssetId, or judge.");
+  if (input.reviewAssetId)
+    return reviewRequest(workspace, input.boardId, input.nodeId, [input.reviewAssetId]);
+  if (input.judge)
+    return judgeRequest(workspace, input.boardId, input.nodeId, manualCandidates(node));
+  return mediaCanvasRequest(workspace, input, selected, node);
+}
+
+function mediaCanvasRequest(
+  workspace: Workspace,
+  input: z.output<typeof canvasGenerationInput>,
+  selected: Workspace["boards"][number],
+  node: CanvasNode,
+) {
+  const board = selected.board;
   const paths: string[] = [],
     modelPaths: string[] = [],
     linkedText: string[] = [];

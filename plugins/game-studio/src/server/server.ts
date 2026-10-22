@@ -1,3 +1,5 @@
+import { canvasEdit } from "./tools/canvas-edit.ts";
+import { canvasContext as canvasContextRpc } from "./rpc/canvas-context.ts";
 import { canvasContext } from "./tools/canvas-context.ts";
 import { generation } from "./tools/generation.ts";
 import { generateCanvasMedia } from "./tools/generate-canvas-media.ts";
@@ -45,6 +47,7 @@ import { registerRequestMention } from "./lib/request-mention.ts";
 export default definePlugin({
   pluginId: "game-studio",
   rpc: {
+    canvasContext: canvasContextRpc,
     briefTemplates,
     generateCanvas,
     canvasGenerationStatus,
@@ -129,6 +132,7 @@ export default definePlugin({
       generate_canvas_media: generateCanvasMedia,
       generation,
       canvas_context: canvasContext,
+      canvas_edit: canvasEdit,
     },
     skills: ["game-studio", "unity-editors"],
   },

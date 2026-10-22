@@ -1,4 +1,12 @@
 import {
+  copyInputFields,
+  availableInputPort,
+  connectInput,
+  disconnectInput,
+  disconnectSource,
+} from "../shared/canvas-connections.ts";
+import { initialData } from "../shared/node-defaults.ts";
+import {
   useBbNavigate,
   Markdown,
   experimental_ProviderModelPicker as ProviderModelPicker,
@@ -24,7 +32,6 @@ import {
   NodeToolbar,
   Panel,
   Position,
-  addEdge,
   useNodesState,
   useEdgesState,
   useConnection,
@@ -686,28 +693,6 @@ function CanvasToolbar({
   );
 }
 const nodeTypes = { studio: CanvasCard };
-const initialData = (kind: NodeKind, documents: StudioDocument[]): CanvasNode["data"] => {
-  switch (kind) {
-    case "text":
-      return { text: "", instruction: "", references: [] };
-    case "document":
-      return { documentId: documents[0]?.id ?? "", references: [] };
-    case "image":
-      return { prompt: "", images: [], resolution: "1K", aspectRatio: "1:1" };
-    case "video":
-      return { prompt: "", references: [], duration: 5, resolution: "720p", aspectRatio: "16:9" };
-    case "model-3d":
-      return { prompt: "", images: [], targetPolycount: 20000, texture: false, pbr: false };
-    case "animate-3d":
-      return { heightMeters: 1.8, actionIds: [] };
-    case "agent":
-      return { instruction: "", references: [] };
-    case "asset":
-      return { assetId: "", mediaType: "audio" };
-    case "table":
-      return { tableId: "" };
-  }
-};
 const noGenerationJobs: GenerationJob[] = [];
 export function StudioCanvas({
   gameId,
@@ -853,18 +838,45 @@ export function StudioCanvas({
     startingBrief === id ||
     nodeJobs(id).some((job) => running(job) && job.request.kind !== "image");
   const generating = busy(selectedId);
+  const change = useCallback(() => {
+    editVersion.current += 1;
+    setEdits(editVersion.current);
+    setDirty(true);
+    onStatus?.("dirty");
+  }, [onStatus]);
   const root = useRef<HTMLDivElement>(null);
   const inspector = useRef<HTMLElement>(null);
   const stage = useRef<HTMLDivElement>(null);
   const flow = useRef<ReactFlowInstance<Card>>(null);
   /** A newly added node to keep in view while it first renders; selection never pans. */
   const focusNode = useRef<string | null>(null);
+  const needsInitialArrange = useRef(board.nodes.length > 0);
   const needsInitialFit = useRef(board.editorLayout.fitView !== false);
   const frame = useRef(0);
   const recoverViewport = useCallback(() => {
     const instance = flow.current;
     const bounds = stage.current?.getBoundingClientRect();
     if (!instance || !bounds?.width || !bounds.height || !instance.getNodes().length) return;
+    if (needsInitialArrange.current) {
+      const measured = instance.getNodes();
+      if (measured.some((node) => !node.measured?.width || !node.measured.height || node.dragging))
+        return;
+      needsInitialArrange.current = false;
+      const arranged = arrangeNodes(measured, instance.getEdges());
+      if (
+        arranged.some(
+          (node, index) =>
+            node.position.x !== measured[index]!.position.x ||
+            node.position.y !== measured[index]!.position.y,
+        )
+      ) {
+        setNodes(arranged);
+        change();
+      }
+      needsInitialFit.current = true;
+      frame.current = requestAnimationFrame(recoverViewport);
+      return;
+    }
     const view = instance.getViewport();
     if (needsInitialFit.current) {
       needsInitialFit.current = false;
@@ -884,7 +896,7 @@ export function StudioCanvas({
     if (!node?.measured?.width || !node.measured.height || node.dragging) return;
     const next = revealNode(view, bounds, instance.getNodesBounds([node]));
     if (next.x !== view.x || next.y !== view.y) void instance.setViewport(next);
-  }, []);
+  }, [change, setNodes]);
   const scheduleFit = useCallback(() => {
     cancelAnimationFrame(frame.current);
     frame.current = requestAnimationFrame(recoverViewport);
@@ -920,12 +932,6 @@ export function StudioCanvas({
     scheduleFit();
     change();
   };
-  const change = useCallback(() => {
-    editVersion.current += 1;
-    setEdits(editVersion.current);
-    setDirty(true);
-    onStatus?.("dirty");
-  }, [onStatus]);
   const updateSelected = (update: Partial<CanvasNode>) => {
     setNodes((current) =>
       current.map((node) =>
@@ -958,6 +964,39 @@ export function StudioCanvas({
   const updateData = (key: string, value: string) => {
     if (selected) editData(selected.id, { [key]: value });
   };
+  const inputGraph = (): Pick<Board, "nodes" | "edges"> => ({
+    nodes: nodes.map((node) => node.data.source),
+    edges: edges.map(({ id, source, target, sourceHandle }) => ({
+      id,
+      source,
+      target,
+      ...(sourceHandle ? { sourceHandle } : {}),
+    })),
+  });
+  const applyInputs = (graph: Pick<Board, "nodes" | "edges">) => {
+    const previous = new Map(nodes.map((node) => [node.id, node.data.source]));
+    const sources = new Map(
+      graph.nodes.filter((node) => node !== previous.get(node.id)).map((node) => [node.id, node]),
+    );
+    const previousEdges = new Map(edges.map((edge) => [edge.id, edge]));
+    setNodes((current) =>
+      current.map((node) => {
+        const source = sources.get(node.id);
+        return source
+          ? Object.assign({}, node, {
+              data: {
+                ...node.data,
+                source: {
+                  ...node.data.source,
+                  data: copyInputFields(node.data.source.data, source.data),
+                },
+              },
+            })
+          : node;
+      }),
+    );
+    setEdges(graph.edges.map((edge) => Object.assign({}, previousEdges.get(edge.id), edge)));
+  };
   const toggleInput = (sourceId: string, enabled: boolean) => {
     if (!selected) return;
     if (enabled) {
@@ -969,31 +1008,8 @@ export function StudioCanvas({
       });
       return;
     }
-    setEdges((current) =>
-      current.filter((edge) => !(edge.source === sourceId && edge.target === selected.id)),
-    );
-    const data = { ...selected.data.source.data };
-    for (const key of ["images", "references"])
-      if (Array.isArray(data[key]))
-        data[key] = data[key].filter(
-          (ref) =>
-            !(
-              typeof ref === "object" &&
-              ref !== null &&
-              !Array.isArray(ref) &&
-              ref.type === "node" &&
-              ref.nodeId === sourceId
-            ),
-        );
-    const source = data.promptSource;
-    if (
-      typeof source === "object" &&
-      source !== null &&
-      !Array.isArray(source) &&
-      source.nodeId === sourceId
-    )
-      delete data.promptSource;
-    updateSelected({ data });
+    applyInputs(disconnectSource(inputGraph(), selected.id, sourceId));
+    change();
   };
   const add = (kind: NodeKind) => {
     const instance = flow.current;
@@ -1044,63 +1060,22 @@ export function StudioCanvas({
       null
     );
   };
-  /** The port a connection fills: the requested one, or the first open port of its type. */
-  const openPort = (connection: Connection | Edge) => {
-    const type = outputType(kindOf(connection.source));
-    if (!type || connection.source === connection.target) return undefined;
-    if (
-      edges.some((edge) => edge.source === connection.source && edge.target === connection.target)
-    )
-      return undefined;
-    return nodePorts
-      .get(connection.target)
-      ?.find(
-        ({ port, refs }) =>
-          port.type === type &&
-          (!connection.targetHandle || port.id === connection.targetHandle) &&
-          refs.length < port.max,
-      )?.port;
-  };
+  const openPort = (connection: Connection | Edge) =>
+    availableInputPort(
+      inputGraph(),
+      connection.source,
+      connection.target,
+      connection.targetHandle ?? undefined,
+    );
   const connect = (connection: Connection) => {
     const port = openPort(connection);
     if (!port) return;
-    const edgeId = crypto.randomUUID();
-    setEdges((current) => addEdge({ ...connection, targetHandle: port.id, id: edgeId }, current));
-    setNodes((current) =>
-      current.map((node) => {
-        if (node.id !== connection.target) return node;
-        const source = node.data.source;
-        const key = ["image", "model-3d"].includes(source.type) ? "images" : "references";
-        const refs = Array.isArray(source.data[key]) ? source.data[key] : [];
-        if (
-          [source.data.images, source.data.references]
-            .flatMap((value) => (Array.isArray(value) ? value : []))
-            .some(
-              (ref) =>
-                typeof ref === "object" &&
-                ref !== null &&
-                !Array.isArray(ref) &&
-                ref.type === "node" &&
-                ref.nodeId === connection.source,
-            )
-        )
-          return node;
-        return {
-          ...node,
-          data: {
-            ...node.data,
-            source: {
-              ...source,
-              data: {
-                ...source.data,
-                [key]: [
-                  ...refs,
-                  { type: "node", nodeId: connection.source, studioEdgeId: edgeId, port: port.id },
-                ],
-              },
-            },
-          },
-        };
+    applyInputs(
+      connectInput(inputGraph(), {
+        id: crypto.randomUUID(),
+        source: connection.source,
+        target: connection.target,
+        port: port.id,
       }),
     );
     change();
@@ -1382,12 +1357,19 @@ export function StudioCanvas({
               }))}
               defaultViewport={board.editorLayout.viewport}
               onNodesChange={(changes) => {
+                // A user starting to drag takes over the initial layout and camera.
+                if (changes.some((item) => item.type === "position" && item.dragging)) {
+                  needsInitialArrange.current = false;
+                  needsInitialFit.current = false;
+                }
                 onNodesChange(changes);
                 if (
                   changes.some(
                     (item) =>
                       item.type === "dimensions" &&
-                      (needsInitialFit.current || item.id === focusNode.current),
+                      (needsInitialArrange.current ||
+                        needsInitialFit.current ||
+                        item.id === focusNode.current),
                   )
                 )
                   scheduleFit();
@@ -1399,39 +1381,11 @@ export function StudioCanvas({
                   changes.filter((item) => item.type === "remove").map((item) => item.id),
                 );
                 if (removedIds.size > 0) {
-                  const removed = new Map(
-                    edges.filter((edge) => removedIds.has(edge.id)).map((edge) => [edge.id, edge]),
-                  );
-                  const remaining = edges.filter((edge) => !removedIds.has(edge.id));
-                  setNodes((current) =>
-                    current.map((node) => {
-                      const data = { ...node.data.source.data };
-                      for (const key of ["images", "references"])
-                        if (Array.isArray(data[key]))
-                          data[key] = data[key].flatMap((ref) => {
-                            if (
-                              typeof ref !== "object" ||
-                              ref === null ||
-                              Array.isArray(ref) ||
-                              ref.type !== "node" ||
-                              typeof ref.studioEdgeId !== "string"
-                            )
-                              return [ref];
-                            const edge = removed.get(ref.studioEdgeId);
-                            if (!edge || edge.target !== node.id || edge.source !== ref.nodeId)
-                              return [ref];
-                            const replacement = remaining.find(
-                              (other) =>
-                                other.source === edge.source && other.target === edge.target,
-                            );
-                            return replacement ? [{ ...ref, studioEdgeId: replacement.id }] : [];
-                          });
-                      return {
-                        ...node,
-                        data: { ...node.data, source: { ...node.data.source, data } },
-                      };
-                    }),
-                  );
+                  let graph = inputGraph();
+                  for (const id of removedIds)
+                    if (graph.edges.some((edge) => edge.id === id))
+                      graph = disconnectInput(graph, id);
+                  applyInputs(graph);
                 }
                 onEdgesChange(changes);
                 if (changes.some((item) => item.type !== "select")) change();
