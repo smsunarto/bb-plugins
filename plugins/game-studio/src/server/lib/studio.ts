@@ -36,7 +36,7 @@ import {
 } from "../../shared/schema.ts";
 import { files as instructions } from "./instructions.ts";
 import { absoluteRoot, pathTools, projectFile, relativeFile } from "./paths.ts";
-import { starterHtml } from "./starter.ts";
+import { canvasGitignore, starterHtml } from "./starter.ts";
 import { studioHostContract } from "../../shared/host-contract.ts";
 import { canvasAssetRoots } from "../../shared/canvas-contract.ts";
 import { readCanvas, snapshotJobs, type CanvasSnapshot } from "./canvas-snapshot.ts";
@@ -320,6 +320,8 @@ async function initializeCanvas(
     game.kind === "unity" ? "canvas/AGENTS.md" : "AGENTS.md",
     `${instructions.read("workspace")}\n`,
   );
+  // Generation jobs, inputs and staged outputs churn and grow; they stay out of Git.
+  await initializeFile(bb, game, "canvas/.gitignore", canvasGitignore);
   if (starter) await initializeFile(bb, game, "index.html", starterHtml);
   // Publish the index last: interrupted initialization can safely retry the preceding creates.
   await initializeFile(

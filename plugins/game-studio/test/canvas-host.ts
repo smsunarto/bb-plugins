@@ -66,6 +66,9 @@ export function sdkDisk(files: BbPluginApi["sdk"]["files"], hostId: string): Can
       });
       return result.outcome === "written" ? result.sha256 : null;
     },
+    async copy(root, _from, to, file) {
+      return (await this.write(root, to, file.content, file.contentEncoding, null)) !== null;
+    },
     async directory() {
       return false;
     },

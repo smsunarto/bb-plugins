@@ -243,6 +243,7 @@ test("Unity design workspace reopens persisted Markdown and BB project identity"
   );
   assert.equal(f.contents("host", "/games/orbit/index.html"), undefined);
   assert.equal(f.contents("host", "/games/orbit/AGENTS.md"), undefined);
+  assert.match(f.contents("host", "/games/orbit/canvas/.gitignore") ?? "", /^staging\/$/m);
   assert.ok(f.writes.every((file) => file.path.startsWith("/games/orbit/canvas/")));
   const resumed = await create.execute({ bb: f.bb }, input);
   assert.equal(resumed.id, game.id);

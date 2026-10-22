@@ -1,6 +1,8 @@
 import { isUtf8 } from "node:buffer";
 import { createHash, randomUUID } from "node:crypto";
+import { constants } from "node:fs";
 import {
+  copyFile,
   link,
   mkdir,
   readdir,
@@ -60,6 +62,11 @@ export interface CanvasDisk {
     encoding: CanvasFile["contentEncoding"],
     expectedSha256: string | null,
   ): Promise<string | null>;
+  /**
+   * Copies a file that is still `file`, as just read, to a new path, sharing its storage where
+   * the filesystem can clone. False when the target already exists.
+   */
+  copy(root: string, from: string, to: string, file: CanvasFile): Promise<boolean>;
   /** Whether a folder exists to watch. */
   directory(root: string, folder: string): Promise<boolean>;
 }
@@ -217,6 +224,32 @@ export const nodeDisk: CanvasDisk = {
           }
         }
         return sha256(bytes);
+      } finally {
+        await unlink(temporary).catch(() => undefined);
+      }
+    });
+  },
+  async copy(root, from, to, file) {
+    const source = await contained(root, projectFile(root, from));
+    if (!source) throw new Error(`Path does not exist: ${from}`);
+    const target = projectFile(root, to);
+    const folder = pathTools(root).dirname(target);
+    await mkdir(folder, { recursive: true });
+    await contained(root, folder);
+    return locked(writing, target, async () => {
+      const temporary = `${target}.${randomUUID()}.tmp`;
+      // APFS, Btrfs and XFS clone without new blocks; other filesystems copy.
+      await copyFile(source, temporary, constants.COPYFILE_EXCL | constants.COPYFILE_FICLONE);
+      try {
+        if (sha256(await readFile(temporary)) !== file.sha256)
+          throw new Error(`${from} changed while it was saved. No request was submitted.`);
+        try {
+          await link(temporary, target);
+          return true;
+        } catch (error) {
+          if (error instanceof Error && "code" in error && error.code === "EEXIST") return false;
+          throw error;
+        }
       } finally {
         await unlink(temporary).catch(() => undefined);
       }
@@ -520,7 +553,7 @@ export class CanvasHost {
     });
   }
 
-  /** Freezes selected image and model bytes as canvas/inputs/<sha>.<ext>, beside the project. */
+  /** Freezes selected image and model bytes as canvas/inputs/<sha>.<ext>, beside the project, as clones where possible. */
   async captureInputs(input: { rootPath: string; paths: string[] }) {
     const inputs: { path: string; snapshot: string; sha256: string }[] = [];
     const written = new Set<string>();
@@ -529,14 +562,8 @@ export class CanvasHost {
       if (!file) throw new Error(`Path does not exist: ${path}`);
       const snapshot = `canvas/inputs/${file.sha256}.${inputExtension(path, file)}`;
       if (!written.has(snapshot)) {
-        const created = await this.disk.write(
-          input.rootPath,
-          snapshot,
-          file.content,
-          file.contentEncoding,
-          null,
-        );
-        if (created === null) {
+        const created = await this.disk.copy(input.rootPath, path, snapshot, file);
+        if (!created) {
           const existing = await this.disk.read(input.rootPath, snapshot);
           if (existing?.sha256 !== file.sha256)
             throw new Error("A saved generation input changed. No request was submitted.");
