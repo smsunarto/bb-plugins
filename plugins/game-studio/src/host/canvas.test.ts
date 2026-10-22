@@ -1,6 +1,16 @@
 import { afterEach, expect, test } from "bun:test";
 import { createHash } from "node:crypto";
-import { mkdir, mkdtemp, readFile, readdir, realpath, rm, writeFile } from "node:fs/promises";
+import {
+  mkdir,
+  mkdtemp,
+  readFile,
+  readdir,
+  realpath,
+  rm,
+  stat,
+  utimes,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import type {
@@ -243,11 +253,13 @@ test("input capture copies image bytes beside the project and never replaces a s
     }),
   ).toEqual({ inputs: [{ path: "refs/hero.PNG", snapshot, sha256: sha256(png) }] });
   expect(await readFile(join(f.rootPath, snapshot))).toEqual(png);
-  // The same bytes again reuse their snapshot.
+  // The same bytes again reuse their snapshot, which is new again so collection keeps it.
+  await utimes(join(f.rootPath, snapshot), 1, 1);
   await f.harness.experimental_call("captureCanvasInputs", {
     rootPath: f.rootPath,
     paths: ["refs/hero.PNG"],
   });
+  expect((await stat(join(f.rootPath, snapshot))).mtimeMs).toBeGreaterThan(Date.now() - 60_000);
   await f.seed(snapshot, "corrupt");
   await expect(
     f.harness.experimental_call("captureCanvasInputs", {

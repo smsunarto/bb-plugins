@@ -110,6 +110,16 @@ Canvas generation captures selected image and GLB bytes in `canvas/inputs/<sha25
 before dispatch. These saved inputs stay outside the asset catalog. Changed GLB bytes
 are imported as a new Tripo source instead of reusing the previous model task.
 Successful outputs stay in `canvas/staging` and are cataloged when collected.
+A node keeps every take of its newest five runs; older runs keep only starred takes and
+the pick. In the background, the host trims boards to that rule and frees what it can
+account for: takes the rule retired over an hour ago; canvas outputs nothing has named
+for a week, such as takes removed by hand or those of a deleted node; failed runs with
+no paid provider task to resume, once superseded or their node is a week gone; and input
+snapshots no job uses. Outputs that never reached their node stay. Nothing a board,
+document, request, evidence or unfinished job names is freed. Uploads and agent requests
+without a node stay. A freed request ID leaves a `.pruned` tombstone, so it never
+submits again. New canvases ignore `jobs/`, `inputs/`, `staging/`, `evidence/` and
+`requests/` in Git.
 Image and video outputs attach to their source node as takes even after its
 brief changes; a new take never replaces the node's chosen output. Text results
 attach only while the brief and connected design sources, including original

@@ -23,6 +23,7 @@ import { captureCanvasInputs } from "./generation-inputs.ts";
 import { CanvasText } from "./canvas-text.ts";
 import { editCanvas } from "./canvas-edit.ts";
 import { readCanvasContext } from "./canvas-context.ts";
+import { CanvasCollection } from "./canvas-collection.ts";
 import { canvasContextInput, canvasEditInput } from "../../shared/canvas-agent.ts";
 
 type Credentials = { vertexProject?: string; falAccessToken?: string };
@@ -52,6 +53,7 @@ export class Generations {
   private readonly slots: SlotStore;
   private readonly work: GenerationWork;
   private readonly text: CanvasText;
+  private readonly collection: CanvasCollection;
   private readonly adoptions = new Map<string, Promise<AdoptionResult>>();
   private readonly jobOperations = new Map<string, Promise<unknown>>();
   constructor(
@@ -64,6 +66,7 @@ export class Generations {
     this.slots = slots;
     this.work = new GenerationWork(slots);
     this.text = new CanvasText(bb);
+    this.collection = new CanvasCollection(bb, slots, this.work);
   }
   private async credentials(provider: MediaRequest["model"]["provider"]): Promise<Credentials> {
     const settings = await this.settings(provider);
@@ -131,6 +134,7 @@ export class Generations {
         changed = true;
       jobs[index] = refreshed.job;
     }
+    this.collection.schedule(game.id);
     return { jobs, changed };
   }
   private async refreshCanvasJob(game: Game, job: GenerationJob) {
@@ -366,6 +370,13 @@ export class Generations {
             cause: error,
           });
         const result = await client.call("reconcileMissing", target, { hostId: game.hostId });
+        if (result.pruned) {
+          this.work.settled(game.hostId, game.rootPath, jobId);
+          throw new Error(
+            "This generation finished earlier, and Game Studio freed the outputs no canvas used. Its request ID stays retired; nothing was resubmitted. Do not submit it again.",
+            { cause: error },
+          );
+        }
         if (result.missing) {
           this.work.settled(game.hostId, game.rootPath, jobId);
           return null;
@@ -513,6 +524,8 @@ export class Generations {
       this.work.reserve(game.hostId, game.rootPath, job.id, owner);
       try {
         const adoption = await adoptGeneration(this.bb, game, job);
+        // Takes of older runs just left the node; free their files.
+        if (adoption.attached) this.collection.schedule(game.id, { soon: true });
         if (adoption.attached && job.request.kind === "text") await this.retryRun(game, job);
         else if (adoption.attached) {
           await this.reviewRun(game, job, adoption.candidateAssetIds);

@@ -38,6 +38,12 @@ export class GenerationWork {
       .get(host, workspace, job) as { owner: string } | undefined;
     return row?.owner ?? null;
   }
+  /** Clears every reservation whose job starts with `prefix`, such as work a restart cut off. */
+  settledAll(prefix: string) {
+    this.slots.db
+      .prepare("DELETE FROM studio_generation_work WHERE substr(job, 1, ?) = ?")
+      .run(prefix.length, prefix);
+  }
   settled(host: string, workspace: string, job: string) {
     this.slots.db
       .prepare("DELETE FROM studio_generation_work WHERE host = ? AND workspace = ? AND job = ?")

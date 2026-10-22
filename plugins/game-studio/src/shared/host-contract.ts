@@ -33,7 +33,14 @@ export const studioHostContract = defineRpcContract({
     output: z.strictObject({ created: z.boolean(), job: generationJob }),
   },
   status: { input: target, output: generationJob },
-  reconcileMissing: { input: target, output: z.strictObject({ missing: z.boolean() }) },
+  reconcileMissing: {
+    input: target,
+    output: z.strictObject({
+      missing: z.boolean(),
+      /** The job finished and collection freed its unused files; its ID stays retired. */
+      pruned: z.boolean().optional(),
+    }),
+  },
   stagedOutputs: { input: target, output: z.array(generatedOutput).max(20) },
   list: {
     input: z.strictObject({ rootPath: z.string() }),

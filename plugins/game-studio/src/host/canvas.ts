@@ -4,6 +4,7 @@ import { constants } from "node:fs";
 import {
   copyFile,
   link,
+  lstat,
   mkdir,
   readdir,
   readFile,
@@ -11,6 +12,7 @@ import {
   rename,
   stat,
   unlink,
+  utimes,
   writeFile,
 } from "node:fs/promises";
 import type {
@@ -247,8 +249,11 @@ export const nodeDisk: CanvasDisk = {
           await link(temporary, target);
           return true;
         } catch (error) {
-          if (error instanceof Error && "code" in error && error.code === "EEXIST") return false;
-          throw error;
+          if (!(error instanceof Error && "code" in error && error.code === "EEXIST")) throw error;
+          // A reused snapshot is new again, so collection waits out the dispatch that reuses it.
+          const at = new Date();
+          await utimes(target, at, at);
+          return false;
         }
       } finally {
         await unlink(temporary).catch(() => undefined);
@@ -263,6 +268,21 @@ export const nodeDisk: CanvasDisk = {
     }
   },
 };
+
+/**
+ * Deletes an input snapshot unless it was written or reused since `before`. It shares the
+ * snapshot's write lock with capture, so a dispatch that reuses it either renews it first or
+ * finds it gone and writes it again.
+ */
+export async function removeStaleSnapshot(root: string, path: string, before: number) {
+  const target = projectFile(root, path);
+  return locked(writing, target, async () => {
+    const entry = await lstat(target).catch(() => null);
+    if (!entry?.isFile() || entry.mtimeMs >= before) return false;
+    await unlink(target);
+    return true;
+  });
+}
 
 /** Job records read straight from disk, for when the runner cannot vouch for them. */
 export async function readJobFiles(disk: CanvasDisk, root: string): Promise<GenerationJob[]> {

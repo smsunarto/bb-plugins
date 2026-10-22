@@ -9,6 +9,7 @@ import {
   readdir,
   realpath,
   rename,
+  rm,
   stat,
   unlink,
   writeFile,
@@ -35,6 +36,11 @@ type Start = {
   credentials?: Credentials;
 };
 type Target = { rootPath: string; jobId: string };
+/** What collection does with a job: keep it, delete it, or keep only these outputs. */
+export type Pruning =
+  | { kind: "keep" }
+  | { kind: "delete" }
+  | { kind: "trim"; outputs: GenerationJob["outputs"] };
 
 /** The files a run of each kind leaves as outputs in its staging directory. */
 function outputPattern(kind: MediaRequest["kind"]) {
@@ -140,13 +146,16 @@ export class GenerationRunner {
     const request = normalizeMediaRequest(input.request);
     return this.locked(this.key(target), async () => {
       await this.directory(rootPath, ["canvas", "jobs"]);
-      try {
-        await lstat(`${this.path(target)}.cancelled`);
-        throw new Error(
-          "This request ID was retired without a submission. Choose a new request ID.",
-        );
-      } catch (error) {
-        if (!(error instanceof Error && "code" in error && error.code === "ENOENT")) throw error;
+      for (const [fence, message] of [
+        [".cancelled", "This request ID was retired without a submission."],
+        [".pruned", "This request ID belongs to a generation whose unused files were freed."],
+      ] as const) {
+        try {
+          await lstat(`${this.path(target)}${fence}`);
+          throw new Error(`${message} Choose a new request ID.`);
+        } catch (error) {
+          if (!(error instanceof Error && "code" in error && error.code === "ENOENT")) throw error;
+        }
       }
       const job: GenerationJob = {
         version: 1,
@@ -328,6 +337,12 @@ export class GenerationRunner {
     return this.locked(this.key(target), async () => {
       await this.directory(target.rootPath, ["canvas", "jobs"]);
       try {
+        await lstat(`${this.path(target)}.pruned`);
+        return { missing: true, pruned: true };
+      } catch (error) {
+        if (!(error instanceof Error && "code" in error && error.code === "ENOENT")) throw error;
+      }
+      try {
         await this.read(target);
         return { missing: false };
       } catch (error) {
@@ -374,13 +389,127 @@ export class GenerationRunner {
       if (error instanceof Error && "code" in error && error.code === "ENOENT") return [];
       throw error;
     }
-    const ids = entries.filter((name) => /^[a-zA-Z0-9_-]{1,100}\.json$/.test(name));
-    if (ids.length > 1000) throw new Error("The project has more than 1000 generation jobs.");
+    const ids = await this.newest(
+      await this.fileDirectory(root, "canvas/jobs"),
+      entries.filter((name) => /^[a-zA-Z0-9_-]{1,100}\.json$/.test(name)),
+      1000,
+    );
     const results = await Promise.allSettled(
       ids.map((name) => this.status({ rootPath: root, jobId: name.slice(0, -5) }, options)),
     );
     const jobs = results.flatMap((result) => (result.status === "fulfilled" ? [result.value] : []));
     return jobs.sort((a, b) => b.createdAt - a.createdAt).slice(0, 100);
+  }
+  /** The most recently written `limit` of these files. */
+  private async newest(directory: string, names: string[], limit: number) {
+    if (names.length <= limit) return names;
+    const times = await Promise.all(
+      names.map(async (name) => {
+        try {
+          return { name, at: (await stat(join(directory, name))).mtimeMs };
+        } catch {
+          return { name, at: 0 };
+        }
+      }),
+    );
+    return times
+      .sort((a, b) => b.at - a.at)
+      .slice(0, limit)
+      .map(({ name }) => name);
+  }
+  /**
+   * Every job record in the project, unrefreshed, for collection. A record it cannot read fails
+   * the whole listing: collection must never mistake an unreadable job for a missing one.
+   */
+  async records(rootPath: string): Promise<GenerationJob[]> {
+    const root = await this.root(rootPath);
+    let entries;
+    try {
+      entries = await readdir(await this.fileDirectory(root, "canvas/jobs"));
+    } catch (error) {
+      if (error instanceof Error && "code" in error && error.code === "ENOENT") return [];
+      throw error;
+    }
+    const names = entries.filter((name) => /^[a-zA-Z0-9_-]{1,100}\.json$/.test(name));
+    const jobs: GenerationJob[] = [];
+    // A few at a time, well under the process's open file limit.
+    for (let at = 0; at < names.length; at += 32)
+      for (const job of await Promise.all(
+        names.slice(at, at + 32).map(async (name) => {
+          try {
+            return await this.read({ rootPath: root, jobId: name.slice(0, -5) });
+          } catch (error) {
+            // Retired or renamed since the listing.
+            if (error instanceof Error && "code" in error && error.code === "ENOENT") return null;
+            throw error;
+          }
+        }),
+      ))
+        if (job) jobs.push(job);
+    return jobs;
+  }
+  /**
+   * Frees a job's unused files as `decide` judges the record under its lock. A retired record
+   * leaves a tombstone, so its request ID is never submitted again; its folder is set aside
+   * under the lock and deleted after it, so reads never wait on a large delete. Returns the
+   * freed output paths.
+   */
+  async prune(input: Target, decide: (job: GenerationJob) => Pruning): Promise<string[]> {
+    const target = { ...input, rootPath: await this.root(input.rootPath) };
+    const freed = await this.locked(this.key(target), async () => {
+      if (this.active.has(this.key(target))) return null;
+      let job;
+      try {
+        job = await this.read(target);
+      } catch (error) {
+        if (error instanceof Error && "code" in error && error.code === "ENOENT") return null;
+        throw error;
+      }
+      const decision = decide(job);
+      if (decision.kind === "keep") return null;
+      if (decision.kind === "delete") return this.retire(target, job);
+      // Only files in the job's own staging folder are its to free.
+      const removed = job.outputs.filter(
+        (output) =>
+          !decision.outputs.includes(output) && output.path.startsWith(`canvas/staging/${job.id}/`),
+      );
+      if (!removed.length) return null;
+      for (const { path } of removed)
+        await rm(join(target.rootPath, ...path.split("/")), { force: true });
+      // The record forgets them too, so adopting the job again cannot bring them back.
+      job.outputs = job.outputs.filter((output) => !removed.includes(output));
+      await this.save(target, job);
+      return { paths: removed.map(({ path }) => path), trash: null };
+    });
+    if (freed?.trash) await rm(freed.trash, { recursive: true, force: true });
+    return freed?.paths ?? [];
+  }
+  /**
+   * Retires a job: its folder set aside for deletion first, then the tombstone, then the record.
+   * A crash before the record goes leaves the record, so the next collection finishes the job.
+   */
+  private async retire(target: Target, job: GenerationJob) {
+    const folder = join(target.rootPath, "canvas", "staging", job.id);
+    // Dot names stay out of workspace listings; collection deletes leftovers of a crash.
+    let trash: string | null = join(
+      target.rootPath,
+      "canvas",
+      "staging",
+      `.freed-${job.id}-${randomUUID()}`,
+    );
+    try {
+      await rename(folder, trash);
+    } catch (error) {
+      if (!(error instanceof Error && "code" in error && error.code === "ENOENT")) throw error;
+      trash = null;
+    }
+    try {
+      await writeFile(`${this.path(target)}.pruned`, "Unused files were freed.\n", { flag: "wx" });
+    } catch (error) {
+      if (!(error instanceof Error && "code" in error && error.code === "EEXIST")) throw error;
+    }
+    await unlink(this.path(target));
+    return { paths: job.outputs.map(({ path }) => path), trash };
   }
   private async fileDirectory(root: string, path: string) {
     const resolved = await realpath(join(root, path));

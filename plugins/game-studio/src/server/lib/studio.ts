@@ -1212,17 +1212,39 @@ async function attachTakes(
   const fresh = ids.filter((id) => !takes.some((take) => take.assetId === id));
   if (!fresh.length) return { candidateAssetIds: ids, attached: true };
   const { candidateAssetIds: _legacy, ...data } = saved.data;
+  // The first output becomes the pick only when the node has none.
+  const pick = takes.some((take) => take.assetId === data.assetId)
+    ? (data.assetId as string)
+    : (takes[0]?.assetId ?? fresh[0]!);
   saved.data = {
     ...data,
     takes: [...takes, ...fresh.map((assetId) => ({ assetId, jobId: job.id }))],
-    // The first output becomes the pick only when the node has none.
-    assetId: takes.some((take) => take.assetId === data.assetId)
-      ? (data.assetId as string)
-      : (takes[0]?.assetId ?? fresh[0]!),
+    assetId: pick,
     generationJobId: job.id,
   };
   await write(bb, game, path, json(content), contentFile.sha256);
   return { candidateAssetIds: ids, attached: true };
+}
+
+/** Removes the catalog entries of files collection deleted. */
+export async function forgetAssets(bb: BbPluginApi, game: Game, paths: string[]): Promise<void> {
+  if (!paths.length) return;
+  await serialized(bb, game.id, async () => {
+    const manifestPath = "canvas/assets.json";
+    const file = await readOptional(bb, game, manifestPath);
+    if (!file) return;
+    const manifest = parse(manifestSchema, file, manifestPath);
+    const gone = new Set(paths);
+    const kept = Object.entries(manifest.assets).filter(([, entry]) => !gone.has(entry.path));
+    if (kept.length === Object.keys(manifest.assets).length) return;
+    await write(
+      bb,
+      game,
+      manifestPath,
+      json({ ...manifest, assets: Object.fromEntries(kept) }),
+      file.sha256,
+    );
+  });
 }
 
 /** A review joins the node's reviews; it never replaces the node's outputs or its brief. */

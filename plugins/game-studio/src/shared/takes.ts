@@ -30,3 +30,16 @@ export function nodeTakes(node: Pick<CanvasNode, "data">): Take[] {
 export const batchRequestId = (requestId: string, index: number) => `${requestId}-b${index}`;
 /** The run a take belongs to: its batch, or its job when it ran alone. */
 export const takeRun = (jobId: string) => jobId.replace(/-b\d$/, "");
+
+/** How many of a node's newest runs keep every take. Older runs keep only stars and the pick. */
+export const keptRuns = 5;
+
+/** A node's takes without those of runs older than its newest `keptRuns`, unless starred or picked. */
+export function pruneTakes(takes: Take[], pick: unknown): Take[] {
+  // Takes are appended as runs land, so a run's first take orders it; "Earlier" comes first.
+  const runs = [...new Set(takes.map((take) => takeRun(take.jobId)))];
+  const recent = new Set(runs.slice(-keptRuns));
+  return takes.filter(
+    (take) => take.star || take.assetId === pick || recent.has(takeRun(take.jobId)),
+  );
+}

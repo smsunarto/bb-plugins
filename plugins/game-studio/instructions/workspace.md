@@ -31,6 +31,10 @@ user's requested scope or budget.
   pending verified import into Unity. Keep stable paths, preserve catalog entries,
   and use relative file paths. `Assets/` is touched only under the main Editor
   authoring claim; never use a lowercase `assets/` output folder in Unity.
+  Game Studio frees canvas generations nothing uses: a node keeps the takes of
+  its newest five runs, its starred takes and its pick, and a take nothing names
+  goes after a week. Star a take, or name its asset on a board or in a document,
+  to keep it.
 
 Inspect current files before changing them. Preserve unrelated edits and detect
 concurrent changes. Do not replace the entire canvas to add a node. Reference

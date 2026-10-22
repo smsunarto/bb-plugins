@@ -12,6 +12,7 @@ import { studioHostContract } from "../shared/host-contract.ts";
 import { studioHostSignals } from "../shared/canvas-contract.ts";
 import { GenerationRunner } from "./generation.ts";
 import { CanvasHost, nodeDisk, readJobFiles } from "./canvas.ts";
+import { collectCanvas } from "./collect.ts";
 
 const runner = new GenerationRunner();
 const canvas = new CanvasHost(nodeDisk, async (root) => {
@@ -36,6 +37,8 @@ export default experimental_defineHostEntry({
     readCanvas: (input, ctx) => canvas.read(input, ctx),
     saveCanvasBoard: (input) => canvas.saveBoard(input),
     captureCanvasInputs: (input) => canvas.captureInputs(input),
+    collectCanvas: ({ rootPath }, ctx) =>
+      collectCanvas(rootPath, nodeDisk, runner, { signal: ctx.signal }),
     planSlotDestination: ({ path }) => planSlotDestination(path),
     provisionSlot: (input, ctx) =>
       provisionRampageSlot(input, ctx.experimental_paths.dataDir, ctx.signal),

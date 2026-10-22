@@ -97,6 +97,16 @@ export const canvasHostContract = {
         .max(64),
     }),
   },
+  /** Frees the files of finished generations nothing on the canvas uses. */
+  collectCanvas: {
+    input: z.strictObject({ rootPath: z.string().min(1) }),
+    output: z.strictObject({
+      deleted: z.array(z.string()),
+      /** Catalogued staged files that are gone, for the catalog to forget. */
+      missing: z.array(z.string()),
+      skipped: z.string().optional(),
+    }),
+  },
 } as const;
 
 export const studioHostSignals = {
