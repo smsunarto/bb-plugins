@@ -5,6 +5,7 @@ import { prompt } from "./command/prompt.ts";
 import { publishActivity } from "./lib/activity.ts";
 import { createGitHub } from "./lib/gh.ts";
 import { createStore } from "./lib/store.ts";
+import { reviewSkills } from "./lib/review-scope.ts";
 import { addDraftComment } from "./rpc/add-draft-comment.ts";
 import { agentActivity } from "./rpc/agent-activity.ts";
 import { branchActivity } from "./rpc/branch-activity.ts";
@@ -71,6 +72,7 @@ export default definePlugin({
   },
   agents: {
     files: instructionFiles(import.meta.url),
+    skills: reviewSkills,
     tools: { report_findings: reportFindings, share_changes: shareChanges },
   },
   setup({ bb, store }) {

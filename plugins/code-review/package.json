@@ -27,7 +27,10 @@
       }
     },
     "server": "./src/server/server.ts",
-    "app": "./src/app/app.tsx"
+    "app": "./src/app/app.tsx",
+    "skills": [
+      "skills"
+    ]
   },
   "files": [
     "dist/*.js",
@@ -36,6 +39,7 @@
     "assets/",
     "instructions/",
     "playbooks/",
+    "skills/",
     "src/",
     "!src/**/*.test.ts",
     "!src/**/*.test.tsx",

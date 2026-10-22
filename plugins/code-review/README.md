@@ -157,3 +157,5 @@ Inside a BB thread, project files are read from that thread's checkout and machi
 The CLI root is `review`; existing `code_review_*` agent tools retain their names.
 
 `bb review prompt --request <text>` prints the shared reviewer brief, including the playbook pointer, followed by your request. Pass multiline requests as one quoted argument and redirect stdout to a file for `bb thread spawn --prompt-file`. The command only formats the prompt; it launches no threads.
+
+The `review` skill is bundled here alongside the prompt command and playbooks. It owns the explicit Claude/Codex launch recipe, unique review titles, result handling, and child cleanup. Dev Mode only points authors to this skill at engineering handoff.

@@ -45,6 +45,7 @@ const REF = { owner: "cli", repo: "cli", number: 9000 };
 async function load() {
   const { bb, harness } = createFakePluginHost({
     pluginId: "code-review",
+    agentSkillIds: ["review"],
     sdk: {
       threads: {
         get: async ({ threadId }) => ({
