@@ -1,24 +1,25 @@
 import { mkdtemp, readFile as readDiskFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
+import { files } from "../instructions.ts";
 import { renameToolTokens } from "../tools/rename.ts";
 import { INSTRUCTIONS } from "../vendor/generated/instructions.ts";
 import { renderInstructions } from "../vendor/review/src/review-api/instructions.ts";
 import { readFile } from "./embedded-fs.ts";
 
-test("instruction topics are served from the generated module", async () => {
+test("unchanged topics stay embedded across native path separators", async () => {
   expect(await readFile("/whiteboard/instructions/scratchpad.md", "utf8")).toBe(
     INSTRUCTIONS.scratchpad,
   );
-  expect(await readFile("\\whiteboard\\instructions\\file-lenses.md")).toBe(
-    INSTRUCTIONS["file-lenses"],
-  );
+  expect(await readFile("\\whiteboard\\instructions\\scratchpad.md")).toBe(INSTRUCTIONS.scratchpad);
 });
 
 test("any other path under the virtual root is a missing file", async () => {
   for (const path of [
     "/whiteboard/instructions/nope.md",
+    "/whiteboard/instructions/authoring.md",
+    "/whiteboard/instructions/file-lenses.md",
     "/whiteboard/instructions/toString.md",
     "/whiteboard/package.json",
   ]) {
@@ -39,34 +40,42 @@ const upstreamMarkdown = (topic: string) =>
   readDiskFile(new URL(`../vendor/review/instructions/${topic}.md`, import.meta.url), "utf8");
 
 test("each embedded topic is upstream's markdown with catalog session_x tokens renamed", async () => {
-  expect(Object.keys(INSTRUCTIONS).sort()).toEqual([
-    "authoring",
-    "file-lenses",
-    "scratchpad",
-    "trace-archaeology",
-  ]);
+  expect(Object.keys(INSTRUCTIONS).sort()).toEqual(["scratchpad", "trace-archaeology"]);
   for (const topic of Object.keys(INSTRUCTIONS)) {
     const markdown = await upstreamMarkdown(topic);
     expect(INSTRUCTIONS[topic as keyof typeof INSTRUCTIONS]).toBe(renameToolTokens(markdown));
   }
-  // The rename is real: upstream names session_get_instructions, the embedded text names the bb tool.
-  expect(await upstreamMarkdown("authoring")).toContain("`session_get_instructions({topic:");
-  expect(INSTRUCTIONS.authoring).toContain("`whiteboard_session_get_instructions({topic:");
 });
 
 describe("renderInstructions on the engine's virtual root", () => {
   const on = { desktopAvailable: true, scratchpadEnabled: true, traceEnabled: false };
   const off = { desktopAvailable: true, scratchpadEnabled: false, traceEnabled: false };
 
-  test("authoring is the embedded text plus upstream's scratchpad pointer", async () => {
+  test("authoring includes the component reference and respects the scratchpad setting", async () => {
+    const authoring = `${files.read("authoring")}\n\n${files.read("components")}`;
     expect(await renderInstructions("authoring", on)).toBe(
-      `${INSTRUCTIONS.authoring}\n\n## More guidance\n\n- Explaining code visually outside a review: \`whiteboard_session_get_instructions({topic:"scratchpad"})\``,
+      `${authoring}\n\n## More guidance\n\n- Explaining code visually outside a review: \`whiteboard_session_get_instructions({topic:"scratchpad"})\``,
     );
-    expect(await renderInstructions("authoring", off)).toBe(INSTRUCTIONS.authoring);
+    expect(await renderInstructions("authoring", off)).toBe(authoring);
+  });
+
+  test("a later prompt read observes edited instructions without a plugin reload", async () => {
+    const original = files.read.bind(files);
+    let revision = "first";
+    const read = vi
+      .spyOn(files, "read")
+      .mockImplementation((name) => (name === "authoring" ? revision : original(name)));
+    try {
+      expect(await renderInstructions("authoring", off)).toContain("first");
+      revision = "edited";
+      expect(await renderInstructions("authoring", off)).toContain("edited");
+    } finally {
+      read.mockRestore();
+    }
   });
 
   test("other topics are served whole", async () => {
-    expect(await renderInstructions("file-lenses", off)).toBe(INSTRUCTIONS["file-lenses"]);
+    expect(await renderInstructions("file-lenses", off)).toBe(files.read("file-lenses"));
     expect(await renderInstructions("scratchpad", on)).toBe(INSTRUCTIONS.scratchpad);
   });
 

@@ -1,10 +1,11 @@
 // Vendored from dev.fast review/src/review-api/instructions.ts @4ecc570 (MIT).
+import { files } from "../../../../instructions.ts";
 import { readFile } from "../../../../stubs/embedded-fs.ts";
 import path from "node:path";
 
 import { z } from "zod";
 
-import { findReviewPackageRoot } from "../../../../stubs/package-paths.ts";
+import { EMBEDDED_PACKAGE_ROOT, findReviewPackageRoot } from "../../../../stubs/package-paths.ts";
 
 export const INSTRUCTION_TOPICS = [
   "authoring",
@@ -29,21 +30,13 @@ export function scratchpadAvailable(context: InstructionContext): boolean {
   return context.desktopAvailable && context.scratchpadEnabled;
 }
 
-const cache = new Map<string, Promise<string>>();
-
-function read(root: string, name: string): Promise<string> {
-  const file = path.join(root, "instructions", `${name}.md`);
-  let content = cache.get(file);
-
-  if (!content) {
-    content = readFile(file, "utf8").catch((error) => {
-      cache.delete(file);
-      throw error;
-    });
-    cache.set(file, content);
+async function read(root: string, name: string): Promise<string> {
+  if (root.replaceAll("\\", "/") === EMBEDDED_PACKAGE_ROOT) {
+    if (name === "authoring") return `${files.read("authoring")}\n\n${files.read("components")}`;
+    if (name === "file-lenses") return files.read("file-lenses");
   }
-
-  return content;
+  const file = path.join(root, "instructions", `${name}.md`);
+  return readFile(file, "utf8");
 }
 
 export async function renderInstructions(

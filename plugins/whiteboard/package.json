@@ -55,6 +55,7 @@
     "!src/**/*.test.ts",
     "!src/**/*.test.tsx",
     "skills/",
+    "instructions/",
     "README.md",
     "LICENSE",
     "THIRD_PARTY_NOTICES.md"

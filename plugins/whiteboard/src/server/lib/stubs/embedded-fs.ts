@@ -5,9 +5,9 @@ import { EMBEDDED_PACKAGE_ROOT } from "./package-paths.ts";
 /**
  * The `node:fs/promises` surface `instructions.ts` uses (design §2.3 C).
  * `readFile("/whiteboard/instructions/<topic>.md", "utf8")` answers the
- * generated instruction text, so no runtime path resolution happens and a
- * path install and a packaged `dist/` behave the same. A path under that
- * virtual root with no topic fails like a missing file.
+ * unchanged embedded upstream topics. Authored topic loading and composition
+ * are handled by `renderInstructions`.
+ * A path under the virtual root with no topic fails like a missing file.
  *
  * Any other path reads the disk, as upstream does. The engine always passes
  * the virtual root; only callers that pass their own `root` to

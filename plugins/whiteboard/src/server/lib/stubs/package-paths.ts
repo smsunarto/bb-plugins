@@ -1,7 +1,7 @@
 /**
  * Upstream `findReviewPackageRoot` for `instructions.ts` (design §2.3 C). The
- * instruction files live in the generated module, served by `embedded-fs.ts`
- * under this virtual root, so no runtime path resolution happens.
+ * virtual root selects BB-authored topic files in `renderInstructions` and
+ * unchanged generated topics in `embedded-fs.ts`.
  */
 export const EMBEDDED_PACKAGE_ROOT = "/whiteboard";
 

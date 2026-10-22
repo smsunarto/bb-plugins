@@ -6,6 +6,7 @@ import type {
 } from "../../../shared/contracts/engine.ts";
 import type { JsonObject } from "../../../shared/vendor/json/src/index.ts";
 import { whenSettingsLoaded } from "../settings.ts";
+import { files } from "../instructions.ts";
 import {
   type AuthoringTool,
   toolResultText,
@@ -62,13 +63,16 @@ function buildCatalog(scratchpadEnabled: boolean): CatalogTool[] {
   return ordered.map((tool) => ({
     tool,
     name: bbToolName(tool.name),
-    description: adaptWording(
-      renameToolTokens(
-        tool.name === INSTRUCTIONS_TOOL
-          ? `${mcpAuthoringGuidance({ scratchpadAvailable: true, traceEnabled: TRACE_ENABLED })}\n\n${tool.description}`
-          : tool.description,
-      ),
-    ),
+    description:
+      tool.name === "session_edit"
+        ? files.tool("whiteboard_session_edit").description
+        : adaptWording(
+            renameToolTokens(
+              tool.name === INSTRUCTIONS_TOOL
+                ? `${mcpAuthoringGuidance({ scratchpadAvailable: true, traceEnabled: TRACE_ENABLED })}\n\n${tool.description}`
+                : tool.description,
+            ),
+          ),
     parameters: renameSchemaDescriptions(flattenSchema(tool.inputSchema as JsonObject)),
   }));
 }

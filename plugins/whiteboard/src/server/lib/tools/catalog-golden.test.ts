@@ -1,6 +1,7 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, test } from "vitest";
 import { createSettings } from "../settings.ts";
+import { files } from "../instructions.ts";
 import { flattenSchema } from "./flatten-schema.ts";
 import { registerTools } from "./register.ts";
 import {
@@ -31,12 +32,16 @@ describe.each([
     expect(names).toEqual(tools.map((tool) => bbToolName(tool.name)));
   });
 
-  test("descriptions are upstream's text with session_x tokens renamed and bb wording", async () => {
+  test("descriptions retain upstream wording except the authored edit-tool reference", async () => {
     // The golden get_instructions description already carries the
     // mcpAuthoringGuidance prefix, as upstream's ListTools sends it.
     const descriptions = (await registered(on)).map((tool) => tool.description);
     expect(descriptions).toEqual(
-      tools.map((tool) => adaptWording(renameToolTokens(tool.description))),
+      tools.map((tool) =>
+        tool.name === "session_edit"
+          ? files.tool("whiteboard_session_edit").description
+          : adaptWording(renameToolTokens(tool.description)),
+      ),
     );
   });
 

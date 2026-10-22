@@ -130,6 +130,7 @@ These files have hand-edited (`edit`) rows in the vendoring map:
 - `review/app/src/review-home-view.tsx`
 - `review/app/src/blocks.tsx`
 - `review/src/review-api/review-progress.ts`
+- `review/src/review-api/instructions.ts`
 - `local-vcs/src/blob-batch-reader.ts`
 - `local-vcs/src/index.ts`
 
@@ -143,6 +144,14 @@ read failures and per-item size-limit failures as errors across Git and jj, so o
 absent files can resolve as one-sided context. Flow updates keep the last consistent drawing mounted while
 the new layout loads, preserving the reader's viewport and inline height.
 
+The authoring and file-lens prompts adapt upstream's
+[October instructions](https://github.com/devdotfast/whiteboard/tree/07ae51800bfefb1f2f04ef8d4b367fe3a0160d9e/packages/review/instructions)
+to BB's existing tools and source schemas. They live under `instructions/`,
+with the component reference and edit-tool description, and are read through
+`instructionFiles`. Authoring and lens prompts pick up edits on the next call;
+tool descriptions apply after a plugin reload. The `/whiteboard` skill loads
+the authoring prompt. Scratchpad and trace guidance retain the embedded baseline.
+
 ## Deviations from upstream
 
 - **Tool names.** `session_*` tools are registered as `whiteboard_session_*`.
@@ -152,8 +161,9 @@ the new layout loads, preserving the reader's viewport and inline height.
   - `review-api/store.ts`: `session_get` in an error
   - `review-api/document-text.ts`: `session_lens_edit`
   - `review-api/instructions.ts`: three `session_get_instructions({topic:` references
-  - Embedded instruction text adapts tool names at the bb boundary. The four
-    instruction `.md` files remain unchanged.
+  - Embedded scratchpad and trace text adapts tool names at the bb boundary.
+    The vendored instruction files retain the baseline for comparison;
+    authoring and file-lens guidance comes from `instructions/` instead.
 - **Settings pointers.** User-facing pointers to Desktop settings name the
   plugin settings in bb instead:
   - `review-api/http.ts`: "Turn it on in Review Desktop Settings." becomes
