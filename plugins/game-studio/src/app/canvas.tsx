@@ -838,18 +838,45 @@ export function StudioCanvas({
     startingBrief === id ||
     nodeJobs(id).some((job) => running(job) && job.request.kind !== "image");
   const generating = busy(selectedId);
+  const change = useCallback(() => {
+    editVersion.current += 1;
+    setEdits(editVersion.current);
+    setDirty(true);
+    onStatus?.("dirty");
+  }, [onStatus]);
   const root = useRef<HTMLDivElement>(null);
   const inspector = useRef<HTMLElement>(null);
   const stage = useRef<HTMLDivElement>(null);
   const flow = useRef<ReactFlowInstance<Card>>(null);
   /** A newly added node to keep in view while it first renders; selection never pans. */
   const focusNode = useRef<string | null>(null);
+  const needsInitialArrange = useRef(board.nodes.length > 0);
   const needsInitialFit = useRef(board.editorLayout.fitView !== false);
   const frame = useRef(0);
   const recoverViewport = useCallback(() => {
     const instance = flow.current;
     const bounds = stage.current?.getBoundingClientRect();
     if (!instance || !bounds?.width || !bounds.height || !instance.getNodes().length) return;
+    if (needsInitialArrange.current) {
+      const measured = instance.getNodes();
+      if (measured.some((node) => !node.measured?.width || !node.measured.height || node.dragging))
+        return;
+      needsInitialArrange.current = false;
+      const arranged = arrangeNodes(measured, instance.getEdges());
+      if (
+        arranged.some(
+          (node, index) =>
+            node.position.x !== measured[index]!.position.x ||
+            node.position.y !== measured[index]!.position.y,
+        )
+      ) {
+        setNodes(arranged);
+        change();
+      }
+      needsInitialFit.current = true;
+      frame.current = requestAnimationFrame(recoverViewport);
+      return;
+    }
     const view = instance.getViewport();
     if (needsInitialFit.current) {
       needsInitialFit.current = false;
@@ -869,7 +896,7 @@ export function StudioCanvas({
     if (!node?.measured?.width || !node.measured.height || node.dragging) return;
     const next = revealNode(view, bounds, instance.getNodesBounds([node]));
     if (next.x !== view.x || next.y !== view.y) void instance.setViewport(next);
-  }, []);
+  }, [change, setNodes]);
   const scheduleFit = useCallback(() => {
     cancelAnimationFrame(frame.current);
     frame.current = requestAnimationFrame(recoverViewport);
@@ -905,12 +932,6 @@ export function StudioCanvas({
     scheduleFit();
     change();
   };
-  const change = useCallback(() => {
-    editVersion.current += 1;
-    setEdits(editVersion.current);
-    setDirty(true);
-    onStatus?.("dirty");
-  }, [onStatus]);
   const updateSelected = (update: Partial<CanvasNode>) => {
     setNodes((current) =>
       current.map((node) =>
@@ -1336,12 +1357,19 @@ export function StudioCanvas({
               }))}
               defaultViewport={board.editorLayout.viewport}
               onNodesChange={(changes) => {
+                // A user starting to drag takes over the initial layout and camera.
+                if (changes.some((item) => item.type === "position" && item.dragging)) {
+                  needsInitialArrange.current = false;
+                  needsInitialFit.current = false;
+                }
                 onNodesChange(changes);
                 if (
                   changes.some(
                     (item) =>
                       item.type === "dimensions" &&
-                      (needsInitialFit.current || item.id === focusNode.current),
+                      (needsInitialArrange.current ||
+                        needsInitialFit.current ||
+                        item.id === focusNode.current),
                   )
                 )
                   scheduleFit();

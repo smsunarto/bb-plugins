@@ -70,7 +70,8 @@ chunks using `nextOffset`. `encoding:"json"` means parse the joined JSON.
 Inspect the dry run, then send the same batch without `dryRun`. On later edits,
 patch only the changed brief fields; generated outputs and existing positions
 survive. Use `connect`/`disconnect` for node inputs and `move_node` for explicit
-positions. Use `connect_asset` with target, assetId, and optional port for library images.
+positions during the current visit. Opening a board automatically arranges its
+measured cards, so explicit positions are recomputed on reopen. Use `connect_asset` with target, assetId, and optional port for library images.
 To replace a library or legacy wireless input, use `remove_input` with the
 node id and `input:{key:"references",index:0}` (or key images), then reconnect
 in the same batch. `input:{key:"promptSource"}` removes a linked prompt.
@@ -78,8 +79,8 @@ Indexes address the arrays in the exact context revision. Library inputs can
 also be supplied in a new node's data.images/references. Non-image catalog
 assets cannot be used as library images.
 A stale revision rejects the entire batch, including a dry run: reread and merge.
-Do not replace whole boards to fix one node. Use the UI's Arrange button when
-real card measurements are needed; estimated coordinates are not visual proof.
+Do not replace whole boards to fix one node. Opening the canvas arranges measured cards automatically; the Arrange button
+can repeat this during a visit; estimated coordinates are not visual proof.
 
 Review and judge are settings on media nodes, not separate node kinds. Keep
 retries at zero until the user authorizes a paid retry scope. Generate, collect,
