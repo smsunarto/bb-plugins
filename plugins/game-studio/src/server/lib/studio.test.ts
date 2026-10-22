@@ -471,6 +471,58 @@ test("Unity uploads stay in staging and externally imported assets appear after 
   );
 });
 
+test("uploads accept models at the 20 MiB limit and preserve their catalog bytes", async () => {
+  const f = fake();
+  const game = await create.execute({ bb: f.bb }, input);
+  const bytes = Buffer.alloc(20 * 1024 * 1024, 0xab);
+  const content = bytes.toString("base64");
+  const asset = await uploadAsset.execute(
+    { bb: f.bb },
+    { gameId: game.id, name: "finished.glb", content },
+  );
+  assert.equal(asset.type, "model");
+  const written = f.writes.find(({ path }) => path.endsWith("-finished.glb"));
+  assert.equal(written?.content, content);
+  assert.equal(written?.contentEncoding, "base64");
+  const workspace = await get.execute({ bb: f.bb }, { gameId: game.id });
+  assert.ok(workspace.assets.some(({ id, path }) => id === asset.id && path === asset.path));
+});
+
+test("uploads reject oversized or malformed base64 before writing files", async () => {
+  const f = fake();
+  const game = await create.execute({ bb: f.bb }, input);
+  const before = f.writes.length;
+  for (const content of [
+    "A",
+    "AAA",
+    "A===",
+    "AA=A",
+    "AA==AAAA",
+    "AAAA\n",
+    "AA-_",
+    "AA==\n\n\n\n",
+  ]) {
+    await assert.rejects(
+      async () =>
+        uploadAsset.execute({ bb: f.bb }, { gameId: game.id, name: "invalid.glb", content }),
+      /not valid base64/,
+    );
+  }
+  await assert.rejects(
+    async () =>
+      uploadAsset.execute(
+        { bb: f.bb },
+        {
+          gameId: game.id,
+          name: "large.glb",
+          content: Buffer.alloc(20 * 1024 * 1024 + 1).toString("base64"),
+        },
+      ),
+    /20 MB or smaller/,
+  );
+  assert.equal(f.writes.length, before);
+});
+
 test("import requests target the exact staged catalog selection without recording progress", async () => {
   const f = fake();
   const game = await create.execute({ bb: f.bb }, input);

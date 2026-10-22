@@ -854,7 +854,8 @@ export async function uploadAsset(
   input: z.infer<typeof uploadAssetInput>,
 ): Promise<Asset> {
   return serialized(bb, input.gameId, async () => {
-    if (!/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(input.content)) {
+    // A repeated group per quartet exhausts V8's regexp stack on multi-megabyte uploads.
+    if (input.content.length % 4 !== 0 || !/^[A-Za-z0-9+/]*={0,2}$/.test(input.content)) {
       throw new Error("The upload is not valid base64.");
     }
     if (Buffer.byteLength(input.content, "base64") > 20 * 1024 * 1024)
