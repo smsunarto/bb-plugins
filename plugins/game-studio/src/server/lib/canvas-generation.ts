@@ -305,9 +305,7 @@ function mediaCanvasRequest(
       kind,
       operation,
       sourcePath,
-      ...(sourceTask(workspace, sourcePath)
-        ? { sourceTaskId: sourceTask(workspace, sourcePath) }
-        : {}),
+      ...modelLineage(workspace, sourcePath, operation),
       ...(operation === "texture" && Object.keys(views).length ? { views } : {}),
       ...(operation === "texture" && prompt ? { prompt } : {}),
       ...(operation === "texture" ? { textureQuality: text("textureQuality") } : {}),
@@ -355,22 +353,52 @@ function mediaCanvasRequest(
 
 /** The Tripo processing step each Tripo recipe runs. */
 const tripoOperations: Partial<Record<string, (typeof modelOperations)[number]>> = {
+  "tripo-smart-uv": "smart-uv",
+  "tripo-apply-uv": "apply-uv",
   "tripo-texture": "texture",
   "tripo-pbr": "pbr",
   "tripo-rig": "rig",
   "tripo-animate": "animate",
 };
+/** Candidate outputs retain the original model task until explicit application. */
+function modelLineage(
+  workspace: Workspace,
+  path: string,
+  operation: (typeof modelOperations)[number] | undefined,
+) {
+  const source = sourceJob(workspace, path);
+  const identity = source
+    ? { sourceSha256: source.outputs.find((output) => output.path === path)?.sha256 }
+    : {};
+  const candidate =
+    source?.request.kind === "model-edit" && source.request.operation === "smart-uv";
+  if (operation === "apply-uv") {
+    const sourceTaskId =
+      source?.providerData?.uvSourceTask ??
+      (source?.request.kind === "model-edit" ? source.request.sourceTaskId : undefined);
+    if (!candidate || !source.taskId || !sourceTaskId)
+      throw new Error(
+        "Connect a completed Tripo Smart UV candidate to Apply UV. Its original model task must be available.",
+      );
+    return { ...identity, sourceTaskId, uvCandidateTaskId: source.taskId };
+  }
+  if (candidate)
+    throw new Error(
+      "Connect this Smart UV candidate through a Tripo Apply UV node before processing it.",
+    );
+  return { ...identity, ...(source?.taskId ? { sourceTaskId: source.taskId } : {}) };
+}
 /**
  * The Tripo task that made a model on this machine, so the next step processes that task
  * directly. A rig only survives this way: an animation must start from its rig's own task.
  */
-function sourceTask(workspace: Workspace, path: string) {
+function sourceJob(workspace: Workspace, path: string) {
   return workspace.generationJobs.find(
     (job) =>
       job.status === "succeeded" &&
       job.request.model.provider === "tripo" &&
       job.outputs.some((output) => output.path === path),
-  )?.taskId;
+  );
 }
 
 /** The inputs a run was made from: its brief, and its input images with their roles. */

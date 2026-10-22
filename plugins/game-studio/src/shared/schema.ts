@@ -213,6 +213,8 @@ export const generationRecipeSchema = z.enum([
   "omni-video",
   "fal-video",
   "model-3d",
+  "tripo-smart-uv",
+  "tripo-apply-uv",
   "tripo-texture",
   "tripo-pbr",
   "tripo-rig",

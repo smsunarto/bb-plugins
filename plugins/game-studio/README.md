@@ -82,7 +82,10 @@ Image, video, and 3D generation use native agent tools: `game_studio_generate_im
 saved node and its exact board revision. Defaults are Google Nano Banana 2.1
 for images and Gemini Omni 1.1 Flash for video. Fal H3 Max remains an alternate
 video provider; Midjourney supports images/video and Tripo P2 handles approved
-image-to-geometry work. ElevenLabs and Suno remain agent workflows for audio.
+image-to-geometry work. The **Tripo Smart UV** recipe generates an inspectable UV
+candidate. Select its take, connect it to **Tripo Apply UV**, and run that step
+before **Tripo Texture** and **Tripo PBR**. Both UV steps use the `model` input
+port and retain the source task and selected operator. ElevenLabs and Suno remain agent workflows for audio.
 
 Nano Banana and Gemini Omni run on Google Vertex AI. Set **Google Cloud project
 (Vertex AI)** in Game Studio settings to a project with the Vertex AI API enabled,
@@ -103,8 +106,9 @@ a confirmed provider task, or stops local waiting without resubmitting it.
 Stopping local waiting does not cancel a paid provider task. Unknown submission
 outcomes require reconciliation before a new request. Collect status before
 releasing a registered checkout; unresolved dispatches keep it reserved.
-Canvas generation captures selected image bytes in `canvas/inputs/<sha256>.<ext>`
-before dispatch. These saved inputs stay outside the asset catalog.
+Canvas generation captures selected image and GLB bytes in `canvas/inputs/<sha256>.<ext>`
+before dispatch. These saved inputs stay outside the asset catalog. Changed GLB bytes
+are imported as a new Tripo source instead of reusing the previous model task.
 Successful outputs stay in `canvas/staging` and are cataloged when collected.
 Image and video outputs attach to their source node as takes even after its
 brief changes; a new take never replaces the node's chosen output. Text results

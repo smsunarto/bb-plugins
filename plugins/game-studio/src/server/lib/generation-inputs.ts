@@ -45,23 +45,44 @@ function snapshotRequest(source: MediaRequest, snapshots: Map<string, string>): 
 export async function captureCanvasInputs(bb: BbPluginApi, game: Game, prepared: Prepared) {
   const source = prepared.request;
   const paths = generationImagePaths(source);
-  if (!paths.length) return prepared;
+  const modelPath = source.kind === "model-edit" ? source.sourcePath : undefined;
+  const allPaths = [...paths, ...(modelPath ? [modelPath] : [])];
+  if (!allPaths.length) return prepared;
   const { inputs } = await bb.hosts
     .experimental_client({ contract: studioHostContract })
     .call(
       "captureCanvasInputs",
-      { rootPath: game.rootPath, paths: [...new Set(paths)] },
+      { rootPath: game.rootPath, paths: [...new Set(allPaths)] },
       { hostId: game.hostId },
     );
   const snapshots = new Map(inputs.map(({ path, snapshot }) => [path, snapshot]));
-  if (paths.some((path) => !snapshots.has(path)))
+  if (allPaths.some((path) => !snapshots.has(path)))
     throw new Error("The host did not capture every generation input. No request was submitted.");
+  let request = snapshotRequest(source, snapshots);
+  const model = inputs.find(({ path }) => path === modelPath);
+  if (request.kind === "model-edit" && model) {
+    const sameModel = request.sourceSha256 === model.sha256;
+    if (request.sourceTaskId && !sameModel && ["apply-uv", "animate"].includes(request.operation))
+      throw new Error(
+        "The selected model bytes changed. Generate and select a new Tripo candidate or rig before continuing.",
+      );
+    request = { ...request, sourcePath: model.snapshot, sourceSha256: model.sha256 };
+    // A locally edited GLB is a new upload, even when it overwrote a previously generated path.
+    if (!sameModel) delete request.sourceTaskId;
+  }
   return {
     ...prepared,
-    request: snapshotRequest(source, snapshots),
+    request,
     target: {
       ...prepared.target,
-      imageRevisions: inputs.map(({ path, sha256 }) => ({ path, sha256 })),
+      ...(paths.length
+        ? {
+            imageRevisions: inputs
+              .filter(({ path }) => paths.includes(path))
+              .map(({ path, sha256 }) => ({ path, sha256 })),
+          }
+        : {}),
+      ...(model ? { modelRevision: { path: model.path, sha256: model.sha256 } } : {}),
     },
   };
 }

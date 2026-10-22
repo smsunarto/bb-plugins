@@ -57,6 +57,20 @@ export const recipes: {
   { id: "fal-video", kind: "video", label: "Fal H3 Max", inputs: frames },
   { id: "model-3d", kind: "model-3d", label: "Tripo P2", inputs: views },
   {
+    id: "tripo-smart-uv",
+    kind: "model-3d",
+    label: "Tripo Smart UV",
+    inputs: [model],
+    direct: true,
+  },
+  {
+    id: "tripo-apply-uv",
+    kind: "model-3d",
+    label: "Tripo Apply UV",
+    inputs: [modelSlot("model", "UV candidate", true)],
+    direct: true,
+  },
+  {
     id: "tripo-texture",
     kind: "model-3d",
     label: "Tripo Texture",

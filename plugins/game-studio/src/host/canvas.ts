@@ -84,6 +84,24 @@ const PART_BYTES = 6 * 1024 * 1024;
 const INPUT_LIMIT_BYTES = 14 * 1024 * 1024;
 const idPattern = /^[a-zA-Z0-9_-]{1,100}$/;
 const recordPattern = /^[a-zA-Z0-9_-]{1,100}\.json$/;
+/** Validate input formats and bound snapshot size before copying on the host. */
+function inputExtension(path: string, file: CanvasFile) {
+  const extension = /\.(png|jpe?g|webp|glb|obj|fbx|stl)$/i.exec(path)?.[1]?.toLowerCase();
+  const isModel = extension !== undefined && ["glb", "obj", "fbx", "stl"].includes(extension);
+  const limit = isModel ? 512 * 1024 * 1024 : INPUT_LIMIT_BYTES;
+  if (
+    !extension ||
+    (!isModel && file.contentEncoding !== "base64") ||
+    file.sizeBytes > limit ||
+    Buffer.byteLength(file.content, file.contentEncoding) > limit
+  )
+    throw new Error(
+      isModel
+        ? "Generation model inputs must be GLB, OBJ, FBX or STL files under 512 MiB."
+        : "Generation image inputs must be PNG, JPEG or WebP files under 14 MiB.",
+    );
+  return extension === "jpeg" ? "jpg" : extension;
+}
 /** BB reads these as binary images; everything else is text when it is valid UTF-8. */
 const imagePattern = /\.(png|jpe?g|gif|webp|avif|bmp|ico|tiff?|heic|heif)$/i;
 
@@ -502,28 +520,20 @@ export class CanvasHost {
     });
   }
 
-  /** Freezes each selected image's bytes as canvas/inputs/<sha>.<ext>, beside the project. */
+  /** Freezes selected image and model bytes as canvas/inputs/<sha>.<ext>, beside the project. */
   async captureInputs(input: { rootPath: string; paths: string[] }) {
     const inputs: { path: string; snapshot: string; sha256: string }[] = [];
     const written = new Set<string>();
     for (const path of new Set(input.paths)) {
       const file = await this.disk.read(input.rootPath, path);
       if (!file) throw new Error(`Path does not exist: ${path}`);
-      const extension = /\.(png|jpe?g|webp)$/i.exec(path)?.[1]?.toLowerCase();
-      if (
-        !extension ||
-        file.contentEncoding !== "base64" ||
-        file.sizeBytes > INPUT_LIMIT_BYTES ||
-        Buffer.byteLength(file.content, "base64") > INPUT_LIMIT_BYTES
-      )
-        throw new Error("Generation image inputs must be PNG, JPEG or WebP files under 14 MiB.");
-      const snapshot = `canvas/inputs/${file.sha256}.${extension === "jpeg" ? "jpg" : extension}`;
+      const snapshot = `canvas/inputs/${file.sha256}.${inputExtension(path, file)}`;
       if (!written.has(snapshot)) {
         const created = await this.disk.write(
           input.rootPath,
           snapshot,
           file.content,
-          "base64",
+          file.contentEncoding,
           null,
         );
         if (created === null) {

@@ -128,7 +128,14 @@ export const agentRequest = z.strictObject({
   outputCount: z.literal(1).default(1),
 });
 /** Tripo's processing steps for an existing model, in pipeline order. */
-export const modelOperations = ["texture", "pbr", "rig", "animate"] as const;
+export const modelOperations = [
+  "smart-uv",
+  "apply-uv",
+  "texture",
+  "pbr",
+  "rig",
+  "animate",
+] as const;
 export const rigTypes = [
   "biped",
   "quadruped",
@@ -156,6 +163,13 @@ export const modelEditRequest = z.strictObject({
    * files, so a source without one is imported first; an animation needs its rig's task.
    */
   sourceTaskId: z.string().min(1).max(200).optional(),
+  /** Hash of the source GLB. A canvas only reuses task lineage while these bytes match. */
+  sourceSha256: z
+    .string()
+    .regex(/^[a-f0-9]{64}$/)
+    .optional(),
+  /** The selected Smart UV candidate's task; sourceTaskId still identifies its original model. */
+  uvCandidateTaskId: z.uuid().optional(),
   /** Texturing references in front, left, back, right order. */
   views: z
     .strictObject({
@@ -221,6 +235,9 @@ export const generationTarget = z.strictObject({
     .array(z.strictObject({ path: mediaPath, sha256: z.string().regex(/^[a-f0-9]{64}$/) }))
     .min(1)
     .max(14)
+    .optional(),
+  modelRevision: z
+    .strictObject({ path: mediaPath, sha256: z.string().regex(/^[a-f0-9]{64}$/) })
     .optional(),
 });
 export const generatedOutput = z.strictObject({
@@ -348,6 +365,10 @@ const policies: Record<
 function normalizeTripo(request: MediaRequest): MediaRequest {
   if (request.kind !== "model-edit") return request;
   const { operation } = request;
+  if (operation === "apply-uv" && (!request.sourceTaskId || !request.uvCandidateTaskId))
+    throw new Error("Apply UV needs a selected candidate from a Tripo Smart UV node.");
+  if (operation !== "apply-uv" && request.uvCandidateTaskId)
+    throw new Error("Only Apply UV accepts a Smart UV candidate task.");
   if (operation === "texture" && !request.prompt && !editViewPaths(request).length)
     throw new Error("Texturing needs a texture prompt or at least one reference view.");
   if (operation === "rig" && !request.rigType)

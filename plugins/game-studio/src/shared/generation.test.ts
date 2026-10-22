@@ -106,6 +106,11 @@ test("Tripo steps reject requests the provider cannot run", () => {
   expect(edit({ operation: "rig" })).toThrow("rig type");
   expect(edit({ operation: "animate", animation: "preset:idle" })).toThrow("rigged by a Tripo Rig");
   expect(edit({ operation: "pbr" })).not.toThrow();
+  expect(edit({ operation: "smart-uv" })).not.toThrow();
+  expect(edit({ operation: "apply-uv" })).toThrow("selected candidate");
+  expect(
+    edit({ operation: "texture", uvCandidateTaskId: "11111111-1111-4111-8111-111111111111" }),
+  ).toThrow("Only Apply UV");
   expect(() =>
     mediaRequest.parse({
       kind: "model-edit",

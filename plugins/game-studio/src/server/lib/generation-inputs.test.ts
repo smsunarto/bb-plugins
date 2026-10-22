@@ -226,3 +226,61 @@ for (const invalid of [
     expect(f.successfulWrites).toEqual([]);
   });
 }
+
+test("model snapshots preserve exact bytes and reuse Tripo identity only for matching geometry", async () => {
+  const f = fake();
+  f.seed("model.glb", "A");
+  const input = prepared({
+    kind: "model-edit",
+    operation: "smart-uv",
+    sourcePath: "model.glb",
+    sourceTaskId: "original-p2",
+    sourceSha256: shaA,
+  });
+  const original = await captureCanvasInputs(f.bb, game, input);
+  expect(original.request).toMatchObject({
+    sourcePath: `canvas/inputs/${shaA}.glb`,
+    sourceTaskId: "original-p2",
+    sourceSha256: shaA,
+  });
+  expect(original.target.modelRevision).toEqual({ path: "model.glb", sha256: shaA });
+  f.seed("model.glb", "B");
+  const edited = await captureCanvasInputs(f.bb, game, input);
+  expect(edited.request).toMatchObject({
+    sourcePath: `canvas/inputs/${shaB}.glb`,
+    sourceSha256: shaB,
+  });
+  expect(edited.request).not.toHaveProperty("sourceTaskId");
+  expect(f.files.get(`/games/orbit/canvas/inputs/${shaA}.glb`)?.content).toBe("QQ==");
+  const apply = prepared({
+    kind: "model-edit",
+    operation: "apply-uv",
+    sourcePath: "model.glb",
+    sourceTaskId: "original-p2",
+    sourceSha256: shaA,
+    uvCandidateTaskId: "11111111-1111-4111-8111-111111111111",
+  });
+  await expect(captureCanvasInputs(f.bb, game, apply)).rejects.toThrow("model bytes changed");
+});
+
+for (const extension of ["obj", "fbx", "stl"]) {
+  test(`model snapshots preserve existing Tripo ${extension.toUpperCase()} import support`, async () => {
+    const f = fake();
+    f.seed(`model.${extension}`, "A", { content: "A", contentEncoding: "utf8" });
+    const result = await captureCanvasInputs(
+      f.bb,
+      game,
+      prepared({
+        kind: "model-edit",
+        operation: "smart-uv",
+        sourcePath: `model.${extension}`,
+      }),
+    );
+    expect(result.request).toMatchObject({
+      sourcePath: `canvas/inputs/${shaA}.${extension}`,
+      sourceSha256: shaA,
+    });
+    expect(result.request).not.toHaveProperty("sourceTaskId");
+    expect(f.files.get(`/games/orbit/canvas/inputs/${shaA}.${extension}`)?.content).toBe("A");
+  });
+}

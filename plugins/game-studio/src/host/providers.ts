@@ -70,6 +70,16 @@ const midjourneySubmission = z.object({
   failure: z.array(z.unknown()).length(0),
 });
 const tripoSubmission = z.object({ task_id: z.uuid() });
+const uvCandidate = z.object({
+  task_id: z.uuid(),
+  type: z.literal("studio_uv_candidate"),
+  status: z.literal("success"),
+  studio: z.object({ project_id: z.string().min(1), operator_id: z.string().min(1) }),
+});
+const uvContext = z.object({
+  project_id: z.string().min(1),
+  candidates: z.array(z.object({ operator_id: z.string().min(1) })),
+});
 function payload(result: CommandResult): unknown {
   try {
     return JSON.parse(result.stdout);
@@ -199,15 +209,52 @@ async function sourceTask(context: ProviderContext, request: ModelEditRequest) {
     "--no-open",
   ]);
   const parsed = tripoSubmission.safeParse(payload(result));
-  if (result.code !== 0 || !parsed.success)
+  if (result.code !== 0 || !parsed.success) {
+    const rejected = tripoRejection(result);
     throw new ProviderFailure(
-      `Tripo could not import the source model. ${tripoRejection(result) ?? "Nothing was processed."}`,
+      `Tripo could not import the source model. ${rejected ?? "Import submission is uncertain. Inspect Tripo's unresolved tasks before trying another request."}`,
+      rejected ? "failed" : "uncertain",
+    );
+  }
+  return parsed.data.task_id;
+}
+/** Read the selected candidate's own receipt, never infer an operator from a project or task ID. */
+async function readUvCandidate(context: ProviderContext, taskId: string, submitted = false) {
+  const result = await command(context, "tripo", ["task", "get", taskId]);
+  const parsed = uvCandidate.safeParse(payload(result));
+  if (result.code !== 0 || !parsed.success || parsed.data.task_id !== taskId)
+    throw new ProviderFailure(
+      "Could not read a completed Tripo Smart UV candidate. Resume its saved job before applying it.",
+      submitted ? "uncertain" : "failed",
+      submitted ? taskId : undefined,
+    );
+  return parsed.data;
+}
+async function uvApplyArgs(context: ProviderContext, request: ModelEditRequest, input: string) {
+  if (!request.uvCandidateTaskId || !request.sourceTaskId)
+    throw new ProviderFailure(
+      "Apply UV requires a Smart UV candidate and its original model task.",
       "failed",
     );
-  return parsed.data.task_id;
+  const candidate = await readUvCandidate(context, request.uvCandidateTaskId);
+  const result = await command(context, "tripo", ["uv", "context", input]);
+  const parsed = uvContext.safeParse(payload(result));
+  if (
+    result.code !== 0 ||
+    !parsed.success ||
+    parsed.data.project_id !== candidate.studio.project_id ||
+    !parsed.data.candidates.some(({ operator_id }) => operator_id === candidate.studio.operator_id)
+  )
+    throw new ProviderFailure(
+      "The selected Smart UV candidate is not available for this source model's current version. Nothing was applied.",
+      "failed",
+    );
+  return ["uv", "apply", input, candidate.studio.operator_id];
 }
 /** The CLI arguments for one processing step, after its input task. */
 function editArgs(context: ProviderContext, request: ModelEditRequest): string[] {
+  if (request.operation === "smart-uv") return ["uv", "generate"];
+  if (request.operation === "apply-uv") throw new Error("Apply UV requires candidate validation.");
   if (request.operation === "pbr") return ["model", "pbr"];
   // Tripo Studio returns GLB and rejects output-format and in-place options on these steps.
   if (request.operation === "rig") return ["anim", "rig", "--rig-type", request.rigType!];
@@ -286,15 +333,14 @@ const tripo: MediaProvider = {
     const request = context.request;
     if (request.kind === "model-edit") {
       const input = await sourceTask(context, request);
-      const [group, action, ...options] = editArgs(context, request);
-      const result = await command(context, "tripo", [
-        group!,
-        action!,
-        input,
-        ...options,
-        "--no-wait",
-        "--no-open",
-      ]);
+      const args =
+        request.operation === "apply-uv"
+          ? await uvApplyArgs(context, request, input)
+          : (() => {
+              const [group, action, ...options] = editArgs(context, request);
+              return [group!, action!, input, ...options];
+            })();
+      const result = await command(context, "tripo", [...args, "--no-wait", "--no-open"]);
       const rejected = tripoRejection(result);
       if (rejected)
         throw new ProviderFailure(`${rejected} Change the node and run it again.`, "failed");
@@ -304,6 +350,8 @@ const tripo: MediaProvider = {
           "Tripo submission is uncertain. Inspect its unresolved tasks before trying a new request. This request will not be submitted again.",
           "uncertain",
         );
+      if (request.operation === "smart-uv" || request.operation === "apply-uv")
+        await context.recordTask(parsed.data.task_id, { uvSourceTask: input });
       return parsed.data.task_id;
     }
     if (request.kind !== "model-3d")
@@ -355,6 +403,22 @@ const tripo: MediaProvider = {
         "uncertain",
         taskId,
       );
+    if (request.kind === "model-edit" && request.operation === "smart-uv") {
+      const candidate = await readUvCandidate(context, taskId, true);
+      const source = context.providerData?.uvSourceTask ?? request.sourceTaskId;
+      if (!source)
+        throw new ProviderFailure(
+          "The Smart UV candidate's source task is missing. Reconcile the saved receipt before applying it.",
+          "uncertain",
+          taskId,
+        );
+      await context.recordTask(taskId, {
+        ...context.providerData,
+        uvSourceTask: source,
+        uvCandidateOperator: candidate.studio.operator_id,
+        uvProject: candidate.studio.project_id,
+      });
+    }
   },
 };
 

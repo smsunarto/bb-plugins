@@ -11,6 +11,8 @@ test("each node offers the inputs its model reads", () => {
   expect(ports("image", "concept-art")).toEqual(["Text Infinity", "Image 14"]);
   expect(ports("video", "fal-video")).toEqual(["Text Infinity", "Start 1", "End 1"]);
   expect(ports("model-3d")).toEqual(["Front* 1", "Left 1", "Back 1", "Right 1"]);
+  expect(ports("model-3d", "tripo-smart-uv")).toEqual(["Model* 1"]);
+  expect(ports("model-3d", "tripo-apply-uv")).toEqual(["UV candidate* 1"]);
   expect(ports("asset", "music")).toEqual(["Text Infinity"]);
   expect(ports("document")).toEqual([]);
 });

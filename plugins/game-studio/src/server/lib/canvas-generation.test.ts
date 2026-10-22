@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { canvasRequest, judgeRequest, retryRequest, reviewRequest } from "./canvas-generation.ts";
 import { workspaceSchema } from "../../shared/schema.ts";
 import { generationPrompt } from "../../shared/generation-prompt.ts";
-import { generationJob } from "../../shared/generation.ts";
+import { generationJob, mediaRequest } from "../../shared/generation.ts";
 const workspace = () =>
   workspaceSchema.parse({
     game: {
@@ -672,6 +672,7 @@ test("a Tripo step processes the task that made its model, with the node's setti
     operation: "rig",
     sourcePath: "canvas/staging/tripo/shark.glb",
     sourceTaskId: "geometry-task",
+    sourceSha256: "a".repeat(64),
     rigType: "aquatic",
     outputCount: 1,
   });
@@ -691,6 +692,51 @@ test("a Tripo step processes the task that made its model, with the node's setti
   });
   node.data = { recipe: "tripo-pbr", references: [] };
   expect(() => canvasRequest(state, step)).toThrow("Connect a 3D model");
+});
+
+test("Smart UV selection keeps original source lineage and requires explicit application before texturing", () => {
+  const state = workspace();
+  withMesh(state, {
+    type: "model-3d",
+    data: { recipe: "tripo-smart-uv", images: [{ type: "node", nodeId: "model", port: "model" }] },
+  });
+  const node = state.boards[0]!.board.nodes.find(({ id }) => id === "step")!;
+  const run = () => canvasRequest(state, { ...input, nodeId: "step" }).request;
+  expect(run()).toMatchObject({ operation: "smart-uv", sourceTaskId: "geometry-task" });
+  const candidateTask = "11111111-1111-4111-8111-111111111111";
+  const source = state.generationJobs[0]!;
+  source.request = mediaRequest.parse({
+    kind: "model-edit",
+    operation: "smart-uv",
+    sourcePath: "canvas/inputs/cleaned.glb",
+  });
+  source.taskId = candidateTask;
+  source.providerData = { uvSourceTask: "imported-cleaned-model" };
+  node.data.recipe = "tripo-texture";
+  expect(run).toThrow("Tripo Apply UV");
+  node.data.recipe = "tripo-apply-uv";
+  expect(run()).toMatchObject({
+    operation: "apply-uv",
+    sourceTaskId: "imported-cleaned-model",
+    uvCandidateTaskId: candidateTask,
+  });
+  source.request = mediaRequest.parse({
+    kind: "model-edit",
+    operation: "apply-uv",
+    sourcePath: "canvas/inputs/candidate.glb",
+    sourceTaskId: "imported-cleaned-model",
+    uvCandidateTaskId: candidateTask,
+  });
+  source.taskId = "applied-task";
+  node.data.recipe = "tripo-texture";
+  expect(run()).toMatchObject({ operation: "texture", sourceTaskId: "applied-task" });
+  node.data.recipe = "tripo-pbr";
+  expect(run()).toMatchObject({ operation: "pbr", sourceTaskId: "applied-task" });
+  node.data.recipe = "tripo-apply-uv";
+  expect(run).toThrow("completed Tripo Smart UV candidate");
+  state.generationJobs = [];
+  node.data.recipe = "tripo-smart-uv";
+  expect(run()).not.toHaveProperty("sourceTaskId");
 });
 
 test("the agent canvas path reviews and judges outputs instead of regenerating media", () => {
