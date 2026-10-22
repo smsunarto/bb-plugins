@@ -110,7 +110,7 @@ test("a thread the panel did not start has nowhere to report to", async () => {
   const tool = { threadId: "thr_other", projectId: "p", signal: new AbortController().signal };
   await expect(
     reportFindings.execute({ ...ctx, tool }, { summary: "", findings: [] }),
-  ).rejects.toThrow("This thread is not a Code Review review, so there is nowhere to report to.");
+  ).rejects.toThrow("This thread is not linked to a review, so there is nowhere to report to.");
 });
 
 test("a finding outside the schema is rejected before it is stored", () => {

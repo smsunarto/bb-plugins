@@ -1,4 +1,4 @@
-Create a clickable Code Review card for changes ready for the human to inspect.
+Create a clickable Review card for changes ready for the human to inspect.
 For a local change, pass the task's committed GitButler branch name; hostId and
 path disambiguate the same branch on multiple machines. For a GitHub pull request,
 pass its URL or owner/repo#123 and optionally the GitHub account to read it as.

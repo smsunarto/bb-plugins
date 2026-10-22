@@ -7,7 +7,7 @@ import {
 } from "@get-bb/plugin-sdk/testing";
 import plugin from "../server.ts";
 
-test("Code Review supplies the review skill to authors and withholds it from answering children", async () => {
+test("Review supplies the review skill to authors and withholds it from answering children", async () => {
   const f = createFakePluginHost({ pluginId: "code-review", agentSkillIds: ["review"] });
   await plugin(f.bb);
   try {

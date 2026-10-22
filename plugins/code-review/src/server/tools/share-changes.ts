@@ -4,7 +4,7 @@ import { accountSchema, parsePrReference, prKey } from "../../shared/schema.ts";
 import type { CodeReviewContext } from "../lib/context.ts";
 import { loadLocalBranches, rememberBranch } from "../lib/gitbutler.ts";
 
-/** Resolves an agent's branch name into the identity the Code Review panel uses. */
+/** Resolves an agent's branch name into the identity the Review panel uses. */
 export const shareChanges = defineTool({
   parameters: z.strictObject({
     target: z.discriminatedUnion("kind", [

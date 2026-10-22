@@ -220,21 +220,6 @@ const customIcons = {
     name: "PanelLeft",
     nodes: PanelLeftIcon,
   },
-  "last-turn-diff": {
-    name: "Last Turn Diff",
-    nodes: [
-      [
-        "path",
-        {
-          d: "M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6M8 13h8M12 10v6M8 19h8",
-          stroke: "currentColor",
-          strokeWidth: "1.8",
-          strokeLinecap: "round",
-          strokeLinejoin: "round",
-        },
-      ],
-    ],
-  },
   "my-stack": {
     name: "My Stack",
     nodes: [

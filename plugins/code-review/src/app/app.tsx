@@ -21,7 +21,7 @@ export default definePluginApp((app) => {
   app.slots.messageDirective({ id: "code-review", component: ReviewEmbed });
   app.slots.navPanel({
     id: "code-review",
-    title: "Code Review",
+    title: "Review",
     icon: "GitPullRequest",
     path: PANEL_PATH,
     component: CodeReviewPage,

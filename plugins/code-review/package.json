@@ -2,7 +2,7 @@
   "name": "@smsunarto/bb-plugin-code-review",
   "version": "0.1.0",
   "private": true,
-  "description": "Review GitHub pull requests in bb: an inbox, diffs with draft comments, checks, and bb reviews.",
+  "description": "Review GitHub pull requests and committed local branches in bb: diffs, comments, checks, and agent reviews.",
   "license": "MIT",
   "author": "Scott Sunarto",
   "homepage": "https://github.com/smsunarto/bb-plugins/tree/main/plugins/code-review",
@@ -17,8 +17,8 @@
     "bbPluginSdk": ">=0.5.26"
   },
   "bb": {
-    "name": "Code Review",
-    "description": "Browse GitHub pull requests awaiting you, read diffs and checks, draft inline comments, ask a bb agent to review, and submit your review.",
+    "name": "Review",
+    "description": "Review GitHub pull requests and committed local branches, read diffs and checks, draft inline comments, and ask a bb agent to review.",
     "branding": {
       "icon": "./assets/icon.svg",
       "logo": {

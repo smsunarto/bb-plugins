@@ -1,4 +1,4 @@
-Review the unpublished branch {{branch}} in {{repoName}} and report every actionable finding to the Code Review panel.
+Review the unpublished branch {{branch}} in {{repoName}} and report every actionable finding to the Review panel.
 
 - Checkout: {{path}} on {{machine}}
 - Base: `{{base}}`{{parent}}

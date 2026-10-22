@@ -19,7 +19,7 @@ test("a review prompt names the pull request, fetches it, and quotes branch name
   const prompt = reviewPrompt(PR, { reused: false, instructions: "" });
 
   expect(prompt).toStartWith(
-    "Review pull request cli/cli#9000 and report every actionable finding to the Code Review panel.",
+    "Review pull request cli/cli#9000 and report every actionable finding to the Review panel.",
   );
   expect(prompt).toContain("- Head: `scott/it's;ok` at `cc36d32a212a2b8b6611fb73549fe6d04fb6ec38`");
   expect(prompt).toContain(

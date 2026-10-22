@@ -224,7 +224,7 @@ function ReviewCard({
         />
         <div className="min-w-0 flex-1">
           <div className="mb-1 flex items-center justify-between gap-2 text-[11px] text-muted-foreground">
-            <span>Code Review</span>
+            <span>Review</span>
             <span aria-live="polite" className={labels.ready ? "text-success" : ""}>
               {labels.status}
             </span>
@@ -296,7 +296,7 @@ function reviewLabels({
       ? "Loading changes…"
       : `${count} of ${plural(total, "file")} reviewed`;
   let action = "Review changes";
-  if (unavailable) action = "Open Code Review";
+  if (unavailable) action = "Open Review";
   else if (updated) action = "Review latest changes";
   else if (ready) action = "Open reviewed changes";
   return { ready, status, progress, action };

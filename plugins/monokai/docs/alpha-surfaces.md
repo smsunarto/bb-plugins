@@ -104,7 +104,7 @@ bun plugins/monokai/scripts/audit-theme-surfaces.ts \
 ```
 
 This mounts user bubbles, composer/context wrappers, annotation banners, embed
-headers, Last turn headings, and inline code on four parent grounds. It asserts
-28 alpha combinations, transparent layout children, and the opaque sticky Git
+headers and inline code on four parent grounds. It asserts
+24 alpha combinations, transparent layout children, and the opaque sticky Git
 header. These fixtures exercise the shipped selectors. They do not replace
 checking real conversation and diff rendering after BB upgrades.

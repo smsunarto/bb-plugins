@@ -22,7 +22,7 @@ function evaluate(source: string) {
 }
 browser("open", new URL("/settings/appearance", appUrl).href);
 browser("wait", 'button[aria-label="Palette"]');
-let report: unknown;
+let report: { surfaces: unknown[]; sticky: string } | undefined;
 try {
   report = evaluate(`(() => {
     const root = document.createElement('section'); root.id = 'monokai-surface-audit';
@@ -35,7 +35,6 @@ try {
       ['Context', '<div aria-label="Thread context before sending"><div class="flex items-center gap-0.5 p-1">Context inlay</div></div>', .06],
       ['Annotation', '<div data-agentation-staging-banner>Annotation banner</div>', .06],
       ['Embed header', '<div class="smart-embed-header">Embed header</div>', .06],
-      ['Last turn', '<div class="last-turn-diff-heading">Last turn heading</div>', .06],
       ['Inline code', '<code class="bg-muted/70">inlineCode</code>', .08],
     ];
     const measurements = [];
@@ -75,4 +74,4 @@ try {
     JSON.stringify(report ?? { error: "Audit did not complete" }, null, 2) + "\n",
   );
 }
-console.log("28 surface/parent combinations and opaque sticky header passed.");
+console.log(`${report!.surfaces.length} surface/parent combinations and opaque sticky header passed.`);

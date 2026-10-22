@@ -126,7 +126,7 @@ test("only a review thread gets the findings tool, and its report reaches the pa
   ]);
   expect(await tools({})).toEqual(["code_review_share_changes"]);
   expect(harness.inspection.registrations.agentTools[0]?.description).toStartWith(
-    "Report the findings of a Code Review review, of a pull request or an unpublished branch",
+    "Report findings from a pull request or an unpublished branch",
   );
 
   await createStore(bb.storage.kv).addLink("cli/cli#9000", {

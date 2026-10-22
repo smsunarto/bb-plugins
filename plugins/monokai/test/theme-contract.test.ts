@@ -99,7 +99,7 @@ describe("bb Monokai contract audit", () => {
       ".dark [data-monokai-diff-shell] {\n  background-color: var(--agent-surface-background);",
     );
     expect(theme).toContain(
-      ".dark .smart-embed-header,\n.dark .last-turn-diff-heading {\n  background-color: var(--agent-surface-background);",
+      ".dark .smart-embed-header {\n  background-color: var(--agent-surface-background);",
     );
     expect(theme).toContain(".font-mono {\n  font-family: var(--font-sans);");
     expect(theme).toContain(".dark .smart-embed-path,");

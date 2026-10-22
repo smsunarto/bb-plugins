@@ -1,4 +1,4 @@
-Review pull request {{owner}}/{{repo}}#{{number}} and report every actionable finding to the Code Review panel.
+Review pull request {{owner}}/{{repo}}#{{number}} and report every actionable finding to the Review panel.
 
 - Title: {{title}}
 - URL: {{url}}

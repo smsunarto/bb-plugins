@@ -39,7 +39,7 @@ export const reportFindings = defineTool({
   async execute(ctx: ToolContext<CodeReviewContext>, { summary, findings }) {
     const linked = await ctx.store.linkForThread(ctx.tool.threadId);
     if (!linked || linked.link.kind !== "review") {
-      throw new Error("This thread is not a Code Review review, so there is nowhere to report to.");
+      throw new Error("This thread is not linked to a review, so there is nowhere to report to.");
     }
     await ctx.store.setRun({
       threadId: ctx.tool.threadId,

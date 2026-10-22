@@ -53,7 +53,7 @@ async function page(subPath: string, rpc: Handlers = baseRpc) {
 /** The Inbox tab in the page's right panel, reading the same URL as the page. */
 async function inboxTab(subPath: string, rpc: Handlers = baseRpc) {
   const tab = (await registration()).fixedTabs?.[0];
-  if (!tab) throw new Error("Code Review declares no Inbox tab");
+  if (!tab) throw new Error("Review declares no Inbox tab");
   return renderSlot(tab, { subPath }, { rpc: rpc as never });
 }
 
@@ -75,10 +75,10 @@ function selectTab(tab: HTMLElement) {
   fireEvent.mouseDown(tab, { button: 0 });
 }
 
-test("registers one Code Review page in the sidebar", async () => {
+test("registers one Review page in the sidebar", async () => {
   const panel = await registration();
   expect(panel.id).toBe("code-review");
-  expect(panel.title).toBe("Code Review");
+  expect(panel.title).toBe("Review");
   expect(panel.path).toBe("code-review");
   expect(panel.icon).toBe("GitPullRequest");
   expect(panel.fixedTabs?.map(({ panelId, id, title }) => ({ panelId, id, title }))).toEqual([

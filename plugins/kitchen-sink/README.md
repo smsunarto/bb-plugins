@@ -42,8 +42,8 @@ Smart Embeds render project evidence inside assistant messages through BB’s ho
 
 Citations use the message thread's current workspace and refresh when it changes. They do not represent historical snapshots. Add `workspace="bb-plugins"` to cite or diff a different workspace — a project name or id, an `env_` id, or a `thr_` id. When a citation path is missing from the thread's workspace, known project checkouts are probed: the containing thread's project wins outright, a single foreign hit resolves, and several hits fail closed with the candidate names. Turn diffs and patches never leave their thread. Unity object IDs retain their precision, local references resolve names, and prefab overrides show target/property paths. Malformed or unsupported assets fall back to YAML. This is a serialized property inspector, not a rendered 3D preview.
 
-- Agents are instructed never to embed diffs of the current turn's own changes. Last Turn already renders those below the final response. `smart-diff` is reserved for answering a user's question that cites an existing commit (`source="commit"` with a full SHA); `smart-patch` covers unapplied proposals.
-- `::smart-diff{path="src/example.ts"}` reads the containing message’s recorded turn patch. Use it only when that exact turn has a recorded patch containing the file. File edits, commits, and the Last Turn inspector do not establish that a recording exists.
+- Agents hand off committed work with the Review plugin's `code_review_share_changes` tool when available. Relevant file diffs use `smart-diff` with `source="commit"` and a verified full SHA; `smart-patch` covers unapplied proposals. Uncommitted edits are not displayed automatically.
+- `::smart-diff{path="src/example.ts"}` reads the containing message’s recorded turn patch. Use it only when that exact turn has a recorded patch containing the file. File edits and commits do not establish that a recording exists.
 - `::smart-diff{path="src/example.ts" source="commit" sha="FULL_40_CHARACTER_SHA"}` selects one exact commit, including a shipped commit still available in the repository.
 - `::smart-diff{path="src/example.ts" source="workspace"}` captures branch plus uncommitted changes at first display. This is the previous workspace behavior, now explicit because it cannot identify an old message’s changes after shipping.
 - `::smart-patch{file="proposal.patch"}` reads a proposal from thread storage. It can also preserve a scoped change snapshot. All files render separately. Optional `path` selects the new or previous name. Select one file before using `start`/`end` ranges.
@@ -58,7 +58,7 @@ Missing recorded turn patches, missing commits, truncated input, ambiguous repea
 
 `@pierre/diffs` supplies `getSingularPatch` and patch boundary constants for parsing file identity and renames. It does not recover Git history. BB’s public `threads.events.list` supplies recorded turn patches, `environments.diff` supplies `commit` and `all` targets, and `threads.storageLocation` plus root-confined `files.read` supplies proposals. `environments.diffFile` can load old/new commit contents, but is unnecessary for patch-only evidence and is not used to guess historical context. The app uses `experimental_Diff`, preserving BB’s theme and diff-renderer routing.
 
-Recorded changes still appear automatically in Last Turn, including the Unity before/after inspector. Smart Code continues to show current Unity values. Clicking a citation filename opens the workspace file.
+Review cards link to committed branch or pull request changes. Smart Code shows current Unity values. Clicking a citation filename opens the workspace file.
 
 ### Before/after images
 

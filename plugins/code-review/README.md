@@ -1,11 +1,11 @@
-# Code Review
+# Review
 
-Review GitHub pull requests without leaving bb: an inbox of what waits on
+Review GitHub pull requests and committed local branches without leaving bb: an inbox of what waits on
 you, each pull request's description, diff, and checks, draft comments on
 any line, a one-click bb review, and **Submit review** to post it all.
 
 It is a bb take on [Codex Code Review](https://learn.chatgpt.com/docs/code-review),
-for GitHub only. Open **Code Review** in the sidebar.
+with local branch reviews alongside pull requests. Open **Review** in the sidebar.
 
 ## Nothing posts until you submit
 
@@ -158,4 +158,4 @@ The CLI root is `review`; existing `code_review_*` agent tools retain their name
 
 `bb review prompt --request <text>` prints the shared reviewer brief, including the playbook pointer, followed by your request. Pass multiline requests as one quoted argument and redirect stdout to a file for `bb thread spawn --prompt-file`. The command only formats the prompt; it launches no threads.
 
-The `review` skill is bundled here alongside the prompt command and playbooks. It owns the explicit Claude/Codex launch recipe, unique review titles, result handling, and child cleanup. Dev Mode only points authors to this skill at engineering handoff.
+The `review` skill is bundled here alongside the prompt command and playbooks. It owns the explicit Claude/Codex launch recipe, unique review titles, result handling, and child cleanup. The shared dotfiles instructions point authors to this skill at engineering handoff.

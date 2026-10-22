@@ -1157,8 +1157,7 @@ diffs-container {
  * has no dedicated data attribute in BB 0.44, so app/diff-header.ts tags it,
  * including collapsed cards, within the secondary panel. Smart embeds expose
  * their own header class. Bodies keep the content ground. */
-.dark .smart-embed-header,
-.dark .last-turn-diff-heading {
+.dark .smart-embed-header {
   background-color: var(--agent-surface-background);
 }
 

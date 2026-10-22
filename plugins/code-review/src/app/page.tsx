@@ -27,7 +27,7 @@ const GH_INSTALL_URL = "https://cli.github.com";
 const STATUS_QUERY = { staleTime: 5 * 60_000 } as const;
 
 /**
- * The Code Review page. The URL is the state: `subPath` is empty when no pull
+ * The Review page. The URL is the state: `subPath` is empty when no pull
  * request is open, or names a pull request or an unpublished branch, and its
  * tab. The inbox lives in the page's Inbox tab, which reads the same URL.
  */
@@ -60,7 +60,7 @@ function Page({ subPath }: { subPath: string }) {
         {status.isError ? (
           <Notice
             tone="error"
-            title="Code Review could not start"
+            title="Review could not start"
             action={<RetryButton onRetry={() => void status.refetch()} />}
           >
             {errorText(status.error)}
@@ -203,7 +203,7 @@ const UNAVAILABLE: Record<
     title: "Install the GitHub CLI",
     detail: (
       <>
-        Code Review reads GitHub through <Command>gh</Command> on the machine running bb, and it is
+        Review reads GitHub through <Command>gh</Command> on the machine running bb, and it is
         not installed there. Install it, sign in with <Command>gh auth login</Command>, then try
         again.
       </>
@@ -214,7 +214,7 @@ const UNAVAILABLE: Record<
     title: "Sign in to GitHub",
     detail: (
       <>
-        Code Review uses the account <Command>gh</Command> is signed in to. Run{" "}
+        Review uses the account <Command>gh</Command> is signed in to. Run{" "}
         <Command>gh auth login</Command> on the machine running bb, then try again.
       </>
     ),
