@@ -13,3 +13,22 @@
   --diffs-font-size: 11px;
   --diffs-line-height: 20px;
 }
+
+/* Trees renders in a shadow root; bridge the existing bb palette through its public tokens. */
+.cr-file-explorer {
+  --trees-bg-override: var(--background);
+  --trees-bg-muted-override: var(--secondary);
+  --trees-fg-override: var(--foreground);
+  --trees-fg-muted-override: var(--muted-foreground);
+  --trees-border-color-override: var(--border);
+  --trees-selected-bg-override: var(--surface-selected);
+  --trees-selected-fg-override: var(--foreground);
+  --trees-focus-ring-color-override: var(--ring);
+  --trees-git-added-color-override: var(--diff-added);
+  --trees-git-deleted-color-override: var(--diff-removed);
+  --trees-git-modified-color-override: var(--warning-text);
+  --trees-git-renamed-color-override: var(--primary);
+  --trees-font-family-override: var(--font-sans, system-ui, sans-serif);
+  --trees-font-size-override: 12px;
+  --trees-padding-inline-override: 8px;
+}

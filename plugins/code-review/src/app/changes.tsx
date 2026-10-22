@@ -8,7 +8,7 @@ import {
   useState,
   useSyncExternalStore,
 } from "react";
-import type { KeyboardEvent, ReactNode, RefObject } from "react";
+import type { ReactNode, RefObject } from "react";
 import { experimental_Icon as Icon } from "@get-bb/plugin-sdk/app";
 import { pluginQueryClient } from "@bb-kit/core/rpc/query";
 import type { UseQueryResult } from "@tanstack/react-query";
@@ -28,13 +28,14 @@ import type { ReviewTarget } from "./bb-review.tsx";
 import { Button } from "./components/ui/button.tsx";
 import { CONTROL_HOVER_TRANSITION } from "./components/ui/motion.ts";
 import { Input } from "./components/ui/input.tsx";
+import { FileExplorer } from "./file-explorer.tsx";
 import { DiffFile, startsFolded } from "./diff-file.tsx";
 import type { DiffStyle } from "./diff-file.tsx";
 import { REVEAL_EVENT } from "./finding.tsx";
 import type { RevealDetail } from "./finding.tsx";
 import { plural } from "./format.ts";
 import { useStoredChoice } from "./hooks/useStoredChoice.ts";
-import { cn, keepInView } from "./lib/utils.ts";
+import { cn } from "./lib/utils.ts";
 import { Loading, Notice, RetryButton, errorText } from "./notice.tsx";
 import { ReviewThreadView } from "./review-thread.tsx";
 import { rpc } from "./rpc.ts";
@@ -628,10 +629,9 @@ function ChangesView({
           files={shown}
           total={all.length}
           current={current}
-          threadsByPath={threadsByPath}
           onSelect={reveal}
-          onViewedChange={onViewedChange}
-          reviewLabel={reviewLabel}
+          reveal={fileFocus}
+          threadsByPath={threadsByPath}
         />
       }
       toolbar={
@@ -791,20 +791,26 @@ function FilePanel({
   onFilter,
   files,
   total,
-  ...rail
+  current,
+  onSelect,
+  reveal,
+  threadsByPath,
 }: {
+  reveal: FileFocus | null;
+  threadsByPath: ReadonlyMap<string, readonly ReviewThread[]>;
   open: boolean;
   pending: boolean;
   filter: string;
   onFilter: (filter: string) => void;
   files: readonly ChangedFile[];
   total: number;
-  reviewLabel: string;
   current: string | null;
-  threadsByPath: ReadonlyMap<string, readonly ReviewThread[]>;
   onSelect: (path: string, line: null) => void;
-  onViewedChange: ((file: ChangedFile, viewed: boolean) => void) | null;
 }) {
+  const threadCounts = useMemo(
+    () => new Map([...threadsByPath].map(([path, threads]) => [path, threads.length])),
+    [threadsByPath],
+  );
   return (
     <nav
       aria-label="Changed files"
@@ -832,7 +838,14 @@ function FilePanel({
       {pending ? (
         <Loading label="Loading files…" rows={8} className="p-3" />
       ) : (
-        <FileRail files={files} {...rail} />
+        <FileExplorer
+          files={files}
+          current={current}
+          onSelect={onSelect}
+          filtering={filter.trim().length > 0}
+          reveal={reveal}
+          threadsByPath={threadCounts}
+        />
       )}
     </nav>
   );
@@ -981,123 +994,5 @@ function OrphanThreads({
         </section>
       ))}
     </section>
-  );
-}
-
-// ── File list ────────────────────────────────────────────────────────────
-
-/** Up and Down walk the rows, so a long list is not a hundred Tab presses. */
-function walkRows(event: KeyboardEvent<HTMLButtonElement>): void {
-  if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
-  const list = event.currentTarget.closest("ul");
-  if (!list) return;
-  const rows = [...list.querySelectorAll<HTMLElement>("[data-rail-path]")];
-  const index = rows.indexOf(event.currentTarget);
-  event.preventDefault();
-  rows[
-    Math.max(0, Math.min(rows.length - 1, index + (event.key === "ArrowDown" ? 1 : -1)))
-  ]?.focus();
-}
-
-/**
- * Every shown file: its Viewed box (on a pull request), name, comment count,
- * and line counts. A row scrolls the diff to its file, and the current
- * file's row stays in view.
- */
-function FileRail({
-  files,
-  reviewLabel,
-  current,
-  threadsByPath,
-  onSelect,
-  onViewedChange,
-}: {
-  files: readonly ChangedFile[];
-  reviewLabel: string;
-  current: string | null;
-  threadsByPath: ReadonlyMap<string, readonly ReviewThread[]>;
-  onSelect: (path: string, line: null) => void;
-  onViewedChange: ((file: ChangedFile, viewed: boolean) => void) | null;
-}) {
-  const list = useRef<HTMLUListElement>(null);
-  useEffect(() => {
-    const container = list.current;
-    if (!container || !current) return;
-    for (const row of container.querySelectorAll<HTMLElement>("[data-rail-path]")) {
-      if (row.dataset.railPath === current) keepInView(container, row);
-    }
-  }, [current]);
-  return (
-    <ul ref={list} className="flex min-h-0 flex-1 flex-col gap-px overflow-y-auto p-1.5">
-      {files.map((file) => {
-        const slash = file.path.lastIndexOf("/");
-        const name = file.path.slice(slash + 1);
-        const folder = slash === -1 ? "" : file.path.slice(0, slash);
-        const threads = threadsByPath.get(file.path)?.length ?? 0;
-        const viewed = file.viewed === "viewed";
-        const isCurrent = file.path === current;
-        return (
-          <li
-            key={file.path}
-            className={cn(
-              "flex h-7 shrink-0 items-center gap-1.5 rounded-md px-1.5 hover:bg-state-hover",
-              isCurrent && "bg-surface-selected hover:bg-surface-selected",
-            )}
-          >
-            {onViewedChange ? (
-              <input
-                type="checkbox"
-                className="size-3.5 shrink-0 cursor-pointer accent-primary"
-                checked={viewed}
-                aria-label={`${reviewLabel} ${file.path}`}
-                onChange={(event) => onViewedChange(file, event.target.checked)}
-              />
-            ) : null}
-            <button
-              type="button"
-              data-rail-path={file.path}
-              className="flex min-w-0 flex-1 cursor-pointer items-baseline gap-1.5 text-left focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring rounded-sm"
-              title={file.path}
-              aria-current={isCurrent ? "location" : undefined}
-              onClick={() => onSelect(file.path, null)}
-              onKeyDown={walkRows}
-            >
-              <span
-                className={cn(
-                  "max-w-full shrink-0 truncate font-medium",
-                  viewed && "text-muted-foreground",
-                )}
-                translate="no"
-              >
-                {name}
-              </span>
-              {folder ? (
-                <span
-                  dir="rtl"
-                  className="min-w-0 truncate text-[11px] text-subtle-foreground"
-                  translate="no"
-                >
-                  {`\u200e${folder}`}
-                </span>
-              ) : null}
-            </button>
-            {threads > 0 ? (
-              <span
-                className="inline-flex shrink-0 items-center gap-0.5 text-[11px] text-muted-foreground tabular-nums"
-                title={plural(threads, "comment thread")}
-              >
-                <Icon name="MessageSquare" className="size-3" aria-hidden />
-                {threads}
-                <span className="sr-only"> comment threads</span>
-              </span>
-            ) : null}
-            <span className="shrink-0 text-[11px] tabular-nums">
-              <span className="text-diff-added">+{file.additions}</span>{" "}
-              <span className="text-diff-removed">−{file.deletions}</span>
-            </span>
-          </li>
-        );
-      })}
-    </ul>
   );
 }

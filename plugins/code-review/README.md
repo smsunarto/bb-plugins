@@ -40,7 +40,8 @@ request yet, from every connected machine, when the
 [GitButler plugin](../gitbutler) is on. A branch opens to its commits and its
 diff, and **Review with bb** reviews it like a pull request.
 
-Tick **Reviewed** on each local file's diff or in the file list. Reviewed
+Tick **Reviewed** on each local file's diff. Pierre's file explorer groups
+changed files by folder and opens their diffs. Reviewed
 diffs collapse, and checking every file shows **Ready**. Untick a file to
 reopen it. These marks are saved in bb for that branch's exact base and head
 commits; a new commit or rebase starts a fresh review. bb keeps marks for
