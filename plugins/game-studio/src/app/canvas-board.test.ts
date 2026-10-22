@@ -145,3 +145,20 @@ it("keeps the draft's own edit to a field the disk also changed", () => {
     assetId: "art",
   });
 });
+
+it("removes a linked prompt source when its node is deleted", () => {
+  const linked = structuredClone(board);
+  linked.nodes[1]!.data.promptSource = { type: "node", nodeId: "note" };
+  const saved = boardSnapshot(linked, [linked.nodes[1]!], [], linked.editorLayout.viewport);
+  expect(saved.nodes[0]!.data).not.toHaveProperty("promptSource");
+  expect(saved.nodes[0]!.data.images).toEqual([{ type: "library", assetId: "reference-art" }]);
+});
+
+it("also removes prompt sources to draft nodes deleted before the first save", () => {
+  const draft = structuredClone(board.nodes[1]!);
+  draft.data.promptSource = { type: "node", nodeId: "never-saved" };
+  draft.data.images = [{ type: "node", nodeId: "never-saved" }];
+  const saved = boardSnapshot(board, [draft], [], board.editorLayout.viewport);
+  expect(saved.nodes[0]!.data).not.toHaveProperty("promptSource");
+  expect(saved.nodes[0]!.data.images).toEqual([]);
+});

@@ -692,3 +692,37 @@ test("a Tripo step processes the task that made its model, with the node's setti
   node.data = { recipe: "tripo-pbr", references: [] };
   expect(() => canvasRequest(state, step)).toThrow("Connect a 3D model");
 });
+
+test("the agent canvas path reviews and judges outputs instead of regenerating media", () => {
+  const state = workspace();
+  state.assets.push(
+    { id: "take-a", name: "A", path: "canvas/staging/a.png", type: "image" },
+    { id: "take-b", name: "B", path: "canvas/staging/b.png", type: "image" },
+  );
+  const node = state.boards[0]!.board.nodes.find(({ id }) => id === "image")!;
+  node.data = {
+    ...node.data,
+    assetId: "take-a",
+    takes: [
+      { assetId: "take-a", jobId: "run-a" },
+      { assetId: "take-b", jobId: "run-b" },
+    ],
+  };
+  expect(canvasRequest(state, { ...input, reviewAssetId: "take-a" }).request).toMatchObject({
+    kind: "text",
+    reviewOf: ["take-a"],
+  });
+  expect(canvasRequest(state, { ...input, judge: true }).request).toMatchObject({
+    kind: "text",
+    judgeOf: ["take-a", "take-b"],
+  });
+  expect(() => canvasRequest(state, { ...input, judge: true, reviewAssetId: "take-a" })).toThrow(
+    "Choose one action",
+  );
+  expect(() => canvasRequest(state, { ...input, brief: true, judge: true })).toThrow(
+    "Choose one action",
+  );
+  expect(() =>
+    canvasRequest(state, { ...input, revision: "stale", reviewAssetId: "take-a" }),
+  ).toThrow("board changed");
+});
