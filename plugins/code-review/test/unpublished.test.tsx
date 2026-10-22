@@ -10,6 +10,11 @@ const { act, fireEvent, waitFor, within } = await import("@testing-library/react
 const { loadPluginApp, renderSlot } = await import("@get-bb/plugin-sdk/testing/app");
 const { REVEAL_EVENT } = await import("../src/app/finding.tsx");
 
+function diffBody(card: HTMLElement): HTMLElement {
+  const id = within(card).getByRole("checkbox").getAttribute("aria-controls")!;
+  return document.getElementById(id)!;
+}
+
 beforeEach(() => {
   pluginQueryClient.clear();
   window.localStorage.clear();
@@ -172,7 +177,7 @@ test("a branch's Changes show its diff and allow reviewing each file", async () 
   expect(await slot.findByText("0 of 1 file reviewed")).toBeTruthy();
   expect(within(card).getByRole("checkbox", { name: "Reviewed src/limit.ts" })).toBeTruthy();
   expect(within(card).queryByRole("link", { name: /on GitHub/ })).toBeNull();
-  expect(within(card).getByRole("button", { name: "Collapse src/limit.ts" })).toBeTruthy();
+  expect(diffBody(card).hidden).toBe(false);
   slot.lifecycle.unmount();
 });
 
@@ -246,7 +251,7 @@ test("a cold branch waits for review marks before mounting its reviewed diffs", 
     expect(slot.rpcCalls.some((call) => call.method === "localChanges")).toBe(true);
     finish?.({ paths: ["src/limit.ts"] });
     const card = await slot.findByRole("article", { name: "src/limit.ts" });
-    expect(within(card).getByRole("button", { name: "Expand src/limit.ts" })).toBeTruthy();
+    expect(diffBody(card).hidden).toBe(true);
     await slot.findByText("Ready");
   } finally {
     finish?.({ paths: [] });

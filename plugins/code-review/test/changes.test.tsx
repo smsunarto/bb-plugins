@@ -10,6 +10,11 @@ const { REVEAL_EVENT } = await import("../src/app/finding.tsx");
 const { NewCommentForm } = await import("../src/app/comment-form.tsx");
 const { rpc } = await import("../src/app/rpc.ts");
 
+function diffBody(card: HTMLElement): HTMLElement {
+  const id = within(card).getByRole("checkbox").getAttribute("aria-controls")!;
+  return document.getElementById(id)!;
+}
+
 beforeEach(() => {
   pluginQueryClient.clear();
   window.localStorage.clear();
@@ -263,8 +268,12 @@ test("lists every changed file with its threads inline, and folds the viewed one
       exact: false,
     }),
   ).toBeTruthy();
-  expect(slot.getByRole("button", { name: "Expand docs/old.md" })).toBeTruthy();
-  expect(slot.getByRole("button", { name: "Collapse src/login.ts" })).toBeTruthy();
+  expect(diffBody(slot.getByRole("article", { name: "docs/old.md" })).hidden).toBe(true);
+  expect(diffBody(slot.getByRole("article", { name: "src/login.ts" })).hidden).toBe(false);
+  expect(slot.queryByRole("button", { name: "Collapse src/login.ts" })).toBeNull();
+  expect(
+    within(slot.getByRole("navigation", { name: "Changed files" })).queryByRole("checkbox"),
+  ).toBeNull();
   slot.lifecycle.unmount();
 });
 
@@ -314,7 +323,7 @@ test("a generated file sorts after the rest and starts folded, and opens on requ
   expect(within(card).getByText("Generated file, 5 changed lines, folded.")).toBeTruthy();
 
   fireEvent.click(within(card).getByRole("button", { name: "Show diff" }));
-  expect(await within(card).findByRole("button", { name: "Collapse bun.lock" })).toBeTruthy();
+  await waitFor(() => expect(diffBody(card).hidden).toBe(false));
   slot.lifecycle.unmount();
 });
 
@@ -333,7 +342,7 @@ test("marking a file viewed tells GitHub and folds its card", async () => {
       input: { account: "scott", pullRequestId: "PR_kwDOA42", path: "src/login.ts", viewed: true },
     },
   ]);
-  expect(slot.getByRole("button", { name: "Expand src/login.ts" })).toBeTruthy();
+  expect(diffBody(slot.getByRole("article", { name: "src/login.ts" })).hidden).toBe(true);
   slot.lifecycle.unmount();
 });
 
@@ -507,12 +516,12 @@ test("folding a card from deep in its diff brings its header back to the top", a
   area.scrollTop = 3_000;
 
   fireEvent.click(within(login).getByRole("checkbox", { name: "Viewed src/login.ts" }));
-  expect(slot.getByRole("button", { name: "Expand src/login.ts" })).toBeTruthy();
+  expect(diffBody(slot.getByRole("article", { name: "src/login.ts" })).hidden).toBe(true);
   // Its top lands 8px under the area's top: 3000 - 600 - 8.
   expect(area.scrollTop).toBe(2_392);
 
   // A card below the reader folds where it is.
-  fireEvent.click(slot.getByRole("button", { name: "Collapse assets/logo.png" }));
+  fireEvent.click(within(logo).getByRole("checkbox", { name: "Viewed assets/logo.png" }));
   expect(area.scrollTop).toBe(2_392);
   slot.lifecycle.unmount();
 });
@@ -594,7 +603,9 @@ test("a Show in Changes request sent before the tab mounts opens that file", asy
   const slot = render();
 
   // The viewed file starts folded, and the request opens it.
-  expect(await slot.findByRole("button", { name: "Collapse docs/old.md" })).toBeTruthy();
+  await waitFor(() =>
+    expect(diffBody(slot.getByRole("article", { name: "docs/old.md" })).hidden).toBe(false),
+  );
   slot.lifecycle.unmount();
 });
 
@@ -620,7 +631,9 @@ test("a Show in Changes request waits out a slow first load", async () => {
   setSystemTime(new Date(Date.now() + 10_000));
   try {
     load!();
-    expect(await slot.findByRole("button", { name: "Collapse docs/old.md" })).toBeTruthy();
+    await waitFor(() =>
+      expect(diffBody(slot.getByRole("article", { name: "docs/old.md" })).hidden).toBe(false),
+    );
   } finally {
     setSystemTime();
     slot.lifecycle.unmount();
@@ -639,7 +652,7 @@ test("a request no tab took in time is ignored by a later visit", async () => {
   const slot = render();
   try {
     await slot.findByText("1 of 3 files viewed");
-    expect(slot.getByRole("button", { name: "Expand docs/old.md" })).toBeTruthy();
+    expect(diffBody(slot.getByRole("article", { name: "docs/old.md" })).hidden).toBe(true);
   } finally {
     setSystemTime();
     slot.lifecycle.unmount();

@@ -129,7 +129,6 @@ function FileHeader({
   bodyId,
   threadCount,
   githubUrl,
-  onToggle,
   onViewedChange,
   reviewLabel,
 }: {
@@ -138,7 +137,6 @@ function FileHeader({
   bodyId: string;
   threadCount: number;
   githubUrl: string | null;
-  onToggle: () => void;
   /** Null until review marks are available. */
   onViewedChange: ((viewed: boolean) => void) | null;
   reviewLabel: string;
@@ -147,7 +145,7 @@ function FileHeader({
   const shown = file.previousPath ? `${file.previousPath} → ${file.path}` : file.path;
   const viewed = file.viewed === "viewed";
   return (
-    // Sticky inside the tab's scroll area, so the path and its Viewed box stay
+    // Sticky inside the tab's scroll area, so the path and review toggle stay
     // in reach down a long diff.
     <div
       className={cn(
@@ -157,23 +155,38 @@ function FileHeader({
         open && "border-b border-border",
       )}
     >
-      <button
-        type="button"
-        className={ICON_BUTTON}
-        aria-label={`${open ? "Collapse" : "Expand"} ${file.path}`}
-        aria-expanded={open}
-        aria-controls={bodyId}
-        onClick={onToggle}
+      <label
+        className={cn(
+          ICON_BUTTON,
+          "relative has-[:focus-visible]:ring-1 has-[:focus-visible]:ring-ring has-[:disabled]:cursor-not-allowed has-[:disabled]:opacity-50",
+        )}
+        title={
+          onViewedChange
+            ? `${viewed ? "Unmark" : "Mark"} ${file.path} as ${reviewLabel.toLowerCase()}`
+            : "Review progress unavailable"
+        }
       >
+        <input
+          type="checkbox"
+          className="peer size-4 cursor-pointer appearance-none rounded-[3px] border border-muted-foreground/60 bg-background outline-none checked:border-primary checked:bg-primary"
+          checked={viewed}
+          aria-controls={bodyId}
+          aria-describedby={`${bodyId}-visibility`}
+          disabled={!onViewedChange}
+          onChange={(event) => onViewedChange?.(event.target.checked)}
+        />
         <Icon
-          name="ChevronRight"
-          className={cn(
-            "size-3.5 transition-transform duration-150 motion-reduce:transition-none",
-            open && "rotate-90",
-          )}
+          name="Check"
+          className="pointer-events-none absolute size-3 text-primary-foreground opacity-0 peer-checked:opacity-100"
           aria-hidden
         />
-      </button>
+        <span id={`${bodyId}-visibility`} hidden>
+          {open ? "Diff expanded" : "Diff collapsed"}
+        </span>
+        <span className="sr-only">
+          {reviewLabel} {file.path}
+        </span>
+      </label>
       <h3 className="flex min-w-0 flex-1 items-center gap-2">
         {/* `dir=rtl` keeps a long path's file name in view. The LRM stops a
             leading dot from being reordered. */}
@@ -216,35 +229,6 @@ function FileHeader({
           </span>
         </span>
       </span>
-      {/* A bordered pill with its own box, as in Pierre's diff header. Checked,
-          it takes the accent, so the files left to read stand out down the list. */}
-      {onViewedChange ? (
-        <label
-          className={cn(
-            "inline-flex h-6 shrink-0 cursor-pointer items-center gap-1.5 rounded-md border px-1.5 text-xs select-none has-[:focus-visible]:ring-1 has-[:focus-visible]:ring-ring",
-            viewed
-              ? "border-primary/40 bg-primary/10 text-foreground"
-              : "border-border text-muted-foreground hover:bg-state-hover hover:text-foreground",
-            CONTROL_HOVER_TRANSITION,
-          )}
-        >
-          <span className="relative grid size-3.5 shrink-0 place-items-center">
-            <input
-              type="checkbox"
-              className="peer size-3.5 cursor-pointer appearance-none rounded-[3px] border border-muted-foreground/60 bg-background outline-none checked:border-primary checked:bg-primary"
-              checked={viewed}
-              onChange={(event) => onViewedChange(event.target.checked)}
-            />
-            <Icon
-              name="Check"
-              className="pointer-events-none absolute size-2.5 text-primary-foreground opacity-0 peer-checked:opacity-100"
-              aria-hidden
-            />
-          </span>
-          {reviewLabel}
-          <span className="sr-only"> {file.path}</span>
-        </label>
-      ) : null}
       {githubUrl ? (
         <UrlLink
           href={githubUrl}
@@ -734,7 +718,6 @@ export const DiffFile = memo(function DiffFile({
         threadCount={threads.length}
         githubUrl={githubUrl}
         reviewLabel={reviewLabel}
-        onToggle={() => onOpenChange(file.path, !open)}
         onViewedChange={onViewedChange ? (viewed) => onViewedChange(file, viewed) : null}
       />
       {folded ? <FoldedDiffHint file={file} onShow={() => onOpenChange(file.path, true)} /> : null}
