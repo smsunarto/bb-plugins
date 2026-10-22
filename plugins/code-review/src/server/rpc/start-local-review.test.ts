@@ -5,8 +5,8 @@ import { BOTTOM, TOP, UNPUBLISHED, fakeGitButler } from "../../../test/fake-gitb
 import { branchActivity } from "./branch-activity.ts";
 import { startLocalReview } from "./start-local-review.ts";
 
-const RATE_LIMIT = "16ea307183d0";
-const NAV = "f1b4224d3a52";
+const RATE_LIMIT = "f4b6d5b36a16";
+const NAV = "bddb4c3d89da";
 
 const PROJECT = {
   id: "p-api",
@@ -60,7 +60,7 @@ test("reviews the branch in the checkout that holds it, read-only, and links it 
     environment: {
       type: "host",
       hostId: "host-1",
-      workspace: { type: "unmanaged", path: "/home/scott/git/api" },
+      workspace: { type: "unmanaged", path: "/home/example/git/api" },
     },
     reasoningLevel: "high",
     visibility: "visible",
@@ -109,7 +109,7 @@ test("the checkout's ready environment is reused, in its own project", async () 
         projectId: "p-other",
         status: "ready",
         hostId: "host-1",
-        path: "/home/scott/git/api",
+        path: "/home/example/git/api",
       },
     ],
   });
@@ -138,7 +138,7 @@ test("a project whose source is the checkout takes it, whatever its remote", asy
       {
         id: "p-web",
         gitRemoteUrl: null,
-        sources: [{ hostId: "host-2", path: "/Users/scott/web", isDefault: true }],
+        sources: [{ hostId: "host-2", path: "/Users/example/web", isDefault: true }],
       },
     ],
   });
@@ -150,7 +150,7 @@ test("a project whose source is the checkout takes it, whatever its remote", asy
     environment: {
       type: "host",
       hostId: "host-2",
-      workspace: { type: "unmanaged", path: "/Users/scott/web" },
+      workspace: { type: "unmanaged", path: "/Users/example/web" },
     },
   });
 });

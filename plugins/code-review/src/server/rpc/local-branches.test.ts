@@ -14,9 +14,9 @@ test("the branch list is the GitButler plugin's, by id", async () => {
   const read = (await callProcedure(localBranches, ctx, {})) as LocalBranches;
 
   expect(read.available && read.branches.map((branch) => [branch.id, branch.branch])).toEqual([
-    ["16ea307183d0", "scott/rate-limit"],
-    ["79bf8abb8346", "scott/login-copy"],
-    ["f1b4224d3a52", "fix-nav"],
+    ["f4b6d5b36a16", "scott/rate-limit"],
+    ["012abaff5bd7", "scott/login-copy"],
+    ["bddb4c3d89da", "fix-nav"],
   ]);
 });
 

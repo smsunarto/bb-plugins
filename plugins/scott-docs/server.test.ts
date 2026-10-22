@@ -2332,8 +2332,8 @@ describe("Docs fork divergences", () => {
 });
 
 describe("Docs across machines", () => {
-  const personalMac = makeHostResponse({ id: "host_mac", name: "Personal Mac" });
-  const devMac = makeHostResponse({ id: "host_dev", name: "Dev Mac" });
+  const personalMac = makeHostResponse({ id: "host_mac", name: "Local Mac" });
+  const devMac = makeHostResponse({ id: "host_dev", name: "Build Mac" });
 
   it("stores the server's host for a vault added without one", async () => {
     const { harness } = await loadNotebook({});
@@ -2382,14 +2382,14 @@ describe("Docs across machines", () => {
         };
       },
     );
-    // The server moved Personal Mac -> Dev Mac -> here. bb remembers only the
+    // The server moved Local Mac -> Build Mac -> here. bb remembers only the
     // last move, so it cannot tell which Mac saved these vaults.
     harness.sdk.stub("experimental_server.moveStatus", async () => ({
       move: null,
       lastMove: {
         moveId: "move_2",
         fromHostId: "host_dev",
-        fromHostName: "Dev Mac",
+        fromHostName: "Build Mac",
         toHostId: "host_primary",
         toHostName: "Server",
         completedAt: 5_000,
@@ -2415,7 +2415,7 @@ describe("Docs across machines", () => {
       );
     };
 
-    // Dev Mac is away, so any of these folders may also be there.
+    // Build Mac is away, so any of these folders may also be there.
     await expect(bindingPass()).resolves.toEqual({
       personal: "host_primary",
       obsidian: null,
@@ -2432,7 +2432,7 @@ describe("Docs across machines", () => {
       // On both Macs: the user chooses.
       dotfiles: null,
       scratch: null,
-      // Personal Mac did not answer for this folder.
+      // Local Mac did not answer for this folder.
       asleep: null,
       "server-notes": "host_primary",
     });
@@ -2444,7 +2444,7 @@ describe("Docs across machines", () => {
     await expect(harness.callRpc("listNotes", { vaultId: "dotfiles" })).resolves.toMatchObject({
       entries: [],
       error:
-        "Choose the machine that holds /Users/me/dotfiles for the Dotfiles vault (found on Personal Mac, Dev Mac), or run bb docs vault-host dotfiles <host-id>.",
+        "Choose the machine that holds /Users/me/dotfiles for the Dotfiles vault (found on Local Mac, Build Mac), or run bb docs vault-host dotfiles <host-id>.",
     });
     expect(
       harness.experimental_hostRpcCalls.filter((call) => call.method === "listPaths"),
@@ -2579,7 +2579,7 @@ describe("Docs across machines", () => {
     });
     expect(ambiguous.exitCode).toBe(2);
     expect(ambiguous.stderr).toContain(
-      "Pass --workspace-host <id>; /work exists on Server (host_primary), Personal Mac (host_mac)",
+      "Pass --workspace-host <id>; /work exists on Server (host_primary), Local Mac (host_mac)",
     );
     expect(files.has("/work/sync/plan.md")).toBe(false);
 
@@ -2595,7 +2595,7 @@ describe("Docs across machines", () => {
     });
     expect(pulled).toMatchObject({
       exitCode: 0,
-      stdout: "Pulled 1 file(s) into /work/sync on Personal Mac.",
+      stdout: "Pulled 1 file(s) into /work/sync on Local Mac.",
     });
     expect(
       harness.sdk
@@ -2624,7 +2624,7 @@ describe("Docs across machines", () => {
       harness.runCli(["pull", "plan.md", "--into", "sync"], { cwd: "/work" }),
     ).resolves.toMatchObject({
       exitCode: 0,
-      stdout: "Pulled 1 file(s) into /work/sync on Personal Mac.",
+      stdout: "Pulled 1 file(s) into /work/sync on Local Mac.",
     });
     expect(
       harness.sdk

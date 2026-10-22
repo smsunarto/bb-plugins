@@ -13,9 +13,9 @@ async function load(cursorHosts: Set<string>) {
     sdk: {
       hosts: {
         list: async () => [
-          makeHostResponse({ id: "host_cardinal", name: "codex@cardinal", status: "connected" }),
-          makeHostResponse({ id: "host_mac", name: "Personal Mac", status: "connected" }),
-          makeHostResponse({ id: "host_asleep", name: "Dev Mac", status: "disconnected" }),
+          makeHostResponse({ id: "host_linux", name: "linux-builder", status: "connected" }),
+          makeHostResponse({ id: "host_mac", name: "Local Mac", status: "connected" }),
+          makeHostResponse({ id: "host_asleep", name: "Build Mac", status: "disconnected" }),
         ],
       },
       files: {
@@ -46,7 +46,7 @@ test("serves Cursor's sound from the connected host that has it, then from memor
   expect(first.status).toBe(200);
   expect(first.headers.get("content-type")).toBe("audio/mpeg");
   expect(new Uint8Array(await first.arrayBuffer())).toEqual(mp3);
-  expect(readHosts().sort()).toEqual(["host_cardinal", "host_mac"]);
+  expect(readHosts().sort()).toEqual(["host_linux", "host_mac"]);
 
   const second = await harness.fetchHttp("GET", "/completion-sound");
   expect(new Uint8Array(await second.arrayBuffer())).toEqual(mp3);
@@ -62,5 +62,5 @@ test("answers 404 while no connected host has Cursor, and looks again on the nex
   cursorHosts.add("host_mac");
   const later = await harness.fetchHttp("GET", "/completion-sound");
   expect(later.status).toBe(200);
-  expect(readHosts()).toEqual(["host_cardinal", "host_mac", "host_cardinal", "host_mac"]);
+  expect(readHosts()).toEqual(["host_linux", "host_mac", "host_linux", "host_mac"]);
 });

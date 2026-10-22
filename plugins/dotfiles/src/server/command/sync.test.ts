@@ -24,7 +24,7 @@ test("sync throws when the repo is missing", async () => {
     (error: unknown) => {
       assert.ok(error instanceof PluginCliError);
       assert.equal(error.exitCode, 1);
-      assert.equal(error.message, "dotfiles repo not found at /dotfiles on codex@cardinal");
+      assert.equal(error.message, "dotfiles repo not found at /dotfiles on linux-builder");
       return true;
     },
   );
@@ -38,7 +38,7 @@ test("sync without --publish runs the pull-only task", async () => {
   assert.deepEqual(result, {
     exitCode: 0,
     stdout: "pulled",
-    stderr: "host: codex@cardinal · repo: /dotfiles\n",
+    stderr: "host: linux-builder · repo: /dotfiles\n",
   });
   assert.deepEqual(
     ctx.git.run.mock.calls.map(([target, command]) => [target.hostId, command]),
@@ -54,7 +54,7 @@ test("sync --publish publishes instead of pulling", async () => {
   assert.deepEqual(result, {
     exitCode: 1,
     stdout: "push rejected",
-    stderr: "host: codex@cardinal · repo: /dotfiles\n",
+    stderr: "host: linux-builder · repo: /dotfiles\n",
   });
   assert.deepEqual(
     ctx.git.run.mock.calls.map(([target, command]) => [target.hostId, command]),

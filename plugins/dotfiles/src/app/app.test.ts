@@ -12,8 +12,8 @@ const { pluginQueryClient } = await import("@bb-kit/core/rpc/query");
 afterEach(() => pluginQueryClient.clear());
 
 const names: Record<string, string> = {
-  host_server: "codex@cardinal",
-  host_mac: "Personal Mac",
+  host_server: "linux-builder",
+  host_mac: "Local Mac",
 };
 
 /** A server whose panel machine starts as `selected` and moves when the picker stores another. */
@@ -35,7 +35,8 @@ function server(selected: string, connected = true) {
       return {
         state: "ready" as const,
         host,
-        repoPath: hostId === "host_mac" ? "/Users/scott/git/dotfiles" : "/home/codex/git/dotfiles",
+        repoPath:
+          hostId === "host_mac" ? "/Users/example/git/dotfiles" : "/home/codex/git/dotfiles",
         repoExists: true,
         branch: "main",
         groups: [],
@@ -67,9 +68,9 @@ test("the files tab reads the picked machine and names it beside the repo path",
   assert.ok(filesTab, "the files tab is registered");
   const slot = renderSlot(filesTab, { subPath: "" }, { rpc: server("host_mac") });
 
-  await slot.findByText("/Users/scott/git/dotfiles");
+  await slot.findByText("/Users/example/git/dotfiles");
   const picker = slot.getByRole("combobox", { name: "Machine" }) as HTMLSelectElement;
-  assert.equal(picker.selectedOptions[0]?.textContent, "Personal Mac");
+  assert.equal(picker.selectedOptions[0]?.textContent, "Local Mac");
   assert.deepEqual(
     slot.rpcCalls.filter((call) => call.method === "overview").map((call) => call.input),
     [{ hostId: "host_mac" }],
@@ -88,7 +89,7 @@ test("picking another machine stores it and reloads the file list from there", a
     target: { value: "host_mac" },
   });
 
-  await slot.findByText("/Users/scott/git/dotfiles");
+  await slot.findByText("/Users/example/git/dotfiles");
   assert.deepEqual(
     slot.rpcCalls.filter((call) => call.method === "selectHost").map((call) => call.input),
     [{ hostId: "host_mac" }],
@@ -102,7 +103,7 @@ test("an offline machine is named instead of showing an empty file list", async 
   assert.ok(filesTab, "the files tab is registered");
   const slot = renderSlot(filesTab, { subPath: "" }, { rpc: server("host_mac", false) });
 
-  await slot.findByText("Personal Mac is not connected.");
+  await slot.findByText("Local Mac is not connected.");
   slot.unmount();
 });
 

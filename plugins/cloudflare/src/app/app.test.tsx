@@ -24,7 +24,7 @@ const overview: Overview = {
     },
   },
   shares: [],
-  hosts: { items: [{ id: "host_1", name: "Dev Mac", online: true }] },
+  hosts: { items: [{ id: "host_1", name: "Build Mac", online: true }] },
   zones: { items: [{ id: "zone_1", name: "example.com" }] },
   dnsRecords: {
     items: [
@@ -75,7 +75,7 @@ const overview: Overview = {
   apps: { items: [] },
   policies: { items: [] },
 };
-const quickHosts = { items: [{ id: "host_1", name: "Dev Mac", online: true }] };
+const quickHosts = { items: [{ id: "host_1", name: "Build Mac", online: true }] };
 const rpc = {
   overview: async () => overview,
   quickList: async () => ({ hosts: quickHosts, shares: [] }),

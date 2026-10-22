@@ -11,8 +11,8 @@ test("a branch's patches are a range diff on its own machine", async () => {
     sdk: {
       hosts: {
         list: async () => [
-          { id: "laptop", name: "Personal Mac", status: "connected" },
-          { id: "server", name: "cardinal", status: "connected" },
+          { id: "laptop", name: "Local Mac", status: "connected" },
+          { id: "server", name: "builder", status: "connected" },
         ],
       },
       projects: {
@@ -64,7 +64,7 @@ test("a range is two commit ids, so neither can be read as a flag", async () => 
 test("a machine where bb knows no checkout is not asked", async () => {
   const bb = {
     sdk: {
-      hosts: { list: async () => [{ id: "laptop", name: "Personal Mac", status: "connected" }] },
+      hosts: { list: async () => [{ id: "laptop", name: "Local Mac", status: "connected" }] },
       projects: { list: async () => [] },
       environments: { list: async () => [] },
     },

@@ -49,7 +49,7 @@ beforeEach(() => {
     rememberPath: () => {},
     callerHost: async () => IN_PROCESS_HOST_ID,
     boundHosts: () => [MAC, IN_PROCESS_HOST_ID],
-    hostName: async (hostId) => (hostId === MAC ? "Personal Mac" : hostId),
+    hostName: async (hostId) => (hostId === MAC ? "Local Mac" : hostId),
   };
   uninstall = installHostClient(client, resolver);
 });
@@ -70,10 +70,10 @@ describe("a host bb cannot reach", () => {
     expect(disconnected).toMatchObject({
       hostId: MAC,
       message:
-        "Personal Mac is not connected to bb. Whiteboard reads this checkout on Personal Mac. Reconnect it, then retry.",
+        "Local Mac is not connected to bb. Whiteboard reads this checkout on Local Mac. Reconnect it, then retry.",
     });
     const timedOut =
-      "Personal Mac did not answer in time. Whiteboard reads this checkout on Personal Mac. Check that it is awake and connected to bb, then retry.";
+      "Local Mac did not answer in time. Whiteboard reads this checkout on Local Mac. Check that it is awake and connected to bb, then retry.";
     offline.set(MAC, transportError(504, "command_timeout"));
     await expect(
       invokeHost("fs", "exists", [macRoot], { rootPath: macRoot }),
@@ -201,7 +201,7 @@ describe("creating a Whiteboard from a pull request URL across hosts", () => {
       await expect(createFromUrl(local)).rejects.toMatchObject({
         name: "HostUnavailableError",
         message:
-          "Personal Mac is not connected to bb. Whiteboard reads this checkout on Personal Mac. Reconnect it, then retry.",
+          "Local Mac is not connected to bb. Whiteboard reads this checkout on Local Mac. Reconnect it, then retry.",
       });
     } finally {
       await local.store.close();

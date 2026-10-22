@@ -122,8 +122,8 @@ test("the sidebar thread list says whether bb or an installed plugin owns it", (
       .find((line) => line.startsWith("**Plugin source:**"));
   // An agent on another machine learns where the path lives and how its own edit reaches bb.
   assert.equal(
-    installed("codex@cardinal"),
-    "**Plugin source:** installed from `path:/home/codex/git/bb-plugins/plugins/gtd-sidebar`, a directory on the bb server's machine (`codex@cardinal`). bb runs the plugin from that copy. If you work in another checkout or on another machine, the change reaches the running plugin only after it lands in that directory and `bb plugin reload gtd-sidebar` runs.",
+    installed("linux-builder"),
+    "**Plugin source:** installed from `path:/home/codex/git/bb-plugins/plugins/gtd-sidebar`, a directory on the bb server's machine (`linux-builder`). bb runs the plugin from that copy. If you work in another checkout or on another machine, the change reaches the running plugin only after it lands in that directory and `bb plugin reload gtd-sidebar` runs.",
   );
   // Annotations stored before bb recorded the server's host still say whose path it is.
   assert.equal(

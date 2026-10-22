@@ -19,7 +19,7 @@ function fixture(overrides: Partial<QuickDependencies> = {}) {
   const running = new Map<string, string>();
   const calls: string[] = [];
   const hosts = [
-    { id: "mac", name: "Dev Mac", online: true },
+    { id: "mac", name: "Build Mac", online: true },
     { id: "linux", name: "Lab box", online: false },
   ];
   const deps: QuickDependencies = {
@@ -67,7 +67,7 @@ test("create picks the only online host, starts cloudflared and returns the publ
 test("create prefers the calling thread's host and reports an unreachable origin", async () => {
   const { service } = fixture({
     hosts: async () => [
-      { id: "mac", name: "Dev Mac", online: true },
+      { id: "mac", name: "Build Mac", online: true },
       { id: "cloud", name: "Cloud box", online: true },
     ],
     threadHost: async () => "cloud",
@@ -82,7 +82,7 @@ test("create prefers the calling thread's host and reports an unreachable origin
 test("create demands a host when several are online and none is implied", async () => {
   const { service } = fixture({
     hosts: async () => [
-      { id: "mac", name: "Dev Mac", online: true },
+      { id: "mac", name: "Build Mac", online: true },
       { id: "cloud", name: "Cloud box", online: true },
     ],
   });
@@ -146,7 +146,7 @@ const other = "0b8f3c2d-5e6a-4f7b-8c9d-1e2f3a4b5c6d";
 test("pruning a removed machine forgets only its shares, without calling it", async () => {
   const { service, calls, records } = fixture({
     hosts: async () => [
-      { id: "mac", name: "Dev Mac", online: true },
+      { id: "mac", name: "Build Mac", online: true },
       { id: "cloud", name: "Cloud box", online: true },
     ],
   });

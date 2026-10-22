@@ -1686,8 +1686,8 @@ describe("bb tasks CLI", () => {
       sdk: {
         hosts: {
           list: async () => [
-            { id: "host_mac", name: "Personal Mac" },
-            { id: "host_server", name: "codex@cardinal" },
+            { id: "host_mac", name: "Local Mac" },
+            { id: "host_server", name: "linux-builder" },
           ],
         },
         threads: {
@@ -1720,7 +1720,7 @@ describe("bb tasks CLI", () => {
             "--file",
             "./shot.png",
             "--machine",
-            "Personal Mac",
+            "Local Mac",
             "--json",
           ],
           macShell,
@@ -1741,7 +1741,7 @@ describe("bb tasks CLI", () => {
       error: {
         code: "machine_required",
         message: "file paths outside a bb thread need --machine <id-or-name>",
-        hint: "enrolled machines: Personal Mac, codex@cardinal",
+        hint: "enrolled machines: Local Mac, linux-builder",
       },
     });
     const outNoThread = await harness.runCli(
@@ -1767,7 +1767,7 @@ describe("bb tasks CLI", () => {
       "--file",
       "shot.png",
       "--machine",
-      "Personal Mac",
+      "Local Mac",
     ]);
     expect(relativeWithoutCwd.exitCode).toBe(1);
     expect(relativeWithoutCwd.stderr).toContain(
@@ -1826,8 +1826,8 @@ describe("bb tasks CLI", () => {
       sdk: {
         hosts: {
           list: async () => [
-            { id: "host_server", name: "codex@cardinal" },
-            { id: "host_mac", name: "Personal Mac" },
+            { id: "host_server", name: "linux-builder" },
+            { id: "host_mac", name: "Local Mac" },
           ],
         },
         threads: {
@@ -1851,7 +1851,7 @@ describe("bb tasks CLI", () => {
     const serverThread = { threadId: "thr_server", cwd: "/home/codex/git/bb-plugins" };
 
     const relative = await harness.runCli(
-      ["attachment", "add", "CRS-1", "--file", "./shot.png", "--machine", "Personal Mac", "--json"],
+      ["attachment", "add", "CRS-1", "--file", "./shot.png", "--machine", "Local Mac", "--json"],
       serverThread,
     );
     expect(relative.exitCode).toBe(1);
@@ -1867,13 +1867,13 @@ describe("bb tasks CLI", () => {
 
     stdout(
       await harness.runCli(
-        ["attachment", "add", "CRS-1", "--file", "/Users/me/shot.png", "--machine", "Personal Mac"],
+        ["attachment", "add", "CRS-1", "--file", "/Users/me/shot.png", "--machine", "Local Mac"],
         serverThread,
       ),
     );
     stdout(
       await harness.runCli(
-        ["attachment", "add", "CRS-1", "--file", "notes.md", "--machine", "codex@cardinal"],
+        ["attachment", "add", "CRS-1", "--file", "notes.md", "--machine", "linux-builder"],
         serverThread,
       ),
     );

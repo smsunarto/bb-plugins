@@ -1239,7 +1239,7 @@ test("a refresh that reads an error keeps the board and says it is stale", async
 });
 
 test("a cold panel on a disconnected machine names the machine, not GitButler", async () => {
-  const offline = "Personal Mac is not connected. The workspace loads when it reconnects.";
+  const offline = "Local Mac is not connected. The workspace loads when it reconnects.";
   const slot = await panel({
     ...baseRpc,
     workspace: () => ({
@@ -2998,7 +2998,7 @@ test("shows each other machine's applied branches, open, and Refresh reads them 
         checkouts: [
           {
             hostId: "laptop",
-            machine: "Personal Mac",
+            machine: "Local Mac",
             path: "/Users/me/git/bb-plugins",
             state: "ready",
             reason: null,
@@ -3018,9 +3018,9 @@ test("shows each other machine's applied branches, open, and Refresh reads them 
       };
     },
   });
-  const laptop = within(await slot.findByRole("region", { name: "On Personal Mac" }));
+  const laptop = within(await slot.findByRole("region", { name: "On Local Mac" }));
   const toggle = laptop.getByRole("button", {
-    name: "bb-plugins Personal Mac /Users/me/git/bb-plugins 2",
+    name: "bb-plugins Local Mac /Users/me/git/bb-plugins 2",
   });
   expect(toggle.getAttribute("aria-expanded")).toBe("true");
   const top = within(laptop.getByRole("listitem", { name: "Branch scott/top" }));
@@ -3046,7 +3046,7 @@ test("shows each other machine's applied branches, open, and Refresh reads them 
 
 const laptopCheckout = {
   hostId: "laptop",
-  machine: "Personal Mac",
+  machine: "Local Mac",
   path: "/Users/me/git/bb-plugins",
   state: "ready",
   reason: null,
@@ -3056,7 +3056,7 @@ const laptopCheckout = {
 test("shows an isolated checkout's actual branch, path, and latest commit with a control to open its workspace", async () => {
   const checkout = {
     hostId: "laptop",
-    machine: "Personal Mac",
+    machine: "Local Mac",
     path: "/Users/me/git/bb-plugins-isolated",
     state: "ready",
     reason: null,
@@ -3080,7 +3080,7 @@ test("shows an isolated checkout's actual branch, path, and latest commit with a
     },
     { sidebarThreads: { experimental_hosts: roster.map((id) => ({ id, name: id })) } },
   );
-  const region = await slot.findByRole("region", { name: "On Personal Mac" });
+  const region = await slot.findByRole("region", { name: "On Local Mac" });
   const card = within(region);
   const machine = region.querySelector<HTMLElement>("[data-machine-id]");
   expect(machine?.getAttribute("data-machine-id")).toBe("laptop");
@@ -3120,7 +3120,7 @@ test("keeps checkouts with the same branch on one machine distinct and does not 
       checkouts: ["/Users/me/git/first/bb-plugins", "/Users/me/git/second/bb-plugins"].map(
         (path) => ({
           hostId: "laptop",
-          machine: "Personal Mac",
+          machine: "Local Mac",
           path,
           state: "ready",
           reason: null,
@@ -3132,7 +3132,7 @@ test("keeps checkouts with the same branch on one machine distinct and does not 
       environmentId: "env-1",
     }),
   });
-  const cards = await slot.findAllByRole("region", { name: "On Personal Mac" });
+  const cards = await slot.findAllByRole("region", { name: "On Local Mac" });
   expect(cards).toHaveLength(2);
   const first = within(cards[0]!);
   const second = within(cards[1]!);
@@ -3164,7 +3164,7 @@ test("shows other machines' branches where this checkout is not a GitButler work
     otherMachines: () => ({ checkouts: [laptopCheckout], reason: null, environmentId: "env-1" }),
   });
   expect(await slot.findByText("This repository is not a GitButler project")).toBeTruthy();
-  const laptop = within(await slot.findByRole("region", { name: "On Personal Mac" }));
+  const laptop = within(await slot.findByRole("region", { name: "On Local Mac" }));
   expect(laptop.getByText("scott/top")).toBeTruthy();
   slot.lifecycle.unmount();
 });
@@ -3180,7 +3180,7 @@ test("never shows machines read for an environment the thread has left", async (
   });
   await waitFor(() => expect(otherReads).toBe(1));
   expect(await slot.findByRole("article", { name: "Branch scott/top" })).toBeTruthy();
-  expect(slot.queryByRole("region", { name: "On Personal Mac" })).toBeNull();
+  expect(slot.queryByRole("region", { name: "On Local Mac" })).toBeNull();
   slot.lifecycle.unmount();
 });
 
@@ -3996,7 +3996,7 @@ test("checkout cards and the opened checkout launch native New thread in the exa
 
   await openIsolated(slot);
   const machine = slot
-    .getByText("Personal Mac")
+    .getByText("Local Mac")
     .parentElement?.querySelector<HTMLElement>("[data-machine-id]");
   expect(machine?.getAttribute("data-machine-id")).toBe("laptop");
   expect(machine?.style.color).toBe(machineColors([])("laptop"));

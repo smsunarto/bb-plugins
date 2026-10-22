@@ -38,7 +38,7 @@ function bbProject(
 function hostList(hosts: Record<string, "connected" | "disconnected">) {
   return Object.entries(hosts).map(([id, status]) => ({
     id,
-    name: id === "host_mac" ? "Personal Mac" : id,
+    name: id === "host_mac" ? "Local Mac" : id,
     status,
   }));
 }
@@ -610,7 +610,7 @@ describe("delegation to a preset without a pinned machine", () => {
     await expect(delegate()).rejects.toMatchObject({
       code: "handler_error",
       message:
-        'bb project "world-engine" has no source folder on a connected machine; it lives on Personal Mac',
+        'bb project "world-engine" has no source folder on a connected machine; it lives on Local Mac',
     });
     expect(spawnedEnvironments()).toEqual([]);
 
@@ -633,7 +633,7 @@ describe("delegation to a preset without a pinned machine", () => {
 
     await expect(delegate()).rejects.toMatchObject({
       code: "handler_error",
-      message: "Could not create a worktree on Personal Mac from main: Host is not connected",
+      message: "Could not create a worktree on Local Mac from main: Host is not connected",
     });
     expect(harness.sdk.callsTo("projects.branches")).toEqual([
       [{ projectId: "proj_bb", hostId: "host_mac", limit: "1" }],
@@ -662,7 +662,7 @@ describe("delegation to a preset without a pinned machine", () => {
     await expect(delegate()).rejects.toMatchObject({
       code: "handler_error",
       message:
-        "Could not open the project folder on Personal Mac: Workspace path is already attached to an environment in provisioning state",
+        "Could not open the project folder on Local Mac: Workspace path is already attached to an environment in provisioning state",
     });
 
     await harness.dispose();

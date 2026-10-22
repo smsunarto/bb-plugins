@@ -516,8 +516,8 @@ test("interest expires after 150 seconds and dispose leaves no engine timers", a
 /** Two connected machines: thread-less calls can no longer fall back to the only host. */
 const twoHosts = () =>
   vi.spyOn(bb.sdk.hosts, "list").mockResolvedValue([
-    { id: IN_PROCESS_HOST_ID, name: "Personal Mac", type: "persistent", status: "connected" },
-    { id: "second-host", name: "Dev Mac", type: "persistent", status: "connected" },
+    { id: IN_PROCESS_HOST_ID, name: "Local Mac", type: "persistent", status: "connected" },
+    { id: "second-host", name: "Build Mac", type: "persistent", status: "connected" },
   ] as never);
 
 /** bb's `ApiError` for a host whose daemon is not connected. */
@@ -535,10 +535,10 @@ test("repository registration reads the path on the caller's host and names both
   expect(registered).toEqual({
     status: 409,
     body: {
-      error: `${repo.root} is already registered from another bb host (Personal Mac), and this call comes from Dev Mac. Whiteboard keys checkouts by path, so one path can belong to one host. Work on this checkout from a thread on Personal Mac, or register a checkout at a different path on Dev Mac.`,
+      error: `${repo.root} is already registered from another bb host (Local Mac), and this call comes from Build Mac. Whiteboard keys checkouts by path, so one path can belong to one host. Work on this checkout from a thread on Local Mac, or register a checkout at a different path on Build Mac.`,
     },
   });
-  // The checkout at this path on the bound host is never read for a Dev Mac caller.
+  // The checkout at this path on the bound host is never read for a Build Mac caller.
   expect(
     client.calls.slice(before).map(({ hostId, input }) => {
       const { module, fn } = input as { module?: string; fn?: string };
@@ -604,7 +604,7 @@ test("a repository host that is not connected answers 503 naming that machine", 
     status: 503,
     body: {
       error:
-        "Personal Mac is not connected to bb. Whiteboard reads this checkout on Personal Mac. Reconnect it, then retry.",
+        "Local Mac is not connected to bb. Whiteboard reads this checkout on Local Mac. Reconnect it, then retry.",
     },
   });
   vi.restoreAllMocks();
@@ -632,7 +632,7 @@ test("Home's info probes the hosts that hold repositories, not the caller's", as
   vi.restoreAllMocks();
 });
 
-/** A second repository, bound to Dev Mac (`second-host`). */
+/** A second repository, bound to Build Mac (`second-host`). */
 const bindDevMacRepository = () =>
   bb.storage
     .database()
@@ -653,7 +653,7 @@ test("Home's info answers with the first host that has diffr, without waiting fo
   const call = client.call;
   vi.spyOn(client, "call").mockImplementation(((method, input, options) => {
     if (method !== "probe") return call(method, input, options);
-    // Dev Mac's daemon is gone and bb has not noticed yet: no answer.
+    // Build Mac's daemon is gone and bb has not noticed yet: no answer.
     if (options.hostId === "second-host") return new Promise(() => {});
     return Promise.resolve(probeResult("/bin/diffr"));
   }) as typeof client.call);
@@ -675,7 +675,7 @@ test("Home's info logs a host that is not connected at debug, not as a warning",
   expect(await engine.info({})).toMatchObject({ structuralDiffEnabled: false });
   expect(warn).not.toHaveBeenCalled();
   expect(debug).toHaveBeenCalledWith(
-    "whiteboard: structural diff capability could not be probed: HostUnavailableError: Dev Mac is not connected to bb. Whiteboard reads this checkout on Dev Mac. Reconnect it, then retry.",
+    "whiteboard: structural diff capability could not be probed: HostUnavailableError: Build Mac is not connected to bb. Whiteboard reads this checkout on Build Mac. Reconnect it, then retry.",
   );
   vi.restoreAllMocks();
 });

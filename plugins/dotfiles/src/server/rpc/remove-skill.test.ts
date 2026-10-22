@@ -29,7 +29,7 @@ test("makes stale skill removal an expected outcome", async () => {
   });
   assert.deepEqual(removed, ["host_mac example"]);
   assert.deepEqual(existing.harness.logEntries, [
-    { level: "info", message: "removing skill example on Personal Mac via npx skills" },
+    { level: "info", message: "removing skill example on Local Mac via npx skills" },
   ]);
   await assert.rejects(
     async () => removeSkill.execute(existing, { name: "../example" }),

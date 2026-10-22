@@ -14,6 +14,6 @@ test("maps publishing to the fixed sync command on the requested machine", async
     [["host_mac", "mise run sync"]],
   );
   assert.deepEqual(ctx.harness.logEntries, [
-    { level: "info", message: "running publish on Personal Mac: mise run sync" },
+    { level: "info", message: "running publish on Local Mac: mise run sync" },
   ]);
 });

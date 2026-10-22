@@ -26,8 +26,8 @@ export const statusPayload = {
               commitId: "8f4598a1eaca7d3d7080a6756164040f0707d0d5",
               createdAt: "2026-09-22T21:43:26+00:00",
               message: "feat(top): add the thing\n\nWith a body.",
-              authorName: "Scott Sunarto",
-              authorEmail: "github@smsunarto.com",
+              authorName: "Example Developer",
+              authorEmail: "developer@example.com",
               conflicted: false,
               reviewId: "42",
               changes: null,
@@ -67,8 +67,8 @@ export const statusPayload = {
               commitId: "730b2a16bda1bd8bdc4572bd9f4df70f50505f90",
               createdAt: "2026-09-22T21:23:13+00:00",
               message: "fix(bottom): repair it",
-              authorName: "Scott Sunarto",
-              authorEmail: "github@smsunarto.com",
+              authorName: "Example Developer",
+              authorEmail: "developer@example.com",
               conflicted: true,
               reviewId: null,
               changes: null,
@@ -102,8 +102,8 @@ export const statusPayload = {
     commitId: "654681d034f5e25b7d987f0c8ed8a3c4118a72aa",
     createdAt: "2026-09-22T20:36:27+00:00",
     message: "fix: the common base",
-    authorName: "Scott Sunarto",
-    authorEmail: "github@smsunarto.com",
+    authorName: "Example Developer",
+    authorEmail: "developer@example.com",
     conflicted: null,
     reviewId: null,
     changes: null,
@@ -149,7 +149,7 @@ export const diffPayload = {
   ],
 };
 
-const author = { name: "Scott Sunarto", email: "github@smsunarto.com" };
+const author = { name: "Example Developer", email: "developer@example.com" };
 
 /**
  * `but branch list --local --review --no-check --no-ahead --json` from

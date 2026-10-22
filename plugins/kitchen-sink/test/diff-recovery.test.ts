@@ -321,11 +321,11 @@ test("workspace= diffs the environment anchored at another project's checkout", 
 describe("workspace= on a project checked out on several machines", () => {
   const MAC = "host_personal_mac";
   const DEV_MAC = "host_dev_mac";
-  const SERVER = "host_cardinal";
+  const SERVER = "host_linux";
   const HOST_NAMES: Record<string, string> = {
-    [MAC]: "Personal Mac",
-    [DEV_MAC]: "Dev Mac",
-    [SERVER]: "codex@cardinal",
+    [MAC]: "Local Mac",
+    [DEV_MAC]: "Build Mac",
+    [SERVER]: "linux-builder",
   };
   const source = (hostId: string, isDefault: boolean) => ({
     id: `src_${hostId}`,
@@ -337,7 +337,7 @@ describe("workspace= on a project checked out on several machines", () => {
     createdAt: 0,
     updatedAt: 0,
   });
-  /** Both Macs hold the same path; the Dev Mac thread was active most recently. */
+  /** Both Macs hold the same path; the Build Mac thread was active most recently. */
   const environments = [
     { id: "env_dev", hostId: DEV_MAC, path: "/Users/me/dotfiles", status: "ready" },
     { id: "env_mac", hostId: MAC, path: "/Users/me/dotfiles", status: "ready" },
@@ -377,7 +377,7 @@ describe("workspace= on a project checked out on several machines", () => {
   }
 
   test.each([
-    [SERVER, "env_mac", "Workspace dotfiles on Personal Mac"],
+    [SERVER, "env_mac", "Workspace dotfiles on Local Mac"],
     [MAC, "env_mac", "Workspace dotfiles"],
     [DEV_MAC, "env_dev", "Workspace dotfiles"],
   ])("a thread on %s diffs %s", async (threadHostId, environmentId, label) => {

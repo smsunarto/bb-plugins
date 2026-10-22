@@ -258,8 +258,8 @@ describe("cross-workspace citations", () => {
 
   describe("a project checked out on several machines", () => {
     const MAC = "host_mac";
-    const SERVER = "host_cardinal";
-    const names: Record<string, string> = { [MAC]: "Personal Mac", [SERVER]: "codex@cardinal" };
+    const SERVER = "host_linux";
+    const names: Record<string, string> = { [MAC]: "Local Mac", [SERVER]: "linux-builder" };
     const checkout = (hostId: string, path: string, isDefault: boolean) => ({
       ...source(hostId, path),
       isDefault,
@@ -334,7 +334,7 @@ describe("cross-workspace citations", () => {
         project("proj_bb", "bb-plugins", "/srv/bb-plugins", SERVER),
       ];
       const result = await renderEmbed.execute(ctx, { kind: "code", threadId: "t", path: "a.ts" });
-      expect(result).toMatchObject({ status: "ready", workspace: "bb-plugins on codex@cardinal" });
+      expect(result).toMatchObject({ status: "ready", workspace: "bb-plugins on linux-builder" });
       expect(read).toHaveBeenLastCalledWith({
         hostId: SERVER,
         path: "/srv/bb-plugins/a.ts",
@@ -376,7 +376,7 @@ describe("cross-workspace citations", () => {
         project("proj_bb", "bb-plugins", "/srv/bb-plugins", SERVER),
       ];
       const result = await renderEmbed.execute(ctx, { kind: "code", threadId: "t", path: "a.ts" });
-      expect(result).toMatchObject({ status: "ready", workspace: "bb-plugins on codex@cardinal" });
+      expect(result).toMatchObject({ status: "ready", workspace: "bb-plugins on linux-builder" });
       expect(read).toHaveBeenLastCalledWith({
         hostId: SERVER,
         path: "/srv/bb-plugins/a.ts",

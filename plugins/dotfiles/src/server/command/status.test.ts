@@ -22,7 +22,7 @@ test("status throws when the repo is missing", async () => {
     (error: unknown) => {
       assert.ok(error instanceof PluginCliError);
       assert.equal(error.exitCode, 1);
-      assert.equal(error.message, "dotfiles repo not found at /dotfiles on codex@cardinal");
+      assert.equal(error.message, "dotfiles repo not found at /dotfiles on linux-builder");
       return true;
     },
   );
@@ -45,7 +45,7 @@ test("status prints the branch and two-column entries", async () => {
   assert.deepEqual(result, {
     exitCode: 0,
     stdout: "branch: feature\nM  .dotfiles/mcp.json\n?? .dotfiles/new.txt",
-    stderr: "host: codex@cardinal · repo: /dotfiles\n",
+    stderr: "host: linux-builder · repo: /dotfiles\n",
   });
 });
 
@@ -54,6 +54,6 @@ test("status prints clean when there are no entries", async () => {
   assert.deepEqual(result, {
     exitCode: 0,
     stdout: "branch: main\nclean",
-    stderr: "host: codex@cardinal · repo: /dotfiles\n",
+    stderr: "host: linux-builder · repo: /dotfiles\n",
   });
 });

@@ -27,8 +27,8 @@ async function load() {
     sdk: {
       hosts: {
         list: async () => [
-          makeHostResponse({ id: MAC, name: "Dev Mac" }),
-          makeHostResponse({ id: LINUX, name: "codex@cardinal" }),
+          makeHostResponse({ id: MAC, name: "Build Mac" }),
+          makeHostResponse({ id: LINUX, name: "linux-builder" }),
         ],
       },
       providers: {
@@ -146,7 +146,7 @@ test("the CLI adds a rule by names and `here`, lists it, and removes it", async 
       "--name",
       "Bun",
       "--host",
-      "here,Dev Mac",
+      "here,Build Mac",
       "--provider",
       "Codex",
       "--model",
@@ -156,7 +156,7 @@ test("the CLI adds a rule by names and `here`, lists it, and removes it", async 
   );
   expect(added.stderr ?? "").toBe("");
   expect(added.stdout).toMatch(
-    /^Added rule_\w+, when host codex@cardinal or Dev Mac · provider Codex · model gpt-\*\n$/,
+    /^Added rule_\w+, when host linux-builder or Build Mac · provider Codex · model gpt-\*\n$/,
   );
   const id = added.stdout.match(/rule_\w+/)?.[0] ?? "";
 
@@ -165,7 +165,7 @@ test("the CLI adds a rule by names and `here`, lists it, and removes it", async 
 
   const listed = await harness.runCli(["list"]);
   expect(listed.stdout).toBe(
-    `${id}  Bun\n  when host codex@cardinal or Dev Mac · provider Codex · model gpt-*\n`,
+    `${id}  Bun\n  when host linux-builder or Build Mac · provider Codex · model gpt-*\n`,
   );
 
   const unknown = await harness.runCli(["add", "x", "--project", "nope"]);
@@ -185,7 +185,7 @@ test("preview prints what the thread's last agent session resolved to", async ()
   await instructionsFor(harness, { thread: "thr_2", model: "gpt-5.5" });
   const after = await harness.runCli(["preview", "--thread", "thr_2"]);
   expect(after.stdout).toBe(
-    "host Dev Mac · provider Codex · model gpt-5.5 · project bb-plugins\n\nMac only.\n",
+    "host Build Mac · provider Codex · model gpt-5.5 · project bb-plugins\n\nMac only.\n",
   );
 });
 

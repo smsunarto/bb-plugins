@@ -179,12 +179,12 @@ export const checks: Checks = {
 
 export const agentActivity: AgentActivity = { threads: [], latestReview: null };
 
-/** `scott/rate-limit`, two commits stacked on `scott/login-copy`, in a checkout on cardinal. */
+/** `scott/rate-limit`, two commits stacked on `scott/login-copy`, in a checkout on builder. */
 export const localBranch: LocalBranch = {
   id: "a1b2c3d4e5f6",
   hostId: "host-1",
-  machine: "cardinal",
-  path: "/home/scott/git/api",
+  machine: "builder",
+  path: "/home/example/git/api",
   repoName: "api",
   repository: "acme/api",
   branch: "scott/rate-limit",

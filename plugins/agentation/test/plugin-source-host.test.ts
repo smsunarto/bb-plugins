@@ -17,7 +17,7 @@ sqlite.pragma ??= function (this: { query(sql: string): { all(): unknown } }, so
   return this.query(`PRAGMA ${source}`).all();
 };
 
-const SERVER_HOST = makeHostResponse({ id: "host_cardinal", name: "codex@cardinal" });
+const SERVER_HOST = makeHostResponse({ id: "host_linux", name: "linux-builder" });
 const SOURCE = "path:/home/codex/git/bb-plugins/plugins/kitchen-sink";
 
 async function annotateKitchenSink(clientContext: Record<string, unknown> = {}) {
@@ -37,7 +37,7 @@ async function annotateKitchenSink(clientContext: Record<string, unknown> = {}) 
   });
   await plugin(bb);
   const { session } = (await harness.callRpc("openSession", {
-    url: "https://scott.getbb.app/threads/thr_1",
+    url: "https://bb.example.test/threads/thr_1",
     route: "/threads/thr_1",
     title: null,
     threadId: "thr_1",
@@ -77,12 +77,12 @@ async function annotateKitchenSink(clientContext: Record<string, unknown> = {}) 
 test("a path source names the bb server's machine it lives on", async () => {
   assert.equal(
     await annotateKitchenSink(),
-    "**Plugin source:** installed from `path:/home/codex/git/bb-plugins/plugins/kitchen-sink`, a directory on the bb server's machine (`codex@cardinal`). bb runs the plugin from that copy. If you work in another checkout or on another machine, the change reaches the running plugin only after it lands in that directory and `bb plugin reload kitchen-sink` runs.",
+    "**Plugin source:** installed from `path:/home/codex/git/bb-plugins/plugins/kitchen-sink`, a directory on the bb server's machine (`linux-builder`). bb runs the plugin from that copy. If you work in another checkout or on another machine, the change reaches the running plugin only after it lands in that directory and `bb plugin reload kitchen-sink` runs.",
   );
 });
 
 test("the browser cannot claim a different machine for the source", async () => {
-  const line = await annotateKitchenSink({ pluginSourceHost: "Personal Mac" });
-  assert.match(line ?? "", /\(`codex@cardinal`\)/);
-  assert.doesNotMatch(line ?? "", /Personal Mac/);
+  const line = await annotateKitchenSink({ pluginSourceHost: "Local Mac" });
+  assert.match(line ?? "", /\(`linux-builder`\)/);
+  assert.doesNotMatch(line ?? "", /Local Mac/);
 });

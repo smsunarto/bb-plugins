@@ -14,8 +14,8 @@ export const UNPUBLISHED = {
   branches: [
     {
       hostId: "host-1",
-      machine: "cardinal",
-      path: "/home/scott/git/api",
+      machine: "builder",
+      path: "/home/example/git/api",
       repoName: "api",
       origin: "github.com/acme/api",
       branch: "scott/login-copy",
@@ -36,8 +36,8 @@ export const UNPUBLISHED = {
     },
     {
       hostId: "host-1",
-      machine: "cardinal",
-      path: "/home/scott/git/api",
+      machine: "builder",
+      path: "/home/example/git/api",
       repoName: "api",
       origin: "github.com/acme/api",
       branch: "scott/rate-limit",
@@ -59,7 +59,7 @@ export const UNPUBLISHED = {
     {
       hostId: "host-2",
       machine: "laptop",
-      path: "/Users/scott/web",
+      path: "/Users/example/web",
       repoName: "web",
       origin: "gitlab.com/acme/web",
       branch: "fix-nav",

@@ -99,15 +99,15 @@ describe("agent markdown", () => {
     const html = renderToStaticMarkup(
       createElement(AgentMarkdown, {
         source: [
-          "[App.test.ts:49](/Users/ketanagrawal/monorepo/repos/dev/packages/review/app/src/App.test.ts:49)",
-          "[styles.css](file:///Users/ketanagrawal/monorepo/repos/dev/packages/review/app/src/styles.css)",
+          "[App.test.ts:49](/Users/example/monorepo/repos/dev/packages/review/app/src/App.test.ts:49)",
+          "[styles.css](file:///Users/example/monorepo/repos/dev/packages/review/app/src/styles.css)",
         ].join("\n\n"),
       }),
     );
 
     expect(html).not.toContain("href=");
     expect(html).not.toContain("file://");
-    expect(html).not.toContain("/Users/ketanagrawal");
+    expect(html).not.toContain("/Users/example");
     expect(html).toContain('<code class="agent-markdown-code-reference">App.test.ts:49</code>');
     expect(html).toContain('<code class="agent-markdown-code-reference">styles.css</code>');
   });

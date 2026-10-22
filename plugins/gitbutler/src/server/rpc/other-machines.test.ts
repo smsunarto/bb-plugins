@@ -23,7 +23,7 @@ const stack: Stack = {
 };
 
 /**
- * A bb with three machines: the thread's own (`cardinal`), a laptop holding
+ * A bb with three machines: the thread's own (`builder`), a laptop holding
  * the repository, and one that is asleep. `answers` is what each machine's
  * `checkouts` call returns, by host id; a missing one fails the call.
  */
@@ -37,14 +37,14 @@ function machines(
     sdk: {
       threads: {
         get: async () => ({
-          environment: { id: "env-1", hostId: "cardinal", path: "/work/app", status: "ready" },
+          environment: { id: "env-1", hostId: "builder", path: "/work/app", status: "ready" },
         }),
       },
       hosts: {
         list: async () => [
-          { id: "cardinal", name: "codex@cardinal", status: "connected" },
-          { id: "laptop", name: "Personal Mac", status: "connected" },
-          { id: "asleep", name: "Dev Mac", status: "disconnected" },
+          { id: "builder", name: "linux-builder", status: "connected" },
+          { id: "laptop", name: "Local Mac", status: "connected" },
+          { id: "asleep", name: "Build Mac", status: "disconnected" },
           { id: "broken", name: "gcp", status: "connected" },
         ],
         get: async () => {
@@ -55,7 +55,7 @@ function machines(
         list: async () => [
           {
             sources: [
-              { hostId: "cardinal", path: "/work/app" },
+              { hostId: "builder", path: "/work/app" },
               { hostId: "laptop", path: "/Users/me/git/app" },
               { hostId: "asleep", path: "/Users/me/git/app" },
               { hostId: "broken", path: "/home/me/app" },
@@ -67,7 +67,7 @@ function machines(
       environments: {
         list: async () => [
           { hostId: "laptop", path: "/Users/me/git/app" },
-          { hostId: "cardinal", path: "/work/app-copy" },
+          { hostId: "builder", path: "/work/app-copy" },
         ],
       },
     },
@@ -94,7 +94,7 @@ function machines(
 
 test("asks each connected machine for its checkouts of the thread's origin", async () => {
   const { ctx, calls } = machines({
-    cardinal: {
+    builder: {
       checkouts: [
         // The thread's own checkout, which the board already is.
         { path: "/real/work/app", state: "ready", reason: null, stacks: [stack] },
@@ -113,8 +113,8 @@ test("asks each connected machine for its checkouts of the thread's origin", asy
         state: "ready",
         reason: null,
         stacks: [],
-        hostId: "cardinal",
-        machine: "codex@cardinal",
+        hostId: "builder",
+        machine: "linux-builder",
       },
       {
         path: "/Users/me/git/app",
@@ -122,7 +122,7 @@ test("asks each connected machine for its checkouts of the thread's origin", asy
         reason: null,
         stacks: [stack],
         hostId: "laptop",
-        machine: "Personal Mac",
+        machine: "Local Mac",
       },
     ],
     reason: null,
@@ -132,12 +132,12 @@ test("asks each connected machine for its checkouts of the thread's origin", asy
     {
       method: "origin",
       input: { environmentPath: "/work/app", repositoryKey: "." },
-      options: { hostId: "cardinal" },
+      options: { hostId: "builder" },
     },
     {
       method: "checkouts",
       input: { paths: ["/work/app", "/work/app-copy"], origin: "github.com/o/app" },
-      options: { hostId: "cardinal", timeoutMs: 30_000 },
+      options: { hostId: "builder", timeoutMs: 30_000 },
     },
     {
       method: "checkouts",
@@ -147,7 +147,7 @@ test("asks each connected machine for its checkouts of the thread's origin", asy
       },
       options: { hostId: "laptop", timeoutMs: 30_000 },
     },
-    // gcp is asked and fails; Dev Mac is asleep and never asked.
+    // gcp is asked and fails; Build Mac is asleep and never asked.
     {
       method: "checkouts",
       input: { paths: ["/home/me/app"], origin: "github.com/o/app" },
@@ -169,7 +169,7 @@ test("a repository with no origin asks no other machine", async () => {
 
 test("keeps isolated branch snapshots distinct by checkout on the same machine", async () => {
   const { ctx } = machines({
-    cardinal: {
+    builder: {
       checkouts: [
         { path: "/real/work/app", state: "ready", reason: null, stacks: [stack] },
         {
@@ -215,8 +215,8 @@ test("keeps isolated branch snapshots distinct by checkout on the same machine",
           createdAt: "2026-10-15T10:00:00Z",
         },
       },
-      hostId: "cardinal",
-      machine: "codex@cardinal",
+      hostId: "builder",
+      machine: "linux-builder",
     },
     {
       path: "/work/app-review",
@@ -224,8 +224,8 @@ test("keeps isolated branch snapshots distinct by checkout on the same machine",
       reason: null,
       stacks: [],
       gitBranch: { name: "scott/performance", head: null },
-      hostId: "cardinal",
-      machine: "codex@cardinal",
+      hostId: "builder",
+      machine: "linux-builder",
     },
   ]);
 });

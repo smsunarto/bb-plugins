@@ -4,19 +4,12 @@ import { machineColors } from "../lib/machine-colors";
 const rosterOf = (size: number, seed: number) =>
   Array.from({ length: size }, (_, index) => `host_${(seed * 7919 + index * 104729).toString(36)}`);
 
-const realRoster = [
-  "host_9ducen3qcx",
-  "host_sbhm567wt6",
-  "host_nmnsd9g5yj",
-  "host_qbfybxaak6",
-  "host_iz3hnkz5sj",
-  "host_2q9i7e6s7u",
-];
+const fixtureRoster = rosterOf(6, 42);
 
 describe("machine colors", () => {
-  test("gives each of six real machines its own color", () => {
-    const colorOf = machineColors(realRoster);
-    expect(new Set(realRoster.map(colorOf)).size).toBe(6);
+  test("gives each of six fixture machines its own color", () => {
+    const colorOf = machineColors(fixtureRoster);
+    expect(new Set(fixtureRoster.map(colorOf)).size).toBe(6);
   });
 
   test("never repeats a color until the roster outgrows the palette", () => {
@@ -57,7 +50,7 @@ describe("machine colors", () => {
   });
 
   test("names theme identity tokens with fallbacks for other themes", () => {
-    expect(new Set(realRoster.map(machineColors(realRoster)))).toEqual(
+    expect(new Set(fixtureRoster.map(machineColors(fixtureRoster)))).toEqual(
       new Set([
         "var(--machine-1, light-dark(#0c7cf4, #2987f8))",
         "var(--machine-2, light-dark(#358793, #07c3de))",

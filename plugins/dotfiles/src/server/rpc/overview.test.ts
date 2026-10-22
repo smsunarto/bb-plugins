@@ -22,7 +22,7 @@ test("builds the overview from static files, discovered skills, and git state", 
 
   assert.equal(result.state, "ready");
   if (result.state !== "ready") return;
-  assert.deepEqual(result.host, { id: "host_server", name: "codex@cardinal" });
+  assert.deepEqual(result.host, { id: "host_server", name: "linux-builder" });
   assert.equal(result.repoPath, "/dotfiles");
   assert.equal(result.repoExists, true);
   assert.equal(result.branch, "feature");
@@ -57,22 +57,22 @@ test("reads the machine the panel asked for", async () => {
   const ctx = createFakeContext({
     inspect: async (target) =>
       cleanRepo(target, {
-        repoPath: target.hostId === "host_mac" ? "/Users/scott/git/dotfiles" : "/dotfiles",
+        repoPath: target.hostId === "host_mac" ? "/Users/example/git/dotfiles" : "/dotfiles",
       }),
   });
 
   const result = await overview.execute(ctx, { hostId: "host_mac" });
 
   assert.equal(result.state, "ready");
-  assert.deepEqual(result.host, { id: "host_mac", name: "Personal Mac" });
-  assert.equal(result.state === "ready" && result.repoPath, "/Users/scott/git/dotfiles");
+  assert.deepEqual(result.host, { id: "host_mac", name: "Local Mac" });
+  assert.equal(result.state === "ready" && result.repoPath, "/Users/example/git/dotfiles");
 });
 
 test("names an offline machine instead of reading it", async () => {
   const ctx = createFakeContext({
     target: async () => ({
       hostId: "host_mac",
-      hostName: "Personal Mac",
+      hostName: "Local Mac",
       connected: false,
       repoPath: "~/git/dotfiles",
     }),
@@ -83,7 +83,7 @@ test("names an offline machine instead of reading it", async () => {
 
   assert.deepEqual(await overview.execute(ctx, { hostId: "host_mac" }), {
     state: "offline",
-    host: { id: "host_mac", name: "Personal Mac" },
+    host: { id: "host_mac", name: "Local Mac" },
   });
 });
 

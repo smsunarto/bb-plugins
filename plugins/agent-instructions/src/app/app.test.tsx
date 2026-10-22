@@ -10,8 +10,8 @@ const { act, fireEvent, waitFor } = await import("@testing-library/react");
 
 const targets: Targets = {
   hosts: [
-    { id: "host_mac", name: "Dev Mac" },
-    { id: "host_linux", name: "codex@cardinal" },
+    { id: "host_mac", name: "Build Mac" },
+    { id: "host_linux", name: "linux-builder" },
   ],
   providers: [
     { id: "codex", name: "Codex" },
@@ -88,8 +88,8 @@ async function settings(
 
 test("a saved rule shows its scope by name", async () => {
   const { slot } = await settings([browser]);
-  expect(slot.getByRole("button", { name: "Scope: Dev Mac · gpt-*" }).textContent).toBe(
-    "Dev Mac · gpt-*",
+  expect(slot.getByRole("button", { name: "Scope: Build Mac · gpt-*" }).textContent).toBe(
+    "Build Mac · gpt-*",
   );
   expect(slot.getByRole("textbox", { name: "Browser review instructions" })).toHaveProperty(
     "value",
@@ -100,7 +100,7 @@ test("a saved rule shows its scope by name", async () => {
 
 test("scoping a rule to a provider autosaves it", async () => {
   const { slot, saves } = await settings([browser]);
-  fireEvent.click(slot.getByRole("button", { name: "Scope: Dev Mac · gpt-*" }));
+  fireEvent.click(slot.getByRole("button", { name: "Scope: Build Mac · gpt-*" }));
   await act(async () => {
     fireEvent.click(slot.getByRole("button", { name: "Claude Code" }));
   });

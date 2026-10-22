@@ -5,7 +5,7 @@ import { createStatus } from "./status.ts";
 test("status names this bb plugin, in upstream Desktop's key order, with nothing machine-local", () => {
   const { bb } = createFakePluginHost({
     pluginId: "whiteboard",
-    appUrl: "https://scott.getbb.app",
+    appUrl: "https://bb.example.test",
     loopbackBaseUrl: "http://127.0.0.1:40000",
     dataDir: "/data/bb",
   });
@@ -27,7 +27,7 @@ test("status names this bb plugin, in upstream Desktop's key order, with nothing
     checkout: null,
     appVersion: "0.1.0",
     cliVersion: null,
-    instanceId: "https://scott.getbb.app",
+    instanceId: "https://bb.example.test",
     url: null,
     home: null,
   });

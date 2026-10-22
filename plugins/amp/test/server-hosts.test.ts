@@ -26,9 +26,9 @@ const REPORT = {
 };
 
 const HOSTS = [
-  { id: "host_mac", name: "Personal Mac", status: "connected" },
-  { id: "host_server", name: "codex@cardinal", status: "connected" },
-  { id: "host_dev", name: "Dev Mac", status: "disconnected" },
+  { id: "host_mac", name: "Local Mac", status: "connected" },
+  { id: "host_server", name: "linux-builder", status: "connected" },
+  { id: "host_dev", name: "Build Mac", status: "disconnected" },
 ];
 
 /** Before any test presses the Orb toggle. */
@@ -157,7 +157,7 @@ test("a thread with no environment finds its report on the connected host that h
 });
 
 test("a thread that moved hosts finds its report on the host that ran the Oracle", async () => {
-  // The report stays on Personal Mac; the thread now runs on codex@cardinal.
+  // The report stays on Local Mac; the thread now runs on linux-builder.
   const harness = await loadAmp((call) => ({
     report: call.hostId === "host_mac" ? REPORT : null,
   }));
@@ -203,7 +203,7 @@ test("the Orb banner reads a thread's provider once, and an unlinked Amp thread 
 });
 
 test("the first host that has the report answers without waiting for a slow one", async () => {
-  // codex@cardinal never answers; the lookup must not wait out its timeout.
+  // linux-builder never answers; the lookup must not wait out its timeout.
   const harness = await loadAmp((call) =>
     call.hostId === "host_mac" ? { report: REPORT } : new Promise(() => {}),
   );
@@ -225,20 +225,20 @@ test("an unreachable thread host is named on the card", async () => {
   assert.deepEqual(result, {
     report: null,
     error:
-      "The Oracle report is stored on Personal Mac, which bb cannot reach right now. Open the native tool call to view its output.",
+      "The Oracle report is stored on Local Mac, which bb cannot reach right now. Open the native tool call to view its output.",
   });
 });
 
 test("`bb amp status` reports the Amp CLI each host would run", async () => {
   const harness = await loadAmp((call) => ({
-    path: call.hostId === "host_mac" ? "/Users/smsunarto/.local/bin/amp" : null,
+    path: call.hostId === "host_mac" ? "/Users/example/.local/bin/amp" : null,
   }));
   const result = await harness.behavior.runCli(["status"]);
   assert.equal(result.exitCode, 0);
   assert.deepEqual(result.stdout.split("\n").slice(0, 3), [
-    "Amp CLI on Personal Mac: /Users/smsunarto/.local/bin/amp",
-    "Amp CLI on codex@cardinal: NOT FOUND. Install it with the Install button in bb's composer, or from https://ampcode.com/docs/cli (on Windows, inside WSL), then run `amp login`.",
-    "Amp CLI on Dev Mac: host not connected",
+    "Amp CLI on Local Mac: /Users/example/.local/bin/amp",
+    "Amp CLI on linux-builder: NOT FOUND. Install it with the Install button in bb's composer, or from https://ampcode.com/docs/cli (on Windows, inside WSL), then run `amp login`.",
+    "Amp CLI on Build Mac: host not connected",
   ]);
   assert.deepEqual(
     hostCalls(harness).map((call) => [call.method, call.hostId]),

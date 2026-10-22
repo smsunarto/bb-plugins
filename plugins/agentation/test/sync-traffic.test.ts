@@ -22,7 +22,7 @@ async function loaded() {
   const { bb, harness } = createFakePluginHost({ pluginId: "agentation" });
   await plugin(bb);
   const { session, cursor } = (await harness.callRpc("openSession", {
-    url: "https://scott.getbb.app/threads/thr_1",
+    url: "https://bb.example.test/threads/thr_1",
     route: "/threads/thr_1",
     title: null,
     threadId: "thr_1",

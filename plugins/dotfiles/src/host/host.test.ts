@@ -9,7 +9,7 @@ import hostEntry from "./host.ts";
 
 const host = experimental_createHostEntryHarness(hostEntry);
 const noise =
-  "source: Error encountered while sourcing file '/Users/smsunarto/.unity/env.fish':\n" +
+  "source: Error encountered while sourcing file '/Users/example/.unity/env.fish':\n" +
   "source: No such file or directory\n";
 const environment = ["SHELL", "GIT_CONFIG_GLOBAL", "GIT_CONFIG_NOSYSTEM"] as const;
 const original = Object.fromEntries(environment.map((name) => [name, process.env[name]]));
@@ -157,7 +157,7 @@ test("a missing checkout reads as missing, with ~ expanded on this machine", asy
 test("tasks run in the checkout through the login shell, output merged for display", async () => {
   expect(await host.experimental_call("run", { repoPath: repo, command: "pwd" })).toEqual({
     exitCode: 0,
-    output: `${noise}${repo}\n`,
+    output: `${noise}${await realpath(repo)}\n`,
   });
   expect(await host.experimental_call("run", { repoPath: repo, command: "exit 3" })).toEqual({
     exitCode: 3,

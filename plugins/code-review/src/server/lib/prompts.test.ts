@@ -117,10 +117,10 @@ test("a branch name with backticks stays inside its inline code", () => {
 test("a branch review reads the branch from git and leaves the GitButler workspace alone", () => {
   const prompt = localReviewPrompt(
     {
-      id: "16ea307183d0",
+      id: "f4b6d5b36a16",
       hostId: "host-1",
-      machine: "cardinal",
-      path: "/home/scott/git/api",
+      machine: "builder",
+      path: "/home/example/git/api",
       repoName: "api",
       repository: "acme/api",
       branch: "scott/it's;`ok`",
@@ -143,7 +143,7 @@ test("a branch review reads the branch from git and leaves the GitButler workspa
   expect(prompt).toStartWith(
     "Review the unpublished branch `` scott/it's;`ok` `` in `api` and report every actionable finding",
   );
-  expect(prompt).toContain("- Checkout: `/home/scott/git/api` on cardinal");
+  expect(prompt).toContain("- Checkout: `/home/example/git/api` on builder");
   expect(prompt).toContain(
     "- Base: `4b825dc642cb6eb9a060e54bf8d69288fbee4904`, the head of `scott/login-copy`",
   );

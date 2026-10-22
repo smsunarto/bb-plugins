@@ -910,8 +910,8 @@ describe("Docs nav panel", () => {
             vaults: [obsidian],
             vault: obsidian,
             hosts: [
-              { id: "host_mac", name: "Personal Mac", status: macStatus },
-              { id: "host_dev", name: "Dev Mac", status: "connected" },
+              { id: "host_mac", name: "Local Mac", status: macStatus },
+              { id: "host_dev", name: "Build Mac", status: "connected" },
             ],
             error,
           }),
@@ -955,11 +955,11 @@ describe("Docs nav panel", () => {
             vaults: [obsidian],
             vault: obsidian,
             hosts: [
-              { id: "host_server", name: "codex@cardinal", status: "connected" },
-              { id: "host_mac", name: "Personal Mac", status: "connected" },
+              { id: "host_server", name: "linux-builder", status: "connected" },
+              { id: "host_mac", name: "Local Mac", status: "connected" },
             ],
             error:
-              "Choose the machine that holds /Users/me/obsidian-vault for the Obsidian vault (found on Personal Mac), or run bb docs vault-host obsidian <host-id>.",
+              "Choose the machine that holds /Users/me/obsidian-vault for the Obsidian vault (found on Local Mac), or run bb docs vault-host obsidian <host-id>.",
           }),
           setVaultHost: () => ({ ...obsidian, hostId: "host_mac" }),
         },
@@ -970,7 +970,7 @@ describe("Docs nav panel", () => {
     const use = slot.getByRole("button", { name: "Use machine" });
     expect(use.hasAttribute("disabled")).toBe(true);
     fireEvent.keyDown(slot.getByRole("combobox", { name: "Vault machine" }), { key: "Enter" });
-    fireEvent.click(await slot.findByRole("option", { name: "Personal Mac · connected" }));
+    fireEvent.click(await slot.findByRole("option", { name: "Local Mac · connected" }));
     await waitFor(() => expect(use.hasAttribute("disabled")).toBe(false));
     fireEvent.click(use);
     await waitFor(() =>
@@ -991,8 +991,8 @@ describe("Docs nav panel", () => {
           listNotes: () => ({
             ...listNotesResult([]),
             hosts: [
-              { id: "host_server", name: "codex@cardinal", status: "connected" },
-              { id: "host_mac", name: "Personal Mac", status: "connected" },
+              { id: "host_server", name: "linux-builder", status: "connected" },
+              { id: "host_mac", name: "Local Mac", status: "connected" },
             ],
           }),
           createVault: () => ({
@@ -1007,7 +1007,7 @@ describe("Docs nav panel", () => {
 
     fireEvent.click(await slot.findByRole("button", { name: "Add vault" }));
     expect(slot.queryByText("Server machine")).toBeNull();
-    await slot.findByText("codex@cardinal · bb server · connected");
+    await slot.findByText("linux-builder · bb server · connected");
     fireEvent.change(slot.getByLabelText("Name"), { target: { value: "Work" } });
     fireEvent.change(slot.getByPlaceholderText("Absolute path on that machine"), {
       target: { value: "/srv/work" },

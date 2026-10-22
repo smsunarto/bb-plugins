@@ -9,7 +9,7 @@ export interface FakeDotfilesGit extends DotfilesGit {
 /** The bb server's own machine, which the fake resolves when no host is asked for. */
 export const serverTarget: Target = {
   hostId: "host_server",
-  hostName: "codex@cardinal",
+  hostName: "linux-builder",
   connected: true,
   repoPath: "~/git/dotfiles",
 };
@@ -17,7 +17,7 @@ export const serverTarget: Target = {
 /** Another connected machine, for tests that target one explicitly. */
 export const macTarget: Target = {
   hostId: "host_mac",
-  hostName: "Personal Mac",
+  hostName: "Local Mac",
   connected: true,
   repoPath: "~/git/dotfiles",
 };

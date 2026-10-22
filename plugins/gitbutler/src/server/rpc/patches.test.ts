@@ -38,8 +38,8 @@ test("fails loudly when the thread has no environment", async () => {
 test("names the machine when bb has lost the thread's host", async () => {
   const { ctx } = harness({
     error: new Error("Host is not connected"),
-    host: { name: "Personal Mac", status: "disconnected" },
+    host: { name: "Local Mac", status: "disconnected" },
   });
 
-  await expect(patches.execute(ctx, uncommitted)).rejects.toThrow("Personal Mac is not connected.");
+  await expect(patches.execute(ctx, uncommitted)).rejects.toThrow("Local Mac is not connected.");
 });

@@ -22,7 +22,7 @@ test("render throws when the repo is missing", async () => {
     (error: unknown) => {
       assert.ok(error instanceof PluginCliError);
       assert.equal(error.exitCode, 1);
-      assert.equal(error.message, "dotfiles repo not found at /dotfiles on codex@cardinal");
+      assert.equal(error.message, "dotfiles repo not found at /dotfiles on linux-builder");
       return true;
     },
   );
@@ -36,7 +36,7 @@ test("render runs the render task and passes the result through", async () => {
   assert.deepEqual(result, {
     exitCode: 3,
     stdout: "rendered 2 files",
-    stderr: "host: codex@cardinal · repo: /dotfiles\n",
+    stderr: "host: linux-builder · repo: /dotfiles\n",
   });
   assert.deepEqual(
     ctx.git.run.mock.calls.map(([target, command]) => [target.hostId, command]),

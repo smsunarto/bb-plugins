@@ -4,13 +4,13 @@ import { createFakePluginHost, makeHostResponse } from "@get-bb/plugin-sdk/testi
 import plugin from "./server.ts";
 
 const machines = {
-  host_server: makeHostResponse({ id: "host_server", name: "codex@cardinal", status: "connected" }),
-  host_mac: makeHostResponse({ id: "host_mac", name: "Personal Mac", status: "connected" }),
+  host_server: makeHostResponse({ id: "host_server", name: "linux-builder", status: "connected" }),
+  host_mac: makeHostResponse({ id: "host_mac", name: "Local Mac", status: "connected" }),
 };
 
 const checkouts: Record<string, string> = {
   host_server: "/home/codex/git/dotfiles",
-  host_mac: "/Users/scott/git/dotfiles",
+  host_mac: "/Users/example/git/dotfiles",
 };
 
 /**
@@ -84,7 +84,7 @@ test("a command against a missing repo exits 1 with the repo path and machine on
   assert.deepEqual(await harness.runCli(["status"]), {
     exitCode: 1,
     stdout: "",
-    stderr: "dotfiles repo not found at /home/codex/git/dotfiles on codex@cardinal\n",
+    stderr: "dotfiles repo not found at /home/codex/git/dotfiles on linux-builder\n",
   });
 });
 
@@ -94,7 +94,7 @@ test("an agent's command acts on its thread's machine and says so", async () => 
   assert.deepEqual(await harness.runCli(["render"], { threadId: "thread-1" }), {
     exitCode: 0,
     stdout: "ran on host_mac\n",
-    stderr: "host: Personal Mac · repo: /Users/scott/git/dotfiles\n",
+    stderr: "host: Local Mac · repo: /Users/example/git/dotfiles\n",
   });
   assert.deepEqual(
     harness.experimental_hostRpcCalls.map(({ method, hostId, input }) => [method, hostId, input]),
@@ -111,7 +111,7 @@ test("a command outside a thread acts on the panel's machine", async () => {
   assert.deepEqual(await harness.runCli(["render"]), {
     exitCode: 0,
     stdout: "ran on host_server\n",
-    stderr: "host: codex@cardinal · repo: /home/codex/git/dotfiles\n",
+    stderr: "host: linux-builder · repo: /home/codex/git/dotfiles\n",
   });
 });
 

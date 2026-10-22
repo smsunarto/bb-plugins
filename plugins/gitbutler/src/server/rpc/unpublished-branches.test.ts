@@ -27,9 +27,9 @@ function machines(answers: Record<string, unknown>) {
     sdk: {
       hosts: {
         list: async () => [
-          { id: "cardinal", name: "codex@cardinal", status: "connected" },
-          { id: "laptop", name: "Personal Mac", status: "connected" },
-          { id: "asleep", name: "Dev Mac", status: "disconnected" },
+          { id: "cardinal", name: "linux-builder", status: "connected" },
+          { id: "laptop", name: "Local Mac", status: "connected" },
+          { id: "asleep", name: "Build Mac", status: "disconnected" },
         ],
         get: async () => ({ status: "connected" }),
       },
@@ -65,7 +65,7 @@ test("asks every connected machine for its unpublished branches and names the ma
   const { ctx, calls } = machines({ cardinal: { branches: [branch("scott/feature")] } });
 
   expect(await unpublishedBranches.execute(ctx as never)).toEqual({
-    branches: [{ ...branch("scott/feature"), hostId: "cardinal", machine: "codex@cardinal" }],
+    branches: [{ ...branch("scott/feature"), hostId: "cardinal", machine: "linux-builder" }],
   });
   // The laptop failed and is left out; the sleeping machine is never asked.
   expect(calls).toEqual([

@@ -567,7 +567,7 @@ describe("mountLinkHints", () => {
       '<button id="stop" aria-label="Stop run" data-promptbox-submit-action>Stop</button>' +
       "<div data-follow-up-composer-footer>" +
       '<div><button id="project" data-promptbox-project-control>Monorepo</button>' +
-      '<button id="machine" aria-label="Environment">Dev Mac</button></div>' +
+      '<button id="machine" aria-label="Environment">Build Mac</button></div>' +
       '<div><button id="permission" aria-label="Permission mode">Ask</button></div>' +
       "</div></div>";
     for (const [index, id] of [
@@ -1205,7 +1205,7 @@ describe("mountLinkHints", () => {
     const controller = newController();
     const dispose = mountLinkHints(contextWith(controller.signal));
     document.body.innerHTML =
-      '<div data-app-composer><button id="machine" aria-label="Machine" aria-haspopup="menu">Personal Mac</button></div>';
+      '<div data-app-composer><button id="machine" aria-label="Machine" aria-haspopup="menu">Local Mac</button></div>';
     const machine = document.getElementById("machine") as HTMLElement;
     giveRect(machine, 10, 10);
     const picked: string[] = [];

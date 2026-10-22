@@ -25,10 +25,10 @@ test("a branch's activity is the threads linked to it, read live", async () => {
     headRefOid: "cc36d32",
     baseRefName: "4b825dc",
   };
-  await ctx.store.addLink("branch:16ea307183d0", link);
+  await ctx.store.addLink("branch:f4b6d5b36a16", link);
   await ctx.store.addLink("acme/api#1", { ...link, threadId: "t2" });
 
-  expect(await callProcedure(branchActivity, ctx, { id: "16ea307183d0" })).toEqual({
+  expect(await callProcedure(branchActivity, ctx, { id: "f4b6d5b36a16" })).toEqual({
     threads: [
       {
         threadId: "t1",

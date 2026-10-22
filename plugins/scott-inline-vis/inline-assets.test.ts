@@ -12,7 +12,7 @@ import { chunkedResponse, mp4File, STREAM_TYPE } from "./mp4-fixture.ts";
 
 afterEach(() => vi.restoreAllMocks());
 const text = (value: string) => new TextEncoder().encode(value);
-const root = new URL("https://scott.getbb.app/api/v1/file-previews/lease/");
+const root = new URL("https://bb.example.test/api/v1/file-previews/lease/");
 const documentUrl = new URL("player.html", root);
 
 describe("relative preview asset URLs", () => {
@@ -54,7 +54,7 @@ function transport() {
     .mockResolvedValue(new Response("video", { headers: { "content-type": "video/mp4" } }));
   const create = vi
     .spyOn(URL, "createObjectURL")
-    .mockReturnValue("blob:https://scott.getbb.app/test");
+    .mockReturnValue("blob:https://bb.example.test/test");
   return { fetch, create };
 }
 

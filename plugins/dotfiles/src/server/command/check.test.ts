@@ -24,7 +24,7 @@ test("check throws when the repo is missing", async () => {
     (error: unknown) => {
       assert.ok(error instanceof PluginCliError);
       assert.equal(error.exitCode, 1);
-      assert.equal(error.message, "dotfiles repo not found at /dotfiles on codex@cardinal");
+      assert.equal(error.message, "dotfiles repo not found at /dotfiles on linux-builder");
       return true;
     },
   );
@@ -36,7 +36,7 @@ test("check without a target runs the full check task", async () => {
   assert.deepEqual(result, {
     exitCode: 0,
     stdout: "ok",
-    stderr: "host: codex@cardinal · repo: /dotfiles\n",
+    stderr: "host: linux-builder · repo: /dotfiles\n",
   });
   assert.deepEqual(
     ctx.git.run.mock.calls.map(([target, command]) => [target.hostId, command]),
@@ -62,7 +62,7 @@ test("check routes each named target to its check task", async () => {
     assert.deepEqual(result, {
       exitCode: 0,
       stdout: "ok",
-      stderr: "host: codex@cardinal · repo: /dotfiles\n",
+      stderr: "host: linux-builder · repo: /dotfiles\n",
     });
     assert.deepEqual(
       ctx.git.run.mock.calls.map(([called, calledCommand]) => [called.hostId, calledCommand]),
@@ -81,7 +81,7 @@ test("check passes the task exit code and output through", async () => {
   assert.deepEqual(result, {
     exitCode: 3,
     stdout: "2 failures",
-    stderr: "host: codex@cardinal · repo: /dotfiles\n",
+    stderr: "host: linux-builder · repo: /dotfiles\n",
   });
 });
 
@@ -103,7 +103,7 @@ test("check runs on the invoking thread's machine and names it", async () => {
       threadHostId: async (threadId) => (threadId === "thread-on-mac" ? "host_mac" : undefined),
       inspect: async (target) =>
         cleanRepo(target, {
-          repoPath: target.hostId === "host_mac" ? "/Users/scott/git/dotfiles" : "/dotfiles",
+          repoPath: target.hostId === "host_mac" ? "/Users/example/git/dotfiles" : "/dotfiles",
         }),
     }),
     threadId: "thread-on-mac",
@@ -114,7 +114,7 @@ test("check runs on the invoking thread's machine and names it", async () => {
   assert.deepEqual(result, {
     exitCode: 0,
     stdout: "ok",
-    stderr: "host: Personal Mac · repo: /Users/scott/git/dotfiles\n",
+    stderr: "host: Local Mac · repo: /Users/example/git/dotfiles\n",
   });
   assert.deepEqual(
     ctx.git.run.mock.calls.map(([called, command]) => [called.hostId, command]),
@@ -126,7 +126,7 @@ test("check refuses an offline machine instead of reporting an empty repo", asyn
   const ctx = createFakeContext({
     target: async () => ({
       hostId: "host_mac",
-      hostName: "Personal Mac",
+      hostName: "Local Mac",
       connected: false,
       repoPath: "~/git/dotfiles",
     }),
@@ -136,7 +136,7 @@ test("check refuses an offline machine instead of reporting an empty repo", asyn
     () => Promise.resolve(check.execute(ctx, args())),
     (error: unknown) => {
       assert.ok(error instanceof PluginCliError);
-      assert.equal(error.message, "Personal Mac is not connected");
+      assert.equal(error.message, "Local Mac is not connected");
       return true;
     },
   );

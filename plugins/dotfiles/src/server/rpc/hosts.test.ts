@@ -8,8 +8,8 @@ test("lists the machines and the one the panel acts on", async () => {
     hosts: async () => ({
       selectedHostId: "host_mac",
       hosts: [
-        { id: "host_server", name: "codex@cardinal", connected: true },
-        { id: "host_mac", name: "Personal Mac", connected: false },
+        { id: "host_server", name: "linux-builder", connected: true },
+        { id: "host_mac", name: "Local Mac", connected: false },
       ],
     }),
   });
@@ -17,8 +17,8 @@ test("lists the machines and the one the panel acts on", async () => {
   assert.deepEqual(await hosts.execute(ctx), {
     selectedHostId: "host_mac",
     hosts: [
-      { id: "host_server", name: "codex@cardinal", connected: true },
-      { id: "host_mac", name: "Personal Mac", connected: false },
+      { id: "host_server", name: "linux-builder", connected: true },
+      { id: "host_mac", name: "Local Mac", connected: false },
     ],
   });
 });

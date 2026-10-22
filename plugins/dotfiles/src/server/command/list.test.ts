@@ -22,7 +22,7 @@ test("list throws when the repo is missing", async () => {
     (error: unknown) => {
       assert.ok(error instanceof PluginCliError);
       assert.equal(error.exitCode, 1);
-      assert.equal(error.message, "dotfiles repo not found at /dotfiles on codex@cardinal");
+      assert.equal(error.message, "dotfiles repo not found at /dotfiles on linux-builder");
       return true;
     },
   );

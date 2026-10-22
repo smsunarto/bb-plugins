@@ -148,7 +148,7 @@ test("unpublished branches get an inbox tab with a count, and a row opens its br
   selectTab(tab);
   const row = await slot.findByRole("button", { name: /scott\/rate-limit/ });
   expect(within(row).getByText("api")).toBeTruthy();
-  expect(within(row).getByText("cardinal")).toBeTruthy();
+  expect(within(row).getByText("builder")).toBeTruthy();
   expect(within(row).getByText("2 commits")).toBeTruthy();
   expect(within(row).getByText("Ahead")).toBeTruthy();
   expect(row.textContent).toContain("on scott/login-copy");
@@ -183,7 +183,7 @@ test("a branch's page names it, and its summary lists its commits", async () => 
   const slot = await page(BRANCH);
   expect((await slot.findByRole("heading", { level: 1 })).textContent).toBe("scott/rate-limit");
   expect(slot.getByText("api")).toBeTruthy();
-  expect(slot.getByText("cardinal")).toBeTruthy();
+  expect(slot.getByText("builder")).toBeTruthy();
   expect(slot.getByText("2 commits")).toBeTruthy();
   expect(slot.getByText("scott/login-copy")).toBeTruthy();
 
@@ -225,7 +225,7 @@ test("a branch's Changes show its diff and allow reviewing each file", async () 
   const card = await slot.findByRole("article", { name: "src/limit.ts" });
   expect(slot.rpcCalls.find((call) => call.method === "localChanges")?.input).toEqual({
     hostId: "host-1",
-    path: "/home/scott/git/api",
+    path: "/home/example/git/api",
     base: "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
     head: "cc36d32a212a2b8b6611fb73549fe6d04fb6ec38",
   });

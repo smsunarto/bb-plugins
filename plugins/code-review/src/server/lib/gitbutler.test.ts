@@ -14,10 +14,10 @@ test("unpublished branches are read from the GitButler plugin, newest commit fir
     available: true,
     branches: [
       {
-        id: "16ea307183d0",
+        id: "f4b6d5b36a16",
         hostId: "host-1",
-        machine: "cardinal",
-        path: "/home/scott/git/api",
+        machine: "builder",
+        path: "/home/example/git/api",
         repoName: "api",
         repository: "acme/api",
         branch: "scott/rate-limit",
@@ -35,10 +35,10 @@ test("unpublished branches are read from the GitButler plugin, newest commit fir
         ],
       },
       {
-        id: "79bf8abb8346",
+        id: "012abaff5bd7",
         hostId: "host-1",
-        machine: "cardinal",
-        path: "/home/scott/git/api",
+        machine: "builder",
+        path: "/home/example/git/api",
         repoName: "api",
         repository: "acme/api",
         branch: "scott/login-copy",
@@ -56,10 +56,10 @@ test("unpublished branches are read from the GitButler plugin, newest commit fir
         ],
       },
       {
-        id: "f1b4224d3a52",
+        id: "bddb4c3d89da",
         hostId: "host-2",
         machine: "laptop",
-        path: "/Users/scott/web",
+        path: "/Users/example/web",
         repoName: "web",
         repository: null,
         branch: "fix-nav",
@@ -88,7 +88,7 @@ test("without the GitButler plugin there are no branches to read, and the reader
     reason:
       "Install and enable the GitButler plugin to review branches that have no pull request yet.",
   });
-  await expect(requireLocalBranch(bb, "16ea307183d0")).rejects.toThrow(
+  await expect(requireLocalBranch(bb, "f4b6d5b36a16")).rejects.toThrow(
     "Install and enable the GitButler plugin",
   );
 });
@@ -108,7 +108,7 @@ test("a GitButler plugin that fails says so instead of reading as not installed"
 test("a branch that was published or is gone cannot be found by its id", async () => {
   const bb = host(fakeGitButler({ unpublishedBranches: () => UNPUBLISHED }));
 
-  expect((await requireLocalBranch(bb, "79bf8abb8346")).branch).toBe("scott/login-copy");
+  expect((await requireLocalBranch(bb, "012abaff5bd7")).branch).toBe("scott/login-copy");
   await expect(requireLocalBranch(bb, "000000000000")).rejects.toThrow(
     "That branch has no unpublished commits any more, or its machine is offline.",
   );
@@ -169,7 +169,7 @@ test("a branch's patches become changed files: hunks only, counted, and labeled 
       },
     }),
   );
-  const range = { hostId: "host-1", path: "/home/scott/git/api", base: BOTTOM, head: TOP };
+  const range = { hostId: "host-1", path: "/home/example/git/api", base: BOTTOM, head: TOP };
 
   expect(await loadLocalChanges(bb, range)).toEqual({
     headRefOid: TOP,

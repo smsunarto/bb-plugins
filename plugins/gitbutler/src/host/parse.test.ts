@@ -42,7 +42,7 @@ test("parseWorkspace reads stacks, branches, and their commits", () => {
     commitId: "8f4598a1eaca7d3d7080a6756164040f0707d0d5",
     changeId: "syvmzmsvwkuzpwuuxyvnmywkktuzxqul",
     message: "feat(top): add the thing\n\nWith a body.",
-    authorName: "Scott Sunarto",
+    authorName: "Example Developer",
     createdAt: "2026-09-22T21:43:26+00:00",
     conflicted: false,
   });
@@ -139,7 +139,7 @@ test("parseWorkspace reads the base and upstream state", () => {
   expect(workspace.base).toEqual({
     commitId: "654681d034f5e25b7d987f0c8ed8a3c4118a72aa",
     message: "fix: the common base",
-    authorName: "Scott Sunarto",
+    authorName: "Example Developer",
     createdAt: "2026-09-22T20:36:27+00:00",
   });
   expect(workspace.upstream).toEqual({

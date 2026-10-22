@@ -16,7 +16,7 @@ test("maps safe task ids to fixed commands", async () => {
   assert.deepEqual(ctx.harness.logEntries, [
     {
       level: "info",
-      message: "running task check:skills on codex@cardinal: mise run check:skills",
+      message: "running task check:skills on linux-builder: mise run check:skills",
     },
   ]);
 });

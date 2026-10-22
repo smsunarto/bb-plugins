@@ -4,15 +4,15 @@ import { createFakePluginHost, makeHostResponse } from "@get-bb/plugin-sdk/testi
 import { createDotfilesGit, type DotfilesHostClient } from "./git.ts";
 
 const machines = {
-  host_server: makeHostResponse({ id: "host_server", name: "codex@cardinal", status: "connected" }),
-  host_dev: makeHostResponse({ id: "host_dev", name: "Dev Mac", status: "connected" }),
-  host_mac: makeHostResponse({ id: "host_mac", name: "Personal Mac", status: "disconnected" }),
+  host_server: makeHostResponse({ id: "host_server", name: "linux-builder", status: "connected" }),
+  host_dev: makeHostResponse({ id: "host_dev", name: "Build Mac", status: "connected" }),
+  host_mac: makeHostResponse({ id: "host_mac", name: "Local Mac", status: "disconnected" }),
 };
 
 type HostCall = { method: string; input: unknown; options: unknown };
 
 const inspection = {
-  repoPath: "/Users/scott/git/dotfiles",
+  repoPath: "/Users/example/git/dotfiles",
   repoExists: true,
   branch: "main",
   entries: [],
@@ -60,14 +60,14 @@ test("acts on the bb server's own machine until the panel picks another", async 
 
   assert.deepEqual(await git.target(undefined), {
     hostId: "host_server",
-    hostName: "codex@cardinal",
+    hostName: "linux-builder",
     connected: true,
     repoPath: "~/git/dotfiles",
   });
 
   await git.selectHost("host_dev");
 
-  assert.equal((await git.target(undefined)).hostName, "Dev Mac");
+  assert.equal((await git.target(undefined)).hostName, "Build Mac");
   assert.equal((await git.hosts()).selectedHostId, "host_dev");
 });
 
@@ -90,7 +90,7 @@ test("names an offline machine instead of calling it", async () => {
 
   await assert.rejects(
     async () => git.run(await git.target("host_mac"), "mise run render"),
-    /^Error: Personal Mac is not connected\.$/,
+    /^Error: Local Mac is not connected\.$/,
   );
   assert.deepEqual(calls, []);
 });
@@ -104,14 +104,14 @@ test("reads and writes the checkout on the machine that was inspected", async ()
 
   assert.deepEqual(calls[0]?.options, { hostId: "host_dev" });
   assert.deepEqual(harness.sdk.callsTo("files.read"), [
-    [{ hostId: "host_dev", path: "/Users/scott/git/dotfiles/AGENTS.md" }],
+    [{ hostId: "host_dev", path: "/Users/example/git/dotfiles/AGENTS.md" }],
   ]);
   assert.deepEqual(harness.sdk.callsTo("files.write"), [
     [
       {
         hostId: "host_dev",
-        path: "/Users/scott/git/dotfiles/AGENTS.md",
-        rootPath: "/Users/scott/git/dotfiles",
+        path: "/Users/example/git/dotfiles/AGENTS.md",
+        rootPath: "/Users/example/git/dotfiles",
         content: "next\n",
         expectedSha256: "sha",
       },

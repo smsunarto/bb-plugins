@@ -4,7 +4,7 @@ import { fakeContext } from "../../../test/fake-gh.ts";
 import { BOTTOM, TOP, fakeGitButler } from "../../../test/fake-gitbutler.ts";
 import { localChanges } from "./local-changes.ts";
 
-const RANGE = { hostId: "host-1", path: "/home/scott/git/api", base: BOTTOM, head: TOP };
+const RANGE = { hostId: "host-1", path: "/home/example/git/api", base: BOTTOM, head: TOP };
 
 test("a branch's changes are read from its machine, labeled by its range", async () => {
   const asked: unknown[] = [];
