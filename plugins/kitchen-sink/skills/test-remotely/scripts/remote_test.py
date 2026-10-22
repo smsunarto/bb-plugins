@@ -172,15 +172,9 @@ def validate_remote(remote):
         raise ValueError('Use a network Git remote without embedded credentials')
 
 
-def validate_branch(branch, url, remote, main_reason):
-    if branch not in ('main', 'master', 'origin/main', 'origin/master'):
-        return
-    path = url.split(':', 1)[1] if url.startswith('git@github.com:') else urlsplit(url).path
-    host = 'github.com' if url.startswith('git@github.com:') else urlsplit(url).hostname
-    owner = path.lstrip('/').split('/')[0]
-    if not (branch == 'main' and remote == 'origin' and host == 'github.com' and
-            owner.lower() == 'smsunarto' and main_reason and main_reason.strip()):
-        raise ValueError('Use a feature branch. origin/main requires a necessary --main-reason and an smsunarto GitHub repository.')
+def validate_branch(branch):
+    if branch in ('main', 'master', 'origin/main', 'origin/master'):
+        raise ValueError('Use a feature branch for remote testing; default branches cannot be published by this helper.')
 
 
 def repository_id(url):
@@ -217,7 +211,7 @@ def push_branch(repo, branch, remote, url):
     command('but', 'push', branch, cwd=repo)
 
 
-def git_source(repo, branch, base, remote, main_reason=None):
+def git_source(repo, branch, base, remote):
     command('git', 'check-ref-format', '--branch', branch)
     head = command('git', '-C', str(repo), 'rev-parse', '--verify', '--end-of-options',
                    f'refs/heads/{branch}^{{commit}}').strip()
@@ -226,13 +220,13 @@ def git_source(repo, branch, base, remote, main_reason=None):
     comparison = command('git', '-C', str(repo), 'merge-base', head, target).strip()
     url = command('git', '-C', str(repo), 'remote', 'get-url', '--', remote).strip()
     validate_remote(url)
-    validate_branch(branch, url, remote, main_reason)
+    validate_branch(branch)
     push_branch(repo, branch, remote, url)
     published = command('git', 'ls-remote', '--heads', '--', url, f'refs/heads/{branch}')
     if published.strip() != f'{head}\trefs/heads/{branch}':
         raise ValueError('Task branch is not published at the selected commit. Commit/push with GitButler first.')
     return {'version': 1, 'remote': url, 'branch': branch, 'head': head, 'base': comparison,
-            'initial_head': head, 'main_reason': main_reason}
+            'initial_head': head}
 
 
 def checkout_source(source, output):
@@ -276,7 +270,7 @@ def publish_fix(repo, source):
     url = command('git', '-C', str(repo), 'remote', 'get-url', 'origin').strip()
     if url != data['remote']:
         raise ValueError('Fix repository does not match the assigned remote')
-    validate_branch(data['branch'], url, 'origin', data.get('main_reason'))
+    validate_branch(data['branch'])
     head = command('git', '-C', str(repo), 'rev-parse', '--verify', '--end-of-options',
                    f"refs/heads/{data['branch']}^{{commit}}").strip()
     command('git', '-C', str(repo), 'diff', '--quiet', head, '--')
@@ -331,15 +325,23 @@ def sync_result(repo, source, apply=False):
     return {'head': actual, 'updated': True}
 
 
+def select_machine(machines, selector):
+    target = next((m for m in machines if m['id'] == selector), None)
+    if target is None:
+        matches = [m for m in machines if m['name'] == selector]
+        if len(matches) > 1:
+            raise ValueError('Machine name is ambiguous. Select its ID from inventory.')
+        target = matches[0] if matches else None
+    if not target or target['status'] != 'connected':
+        raise ValueError('Machine unavailable. Resolve connection/authentication before choosing another.')
+    return target
+
+
 def launch(args):
     if not os.environ.get('BB_THREAD_ID'):
         raise ValueError('Launch from a BB parent thread')
     machines = bb('machine', 'list')
-    target = next((m for m in machines if m['name'] == args.machine), None)
-    if not target or target['status'] != 'connected':
-        raise ValueError('Machine unavailable. Resolve connection/authentication before choosing another.')
-    if args.machine == 'Dev Mac' and not args.mac_reason:
-        raise ValueError('Dev Mac requires --mac-reason mac-required|cardinal-overloaded')
+    target = select_machine(machines, args.machine)
     models = bb('provider', 'models', 'codex', '--machine', target['id'])
     if not any(m['id'] == MODEL and any(e['reasoningEffort'] == 'low'
                for e in m['supportedReasoningEfforts']) for m in models):
@@ -352,7 +354,7 @@ def launch(args):
     if not personal:
         raise ValueError('No personal project for remote bootstrap')
     root = Path(command('git', '-C', str(Path(args.repo).resolve()), 'rev-parse', '--show-toplevel').strip())
-    source = git_source(root, args.branch, args.base, args.remote, args.main_reason)
+    source = git_source(root, args.branch, args.base, args.remote)
     out = Path(args.out).resolve()
     if out.is_relative_to(root):
         raise ValueError('Use thread storage outside the source tree for launch output')
@@ -364,7 +366,7 @@ def launch(args):
     run = 'remote-test-' + uuid.uuid4().hex[:12]
     contract = (helper.parent.parent / 'references' / 'worker.md').read_text()
     prompt = (f'Remote /subthread assignment. Run {run}. Parent {parent}. Project {project}.\n'
-              f'Machine: {args.machine}. Selection reason: {args.mac_reason or "preferred Cardinal"}.\n'
+              f'Machine: {target["name"]} ({target["id"]}). Selection reason: {args.machine_reason or "selected from inventory"}.\n'
               'First download the helper with the command below and verify its SHA256 before running it.\n'
               f'bb project attachment download {project} {dto["path"]} --client-file /tmp/{run}.py\n'
               f'Helper SHA256: {digest(helper)}\n'
@@ -456,12 +458,11 @@ def main():
     p = sub.add_parser('launch')
     for key in ('repo', 'task', 'out'):
         p.add_argument('--' + key, required=True)
-    p.add_argument('--machine', choices=['codex@cardinal', 'Dev Mac'], default='codex@cardinal')
-    p.add_argument('--mac-reason', choices=['mac-required', 'cardinal-overloaded'])
+    p.add_argument('--machine', required=True, help='Connected machine ID or unique name from inventory')
+    p.add_argument('--machine-reason', help='Platform or capacity evidence for this selection')
     p.add_argument('--branch', required=True, help='Task branch containing committed work; pushed by the helper')
     p.add_argument('--base', default='origin/main', help='Comparison target; resolves to its merge base')
     p.set_defaults(remote='origin')
-    p.add_argument('--main-reason', help='Why origin/main is unavoidable; only for smsunarto GitHub repos')
     p = sub.add_parser('checkout')
     p.add_argument('--source', required=True, help='Pinned Git source JSON from the parent')
     p.add_argument('--out', required=True, help='New isolated checkout directory')

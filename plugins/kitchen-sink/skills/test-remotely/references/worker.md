@@ -11,11 +11,10 @@ lists arguments. Preserve the run ID across capacity reservations and reports.
 1. Run `capacity` and inspect `bb thread list --include-hidden --json` for other
    work, including other accounts on this physical machine. Compare load, available
    memory, disk space, and reservations with the proposed workload. A full queue
-   or a resource conflict means wait. Report Cardinal as overloaded only after
-   three capacity samples at least ten seconds apart show insufficient capacity.
-   All managed Cardinal tests run as `codex`. Coordinate capacity and shared
-   resources with any active `exedev` work before admission. Per-account
-   reservations alone cannot protect cross-account workloads.
+   or a resource conflict means wait. Report the selected machine as overloaded
+   only after three capacity samples at least ten seconds apart show insufficient
+   capacity. Coordinate shared resources with active work under other accounts;
+   per-account reservations alone cannot protect cross-account workloads.
    Auth failures require 1Password credentials or a question to the user through
    the parent before another machine is considered. Never print credentials.
 2. Reserve `--resource machine-setup` with `claim` before changing shared tools,
@@ -50,8 +49,8 @@ lists arguments. Preserve the run ID across capacity reservations and reports.
    task fixes on the assigned feature branch. Run `publish-fix --repo <checkout>
 --source <source.json>` outside the sandbox when GitButler requires it.
    It permits only appended commits and stops if another writer moved the branch.
-   Pushing needs no approval. Never push `origin/main` unless unavoidable and
-   the repository belongs to `smsunarto`; honor the parent's recorded exception.
+   Pushing the assigned feature branch needs no approval. The helper rejects
+   `main` and `master`; publish only the assigned feature branch.
 6. Use **media:demo** to capture and inspect the final tested behavior, including
    a reviewed thumbnail for video. Return commands, exit statuses, assertions,
    initial and final commits, comparison base, dotfiles evidence, and failures.

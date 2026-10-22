@@ -117,16 +117,23 @@ class RemoteTest(unittest.TestCase):
             with patch.dict(os.environ, BB_THREAD_ID='owner'):
                 self.assertEqual(r.reservations(args)['reservations'], {})
 
-    def test_launch_requires_auth_and_mac_reason_before_upload(self):
-        args = argparse.Namespace(machine='codex@cardinal', mac_reason=None)
-        with patch.dict(os.environ, BB_THREAD_ID='parent'), patch.object(r, 'bb', return_value=[]):
+    def test_machine_selection_uses_ids_or_unique_names_and_requires_connection(self):
+        linux = {'id': 'host-linux', 'name': 'Linux builder', 'status': 'connected'}
+        mac = {'id': 'host-mac', 'name': 'Build Mac', 'status': 'connected'}
+        for selector, expected in [('host-linux', linux), ('Linux builder', linux), ('Build Mac', mac)]:
+            self.assertEqual(r.select_machine([linux, mac], selector), expected)
+        duplicate = {**linux, 'id': 'host-other'}
+        self.assertEqual(r.select_machine([linux, duplicate], 'host-linux'), linux)
+        with self.assertRaisesRegex(ValueError, 'ambiguous'):
+            r.select_machine([linux, duplicate], 'Linux builder')
+        for machines in [[], [{**linux, 'status': 'disconnected'}]]:
+            with self.subTest(machines=machines), self.assertRaisesRegex(ValueError, 'connection/authentication'):
+                r.select_machine(machines, 'host-linux')
+
+    def test_launch_checks_connection_before_upload(self):
+        args = argparse.Namespace(machine='missing-machine', machine_reason=None)
+        with patch.dict(os.environ, BB_THREAD_ID='parent'), patch.object(r, 'bb', return_value=[]) as calls:
             with self.assertRaisesRegex(ValueError, 'connection/authentication'):
-                r.launch(args)
-        args.machine = 'Dev Mac'
-        with patch.dict(os.environ, BB_THREAD_ID='parent'), patch.object(r, 'bb', return_value=[
-            {'id': 'mac', 'name': 'Dev Mac', 'status': 'connected'}
-        ]) as calls:
-            with self.assertRaisesRegex(ValueError, 'mac-reason'):
                 r.launch(args)
             self.assertEqual(calls.call_count, 1)
 
@@ -149,13 +156,13 @@ class RemoteTest(unittest.TestCase):
         repo.mkdir()
         task = self.root / 'task.md'
         task.write_text('Test the edited app and capture it.')
-        args = argparse.Namespace(machine='codex@cardinal', mac_reason=None, repo=str(repo),
+        args = argparse.Namespace(machine='linux-builder', machine_reason=None, repo=str(repo),
                                   out=str(self.root / 'out'), task=str(task), branch='scott/test', base='origin/main',
-                                  remote='origin', main_reason=None)
+                                  remote='origin')
         launches = []
         def fake_bb(*a):
             if a[:2] == ('machine', 'list'):
-                return [{'id': 'host-cardinal', 'name': 'codex@cardinal', 'status': 'connected'}]
+                return [{'id': 'host-builder', 'name': 'linux-builder', 'status': 'connected'}]
             if a[:2] == ('provider', 'models'):
                 return [{'id': r.MODEL, 'supportedReasoningEfforts': [{'reasoningEffort': 'low'}]}]
             if a == ('status',):
@@ -172,7 +179,7 @@ class RemoteTest(unittest.TestCase):
             result = r.launch(args)
         launch = launches[0]
         self.assertIn('--parent-self', launch)
-        for flag, expected in [('--project', 'personal-project'), ('--machine', 'host-cardinal'),
+        for flag, expected in [('--project', 'personal-project'), ('--machine', 'host-builder'),
                                ('--provider', 'codex'), ('--model', 'gpt-6-astra'),
                                ('--reasoning-level', 'low')]:
             self.assertEqual(launch[launch.index(flag) + 1], expected)
@@ -182,29 +189,21 @@ class RemoteTest(unittest.TestCase):
 
     def source_file(self):
         source = self.root / 'source.json'
-        data = {'version': 1, 'remote': 'https://github.com/smsunarto/example.git',
+        data = {'version': 1, 'remote': 'https://github.com/example-owner/example.git',
                 'branch': 'scott/test', 'head': 'a' * 40, 'base': 'b' * 40,
-                'initial_head': 'a' * 40, 'main_reason': None}
+                'initial_head': 'a' * 40}
         source.write_text(json.dumps(data))
         return source, data
 
-    def test_main_exception_requires_exact_github_owner_and_reason(self):
-        r.validate_branch('scott/test', 'https://github.com/other/example.git', 'origin', None)
-        for url in ['https://github.com/smsunarto/example.git', 'git@github.com:smsunarto/example.git']:
-            r.validate_branch('main', url, 'origin', 'Required by this test integration')
-        for branch, url, reason in [
-            ('main', 'https://github.com/other/example.git', 'required'),
-            ('main', 'https://github.com/smsunarto-other/example.git', 'required'),
-            ('main', 'https://elsewhere.com/smsunarto/example.git', 'required'),
-            ('main', 'https://github.com/smsunarto/example.git', None),
-            ('master', 'https://github.com/smsunarto/example.git', 'required'),
-        ]:
-            with self.subTest(url=url, branch=branch, reason=reason), self.assertRaises(ValueError):
-                r.validate_branch(branch, url, 'origin', reason)
+    def test_default_branches_are_rejected_for_every_repository(self):
+        r.validate_branch('scott/test')
+        for branch in ['main', 'master', 'origin/main', 'origin/master']:
+            with self.subTest(branch=branch), self.assertRaisesRegex(ValueError, 'feature branch'):
+                r.validate_branch(branch)
 
     def test_source_push_pins_commit_and_merge_base(self):
         head, base = 'a' * 40, 'b' * 40
-        url = 'https://github.com/smsunarto/example.git'
+        url = 'https://github.com/example-owner/example.git'
         with patch.object(r, 'command', side_effect=['scott/test', head, base, base, url,
                                                     f'{head}\trefs/heads/scott/test\n']), \
              patch.object(r, 'push_branch') as push:
@@ -217,7 +216,7 @@ class RemoteTest(unittest.TestCase):
         with patch.object(r, 'command', side_effect=['main', 'a' * 40, 'b' * 40, 'b' * 40,
                                                     'https://github.com/other/example.git']) as calls:
             with self.assertRaises(ValueError):
-                r.git_source(self.root, 'main', 'origin/main', 'origin', 'required')
+                r.git_source(self.root, 'main', 'origin/main', 'origin')
             self.assertFalse(any(c.args[0] == 'but' for c in calls.call_args_list))
 
     def test_checkout_refuses_moved_branch_and_reused_directory(self):
@@ -292,7 +291,7 @@ class RemoteTest(unittest.TestCase):
         self.assertIn('--dry-run', calls.call_args_list[-1].args)
 
     def test_push_preflight_blocks_wrong_destination_and_ancestor_changes(self):
-        url = 'https://github.com/smsunarto/example.git'
+        url = 'https://github.com/example-owner/example.git'
         state = {'stacks': [{'branches': [{'name': 'scott/test'}]}]}
         with patch.object(r, 'command', side_effect=[json.dumps({'push_remote': 'fork'})]) as calls:
             with self.assertRaisesRegex(ValueError, 'push remote differs'):
@@ -310,7 +309,7 @@ class RemoteTest(unittest.TestCase):
             self.assertFalse(any(c.args[:2] == ('but', 'push') for c in calls.call_args_list))
         state['stacks'][0]['branches'].pop()
         with patch.object(r, 'command', side_effect=[json.dumps({'push_remote': 'origin'}),
-                                                    'git@github.com:smsunarto/example.git', json.dumps(state), '', '']) as calls:
+                                                    'git@github.com:example-owner/example.git', json.dumps(state), '', '']) as calls:
             r.push_branch(self.root, 'scott/test', 'origin', url)
         self.assertEqual(calls.call_args_list[-2].args, ('but', 'push', 'scott/test', '--dry-run'))
         self.assertEqual(calls.call_args_list[-1].args, ('but', 'push', 'scott/test'))

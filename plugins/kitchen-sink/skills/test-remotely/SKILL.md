@@ -7,32 +7,29 @@ Coordinate remote verification through `/subthread`. The remote child does setup
 testing, and capture. Start it with Codex `gpt-6-astra`, reasoning `low`. Prefer
 fixes and retests in that same child at reasoning `high`, preserving its context.
 
-1. Run `python3 <skill-dir>/scripts/remote_test.py inventory`. Prefer
-   `codex@cardinal`, the large Ubuntu Exe.dev VM. Use `Dev Mac` only for macOS
-   requirements or sustained Cardinal overload. Among eligible hosts, compare
-   measured load and reserved CPU/memory relative to capacity. Two Cardinal
-   accounts share one physical machine. Run all managed Cardinal tests as `codex`.
-   Coordinate with active `exedev` work before reserving capacity or shared setup.
-   An auth failure is not overload:
-   authenticate with 1Password or ask the user before changing machines.
+1. Run `python3 <skill-dir>/scripts/remote_test.py inventory`. Select a connected
+   machine by ID or unique name, using the task's platform requirements and
+   measured load, available memory, and active reservations. Coordinate with
+   other accounts sharing that physical machine before reserving capacity or
+   changing shared setup. Resolve authentication on the selected machine before
+   considering another; an auth failure is not evidence of overload.
 2. Commit the task's changes on its feature branch with GitButler. Keep other
    agents' work out. Write a task file with behavior, checks, platform, and expected
    evidence. The helper pushes the branch with GitButler, pins its commit and
    comparison base, then launches the remote `/subthread`. Run it outside the
    sandbox when GitButler requires that.
 
-   Pushing needs no approval. Use a feature branch. Push `origin/main` only when
-   unavoidable **and** the GitHub repository belongs to `smsunarto`; document why
-   with `--main-reason`. This does not authorize merging or opening a PR.
+   Pushing the task's feature branch needs no approval. The helper rejects
+   `main` and `master`. This does not authorize merging or opening a PR.
 
    ```sh
-   python3 <skill-dir>/scripts/remote_test.py launch --repo . --branch scott/<task> --base origin/main --task <task.md> --out <new-run-directory> --machine codex@cardinal
+   python3 <skill-dir>/scripts/remote_test.py launch --repo . --branch scott/<task> --base origin/main --task <task.md> --out <new-run-directory> --machine <machine-id>
    ```
 
    Git is the source of truth. Include intended edits and new files in the commit.
    Uncommitted and ignored files are not transferred. The worker receives full
-   history and reviews the commit log and diff before testing. For `Dev Mac`,
-   supply `--mac-reason mac-required|cardinal-overloaded` and explain the evidence.
+   history and reviews the commit log and diff before testing. Record platform
+   or capacity evidence with `--machine-reason` when it explains the selection.
 
 3. Read [worker.md](references/worker.md) for the worker contract. Require explicit
    use of **`dotfiles:sync`** to sync and apply `~/git/dotfiles`, then scaffold missing
