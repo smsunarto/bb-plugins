@@ -135,3 +135,23 @@ memory. Drop the flag once a Bun upgrade passes the full suite without it.
 ## License
 
 [MIT](LICENSE)
+
+## Review playbooks
+
+`bb review playbook` lists the bundled global playbooks and Markdown files under the current checkout's `.agents/review/`, using each file's YAML `description` as its “when to use” guidance. Names are scoped, such as `global/correctness` and `project/networking`; `--name <listed-name>` reads one, and `--json` returns structured output.
+
+Project playbooks can live in nested directories. Each file starts with frontmatter:
+
+```markdown
+---
+description: Changes to transport, replication, or reconnect behavior.
+---
+
+# Networking
+
+Review suggestions go here.
+```
+
+Inside a BB thread, project files are read from that thread's checkout and machine. Outside a thread, pass `--machine <id> --directory <absolute-checkout>` to include project playbooks; without them the command lists globals and explains how to load project guidance. Missing project folders are empty; malformed playbooks and read failures produce diagnostics. Project listing failures leave globals available with a diagnostic. The host file API ignores symlinked entries. Index pages default to 50 entries; use `--offset` and `--limit` to page, or JSON `nextOffset` to continue. Pages shrink when necessary to fit the CLI byte limit.
+
+The CLI root is `review`; existing `code_review_*` agent tools retain their names.

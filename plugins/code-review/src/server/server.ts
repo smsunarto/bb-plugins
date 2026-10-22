@@ -1,5 +1,6 @@
 import { instructionFiles } from "@bb-kit/core/instructions";
 import { definePlugin } from "@bb-kit/core/plugin";
+import { playbook } from "./command/playbook.ts";
 import { publishActivity } from "./lib/activity.ts";
 import { createGitHub } from "./lib/gh.ts";
 import { createStore } from "./lib/store.ts";
@@ -34,6 +35,8 @@ import { shareChanges } from "./tools/share-changes.ts";
 
 export default definePlugin({
   pluginId: "code-review",
+  cliName: "review",
+  command: { playbook },
   services(bb) {
     return { github: createGitHub(), store: createStore(bb.storage.kv) };
   },
