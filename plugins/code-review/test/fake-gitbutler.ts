@@ -90,7 +90,9 @@ export function fakeGitButler(
 ) {
   return {
     callRpc: async ({ pluginId, method, input, outputSchema }: RpcArgs) => {
-      const answer = methods[method];
+      const answer =
+        methods[method] ??
+        (method === "unpublishedBranchesAt" ? methods.unpublishedBranches : undefined);
       if (pluginId !== "gitbutler" || !installed || !answer) {
         throw Object.assign(new Error(`HTTP 404: no RPC ${pluginId}.${method}`), { status: 404 });
       }

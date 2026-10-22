@@ -2,7 +2,7 @@ import { defineTool } from "@bb-kit/core/tools";
 import { z } from "zod";
 import { accountSchema, parsePrReference, prKey } from "../../shared/schema.ts";
 import type { CodeReviewContext } from "../lib/context.ts";
-import { loadLocalBranches } from "../lib/gitbutler.ts";
+import { loadLocalBranches, rememberBranch } from "../lib/gitbutler.ts";
 
 /** Resolves an agent's branch name into the identity the Code Review panel uses. */
 export const shareChanges = defineTool({
@@ -27,7 +27,13 @@ export const shareChanges = defineTool({
       if (!ref) throw new Error("Use a GitHub pull request URL or owner/repo#123.");
       return `::code-review{pr="${prKey(ref)}"${target.account ? ` account="${target.account}"` : ""}}`;
     }
-    const result = await loadLocalBranches(ctx.bb);
+    const result = await loadLocalBranches(
+      ctx.bb,
+      undefined,
+      target.hostId
+        ? { hostId: target.hostId, ...(target.path ? { path: target.path } : {}) }
+        : undefined,
+    );
     if (!result.available) throw new Error(result.reason);
     const matches = result.branches.filter(
       (branch) =>
@@ -44,6 +50,7 @@ export const shareChanges = defineTool({
       throw new Error(
         `Several checkouts match; specify hostId and path: ${matches.map(({ hostId, path }) => `${hostId}:${path}`).join(", ")}`,
       );
+    await rememberBranch(ctx.bb, ctx.store, branch);
     return `::code-review{branch="${branch.id}" base="${branch.base}" head="${branch.head}"}`;
   },
 });

@@ -2,6 +2,7 @@ import { expect, test } from "bun:test";
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import type { HostCall } from "../../../test/harness.ts";
 import type { UnpublishedBranch } from "../../shared/schema.ts";
+import { unpublishedBranchesAt } from "./unpublished-branches-at.ts";
 import { unpublishedBranches } from "./unpublished-branches.ts";
 
 const branch = (name: string): UnpublishedBranch => ({
@@ -79,4 +80,22 @@ test("asks every connected machine for its unpublished branches and names the ma
       options: { hostId: "laptop", timeoutMs: 30_000 },
     },
   ]);
+});
+
+test("a scoped lookup contacts only the named host and preserves the checkout boundary", async () => {
+  const { ctx, calls } = machines({ cardinal: { branches: [branch("scott/feature")] } });
+  await unpublishedBranchesAt.execute(ctx as never, { hostId: "cardinal", path: "/work/app" });
+  expect(calls).toEqual([
+    {
+      method: "unpublishedBranches",
+      input: { paths: ["/work/app", "/work/env-1"], path: "/work/app" },
+      options: { hostId: "cardinal", timeoutMs: 30_000 },
+    },
+  ]);
+  await expect(unpublishedBranchesAt.execute(ctx as never, { hostId: "laptop" })).rejects.toThrow(
+    "not answering",
+  );
+  await expect(unpublishedBranchesAt.execute(ctx as never, { hostId: "asleep" })).rejects.toThrow(
+    "offline",
+  );
 });

@@ -9,6 +9,7 @@ import {
   sameAccount,
   sameRef,
   type BranchReviewRange,
+  localBranchSchema,
   branchReviewedSchema,
   branchReviewRangeSchema,
 } from "../../shared/schema.ts";
@@ -71,10 +72,28 @@ const reviewedRevisionSchema = branchReviewRangeSchema
   .omit({ id: true })
   .extend({ paths: branchReviewedSchema.shape.paths });
 const MAX_REVIEWED_REVISIONS = 5;
+const branchLocationSchema = localBranchSchema.pick({ hostId: true, path: true });
 
 export function createStore(kv: PluginKvStorage) {
   const withLock = createLocks();
   return {
+    async branchLocation(id: string) {
+      const parsed = branchLocationSchema.safeParse(await kv.get(`branch-location:${id}`));
+      return parsed.success ? parsed.data : null;
+    },
+
+    async rememberBranch(branch: { id: string; hostId: string; path: string }): Promise<void> {
+      const key = `branch-location:${branch.id}`;
+      const previous = branchLocationSchema.safeParse(await kv.get(key));
+      if (
+        previous.success &&
+        previous.data.hostId === branch.hostId &&
+        previous.data.path === branch.path
+      )
+        return;
+      await kv.set(key, { hostId: branch.hostId, path: branch.path });
+    },
+
     async branchReviewed(range: BranchReviewRange): Promise<string[]> {
       const revisions = parsedList(reviewedRevisionSchema, await kv.get(reviewedKey(range)));
       return (

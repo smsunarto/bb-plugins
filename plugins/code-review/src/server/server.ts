@@ -15,6 +15,7 @@ import { discardReview } from "./rpc/discard-review.ts";
 import { editDraft } from "./rpc/edit-draft.ts";
 import { fixChecksPrompt } from "./rpc/fix-checks-prompt.ts";
 import { inbox } from "./rpc/inbox.ts";
+import { localBranch } from "./rpc/local-branch.ts";
 import { localBranches } from "./rpc/local-branches.ts";
 import { localChanges } from "./rpc/local-changes.ts";
 import { pullRequest } from "./rpc/pull-request.ts";
@@ -56,6 +57,7 @@ export default definePlugin({
     startReview,
     fixChecksPrompt,
     startFix,
+    localBranch,
     localBranches,
     localChanges,
     branchActivity,

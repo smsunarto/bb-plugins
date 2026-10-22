@@ -29,3 +29,15 @@ test("without the GitButler plugin the list says so", async () => {
       "Install and enable the GitButler plugin to review branches that have no pull request yet.",
   });
 });
+
+test("a locator cache write failure does not hide the branch list", async () => {
+  const { ctx } = fakeContext(
+    {},
+    { plugins: fakeGitButler({ unpublishedBranches: () => UNPUBLISHED }) },
+  );
+  ctx.store.rememberBranch = async () => {
+    throw new Error("storage unavailable");
+  };
+  const read = (await callProcedure(localBranches, ctx, {})) as LocalBranches;
+  expect(read.available && read.branches.length).toBe(3);
+});

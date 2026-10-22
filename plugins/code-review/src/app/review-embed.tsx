@@ -15,7 +15,7 @@ import type { ChangedFile, LocalBranch, PrRef } from "../shared/schema.ts";
 import { useBranchReviewed, withReviewedFiles } from "./branch-review.ts";
 import { Button } from "./components/ui/button.tsx";
 import { PANEL_PATH, plural, shortSha } from "./format.ts";
-import { useLocalBranches } from "./inbox.tsx";
+import { useLocalBranch } from "./local-branch-query.ts";
 import { errorText } from "./notice.tsx";
 import { rpc } from "./rpc.ts";
 import { useReconcile } from "./sync-state.tsx";
@@ -38,14 +38,19 @@ const attributesSchema = z.union([
   }),
 ]);
 
-export function ReviewEmbed({ attributes, source }: PluginMessageDirectiveProps) {
+export function ReviewEmbed({ attributes, source, message }: PluginMessageDirectiveProps) {
   useReconcile();
   const parsed = attributesSchema.safeParse(attributes);
   if (!parsed.success) return <code>{source}</code>;
   return (
     <PluginQueryBoundary>
       {"branch" in parsed.data ? (
-        <BranchEmbed id={parsed.data.branch} base={parsed.data.base} head={parsed.data.head} />
+        <BranchEmbed
+          id={parsed.data.branch}
+          base={parsed.data.base}
+          head={parsed.data.head}
+          threadId={message.threadId}
+        />
       ) : (
         <PrEmbed refValue={parsed.data.pr} account={parsed.data.account} />
       )}
@@ -53,11 +58,19 @@ export function ReviewEmbed({ attributes, source }: PluginMessageDirectiveProps)
   );
 }
 
-function BranchEmbed({ id, base, head }: { id: string; base?: string; head?: string }) {
-  const branches = useLocalBranches();
-  const branch = branches.data?.available
-    ? branches.data.branches.find((each) => each.id === id)
-    : undefined;
+function BranchEmbed({
+  id,
+  base,
+  head,
+  threadId,
+}: {
+  id: string;
+  base?: string;
+  head?: string;
+  threadId: string;
+}) {
+  const branches = useLocalBranch(id, threadId);
+  const branch = branches.data;
   if (branch)
     return (
       <LocalCard
@@ -70,13 +83,7 @@ function BranchEmbed({ id, base, head }: { id: string; base?: string; head?: str
         }
       />
     );
-  const issue = branches.isError
-    ? errorText(branches.error)
-    : branches.data
-      ? branches.data.available
-        ? "This branch is no longer unpublished, or its machine is offline."
-        : branches.data.reason
-      : undefined;
+  const issue = branches.isError ? errorText(branches.error) : undefined;
   return (
     <ReviewCard
       title="Branch changes"

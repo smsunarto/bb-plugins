@@ -16,6 +16,7 @@ import { resolveConflicts } from "./rpc/resolve-conflicts.ts";
 import { reviewRequests } from "./rpc/review-requests.ts";
 import { reviewUrl } from "./rpc/review-url.ts";
 import { reviews } from "./rpc/reviews.ts";
+import { unpublishedBranchesAt } from "./rpc/unpublished-branches-at.ts";
 import { unpublishedBranches } from "./rpc/unpublished-branches.ts";
 import { workspace } from "./rpc/workspace.ts";
 
@@ -39,6 +40,7 @@ export default definePlugin({
     conflictResolution,
     // Read by other plugins (Code Review), not by the board.
     unpublishedBranches,
+    unpublishedBranchesAt,
     branchPatches,
   },
   setup({ bb }) {

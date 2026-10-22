@@ -76,6 +76,7 @@ test("registers every RPC and answers them over the host boundary", async () => 
     "editDraft",
     "fixChecksPrompt",
     "inbox",
+    "localBranch",
     "localBranches",
     "localChanges",
     "pullRequest",

@@ -100,7 +100,7 @@ export function useReconcile(): void {
   const previous = useRef(state);
   useEffect(() => {
     if (state === "connected" && previous.current !== "connected") {
-      for (const method of [...LOCAL_READS, "localBranches"]) {
+      for (const method of [...LOCAL_READS, "localBranches", "localBranch"]) {
         void pluginQueryClient.invalidateQueries({ queryKey: [method] }, { cancelRefetch: false });
       }
     }

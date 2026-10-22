@@ -4,7 +4,7 @@ import { pluginQueryClient } from "@bb-kit/core/rpc/query";
 import { timeoutManager } from "@tanstack/react-query";
 import { branchReviewRange } from "../src/shared/schema.ts";
 import { rpc } from "../src/app/rpc.ts";
-import { localBranch, localBranches, localChanges, pullRequest } from "./app-fixtures.ts";
+import { localBranch, localChanges, pullRequest } from "./app-fixtures.ts";
 
 const { fireEvent, waitFor } = await import("@testing-library/react");
 const { loadPluginApp, renderSlot } = await import("@get-bb/plugin-sdk/testing/app");
@@ -29,7 +29,7 @@ async function card(
     },
     {
       rpc: {
-        localBranches: () => localBranches,
+        localBranch: () => localBranch,
         localChanges: () => localChanges,
         branchReviewed: () => ({ paths }),
         status: () => ({ ok: true, login: "scott", accounts: ["scott"] }),
@@ -74,15 +74,17 @@ test("the branch card opens Changes and shares live review progress", async () =
 test("a failed branch-discovery refresh suppresses cached Ready and retries discovery", async () => {
   let failing = false;
   const slot = await card({ branch: localBranch.id }, ["src/limit.ts"], {
-    localBranches: () => {
+    localBranch: () => {
       if (failing) throw new Error("Machine disconnected");
-      return localBranches;
+      return localBranch;
     },
   });
   try {
     await slot.findByText("Ready");
     failing = true;
-    await pluginQueryClient.invalidateQueries({ queryKey: rpc.localBranches.queryKey({}) });
+    await pluginQueryClient.invalidateQueries({
+      queryKey: rpc.localBranch.queryKey({ id: localBranch.id }),
+    });
     await slot.findByRole("alert");
     expect(slot.queryByText("Ready")).toBeNull();
     expect(slot.getByText("Progress unavailable")).toBeTruthy();
@@ -198,4 +200,130 @@ test("malformed directives stay literal and read nothing", async () => {
   await waitFor(() => expect(slot.getByText("::code-review{invalid}")).toBeTruthy());
   expect(slot.rpcCalls).toEqual([]);
   slot.lifecycle.unmount();
+});
+
+test("a branch card renders even while fleet discovery never answers", async () => {
+  let fleetReads = 0;
+  const slot = await card({ branch: localBranch.id }, [], {
+    localBranches: () => {
+      fleetReads++;
+      return new Promise(() => {});
+    },
+  });
+  try {
+    await slot.findByText("0 of 1 file reviewed");
+    expect(slot.getByText("src/limit.ts")).toBeTruthy();
+    expect(fleetReads).toBe(0);
+  } finally {
+    slot.lifecycle.unmount();
+  }
+});
+
+test("BB reconnect refreshes the card's own branch revision", async () => {
+  let moved = false;
+  const slot = await card({ branch: localBranch.id, head: localBranch.head }, [], {
+    localBranch: () => ({ ...localBranch, head: moved ? "d".repeat(40) : localBranch.head }),
+  });
+  try {
+    await slot.findByText("0 of 1 file reviewed");
+    await slot.behavior.setRealtimeConnectionState("reconnecting");
+    moved = true;
+    await slot.behavior.setRealtimeConnectionState("connected");
+    await slot.findByText("New changes since this card was shared.");
+  } finally {
+    slot.lifecycle.unmount();
+  }
+});
+
+test("Review latest changes opens the card's revision even with an older inbox cached", async () => {
+  const head = "d".repeat(40);
+  const latest = { ...localBranch, head };
+  pluginQueryClient.setQueryData(rpc.localBranches.queryKey({}), {
+    available: true,
+    branches: [localBranch],
+  });
+  const slot = await card({ branch: localBranch.id, head: localBranch.head }, ["src/limit.ts"], {
+    localBranch: () => latest,
+    localChanges: (input: unknown) => ({
+      ...localChanges,
+      headRefOid: (input as { head: string }).head,
+    }),
+  });
+  let page: Awaited<ReturnType<typeof renderSlot>> | undefined;
+  try {
+    fireEvent.click(await slot.findByRole("button", { name: "Review latest changes" }));
+    const navigation = slot.navigateCalls.at(-1)!;
+    if (navigation.method !== "toPluginPanel") throw new Error("Expected review panel navigation");
+    const app = await loadPluginApp(() => import("../src/app/app.tsx"));
+    page = await renderSlot(
+      app.navPanels[0]!,
+      { subPath: navigation.options?.subPath ?? "" },
+      {
+        rpc: {
+          localBranch: () => latest,
+          localChanges: (input: unknown) => ({
+            ...localChanges,
+            headRefOid: (input as { head: string }).head,
+          }),
+          branchReviewed: () => ({ paths: ["src/limit.ts"] }),
+          branchActivity: () => ({ threads: [], latestReview: null }),
+          reviewInstructions: () => ({ instructions: "" }),
+        },
+      },
+    );
+    await page.findByRole("article", { name: "src/limit.ts" });
+    const reads = [...slot.rpcCalls, ...page.rpcCalls];
+    expect([
+      ...new Set(
+        reads
+          .filter((call) => call.method === "localChanges")
+          .map((call) => (call.input as { head: string }).head),
+      ),
+    ]).toEqual([head]);
+    expect([
+      ...new Set(
+        reads
+          .filter((call) => call.method === "branchReviewed")
+          .map((call) => (call.input as { head: string }).head),
+      ),
+    ]).toEqual([head]);
+    expect(
+      (page.getByRole("checkbox", { name: "Reviewed src/limit.ts" }) as HTMLInputElement).checked,
+    ).toBe(true);
+    expect(page.rpcCalls.some((call) => call.method === "localBranches")).toBe(false);
+  } finally {
+    page?.lifecycle.unmount();
+    slot.lifecycle.unmount();
+  }
+});
+
+test("a missing card does not retry or poll fleet discovery", async () => {
+  const timers = {
+    setTimeout: (fn: () => void, delay: number) => setTimeout(fn, delay),
+    clearTimeout: (id: ReturnType<typeof setTimeout> | undefined) => clearTimeout(id),
+    setInterval: (fn: () => void, delay: number) => setInterval(fn, delay),
+    clearInterval: (id: ReturnType<typeof setInterval> | undefined) => clearInterval(id),
+  };
+  timeoutManager.setTimeoutProvider({
+    ...timers,
+    setInterval: (fn, delay) => setInterval(fn, delay === 30_000 ? 10 : delay),
+  });
+  let reads = 0;
+  const slot = await card({ branch: localBranch.id }, [], {
+    localBranch: () => {
+      reads++;
+      throw new Error("This branch is no longer unpublished, or its machine is offline.");
+    },
+  });
+  try {
+    await slot.findByRole("alert");
+    await new Promise((resolve) => setTimeout(resolve, 40));
+    expect(reads).toBe(1);
+    expect(slot.getByText("Progress unavailable")).toBeTruthy();
+    fireEvent.click(slot.getByRole("button", { name: "Retry" }));
+    await waitFor(() => expect(reads).toBe(2));
+  } finally {
+    slot.lifecycle.unmount();
+    timeoutManager.setTimeoutProvider(timers);
+  }
 });

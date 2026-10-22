@@ -21,6 +21,11 @@ const baseRpc: Handlers = {
   status: () => ({ ok: true, login: "scott", accounts: ["scott"] }),
   inbox: () => inbox,
   localBranches: () => localBranches,
+  localBranch: (input: { id: string }) => {
+    if (input.id !== localBranch.id)
+      throw new Error("This branch is no longer unpublished, or its machine is offline.");
+    return localBranch;
+  },
   localChanges: () => localChanges,
   branchActivity: () => agentActivity,
   branchReviewed: () => ({ paths: [] }),
@@ -143,9 +148,9 @@ test("a new local commit preserves the mounted overview and scroll area", async 
   fireEvent.wheel(area);
   area.scrollTop = 400;
   await act(async () => {
-    pluginQueryClient.setQueryData(rpc.localBranches.queryKey(), {
-      ...localBranches,
-      branches: [{ ...localBranch, head: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" }],
+    pluginQueryClient.setQueryData(rpc.localBranch.queryKey({ id: localBranch.id }), {
+      ...localBranch,
+      head: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
     });
   });
   await slot.findByRole("article", { name: "src/limit.ts" });
@@ -369,9 +374,7 @@ test("a branch's activity is read again when the server says it changed", async 
 test("a branch no longer listed says so, and leads back to the inbox", async () => {
   const slot = await page("branch/ffffffffffff");
   expect(
-    await slot.findByText(
-      "This branch has no unpublished commits any more, or its machine is offline.",
-    ),
+    await slot.findByText("This branch is no longer unpublished, or its machine is offline."),
   ).toBeTruthy();
   fireEvent.click(slot.getByRole("button", { name: "Back to inbox" }));
   expect(slot.navigateCalls).toEqual([

@@ -99,7 +99,12 @@ export const gitbutlerHostContract = defineRpcContract({
   },
   /** The unpublished branches of every GitButler workspace among `paths`, whatever its origin. */
   unpublishedBranches: {
-    input: z.object({ paths: z.array(environmentPathSchema).max(100_000) }).strict(),
+    input: z
+      .object({
+        paths: z.array(environmentPathSchema).max(100_000),
+        path: environmentPathSchema.optional(),
+      })
+      .strict(),
     output: hostUnpublishedBranchesSchema,
   },
 });

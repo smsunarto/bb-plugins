@@ -486,6 +486,19 @@ test("unpublishedBranches names each workspace branch with no review yet, and wh
     },
   ]);
   expect(await butCalls()).toEqual(["status --json"]);
+  await stackedWorkspace(join(machine, "other"));
+  const scoped = await host.experimental_call("unpublishedBranches", {
+    paths: [join(machine, "app"), join(machine, "other")],
+    path: join(machine, "app"),
+  });
+  expect(scoped).toEqual(answer);
+  expect(await butCalls()).toEqual(["status --json", "status --json"]);
+  await expect(
+    host.experimental_call("unpublishedBranches", {
+      paths: [join(machine, "clone")],
+      path: join(machine, "app"),
+    }),
+  ).rejects.toThrow("not a GitButler workspace bb knows");
 });
 
 test("a range patch is everything the head changes since the base, from git", async () => {

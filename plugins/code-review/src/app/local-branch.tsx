@@ -1,4 +1,3 @@
-import type { ReactNode } from "react";
 import { experimental_Icon as Icon, useBbNavigate } from "@get-bb/plugin-sdk/app";
 import type { BranchTab, LocalBranch } from "../shared/schema.ts";
 import { FindingsCard, LinkedThreads, ReviewWithBbButton } from "./bb-review.tsx";
@@ -6,7 +5,7 @@ import { BranchReview } from "./changes.tsx";
 import { Button } from "./components/ui/button.tsx";
 import { COARSE_POINTER_COMPACT_ICON_BUTTON_CLASS } from "./components/ui/coarse-pointer-sizing.ts";
 import { PANEL_PATH, plural } from "./format.ts";
-import { useLocalBranches } from "./inbox.tsx";
+import { useLocalBranch } from "./local-branch-query.ts";
 import { cn } from "./lib/utils.ts";
 import { Loading, Notice, RetryButton, Section, Tip, errorText } from "./notice.tsx";
 import { BranchStatusChip } from "./status.tsx";
@@ -21,48 +20,32 @@ function useBackToInbox(): () => void {
  * An unpublished branch's commits, findings, and diffs, found by its inbox id.
  */
 export function LocalBranchView({ id, tab }: { id: string; tab: BranchTab }) {
-  const branches = useLocalBranches();
+  const branches = useLocalBranch(id);
   const back = useBackToInbox();
   const data = branches.data;
-  const branch = data?.available ? data.branches.find((each) => each.id === id) : undefined;
-  if (branch) return <Loaded branch={branch} tab={tab} />;
+  if (data && !branches.isError) return <Loaded branch={data} tab={tab} />;
 
   const backButton = (
     <Button variant="outline" size="sm" className="h-6 px-2.5 text-xs font-normal" onClick={back}>
       Back to inbox
     </Button>
   );
-  let body: ReactNode;
-  if (!data) {
-    body = branches.isError ? (
-      <Notice
-        tone="error"
-        title="Could not load unpublished branches"
-        action={
-          <>
-            <RetryButton onRetry={() => void branches.refetch()} />
-            {backButton}
-          </>
-        }
-      >
-        {errorText(branches.error)}
-      </Notice>
-    ) : (
-      <Loading label="Loading the branch…" rows={5} />
-    );
-  } else if (!data.available) {
-    body = (
-      <Notice tone="info" title="Unpublished branches are unavailable" action={backButton}>
-        {data.reason}
-      </Notice>
-    );
-  } else {
-    body = (
-      <Notice tone="info" title="Branch not found" action={backButton}>
-        This branch has no unpublished commits any more, or its machine is offline.
-      </Notice>
-    );
-  }
+  const body = branches.isError ? (
+    <Notice
+      tone="error"
+      title="Could not load the branch"
+      action={
+        <>
+          <RetryButton onRetry={() => void branches.refetch()} />
+          {backButton}
+        </>
+      }
+    >
+      {errorText(branches.error)}
+    </Notice>
+  ) : (
+    <Loading label="Loading the branch…" rows={5} />
+  );
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="flex items-center gap-1 border-b border-border px-3 py-2">

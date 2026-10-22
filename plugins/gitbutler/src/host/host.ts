@@ -298,7 +298,26 @@ export default experimental_defineHostEntry({
       return { checkouts };
     },
 
-    async unpublishedBranches({ paths }, context) {
+    async unpublishedBranches({ paths, path }, context) {
+      if (path) {
+        const repository = await resolveRepository(path, undefined, context.signal);
+        if (
+          !(await isKnownWorkspace(
+            paths.includes(path) ? [path] : paths,
+            repository.path,
+            context.signal,
+          ))
+        )
+          throw new NoRepositoryError(
+            "That is not a GitButler workspace bb knows on this machine.",
+          );
+        return {
+          branches: await readUnpublished(
+            { ...repository, origin: await readOrigin(repository.path, context.signal) },
+            context.signal,
+          ),
+        };
+      }
       const repositories = await findCheckouts(paths, null, context.signal);
       const found = await Promise.all(
         repositories.map((repository) =>

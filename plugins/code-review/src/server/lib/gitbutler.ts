@@ -8,6 +8,7 @@ import type {
   LocalBranch,
   LocalBranches,
 } from "../../shared/schema.ts";
+import type { Store } from "./store.ts";
 import { isGenerated, parseGitattributes } from "./generated.ts";
 
 /*
@@ -80,13 +81,14 @@ async function gitButlerEnabled(bb: BbPluginApi): Promise<boolean> {
 export async function loadLocalBranches(
   bb: BbPluginApi,
   signal?: AbortSignal,
+  scope?: { hostId: string; path?: string },
 ): Promise<LocalBranches> {
   let read: z.infer<typeof unpublished>;
   try {
     read = await bb.sdk.plugins.callRpc({
       pluginId: GITBUTLER_PLUGIN_ID,
-      method: "unpublishedBranches",
-      input: null,
+      method: scope ? "unpublishedBranchesAt" : "unpublishedBranches",
+      input: scope ?? null,
       outputSchema: unpublished,
       ...(signal ? { signal } : {}),
     });
@@ -196,4 +198,17 @@ function countLines(patch: string | null): { additions: number; deletions: numbe
     else if (line.startsWith("-")) deletions++;
   }
   return { additions, deletions };
+}
+
+/** A locator speeds later reads; a cache-write failure must not hide a readable branch. */
+export async function rememberBranch(
+  bb: BbPluginApi,
+  store: Store,
+  branch: LocalBranch,
+): Promise<void> {
+  try {
+    await store.rememberBranch(branch);
+  } catch (error) {
+    bb.log.warn(`Could not remember branch location: ${String(error)}`);
+  }
 }
