@@ -18,6 +18,31 @@
 - Before adding or changing an agent tool, or reviewing its description, read and follow [tool-descriptions](.agents/skills/tool-descriptions/SKILL.md).
 - Keep agent-facing text (thread instructions, prompts, tool descriptions) in `<plugin>/instructions/` and read it with `instructionFiles` from `@bb-kit/core/instructions`. Tool descriptions go in `instructions/tools/<tool>.md`, with an optional `<tool>.instructions.md` thread snippet. The Prompt Editor plugin edits these files, so do not inline agent text in code.
 
+## Local-first plugin design
+
+Design plugins to remain useful across slow, intermittent, and independently failing connections.
+
+- **Topology:** Identify the UI client, BB server, and checkout host separately. Account for a desktop with a local server, Personal Mac connected to a remote BB server with its checkout on either machine, and BB mobile connected to a remote server and a separate checkout host. A phone has no assumed checkout or CLI; a server connection does not establish checkout-host availability.
+- **Platforms:** Support macOS and Ubuntu for server and host code, including mixed-OS connections. Detect the platform and required tools where each operation executes. Use portable runtime and path APIs; handle platform-specific CLI flags, tool locations, filesystem case sensitivity, and permissions explicitly. Keep macOS-only integrations optional with a usable Ubuntu path.
+- **First render:** Show available local or cached data immediately, then refresh in the background. Label stale, offline, pending, and failed states accurately. Keep usable data visible through reconnects; a cache miss should load only the requested resource.
+- **Scoped work:** Route reads and commands to the resource's owning host and checkout through the SDK. Resolve known identities directly. Keep fleet-wide discovery off the interaction's critical path and expose independent results as they arrive.
+- **Failure isolation:** An unrelated slow repository, sleeping laptop, or disconnected host must not block available content or actions. Bound request deadlines, concurrency, and retries; coalesce shared reads, cancel obsolete work where supported, and reject late results for superseded selections.
+- **Connection lifecycle:** Gate polling by surface visibility and connection state. Stop repeated discovery for missing resources, offer explicit retry, and reconcile after reconnect. Retry writes only when their semantics make repetition safe.
+- **Consistency:** Share canonical, revision-aware data between cards, lists, and detail views. Preserve authoritative ownership of writes and show pending or failed outcomes; cached state alone must not imply a successful write or completed review.
+- **Verification:** Verify relevant server and checkout-host behavior on both macOS and Ubuntu, including mixed-OS connections; report any untested platform. Exercise supported connection topologies with cold and warm caches, latency, disconnection, and reconnect. Assert that the selected resource becomes usable while an unrelated host stays pending, and that stale responses cannot replace newer data. Measure the complete user interaction and distinguish client-to-server latency from server-to-host work.
+
+## Resizable thread side-panel tabs
+
+- Every UI in a Thread side-panel tab (`thread-panel`) must adapt continuously to its container's available width and height as the user resizes it. Use container-aware layouts; browser viewport breakpoints alone do not describe the panel's size.
+- Keep primary controls reachable at narrow widths. Wrap or stack controls, let flex/grid children shrink, and give overflowing content an appropriate scroll region. Reserve horizontal scrolling for inherently wide content such as diffs or tables; keep panel controls within the available width. Preserve UI state and keyboard focus during resize.
+- Verify the actual registered tab at narrow, intermediate, and wide widths and short and tall heights. Drag the divider in both directions and reopen a tab at its saved size. Check for clipped content, overlapping controls, unwanted outer scrolling, and resize-triggered state resets or remounts.
+
+## Agent orchestration
+
+- Prefer BB primitives, such as CLI-managed subthreads, messaging, waiting, and lifecycle cleanup, for agent orchestration. Describe workflows, prompts, and decision points in agent instructions or skills so the agent can compose and adapt the steps to the task.
+- Use small scripts or CLI commands to package repetitive setup, argument construction, or result formatting when they reduce boilerplate and token usage. Keep these helpers composable and inspectable, with explicit inputs, results, and thread identities.
+- Keep planning, branching, and recovery decisions in the agent-guided workflow. Add a custom orchestration tool only for a concrete capability the existing primitives cannot provide reliably; keep its responsibility narrow.
+
 ## Work -> Plugins Routing
 
 - Prefer to group work into an existing relevant plugins. Obtain explicit approval before creating a new plugin.
