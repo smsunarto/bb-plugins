@@ -453,6 +453,20 @@
         "typescript": "^6.0.0",
       },
     },
+    "plugins/gcp-machine": {
+      "name": "@smsunarto/bb-plugin-gcp-machine",
+      "version": "0.1.0",
+      "dependencies": {
+        "@bb-kit/core": "workspace:*",
+        "zod": "^4.4.3",
+      },
+      "devDependencies": {
+        "@get-bb/plugin-sdk": "0.5.29",
+        "@types/node": "^22.0.0",
+        "tsx": "4.23.12",
+        "typescript": "^6.0.0",
+      },
+    },
     "plugins/gh-stack": {
       "name": "@smsunarto/bb-plugin-gh-stack",
       "version": "0.3.0",
@@ -1765,6 +1779,8 @@
     "@smsunarto/bb-plugin-dotfiles": ["@smsunarto/bb-plugin-dotfiles@workspace:plugins/dotfiles"],
 
     "@smsunarto/bb-plugin-game-studio": ["@smsunarto/bb-plugin-game-studio@workspace:plugins/game-studio"],
+
+    "@smsunarto/bb-plugin-gcp-machine": ["@smsunarto/bb-plugin-gcp-machine@workspace:plugins/gcp-machine"],
 
     "@smsunarto/bb-plugin-gh-stack": ["@smsunarto/bb-plugin-gh-stack@workspace:plugins/gh-stack"],
 

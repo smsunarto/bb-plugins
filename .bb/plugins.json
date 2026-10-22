@@ -36,6 +36,10 @@
       "source": "./plugins/game-studio"
     },
     {
+      "name": "gcp-machine",
+      "source": "./plugins/gcp-machine"
+    },
+    {
       "name": "gh-stack",
       "source": "./plugins/gh-stack"
     },

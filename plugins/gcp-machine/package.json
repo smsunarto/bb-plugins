@@ -1,0 +1,42 @@
+{
+  "name": "@smsunarto/bb-plugin-gcp-machine",
+  "version": "0.1.0",
+  "type": "module",
+  "engines": {
+    "bb": ">=0.46",
+    "bbPluginSdk": ">=0.5.29"
+  },
+  "bb": {
+    "name": "GCP Machine",
+    "description": "Start an existing GCP VM on demand and stop it after one hour without BB work.",
+    "branding": {
+      "icon": "./assets/icon.svg"
+    },
+    "server": "./src/server/server.ts",
+    "host": "./src/host/host.ts",
+    "skills": [
+      "skills"
+    ]
+  },
+  "dependencies": {
+    "@bb-kit/core": "workspace:*",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@get-bb/plugin-sdk": "0.5.29",
+    "@types/node": "^22.0.0",
+    "tsx": "4.23.12",
+    "typescript": "^6.0.0"
+  },
+  "private": true,
+  "description": "Start an existing GCP VM on demand and stop it after one hour without BB work.",
+  "license": "MIT",
+  "author": "Scott Sunarto",
+  "scripts": {
+    "dev": "bb plugin dev .",
+    "build": "bb plugin build .",
+    "typecheck": "tsc --noEmit",
+    "test": "node --import tsx --test src/host/*.test.ts src/server/lib/*.test.ts src/server/command/*.test.ts",
+    "check": "node --import tsx ../../packages/bb-kit-dev/src/bin.ts check"
+  }
+}
