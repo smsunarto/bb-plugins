@@ -110,8 +110,8 @@ export const gtdSidebarRpcContract = defineRpcContract({
    */
   listCollapsedThreads: {
     experimental_description:
-      "Thread families folded in the sidebar, shared with bb's own sidebar.",
-    input: z.object({}),
+      "Initialize unseen families as collapsed, then list folds shared with bb's own sidebar.",
+    input: z.object({ familyIds: z.array(z.string().trim().min(1)).default([]) }),
     output: z.object({ threadIds: z.array(z.string()) }),
   },
   setThreadCollapsed: {
@@ -260,6 +260,7 @@ export default async function plugin(bb: BbPluginApi) {
   const foldsLifetime = new AbortController();
   bb.onDispose(() => foldsLifetime.abort());
   const collapsedThreads = createCollapsedThreadsStore(bb.sdk.plugins, {
+    defaults: bb.storage.kv,
     signal: foldsLifetime.signal,
     // Whichever call saw the change, a window's fold or the check below,
     // every window re-reads.
@@ -278,8 +279,8 @@ export default async function plugin(bb: BbPluginApi) {
       changeMachineVisibility: async (change) => ({
         hiddenMachineIds: await machineVisibility.change(change),
       }),
-      async listCollapsedThreads() {
-        return { threadIds: await collapsedThreads.list() };
+      async listCollapsedThreads({ familyIds }) {
+        return { threadIds: await collapsedThreads.list(familyIds) };
       },
       async setThreadCollapsed({ threadId, collapsed }) {
         return { threadIds: await collapsedThreads.set(threadId, collapsed) };
@@ -366,8 +367,13 @@ export default async function plugin(bb: BbPluginApi) {
 
   // A deleted thread must not leave a row behind that would park a future
   // thread reusing the id, and stale rows accumulate otherwise.
-  bb.events.on("thread.deleted", ({ thread }) => {
+  bb.events.on("thread.deleted", async ({ thread }) => {
     clear(thread.id);
+    try {
+      await collapsedThreads.remove(thread.id);
+    } catch (error) {
+      bb.log.warn(`cannot remove deleted thread fold: ${String(error)}`);
+    }
   });
 
   // thread-list publishes its own `preferences` channel. SDK 0.6.75 still

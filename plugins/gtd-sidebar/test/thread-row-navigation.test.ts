@@ -463,6 +463,7 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
     compactThreads = false,
     localMachineId = "",
     options: NonNullable<Parameters<typeof renderSlot>[2]> = {},
+    expandFamilies = true,
   ) {
     let current: InboxProps = {
       host,
@@ -499,6 +500,14 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
         ...options.rpc,
       },
     });
+    // Layout/navigation fixtures explicitly open families. Default-fold tests
+    // leave them closed, as a fresh sidebar does.
+    if (expandFamilies) {
+      let expand: HTMLElement | undefined;
+      while ((expand = slot.queryAllByRole("button", { name: /^Expand children of / })[0])) {
+        fireEvent.click(expand);
+      }
+    }
     return {
       slot,
       setGrouping(enabled: boolean) {
@@ -1181,6 +1190,20 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
   });
 
   describe("thread hierarchy", () => {
+    it("starts families collapsed and reveals each nested level on demand", () => {
+      const host = hostState([
+        thread("root"),
+        thread("child", { parentThreadId: "root" }),
+        thread("grandchild", { parentThreadId: "child" }),
+      ]);
+      const { slot } = mount(host, {}, false, "", {}, false);
+      assert.deepEqual(rowIds(slot), ["root"]);
+      fireEvent.click(rowButton(slot, "root", "Expand children of root"));
+      assert.deepEqual(rowIds(slot), ["root", "child"]);
+      fireEvent.click(rowButton(slot, "child", "Expand children of child"));
+      assert.deepEqual(rowIds(slot), ["root", "child", "grandchild"]);
+    });
+
     it("shows snoozed descendants beneath their parent", () => {
       const host = hostState([
         thread("root"),
@@ -1189,7 +1212,9 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
       ]);
       host.lifecycle = lifecycle(["root", "child", "grandchild"]);
       const view = mount(host);
-      fireEvent.click(view.slot.getByRole("button", { name: "Snoozed (3)" }));
+      fireEvent.click(view.slot.getByRole("button", { name: "Snoozed (1)" }));
+      fireEvent.click(rowButton(view.slot, "root", "Expand children of root"));
+      fireEvent.click(rowButton(view.slot, "child", "Expand children of child"));
       assert.deepEqual(rowIds(view.slot), ["root", "child", "grandchild"]);
       assert.ok(rowButton(view.slot, "root", "Collapse children of root"));
       assert.ok(rowButton(view.slot, "child", "Collapse children of child"));

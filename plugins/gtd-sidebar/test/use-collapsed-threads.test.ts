@@ -57,8 +57,8 @@ if (process.env.GTD_COLLAPSED_TEST_CHILD !== "1") {
     return { promise, resolve, reject };
   }
 
-  function FoldProbe() {
-    const { collapsedThreads, toggleThread } = useCollapsedThreads();
+  function FoldProbe({ familyIds }: { familyIds?: readonly string[] }) {
+    const { collapsedThreads, toggleThread } = useCollapsedThreads(familyIds);
     return createElement(
       Fragment,
       null,
@@ -128,6 +128,55 @@ if (process.env.GTD_COLLAPSED_TEST_CHILD !== "1") {
   });
 
   describe("useCollapsedThreads", () => {
+    it("loads a saved expansion despite roster updates with the same families", async () => {
+      const pending = deferred<Folds>();
+      let reads = 0;
+      const slot = renderSlot(
+        { component: FoldProbe },
+        { familyIds: ["t"] },
+        {
+          rpc: {
+            listCollapsedThreads: () => {
+              reads += 1;
+              return pending.promise;
+            },
+          } as never,
+        },
+      );
+      slot.lifecycle.rerender(createElement(FoldProbe, { familyIds: ["t"] }));
+      await act(async () => pending.resolve({ threadIds: [] }));
+      assert.equal(slot.getByRole("status").textContent, "");
+      assert.equal(reads, 1);
+    });
+
+    it("keeps new families folded while loading and expands on the first click", async () => {
+      const pending = deferred<Folds>();
+      const familyIds = ["t"];
+      const slot = renderSlot(
+        { component: FoldProbe },
+        { familyIds },
+        {
+          rpc: {
+            listCollapsedThreads: () =>
+              slot.inspection.rpcCalls.some(({ method }) => method === "setThreadCollapsed")
+                ? { threadIds: [] }
+                : pending.promise,
+            setThreadCollapsed: () => ({ threadIds: [] }),
+          } as never,
+        },
+      );
+      assert.equal(slot.getByRole("status").textContent, "t");
+      fireEvent.click(slot.getByRole("button", { name: "Fold" }));
+      await act(async () => {});
+      assert.equal(slot.getByRole("status").textContent, "");
+      assert.deepEqual(
+        slot.inspection.rpcCalls.find(({ method }) => method === "setThreadCollapsed")?.input,
+        { threadId: "t", collapsed: false },
+      );
+      await act(async () => pending.resolve({ threadIds: ["t"] }));
+      assert.equal(slot.getByRole("status").textContent, "");
+    });
+
     it("folds on the click and writes the fold it wants", async () => {
       const window = await mountFolds();
       window.fold();

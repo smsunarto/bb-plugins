@@ -907,7 +907,17 @@ function useInboxTree(
   // Folded families are bb's own preference, shared with the built-in
   // sidebar and kept across reloads. Folded project groups stay session state
   // below: bb has no per-shelf project key and its preference keys are closed.
-  const { collapsedThreads, toggleThread } = useCollapsedThreads();
+  const familyIds = useMemo(() => {
+    const listed = new Set(threads.map((thread) => thread.id));
+    return [
+      ...new Set(
+        threads.flatMap((thread) =>
+          thread.parentThreadId && listed.has(thread.parentThreadId) ? [thread.parentThreadId] : [],
+        ),
+      ),
+    ];
+  }, [threads]);
+  const { collapsedThreads, toggleThread } = useCollapsedThreads(familyIds);
   // The arrival memory lives for the mount: a row keeps the place it earned
   // when it entered its shelf until the shelf itself changes.
   const [arrivals] = useState(createShelfArrivals);

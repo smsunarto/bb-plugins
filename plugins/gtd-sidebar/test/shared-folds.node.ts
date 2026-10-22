@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { afterEach, describe, it, mock } from "node:test";
-import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
+import { createFakePluginHost, makeThreadResponse } from "@get-bb/plugin-sdk/testing";
 import plugin from "../server.ts";
 
 /** Lets the reconcile's awaited thread-list read finish. */
@@ -8,6 +8,73 @@ const flush = () => new Promise((resolve) => setImmediate(resolve));
 
 describe("shared folds", () => {
   afterEach(() => mock.timers.reset());
+
+  it("defaults new families to folded and preserves explicit expansion across reloads", async () => {
+    let stored = ["existing"];
+    let overwrites = 0;
+    let { bb, harness } = createFakePluginHost({
+      pluginId: "gtd-sidebar",
+      sdk: {
+        subscribe: () => () => {},
+        threads: { list: async () => [] },
+        plugins: {
+          callRpc: async ({ method, input, outputSchema }) => {
+            if (method === "setPreference") {
+              stored = (input as { value: string[] }).value;
+              if (overwrites > 0) {
+                overwrites -= 1;
+                stored = ["existing", "concurrent"];
+              }
+              return outputSchema.parse(input);
+            }
+            return outputSchema.parse({ preferences: { collapsedThreads: stored } });
+          },
+        },
+      },
+    });
+    await plugin(bb);
+    try {
+      const list = (familyIds: string[]) =>
+        harness.behavior.callRpc("listCollapsedThreads", { familyIds });
+      assert.deepEqual(await list(["parent", "child"]), {
+        threadIds: ["existing", "parent", "child"],
+      });
+      await harness.behavior.callRpc("setThreadCollapsed", {
+        threadId: "parent",
+        collapsed: false,
+      });
+      ({ bb, harness } = await harness.lifecycle.reload(plugin));
+      assert.deepEqual(await list(["parent", "child", "new-parent"]), {
+        threadIds: ["existing", "child", "new-parent"],
+      });
+      // A click before initialization still counts as the user's choice.
+      await harness.behavior.callRpc("setThreadCollapsed", {
+        threadId: "clicked-first",
+        collapsed: false,
+      });
+      assert.deepEqual(await list(["clicked-first"]), {
+        threadIds: ["existing", "child", "new-parent"],
+      });
+      // A built-in sidebar write overwrites the first initialization write.
+      overwrites = 1;
+      assert.deepEqual(await list(["raced"]), {
+        threadIds: ["existing", "concurrent", "raced"],
+      });
+      // Exhausting reconciliation must leave initialization retryable.
+      overwrites = 2;
+      await assert.rejects(list(["retry"]), /overwrote the default folds/);
+      assert.deepEqual(await list(["retry"]), {
+        threadIds: ["existing", "concurrent", "retry"],
+      });
+      await harness.behavior.emitThreadEvent("thread.deleted", {
+        thread: makeThreadResponse({ id: "retry" }),
+      });
+      assert.deepEqual(stored, ["existing", "concurrent"]);
+      assert.ok(!(await bb.storage.kv.get<string[]>("initializedThreadFolds"))?.includes("retry"));
+    } finally {
+      await harness.lifecycle.dispose();
+    }
+  });
 
   it("relays a fold made in bb's own sidebar and writes only the fold a window asks for", async () => {
     mock.timers.enable({ apis: ["setTimeout"] });

@@ -29,6 +29,8 @@ export function sameFolds(left: readonly string[], right: readonly string[]): bo
 }
 
 export interface CollapsedThreadsStoreOptions {
+  /** Families whose initial collapsed default has already been applied. */
+  defaults?: BbPluginApi["storage"]["kv"];
   /** Aborts every thread-list call in flight, e.g. when the plugin unloads. */
   signal?: AbortSignal;
   /**
@@ -39,12 +41,14 @@ export interface CollapsedThreadsStoreOptions {
 }
 
 export interface CollapsedThreadsStore {
-  /** The stored folds, or this session's last successful read when thread-list fails. */
-  list(): Promise<string[]>;
+  /** Applies defaults for unseen families, then lists folds. Initialization errors reject. */
+  list(familyIds?: readonly string[]): Promise<string[]>;
   /** The stored folds; rejects when thread-list cannot answer. */
   read(): Promise<string[]>;
   /** Folds or opens one family; resolves to the folds read after the write. */
   set(threadId: string, collapsed: boolean): Promise<string[]>;
+  /** Removes a deleted thread from shared folds and initialization memory. */
+  remove(threadId: string): Promise<void>;
 }
 
 /**
@@ -96,7 +100,7 @@ async function withDeadline<T>(
  */
 export function createCollapsedThreadsStore(
   plugins: Plugins,
-  { signal, onChange }: CollapsedThreadsStoreOptions = {},
+  { signal, onChange, defaults }: CollapsedThreadsStoreOptions = {},
 ): CollapsedThreadsStore {
   let known: string[] | undefined;
   let queue: Promise<unknown> = Promise.resolve();
@@ -140,24 +144,67 @@ export function createCollapsedThreadsStore(
   };
 
   const read = () => serialize(fetchFolds);
+  const initializedFamilies = async () => {
+    const saved = z.array(z.string()).safeParse(await defaults?.get("initializedThreadFolds"));
+    return new Set(saved.success ? saved.data : []);
+  };
+  const rememberFamilies = async (ids: Set<string>) => {
+    await defaults?.set("initializedThreadFolds", [...ids]);
+  };
+  const writeFolds = async (current: string[], ids: readonly string[], collapsed: boolean) => {
+    for (let attempt = 0; attempt < WRITE_ATTEMPTS; attempt++) {
+      if (ids.every((id) => current.includes(id) === collapsed)) return current;
+      const next = new Set(current);
+      for (const id of ids) {
+        if (collapsed) next.add(id);
+        else next.delete(id);
+      }
+      await storeFolds([...next]);
+      current = await fetchFolds();
+    }
+    return current;
+  };
   return {
     read,
-    async list() {
+    async list(familyIds = []) {
       try {
-        return await read();
-      } catch {
+        return await serialize(async () => {
+          const current = await fetchFolds();
+          if (!defaults || familyIds.length === 0) return current;
+          const initialized = await initializedFamilies();
+          const fresh = familyIds.filter((id) => !initialized.has(id));
+          if (fresh.length === 0) return current;
+          const folded = await writeFolds(current, fresh, true);
+          if (fresh.some((id) => !folded.includes(id))) {
+            throw new Error("thread-list overwrote the default folds");
+          }
+          for (const id of fresh) initialized.add(id);
+          await rememberFamilies(initialized);
+          return folded;
+        });
+      } catch (error) {
+        // The UI must keep new families folded until initialization succeeds.
+        if (familyIds.length > 0) throw error;
         return known ?? [];
       }
     },
     set(threadId, collapsed) {
       return serialize(async () => {
-        let current = await fetchFolds();
-        for (let attempt = 0; attempt < WRITE_ATTEMPTS; attempt++) {
-          if (current.includes(threadId) === collapsed) return current;
-          await storeFolds(withThreadCollapsed(current, threadId, collapsed));
-          current = await fetchFolds();
+        const current = await fetchFolds();
+        // An explicit choice wins even before the family's first list read.
+        if (defaults) {
+          const initialized = await initializedFamilies();
+          initialized.add(threadId);
+          await rememberFamilies(initialized);
         }
-        return current;
+        return writeFolds(current, [threadId], collapsed);
+      });
+    },
+    remove(threadId) {
+      return serialize(async () => {
+        const initialized = await initializedFamilies();
+        if (initialized.delete(threadId)) await rememberFamilies(initialized);
+        await writeFolds(await fetchFolds(), [threadId], false);
       });
     },
   };
