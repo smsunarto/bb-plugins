@@ -6,6 +6,8 @@ Arena, independent review, engineering skills, and shared engineering principles
 
 Both ask one Claude and one Codex child thread the same prompt. The agent starts each child with the `bb thread spawn --parent-self` recipe in `instructions/author.md`. BB messages the parent as each child finishes, and the parent reads the answers with `bb thread output <thread-id>`.
 
+After consuming each answer and finishing any follow-up, the parent settles the child by archiving it, stopping its runtime, and verifying its state, as described in `instructions/author.md`.
+
 - **Arena** asks a question when the user wants two independent answers. The parent weighs them.
 - **Review** runs at implementation handoff and before consequential designs. Reviewers read `git diff <base> <head>` in the parent's checkout and apply the lenses under `skills/review/references/`, which the parent pastes into their prompt. The parent judges the findings, fixes accepted ones, and reruns checks.
 

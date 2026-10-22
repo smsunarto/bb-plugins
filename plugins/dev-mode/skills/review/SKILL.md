@@ -19,3 +19,5 @@ Ask one Claude and one Codex reviewer, as Dev Mode's thread instructions describ
 ## Judge and fix
 
 Wait for both reviewers. Merge duplicate findings and note which model raised each. Check every finding against the code: act on real problems, and dismiss wrong or speculative ones with a reason. Fix accepted findings on this task's branch without touching other work, then rerun the relevant checks. For a design, correct the proposal instead. Report the reviewers, what you fixed, the verification results, and any findings you left with your reasons.
+
+Then settle each child as Dev Mode's thread instructions describe, including in read-only reviews.

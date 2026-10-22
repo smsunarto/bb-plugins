@@ -6,3 +6,5 @@ description: "Ask Claude and Codex the same question and compare their answers. 
 # Arena
 
 Ask one Claude and one Codex child the question, as Dev Mode's thread instructions describe, titled `Arena (Claude)` and `Arena (Codex)`. Once both answer, compare them and decide.
+
+Then settle each child as Dev Mode's thread instructions describe.
