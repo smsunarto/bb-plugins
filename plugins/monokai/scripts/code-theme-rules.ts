@@ -2,7 +2,7 @@
 //
 // `code-theme-rules.json` is data, not a second palette — every color is a role
 // name resolved by scripts/generate-theme.ts. `bun run sync:code-theme` rewrites
-// it from the editor theme in the sibling smsunarto-theme checkout.
+// it from the editor-theme directory supplied with --source.
 
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";

@@ -1,7 +1,14 @@
 import { describe, expect, test } from "bun:test";
-import { readFile } from "node:fs/promises";
+import { spawnSync } from "node:child_process";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { readCodeThemeRules } from "../scripts/code-theme-rules";
+import {
+  type CodeThemeRuleFile,
+  codeThemeRulesPath,
+  readCodeThemeRules,
+} from "../scripts/code-theme-rules";
 import { auditTheme, renderCodeTheme, renderTheme, roleValues } from "../scripts/generate-theme";
 import { convertRules } from "../scripts/sync-code-theme";
 
@@ -513,6 +520,44 @@ describe("bb Monokai code theme", () => {
       { scope: ["markup.heading", "entity.name.section"], foreground: "code.entity" },
       { scope: ["comment"], foreground: "text.comment60", fontStyle: "italic" },
     ]);
+  });
+
+  test("checks an explicit source outside the checkout without changing vendored rules", async () => {
+    const source = await mkdtemp(join(tmpdir(), "monokai-source-"));
+    const original = await readFile(codeThemeRulesPath, "utf8");
+    const script = fileURLToPath(new URL("../scripts/sync-code-theme.ts", import.meta.url));
+    try {
+      const { rules } = JSON.parse(original) as CodeThemeRuleFile;
+      const tokenColors = rules.map(({ scope, foreground, background, fontStyle }) => ({
+        scope,
+        settings: {
+          foreground: foreground ? roleValues[foreground as keyof typeof roleValues] : undefined,
+          background: background ? roleValues[background as keyof typeof roleValues] : undefined,
+          fontStyle,
+        },
+      }));
+      await mkdir(join(source, "themes"));
+      await writeFile(
+        join(source, "themes/generated-textmate.json"),
+        JSON.stringify({ tokenColors }),
+      );
+      await writeFile(join(source, "themes/Cursor Monokai-color-theme.json"), '{"tokenColors":[]}');
+      const checked = spawnSync(process.execPath, [script, "--source", source, "--check"], {
+        encoding: "utf8",
+      });
+      expect(checked.stderr).toBe("");
+      expect(checked.status).toBe(0);
+      const missing = spawnSync(process.execPath, [script, "--check"], { encoding: "utf8" });
+      expect(missing.status).not.toBe(0);
+      expect(missing.stderr).toContain("--source <editor-theme-directory>");
+      const unknown = spawnSync(process.execPath, [script, "--source", source, "--typo"], {
+        encoding: "utf8",
+      });
+      expect(unknown.status).not.toBe(0);
+      expect(await readFile(codeThemeRulesPath, "utf8")).toBe(original);
+    } finally {
+      await rm(source, { recursive: true, force: true });
+    }
   });
 
   test("stops the sync on an editor color with no token role", () => {

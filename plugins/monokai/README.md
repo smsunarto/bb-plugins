@@ -92,6 +92,17 @@ toasts over the viewport instead. Native browser and operating-system banners
 from bb's push-notifications plugin are system-owned and cannot be restyled by a
 bb theme.
 
+## Theme authoring
+
+`CONTRACT.md` and the vendored syntax rules are included in this checkout.
+Normal builds and `check:theme` use those files without a sibling repository.
+To import updated rules from a Cursor Monokai source checkout, run
+`bun run sync:code-theme --source <editor-theme-directory>` from this plugin.
+Use `bun run check:code-theme --source <editor-theme-directory>` to compare
+without writing. These commands only sync or compare syntax rules. Copy and review
+upstream contract changes explicitly when importing palette changes; the local
+`CONTRACT.md` is a snapshot, not a link to the editor-theme checkout.
+
 ## Requirements
 
 - bb 0.42+. The live UI-font setting uses the app overlay added in bb 0.42.
