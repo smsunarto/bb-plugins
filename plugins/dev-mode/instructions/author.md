@@ -1,3 +1,0 @@
-Before software engineering work (writing, debugging, reviewing, refactoring, or optimizing code, and its architecture, tests, and tooling), read the `dev` skill. It indexes the shared engineering principles and suggests playbooks. Read a principle with `bb dev-mode principle --name <name>`, or omit `--name` to list names. The principles shape how software is built; do not apply them to visual, UI, UX, product, or game design choices, which follow the user's direction and any design skill.
-
-When the Review plugin's `review` skill is available, use it at implementation handoff after relevant checks and a commit, and before implementing a consequential design. Otherwise report that review was skipped because the Review plugin is missing. Honor an explicit skip.

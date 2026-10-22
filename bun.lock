@@ -352,20 +352,6 @@
         "typescript": "^6.0.0",
       },
     },
-    "plugins/dev-mode": {
-      "name": "@smsunarto/bb-plugin-scott-engineering",
-      "version": "0.1.0",
-      "dependencies": {
-        "@bb-kit/core": "workspace:*",
-      },
-      "devDependencies": {
-        "@get-bb/plugin-sdk": "0.6.37",
-        "@types/node": "^22.0.0",
-        "bun-types": "^1.4.0",
-        "tsx": "4.23.12",
-        "typescript": "^6.0.0",
-      },
-    },
     "plugins/devin": {
       "name": "@smsunarto/bb-plugin-devin",
       "version": "0.1.0",
@@ -1822,8 +1808,6 @@
     "@smsunarto/bb-plugin-remind-me": ["@smsunarto/bb-plugin-remind-me@workspace:plugins/remind-me"],
 
     "@smsunarto/bb-plugin-scott-docs": ["@smsunarto/bb-plugin-scott-docs@workspace:plugins/scott-docs"],
-
-    "@smsunarto/bb-plugin-scott-engineering": ["@smsunarto/bb-plugin-scott-engineering@workspace:plugins/dev-mode"],
 
     "@smsunarto/bb-plugin-scott-inline-vis": ["@smsunarto/bb-plugin-scott-inline-vis@workspace:plugins/scott-inline-vis"],
 
@@ -3332,8 +3316,6 @@
     "@smsunarto/bb-plugin-scott-docs/@hugeicons/core-free-icons": ["@hugeicons/core-free-icons@4.3.5", "", {}, "sha512-Sv+NjHRPnQk+yZsGCMcGznCHdTfJR9PMMOEKcJYAQU4gy90dmlc9PwdtvYOImBZIjiheMsTLL5eMn2DmHxUiUg=="],
 
     "@smsunarto/bb-plugin-scott-docs/typescript": ["@typescript/typescript6@6.0.2", "", { "dependencies": { "@typescript/old": "npm:typescript@^6" }, "bin": { "tsc6": "bin/tsc6" } }, "sha512-mbCddXd+jm7hfx7w2YU64/Av4/NqqeG3GoRZgxPcgoTxYjhrcfJRw9ULch71SS4G+Q3bOXFhRvPqjguN0Hyp5w=="],
-
-    "@smsunarto/bb-plugin-scott-engineering/@get-bb/plugin-sdk": ["@get-bb/plugin-sdk@0.6.37", "", { "dependencies": { "cross-spawn": "^7.0.6", "zod": "^4.6.5" }, "peerDependencies": { "@testing-library/react": "^16.3.2", "@types/better-sqlite3": "^7.6.12", "@types/react": "^19.0.0", "better-sqlite3": ">=12", "cron-parser": "^5.5.0", "hono": "^4.11.9", "react": "^19.0.0", "react-dom": "^19.0.0" }, "optionalPeers": ["@testing-library/react", "@types/better-sqlite3", "@types/react", "better-sqlite3", "cron-parser", "hono", "react", "react-dom"] }, "sha512-fltzoFz2DTSDo35tSMaDR/nlQeTE/WFO1BLUMD0LoJ+dbKsJBCloaK+Kl1BYXP+lABPBH7dgAAfKKKSIgCBzHA=="],
 
     "@smsunarto/bb-plugin-scott-tasks/@hugeicons/core-free-icons": ["@hugeicons/core-free-icons@4.3.5", "", {}, "sha512-Sv+NjHRPnQk+yZsGCMcGznCHdTfJR9PMMOEKcJYAQU4gy90dmlc9PwdtvYOImBZIjiheMsTLL5eMn2DmHxUiUg=="],
 

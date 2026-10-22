@@ -82,10 +82,6 @@
     {
       "name": "whiteboard",
       "source": "./plugins/whiteboard"
-    },
-    {
-      "name": "dev-mode",
-      "source": "./plugins/dev-mode"
     }
   ]
 }

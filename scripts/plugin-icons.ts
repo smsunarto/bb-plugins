@@ -271,21 +271,6 @@ const customIcons = {
       ],
     ],
   },
-  "dev-mode": {
-    name: "Layers",
-    nodes: [
-      [
-        "path",
-        {
-          d: "m3 7 9-4 9 4-9 4-9-4Zm0 5 9 4 9-4M3 17l9 4 9-4",
-          stroke: "currentColor",
-          strokeWidth: "1.5",
-          strokeLinecap: "round",
-          strokeLinejoin: "round",
-        },
-      ],
-    ],
-  },
   // Upstream bb inline-vis, which this plugin was forked from, declares BB's
   // named "AppWindow" icon, which bb maps to Hugeicons' Browser glyph.
   "scott-inline-vis": {
