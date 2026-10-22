@@ -24,7 +24,7 @@ function key(overrides: Partial<DirectKey> = {}): DirectKey {
 
 describe("directShortcutFor", () => {
   test("control keys reuse the reserved hint selectors", () => {
-    for (const char of ["n", "m", "p", "l", "b", ","]) {
+    for (const char of ["n", "h", "m", "p", "l", "b", ","]) {
       const reserved = RESERVED_CONTROLS.find((control) => control.char === char);
       expect(directShortcutFor(key({ key: char }))).toEqual({
         kind: "control",

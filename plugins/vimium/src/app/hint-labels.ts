@@ -17,8 +17,16 @@ export const DROPDOWN_ALPHABET = "fjdkslahgewcmp";
  * general alphabet anyway.
  */
 export const RESERVED_CONTROLS = [
-  { selector: '[data-app-composer] button[aria-label^="Provider, model"]', char: "m" },
-  { selector: "[data-app-composer] [data-promptbox-project-control]", char: "p" },
+  {
+    selector: '[data-app-composer] button[aria-label^="Provider, model"]',
+    char: "m",
+    nativePicker: "model",
+  },
+  {
+    selector: "[data-app-composer] [data-promptbox-project-control]",
+    char: "p",
+    nativePicker: "project",
+  },
   { selector: '[data-app-composer] [role="textbox"]', char: "i" },
   { selector: '[data-app-composer] button[aria-label="Prompt actions"]', char: "a" },
   { selector: '[data-app-composer] button[aria-label="Start voice input"]', char: "v" },
@@ -28,31 +36,57 @@ export const RESERVED_CONTROLS = [
     selector:
       '[data-app-composer] button[aria-label="Machine"], [data-app-composer] button[aria-label="Environment"]',
     char: "l",
+    nativePicker: "machine",
   },
   { selector: '[data-app-composer] button[aria-label="Branch"]', char: "b" },
-  // BB 0.44's Navigation plugin sets these aria-labels only while the command
-  // has a shortcut. The item ids hold when the user unbinds it. The label
-  // forms stay exact so a row's "Search threads options" button never matches.
+  // List rows have stable ids; the rail header loses its label when unbound.
   {
     selector:
       '[data-sidebar-navigation-item="__bb__/new-thread"] > button, button[aria-label="New thread"], button[aria-label^="New thread ("]',
     char: "n",
+    fallback: { selector: "[data-sidebar-header-slot] button", text: "New thread" },
   },
   {
     selector:
       '[data-sidebar-navigation-item="__bb__/search-threads"] > button, button[aria-label="Search threads"], button[aria-label^="Search threads ("]',
     char: "s",
   },
+  {
+    selector:
+      ':is(nav[aria-label="Primary navigation"], [data-testid="app-nav-rail"]) button[aria-label="Home"]',
+    char: "h",
+  },
   { selector: 'button[aria-label="Go back"]', char: "[" },
   { selector: 'button[aria-label="Go forward"]', char: "]" },
-  { selector: '[data-sidebar-navigation-item="__bb__/extensions"] > button', char: "e" },
-  { selector: 'a[href="/settings"]', char: "," },
+  {
+    selector:
+      ':is(nav[aria-label="Primary navigation"], [data-testid="app-nav-rail"]) button:is([aria-label="More"], [aria-label^="More, "]), [data-sidebar-navigation-item="__bb__/extensions"] > button, [data-testid="sidebar-navigation-list"] > button[aria-haspopup="menu"]',
+    char: "e",
+  },
+  {
+    selector:
+      'button[aria-label="Settings"], button[aria-label^="Settings ("], a[aria-label="Settings"], a[aria-label^="Settings ("], a[href="/settings"]',
+    char: ",",
+  },
   { selector: 'button[aria-label^="Toggle sidebar"]', char: "q" },
   {
     selector: 'button[aria-label^="Show right panel"], button[aria-label^="Hide right panel"]',
     char: "\\",
   },
 ] as const;
+
+/** Named controls may omit aria-label when their BB shortcut is unbound. */
+export function matchesReservedControl(
+  element: Element,
+  control: (typeof RESERVED_CONTROLS)[number],
+): boolean {
+  if (element.matches(control.selector)) return true;
+  return (
+    "fallback" in control &&
+    element.matches(control.fallback.selector) &&
+    element.textContent?.trim() === control.fallback.text
+  );
+}
 
 /** Thread rows count across the number row in list order, then fall back to letters. */
 export const THREAD_DIGITS = "1234567890";
@@ -67,91 +101,29 @@ const RESERVED_CHARS = new Set<string>(RESERVED_CONTROLS.map((control) => contro
  * thread with an open diff panel can exceed the remaining two-character range.
  * Extra characters extend the general set past 196 two-character labels.
  */
-const EXTRA_GENERAL_CHARS = "uortnbiyqxz;";
+const EXTRA_GENERAL_CHARS = "uortnbiyqxz;/";
 export const GENERAL_ALPHABET = [...(HINT_ALPHABET + EXTRA_GENERAL_CHARS)]
   .filter((char) => !RESERVED_CHARS.has(char))
   .join("");
 
-export type ScopedKind = "generic" | "provider-model" | "project" | "permission";
-
-export type ScopedRole =
-  | "provider"
-  | "fast-mode"
-  | "choice"
-  | "project"
-  | "new-project"
-  | "projectless"
-  | "permission"
-  | "other";
+export type ScopedKind = "generic" | "reasoning" | "permission";
 
 export interface ScopedFact {
-  readonly role: ScopedRole;
+  readonly role: "permission" | "other";
 }
 
-const MODEL_CHARS = "fjdkslahgewcmprtyuozbnv";
-const PROJECT_CHARS = "fjdkslahgewcmprtyuozbnv";
-const PERMISSION_CHARS = "asdfgh";
-const FALLBACK_PREFIX = "q";
-
-function fillScopedLabels(
-  labels: (string | null)[],
-  facts: readonly ScopedFact[],
-  role: ScopedRole,
-  chars: string,
-): void {
-  const available = [...chars].filter((char) => !labels.includes(char));
-  let next = 0;
-  for (const [index, fact] of facts.entries()) {
-    if (labels[index] !== null || fact.role !== role || next >= available.length) continue;
-    labels[index] = available[next] ?? null;
-    next += 1;
-  }
-}
-
-function completeScopedLabels(labels: (string | null)[]): string[] {
-  const missing = labels.filter((label) => label === null).length;
-  const suffixes = hintLabels(missing, HINT_ALPHABET);
-  let next = 0;
-  return labels.map((label) => label ?? FALLBACK_PREFIX + (suffixes[next++] ?? ""));
-}
-
-function pinScopedLabel(
-  labels: (string | null)[],
-  facts: readonly ScopedFact[],
-  role: ScopedRole,
-  char: string,
-): void {
-  const index = facts.findIndex((fact) => fact.role === role);
-  if (index >= 0) labels[index] = char;
-}
-
-/**
- * Labels inside a popup. Stable popup controls get explicit one-character
- * bindings. Remaining items use q-prefixed labels, which keeps the mixed set
- * prefix-free without taking a useful single key.
- */
+/** Popup choices follow their visible order; reasoning uses the number row. */
 export function assignScopedLabels(kind: ScopedKind, facts: readonly ScopedFact[]): string[] {
+  if (kind === "reasoning") return hintLabels(facts.length, THREAD_DIGITS);
   if (kind === "generic") return hintLabels(facts.length, DROPDOWN_ALPHABET);
-
-  const labels: (string | null)[] = facts.map(() => null);
-  if (kind === "provider-model") {
-    let provider = 0;
-    for (const [index, fact] of facts.entries()) {
-      if (fact.role === "provider" && provider < THREAD_DIGITS.length) {
-        labels[index] = THREAD_DIGITS.charAt(provider);
-        provider += 1;
-      }
-    }
-    pinScopedLabel(labels, facts, "fast-mode", "t");
-    fillScopedLabels(labels, facts, "choice", MODEL_CHARS);
-  } else if (kind === "project") {
-    pinScopedLabel(labels, facts, "new-project", "n");
-    pinScopedLabel(labels, facts, "projectless", "x");
-    fillScopedLabels(labels, facts, "project", PROJECT_CHARS);
-  } else {
-    fillScopedLabels(labels, facts, "permission", PERMISSION_CHARS);
-  }
-  return completeScopedLabels(labels);
+  const chars = "asdfgh";
+  let next = 0;
+  const labels = facts.map((fact) =>
+    fact.role === "permission" && next < chars.length ? chars.charAt(next++) : null,
+  );
+  const fallback = hintLabels(labels.filter((label) => label === null).length);
+  let missing = 0;
+  return labels.map((label) => label ?? "q" + fallback[missing++]);
 }
 
 /** What the top-level labeler needs to know about one hint target, in DOM order. */

@@ -87,8 +87,12 @@ describe("GENERAL_ALPHABET", () => {
         "s",
       'button[aria-label="Go back"]': "[",
       'button[aria-label="Go forward"]': "]",
-      '[data-sidebar-navigation-item="__bb__/extensions"] > button': "e",
-      'a[href="/settings"]': ",",
+      ':is(nav[aria-label="Primary navigation"], [data-testid="app-nav-rail"]) button[aria-label="Home"]':
+        "h",
+      ':is(nav[aria-label="Primary navigation"], [data-testid="app-nav-rail"]) button:is([aria-label="More"], [aria-label^="More, "]), [data-sidebar-navigation-item="__bb__/extensions"] > button, [data-testid="sidebar-navigation-list"] > button[aria-haspopup="menu"]':
+        "e",
+      'button[aria-label="Settings"], button[aria-label^="Settings ("], a[aria-label="Settings"], a[aria-label^="Settings ("], a[href="/settings"]':
+        ",",
       'button[aria-label^="Toggle sidebar"]': "q",
       'button[aria-label^="Show right panel"], button[aria-label^="Hide right panel"]': "\\",
     });
@@ -153,45 +157,16 @@ describe("assignScopedLabels", () => {
   const facts = (roles: Parameters<typeof assignScopedLabels>[1][number]["role"][]) =>
     roles.map((role) => ({ role }));
 
-  test("pins provider tabs and Fast mode", () => {
-    expect(
-      assignScopedLabels(
-        "provider-model",
-        facts(["provider", "provider", "choice", "fast-mode", "choice", "choice"]),
-      ),
-    ).toEqual(["1", "2", "f", "t", "j", "d"]);
-  });
-
-  test("keeps model and reasoning choices on unique ergonomic single keys", () => {
-    const labels = assignScopedLabels(
-      "provider-model",
-      facts(Array.from({ length: 12 }, () => "choice" as const)),
-    );
-    expect(labels).toEqual(["f", "j", "d", "k", "s", "l", "a", "h", "g", "e", "w", "c"]);
-  });
-
-  test("pins project actions while projects use single keys", () => {
-    expect(
-      assignScopedLabels("project", facts(["project", "new-project", "project", "projectless"])),
-    ).toEqual(["f", "n", "j", "x"]);
-  });
-
-  test("keeps pinned actions distinct even with a long choice list", () => {
-    for (const kind of ["provider-model", "project"] as const) {
-      const roles =
-        kind === "provider-model"
-          ? (["fast-mode"] as const)
-          : (["new-project", "projectless"] as const);
-      const labels = assignScopedLabels(
-        kind,
-        facts(
-          [...roles, ...Array(23).fill("choice")].map((role) =>
-            kind === "project" && role === "choice" ? "project" : role,
-          ),
-        ),
-      );
-      expect(new Set(labels).size).toBe(labels.length);
-    }
+  test("numbers reasoning choices in displayed order", () => {
+    expect(assignScopedLabels("reasoning", facts(Array(7).fill("other")))).toEqual([
+      "1",
+      "2",
+      "3",
+      "4",
+      "5",
+      "6",
+      "7",
+    ]);
   });
 
   test("puts permission modes on the left home row first", () => {
@@ -203,16 +178,12 @@ describe("assignScopedLabels", () => {
     ).toEqual(["a", "s", "d", "f", "g", "h"]);
   });
 
-  test("uses q-prefixed fallbacks without breaking prefix freedom", () => {
-    const labels = assignScopedLabels(
-      "provider-model",
-      facts(["provider", ...Array.from({ length: 25 }, () => "choice" as const), "other"]),
-    );
+  test("keeps permission fallbacks prefix-free", () => {
+    const labels = assignScopedLabels("permission", facts(Array(25).fill("permission")));
     expect(labels.at(-1)?.startsWith("q")).toBe(true);
     for (const a of labels) {
       for (const b of labels) {
-        if (a === b) continue;
-        expect(a.startsWith(b)).toBe(false);
+        if (a !== b) expect(a.startsWith(b)).toBe(false);
       }
     }
   });

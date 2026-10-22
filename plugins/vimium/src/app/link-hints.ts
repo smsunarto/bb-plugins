@@ -11,16 +11,16 @@
 // itself while an agent streams, so nothing inside it gets a hint and its own
 // scrolling never dismisses one — only a scroll that moves a hinted target
 // does. A hint that lands on a dropdown trigger re-prompts once the popup
-// appears, with hints scoped to its options and labels ordered for the home
-// row; the scoped prompt follows the popup — exiting when it is dismissed,
-// re-prompting when a pick leaves it open (the model dialog and its tabs),
+// appears (except project, machine, and model pickers), with hints scoped to
+// its options and labels ordered for the home row; the scoped prompt follows the popup — exiting when it is dismissed,
+// re-prompting when a pick leaves it open,
 // and handing focus back to the composer when a pick from one of the
 // composer's own dropdowns closes it. Native input autofocus is preserved.
 // `Cmd+Shift+F` always
 // means the whole screen: it replaces a scoped prompt, and first closes any
 // open popup layer,
 // which would otherwise aria-hide the rest of the page. In idle mode a few
-// plain keys skip the prompt: the pinned control keys (`n`, `m`, `p`, `l`,
+// plain keys skip the prompt: the pinned control keys (`n`, `h`, `m`, `p`, `l`,
 // `b`, `s`, `,`) drive their control directly, `a` opens permission mode,
 // `[` and `]` step the sidebar's thread list, `e` settles the current thread,
 // and `j`, `k`, and `J` scroll the conversation a step down, a step up, and
@@ -44,6 +44,7 @@ import { createScroller } from "./scroller.ts";
 import { mountArchiveUndo } from "./archive-undo.ts";
 import {
   RESERVED_CONTROLS,
+  matchesReservedControl,
   assignScopedLabels,
   assignTopLevelLabels,
   type ScopedFact,
@@ -421,7 +422,11 @@ function threadRowToSettle(activeId: string): ThreadRow | undefined {
 
 function findControl(selector: string): HTMLElement | null {
   const activeComposer = findActivePrimaryComposer();
-  for (const element of document.querySelectorAll<HTMLElement>(selector)) {
+  const control = RESERVED_CONTROLS.find((entry) => entry.selector === selector);
+  const candidates =
+    control && "fallback" in control ? `${selector}, ${control.fallback.selector}` : selector;
+  for (const element of document.querySelectorAll<HTMLElement>(candidates)) {
+    if (control && !matchesReservedControl(element, control)) continue;
     if (isViableCandidate(candidateView(element, activeComposer))) return element;
   }
   return null;
@@ -454,7 +459,7 @@ function collectTargets(scope: ParentNode): HTMLElement[] {
 }
 
 function topLevelFact(element: HTMLElement): TopLevelFact {
-  const reserved = RESERVED_CONTROLS.find((control) => element.matches(control.selector));
+  const reserved = RESERVED_CONTROLS.find((control) => matchesReservedControl(element, control));
   return {
     reservedChar: reserved?.char ?? null,
     isThreadRow: element.matches(THREAD_ROW_SELECTOR),
@@ -462,43 +467,42 @@ function topLevelFact(element: HTMLElement): TopLevelFact {
 }
 
 function dropdownScopeKind(trigger: HTMLElement): ScopedKind {
-  if (trigger.matches('[data-app-composer] button[aria-label^="Provider, model"]')) {
-    return "provider-model";
-  }
-  if (trigger.matches("[data-app-composer] [data-promptbox-project-control]")) {
-    return "project";
-  }
   if (trigger.matches('[data-app-composer] button[aria-label="Permission mode"]')) {
     return "permission";
   }
   return "generic";
 }
 
-function scopedFact(kind: ScopedKind, element: HTMLElement, root: HTMLElement): ScopedFact {
-  if (kind === "provider-model") {
-    if (element.getAttribute("role") === "switch") {
-      return { role: element.getAttribute("aria-label") === "Fast mode" ? "fast-mode" : "other" };
-    }
-    if (element.getAttribute("role") === "radio") return { role: "choice" };
-    const choices = root.querySelector<HTMLElement>('[class~="overflow-y-auto"]');
-    const providerTabs = root.firstElementChild;
-    return {
-      role:
-        choices?.contains(element) === false && element.parentElement === providerTabs
-          ? "provider"
-          : "choice",
-    };
-  }
-  if (kind === "project") {
-    const text = (element.textContent ?? "").trim().toLowerCase();
-    if (text.includes("new project")) return { role: "new-project" };
-    if (text.includes("work in a project")) return { role: "projectless" };
-    return { role: "project" };
-  }
+function scopedFact(kind: ScopedKind, element: HTMLElement): ScopedFact {
   if (kind === "permission") {
     return { role: isTextEntry(element) ? "other" : "permission" };
   }
   return { role: "other" };
+}
+
+/** Resolve only the native pickers whose options intentionally have no hints. */
+const NATIVE_PICKER_CONTROLS = RESERVED_CONTROLS.filter((control) => "nativePicker" in control);
+
+function nativePickerPopups(): HTMLElement[] {
+  return NATIVE_PICKER_CONTROLS.flatMap((control) =>
+    Array.from(document.querySelectorAll<HTMLElement>(control.selector)).flatMap((trigger) => {
+      const id = trigger.getAttribute("aria-controls");
+      const popup = id ? document.getElementById(id) : null;
+      return popup && popup.getAttribute("data-state") !== "closed" ? [popup] : [];
+    }),
+  );
+}
+
+function modelTriggers(): HTMLElement[] {
+  return NATIVE_PICKER_CONTROLS.filter((control) => control.nativePicker === "model").flatMap(
+    (control) => Array.from(document.querySelectorAll<HTMLElement>(control.selector)),
+  );
+}
+
+function isModelPopup(popup: HTMLElement): boolean {
+  return modelTriggers().some(
+    (trigger) => popup.id !== "" && trigger.getAttribute("aria-controls") === popup.id,
+  );
 }
 
 function findPopupRoot(trigger: HTMLElement): HTMLElement | null {
@@ -569,6 +573,7 @@ export function mountLinkHints(context: PluginContentScriptContext): PluginConte
   let mode: HintMode = { kind: "idle" };
   let container: HTMLElement | null = null;
   let popupWatch: number | null = null;
+  let modelSelectionObserver: MutationObserver | null = null;
   const scroller = createScroller();
 
   function exit(): void {
@@ -620,12 +625,13 @@ export function mountLinkHints(context: PluginContentScriptContext): PluginConte
   ): boolean {
     const targets = collectTargets(root).filter(
       (target) =>
-        (scopeKind !== "provider-model" && scopeKind !== "project") || !isTextEntry(target),
+        scopeKind !== "reasoning" ||
+        target.closest('[role="radiogroup"][aria-label="Reasoning"]') !== null,
     );
     if (targets.length === 0) return false;
     const labels = assignScopedLabels(
       scopeKind,
-      targets.map((target) => scopedFact(scopeKind, target, root)),
+      targets.map((target) => scopedFact(scopeKind, target)),
     );
     show(targets, labels, root, refocusComposer, scopeKind);
     return true;
@@ -818,6 +824,10 @@ export function mountLinkHints(context: PluginContentScriptContext): PluginConte
 
   function onKeydown(event: KeyboardEvent): void {
     scroller.noteKeydown({ code: event.code, repeat: event.repeat });
+    if (mode.kind === "idle" && !isForceChord(event) && nativePickerPopups().length > 0) {
+      followModelEnter(event);
+      return;
+    }
     if (mode.kind === "idle") {
       const shortcut = directShortcutFor({
         key: event.key,
@@ -873,22 +883,11 @@ export function mountLinkHints(context: PluginContentScriptContext): PluginConte
     );
     if (action.kind === "ignore") return;
     if (
-      event.key === "Escape" &&
-      (mode.scopeKind === "provider-model" || mode.scopeKind === "project")
+      mode.scopeKind === "reasoning" &&
+      (action.kind === "exit" || (event.key === "Backspace" && mode.typed === ""))
     ) {
       exit();
-      return;
-    }
-    if (
-      action.kind === "exit" &&
-      event.key.length === 1 &&
-      (mode.scopeKind === "provider-model" || mode.scopeKind === "project") &&
-      document.activeElement instanceof HTMLElement &&
-      mode.scopeRoot?.contains(document.activeElement) &&
-      isTextEntry(document.activeElement)
-    ) {
-      // An unassigned letter should type into BB's already-focused search input.
-      exit();
+      followModelEnter(event);
       return;
     }
     event.preventDefault();
@@ -919,6 +918,13 @@ export function mountLinkHints(context: PluginContentScriptContext): PluginConte
   // The popup portals in and animates open after the click, so poll briefly
   // and reprompt with hints scoped to it once it holds viable options.
   function scheduleReprompt(trigger: HTMLElement): void {
+    const nativePicker = NATIVE_PICKER_CONTROLS.find((control) =>
+      trigger.matches(control.selector),
+    );
+    if (nativePicker) {
+      if (nativePicker.nativePicker === "model") watchModelSelection(trigger);
+      return;
+    }
     const refocusComposer = trigger.closest(COMPOSER_SELECTOR) !== null;
     const scopeKind = dropdownScopeKind(trigger);
     let attempts = 0;
@@ -933,7 +939,7 @@ export function mountLinkHints(context: PluginContentScriptContext): PluginConte
   }
 
   // A pick from a popup either closes it or leaves it open: bb's model dialog
-  // stays up after a pick, and its Providers tab swaps the option list. Follow
+  // stays up after a pick. Follow
   // the popup — once it closes, hand focus back to the composer when the
   // trigger came from there; while it stays open, re-prompt scoped to it.
   function afterScopedPick(
@@ -976,6 +982,88 @@ export function mountLinkHints(context: PluginContentScriptContext): PluginConte
     claim();
   }
 
+  // The More models submenu is portaled outside the main picker. The trigger
+  // changes when its selection commits, regardless of where the model was picked.
+  function watchModelSelection(trigger: HTMLElement): void {
+    modelSelectionObserver?.disconnect();
+    let previous = trigger.textContent;
+    modelSelectionObserver = new MutationObserver(() => {
+      const id = trigger.getAttribute("aria-controls");
+      const popup = id ? document.getElementById(id) : null;
+      if (
+        !popup ||
+        popup.getAttribute("data-state") === "closed" ||
+        trigger.getAttribute("aria-expanded") === "false"
+      ) {
+        modelSelectionObserver?.disconnect();
+        modelSelectionObserver = null;
+        return;
+      }
+      if (trigger.textContent === previous) return;
+      previous = trigger.textContent;
+      exit();
+      afterScopedPick(popup, trigger.closest(COMPOSER_SELECTOR) !== null, "reasoning");
+    });
+    modelSelectionObserver.observe(trigger, {
+      childList: true,
+      characterData: true,
+      subtree: true,
+      attributes: true,
+      attributeFilter: ["aria-expanded", "aria-controls", "data-state"],
+    });
+  }
+
+  function followModelEnter(event: KeyboardEvent): void {
+    if (
+      event.key !== "Enter" ||
+      !(event.target instanceof HTMLInputElement) ||
+      event.target.getAttribute("aria-label") !== "Search models"
+    )
+      return;
+    const optionId = event.target.getAttribute("aria-activedescendant");
+    const option = optionId ? document.getElementById(optionId) : null;
+    if (!option?.matches('[role="option"]:not(:disabled):not([aria-disabled="true"])')) return;
+    const popup = event.target.closest<HTMLElement>('[role="dialog"]');
+    if (popup) afterScopedPick(popup, true, "reasoning");
+  }
+
+  function onClick(event: MouseEvent): void {
+    if (!(event.target instanceof Element)) return;
+    const modelTrigger = modelTriggers().find((trigger) =>
+      trigger.contains(event.target instanceof Node ? event.target : null),
+    );
+    if (modelTrigger) {
+      watchModelSelection(modelTrigger);
+      return;
+    }
+    // BB's native toggle command can open the picker without clicking its
+    // trigger. Arm before the selection's React click handler commits it.
+    const openModelTrigger = modelTriggers().find((trigger) => {
+      const id = trigger.getAttribute("aria-controls");
+      const popup = id ? document.getElementById(id) : null;
+      return popup !== null && popup.getAttribute("data-state") !== "closed";
+    });
+    if (openModelTrigger) watchModelSelection(openModelTrigger);
+    const button = event.target.closest<HTMLElement>(
+      'button:not(:disabled):not([aria-disabled="true"])',
+    );
+    const popup = button?.closest<HTMLElement>('[role="dialog"]');
+    if (!button || !popup || !isModelPopup(popup)) return;
+    if (
+      mode.kind === "active" &&
+      mode.scopeKind === "reasoning" &&
+      !button.closest('[role="radiogroup"][aria-label="Reasoning"]')
+    )
+      exit();
+    if (
+      !button.matches('[role="option"]') &&
+      (!button.closest('[class~="overflow-y-auto"]') || button.hasAttribute("aria-expanded"))
+    )
+      return;
+    exit();
+    afterScopedPick(popup, true, "reasoning");
+  }
+
   function onKeyup(event: KeyboardEvent): void {
     scroller.noteKeyup(event.code);
   }
@@ -999,8 +1087,16 @@ export function mountLinkHints(context: PluginContentScriptContext): PluginConte
   }
 
   const archiveUndo = mountArchiveUndo();
-  context.signal.addEventListener("abort", archiveUndo.dispose, { once: true });
+  context.signal.addEventListener(
+    "abort",
+    () => {
+      archiveUndo.dispose();
+      modelSelectionObserver?.disconnect();
+    },
+    { once: true },
+  );
   window.addEventListener("keydown", onKeydown, { capture: true, signal: context.signal });
+  window.addEventListener("click", onClick, { capture: true, signal: context.signal });
   window.addEventListener("keyup", onKeyup, { capture: true, signal: context.signal });
   window.addEventListener("scroll", onScroll, { capture: true, signal: context.signal });
   window.addEventListener("resize", exitIfActive, { signal: context.signal });
@@ -1008,6 +1104,7 @@ export function mountLinkHints(context: PluginContentScriptContext): PluginConte
 
   return () => {
     archiveUndo.dispose();
+    modelSelectionObserver?.disconnect();
     exit();
   };
 }

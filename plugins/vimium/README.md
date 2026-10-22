@@ -10,7 +10,7 @@ Vimium-style link hints for keyboard navigation of the bb UI.
 - Type a label's letters to click that element. Already-typed letters dim, and non-matching labels disappear.
 - `Backspace` drops the last typed letter. `Escape`, any other key, scrolling, or resizing exits hint mode. In the model and project pickers, `Escape` also closes the picker.
 - A hint on a text field focuses it instead of clicking, so `f` can drop you straight into typing.
-- A hint that opens a dropdown re-prompts automatically with labels scoped to that popup. Provider tabs count `1`-`0` across the number row. In the model picker, `t` toggles Fast mode, and model and reasoning choices use ergonomic single keys. In the project picker, `n` selects New project and `x` selects Don't work in a project. Projects use the remaining single keys. The model and project search inputs get no hint or shortcut. Permission modes start at `a`, `s`, `d`, `f`, `g`, and `h`. Other dropdowns start at `f`, `j`, `d`, and `k`.
+- Project, machine, and model pickers open without option hints, leaving native search and navigation available. After selecting a model, reasoning choices get number hints in displayed order: `1` Low, `2` Medium, `3` High, and so on when those levels are available. Selecting a reasoning level keeps its number hints available while the popup stays open. Other dropdowns re-prompt automatically: permission modes start at `a`, `s`, `d`, `f`, `g`, and `h`; other choices start at `f`, `j`, `d`, and `k`.
 - `Cmd+Shift+F` always means the whole screen. During a scoped prompt it replaces it, and over an open dropdown or dialog it closes the popup first, since an open popup hides the rest of the page from hinting.
 - Picking from one of the composer's own dropdowns hands focus back to the composer once the popup closes, so you can keep typing.
 - The conversation timeline never gets hints. It rerenders and auto-scrolls while an agent streams, and its own scrolling never dismisses a prompt — only a scroll that moves a hinted element does.
@@ -19,8 +19,8 @@ Vimium-style link hints for keyboard navigation of the bb UI.
 
 Outside a text field, these keys act without a hint prompt:
 
-- `n` new thread, `s` thread search, `,` Settings.
-- `m` model, `p` project, `l` machine, `b` branch. Each opens its dropdown and re-prompts with labels scoped to it, exactly as `f` then the same key would.
+- `n` new thread, `h` Home, `s` thread search, `,` Settings.
+- `m` model, `p` project, `l` machine, `b` branch. Each opens its picker, exactly as `f` then the same key would. Only branch options get immediate hints.
 - `a` permission mode, as in allow. Its hint label stays `k`, because `k` as a direct key scrolls up.
 - `j` scrolls the conversation down one step, `k` scrolls it up, and `J` (Shift+j) jumps to the bottom. A step is 60px. The scroll animates the way Vimium's does. A tap moves one step in about 100ms, a held key keeps scrolling until you release it, and quick taps add up. `j` and `k` send bb a wheel nudge first, so a streaming reply stops snapping the view back to the bottom until `J` or a scroll to the end re-attaches it.
 - `]` next thread and `[` previous thread, stepping through the sidebar's rows in list order, including rows BB has temporarily unmounted while virtualizing a long list. Rows the sidebar keeps in its More popover are skipped, as BB's own previous/next commands skip them. The list wraps. Off any thread, `]` starts at the top and `[` at the bottom.
@@ -30,7 +30,7 @@ Outside a text field, these keys act without a hint prompt:
 
 A direct key with nothing to act on, such as `e` on a settings page or `j` on a page without a conversation, falls through to bb. Inside a text field every key is just typing. In hint mode `[`, `]`, `e`, `j`, `k`, and `a` keep their hint meanings below.
 
-`n` and `s` find BB's New thread and Search threads rows by their navigation item id, so they keep working after you unbind those commands' shortcuts. `s` activates BB's visible Search threads button when there is one. With a custom sidebar such as GTD that omits it, Vimium opens the Quick palette using `Cmd+K` on Mac or `Ctrl+K` elsewhere, then selects Search threads. That bridge depends on the palette shortcut and action label. If either changes, update the bridge. In hint mode, `f` only labels a visible Search threads button.
+`n` and `s` use BB's accessible button names and list-row ids. When New thread has no label, `n` matches its text inside the sidebar header. Home works with the navigation rail; More works with both navigation layouts; Settings works with both rail buttons and list links. `s` activates BB's visible Search threads button when there is one. With a custom sidebar such as GTD that omits it, Vimium opens the Quick palette using `Cmd+K` on Mac or `Ctrl+K` elsewhere, then selects Search threads. That bridge depends on the palette shortcut and action label. If either changes, update the bridge. In hint mode, `f` only labels a visible Search threads button.
 
 ## BB shortcuts
 
@@ -39,7 +39,7 @@ Every BB shortcut uses a modifier, and every direct key above uses none, so the 
 ## Labels
 
 - bb's stable controls keep pinned single-character labels for muscle memory: `p` project, `i` composer input, `l` machine, `b` branch, `n` new thread, `s` thread search, `k` permission mode, `j` send, `m` model, `a` prompt actions, and `v` voice.
-- Core navigation is stable too: `[` back, `]` forward, `e` Plugins, `,` Settings, `q` left sidebar, and `\` right sidebar. The context-window tracker is never selectable.
+- Core navigation is stable too: `[` back, `]` forward, `h` Home, `e` the navigation rail’s More menu (including Plugins), `,` Settings, `q` left sidebar, and `\` right sidebar. The context-window tracker is never selectable.
 - Sidebar thread rows (bb's own or any sidebar honoring the thread-shortcut contract) count `1`-`0` across the number row.
 - Everything else gets two-character labels from the remaining alphabet, extended past the reserved carve-outs so even a diff-heavy screen stays at two characters.
 
