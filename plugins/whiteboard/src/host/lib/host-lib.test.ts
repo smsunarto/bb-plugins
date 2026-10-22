@@ -174,8 +174,8 @@ describe("readBlobs", () => {
       expect(Math.floor(BLOB_RESPONSE_BYTES / 40_000)).toBe(104);
       expect(items.length).toBe(105);
       expect(items[70]).toEqual({ bytes: null });
-      expect(Buffer.from(items[0]!.bytes!, "base64").toString()).toBe("0".repeat(30_000));
-      expect(Buffer.from(items[104]!.bytes!, "base64").toString()).toBe("3".repeat(30_000));
+      expect(items[0]).toEqual({ bytes: Buffer.from("0".repeat(30_000)).toString("base64") });
+      expect(items[104]).toEqual({ bytes: Buffer.from("3".repeat(30_000)).toString("base64") });
     } finally {
       await closeBlobReaders();
     }
@@ -197,10 +197,28 @@ describe("readBlobs", () => {
       { rootPath: root, kind: "git", items: [{ commit, path: "a.txt" }] },
       new AbortController().signal,
     );
-    expect(Buffer.from(items[0]!.bytes!, "base64").toString()).toBe("alpha");
+    expect(items[0]).toEqual({ bytes: Buffer.from("alpha").toString("base64") });
     expect(catFiles()).toHaveLength(1);
 
     await hostEntry.dispose?.();
     expect(catFiles()).toEqual([]);
+  });
+
+  it.each([6, 11])("reports a %i MiB blob as an item failure instead of absence", async (mib) => {
+    const { root, git } = repository();
+    writeFileSync(path.join(root, "large.txt"), Buffer.alloc(mib * 1024 * 1024, 97));
+    git("add", "-A");
+    git("commit", "-qm", "large source");
+    const commit = git("rev-parse", "HEAD").trim();
+    try {
+      await expect(
+        readBlobs(
+          { rootPath: root, kind: "git", items: [{ commit, path: "large.txt" }] },
+          new AbortController().signal,
+        ),
+      ).resolves.toEqual({ items: [{ error: mib === 6 ? "transfer-limit" : "reader-limit" }] });
+    } finally {
+      await closeBlobReaders();
+    }
   });
 });

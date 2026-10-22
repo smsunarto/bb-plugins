@@ -79,7 +79,13 @@ export function FlowGraph({
 }) {
   const { theme } = useReviewDebugSettings();
   const [error, setError] = useState<string>();
-  const [layout, setLayout] = useState<Layout>();
+  const [computed, setLayout] = useState<{
+    block: FlowDiagramBlock;
+    layout: Layout;
+  }>();
+  // Keep the mounted viewport while ELK works, with one consistent drawing.
+  const layout = computed?.layout;
+  const drawnBlock = computed?.block ?? block;
   const [frame, setFrame] = useState<HTMLDivElement | null>(null);
   const [frameSize, setFrameSize] = useState<FrameSize>();
   // Set by the reader's own pan or zoom; refits stop from then on.
@@ -93,7 +99,7 @@ export function FlowGraph({
     setError(undefined);
     void layoutFlow(block, direction)
       .then((result) => {
-        if (!cancelled) setLayout(result);
+        if (!cancelled) setLayout({ block, layout: result });
       })
       .catch((error) => {
         if (!cancelled) setError(String(error));
@@ -129,7 +135,7 @@ export function FlowGraph({
   const nodes = useMemo<FlowNodeType[]>(
     () =>
       layout
-        ? block.nodes.flatMap((node) => {
+        ? drawnBlock.nodes.flatMap((node) => {
             const position = layout.nodes.get(node.key);
 
             if (!position) return [];
@@ -152,7 +158,7 @@ export function FlowGraph({
             ];
           })
         : [],
-    [block, layout, requireReady, selectedKey, onSelect],
+    [drawnBlock, layout, requireReady, selectedKey, onSelect],
   );
 
   const edges = useMemo<FlowEdgeType[]>(
@@ -160,20 +166,20 @@ export function FlowGraph({
       layout
         ? layout.edges.map((edge) => ({
             id: `${edge.index}:${edge.section}`,
-            source: block.edges[edge.index]!.from,
-            target: block.edges[edge.index]!.to,
+            source: drawnBlock.edges[edge.index]!.from,
+            target: drawnBlock.edges[edge.index]!.to,
             type: "flowEdge",
             selectable: false,
             markerEnd: ARROW,
             data: {
-              unitId: block.edges[edge.index]!.id,
+              unitId: drawnBlock.edges[edge.index]!.id,
               label: edge.label,
-              dashed: block.edges[edge.index]!.style === "dashed",
+              dashed: drawnBlock.edges[edge.index]!.style === "dashed",
               points: edge.points,
             },
           }))
         : [],
-    [block, layout],
+    [drawnBlock, layout],
   );
 
   if (error) return <p role="alert">Could not lay out diagram: {error}</p>;

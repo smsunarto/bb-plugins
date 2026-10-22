@@ -128,6 +128,20 @@ These files have hand-edited (`edit`) rows in the vendoring map:
 - `review/src/review-api/http.ts`
 - `review/app/src/flow-graph.tsx`
 - `review/app/src/review-home-view.tsx`
+- `review/app/src/blocks.tsx`
+- `review/src/review-api/review-progress.ts`
+- `local-vcs/src/blob-batch-reader.ts`
+- `local-vcs/src/index.ts`
+
+Backports retain the pinned baseline: upstream [#634](https://github.com/devdotfast/whiteboard/pull/634)
+resets a block's render error after an edit, [#637](https://github.com/devdotfast/whiteboard/pull/637)
+keeps flow layouts matched to their block and direction, and the source-resolution
+part of [#1232](https://github.com/devdotfast/whiteboard/pull/1232) resolves code
+references when a file exists on only one side. bb retains its existing progress
+flow and error messages; upstream telemetry changes are omitted. The host preserves
+read failures and per-item size-limit failures as errors across Git and jj, so only
+absent files can resolve as one-sided context. Flow updates keep the last consistent drawing mounted while
+the new layout loads, preserving the reader's viewport and inline height.
 
 ## Deviations from upstream
 

@@ -56,9 +56,14 @@ export function createHostBlobReader(input: {
           { hostId },
         );
         if (!items.length) throw new Error("whiteboard: the host answered no blobs.");
-        items.forEach((item, index) =>
-          remaining[index]!.resolve(item.bytes === null ? null : Buffer.from(item.bytes, "base64")),
-        );
+        items.forEach((item, index) => {
+          const pending = remaining[index]!;
+          if ("error" in item) {
+            pending.reject(new Error(`Whiteboard source blob exceeds the ${item.error}.`));
+          } else {
+            pending.resolve(item.bytes === null ? null : Buffer.from(item.bytes, "base64"));
+          }
+        });
         remaining = remaining.slice(items.length);
       }
     } catch (error) {

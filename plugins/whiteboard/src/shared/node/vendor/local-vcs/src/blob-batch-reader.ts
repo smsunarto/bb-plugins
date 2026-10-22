@@ -24,6 +24,7 @@ export interface BlobBatchReaderInput {
 
 export type BlobBatchAnswer =
   | { found: "blob"; blob: Buffer }
+  | { found: "oversized" }
   | { found: "other" }
   | { found: "nothing" };
 
@@ -40,6 +41,7 @@ interface BatchSession {
   buffered: Buffer;
   expected: number | null;
   collected: Buffer[] | null;
+  oversized: boolean;
   writes: Promise<void>;
   tail: Promise<unknown>;
   exit: Promise<void>;
@@ -165,6 +167,7 @@ export class BlobBatchReader {
       buffered: Buffer.alloc(0),
       expected: null,
       collected: null,
+      oversized: false,
       writes: Promise.resolve(),
       tail: Promise.resolve(),
       exit: new Promise((resolve) => {
@@ -210,6 +213,7 @@ export class BlobBatchReader {
         const size = Number(answer[2]);
 
         session.expected = size + 1;
+        session.oversized = answer[1] === "blob" && size > this.maxBlobBytes;
         session.collected =
           answer[1] === "blob" && size <= this.maxBlobBytes ? [] : null;
       }
@@ -230,7 +234,7 @@ export class BlobBatchReader {
         collected
           ? // The framing newline is the last of the collected bytes.
             { found: "blob", blob: Buffer.concat(collected).subarray(0, -1) }
-          : { found: "other" },
+          : session.oversized ? { found: "oversized" } : { found: "other" },
       );
     }
 

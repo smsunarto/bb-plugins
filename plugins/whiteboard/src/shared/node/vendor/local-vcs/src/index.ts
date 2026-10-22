@@ -887,7 +887,7 @@ export async function readFileAtRevision(input: {
 /**
  * Read a blob at a resolved commit through the caller's batch reader.
  * jj conflicted revisions go through `jj file show`: the git tree holds one side only.
- * Null for a missing commit or path, or a non-blob (a directory).
+ * Null for a missing path or a non-blob (a directory). Read failures propagate.
  */
 export async function readFileAtCommit(input: {
   rootPath: string;
@@ -926,13 +926,17 @@ async function readFileWithReader(
     return readJjFileAtCommit(input);
   }
 
-  const answer = await reader
-    .readObject(input.commit, input.relativePath)
-    .catch(() => ({ found: "nothing" }) as const);
+  const answer = await reader.readObject(input.commit, input.relativePath);
 
   if (answer.found === "blob") return answer.blob.toString("utf8");
+  if (answer.found === "oversized")
+    throw new Error("Whiteboard source blob exceeds the reader limit.");
 
   if (answer.found === "other" || input.kind !== "jj") return null;
+
+  // An exported, unconflicted commit's Git tree establishes absence. A jj-only
+  // revision may not be in the object store yet, so ask jj in that case.
+  if ((await reader.readObject(input.commit, "")).found === "other") return null;
 
   return readJjFileAtCommit(input);
 }
@@ -942,6 +946,27 @@ async function readJjFileAtCommit(input: {
   commit: string;
   relativePath: string;
 }): Promise<string | null> {
+  // Establish absence separately; command failures and maxBuffer errors from
+  // `file show` must never be converted into a missing side.
+  const files = await commandOutput(
+    "jj",
+    [
+      "-R",
+      input.rootPath,
+      "file",
+      "list",
+      "-r",
+      input.commit,
+      "--ignore-working-copy",
+      "-T",
+      '"present"',
+      "--",
+      toJjRootFilePattern(input.relativePath),
+    ],
+    { cwd: input.rootPath },
+  );
+  if (files.length === 0) return null;
+
   return commandOutput(
     "jj",
     [
@@ -956,7 +981,7 @@ async function readJjFileAtCommit(input: {
       toJjRootFilePattern(input.relativePath),
     ],
     { cwd: input.rootPath, maxBuffer: 10 * 1024 * 1024, trim: false },
-  ).catch(() => null);
+  );
 }
 
 /** jj writes this README into a conflicted commit; remembered per (immutable) commit. */
@@ -982,10 +1007,11 @@ async function jjCommitIsConflicted(
 
   if (answered) return answered;
 
-  const probe = reader.read(commit, JJ_CONFLICT_MARKER).then(
-    (marker) => marker !== null,
-    () => false,
-  );
+  const probe = reader.readObject(commit, JJ_CONFLICT_MARKER).then((answer) => {
+    if (answer.found === "oversized")
+      throw new Error("Whiteboard conflict marker exceeds the reader limit.");
+    return answer.found === "blob";
+  });
 
   known.set(commit, probe);
 

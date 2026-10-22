@@ -2,6 +2,7 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { FlowDiagramBlock } from "../../shared/vendor/review/src/review-api/blocks/flow_diagram.ts";
+import { BlockErrorBoundary } from "../vendor/review/app/src/blocks.tsx";
 import { ReviewDebugSettingsProvider } from "../vendor/review/app/src/debug-settings.tsx";
 import { FlowGraph } from "../vendor/review/app/src/flow-graph.tsx";
 import { ReviewSessionProvider } from "../vendor/review/app/src/host/review-session.tsx";
@@ -103,6 +104,42 @@ it("has no controls inline", async () => {
   expect(screen.queryByRole("button", { name: /zoom in/i })).toBeNull();
 });
 
+it.each([0, 1, "all"])("keeps rendering after removing edge %s", async (removed) => {
+  const onError = vi.fn();
+  const session = testReviewSession();
+  const initial = {
+    ...block,
+    edges: block.edges.map((edge, index) => Object.assign({}, edge, { label: `Edge ${index}` })),
+  };
+  const view = (flow: FlowDiagramBlock) => (
+    <ReviewSessionProvider session={session}>
+      <ReviewDebugSettingsProvider>
+        <BlockErrorBoundary block={{ ...flow, id: "flow" }} onError={onError}>
+          <FlowGraph block={flow} height={560} onSelect={() => {}} />
+        </BlockErrorBoundary>
+      </ReviewDebugSettingsProvider>
+    </ReviewSessionProvider>
+  );
+  const { container, rerender } = render(view(initial));
+  await screen.findByText("Edge 1");
+
+  rerender(
+    view({
+      ...initial,
+      edges: initial.edges.filter((_, index) => removed !== "all" && index !== removed),
+    }),
+  );
+
+  await screen.findByText(GATE);
+  await waitFor(() =>
+    expect(container.querySelectorAll(".lens-flow-edge-labels text").length).toBe(
+      removed === "all" ? 0 : 1,
+    ),
+  );
+  expect(screen.queryByRole("alert")).toBeNull();
+  expect(onError).not.toHaveBeenCalled();
+});
+
 /** ELK lays this 12-node chain out 234 x 1252, step-N at y = 12 + 106 * (N - 1). */
 const keys = Array.from({ length: 12 }, (_, index) => `step-${index + 1}`);
 const chain: FlowDiagramBlock = {
@@ -124,13 +161,26 @@ function frameRect(width: number, height: number) {
 
 it("sizes an inline down flow to its drawing instead of shrinking it into 560px", async () => {
   frameRect(770, 560);
-  const { container } = renderFlow(false, chain);
+  const { container, rerender } = renderFlow(false, chain);
   const frame = container.querySelector<HTMLElement>(".lens-flow")!;
 
   expect(frame.textContent).toBe("Laying out flow…");
   expect(frame.style.height).toBe("560px");
 
   await waitFor(() => expect(frame.style.height).toBe("1300px"));
+
+  rerender(
+    <ReviewSessionProvider session={testReviewSession()}>
+      <ReviewDebugSettingsProvider>
+        <FlowGraph
+          block={{ ...chain, title: "Updated inline chain" }}
+          height={560}
+          onSelect={() => {}}
+        />
+      </ReviewDebugSettingsProvider>
+    </ReviewSessionProvider>,
+  );
+  expect(frame.style.height).toBe("1300px");
 });
 
 it("opens expanded at a readable zoom on the selected node and pans to a step off screen", async () => {
@@ -208,4 +258,41 @@ it("keeps refitting after a node click, and stops once the reader drags", async 
   resizeTo(808);
 
   expect(viewport()).toEqual([173, 282.5, 1]);
+});
+
+it("keeps a moved tour's viewport across a new snapshot and still reveals offscreen steps", async () => {
+  vi.stubGlobal("matchMedia", () => ({ matches: true }));
+  frameRect(808, 877);
+  const session = testReviewSession();
+  const view = (flow: FlowDiagramBlock, selectedKey = "step-12") => (
+    <ReviewSessionProvider session={session}>
+      <ReviewDebugSettingsProvider>
+        <FlowGraph
+          block={flow}
+          interactive
+          height="100%"
+          selectedKey={selectedKey}
+          onSelect={() => {}}
+        />
+      </ReviewDebugSettingsProvider>
+    </ReviewSessionProvider>
+  );
+  const { container, rerender } = render(view(chain));
+  const viewport = () =>
+    container.querySelector<HTMLElement>(".react-flow__viewport")!.style.transform;
+  await waitFor(() => expect(viewport()).toContain("scale(0.85)"));
+  mouse("mousedown", container.querySelector(".react-flow__pane")!, 100);
+  mouse("mousemove", window, 140);
+  mouse("mouseup", window, 140);
+  const moved = viewport();
+
+  const updated = { ...chain, title: "Updated chain" };
+  rerender(view(updated));
+  expect(viewport()).toBe(moved);
+  await screen.findByLabelText("Updated chain");
+  expect(viewport()).toBe(moved);
+
+  rerender(view(updated, "step-1"));
+  await waitFor(() => expect(viewport()).not.toBe(moved));
+  expect(viewport()).toContain("scale(0.85)");
 });

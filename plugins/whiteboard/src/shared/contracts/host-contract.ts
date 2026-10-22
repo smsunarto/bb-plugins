@@ -118,8 +118,15 @@ export const whiteboardHostContract = defineRpcContract({
       kind: z.enum(["git", "jj"]),
       items: z.array(z.strictObject({ commit: z.string(), path: z.string() })).max(2000),
     }),
-    /** `bytes` is base64, or null when the blob is absent. */
-    output: z.object({ items: z.array(z.object({ bytes: z.string().nullable() })) }),
+    /** A size failure belongs to one item; `bytes: null` means no blob. */
+    output: z.object({
+      items: z.array(
+        z.union([
+          z.object({ bytes: z.string().nullable() }),
+          z.object({ error: z.enum(["reader-limit", "transfer-limit"]) }),
+        ]),
+      ),
+    }),
   },
   /** Start a diffr run. Events arrive as `structuralEvents` signals. Resolves when the run ends. */
   structuralDiff: {

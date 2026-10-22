@@ -29,9 +29,8 @@ function readerFor(input: HostInput<"readBlobs">): BlobBatchReader {
 /**
  * Batched blob reads for pinned source (design §1.5). The answer lists the
  * requested items in order. It may stop early once it holds
- * `BLOB_RESPONSE_BYTES`; the server re-requests the rest. A single blob whose
- * base64 exceeds the hop limit answers `null` (unavailable), as no hop can
- * carry it.
+ * `BLOB_RESPONSE_BYTES`; the server re-requests the rest. Size failures are
+ * per item; reader/process failures reject the call.
  */
 export async function readBlobs(
   input: HostInput<"readBlobs">,
@@ -43,19 +42,24 @@ export async function readBlobs(
   // Read a window at a time, so blobs past the response budget are never read
   // (the server re-requests them; reading them all would be quadratic).
   for (let start = 0; start < input.items.length; start += BLOB_READ_WINDOW) {
-    const blobs = await Promise.all(
+    const answers = await Promise.all(
       input.items
         .slice(start, start + BLOB_READ_WINDOW)
-        .map((item) => reader.read(item.commit, item.path).catch(() => null)),
+        .map((item) => reader.readObject(item.commit, item.path)),
     );
-    for (const blob of blobs) {
+    for (const answer of answers) {
+      if (answer.found === "oversized") {
+        items.push({ error: "reader-limit" });
+        continue;
+      }
+      const blob = answer.found === "blob" ? answer.blob : null;
       if (blob === null) {
         items.push({ bytes: null });
         continue;
       }
       const size = Math.ceil(blob.length / 3) * 4;
       if (size > HOST_PAYLOAD_LIMIT_BYTES) {
-        items.push({ bytes: null });
+        items.push({ error: "transfer-limit" });
         continue;
       }
       if (items.length > 0 && total + size > BLOB_RESPONSE_BYTES) return { items };

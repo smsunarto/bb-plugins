@@ -246,9 +246,7 @@ export const listTrackedFilesAtCommit: typeof upstream.listTrackedFilesAtCommit 
 export const readFileAtCommit: typeof upstream.readFileAtCommit = async (input) => {
   const { reader, ...rest } = input;
   if (reader && input.kind === "git" && isHostBlobReader(reader)) {
-    const answer = await reader
-      .readObject(input.commit, input.relativePath)
-      .catch(() => ({ found: "nothing" }) as const);
+    const answer = await reader.readObject(input.commit, input.relativePath);
     return answer.found === "blob" ? answer.blob.toString("utf8") : null;
   }
   return (await invokeHost("local-vcs", "readFileAtCommit", [rest], at(input.rootPath))) as

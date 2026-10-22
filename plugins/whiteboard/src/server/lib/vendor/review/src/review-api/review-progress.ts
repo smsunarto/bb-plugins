@@ -17,6 +17,8 @@ import {
   lensSelections,
 } from "../../../../../../shared/vendor/review/src/review-api/diff-lenses.ts";
 import { type Pins, anchorPins, selectionReferences } from "../../../../../../shared/vendor/review/src/review-api/document.ts";
+import { ReviewInputError } from "../../../../../../shared/vendor/review/src/review-api/input-error.ts";
+import { textualRows } from "../../../../../../shared/vendor/review/src/review-api/lens-alignment.ts";
 import { resolveFileLens, uncategorizedSources } from "./file-lenses.ts";
 import type { LocalReviewData } from "./local-data.ts";
 import type { ReviewStore, Snapshot } from "./store.ts";
@@ -161,6 +163,7 @@ export async function reviewProgress(
 
     // Context-only files are absent from the changed-file stream. Read both pins
     // and require equality rather than inventing correspondence for missing diffs.
+    // A file present on only one side resolves against that side.
     if (!file && partial && !own) {
       pendingSources.add(key);
 
@@ -168,16 +171,26 @@ export async function reviewProgress(
     }
 
     if (!file) {
-      const [base, head] = await Promise.all([
-        data.file(sourcePins, "base", source.file),
-        data.file(sourcePins, "head", source.file),
-      ]);
+      const [base, head] = await Promise.all(
+        (["base", "head"] as const).map((side) =>
+          data.file(sourcePins, side, source.file).then(
+            (value) => value.text,
+            (error) => {
+              if (error instanceof ReviewInputError && error.status === 404) return null;
+              throw error;
+            },
+          ),
+        ),
+      );
 
-      if (base.text !== head.text)
+      if (base === null && head === null) throw new Error("File is unavailable at these pins.");
+      if (base !== null && head !== null && base !== head)
         throw new Error("Changed context file has no alignment.");
-      rows = Array.from(
-        { length: base.text.split("\n").length },
-        (_, line) => [line, line] as const,
+      rows = textualRows(
+        source.file,
+        "",
+        base?.split("\n").length ?? 0,
+        head?.split("\n").length ?? 0,
       );
     }
 
