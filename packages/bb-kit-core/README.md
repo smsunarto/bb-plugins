@@ -80,6 +80,8 @@ without moving that data, set `publicName`. It becomes the `bb <name>`
 CLI and the tool prefix (`dev-mode` → `dev_mode_<key>`), and tool
 descriptions are read from `instructions/tools/<new name>.md`.
 
+To change only the CLI root, set `cliName`. It defaults to `publicName` and leaves tool names and their instruction paths unchanged.
+
 Callers that still hold a retired tool name can reach the same tool
 through `agents.aliases`:
 

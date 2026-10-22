@@ -445,6 +445,8 @@ export async function runCheck(options: CheckOptions): Promise<BinResult> {
   // publicName names the CLI and prefixes tools; undefined means pluginId.
   let publicName: string | undefined;
   let publicNameRead = true;
+  let cliNameOverride: string | undefined;
+  let cliNameRead = true;
   const derivedToolNames: { name: string; line: number }[] = [];
   const aliasToolNames: { name: string; line: number }[] = [];
   let toolNamesKnown = false;
@@ -689,6 +691,25 @@ export async function runCheck(options: CheckOptions): Promise<BinResult> {
                   `publicName "${publicName}" must match ${PLUGIN_ID_PATTERN} — rule 2`,
                   serverRelative,
                   line,
+                );
+              }
+            }
+            const cliNameProperty = getProperty(argument, "cliName");
+            if (cliNameProperty !== undefined) {
+              cliNameOverride = stringText(unwrap(propertyValue(cliNameProperty)));
+              if (cliNameOverride === undefined) {
+                cliNameRead = false;
+                fail(
+                  "definePlugin's cliName must be a string literal for check to verify it — rule 5",
+                  serverRelative,
+                  lineOfNode(sourceFile, cliNameProperty),
+                );
+              } else if (!PLUGIN_ID_PATTERN.test(cliNameOverride)) {
+                cliNameRead = false;
+                fail(
+                  `cliName "${cliNameOverride}" must match ${PLUGIN_ID_PATTERN} — rule 5`,
+                  serverRelative,
+                  lineOfNode(sourceFile, cliNameProperty),
                 );
               }
             }
@@ -1100,7 +1121,9 @@ export async function runCheck(options: CheckOptions): Promise<BinResult> {
   // fallbacks keep both rules running when the export is absent.
   const CLI_COMMAND_NAME_FALLBACK = /^[a-z0-9-]+$/;
   const AGENT_TOOL_NAME_FALLBACK = /^[a-zA-Z0-9_-]+$/;
-  const cliName = publicNameRead ? (publicName ?? pluginId ?? id) : undefined;
+  const cliName = cliNameRead
+    ? (cliNameOverride ?? (publicNameRead ? (publicName ?? pluginId ?? id) : undefined))
+    : undefined;
   if (cliName !== undefined) {
     try {
       const policyPath = requireFromPlugin.resolve("@get-bb/plugin-sdk/internal/host-policy");

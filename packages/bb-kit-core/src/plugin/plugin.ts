@@ -106,6 +106,8 @@ export function definePlugin<
     pluginId: string;
     /** The CLI name and tool-name prefix. Defaults to `pluginId`. */
     publicName?: string;
+    /** Override only the CLI root, keeping the public tool-name prefix. */
+    cliName?: string;
     /**
      * Build the plugin's long-lived collaborators once per load. Keep it
      * synchronous and free of host and SDK calls: it runs before bb
@@ -156,6 +158,10 @@ export function definePlugin<
   const publicName = definition.publicName === undefined ? pluginId : definition.publicName;
   if (typeof publicName !== "string" || !PLUGIN_ID_PATTERN.test(publicName)) {
     throw new Error(`invalid public name "${publicName}": must match ${PLUGIN_ID_PATTERN}`);
+  }
+  const cliName = definition.cliName === undefined ? publicName : definition.cliName;
+  if (typeof cliName !== "string" || !PLUGIN_ID_PATTERN.test(cliName)) {
+    throw new Error(`invalid CLI name "${cliName}": must match ${PLUGIN_ID_PATTERN}`);
   }
   assertRPCKeys(rpc);
   const commands = definition.command ?? {};
@@ -210,7 +216,7 @@ export function definePlugin<
       registerRPC(bb, ctx, rpc, definition.rpcPublication, reporters);
       bb.cli.register(
         defineCli({
-          name: publicName,
+          name: cliName,
           summary: `CLI for the ${publicName} plugin`,
           commands: {
             ...cliCommands(ctx, commands, reporters.errors),

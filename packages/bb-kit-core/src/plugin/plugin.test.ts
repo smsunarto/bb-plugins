@@ -432,6 +432,37 @@ test("publicName names the CLI and tools while reporters keep the plugin id", as
   assert.equal(unnamed.harness.inspection.registrations.cli?.name, "demo");
 });
 
+test("cliName changes only the CLI root", async () => {
+  const host = createFakePluginHost({ pluginId: "demo" });
+  try {
+    await definePlugin({
+      pluginId: "demo",
+      publicName: "demo-ns",
+      cliName: "review",
+      rpc: {},
+      command: { status },
+      agents: { files, tools: { greet } },
+    })(host.bb);
+    assert.equal(host.harness.inspection.registrations.cli?.name, "review");
+    assert.deepEqual(
+      host.harness.inspection.registrations.agentTools.map((tool) => tool.name),
+      ["demo_ns_greet"],
+    );
+    assert.match(
+      (await host.harness.behavior.runCli(["status", "--help"])).stdout,
+      /bb review status/,
+    );
+  } finally {
+    await host.harness.lifecycle.dispose();
+  }
+  for (const cliName of ["", "Review CLI", "bad.name", null, 123]) {
+    assert.throws(
+      () => definePlugin({ pluginId: "demo", cliName: cliName as never, rpc: {} }),
+      /invalid CLI name/,
+    );
+  }
+});
+
 test("aliases share SDK input schemas, defaults, presentation, text, execution, and tracing", async () => {
   const boom = new Error("tool failed");
   const calls: unknown[] = [];

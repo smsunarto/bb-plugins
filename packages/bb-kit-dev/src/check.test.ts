@@ -270,6 +270,44 @@ test("a reserved publicName fails rule 5 as the CLI name", async () => {
   assert.match(result.stderr, /plugin CLI name "status" is reserved by bb — rule 5/);
 });
 
+test("cliName changes CLI policy independently of the tool prefix", async () => {
+  const root = makeFixture();
+  addToolUnit(root, "beacon");
+  wireAgents(root, "beacon", "{ tools: { beacon } }");
+  edit(
+    root,
+    "src/server/server.ts",
+    'pluginId: "notes",',
+    'pluginId: "notes",\n  cliName: "review",',
+  );
+  const passing = await runCheck({ cwd: root });
+  assert.equal(passing.exitCode, 0, passing.stderr);
+  assert.match(passing.stdout, /notes_beacon/);
+  edit(root, "src/server/server.ts", 'cliName: "review",', 'cliName: "status",');
+  const reserved = await runCheck({ cwd: root });
+  assert.equal(reserved.exitCode, 1);
+  assert.match(reserved.stderr, /CLI name "status" is reserved/);
+});
+
+test("cliName must be a verifiable, valid literal", async () => {
+  for (const [value, message] of [
+    ["NAME", /cliName must be a string literal/],
+    ['"Review CLI"', /cliName "Review CLI" must match/],
+    ['"-review"', /cliName "-review" must match/],
+  ] as const) {
+    const root = makeFixture();
+    edit(
+      root,
+      "src/server/server.ts",
+      'pluginId: "notes",',
+      `pluginId: "notes",\n  cliName: ${value},`,
+    );
+    const result = await runCheck({ cwd: root });
+    assert.equal(result.exitCode, 1);
+    assert.match(result.stderr, message);
+  }
+});
+
 test("a manifest path that does not exist fails rule 4", async () => {
   const root = makeFixture();
   edit(
