@@ -6,7 +6,7 @@ import { rpc } from "../src/app/rpc.ts";
 import type { AgentActivity, LinkedThread } from "../src/shared/schema.ts";
 import { agentActivity, inbox, localBranch, localBranches, localChanges } from "./app-fixtures.ts";
 
-const { fireEvent, waitFor, within } = await import("@testing-library/react");
+const { act, fireEvent, waitFor, within } = await import("@testing-library/react");
 const { loadPluginApp, renderSlot } = await import("@get-bb/plugin-sdk/testing/app");
 const { REVEAL_EVENT } = await import("../src/app/finding.tsx");
 
@@ -127,6 +127,31 @@ test("a branch's page names it, and its summary lists its commits", async () => 
     expect.stringContaining("cc36d32Rate-limit the login endpointScott"),
     expect.stringContaining("5d1a8e0Add a bucket typeAda"),
   ]);
+  expect(await slot.findByRole("article", { name: "src/limit.ts" })).toBeTruthy();
+  expect(slot.queryByRole("tablist", { name: "View" })).toBeNull();
+  slot.lifecycle.unmount();
+});
+
+test("a new local commit preserves the mounted overview and scroll area", async () => {
+  const slot = await page(`${BRANCH}/changes`, {
+    ...baseRpc,
+    localChanges: (input: { head: string }) => ({ ...localChanges, headRefOid: input.head }),
+  });
+  await slot.findByRole("article", { name: "src/limit.ts" });
+  const area = slot.container.querySelector<HTMLElement>("[data-cr-scroll]")!;
+  const overview = slot.getByRole("region", { name: "Commits" });
+  fireEvent.wheel(area);
+  area.scrollTop = 400;
+  await act(async () => {
+    pluginQueryClient.setQueryData(rpc.localBranches.queryKey(), {
+      ...localBranches,
+      branches: [{ ...localBranch, head: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" }],
+    });
+  });
+  await slot.findByRole("article", { name: "src/limit.ts" });
+  expect(slot.container.querySelector("[data-cr-scroll]")).toBe(area);
+  expect(slot.getByRole("region", { name: "Commits" })).toBe(overview);
+  expect(area.scrollTop).toBe(400);
   slot.lifecycle.unmount();
 });
 

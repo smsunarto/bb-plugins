@@ -6,15 +6,12 @@ import {
 } from "@get-bb/plugin-sdk/app";
 import { prSubPath } from "../shared/schema.ts";
 import type { Check, PullRequest, ReviewState, StackPr, TimelineItem } from "../shared/schema.ts";
-import { useChecks } from "./checks.tsx";
+import { ChecksList, useChecks } from "./checks.tsx";
 import { FindingsCard, LinkedThreads } from "./bb-review.tsx";
-import { Button } from "./components/ui/button.tsx";
 import { PANEL_PATH, plural, shortSha, subject } from "./format.ts";
 import { cn } from "./lib/utils.ts";
-import { InlineError, Loading, Notice, Section } from "./notice.tsx";
-import { Avatar, ChecksStateIcon, PrStateBadge, ReviewStateBadge, Timestamp } from "./status.tsx";
-
-const CHECKS_SHOWN = 5;
+import { Notice, Section } from "./notice.tsx";
+import { Avatar, PrStateBadge, ReviewStateBadge, Timestamp } from "./status.tsx";
 
 const COUNT_WORDS: readonly [Check["state"], string][] = [
   ["failure", "failing"],
@@ -47,26 +44,38 @@ const REVIEW_VERB: Record<ReviewState, string> = {
  * part moves to a side column. While narrow, the main column's wrapper is
  * `display: contents`, so `order` can put the side column between its parts.
  */
-export function SummaryTab({ pr }: { pr: PullRequest }) {
+export function PrOverview({ pr }: { pr: PullRequest }) {
+  const checks = useChecks(pr);
   return (
     <div className="@container/summary">
+      {/* GitHub keeps saying CONFLICTING once a pull request is closed or merged. */}
+      {pr.state === "open" && pr.mergeable === "conflicting" ? (
+        <Notice tone="error" title="Merge conflicts" className="mb-4">
+          This branch conflicts with {pr.baseRefName}. Resolve them before it can merge.
+        </Notice>
+      ) : null}
+
       <div className="flex flex-col gap-5 @3xl/summary:flex-row @3xl/summary:items-start">
         <div className="contents @3xl/summary:flex @3xl/summary:min-w-0 @3xl/summary:flex-1 @3xl/summary:flex-col @3xl/summary:gap-5">
           <Description pr={pr} />
           <div className="order-2 min-w-0 empty:hidden">
             <FindingsCard pr={pr} />
           </div>
+          <section data-cr-section="checks" aria-label="Checks" className="order-3 min-w-0">
+            <div className="mb-2 flex flex-wrap items-center gap-x-2 gap-y-1">
+              <h2 className="text-xs font-medium text-foreground">Checks</h2>
+              {checks.data ? (
+                <span className="text-[11px] text-muted-foreground">
+                  {checkCounts(checks.data.checks)}
+                </span>
+              ) : null}
+            </div>
+            <ChecksList pr={pr} compact />
+          </section>
           <Activity pr={pr} />
         </div>
         <div className="order-3 flex min-w-0 flex-col gap-5 @3xl/summary:w-64 @3xl/summary:shrink-0">
-          {/* GitHub keeps saying CONFLICTING once a pull request is closed or merged. */}
-          {pr.state === "open" && pr.mergeable === "conflicting" ? (
-            <Notice tone="error" title="Merge conflicts">
-              This branch conflicts with {pr.baseRefName}. Resolve them before it can merge.
-            </Notice>
-          ) : null}
           <Reviewers pr={pr} />
-          <ChecksSummary pr={pr} />
           <LinkedThreads pr={pr} />
           <Labels pr={pr} />
           <Stack pr={pr} />
@@ -110,66 +119,6 @@ function Reviewers({ pr }: { pr: PullRequest }) {
             </li>
           ))}
         </ul>
-      )}
-    </Section>
-  );
-}
-
-function ChecksSummary({ pr }: { pr: PullRequest }) {
-  const navigate = useBbNavigate();
-  const checks = useChecks(pr);
-  const all = checks.data?.checks ?? [];
-  const openChecks = () =>
-    navigate.toPluginPanel(PANEL_PATH, { subPath: prSubPath(pr.ref, "checks", pr.account) });
-  return (
-    <Section
-      title="Checks"
-      aside={
-        all.length > 0 ? (
-          <Button
-            variant="link"
-            size="sm"
-            className="ms-auto h-auto p-0 text-[11px] font-normal"
-            onClick={openChecks}
-          >
-            View all {all.length}
-          </Button>
-        ) : null
-      }
-    >
-      {checks.data ? (
-        all.length === 0 ? (
-          <p className="text-muted-foreground">No checks on the latest commit.</p>
-        ) : (
-          <>
-            <p className="mb-1.5 flex items-center gap-1.5 text-muted-foreground">
-              <ChecksStateIcon state={checks.data.state} />
-              {checkCounts(all)}
-            </p>
-            <ul className="flex flex-col gap-1">
-              {all.slice(0, CHECKS_SHOWN).map((check) => (
-                <li key={check.id} className="flex min-w-0 items-center gap-1.5">
-                  <ChecksStateIcon state={check.state} className="size-3" />
-                  <span className="min-w-0 truncate" title={check.name}>
-                    {check.workflow ? (
-                      <span className="text-subtle-foreground">{check.workflow} / </span>
-                    ) : null}
-                    {check.name}
-                  </span>
-                </li>
-              ))}
-            </ul>
-            {all.length > CHECKS_SHOWN ? (
-              <p className="mt-1 text-[11px] text-subtle-foreground">
-                and {plural(all.length - CHECKS_SHOWN, "more check")}
-              </p>
-            ) : null}
-          </>
-        )
-      ) : checks.isError ? (
-        <InlineError what="checks" error={checks.error} onRetry={() => void checks.refetch()} />
-      ) : (
-        <Loading label="Loading checks…" rows={2} />
       )}
     </Section>
   );

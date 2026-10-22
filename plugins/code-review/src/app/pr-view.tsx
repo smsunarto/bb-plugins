@@ -1,42 +1,28 @@
 import { UrlLink, experimental_Icon as Icon, useBbNavigate } from "@get-bb/plugin-sdk/app";
 import { pluginQueryClient } from "@bb-kit/core/rpc/query";
 import { useState } from "react";
-import { PR_TABS, prKey, prSubPath, sameAccount, sameRef } from "../shared/schema.ts";
+import { prKey, prSubPath, sameAccount, sameRef } from "../shared/schema.ts";
 import type { Checks, Inbox, InboxPr, PrRef, PrTab, PullRequest } from "../shared/schema.ts";
-import { ChangesTab } from "./changes.tsx";
-import { ChecksTab, useChecks } from "./checks.tsx";
+import { PrReview } from "./changes.tsx";
+import { useChecks } from "./checks.tsx";
 import { ReviewWithBbButton } from "./bb-review.tsx";
 import { Button, buttonVariants } from "./components/ui/button.tsx";
 import { COARSE_POINTER_COMPACT_ICON_BUTTON_CLASS } from "./components/ui/coarse-pointer-sizing.ts";
 import { Popover, PopoverContent, PopoverTrigger } from "./components/ui/popover.tsx";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "./components/ui/tabs.tsx";
 import { PANEL_PATH, plural } from "./format.ts";
 import { useInbox } from "./inbox.tsx";
 import { cn } from "./lib/utils.ts";
 import { Loading, Notice, RetryButton, Tip, errorText } from "./notice.tsx";
 import { rpc } from "./rpc.ts";
 import { DraftSyncNotice, useDraftPreview } from "./draft-sync.tsx";
-import { SyncState, pageSync, useReconcile, usePrPrefetch } from "./sync-state.tsx";
+import { SyncState, pageSync, useReconcile } from "./sync-state.tsx";
 import type { SyncQuery } from "./sync-state.tsx";
-import {
-  AccountAvatar,
-  Avatar,
-  ChecksStateIcon,
-  PrStateBadge,
-  Timestamp,
-  checksLabel,
-} from "./status.tsx";
+import { AccountAvatar, Avatar, PrStateBadge, Timestamp } from "./status.tsx";
 import { SubmitReviewButton } from "./submit-review.tsx";
-import { SummaryTab } from "./summary.tsx";
+import { PrOverview } from "./summary.tsx";
 
 /** How often an open pull request is read again, for new pushes, reviews, and comments. */
 const PR_REFRESH_MS = 60_000;
-
-const TAB_LABEL: Record<PrTab, string> = {
-  summary: "Summary",
-  changes: "Changes",
-  checks: "Checks",
-};
 
 const ICON_BUTTON = cn(COARSE_POINTER_COMPACT_ICON_BUTTON_CLASS, "text-muted-foreground");
 
@@ -45,7 +31,7 @@ function useBackToInbox(): () => void {
   return () => navigate.toPluginPanel(PANEL_PATH, { subPath: "" });
 }
 
-/** One pull request's header, toolbar, and tabs. The tab lives in the URL. */
+/** One pull request's details, checks, and diffs in a single review surface. */
 export function PrView({ prRef, account, tab }: { prRef: PrRef; account: string; tab: PrTab }) {
   const pullRequest = rpc.pullRequest.useQuery(
     { account, ref: prRef },
@@ -99,28 +85,16 @@ export function PrView({ prRef, account, tab }: { prRef: PrRef; account: string;
 }
 
 function Loaded({ pr, tab, pullRequest }: { pr: PullRequest; tab: PrTab; pullRequest: SyncQuery }) {
-  const navigate = useBbNavigate();
   const checks = useChecks(pr);
-  // Observes the Changes tab's read, with its options, to report its age in the header.
+  // All three reads contribute to the page's freshness and refresh action.
   const files = rpc.changedFiles.useQuery(
     { account: pr.account, ref: pr.ref },
-    { staleTime: 30_000, enabled: tab === "changes" },
+    { staleTime: 30_000 },
   );
-  const sync = pageSync(pullRequest, tab === "checks" ? checks : tab === "changes" ? files : null);
-  const prefetch = usePrPrefetch();
+  const sync = pageSync(pullRequest, [checks, files]);
   return (
-    <Tabs
-      value={tab}
-      onValueChange={(value) =>
-        navigate.toPluginPanel(PANEL_PATH, {
-          subPath: prSubPath(pr.ref, value as PrTab, pr.account),
-        })
-      }
-      // The tab is in the URL, so arrow keys only move focus: each selection is a history entry.
-      activationMode="manual"
-      className="flex min-h-0 flex-1 flex-col"
-    >
-      <header className="shrink-0 border-b border-border bg-background px-3 pt-2.5">
+    <div className="flex min-h-0 flex-1 flex-col">
+      <header className="shrink-0 border-b border-border bg-background px-3 py-2.5">
         <div className="flex flex-wrap items-start gap-x-3 gap-y-2">
           <div className="flex min-w-0 flex-1 basis-64 items-start gap-1">
             <h1 className="min-w-0 text-sm leading-snug font-semibold [overflow-wrap:anywhere]">
@@ -133,58 +107,11 @@ function Loaded({ pr, tab, pullRequest }: { pr: PullRequest; tab: PrTab; pullReq
           <Toolbar pr={pr} />
         </div>
         <Meta pr={pr} tab={tab} sync={sync} />
-        <TabsList aria-label="View" className={TAB_LIST}>
-          {PR_TABS.map((value) => (
-            <TabsTrigger
-              key={value}
-              value={value}
-              className={TAB_TRIGGER}
-              onMouseEnter={() => prefetch(pr, value)}
-              onFocus={() => prefetch(pr, value)}
-            >
-              {TAB_LABEL[value]}
-              {value === "changes" ? (
-                <span className="text-subtle-foreground tabular-nums">{pr.changedFiles}</span>
-              ) : null}
-              {value === "checks" && checks.data?.state ? (
-                <ChecksStateIcon
-                  state={checks.data.state}
-                  label={`Checks: ${checksLabel(checks.data.state)}`}
-                  className="size-3"
-                />
-              ) : null}
-            </TabsTrigger>
-          ))}
-        </TabsList>
       </header>
-      <TabsContent value="summary" className={PANE}>
-        <SummaryTab pr={pr} />
-      </TabsContent>
-      <TabsContent value="changes" className={FILL}>
-        <ChangesTab pr={pr} />
-      </TabsContent>
-      <TabsContent value="checks" className={PANE}>
-        <ChecksTab pr={pr} />
-      </TabsContent>
-    </Tabs>
+      <PrReview pr={pr} section={tab} overview={<PrOverview pr={pr} />} />
+    </div>
   );
 }
-
-// The page's tabs sit under its header as underlined labels. An unpublished
-// branch's page shares them.
-export const TAB_LIST = "mt-2 -mb-px h-auto justify-start gap-3 rounded-none bg-transparent p-0";
-export const TAB_TRIGGER = cn(
-  "h-8 gap-1.5 rounded-none border-b-2 border-transparent px-0.5 py-0 text-xs font-medium text-muted-foreground",
-  "hover:text-foreground data-[state=active]:border-foreground data-[state=active]:bg-transparent data-[state=active]:shadow-none",
-);
-
-// Summary and Checks scroll on their own below the header, which stays put.
-// The gutter is reserved so a tab that grows a scrollbar does not shift
-// sideways. Changes lays out its own file list and scroll area, so it gets
-// the whole space, unpadded.
-const TAB_PANE = "mt-0 min-h-0 flex-1 focus-visible:ring-0 focus-visible:ring-offset-0";
-export const PANE = `${TAB_PANE} overflow-y-auto p-3 pb-8 [scrollbar-gutter:stable]`;
-export const FILL = `${TAB_PANE} flex flex-col overflow-hidden`;
 
 /** The PR's state, branches, author, and size, with how fresh the copy is at the end. */
 function Meta({ pr, tab, sync }: { pr: PullRequest; tab: PrTab; sync: SyncQuery }) {

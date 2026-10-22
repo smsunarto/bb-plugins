@@ -1,24 +1,16 @@
 import type { ReactNode } from "react";
 import { experimental_Icon as Icon, useBbNavigate } from "@get-bb/plugin-sdk/app";
-import { BRANCH_TABS, branchSubPath } from "../shared/schema.ts";
 import type { BranchTab, LocalBranch } from "../shared/schema.ts";
 import { FindingsCard, LinkedThreads, ReviewWithBbButton } from "./bb-review.tsx";
-import { BranchChangesTab } from "./changes.tsx";
+import { BranchReview } from "./changes.tsx";
 import { Button } from "./components/ui/button.tsx";
 import { COARSE_POINTER_COMPACT_ICON_BUTTON_CLASS } from "./components/ui/coarse-pointer-sizing.ts";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "./components/ui/tabs.tsx";
 import { PANEL_PATH, plural } from "./format.ts";
 import { useLocalBranches } from "./inbox.tsx";
 import { cn } from "./lib/utils.ts";
 import { Loading, Notice, RetryButton, Section, Tip, errorText } from "./notice.tsx";
-import { FILL, PANE, TAB_LIST, TAB_TRIGGER } from "./pr-view.tsx";
 import { BranchStatusChip } from "./status.tsx";
 import { CommitLine } from "./summary.tsx";
-
-const TAB_LABEL: Record<BranchTab, string> = {
-  summary: "Summary",
-  changes: "Changes",
-};
 
 function useBackToInbox(): () => void {
   const navigate = useBbNavigate();
@@ -26,8 +18,7 @@ function useBackToInbox(): () => void {
 }
 
 /**
- * An unpublished branch's header and tabs. It is found by id among the
- * branches the inbox lists, read once for both. The tab lives in the URL.
+ * An unpublished branch's commits, findings, and diffs, found by its inbox id.
  */
 export function LocalBranchView({ id, tab }: { id: string; tab: BranchTab }) {
   const branches = useLocalBranches();
@@ -83,21 +74,10 @@ export function LocalBranchView({ id, tab }: { id: string; tab: BranchTab }) {
 }
 
 function Loaded({ branch, tab }: { branch: LocalBranch; tab: BranchTab }) {
-  const navigate = useBbNavigate();
   const back = useBackToInbox();
   return (
-    <Tabs
-      value={tab}
-      onValueChange={(value) =>
-        navigate.toPluginPanel(PANEL_PATH, {
-          subPath: branchSubPath(branch.id, value as BranchTab),
-        })
-      }
-      // The tab is in the URL, so arrow keys only move focus: each selection is a history entry.
-      activationMode="manual"
-      className="flex min-h-0 flex-1 flex-col"
-    >
-      <header className="shrink-0 border-b border-border bg-background px-3 pt-2.5">
+    <div className="flex min-h-0 flex-1 flex-col">
+      <header className="shrink-0 border-b border-border bg-background px-3 py-2.5">
         <div className="flex flex-wrap items-start gap-x-3 gap-y-2">
           <div className="flex min-w-0 flex-1 basis-64 items-start gap-1">
             <Tip label="Back to inbox">
@@ -130,21 +110,9 @@ function Loaded({ branch, tab }: { branch: LocalBranch; tab: BranchTab }) {
           </div>
         </div>
         <Meta branch={branch} />
-        <TabsList aria-label="View" className={TAB_LIST}>
-          {BRANCH_TABS.map((value) => (
-            <TabsTrigger key={value} value={value} className={TAB_TRIGGER}>
-              {TAB_LABEL[value]}
-            </TabsTrigger>
-          ))}
-        </TabsList>
       </header>
-      <TabsContent value="summary" className={PANE}>
-        <BranchSummary branch={branch} />
-      </TabsContent>
-      <TabsContent value="changes" className={FILL}>
-        <BranchChangesTab branch={branch} />
-      </TabsContent>
-    </Tabs>
+      <BranchReview branch={branch} section={tab} overview={<BranchSummary branch={branch} />} />
+    </div>
   );
 }
 

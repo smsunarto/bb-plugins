@@ -158,18 +158,106 @@ function placeAt(element: Element, top: number, bottom: number): void {
     ({ top, bottom, left: 0, right: 0, width: 0, height: bottom - top, x: 0, y: top }) as DOMRect;
 }
 
+test("returning to Summary scrolls the mounted review back to its overview", async () => {
+  const { panel, render } = await changesTab();
+  const slot = render();
+  await slot.findByRole("article", { name: "src/login.ts" });
+  const area = slot.container.querySelector<HTMLElement>("[data-cr-scroll]")!;
+  const overview = slot.container.querySelector<HTMLElement>('[data-cr-section="summary"]')!;
+  placeAt(area, 100, 900);
+  overview.getBoundingClientRect = () => ({ top: 112 - area.scrollTop }) as DOMRect;
+  area.scrollTop = 500;
+  const Page = panel.component;
+  slot.lifecycle.rerender(<Page subPath="acme/api/pull/42/summary" />);
+  expect(slot.container.querySelector("[data-cr-scroll]")).toBe(area);
+  expect(area.scrollTop).toBe(0);
+  // A background data refresh does not return the reader to the top.
+  area.scrollTop = 300;
+  await act(async () => {
+    pluginQueryClient.setQueryData(
+      rpc.changedFiles.queryKey({ account: pr.account, ref: pr.ref }),
+      { ...files },
+    );
+  });
+  expect(area.scrollTop).toBe(300);
+  slot.lifecycle.unmount();
+});
+
+test("a late Changes route cannot override a revealed file", async () => {
+  const { panel, render } = await changesTab();
+  const slot = render();
+  const Page = panel.component;
+  await slot.findByRole("article", { name: "src/login.ts" });
+  slot.lifecycle.rerender(<Page subPath="acme/api/pull/42/summary" />);
+  const area = slot.container.querySelector<HTMLElement>("[data-cr-scroll]")!;
+  const card = slot.getByRole("article", { name: "src/login.ts" });
+  const heading = slot.container.querySelector('[data-cr-section="changes"]')!;
+  placeAt(area, 100, 900);
+  card.getBoundingClientRect = () => ({ top: 1700 - area.scrollTop }) as DOMRect;
+  heading.getBoundingClientRect = () => ({ top: 1100 - area.scrollTop }) as DOMRect;
+  area.scrollTop = 500;
+  await act(async () => {
+    window.dispatchEvent(
+      new CustomEvent(REVEAL_EVENT, { detail: { path: "src/login.ts", line: 0, side: "RIGHT" } }),
+    );
+  });
+  await waitFor(() => expect(area.scrollTop).toBe(1592));
+  slot.lifecycle.rerender(<Page subPath="acme/api/pull/42/changes" />);
+  expect(area.scrollTop).toBe(1592);
+  slot.lifecycle.unmount();
+});
+
+test("finishing a slow diff load preserves the reader's scroll and reserved file controls", async () => {
+  let finish!: (value: ChangedFiles) => void;
+  const pending = new Promise<ChangedFiles>((resolve) => {
+    finish = resolve;
+  });
+  const slot = (await changesTab([], { changedFiles: () => pending })).render();
+  await slot.findByText("Loading changed files…");
+  const area = slot.container.querySelector<HTMLElement>("[data-cr-scroll]")!;
+  const rail = slot.getByRole("navigation", { name: "Changed files" });
+  const toolbar = slot.getByRole("button", { name: "Split" });
+  fireEvent.wheel(area);
+  area.scrollTop = 350;
+  finish(files);
+  await slot.findByRole("article", { name: "src/login.ts" });
+  expect(slot.container.querySelector("[data-cr-scroll]")).toBe(area);
+  expect(slot.getByRole("navigation", { name: "Changed files" })).toBe(rail);
+  expect(slot.getByRole("button", { name: "Split" })).toBe(toolbar);
+  expect(area.scrollTop).toBe(350);
+  slot.lifecycle.unmount();
+});
+
+test("pending and failed files do not describe existing comments as orphaned", async () => {
+  let fail!: (error: Error) => void;
+  const pending = new Promise<ChangedFiles>((_resolve, reject) => {
+    fail = reject;
+  });
+  const slot = (await changesTab([], { changedFiles: () => pending })).render();
+  await slot.findByText("Loading changed files…");
+  expect(
+    slot.queryByRole("region", { name: "Comments on files no longer in the diff" }),
+  ).toBeNull();
+  fail(new Error("Files unavailable"));
+  await slot.findByText("Changed files failed to load", {}, { timeout: 5000 });
+  expect(
+    slot.queryByRole("region", { name: "Comments on files no longer in the diff" }),
+  ).toBeNull();
+  slot.lifecycle.unmount();
+});
+
 test("lists every changed file with its threads inline, and folds the viewed one", async () => {
   const slot = (await changesTab()).render();
   await slot.findByText("1 of 3 files viewed");
   await slot.findByRole("article", { name: "Comment by ada" });
 
   // Each file's card in order, and ada's thread inside the diff of the file it is on.
-  expect(slot.getAllByRole("article").map((card) => card.getAttribute("aria-label"))).toEqual([
-    "src/login.ts",
-    "Comment by ada",
-    "assets/logo.png",
-    "docs/old.md",
-  ]);
+  expect(
+    slot
+      .getAllByRole("article")
+      .map((card) => card.getAttribute("aria-label"))
+      .filter(Boolean),
+  ).toEqual(["src/login.ts", "Comment by ada", "assets/logo.png", "docs/old.md"]);
   expect(
     slot.getByText("GitHub sends no diff for this file. It is binary, or too large to show here.", {
       exact: false,
@@ -219,7 +307,7 @@ test("a generated file sorts after the rest and starts folded, and opens on requ
     slot
       .getAllByRole("article")
       .map((card) => card.getAttribute("aria-label"))
-      .filter((name) => !name?.startsWith("Comment")),
+      .filter((name) => name && !name.startsWith("Comment")),
   ).toEqual(["src/login.ts", "assets/logo.png", "docs/old.md", "bun.lock"]);
   const card = slot.getByRole("article", { name: "bun.lock" });
   expect(within(card).getByText("Generated")).toBeTruthy();

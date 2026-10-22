@@ -18,7 +18,7 @@ const { fireEvent, waitFor, within } = await import("@testing-library/react");
 const { installTestPluginRuntime, renderSlot } = await import("@get-bb/plugin-sdk/testing/app");
 installTestPluginRuntime();
 const { PluginQueryBoundary } = await import("@bb-kit/core/rpc/query");
-const { ChecksTab } = await import("./checks.tsx");
+const { ChecksList } = await import("./checks.tsx");
 const { FindingsCard, LinkedThreads, ReviewWithBbButton } = await import("./bb-review.tsx");
 const { FindingCard } = await import("./finding.tsx");
 const { SubmitReviewButton } = await import("./submit-review.tsx");
@@ -156,7 +156,7 @@ function reviewed(findings: Finding[], headRefOid = HEAD, baseRefName = BASE): A
 // ── Checks ───────────────────────────────────────────────────────────────
 
 test("checks are grouped worst first, and skipped ones stay folded away", async () => {
-  const slot = mount(ChecksTab, { checks: () => checks });
+  const slot = mount(ChecksList, { checks: () => checks });
   await slot.findByText("test");
 
   const sections = slot.getAllByRole("region").map((section) => section.getAttribute("aria-label"));
@@ -175,7 +175,7 @@ test("checks are grouped worst first, and skipped ones stay folded away", async 
 });
 
 test("a commit with no checks says so", async () => {
-  const slot = mount(ChecksTab, { checks: () => ({ headRefOid: HEAD, state: null, checks: [] }) });
+  const slot = mount(ChecksList, { checks: () => ({ headRefOid: HEAD, state: null, checks: [] }) });
   expect(await slot.findByText("No checks reported for this commit")).toBeTruthy();
   slot.lifecycle.unmount();
 });
@@ -183,7 +183,7 @@ test("a commit with no checks says so", async () => {
 test("a background poll leaves the checks where they are: the page header reports syncing", async () => {
   let release!: () => void;
   let slow = false;
-  const slot = mount(ChecksTab, {
+  const slot = mount(ChecksList, {
     checks: () =>
       slow
         ? new Promise((resolve) => {
@@ -203,7 +203,7 @@ test("a background poll leaves the checks where they are: the page header report
 
 test("a failed background read keeps the checks and the selection, and says so", async () => {
   let failing = false;
-  const slot = mount(ChecksTab, {
+  const slot = mount(ChecksList, {
     checks: () => {
       if (failing) throw new Error("API rate limit exceeded");
       return checks;
@@ -228,7 +228,7 @@ test("checks are read again as soon as the pull request moves to a new head", as
     state: "success",
     checks: [check("run:9", "build-before-push", "success")],
   };
-  const slot = mount(live(ChecksTab), {
+  const slot = mount(live(ChecksList), {
     pullRequest: () => ({ ...pr, headRefOid: head }),
     checks: () => (head === OLD_HEAD ? before : checks),
   });
@@ -252,7 +252,7 @@ test("Fix opens a composer seeded with the prompt for the selected failures", as
     startFix: () => ({ threadId: "thread-fix" }),
     agentActivity: () => noActivity,
   };
-  const slot = mount(ChecksTab, rpc);
+  const slot = mount(ChecksList, rpc);
   await slot.findByText("test");
 
   const boxes = slot.getAllByRole("checkbox") as HTMLInputElement[];
@@ -305,7 +305,7 @@ test("a prompt that cannot be built says why and can be asked for again", async 
       throw new Error("Those checks are no longer on the latest commit. Refresh and try again.");
     },
   };
-  const slot = mount(ChecksTab, rpc);
+  const slot = mount(ChecksList, rpc);
   await slot.findByText("test");
   fireEvent.click(slot.getByRole("button", { name: "Fix 2 checks" }));
 

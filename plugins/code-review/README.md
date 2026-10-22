@@ -53,23 +53,25 @@ submit a GitHub review or merge changes.
 Agents can call `code_review_share_changes` with a committed GitButler branch
 or GitHub pull request. Its returned `::code-review` directive renders a
 compact card in the reply: changed files, line counts, review progress, and
-**Review changes** to open the Changes tab. The card updates with your review
+**Review changes** to jump to the diffs on the review page. The card updates with your review
 marks. When the shared branch moves, it warns and offers **Review latest
 changes**.
 
 ## A pull request
 
-- **Summary**: the description, labels, reviewers and where each stands,
-  checks, review findings, the bb threads started for it, the open pull
-  requests stacked under and on top of it, and its activity.
-- **Changes**: every file's diff with the review threads on it, your drafts,
-  and review findings inline. Write a draft on any line or range, reply, edit
-  or delete drafts, and mark files viewed, which github.com shows too.
-  Generated files (lockfiles, build output, and anything the repository's
-  `.gitattributes` marks `linguist-generated`) sort last and start folded.
+The description, labels, reviewers, checks, review findings, linked bb threads,
+stack, activity, and changed files share one page. The file list and review
+controls stay visible as you scroll.
+
+- **Changes**: every file's diff with review threads, drafts, and findings
+  inline. Write a draft on any line or range, reply, edit or delete drafts,
+  and mark files viewed, which github.com shows too. Generated files sort
+  last and start folded.
 - **Checks**: check runs and commit statuses on the head commit, failures
   first. **Fix** opens a new-thread composer prefilled with the failing
   checks and the end of each failed GitHub Actions job's log.
+
+Existing links to Summary, Changes, or Checks open this page at that section.
 
 ## Review with bb
 

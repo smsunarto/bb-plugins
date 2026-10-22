@@ -3,7 +3,14 @@ import { beforeEach, expect, test } from "bun:test";
 import { pluginQueryClient } from "@bb-kit/core/rpc/query";
 import { inboxFor } from "../src/app/inbox.tsx";
 import type { Inbox, PrRef, PullRequest } from "../src/shared/schema.ts";
-import { agentActivity, assignedPr, checks, inbox, pullRequest } from "./app-fixtures.ts";
+import {
+  agentActivity,
+  assignedPr,
+  checks,
+  inbox,
+  localChanges,
+  pullRequest,
+} from "./app-fixtures.ts";
 
 const { fireEvent, waitFor, within } = await import("@testing-library/react");
 const { loadPluginApp, renderSlot } = await import("@get-bb/plugin-sdk/testing/app");
@@ -22,6 +29,11 @@ const baseRpc: Handlers = {
   inbox: () => inbox,
   pullRequest: () => pullRequest,
   checks: () => checks,
+  changedFiles: () => ({
+    ...localChanges,
+    headRefOid: pullRequest.headRefOid,
+    baseRefName: pullRequest.baseRefName,
+  }),
   agentActivity: () => agentActivity,
   reviewInstructions: () => ({ instructions: "" }),
   // Without the GitButler plugin, so the inbox has no Unpublished tab.
@@ -430,7 +442,7 @@ test("without gh at all, the page links to its installer", async () => {
   slot.lifecycle.unmount();
 });
 
-test("a pull request opens on its summary, current in the Inbox tab", async () => {
+test("a pull request opens its description, checks, and diffs together, current in the Inbox tab", async () => {
   const slot = await page(PR_PATH);
   const tab = await inboxTab(PR_PATH);
   const heading = await slot.findByRole("heading", { level: 1 });
@@ -445,7 +457,8 @@ test("a pull request opens on its summary, current in the Inbox tab", async () =
   expect(slot.getByText("+120")).toBeTruthy();
   expect(slot.getByText("−30")).toBeTruthy();
   expect(slot.getByText("4 files")).toBeTruthy();
-  expect(slot.getByRole("tab", { name: "Summary", selected: true })).toBeTruthy();
+  expect(slot.queryByRole("tablist", { name: "View" })).toBeNull();
+  expect(await slot.findByRole("article", { name: "src/limit.ts" })).toBeTruthy();
 
   expect(slot.getByText("Adds a **token bucket** in front of `/login`.")).toBeTruthy();
   expect(slot.getByText("security")).toBeTruthy();
@@ -456,7 +469,11 @@ test("a pull request opens on its summary, current in the Inbox tab", async () =
   expect(grace!.getByText("grace")).toBeTruthy();
   expect(grace!.getByText("Approved")).toBeTruthy();
   const checksSection = within(slot.getByRole("region", { name: "Checks" }));
-  expect(await checksSection.findByText("1 failing, 1 passed")).toBeTruthy();
+  expect(await checksSection.findByRole("button", { name: "Fix" })).toBeTruthy();
+  expect(checksSection.getByText("Failing")).toBeTruthy();
+  expect(
+    checksSection.getByRole("button", { name: /Passed 1/ }).getAttribute("aria-expanded"),
+  ).toBe("false");
 
   const activity = within(slot.getByRole("region", { name: "Activity" }));
   expect(activity.getByText("feat(auth): add a token bucket")).toBeTruthy();
@@ -472,24 +489,52 @@ test("a pull request opens on its summary, current in the Inbox tab", async () =
   slot.lifecycle.unmount();
 });
 
-test("the tabs and View all change the URL, not local state", async () => {
-  const slot = await page(PR_PATH);
-  await slot.findByRole("heading", { level: 1 });
-  selectTab(slot.getByRole("tab", { name: /Changes/ }));
-  const viewAll = await slot.findByRole("button", { name: "View all 2" });
-  fireEvent.click(viewAll);
-  expect(slot.navigateCalls).toEqual([
-    {
-      method: "toPluginPanel",
-      path: "code-review",
-      options: { subPath: `@scott/${PR_PATH}/changes` },
+test("old section links open the complete review without tabs", async () => {
+  for (const section of ["summary", "changes", "checks"]) {
+    const slot = await page(`${PR_PATH}/${section}`);
+    expect(await slot.findByRole("region", { name: "Description" })).toBeTruthy();
+    expect(await slot.findByRole("button", { name: "Fix" })).toBeTruthy();
+    expect(await slot.findByRole("article", { name: "src/limit.ts" })).toBeTruthy();
+    expect(slot.queryByRole("tablist", { name: "View" })).toBeNull();
+    expect(slot.navigateCalls).toEqual([]);
+    slot.lifecycle.unmount();
+  }
+});
+
+test("description and check selections survive the diff finishing its first load", async () => {
+  let finish!: (value: typeof localChanges) => void;
+  const pending = new Promise<typeof localChanges>((resolve) => {
+    finish = resolve;
+  });
+  const slot = await page(PR_PATH, { ...baseRpc, changedFiles: () => pending });
+  const check = (await slot.findByRole("checkbox", {
+    name: /Include .* in the fix/,
+  })) as HTMLInputElement;
+  fireEvent.click(check);
+  expect(check.checked).toBe(false);
+  expect(slot.getByRole("region", { name: "Description" })).toBeTruthy();
+  expect(slot.getByText("Loading changed files…")).toBeTruthy();
+  finish({
+    ...localChanges,
+    headRefOid: pullRequest.headRefOid,
+    baseRefName: pullRequest.baseRefName,
+  });
+  await slot.findByRole("article", { name: "src/limit.ts" });
+  expect(slot.getByRole("checkbox", { name: /Include .* in the fix/ })).toBe(check);
+  expect(check.checked).toBe(false);
+  slot.lifecycle.unmount();
+});
+
+test("a diff load failure leaves the description and checks available", async () => {
+  const slot = await page(PR_PATH, {
+    ...baseRpc,
+    changedFiles: () => {
+      throw new Error("Files unavailable");
     },
-    {
-      method: "toPluginPanel",
-      path: "code-review",
-      options: { subPath: `@scott/${PR_PATH}/checks` },
-    },
-  ]);
+  });
+  expect(await slot.findByText("Changed files failed to load", {}, { timeout: 5000 })).toBeTruthy();
+  expect(slot.getByRole("region", { name: "Description" })).toBeTruthy();
+  expect(slot.getByRole("button", { name: "Fix" })).toBeTruthy();
   slot.lifecycle.unmount();
 });
 

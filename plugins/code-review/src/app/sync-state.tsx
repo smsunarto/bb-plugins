@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { experimental_Icon as Icon, useRealtimeConnectionState } from "@get-bb/plugin-sdk/app";
 import { pluginQueryClient } from "@bb-kit/core/rpc/query";
-import type { InboxPr, PrTab } from "../shared/schema.ts";
+import type { InboxPr } from "../shared/schema.ts";
 import { absoluteTime, relativeTime } from "./format.ts";
 import { errorText } from "./notice.tsx";
 import { rpc } from "./rpc.ts";
@@ -17,21 +17,16 @@ export type SyncQuery = {
   refetch: () => unknown;
 };
 
-/**
- * A page's freshness from its own read and the open tab's: as old as the
- * oldest, syncing while either is. Only `own`'s failure is reported here; a
- * tab reports its own failure where its data is.
- */
-export function pageSync(own: SyncQuery, tab: SyncQuery | null): SyncQuery {
-  if (!tab?.dataUpdatedAt) return own;
+/** The page's oldest data and one refresh action; each section reports its own failure. */
+export function pageSync(own: SyncQuery, parts: readonly SyncQuery[]): SyncQuery {
+  const sources = [own, ...parts];
+  const stamps = sources.map((query) => query.dataUpdatedAt).filter((stamp) => stamp > 0);
   return {
-    dataUpdatedAt: own.dataUpdatedAt
-      ? Math.min(own.dataUpdatedAt, tab.dataUpdatedAt)
-      : tab.dataUpdatedAt,
-    isFetching: own.isFetching || tab.isFetching,
+    dataUpdatedAt: stamps.length ? Math.min(...stamps) : 0,
+    isFetching: sources.some((query) => query.isFetching),
     isError: own.isError,
     error: own.error,
-    refetch: () => Promise.all([own.refetch(), tab.refetch()]),
+    refetch: () => Promise.all(sources.map((query) => query.refetch())),
   };
 }
 
@@ -125,30 +120,17 @@ export function usePrPrefetch() {
     },
     [],
   );
-  return (pr: Pick<InboxPr, "account" | "ref">, tab: PrTab = "summary") => {
+  return (pr: Pick<InboxPr, "account" | "ref">) => {
     if (timer.current) clearTimeout(timer.current);
     timer.current = setTimeout(() => {
       if (activePrefetches >= 2) return;
       activePrefetches++;
       const input = { account: pr.account, ref: pr.ref };
-      const request =
-        tab === "changes"
-          ? pluginQueryClient.prefetchQuery({
-              queryKey: rpc.changedFiles.queryKey(input),
-              queryFn: () => client.changedFiles(input),
-              staleTime: 30_000,
-            })
-          : tab === "checks"
-            ? pluginQueryClient.prefetchQuery({
-                queryKey: rpc.checks.queryKey(input),
-                queryFn: () => client.checks(input),
-                staleTime: 10_000,
-              })
-            : pluginQueryClient.prefetchQuery({
-                queryKey: rpc.pullRequest.queryKey(input),
-                queryFn: () => client.pullRequest(input),
-                staleTime: 15_000,
-              });
+      const request = pluginQueryClient.prefetchQuery({
+        queryKey: rpc.pullRequest.queryKey(input),
+        queryFn: () => client.pullRequest(input),
+        staleTime: 15_000,
+      });
       void request.finally(() => {
         activePrefetches--;
       });

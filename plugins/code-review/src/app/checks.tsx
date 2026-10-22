@@ -67,8 +67,7 @@ export function checkDuration(check: Pick<Check, "startedAt" | "completedAt">): 
 }
 
 /**
- * The head commit's checks. The header's tab icon, the Summary, and the Checks
- * tab share it. Given the pull request's `headRefOid`, checks read for an
+ * The head commit's checks, shared by the review page's status and check list. Given the pull request's `headRefOid`, checks read for an
  * earlier head are read again at once, since settled checks are otherwise
  * read only every two minutes and a push would leave the old ones up.
  */
@@ -96,7 +95,7 @@ export function useChecks({
 }
 
 /** The pull request's checks, worst first, and the way to hand failures to an agent. */
-export function ChecksTab({ pr }: { pr: PullRequest }) {
+export function ChecksList({ pr, compact = false }: { pr: PullRequest; compact?: boolean }) {
   const checks = useChecks(pr);
   if (checks.isPending) return <ChecksSkeleton />;
   if (checks.isLoadingError) {
@@ -130,13 +129,13 @@ export function ChecksTab({ pr }: { pr: PullRequest }) {
           </p>
         </div>
       ) : (
-        <CheckGroups pr={pr} data={checks.data} />
+        <CheckGroups pr={pr} data={checks.data} compact={compact} />
       )}
     </div>
   );
 }
 
-function CheckGroups({ pr, data }: { pr: PullRequest; data: Checks }) {
+function CheckGroups({ pr, data, compact }: { pr: PullRequest; data: Checks; compact: boolean }) {
   const groups = groupChecks(data.checks);
   const failing = groups.find((group) => group.id === "failing")?.checks ?? [];
   // Every failure starts selected, including ones that fail after the tab
@@ -159,7 +158,7 @@ function CheckGroups({ pr, data }: { pr: PullRequest; data: Checks }) {
         <CheckSection
           key={group.id}
           group={group}
-          defaultOpen={group.id !== "other"}
+          defaultOpen={group.id !== "other" && (!compact || group.id !== "passed")}
           action={
             group.id === "failing" ? (
               <FixButton

@@ -8,7 +8,7 @@ import {
   useState,
   useSyncExternalStore,
 } from "react";
-import type { KeyboardEvent, RefObject } from "react";
+import type { KeyboardEvent, ReactNode, RefObject } from "react";
 import { experimental_Icon as Icon } from "@get-bb/plugin-sdk/app";
 import { pluginQueryClient } from "@bb-kit/core/rpc/query";
 import type { UseQueryResult } from "@tanstack/react-query";
@@ -20,6 +20,7 @@ import type {
   Finding,
   LocalBranch,
   PullRequest,
+  PrTab,
   ReviewThread,
 } from "../shared/schema.ts";
 import { reviewSubject, useAgentActivity } from "./bb-review.tsx";
@@ -37,6 +38,7 @@ import { cn, keepInView } from "./lib/utils.ts";
 import { Loading, Notice, RetryButton, errorText } from "./notice.tsx";
 import { ReviewThreadView } from "./review-thread.tsx";
 import { rpc } from "./rpc.ts";
+import { ReviewLayout } from "./review-layout.tsx";
 import { SyncState } from "./sync-state.tsx";
 import { useBranchReviewed } from "./branch-review.ts";
 import {
@@ -49,7 +51,7 @@ import {
 import type { ReviewMarks } from "./review-marks.ts";
 
 /*
- * The Changes tab: every changed file's diff, with review threads and bb
+ * The review surface: every changed file's diff, with review threads and bb
  * findings inline, a file list to jump around in, and GitHub's per-viewer
  * "Viewed" marks. It scrolls on its own, so the file list and the summary
  * bar stay put while the diffs move. An unpublished branch's tab is the same
@@ -123,6 +125,20 @@ function groupByPath<T extends { path: string }>(items: readonly T[]): Map<strin
   return groups;
 }
 
+/** Only a successful file read can establish that a thread has lost its file. */
+function missingFileThreads(
+  ready: boolean,
+  files: readonly ChangedFile[],
+  threads: ReadonlyMap<string, readonly ReviewThread[]>,
+  filter: string,
+) {
+  if (!ready) return [];
+  const changedPaths = new Set(files.map((file) => file.path));
+  return [...threads].filter(
+    ([path]) => !changedPaths.has(path) && matches({ path, previousPath: null }, filter),
+  );
+}
+
 /** A viewed file, a generated one, and one too long to draw at once, start folded. */
 function startsOpen(file: ChangedFile): boolean {
   return file.viewed !== "viewed" && !startsFolded(file);
@@ -165,7 +181,8 @@ function selectedLineIn(card: HTMLElement): Element | null {
 // ── Hooks ────────────────────────────────────────────────────────────────
 
 type LineFocus = { line: number; side: DiffSide };
-type Focus = { path: string; line: LineFocus | null };
+type FileFocus = { path: string; line: LineFocus | null };
+type Focus = FileFocus | { section: PrTab };
 
 /**
  * Takes a fresh "Show in Changes" request for this tab, the moment it mounts
@@ -212,6 +229,11 @@ function usePinFocus(
     const content = list.current;
     if (!focus || !area || !content) return;
     const place = () => {
+      if ("section" in focus) {
+        const destination = area.querySelector(`[data-cr-section="${focus.section}"]`);
+        if (destination) scrollWithin(area, destination, 12);
+        return;
+      }
       const card = cardFor(content, focus.path);
       if (!card) return;
       const line = focus.line ? selectedLineIn(card) : null;
@@ -223,9 +245,11 @@ function usePinFocus(
     place();
     const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(place);
     observer?.observe(content);
+    if (area.firstElementChild && area.firstElementChild !== content)
+      observer?.observe(area.firstElementChild);
     // The reader taking over the scroll, or the time running out, lets go.
     const release = () => observer?.disconnect();
-    const timer = window.setTimeout(release, PIN_MS);
+    const timer = "section" in focus ? undefined : window.setTimeout(release, PIN_MS);
     const listening = new AbortController();
     for (const intent of ["wheel", "touchstart", "pointerdown", "keydown"] as const) {
       area.addEventListener(intent, release, { passive: true, signal: listening.signal });
@@ -349,14 +373,17 @@ function refreshDiff({ account, ref }: Pick<PullRequest, "account" | "ref">): Pr
   );
 }
 
-// ── The tab ──────────────────────────────────────────────────────────────
+// ── The review surface ────────────────────────────────────────────────────
 
-export function ChangesTab({ pr }: { pr: PullRequest }) {
+type ReviewOverview = { overview: ReactNode; section: PrTab };
+const EMPTY_CHANGED: ChangedFiles = { headRefOid: "", baseRefName: "", files: [] };
+
+export function PrReview({ pr, ...page }: { pr: PullRequest } & ReviewOverview) {
   // Filter, folds, and focus belong to one pull request.
-  return <PrChanges key={prKey(pr.ref)} pr={pr} />;
+  return <PrChanges key={prKey(pr.ref)} pr={pr} {...page} />;
 }
 
-function PrChanges({ pr }: { pr: PullRequest }) {
+function PrChanges({ pr, ...page }: { pr: PullRequest } & ReviewOverview) {
   const files = rpc.changedFiles.useQuery(
     { account: pr.account, ref: pr.ref },
     { staleTime: 30_000 },
@@ -366,30 +393,29 @@ function PrChanges({ pr }: { pr: PullRequest }) {
   return (
     <>
       <SyncState query={files} errorsOnly className="px-3 pt-1" />
-      <Changes target={{ pr }} files={files} behind={behind} marks={marks} />
+      <Changes target={{ pr }} files={files} behind={behind} marks={marks} {...page} />
     </>
   );
 }
 
-/** An unpublished branch's Changes tab: everything `base..head` changes, read in its checkout. */
-export function BranchChangesTab({ branch }: { branch: LocalBranch }) {
+/** Everything `base..head` changes, alongside the branch's overview. */
+export function BranchReview({ branch, ...page }: { branch: LocalBranch } & ReviewOverview) {
   const files = rpc.localChanges.useQuery(
     { hostId: branch.hostId, path: branch.path, base: branch.base, head: branch.head },
     { staleTime: 30_000 },
   );
   const review = useBranchReviewed(branch);
   const marks = useBranchMarks(branch, review);
-  if (review.isPending)
-    return <Loading label="Loading review progress…" rows={6} className="p-3" />;
   return (
     <>
       <LocalReviewNotices query={review} />
       <Changes
-        key={`${branch.id}:${branch.base}:${branch.head}`}
         target={{ branch }}
         files={files}
         behind={false}
         marks={marks}
+        waitingForMarks={review.isPending}
+        {...page}
       />
     </>
   );
@@ -400,57 +426,100 @@ function Changes({
   files,
   behind,
   marks,
+  waitingForMarks = false,
+  ...page
 }: {
   target: ReviewTarget;
   files: UseQueryResult<ChangedFiles, Error>;
   marks: ReviewMarks | null;
-  /** The files are still of an older revision than the pull request. */
   behind: boolean;
-}) {
+  waitingForMarks?: boolean;
+} & ReviewOverview) {
   const [revealRequest, releaseReveal] = useClaimedReveal();
   const { pr, noun } = reviewSubject(target);
-
-  if (files.isPending) {
-    return <Loading label="Loading changed files…" rows={6} className="p-3" />;
-  }
-  // A pull request's failed refresh keeps the files last read: they carry
-  // their own revision, and the freshness line above says the refresh failed.
-  if (files.isLoadingError || (files.isError && !pr)) {
-    return (
-      <div className="p-3">
-        <Notice
-          tone="error"
-          title="Changed files failed to load"
-          action={<RetryButton onRetry={() => void files.refetch()} />}
-        >
-          {errorText(files.error)}
-        </Notice>
-      </div>
+  let status: ReactNode;
+  let changed = files.data;
+  if (files.isPending || waitingForMarks) {
+    status = (
+      <Loading
+        label={waitingForMarks ? "Loading review progress…" : "Loading changed files…"}
+        rows={6}
+      />
     );
-  }
-  if (files.data.files.length === 0) {
-    // A push that reverted every file leaves its threads, drafts among them,
-    // with no card to show them on.
-    return (
-      <div className="h-full min-h-0 overflow-y-auto p-3 [scrollbar-gutter:stable]">
-        {pr && behind ? <BehindNotice pr={pr} className="mb-2" /> : null}
-        <Notice tone="info" title="No changed files">
-          {`This ${noun} does not change any files.`}
-        </Notice>
-        <OrphanThreads pr={pr} groups={[...groupByPath(pr?.threads ?? EMPTY_THREADS)]} />
-      </div>
+    changed = undefined;
+  } else if (files.isLoadingError || (files.isError && !pr)) {
+    changed = undefined;
+    status = (
+      <Notice
+        tone="error"
+        title="Changed files failed to load"
+        action={<RetryButton onRetry={() => void files.refetch()} />}
+      >
+        {errorText(files.error)}
+      </Notice>
+    );
+  } else if (changed?.files.length === 0) {
+    status = (
+      <Notice
+        tone="info"
+        title="No changed files"
+      >{`This ${noun} does not change any files.`}</Notice>
     );
   }
   return (
     <ChangesView
       target={target}
-      changed={files.data}
+      changed={changed ?? EMPTY_CHANGED}
+      status={status}
+      ready={changed !== undefined}
+      pending={files.isPending || waitingForMarks}
       marks={marks}
       behind={behind}
-      revealRequest={revealRequest}
+      revealRequest={changed ? revealRequest : null}
       releaseReveal={releaseReveal}
+      {...page}
     />
   );
+}
+
+/** Review-local choices reset for a new branch range without replacing the page's scroll area. */
+function useReviewState(target: ReviewTarget, section: PrTab) {
+  const [filter, setFilter] = useState("");
+  const [openState, setOpenState] = useState<Readonly<Record<string, boolean>>>({});
+  const [focus, setFocus] = useState<Focus | null>(() => ({ section }));
+  const [current, setCurrent] = useState<string | null>(null);
+
+  const previousSection = useRef(section);
+  useLayoutEffect(() => {
+    if (previousSection.current === section) return;
+    previousSection.current = section;
+    // A finding may arrive before the host delivers its /changes route.
+    setFocus((current) =>
+      section === "changes" && current && !("section" in current) ? current : { section },
+    );
+  }, [section]);
+  const fileFocus = focus && !("section" in focus) ? focus : null;
+  const branchRevision = target.branch ? `${target.branch.base}:${target.branch.head}` : null;
+  const [previousRevision, setPreviousRevision] = useState(branchRevision);
+  if (previousRevision !== branchRevision) {
+    setPreviousRevision(branchRevision);
+    setFilter("");
+    setOpenState({});
+    setFocus(null);
+    setCurrent(null);
+  }
+
+  return {
+    filter,
+    setFilter,
+    openState,
+    setOpenState,
+    focus,
+    setFocus,
+    fileFocus,
+    current,
+    setCurrent,
+  };
 }
 
 function ChangesView({
@@ -460,7 +529,15 @@ function ChangesView({
   behind,
   revealRequest,
   releaseReveal,
+  overview,
+  section = "summary",
+  status,
+  ready,
+  pending,
 }: {
+  pending: boolean;
+  status: ReactNode;
+  ready: boolean;
   target: ReviewTarget;
   changed: ChangedFiles;
   marks: ReviewMarks | null;
@@ -468,13 +545,20 @@ function ChangesView({
   behind: boolean;
   revealRequest: RevealRequest | null;
   releaseReveal: () => void;
-}) {
+} & ReviewOverview) {
   const { pr, noun } = reviewSubject(target);
   const activity = useAgentActivity(target);
-  const [filter, setFilter] = useState("");
-  const [openState, setOpenState] = useState<Readonly<Record<string, boolean>>>({});
-  const [focus, setFocus] = useState<Focus | null>(null);
-  const [current, setCurrent] = useState<string | null>(null);
+  const {
+    filter,
+    setFilter,
+    openState,
+    setOpenState,
+    focus,
+    setFocus,
+    fileFocus,
+    current,
+    setCurrent,
+  } = useReviewState(target, section);
   const [railOpen, setRailOpen] = useState(true);
   const [diffStyle, setDiffStyle] = useStoredChoice("diff-style", DIFF_STYLES, "unified");
   const scroller = useRef<HTMLDivElement>(null);
@@ -490,18 +574,14 @@ function ChangesView({
   const threads = pr?.threads ?? EMPTY_THREADS;
   const threadsByPath = useMemo(() => groupByPath(threads), [threads]);
   // Threads on a path no card has: a later push reverted or renamed the file.
-  const orphans = useMemo(() => {
-    const changedPaths = new Set(all.map((file) => file.path));
-    return [...threadsByPath].filter(
-      ([path]) => !changedPaths.has(path) && matches({ path, previousPath: null }, filter),
-    );
-  }, [all, threadsByPath, filter]);
+  const orphans = useMemo(
+    () => missingFileThreads(ready, all, threadsByPath, filter),
+    [ready, all, threadsByPath, filter],
+  );
   const review = activity.data?.latestReview ?? null;
   const findingsByPath = useMemo(() => groupByPath(review?.findings ?? []), [review]);
   // A review of another head, or of the same head against another base, saw other lines.
-  const findingsStale =
-    review !== null &&
-    (review.headRefOid !== changed.headRefOid || review.baseRefName !== changed.baseRefName);
+  const findingsStale = review !== null && !sameRevision(review, changed);
   const isOpen = (file: ChangedFile) => openState[file.path] ?? startsOpen(file);
   const anyOpen = shown.some(isOpen);
 
@@ -511,7 +591,7 @@ function ChangesView({
       if (!open) holdFolding(path);
       setOpenState((state) => ({ ...state, [path]: open }));
     },
-    [holdFolding],
+    [holdFolding, setOpenState],
   );
   const onViewedChange = useViewedToggle(marks, setOpen);
   const reveal = useCallback(
@@ -523,31 +603,42 @@ function ChangesView({
       setCurrent(path);
       setFocus({ path, line });
     },
-    [all, filter, setOpen],
+    [all, filter, setOpen, setFilter, setCurrent, setFocus],
   );
   useRevealRequest(revealRequest, releaseReveal, reveal);
   usePinFocus(scroller, list, focus);
   useCurrentFile(scroller, list, shownPaths, setCurrent);
+  const toggleAll = () =>
+    setOpenState((state) => ({
+      ...state,
+      ...Object.fromEntries(shownPaths.map((path) => [path, !anyOpen])),
+    }));
 
   return (
-    <div className="@container/changes flex h-full min-h-0 min-w-0">
-      <FilePanel
-        open={railOpen}
-        filter={filter}
-        onFilter={setFilter}
-        files={shown}
-        total={all.length}
-        current={current}
-        threadsByPath={threadsByPath}
-        onSelect={reveal}
-        onViewedChange={onViewedChange}
-        reviewLabel={reviewLabel}
-      />
-      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+    <ReviewLayout
+      hasFiles={!ready || all.length > 0}
+      scroller={scroller}
+      overview={overview}
+      rail={
+        <FilePanel
+          open={railOpen}
+          pending={pending}
+          filter={filter}
+          onFilter={setFilter}
+          files={shown}
+          total={all.length}
+          current={current}
+          threadsByPath={threadsByPath}
+          onSelect={reveal}
+          onViewedChange={onViewedChange}
+          reviewLabel={reviewLabel}
+        />
+      }
+      toolbar={
         <Toolbar
           railOpen={railOpen}
           onToggleRail={() => setRailOpen((open) => !open)}
-          viewed={marks ? all.filter((file) => file.viewed === "viewed").length : null}
+          viewed={ready && marks ? all.filter((file) => file.viewed === "viewed").length : null}
           reviewLabel={reviewLabel}
           fresh={!marks?.loadError}
           total={all.length}
@@ -555,53 +646,55 @@ function ChangesView({
           diffStyle={diffStyle}
           onDiffStyle={setDiffStyle}
           anyOpen={anyOpen}
-          onToggleAll={
-            shown.length === 0
-              ? null
-              : () =>
-                  setOpenState((state) => ({
-                    ...state,
-                    ...Object.fromEntries(shownPaths.map((path) => [path, !anyOpen])),
-                  }))
-          }
+          onToggleAll={shown.length === 0 ? null : toggleAll}
         />
-        <PullRequestNotices pr={pr} behind={behind} />
-        {marks ? <ViewedErrors pull={marks.errorKey} /> : null}
-        <div
-          ref={scroller}
-          data-cr-scroll
-          className="min-h-0 flex-1 overflow-y-auto [scrollbar-gutter:stable]"
-        >
-          <div ref={list} className="flex flex-col gap-2 p-2 pb-8">
-            <MatchesNotice count={shown.length} noun={noun} filter={filter} />
-            {shown.map((file) => (
-              <DiffFile
-                key={file.path}
-                pr={pr}
-                file={file}
-                headRefOid={changed.headRefOid}
-                baseRefName={changed.baseRefName}
-                threads={threadsByPath.get(file.path) ?? EMPTY_THREADS}
-                findings={findingsByPath.get(file.path) ?? EMPTY_FINDINGS}
-                findingsStale={findingsStale}
-                open={isOpen(file)}
-                diffStyle={diffStyle}
-                focus={focus?.path === file.path ? focus.line : null}
-                onOpenChange={setOpen}
-                onViewedChange={onViewedChange}
-                reviewLabel={reviewLabel}
-              />
-            ))}
-            <OrphanThreads pr={pr} groups={orphans} />
-          </div>
-        </div>
+      }
+      notices={
+        <>
+          <PullRequestNotices pr={pr} behind={behind} />
+          {marks ? <ViewedErrors pull={marks.errorKey} /> : null}
+        </>
+      }
+    >
+      <div ref={list} className="flex flex-col gap-2 p-2 pb-8">
+        {status}
+        <MatchesNotice count={shown.length} total={all.length} noun={noun} filter={filter} />
+        {shown.map((file) => (
+          <DiffFile
+            key={file.path}
+            pr={pr}
+            file={file}
+            headRefOid={changed.headRefOid}
+            baseRefName={changed.baseRefName}
+            threads={threadsByPath.get(file.path) ?? EMPTY_THREADS}
+            findings={findingsByPath.get(file.path) ?? EMPTY_FINDINGS}
+            findingsStale={findingsStale}
+            open={isOpen(file)}
+            diffStyle={diffStyle}
+            focus={fileFocus?.path === file.path ? fileFocus.line : null}
+            onOpenChange={setOpen}
+            onViewedChange={onViewedChange}
+            reviewLabel={reviewLabel}
+          />
+        ))}
+        <OrphanThreads pr={pr} groups={orphans} />
       </div>
-    </div>
+    </ReviewLayout>
   );
 }
 
-function MatchesNotice({ count, noun, filter }: { count: number; noun: string; filter: string }) {
-  if (count > 0) return null;
+function MatchesNotice({
+  count,
+  total,
+  noun,
+  filter,
+}: {
+  count: number;
+  total: number;
+  noun: string;
+  filter: string;
+}) {
+  if (total === 0 || count > 0) return null;
   return (
     <Notice
       tone="info"
@@ -693,6 +786,7 @@ function ViewedErrors({ pull }: { pull: string }) {
 /** The left column: the filter, then the file list. Wide panes only. */
 function FilePanel({
   open,
+  pending,
   filter,
   onFilter,
   files,
@@ -700,6 +794,7 @@ function FilePanel({
   ...rail
 }: {
   open: boolean;
+  pending: boolean;
   filter: string;
   onFilter: (filter: string) => void;
   files: readonly ChangedFile[];
@@ -721,6 +816,7 @@ function FilePanel({
       <div className="flex flex-col gap-1.5 border-b border-border p-2">
         <Input
           type="search"
+          disabled={pending}
           value={filter}
           onChange={(event) => onFilter(event.target.value)}
           placeholder="Filter files"
@@ -733,7 +829,11 @@ function FilePanel({
           </p>
         ) : null}
       </div>
-      <FileRail files={files} {...rail} />
+      {pending ? (
+        <Loading label="Loading files…" rows={8} className="p-3" />
+      ) : (
+        <FileRail files={files} {...rail} />
+      )}
     </nav>
   );
 }
@@ -782,7 +882,7 @@ function Toolbar({
         <Icon name="PanelLeft" className="size-3.5" aria-hidden />
       </button>
       {viewed === null ? (
-        <span className="tabular-nums">{plural(total, "file")}</span>
+        <span className="tabular-nums">{total === 0 ? "Changes" : plural(total, "file")}</span>
       ) : (
         <span className="flex items-center gap-2 tabular-nums">
           <span>
