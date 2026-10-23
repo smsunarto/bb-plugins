@@ -1,4 +1,5 @@
 import { useState, type ReactNode } from "react";
+import { previewUrl, type Preview } from "../shared/media-paths.ts";
 import type { GenerationJob } from "../shared/generation.ts";
 import type { Asset, CanvasNode } from "../shared/schema.ts";
 import { nodeTakes, takeRun, type Take } from "../shared/takes.ts";
@@ -55,7 +56,7 @@ export function nodeRuns(takes: Take[], jobs: GenerationJob[]): Run[] {
 type GenerationProps = {
   node: CanvasNode;
   assets: Asset[];
-  baseUrl?: string;
+  preview?: Preview;
   jobs: GenerationJob[];
   /** The node's review jobs, so each take shows its verdict. */
   reviewJobs?: GenerationJob[];
@@ -75,7 +76,7 @@ type GenerationProps = {
 export function GenerationSection({
   node,
   assets,
-  baseUrl,
+  preview,
   jobs,
   reviewJobs = noJobs,
   batch,
@@ -91,9 +92,7 @@ export function GenerationSection({
   const judged = nodeJudgements(node).at(-1)?.choice;
   const stars = takes.filter((take) => take.star).length;
   const setTakes = (next: Take[]) => onChange({ takes: next });
-  const url = (asset: Asset) =>
-    baseUrl &&
-    `${baseUrl.replace(/\/$/, "")}/${asset.path.split("/").map(encodeURIComponent).join("/")}`;
+  const url = (asset: Asset) => preview && previewUrl(preview, asset.path);
   const runs = nodeRuns(takes, jobs)
     .reverse()
     .map((run) =>

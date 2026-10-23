@@ -43,6 +43,13 @@ function fixture() {
   };
   const bb = {
     storage: { kv: { get: async () => game } },
+    hosts: {
+      experimental_client: () => ({
+        call: async (_method: string, input: { rootPath: string }) => ({
+          dir: `${input.rootPath}/canvas`,
+        }),
+      }),
+    },
     sdk: {
       files: {
         read: async ({ path }: { path: string }) => {

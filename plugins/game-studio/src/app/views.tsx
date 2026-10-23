@@ -6,10 +6,17 @@ import type { ReactNode } from "react";
 import { Markdown, experimental_FileLink as FileLink, useBbNavigate } from "@get-bb/plugin-sdk/app";
 import type { Workspace, StudioDocument, Asset, EvidenceRun } from "../shared/schema.ts";
 import { rpc } from "./rpc.ts";
+import { place, previewUrl, type Preview } from "../shared/media-paths.ts";
 
-type Lease = { baseUrl: string; expiresAtMs: number } | null;
+type Lease = (Preview & { expiresAtMs: number }) | null;
 const assetUrl = (base: string, path: string) =>
   `${base.replace(/\/$/, "")}/${path.split("/").map(encodeURIComponent).join("/")}`;
+/** A canvas file on the game's host: staged media lives in the media folder. */
+function hostPath(workspace: Workspace, path: string) {
+  const root = workspace.game.rootPath.replace(/[\\/]$/, "");
+  const at = place(root, workspace.mediaDir ?? `${root}/canvas`, path);
+  return `${at.root.replace(/[\\/]$/, "")}/${at.path}`;
+}
 const message = (cause: unknown) => (cause instanceof Error ? cause.message : String(cause));
 
 function DocumentDraft({
@@ -225,14 +232,14 @@ export function DesignEditor({
 }
 function Media({
   asset,
-  baseUrl,
+  preview,
   large = false,
 }: {
   asset: Asset;
-  baseUrl?: string;
+  preview?: Preview | null;
   large?: boolean;
 }) {
-  const url = baseUrl ? assetUrl(baseUrl, asset.path) : undefined;
+  const url = preview ? previewUrl(preview, asset.path) : undefined;
   if (asset.type === "model" && url && /\.(glb|gltf)$/i.test(asset.path))
     return <ModelPreview url={url} name={asset.name} path={asset.path} showOpen={large} />;
   if (asset.type === "image" && url) return <img src={url} alt={asset.name} loading="lazy" />;
@@ -355,7 +362,7 @@ export function AssetLibrary({
                 }}
               >
                 <div className="gs-asset-thumbnail">
-                  <Media asset={asset} baseUrl={lease?.baseUrl} />
+                  <Media asset={asset} preview={lease} />
                 </div>
                 <span title={asset.name}>{asset.name}</span>
                 <small>{assetDescription(asset)}</small>
@@ -389,7 +396,7 @@ export function AssetLibrary({
                   setDimensions(`${event.target.naturalWidth} × ${event.target.naturalHeight}`);
               }}
             >
-              <Media asset={selected} baseUrl={lease?.baseUrl} large />
+              <Media asset={selected} preview={lease} large />
             </div>
             <code>{selected.path}</code>
             {dimensions && <span className="gs-muted">{dimensions}</span>}
@@ -406,7 +413,7 @@ export function AssetLibrary({
               target={{
                 kind: "host",
                 hostId: workspace.game.hostId,
-                path: `${workspace.game.rootPath.replace(/[\\/]$/, "")}/${selected.path}`,
+                path: hostPath(workspace, selected.path),
               }}
             >
               Open file in BB
@@ -471,7 +478,7 @@ function CaptureGrid({
       {captures.map((asset) => (
         <button key={asset.id} onClick={() => onSelect(asset)}>
           <div className="gs-capture">
-            <Media asset={asset} baseUrl={lease?.baseUrl} />
+            <Media asset={asset} preview={lease} />
           </div>
           <span>{asset.name}</span>
         </button>
@@ -703,7 +710,7 @@ export function Evidence({
         <strong>{selected.asset.name}</strong>
         <button onClick={() => setSelected(null)}>Close</button>
       </header>
-      <Media asset={selected.asset} baseUrl={lease?.baseUrl} large />
+      <Media asset={selected.asset} preview={lease} large />
       <code>{selected.asset.path}</code>
     </div>
   );

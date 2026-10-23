@@ -175,6 +175,7 @@ for (const context of [
           uvCandidateTaskId: candidate,
         }),
         rootPath: "/game",
+        locate: (path: string) => `/game/${path}`,
         outputPath: "/game/out",
         imagePaths: [],
         signal: new AbortController().signal,

@@ -54,6 +54,8 @@ export class ProviderFailure extends Error {
 export type ProviderContext = {
   request: MediaRequest;
   rootPath: string;
+  /** A canvas path's file on this host, in the checkout or its media folder. */
+  locate: (path: string) => string;
   outputPath: string;
   imagePaths: string[];
   signal: AbortSignal;
@@ -202,7 +204,7 @@ async function sourceTask(context: ProviderContext, request: ModelEditRequest) {
   const result = await command(context, "tripo", [
     "model",
     "import",
-    join(context.rootPath, request.sourcePath),
+    context.locate(request.sourcePath),
     "--no-download",
     "--timeout",
     "600",

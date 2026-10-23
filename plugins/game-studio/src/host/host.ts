@@ -12,33 +12,53 @@ import { studioHostContract } from "../shared/host-contract.ts";
 import { studioHostSignals } from "../shared/canvas-contract.ts";
 import { GenerationRunner } from "./generation.ts";
 import { CanvasHost, nodeDisk, readJobFiles } from "./canvas.ts";
-import { collectCanvas } from "./collect.ts";
+import { collectCanvas, writers } from "./collect.ts";
+import { Media } from "./media.ts";
+import { runCommand } from "./providers.ts";
 
-const runner = new GenerationRunner();
-const canvas = new CanvasHost(nodeDisk, async (root) => {
-  try {
-    const { workspacePath } = await resolveWorkspacePath(root);
-    if (!workspacePath) throw new Error("The project's checkout is unavailable.");
-    // A read only reads: an interrupted job shows as uncertain without rewriting its receipt.
-    return {
-      workspacePath,
-      jobs: await runner.list(workspacePath, { persist: false }),
-      stale: false,
-    };
-  } catch {
-    // The saved records still show; the server marks the ones it cannot vouch for.
-    return { workspacePath: null, jobs: await readJobFiles(nodeDisk, root), stale: true };
-  }
-});
+/** Staged media lives in this plugin's host data directory, which every call names. */
+const media = new Media();
+const runner = new GenerationRunner(runCommand, media);
+const used = (context: { experimental_paths: { dataDir: string } }) =>
+  media.use(context.experimental_paths.dataDir);
+const canvas = new CanvasHost(
+  nodeDisk,
+  async (root) => {
+    try {
+      const { workspacePath } = await resolveWorkspacePath(root);
+      if (!workspacePath) throw new Error("The project's checkout is unavailable.");
+      // A read only reads: an interrupted job shows as uncertain without rewriting its receipt.
+      return {
+        workspacePath,
+        jobs: await runner.list(workspacePath, { persist: false }),
+        stale: false,
+      };
+    } catch {
+      // The saved records still show; the server marks the ones it cannot vouch for.
+      return { workspacePath: null, jobs: await readJobFiles(nodeDisk, root), stale: true };
+    }
+  },
+  { media },
+);
 export default experimental_defineHostEntry({
   contract: studioHostContract,
   experimental_signals: studioHostSignals,
   handlers: {
-    readCanvas: (input, ctx) => canvas.read(input, ctx),
+    readCanvas: (input, ctx) => (used(ctx), canvas.read(input, ctx)),
     saveCanvasBoard: (input) => canvas.saveBoard(input),
-    captureCanvasInputs: (input) => canvas.captureInputs(input),
-    collectCanvas: ({ rootPath }, ctx) =>
-      collectCanvas(rootPath, nodeDisk, runner, { signal: ctx.signal }),
+    captureCanvasInputs: (input, ctx) => (used(ctx), canvas.captureInputs(input)),
+    // A switch in progress finishes first, so a writer that asks again after writing sees it.
+    mediaDir: async ({ rootPath }, ctx) => ({
+      dir: await used(ctx).shared(rootPath, () => media.dir(rootPath)),
+    }),
+    mediaWriters: ({ rootPath }) => writers(nodeDisk, runner, rootPath),
+    collectCanvas: ({ rootPath, movedNote, settled, hold }, ctx) =>
+      collectCanvas(rootPath, nodeDisk, runner, used(ctx), {
+        signal: ctx.signal,
+        note: movedNote,
+        settled,
+        hold,
+      }),
     planSlotDestination: ({ path }) => planSlotDestination(path),
     provisionSlot: (input, ctx) =>
       provisionRampageSlot(input, ctx.experimental_paths.dataDir, ctx.signal),
@@ -57,6 +77,7 @@ export default experimental_defineHostEntry({
     job: ({ instance, jobId }, ctx) =>
       job(instance, jobId, ctx.signal, ctx.experimental_paths.dataDir),
     async start(input, context) {
+      used(context);
       const lease = context.experimental_retainWorker();
       try {
         const result = await runner.start(input);
@@ -69,10 +90,11 @@ export default experimental_defineHostEntry({
     },
     status: (input) => runner.status(input),
     reconcileMissing: (input) => runner.reconcileMissing(input),
-    stagedOutputs: (input) => runner.stagedOutputs(input),
+    stagedOutputs: (input, ctx) => (used(ctx), runner.stagedOutputs(input)),
     list: (input) => runner.list(input.rootPath),
     cancel: (input) => runner.cancel(input),
     async resume(input, context) {
+      used(context);
       const lease = context.experimental_retainWorker();
       try {
         const result = await runner.resume(input);

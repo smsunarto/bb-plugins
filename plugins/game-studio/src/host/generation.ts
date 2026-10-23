@@ -23,8 +23,10 @@ import {
   type GenerationJob,
   type MediaRequest,
 } from "../shared/generation.ts";
+import { place } from "../shared/media-paths.ts";
 import { cliProviders, ProviderFailure, runCommand, type RunCommand } from "./providers.ts";
 import { cloudProviders, type Credentials } from "./cloud-providers.ts";
+import { legacyMedia, type MediaAccess } from "./canvas.ts";
 
 type Start = {
   rootPath: string;
@@ -60,14 +62,28 @@ function outputKind(kind: MediaRequest["kind"], file: string) {
 /** Agent outputs list models first, so a node's first pick is the model it exists to make. */
 const outputOrder = { model: 0, image: 1, video: 2, text: 3 } as const;
 type Work = { controller: AbortController; done: Promise<void> };
+/** Where runs keep their files, and the old-folder files of a moved checkout's late runs. */
+export type RunnerMedia = MediaAccess & {
+  stragglers(root: string, folder: string): Promise<void>;
+};
+const unmoved: RunnerMedia = { ...legacyMedia, stragglers: async () => undefined };
 
-/** All disk writes stay in canvas. A submitted identity is never retried as a new submission. */
+/**
+ * Disk writes stay in canvas and the media folder. A submitted identity is never retried as a
+ * new submission.
+ */
 export class GenerationRunner {
   private readonly active = new Map<string, Work>();
   private readonly queues = new Map<string, Promise<unknown>>();
   private readonly run: RunCommand;
-  constructor(run: RunCommand = runCommand) {
+  private readonly media: RunnerMedia;
+  constructor(run: RunCommand = runCommand, media: RunnerMedia = unmoved) {
     this.run = run;
+    this.media = media;
+  }
+  /** Whether a run of this checkout is executing here. */
+  running(rootPath: string) {
+    return [...this.active.keys()].some((key) => key.startsWith(`${rootPath}\0`));
   }
 
   private async locked<T>(key: string, action: () => Promise<T>): Promise<T> {
@@ -101,7 +117,15 @@ export class GenerationRunner {
     }
     return current;
   }
-  private async file(root: string, path: string) {
+  /** A run's folder in the media folder, which is made first when the checkout has moved. */
+  private async staging(mediaDir: string, jobId: string) {
+    await mkdir(mediaDir, { recursive: true });
+    return this.directory(await realpath(mediaDir), ["staging", jobId]);
+  }
+  private async file(root: string, mediaDir: string, canvasPath: string) {
+    const where = place(root, mediaDir, canvasPath);
+    root = await realpath(where.root);
+    const path = where.path;
     const resolved = await realpath(join(root, path));
     const rel = relative(root, resolved);
     if (
@@ -144,6 +168,10 @@ export class GenerationRunner {
     const rootPath = await this.root(input.rootPath),
       target = { rootPath, jobId: input.jobId };
     const request = normalizeMediaRequest(input.request);
+    return this.media.shared(rootPath, () => this.reserve(target, input, request));
+  }
+  private async reserve(target: Target, input: Start, request: MediaRequest) {
+    const rootPath = target.rootPath;
     return this.locked(this.key(target), async () => {
       await this.directory(rootPath, ["canvas", "jobs"]);
       for (const [fence, message] of [
@@ -198,31 +226,41 @@ export class GenerationRunner {
         await unlink(temporary).catch(() => undefined);
       }
       // BB text and agent runs are executed by the server, but use the same reservation fence.
-      if (!runsOnBb(job.request)) this.launch(target, job, false, input.credentials ?? {});
+      if (!runsOnBb(job.request))
+        this.launch(target, job, false, input.credentials ?? {}, await this.media.dir(rootPath));
       return { created: true, job: structuredClone(job) };
     });
   }
-  private launch(target: Target, job: GenerationJob, resume: boolean, credentials: Credentials) {
+  /** Runs a job with the media folder resolved before a move could start; a move waits for it. */
+  private launch(
+    target: Target,
+    job: GenerationJob,
+    resume: boolean,
+    credentials: Credentials,
+    mediaDir: string,
+  ) {
     const controller = new AbortController();
-    const done = this.execute(target, job, resume, controller.signal, credentials).finally(() =>
-      this.active.delete(this.key(target)),
-    );
+    const done = this.execute(target, job, {
+      resume,
+      signal: controller.signal,
+      credentials,
+      mediaDir,
+    }).finally(() => this.active.delete(this.key(target)));
     this.active.set(this.key(target), { controller, done });
     void done.catch(() => undefined);
   }
   private async execute(
     target: Target,
     job: GenerationJob,
-    resume: boolean,
-    signal: AbortSignal,
-    credentials: Credentials,
+    run: { resume: boolean; signal: AbortSignal; credentials: Credentials; mediaDir: string },
   ) {
+    const { resume, signal, credentials, mediaDir } = run;
     let submitting = false;
     try {
-      const outputPath = await this.directory(target.rootPath, ["canvas", "staging", job.id]);
+      const outputPath = await this.staging(mediaDir, job.id);
       const request = job.request;
       const imagePaths = await Promise.all(
-        generationImagePaths(request).map((path) => this.file(target.rootPath, path)),
+        generationImagePaths(request).map((path) => this.file(target.rootPath, mediaDir, path)),
       );
       for (const path of imagePaths) {
         if (!/\.(png|jpe?g|webp)$/i.test(path))
@@ -233,6 +271,10 @@ export class GenerationRunner {
       const context = {
         request,
         rootPath: target.rootPath,
+        locate: (path: string) => {
+          const where = place(target.rootPath, mediaDir, path);
+          return join(where.root, ...where.path.split("/"));
+        },
         outputPath,
         imagePaths,
         signal,
@@ -258,7 +300,7 @@ export class GenerationRunner {
         throw new Error("A provider task identity is required to resume generation.");
       await provider.collect(context, job.taskId);
       signal.throwIfAborted();
-      job.outputs = await this.outputs(target, job);
+      job.outputs = await this.outputs(job, mediaDir);
       const expected = request.outputCount ?? 1;
       if (job.outputs.length !== expected)
         throw new ProviderFailure(
@@ -279,8 +321,8 @@ export class GenerationRunner {
     }
     await this.save(target, job);
   }
-  private async outputs(target: Target, job: GenerationJob) {
-    const root = await this.directory(target.rootPath, ["canvas", "staging", job.id]);
+  private async outputs(job: GenerationJob, mediaDir: string) {
+    const root = await this.staging(mediaDir, job.id);
     const matches: string[] = [];
     // An agent keeps scratch work in subfolders; only the files it leaves on top are outputs.
     const maxDepth = job.request.kind === "agent" ? 0 : 4;
@@ -315,7 +357,7 @@ export class GenerationRunner {
           await handle.close();
         }
         return {
-          path: relative(target.rootPath, file).split(sep).join("/"),
+          path: `canvas/staging/${job.id}/${relative(root, file).split(sep).join("/")}`,
           type: outputKind(kind, file),
           sizeBytes,
           sha256: hash.digest("hex"),
@@ -323,14 +365,20 @@ export class GenerationRunner {
       }),
     );
   }
-  /** An agent run's outputs once its thread has finished: the files it left in its staging folder. */
+  /**
+   * An agent run's outputs once its thread has finished: the files it left in its staging folder.
+   * Files it wrote to the checkout's old folder, as it was told before a move, move in first.
+   */
   async stagedOutputs(input: Target) {
     const target = { ...input, rootPath: await this.root(input.rootPath) };
-    return this.locked(this.key(target), async () => {
-      const job = await this.read(target);
-      if (job.request.kind !== "agent") throw new Error("Only agent runs collect staged files.");
-      return this.outputs(target, job);
-    });
+    return this.media.shared(target.rootPath, () =>
+      this.locked(this.key(target), async () => {
+        const job = await this.read(target);
+        if (job.request.kind !== "agent") throw new Error("Only agent runs collect staged files.");
+        await this.media.stragglers(target.rootPath, `staging/${job.id}`);
+        return this.outputs(job, await this.media.dir(target.rootPath));
+      }),
+    );
   }
   async reconcileMissing(input: Target) {
     const target = { ...input, rootPath: await this.root(input.rootPath) };
@@ -456,7 +504,13 @@ export class GenerationRunner {
    */
   async prune(input: Target, decide: (job: GenerationJob) => Pruning): Promise<string[]> {
     const target = { ...input, rootPath: await this.root(input.rootPath) };
-    const freed = await this.locked(this.key(target), async () => {
+    const freed = await this.media.shared(target.rootPath, () => this.decide(target, decide));
+    if (freed?.trash) await rm(freed.trash, { recursive: true, force: true });
+    return freed?.paths ?? [];
+  }
+  private async decide(target: Target, decide: (job: GenerationJob) => Pruning) {
+    const mediaDir = await this.media.dir(target.rootPath);
+    return this.locked(this.key(target), async () => {
       if (this.active.has(this.key(target))) return null;
       let job;
       try {
@@ -467,36 +521,31 @@ export class GenerationRunner {
       }
       const decision = decide(job);
       if (decision.kind === "keep") return null;
-      if (decision.kind === "delete") return this.retire(target, job);
+      if (decision.kind === "delete") return this.retire(target, job, mediaDir);
       // Only files in the job's own staging folder are its to free.
       const removed = job.outputs.filter(
         (output) =>
           !decision.outputs.includes(output) && output.path.startsWith(`canvas/staging/${job.id}/`),
       );
       if (!removed.length) return null;
-      for (const { path } of removed)
-        await rm(join(target.rootPath, ...path.split("/")), { force: true });
+      for (const { path } of removed) {
+        const where = place(target.rootPath, mediaDir, path);
+        await rm(join(where.root, ...where.path.split("/")), { force: true });
+      }
       // The record forgets them too, so adopting the job again cannot bring them back.
       job.outputs = job.outputs.filter((output) => !removed.includes(output));
       await this.save(target, job);
       return { paths: removed.map(({ path }) => path), trash: null };
     });
-    if (freed?.trash) await rm(freed.trash, { recursive: true, force: true });
-    return freed?.paths ?? [];
   }
   /**
    * Retires a job: its folder set aside for deletion first, then the tombstone, then the record.
    * A crash before the record goes leaves the record, so the next collection finishes the job.
    */
-  private async retire(target: Target, job: GenerationJob) {
-    const folder = join(target.rootPath, "canvas", "staging", job.id);
+  private async retire(target: Target, job: GenerationJob, mediaDir: string) {
+    const folder = join(mediaDir, "staging", job.id);
     // Dot names stay out of workspace listings; collection deletes leftovers of a crash.
-    let trash: string | null = join(
-      target.rootPath,
-      "canvas",
-      "staging",
-      `.freed-${job.id}-${randomUUID()}`,
-    );
+    let trash: string | null = join(mediaDir, "staging", `.freed-${job.id}-${randomUUID()}`);
     try {
       await rename(folder, trash);
     } catch (error) {
@@ -537,18 +586,21 @@ export class GenerationRunner {
   }
   async resume(input: Target & { credentials?: Credentials }) {
     const target = { ...input, rootPath: await this.root(input.rootPath) };
-    return this.locked(this.key(target), async () => {
-      const job = await this.read(target);
-      if (this.active.has(this.key(target)) || job.status === "succeeded") return job;
-      if (!job.taskId)
-        throw new Error(
-          "There is no confirmed provider task to resume. Reconcile the provider receipt before making a new request.",
-        );
-      job.status = "queued";
-      await this.save(target, job);
-      this.launch(target, job, true, input.credentials ?? {});
-      return job;
-    });
+    return this.media.shared(target.rootPath, () =>
+      this.locked(this.key(target), async () => {
+        const job = await this.read(target);
+        if (this.active.has(this.key(target)) || job.status === "succeeded") return job;
+        if (!job.taskId)
+          throw new Error(
+            "There is no confirmed provider task to resume. Reconcile the provider receipt before making a new request.",
+          );
+        job.status = "queued";
+        await this.save(target, job);
+        const mediaDir = await this.media.dir(target.rootPath);
+        this.launch(target, job, true, input.credentials ?? {}, mediaDir);
+        return job;
+      }),
+    );
   }
   async dispose() {
     for (const work of this.active.values()) work.controller.abort();

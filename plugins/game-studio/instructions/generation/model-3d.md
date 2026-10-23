@@ -3,7 +3,7 @@ workflow in `game-dev` and inspect the selected node's image
 references. Require an approved reference image; a connected image alone does
 not establish visual approval. Use P2 Clean Topology and never text-to-model.
 Confirm the asset contract and authorized paid-job budget before submitting.
-Request authentication when required. Save geometry in `canvas/staging/`,
+Request authentication when required. Save geometry in the media folder's `staging/` (`canvas/staging/` on the canvas),
 review the solid mesh and wireframe, and report its path and remaining cleanup.
 This request does not authorize texture generation or additional outputs.
 

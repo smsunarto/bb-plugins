@@ -66,7 +66,7 @@ export function sdkDisk(files: BbPluginApi["sdk"]["files"], hostId: string): Can
       });
       return result.outcome === "written" ? result.sha256 : null;
     },
-    async copy(root, _from, to, file) {
+    async copy(_fromRoot, _from, root, to, file) {
       return (await this.write(root, to, file.content, file.contentEncoding, null)) !== null;
     },
     async directory() {
@@ -120,7 +120,14 @@ export function canvasHostRouter(
           ? await host.read(parsed as never, unwatched)
           : method === "saveCanvasBoard"
             ? await host.saveBoard(parsed as never)
-            : await host.captureInputs(parsed as never);
+            : method === "mediaDir"
+              ? // A fake host keeps its media in the checkout, as one not yet moved does.
+                { dir: pathTools(parsed.rootPath).join(parsed.rootPath, "canvas") }
+              : method === "captureCanvasInputs"
+                ? await host.captureInputs(parsed as never)
+                : (() => {
+                    throw new Error(`Unexpected canvas host call: ${method}`);
+                  })();
       return contract.output.parse(JSON.parse(JSON.stringify(output)));
     },
   };

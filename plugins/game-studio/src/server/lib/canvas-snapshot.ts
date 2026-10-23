@@ -100,3 +100,9 @@ export function snapshotJobs(snapshot: CanvasSnapshot): {
   jobs.sort((a, b) => b.createdAt - a.createdAt || a.id.localeCompare(b.id));
   return { jobs: jobs.slice(0, 100), workspacePath, stale };
 }
+
+/** The host folder holding the canvas's staged media, or null from a host that predates it. */
+export function snapshotMedia(snapshot: CanvasSnapshot): string | null {
+  const entry = snapshot.entries.get("media");
+  return entry?.kind === "media" ? entry.dir : null;
+}

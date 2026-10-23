@@ -94,6 +94,8 @@ export async function readCanvasContext(
       : null,
     documentCount: workspace.documents.length,
     assetCount: workspace.assets.length,
+    /** Where `canvas/staging/…` and `canvas/inputs/…` files live, as `staging/…` and `inputs/…`. */
+    mediaDir: workspace.mediaDir,
   };
   if (input.section === "assets")
     return page(workspace.assets, input, { ...header, section: "assets" });

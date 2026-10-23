@@ -29,7 +29,12 @@ user's requested scope or budget.
   based on actual work and verification; an idle thread never proves completion.
 - `canvas/staging/`: generated and uploaded images, audio, video, and models,
   pending verified import into Unity. Keep stable paths, preserve catalog entries,
-  and use relative file paths. `Assets/` is touched only under the main Editor
+  and use relative file paths. These files and the `canvas/inputs/` snapshots
+  generations read live in the game's media folder, outside the checkout:
+  `game_studio_canvas_context` returns it as `mediaDir`. `canvas/staging/<path>`
+  is `<mediaDir>/staging/<path>` there, and `canvas/inputs/<path>` is
+  `<mediaDir>/inputs/<path>`. Read and write the files there; name them by their
+  `canvas/` paths on boards and in `canvas/assets.json`. `Assets/` is touched only under the main Editor
   authoring claim; never use a lowercase `assets/` output folder in Unity.
   Game Studio frees canvas generations nothing uses: a node keeps the takes of
   its newest five runs, its starred takes and its pick, and a take nothing names

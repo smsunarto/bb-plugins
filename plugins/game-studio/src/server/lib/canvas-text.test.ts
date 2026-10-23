@@ -74,6 +74,8 @@ async function setup() {
       },
     },
     experimental_callHostRpc: async ({ method, input }) => {
+      if (method === "mediaDir")
+        return { dir: `${(input as { rootPath: string }).rootPath}/canvas` };
       if (method === "start") return runner.start(input as Parameters<typeof runner.start>[0]);
       if (method === "stagedOutputs")
         return runner.stagedOutputs(input as Parameters<typeof runner.stagedOutputs>[0]);

@@ -2,10 +2,12 @@ import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import { studioHostContract } from "../../shared/host-contract.ts";
 import type { GenerationWork } from "./generation-work.ts";
 import type { SlotStore } from "./slot-store.ts";
+import { files as instructions } from "./instructions.ts";
 import { forgetAssets, getGame } from "./studio.ts";
 
 /*
- * Collection keeps a canvas from growing without bound: in one host call, nodes keep the takes
+ * Collection keeps a canvas from growing without bound: in one host call, the host first moves
+ * the checkout's media to its own folder (src/host/media.ts), then nodes keep the takes
  * of their newest runs (`pruneTakes`) and the host frees what nothing names (src/host/
  * collect.ts); then the catalog forgets the freed and missing files. It runs in the background,
  * after reads settle, so a slow or offline host never holds up a studio.
@@ -18,6 +20,7 @@ const SOON_MS = 5_000;
 /** A sleeping host must not hold a game's collection forever. */
 const CALL_TIMEOUT_MS = 2 * 60_000;
 const collectionPrefix = "collect-";
+const working = new Set(["active", "starting", "stopping", "pending"]);
 
 export class CanvasCollection {
   private readonly bb: BbPluginApi;
@@ -74,15 +77,41 @@ export class CanvasCollection {
     if (slot) this.work.reserve(game.hostId, workspacePath, job, slot.ownerThreadId!);
     // The host stops at its next step when the call is cancelled or times out.
     try {
-      const { deleted, missing } = await client.call(
+      // Agent runs whose threads still work, and the game's own thread, hold off the move.
+      const { threads } = await client.call("mediaWriters", { rootPath: game.rootPath }, options);
+      const own = game.threadId ? [game.threadId] : [];
+      const settled = await settledThreads(this.bb, [...threads, ...own]);
+      const { deleted, missing, warning } = await client.call(
         "collectCanvas",
-        { rootPath: game.rootPath },
+        {
+          rootPath: game.rootPath,
+          // The host names the folder the media moved to.
+          movedNote: instructions.read("media-moved", { mediaDir: "{{mediaDir}}" }),
+          settled,
+          hold: own.some((thread) => !settled.includes(thread)),
+        },
         options,
       );
+      if (warning) this.bb.log.warn(warning);
       await forgetAssets(this.bb, game, [...deleted, ...missing]);
       return deleted;
     } finally {
       if (slot) this.work.settled(game.hostId, workspacePath, job);
     }
   }
+}
+
+/** The threads BB reports stopped or gone. One it cannot report on may still be working. */
+export async function settledThreads(bb: BbPluginApi, threads: string[]): Promise<string[]> {
+  const settled: string[] = [];
+  for (const threadId of threads) {
+    try {
+      if (!working.has((await bb.sdk.threads.get({ threadId })).status)) settled.push(threadId);
+    } catch (error) {
+      // A deleted thread writes nothing.
+      if (/not found|404/i.test(error instanceof Error ? error.message : String(error)))
+        settled.push(threadId);
+    }
+  }
+  return settled;
 }

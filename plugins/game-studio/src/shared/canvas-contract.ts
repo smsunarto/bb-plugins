@@ -40,6 +40,8 @@ export const canvasEntry = z.discriminatedUnion("kind", [
     workspacePath: z.string().nullable(),
     stale: z.boolean(),
   }),
+  /** The host folder holding `canvas/staging` and `canvas/inputs` (src/shared/media-paths.ts). */
+  z.strictObject({ kind: z.literal("media"), dir: z.string() }),
 ]);
 export type CanvasEntry = z.infer<typeof canvasEntry>;
 export type CanvasFile = z.infer<typeof canvasFile>;
@@ -97,14 +99,37 @@ export const canvasHostContract = {
         .max(64),
     }),
   },
-  /** Frees the files of finished generations nothing on the canvas uses. */
-  collectCanvas: {
+  /** Where the checkout's staged media and input snapshots live on the host. */
+  mediaDir: {
     input: z.strictObject({ rootPath: z.string().min(1) }),
+    output: z.strictObject({ dir: z.string() }),
+  },
+  /** The BB threads of agent runs that may still write where their prompts told them to. */
+  mediaWriters: {
+    input: z.strictObject({ rootPath: z.string().min(1) }),
+    output: z.strictObject({ threads: z.array(z.string()), unconfirmed: z.boolean() }),
+  },
+  /**
+   * Moves the checkout's media out of it first, when nothing is writing there, then frees the
+   * files of finished generations nothing on the canvas uses.
+   */
+  collectCanvas: {
+    input: z.strictObject({
+      rootPath: z.string().min(1),
+      /** The note left where the media was; `{{mediaDir}}` names where it went. */
+      movedNote: z.string().max(10_000),
+      /** Threads of `mediaWriters` the server saw stopped; any other holds off the move. */
+      settled: z.array(z.string()),
+      /** The game's own thread is at work, with the paths it was given: the move waits. */
+      hold: z.boolean().default(false),
+    }),
     output: z.strictObject({
       deleted: z.array(z.string()),
       /** Catalogued staged files that are gone, for the catalog to forget. */
       missing: z.array(z.string()),
       skipped: z.string().optional(),
+      /** The media could not move; collection went on where it is. */
+      warning: z.string().optional(),
     }),
   },
 } as const;

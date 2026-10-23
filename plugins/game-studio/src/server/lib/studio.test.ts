@@ -779,6 +779,7 @@ test("generation requests show the selected brief and provider while keeping pol
     gameId: game.id,
     hostId: "host",
     rootPath: "/games/orbit",
+    mediaDir: "/games/orbit/canvas",
     documentId: "design",
     documentPath: "canvas/documents/design.md",
     documentRevision: current.documents[0]!.revision,
@@ -1295,8 +1296,10 @@ test("Unity media receives a preview lease without a web game entry", async () =
   const f = fake();
   const game = await create.execute({ bb: f.bb }, input);
   const lease = await preview.execute({ bb: f.bb }, { gameId: game.id });
+  // Staged media is served from the media folder, which a fake host keeps in the checkout.
   assert.deepEqual(lease, {
     baseUrl: "https://preview.test/host/%2Fgames%2Forbit/",
+    mediaBaseUrl: "https://preview.test/host/%2Fgames%2Forbit%2Fcanvas/",
     expiresAtMs: 100000,
   });
   assert.equal(f.contents("host", "/games/orbit/index.html"), undefined);

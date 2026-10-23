@@ -34,6 +34,7 @@ test("native generation tools dispatch typed requests to the game's host and kee
       environments: { get: async () => ({ hostId: "remote", path: "/game" }) as never },
     },
     experimental_callHostRpc: ({ hostId, method, input }) => {
+      if (method === "mediaDir") return { dir: "/game/canvas" };
       calls.push({ hostId, method, input });
       if (method === "resolveWorkspace") return { workspacePath: "/game" };
       if (method === "start") {
@@ -109,6 +110,7 @@ test("a failed dispatch with no host job can be reconciled and releases its chec
       environments: { get: async () => ({ hostId: "remote", path: "/game" }) as never },
     },
     experimental_callHostRpc: ({ method }) => {
+      if (method === "mediaDir") return { dir: "/game/canvas" };
       calls.push(method);
       if (method === "resolveWorkspace") return { workspacePath: "/game" };
       if (method === "start") throw new Error("Host disconnected before dispatch");
@@ -190,6 +192,7 @@ test("status defers adoption outside a checkout lease and fences release during 
         },
       },
       experimental_callHostRpc: ({ method }) => {
+        if (method === "mediaDir") return { dir: "/game/canvas" };
         if (method === "resolveWorkspace") return { workspacePath: "/game" };
         if (method === "status")
           return generationJob.parse({
@@ -281,6 +284,7 @@ test("another thread can read a completed job and adopt it without replacing its
       },
     },
     experimental_callHostRpc: ({ method }) => {
+      if (method === "mediaDir") return { dir: "/game/canvas" };
       if (method === "resolveWorkspace") return { workspacePath: "/game" };
       if (method === "status")
         return generationJob.parse({
@@ -349,6 +353,7 @@ test("canvas job controls work without a main chat thread and cannot control age
   const { bb } = createFakePluginHost({
     pluginId: "game-studio",
     experimental_callHostRpc: ({ method }) => {
+      if (method === "mediaDir") return { dir: "/game/canvas" };
       calls.push(method);
       if (method === "resolveWorkspace") return { workspacePath: "/game" };
       if (method === "status") {

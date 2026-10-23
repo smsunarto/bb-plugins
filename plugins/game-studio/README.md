@@ -120,6 +120,17 @@ document, request, evidence or unfinished job names is freed. Uploads and agent 
 without a node stay. A freed request ID leaves a `.pruned` tombstone, so it never
 submits again. New canvases ignore `jobs/`, `inputs/`, `staging/`, `evidence/` and
 `requests/` in Git.
+Staged media and input snapshots keep their `canvas/staging` and `canvas/inputs` paths on
+the canvas, but their files leave the checkout. The first background collection with no run
+writing there copies them to `<host plugin data>/media/<id>/`, names that folder in
+`canvas/staging/.moved`, and leaves `canvas/staging/MOVED.md` pointing there. Old copies stay
+a day for readers that resolved them; any other file in the old folder, such as one an agent
+saved again at its old path, moves in, and none is deleted. A renamed checkout keeps its
+folder, a copy forks its own at its first collection, and a new checkout at the same path
+starts its own. Media folders of deleted checkouts stay
+until removed by hand. Agents write there directly, so add the host's
+`<host plugin data>/media` (`~/.bb/plugins/game-studio/host-data/media` by default) to their
+sandbox's writable paths.
 Image and video outputs attach to their source node as takes even after its
 brief changes; a new take never replaces the node's chosen output. Text results
 attach only while the brief and connected design sources, including original

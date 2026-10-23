@@ -1,4 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
+import { previewUrl } from "../../shared/media-paths.ts";
 import type { CSSProperties, ReactNode, RefObject } from "react";
 import { useBbNavigate } from "@get-bb/plugin-sdk/app";
 import {
@@ -185,9 +186,7 @@ export function ModelReviewPage({ gameId, path }: { gameId: string; path: string
   const [loaded, setLoaded] = useState<{ model: string; stats: ModelStats } | null>(null);
   const stats = loaded?.model === `${gameId}:${path}` ? loaded.stats : null;
   const navigate = useBbNavigate();
-  const url = preview.data
-    ? `${preview.data.baseUrl.replace(/\/$/, "")}/${path.split("/").map(encodeURIComponent).join("/")}`
-    : "";
+  const url = preview.data ? previewUrl(preview.data, path) : "";
   // The game record only names the header; a model can be reviewed without it.
   if (preview.error)
     return (

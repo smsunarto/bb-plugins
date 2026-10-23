@@ -23,6 +23,7 @@ import {
   type References,
 } from "./collect.ts";
 import { GenerationRunner } from "./generation.ts";
+import { Media } from "./media.ts";
 
 const roots: string[] = [];
 afterEach(async () => {
@@ -239,7 +240,7 @@ test("collection trims a node to its newest five runs and frees what they retire
   await utimes(join(root, unused), old / 1000, old / 1000);
   const runner = new GenerationRunner();
 
-  const first = await collectCanvas(root, nodeDisk, runner, { now });
+  const first = await collectCanvas(root, nodeDisk, runner, new Media(), { note: "", now });
 
   const board = JSON.parse(await readFile(join(root, "canvas/boards/main.json"), "utf8"));
   expect(board.nodes[0].data.takes).toEqual([takes[1], ...takes.slice(8)]);
@@ -247,7 +248,10 @@ test("collection trims a node to its newest five runs and frees what they retire
   expect(first.deleted).toEqual([unused]);
   expect(await readdir(join(root, "canvas/staging"))).toHaveLength(9);
 
-  const result = await collectCanvas(root, nodeDisk, runner, { now: now + GRACE_MS + 1 });
+  const result = await collectCanvas(root, nodeDisk, runner, new Media(), {
+    note: "",
+    now: now + GRACE_MS + 1,
+  });
 
   expect(result.deleted.sort()).toEqual(
     [
@@ -288,7 +292,7 @@ test("a take removed by hand goes a week after anything last named it", async ()
   const day = 24 * GRACE_MS;
   const runner = new GenerationRunner();
   const pass = async (at: number) =>
-    (await collectCanvas(root, nodeDisk, runner, { now: at })).deleted;
+    (await collectCanvas(root, nodeDisk, runner, new Media(), { note: "", now: at })).deleted;
   // The first pass starts its clock.
   expect(await pass(now)).toEqual([]);
   // A document links it on day three, and drops the link on day four.
@@ -310,14 +314,17 @@ test("an output that never reached its live node keeps its files", async () => {
   const { root, put } = await canvas({ nodes: [{ id: "hero", data: {} }] }, [first]);
   const runner = new GenerationRunner();
   // The first pass counts what is already there; a later one only what was named.
-  await collectCanvas(root, nodeDisk, runner, { now });
+  await collectCanvas(root, nodeDisk, runner, new Media(), { note: "", now });
   const late = job("late", { createdAt: now, updatedAt: now });
   await put("canvas/jobs/late.json", JSON.stringify(late));
   for (const { path } of late.outputs) await put(path, "bytes");
   const assets = JSON.parse(await readFile(join(root, "canvas/assets.json"), "utf8"));
   for (const { path } of late.outputs) assets.assets[id(path)] = { name: "output.png", path };
   await put("canvas/assets.json", JSON.stringify(assets));
-  const result = await collectCanvas(root, nodeDisk, runner, { now: now + 2 * UNUSED_MS });
+  const result = await collectCanvas(root, nodeDisk, runner, new Media(), {
+    note: "",
+    now: now + 2 * UNUSED_MS,
+  });
   expect(result.deleted.sort()).toEqual(first.outputs.map(({ path }) => path).sort());
   expect((await readdir(join(root, "canvas/staging/late"))).sort()).toEqual([
     "output-1.png",
@@ -333,7 +340,7 @@ test("a deleted node that comes back starts its clock over", async () => {
   const runner = new GenerationRunner();
   const day = 24 * GRACE_MS;
   const pass = async (at: number) =>
-    (await collectCanvas(root, nodeDisk, runner, { now: at })).deleted;
+    (await collectCanvas(root, nodeDisk, runner, new Media(), { note: "", now: at })).deleted;
   await pass(now);
   await put("canvas/boards/main.json", JSON.stringify({ nodes: [] }));
   expect(await pass(now + day)).toEqual([]);
@@ -352,7 +359,10 @@ test("the catalog hears about staged files already gone", async () => {
   const run = job("run");
   const { root } = await canvas({ nodes: [{ id: "hero", data: {} }] }, [run]);
   await rm(join(root, run.outputs[1]!.path));
-  const result = await collectCanvas(root, nodeDisk, new GenerationRunner(), { now });
+  const result = await collectCanvas(root, nodeDisk, new GenerationRunner(), new Media(), {
+    note: "",
+    now,
+  });
   expect(result).toEqual({ deleted: [], missing: [run.outputs[1]!.path] });
 });
 
@@ -363,7 +373,9 @@ test("an unreadable board stops collection before anything is deleted", async ()
     runs,
   );
   await put("canvas/boards/main.json", "{ not json");
-  await expect(collectCanvas(root, nodeDisk, new GenerationRunner(), { now })).rejects.toThrow();
+  await expect(
+    collectCanvas(root, nodeDisk, new GenerationRunner(), new Media(), { note: "", now }),
+  ).rejects.toThrow();
   expect(await readdir(join(root, "canvas/staging"))).toHaveLength(7);
 });
 
@@ -372,10 +384,10 @@ test("a snapshot a dispatch reuses is new again, so collection keeps it", async 
   await put("refs/hero.png", "png");
   const file = (await nodeDisk.read(root, "refs/hero.png"))!;
   const snapshot = `canvas/inputs/${file.sha256}.png`;
-  await nodeDisk.copy(root, "refs/hero.png", snapshot, file);
+  await nodeDisk.copy(root, "refs/hero.png", root, snapshot, file);
   await utimes(join(root, snapshot), 1, 1);
   // The dispatch reuses it just before collection looks.
-  expect(await nodeDisk.copy(root, "refs/hero.png", snapshot, file)).toBe(false);
+  expect(await nodeDisk.copy(root, "refs/hero.png", root, snapshot, file)).toBe(false);
   expect(await removeStaleSnapshot(root, snapshot, Date.now() - GRACE_MS)).toBe(false);
   await utimes(join(root, snapshot), 1, 1);
   expect(await removeStaleSnapshot(root, snapshot, Date.now() - GRACE_MS)).toBe(true);

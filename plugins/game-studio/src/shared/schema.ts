@@ -151,11 +151,18 @@ export const workspaceSchema = z.object({
   evidenceRuns: z.array(evidenceRunSchema).default([]),
   requests: z.array(unityRequestSchema).default([]),
   generationJobs: z.array(generationJob).default([]),
+  /** The host folder holding staged media and input snapshots (src/shared/media-paths.ts). */
+  mediaDir: z.string().nullable().default(null),
   unityVersion: z.string().nullable().optional(),
 });
 export const gameInput = z.object({ gameId: idSchema });
 export const revisionInput = z.string().nullable();
-export const previewSchema = z.object({ baseUrl: z.string(), expiresAtMs: z.number() });
+export const previewSchema = z.object({
+  baseUrl: z.string(),
+  /** Serves `canvas/staging` and `canvas/inputs` from the media folder. */
+  mediaBaseUrl: z.string().optional(),
+  expiresAtMs: z.number(),
+});
 export const overviewSchema = z.object({
   games: z.array(gameSchema),
   hosts: z.array(z.object({ id: z.string(), name: z.string(), online: z.boolean() })),

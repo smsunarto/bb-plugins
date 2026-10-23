@@ -2,6 +2,7 @@ import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import type { Game } from "../../shared/schema.ts";
 import { modelEvidenceInput, type ModelEvidenceInput } from "../../shared/model-review.ts";
 import { evidenceManifestSchema, getGame, readOptional } from "./studio.ts";
+import { fileArgs as mediaFileArgs, withMedia } from "./media.ts";
 import { projectFile, relativeFile } from "./paths.ts";
 
 type Run = { id: string; capturedAtMs: number; scene?: string; files: string[] };
@@ -35,12 +36,8 @@ function validateCapture(content: string, name: string) {
 }
 export async function saveModelEvidence(bb: BbPluginApi, input: ModelEvidenceInput) {
   const parsed = modelEvidenceInput.parse(input);
-  const game = await getGame(bb, parsed.gameId);
-  const fileArgs = (path: string) => ({
-    hostId: game.hostId,
-    rootPath: game.rootPath,
-    path: projectFile(game.rootPath, path),
-  });
+  const game = await withMedia(bb, await getGame(bb, parsed.gameId));
+  const fileArgs = (path: string) => mediaFileArgs(game, path);
   const prefix = `canvas/evidence/${parsed.runId}`;
   if (parsed.action === "file") {
     validateCapture(parsed.content, parsed.name);

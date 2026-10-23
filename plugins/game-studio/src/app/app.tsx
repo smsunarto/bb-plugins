@@ -299,6 +299,15 @@ function Workbench({ gameId, tab }: { gameId: string; tab: Tab }) {
     },
   );
   const lease = previewQuery.data ?? null;
+  // Media moved out of the checkout is served from its new folder by a new lease.
+  const leasedMedia = useRef(query.data?.mediaDir);
+  useEffect(() => {
+    const mediaDir = query.data?.mediaDir;
+    if (leasedMedia.current === mediaDir) return;
+    const moved = leasedMedia.current !== undefined;
+    leasedMedia.current = mediaDir;
+    if (moved && previewQuery.data) void previewQuery.refetch();
+  }, [query.data?.mediaDir, previewQuery]);
   const upload = useRef<HTMLInputElement>(null);
   // Only the Unity tab shows the inventory live; the header chip keeps the last answer.
   const editors = useUnityEditors(query.data?.game.hostId, { poll: tab === "unity" });
@@ -542,7 +551,7 @@ function Workbench({ gameId, tab }: { gameId: string; tab: Tab }) {
                     documents={workspace.documents}
                     assets={workspace.assets}
                     generationJobs={workspace.generationJobs}
-                    previewBaseUrl={lease?.baseUrl}
+                    preview={lease ?? undefined}
                     onSave={saveBoard}
                     onGenerate={(nodeId, recipe) =>
                       void request("asset", nodeId, recipe, { boardId: board.board.id })

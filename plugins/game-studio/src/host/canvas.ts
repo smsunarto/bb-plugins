@@ -32,6 +32,7 @@ import {
 } from "../shared/canvas-contract.ts";
 import type { Game } from "../shared/schema.ts";
 import { pathTools, projectFile } from "../shared/node/paths.ts";
+import { place } from "../shared/media-paths.ts";
 
 /*
  * The canvas as the host sees it, next to the files. A read gathers every
@@ -68,10 +69,58 @@ export interface CanvasDisk {
    * Copies a file that is still `file`, as just read, to a new path, sharing its storage where
    * the filesystem can clone. False when the target already exists.
    */
-  copy(root: string, from: string, to: string, file: CanvasFile): Promise<boolean>;
+  copy(
+    fromRoot: string,
+    from: string,
+    toRoot: string,
+    to: string,
+    file: CanvasFile,
+  ): Promise<boolean>;
   /** Whether a folder exists to watch. */
   directory(root: string, folder: string): Promise<boolean>;
 }
+/**
+ * Where a checkout's staged media and input snapshots live, and work that a move of them waits
+ * for (src/host/media.ts).
+ */
+export type MediaAccess = {
+  dir(root: string): Promise<string>;
+  shared<T>(root: string, work: () => Promise<T>): Promise<T>;
+};
+/** A checkout that keeps its media in its own canvas folder. */
+export const legacyMedia: MediaAccess = {
+  dir: async (root) => pathTools(root).join(root, "canvas"),
+  shared: (_root, work) => work(),
+};
+
+/** The disk as a canvas sees it: `canvas/staging` and `canvas/inputs` read from `mediaDir`. */
+export function located(disk: CanvasDisk, mediaDir: string): CanvasDisk {
+  const at = (root: string, path: string) => place(root, mediaDir, path);
+  return {
+    read: (root, path) => {
+      const where = at(root, path);
+      return disk.read(where.root, where.path);
+    },
+    list: (root, folder, limit) => {
+      const where = at(root, folder);
+      return disk.list(where.root, where.path, limit);
+    },
+    write: (root, path, content, encoding, expectedSha256) => {
+      const where = at(root, path);
+      return disk.write(where.root, where.path, content, encoding, expectedSha256);
+    },
+    copy: (fromRoot, from, toRoot, to, file) => {
+      const source = at(fromRoot, from);
+      const target = at(toRoot, to);
+      return disk.copy(source.root, source.path, target.root, target.path, file);
+    },
+    directory: (root, folder) => {
+      const where = at(root, folder);
+      return disk.directory(where.root, where.path);
+    },
+  };
+}
+
 /** The generation jobs a canvas shows, and where they were read. */
 export type CanvasJobs = (
   root: string,
@@ -231,8 +280,8 @@ export const nodeDisk: CanvasDisk = {
       }
     });
   },
-  async copy(root, from, to, file) {
-    const source = await contained(root, projectFile(root, from));
+  async copy(fromRoot, from, root, to, file) {
+    const source = await contained(fromRoot, projectFile(fromRoot, from));
     if (!source) throw new Error(`Path does not exist: ${from}`);
     const target = projectFile(root, to);
     const folder = pathTools(root).dirname(target);
@@ -380,10 +429,19 @@ export class CanvasHost {
   private readonly answers = new Map<string, Remembered[]>();
   private readonly saves = new Map<string, Promise<unknown>>();
   private readonly partBytes: number;
-  constructor(disk: CanvasDisk, jobs: CanvasJobs, { partBytes = PART_BYTES } = {}) {
+  private readonly media: MediaAccess;
+  constructor(
+    disk: CanvasDisk,
+    jobs: CanvasJobs,
+    {
+      partBytes = PART_BYTES,
+      media = legacyMedia,
+    }: { partBytes?: number; media?: MediaAccess } = {},
+  ) {
     this.disk = disk;
     this.jobs = jobs;
     this.partBytes = partBytes;
+    this.media = media;
   }
 
   /**
@@ -395,10 +453,13 @@ export class CanvasHost {
    */
   private async gather(root: string, kind: Game["kind"]) {
     const entries = new Map<string, CanvasEntry>();
+    const mediaDir = await this.media.dir(root);
+    const disk = located(this.disk, mediaDir);
+    entries.set("media", { kind: "media", dir: mediaDir });
     const file = async (path: string, optional = false) => {
       let found: CanvasFile | null;
       try {
-        found = await this.disk.read(root, path);
+        found = await disk.read(root, path);
       } catch (error) {
         if (!optional) throw error;
         found = null;
@@ -414,7 +475,7 @@ export class CanvasHost {
       return found;
     };
     const listing = async (folder: string) => {
-      const found = await this.disk.list(root, folder, 10_000);
+      const found = await disk.list(root, folder, 10_000);
       entries.set(
         `list:${folder}`,
         found
@@ -488,8 +549,10 @@ export class CanvasHost {
     const { entries, hashes, fingerprint } = await this.gather(input.rootPath, input.kind);
     if (input.watch) {
       const jobs = entries.get("jobs");
+      const media = entries.get("media");
       await this.keepWatching(input.rootPath, input.kind, input.watch.gameId, hashes, context, {
         jobsPath: jobs?.kind === "jobs" ? jobs.workspacePath : null,
+        mediaDir: media?.kind === "media" ? media.dir : null,
       });
     }
     const base = input.since ? this.remembered(input.rootPath, input.since) : undefined;
@@ -573,26 +636,32 @@ export class CanvasHost {
     });
   }
 
-  /** Freezes selected image and model bytes as canvas/inputs/<sha>.<ext>, beside the project, as clones where possible. */
+  /**
+   * Freezes selected image and model bytes as canvas/inputs/<sha>.<ext>, in the media folder, as
+   * clones where possible. A move of the media waits, so the run that reads them finds them.
+   */
   async captureInputs(input: { rootPath: string; paths: string[] }) {
-    const inputs: { path: string; snapshot: string; sha256: string }[] = [];
-    const written = new Set<string>();
-    for (const path of new Set(input.paths)) {
-      const file = await this.disk.read(input.rootPath, path);
-      if (!file) throw new Error(`Path does not exist: ${path}`);
-      const snapshot = `canvas/inputs/${file.sha256}.${inputExtension(path, file)}`;
-      if (!written.has(snapshot)) {
-        const created = await this.disk.copy(input.rootPath, path, snapshot, file);
-        if (!created) {
-          const existing = await this.disk.read(input.rootPath, snapshot);
-          if (existing?.sha256 !== file.sha256)
-            throw new Error("A saved generation input changed. No request was submitted.");
+    return this.media.shared(input.rootPath, async () => {
+      const disk = located(this.disk, await this.media.dir(input.rootPath));
+      const inputs: { path: string; snapshot: string; sha256: string }[] = [];
+      const written = new Set<string>();
+      for (const path of new Set(input.paths)) {
+        const file = await disk.read(input.rootPath, path);
+        if (!file) throw new Error(`Path does not exist: ${path}`);
+        const snapshot = `canvas/inputs/${file.sha256}.${inputExtension(path, file)}`;
+        if (!written.has(snapshot)) {
+          const created = await disk.copy(input.rootPath, path, input.rootPath, snapshot, file);
+          if (!created) {
+            const existing = await disk.read(input.rootPath, snapshot);
+            if (existing?.sha256 !== file.sha256)
+              throw new Error("A saved generation input changed. No request was submitted.");
+          }
+          written.add(snapshot);
         }
-        written.add(snapshot);
+        inputs.push({ path, snapshot, sha256: file.sha256 });
       }
-      inputs.push({ path, snapshot, sha256: file.sha256 });
-    }
-    return { inputs };
+      return { inputs };
+    });
   }
 
   /**
@@ -606,7 +675,7 @@ export class CanvasHost {
     gameId: string,
     hashes: ReadonlyMap<string, string>,
     context: Context,
-    { jobsPath }: { jobsPath: string | null },
+    { jobsPath, mediaDir }: { jobsPath: string | null; mediaDir: string | null },
   ) {
     let watch = this.watches.get(root);
     if (watch && (watch.gameId !== gameId || watch.kind !== kind)) {
@@ -637,6 +706,10 @@ export class CanvasHost {
         .map((folder): [string, string] => [root, folder]),
       // The runner keeps jobs in the checkout it resolved, which can differ from the game's path.
       ...(jobsPath && jobsPath !== root ? [[jobsPath, "canvas/jobs"] as [string, string]] : []),
+      // Staged media moved out of the checkout is watched where it now lives.
+      ...(mediaDir && !inside(projectFile(root, "canvas"), mediaDir)
+        ? [[mediaDir, "staging"] as [string, string]]
+        : []),
     ];
     // A folder made since the last read is watched from this one on.
     for (const [base, folder] of folders) {

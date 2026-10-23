@@ -80,12 +80,13 @@ import { arrangeNodes, newNodePosition, revealNode } from "./canvas-layout.ts";
 import { boardSnapshot, rebaseBoard } from "./canvas-board.ts";
 import "@xyflow/react/dist/style.css";
 import "./canvas.css";
+import { previewUrl, type Preview } from "../shared/media-paths.ts";
 
 type CardData = {
   source: CanvasNode;
   documents: StudioDocument[];
   assets: Asset[];
-  baseUrl?: string;
+  preview?: Preview;
   /** Jobs targeting this node, newest first; `job` is the newest. */
   jobs?: GenerationJob[];
   job?: GenerationJob;
@@ -159,10 +160,7 @@ function CanvasCard({ id, data, selected }: NodeProps<Card>) {
     [node.data.images, node.data.references].some((refs) => Array.isArray(refs) && refs.length);
   const asset = data.assets.find((item) => item.id === node.data.assetId);
   const document = data.documents.find((item) => item.id === node.data.documentId);
-  const url =
-    asset && data.baseUrl
-      ? `${data.baseUrl.replace(/\/$/, "")}/${asset.path.split("/").map(encodeURIComponent).join("/")}`
-      : undefined;
+  const url = asset && data.preview ? previewUrl(data.preview, asset.path) : undefined;
   const field = promptField(node.type);
   const prompt = field ? String(node.data[field] ?? "") : "";
   // Steps such as Tripo Rig run from their inputs and settings alone, so they show no brief.
@@ -704,7 +702,7 @@ export function StudioCanvas({
   documents,
   assets,
   generationJobs = noGenerationJobs,
-  previewBaseUrl,
+  preview,
   onSave,
   onGenerate,
   onGenerateDirect,
@@ -725,7 +723,7 @@ export function StudioCanvas({
   documents: StudioDocument[];
   assets: Asset[];
   generationJobs?: GenerationJob[];
-  previewBaseUrl?: string;
+  preview?: Preview;
   onSave: (board: Board, expectedRevision: string) => Promise<{ revision: string }>;
   onGenerate: (nodeId: string, recipe: GenerationRecipe) => void;
   onGenerateDirect: (
@@ -756,9 +754,9 @@ export function StudioCanvas({
         id: node.id,
         type: "studio",
         position: source.editorLayout.nodes[node.id] ?? node.position,
-        data: { source: node, documents, assets, baseUrl: previewBaseUrl },
+        data: { source: node, documents, assets, preview },
       })),
-    [documents, assets, previewBaseUrl],
+    [documents, assets, preview],
   );
   const [nodes, setNodes, onNodesChange] = useNodesState<Card>(cards(board));
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>(board.edges);
@@ -1037,7 +1035,7 @@ export function StudioCanvas({
         type: "studio",
         selected: true,
         position,
-        data: { source, documents, assets, baseUrl: previewBaseUrl },
+        data: { source, documents, assets, preview },
       },
     ]);
     setEdges((current) => current.map((edge) => ({ ...edge, selected: false })));
@@ -1337,7 +1335,7 @@ export function StudioCanvas({
                   ...node.data,
                   assets,
                   documents,
-                  baseUrl: previewBaseUrl,
+                  preview,
                   jobs: nodeJobs(node.id),
                   job: nodeJobs(node.id)[0],
                   reviewJobs: reviewJobs(node.id),
@@ -1594,7 +1592,7 @@ export function StudioCanvas({
                 <GenerationSection
                   node={selected.data.source}
                   assets={assets}
-                  baseUrl={previewBaseUrl}
+                  preview={preview}
                   jobs={nodeJobs(selected.id)}
                   batch={nodeBatch(selected.data.source)}
                   canRun={

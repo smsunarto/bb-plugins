@@ -3,8 +3,10 @@ import { lstat, readdir, realpath, rm, stat } from "node:fs/promises";
 import { join, sep } from "node:path";
 import { generationId, runsOnBb, type GenerationJob } from "../shared/generation.ts";
 import { nodeTakes, pruneTakes, type Take } from "../shared/takes.ts";
-import { removeStaleSnapshot, type CanvasDisk } from "./canvas.ts";
+import { place } from "../shared/media-paths.ts";
+import { located, removeStaleSnapshot, type CanvasDisk } from "./canvas.ts";
 import type { GenerationRunner, Pruning } from "./generation.ts";
+import type { Media } from "./media.ts";
 import { resolveWorkspacePath } from "./slot-workspaces.ts";
 
 /*
@@ -31,6 +33,13 @@ const HOUR = 3_600_000;
 export const GRACE_MS = HOUR;
 /** How long a canvas output nothing names stays, so undoing a deletion or a clear keeps it. */
 export const UNUSED_MS = 7 * 24 * HOUR;
+/** A provider run recorded as running this recently may still run in another host worker. */
+const WRITING_MS = 6 * HOUR;
+/** An agent run or request older than this is taken as done, whatever its record says. */
+const AGENT_MS = 7 * 24 * HOUR;
+/** An agent run whose BB thread was never confirmed may still start for this long. */
+const UNCONFIRMED_MS = 24 * HOUR;
+const open = new Set(["queued", "running", "uncertain"]);
 const LEDGER = "canvas/jobs/.retired.json";
 
 /** What a canvas names, read from the files that can name a generation. */
@@ -348,8 +357,8 @@ async function serial<T>(key: string, work: () => Promise<T>): Promise<T> {
   }
 }
 
-const exists = (root: string, path: string) =>
-  stat(join(root, ...path.split("/"))).then(
+const exists = (path: string) =>
+  stat(path).then(
     () => true,
     () => false,
   );
@@ -376,8 +385,8 @@ function retiredPaths(ledger: Ledger, catalog: Map<string, string>, now: number)
  * Every file recursive deletion of the job's folder would remove, or null when it cannot vouch
  * for them: too many, or a link it would not follow.
  */
-async function inventory(root: string, jobId: string): Promise<string[] | null> {
-  const folder = join(root, "canvas", "staging", jobId);
+async function inventory(mediaDir: string, jobId: string): Promise<string[] | null> {
+  const folder = join(mediaDir, "staging", jobId);
   let names: string[];
   try {
     names = await readdir(folder, { recursive: true });
@@ -400,14 +409,14 @@ async function inventory(root: string, jobId: string): Promise<string[] | null> 
  * a reference or a job made since the pass began protects its files.
  */
 async function free(
-  root: string,
+  { root, mediaDir }: { root: string; mediaDir: string },
   disk: CanvasDisk,
   runner: GenerationRunner,
   job: GenerationJob,
   context: Omit<Context, "refs" | "folder" | "jobs">,
   signal?: AbortSignal,
 ) {
-  const folder = await inventory(root, generationId.parse(job.id));
+  const folder = await inventory(mediaDir, generationId.parse(job.id));
   if (!folder) return [];
   const jobs = await runner.records(root);
   const refs = await readReferences(disk, root, jobs, context.now);
@@ -418,15 +427,94 @@ async function free(
 }
 
 /**
- * Frees what nothing uses in one checkout. Returns the freed project-relative paths, and the
- * catalogued staged paths whose files are gone, so the server can forget both.
+ * The BB threads of agent runs that may still write where their prompts told them to, as their
+ * records say, and whether a run's thread was never confirmed.
+ */
+export async function writers(
+  disk: CanvasDisk,
+  runner: GenerationRunner,
+  rootPath: string,
+  now = Date.now(),
+): Promise<{ threads: string[]; unconfirmed: boolean }> {
+  const root = await realpath(rootPath);
+  const threads = new Set<string>();
+  let unconfirmed = false;
+  for (const job of await runner.records(root)) {
+    if (job.request.kind !== "agent" || !open.has(job.status) || now - job.createdAt >= AGENT_MS)
+      continue;
+    if (job.taskId) threads.add(job.taskId);
+    else if (now - job.createdAt < UNCONFIRMED_MS) unconfirmed = true;
+  }
+  return { threads: [...threads], unconfirmed };
+}
+
+/**
+ * Whether an agent request is still open. Its thread may sit idle waiting for the user, then
+ * go on with the paths its prompt named, so only the agent closing it, or its age, ends it.
+ */
+async function openRequest(disk: CanvasDisk, root: string, now: number) {
+  const requests = await disk.list(root, "canvas/requests", 10_000);
+  for (const name of requests?.files ?? []) {
+    if (!name.endsWith(".json")) continue;
+    const record = (await json(disk, root, `canvas/requests/${name}`).catch(() => undefined))
+      ?.value as { status?: unknown; createdAt?: unknown } | undefined;
+    if (
+      open.has(String(record?.status)) &&
+      typeof record?.createdAt === "number" &&
+      now - record.createdAt < AGENT_MS
+    )
+      return true;
+  }
+  return false;
+}
+
+/**
+ * Whether a run may still write where it was told to, so its media cannot move yet: a provider
+ * run here, or one recorded as running lately, which another worker may run; an open agent
+ * request; a BB thread of an agent run the server has not seen stop; or, as `hold` says, the
+ * game's own thread at work. Read again at each step of a move, so a run that starts during the
+ * move holds it off.
+ */
+async function busy(
+  { runner, disk }: { runner: GenerationRunner; disk: CanvasDisk },
+  root: string,
+  now: number,
+  { settled, hold }: { settled: ReadonlySet<string>; hold: boolean },
+) {
+  if (hold || runner.running(root)) return true;
+  const records = await runner.records(root);
+  if (
+    records.some(
+      (job) =>
+        !runsOnBb(job.request) &&
+        ["queued", "running"].includes(job.status) &&
+        now - job.updatedAt < WRITING_MS,
+    )
+  )
+    return true;
+  if (await openRequest(disk, root, now)) return true;
+  const { threads, unconfirmed } = await writers(disk, runner, root, now);
+  return unconfirmed || threads.some((thread) => !settled.has(thread));
+}
+
+/**
+ * Moves the checkout's media to its own folder when nothing is writing there, then frees what
+ * nothing uses. Returns the freed canvas paths, and the catalogued staged paths whose files
+ * are gone, so the server can forget both.
  */
 export async function collectCanvas(
   rootPath: string,
   disk: CanvasDisk,
   runner: GenerationRunner,
-  { now = Date.now(), signal }: { now?: number; signal?: AbortSignal } = {},
-): Promise<{ deleted: string[]; missing: string[]; skipped?: string }> {
+  media: Media,
+  {
+    now = Date.now(),
+    signal,
+    note,
+    settled = [],
+    hold = false,
+  }: { now?: number; signal?: AbortSignal; note: string; settled?: string[]; hold?: boolean },
+): Promise<{ deleted: string[]; missing: string[]; skipped?: string; warning?: string }> {
   const root = await realpath(rootPath);
   // A checkout that shares another's Assets also shares its jobs, which other boards may use.
   if ((await resolveWorkspacePath(root)).workspacePath !== root)
@@ -436,43 +524,97 @@ export async function collectCanvas(
       skipped: "This checkout shares its generation jobs with another.",
     };
   return serial(root, async () => {
-    await removeLeftovers(root);
-    await trimBoards(disk, root, now, signal);
-    const jobs = await runner.records(root);
-    const refs = await readReferences(disk, root, jobs, now);
-    const before = await readLedger(disk, root);
-    const tracked = track(before, jobs, refs, now);
-    const ledger = sameTimes(before, tracked) ? before : await writeLedger(disk, root, tracked);
-    const retired = retiredPaths(ledger, refs.catalog, now);
-    const deleted: string[] = [];
-    for (const job of jobs) {
-      const since = job.target && ledger.missing[`${job.target.boardId}\0${job.target.nodeId}`];
-      const context = {
-        now,
-        retired: retired.get(job.id) ?? new Set<string>(),
-        orphaned: since !== undefined && now - since >= UNUSED_MS,
-      };
-      // A first look with this pass's references; a candidate is decided again before it goes.
-      if (decide(job, { ...context, jobs, refs, folder: [] }).kind === "keep") continue;
-      deleted.push(...(await free(root, disk, runner, job, context, signal)));
+    let state;
+    let warning: string | undefined;
+    try {
+      state = await media.migrate(root, {
+        busy: () => busy({ runner, disk }, root, now, { settled: new Set(settled), hold }),
+        note,
+        ...(signal ? { signal } : {}),
+      });
+    } catch (error) {
+      // A move that cannot finish, such as on a full disk, must not stop freeing space.
+      signal?.throwIfAborted();
+      warning = `Could not move the checkout's media: ${error instanceof Error ? error.message : String(error)}`;
+      state = await media.state(root);
     }
-    const remaining = await runner.records(root);
-    const final = await readReferences(disk, root, remaining, now);
-    const catalog = final.catalog;
-    await compact(disk, root, remaining, final);
-    const snapshots = new Set(
-      remaining.flatMap(
-        (job) => JSON.stringify(job).match(/canvas\/inputs\/[a-f0-9]{64}\.[a-z0-9]+/g) ?? [],
-      ),
+    // None at all, or still another checkout's: nothing here can say what is unused.
+    if (state.kind === "lost" || state.kind === "copied")
+      return {
+        deleted: [],
+        missing: [],
+        skipped:
+          state.kind === "lost"
+            ? "The checkout's media folder is missing."
+            : "The checkout's media are still in the checkout it was copied from.",
+      };
+    const swept = await sweep(
+      { root, mediaDir: state.dir, legacy: state.kind === "moved" },
+      disk,
+      runner,
+      { now, ...(signal ? { signal } : {}) },
     );
-    deleted.push(...(await freeSnapshots(root, snapshots, now - GRACE_MS, signal)));
-    const missing: string[] = [];
-    const freed = new Set(deleted);
-    for (const path of catalog.keys())
-      if (path.startsWith("canvas/staging/") && !freed.has(path) && !(await exists(root, path)))
-        missing.push(path);
-    return { deleted, missing };
+    return warning ? { ...swept, warning } : swept;
   });
+}
+
+async function sweep(
+  where: { root: string; mediaDir: string; legacy: boolean },
+  base: CanvasDisk,
+  runner: GenerationRunner,
+  { now, signal }: { now: number; signal?: AbortSignal },
+) {
+  const { root, mediaDir } = where;
+  const disk = located(base, mediaDir);
+  await removeLeftovers(mediaDir);
+  await trimBoards(disk, root, now, signal);
+  const jobs = await runner.records(root);
+  const refs = await readReferences(disk, root, jobs, now);
+  const before = await readLedger(disk, root);
+  const tracked = track(before, jobs, refs, now);
+  const ledger = sameTimes(before, tracked) ? before : await writeLedger(disk, root, tracked);
+  const retired = retiredPaths(ledger, refs.catalog, now);
+  const deleted: string[] = [];
+  for (const job of jobs) {
+    const since = job.target && ledger.missing[`${job.target.boardId}\0${job.target.nodeId}`];
+    const context = {
+      now,
+      retired: retired.get(job.id) ?? new Set<string>(),
+      orphaned: since !== undefined && now - since >= UNUSED_MS,
+    };
+    // A first look with this pass's references; a candidate is decided again before it goes.
+    if (decide(job, { ...context, jobs, refs, folder: [] }).kind === "keep") continue;
+    deleted.push(...(await free(where, disk, runner, job, context, signal)));
+  }
+  const remaining = await runner.records(root);
+  const final = await readReferences(disk, root, remaining, now);
+  const catalog = final.catalog;
+  await compact(disk, root, remaining, final);
+  const snapshots = new Set(
+    remaining.flatMap(
+      (job) => JSON.stringify(job).match(/canvas\/inputs\/[a-f0-9]{64}\.[a-z0-9]+/g) ?? [],
+    ),
+  );
+  deleted.push(...(await freeSnapshots(mediaDir, snapshots, now - GRACE_MS, signal)));
+  return { deleted, missing: await missingFiles(where, catalog, new Set(deleted)) };
+}
+
+/** Catalogued staged files that are gone, but not those freed just now. */
+async function missingFiles(
+  { root, mediaDir, legacy }: { root: string; mediaDir: string; legacy: boolean },
+  catalog: Map<string, string>,
+  freed: Set<string>,
+) {
+  const missing: string[] = [];
+  for (const path of catalog.keys()) {
+    if (!path.startsWith("canvas/staging/") || freed.has(path)) continue;
+    const at = place(root, mediaDir, path);
+    if (await exists(join(at.root, ...at.path.split("/")))) continue;
+    // A file written to the old folder during a move, which the next pass moves in.
+    if (legacy && (await exists(join(root, ...path.split("/"))))) continue;
+    missing.push(path);
+  }
+  return missing;
 }
 
 /** Keeps in the ledger only what still has files to free, and nodes jobs still target. */
@@ -506,16 +648,16 @@ async function compact(
     await writeLedger(disk, root, compacted);
 }
 
-/** Deletes input snapshots no job names, once older than `before`. Returns their paths. */
+/** Deletes input snapshots no job names, once older than `before`. Returns their canvas paths. */
 async function freeSnapshots(
-  root: string,
+  mediaDir: string,
   named: Set<string>,
   before: number,
   signal?: AbortSignal,
 ) {
   let names: string[];
   try {
-    names = await readdir(join(root, "canvas", "inputs"));
+    names = await readdir(join(mediaDir, "inputs"));
   } catch {
     return [];
   }
@@ -524,20 +666,20 @@ async function freeSnapshots(
     const path = `canvas/inputs/${name}`;
     if (named.has(path) || !/^[a-f0-9]{64}\.[a-z0-9]+$/.test(name)) continue;
     signal?.throwIfAborted();
-    if (await removeStaleSnapshot(root, path, before)) freed.push(path);
+    if (await removeStaleSnapshot(mediaDir, `inputs/${name}`, before)) freed.push(path);
   }
   return freed;
 }
 
 /** Folders a crash left set aside for deletion. */
-async function removeLeftovers(root: string) {
+async function removeLeftovers(mediaDir: string) {
   let names: string[];
   try {
-    names = await readdir(join(root, "canvas", "staging"));
+    names = await readdir(join(mediaDir, "staging"));
   } catch {
     return;
   }
   for (const name of names)
     if (name.startsWith(".freed-"))
-      await rm(join(root, "canvas", "staging", name), { recursive: true, force: true });
+      await rm(join(mediaDir, "staging", name), { recursive: true, force: true });
 }

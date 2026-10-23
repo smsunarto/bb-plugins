@@ -137,7 +137,8 @@ test("duplicate paths and identical image bytes keep attachment order and write 
   expect(f.writes).toEqual([
     {
       hostId: "remote-host",
-      rootPath: "/games/orbit",
+      // Snapshots are written in the media folder, here the checkout's own canvas folder.
+      rootPath: "/games/orbit/canvas",
       path: `/games/orbit/${snapshotA}`,
       content: "QQ==",
       contentEncoding: "base64",
@@ -149,7 +150,9 @@ test("duplicate paths and identical image bytes keep attachment order and write 
   expect(f.successfulWrites).toEqual([`/games/orbit/${snapshotA}`]);
   expect(
     f.reads.every(
-      ({ hostId, rootPath }) => hostId === "remote-host" && rootPath === "/games/orbit",
+      ({ hostId, rootPath, path }) =>
+        hostId === "remote-host" &&
+        rootPath === (path.includes("/canvas/inputs/") ? "/games/orbit/canvas" : "/games/orbit"),
     ),
   ).toBe(true);
 });

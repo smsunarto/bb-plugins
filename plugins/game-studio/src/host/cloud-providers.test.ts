@@ -18,6 +18,7 @@ async function context(request: unknown) {
   const recorded: string[] = [];
   const ctx: ProviderContext = {
     rootPath: outputPath,
+    locate: (path: string) => `${outputPath}/${path}`,
     outputPath,
     request: mediaRequest.parse(request),
     imagePaths: [],

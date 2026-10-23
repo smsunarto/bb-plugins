@@ -64,6 +64,7 @@ function workspace(boardRevision = revision("content-1")): Workspace {
     evidenceRuns: [],
     requests: [],
     generationJobs: [],
+    mediaDir: null,
   };
 }
 

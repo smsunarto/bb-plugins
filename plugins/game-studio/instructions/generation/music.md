@@ -4,5 +4,5 @@ authentication when required. Establish mood, instruments, tempo, duration,
 and the Unity consumer from the selected node. Prefer instrumental BGM unless
 vocals were requested. Use the user's plan where available; this request does
 not authorize an upgraded plan, additional outputs, or a paid job outside an
-agreed budget. Save the selected track in `canvas/staging/`, listen to it, and
+agreed budget. Save the selected track in the media folder's `staging/` (`canvas/staging/` on the canvas), listen to it, and
 check the loop transition when looping is required.

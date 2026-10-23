@@ -39,7 +39,9 @@ import { absoluteRoot, pathTools, projectFile, relativeFile } from "./paths.ts";
 import { canvasGitignore, starterHtml } from "./starter.ts";
 import { studioHostContract } from "../../shared/host-contract.ts";
 import { canvasAssetRoots } from "../../shared/canvas-contract.ts";
-import { readCanvas, snapshotJobs, type CanvasSnapshot } from "./canvas-snapshot.ts";
+import { readCanvas, snapshotJobs, snapshotMedia, type CanvasSnapshot } from "./canvas-snapshot.ts";
+import { fileArgs, withMedia, writeMedia, type Place } from "./media.ts";
+import { mediaArea } from "../../shared/media-paths.ts";
 
 type Index = z.infer<typeof indexSchema>;
 type File = { content: string; contentEncoding: "utf8" | "base64"; sha256: string };
@@ -98,9 +100,7 @@ function locationId(hostId: string, rootPath: string): string {
   return createHash("sha256").update(`${hostId}\0${root}`).digest("hex").slice(0, 32);
 }
 
-function args(game: Pick<Game, "hostId" | "rootPath">, path: string) {
-  return { hostId: game.hostId, rootPath: game.rootPath, path: projectFile(game.rootPath, path) };
-}
+const args = fileArgs;
 
 function missing(error: unknown): boolean {
   return (
@@ -112,7 +112,7 @@ function missing(error: unknown): boolean {
 
 export async function readOptional(
   bb: BbPluginApi,
-  game: Pick<Game, "hostId" | "rootPath">,
+  game: Place,
   path: string,
 ): Promise<File | null> {
   try {
@@ -123,20 +123,25 @@ export async function readOptional(
   }
 }
 
-function sdkReader(bb: BbPluginApi, game: Pick<Game, "hostId" | "rootPath">): Reader {
+function sdkReader(bb: BbPluginApi, game: Place): Reader {
   return {
     read: (path) => readOptional(bb, game, path),
     async list(folder, limit) {
+      const directory = args(game, folder).path;
+      let listing: Listing;
       try {
-        return await bb.sdk.files.list({
-          hostId: game.hostId,
-          path: projectFile(game.rootPath, folder),
-          limit,
-        });
+        listing = await bb.sdk.files.list({ hostId: game.hostId, path: directory, limit });
       } catch (error) {
         if (missing(error)) return null;
         throw error;
       }
+      if (!mediaArea(folder)) return listing;
+      // Media lives outside the checkout; the canvas names it by its canvas path.
+      const paths = pathTools(directory);
+      const canvasPath = (path: string) =>
+        `${folder}/${(paths.isAbsolute(path) ? paths.relative(directory, path) : path).replaceAll("\\", "/")}`;
+      for (const file of listing.files) file.path = canvasPath(file.path);
+      return listing;
     },
   };
 }
@@ -198,7 +203,7 @@ function parse<T>(schema: z.ZodType<T>, file: File, path: string): T {
 
 async function write(
   bb: BbPluginApi,
-  game: Pick<Game, "hostId" | "rootPath">,
+  game: Place,
   path: string,
   content: string,
   expectedSha256: string | null,
@@ -551,7 +556,8 @@ export async function loadCanvas(
 ): Promise<{ workspace: Workspace; workspacePath: string | null; stale: boolean }> {
   const game = await getGame(bb, gameId);
   const snapshot = await readCanvas(bb, game, options);
-  const files = snapshotReader(snapshot, sdkReader(bb, game));
+  const mediaDir = snapshotMedia(snapshot);
+  const files = snapshotReader(snapshot, sdkReader(bb, mediaDir ? { ...game, mediaDir } : game));
   const { index, revision: indexRevision } = await readIndex(files);
   const [boards, documents, assets, captures, requests] = await Promise.all([
     Promise.all(index.boards.map(({ id }) => loadBoard(files, id))),
@@ -581,6 +587,7 @@ export async function loadCanvas(
       evidenceRuns,
       requests,
       generationJobs: jobs,
+      mediaDir,
       ...(game.kind === "unity" ? { unityVersion: await unityVersion(files, false) } : {}),
     },
     workspacePath,
@@ -779,14 +786,17 @@ export async function createBoard(
   });
 }
 
+/** Preview leases for the checkout and its media folder, which expire together. */
 export async function createPreview(bb: BbPluginApi, gameId: string) {
-  const game = await getGame(bb, gameId);
-  const { baseUrl, expiresAtMs } = await bb.sdk.files.createPreview({
-    hostId: game.hostId,
-    rootPath: game.rootPath,
-    ttlMs: 60 * 60 * 1000,
-  });
-  return { baseUrl, expiresAtMs };
+  const game = await withMedia(bb, await getGame(bb, gameId));
+  const lease = (rootPath: string) =>
+    bb.sdk.files.createPreview({ hostId: game.hostId, rootPath, ttlMs: 60 * 60 * 1000 });
+  const [checkout, media] = await Promise.all([lease(game.rootPath), lease(game.mediaDir)]);
+  return {
+    baseUrl: checkout.baseUrl,
+    mediaBaseUrl: media.baseUrl,
+    expiresAtMs: Math.min(checkout.expiresAtMs, media.expiresAtMs),
+  };
 }
 
 export async function updateGame(
@@ -864,7 +874,7 @@ export async function uploadAsset(
       throw new Error("Assets must be 20 MB or smaller.");
     if (/[\\/\0]/.test(input.name) || input.name === "." || input.name === "..")
       throw new Error("Use a filename without directory separators.");
-    const game = await getGame(bb, input.gameId);
+    const game = await withMedia(bb, await getGame(bb, input.gameId));
     const id = randomUUID();
     const filename = input.name.replace(/[^a-zA-Z0-9._-]/g, "_");
     const path = `${game.kind === "unity" ? "canvas/staging" : "assets"}/${id}-${filename}`;
@@ -874,7 +884,19 @@ export async function uploadAsset(
       : { version: 1 as const, assets: {} as z.infer<typeof manifestSchema>["assets"] };
     if (Object.keys(manifest.assets).length >= 10000)
       throw new Error("The workspace supports up to 10,000 catalog assets.");
-    await write(bb, game, path, input.content, null, "base64");
+    const bytes = createHash("sha256").update(Buffer.from(input.content, "base64")).digest("hex");
+    await writeMedia(bb, game, path, async (target) => {
+      const result = await bb.sdk.files.write({
+        ...target,
+        content: input.content,
+        contentEncoding: "base64",
+        expectedSha256: null,
+        createParents: true,
+      });
+      // A move that copied the upload already holds the same bytes.
+      if (result.outcome !== "written" && (await bb.sdk.files.read(target)).sha256 !== bytes)
+        throw new Error(`${path} already exists. Upload it again.`);
+    });
     manifest.assets[id] = { name: input.name, path };
     // A concurrent manifest edit rejects; the uploaded file remains discoverable under assets/.
     await write(bb, game, "canvas/assets.json", json(manifest), manifestFile?.sha256 ?? null);
@@ -1001,6 +1023,7 @@ export async function prompt(
     gameId: workspace.game.id,
     hostId: workspace.game.hostId,
     rootPath: workspace.game.rootPath,
+    ...(workspace.mediaDir ? { mediaDir: workspace.mediaDir } : {}),
     request: descriptor,
     requestPath,
     ...(asset ? { asset } : {}),
@@ -1073,6 +1096,7 @@ export async function prompt(
     ].join("\n\n"),
     context: [
       instructions.read("workspace"),
+      ...(workspace.mediaDir ? [instructions.read("media", { mediaDir: workspace.mediaDir })] : []),
       instructions.read("request-progress"),
       instructions.read(input.action, unitySetup),
       ...(recipe ? [instructions.read(`generation/${recipe}`)] : []),
@@ -1093,8 +1117,9 @@ export async function prompt(
 }
 
 /** Catalog all candidates, then attach only to the still-current saved brief. */
-export async function adoptGeneration(bb: BbPluginApi, game: Game, job: GenerationJob) {
-  return serialized(bb, game.id, async () => {
+export async function adoptGeneration(bb: BbPluginApi, checkout: Game, job: GenerationJob) {
+  return serialized(bb, checkout.id, async () => {
+    const game = await withMedia(bb, checkout);
     const manifestPath = "canvas/assets.json";
     const file = await readOptional(bb, game, manifestPath);
     const manifest = file
@@ -1198,7 +1223,7 @@ export async function adoptGeneration(bb: BbPluginApi, game: Game, job: Generati
  */
 async function attachTakes(
   bb: BbPluginApi,
-  game: Game,
+  game: Game & Place,
   boardId: string,
   job: GenerationJob,
   ids: string[],
@@ -1250,7 +1275,7 @@ export async function forgetAssets(bb: BbPluginApi, game: Game, paths: string[])
 /** A review joins the node's reviews; it never replaces the node's outputs or its brief. */
 async function attachReview(
   bb: BbPluginApi,
-  game: Game,
+  game: Game & Place,
   boardId: string,
   job: GenerationJob,
   assetIds: string[],
@@ -1278,7 +1303,7 @@ async function attachReview(
  */
 async function attachJudgement(
   bb: BbPluginApi,
-  game: Game,
+  game: Game & Place,
   boardId: string,
   job: GenerationJob,
   candidates: string[],
@@ -1310,7 +1335,7 @@ async function attachJudgement(
 }
 
 /** The Markdown a review or judge run wrote. */
-async function runText(bb: BbPluginApi, game: Game, job: GenerationJob, what: string) {
+async function runText(bb: BbPluginApi, game: Game & Place, job: GenerationJob, what: string) {
   const output = job.outputs.find((item) => item.type === "text");
   if (!output) throw new Error(`The ${what} job has no output.`);
   const file = await readRequired(sdkReader(bb, game), output.path);

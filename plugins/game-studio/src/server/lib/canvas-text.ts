@@ -5,24 +5,22 @@ import { generationJob, runsOnBb, type GenerationJob } from "../../shared/genera
 import { generationPrompt } from "../../shared/generation-prompt.ts";
 import type { Game } from "../../shared/schema.ts";
 import { recipes } from "../../shared/recipes.ts";
-import { projectFile } from "./paths.ts";
+import { fileArgs, hostFile, withMedia, writeMedia, type Place } from "./media.ts";
 import { studioHostContract } from "../../shared/host-contract.ts";
 
 const instructions = instructionFiles(import.meta.url);
 type BbRequest = Extract<GenerationJob["request"], { kind: "text" | "agent" }>;
 const stagingDir = (jobId: string) => `canvas/staging/${jobId}`;
 /** Briefs follow the target model's prompting guide; reviews judge inputs; others write node text. */
-function taskInstructions(request: BbRequest, game: Game, jobId: string) {
+function taskInstructions(request: BbRequest, game: Game & Place, jobId: string) {
   if (request.kind === "agent")
     return instructions.read("canvas-agent", {
       inputs:
         [
-          ...request.images.map(
-            (path, index) => `- Image ${index + 1}: ${projectFile(game.rootPath, path)}`,
-          ),
-          ...request.files.map((path) => `- File: ${projectFile(game.rootPath, path)}`),
+          ...request.images.map((path, index) => `- Image ${index + 1}: ${hostFile(game, path)}`),
+          ...request.files.map((path) => `- File: ${hostFile(game, path)}`),
         ].join("\n") || "(none beyond the step itself)",
-      output: projectFile(game.rootPath, stagingDir(jobId)),
+      output: hostFile(game, stagingDir(jobId)),
       step: generationPrompt(request),
     });
   if (request.reviewOf)
@@ -31,7 +29,7 @@ function taskInstructions(request: BbRequest, game: Game, jobId: string) {
         ? instructions.read("model-review", { gameId: game.id, rootPath: game.rootPath })
         : "",
       files: request.files
-        ? request.files.map((path) => `- ${projectFile(game.rootPath, path)}`).join("\n")
+        ? request.files.map((path) => `- ${hostFile(game, path)}`).join("\n")
         : "(none)",
     });
   if (request.judgeOf) return instructions.read("canvas-judge");
@@ -72,8 +70,8 @@ export class CanvasText {
       if (this.queues.get(key) === next) this.queues.delete(key);
     }
   }
-  private file(game: Game, path: string) {
-    return { hostId: game.hostId, rootPath: game.rootPath, path: projectFile(game.rootPath, path) };
+  private file(game: Place, path: string) {
+    return fileArgs(game, path);
   }
   private async read(game: Game, id: string) {
     const file = await this.bb.sdk.files.read(this.file(game, `canvas/jobs/${id}.json`));
@@ -90,8 +88,9 @@ export class CanvasText {
     if (result.outcome === "conflict")
       throw new Error("The text job changed. Refresh its status before continuing.");
   }
-  async start(game: Game, job: GenerationJob) {
-    return this.serial(game, job.id, async () => {
+  async start(checkout: Game, job: GenerationJob) {
+    return this.serial(checkout, job.id, async () => {
+      const game = await withMedia(this.bb, checkout);
       if (!runsOnBb(job.request)) throw new Error("A text or agent request is required.");
       const request = job.request;
       const providers = await this.bb.sdk.providers.list();
@@ -133,6 +132,8 @@ export class CanvasText {
         { hostId: game.hostId },
       );
       if (!reservation.created) return reservation;
+      // Resolved after the reservation, which holds off a move until the run is done.
+      const placed = await withMedia(this.bb, checkout);
       const { revision } = await this.read(game, job.id);
       try {
         // An agent works in the game's checkout, in a thread the person can watch and steer.
@@ -172,8 +173,8 @@ export class CanvasText {
               mentions: [],
               text:
                 request.kind === "agent"
-                  ? taskInstructions(request, game, job.id)
-                  : `${taskInstructions(request, game, job.id)}\n\n${generationPrompt(request)}`,
+                  ? taskInstructions(request, placed, job.id)
+                  : `${taskInstructions(request, placed, job.id)}\n\n${generationPrompt(request)}`,
             },
             ...images,
           ],
@@ -192,8 +193,9 @@ export class CanvasText {
       return { created: true, job };
     });
   }
-  async status(game: Game, id: string, cancel = false) {
-    return this.serial(game, id, async () => {
+  async status(checkout: Game, id: string, cancel = false) {
+    return this.serial(checkout, id, async () => {
+      const game = await withMedia(this.bb, checkout);
       const { job, revision } = await this.read(game, id);
       if (["succeeded", "failed", "cancelled"].includes(job.status)) return job;
       const unchanged = JSON.stringify(job);
@@ -226,18 +228,20 @@ export class CanvasText {
           } else {
             // An agent's report sits beside the files it made, which the host then collects.
             const path = `${stagingDir(job.id)}/${job.request.kind === "agent" ? "report.md" : "output.md"}`;
-            const written = await this.bb.sdk.files.write({
-              ...this.file(game, path),
-              content: text,
-              contentEncoding: "utf8",
-              expectedSha256: null,
-              createParents: true,
+            await writeMedia(this.bb, game, path, async (args) => {
+              const written = await this.bb.sdk.files.write({
+                ...args,
+                content: text,
+                contentEncoding: "utf8",
+                expectedSha256: null,
+                createParents: true,
+              });
+              if (written.outcome === "conflict") {
+                const existing = await this.bb.sdk.files.read(args);
+                if (existing.content !== text)
+                  throw new Error("The staged text was edited. Its newer content was preserved.");
+              }
             });
-            if (written.outcome === "conflict") {
-              const existing = await this.bb.sdk.files.read(this.file(game, path));
-              if (existing.content !== text)
-                throw new Error("The staged text was edited. Its newer content was preserved.");
-            }
             job.outputs =
               job.request.kind === "agent"
                 ? await this.bb.hosts
