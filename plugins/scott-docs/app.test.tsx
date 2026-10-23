@@ -258,7 +258,32 @@ describe("Docs nav panel", () => {
     );
     await slot.findByText("Select a note or HTML page.");
     expect(slot.navigateCalls).toEqual([]);
-    expect(localStorage.getItem("bb-plugin-scott-docs:last-document")).toBeNull();
+    expect(localStorage.getItem("bb-plugin-scott-docs:last-document")).toBe("personal");
+  });
+
+  it("remembers the last vault and restores it after a cold reopen", async () => {
+    const slot = renderSlot(
+      docsRegistration,
+      { subPath: "work" },
+      { rpc: { listNotes: () => listNotesResultForVault("work", "plan.md", "Plan") } },
+    );
+    await slot.findByText("Select a note or HTML page.");
+    expect(localStorage.getItem("bb-plugin-scott-docs:last-document")).toBe("work");
+    cleanup();
+    clearNotebookStores();
+
+    const reopened = renderSlot(
+      docsRegistration,
+      { subPath: "" },
+      { rpc: { listNotes: () => listNotesResult([]) } },
+    );
+    await waitFor(() =>
+      expect(reopened.navigateCalls).toContainEqual({
+        method: "toPluginPanel",
+        path: "docs",
+        options: { subPath: "work", replace: true },
+      }),
+    );
   });
 
   it("ignores malformed saved locations", async () => {
@@ -270,6 +295,35 @@ describe("Docs nav panel", () => {
     );
     await slot.findByText("Select a note or HTML page.");
     expect(slot.navigateCalls).toEqual([]);
+  });
+
+  it("lets readers recover when the remembered vault was removed", async () => {
+    const slot = renderSlot(
+      docsRegistration,
+      { subPath: "gone" },
+      {
+        rpc: {
+          listNotes: () => {
+            throw new Error("Unknown vault: gone");
+          },
+        },
+      },
+    );
+    fireEvent.click(await slot.findByRole("button", { name: "Browse default vault" }));
+    expect(localStorage.getItem("bb-plugin-scott-docs:last-document")).toBeNull();
+    expect(slot.navigateCalls).toContainEqual({
+      method: "toPluginPanel",
+      path: "docs",
+      options: { subPath: "", replace: true },
+    });
+    cleanup();
+    const reopened = renderSlot(
+      docsRegistration,
+      { subPath: "" },
+      { rpc: { listNotes: () => listNotesResult([]) } },
+    );
+    await reopened.findByText("Select a note or HTML page.");
+    expect(reopened.navigateCalls).toEqual([]);
   });
 
   it("keeps the sidebar from moving the reader to the saved document", async () => {

@@ -1884,9 +1884,11 @@ function NotesWorkspace({
   subPath,
   navigationOnly,
   onNavigate,
+  onBrowseDefault,
 }: PluginNavPanelProps & {
   navigationOnly: boolean;
   onNavigate?(subPath: string, replace?: boolean): void;
+  onBrowseDefault?(): void;
 }) {
   const rpc = useRpc<typeof docsRpcContract>();
   const navigate = useBbNavigate();
@@ -1968,6 +1970,11 @@ function NotesWorkspace({
           <Button size="sm" variant="outline" onClick={refresh}>
             Retry
           </Button>
+          {onBrowseDefault && error === `Unknown vault: ${route.vaultId}` ? (
+            <Button size="sm" variant="outline" onClick={onBrowseDefault}>
+              Browse default vault
+            </Button>
+          ) : null}
         </div>
       );
     return (
@@ -2226,7 +2233,7 @@ function NotesWorkspace({
   );
 }
 
-// Only the main panel remembers its document. The sidebar and the document
+// Only the main panel remembers its location. The sidebar and the document
 // picker mount NotesWorkspace too, and neither should move the reader.
 const LAST_DOCUMENT_KEY = "bb-plugin-scott-docs:last-document";
 
@@ -2234,13 +2241,17 @@ function NotesPanel(props: PluginNavPanelProps) {
   const navigate = useBbNavigate();
   const { subPath } = props;
   const restoredRef = useRef(false);
+  const navigateRef = useRef(navigate);
+  useEffect(() => {
+    navigateRef.current = navigate;
+  }, [navigate]);
   useEffect(() => {
     try {
       if (subPath) {
         restoredRef.current = false;
         const route = parseRoute(subPath);
-        // Choosing a vault, not a document, is a request to browse it.
-        if (route.vaultId && route.filePath) localStorage.setItem(LAST_DOCUMENT_KEY, subPath);
+        // Choosing a vault is a request to return to its browser next time.
+        if (route.vaultId) localStorage.setItem(LAST_DOCUMENT_KEY, subPath);
         else localStorage.removeItem(LAST_DOCUMENT_KEY);
         return;
       }
@@ -2251,16 +2262,23 @@ function NotesPanel(props: PluginNavPanelProps) {
       const previous = parseRoute(saved);
       if (
         previous.vaultId &&
-        previous.filePath &&
-        /\.(md|markdown|html?)$/i.test(previous.filePath)
+        (!previous.filePath || /\.(md|markdown|html?)$/i.test(previous.filePath))
       ) {
-        navigate.toPluginPanel("docs", { subPath: saved, replace: true });
+        navigateRef.current.toPluginPanel("docs", { subPath: saved, replace: true });
       }
     } catch {
       // Unavailable storage or a malformed saved path leaves the panel browsing.
     }
-  }, [navigate, subPath]);
-  return <NotesWorkspace {...props} navigationOnly={false} />;
+  }, [subPath]);
+  const browseDefault = () => {
+    try {
+      localStorage.removeItem(LAST_DOCUMENT_KEY);
+    } catch {
+      // Browsing still works when storage is unavailable.
+    }
+    navigate.toPluginPanel("docs", { subPath: "", replace: true });
+  };
+  return <NotesWorkspace {...props} navigationOnly={false} onBrowseDefault={browseDefault} />;
 }
 
 function NotesNavigationPanel(props: PluginNavPanelProps) {
