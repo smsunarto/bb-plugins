@@ -36,9 +36,10 @@
     "package:check": "bun scripts/package-check.ts",
     "clean": "bun run --filter '@bb-kit/*' --parallel clean && bun run --filter '@smsunarto/bb-plugin-*' --parallel clean",
     "doctor": "npx react-doctor@latest",
-    "test:storybook": "bun run build:framework && vitest run --config .storybook/vitest.config.ts"
+    "test:storybook": "bun run build:framework && vitest run --project storybook"
   },
   "devDependencies": {
+    "@bb-plugins/ui": "workspace:*",
     "@fontsource-variable/inter": "5.3.0",
     "@fontsource/ibm-plex-mono": "5.3.0",
     "@get-bb/plugin-sdk": "0.5.29",
@@ -52,6 +53,7 @@
     "@testing-library/react": "16.3.2",
     "@types/bun": "1.3.14",
     "@vitest/browser-playwright": "4.1.11",
+    "@vitest/coverage-v8": "4.1.11",
     "lefthook": "2.1.12",
     "oxfmt": "^0.64.0",
     "oxlint": "^1.77.0",
@@ -64,7 +66,6 @@
     "tailwindcss": "4.3.3",
     "typescript": "^6.0.0",
     "vite": "^8.2.1",
-    "vitest": "4.1.11",
-    "@bb-plugins/ui": "workspace:*"
+    "vitest": "4.1.11"
   }
 }
