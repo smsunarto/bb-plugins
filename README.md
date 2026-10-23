@@ -108,6 +108,35 @@ The watcher targets the running BB selected by the CLI. It rebuilds and reloads 
 Use `bb plugin source monokai`, `bb plugin list`, and `bb plugin logs monokai` to inspect it.
 Run focused tests with BB's SDK testing harnesses, then verify the changed user flow in the app.
 
+## Preview components with Storybook
+
+Run `bun run storybook` from the repository root and open
+[Storybook](http://localhost:6010). It discovers stories under
+`plugins/*/storybook/` and `packages/*/storybook/`, starting with Monokai's
+palette catalog. The preview reuses Monokai's generated theme and decorators.
+Run `bun run build-storybook` to export the catalog to `storybook-static/`.
+
+The [Storybook MCP addon](https://storybook.js.org/docs/ai/mcp/overview) serves
+agent tools at `http://localhost:6010/mcp` while the root Storybook command is
+running. Project-level configuration is checked in as `.mcp.json` for Claude
+Code and `.codex/config.toml` for Codex. Restart your agent after adding the
+configuration; Codex requires the project to be trusted. These files do not
+change global MCP settings. Agents must run on the same machine as Storybook
+to use this localhost endpoint.
+
+Port 6010 is shared by checkouts on the same machine. Start Storybook from the
+checkout you are editing before connecting an agent. The command fails if that
+port is occupied; verify which checkout owns the running server before reusing
+it. To run multiple checkouts simultaneously, give each server a different port
+and update both MCP configuration URLs in that checkout to match.
+
+Claude Code asks you to approve the project MCP server on first use. Codex
+loads its project configuration in a new session.
+
+The existing plugin-local Storybook command still previews Monokai alone.
+Use the root command for the repository catalog and MCP endpoint. Storybook
+previews do not replace live BB checks of host integration and shadow DOM.
+
 ## Test another BB build
 
 Use BB's own launcher from the BB checkout, following its `docs/debugging-and-qa.md`:
