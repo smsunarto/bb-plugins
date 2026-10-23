@@ -1,3 +1,4 @@
+import { screenParameters } from "../../../.storybook/layout";
 import { useEffect, useState } from "react";
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { loadPluginApp, mountPluginContentScripts } from "@get-bb/plugin-sdk/testing/app";
@@ -51,9 +52,11 @@ function LinkHints() {
     </section>
   );
 }
-const meta = { title: "Screens/Vimium/Link hints", component: LinkHints } satisfies Meta<
-  typeof LinkHints
->;
+const meta = {
+  parameters: screenParameters,
+  title: "Screens/Vimium/Link hints",
+  component: LinkHints,
+} satisfies Meta<typeof LinkHints>;
 export default meta;
 type Story = StoryObj<typeof meta>;
 export const KeyboardNavigation: Story = {};

@@ -1,3 +1,4 @@
+import { screenParameters } from "../../../.storybook/layout";
 import { shows } from "../../../.storybook/ready";
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { RegisteredSurface } from "../../../.storybook/host";
@@ -24,7 +25,10 @@ const meta = {
   title: "Screens/Reminders/Saved reminders",
   component: RegisteredSurface,
   args: { source, select: nav },
-  parameters: { host: { pluginId: "remind-me", rpc: { list: () => ({ reminders }) } } },
+  parameters: {
+    ...screenParameters,
+    host: { pluginId: "remind-me", rpc: { list: () => ({ reminders }) } },
+  },
 } satisfies Meta<typeof RegisteredSurface>;
 export default meta;
 type Story = StoryObj<typeof meta>;

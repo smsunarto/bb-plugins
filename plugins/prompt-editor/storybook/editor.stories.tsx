@@ -1,3 +1,4 @@
+import { screenParameters } from "../../../.storybook/layout";
 import { ready, shows } from "../../../.storybook/ready";
 import { clearDraftsForTest } from "../src/app/app";
 import { expect, within } from "storybook/test";
@@ -42,7 +43,7 @@ const meta = {
   title: "Screens/Prompt Editor/Tools and files",
   component: RegisteredSurface,
   args: { source, select: (app) => nav(app, "", "plugins") },
-  parameters: { host: { pluginId: "prompt-editor", rpc } },
+  parameters: { ...screenParameters, host: { pluginId: "prompt-editor", rpc } },
 } satisfies Meta<typeof RegisteredSurface>;
 export default meta;
 type Story = StoryObj<typeof meta>;

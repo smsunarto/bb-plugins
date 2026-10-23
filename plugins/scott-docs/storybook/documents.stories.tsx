@@ -1,3 +1,4 @@
+import { screenParameters } from "../../../.storybook/layout";
 import { ready, shows } from "../../../.storybook/ready";
 import { clearNotebookStores } from "../app";
 import { expect, waitFor } from "storybook/test";
@@ -39,7 +40,10 @@ const meta = {
   title: "Screens/Docs/Document browser",
   component: RegisteredSurface,
   args: { source, select: (app) => nav(app, "personal", "navigation") },
-  parameters: { host: { pluginId: "scott-docs", rpc: { listNotes: () => listing } } },
+  parameters: {
+    ...screenParameters,
+    host: { pluginId: "scott-docs", rpc: { listNotes: () => listing } },
+  },
 } satisfies Meta<typeof RegisteredSurface>;
 export default meta;
 type Story = StoryObj<typeof meta>;

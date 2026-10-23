@@ -1,3 +1,4 @@
+import { screenParameters } from "../../../.storybook/layout";
 import { ready } from "../../../.storybook/ready";
 import { within } from "storybook/test";
 import type { Meta, StoryObj } from "@storybook/react-vite";
@@ -44,6 +45,7 @@ const meta = {
   title: "Screens/Agentation/Annotations",
   component: AnnotationPanel,
   parameters: {
+    ...screenParameters,
     host: {
       pluginId: "agentation",
       rpc: {

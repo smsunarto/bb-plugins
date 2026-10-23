@@ -1,3 +1,4 @@
+import { screenParameters } from "../../../.storybook/layout";
 import { useState, type ComponentProps } from "react";
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { expect, fn, userEvent, waitFor, within } from "storybook/test";
@@ -82,6 +83,7 @@ const meta = {
     onUpload: fn(),
   },
   parameters: {
+    ...screenParameters,
     host: { pluginId: "game-studio", rpc: { briefTemplates: () => ({ templates: [] }) } },
   },
   play: async ({ canvasElement }) => {

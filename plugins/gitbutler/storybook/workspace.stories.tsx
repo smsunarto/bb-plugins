@@ -1,3 +1,4 @@
+import { isolatedParameters } from "../../../.storybook/layout";
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { fn } from "storybook/test";
 import { shows } from "../../../.storybook/ready";
@@ -51,7 +52,7 @@ const meta = {
   title: "Components/GitButler/Workspace",
   component: StackLane,
   args: { target, stack, behind: 0, onOpenFile: fn() },
-  parameters: { host: { pluginId: "gitbutler", rpc } },
+  parameters: { ...isolatedParameters, host: { pluginId: "gitbutler", rpc } },
   play: shows(branch.name),
 } satisfies Meta<typeof StackLane>;
 export default meta;

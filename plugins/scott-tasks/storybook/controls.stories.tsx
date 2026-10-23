@@ -1,3 +1,4 @@
+import { isolatedParameters } from "../../../.storybook/layout";
 import { useState } from "react";
 import { ready } from "../../../.storybook/ready";
 import type { Meta, StoryObj } from "@storybook/react-vite";
@@ -79,6 +80,7 @@ export const Checkbox: Story = {
   },
 };
 export const ConfirmDelete: Story = {
+  parameters: isolatedParameters,
   render: () => (
     <ConfirmDialog
       open
@@ -91,6 +93,7 @@ export const ConfirmDelete: Story = {
   ),
 };
 export const ConfirmBusy: Story = {
+  parameters: isolatedParameters,
   render: () => (
     <ConfirmDialog
       open

@@ -1,3 +1,4 @@
+import { isolatedParameters } from "../../../.storybook/layout";
 import { shows } from "../../../.storybook/ready";
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { RegisteredSurface } from "../../../.storybook/host";
@@ -9,6 +10,7 @@ const meta = {
   component: RegisteredSurface,
   args: { source, select: (app) => banner(app, "cloud-session") },
   parameters: {
+    ...isolatedParameters,
     host: {
       pluginId: "devin",
       context: { threadId: "thr_story" },

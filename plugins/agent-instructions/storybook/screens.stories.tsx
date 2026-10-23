@@ -1,3 +1,4 @@
+import { screenParameters } from "../../../.storybook/layout";
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { within } from "storybook/test";
 import { ready } from "../../../.storybook/ready";
@@ -13,6 +14,7 @@ const targets = {
   projects: [{ id: "proj_story", name: "bb-plugins" }],
 };
 const meta = {
+  parameters: screenParameters,
   title: "Screens/Agent Instructions/Rules editor",
   component: RegisteredSurface,
   args: { source, select: settings },

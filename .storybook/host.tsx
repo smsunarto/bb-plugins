@@ -8,6 +8,7 @@ import {
   type RenderSlotOptions,
 } from "@get-bb/plugin-sdk/testing/app";
 import { PluginQueryBoundary, pluginQueryClient } from "@bb-kit/core/rpc/query";
+import { QueryClient } from "@tanstack/react-query";
 
 import { monokaiCodeTheme } from "./monokai";
 
@@ -35,13 +36,15 @@ class FixtureBoundary extends Component<
 function FixtureContent({
   children,
   onError,
+  queryClient,
 }: {
   children: ReactNode;
   onError: (error: Error) => void;
+  queryClient: QueryClient;
 }) {
   return (
     <FixtureBoundary onError={onError}>
-      <PluginQueryBoundary>{children}</PluginQueryBoundary>
+      <PluginQueryBoundary client={queryClient}>{children}</PluginQueryBoundary>
     </FixtureBoundary>
   );
 }
@@ -77,11 +80,18 @@ export function HostFixture({
   children,
   storyId,
   options = DEFAULT_OPTIONS,
+  sharedQueryClient = false,
 }: {
   children: ReactNode;
   storyId: string;
   options?: RenderSlotOptions;
+  sharedQueryClient?: boolean;
 }) {
+  const [queryClient] = useState(() =>
+    sharedQueryClient
+      ? pluginQueryClient
+      : new QueryClient({ defaultOptions: { queries: { retry: false } } }),
+  );
   const host = useRef<HTMLDivElement>(null);
   const content = useRef(children);
   useLayoutEffect(() => {
@@ -95,11 +105,13 @@ export function HostFixture({
     let slot: ReturnType<typeof renderSlot> | undefined;
     queueMicrotask(() => {
       if (!active || !host.current) return;
-      pluginQueryClient.clear();
+      if (sharedQueryClient) {
+        queryClient.clear();
+      }
       try {
         slot = renderSlot(
           { component: FixtureContent },
-          { children: content.current, onError: setError },
+          { children: content.current, onError: setError, queryClient },
           {
             pluginId: "storybook",
             ...options,
@@ -122,14 +134,25 @@ export function HostFixture({
       queueMicrotask(() => {
         mounted?.lifecycle.unmount();
         mounted?.container.remove();
+        queryClient.clear();
       });
     };
-  }, [storyId, options]);
+  }, [storyId, options, queryClient, sharedQueryClient]);
   useEffect(() => {
-    mountedSlot.current?.lifecycle.rerender(
-      <FixtureContent onError={setError}>{children}</FixtureContent>,
-    );
-  }, [children]);
+    let active = true;
+    // renderSlot's rerender uses act(), which must run after React's commit.
+    queueMicrotask(() => {
+      if (!active) return;
+      mountedSlot.current?.lifecycle.rerender(
+        <FixtureContent onError={setError} queryClient={queryClient}>
+          {children}
+        </FixtureContent>,
+      );
+    });
+    return () => {
+      active = false;
+    };
+  }, [children, queryClient]);
   if (error) throw error;
   return <div ref={host} data-storybook-host="" />;
 }

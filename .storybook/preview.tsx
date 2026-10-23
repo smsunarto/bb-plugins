@@ -32,8 +32,19 @@ const preview: Preview = {
     (Story, context) => {
       const scope = previewSurfaceClass(context.title);
       return (
-        <main className="dark sb-workspace" data-width={context.globals.width}>
-          <HostFixture storyId={context.id} options={context.parameters.host}>
+        <main
+          className="dark sb-workspace"
+          data-width={context.globals.width}
+          data-layout={context.parameters.previewLayout}
+        >
+          <HostFixture
+            key={context.id}
+            storyId={context.id}
+            options={context.parameters.host}
+            sharedQueryClient={
+              context.viewMode !== "docs" || context.parameters.docs?.story?.inline === false
+            }
+          >
             {scope ? (
               <div className={`sb-surface ${scope}`}>
                 <Story />
@@ -56,7 +67,7 @@ const preview: Preview = {
     },
     docs: {
       theme: monokaiStorybookTheme(),
-      story: { inline: false, height: "320px" },
+      story: { inline: true },
       description: {
         component:
           "Production components and complete screens with deterministic local fixtures. BB SDK controls use the official test runtime; no live backend is connected.",

@@ -1,3 +1,4 @@
+import { isolatedParameters } from "../../../.storybook/layout";
 import { ready } from "../../../.storybook/ready";
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { fn } from "storybook/test";
@@ -21,7 +22,10 @@ const meta = {
     onChange: fn(),
     onSave: fn(),
   },
-  parameters: { host: { pluginId: "dotfiles", rpc: { hosts: () => hosts } } },
+  parameters: {
+    ...isolatedParameters,
+    host: { pluginId: "dotfiles", rpc: { hosts: () => hosts } },
+  },
 } satisfies Meta<typeof WorkingFileEditor>;
 export default meta;
 type Story = StoryObj<typeof meta>;

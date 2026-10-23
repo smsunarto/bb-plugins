@@ -14,7 +14,6 @@ body {
 .sb-workspace {
   margin-inline: auto;
   padding: 24px;
-  min-height: 100vh;
   font-family: var(--font-sans);
 }
 .sb-workspace[data-width="narrow"] {
@@ -28,8 +27,14 @@ body {
 }
 .sb-workspace > [data-storybook-host],
 .sb-workspace > [data-storybook-host] > div {
-  height: calc(100vh - 48px);
   min-width: 0;
+}
+.sb-workspace[data-layout="screen"] {
+  min-height: 100vh;
+}
+.sb-workspace[data-layout="screen"] > [data-storybook-host],
+.sb-workspace[data-layout="screen"] > [data-storybook-host] > div {
+  height: calc(100vh - 48px);
 }
 .sb-gallery {
   display: flex;

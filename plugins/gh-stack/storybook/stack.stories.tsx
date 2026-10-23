@@ -1,3 +1,4 @@
+import { screenParameters } from "../../../.storybook/layout";
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { RegisteredSurface } from "../../../.storybook/host";
 import { shows } from "../../../.storybook/ready";
@@ -65,7 +66,10 @@ const meta = {
       return <Panel threadId="thr_story" params={null} />;
     },
   },
-  parameters: { host: { pluginId: "gh-stack", rpc: { getStack: () => result } } },
+  parameters: {
+    ...screenParameters,
+    host: { pluginId: "gh-stack", rpc: { getStack: () => result } },
+  },
   play: shows("Document plugin components"),
 } satisfies Meta<typeof RegisteredSurface>;
 export default meta;

@@ -1,8 +1,10 @@
+import { isolatedParameters } from "../../../.storybook/layout";
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { fn } from "storybook/test";
 import { ready } from "../../../.storybook/ready";
 import { FindingCard } from "../src/app/finding";
 const meta = {
+  parameters: isolatedParameters,
   title: "Components/Code Review/Findings",
   component: FindingCard,
   tags: ["autodocs"],

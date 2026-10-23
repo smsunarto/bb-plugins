@@ -1,4 +1,3 @@
-import { screenParameters } from "../../../.storybook/layout";
 import { useState, type ComponentProps } from "react";
 import { ready } from "../../../.storybook/ready";
 import type { Meta, StoryObj } from "@storybook/react-vite";
@@ -43,7 +42,6 @@ function InteractiveTweaks(args: ComponentProps<typeof TweakPanel>) {
   );
 }
 const meta = {
-  parameters: screenParameters,
   render: (args) => <InteractiveTweaks {...args} />,
   play: ready,
   title: "Components/Inline Visualizations/Tweak panel",

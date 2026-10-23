@@ -13,7 +13,7 @@ const meta = {
   title: "Screens/Dotfiles/Repository",
   component: DotfilesPage,
   args: { subPath: "" },
-  parameters: { host: { pluginId: "dotfiles" } },
+  parameters: { ...screenParameters, host: { pluginId: "dotfiles" } },
 } satisfies Meta<typeof DotfilesPage>;
 export default meta;
 type Story = StoryObj<typeof meta>;
@@ -21,7 +21,6 @@ export const Offline: Story = {
   play: shows("Workstation is not connected."),
   render: () => <DotfilesPage subPath="" />,
   parameters: {
-    ...screenParameters,
     host: {
       rpc: {
         hosts: () => hosts,

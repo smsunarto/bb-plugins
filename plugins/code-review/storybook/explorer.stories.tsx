@@ -5,6 +5,14 @@ import { FileExplorer } from "../src/app/file-explorer";
 const meta = {
   title: "Components/Code Review/File explorer",
   component: FileExplorer,
+  // The virtualized tree needs a viewport; the surrounding preview stays content-sized.
+  decorators: [
+    (Story) => (
+      <div className="flex h-64 flex-col">
+        <Story />
+      </div>
+    ),
+  ],
   tags: ["autodocs"],
   play: ready,
   args: {

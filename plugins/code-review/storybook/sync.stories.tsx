@@ -1,3 +1,4 @@
+import { isolatedParameters } from "../../../.storybook/layout";
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { fn } from "storybook/test";
 import { ready } from "../../../.storybook/ready";
@@ -10,6 +11,7 @@ const query = {
   refetch: fn(),
 };
 const meta = {
+  parameters: isolatedParameters,
   title: "Components/Code Review/Refresh status",
   component: SyncState,
   tags: ["autodocs"],

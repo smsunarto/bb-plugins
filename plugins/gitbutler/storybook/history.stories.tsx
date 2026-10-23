@@ -1,3 +1,4 @@
+import { screenParameters } from "../../../.storybook/layout";
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { shows } from "../../../.storybook/ready";
 import { OperationHistory } from "../src/app/history-screen";
@@ -8,6 +9,7 @@ const meta = {
   component: OperationHistory,
   args: { target },
   parameters: {
+    ...screenParameters,
     host: {
       pluginId: "gitbutler",
       rpc: {

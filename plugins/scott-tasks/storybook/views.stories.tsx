@@ -1,3 +1,4 @@
+import { screenParameters } from "../../../.storybook/layout";
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { expect, waitFor, within } from "storybook/test";
 import type { RenderSlotOptions } from "@get-bb/plugin-sdk/testing/app";
@@ -147,7 +148,7 @@ const meta = {
   component: TasksView,
   tags: ["autodocs"],
   args: { view: "list" },
-  parameters: { host: fixture() },
+  parameters: { ...screenParameters, host: fixture() },
   beforeEach: () => {
     currentTasks = structuredClone(tasks);
     resetQuerySnapshotStateForTest();
