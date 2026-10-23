@@ -652,7 +652,7 @@ test("a reservation protects a launching Editor until its owner claims it", asyn
   expect((await service.releaseReservation("host", "/elsewhere", "carol")).released).toBe(false);
   service.dispose();
 });
-test("handoff requests reach the owner once a minute and conflicts explain the owner's state", async () => {
+test("handoff requests reach the blocking owner once a minute and conflicts explain its state", async () => {
   const sent: [string, string][] = [];
   const { db, transport } = setup();
   const service = new UnityEditors(new EditorClaims(db), transport, async () => false, {
@@ -662,32 +662,185 @@ test("handoff requests reach the owner once a minute and conflicts explain the o
     },
   });
   const alice = await service.claim("host", "main", "alice", "authoring");
-  await expect(service.request("host", "main", "alice", "authoring", "mine")).rejects.toThrow(
-    "already owns",
+  await expect(
+    service.request("host", { instanceId: "main" }, "alice", "authoring", "mine"),
+  ).rejects.toThrow("Nothing blocks");
+  // Alice's main authoring claim also blocks a runtime claim on the clone, so the request goes to her.
+  const result = await service.request(
+    "host",
+    { instanceId: "client" },
+    "bob",
+    "runtime",
+    "bake lighting",
   );
-  await expect(service.request("host", "client", "bob", "runtime", "look")).rejects.toThrow(
-    "No thread owns",
-  );
-  const result = await service.request("host", "main", "bob", "authoring", "bake lighting");
   expect([result.owner, result.ownerStatus?.status, result.requested]).toEqual([
     "alice",
     "idle",
     true,
   ]);
-  expect(result.claim).not.toHaveProperty("claimId");
+  expect(result.holder).not.toHaveProperty("claimId");
   expect(sent).toHaveLength(1);
   expect(sent[0]?.[0]).toBe("alice");
-  for (const part of ["@thread:bob", alice.claimId, "/game", "bake lighting", "bb thread tell bob"])
+  for (const part of [
+    "@thread:bob",
+    alice.claimId,
+    "/game/Library/VP/client",
+    "bake lighting",
+    "bb thread tell bob",
+  ])
     expect(sent[0]?.[1]).toContain(part);
-  await expect(service.request("host", "main", "bob", "authoring", "again")).rejects.toThrow(
-    "went to @thread:alice",
-  );
+  // One request per owner per minute, whoever asks.
+  await expect(
+    service.request("host", { instanceId: "main" }, "carol", "authoring", "again"),
+  ).rejects.toThrow("went to @thread:alice");
   await expect(service.claim("host", "main", "bob", "runtime")).rejects.toThrow(
     /^Editor is owned by @thread:alice\. The owner thread has been idle for 2 min; the claim is about to release\. Options: action "wait"/,
   );
+  // A reservation's holder is asked by workspace path.
+  await service.reserve("host", "/game-wt9", "dave", "authoring");
+  await expect(service.reserve("host", "/game-wt9", "erin", "runtime")).rejects.toThrow(
+    /reserved by @thread:dave.*the reservation is about to release\. Options: action "request" with this workspacePath/s,
+  );
+  const byPath = await service.request(
+    "host",
+    { workspacePath: "/game-wt9" },
+    "erin",
+    "runtime",
+    "need the worktree",
+  );
+  expect([byPath.owner, sent.length]).toEqual(["dave", 2]);
+  expect(sent[1]?.[1]).toContain("release --workspace /game-wt9");
   expect(service.instanceFor("host", alice.claimId, "alice")).toBe("main");
   expect(() => service.instanceFor("host", alice.claimId, "bob")).toThrow(
     "owned by this BB thread",
   );
+  service.dispose();
+});
+test("turn-end release never hands over a playing Editor or unsaved scenes", async () => {
+  const native = { quiet: true, playing: true } as {
+    quiet: boolean;
+    playing?: boolean;
+    dirty?: boolean;
+  };
+  const { db, transport } = setup();
+  const service = new UnityEditors(
+    new EditorClaims(db),
+    { ...transport, quiet: async () => native },
+    async () => false,
+    { ownerStatus: async () => ({ status: "idle", updatedAt: Date.now() }) },
+  );
+  const claim = await service.claim("host", "main", "alice", "authoring");
+  await service.ownerIdle("alice");
+  let kept = service.claims.get("host", "main");
+  expect([kept?.autoRelease, kept?.autoReleaseBlock]).toEqual(["pending", "playing"]);
+  await expect(service.claim("host", "main", "bob", "authoring")).rejects.toThrow(
+    "blocked by playing",
+  );
+  native.playing = false;
+  native.dirty = true;
+  await service.sweepAutoReleases();
+  kept = service.claims.get("host", "main");
+  expect([kept?.claimId, kept?.autoReleaseBlock]).toEqual([claim.claimId, "unsaved scenes"]);
+  native.dirty = false;
+  await service.sweepAutoReleases();
+  expect(service.claims.get("host", "main")).toBeNull();
+  service.dispose();
+});
+test("a resumed or unreachable owner keeps its claim through an in-flight release", async () => {
+  const gate = { resolve: () => {} };
+  const owner = { status: "idle" as string, fail: false };
+  const { db, transport } = setup();
+  const service = new UnityEditors(
+    new EditorClaims(db),
+    {
+      ...transport,
+      quiet: () =>
+        new Promise((resolve) => {
+          gate.resolve = () => resolve({ quiet: true });
+        }),
+    },
+    async () => false,
+    {
+      ownerStatus: async () => {
+        if (owner.fail) throw new Error("bb unreachable");
+        return { status: owner.status, updatedAt: Date.now() };
+      },
+    },
+  );
+  const claim = await service.claim("host", "main", "alice", "runtime");
+  // The owner starts a turn while the quiet probe is still running.
+  const releasing = service.ownerIdle("alice");
+  await new Promise((resolve) => setTimeout(resolve, 10));
+  service.ownerActive("alice");
+  gate.resolve();
+  await releasing;
+  expect(service.claims.get("host", "main")?.claimId).toBe(claim.claimId);
+  // BB cannot be reached: ownership is retained and the attempt stays pending.
+  owner.fail = true;
+  const retry = service.ownerIdle("alice");
+  await new Promise((resolve) => setTimeout(resolve, 10));
+  gate.resolve();
+  await retry;
+  const kept = service.claims.get("host", "main");
+  expect([kept?.claimId, kept?.autoRelease, kept?.autoReleaseBlock]).toEqual([
+    claim.claimId,
+    "pending",
+    "owner thread status unknown",
+  ]);
+  service.dispose();
+});
+test("gone owners lose every reservation, and orphaned reservations are recoverable", async () => {
+  const orphans = new Set<string>();
+  const { db, transport } = setup({
+    discover: async () => ({ instances: [main, client, worktree], warnings: [] }),
+  });
+  const service = new UnityEditors(new EditorClaims(db), transport, async (owner) =>
+    orphans.has(owner),
+  );
+  await service.reserve("host", "/game-worktree", "alice", "authoring", true);
+  await service.reserve("host", "/game-wt2", "bob", "runtime", true);
+  await expect(service.recoverReservation("host", "/game-wt2", "carol")).rejects.toThrow(
+    "Ask @thread:bob",
+  );
+  orphans.add("bob");
+  expect((await service.recoverReservation("host", "/game-wt2", "carol")).recovered).toBe(true);
+  await service.ownerGone("alice");
+  expect((await service.list("host")).reservations).toEqual([]);
+  // A runtime reservation still protects the main Editor; only MPPM clients may share it.
+  await service.reserve("host", "/game", "dave", "runtime");
+  await expect(service.claim("host", "main", "erin", "runtime")).rejects.toThrow(
+    "reserved by @thread:dave",
+  );
+  const guest = await service.claim("host", "client", "erin", "runtime");
+  expect(guest.ownerThreadId).toBe("erin");
+  service.dispose();
+});
+test("peek reports any Editor's idle state without a claim, and a reload sweeps idle owners", async () => {
+  const statuses = new Map([
+    ["alice", "idle"],
+    ["bob", "active"],
+  ]);
+  const { db, transport } = setup();
+  const hooks = {
+    ownerStatus: async (owner: string) => ({
+      status: statuses.get(owner) ?? "gone",
+      updatedAt: Date.now(),
+    }),
+  };
+  const service = new UnityEditors(new EditorClaims(db), transport, async () => false, hooks);
+  const alice = await service.claim("host", "main", "alice", "runtime");
+  const peeked = await service.peek("host", "main");
+  expect([peeked.background, peeked.claim?.ownerThreadId]).toEqual([{ quiet: true }, "alice"]);
+  expect(peeked.claim).not.toHaveProperty("claimId");
+  await service.claim("host", "client", "bob", "runtime");
+  await service.reserve("host", "/game-wt5", "alice", "runtime");
+  // Simulate the plugin reloading after both turns ended without an idle event.
+  const reloaded = new UnityEditors(new EditorClaims(db), transport, async () => false, hooks);
+  await reloaded.sweepAutoReleases();
+  expect(reloaded.claims.get("host", "main")).toBeNull();
+  expect(reloaded.claims.get("host", "client")?.ownerThreadId).toBe("bob");
+  expect(reloaded.claims.reservations("host")).toEqual([]);
+  expect(alice.claimId).toBeTruthy();
+  reloaded.dispose();
   service.dispose();
 });

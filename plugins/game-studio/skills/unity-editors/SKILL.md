@@ -15,6 +15,8 @@ tool; the calling BB thread is always the owner.
 1. `bb game-studio manage list`. Pick the exact instance by `projectPath`,
    `pid`, `workspacePath`, owner and `clone` flag. Each checkout is listed as a
    slot with its main Editor, MPPM clients, claims and reservations.
+   `peek --instance ID` reports any Editor's idle state (`background.quiet`,
+   `playing`, `dirty`) and public owner without taking a claim.
 2. Claim it: `claim --instance ID --mode runtime` for read-only inspection, or
    `--mode authoring` for Assets/Packages writes, imports, scene edits, Play and
    scenario lifecycle. Keep the returned `claimId`; the response carries
@@ -35,11 +37,13 @@ tool; the calling BB thread is always the owner.
 ## Turn end
 
 Claims and reservations release automatically when the owning thread's turn
-ends, as soon as the Editor is quiet; a busy Editor shows
-`autoRelease: "pending"` until then. Re-claim at the start of each turn. Pass
-`--hold` only for an agreed preview handoff or work that continues next turn,
-and say so in the handoff. A held claim survives idle turns and plugin reloads
-and never expires.
+ends, as soon as the Editor is quiet. An Editor left in Play mode or with
+unsaved scenes is never handed over unattended: the claim stays with
+`autoRelease: "pending"` and `autoReleaseBlock` naming the reason, so stop Play
+and save or discard before your turn ends, or hold the claim on purpose.
+Re-claim at the start of each turn. Pass `--hold` only for an agreed preview
+handoff or work that continues next turn, and say so in the handoff. A held
+claim survives idle turns and plugin reloads and never expires.
 
 ## When the Editor is owned
 
@@ -48,9 +52,12 @@ the claim is held or about to release. Then choose one:
 
 - `wait --instance ID --mode MODE --timeout 300` blocks until the Editor frees
   and claims it; it wakes on every release and fails with the same advice.
-- `request --instance ID --mode MODE --reason "..."` sends the owner a handoff
-  request for its next turn. Wait for its reply or ETA; one request per owner
-  per minute.
+- `request --instance ID --mode MODE --reason "..."` sends whoever blocks you
+  (the instance's owner, the checkout's authoring owner, or a reservation
+  holder) a handoff request. It is delivered now: it steers an active owner or
+  starts its next turn. Wait for the reply or ETA; one request per owner per
+  minute, whoever asks. For a refused reservation use `--workspace PATH`
+  instead of `--instance`.
 - Open your own worktree Editor where the project's guide allows it.
 
 Never bypass, restart or save another thread's Editor. If you receive a handoff
@@ -61,9 +68,12 @@ reply with `bb thread tell REQUESTER --mode steer '...'`.
 
 Reserve the checkout first so the Editor is yours from its first discovery:
 `reserve --workspace /abs/checkout --mode authoring`, then `unity open`, then
-claim the discovered instance; the claim consumes the reservation. One
-reservation exists per checkout. It releases at turn end unless held, and
-`release --workspace PATH` drops it early.
+claim the discovered instance; the claim consumes the reservation, and a
+`--hold` on the reservation carries over to that claim. One reservation exists
+per checkout and keeps every other thread off its main Editor in any mode;
+only MPPM clients can still be claimed. It releases at turn end unless held,
+`release --workspace PATH` drops it early, and `recover --workspace PATH`
+removes one whose owner thread was archived or deleted.
 
 ## Modes and limits
 

@@ -196,11 +196,12 @@ bb game-studio manage release --claim claim_id
 bb game-studio manage wait --instance instance_id --mode authoring --timeout 300
 bb game-studio manage request --instance instance_id --mode authoring --reason "..."
 bb game-studio manage reserve --workspace /abs/checkout --mode authoring
+bb game-studio manage peek --instance instance_id
 ```
 
 Keep the returned claim ID; it also selects the instance for `status` and `release`. Run Editor operations through the Unity CLI, targeting the claim's exact `instance.projectPath`, and verify that the selected PID matches `instance.pid`. Runtime claims authorize read-only calls; authoring claims cover shared writes and scenario lifecycle. `claim` and `status` report native idle state as `background.quiet`; write only while it is true.
 
-Claims and reservations release automatically when the owning thread's turn ends, as soon as the Editor is quiet; a busy Editor shows `autoRelease: "pending"` until then. Pass `--hold` to keep a claim across idle turns for an agreed preview handoff or multi-turn work; held claims never expire. A conflict names the owner thread and its state. `wait` blocks until the instance is claimable and wakes on every release; `request` sends the owner a handoff request on its next turn. `reserve` holds a checkout before `unity open`, so the new Editor is owned from its first discovery; the owner's claim consumes the reservation.
+Claims and reservations release automatically when the owning thread's turn ends, as soon as the Editor is quiet; a busy Editor, one in Play mode, or one with unsaved scenes shows `autoRelease: "pending"` and `autoReleaseBlock` until then. Pass `--hold` to keep a claim across idle turns for an agreed preview handoff or multi-turn work; held claims never expire. A conflict names the owner thread and its state. `wait` blocks until the instance is claimable and wakes on every release; `request` sends whoever blocks you (by `--instance` or `--workspace`) a handoff request, steering an active owner or starting its next turn, at most once per owner per minute. `reserve` holds a checkout before `unity open`, so the new Editor is owned from its first discovery; the owner's claim consumes the reservation, and `recover --workspace` clears one left by an archived or deleted thread. `peek` reads any Editor's idle state without a claim.
 
 Status also supports pending jobs from before the upgrade, exposing lifecycle information without command results. Release enforces those legacy job fences and native idle checks; it does not track new Unity CLI jobs, so finish or wait for them first.
 

@@ -425,6 +425,23 @@ export async function job(
   };
 }
 
+/** Unsaved scene edits are the owner's to keep or drop; an unattended handoff must not decide. */
+async function dirtyScenes(instance: EditorInstance, signal?: AbortSignal) {
+  let result: unknown;
+  try {
+    result = await inspectStatus(instance, "list_open_scenes", signal);
+  } catch {
+    return false;
+  }
+  const flagged = (value: unknown, depth = 0): boolean => {
+    if (depth > 4 || !value || typeof value !== "object") return false;
+    if (Array.isArray(value)) return value.some((item) => flagged(item, depth + 1));
+    const record = value as Record<string, unknown>;
+    if (record.isDirty === true || record.dirty === true) return true;
+    return Object.values(record).some((item) => flagged(item, depth + 1));
+  };
+  return flagged(result);
+}
 async function inspectStatus(instance: EditorInstance, command: string, signal?: AbortSignal) {
   const response = envelopeSchema.parse(
     await request(instance, "/api/exec", signal, { command, parameters: {}, timeout: 10000 }),
@@ -477,17 +494,20 @@ export async function quiet(instance: EditorInstance, signal?: AbortSignal) {
     ["ready", "playing"].includes(editor.status) &&
     !editor.compiling &&
     !editor.domainReloadInProgress;
-  return idle
-    ? { quiet: true }
-    : {
-        quiet: false,
-        blocking: {
-          source: "editor_status",
-          status: editor.compiling
-            ? "compiling"
-            : editor.domainReloadInProgress
-              ? "reloading"
-              : editor.status.slice(0, 128),
-        },
-      };
+  if (idle) {
+    const playing = editor.status === "playing";
+    const dirty = await dirtyScenes(instance, signal);
+    return { quiet: true, ...(playing ? { playing } : {}), ...(dirty ? { dirty } : {}) };
+  }
+  return {
+    quiet: false,
+    blocking: {
+      source: "editor_status",
+      status: editor.compiling
+        ? "compiling"
+        : editor.domainReloadInProgress
+          ? "reloading"
+          : editor.status.slice(0, 128),
+    },
+  };
 }

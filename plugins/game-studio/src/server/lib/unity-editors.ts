@@ -55,11 +55,14 @@ export interface UnityEditorsHooks {
 export const DISCOVERY_MEMO_MS = 3_000;
 /** A waiting claim re-checks at least this often, besides waking on every release. */
 export const WAIT_POLL_MS = 5_000;
-/** A busy Editor's turn-end release retries at this interval, for up to the give-up window. */
+/** A busy Editor's turn-end release retries with backoff between these bounds, until it is quiet. */
 export const AUTO_RELEASE_RETRY_MS = 15_000;
-export const AUTO_RELEASE_GIVE_UP_MS = 30 * 60_000;
+export const AUTO_RELEASE_RETRY_MAX_MS = 2 * 60_000;
 /** Repeated handoff requests to one owner wait this long between messages. */
 export const REQUEST_INTERVAL_MS = 60_000;
+/** Thread states during which an owner may still be driving its Editor; unknown counts as running. */
+const running = new Set(["active", "starting", "pending", "stopping", "unknown"]);
+type ConflictKind = "claim" | "reserve";
 type Discovery = Awaited<ReturnType<EditorTransport["discover"]>>;
 
 /** A conflict the caller can wait out, request a handoff for, or route around. */
@@ -83,6 +86,8 @@ export class UnityEditors {
   private hooks: UnityEditorsHooks;
   private waiters = new Set<() => void>();
   private autoReleases = new Map<string, ReturnType<typeof setTimeout>>();
+  /** Bumped when an owner starts a turn, so an in-flight release attempt stands down. */
+  private activity = new Map<string, number>();
   private requests = new Map<string, number>();
   constructor(
     claims: EditorClaims,
@@ -160,20 +165,25 @@ export class UnityEditors {
       ),
     };
   }
-  /** A failed BB lookup must not change what a conflict or release decides. */
+  /** Null without a BB lookup; "gone" for a missing thread; "unknown" when the lookup failed. */
   private async ownerStatus(owner: string): Promise<OwnerStatus | null> {
+    if (!this.hooks.ownerStatus) return null;
     try {
-      return (await this.hooks.ownerStatus?.(owner)) ?? null;
+      return (await this.hooks.ownerStatus(owner)) ?? { status: "gone", updatedAt: 0 };
     } catch {
-      return null;
+      return { status: "unknown", updatedAt: 0 };
     }
   }
   /** Turn a store conflict into advice: who holds it, what they are doing, and the ways out. */
-  private async conflict(error: unknown): Promise<never> {
+  private async conflict(error: unknown, kind: ConflictKind = "claim"): Promise<never> {
     if (!(error instanceof ClaimConflictError)) throw error;
     const status = await this.ownerStatus(error.owner);
+    const options =
+      kind === "claim"
+        ? 'Options: action "wait" with the same instanceId and mode blocks until it frees; action "request" with the same instanceId and a reason asks the holder to release; or open your own worktree Editor.'
+        : 'Options: action "request" with this workspacePath and a reason asks the holder to release, then reserve again; or use another checkout.';
     throw new EditorConflictError(
-      `${error.message}.${describeOwner(status, error.holder)} Options: action "wait" with the same instanceId and mode blocks until it frees; action "request" with a reason asks the owner to release; or open your own worktree Editor.`,
+      `${error.message}.${describeOwner(status, error.holder)} ${options}`,
       error.owner,
       status,
     );
@@ -292,8 +302,39 @@ export class UnityEditors {
     try {
       return this.claims.reserve(host, workspacePath, owner, mode, hold);
     } catch (error) {
-      return this.conflict(error);
+      return this.conflict(error, "reserve");
     }
+  }
+  /** Drop a reservation whose owner is this caller or a thread that no longer runs. */
+  async recoverReservation(host: string, path: string, caller?: string, signal?: AbortSignal) {
+    const workspacePath = await this.workspaceFor(host, path, signal);
+    const existing = this.claims.reservationFor(host, workspacePath);
+    if (!existing) return { recovered: false, workspacePath };
+    if (existing.ownerThreadId !== caller && !(await this.ownerIsOrphan(existing.ownerThreadId)))
+      throw new Error(
+        `Ask @thread:${existing.ownerThreadId} to release its reservation; it is still a live thread`,
+      );
+    const removed = this.claims.recoverReservation(host, workspacePath);
+    if (removed) this.notifyWaiters();
+    return { recovered: Boolean(removed), workspacePath };
+  }
+  /** Read-only idle state of any discovered Editor, for deciding before claiming or cloning. */
+  async peek(host: string, id: string, signal?: AbortSignal) {
+    const { instances } = await this.transport.discover(host, signal);
+    const instance = instances.find((i) => i.id === id);
+    if (!instance) throw new Error("Editor is not in current discovery. List instances again.");
+    const claim = this.claims.get(host, id);
+    let visible: Omit<EditorClaim, "claimId"> | null = null;
+    if (claim) {
+      const { claimId: _claimId, ...rest } = claim;
+      visible = rest;
+    }
+    return {
+      instance,
+      background:
+        instance.port === null ? null : await this.transport.quiet(host, instance, signal),
+      claim: visible,
+    };
   }
   async releaseReservation(host: string, path: string, owner: string, signal?: AbortSignal) {
     const workspacePath = await this.workspaceFor(host, path, signal);
@@ -305,24 +346,48 @@ export class UnityEditors {
       return this.conflict(error);
     }
   }
-  /** Ask the owning thread for a handoff; it decides when its work is safe to pause. */
-  async request(host: string, id: string, requester: string, mode: EditorMode, reason: string) {
-    const claim = this.claims.get(host, id);
-    if (!claim) throw new Error("No thread owns this Editor; claim it directly.");
-    if (claim.ownerThreadId === requester) throw new Error("This thread already owns the Editor");
+  /** Ask whoever blocks a claim or reservation for a handoff; they decide when it is safe to pause. */
+  async request(
+    host: string,
+    target: { instanceId?: string; workspacePath?: string },
+    requester: string,
+    mode: EditorMode,
+    reason: string,
+    signal?: AbortSignal,
+  ) {
+    let holder: EditorClaim | EditorReservation | null = null,
+      subject: string;
+    if (target.instanceId) {
+      const { instances } = await this.transport.discover(host, signal);
+      const instance = instances.find((i) => i.id === target.instanceId);
+      if (!instance) throw new Error("Editor is not in current discovery. List instances again.");
+      holder = this.claims.blockerFor(host, instance, requester, mode);
+      subject = `the Unity Editor at ${instance.projectPath} (pid ${instance.pid})`;
+    } else if (target.workspacePath) {
+      const workspacePath = await this.workspaceFor(host, target.workspacePath, signal);
+      holder = this.claims.workspaceBlocker(host, workspacePath, requester, mode);
+      subject = `the checkout ${workspacePath}`;
+    } else throw new Error("request needs the instanceId or workspacePath you were refused");
+    if (!holder) throw new Error("Nothing blocks this thread here; claim or reserve it directly.");
     if (!this.hooks.send)
       throw new Error("Thread messaging is unavailable here; use bb thread tell on the owner");
-    const key = `${host}:${id}:${requester}`;
+    const owner = holder.ownerThreadId;
+    const key = `${host}:${owner}`;
     const last = this.requests.get(key);
     if (last && Date.now() - last < REQUEST_INTERVAL_MS)
       throw new Error(
-        `A handoff request went to @thread:${claim.ownerThreadId} ${Math.round((Date.now() - last) / 1000)} s ago. Wait for its reply or use action "wait".`,
+        `A handoff request went to @thread:${owner} ${Math.round((Date.now() - last) / 1000)} s ago. Wait for its reply or use action "wait".`,
       );
-    const ownerStatus = await this.ownerStatus(claim.ownerThreadId);
-    await this.hooks.send(claim.ownerThreadId, handoffRequest(requester, claim, mode, reason));
     this.requests.set(key, Date.now());
-    const { claimId: _claimId, ...publicClaim } = claim;
-    return { requested: true, owner: claim.ownerThreadId, ownerStatus, claim: publicClaim };
+    const ownerStatus = await this.ownerStatus(owner);
+    try {
+      await this.hooks.send(owner, handoffRequest(requester, holder, subject, mode, reason));
+    } catch (error) {
+      this.requests.delete(key);
+      throw error;
+    }
+    const { claimId: _claimId, ...publicHolder } = holder as EditorClaim;
+    return { requested: true, owner, ownerStatus, holder: publicHolder };
   }
   async status(host: string, id: string, owner: string, claimId: string, signal?: AbortSignal) {
     let claim = this.owned(host, id, owner, claimId);
@@ -430,7 +495,7 @@ export class UnityEditors {
     this.notifyWaiters();
     return { recovered: true, evidence: confirmation?.note };
   }
-  /** The owner's turn ended: drop its reservations and release its unheld claims once quiet. */
+  /** The owner's turn ended: drop its unheld reservations and release its unheld claims once quiet. */
   async ownerIdle(owner: string) {
     let changed = false;
     for (const reservation of this.claims.reservationsBy(owner)) {
@@ -444,25 +509,99 @@ export class UnityEditors {
       this.claims
         .ownedBy(owner)
         .filter((claim) => !claim.hold && !claim.jobId)
-        .map((claim) => this.tryAutoRelease(claim, Date.now())),
+        .map((claim) => this.tryAutoRelease(claim, this.generation(owner))),
     );
+  }
+  /** The owner was deleted or archived: it will never open an Editor, so every reservation goes. */
+  async ownerGone(owner: string) {
+    if (this.claims.releaseReservationsOf(owner)) this.notifyWaiters();
+    await this.ownerIdle(owner);
   }
   /** The owner started a new turn: whatever release was still pending is theirs to decide. */
   ownerActive(owner: string) {
+    this.activity.set(owner, this.generation(owner) + 1);
     for (const claim of this.claims.ownedBy(owner)) {
       this.cancelAutoRelease(claim.hostId, claim.instance.id);
       if (claim.autoRelease)
         this.claims.autoRelease(claim.hostId, claim.instance.id, owner, claim.claimId, false);
     }
   }
-  /** Retry every release that a plugin reload interrupted. */
+  private generation(owner: string) {
+    return this.activity.get(owner) ?? 0;
+  }
+  /** After a reload: resume pending releases, and release what owners that are no longer running left behind. */
   async sweepAutoReleases() {
+    const owners = new Map<string, Promise<boolean>>();
+    const idle = (owner: string) => {
+      let known = owners.get(owner);
+      if (!known) {
+        known = this.ownerStatus(owner).then((status) =>
+          Boolean(status && !running.has(status.status)),
+        );
+        owners.set(owner, known);
+      }
+      return known;
+    };
+    for (const reservation of this.claims.reservations()) {
+      if (reservation.hold || !(await idle(reservation.ownerThreadId))) continue;
+      if (
+        this.claims.releaseReservation(
+          reservation.hostId,
+          reservation.workspacePath,
+          reservation.ownerThreadId,
+        )
+      )
+        this.notifyWaiters();
+    }
+    const claims = [];
+    for (const claim of this.claims.all()) {
+      if (claim.hold || claim.jobId) continue;
+      if (claim.autoRelease === "pending" || (await idle(claim.ownerThreadId))) claims.push(claim);
+    }
     await Promise.all(
-      this.claims
-        .all()
-        .filter((claim) => claim.autoRelease === "pending")
-        .map((claim) => this.tryAutoRelease(claim, Date.now())),
+      claims.map((claim) => this.tryAutoRelease(claim, this.generation(claim.ownerThreadId))),
     );
+  }
+  private async tryAutoRelease(claim: EditorClaim, generation: number, attempt = 0) {
+    const { hostId: host, ownerThreadId: owner, claimId } = claim;
+    const id = claim.instance.id;
+    this.cancelAutoRelease(host, id);
+    const current = this.claims.get(host, id);
+    if (!current || current.claimId !== claimId || current.hold || current.jobId) return;
+    const state = await this.editorState(host, current.instance);
+    // The owner may have started another turn while the Editor was being checked.
+    const status = await this.ownerStatus(owner);
+    const latest = this.claims.get(host, id);
+    if (!latest || latest.claimId !== claimId || latest.hold || latest.jobId) return;
+    if (this.generation(owner) !== generation) return;
+    const block = releaseBlock(state, status);
+    if (block === null) {
+      if (latest.autoRelease) this.claims.autoRelease(host, id, owner, claimId, false);
+      return;
+    }
+    if (block === "") {
+      try {
+        this.claims.release(host, id, owner, claimId);
+      } catch {
+        return;
+      }
+      this.notifyWaiters();
+      return;
+    }
+    if (latest.autoRelease !== "pending" || latest.autoReleaseBlock !== block)
+      this.claims.autoRelease(host, id, owner, claimId, true, block);
+    const delay = Math.min(AUTO_RELEASE_RETRY_MS * 2 ** attempt, AUTO_RELEASE_RETRY_MAX_MS);
+    const timer = setTimeout(() => void this.tryAutoRelease(claim, generation, attempt + 1), delay);
+    timer.unref?.();
+    this.autoReleases.set(this.autoReleaseKey(host, id), timer);
+  }
+  private async editorState(host: string, instance: EditorInstance): Promise<EditorQuietStatus> {
+    if (instance.port === null) return { quiet: true };
+    try {
+      return await this.transport.quiet(host, instance);
+    } catch (error) {
+      return { quiet: false, blocking: { source: "probe", status: message(error) } };
+    }
   }
   private autoReleaseKey(host: string, id: string) {
     return `${host}:${id}`;
@@ -473,46 +612,6 @@ export class UnityEditors {
     if (timer) clearTimeout(timer);
     this.autoReleases.delete(key);
   }
-  private async tryAutoRelease(claim: EditorClaim, startedAt: number) {
-    const { hostId: host, ownerThreadId: owner, claimId } = claim;
-    const id = claim.instance.id;
-    this.cancelAutoRelease(host, id);
-    const current = this.claims.get(host, id);
-    if (!current || current.claimId !== claimId || current.hold || current.jobId) return;
-    let quiet = true;
-    if (current.instance.port !== null) {
-      try {
-        quiet = (await this.transport.quiet(host, current.instance)).quiet;
-      } catch {
-        quiet = false;
-      }
-    }
-    // The owner may have started another turn while the Editor was being checked.
-    const status = await this.ownerStatus(owner);
-    const latest = this.claims.get(host, id);
-    if (!latest || latest.claimId !== claimId || latest.hold || latest.jobId) return;
-    if (status && ["active", "starting"].includes(status.status)) {
-      if (latest.autoRelease) this.claims.autoRelease(host, id, owner, claimId, false);
-      return;
-    }
-    if (quiet) {
-      try {
-        this.claims.release(host, id, owner, claimId);
-      } catch {
-        return;
-      }
-      this.notifyWaiters();
-      return;
-    }
-    if (!latest.autoRelease) this.claims.autoRelease(host, id, owner, claimId, true);
-    if (Date.now() - startedAt >= AUTO_RELEASE_GIVE_UP_MS) return;
-    const timer = setTimeout(
-      () => void this.tryAutoRelease(claim, startedAt),
-      AUTO_RELEASE_RETRY_MS,
-    );
-    timer.unref?.();
-    this.autoReleases.set(this.autoReleaseKey(host, id), timer);
-  }
   dispose() {
     for (const timer of this.autoReleases.values()) clearTimeout(timer);
     this.autoReleases.clear();
@@ -521,22 +620,49 @@ export class UnityEditors {
 }
 function describeOwner(status: OwnerStatus | null, holder: EditorClaim | EditorReservation) {
   if (!status) return "";
-  if (status.status !== "idle") return ` The owner thread is ${status.status}.`;
+  if (status.status === "gone") return " The owner thread no longer exists; recover it.";
+  if (status.status !== "idle" && status.status !== "error")
+    return ` The owner thread is ${status.status}.`;
   const minutes = Math.max(0, Math.round((Date.now() - status.updatedAt) / 60_000));
   const why =
     "hold" in holder && holder.hold
       ? "held deliberately across its turns"
       : "autoRelease" in holder && holder.autoRelease
-        ? "releasing as soon as its Editor is quiet"
+        ? `releasing once its Editor allows it (blocked by ${holder.autoReleaseBlock ?? "background work"})`
         : "about to release";
-  return ` The owner thread has been idle for ${minutes} min; the claim is ${why}.`;
+  return ` The owner thread has been ${status.status} for ${minutes} min; the ${"claimId" in holder ? "claim" : "reservation"} is ${why}.`;
 }
-function handoffRequest(requester: string, claim: EditorClaim, mode: EditorMode, reason: string) {
-  const instance = claim.instance;
+/** Null when the owner is running again, "" when the Editor can be released, else why not. */
+function releaseBlock(state: EditorQuietStatus, status: OwnerStatus | null): string | null {
+  if (status?.status === "unknown") return "owner thread status unknown";
+  if (status && running.has(status.status)) return null;
+  if (state.playing) return "playing";
+  if (state.dirty) return "unsaved scenes";
+  if (state.quiet) return "";
+  return `${state.blocking?.source ?? "editor"}: ${state.blocking?.status ?? "busy"}`;
+}
+function message(error: unknown) {
+  return error instanceof Error ? error.message.slice(0, 120) : String(error).slice(0, 120);
+}
+function handoffRequest(
+  requester: string,
+  holder: EditorClaim | EditorReservation,
+  subject: string,
+  mode: EditorMode,
+  reason: string,
+) {
+  const release =
+    "claimId" in holder
+      ? `release with game_studio_manage action "release" and claimId ${holder.claimId} (CLI: bb game-studio manage release --claim ${holder.claimId})`
+      : `release the reservation with game_studio_manage action "release" and workspacePath ${holder.workspacePath} (CLI: bb game-studio manage release --workspace ${holder.workspacePath})`;
+  const held =
+    "claimId" in holder
+      ? `which you own in ${holder.mode} mode since ${holder.claimedAt}`
+      : `which you reserved in ${holder.mode} mode at ${holder.reservedAt}`;
   return [
-    `[Editor handoff request] @thread:${requester} needs a ${mode} claim on the Unity Editor at ${instance.projectPath} (pid ${instance.pid}), which you own in ${claim.mode} mode since ${claim.claimedAt}.`,
+    `[Editor handoff request] @thread:${requester} needs a ${mode} claim on ${subject}, ${held}.`,
     `Reason: ${reason.trim()}`,
-    `When your current step can pause: finish or wait for native work, keep dirty scenes unsaved, then release with game_studio_manage action "release" and claimId ${claim.claimId} (CLI: bb game-studio manage release --instance ${instance.id} --claim ${claim.claimId}).`,
+    `When your current step can pause: finish or wait for native work, keep dirty scenes unsaved, then ${release}.`,
     `If you must keep it, reply with an ETA: bb thread tell ${requester} --mode steer '<when you will release>'. Claims release automatically when your turn ends unless held.`,
   ].join("\n");
 }
@@ -583,11 +709,11 @@ export function createUnityEditors(bb: BbPluginApi, slots?: SlotStore) {
   );
   bb.events.on("thread.deleted", ({ thread }) => {
     service.claims.markOrphan(thread.id);
-    void service.ownerIdle(thread.id);
+    void service.ownerGone(thread.id);
   });
   bb.events.on("thread.archived", ({ thread }) => {
     service.claims.markOrphan(thread.id);
-    void service.ownerIdle(thread.id);
+    void service.ownerGone(thread.id);
   });
   bb.events.on("thread.unarchived", ({ thread }) => service.claims.markOrphan(thread.id, false));
   bb.events.on("thread.idle", ({ thread }) => void service.ownerIdle(thread.id));

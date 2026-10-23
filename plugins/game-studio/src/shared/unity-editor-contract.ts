@@ -31,6 +31,8 @@ export const visibleClaimSchema = z
     hold: z.boolean().optional(),
     /** The owner's turn ended while the Editor was busy; release retries until it is quiet. */
     autoRelease: z.literal("pending").optional(),
+    /** What the last release attempt found: playing, dirty scenes, or a background status. */
+    autoReleaseBlock: z.string().max(128).optional(),
   })
   .strict();
 export type VisibleEditorClaim = z.infer<typeof visibleClaimSchema>;
@@ -86,6 +88,10 @@ export const editorQuietSchema = z
       .object({ source: z.string().max(64), status: z.string().max(128) })
       .strict()
       .optional(),
+    /** Quiet, but in Play mode: fine for inspection, not for an unattended handoff. */
+    playing: z.boolean().optional(),
+    /** Quiet, but an open scene has unsaved edits that only the owner should decide about. */
+    dirty: z.boolean().optional(),
   })
   .strict();
 export type EditorQuietStatus = z.infer<typeof editorQuietSchema>;

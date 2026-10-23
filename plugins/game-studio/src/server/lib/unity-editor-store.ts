@@ -18,6 +18,8 @@ export interface EditorClaim {
   hold?: boolean;
   /** The owner's turn ended while the Editor was busy; release retries until it is quiet. */
   autoRelease?: "pending";
+  /** What the last release attempt found: playing, dirty scenes, or a background status. */
+  autoReleaseBlock?: string;
 }
 export interface ClaimOptions {
   hold?: boolean;
@@ -157,10 +159,11 @@ export class EditorClaims {
             conflict,
           );
         const reservation = this.reservationFor(hostId, instance.workspacePath);
+        // A reservation stands for the main Editor being opened: only MPPM clients may share it.
         if (
           reservation &&
           reservation.ownerThreadId !== ownerThreadId &&
-          excludes(mode, reservation.mode)
+          (!instance.clone || excludes(mode, reservation.mode))
         )
           throw new ClaimConflictError(
             `Workspace is reserved by @thread:${reservation.ownerThreadId}, which is opening its Editor`,
@@ -230,17 +233,57 @@ export class EditorClaims {
       })
       .immediate();
   }
-  /** Record whether a busy Editor's claim is still waiting to release itself. */
-  autoRelease(hostId: string, id: string, owner: string, claimId: string, pending: boolean) {
+  /** Record whether a busy Editor's claim is still waiting to release itself, and why. */
+  autoRelease(
+    hostId: string,
+    id: string,
+    owner: string,
+    claimId: string,
+    pending: boolean,
+    block?: string,
+  ) {
     return this.db
       .transaction(() => {
         const claim = this.owned(hostId, id, owner, claimId);
-        const { autoRelease: _autoRelease, ...rest } = claim;
-        const updated: EditorClaim = pending ? { ...rest, autoRelease: "pending" } : rest;
+        const { autoRelease: _autoRelease, autoReleaseBlock: _block, ...rest } = claim;
+        const updated: EditorClaim = pending
+          ? { ...rest, autoRelease: "pending", ...(block ? { autoReleaseBlock: block } : {}) }
+          : rest;
         this.save(updated);
         return updated;
       })
       .immediate();
+  }
+  /** Whatever stops `owner` from claiming `instance` in `mode`: an exact claim, a checkout claim, or a reservation. */
+  blockerFor(
+    hostId: string,
+    instance: EditorInstance,
+    owner: string,
+    mode: EditorMode,
+  ): EditorClaim | EditorReservation | null {
+    const current = this.get(hostId, instance.id);
+    if (current && current.ownerThreadId !== owner) return current;
+    const conflict = this.claimConflict(hostId, instance.workspacePath, owner, mode);
+    if (conflict) return conflict;
+    const reservation = this.reservationFor(hostId, instance.workspacePath);
+    if (
+      reservation &&
+      reservation.ownerThreadId !== owner &&
+      (!instance.clone || excludes(mode, reservation.mode))
+    )
+      return reservation;
+    return null;
+  }
+  /** Whatever stops `owner` from reserving `workspacePath` in `mode`. */
+  workspaceBlocker(
+    hostId: string,
+    workspacePath: string,
+    owner: string,
+    mode: EditorMode,
+  ): EditorClaim | EditorReservation | null {
+    const reservation = this.reservationFor(hostId, workspacePath);
+    if (reservation && reservation.ownerThreadId !== owner) return reservation;
+    return this.claimConflict(hostId, workspacePath, owner, mode) ?? null;
   }
   release(hostId: string, id: string, owner: string, claimId: string): void {
     this.db
@@ -345,6 +388,27 @@ export class EditorClaims {
           );
         this.deleteReservation(hostId, workspacePath);
         return true;
+      })
+      .immediate();
+  }
+  /** A deleted or archived owner will never open its Editor; drop its reservations, held or not. */
+  releaseReservationsOf(owner: string): number {
+    return this.db
+      .transaction(() => {
+        const mine = this.reservationsBy(owner);
+        for (const reservation of mine)
+          this.deleteReservation(reservation.hostId, reservation.workspacePath);
+        return mine.length;
+      })
+      .immediate();
+  }
+  /** Remove a reservation whose owner the caller has proven absent. */
+  recoverReservation(hostId: string, workspacePath: string): EditorReservation | null {
+    return this.db
+      .transaction(() => {
+        const existing = this.reservationFor(hostId, workspacePath);
+        if (existing) this.deleteReservation(hostId, workspacePath);
+        return existing;
       })
       .immediate();
   }

@@ -11,6 +11,7 @@ export const editorActionSchema = z
   .object({
     action: z.enum([
       "list",
+      "peek",
       "claim",
       "wait",
       "reserve",
@@ -23,7 +24,7 @@ export const editorActionSchema = z
     hostId: z.string().optional(),
     instanceId: z.string().optional(),
     claimId: z.string().optional(),
-    /** The checkout a thread is about to open (reserve) or stop opening (release). */
+    /** A checkout path: reserve it, release/recover its reservation, or request its holder. */
     workspacePath: z.string().optional(),
     note: z.string().optional(),
     /** Why the Editor is needed; sent to its owner by `request`. */
@@ -46,11 +47,13 @@ export async function editorAction(
   const host = await editorHost(ctx.bb, threadId, input.hostId),
     service = ctx.unityEditors;
   if (input.action === "list") return service.list(host, signal, threadId);
-  const reservationRelease =
-    input.action === "release" && input.workspacePath && !input.instanceId && !input.claimId;
-  if (input.action === "reserve" || reservationRelease)
+  const byWorkspace = Boolean(input.workspacePath && !input.instanceId && !input.claimId);
+  if (input.action === "recover" && byWorkspace)
+    return service.recoverReservation(host, input.workspacePath!, threadId, signal);
+  if (input.action === "reserve" || (byWorkspace && ["release", "request"].includes(input.action)))
     return reservationAction(service, host, input, owner(threadId), signal);
   const instanceId = resolveInstance(service, host, input, threadId);
+  if (input.action === "peek") return service.peek(host, instanceId, signal);
   if (input.action === "recover")
     return service.recover(
       host,
@@ -88,7 +91,21 @@ async function reservationAction(
     throw new Error("workspacePath is required: the checkout whose Editor you are about to open");
   if (input.action === "reserve")
     return service.reserve(host, input.workspacePath, threadId, input.mode, input.hold, signal);
+  if (input.action === "request")
+    return service.request(
+      host,
+      { workspacePath: input.workspacePath },
+      threadId,
+      input.mode,
+      requestReason(input.reason),
+      signal,
+    );
   return service.releaseReservation(host, input.workspacePath, threadId, signal);
+}
+function requestReason(reason?: string) {
+  if (!reason?.trim())
+    throw new Error("reason is required: tell the holder what you need the Editor for");
+  return reason;
 }
 async function ownedAction(
   service: UnityEditors,
@@ -114,11 +131,15 @@ async function ownedAction(
           );
     return { ...claim, background: await service.quietFor(host, claim, signal) };
   }
-  if (input.action === "request") {
-    if (!input.reason?.trim())
-      throw new Error("reason is required: tell the owner what you need the Editor for");
-    return service.request(host, instanceId, threadId, input.mode, input.reason);
-  }
+  if (input.action === "request")
+    return service.request(
+      host,
+      { instanceId },
+      threadId,
+      input.mode,
+      requestReason(input.reason),
+      signal,
+    );
   if (!input.claimId) throw new Error("claimId is required. Claim the Editor first.");
   if (input.action === "status")
     return service.status(host, instanceId, threadId, input.claimId, signal);

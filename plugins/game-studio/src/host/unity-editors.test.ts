@@ -344,3 +344,26 @@ test("startup instances cannot inspect Pipeline jobs even if a ready descriptor 
   );
   expect(f.requests).toEqual([]);
 });
+
+test("a quiet Editor still reports Play mode and unsaved scenes for unattended handoffs", async () => {
+  let status = "playing",
+    dirty = true;
+  const f = await fixture((path, body) => {
+    if (path === "/api/progress" || path === "/api/dialog") return Response.json({ active: false });
+    if (body.command === "editor_status")
+      return Response.json({
+        success: true,
+        result: { status, compiling: false, domainReloadInProgress: false },
+      });
+    if (body.command === "list_open_scenes")
+      return Response.json({
+        success: true,
+        result: { scenes: [{ path: "Assets/Launch_P.unity", isDirty: dirty, isLoaded: true }] },
+      });
+    return Response.json({ success: true, result: JSON.stringify({ status: "idle" }) });
+  });
+  expect(await quiet(f.instance)).toEqual({ quiet: true, playing: true, dirty: true });
+  status = "ready";
+  dirty = false;
+  expect(await quiet(f.instance)).toEqual({ quiet: true });
+});
