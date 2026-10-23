@@ -1068,78 +1068,134 @@ describe("mountLinkHints", () => {
     controller.abort();
   });
 
-  for (const selection of ["click", "enter", "no-search"] as const) {
-    test(`model selection by ${selection} shows only numbered reasoning hints`, async () => {
-      const controller = newController();
-      const dispose = mountLinkHints(contextWith(controller.signal));
-      document.body.innerHTML =
-        '<div data-app-composer><button id="model" aria-label="Provider, model and reasoning" aria-haspopup="dialog">Model</button></div>';
-      const trigger = document.getElementById("model")!;
-      giveRect(trigger, 10, 10);
-      let picked = "";
-      trigger.addEventListener("click", () => {
-        const dialog = document.createElement("div");
-        dialog.id = "model-popup";
-        dialog.setAttribute("role", "dialog");
-        dialog.innerHTML =
-          "<div><button>Codex</button><button>Claude</button></div>" +
-          '<input id="model-search" aria-label="Search models" aria-activedescendant="model-option">' +
-          '<div class="overflow-y-auto" role="listbox"><button id="model-option" role="option">Sol</button></div>' +
-          '<div role="radiogroup" aria-label="Reasoning"><button role="radio">Low</button>' +
-          '<button role="radio">Medium</button><button role="radio">High</button>' +
-          '<button role="radio">Extra High</button></div>' +
-          '<div role="radiogroup" aria-label="Other"><button role="radio">Unrelated</button></div>';
-        document.body.appendChild(dialog);
-        for (const [index, element] of [...dialog.querySelectorAll("button,input")].entries()) {
-          giveRect(element, 10, 40 + index * 30);
-        }
-        trigger.setAttribute("aria-controls", dialog.id);
-        const search = dialog.querySelector<HTMLInputElement>("input")!;
-        search.focus();
-        search.addEventListener("keydown", (event) => {
-          if (event.key === "Enter") picked = "Sol";
-          if (event.key === "Escape") dialog.remove();
-        });
-        dialog.querySelector("#model-option")!.addEventListener("click", () => {
-          picked = "Sol";
-        });
-        for (const radio of dialog.querySelectorAll<HTMLElement>(
-          '[aria-label="Reasoning"] button',
-        )) {
-          radio.addEventListener("click", () => {
-            picked = radio.textContent ?? "";
+  for (const opening of [
+    "shortcut",
+    "hint",
+    "manual",
+    "native",
+    "reopen",
+    "pending-reopen",
+    "native-reopen",
+    "native-pending-reopen",
+    "dismiss-pending",
+  ] as const) {
+    for (const selection of ["click", "enter", "no-search"] as const) {
+      test(`model selection by ${selection} after ${opening} open scopes reasoning hints to Vimium`, async () => {
+        const controller = newController();
+        const dispose = mountLinkHints(contextWith(controller.signal));
+        document.body.innerHTML =
+          '<div data-app-composer><button id="model" aria-label="Provider, model and reasoning" aria-haspopup="dialog">Model</button><div id="composer" role="textbox" contenteditable="true"></div></div>';
+        const trigger = document.getElementById("model")!;
+        giveRect(trigger, 10, 10);
+        let picked = "";
+        const openPicker = () => {
+          const dialog = document.createElement("div");
+          dialog.id = "model-popup";
+          dialog.setAttribute("role", "dialog");
+          dialog.innerHTML =
+            "<div><button>Codex</button><button>Claude</button></div>" +
+            '<input id="model-search" aria-label="Search models" aria-activedescendant="model-option">' +
+            '<div class="overflow-y-auto" role="listbox"><button id="model-option" role="option">Sol</button></div>' +
+            '<div role="radiogroup" aria-label="Reasoning"><button role="radio">Low</button>' +
+            '<button role="radio">Medium</button><button role="radio">High</button>' +
+            '<button role="radio">Extra High</button></div>' +
+            '<div role="radiogroup" aria-label="Other"><button role="radio">Unrelated</button></div>';
+          document.body.appendChild(dialog);
+          for (const [index, element] of [...dialog.querySelectorAll("button,input")].entries()) {
+            giveRect(element, 10, 40 + index * 30);
+          }
+          trigger.setAttribute("aria-controls", dialog.id);
+          trigger.setAttribute("aria-expanded", "true");
+          const search = dialog.querySelector<HTMLInputElement>("input")!;
+          search.focus();
+          search.addEventListener("keydown", (event) => {
+            if (event.key === "Enter") picked = "Sol";
+            if (event.key === "Escape") dialog.remove();
           });
+          dialog.querySelector("#model-option")!.addEventListener("click", () => {
+            picked = "Sol";
+          });
+          for (const radio of dialog.querySelectorAll<HTMLElement>(
+            '[aria-label="Reasoning"] button',
+          )) {
+            radio.addEventListener("click", () => {
+              picked = radio.textContent ?? "";
+            });
+          }
+        };
+        trigger.addEventListener("click", openPicker);
+        if (
+          opening === "reopen" ||
+          opening === "pending-reopen" ||
+          opening === "native-reopen" ||
+          opening === "native-pending-reopen" ||
+          opening === "dismiss-pending"
+        ) {
+          pressKey("m");
+          if (opening !== "reopen" && opening !== "native-reopen")
+            document.getElementById("model-option")!.click();
+          document.getElementById("model-popup")!.remove();
+          if (opening.startsWith("native-") || opening === "dismiss-pending") {
+            trigger.setAttribute("aria-expanded", "false");
+            trigger.focus();
+            await Promise.resolve();
+          }
         }
+        if (opening === "dismiss-pending") {
+          await eventually(() =>
+            expect(document.activeElement).toBe(document.getElementById("composer")),
+          );
+          expect(markers()).toEqual([]);
+          void dispose();
+          controller.abort();
+          return;
+        }
+        if (opening === "native" || opening.startsWith("native-")) openPicker();
+        else if (opening !== "shortcut" && opening !== "hint") trigger.click();
+        else {
+          if (opening === "hint") pressKey("f");
+          expect(pressKey("m")).toBe(false);
+        }
+        await new Promise((resolve) => setTimeout(resolve, 700));
+        expect(markers()).toEqual([]);
+        const search = document.querySelector<HTMLInputElement>("#model-search")!;
+        expect(document.activeElement).toBe(search);
+        expect(pressKey("f", search)).toBe(true);
+        if (selection === "no-search") {
+          search.remove();
+          document.getElementById("model-option")!.removeAttribute("role");
+        }
+        if (selection !== "enter") document.getElementById("model-option")!.click();
+        else expect(pressKey("Enter", search)).toBe(true);
+        expect(picked).toBe("Sol");
+        if (opening !== "shortcut" && opening !== "hint") {
+          trigger.textContent = "Sol";
+          await new Promise((resolve) => setTimeout(resolve, 700));
+          expect(markers()).toEqual([]);
+          expect(pressKey("2", search)).toBe(true);
+          void dispose();
+          controller.abort();
+          return;
+        }
+        await eventually(() => expect(markers()).toEqual(["1", "2", "3", "4"]));
+        expect(pressKey("2", document.querySelector('[aria-label="Reasoning"] button')!)).toBe(
+          false,
+        );
+        expect(picked).toBe("Medium");
+        await eventually(() => expect(markers()).toEqual(["1", "2", "3", "4"]));
+        // Escape bubbles to the native popup from whichever reasoning control has focus.
+        document.getElementById("model-popup")!.addEventListener("keydown", (event) => {
+          if (event.key === "Escape") document.getElementById("model-popup")?.remove();
+        });
+        expect(pressKey("Escape", document.querySelector('[aria-label="Reasoning"] button')!)).toBe(
+          true,
+        );
+        expect(document.getElementById("model-popup")).toBeNull();
+        expect(markers()).toEqual([]);
+        void dispose();
+        controller.abort();
       });
-      expect(pressKey("m")).toBe(false);
-      await new Promise((resolve) => setTimeout(resolve, 700));
-      expect(markers()).toEqual([]);
-      const search = document.querySelector<HTMLInputElement>("#model-search")!;
-      expect(document.activeElement).toBe(search);
-      expect(pressKey("f", search)).toBe(true);
-      if (selection === "no-search") {
-        search.remove();
-        document.getElementById("model-option")!.removeAttribute("role");
-      }
-      if (selection !== "enter") document.getElementById("model-option")!.click();
-      else expect(pressKey("Enter", search)).toBe(true);
-      expect(picked).toBe("Sol");
-      await eventually(() => expect(markers()).toEqual(["1", "2", "3", "4"]));
-      expect(pressKey("2", document.querySelector('[aria-label="Reasoning"] button')!)).toBe(false);
-      expect(picked).toBe("Medium");
-      await eventually(() => expect(markers()).toEqual(["1", "2", "3", "4"]));
-      // Escape bubbles to the native popup from whichever reasoning control has focus.
-      document.getElementById("model-popup")!.addEventListener("keydown", (event) => {
-        if (event.key === "Escape") document.getElementById("model-popup")?.remove();
-      });
-      expect(pressKey("Escape", document.querySelector('[aria-label="Reasoning"] button')!)).toBe(
-        true,
-      );
-      expect(document.getElementById("model-popup")).toBeNull();
-      expect(markers()).toEqual([]);
-      void dispose();
-      controller.abort();
-    });
+    }
   }
 
   test("a portaled More models selection prompts reasoning and leaves navigation keys native", async () => {
@@ -1170,8 +1226,7 @@ describe("mountLinkHints", () => {
       });
     };
     trigger.addEventListener("click", openPicker);
-    // BB's native model toggle sets open state without clicking the trigger.
-    openPicker();
+    pressKey("m");
     document.getElementById("extra-model")!.click();
     await eventually(() => expect(markers()).toEqual(["1", "2"]));
     for (const key of ["ArrowDown", "ArrowLeft", "Tab", "Backspace", "Enter"]) {

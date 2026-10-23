@@ -574,6 +574,7 @@ export function mountLinkHints(context: PluginContentScriptContext): PluginConte
   let container: HTMLElement | null = null;
   let popupWatch: number | null = null;
   let modelSelectionObserver: MutationObserver | null = null;
+  let modelSelectionTrigger: HTMLElement | null = null;
   const scroller = createScroller();
 
   function exit(): void {
@@ -951,9 +952,17 @@ export function mountLinkHints(context: PluginContentScriptContext): PluginConte
     const poll = (): void => {
       if (context.signal.aborted || mode.kind !== "idle") return;
       if (!popup.isConnected) {
-        if (refocusComposer) assertComposerFocus();
+        // Restore focus on dismissal, but leave a newly opened native picker
+        // in control when this poll belongs to its previous popup.
+        if (refocusComposer && (scopeKind !== "reasoning" || nativePickerPopups().length === 0))
+          assertComposerFocus();
         return;
       }
+      if (
+        scopeKind === "reasoning" &&
+        modelSelectionTrigger?.getAttribute("aria-controls") !== popup.id
+      )
+        return;
       ticks += 1;
       if (ticks < 6) {
         window.setTimeout(poll, 80);
@@ -986,6 +995,7 @@ export function mountLinkHints(context: PluginContentScriptContext): PluginConte
   // changes when its selection commits, regardless of where the model was picked.
   function watchModelSelection(trigger: HTMLElement): void {
     modelSelectionObserver?.disconnect();
+    modelSelectionTrigger = trigger;
     let previous = trigger.textContent;
     modelSelectionObserver = new MutationObserver(() => {
       const id = trigger.getAttribute("aria-controls");
@@ -997,6 +1007,7 @@ export function mountLinkHints(context: PluginContentScriptContext): PluginConte
       ) {
         modelSelectionObserver?.disconnect();
         modelSelectionObserver = null;
+        modelSelectionTrigger = null;
         return;
       }
       if (trigger.textContent === previous) return;
@@ -1015,6 +1026,7 @@ export function mountLinkHints(context: PluginContentScriptContext): PluginConte
 
   function followModelEnter(event: KeyboardEvent): void {
     if (
+      modelSelectionTrigger === null ||
       event.key !== "Enter" ||
       !(event.target instanceof HTMLInputElement) ||
       event.target.getAttribute("aria-label") !== "Search models"
@@ -1033,17 +1045,15 @@ export function mountLinkHints(context: PluginContentScriptContext): PluginConte
       trigger.contains(event.target instanceof Node ? event.target : null),
     );
     if (modelTrigger) {
-      watchModelSelection(modelTrigger);
+      // Only scheduleReprompt arms a picker opened through Vimium. A later
+      // manual open must not inherit its selection observer or delayed hints.
+      modelSelectionObserver?.disconnect();
+      modelSelectionObserver = null;
+      modelSelectionTrigger = null;
+      if (mode.kind === "active" && mode.scopeKind === "reasoning") exit();
       return;
     }
-    // BB's native toggle command can open the picker without clicking its
-    // trigger. Arm before the selection's React click handler commits it.
-    const openModelTrigger = modelTriggers().find((trigger) => {
-      const id = trigger.getAttribute("aria-controls");
-      const popup = id ? document.getElementById(id) : null;
-      return popup !== null && popup.getAttribute("data-state") !== "closed";
-    });
-    if (openModelTrigger) watchModelSelection(openModelTrigger);
+    if (modelSelectionTrigger === null) return;
     const button = event.target.closest<HTMLElement>(
       'button:not(:disabled):not([aria-disabled="true"])',
     );
