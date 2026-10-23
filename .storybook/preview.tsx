@@ -51,7 +51,7 @@ const preview: Preview = {
     options: { storySort: { order: ["Overview", "Theme", "Plugins", "Shared"] } },
     docs: {
       theme: monokaiStorybookTheme(),
-      story: { inline: false },
+      story: { inline: false, height: "320px" },
       description: {
         component:
           "Production plugin components with deterministic local fixtures. BB SDK controls use the official test runtime; no live backend is connected.",
