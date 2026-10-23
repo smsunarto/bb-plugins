@@ -133,9 +133,56 @@ and update both MCP configuration URLs in that checkout to match.
 Claude Code asks you to approve the project MCP server on first use. Codex
 loads its project configuration in a new session.
 
+### Catalog coverage
+
+Every browser plugin has a catalog under its own `storybook/` directory. Use
+Storybook's width toolbar to preview 360px, 640px, and 1100px containers.
+The stories render production components; parent stories exercise their rendered internal
+helpers. States include loading, empty, populated, error, disabled, and selected
+where the component supports them.
+
+| Plugin                | Component coverage                                                             |
+| --------------------- | ------------------------------------------------------------------------------ |
+| Agent Instructions    | Rule editor, scopes, loading and errors, buttons                               |
+| Agentation            | Annotation list, empty and error states, buttons                               |
+| Amp                   | Oracle results, running trace, missing and invalid reports                     |
+| Canvas                | Cards, sections, callouts, tables, controls, task lists, charts                |
+| Cloudflare            | Notices, badges, copy control, quick-share lifecycle                           |
+| Code Review           | Review and branch status, findings, comments, file tree, refresh state         |
+| Devin                 | Starting and active Cloud session banners                                      |
+| Dotfiles              | Source and Markdown editors, host picker, offline and missing repository       |
+| Game Studio           | Workflow canvas, node cards and inspector, generation controls, verdicts       |
+| GitHub Stack          | Stack panel, pull request cards, changed-file tree, loading and errors         |
+| GitButler             | Workspace lanes, branch actions, conflicts, history, file lists and trees      |
+| GTD Sidebar           | Thread cards, status indicators, compact layout, buttons                       |
+| Kitchen Sink          | Image comparison, annotations, invalid paths, branding                         |
+| Monokai               | Theme foundations, chrome, content palettes, surface composition               |
+| Prompt Editor         | Tool browser, file editor, empty and error states                              |
+| Reminders             | Saved cards, loading, empty and error states                                   |
+| Docs                  | Note browser, Markdown editor, HTML card, invalid link, buttons                |
+| Inline Visualizations | Tweak controls, saving, read-only, original and empty states                   |
+| Tasks                 | List, board, detail and activity, labels/presets/folders, controls and dialogs |
+| Traces                | JSON inspector, long output, paging, empty and error states                    |
+| Vimium                | Keyboard activation and visible link hints                                     |
+| Whiteboard            | Markdown, code, empty states, diff tree, buttons                               |
+
+Host-only plugins do not have browser stories. Usage Bar's native macOS menu
+is also outside this browser catalog. The SDK's public test runtime supplies
+host controls and RPC fixtures, so Storybook does not read real accounts or
+checkouts. Host-owned icons, Markdown, navigation, and composer behavior are
+fixture substitutes; use live BB to verify those integrations.
+
+Run `bun run test:storybook` for Chromium render and interaction tests. If
+Chromium is not installed, run `bunx playwright install chromium` first.
+`bun test scripts/storybook-coverage.test.ts` checks that every browser plugin
+keeps its explicit surface inventory, including the Tasks views and Studio canvas. Keep fixtures local to the story and use explicit
+RPC responses for pending, failure, and recovery states.
+
 The existing plugin-local Storybook command still previews Monokai alone.
 Use the root command for the repository catalog and MCP endpoint. Storybook
 previews do not replace live BB checks of host integration and shadow DOM.
+The catalog uses the root SDK test runtime (0.5.29); plugins with different SDK
+pins still need their own build and live integration checks.
 
 ## Test another BB build
 

@@ -44,6 +44,27 @@ jobs:
       - name: Test
         run: bun run test
 
+  storybook:
+    name: Storybook
+    runs-on: namespace-profile-linux-8vcpu-16gb-cached
+    steps:
+      - uses: namespacelabs/nscloud-checkout-action@v9
+      - uses: ./.github/actions/setup
+        with:
+          bb-cli: "false"
+
+      - name: Install Chromium
+        run: bunx playwright install --with-deps chromium
+
+      - name: Check catalog coverage
+        run: bun test scripts/storybook-coverage.test.ts
+
+      - name: Test component states and interactions
+        run: bun run test:storybook
+
+      - name: Build Storybook
+        run: bun run build-storybook
+
   build:
     name: Build
     runs-on: namespace-profile-linux-8vcpu-16gb-cached

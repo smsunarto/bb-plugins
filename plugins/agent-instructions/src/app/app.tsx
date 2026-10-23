@@ -125,7 +125,7 @@ function ScopeEditor({
   );
 }
 
-function RuleCard({
+export function RuleCard({
   rule,
   targets,
   initiallyOpen,

@@ -67,6 +67,12 @@ type DraftUpdate = (draft: Draft | undefined) => Draft | undefined;
 let drafts: ReadonlyMap<string, Draft> = new Map();
 const draftListeners = new Set<() => void>();
 
+/** Start an isolated preview without unsaved edits from a previous fixture. */
+export function clearDraftsForTest(): void {
+  drafts = new Map();
+  for (const listener of draftListeners) listener();
+}
+
 function subscribeDrafts(listener: () => void) {
   draftListeners.add(listener);
   return () => void draftListeners.delete(listener);
