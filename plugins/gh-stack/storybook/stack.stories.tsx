@@ -1,31 +1,30 @@
+import { reviewFiles } from "../../../.storybook/fixtures";
 import { screenParameters } from "../../../.storybook/layout";
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { RegisteredSurface } from "../../../.storybook/host";
 import { shows } from "../../../.storybook/ready";
 const source = () => import("../app");
 const changes = {
-  additions: 34,
-  deletions: 7,
+  additions: 212,
+  deletions: 87,
   truncated: false,
-  files: [
-    {
-      path: "plugins/canvas/app.tsx",
-      previousPath: null,
-      status: "modified",
-      additions: 34,
-      deletions: 7,
-    },
-  ],
+  files: reviewFiles.map(({ path, status, additions, deletions, previousPath }) => ({
+    path,
+    status,
+    additions,
+    deletions,
+    previousPath: previousPath ?? null,
+  })),
 };
 const result = {
   stack: {
     trunk: "main",
-    currentBranch: "scott/catalog",
-    trunkBehind: 0,
+    currentBranch: "maya/offline-review-recovery",
+    trunkBehind: 2,
     prunableBranchCount: 0,
     branches: [
       {
-        name: "scott/catalog",
+        name: "maya/offline-review-recovery",
         isCurrent: true,
         isMerged: false,
         isQueued: false,
@@ -33,10 +32,10 @@ const result = {
         hasStash: false,
         stashCount: 0,
         pr: {
-          number: 42,
-          url: "https://example.com/pr/42",
+          number: 284,
+          url: "https://github.com/example/atlas/pull/284",
           state: "OPEN",
-          title: "Document plugin components",
+          title: "Keep reviews readable while the checkout reconnects",
           isDraft: true,
           metadataStale: false,
         },
@@ -46,16 +45,73 @@ const result = {
       },
     ],
   },
-  workspacePath: "/workspace/bb-plugins",
+  workspacePath: "/home/maya/git/atlas",
   error: null,
   checkoutWarning: null,
   pending: changes,
   defaultBranch: "main",
-  branchPrefix: "scott/",
-  detectedBranchPrefix: "scott/",
-  settings: { branchPrefix: "scott/", conventionalCommits: true },
+  branchPrefix: "maya/",
+  detectedBranchPrefix: "maya/",
+  settings: { branchPrefix: "maya/", conventionalCommits: true },
   fetchedAt: 1792670400000,
 };
+// The active change depends on the cache model and has a follow-up test branch.
+result.stack.branches.unshift({
+  ...result.stack.branches[0]!,
+  name: "maya/revisioned-review-cache",
+  isCurrent: false,
+  aheadOfRemote: 0,
+  behindRemote: 0,
+  pr: {
+    ...result.stack.branches[0]!.pr,
+    number: 282,
+    url: "https://github.com/example/atlas/pull/282",
+    title: "Store review snapshots by checkout and revision",
+    isDraft: false,
+  },
+  diff: {
+    ...changes,
+    additions: 76,
+    deletions: 12,
+    files: [
+      {
+        path: "src/reviews/snapshot-cache.ts",
+        previousPath: null,
+        status: "modified",
+        additions: 76,
+        deletions: 12,
+      },
+    ],
+  },
+});
+result.stack.branches.push({
+  ...result.stack.branches[1]!,
+  name: "maya/reconnect-regression-tests",
+  isCurrent: false,
+  needsRebase: true,
+  aheadOfRemote: 1,
+  pr: {
+    ...result.stack.branches[1]!.pr,
+    number: 285,
+    url: "https://github.com/example/atlas/pull/285",
+    title: "Exercise reconnect while a review comment is being edited",
+    isDraft: true,
+  },
+  diff: {
+    ...changes,
+    additions: 31,
+    deletions: 6,
+    files: [
+      {
+        path: "src/reviews/__tests__/reconnect.test.ts",
+        previousPath: null,
+        status: "modified",
+        additions: 31,
+        deletions: 6,
+      },
+    ],
+  },
+});
 const meta = {
   title: "Screens/GitHub Stack/Stack panel",
   component: RegisteredSurface,
@@ -70,7 +126,7 @@ const meta = {
     ...screenParameters,
     host: { pluginId: "gh-stack", rpc: { getStack: () => result } },
   },
-  play: shows("Document plugin components"),
+  play: shows("Keep reviews readable while the checkout reconnects"),
 } satisfies Meta<typeof RegisteredSurface>;
 export default meta;
 type Story = StoryObj<typeof meta>;

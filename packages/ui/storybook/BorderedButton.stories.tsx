@@ -9,7 +9,7 @@ const sizes = ["sm", "default", "lg", "icon"] as const;
 const meta = {
   title: "Components/Shared/BorderedButton",
   component: BorderedButton,
-  args: { children: "Repository action", variant: "outline", onClick: fn() },
+  args: { children: "Open repository", variant: "outline", onClick: fn() },
   argTypes: {
     variant: { control: "select", options: variants },
     size: { control: "select", options: sizes },

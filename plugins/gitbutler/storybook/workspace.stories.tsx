@@ -9,7 +9,7 @@ import type { Branch, Workspace } from "../src/shared/schema";
 import "../src/app/gitbutler.css";
 const target = { threadId: "thr_story", repositoryKey: "." };
 const branch: Branch = {
-  name: "scott/component-catalog",
+  name: "maya/offline-review-recovery",
   status: "unpushed",
   rawStatus: "Unpushed",
   push: "push",
@@ -19,8 +19,8 @@ const branch: Branch = {
     {
       commitId: "aabbccddeeff",
       changeId: "story",
-      message: "feat(storybook): document plugin components",
-      authorName: "Developer",
+      message: "fix(reviews): keep cached files visible during reconnect",
+      authorName: "Maya Chen",
       createdAt: "2026-10-22T12:00:00Z",
       conflicted: false,
     },
@@ -28,19 +28,23 @@ const branch: Branch = {
   upstreamCommits: [],
   newUpstream: 0,
 };
-const changes = [{ path: "plugins/canvas/app.tsx", kind: "modified" as const }];
+const changes = [
+  { path: "src/reviews/use-review-query.ts", kind: "modified" as const },
+  { path: "src/reviews/offline-notice.tsx", kind: "added" as const },
+  { path: "src/reviews/__tests__/reconnect.test.ts", kind: "added" as const },
+];
 const stack = { key: branch.name, branches: [branch], assignedChanges: changes };
 const workspace: Workspace = {
   state: "ready",
   reason: null,
   environmentId: "env_story",
   repositoryKey: ".",
-  repoName: "bb-plugins",
+  repoName: "Atlas",
   unassignedChanges: changes,
   stacks: [stack],
   base: null,
   upstream: null,
-  conflictedFiles: ["plugins/canvas/app.tsx"],
+  conflictedFiles: ["src/reviews/use-review-query.ts", "src/reviews/review-panel.tsx"],
 };
 const rpc = {
   reviewRequests: () => ({ requests: [] }),

@@ -6,7 +6,7 @@ import { Input } from "../src/input";
 const meta = {
   title: "Components/Shared/Input",
   component: Input,
-  args: { "aria-label": "Name", placeholder: "Component name", onChange: fn() },
+  args: { "aria-label": "Name", placeholder: "e.g. Atlas release checklist", onChange: fn() },
   argTypes: {
     type: {
       control: "select",
@@ -24,7 +24,7 @@ type Story = StoryObj<typeof meta>;
 export const Default: Story = {};
 export const Disabled: Story = { args: { disabled: true, defaultValue: "Unavailable" } };
 export const LongValue: Story = {
-  args: { defaultValue: "Review every component in the current checkout before continuing" },
+  args: { defaultValue: "Investigate checkout reconnection and preserve unsent review comments" },
 };
 
 export const Edit: Story = {

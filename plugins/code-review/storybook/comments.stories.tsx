@@ -25,7 +25,8 @@ const meta = {
   args: {
     label: "Review comment",
     submitLabel: "Add comment",
-    value: "Please cover the disconnected state.",
+    value:
+      "Could we keep the previous file list visible while this refresh is pending? Clearing it loses the selected file and makes the panel jump. The reconnect test should assert that the draft comment survives as well.",
     onChange: fn(),
     onSubmit: fn(),
     onCancel: fn(),
@@ -42,8 +43,10 @@ export const Draft: Story = {
       name: "Review comment",
     });
     await userEvent.clear(field);
-    await userEvent.type(field, "Check the retry state.");
-    await expect(field).toHaveValue("Check the retry state.");
+    await userEvent.type(field, "Please also ignore a late response from the previous checkout.");
+    await expect(field).toHaveValue(
+      "Please also ignore a late response from the previous checkout.",
+    );
   },
 };
 export const Empty: Story = { args: { value: "" } };

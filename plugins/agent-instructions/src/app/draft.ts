@@ -32,6 +32,7 @@ export function createRulesDraft({
   let newest: RulesState | null = null;
   let save: SaveRules | null = null;
   let sending = false;
+  let epoch = 0;
   let timer: ReturnType<typeof setTimeout> | undefined;
   const listeners = new Set<() => void>();
 
@@ -64,11 +65,13 @@ export function createRulesDraft({
     timer = setTimeout(() => void send(), delayMs);
   }
   async function send() {
+    const startedAt = epoch;
     const { base, draft } = current();
     if (save === null) return;
     sending = true;
     try {
       const result = await save({ rules: draft, revision: base.revision });
+      if (startedAt !== epoch) return;
       if (result.saved) {
         const stored = { revision: result.revision, rules: draft };
         seen(stored);
@@ -80,18 +83,30 @@ export function createRulesDraft({
         update({ conflict: stored });
       }
     } catch (error) {
+      if (startedAt !== epoch) return;
       // A newer edit may already fix what failed, so it saves instead.
       if (current().draft === draft) {
         update({ error: error instanceof Error ? error.message : String(error) });
       }
     } finally {
-      sending = false;
+      if (startedAt === epoch) sending = false;
     }
+    if (startedAt !== epoch) return;
     catchUp();
     schedule();
   }
 
   return {
+    /** Reset between isolated previews/tests, after all consumers have unmounted. */
+    resetForTest() {
+      epoch++;
+      clearTimeout(timer);
+      timer = undefined;
+      snapshot = null;
+      newest = null;
+      save = null;
+      sending = false;
+    },
     subscribe(listener: () => void) {
       listeners.add(listener);
       return () => listeners.delete(listener);

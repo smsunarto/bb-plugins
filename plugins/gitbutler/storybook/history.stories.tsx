@@ -16,11 +16,32 @@ const meta = {
         oplog: () => ({
           entries: [
             {
-              id: "aabbccddee",
+              id: "9c804bc37f",
               operation: "CreateCommit",
               title: "CreateCommit",
-              body: "Document plugin components",
-              createdAt: "2026-10-22T12:00:00Z",
+              body: "fix(reviews): keep cached files visible during reconnect",
+              createdAt: "2026-10-23T10:40:00Z",
+            },
+            {
+              id: "7b20a1f933",
+              operation: "AmendCommit",
+              title: "AmendCommit",
+              body: "Add deferred-response coverage for checkout switching",
+              createdAt: "2026-10-23T10:32:00Z",
+            },
+            {
+              id: "50fb24e7c1",
+              operation: "CreateBranch",
+              title: "CreateBranch",
+              body: "maya/offline-review-recovery",
+              createdAt: "2026-10-23T09:18:00Z",
+            },
+            {
+              id: "32cf980a11",
+              operation: "CreateCommit",
+              title: "CreateCommit",
+              body: "feat(reviews): store snapshots by checkout and revision",
+              createdAt: "2026-10-22T16:20:00Z",
             },
           ],
           reason: null,
@@ -33,7 +54,7 @@ export default meta;
 type Story = StoryObj<typeof meta>;
 export const History: Story = {
   render: () => <OperationHistory target={target} />,
-  play: shows("Create commit"),
+  play: shows("fix(reviews): keep cached files visible during reconnect"),
 };
 export const EmptyHistory: Story = {
   render: () => <OperationHistory target={target} />,

@@ -5,7 +5,7 @@ import { BorderedInput } from "../src/input";
 const meta = {
   title: "Components/Shared/BorderedInput",
   component: BorderedInput,
-  args: { "aria-label": "Repository", placeholder: "Repository path", onChange: fn() },
+  args: { "aria-label": "Repository", placeholder: "/home/maya/git/atlas", onChange: fn() },
   argTypes: {
     type: {
       control: "select",
@@ -21,7 +21,7 @@ export default meta;
 type Story = StoryObj<typeof meta>;
 
 export const Default: Story = {};
-export const Disabled: Story = { args: { disabled: true, defaultValue: "/workspace/project" } };
+export const Disabled: Story = { args: { disabled: true, defaultValue: "/home/maya/git/atlas" } };
 
 export const Surface: Story = {
   name: "(Test) Repository surface",

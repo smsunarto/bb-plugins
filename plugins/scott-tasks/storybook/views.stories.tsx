@@ -1,3 +1,4 @@
+import { recoveryPlan } from "../../../.storybook/fixtures";
 import { screenParameters } from "../../../.storybook/layout";
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { expect, waitFor, within } from "storybook/test";
@@ -9,54 +10,124 @@ import { DetailView } from "../views/detail";
 import { TasksRefreshProvider } from "../shell/refresh";
 import { resetQuerySnapshotStateForTest } from "../shell/query-snapshot";
 import { makeTask, rpcInput } from "../test-fixtures";
-import type { Task } from "../shared/contract";
+import { tasksRpcContract, type Task } from "../shared/contract";
 
 const projectId = "01HZZZZZZZZZZZZZZZZZZZZZP1";
 const project = {
   id: projectId,
-  name: "Plugin experience",
+  name: "Atlas · Autumn release",
   prefix: "TSK",
-  nextTaskNumber: 5,
+  nextTaskNumber: 13,
   color: "blue",
   folderId: null,
   linkedBbProjectId: null,
-  createdAt: "2026-07-15T00:00:00.000Z",
+  createdAt: "2026-10-01T09:00:00.000Z",
 };
+const labels = [
+  { id: "01HZZZZZZZZZZZZZZZZZZZZAB1", projectId, name: "Reliability", color: "blue" },
+  { id: "01HZZZZZZZZZZZZZZZZZZZZAB2", projectId, name: "Accessibility", color: "purple" },
+  { id: "01HZZZZZZZZZZZZZZZZZZZZAB3", projectId, name: "Release blocker", color: "red" },
+  { id: "01HZZZZZZZZZZZZZZZZZZZZAB4", projectId, name: "Performance", color: "orange" },
+];
 const tasks: Task[] = [
   makeTask({
-    title: "Document the component catalog",
-    description: "## Acceptance criteria\n\n- Cover each plugin\n- Verify narrow panels",
+    title: "Keep the review panel usable when a checkout goes offline",
+    description: recoveryPlan,
     status: "in_progress",
     priority: "high",
-    labelIds: ["01HZZZZZZZZZZZZZZZZZZZZLBL"],
+    dueDate: "2026-10-26",
+    labelIds: [labels[0]!.id, labels[2]!.id],
+    createdAt: "2026-10-20T09:15:00.000Z",
+    updatedAt: "2026-10-23T10:40:00.000Z",
   }),
-  makeTask({
-    id: "01HZZZZZZZZZZZZZZZZZZZZZT2",
-    number: 2,
-    key: "TSK-2",
-    title: "Review empty states",
-    status: "todo",
-    priority: "medium",
-    position: 1,
-  }),
-  makeTask({
-    id: "01HZZZZZZZZZZZZZZZZZZZZZT3",
-    number: 3,
-    key: "TSK-3",
-    title: "Verify dialogs",
-    status: "done",
-    position: 2,
-  }),
-  makeTask({
-    id: "01HZZZZZZZZZZZZZZZZZZZZZT4",
-    number: 4,
-    key: "TSK-4",
-    title: "Check narrow layout",
-    parentTaskId: "01HZZZZZZZZZZZZZZZZZZZZZT1",
-    status: "todo",
-    position: 3,
-  }),
+  ...(
+    [
+      {
+        title: "Restore keyboard focus after closing the command menu",
+        status: "todo",
+        priority: "high",
+        labelIds: [labels[1]!.id],
+      },
+      {
+        title: "Show the last successful refresh time on cached reviews",
+        status: "done",
+        priority: "medium",
+        labelIds: [labels[0]!.id],
+      },
+      {
+        title: "Ignore stale responses after switching checkouts",
+        status: "in_progress",
+        priority: "high",
+        parentTaskId: "01HZZZZZZZZZZZZZZZZZZZZZT1",
+        labelIds: [labels[0]!.id],
+      },
+      {
+        title: "Reduce initial file-tree render time for large pull requests",
+        status: "in_review",
+        priority: "medium",
+        labelIds: [labels[3]!.id],
+      },
+      {
+        title: "Fix duplicate comments after retrying a timed-out submission",
+        status: "todo",
+        priority: "urgent",
+        labelIds: [labels[2]!.id],
+      },
+      {
+        title: "Document the recovery flow for disconnected build machines",
+        status: "backlog",
+        priority: "low",
+        labelIds: [labels[0]!.id],
+      },
+      {
+        title: "Preserve a draft comment during reconnect",
+        status: "todo",
+        priority: "medium",
+        parentTaskId: "01HZZZZZZZZZZZZZZZZZZZZZT1",
+        labelIds: [labels[0]!.id],
+      },
+      {
+        title: "Announce refresh failures to screen readers",
+        status: "in_review",
+        priority: "high",
+        labelIds: [labels[1]!.id],
+      },
+      {
+        title: "Add a retry action to the empty review state",
+        status: "done",
+        priority: "medium",
+        labelIds: [labels[0]!.id],
+      },
+      {
+        title: "Explore background refresh for recently opened reviews",
+        status: "backlog",
+        priority: "none",
+        labelIds: [],
+      },
+      {
+        title: "Replace the file tree before every network refresh",
+        status: "canceled",
+        priority: "low",
+        labelIds: [labels[3]!.id],
+      },
+    ] satisfies Partial<Task>[]
+  ).map((item, index) =>
+    makeTask({
+      ...item,
+      id: `01HZZZZZZZZZZZZZZZZZZZZ${String(index + 2).padStart(3, "0")}`,
+      number: index + 2,
+      key: `TSK-${index + 2}`,
+      position: index + 1,
+      createdAt: "2026-10-20T09:15:00.000Z",
+      updatedAt: "2026-10-23T10:40:00.000Z",
+      dueDate: index < 5 ? "2026-10-27" : null,
+    } satisfies Partial<Task>),
+  ),
 ];
+// Exercise the real wire schemas so plausible-looking fixture IDs cannot bypass validation.
+tasksRpcContract.listTasks.output.parse({ tasks, nextCursor: null });
+tasksRpcContract.listProjects.output.parse({ projects: [project] });
+tasksRpcContract.listLabels.output.parse({ labels });
 let currentTasks: Task[] = structuredClone(tasks);
 function fixture(
   mode: "populated" | "empty" | "loading" | "error" = "populated",
@@ -72,11 +143,7 @@ function fixture(
       listProjects: () => ({ projects: [project] }),
       listFolders: () => ({ folders: [] }),
       listPresets: () => ({ presets: [] }),
-      listLabels: () => ({
-        labels: [
-          { id: "01HZZZZZZZZZZZZZZZZZZZZLBL", projectId, name: "Documentation", color: "blue" },
-        ],
-      }),
+      listLabels: () => ({ labels }),
       listTasks: async (raw) => {
         const input = rpcInput(raw);
         const all = await read();
@@ -89,31 +156,61 @@ function fixture(
           nextCursor: null,
         };
       },
-      getTaskByKey: async () => ({ task: (await read())[0] ?? null }),
+      getTaskByKey: async (raw) => ({
+        task: (await read()).find((task) => task.key === rpcInput(raw).taskKey) ?? null,
+      }),
       getTask: (raw) => ({
         task: currentTasks.find((task) => task.id === rpcInput(raw).taskId) ?? null,
       }),
-      listTaskThreads: () => ({ taskThreads: [] }),
-      listComments: () => ({
-        comments: [
-          {
-            id: "01HZZZZZZZZZZZZZZZZZZZZZC1",
-            taskId: tasks[0]!.id,
-            kind: "user",
-            authorName: "Developer",
-            presetName: null,
-            threadId: null,
-            body: "Narrow panels are ready for review.",
-            notifiedCount: 0,
-            createdAt: "2026-10-22T12:00:00Z",
-            threadTitle: null,
-            provider: null,
-            attachments: [],
-          },
-        ],
-      }),
+      listTaskThreads: (raw) =>
+        tasksRpcContract.listTaskThreads.output.parse({
+          taskThreads: [
+            {
+              id: "01HZZZZZZZZZZZZZZZZZZZZTH1",
+              taskId: tasks[0]!.id,
+              threadId: "thr_review_recovery",
+              presetName: "Implementation",
+              title: "Preserve cached reviews across reconnects",
+              liveStatus: "working",
+              attachedAt: "2026-10-23T09:10:00.000Z",
+              updatedAt: "2026-10-23T10:40:00.000Z",
+            },
+          ].filter(() => rpcInput(raw).taskId === tasks[0]!.id),
+        }),
+      listComments: (raw) =>
+        tasksRpcContract.listComments.output.parse({
+          comments: [
+            {
+              id: "01HZZZZZZZZZZZZZZZZZZZZZC1",
+              taskId: tasks[0]!.id,
+              kind: "user",
+              authorName: "Maya Chen",
+              presetName: null,
+              threadId: null,
+              body: "The cached file list now survives a disconnect. Please check the stale-response case before we merge; switching checkouts still needs coverage.",
+              notifiedCount: 0,
+              createdAt: "2026-10-22T12:00:00Z",
+              threadTitle: null,
+              provider: null,
+              attachments: [],
+            },
+          ].filter(() => rpcInput(raw).taskId === tasks[0]!.id),
+        }),
       listAttachments: () => ({ attachments: [] }),
-      listTaskPullRequests: () => ({ pullRequests: [], errors: [] }),
+      listTaskPullRequests: (raw) =>
+        tasksRpcContract.listTaskPullRequests.output.parse({
+          pullRequests: [
+            {
+              url: "https://github.com/example/atlas/pull/284",
+              number: 284,
+              title: "Keep cached reviews available while the checkout reconnects",
+              state: "draft",
+              updatedAt: "2026-10-23T10:40:00.000Z",
+              threadIds: ["thr_review_recovery"],
+            },
+          ].filter(() => rpcInput(raw).taskId === tasks[0]!.id),
+          unavailableThreadIds: [],
+        }),
       updateTask: (raw) => {
         const { taskId, ...patch } = rpcInput(raw);
         const task = currentTasks.find((task) => task.id === taskId);
@@ -198,7 +295,14 @@ export const Detail: Story = {
     await expect(
       within(canvasElement).findByRole("textbox", { name: "Task title" }),
     ).resolves.toHaveTextContent(tasks[0]!.title);
-    await expect(within(canvasElement).findByText("Check narrow layout")).resolves.toBeVisible();
+    await expect(
+      within(canvasElement).findByText("Ignore stale responses after switching checkouts"),
+    ).resolves.toBeVisible();
+    await expect(
+      within(canvasElement).findByRole("link", {
+        name: /Pull request #284: Keep cached reviews available/,
+      }),
+    ).resolves.toBeVisible();
   },
 };
 export const MissingDetail: Story = {
@@ -226,6 +330,6 @@ export const Manage: Story = {
     await expect(
       within(canvasElement).findByRole("tab", { name: "Labels" }),
     ).resolves.toBeVisible();
-    await expect(within(canvasElement).findByText("Documentation")).resolves.toBeVisible();
+    await expect(within(canvasElement).findByText("Reliability")).resolves.toBeVisible();
   },
 };

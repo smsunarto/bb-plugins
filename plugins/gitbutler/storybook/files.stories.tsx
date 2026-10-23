@@ -12,10 +12,10 @@ const meta = {
     mode: "list",
     onSelect: fn(),
     changes: [
-      { path: "src/components/button.tsx", kind: "modified" },
-      { path: "src/new-file.ts", kind: "added" },
-      { path: "src/legacy.ts", kind: "deleted" },
-      { path: "assets/icon.svg", kind: "renamed" },
+      { path: "src/reviews/use-review-query.ts", kind: "modified" },
+      { path: "src/reviews/offline-notice.tsx", kind: "added" },
+      { path: "src/reviews/legacy-polling.ts", kind: "deleted" },
+      { path: "docs/reviews/offline-recovery.md", kind: "renamed" },
     ],
   },
 } satisfies Meta<typeof FileList>;
@@ -23,7 +23,7 @@ export default meta;
 type Story = StoryObj<typeof meta>;
 export const List: Story = {};
 export const Tree: Story = { args: { mode: "tree" } };
-export const Selected: Story = { args: { active: "src/components/button.tsx" } };
+export const Selected: Story = { args: { active: "src/reviews/use-review-query.ts" } };
 export const Empty: Story = { args: { changes: [] } };
 export const Statistics: Story = {
   render: () => (

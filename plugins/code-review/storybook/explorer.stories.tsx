@@ -1,3 +1,4 @@
+import { reviewFiles } from "../../../.storybook/fixtures";
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { fn } from "storybook/test";
 import { ready } from "../../../.storybook/ready";
@@ -16,12 +17,13 @@ const meta = {
   tags: ["autodocs"],
   play: ready,
   args: {
-    files: [
-      { path: "src/app.tsx", status: "modified", additions: 12, deletions: 3 },
-      { path: "src/components/button.tsx", status: "added", additions: 42, deletions: 0 },
-      { path: "README.md", status: "modified", additions: 4, deletions: 0 },
-    ],
-    current: "src/app.tsx",
+    files: reviewFiles.map(({ path, status, additions, deletions }) => ({
+      path,
+      additions,
+      deletions,
+      status: status === "deleted" ? "removed" : status,
+    })),
+    current: "src/reviews/use-review-query.ts",
     onSelect: fn(),
   },
 } satisfies Meta<typeof FileExplorer>;
@@ -30,6 +32,11 @@ type Story = StoryObj<typeof meta>;
 export const Files: Story = {};
 export const Empty: Story = { args: { files: [], current: null } };
 export const Filtered: Story = {
-  args: { files: meta.args.files.filter((file) => file.path === "src/app.tsx"), filtering: true },
+  args: {
+    files: meta.args.files.filter((file) => file.path === "src/reviews/use-review-query.ts"),
+    filtering: true,
+  },
 };
-export const WithComments: Story = { args: { threadsByPath: new Map([["src/app.tsx", 3]]) } };
+export const WithComments: Story = {
+  args: { threadsByPath: new Map([["src/reviews/use-review-query.ts", 3]]) },
+};

@@ -1,1 +1,8 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="720" height="400" viewBox="0 0 720 400"><rect width="720" height="400" fill="#202020"/><rect x="180" y="100" width="360" height="200" rx="16" fill="#383838" stroke="#b5bd68" stroke-width="4"/><text x="360" y="205" font-family="sans-serif" font-size="28" text-anchor="middle" fill="#dedede">Review component</text></svg>
+<svg xmlns="http://www.w3.org/2000/svg" width="720" height="400" viewBox="0 0 720 400">
+<rect width="720" height="400" fill="#151515"/><rect x="32" y="24" width="656" height="352" rx="12" fill="#202020" stroke="#383838"/>
+<g font-family="sans-serif"><text x="56" y="60" font-size="17" fill="#e3e3dd">Atlas / Review #284</text><text x="56" y="87" font-size="12" fill="#a8a8a0">Keep cached reviews available during reconnect</text>
+<rect x="56" y="109" width="608" height="48" rx="6" fill="#303a3c"/><circle cx="75" cy="133" r="4" fill="#88c0d0"/><text x="89" y="137" font-size="13" fill="#88c0d0">Cached · refreshed 8 min ago</text>
+<g font-size="13" fill="#e3e3dd"><text x="73" y="199">M</text><text x="103" y="199">src/reviews/use-review-query.ts</text><text x="73" y="238">A</text><text x="103" y="238">src/reviews/offline-notice.tsx</text><text x="73" y="277">A</text><text x="103" y="277">src/reviews/__tests__/reconnect.test.ts</text></g>
+<g stroke="#383838"><path d="M56 214H664M56 253H664M56 292H664"/></g>
+<text x="56" y="338" font-size="12" fill="#a8a8a0">Checkout host disconnected</text><rect x="569" y="316" width="95" height="32" rx="6" fill="#88c0d0"/><text x="616" y="337" font-size="13" text-anchor="middle" fill="#151515">Retry</text>
+</g></svg>

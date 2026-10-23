@@ -29,7 +29,12 @@ export const Annotated: Story = {
     attributes: {
       ...meta.args.attributes,
       annotations: JSON.stringify([
-        { x: 50, y: 50, label: "Changed card emphasis", side: "after" },
+        {
+          x: 42,
+          y: 33,
+          label: "Cached status and refresh time remain visible while the checkout reconnects",
+          side: "after",
+        },
       ]),
     },
   },

@@ -8,7 +8,7 @@ import "../app.css";
 const thread: PluginSidebarThread = {
   id: "thr_story",
   projectId: "proj_story",
-  title: "Review component states",
+  title: "Preserve cached reviews across reconnects",
   titleFallback: null,
   parentThreadId: null,
   sectionId: null,
@@ -24,7 +24,7 @@ const thread: PluginSidebarThread = {
   isArchived: false,
   environment: null,
   host: null,
-  displayTitle: "Review component states",
+  displayTitle: "Preserve cached reviews across reconnects",
   lifecycleOwnerThreadId: null,
   sourceThreadId: null,
   status: "idle",
@@ -68,8 +68,8 @@ const meta = {
     guides: "",
     lastChild: true,
     toggleThread: fn(),
-    projectName: "bb-plugins",
-    branchName: "scott/storybook-mcp",
+    projectName: "Atlas",
+    branchName: "maya/offline-review-recovery",
     isActive: false,
     canPark: true,
     showProviderIcon: true,
@@ -109,7 +109,7 @@ export const LongTitle: Story = {
     thread: {
       ...thread,
       displayTitle:
-        "Review every loading, empty, stale, offline and recovery state across all custom plugin components",
+        "Investigate why switching checkouts during reconnect replaces the selected file and drops an unsent review comment",
     },
   },
 };

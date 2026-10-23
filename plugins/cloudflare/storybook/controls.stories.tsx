@@ -9,7 +9,9 @@ const meta = {
   title: "Components/Cloudflare/Feedback",
   component: Notice,
   tags: ["autodocs"],
-  args: { children: "Connected to the selected host." },
+  args: {
+    children: "Connected to Design MacBook. The Storybook preview on port 6010 is ready to share.",
+  },
 } satisfies Meta<typeof Notice>;
 export default meta;
 type Story = StoryObj<typeof meta>;
@@ -17,7 +19,8 @@ export const Connected: Story = {};
 export const Error: Story = {
   args: {
     error: true,
-    children: "The selected host is offline. Existing shares are still listed.",
+    children:
+      "Design MacBook is offline. Saved shares remain visible; reconnect the machine to start or stop a tunnel.",
   },
 };
 export const Badges: Story = {
@@ -25,7 +28,15 @@ export const Badges: Story = {
     <div className="sb-gallery">
       {(["neutral", "good", "warn", "bad", "accent"] as const).map((tone) => (
         <Badge key={tone} tone={tone} dot>
-          {tone}
+          {
+            {
+              neutral: "Stopped",
+              good: "Running",
+              warn: "Starting",
+              bad: "Connection failed",
+              accent: "Public link",
+            }[tone]
+          }
         </Badge>
       ))}
     </div>
@@ -53,7 +64,7 @@ export const Configuration: Story = {
         <KeyValue label="Local port">
           <Mono>6010</Mono>
         </KeyValue>
-        <KeyValue label="Host">Development workstation</KeyValue>
+        <KeyValue label="Host">Design MacBook · macOS</KeyValue>
       </dl>
     </section>
   ),
@@ -63,7 +74,9 @@ export const Copy: Story = {
     const write = spyOn(navigator.clipboard, "writeText").mockResolvedValue(undefined);
     return () => write.mockRestore();
   },
-  render: () => <CopyButton value="https://preview.example.com" label="Copy URL" />,
+  render: () => (
+    <CopyButton value="https://atlas-release-review.trycloudflare.com" label="Copy URL" />
+  ),
   play: async ({ canvasElement }) => {
     const c = within(canvasElement);
     await userEvent.click(await c.findByRole("button"));

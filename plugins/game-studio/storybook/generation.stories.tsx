@@ -12,7 +12,11 @@ const node = {
   type: "image",
   title: "Character concept",
   position: { x: 0, y: 0 },
-  data: { recipe: "nano-banana" },
+  data: {
+    recipe: "nano-banana",
+    prompt:
+      "Front view of the Compass Courier: forest-green hood, worn leather satchel, brass compass, sturdy boots. Full body on a neutral background; preserve a readable gameplay silhouette.",
+  },
 } as const;
 function InteractiveSettings(args: ComponentProps<typeof GenerationSettings>) {
   const [node, setNode] = useState(args.node);
@@ -39,10 +43,28 @@ export default meta;
 type Story = StoryObj<typeof meta>;
 export const Image: Story = {};
 export const Video: Story = {
-  args: { node: { ...node, id: "video", type: "video", data: { recipe: "omni-video" } } },
+  args: {
+    node: {
+      ...node,
+      id: "video",
+      type: "video",
+      data: {
+        recipe: "omni-video",
+        prompt:
+          "The courier pauses beside a moss-covered waypoint, checks the compass, and continues walking. Locked camera, subtle cloth movement, seamless loop.",
+      },
+    },
+  },
 };
 export const Model: Story = {
-  args: { node: { ...node, id: "model", type: "model-3d", data: { recipe: "model-3d" } } },
+  args: {
+    node: {
+      ...node,
+      id: "model",
+      type: "model-3d",
+      data: { recipe: "model-3d", targetPolycount: 12000 },
+    },
+  },
 };
 export const Compact: Story = { args: { compact: true } };
 export const NoInputs: Story = {
@@ -52,7 +74,7 @@ export const MissingReferenceOutput: Story = {
   render: () => (
     <CanvasInputs
       node={node}
-      nodes={[node, { ...node, id: "reference", title: "Reference image" }]}
+      nodes={[node, { ...node, id: "reference", title: "Courier · side-view reference" }]}
       assets={[]}
       onToggle={fn()}
     />
@@ -69,7 +91,7 @@ export const Starters: Story = {
             {
               id: "character",
               label: "Character sheet",
-              text: "Create a front view of [character].",
+              text: "Create a neutral front view of [character] for a third-person exploration game. Show the full silhouette, hands, footwear, and carried equipment. Use even lighting and an uncluttered background.",
             },
           ],
         }),

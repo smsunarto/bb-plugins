@@ -4,7 +4,7 @@ import { fn } from "storybook/test";
 import { ready } from "../../../.storybook/ready";
 import { RuleCard } from "../src/app/app";
 const targets = {
-  hosts: [{ id: "host_local", name: "Workstation" }],
+  hosts: [{ id: "host_local", name: "Design MacBook" }],
   providers: [
     { id: "codex", name: "Codex" },
     { id: "claude-code", name: "Claude Code" },
@@ -33,9 +33,10 @@ const meta = {
   args: {
     rule: {
       id: "rule_style",
-      name: "Review guidance",
+      name: "Review network and cache changes",
       enabled: true,
-      instructions: "Inspect changed code and verify observable behavior.",
+      instructions:
+        "When a change touches network requests or cached data, trace the disconnect and reconnect paths. Preserve useful cached content, reject responses for a superseded selection, and include a reproduction for any race condition you find.",
       when: { hosts: [], providers: [], projects: [], models: [] },
     },
     targets,

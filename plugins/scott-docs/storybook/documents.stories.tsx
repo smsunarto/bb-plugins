@@ -1,3 +1,4 @@
+import { recoveryPlan } from "../../../.storybook/fixtures";
 import { screenParameters } from "../../../.storybook/layout";
 import { ready, shows } from "../../../.storybook/ready";
 import { clearNotebookStores } from "../app";
@@ -8,25 +9,62 @@ import { nav } from "../../../.storybook/surfaces";
 const source = () => import("../app");
 const vault = {
   id: "personal",
-  name: "Personal",
+  name: "Atlas handbook",
   hostId: "host_local",
-  rootPath: "/home/developer/notes",
+  rootPath: "/home/maya/notes/atlas",
 };
 const notes = [
   {
-    path: "engineering/README.md",
-    title: "Engineering",
-    preview: "Team practices",
-    modifiedAtMs: 1,
+    path: "design.md",
+    title: "Offline review recovery",
+    preview: "Keep cached reviews readable while checkout hosts reconnect.",
+    modifiedAtMs: Date.parse("2026-10-23T10:40:00Z"),
   },
-  { path: "design.md", title: "Design review", preview: "Review notes", modifiedAtMs: 2 },
+  {
+    path: "release-checklist.md",
+    title: "Autumn release checklist",
+    preview: "Desktop QA, API migration, rollback owner, and launch approval.",
+    modifiedAtMs: Date.parse("2026-10-23T09:20:00Z"),
+  },
+  {
+    path: "engineering/README.md",
+    title: "Engineering handbook",
+    preview: "Local development, pull request review, and test conventions.",
+    modifiedAtMs: Date.parse("2026-10-22T14:10:00Z"),
+  },
+  {
+    path: "engineering/cache-ownership.md",
+    title: "Cache ownership and invalidation",
+    preview: "Keys belong to the selected checkout. Superseded requests cannot write.",
+    modifiedAtMs: Date.parse("2026-10-22T11:00:00Z"),
+  },
+  {
+    path: "runbooks/host-reconnect.md",
+    title: "Reconnect a sleeping build host",
+    preview: "Check enrollment, wake the machine, then verify the active checkout.",
+    modifiedAtMs: Date.parse("2026-10-21T16:45:00Z"),
+  },
+  {
+    path: "runbooks/rollback.md",
+    title: "Release rollback",
+    preview: "Restore the previous image and verify the database compatibility gate.",
+    modifiedAtMs: Date.parse("2026-10-21T12:30:00Z"),
+  },
+  {
+    path: "decisions/004-review-snapshots.md",
+    title: "ADR 004 · Revisioned review snapshots",
+    preview: "Why snapshots carry checkout identity and source revision.",
+    modifiedAtMs: Date.parse("2026-10-20T15:00:00Z"),
+  },
 ];
 const listing = {
   vaults: [vault],
   vault,
-  hosts: [{ id: "host_local", name: "Workstation", status: "connected" }],
+  hosts: [{ id: "host_local", name: "Design MacBook", status: "connected" }],
   entries: [
     { kind: "directory", path: "engineering" },
+    { kind: "directory", path: "runbooks" },
+    { kind: "directory", path: "decisions" },
     ...notes.map((n) => ({ kind: "file", path: n.path })),
   ],
   entryOrder: [],
@@ -82,8 +120,7 @@ export const MarkdownEditor: Story = {
       rpc: {
         listNotes: () => listing,
         readNote: () => ({
-          content:
-            "# Design review\n\nKeep controls reachable in narrow panels.\n\n- [ ] Review empty states\n- [x] Verify keyboard access",
+          content: recoveryPlan,
           sha256: "storybook-note",
         }),
         readProposal: () => null,

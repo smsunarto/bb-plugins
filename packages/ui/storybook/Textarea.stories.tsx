@@ -5,7 +5,11 @@ import { Textarea } from "../src/textarea";
 const meta = {
   title: "Components/Shared/Textarea",
   component: Textarea,
-  args: { "aria-label": "Description", placeholder: "Describe this component", onChange: fn() },
+  args: {
+    "aria-label": "Description",
+    placeholder: "Describe the expected behavior and acceptance criteria",
+    onChange: fn(),
+  },
   argTypes: {
     rows: { control: { type: "number", min: 1 } },
     disabled: { control: "boolean" },
@@ -22,7 +26,7 @@ export const Disabled: Story = { args: { disabled: true, defaultValue: "Unavaila
 export const LongContent: Story = {
   args: {
     defaultValue:
-      "The catalog shows each component in isolation.\nInspect narrow layouts, keyboard focus, and longer content.\nAll controls use the current Monokai palette.",
+      "Keep the last successful review visible when the build host disconnects.\nShow when the snapshot was fetched and let the reviewer retry.\nSwitching checkouts must discard late responses without losing the comment draft.",
     rows: 5,
   },
 };

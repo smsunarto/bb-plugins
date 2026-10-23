@@ -1,12 +1,9 @@
+import { reviewFiles } from "../../../.storybook/fixtures";
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { fn } from "storybook/test";
 import { ready } from "../../../.storybook/ready";
 import { DiffFileTree } from "../src/app/bridge/diff-file-tree";
-const files = [
-  { path: "src/app.tsx", status: "modified", additions: 24, deletions: 8 },
-  { path: "src/components/button.tsx", status: "added", additions: 48, deletions: 0 },
-  { path: "src/legacy.ts", status: "deleted", additions: 0, deletions: 16 },
-] as const;
+const files = reviewFiles;
 const meta = {
   title: "Components/Whiteboard/Diff file tree",
   component: DiffFileTree,
@@ -15,7 +12,7 @@ const meta = {
   args: {
     files,
     showFileCounts: true,
-    activePath: "src/app.tsx",
+    activePath: "src/reviews/use-review-query.ts",
     onReveal: fn(),
     onToggleViewed: fn(),
   },
@@ -28,8 +25,8 @@ export const Rename: Story = {
   args: {
     files: [
       {
-        path: "src/renamed.ts",
-        previousPath: "src/original.ts",
+        path: "docs/reviews/offline-recovery.md",
+        previousPath: "docs/reviews/retry.md",
         status: "renamed",
         additions: 1,
         deletions: 1,

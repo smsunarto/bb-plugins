@@ -8,11 +8,11 @@ const meta = {
   component: BarChart,
   tags: ["autodocs"],
   args: {
-    title: "Requests by day",
+    title: "Review refreshes · last five weekdays",
     categories: ["Mon", "Tue", "Wed", "Thu", "Fri"],
     series: [
-      { name: "Accepted", data: [12, 24, 18, 31, 27], tone: "success" },
-      { name: "Retried", data: [3, 5, 2, 8, 4], tone: "warning" },
+      { name: "Accepted", data: [186, 224, 208, 271, 243], tone: "success" },
+      { name: "Retried", data: [9, 12, 6, 18, 8], tone: "warning" },
     ],
   },
 } satisfies Meta<typeof BarChart>;
@@ -23,20 +23,24 @@ export const Stacked: Story = { args: { stacked: true } };
 export const Horizontal: Story = { args: { horizontal: true } };
 export const Empty: Story = { args: { categories: [], series: [] } };
 export const NegativeValues: Story = {
-  args: { categories: ["A", "B", "C"], series: [{ name: "Change", data: [-12, 0, 18] }] },
+  args: {
+    title: "Weekly change in open release issues",
+    categories: ["Web", "API", "Workers"],
+    series: [{ name: "Net issues", data: [-12, 0, 7] }],
+  },
 };
 export const Reference: Story = {
-  args: { referenceLines: [{ value: 25, label: "Target", tone: "info" }] },
+  args: { referenceLines: [{ value: 250, label: "Daily capacity", tone: "info" }] },
 };
 export const Lines: Story = { render: (args) => <LineChart {...args} /> };
 export const Pie: Story = {
   render: () => (
     <PieChart
-      title="Task outcomes"
+      title="Release checks"
       data={[
-        { label: "Complete", value: 24, tone: "success" },
-        { label: "Pending", value: 8, tone: "warning" },
-        { label: "Failed", value: 3, tone: "danger" },
+        { label: "Passed", value: 18, tone: "success" },
+        { label: "Awaiting review", value: 3, tone: "warning" },
+        { label: "Blocked", value: 1, tone: "danger" },
       ]}
     />
   ),
@@ -45,8 +49,8 @@ export const Usage: Story = {
   render: () => (
     <UsageBar
       total={100}
-      segments={[{ label: "Used", value: 68, tone: "info" }]}
-      labels={{ left: "Monthly quota", right: "68 of 100" }}
+      segments={[{ label: "Build minutes", value: 68, tone: "info" }]}
+      labels={{ left: "Build budget", right: "68 of 100 minutes" }}
     />
   ),
 };

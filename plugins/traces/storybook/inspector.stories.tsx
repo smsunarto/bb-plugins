@@ -11,10 +11,24 @@ const meta = {
   tags: ["autodocs"],
   args: {
     value: {
+      sessionId: "session_review_reconnect",
       provider: "codex",
+      task: "Verify cached reviews survive a checkout reconnect",
       status: "complete",
-      usage: { input: 1240, output: 325 },
-      tools: [{ name: "read_file", ok: true }],
+      startedAt: "2026-10-23T09:42:10.000Z",
+      durationMs: 18432,
+      usage: { inputTokens: 18420, cachedInputTokens: 12288, outputTokens: 2186 },
+      tools: [
+        { name: "read_file", path: "src/reviews/use-review-query.ts", durationMs: 42, ok: true },
+        {
+          name: "exec_command",
+          command: "bun test src/reviews/__tests__/reconnect.test.ts",
+          durationMs: 2418,
+          exitCode: 0,
+          ok: true,
+        },
+      ],
+      result: { testsPassed: 8, staleResponseIgnored: true, draftPreserved: true },
       error: null,
     },
   },
@@ -22,7 +36,16 @@ const meta = {
 export default meta;
 type Story = StoryObj<typeof meta>;
 export const Structured: Story = {};
-export const LongText: Story = { args: { value: { message: "Detailed output. ".repeat(200) } } };
+export const LongText: Story = {
+  args: {
+    value: {
+      message:
+        "[refresh] Checkout atlas/frontend disconnected; retaining snapshot r142.\n[refresh] Switched to atlas/api; request r143 started.\n[refresh] Ignored late response r142 for superseded checkout.\n".repeat(
+          35,
+        ),
+    },
+  },
+};
 export const ManyKeys: Story = {
   args: { value: Object.fromEntries(Array.from({ length: 80 }, (_, i) => [`event_${i}`, i])) },
 };

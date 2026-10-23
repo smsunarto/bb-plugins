@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="640" height="640" viewBox="0 0 640 640">
+  <rect width="640" height="640" fill="#e5dfcf"/>
+  <path d="M80 526H560M320 64V542" stroke="#c9c1ae" stroke-width="2" stroke-dasharray="6 10"/>
+  <ellipse cx="320" cy="538" rx="122" ry="19" fill="#c9c1ae"/>
+  <path d="M272 393L270 494L249 527Q274 548 306 529L319 408M327 406L341 531Q376 546 392 523L367 487L370 385" fill="#625547" stroke="#403d34" stroke-width="6"/>
+  <path d="M268 478L304 481L305 527Q280 538 249 527L267 506ZM343 480L370 477L375 505L394 529Q369 544 339 530Z" fill="#3f4237"/>
+  <path d="M262 208Q221 228 193 348L211 373L253 302L260 408Q320 437 381 402L388 304L423 359L444 341Q415 224 369 211Z" fill="#64765d" stroke="#344b40" stroke-width="7"/>
+  <path d="M259 205Q280 263 317 284Q355 258 375 210L369 389Q306 425 256 398Z" fill="#7d8e6a"/>
+  <path d="M276 119Q319 92 363 122L381 177L366 231Q313 258 268 216L253 167Z" fill="#445e4e" stroke="#344b40" stroke-width="6"/>
+  <path d="M281 155Q318 129 350 156L354 190Q323 233 291 197Z" fill="#c5a684"/>
+  <path d="M291 151Q320 139 350 158L344 174Q315 165 286 175Z" fill="#594b3f"/>
+  <path d="M282 179H302M326 179H344" stroke="#403d34" stroke-width="5" stroke-linecap="round"/>
+  <path d="M309 205Q320 211 332 203" fill="none" stroke="#8c6851" stroke-width="4"/>
+  <path d="M275 225L371 326" stroke="#594b3f" stroke-width="21"/>
+  <path d="M276 225L371 326" stroke="#9b805f" stroke-width="11"/>
+  <rect x="323" y="311" width="87" height="80" rx="14" fill="#9b805f" stroke="#594b3f" stroke-width="7"/>
+  <path d="M327 324L369 350L406 324" fill="none" stroke="#594b3f" stroke-width="5"/>
+  <circle cx="365" cy="349" r="6" fill="#d1b87d"/>
+  <circle cx="286" cy="314" r="19" fill="#d1b87d" stroke="#594b3f" stroke-width="5"/>
+  <path d="M286 300L291 316L286 329L281 316Z" fill="#445e4e"/>
+  <path d="M193 348L186 368Q195 389 211 373L215 357M426 348L426 372Q443 380 451 365L443 344" fill="#c5a684" stroke="#594b3f" stroke-width="5"/>
+  <g transform="translate(468 95)"><rect width="28" height="28" rx="5" fill="#445e4e"/><rect y="38" width="28" height="28" rx="5" fill="#7d8e6a"/><rect y="76" width="28" height="28" rx="5" fill="#9b805f"/><rect y="114" width="28" height="28" rx="5" fill="#d1b87d"/></g>
+  <text x="320" y="591" text-anchor="middle" font-family="sans-serif" font-size="20" letter-spacing="3" fill="#594b3f">COMPASS COURIER</text>
+  <text x="320" y="617" text-anchor="middle" font-family="sans-serif" font-size="13" letter-spacing="2" fill="#7b786c">FRONT VIEW · COLOR STUDY</text>
+</svg>

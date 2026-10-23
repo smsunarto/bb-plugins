@@ -213,6 +213,10 @@ const rulesDraft = createRulesDraft({
     ),
 });
 
+export function resetRulesDraftForTest() {
+  rulesDraft.resetForTest();
+}
+
 function useRulesDraft(server: RulesState) {
   rulesDraft.connect(rpc.useClient().saveRules);
   if (rulesDraft.snapshot() === null) rulesDraft.receive(server);

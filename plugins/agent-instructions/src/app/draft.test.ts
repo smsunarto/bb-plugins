@@ -78,3 +78,55 @@ test("an edit made while a failing save is in flight still saves", async () => {
   expect(sent).toEqual([["bad"], ["fixed"]]);
   expect(draft.snapshot()).toMatchObject({ error: null, base: { revision: 2 } });
 });
+
+test("reset cancels a scheduled save and accepts a fresh fixture", async () => {
+  let calls = 0;
+  const draft = createRulesDraft({ delayMs: 10, onStored: () => {} });
+  draft.connect(async ({ rules, revision }) => {
+    calls++;
+    return { rules, revision: revision + 1, saved: true };
+  });
+  draft.receive({ revision: 9, rules: [rule("old")] });
+  draft.edit([rule("unsaved")]);
+  draft.resetForTest();
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  expect(calls).toBe(0);
+  expect(draft.snapshot()).toBeNull();
+  draft.receive({ revision: 1, rules: [rule("fresh")] });
+  expect(names(draft)).toEqual(["fresh"]);
+});
+
+test.each(["success", "conflict", "failure"] as const)(
+  "reset ignores an old in-flight %s without interrupting the new save",
+  async (outcome) => {
+    const old = deferred<RulesState & { saved: boolean }>();
+    const fresh = deferred<RulesState & { saved: boolean }>();
+    const stored: string[][] = [];
+    const draft = createRulesDraft({
+      delayMs: 0,
+      onStored: (state) => stored.push(state.rules.map((item) => item.id)),
+    });
+    draft.connect(() => old.promise);
+    draft.receive({ revision: 9, rules: [rule("old")] });
+    draft.edit([rule("old-edit")]);
+    await settle();
+
+    draft.resetForTest();
+    draft.connect(() => fresh.promise);
+    draft.receive({ revision: 1, rules: [rule("fresh")] });
+    draft.edit([rule("fresh-edit")]);
+    await settle();
+
+    if (outcome === "failure") old.reject(new Error("old host disconnected"));
+    else old.resolve({ revision: 10, rules: [rule("old-edit")], saved: outcome === "success" });
+    await settle();
+    expect(names(draft)).toEqual(["fresh-edit"]);
+    expect(draft.snapshot()).toMatchObject({ base: { revision: 1 }, conflict: null, error: null });
+    expect(stored).toEqual([]);
+
+    fresh.resolve({ revision: 2, rules: [rule("fresh-edit")], saved: true });
+    await settle();
+    expect(draft.snapshot()?.base.revision).toBe(2);
+    expect(stored).toEqual([["fresh-edit"]]);
+  },
+);

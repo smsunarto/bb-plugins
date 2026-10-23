@@ -11,15 +11,15 @@ const meta = {
   args: {
     share: {
       id: "storybook",
-      label: "Component preview",
+      label: "Atlas · release review",
       hostId: "host_local",
       port: 6010,
       state: "running",
-      url: "https://preview.example.com",
+      url: "https://atlas-release-review.trycloudflare.com",
       createdAt: "2026-10-22T12:00:00Z",
       updatedAt: "2026-10-22T12:00:00Z",
     },
-    hosts: [{ id: "host_local", name: "Workstation", online: true }],
+    hosts: [{ id: "host_local", name: "Design MacBook", online: true }],
     busy: false,
     onAction: fn(),
   },
@@ -30,10 +30,15 @@ export const Running: Story = {};
 export const Stopped: Story = { args: { share: { ...meta.args.share, state: "stopped" } } };
 export const Failed: Story = {
   args: {
-    share: { ...meta.args.share, state: "error", lastError: "Tunnel connector disconnected" },
+    share: {
+      ...meta.args.share,
+      state: "error",
+      lastError:
+        "The local server on port 6010 stopped responding. Restart it, then start this share again.",
+    },
   },
 };
 export const HostOffline: Story = {
-  args: { hosts: [{ id: "host_local", name: "Workstation", online: false }] },
+  args: { hosts: [{ id: "host_local", name: "Design MacBook", online: false }] },
 };
 export const Working: Story = { args: { busy: true } };

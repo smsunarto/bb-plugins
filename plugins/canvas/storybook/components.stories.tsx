@@ -5,7 +5,12 @@ import { componentTable } from "../src/app/components";
 import type { CanvasComponentProps } from "../src/app/components";
 import { CanvasProvider, CanvasStateProvider } from "../src/app/state";
 import "../src/app/app.css";
-const body = () => <p>Component content remains readable while the panel is resized.</p>;
+const body = () => (
+  <p>
+    The release candidate is ready for desktop review. Reconnection and keyboard-access checks are
+    still pending before the rollout.
+  </p>
+);
 function Component({
   name,
   props,
@@ -16,8 +21,12 @@ function Component({
   const Render = componentTable[name];
   return (
     <CanvasProvider
-      source={{ kind: "workspace", environmentId: "env_story", path: "demo.canvas.mdx" }}
-      path="demo.canvas.mdx"
+      source={{
+        kind: "workspace",
+        environmentId: "env_story",
+        path: "release-readiness.canvas.mdx",
+      }}
+      path="release-readiness.canvas.mdx"
     >
       <CanvasStateProvider>
         <Render props={props} nodes={[]} renderNodes={body} />
@@ -29,7 +38,7 @@ const meta = {
   play: ready,
   title: "Components/Canvas/Components",
   component: Component,
-  args: { name: "Card", props: { title: "Review summary" } },
+  args: { name: "Card", props: { title: "Autumn release readiness" } },
   parameters: {
     host: {
       pluginId: "canvas",
@@ -47,21 +56,24 @@ export default meta;
 type Story = StoryObj<typeof meta>;
 export const Card: Story = {};
 export const Collapsed: Story = {
-  args: { props: { title: "Review summary", collapsible: true, defaultOpen: false } },
+  args: { props: { title: "Autumn release readiness", collapsible: true, defaultOpen: false } },
 };
-export const Section: Story = { args: { name: "Section", props: { title: "Implementation" } } };
+export const Section: Story = { args: { name: "Section", props: { title: "Rollout checks" } } };
 export const Callout: Story = {
-  args: { name: "Callout", props: { title: "Attention", tone: "warning" } },
+  args: {
+    name: "Callout",
+    props: { title: "Staging database migration required", tone: "warning" },
+  },
 };
 export const Statistic: Story = {
   args: {
     name: "Stat",
     props: {
-      label: "Completed reviews",
-      value: 24,
-      delta: "+8",
+      label: "Release checks passed",
+      value: 18,
+      delta: "+4 since yesterday",
       tone: "success",
-      caption: "This week",
+      caption: "18 of 22 checks complete",
     },
   },
 };
@@ -70,22 +82,32 @@ export const Table: Story = {
   args: {
     name: "Table",
     props: {
-      headers: ["Plugin", "State"],
+      headers: ["Service", "Owner", "Release status"],
       rows: [
-        ["Canvas", "Ready"],
-        ["Docs", "Cached"],
+        ["Web client", "Maya", "Ready"],
+        ["API", "Alex", "Migration pending"],
+        ["Background workers", "Sam", "Soak test running"],
+        ["Documentation", "Nora", "Ready"],
       ],
       striped: true,
     },
   },
 };
 export const Toggle: Story = {
-  args: { name: "Toggle", props: { id: "details", label: "Show details", default: true } },
+  args: {
+    name: "Toggle",
+    props: { id: "details", label: "Include completed checks", default: true },
+  },
 };
 export const Select: Story = {
   args: {
     name: "Select",
-    props: { id: "view", label: "Layout", options: ["List", "Board"], default: "List" },
+    props: {
+      id: "view",
+      label: "Environment",
+      options: ["Staging", "Production"],
+      default: "Staging",
+    },
   },
 };
 export const Checklist: Story = {
@@ -94,8 +116,8 @@ export const Checklist: Story = {
     props: {
       id: "checks",
       items: [
-        { id: "a", label: "Inspect source" },
-        { id: "b", label: "Verify browser" },
+        { id: "a", label: "Verify migration rollback on staging" },
+        { id: "b", label: "Test reconnect with an unsent comment" },
       ],
     },
   },
@@ -105,9 +127,9 @@ export const Todos: Story = {
     name: "Todos",
     props: {
       items: [
-        { id: "a", label: "Inspect source", status: "completed" },
-        { id: "b", label: "Verify browser", status: "in_progress" },
-        { id: "c", label: "Publish", status: "pending" },
+        { id: "a", label: "Verify migration rollback on staging", status: "completed" },
+        { id: "b", label: "Test reconnect with an unsent comment", status: "in_progress" },
+        { id: "c", label: "Approve production rollout", status: "pending" },
       ],
     },
   },
