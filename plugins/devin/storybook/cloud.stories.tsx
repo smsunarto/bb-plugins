@@ -5,7 +5,7 @@ import { banner } from "../../../.storybook/surfaces";
 const source = () => import("../src/app/app");
 const meta = {
   play: shows("Open in Devin"),
-  title: "Plugins/Devin/Cloud session",
+  title: "Components/Devin/Cloud session",
   component: RegisteredSurface,
   args: { source, select: (app) => banner(app, "cloud-session") },
   parameters: {

@@ -22,7 +22,7 @@ function DocumentControls() {
   );
 }
 const meta = {
-  title: "Shared/Whiteboard theme contract",
+  title: "Components/Shared/Whiteboard theme contract",
   component: DocumentControls,
   tags: ["autodocs"],
 } satisfies Meta<typeof DocumentControls>;

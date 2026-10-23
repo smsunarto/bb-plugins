@@ -51,7 +51,7 @@ function LinkHints() {
     </section>
   );
 }
-const meta = { title: "Plugins/Vimium/Link hints", component: LinkHints } satisfies Meta<
+const meta = { title: "Screens/Vimium/Link hints", component: LinkHints } satisfies Meta<
   typeof LinkHints
 >;
 export default meta;

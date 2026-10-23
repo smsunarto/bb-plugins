@@ -11,7 +11,7 @@ import { Notice, InlineError, Loading, RetryButton } from "../src/app/notice";
 import { fn } from "storybook/test";
 const meta = {
   play: ready,
-  title: "Plugins/Code Review/Statuses",
+  title: "Components/Code Review/Statuses",
   component: PrStateBadge,
   tags: ["autodocs"],
   args: { state: "open", isDraft: false },

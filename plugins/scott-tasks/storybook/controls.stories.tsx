@@ -18,7 +18,7 @@ function InteractiveCheckbox() {
 }
 const meta = {
   play: ready,
-  title: "Plugins/Tasks/Controls",
+  title: "Components/Tasks/Controls",
   component: StatusIcon,
   tags: ["autodocs"],
   args: { status: "todo" },

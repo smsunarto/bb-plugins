@@ -6,7 +6,7 @@ import "../src/app/cloudflare.css";
 
 const meta = {
   play: ready,
-  title: "Plugins/Cloudflare/Feedback",
+  title: "Components/Cloudflare/Feedback",
   component: Notice,
   tags: ["autodocs"],
   args: { children: "Connected to the selected host." },

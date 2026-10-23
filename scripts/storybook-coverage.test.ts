@@ -2,11 +2,12 @@ import { expect, test } from "bun:test";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import ts from "typescript";
+import { previewSurfaceClass } from "../.storybook/surfaces";
 
 // Explicit surface inventory. Each entry requires a particular story and its
 // production import/registration, so a lone Button story cannot satisfy coverage.
 const surfaces: Record<string, Record<string, string[]>> = {
-  "agent-instructions": { rules: ["RuleCard"] },
+  "agent-instructions": { rules: ["RuleCard"], screens: ["../src/app/app"] },
   agentation: { panel: ["AnnotationPanel"] },
   amp: { oracle: ["../app"] },
   canvas: {
@@ -22,7 +23,7 @@ const surfaces: Record<string, Record<string, string[]>> = {
     sync: ["SyncState"],
   },
   devin: { cloud: ["../src/app/app"] },
-  dotfiles: { editor: ["WorkingFileEditor", "HostPicker", "DotfilesPage"] },
+  dotfiles: { editor: ["WorkingFileEditor", "HostPicker"], screens: ["DotfilesPage"] },
   "game-studio": {
     canvas: ["StudioCanvas"],
     generation: ["GenerationSettings", "CanvasInputs", "BriefStarters"],
@@ -31,7 +32,8 @@ const surfaces: Record<string, Record<string, string[]>> = {
   "gh-stack": { files: ["ChangedFileTree"], stack: ["../app"] },
   gitbutler: {
     files: ["FileList", "WorkspaceSkeleton", "Notice"],
-    workspace: ["StackLane", "BranchActions", "Conflicts", "OperationHistory"],
+    workspace: ["StackLane", "BranchActions", "Conflicts"],
+    history: ["OperationHistory"],
   },
   "gtd-sidebar": { threads: ["ThreadCard", "RenameProvider"], indicators: ["StatusGlyph"] },
   "kitchen-sink": { comparison: ["SmartImageCompareDirective", "DevinIcon"] },
@@ -45,7 +47,7 @@ const surfaces: Record<string, Record<string, string[]>> = {
   },
   "prompt-editor": { editor: ["../src/app/app"] },
   "remind-me": { reminders: ["../src/app/app"] },
-  "scott-docs": { documents: ["../app"] },
+  "scott-docs": { documents: ["../app"], cards: ["../app"] },
   "scott-inline-vis": { tweaks: ["TweakPanel"] },
   "scott-tasks": {
     views: ["ListView", "BoardView", "DetailView", "ManagePanel"],
@@ -121,3 +123,25 @@ for (const [plugin, inventory] of Object.entries(surfaces)) {
     }
   });
 }
+
+test("stories are grouped into Components or Screens", () => {
+  for (const root of ["plugins", "packages"]) {
+    for (const entry of readdirSync(root, { withFileTypes: true })) {
+      const directory = join(root, entry.name, "storybook");
+      if (!entry.isDirectory() || !existsSync(directory)) continue;
+      for (const name of readdirSync(directory).filter((name) => name.endsWith(".stories.tsx"))) {
+        const path = join(directory, name);
+        expect(readFileSync(path, "utf8"), path).toMatch(/title:\s*"(?:Components|Screens)\//);
+      }
+    }
+  }
+});
+
+test("plugin styles apply to component and screen previews", () => {
+  for (const root of ["Components", "Screens"]) {
+    expect(previewSurfaceClass(`${root}/Game Studio/Canvas`)).toBe("gs-app");
+    expect(previewSurfaceClass(`${root}/Cloudflare/Quick shares`)).toBe("cf-panel");
+    expect(previewSurfaceClass(`${root}/Tasks/Views`)).toBeUndefined();
+    expect(previewSurfaceClass(`${root}/Cloudflare Other/Panel`)).toBeUndefined();
+  }
+});

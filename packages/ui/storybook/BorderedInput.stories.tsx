@@ -3,7 +3,7 @@ import { expect, fn, within } from "storybook/test";
 import { BorderedInput } from "../src/input";
 
 const meta = {
-  title: "Shared/BorderedInput",
+  title: "Components/Shared/BorderedInput",
   component: BorderedInput,
   args: { "aria-label": "Repository", placeholder: "Repository path", onChange: fn() },
   argTypes: {

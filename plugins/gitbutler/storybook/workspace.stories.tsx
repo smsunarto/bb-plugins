@@ -4,7 +4,6 @@ import { shows } from "../../../.storybook/ready";
 import { StackLane, UncommittedCard, CommitExpansionContext } from "../src/app/workspace-lane";
 import { BranchActions } from "../src/app/branch-actions";
 import { Conflicts } from "../src/app/conflicts";
-import { OperationHistory } from "../src/app/history-screen";
 import type { Branch, Workspace } from "../src/shared/schema";
 import "../src/app/gitbutler.css";
 const target = { threadId: "thr_story", repositoryKey: "." };
@@ -47,21 +46,9 @@ const rpc = {
   reviews: () => ({ reviews: [], reason: null }),
   commitChanges: () => ({ changes, reason: null }),
   conflictResolution: () => ({ subthread: null }),
-  oplog: () => ({
-    entries: [
-      {
-        id: "aabbccddee",
-        operation: "CreateCommit",
-        title: "CreateCommit",
-        body: "Document plugin components",
-        createdAt: "2026-10-22T12:00:00Z",
-      },
-    ],
-    reason: null,
-  }),
 };
 const meta = {
-  title: "Plugins/GitButler/Workspace",
+  title: "Components/GitButler/Workspace",
   component: StackLane,
   args: { target, stack, behind: 0, onOpenFile: fn() },
   parameters: { host: { pluginId: "gitbutler", rpc } },
@@ -96,20 +83,4 @@ export const Actions: Story = {
 export const Conflict: Story = {
   render: () => <Conflicts target={target} workspace={workspace} />,
   play: shows("Conflicts to resolve"),
-};
-export const History: Story = {
-  render: () => <OperationHistory target={target} />,
-  play: shows("Create commit"),
-};
-export const EmptyHistory: Story = {
-  render: () => <OperationHistory target={target} />,
-  parameters: { host: { rpc: { oplog: () => ({ entries: [], reason: null }) } } },
-  play: shows("No operations yet"),
-};
-export const OfflineHistory: Story = {
-  render: () => <OperationHistory target={target} />,
-  parameters: {
-    host: { rpc: { oplog: () => Promise.reject(new Error("Checkout host is offline")) } },
-  },
-  play: shows("History failed to load"),
 };

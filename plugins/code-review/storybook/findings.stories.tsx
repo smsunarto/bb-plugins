@@ -3,7 +3,7 @@ import { fn } from "storybook/test";
 import { ready } from "../../../.storybook/ready";
 import { FindingCard } from "../src/app/finding";
 const meta = {
-  title: "Plugins/Code Review/Findings",
+  title: "Components/Code Review/Findings",
   component: FindingCard,
   tags: ["autodocs"],
   play: ready,

@@ -18,7 +18,7 @@ function InteractiveForm(args: ComponentProps<typeof CommentForm>) {
 }
 const meta = {
   render: (args) => <InteractiveForm {...args} />,
-  title: "Plugins/Code Review/Comment form",
+  title: "Components/Code Review/Comment form",
   component: CommentForm,
   tags: ["autodocs"],
   play: ready,

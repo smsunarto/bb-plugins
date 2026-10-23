@@ -56,7 +56,7 @@ const result = {
   fetchedAt: 1792670400000,
 };
 const meta = {
-  title: "Plugins/GitHub Stack/Stack panel",
+  title: "Screens/GitHub Stack/Stack panel",
   component: RegisteredSurface,
   args: {
     source,

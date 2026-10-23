@@ -4,7 +4,7 @@ import { StatusGlyph } from "../components/inbox/status-glyph";
 import "../app.css";
 const meta = {
   play: ready,
-  title: "Plugins/GTD Sidebar/Status indicators",
+  title: "Components/GTD Sidebar/Status indicators",
   component: StatusGlyph,
   tags: ["autodocs"],
   args: { indicator: "runtime", label: "Working" },

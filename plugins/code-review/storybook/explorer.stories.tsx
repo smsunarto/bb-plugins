@@ -3,7 +3,7 @@ import { fn } from "storybook/test";
 import { ready } from "../../../.storybook/ready";
 import { FileExplorer } from "../src/app/file-explorer";
 const meta = {
-  title: "Plugins/Code Review/File explorer",
+  title: "Components/Code Review/File explorer",
   component: FileExplorer,
   tags: ["autodocs"],
   play: ready,

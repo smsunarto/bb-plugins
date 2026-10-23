@@ -6,7 +6,7 @@ const variants = ["default", "secondary", "outline", "ghost", "destructive", "li
 const sizes = ["sm", "default", "lg", "icon"] as const;
 
 const meta = {
-  title: "Shared/NativeButton",
+  title: "Components/Shared/NativeButton",
   component: NativeButton,
   args: { children: "Workspace action", variant: "outline", onClick: fn() },
   argTypes: {

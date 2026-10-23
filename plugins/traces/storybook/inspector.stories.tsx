@@ -6,7 +6,7 @@ import { Empty, QueryError, Pages } from "../src/app/controls";
 import "../src/app/traces.css";
 const meta = {
   play: ready,
-  title: "Plugins/Traces/Inspector",
+  title: "Components/Traces/Inspector",
   component: JsonView,
   tags: ["autodocs"],
   args: {

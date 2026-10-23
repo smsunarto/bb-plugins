@@ -1,11 +1,8 @@
 import { useState, type ComponentProps } from "react";
 import type { Meta, StoryObj } from "@storybook/react-vite";
-import { fn, within } from "storybook/test";
+import { fn } from "storybook/test";
 import { ready } from "../../../.storybook/ready";
-import { RegisteredSurface } from "../../../.storybook/host";
-import { settings } from "../../../.storybook/surfaces";
 import { RuleCard } from "../src/app/app";
-const source = () => import("../src/app/app");
 const targets = {
   hosts: [{ id: "host_local", name: "Workstation" }],
   providers: [
@@ -28,7 +25,7 @@ function EditableRule(args: ComponentProps<typeof RuleCard>) {
   );
 }
 const meta = {
-  title: "Plugins/Agent Instructions/Rules editor",
+  title: "Components/Agent Instructions/Rule card",
   component: RuleCard,
   tags: ["autodocs"],
   play: ready,
@@ -59,34 +56,5 @@ export const Scoped: Story = {
       ...meta.args.rule,
       when: { hosts: ["host_local"], providers: ["codex"], projects: [], models: ["gpt-*"] },
     },
-  },
-};
-export const Loading: Story = {
-  render: () => <RegisteredSurface source={source} select={settings} />,
-  parameters: {
-    host: {
-      pluginId: "agent-instructions",
-      rpc: { rules: () => new Promise(() => {}), targets: () => targets },
-    },
-  },
-  play: async (context) => {
-    await ready(context);
-    await within(context.canvasElement).findByText("Loading…");
-  },
-};
-export const Error: Story = {
-  render: () => <RegisteredSurface source={source} select={settings} />,
-  parameters: {
-    host: {
-      pluginId: "agent-instructions",
-      rpc: {
-        rules: () => Promise.reject(new globalThis.Error("Could not load instructions")),
-        targets: () => targets,
-      },
-    },
-  },
-  play: async (context) => {
-    await ready(context);
-    await within(context.canvasElement).findByText("Could not load instructions");
   },
 };

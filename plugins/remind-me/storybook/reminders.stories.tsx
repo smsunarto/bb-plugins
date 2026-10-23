@@ -21,7 +21,7 @@ const reminders = [
 ];
 const meta = {
   play: shows("Review the component catalog"),
-  title: "Plugins/Reminders/Saved reminders",
+  title: "Screens/Reminders/Saved reminders",
   component: RegisteredSurface,
   args: { source, select: nav },
   parameters: { host: { pluginId: "remind-me", rpc: { list: () => ({ reminders }) } } },

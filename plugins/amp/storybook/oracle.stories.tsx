@@ -14,7 +14,7 @@ const report = {
 };
 const meta = {
   play: shows(report.response),
-  title: "Plugins/Amp/Oracle card",
+  title: "Components/Amp/Oracle card",
   component: RegisteredSurface,
   args: { source, select: (app) => directive(app, "amp-oracle", { reportId: id }) },
   parameters: {

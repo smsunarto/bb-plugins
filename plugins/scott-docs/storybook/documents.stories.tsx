@@ -3,7 +3,7 @@ import { clearNotebookStores } from "../app";
 import { expect, waitFor } from "storybook/test";
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { RegisteredSurface } from "../../../.storybook/host";
-import { nav, directive } from "../../../.storybook/surfaces";
+import { nav } from "../../../.storybook/surfaces";
 const source = () => import("../app");
 const vault = {
   id: "personal",
@@ -36,7 +36,7 @@ const listing = {
 const meta = {
   beforeEach: () => clearNotebookStores(),
   play: ready,
-  title: "Plugins/Docs/Document browser",
+  title: "Screens/Docs/Document browser",
   component: RegisteredSurface,
   args: { source, select: (app) => nav(app, "personal", "navigation") },
   parameters: { host: { pluginId: "scott-docs", rpc: { listNotes: () => listing } } },
@@ -71,18 +71,6 @@ export const Offline: Story = {
     host: { rpc: { listNotes: () => Promise.reject(new globalThis.Error("Host unavailable")) } },
   },
 };
-export const HtmlCard: Story = {
-  args: {
-    select: (app) =>
-      directive(app, "docs", {
-        vault: "personal",
-        path: "report.html",
-        title: "Weekly engineering report",
-      }),
-  },
-};
-export const InvalidLink: Story = { args: { select: (app) => directive(app, "docs", {}) } };
-
 export const MarkdownEditor: Story = {
   args: { select: (app) => nav(app, "personal/design.md") },
   parameters: {

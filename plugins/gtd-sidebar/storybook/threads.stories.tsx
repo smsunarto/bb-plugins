@@ -41,7 +41,7 @@ const thread: PluginSidebarThread = {
   latestAttentionAt: 1792670400000,
 };
 const meta = {
-  title: "Plugins/GTD Sidebar/Thread cards",
+  title: "Components/GTD Sidebar/Thread cards",
   component: ThreadCard,
   tags: ["autodocs"],
   play: ready,

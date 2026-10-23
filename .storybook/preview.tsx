@@ -48,13 +48,18 @@ const preview: Preview = {
   ],
   parameters: {
     layout: "fullscreen",
-    options: { storySort: { order: ["Overview", "Theme", "Plugins", "Shared"] } },
+    options: {
+      storySort: {
+        method: "alphabetical",
+        order: ["Screens", "Components", ["Theme", "Shared", "*"]],
+      },
+    },
     docs: {
       theme: monokaiStorybookTheme(),
       story: { inline: false, height: "320px" },
       description: {
         component:
-          "Production plugin components with deterministic local fixtures. BB SDK controls use the official test runtime; no live backend is connected.",
+          "Production components and complete screens with deterministic local fixtures. BB SDK controls use the official test runtime; no live backend is connected.",
       },
     },
   },

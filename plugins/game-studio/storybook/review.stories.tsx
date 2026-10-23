@@ -5,7 +5,7 @@ import "../src/app/studio.css";
 import "../src/app/canvas.css";
 const meta = {
   play: ready,
-  title: "Plugins/Game Studio/Asset verdict",
+  title: "Components/Game Studio/Asset verdict",
   component: VerdictBadge,
   tags: ["autodocs"],
   args: { verdict: "pass", className: "gs-verdict" },

@@ -61,7 +61,7 @@ function InteractiveCanvas(args: ComponentProps<typeof StudioCanvas>) {
   );
 }
 const meta = {
-  title: "Plugins/Game Studio/Canvas",
+  title: "Screens/Game Studio/Canvas",
   component: StudioCanvas,
   render: (args) => <InteractiveCanvas {...args} />,
   args: {

@@ -29,7 +29,7 @@ function InteractiveSettings(args: ComponentProps<typeof GenerationSettings>) {
 }
 const meta = {
   render: (args) => <InteractiveSettings {...args} />,
-  title: "Plugins/Game Studio/Generation controls",
+  title: "Components/Game Studio/Generation controls",
   component: GenerationSettings,
   tags: ["autodocs"],
   play: ready,

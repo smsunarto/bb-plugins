@@ -112,8 +112,10 @@ Run focused tests with BB's SDK testing harnesses, then verify the changed user 
 
 Run `bun run storybook` from the repository root and open
 [Storybook](http://localhost:6010). It discovers stories under
-`plugins/*/storybook/` and `packages/*/storybook/`, starting with Monokai's
-palette catalog. The preview reuses Monokai's generated theme and decorators.
+`plugins/*/storybook/` and `packages/*/storybook/` in two sections:
+**Screens** for complete plugin views and **Components** for focused states,
+shared controls, and the theme catalog. Start with Screens to review components
+in context. The preview reuses Monokai's generated theme and decorators.
 Run `bun run build-storybook` to export the catalog to `storybook-static/`.
 
 The [Storybook MCP addon](https://storybook.js.org/docs/ai/mcp/overview) serves

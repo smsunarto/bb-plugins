@@ -7,7 +7,7 @@ const variants = ["default", "secondary", "outline", "ghost", "destructive", "li
 const sizes = ["sm", "default", "lg", "icon"] as const;
 
 const meta = {
-  title: "Shared/BorderedButton",
+  title: "Components/Shared/BorderedButton",
   component: BorderedButton,
   args: { children: "Repository action", variant: "outline", onClick: fn() },
   argTypes: {

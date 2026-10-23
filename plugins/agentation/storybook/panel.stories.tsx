@@ -41,7 +41,7 @@ const session = {
 };
 const meta = {
   play: ready,
-  title: "Plugins/Agentation/Annotations",
+  title: "Screens/Agentation/Annotations",
   component: AnnotationPanel,
   parameters: {
     host: {

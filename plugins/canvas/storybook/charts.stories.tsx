@@ -4,7 +4,7 @@ import { BarChart, LineChart, PieChart, UsageBar } from "../src/app/charts";
 import "../src/app/app.css";
 const meta = {
   play: ready,
-  title: "Plugins/Canvas/Charts",
+  title: "Components/Canvas/Charts",
   component: BarChart,
   tags: ["autodocs"],
   args: {

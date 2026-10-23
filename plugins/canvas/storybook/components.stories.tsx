@@ -27,7 +27,7 @@ function Component({
 }
 const meta = {
   play: ready,
-  title: "Plugins/Canvas/Components",
+  title: "Components/Canvas/Components",
   component: Component,
   args: { name: "Card", props: { title: "Review summary" } },
   parameters: {

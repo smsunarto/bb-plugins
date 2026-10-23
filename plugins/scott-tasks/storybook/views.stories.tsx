@@ -143,7 +143,7 @@ function TasksView({ view }: { view: "list" | "board" | "detail" | "manage" }) {
   );
 }
 const meta = {
-  title: "Plugins/Tasks/Views",
+  title: "Screens/Tasks/Views",
   component: TasksView,
   tags: ["autodocs"],
   args: { view: "list" },

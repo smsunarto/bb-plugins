@@ -10,7 +10,7 @@ const query = {
   refetch: fn(),
 };
 const meta = {
-  title: "Plugins/Code Review/Refresh status",
+  title: "Components/Code Review/Refresh status",
   component: SyncState,
   tags: ["autodocs"],
   play: ready,

@@ -6,7 +6,7 @@ const variants = ["default", "secondary", "outline", "ghost", "destructive", "li
 const sizes = ["sm", "default", "lg", "icon"] as const;
 
 const meta = {
-  title: "Shared/Button",
+  title: "Components/Shared/Button",
   component: Button,
   args: { children: "Continue", onClick: fn() },
   argTypes: {

@@ -1,8 +1,7 @@
-import { ready, shows } from "../../../.storybook/ready";
+import { ready } from "../../../.storybook/ready";
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { fn } from "storybook/test";
 import { WorkingFileEditor } from "../src/app/working-file-editor";
-import { DotfilesPage } from "../src/app/page";
 import { HostPicker } from "../src/app/host-picker";
 const hosts = {
   selectedHostId: "host_local",
@@ -13,7 +12,7 @@ const hosts = {
 };
 const meta = {
   play: ready,
-  title: "Plugins/Dotfiles/File editor",
+  title: "Components/Dotfiles/File editor",
   component: WorkingFileEditor,
   tags: ["autodocs"],
   args: {
@@ -35,32 +34,3 @@ export const Markdown: Story = {
   },
 };
 export const Machines: Story = { render: () => <HostPicker /> };
-export const Offline: Story = {
-  play: shows("Workstation is not connected."),
-  render: () => <DotfilesPage subPath="" />,
-  parameters: {
-    host: {
-      rpc: {
-        hosts: () => hosts,
-        overview: () => ({ state: "offline", host: { id: "host_local", name: "Workstation" } }),
-      },
-    },
-  },
-};
-export const RepositoryMissing: Story = {
-  play: shows(/No dotfiles repository/),
-  render: () => <DotfilesPage subPath="" />,
-  parameters: {
-    host: {
-      rpc: {
-        hosts: () => hosts,
-        overview: () => ({
-          state: "ready",
-          host: { id: "host_local", name: "Workstation" },
-          repoExists: false,
-          repoPath: "/home/developer/git/dotfiles",
-        }),
-      },
-    },
-  },
-};

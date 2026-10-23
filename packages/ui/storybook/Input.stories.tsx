@@ -4,7 +4,7 @@ import { expect, fn, userEvent, within } from "storybook/test";
 import { Input } from "../src/input";
 
 const meta = {
-  title: "Shared/Input",
+  title: "Components/Shared/Input",
   component: Input,
   args: { "aria-label": "Name", placeholder: "Component name", onChange: fn() },
   argTypes: {

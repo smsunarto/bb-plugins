@@ -5,7 +5,7 @@ import { FileList, Count, LineStats } from "../src/app/file-list";
 import { Notice, WorkspaceSkeleton, CommitRowsSkeleton, FileRowsSkeleton } from "../src/app/notice";
 const meta = {
   play: ready,
-  title: "Plugins/GitButler/Changed files",
+  title: "Components/GitButler/Changed files",
   component: FileList,
   tags: ["autodocs"],
   args: {

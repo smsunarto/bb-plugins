@@ -4,7 +4,7 @@ import type { Meta, StoryObj } from "@storybook/react-vite";
 type TokenStyle = CSSProperties & Record<`--${string}`, string>;
 
 const meta = {
-  title: "Theme/bb Monokai",
+  title: "Components/Theme/bb Monokai",
 } satisfies Meta;
 
 export default meta;

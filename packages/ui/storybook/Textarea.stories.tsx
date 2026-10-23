@@ -3,7 +3,7 @@ import { expect, fn, userEvent, within } from "storybook/test";
 import { Textarea } from "../src/textarea";
 
 const meta = {
-  title: "Shared/Textarea",
+  title: "Components/Shared/Textarea",
   component: Textarea,
   args: { "aria-label": "Description", placeholder: "Describe this component", onChange: fn() },
   argTypes: {

@@ -8,7 +8,7 @@ const files = [
   { path: "src/legacy.ts", status: "deleted", additions: 0, deletions: 16 },
 ] as const;
 const meta = {
-  title: "Plugins/Whiteboard/Diff file tree",
+  title: "Components/Whiteboard/Diff file tree",
   component: DiffFileTree,
   tags: ["autodocs"],
   play: ready,

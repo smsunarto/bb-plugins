@@ -4,7 +4,7 @@ import { ready } from "../../../.storybook/ready";
 import { QuickShareCard } from "../src/app/shares";
 import "../src/app/cloudflare.css";
 const meta = {
-  title: "Plugins/Cloudflare/Quick shares",
+  title: "Components/Cloudflare/Quick shares",
   component: QuickShareCard,
   tags: ["autodocs"],
   play: ready,

@@ -5,7 +5,7 @@ import { EmptyState } from "../src/app/panel/empty-state";
 import "../src/app/styles/index.css";
 const meta = {
   play: ready,
-  title: "Plugins/Whiteboard/Markdown",
+  title: "Components/Whiteboard/Markdown",
   component: AgentMarkdown,
   tags: ["autodocs"],
   args: {

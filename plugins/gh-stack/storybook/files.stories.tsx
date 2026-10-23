@@ -4,7 +4,7 @@ import { ChangedFileTree } from "../components/stack/changed-file-tree";
 import "../app.css";
 const meta = {
   play: ready,
-  title: "Plugins/GitHub Stack/Changed files",
+  title: "Components/GitHub Stack/Changed files",
   component: ChangedFileTree,
   tags: ["autodocs"],
   args: {

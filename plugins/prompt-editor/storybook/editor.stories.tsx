@@ -39,7 +39,7 @@ const rpc = {
 const meta = {
   beforeEach: () => clearDraftsForTest(),
   play: ready,
-  title: "Plugins/Prompt Editor/Tools and files",
+  title: "Screens/Prompt Editor/Tools and files",
   component: RegisteredSurface,
   args: { source, select: (app) => nav(app, "", "plugins") },
   parameters: { host: { pluginId: "prompt-editor", rpc } },

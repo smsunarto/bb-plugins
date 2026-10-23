@@ -6,7 +6,7 @@ const variants = ["default", "outline", "ghost", "destructive"] as const;
 const sizes = ["xs", "sm", "default"] as const;
 
 const meta = {
-  title: "Shared/CompactButton",
+  title: "Components/Shared/CompactButton",
   component: CompactButton,
   args: { children: "Close", onClick: fn() },
   argTypes: {

@@ -6,7 +6,7 @@ import before from "./before.svg?url";
 import after from "./after.svg?url";
 const meta = {
   play: ready,
-  title: "Plugins/Kitchen Sink/Image comparison",
+  title: "Components/Kitchen Sink/Image comparison",
   component: SmartImageCompareDirective,
   tags: ["autodocs"],
   args: {
