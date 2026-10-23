@@ -6,11 +6,7 @@ import { listEditors as listWorkspaceEditors } from "./slot-workspaces.ts";
 import { promisify } from "node:util";
 import { z } from "zod";
 import { uncertainJob, pipelineJobSchema } from "../shared/unity-editor-contract.ts";
-import type {
-  CommandParameters,
-  CommandSubmission,
-  EditorInstance,
-} from "../shared/unity-editor-contract.ts";
+import type { EditorInstance } from "../shared/unity-editor-contract.ts";
 
 const exec = promisify(execFile);
 function processAlive(pid: number): boolean {
@@ -385,31 +381,6 @@ export async function probe(instance: EditorInstance, signal?: AbortSignal) {
     return { pid: instance.pid };
   } finally {
     await rm(dir, { recursive: true, force: true });
-  }
-}
-export async function execute(
-  instance: EditorInstance,
-  command: string,
-  parameters: CommandParameters,
-  signal?: AbortSignal,
-): Promise<CommandSubmission> {
-  const params: CommandParameters = { ...parameters };
-  // Package requests stay tracked; tests preserve async mode and are monitored by test_status.
-  if (command === "package_add" || command === "package_remove") params.wait = true;
-  try {
-    const response = await request(instance, "/api/exec", signal, {
-      command,
-      parameters: params,
-      job: true,
-      timeout: 600000,
-    });
-    const result = z
-      .object({ jobId: z.string() })
-      .parse(decode(envelopeSchema.parse(response).result));
-    return result;
-  } catch (error) {
-    if (error instanceof RejectedCommand) return { rejected: true as const, error: error.message };
-    throw error;
   }
 }
 export async function job(

@@ -92,7 +92,7 @@ test("interrupted submissions and checkout preparations retain exclusion after m
   const claims = new EditorClaims(source, slots);
   const claim = claims.claim("host", instance, "alice", "authoring").claim;
   claims.job("host", "main", "alice", claim.claimId, null);
-  claims.begin("host", "main", "alice", claim.claimId);
+  claims.job("host", "main", "alice", claim.claimId, "submitting", null);
   const other = slots.register("host", "/partial", "project");
   const pending = slots.acquire(other.id, "host", "project", "alice");
   importUnityStorage(target, dir);

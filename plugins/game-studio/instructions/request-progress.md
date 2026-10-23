@@ -28,7 +28,8 @@ prove the request succeeded. Do not mark other requests complete. Keep `detail`
 under 2,000 characters and keep credentials out of progress files. The Unity tab
 shows the five newest valid request files, within a 1,000-file read limit.
 
-Never fabricate progress or successful verification. A lost Pipeline response,
-unknown job outcome, or uncertain Editor claim requires `uncertain` status until
-the managed Editor workflow reconciles the actual result. Do not repeat an
-operation while its outcome is unknown.
+Never fabricate progress or successful verification. A lost Unity CLI response
+or unknown job outcome requires `uncertain` status until the owner establishes
+native completion and the actual result. Keep the Editor claim while checking
+that work. Managed reconciliation applies only to pre-upgrade pending claim
+state. Do not repeat an operation while its outcome is unknown.

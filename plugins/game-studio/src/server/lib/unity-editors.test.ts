@@ -30,16 +30,11 @@ function setup(overrides: Partial<EditorTransport> = {}) {
   const db = new Database(":memory:");
   dbs.push(db);
   const claims = new EditorClaims(db);
-  const issued: string[] = [];
   const transport: EditorTransport = {
     discover: async () => ({ instances: [main, client], warnings: [] }),
     probe: async (_, instance) => ({ pid: instance.pid }),
     alive: async () => ({ alive: true }),
     quiet: async () => ({ quiet: true }),
-    execute: async (_, instance, command) => {
-      issued.push(`${instance.pid}:${command}`);
-      return { jobId: "job-1" };
-    },
     job: async () => ({ jobId: "job-1", state: "completed", result: { playMode: "stopped" } }),
     ...overrides,
   };
@@ -49,22 +44,55 @@ function setup(overrides: Partial<EditorTransport> = {}) {
     ownerState,
     claims,
     db,
-    issued,
     transport,
   };
 }
-test("a second thread cannot claim or control an occupied Editor", async () => {
-  const { service, issued } = setup();
+test("a second thread cannot claim, inspect or release an occupied Editor", async () => {
+  const { service } = setup();
   const claim = await service.claim("host", "main", "alice", "runtime");
   await expect(service.claim("host", "main", "bob", "runtime")).rejects.toThrow(
     "owned by @thread:alice",
   );
-  await expect(
-    service.command("host", "main", "bob", claim.claimId, "editor_status", {}),
-  ).rejects.toThrow("owned by this BB thread");
-  await service.command("host", "main", "alice", claim.claimId, "editor_status", {});
-  expect(issued).toEqual(["101:editor_status"]);
+  await expect(service.status("host", "main", "bob", claim.claimId)).rejects.toThrow(
+    "owned by this BB thread",
+  );
+  await expect(service.release("host", "main", "bob", claim.claimId)).rejects.toThrow(
+    "owned by this BB thread",
+  );
+  expect((await service.status("host", "main", "alice", claim.claimId)).claim).toEqual(claim);
 });
+
+test("ownership status exposes native work before writes without a legacy job", async () => {
+  let checks = 0;
+  const background = {
+    quiet: false,
+    blocking: { source: "recompile_status", status: "triggered" },
+  };
+  const { service, claims } = setup({
+    quiet: async () => {
+      checks++;
+      return background;
+    },
+    job: async () => {
+      throw new Error("A new claim has no legacy job to inspect");
+    },
+  });
+  const claim = await service.claim("host", "main", "alice", "authoring");
+  await expect(service.status("host", "main", "bob", claim.claimId)).rejects.toThrow(
+    "owned by this BB thread",
+  );
+  expect(checks).toBe(0);
+  expect(await service.status("host", "main", "alice", claim.claimId)).toEqual({
+    claim,
+    job: null,
+    background,
+  });
+  expect(claims.get("host", "main")?.jobId).toBeNull();
+  await expect(service.release("host", "main", "alice", claim.claimId)).rejects.toThrow(
+    "background work",
+  );
+});
+
 test("runtime clients coexist, while shared authoring and clone authoring are refused", async () => {
   const { service, claims } = setup();
   await service.claim("host", "main", "alice", "runtime");
@@ -73,9 +101,6 @@ test("runtime clients coexist, while shared authoring and clone authoring are re
     [101, "alice"],
     [102, "bob"],
   ]);
-  await expect(
-    service.command("host", "client", "bob", guest.claimId, "run_script", {}),
-  ).rejects.toThrow("authoring claim");
   await expect(service.claim("host", "client", "charlie", "authoring")).rejects.toThrow(
     "owned by @thread:bob",
   );
@@ -172,10 +197,10 @@ test("failed PID verification removes only the new reservation", async () => {
   );
   expect(claims.get("host", "main")).toBeNull();
 });
-test("a pending job blocks release and clears only after terminal results", async () => {
+test("a pending pre-upgrade job blocks release and reports lifecycle state without its result", async () => {
   const { service, claims } = setup();
   const claim = await service.claim("host", "main", "alice", "runtime");
-  await service.command("host", "main", "alice", claim.claimId, "editor_status", {});
+  service.claims.job("host", "main", "alice", claim.claimId, "job-1", null);
   expect(() => claims.release("host", "main", "alice", claim.claimId)).toThrow(
     "pending or uncertain",
   );
@@ -183,30 +208,30 @@ test("a pending job blocks release and clears only after terminal results", asyn
   expect(result.job).toEqual({
     jobId: "job-1",
     state: "completed",
-    result: { playMode: "stopped" },
+    error: null,
+    uncertain: false,
   });
+  expect(result.job).not.toHaveProperty("result");
+  expect(result.claim.jobId).toBeNull();
   claims.release("host", "main", "alice", claim.claimId);
   claims.release("host", "main", "alice", claim.claimId);
   const next = await service.claim("host", "main", "bob", "runtime");
   expect(next.ownerThreadId).toBe("bob");
   expect(() => claims.release("host", "main", "alice", claim.claimId)).toThrow("matching claim");
 });
-test("disconnects leave ownership uncertain rather than allowing another command", async () => {
-  const { service, claims } = setup({
-    execute: async () => {
-      throw new Error("connection reset");
-    },
-  });
+test("an uncertain pre-upgrade claim retains ownership until reconciliation", async () => {
+  const { service, claims } = setup();
   const claim = await service.claim("host", "main", "alice", "runtime");
-  await expect(
-    service.command("host", "main", "alice", claim.claimId, "editor_status", {}),
-  ).rejects.toThrow("connection reset");
-  expect(claims.get("host", "main")?.jobId).toBe("uncertain");
-  expect(() => claims.release("host", "main", "alice", claim.claimId)).toThrow(
+  claims.job("host", "main", "alice", claim.claimId, "uncertain", null);
+  expect((await service.status("host", "main", "alice", claim.claimId)).claim.jobId).toBe(
+    "uncertain",
+  );
+  await expect(service.release("host", "main", "alice", claim.claimId)).rejects.toThrow(
     "pending or uncertain",
   );
   await expect(service.recover("host", "main")).rejects.toThrow("still alive");
 });
+
 test("only a proven dead Editor process allows recovery", async () => {
   const { service, claims } = setup({ alive: async () => ({ alive: false }) });
   await service.claim("host", "main", "alice", "runtime");
@@ -214,7 +239,7 @@ test("only a proven dead Editor process allows recovery", async () => {
   expect(claims.get("host", "main")).toBeNull();
   expect(await service.recover("host", "main")).toEqual({ recovered: false });
 });
-test("late job polling cannot clear a newer pending command", async () => {
+test("late legacy job polling cannot clear a newer pending state", async () => {
   let finish!: (value: any) => void;
   const { service, claims } = setup({
     job: () =>
@@ -223,10 +248,10 @@ test("late job polling cannot clear a newer pending command", async () => {
       }),
   });
   const claim = await service.claim("host", "main", "alice", "runtime");
-  await service.command("host", "main", "alice", claim.claimId, "editor_status", {});
+  service.claims.job("host", "main", "alice", claim.claimId, "job-1", null);
   const pending = service.status("host", "main", "alice", claim.claimId);
   claims.job("host", "main", "alice", claim.claimId, null, "job-1");
-  claims.begin("host", "main", "alice", claim.claimId);
+  claims.job("host", "main", "alice", claim.claimId, "submitting", null);
   claims.job("host", "main", "alice", claim.claimId, "job-2", "submitting");
   finish({ jobId: "job-1", state: "completed", result: 1 });
   await pending;
@@ -234,15 +259,9 @@ test("late job polling cannot clear a newer pending command", async () => {
 });
 
 test("only the owner can reconcile finished work after reload, and busy Editors remain locked", async () => {
-  const { service, claims, transport } = setup({
-    execute: async () => {
-      throw new Error("reload");
-    },
-  });
+  const { service, claims, transport } = setup();
   const claim = await service.claim("host", "main", "alice", "authoring");
-  await expect(
-    service.command("host", "main", "alice", claim.claimId, "recompile", {}),
-  ).rejects.toThrow("reload");
+  claims.job("host", "main", "alice", claim.claimId, "uncertain", null);
   await expect(service.reconcile("host", "main", "bob", claim.claimId, "checked")).rejects.toThrow(
     "owned by this BB thread",
   );
@@ -267,35 +286,21 @@ test("successful string results and data mentioning timeout do not poison owners
     job: async () => ({ jobId: "job-1", state: "completed", result: "finished" }),
   });
   const claim = await service.claim("host", "main", "alice", "runtime");
-  await service.command("host", "main", "alice", claim.claimId, "editor_status", {});
-  expect((await service.status("host", "main", "alice", claim.claimId)).job?.result).toBe(
-    "finished",
-  );
+  service.claims.job("host", "main", "alice", claim.claimId, "job-1", null);
+  expect((await service.status("host", "main", "alice", claim.claimId)).claim.jobId).toBeNull();
   transport.job = async () => ({
     jobId: "job-1",
     state: "completed",
     result: { timeout_ms: 10000 },
   });
-  await service.command("host", "main", "alice", claim.claimId, "editor_status", {});
+  service.claims.job("host", "main", "alice", claim.claimId, "job-1", null);
   await service.status("host", "main", "alice", claim.claimId);
   expect(claims.get("host", "main")?.jobId).toBeNull();
 });
-test("known command rejection is retryable without releasing ownership", async () => {
-  const { service, claims } = setup({
-    execute: async () => ({ rejected: true, error: "bad arguments" }),
-  });
-  const claim = await service.claim("host", "main", "alice", "runtime");
-  await expect(
-    service.command("host", "main", "alice", claim.claimId, "editor_status", {}),
-  ).rejects.toThrow("bad arguments");
-  expect(claims.get("host", "main")?.jobId).toBeNull();
-  expect(claims.get("host", "main")?.ownerThreadId).toBe("alice");
-});
-
 test("an idle progress endpoint cannot reconcile a queued native job", async () => {
   const { service, claims } = setup({ job: async () => ({ jobId: "job-1", state: "queued" }) });
   const claim = await service.claim("host", "main", "alice", "runtime");
-  await service.command("host", "main", "alice", claim.claimId, "editor_status", {});
+  service.claims.job("host", "main", "alice", claim.claimId, "job-1", null);
   await expect(
     service.reconcile("host", "main", "alice", claim.claimId, "checked"),
   ).rejects.toThrow("native job is still pending");
@@ -309,7 +314,7 @@ test("reloads discard only unverified read-only probes and retain uncertain subm
   expect(reloaded.get("host", "main")).toBeNull();
   const next = new UnityEditors(reloaded, transport);
   const owner = await next.claim("host", "main", "alice", "authoring");
-  reloaded.begin("host", "main", "alice", owner.claimId);
+  reloaded.job("host", "main", "alice", owner.claimId, "submitting", null);
   const restarted = new UnityEditors(new EditorClaims(db), transport);
   expect(restarted.claims.get("host", "main")?.jobId).toBe("uncertain");
   await restarted.reconcile("host", "main", "alice", owner.claimId, "No owned work remains");
@@ -342,7 +347,7 @@ test("parallel same-owner claims probe only once and cannot roll back each other
 test("background work retains ownership after the native job finishes", async () => {
   const { service, transport } = setup();
   const claim = await service.claim("host", "main", "alice", "authoring");
-  await service.command("host", "main", "alice", claim.claimId, "build", {});
+  service.claims.job("host", "main", "alice", claim.claimId, "job-1", null);
   transport.quiet = async () => ({
     quiet: false,
     blocking: { source: "recompile_status", status: "triggered" },
@@ -395,25 +400,10 @@ test("validation errors mentioning timeout parameters do not poison ownership", 
     }),
   });
   const claim = await service.claim("host", "main", "alice", "runtime");
-  await service.command("host", "main", "alice", claim.claimId, "editor_status", {});
+  service.claims.job("host", "main", "alice", claim.claimId, "job-1", null);
   expect((await service.status("host", "main", "alice", claim.claimId)).claim.jobId).toBeNull();
 });
 
-test("focus parameters and simulated physical input exclude other host owners", async () => {
-  const other = { ...client, workspacePath: "/other-project" };
-  const { service } = setup({ discover: async () => ({ instances: [main, other], warnings: [] }) });
-  const claim = await service.claim("host", "main", "alice", "authoring");
-  await service.claim("host", "client", "bob", "runtime");
-  for (const [command, parameters] of [
-    ["recompile", { focus: true }],
-    ["simulate_key", {}],
-    ["simulate_pointer", {}],
-  ] as const) {
-    await expect(
-      service.command("host", "main", "alice", claim.claimId, command, parameters),
-    ).rejects.toThrow("focus/capture is shared");
-  }
-});
 test("restoring an archived owner fences an in-progress orphan recovery", async () => {
   let resume!: () => void;
   const { service, claims, transport, ownerState } = setup();
@@ -438,7 +428,7 @@ test("concurrent reconciliation cannot claim success while a newer job remains p
   let resume!: () => void;
   const { service, claims, transport } = setup();
   const claim = await service.claim("host", "main", "alice", "runtime");
-  await service.command("host", "main", "alice", claim.claimId, "editor_status", {});
+  service.claims.job("host", "main", "alice", claim.claimId, "job-1", null);
   transport.quiet = async () => {
     await new Promise<void>((r) => {
       resume = r;
@@ -461,22 +451,6 @@ test("missed restore events cannot authorize recovery of a live owner's Editor",
   await expect(service.recover("host", "main", { note: "checked" })).rejects.toThrow("still alive");
   expect(claims.get("host", "main")?.orphaned).toBe(false);
 });
-test("batch focus operations are guarded like top-level focus", async () => {
-  const other = { ...client, workspacePath: "/other" };
-  const { service } = setup({ discover: async () => ({ instances: [main, other], warnings: [] }) });
-  const claim = await service.claim("host", "main", "alice", "authoring");
-  await service.claim("host", "client", "bob", "runtime");
-  for (const op of [
-    { command: "editor_focus", params: { focus: false } },
-    { command: "screenshot", params: { focus: false } },
-    { command: "inspect_prefab", params: { focus: true } },
-  ]) {
-    await expect(
-      service.command("host", "main", "alice", claim.claimId, "batch", { operations: [op] }),
-    ).rejects.toThrow("focus/capture is shared");
-  }
-});
-
 test("a missed restore during native checks is rechecked before releasing an orphan", async () => {
   let resume!: () => void;
   const { service, claims, transport, ownerState } = setup();
@@ -504,24 +478,26 @@ test("serialized nested timeout errors remain uncertain when details are null", 
     }),
   });
   const claim = await service.claim("host", "main", "alice", "runtime");
-  await service.command("host", "main", "alice", claim.claimId, "editor_status", {});
+  service.claims.job("host", "main", "alice", claim.claimId, "job-1", null);
   expect((await service.status("host", "main", "alice", claim.claimId)).claim.jobId).toBe(
     "uncertain",
   );
 });
 
-test("startup ownership is authoring only and cannot submit Pipeline work", async () => {
+test("startup ownership is authoring only and retains its exact instance", async () => {
   const startup = { ...main, port: null };
-  const { service, issued, claims } = setup({
+  const { service, claims } = setup({
     discover: async () => ({ instances: [startup], warnings: [] }),
+    quiet: async () => {
+      throw new Error("A startup claim has no Pipeline idle status");
+    },
   });
   await expect(service.claim("host", "main", "alice", "runtime")).rejects.toThrow("startup");
   const claim = await service.claim("host", "main", "alice", "authoring");
-  expect(claim.instance.port).toBeNull();
-  await expect(
-    service.command("host", "main", "alice", claim.claimId, "editor_status", {}),
-  ).rejects.toThrow("startup");
-  expect(issued).toEqual([]);
+  expect(
+    (await service.status("host", "main", "alice", claim.claimId)).claim.instance.port,
+  ).toBeNull();
+  expect((await service.status("host", "main", "alice", claim.claimId)).background).toBeNull();
   expect(claims.get("host", "main")?.jobId).toBeNull();
   await expect(service.claim("host", "main", "bob", "authoring")).rejects.toThrow("owned");
 });
@@ -542,12 +518,14 @@ test("a startup claim promotes the same process only after its Pipeline PID prob
   expect(promoted.claimId).toBe(startup.claimId);
   expect(promoted.instance.port).toBe(7800);
   expect(probed).toEqual([null, 7800]);
-  await service.command("host", "main", "alice", promoted.claimId, "editor_status", {});
+  expect(
+    (await service.status("host", "main", "alice", promoted.claimId)).claim.instance.port,
+  ).toBe(7800);
 });
 
-test("failed Pipeline promotion retains startup ownership and blocks commands", async () => {
+test("failed Pipeline promotion retains startup ownership", async () => {
   let ready = false;
-  const { service, claims, issued } = setup({
+  const { service, claims } = setup({
     discover: async () => ({ instances: [{ ...main, port: ready ? 7800 : null }], warnings: [] }),
     probe: async (_, instance) => ({ pid: instance.port === null ? instance.pid : 999 }),
   });
@@ -557,8 +535,7 @@ test("failed Pipeline promotion retains startup ownership and blocks commands", 
   expect(claims.get("host", "main")?.claimId).toBe(startup.claimId);
   expect(claims.get("host", "main")?.instance.port).toBeNull();
   expect(claims.get("host", "main")?.jobId).toBeNull();
-  await expect(
-    service.command("host", "main", "alice", startup.claimId, "editor_status", {}),
-  ).rejects.toThrow("startup");
-  expect(issued).toEqual([]);
+  expect(
+    (await service.status("host", "main", "alice", startup.claimId)).claim.instance.port,
+  ).toBeNull();
 });

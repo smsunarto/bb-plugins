@@ -165,20 +165,6 @@ export class EditorClaims {
       })
       .immediate();
   }
-  begin(hostId: string, id: string, owner: string, claimId: string): EditorClaim {
-    return this.db
-      .transaction(() => {
-        const claim = this.owned(hostId, id, owner, claimId);
-        if (claim.jobId)
-          throw new Error(
-            "An Editor operation is pending. Check its status before another command or release.",
-          );
-        this.slots?.editorAccess(hostId, claim.instance.workspacePath, owner);
-        this.save({ ...claim, jobId: "submitting", operationLoadId: this.loadId });
-        return claim;
-      })
-      .immediate();
-  }
   release(hostId: string, id: string, owner: string, claimId: string): void {
     this.db
       .transaction(() => {

@@ -1,6 +1,6 @@
 ---
 name: unity-editors
-description: Discover Unity Editor checkout slots, claim an exact instance for a BB thread, run guarded commands, and release ownership.
+description: Discover Unity Editor checkout slots, claim an exact instance for a BB thread, inspect ownership, and release safely.
 ---
 
 # Unity Editor ownership and checkout slots
@@ -49,9 +49,9 @@ On Linux, an interactive Editor blocked before Pipeline startup is listed with
 port:null. Claim that exact instance in authoring mode under the existing
 checkout lease before handling only its startup dialog. Native discovery and
 the claim recheck its executable, project path, shared Assets root, PID and OS
-start identity; batch/import workers and CLI services are excluded. Pipeline
-commands remain blocked. Preserve crash backups outside Assets before declining
-an optional recovery import. Once Pipeline starts, list and claim the same
+start identity; batch/import workers and CLI services are excluded. Make no
+Unity CLI calls under a startup claim. Preserve crash backups outside Assets
+before declining an optional recovery import. Once Pipeline starts, list and claim the same
 instance again: promotion retains the claim token only after the normal served
 PID probe succeeds. Do not author shared assets or run scenario setup until that
 promotion. If startup exits, recover the dead claim normally.
@@ -65,17 +65,36 @@ Keep the returned claimId. A new claim verifies the served PID with a read-only
 ephemeral script outside Assets. Claims persist until released, including across
 plugin reloads and idle agent turns. They never expire and cannot be stolen.
 
-Run a Pipeline command with `bb game-studio manage command --instance ID
---claim CLAIM --command NAME --parameters '{"key":"value"}'`. Commands become
-tracked Pipeline jobs. Use `bb game-studio manage status --instance ID
---claim CLAIM` until `claim.jobId` is null; a terminal job can still have
-background Editor work. A pending or uncertain operation blocks later commands
-and release. Timeout/cancellation can leave Unity work detached. Do not assume
-disconnect means completion. After checking the native job, recorder/input and
-other owned work, the owner can use `bb game-studio manage reconcile
---instance ID --claim CLAIM --confirm --note "observed completion evidence"`.
-It also requires the Pipeline to be idle. Another thread cannot reconcile your
-claim.
+Use the Unity CLI for Editor operations. Set its `--project-path` to the returned
+claim's exact `instance.projectPath`, including an MPPM client's own clone path.
+Never substitute the shared `workspacePath` or the shell's working directory.
+Before a series of calls, use native discovery to confirm the targeted Editor's
+PID matches `instance.pid`. Stop if the PID, process start identity or project
+path changes; recover the old claim and claim the newly discovered instance.
+If the CLI cannot target a clone exactly, its runtime claim does not authorize
+CLI calls; do not fall back to the main Editor. Before writes, run
+`bb game-studio manage status --instance ID --claim CLAIM` and proceed only when
+`background.quiet` is true and all your earlier operations have finished.
+
+For long Unity CLI operations, use `--detach` and record every returned job ID
+with its exact project path. Finish each with `unity job wait JOB_ID
+--project-path /exact/claimed/path` before releasing ownership. If cancelling,
+use `unity job cancel JOB_ID --project-path /exact/claimed/path`, then confirm
+the job and its native work have stopped. A timeout, cancellation or lost
+response does not prove completion. Keep ownership and the request uncertain
+until you establish the actual outcome; do not repeat an unknown operation.
+Management status and release do not track these new CLI job IDs, and a native
+idle result alone cannot prove an arbitrary script or capture has finished.
+
+Use `bb game-studio manage status --instance ID --claim CLAIM` to inspect
+ownership or finish jobs submitted before the upgrade. These legacy jobs retain
+their lifecycle state and errors, without command results. A pending or uncertain
+job blocks release. Wait until `claim.jobId` is null; a terminal job can still
+have background Editor work. After checking the native job,
+recorder/input and other owned work, the owner can use `bb game-studio manage
+reconcile --instance ID --claim CLAIM --confirm
+--note "observed completion evidence"`. It also requires the Pipeline to be idle.
+Another thread cannot reconcile your claim.
 
 Release with `bb game-studio manage release --instance ID --claim CLAIM`
 after input, jobs and recorders are finished and temporary state is restored.
@@ -90,8 +109,8 @@ cannot authorize a live-owner takeover. Run ownership commands inside a BB
 thread. For discovery outside one, supply `--host`.
 
 Runtime claims allow different agents to inspect distinct clients of one MPPM
-workspace. They permit only registered inspection commands. Clones cannot take
-authoring claims. Main authoring excludes another thread's runtime/authoring
+workspace. Under a runtime claim, make only read-only Unity CLI calls. Clones
+cannot take authoring claims. Main authoring excludes another thread's runtime/authoring
 claim on that shared checkout. Claims coordinate participating tools; direct
 Unity CLI, UI and agent-game calls cannot be intercepted. Do not bypass a claim.
 Shared Assets/Packages writes and scenario lifecycle require the main authoring
@@ -99,11 +118,13 @@ owner. Use the project's existing account, input, capture and scenario rules.
 Release client claims before the scenario owner needs the shared authoring
 window. Never restart or save a dirty Editor to recover ownership. Physical
 focus, screen capture and backend accounts remain shared across checkouts.
+Coordinate capture, focus and simulated input with every other claim owner on
+the host before using them.
 
 CLI identity comes from `BB_THREAD_ID`; it is a coordination interface, not an
 access-control boundary. Do not spoof another thread. Managed `list` hides other
 owners' claim ids; the public read-only `listUnityEditors` RPC hides all claim
 ids, even when a threadId is supplied to select the host. Prefer the native
 agent tool when available. Plugin reloads discard unverified read-only probes
-and preserve interrupted submissions as uncertain. Release and subsequent
-mutations verify native background status before handoff.
+and preserve interrupted submissions as uncertain. Release verifies native
+background status before handoff.

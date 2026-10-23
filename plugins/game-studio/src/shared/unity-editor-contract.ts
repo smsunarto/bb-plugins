@@ -60,9 +60,6 @@ export const pipelineJobSchema = z
   })
   .passthrough();
 export type PipelineJob = z.infer<typeof pipelineJobSchema>;
-export type CommandSubmission = { jobId: string } | { rejected: true; error: string };
-export const jsonParametersSchema = z.record(z.string(), z.json());
-export type CommandParameters = z.infer<typeof jsonParametersSchema>;
 export const editorQuietSchema = z
   .object({
     quiet: z.boolean(),
@@ -109,19 +106,6 @@ export const unityHostContract = defineRpcContract({
   quiet: {
     input: z.object({ instance: editorSchema }).strict(),
     output: editorQuietSchema,
-  },
-  execute: {
-    input: z
-      .object({
-        instance: editorSchema,
-        command: z.string().regex(/^[a-zA-Z][a-zA-Z0-9_]*$/),
-        parameters: jsonParametersSchema,
-      })
-      .strict(),
-    output: z.union([
-      z.object({ jobId: z.string() }).strict(),
-      z.object({ rejected: z.literal(true), error: z.string() }).strict(),
-    ]),
   },
   job: {
     input: z.object({ instance: editorSchema, jobId: z.string() }).strict(),

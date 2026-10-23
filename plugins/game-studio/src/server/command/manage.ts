@@ -7,12 +7,12 @@ import {
 } from "../lib/unity-editor-action.ts";
 
 export const manage = defineCommand({
-  summary: "Discover, claim, control and release Unity Editors by BB thread",
+  summary: "Discover, claim and release Unity Editor slots by BB thread",
   positionals: [
     {
       name: "action",
       required: true,
-      description: "list | claim | status | command | release | recover | reconcile",
+      description: "list | claim | status | release | recover | reconcile",
     },
   ],
   options: {
@@ -33,8 +33,6 @@ export const manage = defineCommand({
       default: "runtime",
       description: "Runtime inspection or exclusive shared-project authoring",
     },
-    command: { type: "string", description: "Registered Unity Pipeline command name" },
-    parameters: { type: "string", description: "Command parameters as a JSON object" },
   },
   async execute(ctx: CommandContext<EditorsContext>, input) {
     const o = input.options;
@@ -46,8 +44,6 @@ export const manage = defineCommand({
       instanceId: o.instance,
       claimId: o.claim,
       mode: o.mode,
-      command: o.command,
-      parameters: o.parameters ?? "{}",
     });
     return {
       exitCode: 0,

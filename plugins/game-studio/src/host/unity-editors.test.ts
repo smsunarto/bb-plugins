@@ -5,7 +5,6 @@ import { mkdtemp, mkdir, writeFile, rm, readFile, realpath, symlink } from "node
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import {
-  execute,
   probe,
   job,
   quiet,
@@ -87,42 +86,23 @@ async function fixture(reply?: (path: string, body: any) => Response) {
   });
   return { project, requests, instance, descriptor, descriptorPath };
 }
-test("native command submission authenticates the exact target and preserves asynchronous PlayMode tests", async () => {
+test("an Editor process start mismatch prevents legacy job inspection", async () => {
   const f = await fixture();
-  expect(
-    await execute(f.instance, "run_tests", { test_filter: "Suite", async_tests: true }),
-  ).toEqual({ jobId: "job-1" });
-  expect(f.requests).toEqual([
-    {
-      path: "/api/exec",
-      authorization: "Bearer test-only-secret",
-      body: {
-        command: "run_tests",
-        parameters: { test_filter: "Suite", async_tests: true },
-        job: true,
-        timeout: 600000,
-      },
-    },
-  ]);
-});
-test("an Editor process start mismatch prevents all command submission", async () => {
-  const f = await fixture();
-  expect(
-    await execute({ ...f.instance, startedAt: "different process" }, "editor_status", {}),
-  ).toEqual({
-    rejected: true,
-    error:
-      "Editor identity/descriptor is unavailable; no command was submitted. Rediscover after reload.",
-  });
+  await expect(
+    job({ ...f.instance, startedAt: "different process" }, "job-1", undefined, f.project),
+  ).rejects.toThrow("Editor identity/descriptor is unavailable");
   expect(f.requests).toEqual([]);
 });
+
 test("Pipeline restarts preserve the process identity and use the current descriptor", async () => {
-  const f = await fixture();
+  const f = await fixture(() =>
+    Response.json({ success: true, result: { success: true, result: process.pid } }),
+  );
   await writeFile(
     f.descriptorPath,
     JSON.stringify({ ...f.descriptor, startedAt: "pipeline-epoch-2" }),
   );
-  expect(await execute(f.instance, "editor_status", {})).toEqual({ jobId: "job-1" });
+  expect(await probe(f.instance)).toEqual({ pid: process.pid });
   expect(f.requests.length).toBe(1);
 });
 test("a claim's read-only ephemeral probe validates the served PID and cleans its source", async () => {
@@ -135,16 +115,8 @@ test("a claim's read-only ephemeral probe validates the served PID and cleans it
   await expect(readFile(file)).rejects.toThrow();
   expect(f.requests[0].body.parameters.mode).toBe("ephemeral");
 });
-test("a native busy rejection is retryable, while a lost job remains uncertain", async () => {
-  const f = await fixture((path) =>
-    path === "/api/exec"
-      ? Response.json({ success: false, status: "busy", retryable: true }, { status: 503 })
-      : Response.json({ error: "Job not found" }, { status: 404 }),
-  );
-  expect(await execute(f.instance, "editor_status", {})).toEqual({
-    rejected: true,
-    error: "Unity rejected the command (503). Check its registered schema.",
-  });
+test("a missing pre-upgrade job remains uncertain", async () => {
+  const f = await fixture(() => Response.json({ error: "Job not found" }, { status: 404 }));
   expect(await job(f.instance, "lost", undefined, f.project)).toEqual({
     jobId: "lost",
     state: "failed",
@@ -152,6 +124,7 @@ test("a native busy rejection is retryable, while a lost job remains uncertain",
     error: "Pipeline no longer retains this job; inspect owned work before reconciliation.",
   });
 });
+
 test("large failed results retain an artifact and timeout uncertainty without leaking authentication", async () => {
   const f = await fixture(() =>
     Response.json({
@@ -182,11 +155,13 @@ test("owner reconciliation checks both native readiness and covered progress", a
 });
 
 test("host timezone changes cannot make a live Editor look orphaned", async () => {
-  const f = await fixture();
+  const f = await fixture(() =>
+    Response.json({ success: true, result: { success: true, result: process.pid } }),
+  );
   const previous = process.env.TZ;
   process.env.TZ = "Pacific/Honolulu";
   try {
-    expect(await execute(f.instance, "editor_status", {})).toEqual({ jobId: "job-1" });
+    expect(await probe(f.instance)).toEqual({ pid: process.pid });
     expect(f.requests.length).toBe(1);
   } finally {
     if (previous === undefined) delete process.env.TZ;
@@ -226,18 +201,6 @@ test("compile, background builds and queued recompiles block handoff even when c
   background = "completed";
   expect(await quiet(f.instance)).toEqual({ quiet: true });
 });
-test("known pre-submission errors do not create uncertain work", async () => {
-  for (const code of [400, 413, 429]) {
-    const f = await fixture(() =>
-      Response.json({ success: false, error: "request rejected" }, { status: code }),
-    );
-    expect(await execute(f.instance, "typo_command", {})).toEqual({
-      rejected: true,
-      error: `Unity rejected the command (${code}). Check its registered schema.`,
-    });
-  }
-});
-
 test("a clone outside the Library pathname still shares the resolved Assets workspace", async () => {
   const root = await realpath(await mkdtemp(join(tmpdir(), "bb-unity-clone-")));
   const main = join(root, "main"),
@@ -272,7 +235,7 @@ test("Internal Server Error is uncertain even if Pipeline responds with HTTP400"
   const f = await fixture(() =>
     Response.json({ success: false, error: "Internal Server Error" }, { status: 400 }),
   );
-  await expect(execute(f.instance, "editor_status", {})).rejects.toThrow("Unity request failed");
+  await expect(probe(f.instance)).rejects.toThrow("Unity request failed");
 });
 
 test("a failed async test is settled and cannot permanently lock an idle Editor", async () => {
@@ -374,12 +337,10 @@ test.skipIf(process.platform !== "linux")(
   },
 );
 
-test("startup instances cannot submit host requests even if a ready descriptor exists", async () => {
+test("startup instances cannot inspect Pipeline jobs even if a ready descriptor exists", async () => {
   const f = await fixture();
-  const result = await execute({ ...f.instance, port: null }, "editor_status", {});
-  expect(result).toEqual({
-    rejected: true,
-    error: "Startup ownership cannot submit Pipeline requests. Reclaim after Pipeline starts.",
-  });
+  await expect(job({ ...f.instance, port: null }, "job-1", undefined, f.project)).rejects.toThrow(
+    "Startup ownership cannot submit Pipeline requests",
+  );
   expect(f.requests).toEqual([]);
 });

@@ -62,9 +62,12 @@ and remaining cleanup; generation success alone does not establish acceptance.
 
 Discover and claim an exact Unity Editor through `unity-editors` before control.
 Shared Assets/Packages writes and scenario lifecycle require the main Editor's
-authoring claim. Use managed command/status/release for Pipeline operations.
+authoring claim. Use the Unity CLI for operations on the claim's exact
+`instance.projectPath` after verifying its PID, and check native idle state before
+writes.
 Do not bypass another thread's claim, restart a dirty Editor, or steal shared
-desktop focus. Finish tracked jobs and native work before releasing ownership.
+desktop focus. Finish native work and any pre-upgrade pending jobs before
+releasing ownership.
 
 Generated and uploaded assets are staged in `canvas/staging`, outside Assets.
 Verify the contract before importing under the main authoring claim. Preserve

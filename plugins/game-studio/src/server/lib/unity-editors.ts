@@ -2,8 +2,6 @@ import { z } from "zod";
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import { uncertainJob, unityHostContract } from "../../shared/unity-editor-contract.ts";
 import type {
-  CommandParameters,
-  CommandSubmission,
   EditorInstance,
   EditorQuietStatus,
   PipelineJob,
@@ -14,37 +12,6 @@ import { checkoutSlots } from "./checkout-slots.ts";
 import type { SlotStore } from "./slot-store.ts";
 import { visibleSlot } from "./unity-slots.ts";
 
-const runtimeCommands = new Set([
-  "editor_status",
-  "list_open_scenes",
-  "get_console_logs",
-  "get_scene_hierarchy",
-  "find_gameobjects",
-  "get_serialized_fields",
-  "inspect_prefab",
-  "project_map",
-  "find_assets",
-  "find_usages",
-  "find_asset_references",
-  "package_list",
-  "package_search",
-  "get_authoring_root",
-]);
-function usesHostFocus(command: string, parameters: CommandParameters): boolean {
-  if (
-    command.includes("focus") ||
-    command.includes("capture") ||
-    command.includes("screenshot") ||
-    ["simulate_key", "simulate_pointer"].includes(command) ||
-    (parameters.focus !== undefined && parameters.focus !== false)
-  )
-    return true;
-  if (command !== "batch") return false;
-  const operations = z
-    .array(z.object({ command: z.string(), params: z.record(z.string(), z.json()).optional() }))
-    .parse(parameters.operations);
-  return operations.some((op) => usesHostFocus(op.command, op.params ?? {}));
-}
 export interface EditorTransport {
   discover(
     host: string,
@@ -53,13 +20,7 @@ export interface EditorTransport {
   probe(host: string, instance: EditorInstance, signal?: AbortSignal): Promise<{ pid: number }>;
   alive(host: string, instance: EditorInstance): Promise<{ alive: boolean }>;
   quiet(host: string, instance: EditorInstance, signal?: AbortSignal): Promise<EditorQuietStatus>;
-  execute(
-    host: string,
-    instance: EditorInstance,
-    command: string,
-    parameters: CommandParameters,
-    signal?: AbortSignal,
-  ): Promise<CommandSubmission>;
+  /** Read pre-upgrade jobs only so existing claims can finish their handoff. */
   job(
     host: string,
     instance: EditorInstance,
@@ -175,7 +136,14 @@ export class UnityEditors {
   async status(host: string, id: string, owner: string, claimId: string, signal?: AbortSignal) {
     let claim = this.owned(host, id, owner, claimId);
     if (!claim.jobId || ["verifying", "submitting", "uncertain"].includes(claim.jobId))
-      return { claim, job: null };
+      return {
+        claim,
+        job: null,
+        background:
+          !claim.jobId && claim.instance.port !== null
+            ? await this.transport.quiet(host, claim.instance, signal)
+            : null,
+      };
     const job = await this.transport.job(host, claim.instance, claim.jobId, signal);
     const terminal = ["completed", "failed", "canceled"].includes(job.state);
     const background =
@@ -192,58 +160,16 @@ export class UnityEditors {
         claim.jobId,
       );
     }
-    return { claim, job, background };
-  }
-  async command(
-    host: string,
-    id: string,
-    owner: string,
-    claimId: string,
-    command: string,
-    parameters: CommandParameters,
-    signal?: AbortSignal,
-  ) {
-    const claim = this.owned(host, id, owner, claimId);
-    if (claim.instance.port === null)
-      throw new Error(
-        "A startup claim only covers its startup dialog. Rediscover and claim again after Pipeline starts.",
-      );
-    if (!runtimeCommands.has(command) && claim.mode !== "authoring")
-      throw new Error(
-        "This command needs an authoring claim on the main Editor; runtime claims permit inspection only",
-      );
-    if (
-      usesHostFocus(command, parameters) &&
-      this.claims.list(host).some((c) => c.ownerThreadId !== owner)
-    )
-      throw new Error("Host focus/capture is shared. Coordinate with other Editor owners first.");
-    this.claims.begin(host, id, owner, claimId);
-    if (!runtimeCommands.has(command)) {
-      try {
-        if (!(await this.transport.quiet(host, claim.instance, signal)).quiet)
-          throw new Error("Editor has background work. Wait before another mutation.");
-      } catch (error) {
-        this.claims.job(host, id, owner, claimId, null, "submitting");
-        throw error;
-      }
-    }
-    try {
-      const result = await this.transport.execute(
-        host,
-        claim.instance,
-        command,
-        parameters,
-        signal,
-      );
-      if ("rejected" in result) {
-        this.claims.job(host, id, owner, claimId, null, "submitting");
-        throw new Error(result.error);
-      }
-      return this.claims.job(host, id, owner, claimId, result.jobId, "submitting");
-    } catch (error) {
-      this.claims.job(host, id, owner, claimId, "uncertain", "submitting");
-      throw error;
-    }
+    return {
+      claim,
+      job: {
+        jobId: job.jobId,
+        state: job.state,
+        error: job.error ?? null,
+        uncertain: uncertainJob(job),
+      },
+      background,
+    };
   }
   async reconcile(
     host: string,
@@ -314,8 +240,6 @@ export function createUnityEditors(bb: BbPluginApi, slots?: SlotStore) {
       alive: (hostId, instance) =>
         host.call("alive", { pid: instance.pid, startedAt: instance.startedAt }, { hostId }),
       quiet: (hostId, instance, signal) => host.call("quiet", { instance }, { hostId, signal }),
-      execute: (hostId, instance, command, parameters, signal) =>
-        host.call("execute", { instance, command, parameters }, { hostId, signal }),
       job: (hostId, instance, jobId, signal) =>
         host.call("job", { instance, jobId }, { hostId, signal }),
     },

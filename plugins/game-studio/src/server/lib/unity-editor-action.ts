@@ -1,6 +1,5 @@
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import { z } from "zod";
-import { jsonParametersSchema } from "../../shared/unity-editor-contract.ts";
 import { editorHost, type UnityEditors } from "./unity-editors.ts";
 
 export type EditorsContext = Readonly<{
@@ -10,18 +9,13 @@ export type EditorsContext = Readonly<{
 }>;
 export const editorActionSchema = z
   .object({
-    action: z.enum(["list", "claim", "status", "command", "release", "recover", "reconcile"]),
+    action: z.enum(["list", "claim", "status", "release", "recover", "reconcile"]),
     hostId: z.string().optional(),
     instanceId: z.string().optional(),
     claimId: z.string().optional(),
     note: z.string().optional(),
     confirmNoPendingWork: z.boolean().default(false),
     mode: z.enum(["runtime", "authoring"]).default("runtime"),
-    command: z
-      .string()
-      .regex(/^[a-zA-Z][a-zA-Z0-9_]*$/)
-      .optional(),
-    parameters: z.string().default("{}").describe("Unity command parameters as JSON object text"),
   })
   .strict();
 export async function editorAction(
@@ -56,17 +50,7 @@ export async function editorAction(
       );
     return service.reconcile(host, input.instanceId, threadId, input.claimId, input.note, signal);
   }
-  if (input.action === "release") {
+  if (input.action === "release")
     return service.release(host, input.instanceId, threadId, input.claimId, signal);
-  }
-  if (!input.command) throw new Error("command is required");
-  return service.command(
-    host,
-    input.instanceId,
-    threadId,
-    input.claimId,
-    input.command,
-    jsonParametersSchema.parse(JSON.parse(input.parameters)),
-    signal,
-  );
+  throw new Error("Unsupported Editor ownership action");
 }

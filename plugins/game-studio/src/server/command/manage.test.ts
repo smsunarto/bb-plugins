@@ -16,20 +16,15 @@ test("Editor CLI binds ownership to the calling thread and blocks another caller
     startedAt: "birth",
     clone: false,
   };
-  const executed: unknown[] = [];
+  const methods: string[] = [];
   const { bb, harness } = createFakePluginHost({
     pluginId: "game-studio",
     sdk: { plugins: { list: async () => ({ plugins: [] }) } },
-    experimental_callHostRpc: ({ method, input }) => {
+    experimental_callHostRpc: ({ method }) => {
+      methods.push(method);
       if (method === "discover") return { instances: [instance], warnings: [] };
       if (method === "probe") return { pid: 101 };
       if (method === "quiet") return { quiet: true };
-      if (method === "execute") {
-        executed.push(input);
-        return { jobId: "job-1" };
-      }
-      if (method === "job")
-        return { jobId: "job-1", state: "completed", result: { playMode: "stopped" } };
       throw new Error("Unexpected host method");
     },
   });
@@ -43,26 +38,17 @@ test("Editor CLI binds ownership to the calling thread and blocks another caller
   const conflict = await harness.runCli(claimArgs, { threadId: "bob" });
   expect(conflict.exitCode).toBe(1);
   expect(conflict.stderr).toContain("owned by @thread:alice");
-  const command = [
-    "manage",
-    "command",
-    "--host",
-    "host",
-    "--instance",
-    "main-1",
-    "--claim",
-    claim.claimId,
-    "--command",
-    "editor_status",
-  ];
-  expect((await harness.runCli(command, { threadId: "bob" })).exitCode).toBe(1);
-  expect((await harness.runCli(command, { threadId: "alice" })).exitCode).toBe(0);
-  expect(executed).toEqual([{ instance, command: "editor_status", parameters: {} }]);
+  const forbiddenRelease = await harness.runCli(
+    ["manage", "release", "--host", "host", "--instance", "main-1", "--claim", claim.claimId],
+    { threadId: "bob" },
+  );
+  expect(forbiddenRelease.exitCode).toBe(1);
+  expect(forbiddenRelease.stderr).toContain("owned by this BB thread");
   const status = await harness.runCli(
     ["manage", "status", "--host", "host", "--instance", "main-1", "--claim", claim.claimId],
     { threadId: "alice" },
   );
-  expect(JSON.parse(status.stdout!).job.result).toEqual({ playMode: "stopped" });
+  expect(JSON.parse(status.stdout!)).toEqual({ claim, job: null, background: { quiet: true } });
   expect(
     (
       await harness.runCli(
@@ -71,7 +57,30 @@ test("Editor CLI binds ownership to the calling thread and blocks another caller
       )
     ).exitCode,
   ).toBe(0);
+  expect(methods).toEqual(["discover", "probe", "discover", "quiet", "quiet"]);
   expect(harness.registrations.agentTools.map((tool) => tool.name)).toContain("game_studio_manage");
+});
+
+test("the management CLI rejects command execution and removed flags before contacting a host", async () => {
+  const { bb, harness } = createFakePluginHost({
+    pluginId: "game-studio",
+    sdk: { plugins: { list: async () => ({ plugins: [] }) } },
+    experimental_callHostRpc: () => {
+      throw new Error("Command execution must be rejected before host lookup");
+    },
+  });
+  await plugin(bb);
+  for (const args of [
+    ["manage", "command", "--instance", "main", "--claim", "claim"],
+    ["manage", "command", "--command", "run_script", "--parameters", "{}"],
+    ["manage", "claim", "--instance", "main", "--command", "run_script"],
+    ["manage", "status", "--instance", "main", "--claim", "claim", "--parameters", "{}"],
+  ]) {
+    const result = await harness.behavior.runCli(args, { threadId: "alice" });
+    expect(result.exitCode).toBe(1);
+  }
+  expect(harness.experimental_hostRpcCalls).toEqual([]);
+  await harness.lifecycle.dispose();
 });
 
 test("Game Studio exposes both workflows and the consolidated Unity tools to agents", async () => {

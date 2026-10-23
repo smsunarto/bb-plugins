@@ -8,8 +8,9 @@ account authentication if needed. Preserve dirty scenes and other agents' focus.
 Claim the appropriate Editor before controlling it. Main authoring is required
 for shared Assets/Packages writes and scenario lifecycle; runtime inspection can
 use an appropriate runtime claim. Do not bypass another thread's claim. Use
-managed command/status/release for Pipeline operations, wait for tracked work to
-finish, restore temporary state, and release when finished. Never take over or
+the Unity CLI for operations on the claim's exact `instance.projectPath` after
+verifying its PID. Wait for native work to finish, restore temporary state,
+and release when finished. Never take over or
 reconcile another live owner's work.
 
 If this thread's job state is uncertain, inspect status and use managed reconcile

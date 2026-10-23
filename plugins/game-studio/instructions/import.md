@@ -15,4 +15,5 @@ Unity importer, scale, pivot, materials, audio, or sprite settings as needed.
 Validate in the consumer scene/prefab using the existing game driver. Keep
 staging sources and generation receipts. Update the canvas and asset catalog
 with the imported Assets-relative path only after successful verification. Wait
-for native work and tracked Pipeline jobs to finish before releasing ownership.
+for native work and any pre-upgrade pending jobs to finish before releasing
+ownership.

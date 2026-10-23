@@ -1,4 +1,4 @@
-import { discover, probe, alive, execute, job, quiet } from "./unity-editors.ts";
+import { discover, probe, alive, job, quiet } from "./unity-editors.ts";
 import {
   inspectRampageWorkspace,
   assertWorkspaceStopped,
@@ -73,7 +73,6 @@ export default experimental_defineHostEntry({
     probe: ({ instance }, ctx) => probe(instance, ctx.signal),
     alive: async ({ pid, startedAt }) => ({ alive: await alive(pid, startedAt) }),
     quiet: ({ instance }, ctx) => quiet(instance, ctx.signal),
-    execute: (input, ctx) => execute(input.instance, input.command, input.parameters, ctx.signal),
     job: ({ instance, jobId }, ctx) =>
       job(instance, jobId, ctx.signal, ctx.experimental_paths.dataDir),
     async start(input, context) {

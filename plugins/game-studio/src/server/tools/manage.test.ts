@@ -98,7 +98,7 @@ test("orphan recovery consults BB's current owner record even when lifecycle eve
   expect(ownerLookups).toEqual(["alice", "alice", "alice"]);
 });
 
-test("an unavailable legacy handoff blocks claims and commands before contacting Unity", async () => {
+test("an unavailable legacy handoff blocks claims before contacting Unity", async () => {
   const { bb, harness } = createFakePluginHost({
     pluginId: "game-studio",
     sdk: {
@@ -116,19 +116,36 @@ test("an unavailable legacy handoff blocks claims and commands before contacting
     },
   });
   await plugin(bb);
-  for (const input of [
-    { action: "claim", hostId: "host", instanceId: "main" },
-    {
-      action: "command",
-      hostId: "host",
-      instanceId: "main",
-      claimId: "stale-token",
-      command: "run_script",
+  await expect(
+    harness.behavior.callAgentTool(
+      "game_studio_manage",
+      { action: "claim", hostId: "host", instanceId: "main" },
+      { threadId: "alice" },
+    ),
+  ).rejects.toThrow("Unity claim migration is incomplete");
+  expect(harness.experimental_hostRpcCalls).toEqual([]);
+  await harness.lifecycle.dispose();
+});
+
+test("the agent tool rejects command execution and command fields before contacting Unity", async () => {
+  const { bb, harness } = createFakePluginHost({
+    pluginId: "game-studio",
+    sdk: { plugins: { list: async () => ({ plugins: [] }) } },
+    experimental_callHostRpc: () => {
+      throw new Error("The slot tool cannot submit Unity commands");
     },
+  });
+  await plugin(bb);
+  const tool = harness.registrations.agentTools.find((t) => t.name === "game_studio_manage")!;
+  for (const input of [
+    { action: "command", instanceId: "main", claimId: "claim", command: "run_script" },
+    { action: "claim", instanceId: "main", command: "run_script" },
+    { action: "status", instanceId: "main", claimId: "claim", parameters: "{}" },
   ]) {
+    expect(tool.parse(input).ok).toBe(false);
     await expect(
       harness.behavior.callAgentTool("game_studio_manage", input, { threadId: "alice" }),
-    ).rejects.toThrow("Unity claim migration is incomplete");
+    ).rejects.toThrow();
   }
   expect(harness.experimental_hostRpcCalls).toEqual([]);
   await harness.lifecycle.dispose();

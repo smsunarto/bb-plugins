@@ -143,7 +143,7 @@ unchanged. Other asset actions still prepare requests in native BB chat.
 
 Game Studio includes Editor discovery, managed ownership, and persistent Rampage
 checkout slots. Use `game_studio_manage` and `game_studio_slots`, or
-`bb game-studio manage` and `bb game-studio slots`. Editor control, imports into
+`bb game-studio manage` and `bb game-studio slots`. Unity CLI operations, imports into
 `Assets`, package edits, and scenario lifecycle require the agent's exact
 Editor claim. The studio UI reads inventory without taking claims.
 
@@ -184,20 +184,20 @@ the pinned upstream source and its licence text.
 
 Coordinate Unity Editor ownership across BB threads. Discovery groups main Editors and Multiplayer Play Mode (MPPM) clients into checkout slots. Each slot follows its canonical shared Assets workspace, independently of Editor restarts or Git branch names.
 
-## Control an Editor
+## Manage an Editor slot
 
 Use the `game_studio_manage` agent tool or these commands inside a BB thread:
 
 ```sh
 bb game-studio manage list
 bb game-studio manage claim --instance instance_id --mode authoring
-bb game-studio manage command --instance instance_id --claim claim_id \
-  --command editor_status
 bb game-studio manage status --instance instance_id --claim claim_id
 bb game-studio manage release --instance instance_id --claim claim_id
 ```
 
-Keep the returned claim ID. Wait until `claim.jobId` is `null` before release. An interrupted submission stays uncertain until its owner checks native completion and reconciles it. Read the bundled `unity-editors` skill for reconciliation and orphan recovery.
+Keep the returned claim ID. Run Editor operations through the Unity CLI, targeting the claim's exact `instance.projectPath`, and verify that the selected PID matches `instance.pid`. Runtime claims authorize read-only calls. Before authoring writes, use management `status` and require `background.quiet: true` plus completion of your earlier operations. Coordinate focus, capture and simulated input with other claim owners on the host. Startup claims cover only the startup dialog; make no Unity CLI calls until ownership is promoted.
+
+Status also supports pending jobs from before the upgrade, exposing lifecycle information without command results. Release enforces those legacy job fences and native idle checks; it does not track new Unity CLI jobs. For long CLI operations, use `--detach`, record every job ID and wait for completion before release. A timeout or cancellation does not prove native completion. Wait until `claim.jobId` is `null` for pre-upgrade work; an interrupted submission stays uncertain until its owner checks native completion and reconciles it. Read the bundled `unity-editors` skill for exact targeting, CLI completion, reconciliation and orphan recovery.
 
 - **Runtime claims** allow inspection of distinct Editors sharing one workspace.
 - **Authoring claims** exclude other threads from the shared workspace. MPPM clients cannot take authoring claims.
