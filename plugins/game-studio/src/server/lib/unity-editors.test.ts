@@ -539,3 +539,155 @@ test("failed Pipeline promotion retains startup ownership", async () => {
     (await service.status("host", "main", "alice", startup.claimId)).claim.instance.port,
   ).toBeNull();
 });
+const worktree: EditorInstance = {
+  ...main,
+  id: "worktree-main",
+  projectPath: "/game-worktree",
+  workspacePath: "/game-worktree",
+  pid: 103,
+  port: 7802,
+};
+test("an owner's turn end releases its claims and reservations unless held", async () => {
+  const { service, claims } = setup({
+    discover: async () => ({ instances: [main, client, worktree], warnings: [] }),
+  });
+  await service.claim("host", "main", "alice", "authoring", undefined, { hold: true });
+  await service.claim("host", "worktree-main", "bob", "authoring");
+  await service.reserve("host", "/game-wt2", "bob", "authoring");
+  await service.reserve("host", "/game-wt3", "bob", "runtime", true);
+  await service.ownerIdle("bob");
+  await service.ownerIdle("alice");
+  expect(claims.get("host", "main")?.hold).toBe(true);
+  expect(claims.get("host", "worktree-main")).toBeNull();
+  expect(claims.reservations("host").map((r) => r.workspacePath)).toEqual(["/game-wt3"]);
+  // Re-claiming without hold turns the held claim back into a turn-scoped one.
+  const again = await service.claim("host", "main", "alice", "authoring", undefined, {
+    hold: false,
+  });
+  expect(again.hold).toBeUndefined();
+  await service.ownerIdle("alice");
+  expect(claims.get("host", "main")).toBeNull();
+  service.dispose();
+});
+test("turn-end release waits for a quiet Editor and yields to a resumed owner", async () => {
+  const native = { quiet: false, blocking: { source: "progress", status: "active" } } as {
+    quiet: boolean;
+    blocking?: { source: string; status: string };
+  };
+  const owner = { status: "idle" };
+  const { db, transport } = setup();
+  const service = new UnityEditors(
+    new EditorClaims(db),
+    { ...transport, quiet: async () => native },
+    async () => false,
+    { ownerStatus: async () => ({ status: owner.status, updatedAt: Date.now() }) },
+  );
+  const claim = await service.claim("host", "main", "alice", "runtime");
+  await service.ownerIdle("alice");
+  expect(service.claims.get("host", "main")?.autoRelease).toBe("pending");
+  expect((await service.list("host")).claims[0]?.autoRelease).toBe("pending");
+  service.ownerActive("alice");
+  expect(service.claims.get("host", "main")?.autoRelease).toBeUndefined();
+  await service.ownerIdle("alice");
+  native.quiet = true;
+  delete native.blocking;
+  owner.status = "active";
+  await service.sweepAutoReleases();
+  expect(service.claims.get("host", "main")?.claimId).toBe(claim.claimId);
+  expect(service.claims.get("host", "main")?.autoRelease).toBeUndefined();
+  owner.status = "idle";
+  await service.ownerIdle("alice");
+  expect(service.claims.get("host", "main")).toBeNull();
+  service.dispose();
+});
+test("wait claims the Editor as soon as its owner releases, and times out with advice", async () => {
+  const { service } = setup();
+  const alice = await service.claim("host", "main", "alice", "runtime");
+  const waiting = service.wait("host", "main", "bob", "authoring", 5_000);
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  await service.release("host", "main", "alice", alice.claimId);
+  const claim = await waiting;
+  expect([claim.ownerThreadId, claim.mode]).toEqual(["bob", "authoring"]);
+  await expect(service.wait("host", "main", "charlie", "runtime", 30)).rejects.toThrow(
+    /Timed out after 30 ms waiting\. Editor is owned by @thread:bob\..*Options: action "wait"/s,
+  );
+  const aborted = new AbortController();
+  const pending = service.wait("host", "main", "charlie", "runtime", 5_000, aborted.signal);
+  aborted.abort(new Error("turn cancelled"));
+  await expect(pending).rejects.toThrow("turn cancelled");
+  service.dispose();
+});
+test("a reservation protects a launching Editor until its owner claims it", async () => {
+  const { service } = setup({
+    discover: async () => ({ instances: [main, client, worktree], warnings: [] }),
+    resolveWorkspace: async (_, path) => ({ workspacePath: path.replace(/\/+$/, "") }),
+  });
+  const reservation = await service.reserve("host", "/game-worktree/", "alice", "authoring");
+  expect(reservation.workspacePath).toBe("/game-worktree");
+  await expect(service.claim("host", "worktree-main", "bob", "runtime")).rejects.toThrow(
+    "reserved by @thread:alice",
+  );
+  await expect(service.reserve("host", "/game-worktree", "bob", "runtime")).rejects.toThrow(
+    "reserved by @thread:alice",
+  );
+  const inventory = await service.list("host", undefined, "bob");
+  expect(inventory.reservations.map((r) => [r.workspacePath, r.ownerThreadId])).toEqual([
+    ["/game-worktree", "alice"],
+  ]);
+  expect(
+    inventory.slots.find((slot) => slot.workspacePath === "/game-worktree")?.reservations,
+  ).toHaveLength(1);
+  const claim = await service.claim("host", "worktree-main", "alice", "authoring");
+  expect(claim.ownerThreadId).toBe("alice");
+  expect((await service.list("host")).reservations).toEqual([]);
+  // One reservation per checkout: it stands for the single main Editor being opened there.
+  await service.reserve("host", "/elsewhere", "carol", "runtime");
+  await expect(service.reserve("host", "/elsewhere", "dave", "runtime")).rejects.toThrow(
+    "reserved by @thread:carol",
+  );
+  await expect(service.releaseReservation("host", "/elsewhere", "dave")).rejects.toThrow(
+    "reserved by @thread:carol",
+  );
+  expect((await service.releaseReservation("host", "/elsewhere", "carol")).released).toBe(true);
+  expect((await service.releaseReservation("host", "/elsewhere", "carol")).released).toBe(false);
+  service.dispose();
+});
+test("handoff requests reach the owner once a minute and conflicts explain the owner's state", async () => {
+  const sent: [string, string][] = [];
+  const { db, transport } = setup();
+  const service = new UnityEditors(new EditorClaims(db), transport, async () => false, {
+    ownerStatus: async () => ({ status: "idle", updatedAt: Date.now() - 120_000 }),
+    send: async (owner, text) => {
+      sent.push([owner, text]);
+    },
+  });
+  const alice = await service.claim("host", "main", "alice", "authoring");
+  await expect(service.request("host", "main", "alice", "authoring", "mine")).rejects.toThrow(
+    "already owns",
+  );
+  await expect(service.request("host", "client", "bob", "runtime", "look")).rejects.toThrow(
+    "No thread owns",
+  );
+  const result = await service.request("host", "main", "bob", "authoring", "bake lighting");
+  expect([result.owner, result.ownerStatus?.status, result.requested]).toEqual([
+    "alice",
+    "idle",
+    true,
+  ]);
+  expect(result.claim).not.toHaveProperty("claimId");
+  expect(sent).toHaveLength(1);
+  expect(sent[0]?.[0]).toBe("alice");
+  for (const part of ["@thread:bob", alice.claimId, "/game", "bake lighting", "bb thread tell bob"])
+    expect(sent[0]?.[1]).toContain(part);
+  await expect(service.request("host", "main", "bob", "authoring", "again")).rejects.toThrow(
+    "went to @thread:alice",
+  );
+  await expect(service.claim("host", "main", "bob", "runtime")).rejects.toThrow(
+    /^Editor is owned by @thread:alice\. The owner thread has been idle for 2 min; the claim is about to release\. Options: action "wait"/,
+  );
+  expect(service.instanceFor("host", alice.claimId, "alice")).toBe("main");
+  expect(() => service.instanceFor("host", alice.claimId, "bob")).toThrow(
+    "owned by this BB thread",
+  );
+  service.dispose();
+});

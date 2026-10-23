@@ -4,6 +4,7 @@ import type { slotSchema } from "../../shared/slot-contract.ts";
 import type {
   CheckoutSlot,
   EditorInstance,
+  EditorReservation,
   VisibleEditorClaim,
 } from "../../shared/unity-editor-contract.ts";
 
@@ -13,6 +14,7 @@ export function checkoutSlots(
   instances: EditorInstance[],
   claims: VisibleEditorClaim[],
   registered: z.infer<typeof slotSchema>[] = [],
+  reservations: EditorReservation[] = [],
 ): CheckoutSlot[] {
   const slots = new Map<string, CheckoutSlot>();
   const slotFor = (workspacePath: string) => {
@@ -28,6 +30,7 @@ export function checkoutSlots(
         mainEditors: [],
         mppmEditors: [],
         claims: [],
+        reservations: [],
       };
       slots.set(workspacePath, slot);
     }
@@ -39,6 +42,9 @@ export function checkoutSlots(
   }
   // An undiscovered Editor's durable claim still occupies its checkout until recovery.
   for (const claim of claims) slotFor(claim.instance.workspacePath).claims.push(claim);
+  // A reservation occupies a checkout whose Editor is still starting.
+  for (const reservation of reservations)
+    slotFor(reservation.workspacePath).reservations.push(reservation);
   for (const slot of registered) slotFor(slot.workspacePath).lifecycle = slot;
   for (const slot of slots.values()) {
     slot.mainEditors.sort((a, b) => a.id.localeCompare(b.id));

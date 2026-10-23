@@ -1,130 +1,103 @@
 ---
 name: unity-editors
-description: Discover Unity Editor checkout slots, claim an exact instance for a BB thread, inspect ownership, and release safely.
+description: Claim, wait for, reserve and release Unity Editors for a BB thread, ask an owner for a handoff, and lease registered Rampage checkout slots.
 ---
 
-# Unity Editor ownership and checkout slots
+# Unity Editor ownership
 
-For registered Rampage checkouts, use `game_studio_slots` or `bb game-studio slots` first.
-Register an existing independent clone with `register --host host_id --project
-project_id --path /absolute/rampage-client`. New threads can select the
-`unity-rampage-slot` environment provider with inputs `{"slotId":"slot_id"}`.
-Create additional warm slots once with `bb game-studio slots create --host host_id
---source master_slot_id --path /absolute/rampage-slot-1 --branch scott/slot-1`.
-The source must be clean, hydrated and stopped. Its lease is frozen during the
-native copy-on-write Library seed. macOS requires Python 3 for APFS clonefile;
-Linux requires reflink support. There is no full-copy fallback. New threads can
-use empty provider inputs `{}` for atomic automatic allocation from these slots.
-Adopted Project Checkout environments require an explicit slotId. Completed
-creation retries preserve later work; failed partial destinations stay fenced.
-An attached thread can `acquire --slot slot_id`; keep its lease ID. Hold this
-lease across idle turns, failures, and Editor restarts, then claim the exact
-Editor as below. Source control remains GitButler within each independent clone.
+Claims coordinate participating tools only. Direct Unity CLI, UI and agent-game
+calls cannot be intercepted, so check ownership first and never bypass another
+thread's claim. Use `bb game-studio manage ACTION` or the `game_studio_manage`
+tool; the calling BB thread is always the owner.
 
-For handoff, finish all native jobs, release Editor claims, preserve dirty scenes,
-and close Unity plus its MPPM clients. Then `release --slot slot_id --lease
-lease_id` and stop using the checkout. Verification failures or interruptions
-quarantine the slot. Recovery requires `recover --slot slot_id --confirm --note
-'Observed completion evidence'`; a different caller needs an archived or deleted
-owner. Never bypass an occupied slot with direct environment reuse or CLI calls.
-Retirement preserves checkout files and Library caches; explicit registration
-is required before reusing a retired slot. No automatic checkout cleanup occurs.
+## Protocol
 
-Use `bb game-studio manage list` or the `game_studio_manage` agent tool.
-The inventory includes `slots`, grouped by the host's canonical shared Assets
-checkout (`workspacePath`), with a stable host-scoped id, main Editors, MPPM
-Editors, and durable claims. A slot is an existing checkout, not a Git branch.
-A claim remains visible when its Editor disappears from discovery until it is
-safely recovered. Listing does not provision checkouts or launch Editors.
+1. `bb game-studio manage list`. Pick the exact instance by `projectPath`,
+   `pid`, `workspacePath`, owner and `clone` flag. Each checkout is listed as a
+   slot with its main Editor, MPPM clients, claims and reservations.
+2. Claim it: `claim --instance ID --mode runtime` for read-only inspection, or
+   `--mode authoring` for Assets/Packages writes, imports, scene edits, Play and
+   scenario lifecycle. Keep the returned `claimId`; the response carries
+   `background.quiet`.
+3. Drive the Editor with the Unity CLI, passing the claim's exact
+   `instance.projectPath` as `--project-path` (an MPPM client's own clone path,
+   never the shared `workspacePath`). Confirm the served PID equals
+   `instance.pid` before a series of calls. If the PID, start identity or path
+   changes, stop, `recover` the old claim and claim the new instance.
+4. Before writes, `status --instance ID --claim CLAIM` and proceed only while
+   `background.quiet` is true. Run long operations with `--detach`, record each
+   job id with its project path, and `unity job wait JOB --project-path PATH`
+   before release; ownership does not track CLI jobs, and a timeout or lost
+   response proves nothing.
+5. `release --instance ID --claim CLAIM` (or `--claim CLAIM` alone) once input,
+   recorders and jobs are finished. Release refuses a busy Editor.
 
-Choose separate physical checkouts or worktrees for concurrent authoring.
-Each checkout needs its own Assets, Packages and Library. MPPM clones share
-Assets with their main Editor, so they remain in that main Editor's slot;
-they provide runtime clients, not independent authoring slots. Different
-GitButler branches applied in one workspace still share one authoring slot.
-Use GitButler within a checkout when its branch workflow suits the project;
-changing branches does not create isolation or release an Editor claim.
+## Turn end
 
-On Linux, an interactive Editor blocked before Pipeline startup is listed with
-port:null. Claim that exact instance in authoring mode under the existing
-checkout lease before handling only its startup dialog. Native discovery and
-the claim recheck its executable, project path, shared Assets root, PID and OS
-start identity; batch/import workers and CLI services are excluded. Make no
-Unity CLI calls under a startup claim. Preserve crash backups outside Assets
-before declining an optional recovery import. Once Pipeline starts, list and claim the same
-instance again: promotion retains the claim token only after the normal served
-PID probe succeeds. Do not author shared assets or run scenario setup until that
-promotion. If startup exits, recover the dead claim normally.
+Claims and reservations release automatically when the owning thread's turn
+ends, as soon as the Editor is quiet; a busy Editor shows
+`autoRelease: "pending"` until then. Re-claim at the start of each turn. Pass
+`--hold` only for an agreed preview handoff or work that continues next turn,
+and say so in the handoff. A held claim survives idle turns and plugin reloads
+and never expires.
 
-Select an exact discovered instance id. Discovery shows its PID, canonical
-project path, shared workspace and owner. Never guess clone paths.
-Claim with `bb game-studio manage claim --instance ID --mode runtime` for
-inspection or `--mode authoring` for main-Editor lifecycle and shared writes.
-The calling BB thread is the owner; there is no arbitrary owner argument.
-Keep the returned claimId. A new claim verifies the served PID with a read-only
-ephemeral script outside Assets. Claims persist until released, including across
-plugin reloads and idle agent turns. They never expire and cannot be stolen.
+## When the Editor is owned
 
-Use the Unity CLI for Editor operations. Set its `--project-path` to the returned
-claim's exact `instance.projectPath`, including an MPPM client's own clone path.
-Never substitute the shared `workspacePath` or the shell's working directory.
-Before a series of calls, use native discovery to confirm the targeted Editor's
-PID matches `instance.pid`. Stop if the PID, process start identity or project
-path changes; recover the old claim and claim the newly discovered instance.
-If the CLI cannot target a clone exactly, its runtime claim does not authorize
-CLI calls; do not fall back to the main Editor. Before writes, run
-`bb game-studio manage status --instance ID --claim CLAIM` and proceed only when
-`background.quiet` is true and all your earlier operations have finished.
+The conflict names the owner, whether its thread is active or idle, and whether
+the claim is held or about to release. Then choose one:
 
-For long Unity CLI operations, use `--detach` and record every returned job ID
-with its exact project path. Finish each with `unity job wait JOB_ID
---project-path /exact/claimed/path` before releasing ownership. If cancelling,
-use `unity job cancel JOB_ID --project-path /exact/claimed/path`, then confirm
-the job and its native work have stopped. A timeout, cancellation or lost
-response does not prove completion. Keep ownership and the request uncertain
-until you establish the actual outcome; do not repeat an unknown operation.
-Management status and release do not track these new CLI job IDs, and a native
-idle result alone cannot prove an arbitrary script or capture has finished.
+- `wait --instance ID --mode MODE --timeout 300` blocks until the Editor frees
+  and claims it; it wakes on every release and fails with the same advice.
+- `request --instance ID --mode MODE --reason "..."` sends the owner a handoff
+  request for its next turn. Wait for its reply or ETA; one request per owner
+  per minute.
+- Open your own worktree Editor where the project's guide allows it.
 
-Use `bb game-studio manage status --instance ID --claim CLAIM` to inspect
-ownership or finish jobs submitted before the upgrade. These legacy jobs retain
-their lifecycle state and errors, without command results. A pending or uncertain
-job blocks release. Wait until `claim.jobId` is null; a terminal job can still
-have background Editor work. After checking the native job,
-recorder/input and other owned work, the owner can use `bb game-studio manage
-reconcile --instance ID --claim CLAIM --confirm
---note "observed completion evidence"`. It also requires the Pipeline to be idle.
-Another thread cannot reconcile your claim.
+Never bypass, restart or save another thread's Editor. If you receive a handoff
+request: finish or wait for native work, preserve dirty scenes, release, then
+reply with `bb thread tell REQUESTER --mode steer '...'`.
 
-Release with `bb game-studio manage release --instance ID --claim CLAIM`
-after input, jobs and recorders are finished and temporary state is restored.
-`bb game-studio manage recover --instance ID` removes a claim after the old
-Editor process is proven gone. Deletion/archive marks an owner orphaned. To
-recover that claim while the Editor stays open, use `recover --confirm
---note "observed completion evidence"` only after checking owned input/recorders
-and detached work. Native jobs, compiling, imports, builds, bakes, tests, package
-work and dialogs must be idle. Restoring an archived thread restores its
-ownership protection. Recovery checks BB's current owner record; a missed event
-cannot authorize a live-owner takeover. Run ownership commands inside a BB
-thread. For discovery outside one, supply `--host`.
+## Opening an Editor
 
-Runtime claims allow different agents to inspect distinct clients of one MPPM
-workspace. Under a runtime claim, make only read-only Unity CLI calls. Clones
-cannot take authoring claims. Main authoring excludes another thread's runtime/authoring
-claim on that shared checkout. Claims coordinate participating tools; direct
-Unity CLI, UI and agent-game calls cannot be intercepted. Do not bypass a claim.
-Shared Assets/Packages writes and scenario lifecycle require the main authoring
-owner. Use the project's existing account, input, capture and scenario rules.
-Release client claims before the scenario owner needs the shared authoring
-window. Never restart or save a dirty Editor to recover ownership. Physical
-focus, screen capture and backend accounts remain shared across checkouts.
-Coordinate capture, focus and simulated input with every other claim owner on
-the host before using them.
+Reserve the checkout first so the Editor is yours from its first discovery:
+`reserve --workspace /abs/checkout --mode authoring`, then `unity open`, then
+claim the discovered instance; the claim consumes the reservation. One
+reservation exists per checkout. It releases at turn end unless held, and
+`release --workspace PATH` drops it early.
 
-CLI identity comes from `BB_THREAD_ID`; it is a coordination interface, not an
-access-control boundary. Do not spoof another thread. Managed `list` hides other
-owners' claim ids; the public read-only `listUnityEditors` RPC hides all claim
-ids, even when a threadId is supplied to select the host. Prefer the native
-agent tool when available. Plugin reloads discard unverified read-only probes
-and preserve interrupted submissions as uncertain. Release verifies native
-background status before handoff.
+## Modes and limits
+
+Runtime claims coexist and allow only read-only CLI calls, including one agent
+per MPPM client. Authoring excludes every other thread on the shared checkout;
+clones cannot author. Physical focus, screen capture, simulated input and
+backend accounts stay shared across checkouts: coordinate them with every owner
+on the host. Linux startup Editors (`port:null`) take an authoring claim for
+their startup dialog only; make no CLI calls until re-claiming the same instance
+after Pipeline starts promotes the claim.
+
+## Recovery
+
+`recover --instance ID` removes a claim whose Editor process is gone. For a
+live Editor whose owner thread is archived or deleted, add
+`--confirm --note "observed completion evidence"` after checking owned input,
+recorders and detached jobs; native work must be idle. Restoring the thread
+restores its protection. `reconcile --instance ID --claim CLAIM --confirm
+--note "..."` finishes pre-upgrade pending jobs only.
+
+## Registered checkout slots
+
+`game_studio_slots` and `bb game-studio slots` lease whole registered Rampage
+checkouts to one thread. New threads select the `unity-rampage-slot`
+environment provider with inputs `{}` for a free warm slot or
+`{"slotId": "..."}` for an adopted checkout; the lease is acquired on dispatch
+and kept across idle turns. Create warm slots once from a clean, stopped
+registered master: `slots create --host HOST --source MASTER --path /abs/slot
+--branch scott/NAME`, on the same copy-on-write filesystem with no full-copy
+fallback. Release at handoff after Editor claims are released and Unity plus its
+MPPM clients are closed; a failed check quarantines the slot until
+`slots recover --slot ID --confirm --note "..."`. Without registered slots,
+claims and reservations alone coordinate checkouts and worktrees.
+
+CLI identity comes from `BB_THREAD_ID`; it is a coordination interface, not
+access control. `list` hides other owners' claim ids, and the public
+`listUnityEditors` RPC hides all of them.

@@ -19,6 +19,7 @@ test("the public inventory RPC exposes slots but never owner capabilities from a
     experimental_callHostRpc: ({ method }) => {
       if (method === "discover") return { instances: [instance], warnings: [] };
       if (method === "probe") return { pid: 101 };
+      if (method === "quiet") return { quiet: true };
       throw new Error("Unexpected host method");
     },
   });

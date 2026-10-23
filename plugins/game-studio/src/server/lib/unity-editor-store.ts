@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
-import type { EditorInstance } from "../../shared/unity-editor-contract.ts";
+import type { EditorInstance, EditorReservation } from "../../shared/unity-editor-contract.ts";
 import type { SlotStore } from "./slot-store.ts";
 
 export type EditorMode = "runtime" | "authoring";
@@ -14,9 +14,32 @@ export interface EditorClaim {
   claimedAt: string;
   operationLoadId?: string;
   orphaned?: boolean;
+  /** Kept across the owner's idle turns; otherwise the claim releases itself at turn end. */
+  hold?: boolean;
+  /** The owner's turn ended while the Editor was busy; release retries until it is quiet. */
+  autoRelease?: "pending";
+}
+export interface ClaimOptions {
+  hold?: boolean;
+}
+/** Another thread holds the Editor, its shared checkout, or a reservation on it. */
+export class ClaimConflictError extends Error {
+  readonly owner: string;
+  readonly holder: EditorClaim | EditorReservation;
+  constructor(message: string, holder: EditorClaim | EditorReservation) {
+    super(message);
+    this.name = "ClaimConflictError";
+    this.owner = holder.ownerThreadId;
+    this.holder = holder;
+  }
 }
 type Db = ReturnType<BbPluginApi["storage"]["database"]>;
 const table = "unity_editor_claims";
+const reservationTable = "unity_editor_reservations";
+/** Runtime claims coexist; an authoring claim excludes every other thread on the checkout. */
+function excludes(mode: EditorMode, other: EditorMode) {
+  return mode === "authoring" || other === "authoring";
+}
 export class EditorClaims {
   private readonly loadId = randomUUID();
   readonly db: Db;
@@ -26,6 +49,9 @@ export class EditorClaims {
     this.slots = slots;
     db.exec(
       `CREATE TABLE IF NOT EXISTS ${table} (key TEXT PRIMARY KEY, host TEXT NOT NULL, workspace TEXT NOT NULL, record TEXT NOT NULL)`,
+    );
+    db.exec(
+      `CREATE TABLE IF NOT EXISTS ${reservationTable} (key TEXT PRIMARY KEY, host TEXT NOT NULL, workspace TEXT NOT NULL, record TEXT NOT NULL)`,
     );
     db.transaction(() => {
       for (const row of db.prepare(`SELECT record FROM ${table}`).all() as { record: string }[]) {
@@ -42,12 +68,7 @@ export class EditorClaims {
   markOrphan(owner: string, orphaned = true) {
     this.db
       .transaction(() => {
-        for (const row of this.db.prepare(`SELECT record FROM ${table}`).all() as {
-          record: string;
-        }[]) {
-          const claim: EditorClaim = JSON.parse(row.record);
-          if (claim.ownerThreadId === owner) this.save({ ...claim, orphaned });
-        }
+        for (const claim of this.ownedBy(owner)) this.save({ ...claim, orphaned });
       })
       .immediate();
   }
@@ -57,6 +78,16 @@ export class EditorClaims {
       .all(hostId)
       .map((row: any) => JSON.parse(row.record));
   }
+  /** Every claim on every host. */
+  all(): EditorClaim[] {
+    return (this.db.prepare(`SELECT record FROM ${table}`).all() as { record: string }[]).map(
+      (row) => JSON.parse(row.record) as EditorClaim,
+    );
+  }
+  /** One thread's claims on every host, for turn-end release. */
+  ownedBy(owner: string): EditorClaim[] {
+    return this.all().filter((claim) => claim.ownerThreadId === owner);
+  }
   private key(hostId: string, id: string) {
     return `${hostId}:${id}`;
   }
@@ -65,6 +96,10 @@ export class EditorClaims {
       .prepare(`SELECT record FROM ${table} WHERE key = ?`)
       .get(this.key(hostId, id)) as { record: string } | undefined;
     return row ? JSON.parse(row.record) : null;
+  }
+  /** Claim ids are unguessable, so a caller's claim id alone identifies its Editor. */
+  byClaimId(hostId: string, claimId: string): EditorClaim | null {
+    return this.list(hostId).find((claim) => claim.claimId === claimId) ?? null;
   }
   private save(claim: EditorClaim) {
     this.db
@@ -78,11 +113,21 @@ export class EditorClaims {
         JSON.stringify(claim),
       );
   }
+  /** The other thread whose claim on this checkout excludes `mode`, if any. */
+  private claimConflict(hostId: string, workspacePath: string, owner: string, mode: EditorMode) {
+    return this.list(hostId).find(
+      (c) =>
+        c.instance.workspacePath === workspacePath &&
+        c.ownerThreadId !== owner &&
+        excludes(mode, c.mode),
+    );
+  }
   claim(
     hostId: string,
     instance: EditorInstance,
     ownerThreadId: string,
     mode: EditorMode,
+    options: ClaimOptions = {},
   ): { claim: EditorClaim; created: boolean } {
     return this.db
       .transaction(() => {
@@ -90,21 +135,40 @@ export class EditorClaims {
         const current = this.get(hostId, instance.id);
         if (current) {
           if (current.ownerThreadId !== ownerThreadId)
-            throw new Error(`Editor is owned by @thread:${current.ownerThreadId}`);
+            throw new ClaimConflictError(
+              `Editor is owned by @thread:${current.ownerThreadId}`,
+              current,
+            );
           if (current.mode !== mode)
             throw new Error("Release the existing claim before changing its mode");
+          if (options.hold !== undefined && Boolean(current.hold) !== options.hold) {
+            const updated = { ...current, hold: options.hold || undefined };
+            this.save(updated);
+            return { claim: updated, created: false };
+          }
           return { claim: current, created: false };
         }
         if (instance.clone && mode === "authoring")
           throw new Error("Additional MPPM Editors cannot author scenes or shared assets");
-        const conflict = this.list(hostId).find(
-          (c) =>
-            c.instance.workspacePath === instance.workspacePath &&
-            c.ownerThreadId !== ownerThreadId &&
-            (mode === "authoring" || c.mode === "authoring"),
-        );
+        const conflict = this.claimConflict(hostId, instance.workspacePath, ownerThreadId, mode);
         if (conflict)
-          throw new Error(`Shared project is owned by @thread:${conflict.ownerThreadId}`);
+          throw new ClaimConflictError(
+            `Shared project is owned by @thread:${conflict.ownerThreadId}`,
+            conflict,
+          );
+        const reservation = this.reservationFor(hostId, instance.workspacePath);
+        if (
+          reservation &&
+          reservation.ownerThreadId !== ownerThreadId &&
+          excludes(mode, reservation.mode)
+        )
+          throw new ClaimConflictError(
+            `Workspace is reserved by @thread:${reservation.ownerThreadId}, which is opening its Editor`,
+            reservation,
+          );
+        const mine = reservation?.ownerThreadId === ownerThreadId ? reservation : null;
+        if (mine) this.deleteReservation(hostId, instance.workspacePath);
+        const hold = options.hold ?? mine?.hold;
         const claim: EditorClaim = {
           instance,
           hostId,
@@ -114,6 +178,7 @@ export class EditorClaims {
           jobId: "verifying",
           operationLoadId: this.loadId,
           claimedAt: new Date().toISOString(),
+          ...(hold ? { hold: true } : {}),
         };
         this.save(claim);
         return { claim, created: true };
@@ -165,6 +230,18 @@ export class EditorClaims {
       })
       .immediate();
   }
+  /** Record whether a busy Editor's claim is still waiting to release itself. */
+  autoRelease(hostId: string, id: string, owner: string, claimId: string, pending: boolean) {
+    return this.db
+      .transaction(() => {
+        const claim = this.owned(hostId, id, owner, claimId);
+        const { autoRelease: _autoRelease, ...rest } = claim;
+        const updated: EditorClaim = pending ? { ...rest, autoRelease: "pending" } : rest;
+        this.save(updated);
+        return updated;
+      })
+      .immediate();
+  }
   release(hostId: string, id: string, owner: string, claimId: string): void {
     this.db
       .transaction(() => {
@@ -195,5 +272,85 @@ export class EditorClaims {
         this.db.prepare(`DELETE FROM ${table} WHERE key = ?`).run(this.key(hostId, id));
       })
       .immediate();
+  }
+  reservations(hostId?: string): EditorReservation[] {
+    const rows = (
+      hostId
+        ? this.db.prepare(`SELECT record FROM ${reservationTable} WHERE host = ?`).all(hostId)
+        : this.db.prepare(`SELECT record FROM ${reservationTable}`).all()
+    ) as { record: string }[];
+    return rows
+      .map((row) => JSON.parse(row.record) as EditorReservation)
+      .sort((a, b) => a.workspacePath.localeCompare(b.workspacePath));
+  }
+  reservationFor(hostId: string, workspacePath: string): EditorReservation | null {
+    const row = this.db
+      .prepare(`SELECT record FROM ${reservationTable} WHERE key = ?`)
+      .get(this.key(hostId, workspacePath)) as { record: string } | undefined;
+    return row ? JSON.parse(row.record) : null;
+  }
+  reservationsBy(owner: string): EditorReservation[] {
+    return this.reservations().filter((reservation) => reservation.ownerThreadId === owner);
+  }
+  /** Hold a checkout for the Editor this thread is about to open. */
+  reserve(
+    hostId: string,
+    workspacePath: string,
+    ownerThreadId: string,
+    mode: EditorMode,
+    hold?: boolean,
+  ): EditorReservation {
+    return this.db
+      .transaction(() => {
+        this.slots?.editorAccess(hostId, workspacePath, ownerThreadId);
+        const existing = this.reservationFor(hostId, workspacePath);
+        if (existing && existing.ownerThreadId !== ownerThreadId)
+          throw new ClaimConflictError(
+            `Workspace is reserved by @thread:${existing.ownerThreadId}, which is opening its Editor`,
+            existing,
+          );
+        const conflict = this.claimConflict(hostId, workspacePath, ownerThreadId, mode);
+        if (conflict)
+          throw new ClaimConflictError(
+            `Shared project is owned by @thread:${conflict.ownerThreadId}`,
+            conflict,
+          );
+        const reservation: EditorReservation = {
+          hostId,
+          workspacePath,
+          ownerThreadId,
+          mode,
+          ...((hold ?? existing?.hold) ? { hold: true } : {}),
+          reservedAt: existing?.reservedAt ?? new Date().toISOString(),
+        };
+        this.db
+          .prepare(
+            `INSERT INTO ${reservationTable} (key, host, workspace, record) VALUES (?, ?, ?, ?) ON CONFLICT(key) DO UPDATE SET record=excluded.record`,
+          )
+          .run(this.key(hostId, workspacePath), hostId, workspacePath, JSON.stringify(reservation));
+        return reservation;
+      })
+      .immediate();
+  }
+  /** Returns false when nothing was reserved. */
+  releaseReservation(hostId: string, workspacePath: string, ownerThreadId: string): boolean {
+    return this.db
+      .transaction(() => {
+        const existing = this.reservationFor(hostId, workspacePath);
+        if (!existing) return false;
+        if (existing.ownerThreadId !== ownerThreadId)
+          throw new ClaimConflictError(
+            `Workspace is reserved by @thread:${existing.ownerThreadId}`,
+            existing,
+          );
+        this.deleteReservation(hostId, workspacePath);
+        return true;
+      })
+      .immediate();
+  }
+  private deleteReservation(hostId: string, workspacePath: string) {
+    this.db
+      .prepare(`DELETE FROM ${reservationTable} WHERE key = ?`)
+      .run(this.key(hostId, workspacePath));
   }
 }

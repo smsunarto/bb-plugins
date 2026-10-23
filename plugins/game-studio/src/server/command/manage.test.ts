@@ -33,8 +33,8 @@ test("Editor CLI binds ownership to the calling thread and blocks another caller
   expect((await harness.runCli(claimArgs)).exitCode).toBe(1);
   const first = await harness.runCli(claimArgs, { threadId: "alice" });
   expect(first.exitCode).toBe(0);
-  const claim = JSON.parse(first.stdout!);
-  expect(claim.ownerThreadId).toBe("alice");
+  const { background, ...claim } = JSON.parse(first.stdout!);
+  expect([claim.ownerThreadId, background]).toEqual(["alice", { quiet: true }]);
   const conflict = await harness.runCli(claimArgs, { threadId: "bob" });
   expect(conflict.exitCode).toBe(1);
   expect(conflict.stderr).toContain("owned by @thread:alice");
@@ -57,7 +57,8 @@ test("Editor CLI binds ownership to the calling thread and blocks another caller
       )
     ).exitCode,
   ).toBe(0);
-  expect(methods).toEqual(["discover", "probe", "discover", "quiet", "quiet"]);
+  // A new claim reports the Editor's idle state, so it probes quiet once more than before.
+  expect(methods).toEqual(["discover", "probe", "quiet", "discover", "quiet", "quiet"]);
   expect(harness.registrations.agentTools.map((tool) => tool.name)).toContain("game_studio_manage");
 });
 

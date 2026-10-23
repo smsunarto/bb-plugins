@@ -29,6 +29,7 @@ function slot(id: string, overrides: Partial<CheckoutSlot> = {}): CheckoutSlot {
     mainEditors: [],
     mppmEditors: [],
     claims: [],
+    reservations: [],
     lifecycle: {
       id,
       hostId: "host-1",

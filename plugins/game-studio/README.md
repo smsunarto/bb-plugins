@@ -191,21 +191,26 @@ Use the `game_studio_manage` agent tool or these commands inside a BB thread:
 ```sh
 bb game-studio manage list
 bb game-studio manage claim --instance instance_id --mode authoring
-bb game-studio manage status --instance instance_id --claim claim_id
-bb game-studio manage release --instance instance_id --claim claim_id
+bb game-studio manage status --claim claim_id
+bb game-studio manage release --claim claim_id
+bb game-studio manage wait --instance instance_id --mode authoring --timeout 300
+bb game-studio manage request --instance instance_id --mode authoring --reason "..."
+bb game-studio manage reserve --workspace /abs/checkout --mode authoring
 ```
 
-Keep the returned claim ID. Run Editor operations through the Unity CLI, targeting the claim's exact `instance.projectPath`, and verify that the selected PID matches `instance.pid`. Runtime claims authorize read-only calls. Before authoring writes, use management `status` and require `background.quiet: true` plus completion of your earlier operations. Coordinate focus, capture and simulated input with other claim owners on the host. Startup claims cover only the startup dialog; make no Unity CLI calls until ownership is promoted.
+Keep the returned claim ID; it also selects the instance for `status` and `release`. Run Editor operations through the Unity CLI, targeting the claim's exact `instance.projectPath`, and verify that the selected PID matches `instance.pid`. Runtime claims authorize read-only calls; authoring claims cover shared writes and scenario lifecycle. `claim` and `status` report native idle state as `background.quiet`; write only while it is true.
 
-Status also supports pending jobs from before the upgrade, exposing lifecycle information without command results. Release enforces those legacy job fences and native idle checks; it does not track new Unity CLI jobs. For long CLI operations, use `--detach`, record every job ID and wait for completion before release. A timeout or cancellation does not prove native completion. Wait until `claim.jobId` is `null` for pre-upgrade work; an interrupted submission stays uncertain until its owner checks native completion and reconciles it. Read the bundled `unity-editors` skill for exact targeting, CLI completion, reconciliation and orphan recovery.
+Claims and reservations release automatically when the owning thread's turn ends, as soon as the Editor is quiet; a busy Editor shows `autoRelease: "pending"` until then. Pass `--hold` to keep a claim across idle turns for an agreed preview handoff or multi-turn work; held claims never expire. A conflict names the owner thread and its state. `wait` blocks until the instance is claimable and wakes on every release; `request` sends the owner a handoff request on its next turn. `reserve` holds a checkout before `unity open`, so the new Editor is owned from its first discovery; the owner's claim consumes the reservation.
+
+Status also supports pending jobs from before the upgrade, exposing lifecycle information without command results. Release enforces those legacy job fences and native idle checks; it does not track new Unity CLI jobs, so finish or wait for them first.
 
 - **Runtime claims** allow inspection of distinct Editors sharing one workspace.
 - **Authoring claims** exclude other threads from the shared workspace. MPPM clients cannot take authoring claims.
 - **Checkout slots** remain occupied when discovery loses an Editor that still has a durable claim. Slot IDs include the host and canonical workspace path.
 
-Claims survive reloads and idle turns. They never expire automatically. Direct filesystem edits, physical input, Unity CLI calls and backend accounts still require coordination.
+Direct filesystem edits, physical input, Unity CLI calls and backend accounts still require coordination.
 
-The published `listUnityEditors` RPC accepts `{ hostId?, threadId? }` and returns `hostId`, `instances`, `warnings`, `claims` and `slots`. Supply a host or a thread whose environment selects one. This RPC always redacts claim IDs. Each slot includes its main Editors, MPPM clients and public ownership records.
+The published `listUnityEditors` RPC accepts `{ hostId?, threadId? }` and returns `hostId`, `instances`, `warnings`, `claims`, `reservations` and `slots`. Supply a host or a thread whose environment selects one. This RPC always redacts claim IDs. Each slot includes its main Editors, MPPM clients and public ownership records.
 
 ## Upgrade from the separate Unity plugin
 

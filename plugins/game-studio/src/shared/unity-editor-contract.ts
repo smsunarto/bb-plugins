@@ -15,20 +15,37 @@ export const editorSchema = z
   })
   .strict();
 export type EditorInstance = z.infer<typeof editorSchema>;
+export const editorModeSchema = z.enum(["runtime", "authoring"]);
 export const visibleClaimSchema = z
   .object({
     instance: editorSchema,
     hostId: z.string(),
     ownerThreadId: z.string(),
     claimId: z.string().optional(),
-    mode: z.enum(["runtime", "authoring"]),
+    mode: editorModeSchema,
     jobId: z.string().nullable(),
     claimedAt: z.string(),
     operationLoadId: z.string().optional(),
     orphaned: z.boolean().optional(),
+    /** Kept across the owner's idle turns; otherwise the claim releases itself at turn end. */
+    hold: z.boolean().optional(),
+    /** The owner's turn ended while the Editor was busy; release retries until it is quiet. */
+    autoRelease: z.literal("pending").optional(),
   })
   .strict();
 export type VisibleEditorClaim = z.infer<typeof visibleClaimSchema>;
+/** A thread's intent to open an Editor on a checkout before discovery can list it. */
+export const reservationSchema = z
+  .object({
+    hostId: z.string(),
+    workspacePath: z.string(),
+    ownerThreadId: z.string(),
+    mode: editorModeSchema,
+    hold: z.boolean().optional(),
+    reservedAt: z.string(),
+  })
+  .strict();
+export type EditorReservation = z.infer<typeof reservationSchema>;
 export const checkoutSlotSchema = z
   .object({
     id: z.string(),
@@ -37,6 +54,7 @@ export const checkoutSlotSchema = z
     mainEditors: z.array(editorSchema),
     mppmEditors: z.array(editorSchema),
     claims: z.array(visibleClaimSchema),
+    reservations: z.array(reservationSchema),
     lifecycle: slotSchema.optional(),
   })
   .strict();
@@ -47,6 +65,7 @@ export const editorInventorySchema = z
     instances: z.array(editorSchema),
     warnings: z.array(z.string()),
     claims: z.array(visibleClaimSchema),
+    reservations: z.array(reservationSchema),
     slots: z.array(checkoutSlotSchema),
   })
   .strict();

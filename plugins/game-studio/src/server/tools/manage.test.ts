@@ -19,6 +19,7 @@ test("the agent tool refuses caller-forged owners and requires confirmation for 
     experimental_callHostRpc: ({ method }) => {
       if (method === "discover") return { instances: [instance], warnings: [] };
       if (method === "probe") return { pid: 101 };
+      if (method === "quiet") return { quiet: true };
       throw new Error("Unexpected host method");
     },
   });
@@ -150,3 +151,89 @@ test("the agent tool rejects command execution and command fields before contact
   expect(harness.experimental_hostRpcCalls).toEqual([]);
   await harness.lifecycle.dispose();
 });
+
+test("the agent tool resolves instances from claim ids, reserves checkouts and releases at turn end", async () => {
+  const instance = {
+    id: "main-1",
+    projectPath: "/game",
+    workspacePath: "/game",
+    pid: 101,
+    port: 7800,
+    version: "6000.3.10f1",
+    startedAt: "birth",
+    clone: false,
+  };
+  const sent: unknown[] = [];
+  const { bb, harness } = createFakePluginHost({
+    pluginId: "game-studio",
+    sdk: {
+      plugins: { list: async () => ({ plugins: [] }) },
+      threads: {
+        get: async ({ threadId }) => makeThreadResponse({ id: threadId }),
+        send: async (args) => {
+          sent.push(args);
+          return { ok: true, delivery: "sent" } as never;
+        },
+      },
+    },
+    experimental_callHostRpc: ({ method, input }) => {
+      if (method === "discover") return { instances: [instance], warnings: [] };
+      if (method === "probe") return { pid: 101 };
+      if (method === "quiet") return { quiet: true };
+      if (method === "resolveWorkspace")
+        return { workspacePath: String((input as { path: string }).path).replace(/\/+$/, "") };
+      throw new Error(`Unexpected host method ${method}`);
+    },
+  });
+  await plugin(bb);
+  const call = async (input: Record<string, unknown>, threadId: string) =>
+    JSON.parse(
+      (await harness.callAgentTool(
+        "game_studio_manage",
+        { hostId: "host", ...input },
+        { threadId },
+      )) as string,
+    );
+  const claim = await call({ action: "claim", instanceId: "main-1", hold: true }, "alice");
+  expect([claim.hold, claim.background]).toEqual([true, { quiet: true }]);
+  const status = await call({ action: "status", claimId: claim.claimId }, "alice");
+  expect(status.claim.instance.id).toBe("main-1");
+  await expect(call({ action: "status", claimId: claim.claimId }, "bob")).rejects.toThrow(
+    "owned by this BB thread",
+  );
+  await expect(call({ action: "request", instanceId: "main-1" }, "bob")).rejects.toThrow(
+    "reason is required",
+  );
+  const request = await call(
+    { action: "request", instanceId: "main-1", mode: "authoring", reason: "scene bake" },
+    "bob",
+  );
+  expect(request.owner).toBe("alice");
+  expect(sent).toHaveLength(1);
+  expect(sent[0]).toMatchObject({ threadId: "alice", mode: "steer-if-active" });
+  const reservation = await call(
+    { action: "reserve", workspacePath: "/game-worktree/", mode: "authoring" },
+    "bob",
+  );
+  expect([reservation.workspacePath, reservation.ownerThreadId]).toEqual(["/game-worktree", "bob"]);
+  await harness.emitThreadEvent("thread.idle", {
+    thread: makeThreadResponse({ id: "alice" }),
+    lastAssistantText: null,
+  });
+  await harness.emitThreadEvent("thread.idle", {
+    thread: makeThreadResponse({ id: "bob" }),
+    lastAssistantText: null,
+  });
+  const inventory = await call({ action: "list" }, "carol");
+  expect(
+    inventory.claims.map((c: { ownerThreadId: string; hold?: boolean }) => [
+      c.ownerThreadId,
+      c.hold,
+    ]),
+  ).toEqual([["alice", true]]);
+  expect(inventory.reservations).toEqual([]);
+  expect(inventory.slots[0]?.reservations).toEqual([]);
+  await expect(
+    call({ action: "wait", instanceId: "main-1", mode: "authoring", timeoutSeconds: 5 }, "carol"),
+  ).rejects.toThrow(/Timed out after 5 s waiting\. Editor is owned by @thread:alice/);
+}, 15_000);

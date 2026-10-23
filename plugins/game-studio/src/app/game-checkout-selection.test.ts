@@ -135,6 +135,7 @@ function registeredCheckout() {
     mainEditors: [],
     mppmEditors: [],
     claims: [],
+    reservations: [],
     lifecycle: {
       id: "slot-performance",
       hostId: "host-mac",
@@ -148,7 +149,14 @@ function registeredCheckout() {
   } satisfies CheckoutSlot;
   return {
     slot,
-    inventory: { hostId: "host-mac", instances: [], warnings: [], claims: [], slots: [slot] },
+    inventory: {
+      hostId: "host-mac",
+      instances: [],
+      warnings: [],
+      claims: [],
+      reservations: [],
+      slots: [slot],
+    },
   };
 }
 
