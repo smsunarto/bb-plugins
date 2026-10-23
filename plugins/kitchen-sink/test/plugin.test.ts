@@ -18,7 +18,11 @@ test("the plugin loads against the fake host and registers every mention provide
   const { bb, harness } = createFakePluginHost({ pluginId: "kitchen-sink" });
   await plugin(bb);
 
-  expect(harness.registrations.rpcMethods).toEqual(["renderEmbed", "exportUnityClaims"]);
+  expect(harness.registrations.rpcMethods).toEqual([
+    "renderEmbed",
+    "exportUnityClaims",
+    "getRpivTodos",
+  ]);
   expect(
     harness.registrations.experimental_publishedRpcMethods.map((entry) => [
       entry.method,
@@ -116,7 +120,9 @@ test("publishes a workspace-changed signal when a thread settles, fails, or goes
   await harness.emitThreadEvent("thread.deleted", { thread });
   await harness.emitThreadEvent("thread.active", { thread });
 
-  expect(harness.realtimeSignals).toEqual([
+  expect(
+    harness.realtimeSignals.filter((entry) => entry.channel === WORKSPACE_CHANGED_CHANNEL),
+  ).toEqual([
     { channel: WORKSPACE_CHANGED_CHANNEL, payload: { threadId: "thread-9", reason: "idle" } },
     { channel: WORKSPACE_CHANGED_CHANNEL, payload: { threadId: "thread-9", reason: "failed" } },
     { channel: WORKSPACE_CHANGED_CHANNEL, payload: { threadId: "thread-9", reason: "archived" } },

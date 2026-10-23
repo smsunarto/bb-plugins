@@ -33,6 +33,20 @@ Kitchen Sink fades thread switches and smooths automatic timeline scrolling. A
 to its live tail. See
 [thread switching and scrolling](src/app/timeline-motion/README.md) for behavior and limitations.
 
+## RPIV task list
+
+Kitchen Sink includes the [RPIV Todo renderer](https://github.com/ZhenHuangLab/bb-rpiv-todo-renderer)
+by ZhenHuangLab, adapted under its [MIT license](src/app/rpiv-todo/LICENSE).
+It shows a collapsible task list above thread, queued-message, and side-chat
+composers, with completion counts and the current task first. The agent needs
+`@juicesharp/rpiv-todo` installed in Pi; Kitchen Sink only renders its `todo` calls.
+
+The list replays successful, completed tool calls from server-stored events. It
+refreshes while running and on reconnect, keeps saved tasks visible when offline,
+and reads long histories in bounded batches. It never contacts the checkout host.
+Turn off **Expand RPIV task list when opening a thread** in Kitchen Sink settings
+to start collapsed. Transcript tool cards retain BB's standard rendering.
+
 ## Smart Embeds
 
 Smart Embeds render project evidence inside assistant messages through BB’s host-owned diff renderer:

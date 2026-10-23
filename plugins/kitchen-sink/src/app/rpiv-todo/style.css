@@ -1,0 +1,62 @@
+.rpiv-todo-card {
+  min-width: 0;
+  color: var(--foreground);
+}
+.rpiv-todo-icon {
+  width: 0.875rem;
+  height: 0.875rem;
+  flex-shrink: 0;
+}
+.rpiv-todo-spin {
+  margin-top: 0.125rem;
+  animation: rpiv-todo-spin 0.9s linear infinite;
+}
+@keyframes rpiv-todo-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.rpiv-todo-chevron {
+  transition: transform 200ms ease;
+}
+.rpiv-todo-chevron-open {
+  transform: rotate(180deg);
+}
+.rpiv-todo-body {
+  display: grid;
+  overflow: hidden;
+  transition:
+    grid-template-rows 200ms ease-out,
+    opacity 200ms ease-out,
+    border-color 200ms ease-out;
+}
+.rpiv-todo-body-open {
+  grid-template-rows: 1fr;
+  border-top: 1px solid var(--border);
+  opacity: 1;
+}
+.rpiv-todo-body-closed {
+  grid-template-rows: 0fr;
+  opacity: 0;
+  pointer-events: none;
+}
+.rpiv-todo-notice {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  padding: 0.25rem 0.75rem;
+  font-size: 0.75rem;
+  color: var(--muted-foreground);
+}
+.rpiv-todo-notice button {
+  text-decoration: underline;
+}
+@media (prefers-reduced-motion: reduce) {
+  .rpiv-todo-spin {
+    animation: none;
+  }
+  .rpiv-todo-chevron,
+  .rpiv-todo-body {
+    transition: none;
+  }
+}

@@ -17,7 +17,11 @@ test("the retired manager exports durable claims without registering Unity contr
   expect(harness.registrations.agentTools.map((tool) => tool.name)).not.toContain(
     "kitchen_sink_editors",
   );
-  expect(harness.registrations.rpcMethods).toEqual(["renderEmbed", "exportUnityClaims"]);
+  expect(harness.registrations.rpcMethods).toEqual([
+    "renderEmbed",
+    "exportUnityClaims",
+    "getRpivTodos",
+  ]);
   db.close();
 });
 
