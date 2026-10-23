@@ -20,8 +20,10 @@ import { UnityCitationView } from "@bb-plugins/unity-inspector/app";
 import { CompletionSound } from "./completion-sound.tsx";
 import { DevinIcon } from "./devin-branding.tsx";
 import { SendHaptic } from "./send-haptic.tsx";
+import { TodoBanner } from "./rpiv-todo/banner.tsx";
 import { SmartImageCompareDirective } from "./smart-image-compare.tsx";
 import "./app.css";
+import "./rpiv-todo/style.css";
 import "./timeline-motion/timeline-motion.css";
 import { mountTimelineMotion } from "./timeline-motion/timeline-motion.ts";
 import {
@@ -308,6 +310,11 @@ export default definePluginApp((app) => {
     run: ({ threadId }) => {
       if (threadId !== null) jumpToLatestEvent(document, threadId);
     },
+  });
+  app.composer.customize({
+    id: "rpiv-todo",
+    scopes: ["thread", "queued-message", "side-chat"],
+    banners: [{ id: "todos", chrome: "card", component: TodoBanner }],
   });
   app.composer.customize({
     id: "send-haptic",

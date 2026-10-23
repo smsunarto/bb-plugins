@@ -5,6 +5,7 @@ import { files } from "./lib/instructions.ts";
 import { registerCompletionSound } from "./lib/completion-sound.ts";
 import { registerWorkspaceSignals } from "./lib/workspace-signals.ts";
 import { registerTimelineMotionSettings } from "./lib/timeline-motion.ts";
+import { registerRpivTodos } from "./lib/rpiv-todos.ts";
 import { mentionProviders } from "./mentions.ts";
 import { renderEmbed } from "./rpc/render-embed.ts";
 
@@ -20,6 +21,7 @@ export default definePlugin({
   setup({ bb }) {
     registerLegacyUnityClaims(bb);
     registerTimelineMotionSettings(bb);
+    registerRpivTodos(bb);
     for (const provider of mentionProviders) {
       bb.ui.registerMentionProvider(provider);
     }
