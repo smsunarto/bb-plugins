@@ -13,10 +13,8 @@ body {
   background: var(--background);
 }
 
-button,
-input,
-textarea {
-  font: inherit;
+@layer base {
+  button, input, textarea { font: inherit; }
 }
 
 .sb-catalog {

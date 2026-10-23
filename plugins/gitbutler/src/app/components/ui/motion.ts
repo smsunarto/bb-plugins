@@ -1,1 +1,1 @@
-export const CONTROL_HOVER_TRANSITION = "transition-colors duration-150 hover:duration-0";
+export { CONTROL_HOVER_TRANSITION, LIST_HOVER_TRANSITION } from "@bb-plugins/ui/motion";

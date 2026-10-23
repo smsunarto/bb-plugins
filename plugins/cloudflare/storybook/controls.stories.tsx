@@ -5,13 +5,6 @@ import { Badge, CopyButton, EmptyState, Notice, KeyValue, Mono, Label } from "..
 import "../src/app/cloudflare.css";
 
 const meta = {
-  decorators: [
-    (Story) => (
-      <div className="cf-panel">
-        <Story />
-      </div>
-    ),
-  ],
   play: ready,
   title: "Plugins/Cloudflare/Feedback",
   component: Notice,

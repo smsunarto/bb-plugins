@@ -3,7 +3,19 @@ import { resolve } from "node:path";
 import tailwindcss from "@tailwindcss/vite";
 import type { StorybookConfig } from "@storybook/react-vite";
 
+const monokaiCSS = readFileSync(
+  new URL("../plugins/monokai/themes/bb-monokai.css", import.meta.url),
+  "utf8",
+);
+
+// Apply the palette before the loading shell paints as well as after React mounts.
+const monokaiHead = (head: string) => `${head}<style>${monokaiCSS}
+html,body{background:var(--background);color:var(--foreground);color-scheme:dark}
+</style><script>document.documentElement.classList.add("dark");</script>`;
+
 const config = {
+  managerHead: monokaiHead,
+  previewHead: monokaiHead,
   framework: "@storybook/react-vite",
   stories: ["../{plugins,packages}/**/storybook/**/*.stories.@(js|jsx|mjs|ts|tsx)"],
   addons: ["@storybook/addon-docs", "@storybook/addon-vitest", "@storybook/addon-mcp"],
@@ -39,7 +51,7 @@ const config = {
     // The preview lives in a workspace package; prebundle its React runtime.
     config.optimizeDeps = {
       ...config.optimizeDeps,
-      entries: [resolve(import.meta.dirname, "../plugins/*/storybook/*.stories.tsx")],
+      entries: [resolve(import.meta.dirname, "../{plugins,packages}/*/storybook/*.stories.tsx")],
       include: [
         ...(config.optimizeDeps?.include ?? []),
         "react",

@@ -3,25 +3,39 @@ import type { Meta, StoryObj } from "@storybook/react-vite";
 import { loadPluginApp, mountPluginContentScripts } from "@get-bb/plugin-sdk/testing/app";
 import { expect, userEvent, waitFor } from "storybook/test";
 import "../src/app/app.css";
+let contentScriptLifecycle: Promise<void> = Promise.resolve();
+let generation = 0;
 function LinkHints() {
   const [mounted, setMounted] = useState(false);
+  const [error, setError] = useState<Error | null>(null);
   useEffect(() => {
     let active = true;
     let scripts: Awaited<ReturnType<typeof mountPluginContentScripts>> | undefined;
-    void loadPluginApp(() => import("../src/app/app"))
-      .then((app) => mountPluginContentScripts(app, { pluginId: "vimium", generation: 1 }))
-      .then((mounted) => {
+    contentScriptLifecycle = contentScriptLifecycle
+      .then(async () => {
+        if (!active) return;
+        const app = await loadPluginApp(() => import("../src/app/app"));
+        if (!active) return;
+        const mounted = await mountPluginContentScripts(app, {
+          pluginId: "vimium",
+          generation: ++generation,
+        });
         if (active) {
           scripts = mounted;
           setMounted(true);
-        } else void mounted.lifecycle.dispose();
-        return undefined;
+        } else await mounted.lifecycle.dispose();
+      })
+      .catch((cause: unknown) => {
+        if (active) setError(cause instanceof Error ? cause : new Error(String(cause)));
       });
     return () => {
       active = false;
-      void scripts?.lifecycle.dispose();
+      contentScriptLifecycle = contentScriptLifecycle.then(async () => {
+        await scripts?.lifecycle.dispose();
+      });
     };
   }, []);
+  if (error) throw error;
   return (
     <section className="sb-stack" data-vimium-ready={mounted}>
       <h2>Keyboard navigation</h2>

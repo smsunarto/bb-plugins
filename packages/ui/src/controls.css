@@ -1,0 +1,206 @@
+/* Shared primitives ship their own styles: BB does not scan hoisted workspace
+ * packages for Tailwind candidates. Components stay below caller utilities. */
+@layer components {
+  .bbui-ccb1744500e8-button {
+    display: inline-flex;
+    cursor: pointer;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    white-space: nowrap;
+    border-radius: var(--radius-md, 0.375rem);
+    font-size: var(--text-sm, 0.8125rem);
+    line-height: var(--text-sm--line-height, calc(1.25 / 0.875));
+    font-weight: 500;
+  }
+  .bbui-ccb1744500e8-motion {
+    transition-property: color, background-color, border-color, outline-color, fill, stroke;
+    transition-duration: 150ms;
+  }
+  .bbui-ccb1744500e8-motion:hover {
+    transition-duration: 0ms;
+  }
+  .bbui-ccb1744500e8-row-motion {
+    transition: none;
+  }
+  .bbui-ccb1744500e8-button:disabled {
+    pointer-events: none;
+    opacity: 0.5;
+  }
+  .bbui-ccb1744500e8-button:where(:not(.bbui-ccb1744500e8-native)):focus-visible {
+    outline: none;
+    --tw-ring-shadow: var(--tw-ring-inset,) 0 0 0 calc(1px + var(--tw-ring-offset-width, 0px))
+      var(--tw-ring-color, var(--ring));
+    box-shadow:
+      var(--tw-inset-shadow, 0 0 #0000), var(--tw-inset-ring-shadow, 0 0 #0000),
+      var(--tw-ring-offset-shadow, 0 0 #0000), var(--tw-ring-shadow), var(--tw-shadow, 0 0 #0000);
+  }
+  .bbui-ccb1744500e8-button :where(svg, [data-icon-root]) {
+    pointer-events: none;
+    flex-shrink: 0;
+  }
+  .bbui-ccb1744500e8-default {
+    background: var(--foreground);
+    color: var(--background);
+  }
+  .bbui-ccb1744500e8-default:hover {
+    background: color-mix(in oklab, var(--foreground) 90%, transparent);
+  }
+  .bbui-ccb1744500e8-destructive {
+    background: var(--destructive);
+    color: var(--destructive-foreground);
+  }
+  .bbui-ccb1744500e8-destructive:hover {
+    background: color-mix(in oklab, var(--destructive) 90%, transparent);
+  }
+  .bbui-ccb1744500e8-outline {
+    border: 1px solid var(--input);
+    background: transparent;
+  }
+  .bbui-ccb1744500e8-outline.bbui-ccb1744500e8-bordered {
+    border-color: var(--border);
+  }
+  .bbui-ccb1744500e8-outline:hover,
+  .bbui-ccb1744500e8-ghost:hover {
+    background: var(--state-hover);
+    color: var(--foreground);
+  }
+  .bbui-ccb1744500e8-secondary {
+    background: var(--secondary);
+    color: var(--secondary-foreground);
+  }
+  .bbui-ccb1744500e8-secondary:hover {
+    background: color-mix(in oklab, var(--secondary) 80%, transparent);
+  }
+  .bbui-ccb1744500e8-ghost:where([aria-pressed="true"], [data-state="open"]),
+  .bbui-ccb1744500e8-ghost:where([aria-pressed="true"], [data-state="open"]):hover {
+    background: var(--state-active);
+    color: var(--foreground);
+  }
+  .bbui-ccb1744500e8-link {
+    color: var(--primary);
+    text-underline-offset: 4px;
+  }
+  .bbui-ccb1744500e8-link:hover {
+    text-decoration-line: underline;
+  }
+  .bbui-ccb1744500e8-size-default {
+    height: 2.25rem;
+    padding: 0.5rem 1rem;
+  }
+  .bbui-ccb1744500e8-size-sm {
+    height: 2rem;
+    padding: 0 0.75rem;
+    font-size: var(--text-xs, 0.75rem);
+    line-height: var(--text-xs--line-height, calc(1 / 0.75));
+  }
+  .bbui-ccb1744500e8-size-lg {
+    height: 2.5rem;
+    padding: 0 2rem;
+  }
+  .bbui-ccb1744500e8-size-icon {
+    height: 2.25rem;
+    width: 2.25rem;
+  }
+  .bbui-ccb1744500e8-compact {
+    gap: 0.375rem;
+  }
+  .bbui-ccb1744500e8-compact.bbui-ccb1744500e8-default {
+    background: var(--primary);
+    color: var(--primary-foreground);
+  }
+  .bbui-ccb1744500e8-compact.bbui-ccb1744500e8-default:hover {
+    background: color-mix(in oklab, var(--primary) 90%, transparent);
+  }
+  .bbui-ccb1744500e8-compact.bbui-ccb1744500e8-outline {
+    border-color: var(--border);
+  }
+  .bbui-ccb1744500e8-compact.bbui-ccb1744500e8-outline:hover {
+    background: color-mix(in oklab, var(--accent) 60%, transparent);
+  }
+  .bbui-ccb1744500e8-compact.bbui-ccb1744500e8-ghost:hover {
+    background: var(--accent);
+  }
+  .bbui-ccb1744500e8-compact.bbui-ccb1744500e8-size-default {
+    height: 2rem;
+    padding: 0 0.75rem;
+    font-size: var(--text-xs, 0.75rem);
+    line-height: var(--text-xs--line-height, calc(1 / 0.75));
+  }
+  .bbui-ccb1744500e8-compact.bbui-ccb1744500e8-size-sm {
+    height: 1.75rem;
+    padding: 0 0.625rem;
+  }
+  .bbui-ccb1744500e8-compact.bbui-ccb1744500e8-size-xs {
+    height: 1.5rem;
+    padding: 0 0.5rem;
+    font-size: var(--text-2xs, 0.625rem);
+  }
+  .bbui-ccb1744500e8-input,
+  .bbui-ccb1744500e8-textarea {
+    display: flex;
+    width: 100%;
+    border: 1px solid var(--input);
+    border-radius: var(--radius-md, 0.375rem);
+    background: transparent;
+    padding: 0.25rem 0.75rem;
+    font-size: var(--text-sm, 0.8125rem);
+    line-height: var(--text-sm--line-height, calc(1.25 / 0.875));
+  }
+  .bbui-ccb1744500e8-input {
+    height: 2.25rem;
+  }
+  .bbui-ccb1744500e8-input::file-selector-button {
+    border: 0;
+    background: transparent;
+    font-size: var(--text-sm, 0.8125rem);
+    line-height: var(--text-sm--line-height, calc(1.25 / 0.875));
+    font-weight: 500;
+    color: var(--foreground);
+  }
+  .bbui-ccb1744500e8-input.bbui-ccb1744500e8-bordered {
+    border-color: var(--border);
+    background: var(--background);
+  }
+  .bbui-ccb1744500e8-textarea {
+    min-height: 60px;
+    padding-block: 0.5rem;
+  }
+  .bbui-ccb1744500e8-input::placeholder,
+  .bbui-ccb1744500e8-textarea::placeholder {
+    color: var(--muted-foreground);
+  }
+  .bbui-ccb1744500e8-input:focus-visible,
+  .bbui-ccb1744500e8-textarea:focus-visible {
+    outline: none;
+    --tw-ring-shadow: var(--tw-ring-inset,) 0 0 0 calc(1px + var(--tw-ring-offset-width, 0px))
+      var(--tw-ring-color, var(--ring));
+    box-shadow:
+      var(--tw-inset-shadow, 0 0 #0000), var(--tw-inset-ring-shadow, 0 0 #0000),
+      var(--tw-ring-offset-shadow, 0 0 #0000), var(--tw-ring-shadow), var(--tw-shadow, 0 0 #0000);
+  }
+  .bbui-ccb1744500e8-input:disabled,
+  .bbui-ccb1744500e8-textarea:disabled {
+    cursor: not-allowed;
+    opacity: 0.5;
+  }
+}
+/* Desktop utility overrides must not shrink touch targets. Explicit coarse-
+ * pointer utilities remain the caller's escape hatch, as with the old defaults. */
+@layer utilities {
+  :where(.bbui-ccb1744500e8-button:not(.bbui-ccb1744500e8-native)) :is(svg, [data-icon-root]),
+  .bbui-ccb1744500e8-native svg:not([class*="size-"]) {
+    width: 1rem;
+    height: 1rem;
+  }
+
+  @media (width < 48rem) and (pointer: coarse) {
+    .bbui-ccb1744500e8-input.bbui-ccb1744500e8-input:not([class*="pointer-coarse:h-"]) {
+      height: 2.5rem;
+    }
+    .bbui-ccb1744500e8-input.bbui-ccb1744500e8-input:not([class*="pointer-coarse:text-"]),
+    .bbui-ccb1744500e8-textarea.bbui-ccb1744500e8-textarea:not([class*="pointer-coarse:text-"]) {
+      font-size: var(--text-base, 1rem);
+    }
+  }
+}

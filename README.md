@@ -143,8 +143,8 @@ where the component supports them.
 
 | Plugin                | Component coverage                                                             |
 | --------------------- | ------------------------------------------------------------------------------ |
-| Agent Instructions    | Rule editor, scopes, loading and errors, buttons                               |
-| Agentation            | Annotation list, empty and error states, buttons                               |
+| Agent Instructions    | Rule editor, scopes, loading and errors                                        |
+| Agentation            | Annotation list, empty and error states                                        |
 | Amp                   | Oracle results, running trace, missing and invalid reports                     |
 | Canvas                | Cards, sections, callouts, tables, controls, task lists, charts                |
 | Cloudflare            | Notices, badges, copy control, quick-share lifecycle                           |
@@ -154,17 +154,39 @@ where the component supports them.
 | Game Studio           | Workflow canvas, node cards and inspector, generation controls, verdicts       |
 | GitHub Stack          | Stack panel, pull request cards, changed-file tree, loading and errors         |
 | GitButler             | Workspace lanes, branch actions, conflicts, history, file lists and trees      |
-| GTD Sidebar           | Thread cards, status indicators, compact layout, buttons                       |
+| GTD Sidebar           | Thread cards, status indicators, compact layout                                |
 | Kitchen Sink          | Image comparison, annotations, invalid paths, branding                         |
 | Monokai               | Theme foundations, chrome, content palettes, surface composition               |
 | Prompt Editor         | Tool browser, file editor, empty and error states                              |
 | Reminders             | Saved cards, loading, empty and error states                                   |
-| Docs                  | Note browser, Markdown editor, HTML card, invalid link, buttons                |
+| Docs                  | Note browser, Markdown editor, HTML card, invalid link                         |
 | Inline Visualizations | Tweak controls, saving, read-only, original and empty states                   |
 | Tasks                 | List, board, detail and activity, labels/presets/folders, controls and dialogs |
 | Traces                | JSON inspector, long output, paging, empty and error states                    |
 | Vimium                | Keyboard activation and visible link hints                                     |
-| Whiteboard            | Markdown, code, empty states, diff tree, buttons                               |
+| Whiteboard            | Markdown, code, empty states, diff tree                                        |
+
+Shared controls live in `packages/ui`: buttons, inputs, textareas, class merging,
+and hover motion. Plugins keep thin re-exports for their existing import paths;
+compact sizing, native focus, and repository border styles remain explicit variants.
+The **Shared** catalog tests these once, including icon sizing and Whiteboard styling.
+Their CSS ships with the components so BB builds do not depend on Tailwind scanning
+hoisted package sources. Selectors carry a content fingerprint to isolate different
+released versions. After editing control CSS, run `bun scripts/shared-ui-styles.ts`.
+CI checks the fingerprint, re-exports, and each consumer's built CSS.
+
+Release Please tracks plugin paths. A shared UI change must include a change under
+every consuming plugin path and release those consumers together: agent-instructions,
+agentation, code-review, dotfiles, gh-stack, gitbutler, gtd-sidebar, scott-docs,
+scott-inline-vis, scott-tasks, and whiteboard. Private plugins use the same rebuild
+step when installed from source.
+
+The manager, docs, story surfaces, portals, and code highlighting use Monokai.
+Semantic utility aliases are generated from its palette with
+`bun scripts/storybook-theme.ts`; the test suite rejects stale aliases and checks
+the rendered theme after every story. `.storybook/bb-theme.css` mirrors the
+BB 0.46.1 plugin theme's typography, radii, fonts, and shadows; refresh that snapshot
+from `PLUGIN_THEME_CSS` when changing the BB toolchain.
 
 Host-only plugins do not have browser stories. Usage Bar's native macOS menu
 is also outside this browser catalog. The SDK's public test runtime supplies

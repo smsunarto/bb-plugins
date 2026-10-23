@@ -4,13 +4,6 @@ import { ready } from "../../../.storybook/ready";
 import { QuickShareCard } from "../src/app/shares";
 import "../src/app/cloudflare.css";
 const meta = {
-  decorators: [
-    (Story) => (
-      <div className="cf-panel">
-        <Story />
-      </div>
-    ),
-  ],
   title: "Plugins/Cloudflare/Quick shares",
   component: QuickShareCard,
   tags: ["autodocs"],

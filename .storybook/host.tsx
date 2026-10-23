@@ -1,4 +1,4 @@
-import { Component, useEffect, useRef, useState, type ReactNode } from "react";
+import { Component, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import {
   installTestPluginRuntime,
   loadPluginApp,
@@ -8,6 +8,8 @@ import {
   type RenderSlotOptions,
 } from "@get-bb/plugin-sdk/testing/app";
 import { PluginQueryBoundary, pluginQueryClient } from "@bb-kit/core/rpc/query";
+
+import { monokaiCodeTheme } from "./monokai";
 
 installTestPluginRuntime();
 pluginQueryClient.setDefaultOptions({ queries: { retry: false } });
@@ -82,7 +84,9 @@ export function HostFixture({
 }) {
   const host = useRef<HTMLDivElement>(null);
   const content = useRef(children);
-  content.current = children;
+  useLayoutEffect(() => {
+    content.current = children;
+  }, [children]);
   const mountedSlot = useRef<ReturnType<typeof renderSlot> | null>(null);
   const [error, setError] = useState<Error | null>(null);
   useEffect(() => {
@@ -98,11 +102,12 @@ export function HostFixture({
           { children: content.current, onError: setError },
           {
             pluginId: "storybook",
-            codeTheme: { mode: "dark", name: "bb-monokai" },
             ...options,
+            codeTheme: monokaiCodeTheme,
             rpc: cancellableRpc(options.rpc, controller.signal),
           },
         );
+        slot.container.dataset.storyId = storyId;
         host.current.append(slot.container);
         mountedSlot.current = slot;
       } catch (cause) {

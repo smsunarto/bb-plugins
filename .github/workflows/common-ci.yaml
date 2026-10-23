@@ -75,6 +75,9 @@ jobs:
       - name: Build
         run: bun run build
 
+      - name: Check shared component styles
+        run: bun scripts/shared-ui-css-check.ts
+
       # `bb plugin build` temporarily rewrites bb.server/bb.app while bundling.
       # A dirty tree here means it did not restore the manifest afterwards.
       - name: Guard against a build leaving a manifest rewritten

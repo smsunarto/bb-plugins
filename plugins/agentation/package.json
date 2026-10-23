@@ -97,7 +97,8 @@
     "sonner": "^1.7.4",
     "tailwind-merge": "^3.4.0",
     "typescript": "^7.0.0",
-    "vaul": "^1.1.2"
+    "vaul": "^1.1.2",
+    "@bb-plugins/ui": "workspace:*"
   },
   "scripts": {
     "dev": "bb plugin dev .",

@@ -61,13 +61,6 @@ function InteractiveCanvas(args: ComponentProps<typeof StudioCanvas>) {
   );
 }
 const meta = {
-  decorators: [
-    (Story) => (
-      <div className="gs-app">
-        <Story />
-      </div>
-    ),
-  ],
   title: "Plugins/Game Studio/Canvas",
   component: StudioCanvas,
   render: (args) => <InteractiveCanvas {...args} />,

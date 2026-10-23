@@ -131,6 +131,7 @@
     "sonner": "^1.7.4",
     "tsx": "4.23.12",
     "typescript": "^6.0.0",
-    "vitest": "^4.1.1"
+    "vitest": "^4.1.1",
+    "@bb-plugins/ui": "workspace:*"
   }
 }

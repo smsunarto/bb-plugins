@@ -31,3 +31,10 @@ export function banner(app: CapturedPluginApp, id: string) {
   if (!Component) throw new Error(`Missing composer banner: ${id}`);
   return <Component />;
 }
+
+/** CSS scopes required by each plugin's own presentation components. */
+export function previewSurfaceClass(title: string): string | undefined {
+  if (title.startsWith("Plugins/Game Studio/")) return "gs-app";
+  if (title.startsWith("Plugins/Cloudflare/")) return "cf-panel";
+  return undefined;
+}

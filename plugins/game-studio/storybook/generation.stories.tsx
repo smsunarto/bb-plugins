@@ -28,13 +28,6 @@ function InteractiveSettings(args: ComponentProps<typeof GenerationSettings>) {
   );
 }
 const meta = {
-  decorators: [
-    (Story) => (
-      <div className="gs-app">
-        <Story />
-      </div>
-    ),
-  ],
   render: (args) => <InteractiveSettings {...args} />,
   title: "Plugins/Game Studio/Generation controls",
   component: GenerationSettings,

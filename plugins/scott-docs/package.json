@@ -90,7 +90,8 @@
     "react-dom": "^19.0.0",
     "sonner": "^1.7.4",
     "typescript": "^7.0.0",
-    "vitest": "^4.1.1"
+    "vitest": "^4.1.1",
+    "@bb-plugins/ui": "workspace:*"
   },
   "dependencies": {
     "@bb-plugins/markdown-prose": "workspace:*",

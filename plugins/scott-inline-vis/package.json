@@ -103,6 +103,7 @@
     "react-dom": "19.2.8",
     "tailwind-merge": "^3.4.0",
     "typescript": "^6.0.0",
-    "vitest": "^4.1.1"
+    "vitest": "^4.1.1",
+    "@bb-plugins/ui": "workspace:*"
   }
 }

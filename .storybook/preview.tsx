@@ -1,4 +1,8 @@
+import { previewSurfaceClass } from "./surfaces";
+import { assertMonokai } from "./theme-checks";
 import type { Preview } from "@storybook/react-vite";
+import { registerCustomTheme } from "@pierre/diffs";
+import { monokaiCodeTheme, monokaiStorybookTheme } from "./monokai";
 import { HostFixture } from "./host";
 import "./preview.css";
 import "../plugins/monokai/.storybook/preview.css";
@@ -6,8 +10,10 @@ import "../plugins/monokai/themes/bb-monokai.css";
 
 // Dialogs and popovers portal to body, outside the story's layout wrapper.
 document.documentElement.classList.add("dark");
+registerCustomTheme(monokaiCodeTheme.name, () => monokaiCodeTheme.theme);
 
 const preview: Preview = {
+  afterEach: assertMonokai,
   initialGlobals: { width: "wide" },
   globalTypes: {
     width: {
@@ -23,18 +29,28 @@ const preview: Preview = {
     },
   },
   decorators: [
-    (Story, context) => (
-      <main className="dark sb-workspace" data-width={context.globals.width}>
-        <HostFixture storyId={context.id} options={context.parameters.host}>
-          <Story />
-        </HostFixture>
-      </main>
-    ),
+    (Story, context) => {
+      const scope = previewSurfaceClass(context.title);
+      return (
+        <main className="dark sb-workspace" data-width={context.globals.width}>
+          <HostFixture storyId={context.id} options={context.parameters.host}>
+            {scope ? (
+              <div className={`sb-surface ${scope}`}>
+                <Story />
+              </div>
+            ) : (
+              <Story />
+            )}
+          </HostFixture>
+        </main>
+      );
+    },
   ],
   parameters: {
     layout: "fullscreen",
     options: { storySort: { order: ["Overview", "Theme", "Plugins", "Shared"] } },
     docs: {
+      theme: monokaiStorybookTheme(),
       story: { inline: false },
       description: {
         component:

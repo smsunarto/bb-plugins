@@ -2,35 +2,12 @@
 @source "../plugins";
 @source "../packages";
 @custom-variant dark (&:where(.dark, .dark *));
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --color-card: var(--card);
-  --color-card-foreground: var(--foreground);
-  --color-popover: var(--popover);
-  --color-popover-foreground: var(--foreground);
-  --color-primary: var(--primary);
-  --color-primary-foreground: var(--primary-foreground);
-  --color-secondary: var(--secondary);
-  --color-secondary-foreground: var(--foreground);
-  --color-muted: var(--muted);
-  --color-muted-foreground: var(--muted-foreground);
-  --color-subtle-foreground: var(--subtle-foreground);
-  --color-border: var(--border);
-  --color-input: var(--input);
-  --color-ring: var(--ring);
-  --color-accent: var(--accent);
-  --color-accent-foreground: var(--foreground);
-  --color-destructive: var(--destructive);
-  --color-destructive-text: var(--destructive-text);
-  --color-success: var(--success);
-  --color-warning: var(--warning);
-  --color-warning-text: var(--warning-text);
-  --color-attention: var(--attention);
-  --color-pr-merged: var(--pr-merged);
-  --color-sidebar: var(--sidebar);
-}
+@import "@bb-plugins/ui/theme.css";
+@import "./bb-theme.css";
+
+html,
 body {
+  color-scheme: dark;
   background: var(--background);
   color: var(--foreground);
 }
@@ -69,4 +46,36 @@ body {
   padding: 16px;
   border: 1px solid var(--border);
   border-radius: 8px;
+}
+
+/* Whiteboard intentionally forces light mode in BB. The component catalog
+ * previews it under the requested Monokai palette, including its shadow host. */
+.sb-workspace .review-canvas-root[data-review-theme],
+.sb-workspace .review-canvas-root[data-review-theme] diffs-container {
+  color-scheme: dark;
+}
+.sb-workspace .review-canvas-root[data-review-theme] {
+  --diffs-addition-color-override: inherit;
+  --diffs-deletion-color-override: inherit;
+  --diffs-modified-color-override: inherit;
+  --diffs-bg-context-override: inherit;
+  --diffs-bg-context-gutter-override: inherit;
+  --diffs-bg-buffer-override: inherit;
+  --diffs-bg-separator-override: inherit;
+  --diffs-bg-addition-emphasis-override: inherit;
+  --diffs-bg-deletion-emphasis-override: inherit;
+  --diffs-bg-hover-override: inherit;
+  --diffs-bg-selection-override: inherit;
+  --diffs-bg-addition-number-override: inherit;
+  --diffs-bg-deletion-number-override: inherit;
+  --diffs-bg-selection-number-override: inherit;
+  --diffs-fg-number-override: inherit;
+  --diffs-fg-number-addition-override: inherit;
+  --diffs-fg-number-deletion-override: inherit;
+  --diffs-fg-conflict-marker-override: inherit;
+}
+
+.sb-surface {
+  height: 100%;
+  min-width: 0;
 }

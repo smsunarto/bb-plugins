@@ -4,13 +4,6 @@ import { VerdictBadge } from "../src/app/review";
 import "../src/app/studio.css";
 import "../src/app/canvas.css";
 const meta = {
-  decorators: [
-    (Story) => (
-      <div className="gs-app">
-        <Story />
-      </div>
-    ),
-  ],
   play: ready,
   title: "Plugins/Game Studio/Asset verdict",
   component: VerdictBadge,
