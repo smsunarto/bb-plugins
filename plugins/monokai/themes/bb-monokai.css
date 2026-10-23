@@ -1406,6 +1406,7 @@ diffs-container {
 .dark .bb-markdown-prose,
 .dark .canvas-prose [data-markdown-preview] {
   --agent-md-space: calc(var(--agent-fluid-size) / 4);
+  --md-table-start-offset: 0px;
   font-weight: 430;
 }
 
@@ -1424,8 +1425,13 @@ diffs-container {
  * a <br> followed by that same newline, so the <br> would double it. */
 .dark [data-message-column].group\/message [data-markdown-preview] p,
 .dark .bb-markdown-prose p {
-  margin: 0 0 8px;
   white-space: pre-line;
+}
+
+/* BB already supplies these margins in the stream. Editable prose needs the
+ * same defaults because it does not use BB's Markdown element renderers. */
+.dark .bb-markdown-prose p {
+  margin: 0 0 8px;
 }
 
 .dark [data-message-column].group\/message [data-markdown-preview] p > br {
@@ -1510,8 +1516,11 @@ diffs-container {
 
 .dark [data-message-column].group\/message [data-markdown-preview] li,
 .dark .bb-markdown-prose li {
-  margin: 0 0 4px;
   padding-inline-start: calc(var(--agent-md-space) * 1.5);
+}
+
+.dark .bb-markdown-prose li {
+  margin: 0 0 4px;
 }
 
 .dark [data-message-column].group\/message [data-markdown-preview] li::marker,
@@ -1604,12 +1613,13 @@ diffs-container {
   margin: calc(var(--agent-md-space) * 7) 0;
 }
 
-/* Tables start at the column edge, fill at least its width, and break out to
- * the right only, with rules between rows. bb centres a wider breakout box
- * with inline styles and publishes the column width as --md-content-w, so
- * the scroller shifts back to the column edge instead of fighting them. */
+/* The stream sets --md-table-start-offset above for BB's newer table layout.
+ * BB 0.46.1 and earlier centre a flex wrapper instead; keep this fallback so
+ * those tables also start at the column edge and break out to the right. */
 .dark [data-message-column].group\/message [data-markdown-preview] .my-2.flex.justify-center,
-.dark .bb-markdown-prose .my-2.flex.justify-center {
+.dark .bb-markdown-prose .my-2.flex.justify-center,
+.dark [data-message-column].group\/message [data-markdown-preview] .my-2[style*="--md-table-start-offset"],
+.dark .bb-markdown-prose .my-2[style*="--md-table-start-offset"] {
   justify-content: flex-start;
   margin-block: calc(var(--agent-md-space) * 4) 0;
 }
@@ -1849,16 +1859,31 @@ diffs-container {
   color: inherit;
 }
 
-/* Trace entries: activity rows follow Codex, 14px on a 21px line with a 16px
- * icon. Rows sit 29px apart and conversation items 28px apart, a little looser
- * than Codex's 25px and 16px so long runs of tool calls don't read as a block. */
+/* Keep BB's own 8px top-level and 0px bundle gaps. Its virtualizer uses those
+ * same values for absolute row positions. Put the additional spacing inside
+ * each measured row so both virtual and ordinary layouts have 28px between
+ * conversation items and 8px between tool rows. Bottom padding preserves the
+ * content's offset from the row anchor when older history is prepended. BB
+ * always mounts the final row, so :last-child identifies the logical end even
+ * in a virtual slice. The direct-child fallback also covers unread dividers
+ * in BB releases without the windowing wrapper. */
 .dark [data-timeline-row-list="top-level"] {
-  gap: 28px;
+  gap: 8px;
 }
 
 .dark [data-timeline-row-list="bundle"] {
-  gap: 8px;
+  gap: 0;
   padding-top: 4px;
+}
+
+.dark [data-timeline-row-list="top-level"] > [data-timeline-items] > [data-timeline-window-key]:not(:last-child),
+.dark [data-timeline-row-list="top-level"] > :not([data-timeline-items]):not(:last-child) {
+  padding-bottom: 20px;
+}
+
+.dark [data-timeline-row-list="bundle"] > [data-timeline-items] > [data-timeline-window-key]:not(:last-child),
+.dark [data-timeline-row-list="bundle"] > :not([data-timeline-items]):not(:last-child) {
+  padding-bottom: 8px;
 }
 
 /* bb fades every finished tool row to 40%, which turns a run of calls into one

@@ -241,7 +241,7 @@ describe("bb Monokai contract audit", () => {
   test("sets agent replies and trace rows on the Codex rhythm", () => {
     const agent = ".dark [data-message-column].group\\/message [data-markdown-preview]";
     expect(theme).toContain(
-      `${agent},\n.dark .bb-markdown-prose,\n.dark .canvas-prose [data-markdown-preview] {\n  --agent-md-space: calc(var(--agent-fluid-size) / 4);\n  font-weight: 430;`,
+      `${agent},\n.dark .bb-markdown-prose,\n.dark .canvas-prose [data-markdown-preview] {\n  --agent-md-space: calc(var(--agent-fluid-size) / 4);\n  --md-table-start-offset: 0px;\n  font-weight: 430;`,
     );
     expect(theme).toContain(
       `${agent} h1,\n.dark .bb-markdown-prose h1 {\n  margin: calc(var(--agent-md-space) * 4) 0 8px;\n  font-size: calc(var(--agent-md-space) * 6);`,
@@ -249,12 +249,12 @@ describe("bb Monokai contract audit", () => {
     expect(theme).toContain(
       `${agent} > p + p,\n.dark .bb-markdown-prose > p + p {\n  margin-top: calc(var(--agent-md-space) * 4);`,
     );
-    expect(theme).toContain(`${agent} li,\n.dark .bb-markdown-prose li {\n  margin: 0 0 4px;`);
+    expect(theme).toContain(".dark .bb-markdown-prose li {\n  margin: 0 0 4px;");
     expect(theme).toContain(
       `${agent} :is(strong, b),\n.dark .bb-markdown-prose :is(strong, b) {\n  font-weight: 700;`,
     );
-    expect(theme).toContain('.dark [data-timeline-row-list="top-level"] {\n  gap: 28px;\n}');
-    expect(theme).toContain('.dark [data-timeline-row-list="bundle"] {\n  gap: 8px;');
+    expect(theme).toContain('.dark [data-timeline-row-list="top-level"] {\n  gap: 8px;\n}');
+    expect(theme).toContain('.dark [data-timeline-row-list="bundle"] {\n  gap: 0;');
     expect(theme).toContain(
       ".dark [data-timeline-row-list] .rounded-md.text-muted-foreground.opacity-40 {\n  opacity: 1;",
     );
