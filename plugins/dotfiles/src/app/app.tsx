@@ -16,24 +16,24 @@ export default definePluginApp(
       path: "dotfiles",
       component: DotfilesPage,
       headerContent: RepoStatusBadge,
-      fixedTabs: [
-        {
-          panelId: "dotfiles",
-          id: "files",
-          title: "Files",
-          icon: "ListView",
-          component: DotfilesFilesTab,
-          layout: "flush",
-        },
-        {
-          panelId: "dotfiles",
-          id: "tasks",
-          title: "Tasks",
-          icon: "Play",
-          component: DotfilesTasksTab,
-          layout: "flush",
-        },
-      ],
+    });
+    app.slots.experimental_tab({
+      context: { kind: "nav-panel", panelId: "dotfiles" },
+      availability: "fixed",
+      id: "files",
+      title: "Files",
+      icon: "ListView",
+      component: DotfilesFilesTab,
+      layout: "flush",
+    });
+    app.slots.experimental_tab({
+      context: { kind: "nav-panel", panelId: "dotfiles" },
+      availability: "fixed",
+      id: "tasks",
+      title: "Tasks",
+      icon: "Play",
+      component: DotfilesTasksTab,
+      layout: "flush",
     });
   }),
 );
