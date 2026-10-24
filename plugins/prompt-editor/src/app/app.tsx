@@ -496,15 +496,14 @@ export default definePluginApp((app) => {
     icon: "EditFile",
     path: PANEL_PATH,
     component: PromptEditorPage,
-    fixedTabs: [
-      {
-        panelId: "prompt-editor",
-        id: "plugins",
-        title: "Plugins",
-        icon: "Puzzle",
-        component: PluginsTab,
-        layout: "flush",
-      },
-    ],
+  });
+  app.slots.experimental_tab({
+    context: { kind: "nav-panel", panelId: "prompt-editor" },
+    availability: "fixed",
+    id: "plugins",
+    title: "Plugins",
+    icon: "Puzzle",
+    component: PluginsTab,
+    layout: "flush",
   });
 });
