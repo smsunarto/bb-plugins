@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { createElement, useState, type ComponentType } from "react";
+import { renderToString } from "react-dom/server";
 import { sentryAppTelemetry } from "./app.ts";
 
 test("missing and blank DSNs disable browser reporting", () => {
@@ -140,16 +142,156 @@ test("instrument wraps components, callbacks, and content-script failures", asyn
   ]);
 });
 
+test("instrument keeps registered hooks working as hooks and reports what they throw", async () => {
+  const target = createFetchTarget(true);
+  const telemetry = sentryAppTelemetry({
+    pluginId: "demo",
+    pluginVersion: "1.0.0",
+    dsn: target.dsn,
+    fetch: target.fetch,
+  });
+  const registrations = createRegistrations();
+  const badgeError = new Error("badge private");
+  const visibleError = new Error("visible private");
+  // What React 19's `use()` throws to suspend, as production builds name it.
+  const useSuspension = new Error("Minified React error #460; visit https://react.dev/errors/460");
+  const Sidebar = () => createElement("nav", null, "sidebar");
+  const waiting = Promise.resolve();
+
+  telemetry.instrument((app: typeof registrations.app) => {
+    app.slots.navPanel({
+      id: "demo-panel",
+      component: () => null,
+      experimental_sidebar: Sidebar,
+      // A real hook: the wrapper must leave React's hook order intact.
+      experimental_useBadge: () => {
+        const [count] = useState(3);
+        return { count, label: `${count} waiting` };
+      },
+      experimental_usePageTitle: () => {
+        throw waiting;
+      },
+    });
+    app.slots.navPanel({
+      id: "broken-panel",
+      component: () => null,
+      experimental_useBadge: () => {
+        throw badgeError;
+      },
+    });
+    app.slots.experimental_tab({
+      id: "demo-tab",
+      context: { kind: "nav-panel", panelId: "demo-panel" },
+      availability: "fixed",
+      component: () => null,
+      useVisible: (suspend: boolean) => {
+        throw suspend ? useSuspension : visibleError;
+      },
+    });
+  })(registrations.app);
+
+  const [panel, broken, tab] = registrations.slots;
+  assert.ok(panel && broken && tab);
+  const useBadge = panel.experimental_useBadge as () => { count: number; label: string };
+  const sidebar = panel.experimental_sidebar as ComponentType & { displayName?: string };
+  assert.equal(sidebar.displayName, "SentryBoundary(Sidebar)");
+  // The tab's context is data, kept as registered.
+  assert.deepEqual(tab.context, { kind: "nav-panel", panelId: "demo-panel" });
+
+  function BadgeProbe() {
+    const badge = useBadge();
+    return createElement("span", null, `${badge.count}|${badge.label}`);
+  }
+  assert.equal(renderToString(createElement(BadgeProbe)), "<span>3|3 waiting</span>");
+  // Suspense throws to wait; that is not a failure.
+  assert.throws(
+    () => (panel.experimental_usePageTitle as () => unknown)(),
+    (thrown) => thrown === waiting,
+  );
+  assert.throws(() => (tab.useVisible as (suspend: boolean) => unknown)(true), useSuspension);
+  assert.throws(() => (tab.useVisible as (suspend: boolean) => unknown)(false), visibleError);
+  assert.throws(() => (broken.experimental_useBadge as () => unknown)(), badgeError);
+  await telemetry.flush(5_000);
+
+  const events = target.envelopes.map(parseEnvelopeEvent);
+  assert.deepEqual(events.map((event) => readRecord(event, "tags")["bb.kit.operation"]).sort(), [
+    "slots.experimental_tab:demo-tab.useVisible",
+    "slots.navPanel:broken-panel.experimental_useBadge",
+  ]);
+  assert.deepEqual(
+    events.map((event) => readRecord(event, "tags")["bb.kit.boundary"]),
+    ["app.render", "app.render"],
+  );
+});
+
+test("instrument reports thread action runs and sidebar footer actions", async () => {
+  const target = createFetchTarget(true);
+  const telemetry = sentryAppTelemetry({
+    pluginId: "demo",
+    pluginVersion: "1.0.0",
+    dsn: target.dsn,
+    fetch: target.fetch,
+  });
+  const registrations = createRegistrations();
+  const runError = new Error("run private");
+  const activateError = new Error("activate private");
+
+  telemetry.instrument((app: typeof registrations.app) => {
+    app.slots.experimental_threadAction({
+      id: "demo-action",
+      item: ({ thread }: { thread: { id: string } }) =>
+        thread.id === "hidden"
+          ? null
+          : {
+              label: `Open ${thread.id}`,
+              run: async () => {
+                throw runError;
+              },
+            },
+    });
+    app.experimental_sidebarFooter.register({
+      id: "demo-footer",
+      kind: "action",
+      onActivate: () => {
+        throw activateError;
+      },
+    });
+  })(registrations.app);
+
+  const item = registrations.slots[0]?.item as (input: {
+    thread: { id: string };
+  }) => { label: string; run: () => Promise<void> } | null;
+  assert.equal(item({ thread: { id: "hidden" } }), null);
+  const action = item({ thread: { id: "t1" } });
+  assert.equal(action?.label, "Open t1");
+  assert.ok(action);
+  await assert.rejects(() => action.run(), runError);
+  const onActivate = registrations.footer[0]?.onActivate as () => void;
+  assert.throws(onActivate, activateError);
+  await telemetry.flush(5_000);
+
+  const events = target.envelopes.map(parseEnvelopeEvent);
+  assert.deepEqual(events.map((event) => readRecord(event, "tags")["bb.kit.operation"]).sort(), [
+    "experimental_sidebarFooter.register:demo-footer.onActivate",
+    "slots.experimental_threadAction:demo-action.item.run",
+  ]);
+});
+
 function createRegistrations() {
   type Registration = Record<string, unknown>;
   type ContentScript = Record<string, unknown>;
   const slots: Registration[] = [];
   const commands: Registration[] = [];
   const contentScripts: ContentScript[] = [];
+  const footer: Registration[] = [];
+  const slot = (registration: Registration) => {
+    slots.push(registration);
+  };
   return {
     slots,
     commands,
     contentScripts,
+    footer,
     app: {
       commands: {
         register(registration: Registration) {
@@ -157,8 +299,14 @@ function createRegistrations() {
         },
       },
       slots: {
-        commandPaletteAction(registration: Registration) {
-          slots.push(registration);
+        commandPaletteAction: slot,
+        navPanel: slot,
+        experimental_tab: slot,
+        experimental_threadAction: slot,
+      },
+      experimental_sidebarFooter: {
+        register(registration: Registration) {
+          footer.push(registration);
         },
       },
       composer: {},
