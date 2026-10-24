@@ -9,7 +9,7 @@
 
 **Scott's kitchen sink of personal bb surfaces: composer commands, provider branding, and Smart Embeds.**
 
-![bb 0.41+](https://img.shields.io/badge/bb-0.41%2B-88C0D0?style=flat-square)
+![bb 0.47+](https://img.shields.io/badge/bb-0.47%2B-88C0D0?style=flat-square)
 
 </div>
 
