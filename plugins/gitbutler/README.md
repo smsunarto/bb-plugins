@@ -43,6 +43,9 @@ and history.
   button that opens the GitButler tab.
 - The first time a thread runs in a GitButler workspace, the GitButler tab is
   added to its side panel without taking focus. A closed tab stays closed.
+- The thread's **Info** tab lists the applied **GitButler branches** with their
+  reviews, since BB's own Branch row shows only `gitbutler/workspace`. Selecting
+  a branch opens the GitButler tab.
 
 ## Branch actions
 

@@ -4,8 +4,14 @@ import { useBoardRepository, useBoardWorkspace, useNativeAgentPrompts } from "./
 import { CONTROL_HOVER_TRANSITION } from "./components/ui/motion.ts";
 import { cn } from "./lib/utils.ts";
 
+/** `text` as a Markdown quote, ending on a new line so the reader's own words follow it unquoted. */
+function quoteMarkdown(text: string): string {
+  const lines = text.replace(/\r\n?/gu, "\n").trim().split("\n");
+  return `${lines.map((line) => (line.length > 0 ? `> ${line}` : ">")).join("\n")}\n`;
+}
+
 /**
- * Quotes `text` into the thread's composer, which also focuses it, so the
+ * Quotes `text` at the end of the thread's composer and focuses it, so the
  * reader can ask the agent about a commit, file, or branch. The panel never
  * rewrites history itself, so this is also how a reader asks for that.
  *
@@ -35,7 +41,11 @@ export function useAskAgent(): ((text: string) => void) | null {
       ]
         .filter(Boolean)
         .join("\n");
-      composer.addQuote(context ? `${text}\n\n${context}` : text);
+      composer.insert(quoteMarkdown(context ? `${text}\n\n${context}` : text), {
+        at: "end",
+        block: true,
+      });
+      composer.focus();
     },
     [composer, repository, checkout, versionControl, native, prompts],
   );
