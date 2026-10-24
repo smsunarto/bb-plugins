@@ -1,6 +1,8 @@
 import { installDom } from "@bb-kit/core/testing";
 import { beforeEach, expect, test } from "bun:test";
 import { pluginQueryClient } from "@bb-kit/core/rpc/query";
+import type { PluginNavPanelProps } from "@get-bb/plugin-sdk/app";
+import type { ComponentType } from "react";
 import type { Plugin } from "../src/shared/schema.ts";
 
 installDom();
@@ -38,26 +40,57 @@ const rpc = {
   file: () => ({ content: "Find a note.", placeholders: [], maxChars: null }),
 };
 
+function loadApp() {
+  return loadPluginApp(() => import("../src/app/app.tsx"));
+}
+
 async function registration() {
-  const app = await loadPluginApp(() => import("../src/app/app.tsx"));
-  return app.navPanels[0]!;
+  return (await loadApp()).navPanels[0]!;
 }
 
 async function page(subPath: string) {
   return renderSlot(await registration(), { subPath }, { rpc: rpc as never });
 }
 
-async function pluginsTab(subPath: string) {
-  const tab = (await registration()).fixedTabs?.[0];
+/** The fixed Plugins tab bb shows beside the page, ready for `renderSlot`. */
+async function pluginsTabRegistration() {
+  const tab = (await loadApp()).tabs.find(
+    (candidate) =>
+      candidate.id === "plugins" &&
+      candidate.availability === "fixed" &&
+      candidate.context.kind === "nav-panel" &&
+      candidate.context.panelId === "prompt-editor",
+  );
   if (!tab) throw new Error("Prompt Editor declares no Plugins tab");
-  return renderSlot(tab, { subPath }, { rpc: rpc as never });
+  return { component: tab.component as ComponentType<PluginNavPanelProps> };
 }
 
-test("the plugin list is the page's Plugins tab", async () => {
-  const panel = await registration();
+async function pluginsTab(subPath: string) {
+  return renderSlot(await pluginsTabRegistration(), { subPath }, { rpc: rpc as never });
+}
+
+test("the plugin list is the page's Plugins tab, under its saved ids", async () => {
+  const app = await loadApp();
+  const panel = app.navPanels[0]!;
   expect(panel.path).toBe("prompt-editor");
-  expect(panel.fixedTabs?.map(({ panelId, id, title }) => ({ panelId, id, title }))).toEqual([
-    { panelId: "prompt-editor", id: "plugins", title: "Plugins" },
+  expect(panel.fixedTabs).toBeUndefined();
+  // Saved panel layouts find the tab by panel id and tab id.
+  expect(
+    app.tabs.map(({ id, title, context, availability, layout }) => ({
+      id,
+      title,
+      context,
+      availability,
+      layout,
+    })),
+  ).toEqual([
+    {
+      id: "plugins",
+      title: "Plugins",
+      context: { kind: "nav-panel", panelId: "prompt-editor" },
+      availability: "fixed",
+      layout: "flush",
+    },
   ]);
 });
 
@@ -101,9 +134,8 @@ test("names with spaces go to bb raw, which encodes the URL itself", async () =>
     tools: [],
     files: [{ path: "instructions/review notes.md", kind: "prompt", tool: null, chars: 12 }],
   };
-  const tab = (await registration()).fixedTabs![0]!;
   const slot = renderSlot(
-    tab,
+    await pluginsTabRegistration(),
     { subPath: "" },
     { rpc: { ...rpc, plugins: () => ({ plugins: [spaced] }) } as never },
   );
