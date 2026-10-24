@@ -1,6 +1,15 @@
+import type {
+  ComposerDraftReplacement,
+  ComposerDraftSnapshot,
+  ComposerMention,
+} from "@get-bb/plugin-sdk/app";
+
 import type { BbContext, StoredAnnotation } from "./afs.ts";
 
 const annotationMentionItemPrefix = "v1/";
+
+/** The composer mention provider the server registers for annotation pills. */
+export const ANNOTATION_MENTION_PROVIDER = "annotation";
 
 export interface ThreadTitleParts {
   title: string | null;
@@ -82,6 +91,51 @@ export function parseAnnotationMentionItemId(itemId: string): {
   } catch {
     return { annotationId: itemId, threadId: null };
   }
+}
+
+/**
+ * The draft without this plugin's annotation pills for `itemIds`, with later
+ * mention ranges shifted onto the shorter text. Returns `draft` itself when no
+ * pill matches, which `composer.replace` treats as a no-op. Attachments are
+ * omitted so the replacement preserves them.
+ */
+export function withoutAnnotationMentions(
+  draft: ComposerDraftSnapshot,
+  pluginId: string,
+  itemIds: ReadonlySet<string>,
+): ComposerDraftReplacement {
+  const removed = draft.mentions
+    .filter(
+      (mention) =>
+        mention.kind === "plugin" &&
+        mention.pluginId === pluginId &&
+        mention.provider === ANNOTATION_MENTION_PROVIDER &&
+        itemIds.has(mention.id),
+    )
+    .sort((left, right) => left.from - right.from);
+  if (removed.length === 0) return draft;
+
+  let text = "";
+  let cursor = 0;
+  for (const mention of removed) {
+    text += draft.text.slice(cursor, mention.from);
+    cursor = mention.to;
+  }
+  text += draft.text.slice(cursor);
+
+  const removedSet = new Set(removed);
+  const mentions: ComposerMention[] = [];
+  for (const mention of draft.mentions) {
+    if (removedSet.has(mention)) continue;
+    const shift = removed.reduce(
+      (sum, gone) => sum + (gone.to <= mention.from ? gone.to - gone.from : 0),
+      0,
+    );
+    mentions.push(
+      shift === 0 ? mention : { ...mention, from: mention.from - shift, to: mention.to - shift },
+    );
+  }
+  return { text, mentions };
 }
 
 function truncateLabelPart(value: string, maxLength: number): string {

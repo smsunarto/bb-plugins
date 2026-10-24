@@ -65,12 +65,17 @@ function withFiber(element: FakeElement, fiber: Fiber): FakeElement {
   return element;
 }
 
+// Every component boundary bb 0.47 (Plugin SDK 0.6.75) mounts around plugin DOM.
 const expectedBoundarySurfaces = {
   appOverlay: "experimental_appOverlay",
   browserToolbarAction: "experimental_browserToolbarAction",
+  codeFenceRenderer: "experimental_codeFenceRenderer",
+  composer: "experimental_composer",
   composerAction: "composer.actions",
   composerBanner: "composer.banners",
   composerPlusMenuItem: "composer.plusMenu",
+  composerPopup: "composer.experimental_popups",
+  composerSendMenuItem: "composer.sendMenu",
   diffRenderer: "experimental_diffRenderer",
   environmentProviderInputs: "experimental_environmentProviderInputs",
   experimental_sidebarFooter: "experimental_sidebarFooter",
@@ -79,19 +84,21 @@ const expectedBoundarySurfaces = {
   machineProviderInputs: "experimental_machineProviderInputs",
   messageDirective: "messageDirective",
   navPanel: "navPanel",
-  navPanelFixedTab: "navPanel.experimental_fixedTabs",
-  navPanelHeaderContent: "navPanel.headerContent",
-  navPanelSidebarAccessory: "navPanel.experimental_sidebarAccessory",
+  navPanelSidebar: "navPanel.experimental_sidebar",
   newThreadPanelAction: "experimental_newThreadPanelAction.component",
   pendingInteraction: "pendingInteraction",
-  providerIcon: "experimental_providerIcon",
   settingsSection: "settingsSection",
-  sidebarHeader: "experimental_sidebarHeader",
+  sidebarHeader: "experimental_sidebarNavigation.headerComponent",
   sidebarNavigation: "experimental_sidebarNavigation",
   sourceCodeRenderer: "experimental_sourceCodeRenderer",
+  tab: "experimental_tab",
+  "threadContextSegment/action": "experimental_threadContextSegment.action",
+  "threadContextSegment/details": "experimental_threadContextSegment.details",
+  "threadContextSegment/summary": "experimental_threadContextSegment.summary",
   threadHeaderAction: "experimental_threadHeaderAction",
+  threadInfoRow: "experimental_threadInfoRow",
+  threadInfoSection: "experimental_threadInfoSection",
   threadList: "experimental_threadList",
-  threadPanelAction: "threadPanelAction.component",
   timelineRenderer: "experimental_timelineRenderer",
 };
 
@@ -133,20 +140,6 @@ test("a sidebar navigation row names both the drawing plugin and the entry", () 
     pluginId: "navigation",
     surface: "experimental_sidebarNavigation",
     surfaceId: "navigation",
-  });
-
-  // A row accessory's own boundary is nearer than the navigation plugin's.
-  const accessory = withFiber(
-    new FakeElement({ closest: { "[data-sidebar-navigation-item]": row } }),
-    {
-      memoizedProps: { pluginId: "github", slotId: "issues", slotKind: "navPanelSidebarAccessory" },
-      return: navigationBoundary,
-    },
-  );
-  assert.deepEqual(pluginUiSurfaceFor(asElement(accessory), "/"), {
-    pluginId: "github",
-    surface: "navPanel.experimental_sidebarAccessory",
-    surfaceId: "issues",
   });
 });
 
@@ -204,7 +197,7 @@ test("host-rendered action descriptors distinguish launchers, messages, and the 
       }),
       expected: {
         pluginId: "gh-stack",
-        surface: "threadPanelAction.run",
+        surface: "experimental_tab.run",
         surfaceId: "stack",
       },
     },
@@ -274,15 +267,97 @@ test("host-rendered action descriptors distinguish launchers, messages, and the 
   });
 });
 
+test("a thread action names its contributing plugin inside the drawing plugin's menu", () => {
+  const threadListBoundary: Fiber = {
+    memoizedProps: { pluginId: "thread-list", slotId: "thread-list", slotKind: "threadList" },
+  };
+  const entry = (pluginId: string, key: string) => ({
+    entry: { key, pluginId, group: "20-share", action: { label: "Share", icon: "Share" } },
+  });
+
+  const menuRow = withFiber(new FakeElement({ text: "Share" }), {
+    return: { memoizedProps: entry("gh-stack", "gh-stack/share"), return: threadListBoundary },
+  });
+  assert.deepEqual(pluginUiSurfaceFor(asElement(menuRow), "/"), {
+    pluginId: "gh-stack",
+    surface: "experimental_threadAction",
+    surfaceId: "share",
+  });
+
+  // bb's own registry entries stay attributed to the plugin drawing the menu.
+  const coreRow = withFiber(new FakeElement({ text: "Archive" }), {
+    return: { memoizedProps: entry("bb--core", "bb--core/archive"), return: threadListBoundary },
+  });
+  assert.deepEqual(pluginUiSurfaceFor(asElement(coreRow), "/"), {
+    pluginId: "thread-list",
+    surface: "experimental_threadList",
+    surfaceId: "thread-list",
+  });
+
+  // An entry above the nearest boundary belongs to another surface.
+  const nested = withFiber(new FakeElement(), {
+    memoizedProps: { pluginId: "notes", slotId: "notes", slotKind: "tab" },
+    return: { memoizedProps: entry("gh-stack", "gh-stack/share") },
+  });
+  assert.deepEqual(pluginUiSurfaceFor(asElement(nested), "/"), {
+    pluginId: "notes",
+    surface: "experimental_tab",
+    surfaceId: "notes",
+  });
+});
+
+test("a page-title hook boundary is transparent to the page it wraps", () => {
+  const pageTitle: Fiber = {
+    memoizedProps: { pluginId: "notes", slotId: "notes", slotKind: "navPanelPageTitle" },
+  };
+  const body = withFiber(new FakeElement(), {
+    memoizedProps: { pluginId: "notes", slotId: "notes", slotKind: "navPanel" },
+    return: pageTitle,
+  });
+  assert.deepEqual(pluginUiSurfaceFor(asElement(body), "/plugins/notes/notes"), {
+    pluginId: "notes",
+    surface: "navPanel",
+    surfaceId: "notes",
+  });
+});
+
+test("composer decorations win over the bundled Composer plugin's boundary", () => {
+  const decoration = withFiber(
+    new FakeElement({ attributes: { "data-bb-plugin-decoration": "amp" } }),
+    {
+      return: {
+        memoizedProps: { pluginId: "bb--composer", slotId: "composer", slotKind: "composer" },
+      },
+    },
+  );
+  decoration.closestResults["[data-bb-plugin-decoration]"] = decoration;
+  assert.deepEqual(pluginUiSurfaceFor(asElement(decoration), "/threads/thr_1"), {
+    pluginId: "amp",
+    surface: "composer.richText",
+    surfaceId: null,
+  });
+});
+
 test("manual plugin roots retain precise header and route fallbacks", () => {
   const owner = new FakeElement({ attributes: { "data-bb-plugin": "notes" } });
-  const header = new FakeElement();
+  // bb renders headerContent in the page chrome under a host component that
+  // holds the panel record, wrapped in the page-title hook's boundary.
+  const header = withFiber(new FakeElement(), {
+    return: {
+      memoizedProps: {
+        panel: { pluginId: "notes", id: "notes", path: "notes", headerContent: () => null },
+        subPath: "",
+      },
+      return: {
+        memoizedProps: { pluginId: "notes", slotId: "notes", slotKind: "navPanelPageTitle" },
+      },
+    },
+  });
   header.closestResults["[data-bb-plugin]"] = owner;
-  header.closestResults["[data-testid='app-page-header-content-row']"] = header;
   assert.deepEqual(pluginUiSurfaceFor(asElement(header), "/plugins/notes/notes"), {
     pluginId: "notes",
     surface: "navPanel.headerContent",
-    surfaceId: null,
+    surfaceId: "notes",
   });
 
   const body = new FakeElement();
