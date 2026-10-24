@@ -31,7 +31,7 @@ export const SCAFFOLD_DEPENDENCIES: Readonly<Record<string, string>> = {
  */
 export const SCAFFOLD_DEV_DEPENDENCIES: Readonly<Record<string, string>> = {
   "@bb-kit/dev": "0.0.0",
-  "@get-bb/plugin-sdk": "0.5.29",
+  "@get-bb/plugin-sdk": "0.6.75",
   "@tanstack/react-query": "5.101.4",
   "@testing-library/react": "16.3.2",
   "@types/node": "22.20.1",
