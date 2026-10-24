@@ -163,6 +163,13 @@
   time this version loads. Provider names and marks now come from bb's own cached
   roster instead of a plugin round trip.
 
+## [0.6.1](https://github.com/smsunarto/bb-plugins/compare/gtd-sidebar/v0.6.0...gtd-sidebar/v0.6.1) (2026-10-24)
+
+
+### Bug Fixes
+
+* **gtd-sidebar,gitbutler:** resolve core from the local workspace ([e89b7cc](https://github.com/smsunarto/bb-plugins/commit/e89b7ccbb3ba90c11b1e1e99fe9b8f9e6b7e6a4f))
+
 ## [0.6.0](https://github.com/smsunarto/bb-plugins/compare/gtd-sidebar/v0.5.1...gtd-sidebar/v0.6.0) (2026-10-21)
 
 
