@@ -18,6 +18,14 @@
       "skills"
     ]
   },
+  "files": [
+    "dist/",
+    "assets/",
+    "src/",
+    "skills/",
+    "README.md",
+    "LICENSE"
+  ],
   "dependencies": {
     "@bb-kit/core": "workspace:*",
     "zod": "^4.4.3"
