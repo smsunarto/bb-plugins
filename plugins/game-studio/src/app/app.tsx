@@ -5,11 +5,14 @@ import {
   definePluginApp,
   useBbNavigate,
   useComposer,
+  experimental_DetailRow as DetailRow,
+  experimental_THREAD_INFO_ROW_GROUPS as THREAD_INFO_ROW_GROUPS,
   experimental_useSidebarThreads as useSidebarThreads,
 } from "@get-bb/plugin-sdk/app";
 import type {
+  ExperimentalThreadActionTabProps,
+  ExperimentalThreadInfoProps,
   PluginNavPanelProps,
-  PluginThreadPanelProps,
   PluginNewThreadPanelProps,
 } from "@get-bb/plugin-sdk/app";
 import { PluginQueryBoundary } from "@bb-kit/core/rpc/query";
@@ -18,7 +21,6 @@ import { selectGameCheckout, selectGameRequestCheckout } from "./game-checkout-s
 import { ConnectDialog } from "./connect.tsx";
 import type { GenerationRecipe, Game, Workspace } from "../shared/schema.ts";
 import type { AgentSelection } from "../shared/generation.ts";
-import { REQUEST_MENTION_PROVIDER } from "../shared/request-mention.ts";
 import { StudioCanvas } from "./canvas.tsx";
 import { ModelReviewLinks, ModelReviewPage } from "./model-review/index.tsx";
 import { DesignEditor, AssetLibrary, Evidence } from "./views.tsx";
@@ -27,6 +29,7 @@ import { UnitySlotInputs } from "./unity-slot-inputs.tsx";
 import { useStudioWorkspace } from "./workspace-sync.ts";
 import { Icon, Joystick } from "./icons.tsx";
 import { createTabRequests } from "./tab-request.ts";
+import { appendStudioRequest, selectedAgent } from "./studio-composer.ts";
 import { ago } from "./time.ts";
 import "./studio.css";
 
@@ -248,31 +251,17 @@ function Workbench({ gameId, tab }: { gameId: string; tab: Tab }) {
   const { query, saveBoard } = useStudioWorkspace(gameId);
   const openGame = useContext(StudioLocation);
   const composer = useComposer();
-  // Text and review nodes start on the composer's agent; each node's composer can change it.
+  // Text and review nodes start on the composer's agent and follow its picker; each node's
+  // composer can change it. Surfaces outside a composer, or a picker still loading, keep the last.
   const [defaultAgent, setDefaultAgent] = useState<AgentSelection>(fallbackAgent);
+  const picked = composer.selection;
   useEffect(() => {
-    let live = true;
-    const resolve = async () => {
-      const { providerId, model, reasoningLevel, serviceTier } = await composer
-        .experimental_setSelection({})
-        // Surfaces outside a composer keep the fallback agent.
-        .catch(() => ({}) as Awaited<ReturnType<typeof composer.experimental_setSelection>>);
-      if (!live || !providerId || !model) return;
-      const next: AgentSelection = {
-        providerId,
-        model,
-        reasoningLevel: reasoningLevel ?? fallbackAgent.reasoningLevel,
-        ...(serviceTier ? { serviceTier } : {}),
-      };
-      setDefaultAgent((current) =>
-        JSON.stringify(current) === JSON.stringify(next) ? current : next,
-      );
-    };
-    void resolve();
-    return () => {
-      live = false;
-    };
-  }, [composer]);
+    const next = selectedAgent(picked, fallbackAgent.reasoningLevel);
+    if (!next) return;
+    setDefaultAgent((current) =>
+      JSON.stringify(current) === JSON.stringify(next) ? current : next,
+    );
+  }, [picked]);
   const [visitedTabs, setVisitedTabs] = useState(() => new Set<Tab>([tab]));
   useEffect(() => {
     setVisitedTabs((previous) => (previous.has(tab) ? previous : new Set([...previous, tab])));
@@ -341,15 +330,10 @@ function Workbench({ gameId, tab }: { gameId: string; tab: Tab }) {
           );
         } else throw new Error("Open Studio beside the main BB thread to prepare a request.");
         const result = await client.prompt(input);
-        composer.updateText((current) =>
-          current.trim() ? `${current}\n\n${result.prompt}` : result.prompt,
-        );
-        composer.insertMention({
-          provider: REQUEST_MENTION_PROVIDER,
+        appendStudioRequest(composer, result.prompt, {
           id: JSON.stringify({ ...input, request: result.request }),
           label: `Game Studio · ${action}`,
         });
-        composer.focus();
       } catch (cause) {
         setError(message(cause));
       }
@@ -557,10 +541,12 @@ function Workbench({ gameId, tab }: { gameId: string; tab: Tab }) {
                       void request("asset", nodeId, recipe, { boardId: board.board.id })
                     }
                     onGenerateDirect={async (nodeId, revision, requestId, model, brief, agent) => {
+                      // An empty setSelection resolves once the pickers settle, so a
+                      // provider or machine changed just now has its model.
                       const selection =
                         agent ??
                         (model.provider === "bb"
-                          ? await composer.experimental_setSelection({})
+                          ? await composer.setSelection({}).catch(() => composer.selection)
                           : undefined);
                       await client.generateCanvas({
                         gameId,
@@ -718,7 +704,7 @@ function StudioPanel({
   projectId,
 }: {
   threadId?: string;
-  params?: PluginThreadPanelProps["params"];
+  params?: ExperimentalThreadActionTabProps["params"];
   projectId?: string | null;
 }) {
   const overview = rpc.overview.useQuery({}, { refetchInterval: 15_000 });
@@ -757,7 +743,7 @@ function StudioPanel({
     </StudioLocation.Provider>
   );
 }
-function ThreadStudio(props: PluginThreadPanelProps) {
+function ThreadStudio(props: ExperimentalThreadActionTabProps) {
   return (
     <PluginQueryBoundary>
       <StudioPanel key={props.threadId} {...props} />
@@ -848,6 +834,36 @@ function StudioNavigation(props: PluginNavPanelProps) {
     </PluginQueryBoundary>
   );
 }
+/** The Info tab names the game a thread works on and opens it in Studio. */
+function StudioInfoRow({ threadId }: ExperimentalThreadInfoProps) {
+  const overview = rpc.overview.useQuery({}, { staleTime: 15_000 });
+  const sidebar = useSidebarThreads();
+  const navigate = useBbNavigate();
+  const thread = sidebar.threads.find((item) => item.id === threadId);
+  const game = overview.data?.games.find(
+    (entry) => entry.threadId === threadId || (thread && sameCheckout(entry, thread)),
+  );
+  if (!game) return null;
+  return (
+    <DetailRow icon="Joystick" label="Game">
+      <button
+        type="button"
+        className="gs-info-link gs-truncate"
+        title={`Open ${game.name} in Game Studio`}
+        onClick={() => navigate.openThreadPanel({ actionId: panelActionId })}
+      >
+        {game.name}
+      </button>
+    </DetailRow>
+  );
+}
+function ThreadInfoStudio(props: ExperimentalThreadInfoProps) {
+  return (
+    <PluginQueryBoundary>
+      <StudioInfoRow {...props} />
+    </PluginQueryBoundary>
+  );
+}
 function StudioHeader() {
   const navigate = useBbNavigate();
   return (
@@ -874,7 +890,10 @@ export default definePluginApp((app) => {
     name: "game-studio/Joystick",
     component: (props) => <Joystick {...props} />,
   });
-  app.slots.threadPanelAction({
+  // Same id as the retired threadPanelAction, so saved Studio tabs and layouts keep opening.
+  app.slots.experimental_tab({
+    context: { kind: "thread" },
+    availability: "action",
     id: panelActionId,
     title: "Game Studio",
     icon: "Joystick",
@@ -892,6 +911,12 @@ export default definePluginApp((app) => {
     id: "studio",
     title: "Game Studio",
     component: StudioHeader,
+  });
+  app.slots.experimental_threadInfoRow({
+    id: "studio-game",
+    group: THREAD_INFO_ROW_GROUPS.environment,
+    order: 40,
+    component: ThreadInfoStudio,
   });
   app.slots.navPanel({
     id: "studio",
