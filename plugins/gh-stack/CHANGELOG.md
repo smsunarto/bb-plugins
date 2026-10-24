@@ -1,5 +1,20 @@
 # @smsunarto/bb-plugin-gh-stack
 
+## [0.4.0](https://github.com/smsunarto/bb-plugins/compare/gh-stack/v0.3.0...gh-stack/v0.4.0) (2026-10-24)
+
+
+### Features
+
+* **gh-stack:** publish discoverable RPC descriptions ([9c69134](https://github.com/smsunarto/bb-plugins/commit/9c69134c6610acd6bd2f8467a24d470b506fd039))
+
+
+### Bug Fixes
+
+* **gh-stack:** keep prompt templates stable under oxfmt ([#146](https://github.com/smsunarto/bb-plugins/issues/146)) ([2aedd58](https://github.com/smsunarto/bb-plugins/commit/2aedd5863a4dc4e9f431bf09af2d9eddc909c74d))
+* **gh-stack:** point cleaned-up workspaces at Restore workspace ([4a907d3](https://github.com/smsunarto/bb-plugins/commit/4a907d372a642aeee6860af6ed88ece97416cbdf))
+* **scott-engineering:** stop Arena rewrites repeating card labels ([69a5eb8](https://github.com/smsunarto/bb-plugins/commit/69a5eb8eaafc43c3d44c61e05bcc24ea6c6d2776))
+* **workspace:** resolve in-repo core consumers locally ([8bc9ab7](https://github.com/smsunarto/bb-plugins/commit/8bc9ab7a9e6b7f8c18282fc3db697f7a7a138648))
+
 ## [0.3.0](https://github.com/smsunarto/bb-plugins/compare/gh-stack/v0.2.3...gh-stack/v0.3.0) (2026-09-15)
 
 
