@@ -1,7 +1,14 @@
-import { useComposer, useRpc } from "@get-bb/plugin-sdk/app";
-import { useCallback, useLayoutEffect, useRef, useState } from "react";
+import {
+  useComposer,
+  useRpc,
+  type ComposerDraftReplacement,
+  type ComposerDraftSnapshot,
+  type ComposerMention,
+} from "@get-bb/plugin-sdk/app";
+import { useCallback, useRef, useState } from "react";
 import {
   MAX_STATE_BYTES,
+  WIDGET_STATE_MENTION_PROVIDER,
   type stateContract,
   type WidgetIdentity,
   type WidgetStateSnapshot,
@@ -63,16 +70,50 @@ function mergeTweaks(savedTweaks: string | null, groups: TweakGroup[], reset?: s
   return JSON.stringify([...merged.values()].slice(-TWEAK_LIMITS.groups * TWEAK_LIMITS.controls));
 }
 
-export function useWidgetState(identity: WidgetIdentity, pluginId: string) {
-  const { threadId, messageId, file } = identity;
+/** The draft without this plugin's pill for one saved state, or `draft` itself. */
+function withoutStateMention(
+  draft: ComposerDraftSnapshot,
+  pluginId: string,
+  id: string,
+): ComposerDraftReplacement {
+  const isState = (mention: ComposerMention) =>
+    mention.kind === "plugin" &&
+    mention.pluginId === pluginId &&
+    mention.provider === WIDGET_STATE_MENTION_PROVIDER &&
+    mention.id === id;
+  if (!draft.mentions.some(isState)) return draft;
+  // Ranges are explicit, so later pills shift left by the removed text.
+  let text = "";
+  let cursor = 0;
+  let removed = 0;
+  const mentions: ComposerMention[] = [];
+  for (const mention of [...draft.mentions].sort((a, b) => a.from - b.from)) {
+    if (isState(mention)) {
+      text += draft.text.slice(cursor, mention.from);
+      cursor = mention.to;
+      removed += mention.to - mention.from;
+      continue;
+    }
+    mentions.push(
+      removed === 0
+        ? mention
+        : { ...mention, from: mention.from - removed, to: mention.to - removed },
+    );
+  }
+  return { text: text + draft.text.slice(cursor), mentions };
+}
+
+/**
+ * Saved state for one preview. A null identity, used for HTML written in the
+ * reply, has nothing to save: follow-up prompts still reach the composer.
+ */
+export function useWidgetState(identity: WidgetIdentity | null, pluginId: string) {
+  const { threadId, messageId, file } = identity ?? { threadId: "", messageId: "", file: "" };
+  const persistent = identity !== null;
   const key = JSON.stringify([pluginId, threadId, messageId, file]);
   const legacyKey = `${pluginId}.widget-state:${threadId}:${messageId}:${file}`;
   const rpc = useRpc<typeof stateContract>();
   const composer = useComposer();
-  const composerRef = useRef(composer);
-  useLayoutEffect(() => {
-    composerRef.current = composer;
-  }, [composer]);
   const saved = useRef({
     state: "null",
     modelContent: null as string | null,
@@ -108,11 +149,10 @@ export function useWidgetState(identity: WidgetIdentity, pluginId: string) {
       const attempts = fields.length ? fields : (["context"] as const);
       // An edit invalidates an attached context chip until the user adds the
       // current selection again. Inserting automatically would steal panel focus.
-      if (invalidate && mentionId.current)
-        composerRef.current.experimental_removeMention({
-          provider: "widget-state",
-          id: mentionId.current,
-        });
+      if (invalidate && mentionId.current) {
+        const id = mentionId.current;
+        composer.replace((current) => withoutStateMention(current, pluginId, id));
+      }
       writeCount.current++;
       setSaving(true);
       const write = (pendingWrites.get(key) ?? Promise.resolve())
@@ -158,11 +198,12 @@ export function useWidgetState(identity: WidgetIdentity, pluginId: string) {
         });
       return write;
     },
-    [rpc, key, threadId, messageId, file],
+    [rpc, composer, pluginId, key, threadId, messageId, file],
   );
 
   const restore = useCallback(
     async (signal: AbortSignal) => {
+      if (!persistent) return { state: "null", modelContent: null, tweaks: null };
       await waitForWrites(key).catch(() => {});
       signal.throwIfAborted();
       let legacy: string | null = null;
@@ -206,7 +247,7 @@ export function useWidgetState(identity: WidgetIdentity, pluginId: string) {
       setHasSavedState(snapshot !== null && hasSavedContext(snapshot));
       return saved.current;
     },
-    [rpc, key, threadId, messageId, file, legacyKey, persist],
+    [rpc, persistent, key, threadId, messageId, file, legacyKey, persist],
   );
 
   const addContext = useCallback(
@@ -214,36 +255,45 @@ export function useWidgetState(identity: WidgetIdentity, pluginId: string) {
       // A storage outage must not swallow an explicit follow-up request.
       if (prompt) {
         beforeFocus?.();
-        composerRef.current.updateText((current) =>
-          current.trim() ? `${current.trimEnd()}\n\n${prompt}` : prompt,
-        );
-        composerRef.current.focus();
+        // A block append keeps the draft and starts the prompt on its own paragraph.
+        composer.insert(prompt, { at: "end", block: true });
+        composer.focus();
       }
       try {
-        if (!hasSavedState && !dirty.current.size) return;
+        if (!persistent || (!hasSavedState && !dirty.current.size)) return;
         const result = await persist([...dirty.current]);
         const snapshot = (await waitForWrites(key)) ?? result;
         if (!prompt) beforeFocus?.();
-        composerRef.current.experimental_removeMention({
-          provider: "widget-state",
-          id: snapshot.mentionId,
+        // Replace any earlier pill for this widget with one for the latest save,
+        // spaced from the draft. Updaters read the draft without subscribing to it.
+        composer.replace((current) => {
+          const next = withoutStateMention(current, pluginId, snapshot.mentionId);
+          return /(?:^|\s)$/u.test(next.text)
+            ? next
+            : { text: `${next.text} `, mentions: next.mentions };
         });
-        composerRef.current.insertMention({
-          provider: "widget-state",
-          id: snapshot.mentionId,
-          label: `State: ${file.split(/[\\/]/u).pop() ?? file}`,
-        });
-        composerRef.current.focus();
+        composer.insert(
+          [
+            {
+              provider: WIDGET_STATE_MENTION_PROVIDER,
+              id: snapshot.mentionId,
+              label: `State: ${file.split(/[\\/]/u).pop() ?? file}`,
+            },
+            " ",
+          ],
+          { at: "end" },
+        );
+        composer.focus();
       } catch {
         /* The visible save error leaves the draft free of stale context. */
       }
     },
-    [persist, key, file, hasSavedState],
+    [persist, composer, pluginId, persistent, key, file, hasSavedState],
   );
 
   const updateState = useCallback(
     (state: string, modelContent: string | null) => {
-      if (readOnly.current) return;
+      if (!persistent || readOnly.current) return;
       if (
         hasSavedState &&
         saved.current.state === state &&
@@ -256,11 +306,11 @@ export function useWidgetState(identity: WidgetIdentity, pluginId: string) {
       dirty.current.add("state");
       void persist(["state"]).catch(() => {});
     },
-    [persist, hasSavedState],
+    [persist, persistent, hasSavedState],
   );
   const updateTweaks = useCallback(
     (groups: TweakGroup[], changed: boolean, reset?: string | null) => {
-      if (readOnly.current || (groups.length === 0 && reset === undefined)) return;
+      if (!persistent || readOnly.current || (groups.length === 0 && reset === undefined)) return;
       // Registration can happen after fetch/import or only when a tab opens.
       // Preserve saved controls that have not registered in this frame yet.
       const next = mergeTweaks(saved.current.tweaks, groups, reset);
@@ -269,7 +319,7 @@ export function useWidgetState(identity: WidgetIdentity, pluginId: string) {
       dirty.current.add("tweaks");
       void persist(["tweaks"], false, changed).catch(() => {});
     },
-    [persist],
+    [persist, persistent],
   );
 
   return {

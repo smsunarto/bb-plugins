@@ -17,7 +17,8 @@ export function TweakPanel({
   onChange: (groupId: string, controlId: string, value: string | number | boolean) => void;
   onReset: (groupId?: string) => void;
   onOriginal: (active: boolean) => void;
-  onApply: () => void;
+  /** Omitted when adjustments cannot be saved, as for HTML written in the reply. */
+  onApply?: () => void;
   onClose: () => void;
   saving: boolean;
   readOnly: boolean;
@@ -39,7 +40,11 @@ export function TweakPanel({
           </svg>
         </button>
       </div>
-      <p>Adjust the preview, then add your changes to chat.</p>
+      <p>
+        {onApply
+          ? "Adjust the preview, then add your changes to chat."
+          : "Adjust the preview. Changes here are not saved."}
+      </p>
       <div className="inline-vis-tweak-actions">
         <button type="button" aria-pressed={original} onClick={() => onOriginal(!original)}>
           {original ? "Show edits" : "Show original"}
@@ -73,14 +78,16 @@ export function TweakPanel({
           </fieldset>
         ))}
       {!groups.some((group) => group.visible) && <p>No controls for this design.</p>}
-      <button
-        type="button"
-        className="inline-vis-tweak-apply"
-        disabled={original || saving || readOnly}
-        onClick={onApply}
-      >
-        {saving ? "Saving…" : "Add changes to chat"}
-      </button>
+      {onApply && (
+        <button
+          type="button"
+          className="inline-vis-tweak-apply"
+          disabled={original || saving || readOnly}
+          onClick={onApply}
+        >
+          {saving ? "Saving…" : "Add changes to chat"}
+        </button>
+      )}
     </aside>
   );
 }

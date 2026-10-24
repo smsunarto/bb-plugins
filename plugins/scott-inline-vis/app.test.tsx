@@ -4,6 +4,7 @@ import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { StrictMode, useState } from "react";
 import { afterEach, expect, test, vi } from "vitest";
+import type { ComposerMention } from "@get-bb/plugin-sdk/app";
 import { loadPluginApp, renderSlot as sdkRenderSlot } from "@get-bb/plugin-sdk/testing/app";
 import { chunkedResponse, mp4File, STREAM_TYPE } from "./mp4-fixture.ts";
 import {
@@ -84,6 +85,13 @@ test("registers the inline-vis directive", () => {
   expect(app.messageDirectives.map((directive) => directive.id)).toEqual(["inline-vis"]);
 });
 
+test("claims a fence language that bb's built-in inline-vis cannot also claim", () => {
+  // bb renders neither renderer when two plugins claim one language.
+  expect(app.codeFenceRenderers.map(({ id, languages }) => ({ id, languages }))).toEqual([
+    { id: "inline-vis", languages: ["scott-inline-vis"] },
+  ]);
+});
+
 test("reserves room for 100 monospace columns without exceeding the message width", async () => {
   const stylesheet = await readFile(join(import.meta.dirname, "app.css"), "utf8");
   expect(stylesheet).toContain("--inline-vis-target-width: calc(100ch + 8rem + 4px)");
@@ -108,6 +116,15 @@ async function inlineVisDirective() {
   const directive = app.messageDirectives.find((item) => item.id === "inline-vis");
   expect(directive).toBeDefined();
   return directive!;
+}
+
+/** The draft's plugin pills, as `useComposer().draft` reports them. */
+function statePills(slot: ReturnType<typeof renderSlot>) {
+  return slot.inspection.composer.draft.mentions.flatMap((mention) =>
+    mention.kind === "plugin"
+      ? [{ provider: mention.provider, id: mention.id, label: mention.label }]
+      : [],
+  );
 }
 
 async function shareSavedState(slot: ReturnType<typeof renderSlot>) {
@@ -695,7 +712,7 @@ test("inline sharing is disabled while state is saving", async () => {
   await waitFor(() => expect(share.hasAttribute("disabled")).toBe(false));
   fireEvent.click(share);
   await waitFor(() =>
-    expect(slot.inspection.composer.mentions).toEqual([
+    expect(statePills(slot)).toEqual([
       {
         provider: "widget-state",
         id: '["thread-inline-vis","message-inline-vis","/tmp/viz/chart.html"]',
@@ -910,16 +927,39 @@ test("inline-vis keeps an open iframe after its lease expires and refreshes only
   }
 });
 
+/** Deliver the slot's prepared frame document and wire messages from that frame. */
+async function connectFrame(slot: ReturnType<typeof renderSlot>) {
+  // The app answers the frame page's request once, so keep the delivered document.
+  const { iframe, html } = await waitFor(() => {
+    const element = slot.container.querySelector("iframe");
+    const delivered = frameDocument(element);
+    expect(delivered).toBeTruthy();
+    return { iframe: element as HTMLIFrameElement, html: delivered! };
+  });
+  // The frame listener registers in a passive effect after the frame commit.
+  await act(async () => {});
+  const token = /"token":"([^"]+)"/u.exec(html)![1]!;
+  const send = (data: Record<string, unknown>) =>
+    act(() => {
+      window.dispatchEvent(
+        new MessageEvent("message", { data: { token, ...data }, source: iframe.contentWindow }),
+      );
+    });
+  return { slot, iframe, html, token, send };
+}
+
 async function renderFragment(
   fragment: string,
   {
     height,
     composerText,
+    composerMentions,
     messageId = inlineVisMessage.id,
     rpc,
   }: {
     height?: string;
     composerText?: string;
+    composerMentions?: readonly ComposerMention[];
     messageId?: string;
     rpc?: NonNullable<Parameters<typeof sdkRenderSlot>[2]>["rpc"];
   } = {},
@@ -938,27 +978,11 @@ async function renderFragment(
     {
       sdk: previewSdk(() => fragment),
       pluginId: "scott-inline-vis",
-      composer: { text: composerText ?? "" },
+      composer: { text: composerText ?? "", mentions: composerMentions },
       rpc,
     },
   );
-  // The app answers the frame page's request once, so keep the delivered document.
-  const { iframe, html } = await waitFor(() => {
-    const element = slot.container.querySelector("iframe");
-    const delivered = frameDocument(element);
-    expect(delivered).toBeTruthy();
-    return { iframe: element as HTMLIFrameElement, html: delivered! };
-  });
-  // The frame listener registers in a passive effect after the frame commit.
-  await act(async () => {});
-  const token = /"token":"([^"]+)"/u.exec(html)![1]!;
-  const send = (data: Record<string, unknown>) =>
-    act(() => {
-      window.dispatchEvent(
-        new MessageEvent("message", { data: { token, ...data }, source: iframe.contentWindow }),
-      );
-    });
-  return { slot, iframe, html, token, send };
+  return connectFrame(slot);
 }
 
 test("inline-vis renders an HTML fragment inside the visualization runtime", async () => {
@@ -1113,7 +1137,7 @@ test("inline-vis puts a fragment follow-up prompt in the composer", async () => 
     expect(slot.inspection.composer.text).toContain("Draft\n\nExplain the p99 spike"),
   );
   expect(slot.inspection.composer.focusCount).toBe(1);
-  expect(slot.inspection.composer.mentions).toEqual([]);
+  expect(statePills(slot)).toEqual([]);
   slot.unmount();
 });
 
@@ -1156,7 +1180,7 @@ test("saved state reaches a fresh native mention without exposing it in the draf
   });
   await shareSavedState(slot);
   await waitFor(() =>
-    expect(slot.inspection.composer.mentions).toEqual([
+    expect(statePills(slot)).toEqual([
       {
         provider: "widget-state",
         id: '["thread-inline-vis","message-inline-vis","/tmp/viz/chart.html"]',
@@ -1164,7 +1188,8 @@ test("saved state reaches a fresh native mention without exposing it in the draf
       },
     ]),
   );
-  expect(slot.inspection.composer.text).toContain("Explain my selection");
+  // The pill follows the draft after a space, and a trailing space keeps typing apart from it.
+  expect(slot.inspection.composer.text).toBe("Explain my selection @State: chart.html ");
   expect(slot.inspection.composer.text).not.toContain("internal");
   expect([...snapshots.values()][0]?.modelContent).toBe('{"selectedTab":"latency"}');
   slot.unmount();
@@ -1183,7 +1208,7 @@ test("a failed save stays visible and does not attach stale model context", asyn
   await shareSavedState(slot);
   await waitFor(() => expect(slot.getByRole("alert").textContent).toContain("Storage unavailable"));
   expect(slot.inspection.composer.text).toBe("My draft");
-  expect(slot.inspection.composer.mentions).toEqual([]);
+  expect(statePills(slot)).toEqual([]);
   slot.unmount();
 });
 
@@ -1263,7 +1288,7 @@ test("Tweak controls route edits to their frame and keep hidden designs out of t
       reference: "Match the card corners",
     },
   ]);
-  expect(slot.inspection.composer.mentions[0]?.provider).toBe("widget-state");
+  expect(statePills(slot)[0]?.provider).toBe("widget-state");
   slot.unmount();
 });
 
@@ -1308,15 +1333,50 @@ test("an edit removes previously shared context until current state is added aga
   });
   send({ type: "bb:inline-vis:state", state: '{"radius":18}' });
   await shareSavedState(slot);
-  await waitFor(() => expect(slot.inspection.composer.mentions).toHaveLength(1));
+  await waitFor(() => expect(statePills(slot)).toHaveLength(1));
   fail = true;
   send({ type: "bb:inline-vis:state", state: '{"radius":7}' });
-  expect(slot.inspection.composer.mentions).toEqual([]);
+  expect(statePills(slot)).toEqual([]);
   await waitFor(() => expect(slot.getByRole("alert").textContent).toContain("Storage unavailable"));
   fail = false;
   await shareSavedState(slot);
-  await waitFor(() => expect(slot.inspection.composer.mentions).toHaveLength(1));
+  await waitFor(() => expect(statePills(slot)).toHaveLength(1));
   expect([...snapshots.values()][0]?.state).toBe('{"radius":7}');
+  slot.unmount();
+});
+
+test("an edit removes only its own pill and keeps later pills on their text", async () => {
+  const identity = {
+    threadId: inlineVisMessage.threadId,
+    messageId: inlineVisMessage.id,
+    file: "/tmp/viz/chart.html",
+  };
+  const { mentionId } = stateRpc.saveState({
+    ...identity,
+    state: '{"radius":18}',
+    modelContent: null,
+    tweaks: null,
+  });
+  // The harness writes a plugin pill as "@" plus its label.
+  const pill = (from: number, label: string, provider: string, id: string): ComposerMention => ({
+    from,
+    to: from + 1 + label.length,
+    label,
+    kind: "plugin",
+    pluginId: "scott-inline-vis",
+    provider,
+    id,
+  });
+  const { slot, send } = await renderFragment("<p>Shared</p>", {
+    composerText: "Compare @State: chart.html with @Notes ",
+    composerMentions: [
+      pill(8, "State: chart.html", "widget-state", mentionId),
+      pill(32, "Notes", "notes", "notes-1"),
+    ],
+  });
+  send({ type: "bb:inline-vis:state", state: '{"radius":7}' });
+  expect(slot.inspection.composer.draft.text).toBe("Compare  with @Notes ");
+  expect(slot.inspection.composer.draft.mentions).toEqual([pill(14, "Notes", "notes", "notes-1")]);
   slot.unmount();
 });
 
@@ -1397,13 +1457,13 @@ test("unchanged frame publications preserve an attached context chip", async () 
   send(state);
   send({ type: "bb:inline-vis:tweak", groups, original: false, changed: false });
   await shareSavedState(slot);
-  await waitFor(() => expect(slot.inspection.composer.mentions).toHaveLength(1));
+  await waitFor(() => expect(statePills(slot)).toHaveLength(1));
   const count = save.mock.calls.length;
   send(state);
   send({ type: "bb:inline-vis:tweak", groups, original: true, changed: false });
   await act(async () => {});
   expect(save).toHaveBeenCalledTimes(count);
-  expect(slot.inspection.composer.mentions).toHaveLength(1);
+  expect(statePills(slot)).toHaveLength(1);
   slot.unmount();
 });
 
@@ -1448,7 +1508,7 @@ test("late and partial control registration preserves saved edits and attached c
   });
   await first.slot.findByRole("button", { name: "Use saved state" });
   await shareSavedState(first.slot);
-  await waitFor(() => expect(first.slot.inspection.composer.mentions).toHaveLength(1));
+  await waitFor(() => expect(statePills(first.slot)).toHaveLength(1));
   fireEvent.click(
     first.slot.getByRole("button", { name: "Collapse visualization /tmp/viz/chart.html" }),
   );
@@ -1482,10 +1542,10 @@ test("late and partial control registration preserves saved edits and attached c
     unit: "px",
     reference: "Match the card corners",
   });
-  expect(first.slot.inspection.composer.mentions).toHaveLength(1);
+  expect(statePills(first.slot)).toHaveLength(1);
   publish([radiusGroup("player", 7)]);
   await act(async () => {});
-  expect(first.slot.inspection.composer.mentions).toHaveLength(1);
+  expect(statePills(first.slot)).toHaveLength(1);
   fireEvent.click(first.slot.getByRole("button", { name: "Tweak" }));
   expect(first.slot.getByText("Match the card corners")).toBeTruthy();
   first.slot.unmount();
@@ -1622,7 +1682,7 @@ test("a successful tweak save does not hide an unsaved widget-state failure", as
   expect([...snapshots.values()][0]?.state).toBe("null");
   failState = false;
   await shareSavedState(slot);
-  await waitFor(() => expect(slot.inspection.composer.mentions).toHaveLength(1));
+  await waitFor(() => expect(statePills(slot)).toHaveLength(1));
   expect(slot.queryByRole("alert")).toBeNull();
   expect([...snapshots.values()][0]?.state).toBe('{"selected":"studio"}');
   slot.unmount();
@@ -1660,7 +1720,7 @@ test("unsaved widget state keeps its retry action after the last Tweak adjustmen
   expect(slot.getByRole("alert").textContent).toContain("State write failed");
   failState = false;
   await shareSavedState(slot);
-  await waitFor(() => expect(slot.inspection.composer.mentions).toHaveLength(1));
+  await waitFor(() => expect(statePills(slot)).toHaveLength(1));
   expect([...snapshots.values()][0]?.state).toBe('{"selected":"studio"}');
   expect(slot.queryByRole("alert")).toBeNull();
   slot.unmount();
@@ -1714,7 +1774,7 @@ test("follow-up prompts survive failed saves without attaching stale context", a
   await waitFor(() => expect(slot.inspection.composer.text).toBe("Draft\n\nExplain my selection"));
   expect(slot.queryByRole("dialog")).toBeNull();
   await waitFor(() => expect(slot.getByRole("alert").textContent).toContain("Storage unavailable"));
-  expect(slot.inspection.composer.mentions).toEqual([]);
+  expect(statePills(slot)).toEqual([]);
   expect(slot.inspection.composer.focusCount).toBeGreaterThan(0);
   slot.unmount();
 });
@@ -1733,7 +1793,7 @@ test("follow-up prompts survive a read-only preview", async () => {
   });
   send({ type: "bb:inline-vis:follow-up", prompt: "Explain this chart" });
   await waitFor(() => expect(slot.inspection.composer.text).toBe("Draft\n\nExplain this chart"));
-  expect(slot.inspection.composer.mentions).toEqual([]);
+  expect(statePills(slot)).toEqual([]);
   expect(save).not.toHaveBeenCalled();
   expect(slot.getByRole("alert").textContent).toContain("Saved state is unavailable");
   slot.unmount();
@@ -1775,12 +1835,12 @@ test("oversized tweaks leave state saves and follow-up prompts usable", async ()
     expect(slot.inspection.composer.text).toBe("Draft\n\nExplain these controls"),
   );
   await act(async () => {});
-  expect(slot.inspection.composer.mentions).toEqual([]);
+  expect(statePills(slot)).toEqual([]);
   // Resetting adjustments removes the budget error and makes current context shareable.
   send({ type: "bb:inline-vis:tweak", groups: [], original: false, changed: true, reset: null });
   await waitFor(() => expect(slot.queryByRole("alert")).toBeNull());
   await shareSavedState(slot);
-  await waitFor(() => expect(slot.inspection.composer.mentions).toHaveLength(1));
+  await waitFor(() => expect(statePills(slot)).toHaveLength(1));
   expect([...snapshots.values()][0]?.tweaks).toBe("[]");
   slot.unmount();
 });
@@ -1834,7 +1894,7 @@ test("untouched controls do not create saved context for a follow-up", async () 
   await waitFor(() =>
     expect(slot.inspection.composer.text).toBe("Draft\n\nExplain these controls"),
   );
-  expect(slot.inspection.composer.mentions).toEqual([]);
+  expect(statePills(slot)).toEqual([]);
   expect(save).not.toHaveBeenCalled();
   slot.unmount();
 });
@@ -1854,7 +1914,7 @@ test.each([false, null])(
     expect(slot.queryByRole("button", { name: "Use saved state" })).toBeNull();
     send({ type: "bb:inline-vis:follow-up", prompt: "Explain these controls" });
     await waitFor(() => expect(slot.inspection.composer.text).toBe("Explain these controls"));
-    expect(slot.inspection.composer.mentions).toEqual([]);
+    expect(statePills(slot)).toEqual([]);
     slot.unmount();
   },
 );
@@ -1885,7 +1945,7 @@ test("a successful field save clears an earlier context-only error", async () =>
   failContext = false;
   send({ type: "bb:inline-vis:state", state: '{"selected":2}' });
   await shareSavedState(slot);
-  await waitFor(() => expect(slot.inspection.composer.mentions).toHaveLength(1));
+  await waitFor(() => expect(statePills(slot)).toHaveLength(1));
   expect([...snapshots.values()][0]?.state).toBe('{"selected":2}');
   expect(slot.queryByRole("alert")).toBeNull();
   slot.unmount();
@@ -1954,5 +2014,132 @@ test("an ambiguous old null snapshot retains its browser legacy copy", async () 
   expect(html).toContain('"state":null');
   expect(save).not.toHaveBeenCalled();
   expect(window.localStorage.getItem(legacyKey)).toBe('{"selected":"legacy"}');
+  slot.unmount();
+});
+
+function FenceSource() {
+  return <pre data-testid="fence-source">fence source</pre>;
+}
+
+function fenceProps(code: string, status: "closed" | "streaming" | "unclosed" = "closed") {
+  return {
+    code,
+    language: "scott-inline-vis",
+    status,
+    index: 0,
+    message: inlineVisMessage,
+    Original: FenceSource,
+  };
+}
+
+function inlineVisFence() {
+  const fence = app.codeFenceRenderers.find((item) => item.id === "inline-vis");
+  expect(fence).toBeDefined();
+  return fence!;
+}
+
+test("a fenced fragment shows progress, then renders in the runtime when the fence closes", async () => {
+  const fence = inlineVisFence();
+  const slot = renderSlot(fence, fenceProps('<div id="viz">Hi', "streaming"), {
+    pluginId: "scott-inline-vis",
+    sdk: {},
+  });
+  expect(await slot.findByText("Writing visualization…")).toBeTruthy();
+  expect(slot.container.querySelector("iframe")).toBeNull();
+
+  slot.lifecycle.rerender(<fence.component {...fenceProps('<div id="viz">Hi</div>')} />);
+  const { iframe, html } = await connectFrame(slot);
+  expect(iframe.getAttribute("src")).toBe(FRAME_URL);
+  expect(iframe.getAttribute("sandbox")).toBe("allow-scripts");
+  const parsed = new DOMParser().parseFromString(html, "text/html");
+  expect(parsed.querySelector("#viz")?.textContent).toBe("Hi");
+  expect(parsed.querySelector("base")).toBeNull();
+  expect(parsed.querySelector("style")?.textContent).toContain("--viz-series-1");
+  expect(parsed.head.querySelector("script")?.textContent).toContain('"bb"');
+  expect(slot.getByRole("button", { name: "Collapse visualization HTML block 1" })).toBeTruthy();
+  // Nothing is read from a host or saved: the block is the whole page.
+  expect(slot.sdkCalls).toEqual([]);
+  expect(slot.inspection.rpcCalls).toEqual([]);
+  slot.unmount();
+});
+
+test("an interrupted or empty fenced block stays bb's code block", () => {
+  const fence = inlineVisFence();
+  for (const props of [fenceProps("<p>Half", "unclosed"), fenceProps("  \n")]) {
+    const slot = renderSlot(fence, props, { pluginId: "scott-inline-vis", sdk: {} });
+    expect(slot.getByTestId("fence-source")).toBeTruthy();
+    expect(slot.container.querySelector("figure")).toBeNull();
+    slot.unmount();
+  }
+});
+
+test("a fenced fragment keeps state in memory, sends follow-ups, and reveals its source", async () => {
+  setUserActivation(true);
+  const fence = inlineVisFence();
+  const { slot, send } = await connectFrame(
+    renderSlot(fence, fenceProps("<p>Ask</p>"), {
+      pluginId: "scott-inline-vis",
+      sdk: {},
+      composer: { text: "Draft" },
+    }),
+  );
+  send({ type: "bb:inline-vis:state", state: '{"tab":"latency"}' });
+  send({
+    type: "bb:inline-vis:tweak",
+    groups: [
+      {
+        id: "tweak-chart",
+        title: "Chart",
+        variant: null,
+        visible: true,
+        controls: [
+          { id: "toggle:grid", label: "Grid", type: "toggle", value: false, initialValue: true },
+        ],
+      },
+    ],
+    original: false,
+    changed: true,
+  });
+  send({ type: "bb:inline-vis:follow-up", prompt: "Explain this chart" });
+  await waitFor(() => expect(slot.inspection.composer.text).toBe("Draft\n\nExplain this chart"));
+  expect(statePills(slot)).toEqual([]);
+  expect(slot.inspection.rpcCalls).toEqual([]);
+  expect(slot.queryByRole("button", { name: "Use saved state" })).toBeNull();
+  expect(slot.queryByRole("button", { name: /in sidebar$/u })).toBeNull();
+
+  fireEvent.click(slot.getByRole("button", { name: "Tweak" }));
+  expect(slot.getByText("Adjust the preview. Changes here are not saved.")).toBeTruthy();
+  expect(slot.queryByRole("button", { name: "Add changes to chat" })).toBeNull();
+
+  expect(slot.queryByTestId("fence-source")).toBeNull();
+  fireEvent.click(slot.getByRole("button", { name: "Show source" }));
+  expect(slot.getByTestId("fence-source")).toBeTruthy();
+  expect(slot.getByRole("button", { name: "Hide source" }).getAttribute("aria-pressed")).toBe(
+    "true",
+  );
+  slot.unmount();
+});
+
+test("a fenced full document keeps its own markup without the fragment runtime", async () => {
+  const fence = inlineVisFence();
+  const slot = renderSlot(
+    fence,
+    fenceProps("<!doctype html><html><body><p>Doc</p></body></html>"),
+    {
+      pluginId: "scott-inline-vis",
+      sdk: {},
+    },
+  );
+  const { iframe, html } = await waitFor(() => {
+    const element = slot.container.querySelector("iframe");
+    const delivered = frameDocument(element);
+    expect(delivered).toBeTruthy();
+    return { iframe: element!, html: delivered! };
+  });
+  expect(iframe.getAttribute("src")).toBe(FRAME_URL);
+  expect(iframe.style.height).toBe("224px");
+  expect(html).toContain("<p>Doc</p>");
+  expect(html).toContain("bb:inline-vis:escape");
+  expect(html).not.toContain("--viz-series-1");
   slot.unmount();
 });

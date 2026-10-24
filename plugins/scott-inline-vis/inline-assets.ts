@@ -349,6 +349,20 @@ export function prepareInlineAssets(
 }
 
 /**
+ * Build the frame document for HTML written in a reply. It has no directory,
+ * so relative URLs stay as written and no local media is fetched for it.
+ */
+export function prepareInlineDocument(
+  html: string,
+  prepare?: (document: Document, token: string) => void,
+): { html: string; assets: InlinePreviewAsset[]; token: string } {
+  const document = new DOMParser().parseFromString(html, "text/html");
+  const token = crypto.randomUUID();
+  (prepare ?? injectWideEscapeBridge)(document, token);
+  return { html: `<!doctype html>\n${document.documentElement.outerHTML}`, assets: [], token };
+}
+
+/**
  * A <video> without metadata is 150px tall at any width, then jumps to its
  * real height. Hold the size the app saw before, or 16:9, the usual recording
  * shape, until the app or the decoder reports the real size. Width and height
