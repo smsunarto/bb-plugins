@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.2.1](https://github.com/smsunarto/bb-plugins/compare/gitbutler/v0.2.0...gitbutler/v0.2.1) (2026-10-24)
+
+
+### Bug Fixes
+
+* **gtd-sidebar,gitbutler:** resolve core from the local workspace ([e89b7cc](https://github.com/smsunarto/bb-plugins/commit/e89b7ccbb3ba90c11b1e1e99fe9b8f9e6b7e6a4f))
+
+
+### Performance Improvements
+
+* **code-review:** load branch cards from their checkout ([413b563](https://github.com/smsunarto/bb-plugins/commit/413b563d3fc5bc8814698d9c196c2f89f2ca1f4d))
+
 ## [0.2.0](https://github.com/smsunarto/bb-plugins/compare/gitbutler/v0.1.0...gitbutler/v0.2.0) (2026-10-21)
 
 
