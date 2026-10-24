@@ -1,6 +1,8 @@
 import { reviewFiles } from "../../../.storybook/fixtures";
 import { screenParameters } from "../../../.storybook/layout";
 import type { Meta, StoryObj } from "@storybook/react-vite";
+import type { ExperimentalThreadActionTabProps } from "@get-bb/plugin-sdk/app";
+import type { ComponentType } from "react";
 import { RegisteredSurface } from "../../../.storybook/host";
 import { shows } from "../../../.storybook/ready";
 const source = () => import("../app");
@@ -118,7 +120,8 @@ const meta = {
   args: {
     source,
     select: (app) => {
-      const Panel = app.threadPanelActions[0]!.component;
+      const Panel = app.tabs.find((tab) => tab.id === "stack")!
+        .component as ComponentType<ExperimentalThreadActionTabProps>;
       return <Panel threadId="thr_story" params={null} />;
     },
   },
