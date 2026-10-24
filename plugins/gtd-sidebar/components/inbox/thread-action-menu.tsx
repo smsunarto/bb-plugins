@@ -32,9 +32,7 @@ const SHARED_LAYER_CLASS = cn(
 export function CompactThreadActionMenu({
   plan,
   thread,
-  command,
   rename,
-  canSplit,
   open,
   onOpenChange,
   anchorRef,
@@ -141,11 +139,9 @@ export function CompactThreadActionMenu({
           >
             <ThreadMenuActions
               thread={thread}
-              command={command}
               plan={plan}
               rename={rename}
               compact
-              canSplit={canSplit}
               haptics={!scrollable}
               closeMenu={() => onOpenChange(false)}
             />

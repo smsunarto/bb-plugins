@@ -6,19 +6,10 @@ export type ActiveThreadShelf = "pinned" | "nextAction" | "waiting";
 export const SNOOZE_TOMORROW_LABEL = "Snooze until tomorrow";
 
 export type RowCommand =
-  | {
-      kind: "open";
-      threadId: string;
-      shelf: ActiveThreadShelf | "snoozed" | "settled";
-      split: boolean;
-    }
-  | { kind: "open-in-split"; threadId: string }
+  | { kind: "open"; threadId: string; split: boolean }
   | { kind: "settle"; threadId: string }
   | { kind: "snooze"; threadId: string; until: number }
-  | { kind: "restore"; threadId: string; shelf: "snoozed" | "settled" }
-  | { kind: "pin"; threadId: string; pinned: boolean }
-  | { kind: "set-read"; threadId: string; read: boolean }
-  | { kind: "request-delete"; threadId: string };
+  | { kind: "restore"; threadId: string; shelf: "snoozed" | "settled" };
 
 export type DispatchRowCommand = (command: RowCommand) => void;
 
@@ -32,37 +23,24 @@ export type RowLifecycleState =
   | { kind: "snoozed"; wakeNow: () => void }
   | { kind: "settled"; unsettle: () => void };
 
-export type ThreadActionId =
-  | "settle"
-  | "snooze-tomorrow"
-  | "wake-now"
-  | "unsettle"
-  | "toggle-pin"
-  | "request-delete";
+export type ThreadActionId = "settle" | "snooze-tomorrow" | "wake-now" | "unsettle";
 
 export interface ThreadAction {
   id: ThreadActionId;
   label: string;
   icon: IconName;
   execute: () => void;
-  destructive?: boolean;
 }
 
 /**
- * GTD lifecycle actions, then pin and delete. Both menus insert BB's
- * navigation and organization actions through ThreadMenuActions.
- * The card's hover buttons pick single entries out of it.
+ * The GTD lifecycle moves for one row. Both menus lead with them, then list
+ * bb's thread actions (split, copy link, pin, read, rename, delete, and every
+ * plugin's) from its registry through ThreadMenuActions. The card's hover
+ * buttons pick single entries out of it.
  */
 export type ThreadActionPlan = readonly ThreadAction[];
 
-export interface BuildThreadActionPlanOptions {
-  lifecycle: RowLifecycleState;
-  isPinned: boolean;
-  setPinned: (pinned: boolean) => void;
-  requestDelete: () => void;
-}
-
-function lifecycleActions(lifecycle: RowLifecycleState): ThreadAction[] {
+export function buildThreadActionPlan(lifecycle: RowLifecycleState): ThreadActionPlan {
   switch (lifecycle.kind) {
     case "active": {
       // Settle is bb's archive, which bb offers on every thread, so it is not
@@ -94,30 +72,6 @@ function lifecycleActions(lifecycle: RowLifecycleState): ThreadAction[] {
         },
       ];
   }
-}
-
-export function buildThreadActionPlan({
-  lifecycle,
-  isPinned,
-  setPinned,
-  requestDelete,
-}: BuildThreadActionPlanOptions): ThreadActionPlan {
-  return [
-    ...lifecycleActions(lifecycle),
-    {
-      id: "toggle-pin",
-      label: isPinned ? "Unpin" : "Pin",
-      icon: isPinned ? "PinOff" : "Pin",
-      execute: () => setPinned(!isPinned),
-    },
-    {
-      id: "request-delete",
-      label: "Delete",
-      icon: "Delete",
-      execute: requestDelete,
-      destructive: true,
-    },
-  ];
 }
 
 export function findThreadAction(
