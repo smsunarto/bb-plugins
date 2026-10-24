@@ -1036,7 +1036,7 @@ describe("thread activity", () => {
       isThreadWorking(
         sidebarThread({
           status: "active",
-          runtimeStatus: "host-reconnecting",
+          runtimeStatus: "waiting-for-host",
           indicator: "waiting-for-input",
           hasPendingInteraction: true,
         }),
