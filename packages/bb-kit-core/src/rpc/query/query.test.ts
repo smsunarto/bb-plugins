@@ -306,3 +306,67 @@ test("PluginQueryBoundary uses a provided client instead of the shared one", asy
   // Drop the external client's gcTime timers so the process can exit.
   provided.clear();
 });
+
+test("outside a PluginQueryBoundary the accessors share pluginQueryClient", async () => {
+  // A hook slot such as a nav panel badge has no component root to wrap.
+  function useOverviewTotal(): number | null {
+    const overview = rpc.overview.useQuery({ staleTime: Infinity });
+    return overview.data?.total ?? null;
+  }
+  function Badge() {
+    return createElement("div", null, `badge:${useOverviewTotal() ?? "none"}`);
+  }
+  const badge = renderSlot({ component: Badge }, {}, { rpc: { overview: () => ({ total: 3 }) } });
+  await badge.findByText("badge:3");
+  assert.deepEqual(badge.rpcCalls, [{ method: "overview", input: null }]);
+  badge.unmount();
+  // A boundary-wrapped panel reads the same cache entry instead of fetching.
+  function OverviewPanel() {
+    return createElement("div", null, `panel:${useOverviewTotal() ?? "none"}`);
+  }
+  const panel = renderSlot({ component: boundary(createElement(OverviewPanel)) }, {}, { rpc: {} });
+  await panel.findByText("panel:3");
+  assert.equal(panel.rpcCalls.length, 0);
+  panel.unmount();
+});
+
+test("useMutation works outside a PluginQueryBoundary", async () => {
+  function SaveButton() {
+    const save = rpc.saveFile.useMutation();
+    const fired = useRef(false);
+    useEffect(() => {
+      if (!fired.current) {
+        fired.current = true;
+        save.mutate({ path: "a.md" });
+      }
+    }, [save]);
+    return createElement("div", null, save.status === "success" ? "saved" : save.status);
+  }
+  const slot = renderSlot(
+    { component: SaveButton },
+    {},
+    { rpc: { saveFile: () => ({ saved: true }) } },
+  );
+  await slot.findByText("saved");
+  assert.deepEqual(slot.rpcCalls, [{ method: "saveFile", input: { path: "a.md" } }]);
+  slot.unmount();
+});
+
+test("outside a PluginQueryBoundary a query paused offline resumes on reconnect", async () => {
+  const { onlineManager } = await import("@tanstack/react-query");
+  // Only a hook slot reads the shared client, so no QueryClientProvider mounts it.
+  onlineManager.setOnline(false);
+  try {
+    function Badge() {
+      const overview = rpc.overview.useQuery({ staleTime: Infinity });
+      return createElement("div", null, `badge:${overview.data?.total ?? overview.fetchStatus}`);
+    }
+    const badge = renderSlot({ component: Badge }, {}, { rpc: { overview: () => ({ total: 7 }) } });
+    await badge.findByText("badge:paused");
+    onlineManager.setOnline(true);
+    await badge.findByText("badge:7");
+    badge.unmount();
+  } finally {
+    onlineManager.setOnline(true);
+  }
+});
