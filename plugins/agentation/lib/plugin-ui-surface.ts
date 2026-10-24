@@ -8,7 +8,7 @@
 // agent should inspect instead of the old catch-all `inline` label.
 
 import { panelPluginIdFromRoute } from "./route.ts";
-import { PUBLIC_SURFACE_BY_SLOT_KIND } from "./plugin-ui-surface-map.ts";
+import { PUBLIC_SURFACE_BY_SLOT_KIND, WRAPPER_SLOT_KINDS } from "./plugin-ui-surface-map.ts";
 
 export interface PluginUiSurfaceContext {
   pluginId: string | null;
@@ -37,6 +37,8 @@ type PluginRecord = {
 
 const REACT_FIBER_PREFIXES = ["__reactFiber$", "__reactInternalInstance$"] as const;
 const MAX_FIBER_DEPTH = 80;
+/** The owner bb gives its own entries in the shared thread action registry. */
+const CORE_THREAD_ACTION_OWNER = "bb--core";
 
 function asRecord(value: unknown): Record<string, unknown> | null {
   return typeof value === "object" && value !== null ? (value as Record<string, unknown>) : null;
@@ -67,27 +69,6 @@ function publicSurface(slotKind: string): string {
   );
 }
 
-/** The nearest bb plugin component boundary in this element's React ancestry. */
-function componentBoundaryFor(element: Element): PluginUiSurfaceContext | null {
-  let fiber = fiberFromElement(element);
-  let depth = 0;
-  while (fiber && depth < MAX_FIBER_DEPTH) {
-    const props = asRecord(fiber.memoizedProps);
-    const pluginId = nonEmptyString(props?.pluginId);
-    const slotKind = nonEmptyString(props?.slotKind);
-    if (pluginId && slotKind) {
-      return {
-        pluginId,
-        surface: publicSurface(slotKind),
-        surfaceId: nonEmptyString(props?.slotId),
-      };
-    }
-    fiber = fiber.return ?? null;
-    depth += 1;
-  }
-  return null;
-}
-
 function pluginRecord(value: unknown): PluginRecord | null {
   const record = asRecord(value);
   const pluginId = nonEmptyString(record?.pluginId);
@@ -102,34 +83,89 @@ function pluginRecord(value: unknown): PluginRecord | null {
 }
 
 /**
- * Host-rendered registrations do not get a plugin component boundary. Their
- * descriptor remains in an ancestor's props, so collect only direct records
- * and arrays from that ancestry; walking arbitrary object graphs would enter
- * React elements and application state.
+ * A plugin's `experimental_threadAction` entry, as bb hands it to each menu row
+ * and sidebar row button: `{ key: "<pluginId>/<id>", pluginId, group, action }`.
+ * bb's own actions share the registry under a reserved owner and are skipped.
  */
-function pluginRecordsFromFiber(element: Element): PluginRecord[] {
+function threadActionEntry(value: unknown): PluginUiSurfaceContext | null {
+  const record = asRecord(value);
+  const pluginId = nonEmptyString(record?.pluginId);
+  const key = nonEmptyString(record?.key);
+  if (!pluginId || !key || pluginId === CORE_THREAD_ACTION_OWNER) return null;
+  if (typeof record?.group !== "string" || !nonEmptyString(asRecord(record.action)?.label)) {
+    return null;
+  }
+  const prefix = `${pluginId}/`;
+  const actionId = key.startsWith(prefix) ? nonEmptyString(key.slice(prefix.length)) : null;
+  return actionId ? { pluginId, surface: "experimental_threadAction", surfaceId: actionId } : null;
+}
+
+interface ReactOwnership {
+  /** The nearest bb plugin component boundary, if any. */
+  boundary: PluginUiSurfaceContext | null;
+  /** A plugin thread action drawn between the element and that boundary. */
+  threadAction: PluginUiSurfaceContext | null;
+  /**
+   * Host-rendered registration descriptors between the element and that
+   * boundary. Host-rendered registrations do not get a component boundary;
+   * their descriptor remains in an ancestor's props, so collect only direct
+   * records and arrays; walking arbitrary object graphs would enter React
+   * elements and application state.
+   */
+  records: PluginRecord[];
+}
+
+/** Collect one fiber's direct plugin records; return a thread action entry among them. */
+function collectFiberRecords(
+  props: Record<string, unknown>,
+  records: PluginRecord[],
+): PluginUiSurfaceContext | null {
+  let threadAction: PluginUiSurfaceContext | null = null;
+  for (const value of Object.values(props)) {
+    const items = Array.isArray(value) ? value : [value];
+    if (!Array.isArray(value)) threadAction ??= threadActionEntry(value);
+    for (const item of items) {
+      const candidate = pluginRecord(item);
+      if (candidate) records.push(candidate);
+    }
+  }
+  return threadAction;
+}
+
+/**
+ * Walk the element's React ancestry to the nearest plugin component boundary.
+ * Host-rendered items another plugin draws, such as thread actions in the
+ * Thread List plugin's menus or message actions in a side chat, sit inside
+ * the drawing plugin's boundary, so what the walk meets first wins.
+ */
+function reactOwnershipFor(element: Element): ReactOwnership {
   const records: PluginRecord[] = [];
+  let threadAction: PluginUiSurfaceContext | null = null;
   let fiber = fiberFromElement(element);
   let depth = 0;
   while (fiber && depth < MAX_FIBER_DEPTH) {
     const props = asRecord(fiber.memoizedProps);
+    const pluginId = nonEmptyString(props?.pluginId);
+    const slotKind = nonEmptyString(props?.slotKind);
+    if (pluginId && slotKind && !WRAPPER_SLOT_KINDS.has(slotKind)) {
+      return {
+        boundary: {
+          pluginId,
+          surface: publicSurface(slotKind),
+          surfaceId: nonEmptyString(props?.slotId),
+        },
+        threadAction,
+        records,
+      };
+    }
     if (props) {
-      for (const value of Object.values(props)) {
-        if (Array.isArray(value)) {
-          for (const item of value) {
-            const candidate = pluginRecord(item);
-            if (candidate) records.push(candidate);
-          }
-          continue;
-        }
-        const candidate = pluginRecord(value);
-        if (candidate) records.push(candidate);
-      }
+      const found = collectFiberRecords(props, records);
+      threadAction ??= found;
     }
     fiber = fiber.return ?? null;
     depth += 1;
   }
-  return records;
+  return { boundary: null, threadAction, records };
 }
 
 function targetLabels(element: Element): Set<string> {
@@ -161,9 +197,11 @@ function prefixedRegistrationId(record: PluginRecord, prefix: string): string | 
     : null;
 }
 
-function hostRenderedActionFor(element: Element): PluginUiSurfaceContext | null {
+function hostRenderedActionFor(
+  element: Element,
+  records: readonly PluginRecord[],
+): PluginUiSurfaceContext | null {
   const labels = targetLabels(element);
-  const records = pluginRecordsFromFiber(element);
 
   const footer = element.closest<HTMLElement>("[data-testid^='plugin-sidebar-footer-action-']");
   const footerTestId = footer?.getAttribute("data-testid") ?? null;
@@ -190,7 +228,7 @@ function hostRenderedActionFor(element: Element): PluginUiSurfaceContext | null 
   if (panelAction) {
     return {
       pluginId: panelAction.pluginId,
-      surface: "threadPanelAction.run",
+      surface: "experimental_tab.run",
       surfaceId: prefixedRegistrationId(panelAction, "plugin-action"),
     };
   }
@@ -240,6 +278,24 @@ function pluginIdFromAssetUrl(rawUrl: string | null): string | null {
   }
 }
 
+/**
+ * A nav panel's `headerContent`. bb draws it in the page chrome, outside every
+ * component boundary, under a host component that holds the panel record.
+ */
+function navPanelHeaderFor(element: Element, pluginId: string): PluginUiSurfaceContext | null {
+  let fiber = fiberFromElement(element);
+  let depth = 0;
+  while (fiber && depth < MAX_FIBER_DEPTH) {
+    const panel = asRecord(asRecord(fiber.memoizedProps)?.panel);
+    if (panel?.pluginId === pluginId && panel.headerContent != null) {
+      return { pluginId, surface: "navPanel.headerContent", surfaceId: nonEmptyString(panel.id) };
+    }
+    fiber = fiber.return ?? null;
+    depth += 1;
+  }
+  return null;
+}
+
 /** Host-rendered sidebar rows from bb before 0.44, which had no navigation plugin. */
 function navPanelRowFor(element: Element): PluginUiSurfaceContext | null {
   if (!element.closest("[data-testid='plugin-nav-sidebar-items']")) return null;
@@ -266,7 +322,20 @@ function navPanelRowFor(element: Element): PluginUiSurfaceContext | null {
 export function pluginUiSurfaceFor(element: Element | null, route: string): PluginUiSurfaceContext {
   if (!element) return { pluginId: null, surface: null, surfaceId: null };
 
-  const boundary = componentBoundaryFor(element);
+  // Decorations paint text inside the composer, which bb 0.47 draws as its
+  // bundled Composer plugin, so the marker is always nearer than a boundary.
+  const richTextDecoration = element.closest<HTMLElement>("[data-bb-plugin-decoration]");
+  const richTextPluginId = richTextDecoration?.getAttribute("data-bb-plugin-decoration") ?? null;
+  if (richTextPluginId) {
+    return { pluginId: richTextPluginId, surface: "composer.richText", surfaceId: null };
+  }
+
+  const { boundary, threadAction, records } = reactOwnershipFor(element);
+  if (threadAction) return threadAction;
+
+  const hostAction = hostRenderedActionFor(element, records);
+  if (hostAction) return hostAction;
+
   if (boundary?.surface === PUBLIC_SURFACE_BY_SLOT_KIND.sidebarNavigation) {
     // bb's bundled Navigation plugin marks each row; other navigation plugins
     // may not, and then only the drawing plugin is known.
@@ -276,21 +345,12 @@ export function pluginUiSurfaceFor(element: Element | null, route: string): Plug
   }
   if (boundary) return boundary;
 
-  const richTextDecoration = element.closest<HTMLElement>("[data-bb-plugin-decoration]");
-  const richTextPluginId = richTextDecoration?.getAttribute("data-bb-plugin-decoration") ?? null;
-  if (richTextPluginId) {
-    return { pluginId: richTextPluginId, surface: "composer.richText", surfaceId: null };
-  }
-
   const composerAction = element.closest<HTMLElement>("[data-plugin-composer-action-plugin]");
   const composerActionPluginId =
     composerAction?.getAttribute("data-plugin-composer-action-plugin") ?? null;
   if (composerActionPluginId) {
     return { pluginId: composerActionPluginId, surface: "composer.actions", surfaceId: null };
   }
-
-  const hostAction = hostRenderedActionFor(element);
-  if (hostAction) return hostAction;
 
   const navRow = navPanelRowFor(element);
   if (navRow) return navRow;
@@ -299,9 +359,8 @@ export function pluginUiSurfaceFor(element: Element | null, route: string): Plug
   const pluginId = owner?.getAttribute("data-bb-plugin") ?? null;
   if (!pluginId) return { pluginId: null, surface: null, surfaceId: null };
 
-  if (element.closest("[data-testid='app-page-header-content-row']")) {
-    return { pluginId, surface: "navPanel.headerContent", surfaceId: null };
-  }
+  const header = navPanelHeaderFor(element, pluginId);
+  if (header) return header;
   if (element.closest("[data-bb-portaled-overlay]")) {
     return { pluginId, surface: "overlay", surfaceId: null };
   }

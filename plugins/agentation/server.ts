@@ -35,6 +35,7 @@ import {
 import { STREAM_HEARTBEAT_MS, STREAM_RETRY_MS } from "./lib/event-stream.ts";
 import { projectIdFromRoute, threadIdFromRoute } from "./lib/route.ts";
 import {
+  ANNOTATION_MENTION_PROVIDER,
   annotationMentionItemId,
   annotationMatchesMentionQuery,
   annotationMentionLabel,
@@ -290,7 +291,7 @@ export default async function plugin(bb: BbPluginApi) {
   }
 
   bb.ui.registerMentionProvider({
-    id: "annotation",
+    id: ANNOTATION_MENTION_PROVIDER,
     label: "Annotations",
     async search({ query, threadId }) {
       const annotations = listAnnotations(db, { limit: null })
