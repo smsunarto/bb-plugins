@@ -16,6 +16,28 @@
 - Reopen the toolbar's event stream when it closes for good (a plugin reload, a server restart, the tunnel's offline page) or goes silent past two heartbeats, instead of polling every 4 seconds until the page reloads. The healthy safety-net poll drops from 30 seconds to 5 minutes, toolbars skip pulls for other pages' changes, and an unchanged pull no longer carries the annotation list.
 - The review panel, its header, and every staged-annotation banner share one request per change and skip changes that cannot affect them. Panel actions show their result at once instead of waiting for a refetch.
 
+## [0.4.0](https://github.com/smsunarto/bb-plugins/compare/agentation/v0.3.0...agentation/v0.4.0) (2026-10-24)
+
+
+### Features
+
+* **agentation:** attribute bb 0.44 sidebar surfaces to their owner plugin ([da925e2](https://github.com/smsunarto/bb-plugins/commit/da925e23c98c4e3cdd086ee954b36904b3a9cf9e))
+* **agentation:** make the RPC contract discoverable ([7fcbbaf](https://github.com/smsunarto/bb-plugins/commit/7fcbbaf0a81f5b215d25c58c985a40cf1b226cfb))
+* **agentation:** map overlay, browser toolbar, and timeline surfaces ([708bed4](https://github.com/smsunarto/bb-plugins/commit/708bed4bc6e9dcf9a8a5169327dc08f5ab83e749))
+
+
+### Bug Fixes
+
+* **agentation:** keep turn assignments while their thread is mid-turn ([beb1d37](https://github.com/smsunarto/bb-plugins/commit/beb1d3727dfdcaa25dca805fe1070698b8159479))
+* **gtd-sidebar,gitbutler:** resolve core from the local workspace ([e89b7cc](https://github.com/smsunarto/bb-plugins/commit/e89b7ccbb3ba90c11b1e1e99fe9b8f9e6b7e6a4f))
+* **kitchen-sink,agentation:** play the completion sound in the browser and resolve embeds on the thread's host ([21b4bce](https://github.com/smsunarto/bb-plugins/commit/21b4bce93fdc4395d0ac6c8e72eb31ce1e16412a))
+* **scott-engineering:** stop Arena rewrites repeating card labels ([69a5eb8](https://github.com/smsunarto/bb-plugins/commit/69a5eb8eaafc43c3d44c61e05bcc24ea6c6d2776))
+
+
+### Performance Improvements
+
+* **agentation:** supervise the toolbar event stream and share snapshot reads ([2fb9621](https://github.com/smsunarto/bb-plugins/commit/2fb962155dacabace068273264ad0111eb8e8fed))
+
 ## [0.3.0](https://github.com/smsunarto/bb-plugins/compare/agentation/v0.2.3...agentation/v0.3.0) (2026-09-15)
 
 ### Features
