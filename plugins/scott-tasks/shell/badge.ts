@@ -1,8 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useRealtime, useRealtimeConnectionState } from "@get-bb/plugin-sdk/app";
+import {
+  useRealtime,
+  useRealtimeConnectionState,
+  type ExperimentalBadge,
+} from "@get-bb/plugin-sdk/app";
 import { useTasksRpc } from "./data.js";
 
-export function TasksSidebarAccessory() {
+export function useTasksBadge(): ExperimentalBadge | null {
   const rpc = useTasksRpc();
   const rpcRef = useRef(rpc);
   rpcRef.current = rpc;
@@ -51,7 +55,9 @@ export function TasksSidebarAccessory() {
   useRealtime("tasks:changed", refresh);
   useRealtime("projects:changed", refresh);
 
-  return count === null || count === 0 ? null : (
-    <span className="text-muted-foreground tabular-nums">{count}</span>
-  );
+  if (count === null || count === 0) return null;
+  return {
+    count,
+    label: count === 1 ? "1 open task" : `${count} open tasks`,
+  };
 }

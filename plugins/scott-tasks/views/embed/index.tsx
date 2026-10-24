@@ -1,5 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { PluginMessageDirectiveProps, PluginThreadPanelProps } from "@get-bb/plugin-sdk";
+import type {
+  ExperimentalThreadActionTabProps,
+  PluginMessageDirectiveProps,
+} from "@get-bb/plugin-sdk";
 import { useBbNavigate, useRealtime } from "@get-bb/plugin-sdk/app";
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
@@ -230,7 +233,7 @@ export function TaskDirectiveCard({ attributes }: PluginMessageDirectiveProps) {
   );
 }
 
-function TaskEmbedPanelContent({ params }: PluginThreadPanelProps) {
+function TaskEmbedPanelContent({ params }: ExperimentalThreadActionTabProps) {
   const taskKey = isRecord(params) && typeof params.taskKey === "string" ? params.taskKey : null;
   if (taskKey === null || !TASK_KEY_PATTERN.test(taskKey.trim())) {
     return (
@@ -257,7 +260,7 @@ function TaskEmbedPanelContent({ params }: PluginThreadPanelProps) {
   );
 }
 
-export function TaskEmbedPanel(props: PluginThreadPanelProps) {
+export function TaskEmbedPanel(props: ExperimentalThreadActionTabProps) {
   return (
     <TasksRefreshProvider>
       <TaskEmbedPanelContent {...props} />
