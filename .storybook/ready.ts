@@ -5,10 +5,10 @@ export async function ready({ canvasElement }: { canvasElement: HTMLElement }) {
     () => {
       const host = canvasElement.querySelector("[data-storybook-host]");
       // renderSlot always appends a container, even when its React root is blank.
-      const content = host?.firstElementChild;
+      const content = host?.querySelector("[data-storybook-component]") ?? host?.firstElementChild;
       const dialog = canvasElement.ownerDocument.querySelector('[role="dialog"]');
       expect((content?.childElementCount ?? 0) + (dialog ? 1 : 0)).toBeGreaterThan(0);
-      expect(host?.textContent).not.toBe("Loading component…");
+      expect(content?.textContent).not.toBe("Loading component…");
     },
     { timeout: 15000 },
   );

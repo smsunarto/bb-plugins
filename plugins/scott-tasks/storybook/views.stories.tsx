@@ -226,7 +226,7 @@ function fixture(
 function TasksView({ view }: { view: "list" | "board" | "detail" | "manage" }) {
   return (
     <TasksRefreshProvider>
-      <div style={{ height: 700 }}>
+      <div style={{ height: "100%", minHeight: 0 }}>
         {view === "list" ? (
           <ListView projectId={projectId} />
         ) : view === "board" ? (

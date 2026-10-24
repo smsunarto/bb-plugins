@@ -137,8 +137,18 @@ loads its project configuration in a new session.
 
 ### Catalog coverage
 
-Every browser plugin has a catalog under its own `storybook/` directory. Use
-Storybook's width toolbar to preview 360px, 640px, and 1100px containers.
+Every browser plugin has a catalog under its own `storybook/` directory. Canvas
+previews place plugin content in BB editor surroundings: navigation pages, thread
+panels, messages, composer banners, and settings. The chrome is a local fixture
+based on BB's registered layouts; the active component remains production code
+running through the SDK test runtime. It does not run the BB app or its backend.
+
+Use the context toolbar to switch between **BB editor** and **Isolated component**.
+**Auto** uses editor context in Canvas and compact, isolated examples in Docs.
+Shared primitives and the theme catalog stay isolated. Use the width toolbar for
+360px, 640px, and 1100px content widths (wide side panels use 900px); drag a panel's
+divider or use its arrow keys to resize, then close and reopen it without losing
+its state. At narrow viewport sizes the preview prioritizes the active panel.
 The stories render production components; parent stories exercise their rendered internal
 helpers. States include loading, empty, populated, error, disabled, and selected
 where the component supports them.

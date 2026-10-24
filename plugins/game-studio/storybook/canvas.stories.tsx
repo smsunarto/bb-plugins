@@ -58,7 +58,7 @@ const board: Board = {
 function InteractiveCanvas(args: ComponentProps<typeof StudioCanvas>) {
   const [saved, setSaved] = useState({ board: args.board, revision: args.revision });
   return (
-    <div style={{ height: 720 }}>
+    <div style={{ height: "100%", minHeight: 0 }}>
       <StudioCanvas
         {...args}
         {...saved}

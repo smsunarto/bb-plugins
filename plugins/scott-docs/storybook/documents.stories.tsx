@@ -80,6 +80,7 @@ const meta = {
   args: { source, select: (app) => nav(app, "personal", "navigation") },
   parameters: {
     ...screenParameters,
+    editorContext: { placement: "page-panel", title: "Docs", tab: "Navigation" },
     host: { pluginId: "scott-docs", rpc: { listNotes: () => listing } },
   },
 } satisfies Meta<typeof RegisteredSurface>;
@@ -116,6 +117,7 @@ export const Offline: Story = {
 export const MarkdownEditor: Story = {
   args: { select: (app) => nav(app, "personal/design.md") },
   parameters: {
+    editorContext: { placement: "page", title: "Docs" },
     host: {
       rpc: {
         listNotes: () => listing,

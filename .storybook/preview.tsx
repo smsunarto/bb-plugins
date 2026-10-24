@@ -3,6 +3,8 @@ import { assertMonokai } from "./theme-checks";
 import type { Preview } from "@storybook/react-vite";
 import { registerCustomTheme } from "@pierre/diffs";
 import { monokaiCodeTheme, monokaiStorybookTheme } from "./monokai";
+import { editorContextFor, showsEditor } from "./editor-context";
+import { EditorFrame } from "./editor-frame";
 import { HostFixture } from "./host";
 import "./preview.css";
 import "../plugins/monokai/.storybook/preview.css";
@@ -12,10 +14,33 @@ import "../plugins/monokai/themes/bb-monokai.css";
 document.documentElement.classList.add("dark");
 registerCustomTheme(monokaiCodeTheme.name, () => monokaiCodeTheme.theme);
 
+// Non-inline Docs examples are story-mode iframes nested inside the Docs preview.
+function isDocsIframe(): boolean {
+  try {
+    return (
+      window.parent !== window &&
+      new URL(window.parent.location.href).searchParams.get("viewMode") === "docs"
+    );
+  } catch {
+    return false;
+  }
+}
+
 const preview: Preview = {
   afterEach: assertMonokai,
-  initialGlobals: { width: "wide" },
+  initialGlobals: { width: "wide", context: "auto" },
   globalTypes: {
+    context: {
+      description: "Preview surroundings",
+      toolbar: {
+        icon: "browser",
+        items: [
+          { value: "auto", title: "BB editor · isolated in Docs" },
+          { value: "editor", title: "BB editor" },
+          { value: "isolated", title: "Isolated component" },
+        ],
+      },
+    },
     width: {
       description: "Component container width",
       toolbar: {
@@ -31,10 +56,24 @@ const preview: Preview = {
   decorators: [
     (Story, context) => {
       const scope = previewSurfaceClass(context.title);
+      const placement =
+        context.parameters.editorContext === false
+          ? undefined
+          : (context.parameters.editorContext ?? editorContextFor(context.title));
+      const editor =
+        placement && showsEditor(context.globals.context, context.viewMode, isDocsIframe());
+      const content = scope ? (
+        <div className={`sb-surface ${scope}`}>
+          <Story />
+        </div>
+      ) : (
+        <Story />
+      );
       return (
         <main
           className="dark sb-workspace"
           data-width={context.globals.width}
+          data-editor={editor ? "true" : undefined}
           data-layout={context.parameters.previewLayout}
         >
           <HostFixture
@@ -45,12 +84,12 @@ const preview: Preview = {
               context.viewMode !== "docs" || context.parameters.docs?.story?.inline === false
             }
           >
-            {scope ? (
-              <div className={`sb-surface ${scope}`}>
-                <Story />
-              </div>
+            {editor ? (
+              <EditorFrame context={placement} width={context.globals.width}>
+                {content}
+              </EditorFrame>
             ) : (
-              <Story />
+              content
             )}
           </HostFixture>
         </main>

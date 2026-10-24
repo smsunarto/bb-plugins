@@ -86,17 +86,23 @@ const meta = {
   title: "Screens/Prompt Editor/Tools and files",
   component: RegisteredSurface,
   args: { source, select: (app) => nav(app, "", "plugins") },
-  parameters: { ...screenParameters, host: { pluginId: "prompt-editor", rpc } },
+  parameters: {
+    ...screenParameters,
+    editorContext: { placement: "page-panel", title: "Prompt Editor", tab: "Plugins" },
+    host: { pluginId: "prompt-editor", rpc },
+  },
 } satisfies Meta<typeof RegisteredSurface>;
 export default meta;
 type Story = StoryObj<typeof meta>;
 export const ToolBrowser: Story = { play: shows("Code Review") };
 export const FileEditor: Story = {
+  parameters: { editorContext: { placement: "page", title: "Prompt Editor" } },
   args: {
     select: (app) => nav(app, "code-review/file/instructions/tools/code_review_share_changes.md"),
   },
 };
 export const NoSelection: Story = {
+  parameters: { editorContext: { placement: "page", title: "Prompt Editor" } },
   args: { select: (app) => nav(app) },
   play: shows("Pick a tool, prompt, or skill in the Plugins tab."),
 };
