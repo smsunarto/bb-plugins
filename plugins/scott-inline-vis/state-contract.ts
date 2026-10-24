@@ -2,6 +2,8 @@ import { defineRpcContract } from "@get-bb/plugin-sdk";
 import { z } from "zod";
 
 export const MAX_STATE_BYTES = 16 * 1024;
+/** Mention provider for saved state pills, shared by the app and server. */
+export const WIDGET_STATE_MENTION_PROVIDER = "widget-state";
 export const MAX_STATE_MENTION_ID_LENGTH = 40_000;
 
 const identifierSchema = z

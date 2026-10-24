@@ -106,6 +106,19 @@
   outline-offset: -2px;
 }
 
+.inline-vis-icon[aria-pressed="true"] {
+  color: var(--foreground);
+}
+
+/* A fenced block still streaming into the reply. */
+.inline-vis-pending {
+  display: block;
+  padding: 0.75rem 1rem;
+  color: var(--muted-foreground);
+  font-family: var(--font-sans, system-ui, sans-serif);
+  font-size: 0.8125rem;
+}
+
 .inline-vis-frame {
   display: block;
   width: 100%;

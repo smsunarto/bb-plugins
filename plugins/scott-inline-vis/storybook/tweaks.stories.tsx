@@ -138,3 +138,5 @@ export const Saving: Story = { args: { saving: true } };
 export const ReadOnly: Story = { args: { readOnly: true } };
 export const Original: Story = { args: { original: true } };
 export const Empty: Story = { args: { groups: [] } };
+/** A fenced block's preview adjusts live but has no saved state to add to chat. */
+export const Unsaved: Story = { args: { onApply: undefined } };

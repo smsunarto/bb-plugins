@@ -4,6 +4,8 @@ import {
   Markdown,
   useBbNavigate,
   useSdk,
+  type ExperimentalCodeFenceRendererProps,
+  type PluginMessageDirectiveMessage,
   type PluginMessageDirectiveProps,
 } from "@get-bb/plugin-sdk/app";
 import {
@@ -25,6 +27,7 @@ import {
   INLINE_ASSET_READY,
   type InlineAssetMessage,
   prepareInlineAssets,
+  prepareInlineDocument,
   type InlinePreviewAsset,
 } from "./inline-assets.ts";
 import {
@@ -45,14 +48,31 @@ import { TweakPanel } from "./tweak-panel.tsx";
 import type { TweakGroup } from "./tweak-contract.ts";
 import { useWidgetState } from "./use-widget-state.ts";
 
+/**
+ * The fenced-block language this plugin renders. bb's built-in plugin claims
+ * `inline-vis`, and bb renders neither when two plugins claim one language.
+ */
+export const FENCE_LANGUAGE = "scott-inline-vis";
+
+/**
+ * What a card shows: a file on the thread host, or HTML written in the reply.
+ * `key` identifies it within its message, for remembered heights.
+ */
+type PreviewTarget = { label: string; key: string } & (
+  | { kind: "file"; file: string; height: string | undefined }
+  | { kind: "fence"; code: string }
+);
+
+/** The host file behind a ready preview. HTML written in the reply has none. */
+type PreviewLocation = { file: string; hostId: string; url: string };
+
 type LoadState =
   | { status: "loading" }
   | {
       status: "ready";
       kind: "html";
-      file: string;
-      hostId: string;
-      url: string;
+      label: string;
+      location: PreviewLocation | null;
       html?: string;
       assets: InlinePreviewAsset[];
       token?: string;
@@ -61,12 +81,13 @@ type LoadState =
   | {
       status: "ready";
       kind: "markdown";
-      file: string;
-      hostId: string;
-      url: string;
+      label: string;
+      location: PreviewLocation;
       content: string;
     }
   | { status: "error"; message: string };
+
+type SourceToggle = { shown: boolean; onToggle: () => void };
 
 export const DEFAULT_HEIGHT_PX = 224;
 export const MIN_HEIGHT_PX = 120;
@@ -92,19 +113,22 @@ export function parsePreviewHeight(value: string | undefined): number | null {
 }
 
 function PreviewHeader({
-  file,
+  label,
   expanded,
   onToggle,
   onOpen,
   onWide,
   wideTrigger,
+  sourceToggle,
 }: {
-  file: string;
+  label: string;
   expanded: boolean;
   onToggle: () => void;
   onOpen: (() => void) | null;
   onWide?: () => void;
   wideTrigger?: RefObject<HTMLButtonElement | null>;
+  /** HTML written in the reply has no file to open, so it reveals its source. */
+  sourceToggle?: SourceToggle;
 }) {
   // Upstream #4507 and #4538: the whole row toggles in place, and opening the
   // file is a separate trailing action so the two never look alike.
@@ -113,14 +137,14 @@ function PreviewHeader({
       <button
         type="button"
         className="inline-vis-toggle"
-        aria-label={`${expanded ? "Collapse" : "Expand"} visualization ${file}`}
+        aria-label={`${expanded ? "Collapse" : "Expand"} visualization ${label}`}
         aria-expanded={expanded}
         title={expanded ? "Collapse preview" : "Expand preview here"}
         onClick={onToggle}
       >
         <span className="inline-vis-label">inline-vis</span>
-        <span className="inline-vis-path" title={file}>
-          <bdi>{file}</bdi>
+        <span className="inline-vis-path" title={label}>
+          <bdi>{label}</bdi>
         </span>
         {/* Sized attributes keep icons small if they render before app.css applies. */}
         <svg
@@ -161,13 +185,36 @@ function PreviewHeader({
         // Hold the slot while loading so the row does not shift when it appears.
         expanded && <span aria-hidden="true" className="inline-vis-action" />
       )}
-      {onOpen === null ? (
+      {sourceToggle ? (
+        <button
+          type="button"
+          className="inline-vis-action inline-vis-icon"
+          aria-label={sourceToggle.shown ? "Hide source" : "Show source"}
+          aria-pressed={sourceToggle.shown}
+          title={sourceToggle.shown ? "Hide source" : "Show source"}
+          onClick={sourceToggle.onToggle}
+        >
+          <svg
+            aria-hidden="true"
+            width="14"
+            height="14"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <path d="m16 18 6-6-6-6M8 6l-6 6 6 6" />
+          </svg>
+        </button>
+      ) : onOpen === null ? (
         <span aria-hidden="true" className="inline-vis-action" />
       ) : (
         <button
           type="button"
           className="inline-vis-action inline-vis-icon inline-vis-open"
-          aria-label={`Open ${file} in sidebar`}
+          aria-label={`Open ${label} in sidebar`}
           title="Open in sidebar"
           onClick={onOpen}
         >
@@ -210,12 +257,7 @@ function Alert({
   );
 }
 
-function InlineVisDirective({
-  attributes,
-  source,
-  message,
-  openWorkspaceFile,
-}: PluginMessageDirectiveProps) {
+function InlineVisDirective({ attributes, source, message }: PluginMessageDirectiveProps) {
   const file = attributes.file?.trim() ?? "";
   const height = parsePreviewHeight(attributes.height);
   const previewSource = attributes.source?.trim();
@@ -241,15 +283,52 @@ function InlineVisDirective({
   return (
     <CollapsiblePreview
       key={`${message.threadId}:${message.id}:${file}`}
-      attributes={attributes}
+      target={{ kind: "file", label: file, key: file, file, height: attributes.height }}
       source={source}
       message={message}
-      openWorkspaceFile={openWorkspaceFile}
     />
   );
 }
 
-function CollapsiblePreview(props: PluginMessageDirectiveProps) {
+/**
+ * HTML written in the reply as a fenced block. bb keeps this instance for the
+ * whole stream, so the card registers once and loads when the fence closes.
+ */
+function InlineVisFence({
+  code,
+  language,
+  status,
+  index,
+  message,
+  Original,
+}: ExperimentalCodeFenceRendererProps) {
+  const [sourceShown, setSourceShown] = useState(false);
+  // An interrupted reply or an empty block stays bb's ordinary code block.
+  if (status === "unclosed" || (status === "closed" && !code.trim())) return <Original />;
+  const label = `HTML block ${index + 1}`;
+  return (
+    <>
+      <CollapsiblePreview
+        target={{ kind: "fence", label, key: `#${language}#${index}`, code }}
+        source={label}
+        message={message}
+        writing={status === "streaming"}
+        sourceToggle={{ shown: sourceShown, onToggle: () => setSourceShown(!sourceShown) }}
+      />
+      {sourceShown && <Original />}
+    </>
+  );
+}
+
+type PreviewProps = {
+  target: PreviewTarget;
+  /** Shown as the alert tooltip: the directive text, or the block's label. */
+  source: string;
+  message: PluginMessageDirectiveMessage;
+  sourceToggle?: SourceToggle;
+};
+
+function CollapsiblePreview({ writing = false, ...props }: PreviewProps & { writing?: boolean }) {
   const pluginId = experimental_usePluginId();
   const [expansion] = useState(() => createPreviewExpansion(`${pluginId}.inline-vis.collapsed`));
   const card = useRef<HTMLElement>(null);
@@ -260,15 +339,23 @@ function CollapsiblePreview(props: PluginMessageDirectiveProps) {
   );
   return (
     <figure ref={card} className="inline-vis-card">
-      {expanded ? (
+      {expanded && !writing ? (
         <ExpandedPreview {...props} onToggle={expansion.toggle} />
       ) : (
-        <PreviewHeader
-          file={props.attributes.file!.trim()}
-          expanded={false}
-          onToggle={expansion.toggle}
-          onOpen={null}
-        />
+        <>
+          <PreviewHeader
+            label={props.target.label}
+            expanded={expanded}
+            onToggle={expansion.toggle}
+            onOpen={null}
+            sourceToggle={props.sourceToggle}
+          />
+          {expanded && (
+            <output className="inline-vis-pending" aria-busy="true">
+              Writing visualization…
+            </output>
+          )}
+        </>
       )}
     </figure>
   );
@@ -295,8 +382,13 @@ function PreviewDocument({
   return (
     <iframe
       key={frameKey}
-      title={`inline-vis: ${preview.file}`}
-      src={preview.html === undefined ? preview.url : previewFrameUrl(pluginId)}
+      title={`inline-vis: ${preview.label}`}
+      // Only a prepared document lacks HTML, and only a host file skips preparation.
+      src={
+        preview.html === undefined && preview.location
+          ? preview.location.url
+          : previewFrameUrl(pluginId)
+      }
       ref={frame}
       sandbox="allow-scripts"
       // The opaque frame needs this for a video player's fullscreen button.
@@ -372,10 +464,11 @@ function useFragmentBridge(
       state.status !== "ready" ||
       state.kind !== "html" ||
       !state.token ||
+      !state.location ||
       state.assets.length === 0
     )
       return;
-    const token = state.token;
+    const { token, location } = state;
     const controller = new AbortController();
     // Media downloads while the frame loads, and each asset goes to the frame
     // as soon as it settles. A fragmented MP4 also streams while it downloads.
@@ -399,7 +492,7 @@ function useFragmentBridge(
     const sizes = videoSizeStore(pluginId);
     const load = (asset: InlinePreviewAsset) =>
       fetchInlineAsset(asset, controller.signal, (message) => {
-        if ("size" in message) sizes.write(videoSizeKey(state, asset.path), message.size);
+        if ("size" in message) sizes.write(videoSizeKey(location, asset.path), message.size);
         send(message);
       }).then(
         (blob) => send({ key: asset.key, blob }),
@@ -542,22 +635,115 @@ function WidgetStateNotice({
   return null;
 }
 
+type ReadyState = Extract<LoadState, { status: "ready" }>;
+
+/** Opens a preview's host file in bb's viewer. HTML written in the reply has none. */
+function hostFileOpener(
+  navigate: ReturnType<typeof useBbNavigate>,
+  location: PreviewLocation | null,
+): (() => void) | null {
+  if (!location) return null;
+  return () =>
+    navigate.experimental_openFilePreview({
+      target: { kind: "host", hostId: location.hostId, path: location.file },
+      location: null,
+    });
+}
+
+/** The parts of a target the loader and sizing read. */
+function targetSource(target: PreviewTarget) {
+  return target.kind === "file"
+    ? { file: target.file, code: null, requestedHeight: target.height }
+    : { file: null, code: target.code, requestedHeight: undefined };
+}
+
+/**
+ * Read a host file, or take a fenced block's HTML, and prepare its frame
+ * document. Fragments restore saved state and gain the runtime first.
+ */
+async function prepareTarget(
+  { file, code, label }: { file: string | null; code: string | null; label: string },
+  {
+    sdk,
+    threadId,
+    pluginId,
+    restore,
+    signal,
+  }: {
+    sdk: ReturnType<typeof useSdk>;
+    threadId: string;
+    pluginId: string;
+    restore: ReturnType<typeof useWidgetState>["restore"];
+    signal: AbortSignal;
+  },
+): Promise<ReadyState> {
+  const result = file === null ? null : await loadPreview(sdk, threadId, file, signal);
+  if (result?.kind === "markdown")
+    return {
+      status: "ready",
+      kind: "markdown",
+      label: result.file,
+      location: { file: result.file, hostId: result.hostId, url: result.url },
+      content: previewMarkdown(result.content, result.url),
+    };
+  const html = result ? result.html : (code ?? "");
+  const fragment = isFragment(html);
+  const [widget, videoPlayer] = await Promise.all([
+    fragment ? restore(signal) : null,
+    fragment && mayNeedVideoPlayer(html) ? loadVideoPlayer(pluginId) : undefined,
+  ]);
+  signal.throwIfAborted();
+  const prepare = fragment
+    ? (document: Document, token: string) => {
+        if (videoPlayer) upgradeVideoPlayers(document, videoPlayer);
+        injectFragmentRuntime(document, {
+          token,
+          theme: readHostTheme(window.document.documentElement),
+          state: widget?.state === "null" ? null : (widget?.state ?? null),
+          tweaks: widget?.tweaks ?? null,
+        });
+      }
+    : undefined;
+  if (!result)
+    return {
+      status: "ready",
+      kind: "html",
+      label,
+      location: null,
+      fragment,
+      ...prepareInlineDocument(html, prepare),
+    };
+  const sizes = videoSizeStore(pluginId);
+  return {
+    status: "ready",
+    kind: "html",
+    label: result.file,
+    location: { file: result.file, hostId: result.hostId, url: result.url },
+    fragment,
+    ...prepareInlineAssets(html, result.url, prepare, (path) =>
+      sizes.read(videoSizeKey(result, path)),
+    ),
+  };
+}
+
 function ExpandedPreview({
-  attributes,
+  target,
   source,
   message,
+  sourceToggle,
   onToggle,
-}: PluginMessageDirectiveProps & { onToggle: () => void }) {
+}: PreviewProps & { onToggle: () => void }) {
   const sdk = useSdk();
   const navigate = useBbNavigate();
   const pluginId = experimental_usePluginId();
-  const file = attributes.file?.trim() ?? "";
-  const previewHeight = parsePreviewHeight(attributes.height);
-  const fixedHeight = Boolean(attributes.height?.trim());
+  const { label } = target;
+  const { file, code, requestedHeight } = targetSource(target);
+  const previewHeight = parsePreviewHeight(requestedHeight);
+  const fixedHeight = Boolean(requestedHeight?.trim());
   // Only content-sized fragments are remembered, so a hit implies one.
   const [rememberedHeight, rememberHeight] = useRememberedHeight(
     `${pluginId}.inline-vis.heights`,
-    `${message.threadId}:${message.id}:${file}`,
+    `${message.threadId}:${message.id}:${target.key}`,
   );
   const [state, setState] = useState<LoadState>({ status: "loading" });
   const frame = useRef<HTMLIFrameElement>(null);
@@ -580,7 +766,11 @@ function ExpandedPreview({
     addContext: attachContext,
     updateState,
     updateTweaks,
-  } = useWidgetState({ threadId: message.threadId, messageId: message.id, file }, pluginId);
+  } = useWidgetState(
+    // Saved state is keyed by file. HTML written in the reply keeps it in memory.
+    file === null ? null : { threadId: message.threadId, messageId: message.id, file },
+    pluginId,
+  );
   const addContext = useCallback(
     (prompt?: string) =>
       attachContext(prompt, () => {
@@ -624,52 +814,11 @@ function ExpandedPreview({
     setState({ status: "loading" });
     void (async () => {
       try {
-        const result = await loadPreview(sdk, message.threadId, file, controller.signal);
-        if (result.kind === "markdown") {
-          if (!cancelled)
-            setState({
-              status: "ready",
-              kind: "markdown",
-              file: result.file,
-              hostId: result.hostId,
-              url: result.url,
-              content: previewMarkdown(result.content, result.url),
-            });
-          return;
-        }
-        const fragment = isFragment(result.html);
-        const [widget, videoPlayer] = await Promise.all([
-          fragment ? restore(controller.signal) : null,
-          fragment && mayNeedVideoPlayer(result.html) ? loadVideoPlayer(pluginId) : undefined,
-        ]);
-        if (cancelled) return;
-        const sizes = videoSizeStore(pluginId);
-        const prepared = prepareInlineAssets(
-          result.html,
-          result.url,
-          fragment
-            ? (document, token) => {
-                if (videoPlayer) upgradeVideoPlayers(document, videoPlayer);
-                injectFragmentRuntime(document, {
-                  token,
-                  theme: readHostTheme(window.document.documentElement),
-                  state: widget?.state === "null" ? null : (widget?.state ?? null),
-                  tweaks: widget?.tweaks ?? null,
-                });
-              }
-            : undefined,
-          (path) => sizes.read(videoSizeKey(result, path)),
+        const ready = await prepareTarget(
+          { file, code, label },
+          { sdk, threadId: message.threadId, pluginId, restore, signal: controller.signal },
         );
-        if (!cancelled)
-          setState({
-            status: "ready",
-            kind: "html",
-            file: result.file,
-            hostId: result.hostId,
-            url: result.url,
-            fragment,
-            ...prepared,
-          });
+        if (!cancelled) setState(ready);
       } catch (error) {
         if (cancelled) return;
         setState({
@@ -683,14 +832,20 @@ function ExpandedPreview({
       cancelled = true;
       controller.abort();
     };
-  }, [file, message.threadId, sdk, restore, restoreRevision, pluginId]);
+  }, [file, code, label, message.threadId, sdk, restore, restoreRevision, pluginId]);
 
   if (state.status === "error") {
     return (
       <>
-        <PreviewHeader file={file} expanded onToggle={onToggle} onOpen={null} />
+        <PreviewHeader
+          label={label}
+          expanded
+          onToggle={onToggle}
+          onOpen={null}
+          sourceToggle={sourceToggle}
+        />
         <Alert source={source} error>
-          Failed to load {file}: {state.message}
+          Failed to load {label}: {state.message}
           <button type="button" onClick={() => setRestoreRevision((value) => value + 1)}>
             Retry preview
           </button>
@@ -702,10 +857,16 @@ function ExpandedPreview({
   if (state.status === "loading") {
     return (
       <>
-        <PreviewHeader file={file} expanded onToggle={onToggle} onOpen={null} />
+        <PreviewHeader
+          label={label}
+          expanded
+          onToggle={onToggle}
+          onOpen={null}
+          sourceToggle={sourceToggle}
+        />
         <output
           aria-busy="true"
-          aria-label={`Loading visualization ${file}`}
+          aria-label={`Loading visualization ${label}`}
           style={{
             height: (fixedHeight ? previewHeight : rememberedHeight) ?? DEFAULT_HEIGHT_PX,
           }}
@@ -717,6 +878,7 @@ function ExpandedPreview({
     );
   }
 
+  const hostFile = state.location;
   const hasTweaks = state.kind === "html" && state.fragment && tweaks.groups.length > 0;
   const canShareState = state.kind === "html" && state.fragment && hasSavedState;
   const height =
@@ -738,17 +900,13 @@ function ExpandedPreview({
   return (
     <>
       <PreviewHeader
-        file={state.file}
+        label={state.label}
         expanded
         onToggle={onToggle}
-        onOpen={() =>
-          navigate.experimental_openFilePreview({
-            target: { kind: "host", hostId: state.hostId, path: state.file },
-            location: null,
-          })
-        }
+        onOpen={hostFileOpener(navigate, hostFile)}
         onWide={() => setWide(true)}
         wideTrigger={wideTrigger}
+        sourceToggle={sourceToggle}
       />
       {/* Plain previews, such as recordings, sit flush under the header. */}
       {(hasTweaks || canShareState) && <div className="inline-vis-toolbar">{actions}</div>}
@@ -756,7 +914,7 @@ function ExpandedPreview({
         ref={surface}
         className={`inline-vis-surface${wide ? " inline-vis-wide" : ""}`}
         role={wide ? "dialog" : "region"}
-        aria-label={wide ? `Wide visualization: ${state.file}` : `Visualization: ${state.file}`}
+        aria-label={wide ? `Wide visualization: ${state.label}` : `Visualization: ${state.label}`}
         aria-modal={wide || undefined}
         onCancel={(event) => {
           event.preventDefault();
@@ -765,7 +923,7 @@ function ExpandedPreview({
       >
         {wide && (
           <div className="inline-vis-wide-header">
-            <span>{state.file.split(/[\\/]/u).pop()}</span>
+            <span>{hostFile?.file.split(/[\\/]/u).pop() ?? state.label}</span>
             <div>
               {actions}
               <button
@@ -787,7 +945,7 @@ function ExpandedPreview({
         />
         {assetError && (
           <Alert source={source} error>
-            Some media in {state.file} did not load: {assetError}
+            Some media in {state.label} did not load: {assetError}
           </Alert>
         )}
         <div
@@ -808,7 +966,12 @@ function ExpandedPreview({
               }
               onReset={(groupId) => sendToFrame(FRAGMENT_MESSAGES.tweakReset, { groupId })}
               onOriginal={(active) => sendToFrame(FRAGMENT_MESSAGES.tweakOriginal, { active })}
-              onApply={() => void addContext("Use these design adjustments for the next revision.")}
+              // Adjustments travel in a saved-state pill, which needs a host file.
+              onApply={
+                hostFile
+                  ? () => void addContext("Use these design adjustments for the next revision.")
+                  : undefined
+              }
             />
           )}
         </div>
@@ -819,4 +982,9 @@ function ExpandedPreview({
 
 export default definePluginApp((app) => {
   app.slots.messageDirective({ id: "inline-vis", component: InlineVisDirective });
+  app.slots.experimental_codeFenceRenderer({
+    id: "inline-vis",
+    languages: [FENCE_LANGUAGE],
+    component: InlineVisFence,
+  });
 });
