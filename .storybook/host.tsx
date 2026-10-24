@@ -21,14 +21,14 @@ class FixtureBoundary extends Component<
   { children: ReactNode; onError: (error: Error) => void },
   { failed: boolean }
 > {
-  state = { failed: false };
+  override state = { failed: false };
   static getDerivedStateFromError() {
     return { failed: true };
   }
-  componentDidCatch(error: Error) {
+  override componentDidCatch(error: Error) {
     this.props.onError(error);
   }
-  render() {
+  override render() {
     return this.state.failed ? null : this.props.children;
   }
 }

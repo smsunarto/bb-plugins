@@ -138,17 +138,25 @@ loads its project configuration in a new session.
 ### Catalog coverage
 
 Every browser plugin has a catalog under its own `storybook/` directory. Canvas
-previews place plugin content in BB editor surroundings: navigation pages, thread
-panels, messages, composer banners, and settings. The chrome is a local fixture
-based on BB's registered layouts; the active component remains production code
-running through the SDK test runtime. It does not run the BB app or its backend.
+previews use BB's native sidebar, page header, tabbed panel, message, composer,
+and settings components. Storybook builds these from the working files in a
+local BB checkout: `BB_STORYBOOK_SOURCE`, or the sibling `../bb` directory.
+BB's dependencies must be installed there. Restart Storybook after changing
+that checkout. This does not modify or start the BB app.
 
 Use the context toolbar to switch between **BB editor** and **Isolated component**.
-**Auto** uses editor context in Canvas and compact, isolated examples in Docs.
-Shared primitives and the theme catalog stay isolated. Use the width toolbar for
-360px, 640px, and 1100px content widths (wide side panels use 900px); drag a panel's
-divider or use its arrow keys to resize, then close and reopen it without losing
-its state. At narrow viewport sizes the preview prioritizes the active panel.
+**Auto** uses native context in Canvas and isolated examples in Docs. Switching
+back to isolated mode reloads the preview document to remove BB's global styles;
+Controls args and globals are retained. A missing or incompatible checkout shows
+an explicit notice, and isolated previews remain available.
+
+Use the width toolbar for 360px, 640px, and 1100px component containers. BB's native
+panel divider controls the surrounding panel width. Backend calls are replaced
+with local fixtures or rejected, and panel width stays within the story's state.
+Run `bun run test:storybook:native` against the running local Storybook to check
+the native integration; it fails if native BB is unavailable. The regular
+`test:storybook` command tests isolated components without requiring BB source.
+
 The stories render production components; parent stories exercise their rendered internal
 helpers. States include loading, empty, populated, error, disabled, and selected
 where the component supports them.

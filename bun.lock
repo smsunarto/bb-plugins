@@ -29,6 +29,7 @@
         "react": "19.2.8",
         "react-doctor": "^0.9.13",
         "react-dom": "19.2.8",
+        "rolldown": "1.2.4",
         "storybook": "10.6.3",
         "tailwindcss": "4.3.3",
         "typescript": "^6.0.0",
@@ -1503,7 +1504,7 @@
 
     "@oxc-parser/binding-win32-x64-msvc": ["@oxc-parser/binding-win32-x64-msvc@0.127.0", "", { "os": "win32", "cpu": "x64" }, "sha512-rOrnSQSCbhI2kowr9XxE7m9a8oQXnBHjnS6j95LxxAnEZ0+Fz20WlRXG4ondQb+ejjt2KOsa65sE6++L6kUd+w=="],
 
-    "@oxc-project/types": ["@oxc-project/types@0.127.0", "", {}, "sha512-aIYXQBo4lCbO4z0R3FHeucQHpF46l2LbMdxRvqvuRuW2OxdnSkcng5B8+K12spgLDj93rtN3+J2Vac/TIO+ciQ=="],
+    "@oxc-project/types": ["@oxc-project/types@0.144.0", "", {}, "sha512-nuhZIOLuI6TFQ32I/WnUx+SCPY7SdSKwgnFHydAuoS1+Z4BRcaP+RRJmGzl9lw+0OFF7UmaESf7KQRXaNLHypg=="],
 
     "@oxc-resolver/binding-android-arm-eabi": ["@oxc-resolver/binding-android-arm-eabi@11.24.2", "", { "os": "android", "cpu": "arm" }, "sha512-y09e0L0SRI2OA2tUIrjBgoV3eH5hvUKXNkJqXmNo5V2WxIjyC7I7aJfRLMEVpA8yi95f90gFDvO0VMgrDw+vwA=="],
 
@@ -3527,6 +3528,8 @@
 
     "negotiator/content-type": ["content-type@2.1.0", "", {}, "sha512-mj7UPXE0jaqaOsukNZRUEfEi2AcL7C/vwmwcHV0O97eO1E1pxBZuyjlZrx5seTaNBg1U6+o35wpa35Qfcc+7ag=="],
 
+    "oxc-parser/@oxc-project/types": ["@oxc-project/types@0.127.0", "", {}, "sha512-aIYXQBo4lCbO4z0R3FHeucQHpF46l2LbMdxRvqvuRuW2OxdnSkcng5B8+K12spgLDj93rtN3+J2Vac/TIO+ciQ=="],
+
     "oxlint-plugin-react-doctor/oxc-parser": ["oxc-parser@0.146.0", "", { "dependencies": { "@oxc-project/types": "^0.146.0" }, "optionalDependencies": { "@oxc-parser/binding-android-arm-eabi": "0.146.0", "@oxc-parser/binding-android-arm64": "0.146.0", "@oxc-parser/binding-darwin-arm64": "0.146.0", "@oxc-parser/binding-darwin-x64": "0.146.0", "@oxc-parser/binding-freebsd-x64": "0.146.0", "@oxc-parser/binding-linux-arm-gnueabihf": "0.146.0", "@oxc-parser/binding-linux-arm-musleabihf": "0.146.0", "@oxc-parser/binding-linux-arm64-gnu": "0.146.0", "@oxc-parser/binding-linux-arm64-musl": "0.146.0", "@oxc-parser/binding-linux-ppc64-gnu": "0.146.0", "@oxc-parser/binding-linux-riscv64-gnu": "0.146.0", "@oxc-parser/binding-linux-riscv64-musl": "0.146.0", "@oxc-parser/binding-linux-s390x-gnu": "0.146.0", "@oxc-parser/binding-linux-x64-gnu": "0.146.0", "@oxc-parser/binding-linux-x64-musl": "0.146.0", "@oxc-parser/binding-openharmony-arm64": "0.146.0", "@oxc-parser/binding-win32-arm64-msvc": "0.146.0", "@oxc-parser/binding-win32-ia32-msvc": "0.146.0", "@oxc-parser/binding-win32-x64-msvc": "0.146.0" } }, "sha512-hrt0Ou2mCL8dLuvfvKWFjRlWaJKt0Xs7CfacAgb9mha0gKW1lSisUzNRyALgItMPIfThxkl8jH2ONP6ZbQXpaA=="],
 
     "parse-entities/@types/unist": ["@types/unist@2.0.11", "", {}, "sha512-CmBKiL6NNo/OqgmMn95Fk9Whlp2mtvIv+KNpQKN2F4SjvrEesubTRWGYSg+BnWZOnlCaSTU1sMpsBOzgbYhnsA=="],
@@ -3548,8 +3551,6 @@
     "react-doctor/typescript": ["typescript@5.9.3", "", { "bin": { "tsc": "bin/tsc", "tsserver": "bin/tsserver" } }, "sha512-jl1vZzPDinLr9eUt3J/t7V6FgNEw9QjvBPdysz9KfQDD41fQrC2Y4vKQdiaUpFT4bXlb1RHhLpp8wtm6M5TgSw=="],
 
     "redent/strip-indent": ["strip-indent@3.0.0", "", { "dependencies": { "min-indent": "^1.0.0" } }, "sha512-laJTa3Jb+VQpaC6DseHhF7dXVqHTfJPCRDaEbid/drOhgitgYku/letMUqOXFoWV0zIIUbjpdH2t+tYj4bQMRQ=="],
-
-    "rolldown/@oxc-project/types": ["@oxc-project/types@0.144.0", "", {}, "sha512-nuhZIOLuI6TFQ32I/WnUx+SCPY7SdSKwgnFHydAuoS1+Z4BRcaP+RRJmGzl9lw+0OFF7UmaESf7KQRXaNLHypg=="],
 
     "send/mime-types": ["mime-types@3.0.2", "", { "dependencies": { "mime-db": "^1.54.0" } }, "sha512-Lbgzdk0h4juoQ9fCKXW4by0UJqj+nOOrI9MJ1sSj4nI8aI2eo1qmvQEie4VD1glsS250n15LsWsYtCugiStS5A=="],
 

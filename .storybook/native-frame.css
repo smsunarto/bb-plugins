@@ -1,0 +1,55 @@
+.sb-workspace[data-editor="true"] {
+  padding: 0;
+  max-width: none;
+}
+.sb-workspace[data-editor="true"] > [data-storybook-host],
+.sb-workspace[data-editor="true"] > [data-storybook-host] > div {
+  height: 100vh;
+  min-height: 0;
+}
+.sb-native-frame {
+  height: 100%;
+  min-height: 0;
+  --sb-native-width: 1100px;
+}
+.sb-native-frame[data-width="narrow"] {
+  --sb-native-width: 360px;
+}
+.sb-native-frame[data-width="medium"] {
+  --sb-native-width: 640px;
+}
+.sb-native-slot {
+  width: 100%;
+  max-width: var(--sb-native-width);
+  min-width: 0;
+  min-height: 0;
+}
+.sb-native-slot > .sb-surface {
+  height: 100%;
+  min-height: 0;
+}
+.sb-native-page {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 20px;
+}
+.sb-native-page > [data-native-slot-outlet] {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+}
+.sb-native-page .sb-native-slot {
+  flex: 1;
+  margin-inline: auto;
+}
+.sb-workspace[data-layout="screen"] .sb-native-page .sb-native-slot > * {
+  height: 100%;
+  min-height: 0;
+}
+.sb-native-slot[data-native-slot-placement="thread-panel"],
+.sb-native-slot[data-native-slot-placement="page-panel"] {
+  height: 100%;
+}

@@ -1,10 +1,12 @@
+import { addons } from "storybook/preview-api";
+import { readPreviewState } from "./preview-state";
 import { previewSurfaceClass } from "./surfaces";
 import { assertMonokai } from "./theme-checks";
 import type { Preview } from "@storybook/react-vite";
 import { registerCustomTheme } from "@pierre/diffs";
 import { monokaiCodeTheme, monokaiStorybookTheme } from "./monokai";
 import { editorContextFor, showsEditor } from "./editor-context";
-import { EditorFrame } from "./editor-frame";
+import { EditorFrame, IsolatedDocument, preloadNativeFrame } from "./editor-frame";
 import { HostFixture } from "./host";
 import "./preview.css";
 import "../plugins/monokai/.storybook/preview.css";
@@ -12,7 +14,7 @@ import "../plugins/monokai/themes/bb-monokai.css";
 
 // Dialogs and popovers portal to body, outside the story's layout wrapper.
 document.documentElement.classList.add("dark");
-registerCustomTheme(monokaiCodeTheme.name, () => monokaiCodeTheme.theme);
+registerCustomTheme(monokaiCodeTheme.name, async () => monokaiCodeTheme.theme);
 
 // Non-inline Docs examples are story-mode iframes nested inside the Docs preview.
 function isDocsIframe(): boolean {
@@ -26,9 +28,43 @@ function isDocsIframe(): boolean {
   }
 }
 
+let reloadState = readPreviewState();
+
 const preview: Preview = {
   afterEach: assertMonokai,
-  initialGlobals: { width: "wide", context: "auto" },
+  loaders: [
+    async (context) => {
+      if (reloadState?.storyId === context.id) {
+        const snapshot = reloadState;
+        reloadState = undefined;
+        // Restore before render/play, so a later Controls edit cannot race a deferred effect.
+        Object.assign(context.args, snapshot.args);
+        addons
+          .getChannel()
+          .emit("updateStoryArgs", { storyId: context.id, updatedArgs: snapshot.args });
+      }
+      const placement =
+        context.parameters.editorContext === false
+          ? undefined
+          : (context.parameters.editorContext ?? editorContextFor(context.title));
+      if (
+        placement &&
+        __BB_NATIVE_AVAILABLE__ &&
+        !__BB_NATIVE_ERROR__ &&
+        showsEditor(context.globals.context, context.viewMode, isDocsIframe())
+      ) {
+        // Let the native module settle before story play functions start.
+        // The render boundary presents any import failure with an isolated fallback link.
+        await preloadNativeFrame().catch(() => undefined);
+      }
+      return {};
+    },
+  ],
+  initialGlobals: {
+    width: "wide",
+    context: import.meta.env.MODE === "test" ? "isolated" : "auto",
+    ...reloadState?.globals,
+  },
   globalTypes: {
     context: {
       description: "Preview surroundings",
@@ -56,6 +92,13 @@ const preview: Preview = {
   decorators: [
     (Story, context) => {
       const scope = previewSurfaceClass(context.title);
+      const location = {
+        storyId: context.id,
+        viewMode: context.viewMode,
+        globals: context.globals,
+        args: context.args,
+        initialArgs: context.initialArgs,
+      };
       const placement =
         context.parameters.editorContext === false
           ? undefined
@@ -85,11 +128,11 @@ const preview: Preview = {
             }
           >
             {editor ? (
-              <EditorFrame context={placement} width={context.globals.width}>
+              <EditorFrame context={placement} width={context.globals.width} location={location}>
                 {content}
               </EditorFrame>
             ) : (
-              content
+              <IsolatedDocument location={location}>{content}</IsolatedDocument>
             )}
           </HostFixture>
         </main>

@@ -36,7 +36,8 @@
     "package:check": "bun scripts/package-check.ts",
     "clean": "bun run --filter '@bb-kit/*' --parallel clean && bun run --filter '@smsunarto/bb-plugin-*' --parallel clean",
     "doctor": "npx react-doctor@latest",
-    "test:storybook": "bun run build:framework && vitest run --project storybook"
+    "test:storybook": "bun run build:framework && vitest run --project storybook",
+    "test:storybook:native": "bun scripts/test-storybook-native.ts"
   },
   "devDependencies": {
     "@bb-plugins/ui": "workspace:*",
@@ -63,6 +64,7 @@
     "react": "19.2.8",
     "react-doctor": "^0.9.13",
     "react-dom": "19.2.8",
+    "rolldown": "1.2.4",
     "storybook": "10.6.3",
     "tailwindcss": "4.3.3",
     "typescript": "^6.0.0",

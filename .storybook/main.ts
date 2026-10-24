@@ -1,6 +1,11 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import tailwindcss from "@tailwindcss/vite";
+import {
+  nativePreviewPlugins,
+  nativeSourceAvailable,
+  nativeSourceError,
+} from "./native-preview.ts";
 import type { StorybookConfig } from "@storybook/react-vite";
 
 const monokaiCSS = readFileSync(
@@ -9,7 +14,7 @@ const monokaiCSS = readFileSync(
 );
 
 // Apply the palette before the loading shell paints as well as after React mounts.
-const monokaiHead = (head: string) => `${head}<style>${monokaiCSS}
+const monokaiHead = (head = "") => `${head}<style>${monokaiCSS}
 html,body{background:var(--background);color:var(--foreground);color-scheme:dark}
 </style><script>document.documentElement.classList.add("dark");</script>`;
 
@@ -22,13 +27,15 @@ const config = {
   features: {
     componentsManifest: true,
   },
-  viteFinal(config) {
+  async viteFinal(config) {
+    const nativeEnabled = config.mode !== "test" && process.env.VITEST !== "true";
     config.resolve = {
       ...config.resolve,
       dedupe: ["react", "react-dom", "@tanstack/react-query", "@get-bb/plugin-sdk"],
     };
     config.plugins = [
       ...(config.plugins ?? []),
+      ...(await nativePreviewPlugins(nativeEnabled)),
       tailwindcss(),
       {
         name: "plugin-local-aliases",
@@ -47,7 +54,12 @@ const config = {
       },
     ];
     // The public SDK test harness uses React.act in static previews too.
-    config.define = { ...config.define, "process.env.NODE_ENV": JSON.stringify("development") };
+    config.define = {
+      __BB_NATIVE_AVAILABLE__: JSON.stringify(nativeSourceAvailable && nativeEnabled),
+      __BB_NATIVE_ERROR__: JSON.stringify(nativeSourceError),
+      ...config.define,
+      "process.env.NODE_ENV": JSON.stringify("development"),
+    };
     // The preview lives in a workspace package; prebundle its React runtime.
     config.optimizeDeps = {
       ...config.optimizeDeps,
