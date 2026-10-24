@@ -1,8 +1,5 @@
 import { useEffect, useId, useRef, useState, type ReactNode } from "react";
-import {
-  experimental_Icon as Icon,
-  experimental_useSidebarThreadActions as useThreadActions,
-} from "@get-bb/plugin-sdk/app";
+import { experimental_Icon as Icon, useBbNavigate } from "@get-bb/plugin-sdk/app";
 import type { CheckoutSelection } from "../shared/schema.ts";
 import type { WorkspaceTarget } from "./branch-actions.tsx";
 import { Button } from "./components/ui/button.tsx";
@@ -30,7 +27,7 @@ export function CheckoutChatActions(props: Props) {
 }
 
 function CheckoutChatControl({ target, environmentId, children }: Props) {
-  const threads = useThreadActions();
+  const navigate = useBbNavigate();
   const descriptionId = useId();
   const mounted = useRef(true);
   useEffect(() => {
@@ -63,7 +60,7 @@ function CheckoutChatControl({ target, environmentId, children }: Props) {
       // Errors stay on the query, so the next click's answer replaces them.
       const result = await query.refetch({ throwOnError: true }).catch(() => null);
       if (!mounted.current || result?.data?.state !== "ready") return;
-      threads.openNewThread({
+      navigate.toCompose({
         projectId: result.data.projectId,
         environmentId: result.data.environmentId,
         hostId: result.data.hostId,

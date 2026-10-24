@@ -16,12 +16,19 @@ import {
   UrlLink,
   definePluginApp,
   experimental_Icon as Icon,
+  experimental_InfoList as InfoList,
+  experimental_InfoListRow as InfoListRow,
+  experimental_InfoSection as InfoSection,
+  experimental_THREAD_INFO_SECTION_GROUPS,
   useBbContext,
   useBbNavigate,
   useRealtime,
   useRealtimeConnectionState,
 } from "@get-bb/plugin-sdk/app";
-import type { PluginThreadHeaderActionProps } from "@get-bb/plugin-sdk/app";
+import type {
+  ExperimentalThreadInfoProps,
+  PluginThreadHeaderActionProps,
+} from "@get-bb/plugin-sdk/app";
 import { PluginQueryBoundary, pluginQueryClient } from "@bb-kit/core/rpc/query";
 import {
   PANEL_ACTION_ID,
@@ -1592,17 +1599,143 @@ function HeaderAction(props: PluginThreadHeaderActionProps) {
   );
 }
 
+/**
+ * The board the Info tab lists branches from. It draws the answer the header
+ * or panel already holds, or the stored one, then reads it again, because the
+ * Info tab is opened to see what is there now. While it is open, a finished
+ * turn on the environment, a change on disk, or a reconnect reads it again, as
+ * they do for the panel. A read already in flight, such as the panel's, is
+ * joined rather than restarted. A failed read keeps the last board, marked
+ * stale, as the panel does, and signals match on that board's identity so the
+ * host coming back restores the section.
+ */
+function useInfoBoard(threadId: string): ShownWorkspace {
+  const repositoryKey = useStoredRepository(threadId) ?? undefined;
+  const input = useMemo(() => ({ threadId, repositoryKey }), [threadId, repositoryKey]);
+  const workspace = rpc.workspace.useQuery(input, {
+    ...storedAnswer("workspace", input),
+    // Any other answer, such as no GitButler here, is trusted as long as the header trusts it.
+    staleTime: (query) => (query.state.data?.state === "ready" ? 0 : NOT_READY_STALE_MS),
+    gcTime: Number.POSITIVE_INFINITY,
+  });
+  const shown = useShownWorkspace(workspace, threadId, repositoryKey, undefined);
+  const board = shown.data;
+  const refresh = useCallback(
+    () =>
+      void pluginQueryClient.invalidateQueries(
+        { queryKey: rpc.workspace.queryKey(input), exact: true },
+        { cancelRefetch: false },
+      ),
+    [input],
+  );
+  useRealtime(WORKSPACE_CHANGED_CHANNEL, (payload) => {
+    const parsed = workspaceChangedSchema.safeParse(payload);
+    if (!parsed.success || board === undefined) return;
+    const signal = parsed.data;
+    const path = board.checkoutIdentity?.path;
+    const ours =
+      "environmentId" in signal
+        ? signal.environmentId === board.environmentId
+        : signal.hostId === board.hostId && path !== undefined && signal.checkouts.includes(path);
+    if (ours) refresh();
+  });
+  const connection = useRealtimeConnectionState();
+  const previous = useRef(connection);
+  useEffect(() => {
+    const was = previous.current;
+    previous.current = connection;
+    if (was === "reconnecting" && connection === "connected") refresh();
+  }, [connection, refresh]);
+  return shown;
+}
+
+/**
+ * The Info tab's GitButler branches: every branch applied in the thread's
+ * workspace, each stack's top branch first, with the review it has. bb's own
+ * Branch row reads `gitbutler/workspace` there, which names none of them.
+ * Selecting one opens the GitButler tab. Like bb's Git rows, it draws nothing
+ * without a usable checkout. Nor for an ordinary Git checkout, whose branch
+ * bb's row already names, or before a board is read.
+ */
+function BranchesInfo({ threadId }: ExperimentalThreadInfoProps) {
+  const navigate = useBbNavigate();
+  const { data: board, stale } = useInfoBoard(threadId);
+  if (board?.state !== "ready" || board.checkoutIdentity?.kind === "git") return null;
+  const branches = board.stacks.flatMap((stack) =>
+    stack.branches.map((branch, index) => ({
+      branch,
+      base: stack.branches[index + 1]?.name ?? null,
+    })),
+  );
+  if (branches.length === 0) return null;
+  const open = () => navigate.openThreadPanel({ actionId: PANEL_ACTION_ID });
+  return (
+    <InfoSection
+      label="GitButler branches"
+      count={branches.length}
+      {...(stale === null
+        ? {}
+        : {
+            accessory: (
+              <span
+                className="inline-flex"
+                title={stale ? `Couldn't refresh: ${stale}` : "Couldn't refresh"}
+              >
+                <Icon name="AlertTriangle" className="size-3 text-attention" aria-hidden />
+                <span className="sr-only">Couldn't refresh. Showing the last workspace.</span>
+              </span>
+            ),
+          })}
+    >
+      <InfoList
+        items={branches}
+        getKey={({ branch }) => branch.name}
+        renderItem={({ branch, base }) => (
+          <InfoListRow
+            leading={<Icon name="GitBranch" className="size-3" aria-hidden />}
+            name={branch.name}
+            title={branch.name}
+            {...(base ? { context: `on ${base}` } : {})}
+            {...(branch.reviewId
+              ? { trailing: <span className="text-muted-foreground">{branch.reviewId}</span> }
+              : {})}
+            onSelect={open}
+          />
+        )}
+      />
+    </InfoSection>
+  );
+}
+
+function BranchesInfoSection(props: ExperimentalThreadInfoProps) {
+  if (!props.environment) return null;
+  return (
+    <PluginQueryBoundary>
+      <BranchesInfo key={props.threadId} {...props} />
+    </PluginQueryBoundary>
+  );
+}
+
 export default definePluginApp((app) => {
   app.slots.experimental_threadHeaderAction({
     id: "open",
     title: "GitButler",
     component: HeaderAction,
   });
-  app.slots.threadPanelAction({
+  app.slots.experimental_tab({
+    context: { kind: "thread" },
+    availability: "action",
     id: PANEL_ACTION_ID,
     title: "GitButler",
     icon: "GitBranch",
     component: GitButlerApp,
     layout: "flush",
+  });
+  app.slots.experimental_threadInfoSection({
+    id: "branches",
+    group: experimental_THREAD_INFO_SECTION_GROUPS.changes,
+    // Before bb's Commits (10): the branches name what those commits are on.
+    order: 5,
+    component: BranchesInfoSection,
   });
 });
