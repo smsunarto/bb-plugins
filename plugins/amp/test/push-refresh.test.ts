@@ -238,3 +238,18 @@ test("a link published while a read is out gets one more read", async () => {
   assert.equal(orbCalls(slot), 2);
   assert.ok(slot.getByText("Active"));
 });
+
+test("copying the sync command goes through bb's clipboard writer", async () => {
+  const { slot } = renderOrb("thr_copy", () => ({
+    state: "active",
+    ampThreadId: "T-copy",
+    syncCommand: "amp sync T-copy",
+  }));
+  await act(settle);
+  await act(async () => {
+    slot.getByLabelText("Copy Amp sync command").click();
+    await settle();
+  });
+  assert.deepEqual(slot.inspection.experimental_clipboardWrites, [{ text: "amp sync T-copy" }]);
+  assert.ok(slot.getByText("Copied"));
+});

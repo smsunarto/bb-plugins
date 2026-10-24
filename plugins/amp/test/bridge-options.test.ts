@@ -62,6 +62,8 @@ test("toSessionShape maps the reasoning ladder onto Amp's four modes", () => {
     ["max", "ultra"],
     ["ultra", "ultra"],
     ["ultracode", "ultra"],
+    // Reasoning levels are open strings; one bb's ladder lacks takes the default.
+    ["minimal", "medium"],
   ];
   for (const [level, mode] of expectations) {
     assert.equal(shapeFor({ reasoningLevel: level }).mode, mode, `reasoningLevel ${String(level)}`);

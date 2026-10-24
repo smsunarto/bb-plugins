@@ -98,6 +98,9 @@ const CAPABILITIES: BridgeCapabilities = {
   approvalEnforcedBy: "runtime",
   steerMode: "inject",
   skills: { configure: false },
+  // No slash-command catalog yet: bb sends no commands/list, and the
+  // composer's `/` menu lists only bb's own commands for Amp threads.
+  commands: { list: false },
 };
 
 type JsonRpcId = string | number;
@@ -653,6 +656,9 @@ const handlers: Record<string, RequestHandler> = {
   },
   [BRIDGE_REQUEST_METHODS.skillsConfigure]: (id) => {
     methodNotFound(id, BRIDGE_REQUEST_METHODS.skillsConfigure);
+  },
+  [BRIDGE_REQUEST_METHODS.commandList]: (id) => {
+    methodNotFound(id, BRIDGE_REQUEST_METHODS.commandList);
   },
 };
 
