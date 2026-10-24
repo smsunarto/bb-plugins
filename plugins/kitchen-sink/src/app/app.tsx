@@ -313,7 +313,8 @@ export default definePluginApp((app) => {
   });
   app.composer.customize({
     id: "rpiv-todo",
-    scopes: ["thread", "queued-message", "side-chat"],
+    // Side chats are ThreadChat composers and report the "thread" scope.
+    scopes: ["thread", "queued-message"],
     banners: [{ id: "todos", chrome: "card", component: TodoBanner }],
   });
   app.composer.customize({
