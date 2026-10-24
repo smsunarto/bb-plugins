@@ -24,6 +24,12 @@ The fork also fixes three bugs from upstream's incremental loading
 - `boardMove` publishes every card a column renumber touches, so the board
   keeps the server order.
 
+The Plugin SDK 0.6.75 migration also ported three later upstream changes:
+per-model preset reasoning levels and service tiers
+([#4689](https://github.com/get-bb/bb/pull/4689),
+[#5266](https://github.com/get-bb/bb/pull/5266)) and pull request reads through
+GitHub PR Status ([#6125](https://github.com/get-bb/bb/pull/6125)).
+
 ## Install
 
 Install the fork from a checkout of this repository:
@@ -145,7 +151,8 @@ thread with `bb tasks attach KEY`. The inverse is `bb tasks detach KEY
 [--thread <id>]`, and each thread card on the task page has a detach control;
 use either to drop a thread that died or moved on to other work. The task
 page and `bb tasks threads` list live threads before completed or failed ones,
-newest first.
+newest first. A thread's Info tab lists the tasks it is attached to;
+select one to open it beside the thread.
 
 ## Task mentions
 

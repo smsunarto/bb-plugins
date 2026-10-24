@@ -841,7 +841,7 @@ describe("bb tasks CLI", () => {
           "--reasoning",
           "high",
           "--service-tier",
-          "fast",
+          "ultrafast",
           "--permission",
           "accept-edits",
           "--environment",
@@ -861,7 +861,7 @@ describe("bb tasks CLI", () => {
       providerId: "codex",
       modelId: "gpt-5.6-sol",
       reasoningLevel: "high",
-      serviceTier: "fast",
+      serviceTier: "ultrafast",
       permissionMode: "accept-edits",
       environmentKind: "new-worktree",
       baseBranch: "main",
@@ -872,7 +872,26 @@ describe("bb tasks CLI", () => {
     expect(shown).toContain("Environment   worktree");
     expect(shown).toContain("Base branch   main");
     expect(shown).toContain("Machine       host_air");
-    expect(shown).toContain("Service tier  fast");
+    expect(shown).toContain("Service tier  ultrafast");
+
+    const conflicting = await harness.runCli([
+      "preset",
+      "update",
+      "CLI worker",
+      "--service-tier",
+      "fast",
+      "--clear-service-tier",
+    ]);
+    expect(conflicting).toMatchObject({
+      exitCode: 1,
+      stderr: "Cannot combine --service-tier and --clear-service-tier.\n",
+    });
+    // "none" used to clear the tier; saving it as a tier would fail only at dispatch.
+    const none = await harness.runCli(["preset", "update", "CLI worker", "--service-tier", "none"]);
+    expect(none).toMatchObject({
+      exitCode: 1,
+      stderr: '"none" is not a service tier. Use --clear-service-tier to remove it.\n',
+    });
 
     const updated = JSON.parse(
       stdout(
@@ -882,8 +901,7 @@ describe("bb tasks CLI", () => {
           "CLI worker",
           "--reasoning",
           "ultra",
-          "--service-tier",
-          "none",
+          "--clear-service-tier",
           "--name",
           "CLI reviewer",
           "--environment",
@@ -1290,37 +1308,36 @@ describe("bb tasks CLI", () => {
                   : null,
           }),
         },
-        environments: {
-          pullRequest: async ({ environmentId }: { environmentId: string }) =>
-            environmentId === "env_absent"
-              ? { outcome: "absent" }
-              : {
-                  outcome: "available",
-                  pullRequest: {
-                    number: 12,
-                    title: "BB-15 Show PRs in tasks",
-                    state: "draft",
-                    url: "https://github.com/acme/bb/pull/12",
-                    baseRefName: "main",
-                    headRefName: "bb/bb-15",
-                    updatedAt: "2026-07-16T10:00:00.000Z",
-                    checks: {
-                      state: "pending",
-                      totalCount: 1,
-                      passedCount: 0,
-                      failedCount: 0,
-                      pendingCount: 1,
-                    },
-                    review: { state: "none", reviewRequestCount: 0 },
-                    mergeability: {
-                      state: "draft",
-                      mergeStateStatus: null,
-                      mergeable: null,
-                    },
-                    attention: "draft",
+        plugins: githubPrStatusRpc((environmentId) =>
+          environmentId === "env_absent"
+            ? { outcome: "absent" }
+            : {
+                outcome: "available",
+                pullRequest: {
+                  number: 12,
+                  title: "BB-15 Show PRs in tasks",
+                  state: "draft",
+                  url: "https://github.com/acme/bb/pull/12",
+                  baseRefName: "main",
+                  headRefName: "bb/bb-15",
+                  updatedAt: "2026-07-16T10:00:00.000Z",
+                  checks: {
+                    state: "pending",
+                    totalCount: 1,
+                    passedCount: 0,
+                    failedCount: 0,
+                    pendingCount: 1,
                   },
+                  review: { state: "none", reviewRequestCount: 0 },
+                  mergeability: {
+                    state: "draft",
+                    mergeStateStatus: null,
+                    mergeable: null,
+                  },
+                  attention: "draft",
                 },
-        },
+              },
+        ),
       },
     });
     await plugin(bb);
@@ -1365,12 +1382,10 @@ describe("bb tasks CLI", () => {
             environmentId: "env_down",
           }),
         },
-        environments: {
-          pullRequest: async () => ({
-            outcome: "unavailable",
-            message: "gh pr view failed: authentication required",
-          }),
-        },
+        plugins: githubPrStatusRpc(() => ({
+          outcome: "unavailable",
+          message: "gh pr view failed: authentication required",
+        })),
       },
     });
     await plugin(bb);
@@ -2088,3 +2103,15 @@ describe("bb tasks CLI", () => {
     await harness.dispose();
   });
 });
+
+function githubPrStatusRpc(lookup: (environmentId: string) => unknown) {
+  return {
+    async callRpc<TOutput>(args: {
+      input?: unknown;
+      outputSchema: { parse(value: unknown): TOutput };
+    }): Promise<TOutput> {
+      const { keys } = args.input as { keys: string[] };
+      return args.outputSchema.parse(Object.fromEntries(keys.map((key) => [key, lookup(key)])));
+    },
+  };
+}

@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import type { ExperimentalTabRegistration } from "@get-bb/plugin-sdk";
 import { act, cleanup, fireEvent, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { loadPluginApp, renderSlot } from "@get-bb/plugin-sdk/testing/app";
@@ -26,7 +27,14 @@ const { querySnapshotStorageKey, resetQuerySnapshotStateForTest } =
   await import("./query-snapshot.js");
 
 const tasksRegistration = app.navPanels[0]!;
-const navigationView = tasksRegistration.fixedTabs?.[0]!;
+const navigationView = app.tabs.find(
+  (
+    tab,
+  ): tab is Extract<
+    ExperimentalTabRegistration,
+    { context: { kind: "nav-panel" }; availability: "fixed" }
+  > => tab.context.kind === "nav-panel" && tab.availability === "fixed" && tab.id === "navigation",
+)!;
 const navigationRegistration = {
   ...tasksRegistration,
   component: navigationView.component,
@@ -246,8 +254,10 @@ describe("task pager", () => {
 
 describe("tasks app shell", () => {
   it("registers navigation as a BB-owned fixed panel tab", () => {
-    expect(tasksRegistration.fixedTabs).toMatchObject([
+    expect(app.tabs.filter((tab) => tab.context.kind === "nav-panel")).toMatchObject([
       {
+        context: { kind: "nav-panel", panelId: "tasks" },
+        availability: "fixed",
         id: "navigation",
         title: "Navigation",
         icon: "ListView",

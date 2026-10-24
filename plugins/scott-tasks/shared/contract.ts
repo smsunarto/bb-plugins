@@ -29,18 +29,11 @@ export const ISO_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 
 export const idSchema = z.string().regex(ULID_PATTERN, "must be a ULID");
 const nonBlankStringSchema = z.string().trim().min(1, "must not be blank");
-export const presetReasoningLevelSchema = z.enum([
-  "none",
-  "low",
-  "medium",
-  "high",
-  "xhigh",
-  "ultracode",
-  "max",
-  "ultra",
-]);
+// Providers declare reasoning levels and service tiers per model, so presets
+// keep whatever id the model picker or CLI supplies.
+export const presetReasoningLevelSchema = nonBlankStringSchema;
 export type PresetReasoningLevel = z.infer<typeof presetReasoningLevelSchema>;
-export const presetServiceTierSchema = z.enum(["default", "fast"]);
+export const presetServiceTierSchema = nonBlankStringSchema;
 export type PresetServiceTier = z.infer<typeof presetServiceTierSchema>;
 export const PRESET_PERMISSION_MODES = ["accept-edits", "auto", "full"] as const;
 export const presetPermissionModeSchema = z.enum(PRESET_PERMISSION_MODES);
@@ -557,6 +550,10 @@ export const tasksRpcContract = defineRpcContract({
   listTaskThreads: {
     input: z.object({ taskId: idSchema }).strict(),
     output: z.object({ taskThreads: z.array(taskThreadSchema) }).strict(),
+  },
+  listThreadTasks: {
+    input: z.object({ threadId: z.string().startsWith("thr_") }).strict(),
+    output: z.object({ tasks: z.array(taskSchema) }).strict(),
   },
   listTaskPullRequests: {
     input: z.object({ taskId: idSchema }).strict(),

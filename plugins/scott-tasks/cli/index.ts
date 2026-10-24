@@ -23,7 +23,6 @@ import {
 import { delegationRpcContract } from "../delegate/contract";
 import { handlers as delegationHandlers } from "../delegate";
 import {
-  presetReasoningLevelSchema,
   tasksRpcContract,
   PRESET_PERMISSION_MODES,
   TASK_PRIORITIES,
@@ -50,7 +49,6 @@ const ACTIVE_THREAD_STATUSES = new Set(["starting", "working"]);
 const DEFAULT_PROJECT_COLOR = "blue";
 const DEFAULT_LABEL_COLOR = "gray";
 
-const PRESET_SERVICE_TIERS = ["default", "fast", "none"] as const;
 const PRESET_ENVIRONMENTS = ["project-default", "worktree"] as const;
 
 const JSON_OPTION = {
@@ -504,10 +502,17 @@ function presetEnvironmentKind(
 }
 
 function presetServiceTier(
-  value: (typeof PRESET_SERVICE_TIERS)[number] | undefined,
-): "default" | "fast" | null | undefined {
-  if (value === undefined) return undefined;
-  return value === "none" ? null : value;
+  value: string | undefined,
+  clear: boolean | undefined,
+): string | null | undefined {
+  if (clear && value !== undefined) {
+    throw new CliError("Cannot combine --service-tier and --clear-service-tier.");
+  }
+  // Older docs cleared the tier with "none"; bb rejects it as a tier only at dispatch.
+  if (value?.trim().toLowerCase() === "none") {
+    throw new CliError('"none" is not a service tier. Use --clear-service-tier to remove it.');
+  }
+  return clear ? null : value;
 }
 
 async function listMachines(domain: TasksDomain) {
@@ -2044,10 +2049,10 @@ export function registerTasksCli(
               description: "Model id as the provider spells it",
             },
             reasoning: {
-              type: "enum",
-              values: presetReasoningLevelSchema.options,
+              type: "string",
               required: true,
-              description: "Reasoning level the provider supports",
+              placeholder: "level",
+              description: "Reasoning level id the model lists",
             },
             permission: {
               type: "enum",
@@ -2056,9 +2061,14 @@ export function registerTasksCli(
               description: "Permission mode for the dispatched thread",
             },
             "service-tier": {
-              type: "enum",
-              values: PRESET_SERVICE_TIERS,
-              description: "Service tier; none clears it",
+              type: "string",
+              placeholder: "tier",
+              description:
+                "Service tier id the provider lists for the model, such as default or fast",
+            },
+            "clear-service-tier": {
+              type: "boolean",
+              description: "Leave the preset without a service tier",
             },
             environment: {
               type: "enum",
@@ -2104,7 +2114,11 @@ export function registerTasksCli(
                     providerId: input.options.provider,
                     modelId: input.options.model,
                     reasoningLevel: input.options.reasoning,
-                    serviceTier: presetServiceTier(input.options["service-tier"]) ?? null,
+                    serviceTier:
+                      presetServiceTier(
+                        input.options["service-tier"],
+                        input.options["clear-service-tier"],
+                      ) ?? null,
                     permissionMode: input.options.permission,
                     environmentKind,
                     baseBranch: baseBranch ?? null,
@@ -2142,9 +2156,9 @@ export function registerTasksCli(
               description: "Model id as the provider spells it",
             },
             reasoning: {
-              type: "enum",
-              values: presetReasoningLevelSchema.options,
-              description: "Reasoning level the provider supports",
+              type: "string",
+              placeholder: "level",
+              description: "Reasoning level id the model lists",
             },
             permission: {
               type: "enum",
@@ -2152,9 +2166,14 @@ export function registerTasksCli(
               description: "Permission mode for the dispatched thread",
             },
             "service-tier": {
-              type: "enum",
-              values: PRESET_SERVICE_TIERS,
-              description: "Service tier; none clears it",
+              type: "string",
+              placeholder: "tier",
+              description:
+                "Service tier id the provider lists for the model, such as default or fast",
+            },
+            "clear-service-tier": {
+              type: "boolean",
+              description: "Leave the preset without a service tier",
             },
             environment: {
               type: "enum",
@@ -2206,7 +2225,10 @@ export function registerTasksCli(
                     providerId: input.options.provider,
                     modelId: input.options.model,
                     reasoningLevel: input.options.reasoning,
-                    serviceTier: presetServiceTier(input.options["service-tier"]),
+                    serviceTier: presetServiceTier(
+                      input.options["service-tier"],
+                      input.options["clear-service-tier"],
+                    ),
                     permissionMode: input.options.permission,
                     environmentKind: environmentOption === undefined ? undefined : environmentKind,
                     baseBranch:
