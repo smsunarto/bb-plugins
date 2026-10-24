@@ -11,6 +11,7 @@ import {
   localChanges,
   pullRequest,
 } from "./app-fixtures.ts";
+import { inboxTabRegistration } from "./registrations.ts";
 
 const { fireEvent, waitFor, within } = await import("@testing-library/react");
 const { loadPluginApp, renderSlot } = await import("@get-bb/plugin-sdk/testing/app");
@@ -40,8 +41,12 @@ const baseRpc: Handlers = {
   localBranches: () => ({ available: false, reason: "No GitButler plugin." }),
 };
 
+function loadApp() {
+  return loadPluginApp(() => import("../src/app/app.tsx"));
+}
+
 async function registration() {
-  const app = await loadPluginApp(() => import("../src/app/app.tsx"));
+  const app = await loadApp();
   expect(app.navPanels).toHaveLength(1);
   return app.navPanels[0]!;
 }
@@ -52,9 +57,18 @@ async function page(subPath: string, rpc: Handlers = baseRpc) {
 
 /** The Inbox tab in the page's right panel, reading the same URL as the page. */
 async function inboxTab(subPath: string, rpc: Handlers = baseRpc) {
-  const tab = (await registration()).fixedTabs?.[0];
-  if (!tab) throw new Error("Review declares no Inbox tab");
-  return renderSlot(tab, { subPath }, { rpc: rpc as never });
+  return renderSlot(inboxTabRegistration(await loadApp()), { subPath }, { rpc: rpc as never });
+}
+
+/** Renders the Review destination's badge hook the way bb calls it: no component root of ours. */
+async function badge(rpc: Handlers = baseRpc) {
+  const useBadge = (await registration()).experimental_useBadge;
+  if (!useBadge) throw new Error("Review registers no navigation badge");
+  function Badge() {
+    const value = useBadge!();
+    return value === null ? null : <span>{`${value.count}|${value.label}`}</span>;
+  }
+  return renderSlot({ component: Badge }, {}, { rpc: rpc as never });
 }
 
 const PR_PATH = "acme/api/pull/42";
@@ -75,39 +89,63 @@ function selectTab(tab: HTMLElement) {
   fireEvent.mouseDown(tab, { button: 0 });
 }
 
-test("registers one Review page in the sidebar", async () => {
+test("registers one Review page with its Inbox tab, under the saved ids", async () => {
+  const app = await loadApp();
   const panel = await registration();
   expect(panel.id).toBe("code-review");
   expect(panel.title).toBe("Review");
   expect(panel.path).toBe("code-review");
   expect(panel.icon).toBe("GitPullRequest");
-  expect(panel.fixedTabs?.map(({ panelId, id, title }) => ({ panelId, id, title }))).toEqual([
-    { panelId: "code-review", id: "inbox", title: "Inbox" },
+  expect(panel.fixedTabs).toBeUndefined();
+  // Saved panel layouts find the tab by panel id and tab id.
+  expect(
+    app.tabs.map(({ id, title, context, availability, layout }) => ({
+      id,
+      title,
+      context,
+      availability,
+      layout,
+    })),
+  ).toEqual([
+    {
+      id: "inbox",
+      title: "Inbox",
+      context: { kind: "nav-panel", panelId: "code-review" },
+      availability: "fixed",
+      layout: "flush",
+    },
   ]);
 });
 
-test("the sidebar counts pull requests still waiting for the viewer's review", async () => {
-  const panel = await registration();
-  const accessory = renderSlot(
-    { component: panel.experimental_sidebarAccessory! },
-    {},
-    { rpc: baseRpc as never },
-  );
+test("the navigation badge counts pull requests still waiting for the viewer's review", async () => {
+  const slot = await badge();
   // #42 and #7 wait on the viewer; #40 is reviewed already.
-  await waitFor(() => expect(accessory.container.textContent).toBe("2"));
-  accessory.lifecycle.unmount();
+  expect(await slot.findByText("2|2 pull requests waiting for your review")).toBeTruthy();
+  slot.lifecycle.unmount();
+  // The Inbox tab reads the badge's cached inbox instead of asking GitHub again.
+  const tab = await inboxTab("");
+  await tab.findByText("Rate-limit the login endpoint");
+  expect(tab.rpcCalls.filter(({ method }) => method === "inbox")).toEqual([]);
+  tab.lifecycle.unmount();
 });
 
-test("the sidebar shows nothing when no review is waiting", async () => {
-  const panel = await registration();
-  const accessory = renderSlot(
-    { component: panel.experimental_sidebarAccessory! },
-    {},
-    { rpc: { ...baseRpc, inbox: () => ({ ...inbox, assigned: [], team: [] }) } as never },
-  );
-  await waitFor(() => expect(accessory.rpcCalls).toEqual([{ method: "inbox", input: null }]));
-  expect(accessory.container.textContent).toBe("");
-  accessory.lifecycle.unmount();
+test("the navigation badge is empty when no review is waiting", async () => {
+  const slot = await badge({ ...baseRpc, inbox: () => ({ ...inbox, assigned: [], team: [] }) });
+  await waitFor(() => expect(slot.rpcCalls).toEqual([{ method: "inbox", input: null }]));
+  expect(slot.container.textContent).toBe("");
+  slot.lifecycle.unmount();
+});
+
+test("the navigation badge is empty while GitHub is unreachable", async () => {
+  const slot = await badge({
+    ...baseRpc,
+    inbox: () => {
+      throw new Error("gh is not signed in");
+    },
+  });
+  await waitFor(() => expect(slot.rpcCalls.length).toBeGreaterThan(0));
+  expect(slot.container.textContent).toBe("");
+  slot.lifecycle.unmount();
 });
 
 test("lists what is assigned to the viewer, with a count on every tab", async () => {
