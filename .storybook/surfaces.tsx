@@ -2,9 +2,24 @@ import type { CapturedPluginApp } from "@get-bb/plugin-sdk/testing/app";
 
 export function nav(app: CapturedPluginApp, subPath = "", tab?: string) {
   const panel = app.navPanels[0];
-  const target = tab ? panel?.fixedTabs?.find((item) => item.id === tab) : panel;
-  if (!target) throw new Error(`Missing navigation registration: ${tab ?? "main"}`);
-  const Component = target.component;
+  if (tab) {
+    const target = app.tabs.find(
+      (
+        item,
+      ): item is Extract<CapturedPluginApp["tabs"][number], { context: { kind: "nav-panel" } }> =>
+        item.id === tab && item.context.kind === "nav-panel" && item.context.panelId === panel?.id,
+    );
+    if (!target || target.context.kind !== "nav-panel")
+      throw new Error(`Missing navigation tab registration: ${tab}`);
+    if (target.availability === "action") {
+      const Component = target.component;
+      return <Component subPath={subPath} params={target.params ?? null} />;
+    }
+    const Component = target.component;
+    return <Component subPath={subPath} />;
+  }
+  if (!panel) throw new Error("Missing navigation registration: main");
+  const Component = panel.component;
   return <Component subPath={subPath} />;
 }
 export function settings(app: CapturedPluginApp) {

@@ -6,9 +6,12 @@ export type EditorPlacement =
   | "composer"
   | "sidebar"
   | "settings"
-  | "dialog"
   | "overlay";
-export type EditorContext = { placement: EditorPlacement; title: string; tab?: string };
+export type EditorContext = {
+  placement: EditorPlacement;
+  title: string;
+  tab?: string;
+};
 
 /** Placements follow the plugin app registrations and BB's SplitThreadArea. */
 const placements: Record<string, EditorContext> = {
@@ -19,11 +22,11 @@ const placements: Record<string, EditorContext> = {
   Canvas: { placement: "thread-panel", title: "Canvas", tab: "release-review.mdx" },
   "Kitchen Sink": { placement: "message", title: "Kitchen Sink" },
   "Game Studio": { placement: "thread-panel", title: "Game Studio", tab: "Game Studio" },
-  "GitHub Stack": { placement: "thread-panel", title: "GitHub Stack", tab: "Stack" },
-  GitButler: { placement: "thread-panel", title: "GitButler", tab: "Changes" },
+  "GitHub Stack": { placement: "thread-panel", title: "GitHub Stack", tab: "GitHub Stack" },
+  GitButler: { placement: "thread-panel", title: "GitButler", tab: "GitButler" },
   Whiteboard: { placement: "thread-panel", title: "Whiteboard", tab: "Whiteboard" },
-  "Inline Visualizations": { placement: "dialog", title: "Visualization", tab: "Tweak" },
-  "Code Review": { placement: "page", title: "Reviews" },
+  "Inline Visualizations": { placement: "message", title: "Visualization" },
+  "Code Review": { placement: "page", title: "Review" },
   Tasks: { placement: "page", title: "Tasks" },
   Dotfiles: { placement: "page", title: "Dotfiles" },
   Reminders: { placement: "page", title: "Reminders" },

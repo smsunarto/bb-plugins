@@ -128,7 +128,12 @@ const preview: Preview = {
             }
           >
             {editor ? (
-              <EditorFrame context={placement} width={context.globals.width} location={location}>
+              <EditorFrame
+                context={placement}
+                width={context.globals.width}
+                layout={context.parameters.previewLayout}
+                location={location}
+              >
                 {content}
               </EditorFrame>
             ) : (

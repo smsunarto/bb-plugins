@@ -47,6 +47,12 @@ import { loadVideoPlayer, mayNeedVideoPlayer, upgradeVideoPlayers } from "./vide
 import { TweakPanel } from "./tweak-panel.tsx";
 import type { TweakGroup } from "./tweak-contract.ts";
 import { useWidgetState } from "./use-widget-state.ts";
+import {
+  PreviewActions,
+  PreviewHeader,
+  PreviewSurface,
+  type SourceToggle,
+} from "./components/preview-surface.tsx";
 
 /**
  * The fenced-block language this plugin renders. bb's built-in plugin claims
@@ -87,8 +93,6 @@ type LoadState =
     }
   | { status: "error"; message: string };
 
-type SourceToggle = { shown: boolean; onToggle: () => void };
-
 export const DEFAULT_HEIGHT_PX = 224;
 export const MIN_HEIGHT_PX = 120;
 export const MAX_HEIGHT_PX = 1_200;
@@ -110,131 +114,6 @@ export function parsePreviewHeight(value: string | undefined): number | null {
   return Number.isSafeInteger(height) && height >= MIN_HEIGHT_PX && height <= MAX_HEIGHT_PX
     ? height
     : null;
-}
-
-function PreviewHeader({
-  label,
-  expanded,
-  onToggle,
-  onOpen,
-  onWide,
-  wideTrigger,
-  sourceToggle,
-}: {
-  label: string;
-  expanded: boolean;
-  onToggle: () => void;
-  onOpen: (() => void) | null;
-  onWide?: () => void;
-  wideTrigger?: RefObject<HTMLButtonElement | null>;
-  /** HTML written in the reply has no file to open, so it reveals its source. */
-  sourceToggle?: SourceToggle;
-}) {
-  // Upstream #4507 and #4538: the whole row toggles in place, and opening the
-  // file is a separate trailing action so the two never look alike.
-  return (
-    <figcaption className="inline-vis-header">
-      <button
-        type="button"
-        className="inline-vis-toggle"
-        aria-label={`${expanded ? "Collapse" : "Expand"} visualization ${label}`}
-        aria-expanded={expanded}
-        title={expanded ? "Collapse preview" : "Expand preview here"}
-        onClick={onToggle}
-      >
-        <span className="inline-vis-label">inline-vis</span>
-        <span className="inline-vis-path" title={label}>
-          <bdi>{label}</bdi>
-        </span>
-        {/* Sized attributes keep icons small if they render before app.css applies. */}
-        <svg
-          aria-hidden="true"
-          className="inline-vis-chevron"
-          width="10"
-          height="16"
-          viewBox="0 0 10 16"
-          fill="currentColor"
-        >
-          <path d="M.47 5.47a.75.75 0 0 1 1.06 0L5 8.94l3.47-3.47a.75.75 0 0 1 1.06 1.06l-4 4a.75.75 0 0 1-1.06 0l-4-4a.75.75 0 0 1 0-1.06" />
-        </svg>
-      </button>
-      {onWide ? (
-        <button
-          type="button"
-          ref={wideTrigger}
-          className="inline-vis-action inline-vis-icon"
-          aria-label="Wide view"
-          title="Wide view"
-          onClick={onWide}
-        >
-          <svg
-            aria-hidden="true"
-            width="14"
-            height="14"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          >
-            <path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7" />
-          </svg>
-        </button>
-      ) : (
-        // Hold the slot while loading so the row does not shift when it appears.
-        expanded && <span aria-hidden="true" className="inline-vis-action" />
-      )}
-      {sourceToggle ? (
-        <button
-          type="button"
-          className="inline-vis-action inline-vis-icon"
-          aria-label={sourceToggle.shown ? "Hide source" : "Show source"}
-          aria-pressed={sourceToggle.shown}
-          title={sourceToggle.shown ? "Hide source" : "Show source"}
-          onClick={sourceToggle.onToggle}
-        >
-          <svg
-            aria-hidden="true"
-            width="14"
-            height="14"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          >
-            <path d="m16 18 6-6-6-6M8 6l-6 6 6 6" />
-          </svg>
-        </button>
-      ) : onOpen === null ? (
-        <span aria-hidden="true" className="inline-vis-action" />
-      ) : (
-        <button
-          type="button"
-          className="inline-vis-action inline-vis-icon inline-vis-open"
-          aria-label={`Open ${label} in sidebar`}
-          title="Open in sidebar"
-          onClick={onOpen}
-        >
-          <svg
-            aria-hidden="true"
-            width="14"
-            height="14"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          >
-            <path d="M15 3h6v6M10 14 21 3M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
-          </svg>
-        </button>
-      )}
-    </figcaption>
-  );
 }
 
 function Alert({
@@ -575,37 +454,6 @@ function useFragmentBridge(
   return { contentHeight, tweaks, frameKey, assetError };
 }
 
-function PreviewActions({
-  hasTweaks,
-  canShareState,
-  tweakOpen,
-  saving,
-  onTweak,
-  onShare,
-}: {
-  hasTweaks: boolean;
-  canShareState: boolean;
-  tweakOpen: boolean;
-  saving: boolean;
-  onTweak: () => void;
-  onShare: () => void;
-}) {
-  return (
-    <>
-      {hasTweaks && (
-        <button type="button" aria-expanded={tweakOpen} onClick={onTweak}>
-          Tweak
-        </button>
-      )}
-      {canShareState && (
-        <button type="button" disabled={saving} onClick={onShare}>
-          Use saved state
-        </button>
-      )}
-    </>
-  );
-}
-
 function WidgetStateNotice({
   source,
   readError,
@@ -910,72 +758,53 @@ function ExpandedPreview({
       />
       {/* Plain previews, such as recordings, sit flush under the header. */}
       {(hasTweaks || canShareState) && <div className="inline-vis-toolbar">{actions}</div>}
-      <dialog
-        ref={surface}
-        className={`inline-vis-surface${wide ? " inline-vis-wide" : ""}`}
-        role={wide ? "dialog" : "region"}
-        aria-label={wide ? `Wide visualization: ${state.label}` : `Visualization: ${state.label}`}
-        aria-modal={wide || undefined}
-        onCancel={(event) => {
-          event.preventDefault();
-          leaveWide();
-        }}
-      >
-        {wide && (
-          <div className="inline-vis-wide-header">
-            <span>{hostFile?.file.split(/[\\/]/u).pop() ?? state.label}</span>
-            <div>
-              {actions}
-              <button
-                type="button"
-                onClick={() => {
-                  leaveWide();
-                }}
-              >
-                Back to chat
-              </button>
-            </div>
-          </div>
-        )}
-        <WidgetStateNotice
-          source={source}
-          readError={readError}
-          saveError={saveError}
-          onRetry={() => setRestoreRevision((value) => value + 1)}
-        />
-        {assetError && (
-          <Alert source={source} error>
-            Some media in {state.label} did not load: {assetError}
-          </Alert>
-        )}
-        <div
-          className={`inline-vis-workspace${tweakOpen && tweaks.groups.length > 0 ? " inline-vis-with-tweaks" : ""}`}
-        >
-          <div className="inline-vis-preview">
-            <PreviewDocument preview={state} frame={frame} frameKey={frameKey} height={height} />
-          </div>
-          {tweakOpen && tweaks.groups.length > 0 && (
-            <TweakPanel
-              groups={tweaks.groups}
-              original={tweaks.original}
-              saving={saving}
-              readOnly={readError !== null}
-              onClose={() => setTweakOpen(false)}
-              onChange={(groupId, controlId, value) =>
-                sendToFrame(FRAGMENT_MESSAGES.tweakChange, { groupId, controlId, value })
-              }
-              onReset={(groupId) => sendToFrame(FRAGMENT_MESSAGES.tweakReset, { groupId })}
-              onOriginal={(active) => sendToFrame(FRAGMENT_MESSAGES.tweakOriginal, { active })}
-              // Adjustments travel in a saved-state pill, which needs a host file.
-              onApply={
-                hostFile
-                  ? () => void addContext("Use these design adjustments for the next revision.")
-                  : undefined
-              }
+      <PreviewSurface
+        dialogRef={surface}
+        wide={wide}
+        label={state.label}
+        wideLabel={hostFile?.file.split(/[\\/]/u).pop() ?? state.label}
+        onLeaveWide={leaveWide}
+        actions={actions}
+        notice={
+          <>
+            <WidgetStateNotice
+              source={source}
+              readError={readError}
+              saveError={saveError}
+              onRetry={() => setRestoreRevision((value) => value + 1)}
             />
-          )}
-        </div>
-      </dialog>
+            {assetError && (
+              <Alert source={source} error>
+                Some media in {state.label} did not load: {assetError}
+              </Alert>
+            )}
+          </>
+        }
+        preview={
+          <PreviewDocument preview={state} frame={frame} frameKey={frameKey} height={height} />
+        }
+        showPanel={tweakOpen && tweaks.groups.length > 0}
+        panel={
+          <TweakPanel
+            groups={tweaks.groups}
+            original={tweaks.original}
+            saving={saving}
+            readOnly={readError !== null}
+            onClose={() => setTweakOpen(false)}
+            onChange={(groupId, controlId, value) =>
+              sendToFrame(FRAGMENT_MESSAGES.tweakChange, { groupId, controlId, value })
+            }
+            onReset={(groupId) => sendToFrame(FRAGMENT_MESSAGES.tweakReset, { groupId })}
+            onOriginal={(active) => sendToFrame(FRAGMENT_MESSAGES.tweakOriginal, { active })}
+            // Adjustments travel in a saved-state pill, which needs a host file.
+            onApply={
+              hostFile
+                ? () => void addContext("Use these design adjustments for the next revision.")
+                : undefined
+            }
+          />
+        }
+      />
     </>
   );
 }

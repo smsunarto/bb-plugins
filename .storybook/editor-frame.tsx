@@ -102,11 +102,13 @@ class NativeBoundary extends Component<
 export function EditorFrame({
   context,
   width,
+  layout,
   children,
   location,
 }: {
   context: EditorContext;
   width: string;
+  layout?: string;
   children: ReactNode;
   location: PreviewLocation;
 }) {
@@ -125,7 +127,7 @@ export function EditorFrame({
   return (
     <NativeBoundary isolatedURL={previewURL(location, true)} location={location}>
       <Suspense fallback={<output>Loading native BB editor…</output>}>
-        <NativeEditorFrame context={context} width={width}>
+        <NativeEditorFrame context={context} width={width} layout={layout}>
           <StoryBoundary onError={setStoryError}>{children}</StoryBoundary>
         </NativeEditorFrame>
       </Suspense>

@@ -2,6 +2,7 @@ declare module "virtual:bb-native-frame" {
   const NativeEditorFrame: import("react").ComponentType<{
     context: import("./editor-context").EditorContext;
     width: string;
+    layout?: string;
     children: import("react").ReactNode;
   }>;
   export default NativeEditorFrame;

@@ -86,7 +86,10 @@ async function ready(page: Page) {
       `Native preview did not start: ${(await page.locator("body").innerText()).slice(0, 800)}`,
     );
   }
-  await page.locator("[data-storybook-component]").waitFor();
+  await page
+    .locator("[data-storybook-component]:visible, [data-storybook-component] dialog[open]:visible")
+    .first()
+    .waitFor();
 }
 try {
   await story("screens-github-stack-stack-panel--draft-stack");
@@ -176,9 +179,10 @@ try {
       ["screens-tasks-views--list", "page"],
       ["screens-dotfiles-repository--populated", "page"],
       ["screens-agent-instructions-rules-editor--populated", "settings"],
+      ["screens-docs-document-browser--notes", "page-panel"],
       ["components-amp-oracle-card--completed", "message"],
       ["components-devin-cloud-session--active", "composer"],
-      ["components-inline-visualizations-tweak-panel--editable", "dialog"],
+      ["components-inline-visualizations-tweak-panel--editable", "message"],
       ["components-gtd-sidebar-thread-cards--idle", "sidebar"],
       ["screens-vimium-link-hints--keyboard-navigation", "overlay"],
     ]) {
@@ -189,15 +193,47 @@ try {
         await page.locator("[data-native-bb]").getAttribute("data-placement"),
         placement,
       );
-      if (placement === "dialog") {
-        await page.evaluate(() =>
-          window.__STORYBOOK_ADDONS_CHANNEL__.emit("updateGlobals", {
-            globals: { width: "narrow" },
-          }),
+      if (id === "components-inline-visualizations-tweak-panel--editable") {
+        await page
+          .getByRole("dialog", { name: "Wide visualization: release-readiness.html" })
+          .waitFor();
+        const preview = await page.getByTitle("Release readiness preview").boundingBox();
+        const controls = await page
+          .getByRole("complementary", { name: "Design controls" })
+          .boundingBox();
+        assert(
+          preview && controls && preview.x < controls.x && controls.width <= 300,
+          "visualization inspector sits beside the preview at its production width",
         );
-        await page.waitForTimeout(100);
-        const box = await page.locator("[data-storybook-component]").boundingBox();
-        assert(box && box.width <= 361, "portaled dialog respects narrow width");
+        assert.equal(
+          await page.getByRole("button", { name: "Close", exact: true }).count(),
+          0,
+          "plugin-owned dialog has no duplicate generic dialog close button",
+        );
+        await page.getByRole("button", { name: "Back to chat", exact: true }).click();
+        const reopen = page.getByRole("button", { name: "Wide view", exact: true });
+        await reopen.waitFor();
+        assert(await reopen.evaluate((element) => document.activeElement === element));
+        assert.equal(await page.locator('dialog[aria-modal="true"]').count(), 0);
+        await reopen.click();
+        await page.getByRole("complementary", { name: "Design controls" }).waitFor();
+      }
+      if (placement === "settings") {
+        await page.getByRole("heading", { name: /Agent instructions/i }).waitFor();
+        await page.setViewportSize({ width: 640, height: 740 });
+        await page.waitForTimeout(250);
+        const toggle = await page
+          .getByRole("button", { name: "Toggle sidebar", exact: true })
+          .boundingBox();
+        const title = await page
+          .locator('[data-testid="app-page-header-content-row"]')
+          .getByText("Settings", { exact: true })
+          .boundingBox();
+        assert(
+          toggle && title && toggle.x + toggle.width <= title.x,
+          "compact sidebar toggle does not overlap the page title",
+        );
+        await page.setViewportSize({ width: 1600, height: 720 });
       }
       if (placement === "page") {
         await page.setViewportSize({ width: 1600, height: 400 });
@@ -213,6 +249,17 @@ try {
           "page story fills its available editor height",
         );
         assert(pageLayout.bottom <= pageLayout.viewport, "page scrolling stays inside the editor");
+        const horizontalLayout = await page
+          .locator("[data-storybook-component]")
+          .evaluate((slot) => ({
+            width: slot.clientWidth,
+            parent: slot.parentElement?.clientWidth,
+          }));
+        assert.equal(
+          horizontalLayout.width,
+          horizontalLayout.parent,
+          "complete screens fill the native page rather than using a component width cap",
+        );
         if (id === "screens-tasks-views--list") {
           await page.locator("[data-task-key]").first().waitFor();
           assert(
@@ -243,6 +290,24 @@ try {
       }
     }
     console.log("PASS: native placements, responsive plugin utilities and portal widths");
+    await story("components-inline-visualizations-tweak-panel--empty");
+    await ready(page);
+    assert.equal(await page.getByRole("complementary", { name: "Design controls" }).count(), 0);
+    assert.equal(await page.getByRole("button", { name: "Tweak", exact: true }).count(), 0);
+    await page.goto(
+      `${base}/iframe.html?id=components-inline-visualizations-tweak-panel--docs&viewMode=docs&globals=context:editor;width:wide`,
+    );
+    await page.locator("[data-native-bb]").nth(1).waitFor();
+    assert.equal(await page.locator('dialog[aria-modal="true"]').count(), 0);
+    const wideViews = page.getByRole("button", { name: "Wide view", exact: true });
+    await wideViews.first().click();
+    await page.locator('dialog[aria-modal="true"]').waitFor();
+    assert.equal(await page.locator('dialog[aria-modal="true"]').count(), 1);
+    await page.getByRole("button", { name: "Back to chat", exact: true }).click();
+    assert.equal(await page.locator('dialog[aria-modal="true"]').count(), 0);
+    console.log(
+      "PASS: empty visualization and multiple Docs examples use the real preview surface",
+    );
     await story("components-code-review-comment-form--empty");
     await ready(page);
     await page.evaluate(() =>

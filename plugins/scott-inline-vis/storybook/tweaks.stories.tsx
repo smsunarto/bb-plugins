@@ -1,18 +1,166 @@
-import { useState, type ComponentProps } from "react";
+import { useLayoutEffect, useRef, useState, type ComponentProps, type ReactNode } from "react";
 import { ready } from "../../../.storybook/ready";
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { fn } from "storybook/test";
 import { TweakPanel } from "../tweak-panel";
 import "../app.css";
-function InteractiveTweaks(args: ComponentProps<typeof TweakPanel>) {
+import { PreviewActions, PreviewHeader, PreviewSurface } from "../components/preview-surface";
+
+function ReleasePreview({
+  groups,
+  original,
+}: Pick<ComponentProps<typeof TweakPanel>, "groups" | "original">) {
+  const value = (id: string) => {
+    const control = groups.flatMap((group) => group.controls).find((control) => control.id === id);
+    return original ? control?.initialValue : control?.value;
+  };
+  const escape = (input: string) =>
+    input.replace(
+      /[&<>"']/g,
+      (character) =>
+        ({
+          "&": "&amp;",
+          "<": "&lt;",
+          ">": "&gt;",
+          '"': "&quot;",
+          "'": "&#39;",
+        })[character] ?? character,
+    );
+  const theme = getComputedStyle(document.documentElement);
+  const color = (name: string) => escape(theme.getPropertyValue(name).trim());
+  const height = Number(value("size")) || 24;
+  const labelSize = Number(value("label-size")) || 13;
+  const rows =
+    value("palette") === "status"
+      ? [
+          ["In review", 78],
+          ["Ready", 92],
+          ["In progress", 61],
+        ]
+      : value("palette") === "priority"
+        ? [
+            ["Release blockers", 92],
+            ["High priority", 78],
+            ["Improvements", 61],
+          ]
+        : [
+            ["Platform", 92],
+            ["Desktop", 78],
+            ["Developer experience", 61],
+          ];
+  const accent = typeof value("accent") === "string" ? String(value("accent")) : color("--primary");
+  const html = `<!doctype html><html><head><meta charset="utf-8"><style>
+    *{box-sizing:border-box}body{margin:0;padding:32px;background:${color("--background")};color:${color("--foreground")};font:13px system-ui,sans-serif}
+    h1{margin:0 0 8px;font-size:20px}p{margin:0 0 32px;color:${color("--muted-foreground")};line-height:1.5}
+    .row{margin:0 0 24px}.label{display:flex;justify-content:space-between;margin-bottom:8px;font-size:${labelSize}px}
+    .track{position:relative;height:${height}px;background:${color("--muted")};border-radius:4px;overflow:hidden}
+    .fill{height:100%;background:${escape(accent)};border-radius:4px}.target{position:absolute;inset:0 auto 0 80%;border-left:2px dashed ${color("--foreground")}}
+    footer{padding-top:20px;border-top:1px solid ${color("--border")};color:${color("--muted-foreground")}}
+    </style></head><body><h1>Autumn release readiness</h1><p>Completed release checks by ${escape(String(value("palette") ?? "team"))}. Target: 80% before the release candidate.</p>
+    ${rows.map(([label, percent]) => `<div class="row"><div class="label"><span>${label}</span>${value("totals") !== false ? `<span>${percent}%</span>` : ""}</div><div class="track"><div class="fill" style="width:${percent}%"></div>${value("grid") !== false ? '<span class="target"></span>' : ""}</div></div>`).join("")}
+    <footer>Release candidate · 24 October</footer></body></html>`;
+  return (
+    <iframe
+      title="Release readiness preview"
+      className="inline-vis-frame"
+      srcDoc={html}
+      sandbox=""
+      style={{ height: 440 }}
+    />
+  );
+}
+
+function TweakWorkspace({
+  preview,
+  panel,
+  visible,
+  hasTweaks,
+  initialWide,
+  onToggle,
+}: {
+  preview: ReactNode;
+  panel: ReactNode;
+  visible: boolean;
+  hasTweaks: boolean;
+  initialWide: boolean;
+  onToggle: () => void;
+}) {
+  const dialog = useRef<HTMLDialogElement>(null);
+  const wideTrigger = useRef<HTMLButtonElement>(null);
+  const [wide, setWide] = useState(initialWide);
+  const [expanded, setExpanded] = useState(true);
+  useLayoutEffect(() => {
+    const frame = requestAnimationFrame(() => {
+      const element = dialog.current;
+      if (!element?.isConnected) return;
+      if (element.open) element.close();
+      if (wide) element.showModal();
+      else element.setAttribute("open", "");
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [wide, expanded]);
+  const leaveWide = () => {
+    dialog.current?.close();
+    setWide(false);
+    wideTrigger.current?.focus({ preventScroll: true });
+  };
+  const actions = (
+    <PreviewActions
+      hasTweaks={hasTweaks}
+      canShareState={false}
+      tweakOpen={visible}
+      saving={false}
+      onTweak={onToggle}
+      onShare={() => {}}
+    />
+  );
+  return (
+    <figure className="inline-vis-card">
+      <PreviewHeader
+        label="release-readiness.html"
+        expanded={expanded}
+        onToggle={() => setExpanded(!expanded)}
+        onOpen={null}
+        onWide={expanded ? () => setWide(true) : undefined}
+        wideTrigger={wideTrigger}
+      />
+      {expanded && (
+        <>
+          {hasTweaks && <div className="inline-vis-toolbar">{actions}</div>}
+          <PreviewSurface
+            dialogRef={dialog}
+            wide={wide}
+            label="release-readiness.html"
+            onLeaveWide={leaveWide}
+            actions={actions}
+            preview={preview}
+            panel={panel}
+            showPanel={visible && hasTweaks}
+          />
+        </>
+      )}
+    </figure>
+  );
+}
+
+function InteractiveTweaks({
+  initialWide,
+  ...args
+}: ComponentProps<typeof TweakPanel> & { initialWide: boolean }) {
   const [groups, setGroups] = useState(args.groups);
   const [original, setOriginal] = useState(args.original);
-  return (
+  const [visible, setVisible] = useState(true);
+  const inEditor = document.documentElement.dataset.bbNativePreview === "loaded";
+  const panel = (
     <TweakPanel
       {...args}
       groups={groups}
       original={original}
       onOriginal={setOriginal}
+      onClose={() => {
+        args.onClose();
+        setVisible(false);
+      }}
       onReset={() => setGroups(args.groups)}
       onChange={(groupId, controlId, value) => {
         args.onChange(groupId, controlId, value);
@@ -40,12 +188,29 @@ function InteractiveTweaks(args: ComponentProps<typeof TweakPanel>) {
       }}
     />
   );
+  return inEditor ? (
+    <TweakWorkspace
+      preview={<ReleasePreview groups={groups} original={original} />}
+      panel={panel}
+      visible={visible}
+      hasTweaks={groups.length > 0}
+      initialWide={initialWide}
+      onToggle={() => setVisible(!visible)}
+    />
+  ) : (
+    panel
+  );
 }
 const meta = {
-  render: (args) => <InteractiveTweaks {...args} />,
+  render: (args, context) => (
+    <InteractiveTweaks {...args} initialWide={context.viewMode !== "docs"} />
+  ),
   play: ready,
   title: "Components/Inline Visualizations/Tweak panel",
   component: TweakPanel,
+  parameters: {
+    editorContext: { placement: "message", title: "Visualization" },
+  },
   tags: ["autodocs"],
   args: {
     groups: [

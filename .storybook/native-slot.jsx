@@ -1,7 +1,7 @@
 import { useLayoutEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
 
-function SlotOutlet({ element, focus }) {
+function SlotOutlet({ element, focus, layout, placement }) {
   const holder = useRef(/** @type {HTMLDivElement | null} */ (null));
   useLayoutEffect(() => {
     const container = holder.current;
@@ -15,11 +15,19 @@ function SlotOutlet({ element, focus }) {
       if (element.parentNode === container) element.remove();
     };
   }, [element, focus]);
-  return <div ref={holder} data-native-slot-outlet="" className="h-full w-full min-h-0 min-w-0" />;
+  return (
+    <div
+      ref={holder}
+      data-native-slot-outlet=""
+      data-native-slot-layout={layout ?? "component"}
+      data-native-slot-placement={placement}
+      className="w-full min-h-0 min-w-0"
+    />
+  );
 }
 
 /** Keep plugin React state alive while native BB moves between an inline panel and a portal. */
-export function useNativeSlot(children, width, placement) {
+export function useNativeSlot(children, width, placement, layout) {
   const element = useMemo(() => {
     const node = document.createElement("div");
     node.className = "sb-native-slot";
@@ -33,7 +41,8 @@ export function useNativeSlot(children, width, placement) {
       { narrow: "360px", medium: "640px" }[width] ?? "1100px",
     );
     element.dataset.nativeSlotPlacement = placement;
-  }, [element, width, placement]);
+    element.dataset.nativeSlotLayout = layout ?? "component";
+  }, [element, width, placement, layout]);
   useLayoutEffect(() => {
     const trackFocus = (event) => {
       if (element.contains(event.target)) focus.current = event.target;
@@ -43,7 +52,7 @@ export function useNativeSlot(children, width, placement) {
     return () => document.removeEventListener("focusin", trackFocus);
   }, [element]);
   return {
-    outlet: <SlotOutlet element={element} focus={focus} />,
+    outlet: <SlotOutlet element={element} focus={focus} layout={layout} placement={placement} />,
     portal: createPortal(children, element),
   };
 }
