@@ -6,7 +6,9 @@ import { OpenListener } from "./panel/open-listener.tsx";
 import { SessionPanel } from "./panel/session-panel.tsx";
 
 export default definePluginApp((app) => {
-  app.slots.threadPanelAction({
+  app.slots.experimental_tab({
+    context: { kind: "thread" },
+    availability: "action",
     id: PANEL_ACTION_ID,
     title: "Whiteboard",
     icon: WHITEBOARD_ICON,
