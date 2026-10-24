@@ -1,11 +1,8 @@
-import type { PluginSidebarThreadActions } from "@get-bb/plugin-sdk/app";
-
 // The palette row is registered at app definition time, outside React, while
-// the host's archive action and the list's advance only exist inside a
-// mounted inbox. The mounted list publishes both here so the palette settles
+// bb's archive action and the list's advance only exist inside a mounted
+// inbox. The mounted list publishes its settle here so the palette settles
 // exactly like a row's own button.
 export interface PublishedSidebarActions {
-  actions: PluginSidebarThreadActions;
   settle(threadId: string): void;
 }
 

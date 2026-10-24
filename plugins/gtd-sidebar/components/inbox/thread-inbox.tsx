@@ -1,17 +1,16 @@
-import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { createPortal } from "react-dom";
 import { DndContext, DragOverlay } from "@dnd-kit/core";
 import { SortableContext, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import {
   experimental_useProviders as useProviders,
-  experimental_useSidebarThreadActions as useSidebarThreadActions,
   experimental_useSidebarThreads as useSidebarThreads,
   useBbNavigate,
   useRpc,
   useSdk,
   useSettings,
   type PluginSidebarThread,
-  type PluginSidebarThreadActions,
+  type PluginThreadActionTarget,
   type PluginThreadListProps,
 } from "@get-bb/plugin-sdk/app";
 import { toast } from "sonner";
@@ -36,6 +35,8 @@ import { useHiddenWorkerActivity } from "../../hooks/use-hidden-worker-activity"
 import { useSettledArchivePaging, useUnsettle } from "../../hooks/use-settled-threads";
 import { useCommittedEvent } from "../../hooks/use-committed-event";
 import { forgetSidebarActions, publishSidebarActions } from "../../lib/sidebar-actions-bridge";
+import { toThreadActionTarget } from "../../lib/thread-action-target";
+import { usePendingArchives } from "./pending-archives";
 import { TRAILING_GLYPH_BOX_CLASS } from "./status-slot";
 import { archiveAsksFirst, filterByProject, nextThreadIdAfterSettle } from "../../lib/inbox";
 import {
@@ -95,14 +96,18 @@ const MOBILE_SCROLL_FADE_STYLE: CSSProperties = {
 };
 
 export function ThreadInbox(props: PluginThreadListProps) {
-  // One subscription to bb's actions for the whole list; rows never take one.
-  const threadActions = useSidebarThreadActions();
+  const sdk = useSdk();
+  // bb's silent title write, the one its own inline rename makes.
+  const renameThread = useCallback(
+    (threadId: string, title: string) => sdk.threads.update({ threadId, title }),
+    [sdk],
+  );
   // bb's slot prop, not a media query, decides compact for the vendored
   // registry hooks, so the rename editor and the rows agree.
   return (
     <CompactViewportOverrideProvider isCompactViewport={props.isCompactViewport}>
-      <RenameProvider renameThread={threadActions.rename}>
-        <InboxList {...props} threadActions={threadActions} />
+      <RenameProvider renameThread={renameThread}>
+        <InboxList {...props} />
       </RenameProvider>
     </CompactViewportOverrideProvider>
   );
@@ -113,8 +118,7 @@ function InboxList({
   isCompactViewport,
   onNavigate,
   searchQuery,
-  threadActions,
-}: PluginThreadListProps & { threadActions: PluginSidebarThreadActions }) {
+}: PluginThreadListProps) {
   const sidebar = useSidebarThreads({ experimental_lifecycles: SIDEBAR_LIFECYCLES });
   const { status, projects } = sidebar;
   const sidebarThreads = useStableThreads(useHiddenWorkerActivity(sidebar.threads));
@@ -228,11 +232,13 @@ function InboxList({
   );
   // A machine scope carries into the composer, which preselects that machine
   // for the new environment when it can host one.
+  const navigate = useBbNavigate();
   const onNewThread = useCommittedEvent((projectId: string) => {
-    threadActions.openNewThread({
+    const hostId = visibility.composerHostId;
+    navigate.toCompose({
       projectId,
-      hostId: visibility.composerHostId,
       focusPrompt: true,
+      ...(hostId === undefined ? {} : { hostId }),
     });
     onNavigate();
   });
@@ -431,6 +437,7 @@ function InboxList({
   // moves itself through the sortable's transform instead.
   const dragSource = sidebarDrag.drag.source;
   const dragGhostTitle = dragSource?.kind === "thread" ? titleFor(dragSource.threadId) : null;
+  const pendingArchives = usePendingArchives();
   const command = useRowCommands({
     activeThreadId,
     onNavigate,
@@ -438,7 +445,7 @@ function InboxList({
     unsettle,
     visibleActiveRows,
     threads: sidebar.threads,
-    threadActions,
+    archive: pendingArchives.archive,
   });
   const scrollRef = useRef<HTMLDivElement>(null);
   const focusedRow = useFocusedRow();
@@ -459,6 +466,7 @@ function InboxList({
       settingsLoading={settingsLoading}
       knownMachines={sidebar.experimental_hosts}
     >
+      {pendingArchives.runners}
       <DndContext {...sidebarDrag.contextProps}>
         <div
           data-gtd-sidebar-thread-list=""
@@ -763,7 +771,7 @@ function useRowCommands({
   unsettle,
   visibleActiveRows,
   threads,
-  threadActions,
+  archive,
 }: {
   activeThreadId: PluginThreadListProps["activeThreadId"];
   onNavigate: PluginThreadListProps["onNavigate"];
@@ -774,9 +782,16 @@ function useRowCommands({
     row: VisibleInboxRow;
   }[];
   threads: readonly PluginSidebarThread[];
-  threadActions: PluginSidebarThreadActions;
+  /** bb's own Archive for one thread, confirmation included. */
+  archive: (thread: PluginThreadActionTarget) => void;
 }) {
   const navigate = useBbNavigate();
+  // bb's split placement rules, or a plain open; either one expands the
+  // thread's conversation if a side panel had collapsed it.
+  const openThread = useCommittedEvent((threadId: string, split = false) => {
+    if (split) navigate.toThread(threadId, { split: true });
+    else navigate.toThread(threadId);
+  });
   // bb's archive sends the viewer to the compose screen once the mutation
   // resolves. Route changes commit inside a React transition, so against a
   // local server that lands before the neighbour's route does and wins. The
@@ -805,8 +820,8 @@ function useRowCommands({
       return;
     }
     pendingAdvanceRef.current = null;
-    threadActions.open(pending.nextThreadId);
-  }, [activeThreadId, threads, threadActions]);
+    openThread(pending.nextThreadId);
+  }, [activeThreadId, threads, openThread]);
 
   const settle = useCommittedEvent((threadId: string) => {
     const settled = visibleActiveRows.find((entry) => entry.row.node.thread.id === threadId);
@@ -832,31 +847,26 @@ function useRowCommands({
         // A parent waits on bb's confirmation, so only the effect above
         // advances, once the archive lands. A cancel leaves the user in place.
         if (!awaitsArchive) {
-          threadActions.open(nextThreadId);
+          openThread(nextThreadId);
           onNavigate();
         }
       }
     }
-    threadActions.archive(threadId);
+    archiveIfActive(threads, threadId, archive);
   });
 
   // The palette's settle row runs this same dispatcher, and a mounted list
   // is the only place it exists.
   useEffect(() => {
-    const published = { actions: threadActions, settle };
+    const published = { settle };
     publishSidebarActions(published);
     return () => forgetSidebarActions(published);
-  }, [threadActions, settle]);
+  }, [settle]);
 
   const command = useCommittedEvent((command: RowCommand) => {
     switch (command.kind) {
       case "open":
-        if (command.shelf === "settled") navigate.toThread(command.threadId);
-        else threadActions.open(command.threadId, { split: command.split });
-        onNavigate();
-        return;
-      case "open-in-split":
-        threadActions.open(command.threadId, { split: true });
+        openThread(command.threadId, command.split);
         onNavigate();
         return;
       case "settle":
@@ -868,19 +878,23 @@ function useRowCommands({
       case "restore":
         if (command.shelf === "snoozed") lifecycle.unsnooze(command.threadId);
         else unsettle(command.threadId);
-        return;
-      case "pin":
-        void threadActions.setPinned(command.threadId, command.pinned);
-        return;
-      case "set-read":
-        void threadActions.setRead(command.threadId, command.read);
-        return;
-      case "request-delete":
-        threadActions.requestDelete(command.threadId);
     }
   });
 
   return command;
+}
+
+/**
+ * Settle is bb's archive. An archived thread's Archive entry is Unarchive, so
+ * a thread already on the Settled shelf is left where it is.
+ */
+function archiveIfActive(
+  threads: readonly PluginSidebarThread[],
+  threadId: string,
+  archive: (thread: PluginThreadActionTarget) => void,
+): void {
+  const thread = threads.find((entry) => entry.id === threadId);
+  if (thread !== undefined && !thread.isArchived) archive(toThreadActionTarget(thread));
 }
 
 function useInboxTree(

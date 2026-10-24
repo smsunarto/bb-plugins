@@ -8,10 +8,11 @@ import { cn } from "../../lib/utils";
  * for a raised hand, the clock for a message waiting in the queue, the
  * spinner for live work, and a dot for a finished thread you have not read.
  *
- * The SDK ships `indicator` as data and no status component on purpose, so a
- * replaced sidebar can choose its own look. This one deliberately does not:
- * the two lists sit in the same window, and a user who switches between them
- * should not have to learn a second vocabulary.
+ * The two lists sit in the same window, and a user who switches between them
+ * should not have to learn a second vocabulary. SDK 0.6.75 also ships bb's
+ * own glyph as `experimental_ThreadStatusGlyph`, which draws other plugins'
+ * row statuses too; moving to it means reading `useSidebarThreadRowStatus`
+ * per row and reworking the slot's glyph-or-age rule and its descriptions.
  *
  * An unrecognized indicator draws nothing: bb adds kinds over time, and a
  * plugin built today must not break on a kind shipped tomorrow.

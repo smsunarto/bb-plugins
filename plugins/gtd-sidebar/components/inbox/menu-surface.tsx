@@ -21,30 +21,60 @@ export function MenuSurface({
       <ContextMenu.Content
         {...usePortalScopeProps()}
         {...props}
-        className="z-50 min-w-44 text-popover-foreground"
-        // The theme paints context-menu content as an opaque, bordered
-        // 15px card. Inline resets outrank that selector so the blurred
-        // layer below is the only surface, with the theme's geometry on it.
-        style={{ padding: 0, border: 0, background: "transparent", boxShadow: "none" }}
+        className={MENU_CONTENT_CLASS}
+        style={MENU_CONTENT_RESET_STYLE}
       >
-        <div
-          className={cn(
-            "rounded-[15px] p-[5px]",
-            // Translucent on purpose: the blurred sidebar shows through. A
-            // one-item menu is too short for the blur to hide the rows
-            // behind it, so the ground stays mostly opaque.
-            "bg-popover/85 backdrop-blur-xl backdrop-saturate-150",
-            // A 1px inner rim in the theme's border tone lifts the edge off the
-            // blur. Elevation is bb's --shadow-md, as on bb's own context menus.
-            "shadow-[inset_0_0_0_1px_var(--border),var(--shadow-md)]",
-          )}
-        >
-          {children}
-        </div>
+        <div className={MENU_MATERIAL_CLASS}>{children}</div>
       </ContextMenu.Content>
     </ContextMenu.Portal>
   );
 }
+
+/**
+ * A submenu on the same material, for a thread action's choice list (a
+ * plugin's Notifications levels, say). It hangs off its trigger row the way
+ * bb's own thread menu opens one.
+ */
+export function MenuSubSurface({
+  children,
+  ...props
+}: Omit<ContextMenu.ContextMenuSubContentProps, "className" | "style">) {
+  return (
+    <ContextMenu.Portal>
+      <ContextMenu.SubContent
+        {...usePortalScopeProps()}
+        sideOffset={6}
+        alignOffset={-5}
+        {...props}
+        className={cn(MENU_CONTENT_CLASS, "max-h-[min(24rem,calc(100vh-2rem))] overflow-y-auto")}
+        style={MENU_CONTENT_RESET_STYLE}
+      >
+        <div className={MENU_MATERIAL_CLASS}>{children}</div>
+      </ContextMenu.SubContent>
+    </ContextMenu.Portal>
+  );
+}
+
+const MENU_CONTENT_CLASS = "z-50 min-w-44 text-popover-foreground";
+// The theme paints context-menu content as an opaque, bordered 15px card.
+// Inline resets outrank that selector so the blurred layer below is the only
+// surface, with the theme's geometry on it.
+const MENU_CONTENT_RESET_STYLE = {
+  padding: 0,
+  border: 0,
+  background: "transparent",
+  boxShadow: "none",
+} as const;
+const MENU_MATERIAL_CLASS = cn(
+  "rounded-[15px] p-[5px]",
+  // Translucent on purpose: the blurred sidebar shows through. A one-item
+  // menu is too short for the blur to hide the rows behind it, so the ground
+  // stays mostly opaque.
+  "bg-popover/85 backdrop-blur-xl backdrop-saturate-150",
+  // A 1px inner rim in the theme's border tone lifts the edge off the blur.
+  // Elevation is bb's --shadow-md, as on bb's own context menus.
+  "shadow-[inset_0_0_0_1px_var(--border),var(--shadow-md)]",
+);
 
 /**
  * Opens the right-click menu around the focused element on Shift+F10 or the

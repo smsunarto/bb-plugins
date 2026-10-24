@@ -1,6 +1,5 @@
 import assert from "node:assert/strict";
 import { beforeEach, describe, it } from "node:test";
-import type { PluginSidebarThreadActions } from "@get-bb/plugin-sdk/app";
 import {
   archiveThread,
   forgetSidebarActions,
@@ -10,26 +9,8 @@ import {
   type PublishedSidebarActions,
 } from "../lib/sidebar-actions-bridge.ts";
 
-function fakeActions(archived: string[]): PluginSidebarThreadActions {
-  const noop = () => {};
-  return {
-    open: noop,
-    openNewThread: noop,
-    setPinned: async () => {},
-    setRead: async () => {},
-    rename: async () => {},
-    archive: (threadId) => {
-      archived.push(threadId);
-    },
-    requestDelete: noop,
-  };
-}
-
 function fakeEntry(settled: string[]): PublishedSidebarActions {
-  return {
-    actions: fakeActions([]),
-    settle: (threadId) => settled.push(threadId),
-  };
+  return { settle: (threadId) => settled.push(threadId) };
 }
 
 describe("sidebar actions bridge", () => {

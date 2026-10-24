@@ -11,10 +11,8 @@ import {
   type ReactNode,
 } from "react";
 import {
-  experimental_useSidebarThreadPullRequest as useSidebarThreadPullRequest,
   experimental_useSidebarThreadSplit as useSidebarThreadSplit,
   useSidebarThreadShortcut,
-  type PluginSidebarPullRequest,
   type PluginSidebarThread,
   type PluginSidebarThreadShortcut,
 } from "@get-bb/plugin-sdk/app";
@@ -41,6 +39,8 @@ import { snoozeUntilTomorrow } from "../../lib/lifecycle";
 import { useIosLongPress } from "../../hooks/use-ios-long-press";
 import { useCommittedEvent } from "../../hooks/use-committed-event";
 import { useNestRow, type SidebarDragApi } from "../../hooks/use-nest-drag";
+import { useRowPullRequest } from "../../hooks/use-row-pull-request";
+import type { RowPullRequest } from "../../lib/pull-requests";
 
 /** Horizontal step per nesting level, in px. Mirrors --gtd-depth-step in app.css. */
 const DEPTH_STEP = 16;
@@ -81,7 +81,7 @@ interface ThreadCardProps {
 
 export const ThreadCard = memo(function ThreadCard(props: ThreadCardProps) {
   const { splitProps, layout } = useSidebarThreadSplit(props.thread.id);
-  const { pullRequest } = useSidebarThreadPullRequest(props.thread.id);
+  const pullRequest = useRowPullRequest(props.thread.environment?.id ?? null);
   const onSplitPointerDown = useCommittedEvent((event: PointerEvent<HTMLElement>) => {
     splitProps.onPointerDown?.(event);
   });
@@ -165,7 +165,7 @@ const ThreadCardBody = memo(function ThreadCardBody({
   nestIsOver,
   setNestRef,
 }: ThreadCardProps & {
-  pullRequest: PluginSidebarPullRequest | null;
+  pullRequest: RowPullRequest | null;
   isOpenInSplit: boolean;
   isFocusedInSplit: boolean | undefined;
   onSplitPointerDown?: (event: PointerEvent<HTMLElement>) => void;
@@ -176,16 +176,11 @@ const ThreadCardBody = memo(function ThreadCardBody({
   setNestRef: (node: HTMLDivElement | null) => void;
 }) {
   const plan = buildThreadActionPlan({
-    lifecycle: {
-      kind: "active",
-      canPark,
-      snoozeUntilTomorrow: () =>
-        command({ kind: "snooze", threadId: thread.id, until: snoozeUntilTomorrow(new Date()) }),
-      settle: () => command({ kind: "settle", threadId: thread.id }),
-    },
-    isPinned: thread.isPinned,
-    setPinned: (pinned) => command({ kind: "pin", threadId: thread.id, pinned }),
-    requestDelete: () => command({ kind: "request-delete", threadId: thread.id }),
+    kind: "active",
+    canPark,
+    snoozeUntilTomorrow: () =>
+      command({ kind: "snooze", threadId: thread.id, until: snoozeUntilTomorrow(new Date()) }),
+    settle: () => command({ kind: "settle", threadId: thread.id }),
   });
   const titleText = thread.displayTitle;
   const rename = useThreadRename(thread.id, titleText);
@@ -273,14 +268,7 @@ const ThreadCardBody = memo(function ThreadCardBody({
   );
 
   return (
-    <RowContextMenu
-      thread={thread}
-      command={command}
-      plan={plan}
-      rename={rename}
-      canSplit={onSplitPointerDown !== undefined}
-      disabled={isCompactViewport}
-    >
+    <RowContextMenu thread={thread} plan={plan} rename={rename} disabled={isCompactViewport}>
       <div>
         <div
           ref={setCardRef}
@@ -319,7 +307,6 @@ const ThreadCardBody = memo(function ThreadCardBody({
             threadId={thread.id}
             title={titleText}
             describedBy={describedBy}
-            shelf={shelf}
             isActive={isActive}
             mobile={isCompactViewport}
             parentId={parentId}
@@ -341,10 +328,8 @@ const ThreadCardBody = memo(function ThreadCardBody({
           {isCompactViewport ? (
             <CompactThreadActionMenu
               thread={thread}
-              command={command}
               rename={rename}
               plan={plan}
-              canSplit={false}
               open={isMenuOpen}
               onOpenChange={setMenuOpen}
               anchorRef={cardRef}
@@ -527,7 +512,7 @@ function MobileThreadSummary({
   isUnread: boolean;
   shortcut: PluginSidebarThreadShortcut | null;
   activity: PluginSidebarThread["activity"];
-  pullRequest: PluginSidebarPullRequest | null;
+  pullRequest: RowPullRequest | null;
   interactive: boolean;
   /** The slot's id, which the row's link names as its description. */
   statusId: string;
@@ -651,7 +636,6 @@ function ThreadRowLink({
   shortcut,
   threadId,
   title,
-  shelf,
   isActive,
   mobile,
   parentId,
@@ -678,7 +662,6 @@ function ThreadRowLink({
   shortcut: PluginSidebarThreadShortcut | null;
   threadId: string;
   title: string;
-  shelf: ActiveThreadShelf;
   isActive: boolean;
   mobile: boolean;
   parentId: string | null;
@@ -757,12 +740,7 @@ function ThreadRowLink({
           if (event.button !== 0) return;
           event.preventDefault();
           if (rename.isEditing) return;
-          command({
-            kind: "open",
-            threadId: threadId,
-            shelf,
-            split: event.metaKey || event.ctrlKey,
-          });
+          command({ kind: "open", threadId: threadId, split: event.metaKey || event.ctrlKey });
         }}
         className={cn("absolute inset-0 cursor-pointer", mobile ? "rounded-xl" : "rounded-md")}
       />
@@ -792,7 +770,7 @@ function DesktopThreadSummary({
   showActions: boolean;
   canPark: boolean;
   activity: PluginSidebarThread["activity"];
-  pullRequest: PluginSidebarPullRequest | null;
+  pullRequest: RowPullRequest | null;
   /** The slot's id, which the row's link names as its description. */
   statusId: string;
 }) {
@@ -845,7 +823,7 @@ function ThreadMetadata({
   provider?: ProviderGlyphInfo;
   projectName: string | null;
   branchName: string | null;
-  pullRequest: PluginSidebarPullRequest | null;
+  pullRequest: RowPullRequest | null;
   showProviderIcon: boolean;
 }) {
   return (
@@ -941,7 +919,7 @@ function PullRequestNumber({
   interactive,
   className,
 }: {
-  pullRequest: PluginSidebarPullRequest;
+  pullRequest: RowPullRequest;
   interactive: boolean;
   className?: string;
 }) {
