@@ -27,19 +27,41 @@ export interface SentryAppTelemetry {
   flush(timeoutMs?: number): Promise<void>;
 }
 
+/** Registration fields holding a React component, as of Plugin SDK 0.6.75. */
 const COMPONENT_KEYS: ReadonlySet<string> = new Set([
+  // Thread context segments: `summary`, `action`, and `details`.
+  "action",
   "component",
+  "details",
+  "experimental_sidebar",
+  "headerComponent",
   "headerContent",
-  "experimental_sidebarAccessory",
   "icon",
+  "summary",
+]);
+/**
+ * Registration fields holding a React hook, such as a nav panel's badge or a
+ * tab's visibility. bb calls them while rendering, so the wrapper calls the
+ * hook unconditionally and only observes what it throws.
+ */
+const HOOK_KEYS: ReadonlySet<string> = new Set([
+  "experimental_useBadge",
+  "experimental_usePageTitle",
+  "useData",
+  "useVisible",
 ]);
 const CALLBACK_KEYS: ReadonlySet<string> = new Set([
+  // Composer plus and send menu items accept a predicate as well as a boolean.
+  "disabled",
   "isAvailable",
   "match",
+  "onActivate",
   "onDraftChange",
   "run",
   "validate",
 ]);
+/** Callbacks whose result is itself a registration, such as a thread action's `item`. */
+const FACTORY_KEYS: ReadonlySet<string> = new Set(["item"]);
 const MAX_EVENTS_PER_PAGE = 25;
 const LIFECYCLE_REGISTRATION_ID = "bb-kit-sentry";
 
@@ -218,10 +240,14 @@ function belongsToPlugin(pluginId: string, error: unknown, filename?: string): b
 }
 
 function instrumentBuilder<App extends object>(app: App, telemetry: SentryAppTelemetry): App {
+  const wrap = (kind: string, registration: unknown) =>
+    wrapRegistration(registration, kind, telemetry);
   const transforms: Record<string, (kind: string, registration: unknown) => unknown> = {
-    slots: (kind, registration) => wrapRegistration(registration, kind, telemetry),
-    composer: (kind, registration) => wrapRegistration(registration, kind, telemetry),
-    commands: (kind, registration) => wrapRegistration(registration, kind, telemetry),
+    slots: wrap,
+    composer: wrap,
+    commands: wrap,
+    experimental_icons: wrap,
+    experimental_sidebarFooter: wrap,
     contentScripts: (kind, registration) => wrapContentScript(registration, kind, telemetry),
   };
   return new Proxy(app, {
@@ -272,13 +298,13 @@ function wrapRegistration(
   const scoped = id === undefined ? operation : `${operation}:${id}`;
   const out: Record<string, unknown> = {};
   for (const [key, entry] of Object.entries(value)) {
-    if (COMPONENT_KEYS.has(key) && typeof entry === "function") {
-      out[key] = instrumentComponent(entry as ComponentType<object>, scoped, telemetry);
-    } else if (CALLBACK_KEYS.has(key) && typeof entry === "function") {
-      out[key] = instrumentCallback(
+    if (typeof entry === "function") {
+      out[key] = wrapFunction(
+        key,
         entry as (...args: never[]) => unknown,
-        `${scoped}.${key}`,
+        scoped,
         telemetry,
+        depth,
       );
     } else if (Array.isArray(entry) || isRecord(entry)) {
       out[key] = wrapRegistration(entry, scoped, telemetry, depth + 1);
@@ -287,6 +313,28 @@ function wrapRegistration(
     }
   }
   return out;
+}
+
+/** Instrument one function-valued registration field by what its key holds. */
+function wrapFunction(
+  key: string,
+  entry: (...args: never[]) => unknown,
+  scoped: string,
+  telemetry: SentryAppTelemetry,
+  depth: number,
+): unknown {
+  const operation = `${scoped}.${key}`;
+  if (COMPONENT_KEYS.has(key)) {
+    return instrumentComponent(entry as ComponentType<object>, scoped, telemetry);
+  }
+  if (HOOK_KEYS.has(key)) return instrumentHook(entry, operation, telemetry);
+  if (CALLBACK_KEYS.has(key)) return instrumentCallback(entry, operation, telemetry);
+  if (FACTORY_KEYS.has(key)) {
+    const factory = instrumentCallback(entry, operation, telemetry);
+    return (...args: never[]) =>
+      wrapRegistration(factory(...args), operation, telemetry, depth + 1);
+  }
+  return entry;
 }
 
 function instrumentComponent(
@@ -314,6 +362,26 @@ function instrumentComponent(
     createElement(SentryBoundary, null, createElement(Original, props));
   Instrumented.displayName = `SentryBoundary(${Original.displayName ?? Original.name ?? "Component"})`;
   return Instrumented;
+}
+
+/**
+ * Report what a registered hook throws. The wrapper adds no hooks of its own
+ * and always calls the original, so React sees the same hook order. Suspense
+ * signals are waiting, not failures.
+ */
+function instrumentHook(
+  hook: (...args: never[]) => unknown,
+  operation: string,
+  telemetry: SentryAppTelemetry,
+): (...args: never[]) => unknown {
+  return (...args) => {
+    try {
+      return hook(...args);
+    } catch (error) {
+      if (!isSuspenseSignal(error)) telemetry.capture({ boundary: "app.render", operation, error });
+      throw error;
+    }
+  };
 }
 
 function instrumentCallback(
@@ -354,6 +422,20 @@ function wrapContentScript(
     ...registration,
     mount: instrumentCallback(mount.bind(registration), operation, wrappedTelemetry),
   };
+}
+
+/**
+ * What a render throws to suspend: a thenable, or React 19's internal
+ * Suspense exceptions from `use()` (named in development, codes 460, 474,
+ * and 542 in production builds).
+ */
+function isSuspenseSignal(value: unknown): boolean {
+  if (isPromiseLike(value)) return true;
+  if (!(value instanceof Error)) return false;
+  return (
+    value.message.startsWith("Suspense Exception:") ||
+    /^Minified React error #(?:460|474|542)\b/u.test(value.message)
+  );
 }
 
 function isPromiseLike(value: unknown): value is PromiseLike<unknown> {
