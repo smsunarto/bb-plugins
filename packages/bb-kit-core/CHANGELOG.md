@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.1.0](https://github.com/smsunarto/bb-plugins/compare/bb-kit-core/v1.0.0...bb-kit-core/v1.1.0) (2026-10-24)
+
+
+### Features
+
+* **bb-kit:** allow a separate CLI root ([32225a0](https://github.com/smsunarto/bb-plugins/commit/32225a045d83b072a587bb77e4a858093b91488f))
+
 ## [1.0.0](https://github.com/smsunarto/bb-plugins/compare/bb-kit-core/v0.2.0...bb-kit-core/v1.0.0) (2026-10-20)
 
 
