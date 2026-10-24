@@ -67,7 +67,7 @@ export const nodeModelLabel = (node: CanvasNode) =>
   node.type === "text" || node.type === "agent" ? undefined : nodeRecipe(node)?.label;
 /** A BB agent as the picker summarizes it. */
 export const agentLabel = (agent: AgentSelection) =>
-  [agent.model, agent.reasoningLevel, agent.serviceTier === "fast" && "fast"]
+  [agent.model, agent.reasoningLevel, agent.serviceTier !== "default" && agent.serviceTier]
     .filter(Boolean)
     .join(" · ");
 /** The BB agent saved on a text node, when one was chosen. */

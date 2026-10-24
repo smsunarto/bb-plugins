@@ -6,10 +6,10 @@ import type { editorInventorySchema } from "../shared/unity-editor-contract.ts";
 
 /** Keep the native Unity checkout picker authoritative when preparing a Studio request. */
 export async function selectGameCheckout(
-  composer: Pick<PluginComposerApi, "experimental_setSelection">,
+  composer: Pick<PluginComposerApi, "setSelection">,
   game: Pick<Game, "projectId" | "hostId" | "rootPath">,
 ) {
-  const selection = await composer.experimental_setSelection({});
+  const selection = await composer.setSelection({});
   if (selection.projectId === game.projectId) {
     const environment = selection.environment;
     if (!environment) return selection;
@@ -25,7 +25,7 @@ export async function selectGameCheckout(
       return selection;
     }
   }
-  return composer.experimental_setSelection({
+  return composer.setSelection({
     projectId: game.projectId,
     environment: {
       type: "host",
@@ -37,7 +37,7 @@ export async function selectGameCheckout(
 
 /** A prepared context names one game's files, so its checkout must already be explicit. */
 export async function selectGameRequestCheckout(
-  composer: Pick<PluginComposerApi, "experimental_setSelection">,
+  composer: Pick<PluginComposerApi, "setSelection">,
   game: Pick<Game, "projectId" | "hostId" | "rootPath">,
   loadEditors: (input: { hostId: string }) => Promise<z.infer<typeof editorInventorySchema>>,
 ) {

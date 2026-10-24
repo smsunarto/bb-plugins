@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { mediaRequest, normalizeMediaRequest } from "./generation.ts";
+import { agentSelection, mediaRequest, normalizeMediaRequest } from "./generation.ts";
 test("model defaults and supported alternatives reflect the enabled providers", () => {
   expect(
     normalizeMediaRequest(mediaRequest.parse({ kind: "image", prompt: "Icon" })).model,
@@ -119,4 +119,15 @@ test("Tripo steps reject requests the provider cannot run", () => {
       animation: "idle --flag",
     }),
   ).toThrow("Tripo preset");
+});
+test("a pinned agent keeps its model's own reasoning level and service tier", () => {
+  const agent = {
+    providerId: "codex",
+    model: "gpt-6.1-sol",
+    reasoningLevel: "ultracode",
+    serviceTier: "ultrafast",
+  };
+  expect(agentSelection.parse(agent)).toEqual(agent);
+  expect(agentSelection.safeParse({ ...agent, serviceTier: "" }).success).toBe(false);
+  expect(agentSelection.safeParse({ ...agent, reasoningLevel: "" }).success).toBe(false);
 });
