@@ -9,7 +9,7 @@
 
 **A thread list organized by who can act next.**
 
-![bb 0.43.1+](https://img.shields.io/badge/bb-0.43.1%2B-88C0D0?style=flat-square)
+![bb 0.47+](https://img.shields.io/badge/bb-0.47%2B-88C0D0?style=flat-square)
 ![any platform](https://img.shields.io/badge/platform-any-3FA266?style=flat-square)
 ![experimental slot](https://img.shields.io/badge/uses-experimental%20SDK%20slot-F1B467?style=flat-square)
 
@@ -59,7 +59,7 @@ reinstall.
 
 ## Requirements
 
-- bb 0.44.0+
+- bb 0.47.0+
 - Sidebar organization needs nothing else.
 - Thread naming needs an existing Codex login on bb's primary host.
 
@@ -235,15 +235,17 @@ the task has not changed.
 ### The rest
 
 - A project scope picker — the one control the plugin adds.
-- Right-click a row for Settle and Snooze first, followed by bb's split, copy-link,
-  read/unread, pin, section-move, rename, and delete actions. Settle replaces Archive.
-  Settling a thread with subthreads waits for bb's confirmation before moving on.
+- Right-click a row for Settle and Snooze first, followed by every action in bb's own
+  thread menu: split, copy link, pin, read/unread, section moves, rename, delete, and
+  the actions other plugins add, such as per-thread notifications. Settle replaces
+  Archive. Settling a thread with subthreads waits for bb's confirmation before moving on.
 - Rename a thread in place: choose Rename, or double-click its title. Enter saves,
   Escape cancels, and a failed save keeps your text for another try.
   Moving to a section also unpins the thread, as in bb's normal sidebar.
-- On a phone, hold a row for half a second (iOS's own long-press timing) for a short
-  settle, snooze, pin, and delete menu, drawn as an iOS-style frosted sheet.
-  Menu taps can play a haptic on iOS when enabled in settings.
+- On a phone, hold a row for half a second (iOS's own long-press timing) for the same
+  menu, drawn as an iOS-style frosted sheet. A choice list, such as notification
+  levels, opens in place with Back. Menu taps can play a haptic on iOS when enabled
+  in settings.
 - Drag a card to a split pane, or Cmd/Ctrl-click to open one.
 - Drag a card onto another to nest it, or onto a project header to un-nest it.
 - Drag a project group header onto another group to reorder the project in bb.

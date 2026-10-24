@@ -1,6 +1,7 @@
 import type { BbPluginApi, PluginMentionItem } from "@get-bb/plugin-sdk";
 import {
   MAX_STATE_MENTION_ID_LENGTH,
+  WIDGET_STATE_MENTION_PROVIDER,
   widgetIdentitySchema,
   type SaveWidgetState,
   type WidgetIdentity,
@@ -9,7 +10,7 @@ import {
 
 type Database = ReturnType<BbPluginApi["storage"]["database"]>;
 
-export const WIDGET_STATE_MENTION_PROVIDER = "widget-state";
+export { WIDGET_STATE_MENTION_PROVIDER };
 export const RECENT_STATE_LIMIT = 20;
 export const MAX_CONTEXT_BYTES = 64 * 1024;
 

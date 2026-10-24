@@ -9,7 +9,7 @@
 
 **Point at the problem instead of describing it.**
 
-![bb 0.42.1+](https://img.shields.io/badge/bb-0.42.1%2B-88C0D0?style=flat-square)
+![bb 0.47+](https://img.shields.io/badge/bb-0.47%2B-88C0D0?style=flat-square)
 ![any platform](https://img.shields.io/badge/platform-any-3FA266?style=flat-square)
 ![no setup](https://img.shields.io/badge/setup-none-F1B467?style=flat-square)
 
@@ -103,7 +103,7 @@ where to look before it starts grepping.
 | ----------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `bb.route`                                | The bb route the annotation was taken on.                                                                                                                                               |
 | `bb.pluginId`                             | Owning plugin, or `null` for the bb app shell.                                                                                                                                          |
-| `bb.surface`                              | Public SDK surface such as `navPanel`, `composer.banners`, `experimental_threadList`, or `threadPanelAction.component`; `inline` / `overlay` for trusted custom content.                |
+| `bb.surface`                              | Public SDK surface such as `navPanel`, `composer.banners`, `experimental_tab`, or `experimental_threadAction`; `inline` / `overlay` for trusted custom content.                         |
 | `bb.surfaceId`                            | Registration/item id exposed by the surface, such as `inbox`; omitted on older annotations or when bb does not expose one.                                                              |
 | `bb.navigationItemId`                     | Sidebar row (`<pluginId>/<panelId>` or `__bb__/…`) when a navigation plugin drew the element. The row's entry comes from that plugin's `navPanel`.                                      |
 | `bb.pluginProvenance` / `bb.pluginSource` | Whether the owner ships with bb (`builtin`, such as the bundled `thread-list` and `navigation`) or was installed (`direct`, `catalog`), and its install source. Recorded by the server. |

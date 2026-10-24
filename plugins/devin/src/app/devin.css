@@ -46,12 +46,6 @@
   opacity: 0.5;
 }
 
-/* The gate keeps this wrapper mounted as its DOM anchor while the button
-   unmounts; display:contents keeps it out of the action row's layout. */
-.devin-cloud-toggle-slot {
-  display: contents;
-}
-
 .devin-cloud-status {
   display: inline-flex;
   min-width: 4.5rem;

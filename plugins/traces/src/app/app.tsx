@@ -475,7 +475,9 @@ export function createTracesApp(options: { renderers?: TraceRendererRegistry } =
       path: "traces",
       component: TracesNav,
     });
-    app.slots.threadPanelAction({
+    app.slots.experimental_tab({
+      context: { kind: "thread" },
+      availability: "action",
       id: "traces",
       title: "Traces",
       icon: "Activity",

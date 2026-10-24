@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties }
 import "@bb-plugins/markdown-prose/prose.css";
 import {
   definePluginApp,
+  experimental_copyToClipboard as copyToClipboard,
   experimental_FileLink as FileLink,
   useBbNavigate,
   useComposer,
@@ -12,8 +13,8 @@ import {
   type PluginFileOpenerProps,
   type PluginMessageDirectiveProps,
   type PluginNavPanelProps,
-  type PluginThreadPanelProps,
   type ExperimentalLiveFileTarget,
+  type ExperimentalThreadActionTabProps,
 } from "@get-bb/plugin-sdk/app";
 import { DOMParser as ProseMirrorDOMParser, type Node as ProseMirrorNode } from "@tiptap/pm/model";
 import { createProposalDiff, proposalDiffKey } from "./proposal-diff.js";
@@ -777,24 +778,22 @@ function InlineDocument({ document, openInTab }: { document: DocumentRef; openIn
       (state.proposal.status === "rejected" && state.proposal.baseSha256 === state.sha256));
   const redo = state.proposal?.status === "undone" && state.proposal.baseSha256 === state.sha256;
   const copy = async () => {
-    try {
-      await navigator.clipboard.writeText(state.draft);
-      toast.success("Document copied");
-    } catch {
-      toast.error("Could not copy the document");
-    }
+    if (await copyToClipboard({ text: state.draft })) toast.success("Document copied");
+    else toast.error("Could not copy the document");
   };
   const ask = async () => {
     setAsking(true);
     setAskError(null);
     try {
       await session.flush();
-      composer.updateText((current) => `${current}${current.trim() ? "\n\n" : ""}Update `);
-      composer.insertMention({
-        provider: "note",
-        id: `${document.vaultId}:${document.path}`,
-        label: document.title,
-      });
+      composer.insert(
+        [
+          "Update ",
+          { provider: "note", id: `${document.vaultId}:${document.path}`, label: document.title },
+          " ",
+        ],
+        { at: "end", block: true },
+      );
       composer.focus();
     } catch (error) {
       setAskError(errorMessage(error));
@@ -1088,7 +1087,7 @@ function DocumentPicker() {
   );
 }
 
-function DocumentPanel({ params }: PluginThreadPanelProps) {
+function DocumentPanel({ params }: ExperimentalThreadActionTabProps) {
   const document = parseDocumentRef(params);
   const navigate = useBbNavigate();
   if (!document) return <DocumentPicker />;
@@ -2292,18 +2291,19 @@ export default definePluginApp((app) => {
     icon: "FileText",
     path: "docs",
     component: NotesPanel,
-    fixedTabs: [
-      {
-        panelId: "docs",
-        id: "navigation",
-        title: "Navigation",
-        icon: "ListView",
-        component: NotesNavigationPanel,
-        layout: "flush",
-      },
-    ],
   });
-  app.slots.threadPanelAction({
+  app.slots.experimental_tab({
+    context: { kind: "nav-panel", panelId: "docs" },
+    availability: "fixed",
+    id: "navigation",
+    title: "Navigation",
+    icon: "ListView",
+    component: NotesNavigationPanel,
+    layout: "flush",
+  });
+  app.slots.experimental_tab({
+    context: { kind: "thread" },
+    availability: "action",
     id: "document",
     title: "Document",
     icon: "FileText",

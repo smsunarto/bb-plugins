@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 import {
+  experimental_usePluginId,
   useComposer,
-  useComposerView,
   useRealtime,
   useRealtimeConnectionState,
   useRpc,
@@ -20,10 +20,12 @@ import {
 import { Icon } from "@bb-plugins/icons";
 import type { StoredAnnotation } from "@/lib/afs.ts";
 import {
+  ANNOTATION_MENTION_PROVIDER,
   annotationMentionItemId,
   annotationMentionLabel,
   annotationMentionLabelParts,
   annotationSourceLabel,
+  withoutAnnotationMentions,
 } from "@/lib/staging-display.ts";
 import { broadcastType, sharedRequest } from "@/lib/shared-request.ts";
 import type { rpcContract } from "@/server.ts";
@@ -31,6 +33,7 @@ import type { rpcContract } from "@/server.ts";
 function StagedAnnotations({ threadId }: { threadId: string }) {
   const rpc = useRpc<typeof rpcContract>();
   const composer = useComposer();
+  const pluginId = experimental_usePluginId();
   const [annotations, setAnnotations] = useState<StoredAnnotation[]>([]);
   const [threadTitles, setThreadTitles] = useState<Record<string, string>>({});
   const [isLoading, setIsLoading] = useState(true);
@@ -85,19 +88,33 @@ function StagedAnnotations({ threadId }: { threadId: string }) {
 
   // A submitted draft consumes its annotation pills; the server assigns those
   // annotations while resolving the mentions, so re-read the banner at once.
-  const onSubmitted = composer.experimental_onSubmitted;
-  useEffect(() => onSubmitted(() => void refresh()), [onSubmitted, refresh]);
+  useEffect(() => composer.onSubmitted(() => void refresh()), [composer, refresh]);
 
-  const mentionOf = (annotationId: string) => ({
-    provider: "annotation",
-    id: annotationMentionItemId(annotationId, threadId),
-  });
+  // Append the pill after the draft's last word, as typing it there would.
+  const mentionAnnotation = (annotationId: string, label: string) => {
+    const { text } = composer.draft;
+    const separator = text.length === 0 || /\s$/u.test(text) ? "" : " ";
+    composer.insert(
+      [
+        separator,
+        {
+          provider: ANNOTATION_MENTION_PROVIDER,
+          id: annotationMentionItemId(annotationId, threadId),
+          label,
+        },
+        " ",
+      ],
+      { at: "end" },
+    );
+    composer.focus();
+  };
 
   // An annotation that left staging must leave the draft too, or its pill
   // would resolve against a record this thread already holds or dismissed.
   const forgetMentions = (annotationIds: readonly string[]) => {
-    for (const annotationId of annotationIds)
-      composer.experimental_removeMention(mentionOf(annotationId));
+    if (annotationIds.length === 0) return;
+    const itemIds = new Set(annotationIds.map((id) => annotationMentionItemId(id, threadId)));
+    composer.replace((current) => withoutAnnotationMentions(current, pluginId, itemIds));
   };
 
   const connection = useRealtimeConnectionState();
@@ -306,10 +323,7 @@ function StagedAnnotations({ threadId }: { threadId: string }) {
                     disabled={isMutating}
                     aria-label="Mention annotation in composer"
                     aria-describedby={`${annotationDescriptionPrefix}-${annotation.id}`}
-                    onClick={() => {
-                      composer.insertMention({ ...mentionOf(annotation.id), label });
-                      composer.focus();
-                    }}
+                    onClick={() => mentionAnnotation(annotation.id, label)}
                   >
                     <Icon name="AtSign" aria-hidden="true" />
                   </Button>
@@ -404,8 +418,8 @@ function StagedAnnotations({ threadId }: { threadId: string }) {
 }
 
 export function AgentationStagingBanner() {
-  const view = useComposerView();
-  if (view.scope.kind !== "thread") return null;
+  const { scope } = useComposer();
+  if (scope.kind !== "thread") return null;
 
-  return <StagedAnnotations threadId={view.scope.threadId} />;
+  return <StagedAnnotations threadId={scope.threadId} />;
 }

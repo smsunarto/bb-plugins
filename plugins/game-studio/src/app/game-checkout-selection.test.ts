@@ -1,19 +1,19 @@
 import { describe, expect, it } from "bun:test";
-import type { ExperimentalComposerSelection } from "@get-bb/plugin-sdk/app";
+import type { ComposerSelection } from "@get-bb/plugin-sdk/app";
 import type { CheckoutSlot } from "../shared/unity-editor-contract.ts";
 import { selectGameCheckout, selectGameRequestCheckout } from "./game-checkout-selection.ts";
 
 const game = { projectId: "project-rampage", hostId: "host-mac", rootPath: "/games/rampage" };
 
-function composerWith(initial: ExperimentalComposerSelection) {
+function composerWith(initial: ComposerSelection) {
   let selection = initial;
-  const patches: ExperimentalComposerSelection[] = [];
+  const patches: ComposerSelection[] = [];
   return {
     patches,
     get selection() {
       return selection;
     },
-    async experimental_setSelection(patch: ExperimentalComposerSelection) {
+    async setSelection(patch: ComposerSelection) {
       patches.push(patch);
       selection = { ...selection, ...patch };
       return selection;

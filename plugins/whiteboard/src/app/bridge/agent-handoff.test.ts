@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { copyText, registerHandoffSink } from "./agent-handoff.ts";
+import { copyText, handoffParts, registerHandoffSink } from "./agent-handoff.ts";
 
 /** What copy-context answers beside its clipboard text. */
 const handoff = (quote: string) => ({ quote, sessionId: "s1", version: 3, title: "Plan" });
@@ -86,5 +86,21 @@ describe("agent handoff", () => {
     expect(await copyText("after unmount", handoff("quote text"), text)).toBe(false);
 
     expect(sink.mock.calls).toEqual([[handoff("quote text")]]);
+  });
+});
+
+describe("handoffParts", () => {
+  const pill = { provider: "session", id: "s1@3", label: "Plan" };
+
+  it("quotes every line of the selection, then names the session version on the next line", () => {
+    expect(handoffParts(handoff("First line\r\n\nSecond line\n"))).toEqual([
+      "> First line\n>\n> Second line\n",
+      pill,
+      " ",
+    ]);
+  });
+
+  it("adds only the pill when the selection is blank", () => {
+    expect(handoffParts(handoff("  \n "))).toEqual([pill, " "]);
   });
 });

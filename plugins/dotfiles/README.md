@@ -10,7 +10,7 @@
 **Browse, edit, and sync one dotfiles repo from a bb panel.**
 
 ![personal](https://img.shields.io/badge/status-personal%20%C2%B7%20unsupported-E34671?style=flat-square)
-![bb 0.44+](https://img.shields.io/badge/bb-0.44%2B-88C0D0?style=flat-square)
+![bb 0.47+](https://img.shields.io/badge/bb-0.47%2B-88C0D0?style=flat-square)
 ![macOS · Linux](https://img.shields.io/badge/platform-macOS%20%C2%B7%20Linux-3FA266?style=flat-square)
 
 </div>
@@ -41,7 +41,7 @@ browser, and that machine can all be different computers.
 
 ## Requirements
 
-- bb 0.44+
+- bb 0.47+
 - macOS or Linux. There is no Windows path
 - On each machine the panel acts on: `git` on the bb host daemon's `PATH`, and `mise`
   on `PATH` inside that machine's login shell

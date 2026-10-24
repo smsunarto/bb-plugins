@@ -125,13 +125,6 @@
   flex: 0 0 auto;
 }
 
-/* The gate keeps this wrapper mounted as its DOM anchor while the button
-   unmounts; display:contents keeps the empty wrapper out of the action row's
-   flex layout. */
-.amp-orb-toggle-slot {
-  display: contents;
-}
-
 @keyframes amp-orb-status-spin {
   to {
     transform: rotate(360deg);

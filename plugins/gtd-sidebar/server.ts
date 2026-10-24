@@ -370,9 +370,13 @@ export default async function plugin(bb: BbPluginApi) {
     clear(thread.id);
   });
 
-  // thread-list publishes its own `preferences` channel. SDK 0.5.29 only
-  // subscribes to the current plugin's signals, so check on the server rather
-  // than adding WAN polling in every window; the store publishes what changed.
+  // thread-list publishes its own `preferences` channel. SDK 0.6.75 still
+  // subscribes only to the current plugin's signals (`useRealtime` takes no
+  // plugin id, and `bb.realtime` only publishes), thread-list's
+  // `listPreferences` declares no tags a cross-plugin query could refresh
+  // on, and `collapsedThreads` is not one of bb's synced UI preferences. So
+  // check on the server rather than adding WAN polling in every window; the
+  // store publishes what changed.
   // Checks never overlap. While thread-list cannot answer (turned off, missing,
   // or hung) they back off to 30 s, and only the outage and the recovery log.
   let foldTimer: ReturnType<typeof setTimeout> | undefined;

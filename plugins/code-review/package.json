@@ -13,8 +13,8 @@
   },
   "type": "module",
   "engines": {
-    "bb": ">=0.44.0 <1.0.0",
-    "bbPluginSdk": ">=0.5.26"
+    "bb": ">=0.47.0 <1.0.0",
+    "bbPluginSdk": ">=0.6.75"
   },
   "bb": {
     "name": "Review",
@@ -56,7 +56,7 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
-    "@get-bb/plugin-sdk": "0.5.29",
+    "@get-bb/plugin-sdk": "0.6.75",
     "@pierre/diffs": "^1.3.5",
     "@radix-ui/react-dialog": "^1.1.19",
     "@radix-ui/react-popover": "^1.1.19",

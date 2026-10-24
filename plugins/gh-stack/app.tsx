@@ -1543,7 +1543,9 @@ function StackPanel({ threadId }: { threadId: string }) {
 }
 
 export default definePluginApp((app) => {
-  app.slots.threadPanelAction({
+  app.slots.experimental_tab({
+    context: { kind: "thread" },
+    availability: "action",
     id: "stack",
     title: "GitHub Stack",
     icon: "Layers",

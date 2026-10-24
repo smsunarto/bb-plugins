@@ -1,6 +1,6 @@
 # Inline visualizations
 
-This plugin renders an agent's interactive explanation, chart, interface preview, recording, or Markdown report inside its assistant message. It reads files at absolute paths on the thread's host. HTML fragments inherit bb's theme and interaction runtime. Full HTML documents retain their own styling.
+This plugin renders an agent's interactive explanation, chart, interface preview, recording, or Markdown report inside its assistant message. It reads files at absolute paths on the thread's host, or HTML the agent writes in a fenced block. HTML fragments inherit bb's theme and interaction runtime. Full HTML documents retain their own styling.
 
 This fork uses package name `@smsunarto/bb-plugin-scott-inline-vis` and plugin ID `scott-inline-vis`. bb reserves the built-in `inline-vis` ID. The fork keeps the `::inline-vis` directive and adds absolute-path loading, sibling media delivery, an auto-open limit, and a fragment runtime.
 
@@ -27,6 +27,16 @@ Keep previews in a dedicated directory, such as `.scratch/demo/`. The preview le
 
 Keep both files in place. Markdown images should use `![Label](image.png)`. Raw HTML paths do not receive Markdown destination rewriting. Use HTML when you need image sizing or local video.
 
+A small fragment can also be written directly in the reply as a fenced block with the language `scott-inline-vis`. Nothing is written to disk:
+
+````text
+```scott-inline-vis
+<div id="latency-viz">…</div>
+```
+````
+
+The card shows "Writing visualization…" until the closing fence arrives, then renders the block through the same frame and fragment runtime. Its header button toggles bb's code block for the source. An unclosed or empty block stays an ordinary code block. A block has no directory, so relative media does not load, and it takes no attributes: fragments size to their content and full documents use the 224px viewport. Its saved state lasts only while the preview is open, and its Tweak panel cannot add changes to chat. Use a file for anything that needs those.
+
 The bundled [inline-vis skill](skills/inline-vis/SKILL.md) teaches agents how to choose a format, author fragments, and verify delivery. The plugin injects a one-line instruction that routes agents to it. [Visual design](skills/inline-vis/references/visual-design.md) covers composition and runtime features. [Video delivery](skills/inline-vis/references/video.md) covers compatible encodings and playback checks.
 
 ## How it differs from upstream
@@ -44,6 +54,7 @@ The fork changes loading and presentation while retaining the directive syntax:
 | Fragment height  | Fixed viewport                                      | Content sizing unless `height` is set                                   |
 | Fragment actions | None                                                | Durable saved state, native context chips, and composer prompts         |
 | Design review    | None                                                | Wide view and a host Tweak panel for registered controls                |
+| Fenced blocks    | ` ```inline-vis ` page in a borderless frame        | ` ```scott-inline-vis ` fragment in the same card and runtime           |
 
 ## Fragment runtime
 
@@ -108,7 +119,7 @@ Open previews retain in-memory state when the one-hour lease expires. Collapse a
 
 ## Built-in conflict
 
-bb leaves a directive literal when two plugins claim it. A fresh install of this fork disables bb's built-in `inline-vis` plugin once. Updates and reloads leave that choice alone. Re-enabling the built-in makes `::inline-vis` render as plain text. Removing the fork does not re-enable it. Run `bb plugin enable inline-vis` to restore bb's renderer.
+bb leaves a directive literal, and a fenced block as plain code, when two plugins claim it. The fork's fence language, `scott-inline-vis`, cannot collide with the built-in's `inline-vis`. The directive still collides, so a fresh install of this fork disables bb's built-in `inline-vis` plugin once. Updates and reloads leave that choice alone. Re-enabling the built-in makes `::inline-vis` render as plain text. Removing the fork does not re-enable it. Run `bb plugin enable inline-vis` to restore bb's renderer.
 
 ## Tests
 

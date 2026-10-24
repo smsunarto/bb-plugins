@@ -105,15 +105,11 @@ const SlimRowBody = memo(function SlimRowBody({
   const statusId = useId();
   const rename = useThreadRename(thread.id, title);
   const onRestore = () => command({ kind: "restore", threadId: thread.id, shelf });
-  const plan = buildThreadActionPlan({
-    lifecycle:
-      shelf === "snoozed"
-        ? { kind: "snoozed", wakeNow: onRestore }
-        : { kind: "settled", unsettle: onRestore },
-    isPinned: thread.isPinned,
-    setPinned: (pinned) => command({ kind: "pin", threadId: thread.id, pinned }),
-    requestDelete: () => command({ kind: "request-delete", threadId: thread.id }),
-  });
+  const plan = buildThreadActionPlan(
+    shelf === "snoozed"
+      ? { kind: "snoozed", wakeNow: onRestore }
+      : { kind: "settled", unsettle: onRestore },
+  );
   const restoreAction = findThreadAction(plan, shelf === "snoozed" ? "wake-now" : "unsettle");
   const [isMenuOpen, setMenuOpen] = useState(false);
   const rowRef = useRef<HTMLDivElement>(null);
@@ -170,14 +166,7 @@ const SlimRowBody = memo(function SlimRowBody({
   );
 
   return (
-    <RowContextMenu
-      thread={thread}
-      command={command}
-      plan={plan}
-      rename={rename}
-      canSplit={onSplitPointerDown !== undefined}
-      disabled={isCompactViewport}
-    >
+    <RowContextMenu thread={thread} plan={plan} rename={rename} disabled={isCompactViewport}>
       <div>
         <div
           ref={rowRef}
@@ -235,7 +224,6 @@ const SlimRowBody = memo(function SlimRowBody({
                 command({
                   kind: "open",
                   threadId: thread.id,
-                  shelf,
                   split: event.metaKey || event.ctrlKey,
                 });
               }}
@@ -284,10 +272,8 @@ const SlimRowBody = memo(function SlimRowBody({
           {isCompactViewport ? (
             <CompactThreadActionMenu
               thread={thread}
-              command={command}
               rename={rename}
               plan={plan}
-              canSplit={false}
               open={isMenuOpen}
               onOpenChange={setMenuOpen}
               anchorRef={rowRef}

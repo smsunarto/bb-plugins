@@ -9,7 +9,7 @@
 
 **Run [Amp](https://ampcode.com) in a bb thread, like any built-in provider.**
 
-![bb 0.40+](https://img.shields.io/badge/bb-0.40%2B-88C0D0?style=flat-square)
+![bb 0.47+](https://img.shields.io/badge/bb-0.47%2B-88C0D0?style=flat-square)
 ![macOS · Linux](https://img.shields.io/badge/platform-macOS%20%C2%B7%20Linux-3FA266?style=flat-square)
 ![needs Amp CLI](https://img.shields.io/badge/needs-Amp%20CLI-F1B467?style=flat-square)
 
@@ -63,7 +63,7 @@ bb plugin install ./plugins/amp
 
 ## Requirements
 
-- bb 0.40+ or a current bb nightly, on macOS or Linux (Windows through WSL).
+- bb 0.47+ or a current bb nightly, on macOS or Linux (Windows through WSL).
   Amp 0.4.2 starts this compatibility line. The plugin registers its provider
   through bb's plugin API, which bb 0.39 stable predates. The composer's
   Install button needs bb 0.44+

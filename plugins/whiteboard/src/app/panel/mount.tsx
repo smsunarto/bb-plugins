@@ -23,17 +23,13 @@ import type { InfoOutput } from "../../shared/contracts/api-tunnel.ts";
 import { CHANNELS, changedPayload } from "../../shared/contracts/channels.ts";
 import { NAV_PANEL_PATH, PANEL_ACTION_ID } from "../../shared/contracts/panel.ts";
 import {
-  SESSION_MENTION_PROVIDER,
-  sessionMentionId,
-} from "../../shared/contracts/selection-handoff.ts";
-import {
   type ReviewApiSummary,
   type ReviewCanvasBridge,
   type ReviewCanvasContent,
   type ReviewSourceView,
   ReviewApiClient,
 } from "../../shared/vendor/review-protocol/src/index.ts";
-import { registerHandoffSink } from "../bridge/agent-handoff.ts";
+import { handoffParts, registerHandoffSink } from "../bridge/agent-handoff.ts";
 import { createBbBridge } from "../bridge/bb-bridge.ts";
 import { createSurfaceEvents } from "../bridge/events.ts";
 import { type LiveHub, createLiveHub } from "../bridge/live-watch.ts";
@@ -403,12 +399,8 @@ export function WhiteboardMount({
   useEffect(() => {
     if (!container) return;
     return registerHandoffSink(container, (handoff) => {
-      composer.addQuote(handoff.quote);
-      composer.insertMention({
-        provider: SESSION_MENTION_PROVIDER,
-        id: sessionMentionId(handoff),
-        label: handoff.title,
-      });
+      composer.insert(handoffParts(handoff), { at: "end", block: true });
+      composer.focus();
       if (!threadId) navigate.toCompose({ focusPrompt: true });
     });
   }, [container, composer, navigate, threadId]);
