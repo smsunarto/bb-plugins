@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import type { ExperimentalTabRegistration } from "@get-bb/plugin-sdk";
 import { act, cleanup, fireEvent, waitFor, within } from "@testing-library/react";
 import { StrictMode } from "react";
 import { DOMParser as ProseMirrorDOMParser } from "@tiptap/pm/model";
@@ -9,7 +10,14 @@ const app = await loadPluginApp(() => import("./app"));
 const { clearNotebookStores } = await import("./app");
 const docsRegistration = app.navPanels[0];
 if (!docsRegistration) throw new Error("Docs navigation panel was not registered");
-const navigationView = docsRegistration.fixedTabs?.[0];
+const navigationView = app.tabs.find(
+  (
+    tab,
+  ): tab is Extract<
+    ExperimentalTabRegistration,
+    { context: { kind: "nav-panel" }; availability: "fixed" }
+  > => tab.context.kind === "nav-panel" && tab.availability === "fixed" && tab.id === "navigation",
+);
 if (!navigationView) throw new Error("Docs navigation tab was not registered");
 const navigationRegistration = {
   ...docsRegistration,
@@ -343,23 +351,28 @@ describe("Docs nav panel", () => {
       id: "docs",
       title: "Docs",
       path: "docs",
-      fixedTabs: [
-        {
-          panelId: "docs",
-          id: "navigation",
-          title: "Navigation",
-          icon: "ListView",
-          layout: "flush",
-        },
-      ],
     });
+    expect(app.navPanels[0]).not.toHaveProperty("fixedTabs");
     expect(app.navPanels[0]?.headerContent).toBeUndefined();
     expect(app.messageDirectives).toHaveLength(1);
     expect(app.messageDirectives[0]?.id).toBe("docs");
-    expect(app.threadPanelActions[0]).toMatchObject({
-      id: "document",
-      title: "Document",
-    });
+    expect(app.tabs).toEqual([
+      expect.objectContaining({
+        context: { kind: "nav-panel", panelId: "docs" },
+        availability: "fixed",
+        id: "navigation",
+        title: "Navigation",
+        icon: "ListView",
+        layout: "flush",
+      }),
+      expect.objectContaining({
+        context: { kind: "thread" },
+        availability: "action",
+        id: "document",
+        title: "Document",
+        icon: "FileText",
+      }),
+    ]);
     expect(app.fileOpeners[0]).toMatchObject({
       id: "docs",
       title: "Docs",
@@ -1702,16 +1715,33 @@ describe("Docs nav panel", () => {
     await slot.findByRole("textbox", { name: "Document content" });
     fireEvent.click(slot.getByRole("button", { name: "Ask for changes" }));
     await waitFor(() =>
-      expect(slot.inspection.composer.mentions).toEqual([
-        {
+      expect(slot.inspection.composer.draft.mentions).toEqual([
+        expect.objectContaining({
           provider: "note",
           id: "personal:ask-inline.md",
           label: "Launch email",
-        },
+        }),
       ]),
     );
-    expect(slot.inspection.composer.text).toBe("Keep this instruction.\n\nUpdate Launch email ");
+    expect(slot.inspection.composer.text).toBe("Keep this instruction.\n\nUpdate @Launch email ");
+    const [mention] = slot.inspection.composer.draft.mentions;
+    expect(slot.inspection.composer.text.slice(mention!.from, mention!.to)).toBe("@Launch email");
     expect(slot.inspection.composer.focusCount).toBeGreaterThan(0);
+  });
+
+  it("copies the document through the host clipboard", async () => {
+    const slot = renderDocument("copy-inline.md", "Launch email", {
+      rpc: {
+        readNote: () => ({ content: "Email body.", sha256: "original-sha" }),
+      },
+    });
+    await slot.findByRole("textbox", { name: "Document content" });
+    fireEvent.click(slot.getByRole("button", { name: "Copy" }));
+    await waitFor(() =>
+      expect(slot.inspection.experimental_clipboardWrites).toEqual([
+        expect.objectContaining({ text: expect.stringContaining("Email body.") }),
+      ]),
+    );
   });
 
   it.each(["reject", "redo"] as const)(
