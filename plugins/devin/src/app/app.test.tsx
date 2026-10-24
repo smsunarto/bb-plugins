@@ -5,7 +5,8 @@ import type { CloudSessionView } from "../shared/devin.ts";
 
 installDom();
 const { loadPluginApp, renderSlot } = await import("@get-bb/plugin-sdk/testing/app");
-const { act, cleanup } = await import("@testing-library/react");
+const { useComposer } = await import("@get-bb/plugin-sdk/app");
+const { act, cleanup, fireEvent } = await import("@testing-library/react");
 const { pluginQueryClient } = await import("@bb-kit/core/rpc/query");
 beforeEach(() => pluginQueryClient.clear());
 afterEach(cleanup);
@@ -139,4 +140,124 @@ test("a starting banner reconciles once realtime reconnects", async () => {
   await banner.settle();
   expect(banner.calls()).toBe(2);
   expect(banner.slot.getByText("Active")).toBeTruthy();
+});
+
+async function cloudToggleAction() {
+  const app = await loadPluginApp(() => import("./app.tsx"));
+  const action = app.composerCustomizations.find((c) => c.id === "cloud-toggle")?.actions?.[0];
+  if (!action) throw new Error("Missing Cloud toggle");
+  return action;
+}
+
+const TOGGLE_RPC = {
+  cloudIntent: () => ({ armed: false }),
+  setCloudIntent: (input: unknown) => input,
+};
+
+test("the Cloud toggle shows only while the composer's selected provider is Devin", async () => {
+  const action = await cloudToggleAction();
+  const cases = [
+    { selection: { providerId: "devin", model: "swe-1.6" }, visible: true },
+    { selection: { providerId: "claude-code" }, visible: false },
+    // No pickers resolved yet: nothing says Devin is selected.
+    { selection: undefined, visible: false },
+  ];
+  for (const { selection, visible } of cases) {
+    const slot = renderSlot(
+      action,
+      {},
+      {
+        pluginId: "devin",
+        composer: {
+          scope: { kind: "new-thread", projectId: "prj_1" },
+          ...(selection === undefined ? {} : { selection }),
+        },
+        rpc: TOGGLE_RPC,
+      },
+    );
+    await act(() => new Promise((resolve) => setTimeout(resolve, 20)));
+    expect(slot.queryByRole("button", { name: /Cloud/ }) !== null).toBe(visible);
+    slot.unmount();
+  }
+});
+
+test("the Cloud toggle follows the provider picker as the user switches", async () => {
+  const action = await cloudToggleAction();
+  const Toggle = action.component;
+  function PickerAndToggle() {
+    const composer = useComposer();
+    return (
+      <>
+        <button onClick={() => void composer.setSelection({ providerId: "devin" })} type="button">
+          Pick Devin
+        </button>
+        <button onClick={() => void composer.setSelection({ providerId: "codex" })} type="button">
+          Pick Codex
+        </button>
+        <Toggle />
+      </>
+    );
+  }
+  const slot = renderSlot(
+    { component: PickerAndToggle },
+    {},
+    {
+      pluginId: "devin",
+      composer: {
+        scope: { kind: "new-thread", projectId: "prj_1" },
+        selection: { providerId: "codex" },
+      },
+      rpc: TOGGLE_RPC,
+    },
+  );
+  expect(slot.queryByTitle("Run this thread on a Devin Cloud VM")).toBeNull();
+  await act(async () => fireEvent.click(slot.getByText("Pick Devin")));
+  expect(slot.getByTitle("Run this thread on a Devin Cloud VM")).toBeTruthy();
+  await act(async () => fireEvent.click(slot.getByText("Pick Codex")));
+  expect(slot.queryByTitle("Run this thread on a Devin Cloud VM")).toBeNull();
+});
+
+test("copying the attach command goes through bb's clipboard writer", async () => {
+  const banner = await renderBanner(ACTIVE);
+  await act(async () => fireEvent.click(banner.slot.getByLabelText("Copy Devin attach command")));
+  expect(banner.slot.inspection.experimental_clipboardWrites).toEqual([
+    { text: ACTIVE.attachCommand },
+  ]);
+  expect(banner.slot.getByText("Copied")).toBeTruthy();
+});
+
+test("a submit from the thread composer re-reads a live Cloud session", async () => {
+  const app = await loadPluginApp(() => import("./app.tsx"));
+  const banner = app.composerCustomizations.find((c) => c.id === "cloud-session")?.banners?.[0];
+  if (!banner) throw new Error("Missing Cloud banner");
+  const Banner = banner.component;
+  function BannerAndEnter() {
+    const composer = useComposer();
+    return (
+      <>
+        <Banner />
+        <button onClick={() => void composer.submit()} type="button">
+          Enter
+        </button>
+      </>
+    );
+  }
+  const slot = renderSlot(
+    { component: BannerAndEnter },
+    {},
+    {
+      pluginId: "devin",
+      composer: { scope: { kind: "thread", threadId: "thr_cloud" }, text: "go" },
+      rpc: { cloudSession: () => ({ state: "unclaimed" }) },
+      sdk: { subscribe: () => () => {} },
+    },
+  );
+  const settle = () => act(() => new Promise((resolve) => setTimeout(resolve, 20)));
+  await settle();
+  const reads = () => slot.inspection.rpcCalls.filter((c) => c.method === "cloudSession").length;
+  expect(reads()).toBe(1);
+  await act(async () => fireEvent.click(slot.getByText("Enter")));
+  await settle();
+  expect(slot.inspection.composer.submits).toHaveLength(1);
+  expect(reads()).toBe(2);
 });

@@ -4,9 +4,8 @@ import type { QueryClient } from "@tanstack/react-query";
 import { PluginQueryBoundary } from "@bb-kit/core/rpc/query";
 import {
   definePluginApp,
-  experimental_useProviders,
+  experimental_copyToClipboard,
   useComposer,
-  useComposerView,
   useRealtimeConnectionState,
   useSdk,
 } from "@get-bb/plugin-sdk/app";
@@ -43,7 +42,7 @@ function movesCloudSession(event: ThreadChange): boolean {
 function useCloudSession(threadId: string | null) {
   const sdk = useSdk();
   const connection = useRealtimeConnectionState();
-  const submitting = useComposerView().run.isSubmitting;
+  const composer = useComposer();
   const session = rpc.cloudSession.useQuery(
     { threadId: threadId ?? "" },
     {
@@ -86,12 +85,10 @@ function useCloudSession(threadId: string | null) {
     if (live && connection === "connected" && previous !== "connected") refresh.current();
   }, [connection, live]);
 
-  const wasSubmitting = useRef(submitting);
   useEffect(() => {
-    const previous = wasSubmitting.current;
-    wasSubmitting.current = submitting;
-    if (live && previous && !submitting) refresh.current();
-  }, [submitting, live]);
+    if (!live) return;
+    return composer.onSubmitted(() => refresh.current());
+  }, [composer, live]);
 
   return session.data;
 }
@@ -106,59 +103,6 @@ function DevinLogo() {
   );
 }
 
-/**
- * True while this composer's model picker shows Devin. The composer view has
- * no selected-provider signal (SDK 0.5.29), so this reads the markers the
- * host paints into the picker trigger: the provider icon's
- * `data-provider-logo` mask and the trigger's `title="Devin: …"`. It is scoped
- * to the surrounding `[data-app-composer]` so split panes gate on their own
- * picker, and hides while the provider directory cannot say what Devin looks
- * like. Same approach as the Amp plugin's Orb toggle.
- */
-function useDevinSelected(): { setAnchor: (node: HTMLElement | null) => void; visible: boolean } {
-  const providersState = experimental_useProviders();
-  const devin = providersState.providers.find((provider) => provider.id === DEVIN_PROVIDER_ID);
-  const logoUrl = devin?.logoUrl ?? null;
-  const displayName = devin?.displayName ?? null;
-  const [anchor, setAnchor] = useState<HTMLElement | null>(null);
-  const [visible, setVisible] = useState(false);
-  useEffect(() => {
-    if (anchor === null) return;
-    if (providersState.status !== "ready" || (logoUrl === null && displayName === null)) {
-      setVisible(false);
-      return;
-    }
-    // Overflowed composer actions portal to <body>. Only one new-thread
-    // composer exists, so the document-wide picker is still the right one.
-    const root: ParentNode = anchor.closest("[data-app-composer]") ?? anchor.ownerDocument;
-    const check = () => {
-      const logoSelected =
-        logoUrl !== null &&
-        Array.from(root.querySelectorAll("[data-provider-logo]")).some(
-          (mark) => mark.getAttribute("data-provider-logo") === logoUrl,
-        );
-      const titleSelected =
-        displayName !== null &&
-        Array.from(root.querySelectorAll("[title]")).some(
-          (node) =>
-            node.closest(".devin-cloud-toggle-slot") === null &&
-            (node.getAttribute("title") ?? "").startsWith(`${displayName}:`),
-        );
-      setVisible(logoSelected || titleSelected);
-    };
-    check();
-    const observer = new MutationObserver(check);
-    observer.observe(root instanceof Document ? root.body : root, {
-      attributeFilter: ["data-provider-logo", "title"],
-      attributes: true,
-      childList: true,
-      subtree: true,
-    });
-    return () => observer.disconnect();
-  }, [anchor, logoUrl, displayName, providersState.status]);
-  return { setAnchor, visible };
-}
-
 /** A press, or the new thread's first command consuming an armed intent,
  *  outdates the cached read, so the toggle's next appearance asks again. */
 function markIntentStale(queryClient: QueryClient): void {
@@ -171,11 +115,12 @@ function markIntentStale(queryClient: QueryClient): void {
  *  last read is stale or a submit may have consumed it. */
 function CloudToggle() {
   const composer = useComposer();
-  const view = useComposerView();
-  const gate = useDevinSelected();
+  // The composer reports its picker's provider, so split panes and an
+  // overflowed action row each gate on their own composer.
+  const visible = composer.selection?.providerId === DEVIN_PROVIDER_ID;
   const queryClient = useQueryClient();
   const intent = rpc.cloudIntent.useQuery({
-    enabled: gate.visible,
+    enabled: visible,
     staleTime: CLOUD_INTENT_STALE_MS,
   });
   const setIntent = rpc.setCloudIntent.useMutation();
@@ -189,7 +134,7 @@ function CloudToggle() {
       setPressed(intent.data.armed);
     }
   }, [intent.data, intent.dataUpdatedAt]);
-  const submitting = view.run.isSubmitting;
+  const submitting = composer.isSubmitting;
   useEffect(() => {
     if (submitting) markIntentStale(queryClient);
   }, [submitting, queryClient]);
@@ -209,28 +154,25 @@ function CloudToggle() {
     );
     composer.focus();
   };
+  if (!visible) return null;
   return (
-    <span className="devin-cloud-toggle-slot" ref={gate.setAnchor}>
-      {gate.visible ? (
-        <button
-          aria-pressed={pressed}
-          className="devin-cloud-toggle"
-          disabled={view.run.isSubmitting}
-          onClick={toggle}
-          title="Run this thread on a Devin Cloud VM"
-          type="button"
-        >
-          <DevinLogo />
-          Cloud
-        </button>
-      ) : null}
-    </span>
+    <button
+      aria-pressed={pressed}
+      className="devin-cloud-toggle"
+      disabled={submitting}
+      onClick={toggle}
+      title="Run this thread on a Devin Cloud VM"
+      type="button"
+    >
+      <DevinLogo />
+      Cloud
+    </button>
   );
 }
 
 function CloudBanner() {
-  const view = useComposerView();
-  const threadId = view.scope.kind === "thread" ? view.scope.threadId : null;
+  const { scope } = useComposer();
+  const threadId = scope.kind === "thread" ? scope.threadId : null;
   const data = useCloudSession(threadId);
   const [copied, setCopied] = useState<"idle" | "copied" | "failed">("idle");
   useEffect(() => {
@@ -245,12 +187,10 @@ function CloudBanner() {
 
   const copy = async () => {
     if (active === null) return;
-    try {
-      await navigator.clipboard.writeText(active.attachCommand);
-      setCopied("copied");
-    } catch {
-      setCopied("failed");
-    }
+    // bb's own writer: the native clipboard in bb Desktop, no focus or secure
+    // origin needed. It resolves false instead of rejecting.
+    const written = await experimental_copyToClipboard({ text: active.attachCommand });
+    setCopied(written ? "copied" : "failed");
   };
 
   return (
