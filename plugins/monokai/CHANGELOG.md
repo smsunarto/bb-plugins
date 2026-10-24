@@ -1,5 +1,12 @@
 # @smsunarto/bb-plugin-monokai
 
+## [0.5.1](https://github.com/smsunarto/bb-plugins/compare/monokai/v0.5.0...monokai/v0.5.1) (2026-10-24)
+
+
+### Bug Fixes
+
+* **monokai:** make theme authoring checkout independent ([7b47a13](https://github.com/smsunarto/bb-plugins/commit/7b47a1366e66329e49729ee572a64924c2ac92bc))
+
 ## [0.5.0](https://github.com/smsunarto/bb-plugins/compare/monokai/v0.4.0...monokai/v0.5.0) (2026-10-21)
 
 
