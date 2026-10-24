@@ -223,7 +223,7 @@ RPC responses for pending, failure, and recovery states.
 The existing plugin-local Storybook command still previews Monokai alone.
 Use the root command for the repository catalog and MCP endpoint. Storybook
 previews do not replace live BB checks of host integration and shadow DOM.
-The catalog uses the root SDK test runtime (0.5.29); plugins with different SDK
+The catalog uses the root SDK test runtime (0.6.75); plugins with different SDK
 pins still need their own build and live integration checks.
 
 ## Test another BB build

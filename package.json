@@ -43,7 +43,7 @@
     "@bb-plugins/ui": "workspace:*",
     "@fontsource-variable/inter": "5.3.0",
     "@fontsource/ibm-plex-mono": "5.3.0",
-    "@get-bb/plugin-sdk": "0.5.29",
+    "@get-bb/plugin-sdk": "0.6.75",
     "@hugeicons/core-free-icons": "4.2.3",
     "@sentry/cli": "3.7.0",
     "@storybook/addon-docs": "10.6.3",
