@@ -10,12 +10,11 @@ const result = (text: string) => ({
   truncated: false,
 });
 
-test("registers the RPIV banner for thread, queue and side chat composers", async () => {
+test("registers the RPIV banner for thread and queue composers, which include side chats", async () => {
   const app = await loadPluginApp(() => import("../src/app/app.tsx"));
   expect(app.composerCustomizations.find(({ id }) => id === "rpiv-todo")?.scopes).toEqual([
     "thread",
     "queued-message",
-    "side-chat",
   ]);
 });
 
@@ -57,15 +56,8 @@ test("sorts active tasks first and keeps the manual collapsed state on refresh",
     {},
     {
       sdk: { subscribe: () => () => {} },
-      composer: {
-        scope: {
-          kind: "side-chat",
-          parentThreadId: "parent",
-          childThreadId: "side",
-          projectId: "p1",
-          tabId: "tab1",
-        },
-      },
+      // A side chat's ThreadChat composer reports its own thread.
+      composer: { scope: { kind: "thread", threadId: "side" } },
       rpc: {
         getRpivTodos: () => ({
           items: [

@@ -1,6 +1,7 @@
 // Adapted from ZhenHuangLab/bb-rpiv-todo-renderer (MIT); see LICENSE.
 import {
-  useComposerView,
+  useComposer,
+  type PluginComposerScope,
   useRealtime,
   useRealtimeConnectionState,
   useRpc,
@@ -20,10 +21,9 @@ import type { TodoItem } from "../../shared/rpiv-todo-types.ts";
 
 const STATUS_ORDER = { in_progress: 0, pending: 1, completed: 2 } as const;
 
-function threadIdFromScope(scope: ReturnType<typeof useComposerView>["scope"]): string | null {
-  if (scope.kind === "thread" || scope.kind === "queued-message") return scope.threadId;
-  if (scope.kind === "side-chat") return scope.childThreadId;
-  return null;
+/** Side chats are `ThreadChat` composers, which report their own thread. */
+function threadIdFromScope(scope: PluginComposerScope): string | null {
+  return scope.kind === "thread" || scope.kind === "queued-message" ? scope.threadId : null;
 }
 
 function StatusGlyph({ status }: { status: TodoItem["status"] }) {
@@ -60,10 +60,10 @@ function TodoRow({ item }: { item: TodoItem }) {
 const snapshots = new Map<string, TodoSnapshot>();
 
 export function TodoBanner() {
-  const view = useComposerView();
-  const threadId = threadIdFromScope(view.scope);
+  const composer = useComposer();
+  const threadId = threadIdFromScope(composer.scope);
   return threadId ? (
-    <ThreadTodoBanner key={threadId} threadId={threadId} running={view.run.isRunning} />
+    <ThreadTodoBanner key={threadId} threadId={threadId} running={composer.isRunning} />
   ) : null;
 }
 
