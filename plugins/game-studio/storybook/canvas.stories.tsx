@@ -103,6 +103,7 @@ const meta = {
     onSave: fn(async () => ({ revision: "2" })),
     onGenerate: fn(),
     onGenerateDirect: fn(async () => {}),
+    onCancelPending: fn(async () => {}),
     onReview: fn(async () => {}),
     onJudge: fn(async () => {}),
     onGenerationControl: fn(async () => ({ missing: false })),
@@ -165,5 +166,68 @@ export const Animation: Story = {
       "Courier idle · breathing and satchel sway",
     );
     await waitFor(() => expect(title).toBeVisible());
+  },
+};
+
+/* A pick older than the brief or inputs that made it wears a Stale badge. */
+export const Stale: Story = {
+  args: { freshness: { concept: "stale" } },
+  play: async ({ canvasElement }) => {
+    const badge = await within(canvasElement).findByText("Stale");
+    await waitFor(() => expect(badge).toBeVisible());
+    await expect(badge).toHaveAttribute(
+      "title",
+      "Pick predates the current brief or inputs. Reroll, then Use.",
+    );
+  },
+};
+/* The server holds a run until the node's inputs land; the card says so and can drop it. */
+export const Waiting: Story = {
+  args: { pending: { model: { requestId: "run-1", requestedAt: 1 } } },
+  play: async ({ canvasElement, args }) => {
+    const canvas = within(canvasElement);
+    await waitFor(() => expect(canvas.getByText("Waiting for inputs…")).toBeVisible());
+    await userEvent.click(canvas.getByRole("button", { name: "Cancel" }));
+    await waitFor(() => expect(args.onCancelPending).toHaveBeenCalledWith("model", "run-1"));
+  },
+};
+export const CouldNotStart: Story = {
+  args: {
+    pending: {
+      model: { requestId: "run-1", requestedAt: 1, error: "Tripo rejected the front view." },
+    },
+  },
+  play: async ({ canvasElement }) => {
+    await waitFor(() =>
+      expect(
+        within(canvasElement).getByText("Could not start: Tripo rejected the front view."),
+      ).toBeVisible(),
+    );
+  },
+};
+/* Running a node whose input has no output makes that input first; the run button says so,
+   and that the run then waits for the front view to be approved. */
+export const RunsInputsFirst: Story = {
+  args: {
+    board: {
+      ...board,
+      nodes: board.nodes.map((node) =>
+        node.id === "concept"
+          ? Object.assign({}, node, {
+              data: Object.fromEntries(
+                Object.entries(node.data).filter(([key]) => key !== "assetId" && key !== "takes"),
+              ),
+            })
+          : node,
+      ),
+    },
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await userEvent.click(await canvas.findByText("Game-ready mesh"));
+    await waitFor(() =>
+      expect(canvas.getByText("⌘↵ runs 1 input, then waits for approval")).toBeVisible(),
+    );
+    await expect(canvas.getByRole("button", { name: "Run node" })).toBeEnabled();
   },
 };

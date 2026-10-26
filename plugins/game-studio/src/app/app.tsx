@@ -540,26 +540,44 @@ function Workbench({ gameId, tab }: { gameId: string; tab: Tab }) {
                     onGenerate={(nodeId, recipe) =>
                       void request("asset", nodeId, recipe, { boardId: board.board.id })
                     }
-                    onGenerateDirect={async (nodeId, revision, requestId, model, brief, agent) => {
+                    freshness={board.freshness}
+                    pending={board.pending}
+                    onGenerateDirect={async (nodeId, revision, requestId, options) => {
+                      const { model, brief, agent, upstream } = options;
                       // An empty setSelection resolves once the pickers settle, so a
                       // provider or machine changed just now has its model.
                       const selection =
                         agent ??
-                        (model.provider === "bb"
+                        (model?.provider === "bb"
                           ? await composer.setSelection({}).catch(() => composer.selection)
                           : undefined);
-                      await client.generateCanvas({
+                      // A media node names no model here: the server reads it from the recipe.
+                      const result = await client.generateCanvas({
                         gameId,
                         boardId: board.board.id,
                         nodeId,
                         revision,
                         requestId,
                         threadId: composer.scope.kind === "thread" ? composer.scope.threadId : null,
-                        model: selection?.model ? { ...model, id: selection.model } : model,
+                        ...(model
+                          ? { model: selection?.model ? { ...model, id: selection.model } : model }
+                          : {}),
                         ...(selection?.providerId ? { textProviderId: selection.providerId } : {}),
                         ...(agent?.reasoningLevel ? { reasoningLevel: agent.reasoningLevel } : {}),
                         ...(agent?.serviceTier ? { serviceTier: agent.serviceTier } : {}),
                         ...(brief ? { brief } : {}),
+                        ...(upstream ? { upstream } : {}),
+                      });
+                      await refetch();
+                      return result;
+                    }}
+                    onCancelPending={async (nodeId, requestId) => {
+                      await client.cancelCanvasRun({
+                        gameId,
+                        boardId: board.board.id,
+                        nodeId,
+                        requestId,
+                        threadId: composer.scope.kind === "thread" ? composer.scope.threadId : null,
                       });
                       await refetch();
                     }}
