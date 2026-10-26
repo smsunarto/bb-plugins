@@ -21,7 +21,7 @@ import {
   type canvasDirectControl,
   type cancelCanvasRunInput,
 } from "../../shared/generation.ts";
-import { getGame, loadCanvas, loadWorkspace, adoptGeneration } from "./studio.ts";
+import { getGame, loadCanvas, loadWorkspace, adoptGeneration, saveBoard } from "./studio.ts";
 import type { SlotStore } from "./slot-store.ts";
 import { canvasRequest, judgeRequest, retryRequest, reviewRequest } from "./canvas-generation.ts";
 import { judgeRequestId, nodeJudgeSettings, runCandidates } from "../../shared/judge.ts";
@@ -43,11 +43,19 @@ import {
   type HeldRunAgent,
   type HeldRunOptions,
 } from "./canvas-runs.ts";
-import type { ApprovalGrant, Board, CanvasNode, Workspace } from "../../shared/schema.ts";
+import type {
+  ApprovalGrant,
+  Board,
+  BoardEdit,
+  CanvasNode,
+  Workspace,
+  undoCanvasEditInput,
+} from "../../shared/schema.ts";
 import { nodeReviewSettings, retryLineage, reviewRequestId } from "../../shared/review.ts";
 import { captureCanvasInputs } from "./generation-inputs.ts";
 import { CanvasText } from "./canvas-text.ts";
-import { editCanvas } from "./canvas-edit.ts";
+import { applyCanvasEdits, describeEdit, editCanvas, saveCanvasEdit } from "./canvas-edit.ts";
+import { CanvasEditStore, restoredBoard, undoBlocker } from "./canvas-edits.ts";
 import { readCanvasContext } from "./canvas-context.ts";
 import { CanvasCollection } from "./canvas-collection.ts";
 import { canvasContextInput, canvasEditInput } from "../../shared/canvas-agent.ts";
@@ -106,6 +114,7 @@ export class Generations {
   private readonly collection: CanvasCollection;
   private readonly runs: CanvasRunStore;
   private readonly approvals: ApprovalStore;
+  private readonly editLog: CanvasEditStore;
   private readonly ask: Ask;
   /** Games whose agent runs the person approved in advance, until bb restarts or they stop it. */
   private readonly grants = new Map<string, ApprovalGrant>();
@@ -133,6 +142,7 @@ export class Generations {
     this.collection = new CanvasCollection(bb, slots, this.work);
     this.runs = new CanvasRunStore(slots.db);
     this.approvals = new ApprovalStore(slots.db);
+    this.editLog = new CanvasEditStore(slots.db);
     this.ask = options.ask ?? ((request) => bb.ui.requestInput(request));
     // Runs held before a restart go on without a studio reading them.
     for (const gameId of this.runs.games()) this.drive(gameId, ADVANCE_EVERY_MS);
@@ -145,6 +155,10 @@ export class Generations {
   /** The held runs of a game by board and node, as a workspace read shows them. */
   pending(gameId: string) {
     return this.runs.pending(gameId);
+  }
+  /** Each board's agent edits as a workspace read shows them. */
+  edits(workspace: Workspace): Record<string, BoardEdit[]> {
+    return this.editLog.forWorkspace(workspace);
   }
   /** Whether a game's agent runs are approved in advance, and by whom. */
   grant(gameId: string): ApprovalGrant | null {
@@ -665,9 +679,90 @@ export class Generations {
     await this.game(input.gameId, threadId, "read");
     return readCanvasContext(this.bb, input, this.runs.pending(input.gameId));
   }
+  /**
+   * An agent's edit, and the run it asks for on the edited board. The run is planned from the
+   * edit before it is saved, so the person approves what the agent proposes and a decline
+   * saves nothing; the save and the dispatch then share one turn of the game's lock.
+   */
   async editCanvas(input: z.output<typeof canvasEditInput>, threadId?: string) {
-    await this.game(input.gameId, threadId);
-    return editCanvas(this.bb, input);
+    const game = await this.game(input.gameId, threadId);
+    const log = { edits: this.editLog, threadId: threadId ?? null };
+    const run = input.run;
+    if (!run) return editCanvas(this.bb, input, log);
+    const workspace = await loadWorkspace(this.bb, input.gameId);
+    const board = applyCanvasEdits(workspace, input);
+    const plan = planRun(board, run.nodeId);
+    if (plan.issues.length) throw new Error(plan.issues.map(({ message }) => message).join(" "));
+    if (input.dryRun)
+      return {
+        ...describeEdit(input, board, null),
+        run: { planned: plan.queue, ...(plan.gate ? { gate: plan.gate } : {}) },
+      };
+    const ids = new Map(
+      plan.queue.map((id) => [id, id === run.nodeId ? run.requestId : randomUUID()]),
+    );
+    const items = plan.queue.map((id) =>
+      nodeItem(
+        board.nodes.find((node) => node.id === id)!,
+        ids.get(id)!,
+        1,
+      ),
+    );
+    const verdict = await this.approve(game, threadId!, items, board.id);
+    if (verdict !== "approved") return { ...describeEdit(input, board, null), ...declined() };
+    const result = await this.exclusive(game.id, async () => {
+      const saved = await saveCanvasEdit(this.bb, workspace, board, input, log);
+      const started = await this.runPlan(
+        game,
+        threadId!,
+        await loadWorkspace(this.bb, input.gameId),
+        {
+          gameId: input.gameId,
+          boardId: input.boardId,
+          nodeId: run.nodeId,
+          requestId: run.requestId,
+          revision: saved.revision,
+          upstream: true,
+          threadId: threadId!,
+        },
+        false,
+        ids,
+      );
+      return { ...describeEdit(input, board, saved), run: started };
+    });
+    if (result.run.waiting.length) this.drive(game.id, ADVANCE_EVERY_MS);
+    return result;
+  }
+  /** Puts back what an agent's edit changed, as the studio asks, while it is still the latest. */
+  async undoEdit(input: z.output<typeof undoCanvasEditInput>) {
+    const { game } = await this.canvasGame(input.gameId, input.threadId);
+    return this.exclusive(game.id, async () => {
+      const workspace = await loadWorkspace(this.bb, input.gameId);
+      const current = workspace.boards.find(({ board }) => board.id === input.boardId);
+      if (!current) throw new Error("This board no longer exists.");
+      const edit = this.editLog.get(game.id, input.editId);
+      if (!edit || edit.boardId !== input.boardId)
+        throw new Error("This edit is no longer on record.");
+      const blocker = undoBlocker(edit, current, workspace.assets);
+      if (blocker) throw new Error(blocker);
+      const restored = restoredBoard(current.board, edit.before);
+      const saved = await saveBoard(this.bb, {
+        gameId: input.gameId,
+        board: restored,
+        revision: current.revision,
+      });
+      this.editLog.record({
+        gameId: game.id,
+        boardId: input.boardId,
+        threadId: input.threadId,
+        undoOf: edit.id,
+        before: current.board,
+        after: restored,
+        beforeRevision: current.revision,
+        afterRevision: saved.revision,
+      });
+      return { revision: saved.revision };
+    });
   }
   async start(
     gameId: string,
@@ -804,6 +899,8 @@ export class Generations {
       threadId,
       input.action === "resume" ? "write" : "reconcile",
     );
+    const held = this.runs.byRequest(game.id, input.jobId);
+    if (held) return this.heldControl(game, held, input.action, threadId!);
     const before = await this.readJob(game, input.jobId, threadId!);
     if (!before)
       return {
@@ -815,6 +912,42 @@ export class Generations {
     if (input.action !== "status" && before.threadId !== threadId)
       throw new Error("Only the requesting thread can resume or stop this job.");
     return this.runControl(game, before, input.action, threadId!);
+  }
+  /** A run the server still holds has no job: its status is that it waits, and it can be dropped. */
+  private async heldControl(
+    game: Game,
+    held: HeldRun,
+    action: "status" | "resume" | "cancel",
+    threadId: string,
+  ) {
+    const run = {
+      boardId: held.boardId,
+      nodeId: held.nodeId,
+      requestedAt: held.requestedAt,
+      ...(held.error ? { error: held.error } : {}),
+    };
+    if (action === "resume")
+      throw new Error("This run waits for its inputs; there is no job to resume yet.");
+    if (action === "cancel") {
+      if (held.threadId !== threadId)
+        throw new Error("Only the requesting thread can stop this waiting run.");
+      const { cancelled } = await this.cancel({
+        gameId: game.id,
+        boardId: held.boardId,
+        nodeId: held.nodeId,
+        requestId: held.requestId,
+        threadId,
+      });
+      return { job: null, status: cancelled ? "cancelled" : "waiting", run };
+    }
+    return {
+      job: null,
+      status: "waiting",
+      run,
+      detail: held.error
+        ? "The run could not start last time and is tried again when its inputs change. Fix the cause or cancel it."
+        : "The run waits for its inputs to land; its job is created when they do. Check again later, or cancel it.",
+    };
   }
   private async readJob(game: Game, jobId: string, threadId: string) {
     const client = this.bb.hosts.experimental_client({ contract: studioHostContract });

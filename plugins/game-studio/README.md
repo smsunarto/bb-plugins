@@ -178,6 +178,16 @@ Agents keep independent progress files for accepted requests at
 `canvas/requests/<id>.json`; drafts create no request history. The studio reads
 up to 1,000 request files and shows the newest five valid records.
 
+Board edits an agent makes through `game_studio_canvas_edit` are remembered in
+the BB server's database, newest twenty per board, with what each changed. The
+canvas shows them and can undo the latest while it is still the board's content;
+an undo keeps the current layout and leaves its own record, so it can be redone.
+Saves from the studio and from the CLI are not recorded. A paid generation an
+agent starts asks the person first through a form in the thread; approval covers
+the run's batch and review retries, and a game can be approved in advance until
+BB restarts. `@` a canvas node in the composer to hand the agent its brief,
+inputs, and output.
+
 Each game is bound to its BB project, machine, and directory. A linked agent
 thread must use that same checkout; another worktree does not share the studio's
 files. BB's remote file APIs serve media on the correct enrolled machine.

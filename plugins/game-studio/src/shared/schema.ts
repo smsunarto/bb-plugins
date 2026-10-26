@@ -156,11 +156,36 @@ export const pendingRunSchema = z.object({
   error: z.string().optional(),
 });
 export type PendingRun = z.infer<typeof pendingRunSchema>;
+const editedNode = z.object({ id: idSchema, title: z.string(), type: nodeKindSchema });
+const editedWire = z.object({ id: idSchema, source: idSchema, target: idSchema });
+/** What a saved edit changed on a board, in the terms a person reads; layout is not a change. */
+export const editSummarySchema = z.object({
+  added: z.array(editedNode),
+  removed: z.array(editedNode),
+  updated: z.array(editedNode.extend({ fields: z.array(z.string()) })),
+  connected: z.array(editedWire),
+  disconnected: z.array(editedWire),
+});
+export type EditSummary = z.infer<typeof editSummarySchema>;
+/** A board edit the server saved for an agent, or an undo of one; a board lists its newest first. */
+export const boardEditSchema = z.object({
+  id: z.string(),
+  /** The agent thread that asked for it; an undo from the studio has none. */
+  threadId: z.string().nullable(),
+  at: z.number(),
+  /** The edit this one put back. */
+  undoOf: z.string().optional(),
+  summary: editSummarySchema,
+  /** It is still the board's latest content, and what it put there still exists, so it can be undone. */
+  undoable: z.boolean(),
+});
+export type BoardEdit = z.infer<typeof boardEditSchema>;
 export const workspaceBoardSchema = z.object({
   board: boardSchema,
   revision: z.string(),
   freshness: z.record(z.string(), freshnessSchema).default({}),
   pending: z.record(z.string(), pendingRunSchema).default({}),
+  edits: z.array(boardEditSchema).default([]),
 });
 /** An agent's later paid runs for a game are approved without asking while a grant stands. */
 export const approvalGrantSchema = z.object({ threadId: z.string().nullable(), at: z.number() });
@@ -214,6 +239,14 @@ export const attachGameInput = z
 export const revisionSchema = z.object({ revision: z.string() });
 export const saveBoardInput = gameInput
   .extend({ board: boardSchema, revision: z.string() })
+  .strict();
+/** Puts back what an agent's edit changed, while that edit is still the board's latest content. */
+export const undoCanvasEditInput = gameInput
+  .extend({
+    boardId: idSchema,
+    editId: z.string().min(1).max(100),
+    threadId: z.string().nullable(),
+  })
   .strict();
 export const saveDocumentInput = gameInput
   .extend({

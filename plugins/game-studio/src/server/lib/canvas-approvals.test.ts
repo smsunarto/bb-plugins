@@ -1,5 +1,6 @@
 import { afterEach, expect, test } from "bun:test";
 import { createHash } from "node:crypto";
+import { readFileSync } from "node:fs";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -8,6 +9,7 @@ import { createFakePluginHost, makeThreadResponse } from "@get-bb/plugin-sdk/tes
 import type { GenerationRunner } from "../../host/generation.ts";
 import { generationJob, type GenerationJob } from "../../shared/generation.ts";
 import { generationApprovalPayload } from "../../shared/approvals.ts";
+import { canvasEditInput } from "../../shared/canvas-agent.ts";
 import { Generations } from "./generations.ts";
 import { SlotStore } from "./slot-store.ts";
 import { loadWorkspace } from "./studio.ts";
@@ -249,6 +251,100 @@ test("an agent's run asks once for everything it will make, then runs under that
   await f.completeHostJob("final-request");
   await f.generations.list("orbit");
   await f.agentRun("alt");
+  expect(f.asked).toHaveLength(2);
+});
+
+test("an edit that runs asks before anything is saved, then saves and runs as one", async () => {
+  let nodesWhenAsked = 0;
+  const f = await fixture(() => ({ outcome: "submitted", value: { approved: true } }));
+  const boardFile = () =>
+    JSON.parse(readFileSync(join(f.rootPath, "canvas/boards/main.json"), "utf8"));
+  f.generations.setGrant("orbit", null);
+  const ask = f.asked;
+  const editRun = async (approved: boolean) => {
+    const workspace = await loadWorkspace(f.bb, "orbit");
+    return f.generations.editCanvas(
+      canvasEditInput.parse({
+        gameId: "orbit",
+        boardId: "main",
+        revision: workspace.boards[0]!.revision,
+        operations: [
+          { op: "add_node", node: { id: "hero", type: "image", data: { prompt: "Hero shot" } } },
+        ],
+        run: { nodeId: "hero", requestId: `hero-${approved ? "yes" : "no"}` },
+      }),
+      "thread",
+    );
+  };
+  // Approval is asked for from the edited board, before it is saved.
+  const generations = new Generations(
+    f.bb,
+    async () => ({ vertexProject: "studio-test" }),
+    new SlotStore(f.bb.storage.database()),
+    {
+      ask: async (request) => {
+        nodesWhenAsked = boardFile().nodes.length;
+        ask.push(request);
+        return { outcome: "submitted", value: { approved: false } };
+      },
+    },
+  );
+  cleanups.push(async () => generations.dispose());
+  const declined = await (async () => {
+    const workspace = await loadWorkspace(f.bb, "orbit");
+    return generations.editCanvas(
+      canvasEditInput.parse({
+        gameId: "orbit",
+        boardId: "main",
+        revision: workspace.boards[0]!.revision,
+        operations: [
+          { op: "add_node", node: { id: "hero", type: "image", data: { prompt: "Hero shot" } } },
+        ],
+        run: { nodeId: "hero", requestId: "hero-no" },
+      }),
+      "thread",
+    );
+  })();
+  expect(nodesWhenAsked).toBe(4);
+  expect(f.items(ask[0]!)).toEqual([
+    expect.objectContaining({ nodeId: "hero", requestId: "hero-no", provider: "google" }),
+  ]);
+  expect(declined).toMatchObject({ declined: true, saved: false });
+  expect(boardFile().nodes).toHaveLength(4);
+  expect(f.starts).toHaveLength(0);
+  // Approved: the edit lands and the run starts from the saved board under the same ids.
+  const result = await editRun(true);
+  expect(result).toMatchObject({
+    saved: true,
+    editId: expect.stringMatching(/^[0-9a-f-]{36}$/),
+    run: {
+      waiting: [],
+      jobs: [
+        expect.objectContaining({
+          id: "hero-yes",
+          target: expect.objectContaining({ boardId: "main", nodeId: "hero" }),
+        }),
+      ],
+    },
+  });
+  expect(boardFile().nodes).toHaveLength(5);
+  expect(f.starts.map((start) => start.jobId)).toEqual(["hero-yes"]);
+  expect(f.approvals.get("orbit", "hero-yes")).toMatchObject({ budget: 1, used: 1 });
+  expect((await loadWorkspace(f.bb, "orbit")).boards[0]!.revision).toBe(result.revision);
+  // A dry run plans without asking or saving.
+  const workspace = await loadWorkspace(f.bb, "orbit");
+  const dry = await f.generations.editCanvas(
+    canvasEditInput.parse({
+      gameId: "orbit",
+      boardId: "main",
+      revision: workspace.boards[0]!.revision,
+      dryRun: true,
+      operations: [{ op: "update_node", id: "alt", patch: { data: { prompt: "Alt shot" } } }],
+      run: { nodeId: "alt", requestId: "alt-dry" },
+    }),
+    "thread",
+  );
+  expect(dry).toMatchObject({ saved: false, run: { planned: ["concept", "alt"] } });
   expect(f.asked).toHaveLength(2);
 });
 

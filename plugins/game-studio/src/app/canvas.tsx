@@ -16,6 +16,7 @@ import {
 import type { AgentSelection, CanvasRunResult, GenerationJob } from "../shared/generation.ts";
 import { planRun, type RunPlan } from "../shared/canvas-plan.ts";
 import { Icon } from "./icons.tsx";
+import { AgentEdits } from "./canvas-edits.tsx";
 // Canvas model and layout adapted from OhMyGame; modified for BB. Apache-2.0.
 import {
   createContext,
@@ -59,6 +60,7 @@ import type {
   Freshness,
   GenerationRecipe,
   PendingRun,
+  BoardEdit,
 } from "../shared/schema.ts";
 import { nodeBriefRecipe, nodeRecipe, nodeTakesBrief } from "../shared/recipes.ts";
 import { outputType } from "../shared/inputs.ts";
@@ -132,6 +134,7 @@ export type DirectRunOptions = {
 };
 const noFreshness: Record<string, Freshness> = {};
 const noPending: Record<string, PendingRun> = {};
+const noEdits: BoardEdit[] = [];
 /** Where BB agents run for this canvas, and the agent they use until a node picks another. */
 const AgentDefaults = createContext<{ hostId: string; agent: AgentSelection } | null>(null);
 type Handlers = Record<string, (...args: never[]) => unknown>;
@@ -753,6 +756,9 @@ export function StudioCanvas({
   preview,
   freshness = noFreshness,
   pending = noPending,
+  edits: boardEdits = noEdits,
+  onUndoEdit,
+  onMention,
   onSave,
   onGenerate,
   onGenerateDirect,
@@ -778,6 +784,11 @@ export function StudioCanvas({
   /** Per node, whether its pick reflects its inputs, and the run the server holds for it. */
   freshness?: Record<string, Freshness>;
   pending?: Record<string, PendingRun>;
+  /** The board's agent edits, newest first, and how to put one back. */
+  edits?: BoardEdit[];
+  onUndoEdit?: (editId: string) => Promise<void>;
+  /** Puts a node in the composer as an @ mention for the agent. */
+  onMention?: (nodeId: string) => void;
   onSave: (board: Board, expectedRevision: string) => Promise<{ revision: string }>;
   onGenerate: (nodeId: string, recipe: GenerationRecipe) => void;
   onGenerateDirect: (
@@ -1443,6 +1454,13 @@ export function StudioCanvas({
                 </button>
               </output>
             )}
+            <AgentEdits
+              key={`${gameId}:${board.id}`}
+              edits={boardEdits}
+              dirty={dirty}
+              storageKey={`game-studio:edits-seen:${gameId}:${board.id}`}
+              onUndo={onUndoEdit}
+            />
             <ReactFlow<Card>
               onInit={handlers.init}
               colorMode={colorMode}
@@ -1519,6 +1537,17 @@ export function StudioCanvas({
                   <Icon name="X" />
                 </button>
               </header>
+              {onMention && (
+                <button
+                  type="button"
+                  className="gs-inspector-mention"
+                  title="Add this node to the chat draft, so the agent reads it when you send"
+                  onClick={() => onMention(selected.id)}
+                >
+                  <Icon name="AtSign" />
+                  Mention in chat
+                </button>
+              )}
               {promptField(selected.data.source.type) &&
                 selected.data.source.type !== "text" &&
                 !selectedMedia && (

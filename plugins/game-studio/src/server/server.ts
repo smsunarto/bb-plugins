@@ -42,9 +42,11 @@ import { auth } from "./command/auth.ts";
 import { generateCanvas } from "./rpc/generate-canvas.ts";
 import { cancelCanvasRun } from "./rpc/cancel-canvas-run.ts";
 import { generationGrant } from "./rpc/generation-grant.ts";
+import { undoCanvasEdit } from "./rpc/undo-canvas-edit.ts";
 import { canvasGenerationStatus } from "./rpc/canvas-generation-status.ts";
 import { briefTemplates } from "./rpc/brief-templates.ts";
 import { registerRequestMention } from "./lib/request-mention.ts";
+import { registerNodeMention } from "./lib/node-mention.ts";
 
 export default definePlugin({
   pluginId: "game-studio",
@@ -54,6 +56,7 @@ export default definePlugin({
     generateCanvas,
     cancelCanvasRun,
     generationGrant,
+    undoCanvasEdit,
     canvasGenerationStatus,
     falAuth,
     listUnityEditors,
@@ -125,6 +128,7 @@ export default definePlugin({
     bb.events.on("thread.idle", ({ thread }) => publishRunEnded(bb, thread));
     bb.events.on("thread.failed", ({ thread }) => publishRunEnded(bb, thread));
     registerRequestMention(bb);
+    bb.onDispose(registerNodeMention(bb));
     unitySlots.install();
   },
   agents: {

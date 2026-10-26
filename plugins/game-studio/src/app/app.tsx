@@ -24,6 +24,7 @@ import type { AgentSelection } from "../shared/generation.ts";
 import { StudioCanvas } from "./canvas.tsx";
 import { GenerationApproval } from "./generation-approval.tsx";
 import { APPROVAL_RENDERER } from "../shared/approvals.ts";
+import { NODE_MENTION_PROVIDER, nodeMentionId } from "../shared/node-mention.ts";
 import { ModelReviewLinks, ModelReviewPage } from "./model-review/index.tsx";
 import { DesignEditor, AssetLibrary, Evidence } from "./views.tsx";
 import { UnityPanel, useUnityEditors, editorLabel } from "./unity.tsx";
@@ -564,6 +565,38 @@ function Workbench({ gameId, tab }: { gameId: string; tab: Tab }) {
                     }
                     freshness={board.freshness}
                     pending={board.pending}
+                    edits={board.edits}
+                    onUndoEdit={async (editId) => {
+                      await client.undoCanvasEdit({
+                        gameId,
+                        boardId: board.board.id,
+                        editId,
+                        threadId: composer.scope.kind === "thread" ? composer.scope.threadId : null,
+                      });
+                      await refetch();
+                    }}
+                    onMention={(nodeId) => {
+                      if (
+                        composer.scope.kind !== "thread" &&
+                        composer.scope.kind !== "new-thread"
+                      ) {
+                        setError("Open Studio beside a BB thread to mention a node.");
+                        return;
+                      }
+                      const node = board.board.nodes.find((node) => node.id === nodeId);
+                      composer.insert(
+                        [
+                          {
+                            provider: NODE_MENTION_PROVIDER,
+                            id: nodeMentionId({ gameId, boardId: board.board.id, nodeId }),
+                            label: node?.title || node?.type || nodeId,
+                          },
+                          " ",
+                        ],
+                        { at: "end" },
+                      );
+                      composer.focus();
+                    }}
                     onGenerateDirect={async (nodeId, revision, requestId, options) => {
                       const { model, brief, agent, upstream } = options;
                       // An empty setSelection resolves once the pickers settle, so a

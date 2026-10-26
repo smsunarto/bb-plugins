@@ -17,9 +17,12 @@ a saved node. Provider CLI commands and credentials are internal details. Keep
 a stable requestId and poll `game_studio_generation` to collect outputs. Resume
 only a confirmed existing task; never resubmit an uncertain paid request.
 
-Run `bb game-studio rpc overview '{}'` to list registered games. The plugin's RPCs are
-also available through `bb plugin rpc game-studio`. Query `canvasContext` with `{"gameId":"..."}` for a bounded overview.
-`get` returns the full workspace and can be large.
+Run `bb game-studio rpc overview '{}'` to list registered games, and `canvasContext`
+with `{"gameId":"..."}` for a bounded overview; `get` returns the full workspace and
+can be large. Use the CLI for reads. Generation and board edits go through the native
+tools: a paid generation an agent starts waits for the person's approval there, and
+an edit made there is shown to the person with an undo. The studio's own mutation
+RPCs skip both.
 Use the returned project's host and root path; never assume the game lives on
 the BB server. Inspect current CLI metadata for mutation input schemas.
 
@@ -60,14 +63,55 @@ chunks using `nextOffset`. `encoding:"json"` means parse the joined JSON.
 `game_studio_canvas_edit` takes the board's exact revision and a batch such as:
 
 ```json
-{"gameId":"...","boardId":"...","revision":"...","dryRun":true,"operations":[
-  {"op":"add_node","node":{"id":"direction","type":"text","data":{"text":"Match the approved HQ render and character references."}}},
-  {"op":"add_node","node":{"id":"concept","type":"image","data":{"prompt":"Urban Tokyo HQ exterior","review":{"enabled":true,"retries":0,"criteria":"Match the approved materials and character identity."},"judge":{"enabled":true}}}},
-  {"op":"connect","id":"direction-concept","source":"direction","target":"concept","port":"text"}
-]}
+{
+  "gameId": "...",
+  "boardId": "...",
+  "revision": "...",
+  "dryRun": true,
+  "operations": [
+    {
+      "op": "add_node",
+      "node": {
+        "id": "direction",
+        "type": "text",
+        "data": { "text": "Match the approved HQ render and character references." }
+      }
+    },
+    {
+      "op": "add_node",
+      "node": {
+        "id": "concept",
+        "type": "image",
+        "data": {
+          "prompt": "Urban Tokyo HQ exterior",
+          "review": {
+            "enabled": true,
+            "retries": 0,
+            "criteria": "Match the approved materials and character identity."
+          },
+          "judge": { "enabled": true }
+        }
+      }
+    },
+    {
+      "op": "connect",
+      "id": "direction-concept",
+      "source": "direction",
+      "target": "concept",
+      "port": "text"
+    }
+  ]
+}
 ```
 
-Inspect the dry run, then send the same batch without `dryRun`. On later edits,
+Inspect the dry run, then send the same batch without `dryRun`. Add
+`run:{nodeId,requestId}` to generate a node of the edited board once the edit is
+saved; the person approves a paid run before anything is saved, and a decline
+leaves the board unchanged. Each saved edit returns an `editId`; the person sees
+what it changed and can put it back, so send one coherent batch per change.
+When the person `@`-mentions a canvas node in chat, its brief, inputs, output,
+board revision, and ids arrive as context; read it in full with
+`game_studio_canvas_context` before editing. On later edits,
 patch only the changed brief fields; generated outputs and existing positions
 survive. Use `connect`/`disconnect` for node inputs and `move_node` for explicit
 positions during the current visit. Opening a board automatically arranges its

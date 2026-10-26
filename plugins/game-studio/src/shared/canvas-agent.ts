@@ -82,6 +82,13 @@ export const canvasEditInput = gameInput
       )
       .min(1)
       .max(100),
+    /**
+     * Run this node of the edited board once the edit is saved, its missing inputs first. A
+     * paid run asks the person before anything is saved; a decline saves nothing.
+     */
+    run: z
+      .strictObject({ nodeId: idSchema, requestId: z.string().regex(/^[a-zA-Z0-9_-]{1,100}$/) })
+      .optional(),
   })
   .strict();
 

@@ -109,6 +109,8 @@ const meta = {
     onGenerationControl: fn(async () => ({ missing: false })),
     onOpenDocument: fn(),
     onUpload: fn(),
+    onUndoEdit: fn(async () => {}),
+    onMention: fn(),
   },
   parameters: {
     ...screenParameters,
@@ -229,5 +231,65 @@ export const RunsInputsFirst: Story = {
       expect(canvas.getByText("⌘↵ runs 1 input, then waits for approval")).toBeVisible(),
     );
     await expect(canvas.getByRole("button", { name: "Run node" })).toBeEnabled();
+  },
+};
+/* The agent edited the board while the person was away: the banner says so, lists what
+   changed, and puts the latest edit back. */
+export const AgentEdits: Story = {
+  args: {
+    edits: [
+      {
+        id: "edit-2",
+        threadId: "thread-1",
+        at: Date.now() - 2 * 60_000,
+        undoable: true,
+        summary: {
+          added: [{ id: "model", title: "Game-ready mesh", type: "model-3d" }],
+          removed: [],
+          updated: [
+            { id: "concept", title: "Character concept", type: "image", fields: ["prompt"] },
+          ],
+          connected: [{ id: "concept-model", source: "concept", target: "model" }],
+          disconnected: [],
+        },
+      },
+      {
+        id: "edit-1",
+        threadId: "thread-1",
+        at: Date.now() - 9 * 60_000,
+        undoable: false,
+        summary: {
+          added: [{ id: "concept", title: "Character concept", type: "image" }],
+          removed: [],
+          updated: [],
+          connected: [{ id: "brief-concept", source: "brief", target: "concept" }],
+          disconnected: [],
+        },
+      },
+    ],
+  },
+  play: async ({ canvasElement, args }) => {
+    const canvas = within(canvasElement);
+    await waitFor(() =>
+      expect(canvas.getByText("The agent made 2 edits to this board.")).toBeVisible(),
+    );
+    await userEvent.click(canvas.getByRole("button", { name: "Show" }));
+    await expect(canvas.getByText("Added “Game-ready mesh” (model-3d)")).toBeVisible();
+    await expect(canvas.getByText("Changed “Character concept” (image): prompt")).toBeVisible();
+    const undos = canvas.getAllByRole("button", { name: "Undo" });
+    // The opening arrange saves first; the older edit is history and stays disabled.
+    await waitFor(() => expect(undos[0]).toBeEnabled());
+    await expect(undos[1]).toBeDisabled();
+    await userEvent.click(undos[0]!);
+    await waitFor(() => expect(args.onUndoEdit).toHaveBeenCalledWith("edit-2"));
+  },
+};
+/* A node's inspector can hand the node to the chat as an @ mention. */
+export const MentionInChat: Story = {
+  play: async ({ canvasElement, args }) => {
+    const canvas = within(canvasElement);
+    await userEvent.click(await canvas.findByText("Character concept"));
+    await userEvent.click(await canvas.findByRole("button", { name: "Mention in chat" }));
+    await waitFor(() => expect(args.onMention).toHaveBeenCalledWith("concept"));
   },
 };

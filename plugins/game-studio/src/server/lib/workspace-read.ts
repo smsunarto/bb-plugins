@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
-import type { ApprovalGrant, PendingRun, Workspace } from "../../shared/schema.ts";
+import type { ApprovalGrant, BoardEdit, PendingRun, Workspace } from "../../shared/schema.ts";
 import type { Generations } from "./generations.ts";
 import { loadCanvas } from "./studio.ts";
 
@@ -10,13 +10,17 @@ export type WorkspaceContext = { bb: BbPluginApi; generations?: Generations };
 function uncertain(
   workspace: Workspace,
   pending: Record<string, Record<string, PendingRun>>,
+  edits: Record<string, BoardEdit[]>,
   grant: ApprovalGrant | null,
 ): Workspace {
   return {
     ...workspace,
     approvalGrant: grant,
     boards: workspace.boards.map((entry) =>
-      Object.assign({}, entry, { pending: pending[entry.board.id] ?? {} }),
+      Object.assign({}, entry, {
+        pending: pending[entry.board.id] ?? {},
+        edits: edits[entry.board.id] ?? [],
+      }),
     ),
     generationJobs: workspace.generationJobs.map((job) =>
       ["queued", "running"].includes(job.status)
@@ -46,6 +50,7 @@ export async function readWorkspace(
       return uncertain(
         read.workspace,
         ctx.generations.pending(gameId),
+        ctx.generations.edits(read.workspace),
         ctx.generations.grant(gameId),
       );
     let refreshed;
@@ -55,18 +60,24 @@ export async function readWorkspace(
       return uncertain(
         read.workspace,
         ctx.generations.pending(gameId),
+        ctx.generations.edits(read.workspace),
         ctx.generations.grant(gameId),
       );
     }
-    if (!refreshed.changed || pass > 0)
+    if (!refreshed.changed || pass > 0) {
+      const edits = ctx.generations.edits(read.workspace);
       return {
         ...read.workspace,
         approvalGrant: refreshed.grant,
         generationJobs: refreshed.jobs,
         boards: read.workspace.boards.map((entry) =>
-          Object.assign({}, entry, { pending: refreshed.pending[entry.board.id] ?? {} }),
+          Object.assign({}, entry, {
+            pending: refreshed.pending[entry.board.id] ?? {},
+            edits: edits[entry.board.id] ?? [],
+          }),
         ),
       };
+    }
     read = await loadCanvas(ctx.bb, gameId, options);
   }
 }

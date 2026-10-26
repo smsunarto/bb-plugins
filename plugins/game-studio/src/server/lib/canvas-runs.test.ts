@@ -375,3 +375,30 @@ test("cancelling a waiting run drops the inputs it was making that still wait", 
   await f.generations.list("orbit");
   expect(f.starts).toHaveLength(1);
 });
+
+test("a waiting run answers the generation tool as waiting, and only its thread can stop it there", async () => {
+  const f = await fixture();
+  await f.run("final");
+  const status = await f.generations.control(
+    { gameId: "orbit", jobId: "final-request", action: "status" },
+    "thread",
+  );
+  expect(status).toMatchObject({
+    job: null,
+    status: "waiting",
+    run: { boardId: "main", nodeId: "final" },
+  });
+  await expect(
+    f.generations.control({ gameId: "orbit", jobId: "final-request", action: "resume" }, "thread"),
+  ).rejects.toThrow("no job to resume");
+  await expect(
+    f.generations.control({ gameId: "orbit", jobId: "final-request", action: "cancel" }, "other"),
+  ).rejects.toThrow("checkout owner");
+  expect(
+    await f.generations.control(
+      { gameId: "orbit", jobId: "final-request", action: "cancel" },
+      "thread",
+    ),
+  ).toMatchObject({ job: null, status: "cancelled" });
+  expect(f.runs.get("orbit", "main", "final")).toBeUndefined();
+});

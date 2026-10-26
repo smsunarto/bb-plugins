@@ -9,6 +9,7 @@ import { canvasHostRouter } from "../../../test/canvas-host.ts";
 import { loadWorkspace } from "./studio.ts";
 import { canvasEditInput, canvasContextInput } from "../../shared/canvas-agent.ts";
 import { editCanvas } from "./canvas-edit.ts";
+import { CanvasEditStore } from "./canvas-edits.ts";
 import { readCanvasContext } from "./canvas-context.ts";
 
 const cleanups: (() => Promise<void>)[] = [];
@@ -97,6 +98,7 @@ async function fixture(count = 1) {
     return editCanvas(
       bb,
       canvasEditInput.parse({ gameId: "game", boardId: "main", revision, operations, ...options }),
+      { edits: new CanvasEditStore(bb.storage.database()), threadId: "owner" },
     );
   };
   return { bb, harness, calls, rootPath, snapshot, edit, seed };
@@ -173,6 +175,7 @@ test("native edits build connected workflows, merge brief data and preserve outp
     { threadId: "owner" },
   );
   expect(result).toContain('"saved":true');
+  expect(result).toMatch(/"editId":"[0-9a-f-]{36}"/);
   const saved = await f.snapshot();
   expect(saved.board.nodes[0]!.data.takes).toEqual(initial.board.nodes[0]!.data.takes);
   expect(saved.board.nodes[0]!.position).toEqual({ x: 740, y: 120 });

@@ -353,15 +353,20 @@ export async function getGame(bb: BbPluginApi, gameId: string): Promise<Game> {
   return gameSchema.parse(raw);
 }
 
+/** Every registered game, newest first. */
+export async function listGames(bb: BbPluginApi): Promise<Game[]> {
+  const keys = await bb.storage.kv.list(prefix);
+  return (await Promise.all(keys.map((key) => bb.storage.kv.get(key))))
+    .map((raw) => gameSchema.parse(raw))
+    .sort((a, b) => b.createdAt - a.createdAt);
+}
+
 export async function overview(bb: BbPluginApi) {
-  const [keys, hosts, projects] = await Promise.all([
-    bb.storage.kv.list(prefix),
+  const [games, hosts, projects] = await Promise.all([
+    listGames(bb),
     bb.sdk.hosts.list(),
     bb.sdk.projects.list(),
   ]);
-  const games = (await Promise.all(keys.map((key) => bb.storage.kv.get(key))))
-    .map((raw) => gameSchema.parse(raw))
-    .sort((a, b) => b.createdAt - a.createdAt);
   return {
     games,
     hosts: hosts
@@ -591,6 +596,7 @@ export async function loadCanvas(
         ...entry,
         freshness: boardFreshness(entry.board, read),
         pending: {},
+        edits: [],
       })),
       documents,
       assets,

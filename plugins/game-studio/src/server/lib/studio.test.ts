@@ -2252,6 +2252,7 @@ test("a generation status service outage preserves the workspace and marks pendi
           throw new Error("Host unavailable");
         },
         pending: () => ({}),
+        edits: () => ({}),
         grant: () => null,
       } as never,
     },

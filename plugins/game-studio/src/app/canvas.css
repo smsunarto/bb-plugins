@@ -1414,3 +1414,70 @@
   padding: 4px 8px;
   font-size: 11px;
 }
+
+/* What the agent changed on this board, with a way back. */
+.gs-canvas-edits {
+  position: absolute;
+  z-index: 9;
+  left: 50%;
+  top: 54px;
+  transform: translateX(-50%);
+  width: max-content;
+  max-width: min(520px, calc(100% - 24px));
+  padding: 8px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--surface-raised-solid, var(--popover));
+  color: var(--foreground);
+  font-size: 12px;
+}
+.gs-canvas-edits-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.gs-canvas-edits-row > span {
+  flex: 1;
+  min-width: 120px;
+}
+.gs-canvas-edits-error {
+  margin: 6px 0 0;
+  color: var(--destructive-text);
+}
+.gs-canvas-edits-list {
+  margin: 8px 0 0;
+  padding: 0;
+  max-height: 40vh;
+  overflow: auto;
+  list-style: none;
+  border-top: 1px solid var(--border-hairline);
+}
+.gs-canvas-edits-list > li {
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border-hairline);
+}
+.gs-canvas-edits-list > li > header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.gs-canvas-edits-list > li > header > time {
+  flex: 1;
+  color: var(--muted-foreground);
+}
+.gs-canvas-edits-list > li[data-undo] > header > span {
+  color: var(--muted-foreground);
+}
+.gs-canvas-edits-list ul {
+  margin: 4px 0 0;
+  padding-left: 16px;
+}
+.gs-app .gs-node-inspector .gs-inspector-mention {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin: 10px 14px 0;
+  padding: 4px 8px;
+  font-size: 11px;
+}

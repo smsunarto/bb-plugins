@@ -23,6 +23,10 @@ import { nodeRefs } from "../../shared/inputs.ts";
 import { reviewSettings } from "../../shared/review.ts";
 import { judgeSettings } from "../../shared/judge.ts";
 import { loadWorkspace, saveBoard } from "./studio.ts";
+import type { CanvasEditStore } from "./canvas-edits.ts";
+
+/** Where a saved edit is remembered, and for whom. */
+export type EditLog = { edits: CanvasEditStore; threadId: string | null };
 
 const protectedKeys = new Set(["takes", "reviews", "judgements", "generationJobId", "briefJobId"]);
 const selectedAssetTypes: Partial<Record<CanvasNode["type"], Asset["type"]>> = {
@@ -176,15 +180,38 @@ export function applyCanvasEdits(workspace: Workspace, input: z.output<typeof ca
   return boardSchema.parse(withEdges(board));
 }
 
-export async function editCanvas(bb: BbPluginApi, input: z.output<typeof canvasEditInput>) {
-  const workspace = await loadWorkspace(bb, input.gameId);
-  const board = applyCanvasEdits(workspace, input);
-  const saved = input.dryRun
-    ? { revision: input.revision }
-    : await saveBoard(bb, { gameId: input.gameId, board, revision: input.revision });
+/** Saves an edited board over the revision the edit was made from, and remembers what changed. */
+export async function saveCanvasEdit(
+  bb: BbPluginApi,
+  workspace: Workspace,
+  board: Board,
+  input: Pick<z.output<typeof canvasEditInput>, "gameId" | "boardId" | "revision">,
+  log: EditLog,
+): Promise<{ revision: string; editId: string }> {
+  const before = workspace.boards.find((entry) => entry.board.id === input.boardId)!.board;
+  const saved = await saveBoard(bb, { gameId: input.gameId, board, revision: input.revision });
+  const recorded = log.edits.record({
+    gameId: input.gameId,
+    boardId: board.id,
+    threadId: log.threadId,
+    before,
+    after: board,
+    beforeRevision: input.revision,
+    afterRevision: saved.revision,
+  });
+  return { revision: saved.revision, editId: recorded.id };
+}
+
+/** The tool's account of an edit: what it touched and where the board stands. */
+export function describeEdit(
+  input: z.output<typeof canvasEditInput>,
+  board: Board,
+  saved: { revision: string; editId?: string } | null,
+) {
   return {
-    ...saved,
-    saved: !input.dryRun,
+    revision: saved?.revision ?? input.revision,
+    saved: saved !== null,
+    ...(saved?.editId ? { editId: saved.editId } : {}),
     boardId: board.id,
     nodeCount: board.nodes.length,
     edgeCount: board.edges.length,
@@ -199,4 +226,15 @@ export async function editCanvas(bb: BbPluginApi, input: z.output<typeof canvasE
     })),
     placement: "estimated",
   };
+}
+
+export async function editCanvas(
+  bb: BbPluginApi,
+  input: z.output<typeof canvasEditInput>,
+  log: EditLog,
+) {
+  const workspace = await loadWorkspace(bb, input.gameId);
+  const board = applyCanvasEdits(workspace, input);
+  if (input.dryRun) return describeEdit(input, board, null);
+  return describeEdit(input, board, await saveCanvasEdit(bb, workspace, board, input, log));
 }

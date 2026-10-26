@@ -109,6 +109,13 @@ export class CanvasRunStore {
       .get(gameId, boardId, nodeId) as Row | undefined;
     return row && CanvasRunStore.run(row);
   }
+  /** The held run a request id names, when its job has not been created yet. */
+  byRequest(gameId: string, requestId: string): HeldRun | undefined {
+    const row = this.db
+      .prepare(`SELECT * FROM ${table} WHERE game = ? AND request = ?`)
+      .get(gameId, requestId) as Row | undefined;
+    return row && CanvasRunStore.run(row);
+  }
   list(gameId: string): HeldRun[] {
     return (
       this.db
