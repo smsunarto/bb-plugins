@@ -66,6 +66,8 @@ type GenerationProps = {
   settings: ReactNode;
   onChange: (patch: NodePatch) => void;
   onRun: () => void;
+  /** Hands the run to the agent as a composer request instead. */
+  onAskAgent?: () => void;
   onControl: (jobId: string, action: "cancel" | "resume") => void;
 };
 
@@ -84,6 +86,7 @@ export function GenerationSection({
   settings,
   onChange,
   onRun,
+  onAskAgent,
   onControl,
 }: GenerationProps) {
   const [shortlist, setShortlist] = useState(false);
@@ -114,6 +117,16 @@ export function GenerationSection({
         <span className="tabular-nums">
           {takes.length ? `${takes.length} takes · ${stars} ★` : "No takes yet"}
         </span>
+        {onAskAgent && (
+          <button
+            type="button"
+            className="gs-takes-ask"
+            title="Prepare a composer request for the agent instead of running here"
+            onClick={onAskAgent}
+          >
+            Ask the agent instead
+          </button>
+        )}
         <button
           type="button"
           className="gs-takes-reroll"

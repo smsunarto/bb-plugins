@@ -57,7 +57,9 @@ function issue(
 ): string | undefined {
   const name = title(node);
   if (node.type === "asset")
-    return `Audio node “${name}” has no output. Import one, or ask the agent to generate it.`;
+    return hasOutput(node)
+      ? `Audio node “${name}” is imported, not generated here.`
+      : `Audio node “${name}” has no output. Import one, or ask the agent to generate it.`;
   if (node.type === "document") return `Document node “${name}” has no document selected.`;
   if (node.type === "table") return undefined;
   const ports = nodeInputs(node, kindOf);
@@ -65,7 +67,9 @@ function issue(
   if (empty) return `“${name}” needs a ${empty.port.label} input.`;
   const instruction = typeof node.data.instruction === "string" ? node.data.instruction.trim() : "";
   if (node.type === "text" && !instruction)
-    return `Note “${name}” is empty. Write it, or write an instruction for the agent.`;
+    return hasOutput(node)
+      ? `Tell the agent what to write in “${name}”.`
+      : `Note “${name}” is empty. Write it, or write an instruction for the agent.`;
   if (node.type === "agent" && !instruction) return `Agent step “${name}” needs an instruction.`;
   const prompt = typeof node.data.prompt === "string" ? node.data.prompt.trim() : "";
   const linkedText = ports.some(({ port, refs }) => port.type === "text" && refs.length > 0);

@@ -1386,3 +1386,31 @@
   font-size: 12px;
   line-height: 1.5;
 }
+
+/* A pick older than the brief or inputs that made it. */
+.gs-node-stale {
+  margin-left: auto;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--ansi-3, #f1b467) 22%, transparent);
+  color: var(--ansi-3, #f1b467);
+  font-size: 10px;
+  font-style: normal;
+  cursor: help;
+}
+.gs-node-label span + .gs-node-stale {
+  margin-left: 6px;
+}
+/* A run the server holds until the node's inputs land, or could not start. */
+.gs-generation-progress[data-failed] {
+  color: var(--destructive-text);
+}
+.gs-canvas-notice[data-tone="info"] {
+  background: var(--surface-raised-solid, var(--muted));
+  color: var(--foreground);
+  border-bottom-color: var(--border-hairline);
+}
+.gs-takes-ask {
+  padding: 4px 8px;
+  font-size: 11px;
+}

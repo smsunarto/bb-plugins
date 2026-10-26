@@ -11,10 +11,11 @@ which also opens Studio.
 The navigation gallery opens projects beside their native BB thread. Studio
 contains no embedded chat or composer. Actions add a request to the main chat’s
 native composer for you to review and send; BB owns the agent and its settings.
-Canvas text and image generation runs directly from the selected node.
-Other generation choices use **Prepare request** so you can review the native
-composer before sending. A 3D request uses one approved image for geometry; the
-written brief guides reference selection and review.
+Canvas text, image, video, and 3D generation runs directly from the selected node
+with the model its recipe names; **Ask the agent instead** hands a video or 3D
+node to the composer as a request you review before sending. A 3D request uses
+one approved image for geometry; the written brief guides reference selection
+and review.
 Select its enrolled machine and enter the absolute Unity project directory. The
 connection checks `ProjectSettings/ProjectVersion.txt` and `Assets`. **New
 project** creates a design workspace with your selected Editor version and
@@ -51,6 +52,15 @@ creation tooling. Leave the version unset to let the agent choose through Hub.
   **Use** to set the node's output, and **Reroll** to run the brief again while
   earlier runs generate. Nano Banana runs make ×1, ×2, or ×4 images per run.
   **Clear unstarred** removes takes from the node; their files stay staged.
+  Running a node runs the inputs that have no output first, inputs before the
+  nodes that need them; the run button says how many. A node waiting for its
+  inputs shows **Waiting for inputs…** with **Cancel**; the server holds that
+  run, so it survives a closed tab, and starts it when the inputs land. Cancel
+  drops that step and the inputs still waiting for it; inputs already
+  generating finish as takes. A run
+  stops before a step that needs an approved input, such as Tripo's front view,
+  and tells you which take to choose. A **Stale** badge marks a pick made from
+  an older brief or inputs; **Reroll**, then **Use**, clears it.
   The **Starters** menu in the node's brief editor covers concept exploration,
   isolated 3D references, focused edits, motion, geometry contracts, and design
   experiments. Inserting a starter appends to an existing draft. Replace
