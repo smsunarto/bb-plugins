@@ -38,5 +38,16 @@
     "typecheck": "tsc --noEmit",
     "test": "node --import tsx --test src/host/*.test.ts src/server/lib/*.test.ts src/server/command/*.test.ts",
     "check": "node --import tsx ../../packages/bb-kit-dev/src/bin.ts check"
-  }
+  },
+  "files": [
+    "dist/*.js",
+    "dist/*.json",
+    "assets/",
+    "skills/",
+    "src/",
+    "!src/**/*.test.ts",
+    "!src/**/*.test.tsx",
+    "README.md",
+    "LICENSE"
+  ]
 }
