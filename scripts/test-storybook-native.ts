@@ -182,7 +182,7 @@ try {
       ["screens-docs-document-browser--notes", "page-panel"],
       ["components-amp-oracle-card--completed", "message"],
       ["components-devin-cloud-session--active", "composer"],
-      ["components-inline-visualizations-tweak-panel--editable", "message"],
+      ["components-html-tweak-panel--editable", "message"],
       ["components-gtd-sidebar-thread-cards--idle", "sidebar"],
       ["screens-vimium-link-hints--keyboard-navigation", "overlay"],
     ]) {
@@ -193,10 +193,8 @@ try {
         await page.locator("[data-native-bb]").getAttribute("data-placement"),
         placement,
       );
-      if (id === "components-inline-visualizations-tweak-panel--editable") {
-        await page
-          .getByRole("dialog", { name: "Wide visualization: release-readiness.html" })
-          .waitFor();
+      if (id === "components-html-tweak-panel--editable") {
+        await page.getByRole("dialog", { name: "Wide visualization: Release readiness" }).waitFor();
         const preview = await page.getByTitle("Release readiness preview").boundingBox();
         const controls = await page
           .getByRole("complementary", { name: "Design controls" })
@@ -290,12 +288,12 @@ try {
       }
     }
     console.log("PASS: native placements, responsive plugin utilities and portal widths");
-    await story("components-inline-visualizations-tweak-panel--empty");
+    await story("components-html-tweak-panel--empty");
     await ready(page);
     assert.equal(await page.getByRole("complementary", { name: "Design controls" }).count(), 0);
     assert.equal(await page.getByRole("button", { name: "Tweak", exact: true }).count(), 0);
     await page.goto(
-      `${base}/iframe.html?id=components-inline-visualizations-tweak-panel--docs&viewMode=docs&globals=context:editor;width:wide`,
+      `${base}/iframe.html?id=components-html-tweak-panel--docs&viewMode=docs&globals=context:editor;width:wide`,
     );
     await page.locator("[data-native-bb]").nth(1).waitFor();
     assert.equal(await page.locator('dialog[aria-modal="true"]').count(), 0);

@@ -1,7 +1,7 @@
-.inline-vis-card {
-  --inline-vis-target-width: calc(100ch + 8rem + 4px);
+.html-page-card {
+  --html-page-target-width: calc(100ch + 8rem + 4px);
   box-sizing: border-box;
-  width: min(var(--inline-vis-target-width), 100%);
+  width: min(var(--html-page-target-width), 100%);
   max-width: 100%;
   margin: 0.75rem auto;
   overflow: hidden;
@@ -23,7 +23,7 @@
   box-shadow: 0 1px 2px color-mix(in oklch, var(--foreground) 5%, transparent);
 }
 
-.inline-vis-header {
+.html-page-header {
   display: flex;
   min-height: 2.75rem;
   align-items: stretch;
@@ -34,7 +34,7 @@
 }
 
 /* The toggle fills the row, padding included, so any click on it toggles. */
-.inline-vis-toggle {
+.html-page-toggle {
   display: flex;
   min-width: 0;
   flex: 1;
@@ -49,24 +49,22 @@
   cursor: pointer;
 }
 
-.inline-vis-toggle[aria-expanded="true"] {
+.html-page-toggle[aria-expanded="true"] {
   color: var(--foreground);
 }
 
-.inline-vis-label {
+.html-page-label {
   flex: 0 0 auto;
 }
 
-.inline-vis-path {
+.html-page-path {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  direction: rtl;
-  text-align: left;
 }
 
-.inline-vis-chevron {
+.html-page-chevron {
   width: 0.625rem;
   height: 1rem;
   flex: 0 0 auto;
@@ -74,12 +72,12 @@
   transition: transform 150ms;
 }
 
-.inline-vis-toggle[aria-expanded="true"] .inline-vis-chevron {
+.html-page-toggle[aria-expanded="true"] .html-page-chevron {
   transform: rotate(180deg);
 }
 
 /* The loading placeholder shares this box so the row does not shift. */
-.inline-vis-action {
+.html-page-action {
   display: inline-flex;
   width: 2.5rem;
   flex: 0 0 auto;
@@ -87,7 +85,7 @@
   justify-content: center;
 }
 
-.inline-vis-icon {
+.html-page-icon {
   padding: 0;
   border: 0;
   background: transparent;
@@ -95,46 +93,25 @@
   cursor: pointer;
 }
 
-.inline-vis-icon svg {
+.html-page-icon svg {
   width: 0.875rem;
   height: 0.875rem;
 }
 
-.inline-vis-toggle:focus-visible,
-.inline-vis-icon:focus-visible {
+.html-page-toggle:focus-visible,
+.html-page-icon:focus-visible {
   outline: 2px solid var(--ring);
   outline-offset: -2px;
 }
 
-.inline-vis-icon[aria-pressed="true"] {
-  color: var(--foreground);
-}
-
-/* A fenced block still streaming into the reply. */
-.inline-vis-pending {
-  display: block;
-  padding: 0.75rem 1rem;
-  color: var(--muted-foreground);
-  font-family: var(--font-sans, system-ui, sans-serif);
-  font-size: 0.8125rem;
-}
-
-.inline-vis-frame {
+.html-page-frame {
   display: block;
   width: 100%;
   border: 0;
   background: var(--background);
 }
 
-.inline-vis-markdown {
-  box-sizing: border-box;
-  width: 100%;
-  overflow: auto;
-  padding: 0.75rem;
-  background: var(--background);
-}
-
-.inline-vis-alert {
+.html-page-alert {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
@@ -149,39 +126,39 @@
   font-size: 0.875rem;
 }
 
-.inline-vis-alert-error {
+.html-page-alert-error {
   border-color: color-mix(in oklch, var(--destructive) 40%, transparent);
   background: color-mix(in oklch, var(--destructive) 10%, transparent);
   color: var(--destructive);
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .inline-vis-chevron {
+  .html-page-chevron {
     transition: none;
   }
 }
 
-.inline-vis-toolbar,
-.inline-vis-wide-header,
-.inline-vis-tweak-heading,
-.inline-vis-tweak-actions {
+.html-page-toolbar,
+.html-page-wide-header,
+.html-page-tweak-heading,
+.html-page-tweak-actions {
   display: flex;
   align-items: center;
   gap: 0.5rem;
 }
 
-.inline-vis-toolbar {
+.html-page-toolbar {
   flex-wrap: wrap;
   padding: 0.5rem 0.75rem;
   border-top: 1px solid var(--border);
   font-family: var(--font-sans, system-ui, sans-serif);
 }
 
-.inline-vis-toolbar button,
-.inline-vis-wide-header button,
-.inline-vis-tweaks button,
-.inline-vis-tweaks select,
-.inline-vis-alert button {
+.html-page-toolbar button,
+.html-page-wide-header button,
+.html-page-tweaks button,
+.html-page-tweaks select,
+.html-page-alert button {
   min-height: 2rem;
   padding: 0.375rem 0.625rem;
   border: 1px solid var(--border);
@@ -192,7 +169,7 @@
   cursor: pointer;
 }
 
-.inline-vis-surface {
+.html-page-surface {
   position: static;
   box-sizing: border-box;
   width: 100%;
@@ -206,7 +183,7 @@
   font-size: 0.8125rem;
 }
 
-.inline-vis-surface.inline-vis-wide {
+.html-page-surface.html-page-wide {
   position: fixed;
   inset: 0;
   width: min(1024px, calc(100vw - 2rem));
@@ -218,11 +195,11 @@
   box-shadow: 0 1rem 3rem color-mix(in oklch, var(--foreground) 15%, transparent);
 }
 
-.inline-vis-wide::backdrop {
+.html-page-wide::backdrop {
   background: color-mix(in oklch, var(--background) 80%, transparent);
 }
 
-.inline-vis-wide-header {
+.html-page-wide-header {
   position: sticky;
   top: 0;
   z-index: 1;
@@ -232,30 +209,30 @@
   background: var(--background);
 }
 
-.inline-vis-wide-header > span {
+.html-page-wide-header > span {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.inline-vis-wide-header > div {
+.html-page-wide-header > div {
   display: flex;
   flex-shrink: 0;
   gap: 0.5rem;
   flex-wrap: wrap;
 }
-.inline-vis-workspace {
+.html-page-workspace {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
 }
-.inline-vis-preview {
+.html-page-preview {
   min-width: 0;
 }
-.inline-vis-wide .inline-vis-with-tweaks {
+.html-page-wide .html-page-with-tweaks {
   grid-template-columns: minmax(0, 1fr) 17rem;
 }
 
-.inline-vis-tweaks {
+.html-page-tweaks {
   min-width: 0;
   padding: 1rem;
   border-top: 1px solid var(--border);
@@ -263,69 +240,69 @@
   color: var(--card-foreground);
 }
 
-.inline-vis-wide .inline-vis-tweaks {
+.html-page-wide .html-page-tweaks {
   border-top: 0;
   border-left: 1px solid var(--border);
 }
-.inline-vis-tweak-heading {
+.html-page-tweak-heading {
   justify-content: space-between;
 }
-.inline-vis-tweak-heading h3 {
+.html-page-tweak-heading h3 {
   margin: 0;
   font-size: 1rem;
   font-weight: 500;
 }
-.inline-vis-tweak-heading button {
+.html-page-tweak-heading button {
   display: inline-flex;
   width: 2rem;
   align-items: center;
   justify-content: center;
   padding: 0;
 }
-.inline-vis-tweak-heading button svg {
+.html-page-tweak-heading button svg {
   width: 1rem;
   height: 1rem;
 }
-.inline-vis-tweak-actions {
+.html-page-tweak-actions {
   flex-wrap: wrap;
 }
-.inline-vis-tweaks p {
+.html-page-tweaks p {
   color: var(--muted-foreground);
   line-height: 1.5;
 }
-.inline-vis-tweaks fieldset {
+.html-page-tweaks fieldset {
   margin: 1rem 0;
   padding: 0;
   border: 0;
   min-width: 0;
 }
-.inline-vis-tweaks legend {
+.html-page-tweaks legend {
   margin-bottom: 0.75rem;
   font-weight: 500;
 }
-.inline-vis-tweak-control {
+.html-page-tweak-control {
   margin: 0.75rem 0;
 }
-.inline-vis-tweak-control label {
+.html-page-tweak-control label {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 0.5rem;
   margin-bottom: 0.375rem;
 }
-.inline-vis-tweak-control output {
+.html-page-tweak-control output {
   color: var(--muted-foreground);
   font-variant-numeric: tabular-nums;
 }
-.inline-vis-tweak-control input[type="range"],
-.inline-vis-tweak-control select {
+.html-page-tweak-control input[type="range"],
+.html-page-tweak-control select {
   width: 100%;
   box-sizing: border-box;
 }
-.inline-vis-tweak-control input {
+.html-page-tweak-control input {
   accent-color: var(--primary);
 }
-.inline-vis-tweak-control input[type="color"] {
+.html-page-tweak-control input[type="color"] {
   width: 100%;
   height: 2rem;
   padding: 0.125rem;
@@ -333,60 +310,60 @@
   border-radius: 0.375rem;
   background: var(--background);
 }
-.inline-vis-tweaks .inline-vis-tweak-apply {
+.html-page-tweaks .html-page-tweak-apply {
   width: 100%;
   background: var(--primary);
   color: var(--primary-foreground);
 }
-.inline-vis-toolbar button:disabled,
-.inline-vis-wide-header button:disabled,
-.inline-vis-tweaks button:disabled,
-.inline-vis-tweaks fieldset:disabled {
+.html-page-toolbar button:disabled,
+.html-page-wide-header button:disabled,
+.html-page-tweaks button:disabled,
+.html-page-tweaks fieldset:disabled {
   opacity: 0.6;
   cursor: default;
 }
-.inline-vis-tweaks [aria-pressed="true"] {
+.html-page-tweaks [aria-pressed="true"] {
   background: var(--accent);
   color: var(--accent-foreground);
 }
-.inline-vis-toolbar button:focus-visible,
-.inline-vis-wide-header button:focus-visible,
-.inline-vis-alert button:focus-visible,
-.inline-vis-tweaks :is(button, input, select):focus-visible {
+.html-page-toolbar button:focus-visible,
+.html-page-wide-header button:focus-visible,
+.html-page-alert button:focus-visible,
+.html-page-tweaks :is(button, input, select):focus-visible {
   outline: 2px solid var(--ring);
   outline-offset: 2px;
 }
 
 @media (hover: hover) {
-  .inline-vis-toggle:hover,
-  .inline-vis-icon:hover,
-  .inline-vis-toolbar button:hover:enabled,
-  .inline-vis-wide-header button:hover:enabled,
-  .inline-vis-tweaks button:not(.inline-vis-tweak-apply):hover:enabled,
-  .inline-vis-alert button:hover:enabled {
+  .html-page-toggle:hover,
+  .html-page-icon:hover,
+  .html-page-toolbar button:hover:enabled,
+  .html-page-wide-header button:hover:enabled,
+  .html-page-tweaks button:not(.html-page-tweak-apply):hover:enabled,
+  .html-page-alert button:hover:enabled {
     background: var(--accent);
     color: var(--accent-foreground);
   }
 }
 
 @media (max-width: 768px) {
-  .inline-vis-wide-header {
+  .html-page-wide-header {
     flex-wrap: wrap;
   }
-  .inline-vis-wide-header > span {
+  .html-page-wide-header > span {
     flex-basis: 100%;
   }
-  .inline-vis-wide-header > div {
+  .html-page-wide-header > div {
     flex-shrink: 1;
   }
-  .inline-vis-surface.inline-vis-wide {
+  .html-page-surface.html-page-wide {
     width: calc(100vw - 1rem);
     max-height: calc(100dvh - 1rem);
   }
-  .inline-vis-wide .inline-vis-with-tweaks {
+  .html-page-wide .html-page-with-tweaks {
     grid-template-columns: minmax(0, 1fr);
   }
-  .inline-vis-wide .inline-vis-tweaks {
+  .html-page-wide .html-page-tweaks {
     border-left: 0;
     border-top: 1px solid var(--border);
   }

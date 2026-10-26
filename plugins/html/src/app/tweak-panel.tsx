@@ -24,8 +24,8 @@ export function TweakPanel({
   readOnly: boolean;
 }) {
   return (
-    <aside className="inline-vis-tweaks" aria-label="Design controls">
-      <div className="inline-vis-tweak-heading">
+    <aside className="html-page-tweaks" aria-label="Design controls">
+      <div className="html-page-tweak-heading">
         <h3>Tweak</h3>
         <button type="button" onClick={onClose} aria-label="Close Tweak panel">
           <svg
@@ -45,7 +45,7 @@ export function TweakPanel({
           ? "Adjust the preview, then add your changes to chat."
           : "Adjust the preview. Changes here are not saved."}
       </p>
-      <div className="inline-vis-tweak-actions">
+      <div className="html-page-tweak-actions">
         <button type="button" aria-pressed={original} onClick={() => onOriginal(!original)}>
           {original ? "Show edits" : "Show original"}
         </button>
@@ -70,7 +70,7 @@ export function TweakPanel({
             ))}
             <button
               type="button"
-              className="inline-vis-tweak-reset"
+              className="html-page-tweak-reset"
               onClick={() => onReset(group.id)}
             >
               Reset {group.title}
@@ -81,7 +81,7 @@ export function TweakPanel({
       {onApply && (
         <button
           type="button"
-          className="inline-vis-tweak-apply"
+          className="html-page-tweak-apply"
           disabled={original || saving || readOnly}
           onClick={onApply}
         >
@@ -102,7 +102,7 @@ function DesignControl({
   const id = useId();
   const descriptionId = control.reference ? `${id}-reference` : undefined;
   return (
-    <div className="inline-vis-tweak-control">
+    <div className="html-page-tweak-control">
       <label htmlFor={id}>
         <span>{control.label}</span>
         {control.type === "slider" && (

@@ -112,41 +112,39 @@ describe("isFragment", () => {
 describe("parseFrameMessage", () => {
   test("accepts only known messages carrying the frame token", () => {
     expect(
-      parseFrameMessage({ type: "bb:inline-vis:resize", token: TOKEN, height: 10.2 }, TOKEN),
+      parseFrameMessage({ type: "bb:html:resize", token: TOKEN, height: 10.2 }, TOKEN),
     ).toEqual({
       type: "resize",
       height: 11,
     });
+    expect(parseFrameMessage({ type: "bb:html:resize", token: "x", height: 10 }, TOKEN)).toBeNull();
     expect(
-      parseFrameMessage({ type: "bb:inline-vis:resize", token: "x", height: 10 }, TOKEN),
+      parseFrameMessage({ type: "bb:html:resize", token: TOKEN, height: "10" }, TOKEN),
     ).toBeNull();
     expect(
-      parseFrameMessage({ type: "bb:inline-vis:resize", token: TOKEN, height: "10" }, TOKEN),
-    ).toBeNull();
-    expect(
-      parseFrameMessage({ type: "bb:inline-vis:follow-up", token: TOKEN, prompt: "  " }, TOKEN),
+      parseFrameMessage({ type: "bb:html:follow-up", token: TOKEN, prompt: "  " }, TOKEN),
     ).toBeNull();
     expect(
       parseFrameMessage(
         {
-          type: "bb:inline-vis:state",
+          type: "bb:html:state",
           token: TOKEN,
           state: "x".repeat(MAX_WIDGET_STATE_BYTES + 1),
         },
         TOKEN,
       ),
     ).toBeNull();
-    expect(parseFrameMessage("bb:inline-vis:resize", TOKEN)).toBeNull();
+    expect(parseFrameMessage("bb:html:resize", TOKEN)).toBeNull();
     expect(
-      parseFrameMessage({ type: "bb:inline-vis:state", token: TOKEN, state: "undefined" }, TOKEN),
+      parseFrameMessage({ type: "bb:html:state", token: TOKEN, state: "undefined" }, TOKEN),
     ).toBeNull();
     expect(
-      parseFrameMessage({ type: "bb:inline-vis:state", token: TOKEN, state: '{"a":1}' }, TOKEN),
+      parseFrameMessage({ type: "bb:html:state", token: TOKEN, state: '{"a":1}' }, TOKEN),
     ).toEqual({ type: "state", state: '{"a":1}' });
   });
 
   test("validates optional model content independently from saved widget state", () => {
-    const message = { type: "bb:inline-vis:state", token: TOKEN, state: '{"view":"a"}' };
+    const message = { type: "bb:html:state", token: TOKEN, state: '{"view":"a"}' };
     expect(parseFrameMessage({ ...message, modelContent: '{"selected":"Card A"}' }, TOKEN)).toEqual(
       { type: "state", state: '{"view":"a"}', modelContent: '{"selected":"Card A"}' },
     );
@@ -186,7 +184,7 @@ describe("parseFrameMessage", () => {
       ],
     };
     const message = {
-      type: "bb:inline-vis:tweak",
+      type: "bb:html:tweak",
       token: TOKEN,
       groups: [{ ...group, callback: "never trusted" }],
       original: false,
@@ -281,9 +279,9 @@ describe("fragment runtime", () => {
   test("updates the theme from a parent message with the frame token", () => {
     const { document, fromParent } = runFragment("<p>x</p>");
     const theme = { appearance: "light", variables: { "--background": "#ffffff" } };
-    fromParent({ type: "bb:inline-vis:theme", token: "other", theme });
+    fromParent({ type: "bb:html:theme", token: "other", theme });
     expect(document.documentElement.style.getPropertyValue("--background")).toBe("#181818");
-    fromParent({ type: "bb:inline-vis:theme", token: TOKEN, theme });
+    fromParent({ type: "bb:html:theme", token: TOKEN, theme });
     expect(document.documentElement.style.getPropertyValue("--background")).toBe("#ffffff");
     expect(document.documentElement.style.colorScheme).toBe("light");
   });
@@ -301,14 +299,14 @@ describe("fragment runtime", () => {
     ).bb;
     await bb.setWidgetState({ selected: [1, 2] });
     expect(bb.widgetState).toEqual({ selected: [1, 2] });
-    expect(sent("bb:inline-vis:state")).toEqual([
-      { type: "bb:inline-vis:state", token: TOKEN, state: '{"selected":[1,2]}' },
+    expect(sent("bb:html:state")).toEqual([
+      { type: "bb:html:state", token: TOKEN, state: '{"selected":[1,2]}' },
     ]);
     await expect(bb.setWidgetState("x".repeat(MAX_WIDGET_STATE_BYTES))).rejects.toThrow(/exceeds/u);
 
     await bb.sendFollowUp("Explain region 3");
-    expect(sent("bb:inline-vis:follow-up")).toEqual([
-      { type: "bb:inline-vis:follow-up", token: TOKEN, prompt: "Explain region 3" },
+    expect(sent("bb:html:follow-up")).toEqual([
+      { type: "bb:html:follow-up", token: TOKEN, prompt: "Explain region 3" },
     ]);
     await expect(bb.sendFollowUp(" ")).rejects.toThrow(/non-empty/u);
   });
@@ -324,8 +322,8 @@ describe("fragment runtime", () => {
       }
     ).bb;
     await bb.setWidgetState({ radius: 8 }, { modelContent: { summary: "Radius set to 8px" } });
-    expect(sent("bb:inline-vis:state").at(-1)).toEqual({
-      type: "bb:inline-vis:state",
+    expect(sent("bb:html:state").at(-1)).toEqual({
+      type: "bb:html:state",
       token: TOKEN,
       state: '{"radius":8}',
       modelContent: '{"summary":"Radius set to 8px"}',
@@ -338,8 +336,8 @@ describe("fragment runtime", () => {
     );
     expect(bb.widgetState).toEqual({ radius: 8 });
     await bb.setWidgetState({ radius: 12 }, { modelContent: null });
-    expect(sent("bb:inline-vis:state").at(-1)).toEqual({
-      type: "bb:inline-vis:state",
+    expect(sent("bb:html:state").at(-1)).toEqual({
+      type: "bb:html:state",
       token: TOKEN,
       state: '{"radius":12}',
       modelContent: null,
@@ -350,8 +348,8 @@ describe("fragment runtime", () => {
     const { sent, geometry } = runFragment("<p>x</p>");
     geometry.bodyHeight = 180;
     await frames();
-    expect(sent("bb:inline-vis:resize").at(-1)).toEqual({
-      type: "bb:inline-vis:resize",
+    expect(sent("bb:html:resize").at(-1)).toEqual({
+      type: "bb:html:resize",
       token: TOKEN,
       height: 180,
     });
@@ -359,7 +357,7 @@ describe("fragment runtime", () => {
     geometry.bodyHeight = 260;
     geometry.resize();
     await frames();
-    expect(sent("bb:inline-vis:resize").at(-1)?.height).toBe(260);
+    expect(sent("bb:html:resize").at(-1)?.height).toBe(260);
   });
 
   test("starts with null state when the saved snapshot is malformed", () => {
@@ -448,9 +446,9 @@ describe("fragment runtime", () => {
       new window.KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }),
     );
     await frames();
-    expect(sent("bb:inline-vis:escape")).toEqual([{ type: "bb:inline-vis:escape", token: TOKEN }]);
-    expect(parseFrameMessage(sent("bb:inline-vis:escape")[0], TOKEN)).toEqual({ type: "escape" });
-    expect(parseFrameMessage(sent("bb:inline-vis:escape")[0], "other")).toBeNull();
+    expect(sent("bb:html:escape")).toEqual([{ type: "bb:html:escape", token: TOKEN }]);
+    expect(parseFrameMessage(sent("bb:html:escape")[0], TOKEN)).toEqual({ type: "escape" });
+    expect(parseFrameMessage(sent("bb:html:escape")[0], "other")).toBeNull();
     // A window listener registered by the author runs after the bridge's listener.
     window.addEventListener("keydown", (event) => event.preventDefault(), { once: true });
     button.dispatchEvent(
@@ -460,7 +458,7 @@ describe("fragment runtime", () => {
       new window.KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }),
     );
     await frames();
-    expect(sent("bb:inline-vis:escape")).toEqual([{ type: "bb:inline-vis:escape", token: TOKEN }]);
+    expect(sent("bb:html:escape")).toEqual([{ type: "bb:html:escape", token: TOKEN }]);
   });
 
   test("Escape dismisses an open tooltip before it forwards a subsequent Escape", async () => {
@@ -473,12 +471,12 @@ describe("fragment runtime", () => {
     );
     await frames();
     expect(document.querySelector('[role="tooltip"]')).toBeNull();
-    expect(sent("bb:inline-vis:escape")).toEqual([]);
+    expect(sent("bb:html:escape")).toEqual([]);
     button.dispatchEvent(
       new window.KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }),
     );
     await frames();
-    expect(sent("bb:inline-vis:escape")).toEqual([{ type: "bb:inline-vis:escape", token: TOKEN }]);
+    expect(sent("bb:html:escape")).toEqual([{ type: "bb:html:escape", token: TOKEN }]);
   });
 
   test.each([
@@ -515,12 +513,12 @@ describe("fragment runtime", () => {
     // Native dismissal occurs after keydown, before the bridge's next task.
     nativeOpen = false;
     await frames();
-    expect(sent("bb:inline-vis:escape")).toEqual([]);
+    expect(sent("bb:html:escape")).toEqual([]);
     button.dispatchEvent(
       new window.KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }),
     );
     await frames();
-    expect(sent("bb:inline-vis:escape")).toEqual([{ type: "bb:inline-vis:escape", token: TOKEN }]);
+    expect(sent("bb:html:escape")).toEqual([{ type: "bb:html:escape", token: TOKEN }]);
   });
 
   test("Escape forwards with a persistent manual popover or ordinary non-modal dialog", async () => {
@@ -540,7 +538,7 @@ describe("fragment runtime", () => {
         new window.KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }),
       );
     await frames();
-    expect(sent("bb:inline-vis:escape")).toEqual([{ type: "bb:inline-vis:escape", token: TOKEN }]);
+    expect(sent("bb:html:escape")).toEqual([{ type: "bb:html:escape", token: TOKEN }]);
     expect(document.querySelector("dialog")!.open).toBe(true);
   });
 
@@ -586,22 +584,22 @@ describe("Tweak runtime", () => {
     const { window, sent, fromParent } = runFragment(tweakFragment);
     await frames();
     fromParent({
-      type: "bb:inline-vis:tweak-change",
+      type: "bb:html:tweak-change",
       token: TOKEN,
       groupId: "tweak-card",
       controlId: "slider:radius",
       value: 8,
     });
     await frames();
-    fromParent({ type: "bb:inline-vis:tweak-original", token: TOKEN, active: true });
+    fromParent({ type: "bb:html:tweak-original", token: TOKEN, active: true });
     await frames();
-    fromParent({ type: "bb:inline-vis:tweak-original", token: TOKEN, active: false });
+    fromParent({ type: "bb:html:tweak-original", token: TOKEN, active: false });
     await frames();
-    fromParent({ type: "bb:inline-vis:tweak-reset", token: TOKEN, groupId: "tweak-card" });
+    fromParent({ type: "bb:html:tweak-reset", token: TOKEN, groupId: "tweak-card" });
     await frames();
     (window as unknown as { tweak: { dispose(): void } }).tweak.dispose();
     await frames();
-    expect(sent("bb:inline-vis:tweak").map((message) => message.changed)).toEqual([
+    expect(sent("bb:html:tweak").map((message) => message.changed)).toEqual([
       false,
       true,
       false,
@@ -609,22 +607,22 @@ describe("Tweak runtime", () => {
       true,
       false,
     ]);
-    expect(sent("bb:inline-vis:tweak").at(-1)!.groups).toEqual([]);
+    expect(sent("bb:html:tweak").at(-1)!.groups).toEqual([]);
   });
 
   test("preserves an edit's cause when a passive publication batches with it", async () => {
     const { sent, fromParent } = runFragment(tweakFragment);
     await frames();
     fromParent({
-      type: "bb:inline-vis:tweak-change",
+      type: "bb:html:tweak-change",
       token: TOKEN,
       groupId: "tweak-card",
       controlId: "slider:radius",
       value: 8,
     });
-    fromParent({ type: "bb:inline-vis:tweak-original", token: TOKEN, active: true });
+    fromParent({ type: "bb:html:tweak-original", token: TOKEN, active: true });
     await frames();
-    const message = sent("bb:inline-vis:tweak").at(-1)!;
+    const message = sent("bb:html:tweak").at(-1)!;
     expect(message.changed).toBe(true);
     expect(message.original).toBe(true);
     expect((message.groups as TweakGroup[])[0]!.controls[0]!.value).toBe(8);
@@ -643,7 +641,7 @@ describe("Tweak runtime", () => {
         panel.addSlider(values, "radius", {min: 0, max: 32});
       </script>`);
     fromParent({
-      type: "bb:inline-vis:tweak-change",
+      type: "bb:html:tweak-change",
       token: TOKEN,
       groupId: "tweak-card",
       controlId: "slider:radius",
@@ -651,7 +649,7 @@ describe("Tweak runtime", () => {
     });
     await frames();
     expect(document.querySelector("output")!.textContent).toBe("8");
-    expect(sent("bb:inline-vis:state").at(-1)!.state).toBe('{"radius":8}');
+    expect(sent("bb:html:state").at(-1)!.state).toBe('{"radius":8}');
   });
 
   test.each(["class Tweak { }", "function Tweak() { }"])(
@@ -668,7 +666,7 @@ describe("Tweak runtime", () => {
   test("registers typed controls and applies host changes to the bound model and rendering", async () => {
     const { document, sent, fromParent } = runFragment(tweakFragment);
     await frames();
-    const initial = sent("bb:inline-vis:tweak").at(-1)!;
+    const initial = sent("bb:html:tweak").at(-1)!;
     expect(parseFrameMessage(initial, TOKEN)).toEqual({
       type: "tweak",
       original: false,
@@ -728,7 +726,7 @@ describe("Tweak runtime", () => {
       ["select:layout", "roomy"],
     ]) {
       fromParent({
-        type: "bb:inline-vis:tweak-change",
+        type: "bb:html:tweak-change",
         token: TOKEN,
         groupId: "tweak-card",
         controlId,
@@ -741,7 +739,7 @@ describe("Tweak runtime", () => {
     expect(document.getElementById("card")!.style.borderRadius).toBe("8px");
     await frames();
     expect(
-      (sent("bb:inline-vis:tweak").at(-1)!.groups as TweakGroup[])[0]!.controls.map(
+      (sent("bb:html:tweak").at(-1)!.groups as TweakGroup[])[0]!.controls.map(
         (control) => control.value,
       ),
     ).toEqual([8, "#123456", false, "roomy"]);
@@ -750,7 +748,7 @@ describe("Tweak runtime", () => {
   test("rejects forged sources, stale tokens, and malformed control values", async () => {
     const { document, fromParent } = runFragment(tweakFragment);
     const change = {
-      type: "bb:inline-vis:tweak-change",
+      type: "bb:html:tweak-change",
       token: TOKEN,
       groupId: "tweak-card",
       controlId: "slider:radius",
@@ -771,28 +769,26 @@ describe("Tweak runtime", () => {
   test("Original previews page defaults without replacing edits and Reset discards edits", async () => {
     const { document, sent, fromParent } = runFragment(tweakFragment);
     const change = {
-      type: "bb:inline-vis:tweak-change",
+      type: "bb:html:tweak-change",
       token: TOKEN,
       groupId: "tweak-card",
       controlId: "slider:radius",
       value: 8,
     };
     fromParent(change);
-    fromParent({ type: "bb:inline-vis:tweak-original", token: TOKEN, active: true });
+    fromParent({ type: "bb:html:tweak-original", token: TOKEN, active: true });
     expect(document.getElementById("card")!.style.borderRadius).toBe("18px");
     await frames();
-    const original = sent("bb:inline-vis:tweak").at(-1)!;
+    const original = sent("bb:html:tweak").at(-1)!;
     expect(original.original).toBe(true);
     expect((original.groups as TweakGroup[])[0]!.controls[0]!.value).toBe(8);
     fromParent({ ...change, value: 12 });
-    fromParent({ type: "bb:inline-vis:tweak-original", token: TOKEN, active: false });
+    fromParent({ type: "bb:html:tweak-original", token: TOKEN, active: false });
     expect(document.getElementById("card")!.style.borderRadius).toBe("8px");
-    fromParent({ type: "bb:inline-vis:tweak-reset", token: TOKEN, groupId: "tweak-card" });
+    fromParent({ type: "bb:html:tweak-reset", token: TOKEN, groupId: "tweak-card" });
     expect(document.getElementById("card")!.style.borderRadius).toBe("18px");
     await frames();
-    expect(
-      (sent("bb:inline-vis:tweak").at(-1)!.groups as TweakGroup[])[0]!.controls[0]!.value,
-    ).toBe(18);
+    expect((sent("bb:html:tweak").at(-1)!.groups as TweakGroup[])[0]!.controls[0]!.value).toBe(18);
   });
 
   test("Original rendering callbacks cannot overwrite widget state or model content", async () => {
@@ -802,15 +798,15 @@ describe("Tweak runtime", () => {
     );
     const { window, document, sent, fromParent } = runFragment(savesWhileRendering);
     fromParent({
-      type: "bb:inline-vis:tweak-change",
+      type: "bb:html:tweak-change",
       token: TOKEN,
       groupId: "tweak-card",
       controlId: "slider:radius",
       value: 8,
     });
-    expect(sent("bb:inline-vis:state").at(-1)!.modelContent).toBe('{"radius":8}');
-    const saveCount = sent("bb:inline-vis:state").length;
-    fromParent({ type: "bb:inline-vis:tweak-original", token: TOKEN, active: true });
+    expect(sent("bb:html:state").at(-1)!.modelContent).toBe('{"radius":8}');
+    const saveCount = sent("bb:html:state").length;
+    fromParent({ type: "bb:html:tweak-original", token: TOKEN, active: true });
     await expect(
       (window as unknown as { renderSave: Promise<void> }).renderSave,
     ).resolves.toBeUndefined();
@@ -821,10 +817,10 @@ describe("Tweak runtime", () => {
       shadow: true,
       layout: "compact",
     });
-    expect(sent("bb:inline-vis:state")).toHaveLength(saveCount);
-    fromParent({ type: "bb:inline-vis:tweak-original", token: TOKEN, active: false });
+    expect(sent("bb:html:state")).toHaveLength(saveCount);
+    fromParent({ type: "bb:html:tweak-original", token: TOKEN, active: false });
     expect(document.getElementById("card")!.style.borderRadius).toBe("8px");
-    expect(sent("bb:inline-vis:state").at(-1)!.modelContent).toBe('{"radius":8}');
+    expect(sent("bb:html:state").at(-1)!.modelContent).toBe('{"radius":8}');
     await frames();
   });
 
@@ -835,15 +831,15 @@ describe("Tweak runtime", () => {
         bb: { widgetState: unknown; setWidgetState(next: unknown): Promise<void> };
       }
     ).bb;
-    fromParent({ type: "bb:inline-vis:tweak-original", token: TOKEN, active: true });
+    fromParent({ type: "bb:html:tweak-original", token: TOKEN, active: true });
     await expect(bb.setWidgetState({ selectedTab: "b" })).resolves.toBeUndefined();
     expect(bb.widgetState).toEqual({ selectedTab: "b" });
-    expect(sent("bb:inline-vis:state").at(-1)).toEqual({
-      type: "bb:inline-vis:state",
+    expect(sent("bb:html:state").at(-1)).toEqual({
+      type: "bb:html:state",
       token: TOKEN,
       state: '{"selectedTab":"b"}',
     });
-    fromParent({ type: "bb:inline-vis:tweak-original", token: TOKEN, active: false });
+    fromParent({ type: "bb:html:tweak-original", token: TOKEN, active: false });
     expect(bb.widgetState).toEqual({ selectedTab: "b" });
     await frames();
   });
@@ -889,7 +885,7 @@ describe("Tweak restoration", () => {
       "10",
     ]);
     fromParent({
-      type: "bb:inline-vis:tweak-change",
+      type: "bb:html:tweak-change",
       token: TOKEN,
       groupId: "tweak-card",
       controlId: "slider:radius",
@@ -897,7 +893,7 @@ describe("Tweak restoration", () => {
     });
     await frames();
     fromParent({
-      type: "bb:inline-vis:tweak-change",
+      type: "bb:html:tweak-change",
       token: TOKEN,
       groupId: "tweak-chart",
       controlId: "slider:bars",
@@ -911,29 +907,29 @@ describe("Tweak restoration", () => {
       "10",
     ]);
     expect(
-      (sent("bb:inline-vis:tweak").at(-1)!.groups as TweakGroup[]).map(
+      (sent("bb:html:tweak").at(-1)!.groups as TweakGroup[]).map(
         (group) => group.controls[0]!.initialValue,
       ),
     ).toEqual([18, 6, 6]);
-    fromParent({ type: "bb:inline-vis:tweak-original", token: TOKEN, active: true });
+    fromParent({ type: "bb:html:tweak-original", token: TOKEN, active: true });
     expect([...document.querySelectorAll("output")].map((node) => node.textContent)).toEqual([
       "18",
       "6",
       "6",
     ]);
-    fromParent({ type: "bb:inline-vis:tweak-original", token: TOKEN, active: false });
+    fromParent({ type: "bb:html:tweak-original", token: TOKEN, active: false });
     expect([...document.querySelectorAll("output")].map((node) => node.textContent)).toEqual([
       "12",
       "11",
       "10",
     ]);
-    fromParent({ type: "bb:inline-vis:tweak-reset", token: TOKEN, groupId: "tweak-chart" });
+    fromParent({ type: "bb:html:tweak-reset", token: TOKEN, groupId: "tweak-chart" });
     expect([...document.querySelectorAll("output")].map((node) => node.textContent)).toEqual([
       "12",
       "6",
       "10",
     ]);
-    fromParent({ type: "bb:inline-vis:tweak-reset", token: TOKEN });
+    fromParent({ type: "bb:html:tweak-reset", token: TOKEN });
     expect([...document.querySelectorAll("output")].map((node) => node.textContent)).toEqual([
       "18",
       "6",
@@ -957,7 +953,7 @@ describe("Tweak restoration", () => {
       </script>`);
     await frames();
     fromParent({
-      type: "bb:inline-vis:tweak-change",
+      type: "bb:html:tweak-change",
       token: TOKEN,
       groupId: "tweak-card",
       controlId: "slider:radius",
@@ -980,7 +976,7 @@ describe("Tweak restoration", () => {
       </script>`);
     await frames();
     fromParent({
-      type: "bb:inline-vis:tweak-change",
+      type: "bb:html:tweak-change",
       token: TOKEN,
       groupId: "tweak-card",
       controlId: "slider:radius",
@@ -990,12 +986,12 @@ describe("Tweak restoration", () => {
     window.eval("values.radius=30;render();");
     await frames();
     expect(document.querySelector("output")!.textContent).toBe("30");
-    const message = sent("bb:inline-vis:tweak").at(-1)!;
+    const message = sent("bb:html:tweak").at(-1)!;
     expect(message.changed).toBe(true);
     expect((message.groups as TweakGroup[])[0]!.controls[0]!.value).toBe(30);
-    fromParent({ type: "bb:inline-vis:tweak-original", token: TOKEN, active: true });
+    fromParent({ type: "bb:html:tweak-original", token: TOKEN, active: true });
     expect(document.querySelector("output")!.textContent).toBe("18");
-    fromParent({ type: "bb:inline-vis:tweak-original", token: TOKEN, active: false });
+    fromParent({ type: "bb:html:tweak-original", token: TOKEN, active: false });
     expect(document.querySelector("output")!.textContent).toBe("30");
     await frames();
     const restored = runFragment(
@@ -1022,7 +1018,7 @@ describe("Tweak restoration", () => {
       </script>`);
     await frames();
     fromParent({
-      type: "bb:inline-vis:tweak-change",
+      type: "bb:html:tweak-change",
       token: TOKEN,
       groupId: "tweak-theme",
       controlId: "select:preset",
@@ -1030,11 +1026,11 @@ describe("Tweak restoration", () => {
     });
     await frames();
     expect(document.querySelector("output")!.textContent).toBe("#111111");
-    expect(
-      (sent("bb:inline-vis:tweak").at(-1)!.groups as TweakGroup[])[1]!.controls[0]!.value,
-    ).toBe("#111111");
+    expect((sent("bb:html:tweak").at(-1)!.groups as TweakGroup[])[1]!.controls[0]!.value).toBe(
+      "#111111",
+    );
     fromParent({
-      type: "bb:inline-vis:tweak-change",
+      type: "bb:html:tweak-change",
       token: TOKEN,
       groupId: "tweak-colors",
       controlId: "color:background",
@@ -1060,7 +1056,7 @@ describe("Tweak restoration", () => {
       </script>`);
     await frames();
     fromParent({
-      type: "bb:inline-vis:tweak-change",
+      type: "bb:html:tweak-change",
       token: TOKEN,
       groupId: "tweak-type",
       controlId: "select:family",
@@ -1068,7 +1064,7 @@ describe("Tweak restoration", () => {
     });
     await frames();
     expect(document.querySelector("output")!.textContent).toBe("Mono/400");
-    const dynamic = sent("bb:inline-vis:tweak").at(-1)!;
+    const dynamic = sent("bb:html:tweak").at(-1)!;
     expect(parseFrameMessage(dynamic, TOKEN)?.type).toBe("tweak");
     expect(
       (dynamic.groups as TweakGroup[])[0]!.controls.map((control) => [
@@ -1079,11 +1075,11 @@ describe("Tweak restoration", () => {
       ["Mono", "Inter"],
       ["400", "400"],
     ]);
-    fromParent({ type: "bb:inline-vis:tweak-reset", token: TOKEN });
+    fromParent({ type: "bb:html:tweak-reset", token: TOKEN });
     await frames();
     expect(document.querySelector("output")!.textContent).toBe("Inter/700");
     expect(
-      (sent("bb:inline-vis:tweak").at(-1)!.groups as TweakGroup[])[0]!.controls.map(
+      (sent("bb:html:tweak").at(-1)!.groups as TweakGroup[])[0]!.controls.map(
         (control) => control.initialValue,
       ),
     ).toEqual(["Inter", "700"]);
@@ -1120,7 +1116,7 @@ describe("Tweak registration lifecycle", () => {
       expect((window as unknown as { renders: number }).renders).toBe(2);
       expect(document.querySelector("output")!.textContent).toBe("7");
       fromParent({
-        type: "bb:inline-vis:tweak-change",
+        type: "bb:html:tweak-change",
         token: TOKEN,
         groupId: "tweak-card",
         controlId: "slider:radius",
@@ -1128,13 +1124,13 @@ describe("Tweak registration lifecycle", () => {
       });
       await frames();
       expect((window as unknown as { renders: number }).renders).toBe(3);
-      const current = (sent("bb:inline-vis:tweak").at(-1)!.groups as TweakGroup[])[0]!.controls[0]!;
+      const current = (sent("bb:html:tweak").at(-1)!.groups as TweakGroup[])[0]!.controls[0]!;
       expect([current.value, current.initialValue]).toEqual([12, 18]);
-      fromParent({ type: "bb:inline-vis:tweak-original", token: TOKEN, active: true });
+      fromParent({ type: "bb:html:tweak-original", token: TOKEN, active: true });
       expect(document.querySelector("output")!.textContent).toBe("18");
-      fromParent({ type: "bb:inline-vis:tweak-original", token: TOKEN, active: false });
+      fromParent({ type: "bb:html:tweak-original", token: TOKEN, active: false });
       expect(document.querySelector("output")!.textContent).toBe("12");
-      fromParent({ type: "bb:inline-vis:tweak-reset", token: TOKEN, groupId: "tweak-card" });
+      fromParent({ type: "bb:html:tweak-reset", token: TOKEN, groupId: "tweak-card" });
       await frames();
       expect(document.querySelector("output")!.textContent).toBe("18");
       expect((window as unknown as { renders: number }).renders).toBe(6);
@@ -1158,7 +1154,7 @@ describe("Tweak registration lifecycle", () => {
     await frames();
     for (let value = 1; value <= 25; value++)
       fromParent({
-        type: "bb:inline-vis:tweak-change",
+        type: "bb:html:tweak-change",
         token: TOKEN,
         groupId: "tweak-root",
         controlId: "slider:radius",
@@ -1167,7 +1163,7 @@ describe("Tweak registration lifecycle", () => {
     await frames();
     expect(document.querySelector("output")!.textContent).toBe("25");
     expect((window as unknown as { renders: number }).renders).toBe(26);
-    const groups = sent("bb:inline-vis:tweak").at(-1)!.groups as TweakGroup[];
+    const groups = sent("bb:html:tweak").at(-1)!.groups as TweakGroup[];
     expect(
       groups.map((group) => [group.id, group.controls[0]!.value, group.controls[0]!.initialValue]),
     ).toEqual([["tweak-root", 25, 18]]);
@@ -1189,7 +1185,7 @@ describe("Tweak registration lifecycle", () => {
       "This Tweak group was disposed or replaced. Register one Tweak group per container.",
     );
     expect(
-      (sent("bb:inline-vis:tweak").at(-1)!.groups as TweakGroup[]).map((group) => [
+      (sent("bb:html:tweak").at(-1)!.groups as TweakGroup[]).map((group) => [
         group.id,
         group.controls.map((control) => [control.id, control.value]),
       ]),
@@ -1209,7 +1205,7 @@ describe("Tweak registration lifecycle", () => {
     expect((window as unknown as { registrationError: string }).registrationError).toBe(
       "A detached Tweak container needs a stable id before registration.",
     );
-    const groups = sent("bb:inline-vis:tweak").at(-1)!.groups as TweakGroup[];
+    const groups = sent("bb:html:tweak").at(-1)!.groups as TweakGroup[];
     expect(groups.map((group) => [group.id, group.variant, group.controls[0]!.value])).toEqual([
       ["tweak-Compact:Card", "Compact", 18],
     ]);
@@ -1233,7 +1229,7 @@ describe("Tweak registration lifecycle", () => {
       '{"radius":8,"color":"#aabbcc","shadow":false,"layout":"compact"}',
     );
     await frames();
-    const groups = sent("bb:inline-vis:tweak").at(-1)!.groups as TweakGroup[];
+    const groups = sent("bb:html:tweak").at(-1)!.groups as TweakGroup[];
     expect(
       groups[0]!.controls.map((control) => [control.id, control.value, control.initialValue]),
     ).toEqual([
@@ -1271,9 +1267,9 @@ describe("Tweak registration lifecycle", () => {
       { group: "card", radius: 8, color: "#123456", shadow: false },
       { group: "layout", radius: 8, color: "#123456", shadow: false },
     ]);
-    expect(sent("bb:inline-vis:state")).toEqual([
+    expect(sent("bb:html:state")).toEqual([
       {
-        type: "bb:inline-vis:state",
+        type: "bb:html:state",
         token: TOKEN,
         state: '{"radius":8,"color":"#123456","shadow":false}',
       },
@@ -1330,9 +1326,7 @@ describe("Tweak registration lifecycle", () => {
     );
     await frames();
     expect((window as unknown as { restored: unknown }).restored).toEqual(["kept"]);
-    expect(
-      (sent("bb:inline-vis:tweak").at(-1)!.groups as TweakGroup[])[0]!.controls[0]!.value,
-    ).toBe(12);
+    expect((sent("bb:html:tweak").at(-1)!.groups as TweakGroup[])[0]!.controls[0]!.value).toBe(12);
   });
 
   test.each(["documentDOMContentLoaded", "windowDOMContentLoaded", "windowLoad"])(
@@ -1368,7 +1362,7 @@ describe("Tweak registration lifecycle", () => {
         { radius: 8, shadow: false },
       ]);
       expect(
-        sent("bb:inline-vis:tweak").map((message) =>
+        sent("bb:html:tweak").map((message) =>
           (message.groups as TweakGroup[]).map((group) => [group.id, group.controls[0]!.value]),
         ),
       ).toEqual([
@@ -1395,7 +1389,7 @@ describe("Tweak registration lifecycle", () => {
       </script>`;
       const first = runFragment(html);
       await frames();
-      expect((first.sent("bb:inline-vis:tweak").at(-1)!.groups as TweakGroup[])[0]!.id).toBe(
+      expect((first.sent("bb:html:tweak").at(-1)!.groups as TweakGroup[])[0]!.id).toBe(
         "tweak-card",
       );
       first.window.eval(
@@ -1404,14 +1398,14 @@ describe("Tweak registration lifecycle", () => {
           : 'const old = tweak; const replacement = document.createElement("div"); replacement.id = "card"; replacement.innerHTML = "<output></output>"; document.getElementById("card").replaceWith(replacement); make(); old.dispose();',
       );
       first.fromParent({
-        type: "bb:inline-vis:tweak-change",
+        type: "bb:html:tweak-change",
         token: TOKEN,
         groupId: "tweak-card",
         controlId: "slider:radius",
         value: 8,
       });
       await frames();
-      const groups = first.sent("bb:inline-vis:tweak").at(-1)!.groups as TweakGroup[];
+      const groups = first.sent("bb:html:tweak").at(-1)!.groups as TweakGroup[];
       expect(groups.map((group) => [group.id, group.controls[0]!.value])).toEqual([
         ["tweak-card", 8],
       ]);
@@ -1429,8 +1423,7 @@ describe("Tweak registration lifecycle", () => {
       await frames();
       expect(reloaded.document.querySelector("output")!.textContent).toBe("8");
       expect(
-        (reloaded.sent("bb:inline-vis:tweak").at(-1)!.groups as TweakGroup[])[0]!.controls[0]!
-          .value,
+        (reloaded.sent("bb:html:tweak").at(-1)!.groups as TweakGroup[])[0]!.controls[0]!.value,
       ).toBe(8);
     },
   );
@@ -1476,7 +1469,7 @@ describe("Tweak registration lifecycle", () => {
       await frames();
       expect(first.document.querySelector("output")!.textContent).toBe("7");
       first.fromParent({
-        type: "bb:inline-vis:tweak-change",
+        type: "bb:html:tweak-change",
         token: TOKEN,
         groupId: "tweak-card",
         controlId: "slider:radius",
@@ -1491,7 +1484,7 @@ describe("Tweak registration lifecycle", () => {
       first.window.eval(recreate);
       await frames();
       expect(first.document.querySelector("output")!.textContent).toBe("12");
-      const groups = first.sent("bb:inline-vis:tweak").at(-1)!.groups as TweakGroup[];
+      const groups = first.sent("bb:html:tweak").at(-1)!.groups as TweakGroup[];
       const saved = JSON.stringify(
         groups.flatMap((group) =>
           group.controls.map((control) => ({
@@ -1504,7 +1497,7 @@ describe("Tweak registration lifecycle", () => {
       const reloaded = runFragment(html, null, saved);
       await frames();
       expect(reloaded.document.querySelector("output")!.textContent).toBe("12");
-      first.fromParent({ type: "bb:inline-vis:tweak-reset", token: TOKEN, groupId: "tweak-card" });
+      first.fromParent({ type: "bb:html:tweak-reset", token: TOKEN, groupId: "tweak-card" });
       first.window.eval(recreate);
       await frames();
       expect(first.document.querySelector("output")!.textContent).toBe("18");
@@ -1529,13 +1522,11 @@ describe("Tweak registration lifecycle", () => {
       '[{"groupId":"tweak-late","controlId":"slider:radius","value":7}]',
     );
     await frames();
-    fromParent({ type: "bb:inline-vis:tweak-reset", token: TOKEN });
+    fromParent({ type: "bb:html:tweak-reset", token: TOKEN });
     window.eval("registerLate();");
     await frames();
     expect(document.querySelector("#late output")!.textContent).toBe("24");
-    expect(sent("bb:inline-vis:tweak").find((message) => message.reset === null)?.changed).toBe(
-      true,
-    );
+    expect(sent("bb:html:tweak").find((message) => message.reset === null)?.changed).toBe(true);
   });
 
   test("two connected containers with the same ID retain separate groups", async () => {
@@ -1548,7 +1539,7 @@ describe("Tweak registration lifecycle", () => {
       </script>`);
     await frames();
     expect(
-      (sent("bb:inline-vis:tweak").at(-1)!.groups as TweakGroup[]).map((group) => [
+      (sent("bb:html:tweak").at(-1)!.groups as TweakGroup[]).map((group) => [
         group.id,
         group.controls[0]!.value,
       ]),
@@ -1576,20 +1567,20 @@ describe("Tweak registration lifecycle", () => {
       '[{"groupId":"tweak-late","controlId":"slider:radius","value":9}]',
     );
     await frames();
-    fromParent({ type: "bb:inline-vis:tweak-reset", token: TOKEN, groupId: "tweak-a" });
-    fromParent({ type: "bb:inline-vis:tweak-reset", token: TOKEN, groupId: "tweak-b" });
+    fromParent({ type: "bb:html:tweak-reset", token: TOKEN, groupId: "tweak-a" });
+    fromParent({ type: "bb:html:tweak-reset", token: TOKEN, groupId: "tweak-b" });
     window.eval("registerLate();");
     await frames();
     expect(document.querySelector("#late output")!.textContent).toBe("9");
     expect(
-      sent("bb:inline-vis:tweak")
+      sent("bb:html:tweak")
         .filter((message) => message.reset !== undefined)
         .map((message) => [message.reset, message.changed]),
     ).toEqual([
       ["tweak-a", true],
       ["tweak-b", true],
     ]);
-    expect(sent("bb:inline-vis:tweak").at(-1)!.changed).toBe(false);
+    expect(sent("bb:html:tweak").at(-1)!.changed).toBe(false);
   });
 
   test("tracks carousel visibility while preserving each variant's independent changes", async () => {
@@ -1608,7 +1599,7 @@ describe("Tweak registration lifecycle", () => {
       </script>`);
     await frames();
     expect(
-      (sent("bb:inline-vis:tweak").at(-1)!.groups as TweakGroup[]).map((group) => [
+      (sent("bb:html:tweak").at(-1)!.groups as TweakGroup[]).map((group) => [
         group.variant,
         group.visible,
       ]),
@@ -1617,7 +1608,7 @@ describe("Tweak registration lifecycle", () => {
       ["B", false],
     ]);
     fromParent({
-      type: "bb:inline-vis:tweak-change",
+      type: "bb:html:tweak-change",
       token: TOKEN,
       groupId: "tweak-a",
       controlId: "slider:radius",
@@ -1626,7 +1617,7 @@ describe("Tweak registration lifecycle", () => {
     document.querySelector<HTMLButtonElement>('[aria-label="Next design"]')!.click();
     await frames();
     expect(
-      (sent("bb:inline-vis:tweak").at(-1)!.groups as TweakGroup[]).map((group) => [
+      (sent("bb:html:tweak").at(-1)!.groups as TweakGroup[]).map((group) => [
         group.variant,
         group.visible,
         group.controls[0]!.value,
@@ -1638,30 +1629,30 @@ describe("Tweak registration lifecycle", () => {
     document.querySelector<HTMLButtonElement>('[aria-label="Previous design"]')!.click();
     await frames();
     expect(document.querySelector("#a output")!.textContent).toBe("8");
-    expect((sent("bb:inline-vis:tweak").at(-1)!.groups as TweakGroup[])[0]!.visible).toBe(true);
+    expect((sent("bb:html:tweak").at(-1)!.groups as TweakGroup[])[0]!.visible).toBe(true);
   });
 
   test("removes disconnected or disposed groups from the host and rejects edits after disposal", async () => {
     const { window, document, sent, fromParent } = runFragment(tweakFragment);
     await frames();
-    expect((sent("bb:inline-vis:tweak").at(-1)!.groups as TweakGroup[])[0]!.id).toBe("tweak-card");
+    expect((sent("bb:html:tweak").at(-1)!.groups as TweakGroup[])[0]!.id).toBe("tweak-card");
     const container = document.getElementById("card")!;
     container.remove();
     await frames();
-    expect(sent("bb:inline-vis:tweak").at(-1)!.groups).toEqual([]);
+    expect(sent("bb:html:tweak").at(-1)!.groups).toEqual([]);
     document.body.append(container);
     await frames();
-    expect((sent("bb:inline-vis:tweak").at(-1)!.groups as TweakGroup[])[0]!.id).toBe("tweak-card");
+    expect((sent("bb:html:tweak").at(-1)!.groups as TweakGroup[])[0]!.id).toBe("tweak-card");
     (window as unknown as { tweak: { dispose(): void } }).tweak.dispose();
     fromParent({
-      type: "bb:inline-vis:tweak-change",
+      type: "bb:html:tweak-change",
       token: TOKEN,
       groupId: "tweak-card",
       controlId: "slider:radius",
       value: 8,
     });
     await frames();
-    expect(sent("bb:inline-vis:tweak").at(-1)!.groups).toEqual([]);
+    expect(sent("bb:html:tweak").at(-1)!.groups).toEqual([]);
     expect(container.style.borderRadius).toBe("18px");
   });
 
@@ -1720,7 +1711,7 @@ describe("Tweak registration lifecycle", () => {
       bundled.injectFragmentRuntime,
     );
     fromParent({
-      type: "bb:inline-vis:tweak-change",
+      type: "bb:html:tweak-change",
       token: TOKEN,
       groupId: "tweak-card",
       controlId: "slider:radius",
@@ -1728,8 +1719,6 @@ describe("Tweak registration lifecycle", () => {
     });
     await frames();
     expect(document.getElementById("card")!.style.borderRadius).toBe("8px");
-    expect(
-      (sent("bb:inline-vis:tweak").at(-1)!.groups as TweakGroup[])[0]!.controls[0]!.value,
-    ).toBe(8);
+    expect((sent("bb:html:tweak").at(-1)!.groups as TweakGroup[])[0]!.controls[0]!.value).toBe(8);
   });
 });

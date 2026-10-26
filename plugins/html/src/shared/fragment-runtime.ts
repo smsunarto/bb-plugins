@@ -29,15 +29,15 @@ export function isFragment(html: string): boolean {
 }
 
 export const FRAGMENT_MESSAGES = {
-  resize: "bb:inline-vis:resize",
-  state: "bb:inline-vis:state",
-  followUp: "bb:inline-vis:follow-up",
-  theme: "bb:inline-vis:theme",
-  tweak: "bb:inline-vis:tweak",
-  tweakChange: "bb:inline-vis:tweak-change",
-  tweakReset: "bb:inline-vis:tweak-reset",
-  tweakOriginal: "bb:inline-vis:tweak-original",
-  escape: "bb:inline-vis:escape",
+  resize: "bb:html:resize",
+  state: "bb:html:state",
+  followUp: "bb:html:follow-up",
+  theme: "bb:html:theme",
+  tweak: "bb:html:tweak",
+  tweakChange: "bb:html:tweak-change",
+  tweakReset: "bb:html:tweak-reset",
+  tweakOriginal: "bb:html:tweak-original",
+  escape: "bb:html:escape",
 } as const;
 
 export const MAX_WIDGET_STATE_BYTES = 16 * 1024;
@@ -414,7 +414,7 @@ function fragmentRuntime(config: RuntimeConfig): void {
     try {
       group.onChange();
     } catch (error) {
-      console.error("inline-vis: Tweak onChange failed", error);
+      console.error("html: Tweak onChange failed", error);
     } finally {
       markSharedRender(group);
       if (temporary) originalRenderDepth--;
@@ -801,7 +801,7 @@ function fragmentRuntime(config: RuntimeConfig): void {
     try {
       await loadLucide();
     } catch {
-      console.warn(`inline-vis: failed to load icons from ${config.lucideUrl}`);
+      console.warn(`html: failed to load icons from ${config.lucideUrl}`);
       return;
     }
     const api = (window as unknown as { lucide?: { createIcons(options: object): void } }).lucide;

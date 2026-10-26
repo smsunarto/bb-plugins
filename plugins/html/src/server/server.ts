@@ -21,11 +21,6 @@ import { getState } from "./tools/get-state.ts";
 import { preview } from "./tools/preview.ts";
 import { render } from "./tools/render.ts";
 
-/** bb's built-in plugin that also claims `::inline-vis`. */
-export const BUILTIN_INLINE_VIS_PLUGIN_ID = "inline-vis";
-/** The plugin this one replaced, which claims `::inline-vis` and the fence. */
-export const RETIRED_INLINE_VIS_PLUGIN_ID = "scott-inline-vis";
-
 // Opaque origin: page scripts run but cannot reach bb's cookies, storage, or API.
 const PAGE_HEADERS = {
   "content-type": "text/html; charset=utf-8",
@@ -41,7 +36,6 @@ export default definePlugin({
   agents: {
     files,
     tools: { render, preview, get_state: getState },
-    instructions: () => files.read("inline-vis"),
   },
   services: createServices,
   setup({ bb, store, states, requireThread }) {
@@ -94,15 +88,6 @@ export default definePlugin({
     bb.events.on("thread.deleted", ({ thread }) => {
       store.deleteThread(thread.id);
       states.deleteThread(thread.id);
-    });
-
-    // bb leaves a directive as literal text when two plugins claim it, so a fresh
-    // install turns the built-in renderer and the retired scott-inline-vis off
-    // once. Re-enabling either later is the user's choice; update, reload, and
-    // restart leave them alone.
-    bb.onInstall(async () => {
-      await bb.sdk.plugins.disable({ pluginId: BUILTIN_INLINE_VIS_PLUGIN_ID });
-      await bb.sdk.plugins.disable({ pluginId: RETIRED_INLINE_VIS_PLUGIN_ID }).catch(() => {}); // Most installs never had it.
     });
   },
 });

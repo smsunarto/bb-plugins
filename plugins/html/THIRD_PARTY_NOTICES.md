@@ -1,7 +1,7 @@
 # Third-party notices
 
-The file and fence previews are forked from bb's built-in inline-vis plugin,
-last synced with `desktop-v0.44.0` (commit
+The preview card derives from bb's built-in inline-vis plugin, last synced
+with `desktop-v0.44.0` (commit
 `0baa605b32a00619c1d7e3f32be6553ebcf8244a`). Published pages, their agent
 prompts, and `html_preview` port T3 Code (pingdotgg/t3code `cc0b86d`).
 

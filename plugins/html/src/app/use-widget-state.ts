@@ -103,14 +103,15 @@ function withoutStateMention(
 }
 
 /**
- * Saved state for one preview. A null identity, used for HTML written in the
- * reply, has nothing to save: follow-up prompts still reach the composer.
- * `label` names the preview on its saved-state pill.
+ * Saved state for one page in one message. `label` names the page on its
+ * saved-state pill.
  */
-export function useWidgetState(identity: WidgetIdentity | null, pluginId: string, label: string) {
-  const { threadId, messageId, file } = identity ?? { threadId: "", messageId: "", file: "" };
-  const persistent = identity !== null;
-  const key = JSON.stringify([pluginId, threadId, messageId, file]);
+export function useWidgetState(
+  { threadId, messageId, pageId }: WidgetIdentity,
+  pluginId: string,
+  label: string,
+) {
+  const key = JSON.stringify([pluginId, threadId, messageId, pageId]);
   const rpc = stateRpc.useClient();
   const composer = useComposer();
   const saved = useRef({
@@ -135,7 +136,7 @@ export function useWidgetState(identity: WidgetIdentity | null, pluginId: string
       const input = {
         threadId,
         messageId,
-        file,
+        pageId,
         ...(fields.includes("state")
           ? { state: saved.current.state, modelContent: saved.current.modelContent }
           : {}),
@@ -193,17 +194,16 @@ export function useWidgetState(identity: WidgetIdentity | null, pluginId: string
         });
       return write;
     },
-    [rpc, composer, pluginId, key, threadId, messageId, file],
+    [rpc, composer, pluginId, key, threadId, messageId, pageId],
   );
 
   const restore = useCallback(
     async (signal: AbortSignal) => {
-      if (!persistent) return { state: "null", modelContent: null, tweaks: null };
       await waitForWrites(key).catch(() => {});
       signal.throwIfAborted();
       let snapshot: WidgetStateSnapshot | null;
       try {
-        ({ snapshot } = await rpc.readState({ threadId, messageId, file }));
+        ({ snapshot } = await rpc.readState({ threadId, messageId, pageId }));
       } catch (error) {
         signal.throwIfAborted();
         readOnly.current = true;
@@ -221,7 +221,7 @@ export function useWidgetState(identity: WidgetIdentity | null, pluginId: string
       setHasSavedState(snapshot !== null && hasSavedContext(snapshot));
       return saved.current;
     },
-    [rpc, persistent, key, threadId, messageId, file],
+    [rpc, key, threadId, messageId, pageId],
   );
 
   const addContext = useCallback(
@@ -234,7 +234,7 @@ export function useWidgetState(identity: WidgetIdentity | null, pluginId: string
         composer.focus();
       }
       try {
-        if (!persistent || (!hasSavedState && !dirty.current.size)) return;
+        if (!hasSavedState && !dirty.current.size) return;
         const result = await persist([...dirty.current]);
         const snapshot = (await waitForWrites(key)) ?? result;
         if (!prompt) beforeFocus?.();
@@ -262,12 +262,12 @@ export function useWidgetState(identity: WidgetIdentity | null, pluginId: string
         /* The visible save error leaves the draft free of stale context. */
       }
     },
-    [persist, composer, pluginId, persistent, key, label, hasSavedState],
+    [persist, composer, pluginId, key, label, hasSavedState],
   );
 
   const updateState = useCallback(
     (state: string, modelContent: string | null) => {
-      if (!persistent || readOnly.current) return;
+      if (readOnly.current) return;
       if (
         hasSavedState &&
         saved.current.state === state &&
@@ -280,11 +280,11 @@ export function useWidgetState(identity: WidgetIdentity | null, pluginId: string
       dirty.current.add("state");
       void persist(["state"]).catch(() => {});
     },
-    [persist, persistent, hasSavedState],
+    [persist, hasSavedState],
   );
   const updateTweaks = useCallback(
     (groups: TweakGroup[], changed: boolean, reset?: string | null) => {
-      if (!persistent || readOnly.current || (groups.length === 0 && reset === undefined)) return;
+      if (readOnly.current || (groups.length === 0 && reset === undefined)) return;
       // Registration can happen after fetch/import or only when a tab opens.
       // Preserve saved controls that have not registered in this frame yet.
       const next = mergeTweaks(saved.current.tweaks, groups, reset);
@@ -293,7 +293,7 @@ export function useWidgetState(identity: WidgetIdentity | null, pluginId: string
       dirty.current.add("tweaks");
       void persist(["tweaks"], changed).catch(() => {});
     },
-    [persist, persistent],
+    [persist],
   );
 
   return {

@@ -14,32 +14,10 @@ const identifierSchema = z
     message: "Identifier must not contain a null byte",
   });
 
-export const absoluteFileSchema = z
-  .string()
-  .min(1)
-  .max(4096)
-  .refine(
-    (value) => !value.includes("\0") && /^(?:\/|[A-Za-z]:[\\/]|\\\\[^\\]+\\[^\\]+)/.test(value),
-    { message: "Visualization file must be an absolute path without null bytes" },
-  );
-
-/** Saved state for a page `html_render` published is keyed by this prefix and its id. */
-export const PAGE_STATE_PREFIX = "html-render:";
-
-export const pageStateKey = (id: string) => PAGE_STATE_PREFIX + id;
-
-export function pageIdOfStateKey(file: string): string | undefined {
-  const id = file.startsWith(PAGE_STATE_PREFIX) ? file.slice(PAGE_STATE_PREFIX.length) : "";
-  return isHtmlRenderPageId(id) ? id : undefined;
-}
-
-/** What a saved state belongs to: a host file, or a published page. */
-export const stateSourceSchema = z.union([
-  absoluteFileSchema,
-  z.string().refine((value) => pageIdOfStateKey(value) !== undefined, {
-    message: "Page state keys are html-render: followed by the page id",
-  }),
-]);
+/** Saved state belongs to a page `html_render` published, within one message. */
+export const pageIdSchema = z.string().refine(isHtmlRenderPageId, {
+  message: "Expected a page id that html_render returned",
+});
 
 /** JSON crosses the RPC boundary as text so arbitrary fragment state stays opaque. */
 export const jsonStateSchema = z
@@ -63,7 +41,7 @@ export const jsonStateSchema = z
 export const widgetIdentitySchema = z.strictObject({
   threadId: identifierSchema,
   messageId: identifierSchema,
-  file: stateSourceSchema,
+  pageId: pageIdSchema,
 });
 
 const widgetStateValuesSchema = widgetIdentitySchema.extend({

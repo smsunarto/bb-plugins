@@ -20,9 +20,9 @@ function reconcile(previews: Set<Preview>) {
 }
 
 /**
- * Upstream inline-vis remembers the last collapse or expand choice on this
- * client. Here that choice decides whether the latest two previews open by
- * themselves. It is read once per occurrence, so it never closes an open card.
+ * The last collapse or expand choice on this client decides whether the latest
+ * two previews open by themselves. It is read once per occurrence, so it never
+ * closes an open card.
  */
 function readCollapsedPreference(storageKey: string): boolean {
   try {

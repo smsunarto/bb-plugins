@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { VideoSize } from "./inline-assets.ts";
 
 /**
  * Sizes this client last saw, so a preview that remounts starts at its final
@@ -38,26 +37,12 @@ function writeOne<T>(
   try {
     window.localStorage.setItem(storageKey, JSON.stringify([...entries].slice(-LIMIT)));
   } catch {
-    // Storage can be unavailable; the preview then starts at its default size.
+    // Storage can be unavailable; the preview then starts at its directive height.
   }
 }
 
 const isHeight = (value: unknown): value is number =>
   typeof value === "number" && Number.isFinite(value) && value > 0;
-
-const isVideoSize = (value: unknown): value is VideoSize =>
-  typeof value === "object" &&
-  value !== null &&
-  isHeight((value as VideoSize).width) &&
-  isHeight((value as VideoSize).height);
-
-/** Display sizes of local videos, keyed by host and path. */
-export function videoSizes(storageKey: string) {
-  return {
-    read: (key: string) => readAll(storageKey, isVideoSize).get(key),
-    write: (key: string, size: VideoSize) => writeOne(storageKey, isVideoSize, key, size),
-  };
-}
 
 /**
  * The height `key` had when it was last shown, and a setter that saves at

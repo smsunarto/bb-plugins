@@ -66,7 +66,7 @@ function ReleasePreview({
   return (
     <iframe
       title="Release readiness preview"
-      className="inline-vis-frame"
+      className="html-page-frame"
       srcDoc={html}
       sandbox=""
       style={{ height: 440 }}
@@ -119,22 +119,21 @@ function TweakWorkspace({
     />
   );
   return (
-    <figure className="inline-vis-card">
+    <figure className="html-page-card">
       <PreviewHeader
-        label="release-readiness.html"
+        label="Release readiness"
         expanded={expanded}
         onToggle={() => setExpanded(!expanded)}
-        onOpen={null}
         onWide={expanded ? () => setWide(true) : undefined}
         wideTrigger={wideTrigger}
       />
       {expanded && (
         <>
-          {hasTweaks && <div className="inline-vis-toolbar">{actions}</div>}
+          {hasTweaks && <div className="html-page-toolbar">{actions}</div>}
           <PreviewSurface
             dialogRef={dialog}
             wide={wide}
-            label="release-readiness.html"
+            label="Release readiness"
             onLeaveWide={leaveWide}
             actions={actions}
             preview={preview}
@@ -210,7 +209,7 @@ const meta = {
     <InteractiveTweaks {...args} initialWide={context.viewMode !== "docs"} />
   ),
   play: ready,
-  title: "Components/Inline Visualizations/Tweak panel",
+  title: "Components/HTML/Tweak panel",
   component: TweakPanel,
   parameters: {
     editorContext: { placement: "message", title: "Visualization" },

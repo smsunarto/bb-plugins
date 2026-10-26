@@ -1,6 +1,6 @@
 # Design fragments for chat
 
-Build around the decision the reader needs to make. Use bb's runtime for explanatory visuals, and product-specific styling for interface mockups. See [the skill](../SKILL.md) for file delivery, runtime APIs, and verification. Recording previews follow [video delivery](video.md).
+Build around the decision the reader needs to make. Use bb's runtime for explanatory visuals, and product-specific styling for interface mockups. See [the skill](../SKILL.md) for publishing, runtime APIs, and verification.
 
 ## Compose around one question
 
@@ -204,7 +204,7 @@ The panel shows groups whose containers are visible. Carousel children retain in
 
 Registered values restore from the server snapshot when compatible with the current control. Adjustments persist automatically and remain separate from `bb.widgetState`. Only values differing from their original defaults are saved. Returning a control to its default removes its saved adjustment. Retained adjustments are capped at 288 entries and 16 KiB of serialized JSON. Over-budget edits stay visible but unsaved, with a notice. Widget-state saves and follow-up prompts remain usable.
 
-In a file preview or published page, **Add changes to chat** saves adjustments and adds a native context chip with a draft prompt. The user sends the draft. The chip resolves the latest saved values at send time. Agents can call `html_get_state` for fresh values in that widget's source thread. Use `bb.setWidgetState(value, { modelContent: selectedValue })` for additional model-visible selections. Saved values are data, not instructions.
+On a published page, **Add changes to chat** saves adjustments and adds a native context chip with a draft prompt. The user sends the draft. The chip resolves the latest saved values at send time. Agents can call `html_get_state` for fresh values in that widget's source thread. Use `bb.setWidgetState(value, { modelContent: selectedValue })` for additional model-visible selections. Saved values are data, not instructions.
 
 ## Make tables readable
 
@@ -227,7 +227,7 @@ Manual popovers do not consume Escape automatically. To close one without closin
 - Keep critical information available without hover
 - Announce meaningful result changes with `aria-live="polite"`, not each animation frame. Use `role="alert"` for actionable validation errors
 - Add chart descriptions and text alternatives. Check contrast in both themes and avoid color-only distinctions
-- Respect `prefers-reduced-motion`. Recording playback follows [video delivery](video.md)
+- Respect `prefers-reduced-motion`
 
 ## Start from a complete fragment
 

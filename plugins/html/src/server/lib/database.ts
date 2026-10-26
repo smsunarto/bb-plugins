@@ -6,7 +6,7 @@ export type Database = ReturnType<BbPluginApi["storage"]["database"]>;
  * One list for the plugin's one database: bb numbers migrations by index, so
  * append new statements and never reorder these.
  */
-const MIGRATIONS = [
+export const MIGRATIONS = [
   `CREATE TABLE pages (
     id TEXT PRIMARY KEY,
     thread_id TEXT NOT NULL,
@@ -16,7 +16,6 @@ const MIGRATIONS = [
     created_at INTEGER NOT NULL
   )`,
   `CREATE INDEX pages_thread ON pages (thread_id)`,
-  // `file` is a host file's absolute path, or `html-render:<page id>`.
   `CREATE TABLE widget_states (
     sequence INTEGER PRIMARY KEY AUTOINCREMENT,
     thread_id TEXT NOT NULL,
@@ -30,6 +29,11 @@ const MIGRATIONS = [
     UNIQUE(thread_id, message_id, file)
   )`,
   `CREATE INDEX widget_states_thread_recent ON widget_states(thread_id, sequence DESC)`,
+  // State belongs only to published pages. Host-file state from the retired
+  // file directive is dropped, and page keys lose their `html-render:` prefix.
+  `DELETE FROM widget_states WHERE file NOT LIKE 'html-render:%'`,
+  `UPDATE widget_states SET file = substr(file, 13)`,
+  `ALTER TABLE widget_states RENAME COLUMN file TO page_id`,
 ];
 
 export function openDatabase(bb: BbPluginApi): Database {

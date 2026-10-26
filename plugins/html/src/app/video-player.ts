@@ -4,8 +4,8 @@ import { videoPlayerUrl } from "../shared/preview-frame.ts";
  * A fragment's `<video controls>` plays in the Video.js player and skin: the
  * same controls, hotkeys, speed menu, fullscreen, and picture-in-picture in
  * every browser, at bb's corner radius. It wraps the author's `<video>`, so
- * the asset bridge and the author's styles still reach that element. Full
- * HTML documents keep the author's own player.
+ * the author's styles still reach that element. Full HTML documents keep the
+ * author's own player.
  */
 // The skin's controls stay dark in both color schemes, so it keeps its own
 // accent; bb's primary is near black in light themes.
@@ -31,8 +31,7 @@ const playerVideos = (document: Document) =>
       !video.closest("video-player, video-skin") &&
       !video.hasAttribute("width") &&
       !video.hasAttribute("height") &&
-      // The box hold's ratio property is the asset loader's, not the author's.
-      !(video.getAttribute("style") ?? "").replace(/--bb-inline-preview-ratio:[^;]*;?/u, "").trim(),
+      !video.getAttribute("style")?.trim(),
   );
 
 /** Whether `html` may need the player, before parsing it. */

@@ -19,7 +19,7 @@ function upgrade(html: string) {
 
 test("wraps each <video controls> in the Video.js player and skin", () => {
   const document = upgrade(
-    `<video id="clip" controls src="clip.mp4" style="--bb-inline-preview-ratio: 16 / 9"></video>
+    `<video id="clip" controls src="clip.mp4"></video>
      <video autoplay muted loop src="background.mp4"></video>
      <video-player><video-skin><video controls src="own.mp4"></video></video-skin></video-player>`,
   );

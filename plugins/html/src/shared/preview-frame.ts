@@ -10,8 +10,8 @@ export const PREVIEW_FRAME_PATH = "/frame";
 export const VIDEO_PLAYER_PATH = "/video-player.js";
 
 export const PREVIEW_FRAME_MESSAGES = {
-  ready: "bb:inline-vis:frame-ready",
-  document: "bb:inline-vis:document",
+  ready: "bb:html:frame-ready",
+  document: "bb:html:document",
 } as const;
 
 /**

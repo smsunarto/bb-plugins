@@ -23,17 +23,17 @@ function framePage() {
 test("the frame page asks its parent for a document and writes only the parent's", async () => {
   const { parent, frame, received, send } = framePage();
   await tick();
-  expect(received).toEqual([{ type: "bb:inline-vis:frame-ready" }]);
+  expect(received).toEqual([{ type: "bb:html:frame-ready" }]);
 
   const html =
     "<!doctype html><p id=written>Prepared</p><script>parent.postMessage('ran', '*')</script>";
-  send(frame, { type: "bb:inline-vis:document", html });
-  send(parent, { type: "bb:inline-vis:other", html });
-  send(parent, { type: "bb:inline-vis:document", html: 7 });
+  send(frame, { type: "bb:html:document", html });
+  send(parent, { type: "bb:html:other", html });
+  send(parent, { type: "bb:html:document", html: 7 });
   expect(frame.document.getElementById("written")).toBeNull();
 
-  send(parent, { type: "bb:inline-vis:document", html });
+  send(parent, { type: "bb:html:document", html });
   expect(frame.document.getElementById("written")?.textContent).toBe("Prepared");
   await tick();
-  expect(received).toEqual([{ type: "bb:inline-vis:frame-ready" }, "ran"]);
+  expect(received).toEqual([{ type: "bb:html:frame-ready" }, "ran"]);
 });

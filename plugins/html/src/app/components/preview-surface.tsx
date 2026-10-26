@@ -1,45 +1,37 @@
 import type { ReactNode, RefObject } from "react";
 
-export type SourceToggle = { shown: boolean; onToggle: () => void };
-
 export function PreviewHeader({
   label,
   expanded,
   onToggle,
-  onOpen,
   onWide,
   wideTrigger,
-  sourceToggle,
 }: {
   label: string;
   expanded: boolean;
   onToggle: () => void;
-  onOpen: (() => void) | null;
   onWide?: () => void;
   wideTrigger?: RefObject<HTMLButtonElement | null>;
-  /** HTML written in the reply has no file to open, so it reveals its source. */
-  sourceToggle?: SourceToggle;
 }) {
-  // Upstream #4507 and #4538: the whole row toggles in place, and opening the
-  // file is a separate trailing action so the two never look alike.
+  // The whole row toggles in place; Wide view is a separate trailing action.
   return (
-    <figcaption className="inline-vis-header">
+    <figcaption className="html-page-header">
       <button
         type="button"
-        className="inline-vis-toggle"
+        className="html-page-toggle"
         aria-label={`${expanded ? "Collapse" : "Expand"} visualization ${label}`}
         aria-expanded={expanded}
         title={expanded ? "Collapse preview" : "Expand preview here"}
         onClick={onToggle}
       >
-        <span className="inline-vis-label">inline-vis</span>
-        <span className="inline-vis-path" title={label}>
+        <span className="html-page-label">HTML</span>
+        <span className="html-page-path" title={label}>
           <bdi>{label}</bdi>
         </span>
         {/* Sized attributes keep icons small if they render before app.css applies. */}
         <svg
           aria-hidden="true"
-          className="inline-vis-chevron"
+          className="html-page-chevron"
           width="10"
           height="16"
           viewBox="0 0 10 16"
@@ -52,7 +44,7 @@ export function PreviewHeader({
         <button
           type="button"
           ref={wideTrigger}
-          className="inline-vis-action inline-vis-icon"
+          className="html-page-action html-page-icon"
           aria-label="Wide view"
           title="Wide view"
           onClick={onWide}
@@ -73,55 +65,7 @@ export function PreviewHeader({
         </button>
       ) : (
         // Hold the slot while loading so the row does not shift when it appears.
-        expanded && <span aria-hidden="true" className="inline-vis-action" />
-      )}
-      {sourceToggle ? (
-        <button
-          type="button"
-          className="inline-vis-action inline-vis-icon"
-          aria-label={sourceToggle.shown ? "Hide source" : "Show source"}
-          aria-pressed={sourceToggle.shown}
-          title={sourceToggle.shown ? "Hide source" : "Show source"}
-          onClick={sourceToggle.onToggle}
-        >
-          <svg
-            aria-hidden="true"
-            width="14"
-            height="14"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          >
-            <path d="m16 18 6-6-6-6M8 6l-6 6 6 6" />
-          </svg>
-        </button>
-      ) : onOpen === null ? (
-        <span aria-hidden="true" className="inline-vis-action" />
-      ) : (
-        <button
-          type="button"
-          className="inline-vis-action inline-vis-icon inline-vis-open"
-          aria-label={`Open ${label} in sidebar`}
-          title="Open in sidebar"
-          onClick={onOpen}
-        >
-          <svg
-            aria-hidden="true"
-            width="14"
-            height="14"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          >
-            <path d="M15 3h6v6M10 14 21 3M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
-          </svg>
-        </button>
+        expanded && <span aria-hidden="true" className="html-page-action" />
       )}
     </figcaption>
   );
@@ -185,7 +129,7 @@ export function PreviewSurface({
   return (
     <dialog
       ref={dialogRef}
-      className={`inline-vis-surface${wide ? " inline-vis-wide" : ""}`}
+      className={`html-page-surface${wide ? " html-page-wide" : ""}`}
       role={wide ? "dialog" : "region"}
       aria-label={wide ? `Wide visualization: ${label}` : `Visualization: ${label}`}
       aria-modal={wide || undefined}
@@ -195,7 +139,7 @@ export function PreviewSurface({
       }}
     >
       {wide && (
-        <div className="inline-vis-wide-header">
+        <div className="html-page-wide-header">
           <span>{wideLabel}</span>
           <div>
             {actions}
@@ -206,8 +150,8 @@ export function PreviewSurface({
         </div>
       )}
       {notice}
-      <div className={`inline-vis-workspace${showPanel ? " inline-vis-with-tweaks" : ""}`}>
-        <div className="inline-vis-preview">{preview}</div>
+      <div className={`html-page-workspace${showPanel ? " html-page-with-tweaks" : ""}`}>
+        <div className="html-page-preview">{preview}</div>
         {showPanel && panel}
       </div>
     </dialog>

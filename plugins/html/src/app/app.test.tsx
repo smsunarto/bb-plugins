@@ -6,7 +6,6 @@ import { StrictMode, useState } from "react";
 import { afterEach, expect, test, vi } from "vitest";
 import type { ComposerMention } from "@get-bb/plugin-sdk/app";
 import { loadPluginApp, renderSlot as sdkRenderSlot } from "@get-bb/plugin-sdk/testing/app";
-import { chunkedResponse, mp4File, STREAM_TYPE } from "./mp4-fixture.ts";
 import { PREVIEW_FRAME_SANDBOX } from "../shared/preview-frame.ts";
 import {
   widgetIdentitySchema,
@@ -17,7 +16,7 @@ import {
 
 const snapshots = new Map<string, WidgetStateSnapshot>();
 const identityKey = (identity: WidgetIdentity) =>
-  JSON.stringify([identity.threadId, identity.messageId, identity.file]);
+  JSON.stringify([identity.threadId, identity.messageId, identity.pageId]);
 const stateRpc = {
   readState: (raw: unknown) => ({
     snapshot: snapshots.get(identityKey(widgetIdentitySchema.parse(raw))) ?? null,
@@ -35,7 +34,7 @@ const stateRpc = {
     const result = {
       threadId: data.threadId,
       messageId: data.messageId,
-      file: data.file,
+      pageId: data.pageId,
       state: "null",
       modelContent: null as string | null,
       tweaks: data.tweaks ?? null,
@@ -75,52 +74,61 @@ if (typeof CSSStyleSheet.prototype.replaceSync !== "function") {
 }
 const app = await loadPluginApp(() => import("./app.tsx"));
 
-// Upstream's collapse preference persists per client; each test starts without one.
+// The collapse preference persists per client; each test starts without one.
 afterEach(() => {
   cleanup();
   window.localStorage.clear();
   snapshots.clear();
+  vi.restoreAllMocks();
   Reflect.deleteProperty(navigator, "userActivation");
 });
 
-test("registers the html-render and inline-vis directives", () => {
-  expect(app.messageDirectives.map((directive) => directive.id)).toEqual([
-    "html-render",
-    "inline-vis",
-  ]);
-});
-
-test("claims a fence language that bb's built-in inline-vis cannot also claim", () => {
-  // bb renders neither renderer when two plugins claim one language.
-  expect(app.codeFenceRenderers.map(({ id, languages }) => ({ id, languages }))).toEqual([
-    { id: "inline-vis", languages: ["scott-inline-vis"] },
-  ]);
+test("registers only the html-render directive", () => {
+  expect(app.messageDirectives.map((directive) => directive.id)).toEqual(["html-render"]);
+  expect(app.codeFenceRenderers).toEqual([]);
 });
 
 test("reserves room for 100 monospace columns without exceeding the message width", async () => {
   const stylesheet = await readFile(join(import.meta.dirname, "app.css"), "utf8");
-  expect(stylesheet).toContain("--inline-vis-target-width: calc(100ch + 8rem + 4px)");
-  expect(stylesheet).toContain("width: min(var(--inline-vis-target-width), 100%)");
+  expect(stylesheet).toContain("--html-page-target-width: calc(100ch + 8rem + 4px)");
+  expect(stylesheet).toContain("width: min(var(--html-page-target-width), 100%)");
   expect(stylesheet).toContain("max-width: 100%");
 });
 
 test("uses the requested preview header background", async () => {
   const stylesheet = await readFile(join(import.meta.dirname, "app.css"), "utf8");
-  const header = stylesheet.match(/\.inline-vis-header \{([^}]*)\}/u)?.[1];
+  const header = stylesheet.match(/\.html-page-header \{([^}]*)\}/u)?.[1];
   expect(header).toContain("background: #1e1e1e");
 });
 
-const inlineVisMessage = {
-  id: "message-inline-vis",
-  threadId: "thread-inline-vis",
-  turnId: "turn-inline-vis",
-  projectId: "project-inline-vis",
+const pageMessage = {
+  id: "message-html",
+  threadId: "thread-html",
+  turnId: "turn-html",
+  projectId: "project-html",
 };
 
-async function inlineVisDirective() {
-  const directive = app.messageDirectives.find((item) => item.id === "inline-vis");
-  expect(directive).toBeDefined();
-  return directive!;
+const pageDirective = () => app.messageDirectives.find((item) => item.id === "html-render")!;
+
+/** Directive props for a published page; its title labels the card. */
+function pageProps(id: string, title: string, message = pageMessage) {
+  return {
+    attributes: { id, title, height: "240" },
+    source: `::html-render{id="${id}" title="${title}" height="240"}`,
+    message,
+    openWorkspaceFile: null,
+  };
+}
+
+/** Serve published pages through `fetch`, recording which page ids loaded. */
+function servePages(read: (id: string) => string | Promise<string>) {
+  const reads: string[] = [];
+  vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
+    const id = new URL(String(input), "http://localhost").searchParams.get("id")!;
+    reads.push(id);
+    return new Response(await read(id));
+  });
+  return reads;
 }
 
 /** The draft's plugin pills, as `useComposer().draft` reports them. */
@@ -138,24 +146,21 @@ async function shareSavedState(slot: ReturnType<typeof renderSlot>) {
   fireEvent.click(button);
 }
 
-type SdkFakes = NonNullable<
-  NonNullable<Parameters<typeof import("@get-bb/plugin-sdk/testing/app").renderSlot>[2]>["sdk"]
->;
-const LEASE_URL = "/api/v1/file-previews/lease";
 const FRAME_URL = "/api/v1/plugins/html/http/frame";
+const CHART_ID = "page_chart_0000000001";
 /** Request the prepared document the way the frame page does once it loads. */
 function frameDocument(iframe: HTMLIFrameElement | null | undefined): string | undefined {
   const frameWindow = iframe?.contentWindow;
   if (!frameWindow) return undefined;
   let html: string | undefined;
   const post = vi.spyOn(frameWindow, "postMessage").mockImplementation((data) => {
-    if (data?.type === "bb:inline-vis:document") html = data.html;
+    if (data?.type === "bb:html:document") html = data.html;
   });
   try {
     window.dispatchEvent(
       new MessageEvent("message", {
         source: frameWindow,
-        data: { type: "bb:inline-vis:frame-ready" },
+        data: { type: "bb:html:frame-ready" },
       }),
     );
   } finally {
@@ -163,530 +168,20 @@ function frameDocument(iframe: HTMLIFrameElement | null | undefined): string | u
   }
   return html;
 }
-/** The host file API as `useSdk()` sees it: `read` returns each file's text. */
-function previewSdk(
-  read: (path: string) => string | Promise<string>,
-  expiresAtMs = Date.now() + 3_600_000,
-): SdkFakes {
-  return {
-    threads: { storageLocation: async () => ({ hostId: "host-1", storageRootPath: "/storage" }) },
-    files: {
-      read: async ({ path }: { path: string }) => {
-        const content = await read(path);
-        return { content, contentEncoding: "utf8", sizeBytes: content.length };
-      },
-      createPreview: async () => ({ baseUrl: LEASE_URL, expiresAtMs }),
-    },
-  } as unknown as SdkFakes;
-}
-function previewReads(slot: { sdkCalls: readonly { method: string; args: unknown[] }[] }) {
-  return slot.sdkCalls
-    .filter((call) => call.method === "files.read")
-    .map((call) => (call.args[0] as { path: string }).path);
-}
-
-test("inline-vis rejects an unknown source without reading the file", async () => {
-  const directive = await inlineVisDirective();
-  const slot = renderSlot(
-    directive,
-    {
-      attributes: { file: "/tmp/demo.html", source: "project" },
-      source: '::inline-vis{source="project" file="/tmp/demo.html"}',
-      message: inlineVisMessage,
-      openWorkspaceFile: null,
-    },
-    { sdk: {} },
-  );
-
-  expect(slot.getByRole("alert").textContent).toMatch(/no longer accepts source/i);
-  expect(slot.container.querySelector("iframe")).toBeNull();
-  expect(slot.sdkCalls).toEqual([]);
-  slot.unmount();
-});
-
-test("inline-vis renders workspace Markdown with the host renderer and no iframe", async () => {
-  const directive = await inlineVisDirective();
-  const openWorkspaceFile = vi.fn(() => true);
-  const slot = renderSlot(
-    directive,
-    {
-      attributes: { file: "/tmp/reports/notes.md" },
-      source: '::inline-vis{file="/tmp/reports/notes.md"}',
-      message: inlineVisMessage,
-      openWorkspaceFile,
-    },
-    { sdk: previewSdk(() => "# Notes\n\nReady for review.") },
-  );
-
-  const markdown = await slot.findByTestId("bb-markdown");
-  expect(markdown.textContent?.trim()).toBe("# Notes\n\nReady for review.");
-  expect(slot.container.querySelector("iframe")).toBeNull();
-  expect(markdown.parentElement?.className).toBe("inline-vis-markdown");
-  expect(markdown.parentElement?.style.height).toBe("224px");
-  expect(slot.getByRole("button", { name: "Open /tmp/reports/notes.md in sidebar" })).toBeTruthy();
-  expect(openWorkspaceFile).not.toHaveBeenCalled();
-  expect(slot.sdkCalls.map((call) => [call.method, call.args[0]])).toEqual([
-    ["threads.storageLocation", { threadId: "thread-inline-vis", signal: expect.any(AbortSignal) }],
-    [
-      "files.read",
-      {
-        path: "/tmp/reports/notes.md",
-        rootPath: "/tmp/reports",
-        hostId: "host-1",
-        signal: expect.any(AbortSignal),
-      },
-    ],
-    [
-      "files.createPreview",
-      {
-        rootPath: "/tmp/reports",
-        hostId: "host-1",
-        ttlMs: 3_600_000,
-        signal: expect.any(AbortSignal),
-      },
-    ],
-  ]);
-  slot.unmount();
-});
-
-test("inline-vis reserves the Markdown preview height while loading", async () => {
-  const directive = await inlineVisDirective();
-  let resolvePreview = (_content: string) => {};
-  const pendingPreview = new Promise<string>((resolve) => {
-    resolvePreview = resolve;
-  });
-  const slot = renderSlot(
-    directive,
-    {
-      attributes: { file: "/tmp/notes.md", height: "480" },
-      source: '::inline-vis{file="/tmp/notes.md" height="480"}',
-      message: inlineVisMessage,
-      openWorkspaceFile: null,
-    },
-    { sdk: previewSdk(() => pendingPreview) },
-  );
-
-  const loading = await slot.findByRole("status", { name: "Loading visualization /tmp/notes.md" });
-  expect((loading as HTMLElement).style.height).toBe("480px");
-  const loadingCard = loading.parentElement!;
-
-  resolvePreview("# Notes");
-  const markdown = await slot.findByTestId("bb-markdown");
-  expect(markdown.parentElement?.style.height).toBe("480px");
-  expect(markdown.closest("figure")).toBe(loadingCard);
-  expect(slot.queryByRole("status")).toBeNull();
-  slot.unmount();
-});
-
-test("inline-vis requires a file attribute without reading the file", async () => {
-  const directive = await inlineVisDirective();
-  const slot = renderSlot(
-    directive,
-    {
-      attributes: {},
-      source: "::inline-vis{}",
-      message: inlineVisMessage,
-      openWorkspaceFile: null,
-    },
-    { sdk: {} },
-  );
-
-  expect(slot.getByRole("alert").textContent).toMatch(/requires a file attribute/i);
-  expect(slot.sdkCalls).toEqual([]);
-  slot.unmount();
-});
-
-test("inline-vis loads a full HTML document from the SDK preview URL with an opaque-origin sandbox", async () => {
-  const directive = await inlineVisDirective();
-  const openWorkspaceFile = vi.fn(() => true);
-  const slot = renderSlot(
-    directive,
-    {
-      attributes: { file: "/tmp/charts/demo file.html" },
-      source: '::inline-vis{file="/tmp/charts/demo file.html"}',
-      message: inlineVisMessage,
-      openWorkspaceFile,
-    },
-    { sdk: previewSdk(() => "<!doctype html><h1>Example</h1>") },
-  );
-
-  await slot.findByRole("status", {
-    name: "Loading visualization /tmp/charts/demo file.html",
-  });
-  const iframe = await waitFor(() => {
-    const element = slot.container.querySelector("iframe");
-    expect(element).toBeTruthy();
-    return element as HTMLIFrameElement;
-  });
-
-  expect(iframe.getAttribute("sandbox")).toBe(PREVIEW_FRAME_SANDBOX);
-  expect(iframe.getAttribute("sandbox")).not.toContain("allow-same-origin");
-  expect(iframe.getAttribute("src")).toBe(`${LEASE_URL}/demo%20file.html`);
-  expect(iframe.getAttribute("srcdoc")).toBeNull();
-  expect(iframe.style.height).toBe("224px");
-  const toggle = slot.getByRole("button", {
-    name: "Collapse visualization /tmp/charts/demo file.html",
-  });
-  const header = toggle.closest(".inline-vis-header")!;
-  expect(header.closest(".inline-vis-card")).toBeTruthy();
-  expect(toggle.classList.contains("inline-vis-toggle")).toBe(true);
-  expect(toggle.getAttribute("aria-expanded")).toBe("true");
-  expect(header.querySelector(".inline-vis-path")?.getAttribute("title")).toBe(
-    "/tmp/charts/demo file.html",
-  );
-  expect(
-    slot.getByRole("button", { name: "Open /tmp/charts/demo file.html in sidebar" }),
-  ).toBeTruthy();
-  expect(openWorkspaceFile).not.toHaveBeenCalled();
-  expect(previewReads(slot)).toEqual(["/tmp/charts/demo file.html"]);
-  slot.unmount();
-});
-
-/** The frame's readiness handshake, carrying the port its document created. */
-function announce(source: Window | null, token: string) {
-  const port = { postMessage: vi.fn(), close: vi.fn() };
-  const event = new window.MessageEvent("message", {
-    source,
-    data: { type: "bb:inline-preview-ready", token },
-  });
-  // jsdom has no MessagePort, and its MessageEvent rejects stand-ins.
-  Object.defineProperty(event, "ports", { value: [port] });
-  window.dispatchEvent(event);
-  return port;
-}
-
-const VIDEO_PLAYER = "/* the Video.js bundle */";
-
-function deferredFetch() {
-  const pending: { url: string; signal: AbortSignal; resolve: (response: Response) => void }[] = [];
-  const fetch = vi.spyOn(globalThis, "fetch").mockImplementation((url, init) =>
-    // A fragment with a controlled video first fetches the player bundle.
-    String(url).endsWith("/http/video-player.js")
-      ? Promise.resolve(new Response(VIDEO_PLAYER))
-      : new Promise<Response>((resolve) =>
-          pending.push({ url: String(url), signal: init!.signal!, resolve }),
-        ),
-  );
-  return { fetch, pending };
-}
-
-test("inline-vis renders before media downloads and streams each asset to the opaque frame", async () => {
-  const { fetch, pending } = deferredFetch();
-  const slot = renderSlot(
-    await inlineVisDirective(),
-    {
-      attributes: { file: "/tmp/charts/player.html" },
-      source: '::inline-vis{file="/tmp/charts/player.html"}',
-      message: inlineVisMessage,
-      openWorkspaceFile: null,
-    },
-    {
-      sdk: previewSdk(() => '<img src="still.png"><video controls src="clip.mp4"></video>'),
-      pluginId: "html",
-    },
-  );
-  try {
-    // The frame mounts while both downloads are still in flight.
-    const html = await waitFor(() => {
-      const value = frameDocument(slot.container.querySelector("iframe"));
-      expect(value).toContain("bb:inline-preview-ready");
-      return value!;
-    });
-    // Images download first. They are small and show on arrival.
-    expect(pending.map(({ url }) => url)).toEqual([`http://localhost:3000${LEASE_URL}/still.png`]);
-    const iframe = slot.container.querySelector("iframe")!;
-    expect(iframe.getAttribute("sandbox")).toBe(PREVIEW_FRAME_SANDBOX);
-    expect(iframe.getAttribute("src")).toBe(FRAME_URL);
-    const post = vi.spyOn(iframe.contentWindow!, "postMessage").mockImplementation(() => {});
-    const token = html.match(/const token = "([^"]+)"/)![1]!;
-    const stranger = announce(window, token);
-    const forged = announce(iframe.contentWindow, "wrong-token");
-    const port = announce(iframe.contentWindow, token);
-    // The image goes straight to the frame document's port, then the video starts downloading.
-    pending[0]!.resolve(new Response("image", { headers: { "content-type": "image/png" } }));
-    await waitFor(() => expect(port.postMessage).toHaveBeenCalledTimes(1));
-    const [message] = port.postMessage.mock.calls[0]! as [{ key: string; blob: Blob }];
-    expect(message.key).toBe("0");
-    expect(await message.blob.text()).toBe("image");
-    await waitFor(() => expect(pending).toHaveLength(2));
-    expect(pending[1]!.url).toBe(`http://localhost:3000${LEASE_URL}/clip.mp4`);
-    // A document that later takes over the same frame window, for example
-    // after a link navigates it, cannot claim the remaining downloads.
-    const navigated = announce(iframe.contentWindow, token);
-    fireEvent.click(
-      slot.getByRole("button", { name: "Collapse visualization /tmp/charts/player.html" }),
-    );
-    expect(slot.container.querySelector("iframe")).toBeNull();
-    expect(pending[1]!.signal.aborted).toBe(true);
-    expect(port.close).toHaveBeenCalled();
-    pending[1]!.resolve(new Response("video", { headers: { "content-type": "video/mp4" } }));
-    await Promise.resolve();
-    expect(port.postMessage).toHaveBeenCalledTimes(1);
-    for (const other of [stranger, forged, navigated])
-      expect(other.postMessage).not.toHaveBeenCalled();
-    expect(post).not.toHaveBeenCalled();
-    post.mockRestore();
-  } finally {
-    slot.unmount();
-    fetch.mockRestore();
-  }
-});
-
-test("inline-vis keeps the preview and reports media that failed to download", async () => {
-  const { fetch, pending } = deferredFetch();
-  const slot = renderSlot(
-    await inlineVisDirective(),
-    {
-      attributes: { file: "/tmp/charts/player.html" },
-      source: '::inline-vis{file="/tmp/charts/player.html"}',
-      message: inlineVisMessage,
-      openWorkspaceFile: null,
-    },
-    {
-      sdk: previewSdk(() => '<video controls src="clip.mp4"></video>'),
-      pluginId: "html",
-    },
-  );
-  try {
-    const html = await waitFor(() => {
-      const value = frameDocument(slot.container.querySelector("iframe"));
-      expect(value).toContain("bb:inline-preview-ready");
-      return value!;
-    });
-    const iframe = slot.container.querySelector("iframe")!;
-    pending[0]!.resolve(new Response("missing", { status: 404 }));
-    const alert = await slot.findByText(/Some media in \/tmp\/charts\/player\.html did not load/);
-    expect(alert.textContent).toContain("HTTP 404");
-    expect(slot.container.querySelector("iframe")).toBe(iframe);
-    // A frame that announces itself after the failure still learns about it.
-    const token = html.match(/const token = "([^"]+)"/)![1]!;
-    const port = announce(iframe.contentWindow, token);
-    expect(port.postMessage.mock.calls).toEqual([[{ key: "0", failed: true }]]);
-  } finally {
-    slot.unmount();
-    fetch.mockRestore();
-  }
-});
-
-test("inline-vis streams a video to the frame and replays its bytes to a late frame", async () => {
-  const { fetch, pending } = deferredFetch();
-  const slot = renderSlot(
-    await inlineVisDirective(),
-    {
-      attributes: { file: "/tmp/charts/player.html" },
-      source: '::inline-vis{file="/tmp/charts/player.html"}',
-      message: inlineVisMessage,
-      openWorkspaceFile: null,
-    },
-    {
-      sdk: previewSdk(() => '<video controls src="clip.mp4"></video>'),
-      pluginId: "html",
-    },
-  );
-  try {
-    const html = await waitFor(() => {
-      const value = frameDocument(slot.container.querySelector("iframe"));
-      expect(value).toContain("bb:inline-preview-ready");
-      return value!;
-    });
-    // A fragment's controlled video plays in the Video.js player.
-    expect(html).toContain(`<script type="module">${VIDEO_PLAYER}</script>`);
-    expect(html).toContain("<video-player><video-skin><video ");
-    const iframe = slot.container.querySelector("iframe")!;
-    const file = await mp4File("in-memory");
-    let body!: ReadableStreamDefaultController<Uint8Array>;
-    const response = new Response(
-      new ReadableStream<Uint8Array>({ start: (controller) => void (body = controller) }),
-      { headers: { "content-type": "video/mp4" } },
-    );
-    await waitFor(() => expect(pending).toHaveLength(1));
-    pending[0]!.resolve(response);
-    // Every byte has arrived, but the download has not ended.
-    body.enqueue(file);
-    // The frame announces itself late, and catches up on the stream so far.
-    await new Promise((resolve) => setTimeout(resolve, 300));
-    const token = html.match(/const token = "([^"]+)"/)![1]!;
-    const port = announce(iframe.contentWindow, token);
-    expect(port.postMessage.mock.calls.length).toBeGreaterThan(1);
-    const streamed = port.postMessage.mock.calls.map(
-      ([message]) => message as Record<string, unknown>,
-    );
-    expect(streamed.slice(0, 2)).toEqual([
-      { key: "0", size: { width: 64, height: 64 } },
-      { key: "0", stream: STREAM_TYPE },
-    ]);
-    expect(streamed.slice(2).every((message) => message.chunk instanceof Uint8Array)).toBe(true);
-    body.close();
-    await waitFor(() => expect(port.postMessage.mock.lastCall?.[0]).toHaveProperty("blob"));
-    const [last] = port.postMessage.mock.lastCall! as [{ key: string; blob: Blob }];
-    expect(last.key).toBe("0");
-    expect(last.blob.size).toBe(file.length);
-    // Reopened, the player starts at the size the stream reported.
-    const again = renderSlot(
-      await inlineVisDirective(),
-      {
-        attributes: { file: "/tmp/charts/player.html" },
-        source: '::inline-vis{file="/tmp/charts/player.html"}',
-        message: inlineVisMessage,
-        openWorkspaceFile: null,
-      },
-      {
-        sdk: previewSdk(() => '<video controls src="clip.mp4"></video>'),
-        pluginId: "html",
-      },
-    );
-    const reopened = await waitFor(() => {
-      const value = frameDocument(again.container.querySelector("iframe"));
-      expect(value).toContain("bb:inline-preview-ready");
-      return value!;
-    });
-    expect(reopened).toContain("--bb-inline-preview-ratio: 64 / 64");
-    again.unmount();
-  } finally {
-    slot.unmount();
-    fetch.mockRestore();
-  }
-});
-
-test("inline-vis sends a frame that announces after the download its video's size first", async () => {
-  const { fetch, pending } = deferredFetch();
-  const slot = renderSlot(
-    await inlineVisDirective(),
-    {
-      attributes: { file: "/tmp/charts/player.html" },
-      source: '::inline-vis{file="/tmp/charts/player.html"}',
-      message: inlineVisMessage,
-      openWorkspaceFile: null,
-    },
-    {
-      sdk: previewSdk(() => '<video controls src="clip.mp4"></video>'),
-      pluginId: "html",
-    },
-  );
-  try {
-    const html = await waitFor(() => {
-      const value = frameDocument(slot.container.querySelector("iframe"));
-      expect(value).toContain("bb:inline-preview-ready");
-      return value!;
-    });
-    const iframe = slot.container.querySelector("iframe")!;
-    await waitFor(() => expect(pending).toHaveLength(1));
-    pending[0]!.resolve(chunkedResponse([await mp4File("in-memory")]));
-    await new Promise((resolve) => setTimeout(resolve, 300));
-    const token = html.match(/const token = "([^"]+)"/)![1]!;
-    const port = announce(iframe.contentWindow, token);
-    const replayed = port.postMessage.mock.calls.map(([message]) => Object.keys(message as object));
-    expect(replayed).toEqual([
-      ["key", "size"],
-      ["key", "blob"],
-    ]);
-  } finally {
-    slot.unmount();
-    fetch.mockRestore();
-  }
-});
-
-test("inline-vis uses an optional bounded height and reserves it while loading", async () => {
-  const directive = await inlineVisDirective();
-  let resolvePreview = (_html: string) => {};
-  const pendingPreview = new Promise<string>((resolve) => {
-    resolvePreview = resolve;
-  });
-  const slot = renderSlot(
-    directive,
-    {
-      attributes: { file: "/tmp/demo.html", height: "480" },
-      source: '::inline-vis{file="/tmp/demo.html" height="480"}',
-      message: inlineVisMessage,
-      openWorkspaceFile: vi.fn(() => true),
-    },
-    { sdk: previewSdk(() => pendingPreview) },
-  );
-
-  const loading = await slot.findByRole("status", { name: "Loading visualization /tmp/demo.html" });
-  expect((loading as HTMLElement).style.height).toBe("480px");
-  const loadingCard = loading.parentElement!;
-  const loadingHeader = loadingCard.firstElementChild!;
-  expect(loadingHeader.querySelector(".inline-vis-header")).toBeNull();
-  expect(loadingHeader.classList.contains("inline-vis-header")).toBe(true);
-  expect(loadingHeader.querySelector(".inline-vis-open")).toBeNull();
-
-  resolvePreview("");
-  const iframe = await waitFor(() => {
-    const element = slot.container.querySelector("iframe");
-    expect(element).toBeTruthy();
-    return element as HTMLIFrameElement;
-  });
-  expect(iframe.style.height).toBe("480px");
-  expect(iframe.closest("figure")).toBe(loadingCard);
-  expect(loadingCard.firstElementChild?.className).toBe(loadingHeader.className);
-  slot.unmount();
-});
-
-test("inline-vis rejects invalid heights without reading the file", async () => {
-  const directive = await inlineVisDirective();
-  const slot = renderSlot(
-    directive,
-    {
-      attributes: { file: "/tmp/demo.html", height: "100vh" },
-      source: '::inline-vis{file="/tmp/demo.html" height="100vh"}',
-      message: inlineVisMessage,
-      openWorkspaceFile: null,
-    },
-    { sdk: {} },
-  );
-
-  expect(slot.getByRole("alert").textContent).toMatch(/whole number from 120 to 1200 pixels/i);
-  expect(slot.container.querySelector("iframe")).toBeNull();
-  expect(slot.sdkCalls).toEqual([]);
-  slot.unmount();
-});
-
-test("inline-vis reports read failures without mounting an iframe", async () => {
-  const directive = await inlineVisDirective();
-  const slot = renderSlot(
-    directive,
-    {
-      attributes: { file: "/tmp/missing.html" },
-      source: '::inline-vis{file="/tmp/missing.html"}',
-      message: inlineVisMessage,
-      openWorkspaceFile: null,
-    },
-    {
-      sdk: previewSdk(() => {
-        throw Object.assign(new Error("missing"), { status: 404 });
-      }),
-    },
-  );
-
-  const alert = await slot.findByRole("alert");
-  expect(alert.textContent).toMatch(/Preview file not found: \/tmp\/missing\.html/);
-  expect(slot.container.querySelector("iframe")).toBeNull();
-  slot.unmount();
-});
-
 test("a failed preview can retry loading without collapsing the card", async () => {
   let available = false;
-  const slot = renderSlot(
-    await inlineVisDirective(),
-    {
-      attributes: { file: "/tmp/retry.html" },
-      source: '::inline-vis{file="/tmp/retry.html"}',
-      message: inlineVisMessage,
-      openWorkspaceFile: null,
-    },
-    {
-      sdk: previewSdk(() => {
-        if (!available) throw new Error("Host disconnected");
-        return "<p>Host reconnected</p>";
-      }),
-    },
-  );
-  expect((await slot.findByRole("alert")).textContent).toContain("Host disconnected");
+  servePages(() => {
+    if (!available) throw new Error("Server disconnected");
+    return "<p>Server reconnected</p>";
+  });
+  const slot = renderSlot(pageDirective(), pageProps("page_retry_000000001", "Retry"), {
+    pluginId: "html",
+  });
+  expect((await slot.findByRole("alert")).textContent).toContain("Server disconnected");
   available = true;
   fireEvent.click(slot.getByRole("button", { name: "Retry preview" }));
   await waitFor(() =>
-    expect(frameDocument(slot.container.querySelector("iframe"))).toContain("Host reconnected"),
+    expect(frameDocument(slot.container.querySelector("iframe"))).toContain("Server reconnected"),
   );
   expect(slot.queryByRole("alert")).toBeNull();
   expect(slot.getByRole("button", { name: "Wide view" }).getAttribute("title")).toBe("Wide view");
@@ -707,7 +202,7 @@ test("inline sharing is disabled while state is saving", async () => {
       },
     },
   });
-  send({ type: "bb:inline-vis:state", state: '{"selected":2}' });
+  send({ type: "bb:html:state", state: '{"selected":2}' });
   await waitFor(() => expect(release).toBeTypeOf("function"));
   const share = slot.getByRole("button", { name: "Use saved state" });
   expect(share.hasAttribute("disabled")).toBe(true);
@@ -720,16 +215,17 @@ test("inline sharing is disabled while state is saving", async () => {
     expect(statePills(slot)).toEqual([
       {
         provider: "widget-state",
-        id: '["thread-inline-vis","message-inline-vis","/tmp/viz/chart.html"]',
-        label: "State: chart.html",
+        id: '["thread-html","message-html","page_chart_0000000001"]',
+        label: "State: Chart",
       },
     ]),
   );
   slot.unmount();
 });
 
-test("inline-vis opens only the final two occurrences and unloads manually collapsed frames", async () => {
-  const directive = await inlineVisDirective();
+test("opens only the final two occurrences and unloads manually collapsed frames", async () => {
+  const reads = servePages(() => "");
+  const directive = pageDirective();
   const Component = directive.component;
   const slot = renderSlot(
     {
@@ -742,19 +238,14 @@ test("inline-vis opens only the final two occurrences and unloads manually colla
         </StrictMode>
       ),
     },
-    {
-      attributes: { file: "/tmp/same.html" },
-      source: '::inline-vis{file="/tmp/same.html"}',
-      message: inlineVisMessage,
-      openWorkspaceFile: null,
-    },
-    { sdk: previewSdk(() => "") },
+    pageProps("page_same_0000000001", "Same"),
+    { pluginId: "html" },
   );
   await waitFor(() => expect(slot.container.querySelectorAll("iframe")).toHaveLength(2));
-  const cards = [...slot.container.querySelectorAll(".inline-vis-card")];
+  const cards = [...slot.container.querySelectorAll(".html-page-card")];
   expect(cards.map((card) => !!card.querySelector("iframe"))).toEqual([false, false, true, true]);
   // StrictMode runs the two open previews' effects twice. Closed previews never prepare.
-  expect(previewReads(slot)).toHaveLength(4);
+  expect(reads).toHaveLength(4);
   fireEvent.click(cards[0]!.querySelector("button")!);
   await waitFor(() => expect(slot.container.querySelectorAll("iframe")).toHaveLength(3));
   const iframe = cards[0]!.querySelector("iframe");
@@ -767,8 +258,9 @@ test("inline-vis opens only the final two occurrences and unloads manually colla
   slot.unmount();
 });
 
-test("inline-vis keeps thread-wide order and manual choices when new previews and older history arrive", async () => {
-  const directive = await inlineVisDirective();
+test("keeps thread-wide order and manual choices when new previews and older history arrive", async () => {
+  const reads = servePages(() => "");
+  const directive = pageDirective();
   const Component = directive.component;
   const slot = renderSlot(
     {
@@ -783,153 +275,94 @@ test("inline-vis keeps thread-wide order and manual choices when new previews an
               <Component
                 key={id}
                 {...props}
-                attributes={{ file: `/tmp/${id}.html` }}
+                attributes={{ id: `page_${id}_000000000000`, title: `Page ${id}`, height: "240" }}
                 message={{ ...props.message, id: `message-${id}` }}
               />
             ))}
             <Component
               {...props}
-              attributes={{ file: "/tmp/other.html" }}
+              attributes={{ id: "page_other_00000000", title: "Other", height: "240" }}
               message={{ ...props.message, threadId: "another-thread" }}
             />
           </>
         );
       },
     },
-    { attributes: {}, source: "fixture", message: inlineVisMessage, openWorkspaceFile: null },
-    { sdk: previewSdk(() => "") },
+    { attributes: {}, source: "fixture", message: pageMessage, openWorkspaceFile: null },
+    { pluginId: "html" },
   );
   await waitFor(() => expect(slot.container.querySelectorAll("iframe")).toHaveLength(3));
-  expect(previewReads(slot).sort()).toEqual(["/tmp/2.html", "/tmp/3.html", "/tmp/other.html"]);
-  fireEvent.click(slot.getByRole("button", { name: "Collapse visualization /tmp/3.html" }));
+  expect(reads.sort()).toEqual([
+    "page_2_000000000000",
+    "page_3_000000000000",
+    "page_other_00000000",
+  ]);
+  fireEvent.click(slot.getByRole("button", { name: "Collapse visualization Page 3" }));
   // Expanding last leaves the remembered preference open, so new previews still auto-open.
-  fireEvent.click(slot.getByRole("button", { name: "Expand visualization /tmp/1.html" }));
+  fireEvent.click(slot.getByRole("button", { name: "Expand visualization Page 1" }));
   await waitFor(() => expect(slot.container.querySelectorAll("iframe")).toHaveLength(3));
   fireEvent.click(slot.getByRole("button", { name: "Append preview" }));
   await waitFor(() => expect(slot.container.querySelectorAll("iframe")).toHaveLength(3));
-  const files = () =>
+  const titles = () =>
     [...slot.container.querySelectorAll("iframe")].map((frame) => frame.getAttribute("title"));
-  expect(files()).toEqual([
-    "inline-vis: /tmp/1.html",
-    "inline-vis: /tmp/4.html",
-    "inline-vis: /tmp/other.html",
-  ]);
+  expect(titles()).toEqual(["HTML: Page 1", "HTML: Page 4", "HTML: Other"]);
   fireEvent.click(slot.getByRole("button", { name: "Prepend history" }));
   await waitFor(() =>
-    expect(slot.getByRole("button", { name: "Expand visualization /tmp/0.html" })).toBeTruthy(),
+    expect(slot.getByRole("button", { name: "Expand visualization Page 0" })).toBeTruthy(),
   );
-  expect(files()).toEqual([
-    "inline-vis: /tmp/1.html",
-    "inline-vis: /tmp/4.html",
-    "inline-vis: /tmp/other.html",
-  ]);
-  expect(previewReads(slot)).not.toContain("/tmp/0.html");
+  expect(titles()).toEqual(["HTML: Page 1", "HTML: Page 4", "HTML: Other"]);
+  expect(reads).not.toContain("page_0_000000000000");
   slot.unmount();
 });
 
-test("inline-vis ignores a preparation result that arrives after collapse", async () => {
-  const directive = await inlineVisDirective();
+test("ignores a page that arrives after collapse", async () => {
   let resolvePreview = (_html: string) => {};
   const pending = new Promise<string>((resolve) => {
     resolvePreview = resolve;
   });
-  const slot = renderSlot(
-    directive,
-    {
-      attributes: { file: "/tmp/pending.html" },
-      source: "fixture",
-      message: inlineVisMessage,
-      openWorkspaceFile: null,
-    },
-    { sdk: previewSdk(() => pending) },
-  );
-  await slot.findByRole("status", { name: "Loading visualization /tmp/pending.html" });
-  fireEvent.click(slot.getByRole("button", { name: "Collapse visualization /tmp/pending.html" }));
+  servePages(() => pending);
+  const slot = renderSlot(pageDirective(), pageProps("page_pending_0000001", "Pending"), {
+    pluginId: "html",
+  });
+  await slot.findByRole("status", { name: "Loading visualization Pending" });
+  fireEvent.click(slot.getByRole("button", { name: "Collapse visualization Pending" }));
   resolvePreview("");
   await waitFor(() =>
-    expect(
-      slot.getByRole("button", { name: "Expand visualization /tmp/pending.html" }),
-    ).toBeTruthy(),
+    expect(slot.getByRole("button", { name: "Expand visualization Pending" })).toBeTruthy(),
   );
   expect(slot.container.querySelector("iframe")).toBeNull();
   slot.unmount();
 });
 
-test("inline-vis remembers the last collapse choice for previews that mount later", async () => {
-  const directive = await inlineVisDirective();
-  const render = (file: string) =>
+test("remembers the last collapse choice for previews that mount later", async () => {
+  const reads = servePages(() => "");
+  const render = (title: string) =>
     renderSlot(
-      directive,
-      {
-        attributes: { file },
-        source: "fixture",
-        message: { ...inlineVisMessage, id: file },
-        openWorkspaceFile: null,
-      },
-      { sdk: previewSdk(() => "") },
+      pageDirective(),
+      pageProps(`page_${title}_0000000000`, title, { ...pageMessage, id: title }),
+      { pluginId: "html" },
     );
 
-  const first = render("/tmp/first.html");
+  const first = render("first");
   await waitFor(() => expect(first.container.querySelector("iframe")).toBeTruthy());
-  fireEvent.click(first.getByRole("button", { name: "Collapse visualization /tmp/first.html" }));
+  fireEvent.click(first.getByRole("button", { name: "Collapse visualization first" }));
   first.unmount();
-  const stored = Object.entries(window.localStorage);
-  expect(stored).toHaveLength(1);
-  // Keyed by plugin id, so it never shares bb's built-in inline-vis preference.
-  expect(stored[0]![0]).toMatch(/^.+\.inline-vis\.collapsed$/u);
-  expect(stored[0]![0]).not.toBe("bb.inline-vis.collapsed");
-  expect(stored[0]![1]).toBe("true");
+  const stored = Object.entries(window.localStorage).filter(([key]) => key.endsWith(".collapsed"));
+  expect(stored).toEqual([["html.collapsed", "true"]]);
 
-  const second = render("/tmp/second.html");
+  const second = render("second");
   await waitFor(() =>
-    expect(
-      second.getByRole("button", { name: "Expand visualization /tmp/second.html" }),
-    ).toBeTruthy(),
+    expect(second.getByRole("button", { name: "Expand visualization second" })).toBeTruthy(),
   );
   expect(second.container.querySelector("iframe")).toBeNull();
-  expect(previewReads(second)).toEqual([]);
-  fireEvent.click(second.getByRole("button", { name: "Expand visualization /tmp/second.html" }));
+  expect(reads).toEqual(["page_first_0000000000"]);
+  fireEvent.click(second.getByRole("button", { name: "Expand visualization second" }));
   await waitFor(() => expect(second.container.querySelector("iframe")).toBeTruthy());
   second.unmount();
 
-  const third = render("/tmp/third.html");
+  const third = render("third");
   await waitFor(() => expect(third.container.querySelector("iframe")).toBeTruthy());
   third.unmount();
-});
-
-test("inline-vis keeps an open iframe after its lease expires and refreshes only on reopening", async () => {
-  const slot = renderSlot(
-    await inlineVisDirective(),
-    {
-      attributes: { file: "/tmp/interactive.html" },
-      source: '::inline-vis{file="/tmp/interactive.html"}',
-      message: inlineVisMessage,
-      openWorkspaceFile: null,
-    },
-    { sdk: previewSdk(() => "<input value='keep me'>", Date.now() - 1) },
-  );
-  try {
-    const iframe = await waitFor(() => {
-      const value = slot.container.querySelector("iframe");
-      expect(value).toBeTruthy();
-      return value!;
-    });
-    // An expired lease previously scheduled a destructive reload after one second.
-    await new Promise((resolve) => setTimeout(resolve, 1_100));
-    expect(slot.container.querySelector("iframe")).toBe(iframe);
-    expect(previewReads(slot)).toHaveLength(1);
-    fireEvent.click(
-      slot.getByRole("button", { name: "Collapse visualization /tmp/interactive.html" }),
-    );
-    fireEvent.click(
-      slot.getByRole("button", { name: "Expand visualization /tmp/interactive.html" }),
-    );
-    await waitFor(() => expect(previewReads(slot)).toHaveLength(2));
-    await waitFor(() => expect(slot.container.querySelector("iframe")).toBeTruthy());
-    expect(slot.container.querySelector("iframe")).not.toBe(iframe);
-  } finally {
-    slot.unmount();
-  }
 });
 
 /** Deliver the slot's prepared frame document and wire messages from that frame. */
@@ -956,32 +389,22 @@ async function connectFrame(slot: ReturnType<typeof renderSlot>) {
 async function renderFragment(
   fragment: string,
   {
-    height,
     composerText,
     composerMentions,
-    messageId = inlineVisMessage.id,
+    messageId = pageMessage.id,
     rpc,
   }: {
-    height?: string;
     composerText?: string;
     composerMentions?: readonly ComposerMention[];
     messageId?: string;
     rpc?: NonNullable<Parameters<typeof sdkRenderSlot>[2]>["rpc"];
   } = {},
 ) {
-  const directive = await inlineVisDirective();
-  const attributes: Record<string, string> = { file: "/tmp/viz/chart.html" };
-  if (height) attributes.height = height;
+  servePages(() => fragment);
   const slot = renderSlot(
-    directive,
+    pageDirective(),
+    pageProps(CHART_ID, "Chart", { ...pageMessage, id: messageId }),
     {
-      attributes,
-      source: '::inline-vis{file="/tmp/viz/chart.html"}',
-      message: { ...inlineVisMessage, id: messageId },
-      openWorkspaceFile: null,
-    },
-    {
-      sdk: previewSdk(() => fragment),
       pluginId: "html",
       composer: { text: composerText ?? "", mentions: composerMentions },
       rpc,
@@ -990,7 +413,7 @@ async function renderFragment(
   return connectFrame(slot);
 }
 
-test("inline-vis renders an HTML fragment inside the visualization runtime", async () => {
+test("renders a published fragment inside the visualization runtime", async () => {
   const { slot, iframe, html } = await renderFragment('<div id="viz" class="card">Hi</div>');
 
   // bb mobile cancels about:srcdoc frames, so the document loads through a same-origin page.
@@ -999,9 +422,6 @@ test("inline-vis renders an HTML fragment inside the visualization runtime", asy
   expect(iframe.getAttribute("sandbox")).toBe(PREVIEW_FRAME_SANDBOX);
   expect(iframe.getAttribute("allow")).toBe("fullscreen");
   const parsed = new DOMParser().parseFromString(html, "text/html");
-  expect(parsed.querySelector("base")?.getAttribute("href")).toBe(
-    "http://localhost:3000/api/v1/file-previews/lease/chart.html",
-  );
   expect(parsed.querySelector("style")?.textContent).toContain("--viz-series-1");
   expect(parsed.querySelector("#viz")?.textContent).toBe("Hi");
   // The runtime script runs before the fragment's own markup and scripts.
@@ -1009,7 +429,7 @@ test("inline-vis renders an HTML fragment inside the visualization runtime", asy
   slot.unmount();
 });
 
-test("inline-vis answers each frame once and replaces a frame that asks again", async () => {
+test("answers each frame once and replaces a frame that asks again", async () => {
   const { slot, iframe, html } = await renderFragment("<p>Secret state</p>");
   expect(html).toContain("Secret state");
   // A reload, or a page a preview link navigated to, asks from the same window.
@@ -1029,32 +449,32 @@ test("inline-vis answers each frame once and replaces a frame that asks again", 
   slot.unmount();
 });
 
-test("inline-vis sizes a fragment to its content within the height limits", async () => {
+test("sizes a fragment to its content within the page height limits", async () => {
   const { slot, iframe, send } = await renderFragment("<p>Tall</p>");
-  expect(iframe.style.height).toBe("224px");
+  expect(iframe.style.height).toBe("240px");
 
-  send({ type: "bb:inline-vis:resize", height: 318.4 });
+  send({ type: "bb:html:resize", height: 318.4 });
   expect(iframe.style.height).toBe("319px");
-  send({ type: "bb:inline-vis:resize", height: 9_000 });
-  expect(iframe.style.height).toBe("1200px");
-  send({ type: "bb:inline-vis:resize", height: 3 });
-  expect(iframe.style.height).toBe("40px");
+  send({ type: "bb:html:resize", height: 90_000 });
+  expect(iframe.style.height).toBe("20000px");
+  send({ type: "bb:html:resize", height: 3 });
+  expect(iframe.style.height).toBe("80px");
   // A message with the wrong token is ignored.
   act(() => {
     window.dispatchEvent(
       new MessageEvent("message", {
-        data: { type: "bb:inline-vis:resize", token: "other", height: 500 },
+        data: { type: "bb:html:resize", token: "other", height: 500 },
         source: iframe.contentWindow,
       }),
     );
   });
-  expect(iframe.style.height).toBe("40px");
+  expect(iframe.style.height).toBe("80px");
   slot.unmount();
 });
 
-test("inline-vis reopens a fragment at its last height", async () => {
+test("reopens a fragment at its last height", async () => {
   const first = await renderFragment("<p>Recording</p>");
-  first.send({ type: "bb:inline-vis:resize", height: 452 });
+  first.send({ type: "bb:html:resize", height: 452 });
   // Unmounting saves the height without waiting for the save delay.
   first.slot.unmount();
 
@@ -1064,11 +484,11 @@ test("inline-vis reopens a fragment at its last height", async () => {
 
   // Each message keeps its own height.
   const other = await renderFragment("<p>Recording</p>", { messageId: "message-other" });
-  expect(other.iframe.style.height).toBe("224px");
+  expect(other.iframe.style.height).toBe("240px");
   other.slot.unmount();
 });
 
-test("inline-vis sends theme changes when bb rewrites its theme stylesheet", async () => {
+test("sends theme changes when bb rewrites its theme stylesheet", async () => {
   const themeStyle = document.createElement("style");
   themeStyle.textContent = ":root { --background: #111111; }";
   document.head.append(themeStyle);
@@ -1079,7 +499,7 @@ test("inline-vis sends theme changes when bb rewrites its theme stylesheet", asy
   await waitFor(() =>
     expect(post).toHaveBeenCalledWith(
       {
-        type: "bb:inline-vis:theme",
+        type: "bb:html:theme",
         token,
         theme: expect.objectContaining({
           variables: expect.objectContaining({ "--background": "#fafafa" }),
@@ -1092,16 +512,9 @@ test("inline-vis sends theme changes when bb rewrites its theme stylesheet", asy
   slot.unmount();
 });
 
-test("inline-vis keeps an explicit fragment height", async () => {
-  const { slot, iframe, send } = await renderFragment("<p>Fixed</p>", { height: "480" });
-  send({ type: "bb:inline-vis:resize", height: 200 });
-  expect(iframe.style.height).toBe("480px");
-  slot.unmount();
-});
-
-test("inline-vis restores saved fragment state when the preview reopens", async () => {
+test("restores saved fragment state when the preview reopens", async () => {
   const first = await renderFragment("<p>State</p>");
-  first.send({ type: "bb:inline-vis:state", state: '{"tab":"latency"}' });
+  first.send({ type: "bb:html:state", state: '{"tab":"latency"}' });
   await waitFor(() => expect([...snapshots.values()][0]?.state).toBe('{"tab":"latency"}'));
   first.slot.unmount();
 
@@ -1122,10 +535,10 @@ function setUserActivation(isActive: boolean) {
   });
 }
 
-test("inline-vis ignores a follow-up prompt without a user click", async () => {
+test("ignores a follow-up prompt without a user click", async () => {
   setUserActivation(false);
   const { slot, send } = await renderFragment("<p>Ask</p>", { composerText: "Draft" });
-  send({ type: "bb:inline-vis:follow-up", prompt: "Explain the p99 spike" });
+  send({ type: "bb:html:follow-up", prompt: "Explain the p99 spike" });
 
   expect(slot.inspection.composer.text).toBe("Draft");
   expect(slot.inspection.composer.focusCount).toBe(0);
@@ -1133,10 +546,10 @@ test("inline-vis ignores a follow-up prompt without a user click", async () => {
   slot.unmount();
 });
 
-test("inline-vis puts a fragment follow-up prompt in the composer", async () => {
+test("puts a fragment follow-up prompt in the composer", async () => {
   setUserActivation(true);
   const { slot, send } = await renderFragment("<p>Ask</p>", { composerText: "Draft" });
-  send({ type: "bb:inline-vis:follow-up", prompt: "  Explain the p99 spike  " });
+  send({ type: "bb:html:follow-up", prompt: "  Explain the p99 spike  " });
 
   await waitFor(() =>
     expect(slot.inspection.composer.text).toContain("Draft\n\nExplain the p99 spike"),
@@ -1150,7 +563,7 @@ test("a preview without design actions sits directly under the header, which hol
   const { slot, iframe } = await renderFragment("<p>Recording</p>");
   const header = slot.container.querySelector("figcaption")!;
   expect(header.contains(slot.getByRole("button", { name: "Wide view" }))).toBe(true);
-  expect(slot.container.querySelector(".inline-vis-toolbar")).toBeNull();
+  expect(slot.container.querySelector(".html-page-toolbar")).toBeNull();
   expect(slot.queryByRole("button", { name: "Tweak" })).toBeNull();
   expect(iframe.closest("figure")).toBe(header.parentElement);
   slot.unmount();
@@ -1158,18 +571,16 @@ test("a preview without design actions sits directly under the header, which hol
 
 test("wide view preserves the live iframe and returns to chat on Escape", async () => {
   const { slot, iframe, send } = await renderFragment("<p>Wide</p>");
-  send({ type: "bb:inline-vis:resize", height: 356 });
+  send({ type: "bb:html:resize", height: 356 });
   fireEvent.click(slot.getByRole("button", { name: "Wide view" }));
-  const dialog = slot.getByRole("dialog", { name: "Wide visualization: /tmp/viz/chart.html" });
+  const dialog = slot.getByRole("dialog", { name: "Wide visualization: Chart" });
   expect(dialog.getAttribute("aria-modal")).toBe("true");
   expect(dialog.querySelector("iframe")).toBe(iframe);
   expect(iframe.style.height).toBe("356px");
   fireEvent(dialog, new Event("cancel", { cancelable: true }));
-  expect(
-    slot
-      .getByRole("region", { name: "Visualization: /tmp/viz/chart.html" })
-      .querySelector("iframe"),
-  ).toBe(iframe);
+  expect(slot.getByRole("region", { name: "Visualization: Chart" }).querySelector("iframe")).toBe(
+    iframe,
+  );
   expect(document.activeElement).toBe(slot.getByRole("button", { name: "Wide view" }));
   slot.unmount();
 });
@@ -1179,7 +590,7 @@ test("saved state reaches a fresh native mention without exposing it in the draf
     composerText: "Explain my selection",
   });
   send({
-    type: "bb:inline-vis:state",
+    type: "bb:html:state",
     state: '{"tab":"latency","internal":8}',
     modelContent: '{"selectedTab":"latency"}',
   });
@@ -1188,13 +599,13 @@ test("saved state reaches a fresh native mention without exposing it in the draf
     expect(statePills(slot)).toEqual([
       {
         provider: "widget-state",
-        id: '["thread-inline-vis","message-inline-vis","/tmp/viz/chart.html"]',
-        label: "State: chart.html",
+        id: '["thread-html","message-html","page_chart_0000000001"]',
+        label: "State: Chart",
       },
     ]),
   );
   // The pill follows the draft after a space, and a trailing space keeps typing apart from it.
-  expect(slot.inspection.composer.text).toBe("Explain my selection @State: chart.html ");
+  expect(slot.inspection.composer.text).toBe("Explain my selection @State: Chart ");
   expect(slot.inspection.composer.text).not.toContain("internal");
   expect([...snapshots.values()][0]?.modelContent).toBe('{"selectedTab":"latency"}');
   slot.unmount();
@@ -1209,7 +620,7 @@ test("a failed save stays visible and does not attach stale model context", asyn
       },
     },
   });
-  send({ type: "bb:inline-vis:state", state: '{"selected":2}' });
+  send({ type: "bb:html:state", state: '{"selected":2}' });
   await shareSavedState(slot);
   await waitFor(() => expect(slot.getByRole("alert").textContent).toContain("Storage unavailable"));
   expect(slot.inspection.composer.text).toBe("My draft");
@@ -1242,7 +653,7 @@ test("Tweak controls route edits to their frame and keep hidden designs out of t
     },
     { id: "tweak-hidden", title: "Hidden design", variant: "Studio", visible: false, controls: [] },
   ];
-  send({ type: "bb:inline-vis:tweak", groups, original: false, changed: false });
+  send({ type: "bb:html:tweak", groups, original: false, changed: false });
   fireEvent.click(slot.getByRole("button", { name: "Tweak" }));
   const slider = slot.getByRole("slider", { name: "Corner radius" });
   expect(slider.getAttribute("aria-valuetext")).toBe("18px");
@@ -1253,7 +664,7 @@ test("Tweak controls route edits to their frame and keep hidden designs out of t
   fireEvent.change(slider, { target: { value: "8" } });
   expect(post).toHaveBeenLastCalledWith(
     {
-      type: "bb:inline-vis:tweak-change",
+      type: "bb:html:tweak-change",
       token,
       groupId: "tweak-player",
       controlId: "slider:radius",
@@ -1263,7 +674,7 @@ test("Tweak controls route edits to their frame and keep hidden designs out of t
   );
   expect(slot.queryByText("Hidden design · Studio")).toBeNull();
   send({
-    type: "bb:inline-vis:tweak",
+    type: "bb:html:tweak",
     groups: [{ ...groups[0], controls: [{ ...groups[0]!.controls[0], value: 8 }] }, groups[1]],
     original: false,
     changed: true,
@@ -1310,10 +721,10 @@ test("reopening waits for the prior preview's pending save before restoring", as
   const { slot, send } = await renderFragment("<p>Queued</p>", {
     rpc: { readState: read, saveState: save },
   });
-  send({ type: "bb:inline-vis:state", state: '{"radius":7}' });
+  send({ type: "bb:html:state", state: '{"radius":7}' });
   await waitFor(() => expect(save).toHaveBeenCalledTimes(1));
-  fireEvent.click(slot.getByRole("button", { name: "Collapse visualization /tmp/viz/chart.html" }));
-  fireEvent.click(slot.getByRole("button", { name: "Expand visualization /tmp/viz/chart.html" }));
+  fireEvent.click(slot.getByRole("button", { name: "Collapse visualization Chart" }));
+  fireEvent.click(slot.getByRole("button", { name: "Expand visualization Chart" }));
   await act(async () => {});
   expect(slot.container.querySelector("iframe")).toBeNull();
   expect(read).toHaveBeenCalledTimes(1);
@@ -1336,11 +747,11 @@ test("an edit removes previously shared context until current state is added aga
       },
     },
   });
-  send({ type: "bb:inline-vis:state", state: '{"radius":18}' });
+  send({ type: "bb:html:state", state: '{"radius":18}' });
   await shareSavedState(slot);
   await waitFor(() => expect(statePills(slot)).toHaveLength(1));
   fail = true;
-  send({ type: "bb:inline-vis:state", state: '{"radius":7}' });
+  send({ type: "bb:html:state", state: '{"radius":7}' });
   expect(statePills(slot)).toEqual([]);
   await waitFor(() => expect(slot.getByRole("alert").textContent).toContain("Storage unavailable"));
   fail = false;
@@ -1352,9 +763,9 @@ test("an edit removes previously shared context until current state is added aga
 
 test("an edit removes only its own pill and keeps later pills on their text", async () => {
   const identity = {
-    threadId: inlineVisMessage.threadId,
-    messageId: inlineVisMessage.id,
-    file: "/tmp/viz/chart.html",
+    threadId: pageMessage.threadId,
+    messageId: pageMessage.id,
+    pageId: CHART_ID,
   };
   const { mentionId } = stateRpc.saveState({
     ...identity,
@@ -1373,13 +784,13 @@ test("an edit removes only its own pill and keeps later pills on their text", as
     id,
   });
   const { slot, send } = await renderFragment("<p>Shared</p>", {
-    composerText: "Compare @State: chart.html with @Notes ",
+    composerText: "Compare @State: Chart with @Notes ",
     composerMentions: [
-      pill(8, "State: chart.html", "widget-state", mentionId),
-      pill(32, "Notes", "notes", "notes-1"),
+      pill(8, "State: Chart", "widget-state", mentionId),
+      pill(27, "Notes", "notes", "notes-1"),
     ],
   });
-  send({ type: "bb:inline-vis:state", state: '{"radius":7}' });
+  send({ type: "bb:html:state", state: '{"radius":7}' });
   expect(slot.inspection.composer.draft.text).toBe("Compare  with @Notes ");
   expect(slot.inspection.composer.draft.mentions).toEqual([pill(14, "Notes", "notes", "notes-1")]);
   slot.unmount();
@@ -1387,7 +798,7 @@ test("an edit removes only its own pill and keeps later pills on their text", as
 
 test("saved null with model-only content remains shareable after reopening", async () => {
   const first = await renderFragment("<p>Model content</p>");
-  first.send({ type: "bb:inline-vis:state", state: "null", modelContent: '{"selected":"studio"}' });
+  first.send({ type: "bb:html:state", state: "null", modelContent: '{"selected":"studio"}' });
   await waitFor(() =>
     expect([...snapshots.values()][0]?.modelContent).toBe('{"selected":"studio"}'),
   );
@@ -1401,7 +812,7 @@ test("unchanged frame publications preserve an attached context chip", async () 
   const save = vi.fn(stateRpc.saveState);
   const { slot, send } = await renderFragment("<p>Unchanged</p>", { rpc: { saveState: save } });
   const state = {
-    type: "bb:inline-vis:state",
+    type: "bb:html:state",
     state: '{"radius":18}',
     modelContent: '{"radius":18}',
   };
@@ -1426,12 +837,12 @@ test("unchanged frame publications preserve an attached context chip", async () 
     },
   ];
   send(state);
-  send({ type: "bb:inline-vis:tweak", groups, original: false, changed: false });
+  send({ type: "bb:html:tweak", groups, original: false, changed: false });
   await shareSavedState(slot);
   await waitFor(() => expect(statePills(slot)).toHaveLength(1));
   const count = save.mock.calls.length;
   send(state);
-  send({ type: "bb:inline-vis:tweak", groups, original: true, changed: false });
+  send({ type: "bb:html:tweak", groups, original: true, changed: false });
   await act(async () => {});
   expect(save).toHaveBeenCalledTimes(count);
   expect(statePills(slot)).toHaveLength(1);
@@ -1441,7 +852,7 @@ test("unchanged frame publications preserve an attached context chip", async () 
 test("opening a fragment with no design controls does not create saved state", async () => {
   const save = vi.fn(stateRpc.saveState);
   const { slot, send } = await renderFragment("<p>Read only</p>", { rpc: { saveState: save } });
-  send({ type: "bb:inline-vis:tweak", groups: [], original: false, changed: false });
+  send({ type: "bb:html:tweak", groups: [], original: false, changed: false });
   await act(async () => {});
   expect(save).not.toHaveBeenCalled();
   expect(slot.queryByRole("button", { name: "Use saved state" })).toBeNull();
@@ -1472,7 +883,7 @@ const radiusGroup = (id: string, value: number) => ({
 test("late and partial control registration preserves saved edits and attached context", async () => {
   const first = await renderFragment("<p>Late controls</p>");
   first.send({
-    type: "bb:inline-vis:tweak",
+    type: "bb:html:tweak",
     groups: [radiusGroup("player", 7)],
     original: false,
     changed: true,
@@ -1480,12 +891,8 @@ test("late and partial control registration preserves saved edits and attached c
   await first.slot.findByRole("button", { name: "Use saved state" });
   await shareSavedState(first.slot);
   await waitFor(() => expect(statePills(first.slot)).toHaveLength(1));
-  fireEvent.click(
-    first.slot.getByRole("button", { name: "Collapse visualization /tmp/viz/chart.html" }),
-  );
-  fireEvent.click(
-    first.slot.getByRole("button", { name: "Expand visualization /tmp/viz/chart.html" }),
-  );
+  fireEvent.click(first.slot.getByRole("button", { name: "Collapse visualization Chart" }));
+  fireEvent.click(first.slot.getByRole("button", { name: "Expand visualization Chart" }));
   await waitFor(() => expect(first.slot.container.querySelector("iframe")).toBeTruthy());
   const iframe = first.slot.container.querySelector("iframe")!;
   const token = /"token":"([^"]+)"/u.exec(frameDocument(iframe)!)![1]!;
@@ -1494,7 +901,7 @@ test("late and partial control registration preserves saved edits and attached c
       window.dispatchEvent(
         new MessageEvent("message", {
           source: iframe.contentWindow,
-          data: { type: "bb:inline-vis:tweak", token, groups, original: false, changed: false },
+          data: { type: "bb:html:tweak", token, groups, original: false, changed: false },
         }),
       ),
     );
@@ -1531,9 +938,9 @@ test("state read failures leave a usable preview without writing defaults and re
         if (!available) throw new Error("State server restarting");
         return {
           snapshot: {
-            ...inlineVisMessage,
-            file: "/tmp/viz/chart.html",
-            messageId: inlineVisMessage.id,
+            ...pageMessage,
+            pageId: CHART_ID,
+            messageId: pageMessage.id,
             state: '{"radius":7}',
             modelContent: null,
             tweaks: null,
@@ -1548,9 +955,9 @@ test("state read failures leave a usable preview without writing defaults and re
   });
   expect(html).toContain("Usable preview");
   expect(slot.getByRole("alert").textContent).toContain("Preview changes will not be saved");
-  send({ type: "bb:inline-vis:state", state: '{"radius":18}' });
+  send({ type: "bb:html:state", state: '{"radius":18}' });
   send({
-    type: "bb:inline-vis:tweak",
+    type: "bb:html:tweak",
     groups: [radiusGroup("player", 18)],
     original: false,
     changed: false,
@@ -1577,43 +984,32 @@ test("Escape from the authenticated iframe leaves Wide view and restores trigger
     window.dispatchEvent(
       new MessageEvent("message", {
         source: iframe.contentWindow,
-        data: { type: "bb:inline-vis:escape", token: "wrong" },
+        data: { type: "bb:html:escape", token: "wrong" },
       }),
     ),
   );
   expect(slot.queryByRole("dialog")).toBeTruthy();
-  send({ type: "bb:inline-vis:escape" });
+  send({ type: "bb:html:escape" });
   expect(slot.queryByRole("dialog")).toBeNull();
   expect(document.activeElement).toBe(trigger);
   expect(slot.container.querySelector("iframe")).toBe(iframe);
   slot.unmount();
 });
 
-test("prepared full HTML forwards Escape without gaining the fragment state API", async () => {
-  const fetchImage = vi
-    .spyOn(globalThis, "fetch")
-    .mockResolvedValue(new Response("image", { headers: { "content-type": "image/png" } }));
+test("a published document forwards Escape without gaining the fragment state API", async () => {
+  servePages(() => "<!doctype html><button>Focus</button>");
   const save = vi.fn(stateRpc.saveState);
-  const slot = renderSlot(
-    await inlineVisDirective(),
-    {
-      attributes: { file: "/tmp/full.html" },
-      source: "fixture",
-      message: inlineVisMessage,
-      openWorkspaceFile: null,
-    },
-    {
-      sdk: previewSdk(() => "<!doctype html><button>Focus</button><img src=photo.png>"),
-      rpc: { saveState: save },
-    },
-  );
+  const slot = renderSlot(pageDirective(), pageProps("page_full_0000000001", "Full"), {
+    pluginId: "html",
+    rpc: { saveState: save },
+  });
   const html = await waitFor(() => {
     const delivered = frameDocument(slot.container.querySelector("iframe"));
-    expect(delivered).toContain("bb:inline-vis:escape");
+    expect(delivered).toContain("bb:html:escape");
     return delivered!;
   });
   const iframe = slot.container.querySelector("iframe")!;
-  const token = /const token = "([^"]+)"/u.exec(html)![1]!;
+  const token = /token:"([^"]+)"/u.exec(html)![1]!;
   await act(async () => {});
   fireEvent.click(slot.getByRole("button", { name: "Wide view" }));
   const send = (data: Record<string, unknown>) =>
@@ -1622,13 +1018,12 @@ test("prepared full HTML forwards Escape without gaining the fragment state API"
         new MessageEvent("message", { source: iframe.contentWindow, data: { token, ...data } }),
       ),
     );
-  send({ type: "bb:inline-vis:state", state: '{"radius":18}' });
+  send({ type: "bb:html:state", state: '{"radius":18}' });
   expect(save).not.toHaveBeenCalled();
-  send({ type: "bb:inline-vis:escape" });
+  send({ type: "bb:html:escape" });
   expect(slot.queryByRole("dialog")).toBeNull();
   expect(slot.container.querySelector("iframe")).toBe(iframe);
   slot.unmount();
-  fetchImage.mockRestore();
 });
 
 test("a successful tweak save does not hide an unsaved widget-state failure", async () => {
@@ -1642,10 +1037,10 @@ test("a successful tweak save does not hide an unsaved widget-state failure", as
       },
     },
   });
-  send({ type: "bb:inline-vis:state", state: '{"selected":"studio"}' });
+  send({ type: "bb:html:state", state: '{"selected":"studio"}' });
   await slot.findByRole("alert");
   send({
-    type: "bb:inline-vis:tweak",
+    type: "bb:html:tweak",
     groups: [radiusGroup("player", 7)],
     original: false,
     changed: true,
@@ -1673,16 +1068,16 @@ test("unsaved widget state keeps its retry action after the last Tweak adjustmen
     },
   });
   send({
-    type: "bb:inline-vis:tweak",
+    type: "bb:html:tweak",
     groups: [radiusGroup("player", 7)],
     original: false,
     changed: true,
   });
   await slot.findByRole("button", { name: "Use saved state" });
-  send({ type: "bb:inline-vis:state", state: '{"selected":"studio"}' });
+  send({ type: "bb:html:state", state: '{"selected":"studio"}' });
   await slot.findByRole("alert");
   send({
-    type: "bb:inline-vis:tweak",
+    type: "bb:html:tweak",
     groups: [radiusGroup("player", 18)],
     original: false,
     changed: true,
@@ -1702,14 +1097,14 @@ test("unsaved widget state keeps its retry action after the last Tweak adjustmen
 test("Reset all clears saved controls that have not registered yet", async () => {
   const { slot, send } = await renderFragment("<p>Lazy controls</p>");
   send({
-    type: "bb:inline-vis:tweak",
+    type: "bb:html:tweak",
     groups: [radiusGroup("player", 7), radiusGroup("lazy-player", 9)],
     original: false,
     changed: true,
   });
   await waitFor(() => expect(JSON.parse([...snapshots.values()][0]!.tweaks!)).toHaveLength(2));
   send({
-    type: "bb:inline-vis:tweak",
+    type: "bb:html:tweak",
     groups: [radiusGroup("player", 18)],
     original: false,
     changed: true,
@@ -1721,7 +1116,7 @@ test("Reset all clears saved controls that have not registered yet", async () =>
     ]),
   );
   send({
-    type: "bb:inline-vis:tweak",
+    type: "bb:html:tweak",
     groups: [radiusGroup("player", 18)],
     original: false,
     changed: true,
@@ -1741,9 +1136,9 @@ test("follow-up prompts survive failed saves without attaching stale context", a
       },
     },
   });
-  send({ type: "bb:inline-vis:state", state: '{"selection":7}' });
+  send({ type: "bb:html:state", state: '{"selection":7}' });
   fireEvent.click(slot.getByRole("button", { name: "Wide view" }));
-  send({ type: "bb:inline-vis:follow-up", prompt: "Explain my selection" });
+  send({ type: "bb:html:follow-up", prompt: "Explain my selection" });
   await waitFor(() => expect(slot.inspection.composer.text).toBe("Draft\n\nExplain my selection"));
   expect(slot.queryByRole("dialog")).toBeNull();
   await waitFor(() => expect(slot.getByRole("alert").textContent).toContain("Storage unavailable"));
@@ -1764,7 +1159,7 @@ test("follow-up prompts survive a read-only preview", async () => {
       saveState: save,
     },
   });
-  send({ type: "bb:inline-vis:follow-up", prompt: "Explain this chart" });
+  send({ type: "bb:html:follow-up", prompt: "Explain this chart" });
   await waitFor(() => expect(slot.inspection.composer.text).toBe("Draft\n\nExplain this chart"));
   expect(statePills(slot)).toEqual([]);
   expect(save).not.toHaveBeenCalled();
@@ -1788,11 +1183,11 @@ test("oversized tweaks leave state saves and follow-up prompts usable", async ()
       reference: "C".repeat(160),
     })),
   }));
-  send({ type: "bb:inline-vis:tweak", groups, original: false, changed: true });
+  send({ type: "bb:html:tweak", groups, original: false, changed: true });
   await waitFor(() =>
     expect(slot.getByRole("alert").textContent).toContain("Tweak changes exceed 16 KiB"),
   );
-  send({ type: "bb:inline-vis:state", state: '{"selection":7}', modelContent: '{"selected":7}' });
+  send({ type: "bb:html:state", state: '{"selection":7}', modelContent: '{"selected":7}' });
   await waitFor(() => expect([...snapshots.values()][0]?.state).toBe('{"selection":7}'));
   expect(save).toHaveBeenCalledWith(
     expect.objectContaining({
@@ -1803,14 +1198,14 @@ test("oversized tweaks leave state saves and follow-up prompts usable", async ()
   );
   expect(save.mock.calls[0]![0]).not.toHaveProperty("tweaks");
   expect(slot.getByRole("alert").textContent).toContain("Tweak changes exceed 16 KiB");
-  send({ type: "bb:inline-vis:follow-up", prompt: "Explain these controls" });
+  send({ type: "bb:html:follow-up", prompt: "Explain these controls" });
   await waitFor(() =>
     expect(slot.inspection.composer.text).toBe("Draft\n\nExplain these controls"),
   );
   await act(async () => {});
   expect(statePills(slot)).toEqual([]);
   // Resetting adjustments removes the budget error and makes current context shareable.
-  send({ type: "bb:inline-vis:tweak", groups: [], original: false, changed: true, reset: null });
+  send({ type: "bb:html:tweak", groups: [], original: false, changed: true, reset: null });
   await waitFor(() => expect(slot.queryByRole("alert")).toBeNull());
   await shareSavedState(slot);
   await waitFor(() => expect(statePills(slot)).toHaveLength(1));
@@ -1826,7 +1221,7 @@ test("untouched controls do not create saved context for a follow-up", async () 
     rpc: { saveState: save },
   });
   send({
-    type: "bb:inline-vis:tweak",
+    type: "bb:html:tweak",
     groups: [radiusGroup("player", 18)],
     original: false,
     changed: false,
@@ -1835,7 +1230,7 @@ test("untouched controls do not create saved context for a follow-up", async () 
   expect(save).not.toHaveBeenCalled();
   expect(snapshots.size).toBe(0);
   expect(slot.queryByRole("button", { name: "Use saved state" })).toBeNull();
-  send({ type: "bb:inline-vis:follow-up", prompt: "Explain these controls" });
+  send({ type: "bb:html:follow-up", prompt: "Explain these controls" });
   await waitFor(() =>
     expect(slot.inspection.composer.text).toBe("Draft\n\nExplain these controls"),
   );
@@ -1849,15 +1244,15 @@ test.each([false])(
   async (marker) => {
     setUserActivation(true);
     const identity = {
-      threadId: inlineVisMessage.threadId,
-      messageId: inlineVisMessage.id,
-      file: "/tmp/viz/chart.html",
+      threadId: pageMessage.threadId,
+      messageId: pageMessage.id,
+      pageId: CHART_ID,
     };
     const snapshot = stateRpc.saveState({ ...identity, fields: ["tweaks"], tweaks: "[]" });
     snapshots.set(identityKey(identity), { ...snapshot, hasWidgetState: marker });
     const { slot, send } = await renderFragment("<p>Untouched controls</p>");
     expect(slot.queryByRole("button", { name: "Use saved state" })).toBeNull();
-    send({ type: "bb:inline-vis:follow-up", prompt: "Explain these controls" });
+    send({ type: "bb:html:follow-up", prompt: "Explain these controls" });
     await waitFor(() => expect(slot.inspection.composer.text).toBe("Explain these controls"));
     expect(statePills(slot)).toEqual([]);
     slot.unmount();
@@ -1866,9 +1261,9 @@ test.each([false])(
 
 test("a successful field save clears an earlier context-only error", async () => {
   stateRpc.saveState({
-    threadId: inlineVisMessage.threadId,
-    messageId: inlineVisMessage.id,
-    file: "/tmp/viz/chart.html",
+    threadId: pageMessage.threadId,
+    messageId: pageMessage.id,
+    pageId: CHART_ID,
     state: '{"selected":1}',
     modelContent: null,
     tweaks: null,
@@ -1888,138 +1283,11 @@ test("a successful field save clears an earlier context-only error", async () =>
     expect(slot.getByRole("alert").textContent).toContain("Transient context failure"),
   );
   failContext = false;
-  send({ type: "bb:inline-vis:state", state: '{"selected":2}' });
+  send({ type: "bb:html:state", state: '{"selected":2}' });
   await shareSavedState(slot);
   await waitFor(() => expect(statePills(slot)).toHaveLength(1));
   expect([...snapshots.values()][0]?.state).toBe('{"selected":2}');
   expect(slot.queryByRole("alert")).toBeNull();
-  slot.unmount();
-});
-
-function FenceSource() {
-  return <pre data-testid="fence-source">fence source</pre>;
-}
-
-function fenceProps(code: string, status: "closed" | "streaming" | "unclosed" = "closed") {
-  return {
-    code,
-    language: "scott-inline-vis",
-    status,
-    index: 0,
-    message: inlineVisMessage,
-    Original: FenceSource,
-  };
-}
-
-function inlineVisFence() {
-  const fence = app.codeFenceRenderers.find((item) => item.id === "inline-vis");
-  expect(fence).toBeDefined();
-  return fence!;
-}
-
-test("a fenced fragment shows progress, then renders in the runtime when the fence closes", async () => {
-  const fence = inlineVisFence();
-  const slot = renderSlot(fence, fenceProps('<div id="viz">Hi', "streaming"), {
-    pluginId: "html",
-    sdk: {},
-  });
-  expect(await slot.findByText("Writing visualization…")).toBeTruthy();
-  expect(slot.container.querySelector("iframe")).toBeNull();
-
-  slot.lifecycle.rerender(<fence.component {...fenceProps('<div id="viz">Hi</div>')} />);
-  const { iframe, html } = await connectFrame(slot);
-  expect(iframe.getAttribute("src")).toBe(FRAME_URL);
-  expect(iframe.getAttribute("sandbox")).toBe(PREVIEW_FRAME_SANDBOX);
-  const parsed = new DOMParser().parseFromString(html, "text/html");
-  expect(parsed.querySelector("#viz")?.textContent).toBe("Hi");
-  expect(parsed.querySelector("base")).toBeNull();
-  expect(parsed.querySelector("style")?.textContent).toContain("--viz-series-1");
-  expect(parsed.head.querySelector("script")?.textContent).toContain('"bb"');
-  expect(slot.getByRole("button", { name: "Collapse visualization HTML block 1" })).toBeTruthy();
-  // Nothing is read from a host or saved: the block is the whole page.
-  expect(slot.sdkCalls).toEqual([]);
-  expect(slot.inspection.rpcCalls).toEqual([]);
-  slot.unmount();
-});
-
-test("an interrupted or empty fenced block stays bb's code block", () => {
-  const fence = inlineVisFence();
-  for (const props of [fenceProps("<p>Half", "unclosed"), fenceProps("  \n")]) {
-    const slot = renderSlot(fence, props, { pluginId: "html", sdk: {} });
-    expect(slot.getByTestId("fence-source")).toBeTruthy();
-    expect(slot.container.querySelector("figure")).toBeNull();
-    slot.unmount();
-  }
-});
-
-test("a fenced fragment keeps state in memory, sends follow-ups, and reveals its source", async () => {
-  setUserActivation(true);
-  const fence = inlineVisFence();
-  const { slot, send } = await connectFrame(
-    renderSlot(fence, fenceProps("<p>Ask</p>"), {
-      pluginId: "html",
-      sdk: {},
-      composer: { text: "Draft" },
-    }),
-  );
-  send({ type: "bb:inline-vis:state", state: '{"tab":"latency"}' });
-  send({
-    type: "bb:inline-vis:tweak",
-    groups: [
-      {
-        id: "tweak-chart",
-        title: "Chart",
-        variant: null,
-        visible: true,
-        controls: [
-          { id: "toggle:grid", label: "Grid", type: "toggle", value: false, initialValue: true },
-        ],
-      },
-    ],
-    original: false,
-    changed: true,
-  });
-  send({ type: "bb:inline-vis:follow-up", prompt: "Explain this chart" });
-  await waitFor(() => expect(slot.inspection.composer.text).toBe("Draft\n\nExplain this chart"));
-  expect(statePills(slot)).toEqual([]);
-  expect(slot.inspection.rpcCalls).toEqual([]);
-  expect(slot.queryByRole("button", { name: "Use saved state" })).toBeNull();
-  expect(slot.queryByRole("button", { name: /in sidebar$/u })).toBeNull();
-
-  fireEvent.click(slot.getByRole("button", { name: "Tweak" }));
-  expect(slot.getByText("Adjust the preview. Changes here are not saved.")).toBeTruthy();
-  expect(slot.queryByRole("button", { name: "Add changes to chat" })).toBeNull();
-
-  expect(slot.queryByTestId("fence-source")).toBeNull();
-  fireEvent.click(slot.getByRole("button", { name: "Show source" }));
-  expect(slot.getByTestId("fence-source")).toBeTruthy();
-  expect(slot.getByRole("button", { name: "Hide source" }).getAttribute("aria-pressed")).toBe(
-    "true",
-  );
-  slot.unmount();
-});
-
-test("a fenced full document keeps its own markup without the fragment runtime", async () => {
-  const fence = inlineVisFence();
-  const slot = renderSlot(
-    fence,
-    fenceProps("<!doctype html><html><body><p>Doc</p></body></html>"),
-    {
-      pluginId: "html",
-      sdk: {},
-    },
-  );
-  const { iframe, html } = await waitFor(() => {
-    const element = slot.container.querySelector("iframe");
-    const delivered = frameDocument(element);
-    expect(delivered).toBeTruthy();
-    return { iframe: element!, html: delivered! };
-  });
-  expect(iframe.getAttribute("src")).toBe(FRAME_URL);
-  expect(iframe.style.height).toBe("224px");
-  expect(html).toContain("<p>Doc</p>");
-  expect(html).toContain("bb:inline-vis:escape");
-  expect(html).not.toContain("--viz-series-1");
   slot.unmount();
 });
 
@@ -2036,10 +1304,10 @@ async function renderPage(html: string, { status = 200 } = {}) {
     {
       attributes: { id: PAGE_ID, title: "Latency budget", height: "240" },
       source: `::html-render{id="${PAGE_ID}" title="Latency budget" height="240"}`,
-      message: inlineVisMessage,
+      message: pageMessage,
       openWorkspaceFile: null,
     },
-    { pluginId: "html", sdk: {} },
+    { pluginId: "html" },
   );
   return { slot, fetchPage };
 }
@@ -2057,10 +1325,10 @@ test("html-render frames a published fragment in the runtime and keeps its state
   expect(parsed.head.querySelector("script")?.textContent).toContain("ui/open-link");
   expect(slot.getByRole("button", { name: "Collapse visualization Latency budget" })).toBeTruthy();
 
-  send({ type: "bb:inline-vis:state", state: '{"budget":120}' });
-  await waitFor(() => expect([...snapshots.values()][0]?.file).toBe(`html-render:${PAGE_ID}`));
-  // A published page has no viewport units, so it fits past a fenced fragment's cap.
-  send({ type: "bb:inline-vis:resize", height: 3_000 });
+  send({ type: "bb:html:state", state: '{"budget":120}' });
+  await waitFor(() => expect([...snapshots.values()][0]?.pageId).toBe(PAGE_ID));
+  // A published page has no viewport units, so it fits its content past 1200px.
+  send({ type: "bb:html:resize", height: 3_000 });
   expect(iframe.style.height).toBe("3000px");
   slot.unmount();
   fetchPage.mockRestore();
@@ -2122,7 +1390,7 @@ test("html-render gives a published document the page theme, its size, and host 
   fireEvent.click(slot.getByRole("button", { name: "Wide view" }));
   expect(slot.container.querySelector("dialog")?.getAttribute("aria-modal")).toBe("true");
   const token = /token:"([^"]+)"/u.exec(html)![1]!;
-  await fromPage({ type: "bb:inline-vis:escape", token });
+  await fromPage({ type: "bb:html:escape", token });
   expect(slot.container.querySelector("dialog")?.getAttribute("aria-modal")).not.toBe("true");
   slot.unmount();
   fetchPage.mockRestore();

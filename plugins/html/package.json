@@ -1,7 +1,7 @@
 {
   "name": "@smsunarto/bb-plugin-html",
   "version": "0.1.0",
-  "description": "Agents show interactive visualizations, HTML pages, recordings, and Markdown inline in the thread, following bb's theme.",
+  "description": "Agents publish interactive visualizations and HTML pages inline in the thread, following bb's theme.",
   "private": true,
   "license": "MIT",
   "author": "Scott Sunarto",
@@ -21,7 +21,7 @@
   },
   "bb": {
     "name": "HTML visualizations",
-    "description": "Agents show interactive visualizations, HTML pages, recordings, and Markdown inline in the thread.",
+    "description": "Agents publish interactive visualizations and HTML pages inline in the thread.",
     "branding": {
       "icon": "./assets/icon.svg",
       "logo": {
@@ -39,7 +39,7 @@
     "bb",
     "bb-plugin",
     "html",
-    "inline-visualizations"
+    "visualizations"
   ],
   "files": [
     "dist/*.js",
@@ -56,11 +56,6 @@
   ],
   "dependencies": {
     "@bb-kit/core": "workspace:*",
-    "mdast-util-from-markdown": "2.0.3",
-    "mdast-util-gfm": "3.1.0",
-    "mdast-util-to-markdown": "2.1.2",
-    "mediabunny": "1.61.5",
-    "micromark-extension-gfm": "3.0.0",
     "zod": "^4.4.3"
   },
   "devDependencies": {

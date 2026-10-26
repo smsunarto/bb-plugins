@@ -1,7 +1,7 @@
 import { defineTool } from "@bb-kit/core/tools";
 import type { ToolContext } from "@bb-kit/core/tools";
 import { z } from "zod";
-import { stateSourceSchema, widgetIdentitySchema } from "../../shared/state-contract.ts";
+import { pageIdSchema, widgetIdentitySchema } from "../../shared/state-contract.ts";
 import type { HtmlContext } from "../lib/context.ts";
 import { recentStateContext } from "../lib/widget-state.ts";
 
@@ -10,7 +10,7 @@ export const getState = defineTool({
     label: { pending: "Reading visualization state", completed: "Read visualization state" },
   },
   parameters: z.strictObject({
-    file: stateSourceSchema.optional(),
+    pageId: pageIdSchema.optional(),
     messageId: widgetIdentitySchema.shape.messageId.optional(),
   }),
   async execute(ctx: ToolContext<HtmlContext>, input) {
