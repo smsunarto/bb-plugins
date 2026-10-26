@@ -4,6 +4,7 @@ import {
   connectInput,
   disconnectInput,
   disconnectSource,
+  graphEdges,
 } from "../shared/canvas-connections.ts";
 import { initialData } from "../shared/node-defaults.ts";
 import {
@@ -12,7 +13,8 @@ import {
   experimental_ProviderModelPicker as ProviderModelPicker,
   experimental_useCodeTheme as useCodeTheme,
 } from "@get-bb/plugin-sdk/app";
-import type { AgentSelection, GenerationJob } from "../shared/generation.ts";
+import type { AgentSelection, CanvasRunResult, GenerationJob } from "../shared/generation.ts";
+import { planRun, type RunPlan } from "../shared/canvas-plan.ts";
 import { Icon } from "./icons.tsx";
 // Canvas model and layout adapted from OhMyGame; modified for BB. Apache-2.0.
 import {
@@ -24,7 +26,7 @@ import {
   useRef,
   useState,
 } from "react";
-import type { CSSProperties, KeyboardEvent } from "react";
+import type { CSSProperties, KeyboardEvent, MouseEvent as ReactMouseEvent } from "react";
 import {
   ReactFlow,
   Background,
@@ -36,11 +38,12 @@ import {
   useEdgesState,
   useConnection,
   useReactFlow,
-  useViewport,
+  useStore,
 } from "@xyflow/react";
 import type {
-  Node,
   NodeProps,
+  NodeChange,
+  EdgeChange,
   Connection,
   Viewport,
   Edge,
@@ -53,11 +56,25 @@ import type {
   NodeKind,
   StudioDocument,
   Asset,
+  Freshness,
   GenerationRecipe,
+  PendingRun,
 } from "../shared/schema.ts";
-import { nodeBriefRecipe, nodeInputs, nodeRecipe, nodeTakesBrief } from "../shared/recipes.ts";
+import { nodeBriefRecipe, nodeRecipe, nodeTakesBrief } from "../shared/recipes.ts";
 import { outputType } from "../shared/inputs.ts";
 import type { InputRef, InputType, PortInputs } from "../shared/inputs.ts";
+import {
+  baseCards,
+  createFlowCache,
+  isBrief,
+  kindInfo,
+  kinds,
+  noJobs,
+  nodeBusy,
+  prepareFlow,
+  running,
+  type Card,
+} from "./canvas-cards.ts";
 import { CanvasInputs } from "./canvas-inputs.tsx";
 import {
   GenerationSettings,
@@ -70,55 +87,19 @@ import {
 import { ModelPreview } from "./model-review/index.tsx";
 import { ReviewSection, VerdictBadge, outputReviewState, pinnedAgent } from "./review.tsx";
 import { reviewable } from "../shared/review.ts";
-import { JudgeSection, isJudge } from "./judge.tsx";
+import { JudgeSection } from "./judge.tsx";
 import { judgeable } from "../shared/judge.ts";
 import type { NodePatch } from "./generation.tsx";
 import { BriefStarters } from "./brief-starters.tsx";
 import { GenerationSection } from "./takes.tsx";
-import { batchRequestId, nodeTakes, type Take } from "../shared/takes.ts";
+import { nodeTakes, type Take } from "../shared/takes.ts";
 import { arrangeNodes, newNodePosition, revealNode } from "./canvas-layout.ts";
 import { boardSnapshot, rebaseBoard } from "./canvas-board.ts";
 import "@xyflow/react/dist/style.css";
 import "./canvas.css";
 import { previewUrl, type Preview } from "../shared/media-paths.ts";
 
-type CardData = {
-  source: CanvasNode;
-  documents: StudioDocument[];
-  assets: Asset[];
-  preview?: Preview;
-  /** Jobs targeting this node, newest first; `job` is the newest. */
-  jobs?: GenerationJob[];
-  job?: GenerationJob;
-  busy?: boolean;
-  /** A BB model is writing this media node's brief. */
-  briefing?: boolean;
-  /** The node's inputs placed on its model's ports. */
-  inputs?: PortInputs<InputRef>[];
-  /** Reviews of this node's outputs, newest first; kept apart from its generation jobs. */
-  reviewJobs?: GenerationJob[];
-};
-type Card = Node<CardData, "studio">;
 type Tool = "select" | "hand";
-// Each kind owns its port and edge color. Monokai's ANSI hues keep the canvas themed.
-const kinds: { kind: NodeKind; label: string; icon: string; key?: string; color: string }[] = [
-  { kind: "text", label: "Text", icon: "Type", key: "t", color: "var(--ansi-6, #51dae9)" },
-  { kind: "image", label: "Image", icon: "Image", key: "i", color: "var(--ansi-3, #f1b467)" },
-  { kind: "video", label: "Video", icon: "Video", key: "v", color: "var(--ansi-5, #a895fe)" },
-  { kind: "asset", label: "Audio", icon: "Music", key: "a", color: "var(--ansi-10, #9ddd54)" },
-  { kind: "model-3d", label: "3D", icon: "Box", color: "var(--ansi-9, #fe5d86)" },
-  { kind: "agent", label: "Agent", icon: "Bot", key: "g", color: "var(--ansi-13, #c4a7ff)" },
-  { kind: "document", label: "Document", icon: "FileText", color: "var(--ansi-12, #7cacfe)" },
-  { kind: "table", label: "Table", icon: "Table", color: "var(--ansi-11, #f7d05c)" },
-];
-const kindInfo = (kind: NodeKind | undefined) =>
-  kinds.find((item) => item.kind === kind) ?? {
-    kind,
-    label: kind ?? "Node",
-    icon: "Box",
-    key: undefined,
-    color: "var(--muted-foreground)",
-  };
 // Each input type takes the color and icon of the node kind that feeds it.
 const inputTypes = {
   text: kindInfo("text"),
@@ -129,18 +110,46 @@ type CardActionsValue = {
   edit: (id: string, patch: NodePatch) => void;
   run: (id: string) => void;
   brief: (id: string) => void;
+  /** Drops the run the server holds for a node. */
+  cancel: (id: string, requestId: string) => void;
+  /** What a node's run makes first, for its hint; nothing while the node cannot be planned. */
+  plan: (id: string) => RunPlan | undefined;
 };
 const CardActions = createContext<CardActionsValue>({
   edit: () => {},
   run: () => {},
   brief: () => {},
+  cancel: () => {},
+  plan: () => undefined,
 });
+/** How a node runs from the canvas: a BB agent for text, the recipe's model otherwise. */
+export type DirectRunOptions = {
+  model?: { provider: string; id?: string };
+  brief?: true;
+  agent?: AgentSelection;
+  /** Make the node's missing inputs first, then the node. */
+  upstream?: true;
+};
+const noFreshness: Record<string, Freshness> = {};
+const noPending: Record<string, PendingRun> = {};
 /** Where BB agents run for this canvas, and the agent they use until a node picks another. */
 const AgentDefaults = createContext<{ hostId: string; agent: AgentSelection } | null>(null);
-const running = (job: GenerationJob) => job.status === "queued" || job.status === "running";
-const isBrief = (job: GenerationJob | undefined) =>
-  job?.request.kind === "text" && !!job.request.briefFor;
-const isReview = (job: GenerationJob) => job.request.kind === "text" && !!job.request.reviewOf;
+type Handlers = Record<string, (...args: never[]) => unknown>;
+/** The same functions every render, each calling this render's handler, so memoized children keep their props. */
+function useStableHandlers<T extends Handlers>(handlers: T): T {
+  const latest = useRef(handlers);
+  latest.current = handlers;
+  const [stable] = useState(
+    () =>
+      Object.fromEntries(
+        Object.keys(handlers).map((key) => [
+          key,
+          (...args: unknown[]) => (latest.current[key] as (...args: unknown[]) => unknown)(...args),
+        ]),
+      ) as unknown as T,
+  );
+  return stable;
+}
 function CanvasCard({ id, data, selected }: NodeProps<Card>) {
   const node = data.source;
   const info = kindInfo(node.type);
@@ -150,16 +159,22 @@ function CanvasCard({ id, data, selected }: NodeProps<Card>) {
   const briefing = !!data.briefing;
   const jobs = data.jobs ?? [];
   const media = node.type === "image" || node.type === "video";
+  /** A run the server holds until this node's inputs land. */
+  const held = data.pending;
   // Image runs keep the node usable, so "generating" comes from its jobs rather than `busy`.
   const pending =
-    (data.busy && !briefing) || jobs.some((job) => running(job) && job.request.kind !== "text");
+    (data.busy && !briefing && !held) ||
+    jobs.some((job) => running(job) && job.request.kind !== "text");
+  // The plan behind the run button: what runs first, or why the node cannot run.
+  const plan = selected && runsDirectly(node) ? actions.plan(id) : undefined;
+  // What this run starts besides the node; inputs behind a gate wait for a person instead.
+  const upstream = plan ? plan.queue.filter((item) => item !== id).length : 0;
   const takes = media || node.type === "model-3d" || node.type === "agent" ? nodeTakes(node) : [];
   const briefModel = nodeBriefRecipe(node);
   const hasInputs =
     !!node.data.promptSource ||
     [node.data.images, node.data.references].some((refs) => Array.isArray(refs) && refs.length);
-  const asset = data.assets.find((item) => item.id === node.data.assetId);
-  const document = data.documents.find((item) => item.id === node.data.documentId);
+  const { asset, document } = data;
   const url = asset && data.preview ? previewUrl(data.preview, asset.path) : undefined;
   const field = promptField(node.type);
   const prompt = field ? String(node.data[field] ?? "") : "";
@@ -184,7 +199,9 @@ function CanvasCard({ id, data, selected }: NodeProps<Card>) {
       className="gs-node"
       data-kind={node.type}
       data-selected={selected || undefined}
-      data-generation={pending ? (asset ? "pending-more" : "pending") : data.job?.status}
+      data-generation={
+        held ? "waiting" : pending ? (asset ? "pending-more" : "pending") : data.job?.status
+      }
       style={{ "--gs-kind": info.color, "--gs-ports": data.inputs?.length ?? 0 } as CSSProperties}
     >
       {field && node.type !== "text" && (
@@ -209,6 +226,14 @@ function CanvasCard({ id, data, selected }: NodeProps<Card>) {
         <Icon name={info.icon} />
         <strong>{node.title || info.label}</strong>
         {modelLabel && <span>{modelLabel}</span>}
+        {data.freshness === "stale" && (
+          <em
+            className="gs-node-stale"
+            title="Pick predates the current brief or inputs. Reroll, then Use."
+          >
+            Stale
+          </em>
+        )}
       </header>
       <div className="gs-node-body">
         <InputPorts inputs={data.inputs ?? []} selected={!!selected} />
@@ -237,7 +262,19 @@ function CanvasCard({ id, data, selected }: NodeProps<Card>) {
             }
           />
         )}
-        {data.job && !(isBrief(data.job) && data.job.status === "succeeded") && (
+        {held && (
+          <div
+            className="gs-generation-progress nodrag nopan"
+            data-waiting={held.error ? undefined : true}
+            data-failed={held.error ? true : undefined}
+          >
+            <span>{held.error ? `Could not start: ${held.error}` : "Waiting for inputs…"}</span>
+            <button type="button" onClick={() => actions.cancel(id, held.requestId)}>
+              Cancel
+            </button>
+          </div>
+        )}
+        {!held && data.job && !(isBrief(data.job) && data.job.status === "succeeded") && (
           <div className="gs-generation-progress nodrag nopan">
             <span>
               {briefing
@@ -320,11 +357,16 @@ function CanvasCard({ id, data, selected }: NodeProps<Card>) {
                     />
                   ) : (
                     <small>
-                      {runsDirectly(node)
-                        ? briefed
-                          ? "⌘↵ to run"
-                          : "Runs from its inputs and settings"
-                        : "Prepares a composer request"}
+                      {!runsDirectly(node)
+                        ? "Prepares a composer request"
+                        : (plan?.issues[0]?.message ??
+                          (plan?.gate
+                            ? `⌘↵ runs ${upstream} input${upstream === 1 ? "" : "s"}, then waits for approval`
+                            : upstream
+                              ? `⌘↵ runs ${upstream} input${upstream === 1 ? "" : "s"} first`
+                              : briefed
+                                ? "⌘↵ to run"
+                                : "Runs from its inputs and settings"))}
                     </small>
                   )}
                   {briefModel && (
@@ -345,7 +387,10 @@ function CanvasCard({ id, data, selected }: NodeProps<Card>) {
                     data-busy={(data.busy && !briefing) || undefined}
                     title={runsDirectly(node) ? "Run node" : "Prepare request"}
                     aria-label={runsDirectly(node) ? "Run node" : "Prepare request"}
-                    disabled={data.busy || (!prompt.trim() && node.type !== "model-3d")}
+                    disabled={
+                      data.busy ||
+                      (plan ? plan.issues.length > 0 : !prompt.trim() && node.type !== "model-3d")
+                    }
                     onClick={() => actions.run(id)}
                   >
                     <Icon name={data.busy && !briefing ? "LoaderCircle" : "ArrowUp"} />
@@ -522,7 +567,7 @@ function CanvasToolbar({
   const [menu, setMenu] = useState<"add" | "zoom" | null>(null);
   const [utilities, setUtilities] = useState(false);
   const bar = useRef<HTMLDivElement>(null);
-  const { zoom } = useViewport();
+  const zoomPercent = useStore((state) => Math.round(state.transform[2] * 100));
   const flow = useReactFlow();
   useEffect(() => {
     if (!menu) return;
@@ -683,7 +728,7 @@ function CanvasToolbar({
           aria-expanded={menu === "zoom"}
           onClick={() => toggle("zoom")}
         >
-          <span>{Math.round(zoom * 100)}%</span>
+          <span>{zoomPercent}%</span>
           <Icon name="ChevronDown" />
         </button>
       </div>
@@ -692,6 +737,9 @@ function CanvasToolbar({
 }
 const nodeTypes = { studio: CanvasCard };
 const noGenerationJobs: GenerationJob[] = [];
+const proOptions = { hideAttribution: true };
+/** With the select tool, the middle and right buttons pan. */
+const selectPanButtons = [1, 2];
 export function StudioCanvas({
   gameId,
   hostId,
@@ -703,9 +751,12 @@ export function StudioCanvas({
   assets,
   generationJobs = noGenerationJobs,
   preview,
+  freshness = noFreshness,
+  pending = noPending,
   onSave,
   onGenerate,
   onGenerateDirect,
+  onCancelPending,
   onGenerationControl,
   onReview,
   onJudge,
@@ -724,16 +775,19 @@ export function StudioCanvas({
   assets: Asset[];
   generationJobs?: GenerationJob[];
   preview?: Preview;
+  /** Per node, whether its pick reflects its inputs, and the run the server holds for it. */
+  freshness?: Record<string, Freshness>;
+  pending?: Record<string, PendingRun>;
   onSave: (board: Board, expectedRevision: string) => Promise<{ revision: string }>;
   onGenerate: (nodeId: string, recipe: GenerationRecipe) => void;
   onGenerateDirect: (
     nodeId: string,
     revision: string,
     requestId: string,
-    model: { provider: string; id?: string },
-    brief?: true,
-    agent?: AgentSelection,
-  ) => Promise<void>;
+    options: DirectRunOptions,
+  ) => Promise<CanvasRunResult | void>;
+  /** Drops the run the server holds for a node. */
+  onCancelPending?: (nodeId: string, requestId: string) => Promise<void>;
   /** Reviews one output of an image or 3D node now. */
   onReview: (nodeId: string, revision: string, requestId: string, assetId: string) => Promise<void>;
   /** Has an image node's judge choose between its shortlist, or its takes, now. */
@@ -748,18 +802,10 @@ export function StudioCanvas({
 }) {
   const { mode: colorMode } = useCodeTheme();
   const agentDefaults = useMemo(() => ({ hostId, agent: defaultAgent }), [hostId, defaultAgent]);
-  const cards = useCallback(
-    (source: Board): Card[] =>
-      source.nodes.map((node) => ({
-        id: node.id,
-        type: "studio",
-        position: source.editorLayout.nodes[node.id] ?? node.position,
-        data: { source: node, documents, assets, preview },
-      })),
-    [documents, assets, preview],
+  const [nodes, setNodes, onNodesChange] = useNodesState<Card>(baseCards(board));
+  const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>(
+    graphEdges(board.nodes, board.edges),
   );
-  const [nodes, setNodes, onNodesChange] = useNodesState<Card>(cards(board));
-  const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>(board.edges);
   const [selectedId, setSelected] = useState<string | null>(null);
   const [tool, setTool] = useState<Tool>("select");
   // Cards read the latest handlers through a stable context value.
@@ -767,11 +813,15 @@ export function StudioCanvas({
     edit: () => {},
     run: () => {},
     brief: () => {},
+    cancel: () => {},
+    plan: () => undefined,
   });
   const [cardActions] = useState<CardActionsValue>(() => ({
     edit: (id, patch) => latestActions.current.edit(id, patch),
     run: (id) => latestActions.current.run(id),
     brief: (id) => latestActions.current.brief(id),
+    cancel: (id, requestId) => latestActions.current.cancel(id, requestId),
+    plan: (id) => latestActions.current.plan(id),
   }));
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -816,25 +866,47 @@ export function StudioCanvas({
   const viewport = useRef<Viewport>(board.editorLayout.viewport);
   const selected = nodes.find((node) => node.id === selectedId);
   const selectedAsset = assets.find((asset) => asset.id === selected?.data.source.data.assetId);
-  const targetJobs = (id: string | null) =>
-    generationJobs.filter((job) => job.target?.boardId === board.id && job.target.nodeId === id);
-  // Reviews run beside a node's generations; they never make the node busy or replace its status.
-  const nodeJobs = (id: string | null) =>
-    targetJobs(id).filter((job) => !isReview(job) && !isJudge(job));
-  const reviewJobs = (id: string | null) => targetJobs(id).filter(isReview);
-  const judgeJobs = (id: string | null) => targetJobs(id).filter(isJudge);
-  const selectedJob = nodeJobs(selectedId)[0];
-  const briefing = (id: string) =>
-    startingBrief === id || nodeJobs(id).some((job) => running(job) && isBrief(job));
+  const [flowCache] = useState(createFlowCache);
+  /** What React Flow renders. Unchanged cards and edges keep their objects, so their views stay idle. */
+  const shown = useMemo(
+    () =>
+      prepareFlow(flowCache, {
+        nodes,
+        edges,
+        boardId: board.id,
+        jobs: generationJobs,
+        assets,
+        documents,
+        preview,
+        starting,
+        startingBrief,
+        freshness,
+        pending,
+      }),
+    [
+      flowCache,
+      nodes,
+      edges,
+      board.id,
+      generationJobs,
+      assets,
+      documents,
+      preview,
+      starting,
+      startingBrief,
+      freshness,
+      pending,
+    ],
+  );
+  const jobsOf = (id: string | null) => (id && shown.jobs.get(id)) || noJobs;
+  const selectedJob = jobsOf(selectedId).jobs[0];
   /** Image runs become takes, so rerolls start while earlier runs generate. */
   const selectedMedia =
     selected?.data.source.type === "image" || selected?.data.source.type === "video";
   // Takes choose a media node's output, so the asset picker only links outputs by hand.
   const takesShown = !!selected && selectedMedia && nodeTakes(selected.data.source).length > 0;
   const busy = (id: string | null) =>
-    starting === id ||
-    startingBrief === id ||
-    nodeJobs(id).some((job) => running(job) && job.request.kind !== "image");
+    !!id && nodeBusy(id, jobsOf(id), starting, startingBrief, pending[id]);
   const generating = busy(selectedId);
   const change = useCallback(() => {
     editVersion.current += 1;
@@ -964,11 +1036,11 @@ export function StudioCanvas({
   };
   const inputGraph = (): Pick<Board, "nodes" | "edges"> => ({
     nodes: nodes.map((node) => node.data.source),
-    edges: edges.map(({ id, source, target, sourceHandle }) => ({
+    edges: edges.map(({ id, source, target, targetHandle }) => ({
       id,
       source,
       target,
-      ...(sourceHandle ? { sourceHandle } : {}),
+      ...(targetHandle ? { targetHandle } : {}),
     })),
   });
   const applyInputs = (graph: Pick<Board, "nodes" | "edges">) => {
@@ -998,12 +1070,7 @@ export function StudioCanvas({
   const toggleInput = (sourceId: string, enabled: boolean) => {
     if (!selected) return;
     if (enabled) {
-      connect({
-        source: sourceId,
-        target: selected.id,
-        sourceHandle: null,
-        targetHandle: null,
-      });
+      connect({ source: sourceId, target: selected.id, sourceHandle: null, targetHandle: null });
       return;
     }
     applyInputs(disconnectSource(inputGraph(), selected.id, sourceId));
@@ -1035,28 +1102,13 @@ export function StudioCanvas({
         type: "studio",
         selected: true,
         position,
-        data: { source, documents, assets, preview },
+        data: { source },
       },
     ]);
     setEdges((current) => current.map((edge) => ({ ...edge, selected: false })));
     focusNode.current = id;
     setSelected(id);
     change();
-  };
-  const nodeKinds = new Map(nodes.map((node) => [node.id, node.data.source.type]));
-  const kindOf = (id: string) => nodeKinds.get(id);
-  const nodePorts = new Map(nodes.map((node) => [node.id, nodeInputs(node.data.source, kindOf)]));
-  /** The port an edge lands on: the one holding its saved input, else one of its type. */
-  const edgePort = (edge: Edge) => {
-    const ports = nodePorts.get(edge.target) ?? [];
-    const holding = (match: (ref: InputRef) => boolean) =>
-      ports.find(({ refs }) => refs.some(match))?.port.id;
-    return (
-      holding((ref) => ref.studioEdgeId === edge.id) ??
-      holding((ref) => ref.nodeId === edge.source) ??
-      ports.find(({ port }) => port.type === outputType(kindOf(edge.source)))?.port.id ??
-      null
-    );
   };
   const openPort = (connection: Connection | Edge) =>
     availableInputPort(
@@ -1082,7 +1134,7 @@ export function StudioCanvas({
     boardSnapshot(
       board,
       nodes.map((node) => ({ ...node.data.source, position: node.position })),
-      edges,
+      inputGraph().edges,
       viewport.current,
     );
   /** Saves the draft; concurrent callers wait for the save in flight, then save what remains. */
@@ -1132,7 +1184,7 @@ export function StudioCanvas({
     if (revision === baseline.current || saving) return;
     const next = dirty ? rebaseBoard(synced.current, snapshot(), board) : board;
     setNodes((current) =>
-      cards(next).map((node) =>
+      baseCards(next).map((node) =>
         Object.assign(node, {
           selected: current.some((old) => old.id === node.id && old.selected),
         }),
@@ -1148,7 +1200,7 @@ export function StudioCanvas({
     baseline.current = revision;
     synced.current = board;
     // oxlint-disable-next-line react-hooks/exhaustive-deps -- snapshot reads this render's draft.
-  }, [board, cards, revision, dirty, saving, setNodes, setEdges]);
+  }, [board, revision, dirty, saving, setNodes, setEdges]);
   useEffect(() => {
     if (!dirty || saving || revision !== baseline.current) return;
     const timer = setTimeout(() => void latestSave.current(), 600);
@@ -1156,43 +1208,36 @@ export function StudioCanvas({
   }, [edits, dirty, saving, revision]);
   // Leaving the board (switching boards or tabs) saves the pending draft.
   useEffect(() => () => void latestSave.current(), []);
-  const generate = async (
-    id: string,
-    model: { provider: string; id?: string },
-    brief?: true,
-    batch = 1,
-    agent?: AgentSelection,
-  ) => {
+  const [notice, setNotice] = useState("");
+  const titleOf = (nodeId: string) => {
+    const source = nodes.find((node) => node.id === nodeId)?.data.source;
+    return source ? source.title || kindInfo(source.type).label : nodeId;
+  };
+  const generate = async (id: string, options: DirectRunOptions) => {
     if (startingRef.current || busy(id)) return;
     startingRef.current = true;
-    (brief ? setStartingBrief : setStarting)(id);
+    (options.brief ? setStartingBrief : setStarting)(id);
     setError("");
+    setNotice("");
     // A brief and a media run on one node keep separate retry identities.
-    const key = brief ? `${id}#brief` : id;
+    const key = options.brief ? `${id}#brief` : id;
     try {
       const saved = dirty ? await save() : baseline.current;
       if (!saved) throw new Error("Save the current edits before generating.");
       const requestId = requestIds.get(key) ?? crypto.randomUUID();
       rememberRequest(key, requestId);
-      // A batch is separate requests; a retry reuses their identities.
-      await Promise.all(
-        Array.from({ length: batch }, (_, index) =>
-          onGenerateDirect(
-            id,
-            saved,
-            batch > 1 ? batchRequestId(requestId, index) : requestId,
-            model,
-            brief,
-            agent,
-          ),
-        ),
-      );
+      // The server makes a batch from one request id, and holds the run until its inputs land.
+      const result = await onGenerateDirect(id, saved, requestId, options);
       rememberRequest(key);
+      if (result?.gate)
+        setNotice(
+          `“${titleOf(result.gate.nodeId)}” waits for “${titleOf(result.gate.sourceId)}” to be approved. Use a take there, then run it again.`,
+        );
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
     } finally {
       startingRef.current = false;
-      (brief ? setStartingBrief : setStarting)(null);
+      (options.brief ? setStartingBrief : setStarting)(null);
     }
   };
   const [reviewing, setReviewing] = useState<string | null>(null);
@@ -1215,37 +1260,105 @@ export function StudioCanvas({
     check(id, (saved) => onReview(id, saved, crypto.randomUUID(), assetId));
   const judgeOutputs = (id: string) =>
     check(id, (saved) => onJudge(id, saved, crypto.randomUUID()));
-  const run = async (id: string) => {
+  const planFor = (id: string) => {
+    try {
+      return planRun({ nodes: nodes.map((node) => node.data.source) }, id);
+    } catch {
+      return undefined;
+    }
+  };
+  /** Hands a node to the agent as a composer request, which reads the saved board. */
+  const askAgent = async (id: string) => {
     const source = nodes.find((node) => node.id === id)?.data.source;
     const recipe = source && nodeRecipe(source);
-    if (!source || busy(id)) return;
-    if (source.type === "text" || source.type === "agent")
-      return generate(id, { provider: "bb" }, undefined, 1, nodeAgent(source) ?? defaultAgent);
-    const missing = nodePorts.get(id)?.find(({ port, refs }) => port.required && !refs.length);
-    if (missing) {
-      setError(`Connect an input to the ${missing.port.label} port first.`);
-      return;
-    }
-    if (recipe?.id.startsWith("tripo-")) return generate(id, { provider: "tripo", id: "tripo-p2" });
-    if (runsDirectly(source))
-      return generate(
-        id,
-        recipe?.id === "concept-art"
-          ? { provider: "midjourney" }
-          : { provider: "google", id: "gemini-nano-banana-2.1" },
-        undefined,
-        nodeBatch(source),
-      );
-    if (!recipe) return;
+    if (!recipe || busy(id)) return;
     if (dirty && !(await save())) return;
     onGenerate(id, recipe.id);
+  };
+  const run = async (id: string) => {
+    const source = nodes.find((node) => node.id === id)?.data.source;
+    if (!source || busy(id)) return;
+    if (!runsDirectly(source)) return askAgent(id);
+    // The server runs the same plan; naming what cannot run here saves a round trip.
+    const issues = planFor(id)?.issues ?? [];
+    if (issues.length) {
+      setError(issues.map((issue) => issue.message).join(" "));
+      return;
+    }
+    return generate(
+      id,
+      source.type === "text" || source.type === "agent"
+        ? { model: { provider: "bb" }, agent: nodeAgent(source) ?? defaultAgent, upstream: true }
+        : { upstream: true },
+    );
   };
   useEffect(() => {
     latestActions.current = {
       edit: editData,
       run: (id) => void run(id),
-      brief: (id) => void generate(id, { provider: "bb" }, true),
+      brief: (id) => void generate(id, { model: { provider: "bb" }, brief: true }),
+      cancel: (id, requestId) =>
+        void onCancelPending?.(id, requestId).catch((cause) => setError(String(cause))),
+      plan: planFor,
     };
+  });
+  const handlers = useStableHandlers({
+    init: (instance: ReactFlowInstance<Card>) => {
+      flow.current = instance;
+      scheduleFit();
+    },
+    nodesChange: (changes: NodeChange<Card>[]) => {
+      // A user starting to drag takes over the initial layout and camera.
+      if (changes.some((item) => item.type === "position" && item.dragging)) {
+        needsInitialArrange.current = false;
+        needsInitialFit.current = false;
+      }
+      onNodesChange(changes);
+      if (
+        changes.some(
+          (item) =>
+            item.type === "dimensions" &&
+            (needsInitialArrange.current ||
+              needsInitialFit.current ||
+              item.id === focusNode.current),
+        )
+      )
+        scheduleFit();
+      if (changes.some((item) => item.type !== "select" && item.type !== "dimensions")) change();
+    },
+    edgesChange: (changes: EdgeChange<Edge>[]) => {
+      const removedIds = new Set(
+        changes.filter((item) => item.type === "remove").map((item) => item.id),
+      );
+      if (removedIds.size > 0) {
+        let graph = inputGraph();
+        for (const id of removedIds)
+          if (graph.edges.some((edge) => edge.id === id)) graph = disconnectInput(graph, id);
+        applyInputs(graph);
+      }
+      onEdgesChange(changes);
+      if (changes.some((item) => item.type !== "select")) change();
+    },
+    connect,
+    isValidConnection: (connection: Connection | Edge) => !!openPort(connection),
+    nodeDoubleClick: (event: ReactMouseEvent) => {
+      const brief = (event.target as HTMLElement)
+        .closest(".react-flow__node")
+        ?.querySelector("textarea");
+      (brief ?? inspector.current?.querySelector("input"))?.focus();
+    },
+    paneClick: () => {
+      clearSelection();
+      root.current?.focus();
+    },
+    moveEnd: (event: MouseEvent | TouchEvent | null, view: Viewport) => {
+      const before = viewport.current;
+      viewport.current = view;
+      if (event && (before.x !== view.x || before.y !== view.y || before.zoom !== view.zoom))
+        change();
+    },
+    add,
+    arrange,
   });
   const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     if (!active) return;
@@ -1322,113 +1435,48 @@ export function StudioCanvas({
                 {error}
               </div>
             )}
+            {notice && !error && (
+              <output className="gs-canvas-notice gs-notice" data-tone="info">
+                {notice}
+                <button type="button" onClick={() => setNotice("")}>
+                  Dismiss
+                </button>
+              </output>
+            )}
             <ReactFlow<Card>
-              onInit={(instance) => {
-                flow.current = instance;
-                scheduleFit();
-              }}
+              onInit={handlers.init}
               colorMode={colorMode}
               nodeTypes={nodeTypes}
-              nodes={nodes.map((node) => ({
-                ...node,
-                data: {
-                  ...node.data,
-                  assets,
-                  documents,
-                  preview,
-                  jobs: nodeJobs(node.id),
-                  job: nodeJobs(node.id)[0],
-                  reviewJobs: reviewJobs(node.id),
-                  busy: busy(node.id),
-                  briefing: briefing(node.id),
-                  inputs: nodePorts.get(node.id),
-                },
-              }))}
-              edges={edges.map((edge) => ({
-                ...edge,
-                targetHandle: edgePort(edge),
-                style: {
-                  stroke: kindInfo(nodes.find((node) => node.id === edge.source)?.data.source.type)
-                    .color,
-                  strokeWidth: edge.selected ? 3 : 2,
-                },
-              }))}
+              nodes={shown.nodes}
+              edges={shown.edges}
               defaultViewport={board.editorLayout.viewport}
-              onNodesChange={(changes) => {
-                // A user starting to drag takes over the initial layout and camera.
-                if (changes.some((item) => item.type === "position" && item.dragging)) {
-                  needsInitialArrange.current = false;
-                  needsInitialFit.current = false;
-                }
-                onNodesChange(changes);
-                if (
-                  changes.some(
-                    (item) =>
-                      item.type === "dimensions" &&
-                      (needsInitialArrange.current ||
-                        needsInitialFit.current ||
-                        item.id === focusNode.current),
-                  )
-                )
-                  scheduleFit();
-                if (changes.some((item) => item.type !== "select" && item.type !== "dimensions"))
-                  change();
-              }}
-              onEdgesChange={(changes) => {
-                const removedIds = new Set(
-                  changes.filter((item) => item.type === "remove").map((item) => item.id),
-                );
-                if (removedIds.size > 0) {
-                  let graph = inputGraph();
-                  for (const id of removedIds)
-                    if (graph.edges.some((edge) => edge.id === id))
-                      graph = disconnectInput(graph, id);
-                  applyInputs(graph);
-                }
-                onEdgesChange(changes);
-                if (changes.some((item) => item.type !== "select")) change();
-              }}
-              onConnect={connect}
-              isValidConnection={(connection) => !!openPort(connection)}
+              onNodesChange={handlers.nodesChange}
+              onEdgesChange={handlers.edgesChange}
+              onConnect={handlers.connect}
+              isValidConnection={handlers.isValidConnection}
               onSelectionChange={selectionChanged}
-              onNodeDoubleClick={(event) => {
-                const brief = (event.target as HTMLElement)
-                  .closest(".react-flow__node")
-                  ?.querySelector("textarea");
-                (brief ?? inspector.current?.querySelector("input"))?.focus();
-              }}
-              onPaneClick={() => {
-                clearSelection();
-                root.current?.focus();
-              }}
-              onMoveEnd={(event, view) => {
-                const before = viewport.current;
-                viewport.current = view;
-                if (
-                  event &&
-                  (before.x !== view.x || before.y !== view.y || before.zoom !== view.zoom)
-                )
-                  change();
-              }}
+              onNodeDoubleClick={handlers.nodeDoubleClick}
+              onPaneClick={handlers.paneClick}
+              onMoveEnd={handlers.moveEnd}
               minZoom={0.15}
               maxZoom={2.5}
               deleteKeyCode={null}
               panOnScroll
-              panOnDrag={tool === "hand" ? true : [1, 2]}
+              panOnDrag={tool === "hand" ? true : selectPanButtons}
               selectionOnDrag={tool === "select"}
               nodesDraggable={tool === "select"}
               zoomOnScroll={false}
               zoomOnDoubleClick={false}
-              proOptions={{ hideAttribution: true }}
+              proOptions={proOptions}
               data-tool={tool}
             >
               <Background gap={20} size={1.5} />
               <CanvasToolbar
                 tool={tool}
                 onTool={setTool}
-                onAdd={add}
+                onAdd={handlers.add}
                 onUpload={onUpload}
-                onArrange={arrange}
+                onArrange={handlers.arrange}
                 canArrange={nodes.length > 1}
               />
             </ReactFlow>
@@ -1525,6 +1573,16 @@ export function StudioCanvas({
                     assets={assets}
                     onToggle={toggleInput}
                   />
+                  {nodeRecipe(selected.data.source)?.id === "model-3d" && (
+                    <button
+                      type="button"
+                      className="gs-takes-ask"
+                      disabled={busy(selected.id)}
+                      onClick={() => void askAgent(selected.id)}
+                    >
+                      Ask the agent instead
+                    </button>
+                  )}
                   {requestIds.has(selected.id) && !starting && (
                     <button
                       onClick={() => {
@@ -1593,20 +1651,23 @@ export function StudioCanvas({
                   node={selected.data.source}
                   assets={assets}
                   preview={preview}
-                  jobs={nodeJobs(selected.id)}
+                  jobs={jobsOf(selected.id).jobs}
                   batch={nodeBatch(selected.data.source)}
-                  canRun={
-                    !busy(selected.id) && !!String(selected.data.source.data.prompt ?? "").trim()
-                  }
+                  canRun={!busy(selected.id) && planFor(selected.id)?.issues.length === 0}
                   settings={
                     <GenerationSettings
                       node={selected.data.source}
                       onChange={(patch) => editData(selected.id, patch)}
                     />
                   }
-                  reviewJobs={reviewJobs(selected.id)}
+                  reviewJobs={jobsOf(selected.id).reviewJobs}
                   onChange={(patch) => editData(selected.id, patch)}
                   onRun={() => void run(selected.id)}
+                  onAskAgent={
+                    selected.data.source.type === "video" && nodeRecipe(selected.data.source)
+                      ? () => void askAgent(selected.id)
+                      : undefined
+                  }
                   onControl={(jobId, action) =>
                     void onGenerationControl(jobId, action).catch((cause) =>
                       setError(String(cause)),
@@ -1649,7 +1710,7 @@ export function StudioCanvas({
                   assetId={selectedAsset?.id}
                   hostId={hostId}
                   defaultAgent={defaultAgent}
-                  jobs={reviewJobs(selected.id)}
+                  jobs={jobsOf(selected.id).reviewJobs}
                   disabled={reviewing === selected.id}
                   onChange={(patch) => editData(selected.id, patch)}
                   onReview={(assetId) => void reviewOutput(selected.id, assetId)}
@@ -1661,7 +1722,7 @@ export function StudioCanvas({
                   assets={assets}
                   hostId={hostId}
                   defaultAgent={defaultAgent}
-                  jobs={judgeJobs(selected.id)}
+                  jobs={jobsOf(selected.id).judgeJobs}
                   disabled={reviewing === selected.id}
                   onChange={(patch) => editData(selected.id, patch)}
                   onJudge={() => void judgeOutputs(selected.id)}
