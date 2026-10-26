@@ -10,6 +10,7 @@ import {
   type Workspace,
 } from "../../shared/schema.ts";
 import { nodeRefs } from "../../shared/inputs.ts";
+import { nodeTakes } from "../../shared/takes.ts";
 
 /*
  * What the server changed on a board for an agent, kept so a person can see it and put it
@@ -22,14 +23,15 @@ type Db = ReturnType<BbPluginApi["storage"]["database"]>;
 const table = "studio_canvas_edits";
 const KEEP = 20;
 
-export type StoredEdit = Omit<BoardEdit, "undoable"> & {
+/** An edit as the log lists it; `before`, the board an undo puts back, is read on its own. */
+export type StoredEdit = Omit<BoardEdit, "undoable" | "blocker"> & {
   gameId: string;
   boardId: string;
   /** The content hashes of the board before and after, as its revision names them. */
   beforeContent: string | null;
   afterContent: string | null;
-  /** The board as it was, for an undo to put back. */
-  before: Board;
+  /** The assets the board used before: its picks, library inputs, and takes. */
+  uses: string[];
 };
 type Row = {
   id: string;
@@ -40,11 +42,11 @@ type Row = {
   undo_of: string | null;
   before_content: string | null;
   after_content: string | null;
-  before: string;
+  uses: string;
   summary: string;
 };
+const listed = "id, game, board, thread, at, undo_of, before_content, after_content, uses, summary";
 
-const title = (node: Pick<CanvasNode, "title" | "type">) => node.title || node.type;
 const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
 const named = ({ id, title: name, type }: CanvasNode) => ({ id, title: name || type, type });
 
@@ -92,27 +94,31 @@ export function summarizeEdit(before: Board, after: Board): EditSummary {
   return summary;
 }
 
+/** The assets a board's nodes use: their picks, library inputs, and takes. */
+export function boardUses(board: Pick<Board, "nodes">): string[] {
+  const uses = new Set<string>();
+  for (const node of board.nodes) {
+    for (const take of nodeTakes(node)) uses.add(take.assetId);
+    for (const ref of nodeRefs(node))
+      if (ref.type === "library" && typeof ref.assetId === "string") uses.add(ref.assetId);
+  }
+  return [...uses];
+}
+
 /** Why an edit cannot be undone on the board as it is now, or null when it can. */
 export function undoBlocker(
-  edit: Pick<StoredEdit, "afterContent" | "before">,
+  edit: Pick<StoredEdit, "afterContent" | "uses">,
   current: { revision: string },
   assets: Asset[],
 ): string | null {
   if (!edit.afterContent || revisionContent(current.revision) !== edit.afterContent)
-    return "The board has changed since this edit, so it cannot be undone.";
+    return "The board has changed since this edit.";
   const catalogued = new Set(assets.map(({ id }) => id));
-  for (const node of edit.before.nodes) {
-    const picked = typeof node.data.assetId === "string" ? node.data.assetId : "";
-    const used = [
-      ...(picked ? [picked] : []),
-      ...nodeRefs(node).flatMap((ref) =>
-        ref.type === "library" && typeof ref.assetId === "string" ? [ref.assetId] : [],
-      ),
-    ];
-    const gone = used.find((id) => !catalogued.has(id));
-    if (gone)
-      return `Undoing this edit would bring back “${title(node)}” with an asset that no longer exists (${gone}).`;
-  }
+  const gone = edit.uses.filter((id) => !catalogued.has(id));
+  if (gone.length === 1)
+    return `Undoing it would bring back an asset that no longer exists (${gone[0]}).`;
+  if (gone.length)
+    return `Undoing it would bring back ${gone.length} assets that no longer exist (${gone.join(", ")}).`;
   return null;
 }
 
@@ -139,22 +145,28 @@ export class CanvasEditStore {
     this.db = db;
     db.exec(`CREATE TABLE IF NOT EXISTS ${table} (
       id TEXT PRIMARY KEY, game TEXT NOT NULL, board TEXT NOT NULL, thread TEXT, at INTEGER NOT NULL,
-      undo_of TEXT, before_content TEXT, after_content TEXT, before TEXT NOT NULL, summary TEXT NOT NULL)`);
+      undo_of TEXT, before_content TEXT, after_content TEXT, uses TEXT NOT NULL DEFAULT '[]',
+      before TEXT NOT NULL, summary TEXT NOT NULL)`);
     db.exec(`CREATE INDEX IF NOT EXISTS ${table}_board ON ${table} (game, board, at)`);
   }
-  private static edit(row: Row): StoredEdit {
-    return {
-      id: row.id,
-      gameId: row.game,
-      boardId: row.board,
-      threadId: row.thread,
-      at: row.at,
-      ...(row.undo_of ? { undoOf: row.undo_of } : {}),
-      beforeContent: row.before_content,
-      afterContent: row.after_content,
-      before: boardSchema.parse(JSON.parse(row.before)),
-      summary: JSON.parse(row.summary) as EditSummary,
-    };
+  /** A listed row, or null for one whose record no longer reads. */
+  private static edit(row: Row): StoredEdit | null {
+    try {
+      return {
+        id: row.id,
+        gameId: row.game,
+        boardId: row.board,
+        threadId: row.thread,
+        at: row.at,
+        ...(row.undo_of ? { undoOf: row.undo_of } : {}),
+        beforeContent: row.before_content,
+        afterContent: row.after_content,
+        uses: JSON.parse(row.uses) as string[],
+        summary: JSON.parse(row.summary) as EditSummary,
+      };
+    } catch {
+      return null;
+    }
   }
   /** Remembers a saved edit, and forgets the board's oldest beyond the newest twenty. */
   record(edit: {
@@ -172,8 +184,8 @@ export class CanvasEditStore {
     const summary = summarizeEdit(edit.before, edit.after);
     this.db
       .prepare(
-        `INSERT INTO ${table} (id, game, board, thread, at, undo_of, before_content, after_content, before, summary)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO ${table} (id, game, board, thread, at, undo_of, before_content, after_content, uses, before, summary)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         id,
@@ -184,6 +196,7 @@ export class CanvasEditStore {
         edit.undoOf ?? null,
         revisionContent(edit.beforeRevision),
         revisionContent(edit.afterRevision),
+        JSON.stringify(boardUses(edit.before)),
         JSON.stringify(edit.before),
         JSON.stringify(summary),
       );
@@ -195,19 +208,25 @@ export class CanvasEditStore {
       .run(edit.gameId, edit.boardId, edit.gameId, edit.boardId, KEEP);
     return { id, at, summary };
   }
-  get(gameId: string, editId: string): StoredEdit | undefined {
+  /** One edit with the board an undo puts back. */
+  get(gameId: string, editId: string): (StoredEdit & { before: Board }) | undefined {
     const row = this.db
-      .prepare(`SELECT * FROM ${table} WHERE game = ? AND id = ?`)
-      .get(gameId, editId) as Row | undefined;
-    return row && CanvasEditStore.edit(row);
+      .prepare(`SELECT ${listed}, before FROM ${table} WHERE game = ? AND id = ?`)
+      .get(gameId, editId) as (Row & { before: string }) | undefined;
+    const edit = row && CanvasEditStore.edit(row);
+    if (!row || !edit) return undefined;
+    return { ...edit, before: boardSchema.parse(JSON.parse(row.before)) };
   }
-  /** A game's edits, newest first. */
+  /** A game's edits, newest first, without the boards they put back. */
   list(gameId: string): StoredEdit[] {
     return (
       this.db
-        .prepare(`SELECT * FROM ${table} WHERE game = ? ORDER BY rowid DESC`)
+        .prepare(`SELECT ${listed} FROM ${table} WHERE game = ? ORDER BY rowid DESC`)
         .all(gameId) as Row[]
-    ).map(CanvasEditStore.edit);
+    ).flatMap((row) => {
+      const edit = CanvasEditStore.edit(row);
+      return edit ? [edit] : [];
+    });
   }
   /** Each board's edits as a workspace read shows them, with whether each can be undone now. */
   forWorkspace(
@@ -220,14 +239,16 @@ export class CanvasEditStore {
       const {
         gameId: _game,
         boardId: _board,
-        before,
+        uses,
         beforeContent: _b,
         afterContent,
         ...shown
       } = edit;
+      const blocker = undoBlocker({ afterContent, uses }, current, workspace.assets);
       (result[edit.boardId] ??= []).push({
         ...shown,
-        undoable: undoBlocker({ afterContent, before }, current, workspace.assets) === null,
+        undoable: blocker === null,
+        ...(blocker ? { blocker } : {}),
       });
     }
     return result;

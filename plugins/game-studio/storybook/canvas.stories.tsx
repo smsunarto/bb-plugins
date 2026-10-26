@@ -293,3 +293,53 @@ export const MentionInChat: Story = {
     await waitFor(() => expect(args.onMention).toHaveBeenCalledWith("concept"));
   },
 };
+/* After an undo the banner offers the way back, and says why an older edit stays put. */
+export const AgentEditUndone: Story = {
+  args: {
+    edits: [
+      {
+        id: "undo-2",
+        threadId: null,
+        at: Date.now() - 60_000,
+        undoOf: "edit-2",
+        undoable: true,
+        summary: {
+          added: [],
+          removed: [{ id: "model", title: "Game-ready mesh", type: "model-3d" }],
+          updated: [],
+          connected: [],
+          disconnected: [{ id: "concept-model", source: "concept", target: "model" }],
+        },
+      },
+      {
+        id: "edit-2",
+        threadId: "thread-1",
+        at: Date.now() - 5 * 60_000,
+        undoable: false,
+        blocker: "Undoing it would bring back an asset that no longer exists (mesh-1).",
+        summary: {
+          added: [{ id: "model", title: "Game-ready mesh", type: "model-3d" }],
+          removed: [],
+          updated: [],
+          connected: [{ id: "concept-model", source: "concept", target: "model" }],
+          disconnected: [],
+        },
+      },
+    ],
+  },
+  play: async ({ canvasElement, args }) => {
+    const canvas = within(canvasElement);
+    await waitFor(() => expect(canvas.getByText("An agent edit was undone.")).toBeVisible());
+    await userEvent.click(canvas.getByRole("button", { name: "Show" }));
+    const undo = canvas.getByRole("button", { name: "Undo" });
+    await expect(undo).toBeDisabled();
+    await expect(undo).toHaveAttribute(
+      "title",
+      "Undoing it would bring back an asset that no longer exists (mesh-1).",
+    );
+    const redo = canvas.getByRole("button", { name: "Redo" });
+    await waitFor(() => expect(redo).toBeEnabled());
+    await userEvent.click(redo);
+    await waitFor(() => expect(args.onUndoEdit).toHaveBeenCalledWith("undo-2"));
+  },
+};

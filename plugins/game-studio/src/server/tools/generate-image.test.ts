@@ -462,7 +462,7 @@ test("a paid agent request waits for the person, and a decline submits nothing",
   });
   const call = harness.callAgentTool(
     "game_studio_generate_image",
-    { gameId: "game", requestId: "declined", prompt: "A moon icon", outputCount: 4 },
+    { gameId: "game", requestId: "declined", prompt: "A moon icon" },
     { threadId: "thread" },
   );
   while (!harness.pendingInteractions.length) await new Promise((r) => setTimeout(r, 2));
@@ -474,7 +474,7 @@ test("a paid agent request waits for the person, and a decline submits nothing",
       requestId: "declined",
       provider: "google",
       model: "gemini-nano-banana-2.1",
-      count: 4,
+      count: 1,
     }),
   ]);
   harness.submitInteraction(form.id, { approved: false });

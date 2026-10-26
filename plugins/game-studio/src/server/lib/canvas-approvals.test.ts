@@ -34,6 +34,7 @@ afterEach(async () => {
 async function fixture(answer: () => PluginInteractionResult) {
   const rootPath = await mkdtemp(join(tmpdir(), "studio-approvals-"));
   const starts: Start[] = [];
+  const refuse = { starts: 0 };
   const asked: PluginInteractionRequest[] = [];
   const hostJobs = new Map<string, GenerationJob>();
   const canvas = canvasHostRouter(
@@ -96,6 +97,10 @@ async function fixture(answer: () => PluginInteractionResult) {
       if (method === "list") return [...hostJobs.values()].map((job) => structuredClone(job));
       if (method === "reconcileMissing") return { missing: !hostJobs.has(target.jobId!) };
       if (method !== "start") throw new Error(`Unexpected host call: ${method}`);
+      if (refuse.starts > 0) {
+        refuse.starts--;
+        throw new Error("Host unreachable");
+      }
       const submitted = input as Start;
       starts.push(structuredClone(submitted));
       const existing = hostJobs.get(submitted.jobId);
@@ -219,6 +224,7 @@ async function fixture(answer: () => PluginInteractionResult) {
     completeHostJob,
     agentRun,
     seed,
+    refuse,
   };
 }
 
@@ -407,4 +413,70 @@ test("a lineage's budget is spent by dispatches and refuses what exceeds it", as
   expect(f.approvals.consume("orbit", "r", 1)).toBe(false);
   // A lineage nobody approved, such as a run from the canvas, is unrestricted.
   expect(f.approvals.consume("orbit", "ui-run", 4)).toBe(true);
+});
+
+test("the form shows the model the agent chose, and a direct run spends what it approved", async () => {
+  const f = await fixture(() => ({ outcome: "submitted", value: { approved: true } }));
+  // An upstream run with a media model override: the target is approved on that model.
+  const workspace = await loadWorkspace(f.bb, "orbit");
+  await f.generations.canvas(
+    {
+      gameId: "orbit",
+      boardId: "main",
+      nodeId: "final",
+      revision: workspace.boards[0]!.revision,
+      requestId: "final-mj",
+      upstream: true,
+      model: { provider: "midjourney", id: "default" },
+    },
+    "thread",
+  );
+  expect(f.items(f.asked[0]!)).toEqual([
+    expect.objectContaining({ nodeId: "concept", provider: "google" }),
+    expect.objectContaining({ nodeId: "final", provider: "midjourney", model: "default" }),
+  ]);
+  expect(f.runs.get("orbit", "main", "final")?.options).toMatchObject({
+    model: { provider: "midjourney", id: "default" },
+    approved: { provider: "midjourney", model: "default" },
+  });
+  // The concept lands and the final render dispatches on the approved override.
+  await f.completeHostJob(f.starts[0]!.jobId);
+  await f.generations.list("orbit");
+  expect(f.starts.find((start) => start.jobId === "final-mj")?.request.model).toEqual({
+    provider: "midjourney",
+    id: "default",
+  });
+  // A run the agent wrote itself is approved with its node's retries and spends on dispatch.
+  await f.completeHostJob("final-mj");
+  await f.generations.list("orbit");
+  const again = await loadWorkspace(f.bb, "orbit");
+  await f.generations.canvas(
+    {
+      gameId: "orbit",
+      boardId: "main",
+      nodeId: "final",
+      revision: again.boards[0]!.revision,
+      requestId: "final-direct",
+    },
+    "thread",
+  );
+  expect(f.items(f.asked[1]!)).toEqual([
+    expect.objectContaining({ requestId: "final-direct", count: 1, retries: 1 }),
+  ]);
+  expect(f.approvals.get("orbit", "final-direct")).toMatchObject({ budget: 2, used: 1 });
+});
+
+test("a submission the host refuses spends nothing, and nobody answering is not a decline", async () => {
+  const f = await fixture(() => ({ outcome: "submitted", value: { approved: true } }));
+  f.refuse.starts = 1;
+  await expect(f.agentRun("concept")).rejects.toThrow("Host unreachable");
+  expect(f.approvals.get("orbit", "concept-request")).toMatchObject({ budget: 1, used: 0 });
+  // The same request id asks nobody again: its approval still stands, and now it runs.
+  const result = await f.agentRun("concept");
+  expect(f.asked).toHaveLength(1);
+  expect("jobs" in result && result.jobs.map((job) => job.id)).toEqual(["concept-request"]);
+  expect(f.approvals.get("orbit", "concept-request")).toMatchObject({ budget: 1, used: 1 });
+  const quiet = await fixture(() => ({ outcome: "cancelled", reason: "timeout" }));
+  expect(await quiet.agentRun("concept")).toMatchObject({ declined: true, reason: "timeout" });
+  expect(quiet.starts).toHaveLength(0);
 });

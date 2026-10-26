@@ -32,6 +32,7 @@ type Row = {
   approved: number;
 };
 const table = "studio_canvas_approvals";
+const KEEP_MS = 30 * 24 * 60 * 60_000;
 
 export class ApprovalStore {
   private readonly db: Db;
@@ -55,12 +56,21 @@ export class ApprovalStore {
       approvedAt: row.approved,
     };
   }
-  /** Records an approval for a request lineage, replacing an earlier one for the same root. */
+  /**
+   * Records an approval for a request lineage. An earlier one for the same root keeps what it
+   * has spent, so asking again for a stable request id never refills its budget. Approvals
+   * older than thirty days are forgotten; their runs have long settled.
+   */
   grant(approval: Omit<Approval, "used" | "approvedAt">) {
     this.db
+      .prepare(`DELETE FROM ${table} WHERE game = ? AND approved < ?`)
+      .run(approval.gameId, Date.now() - KEEP_MS);
+    this.db
       .prepare(
-        `INSERT OR REPLACE INTO ${table} (game, root, thread, board, node, budget, used, spec, approved)
-         VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?)`,
+        `INSERT INTO ${table} (game, root, thread, board, node, budget, used, spec, approved)
+         VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?)
+         ON CONFLICT (game, root) DO UPDATE SET thread = excluded.thread, board = excluded.board,
+           node = excluded.node, budget = excluded.budget, spec = excluded.spec, approved = excluded.approved`,
       )
       .run(
         approval.gameId,
@@ -78,6 +88,22 @@ export class ApprovalStore {
       .prepare(`SELECT * FROM ${table} WHERE game = ? AND root = ?`)
       .get(gameId, root) as Row | undefined;
     return row && ApprovalStore.approval(row);
+  }
+  /** Whether an approval already covers this lineage: the same model, with budget to spare. */
+  covers(gameId: string, root: string, spec: ApprovedSpec, budget: number): boolean {
+    const row = this.get(gameId, root);
+    return (
+      !!row &&
+      row.spec?.provider === spec.provider &&
+      (row.spec.model ?? null) === (spec.model ?? null) &&
+      row.budget - row.used >= budget
+    );
+  }
+  /** Gives back what a submission that never reached the provider had spent. */
+  refund(gameId: string, root: string, count: number) {
+    this.db
+      .prepare(`UPDATE ${table} SET used = MAX(0, used - ?) WHERE game = ? AND root = ?`)
+      .run(count, gameId, root);
   }
   /**
    * Spends `count` of the lineage's budget. True when it may go ahead: nobody approved this

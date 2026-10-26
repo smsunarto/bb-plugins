@@ -56,7 +56,8 @@ export function AgentEdits({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const newest = edits[0];
-  const quick = edits.find((edit) => byAgent(edit) && edit.undoable);
+  // The newest record is the one to act on: an agent edit to undo, or an undo to redo.
+  const quick = newest?.undoable ? newest : edits.find((edit) => byAgent(edit) && edit.undoable);
   if (!newest || newest.id === seen || !(byAgent(newest) || quick)) return null;
   const dismiss = () => {
     remember(storageKey, newest.id);
@@ -77,17 +78,21 @@ export function AgentEdits({
   const why = (edit: BoardEdit) =>
     !onUndo
       ? "Undo is unavailable here."
-      : dirty
-        ? "Save your changes first."
-        : !edit.undoable
-          ? "The board has changed since this edit."
+      : !edit.undoable
+        ? (edit.blocker ?? "The board has changed since this edit.")
+        : dirty
+          ? "Save your changes first."
           : undefined;
   const count = edits.filter(byAgent).length;
   return (
     <section className="gs-canvas-edits gs-notice" aria-label="Agent edits">
       <div className="gs-canvas-edits-row">
         <Icon name="Bot" />
-        <span>The agent made {count === 1 ? "an edit" : `${count} edits`} to this board.</span>
+        <span>
+          {newest.undoOf
+            ? "An agent edit was undone."
+            : `The agent made ${count === 1 ? "an edit" : `${count} edits`} to this board.`}
+        </span>
         <button type="button" aria-expanded={open} onClick={() => setOpen(!open)}>
           {open ? "Hide" : "Show"}
         </button>
@@ -98,7 +103,7 @@ export function AgentEdits({
             title={why(quick)}
             onClick={() => void undo(quick.id)}
           >
-            Undo
+            {quick.undoOf ? "Redo" : "Undo"}
           </button>
         )}
         <button type="button" className="gs-icon" aria-label="Dismiss" onClick={dismiss}>

@@ -70,6 +70,16 @@ export function retryLineage(jobId: string) {
   const match = /^(.+)-retry-(\d+)$/.exec(jobId);
   return match ? { root: match[1]!, attempt: Number(match[2]) } : { root: jobId, attempt: 0 };
 }
+/**
+ * The lineage an approval binds to: a request id without its batch (`-b<n>`) and retry
+ * suffixes, cut as `retryRequestId` cuts roots, so a run, its batch, and their retries all
+ * spend one budget.
+ */
+export function approvalRoot(requestId: string) {
+  return retryLineage(requestId)
+    .root.replace(/-b\d+$/, "")
+    .slice(0, 80);
+}
 /** The request id of the retry that follows a run, so a repeated adoption never runs it twice. */
 export function retryRequestId(jobId: string) {
   const { root, attempt } = retryLineage(jobId);

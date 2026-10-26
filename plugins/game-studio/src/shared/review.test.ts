@@ -7,6 +7,7 @@ import {
   reviewedJobId,
   reviewRequestId,
   reviewVerdict,
+  approvalRoot,
 } from "./review.ts";
 
 test("the verdict comes from the review's first line only", () => {
@@ -55,4 +56,14 @@ test("a retry follows only the verdicts and count the node allows", () => {
   expect(retryWanted(settings, undefined, 0)).toBe(false);
   expect(retryWanted({ ...settings, enabled: false }, "fail", 0)).toBe(false);
   expect(retryWanted({ enabled: true }, "fail", 0)).toBe(false);
+});
+
+test("an approval root drops batch and retry suffixes and is cut like retry roots are", () => {
+  expect(approvalRoot("req")).toBe("req");
+  expect(approvalRoot("req-b3")).toBe("req");
+  expect(approvalRoot("req-retry-2")).toBe("req");
+  expect(approvalRoot("req-b3-retry-2")).toBe("req");
+  const long = "x".repeat(100);
+  expect(approvalRoot(long)).toBe("x".repeat(80));
+  expect(approvalRoot(`${"x".repeat(80)}-retry-1`)).toBe("x".repeat(80));
 });

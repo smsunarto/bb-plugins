@@ -178,6 +178,8 @@ export const boardEditSchema = z.object({
   summary: editSummarySchema,
   /** It is still the board's latest content, and what it put there still exists, so it can be undone. */
   undoable: z.boolean(),
+  /** Why it cannot be undone now. */
+  blocker: z.string().optional(),
 });
 export type BoardEdit = z.infer<typeof boardEditSchema>;
 export const workspaceBoardSchema = z.object({

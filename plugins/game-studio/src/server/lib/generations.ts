@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { GenerationWork } from "./generation-work.ts";
 import type {
   BbPluginApi,
+  PluginInteractionCancelReason,
   PluginInteractionRequest,
   PluginInteractionResult,
 } from "@get-bb/plugin-sdk";
@@ -51,7 +52,7 @@ import type {
   Workspace,
   undoCanvasEditInput,
 } from "../../shared/schema.ts";
-import { nodeReviewSettings, retryLineage, reviewRequestId } from "../../shared/review.ts";
+import { approvalRoot, nodeReviewSettings, reviewRequestId } from "../../shared/review.ts";
 import { captureCanvasInputs } from "./generation-inputs.ts";
 import { CanvasText } from "./canvas-text.ts";
 import { applyCanvasEdits, describeEdit, editCanvas, saveCanvasEdit } from "./canvas-edit.ts";
@@ -68,10 +69,21 @@ type Ask = (request: PluginInteractionRequest) => Promise<PluginInteractionResul
 /** How long a run waits for the person before the agent is told nobody answered. */
 const APPROVAL_TIMEOUT_MS = 10 * 60_000;
 /** What an agent gets when the person declines: a plain result, so a new turn can ask what to change. */
-const declined = () => ({
-  declined: true as const,
+type Declined = {
+  declined: true;
+  reason: "declined" | PluginInteractionCancelReason;
+  detail: string;
+};
+/** Why an approval did not come, for the agent: a decline is not the same as nobody answering. */
+const declined = (reason: Declined["reason"] = "declined"): Declined => ({
+  declined: true,
+  reason,
   detail:
-    "The person declined this generation. Nothing was submitted and nothing was spent. Ask what to change before trying again.",
+    reason === "declined"
+      ? "The person declined this generation. Nothing was submitted and nothing was spent. Ask what to change before trying again."
+      : reason === "timeout"
+        ? "Nobody answered the approval form within ten minutes. Nothing was submitted and nothing was spent. Ask the person whether to try again."
+        : `The approval form was closed before anyone answered (${reason}). Nothing was submitted and nothing was spent.`,
 });
 const running = (job: GenerationJob) => job.status === "queued" || job.status === "running";
 /** A text job that serves a media node (its brief, review, or judgement), not a node's own output. */
@@ -171,18 +183,28 @@ export class Generations {
   }
   /**
    * Asks the person once for everything paid a run will make, unless the game is approved in
-   * advance, and records a budget per request lineage that dispatches spend. Nothing paid
-   * means nothing to ask. Inside a tool the form detaches the call: the agent hears the
-   * answer, and the run's result, as a message.
+   * advance or an earlier answer still covers it, and records a budget per request lineage
+   * that dispatches spend. Nothing paid means nothing to ask. Inside a tool the form detaches
+   * the call: the agent hears the answer, and the run's result, as a message. Returns why
+   * the run may not go ahead, or null when it may.
    */
   private async approve(
     game: Game,
     threadId: string,
     items: GenerationApprovalItem[],
     boardId?: string,
-  ): Promise<"approved" | "declined"> {
-    const paid = items.filter((item) => paidProvider(item.provider));
-    if (!paid.length) return "approved";
+  ): Promise<Declined | null> {
+    const paid = items.filter(
+      (item) =>
+        paidProvider(item.provider) &&
+        !this.approvals.covers(
+          game.id,
+          approvalRoot(item.requestId),
+          itemSpec(item),
+          itemBudget(item),
+        ),
+    );
+    if (!paid.length) return null;
     if (!this.grants.has(game.id)) {
       const payload: GenerationApprovalPayload = {
         gameId: game.id,
@@ -216,22 +238,31 @@ export class Generations {
           };
         },
       });
-      const answer =
-        result.outcome === "submitted" ? generationApprovalResponse.safeParse(result.value) : null;
-      if (!answer?.success || !answer.data.approved) return "declined";
+      if (result.outcome === "cancelled") return declined(result.reason);
+      const answer = generationApprovalResponse.safeParse(result.value);
+      if (!answer.success || !answer.data.approved) return declined();
       if (answer.data.grantGame) this.grants.set(game.id, { threadId, at: Date.now() });
     }
     for (const item of paid)
       this.approvals.grant({
         gameId: game.id,
-        root: item.requestId,
+        root: approvalRoot(item.requestId),
         threadId,
         boardId: boardId ?? null,
         nodeId: item.nodeId ?? null,
         budget: itemBudget(item),
-        spec: { provider: item.provider, ...(item.model ? { model: item.model } : {}) },
+        spec: itemSpec(item),
       });
-    return "approved";
+    return null;
+  }
+  /** Spends approved budget for submissions about to be made; gives it back for those that failed. */
+  private spend(game: Game, requestId: string, count: number) {
+    const root = approvalRoot(requestId);
+    if (!this.approvals.consume(game.id, root, count))
+      throw new Error(
+        "The approved budget for this run is spent. Ask for approval again with a new request id.",
+      );
+    return { refund: (failed = count) => this.approvals.refund(game.id, root, failed) };
   }
   /**
    * The run an agent asks for, planned from the saved board before anyone is asked: the
@@ -254,6 +285,7 @@ export class Generations {
         selected.board.nodes.find((node) => node.id === id)!,
         ids.get(id)!,
         1,
+        id === input.nodeId ? runOptions(input)?.model : undefined,
       ),
     );
     return { ids, items };
@@ -491,7 +523,7 @@ export class Generations {
         agent,
         options: heldOptions(
           isTarget ? runOptions(input) : null,
-          approved ? approvedSpec(node) : null,
+          approved ? effectiveSpec(node, isTarget ? runOptions(input)?.model : undefined) : null,
         ),
         origin: isTarget ? null : input.requestId,
         batch: isTarget && batched ? nodeBatch(node) : 1,
@@ -537,11 +569,8 @@ export class Generations {
         : {}),
     });
     const ids = only ?? batchIds(run);
-    if (!this.approvals.consume(game.id, run.requestId, ids.length))
-      throw new Error(
-        "The approved budget for this run is spent. Ask for approval again with a new request id.",
-      );
-    const results = await Promise.all(
+    const spent = this.spend(game, run.requestId, ids.length);
+    const results = await Promise.allSettled(
       ids.map((id) =>
         this.dispatch(game, id, prepared.request, thread, prepared.target, {
           kind: "canvas",
@@ -549,7 +578,13 @@ export class Generations {
         }),
       ),
     );
-    return results.map(({ job }) => job);
+    // A submission that never reached the host spends nothing; the ones that did are kept.
+    const failed = results.filter((result) => result.status === "rejected");
+    if (failed.length) {
+      spent.refund(failed.length);
+      throw failed[0]!.reason;
+    }
+    return results.flatMap((result) => (result.status === "fulfilled" ? [result.value.job] : []));
   }
   /**
    * Dispatches held runs whose inputs have landed. One at a time per game; a run whose job
@@ -594,7 +629,10 @@ export class Generations {
       }
       if (missing.length === run.batch && !inputsReady(selected.board, node)) continue;
       // The person approved a model; a node changed since waits for a new approval.
-      if (run.options?.approved && !sameSpec(run.options.approved, node)) {
+      if (
+        run.options?.approved &&
+        !sameSpec(run.options.approved, effectiveSpec(node, run.options.model))
+      ) {
         this.runs.fail(
           gameId,
           run.boardId,
@@ -708,29 +746,40 @@ export class Generations {
         1,
       ),
     );
-    const verdict = await this.approve(game, threadId!, items, board.id);
-    if (verdict !== "approved") return { ...describeEdit(input, board, null), ...declined() };
-    const result = await this.exclusive(game.id, async () => {
+    const refused = await this.approve(game, threadId!, items, board.id);
+    if (refused) return { ...describeEdit(input, board, null), ...refused };
+    // The wait may have outlasted the checkout lease; the save and the dispatch need it now.
+    const owned = await this.game(input.gameId, threadId);
+    const result = await this.exclusive(owned.id, async () => {
       const saved = await saveCanvasEdit(this.bb, workspace, board, input, log);
-      const started = await this.runPlan(
-        game,
-        threadId!,
-        await loadWorkspace(this.bb, input.gameId),
-        {
-          gameId: input.gameId,
-          boardId: input.boardId,
-          nodeId: run.nodeId,
-          requestId: run.requestId,
-          revision: saved.revision,
-          upstream: true,
-          threadId: threadId!,
-        },
-        false,
-        ids,
-      );
-      return { ...describeEdit(input, board, saved), run: started };
+      // The edit is saved and on record either way; a run that cannot start says so beside it.
+      try {
+        const started = await this.runPlan(
+          owned,
+          threadId!,
+          await loadWorkspace(this.bb, input.gameId),
+          {
+            gameId: input.gameId,
+            boardId: input.boardId,
+            nodeId: run.nodeId,
+            requestId: run.requestId,
+            revision: saved.revision,
+            upstream: true,
+            threadId: threadId!,
+          },
+          false,
+          ids,
+        );
+        return { ...describeEdit(input, board, saved), run: started };
+      } catch (error) {
+        return {
+          ...describeEdit(input, board, saved),
+          run: { error: error instanceof Error ? error.message : String(error) },
+        };
+      }
     });
-    if (result.run.waiting.length) this.drive(game.id, ADVANCE_EVERY_MS);
+    if ("waiting" in result.run && result.run.waiting.length)
+      this.drive(owned.id, ADVANCE_EVERY_MS);
     return result;
   }
   /** Puts back what an agent's edit changed, as the studio asks, while it is still the latest. */
@@ -771,10 +820,22 @@ export class Generations {
     threadId?: string,
     target?: GenerationJob["target"],
   ) {
+    await this.game(gameId, threadId);
+    const node = target
+      ? nodeOf(await loadWorkspace(this.bb, gameId), target.boardId, target.nodeId)
+      : undefined;
+    const item = requestItem(request, requestId, target, node);
+    const refused = await this.approve(await this.game(gameId, threadId), threadId!, [item]);
+    if (refused) return refused;
+    // The wait may have outlasted the checkout lease; the dispatch needs it now.
     const game = await this.game(gameId, threadId);
-    const verdict = await this.approve(game, threadId!, [requestItem(request, requestId, target)]);
-    if (verdict !== "approved") return declined();
-    return this.dispatch(game, requestId, request, threadId!, target, { kind: "agent" });
+    const spent = this.spend(game, requestId, item.count);
+    try {
+      return await this.dispatch(game, requestId, request, threadId!, target, { kind: "agent" });
+    } catch (error) {
+      spent.refund();
+      throw error;
+    }
   }
   private async dispatch(
     game: Game,
@@ -861,13 +922,15 @@ export class Generations {
     }
   }
   async canvas(input: z.output<typeof canvasGenerationInput>, threadId?: string) {
-    const game = await this.game(input.gameId, threadId);
+    let game = await this.game(input.gameId, threadId);
     const run: RunInput = { ...input, threadId: threadId! };
     if (input.upstream && !input.brief && !input.reviewAssetId && !input.judge) {
       // Plan, ask with no lock held, then plan again under the lock against the same ids.
       const planned = await this.planForApproval(game, run);
-      const verdict = await this.approve(game, threadId!, planned.items, input.boardId);
-      if (verdict !== "approved") return declined();
+      const refused = await this.approve(game, threadId!, planned.items, input.boardId);
+      if (refused) return refused;
+      // The wait may have outlasted the checkout lease; the dispatch needs it now.
+      game = await this.game(input.gameId, threadId);
       const result = await this.exclusive(game.id, async () =>
         this.runPlan(
           game,
@@ -884,14 +947,19 @@ export class Generations {
     const workspace = await loadWorkspace(this.bb, input.gameId);
     const { request, target } = canvasRequest(workspace, input);
     const node = nodeOf(workspace, input.boardId, input.nodeId);
-    const verdict = await this.approve(
-      game,
-      threadId!,
-      [requestItem(request, input.requestId, target, node.title)],
-      input.boardId,
-    );
-    if (verdict !== "approved") return declined();
-    return this.dispatch(game, input.requestId, request, threadId!, target, { kind: "agent" });
+    const item = requestItem(request, input.requestId, target, node);
+    const refused = await this.approve(game, threadId!, [item], input.boardId);
+    if (refused) return refused;
+    game = await this.game(input.gameId, threadId);
+    const spent = this.spend(game, input.requestId, item.count);
+    try {
+      return await this.dispatch(game, input.requestId, request, threadId!, target, {
+        kind: "agent",
+      });
+    } catch (error) {
+      spent.refund();
+      throw error;
+    }
   }
   async control(input: z.output<typeof generationControlInput>, threadId?: string) {
     const game = await this.game(
@@ -1084,15 +1152,20 @@ export class Generations {
       const retry = retryRequest(await loadWorkspace(this.bb, game.id), review);
       if (!retry) return;
       // A retry spends the budget the person approved for the run it repeats.
-      if (!this.approvals.consume(game.id, retryLineage(retry.requestId).root, 1)) {
+      if (!this.approvals.consume(game.id, approvalRoot(retry.requestId), 1)) {
         this.bb.log.warn(`Not retrying ${review.id}: its approved budget is spent.`);
         return;
       }
       // Retries belong to the canvas, like the reviews that call for them.
-      await this.dispatch(game, retry.requestId, retry.request, null, retry.target, {
-        kind: "canvas",
-        gameId: game.id,
-      });
+      try {
+        await this.dispatch(game, retry.requestId, retry.request, null, retry.target, {
+          kind: "canvas",
+          gameId: game.id,
+        });
+      } catch (error) {
+        this.approvals.refund(game.id, approvalRoot(retry.requestId), 1);
+        throw error;
+      }
     } catch (error) {
       this.bb.log.warn(
         `Could not retry the run ${review.id} judged: ${error instanceof Error ? error.message : String(error)}`,
@@ -1156,23 +1229,35 @@ function runAgent(input: RunInput): HeldRunAgent | null {
     ...(input.serviceTier ? { serviceTier: input.serviceTier } : {}),
   };
 }
-/** The model a node runs on now, as an approval records it. */
-function approvedSpec(node: CanvasNode): ApprovedSpec {
+/**
+ * The model a node runs on now, as an approval records it: the caller's media model when it
+ * named one, else the node's recipe.
+ */
+function effectiveSpec(node: CanvasNode, override?: HeldRunOptions["model"]): ApprovedSpec {
+  if (override && override.provider !== "bb" && !runsOnBbNode(node))
+    return { provider: override.provider, ...(override.id ? { model: override.id } : {}) };
   const model = runsOnBbNode(node) ? undefined : recipeModel(node);
   return { provider: model?.provider ?? "bb", ...(model?.id ? { model: model.id } : {}) };
 }
-const sameSpec = (approved: ApprovedSpec, node: CanvasNode) => {
-  const now = approvedSpec(node);
-  return now.provider === approved.provider && (now.model ?? null) === (approved.model ?? null);
-};
+const sameSpec = (approved: ApprovedSpec, now: ApprovedSpec) =>
+  now.provider === approved.provider && (now.model ?? null) === (approved.model ?? null);
+const itemSpec = (item: GenerationApprovalItem): ApprovedSpec => ({
+  provider: item.provider,
+  ...(item.model ? { model: item.model } : {}),
+});
 const heldOptions = (
   options: HeldRunOptions | null,
   approved: ApprovedSpec | null,
 ): HeldRunOptions | null =>
   options || approved ? { ...options, ...(approved ? { approved } : {}) } : null;
-/** What a run makes, for the person to approve: one node on its recipe's model. */
-function nodeItem(node: CanvasNode, requestId: string, count: number): GenerationApprovalItem {
-  const spec = approvedSpec(node);
+/** What a run makes, for the person to approve: one node on the model it will run on. */
+function nodeItem(
+  node: CanvasNode,
+  requestId: string,
+  count: number,
+  override?: HeldRunOptions["model"],
+): GenerationApprovalItem {
+  const spec = effectiveSpec(node, override);
   return {
     requestId,
     nodeId: node.id,
@@ -1184,23 +1269,28 @@ function nodeItem(node: CanvasNode, requestId: string, count: number): Generatio
     retries: nodeReviewSettings(node)?.retries ?? 0,
   };
 }
-/** What a request an agent wrote itself makes, for the person to approve. */
+/**
+ * What a request an agent wrote itself makes, for the person to approve: as many outputs as
+ * the provider will make of it, and the retries its node's review may add.
+ */
 function requestItem(
   request: MediaRequest,
   requestId: string,
   target?: GenerationJob["target"],
-  title?: string,
+  node?: CanvasNode,
 ): GenerationApprovalItem {
-  const prompt = "prompt" in request && typeof request.prompt === "string" ? request.prompt : "";
+  const normalized = runsOnBb(request) ? request : normalizeMediaRequest(request);
+  const prompt =
+    "prompt" in normalized && typeof normalized.prompt === "string" ? normalized.prompt : "";
   return {
     requestId,
     ...(target ? { nodeId: target.nodeId } : {}),
-    title: title || prompt.slice(0, 80) || request.kind,
-    kind: request.kind,
-    provider: request.model.provider,
-    ...(request.model.id ? { model: request.model.id } : {}),
-    count: request.kind === "image" ? (request.outputCount ?? 1) : 1,
-    retries: 0,
+    title: node?.title || prompt.slice(0, 80) || normalized.kind,
+    kind: normalized.kind,
+    provider: normalized.model.provider,
+    ...(normalized.model.id ? { model: normalized.model.id } : {}),
+    count: "outputCount" in normalized ? (normalized.outputCount ?? 1) : 1,
+    retries: node ? (nodeReviewSettings(node)?.retries ?? 0) : 0,
   };
 }
 /** What the target keeps of the caller's request: a media model it chose, and its approval. */
