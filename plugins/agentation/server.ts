@@ -42,6 +42,7 @@ import {
   annotationSourceLabel,
   parseAnnotationMentionItemId,
   threadDisplayTitle,
+  threadlessAnnotationMentionIds,
 } from "./lib/staging-display.ts";
 import {
   renderAnnotation,
@@ -450,6 +451,42 @@ export default async function plugin(bb: BbPluginApi) {
     const origin = rest.pluginId ? pluginOrigins.get(rest.pluginId) : undefined;
     return origin ? { ...rest, ...origin } : rest;
   }
+
+  // A pill from the new-thread composer names no thread, so `resolve` cannot
+  // assign it. The thread exists by the time its first message is dispatched;
+  // assign those annotations there. A start on a running thread queues behind
+  // its turn, so it re-stages after the next turn, as a queued send does.
+  // Claims are idempotent across re-attempts. Assignment is bookkeeping and a
+  // throwing hook fails the send, so errors are logged and the send proceeds.
+  bb.experimental_hooks.on("message.dispatch", ({ thread, input, attempt }) => {
+    try {
+      const phase =
+        attempt === "start-turn" && thread.status === "active"
+          ? "awaiting-start"
+          : "awaiting-finish";
+      let assigned = 0;
+      for (const annotationId of threadlessAnnotationMentionIds(input.blocks, bb.pluginId)) {
+        const claim = claimStagedAnnotations(db, {
+          annotationIds: [annotationId],
+          threadId: thread.id,
+        });
+        if (claim.outcome === "stale") continue;
+        completeDispatch(db, claim.dispatch.id, { reappearAfterTurn: phase });
+        assigned += 1;
+      }
+      if (assigned > 0) {
+        broadcast({ type: "routing", sessionId: null });
+        bb.log.info(
+          `assigned ${assigned} mentioned annotation${assigned === 1 ? "" : "s"} to ${thread.id}`,
+        );
+      }
+    } catch (error) {
+      bb.log.warn(
+        `could not assign mentioned annotations to ${thread.id}: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+    return { action: "proceed" };
+  });
 
   bb.events.on("thread.active", ({ thread }) => {
     advanceTurnAssignments(db, thread.id);

@@ -30,7 +30,12 @@ import {
 import { broadcastType, sharedRequest } from "@/lib/shared-request.ts";
 import type { rpcContract } from "@/server.ts";
 
-function StagedAnnotations({ threadId }: { threadId: string }) {
+/**
+ * `threadId` is null in the new-thread composer: no thread exists to send to
+ * yet, so the banner only mentions annotations, and the dispatch that creates
+ * the thread assigns them.
+ */
+function StagedAnnotations({ threadId }: { threadId: string | null }) {
   const rpc = useRpc<typeof rpcContract>();
   const composer = useComposer();
   const pluginId = experimental_usePluginId();
@@ -90,22 +95,27 @@ function StagedAnnotations({ threadId }: { threadId: string }) {
   // annotations while resolving the mentions, so re-read the banner at once.
   useEffect(() => composer.onSubmitted(() => void refresh()), [composer, refresh]);
 
-  // Append the pill after the draft's last word, as typing it there would.
-  const mentionAnnotation = (annotationId: string, label: string) => {
-    const { text } = composer.draft;
-    const separator = text.length === 0 || /\s$/u.test(text) ? "" : " ";
-    composer.insert(
-      [
-        separator,
-        {
-          provider: ANNOTATION_MENTION_PROVIDER,
-          id: annotationMentionItemId(annotationId, threadId),
-          label,
-        },
-        " ",
-      ],
-      { at: "end" },
+  // Append the pills after the draft's last word, as typing them there would.
+  // Pills already in the draft are not repeated.
+  const mentionAnnotations = (items: readonly { id: string; label: string }[]) => {
+    const { text, mentions } = composer.draft;
+    const present = new Set(
+      mentions.flatMap((mention) =>
+        mention.kind === "plugin" &&
+        mention.pluginId === pluginId &&
+        mention.provider === ANNOTATION_MENTION_PROVIDER
+          ? [mention.id]
+          : [],
+      ),
     );
+    const parts = items
+      .map((item) => ({ ...item, id: annotationMentionItemId(item.id, threadId) }))
+      .filter((item) => !present.has(item.id))
+      .flatMap((item) => [{ provider: ANNOTATION_MENTION_PROVIDER, ...item }, " "]);
+    if (parts.length > 0) {
+      const separator = text.length === 0 || /\s$/u.test(text) ? "" : " ";
+      composer.insert([separator, ...parts], { at: "end" });
+    }
     composer.focus();
   };
 
@@ -126,8 +136,19 @@ function StagedAnnotations({ threadId }: { threadId: string }) {
     previousConnection.current = connection;
   }, [connection, refresh]);
 
+  const mentionAll = () =>
+    mentionAnnotations(
+      annotations.map((annotation) => ({
+        id: annotation.id,
+        label: annotationMentionLabel(
+          annotation,
+          annotationSourceLabel(annotation.bb, threadTitles),
+        ),
+      })),
+    );
+
   const sendAnnotations = async (annotationIds: string[], sendingAnnotationId: string | null) => {
-    if (actionInFlight.current) return;
+    if (actionInFlight.current || threadId === null) return;
     if (annotationIds.length === 0) return;
 
     actionInFlight.current = true;
@@ -229,6 +250,20 @@ function StagedAnnotations({ threadId }: { threadId: string }) {
   const isMutating =
     isSending || sendingId !== null || discardingId !== null || isDiscarding || discardIds !== null;
 
+  // A failed read offers only a retry; a new-thread draft has no thread to
+  // send to, so it mentions everything instead.
+  const sendAll = () =>
+    void sendAnnotations(
+      annotations.map((annotation) => annotation.id),
+      null,
+    );
+  const primaryAction =
+    error && annotations.length === 0
+      ? { label: "Retry", icon: null, run: () => void refresh() }
+      : threadId === null
+        ? { label: "Mention all", icon: "AtSign" as const, run: mentionAll }
+        : { label: isSending ? "Sending…" : "Send all", icon: "ArrowUp" as const, run: sendAll };
+
   return (
     <>
       <div
@@ -259,23 +294,9 @@ function StagedAnnotations({ threadId }: { threadId: string }) {
                 Discard all
               </Button>
             ) : null}
-            <Button
-              type="button"
-              size="sm"
-              disabled={isMutating}
-              onClick={() =>
-                error && annotations.length === 0
-                  ? void refresh()
-                  : void sendAnnotations(
-                      annotations.map((annotation) => annotation.id),
-                      null,
-                    )
-              }
-            >
-              {error && annotations.length === 0 ? null : (
-                <Icon name="ArrowUp" aria-hidden="true" />
-              )}
-              {error && annotations.length === 0 ? "Retry" : isSending ? "Sending…" : "Send all"}
+            <Button type="button" size="sm" disabled={isMutating} onClick={primaryAction.run}>
+              {primaryAction.icon ? <Icon name={primaryAction.icon} aria-hidden="true" /> : null}
+              {primaryAction.label}
             </Button>
           </div>
         </div>
@@ -323,30 +344,32 @@ function StagedAnnotations({ threadId }: { threadId: string }) {
                     disabled={isMutating}
                     aria-label="Mention annotation in composer"
                     aria-describedby={`${annotationDescriptionPrefix}-${annotation.id}`}
-                    onClick={() => mentionAnnotation(annotation.id, label)}
+                    onClick={() => mentionAnnotations([{ id: annotation.id, label }])}
                   >
                     <Icon name="AtSign" aria-hidden="true" />
                   </Button>
-                  <Button
-                    type="button"
-                    size="icon"
-                    variant="ghost"
-                    className="h-7 w-7 shrink-0 text-muted-foreground hover:text-foreground"
-                    disabled={isMutating}
-                    aria-label={
-                      isSendingAnnotation
-                        ? "Sending annotation to this thread"
-                        : "Send annotation to this thread"
-                    }
-                    aria-describedby={`${annotationDescriptionPrefix}-${annotation.id}`}
-                    onClick={() => void sendAnnotations([annotation.id], annotation.id)}
-                  >
-                    <Icon
-                      name={isSendingAnnotation ? "Spinner" : "ArrowUp"}
-                      className={isSendingAnnotation ? "animate-spin" : undefined}
-                      aria-hidden="true"
-                    />
-                  </Button>
+                  {threadId === null ? null : (
+                    <Button
+                      type="button"
+                      size="icon"
+                      variant="ghost"
+                      className="h-7 w-7 shrink-0 text-muted-foreground hover:text-foreground"
+                      disabled={isMutating}
+                      aria-label={
+                        isSendingAnnotation
+                          ? "Sending annotation to this thread"
+                          : "Send annotation to this thread"
+                      }
+                      aria-describedby={`${annotationDescriptionPrefix}-${annotation.id}`}
+                      onClick={() => void sendAnnotations([annotation.id], annotation.id)}
+                    >
+                      <Icon
+                        name={isSendingAnnotation ? "Spinner" : "ArrowUp"}
+                        className={isSendingAnnotation ? "animate-spin" : undefined}
+                        aria-hidden="true"
+                      />
+                    </Button>
+                  )}
                   <Button
                     type="button"
                     size="icon"
@@ -419,7 +442,7 @@ function StagedAnnotations({ threadId }: { threadId: string }) {
 
 export function AgentationStagingBanner() {
   const { scope } = useComposer();
-  if (scope.kind !== "thread") return null;
-
-  return <StagedAnnotations threadId={scope.threadId} />;
+  if (scope.kind === "thread") return <StagedAnnotations threadId={scope.threadId} />;
+  if (scope.kind === "new-thread") return <StagedAnnotations threadId={null} />;
+  return null;
 }

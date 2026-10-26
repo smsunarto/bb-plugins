@@ -17,7 +17,7 @@ export default definePluginApp((app) => {
 
   app.composer.customize({
     id: "staged-annotations",
-    scopes: ["thread"],
+    scopes: ["thread", "new-thread"],
     banners: [
       {
         id: "staged-annotations",

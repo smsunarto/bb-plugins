@@ -8,6 +8,7 @@ import {
   annotationSourceLabel,
   parseAnnotationMentionItemId,
   threadDisplayTitle,
+  threadlessAnnotationMentionIds,
 } from "../lib/staging-display.ts";
 
 const mentionAnnotation = {
@@ -132,4 +133,29 @@ test("an annotation mention carries its destination thread through resolution", 
     annotationId: "1787554470191",
     threadId: null,
   });
+});
+
+test("a dispatch assigns only this plugin's threadless annotation pills", () => {
+  const plugin = (pluginId: string, itemId: string) => ({
+    start: 0,
+    end: 1,
+    resource: { kind: "plugin", pluginId, itemId, label: "pill" },
+  });
+  const blocks = [
+    {
+      type: "text",
+      text: "fix these",
+      mentions: [
+        plugin("agentation", "annotation:ann_new"),
+        plugin("agentation", `annotation:${annotationMentionItemId("ann_tagged", "thr_1")}`),
+        plugin("agentation", "annotation:ann_new"),
+        plugin("other", "annotation:ann_foreign"),
+        plugin("agentation", "other-provider:ann_other"),
+        { start: 0, end: 1, resource: { kind: "thread", threadId: "thr_2" } },
+      ],
+    },
+    { type: "image", url: "https://example.com/a.png" },
+  ];
+
+  assert.deepEqual(threadlessAnnotationMentionIds(blocks, "agentation"), ["ann_new"]);
 });

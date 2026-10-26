@@ -66,6 +66,7 @@ function annotationPill(
 function renderBanner(options: {
   text?: string;
   mentions?: readonly ComposerMention[];
+  newThread?: boolean;
   rpc: Record<string, (input: unknown) => unknown>;
 }) {
   return renderSlot(
@@ -74,7 +75,9 @@ function renderBanner(options: {
     {
       pluginId: PLUGIN_ID,
       composer: {
-        scope: { kind: "thread", threadId: THREAD_ID },
+        scope: options.newThread
+          ? { kind: "new-thread", projectId: "prj_1" }
+          : { kind: "thread", threadId: THREAD_ID },
         text: options.text ?? "",
         mentions: options.mentions ?? [],
       },
@@ -195,4 +198,33 @@ test("a submitted draft re-reads the staged list at once", async () => {
 
   expect(slot.inspection.composer.submits).toHaveLength(1);
   await waitFor(() => expect(reads).toBe(before + 1));
+});
+
+test("the new-thread composer offers mentions instead of sends", async () => {
+  const slot = renderBanner({
+    newThread: true,
+    text: "Fix",
+    mentions: [],
+    rpc: {
+      listStagedAnnotations: () => ({
+        annotations: [staged("ann_1", "Save is misaligned"), staged("ann_2", "Wrong color")],
+        threadTitles: {},
+      }),
+    },
+  });
+  await slot.findByText("Annotations");
+  expect(slot.queryByRole("button", { name: "Send all" })).toBeNull();
+  expect(slot.queryByRole("button", { name: "Send annotation to this thread" })).toBeNull();
+
+  const [mentionFirst] = slot.getAllByRole("button", { name: "Mention annotation in composer" });
+  fireEvent.click(mentionFirst!);
+  fireEvent.click(slot.getByRole("button", { name: "Mention all" }));
+
+  // The pills name no thread; the dispatch that creates the thread assigns them.
+  const { draft } = slot.inspection.composer;
+  expect(draft.mentions.map((mention) => mention.kind === "plugin" && mention.id)).toEqual([
+    annotationMentionItemId("ann_1", null),
+    annotationMentionItemId("ann_2", null),
+  ]);
+  expect(draft.text.startsWith("Fix ")).toBe(true);
 });

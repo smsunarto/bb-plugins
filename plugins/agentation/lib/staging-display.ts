@@ -160,3 +160,33 @@ export function annotationMatchesMentionQuery(
     .filter((value): value is string => Boolean(value))
     .some((value) => value.toLowerCase().includes(needle));
 }
+
+interface DispatchedMentionBlock {
+  type: string;
+  mentions?: readonly { resource: { kind: string; pluginId?: string; itemId?: string } }[];
+}
+
+/**
+ * Annotations a sent message mentions without naming a thread. The
+ * new-thread composer has no thread to put in the pill, so the dispatch that
+ * creates the thread assigns them. Wire item ids carry the provider prefix.
+ */
+export function threadlessAnnotationMentionIds(
+  blocks: readonly DispatchedMentionBlock[],
+  pluginId: string,
+): string[] {
+  const prefix = `${ANNOTATION_MENTION_PROVIDER}:`;
+  const ids = new Set<string>();
+  for (const block of blocks) {
+    if (block.type !== "text") continue;
+    for (const { resource } of block.mentions ?? []) {
+      if (resource.kind !== "plugin" || resource.pluginId !== pluginId) continue;
+      if (!resource.itemId?.startsWith(prefix)) continue;
+      const { annotationId, threadId } = parseAnnotationMentionItemId(
+        resource.itemId.slice(prefix.length),
+      );
+      if (threadId === null) ids.add(annotationId);
+    }
+  }
+  return [...ids];
+}
