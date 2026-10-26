@@ -22,6 +22,8 @@ import { ConnectDialog } from "./connect.tsx";
 import type { GenerationRecipe, Game, Workspace } from "../shared/schema.ts";
 import type { AgentSelection } from "../shared/generation.ts";
 import { StudioCanvas } from "./canvas.tsx";
+import { GenerationApproval } from "./generation-approval.tsx";
+import { APPROVAL_RENDERER } from "../shared/approvals.ts";
 import { ModelReviewLinks, ModelReviewPage } from "./model-review/index.tsx";
 import { DesignEditor, AssetLibrary, Evidence } from "./views.tsx";
 import { UnityPanel, useUnityEditors, editorLabel } from "./unity.tsx";
@@ -522,6 +524,26 @@ function Workbench({ gameId, tab }: { gameId: string; tab: Tab }) {
                   >
                     <Icon name="Plus" />
                   </button>
+                  {workspace.approvalGrant && (
+                    <button
+                      className="gs-grant"
+                      title="The agent's paid runs for this game start without asking. Click to ask again."
+                      onClick={() =>
+                        void client
+                          .generationGrant({
+                            gameId,
+                            enabled: false,
+                            threadId:
+                              composer.scope.kind === "thread" ? composer.scope.threadId : null,
+                          })
+                          .then(() => refetch())
+                          .catch((cause) => setError(message(cause)))
+                      }
+                    >
+                      <Icon name="ShieldCheck" />
+                      Runs auto-approved
+                    </button>
+                  )}
                 </div>
                 {board ? (
                   <StudioCanvas
@@ -899,6 +921,7 @@ export default definePluginApp((app) => {
     environmentProviderId: "unity-rampage-slot",
     component: UnitySlotInputs,
   });
+  app.slots.pendingInteraction({ id: APPROVAL_RENDERER, component: GenerationApproval });
   app.composer.customize({
     id: "studio-native-composer",
     scopes: ["new-thread", "thread"],

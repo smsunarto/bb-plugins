@@ -155,6 +155,13 @@ export function nodeRecipe(node: Pick<CanvasNode, "type" | "data">) {
 }
 
 /** The model a direct run of the node generates with. Text and agent nodes run on BB. */
+/** The label a model is shown with, from the recipe that names it; otherwise its id. */
+export function modelLabel(provider: string, id?: string): string {
+  const recipe = recipes.find(
+    ({ model }) => model && model.provider === provider && (model.id ?? null) === (id ?? null),
+  );
+  return recipe?.label ?? (id ? `${provider} ${id}` : provider);
+}
 export function recipeModel(node: Pick<CanvasNode, "type" | "data">): RecipeModel | undefined {
   if (node.type === "text" || node.type === "agent") return { provider: "bb" };
   return nodeRecipe(node)?.model;

@@ -169,7 +169,9 @@ async function fixture() {
   const slot = slots.register("host", rootPath, "project");
   const acquiring = slots.acquire(slot.id, "host", "project", "thread");
   slots.completeAcquire(slot.id, acquiring.leaseId!);
-  const generations = new Generations(bb, async () => ({ vertexProject: "studio-test" }), slots);
+  const generations = new Generations(bb, async () => ({ vertexProject: "studio-test" }), slots, {
+    ask: async () => ({ outcome: "submitted" as const, value: { approved: true } }),
+  });
   const runs = new CanvasRunStore(bb.storage.database());
   const work = new GenerationWork(slots);
   cleanups.push(async () => {

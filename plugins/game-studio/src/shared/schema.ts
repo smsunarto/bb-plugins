@@ -162,8 +162,12 @@ export const workspaceBoardSchema = z.object({
   freshness: z.record(z.string(), freshnessSchema).default({}),
   pending: z.record(z.string(), pendingRunSchema).default({}),
 });
+/** An agent's later paid runs for a game are approved without asking while a grant stands. */
+export const approvalGrantSchema = z.object({ threadId: z.string().nullable(), at: z.number() });
+export type ApprovalGrant = z.infer<typeof approvalGrantSchema>;
 export const workspaceSchema = z.object({
   game: gameSchema,
+  approvalGrant: approvalGrantSchema.nullable().default(null),
   index: indexSchema,
   indexRevision: z.string(),
   boards: z.array(workspaceBoardSchema),

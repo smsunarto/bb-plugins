@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
-import type { PendingRun, Workspace } from "../../shared/schema.ts";
+import type { ApprovalGrant, PendingRun, Workspace } from "../../shared/schema.ts";
 import type { Generations } from "./generations.ts";
 import { loadCanvas } from "./studio.ts";
 
@@ -10,9 +10,11 @@ export type WorkspaceContext = { bb: BbPluginApi; generations?: Generations };
 function uncertain(
   workspace: Workspace,
   pending: Record<string, Record<string, PendingRun>>,
+  grant: ApprovalGrant | null,
 ): Workspace {
   return {
     ...workspace,
+    approvalGrant: grant,
     boards: workspace.boards.map((entry) =>
       Object.assign({}, entry, { pending: pending[entry.board.id] ?? {} }),
     ),
@@ -40,16 +42,26 @@ export async function readWorkspace(
   let read = await loadCanvas(ctx.bb, gameId, options);
   if (!ctx.generations) return read.workspace;
   for (let pass = 0; ; pass++) {
-    if (read.stale) return uncertain(read.workspace, ctx.generations.pending(gameId));
+    if (read.stale)
+      return uncertain(
+        read.workspace,
+        ctx.generations.pending(gameId),
+        ctx.generations.grant(gameId),
+      );
     let refreshed;
     try {
       refreshed = await ctx.generations.refresh(read.workspace.game, read);
     } catch {
-      return uncertain(read.workspace, ctx.generations.pending(gameId));
+      return uncertain(
+        read.workspace,
+        ctx.generations.pending(gameId),
+        ctx.generations.grant(gameId),
+      );
     }
     if (!refreshed.changed || pass > 0)
       return {
         ...read.workspace,
+        approvalGrant: refreshed.grant,
         generationJobs: refreshed.jobs,
         boards: read.workspace.boards.map((entry) =>
           Object.assign({}, entry, { pending: refreshed.pending[entry.board.id] ?? {} }),

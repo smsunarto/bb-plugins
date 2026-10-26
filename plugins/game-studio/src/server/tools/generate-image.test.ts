@@ -2,6 +2,28 @@ import { expect, test } from "bun:test";
 import { createFakePluginHost, makeThreadResponse } from "@get-bb/plugin-sdk/testing";
 import plugin from "../server.ts";
 import { mediaRequest, generationJob } from "../../shared/generation.ts";
+import { generationApprovalPayload } from "../../shared/approvals.ts";
+
+type Approver = {
+  pendingInteractions: readonly { id: string }[];
+  submitInteraction(id: string, value: { approved: boolean }): void;
+};
+/** Answers every approval form the way a person approving everything would, while `action` runs. */
+async function approving<T>(harness: Approver, action: () => Promise<T>): Promise<T> {
+  const answered = new Set<string>();
+  const timer = setInterval(() => {
+    for (const { id } of harness.pendingInteractions)
+      if (!answered.has(id)) {
+        answered.add(id);
+        harness.submitInteraction(id, { approved: true });
+      }
+  }, 2);
+  try {
+    return await action();
+  } finally {
+    clearInterval(timer);
+  }
+}
 
 test("native generation tools dispatch typed requests to the game's host and keep secrets out of results", async () => {
   const calls: { hostId: unknown; method: string; input: unknown }[] = [];
@@ -64,10 +86,12 @@ test("native generation tools dispatch typed requests to the game's host and kee
     ["game_studio_generate_3d_asset", { approvedImagePath: "canvas/staging/moon.png" }],
   ] as const) {
     const result = JSON.parse(
-      (await harness.callAgentTool(
-        name,
-        { gameId: "game", requestId: name, ...input },
-        { threadId: "thread" },
+      (await approving(harness, () =>
+        harness.callAgentTool(
+          name,
+          { gameId: "game", requestId: name, ...input },
+          { threadId: "thread" },
+        ),
       )) as string,
     );
     expect(result.job.status).toBe("queued");
@@ -136,10 +160,12 @@ test("a failed dispatch with no host job can be reconciled and releases its chec
   const preparing = slots.acquire(slot.id, "remote", "project", "thread"),
     leased = slots.completeAcquire(slot.id, preparing.leaseId!);
   await expect(
-    harness.callAgentTool(
-      "game_studio_generate_image",
-      { gameId: "game", requestId: "lost", prompt: "A moon" },
-      { threadId: "thread" },
+    approving(harness, () =>
+      harness.callAgentTool(
+        "game_studio_generate_image",
+        { gameId: "game", requestId: "lost", prompt: "A moon" },
+        { threadId: "thread" },
+      ),
     ),
   ).rejects.toThrow("Host disconnected");
   expect(() => slots.beginRelease(leased.id, "thread", leased.leaseId!)).toThrow("generation jobs");
@@ -319,7 +345,9 @@ test("another thread can read a completed job and adopt it without replacing its
     previewPath: "index.html",
   });
   const slots = new SlotStore(bb.storage.database()),
-    generations = new Generations(bb, async () => ({}), slots),
+    generations = new Generations(bb, async () => ({}), slots, {
+      ask: async () => ({ outcome: "submitted" as const, value: { approved: true } }),
+    }),
     work = new GenerationWork(slots);
   work.reserve("remote", "/game", "finished", "requester");
   const result = await generations.control(
@@ -383,6 +411,7 @@ test("canvas job controls work without a main chat thread and cannot control age
       throw new Error("Status must not request provider credentials");
     },
     slots,
+    { ask: async () => ({ outcome: "submitted" as const, value: { approved: true } }) },
   );
   const input = { gameId: "game", jobId: "direct-job", threadId: null, action: "status" as const };
   expect((await service.directControl(input)).job?.status).toBe("running");
@@ -400,4 +429,55 @@ test("canvas job controls work without a main chat thread and cannot control age
   expect((await service.directControl({ ...input, jobId: "missing" })).job).toBeNull();
   expect(work.owner("host", "/game", "missing")).toBeNull();
   expect(calls.filter((method) => method === "reconcileMissing")).toEqual(["reconcileMissing"]);
+});
+
+test("a paid agent request waits for the person, and a decline submits nothing", async () => {
+  const calls: string[] = [];
+  const { bb, harness } = createFakePluginHost({
+    pluginId: "game-studio",
+    sdk: {
+      threads: {
+        get: async ({ threadId }) =>
+          makeThreadResponse({ id: threadId, projectId: "project", environmentId: "env" }),
+      },
+      environments: { get: async () => ({ id: "env", hostId: "remote", path: "/game" }) as never },
+    },
+    experimental_callHostRpc: async ({ method }) => {
+      calls.push(method);
+      if (method === "resolveWorkspace") return { workspacePath: "/game" };
+      throw new Error(`Unexpected host call ${method}`);
+    },
+  });
+  await plugin(bb);
+  await bb.storage.kv.set("game:game", {
+    id: "game",
+    name: "Moon",
+    projectId: "project",
+    hostId: "remote",
+    rootPath: "/game",
+    kind: "unity",
+    createdAt: 0,
+    threadId: "thread",
+    previewPath: "index.html",
+  });
+  const call = harness.callAgentTool(
+    "game_studio_generate_image",
+    { gameId: "game", requestId: "declined", prompt: "A moon icon", outputCount: 4 },
+    { threadId: "thread" },
+  );
+  while (!harness.pendingInteractions.length) await new Promise((r) => setTimeout(r, 2));
+  const form = harness.pendingInteractions[0]!;
+  expect(form.threadId).toBe("thread");
+  expect(form.title).toBe("Approve a generation for Moon");
+  expect(generationApprovalPayload.parse(form.payload).items).toEqual([
+    expect.objectContaining({
+      requestId: "declined",
+      provider: "google",
+      model: "gemini-nano-banana-2.1",
+      count: 4,
+    }),
+  ]);
+  harness.submitInteraction(form.id, { approved: false });
+  expect(JSON.parse((await call) as string)).toMatchObject({ declined: true });
+  expect(calls).not.toContain("start");
 });

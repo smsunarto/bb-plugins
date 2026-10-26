@@ -1,5 +1,5 @@
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
-import type { z } from "zod";
+import { z } from "zod";
 import { agentSelection, canvasGenerationInput } from "../../shared/generation.ts";
 import type { PendingRun } from "../../shared/schema.ts";
 
@@ -15,7 +15,12 @@ type Db = ReturnType<BbPluginApi["storage"]["database"]>;
 export const heldRunAgent = agentSelection.partial({ reasoningLevel: true });
 export type HeldRunAgent = z.output<typeof heldRunAgent>;
 /** What a held run keeps of its request besides the node: the caller's model and approval. */
-export const heldRunOptions = canvasGenerationInput.pick({ model: true, approvedImagePath: true });
+export const heldRunOptions = canvasGenerationInput
+  .pick({ model: true, approvedImagePath: true })
+  .extend({
+    /** The model the person approved this run for; a node changed since does not run. */
+    approved: z.strictObject({ provider: z.string(), model: z.string().optional() }).optional(),
+  });
 export type HeldRunOptions = z.output<typeof heldRunOptions>;
 export type HeldRun = {
   gameId: string;

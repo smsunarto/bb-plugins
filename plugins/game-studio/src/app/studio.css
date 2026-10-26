@@ -1070,3 +1070,88 @@
 .gs-app .gs-badge.gs-success {
   color: var(--success-foreground);
 }
+
+/* The form an agent's paid run waits on, rendered by bb beside the thread composer. */
+.gs-approval {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px;
+  font-size: 12px;
+}
+.gs-approval p {
+  margin: 0;
+}
+.gs-approval ul {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.gs-approval li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.gs-approval li > svg {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+  color: var(--muted-foreground);
+}
+.gs-approval-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.gs-approval-model {
+  margin-left: auto;
+  flex-shrink: 0;
+  color: var(--muted-foreground);
+}
+.gs-approval-grant {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted-foreground);
+}
+.gs-approval footer {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.gs-approval footer small {
+  margin-right: auto;
+  color: var(--muted-foreground);
+}
+.gs-approval-approve {
+  background: var(--gs-accent, var(--primary));
+  color: var(--primary-foreground, #181818);
+  font-weight: 600;
+}
+.gs-approval-error {
+  margin: 0;
+  padding: 10px 12px;
+  color: var(--destructive-text);
+  font-size: 12px;
+}
+
+/* A game whose agent runs the person approved in advance; one click asks again. */
+.gs-app .gs-grant {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: 4px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--ansi-10, #9ddd54) 20%, transparent);
+  color: var(--ansi-10, #9ddd54);
+  font-size: 11px;
+}
+.gs-app .gs-grant svg {
+  width: 12px;
+  height: 12px;
+}

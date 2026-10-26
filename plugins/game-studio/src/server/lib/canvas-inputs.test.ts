@@ -176,6 +176,7 @@ async function fixture({ registered = true } = {}) {
     bb,
     async () => ({ vertexProject: "studio-test-project" }),
     slots,
+    { ask: async () => ({ outcome: "submitted" as const, value: { approved: true } }) },
   );
   const work = new GenerationWork(slots);
   captureGuard = (phase) => {

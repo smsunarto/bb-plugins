@@ -41,6 +41,7 @@ import { falAuth } from "./rpc/fal-auth.ts";
 import { auth } from "./command/auth.ts";
 import { generateCanvas } from "./rpc/generate-canvas.ts";
 import { cancelCanvasRun } from "./rpc/cancel-canvas-run.ts";
+import { generationGrant } from "./rpc/generation-grant.ts";
 import { canvasGenerationStatus } from "./rpc/canvas-generation-status.ts";
 import { briefTemplates } from "./rpc/brief-templates.ts";
 import { registerRequestMention } from "./lib/request-mention.ts";
@@ -52,6 +53,7 @@ export default definePlugin({
     briefTemplates,
     generateCanvas,
     cancelCanvasRun,
+    generationGrant,
     canvasGenerationStatus,
     falAuth,
     listUnityEditors,

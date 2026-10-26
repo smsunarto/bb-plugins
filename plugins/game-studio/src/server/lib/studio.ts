@@ -583,6 +583,7 @@ export async function loadCanvas(
   return {
     workspace: {
       game,
+      approvalGrant: null,
       index,
       indexRevision,
       // Held runs are the server's own; the generation service adds them to what it serves.
