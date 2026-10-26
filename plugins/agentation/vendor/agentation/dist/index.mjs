@@ -1,43 +1,1746 @@
 "use client";
 
-// src/components/page-toolbar-css/index.tsx
-import { useState as useState6, useCallback as useCallback5, useEffect as useEffect6, useLayoutEffect, useRef as useRef6 } from "react";
-import { createPortal as createPortal2 } from "react-dom";
+// src/hooks/use-latest-action.ts
+import { useEffect, useMemo } from "react";
 
-// src/components/annotation-popup-css/index.tsx
-import { useState, useRef, useEffect, useCallback, forwardRef, useImperativeHandle } from "react";
-
-// src/components/annotation-popup-css/styles.module.scss
-var css = '.styles-module__popup___IhzrD svg[fill=none] {\n  fill: none !important;\n}\n.styles-module__popup___IhzrD svg[fill=none] :not([fill]) {\n  fill: none !important;\n}\n\n@keyframes styles-module__popupEnter___AuQDN {\n  from {\n    opacity: 0;\n    transform: translateX(-50%) scale(0.95) translateY(4px);\n  }\n  to {\n    opacity: 1;\n    transform: translateX(-50%) scale(1) translateY(0);\n  }\n}\n@keyframes styles-module__popupExit___JJKQX {\n  from {\n    opacity: 1;\n    transform: translateX(-50%) scale(1) translateY(0);\n  }\n  to {\n    opacity: 0;\n    transform: translateX(-50%) scale(0.95) translateY(4px);\n  }\n}\n@keyframes styles-module__shake___jdbWe {\n  0%, 100% {\n    transform: translateX(-50%) scale(1) translateY(0) translateX(0);\n  }\n  20% {\n    transform: translateX(-50%) scale(1) translateY(0) translateX(-3px);\n  }\n  40% {\n    transform: translateX(-50%) scale(1) translateY(0) translateX(3px);\n  }\n  60% {\n    transform: translateX(-50%) scale(1) translateY(0) translateX(-2px);\n  }\n  80% {\n    transform: translateX(-50%) scale(1) translateY(0) translateX(2px);\n  }\n}\n.styles-module__popup___IhzrD {\n  position: fixed;\n  transform: translateX(-50%);\n  width: 280px;\n  padding: 0.75rem 1rem 14px;\n  background: #1a1a1a;\n  border-radius: 16px;\n  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.3), 0 0 0 1px rgba(255, 255, 255, 0.08);\n  z-index: 100001;\n  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;\n  will-change: transform, opacity;\n  opacity: 0;\n}\n.styles-module__popup___IhzrD.styles-module__enter___L7U7N {\n  animation: styles-module__popupEnter___AuQDN 0.2s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;\n}\n.styles-module__popup___IhzrD.styles-module__entered___COX-w {\n  opacity: 1;\n  transform: translateX(-50%) scale(1) translateY(0);\n}\n.styles-module__popup___IhzrD.styles-module__exit___5eGjE {\n  animation: styles-module__popupExit___JJKQX 0.15s ease-in forwards;\n}\n.styles-module__popup___IhzrD.styles-module__entered___COX-w.styles-module__shake___jdbWe {\n  animation: styles-module__shake___jdbWe 0.25s ease-out;\n}\n\n.styles-module__header___wWsSi {\n  display: flex;\n  align-items: center;\n  justify-content: space-between;\n  margin-bottom: 0.5625rem;\n}\n\n.styles-module__element___fTV2z {\n  font-size: 0.75rem;\n  font-weight: 400;\n  color: rgba(255, 255, 255, 0.5);\n  max-width: 100%;\n  overflow: hidden;\n  text-overflow: ellipsis;\n  white-space: nowrap;\n  flex: 1;\n}\n\n.styles-module__headerToggle___WpW0b {\n  display: flex;\n  align-items: center;\n  gap: 0.25rem;\n  background: none;\n  border: none;\n  padding: 0;\n  cursor: pointer;\n  flex: 1;\n  min-width: 0;\n  text-align: left;\n}\n.styles-module__headerToggle___WpW0b .styles-module__element___fTV2z {\n  flex: 1;\n}\n\n.styles-module__chevron___ZZJlR {\n  color: rgba(255, 255, 255, 0.5);\n  transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1);\n  flex-shrink: 0;\n}\n.styles-module__chevron___ZZJlR.styles-module__expanded___2Hxgv {\n  transform: rotate(90deg);\n}\n\n.styles-module__stylesWrapper___pnHgy {\n  display: grid;\n  grid-template-rows: 0fr;\n  transition: grid-template-rows 0.3s cubic-bezier(0.16, 1, 0.3, 1);\n}\n.styles-module__stylesWrapper___pnHgy.styles-module__expanded___2Hxgv {\n  grid-template-rows: 1fr;\n}\n\n.styles-module__stylesInner___YYZe2 {\n  overflow: hidden;\n}\n\n.styles-module__stylesBlock___VfQKn {\n  background: rgba(255, 255, 255, 0.05);\n  border-radius: 0.375rem;\n  padding: 0.5rem 0.625rem;\n  margin-bottom: 0.5rem;\n  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;\n  font-size: 0.6875rem;\n  line-height: 1.5;\n}\n\n.styles-module__styleLine___1YQiD {\n  color: rgba(255, 255, 255, 0.85);\n  word-break: break-word;\n}\n\n.styles-module__styleProperty___84L1i {\n  color: #c792ea;\n}\n\n.styles-module__styleValue___q51-h {\n  color: rgba(255, 255, 255, 0.85);\n}\n\n.styles-module__timestamp___Dtpsv {\n  font-size: 0.625rem;\n  font-weight: 500;\n  color: rgba(255, 255, 255, 0.35);\n  font-variant-numeric: tabular-nums;\n  margin-left: 0.5rem;\n  flex-shrink: 0;\n}\n\n.styles-module__quote___mcMmQ {\n  font-size: 12px;\n  font-style: italic;\n  color: rgba(255, 255, 255, 0.6);\n  margin-bottom: 0.5rem;\n  padding: 0.4rem 0.5rem;\n  background: rgba(255, 255, 255, 0.05);\n  border-radius: 0.25rem;\n  line-height: 1.45;\n}\n\n.styles-module__textarea___jrSae {\n  box-sizing: border-box;\n  width: 100%;\n  padding: 0.5rem 0.625rem;\n  font-size: 0.8125rem;\n  font-family: inherit;\n  background: rgba(255, 255, 255, 0.05);\n  color: #fff;\n  border: 1px solid rgba(255, 255, 255, 0.15);\n  border-radius: 8px;\n  resize: none;\n  outline: none;\n  transition: border-color 0.15s ease;\n}\n.styles-module__textarea___jrSae:focus {\n  border-color: var(--agentation-color-blue);\n}\n.styles-module__textarea___jrSae.styles-module__green___99l3h:focus {\n  border-color: var(--agentation-color-green);\n}\n.styles-module__textarea___jrSae::placeholder {\n  color: rgba(255, 255, 255, 0.35);\n}\n.styles-module__textarea___jrSae::-webkit-scrollbar {\n  width: 6px;\n}\n.styles-module__textarea___jrSae::-webkit-scrollbar-track {\n  background: transparent;\n}\n.styles-module__textarea___jrSae::-webkit-scrollbar-thumb {\n  background: rgba(255, 255, 255, 0.2);\n  border-radius: 3px;\n}\n\n.styles-module__actions___D6x3f {\n  display: flex;\n  justify-content: flex-end;\n  gap: 0.375rem;\n  margin-top: 0.5rem;\n}\n\n.styles-module__cancel___hRjnL,\n.styles-module__submit___K-mIR {\n  padding: 0.4rem 0.875rem;\n  font-size: 0.75rem;\n  font-weight: 500;\n  border-radius: 1rem;\n  border: none;\n  cursor: pointer;\n  transition: background-color 0.15s ease, color 0.15s ease, opacity 0.15s ease;\n}\n\n.styles-module__cancel___hRjnL {\n  background: transparent;\n  color: rgba(255, 255, 255, 0.5);\n}\n.styles-module__cancel___hRjnL:hover {\n  background: rgba(255, 255, 255, 0.1);\n  color: rgba(255, 255, 255, 0.8);\n}\n\n.styles-module__submit___K-mIR {\n  color: white;\n}\n.styles-module__submit___K-mIR:hover:not(:disabled) {\n  filter: brightness(0.9);\n}\n.styles-module__submit___K-mIR:disabled {\n  cursor: not-allowed;\n}\n\n.styles-module__deleteWrapper___oSjdo {\n  margin-right: auto;\n}\n\n.styles-module__deleteButton___4VuAE {\n  cursor: pointer;\n  display: flex;\n  align-items: center;\n  justify-content: center;\n  width: 28px;\n  height: 28px;\n  border-radius: 50%;\n  border: none;\n  background: transparent;\n  color: rgba(255, 255, 255, 0.4);\n  transition: background-color 0.15s ease, color 0.15s ease, transform 0.1s ease;\n}\n.styles-module__deleteButton___4VuAE:hover {\n  background-color: color-mix(in srgb, var(--agentation-color-red) 25%, transparent);\n  color: var(--agentation-color-red);\n}\n.styles-module__deleteButton___4VuAE:active {\n  transform: scale(0.92);\n}\n\n.styles-module__light___6AaSQ.styles-module__popup___IhzrD {\n  background: #fff;\n  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.12), 0 0 0 1px rgba(0, 0, 0, 0.06);\n}\n.styles-module__light___6AaSQ .styles-module__element___fTV2z {\n  color: rgba(0, 0, 0, 0.6);\n}\n.styles-module__light___6AaSQ .styles-module__timestamp___Dtpsv {\n  color: rgba(0, 0, 0, 0.4);\n}\n.styles-module__light___6AaSQ .styles-module__chevron___ZZJlR {\n  color: rgba(0, 0, 0, 0.4);\n}\n.styles-module__light___6AaSQ .styles-module__stylesBlock___VfQKn {\n  background: rgba(0, 0, 0, 0.03);\n}\n.styles-module__light___6AaSQ .styles-module__styleLine___1YQiD {\n  color: rgba(0, 0, 0, 0.75);\n}\n.styles-module__light___6AaSQ .styles-module__styleProperty___84L1i {\n  color: #7c3aed;\n}\n.styles-module__light___6AaSQ .styles-module__styleValue___q51-h {\n  color: rgba(0, 0, 0, 0.75);\n}\n.styles-module__light___6AaSQ .styles-module__quote___mcMmQ {\n  color: rgba(0, 0, 0, 0.55);\n  background: rgba(0, 0, 0, 0.04);\n}\n.styles-module__light___6AaSQ .styles-module__textarea___jrSae {\n  background: rgba(0, 0, 0, 0.03);\n  color: #1a1a1a;\n  border-color: rgba(0, 0, 0, 0.12);\n}\n.styles-module__light___6AaSQ .styles-module__textarea___jrSae::placeholder {\n  color: rgba(0, 0, 0, 0.4);\n}\n.styles-module__light___6AaSQ .styles-module__textarea___jrSae::-webkit-scrollbar-thumb {\n  background: rgba(0, 0, 0, 0.15);\n}\n.styles-module__light___6AaSQ .styles-module__cancel___hRjnL {\n  color: rgba(0, 0, 0, 0.5);\n}\n.styles-module__light___6AaSQ .styles-module__cancel___hRjnL:hover {\n  background: rgba(0, 0, 0, 0.06);\n  color: rgba(0, 0, 0, 0.75);\n}\n.styles-module__light___6AaSQ .styles-module__deleteButton___4VuAE {\n  color: rgba(0, 0, 0, 0.4);\n}\n.styles-module__light___6AaSQ .styles-module__deleteButton___4VuAE:hover {\n  background-color: color-mix(in srgb, var(--agentation-color-red) 25%, transparent);\n  color: var(--agentation-color-red);\n}';
-var classNames = { "popup": "styles-module__popup___IhzrD", "enter": "styles-module__enter___L7U7N", "popupEnter": "styles-module__popupEnter___AuQDN", "entered": "styles-module__entered___COX-w", "exit": "styles-module__exit___5eGjE", "popupExit": "styles-module__popupExit___JJKQX", "shake": "styles-module__shake___jdbWe", "header": "styles-module__header___wWsSi", "element": "styles-module__element___fTV2z", "headerToggle": "styles-module__headerToggle___WpW0b", "chevron": "styles-module__chevron___ZZJlR", "expanded": "styles-module__expanded___2Hxgv", "stylesWrapper": "styles-module__stylesWrapper___pnHgy", "stylesInner": "styles-module__stylesInner___YYZe2", "stylesBlock": "styles-module__stylesBlock___VfQKn", "styleLine": "styles-module__styleLine___1YQiD", "styleProperty": "styles-module__styleProperty___84L1i", "styleValue": "styles-module__styleValue___q51-h", "timestamp": "styles-module__timestamp___Dtpsv", "quote": "styles-module__quote___mcMmQ", "textarea": "styles-module__textarea___jrSae", "green": "styles-module__green___99l3h", "actions": "styles-module__actions___D6x3f", "cancel": "styles-module__cancel___hRjnL", "submit": "styles-module__submit___K-mIR", "deleteWrapper": "styles-module__deleteWrapper___oSjdo", "deleteButton": "styles-module__deleteButton___4VuAE", "light": "styles-module__light___6AaSQ" };
-if (typeof document !== "undefined") {
-  let style = document.getElementById("feedback-tool-styles-annotation-popup-css-styles");
+// src/utils/freeze-animations.ts
+var EXCLUDE_ATTRS = [
+  "data-feedback-toolbar",
+  "data-annotation-popup",
+  "data-annotation-marker"
+];
+var NOT_SELECTORS = EXCLUDE_ATTRS.flatMap((a) => [`:not([${a}])`, `:not([${a}] *)`]).join("");
+var STYLE_ID = "feedback-freeze-styles";
+var STATE_KEY = "__agentation_freeze";
+function getState() {
+  if (typeof window === "undefined") {
+    return {
+      frozen: false,
+      installed: true,
+      // prevent patching on server
+      origSetTimeout: setTimeout,
+      origSetInterval: setInterval,
+      origRAF: (cb) => 0,
+      pausedAnimations: [],
+      frozenTimeoutQueue: [],
+      frozenRAFQueue: []
+    };
+  }
+  const w = window;
+  return w[STATE_KEY] ?? {
+    frozen: false,
+    installed: false,
+    origSetTimeout: window.setTimeout.bind(window),
+    origSetInterval: window.setInterval.bind(window),
+    origRAF: window.requestAnimationFrame.bind(window),
+    pausedAnimations: [],
+    frozenTimeoutQueue: [],
+    frozenRAFQueue: []
+  };
+}
+var _s = getState();
+function installAnimationFreeze() {
+  if (typeof window === "undefined") return;
+  const w = window;
+  _s = w[STATE_KEY] ?? (w[STATE_KEY] = _s);
+  if (_s.installed) return;
+  window.setTimeout = (handler, timeout, ...args) => {
+    if (typeof handler === "string") {
+      return _s.origSetTimeout(handler, timeout);
+    }
+    return _s.origSetTimeout(
+      (...a) => {
+        if (_s.frozen) {
+          _s.frozenTimeoutQueue.push(() => handler(...a));
+        } else {
+          handler(...a);
+        }
+      },
+      timeout,
+      ...args
+    );
+  };
+  window.setInterval = (handler, timeout, ...args) => {
+    if (typeof handler === "string") {
+      return _s.origSetInterval(handler, timeout);
+    }
+    return _s.origSetInterval(
+      (...a) => {
+        if (!_s.frozen) handler(...a);
+      },
+      timeout,
+      ...args
+    );
+  };
+  window.requestAnimationFrame = (callback) => {
+    return _s.origRAF((timestamp) => {
+      if (_s.frozen) {
+        _s.frozenRAFQueue.push(callback);
+      } else {
+        callback(timestamp);
+      }
+    });
+  };
+  _s.installed = true;
+}
+var originalSetTimeout = _s.origSetTimeout;
+var originalSetInterval = _s.origSetInterval;
+var originalRequestAnimationFrame = _s.origRAF;
+function isAgentationElement(el) {
+  if (!el) return false;
+  return EXCLUDE_ATTRS.some((attr) => !!el.closest?.(`[${attr}]`));
+}
+function freeze() {
+  if (typeof document === "undefined") return;
+  installAnimationFreeze();
+  if (_s.frozen) return;
+  _s.frozen = true;
+  _s.frozenTimeoutQueue = [];
+  _s.frozenRAFQueue = [];
+  let style = document.getElementById(STYLE_ID);
   if (!style) {
     style = document.createElement("style");
-    style.id = "feedback-tool-styles-annotation-popup-css-styles";
-    document.head.appendChild(style);
+    style.id = STYLE_ID;
   }
-  style.textContent = css;
+  style.textContent = `
+    *${NOT_SELECTORS},
+    *${NOT_SELECTORS}::before,
+    *${NOT_SELECTORS}::after {
+      animation-play-state: paused !important;
+      transition: none !important;
+    }
+  `;
+  document.head.appendChild(style);
+  _s.pausedAnimations = [];
+  try {
+    document.getAnimations().forEach((anim) => {
+      if (anim.playState !== "running") return;
+      const target = anim.effect?.target;
+      if (!isAgentationElement(target)) {
+        anim.pause();
+        _s.pausedAnimations.push(anim);
+      }
+    });
+  } catch {
+  }
+  document.querySelectorAll("video").forEach((video) => {
+    if (!video.paused) {
+      video.dataset.wasPaused = "false";
+      video.pause();
+    }
+  });
 }
-var styles_module_default = classNames;
+function unfreeze() {
+  if (typeof document === "undefined") return;
+  if (!_s.frozen) return;
+  _s.frozen = false;
+  const timeoutQueue = _s.frozenTimeoutQueue;
+  _s.frozenTimeoutQueue = [];
+  for (const cb of timeoutQueue) {
+    _s.origSetTimeout(() => {
+      if (_s.frozen) {
+        _s.frozenTimeoutQueue.push(cb);
+        return;
+      }
+      try {
+        cb();
+      } catch (e) {
+        console.warn("[agentation] Error replaying queued timeout:", e);
+      }
+    }, 0);
+  }
+  const rafQueue = _s.frozenRAFQueue;
+  _s.frozenRAFQueue = [];
+  for (const cb of rafQueue) {
+    _s.origRAF((ts) => {
+      if (_s.frozen) {
+        _s.frozenRAFQueue.push(cb);
+        return;
+      }
+      cb(ts);
+    });
+  }
+  for (const anim of _s.pausedAnimations) {
+    try {
+      anim.play();
+    } catch (e) {
+      console.warn("[agentation] Error resuming animation:", e);
+    }
+  }
+  _s.pausedAnimations = [];
+  document.getElementById(STYLE_ID)?.remove();
+  document.querySelectorAll("video").forEach((video) => {
+    if (video.dataset.wasPaused === "false") {
+      video.play().catch(() => {
+      });
+      delete video.dataset.wasPaused;
+    }
+  });
+}
+
+// src/hooks/use-latest-action.ts
+function useLatestAction() {
+  const action = useMemo(() => {
+    let sequence = 0;
+    const timers = /* @__PURE__ */ new Set();
+    const start = () => {
+      timers.forEach(clearTimeout);
+      timers.clear();
+      return ++sequence;
+    };
+    const isCurrent = (id) => id === sequence;
+    const schedule = (id, callback, delay) => {
+      if (!isCurrent(id)) return;
+      const timer = originalSetTimeout(() => {
+        timers.delete(timer);
+        if (isCurrent(id)) callback();
+      }, delay);
+      timers.add(timer);
+    };
+    return { start, isCurrent, schedule };
+  }, []);
+  useEffect(
+    () => () => {
+      action.start();
+    },
+    [action]
+  );
+  return action;
+}
+
+// src/utils/merge-session-feedback.ts
+function mergeSessionFeedback(before, current, incoming, serverIds) {
+  const serverId = (annotation) => serverIds.get(annotation.id) ?? annotation.id;
+  const previous = new Map(before.map((annotation) => [serverId(annotation), annotation]));
+  const latest = new Map(current.map((annotation) => [serverId(annotation), annotation]));
+  const receivedIds = new Set(incoming.map((annotation) => annotation.id));
+  const merged = [];
+  for (const remote of incoming) {
+    const original = previous.get(remote.id);
+    const local = latest.get(remote.id);
+    if (original && !local) continue;
+    const edited = local && original && local.comment !== original.comment;
+    merged.push(edited ? { ...remote, comment: local.comment } : remote);
+  }
+  for (const [id, local] of latest) {
+    if (!previous.has(id) && !receivedIds.has(id)) merged.push(local);
+  }
+  return merged;
+}
+
+// src/utils/frame-dom.ts
+function frameDocument(frame) {
+  if (frame.tagName !== "IFRAME") return null;
+  try {
+    return frame.contentDocument;
+  } catch {
+    return null;
+  }
+}
+function parentFrame(doc, root = document) {
+  if (doc === root) return null;
+  try {
+    return doc.defaultView?.frameElement;
+  } catch {
+    return null;
+  }
+}
+function isShadowRoot(node) {
+  return node.nodeType === 11 && "host" in node;
+}
+function frameGeometry(frame) {
+  const rect = frame.getBoundingClientRect();
+  const sx = frame.offsetWidth ? rect.width / frame.offsetWidth : 1;
+  const sy = frame.offsetHeight ? rect.height / frame.offsetHeight : 1;
+  const style = frame.ownerDocument.defaultView?.getComputedStyle(frame);
+  const padding = (value) => parseFloat(value || "0") || 0;
+  const left = padding(style?.paddingLeft), top = padding(style?.paddingTop);
+  const width = frame.clientWidth - left - padding(style?.paddingRight);
+  const height = frame.clientHeight - top - padding(style?.paddingBottom);
+  return {
+    x: rect.left + (frame.clientLeft + left) * sx,
+    y: rect.top + (frame.clientTop + top) * sy,
+    sx,
+    sy,
+    width: width * sx,
+    height: height * sy
+  };
+}
+function frameLocationKey(url) {
+  try {
+    const parsed = new URL(url);
+    return parsed.origin + parsed.pathname;
+  } catch {
+    return url;
+  }
+}
+function viewportPoint(doc, x, y, root = document) {
+  let frame = parentFrame(doc, root);
+  while (frame) {
+    const box = frameGeometry(frame);
+    x = box.x + x * box.sx;
+    y = box.y + y * box.sy;
+    frame = parentFrame(frame.ownerDocument, root);
+  }
+  return { x, y };
+}
+function viewportRect(element, root = document) {
+  const rect = element.getBoundingClientRect();
+  return rectInViewport(element.ownerDocument, rect, root);
+}
+function rectInViewport(doc, rect, root) {
+  if (!parentFrame(doc, root)) return rect;
+  let left = rect.left, top = rect.top, right = rect.right, bottom = rect.bottom;
+  let frame = parentFrame(doc, root);
+  while (frame) {
+    const box = frameGeometry(frame);
+    left = Math.max(box.x, box.x + left * box.sx);
+    top = Math.max(box.y, box.y + top * box.sy);
+    right = Math.min(box.x + box.width, box.x + right * box.sx);
+    bottom = Math.min(box.y + box.height, box.y + bottom * box.sy);
+    frame = parentFrame(frame.ownerDocument, root);
+  }
+  return new DOMRect(left, top, Math.max(0, right - left), Math.max(0, bottom - top));
+}
+function framesIn(root) {
+  const result = [];
+  for (const element of root.querySelectorAll("*")) {
+    if (element.tagName === "IFRAME") result.push(element);
+    if (element.shadowRoot && element.tagName !== "AGENTATION-TOOLBAR")
+      result.push(...framesIn(element.shadowRoot));
+  }
+  return result;
+}
+function captureFrameContext(element, x, y, root = document) {
+  const chain = [];
+  for (let frame = parentFrame(element.ownerDocument, root); frame; frame = parentFrame(frame.ownerDocument, root))
+    chain.unshift(frame);
+  if (!chain.length) return void 0;
+  const path = chain.map((frame) => {
+    const box = frameGeometry(frame);
+    x = (x - box.x) / box.sx;
+    y = (y - box.y) / box.sy;
+    return {
+      index: framesIn(frame.ownerDocument).indexOf(frame),
+      id: frame.id || void 0,
+      url: frameDocument(frame)?.URL ?? ""
+    };
+  });
+  const win = element.ownerDocument.defaultView;
+  let fixed = false;
+  for (let current = element; current; current = current.parentElement) {
+    if (["fixed", "sticky"].includes(win.getComputedStyle(current).position)) {
+      fixed = true;
+      break;
+    }
+  }
+  const dx = fixed ? 0 : win.scrollX, dy = fixed ? 0 : win.scrollY;
+  const rect = element.getBoundingClientRect();
+  return {
+    path,
+    x: x + dx,
+    y: y + dy,
+    fixed,
+    boundingBox: { x: rect.left + dx, y: rect.top + dy, width: rect.width, height: rect.height }
+  };
+}
+function createFrameProjector(root = document) {
+  const framesByDocument = /* @__PURE__ */ new Map();
+  const lookup = (doc) => {
+    let frames = framesByDocument.get(doc);
+    if (!frames) {
+      frames = framesIn(doc);
+      framesByDocument.set(doc, frames);
+    }
+    return frames;
+  };
+  return (annotation) => projectFrameAnnotation(annotation, root, lookup);
+}
+function projectFrameAnnotation(annotation, root = document, lookup = framesIn) {
+  const context = annotation.frame;
+  if (!context) return annotation;
+  let doc = root;
+  for (const entry of context.path) {
+    const frames = lookup(doc);
+    const frame = entry.id ? frames.find((frame2) => frame2.id === entry.id) : frames[entry.index];
+    const child = frame && frameDocument(frame);
+    if (!child || frameLocationKey(child.URL) !== frameLocationKey(entry.url)) return null;
+    doc = child;
+  }
+  const win = doc.defaultView;
+  const dx = context.fixed ? 0 : win.scrollX, dy = context.fixed ? 0 : win.scrollY;
+  let localX = context.x - dx, localY = context.y - dy;
+  for (let current = doc, frame = parentFrame(doc, root); frame; frame = parentFrame(current, root)) {
+    const view = current.defaultView;
+    if (localX < 0 || localY < 0 || localX > view.innerWidth || localY > view.innerHeight)
+      return null;
+    const box2 = frameGeometry(frame);
+    if (box2.width <= 0 || box2.height <= 0) return null;
+    localX = box2.x + localX * box2.sx;
+    localY = box2.y + localY * box2.sy;
+    current = frame.ownerDocument;
+  }
+  const box = context.boundingBox;
+  const rect = rectInViewport(doc, new DOMRect(box.x - dx, box.y - dy, box.width, box.height), root);
+  const rootWindow = root.defaultView;
+  return {
+    ...annotation,
+    x: localX / rootWindow.innerWidth * 100,
+    y: localY + (annotation.isFixed ? 0 : rootWindow.scrollY),
+    boundingBox: {
+      x: rect.x,
+      y: rect.y + (annotation.isFixed ? 0 : rootWindow.scrollY),
+      width: rect.width,
+      height: rect.height
+    }
+  };
+}
+function pageEvent(event, doc, root) {
+  if (!("clientX" in event) || doc === root) return event;
+  const point = viewportPoint(
+    doc,
+    event.clientX,
+    event.clientY,
+    root
+  );
+  return new Proxy(event, {
+    get(target, key) {
+      if (key === "clientX") return point.x;
+      if (key === "clientY") return point.y;
+      const value = Reflect.get(target, key, target);
+      return typeof value === "function" ? value.bind(target) : value;
+    }
+  });
+}
+function createPageEvents(root, onGeometryChange) {
+  const documents = /* @__PURE__ */ new Set([root]);
+  const subscriptions = /* @__PURE__ */ new Set();
+  let observers = [];
+  let frames = /* @__PURE__ */ new Set();
+  let queued = false, running = false;
+  let resizeObserver;
+  const connect = (subscription, doc) => {
+    const handler = (event) => subscription.listener(pageEvent(event, doc, root));
+    subscription.handlers.set(doc, handler);
+    doc.addEventListener(subscription.type, handler, subscription.options);
+  };
+  const reconcile = () => {
+    queued = false;
+    if (!running) return;
+    const next = /* @__PURE__ */ new Set();
+    const nextFrames = /* @__PURE__ */ new Set();
+    const roots = [];
+    const visit = (tree) => {
+      roots.push(tree);
+      for (const element of tree.querySelectorAll("*")) {
+        if (element.matches("agentation-toolbar, [data-agentation-portal]")) continue;
+        if (element.shadowRoot) visit(element.shadowRoot);
+        if (element.tagName === "IFRAME") {
+          nextFrames.add(element);
+          const child = frameDocument(element);
+          if (child && !next.has(child)) {
+            next.add(child);
+            visit(child);
+          }
+        }
+      }
+    };
+    next.add(root);
+    visit(root);
+    for (const doc of documents)
+      if (!next.has(doc)) {
+        for (const subscription of subscriptions) {
+          const handler = subscription.handlers.get(doc);
+          if (handler) doc.removeEventListener(subscription.type, handler, subscription.options);
+          subscription.handlers.delete(doc);
+        }
+        documents.delete(doc);
+      }
+    for (const doc of next)
+      if (!documents.has(doc)) {
+        documents.add(doc);
+        for (const subscription of subscriptions) connect(subscription, doc);
+      }
+    for (const frame of frames)
+      if (!nextFrames.has(frame)) frame.removeEventListener("load", reconcile);
+    for (const frame of nextFrames)
+      if (!frames.has(frame)) frame.addEventListener("load", reconcile);
+    frames = nextFrames;
+    resizeObserver?.disconnect();
+    frames.forEach((frame) => resizeObserver?.observe(frame));
+    observers.forEach((observer) => observer.disconnect());
+    observers = roots.map((tree) => {
+      const observer = new MutationObserver((records) => {
+        const structural = records.some(
+          (record) => [...record.addedNodes, ...record.removedNodes].some(
+            (node) => node.nodeType === 1 && !node.closest("agentation-toolbar, [data-agentation-portal]") && (node.tagName === "IFRAME" || !!node.shadowRoot || !!node.querySelector("iframe"))
+          )
+        );
+        if (structural && !queued) {
+          queued = true;
+          queueMicrotask(reconcile);
+        }
+      });
+      observer.observe(tree, { childList: true, subtree: true });
+      return observer;
+    });
+    onGeometryChange?.();
+  };
+  return {
+    start() {
+      if (running) return;
+      running = true;
+      if (typeof ResizeObserver === "function") {
+        resizeObserver = new ResizeObserver(() => onGeometryChange?.());
+      }
+      reconcile();
+    },
+    stop() {
+      running = false;
+      resizeObserver?.disconnect();
+      resizeObserver = void 0;
+      observers.forEach((observer) => observer.disconnect());
+      observers = [];
+      for (const frame of frames) frame.removeEventListener("load", reconcile);
+      frames.clear();
+      for (const subscription of subscriptions)
+        for (const [doc, handler] of subscription.handlers) {
+          doc.removeEventListener(subscription.type, handler, subscription.options);
+        }
+      subscriptions.clear();
+      documents.clear();
+      documents.add(root);
+    },
+    addEventListener(type, listener, options) {
+      const subscription = {
+        type,
+        listener,
+        options,
+        handlers: /* @__PURE__ */ new Map()
+      };
+      subscriptions.add(subscription);
+      for (const doc of documents) connect(subscription, doc);
+    },
+    removeEventListener(type, listener, _options) {
+      for (const subscription of subscriptions)
+        if (subscription.type === type && subscription.listener === listener) {
+          for (const [doc, handler] of subscription.handlers)
+            doc.removeEventListener(type, handler, subscription.options);
+          subscriptions.delete(subscription);
+        }
+    },
+    querySelectorAll(selector) {
+      return [...documents].flatMap((doc) => [...doc.querySelectorAll(selector)]);
+    }
+  };
+}
+
+// src/utils/element-attributes.ts
+var DEFAULT_IDENTIFYING_ATTRIBUTES = [
+  "data-testid",
+  "data-test",
+  "data-qa",
+  "data-cy",
+  "data-component"
+];
+function captureElementAttributes(element, names = DEFAULT_IDENTIFYING_ATTRIBUTES) {
+  const attributes = {};
+  for (const name of [...new Set(names)].slice(0, 16)) {
+    if (!/^[a-zA-Z_][\w:.-]*$/.test(name)) continue;
+    const value = element.getAttribute(name);
+    if (value != null && value.length <= 500) {
+      Object.defineProperty(attributes, name, { value, enumerable: true });
+    }
+  }
+  return attributes;
+}
+function identifyingAttributeSelector(element, names = DEFAULT_IDENTIFYING_ATTRIBUTES) {
+  return Object.entries(captureElementAttributes(element, names)).filter(([name, value]) => /^data-[a-z0-9_-]+$/.test(name) && value.length <= 120).slice(0, 2).map(
+    ([name, value]) => `[${name}="${value.replace(
+      /[\\"\n\r\f\0]/g,
+      (char) => char === "\\" || char === '"' ? `\\${char}` : `\\${char.charCodeAt(0).toString(16)} `
+    )}"]`
+  ).join("");
+}
+
+// src/utils/element-identification.ts
+function getParentElement(element) {
+  if (element.parentElement) {
+    return element.parentElement;
+  }
+  const root = element.getRootNode();
+  if (isShadowRoot(root)) {
+    return root.host;
+  }
+  return null;
+}
+function closestCrossingShadow(element, selector) {
+  let current = element;
+  while (current) {
+    if (current.matches(selector)) return current;
+    current = getParentElement(current);
+  }
+  return null;
+}
+function isInShadowDOM(element) {
+  return isShadowRoot(element.getRootNode());
+}
+function getShadowHost(element) {
+  const root = element.getRootNode();
+  if (isShadowRoot(root)) {
+    return root.host;
+  }
+  return null;
+}
+function getElementPath(target, maxDepth = 4, attributeNames) {
+  const parts = [];
+  let current = target;
+  let depth = 0;
+  while (current && depth < maxDepth) {
+    const tag = current.tagName.toLowerCase();
+    if (tag === "html" || tag === "body") {
+      if (parts.length === 0) parts.push(tag);
+      break;
+    }
+    let identifier = tag;
+    if (current.id) {
+      identifier = `#${current.id}`;
+    } else if (current.className && typeof current.className === "string") {
+      const meaningfulClass = current.className.split(/\s+/).find((c) => c.length > 2 && !c.match(/^[a-z]{1,2}$/) && !c.match(/[A-Z0-9]{5,}/));
+      if (meaningfulClass) {
+        identifier = `.${meaningfulClass.split("_")[0]}`;
+      }
+    }
+    identifier += identifyingAttributeSelector(current, attributeNames);
+    const nextParent = getParentElement(current);
+    if (!current.parentElement && nextParent) {
+      identifier = `\u27E8shadow\u27E9 ${identifier}`;
+    }
+    parts.unshift(identifier);
+    current = nextParent;
+    depth++;
+  }
+  const frame = parentFrame(target.ownerDocument);
+  return (frame ? getElementPath(frame, 2) + " > \u27E8iframe\u27E9 " : "") + parts.join(" > ");
+}
+function getDirectTextContent(el) {
+  let text = "";
+  for (const child of el.childNodes) {
+    if (child.nodeType === Node.TEXT_NODE) {
+      const t = child.textContent?.trim();
+      if (t) text += (text ? " " : "") + t;
+    }
+  }
+  return text;
+}
+function identifyElement(target, attributeNames) {
+  const path = getElementPath(target, 4, attributeNames);
+  if (target.dataset.element) {
+    return { name: target.dataset.element, path };
+  }
+  const tag = target.tagName.toLowerCase();
+  if (["path", "circle", "rect", "line", "g"].includes(tag)) {
+    const svg = closestCrossingShadow(target, "svg");
+    if (svg) {
+      const parent = getParentElement(svg);
+      if (parent?.namespaceURI === "http://www.w3.org/1999/xhtml") {
+        const parentName = identifyElement(parent).name;
+        return { name: `graphic in ${parentName}`, path };
+      }
+    }
+    return { name: "graphic element", path };
+  }
+  if (tag === "svg") {
+    const parent = getParentElement(target);
+    if (parent?.tagName.toLowerCase() === "button") {
+      const btnText = parent.textContent?.trim();
+      return { name: btnText ? `icon in "${btnText}" button` : "button icon", path };
+    }
+    return { name: "icon", path };
+  }
+  if (tag === "button") {
+    const text = target.textContent?.trim();
+    const ariaLabel = target.getAttribute("aria-label");
+    if (ariaLabel) return { name: `button [${ariaLabel}]`, path };
+    return { name: text ? `button "${text.slice(0, 25)}"` : "button", path };
+  }
+  if (tag === "a") {
+    const text = target.textContent?.trim();
+    const href = target.getAttribute("href");
+    if (text) return { name: `link "${text.slice(0, 25)}"`, path };
+    if (href) return { name: `link to ${href.slice(0, 30)}`, path };
+    return { name: "link", path };
+  }
+  if (tag === "input") {
+    const type = target.getAttribute("type") || "text";
+    const placeholder = target.getAttribute("placeholder");
+    const name = target.getAttribute("name");
+    if (placeholder) return { name: `input "${placeholder}"`, path };
+    if (name) return { name: `input [${name}]`, path };
+    return { name: `${type} input`, path };
+  }
+  if (["h1", "h2", "h3", "h4", "h5", "h6"].includes(tag)) {
+    const text = target.textContent?.trim();
+    return { name: text ? `${tag} "${text.slice(0, 35)}"` : tag, path };
+  }
+  if (tag === "p") {
+    const text = target.textContent?.trim();
+    if (text) return { name: `paragraph: "${text.slice(0, 40)}${text.length > 40 ? "..." : ""}"`, path };
+    return { name: "paragraph", path };
+  }
+  if (tag === "span" || tag === "label") {
+    const text = target.textContent?.trim();
+    if (text && text.length < 40) return { name: `"${text}"`, path };
+    return { name: tag, path };
+  }
+  if (tag === "li") {
+    const text = target.textContent?.trim();
+    if (text && text.length < 40) return { name: `list item: "${text.slice(0, 35)}"`, path };
+    return { name: "list item", path };
+  }
+  if (tag === "blockquote") return { name: "blockquote", path };
+  if (tag === "code") {
+    const text = target.textContent?.trim();
+    if (text && text.length < 30) return { name: `code: \`${text}\``, path };
+    return { name: "code", path };
+  }
+  if (tag === "pre") return { name: "code block", path };
+  if (tag === "img") {
+    const alt = target.getAttribute("alt");
+    return { name: alt ? `image "${alt.slice(0, 30)}"` : "image", path };
+  }
+  if (tag === "video") return { name: "video", path };
+  if (["div", "section", "article", "nav", "header", "footer", "aside", "main"].includes(tag)) {
+    const className = target.className;
+    const role = target.getAttribute("role");
+    const ariaLabel = target.getAttribute("aria-label");
+    if (ariaLabel) return { name: `${tag} [${ariaLabel}]`, path };
+    if (role) return { name: `${role}`, path };
+    const directText = getDirectTextContent(target);
+    if (directText && directText.length < 50) {
+      return { name: `"${directText}"`, path };
+    }
+    if (typeof className === "string" && className) {
+      const words = className.split(/[\s_-]+/).map((c) => c.replace(/[A-Z0-9]{5,}.*$/, "")).filter((c) => c.length > 2 && !/^[a-z]{1,2}$/.test(c)).slice(0, 2);
+      if (words.length > 0) return { name: words.join(" "), path };
+    }
+    return { name: tag === "div" ? "container" : tag, path };
+  }
+  return { name: tag, path };
+}
+function getNearbyText(element) {
+  const texts = [];
+  const ownText = element.textContent?.trim();
+  if (ownText && ownText.length < 100) {
+    texts.push(ownText);
+  }
+  const prev = element.previousElementSibling;
+  if (prev) {
+    const prevText = prev.textContent?.trim();
+    if (prevText && prevText.length < 50) {
+      texts.unshift(`[before: "${prevText.slice(0, 40)}"]`);
+    }
+  }
+  const next = element.nextElementSibling;
+  if (next) {
+    const nextText = next.textContent?.trim();
+    if (nextText && nextText.length < 50) {
+      texts.push(`[after: "${nextText.slice(0, 40)}"]`);
+    }
+  }
+  return texts.join(" ");
+}
+function identifyAnimationElement(target) {
+  if (target.dataset.element) return target.dataset.element;
+  const tag = target.tagName.toLowerCase();
+  if (tag === "path") return "path";
+  if (tag === "circle") return "circle";
+  if (tag === "rect") return "rectangle";
+  if (tag === "line") return "line";
+  if (tag === "ellipse") return "ellipse";
+  if (tag === "polygon") return "polygon";
+  if (tag === "g") return "group";
+  if (tag === "svg") return "svg";
+  if (tag === "button") {
+    const text = target.textContent?.trim();
+    return text ? `button "${text}"` : "button";
+  }
+  if (tag === "input") {
+    const type = target.getAttribute("type") || "text";
+    return `input (${type})`;
+  }
+  if (tag === "span" || tag === "p" || tag === "label") {
+    const text = target.textContent?.trim();
+    if (text && text.length < 30) return `"${text}"`;
+    return "text";
+  }
+  if (tag === "div") {
+    const className = target.className;
+    if (typeof className === "string" && className) {
+      const words = className.split(/[\s_-]+/).map((c) => c.replace(/[A-Z0-9]{5,}.*$/, "")).filter((c) => c.length > 2 && !/^[a-z]{1,2}$/.test(c)).slice(0, 2);
+      if (words.length > 0) {
+        return words.join(" ");
+      }
+    }
+    return "container";
+  }
+  return tag;
+}
+function getNearbyElements(element) {
+  const parent = getParentElement(element);
+  if (!parent) return "";
+  const elementRoot = element.getRootNode();
+  const children = isShadowRoot(elementRoot) && element.parentElement ? Array.from(element.parentElement.children) : Array.from(parent.children);
+  const siblings = children.filter(
+    (child) => child !== element && child.namespaceURI === "http://www.w3.org/1999/xhtml"
+  );
+  if (siblings.length === 0) return "";
+  const siblingIds = siblings.slice(0, 4).map((sib) => {
+    const tag = sib.tagName.toLowerCase();
+    const className = sib.className;
+    let cls = "";
+    if (typeof className === "string" && className) {
+      const meaningful = className.split(/\s+/).map((c) => c.replace(/[_][a-zA-Z0-9]{5,}.*$/, "")).find((c) => c.length > 2 && !/^[a-z]{1,2}$/.test(c));
+      if (meaningful) cls = `.${meaningful}`;
+    }
+    if (tag === "button" || tag === "a") {
+      const text = sib.textContent?.trim().slice(0, 15);
+      if (text) return `${tag}${cls} "${text}"`;
+    }
+    return `${tag}${cls}`;
+  });
+  const parentTag = parent.tagName.toLowerCase();
+  let parentId = parentTag;
+  if (typeof parent.className === "string" && parent.className) {
+    const parentCls = parent.className.split(/\s+/).map((c) => c.replace(/[_][a-zA-Z0-9]{5,}.*$/, "")).find((c) => c.length > 2 && !/^[a-z]{1,2}$/.test(c));
+    if (parentCls) parentId = `.${parentCls}`;
+  }
+  const total = parent.children.length;
+  const suffix = total > siblingIds.length + 1 ? ` (${total} total in ${parentId})` : "";
+  return siblingIds.join(", ") + suffix;
+}
+function getElementClasses(target) {
+  const className = target.className;
+  if (typeof className !== "string" || !className) return "";
+  const classes = className.split(/\s+/).filter((c) => c.length > 0).map((c) => {
+    const match = c.match(/^([a-zA-Z][a-zA-Z0-9_-]*?)(?:_[a-zA-Z0-9]{5,})?$/);
+    return match ? match[1] : c;
+  }).filter((c, i, arr) => arr.indexOf(c) === i);
+  return classes.join(", ");
+}
+var DEFAULT_STYLE_VALUES = /* @__PURE__ */ new Set([
+  "none",
+  "normal",
+  "auto",
+  "0px",
+  "rgba(0, 0, 0, 0)",
+  "transparent",
+  "static",
+  "visible"
+]);
+var TEXT_ELEMENTS = /* @__PURE__ */ new Set([
+  "p",
+  "span",
+  "h1",
+  "h2",
+  "h3",
+  "h4",
+  "h5",
+  "h6",
+  "label",
+  "li",
+  "td",
+  "th",
+  "blockquote",
+  "figcaption",
+  "caption",
+  "legend",
+  "dt",
+  "dd",
+  "pre",
+  "code",
+  "em",
+  "strong",
+  "b",
+  "i",
+  "a",
+  "time",
+  "cite",
+  "q"
+]);
+var FORM_INPUT_ELEMENTS = /* @__PURE__ */ new Set(["input", "textarea", "select"]);
+var MEDIA_ELEMENTS = /* @__PURE__ */ new Set(["img", "video", "canvas", "svg"]);
+var CONTAINER_ELEMENTS = /* @__PURE__ */ new Set([
+  "div",
+  "section",
+  "article",
+  "nav",
+  "header",
+  "footer",
+  "aside",
+  "main",
+  "ul",
+  "ol",
+  "form",
+  "fieldset"
+]);
+function getDetailedComputedStyles(target) {
+  if (typeof window === "undefined") return {};
+  const styles = (target.ownerDocument.defaultView ?? window).getComputedStyle(target);
+  const result = {};
+  const tag = target.tagName.toLowerCase();
+  let properties;
+  if (TEXT_ELEMENTS.has(tag)) {
+    properties = ["color", "fontSize", "fontWeight", "fontFamily", "lineHeight"];
+  } else if (tag === "button" || tag === "a" && target.getAttribute("role") === "button") {
+    properties = ["backgroundColor", "color", "padding", "borderRadius", "fontSize"];
+  } else if (FORM_INPUT_ELEMENTS.has(tag)) {
+    properties = ["backgroundColor", "color", "padding", "borderRadius", "fontSize"];
+  } else if (MEDIA_ELEMENTS.has(tag)) {
+    properties = ["width", "height", "objectFit", "borderRadius"];
+  } else if (CONTAINER_ELEMENTS.has(tag)) {
+    properties = ["display", "padding", "margin", "gap", "backgroundColor"];
+  } else {
+    properties = ["color", "fontSize", "margin", "padding", "backgroundColor"];
+  }
+  for (const prop of properties) {
+    const cssPropertyName = prop.replace(/([A-Z])/g, "-$1").toLowerCase();
+    const value = styles.getPropertyValue(cssPropertyName);
+    if (value && !DEFAULT_STYLE_VALUES.has(value)) {
+      result[prop] = value;
+    }
+  }
+  return result;
+}
+var FORENSIC_PROPERTIES = [
+  // Colors
+  "color",
+  "backgroundColor",
+  "borderColor",
+  // Typography
+  "fontSize",
+  "fontWeight",
+  "fontFamily",
+  "lineHeight",
+  "letterSpacing",
+  "textAlign",
+  // Box model
+  "width",
+  "height",
+  "padding",
+  "margin",
+  "border",
+  "borderRadius",
+  // Layout & positioning
+  "display",
+  "position",
+  "top",
+  "right",
+  "bottom",
+  "left",
+  "zIndex",
+  "flexDirection",
+  "justifyContent",
+  "alignItems",
+  "gap",
+  // Visual effects
+  "opacity",
+  "visibility",
+  "overflow",
+  "boxShadow",
+  // Transform
+  "transform"
+];
+function getForensicComputedStyles(target) {
+  if (typeof window === "undefined") return "";
+  const styles = (target.ownerDocument.defaultView ?? window).getComputedStyle(target);
+  const parts = [];
+  for (const prop of FORENSIC_PROPERTIES) {
+    const cssPropertyName = prop.replace(/([A-Z])/g, "-$1").toLowerCase();
+    const value = styles.getPropertyValue(cssPropertyName);
+    if (value && !DEFAULT_STYLE_VALUES.has(value)) {
+      parts.push(`${cssPropertyName}: ${value}`);
+    }
+  }
+  return parts.join("; ");
+}
+function parseComputedStylesString(stylesStr) {
+  if (!stylesStr) return void 0;
+  const result = {};
+  const parts = stylesStr.split(";").map((p) => p.trim()).filter(Boolean);
+  for (const part of parts) {
+    const colonIndex = part.indexOf(":");
+    if (colonIndex > 0) {
+      const key = part.slice(0, colonIndex).trim();
+      const value = part.slice(colonIndex + 1).trim();
+      if (key && value) {
+        result[key] = value;
+      }
+    }
+  }
+  return Object.keys(result).length > 0 ? result : void 0;
+}
+function getAccessibilityInfo(target) {
+  const parts = [];
+  const role = target.getAttribute("role");
+  const ariaLabel = target.getAttribute("aria-label");
+  const ariaDescribedBy = target.getAttribute("aria-describedby");
+  const tabIndex = target.getAttribute("tabindex");
+  const ariaHidden = target.getAttribute("aria-hidden");
+  if (role) parts.push(`role="${role}"`);
+  if (ariaLabel) parts.push(`aria-label="${ariaLabel}"`);
+  if (ariaDescribedBy) parts.push(`aria-describedby="${ariaDescribedBy}"`);
+  if (tabIndex) parts.push(`tabindex=${tabIndex}`);
+  if (ariaHidden === "true") parts.push("aria-hidden");
+  const focusable = target.matches("a, button, input, select, textarea, [tabindex]");
+  if (focusable) parts.push("focusable");
+  return parts.join(", ");
+}
+function getFullElementPath(target) {
+  const parts = [];
+  let current = target;
+  while (current && current.tagName.toLowerCase() !== "html") {
+    const tag = current.tagName.toLowerCase();
+    let identifier = tag;
+    if (current.id) {
+      identifier = `${tag}#${current.id}`;
+    } else if (current.className && typeof current.className === "string") {
+      const cls = current.className.split(/\s+/).map((c) => c.replace(/[_][a-zA-Z0-9]{5,}.*$/, "")).find((c) => c.length > 2);
+      if (cls) identifier = `${tag}.${cls}`;
+    }
+    const nextParent = getParentElement(current);
+    if (!current.parentElement && nextParent) {
+      identifier = `\u27E8shadow\u27E9 ${identifier}`;
+    }
+    parts.unshift(identifier);
+    current = nextParent;
+  }
+  const frame = parentFrame(target.ownerDocument);
+  return (frame ? getFullElementPath(frame) + " > \u27E8iframe\u27E9 " : "") + parts.join(" > ");
+}
+
+// src/utils/hit-testing.ts
+var TOOLBAR = "agentation-toolbar, [data-agentation-root], [data-feedback-toolbar], [data-annotation-popup], [data-annotation-marker]";
+var CONTAINERS = /* @__PURE__ */ new Set([
+  "DIV",
+  "SPAN",
+  "SECTION",
+  "ARTICLE",
+  "MAIN",
+  "ASIDE",
+  "HEADER",
+  "FOOTER",
+  "NAV"
+]);
+function deepElementFromPoint(x, y) {
+  let element = document.elementFromPoint(x, y);
+  const visited = /* @__PURE__ */ new Set();
+  while (element && !visited.has(element)) {
+    visited.add(element);
+    const frame = frameDocument(element);
+    let deeper;
+    if (frame) {
+      const box = frameGeometry(element);
+      x = (x - box.x) / box.sx;
+      y = (y - box.y) / box.sy;
+      deeper = frame.elementFromPoint?.(x, y);
+    } else deeper = element.shadowRoot?.elementFromPoint?.(x, y);
+    if (!deeper || deeper === element) break;
+    element = deeper;
+  }
+  return element;
+}
+function isVisible(element) {
+  if (typeof element.checkVisibility === "function") {
+    return element.checkVisibility({ checkOpacity: true, checkVisibilityCSS: true });
+  }
+  const style = getComputedStyle(element);
+  if (style.visibility === "hidden" || style.visibility === "collapse") return false;
+  let current = element;
+  while (current) {
+    const currentStyle = getComputedStyle(current);
+    if (currentStyle.opacity === "0" || currentStyle.display === "none" || currentStyle.contentVisibility === "hidden") return false;
+    const root = current.getRootNode();
+    current = current.parentElement || (isShadowRoot(root) ? root.host : null);
+  }
+  return true;
+}
+function elementsAtPoint(x, y) {
+  const candidates = [];
+  const seen = /* @__PURE__ */ new Set();
+  const visit = (elements, localX, localY) => {
+    for (const element of elements) {
+      if (seen.has(element)) continue;
+      seen.add(element);
+      if (element.shadowRoot) {
+        const root = element.shadowRoot;
+        const inner = root.elementsFromPoint?.(localX, localY) ?? [];
+        visit(inner.length ? inner : [root.elementFromPoint?.(localX, localY)].filter(Boolean), localX, localY);
+      }
+      const frame = frameDocument(element);
+      if (frame) {
+        const box = frameGeometry(element);
+        const childX = (localX - box.x) / box.sx, childY = (localY - box.y) / box.sy;
+        visit(frame.elementsFromPoint?.(childX, childY) ?? [frame.elementFromPoint?.(childX, childY)].filter(Boolean), childX, childY);
+      }
+      if (element !== element.ownerDocument.body && element !== element.ownerDocument.documentElement && !closestCrossingShadow(element, TOOLBAR) && isVisible(element)) {
+        candidates.push(element);
+      }
+    }
+  };
+  visit(document.elementsFromPoint?.(x, y) ?? [document.elementFromPoint(x, y)].filter(Boolean), x, y);
+  return candidates;
+}
+function annotationElementFromPoint(x, y, box) {
+  if (box.width <= 0 || box.height <= 0) return null;
+  let best = null;
+  let score = Infinity;
+  for (const element of elementsAtPoint(x, y)) {
+    const rect = viewportRect(element);
+    const widthRatio = rect.width / box.width;
+    const heightRatio = rect.height / box.height;
+    if (widthRatio < 0.5 || widthRatio > 2 || heightRatio < 0.5 || heightRatio > 2) continue;
+    const difference = Math.abs(Math.log(widthRatio)) + Math.abs(Math.log(heightRatio));
+    if (difference < score) {
+      best = element;
+      score = difference;
+    }
+  }
+  return best;
+}
+function pierceElementFromPoint(x, y) {
+  const top = deepElementFromPoint(x, y);
+  if (!top || closestCrossingShadow(top, TOOLBAR)) return null;
+  const candidates = elementsAtPoint(x, y);
+  for (const element of candidates) {
+    if (!CONTAINERS.has(element.tagName) && !element.shadowRoot || Array.from(element.childNodes).some((node) => node.nodeType === Node.TEXT_NODE && node.textContent?.trim())) {
+      return element;
+    }
+  }
+  let smallest = null;
+  let smallestArea = Infinity;
+  for (const element of candidates) {
+    const rect = viewportRect(element);
+    const area = rect.width * rect.height;
+    if (area > 0 && area < smallestArea) {
+      smallest = element;
+      smallestArea = area;
+    }
+  }
+  return smallest;
+}
+
+// src/components/page-toolbar-css/index.tsx
+import { useState as useState11, useCallback as useCallback8, useEffect as useEffect8, useLayoutEffect as useLayoutEffect10, useRef as useRef14, useMemo as useMemo2 } from "react";
+
+// src/utils/page-routing.ts
+import { useCallback, useSyncExternalStore } from "react";
+function usePagePath(useHashLocation) {
+  const subscribe = useCallback((notify) => {
+    if (!useHashLocation) return () => {
+    };
+    window.addEventListener("hashchange", notify);
+    window.addEventListener("popstate", notify);
+    return () => {
+      window.removeEventListener("hashchange", notify);
+      window.removeEventListener("popstate", notify);
+    };
+  }, [useHashLocation]);
+  return useSyncExternalStore(
+    subscribe,
+    () => window.location.pathname + (useHashLocation ? window.location.hash : ""),
+    () => "/"
+  );
+}
+var pending = /* @__PURE__ */ new Map();
+function runPageTask(key, work) {
+  const task = (pending.get(key) ?? Promise.resolve()).then(work);
+  const settled = task.then(() => {
+  }, () => {
+  });
+  pending.set(key, settled);
+  void settled.then(() => {
+    if (pending.get(key) === settled) pending.delete(key);
+  });
+  return task;
+}
+function matchesPage(url, pathname, origin) {
+  try {
+    const parsed = new URL(url, origin);
+    return parsed.origin === origin && parsed.pathname + parsed.hash === pathname;
+  } catch {
+    return false;
+  }
+}
+
+// src/components/page-toolbar-css/index.tsx
+import { createPortal as createPortal3 } from "react-dom";
+
+// src/components/page-toolbar-css/use-feedback-portal.ts
+import { useEffect as useEffect2, useLayoutEffect, useState } from "react";
+var useBrowserLayoutEffect = typeof window === "undefined" ? useEffect2 : useLayoutEffect;
+function useFeedbackPortal(container) {
+  const [portalHost, setPortalHost] = useState(null);
+  useBrowserLayoutEffect(() => {
+    const host = document.createElement("div");
+    host.setAttribute("data-agentation-portal", "");
+    host.style.display = "contents";
+    setPortalHost(host);
+    return () => host.remove();
+  }, []);
+  useBrowserLayoutEffect(() => {
+    if (!portalHost) return;
+    const target = container ?? document.body;
+    if (target.ownerDocument !== document) {
+      console.warn("[Agentation] portalContainer belongs to another document; the toolbar will not render.");
+      return;
+    }
+    let focused = document.activeElement;
+    while (focused?.shadowRoot?.activeElement) focused = focused.shadowRoot.activeElement;
+    const restoreFocus = focused && portalHost.contains(document.activeElement) ? focused : null;
+    if (typeof portalHost.hidePopover === "function" && portalHost.matches(":popover-open"))
+      portalHost.hidePopover();
+    target.appendChild(portalHost);
+    if (container && typeof portalHost.showPopover === "function") {
+      portalHost.setAttribute("popover", "manual");
+      portalHost.style.cssText = "position:fixed;inset:0 auto auto 0;margin:0;padding:0;border:0;background:transparent;width:0;height:0;overflow:visible;pointer-events:none";
+      portalHost.showPopover();
+    } else {
+      portalHost.removeAttribute("popover");
+      portalHost.style.cssText = "display:contents";
+    }
+    restoreFocus?.focus({ preventScroll: true });
+  }, [portalHost, container]);
+  return portalHost;
+}
+
+// src/components/shadow-root/index.tsx
+import {
+  useRef,
+  useState as useState2,
+  useLayoutEffect as useLayoutEffect2
+} from "react";
+import { createPortal } from "react-dom";
+import { jsx } from "react/jsx-runtime";
+var ShadowRoot = ({
+  mode = "open",
+  delegatesFocus,
+  slotAssignment,
+  host = "div",
+  children,
+  className,
+  ...hostProps
+}) => {
+  const hostRef = useRef(null);
+  const [shadowContainer, setShadowContainer] = useState2(
+    null
+  );
+  useLayoutEffect2(() => {
+    const hostElement = hostRef.current;
+    if (!hostElement || hostElement.shadowRoot) return;
+    const shadow = hostElement.attachShadow({
+      mode,
+      delegatesFocus,
+      slotAssignment
+    });
+    setShadowContainer(shadow);
+  }, []);
+  const Host = host;
+  return /* @__PURE__ */ jsx(
+    Host,
+    {
+      ref: hostRef,
+      ...hostProps,
+      ...host.includes("-") ? { class: className } : { className },
+      children: shadowContainer && createPortal(children, shadowContainer)
+    }
+  );
+};
+
+// src/components/annotation-popup-css/index.tsx
+import { useState as useState4, useRef as useRef4, useEffect as useEffect3, useCallback as useCallback4, forwardRef as forwardRef2, useImperativeHandle as useImperativeHandle2 } from "react";
+
+// src/hooks/use-exit-completion.ts
+import { useLayoutEffect as useLayoutEffect3, useRef as useRef2 } from "react";
+function useExitCompletion(ref, exiting, onExited) {
+  const onExitedRef = useRef2(onExited);
+  useLayoutEffect3(() => {
+    onExitedRef.current = onExited;
+  }, [onExited]);
+  useLayoutEffect3(() => {
+    const element = ref.current;
+    if (!exiting || !element) return;
+    let cancelled = false;
+    const animations = element.getAnimations?.() ?? [];
+    Promise.allSettled(animations.map((animation) => animation.finished)).then(() => {
+      if (!cancelled) onExitedRef.current();
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [ref, exiting]);
+}
+
+// src/components/annotation-popup-css/styles.module.scss
+var css = '@charset "UTF-8";\n.styles-module__popup___IhzrD svg[fill=none] {\n  fill: none !important;\n}\n.styles-module__popup___IhzrD svg[fill=none] :not([fill]) {\n  fill: none !important;\n}\n\n@keyframes styles-module__popupEnter___AuQDN {\n  from {\n    opacity: 0;\n    transform: translateX(-50%) scale(0.95) translateY(4px);\n  }\n  to {\n    opacity: 1;\n    transform: translateX(-50%) scale(1) translateY(0);\n  }\n}\n@keyframes styles-module__popupExit___JJKQX {\n  from {\n    opacity: 1;\n    transform: translateX(-50%) scale(1) translateY(0);\n  }\n  to {\n    opacity: 0;\n    transform: translateX(-50%) scale(0.95) translateY(4px);\n  }\n}\n@keyframes styles-module__shake___jdbWe {\n  0%, 100% {\n    transform: translateX(-50%) scale(1) translateY(0) translateX(0);\n  }\n  20% {\n    transform: translateX(-50%) scale(1) translateY(0) translateX(-3px);\n  }\n  40% {\n    transform: translateX(-50%) scale(1) translateY(0) translateX(3px);\n  }\n  60% {\n    transform: translateX(-50%) scale(1) translateY(0) translateX(-2px);\n  }\n  80% {\n    transform: translateX(-50%) scale(1) translateY(0) translateX(2px);\n  }\n}\n.styles-module__popup___IhzrD {\n  position: fixed;\n  transform: translateX(-50%);\n  width: 280px;\n  padding: 0.75rem 1rem;\n  background: #1a1a1a;\n  border-radius: 16px;\n  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.3), 0 0 0 1px rgba(255, 255, 255, 0.08);\n  z-index: 100001;\n  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;\n  will-change: transform, opacity;\n  opacity: 0;\n}\n.styles-module__popup___IhzrD.styles-module__enter___L7U7N {\n  animation: styles-module__popupEnter___AuQDN 0.2s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;\n}\n.styles-module__popup___IhzrD.styles-module__entered___COX-w {\n  opacity: 1;\n  transform: translateX(-50%) scale(1) translateY(0);\n}\n.styles-module__popup___IhzrD.styles-module__exit___5eGjE {\n  pointer-events: none;\n  animation: styles-module__popupExit___JJKQX 0.15s ease-in forwards;\n}\n.styles-module__popup___IhzrD.styles-module__entered___COX-w.styles-module__shake___jdbWe {\n  animation: styles-module__shake___jdbWe 0.25s ease-out;\n}\n\n.styles-module__header___wWsSi {\n  display: flex;\n  align-items: center;\n  justify-content: space-between;\n  margin-bottom: 0.5625rem;\n}\n\n.styles-module__element___fTV2z {\n  font-size: 0.75rem;\n  font-weight: 400;\n  color: rgba(255, 255, 255, 0.5);\n  max-width: 100%;\n  overflow: hidden;\n  text-overflow: ellipsis;\n  white-space: nowrap;\n  flex: 1;\n}\n\n.styles-module__headerToggle___WpW0b {\n  display: flex;\n  align-items: center;\n  gap: 0.25rem;\n  background: none;\n  border: none;\n  padding: 0;\n  cursor: pointer;\n  flex: 1;\n  min-width: 0;\n  text-align: left;\n}\n.styles-module__headerToggle___WpW0b .styles-module__element___fTV2z {\n  flex: 1;\n}\n\n.styles-module__chevron___ZZJlR {\n  color: rgba(255, 255, 255, 0.5);\n  transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1);\n  flex-shrink: 0;\n}\n.styles-module__chevron___ZZJlR.styles-module__expanded___2Hxgv {\n  transform: rotate(90deg);\n}\n\n.styles-module__stylesWrapper___pnHgy {\n  display: grid;\n  grid-template-rows: 0fr;\n  transition: grid-template-rows 0.3s cubic-bezier(0.16, 1, 0.3, 1);\n}\n.styles-module__stylesWrapper___pnHgy.styles-module__expanded___2Hxgv {\n  grid-template-rows: 1fr;\n}\n\n.styles-module__stylesInner___YYZe2 {\n  overflow: hidden;\n}\n\n.styles-module__stylesBlock___VfQKn {\n  background: rgba(255, 255, 255, 0.05);\n  border-radius: 0.375rem;\n  padding: 0.5rem 0.625rem;\n  margin-bottom: 0.5rem;\n  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;\n  font-size: 0.6875rem;\n  line-height: 1.5;\n}\n\n.styles-module__styleLine___1YQiD {\n  color: rgba(255, 255, 255, 0.85);\n  word-break: break-word;\n}\n\n.styles-module__styleProperty___84L1i {\n  color: #c792ea;\n}\n\n.styles-module__styleValue___q51-h {\n  color: rgba(255, 255, 255, 0.85);\n}\n\n.styles-module__timestamp___Dtpsv {\n  font-size: 0.625rem;\n  font-weight: 500;\n  color: rgba(255, 255, 255, 0.35);\n  font-variant-numeric: tabular-nums;\n  margin-left: 0.5rem;\n  flex-shrink: 0;\n}\n\n.styles-module__quote___mcMmQ {\n  font-size: 12px;\n  font-style: italic;\n  color: rgba(255, 255, 255, 0.6);\n  margin-bottom: 0.5rem;\n  padding: 0.4rem 0.5rem;\n  background: rgba(255, 255, 255, 0.05);\n  border-radius: 0.25rem;\n  line-height: 1.45;\n}\n\n.styles-module__textarea___jrSae {\n  box-sizing: border-box;\n  width: 100%;\n  padding: 0.5rem 0.625rem;\n  font-size: 0.8125rem;\n  font-family: inherit;\n  background: rgba(255, 255, 255, 0.05);\n  color: #fff;\n  border: 1px solid rgba(255, 255, 255, 0.15);\n  border-radius: 8px;\n  resize: none;\n  outline: none;\n  transition: border-color 0.15s ease;\n}\n.styles-module__textarea___jrSae:focus {\n  border-color: var(--agentation-color-blue);\n}\n.styles-module__textarea___jrSae.styles-module__green___99l3h:focus {\n  border-color: var(--agentation-color-green);\n}\n.styles-module__textarea___jrSae::placeholder {\n  color: rgba(255, 255, 255, 0.35);\n}\n.styles-module__textarea___jrSae::-webkit-scrollbar {\n  width: 6px;\n}\n.styles-module__textarea___jrSae::-webkit-scrollbar-track {\n  background: transparent;\n}\n.styles-module__textarea___jrSae::-webkit-scrollbar-thumb {\n  background: rgba(255, 255, 255, 0.2);\n  border-radius: 3px;\n}\n\n.styles-module__actions___D6x3f {\n  display: flex;\n  align-items: center;\n  justify-content: flex-end;\n  gap: 0.375rem;\n  margin-top: 0.75rem;\n}\n\n.styles-module__sourceAction___EabJb {\n  display: block;\n  max-width: 100%;\n  margin: -2px 0 8px;\n  padding: 2px 0;\n  background: transparent;\n  color: #fff;\n  font: inherit;\n  font-size: 11px;\n  border: 0;\n  cursor: pointer;\n  opacity: 0.6;\n  transition: opacity 0.15s ease;\n}\n.styles-module__sourceAction___EabJb:hover, .styles-module__sourceAction___EabJb:focus-visible {\n  opacity: 1;\n}\n.styles-module__sourceAction___EabJb:focus-visible {\n  outline: 2px solid currentColor;\n  outline-offset: 3px;\n}\n\n.styles-module__light___6AaSQ .styles-module__sourceAction___EabJb {\n  color: #111;\n}\n\n.styles-module__cancel___hRjnL,\n.styles-module__submit___K-mIR,\n.styles-module__deleteButton___4VuAE {\n  display: inline-flex;\n  align-items: center;\n  justify-content: center;\n  min-height: 1.875rem;\n  padding: 0.375rem 0.875rem;\n  font-size: 0.75rem;\n  font-weight: 500;\n  border-radius: 1rem;\n  border: none;\n  cursor: pointer;\n  transition: background-color 0.15s ease, color 0.15s ease, opacity 0.15s ease;\n}\n\n.styles-module__cancel___hRjnL {\n  background: transparent;\n  color: rgba(255, 255, 255, 0.5);\n}\n.styles-module__cancel___hRjnL:hover {\n  background: rgba(255, 255, 255, 0.1);\n  color: rgba(255, 255, 255, 0.8);\n}\n\n.styles-module__submit___K-mIR {\n  color: white;\n}\n.styles-module__submit___K-mIR:hover:not(:disabled) {\n  filter: brightness(0.9);\n}\n.styles-module__submit___K-mIR:disabled {\n  cursor: not-allowed;\n}\n\n.styles-module__deleteWrapper___oSjdo {\n  display: flex;\n  margin-right: auto;\n}\n\n.styles-module__deleteButton___4VuAE {\n  background: transparent;\n  color: rgba(255, 255, 255, 0.4);\n  transition: background-color 0.15s ease, color 0.15s ease, transform 0.1s ease;\n}\n.styles-module__deleteButton___4VuAE:hover {\n  background-color: color-mix(in srgb, var(--agentation-color-red) 25%, transparent);\n  color: var(--agentation-color-red);\n}\n.styles-module__deleteButton___4VuAE:active {\n  transform: scale(0.92);\n}\n\n.styles-module__light___6AaSQ.styles-module__popup___IhzrD {\n  background: #fff;\n  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.12), 0 0 0 1px rgba(0, 0, 0, 0.06);\n}\n.styles-module__light___6AaSQ .styles-module__element___fTV2z {\n  color: rgba(0, 0, 0, 0.6);\n}\n.styles-module__light___6AaSQ .styles-module__timestamp___Dtpsv {\n  color: rgba(0, 0, 0, 0.4);\n}\n.styles-module__light___6AaSQ .styles-module__chevron___ZZJlR {\n  color: rgba(0, 0, 0, 0.4);\n}\n.styles-module__light___6AaSQ .styles-module__stylesBlock___VfQKn {\n  background: rgba(0, 0, 0, 0.03);\n}\n.styles-module__light___6AaSQ .styles-module__styleLine___1YQiD {\n  color: rgba(0, 0, 0, 0.75);\n}\n.styles-module__light___6AaSQ .styles-module__styleProperty___84L1i {\n  color: #7c3aed;\n}\n.styles-module__light___6AaSQ .styles-module__styleValue___q51-h {\n  color: rgba(0, 0, 0, 0.75);\n}\n.styles-module__light___6AaSQ .styles-module__quote___mcMmQ {\n  color: rgba(0, 0, 0, 0.55);\n  background: rgba(0, 0, 0, 0.04);\n}\n.styles-module__light___6AaSQ .styles-module__textarea___jrSae {\n  background: rgba(0, 0, 0, 0.03);\n  color: #1a1a1a;\n  border-color: rgba(0, 0, 0, 0.12);\n}\n.styles-module__light___6AaSQ .styles-module__textarea___jrSae::placeholder {\n  color: rgba(0, 0, 0, 0.4);\n}\n.styles-module__light___6AaSQ .styles-module__textarea___jrSae::-webkit-scrollbar-thumb {\n  background: rgba(0, 0, 0, 0.15);\n}\n.styles-module__light___6AaSQ .styles-module__cancel___hRjnL {\n  color: rgba(0, 0, 0, 0.5);\n}\n.styles-module__light___6AaSQ .styles-module__cancel___hRjnL:hover {\n  background: rgba(0, 0, 0, 0.06);\n  color: rgba(0, 0, 0, 0.75);\n}\n.styles-module__light___6AaSQ .styles-module__deleteButton___4VuAE {\n  color: rgba(0, 0, 0, 0.4);\n}\n.styles-module__light___6AaSQ .styles-module__deleteButton___4VuAE:hover {\n  background-color: color-mix(in srgb, var(--agentation-color-red) 25%, transparent);\n  color: var(--agentation-color-red);\n}\n\n@media (prefers-reduced-motion: reduce) {\n  .styles-module__popup___IhzrD.styles-module__enter___L7U7N, .styles-module__popup___IhzrD.styles-module__exit___5eGjE {\n    animation-duration: 1ms;\n    animation-delay: 0ms !important;\n  }\n}\n.styles-module__sharedForm___8GvQl {\n  --card-motion: 200ms cubic-bezier(0.2, 0.8, 0.2, 1);\n  padding: 0.75rem 1rem;\n  transition: padding var(--card-motion);\n}\n.styles-module__sharedForm___8GvQl .styles-module__header___wWsSi {\n  transition: margin-bottom var(--card-motion);\n}\n.styles-module__sharedForm___8GvQl .styles-module__element___fTV2z {\n  font-style: italic;\n  color: rgba(255, 255, 255, 0.6);\n}\n.styles-module__sharedForm___8GvQl .styles-module__previewExcerpt___DCOIL {\n  display: none;\n}\n.styles-module__sharedForm___8GvQl .styles-module__headerToggle___WpW0b .styles-module__chevron___ZZJlR {\n  opacity: 1;\n  margin-left: 0;\n  transition: margin-left var(--card-motion), opacity 100ms ease-out, transform var(--card-motion);\n}\n.styles-module__sharedForm___8GvQl .styles-module__sharedNote___OYVi5 {\n  position: relative;\n  height: var(--editor-field-height, 57px);\n  border-radius: 8px;\n  overflow: clip;\n  transition: height var(--card-motion);\n}\n.styles-module__sharedForm___8GvQl .styles-module__sharedNote___OYVi5::before {\n  content: "";\n  position: absolute;\n  inset: 0;\n  border: 1px solid var(--field-border, rgba(255, 255, 255, 0.15));\n  border-radius: inherit;\n  background: rgba(255, 255, 255, 0.05);\n  pointer-events: none;\n  transition: opacity var(--card-motion), border-color var(--card-motion);\n}\n.styles-module__sharedForm___8GvQl .styles-module__sharedNoteContent___6q3KD {\n  position: relative;\n  width: 100%;\n  height: 100%;\n  overflow: clip;\n  transition: width var(--card-motion);\n}\n.styles-module__sharedForm___8GvQl .styles-module__sharedNote___OYVi5[data-truncated]::after {\n  content: "\u2026";\n  position: absolute;\n  right: 0;\n  top: 0;\n  color: #fff;\n  font-size: 13px;\n  line-height: 1.4;\n  opacity: 0;\n  pointer-events: none;\n  transition: opacity 80ms ease-out;\n}\n.styles-module__sharedForm___8GvQl .styles-module__textarea___jrSae {\n  display: block;\n  width: calc(280px - 2rem);\n  max-width: calc(100vw - 24px - 2rem);\n  margin: 0;\n  background: transparent !important;\n  border-color: transparent !important;\n  transform: translate(0, 0);\n  transition: transform var(--card-motion), color var(--card-motion);\n}\n.styles-module__sharedForm___8GvQl .styles-module__sharedExtra___RUBKC, .styles-module__sharedForm___8GvQl .styles-module__sharedActions___6Glpl {\n  display: grid;\n  grid-template-rows: 1fr;\n  opacity: 1;\n  transition: grid-template-rows var(--card-motion), opacity 80ms ease-out;\n}\n.styles-module__sharedForm___8GvQl .styles-module__sharedActions___6Glpl {\n  transition-delay: 0ms, 120ms;\n}\n.styles-module__sharedForm___8GvQl .styles-module__sharedExtraInner___EuUh4 {\n  min-height: 0;\n  overflow: hidden;\n}\n.styles-module__sharedForm___8GvQl .styles-module__actions___D6x3f {\n  min-height: 0;\n  overflow: hidden;\n  transition: margin-top var(--card-motion);\n}\n.styles-module__sharedForm___8GvQl[data-preview] {\n  padding: 8px 12px;\n}\n.styles-module__sharedForm___8GvQl[data-preview] .styles-module__header___wWsSi {\n  margin-bottom: 5px;\n}\n.styles-module__sharedForm___8GvQl[data-preview] .styles-module__previewExcerpt___DCOIL {\n  display: inline;\n}\n.styles-module__sharedForm___8GvQl[data-preview] .styles-module__element___fTV2z {\n  line-height: 1.4;\n}\n.styles-module__sharedForm___8GvQl[data-preview] .styles-module__chevron___ZZJlR {\n  opacity: 0;\n  margin-left: -18px;\n}\n.styles-module__sharedForm___8GvQl[data-preview] .styles-module__sharedNote___OYVi5 {\n  height: 20.2px;\n  border-radius: 0;\n}\n.styles-module__sharedForm___8GvQl[data-preview] .styles-module__sharedNote___OYVi5::before {\n  opacity: 0;\n}\n.styles-module__sharedForm___8GvQl[data-preview] .styles-module__textarea___jrSae {\n  transform: translate(-11px, calc(-9px + (1.4em - 1lh) / 2));\n  color: #fff;\n  overflow: hidden;\n  cursor: default;\n}\n.styles-module__sharedForm___8GvQl[data-preview] .styles-module__sharedExtra___RUBKC, .styles-module__sharedForm___8GvQl[data-preview] .styles-module__sharedActions___6Glpl {\n  grid-template-rows: 0fr;\n  opacity: 0;\n  transition-delay: 0ms;\n}\n.styles-module__sharedForm___8GvQl[data-preview] .styles-module__actions___D6x3f {\n  margin-top: 0;\n}\n.styles-module__sharedForm___8GvQl[data-preview] .styles-module__stylesWrapper___pnHgy {\n  grid-template-rows: 0fr;\n}\n.styles-module__sharedForm___8GvQl[data-preview] .styles-module__sharedNote___OYVi5[data-truncated] .styles-module__sharedNoteContent___6q3KD {\n  width: calc(100% - 12px);\n}\n.styles-module__sharedForm___8GvQl[data-preview] .styles-module__sharedNote___OYVi5[data-truncated]::after {\n  opacity: 1;\n}\n\n.styles-module__light___6AaSQ .styles-module__sharedForm___8GvQl .styles-module__sharedNote___OYVi5::before {\n  border-color: var(--field-border, rgba(0, 0, 0, 0.12));\n  background: rgba(0, 0, 0, 0.03);\n}\n\n.styles-module__light___6AaSQ .styles-module__sharedForm___8GvQl .styles-module__element___fTV2z {\n  color: rgba(0, 0, 0, 0.5);\n}\n\n.styles-module__light___6AaSQ .styles-module__sharedForm___8GvQl[data-preview] .styles-module__textarea___jrSae, .styles-module__light___6AaSQ .styles-module__sharedForm___8GvQl[data-preview] .styles-module__sharedNote___OYVi5::after {\n  color: rgba(0, 0, 0, 0.85);\n}\n\n@media (prefers-reduced-motion: reduce) {\n  .styles-module__sharedForm___8GvQl {\n    --card-motion: 1ms linear;\n  }\n  .styles-module__sharedForm___8GvQl .styles-module__sharedActions___6Glpl, .styles-module__sharedForm___8GvQl .styles-module__headerToggle___WpW0b .styles-module__chevron___ZZJlR {\n    transition: opacity 100ms ease-out;\n    transition-delay: 0ms;\n  }\n}';
+var styles_module_default = { "popup": "styles-module__popup___IhzrD", "enter": "styles-module__enter___L7U7N", "popupEnter": "styles-module__popupEnter___AuQDN", "entered": "styles-module__entered___COX-w", "exit": "styles-module__exit___5eGjE", "popupExit": "styles-module__popupExit___JJKQX", "shake": "styles-module__shake___jdbWe", "header": "styles-module__header___wWsSi", "element": "styles-module__element___fTV2z", "headerToggle": "styles-module__headerToggle___WpW0b", "chevron": "styles-module__chevron___ZZJlR", "expanded": "styles-module__expanded___2Hxgv", "stylesWrapper": "styles-module__stylesWrapper___pnHgy", "stylesInner": "styles-module__stylesInner___YYZe2", "stylesBlock": "styles-module__stylesBlock___VfQKn", "styleLine": "styles-module__styleLine___1YQiD", "styleProperty": "styles-module__styleProperty___84L1i", "styleValue": "styles-module__styleValue___q51-h", "timestamp": "styles-module__timestamp___Dtpsv", "quote": "styles-module__quote___mcMmQ", "textarea": "styles-module__textarea___jrSae", "green": "styles-module__green___99l3h", "actions": "styles-module__actions___D6x3f", "sourceAction": "styles-module__sourceAction___EabJb", "light": "styles-module__light___6AaSQ", "cancel": "styles-module__cancel___hRjnL", "submit": "styles-module__submit___K-mIR", "deleteButton": "styles-module__deleteButton___4VuAE", "deleteWrapper": "styles-module__deleteWrapper___oSjdo", "sharedForm": "styles-module__sharedForm___8GvQl", "previewExcerpt": "styles-module__previewExcerpt___DCOIL", "sharedNote": "styles-module__sharedNote___OYVi5", "sharedNoteContent": "styles-module__sharedNoteContent___6q3KD", "sharedExtra": "styles-module__sharedExtra___RUBKC", "sharedActions": "styles-module__sharedActions___6Glpl", "sharedExtraInner": "styles-module__sharedExtraInner___EuUh4" };
+
+// src/utils/ensure-styles.ts
+import { useCallback as useCallback2 } from "react";
+var ATTR = "data-agentation-styles";
+function ensureStyles(root, id, css13) {
+  if (!css13 || !root) return;
+  const container = root.nodeType === 9 ? root.head : root.nodeType === 11 ? root : null;
+  if (!container || typeof container.querySelector !== "function") return;
+  if (container.querySelector(`style[${ATTR}~="toolbar"], style[${ATTR}~="${id}"]`)) return;
+  const doc = root.nodeType === 9 ? root : root.ownerDocument;
+  const style = doc.createElement("style");
+  style.setAttribute(ATTR, id);
+  style.textContent = css13;
+  container.appendChild(style);
+}
+function useEnsureStyles(id, css13) {
+  return useCallback2((element) => {
+    if (element) ensureStyles(element.getRootNode(), id, css13);
+  }, [id, css13]);
+}
+
+// src/components/annotation-popup-css/annotation-editor.tsx
+import {
+  forwardRef,
+  useCallback as useCallback3,
+  useImperativeHandle,
+  useLayoutEffect as useLayoutEffect4,
+  useRef as useRef3,
+  useState as useState3
+} from "react";
+import { jsx as jsx2, jsxs } from "react/jsx-runtime";
+function focusBypassingTraps(el) {
+  if (!el) return;
+  const trap = (e) => e.stopImmediatePropagation();
+  document.addEventListener("focusin", trap, true);
+  document.addEventListener("focusout", trap, true);
+  try {
+    el.focus({ preventScroll: true });
+  } finally {
+    document.removeEventListener("focusin", trap, true);
+    document.removeEventListener("focusout", trap, true);
+  }
+}
+var AnnotationEditor = forwardRef(function AnnotationEditor2({
+  element,
+  timestamp,
+  selectedText,
+  placeholder = "What should change?",
+  initialValue = "",
+  submitLabel = "Add",
+  onSubmit,
+  onCancel,
+  onDelete,
+  onOpenSource,
+  allowEmpty = false,
+  accentColor = "#3c82f7",
+  computedStyles,
+  disabled = false,
+  preview = false,
+  resetOnPreview = true,
+  variant = "popup"
+}, ref) {
+  const isCard = variant === "card";
+  const [text, setText] = useState3(initialValue);
+  const [isFocused, setIsFocused] = useState3(false);
+  const [isStylesExpanded, setIsStylesExpanded] = useState3(false);
+  const textareaRef = useRef3(null);
+  const formRef = useRef3(null);
+  const previewExcerpt = selectedText ? ` "${selectedText.slice(0, 30)}${selectedText.length > 30 ? "..." : ""}"` : "";
+  useLayoutEffect4(() => {
+    const form = formRef.current;
+    const textarea = textareaRef.current;
+    if (!isCard || !form || !textarea) return;
+    const measure = () => {
+      form.style.setProperty(
+        "--editor-field-height",
+        `${textarea.offsetHeight}px`
+      );
+    };
+    measure();
+    if ("CanvasRenderingContext2D" in window) {
+      const context = document.createElement("canvas").getContext("2d");
+      if (context) {
+        const family = getComputedStyle(textarea).fontFamily;
+        context.font = `13px ${family}`;
+        const noteWidth = context.measureText(
+          initialValue.replace(/\s+/g, " ")
+        ).width;
+        context.font = `italic 12px ${family}`;
+        const headingWidth = context.measureText(
+          element + previewExcerpt
+        ).width;
+        const width = Math.min(
+          200,
+          Math.max(120, Math.ceil(Math.max(noteWidth, headingWidth)) + 24)
+        );
+        form.closest("[data-annotation-card]")?.style.setProperty("--preview-width", `${width}px`);
+        const note = form.querySelector("[data-shared-note]");
+        if (note)
+          note.toggleAttribute("data-truncated", noteWidth > width - 24);
+      }
+    }
+    const observer = typeof ResizeObserver !== "undefined" ? new ResizeObserver(measure) : null;
+    observer?.observe(textarea);
+    return () => observer?.disconnect();
+  }, [isCard, element, initialValue, previewExcerpt]);
+  useLayoutEffect4(() => {
+    if (preview && resetOnPreview) {
+      setText(initialValue);
+      setIsStylesExpanded(false);
+      if (textareaRef.current) {
+        textareaRef.current.scrollTop = 0;
+        textareaRef.current.scrollLeft = 0;
+      }
+    }
+  }, [preview, resetOnPreview, initialValue]);
+  useImperativeHandle(
+    ref,
+    () => ({
+      focus() {
+        const textarea = textareaRef.current;
+        focusBypassingTraps(textarea);
+        if (textarea) {
+          textarea.selectionStart = textarea.selectionEnd = textarea.value.length;
+          textarea.scrollTop = isCard ? 0 : textarea.scrollHeight;
+        }
+      }
+    }),
+    [isCard]
+  );
+  const handleSubmit = useCallback3(() => {
+    if (disabled || !text.trim() && !allowEmpty) return;
+    onSubmit(text.trim());
+  }, [disabled, text, allowEmpty, onSubmit]);
+  const handleKeyDown = (event) => {
+    event.stopPropagation();
+    if (event.nativeEvent.isComposing) return;
+    if (event.key === "Enter" && !event.shiftKey) {
+      event.preventDefault();
+      handleSubmit();
+    }
+    if (event.key === "Escape") onCancel();
+  };
+  return /* @__PURE__ */ jsxs(
+    "div",
+    {
+      ref: formRef,
+      className: isCard ? styles_module_default.sharedForm : void 0,
+      style: isCard ? void 0 : { display: "contents" },
+      "data-annotation-editor": true,
+      "data-preview": preview || void 0,
+      children: [
+        /* @__PURE__ */ jsxs("div", { className: styles_module_default.header, "data-editor-heading": true, children: [
+          computedStyles && Object.keys(computedStyles).length > 0 ? /* @__PURE__ */ jsxs(
+            "button",
+            {
+              className: styles_module_default.headerToggle,
+              onClick: () => {
+                const wasExpanded = isStylesExpanded;
+                setIsStylesExpanded(!isStylesExpanded);
+                if (wasExpanded) {
+                  originalSetTimeout(
+                    () => focusBypassingTraps(textareaRef.current),
+                    0
+                  );
+                }
+              },
+              type: "button",
+              children: [
+                /* @__PURE__ */ jsx2(
+                  "svg",
+                  {
+                    className: `${styles_module_default.chevron} ${isStylesExpanded ? styles_module_default.expanded : ""}`,
+                    width: "14",
+                    height: "14",
+                    viewBox: "0 0 14 14",
+                    fill: "none",
+                    xmlns: "http://www.w3.org/2000/svg",
+                    children: /* @__PURE__ */ jsx2(
+                      "path",
+                      {
+                        d: "M5.5 10.25L9 7.25L5.75 4",
+                        stroke: "currentColor",
+                        strokeWidth: "1.5",
+                        strokeLinecap: "round",
+                        strokeLinejoin: "round"
+                      }
+                    )
+                  }
+                ),
+                /* @__PURE__ */ jsxs("span", { className: styles_module_default.element, children: [
+                  element,
+                  isCard && previewExcerpt && /* @__PURE__ */ jsx2("span", { className: styles_module_default.previewExcerpt, children: previewExcerpt })
+                ] })
+              ]
+            }
+          ) : /* @__PURE__ */ jsxs("span", { className: styles_module_default.element, children: [
+            element,
+            isCard && previewExcerpt && /* @__PURE__ */ jsx2("span", { className: styles_module_default.previewExcerpt, children: previewExcerpt })
+          ] }),
+          timestamp && /* @__PURE__ */ jsx2("span", { className: styles_module_default.timestamp, children: timestamp })
+        ] }),
+        onOpenSource && /* @__PURE__ */ jsx2(
+          "div",
+          {
+            className: isCard ? styles_module_default.sharedExtra : void 0,
+            style: isCard ? void 0 : { display: "contents" },
+            children: /* @__PURE__ */ jsx2(
+              "div",
+              {
+                className: isCard ? styles_module_default.sharedExtraInner : void 0,
+                style: isCard ? void 0 : { display: "contents" },
+                children: /* @__PURE__ */ jsx2(
+                  "button",
+                  {
+                    type: "button",
+                    className: styles_module_default.sourceAction,
+                    onClick: onOpenSource,
+                    children: "Open in editor"
+                  }
+                )
+              }
+            )
+          }
+        ),
+        computedStyles && Object.keys(computedStyles).length > 0 && /* @__PURE__ */ jsx2(
+          "div",
+          {
+            className: `${styles_module_default.stylesWrapper} ${isStylesExpanded ? styles_module_default.expanded : ""}`,
+            children: /* @__PURE__ */ jsx2("div", { className: styles_module_default.stylesInner, children: /* @__PURE__ */ jsx2("div", { className: styles_module_default.stylesBlock, children: Object.entries(computedStyles).map(([key, value]) => /* @__PURE__ */ jsxs("div", { className: styles_module_default.styleLine, children: [
+              /* @__PURE__ */ jsx2("span", { className: styles_module_default.styleProperty, children: key.replace(/([A-Z])/g, "-$1").toLowerCase() }),
+              ": ",
+              /* @__PURE__ */ jsx2("span", { className: styles_module_default.styleValue, children: value }),
+              ";"
+            ] }, key)) }) })
+          }
+        ),
+        selectedText && /* @__PURE__ */ jsx2(
+          "div",
+          {
+            className: isCard ? styles_module_default.sharedExtra : void 0,
+            style: isCard ? void 0 : { display: "contents" },
+            children: /* @__PURE__ */ jsx2(
+              "div",
+              {
+                className: isCard ? styles_module_default.sharedExtraInner : void 0,
+                style: isCard ? void 0 : { display: "contents" },
+                children: /* @__PURE__ */ jsxs("div", { className: styles_module_default.quote, children: [
+                  "\u201C",
+                  selectedText.slice(0, 80),
+                  selectedText.length > 80 ? "..." : "",
+                  "\u201D"
+                ] })
+              }
+            )
+          }
+        ),
+        /* @__PURE__ */ jsx2(
+          "div",
+          {
+            "data-shared-note": true,
+            className: isCard ? styles_module_default.sharedNote : void 0,
+            style: isCard ? {
+              "--field-border": isFocused ? accentColor : void 0
+            } : { display: "contents" },
+            children: /* @__PURE__ */ jsx2(
+              "div",
+              {
+                className: isCard ? styles_module_default.sharedNoteContent : void 0,
+                style: isCard ? void 0 : { display: "contents" },
+                children: /* @__PURE__ */ jsx2(
+                  "textarea",
+                  {
+                    ref: textareaRef,
+                    className: styles_module_default.textarea,
+                    readOnly: preview,
+                    "aria-hidden": preview,
+                    style: isCard ? void 0 : { borderColor: isFocused ? accentColor : void 0 },
+                    placeholder,
+                    value: preview ? text.replace(/\s+/g, " ") : text,
+                    onChange: (e) => setText(e.target.value),
+                    onFocus: () => setIsFocused(true),
+                    onBlur: () => setIsFocused(false),
+                    rows: 2,
+                    onKeyDown: handleKeyDown
+                  }
+                )
+              }
+            )
+          }
+        ),
+        /* @__PURE__ */ jsx2(
+          "div",
+          {
+            "data-editor-actions": true,
+            className: isCard ? styles_module_default.sharedActions : void 0,
+            style: isCard ? void 0 : { display: "contents" },
+            children: /* @__PURE__ */ jsxs("div", { className: styles_module_default.actions, children: [
+              onDelete && /* @__PURE__ */ jsx2("div", { className: styles_module_default.deleteWrapper, children: /* @__PURE__ */ jsx2(
+                "button",
+                {
+                  className: styles_module_default.deleteButton,
+                  onClick: onDelete,
+                  type: "button",
+                  "aria-label": "Delete annotation",
+                  children: "Delete"
+                }
+              ) }),
+              /* @__PURE__ */ jsx2("button", { className: styles_module_default.cancel, onClick: onCancel, children: "Cancel" }),
+              /* @__PURE__ */ jsx2(
+                "button",
+                {
+                  className: styles_module_default.submit,
+                  style: {
+                    backgroundColor: accentColor,
+                    opacity: text.trim() || allowEmpty ? 1 : 0.4
+                  },
+                  onClick: handleSubmit,
+                  disabled: disabled || !text.trim() && !allowEmpty,
+                  children: submitLabel
+                }
+              )
+            ] })
+          }
+        )
+      ]
+    }
+  );
+});
+
+// src/components/annotation-popup-css/index.tsx
+import { jsx as jsx3 } from "react/jsx-runtime";
+var AnnotationPopupCSS = forwardRef2(
+  function AnnotationPopupCSS2({
+    element,
+    timestamp,
+    selectedText,
+    placeholder = "What should change?",
+    initialValue = "",
+    submitLabel = "Add",
+    onSubmit,
+    onCancel,
+    onDelete,
+    onOpenSource,
+    allowEmpty = false,
+    style,
+    accentColor = "#3c82f7",
+    isExiting = false,
+    onExitComplete,
+    lightMode = false,
+    computedStyles
+  }, ref) {
+    const [isShaking, setIsShaking] = useState4(false);
+    const [animState, setAnimState] = useState4("initial");
+    const editorRef = useRef4(null);
+    const popupRef = useRef4(null);
+    useEffect3(() => {
+      ensureStyles(popupRef.current?.getRootNode(), "annotation-popup", css);
+    }, []);
+    const shakeTimerRef = useRef4(null);
+    useEffect3(() => {
+      const startTimer = originalSetTimeout(() => {
+        setAnimState((previous) => previous === "initial" ? "enter" : previous);
+      }, 0);
+      return () => {
+        clearTimeout(startTimer);
+        if (shakeTimerRef.current) clearTimeout(shakeTimerRef.current);
+      };
+    }, []);
+    useEffect3(() => {
+      if (isExiting) return;
+      const timer = originalSetTimeout(() => editorRef.current?.focus(), 50);
+      return () => clearTimeout(timer);
+    }, [isExiting]);
+    const shake = useCallback4(() => {
+      if (shakeTimerRef.current) clearTimeout(shakeTimerRef.current);
+      setIsShaking(true);
+      shakeTimerRef.current = originalSetTimeout(() => {
+        setIsShaking(false);
+        editorRef.current?.focus();
+      }, 250);
+    }, []);
+    useImperativeHandle2(ref, () => ({
+      shake
+    }), [shake]);
+    const handleCancel = useCallback4(() => {
+      if (onExitComplete) {
+        onCancel();
+        return;
+      }
+      setAnimState("exit");
+    }, [onCancel, onExitComplete]);
+    const visibleAnimState = isExiting ? "exit" : animState;
+    useExitCompletion(popupRef, visibleAnimState === "exit", () => {
+      if (isExiting) onExitComplete?.();
+      else onCancel();
+    });
+    const popupClassName = [
+      styles_module_default.popup,
+      lightMode ? styles_module_default.light : "",
+      visibleAnimState === "enter" ? styles_module_default.enter : "",
+      visibleAnimState === "entered" ? styles_module_default.entered : "",
+      visibleAnimState === "exit" ? styles_module_default.exit : "",
+      isShaking && visibleAnimState !== "exit" ? styles_module_default.shake : ""
+    ].filter(Boolean).join(" ");
+    return /* @__PURE__ */ jsx3(
+      "div",
+      {
+        ref: popupRef,
+        className: popupClassName,
+        "data-annotation-popup": true,
+        style,
+        onAnimationEnd: (event) => {
+          if (event.target !== event.currentTarget) return;
+          if (event.animationName.includes("popupEnter") && !isExiting) {
+            setAnimState("entered");
+          }
+        },
+        onKeyDownCapture: (event) => {
+          if (event.key !== "Escape" || event.nativeEvent.isComposing) return;
+          event.preventDefault();
+          event.stopPropagation();
+          handleCancel();
+        },
+        onClick: (e) => e.stopPropagation(),
+        children: /* @__PURE__ */ jsx3(
+          AnnotationEditor,
+          {
+            ref: editorRef,
+            element,
+            timestamp,
+            selectedText,
+            placeholder,
+            initialValue,
+            submitLabel,
+            onSubmit,
+            onCancel: handleCancel,
+            onDelete,
+            onOpenSource,
+            allowEmpty,
+            accentColor,
+            computedStyles,
+            disabled: visibleAnimState === "exit"
+          }
+        )
+      }
+    );
+  }
+);
 
 // src/components/icon-transitions.module.scss
 var css2 = ".icon-transitions-module__iconState___uqK9J {\n  transition: opacity 0.2s ease, transform 0.2s ease;\n  transform-origin: center;\n}\n\n.icon-transitions-module__iconStateFast___HxlMm {\n  transition: opacity 0.15s ease, transform 0.15s ease;\n  transform-origin: center;\n}\n\n.icon-transitions-module__iconFade___nPwXg {\n  transition: opacity 0.2s ease;\n}\n\n.icon-transitions-module__iconFadeFast___Ofb2t {\n  transition: opacity 0.15s ease;\n}\n\n.icon-transitions-module__visible___PlHsU {\n  opacity: 1 !important;\n}\n\n.icon-transitions-module__visibleScaled___8Qog- {\n  opacity: 1 !important;\n  transform: scale(1);\n}\n\n.icon-transitions-module__hidden___ETykt {\n  opacity: 0 !important;\n}\n\n.icon-transitions-module__hiddenScaled___JXn-m {\n  opacity: 0 !important;\n  transform: scale(0.8);\n}\n\n.icon-transitions-module__sending___uaLN- {\n  opacity: 0.5 !important;\n  transform: scale(0.8);\n}";
-var classNames2 = { "iconState": "icon-transitions-module__iconState___uqK9J", "iconStateFast": "icon-transitions-module__iconStateFast___HxlMm", "iconFade": "icon-transitions-module__iconFade___nPwXg", "iconFadeFast": "icon-transitions-module__iconFadeFast___Ofb2t", "visible": "icon-transitions-module__visible___PlHsU", "visibleScaled": "icon-transitions-module__visibleScaled___8Qog-", "hidden": "icon-transitions-module__hidden___ETykt", "hiddenScaled": "icon-transitions-module__hiddenScaled___JXn-m", "sending": "icon-transitions-module__sending___uaLN-" };
-if (typeof document !== "undefined") {
-  let style = document.getElementById("feedback-tool-styles-components-icon-transitions");
-  if (!style) {
-    style = document.createElement("style");
-    style.id = "feedback-tool-styles-components-icon-transitions";
-    document.head.appendChild(style);
-  }
-  style.textContent = css2;
-}
-var icon_transitions_module_default = classNames2;
+var icon_transitions_module_default = { "iconState": "icon-transitions-module__iconState___uqK9J", "iconStateFast": "icon-transitions-module__iconStateFast___HxlMm", "iconFade": "icon-transitions-module__iconFade___nPwXg", "iconFadeFast": "icon-transitions-module__iconFadeFast___Ofb2t", "visible": "icon-transitions-module__visible___PlHsU", "visibleScaled": "icon-transitions-module__visibleScaled___8Qog-", "hidden": "icon-transitions-module__hidden___ETykt", "hiddenScaled": "icon-transitions-module__hiddenScaled___JXn-m", "sending": "icon-transitions-module__sending___uaLN-" };
 
 // src/components/icons.tsx
-import { jsx, jsxs } from "react/jsx-runtime";
-var IconClose = ({ size = 16 }) => /* @__PURE__ */ jsx("svg", { width: size, height: size, viewBox: "0 0 16 16", fill: "none", children: /* @__PURE__ */ jsx(
+import { jsx as jsx4, jsxs as jsxs2 } from "react/jsx-runtime";
+var IconClose = ({ size = 16 }) => /* @__PURE__ */ jsx4("svg", { width: size, height: size, viewBox: "0 0 16 16", fill: "none", children: /* @__PURE__ */ jsx4(
   "path",
   {
     d: "M4 4l8 8M12 4l-8 8",
@@ -46,7 +1749,7 @@ var IconClose = ({ size = 16 }) => /* @__PURE__ */ jsx("svg", { width: size, hei
     strokeLinecap: "round"
   }
 ) });
-var IconPlus = ({ size = 16 }) => /* @__PURE__ */ jsx("svg", { width: size, height: size, viewBox: "0 0 16 16", fill: "none", children: /* @__PURE__ */ jsx(
+var IconPlus = ({ size = 16 }) => /* @__PURE__ */ jsx4("svg", { width: size, height: size, viewBox: "0 0 16 16", fill: "none", children: /* @__PURE__ */ jsx4(
   "path",
   {
     d: "M8 3v10M3 8h10",
@@ -55,7 +1758,7 @@ var IconPlus = ({ size = 16 }) => /* @__PURE__ */ jsx("svg", { width: size, heig
     strokeLinecap: "round"
   }
 ) });
-var IconCheck = ({ size = 16 }) => /* @__PURE__ */ jsx("svg", { width: size, height: size, viewBox: "0 0 16 16", fill: "none", children: /* @__PURE__ */ jsx(
+var IconCheck = ({ size = 16 }) => /* @__PURE__ */ jsx4("svg", { width: size, height: size, viewBox: "0 0 16 16", fill: "none", children: /* @__PURE__ */ jsx4(
   "path",
   {
     d: "M3 8l3.5 3.5L13 5",
@@ -65,7 +1768,7 @@ var IconCheck = ({ size = 16 }) => /* @__PURE__ */ jsx("svg", { width: size, hei
     strokeLinejoin: "round"
   }
 ) });
-var IconCheckSmall = ({ size = 14 }) => /* @__PURE__ */ jsx("svg", { width: size, height: size, viewBox: "0 0 14 14", fill: "none", children: /* @__PURE__ */ jsx(
+var IconCheckSmall = ({ size = 14 }) => /* @__PURE__ */ jsx4("svg", { width: size, height: size, viewBox: "0 0 14 14", fill: "none", children: /* @__PURE__ */ jsx4(
   "path",
   {
     d: "M3.9375 7L6.125 9.1875L10.5 4.8125",
@@ -78,9 +1781,9 @@ var IconCheckSmall = ({ size = 14 }) => /* @__PURE__ */ jsx("svg", { width: size
 var IconListSparkle = ({
   size = 24,
   style = {}
-}) => /* @__PURE__ */ jsxs("svg", { width: size, height: size, viewBox: "0 0 24 24", fill: "none", style, children: [
-  /* @__PURE__ */ jsxs("g", { clipPath: "url(#clip0_list_sparkle)", children: [
-    /* @__PURE__ */ jsx(
+}) => /* @__PURE__ */ jsxs2("svg", { width: size, height: size, viewBox: "0 0 24 24", fill: "none", style, children: [
+  /* @__PURE__ */ jsxs2("g", { clipPath: "url(#clip0_list_sparkle)", children: [
+    /* @__PURE__ */ jsx4(
       "path",
       {
         d: "M11.5 12L5.5 12",
@@ -90,7 +1793,7 @@ var IconListSparkle = ({
         strokeLinejoin: "round"
       }
     ),
-    /* @__PURE__ */ jsx(
+    /* @__PURE__ */ jsx4(
       "path",
       {
         d: "M18.5 6.75L5.5 6.75",
@@ -100,7 +1803,7 @@ var IconListSparkle = ({
         strokeLinejoin: "round"
       }
     ),
-    /* @__PURE__ */ jsx(
+    /* @__PURE__ */ jsx4(
       "path",
       {
         d: "M9.25 17.25L5.5 17.25",
@@ -110,7 +1813,7 @@ var IconListSparkle = ({
         strokeLinejoin: "round"
       }
     ),
-    /* @__PURE__ */ jsx(
+    /* @__PURE__ */ jsx4(
       "path",
       {
         d: "M16 12.75L16.5179 13.9677C16.8078 14.6494 17.3506 15.1922 18.0323 15.4821L19.25 16L18.0323 16.5179C17.3506 16.8078 16.8078 17.3506 16.5179 18.0323L16 19.25L15.4821 18.0323C15.1922 17.3506 14.6494 16.8078 13.9677 16.5179L12.75 16L13.9677 15.4821C14.6494 15.1922 15.1922 14.6494 15.4821 13.9677L16 12.75Z",
@@ -120,12 +1823,12 @@ var IconListSparkle = ({
       }
     )
   ] }),
-  /* @__PURE__ */ jsx("defs", { children: /* @__PURE__ */ jsx("clipPath", { id: "clip0_list_sparkle", children: /* @__PURE__ */ jsx("rect", { width: "24", height: "24", fill: "white" }) }) })
+  /* @__PURE__ */ jsx4("defs", { children: /* @__PURE__ */ jsx4("clipPath", { id: "clip0_list_sparkle", children: /* @__PURE__ */ jsx4("rect", { width: "24", height: "24", fill: "white" }) }) })
 ] });
 var IconHelp = ({
   size = 20,
   ...props
-}) => /* @__PURE__ */ jsxs(
+}) => /* @__PURE__ */ jsxs2(
   "svg",
   {
     width: size,
@@ -135,7 +1838,7 @@ var IconHelp = ({
     xmlns: "http://www.w3.org/2000/svg",
     ...props,
     children: [
-      /* @__PURE__ */ jsx(
+      /* @__PURE__ */ jsx4(
         "circle",
         {
           cx: "10",
@@ -145,7 +1848,7 @@ var IconHelp = ({
           strokeWidth: "1.25"
         }
       ),
-      /* @__PURE__ */ jsx(
+      /* @__PURE__ */ jsx4(
         "path",
         {
           d: "M8.5 8.5C8.73 7.85 9.31 7.49 10 7.5C10.86 7.51 11.5 8.13 11.5 9C11.5 10.08 10 10.5 10 10.5V10.75",
@@ -155,12 +1858,12 @@ var IconHelp = ({
           strokeLinejoin: "round"
         }
       ),
-      /* @__PURE__ */ jsx("circle", { cx: "10", cy: "12.625", r: "0.625", fill: "currentColor" })
+      /* @__PURE__ */ jsx4("circle", { cx: "10", cy: "12.625", r: "0.625", fill: "currentColor" })
     ]
   }
 );
-var IconCheckSmallAnimated = ({ size = 14 }) => /* @__PURE__ */ jsxs("svg", { width: size, height: size, viewBox: "0 0 14 14", fill: "none", children: [
-  /* @__PURE__ */ jsx("style", { children: `
+var IconCheckSmallAnimated = ({ size = 14 }) => /* @__PURE__ */ jsxs2("svg", { width: size, height: size, viewBox: "0 0 14 14", fill: "none", children: [
+  /* @__PURE__ */ jsx4("style", { children: `
       @keyframes checkDraw {
         0% {
           stroke-dashoffset: 12;
@@ -192,7 +1895,7 @@ var IconCheckSmallAnimated = ({ size = 14 }) => /* @__PURE__ */ jsxs("svg", { wi
         animation: checkDraw 0.18s ease-out, checkBounce 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
       }
     ` }),
-  /* @__PURE__ */ jsx(
+  /* @__PURE__ */ jsx4(
     "path",
     {
       className: "check-path-animated",
@@ -204,8 +1907,8 @@ var IconCheckSmallAnimated = ({ size = 14 }) => /* @__PURE__ */ jsxs("svg", { wi
     }
   )
 ] });
-var IconCopyAlt = ({ size = 16 }) => /* @__PURE__ */ jsxs("svg", { width: size, height: size, viewBox: "0 0 24 24", fill: "none", children: [
-  /* @__PURE__ */ jsx(
+var IconCopyAlt = ({ size = 16 }) => /* @__PURE__ */ jsxs2("svg", { width: size, height: size, viewBox: "0 0 24 24", fill: "none", children: [
+  /* @__PURE__ */ jsx4(
     "path",
     {
       d: "M4.75 11.25C4.75 10.4216 5.42157 9.75 6.25 9.75H12.75C13.5784 9.75 14.25 10.4216 14.25 11.25V17.75C14.25 18.5784 13.5784 19.25 12.75 19.25H6.25C5.42157 19.25 4.75 18.5784 4.75 17.75V11.25Z",
@@ -213,7 +1916,7 @@ var IconCopyAlt = ({ size = 16 }) => /* @__PURE__ */ jsxs("svg", { width: size, 
       strokeWidth: "1.5"
     }
   ),
-  /* @__PURE__ */ jsx(
+  /* @__PURE__ */ jsx4(
     "path",
     {
       d: "M17.25 14.25H17.75C18.5784 14.25 19.25 13.5784 19.25 12.75V6.25C19.25 5.42157 18.5784 4.75 17.75 4.75H11.25C10.4216 4.75 9.75 5.42157 9.75 6.25V6.75",
@@ -227,13 +1930,13 @@ var IconCopyAnimated = ({
   size = 24,
   copied = false,
   tint
-}) => /* @__PURE__ */ jsxs("svg", { width: size, height: size, viewBox: "0 0 24 24", fill: "none", style: tint ? { color: tint, transition: "color 0.3s ease" } : void 0, children: [
-  /* @__PURE__ */ jsxs(
+}) => /* @__PURE__ */ jsxs2("svg", { ref: useEnsureStyles("icon-transitions", css2), width: size, height: size, viewBox: "0 0 24 24", fill: "none", style: tint ? { color: tint, transition: "color 0.3s ease" } : void 0, children: [
+  /* @__PURE__ */ jsxs2(
     "g",
     {
       className: `${icon_transitions_module_default.iconState} ${copied ? icon_transitions_module_default.hiddenScaled : icon_transitions_module_default.visibleScaled}`,
       children: [
-        /* @__PURE__ */ jsx(
+        /* @__PURE__ */ jsx4(
           "path",
           {
             d: "M4.75 11.25C4.75 10.4216 5.42157 9.75 6.25 9.75H12.75C13.5784 9.75 14.25 10.4216 14.25 11.25V17.75C14.25 18.5784 13.5784 19.25 12.75 19.25H6.25C5.42157 19.25 4.75 18.5784 4.75 17.75V11.25Z",
@@ -241,7 +1944,7 @@ var IconCopyAnimated = ({
             strokeWidth: "1.5"
           }
         ),
-        /* @__PURE__ */ jsx(
+        /* @__PURE__ */ jsx4(
           "path",
           {
             d: "M17.25 14.25H17.75C18.5784 14.25 19.25 13.5784 19.25 12.75V6.25C19.25 5.42157 18.5784 4.75 17.75 4.75H11.25C10.4216 4.75 9.75 5.42157 9.75 6.25V6.75",
@@ -253,12 +1956,12 @@ var IconCopyAnimated = ({
       ]
     }
   ),
-  /* @__PURE__ */ jsxs(
+  /* @__PURE__ */ jsxs2(
     "g",
     {
       className: `${icon_transitions_module_default.iconState} ${copied ? icon_transitions_module_default.visibleScaled : icon_transitions_module_default.hiddenScaled}`,
       children: [
-        /* @__PURE__ */ jsx(
+        /* @__PURE__ */ jsx4(
           "path",
           {
             d: "M12 20C7.58172 20 4 16.4182 4 12C4 7.58172 7.58172 4 12 4C16.4182 4 20 7.58172 20 12C20 16.4182 16.4182 20 12 20Z",
@@ -268,7 +1971,7 @@ var IconCopyAnimated = ({
             strokeLinejoin: "round"
           }
         ),
-        /* @__PURE__ */ jsx(
+        /* @__PURE__ */ jsx4(
           "path",
           {
             d: "M15 10L11 14.25L9.25 12.25",
@@ -290,12 +1993,12 @@ var IconSendArrow = ({
   const showCheck = state === "sent";
   const showError = state === "failed";
   const isSending = state === "sending";
-  return /* @__PURE__ */ jsxs("svg", { width: size, height: size, viewBox: "0 0 24 24", fill: "none", children: [
-    /* @__PURE__ */ jsx(
+  return /* @__PURE__ */ jsxs2("svg", { width: size, height: size, viewBox: "0 0 24 24", fill: "none", children: [
+    /* @__PURE__ */ jsx4(
       "g",
       {
         className: `${icon_transitions_module_default.iconStateFast} ${showArrow ? icon_transitions_module_default.visibleScaled : isSending ? icon_transitions_module_default.sending : icon_transitions_module_default.hiddenScaled}`,
-        children: /* @__PURE__ */ jsx(
+        children: /* @__PURE__ */ jsx4(
           "path",
           {
             d: "M9.875 14.125L12.3506 19.6951C12.7184 20.5227 13.9091 20.4741 14.2083 19.6193L18.8139 6.46032C19.0907 5.6695 18.3305 4.90933 17.5397 5.18611L4.38072 9.79174C3.52589 10.0909 3.47731 11.2816 4.30494 11.6494L9.875 14.125ZM9.875 14.125L13.375 10.625",
@@ -307,12 +2010,12 @@ var IconSendArrow = ({
         )
       }
     ),
-    /* @__PURE__ */ jsxs(
+    /* @__PURE__ */ jsxs2(
       "g",
       {
         className: `${icon_transitions_module_default.iconStateFast} ${showCheck ? icon_transitions_module_default.visibleScaled : icon_transitions_module_default.hiddenScaled}`,
         children: [
-          /* @__PURE__ */ jsx(
+          /* @__PURE__ */ jsx4(
             "path",
             {
               d: "M12 20C7.58172 20 4 16.4182 4 12C4 7.58172 7.58172 4 12 4C16.4182 4 20 7.58172 20 12C20 16.4182 16.4182 20 12 20Z",
@@ -322,7 +2025,7 @@ var IconSendArrow = ({
               strokeLinejoin: "round"
             }
           ),
-          /* @__PURE__ */ jsx(
+          /* @__PURE__ */ jsx4(
             "path",
             {
               d: "M15 10L11 14.25L9.25 12.25",
@@ -335,12 +2038,12 @@ var IconSendArrow = ({
         ]
       }
     ),
-    /* @__PURE__ */ jsxs(
+    /* @__PURE__ */ jsxs2(
       "g",
       {
         className: `${icon_transitions_module_default.iconStateFast} ${showError ? icon_transitions_module_default.visibleScaled : icon_transitions_module_default.hiddenScaled}`,
         children: [
-          /* @__PURE__ */ jsx(
+          /* @__PURE__ */ jsx4(
             "path",
             {
               d: "M12 20C7.58172 20 4 16.4182 4 12C4 7.58172 7.58172 4 12 4C16.4182 4 20 7.58172 20 12C20 16.4182 16.4182 20 12 20Z",
@@ -350,7 +2053,7 @@ var IconSendArrow = ({
               strokeLinejoin: "round"
             }
           ),
-          /* @__PURE__ */ jsx(
+          /* @__PURE__ */ jsx4(
             "path",
             {
               d: "M12 8V12",
@@ -359,7 +2062,7 @@ var IconSendArrow = ({
               strokeLinecap: "round"
             }
           ),
-          /* @__PURE__ */ jsx(
+          /* @__PURE__ */ jsx4(
             "circle",
             {
               cx: "12",
@@ -378,9 +2081,9 @@ var IconSendArrow = ({
 var IconSendAnimated = ({
   size = 24,
   sent = false
-}) => /* @__PURE__ */ jsxs("svg", { width: size, height: size, viewBox: "0 0 22 21", fill: "none", children: [
-  /* @__PURE__ */ jsxs("g", { className: `${icon_transitions_module_default.iconState} ${sent ? icon_transitions_module_default.hiddenScaled : icon_transitions_module_default.visibleScaled}`, children: [
-    /* @__PURE__ */ jsx(
+}) => /* @__PURE__ */ jsxs2("svg", { ref: useEnsureStyles("icon-transitions", css2), width: size, height: size, viewBox: "0 0 22 21", fill: "none", children: [
+  /* @__PURE__ */ jsxs2("g", { className: `${icon_transitions_module_default.iconState} ${sent ? icon_transitions_module_default.hiddenScaled : icon_transitions_module_default.visibleScaled}`, children: [
+    /* @__PURE__ */ jsx4(
       "path",
       {
         d: "M9.5 5H6.5C4.84315 5 3.5 6.34315 3.5 8V15C3.5 16.6569 4.84315 18 6.5 18H13.5C15.1569 18 16.5 16.6569 16.5 15V12",
@@ -389,7 +2092,7 @@ var IconSendAnimated = ({
         strokeLinecap: "round"
       }
     ),
-    /* @__PURE__ */ jsx(
+    /* @__PURE__ */ jsx4(
       "path",
       {
         d: "M13.5 8.5L18.5 3.5M18.5 3.5L14.4524 3.5M18.5 3.5L18.5 7.54762",
@@ -399,7 +2102,7 @@ var IconSendAnimated = ({
         strokeLinejoin: "round"
       }
     ),
-    /* @__PURE__ */ jsx(
+    /* @__PURE__ */ jsx4(
       "path",
       {
         d: "M7.5 13.75H12.5",
@@ -408,7 +2111,7 @@ var IconSendAnimated = ({
         strokeLinecap: "round"
       }
     ),
-    /* @__PURE__ */ jsx(
+    /* @__PURE__ */ jsx4(
       "path",
       {
         d: "M7.5 10.75H10.5",
@@ -418,8 +2121,8 @@ var IconSendAnimated = ({
       }
     )
   ] }),
-  /* @__PURE__ */ jsxs("g", { className: `${icon_transitions_module_default.iconState} ${sent ? icon_transitions_module_default.visibleScaled : icon_transitions_module_default.hiddenScaled}`, children: [
-    /* @__PURE__ */ jsx(
+  /* @__PURE__ */ jsxs2("g", { className: `${icon_transitions_module_default.iconState} ${sent ? icon_transitions_module_default.visibleScaled : icon_transitions_module_default.hiddenScaled}`, children: [
+    /* @__PURE__ */ jsx4(
       "path",
       {
         d: "M11 19C6.58172 19 3 15.4182 3 11C3 6.58172 6.58172 3 11 3C15.4182 3 19 6.58172 19 11C19 15.4182 15.4182 19 11 19Z",
@@ -429,7 +2132,7 @@ var IconSendAnimated = ({
         strokeLinejoin: "round"
       }
     ),
-    /* @__PURE__ */ jsx(
+    /* @__PURE__ */ jsx4(
       "path",
       {
         d: "M14 9L10 13.25L8.25 11.25",
@@ -441,8 +2144,8 @@ var IconSendAnimated = ({
     )
   ] })
 ] });
-var IconEye = ({ size = 16 }) => /* @__PURE__ */ jsxs("svg", { width: size, height: size, viewBox: "0 0 24 24", fill: "none", children: [
-  /* @__PURE__ */ jsx(
+var IconEye = ({ size = 16 }) => /* @__PURE__ */ jsxs2("svg", { width: size, height: size, viewBox: "0 0 24 24", fill: "none", children: [
+  /* @__PURE__ */ jsx4(
     "path",
     {
       d: "M4.91516 12.7108C4.63794 12.2883 4.63705 11.7565 4.91242 11.3328C5.84146 9.9033 8.30909 6.74994 12 6.74994C15.6909 6.74994 18.1585 9.9033 19.0876 11.3328C19.3629 11.7565 19.3621 12.2883 19.0848 12.7108C18.1537 14.13 15.6873 17.2499 12 17.2499C8.31272 17.2499 5.8463 14.13 4.91516 12.7108Z",
@@ -452,7 +2155,7 @@ var IconEye = ({ size = 16 }) => /* @__PURE__ */ jsxs("svg", { width: size, heig
       strokeLinejoin: "round"
     }
   ),
-  /* @__PURE__ */ jsx(
+  /* @__PURE__ */ jsx4(
     "path",
     {
       d: "M12 14.25C13.2426 14.25 14.25 13.2426 14.25 12C14.25 10.7574 13.2426 9.75 12 9.75C10.7574 9.75 9.75 10.7574 9.75 12C9.75 13.2426 10.7574 14.25 12 14.25Z",
@@ -463,8 +2166,8 @@ var IconEye = ({ size = 16 }) => /* @__PURE__ */ jsxs("svg", { width: size, heig
     }
   )
 ] });
-var IconEyeAlt = ({ size = 24 }) => /* @__PURE__ */ jsxs("svg", { width: size, height: size, viewBox: "0 0 24 24", fill: "none", children: [
-  /* @__PURE__ */ jsx(
+var IconEyeAlt = ({ size = 24 }) => /* @__PURE__ */ jsxs2("svg", { width: size, height: size, viewBox: "0 0 24 24", fill: "none", children: [
+  /* @__PURE__ */ jsx4(
     "path",
     {
       d: "M3.91752 12.7539C3.65127 12.2996 3.65037 11.7515 3.9149 11.2962C4.9042 9.59346 7.72688 5.49994 12 5.49994C16.2731 5.49994 19.0958 9.59346 20.0851 11.2962C20.3496 11.7515 20.3487 12.2996 20.0825 12.7539C19.0908 14.4459 16.2694 18.4999 12 18.4999C7.73064 18.4999 4.90918 14.4459 3.91752 12.7539Z",
@@ -474,7 +2177,7 @@ var IconEyeAlt = ({ size = 24 }) => /* @__PURE__ */ jsxs("svg", { width: size, h
       strokeLinejoin: "round"
     }
   ),
-  /* @__PURE__ */ jsx(
+  /* @__PURE__ */ jsx4(
     "path",
     {
       d: "M12 14.8261C13.5608 14.8261 14.8261 13.5608 14.8261 12C14.8261 10.4392 13.5608 9.17392 12 9.17392C10.4392 9.17392 9.17391 10.4392 9.17391 12C9.17391 13.5608 10.4392 14.8261 12 14.8261Z",
@@ -485,15 +2188,15 @@ var IconEyeAlt = ({ size = 24 }) => /* @__PURE__ */ jsxs("svg", { width: size, h
     }
   )
 ] });
-var IconEyeClosed = ({ size = 24 }) => /* @__PURE__ */ jsxs("svg", { width: size, height: size, viewBox: "0 0 24 24", fill: "none", children: [
-  /* @__PURE__ */ jsx(
+var IconEyeClosed = ({ size = 24 }) => /* @__PURE__ */ jsxs2("svg", { width: size, height: size, viewBox: "0 0 24 24", fill: "none", children: [
+  /* @__PURE__ */ jsx4(
     "path",
     {
       d: "M18.6025 9.28503C18.9174 8.9701 19.4364 8.99481 19.7015 9.35271C20.1484 9.95606 20.4943 10.507 20.7342 10.9199C21.134 11.6086 21.1329 12.4454 20.7303 13.1328C20.2144 14.013 19.2151 15.5225 17.7723 16.8193C16.3293 18.1162 14.3852 19.2497 12.0008 19.25C11.4192 19.25 10.8638 19.1823 10.3355 19.0613C9.77966 18.934 9.63498 18.2525 10.0382 17.8493C10.2412 17.6463 10.5374 17.573 10.8188 17.6302C11.1993 17.7076 11.5935 17.75 12.0008 17.75C13.8848 17.7497 15.4867 16.8568 16.7693 15.7041C18.0522 14.5511 18.9606 13.1867 19.4363 12.375C19.5656 12.1543 19.5659 11.8943 19.4373 11.6729C19.2235 11.3049 18.921 10.8242 18.5364 10.3003C18.3085 9.98991 18.3302 9.5573 18.6025 9.28503ZM12.0008 4.75C12.5814 4.75006 13.1358 4.81803 13.6632 4.93953C14.2182 5.06741 14.362 5.74812 13.9593 6.15091C13.7558 6.35435 13.4589 6.42748 13.1771 6.36984C12.7983 6.29239 12.4061 6.25006 12.0008 6.25C10.1167 6.25 8.51415 7.15145 7.23028 8.31543C5.94678 9.47919 5.03918 10.8555 4.56426 11.6729C4.43551 11.8945 4.43582 12.1542 4.56524 12.375C4.77587 12.7343 5.07189 13.2012 5.44718 13.7105C5.67623 14.0213 5.65493 14.4552 5.38193 14.7282C5.0671 15.0431 4.54833 15.0189 4.28292 14.6614C3.84652 14.0736 3.50813 13.5369 3.27129 13.1328C2.86831 12.4451 2.86717 11.6088 3.26739 10.9199C3.78185 10.0345 4.77959 8.51239 6.22247 7.2041C7.66547 5.89584 9.61202 4.75 12.0008 4.75Z",
       fill: "currentColor"
     }
   ),
-  /* @__PURE__ */ jsx(
+  /* @__PURE__ */ jsx4(
     "path",
     {
       d: "M5 19L19 5",
@@ -506,9 +2209,9 @@ var IconEyeClosed = ({ size = 24 }) => /* @__PURE__ */ jsxs("svg", { width: size
 var IconEyeAnimated = ({
   size = 24,
   isOpen = true
-}) => /* @__PURE__ */ jsxs("svg", { width: size, height: size, viewBox: "0 0 24 24", fill: "none", children: [
-  /* @__PURE__ */ jsxs("g", { className: `${icon_transitions_module_default.iconFade} ${isOpen ? icon_transitions_module_default.visible : icon_transitions_module_default.hidden}`, children: [
-    /* @__PURE__ */ jsx(
+}) => /* @__PURE__ */ jsxs2("svg", { ref: useEnsureStyles("icon-transitions", css2), width: size, height: size, viewBox: "0 0 24 24", fill: "none", children: [
+  /* @__PURE__ */ jsxs2("g", { className: `${icon_transitions_module_default.iconFade} ${isOpen ? icon_transitions_module_default.visible : icon_transitions_module_default.hidden}`, children: [
+    /* @__PURE__ */ jsx4(
       "path",
       {
         d: "M3.91752 12.7539C3.65127 12.2996 3.65037 11.7515 3.9149 11.2962C4.9042 9.59346 7.72688 5.49994 12 5.49994C16.2731 5.49994 19.0958 9.59346 20.0851 11.2962C20.3496 11.7515 20.3487 12.2996 20.0825 12.7539C19.0908 14.4459 16.2694 18.4999 12 18.4999C7.73064 18.4999 4.90918 14.4459 3.91752 12.7539Z",
@@ -518,7 +2221,7 @@ var IconEyeAnimated = ({
         strokeLinejoin: "round"
       }
     ),
-    /* @__PURE__ */ jsx(
+    /* @__PURE__ */ jsx4(
       "path",
       {
         d: "M12 14.8261C13.5608 14.8261 14.8261 13.5608 14.8261 12C14.8261 10.4392 13.5608 9.17392 12 9.17392C10.4392 9.17392 9.17391 10.4392 9.17391 12C9.17391 13.5608 10.4392 14.8261 12 14.8261Z",
@@ -529,15 +2232,15 @@ var IconEyeAnimated = ({
       }
     )
   ] }),
-  /* @__PURE__ */ jsxs("g", { className: `${icon_transitions_module_default.iconFade} ${isOpen ? icon_transitions_module_default.hidden : icon_transitions_module_default.visible}`, children: [
-    /* @__PURE__ */ jsx(
+  /* @__PURE__ */ jsxs2("g", { className: `${icon_transitions_module_default.iconFade} ${isOpen ? icon_transitions_module_default.hidden : icon_transitions_module_default.visible}`, children: [
+    /* @__PURE__ */ jsx4(
       "path",
       {
         d: "M18.6025 9.28503C18.9174 8.9701 19.4364 8.99481 19.7015 9.35271C20.1484 9.95606 20.4943 10.507 20.7342 10.9199C21.134 11.6086 21.1329 12.4454 20.7303 13.1328C20.2144 14.013 19.2151 15.5225 17.7723 16.8193C16.3293 18.1162 14.3852 19.2497 12.0008 19.25C11.4192 19.25 10.8638 19.1823 10.3355 19.0613C9.77966 18.934 9.63498 18.2525 10.0382 17.8493C10.2412 17.6463 10.5374 17.573 10.8188 17.6302C11.1993 17.7076 11.5935 17.75 12.0008 17.75C13.8848 17.7497 15.4867 16.8568 16.7693 15.7041C18.0522 14.5511 18.9606 13.1867 19.4363 12.375C19.5656 12.1543 19.5659 11.8943 19.4373 11.6729C19.2235 11.3049 18.921 10.8242 18.5364 10.3003C18.3085 9.98991 18.3302 9.5573 18.6025 9.28503ZM12.0008 4.75C12.5814 4.75006 13.1358 4.81803 13.6632 4.93953C14.2182 5.06741 14.362 5.74812 13.9593 6.15091C13.7558 6.35435 13.4589 6.42748 13.1771 6.36984C12.7983 6.29239 12.4061 6.25006 12.0008 6.25C10.1167 6.25 8.51415 7.15145 7.23028 8.31543C5.94678 9.47919 5.03918 10.8555 4.56426 11.6729C4.43551 11.8945 4.43582 12.1542 4.56524 12.375C4.77587 12.7343 5.07189 13.2012 5.44718 13.7105C5.67623 14.0213 5.65493 14.4552 5.38193 14.7282C5.0671 15.0431 4.54833 15.0189 4.28292 14.6614C3.84652 14.0736 3.50813 13.5369 3.27129 13.1328C2.86831 12.4451 2.86717 11.6088 3.26739 10.9199C3.78185 10.0345 4.77959 8.51239 6.22247 7.2041C7.66547 5.89584 9.61202 4.75 12.0008 4.75Z",
         fill: "currentColor"
       }
     ),
-    /* @__PURE__ */ jsx(
+    /* @__PURE__ */ jsx4(
       "path",
       {
         d: "M5 19L19 5",
@@ -551,9 +2254,9 @@ var IconEyeAnimated = ({
 var IconPausePlayAnimated = ({
   size = 24,
   isPaused = false
-}) => /* @__PURE__ */ jsxs("svg", { width: size, height: size, viewBox: "0 0 24 24", fill: "none", children: [
-  /* @__PURE__ */ jsxs("g", { className: `${icon_transitions_module_default.iconFadeFast} ${isPaused ? icon_transitions_module_default.hidden : icon_transitions_module_default.visible}`, children: [
-    /* @__PURE__ */ jsx(
+}) => /* @__PURE__ */ jsxs2("svg", { ref: useEnsureStyles("icon-transitions", css2), width: size, height: size, viewBox: "0 0 24 24", fill: "none", children: [
+  /* @__PURE__ */ jsxs2("g", { className: `${icon_transitions_module_default.iconFadeFast} ${isPaused ? icon_transitions_module_default.hidden : icon_transitions_module_default.visible}`, children: [
+    /* @__PURE__ */ jsx4(
       "path",
       {
         d: "M8 6L8 18",
@@ -562,7 +2265,7 @@ var IconPausePlayAnimated = ({
         strokeLinecap: "round"
       }
     ),
-    /* @__PURE__ */ jsx(
+    /* @__PURE__ */ jsx4(
       "path",
       {
         d: "M16 18L16 6",
@@ -572,7 +2275,7 @@ var IconPausePlayAnimated = ({
       }
     )
   ] }),
-  /* @__PURE__ */ jsx(
+  /* @__PURE__ */ jsx4(
     "path",
     {
       className: `${icon_transitions_module_default.iconFadeFast} ${isPaused ? icon_transitions_module_default.visible : icon_transitions_module_default.hidden}`,
@@ -582,8 +2285,8 @@ var IconPausePlayAnimated = ({
     }
   )
 ] });
-var IconEyeMinus = ({ size = 16 }) => /* @__PURE__ */ jsxs("svg", { width: size, height: size, viewBox: "0 0 24 24", fill: "none", children: [
-  /* @__PURE__ */ jsx(
+var IconEyeMinus = ({ size = 16 }) => /* @__PURE__ */ jsxs2("svg", { width: size, height: size, viewBox: "0 0 24 24", fill: "none", children: [
+  /* @__PURE__ */ jsx4(
     "path",
     {
       d: "M4.91516 12.7108C4.63794 12.2883 4.63705 11.7565 4.91242 11.3328C5.84146 9.9033 8.30909 6.74994 12 6.74994C15.6909 6.74994 18.1585 9.9033 19.0876 11.3328C19.3629 11.7565 19.3621 12.2883 19.0848 12.7108C18.1537 14.13 15.6873 17.2499 12 17.2499C8.31272 17.2499 5.8463 14.13 4.91516 12.7108Z",
@@ -593,7 +2296,7 @@ var IconEyeMinus = ({ size = 16 }) => /* @__PURE__ */ jsxs("svg", { width: size,
       strokeLinejoin: "round"
     }
   ),
-  /* @__PURE__ */ jsx(
+  /* @__PURE__ */ jsx4(
     "path",
     {
       d: "M9 12H15",
@@ -603,8 +2306,8 @@ var IconEyeMinus = ({ size = 16 }) => /* @__PURE__ */ jsxs("svg", { width: size,
     }
   )
 ] });
-var IconGear = ({ size = 16 }) => /* @__PURE__ */ jsxs("svg", { width: size, height: size, viewBox: "0 0 24 24", fill: "none", children: [
-  /* @__PURE__ */ jsx(
+var IconGear = ({ size = 16 }) => /* @__PURE__ */ jsxs2("svg", { width: size, height: size, viewBox: "0 0 24 24", fill: "none", children: [
+  /* @__PURE__ */ jsx4(
     "path",
     {
       d: "M10.6504 5.81117C10.9939 4.39628 13.0061 4.39628 13.3496 5.81117C13.5715 6.72517 14.6187 7.15891 15.4219 6.66952C16.6652 5.91193 18.0881 7.33479 17.3305 8.57815C16.8411 9.38134 17.2748 10.4285 18.1888 10.6504C19.6037 10.9939 19.6037 13.0061 18.1888 13.3496C17.2748 13.5715 16.8411 14.6187 17.3305 15.4219C18.0881 16.6652 16.6652 18.0881 15.4219 17.3305C14.6187 16.8411 13.5715 17.2748 13.3496 18.1888C13.0061 19.6037 10.9939 19.6037 10.6504 18.1888C10.4285 17.2748 9.38135 16.8411 8.57815 17.3305C7.33479 18.0881 5.91193 16.6652 6.66952 15.4219C7.15891 14.6187 6.72517 13.5715 5.81117 13.3496C4.39628 13.0061 4.39628 10.9939 5.81117 10.6504C6.72517 10.4285 7.15891 9.38134 6.66952 8.57815C5.91193 7.33479 7.33479 5.91192 8.57815 6.66952C9.38135 7.15891 10.4285 6.72517 10.6504 5.81117Z",
@@ -614,10 +2317,10 @@ var IconGear = ({ size = 16 }) => /* @__PURE__ */ jsxs("svg", { width: size, hei
       strokeLinejoin: "round"
     }
   ),
-  /* @__PURE__ */ jsx("circle", { cx: "12", cy: "12", r: "2.5", stroke: "currentColor", strokeWidth: "1.5" })
+  /* @__PURE__ */ jsx4("circle", { cx: "12", cy: "12", r: "2.5", stroke: "currentColor", strokeWidth: "1.5" })
 ] });
-var IconPauseAlt = ({ size = 16 }) => /* @__PURE__ */ jsxs("svg", { width: size, height: size, viewBox: "0 0 24 24", fill: "none", children: [
-  /* @__PURE__ */ jsx(
+var IconPauseAlt = ({ size = 16 }) => /* @__PURE__ */ jsxs2("svg", { width: size, height: size, viewBox: "0 0 24 24", fill: "none", children: [
+  /* @__PURE__ */ jsx4(
     "path",
     {
       d: "M9.25 5.75C9.80228 5.75 10.25 6.19772 10.25 6.75L10.25 17.25C10.25 17.8023 9.80228 18.25 9.25 18.25L6.75 18.25C6.19772 18.25 5.75 17.8023 5.75 17.25L5.75 6.75C5.75 6.19772 6.19772 5.75 6.75 5.75L9.25 5.75Z",
@@ -625,7 +2328,7 @@ var IconPauseAlt = ({ size = 16 }) => /* @__PURE__ */ jsxs("svg", { width: size,
       strokeWidth: "1.5"
     }
   ),
-  /* @__PURE__ */ jsx(
+  /* @__PURE__ */ jsx4(
     "path",
     {
       d: "M17.25 5.75C17.8023 5.75 18.25 6.19772 18.25 6.75L18.25 17.25C18.25 17.8023 17.8023 18.25 17.25 18.25L14.75 18.25C14.1977 18.25 13.75 17.8023 13.75 17.25L13.75 6.75C13.75 6.19772 14.1977 5.75 14.75 5.75L17.25 5.75Z",
@@ -634,8 +2337,8 @@ var IconPauseAlt = ({ size = 16 }) => /* @__PURE__ */ jsxs("svg", { width: size,
     }
   )
 ] });
-var IconPause = ({ size = 24 }) => /* @__PURE__ */ jsxs("svg", { width: size, height: size, viewBox: "0 0 24 24", fill: "none", children: [
-  /* @__PURE__ */ jsx(
+var IconPause = ({ size = 24 }) => /* @__PURE__ */ jsxs2("svg", { width: size, height: size, viewBox: "0 0 24 24", fill: "none", children: [
+  /* @__PURE__ */ jsx4(
     "path",
     {
       d: "M8 6L8 18",
@@ -644,7 +2347,7 @@ var IconPause = ({ size = 24 }) => /* @__PURE__ */ jsxs("svg", { width: size, he
       strokeLinecap: "round"
     }
   ),
-  /* @__PURE__ */ jsx(
+  /* @__PURE__ */ jsx4(
     "path",
     {
       d: "M16 18L16 6",
@@ -654,7 +2357,7 @@ var IconPause = ({ size = 24 }) => /* @__PURE__ */ jsxs("svg", { width: size, he
     }
   )
 ] });
-var IconPlayAlt = ({ size = 16 }) => /* @__PURE__ */ jsx("svg", { width: size, height: size, viewBox: "0 0 24 24", fill: "none", children: /* @__PURE__ */ jsx(
+var IconPlayAlt = ({ size = 16 }) => /* @__PURE__ */ jsx4("svg", { width: size, height: size, viewBox: "0 0 24 24", fill: "none", children: /* @__PURE__ */ jsx4(
   "path",
   {
     d: "M17.75 10.701C18.75 11.2783 18.75 12.7217 17.75 13.299L8.75 18.4952C7.75 19.0725 6.5 18.3509 6.5 17.1962L6.5 6.80384C6.5 5.64914 7.75 4.92746 8.75 5.50481L17.75 10.701Z",
@@ -662,7 +2365,7 @@ var IconPlayAlt = ({ size = 16 }) => /* @__PURE__ */ jsx("svg", { width: size, h
     strokeWidth: "1.5"
   }
 ) });
-var IconTrashAlt = ({ size = 16 }) => /* @__PURE__ */ jsx("svg", { width: size, height: size, viewBox: "0 0 24 24", fill: "none", children: /* @__PURE__ */ jsx(
+var IconTrashAlt = ({ size = 16 }) => /* @__PURE__ */ jsx4("svg", { width: size, height: size, viewBox: "0 0 24 24", fill: "none", children: /* @__PURE__ */ jsx4(
   "path",
   {
     d: "M13.5 4C14.7426 4 15.75 5.00736 15.75 6.25V7H18.5C18.9142 7 19.25 7.33579 19.25 7.75C19.25 8.16421 18.9142 8.5 18.5 8.5H17.9678L17.6328 16.2217C17.61 16.7475 17.5912 17.1861 17.5469 17.543C17.5015 17.9087 17.4225 18.2506 17.2461 18.5723C16.9747 19.0671 16.5579 19.4671 16.0518 19.7168C15.7227 19.8791 15.3772 19.9422 15.0098 19.9717C14.6514 20.0004 14.2126 20 13.6865 20H10.3135C9.78735 20 9.34856 20.0004 8.99023 19.9717C8.62278 19.9422 8.27729 19.8791 7.94824 19.7168C7.44205 19.4671 7.02532 19.0671 6.75391 18.5723C6.57751 18.2506 6.49853 17.9087 6.45312 17.543C6.40883 17.1861 6.39005 16.7475 6.36719 16.2217L6.03223 8.5H5.5C5.08579 8.5 4.75 8.16421 4.75 7.75C4.75 7.33579 5.08579 7 5.5 7H8.25V6.25C8.25 5.00736 9.25736 4 10.5 4H13.5ZM7.86621 16.1562C7.89013 16.7063 7.90624 17.0751 7.94141 17.3584C7.97545 17.6326 8.02151 17.7644 8.06934 17.8516C8.19271 18.0763 8.38239 18.2577 8.6123 18.3711C8.70153 18.4151 8.83504 18.4545 9.11035 18.4766C9.39482 18.4994 9.76335 18.5 10.3135 18.5H13.6865C14.2367 18.5 14.6052 18.4994 14.8896 18.4766C15.165 18.4545 15.2985 18.4151 15.3877 18.3711C15.6176 18.2577 15.8073 18.0763 15.9307 17.8516C15.9785 17.7644 16.0245 17.6326 16.0586 17.3584C16.0938 17.0751 16.1099 16.7063 16.1338 16.1562L16.4668 8.5H7.5332L7.86621 16.1562ZM9.97656 10.75C10.3906 10.7371 10.7371 11.0626 10.75 11.4766L10.875 15.4766C10.8879 15.8906 10.5624 16.2371 10.1484 16.25C9.73443 16.2629 9.38794 15.9374 9.375 15.5234L9.25 11.5234C9.23706 11.1094 9.56255 10.7629 9.97656 10.75ZM14.0244 10.75C14.4384 10.7635 14.7635 11.1105 14.75 11.5244L14.6201 15.5244C14.6066 15.9384 14.2596 16.2634 13.8457 16.25C13.4317 16.2365 13.1067 15.8896 13.1201 15.4756L13.251 11.4756C13.2645 11.0617 13.6105 10.7366 14.0244 10.75ZM10.5 5.5C10.0858 5.5 9.75 5.83579 9.75 6.25V7H14.25V6.25C14.25 5.83579 13.9142 5.5 13.5 5.5H10.5Z",
@@ -672,20 +2375,20 @@ var IconTrashAlt = ({ size = 16 }) => /* @__PURE__ */ jsx("svg", { width: size, 
 var IconChatEllipsis = ({
   size = 16,
   style = {}
-}) => /* @__PURE__ */ jsxs("svg", { width: size, height: size, viewBox: "0 0 24 24", fill: "none", style, children: [
-  /* @__PURE__ */ jsx(
+}) => /* @__PURE__ */ jsxs2("svg", { width: size, height: size, viewBox: "0 0 24 24", fill: "none", style, children: [
+  /* @__PURE__ */ jsx4(
     "path",
     {
       d: "M18.8875 19.25L19.6112 19.0533C19.6823 19.3148 19.6068 19.5943 19.4137 19.7844C19.2206 19.9746 18.9399 20.0457 18.6795 19.9706L18.8875 19.25ZM14.9631 18.244L15.263 18.9314L14.9631 18.244ZM18.0914 15.6309L17.4669 15.2156L18.0914 15.6309ZM4.75 11.8041H5.5C5.5 15.2664 8.39065 18.1081 12 18.1081V18.8581V19.6081C7.60123 19.6081 4 16.1334 4 11.8041H4.75ZM19.25 11.8041H18.5C18.5 8.34166 15.6094 5.5 12 5.5V4.75V4C16.3988 4 20 7.47476 20 11.8041H19.25ZM12 4.75V5.5C8.39065 5.5 5.5 8.34166 5.5 11.8041H4.75H4C4 7.47476 7.60123 4 12 4V4.75ZM18.0914 15.6309L17.4669 15.2156C18.1213 14.2315 18.5 13.0612 18.5 11.8041H19.25H20C20 13.3681 19.5276 14.8257 18.716 16.0462L18.0914 15.6309ZM18.8875 19.25L18.1638 19.4467L17.2953 16.2517L18.019 16.055L18.7428 15.8583L19.6112 19.0533L18.8875 19.25ZM12 18.8581V18.1081C12.9509 18.1081 13.8518 17.9105 14.6632 17.5565L14.9631 18.244L15.263 18.9314C14.2652 19.3667 13.1603 19.6081 12 19.6081V18.8581ZM15.3144 18.2188L15.5224 17.4982L19.0955 18.5294L18.8875 19.25L18.6795 19.9706L15.1064 18.9394L15.3144 18.2188ZM14.9631 18.244L14.6632 17.5565C14.925 17.4423 15.2286 17.4134 15.5224 17.4982L15.3144 18.2188L15.1064 18.9394C15.1677 18.957 15.223 18.9489 15.263 18.9314L14.9631 18.244ZM18.0914 15.6309L18.716 16.0462C18.7451 16.0024 18.7636 15.9351 18.7428 15.8583L18.019 16.055L17.2953 16.2517C17.1957 15.8853 17.2716 15.5093 17.4669 15.2156L18.0914 15.6309Z",
       fill: "currentColor"
     }
   ),
-  /* @__PURE__ */ jsx("circle", { cx: "15", cy: "11.75", r: "1", fill: "currentColor" }),
-  /* @__PURE__ */ jsx("circle", { cx: "12", cy: "11.75", r: "1", fill: "currentColor" }),
-  /* @__PURE__ */ jsx("circle", { cx: "9", cy: "11.75", r: "1", fill: "currentColor" })
+  /* @__PURE__ */ jsx4("circle", { cx: "15", cy: "11.75", r: "1", fill: "currentColor" }),
+  /* @__PURE__ */ jsx4("circle", { cx: "12", cy: "11.75", r: "1", fill: "currentColor" }),
+  /* @__PURE__ */ jsx4("circle", { cx: "9", cy: "11.75", r: "1", fill: "currentColor" })
 ] });
-var IconCheckmark = ({ size = 16 }) => /* @__PURE__ */ jsxs("svg", { width: size, height: size, viewBox: "0 0 24 24", fill: "none", children: [
-  /* @__PURE__ */ jsx("g", { clipPath: "url(#clip0_2_45)", children: /* @__PURE__ */ jsx(
+var IconCheckmark = ({ size = 16 }) => /* @__PURE__ */ jsxs2("svg", { width: size, height: size, viewBox: "0 0 24 24", fill: "none", children: [
+  /* @__PURE__ */ jsx4("g", { clipPath: "url(#clip0_2_45)", children: /* @__PURE__ */ jsx4(
     "path",
     {
       d: "M16.25 8.75L10 15.25L7.25 12.25",
@@ -695,10 +2398,10 @@ var IconCheckmark = ({ size = 16 }) => /* @__PURE__ */ jsxs("svg", { width: size
       strokeLinejoin: "round"
     }
   ) }),
-  /* @__PURE__ */ jsx("defs", { children: /* @__PURE__ */ jsx("clipPath", { id: "clip0_2_45", children: /* @__PURE__ */ jsx("rect", { width: "24", height: "24", fill: "white" }) }) })
+  /* @__PURE__ */ jsx4("defs", { children: /* @__PURE__ */ jsx4("clipPath", { id: "clip0_2_45", children: /* @__PURE__ */ jsx4("rect", { width: "24", height: "24", fill: "white" }) }) })
 ] });
-var IconCheckmarkLarge = ({ size = 16 }) => /* @__PURE__ */ jsxs("svg", { width: size, height: size, viewBox: "0 0 24 24", fill: "none", children: [
-  /* @__PURE__ */ jsx("g", { clipPath: "url(#clip0_2_37)", children: /* @__PURE__ */ jsx(
+var IconCheckmarkLarge = ({ size = 16 }) => /* @__PURE__ */ jsxs2("svg", { width: size, height: size, viewBox: "0 0 24 24", fill: "none", children: [
+  /* @__PURE__ */ jsx4("g", { clipPath: "url(#clip0_2_37)", children: /* @__PURE__ */ jsx4(
     "path",
     {
       d: "M17.5962 7.75L9.42308 16.25L6.15385 12.6538",
@@ -708,11 +2411,11 @@ var IconCheckmarkLarge = ({ size = 16 }) => /* @__PURE__ */ jsxs("svg", { width:
       strokeLinejoin: "round"
     }
   ) }),
-  /* @__PURE__ */ jsx("defs", { children: /* @__PURE__ */ jsx("clipPath", { id: "clip0_2_37", children: /* @__PURE__ */ jsx("rect", { width: "24", height: "24", fill: "white" }) }) })
+  /* @__PURE__ */ jsx4("defs", { children: /* @__PURE__ */ jsx4("clipPath", { id: "clip0_2_37", children: /* @__PURE__ */ jsx4("rect", { width: "24", height: "24", fill: "white" }) }) })
 ] });
-var IconCheckmarkCircle = ({ size = 24 }) => /* @__PURE__ */ jsxs("svg", { width: size, height: size, viewBox: "0 0 24 24", fill: "none", children: [
-  /* @__PURE__ */ jsxs("g", { clipPath: "url(#clip0_checkmark_circle)", children: [
-    /* @__PURE__ */ jsx(
+var IconCheckmarkCircle = ({ size = 24 }) => /* @__PURE__ */ jsxs2("svg", { width: size, height: size, viewBox: "0 0 24 24", fill: "none", children: [
+  /* @__PURE__ */ jsxs2("g", { clipPath: "url(#clip0_checkmark_circle)", children: [
+    /* @__PURE__ */ jsx4(
       "path",
       {
         d: "M12 20C7.58172 20 4 16.4182 4 12C4 7.58172 7.58172 4 12 4C16.4182 4 20 7.58172 20 12C20 16.4182 16.4182 20 12 20Z",
@@ -722,7 +2425,7 @@ var IconCheckmarkCircle = ({ size = 24 }) => /* @__PURE__ */ jsxs("svg", { width
         strokeLinejoin: "round"
       }
     ),
-    /* @__PURE__ */ jsx(
+    /* @__PURE__ */ jsx4(
       "path",
       {
         d: "M15 10L11 14.25L9.25 12.25",
@@ -733,11 +2436,11 @@ var IconCheckmarkCircle = ({ size = 24 }) => /* @__PURE__ */ jsxs("svg", { width
       }
     )
   ] }),
-  /* @__PURE__ */ jsx("defs", { children: /* @__PURE__ */ jsx("clipPath", { id: "clip0_checkmark_circle", children: /* @__PURE__ */ jsx("rect", { width: "24", height: "24", fill: "white" }) }) })
+  /* @__PURE__ */ jsx4("defs", { children: /* @__PURE__ */ jsx4("clipPath", { id: "clip0_checkmark_circle", children: /* @__PURE__ */ jsx4("rect", { width: "24", height: "24", fill: "white" }) }) })
 ] });
-var IconXmark = ({ size = 16 }) => /* @__PURE__ */ jsxs("svg", { width: size, height: size, viewBox: "0 0 24 24", fill: "none", children: [
-  /* @__PURE__ */ jsxs("g", { clipPath: "url(#clip0_2_53)", children: [
-    /* @__PURE__ */ jsx(
+var IconXmark = ({ size = 16 }) => /* @__PURE__ */ jsxs2("svg", { width: size, height: size, viewBox: "0 0 24 24", fill: "none", children: [
+  /* @__PURE__ */ jsxs2("g", { clipPath: "url(#clip0_2_53)", children: [
+    /* @__PURE__ */ jsx4(
       "path",
       {
         d: "M16.25 16.25L7.75 7.75",
@@ -747,7 +2450,7 @@ var IconXmark = ({ size = 16 }) => /* @__PURE__ */ jsxs("svg", { width: size, he
         strokeLinejoin: "round"
       }
     ),
-    /* @__PURE__ */ jsx(
+    /* @__PURE__ */ jsx4(
       "path",
       {
         d: "M7.75 16.25L16.25 7.75",
@@ -758,17 +2461,17 @@ var IconXmark = ({ size = 16 }) => /* @__PURE__ */ jsxs("svg", { width: size, he
       }
     )
   ] }),
-  /* @__PURE__ */ jsx("defs", { children: /* @__PURE__ */ jsx("clipPath", { id: "clip0_2_53", children: /* @__PURE__ */ jsx("rect", { width: "24", height: "24", fill: "white" }) }) })
+  /* @__PURE__ */ jsx4("defs", { children: /* @__PURE__ */ jsx4("clipPath", { id: "clip0_2_53", children: /* @__PURE__ */ jsx4("rect", { width: "24", height: "24", fill: "white" }) }) })
 ] });
-var IconXmarkLarge = ({ size = 24 }) => /* @__PURE__ */ jsx("svg", { width: size, height: size, viewBox: "0 0 24 24", fill: "none", children: /* @__PURE__ */ jsx(
+var IconXmarkLarge = ({ size = 24 }) => /* @__PURE__ */ jsx4("svg", { width: size, height: size, viewBox: "0 0 24 24", fill: "none", children: /* @__PURE__ */ jsx4(
   "path",
   {
     d: "M16.7198 6.21973C17.0127 5.92683 17.4874 5.92683 17.7803 6.21973C18.0732 6.51262 18.0732 6.9874 17.7803 7.28027L13.0606 12L17.7803 16.7197C18.0732 17.0126 18.0732 17.4874 17.7803 17.7803C17.4875 18.0731 17.0127 18.0731 16.7198 17.7803L12.0001 13.0605L7.28033 17.7803C6.98746 18.0731 6.51268 18.0731 6.21979 17.7803C5.92689 17.4874 5.92689 17.0126 6.21979 16.7197L10.9395 12L6.21979 7.28027C5.92689 6.98738 5.92689 6.51262 6.21979 6.21973C6.51268 5.92683 6.98744 5.92683 7.28033 6.21973L12.0001 10.9395L16.7198 6.21973Z",
     fill: "currentColor"
   }
 ) });
-var IconSun = ({ size = 16 }) => /* @__PURE__ */ jsxs("svg", { width: size, height: size, viewBox: "0 0 20 20", fill: "none", children: [
-  /* @__PURE__ */ jsx(
+var IconSun = ({ size = 16 }) => /* @__PURE__ */ jsxs2("svg", { width: size, height: size, viewBox: "0 0 20 20", fill: "none", children: [
+  /* @__PURE__ */ jsx4(
     "path",
     {
       d: "M9.99999 12.7082C11.4958 12.7082 12.7083 11.4956 12.7083 9.99984C12.7083 8.50407 11.4958 7.2915 9.99999 7.2915C8.50422 7.2915 7.29166 8.50407 7.29166 9.99984C7.29166 11.4956 8.50422 12.7082 9.99999 12.7082Z",
@@ -778,7 +2481,7 @@ var IconSun = ({ size = 16 }) => /* @__PURE__ */ jsxs("svg", { width: size, heig
       strokeLinejoin: "round"
     }
   ),
-  /* @__PURE__ */ jsx(
+  /* @__PURE__ */ jsx4(
     "path",
     {
       d: "M10 3.9585V5.05698",
@@ -788,7 +2491,7 @@ var IconSun = ({ size = 16 }) => /* @__PURE__ */ jsxs("svg", { width: size, heig
       strokeLinejoin: "round"
     }
   ),
-  /* @__PURE__ */ jsx(
+  /* @__PURE__ */ jsx4(
     "path",
     {
       d: "M10 14.9429V16.0414",
@@ -798,7 +2501,7 @@ var IconSun = ({ size = 16 }) => /* @__PURE__ */ jsxs("svg", { width: size, heig
       strokeLinejoin: "round"
     }
   ),
-  /* @__PURE__ */ jsx(
+  /* @__PURE__ */ jsx4(
     "path",
     {
       d: "M5.7269 5.72656L6.50682 6.50649",
@@ -808,7 +2511,7 @@ var IconSun = ({ size = 16 }) => /* @__PURE__ */ jsxs("svg", { width: size, heig
       strokeLinejoin: "round"
     }
   ),
-  /* @__PURE__ */ jsx(
+  /* @__PURE__ */ jsx4(
     "path",
     {
       d: "M13.4932 13.4932L14.2731 14.2731",
@@ -818,7 +2521,7 @@ var IconSun = ({ size = 16 }) => /* @__PURE__ */ jsxs("svg", { width: size, heig
       strokeLinejoin: "round"
     }
   ),
-  /* @__PURE__ */ jsx(
+  /* @__PURE__ */ jsx4(
     "path",
     {
       d: "M3.95834 10H5.05683",
@@ -828,7 +2531,7 @@ var IconSun = ({ size = 16 }) => /* @__PURE__ */ jsxs("svg", { width: size, heig
       strokeLinejoin: "round"
     }
   ),
-  /* @__PURE__ */ jsx(
+  /* @__PURE__ */ jsx4(
     "path",
     {
       d: "M14.9432 10H16.0417",
@@ -838,7 +2541,7 @@ var IconSun = ({ size = 16 }) => /* @__PURE__ */ jsxs("svg", { width: size, heig
       strokeLinejoin: "round"
     }
   ),
-  /* @__PURE__ */ jsx(
+  /* @__PURE__ */ jsx4(
     "path",
     {
       d: "M5.7269 14.2731L6.50682 13.4932",
@@ -848,7 +2551,7 @@ var IconSun = ({ size = 16 }) => /* @__PURE__ */ jsxs("svg", { width: size, heig
       strokeLinejoin: "round"
     }
   ),
-  /* @__PURE__ */ jsx(
+  /* @__PURE__ */ jsx4(
     "path",
     {
       d: "M13.4932 6.50649L14.2731 5.72656",
@@ -859,7 +2562,7 @@ var IconSun = ({ size = 16 }) => /* @__PURE__ */ jsxs("svg", { width: size, heig
     }
   )
 ] });
-var IconMoon = ({ size = 16 }) => /* @__PURE__ */ jsx("svg", { width: size, height: size, viewBox: "0 0 20 20", fill: "none", children: /* @__PURE__ */ jsx(
+var IconMoon = ({ size = 16 }) => /* @__PURE__ */ jsx4("svg", { width: size, height: size, viewBox: "0 0 20 20", fill: "none", children: /* @__PURE__ */ jsx4(
   "path",
   {
     d: "M15.5 10.4955C15.4037 11.5379 15.0124 12.5314 14.3721 13.3596C13.7317 14.1878 12.8688 14.8165 11.8841 15.1722C10.8995 15.5278 9.83397 15.5957 8.81217 15.3679C7.79038 15.1401 6.8546 14.6259 6.11434 13.8857C5.37408 13.1454 4.85995 12.2096 4.63211 11.1878C4.40427 10.166 4.47215 9.10048 4.82781 8.11585C5.18346 7.13123 5.81218 6.26825 6.64039 5.62791C7.4686 4.98756 8.46206 4.59634 9.5045 4.5C8.89418 5.32569 8.60049 6.34302 8.67685 7.36695C8.75321 8.39087 9.19454 9.35339 9.92058 10.0794C10.6466 10.8055 11.6091 11.2468 12.6331 11.3231C13.657 11.3995 14.6743 11.1058 15.5 10.4955Z",
@@ -869,7 +2572,7 @@ var IconMoon = ({ size = 16 }) => /* @__PURE__ */ jsx("svg", { width: size, heig
     strokeLinejoin: "round"
   }
 ) });
-var IconEdit = ({ size = 16 }) => /* @__PURE__ */ jsx(
+var IconEdit = ({ size = 16 }) => /* @__PURE__ */ jsx4(
   "svg",
   {
     width: size,
@@ -877,7 +2580,7 @@ var IconEdit = ({ size = 16 }) => /* @__PURE__ */ jsx(
     viewBox: "0 0 16 16",
     fill: "none",
     xmlns: "http://www.w3.org/2000/svg",
-    children: /* @__PURE__ */ jsx(
+    children: /* @__PURE__ */ jsx4(
       "path",
       {
         d: "M11.3799 6.9572L9.05645 4.63375M11.3799 6.9572L6.74949 11.5699C6.61925 11.6996 6.45577 11.791 6.277 11.8339L4.29549 12.3092C3.93194 12.3964 3.60478 12.0683 3.69297 11.705L4.16585 9.75693C4.20893 9.57947 4.29978 9.4172 4.42854 9.28771L9.05645 4.63375M11.3799 6.9572L12.3455 5.98759C12.9839 5.34655 12.9839 4.31002 12.3455 3.66897C11.7033 3.02415 10.6594 3.02415 10.0172 3.66897L9.06126 4.62892L9.05645 4.63375",
@@ -889,7 +2592,7 @@ var IconEdit = ({ size = 16 }) => /* @__PURE__ */ jsx(
     )
   }
 );
-var IconTrash = ({ size = 24 }) => /* @__PURE__ */ jsx(
+var IconTrash = ({ size = 24 }) => /* @__PURE__ */ jsx4(
   "svg",
   {
     width: size,
@@ -897,7 +2600,7 @@ var IconTrash = ({ size = 24 }) => /* @__PURE__ */ jsx(
     viewBox: "0 0 24 24",
     fill: "none",
     xmlns: "http://www.w3.org/2000/svg",
-    children: /* @__PURE__ */ jsx(
+    children: /* @__PURE__ */ jsx4(
       "path",
       {
         d: "M13.5 4C14.7426 4 15.75 5.00736 15.75 6.25V7H18.5C18.9142 7 19.25 7.33579 19.25 7.75C19.25 8.16421 18.9142 8.5 18.5 8.5H17.9678L17.6328 16.2217C17.61 16.7475 17.5912 17.1861 17.5469 17.543C17.5015 17.9087 17.4225 18.2506 17.2461 18.5723C16.9747 19.0671 16.5579 19.4671 16.0518 19.7168C15.7227 19.8791 15.3772 19.9422 15.0098 19.9717C14.6514 20.0004 14.2126 20 13.6865 20H10.3135C9.78735 20 9.34856 20.0004 8.99023 19.9717C8.62278 19.9422 8.27729 19.8791 7.94824 19.7168C7.44205 19.4671 7.02532 19.0671 6.75391 18.5723C6.57751 18.2506 6.49853 17.9087 6.45312 17.543C6.40883 17.1861 6.39005 16.7475 6.36719 16.2217L6.03223 8.5H5.5C5.08579 8.5 4.75 8.16421 4.75 7.75C4.75 7.33579 5.08579 7 5.5 7H8.25V6.25C8.25 5.00736 9.25736 4 10.5 4H13.5ZM7.86621 16.1562C7.89013 16.7063 7.90624 17.0751 7.94141 17.3584C7.97545 17.6326 8.02151 17.7644 8.06934 17.8516C8.19271 18.0763 8.38239 18.2577 8.6123 18.3711C8.70153 18.4151 8.83504 18.4545 9.11035 18.4766C9.39482 18.4994 9.76335 18.5 10.3135 18.5H13.6865C14.2367 18.5 14.6052 18.4994 14.8896 18.4766C15.165 18.4545 15.2985 18.4151 15.3877 18.3711C15.6176 18.2577 15.8073 18.0763 15.9307 17.8516C15.9785 17.7644 16.0245 17.6326 16.0586 17.3584C16.0938 17.0751 16.1099 16.7063 16.1338 16.1562L16.4668 8.5H7.5332L7.86621 16.1562ZM9.97656 10.75C10.3906 10.7371 10.7371 11.0626 10.75 11.4766L10.875 15.4766C10.8879 15.8906 10.5624 16.2371 10.1484 16.25C9.73443 16.2629 9.38794 15.9374 9.375 15.5234L9.25 11.5234C9.23706 11.1094 9.56255 10.7629 9.97656 10.75ZM14.0244 10.75C14.4383 10.7635 14.7635 11.1105 14.75 11.5244L14.6201 15.5244C14.6066 15.9384 14.2596 16.2634 13.8457 16.25C13.4317 16.2365 13.1067 15.8896 13.1201 15.4756L13.251 11.4756C13.2645 11.0617 13.6105 10.7366 14.0244 10.75ZM10.5 5.5C10.0858 5.5 9.75 5.83579 9.75 6.25V7H14.25V6.25C14.25 5.83579 13.9142 5.5 13.5 5.5H10.5Z",
@@ -906,7 +2609,7 @@ var IconTrash = ({ size = 24 }) => /* @__PURE__ */ jsx(
     )
   }
 );
-var IconChevronLeft = ({ size = 16 }) => /* @__PURE__ */ jsx(
+var IconChevronLeft = ({ size = 16 }) => /* @__PURE__ */ jsx4(
   "svg",
   {
     width: size,
@@ -914,7 +2617,7 @@ var IconChevronLeft = ({ size = 16 }) => /* @__PURE__ */ jsx(
     viewBox: "0 0 16 16",
     fill: "none",
     xmlns: "http://www.w3.org/2000/svg",
-    children: /* @__PURE__ */ jsx(
+    children: /* @__PURE__ */ jsx4(
       "path",
       {
         d: "M8.5 3.5L4 8L8.5 12.5",
@@ -926,7 +2629,7 @@ var IconChevronLeft = ({ size = 16 }) => /* @__PURE__ */ jsx(
     )
   }
 );
-var IconChevronRight = ({ size = 16 }) => /* @__PURE__ */ jsx(
+var IconChevronRight = ({ size = 16 }) => /* @__PURE__ */ jsx4(
   "svg",
   {
     width: size,
@@ -934,7 +2637,7 @@ var IconChevronRight = ({ size = 16 }) => /* @__PURE__ */ jsx(
     viewBox: "0 0 16 16",
     fill: "none",
     xmlns: "http://www.w3.org/2000/svg",
-    children: /* @__PURE__ */ jsx(
+    children: /* @__PURE__ */ jsx4(
       "path",
       {
         d: "M8.5 11.5L12 8L8.5 4.5",
@@ -949,7 +2652,7 @@ var IconChevronRight = ({ size = 16 }) => /* @__PURE__ */ jsx(
 var AnimatedBunny = ({
   size = 20,
   color = "#4C74FF"
-}) => /* @__PURE__ */ jsxs(
+}) => /* @__PURE__ */ jsxs2(
   "svg",
   {
     width: size,
@@ -958,7 +2661,7 @@ var AnimatedBunny = ({
     fill: "none",
     xmlns: "http://www.w3.org/2000/svg",
     children: [
-      /* @__PURE__ */ jsx("style", { children: `
+      /* @__PURE__ */ jsx4("style", { children: `
       @keyframes bunnyEnterEar {
         0% { opacity: 0; transform: scale(0.8); }
         100% { opacity: 1; transform: scale(1); }
@@ -1054,8 +2757,8 @@ var AnimatedBunny = ({
         opacity: 1;
       }
     ` }),
-      /* @__PURE__ */ jsx("rect", { width: "28", height: "28", fill: "transparent" }),
-      /* @__PURE__ */ jsx(
+      /* @__PURE__ */ jsx4("rect", { width: "28", height: "28", fill: "transparent" }),
+      /* @__PURE__ */ jsx4(
         "path",
         {
           className: "bunny-ear-left",
@@ -1063,7 +2766,7 @@ var AnimatedBunny = ({
           fill: color
         }
       ),
-      /* @__PURE__ */ jsx(
+      /* @__PURE__ */ jsx4(
         "path",
         {
           className: "bunny-ear-right",
@@ -1071,7 +2774,7 @@ var AnimatedBunny = ({
           fill: color
         }
       ),
-      /* @__PURE__ */ jsx(
+      /* @__PURE__ */ jsx4(
         "path",
         {
           className: "bunny-face",
@@ -1079,7 +2782,7 @@ var AnimatedBunny = ({
           fill: color
         }
       ),
-      /* @__PURE__ */ jsx(
+      /* @__PURE__ */ jsx4(
         "circle",
         {
           className: "bunny-eye-left",
@@ -1089,7 +2792,7 @@ var AnimatedBunny = ({
           fill: color
         }
       ),
-      /* @__PURE__ */ jsx(
+      /* @__PURE__ */ jsx4(
         "circle",
         {
           className: "bunny-eye-right",
@@ -1099,7 +2802,7 @@ var AnimatedBunny = ({
           fill: color
         }
       ),
-      /* @__PURE__ */ jsx(
+      /* @__PURE__ */ jsx4(
         "text",
         {
           className: "bunny-happy-face",
@@ -1116,8 +2819,8 @@ var AnimatedBunny = ({
     ]
   }
 );
-var IconLayout = ({ size = 24 }) => /* @__PURE__ */ jsxs("svg", { width: size, height: size, viewBox: "0 0 24 24", fill: "none", children: [
-  /* @__PURE__ */ jsx(
+var IconLayout = ({ size = 24 }) => /* @__PURE__ */ jsxs2("svg", { width: size, height: size, viewBox: "0 0 24 24", fill: "none", children: [
+  /* @__PURE__ */ jsx4(
     "rect",
     {
       x: "3",
@@ -1129,7 +2832,7 @@ var IconLayout = ({ size = 24 }) => /* @__PURE__ */ jsxs("svg", { width: size, h
       strokeWidth: "1.5"
     }
   ),
-  /* @__PURE__ */ jsx(
+  /* @__PURE__ */ jsx4(
     "line",
     {
       x1: "3",
@@ -1140,7 +2843,7 @@ var IconLayout = ({ size = 24 }) => /* @__PURE__ */ jsxs("svg", { width: size, h
       strokeWidth: "1.5"
     }
   ),
-  /* @__PURE__ */ jsx(
+  /* @__PURE__ */ jsx4(
     "line",
     {
       x1: "9",
@@ -1153,407 +2856,21 @@ var IconLayout = ({ size = 24 }) => /* @__PURE__ */ jsxs("svg", { width: size, h
   )
 ] });
 
-// src/utils/freeze-animations.ts
-var EXCLUDE_ATTRS = [
-  "data-feedback-toolbar",
-  "data-annotation-popup",
-  "data-annotation-marker"
-];
-var NOT_SELECTORS = EXCLUDE_ATTRS.flatMap((a) => [`:not([${a}])`, `:not([${a}] *)`]).join("");
-var STYLE_ID = "feedback-freeze-styles";
-var STATE_KEY = "__agentation_freeze";
-function getState() {
-  if (typeof window === "undefined") {
-    return {
-      frozen: false,
-      installed: true,
-      // prevent patching on server
-      origSetTimeout: setTimeout,
-      origSetInterval: setInterval,
-      origRAF: (cb) => 0,
-      pausedAnimations: [],
-      frozenTimeoutQueue: [],
-      frozenRAFQueue: []
-    };
-  }
-  const w = window;
-  if (!w[STATE_KEY]) {
-    w[STATE_KEY] = {
-      frozen: false,
-      installed: false,
-      origSetTimeout: null,
-      origSetInterval: null,
-      origRAF: null,
-      pausedAnimations: [],
-      frozenTimeoutQueue: [],
-      frozenRAFQueue: []
-    };
-  }
-  return w[STATE_KEY];
-}
-var _s = getState();
-if (typeof window !== "undefined" && !_s.installed) {
-  _s.origSetTimeout = window.setTimeout.bind(window);
-  _s.origSetInterval = window.setInterval.bind(window);
-  _s.origRAF = window.requestAnimationFrame.bind(window);
-  window.setTimeout = (handler, timeout, ...args) => {
-    if (typeof handler === "string") {
-      return _s.origSetTimeout(handler, timeout);
-    }
-    return _s.origSetTimeout(
-      (...a) => {
-        if (_s.frozen) {
-          _s.frozenTimeoutQueue.push(() => handler(...a));
-        } else {
-          handler(...a);
-        }
-      },
-      timeout,
-      ...args
-    );
-  };
-  window.setInterval = (handler, timeout, ...args) => {
-    if (typeof handler === "string") {
-      return _s.origSetInterval(handler, timeout);
-    }
-    return _s.origSetInterval(
-      (...a) => {
-        if (!_s.frozen) handler(...a);
-      },
-      timeout,
-      ...args
-    );
-  };
-  window.requestAnimationFrame = (callback) => {
-    return _s.origRAF((timestamp) => {
-      if (_s.frozen) {
-        _s.frozenRAFQueue.push(callback);
-      } else {
-        callback(timestamp);
-      }
-    });
-  };
-  _s.installed = true;
-}
-var originalSetTimeout = _s.origSetTimeout;
-var originalSetInterval = _s.origSetInterval;
-var originalRequestAnimationFrame = _s.origRAF;
-function isAgentationElement(el) {
-  if (!el) return false;
-  return EXCLUDE_ATTRS.some((attr) => !!el.closest?.(`[${attr}]`));
-}
-function freeze() {
-  if (typeof document === "undefined") return;
-  if (_s.frozen) return;
-  _s.frozen = true;
-  _s.frozenTimeoutQueue = [];
-  _s.frozenRAFQueue = [];
-  let style = document.getElementById(STYLE_ID);
-  if (!style) {
-    style = document.createElement("style");
-    style.id = STYLE_ID;
-  }
-  style.textContent = `
-    *${NOT_SELECTORS},
-    *${NOT_SELECTORS}::before,
-    *${NOT_SELECTORS}::after {
-      animation-play-state: paused !important;
-      transition: none !important;
-    }
-  `;
-  document.head.appendChild(style);
-  _s.pausedAnimations = [];
-  try {
-    document.getAnimations().forEach((anim) => {
-      if (anim.playState !== "running") return;
-      const target = anim.effect?.target;
-      if (!isAgentationElement(target)) {
-        anim.pause();
-        _s.pausedAnimations.push(anim);
-      }
-    });
-  } catch {
-  }
-  document.querySelectorAll("video").forEach((video) => {
-    if (!video.paused) {
-      video.dataset.wasPaused = "false";
-      video.pause();
-    }
-  });
-}
-function unfreeze() {
-  if (typeof document === "undefined") return;
-  if (!_s.frozen) return;
-  _s.frozen = false;
-  const timeoutQueue = _s.frozenTimeoutQueue;
-  _s.frozenTimeoutQueue = [];
-  for (const cb of timeoutQueue) {
-    _s.origSetTimeout(() => {
-      if (_s.frozen) {
-        _s.frozenTimeoutQueue.push(cb);
-        return;
-      }
-      try {
-        cb();
-      } catch (e) {
-        console.warn("[agentation] Error replaying queued timeout:", e);
-      }
-    }, 0);
-  }
-  const rafQueue = _s.frozenRAFQueue;
-  _s.frozenRAFQueue = [];
-  for (const cb of rafQueue) {
-    _s.origRAF((ts) => {
-      if (_s.frozen) {
-        _s.frozenRAFQueue.push(cb);
-        return;
-      }
-      cb(ts);
-    });
-  }
-  for (const anim of _s.pausedAnimations) {
-    try {
-      anim.play();
-    } catch (e) {
-      console.warn("[agentation] Error resuming animation:", e);
-    }
-  }
-  _s.pausedAnimations = [];
-  document.getElementById(STYLE_ID)?.remove();
-  document.querySelectorAll("video").forEach((video) => {
-    if (video.dataset.wasPaused === "false") {
-      video.play().catch(() => {
-      });
-      delete video.dataset.wasPaused;
-    }
-  });
-}
-
-// src/components/annotation-popup-css/index.tsx
-import { jsx as jsx2, jsxs as jsxs2 } from "react/jsx-runtime";
-function focusBypassingTraps(el) {
-  if (!el) return;
-  const trap = (e) => e.stopImmediatePropagation();
-  document.addEventListener("focusin", trap, true);
-  document.addEventListener("focusout", trap, true);
-  try {
-    el.focus();
-  } finally {
-    document.removeEventListener("focusin", trap, true);
-    document.removeEventListener("focusout", trap, true);
-  }
-}
-var AnnotationPopupCSS = forwardRef(
-  function AnnotationPopupCSS2({
-    element,
-    timestamp,
-    selectedText,
-    placeholder = "What should change?",
-    initialValue = "",
-    submitLabel = "Add",
-    onSubmit,
-    onCancel,
-    onDelete,
-    style,
-    accentColor = "#3c82f7",
-    isExiting = false,
-    lightMode = false,
-    computedStyles
-  }, ref) {
-    const [text, setText] = useState(initialValue);
-    const [isShaking, setIsShaking] = useState(false);
-    const [animState, setAnimState] = useState("initial");
-    const [isFocused, setIsFocused] = useState(false);
-    const [isStylesExpanded, setIsStylesExpanded] = useState(false);
-    const textareaRef = useRef(null);
-    const popupRef = useRef(null);
-    const cancelTimerRef = useRef(null);
-    const shakeTimerRef = useRef(null);
-    useEffect(() => {
-      if (isExiting && animState !== "exit") {
-        setAnimState("exit");
-      }
-    }, [isExiting, animState]);
-    useEffect(() => {
-      originalSetTimeout(() => {
-        setAnimState("enter");
-      }, 0);
-      const enterTimer = originalSetTimeout(() => {
-        setAnimState("entered");
-      }, 200);
-      const focusTimer = originalSetTimeout(() => {
-        const textarea = textareaRef.current;
-        if (textarea) {
-          focusBypassingTraps(textarea);
-          textarea.selectionStart = textarea.selectionEnd = textarea.value.length;
-          textarea.scrollTop = textarea.scrollHeight;
-        }
-      }, 50);
-      return () => {
-        clearTimeout(enterTimer);
-        clearTimeout(focusTimer);
-        if (cancelTimerRef.current) clearTimeout(cancelTimerRef.current);
-        if (shakeTimerRef.current) clearTimeout(shakeTimerRef.current);
-      };
-    }, []);
-    const shake = useCallback(() => {
-      if (shakeTimerRef.current) clearTimeout(shakeTimerRef.current);
-      setIsShaking(true);
-      shakeTimerRef.current = originalSetTimeout(() => {
-        setIsShaking(false);
-        focusBypassingTraps(textareaRef.current);
-      }, 250);
-    }, []);
-    useImperativeHandle(ref, () => ({
-      shake
-    }), [shake]);
-    const handleCancel = useCallback(() => {
-      setAnimState("exit");
-      cancelTimerRef.current = originalSetTimeout(() => {
-        onCancel();
-      }, 150);
-    }, [onCancel]);
-    const handleSubmit = useCallback(() => {
-      if (!text.trim()) return;
-      onSubmit(text.trim());
-    }, [text, onSubmit]);
-    const handleKeyDown = useCallback(
-      (e) => {
-        e.stopPropagation();
-        if (e.nativeEvent.isComposing) return;
-        if (e.key === "Enter" && !e.shiftKey) {
-          e.preventDefault();
-          handleSubmit();
-        }
-        if (e.key === "Escape") {
-          handleCancel();
-        }
-      },
-      [handleSubmit, handleCancel]
-    );
-    const popupClassName = [
-      styles_module_default.popup,
-      lightMode ? styles_module_default.light : "",
-      animState === "enter" ? styles_module_default.enter : "",
-      animState === "entered" ? styles_module_default.entered : "",
-      animState === "exit" ? styles_module_default.exit : "",
-      isShaking ? styles_module_default.shake : ""
-    ].filter(Boolean).join(" ");
-    return /* @__PURE__ */ jsxs2(
-      "div",
-      {
-        ref: popupRef,
-        className: popupClassName,
-        "data-annotation-popup": true,
-        style,
-        onClick: (e) => e.stopPropagation(),
-        children: [
-          /* @__PURE__ */ jsxs2("div", { className: styles_module_default.header, children: [
-            computedStyles && Object.keys(computedStyles).length > 0 ? /* @__PURE__ */ jsxs2(
-              "button",
-              {
-                className: styles_module_default.headerToggle,
-                onClick: () => {
-                  const wasExpanded = isStylesExpanded;
-                  setIsStylesExpanded(!isStylesExpanded);
-                  if (wasExpanded) {
-                    originalSetTimeout(() => focusBypassingTraps(textareaRef.current), 0);
-                  }
-                },
-                type: "button",
-                children: [
-                  /* @__PURE__ */ jsx2(
-                    "svg",
-                    {
-                      className: `${styles_module_default.chevron} ${isStylesExpanded ? styles_module_default.expanded : ""}`,
-                      width: "14",
-                      height: "14",
-                      viewBox: "0 0 14 14",
-                      fill: "none",
-                      xmlns: "http://www.w3.org/2000/svg",
-                      children: /* @__PURE__ */ jsx2(
-                        "path",
-                        {
-                          d: "M5.5 10.25L9 7.25L5.75 4",
-                          stroke: "currentColor",
-                          strokeWidth: "1.5",
-                          strokeLinecap: "round",
-                          strokeLinejoin: "round"
-                        }
-                      )
-                    }
-                  ),
-                  /* @__PURE__ */ jsx2("span", { className: styles_module_default.element, children: element })
-                ]
-              }
-            ) : /* @__PURE__ */ jsx2("span", { className: styles_module_default.element, children: element }),
-            timestamp && /* @__PURE__ */ jsx2("span", { className: styles_module_default.timestamp, children: timestamp })
-          ] }),
-          computedStyles && Object.keys(computedStyles).length > 0 && /* @__PURE__ */ jsx2("div", { className: `${styles_module_default.stylesWrapper} ${isStylesExpanded ? styles_module_default.expanded : ""}`, children: /* @__PURE__ */ jsx2("div", { className: styles_module_default.stylesInner, children: /* @__PURE__ */ jsx2("div", { className: styles_module_default.stylesBlock, children: Object.entries(computedStyles).map(([key, value]) => /* @__PURE__ */ jsxs2("div", { className: styles_module_default.styleLine, children: [
-            /* @__PURE__ */ jsx2("span", { className: styles_module_default.styleProperty, children: key.replace(/([A-Z])/g, "-$1").toLowerCase() }),
-            ": ",
-            /* @__PURE__ */ jsx2("span", { className: styles_module_default.styleValue, children: value }),
-            ";"
-          ] }, key)) }) }) }),
-          selectedText && /* @__PURE__ */ jsxs2("div", { className: styles_module_default.quote, children: [
-            "\u201C",
-            selectedText.slice(0, 80),
-            selectedText.length > 80 ? "..." : "",
-            "\u201D"
-          ] }),
-          /* @__PURE__ */ jsx2(
-            "textarea",
-            {
-              ref: textareaRef,
-              className: styles_module_default.textarea,
-              style: { borderColor: isFocused ? accentColor : void 0 },
-              placeholder,
-              value: text,
-              onChange: (e) => setText(e.target.value),
-              onFocus: () => setIsFocused(true),
-              onBlur: () => setIsFocused(false),
-              rows: 2,
-              onKeyDown: handleKeyDown
-            }
-          ),
-          /* @__PURE__ */ jsxs2("div", { className: styles_module_default.actions, children: [
-            onDelete && /* @__PURE__ */ jsx2("div", { className: styles_module_default.deleteWrapper, children: /* @__PURE__ */ jsx2("button", { className: styles_module_default.deleteButton, onClick: onDelete, type: "button", children: /* @__PURE__ */ jsx2(IconTrash, { size: 22 }) }) }),
-            /* @__PURE__ */ jsx2("button", { className: styles_module_default.cancel, onClick: handleCancel, children: "Cancel" }),
-            /* @__PURE__ */ jsx2(
-              "button",
-              {
-                className: styles_module_default.submit,
-                style: {
-                  backgroundColor: accentColor,
-                  opacity: text.trim() ? 1 : 0.4
-                },
-                onClick: handleSubmit,
-                disabled: !text.trim(),
-                children: submitLabel
-              }
-            )
-          ] })
-        ]
-      }
-    );
-  }
-);
-
 // src/components/tooltip/index.tsx
-import { useEffect as useEffect2, useRef as useRef2, useState as useState2 } from "react";
-import { createPortal } from "react-dom";
-import { Fragment, jsx as jsx3, jsxs as jsxs3 } from "react/jsx-runtime";
+import { useEffect as useEffect4, useRef as useRef5, useState as useState5 } from "react";
+import { createPortal as createPortal2 } from "react-dom";
+import { Fragment, jsx as jsx5, jsxs as jsxs3 } from "react/jsx-runtime";
 var Tooltip = ({
   content,
   children,
   ...props
 }) => {
-  const [visible, setVisible] = useState2(false);
-  const [shouldRender, setShouldRender] = useState2(false);
-  const [position, setPosition] = useState2({ top: 0, right: 0 });
-  const triggerRef = useRef2(null);
-  const timeoutRef = useRef2(null);
-  const exitTimeoutRef = useRef2(null);
+  const [visible, setVisible] = useState5(false);
+  const [shouldRender, setShouldRender] = useState5(false);
+  const [position, setPosition] = useState5({ top: 0, right: 0 });
+  const triggerRef = useRef5(null);
+  const timeoutRef = useRef5(null);
+  const exitTimeoutRef = useRef5(null);
   const updatePosition = () => {
     if (triggerRef.current) {
       const rect = triggerRef.current.getBoundingClientRect();
@@ -1584,14 +2901,14 @@ var Tooltip = ({
       setShouldRender(false);
     }, 150);
   };
-  useEffect2(() => {
+  useEffect4(() => {
     return () => {
       if (timeoutRef.current) clearTimeout(timeoutRef.current);
       if (exitTimeoutRef.current) clearTimeout(exitTimeoutRef.current);
     };
   }, []);
   return /* @__PURE__ */ jsxs3(Fragment, { children: [
-    /* @__PURE__ */ jsx3(
+    /* @__PURE__ */ jsx5(
       "span",
       {
         ref: triggerRef,
@@ -1601,8 +2918,8 @@ var Tooltip = ({
         children
       }
     ),
-    shouldRender && createPortal(
-      /* @__PURE__ */ jsx3(
+    shouldRender && createPortal2(
+      /* @__PURE__ */ jsx5(
         "div",
         {
           "data-feedback-toolbar": true,
@@ -1636,26 +2953,53 @@ var Tooltip = ({
 
 // src/components/help-tooltip/styles.module.scss
 var css3 = ".styles-module__tooltip___mcXL2 {\n  display: flex;\n  justify-content: center;\n  align-items: center;\n  cursor: help;\n}\n\n.styles-module__tooltipIcon___Nq2nD {\n  transform: translateY(0.5px);\n  color: #fff;\n  opacity: 0.2;\n  transition: opacity 0.15s ease;\n  will-change: transform;\n}\n.styles-module__tooltip___mcXL2:hover .styles-module__tooltipIcon___Nq2nD {\n  opacity: 0.5;\n}\n[data-agentation-theme=light] .styles-module__tooltipIcon___Nq2nD {\n  color: #000;\n}";
-var classNames3 = { "tooltip": "styles-module__tooltip___mcXL2", "tooltipIcon": "styles-module__tooltipIcon___Nq2nD" };
-if (typeof document !== "undefined") {
-  let style = document.getElementById("feedback-tool-styles-help-tooltip-styles");
-  if (!style) {
-    style = document.createElement("style");
-    style.id = "feedback-tool-styles-help-tooltip-styles";
-    document.head.appendChild(style);
-  }
-  style.textContent = css3;
-}
-var styles_module_default2 = classNames3;
+var styles_module_default2 = { "tooltip": "styles-module__tooltip___mcXL2", "tooltipIcon": "styles-module__tooltipIcon___Nq2nD" };
 
 // src/components/help-tooltip/index.tsx
-import { jsx as jsx4 } from "react/jsx-runtime";
+import { jsx as jsx6 } from "react/jsx-runtime";
 var HelpTooltip = ({ content }) => {
-  return /* @__PURE__ */ jsx4(Tooltip, { className: styles_module_default2.tooltip, content, children: /* @__PURE__ */ jsx4(IconHelp, { className: styles_module_default2.tooltipIcon }) });
+  return /* @__PURE__ */ jsx6(Tooltip, { className: styles_module_default2.tooltip, content, children: /* @__PURE__ */ jsx6(IconHelp, { className: styles_module_default2.tooltipIcon }) });
 };
 
+// src/components/page-toolbar-css/styles.module.scss
+var css4 = '.styles-module__toolbar___wNsdK svg[fill=none],\n.styles-module__markersLayer___-25j1 svg[fill=none],\n.styles-module__fixedMarkersLayer___ffyX6 svg[fill=none] {\n  fill: none !important;\n}\n.styles-module__toolbar___wNsdK svg[fill=none] :not([fill]),\n.styles-module__markersLayer___-25j1 svg[fill=none] :not([fill]),\n.styles-module__fixedMarkersLayer___ffyX6 svg[fill=none] :not([fill]) {\n  fill: none !important;\n}\n\n.styles-module__controlsContent___9GJWU :where(button, input, select, textarea, label) {\n  background: unset;\n  border: unset;\n  border-radius: unset;\n  padding: unset;\n  margin: unset;\n  color: unset;\n  font-family: unset;\n  font-weight: unset;\n  font-style: unset;\n  line-height: unset;\n  letter-spacing: unset;\n  text-transform: unset;\n  text-decoration: unset;\n  box-shadow: unset;\n  outline: unset;\n}\n\n@keyframes styles-module__toolbarEnter___u8RRu {\n  from {\n    opacity: 0;\n    transform: scale(0.5) rotate(90deg);\n  }\n  to {\n    opacity: 1;\n    transform: scale(1) rotate(0deg);\n  }\n}\n@keyframes styles-module__toolbarHide___y8kaT {\n  from {\n    opacity: 1;\n    transform: scale(1);\n  }\n  to {\n    opacity: 0;\n    transform: scale(0.8);\n  }\n}\n@keyframes styles-module__badgeEnter___mVQLj {\n  from {\n    opacity: 0;\n    transform: scale(0);\n  }\n  to {\n    opacity: 1;\n    transform: scale(1);\n  }\n}\n@keyframes styles-module__scaleIn___c-r1K {\n  from {\n    opacity: 0;\n    transform: scale(0.85);\n  }\n  to {\n    opacity: 1;\n    transform: scale(1);\n  }\n}\n@keyframes styles-module__scaleOut___Wctwz {\n  from {\n    opacity: 1;\n    transform: scale(1);\n  }\n  to {\n    opacity: 0;\n    transform: scale(0.85);\n  }\n}\n@keyframes styles-module__slideUp___kgD36 {\n  from {\n    opacity: 0;\n    transform: scale(0.85) translateY(8px);\n  }\n  to {\n    opacity: 1;\n    transform: scale(1) translateY(0);\n  }\n}\n@keyframes styles-module__slideDown___zcdje {\n  from {\n    opacity: 1;\n    transform: scale(1) translateY(0);\n  }\n  to {\n    opacity: 0;\n    transform: scale(0.85) translateY(8px);\n  }\n}\n@keyframes styles-module__fadeIn___b9qmf {\n  from {\n    opacity: 0;\n  }\n  to {\n    opacity: 1;\n  }\n}\n@keyframes styles-module__fadeOut___6Ut6- {\n  from {\n    opacity: 1;\n  }\n  to {\n    opacity: 0;\n  }\n}\n@keyframes styles-module__hoverHighlightIn___6WYHY {\n  from {\n    opacity: 0;\n    transform: scale(0.98);\n  }\n  to {\n    opacity: 1;\n    transform: scale(1);\n  }\n}\n@keyframes styles-module__hoverTooltipIn___FYGQx {\n  from {\n    opacity: 0;\n    transform: scale(0.95) translateY(4px);\n  }\n  to {\n    opacity: 1;\n    transform: scale(1) translateY(0);\n  }\n}\n.styles-module__disableTransitions___EopxO :is(*, *::before, *::after) {\n  transition: none !important;\n}\n\n:host {\n  /* Set here rather than inline so a consumer className rule can still hide the toolbar. */\n  display: contents;\n  position: fixed;\n  top: auto;\n  left: auto;\n  bottom: 1.25rem;\n  right: 1.25rem;\n  z-index: 100000;\n}\n\n.styles-module__positionContext___AZFHE,\n.styles-module__toolbar___wNsdK {\n  position: inherit;\n  top: inherit;\n  left: inherit;\n  bottom: inherit;\n  right: inherit;\n  z-index: inherit;\n}\n\n.styles-module__toolbar___wNsdK {\n  width: 337px;\n  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;\n  pointer-events: none;\n  transition: left 0.36s cubic-bezier(0.19, 1, 0.22, 1), top 0s, right 0s, bottom 0s;\n}\n.styles-module__toolbar___wNsdK[data-dragging=true] {\n  transition: none;\n}\n\n.styles-module__toolbarContainer___dIhma {\n  position: relative;\n  -webkit-user-select: none;\n  user-select: none;\n  margin-left: auto;\n  align-self: flex-end;\n  display: flex;\n  align-items: center;\n  justify-content: center;\n  background: #1a1a1a;\n  color: #fff;\n  border: none;\n  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2), 0 4px 16px rgba(0, 0, 0, 0.1);\n  pointer-events: auto;\n  transition: width 0.36s cubic-bezier(0.19, 1, 0.22, 1), transform 0.36s cubic-bezier(0.19, 1, 0.22, 1);\n}\n.styles-module__toolbarContainer___dIhma.styles-module__entrance___sgHd8 {\n  animation: styles-module__toolbarEnter___u8RRu 0.5s cubic-bezier(0.34, 1.2, 0.64, 1) forwards;\n}\n.styles-module__toolbarContainer___dIhma.styles-module__hiding___1td44 {\n  animation: styles-module__toolbarHide___y8kaT 0.4s cubic-bezier(0.4, 0, 1, 1) forwards;\n  pointer-events: none;\n}\n.styles-module__toolbarContainer___dIhma.styles-module__collapsed___Rydsn {\n  width: 44px;\n  height: 44px;\n  border-radius: 22px;\n  padding: 0;\n  cursor: pointer;\n}\n.styles-module__toolbarContainer___dIhma.styles-module__collapsed___Rydsn:hover {\n  background: #2a2a2a;\n}\n.styles-module__toolbarContainer___dIhma.styles-module__collapsed___Rydsn:active {\n  transform: scale(0.95);\n}\n.styles-module__toolbarContainer___dIhma.styles-module__expanded___ofKPx {\n  height: 44px;\n  border-radius: 22px;\n  padding: 5px;\n  width: 297px;\n}\n.styles-module__toolbarContainer___dIhma.styles-module__expanded___ofKPx.styles-module__serverConnected___Gfbou {\n  width: 337px;\n}\n\n@media (prefers-reduced-motion: reduce) {\n  .styles-module__toolbar___wNsdK,\n  .styles-module__toolbarContainer___dIhma {\n    transition: none;\n  }\n}\n.styles-module__buttonWrapper___rBcdv.styles-module__toggleWrapper___7N0-q {\n  position: absolute;\n  top: 0;\n  right: 0;\n  width: 44px;\n  height: 44px;\n}\n\n.styles-module__togglePlaceholder___wnqrL {\n  width: 34px;\n  flex: 0 0 34px;\n  height: 34px;\n}\n\n.styles-module__toggleContent___0yfyP {\n  position: absolute;\n  top: 0;\n  right: 0;\n  width: 44px;\n  height: 44px;\n  display: flex;\n  align-items: center;\n  justify-content: center;\n  border: 0;\n  border-radius: 50%;\n  padding: 0;\n  margin: 0;\n  background: transparent;\n  color: #fff;\n  cursor: pointer;\n  transition: color 0.15s ease;\n}\n.styles-module__toggleContent___0yfyP::before {\n  content: "";\n  position: absolute;\n  inset: 5px;\n  border-radius: 50%;\n  pointer-events: none;\n  background: transparent;\n  transition: background-color 0.15s ease, transform 0.1s ease;\n}\n.styles-module__toggleContent___0yfyP.styles-module__expandedToggle___F7SRN {\n  color: rgba(255, 255, 255, 0.85);\n}\n.styles-module__toggleContent___0yfyP.styles-module__expandedToggle___F7SRN:hover {\n  color: #fff;\n}\n.styles-module__toggleContent___0yfyP.styles-module__expandedToggle___F7SRN:hover::before {\n  background: rgba(255, 255, 255, 0.12);\n}\n.styles-module__toggleContent___0yfyP.styles-module__expandedToggle___F7SRN:active::before, .styles-module__toggleContent___0yfyP.styles-module__expandedToggle___F7SRN:active .styles-module__toggleGlyph___R7Oom {\n  transform: scale(0.92);\n}\n\n.styles-module__toggleIcon___Jbtus {\n  transform: translateY(-0.5px);\n  transition: transform 0.3s cubic-bezier(0.22, 1, 0.36, 1);\n  position: relative;\n  display: flex;\n  align-items: center;\n  justify-content: center;\n}\n\n.styles-module__expandedToggle___F7SRN .styles-module__toggleIcon___Jbtus {\n  transform: none;\n}\n\n.styles-module__toggleGlyph___R7Oom {\n  overflow: visible;\n  transition: transform 0.1s ease;\n}\n.styles-module__toggleGlyph___R7Oom path {\n  transform-box: fill-box;\n  transform-origin: center;\n  transition: transform 0.3s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.16s ease;\n}\n\n.styles-module__toggleTopLine___hQaCm,\n.styles-module__toggleMiddleLine___sFFVe {\n  vector-effect: non-scaling-stroke;\n}\n\n.styles-module__toggleBottomLine___V-jX3 {\n  transform-origin: left center;\n}\n\n.styles-module__toggleGlyph___R7Oom[data-active=true] .styles-module__toggleTopLine___hQaCm {\n  transform: translateY(5.25px) rotate(45deg) scaleX(1.1422494);\n}\n.styles-module__toggleGlyph___R7Oom[data-active=true] .styles-module__toggleMiddleLine___sFFVe {\n  transform: translateX(3.5px) rotate(-45deg) scaleX(2.4748737);\n}\n.styles-module__toggleGlyph___R7Oom[data-active=true] .styles-module__toggleBottomLine___V-jX3 {\n  transform: scaleX(0);\n  opacity: 0;\n}\n.styles-module__toggleGlyph___R7Oom[data-active=true] .styles-module__toggleSparkle___eeF99 {\n  transform: scale(0);\n  opacity: 0;\n}\n\n.styles-module__toggleContent___0yfyP:focus-visible,\n.styles-module__controlButton___8Q0jc:focus-visible {\n  outline: 2px solid var(--agentation-color-accent);\n  outline-offset: 3px;\n}\n\n.styles-module__controlsContent___9GJWU {\n  display: flex;\n  align-items: center;\n  gap: 6px;\n  transition: filter 0.14s ease-out, opacity 0.14s ease-out, transform 0.36s cubic-bezier(0.19, 1, 0.22, 1);\n}\n.styles-module__controlsContent___9GJWU.styles-module__visible___KHwEW {\n  transition: filter 0.3s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.24s ease-out, transform 0.42s cubic-bezier(0.19, 1, 0.22, 1);\n  opacity: 1;\n  filter: blur(0px);\n  transform: scale(1);\n  visibility: visible;\n  pointer-events: auto;\n}\n.styles-module__controlsContent___9GJWU.styles-module__hidden___Ae8H4 {\n  pointer-events: none;\n  opacity: 0;\n  filter: blur(6px);\n  transform: scale(0.4);\n}\n\n@media (prefers-reduced-motion: reduce) {\n  .styles-module__controlsContent___9GJWU,\n  .styles-module__controlsContent___9GJWU.styles-module__visible___KHwEW,\n  .styles-module__toggleContent___0yfyP,\n  .styles-module__toggleContent___0yfyP::before,\n  .styles-module__toggleGlyph___R7Oom,\n  .styles-module__toggleIcon___Jbtus,\n  .styles-module__toggleGlyph___R7Oom path {\n    transition: none;\n  }\n  .styles-module__controlsContent___9GJWU.styles-module__hidden___Ae8H4 {\n    filter: none;\n    transform: none;\n  }\n}\n.styles-module__badge___2XsgF {\n  position: absolute;\n  top: -13px;\n  right: -13px;\n  -webkit-user-select: none;\n  user-select: none;\n  min-width: 18px;\n  height: 18px;\n  padding: 0 5px;\n  border-radius: 9px;\n  background-color: var(--agentation-color-accent);\n  color: white;\n  font-size: 0.625rem;\n  font-weight: 600;\n  display: flex;\n  align-items: center;\n  justify-content: center;\n  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15), inset 0 0 0 1px rgba(255, 255, 255, 0.04);\n  opacity: 1;\n  transition: transform 0.3s ease, opacity 0.2s ease;\n  transform: scale(1);\n}\n.styles-module__badge___2XsgF.styles-module__fadeOut___6Ut6- {\n  opacity: 0;\n  transform: scale(0);\n  pointer-events: none;\n}\n.styles-module__badge___2XsgF.styles-module__entrance___sgHd8 {\n  animation: styles-module__badgeEnter___mVQLj 0.3s cubic-bezier(0.34, 1.2, 0.64, 1) 0.4s both;\n}\n\n.styles-module__controlButton___8Q0jc {\n  position: relative;\n  cursor: pointer;\n  display: flex;\n  align-items: center;\n  justify-content: center;\n  width: 34px;\n  height: 34px;\n  border-radius: 50%;\n  border: none;\n  background: transparent;\n  color: rgba(255, 255, 255, 0.85);\n  transition: background-color 0.15s ease, color 0.15s ease, transform 0.1s ease, opacity 0.2s ease;\n}\n.styles-module__controlButton___8Q0jc:hover:not(:disabled):not([data-active=true]):not([data-failed=true]):not([data-auto-sync=true]):not([data-error=true]):not([data-no-hover=true]) {\n  background: rgba(255, 255, 255, 0.12);\n  color: #fff;\n}\n.styles-module__controlButton___8Q0jc:active:not(:disabled) {\n  transform: scale(0.92);\n}\n.styles-module__controlButton___8Q0jc:disabled {\n  opacity: 0.35;\n  cursor: not-allowed;\n}\n.styles-module__controlButton___8Q0jc[data-active=true] {\n  color: var(--agentation-color-blue);\n  background-color: color-mix(in srgb, var(--agentation-color-blue) 25%, transparent);\n}\n.styles-module__controlButton___8Q0jc[data-error=true] {\n  color: var(--agentation-color-red);\n  background-color: color-mix(in srgb, var(--agentation-color-red) 25%, transparent);\n}\n.styles-module__controlButton___8Q0jc[data-danger]:hover:not(:disabled):not([data-active=true]):not([data-failed=true]) {\n  background-color: color-mix(in srgb, var(--agentation-color-red) 25%, transparent);\n  color: var(--agentation-color-red);\n}\n.styles-module__controlButton___8Q0jc[data-no-hover=true], .styles-module__controlButton___8Q0jc.styles-module__statusShowing___te6iu {\n  cursor: default;\n  pointer-events: none;\n  background: transparent !important;\n}\n.styles-module__controlButton___8Q0jc[data-auto-sync=true] {\n  color: var(--agentation-color-green);\n  background: transparent;\n  cursor: default;\n}\n.styles-module__controlButton___8Q0jc[data-failed=true] {\n  color: var(--agentation-color-red);\n  background-color: color-mix(in srgb, var(--agentation-color-red) 25%, transparent);\n}\n\n.styles-module__buttonBadge___NeFWb {\n  position: absolute;\n  top: 0px;\n  right: 0px;\n  min-width: 16px;\n  height: 16px;\n  padding: 0 4px;\n  border-radius: 8px;\n  background-color: var(--agentation-color-accent);\n  color: white;\n  font-size: 0.625rem;\n  font-weight: 600;\n  display: flex;\n  align-items: center;\n  justify-content: center;\n  box-shadow: 0 0 0 2px #1a1a1a, 0 1px 3px rgba(0, 0, 0, 0.2);\n  pointer-events: none;\n}\n[data-agentation-theme=light] .styles-module__buttonBadge___NeFWb {\n  box-shadow: 0 0 0 2px #fff, 0 1px 3px rgba(0, 0, 0, 0.2);\n}\n\n@keyframes styles-module__mcpIndicatorPulseConnected___EDodZ {\n  0%, 100% {\n    box-shadow: 0 0 0 0 color-mix(in srgb, var(--agentation-color-green) 50%, transparent);\n  }\n  50% {\n    box-shadow: 0 0 0 5px color-mix(in srgb, var(--agentation-color-green) 0%, transparent);\n  }\n}\n@keyframes styles-module__mcpIndicatorPulseConnecting___cCYte {\n  0%, 100% {\n    box-shadow: 0 0 0 0 color-mix(in srgb, var(--agentation-color-yellow) 50%, transparent);\n  }\n  50% {\n    box-shadow: 0 0 0 5px color-mix(in srgb, var(--agentation-color-yellow) 0%, transparent);\n  }\n}\n.styles-module__mcpIndicator___zGJeL {\n  position: absolute;\n  top: 3px;\n  right: 3px;\n  width: 6px;\n  height: 6px;\n  border-radius: 50%;\n  pointer-events: none;\n  transition: background-color 0.3s ease, opacity 0.15s ease, transform 0.15s ease;\n  opacity: 1;\n  transform: scale(1);\n}\n.styles-module__mcpIndicator___zGJeL.styles-module__connected___7c28g {\n  background-color: var(--agentation-color-green);\n  animation: styles-module__mcpIndicatorPulseConnected___EDodZ 2.5s ease-in-out infinite;\n}\n.styles-module__mcpIndicator___zGJeL.styles-module__connecting___uo-CW {\n  background-color: var(--agentation-color-yellow);\n  animation: styles-module__mcpIndicatorPulseConnecting___cCYte 1.5s ease-in-out infinite;\n}\n.styles-module__mcpIndicator___zGJeL.styles-module__hidden___Ae8H4 {\n  opacity: 0;\n  transform: scale(0);\n  animation: none;\n}\n\n@keyframes styles-module__connectionPulse___-Zycw {\n  0%, 100% {\n    opacity: 1;\n    transform: scale(1);\n  }\n  50% {\n    opacity: 0.6;\n    transform: scale(0.9);\n  }\n}\n.styles-module__connectionIndicatorWrapper___L-e-3 {\n  width: 8px;\n  height: 34px;\n  margin-left: 6px;\n  margin-right: 6px;\n}\n\n.styles-module__connectionIndicator___afk9p {\n  position: relative;\n  width: 8px;\n  height: 8px;\n  border-radius: 50%;\n  opacity: 0;\n  transition: opacity 0.3s ease, background-color 0.3s ease;\n  cursor: default;\n}\n\n.styles-module__connectionIndicatorVisible___C-i5B {\n  opacity: 1;\n}\n\n.styles-module__connectionIndicatorConnected___IY8pR {\n  background-color: var(--agentation-color-green);\n  animation: styles-module__connectionPulse___-Zycw 2.5s ease-in-out infinite;\n}\n\n.styles-module__connectionIndicatorDisconnected___kmpaZ {\n  background-color: var(--agentation-color-red);\n  animation: none;\n}\n\n.styles-module__connectionIndicatorConnecting___QmSLH {\n  background-color: var(--agentation-color-yellow);\n  animation: styles-module__connectionPulse___-Zycw 1s ease-in-out infinite;\n}\n\n.styles-module__buttonWrapper___rBcdv {\n  position: relative;\n  display: flex;\n  align-items: center;\n  justify-content: center;\n}\n.styles-module__buttonWrapper___rBcdv:hover .styles-module__buttonTooltip___Burd9 {\n  opacity: 1;\n  visibility: visible;\n  transform: translateX(-50%) scale(1);\n  transition-delay: 0.85s;\n}\n.styles-module__buttonWrapper___rBcdv:has(.styles-module__controlButton___8Q0jc:disabled):hover .styles-module__buttonTooltip___Burd9 {\n  opacity: 0;\n  visibility: hidden;\n}\n\n.styles-module__tooltipsInSession___-0lHH .styles-module__buttonWrapper___rBcdv:hover .styles-module__buttonTooltip___Burd9 {\n  transition-delay: 0s;\n}\n\n.styles-module__sendButtonWrapper___UUxG6 {\n  width: 0;\n  opacity: 0;\n  overflow: hidden;\n  pointer-events: none;\n  margin-left: -6px;\n  transition: width 0.36s cubic-bezier(0.19, 1, 0.22, 1), opacity 0.2s cubic-bezier(0.19, 1, 0.22, 1), margin 0.36s cubic-bezier(0.19, 1, 0.22, 1);\n}\n.styles-module__sendButtonWrapper___UUxG6 .styles-module__controlButton___8Q0jc {\n  transform: scale(0.8);\n  transition: transform 0.36s cubic-bezier(0.19, 1, 0.22, 1);\n}\n.styles-module__sendButtonWrapper___UUxG6.styles-module__sendButtonVisible___WPSQU {\n  width: 34px;\n  opacity: 1;\n  overflow: visible;\n  pointer-events: auto;\n  margin-left: 0;\n}\n.styles-module__sendButtonWrapper___UUxG6.styles-module__sendButtonVisible___WPSQU .styles-module__controlButton___8Q0jc {\n  transform: scale(1);\n}\n\n.styles-module__buttonTooltip___Burd9 {\n  position: absolute;\n  bottom: calc(100% + 14px);\n  left: 50%;\n  transform: translateX(-50%) scale(0.95);\n  padding: 6px 10px;\n  background: #1a1a1a;\n  color: rgba(255, 255, 255, 0.9);\n  font-size: 12px;\n  font-weight: 500;\n  border-radius: 8px;\n  white-space: nowrap;\n  opacity: 0;\n  visibility: hidden;\n  pointer-events: none;\n  z-index: 100001;\n  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);\n  transition: opacity 0.135s ease, transform 0.135s ease, visibility 0.135s ease;\n}\n.styles-module__buttonTooltip___Burd9::after {\n  content: "";\n  position: absolute;\n  top: calc(100% - 4px);\n  left: 50%;\n  transform: translateX(-50%) rotate(45deg);\n  width: 8px;\n  height: 8px;\n  background: #1a1a1a;\n  border-radius: 0 0 2px 0;\n}\n\n.styles-module__shortcut___lEAQk {\n  margin-left: 4px;\n  opacity: 0.5;\n}\n\n.styles-module__tooltipBelow___m6ats .styles-module__buttonTooltip___Burd9 {\n  bottom: auto;\n  top: calc(100% + 14px);\n  transform: translateX(-50%) scale(0.95);\n}\n.styles-module__tooltipBelow___m6ats .styles-module__buttonTooltip___Burd9::after {\n  top: -4px;\n  bottom: auto;\n  border-radius: 2px 0 0 0;\n}\n\n.styles-module__tooltipBelow___m6ats .styles-module__buttonWrapper___rBcdv:hover .styles-module__buttonTooltip___Burd9 {\n  transform: translateX(-50%) scale(1);\n}\n\n.styles-module__tooltipsHidden___VtLJG .styles-module__buttonTooltip___Burd9 {\n  opacity: 0 !important;\n  visibility: hidden !important;\n  transition: none !important;\n}\n\n.styles-module__tooltipVisible___0jcCv,\n.styles-module__tooltipsHidden___VtLJG .styles-module__tooltipVisible___0jcCv {\n  opacity: 1 !important;\n  visibility: visible !important;\n  transform: translateX(-50%) scale(1) !important;\n  transition-delay: 0s !important;\n}\n\n.styles-module__buttonWrapperAlignLeft___myzIp .styles-module__buttonTooltip___Burd9 {\n  left: 50%;\n  transform: translateX(-12px) scale(0.95);\n}\n.styles-module__buttonWrapperAlignLeft___myzIp .styles-module__buttonTooltip___Burd9::after {\n  left: 16px;\n}\n.styles-module__buttonWrapperAlignLeft___myzIp:hover .styles-module__buttonTooltip___Burd9 {\n  transform: translateX(-12px) scale(1);\n}\n\n.styles-module__tooltipBelow___m6ats .styles-module__buttonWrapperAlignLeft___myzIp .styles-module__buttonTooltip___Burd9 {\n  transform: translateX(-12px) scale(0.95);\n}\n.styles-module__tooltipBelow___m6ats .styles-module__buttonWrapperAlignLeft___myzIp:hover .styles-module__buttonTooltip___Burd9 {\n  transform: translateX(-12px) scale(1);\n}\n\n.styles-module__buttonWrapperAlignRight___HCQFR .styles-module__buttonTooltip___Burd9 {\n  left: 50%;\n  transform: translateX(calc(-100% + 12px)) scale(0.95);\n}\n.styles-module__buttonWrapperAlignRight___HCQFR .styles-module__buttonTooltip___Burd9::after {\n  left: auto;\n  right: 8px;\n}\n.styles-module__buttonWrapperAlignRight___HCQFR:hover .styles-module__buttonTooltip___Burd9 {\n  transform: translateX(calc(-100% + 12px)) scale(1);\n}\n\n.styles-module__tooltipBelow___m6ats .styles-module__buttonWrapperAlignRight___HCQFR .styles-module__buttonTooltip___Burd9 {\n  transform: translateX(calc(-100% + 12px)) scale(0.95);\n}\n.styles-module__tooltipBelow___m6ats .styles-module__buttonWrapperAlignRight___HCQFR:hover .styles-module__buttonTooltip___Burd9 {\n  transform: translateX(calc(-100% + 12px)) scale(1);\n}\n\n.styles-module__divider___c--s1 {\n  width: 1px;\n  height: 12px;\n  background: rgba(255, 255, 255, 0.15);\n  margin: 0 3px;\n}\n\n.styles-module__overlay___Q1O9y {\n  position: fixed;\n  inset: 0;\n  z-index: 99997;\n  pointer-events: none;\n}\n.styles-module__overlay___Q1O9y > * {\n  pointer-events: auto;\n}\n\n.styles-module__hoverHighlight___ogakW {\n  position: fixed;\n  border: 2px solid color-mix(in srgb, var(--agentation-color-accent) 50%, transparent);\n  border-radius: 4px;\n  background-color: color-mix(in srgb, var(--agentation-color-accent) 4%, transparent);\n  pointer-events: none !important;\n  box-sizing: border-box;\n  will-change: opacity;\n  contain: layout style;\n}\n.styles-module__hoverHighlight___ogakW.styles-module__enter___WFIki {\n  animation: styles-module__hoverHighlightIn___6WYHY 0.12s ease-out forwards;\n}\n\n.styles-module__multiSelectOutline___cSJ-m {\n  position: fixed;\n  border: 2px dashed color-mix(in srgb, var(--agentation-color-green) 60%, transparent);\n  border-radius: 4px;\n  pointer-events: none !important;\n  background-color: color-mix(in srgb, var(--agentation-color-green) 5%, transparent);\n  box-sizing: border-box;\n  will-change: opacity;\n}\n.styles-module__multiSelectOutline___cSJ-m.styles-module__enter___WFIki {\n  animation: styles-module__fadeIn___b9qmf 0.15s ease-out forwards;\n}\n.styles-module__multiSelectOutline___cSJ-m.styles-module__exit___fyOJ0 {\n  animation: styles-module__fadeOut___6Ut6- 0.15s ease-out forwards;\n}\n\n.styles-module__singleSelectOutline___QhX-O {\n  position: fixed;\n  border: 2px solid color-mix(in srgb, var(--agentation-color-blue) 60%, transparent);\n  border-radius: 4px;\n  pointer-events: none !important;\n  background-color: color-mix(in srgb, var(--agentation-color-blue) 5%, transparent);\n  box-sizing: border-box;\n  will-change: opacity;\n}\n.styles-module__singleSelectOutline___QhX-O.styles-module__enter___WFIki {\n  animation: styles-module__fadeIn___b9qmf 0.15s ease-out forwards;\n}\n.styles-module__singleSelectOutline___QhX-O.styles-module__exit___fyOJ0 {\n  animation: styles-module__fadeOut___6Ut6- 0.15s ease-out forwards;\n}\n\n.styles-module__hoverTooltip___bvLk7 {\n  position: fixed;\n  z-index: 99999;\n  font-size: 0.6875rem;\n  font-weight: 500;\n  color: #fff;\n  background: rgba(0, 0, 0, 0.85);\n  padding: 0.35rem 0.6rem;\n  border-radius: 0.375rem;\n  pointer-events: none !important;\n  white-space: nowrap;\n  max-width: min(280px, 100vw - 16px - 1.2rem);\n  overflow: hidden;\n  text-overflow: ellipsis;\n}\n.styles-module__hoverTooltip___bvLk7.styles-module__enter___WFIki {\n  animation: styles-module__hoverTooltipIn___FYGQx 0.1s ease-out forwards;\n}\n\n.styles-module__hoverReactPath___gx1IJ {\n  font-size: 0.625rem;\n  color: rgba(255, 255, 255, 0.6);\n  margin-bottom: 0.15rem;\n  overflow: hidden;\n  text-overflow: ellipsis;\n}\n\n.styles-module__hoverElementName___QMLMl {\n  overflow: hidden;\n  text-overflow: ellipsis;\n}\n\n.styles-module__markersLayer___-25j1 {\n  position: absolute;\n  top: 0;\n  left: 0;\n  right: 0;\n  height: 0;\n  z-index: 99998;\n  pointer-events: none;\n}\n.styles-module__markersLayer___-25j1 > * {\n  pointer-events: auto;\n}\n\n.styles-module__fixedMarkersLayer___ffyX6 {\n  position: fixed;\n  top: 0;\n  left: 0;\n  right: 0;\n  bottom: 0;\n  z-index: 99998;\n  pointer-events: none;\n}\n.styles-module__fixedMarkersLayer___ffyX6 > * {\n  pointer-events: auto;\n}\n\n.styles-module__marker___6sQrs {\n  position: absolute;\n  width: 22px;\n  height: 22px;\n  background: var(--agentation-color-blue);\n  color: white;\n  border-radius: 50%;\n  display: flex;\n  align-items: center;\n  justify-content: center;\n  font-size: 0.6875rem;\n  font-weight: 600;\n  transform: translate(-50%, -50%) scale(1);\n  opacity: 1;\n  cursor: pointer;\n  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2), inset 0 0 0 1px rgba(0, 0, 0, 0.04);\n  -webkit-user-select: none;\n  user-select: none;\n  will-change: transform, opacity;\n  contain: layout style;\n  z-index: 1;\n}\n.styles-module__marker___6sQrs:hover {\n  z-index: 2;\n}\n.styles-module__marker___6sQrs:not(.styles-module__enter___WFIki):not(.styles-module__exit___fyOJ0):not(.styles-module__clearing___FQ--7) {\n  transition: background-color 0.15s ease, transform 0.1s ease;\n}\n.styles-module__marker___6sQrs.styles-module__enter___WFIki {\n  animation: styles-module__markerIn___5FaAP 0.25s cubic-bezier(0.22, 1, 0.36, 1) both;\n}\n.styles-module__marker___6sQrs.styles-module__exit___fyOJ0 {\n  animation: styles-module__markerOut___GU5jX 0.2s ease-out both;\n  pointer-events: none;\n}\n.styles-module__marker___6sQrs.styles-module__clearing___FQ--7 {\n  animation: styles-module__markerOut___GU5jX 0.15s ease-out both;\n  pointer-events: none;\n}\n.styles-module__marker___6sQrs:not(.styles-module__enter___WFIki):not(.styles-module__exit___fyOJ0):not(.styles-module__clearing___FQ--7):hover {\n  transform: translate(-50%, -50%) scale(1.1);\n}\n.styles-module__marker___6sQrs.styles-module__pending___2IHLC {\n  position: fixed;\n  background-color: var(--agentation-color-blue);\n  cursor: default;\n}\n.styles-module__marker___6sQrs.styles-module__fixed___dBMHC {\n  position: fixed;\n}\n.styles-module__marker___6sQrs.styles-module__multiSelect___YWiuz {\n  background-color: var(--agentation-color-green);\n  width: 26px;\n  height: 26px;\n  border-radius: 6px;\n  font-size: 0.75rem;\n}\n.styles-module__marker___6sQrs.styles-module__multiSelect___YWiuz.styles-module__pending___2IHLC {\n  background-color: var(--agentation-color-green);\n}\n.styles-module__marker___6sQrs.styles-module__hovered___ZgXIy {\n  background-color: var(--agentation-color-red);\n}\n\n.styles-module__renumber___nCTxD {\n  display: block;\n  animation: styles-module__renumberRoll___Wgbq3 0.2s ease-out;\n}\n\n@keyframes styles-module__renumberRoll___Wgbq3 {\n  0% {\n    transform: translateX(-40%);\n    opacity: 0;\n  }\n  100% {\n    transform: translateX(0);\n    opacity: 1;\n  }\n}\n.styles-module__markerTooltip___aLJID {\n  position: absolute;\n  top: calc(100% + 10px);\n  left: 50%;\n  transform: translateX(-50%) scale(0.909);\n  z-index: 100002;\n  background: #1a1a1a;\n  padding: 8px 0.75rem;\n  border-radius: 0.75rem;\n  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;\n  font-weight: 400;\n  color: #fff;\n  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3), 0 0 0 1px rgba(255, 255, 255, 0.08);\n  min-width: 120px;\n  max-width: 200px;\n  pointer-events: none;\n  cursor: default;\n}\n.styles-module__markerTooltip___aLJID.styles-module__enter___WFIki {\n  animation: styles-module__tooltipIn___0N31w 0.1s ease-out forwards;\n}\n\n.styles-module__markerQuote___FHmrz {\n  display: block;\n  font-size: 12px;\n  font-style: italic;\n  color: rgba(255, 255, 255, 0.6);\n  margin-bottom: 0.3125rem;\n  line-height: 1.4;\n  white-space: nowrap;\n  overflow: hidden;\n  text-overflow: ellipsis;\n}\n\n.styles-module__markerNote___QkrrS {\n  display: block;\n  font-size: 13px;\n  font-weight: 400;\n  line-height: 1.4;\n  color: #fff;\n  white-space: nowrap;\n  overflow: hidden;\n  text-overflow: ellipsis;\n  padding-bottom: 2px;\n}\n\n.styles-module__markerHint___2iF-6 {\n  display: block;\n  font-size: 0.625rem;\n  font-weight: 400;\n  color: rgba(255, 255, 255, 0.6);\n  margin-top: 0.375rem;\n  white-space: nowrap;\n}\n\n.styles-module__settingsPanel___OxX3Y {\n  position: absolute;\n  right: 5px;\n  bottom: calc(100% + 0.5rem);\n  z-index: 1;\n  overflow: hidden;\n  background: #1c1c1c;\n  border-radius: 1rem;\n  padding: 13px 0 16px;\n  min-width: 205px;\n  cursor: default;\n  opacity: 1;\n  box-shadow: 0 1px 8px rgba(0, 0, 0, 0.25), 0 0 0 1px rgba(0, 0, 0, 0.04);\n  transition: background-color 0.25s ease, box-shadow 0.25s ease;\n}\n.styles-module__settingsPanel___OxX3Y::before, .styles-module__settingsPanel___OxX3Y::after {\n  content: "";\n  position: absolute;\n  top: 0;\n  bottom: 0;\n  width: 16px;\n  z-index: 2;\n  pointer-events: none;\n}\n.styles-module__settingsPanel___OxX3Y::before {\n  left: 0;\n  background: linear-gradient(to right, #1c1c1c 0%, transparent 100%);\n}\n.styles-module__settingsPanel___OxX3Y::after {\n  right: 0;\n  background: linear-gradient(to left, #1c1c1c 0%, transparent 100%);\n}\n.styles-module__settingsPanel___OxX3Y .styles-module__settingsHeader___pwDY9,\n.styles-module__settingsPanel___OxX3Y .styles-module__settingsBrand___0gJeM,\n.styles-module__settingsPanel___OxX3Y .styles-module__settingsBrandSlash___uTG18,\n.styles-module__settingsPanel___OxX3Y .styles-module__settingsVersion___TUcFq,\n.styles-module__settingsPanel___OxX3Y .styles-module__settingsSection___m-YM2,\n.styles-module__settingsPanel___OxX3Y .styles-module__settingsLabel___8UjfX,\n.styles-module__settingsPanel___OxX3Y .styles-module__cycleButton___FMKfw,\n.styles-module__settingsPanel___OxX3Y .styles-module__cycleDot___nPgLY,\n.styles-module__settingsPanel___OxX3Y .styles-module__dropdownButton___16NPz,\n.styles-module__settingsPanel___OxX3Y .styles-module__toggleLabel___Xm8Aa,\n.styles-module__settingsPanel___OxX3Y .styles-module__customCheckbox___U39ax,\n.styles-module__settingsPanel___OxX3Y .styles-module__sliderLabel___U8sPr,\n.styles-module__settingsPanel___OxX3Y .styles-module__slider___GLdxp,\n.styles-module__settingsPanel___OxX3Y .styles-module__themeToggle___2rUjA {\n  transition: background-color 0.25s ease, color 0.25s ease, border-color 0.25s ease;\n}\n.styles-module__settingsPanel___OxX3Y.styles-module__enter___WFIki {\n  opacity: 1;\n  transform: translateY(0) scale(1);\n  filter: blur(0px);\n  transition: opacity 0.2s ease, transform 0.2s ease, filter 0.2s ease;\n}\n.styles-module__settingsPanel___OxX3Y.styles-module__exit___fyOJ0 {\n  opacity: 0;\n  transform: translateY(8px) scale(0.95);\n  filter: blur(5px);\n  pointer-events: none;\n  transition: opacity 0.1s ease, transform 0.1s ease, filter 0.1s ease;\n}\n[data-agentation-theme=dark] .styles-module__settingsPanel___OxX3Y {\n  background: #1a1a1a;\n  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3), 0 0 0 1px rgba(255, 255, 255, 0.08);\n}\n[data-agentation-theme=dark] .styles-module__settingsPanel___OxX3Y .styles-module__settingsLabel___8UjfX {\n  color: rgba(255, 255, 255, 0.6);\n}\n[data-agentation-theme=dark] .styles-module__settingsPanel___OxX3Y .styles-module__settingsOption___UNa12 {\n  color: rgba(255, 255, 255, 0.85);\n}\n[data-agentation-theme=dark] .styles-module__settingsPanel___OxX3Y .styles-module__settingsOption___UNa12:hover {\n  background: rgba(255, 255, 255, 0.1);\n}\n[data-agentation-theme=dark] .styles-module__settingsPanel___OxX3Y .styles-module__settingsOption___UNa12.styles-module__selected___OwRqP {\n  background: rgba(255, 255, 255, 0.15);\n  color: #fff;\n}\n[data-agentation-theme=dark] .styles-module__settingsPanel___OxX3Y .styles-module__toggleLabel___Xm8Aa {\n  color: rgba(255, 255, 255, 0.85);\n}\n\n.styles-module__settingsPanelContainer___Xksv8 {\n  overflow: visible;\n  position: relative;\n  display: flex;\n  padding: 0 1rem;\n}\n\n.styles-module__settingsPage___6YfHH {\n  min-width: 100%;\n  flex-shrink: 0;\n  transition: transform 0.2s ease, opacity 0.2s ease;\n  transition-delay: 0s;\n  opacity: 1;\n}\n\n.styles-module__settingsPage___6YfHH.styles-module__slideLeft___Ps01J {\n  transform: translateX(-24px);\n  opacity: 0;\n  pointer-events: none;\n}\n\n.styles-module__automationsPage___uvCq6 {\n  position: absolute;\n  top: 0;\n  left: 24px;\n  width: 100%;\n  height: 100%;\n  padding: 3px 1rem 0;\n  box-sizing: border-box;\n  display: flex;\n  flex-direction: column;\n  transition: transform 0.2s ease, opacity 0.2s ease;\n  opacity: 0;\n  pointer-events: none;\n}\n\n.styles-module__automationsPage___uvCq6.styles-module__slideIn___4-qXe {\n  transform: translateX(-24px);\n  opacity: 1;\n  pointer-events: auto;\n}\n\n.styles-module__settingsNavLink___wCzJt {\n  display: flex;\n  align-items: center;\n  justify-content: space-between;\n  width: 100%;\n  padding: 0;\n  border: none;\n  background: transparent;\n  font-family: inherit;\n  font-size: 0.8125rem;\n  font-weight: 400;\n  color: rgba(255, 255, 255, 0.5);\n  cursor: pointer;\n  transition: color 0.15s ease;\n}\n.styles-module__settingsNavLink___wCzJt:hover {\n  color: rgba(255, 255, 255, 0.9);\n}\n[data-agentation-theme=light] .styles-module__settingsNavLink___wCzJt {\n  color: rgba(0, 0, 0, 0.5);\n}\n[data-agentation-theme=light] .styles-module__settingsNavLink___wCzJt:hover {\n  color: rgba(0, 0, 0, 0.8);\n}\n.styles-module__settingsNavLink___wCzJt svg {\n  color: rgba(255, 255, 255, 0.4);\n  transition: color 0.15s ease;\n}\n.styles-module__settingsNavLink___wCzJt:hover svg {\n  color: #fff;\n}\n[data-agentation-theme=light] .styles-module__settingsNavLink___wCzJt svg {\n  color: rgba(0, 0, 0, 0.25);\n}\n[data-agentation-theme=light] .styles-module__settingsNavLink___wCzJt:hover svg {\n  color: rgba(0, 0, 0, 0.8);\n}\n\n.styles-module__settingsNavLinkRight___ZWwhj {\n  display: flex;\n  align-items: center;\n  gap: 6px;\n}\n\n.styles-module__mcpNavIndicator___cl9pO {\n  width: 8px;\n  height: 8px;\n  border-radius: 50%;\n  flex-shrink: 0;\n}\n.styles-module__mcpNavIndicator___cl9pO.styles-module__connected___7c28g {\n  background-color: var(--agentation-color-green);\n  animation: styles-module__mcpPulse___uNggr 2.5s ease-in-out infinite;\n}\n.styles-module__mcpNavIndicator___cl9pO.styles-module__connecting___uo-CW {\n  background-color: var(--agentation-color-yellow);\n  animation: styles-module__mcpPulse___uNggr 1.5s ease-in-out infinite;\n}\n\n.styles-module__settingsBackButton___bIe2j {\n  display: flex;\n  align-items: center;\n  gap: 4px;\n  padding: 6px 0 12px 0;\n  margin: -6px 0 0.5rem 0;\n  border: none;\n  border-bottom: 1px solid rgba(255, 255, 255, 0.07);\n  border-radius: 0;\n  background: transparent;\n  font-family: inherit;\n  font-size: 0.8125rem;\n  font-weight: 500;\n  letter-spacing: -0.15px;\n  color: #fff;\n  cursor: pointer;\n  transition: transform 0.12s cubic-bezier(0.32, 0.72, 0, 1);\n}\n.styles-module__settingsBackButton___bIe2j svg {\n  opacity: 0.4;\n  flex-shrink: 0;\n  transition: opacity 0.15s ease, transform 0.18s cubic-bezier(0.32, 0.72, 0, 1);\n}\n.styles-module__settingsBackButton___bIe2j:hover {\n  border-bottom-color: rgba(255, 255, 255, 0.07);\n}\n.styles-module__settingsBackButton___bIe2j:hover svg {\n  opacity: 1;\n}\n[data-agentation-theme=light] .styles-module__settingsBackButton___bIe2j {\n  color: rgba(0, 0, 0, 0.85);\n  border-bottom-color: rgba(0, 0, 0, 0.08);\n}\n[data-agentation-theme=light] .styles-module__settingsBackButton___bIe2j:hover {\n  border-bottom-color: rgba(0, 0, 0, 0.08);\n}\n\n.styles-module__automationHeader___InP0r {\n  display: flex;\n  align-items: center;\n  gap: 0.125rem;\n  font-size: 0.8125rem;\n  font-weight: 400;\n  color: #fff;\n}\n[data-agentation-theme=light] .styles-module__automationHeader___InP0r {\n  color: rgba(0, 0, 0, 0.85);\n}\n\n.styles-module__automationDescription___NKlmo {\n  font-size: 0.6875rem;\n  font-weight: 300;\n  color: rgba(255, 255, 255, 0.5);\n  margin-top: 2px;\n  line-height: 14px;\n}\n[data-agentation-theme=light] .styles-module__automationDescription___NKlmo {\n  color: rgba(0, 0, 0, 0.5);\n}\n\n.styles-module__learnMoreLink___8xv-x {\n  color: rgba(255, 255, 255, 0.8);\n  text-decoration: underline dotted;\n  text-decoration-color: rgba(255, 255, 255, 0.2);\n  text-underline-offset: 2px;\n  transition: color 0.15s ease;\n}\n.styles-module__learnMoreLink___8xv-x:hover {\n  color: #fff;\n}\n[data-agentation-theme=light] .styles-module__learnMoreLink___8xv-x {\n  color: rgba(0, 0, 0, 0.6);\n  text-decoration-color: rgba(0, 0, 0, 0.2);\n}\n[data-agentation-theme=light] .styles-module__learnMoreLink___8xv-x:hover {\n  color: rgba(0, 0, 0, 0.85);\n}\n\n.styles-module__autoSendRow___UblX5 {\n  display: flex;\n  align-items: center;\n  gap: 8px;\n}\n\n.styles-module__autoSendLabel___icDc2 {\n  font-size: 0.6875rem;\n  font-weight: 400;\n  color: rgba(255, 255, 255, 0.4);\n  transition: color 0.15s ease;\n}\n.styles-module__autoSendLabel___icDc2.styles-module__active___-zoN6 {\n  color: #66b8ff;\n  color: color(display-p3 0.4 0.72 1);\n}\n[data-agentation-theme=light] .styles-module__autoSendLabel___icDc2 {\n  color: rgba(0, 0, 0, 0.4);\n}\n[data-agentation-theme=light] .styles-module__autoSendLabel___icDc2.styles-module__active___-zoN6 {\n  color: var(--agentation-color-blue);\n}\n\n.styles-module__webhookUrlInput___2375C {\n  display: block;\n  width: 100%;\n  flex: 1;\n  min-height: 60px;\n  box-sizing: border-box;\n  margin-top: 11px;\n  padding: 8px 10px;\n  border: 1px solid rgba(255, 255, 255, 0.1);\n  border-radius: 6px;\n  background: rgba(255, 255, 255, 0.03);\n  font-family: inherit;\n  font-size: 0.75rem;\n  font-weight: 400;\n  color: #fff;\n  outline: none;\n  resize: none;\n  user-select: text;\n  transition: border-color 0.15s ease, background-color 0.15s ease, box-shadow 0.15s ease;\n}\n.styles-module__webhookUrlInput___2375C::placeholder {\n  color: rgba(255, 255, 255, 0.3);\n}\n.styles-module__webhookUrlInput___2375C:focus {\n  border-color: rgba(255, 255, 255, 0.3);\n  background: rgba(255, 255, 255, 0.08);\n}\n[data-agentation-theme=light] .styles-module__webhookUrlInput___2375C {\n  border-color: rgba(0, 0, 0, 0.1);\n  background: rgba(0, 0, 0, 0.03);\n  color: rgba(0, 0, 0, 0.85);\n}\n[data-agentation-theme=light] .styles-module__webhookUrlInput___2375C::placeholder {\n  color: rgba(0, 0, 0, 0.3);\n}\n[data-agentation-theme=light] .styles-module__webhookUrlInput___2375C:focus {\n  border-color: rgba(0, 0, 0, 0.25);\n  background: rgba(0, 0, 0, 0.05);\n}\n\n.styles-module__settingsHeader___pwDY9 {\n  display: flex;\n  align-items: center;\n  justify-content: space-between;\n  min-height: 24px;\n  margin-bottom: 0.5rem;\n  padding-bottom: 9px;\n  border-bottom: 1px solid rgba(255, 255, 255, 0.07);\n}\n\n.styles-module__settingsBrand___0gJeM {\n  font-size: 0.8125rem;\n  font-weight: 600;\n  letter-spacing: -0.0094em;\n  color: #fff;\n  text-decoration: none;\n}\n\n.styles-module__settingsBrandSlash___uTG18 {\n  color: var(--agentation-color-accent);\n  transition: color 0.2s ease;\n}\n\n.styles-module__settingsVersion___TUcFq {\n  font-size: 11px;\n  font-weight: 400;\n  color: rgba(255, 255, 255, 0.4);\n  margin-left: auto;\n  letter-spacing: -0.0094em;\n}\n\n.styles-module__settingsSection___m-YM2 + .styles-module__settingsSection___m-YM2 {\n  margin-top: 0.5rem;\n  padding-top: 0.5rem;\n  border-top: 1px solid rgba(255, 255, 255, 0.07);\n}\n.styles-module__settingsSection___m-YM2.styles-module__settingsSectionExtraPadding___jdhFV {\n  padding-top: calc(0.5rem + 4px);\n}\n\n.styles-module__settingsSectionGrow___h-5HZ {\n  flex: 1;\n  display: flex;\n  flex-direction: column;\n}\n\n.styles-module__settingsRow___3sdhc {\n  display: flex;\n  align-items: center;\n  justify-content: space-between;\n  min-height: 24px;\n}\n.styles-module__settingsRow___3sdhc.styles-module__settingsRowMarginTop___zA0Sp {\n  margin-top: 8px;\n}\n\n.styles-module__dropdownContainer___BVnxe {\n  position: relative;\n}\n\n.styles-module__dropdownButton___16NPz {\n  display: flex;\n  align-items: center;\n  gap: 0.5rem;\n  padding: 0.25rem 0.5rem;\n  border: none;\n  border-radius: 0.375rem;\n  background: transparent;\n  font-size: 0.8125rem;\n  font-weight: 600;\n  color: #fff;\n  cursor: pointer;\n  transition: background-color 0.15s ease, color 0.15s ease;\n  letter-spacing: -0.0094em;\n}\n.styles-module__dropdownButton___16NPz:hover {\n  background: rgba(255, 255, 255, 0.08);\n}\n.styles-module__dropdownButton___16NPz svg {\n  opacity: 0.6;\n}\n\n.styles-module__cycleButton___FMKfw {\n  display: flex;\n  align-items: center;\n  gap: 0.5rem;\n  padding: 0;\n  border: none;\n  background: transparent;\n  font-size: 0.8125rem;\n  font-weight: 500;\n  color: #fff;\n  cursor: pointer;\n  letter-spacing: -0.0094em;\n}\n[data-agentation-theme=light] .styles-module__cycleButton___FMKfw {\n  color: rgba(0, 0, 0, 0.85);\n}\n.styles-module__cycleButton___FMKfw:disabled {\n  opacity: 0.35;\n  cursor: not-allowed;\n}\n\n.styles-module__settingsRowDisabled___EgS0V .styles-module__settingsLabel___8UjfX {\n  color: rgba(255, 255, 255, 0.2);\n}\n[data-agentation-theme=light] .styles-module__settingsRowDisabled___EgS0V .styles-module__settingsLabel___8UjfX {\n  color: rgba(0, 0, 0, 0.2);\n}\n.styles-module__settingsRowDisabled___EgS0V .styles-module__toggleSwitch___l4Ygm {\n  opacity: 0.4;\n  cursor: not-allowed;\n}\n\n@keyframes styles-module__cycleTextIn___Q6zJf {\n  0% {\n    opacity: 0;\n    transform: translateY(-6px);\n  }\n  100% {\n    opacity: 1;\n    transform: translateY(0);\n  }\n}\n.styles-module__cycleButtonText___fD1LR {\n  display: inline-block;\n  animation: styles-module__cycleTextIn___Q6zJf 0.2s ease-out;\n}\n\n.styles-module__cycleDots___LWuoQ {\n  display: flex;\n  flex-direction: column;\n  gap: 2px;\n}\n\n.styles-module__cycleDot___nPgLY {\n  width: 3px;\n  height: 3px;\n  border-radius: 50%;\n  background: rgba(255, 255, 255, 0.3);\n  transform: scale(0.667);\n  transition: background-color 0.25s ease-out, transform 0.25s ease-out;\n}\n.styles-module__cycleDot___nPgLY.styles-module__active___-zoN6 {\n  background: #fff;\n  transform: scale(1);\n}\n[data-agentation-theme=light] .styles-module__cycleDot___nPgLY {\n  background: rgba(0, 0, 0, 0.2);\n}\n[data-agentation-theme=light] .styles-module__cycleDot___nPgLY.styles-module__active___-zoN6 {\n  background: rgba(0, 0, 0, 0.7);\n}\n\n.styles-module__dropdownMenu___k73ER {\n  position: absolute;\n  right: 0;\n  top: calc(100% + 0.25rem);\n  background: #1a1a1a;\n  border-radius: 0.5rem;\n  padding: 0.25rem;\n  min-width: 120px;\n  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3), 0 0 0 1px rgba(255, 255, 255, 0.1);\n  z-index: 10;\n  animation: styles-module__scaleIn___c-r1K 0.15s ease-out;\n}\n\n.styles-module__dropdownItem___ylsLj {\n  width: 100%;\n  display: flex;\n  align-items: center;\n  padding: 0.5rem 0.625rem;\n  border: none;\n  border-radius: 0.375rem;\n  background: transparent;\n  font-size: 0.8125rem;\n  font-weight: 500;\n  color: rgba(255, 255, 255, 0.85);\n  cursor: pointer;\n  text-align: left;\n  transition: background-color 0.15s ease, color 0.15s ease;\n  letter-spacing: -0.0094em;\n}\n.styles-module__dropdownItem___ylsLj:hover {\n  background: rgba(255, 255, 255, 0.08);\n}\n.styles-module__dropdownItem___ylsLj.styles-module__selected___OwRqP {\n  background: rgba(255, 255, 255, 0.12);\n  color: #fff;\n  font-weight: 600;\n}\n\n.styles-module__settingsLabel___8UjfX {\n  font-size: 0.8125rem;\n  font-weight: 400;\n  letter-spacing: -0.0094em;\n  color: rgba(255, 255, 255, 0.5);\n  display: flex;\n  align-items: center;\n  gap: 0.125rem;\n}\n[data-agentation-theme=light] .styles-module__settingsLabel___8UjfX {\n  color: rgba(0, 0, 0, 0.5);\n}\n\n.styles-module__settingsLabelMarker___ewdtV {\n  padding-top: 3px;\n  margin-bottom: 10px;\n}\n\n.styles-module__settingsOptions___LyrBA {\n  display: flex;\n  gap: 0.25rem;\n}\n\n.styles-module__settingsOption___UNa12 {\n  flex: 1;\n  display: flex;\n  align-items: center;\n  justify-content: center;\n  gap: 0.25rem;\n  padding: 0.375rem 0.5rem;\n  border: none;\n  border-radius: 0.375rem;\n  background: transparent;\n  font-size: 0.6875rem;\n  font-weight: 500;\n  color: rgba(0, 0, 0, 0.7);\n  cursor: pointer;\n  transition: background-color 0.15s ease, color 0.15s ease;\n}\n.styles-module__settingsOption___UNa12:hover {\n  background: rgba(0, 0, 0, 0.05);\n}\n.styles-module__settingsOption___UNa12.styles-module__selected___OwRqP {\n  background: color-mix(in srgb, var(--agentation-color-blue) 15%, transparent);\n  color: var(--agentation-color-blue);\n}\n\n.styles-module__sliderContainer___ducXj {\n  display: flex;\n  flex-direction: column;\n  gap: 0.5rem;\n}\n\n.styles-module__slider___GLdxp {\n  -webkit-appearance: none;\n  appearance: none;\n  width: 100%;\n  height: 4px;\n  background: rgba(255, 255, 255, 0.15);\n  border-radius: 2px;\n  outline: none;\n  cursor: pointer;\n}\n.styles-module__slider___GLdxp::-webkit-slider-thumb {\n  -webkit-appearance: none;\n  appearance: none;\n  width: 14px;\n  height: 14px;\n  background: white;\n  border-radius: 50%;\n  cursor: pointer;\n  transition: transform 0.15s ease, box-shadow 0.15s ease;\n  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);\n}\n.styles-module__slider___GLdxp::-moz-range-thumb {\n  width: 14px;\n  height: 14px;\n  background: white;\n  border: none;\n  border-radius: 50%;\n  cursor: pointer;\n  transition: transform 0.15s ease, box-shadow 0.15s ease;\n  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);\n}\n.styles-module__slider___GLdxp:hover::-webkit-slider-thumb {\n  transform: scale(1.15);\n  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);\n}\n.styles-module__slider___GLdxp:hover::-moz-range-thumb {\n  transform: scale(1.15);\n  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);\n}\n\n.styles-module__sliderLabels___FhLDB {\n  display: flex;\n  justify-content: space-between;\n}\n\n.styles-module__sliderLabel___U8sPr {\n  font-size: 0.625rem;\n  font-weight: 500;\n  color: rgba(255, 255, 255, 0.4);\n  cursor: pointer;\n  transition: color 0.15s ease;\n}\n.styles-module__sliderLabel___U8sPr:hover {\n  color: rgba(255, 255, 255, 0.7);\n}\n.styles-module__sliderLabel___U8sPr.styles-module__active___-zoN6 {\n  color: rgba(255, 255, 255, 0.9);\n}\n\n.styles-module__colorOptions___iHCNX {\n  display: flex;\n  gap: 0.5rem;\n  margin-top: 0.375rem;\n  margin-bottom: 1px;\n}\n\n.styles-module__colorOption___IodiY {\n  display: block;\n  width: 20px;\n  height: 20px;\n  border-radius: 50%;\n  border: 2px solid transparent;\n  background-color: var(--swatch);\n  cursor: pointer;\n  transition: transform 0.2s cubic-bezier(0.25, 1, 0.5, 1);\n}\n@supports (color: color(display-p3 0 0 0)) {\n  .styles-module__colorOption___IodiY {\n    background-color: var(--swatch-p3);\n  }\n}\n.styles-module__colorOption___IodiY:hover {\n  transform: scale(1.15);\n}\n.styles-module__colorOption___IodiY.styles-module__selected___OwRqP {\n  transform: scale(0.83);\n}\n\n.styles-module__colorOptionRing___U2xpo {\n  display: flex;\n  width: 24px;\n  height: 24px;\n  border: 2px solid transparent;\n  border-radius: 50%;\n  transition: border-color 0.3s ease;\n}\n.styles-module__colorOptionRing___U2xpo.styles-module__selected___OwRqP {\n  border-color: var(--swatch);\n}\n@supports (color: color(display-p3 0 0 0)) {\n  .styles-module__colorOptionRing___U2xpo.styles-module__selected___OwRqP {\n    border-color: var(--swatch-p3);\n  }\n}\n\n.styles-module__settingsToggle___fBrFn {\n  display: flex;\n  align-items: center;\n  gap: 0.5rem;\n  cursor: pointer;\n}\n.styles-module__settingsToggle___fBrFn + .styles-module__settingsToggle___fBrFn {\n  margin-top: calc(0.5rem + 6px);\n}\n.styles-module__settingsToggle___fBrFn input[type=checkbox] {\n  position: absolute;\n  opacity: 0;\n  width: 0;\n  height: 0;\n}\n.styles-module__settingsToggle___fBrFn.styles-module__settingsToggleMarginBottom___MZUyF {\n  margin-bottom: calc(0.5rem + 6px);\n}\n\n@keyframes styles-module__mcpPulse___uNggr {\n  0% {\n    box-shadow: 0 0 0 0 color-mix(in srgb, var(--agentation-color-green) 50%, transparent);\n  }\n  70% {\n    box-shadow: 0 0 0 6px color-mix(in srgb, var(--agentation-color-green) 0%, transparent);\n  }\n  100% {\n    box-shadow: 0 0 0 0 color-mix(in srgb, var(--agentation-color-green) 0%, transparent);\n  }\n}\n@keyframes styles-module__mcpPulseError___fov9B {\n  0% {\n    box-shadow: 0 0 0 0 color-mix(in srgb, var(--agentation-color-red) 50%, transparent);\n  }\n  70% {\n    box-shadow: 0 0 0 6px color-mix(in srgb, var(--agentation-color-red) 0%, transparent);\n  }\n  100% {\n    box-shadow: 0 0 0 0 color-mix(in srgb, var(--agentation-color-red) 0%, transparent);\n  }\n}\n.styles-module__mcpStatusDot___ibgkc {\n  width: 8px;\n  height: 8px;\n  border-radius: 50%;\n  flex-shrink: 0;\n}\n.styles-module__mcpStatusDot___ibgkc.styles-module__connecting___uo-CW {\n  background-color: var(--agentation-color-yellow);\n  animation: styles-module__mcpPulse___uNggr 1.5s infinite;\n}\n.styles-module__mcpStatusDot___ibgkc.styles-module__connected___7c28g {\n  background-color: var(--agentation-color-green);\n  animation: styles-module__mcpPulse___uNggr 2.5s ease-in-out infinite;\n}\n.styles-module__mcpStatusDot___ibgkc.styles-module__disconnected___cHPxR {\n  background-color: var(--agentation-color-red);\n  animation: styles-module__mcpPulseError___fov9B 2s infinite;\n}\n\n.styles-module__drawCanvas___7cG9U {\n  position: fixed;\n  inset: 0;\n  z-index: 99996;\n  pointer-events: none !important;\n}\n.styles-module__drawCanvas___7cG9U.styles-module__active___-zoN6 {\n  pointer-events: auto !important;\n  cursor: crosshair !important;\n}\n.styles-module__drawCanvas___7cG9U.styles-module__active___-zoN6[data-stroke-hover] {\n  cursor: pointer !important;\n}\n\n.styles-module__dragSelection___kZLq2 {\n  position: fixed;\n  top: 0;\n  left: 0;\n  border: 2px solid color-mix(in srgb, var(--agentation-color-green) 60%, transparent);\n  border-radius: 4px;\n  background-color: color-mix(in srgb, var(--agentation-color-green) 8%, transparent);\n  pointer-events: none;\n  z-index: 99997;\n  will-change: transform, width, height;\n  contain: layout style;\n}\n\n.styles-module__dragCount___KM90j {\n  position: absolute;\n  top: 50%;\n  left: 50%;\n  transform: translate(-50%, -50%);\n  background-color: var(--agentation-color-green);\n  color: white;\n  font-size: 0.875rem;\n  font-weight: 600;\n  padding: 0.25rem 0.5rem;\n  border-radius: 1rem;\n  min-width: 1.5rem;\n  text-align: center;\n}\n\n.styles-module__highlightsContainer___-0xzG {\n  position: fixed;\n  top: 0;\n  left: 0;\n  pointer-events: none;\n  z-index: 99996;\n}\n\n.styles-module__selectedElementHighlight___fyVlI {\n  position: fixed;\n  top: 0;\n  left: 0;\n  border: 2px solid color-mix(in srgb, var(--agentation-color-green) 50%, transparent);\n  border-radius: 4px;\n  background: color-mix(in srgb, var(--agentation-color-green) 6%, transparent);\n  pointer-events: none;\n  will-change: transform, width, height;\n  contain: layout style;\n}\n\n[data-agentation-theme=light] .styles-module__toolbarContainer___dIhma {\n  background: #fff;\n  color: rgba(0, 0, 0, 0.85);\n  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08), 0 4px 16px rgba(0, 0, 0, 0.06), 0 0 0 1px rgba(0, 0, 0, 0.04);\n}\n[data-agentation-theme=light] .styles-module__toolbarContainer___dIhma.styles-module__collapsed___Rydsn:hover {\n  background: #f5f5f5;\n}\n[data-agentation-theme=light] .styles-module__toggleContent___0yfyP {\n  color: rgba(0, 0, 0, 0.85);\n}\n[data-agentation-theme=light] .styles-module__toggleContent___0yfyP.styles-module__expandedToggle___F7SRN {\n  color: rgba(0, 0, 0, 0.5);\n}\n[data-agentation-theme=light] .styles-module__toggleContent___0yfyP.styles-module__expandedToggle___F7SRN:hover {\n  color: rgba(0, 0, 0, 0.85);\n}\n[data-agentation-theme=light] .styles-module__toggleContent___0yfyP.styles-module__expandedToggle___F7SRN:hover::before {\n  background: rgba(0, 0, 0, 0.06);\n}\n[data-agentation-theme=light] .styles-module__controlButton___8Q0jc {\n  color: rgba(0, 0, 0, 0.5);\n}\n[data-agentation-theme=light] .styles-module__controlButton___8Q0jc:hover:not(:disabled):not([data-active=true]):not([data-failed=true]):not([data-auto-sync=true]):not([data-error=true]):not([data-no-hover=true]) {\n  background: rgba(0, 0, 0, 0.06);\n  color: rgba(0, 0, 0, 0.85);\n}\n[data-agentation-theme=light] .styles-module__controlButton___8Q0jc[data-active=true] {\n  color: var(--agentation-color-blue);\n  background: color-mix(in srgb, var(--agentation-color-blue) 15%, transparent);\n}\n[data-agentation-theme=light] .styles-module__controlButton___8Q0jc[data-error=true] {\n  color: var(--agentation-color-red);\n  background: color-mix(in srgb, var(--agentation-color-red) 15%, transparent);\n}\n[data-agentation-theme=light] .styles-module__controlButton___8Q0jc[data-danger]:hover:not(:disabled):not([data-active=true]):not([data-failed=true]) {\n  color: var(--agentation-color-red);\n  background: color-mix(in srgb, var(--agentation-color-red) 15%, transparent);\n}\n[data-agentation-theme=light] .styles-module__controlButton___8Q0jc[data-auto-sync=true] {\n  color: var(--agentation-color-green);\n  background: transparent;\n}\n[data-agentation-theme=light] .styles-module__controlButton___8Q0jc[data-failed=true] {\n  color: var(--agentation-color-red);\n  background: color-mix(in srgb, var(--agentation-color-red) 15%, transparent);\n}\n[data-agentation-theme=light] .styles-module__buttonTooltip___Burd9 {\n  background: #fff;\n  color: rgba(0, 0, 0, 0.85);\n  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08), 0 4px 16px rgba(0, 0, 0, 0.06), 0 0 0 1px rgba(0, 0, 0, 0.04);\n}\n[data-agentation-theme=light] .styles-module__buttonTooltip___Burd9::after {\n  background: #fff;\n}\n[data-agentation-theme=light] .styles-module__divider___c--s1 {\n  background: rgba(0, 0, 0, 0.1);\n}';
+var styles_module_default3 = { "toolbar": "styles-module__toolbar___wNsdK", "markersLayer": "styles-module__markersLayer___-25j1", "fixedMarkersLayer": "styles-module__fixedMarkersLayer___ffyX6", "controlsContent": "styles-module__controlsContent___9GJWU", "disableTransitions": "styles-module__disableTransitions___EopxO", "positionContext": "styles-module__positionContext___AZFHE", "toolbarContainer": "styles-module__toolbarContainer___dIhma", "entrance": "styles-module__entrance___sgHd8", "toolbarEnter": "styles-module__toolbarEnter___u8RRu", "hiding": "styles-module__hiding___1td44", "toolbarHide": "styles-module__toolbarHide___y8kaT", "collapsed": "styles-module__collapsed___Rydsn", "expanded": "styles-module__expanded___ofKPx", "serverConnected": "styles-module__serverConnected___Gfbou", "buttonWrapper": "styles-module__buttonWrapper___rBcdv", "toggleWrapper": "styles-module__toggleWrapper___7N0-q", "togglePlaceholder": "styles-module__togglePlaceholder___wnqrL", "toggleContent": "styles-module__toggleContent___0yfyP", "expandedToggle": "styles-module__expandedToggle___F7SRN", "toggleGlyph": "styles-module__toggleGlyph___R7Oom", "toggleIcon": "styles-module__toggleIcon___Jbtus", "toggleTopLine": "styles-module__toggleTopLine___hQaCm", "toggleMiddleLine": "styles-module__toggleMiddleLine___sFFVe", "toggleBottomLine": "styles-module__toggleBottomLine___V-jX3", "toggleSparkle": "styles-module__toggleSparkle___eeF99", "controlButton": "styles-module__controlButton___8Q0jc", "visible": "styles-module__visible___KHwEW", "hidden": "styles-module__hidden___Ae8H4", "badge": "styles-module__badge___2XsgF", "fadeOut": "styles-module__fadeOut___6Ut6-", "badgeEnter": "styles-module__badgeEnter___mVQLj", "statusShowing": "styles-module__statusShowing___te6iu", "buttonBadge": "styles-module__buttonBadge___NeFWb", "mcpIndicator": "styles-module__mcpIndicator___zGJeL", "connected": "styles-module__connected___7c28g", "mcpIndicatorPulseConnected": "styles-module__mcpIndicatorPulseConnected___EDodZ", "connecting": "styles-module__connecting___uo-CW", "mcpIndicatorPulseConnecting": "styles-module__mcpIndicatorPulseConnecting___cCYte", "connectionIndicatorWrapper": "styles-module__connectionIndicatorWrapper___L-e-3", "connectionIndicator": "styles-module__connectionIndicator___afk9p", "connectionIndicatorVisible": "styles-module__connectionIndicatorVisible___C-i5B", "connectionIndicatorConnected": "styles-module__connectionIndicatorConnected___IY8pR", "connectionPulse": "styles-module__connectionPulse___-Zycw", "connectionIndicatorDisconnected": "styles-module__connectionIndicatorDisconnected___kmpaZ", "connectionIndicatorConnecting": "styles-module__connectionIndicatorConnecting___QmSLH", "buttonTooltip": "styles-module__buttonTooltip___Burd9", "tooltipsInSession": "styles-module__tooltipsInSession___-0lHH", "sendButtonWrapper": "styles-module__sendButtonWrapper___UUxG6", "sendButtonVisible": "styles-module__sendButtonVisible___WPSQU", "shortcut": "styles-module__shortcut___lEAQk", "tooltipBelow": "styles-module__tooltipBelow___m6ats", "tooltipsHidden": "styles-module__tooltipsHidden___VtLJG", "tooltipVisible": "styles-module__tooltipVisible___0jcCv", "buttonWrapperAlignLeft": "styles-module__buttonWrapperAlignLeft___myzIp", "buttonWrapperAlignRight": "styles-module__buttonWrapperAlignRight___HCQFR", "divider": "styles-module__divider___c--s1", "overlay": "styles-module__overlay___Q1O9y", "hoverHighlight": "styles-module__hoverHighlight___ogakW", "enter": "styles-module__enter___WFIki", "hoverHighlightIn": "styles-module__hoverHighlightIn___6WYHY", "multiSelectOutline": "styles-module__multiSelectOutline___cSJ-m", "fadeIn": "styles-module__fadeIn___b9qmf", "exit": "styles-module__exit___fyOJ0", "singleSelectOutline": "styles-module__singleSelectOutline___QhX-O", "hoverTooltip": "styles-module__hoverTooltip___bvLk7", "hoverTooltipIn": "styles-module__hoverTooltipIn___FYGQx", "hoverReactPath": "styles-module__hoverReactPath___gx1IJ", "hoverElementName": "styles-module__hoverElementName___QMLMl", "marker": "styles-module__marker___6sQrs", "clearing": "styles-module__clearing___FQ--7", "markerIn": "styles-module__markerIn___5FaAP", "markerOut": "styles-module__markerOut___GU5jX", "pending": "styles-module__pending___2IHLC", "fixed": "styles-module__fixed___dBMHC", "multiSelect": "styles-module__multiSelect___YWiuz", "hovered": "styles-module__hovered___ZgXIy", "renumber": "styles-module__renumber___nCTxD", "renumberRoll": "styles-module__renumberRoll___Wgbq3", "markerTooltip": "styles-module__markerTooltip___aLJID", "tooltipIn": "styles-module__tooltipIn___0N31w", "markerQuote": "styles-module__markerQuote___FHmrz", "markerNote": "styles-module__markerNote___QkrrS", "markerHint": "styles-module__markerHint___2iF-6", "settingsPanel": "styles-module__settingsPanel___OxX3Y", "settingsHeader": "styles-module__settingsHeader___pwDY9", "settingsBrand": "styles-module__settingsBrand___0gJeM", "settingsBrandSlash": "styles-module__settingsBrandSlash___uTG18", "settingsVersion": "styles-module__settingsVersion___TUcFq", "settingsSection": "styles-module__settingsSection___m-YM2", "settingsLabel": "styles-module__settingsLabel___8UjfX", "cycleButton": "styles-module__cycleButton___FMKfw", "cycleDot": "styles-module__cycleDot___nPgLY", "dropdownButton": "styles-module__dropdownButton___16NPz", "toggleLabel": "styles-module__toggleLabel___Xm8Aa", "customCheckbox": "styles-module__customCheckbox___U39ax", "sliderLabel": "styles-module__sliderLabel___U8sPr", "slider": "styles-module__slider___GLdxp", "themeToggle": "styles-module__themeToggle___2rUjA", "settingsOption": "styles-module__settingsOption___UNa12", "selected": "styles-module__selected___OwRqP", "settingsPanelContainer": "styles-module__settingsPanelContainer___Xksv8", "settingsPage": "styles-module__settingsPage___6YfHH", "slideLeft": "styles-module__slideLeft___Ps01J", "automationsPage": "styles-module__automationsPage___uvCq6", "slideIn": "styles-module__slideIn___4-qXe", "settingsNavLink": "styles-module__settingsNavLink___wCzJt", "settingsNavLinkRight": "styles-module__settingsNavLinkRight___ZWwhj", "mcpNavIndicator": "styles-module__mcpNavIndicator___cl9pO", "mcpPulse": "styles-module__mcpPulse___uNggr", "settingsBackButton": "styles-module__settingsBackButton___bIe2j", "automationHeader": "styles-module__automationHeader___InP0r", "automationDescription": "styles-module__automationDescription___NKlmo", "learnMoreLink": "styles-module__learnMoreLink___8xv-x", "autoSendRow": "styles-module__autoSendRow___UblX5", "autoSendLabel": "styles-module__autoSendLabel___icDc2", "active": "styles-module__active___-zoN6", "webhookUrlInput": "styles-module__webhookUrlInput___2375C", "settingsSectionExtraPadding": "styles-module__settingsSectionExtraPadding___jdhFV", "settingsSectionGrow": "styles-module__settingsSectionGrow___h-5HZ", "settingsRow": "styles-module__settingsRow___3sdhc", "settingsRowMarginTop": "styles-module__settingsRowMarginTop___zA0Sp", "dropdownContainer": "styles-module__dropdownContainer___BVnxe", "settingsRowDisabled": "styles-module__settingsRowDisabled___EgS0V", "toggleSwitch": "styles-module__toggleSwitch___l4Ygm", "cycleButtonText": "styles-module__cycleButtonText___fD1LR", "cycleTextIn": "styles-module__cycleTextIn___Q6zJf", "cycleDots": "styles-module__cycleDots___LWuoQ", "dropdownMenu": "styles-module__dropdownMenu___k73ER", "scaleIn": "styles-module__scaleIn___c-r1K", "dropdownItem": "styles-module__dropdownItem___ylsLj", "settingsLabelMarker": "styles-module__settingsLabelMarker___ewdtV", "settingsOptions": "styles-module__settingsOptions___LyrBA", "sliderContainer": "styles-module__sliderContainer___ducXj", "sliderLabels": "styles-module__sliderLabels___FhLDB", "colorOptions": "styles-module__colorOptions___iHCNX", "colorOption": "styles-module__colorOption___IodiY", "colorOptionRing": "styles-module__colorOptionRing___U2xpo", "settingsToggle": "styles-module__settingsToggle___fBrFn", "settingsToggleMarginBottom": "styles-module__settingsToggleMarginBottom___MZUyF", "mcpStatusDot": "styles-module__mcpStatusDot___ibgkc", "disconnected": "styles-module__disconnected___cHPxR", "mcpPulseError": "styles-module__mcpPulseError___fov9B", "drawCanvas": "styles-module__drawCanvas___7cG9U", "dragSelection": "styles-module__dragSelection___kZLq2", "dragCount": "styles-module__dragCount___KM90j", "highlightsContainer": "styles-module__highlightsContainer___-0xzG", "selectedElementHighlight": "styles-module__selectedElementHighlight___fyVlI", "scaleOut": "styles-module__scaleOut___Wctwz", "slideUp": "styles-module__slideUp___kgD36", "slideDown": "styles-module__slideDown___zcdje" };
+
+// src/components/page-toolbar-css/toolbar-toggle-icon.tsx
+import { jsx as jsx7, jsxs as jsxs4 } from "react/jsx-runtime";
+function ToolbarToggleIcon({ active }) {
+  return /* @__PURE__ */ jsxs4(
+    "svg",
+    {
+      className: styles_module_default3.toggleGlyph,
+      "data-active": active,
+      width: "24",
+      height: "24",
+      viewBox: "0 0 24 24",
+      fill: "none",
+      stroke: "currentColor",
+      strokeWidth: "1.5",
+      strokeLinecap: "round",
+      strokeLinejoin: "round",
+      "aria-hidden": "true",
+      children: [
+        /* @__PURE__ */ jsx7("path", { className: styles_module_default3.toggleTopLine, d: "M5.5 6.75H18.5" }),
+        /* @__PURE__ */ jsx7("path", { className: styles_module_default3.toggleMiddleLine, d: "M5.5 12H11.5" }),
+        /* @__PURE__ */ jsx7("path", { className: styles_module_default3.toggleBottomLine, d: "M5.5 17.25H9.25" }),
+        /* @__PURE__ */ jsx7(
+          "path",
+          {
+            className: styles_module_default3.toggleSparkle,
+            d: "M16 12.75L16.5179 13.9677C16.8078 14.6494 17.3506 15.1922 18.0323 15.4821L19.25 16L18.0323 16.5179C17.3506 16.8078 16.8078 17.3506 16.5179 18.0323L16 19.25L15.4821 18.0323C15.1922 17.3506 14.6494 16.8078 13.9677 16.5179L12.75 16L13.9677 15.4821C14.6494 15.1922 15.1922 14.6494 15.4821 13.9677L16 12.75Z"
+          }
+        )
+      ]
+    }
+  );
+}
+
 // src/components/design-mode/index.tsx
-import { useState as useState3, useCallback as useCallback2, useEffect as useEffect3, useRef as useRef3 } from "react";
+import { useState as useState6, useCallback as useCallback5, useEffect as useEffect5, useRef as useRef6 } from "react";
 
 // src/components/design-mode/types.ts
 var DEFAULT_SIZES = {
@@ -1827,9 +3171,9 @@ for (const section of COMPONENT_REGISTRY) {
 }
 
 // src/components/design-mode/skeletons.tsx
-import { jsx as jsx5, jsxs as jsxs4 } from "react/jsx-runtime";
+import { jsx as jsx8, jsxs as jsxs5 } from "react/jsx-runtime";
 function Bar({ w, h = 3, strong }) {
-  return /* @__PURE__ */ jsx5(
+  return /* @__PURE__ */ jsx8(
     "div",
     {
       style: {
@@ -1848,7 +3192,7 @@ function Block({
   radius = 3,
   style
 }) {
-  return /* @__PURE__ */ jsx5(
+  return /* @__PURE__ */ jsx8(
     "div",
     {
       style: {
@@ -1864,7 +3208,7 @@ function Block({
   );
 }
 function Circle({ size }) {
-  return /* @__PURE__ */ jsx5(
+  return /* @__PURE__ */ jsx8(
     "div",
     {
       style: {
@@ -1880,106 +3224,106 @@ function Circle({ size }) {
 }
 function NavigationSkeleton({ width, height }) {
   const pad = Math.max(8, height * 0.2);
-  return /* @__PURE__ */ jsxs4("div", { style: { display: "flex", alignItems: "center", height: "100%", padding: `0 ${pad}px`, gap: width * 0.02 }, children: [
-    /* @__PURE__ */ jsx5(Block, { w: Math.max(20, height * 0.5), h: Math.max(12, height * 0.4), radius: 2 }),
-    /* @__PURE__ */ jsxs4("div", { style: { flex: 1, display: "flex", gap: width * 0.03, marginLeft: width * 0.04 }, children: [
-      /* @__PURE__ */ jsx5(Bar, { w: width * 0.06 }),
-      /* @__PURE__ */ jsx5(Bar, { w: width * 0.07 }),
-      /* @__PURE__ */ jsx5(Bar, { w: width * 0.05 }),
-      /* @__PURE__ */ jsx5(Bar, { w: width * 0.06 })
+  return /* @__PURE__ */ jsxs5("div", { style: { display: "flex", alignItems: "center", height: "100%", padding: `0 ${pad}px`, gap: width * 0.02 }, children: [
+    /* @__PURE__ */ jsx8(Block, { w: Math.max(20, height * 0.5), h: Math.max(12, height * 0.4), radius: 2 }),
+    /* @__PURE__ */ jsxs5("div", { style: { flex: 1, display: "flex", gap: width * 0.03, marginLeft: width * 0.04 }, children: [
+      /* @__PURE__ */ jsx8(Bar, { w: width * 0.06 }),
+      /* @__PURE__ */ jsx8(Bar, { w: width * 0.07 }),
+      /* @__PURE__ */ jsx8(Bar, { w: width * 0.05 }),
+      /* @__PURE__ */ jsx8(Bar, { w: width * 0.06 })
     ] }),
-    /* @__PURE__ */ jsx5(Block, { w: width * 0.1, h: Math.min(28, height * 0.5), radius: 4 })
+    /* @__PURE__ */ jsx8(Block, { w: width * 0.1, h: Math.min(28, height * 0.5), radius: 4 })
   ] });
 }
 function HeroSkeleton({ width, height, text }) {
-  return /* @__PURE__ */ jsxs4("div", { style: { display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: "100%", gap: height * 0.05 }, children: [
-    text ? /* @__PURE__ */ jsx5("span", { style: { fontSize: Math.min(20, height * 0.08), fontWeight: 600, color: "var(--agd-text-3)", textAlign: "center", maxWidth: "80%" }, children: text }) : /* @__PURE__ */ jsx5(Bar, { w: width * 0.5, h: Math.max(6, height * 0.04), strong: true }),
-    /* @__PURE__ */ jsx5(Bar, { w: width * 0.6 }),
-    /* @__PURE__ */ jsx5(Bar, { w: width * 0.4 }),
-    /* @__PURE__ */ jsx5(Block, { w: Math.min(140, width * 0.2), h: Math.min(36, height * 0.12), radius: 6, style: { marginTop: height * 0.06 } })
+  return /* @__PURE__ */ jsxs5("div", { style: { display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: "100%", gap: height * 0.05 }, children: [
+    text ? /* @__PURE__ */ jsx8("span", { style: { fontSize: Math.min(20, height * 0.08), fontWeight: 600, color: "var(--agd-text-3)", textAlign: "center", maxWidth: "80%" }, children: text }) : /* @__PURE__ */ jsx8(Bar, { w: width * 0.5, h: Math.max(6, height * 0.04), strong: true }),
+    /* @__PURE__ */ jsx8(Bar, { w: width * 0.6 }),
+    /* @__PURE__ */ jsx8(Bar, { w: width * 0.4 }),
+    /* @__PURE__ */ jsx8(Block, { w: Math.min(140, width * 0.2), h: Math.min(36, height * 0.12), radius: 6, style: { marginTop: height * 0.06 } })
   ] });
 }
 function SidebarSkeleton({ width, height }) {
   const items = Math.max(3, Math.floor(height / 36));
-  return /* @__PURE__ */ jsxs4("div", { style: { padding: width * 0.08, display: "flex", flexDirection: "column", gap: height * 0.03 }, children: [
-    /* @__PURE__ */ jsx5(Bar, { w: width * 0.6, h: 4, strong: true }),
-    Array.from({ length: items }, (_, i) => /* @__PURE__ */ jsxs4("div", { style: { display: "flex", alignItems: "center", gap: 6 }, children: [
-      /* @__PURE__ */ jsx5(Block, { w: 10, h: 10, radius: 2 }),
-      /* @__PURE__ */ jsx5(Bar, { w: width * (0.4 + i * 17 % 30 / 100) })
+  return /* @__PURE__ */ jsxs5("div", { style: { padding: width * 0.08, display: "flex", flexDirection: "column", gap: height * 0.03 }, children: [
+    /* @__PURE__ */ jsx8(Bar, { w: width * 0.6, h: 4, strong: true }),
+    Array.from({ length: items }, (_, i) => /* @__PURE__ */ jsxs5("div", { style: { display: "flex", alignItems: "center", gap: 6 }, children: [
+      /* @__PURE__ */ jsx8(Block, { w: 10, h: 10, radius: 2 }),
+      /* @__PURE__ */ jsx8(Bar, { w: width * (0.4 + i * 17 % 30 / 100) })
     ] }, i))
   ] });
 }
 function FooterSkeleton({ width, height }) {
   const cols = Math.max(2, Math.min(4, Math.floor(width / 160)));
-  return /* @__PURE__ */ jsx5("div", { style: { display: "flex", padding: `${height * 0.12}px ${width * 0.03}px`, gap: width * 0.05 }, children: Array.from({ length: cols }, (_, i) => /* @__PURE__ */ jsxs4("div", { style: { flex: 1, display: "flex", flexDirection: "column", gap: 4 }, children: [
-    /* @__PURE__ */ jsx5(Bar, { w: "60%", h: 3, strong: true }),
-    /* @__PURE__ */ jsx5(Bar, { w: "80%", h: 2 }),
-    /* @__PURE__ */ jsx5(Bar, { w: "70%", h: 2 }),
-    /* @__PURE__ */ jsx5(Bar, { w: "60%", h: 2 })
+  return /* @__PURE__ */ jsx8("div", { style: { display: "flex", padding: `${height * 0.12}px ${width * 0.03}px`, gap: width * 0.05 }, children: Array.from({ length: cols }, (_, i) => /* @__PURE__ */ jsxs5("div", { style: { flex: 1, display: "flex", flexDirection: "column", gap: 4 }, children: [
+    /* @__PURE__ */ jsx8(Bar, { w: "60%", h: 3, strong: true }),
+    /* @__PURE__ */ jsx8(Bar, { w: "80%", h: 2 }),
+    /* @__PURE__ */ jsx8(Bar, { w: "70%", h: 2 }),
+    /* @__PURE__ */ jsx8(Bar, { w: "60%", h: 2 })
   ] }, i)) });
 }
 function ModalSkeleton({ width, height }) {
-  return /* @__PURE__ */ jsxs4("div", { style: { height: "100%", display: "flex", flexDirection: "column" }, children: [
-    /* @__PURE__ */ jsxs4("div", { style: { padding: "10px 12px", borderBottom: "1px solid var(--agd-stroke)", display: "flex", alignItems: "center", justifyContent: "space-between" }, children: [
-      /* @__PURE__ */ jsx5(Bar, { w: width * 0.3, h: 4, strong: true }),
-      /* @__PURE__ */ jsx5("div", { style: { width: 14, height: 14, border: "1px solid var(--agd-stroke)", borderRadius: 3 } })
+  return /* @__PURE__ */ jsxs5("div", { style: { height: "100%", display: "flex", flexDirection: "column" }, children: [
+    /* @__PURE__ */ jsxs5("div", { style: { padding: "10px 12px", borderBottom: "1px solid var(--agd-stroke)", display: "flex", alignItems: "center", justifyContent: "space-between" }, children: [
+      /* @__PURE__ */ jsx8(Bar, { w: width * 0.3, h: 4, strong: true }),
+      /* @__PURE__ */ jsx8("div", { style: { width: 14, height: 14, border: "1px solid var(--agd-stroke)", borderRadius: 3 } })
     ] }),
-    /* @__PURE__ */ jsxs4("div", { style: { flex: 1, padding: 12, display: "flex", flexDirection: "column", gap: 6 }, children: [
-      /* @__PURE__ */ jsx5(Bar, { w: "90%" }),
-      /* @__PURE__ */ jsx5(Bar, { w: "70%" }),
-      /* @__PURE__ */ jsx5(Bar, { w: "80%" })
+    /* @__PURE__ */ jsxs5("div", { style: { flex: 1, padding: 12, display: "flex", flexDirection: "column", gap: 6 }, children: [
+      /* @__PURE__ */ jsx8(Bar, { w: "90%" }),
+      /* @__PURE__ */ jsx8(Bar, { w: "70%" }),
+      /* @__PURE__ */ jsx8(Bar, { w: "80%" })
     ] }),
-    /* @__PURE__ */ jsxs4("div", { style: { padding: "10px 12px", borderTop: "1px solid var(--agd-stroke)", display: "flex", justifyContent: "flex-end", gap: 8 }, children: [
-      /* @__PURE__ */ jsx5(Block, { w: 70, h: 26, radius: 4 }),
-      /* @__PURE__ */ jsx5(Block, { w: 70, h: 26, radius: 4, style: { background: "var(--agd-bar)" } })
+    /* @__PURE__ */ jsxs5("div", { style: { padding: "10px 12px", borderTop: "1px solid var(--agd-stroke)", display: "flex", justifyContent: "flex-end", gap: 8 }, children: [
+      /* @__PURE__ */ jsx8(Block, { w: 70, h: 26, radius: 4 }),
+      /* @__PURE__ */ jsx8(Block, { w: 70, h: 26, radius: 4, style: { background: "var(--agd-bar)" } })
     ] })
   ] });
 }
 function CardSkeleton({ width, height }) {
-  return /* @__PURE__ */ jsxs4("div", { style: { height: "100%", display: "flex", flexDirection: "column" }, children: [
-    /* @__PURE__ */ jsx5("div", { style: { height: "40%", background: "var(--agd-fill)", borderBottom: "1px dashed var(--agd-stroke)" } }),
-    /* @__PURE__ */ jsxs4("div", { style: { flex: 1, padding: 10, display: "flex", flexDirection: "column", gap: 5 }, children: [
-      /* @__PURE__ */ jsx5(Bar, { w: "70%", h: 4, strong: true }),
-      /* @__PURE__ */ jsx5(Bar, { w: "95%", h: 2 }),
-      /* @__PURE__ */ jsx5(Bar, { w: "85%", h: 2 }),
-      /* @__PURE__ */ jsx5(Bar, { w: "50%", h: 2 })
+  return /* @__PURE__ */ jsxs5("div", { style: { height: "100%", display: "flex", flexDirection: "column" }, children: [
+    /* @__PURE__ */ jsx8("div", { style: { height: "40%", background: "var(--agd-fill)", borderBottom: "1px dashed var(--agd-stroke)" } }),
+    /* @__PURE__ */ jsxs5("div", { style: { flex: 1, padding: 10, display: "flex", flexDirection: "column", gap: 5 }, children: [
+      /* @__PURE__ */ jsx8(Bar, { w: "70%", h: 4, strong: true }),
+      /* @__PURE__ */ jsx8(Bar, { w: "95%", h: 2 }),
+      /* @__PURE__ */ jsx8(Bar, { w: "85%", h: 2 }),
+      /* @__PURE__ */ jsx8(Bar, { w: "50%", h: 2 })
     ] })
   ] });
 }
 function TextSkeleton({ width, height, text }) {
   if (text) {
-    return /* @__PURE__ */ jsx5("div", { style: { padding: 4, fontSize: Math.min(14, height * 0.3), lineHeight: 1.5, color: "var(--agd-text-3)", wordBreak: "break-word", overflow: "hidden" }, children: text });
+    return /* @__PURE__ */ jsx8("div", { style: { padding: 4, fontSize: Math.min(14, height * 0.3), lineHeight: 1.5, color: "var(--agd-text-3)", wordBreak: "break-word", overflow: "hidden" }, children: text });
   }
   const lines = Math.max(2, Math.floor(height / 18));
-  return /* @__PURE__ */ jsxs4("div", { style: { display: "flex", flexDirection: "column", gap: 6, padding: 4 }, children: [
-    /* @__PURE__ */ jsx5(Bar, { w: width * 0.6, h: 5, strong: true }),
-    Array.from({ length: lines }, (_, i) => /* @__PURE__ */ jsx5(Bar, { w: `${70 + i * 13 % 25}%`, h: 2 }, i))
+  return /* @__PURE__ */ jsxs5("div", { style: { display: "flex", flexDirection: "column", gap: 6, padding: 4 }, children: [
+    /* @__PURE__ */ jsx8(Bar, { w: width * 0.6, h: 5, strong: true }),
+    Array.from({ length: lines }, (_, i) => /* @__PURE__ */ jsx8(Bar, { w: `${70 + i * 13 % 25}%`, h: 2 }, i))
   ] });
 }
 function ImageSkeleton({ width, height }) {
-  return /* @__PURE__ */ jsx5("div", { style: { height: "100%", position: "relative" }, children: /* @__PURE__ */ jsxs4("svg", { width: "100%", height: "100%", viewBox: `0 0 ${width} ${height}`, preserveAspectRatio: "none", fill: "none", children: [
-    /* @__PURE__ */ jsx5("line", { x1: "0", y1: "0", x2: width, y2: height, stroke: "var(--agd-stroke)", strokeWidth: "1" }),
-    /* @__PURE__ */ jsx5("line", { x1: width, y1: "0", x2: "0", y2: height, stroke: "var(--agd-stroke)", strokeWidth: "1" }),
-    /* @__PURE__ */ jsx5("circle", { cx: width * 0.3, cy: height * 0.3, r: Math.min(width, height) * 0.08, fill: "var(--agd-fill)", stroke: "var(--agd-stroke)", strokeWidth: "0.8" })
+  return /* @__PURE__ */ jsx8("div", { style: { height: "100%", position: "relative" }, children: /* @__PURE__ */ jsxs5("svg", { width: "100%", height: "100%", viewBox: `0 0 ${width} ${height}`, preserveAspectRatio: "none", fill: "none", children: [
+    /* @__PURE__ */ jsx8("line", { x1: "0", y1: "0", x2: width, y2: height, stroke: "var(--agd-stroke)", strokeWidth: "1" }),
+    /* @__PURE__ */ jsx8("line", { x1: width, y1: "0", x2: "0", y2: height, stroke: "var(--agd-stroke)", strokeWidth: "1" }),
+    /* @__PURE__ */ jsx8("circle", { cx: width * 0.3, cy: height * 0.3, r: Math.min(width, height) * 0.08, fill: "var(--agd-fill)", stroke: "var(--agd-stroke)", strokeWidth: "0.8" })
   ] }) });
 }
 function TableSkeleton({ width, height }) {
   const cols = Math.max(2, Math.min(5, Math.floor(width / 100)));
   const rows = Math.max(2, Math.min(6, Math.floor(height / 32)));
-  return /* @__PURE__ */ jsxs4("div", { style: { height: "100%", display: "flex", flexDirection: "column" }, children: [
-    /* @__PURE__ */ jsx5("div", { style: { display: "flex", borderBottom: "1px solid var(--agd-stroke)", padding: "6px 0" }, children: Array.from({ length: cols }, (_, i) => /* @__PURE__ */ jsx5("div", { style: { flex: 1, padding: "0 8px" }, children: /* @__PURE__ */ jsx5(Bar, { w: "70%", h: 3, strong: true }) }, i)) }),
-    Array.from({ length: rows }, (_, r) => /* @__PURE__ */ jsx5("div", { style: { display: "flex", borderBottom: "1px solid rgba(255,255,255,0.03)", padding: "6px 0" }, children: Array.from({ length: cols }, (_2, c) => /* @__PURE__ */ jsx5("div", { style: { flex: 1, padding: "0 8px" }, children: /* @__PURE__ */ jsx5(Bar, { w: `${50 + (r * 7 + c * 13) % 40}%`, h: 2 }) }, c)) }, r))
+  return /* @__PURE__ */ jsxs5("div", { style: { height: "100%", display: "flex", flexDirection: "column" }, children: [
+    /* @__PURE__ */ jsx8("div", { style: { display: "flex", borderBottom: "1px solid var(--agd-stroke)", padding: "6px 0" }, children: Array.from({ length: cols }, (_, i) => /* @__PURE__ */ jsx8("div", { style: { flex: 1, padding: "0 8px" }, children: /* @__PURE__ */ jsx8(Bar, { w: "70%", h: 3, strong: true }) }, i)) }),
+    Array.from({ length: rows }, (_, r) => /* @__PURE__ */ jsx8("div", { style: { display: "flex", borderBottom: "1px solid rgba(255,255,255,0.03)", padding: "6px 0" }, children: Array.from({ length: cols }, (_2, c) => /* @__PURE__ */ jsx8("div", { style: { flex: 1, padding: "0 8px" }, children: /* @__PURE__ */ jsx8(Bar, { w: `${50 + (r * 7 + c * 13) % 40}%`, h: 2 }) }, c)) }, r))
   ] });
 }
 function ListSkeleton({ width, height }) {
   const items = Math.max(2, Math.floor(height / 28));
-  return /* @__PURE__ */ jsx5("div", { style: { display: "flex", flexDirection: "column", gap: 4, padding: 4 }, children: Array.from({ length: items }, (_, i) => /* @__PURE__ */ jsxs4("div", { style: { display: "flex", alignItems: "center", gap: 8, padding: "4px 0" }, children: [
-    /* @__PURE__ */ jsx5(Circle, { size: 8 }),
-    /* @__PURE__ */ jsx5(Bar, { w: `${55 + i * 17 % 35}%`, h: 2 })
+  return /* @__PURE__ */ jsx8("div", { style: { display: "flex", flexDirection: "column", gap: 4, padding: 4 }, children: Array.from({ length: items }, (_, i) => /* @__PURE__ */ jsxs5("div", { style: { display: "flex", alignItems: "center", gap: 8, padding: "4px 0" }, children: [
+    /* @__PURE__ */ jsx8(Circle, { size: 8 }),
+    /* @__PURE__ */ jsx8(Bar, { w: `${55 + i * 17 % 35}%`, h: 2 })
   ] }, i)) });
 }
 function ButtonSkeleton({ width, height, text }) {
-  return /* @__PURE__ */ jsx5("div", { style: {
+  return /* @__PURE__ */ jsx8("div", { style: {
     height: "100%",
     borderRadius: Math.min(8, height / 3),
     border: "1px solid var(--agd-stroke)",
@@ -1987,12 +3331,12 @@ function ButtonSkeleton({ width, height, text }) {
     display: "flex",
     alignItems: "center",
     justifyContent: "center"
-  }, children: text ? /* @__PURE__ */ jsx5("span", { style: { fontSize: Math.min(13, height * 0.4), fontWeight: 500, color: "var(--agd-text-3)", letterSpacing: "-0.01em" }, children: text }) : /* @__PURE__ */ jsx5(Bar, { w: Math.max(20, width * 0.5), h: 3, strong: true }) });
+  }, children: text ? /* @__PURE__ */ jsx8("span", { style: { fontSize: Math.min(13, height * 0.4), fontWeight: 500, color: "var(--agd-text-3)", letterSpacing: "-0.01em" }, children: text }) : /* @__PURE__ */ jsx8(Bar, { w: Math.max(20, width * 0.5), h: 3, strong: true }) });
 }
 function InputSkeleton({ width, height }) {
-  return /* @__PURE__ */ jsxs4("div", { style: { display: "flex", flexDirection: "column", gap: 4, height: "100%", justifyContent: "center" }, children: [
-    /* @__PURE__ */ jsx5(Bar, { w: Math.min(80, width * 0.3), h: 2 }),
-    /* @__PURE__ */ jsx5("div", { style: {
+  return /* @__PURE__ */ jsxs5("div", { style: { display: "flex", flexDirection: "column", gap: 4, height: "100%", justifyContent: "center" }, children: [
+    /* @__PURE__ */ jsx8(Bar, { w: Math.min(80, width * 0.3), h: 2 }),
+    /* @__PURE__ */ jsx8("div", { style: {
       height: Math.min(36, height * 0.6),
       borderRadius: 4,
       border: "1px dashed var(--agd-stroke)",
@@ -2000,36 +3344,36 @@ function InputSkeleton({ width, height }) {
       display: "flex",
       alignItems: "center",
       paddingLeft: 8
-    }, children: /* @__PURE__ */ jsx5(Bar, { w: "40%", h: 2 }) })
+    }, children: /* @__PURE__ */ jsx8(Bar, { w: "40%", h: 2 }) })
   ] });
 }
 function FormSkeleton({ width, height }) {
   const fields = Math.max(2, Math.min(5, Math.floor(height / 56)));
-  return /* @__PURE__ */ jsxs4("div", { style: { display: "flex", flexDirection: "column", gap: height * 0.04, padding: 8 }, children: [
-    Array.from({ length: fields }, (_, i) => /* @__PURE__ */ jsxs4("div", { style: { display: "flex", flexDirection: "column", gap: 4 }, children: [
-      /* @__PURE__ */ jsx5(Bar, { w: 60 + i * 17 % 30, h: 2 }),
-      /* @__PURE__ */ jsx5(Block, { w: "100%", h: 28, radius: 4 })
+  return /* @__PURE__ */ jsxs5("div", { style: { display: "flex", flexDirection: "column", gap: height * 0.04, padding: 8 }, children: [
+    Array.from({ length: fields }, (_, i) => /* @__PURE__ */ jsxs5("div", { style: { display: "flex", flexDirection: "column", gap: 4 }, children: [
+      /* @__PURE__ */ jsx8(Bar, { w: 60 + i * 17 % 30, h: 2 }),
+      /* @__PURE__ */ jsx8(Block, { w: "100%", h: 28, radius: 4 })
     ] }, i)),
-    /* @__PURE__ */ jsx5(Block, { w: Math.min(120, width * 0.35), h: 30, radius: 6, style: { marginTop: 8, alignSelf: "flex-end", background: "var(--agd-bar)" } })
+    /* @__PURE__ */ jsx8(Block, { w: Math.min(120, width * 0.35), h: 30, radius: 6, style: { marginTop: 8, alignSelf: "flex-end", background: "var(--agd-bar)" } })
   ] });
 }
 function TabsSkeleton({ width, height }) {
   const tabCount = Math.max(2, Math.min(4, Math.floor(width / 120)));
-  return /* @__PURE__ */ jsxs4("div", { style: { height: "100%", display: "flex", flexDirection: "column" }, children: [
-    /* @__PURE__ */ jsx5("div", { style: { display: "flex", gap: 2, borderBottom: "1px solid var(--agd-stroke)" }, children: Array.from({ length: tabCount }, (_, i) => /* @__PURE__ */ jsx5("div", { style: { padding: "8px 12px", borderBottom: i === 0 ? "2px solid var(--agd-bar-strong)" : "none" }, children: /* @__PURE__ */ jsx5(Bar, { w: 60, h: 3, strong: i === 0 }) }, i)) }),
-    /* @__PURE__ */ jsxs4("div", { style: { flex: 1, padding: 12, display: "flex", flexDirection: "column", gap: 6 }, children: [
-      /* @__PURE__ */ jsx5(Bar, { w: "80%", h: 2 }),
-      /* @__PURE__ */ jsx5(Bar, { w: "65%", h: 2 }),
-      /* @__PURE__ */ jsx5(Bar, { w: "75%", h: 2 })
+  return /* @__PURE__ */ jsxs5("div", { style: { height: "100%", display: "flex", flexDirection: "column" }, children: [
+    /* @__PURE__ */ jsx8("div", { style: { display: "flex", gap: 2, borderBottom: "1px solid var(--agd-stroke)" }, children: Array.from({ length: tabCount }, (_, i) => /* @__PURE__ */ jsx8("div", { style: { padding: "8px 12px", borderBottom: i === 0 ? "2px solid var(--agd-bar-strong)" : "none" }, children: /* @__PURE__ */ jsx8(Bar, { w: 60, h: 3, strong: i === 0 }) }, i)) }),
+    /* @__PURE__ */ jsxs5("div", { style: { flex: 1, padding: 12, display: "flex", flexDirection: "column", gap: 6 }, children: [
+      /* @__PURE__ */ jsx8(Bar, { w: "80%", h: 2 }),
+      /* @__PURE__ */ jsx8(Bar, { w: "65%", h: 2 }),
+      /* @__PURE__ */ jsx8(Bar, { w: "75%", h: 2 })
     ] })
   ] });
 }
 function AvatarSkeleton({ width, height }) {
   const r = Math.min(width, height) / 2;
-  return /* @__PURE__ */ jsxs4("svg", { width: "100%", height: "100%", viewBox: `0 0 ${width} ${height}`, fill: "none", children: [
-    /* @__PURE__ */ jsx5("circle", { cx: width / 2, cy: height / 2, r: r - 1, stroke: "var(--agd-stroke)", fill: "var(--agd-fill)", strokeWidth: "1.5", strokeDasharray: "3 2" }),
-    /* @__PURE__ */ jsx5("circle", { cx: width / 2, cy: height * 0.38, r: r * 0.28, stroke: "var(--agd-stroke)", fill: "var(--agd-fill)", strokeWidth: "0.8" }),
-    /* @__PURE__ */ jsx5(
+  return /* @__PURE__ */ jsxs5("svg", { width: "100%", height: "100%", viewBox: `0 0 ${width} ${height}`, fill: "none", children: [
+    /* @__PURE__ */ jsx8("circle", { cx: width / 2, cy: height / 2, r: r - 1, stroke: "var(--agd-stroke)", fill: "var(--agd-fill)", strokeWidth: "1.5", strokeDasharray: "3 2" }),
+    /* @__PURE__ */ jsx8("circle", { cx: width / 2, cy: height * 0.38, r: r * 0.28, stroke: "var(--agd-stroke)", fill: "var(--agd-fill)", strokeWidth: "0.8" }),
+    /* @__PURE__ */ jsx8(
       "path",
       {
         d: `M${width / 2 - r * 0.55} ${height * 0.78} C${width / 2 - r * 0.55} ${height * 0.55} ${width / 2 + r * 0.55} ${height * 0.55} ${width / 2 + r * 0.55} ${height * 0.78}`,
@@ -2041,7 +3385,7 @@ function AvatarSkeleton({ width, height }) {
   ] });
 }
 function BadgeSkeleton({ width, height }) {
-  return /* @__PURE__ */ jsx5("div", { style: {
+  return /* @__PURE__ */ jsx8("div", { style: {
     height: "100%",
     borderRadius: height / 2,
     border: "1px solid var(--agd-stroke)",
@@ -2049,306 +3393,306 @@ function BadgeSkeleton({ width, height }) {
     display: "flex",
     alignItems: "center",
     justifyContent: "center"
-  }, children: /* @__PURE__ */ jsx5(Bar, { w: Math.max(16, width * 0.5), h: 2, strong: true }) });
+  }, children: /* @__PURE__ */ jsx8(Bar, { w: Math.max(16, width * 0.5), h: 2, strong: true }) });
 }
 function HeaderSkeleton({ width, height }) {
-  return /* @__PURE__ */ jsxs4("div", { style: { display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: "100%", gap: height * 0.08 }, children: [
-    /* @__PURE__ */ jsx5(Bar, { w: width * 0.5, h: Math.max(5, height * 0.06), strong: true }),
-    /* @__PURE__ */ jsx5(Bar, { w: width * 0.35 })
+  return /* @__PURE__ */ jsxs5("div", { style: { display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: "100%", gap: height * 0.08 }, children: [
+    /* @__PURE__ */ jsx8(Bar, { w: width * 0.5, h: Math.max(5, height * 0.06), strong: true }),
+    /* @__PURE__ */ jsx8(Bar, { w: width * 0.35 })
   ] });
 }
 function SectionSkeleton({ width, height }) {
-  return /* @__PURE__ */ jsxs4("div", { style: { display: "flex", flexDirection: "column", height: "100%", gap: height * 0.04, padding: width * 0.04 }, children: [
-    /* @__PURE__ */ jsx5(Bar, { w: width * 0.3, h: 4, strong: true }),
-    /* @__PURE__ */ jsx5(Bar, { w: width * 0.7 }),
-    /* @__PURE__ */ jsx5(Bar, { w: width * 0.5 }),
-    /* @__PURE__ */ jsxs4("div", { style: { flex: 1, display: "flex", gap: width * 0.03, marginTop: height * 0.06 }, children: [
-      /* @__PURE__ */ jsx5(Block, { w: "33%", h: "100%", radius: 4 }),
-      /* @__PURE__ */ jsx5(Block, { w: "33%", h: "100%", radius: 4 }),
-      /* @__PURE__ */ jsx5(Block, { w: "33%", h: "100%", radius: 4 })
+  return /* @__PURE__ */ jsxs5("div", { style: { display: "flex", flexDirection: "column", height: "100%", gap: height * 0.04, padding: width * 0.04 }, children: [
+    /* @__PURE__ */ jsx8(Bar, { w: width * 0.3, h: 4, strong: true }),
+    /* @__PURE__ */ jsx8(Bar, { w: width * 0.7 }),
+    /* @__PURE__ */ jsx8(Bar, { w: width * 0.5 }),
+    /* @__PURE__ */ jsxs5("div", { style: { flex: 1, display: "flex", gap: width * 0.03, marginTop: height * 0.06 }, children: [
+      /* @__PURE__ */ jsx8(Block, { w: "33%", h: "100%", radius: 4 }),
+      /* @__PURE__ */ jsx8(Block, { w: "33%", h: "100%", radius: 4 }),
+      /* @__PURE__ */ jsx8(Block, { w: "33%", h: "100%", radius: 4 })
     ] })
   ] });
 }
 function GridSkeleton({ width, height }) {
   const cols = Math.max(2, Math.min(4, Math.floor(width / 140)));
   const rows = Math.max(1, Math.min(3, Math.floor(height / 120)));
-  return /* @__PURE__ */ jsx5("div", { style: { display: "grid", gridTemplateColumns: `repeat(${cols}, 1fr)`, gridTemplateRows: `repeat(${rows}, 1fr)`, gap: 6, height: "100%" }, children: Array.from({ length: cols * rows }, (_, i) => /* @__PURE__ */ jsx5(Block, { w: "100%", h: "100%", radius: 4 }, i)) });
+  return /* @__PURE__ */ jsx8("div", { style: { display: "grid", gridTemplateColumns: `repeat(${cols}, 1fr)`, gridTemplateRows: `repeat(${rows}, 1fr)`, gap: 6, height: "100%" }, children: Array.from({ length: cols * rows }, (_, i) => /* @__PURE__ */ jsx8(Block, { w: "100%", h: "100%", radius: 4 }, i)) });
 }
 function DropdownSkeleton({ width, height }) {
   const items = Math.max(2, Math.floor((height - 32) / 28));
-  return /* @__PURE__ */ jsxs4("div", { style: { height: "100%", display: "flex", flexDirection: "column" }, children: [
-    /* @__PURE__ */ jsx5("div", { style: { padding: "6px 8px", borderBottom: "1px solid var(--agd-stroke)" }, children: /* @__PURE__ */ jsx5(Bar, { w: width * 0.5, h: 3, strong: true }) }),
-    /* @__PURE__ */ jsx5("div", { style: { flex: 1, padding: 4, display: "flex", flexDirection: "column", gap: 2 }, children: Array.from({ length: items }, (_, i) => /* @__PURE__ */ jsx5("div", { style: { padding: "4px 6px", borderRadius: 3, background: i === 0 ? "var(--agd-fill)" : "transparent" }, children: /* @__PURE__ */ jsx5(Bar, { w: `${50 + i * 17 % 35}%`, h: 2, strong: i === 0 }) }, i)) })
+  return /* @__PURE__ */ jsxs5("div", { style: { height: "100%", display: "flex", flexDirection: "column" }, children: [
+    /* @__PURE__ */ jsx8("div", { style: { padding: "6px 8px", borderBottom: "1px solid var(--agd-stroke)" }, children: /* @__PURE__ */ jsx8(Bar, { w: width * 0.5, h: 3, strong: true }) }),
+    /* @__PURE__ */ jsx8("div", { style: { flex: 1, padding: 4, display: "flex", flexDirection: "column", gap: 2 }, children: Array.from({ length: items }, (_, i) => /* @__PURE__ */ jsx8("div", { style: { padding: "4px 6px", borderRadius: 3, background: i === 0 ? "var(--agd-fill)" : "transparent" }, children: /* @__PURE__ */ jsx8(Bar, { w: `${50 + i * 17 % 35}%`, h: 2, strong: i === 0 }) }, i)) })
   ] });
 }
 function ToggleSkeleton({ width, height }) {
   const r = Math.min(width, height) / 2;
-  return /* @__PURE__ */ jsxs4("svg", { width: "100%", height: "100%", viewBox: `0 0 ${width} ${height}`, fill: "none", children: [
-    /* @__PURE__ */ jsx5("rect", { x: "1", y: "1", width: width - 2, height: height - 2, rx: r, stroke: "var(--agd-stroke)", strokeWidth: "1" }),
-    /* @__PURE__ */ jsx5("circle", { cx: width - r, cy: height / 2, r: r * 0.7, fill: "var(--agd-bar)" })
+  return /* @__PURE__ */ jsxs5("svg", { width: "100%", height: "100%", viewBox: `0 0 ${width} ${height}`, fill: "none", children: [
+    /* @__PURE__ */ jsx8("rect", { x: "1", y: "1", width: width - 2, height: height - 2, rx: r, stroke: "var(--agd-stroke)", strokeWidth: "1" }),
+    /* @__PURE__ */ jsx8("circle", { cx: width - r, cy: height / 2, r: r * 0.7, fill: "var(--agd-bar)" })
   ] });
 }
 function SearchSkeleton({ width, height }) {
   const r = Math.min(height / 2, 20);
-  return /* @__PURE__ */ jsxs4("div", { style: { height: "100%", borderRadius: r, border: "1px dashed var(--agd-stroke)", background: "var(--agd-fill)", display: "flex", alignItems: "center", padding: `0 ${r * 0.6}px`, gap: 6 }, children: [
-    /* @__PURE__ */ jsx5(Circle, { size: Math.min(14, height * 0.4) }),
-    /* @__PURE__ */ jsx5(Bar, { w: "50%", h: 2 })
+  return /* @__PURE__ */ jsxs5("div", { style: { height: "100%", borderRadius: r, border: "1px dashed var(--agd-stroke)", background: "var(--agd-fill)", display: "flex", alignItems: "center", padding: `0 ${r * 0.6}px`, gap: 6 }, children: [
+    /* @__PURE__ */ jsx8(Circle, { size: Math.min(14, height * 0.4) }),
+    /* @__PURE__ */ jsx8(Bar, { w: "50%", h: 2 })
   ] });
 }
 function ToastSkeleton({ width, height }) {
-  return /* @__PURE__ */ jsxs4("div", { style: { height: "100%", borderRadius: 8, border: "1px dashed var(--agd-stroke)", background: "var(--agd-fill)", display: "flex", alignItems: "center", padding: "0 10px", gap: 8 }, children: [
-    /* @__PURE__ */ jsx5(Circle, { size: Math.min(20, height * 0.5) }),
-    /* @__PURE__ */ jsxs4("div", { style: { flex: 1, display: "flex", flexDirection: "column", gap: 3 }, children: [
-      /* @__PURE__ */ jsx5(Bar, { w: "60%", h: 3, strong: true }),
-      /* @__PURE__ */ jsx5(Bar, { w: "80%", h: 2 })
+  return /* @__PURE__ */ jsxs5("div", { style: { height: "100%", borderRadius: 8, border: "1px dashed var(--agd-stroke)", background: "var(--agd-fill)", display: "flex", alignItems: "center", padding: "0 10px", gap: 8 }, children: [
+    /* @__PURE__ */ jsx8(Circle, { size: Math.min(20, height * 0.5) }),
+    /* @__PURE__ */ jsxs5("div", { style: { flex: 1, display: "flex", flexDirection: "column", gap: 3 }, children: [
+      /* @__PURE__ */ jsx8(Bar, { w: "60%", h: 3, strong: true }),
+      /* @__PURE__ */ jsx8(Bar, { w: "80%", h: 2 })
     ] }),
-    /* @__PURE__ */ jsx5("div", { style: { width: 14, height: 14, border: "1px solid var(--agd-stroke)", borderRadius: 3, flexShrink: 0 } })
+    /* @__PURE__ */ jsx8("div", { style: { width: 14, height: 14, border: "1px solid var(--agd-stroke)", borderRadius: 3, flexShrink: 0 } })
   ] });
 }
 function ProgressSkeleton({ width, height }) {
-  return /* @__PURE__ */ jsxs4("svg", { width: "100%", height: "100%", viewBox: `0 0 ${width} ${height}`, fill: "none", children: [
-    /* @__PURE__ */ jsx5("rect", { x: "0", y: "0", width, height, rx: height / 2, stroke: "var(--agd-stroke)", strokeWidth: "0.8" }),
-    /* @__PURE__ */ jsx5("rect", { x: "1", y: "1", width: width * 0.65, height: height - 2, rx: (height - 2) / 2, fill: "var(--agd-bar)" })
+  return /* @__PURE__ */ jsxs5("svg", { width: "100%", height: "100%", viewBox: `0 0 ${width} ${height}`, fill: "none", children: [
+    /* @__PURE__ */ jsx8("rect", { x: "0", y: "0", width, height, rx: height / 2, stroke: "var(--agd-stroke)", strokeWidth: "0.8" }),
+    /* @__PURE__ */ jsx8("rect", { x: "1", y: "1", width: width * 0.65, height: height - 2, rx: (height - 2) / 2, fill: "var(--agd-bar)" })
   ] });
 }
 function ChartSkeleton({ width, height }) {
   const bars = Math.max(3, Math.min(7, Math.floor(width / 50)));
   const barW = width / (bars * 2);
-  return /* @__PURE__ */ jsx5("div", { style: { height: "100%", display: "flex", alignItems: "flex-end", justifyContent: "space-around", padding: "0 4px", borderBottom: "1px solid var(--agd-stroke)" }, children: Array.from({ length: bars }, (_, i) => {
+  return /* @__PURE__ */ jsx8("div", { style: { height: "100%", display: "flex", alignItems: "flex-end", justifyContent: "space-around", padding: "0 4px", borderBottom: "1px solid var(--agd-stroke)" }, children: Array.from({ length: bars }, (_, i) => {
     const h = 30 + (i * 37 + 17) % 55;
-    return /* @__PURE__ */ jsx5(Block, { w: barW, h: `${h}%`, radius: 2 }, i);
+    return /* @__PURE__ */ jsx8(Block, { w: barW, h: `${h}%`, radius: 2 }, i);
   }) });
 }
 function VideoSkeleton({ width, height }) {
   const btnR = Math.min(width, height) * 0.12;
-  return /* @__PURE__ */ jsxs4("div", { style: { height: "100%", position: "relative", display: "flex", alignItems: "center", justifyContent: "center" }, children: [
-    /* @__PURE__ */ jsx5(Block, { w: "100%", h: "100%", radius: 4 }),
-    /* @__PURE__ */ jsx5("div", { style: { position: "absolute", width: btnR * 2, height: btnR * 2, borderRadius: "50%", border: "1.5px solid var(--agd-stroke)", background: "var(--agd-fill)", display: "flex", alignItems: "center", justifyContent: "center" }, children: /* @__PURE__ */ jsx5("div", { style: { width: 0, height: 0, borderLeft: `${btnR * 0.6}px solid var(--agd-bar-strong)`, borderTop: `${btnR * 0.4}px solid transparent`, borderBottom: `${btnR * 0.4}px solid transparent`, marginLeft: btnR * 0.15 } }) })
+  return /* @__PURE__ */ jsxs5("div", { style: { height: "100%", position: "relative", display: "flex", alignItems: "center", justifyContent: "center" }, children: [
+    /* @__PURE__ */ jsx8(Block, { w: "100%", h: "100%", radius: 4 }),
+    /* @__PURE__ */ jsx8("div", { style: { position: "absolute", width: btnR * 2, height: btnR * 2, borderRadius: "50%", border: "1.5px solid var(--agd-stroke)", background: "var(--agd-fill)", display: "flex", alignItems: "center", justifyContent: "center" }, children: /* @__PURE__ */ jsx8("div", { style: { width: 0, height: 0, borderLeft: `${btnR * 0.6}px solid var(--agd-bar-strong)`, borderTop: `${btnR * 0.4}px solid transparent`, borderBottom: `${btnR * 0.4}px solid transparent`, marginLeft: btnR * 0.15 } }) })
   ] });
 }
 function TooltipSkeleton({ width, height }) {
-  return /* @__PURE__ */ jsxs4("div", { style: { height: "100%", display: "flex", flexDirection: "column", alignItems: "center" }, children: [
-    /* @__PURE__ */ jsx5("div", { style: { flex: 1, width: "100%", borderRadius: 6, border: "1px dashed var(--agd-stroke)", background: "var(--agd-fill)", display: "flex", alignItems: "center", justifyContent: "center" }, children: /* @__PURE__ */ jsx5(Bar, { w: "60%", h: 2 }) }),
-    /* @__PURE__ */ jsx5("div", { style: { width: 8, height: 8, background: "var(--agd-fill)", border: "1px dashed var(--agd-stroke)", borderTop: "none", borderLeft: "none", transform: "rotate(45deg)", marginTop: -5 } })
+  return /* @__PURE__ */ jsxs5("div", { style: { height: "100%", display: "flex", flexDirection: "column", alignItems: "center" }, children: [
+    /* @__PURE__ */ jsx8("div", { style: { flex: 1, width: "100%", borderRadius: 6, border: "1px dashed var(--agd-stroke)", background: "var(--agd-fill)", display: "flex", alignItems: "center", justifyContent: "center" }, children: /* @__PURE__ */ jsx8(Bar, { w: "60%", h: 2 }) }),
+    /* @__PURE__ */ jsx8("div", { style: { width: 8, height: 8, background: "var(--agd-fill)", border: "1px dashed var(--agd-stroke)", borderTop: "none", borderLeft: "none", transform: "rotate(45deg)", marginTop: -5 } })
   ] });
 }
 function BreadcrumbSkeleton({ width, height }) {
   const items = Math.max(2, Math.min(4, Math.floor(width / 80)));
-  return /* @__PURE__ */ jsx5("div", { style: { display: "flex", alignItems: "center", height: "100%", gap: 4 }, children: Array.from({ length: items }, (_, i) => /* @__PURE__ */ jsxs4("div", { style: { display: "flex", alignItems: "center", gap: 4 }, children: [
-    i > 0 && /* @__PURE__ */ jsx5("span", { style: { color: "var(--agd-stroke)", fontSize: 10 }, children: "/" }),
-    /* @__PURE__ */ jsx5(Bar, { w: 40 + i * 13 % 20, h: 2, strong: i === items - 1 })
+  return /* @__PURE__ */ jsx8("div", { style: { display: "flex", alignItems: "center", height: "100%", gap: 4 }, children: Array.from({ length: items }, (_, i) => /* @__PURE__ */ jsxs5("div", { style: { display: "flex", alignItems: "center", gap: 4 }, children: [
+    i > 0 && /* @__PURE__ */ jsx8("span", { style: { color: "var(--agd-stroke)", fontSize: 10 }, children: "/" }),
+    /* @__PURE__ */ jsx8(Bar, { w: 40 + i * 13 % 20, h: 2, strong: i === items - 1 })
   ] }, i)) });
 }
 function PaginationSkeleton({ width, height }) {
   const count = Math.max(3, Math.min(5, Math.floor(width / 40)));
   const sz = Math.min(28, height * 0.8);
-  return /* @__PURE__ */ jsx5("div", { style: { display: "flex", alignItems: "center", justifyContent: "center", height: "100%", gap: 4 }, children: Array.from({ length: count }, (_, i) => /* @__PURE__ */ jsx5(Block, { w: sz, h: sz, radius: 4, style: i === 1 ? { background: "var(--agd-bar)" } : void 0 }, i)) });
+  return /* @__PURE__ */ jsx8("div", { style: { display: "flex", alignItems: "center", justifyContent: "center", height: "100%", gap: 4 }, children: Array.from({ length: count }, (_, i) => /* @__PURE__ */ jsx8(Block, { w: sz, h: sz, radius: 4, style: i === 1 ? { background: "var(--agd-bar)" } : void 0 }, i)) });
 }
 function DividerSkeleton({ width }) {
-  return /* @__PURE__ */ jsx5("div", { style: { display: "flex", alignItems: "center", height: "100%" }, children: /* @__PURE__ */ jsx5("div", { style: { width: "100%", height: 1, background: "var(--agd-stroke)" } }) });
+  return /* @__PURE__ */ jsx8("div", { style: { display: "flex", alignItems: "center", height: "100%" }, children: /* @__PURE__ */ jsx8("div", { style: { width: "100%", height: 1, background: "var(--agd-stroke)" } }) });
 }
 function AccordionSkeleton({ width, height }) {
   const items = Math.max(2, Math.min(4, Math.floor(height / 40)));
-  return /* @__PURE__ */ jsx5("div", { style: { display: "flex", flexDirection: "column", height: "100%" }, children: Array.from({ length: items }, (_, i) => /* @__PURE__ */ jsxs4("div", { style: { borderBottom: "1px solid var(--agd-stroke)", padding: "8px 6px", display: "flex", alignItems: "center", justifyContent: "space-between", flex: i === 0 ? 2 : 1 }, children: [
-    /* @__PURE__ */ jsx5(Bar, { w: `${40 + i * 17 % 25}%`, h: 3, strong: true }),
-    /* @__PURE__ */ jsx5("span", { style: { fontSize: 8, color: "var(--agd-stroke)" }, children: i === 0 ? "\u25BC" : "\u25B6" })
+  return /* @__PURE__ */ jsx8("div", { style: { display: "flex", flexDirection: "column", height: "100%" }, children: Array.from({ length: items }, (_, i) => /* @__PURE__ */ jsxs5("div", { style: { borderBottom: "1px solid var(--agd-stroke)", padding: "8px 6px", display: "flex", alignItems: "center", justifyContent: "space-between", flex: i === 0 ? 2 : 1 }, children: [
+    /* @__PURE__ */ jsx8(Bar, { w: `${40 + i * 17 % 25}%`, h: 3, strong: true }),
+    /* @__PURE__ */ jsx8("span", { style: { fontSize: 8, color: "var(--agd-stroke)" }, children: i === 0 ? "\u25BC" : "\u25B6" })
   ] }, i)) });
 }
 function CarouselSkeleton({ width, height }) {
-  return /* @__PURE__ */ jsxs4("div", { style: { height: "100%", display: "flex", flexDirection: "column", gap: 6 }, children: [
-    /* @__PURE__ */ jsxs4("div", { style: { flex: 1, display: "flex", gap: 6, alignItems: "center" }, children: [
-      /* @__PURE__ */ jsx5("span", { style: { fontSize: 12, color: "var(--agd-stroke)" }, children: "\u2039" }),
-      /* @__PURE__ */ jsx5(Block, { w: "100%", h: "100%", radius: 4 }),
-      /* @__PURE__ */ jsx5("span", { style: { fontSize: 12, color: "var(--agd-stroke)" }, children: "\u203A" })
+  return /* @__PURE__ */ jsxs5("div", { style: { height: "100%", display: "flex", flexDirection: "column", gap: 6 }, children: [
+    /* @__PURE__ */ jsxs5("div", { style: { flex: 1, display: "flex", gap: 6, alignItems: "center" }, children: [
+      /* @__PURE__ */ jsx8("span", { style: { fontSize: 12, color: "var(--agd-stroke)" }, children: "\u2039" }),
+      /* @__PURE__ */ jsx8(Block, { w: "100%", h: "100%", radius: 4 }),
+      /* @__PURE__ */ jsx8("span", { style: { fontSize: 12, color: "var(--agd-stroke)" }, children: "\u203A" })
     ] }),
-    /* @__PURE__ */ jsxs4("div", { style: { display: "flex", justifyContent: "center", gap: 4 }, children: [
-      /* @__PURE__ */ jsx5(Circle, { size: 5 }),
-      /* @__PURE__ */ jsx5(Circle, { size: 5 }),
-      /* @__PURE__ */ jsx5(Circle, { size: 5 })
+    /* @__PURE__ */ jsxs5("div", { style: { display: "flex", justifyContent: "center", gap: 4 }, children: [
+      /* @__PURE__ */ jsx8(Circle, { size: 5 }),
+      /* @__PURE__ */ jsx8(Circle, { size: 5 }),
+      /* @__PURE__ */ jsx8(Circle, { size: 5 })
     ] })
   ] });
 }
 function PricingSkeleton({ width, height }) {
-  return /* @__PURE__ */ jsxs4("div", { style: { height: "100%", display: "flex", flexDirection: "column", alignItems: "center", padding: 10, gap: height * 0.04 }, children: [
-    /* @__PURE__ */ jsx5(Bar, { w: width * 0.4, h: 3, strong: true }),
-    /* @__PURE__ */ jsx5(Bar, { w: width * 0.3, h: 6, strong: true }),
-    /* @__PURE__ */ jsx5("div", { style: { flex: 1, display: "flex", flexDirection: "column", gap: 4, width: "100%", padding: "8px 0" }, children: Array.from({ length: 4 }, (_, i) => /* @__PURE__ */ jsxs4("div", { style: { display: "flex", alignItems: "center", gap: 4 }, children: [
-      /* @__PURE__ */ jsx5(Circle, { size: 5 }),
-      /* @__PURE__ */ jsx5(Bar, { w: `${50 + i * 17 % 35}%`, h: 2 })
+  return /* @__PURE__ */ jsxs5("div", { style: { height: "100%", display: "flex", flexDirection: "column", alignItems: "center", padding: 10, gap: height * 0.04 }, children: [
+    /* @__PURE__ */ jsx8(Bar, { w: width * 0.4, h: 3, strong: true }),
+    /* @__PURE__ */ jsx8(Bar, { w: width * 0.3, h: 6, strong: true }),
+    /* @__PURE__ */ jsx8("div", { style: { flex: 1, display: "flex", flexDirection: "column", gap: 4, width: "100%", padding: "8px 0" }, children: Array.from({ length: 4 }, (_, i) => /* @__PURE__ */ jsxs5("div", { style: { display: "flex", alignItems: "center", gap: 4 }, children: [
+      /* @__PURE__ */ jsx8(Circle, { size: 5 }),
+      /* @__PURE__ */ jsx8(Bar, { w: `${50 + i * 17 % 35}%`, h: 2 })
     ] }, i)) }),
-    /* @__PURE__ */ jsx5(Block, { w: width * 0.7, h: Math.min(32, height * 0.1), radius: 6, style: { background: "var(--agd-bar)" } })
+    /* @__PURE__ */ jsx8(Block, { w: width * 0.7, h: Math.min(32, height * 0.1), radius: 6, style: { background: "var(--agd-bar)" } })
   ] });
 }
 function TestimonialSkeleton({ width, height }) {
-  return /* @__PURE__ */ jsxs4("div", { style: { height: "100%", display: "flex", flexDirection: "column", padding: 10, gap: 8 }, children: [
-    /* @__PURE__ */ jsx5("span", { style: { fontSize: 18, lineHeight: 1, color: "var(--agd-stroke)", fontFamily: "serif" }, children: "\u201C" }),
-    /* @__PURE__ */ jsxs4("div", { style: { flex: 1, display: "flex", flexDirection: "column", gap: 4 }, children: [
-      /* @__PURE__ */ jsx5(Bar, { w: "90%", h: 2 }),
-      /* @__PURE__ */ jsx5(Bar, { w: "75%", h: 2 }),
-      /* @__PURE__ */ jsx5(Bar, { w: "60%", h: 2 })
+  return /* @__PURE__ */ jsxs5("div", { style: { height: "100%", display: "flex", flexDirection: "column", padding: 10, gap: 8 }, children: [
+    /* @__PURE__ */ jsx8("span", { style: { fontSize: 18, lineHeight: 1, color: "var(--agd-stroke)", fontFamily: "serif" }, children: "\u201C" }),
+    /* @__PURE__ */ jsxs5("div", { style: { flex: 1, display: "flex", flexDirection: "column", gap: 4 }, children: [
+      /* @__PURE__ */ jsx8(Bar, { w: "90%", h: 2 }),
+      /* @__PURE__ */ jsx8(Bar, { w: "75%", h: 2 }),
+      /* @__PURE__ */ jsx8(Bar, { w: "60%", h: 2 })
     ] }),
-    /* @__PURE__ */ jsxs4("div", { style: { display: "flex", alignItems: "center", gap: 6 }, children: [
-      /* @__PURE__ */ jsx5(Circle, { size: 20 }),
-      /* @__PURE__ */ jsxs4("div", { style: { display: "flex", flexDirection: "column", gap: 2 }, children: [
-        /* @__PURE__ */ jsx5(Bar, { w: 60, h: 3, strong: true }),
-        /* @__PURE__ */ jsx5(Bar, { w: 40, h: 2 })
+    /* @__PURE__ */ jsxs5("div", { style: { display: "flex", alignItems: "center", gap: 6 }, children: [
+      /* @__PURE__ */ jsx8(Circle, { size: 20 }),
+      /* @__PURE__ */ jsxs5("div", { style: { display: "flex", flexDirection: "column", gap: 2 }, children: [
+        /* @__PURE__ */ jsx8(Bar, { w: 60, h: 3, strong: true }),
+        /* @__PURE__ */ jsx8(Bar, { w: 40, h: 2 })
       ] })
     ] })
   ] });
 }
 function CtaSkeleton({ width, height }) {
-  return /* @__PURE__ */ jsxs4("div", { style: { display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: "100%", gap: height * 0.08 }, children: [
-    /* @__PURE__ */ jsx5(Bar, { w: width * 0.5, h: Math.max(4, height * 0.05), strong: true }),
-    /* @__PURE__ */ jsx5(Bar, { w: width * 0.35 }),
-    /* @__PURE__ */ jsx5(Block, { w: Math.min(140, width * 0.25), h: Math.min(32, height * 0.15), radius: 6, style: { marginTop: height * 0.04, background: "var(--agd-bar)" } })
+  return /* @__PURE__ */ jsxs5("div", { style: { display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: "100%", gap: height * 0.08 }, children: [
+    /* @__PURE__ */ jsx8(Bar, { w: width * 0.5, h: Math.max(4, height * 0.05), strong: true }),
+    /* @__PURE__ */ jsx8(Bar, { w: width * 0.35 }),
+    /* @__PURE__ */ jsx8(Block, { w: Math.min(140, width * 0.25), h: Math.min(32, height * 0.15), radius: 6, style: { marginTop: height * 0.04, background: "var(--agd-bar)" } })
   ] });
 }
 function AlertSkeleton({ width, height }) {
-  return /* @__PURE__ */ jsxs4("div", { style: { height: "100%", borderRadius: 6, border: "1px dashed var(--agd-stroke)", background: "var(--agd-fill)", display: "flex", alignItems: "center", padding: "0 10px", gap: 8 }, children: [
-    /* @__PURE__ */ jsx5("div", { style: { width: 16, height: 16, borderRadius: "50%", border: "1.5px solid var(--agd-bar-strong)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }, children: /* @__PURE__ */ jsx5("div", { style: { width: 2, height: 6, background: "var(--agd-bar-strong)", borderRadius: 1 } }) }),
-    /* @__PURE__ */ jsxs4("div", { style: { flex: 1, display: "flex", flexDirection: "column", gap: 3 }, children: [
-      /* @__PURE__ */ jsx5(Bar, { w: "40%", h: 3, strong: true }),
-      /* @__PURE__ */ jsx5(Bar, { w: "70%", h: 2 })
+  return /* @__PURE__ */ jsxs5("div", { style: { height: "100%", borderRadius: 6, border: "1px dashed var(--agd-stroke)", background: "var(--agd-fill)", display: "flex", alignItems: "center", padding: "0 10px", gap: 8 }, children: [
+    /* @__PURE__ */ jsx8("div", { style: { width: 16, height: 16, borderRadius: "50%", border: "1.5px solid var(--agd-bar-strong)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }, children: /* @__PURE__ */ jsx8("div", { style: { width: 2, height: 6, background: "var(--agd-bar-strong)", borderRadius: 1 } }) }),
+    /* @__PURE__ */ jsxs5("div", { style: { flex: 1, display: "flex", flexDirection: "column", gap: 3 }, children: [
+      /* @__PURE__ */ jsx8(Bar, { w: "40%", h: 3, strong: true }),
+      /* @__PURE__ */ jsx8(Bar, { w: "70%", h: 2 })
     ] })
   ] });
 }
 function BannerSkeleton({ width, height }) {
-  return /* @__PURE__ */ jsxs4("div", { style: { height: "100%", background: "var(--agd-fill)", display: "flex", alignItems: "center", justifyContent: "center", gap: 8, padding: "0 12px" }, children: [
-    /* @__PURE__ */ jsx5(Bar, { w: width * 0.4, h: 3, strong: true }),
-    /* @__PURE__ */ jsx5(Block, { w: 60, h: Math.min(24, height * 0.6), radius: 4 })
+  return /* @__PURE__ */ jsxs5("div", { style: { height: "100%", background: "var(--agd-fill)", display: "flex", alignItems: "center", justifyContent: "center", gap: 8, padding: "0 12px" }, children: [
+    /* @__PURE__ */ jsx8(Bar, { w: width * 0.4, h: 3, strong: true }),
+    /* @__PURE__ */ jsx8(Block, { w: 60, h: Math.min(24, height * 0.6), radius: 4 })
   ] });
 }
 function StatSkeleton({ width, height }) {
-  return /* @__PURE__ */ jsxs4("div", { style: { height: "100%", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: height * 0.06 }, children: [
-    /* @__PURE__ */ jsx5(Bar, { w: width * 0.5, h: 2 }),
-    /* @__PURE__ */ jsx5(Bar, { w: width * 0.4, h: Math.max(8, height * 0.18), strong: true }),
-    /* @__PURE__ */ jsx5(Bar, { w: width * 0.3, h: 2 })
+  return /* @__PURE__ */ jsxs5("div", { style: { height: "100%", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: height * 0.06 }, children: [
+    /* @__PURE__ */ jsx8(Bar, { w: width * 0.5, h: 2 }),
+    /* @__PURE__ */ jsx8(Bar, { w: width * 0.4, h: Math.max(8, height * 0.18), strong: true }),
+    /* @__PURE__ */ jsx8(Bar, { w: width * 0.3, h: 2 })
   ] });
 }
 function StepperSkeleton({ width, height }) {
   const steps = Math.max(3, Math.min(5, Math.floor(width / 100)));
   const dotR = Math.min(12, height * 0.35);
-  return /* @__PURE__ */ jsx5("div", { style: { display: "flex", alignItems: "center", justifyContent: "space-between", height: "100%", padding: "0 8px" }, children: Array.from({ length: steps }, (_, i) => /* @__PURE__ */ jsxs4("div", { style: { display: "flex", alignItems: "center", gap: 0, flex: 1 }, children: [
-    /* @__PURE__ */ jsx5("div", { style: { width: dotR, height: dotR, borderRadius: "50%", border: "1.5px solid var(--agd-stroke)", background: i === 0 ? "var(--agd-bar)" : "transparent", flexShrink: 0 } }),
-    i < steps - 1 && /* @__PURE__ */ jsx5("div", { style: { flex: 1, height: 1, background: "var(--agd-stroke)", margin: "0 4px" } })
+  return /* @__PURE__ */ jsx8("div", { style: { display: "flex", alignItems: "center", justifyContent: "space-between", height: "100%", padding: "0 8px" }, children: Array.from({ length: steps }, (_, i) => /* @__PURE__ */ jsxs5("div", { style: { display: "flex", alignItems: "center", gap: 0, flex: 1 }, children: [
+    /* @__PURE__ */ jsx8("div", { style: { width: dotR, height: dotR, borderRadius: "50%", border: "1.5px solid var(--agd-stroke)", background: i === 0 ? "var(--agd-bar)" : "transparent", flexShrink: 0 } }),
+    i < steps - 1 && /* @__PURE__ */ jsx8("div", { style: { flex: 1, height: 1, background: "var(--agd-stroke)", margin: "0 4px" } })
   ] }, i)) });
 }
 function TagSkeleton({ width, height }) {
-  return /* @__PURE__ */ jsxs4("div", { style: { height: "100%", borderRadius: 4, border: "1px solid var(--agd-stroke)", background: "var(--agd-fill)", display: "flex", alignItems: "center", justifyContent: "center", gap: 4, padding: "0 6px" }, children: [
-    /* @__PURE__ */ jsx5(Bar, { w: Math.max(16, width * 0.5), h: 2, strong: true }),
-    /* @__PURE__ */ jsx5("div", { style: { width: 8, height: 8, borderRadius: "50%", border: "1px solid var(--agd-stroke)", flexShrink: 0 } })
+  return /* @__PURE__ */ jsxs5("div", { style: { height: "100%", borderRadius: 4, border: "1px solid var(--agd-stroke)", background: "var(--agd-fill)", display: "flex", alignItems: "center", justifyContent: "center", gap: 4, padding: "0 6px" }, children: [
+    /* @__PURE__ */ jsx8(Bar, { w: Math.max(16, width * 0.5), h: 2, strong: true }),
+    /* @__PURE__ */ jsx8("div", { style: { width: 8, height: 8, borderRadius: "50%", border: "1px solid var(--agd-stroke)", flexShrink: 0 } })
   ] });
 }
 function RatingSkeleton({ width, height }) {
   const stars = 5;
   const sz = Math.min(height * 0.7, width / (stars * 1.5));
-  return /* @__PURE__ */ jsx5("div", { style: { display: "flex", alignItems: "center", justifyContent: "center", height: "100%", gap: sz * 0.2 }, children: Array.from({ length: stars }, (_, i) => /* @__PURE__ */ jsx5("svg", { width: sz, height: sz, viewBox: "0 0 16 16", fill: "none", children: /* @__PURE__ */ jsx5("path", { d: "M8 1.5l2 4 4.5.7-3.25 3.1.75 4.5L8 11.4l-4 2.4.75-4.5L1.5 6.2 6 5.5z", stroke: "var(--agd-stroke)", strokeWidth: "0.8", fill: i < 3 ? "var(--agd-bar)" : "none" }) }, i)) });
+  return /* @__PURE__ */ jsx8("div", { style: { display: "flex", alignItems: "center", justifyContent: "center", height: "100%", gap: sz * 0.2 }, children: Array.from({ length: stars }, (_, i) => /* @__PURE__ */ jsx8("svg", { width: sz, height: sz, viewBox: "0 0 16 16", fill: "none", children: /* @__PURE__ */ jsx8("path", { d: "M8 1.5l2 4 4.5.7-3.25 3.1.75 4.5L8 11.4l-4 2.4.75-4.5L1.5 6.2 6 5.5z", stroke: "var(--agd-stroke)", strokeWidth: "0.8", fill: i < 3 ? "var(--agd-bar)" : "none" }) }, i)) });
 }
 function MapSkeleton({ width, height }) {
-  return /* @__PURE__ */ jsxs4("div", { style: { height: "100%", position: "relative", borderRadius: 4, border: "1px dashed var(--agd-stroke)", background: "var(--agd-fill)", overflow: "hidden" }, children: [
-    /* @__PURE__ */ jsxs4("svg", { width: "100%", height: "100%", viewBox: `0 0 ${width} ${height}`, fill: "none", style: { position: "absolute", inset: 0 }, children: [
-      /* @__PURE__ */ jsx5("line", { x1: 0, y1: height * 0.3, x2: width, y2: height * 0.7, stroke: "var(--agd-stroke)", strokeWidth: "0.5", opacity: ".2" }),
-      /* @__PURE__ */ jsx5("line", { x1: 0, y1: height * 0.6, x2: width, y2: height * 0.2, stroke: "var(--agd-stroke)", strokeWidth: "0.5", opacity: ".15" }),
-      /* @__PURE__ */ jsx5("line", { x1: width * 0.4, y1: 0, x2: width * 0.6, y2: height, stroke: "var(--agd-stroke)", strokeWidth: "0.5", opacity: ".15" })
+  return /* @__PURE__ */ jsxs5("div", { style: { height: "100%", position: "relative", borderRadius: 4, border: "1px dashed var(--agd-stroke)", background: "var(--agd-fill)", overflow: "hidden" }, children: [
+    /* @__PURE__ */ jsxs5("svg", { width: "100%", height: "100%", viewBox: `0 0 ${width} ${height}`, fill: "none", style: { position: "absolute", inset: 0 }, children: [
+      /* @__PURE__ */ jsx8("line", { x1: 0, y1: height * 0.3, x2: width, y2: height * 0.7, stroke: "var(--agd-stroke)", strokeWidth: "0.5", opacity: ".2" }),
+      /* @__PURE__ */ jsx8("line", { x1: 0, y1: height * 0.6, x2: width, y2: height * 0.2, stroke: "var(--agd-stroke)", strokeWidth: "0.5", opacity: ".15" }),
+      /* @__PURE__ */ jsx8("line", { x1: width * 0.4, y1: 0, x2: width * 0.6, y2: height, stroke: "var(--agd-stroke)", strokeWidth: "0.5", opacity: ".15" })
     ] }),
-    /* @__PURE__ */ jsx5("div", { style: { position: "absolute", left: "50%", top: "40%", transform: "translate(-50%, -100%)" }, children: /* @__PURE__ */ jsxs4("svg", { width: "16", height: "22", viewBox: "0 0 16 22", fill: "none", children: [
-      /* @__PURE__ */ jsx5("path", { d: "M8 0C3.6 0 0 3.6 0 8c0 6 8 14 8 14s8-8 8-14c0-4.4-3.6-8-8-8z", fill: "var(--agd-bar)", opacity: ".4" }),
-      /* @__PURE__ */ jsx5("circle", { cx: "8", cy: "8", r: "3", fill: "var(--agd-fill)" })
+    /* @__PURE__ */ jsx8("div", { style: { position: "absolute", left: "50%", top: "40%", transform: "translate(-50%, -100%)" }, children: /* @__PURE__ */ jsxs5("svg", { width: "16", height: "22", viewBox: "0 0 16 22", fill: "none", children: [
+      /* @__PURE__ */ jsx8("path", { d: "M8 0C3.6 0 0 3.6 0 8c0 6 8 14 8 14s8-8 8-14c0-4.4-3.6-8-8-8z", fill: "var(--agd-bar)", opacity: ".4" }),
+      /* @__PURE__ */ jsx8("circle", { cx: "8", cy: "8", r: "3", fill: "var(--agd-fill)" })
     ] }) })
   ] });
 }
 function TimelineSkeleton({ width, height }) {
   const items = Math.max(3, Math.min(5, Math.floor(height / 60)));
-  return /* @__PURE__ */ jsxs4("div", { style: { display: "flex", height: "100%", padding: "8px 0" }, children: [
-    /* @__PURE__ */ jsx5("div", { style: { width: 16, display: "flex", flexDirection: "column", alignItems: "center" }, children: Array.from({ length: items }, (_, i) => /* @__PURE__ */ jsxs4("div", { style: { display: "flex", flexDirection: "column", alignItems: "center", flex: 1 }, children: [
-      /* @__PURE__ */ jsx5(Circle, { size: 8 }),
-      i < items - 1 && /* @__PURE__ */ jsx5("div", { style: { flex: 1, width: 1, background: "var(--agd-stroke)" } })
+  return /* @__PURE__ */ jsxs5("div", { style: { display: "flex", height: "100%", padding: "8px 0" }, children: [
+    /* @__PURE__ */ jsx8("div", { style: { width: 16, display: "flex", flexDirection: "column", alignItems: "center" }, children: Array.from({ length: items }, (_, i) => /* @__PURE__ */ jsxs5("div", { style: { display: "flex", flexDirection: "column", alignItems: "center", flex: 1 }, children: [
+      /* @__PURE__ */ jsx8(Circle, { size: 8 }),
+      i < items - 1 && /* @__PURE__ */ jsx8("div", { style: { flex: 1, width: 1, background: "var(--agd-stroke)" } })
     ] }, i)) }),
-    /* @__PURE__ */ jsx5("div", { style: { flex: 1, display: "flex", flexDirection: "column", justifyContent: "space-around", paddingLeft: 8 }, children: Array.from({ length: items }, (_, i) => /* @__PURE__ */ jsxs4("div", { style: { display: "flex", flexDirection: "column", gap: 3 }, children: [
-      /* @__PURE__ */ jsx5(Bar, { w: `${35 + i * 13 % 25}%`, h: 3, strong: true }),
-      /* @__PURE__ */ jsx5(Bar, { w: `${50 + i * 17 % 30}%`, h: 2 })
+    /* @__PURE__ */ jsx8("div", { style: { flex: 1, display: "flex", flexDirection: "column", justifyContent: "space-around", paddingLeft: 8 }, children: Array.from({ length: items }, (_, i) => /* @__PURE__ */ jsxs5("div", { style: { display: "flex", flexDirection: "column", gap: 3 }, children: [
+      /* @__PURE__ */ jsx8(Bar, { w: `${35 + i * 13 % 25}%`, h: 3, strong: true }),
+      /* @__PURE__ */ jsx8(Bar, { w: `${50 + i * 17 % 30}%`, h: 2 })
     ] }, i)) })
   ] });
 }
 function FileUploadSkeleton({ width, height }) {
-  return /* @__PURE__ */ jsxs4("div", { style: { height: "100%", borderRadius: 8, border: "2px dashed var(--agd-stroke)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: height * 0.06 }, children: [
-    /* @__PURE__ */ jsxs4("svg", { width: "24", height: "24", viewBox: "0 0 24 24", fill: "none", children: [
-      /* @__PURE__ */ jsx5("path", { d: "M12 16V4m0 0l-4 4m4-4l4 4", stroke: "var(--agd-stroke)", strokeWidth: "1.5" }),
-      /* @__PURE__ */ jsx5("path", { d: "M4 17v2a1 1 0 001 1h14a1 1 0 001-1v-2", stroke: "var(--agd-stroke)", strokeWidth: "1.5" })
+  return /* @__PURE__ */ jsxs5("div", { style: { height: "100%", borderRadius: 8, border: "2px dashed var(--agd-stroke)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: height * 0.06 }, children: [
+    /* @__PURE__ */ jsxs5("svg", { width: "24", height: "24", viewBox: "0 0 24 24", fill: "none", children: [
+      /* @__PURE__ */ jsx8("path", { d: "M12 16V4m0 0l-4 4m4-4l4 4", stroke: "var(--agd-stroke)", strokeWidth: "1.5" }),
+      /* @__PURE__ */ jsx8("path", { d: "M4 17v2a1 1 0 001 1h14a1 1 0 001-1v-2", stroke: "var(--agd-stroke)", strokeWidth: "1.5" })
     ] }),
-    /* @__PURE__ */ jsx5(Bar, { w: width * 0.4, h: 2 }),
-    /* @__PURE__ */ jsx5(Bar, { w: width * 0.25, h: 2 })
+    /* @__PURE__ */ jsx8(Bar, { w: width * 0.4, h: 2 }),
+    /* @__PURE__ */ jsx8(Bar, { w: width * 0.25, h: 2 })
   ] });
 }
 function CodeBlockSkeleton({ width, height }) {
   const lines = Math.max(3, Math.min(8, Math.floor(height / 20)));
-  return /* @__PURE__ */ jsxs4("div", { style: { height: "100%", borderRadius: 6, background: "var(--agd-fill)", border: "1px solid var(--agd-stroke)", padding: 8, display: "flex", flexDirection: "column", gap: 4 }, children: [
-    /* @__PURE__ */ jsxs4("div", { style: { display: "flex", gap: 3, marginBottom: 4 }, children: [
-      /* @__PURE__ */ jsx5(Circle, { size: 6 }),
-      /* @__PURE__ */ jsx5(Circle, { size: 6 }),
-      /* @__PURE__ */ jsx5(Circle, { size: 6 })
+  return /* @__PURE__ */ jsxs5("div", { style: { height: "100%", borderRadius: 6, background: "var(--agd-fill)", border: "1px solid var(--agd-stroke)", padding: 8, display: "flex", flexDirection: "column", gap: 4 }, children: [
+    /* @__PURE__ */ jsxs5("div", { style: { display: "flex", gap: 3, marginBottom: 4 }, children: [
+      /* @__PURE__ */ jsx8(Circle, { size: 6 }),
+      /* @__PURE__ */ jsx8(Circle, { size: 6 }),
+      /* @__PURE__ */ jsx8(Circle, { size: 6 })
     ] }),
-    Array.from({ length: lines }, (_, i) => /* @__PURE__ */ jsx5("div", { style: { display: "flex", gap: 6, paddingLeft: i > 0 && i < lines - 1 ? 12 : 0 }, children: /* @__PURE__ */ jsx5(Bar, { w: `${25 + i * 23 % 50}%`, h: 2, strong: i === 0 }) }, i))
+    Array.from({ length: lines }, (_, i) => /* @__PURE__ */ jsx8("div", { style: { display: "flex", gap: 6, paddingLeft: i > 0 && i < lines - 1 ? 12 : 0 }, children: /* @__PURE__ */ jsx8(Bar, { w: `${25 + i * 23 % 50}%`, h: 2, strong: i === 0 }) }, i))
   ] });
 }
 function CalendarSkeleton({ width, height }) {
   const cols = 7;
   const rows = 5;
   const cellSz = Math.min((width - 16) / cols, (height - 40) / (rows + 1));
-  return /* @__PURE__ */ jsxs4("div", { style: { height: "100%", display: "flex", flexDirection: "column" }, children: [
-    /* @__PURE__ */ jsxs4("div", { style: { display: "flex", alignItems: "center", justifyContent: "space-between", padding: "6px 8px" }, children: [
-      /* @__PURE__ */ jsx5("span", { style: { fontSize: 8, color: "var(--agd-stroke)" }, children: "\u2039" }),
-      /* @__PURE__ */ jsx5(Bar, { w: width * 0.3, h: 3, strong: true }),
-      /* @__PURE__ */ jsx5("span", { style: { fontSize: 8, color: "var(--agd-stroke)" }, children: "\u203A" })
+  return /* @__PURE__ */ jsxs5("div", { style: { height: "100%", display: "flex", flexDirection: "column" }, children: [
+    /* @__PURE__ */ jsxs5("div", { style: { display: "flex", alignItems: "center", justifyContent: "space-between", padding: "6px 8px" }, children: [
+      /* @__PURE__ */ jsx8("span", { style: { fontSize: 8, color: "var(--agd-stroke)" }, children: "\u2039" }),
+      /* @__PURE__ */ jsx8(Bar, { w: width * 0.3, h: 3, strong: true }),
+      /* @__PURE__ */ jsx8("span", { style: { fontSize: 8, color: "var(--agd-stroke)" }, children: "\u203A" })
     ] }),
-    /* @__PURE__ */ jsxs4("div", { style: { display: "grid", gridTemplateColumns: `repeat(${cols}, 1fr)`, gap: 2, padding: "0 4px", flex: 1 }, children: [
-      Array.from({ length: cols }, (_, i) => /* @__PURE__ */ jsx5("div", { style: { display: "flex", alignItems: "center", justifyContent: "center", height: cellSz * 0.6 }, children: /* @__PURE__ */ jsx5(Bar, { w: cellSz * 0.5, h: 2 }) }, `h${i}`)),
-      Array.from({ length: cols * rows }, (_, i) => /* @__PURE__ */ jsx5("div", { style: { display: "flex", alignItems: "center", justifyContent: "center", height: cellSz }, children: /* @__PURE__ */ jsx5("div", { style: { width: cellSz * 0.6, height: cellSz * 0.6, borderRadius: "50%", background: i === 12 ? "var(--agd-bar)" : "transparent", display: "flex", alignItems: "center", justifyContent: "center" }, children: /* @__PURE__ */ jsx5("div", { style: { width: 2, height: 2, borderRadius: 1, background: "var(--agd-bar-strong)", opacity: i === 12 ? 1 : 0.3 } }) }) }, i))
+    /* @__PURE__ */ jsxs5("div", { style: { display: "grid", gridTemplateColumns: `repeat(${cols}, 1fr)`, gap: 2, padding: "0 4px", flex: 1 }, children: [
+      Array.from({ length: cols }, (_, i) => /* @__PURE__ */ jsx8("div", { style: { display: "flex", alignItems: "center", justifyContent: "center", height: cellSz * 0.6 }, children: /* @__PURE__ */ jsx8(Bar, { w: cellSz * 0.5, h: 2 }) }, `h${i}`)),
+      Array.from({ length: cols * rows }, (_, i) => /* @__PURE__ */ jsx8("div", { style: { display: "flex", alignItems: "center", justifyContent: "center", height: cellSz }, children: /* @__PURE__ */ jsx8("div", { style: { width: cellSz * 0.6, height: cellSz * 0.6, borderRadius: "50%", background: i === 12 ? "var(--agd-bar)" : "transparent", display: "flex", alignItems: "center", justifyContent: "center" }, children: /* @__PURE__ */ jsx8("div", { style: { width: 2, height: 2, borderRadius: 1, background: "var(--agd-bar-strong)", opacity: i === 12 ? 1 : 0.3 } }) }) }, i))
     ] })
   ] });
 }
 function NotificationSkeleton({ width, height }) {
-  return /* @__PURE__ */ jsxs4("div", { style: { height: "100%", borderRadius: 8, border: "1px dashed var(--agd-stroke)", background: "var(--agd-fill)", display: "flex", alignItems: "center", padding: "0 10px", gap: 8 }, children: [
-    /* @__PURE__ */ jsx5(Circle, { size: Math.min(32, height * 0.55) }),
-    /* @__PURE__ */ jsxs4("div", { style: { flex: 1, display: "flex", flexDirection: "column", gap: 3 }, children: [
-      /* @__PURE__ */ jsx5(Bar, { w: "50%", h: 3, strong: true }),
-      /* @__PURE__ */ jsx5(Bar, { w: "75%", h: 2 })
+  return /* @__PURE__ */ jsxs5("div", { style: { height: "100%", borderRadius: 8, border: "1px dashed var(--agd-stroke)", background: "var(--agd-fill)", display: "flex", alignItems: "center", padding: "0 10px", gap: 8 }, children: [
+    /* @__PURE__ */ jsx8(Circle, { size: Math.min(32, height * 0.55) }),
+    /* @__PURE__ */ jsxs5("div", { style: { flex: 1, display: "flex", flexDirection: "column", gap: 3 }, children: [
+      /* @__PURE__ */ jsx8(Bar, { w: "50%", h: 3, strong: true }),
+      /* @__PURE__ */ jsx8(Bar, { w: "75%", h: 2 })
     ] }),
-    /* @__PURE__ */ jsx5(Bar, { w: 30, h: 2 })
+    /* @__PURE__ */ jsx8(Bar, { w: 30, h: 2 })
   ] });
 }
 function ProductCardSkeleton({ width, height }) {
-  return /* @__PURE__ */ jsxs4("div", { style: { height: "100%", display: "flex", flexDirection: "column" }, children: [
-    /* @__PURE__ */ jsx5("div", { style: { height: "50%", background: "var(--agd-fill)", borderBottom: "1px dashed var(--agd-stroke)" } }),
-    /* @__PURE__ */ jsxs4("div", { style: { flex: 1, padding: 10, display: "flex", flexDirection: "column", gap: 5 }, children: [
-      /* @__PURE__ */ jsx5(Bar, { w: "65%", h: 4, strong: true }),
-      /* @__PURE__ */ jsx5(Bar, { w: "40%", h: 3 }),
-      /* @__PURE__ */ jsx5("div", { style: { flex: 1 } }),
-      /* @__PURE__ */ jsxs4("div", { style: { display: "flex", alignItems: "center", justifyContent: "space-between" }, children: [
-        /* @__PURE__ */ jsx5(Bar, { w: "30%", h: 5, strong: true }),
-        /* @__PURE__ */ jsx5(Block, { w: Math.min(70, width * 0.3), h: 26, radius: 4, style: { background: "var(--agd-bar)" } })
+  return /* @__PURE__ */ jsxs5("div", { style: { height: "100%", display: "flex", flexDirection: "column" }, children: [
+    /* @__PURE__ */ jsx8("div", { style: { height: "50%", background: "var(--agd-fill)", borderBottom: "1px dashed var(--agd-stroke)" } }),
+    /* @__PURE__ */ jsxs5("div", { style: { flex: 1, padding: 10, display: "flex", flexDirection: "column", gap: 5 }, children: [
+      /* @__PURE__ */ jsx8(Bar, { w: "65%", h: 4, strong: true }),
+      /* @__PURE__ */ jsx8(Bar, { w: "40%", h: 3 }),
+      /* @__PURE__ */ jsx8("div", { style: { flex: 1 } }),
+      /* @__PURE__ */ jsxs5("div", { style: { display: "flex", alignItems: "center", justifyContent: "space-between" }, children: [
+        /* @__PURE__ */ jsx8(Bar, { w: "30%", h: 5, strong: true }),
+        /* @__PURE__ */ jsx8(Block, { w: Math.min(70, width * 0.3), h: 26, radius: 4, style: { background: "var(--agd-bar)" } })
       ] })
     ] })
   ] });
 }
 function ProfileSkeleton({ width, height }) {
   const avatarSz = Math.min(48, height * 0.3);
-  return /* @__PURE__ */ jsxs4("div", { style: { height: "100%", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: height * 0.06 }, children: [
-    /* @__PURE__ */ jsx5(Circle, { size: avatarSz }),
-    /* @__PURE__ */ jsx5(Bar, { w: width * 0.45, h: 4, strong: true }),
-    /* @__PURE__ */ jsx5(Bar, { w: width * 0.3, h: 2 }),
-    /* @__PURE__ */ jsxs4("div", { style: { display: "flex", gap: width * 0.08, marginTop: height * 0.04 }, children: [
-      /* @__PURE__ */ jsxs4("div", { style: { display: "flex", flexDirection: "column", alignItems: "center", gap: 2 }, children: [
-        /* @__PURE__ */ jsx5(Bar, { w: 20, h: 3, strong: true }),
-        /* @__PURE__ */ jsx5(Bar, { w: 28, h: 2 })
+  return /* @__PURE__ */ jsxs5("div", { style: { height: "100%", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: height * 0.06 }, children: [
+    /* @__PURE__ */ jsx8(Circle, { size: avatarSz }),
+    /* @__PURE__ */ jsx8(Bar, { w: width * 0.45, h: 4, strong: true }),
+    /* @__PURE__ */ jsx8(Bar, { w: width * 0.3, h: 2 }),
+    /* @__PURE__ */ jsxs5("div", { style: { display: "flex", gap: width * 0.08, marginTop: height * 0.04 }, children: [
+      /* @__PURE__ */ jsxs5("div", { style: { display: "flex", flexDirection: "column", alignItems: "center", gap: 2 }, children: [
+        /* @__PURE__ */ jsx8(Bar, { w: 20, h: 3, strong: true }),
+        /* @__PURE__ */ jsx8(Bar, { w: 28, h: 2 })
       ] }),
-      /* @__PURE__ */ jsxs4("div", { style: { display: "flex", flexDirection: "column", alignItems: "center", gap: 2 }, children: [
-        /* @__PURE__ */ jsx5(Bar, { w: 20, h: 3, strong: true }),
-        /* @__PURE__ */ jsx5(Bar, { w: 28, h: 2 })
+      /* @__PURE__ */ jsxs5("div", { style: { display: "flex", flexDirection: "column", alignItems: "center", gap: 2 }, children: [
+        /* @__PURE__ */ jsx8(Bar, { w: 20, h: 3, strong: true }),
+        /* @__PURE__ */ jsx8(Bar, { w: 28, h: 2 })
       ] }),
-      /* @__PURE__ */ jsxs4("div", { style: { display: "flex", flexDirection: "column", alignItems: "center", gap: 2 }, children: [
-        /* @__PURE__ */ jsx5(Bar, { w: 20, h: 3, strong: true }),
-        /* @__PURE__ */ jsx5(Bar, { w: 28, h: 2 })
+      /* @__PURE__ */ jsxs5("div", { style: { display: "flex", flexDirection: "column", alignItems: "center", gap: 2 }, children: [
+        /* @__PURE__ */ jsx8(Bar, { w: 20, h: 3, strong: true }),
+        /* @__PURE__ */ jsx8(Bar, { w: 28, h: 2 })
       ] })
     ] })
   ] });
@@ -2356,73 +3700,73 @@ function ProfileSkeleton({ width, height }) {
 function DrawerSkeleton({ width, height }) {
   const panelW = Math.max(width * 0.6, 80);
   const items = Math.max(3, Math.floor(height / 40));
-  return /* @__PURE__ */ jsxs4("div", { style: { height: "100%", display: "flex" }, children: [
-    /* @__PURE__ */ jsx5("div", { style: { width: width - panelW, background: "var(--agd-fill)", opacity: 0.3 } }),
-    /* @__PURE__ */ jsxs4("div", { style: { flex: 1, borderLeft: "1px solid var(--agd-stroke)", display: "flex", flexDirection: "column", padding: width * 0.04 }, children: [
-      /* @__PURE__ */ jsxs4("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: height * 0.06 }, children: [
-        /* @__PURE__ */ jsx5(Bar, { w: panelW * 0.4, h: 4, strong: true }),
-        /* @__PURE__ */ jsx5("div", { style: { width: 12, height: 12, border: "1px solid var(--agd-stroke)", borderRadius: 3 } })
+  return /* @__PURE__ */ jsxs5("div", { style: { height: "100%", display: "flex" }, children: [
+    /* @__PURE__ */ jsx8("div", { style: { width: width - panelW, background: "var(--agd-fill)", opacity: 0.3 } }),
+    /* @__PURE__ */ jsxs5("div", { style: { flex: 1, borderLeft: "1px solid var(--agd-stroke)", display: "flex", flexDirection: "column", padding: width * 0.04 }, children: [
+      /* @__PURE__ */ jsxs5("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: height * 0.06 }, children: [
+        /* @__PURE__ */ jsx8(Bar, { w: panelW * 0.4, h: 4, strong: true }),
+        /* @__PURE__ */ jsx8("div", { style: { width: 12, height: 12, border: "1px solid var(--agd-stroke)", borderRadius: 3 } })
       ] }),
-      Array.from({ length: items }, (_, i) => /* @__PURE__ */ jsx5("div", { style: { padding: "6px 0" }, children: /* @__PURE__ */ jsx5(Bar, { w: `${50 + i * 17 % 35}%`, h: 2, strong: i === 0 }) }, i))
+      Array.from({ length: items }, (_, i) => /* @__PURE__ */ jsx8("div", { style: { padding: "6px 0" }, children: /* @__PURE__ */ jsx8(Bar, { w: `${50 + i * 17 % 35}%`, h: 2, strong: i === 0 }) }, i))
     ] })
   ] });
 }
 function PopoverSkeleton({ width, height }) {
-  return /* @__PURE__ */ jsxs4("div", { style: { height: "100%", display: "flex", flexDirection: "column", alignItems: "center" }, children: [
-    /* @__PURE__ */ jsxs4("div", { style: { flex: 1, width: "100%", borderRadius: 8, border: "1px dashed var(--agd-stroke)", background: "var(--agd-fill)", padding: 10, display: "flex", flexDirection: "column", gap: 5 }, children: [
-      /* @__PURE__ */ jsx5(Bar, { w: "70%", h: 3, strong: true }),
-      /* @__PURE__ */ jsx5(Bar, { w: "90%", h: 2 }),
-      /* @__PURE__ */ jsx5(Bar, { w: "60%", h: 2 })
+  return /* @__PURE__ */ jsxs5("div", { style: { height: "100%", display: "flex", flexDirection: "column", alignItems: "center" }, children: [
+    /* @__PURE__ */ jsxs5("div", { style: { flex: 1, width: "100%", borderRadius: 8, border: "1px dashed var(--agd-stroke)", background: "var(--agd-fill)", padding: 10, display: "flex", flexDirection: "column", gap: 5 }, children: [
+      /* @__PURE__ */ jsx8(Bar, { w: "70%", h: 3, strong: true }),
+      /* @__PURE__ */ jsx8(Bar, { w: "90%", h: 2 }),
+      /* @__PURE__ */ jsx8(Bar, { w: "60%", h: 2 })
     ] }),
-    /* @__PURE__ */ jsx5("div", { style: { width: 10, height: 10, background: "var(--agd-fill)", border: "1px dashed var(--agd-stroke)", borderTop: "none", borderLeft: "none", transform: "rotate(45deg)", marginTop: -6 } })
+    /* @__PURE__ */ jsx8("div", { style: { width: 10, height: 10, background: "var(--agd-fill)", border: "1px dashed var(--agd-stroke)", borderTop: "none", borderLeft: "none", transform: "rotate(45deg)", marginTop: -6 } })
   ] });
 }
 function LogoSkeleton({ width, height }) {
   const iconSz = Math.min(height * 0.7, width * 0.3);
-  return /* @__PURE__ */ jsxs4("div", { style: { height: "100%", display: "flex", alignItems: "center", gap: width * 0.08 }, children: [
-    /* @__PURE__ */ jsx5(Block, { w: iconSz, h: iconSz, radius: iconSz * 0.25 }),
-    /* @__PURE__ */ jsx5(Bar, { w: width * 0.45, h: Math.max(4, height * 0.2), strong: true })
+  return /* @__PURE__ */ jsxs5("div", { style: { height: "100%", display: "flex", alignItems: "center", gap: width * 0.08 }, children: [
+    /* @__PURE__ */ jsx8(Block, { w: iconSz, h: iconSz, radius: iconSz * 0.25 }),
+    /* @__PURE__ */ jsx8(Bar, { w: width * 0.45, h: Math.max(4, height * 0.2), strong: true })
   ] });
 }
 function FaqSkeleton({ width, height }) {
   const items = Math.max(2, Math.min(5, Math.floor(height / 56)));
-  return /* @__PURE__ */ jsx5("div", { style: { display: "flex", flexDirection: "column", height: "100%" }, children: Array.from({ length: items }, (_, i) => /* @__PURE__ */ jsxs4("div", { style: { borderBottom: "1px solid var(--agd-stroke)", padding: "8px 6px", display: "flex", alignItems: "center", justifyContent: "space-between", flex: i === 0 ? 2 : 1 }, children: [
-    /* @__PURE__ */ jsxs4("div", { style: { display: "flex", alignItems: "center", gap: 6 }, children: [
-      /* @__PURE__ */ jsx5("span", { style: { fontSize: 9, fontWeight: 700, color: "var(--agd-stroke)" }, children: "Q" }),
-      /* @__PURE__ */ jsx5(Bar, { w: width * (0.3 + i * 13 % 25 / 100), h: 3, strong: true })
+  return /* @__PURE__ */ jsx8("div", { style: { display: "flex", flexDirection: "column", height: "100%" }, children: Array.from({ length: items }, (_, i) => /* @__PURE__ */ jsxs5("div", { style: { borderBottom: "1px solid var(--agd-stroke)", padding: "8px 6px", display: "flex", alignItems: "center", justifyContent: "space-between", flex: i === 0 ? 2 : 1 }, children: [
+    /* @__PURE__ */ jsxs5("div", { style: { display: "flex", alignItems: "center", gap: 6 }, children: [
+      /* @__PURE__ */ jsx8("span", { style: { fontSize: 9, fontWeight: 700, color: "var(--agd-stroke)" }, children: "Q" }),
+      /* @__PURE__ */ jsx8(Bar, { w: width * (0.3 + i * 13 % 25 / 100), h: 3, strong: true })
     ] }),
-    /* @__PURE__ */ jsx5("span", { style: { fontSize: 8, color: "var(--agd-stroke)" }, children: i === 0 ? "\u25BC" : "\u25B6" })
+    /* @__PURE__ */ jsx8("span", { style: { fontSize: 8, color: "var(--agd-stroke)" }, children: i === 0 ? "\u25BC" : "\u25B6" })
   ] }, i)) });
 }
 function GallerySkeleton({ width, height }) {
   const cols = Math.max(2, Math.min(4, Math.floor(width / 120)));
   const rows = Math.max(1, Math.min(3, Math.floor(height / 120)));
-  return /* @__PURE__ */ jsx5("div", { style: { display: "grid", gridTemplateColumns: `repeat(${cols}, 1fr)`, gridTemplateRows: `repeat(${rows}, 1fr)`, gap: 4, height: "100%" }, children: Array.from({ length: cols * rows }, (_, i) => /* @__PURE__ */ jsx5("div", { style: { borderRadius: 4, border: "1px dashed var(--agd-stroke)", background: "var(--agd-fill)", position: "relative", overflow: "hidden" }, children: /* @__PURE__ */ jsxs4("svg", { width: "100%", height: "100%", viewBox: "0 0 100 100", preserveAspectRatio: "none", fill: "none", children: [
-    /* @__PURE__ */ jsx5("line", { x1: "0", y1: "0", x2: "100", y2: "100", stroke: "var(--agd-stroke)", strokeWidth: "0.5" }),
-    /* @__PURE__ */ jsx5("line", { x1: "100", y1: "0", x2: "0", y2: "100", stroke: "var(--agd-stroke)", strokeWidth: "0.5" })
+  return /* @__PURE__ */ jsx8("div", { style: { display: "grid", gridTemplateColumns: `repeat(${cols}, 1fr)`, gridTemplateRows: `repeat(${rows}, 1fr)`, gap: 4, height: "100%" }, children: Array.from({ length: cols * rows }, (_, i) => /* @__PURE__ */ jsx8("div", { style: { borderRadius: 4, border: "1px dashed var(--agd-stroke)", background: "var(--agd-fill)", position: "relative", overflow: "hidden" }, children: /* @__PURE__ */ jsxs5("svg", { width: "100%", height: "100%", viewBox: "0 0 100 100", preserveAspectRatio: "none", fill: "none", children: [
+    /* @__PURE__ */ jsx8("line", { x1: "0", y1: "0", x2: "100", y2: "100", stroke: "var(--agd-stroke)", strokeWidth: "0.5" }),
+    /* @__PURE__ */ jsx8("line", { x1: "100", y1: "0", x2: "0", y2: "100", stroke: "var(--agd-stroke)", strokeWidth: "0.5" })
   ] }) }, i)) });
 }
 function CheckboxSkeleton({ width, height }) {
   const sz = Math.min(width, height);
-  return /* @__PURE__ */ jsxs4("svg", { width: "100%", height: "100%", viewBox: `0 0 ${width} ${height}`, fill: "none", children: [
-    /* @__PURE__ */ jsx5("rect", { x: "1", y: (height - sz + 2) / 2, width: sz - 2, height: sz - 2, rx: sz * 0.15, stroke: "var(--agd-stroke)", strokeWidth: "1.5" }),
-    /* @__PURE__ */ jsx5("path", { d: `M${sz * 0.25} ${height / 2}l${sz * 0.2} ${sz * 0.2} ${sz * 0.3}-${sz * 0.35}`, stroke: "var(--agd-bar)", strokeWidth: "1.5", fill: "none", strokeLinecap: "round", strokeLinejoin: "round" })
+  return /* @__PURE__ */ jsxs5("svg", { width: "100%", height: "100%", viewBox: `0 0 ${width} ${height}`, fill: "none", children: [
+    /* @__PURE__ */ jsx8("rect", { x: "1", y: (height - sz + 2) / 2, width: sz - 2, height: sz - 2, rx: sz * 0.15, stroke: "var(--agd-stroke)", strokeWidth: "1.5" }),
+    /* @__PURE__ */ jsx8("path", { d: `M${sz * 0.25} ${height / 2}l${sz * 0.2} ${sz * 0.2} ${sz * 0.3}-${sz * 0.35}`, stroke: "var(--agd-bar)", strokeWidth: "1.5", fill: "none", strokeLinecap: "round", strokeLinejoin: "round" })
   ] });
 }
 function RadioSkeleton({ width, height }) {
   const r = Math.min(width, height) / 2 - 1;
-  return /* @__PURE__ */ jsxs4("svg", { width: "100%", height: "100%", viewBox: `0 0 ${width} ${height}`, fill: "none", children: [
-    /* @__PURE__ */ jsx5("circle", { cx: width / 2, cy: height / 2, r, stroke: "var(--agd-stroke)", strokeWidth: "1.5" }),
-    /* @__PURE__ */ jsx5("circle", { cx: width / 2, cy: height / 2, r: r * 0.45, fill: "var(--agd-bar)" })
+  return /* @__PURE__ */ jsxs5("svg", { width: "100%", height: "100%", viewBox: `0 0 ${width} ${height}`, fill: "none", children: [
+    /* @__PURE__ */ jsx8("circle", { cx: width / 2, cy: height / 2, r, stroke: "var(--agd-stroke)", strokeWidth: "1.5" }),
+    /* @__PURE__ */ jsx8("circle", { cx: width / 2, cy: height / 2, r: r * 0.45, fill: "var(--agd-bar)" })
   ] });
 }
 function SliderSkeleton({ width, height }) {
   const trackH = Math.max(2, height * 0.12);
   const thumbR = Math.min(height * 0.35, 10);
   const fillW = width * 0.55;
-  return /* @__PURE__ */ jsxs4("div", { style: { height: "100%", display: "flex", alignItems: "center", position: "relative" }, children: [
-    /* @__PURE__ */ jsx5("div", { style: { width: "100%", height: trackH, borderRadius: trackH / 2, background: "var(--agd-fill)", border: "1px solid var(--agd-stroke)", position: "relative" }, children: /* @__PURE__ */ jsx5("div", { style: { width: fillW, height: "100%", borderRadius: trackH / 2, background: "var(--agd-bar)" } }) }),
-    /* @__PURE__ */ jsx5("div", { style: { position: "absolute", left: fillW - thumbR, width: thumbR * 2, height: thumbR * 2, borderRadius: "50%", border: "1.5px solid var(--agd-stroke)", background: "var(--agd-fill)" } })
+  return /* @__PURE__ */ jsxs5("div", { style: { height: "100%", display: "flex", alignItems: "center", position: "relative" }, children: [
+    /* @__PURE__ */ jsx8("div", { style: { width: "100%", height: trackH, borderRadius: trackH / 2, background: "var(--agd-fill)", border: "1px solid var(--agd-stroke)", position: "relative" }, children: /* @__PURE__ */ jsx8("div", { style: { width: fillW, height: "100%", borderRadius: trackH / 2, background: "var(--agd-bar)" } }) }),
+    /* @__PURE__ */ jsx8("div", { style: { position: "absolute", left: fillW - thumbR, width: thumbR * 2, height: thumbR * 2, borderRadius: "50%", border: "1.5px solid var(--agd-stroke)", background: "var(--agd-fill)" } })
   ] });
 }
 function DatePickerSkeleton({ width, height }) {
@@ -2430,41 +3774,41 @@ function DatePickerSkeleton({ width, height }) {
   const cols = 7;
   const rows = 4;
   const cellSz = Math.min((width - 16) / cols, (height - inputH - 40) / (rows + 1));
-  return /* @__PURE__ */ jsxs4("div", { style: { height: "100%", display: "flex", flexDirection: "column", gap: 4 }, children: [
-    /* @__PURE__ */ jsxs4("div", { style: { height: inputH, borderRadius: 4, border: "1px dashed var(--agd-stroke)", background: "var(--agd-fill)", display: "flex", alignItems: "center", padding: "0 8px", justifyContent: "space-between" }, children: [
-      /* @__PURE__ */ jsx5(Bar, { w: "40%", h: 2 }),
-      /* @__PURE__ */ jsxs4("svg", { width: "12", height: "12", viewBox: "0 0 16 16", fill: "none", children: [
-        /* @__PURE__ */ jsx5("rect", { x: "2", y: "3", width: "12", height: "11", rx: "1", stroke: "var(--agd-stroke)", strokeWidth: "1" }),
-        /* @__PURE__ */ jsx5("line", { x1: "2", y1: "6", x2: "14", y2: "6", stroke: "var(--agd-stroke)", strokeWidth: "0.5" })
+  return /* @__PURE__ */ jsxs5("div", { style: { height: "100%", display: "flex", flexDirection: "column", gap: 4 }, children: [
+    /* @__PURE__ */ jsxs5("div", { style: { height: inputH, borderRadius: 4, border: "1px dashed var(--agd-stroke)", background: "var(--agd-fill)", display: "flex", alignItems: "center", padding: "0 8px", justifyContent: "space-between" }, children: [
+      /* @__PURE__ */ jsx8(Bar, { w: "40%", h: 2 }),
+      /* @__PURE__ */ jsxs5("svg", { width: "12", height: "12", viewBox: "0 0 16 16", fill: "none", children: [
+        /* @__PURE__ */ jsx8("rect", { x: "2", y: "3", width: "12", height: "11", rx: "1", stroke: "var(--agd-stroke)", strokeWidth: "1" }),
+        /* @__PURE__ */ jsx8("line", { x1: "2", y1: "6", x2: "14", y2: "6", stroke: "var(--agd-stroke)", strokeWidth: "0.5" })
       ] })
     ] }),
-    /* @__PURE__ */ jsxs4("div", { style: { flex: 1, borderRadius: 6, border: "1px dashed var(--agd-stroke)", background: "var(--agd-fill)", display: "flex", flexDirection: "column" }, children: [
-      /* @__PURE__ */ jsxs4("div", { style: { display: "flex", alignItems: "center", justifyContent: "space-between", padding: "4px 6px" }, children: [
-        /* @__PURE__ */ jsx5("span", { style: { fontSize: 7, color: "var(--agd-stroke)" }, children: "\u2039" }),
-        /* @__PURE__ */ jsx5(Bar, { w: width * 0.25, h: 2, strong: true }),
-        /* @__PURE__ */ jsx5("span", { style: { fontSize: 7, color: "var(--agd-stroke)" }, children: "\u203A" })
+    /* @__PURE__ */ jsxs5("div", { style: { flex: 1, borderRadius: 6, border: "1px dashed var(--agd-stroke)", background: "var(--agd-fill)", display: "flex", flexDirection: "column" }, children: [
+      /* @__PURE__ */ jsxs5("div", { style: { display: "flex", alignItems: "center", justifyContent: "space-between", padding: "4px 6px" }, children: [
+        /* @__PURE__ */ jsx8("span", { style: { fontSize: 7, color: "var(--agd-stroke)" }, children: "\u2039" }),
+        /* @__PURE__ */ jsx8(Bar, { w: width * 0.25, h: 2, strong: true }),
+        /* @__PURE__ */ jsx8("span", { style: { fontSize: 7, color: "var(--agd-stroke)" }, children: "\u203A" })
       ] }),
-      /* @__PURE__ */ jsx5("div", { style: { display: "grid", gridTemplateColumns: `repeat(${cols}, 1fr)`, gap: 1, padding: "0 4px", flex: 1 }, children: Array.from({ length: cols * rows }, (_, i) => /* @__PURE__ */ jsx5("div", { style: { display: "flex", alignItems: "center", justifyContent: "center", height: cellSz }, children: /* @__PURE__ */ jsx5("div", { style: { width: cellSz * 0.5, height: cellSz * 0.5, borderRadius: "50%", background: i === 10 ? "var(--agd-bar)" : "transparent" }, children: /* @__PURE__ */ jsx5("div", { style: { width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center" }, children: /* @__PURE__ */ jsx5("div", { style: { width: 1.5, height: 1.5, borderRadius: 1, background: "var(--agd-bar-strong)", opacity: i === 10 ? 1 : 0.25 } }) }) }) }, i)) })
+      /* @__PURE__ */ jsx8("div", { style: { display: "grid", gridTemplateColumns: `repeat(${cols}, 1fr)`, gap: 1, padding: "0 4px", flex: 1 }, children: Array.from({ length: cols * rows }, (_, i) => /* @__PURE__ */ jsx8("div", { style: { display: "flex", alignItems: "center", justifyContent: "center", height: cellSz }, children: /* @__PURE__ */ jsx8("div", { style: { width: cellSz * 0.5, height: cellSz * 0.5, borderRadius: "50%", background: i === 10 ? "var(--agd-bar)" : "transparent" }, children: /* @__PURE__ */ jsx8("div", { style: { width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center" }, children: /* @__PURE__ */ jsx8("div", { style: { width: 1.5, height: 1.5, borderRadius: 1, background: "var(--agd-bar-strong)", opacity: i === 10 ? 1 : 0.25 } }) }) }) }, i)) })
     ] })
   ] });
 }
 function SkeletonSkeletonRenderer({ width, height }) {
-  return /* @__PURE__ */ jsxs4("div", { style: { height: "100%", display: "flex", flexDirection: "column", gap: height * 0.08, padding: 4 }, children: [
-    /* @__PURE__ */ jsx5("div", { style: { width: "100%", height: height * 0.2, borderRadius: 4, background: "var(--agd-fill)" } }),
-    /* @__PURE__ */ jsx5("div", { style: { width: "70%", height: Math.max(6, height * 0.1), borderRadius: 3, background: "var(--agd-fill)" } }),
-    /* @__PURE__ */ jsx5("div", { style: { width: "90%", height: Math.max(4, height * 0.06), borderRadius: 3, background: "var(--agd-fill)" } }),
-    /* @__PURE__ */ jsx5("div", { style: { width: "50%", height: Math.max(4, height * 0.06), borderRadius: 3, background: "var(--agd-fill)" } })
+  return /* @__PURE__ */ jsxs5("div", { style: { height: "100%", display: "flex", flexDirection: "column", gap: height * 0.08, padding: 4 }, children: [
+    /* @__PURE__ */ jsx8("div", { style: { width: "100%", height: height * 0.2, borderRadius: 4, background: "var(--agd-fill)" } }),
+    /* @__PURE__ */ jsx8("div", { style: { width: "70%", height: Math.max(6, height * 0.1), borderRadius: 3, background: "var(--agd-fill)" } }),
+    /* @__PURE__ */ jsx8("div", { style: { width: "90%", height: Math.max(4, height * 0.06), borderRadius: 3, background: "var(--agd-fill)" } }),
+    /* @__PURE__ */ jsx8("div", { style: { width: "50%", height: Math.max(4, height * 0.06), borderRadius: 3, background: "var(--agd-fill)" } })
   ] });
 }
 function ChipSkeleton({ width, height }) {
-  return /* @__PURE__ */ jsx5("div", { style: { height: "100%", display: "flex", alignItems: "center", gap: 6 }, children: /* @__PURE__ */ jsxs4("div", { style: { height: "100%", flex: 1, borderRadius: height / 2, border: "1px solid var(--agd-stroke)", background: "var(--agd-fill)", display: "flex", alignItems: "center", padding: `0 ${height * 0.3}px`, gap: 4 }, children: [
-    /* @__PURE__ */ jsx5(Bar, { w: "60%", h: 2, strong: true }),
-    /* @__PURE__ */ jsx5("div", { style: { width: Math.max(6, height * 0.3), height: Math.max(6, height * 0.3), borderRadius: "50%", border: "1px solid var(--agd-stroke)", flexShrink: 0, marginLeft: "auto" } })
+  return /* @__PURE__ */ jsx8("div", { style: { height: "100%", display: "flex", alignItems: "center", gap: 6 }, children: /* @__PURE__ */ jsxs5("div", { style: { height: "100%", flex: 1, borderRadius: height / 2, border: "1px solid var(--agd-stroke)", background: "var(--agd-fill)", display: "flex", alignItems: "center", padding: `0 ${height * 0.3}px`, gap: 4 }, children: [
+    /* @__PURE__ */ jsx8(Bar, { w: "60%", h: 2, strong: true }),
+    /* @__PURE__ */ jsx8("div", { style: { width: Math.max(6, height * 0.3), height: Math.max(6, height * 0.3), borderRadius: "50%", border: "1px solid var(--agd-stroke)", flexShrink: 0, marginLeft: "auto" } })
   ] }) });
 }
 function IconSkeleton({ width, height }) {
   const sz = Math.min(width, height);
-  return /* @__PURE__ */ jsx5("svg", { width: "100%", height: "100%", viewBox: `0 0 ${width} ${height}`, fill: "none", children: /* @__PURE__ */ jsx5(
+  return /* @__PURE__ */ jsx8("svg", { width: "100%", height: "100%", viewBox: `0 0 ${width} ${height}`, fill: "none", children: /* @__PURE__ */ jsx8(
     "path",
     {
       d: `M${width / 2} ${(height - sz) / 2 + sz * 0.1}l${sz * 0.12} ${sz * 0.25} ${sz * 0.28} ${sz * 0.04}-${sz * 0.2} ${sz * 0.2} ${sz * 0.05} ${sz * 0.28}-${sz * 0.25}-${sz * 0.12}-${sz * 0.25} ${sz * 0.12} ${sz * 0.05}-${sz * 0.28}-${sz * 0.2}-${sz * 0.2} ${sz * 0.28}-${sz * 0.04}z`,
@@ -2476,70 +3820,70 @@ function IconSkeleton({ width, height }) {
 }
 function SpinnerSkeleton({ width, height }) {
   const r = Math.min(width, height) / 2 - 2;
-  return /* @__PURE__ */ jsxs4("svg", { width: "100%", height: "100%", viewBox: `0 0 ${width} ${height}`, fill: "none", children: [
-    /* @__PURE__ */ jsx5("circle", { cx: width / 2, cy: height / 2, r, stroke: "var(--agd-stroke)", strokeWidth: "1.5", opacity: ".2" }),
-    /* @__PURE__ */ jsx5("path", { d: `M${width / 2} ${height / 2 - r}a${r} ${r} 0 0 1 ${r} ${r}`, stroke: "var(--agd-bar-strong)", strokeWidth: "1.5", strokeLinecap: "round" })
+  return /* @__PURE__ */ jsxs5("svg", { width: "100%", height: "100%", viewBox: `0 0 ${width} ${height}`, fill: "none", children: [
+    /* @__PURE__ */ jsx8("circle", { cx: width / 2, cy: height / 2, r, stroke: "var(--agd-stroke)", strokeWidth: "1.5", opacity: ".2" }),
+    /* @__PURE__ */ jsx8("path", { d: `M${width / 2} ${height / 2 - r}a${r} ${r} 0 0 1 ${r} ${r}`, stroke: "var(--agd-bar-strong)", strokeWidth: "1.5", strokeLinecap: "round" })
   ] });
 }
 function FeatureSkeleton({ width, height }) {
   const iconSz = Math.min(36, height * 0.25, width * 0.12);
   const items = Math.max(1, Math.min(3, Math.floor(height / 80)));
-  return /* @__PURE__ */ jsx5("div", { style: { display: "flex", flexDirection: "column", height: "100%", justifyContent: "space-around", padding: 8 }, children: Array.from({ length: items }, (_, i) => /* @__PURE__ */ jsxs4("div", { style: { display: "flex", gap: width * 0.04, alignItems: "flex-start" }, children: [
-    /* @__PURE__ */ jsx5(Block, { w: iconSz, h: iconSz, radius: iconSz * 0.25 }),
-    /* @__PURE__ */ jsxs4("div", { style: { flex: 1, display: "flex", flexDirection: "column", gap: 4 }, children: [
-      /* @__PURE__ */ jsx5(Bar, { w: `${40 + i * 13 % 20}%`, h: 3, strong: true }),
-      /* @__PURE__ */ jsx5(Bar, { w: `${60 + i * 17 % 25}%`, h: 2 })
+  return /* @__PURE__ */ jsx8("div", { style: { display: "flex", flexDirection: "column", height: "100%", justifyContent: "space-around", padding: 8 }, children: Array.from({ length: items }, (_, i) => /* @__PURE__ */ jsxs5("div", { style: { display: "flex", gap: width * 0.04, alignItems: "flex-start" }, children: [
+    /* @__PURE__ */ jsx8(Block, { w: iconSz, h: iconSz, radius: iconSz * 0.25 }),
+    /* @__PURE__ */ jsxs5("div", { style: { flex: 1, display: "flex", flexDirection: "column", gap: 4 }, children: [
+      /* @__PURE__ */ jsx8(Bar, { w: `${40 + i * 13 % 20}%`, h: 3, strong: true }),
+      /* @__PURE__ */ jsx8(Bar, { w: `${60 + i * 17 % 25}%`, h: 2 })
     ] })
   ] }, i)) });
 }
 function TeamSkeleton({ width, height }) {
   const cols = Math.max(2, Math.min(4, Math.floor(width / 120)));
   const avatarSz = Math.min(36, height * 0.25);
-  return /* @__PURE__ */ jsxs4("div", { style: { height: "100%", display: "flex", flexDirection: "column", alignItems: "center", gap: height * 0.06, padding: height * 0.06 }, children: [
-    /* @__PURE__ */ jsx5(Bar, { w: width * 0.3, h: 4, strong: true }),
-    /* @__PURE__ */ jsx5("div", { style: { display: "flex", gap: width * 0.06, justifyContent: "center", flex: 1, alignItems: "center" }, children: Array.from({ length: cols }, (_, i) => /* @__PURE__ */ jsxs4("div", { style: { display: "flex", flexDirection: "column", alignItems: "center", gap: 6 }, children: [
-      /* @__PURE__ */ jsx5(Circle, { size: avatarSz }),
-      /* @__PURE__ */ jsx5(Bar, { w: width * 0.12, h: 3, strong: true }),
-      /* @__PURE__ */ jsx5(Bar, { w: width * 0.08, h: 2 })
+  return /* @__PURE__ */ jsxs5("div", { style: { height: "100%", display: "flex", flexDirection: "column", alignItems: "center", gap: height * 0.06, padding: height * 0.06 }, children: [
+    /* @__PURE__ */ jsx8(Bar, { w: width * 0.3, h: 4, strong: true }),
+    /* @__PURE__ */ jsx8("div", { style: { display: "flex", gap: width * 0.06, justifyContent: "center", flex: 1, alignItems: "center" }, children: Array.from({ length: cols }, (_, i) => /* @__PURE__ */ jsxs5("div", { style: { display: "flex", flexDirection: "column", alignItems: "center", gap: 6 }, children: [
+      /* @__PURE__ */ jsx8(Circle, { size: avatarSz }),
+      /* @__PURE__ */ jsx8(Bar, { w: width * 0.12, h: 3, strong: true }),
+      /* @__PURE__ */ jsx8(Bar, { w: width * 0.08, h: 2 })
     ] }, i)) })
   ] });
 }
 function LoginSkeleton({ width, height }) {
   const fields = Math.max(2, Math.min(3, Math.floor(height / 80)));
-  return /* @__PURE__ */ jsxs4("div", { style: { height: "100%", display: "flex", flexDirection: "column", alignItems: "center", padding: width * 0.06, gap: height * 0.04 }, children: [
-    /* @__PURE__ */ jsx5(Bar, { w: width * 0.5, h: Math.max(5, height * 0.04), strong: true }),
-    /* @__PURE__ */ jsx5(Bar, { w: width * 0.35, h: 2 }),
-    /* @__PURE__ */ jsx5("div", { style: { width: "100%", display: "flex", flexDirection: "column", gap: height * 0.03, marginTop: height * 0.04 }, children: Array.from({ length: fields }, (_, i) => /* @__PURE__ */ jsxs4("div", { style: { display: "flex", flexDirection: "column", gap: 3 }, children: [
-      /* @__PURE__ */ jsx5(Bar, { w: Math.min(60, width * 0.2), h: 2 }),
-      /* @__PURE__ */ jsx5(Block, { w: "100%", h: Math.min(32, height * 0.1), radius: 4 })
+  return /* @__PURE__ */ jsxs5("div", { style: { height: "100%", display: "flex", flexDirection: "column", alignItems: "center", padding: width * 0.06, gap: height * 0.04 }, children: [
+    /* @__PURE__ */ jsx8(Bar, { w: width * 0.5, h: Math.max(5, height * 0.04), strong: true }),
+    /* @__PURE__ */ jsx8(Bar, { w: width * 0.35, h: 2 }),
+    /* @__PURE__ */ jsx8("div", { style: { width: "100%", display: "flex", flexDirection: "column", gap: height * 0.03, marginTop: height * 0.04 }, children: Array.from({ length: fields }, (_, i) => /* @__PURE__ */ jsxs5("div", { style: { display: "flex", flexDirection: "column", gap: 3 }, children: [
+      /* @__PURE__ */ jsx8(Bar, { w: Math.min(60, width * 0.2), h: 2 }),
+      /* @__PURE__ */ jsx8(Block, { w: "100%", h: Math.min(32, height * 0.1), radius: 4 })
     ] }, i)) }),
-    /* @__PURE__ */ jsx5(Block, { w: "100%", h: Math.min(36, height * 0.12), radius: 6, style: { marginTop: height * 0.03, background: "var(--agd-bar)" } }),
-    /* @__PURE__ */ jsx5(Bar, { w: width * 0.4, h: 2 })
+    /* @__PURE__ */ jsx8(Block, { w: "100%", h: Math.min(36, height * 0.12), radius: 6, style: { marginTop: height * 0.03, background: "var(--agd-bar)" } }),
+    /* @__PURE__ */ jsx8(Bar, { w: width * 0.4, h: 2 })
   ] });
 }
 function ContactSkeleton({ width, height }) {
-  return /* @__PURE__ */ jsxs4("div", { style: { height: "100%", display: "flex", flexDirection: "column", padding: width * 0.04, gap: height * 0.03 }, children: [
-    /* @__PURE__ */ jsx5(Bar, { w: width * 0.4, h: 4, strong: true }),
-    /* @__PURE__ */ jsx5(Bar, { w: width * 0.6, h: 2 }),
-    /* @__PURE__ */ jsxs4("div", { style: { display: "flex", gap: 6, marginTop: height * 0.03 }, children: [
-      /* @__PURE__ */ jsxs4("div", { style: { flex: 1, display: "flex", flexDirection: "column", gap: 3 }, children: [
-        /* @__PURE__ */ jsx5(Bar, { w: 50, h: 2 }),
-        /* @__PURE__ */ jsx5(Block, { w: "100%", h: Math.min(28, height * 0.1), radius: 4 })
+  return /* @__PURE__ */ jsxs5("div", { style: { height: "100%", display: "flex", flexDirection: "column", padding: width * 0.04, gap: height * 0.03 }, children: [
+    /* @__PURE__ */ jsx8(Bar, { w: width * 0.4, h: 4, strong: true }),
+    /* @__PURE__ */ jsx8(Bar, { w: width * 0.6, h: 2 }),
+    /* @__PURE__ */ jsxs5("div", { style: { display: "flex", gap: 6, marginTop: height * 0.03 }, children: [
+      /* @__PURE__ */ jsxs5("div", { style: { flex: 1, display: "flex", flexDirection: "column", gap: 3 }, children: [
+        /* @__PURE__ */ jsx8(Bar, { w: 50, h: 2 }),
+        /* @__PURE__ */ jsx8(Block, { w: "100%", h: Math.min(28, height * 0.1), radius: 4 })
       ] }),
-      /* @__PURE__ */ jsxs4("div", { style: { flex: 1, display: "flex", flexDirection: "column", gap: 3 }, children: [
-        /* @__PURE__ */ jsx5(Bar, { w: 40, h: 2 }),
-        /* @__PURE__ */ jsx5(Block, { w: "100%", h: Math.min(28, height * 0.1), radius: 4 })
+      /* @__PURE__ */ jsxs5("div", { style: { flex: 1, display: "flex", flexDirection: "column", gap: 3 }, children: [
+        /* @__PURE__ */ jsx8(Bar, { w: 40, h: 2 }),
+        /* @__PURE__ */ jsx8(Block, { w: "100%", h: Math.min(28, height * 0.1), radius: 4 })
       ] })
     ] }),
-    /* @__PURE__ */ jsxs4("div", { style: { display: "flex", flexDirection: "column", gap: 3 }, children: [
-      /* @__PURE__ */ jsx5(Bar, { w: 50, h: 2 }),
-      /* @__PURE__ */ jsx5(Block, { w: "100%", h: Math.min(28, height * 0.1), radius: 4 })
+    /* @__PURE__ */ jsxs5("div", { style: { display: "flex", flexDirection: "column", gap: 3 }, children: [
+      /* @__PURE__ */ jsx8(Bar, { w: 50, h: 2 }),
+      /* @__PURE__ */ jsx8(Block, { w: "100%", h: Math.min(28, height * 0.1), radius: 4 })
     ] }),
-    /* @__PURE__ */ jsxs4("div", { style: { display: "flex", flexDirection: "column", gap: 3, flex: 1 }, children: [
-      /* @__PURE__ */ jsx5(Bar, { w: 60, h: 2 }),
-      /* @__PURE__ */ jsx5(Block, { w: "100%", h: "100%", radius: 4 })
+    /* @__PURE__ */ jsxs5("div", { style: { display: "flex", flexDirection: "column", gap: 3, flex: 1 }, children: [
+      /* @__PURE__ */ jsx8(Bar, { w: 60, h: 2 }),
+      /* @__PURE__ */ jsx8(Block, { w: "100%", h: "100%", radius: 4 })
     ] }),
-    /* @__PURE__ */ jsx5(Block, { w: Math.min(120, width * 0.3), h: Math.min(30, height * 0.1), radius: 6, style: { alignSelf: "flex-end", background: "var(--agd-bar)" } })
+    /* @__PURE__ */ jsx8(Block, { w: Math.min(120, width * 0.3), h: Math.min(30, height * 0.1), radius: 6, style: { alignSelf: "flex-end", background: "var(--agd-bar)" } })
   ] });
 }
 var SKELETON_RENDERERS = {
@@ -2613,27 +3957,17 @@ var SKELETON_RENDERERS = {
 function Skeleton({ type, width, height, text }) {
   const Renderer = SKELETON_RENDERERS[type];
   if (!Renderer) {
-    return /* @__PURE__ */ jsx5("div", { style: { width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center" }, children: /* @__PURE__ */ jsx5("span", { style: { fontSize: 10, fontWeight: 600, color: "var(--agd-text-3)", textTransform: "uppercase", letterSpacing: "0.06em", opacity: 0.5 }, children: type }) });
+    return /* @__PURE__ */ jsx8("div", { style: { width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center" }, children: /* @__PURE__ */ jsx8("span", { style: { fontSize: 10, fontWeight: 600, color: "var(--agd-text-3)", textTransform: "uppercase", letterSpacing: "0.06em", opacity: 0.5 }, children: type }) });
   }
-  return /* @__PURE__ */ jsx5("div", { style: { width: "100%", height: "100%", padding: 8, position: "relative", pointerEvents: "none" }, children: /* @__PURE__ */ jsx5(Renderer, { width, height, text }) });
+  return /* @__PURE__ */ jsx8("div", { style: { width: "100%", height: "100%", padding: 8, position: "relative", pointerEvents: "none" }, children: /* @__PURE__ */ jsx8(Renderer, { width, height, text }) });
 }
 
 // src/components/design-mode/styles.module.scss
-var css4 = 'svg[fill=none] {\n  fill: none !important;\n}\n\n.styles-module__overlayExiting___iEmYr {\n  opacity: 0 !important;\n  transition: opacity 0.25s ease !important;\n  pointer-events: none !important;\n}\n\n.styles-module__overlay___aWh-q {\n  position: fixed;\n  inset: 0;\n  z-index: 99995;\n  pointer-events: auto;\n  cursor: default;\n  animation: styles-module__overlayFadeIn___aECVy 0.15s ease;\n  --agd-stroke: rgba(59, 130, 246, 0.35);\n  --agd-fill: rgba(59, 130, 246, 0.06);\n  --agd-bar: rgba(59, 130, 246, 0.18);\n  --agd-bar-strong: rgba(59, 130, 246, 0.28);\n  --agd-text-3: rgba(255, 255, 255, 0.6);\n  --agd-surface: #fff;\n}\n.styles-module__overlay___aWh-q.styles-module__light___ORIft {\n  --agd-surface: #fff;\n}\n.styles-module__overlay___aWh-q:not(.styles-module__light___ORIft) {\n  --agd-surface: #141414;\n}\n.styles-module__overlay___aWh-q.styles-module__wireframe___itvQU {\n  --agd-stroke: rgba(249, 115, 22, 0.35);\n  --agd-fill: rgba(249, 115, 22, 0.06);\n  --agd-bar: rgba(249, 115, 22, 0.18);\n  --agd-bar-strong: rgba(249, 115, 22, 0.28);\n}\n.styles-module__overlay___aWh-q.styles-module__placing___45yD8 {\n  cursor: crosshair;\n}\n.styles-module__overlay___aWh-q.styles-module__passthrough___xaFeE {\n  pointer-events: none;\n}\n\n.styles-module__blankCanvas___t2Eue {\n  position: fixed;\n  inset: 0;\n  z-index: 99994;\n  background: #fff;\n  opacity: 0;\n  pointer-events: none;\n  transition: opacity 0.25s ease;\n}\n.styles-module__blankCanvas___t2Eue.styles-module__visible___OKKqX {\n  opacity: var(--canvas-opacity, 1);\n  pointer-events: auto;\n}\n.styles-module__blankCanvas___t2Eue::after {\n  content: "";\n  position: absolute;\n  inset: 0;\n  background-image: radial-gradient(circle, rgba(0, 0, 0, 0.08) 1px, transparent 1px);\n  background-size: 24px 24px;\n  background-position: 12px 12px;\n  pointer-events: none;\n  transition: opacity 0.2s ease;\n}\n.styles-module__blankCanvas___t2Eue.styles-module__gridActive___OZ-cf::after {\n  opacity: 1;\n  background-image: radial-gradient(circle, rgba(0, 0, 0, 0.22) 1px, transparent 1px);\n}\n\n.styles-module__paletteHeader___-Q5gQ {\n  padding: 0 1rem 0.375rem;\n}\n\n.styles-module__paletteHeaderTitle___oHqZC {\n  font-size: 0.8125rem;\n  font-weight: 500;\n  color: #fff;\n  letter-spacing: -0.0094em;\n}\n.styles-module__light___ORIft .styles-module__paletteHeaderTitle___oHqZC {\n  color: rgba(0, 0, 0, 0.85);\n}\n\n.styles-module__paletteHeaderDesc___6i74T {\n  font-size: 0.6875rem;\n  font-weight: 300;\n  color: rgba(255, 255, 255, 0.45);\n  margin-top: 2px;\n  line-height: 14px;\n}\n.styles-module__light___ORIft .styles-module__paletteHeaderDesc___6i74T {\n  color: rgba(0, 0, 0, 0.45);\n}\n.styles-module__paletteHeaderDesc___6i74T a {\n  color: rgba(255, 255, 255, 0.8);\n  text-decoration: underline dotted;\n  text-decoration-color: rgba(255, 255, 255, 0.2);\n  text-underline-offset: 2px;\n  transition: color 0.15s ease;\n}\n.styles-module__paletteHeaderDesc___6i74T a:hover {\n  color: #fff;\n}\n.styles-module__light___ORIft .styles-module__paletteHeaderDesc___6i74T a {\n  color: rgba(0, 0, 0, 0.6);\n  text-decoration-color: rgba(0, 0, 0, 0.2);\n}\n.styles-module__light___ORIft .styles-module__paletteHeaderDesc___6i74T a:hover {\n  color: rgba(0, 0, 0, 0.85);\n}\n\n.styles-module__wireframePurposeWrap___To-tS {\n  display: grid;\n  grid-template-rows: 1fr;\n  transition: grid-template-rows 0.2s ease, opacity 0.15s ease;\n  opacity: 1;\n}\n.styles-module__wireframePurposeWrap___To-tS.styles-module__collapsed___Ms9vS {\n  grid-template-rows: 0fr;\n  opacity: 0;\n}\n\n.styles-module__wireframePurposeInner___Lrahs {\n  overflow: hidden;\n}\n\n.styles-module__wireframePurposeInput___7EtBN {\n  display: block;\n  width: calc(100% - 2rem);\n  margin: 0.25rem 1rem 0.375rem;\n  padding: 0.375rem 0.5rem;\n  font-size: 0.8125rem;\n  font-family: inherit;\n  color: rgba(255, 255, 255, 0.85);\n  background: rgba(255, 255, 255, 0.03);\n  border: 1px solid rgba(255, 255, 255, 0.1);\n  border-radius: 0.375rem;\n  resize: none;\n  outline: none;\n  transition: border-color 0.15s ease;\n  letter-spacing: -0.0094em;\n}\n.styles-module__wireframePurposeInput___7EtBN::placeholder {\n  color: rgba(255, 255, 255, 0.3);\n}\n.styles-module__wireframePurposeInput___7EtBN:focus {\n  border-color: rgba(255, 255, 255, 0.3);\n  background: rgba(255, 255, 255, 0.05);\n}\n.styles-module__light___ORIft .styles-module__wireframePurposeInput___7EtBN {\n  color: rgba(0, 0, 0, 0.7);\n  background: rgba(0, 0, 0, 0.03);\n  border-color: rgba(0, 0, 0, 0.1);\n}\n.styles-module__light___ORIft .styles-module__wireframePurposeInput___7EtBN::placeholder {\n  color: rgba(0, 0, 0, 0.3);\n}\n.styles-module__light___ORIft .styles-module__wireframePurposeInput___7EtBN:focus {\n  border-color: rgba(0, 0, 0, 0.25);\n  background: rgba(0, 0, 0, 0.05);\n}\n\n.styles-module__canvasToggle___-QqSy {\n  display: flex;\n  align-items: center;\n  justify-content: center;\n  gap: 0.375rem;\n  margin: 0.25rem 1rem 0.25rem;\n  padding: 0.375rem 0.5rem;\n  border-radius: 0.5rem;\n  cursor: pointer;\n  border: 1px dashed rgba(255, 255, 255, 0.1);\n  background: transparent;\n  transition: background 0.15s ease, border-color 0.15s ease;\n}\n.styles-module__canvasToggle___-QqSy:hover {\n  background: rgba(255, 255, 255, 0.04);\n  border-color: rgba(255, 255, 255, 0.15);\n}\n.styles-module__canvasToggle___-QqSy.styles-module__active___hosp7 {\n  background: #f97316;\n  border-color: transparent;\n  border-style: solid;\n  box-shadow: none;\n}\n.styles-module__light___ORIft .styles-module__canvasToggle___-QqSy {\n  border-color: rgba(0, 0, 0, 0.08);\n}\n.styles-module__light___ORIft .styles-module__canvasToggle___-QqSy:hover {\n  background: rgba(0, 0, 0, 0.02);\n  border-color: rgba(0, 0, 0, 0.12);\n}\n.styles-module__light___ORIft .styles-module__canvasToggle___-QqSy.styles-module__active___hosp7 {\n  background: #f97316;\n  border-color: transparent;\n  border-style: solid;\n  box-shadow: none;\n}\n\n.styles-module__canvasToggleIcon___7pJ82 {\n  width: 14px;\n  height: 14px;\n  flex-shrink: 0;\n  display: flex;\n  align-items: center;\n  justify-content: center;\n  color: rgba(255, 255, 255, 0.35);\n}\n.styles-module__active___hosp7 .styles-module__canvasToggleIcon___7pJ82 {\n  color: rgba(255, 255, 255, 0.85);\n}\n.styles-module__light___ORIft .styles-module__canvasToggleIcon___7pJ82 {\n  color: rgba(0, 0, 0, 0.25);\n}\n.styles-module__light___ORIft .styles-module__active___hosp7 .styles-module__canvasToggleIcon___7pJ82 {\n  color: rgba(255, 255, 255, 0.85);\n}\n\n.styles-module__canvasToggleLabel___OanpY {\n  font-size: 0.8125rem;\n  font-weight: 400;\n  color: rgba(255, 255, 255, 0.6);\n  letter-spacing: -0.0094em;\n}\n.styles-module__active___hosp7 .styles-module__canvasToggleLabel___OanpY {\n  color: #fff;\n}\n.styles-module__light___ORIft .styles-module__canvasToggleLabel___OanpY {\n  color: rgba(0, 0, 0, 0.5);\n}\n.styles-module__light___ORIft .styles-module__active___hosp7 .styles-module__canvasToggleLabel___OanpY {\n  color: #fff;\n}\n\n.styles-module__canvasPurposeWrap___hj6zk {\n  display: grid;\n  grid-template-rows: 1fr;\n  transition: grid-template-rows 0.2s ease, opacity 0.15s ease;\n  opacity: 1;\n}\n.styles-module__canvasPurposeWrap___hj6zk.styles-module__collapsed___Ms9vS {\n  grid-template-rows: 0fr;\n  opacity: 0;\n}\n\n.styles-module__canvasPurposeInner___VWiyu {\n  overflow: hidden;\n}\n\n.styles-module__canvasPurposeToggle___byDH2 {\n  display: flex;\n  align-items: center;\n  gap: 0.5rem;\n  cursor: pointer;\n  margin: 0.375rem 1rem 0.375rem 1.1875rem;\n}\n.styles-module__canvasPurposeToggle___byDH2 input[type=checkbox] {\n  position: absolute;\n  opacity: 0;\n  width: 0;\n  height: 0;\n}\n\n.styles-module__canvasPurposeCheck___xqd7l {\n  position: relative;\n  width: 14px;\n  height: 14px;\n  border: 1px solid rgba(255, 255, 255, 0.2);\n  border-radius: 4px;\n  background: rgba(255, 255, 255, 0.05);\n  display: flex;\n  align-items: center;\n  justify-content: center;\n  flex-shrink: 0;\n  transition: background 0.25s ease, border-color 0.25s ease;\n}\n.styles-module__canvasPurposeCheck___xqd7l svg {\n  color: #1a1a1a;\n  opacity: 1;\n  transition: opacity 0.15s ease;\n}\n.styles-module__canvasPurposeCheck___xqd7l.styles-module__checked___-1JGH {\n  border-color: rgba(255, 255, 255, 0.3);\n  background: rgb(255, 255, 255);\n}\n.styles-module__light___ORIft .styles-module__canvasPurposeCheck___xqd7l {\n  border: 1px solid rgba(0, 0, 0, 0.15);\n  background: #fff;\n}\n.styles-module__light___ORIft .styles-module__canvasPurposeCheck___xqd7l.styles-module__checked___-1JGH {\n  border-color: #1a1a1a;\n  background: #1a1a1a;\n}\n.styles-module__light___ORIft .styles-module__canvasPurposeCheck___xqd7l.styles-module__checked___-1JGH svg {\n  color: #fff;\n}\n\n.styles-module__canvasPurposeLabel___Zu-tD {\n  font-size: 0.8125rem;\n  font-weight: 400;\n  color: rgba(255, 255, 255, 0.5);\n  letter-spacing: -0.0094em;\n  display: flex;\n  align-items: center;\n  gap: 0.25rem;\n}\n.styles-module__light___ORIft .styles-module__canvasPurposeLabel___Zu-tD {\n  color: rgba(0, 0, 0, 0.5);\n}\n\n.styles-module__canvasPurposeHelp___jijwR {\n  position: relative;\n  display: inline-flex;\n  align-items: center;\n  justify-content: center;\n  cursor: help;\n}\n.styles-module__canvasPurposeHelp___jijwR svg {\n  color: rgba(255, 255, 255, 0.2);\n  transform: translateY(2px);\n  transition: color 0.15s ease;\n}\n.styles-module__canvasPurposeHelp___jijwR:hover svg {\n  color: rgba(255, 255, 255, 0.5);\n}\n.styles-module__light___ORIft .styles-module__canvasPurposeHelp___jijwR svg {\n  color: rgba(0, 0, 0, 0.2);\n}\n.styles-module__light___ORIft .styles-module__canvasPurposeHelp___jijwR:hover svg {\n  color: rgba(0, 0, 0, 0.5);\n}\n\n.styles-module__placement___zcxv8 {\n  position: absolute;\n  border: 1.5px dashed rgba(59, 130, 246, 0.4);\n  border-radius: 6px;\n  background: rgba(59, 130, 246, 0.08);\n  cursor: grab;\n  transition: box-shadow 0.15s, border-color 0.15s, opacity 0.15s ease, transform 0.15s ease;\n  user-select: none;\n  pointer-events: auto;\n  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);\n  animation: styles-module__placementEnter___TdRhf 0.25s cubic-bezier(0.34, 1.2, 0.64, 1);\n}\n.styles-module__placement___zcxv8:active {\n  cursor: grabbing;\n}\n.styles-module__placement___zcxv8:hover {\n  border-color: rgba(59, 130, 246, 0.5);\n  background: rgba(59, 130, 246, 0.1);\n  box-shadow: 0 2px 8px rgba(59, 130, 246, 0.12);\n}\n.styles-module__placement___zcxv8.styles-module__selected___6yrp6 {\n  border-color: #3c82f7;\n  border-style: solid;\n  background: rgba(59, 130, 246, 0.1);\n  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.15), 0 2px 8px rgba(59, 130, 246, 0.15);\n}\n.styles-module__placement___zcxv8.styles-module__selected___6yrp6:hover {\n  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.15), 0 2px 8px rgba(59, 130, 246, 0.15);\n}\n.styles-module__wireframe___itvQU .styles-module__placement___zcxv8 {\n  border-color: rgba(249, 115, 22, 0.4);\n  background: rgba(249, 115, 22, 0.08);\n}\n.styles-module__wireframe___itvQU .styles-module__placement___zcxv8:hover {\n  border-color: rgba(249, 115, 22, 0.5);\n  background: rgba(249, 115, 22, 0.1);\n  box-shadow: 0 2px 8px rgba(249, 115, 22, 0.12);\n}\n.styles-module__wireframe___itvQU .styles-module__placement___zcxv8.styles-module__selected___6yrp6 {\n  border-color: #f97316;\n  background: rgba(249, 115, 22, 0.1);\n  box-shadow: 0 0 0 2px rgba(249, 115, 22, 0.15), 0 2px 8px rgba(249, 115, 22, 0.15);\n}\n.styles-module__wireframe___itvQU .styles-module__placement___zcxv8.styles-module__selected___6yrp6:hover {\n  box-shadow: 0 0 0 2px rgba(249, 115, 22, 0.15), 0 2px 8px rgba(249, 115, 22, 0.15);\n}\n.styles-module__placement___zcxv8.styles-module__dragging___le6KZ {\n  opacity: 0.85;\n  z-index: 50;\n}\n.styles-module__placement___zcxv8.styles-module__exiting___YrM8F {\n  opacity: 0;\n  transform: scale(0.97);\n  pointer-events: none;\n  animation: none;\n  transition: opacity 0.2s ease, transform 0.2s cubic-bezier(0.32, 0.72, 0, 1);\n}\n\n.styles-module__placementContent___f64A4 {\n  width: 100%;\n  height: 100%;\n  overflow: hidden;\n  pointer-events: none;\n}\n\n.styles-module__placementLabel___0KvWl {\n  position: absolute;\n  top: -18px;\n  left: 0;\n  font-size: 10px;\n  font-weight: 600;\n  color: rgba(59, 130, 246, 0.7);\n  white-space: nowrap;\n  pointer-events: none;\n  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;\n  text-shadow: 0 0 4px rgba(255, 255, 255, 0.8), 0 0 8px rgba(255, 255, 255, 0.5);\n}\n.styles-module__selected___6yrp6 .styles-module__placementLabel___0KvWl {\n  color: #3c82f7;\n}\n.styles-module__wireframe___itvQU .styles-module__placementLabel___0KvWl {\n  color: rgba(249, 115, 22, 0.7);\n}\n.styles-module__wireframe___itvQU .styles-module__selected___6yrp6 .styles-module__placementLabel___0KvWl {\n  color: #f97316;\n}\n\n.styles-module__placementAnnotation___78pTr {\n  position: absolute;\n  bottom: -18px;\n  left: 0;\n  right: 0;\n  font-weight: 450;\n  color: rgba(0, 0, 0, 0.5);\n  font-size: 10px;\n  white-space: nowrap;\n  overflow: hidden;\n  text-overflow: ellipsis;\n  pointer-events: none;\n  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;\n  text-shadow: 0 0 4px rgba(255, 255, 255, 0.9), 0 0 8px rgba(255, 255, 255, 0.6);\n  opacity: 0;\n  transform: translateY(-2px);\n  transition: opacity 0.2s ease, transform 0.2s ease;\n}\n.styles-module__placementAnnotation___78pTr.styles-module__annotationVisible___mrUyA {\n  opacity: 1;\n  transform: translateY(0);\n}\n\n.styles-module__sectionAnnotation___aUIs0 {\n  position: absolute;\n  bottom: -18px;\n  left: 0;\n  right: 0;\n  font-weight: 450;\n  color: rgba(59, 130, 246, 0.6);\n  font-size: 10px;\n  white-space: nowrap;\n  overflow: hidden;\n  text-overflow: ellipsis;\n  pointer-events: none;\n  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;\n  text-shadow: 0 0 4px rgba(255, 255, 255, 0.9), 0 0 8px rgba(255, 255, 255, 0.6);\n  opacity: 0;\n  transform: translateY(-2px);\n  transition: opacity 0.2s ease, transform 0.2s ease;\n}\n.styles-module__sectionAnnotation___aUIs0.styles-module__annotationVisible___mrUyA {\n  opacity: 1;\n  transform: translateY(0);\n}\n\n.styles-module__handle___Ikbxm {\n  position: absolute;\n  width: 8px;\n  height: 8px;\n  background: #fff;\n  border: 1.5px solid #3c82f7;\n  border-radius: 2px;\n  z-index: 12;\n  box-shadow: 0 0 0 0.5px rgba(0, 0, 0, 0.1), 0 1px 2px rgba(0, 0, 0, 0.12);\n  opacity: 0;\n  transform: scale(0.3);\n  pointer-events: none;\n  will-change: opacity, transform;\n  transition: opacity 0.2s ease-out, transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);\n}\n.styles-module__placement___zcxv8:hover .styles-module__handle___Ikbxm, .styles-module__sectionOutline___s0hy-:hover .styles-module__handle___Ikbxm, .styles-module__ghostOutline___po-kO:hover .styles-module__handle___Ikbxm, .styles-module__placement___zcxv8:active .styles-module__handle___Ikbxm, .styles-module__sectionOutline___s0hy-:active .styles-module__handle___Ikbxm, .styles-module__ghostOutline___po-kO:active .styles-module__handle___Ikbxm, .styles-module__selected___6yrp6 .styles-module__handle___Ikbxm {\n  opacity: 1;\n  transform: scale(1);\n  pointer-events: auto;\n}\n.styles-module__sectionOutline___s0hy- .styles-module__handle___Ikbxm {\n  border-color: inherit;\n}\n.styles-module__wireframe___itvQU .styles-module__handle___Ikbxm {\n  border-color: #f97316;\n}\n\n.styles-module__handleNw___4TMIj {\n  top: -4px;\n  left: -4px;\n  cursor: nw-resize;\n}\n\n.styles-module__handleNe___mnsTh {\n  top: -4px;\n  right: -4px;\n  cursor: ne-resize;\n}\n\n.styles-module__handleSe___oSFnk {\n  bottom: -4px;\n  right: -4px;\n  cursor: se-resize;\n}\n\n.styles-module__handleSw___pi--Z {\n  bottom: -4px;\n  left: -4px;\n  cursor: sw-resize;\n}\n\n.styles-module__handleN___aBA-Q, .styles-module__handleE___0hM5u, .styles-module__handleS___JjDRv, .styles-module__handleW___ERWGQ {\n  opacity: 0 !important;\n  pointer-events: none !important;\n}\n\n.styles-module__edgeHandle___XxXdT {\n  position: absolute;\n  z-index: 11;\n  display: flex;\n  align-items: center;\n  justify-content: center;\n}\n.styles-module__edgeHandle___XxXdT::after {\n  content: "";\n  position: absolute;\n  border-radius: 4px;\n  background: #3c82f7;\n}\n.styles-module__wireframe___itvQU .styles-module__edgeHandle___XxXdT::after {\n  background: #f97316;\n}\n.styles-module__edgeHandle___XxXdT::after {\n  opacity: 0;\n  transition: opacity 0.1s ease, transform 0.1s ease;\n  transform: scale(0.8);\n}\n.styles-module__edgeHandle___XxXdT:hover::after {\n  opacity: 0.85;\n  transform: scale(1);\n}\n.styles-module__edgeHandle___XxXdT svg {\n  position: relative;\n  z-index: 1;\n  opacity: 0;\n  transition: opacity 0.1s ease;\n  filter: drop-shadow(0 0 2px var(--agd-surface));\n}\n.styles-module__edgeHandle___XxXdT:hover svg {\n  opacity: 1;\n}\n\n.styles-module__edgeN___-JJDj, .styles-module__edgeS___66lMX {\n  left: 12px;\n  right: 12px;\n  height: 12px;\n  cursor: n-resize;\n}\n.styles-module__edgeN___-JJDj::after, .styles-module__edgeS___66lMX::after {\n  width: 24px;\n  height: 4px;\n}\n\n.styles-module__edgeN___-JJDj {\n  top: -6px;\n}\n\n.styles-module__edgeS___66lMX {\n  bottom: -6px;\n  cursor: s-resize;\n}\n\n.styles-module__edgeE___1bGDa, .styles-module__edgeW___lHQNo {\n  top: 12px;\n  bottom: 12px;\n  width: 12px;\n  cursor: e-resize;\n}\n.styles-module__edgeE___1bGDa::after, .styles-module__edgeW___lHQNo::after {\n  width: 4px;\n  height: 24px;\n}\n\n.styles-module__edgeE___1bGDa {\n  right: -6px;\n}\n\n.styles-module__edgeW___lHQNo {\n  left: -6px;\n  cursor: w-resize;\n}\n\n.styles-module__deleteButton___LkGCb {\n  position: absolute;\n  top: -8px;\n  right: -8px;\n  width: 18px;\n  height: 18px;\n  border-radius: 50%;\n  background: rgba(255, 255, 255, 0.9);\n  backdrop-filter: blur(8px);\n  border: 1px solid rgba(0, 0, 0, 0.08);\n  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);\n  color: rgba(0, 0, 0, 0.35);\n  cursor: pointer;\n  display: flex;\n  align-items: center;\n  justify-content: center;\n  font-size: 10px;\n  line-height: 1;\n  z-index: 15;\n  pointer-events: none;\n  opacity: 0;\n  transform: scale(0.8);\n  will-change: opacity, transform;\n  transition: opacity 0.2s ease-out, transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1), background 0.12s ease, color 0.12s ease, border-color 0.12s ease, box-shadow 0.12s ease;\n}\n.styles-module__placement___zcxv8:hover .styles-module__deleteButton___LkGCb, .styles-module__selected___6yrp6 .styles-module__deleteButton___LkGCb, .styles-module__sectionOutline___s0hy-:hover .styles-module__deleteButton___LkGCb, .styles-module__sectionOutline___s0hy-.styles-module__selected___6yrp6 .styles-module__deleteButton___LkGCb, .styles-module__ghostOutline___po-kO:hover .styles-module__deleteButton___LkGCb, .styles-module__ghostOutline___po-kO.styles-module__selected___6yrp6 .styles-module__deleteButton___LkGCb {\n  opacity: 1;\n  transform: scale(1);\n  pointer-events: auto;\n}\n.styles-module__deleteButton___LkGCb:hover {\n  background: #ef4444;\n  color: #fff;\n  border-color: #ef4444;\n  box-shadow: 0 1px 4px rgba(239, 68, 68, 0.3);\n  transform: scale(1.1);\n}\n.styles-module__overlay___aWh-q:not(.styles-module__light___ORIft) .styles-module__deleteButton___LkGCb, .styles-module__rearrangeOverlay___-3R3t:not(.styles-module__light___ORIft) .styles-module__deleteButton___LkGCb {\n  background: rgba(40, 40, 40, 0.9);\n  border-color: rgba(255, 255, 255, 0.1);\n  color: rgba(255, 255, 255, 0.5);\n  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);\n}\n.styles-module__overlay___aWh-q:not(.styles-module__light___ORIft) .styles-module__deleteButton___LkGCb:hover, .styles-module__rearrangeOverlay___-3R3t:not(.styles-module__light___ORIft) .styles-module__deleteButton___LkGCb:hover {\n  background: #ef4444;\n  color: #fff;\n  border-color: #ef4444;\n}\n\n.styles-module__drawBox___BrVAa {\n  position: fixed;\n  pointer-events: none;\n  z-index: 99996;\n  border: 2px solid #3c82f7;\n  border-radius: 6px;\n  background: rgba(59, 130, 246, 0.15);\n}\n\n.styles-module__selectBox___Iu8kB {\n  position: fixed;\n  pointer-events: none;\n  z-index: 99996;\n  border: 1px dashed #3c82f7;\n  background: rgba(59, 130, 246, 0.08);\n  border-radius: 2px;\n}\n\n.styles-module__sizeIndicator___7zJ4y {\n  position: fixed;\n  pointer-events: none;\n  z-index: 100001;\n  font-size: 10px;\n  color: #fff;\n  background: #3c82f7;\n  padding: 2px 6px;\n  border-radius: 4px;\n  white-space: nowrap;\n  font-weight: 500;\n  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;\n  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);\n}\n\n.styles-module__guideLine___DUQY2 {\n  pointer-events: none;\n  z-index: 100001;\n  background: #f0f;\n  opacity: 0.5;\n}\n\n.styles-module__dragPreview___onPbU {\n  position: fixed;\n  z-index: 100002;\n  pointer-events: none;\n  border: 1.5px dashed #3c82f7;\n  border-radius: 6px;\n  background: rgba(59, 130, 246, 0.1);\n  backdrop-filter: blur(8px);\n  display: flex;\n  align-items: center;\n  justify-content: center;\n  font-size: 9px;\n  font-weight: 600;\n  color: #3c82f7;\n  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;\n  text-transform: uppercase;\n  letter-spacing: 0.04em;\n  box-shadow: 0 4px 16px rgba(59, 130, 246, 0.15);\n  transition: width 0.08s ease, height 0.08s ease, opacity 0.08s ease;\n}\n\n.styles-module__dragPreviewWireframe___jsg0G {\n  border-color: #f97316;\n  background: rgba(249, 115, 22, 0.1);\n  color: #f97316;\n  box-shadow: 0 4px 16px rgba(249, 115, 22, 0.15);\n}\n\n.styles-module__palette___C7iSH {\n  position: absolute;\n  right: 5px;\n  bottom: calc(100% + 0.5rem);\n  width: 256px;\n  overflow: hidden;\n  background: #1c1c1c;\n  border: none;\n  border-radius: 1rem;\n  padding: 13px 0 16px;\n  box-shadow: 0 1px 8px rgba(0, 0, 0, 0.25), 0 0 0 1px rgba(0, 0, 0, 0.04);\n  z-index: 100001;\n  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;\n  cursor: default;\n  opacity: 0;\n  filter: blur(5px);\n}\n.styles-module__palette___C7iSH .styles-module__paletteItem___6TlnA,\n.styles-module__palette___C7iSH .styles-module__paletteItemLabel___6ncO4,\n.styles-module__palette___C7iSH .styles-module__paletteSectionTitle___PqnjX,\n.styles-module__palette___C7iSH .styles-module__paletteFooter___QYnAG {\n  transition: background 0.25s ease, color 0.25s ease, border-color 0.25s ease;\n}\n.styles-module__palette___C7iSH.styles-module__enter___6LYk5 {\n  opacity: 1;\n  transform: translateY(0);\n  filter: blur(0px);\n  transition: opacity 0.2s ease, transform 0.2s ease, filter 0.2s ease;\n}\n.styles-module__palette___C7iSH.styles-module__exit___iSGRw {\n  opacity: 0;\n  transform: translateY(6px);\n  filter: blur(5px);\n  pointer-events: none;\n  transition: opacity 0.1s ease, transform 0.1s ease, filter 0.1s ease;\n}\n.styles-module__palette___C7iSH.styles-module__light___ORIft {\n  background: #fff;\n  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08), 0 4px 16px rgba(0, 0, 0, 0.06), 0 0 0 1px rgba(0, 0, 0, 0.04);\n}\n\n.styles-module__paletteSection___V8DEA {\n  padding: 0 1rem;\n}\n.styles-module__paletteSection___V8DEA + .styles-module__paletteSection___V8DEA {\n  margin-top: 0.5rem;\n  padding-top: 0.5rem;\n  border-top: 1px solid rgba(255, 255, 255, 0.07);\n}\n.styles-module__light___ORIft .styles-module__paletteSection___V8DEA + .styles-module__paletteSection___V8DEA {\n  border-top-color: rgba(0, 0, 0, 0.07);\n}\n\n.styles-module__paletteSectionTitle___PqnjX {\n  font-size: 0.6875rem;\n  font-weight: 500;\n  color: rgba(255, 255, 255, 0.5);\n  letter-spacing: -0.0094em;\n  padding: 0 0 3px 3px;\n}\n.styles-module__light___ORIft .styles-module__paletteSectionTitle___PqnjX {\n  color: rgba(0, 0, 0, 0.4);\n}\n\n.styles-module__paletteItem___6TlnA {\n  display: flex;\n  align-items: center;\n  gap: 0.375rem;\n  padding: 0.25rem 0.25rem;\n  margin-bottom: 1px;\n  border-radius: 0.375rem;\n  cursor: pointer;\n  transition: background-color 0.15s ease, border-color 0.15s ease;\n  border: 1px solid transparent;\n  user-select: none;\n  min-height: 24px;\n}\n.styles-module__paletteItem___6TlnA:hover {\n  background: rgba(255, 255, 255, 0.1);\n}\n.styles-module__paletteItem___6TlnA.styles-module__active___hosp7 {\n  background: #3c82f7;\n  border-color: transparent;\n}\n.styles-module__paletteItem___6TlnA.styles-module__wireframe___itvQU.styles-module__active___hosp7 {\n  background: #f97316;\n}\n.styles-module__light___ORIft .styles-module__paletteItem___6TlnA:hover {\n  background: rgba(0, 0, 0, 0.05);\n}\n.styles-module__light___ORIft .styles-module__paletteItem___6TlnA.styles-module__active___hosp7 {\n  background: #3c82f7;\n  border-color: transparent;\n}\n.styles-module__light___ORIft .styles-module__paletteItem___6TlnA.styles-module__wireframe___itvQU.styles-module__active___hosp7 {\n  background: #f97316;\n}\n\n.styles-module__paletteItemIcon___0NPQK {\n  width: 20px;\n  height: 16px;\n  border-radius: 2px;\n  border: 1px dashed rgba(255, 255, 255, 0.15);\n  background: rgba(255, 255, 255, 0.04);\n  display: flex;\n  align-items: center;\n  justify-content: center;\n  flex-shrink: 0;\n  overflow: hidden;\n  color: rgba(255, 255, 255, 0.45);\n}\n.styles-module__paletteItemIcon___0NPQK svg {\n  display: block;\n  width: 20px;\n  height: 16px;\n}\n.styles-module__active___hosp7 .styles-module__paletteItemIcon___0NPQK {\n  border-color: rgba(255, 255, 255, 0.3);\n  background: rgba(255, 255, 255, 0.15);\n  color: #fff;\n}\n.styles-module__light___ORIft .styles-module__paletteItemIcon___0NPQK {\n  border-color: rgba(0, 0, 0, 0.12);\n  background: rgba(0, 0, 0, 0.02);\n  color: rgba(0, 0, 0, 0.4);\n}\n.styles-module__light___ORIft .styles-module__active___hosp7 .styles-module__paletteItemIcon___0NPQK {\n  border-color: rgba(255, 255, 255, 0.3);\n  background: rgba(255, 255, 255, 0.15);\n  color: #fff;\n}\n\n.styles-module__paletteItemLabel___6ncO4 {\n  font-size: 0.8125rem;\n  font-weight: 500;\n  color: rgba(255, 255, 255, 0.85);\n  letter-spacing: -0.0094em;\n  line-height: 1;\n  min-width: 0;\n}\n.styles-module__active___hosp7 .styles-module__paletteItemLabel___6ncO4 {\n  color: #fff;\n  font-weight: 600;\n}\n.styles-module__light___ORIft .styles-module__paletteItemLabel___6ncO4 {\n  color: rgba(0, 0, 0, 0.7);\n}\n.styles-module__light___ORIft .styles-module__active___hosp7 .styles-module__paletteItemLabel___6ncO4 {\n  color: #fff;\n  font-weight: 600;\n}\n\n.styles-module__placeScroll___7sClM {\n  max-height: 240px;\n  overflow-y: auto;\n  overflow-x: hidden;\n  padding-top: 0.25rem;\n}\n.styles-module__placeScroll___7sClM.styles-module__fadeTop___KT9tF {\n  -webkit-mask-image: linear-gradient(to bottom, transparent 0, black 32px);\n  mask-image: linear-gradient(to bottom, transparent 0, black 32px);\n}\n.styles-module__placeScroll___7sClM.styles-module__fadeBottom___x3ShT {\n  -webkit-mask-image: linear-gradient(to bottom, black calc(100% - 32px), transparent 100%);\n  mask-image: linear-gradient(to bottom, black calc(100% - 32px), transparent 100%);\n}\n.styles-module__placeScroll___7sClM.styles-module__fadeTop___KT9tF.styles-module__fadeBottom___x3ShT {\n  -webkit-mask-image: linear-gradient(to bottom, transparent 0, black 32px, black calc(100% - 32px), transparent 100%);\n  mask-image: linear-gradient(to bottom, transparent 0, black 32px, black calc(100% - 32px), transparent 100%);\n}\n.styles-module__placeScroll___7sClM::-webkit-scrollbar {\n  width: 3px;\n}\n.styles-module__placeScroll___7sClM::-webkit-scrollbar-thumb {\n  background: rgba(255, 255, 255, 0.12);\n  border-radius: 2px;\n}\n.styles-module__light___ORIft .styles-module__placeScroll___7sClM::-webkit-scrollbar-thumb {\n  background: rgba(0, 0, 0, 0.1);\n}\n\n.styles-module__paletteFooterWrap___71-fI {\n  display: grid;\n  grid-template-rows: 1fr;\n  transition: grid-template-rows 0.25s cubic-bezier(0.32, 0.72, 0, 1);\n}\n.styles-module__paletteFooterWrap___71-fI.styles-module__footerHidden___fJUik {\n  grid-template-rows: 0fr;\n}\n\n.styles-module__paletteFooterInnerContent___VC26h {\n  opacity: 1;\n  transform: translateY(0);\n  transition: opacity 0.15s ease, transform 0.15s ease;\n}\n.styles-module__footerHidden___fJUik .styles-module__paletteFooterInnerContent___VC26h {\n  opacity: 0;\n  transform: translateY(4px);\n}\n\n.styles-module__paletteFooterInner___dfylY {\n  overflow: hidden;\n}\n\n.styles-module__paletteFooter___QYnAG {\n  display: flex;\n  align-items: center;\n  justify-content: space-between;\n  min-height: 24px;\n  padding: 0 1rem;\n  margin-top: 0.5rem;\n  padding-top: 0.5rem;\n  border-top: 1px solid rgba(255, 255, 255, 0.07);\n}\n.styles-module__light___ORIft .styles-module__paletteFooter___QYnAG {\n  border-top-color: rgba(0, 0, 0, 0.07);\n}\n\n.styles-module__paletteFooterCount___D3Fia {\n  font-size: 0.8125rem;\n  font-weight: 400;\n  letter-spacing: -0.0094em;\n  color: rgba(255, 255, 255, 0.5);\n}\n.styles-module__light___ORIft .styles-module__paletteFooterCount___D3Fia {\n  color: rgba(0, 0, 0, 0.5);\n}\n\n.styles-module__paletteFooterClear___ybBoa {\n  font-size: 0.8125rem;\n  font-weight: 400;\n  letter-spacing: -0.0094em;\n  color: rgba(255, 255, 255, 0.5);\n  background: none;\n  border: none;\n  cursor: pointer;\n  padding: 0;\n  font-family: inherit;\n  transition: color 0.15s ease;\n}\n.styles-module__paletteFooterClear___ybBoa:hover {\n  color: rgba(255, 255, 255, 0.7);\n}\n.styles-module__light___ORIft .styles-module__paletteFooterClear___ybBoa {\n  color: rgba(0, 0, 0, 0.5);\n}\n.styles-module__light___ORIft .styles-module__paletteFooterClear___ybBoa:hover {\n  color: rgba(0, 0, 0, 0.6);\n}\n\n.styles-module__paletteFooterActions___fLzv8 {\n  display: flex;\n  align-items: center;\n  gap: 0.75rem;\n}\n\n.styles-module__rollingWrap___S75jM {\n  display: inline-block;\n  overflow: hidden;\n  height: 1.15em;\n  position: relative;\n  vertical-align: bottom;\n}\n\n.styles-module__rollingNum___1RKDx {\n  position: absolute;\n  left: 0;\n  top: 0;\n}\n\n.styles-module__exitUp___AFDRW {\n  animation: styles-module__numExitUp___FRQqx 0.25s cubic-bezier(0.32, 0.72, 0, 1) forwards;\n}\n\n.styles-module__enterUp___CPlXb {\n  animation: styles-module__numEnterUp___2Yd-w 0.25s cubic-bezier(0.32, 0.72, 0, 1) forwards;\n}\n\n.styles-module__exitDown___-1yAy {\n  animation: styles-module__numExitDown___xm5by 0.25s cubic-bezier(0.32, 0.72, 0, 1) forwards;\n}\n\n.styles-module__enterDown___DDuFR {\n  animation: styles-module__numEnterDown___hpxBk 0.25s cubic-bezier(0.32, 0.72, 0, 1) forwards;\n}\n\n@keyframes styles-module__numExitUp___FRQqx {\n  from {\n    transform: translateY(0);\n    opacity: 1;\n  }\n  to {\n    transform: translateY(-110%);\n    opacity: 0;\n  }\n}\n@keyframes styles-module__numEnterUp___2Yd-w {\n  from {\n    transform: translateY(110%);\n    opacity: 0;\n  }\n  to {\n    transform: translateY(0);\n    opacity: 1;\n  }\n}\n@keyframes styles-module__numExitDown___xm5by {\n  from {\n    transform: translateY(0);\n    opacity: 1;\n  }\n  to {\n    transform: translateY(110%);\n    opacity: 0;\n  }\n}\n@keyframes styles-module__numEnterDown___hpxBk {\n  from {\n    transform: translateY(-110%);\n    opacity: 0;\n  }\n  to {\n    transform: translateY(0);\n    opacity: 1;\n  }\n}\n.styles-module__rearrangeOverlay___-3R3t {\n  position: fixed;\n  inset: 0;\n  z-index: 99995;\n  pointer-events: none;\n  cursor: default;\n  user-select: none;\n  animation: styles-module__overlayFadeIn___aECVy 0.15s ease;\n}\n\n.styles-module__hoverHighlight___8eT-v {\n  position: fixed;\n  pointer-events: none;\n  z-index: 99994;\n  border: 2px dashed rgba(59, 130, 246, 0.5);\n  border-radius: 4px;\n  background: rgba(59, 130, 246, 0.06);\n  animation: styles-module__highlightFadeIn___Lg7KY 0.12s ease;\n}\n\n.styles-module__sectionOutline___s0hy- {\n  position: fixed;\n  border: 2px solid;\n  border-radius: 4px;\n  cursor: grab;\n}\n.styles-module__sectionOutline___s0hy-:active {\n  cursor: grabbing;\n}\n.styles-module__sectionOutline___s0hy- {\n  transition: box-shadow 0.15s, border-color 0.3s, background-color 0.3s, border-style 0s;\n  user-select: none;\n  pointer-events: auto;\n  animation: styles-module__sectionEnter___-8BXT 0.2s ease;\n}\n.styles-module__sectionOutline___s0hy-:hover {\n  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.1), 0 4px 12px rgba(0, 0, 0, 0.15);\n}\n.styles-module__sectionOutline___s0hy-.styles-module__selected___6yrp6 {\n  border-style: solid;\n  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.15), 0 2px 8px rgba(59, 130, 246, 0.15);\n}\n.styles-module__sectionOutline___s0hy-.styles-module__selected___6yrp6:hover {\n  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.15), 0 2px 8px rgba(59, 130, 246, 0.15);\n}\n.styles-module__sectionOutline___s0hy-.styles-module__settled___b5U5o:not(.styles-module__selected___6yrp6) {\n  border: 1.5px dashed rgba(150, 150, 150, 0.35);\n  background-color: transparent !important;\n  box-shadow: none;\n}\n.styles-module__sectionOutline___s0hy-.styles-module__settled___b5U5o:not(.styles-module__selected___6yrp6):hover {\n  border-color: rgba(150, 150, 150, 0.6);\n  box-shadow: none;\n}\n.styles-module__sectionOutline___s0hy-.styles-module__settled___b5U5o:not(.styles-module__selected___6yrp6) .styles-module__sectionLabel___F80HQ {\n  opacity: 0;\n  transition: opacity 0.15s ease;\n}\n.styles-module__sectionOutline___s0hy-.styles-module__settled___b5U5o:not(.styles-module__selected___6yrp6):hover .styles-module__sectionLabel___F80HQ {\n  opacity: 1;\n}\n.styles-module__sectionOutline___s0hy-.styles-module__settled___b5U5o:not(.styles-module__selected___6yrp6) .styles-module__movedBadge___s8z-q,\n.styles-module__sectionOutline___s0hy-.styles-module__settled___b5U5o:not(.styles-module__selected___6yrp6) .styles-module__sectionDimensions___RcJSL {\n  opacity: 0;\n  transition: opacity 0.15s ease;\n}\n.styles-module__sectionOutline___s0hy-.styles-module__settled___b5U5o:not(.styles-module__selected___6yrp6):hover .styles-module__sectionDimensions___RcJSL {\n  opacity: 1;\n}\n.styles-module__sectionOutline___s0hy-.styles-module__exiting___YrM8F {\n  opacity: 0;\n  transform: scale(0.97);\n  pointer-events: none;\n  animation: none;\n  transition: opacity 0.2s ease, transform 0.2s cubic-bezier(0.32, 0.72, 0, 1);\n}\n\n.styles-module__sectionLabel___F80HQ {\n  position: absolute;\n  top: 4px;\n  left: 4px;\n  font-size: 10px;\n  font-weight: 600;\n  color: #fff;\n  padding: 2px 8px;\n  border-radius: 4px;\n  white-space: nowrap;\n  pointer-events: none;\n  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;\n  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.2);\n  max-width: calc(100% - 8px);\n  overflow: hidden;\n  text-overflow: ellipsis;\n}\n\n.styles-module__movedBadge___s8z-q {\n  position: absolute;\n  bottom: 22px;\n  right: 4px;\n  font-size: 9px;\n  font-weight: 700;\n  color: #fff;\n  background: #22c55e;\n  padding: 2px 6px;\n  border-radius: 4px;\n  white-space: nowrap;\n  pointer-events: none;\n  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;\n  text-transform: uppercase;\n  letter-spacing: 0.04em;\n  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.2);\n  opacity: 0;\n  transform: scale(0.8);\n  transition: opacity 0.15s ease, transform 0.15s ease;\n}\n.styles-module__movedBadge___s8z-q.styles-module__badgeVisible___npbdS {\n  opacity: 1;\n  transform: scale(1);\n  transition: opacity 0.2s cubic-bezier(0.34, 1.2, 0.64, 1), transform 0.2s cubic-bezier(0.34, 1.2, 0.64, 1);\n}\n\n.styles-module__resizedBadge___u51V8 {\n  background: #3c82f7;\n  bottom: 40px;\n}\n\n.styles-module__sectionDimensions___RcJSL {\n  position: absolute;\n  bottom: 4px;\n  right: 4px;\n  font-size: 9px;\n  font-weight: 500;\n  color: rgba(255, 255, 255, 0.7);\n  background: rgba(0, 0, 0, 0.5);\n  padding: 1px 5px;\n  border-radius: 3px;\n  white-space: nowrap;\n  pointer-events: none;\n  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;\n}\n.styles-module__light___ORIft .styles-module__sectionDimensions___RcJSL {\n  color: rgba(0, 0, 0, 0.5);\n  background: rgba(255, 255, 255, 0.7);\n}\n\n.styles-module__wireframeNotice___4GJyB {\n  position: fixed;\n  bottom: 16px;\n  left: 24px;\n  z-index: 99995;\n  font-size: 9.5px;\n  font-weight: 400;\n  color: rgba(0, 0, 0, 0.4);\n  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;\n  pointer-events: auto;\n  animation: styles-module__overlayFadeIn___aECVy 0.3s ease;\n  line-height: 1.5;\n  max-width: 280px;\n}\n\n.styles-module__wireframeOpacityRow___CJXzi {\n  display: flex;\n  align-items: center;\n  gap: 8px;\n  margin-bottom: 8px;\n}\n\n.styles-module__wireframeOpacityLabel___afkfT {\n  font-size: 9px;\n  font-weight: 500;\n  color: rgba(0, 0, 0, 0.32);\n  letter-spacing: 0.02em;\n  white-space: nowrap;\n  user-select: none;\n}\n\n.styles-module__wireframeOpacitySlider___YcoEs {\n  -webkit-appearance: none;\n  appearance: none;\n  width: 56px;\n  height: 4px;\n  background: rgba(0, 0, 0, 0.08);\n  border-radius: 2px;\n  outline: none;\n  cursor: pointer;\n  flex-shrink: 0;\n  transition: background 0.15s ease;\n}\n.styles-module__wireframeOpacitySlider___YcoEs:hover {\n  background: rgba(0, 0, 0, 0.13);\n}\n.styles-module__wireframeOpacitySlider___YcoEs::-webkit-slider-thumb {\n  -webkit-appearance: none;\n  appearance: none;\n  width: 10px;\n  height: 10px;\n  border-radius: 50%;\n  background: #f97316;\n  cursor: pointer;\n  transition: background 0.15s ease;\n}\n.styles-module__wireframeOpacitySlider___YcoEs::-webkit-slider-thumb:hover {\n  background: rgb(224.4209205021, 95.3548117155, 5.7790794979);\n}\n.styles-module__wireframeOpacitySlider___YcoEs::-moz-range-thumb {\n  width: 10px;\n  height: 10px;\n  border-radius: 50%;\n  background: #f97316;\n  border: none;\n  cursor: pointer;\n}\n.styles-module__wireframeOpacitySlider___YcoEs::-moz-range-track {\n  background: rgba(0, 0, 0, 0.08);\n  height: 4px;\n  border-radius: 2px;\n}\n\n.styles-module__wireframeNoticeTitleRow___PJqyG {\n  display: flex;\n  align-items: center;\n  gap: 0;\n  margin-bottom: 2px;\n}\n\n.styles-module__wireframeNoticeTitle___okr08 {\n  font-weight: 600;\n  color: rgba(0, 0, 0, 0.55);\n}\n\n.styles-module__wireframeNoticeDivider___PNKQ6 {\n  width: 1px;\n  height: 8px;\n  background: rgba(0, 0, 0, 0.12);\n  margin: 0 8px;\n  flex-shrink: 0;\n}\n\n.styles-module__wireframeStartOver___YFk-I {\n  font-size: 9.5px;\n  font-weight: 500;\n  color: rgba(0, 0, 0, 0.35);\n  cursor: pointer;\n  background: none;\n  border: none;\n  padding: 0;\n  font-family: inherit;\n  text-decoration: none;\n  transition: color 0.12s ease;\n  white-space: nowrap;\n}\n.styles-module__wireframeStartOver___YFk-I:hover {\n  color: rgba(0, 0, 0, 0.6);\n}\n\n.styles-module__ghostOutline___po-kO {\n  position: fixed;\n  border: 1.5px dashed rgba(59, 130, 246, 0.4);\n  border-radius: 4px;\n  background: rgba(59, 130, 246, 0.04);\n  cursor: grab;\n  opacity: 0.5;\n  user-select: none;\n  pointer-events: auto;\n  animation: styles-module__ghostEnter___EC3Mb 0.25s ease;\n  transition: box-shadow 0.15s, border-color 0.3s, opacity 0.25s;\n}\n.styles-module__ghostOutline___po-kO:active {\n  cursor: grabbing;\n}\n.styles-module__ghostOutline___po-kO:hover {\n  opacity: 0.7;\n  box-shadow: 0 0 0 1px rgba(59, 130, 246, 0.1), 0 4px 12px rgba(0, 0, 0, 0.08);\n}\n.styles-module__ghostOutline___po-kO.styles-module__selected___6yrp6 {\n  opacity: 1;\n  border-style: solid;\n  border-width: 2px;\n  border-color: #3c82f7;\n  background: rgba(59, 130, 246, 0.08);\n  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.15), 0 2px 8px rgba(59, 130, 246, 0.15);\n}\n.styles-module__ghostOutline___po-kO.styles-module__exiting___YrM8F {\n  opacity: 0;\n  transform: scale(0.97);\n  pointer-events: none;\n  animation: none;\n  transition: opacity 0.2s ease, transform 0.2s cubic-bezier(0.32, 0.72, 0, 1);\n}\n\n.styles-module__ghostBadge___tsQUK {\n  position: absolute;\n  bottom: calc(100% + 4px);\n  left: -1px;\n  font-size: 9px;\n  font-weight: 600;\n  color: rgba(59, 130, 246, 0.9);\n  background: rgba(59, 130, 246, 0.08);\n  border: 1px solid rgba(59, 130, 246, 0.2);\n  padding: 1px 5px;\n  border-radius: 3px;\n  white-space: nowrap;\n  pointer-events: none;\n  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;\n  letter-spacing: 0.02em;\n  line-height: 1.2;\n  animation: styles-module__badgeSlideIn___typJ7 0.2s ease both;\n}\n\n@keyframes styles-module__badgeSlideIn___typJ7 {\n  from {\n    opacity: 0;\n    transform: translateY(4px);\n  }\n  to {\n    opacity: 1;\n    transform: translateY(0);\n  }\n}\n.styles-module__ghostBadgeExtra___6CVoD {\n  display: inline;\n  animation: styles-module__badgeExtraIn___i4W8F 0.2s ease both;\n}\n\n@keyframes styles-module__badgeExtraIn___i4W8F {\n  from {\n    opacity: 0;\n  }\n  to {\n    opacity: 1;\n  }\n}\n.styles-module__originalOutline___Y6DD1 {\n  position: fixed;\n  border: 1.5px dashed rgba(150, 150, 150, 0.3);\n  border-radius: 4px;\n  background: transparent;\n  pointer-events: none;\n  user-select: none;\n  animation: styles-module__sectionEnter___-8BXT 0.2s ease;\n}\n\n.styles-module__originalLabel___HqI9g {\n  position: absolute;\n  top: 4px;\n  left: 4px;\n  font-size: 9px;\n  font-weight: 500;\n  color: rgba(150, 150, 150, 0.5);\n  padding: 1px 6px;\n  border-radius: 3px;\n  white-space: nowrap;\n  pointer-events: none;\n  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;\n  background: rgba(150, 150, 150, 0.08);\n}\n\n.styles-module__connectorSvg___Lovld {\n  position: fixed;\n  inset: 0;\n  width: 100vw;\n  height: 100vh;\n  pointer-events: none;\n  z-index: 99996;\n}\n\n.styles-module__connectorLine___XeWh- {\n  transition: opacity 0.2s ease;\n  animation: styles-module__connectorDraw___8sK5I 0.3s ease both;\n}\n\n.styles-module__connectorDot___yvf7C {\n  transform-box: fill-box;\n  transform-origin: center;\n  animation: styles-module__connectorDotIn___NwTUq 0.25s cubic-bezier(0.34, 1.56, 0.64, 1) 0.15s both;\n}\n\n@keyframes styles-module__connectorDraw___8sK5I {\n  from {\n    opacity: 0;\n  }\n  to {\n    opacity: 1;\n  }\n}\n@keyframes styles-module__connectorDotIn___NwTUq {\n  from {\n    transform: scale(0);\n    opacity: 0;\n  }\n  to {\n    transform: scale(1);\n    opacity: 1;\n  }\n}\n.styles-module__connectorExiting___2lLOs {\n  animation: styles-module__connectorOut___5QoPl 0.2s ease forwards;\n}\n.styles-module__connectorExiting___2lLOs .styles-module__connectorDot___yvf7C {\n  animation: styles-module__connectorDotOut___FEq7e 0.2s ease forwards;\n}\n\n@keyframes styles-module__connectorOut___5QoPl {\n  from {\n    opacity: 1;\n  }\n  to {\n    opacity: 0;\n  }\n}\n@keyframes styles-module__connectorDotOut___FEq7e {\n  from {\n    transform: scale(1);\n    opacity: 1;\n  }\n  to {\n    transform: scale(0);\n    opacity: 0;\n  }\n}\n@keyframes styles-module__placementEnter___TdRhf {\n  from {\n    opacity: 0;\n    transform: scale(0.85);\n  }\n  to {\n    opacity: 1;\n    transform: scale(1);\n  }\n}\n@keyframes styles-module__sectionEnter___-8BXT {\n  from {\n    opacity: 0;\n    transform: scale(0.96);\n  }\n  to {\n    opacity: 1;\n    transform: scale(1);\n  }\n}\n@keyframes styles-module__highlightFadeIn___Lg7KY {\n  from {\n    opacity: 0;\n  }\n  to {\n    opacity: 1;\n  }\n}\n@keyframes styles-module__overlayFadeIn___aECVy {\n  from {\n    opacity: 0;\n  }\n  to {\n    opacity: 1;\n  }\n}\n@keyframes styles-module__ghostEnter___EC3Mb {\n  from {\n    opacity: 0;\n    transform: scale(0.96);\n  }\n  to {\n    opacity: 0.6;\n    transform: scale(1);\n  }\n}';
-var classNames4 = { "overlayExiting": "styles-module__overlayExiting___iEmYr", "overlay": "styles-module__overlay___aWh-q", "overlayFadeIn": "styles-module__overlayFadeIn___aECVy", "light": "styles-module__light___ORIft", "wireframe": "styles-module__wireframe___itvQU", "placing": "styles-module__placing___45yD8", "passthrough": "styles-module__passthrough___xaFeE", "blankCanvas": "styles-module__blankCanvas___t2Eue", "visible": "styles-module__visible___OKKqX", "gridActive": "styles-module__gridActive___OZ-cf", "paletteHeader": "styles-module__paletteHeader___-Q5gQ", "paletteHeaderTitle": "styles-module__paletteHeaderTitle___oHqZC", "paletteHeaderDesc": "styles-module__paletteHeaderDesc___6i74T", "wireframePurposeWrap": "styles-module__wireframePurposeWrap___To-tS", "collapsed": "styles-module__collapsed___Ms9vS", "wireframePurposeInner": "styles-module__wireframePurposeInner___Lrahs", "wireframePurposeInput": "styles-module__wireframePurposeInput___7EtBN", "canvasToggle": "styles-module__canvasToggle___-QqSy", "active": "styles-module__active___hosp7", "canvasToggleIcon": "styles-module__canvasToggleIcon___7pJ82", "canvasToggleLabel": "styles-module__canvasToggleLabel___OanpY", "canvasPurposeWrap": "styles-module__canvasPurposeWrap___hj6zk", "canvasPurposeInner": "styles-module__canvasPurposeInner___VWiyu", "canvasPurposeToggle": "styles-module__canvasPurposeToggle___byDH2", "canvasPurposeCheck": "styles-module__canvasPurposeCheck___xqd7l", "checked": "styles-module__checked___-1JGH", "canvasPurposeLabel": "styles-module__canvasPurposeLabel___Zu-tD", "canvasPurposeHelp": "styles-module__canvasPurposeHelp___jijwR", "placement": "styles-module__placement___zcxv8", "placementEnter": "styles-module__placementEnter___TdRhf", "selected": "styles-module__selected___6yrp6", "dragging": "styles-module__dragging___le6KZ", "exiting": "styles-module__exiting___YrM8F", "placementContent": "styles-module__placementContent___f64A4", "placementLabel": "styles-module__placementLabel___0KvWl", "placementAnnotation": "styles-module__placementAnnotation___78pTr", "annotationVisible": "styles-module__annotationVisible___mrUyA", "sectionAnnotation": "styles-module__sectionAnnotation___aUIs0", "handle": "styles-module__handle___Ikbxm", "sectionOutline": "styles-module__sectionOutline___s0hy-", "ghostOutline": "styles-module__ghostOutline___po-kO", "handleNw": "styles-module__handleNw___4TMIj", "handleNe": "styles-module__handleNe___mnsTh", "handleSe": "styles-module__handleSe___oSFnk", "handleSw": "styles-module__handleSw___pi--Z", "handleN": "styles-module__handleN___aBA-Q", "handleE": "styles-module__handleE___0hM5u", "handleS": "styles-module__handleS___JjDRv", "handleW": "styles-module__handleW___ERWGQ", "edgeHandle": "styles-module__edgeHandle___XxXdT", "edgeN": "styles-module__edgeN___-JJDj", "edgeS": "styles-module__edgeS___66lMX", "edgeE": "styles-module__edgeE___1bGDa", "edgeW": "styles-module__edgeW___lHQNo", "deleteButton": "styles-module__deleteButton___LkGCb", "rearrangeOverlay": "styles-module__rearrangeOverlay___-3R3t", "drawBox": "styles-module__drawBox___BrVAa", "selectBox": "styles-module__selectBox___Iu8kB", "sizeIndicator": "styles-module__sizeIndicator___7zJ4y", "guideLine": "styles-module__guideLine___DUQY2", "dragPreview": "styles-module__dragPreview___onPbU", "dragPreviewWireframe": "styles-module__dragPreviewWireframe___jsg0G", "palette": "styles-module__palette___C7iSH", "paletteItem": "styles-module__paletteItem___6TlnA", "paletteItemLabel": "styles-module__paletteItemLabel___6ncO4", "paletteSectionTitle": "styles-module__paletteSectionTitle___PqnjX", "paletteFooter": "styles-module__paletteFooter___QYnAG", "enter": "styles-module__enter___6LYk5", "exit": "styles-module__exit___iSGRw", "paletteSection": "styles-module__paletteSection___V8DEA", "paletteItemIcon": "styles-module__paletteItemIcon___0NPQK", "placeScroll": "styles-module__placeScroll___7sClM", "fadeTop": "styles-module__fadeTop___KT9tF", "fadeBottom": "styles-module__fadeBottom___x3ShT", "paletteFooterWrap": "styles-module__paletteFooterWrap___71-fI", "footerHidden": "styles-module__footerHidden___fJUik", "paletteFooterInnerContent": "styles-module__paletteFooterInnerContent___VC26h", "paletteFooterInner": "styles-module__paletteFooterInner___dfylY", "paletteFooterCount": "styles-module__paletteFooterCount___D3Fia", "paletteFooterClear": "styles-module__paletteFooterClear___ybBoa", "paletteFooterActions": "styles-module__paletteFooterActions___fLzv8", "rollingWrap": "styles-module__rollingWrap___S75jM", "rollingNum": "styles-module__rollingNum___1RKDx", "exitUp": "styles-module__exitUp___AFDRW", "numExitUp": "styles-module__numExitUp___FRQqx", "enterUp": "styles-module__enterUp___CPlXb", "numEnterUp": "styles-module__numEnterUp___2Yd-w", "exitDown": "styles-module__exitDown___-1yAy", "numExitDown": "styles-module__numExitDown___xm5by", "enterDown": "styles-module__enterDown___DDuFR", "numEnterDown": "styles-module__numEnterDown___hpxBk", "hoverHighlight": "styles-module__hoverHighlight___8eT-v", "highlightFadeIn": "styles-module__highlightFadeIn___Lg7KY", "sectionEnter": "styles-module__sectionEnter___-8BXT", "settled": "styles-module__settled___b5U5o", "sectionLabel": "styles-module__sectionLabel___F80HQ", "movedBadge": "styles-module__movedBadge___s8z-q", "sectionDimensions": "styles-module__sectionDimensions___RcJSL", "badgeVisible": "styles-module__badgeVisible___npbdS", "resizedBadge": "styles-module__resizedBadge___u51V8", "wireframeNotice": "styles-module__wireframeNotice___4GJyB", "wireframeOpacityRow": "styles-module__wireframeOpacityRow___CJXzi", "wireframeOpacityLabel": "styles-module__wireframeOpacityLabel___afkfT", "wireframeOpacitySlider": "styles-module__wireframeOpacitySlider___YcoEs", "wireframeNoticeTitleRow": "styles-module__wireframeNoticeTitleRow___PJqyG", "wireframeNoticeTitle": "styles-module__wireframeNoticeTitle___okr08", "wireframeNoticeDivider": "styles-module__wireframeNoticeDivider___PNKQ6", "wireframeStartOver": "styles-module__wireframeStartOver___YFk-I", "ghostEnter": "styles-module__ghostEnter___EC3Mb", "ghostBadge": "styles-module__ghostBadge___tsQUK", "badgeSlideIn": "styles-module__badgeSlideIn___typJ7", "ghostBadgeExtra": "styles-module__ghostBadgeExtra___6CVoD", "badgeExtraIn": "styles-module__badgeExtraIn___i4W8F", "originalOutline": "styles-module__originalOutline___Y6DD1", "originalLabel": "styles-module__originalLabel___HqI9g", "connectorSvg": "styles-module__connectorSvg___Lovld", "connectorLine": "styles-module__connectorLine___XeWh-", "connectorDraw": "styles-module__connectorDraw___8sK5I", "connectorDot": "styles-module__connectorDot___yvf7C", "connectorDotIn": "styles-module__connectorDotIn___NwTUq", "connectorExiting": "styles-module__connectorExiting___2lLOs", "connectorOut": "styles-module__connectorOut___5QoPl", "connectorDotOut": "styles-module__connectorDotOut___FEq7e" };
-if (typeof document !== "undefined") {
-  let style = document.getElementById("feedback-tool-styles-design-mode-styles");
-  if (!style) {
-    style = document.createElement("style");
-    style.id = "feedback-tool-styles-design-mode-styles";
-    document.head.appendChild(style);
-  }
-  style.textContent = css4;
-}
-var styles_module_default3 = classNames4;
+var css5 = '.styles-module__overlay___aWh-q svg[fill=none],\n.styles-module__rearrangeOverlay___-3R3t svg[fill=none] {\n  fill: none !important;\n}\n.styles-module__overlay___aWh-q svg[fill=none] :not([fill]),\n.styles-module__rearrangeOverlay___-3R3t svg[fill=none] :not([fill]) {\n  fill: none !important;\n}\n\n.styles-module__overlayExiting___iEmYr {\n  opacity: 0 !important;\n  transition: opacity 0.25s ease !important;\n  pointer-events: none !important;\n}\n\n.styles-module__overlay___aWh-q {\n  position: fixed;\n  inset: 0;\n  z-index: 99995;\n  pointer-events: auto;\n  cursor: default;\n  animation: styles-module__overlayFadeIn___aECVy 0.15s ease;\n  --agd-stroke: rgba(59, 130, 246, 0.35);\n  --agd-fill: rgba(59, 130, 246, 0.06);\n  --agd-bar: rgba(59, 130, 246, 0.18);\n  --agd-bar-strong: rgba(59, 130, 246, 0.28);\n  --agd-text-3: rgba(255, 255, 255, 0.6);\n  --agd-surface: #fff;\n}\n.styles-module__overlay___aWh-q.styles-module__light___ORIft {\n  --agd-surface: #fff;\n}\n.styles-module__overlay___aWh-q:not(.styles-module__light___ORIft) {\n  --agd-surface: #141414;\n}\n.styles-module__overlay___aWh-q.styles-module__wireframe___itvQU {\n  --agd-stroke: rgba(249, 115, 22, 0.35);\n  --agd-fill: rgba(249, 115, 22, 0.06);\n  --agd-bar: rgba(249, 115, 22, 0.18);\n  --agd-bar-strong: rgba(249, 115, 22, 0.28);\n}\n.styles-module__overlay___aWh-q.styles-module__placing___45yD8 {\n  cursor: crosshair;\n}\n.styles-module__overlay___aWh-q.styles-module__passthrough___xaFeE {\n  pointer-events: none;\n}\n\n.styles-module__blankCanvas___t2Eue {\n  position: fixed;\n  inset: 0;\n  z-index: 99994;\n  background: #fff;\n  opacity: 0;\n  pointer-events: none;\n  transition: opacity 0.25s ease;\n}\n.styles-module__blankCanvas___t2Eue.styles-module__visible___OKKqX {\n  opacity: var(--canvas-opacity, 1);\n  pointer-events: auto;\n}\n.styles-module__blankCanvas___t2Eue::after {\n  content: "";\n  position: absolute;\n  inset: 0;\n  background-image: radial-gradient(circle, rgba(0, 0, 0, 0.08) 1px, transparent 1px);\n  background-size: 24px 24px;\n  background-position: 12px 12px;\n  pointer-events: none;\n  transition: opacity 0.2s ease;\n}\n.styles-module__blankCanvas___t2Eue.styles-module__gridActive___OZ-cf::after {\n  opacity: 1;\n  background-image: radial-gradient(circle, rgba(0, 0, 0, 0.22) 1px, transparent 1px);\n}\n\n.styles-module__paletteHeader___-Q5gQ {\n  padding: 0 1rem 0.375rem;\n}\n\n.styles-module__paletteHeaderTitle___oHqZC {\n  font-size: 0.8125rem;\n  font-weight: 500;\n  color: #fff;\n  letter-spacing: -0.0094em;\n}\n.styles-module__light___ORIft .styles-module__paletteHeaderTitle___oHqZC {\n  color: rgba(0, 0, 0, 0.85);\n}\n\n.styles-module__paletteHeaderDesc___6i74T {\n  font-size: 0.6875rem;\n  font-weight: 300;\n  color: rgba(255, 255, 255, 0.45);\n  margin-top: 2px;\n  line-height: 14px;\n}\n.styles-module__light___ORIft .styles-module__paletteHeaderDesc___6i74T {\n  color: rgba(0, 0, 0, 0.45);\n}\n.styles-module__paletteHeaderDesc___6i74T a {\n  color: rgba(255, 255, 255, 0.8);\n  text-decoration: underline dotted;\n  text-decoration-color: rgba(255, 255, 255, 0.2);\n  text-underline-offset: 2px;\n  transition: color 0.15s ease;\n}\n.styles-module__paletteHeaderDesc___6i74T a:hover {\n  color: #fff;\n}\n.styles-module__light___ORIft .styles-module__paletteHeaderDesc___6i74T a {\n  color: rgba(0, 0, 0, 0.6);\n  text-decoration-color: rgba(0, 0, 0, 0.2);\n}\n.styles-module__light___ORIft .styles-module__paletteHeaderDesc___6i74T a:hover {\n  color: rgba(0, 0, 0, 0.85);\n}\n\n.styles-module__wireframePurposeWrap___To-tS {\n  display: grid;\n  grid-template-rows: 1fr;\n  transition: grid-template-rows 0.2s ease, opacity 0.15s ease;\n  opacity: 1;\n}\n.styles-module__wireframePurposeWrap___To-tS.styles-module__collapsed___Ms9vS {\n  grid-template-rows: 0fr;\n  opacity: 0;\n}\n\n.styles-module__wireframePurposeInner___Lrahs {\n  overflow: hidden;\n}\n\n.styles-module__wireframePurposeInput___7EtBN {\n  display: block;\n  width: calc(100% - 2rem);\n  margin: 0.25rem 1rem 0.375rem;\n  padding: 0.375rem 0.5rem;\n  font-size: 0.8125rem;\n  font-family: inherit;\n  color: rgba(255, 255, 255, 0.85);\n  background: rgba(255, 255, 255, 0.03);\n  border: 1px solid rgba(255, 255, 255, 0.1);\n  border-radius: 0.375rem;\n  resize: none;\n  outline: none;\n  transition: border-color 0.15s ease;\n  letter-spacing: -0.0094em;\n}\n.styles-module__wireframePurposeInput___7EtBN::placeholder {\n  color: rgba(255, 255, 255, 0.3);\n}\n.styles-module__wireframePurposeInput___7EtBN:focus {\n  border-color: rgba(255, 255, 255, 0.3);\n  background: rgba(255, 255, 255, 0.05);\n}\n.styles-module__light___ORIft .styles-module__wireframePurposeInput___7EtBN {\n  color: rgba(0, 0, 0, 0.7);\n  background: rgba(0, 0, 0, 0.03);\n  border-color: rgba(0, 0, 0, 0.1);\n}\n.styles-module__light___ORIft .styles-module__wireframePurposeInput___7EtBN::placeholder {\n  color: rgba(0, 0, 0, 0.3);\n}\n.styles-module__light___ORIft .styles-module__wireframePurposeInput___7EtBN:focus {\n  border-color: rgba(0, 0, 0, 0.25);\n  background: rgba(0, 0, 0, 0.05);\n}\n\n.styles-module__canvasToggle___-QqSy {\n  width: calc(100% - 2rem);\n  display: flex;\n  align-items: center;\n  justify-content: center;\n  gap: 0.375rem;\n  margin: 0.25rem 1rem 0.25rem;\n  padding: 0.375rem 0.5rem;\n  border-radius: 0.5rem;\n  cursor: pointer;\n  border: 1px dashed rgba(255, 255, 255, 0.1);\n  background: transparent;\n  transition: background 0.15s ease, border-color 0.15s ease;\n}\n.styles-module__canvasToggle___-QqSy:hover {\n  background: rgba(255, 255, 255, 0.04);\n  border-color: rgba(255, 255, 255, 0.15);\n}\n.styles-module__canvasToggle___-QqSy.styles-module__active___hosp7 {\n  background: #f97316;\n  border-color: transparent;\n  border-style: solid;\n  box-shadow: none;\n}\n.styles-module__light___ORIft .styles-module__canvasToggle___-QqSy {\n  border-color: rgba(0, 0, 0, 0.08);\n}\n.styles-module__light___ORIft .styles-module__canvasToggle___-QqSy:hover {\n  background: rgba(0, 0, 0, 0.02);\n  border-color: rgba(0, 0, 0, 0.12);\n}\n.styles-module__light___ORIft .styles-module__canvasToggle___-QqSy.styles-module__active___hosp7 {\n  background: #f97316;\n  border-color: transparent;\n  border-style: solid;\n  box-shadow: none;\n}\n\n.styles-module__canvasToggleIcon___7pJ82 {\n  width: 14px;\n  height: 14px;\n  flex-shrink: 0;\n  display: flex;\n  align-items: center;\n  justify-content: center;\n  color: rgba(255, 255, 255, 0.35);\n}\n.styles-module__active___hosp7 .styles-module__canvasToggleIcon___7pJ82 {\n  color: rgba(255, 255, 255, 0.85);\n}\n.styles-module__light___ORIft .styles-module__canvasToggleIcon___7pJ82 {\n  color: rgba(0, 0, 0, 0.25);\n}\n.styles-module__light___ORIft .styles-module__active___hosp7 .styles-module__canvasToggleIcon___7pJ82 {\n  color: rgba(255, 255, 255, 0.85);\n}\n\n.styles-module__canvasToggleLabel___OanpY {\n  font-size: 0.8125rem;\n  font-weight: 400;\n  color: rgba(255, 255, 255, 0.6);\n  letter-spacing: -0.0094em;\n}\n.styles-module__active___hosp7 .styles-module__canvasToggleLabel___OanpY {\n  color: #fff;\n}\n.styles-module__light___ORIft .styles-module__canvasToggleLabel___OanpY {\n  color: rgba(0, 0, 0, 0.5);\n}\n.styles-module__light___ORIft .styles-module__active___hosp7 .styles-module__canvasToggleLabel___OanpY {\n  color: #fff;\n}\n\n.styles-module__placement___zcxv8 {\n  position: absolute;\n  border: 1.5px dashed rgba(59, 130, 246, 0.4);\n  border-radius: 6px;\n  background: rgba(59, 130, 246, 0.08);\n  cursor: grab;\n  transition: box-shadow 0.15s, border-color 0.15s, opacity 0.15s ease, transform 0.15s ease;\n  -webkit-user-select: none;\n  user-select: none;\n  pointer-events: auto;\n  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);\n  animation: styles-module__placementEnter___TdRhf 0.25s cubic-bezier(0.34, 1.2, 0.64, 1);\n}\n.styles-module__placement___zcxv8:active {\n  cursor: grabbing;\n}\n.styles-module__placement___zcxv8:hover {\n  border-color: rgba(59, 130, 246, 0.5);\n  background: rgba(59, 130, 246, 0.1);\n  box-shadow: 0 2px 8px rgba(59, 130, 246, 0.12);\n}\n.styles-module__placement___zcxv8.styles-module__selected___6yrp6 {\n  border-color: #3c82f7;\n  border-style: solid;\n  background: rgba(59, 130, 246, 0.1);\n  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.15), 0 2px 8px rgba(59, 130, 246, 0.15);\n}\n.styles-module__placement___zcxv8.styles-module__selected___6yrp6:hover {\n  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.15), 0 2px 8px rgba(59, 130, 246, 0.15);\n}\n.styles-module__wireframe___itvQU .styles-module__placement___zcxv8 {\n  border-color: rgba(249, 115, 22, 0.4);\n  background: rgba(249, 115, 22, 0.08);\n}\n.styles-module__wireframe___itvQU .styles-module__placement___zcxv8:hover {\n  border-color: rgba(249, 115, 22, 0.5);\n  background: rgba(249, 115, 22, 0.1);\n  box-shadow: 0 2px 8px rgba(249, 115, 22, 0.12);\n}\n.styles-module__wireframe___itvQU .styles-module__placement___zcxv8.styles-module__selected___6yrp6 {\n  border-color: #f97316;\n  background: rgba(249, 115, 22, 0.1);\n  box-shadow: 0 0 0 2px rgba(249, 115, 22, 0.15), 0 2px 8px rgba(249, 115, 22, 0.15);\n}\n.styles-module__wireframe___itvQU .styles-module__placement___zcxv8.styles-module__selected___6yrp6:hover {\n  box-shadow: 0 0 0 2px rgba(249, 115, 22, 0.15), 0 2px 8px rgba(249, 115, 22, 0.15);\n}\n.styles-module__placement___zcxv8.styles-module__dragging___le6KZ {\n  opacity: 0.85;\n  z-index: 50;\n}\n.styles-module__placement___zcxv8.styles-module__exiting___YrM8F {\n  opacity: 0;\n  transform: scale(0.97);\n  pointer-events: none;\n  animation: none;\n  transition: opacity 0.2s ease, transform 0.2s cubic-bezier(0.32, 0.72, 0, 1);\n}\n\n.styles-module__placementContent___f64A4 {\n  width: 100%;\n  height: 100%;\n  overflow: hidden;\n  pointer-events: none;\n}\n\n.styles-module__placementLabel___0KvWl {\n  position: absolute;\n  top: -18px;\n  left: 0;\n  font-size: 10px;\n  font-weight: 600;\n  color: rgba(59, 130, 246, 0.7);\n  white-space: nowrap;\n  pointer-events: none;\n  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;\n  text-shadow: 0 0 4px rgba(255, 255, 255, 0.8), 0 0 8px rgba(255, 255, 255, 0.5);\n}\n.styles-module__selected___6yrp6 .styles-module__placementLabel___0KvWl {\n  color: #3c82f7;\n}\n.styles-module__wireframe___itvQU .styles-module__placementLabel___0KvWl {\n  color: rgba(249, 115, 22, 0.7);\n}\n.styles-module__wireframe___itvQU .styles-module__selected___6yrp6 .styles-module__placementLabel___0KvWl {\n  color: #f97316;\n}\n\n.styles-module__placementAnnotation___78pTr {\n  position: absolute;\n  bottom: -18px;\n  left: 0;\n  right: 0;\n  font-weight: 450;\n  color: rgba(0, 0, 0, 0.5);\n  font-size: 10px;\n  white-space: nowrap;\n  overflow: hidden;\n  text-overflow: ellipsis;\n  pointer-events: none;\n  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;\n  text-shadow: 0 0 4px rgba(255, 255, 255, 0.9), 0 0 8px rgba(255, 255, 255, 0.6);\n  opacity: 0;\n  transform: translateY(-2px);\n  transition: opacity 0.2s ease, transform 0.2s ease;\n}\n.styles-module__placementAnnotation___78pTr.styles-module__annotationVisible___mrUyA {\n  opacity: 1;\n  transform: translateY(0);\n}\n\n.styles-module__sectionAnnotation___aUIs0 {\n  position: absolute;\n  bottom: -18px;\n  left: 0;\n  right: 0;\n  font-weight: 450;\n  color: rgba(59, 130, 246, 0.6);\n  font-size: 10px;\n  white-space: nowrap;\n  overflow: hidden;\n  text-overflow: ellipsis;\n  pointer-events: none;\n  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;\n  text-shadow: 0 0 4px rgba(255, 255, 255, 0.9), 0 0 8px rgba(255, 255, 255, 0.6);\n  opacity: 0;\n  transform: translateY(-2px);\n  transition: opacity 0.2s ease, transform 0.2s ease;\n}\n.styles-module__sectionAnnotation___aUIs0.styles-module__annotationVisible___mrUyA {\n  opacity: 1;\n  transform: translateY(0);\n}\n\n.styles-module__handle___Ikbxm {\n  position: absolute;\n  width: 8px;\n  height: 8px;\n  background: #fff;\n  border: 1.5px solid #3c82f7;\n  border-radius: 2px;\n  z-index: 12;\n  box-shadow: 0 0 0 0.5px rgba(0, 0, 0, 0.1), 0 1px 2px rgba(0, 0, 0, 0.12);\n  opacity: 0;\n  transform: scale(0.3);\n  pointer-events: none;\n  will-change: opacity, transform;\n  transition: opacity 0.2s ease-out, transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);\n}\n.styles-module__placement___zcxv8:hover .styles-module__handle___Ikbxm, .styles-module__sectionOutline___s0hy-:hover .styles-module__handle___Ikbxm, .styles-module__ghostOutline___po-kO:hover .styles-module__handle___Ikbxm, .styles-module__placement___zcxv8:active .styles-module__handle___Ikbxm, .styles-module__sectionOutline___s0hy-:active .styles-module__handle___Ikbxm, .styles-module__ghostOutline___po-kO:active .styles-module__handle___Ikbxm, .styles-module__selected___6yrp6 .styles-module__handle___Ikbxm {\n  opacity: 1;\n  transform: scale(1);\n  pointer-events: auto;\n}\n.styles-module__sectionOutline___s0hy- .styles-module__handle___Ikbxm {\n  border-color: inherit;\n}\n.styles-module__wireframe___itvQU .styles-module__handle___Ikbxm {\n  border-color: #f97316;\n}\n\n.styles-module__handleNw___4TMIj {\n  top: -4px;\n  left: -4px;\n  cursor: nw-resize;\n}\n\n.styles-module__handleNe___mnsTh {\n  top: -4px;\n  right: -4px;\n  cursor: ne-resize;\n}\n\n.styles-module__handleSe___oSFnk {\n  bottom: -4px;\n  right: -4px;\n  cursor: se-resize;\n}\n\n.styles-module__handleSw___pi--Z {\n  bottom: -4px;\n  left: -4px;\n  cursor: sw-resize;\n}\n\n.styles-module__handleN___aBA-Q,\n.styles-module__handleE___0hM5u,\n.styles-module__handleS___JjDRv,\n.styles-module__handleW___ERWGQ {\n  opacity: 0 !important;\n  pointer-events: none !important;\n}\n\n.styles-module__edgeHandle___XxXdT {\n  position: absolute;\n  z-index: 11;\n  display: flex;\n  align-items: center;\n  justify-content: center;\n}\n.styles-module__edgeHandle___XxXdT::after {\n  content: "";\n  position: absolute;\n  border-radius: 4px;\n  background: #3c82f7;\n}\n.styles-module__wireframe___itvQU .styles-module__edgeHandle___XxXdT::after {\n  background: #f97316;\n}\n.styles-module__edgeHandle___XxXdT::after {\n  opacity: 0;\n  transition: opacity 0.1s ease, transform 0.1s ease;\n  transform: scale(0.8);\n}\n.styles-module__edgeHandle___XxXdT:hover::after {\n  opacity: 0.85;\n  transform: scale(1);\n}\n.styles-module__edgeHandle___XxXdT svg {\n  position: relative;\n  z-index: 1;\n  opacity: 0;\n  transition: opacity 0.1s ease;\n  filter: drop-shadow(0 0 2px var(--agd-surface));\n}\n.styles-module__edgeHandle___XxXdT:hover svg {\n  opacity: 1;\n}\n\n.styles-module__edgeN___-JJDj,\n.styles-module__edgeS___66lMX {\n  left: 12px;\n  right: 12px;\n  height: 12px;\n  cursor: n-resize;\n}\n.styles-module__edgeN___-JJDj::after,\n.styles-module__edgeS___66lMX::after {\n  width: 24px;\n  height: 4px;\n}\n\n.styles-module__edgeN___-JJDj {\n  top: -6px;\n}\n\n.styles-module__edgeS___66lMX {\n  bottom: -6px;\n  cursor: s-resize;\n}\n\n.styles-module__edgeE___1bGDa,\n.styles-module__edgeW___lHQNo {\n  top: 12px;\n  bottom: 12px;\n  width: 12px;\n  cursor: e-resize;\n}\n.styles-module__edgeE___1bGDa::after,\n.styles-module__edgeW___lHQNo::after {\n  width: 4px;\n  height: 24px;\n}\n\n.styles-module__edgeE___1bGDa {\n  right: -6px;\n}\n\n.styles-module__edgeW___lHQNo {\n  left: -6px;\n  cursor: w-resize;\n}\n\n.styles-module__deleteButton___LkGCb {\n  position: absolute;\n  top: -8px;\n  right: -8px;\n  width: 18px;\n  height: 18px;\n  border-radius: 50%;\n  background: rgba(255, 255, 255, 0.9);\n  backdrop-filter: blur(8px);\n  border: 1px solid rgba(0, 0, 0, 0.08);\n  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);\n  color: rgba(0, 0, 0, 0.35);\n  cursor: pointer;\n  display: flex;\n  align-items: center;\n  justify-content: center;\n  font-size: 10px;\n  line-height: 1;\n  z-index: 15;\n  pointer-events: none;\n  opacity: 0;\n  transform: scale(0.8);\n  will-change: opacity, transform;\n  transition: opacity 0.2s ease-out, transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1), background 0.12s ease, color 0.12s ease, border-color 0.12s ease, box-shadow 0.12s ease;\n}\n.styles-module__placement___zcxv8:hover .styles-module__deleteButton___LkGCb, .styles-module__selected___6yrp6 .styles-module__deleteButton___LkGCb, .styles-module__sectionOutline___s0hy-:hover .styles-module__deleteButton___LkGCb, .styles-module__sectionOutline___s0hy-.styles-module__selected___6yrp6 .styles-module__deleteButton___LkGCb, .styles-module__ghostOutline___po-kO:hover .styles-module__deleteButton___LkGCb, .styles-module__ghostOutline___po-kO.styles-module__selected___6yrp6 .styles-module__deleteButton___LkGCb {\n  opacity: 1;\n  transform: scale(1);\n  pointer-events: auto;\n}\n.styles-module__deleteButton___LkGCb:hover {\n  background: #ef4444;\n  color: #fff;\n  border-color: #ef4444;\n  box-shadow: 0 1px 4px rgba(239, 68, 68, 0.3);\n  transform: scale(1.1);\n}\n.styles-module__overlay___aWh-q:not(.styles-module__light___ORIft) .styles-module__deleteButton___LkGCb, .styles-module__rearrangeOverlay___-3R3t:not(.styles-module__light___ORIft) .styles-module__deleteButton___LkGCb {\n  background: rgba(40, 40, 40, 0.9);\n  border-color: rgba(255, 255, 255, 0.1);\n  color: rgba(255, 255, 255, 0.5);\n  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);\n}\n.styles-module__overlay___aWh-q:not(.styles-module__light___ORIft) .styles-module__deleteButton___LkGCb:hover, .styles-module__rearrangeOverlay___-3R3t:not(.styles-module__light___ORIft) .styles-module__deleteButton___LkGCb:hover {\n  background: #ef4444;\n  color: #fff;\n  border-color: #ef4444;\n}\n\n.styles-module__drawBox___BrVAa {\n  position: fixed;\n  pointer-events: none;\n  z-index: 99996;\n  border: 2px solid #3c82f7;\n  border-radius: 6px;\n  background: rgba(59, 130, 246, 0.15);\n}\n\n.styles-module__selectBox___Iu8kB {\n  position: fixed;\n  pointer-events: none;\n  z-index: 99996;\n  border: 1px dashed #3c82f7;\n  background: rgba(59, 130, 246, 0.08);\n  border-radius: 2px;\n}\n\n.styles-module__sizeIndicator___7zJ4y {\n  position: fixed;\n  pointer-events: none;\n  z-index: 100001;\n  font-size: 10px;\n  color: #fff;\n  background: #3c82f7;\n  padding: 2px 6px;\n  border-radius: 4px;\n  white-space: nowrap;\n  font-weight: 500;\n  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;\n  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);\n}\n\n.styles-module__guideLine___DUQY2 {\n  pointer-events: none;\n  z-index: 100001;\n  background: #f0f;\n  opacity: 0.5;\n}\n\n.styles-module__dragPreview___onPbU {\n  position: fixed;\n  z-index: 100002;\n  pointer-events: none;\n  border: 1.5px dashed #3c82f7;\n  border-radius: 6px;\n  background: rgba(59, 130, 246, 0.1);\n  backdrop-filter: blur(8px);\n  display: flex;\n  align-items: center;\n  justify-content: center;\n  font-size: 9px;\n  font-weight: 600;\n  color: #3c82f7;\n  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;\n  text-transform: uppercase;\n  letter-spacing: 0.04em;\n  box-shadow: 0 4px 16px rgba(59, 130, 246, 0.15);\n  transition: width 0.08s ease, height 0.08s ease, opacity 0.08s ease;\n}\n\n.styles-module__dragPreviewWireframe___jsg0G {\n  border-color: #f97316;\n  background: rgba(249, 115, 22, 0.1);\n  color: #f97316;\n  box-shadow: 0 4px 16px rgba(249, 115, 22, 0.15);\n}\n\n.styles-module__palette___C7iSH {\n  position: absolute;\n  right: 5px;\n  bottom: calc(100% + 0.5rem);\n  width: 256px;\n  overflow: hidden;\n  background: #1c1c1c;\n  border: none;\n  border-radius: 1rem;\n  padding: 13px 0 16px;\n  box-shadow: 0 1px 8px rgba(0, 0, 0, 0.25), 0 0 0 1px rgba(0, 0, 0, 0.04);\n  z-index: 100001;\n  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;\n  cursor: default;\n  opacity: 0;\n  filter: blur(5px);\n}\n.styles-module__palette___C7iSH .styles-module__paletteItem___6TlnA,\n.styles-module__palette___C7iSH .styles-module__paletteItemLabel___6ncO4,\n.styles-module__palette___C7iSH .styles-module__paletteSectionTitle___PqnjX,\n.styles-module__palette___C7iSH .styles-module__paletteFooter___QYnAG {\n  transition: background 0.25s ease, color 0.25s ease, border-color 0.25s ease;\n}\n.styles-module__palette___C7iSH {\n  opacity: 0;\n  transform: translateY(var(--panel-offset-y, 4px)) scale(0.98);\n  transform-origin: var(--panel-origin, bottom right);\n  filter: blur(2px);\n  pointer-events: none;\n  visibility: hidden;\n  transition: opacity 120ms cubic-bezier(0.25, 0.46, 0.45, 0.94), transform 120ms cubic-bezier(0.25, 0.46, 0.45, 0.94), filter 120ms cubic-bezier(0.25, 0.46, 0.45, 0.94);\n}\n.styles-module__palette___C7iSH[data-panel-present=true] {\n  visibility: visible;\n}\n.styles-module__palette___C7iSH[data-panel-open=true] {\n  opacity: 1;\n  transform: translateY(0) scale(1);\n  filter: blur(0);\n  pointer-events: auto;\n  transition-duration: 160ms;\n}\n@media (prefers-reduced-motion: reduce) {\n  .styles-module__palette___C7iSH {\n    transition: none;\n    transform: none;\n    filter: none;\n  }\n}\n.styles-module__palette___C7iSH.styles-module__light___ORIft {\n  background: #fff;\n  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08), 0 4px 16px rgba(0, 0, 0, 0.06), 0 0 0 1px rgba(0, 0, 0, 0.04);\n}\n\n.styles-module__paletteSection___V8DEA {\n  padding: 0 1rem;\n}\n.styles-module__paletteSection___V8DEA + .styles-module__paletteSection___V8DEA {\n  margin-top: 0.5rem;\n  padding-top: 0.5rem;\n  border-top: 1px solid rgba(255, 255, 255, 0.07);\n}\n.styles-module__light___ORIft .styles-module__paletteSection___V8DEA + .styles-module__paletteSection___V8DEA {\n  border-top-color: rgba(0, 0, 0, 0.07);\n}\n\n.styles-module__paletteSectionTitle___PqnjX {\n  font-size: 0.6875rem;\n  font-weight: 500;\n  color: rgba(255, 255, 255, 0.5);\n  letter-spacing: -0.0094em;\n  padding: 0 0 3px 3px;\n}\n.styles-module__light___ORIft .styles-module__paletteSectionTitle___PqnjX {\n  color: rgba(0, 0, 0, 0.4);\n}\n\n.styles-module__paletteItem___6TlnA {\n  width: 100%;\n  text-align: left;\n  background: transparent;\n  display: flex;\n  align-items: center;\n  gap: 0.375rem;\n  padding: 0.25rem 0.25rem;\n  margin-bottom: 1px;\n  border-radius: 0.375rem;\n  cursor: pointer;\n  transition: background-color 0.15s ease, border-color 0.15s ease;\n  border: 1px solid transparent;\n  -webkit-user-select: none;\n  user-select: none;\n  min-height: 24px;\n}\n.styles-module__paletteItem___6TlnA:hover {\n  background: rgba(255, 255, 255, 0.1);\n}\n.styles-module__paletteItem___6TlnA.styles-module__active___hosp7 {\n  background: #3c82f7;\n  border-color: transparent;\n}\n.styles-module__paletteItem___6TlnA.styles-module__wireframe___itvQU.styles-module__active___hosp7 {\n  background: #f97316;\n}\n.styles-module__light___ORIft .styles-module__paletteItem___6TlnA:hover {\n  background: rgba(0, 0, 0, 0.05);\n}\n.styles-module__light___ORIft .styles-module__paletteItem___6TlnA.styles-module__active___hosp7 {\n  background: #3c82f7;\n  border-color: transparent;\n}\n.styles-module__light___ORIft .styles-module__paletteItem___6TlnA.styles-module__wireframe___itvQU.styles-module__active___hosp7 {\n  background: #f97316;\n}\n\n.styles-module__paletteItemIcon___0NPQK {\n  width: 20px;\n  height: 16px;\n  border-radius: 2px;\n  border: 1px dashed rgba(255, 255, 255, 0.15);\n  background: rgba(255, 255, 255, 0.04);\n  display: flex;\n  align-items: center;\n  justify-content: center;\n  flex-shrink: 0;\n  overflow: hidden;\n  color: rgba(255, 255, 255, 0.45);\n}\n.styles-module__paletteItemIcon___0NPQK svg {\n  display: block;\n  width: 20px;\n  height: 16px;\n}\n.styles-module__active___hosp7 .styles-module__paletteItemIcon___0NPQK {\n  border-color: rgba(255, 255, 255, 0.3);\n  background: rgba(255, 255, 255, 0.15);\n  color: #fff;\n}\n.styles-module__light___ORIft .styles-module__paletteItemIcon___0NPQK {\n  border-color: rgba(0, 0, 0, 0.12);\n  background: rgba(0, 0, 0, 0.02);\n  color: rgba(0, 0, 0, 0.4);\n}\n.styles-module__light___ORIft .styles-module__active___hosp7 .styles-module__paletteItemIcon___0NPQK {\n  border-color: rgba(255, 255, 255, 0.3);\n  background: rgba(255, 255, 255, 0.15);\n  color: #fff;\n}\n\n.styles-module__paletteItemLabel___6ncO4 {\n  font-size: 0.8125rem;\n  font-weight: 500;\n  color: rgba(255, 255, 255, 0.85);\n  letter-spacing: -0.0094em;\n  line-height: 1;\n  min-width: 0;\n}\n.styles-module__active___hosp7 .styles-module__paletteItemLabel___6ncO4 {\n  color: #fff;\n  font-weight: 600;\n}\n.styles-module__light___ORIft .styles-module__paletteItemLabel___6ncO4 {\n  color: rgba(0, 0, 0, 0.7);\n}\n.styles-module__light___ORIft .styles-module__active___hosp7 .styles-module__paletteItemLabel___6ncO4 {\n  color: #fff;\n  font-weight: 600;\n}\n\n.styles-module__placeScroll___7sClM {\n  max-height: 240px;\n  overflow-y: auto;\n  overflow-x: hidden;\n  padding-top: 0.25rem;\n}\n.styles-module__placeScroll___7sClM.styles-module__fadeTop___KT9tF {\n  -webkit-mask-image: linear-gradient(to bottom, transparent 0, black 32px);\n  mask-image: linear-gradient(to bottom, transparent 0, black 32px);\n}\n.styles-module__placeScroll___7sClM.styles-module__fadeBottom___x3ShT {\n  -webkit-mask-image: linear-gradient(to bottom, black calc(100% - 32px), transparent 100%);\n  mask-image: linear-gradient(to bottom, black calc(100% - 32px), transparent 100%);\n}\n.styles-module__placeScroll___7sClM.styles-module__fadeTop___KT9tF.styles-module__fadeBottom___x3ShT {\n  -webkit-mask-image: linear-gradient(to bottom, transparent 0, black 32px, black calc(100% - 32px), transparent 100%);\n  mask-image: linear-gradient(to bottom, transparent 0, black 32px, black calc(100% - 32px), transparent 100%);\n}\n.styles-module__placeScroll___7sClM::-webkit-scrollbar {\n  width: 3px;\n}\n.styles-module__placeScroll___7sClM::-webkit-scrollbar-thumb {\n  background: rgba(255, 255, 255, 0.12);\n  border-radius: 2px;\n}\n.styles-module__light___ORIft .styles-module__placeScroll___7sClM::-webkit-scrollbar-thumb {\n  background: rgba(0, 0, 0, 0.1);\n}\n\n.styles-module__paletteFooterWrap___71-fI {\n  display: grid;\n  grid-template-rows: 1fr;\n  transition: grid-template-rows 0.25s cubic-bezier(0.32, 0.72, 0, 1);\n}\n.styles-module__paletteFooterWrap___71-fI.styles-module__footerHidden___fJUik {\n  grid-template-rows: 0fr;\n}\n\n.styles-module__paletteFooterInnerContent___VC26h {\n  opacity: 1;\n  transform: translateY(0);\n  transition: opacity 0.15s ease, transform 0.15s ease;\n}\n.styles-module__footerHidden___fJUik .styles-module__paletteFooterInnerContent___VC26h {\n  opacity: 0;\n  transform: translateY(4px);\n}\n\n.styles-module__paletteFooterInner___dfylY {\n  overflow: hidden;\n}\n\n.styles-module__paletteFooter___QYnAG {\n  display: flex;\n  align-items: center;\n  justify-content: space-between;\n  min-height: 24px;\n  padding: 0 1rem;\n  margin-top: 0.5rem;\n  padding-top: 0.5rem;\n  border-top: 1px solid rgba(255, 255, 255, 0.07);\n}\n.styles-module__light___ORIft .styles-module__paletteFooter___QYnAG {\n  border-top-color: rgba(0, 0, 0, 0.07);\n}\n\n.styles-module__paletteFooterCount___D3Fia {\n  font-size: 0.8125rem;\n  font-weight: 400;\n  letter-spacing: -0.0094em;\n  color: rgba(255, 255, 255, 0.5);\n}\n.styles-module__light___ORIft .styles-module__paletteFooterCount___D3Fia {\n  color: rgba(0, 0, 0, 0.5);\n}\n\n.styles-module__paletteFooterClear___ybBoa {\n  font-size: 0.8125rem;\n  font-weight: 400;\n  letter-spacing: -0.0094em;\n  color: rgba(255, 255, 255, 0.5);\n  background: none;\n  border: none;\n  cursor: pointer;\n  padding: 0;\n  font-family: inherit;\n  transition: color 0.15s ease;\n}\n.styles-module__paletteFooterClear___ybBoa:hover {\n  color: rgba(255, 255, 255, 0.7);\n}\n.styles-module__light___ORIft .styles-module__paletteFooterClear___ybBoa {\n  color: rgba(0, 0, 0, 0.5);\n}\n.styles-module__light___ORIft .styles-module__paletteFooterClear___ybBoa:hover {\n  color: rgba(0, 0, 0, 0.6);\n}\n\n.styles-module__paletteFooterActions___fLzv8 {\n  display: flex;\n  align-items: center;\n  gap: 0.75rem;\n}\n\n.styles-module__rollingWrap___S75jM {\n  display: inline-block;\n  overflow: hidden;\n  height: 1.15em;\n  position: relative;\n  vertical-align: bottom;\n}\n\n.styles-module__rollingNum___1RKDx {\n  position: absolute;\n  left: 0;\n  top: 0;\n}\n\n.styles-module__exitUp___AFDRW {\n  animation: styles-module__numExitUp___FRQqx 0.25s cubic-bezier(0.32, 0.72, 0, 1) forwards;\n}\n\n.styles-module__enterUp___CPlXb {\n  animation: styles-module__numEnterUp___2Yd-w 0.25s cubic-bezier(0.32, 0.72, 0, 1) forwards;\n}\n\n.styles-module__exitDown___-1yAy {\n  animation: styles-module__numExitDown___xm5by 0.25s cubic-bezier(0.32, 0.72, 0, 1) forwards;\n}\n\n.styles-module__enterDown___DDuFR {\n  animation: styles-module__numEnterDown___hpxBk 0.25s cubic-bezier(0.32, 0.72, 0, 1) forwards;\n}\n\n@keyframes styles-module__numExitUp___FRQqx {\n  from {\n    transform: translateY(0);\n    opacity: 1;\n  }\n  to {\n    transform: translateY(-110%);\n    opacity: 0;\n  }\n}\n@keyframes styles-module__numEnterUp___2Yd-w {\n  from {\n    transform: translateY(110%);\n    opacity: 0;\n  }\n  to {\n    transform: translateY(0);\n    opacity: 1;\n  }\n}\n@keyframes styles-module__numExitDown___xm5by {\n  from {\n    transform: translateY(0);\n    opacity: 1;\n  }\n  to {\n    transform: translateY(110%);\n    opacity: 0;\n  }\n}\n@keyframes styles-module__numEnterDown___hpxBk {\n  from {\n    transform: translateY(-110%);\n    opacity: 0;\n  }\n  to {\n    transform: translateY(0);\n    opacity: 1;\n  }\n}\n.styles-module__rearrangeOverlay___-3R3t {\n  position: fixed;\n  inset: 0;\n  z-index: 99995;\n  pointer-events: none;\n  cursor: default;\n  -webkit-user-select: none;\n  user-select: none;\n  animation: styles-module__overlayFadeIn___aECVy 0.15s ease;\n}\n\n.styles-module__hoverHighlight___8eT-v {\n  position: fixed;\n  pointer-events: none;\n  z-index: 99994;\n  border: 2px dashed rgba(59, 130, 246, 0.5);\n  border-radius: 4px;\n  background: rgba(59, 130, 246, 0.06);\n  animation: styles-module__highlightFadeIn___Lg7KY 0.12s ease;\n}\n\n.styles-module__sectionOutline___s0hy- {\n  position: fixed;\n  border: 2px solid;\n  border-radius: 4px;\n  cursor: grab;\n}\n.styles-module__sectionOutline___s0hy-:active {\n  cursor: grabbing;\n}\n.styles-module__sectionOutline___s0hy- {\n  transition: box-shadow 0.15s, border-color 0.3s, background-color 0.3s, border-style 0s;\n  -webkit-user-select: none;\n  user-select: none;\n  pointer-events: auto;\n  animation: styles-module__sectionEnter___-8BXT 0.2s ease;\n}\n.styles-module__sectionOutline___s0hy-:hover {\n  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.1), 0 4px 12px rgba(0, 0, 0, 0.15);\n}\n.styles-module__sectionOutline___s0hy-.styles-module__selected___6yrp6 {\n  border-style: solid;\n  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.15), 0 2px 8px rgba(59, 130, 246, 0.15);\n}\n.styles-module__sectionOutline___s0hy-.styles-module__selected___6yrp6:hover {\n  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.15), 0 2px 8px rgba(59, 130, 246, 0.15);\n}\n.styles-module__sectionOutline___s0hy-.styles-module__settled___b5U5o:not(.styles-module__selected___6yrp6) {\n  border: 1.5px dashed rgba(150, 150, 150, 0.35);\n  background-color: transparent !important;\n  box-shadow: none;\n}\n.styles-module__sectionOutline___s0hy-.styles-module__settled___b5U5o:not(.styles-module__selected___6yrp6):hover {\n  border-color: rgba(150, 150, 150, 0.6);\n  box-shadow: none;\n}\n.styles-module__sectionOutline___s0hy-.styles-module__settled___b5U5o:not(.styles-module__selected___6yrp6) .styles-module__sectionLabel___F80HQ {\n  opacity: 0;\n  transition: opacity 0.15s ease;\n}\n.styles-module__sectionOutline___s0hy-.styles-module__settled___b5U5o:not(.styles-module__selected___6yrp6):hover .styles-module__sectionLabel___F80HQ {\n  opacity: 1;\n}\n.styles-module__sectionOutline___s0hy-.styles-module__settled___b5U5o:not(.styles-module__selected___6yrp6) .styles-module__movedBadge___s8z-q,\n.styles-module__sectionOutline___s0hy-.styles-module__settled___b5U5o:not(.styles-module__selected___6yrp6) .styles-module__sectionDimensions___RcJSL {\n  opacity: 0;\n  transition: opacity 0.15s ease;\n}\n.styles-module__sectionOutline___s0hy-.styles-module__settled___b5U5o:not(.styles-module__selected___6yrp6):hover .styles-module__sectionDimensions___RcJSL {\n  opacity: 1;\n}\n.styles-module__sectionOutline___s0hy-.styles-module__exiting___YrM8F {\n  opacity: 0;\n  transform: scale(0.97);\n  pointer-events: none;\n  animation: none;\n  transition: opacity 0.2s ease, transform 0.2s cubic-bezier(0.32, 0.72, 0, 1);\n}\n\n.styles-module__sectionLabel___F80HQ {\n  position: absolute;\n  top: 4px;\n  left: 4px;\n  font-size: 10px;\n  font-weight: 600;\n  color: #fff;\n  padding: 2px 8px;\n  border-radius: 4px;\n  white-space: nowrap;\n  pointer-events: none;\n  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;\n  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.2);\n  max-width: calc(100% - 8px);\n  overflow: hidden;\n  text-overflow: ellipsis;\n}\n\n.styles-module__movedBadge___s8z-q {\n  position: absolute;\n  bottom: 22px;\n  right: 4px;\n  font-size: 9px;\n  font-weight: 700;\n  color: #fff;\n  background: #22c55e;\n  padding: 2px 6px;\n  border-radius: 4px;\n  white-space: nowrap;\n  pointer-events: none;\n  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;\n  text-transform: uppercase;\n  letter-spacing: 0.04em;\n  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.2);\n  opacity: 0;\n  transform: scale(0.8);\n  transition: opacity 0.15s ease, transform 0.15s ease;\n}\n.styles-module__movedBadge___s8z-q.styles-module__badgeVisible___npbdS {\n  opacity: 1;\n  transform: scale(1);\n  transition: opacity 0.2s cubic-bezier(0.34, 1.2, 0.64, 1), transform 0.2s cubic-bezier(0.34, 1.2, 0.64, 1);\n}\n\n.styles-module__resizedBadge___u51V8 {\n  background: #3c82f7;\n  bottom: 40px;\n}\n\n.styles-module__sectionDimensions___RcJSL {\n  position: absolute;\n  bottom: 4px;\n  right: 4px;\n  font-size: 9px;\n  font-weight: 500;\n  color: rgba(255, 255, 255, 0.7);\n  background: rgba(0, 0, 0, 0.5);\n  padding: 1px 5px;\n  border-radius: 3px;\n  white-space: nowrap;\n  pointer-events: none;\n  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;\n}\n.styles-module__light___ORIft .styles-module__sectionDimensions___RcJSL {\n  color: rgba(0, 0, 0, 0.5);\n  background: rgba(255, 255, 255, 0.7);\n}\n\n.styles-module__wireframeNotice___4GJyB {\n  position: fixed;\n  bottom: 16px;\n  left: 24px;\n  z-index: 99995;\n  font-size: 9.5px;\n  font-weight: 400;\n  color: rgba(0, 0, 0, 0.4);\n  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;\n  pointer-events: auto;\n  animation: styles-module__overlayFadeIn___aECVy 0.3s ease;\n  line-height: 1.5;\n  max-width: 280px;\n}\n\n.styles-module__wireframeOpacityRow___CJXzi {\n  display: flex;\n  align-items: center;\n  gap: 8px;\n  margin-bottom: 8px;\n}\n\n.styles-module__wireframeOpacityLabel___afkfT {\n  font-size: 9px;\n  font-weight: 500;\n  color: rgba(0, 0, 0, 0.32);\n  letter-spacing: 0.02em;\n  white-space: nowrap;\n  -webkit-user-select: none;\n  user-select: none;\n}\n\n.styles-module__wireframeOpacitySlider___YcoEs {\n  -webkit-appearance: none;\n  appearance: none;\n  width: 56px;\n  height: 4px;\n  background: rgba(0, 0, 0, 0.08);\n  border-radius: 2px;\n  outline: none;\n  cursor: pointer;\n  flex-shrink: 0;\n  transition: background 0.15s ease;\n}\n.styles-module__wireframeOpacitySlider___YcoEs:hover {\n  background: rgba(0, 0, 0, 0.13);\n}\n.styles-module__wireframeOpacitySlider___YcoEs::-webkit-slider-thumb {\n  -webkit-appearance: none;\n  appearance: none;\n  width: 10px;\n  height: 10px;\n  border-radius: 50%;\n  background: #f97316;\n  cursor: pointer;\n  transition: background 0.15s ease;\n}\n.styles-module__wireframeOpacitySlider___YcoEs::-webkit-slider-thumb:hover {\n  background: rgb(88.0082041185%, 37.39404381%, 2.2663056855%);\n}\n.styles-module__wireframeOpacitySlider___YcoEs::-moz-range-thumb {\n  width: 10px;\n  height: 10px;\n  border-radius: 50%;\n  background: #f97316;\n  border: none;\n  cursor: pointer;\n}\n.styles-module__wireframeOpacitySlider___YcoEs::-moz-range-track {\n  background: rgba(0, 0, 0, 0.08);\n  height: 4px;\n  border-radius: 2px;\n}\n\n.styles-module__wireframeNoticeTitleRow___PJqyG {\n  display: flex;\n  align-items: center;\n  gap: 0;\n  margin-bottom: 2px;\n}\n\n.styles-module__wireframeNoticeTitle___okr08 {\n  font-weight: 600;\n  color: rgba(0, 0, 0, 0.55);\n}\n\n.styles-module__wireframeNoticeDivider___PNKQ6 {\n  width: 1px;\n  height: 8px;\n  background: rgba(0, 0, 0, 0.12);\n  margin: 0 8px;\n  flex-shrink: 0;\n}\n\n.styles-module__wireframeStartOver___YFk-I {\n  font-size: 9.5px;\n  font-weight: 500;\n  color: rgba(0, 0, 0, 0.35);\n  cursor: pointer;\n  background: none;\n  border: none;\n  padding: 0;\n  font-family: inherit;\n  text-decoration: none;\n  transition: color 0.12s ease;\n  white-space: nowrap;\n}\n.styles-module__wireframeStartOver___YFk-I:hover {\n  color: rgba(0, 0, 0, 0.6);\n}\n\n.styles-module__ghostOutline___po-kO {\n  position: fixed;\n  border: 1.5px dashed rgba(59, 130, 246, 0.4);\n  border-radius: 4px;\n  background: rgba(59, 130, 246, 0.04);\n  cursor: grab;\n  opacity: 0.5;\n  -webkit-user-select: none;\n  user-select: none;\n  pointer-events: auto;\n  animation: styles-module__ghostEnter___EC3Mb 0.25s ease;\n  transition: box-shadow 0.15s, border-color 0.3s, opacity 0.25s;\n}\n.styles-module__ghostOutline___po-kO:active {\n  cursor: grabbing;\n}\n.styles-module__ghostOutline___po-kO:hover {\n  opacity: 0.7;\n  box-shadow: 0 0 0 1px rgba(59, 130, 246, 0.1), 0 4px 12px rgba(0, 0, 0, 0.08);\n}\n.styles-module__ghostOutline___po-kO.styles-module__selected___6yrp6 {\n  opacity: 1;\n  border-style: solid;\n  border-width: 2px;\n  border-color: #3c82f7;\n  background: rgba(59, 130, 246, 0.08);\n  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.15), 0 2px 8px rgba(59, 130, 246, 0.15);\n}\n.styles-module__ghostOutline___po-kO.styles-module__exiting___YrM8F {\n  opacity: 0;\n  transform: scale(0.97);\n  pointer-events: none;\n  animation: none;\n  transition: opacity 0.2s ease, transform 0.2s cubic-bezier(0.32, 0.72, 0, 1);\n}\n\n.styles-module__ghostBadge___tsQUK {\n  position: absolute;\n  bottom: calc(100% + 4px);\n  left: -1px;\n  font-size: 9px;\n  font-weight: 600;\n  color: rgba(59, 130, 246, 0.9);\n  background: rgba(59, 130, 246, 0.08);\n  border: 1px solid rgba(59, 130, 246, 0.2);\n  padding: 1px 5px;\n  border-radius: 3px;\n  white-space: nowrap;\n  pointer-events: none;\n  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;\n  letter-spacing: 0.02em;\n  line-height: 1.2;\n  animation: styles-module__badgeSlideIn___typJ7 0.2s ease both;\n}\n\n@keyframes styles-module__badgeSlideIn___typJ7 {\n  from {\n    opacity: 0;\n    transform: translateY(4px);\n  }\n  to {\n    opacity: 1;\n    transform: translateY(0);\n  }\n}\n.styles-module__ghostBadgeExtra___6CVoD {\n  display: inline;\n  animation: styles-module__badgeExtraIn___i4W8F 0.2s ease both;\n}\n\n@keyframes styles-module__badgeExtraIn___i4W8F {\n  from {\n    opacity: 0;\n  }\n  to {\n    opacity: 1;\n  }\n}\n.styles-module__originalOutline___Y6DD1 {\n  position: fixed;\n  border: 1.5px dashed rgba(150, 150, 150, 0.3);\n  border-radius: 4px;\n  background: transparent;\n  pointer-events: none;\n  -webkit-user-select: none;\n  user-select: none;\n  animation: styles-module__sectionEnter___-8BXT 0.2s ease;\n}\n\n.styles-module__originalLabel___HqI9g {\n  position: absolute;\n  top: 4px;\n  left: 4px;\n  font-size: 9px;\n  font-weight: 500;\n  color: rgba(150, 150, 150, 0.5);\n  padding: 1px 6px;\n  border-radius: 3px;\n  white-space: nowrap;\n  pointer-events: none;\n  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;\n  background: rgba(150, 150, 150, 0.08);\n}\n\n.styles-module__connectorSvg___Lovld {\n  position: fixed;\n  inset: 0;\n  width: 100vw;\n  height: 100vh;\n  pointer-events: none;\n  z-index: 99996;\n}\n\n.styles-module__connectorLine___XeWh- {\n  transition: opacity 0.2s ease;\n  animation: styles-module__connectorDraw___8sK5I 0.3s ease both;\n}\n\n.styles-module__connectorDot___yvf7C {\n  transform-box: fill-box;\n  transform-origin: center;\n  animation: styles-module__connectorDotIn___NwTUq 0.25s cubic-bezier(0.34, 1.56, 0.64, 1) 0.15s both;\n}\n\n@keyframes styles-module__connectorDraw___8sK5I {\n  from {\n    opacity: 0;\n  }\n  to {\n    opacity: 1;\n  }\n}\n@keyframes styles-module__connectorDotIn___NwTUq {\n  from {\n    transform: scale(0);\n    opacity: 0;\n  }\n  to {\n    transform: scale(1);\n    opacity: 1;\n  }\n}\n.styles-module__connectorExiting___2lLOs {\n  animation: styles-module__connectorOut___5QoPl 0.2s ease forwards;\n}\n.styles-module__connectorExiting___2lLOs .styles-module__connectorDot___yvf7C {\n  animation: styles-module__connectorDotOut___FEq7e 0.2s ease forwards;\n}\n\n@keyframes styles-module__connectorOut___5QoPl {\n  from {\n    opacity: 1;\n  }\n  to {\n    opacity: 0;\n  }\n}\n@keyframes styles-module__connectorDotOut___FEq7e {\n  from {\n    transform: scale(1);\n    opacity: 1;\n  }\n  to {\n    transform: scale(0);\n    opacity: 0;\n  }\n}\n@keyframes styles-module__placementEnter___TdRhf {\n  from {\n    opacity: 0;\n    transform: scale(0.85);\n  }\n  to {\n    opacity: 1;\n    transform: scale(1);\n  }\n}\n@keyframes styles-module__sectionEnter___-8BXT {\n  from {\n    opacity: 0;\n    transform: scale(0.96);\n  }\n  to {\n    opacity: 1;\n    transform: scale(1);\n  }\n}\n@keyframes styles-module__highlightFadeIn___Lg7KY {\n  from {\n    opacity: 0;\n  }\n  to {\n    opacity: 1;\n  }\n}\n@keyframes styles-module__overlayFadeIn___aECVy {\n  from {\n    opacity: 0;\n  }\n  to {\n    opacity: 1;\n  }\n}\n@keyframes styles-module__ghostEnter___EC3Mb {\n  from {\n    opacity: 0;\n    transform: scale(0.96);\n  }\n  to {\n    opacity: 0.6;\n    transform: scale(1);\n  }\n}\n.styles-module__canvasToggle___-QqSy:focus-visible,\n.styles-module__paletteItem___6TlnA:focus-visible {\n  outline: 2px solid var(--agentation-color-accent);\n  outline-offset: -2px;\n}';
+var styles_module_default4 = { "overlay": "styles-module__overlay___aWh-q", "rearrangeOverlay": "styles-module__rearrangeOverlay___-3R3t", "overlayExiting": "styles-module__overlayExiting___iEmYr", "overlayFadeIn": "styles-module__overlayFadeIn___aECVy", "light": "styles-module__light___ORIft", "wireframe": "styles-module__wireframe___itvQU", "placing": "styles-module__placing___45yD8", "passthrough": "styles-module__passthrough___xaFeE", "blankCanvas": "styles-module__blankCanvas___t2Eue", "visible": "styles-module__visible___OKKqX", "gridActive": "styles-module__gridActive___OZ-cf", "paletteHeader": "styles-module__paletteHeader___-Q5gQ", "paletteHeaderTitle": "styles-module__paletteHeaderTitle___oHqZC", "paletteHeaderDesc": "styles-module__paletteHeaderDesc___6i74T", "wireframePurposeWrap": "styles-module__wireframePurposeWrap___To-tS", "collapsed": "styles-module__collapsed___Ms9vS", "wireframePurposeInner": "styles-module__wireframePurposeInner___Lrahs", "wireframePurposeInput": "styles-module__wireframePurposeInput___7EtBN", "canvasToggle": "styles-module__canvasToggle___-QqSy", "active": "styles-module__active___hosp7", "canvasToggleIcon": "styles-module__canvasToggleIcon___7pJ82", "canvasToggleLabel": "styles-module__canvasToggleLabel___OanpY", "placement": "styles-module__placement___zcxv8", "placementEnter": "styles-module__placementEnter___TdRhf", "selected": "styles-module__selected___6yrp6", "dragging": "styles-module__dragging___le6KZ", "exiting": "styles-module__exiting___YrM8F", "placementContent": "styles-module__placementContent___f64A4", "placementLabel": "styles-module__placementLabel___0KvWl", "placementAnnotation": "styles-module__placementAnnotation___78pTr", "annotationVisible": "styles-module__annotationVisible___mrUyA", "sectionAnnotation": "styles-module__sectionAnnotation___aUIs0", "handle": "styles-module__handle___Ikbxm", "sectionOutline": "styles-module__sectionOutline___s0hy-", "ghostOutline": "styles-module__ghostOutline___po-kO", "handleNw": "styles-module__handleNw___4TMIj", "handleNe": "styles-module__handleNe___mnsTh", "handleSe": "styles-module__handleSe___oSFnk", "handleSw": "styles-module__handleSw___pi--Z", "handleN": "styles-module__handleN___aBA-Q", "handleE": "styles-module__handleE___0hM5u", "handleS": "styles-module__handleS___JjDRv", "handleW": "styles-module__handleW___ERWGQ", "edgeHandle": "styles-module__edgeHandle___XxXdT", "edgeN": "styles-module__edgeN___-JJDj", "edgeS": "styles-module__edgeS___66lMX", "edgeE": "styles-module__edgeE___1bGDa", "edgeW": "styles-module__edgeW___lHQNo", "deleteButton": "styles-module__deleteButton___LkGCb", "drawBox": "styles-module__drawBox___BrVAa", "selectBox": "styles-module__selectBox___Iu8kB", "sizeIndicator": "styles-module__sizeIndicator___7zJ4y", "guideLine": "styles-module__guideLine___DUQY2", "dragPreview": "styles-module__dragPreview___onPbU", "dragPreviewWireframe": "styles-module__dragPreviewWireframe___jsg0G", "palette": "styles-module__palette___C7iSH", "paletteItem": "styles-module__paletteItem___6TlnA", "paletteItemLabel": "styles-module__paletteItemLabel___6ncO4", "paletteSectionTitle": "styles-module__paletteSectionTitle___PqnjX", "paletteFooter": "styles-module__paletteFooter___QYnAG", "paletteSection": "styles-module__paletteSection___V8DEA", "paletteItemIcon": "styles-module__paletteItemIcon___0NPQK", "placeScroll": "styles-module__placeScroll___7sClM", "fadeTop": "styles-module__fadeTop___KT9tF", "fadeBottom": "styles-module__fadeBottom___x3ShT", "paletteFooterWrap": "styles-module__paletteFooterWrap___71-fI", "footerHidden": "styles-module__footerHidden___fJUik", "paletteFooterInnerContent": "styles-module__paletteFooterInnerContent___VC26h", "paletteFooterInner": "styles-module__paletteFooterInner___dfylY", "paletteFooterCount": "styles-module__paletteFooterCount___D3Fia", "paletteFooterClear": "styles-module__paletteFooterClear___ybBoa", "paletteFooterActions": "styles-module__paletteFooterActions___fLzv8", "rollingWrap": "styles-module__rollingWrap___S75jM", "rollingNum": "styles-module__rollingNum___1RKDx", "exitUp": "styles-module__exitUp___AFDRW", "numExitUp": "styles-module__numExitUp___FRQqx", "enterUp": "styles-module__enterUp___CPlXb", "numEnterUp": "styles-module__numEnterUp___2Yd-w", "exitDown": "styles-module__exitDown___-1yAy", "numExitDown": "styles-module__numExitDown___xm5by", "enterDown": "styles-module__enterDown___DDuFR", "numEnterDown": "styles-module__numEnterDown___hpxBk", "hoverHighlight": "styles-module__hoverHighlight___8eT-v", "highlightFadeIn": "styles-module__highlightFadeIn___Lg7KY", "sectionEnter": "styles-module__sectionEnter___-8BXT", "settled": "styles-module__settled___b5U5o", "sectionLabel": "styles-module__sectionLabel___F80HQ", "movedBadge": "styles-module__movedBadge___s8z-q", "sectionDimensions": "styles-module__sectionDimensions___RcJSL", "badgeVisible": "styles-module__badgeVisible___npbdS", "resizedBadge": "styles-module__resizedBadge___u51V8", "wireframeNotice": "styles-module__wireframeNotice___4GJyB", "wireframeOpacityRow": "styles-module__wireframeOpacityRow___CJXzi", "wireframeOpacityLabel": "styles-module__wireframeOpacityLabel___afkfT", "wireframeOpacitySlider": "styles-module__wireframeOpacitySlider___YcoEs", "wireframeNoticeTitleRow": "styles-module__wireframeNoticeTitleRow___PJqyG", "wireframeNoticeTitle": "styles-module__wireframeNoticeTitle___okr08", "wireframeNoticeDivider": "styles-module__wireframeNoticeDivider___PNKQ6", "wireframeStartOver": "styles-module__wireframeStartOver___YFk-I", "ghostEnter": "styles-module__ghostEnter___EC3Mb", "ghostBadge": "styles-module__ghostBadge___tsQUK", "badgeSlideIn": "styles-module__badgeSlideIn___typJ7", "ghostBadgeExtra": "styles-module__ghostBadgeExtra___6CVoD", "badgeExtraIn": "styles-module__badgeExtraIn___i4W8F", "originalOutline": "styles-module__originalOutline___Y6DD1", "originalLabel": "styles-module__originalLabel___HqI9g", "connectorSvg": "styles-module__connectorSvg___Lovld", "connectorLine": "styles-module__connectorLine___XeWh-", "connectorDraw": "styles-module__connectorDraw___8sK5I", "connectorDot": "styles-module__connectorDot___yvf7C", "connectorDotIn": "styles-module__connectorDotIn___NwTUq", "connectorExiting": "styles-module__connectorExiting___2lLOs", "connectorOut": "styles-module__connectorOut___5QoPl", "connectorDotOut": "styles-module__connectorDotOut___FEq7e" };
 
 // src/components/design-mode/index.tsx
-import { Fragment as Fragment2, jsx as jsx6, jsxs as jsxs5 } from "react/jsx-runtime";
+import { Fragment as Fragment2, jsx as jsx9, jsxs as jsxs6 } from "react/jsx-runtime";
 var MIN_SIZE = 24;
 var SNAP_THRESHOLD = 5;
 function computeSnap(rect, others, excludeIds, activeEdges, extraRects) {
@@ -2723,55 +4057,45 @@ function DesignMode({
   deselectSignal,
   onDragMove,
   onDragEnd,
-  clearSignal,
+  clearingPlacements,
   wireframe
 }) {
-  const [selectedIds, setSelectedIds] = useState3(/* @__PURE__ */ new Set());
-  const [drawBox, setDrawBox] = useState3(null);
-  const [selectBox, setSelectBox] = useState3(null);
-  const [sizeIndicator, setSizeIndicator] = useState3(null);
-  const [guides, setGuides] = useState3([]);
-  const [editingId, setEditingId] = useState3(null);
-  const [editExiting, setEditExiting] = useState3(false);
-  const editHadTextRef = useRef3(false);
-  const [exitingIds, setExitingIds] = useState3(/* @__PURE__ */ new Set());
-  const lastAnnotationTextRef = useRef3(/* @__PURE__ */ new Map());
-  const overlayRef = useRef3(null);
-  const interactionRef = useRef3(null);
-  const placementsRef = useRef3(placements);
+  const [selectedIds, setSelectedIds] = useState6(/* @__PURE__ */ new Set());
+  const [drawBox, setDrawBox] = useState6(null);
+  const [selectBox, setSelectBox] = useState6(null);
+  const [sizeIndicator, setSizeIndicator] = useState6(null);
+  const [guides, setGuides] = useState6([]);
+  const [editingId, setEditingId] = useState6(null);
+  const [editExiting, setEditExiting] = useState6(false);
+  const editHadTextRef = useRef6(false);
+  const [exitingIds, setExitingIds] = useState6(/* @__PURE__ */ new Set());
+  const lastAnnotationTextRef = useRef6(/* @__PURE__ */ new Map());
+  const overlayRef = useRef6(null);
+  const interactionRef = useRef6(null);
+  const placementsRef = useRef6(placements);
   placementsRef.current = placements;
-  const onSelectionChangeRef = useRef3(onSelectionChange);
+  const onSelectionChangeRef = useRef6(onSelectionChange);
   onSelectionChangeRef.current = onSelectionChange;
-  const onDragMoveRef = useRef3(onDragMove);
+  const onDragMoveRef = useRef6(onDragMove);
   onDragMoveRef.current = onDragMove;
-  const onDragEndRef = useRef3(onDragEnd);
+  const onDragEndRef = useRef6(onDragEnd);
   onDragEndRef.current = onDragEnd;
-  const deselectRef = useRef3(deselectSignal);
-  useEffect3(() => {
+  const deselectRef = useRef6(deselectSignal);
+  useEffect5(() => {
     if (deselectSignal !== deselectRef.current) {
       deselectRef.current = deselectSignal;
       setSelectedIds(/* @__PURE__ */ new Set());
     }
   }, [deselectSignal]);
-  const clearRef = useRef3(clearSignal);
-  useEffect3(() => {
-    if (clearSignal !== void 0 && clearSignal !== clearRef.current) {
-      clearRef.current = clearSignal;
-      const allIds = new Set(placementsRef.current.map((p) => p.id));
-      if (allIds.size > 0) {
-        setExitingIds(allIds);
-        setSelectedIds(/* @__PURE__ */ new Set());
-        interactionRef.current = null;
-        originalSetTimeout(() => {
-          onChange([]);
-          setExitingIds(/* @__PURE__ */ new Set());
-        }, 180);
-      }
+  useEffect5(() => {
+    if (clearingPlacements?.length) {
+      setSelectedIds((previous) => new Set([...previous].filter((id) => !clearingPlacements.some((p) => p.id === id))));
+      interactionRef.current = null;
     }
-  }, [clearSignal, onChange]);
-  useEffect3(() => {
+  }, [clearingPlacements]);
+  useEffect5(() => {
     const handleKeyDown = (e) => {
-      const target = e.target;
+      const target = e.composedPath()[0] || e.target;
       const isTyping = target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable;
       if (isTyping) return;
       if ((e.key === "Backspace" || e.key === "Delete") && selectedIds.size > 0) {
@@ -2809,12 +4133,12 @@ function DesignMode({
     document.addEventListener("keydown", handleKeyDown);
     return () => document.removeEventListener("keydown", handleKeyDown);
   }, [selectedIds, activeComponent, placements, onChange, onActiveComponentChange]);
-  const handleOverlayMouseDown = useCallback2(
+  const handleOverlayMouseDown = useCallback5(
     (e) => {
       if (e.button !== 0) return;
       if (passthrough) return;
       const target = e.target;
-      if (target.closest(`.${styles_module_default3.placement}`)) return;
+      if (target.closest(`.${styles_module_default4.placement}`)) return;
       e.preventDefault();
       e.stopPropagation();
       const scrollY2 = window.scrollY;
@@ -2922,11 +4246,11 @@ function DesignMode({
     },
     [activeComponent, passthrough, placements, onChange, selectedIds]
   );
-  const handlePlacementMouseDown = useCallback2(
+  const handlePlacementMouseDown = useCallback5(
     (e, id) => {
       if (e.button !== 0) return;
       const target = e.target;
-      if (target.closest(`.${styles_module_default3.handle}`) || target.closest(`.${styles_module_default3.deleteButton}`)) return;
+      if (target.closest(`.${styles_module_default4.handle}`) || target.closest(`.${styles_module_default4.deleteButton}`)) return;
       e.preventDefault();
       e.stopPropagation();
       let newSelected;
@@ -3014,7 +4338,7 @@ function DesignMode({
     },
     [selectedIds, placements, onChange, onInteractionChange]
   );
-  const handleResizeMouseDown = useCallback2(
+  const handleResizeMouseDown = useCallback5(
     (e, id, dir) => {
       e.preventDefault();
       e.stopPropagation();
@@ -3090,7 +4414,7 @@ function DesignMode({
     },
     [placements, onChange, onInteractionChange]
   );
-  const handleDelete = useCallback2(
+  const handleDelete = useCallback5(
     (id) => {
       interactionRef.current = null;
       setExitingIds((prev) => {
@@ -3136,14 +4460,14 @@ function DesignMode({
     stat: "Metric value",
     productCard: "Product name"
   };
-  const handleDoubleClick = useCallback2((id) => {
+  const handleDoubleClick = useCallback5((id) => {
     const p = placements.find((pl) => pl.id === id);
     if (!p) return;
     editHadTextRef.current = !!p.text;
     setEditingId(id);
     setEditExiting(false);
   }, [placements]);
-  const dismissEdit = useCallback2(() => {
+  const dismissEdit = useCallback5(() => {
     if (!editingId) return;
     setEditExiting(true);
     originalSetTimeout(() => {
@@ -3151,10 +4475,10 @@ function DesignMode({
       setEditExiting(false);
     }, 150);
   }, [editingId]);
-  useEffect3(() => {
+  useEffect5(() => {
     if (exiting && editingId) dismissEdit();
   }, [exiting]);
-  const submitEdit = useCallback2((text) => {
+  const submitEdit = useCallback5((text) => {
     if (!editingId) return;
     onChange(placements.map((p) => p.id === editingId ? { ...p, text: text.trim() || void 0 } : p));
     dismissEdit();
@@ -3163,28 +4487,28 @@ function DesignMode({
   const cornerHandles = ["nw", "ne", "se", "sw"];
   const arrowColor = wireframe ? "#f97316" : "#3c82f7";
   const edgeHandles = [
-    { dir: "n", cls: styles_module_default3.edgeN, arrow: /* @__PURE__ */ jsx6("svg", { width: "8", height: "6", viewBox: "0 0 8 6", fill: "none", children: /* @__PURE__ */ jsx6("path", { d: "M4 0.5L1 4.5h6z", fill: arrowColor }) }) },
-    { dir: "e", cls: styles_module_default3.edgeE, arrow: /* @__PURE__ */ jsx6("svg", { width: "6", height: "8", viewBox: "0 0 6 8", fill: "none", children: /* @__PURE__ */ jsx6("path", { d: "M5.5 4L1.5 1v6z", fill: arrowColor }) }) },
-    { dir: "s", cls: styles_module_default3.edgeS, arrow: /* @__PURE__ */ jsx6("svg", { width: "8", height: "6", viewBox: "0 0 8 6", fill: "none", children: /* @__PURE__ */ jsx6("path", { d: "M4 5.5L1 1.5h6z", fill: arrowColor }) }) },
-    { dir: "w", cls: styles_module_default3.edgeW, arrow: /* @__PURE__ */ jsx6("svg", { width: "6", height: "8", viewBox: "0 0 6 8", fill: "none", children: /* @__PURE__ */ jsx6("path", { d: "M0.5 4L4.5 1v6z", fill: arrowColor }) }) }
+    { dir: "n", cls: styles_module_default4.edgeN, arrow: /* @__PURE__ */ jsx9("svg", { width: "8", height: "6", viewBox: "0 0 8 6", fill: "none", children: /* @__PURE__ */ jsx9("path", { d: "M4 0.5L1 4.5h6z", fill: arrowColor }) }) },
+    { dir: "e", cls: styles_module_default4.edgeE, arrow: /* @__PURE__ */ jsx9("svg", { width: "6", height: "8", viewBox: "0 0 6 8", fill: "none", children: /* @__PURE__ */ jsx9("path", { d: "M5.5 4L1.5 1v6z", fill: arrowColor }) }) },
+    { dir: "s", cls: styles_module_default4.edgeS, arrow: /* @__PURE__ */ jsx9("svg", { width: "8", height: "6", viewBox: "0 0 8 6", fill: "none", children: /* @__PURE__ */ jsx9("path", { d: "M4 5.5L1 1.5h6z", fill: arrowColor }) }) },
+    { dir: "w", cls: styles_module_default4.edgeW, arrow: /* @__PURE__ */ jsx9("svg", { width: "6", height: "8", viewBox: "0 0 6 8", fill: "none", children: /* @__PURE__ */ jsx9("path", { d: "M0.5 4L4.5 1v6z", fill: arrowColor }) }) }
   ];
-  return /* @__PURE__ */ jsxs5(Fragment2, { children: [
-    /* @__PURE__ */ jsx6(
+  return /* @__PURE__ */ jsxs6(Fragment2, { children: [
+    /* @__PURE__ */ jsx9(
       "div",
       {
         ref: overlayRef,
-        className: `${styles_module_default3.overlay} ${!isDarkMode ? styles_module_default3.light : ""} ${activeComponent ? styles_module_default3.placing : ""} ${passthrough ? styles_module_default3.passthrough : ""} ${exiting ? styles_module_default3.overlayExiting : ""} ${wireframe ? styles_module_default3.wireframe : ""}${extraClassName ? ` ${extraClassName}` : ""}`,
+        className: `${styles_module_default4.overlay} ${!isDarkMode ? styles_module_default4.light : ""} ${activeComponent ? styles_module_default4.placing : ""} ${passthrough ? styles_module_default4.passthrough : ""} ${exiting ? styles_module_default4.overlayExiting : ""} ${wireframe ? styles_module_default4.wireframe : ""}${extraClassName ? ` ${extraClassName}` : ""}`,
         "data-feedback-toolbar": true,
         onMouseDown: handleOverlayMouseDown,
         children: placements.map((p) => {
           const isSelected = selectedIds.has(p.id);
           const label = COMPONENT_MAP[p.type]?.label || p.type;
           const screenY = p.y - scrollY;
-          return /* @__PURE__ */ jsxs5(
+          return /* @__PURE__ */ jsxs6(
             "div",
             {
               "data-design-placement": p.id,
-              className: `${styles_module_default3.placement} ${isSelected ? styles_module_default3.selected : ""} ${exitingIds.has(p.id) ? styles_module_default3.exiting : ""}`,
+              className: `${styles_module_default4.placement} ${isSelected ? styles_module_default4.selected : ""} ${exitingIds.has(p.id) || clearingPlacements?.includes(p) ? styles_module_default4.exiting : ""}`,
               style: {
                 left: p.x,
                 top: screenY,
@@ -3195,33 +4519,33 @@ function DesignMode({
               onMouseDown: (e) => handlePlacementMouseDown(e, p.id),
               onDoubleClick: () => handleDoubleClick(p.id),
               children: [
-                /* @__PURE__ */ jsx6("span", { className: styles_module_default3.placementLabel, children: label }),
-                /* @__PURE__ */ jsx6("span", { className: `${styles_module_default3.placementAnnotation} ${p.text ? styles_module_default3.annotationVisible : ""}`, children: (() => {
+                /* @__PURE__ */ jsx9("span", { className: styles_module_default4.placementLabel, children: label }),
+                /* @__PURE__ */ jsx9("span", { className: `${styles_module_default4.placementAnnotation} ${p.text ? styles_module_default4.annotationVisible : ""}`, children: (() => {
                   if (p.text) lastAnnotationTextRef.current.set(p.id, p.text);
                   return p.text || lastAnnotationTextRef.current.get(p.id) || "";
                 })() }),
-                /* @__PURE__ */ jsx6("div", { className: styles_module_default3.placementContent, children: /* @__PURE__ */ jsx6(Skeleton, { type: p.type, width: p.width, height: p.height, text: p.text }) }),
-                /* @__PURE__ */ jsx6(
+                /* @__PURE__ */ jsx9("div", { className: styles_module_default4.placementContent, children: /* @__PURE__ */ jsx9(Skeleton, { type: p.type, width: p.width, height: p.height, text: p.text }) }),
+                /* @__PURE__ */ jsx9(
                   "div",
                   {
-                    className: styles_module_default3.deleteButton,
+                    className: styles_module_default4.deleteButton,
                     onMouseDown: (e) => e.stopPropagation(),
                     onClick: () => handleDelete(p.id),
                     children: "\u2715"
                   }
                 ),
-                cornerHandles.map((dir) => /* @__PURE__ */ jsx6(
+                cornerHandles.map((dir) => /* @__PURE__ */ jsx9(
                   "div",
                   {
-                    className: `${styles_module_default3.handle} ${styles_module_default3[`handle${dir.charAt(0).toUpperCase()}${dir.slice(1)}`]}`,
+                    className: `${styles_module_default4.handle} ${styles_module_default4[`handle${dir.charAt(0).toUpperCase()}${dir.slice(1)}`]}`,
                     onMouseDown: (e) => handleResizeMouseDown(e, p.id, dir)
                   },
                   dir
                 )),
-                edgeHandles.map(({ dir, cls, arrow }) => /* @__PURE__ */ jsx6(
+                edgeHandles.map(({ dir, cls, arrow }) => /* @__PURE__ */ jsx9(
                   "div",
                   {
-                    className: `${styles_module_default3.edgeHandle} ${cls}`,
+                    className: `${styles_module_default4.edgeHandle} ${cls}`,
                     onMouseDown: (e) => handleResizeMouseDown(e, p.id, dir),
                     children: arrow
                   },
@@ -3252,7 +4576,7 @@ function DesignMode({
       } else {
         popupStyle = { left: popupLeft, top: Math.max(80, window.innerHeight / 2 - 80) };
       }
-      return /* @__PURE__ */ jsx6(
+      return /* @__PURE__ */ jsx9(
         AnnotationPopupCSS,
         {
           element: COMPONENT_MAP[ep.type]?.label || ep.type,
@@ -3270,35 +4594,35 @@ function DesignMode({
         }
       );
     })(),
-    drawBox && /* @__PURE__ */ jsx6(
+    drawBox && /* @__PURE__ */ jsx9(
       "div",
       {
-        className: styles_module_default3.drawBox,
+        className: styles_module_default4.drawBox,
         style: { left: drawBox.x, top: drawBox.y, width: drawBox.w, height: drawBox.h },
         "data-feedback-toolbar": true
       }
     ),
-    selectBox && /* @__PURE__ */ jsx6(
+    selectBox && /* @__PURE__ */ jsx9(
       "div",
       {
-        className: styles_module_default3.selectBox,
+        className: styles_module_default4.selectBox,
         style: { left: selectBox.x, top: selectBox.y, width: selectBox.w, height: selectBox.h },
         "data-feedback-toolbar": true
       }
     ),
-    sizeIndicator && /* @__PURE__ */ jsx6(
+    sizeIndicator && /* @__PURE__ */ jsx9(
       "div",
       {
-        className: styles_module_default3.sizeIndicator,
+        className: styles_module_default4.sizeIndicator,
         style: { left: sizeIndicator.x, top: sizeIndicator.y },
         "data-feedback-toolbar": true,
         children: sizeIndicator.text
       }
     ),
-    guides.map((g, i) => /* @__PURE__ */ jsx6(
+    guides.map((g, i) => /* @__PURE__ */ jsx9(
       "div",
       {
-        className: styles_module_default3.guideLine,
+        className: styles_module_default4.guideLine,
         style: g.axis === "x" ? { position: "fixed", left: g.pos, top: 0, width: 1, bottom: 0 } : { position: "fixed", left: 0, top: g.pos - scrollY, right: 0, height: 1 },
         "data-feedback-toolbar": true
       },
@@ -3308,506 +4632,541 @@ function DesignMode({
 }
 
 // src/components/design-mode/palette.tsx
-import { useEffect as useEffect4, useRef as useRef4, useState as useState4 } from "react";
-import { Fragment as Fragment3, jsx as jsx7, jsxs as jsxs6 } from "react/jsx-runtime";
+import { useEffect as useEffect6, useRef as useRef8, useState as useState8 } from "react";
+
+// src/hooks/use-panel-presence.ts
+import { useLayoutEffect as useLayoutEffect5, useRef as useRef7, useState as useState7 } from "react";
+function usePanelPresence(open, { keepMounted = false, onExited } = {}) {
+  const [mounted, setMounted] = useState7(keepMounted || open);
+  const ref = useRef7(null);
+  const onExitedRef = useRef7(onExited);
+  if (open && !mounted) setMounted(true);
+  useLayoutEffect5(() => {
+    onExitedRef.current = onExited;
+  }, [onExited]);
+  useLayoutEffect5(() => {
+    const panel = ref.current;
+    if (!panel || panel.dataset.panelOpen === "true" === open) return;
+    getComputedStyle(panel).opacity;
+    panel.dataset.panelPresent = "true";
+    panel.dataset.panelOpen = String(open);
+    let cancelled = false;
+    const transitions = panel.getAnimations?.() ?? [];
+    Promise.allSettled(transitions.map((transition) => transition.finished)).then(() => {
+      if (cancelled || open) return;
+      delete panel.dataset.panelPresent;
+      if (!keepMounted) setMounted(false);
+      onExitedRef.current?.();
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [open, mounted, keepMounted]);
+  return { ref, mounted };
+}
+
+// src/components/design-mode/palette.tsx
+import { Fragment as Fragment3, jsx as jsx10, jsxs as jsxs7 } from "react/jsx-runtime";
 function scrollFadeClass(el) {
   if (!el) return "";
   const top = el.scrollTop > 2;
   const bottom = el.scrollTop + el.clientHeight < el.scrollHeight - 2;
-  return `${top ? styles_module_default3.fadeTop : ""} ${bottom ? styles_module_default3.fadeBottom : ""}`;
+  return `${top ? styles_module_default4.fadeTop : ""} ${bottom ? styles_module_default4.fadeBottom : ""}`;
 }
 var s = "currentColor";
 var sw = "0.5";
 function PaletteIconSvg({ type }) {
   switch (type) {
     case "navigation":
-      return /* @__PURE__ */ jsxs6("svg", { viewBox: "0 0 20 16", width: "20", height: "16", fill: "none", children: [
-        /* @__PURE__ */ jsx7("rect", { x: "1", y: "4", width: "18", height: "8", rx: "1", stroke: s, strokeWidth: sw }),
-        /* @__PURE__ */ jsx7("rect", { x: "2.5", y: "7", width: "3", height: "1.5", rx: ".5", fill: s, opacity: ".4" }),
-        /* @__PURE__ */ jsx7("rect", { x: "7", y: "7", width: "2.5", height: "1.5", rx: ".5", fill: s, opacity: ".25" }),
-        /* @__PURE__ */ jsx7("rect", { x: "11", y: "7", width: "2.5", height: "1.5", rx: ".5", fill: s, opacity: ".25" })
+      return /* @__PURE__ */ jsxs7("svg", { viewBox: "0 0 20 16", width: "20", height: "16", fill: "none", children: [
+        /* @__PURE__ */ jsx10("rect", { x: "1", y: "4", width: "18", height: "8", rx: "1", stroke: s, strokeWidth: sw }),
+        /* @__PURE__ */ jsx10("rect", { x: "2.5", y: "7", width: "3", height: "1.5", rx: ".5", fill: s, opacity: ".4" }),
+        /* @__PURE__ */ jsx10("rect", { x: "7", y: "7", width: "2.5", height: "1.5", rx: ".5", fill: s, opacity: ".25" }),
+        /* @__PURE__ */ jsx10("rect", { x: "11", y: "7", width: "2.5", height: "1.5", rx: ".5", fill: s, opacity: ".25" })
       ] });
     case "header":
-      return /* @__PURE__ */ jsxs6("svg", { viewBox: "0 0 20 16", width: "20", height: "16", fill: "none", children: [
-        /* @__PURE__ */ jsx7("rect", { x: "1", y: "2", width: "18", height: "12", rx: "1", stroke: s, strokeWidth: sw }),
-        /* @__PURE__ */ jsx7("rect", { x: "3", y: "5.5", width: "8", height: "2", rx: ".5", fill: s, opacity: ".35" }),
-        /* @__PURE__ */ jsx7("rect", { x: "3", y: "9", width: "12", height: "1", rx: ".5", fill: s, opacity: ".15" })
+      return /* @__PURE__ */ jsxs7("svg", { viewBox: "0 0 20 16", width: "20", height: "16", fill: "none", children: [
+        /* @__PURE__ */ jsx10("rect", { x: "1", y: "2", width: "18", height: "12", rx: "1", stroke: s, strokeWidth: sw }),
+        /* @__PURE__ */ jsx10("rect", { x: "3", y: "5.5", width: "8", height: "2", rx: ".5", fill: s, opacity: ".35" }),
+        /* @__PURE__ */ jsx10("rect", { x: "3", y: "9", width: "12", height: "1", rx: ".5", fill: s, opacity: ".15" })
       ] });
     case "hero":
-      return /* @__PURE__ */ jsxs6("svg", { viewBox: "0 0 20 16", width: "20", height: "16", fill: "none", children: [
-        /* @__PURE__ */ jsx7("rect", { x: "1", y: "1", width: "18", height: "14", rx: "1", stroke: s, strokeWidth: sw }),
-        /* @__PURE__ */ jsx7("rect", { x: "5", y: "5", width: "10", height: "1.5", rx: ".5", fill: s, opacity: ".35" }),
-        /* @__PURE__ */ jsx7("rect", { x: "7", y: "8", width: "6", height: "1", rx: ".5", fill: s, opacity: ".15" }),
-        /* @__PURE__ */ jsx7("rect", { x: "7.5", y: "10.5", width: "5", height: "2.5", rx: "1", stroke: s, strokeWidth: sw })
+      return /* @__PURE__ */ jsxs7("svg", { viewBox: "0 0 20 16", width: "20", height: "16", fill: "none", children: [
+        /* @__PURE__ */ jsx10("rect", { x: "1", y: "1", width: "18", height: "14", rx: "1", stroke: s, strokeWidth: sw }),
+        /* @__PURE__ */ jsx10("rect", { x: "5", y: "5", width: "10", height: "1.5", rx: ".5", fill: s, opacity: ".35" }),
+        /* @__PURE__ */ jsx10("rect", { x: "7", y: "8", width: "6", height: "1", rx: ".5", fill: s, opacity: ".15" }),
+        /* @__PURE__ */ jsx10("rect", { x: "7.5", y: "10.5", width: "5", height: "2.5", rx: "1", stroke: s, strokeWidth: sw })
       ] });
     case "section":
-      return /* @__PURE__ */ jsxs6("svg", { viewBox: "0 0 20 16", width: "20", height: "16", fill: "none", children: [
-        /* @__PURE__ */ jsx7("rect", { x: "1", y: "1", width: "18", height: "14", rx: "1", stroke: s, strokeWidth: sw }),
-        /* @__PURE__ */ jsx7("rect", { x: "3", y: "4", width: "6", height: "1", rx: ".5", fill: s, opacity: ".3" }),
-        /* @__PURE__ */ jsx7("rect", { x: "3", y: "6.5", width: "14", height: "1", rx: ".5", fill: s, opacity: ".15" }),
-        /* @__PURE__ */ jsx7("rect", { x: "3", y: "9", width: "10", height: "1", rx: ".5", fill: s, opacity: ".15" })
+      return /* @__PURE__ */ jsxs7("svg", { viewBox: "0 0 20 16", width: "20", height: "16", fill: "none", children: [
+        /* @__PURE__ */ jsx10("rect", { x: "1", y: "1", width: "18", height: "14", rx: "1", stroke: s, strokeWidth: sw }),
+        /* @__PURE__ */ jsx10("rect", { x: "3", y: "4", width: "6", height: "1", rx: ".5", fill: s, opacity: ".3" }),
+        /* @__PURE__ */ jsx10("rect", { x: "3", y: "6.5", width: "14", height: "1", rx: ".5", fill: s, opacity: ".15" }),
+        /* @__PURE__ */ jsx10("rect", { x: "3", y: "9", width: "10", height: "1", rx: ".5", fill: s, opacity: ".15" })
       ] });
     case "sidebar":
-      return /* @__PURE__ */ jsxs6("svg", { viewBox: "0 0 20 16", width: "20", height: "16", fill: "none", children: [
-        /* @__PURE__ */ jsx7("rect", { x: "1", y: "1", width: "7", height: "14", rx: "1", stroke: s, strokeWidth: sw }),
-        /* @__PURE__ */ jsx7("rect", { x: "2.5", y: "4", width: "4", height: "1", rx: ".5", fill: s, opacity: ".3" }),
-        /* @__PURE__ */ jsx7("rect", { x: "2.5", y: "6.5", width: "3.5", height: "1", rx: ".5", fill: s, opacity: ".15" }),
-        /* @__PURE__ */ jsx7("rect", { x: "2.5", y: "9", width: "4", height: "1", rx: ".5", fill: s, opacity: ".15" })
+      return /* @__PURE__ */ jsxs7("svg", { viewBox: "0 0 20 16", width: "20", height: "16", fill: "none", children: [
+        /* @__PURE__ */ jsx10("rect", { x: "1", y: "1", width: "7", height: "14", rx: "1", stroke: s, strokeWidth: sw }),
+        /* @__PURE__ */ jsx10("rect", { x: "2.5", y: "4", width: "4", height: "1", rx: ".5", fill: s, opacity: ".3" }),
+        /* @__PURE__ */ jsx10("rect", { x: "2.5", y: "6.5", width: "3.5", height: "1", rx: ".5", fill: s, opacity: ".15" }),
+        /* @__PURE__ */ jsx10("rect", { x: "2.5", y: "9", width: "4", height: "1", rx: ".5", fill: s, opacity: ".15" })
       ] });
     case "footer":
-      return /* @__PURE__ */ jsxs6("svg", { viewBox: "0 0 20 16", width: "20", height: "16", fill: "none", children: [
-        /* @__PURE__ */ jsx7("rect", { x: "1", y: "7", width: "18", height: "8", rx: "1", stroke: s, strokeWidth: sw }),
-        /* @__PURE__ */ jsx7("rect", { x: "3", y: "9.5", width: "4", height: "1", rx: ".5", fill: s, opacity: ".25" }),
-        /* @__PURE__ */ jsx7("rect", { x: "9", y: "9.5", width: "4", height: "1", rx: ".5", fill: s, opacity: ".25" }),
-        /* @__PURE__ */ jsx7("rect", { x: "15", y: "9.5", width: "3", height: "1", rx: ".5", fill: s, opacity: ".2" })
+      return /* @__PURE__ */ jsxs7("svg", { viewBox: "0 0 20 16", width: "20", height: "16", fill: "none", children: [
+        /* @__PURE__ */ jsx10("rect", { x: "1", y: "7", width: "18", height: "8", rx: "1", stroke: s, strokeWidth: sw }),
+        /* @__PURE__ */ jsx10("rect", { x: "3", y: "9.5", width: "4", height: "1", rx: ".5", fill: s, opacity: ".25" }),
+        /* @__PURE__ */ jsx10("rect", { x: "9", y: "9.5", width: "4", height: "1", rx: ".5", fill: s, opacity: ".25" }),
+        /* @__PURE__ */ jsx10("rect", { x: "15", y: "9.5", width: "3", height: "1", rx: ".5", fill: s, opacity: ".2" })
       ] });
     case "modal":
-      return /* @__PURE__ */ jsxs6("svg", { viewBox: "0 0 20 16", width: "20", height: "16", fill: "none", children: [
-        /* @__PURE__ */ jsx7("rect", { x: "3", y: "2", width: "14", height: "12", rx: "1.5", stroke: s, strokeWidth: sw }),
-        /* @__PURE__ */ jsx7("rect", { x: "5", y: "4.5", width: "7", height: "1", rx: ".5", fill: s, opacity: ".3" }),
-        /* @__PURE__ */ jsx7("rect", { x: "5", y: "7", width: "10", height: "1", rx: ".5", fill: s, opacity: ".15" }),
-        /* @__PURE__ */ jsx7("rect", { x: "11", y: "11", width: "5", height: "2", rx: ".75", stroke: s, strokeWidth: sw })
+      return /* @__PURE__ */ jsxs7("svg", { viewBox: "0 0 20 16", width: "20", height: "16", fill: "none", children: [
+        /* @__PURE__ */ jsx10("rect", { x: "3", y: "2", width: "14", height: "12", rx: "1.5", stroke: s, strokeWidth: sw }),
+        /* @__PURE__ */ jsx10("rect", { x: "5", y: "4.5", width: "7", height: "1", rx: ".5", fill: s, opacity: ".3" }),
+        /* @__PURE__ */ jsx10("rect", { x: "5", y: "7", width: "10", height: "1", rx: ".5", fill: s, opacity: ".15" }),
+        /* @__PURE__ */ jsx10("rect", { x: "11", y: "11", width: "5", height: "2", rx: ".75", stroke: s, strokeWidth: sw })
       ] });
     case "divider":
-      return /* @__PURE__ */ jsx7("svg", { viewBox: "0 0 20 16", width: "20", height: "16", fill: "none", children: /* @__PURE__ */ jsx7("line", { x1: "2", y1: "8", x2: "18", y2: "8", stroke: s, strokeWidth: "0.5", opacity: ".3" }) });
+      return /* @__PURE__ */ jsx10("svg", { viewBox: "0 0 20 16", width: "20", height: "16", fill: "none", children: /* @__PURE__ */ jsx10("line", { x1: "2", y1: "8", x2: "18", y2: "8", stroke: s, strokeWidth: "0.5", opacity: ".3" }) });
     case "card":
-      return /* @__PURE__ */ jsxs6("svg", { viewBox: "0 0 20 16", width: "20", height: "16", fill: "none", children: [
-        /* @__PURE__ */ jsx7("rect", { x: "2", y: "1", width: "16", height: "14", rx: "1.5", stroke: s, strokeWidth: sw }),
-        /* @__PURE__ */ jsx7("rect", { x: "2", y: "1", width: "16", height: "5.5", rx: "1", fill: s, opacity: ".04" }),
-        /* @__PURE__ */ jsx7("rect", { x: "4", y: "8.5", width: "8", height: "1", rx: ".5", fill: s, opacity: ".25" }),
-        /* @__PURE__ */ jsx7("rect", { x: "4", y: "11", width: "11", height: "1", rx: ".5", fill: s, opacity: ".12" })
+      return /* @__PURE__ */ jsxs7("svg", { viewBox: "0 0 20 16", width: "20", height: "16", fill: "none", children: [
+        /* @__PURE__ */ jsx10("rect", { x: "2", y: "1", width: "16", height: "14", rx: "1.5", stroke: s, strokeWidth: sw }),
+        /* @__PURE__ */ jsx10("rect", { x: "2", y: "1", width: "16", height: "5.5", rx: "1", fill: s, opacity: ".04" }),
+        /* @__PURE__ */ jsx10("rect", { x: "4", y: "8.5", width: "8", height: "1", rx: ".5", fill: s, opacity: ".25" }),
+        /* @__PURE__ */ jsx10("rect", { x: "4", y: "11", width: "11", height: "1", rx: ".5", fill: s, opacity: ".12" })
       ] });
     case "text":
-      return /* @__PURE__ */ jsxs6("svg", { viewBox: "0 0 20 16", width: "20", height: "16", fill: "none", children: [
-        /* @__PURE__ */ jsx7("rect", { x: "2", y: "4", width: "14", height: "1.5", rx: ".5", fill: s, opacity: ".3" }),
-        /* @__PURE__ */ jsx7("rect", { x: "2", y: "7", width: "11", height: "1", rx: ".5", fill: s, opacity: ".15" }),
-        /* @__PURE__ */ jsx7("rect", { x: "2", y: "9.5", width: "13", height: "1", rx: ".5", fill: s, opacity: ".15" }),
-        /* @__PURE__ */ jsx7("rect", { x: "2", y: "12", width: "8", height: "1", rx: ".5", fill: s, opacity: ".12" })
+      return /* @__PURE__ */ jsxs7("svg", { viewBox: "0 0 20 16", width: "20", height: "16", fill: "none", children: [
+        /* @__PURE__ */ jsx10("rect", { x: "2", y: "4", width: "14", height: "1.5", rx: ".5", fill: s, opacity: ".3" }),
+        /* @__PURE__ */ jsx10("rect", { x: "2", y: "7", width: "11", height: "1", rx: ".5", fill: s, opacity: ".15" }),
+        /* @__PURE__ */ jsx10("rect", { x: "2", y: "9.5", width: "13", height: "1", rx: ".5", fill: s, opacity: ".15" }),
+        /* @__PURE__ */ jsx10("rect", { x: "2", y: "12", width: "8", height: "1", rx: ".5", fill: s, opacity: ".12" })
       ] });
     case "image":
-      return /* @__PURE__ */ jsxs6("svg", { viewBox: "0 0 20 16", width: "20", height: "16", fill: "none", children: [
-        /* @__PURE__ */ jsx7("rect", { x: "2", y: "2", width: "16", height: "12", rx: "1", stroke: s, strokeWidth: sw }),
-        /* @__PURE__ */ jsx7("line", { x1: "2", y1: "2", x2: "18", y2: "14", stroke: s, strokeWidth: ".3", opacity: ".25" }),
-        /* @__PURE__ */ jsx7("line", { x1: "18", y1: "2", x2: "2", y2: "14", stroke: s, strokeWidth: ".3", opacity: ".25" })
+      return /* @__PURE__ */ jsxs7("svg", { viewBox: "0 0 20 16", width: "20", height: "16", fill: "none", children: [
+        /* @__PURE__ */ jsx10("rect", { x: "2", y: "2", width: "16", height: "12", rx: "1", stroke: s, strokeWidth: sw }),
+        /* @__PURE__ */ jsx10("line", { x1: "2", y1: "2", x2: "18", y2: "14", stroke: s, strokeWidth: ".3", opacity: ".25" }),
+        /* @__PURE__ */ jsx10("line", { x1: "18", y1: "2", x2: "2", y2: "14", stroke: s, strokeWidth: ".3", opacity: ".25" })
       ] });
     case "video":
-      return /* @__PURE__ */ jsxs6("svg", { viewBox: "0 0 20 16", width: "20", height: "16", fill: "none", children: [
-        /* @__PURE__ */ jsx7("rect", { x: "2", y: "2", width: "16", height: "12", rx: "1", stroke: s, strokeWidth: sw }),
-        /* @__PURE__ */ jsx7("path", { d: "M8.5 5.5v5l4.5-2.5z", stroke: s, strokeWidth: sw, fill: s, opacity: ".15" })
+      return /* @__PURE__ */ jsxs7("svg", { viewBox: "0 0 20 16", width: "20", height: "16", fill: "none", children: [
+        /* @__PURE__ */ jsx10("rect", { x: "2", y: "2", width: "16", height: "12", rx: "1", stroke: s, strokeWidth: sw }),
+        /* @__PURE__ */ jsx10("path", { d: "M8.5 5.5v5l4.5-2.5z", stroke: s, strokeWidth: sw, fill: s, opacity: ".15" })
       ] });
     case "table":
-      return /* @__PURE__ */ jsxs6("svg", { viewBox: "0 0 20 16", width: "20", height: "16", fill: "none", children: [
-        /* @__PURE__ */ jsx7("rect", { x: "1", y: "2", width: "18", height: "12", rx: "1", stroke: s, strokeWidth: sw }),
-        /* @__PURE__ */ jsx7("line", { x1: "1", y1: "5.5", x2: "19", y2: "5.5", stroke: s, strokeWidth: ".3", opacity: ".25" }),
-        /* @__PURE__ */ jsx7("line", { x1: "1", y1: "9", x2: "19", y2: "9", stroke: s, strokeWidth: ".3", opacity: ".25" }),
-        /* @__PURE__ */ jsx7("line", { x1: "7", y1: "2", x2: "7", y2: "14", stroke: s, strokeWidth: ".3", opacity: ".25" }),
-        /* @__PURE__ */ jsx7("line", { x1: "13", y1: "2", x2: "13", y2: "14", stroke: s, strokeWidth: ".3", opacity: ".25" })
+      return /* @__PURE__ */ jsxs7("svg", { viewBox: "0 0 20 16", width: "20", height: "16", fill: "none", children: [
+        /* @__PURE__ */ jsx10("rect", { x: "1", y: "2", width: "18", height: "12", rx: "1", stroke: s, strokeWidth: sw }),
+        /* @__PURE__ */ jsx10("line", { x1: "1", y1: "5.5", x2: "19", y2: "5.5", stroke: s, strokeWidth: ".3", opacity: ".25" }),
+        /* @__PURE__ */ jsx10("line", { x1: "1", y1: "9", x2: "19", y2: "9", stroke: s, strokeWidth: ".3", opacity: ".25" }),
+        /* @__PURE__ */ jsx10("line", { x1: "7", y1: "2", x2: "7", y2: "14", stroke: s, strokeWidth: ".3", opacity: ".25" }),
+        /* @__PURE__ */ jsx10("line", { x1: "13", y1: "2", x2: "13", y2: "14", stroke: s, strokeWidth: ".3", opacity: ".25" })
       ] });
     case "grid":
-      return /* @__PURE__ */ jsxs6("svg", { viewBox: "0 0 20 16", width: "20", height: "16", fill: "none", children: [
-        /* @__PURE__ */ jsx7("rect", { x: "1.5", y: "2", width: "7", height: "5.5", rx: "1", stroke: s, strokeWidth: sw }),
-        /* @__PURE__ */ jsx7("rect", { x: "11.5", y: "2", width: "7", height: "5.5", rx: "1", stroke: s, strokeWidth: sw }),
-        /* @__PURE__ */ jsx7("rect", { x: "1.5", y: "9.5", width: "7", height: "5.5", rx: "1", stroke: s, strokeWidth: sw }),
-        /* @__PURE__ */ jsx7("rect", { x: "11.5", y: "9.5", width: "7", height: "5.5", rx: "1", stroke: s, strokeWidth: sw })
+      return /* @__PURE__ */ jsxs7("svg", { viewBox: "0 0 20 16", width: "20", height: "16", fill: "none", children: [
+        /* @__PURE__ */ jsx10("rect", { x: "1.5", y: "2", width: "7", height: "5.5", rx: "1", stroke: s, strokeWidth: sw }),
+        /* @__PURE__ */ jsx10("rect", { x: "11.5", y: "2", width: "7", height: "5.5", rx: "1", stroke: s, strokeWidth: sw }),
+        /* @__PURE__ */ jsx10("rect", { x: "1.5", y: "9.5", width: "7", height: "5.5", rx: "1", stroke: s, strokeWidth: sw }),
+        /* @__PURE__ */ jsx10("rect", { x: "11.5", y: "9.5", width: "7", height: "5.5", rx: "1", stroke: s, strokeWidth: sw })
       ] });
     case "list":
-      return /* @__PURE__ */ jsxs6("svg", { viewBox: "0 0 20 16", width: "20", height: "16", fill: "none", children: [
-        /* @__PURE__ */ jsx7("circle", { cx: "3.5", cy: "4.5", r: "1", stroke: s, strokeWidth: sw }),
-        /* @__PURE__ */ jsx7("rect", { x: "6.5", y: "4", width: "10", height: "1", rx: ".5", fill: s, opacity: ".2" }),
-        /* @__PURE__ */ jsx7("circle", { cx: "3.5", cy: "8", r: "1", stroke: s, strokeWidth: sw }),
-        /* @__PURE__ */ jsx7("rect", { x: "6.5", y: "7.5", width: "8", height: "1", rx: ".5", fill: s, opacity: ".2" }),
-        /* @__PURE__ */ jsx7("circle", { cx: "3.5", cy: "11.5", r: "1", stroke: s, strokeWidth: sw }),
-        /* @__PURE__ */ jsx7("rect", { x: "6.5", y: "11", width: "11", height: "1", rx: ".5", fill: s, opacity: ".2" })
+      return /* @__PURE__ */ jsxs7("svg", { viewBox: "0 0 20 16", width: "20", height: "16", fill: "none", children: [
+        /* @__PURE__ */ jsx10("circle", { cx: "3.5", cy: "4.5", r: "1", stroke: s, strokeWidth: sw }),
+        /* @__PURE__ */ jsx10("rect", { x: "6.5", y: "4", width: "10", height: "1", rx: ".5", fill: s, opacity: ".2" }),
+        /* @__PURE__ */ jsx10("circle", { cx: "3.5", cy: "8", r: "1", stroke: s, strokeWidth: sw }),
+        /* @__PURE__ */ jsx10("rect", { x: "6.5", y: "7.5", width: "8", height: "1", rx: ".5", fill: s, opacity: ".2" }),
+        /* @__PURE__ */ jsx10("circle", { cx: "3.5", cy: "11.5", r: "1", stroke: s, strokeWidth: sw }),
+        /* @__PURE__ */ jsx10("rect", { x: "6.5", y: "11", width: "11", height: "1", rx: ".5", fill: s, opacity: ".2" })
       ] });
     case "chart":
-      return /* @__PURE__ */ jsxs6("svg", { viewBox: "0 0 20 16", width: "20", height: "16", fill: "none", children: [
-        /* @__PURE__ */ jsx7("rect", { x: "3", y: "9", width: "2.5", height: "4", rx: ".5", fill: s, opacity: ".2" }),
-        /* @__PURE__ */ jsx7("rect", { x: "7", y: "6", width: "2.5", height: "7", rx: ".5", fill: s, opacity: ".25" }),
-        /* @__PURE__ */ jsx7("rect", { x: "11", y: "3", width: "2.5", height: "10", rx: ".5", fill: s, opacity: ".3" }),
-        /* @__PURE__ */ jsx7("rect", { x: "15", y: "5", width: "2.5", height: "8", rx: ".5", fill: s, opacity: ".2" })
+      return /* @__PURE__ */ jsxs7("svg", { viewBox: "0 0 20 16", width: "20", height: "16", fill: "none", children: [
+        /* @__PURE__ */ jsx10("rect", { x: "3", y: "9", width: "2.5", height: "4", rx: ".5", fill: s, opacity: ".2" }),
+        /* @__PURE__ */ jsx10("rect", { x: "7", y: "6", width: "2.5", height: "7", rx: ".5", fill: s, opacity: ".25" }),
+        /* @__PURE__ */ jsx10("rect", { x: "11", y: "3", width: "2.5", height: "10", rx: ".5", fill: s, opacity: ".3" }),
+        /* @__PURE__ */ jsx10("rect", { x: "15", y: "5", width: "2.5", height: "8", rx: ".5", fill: s, opacity: ".2" })
       ] });
     case "accordion":
-      return /* @__PURE__ */ jsxs6("svg", { viewBox: "0 0 20 16", width: "20", height: "16", fill: "none", children: [
-        /* @__PURE__ */ jsx7("rect", { x: "1.5", y: "2", width: "17", height: "4", rx: "1", stroke: s, strokeWidth: sw }),
-        /* @__PURE__ */ jsx7("rect", { x: "3", y: "3.5", width: "6", height: "1", rx: ".5", fill: s, opacity: ".25" }),
-        /* @__PURE__ */ jsx7("rect", { x: "1.5", y: "7.5", width: "17", height: "3", rx: "1", stroke: s, strokeWidth: sw }),
-        /* @__PURE__ */ jsx7("rect", { x: "1.5", y: "12", width: "17", height: "3", rx: "1", stroke: s, strokeWidth: sw })
+      return /* @__PURE__ */ jsxs7("svg", { viewBox: "0 0 20 16", width: "20", height: "16", fill: "none", children: [
+        /* @__PURE__ */ jsx10("rect", { x: "1.5", y: "2", width: "17", height: "4", rx: "1", stroke: s, strokeWidth: sw }),
+        /* @__PURE__ */ jsx10("rect", { x: "3", y: "3.5", width: "6", height: "1", rx: ".5", fill: s, opacity: ".25" }),
+        /* @__PURE__ */ jsx10("rect", { x: "1.5", y: "7.5", width: "17", height: "3", rx: "1", stroke: s, strokeWidth: sw }),
+        /* @__PURE__ */ jsx10("rect", { x: "1.5", y: "12", width: "17", height: "3", rx: "1", stroke: s, strokeWidth: sw })
       ] });
     case "carousel":
-      return /* @__PURE__ */ jsxs6("svg", { viewBox: "0 0 20 16", width: "20", height: "16", fill: "none", children: [
-        /* @__PURE__ */ jsx7("rect", { x: "3", y: "2", width: "14", height: "10", rx: "1", stroke: s, strokeWidth: sw }),
-        /* @__PURE__ */ jsx7("path", { d: "M1.5 7L3 8.5 1.5 10", stroke: s, strokeWidth: sw, opacity: ".35" }),
-        /* @__PURE__ */ jsx7("path", { d: "M18.5 7L17 8.5 18.5 10", stroke: s, strokeWidth: sw, opacity: ".35" }),
-        /* @__PURE__ */ jsx7("circle", { cx: "8.5", cy: "14", r: ".6", fill: s, opacity: ".35" }),
-        /* @__PURE__ */ jsx7("circle", { cx: "10", cy: "14", r: ".6", fill: s, opacity: ".15" }),
-        /* @__PURE__ */ jsx7("circle", { cx: "11.5", cy: "14", r: ".6", fill: s, opacity: ".15" })
+      return /* @__PURE__ */ jsxs7("svg", { viewBox: "0 0 20 16", width: "20", height: "16", fill: "none", children: [
+        /* @__PURE__ */ jsx10("rect", { x: "3", y: "2", width: "14", height: "10", rx: "1", stroke: s, strokeWidth: sw }),
+        /* @__PURE__ */ jsx10("path", { d: "M1.5 7L3 8.5 1.5 10", stroke: s, strokeWidth: sw, opacity: ".35" }),
+        /* @__PURE__ */ jsx10("path", { d: "M18.5 7L17 8.5 18.5 10", stroke: s, strokeWidth: sw, opacity: ".35" }),
+        /* @__PURE__ */ jsx10("circle", { cx: "8.5", cy: "14", r: ".6", fill: s, opacity: ".35" }),
+        /* @__PURE__ */ jsx10("circle", { cx: "10", cy: "14", r: ".6", fill: s, opacity: ".15" }),
+        /* @__PURE__ */ jsx10("circle", { cx: "11.5", cy: "14", r: ".6", fill: s, opacity: ".15" })
       ] });
     case "button":
-      return /* @__PURE__ */ jsxs6("svg", { viewBox: "0 0 20 16", width: "20", height: "16", fill: "none", children: [
-        /* @__PURE__ */ jsx7("rect", { x: "3", y: "5", width: "14", height: "6", rx: "2", stroke: s, strokeWidth: sw }),
-        /* @__PURE__ */ jsx7("rect", { x: "6.5", y: "7.5", width: "7", height: "1", rx: ".5", fill: s, opacity: ".25" })
+      return /* @__PURE__ */ jsxs7("svg", { viewBox: "0 0 20 16", width: "20", height: "16", fill: "none", children: [
+        /* @__PURE__ */ jsx10("rect", { x: "3", y: "5", width: "14", height: "6", rx: "2", stroke: s, strokeWidth: sw }),
+        /* @__PURE__ */ jsx10("rect", { x: "6.5", y: "7.5", width: "7", height: "1", rx: ".5", fill: s, opacity: ".25" })
       ] });
     case "input":
-      return /* @__PURE__ */ jsxs6("svg", { viewBox: "0 0 20 16", width: "20", height: "16", fill: "none", children: [
-        /* @__PURE__ */ jsx7("rect", { x: "2", y: "4", width: "5.5", height: "1", rx: ".5", fill: s, opacity: ".25" }),
-        /* @__PURE__ */ jsx7("rect", { x: "2", y: "6.5", width: "16", height: "5.5", rx: "1", stroke: s, strokeWidth: sw }),
-        /* @__PURE__ */ jsx7("rect", { x: "3.5", y: "8.5", width: "7", height: "1", rx: ".5", fill: s, opacity: ".12" })
+      return /* @__PURE__ */ jsxs7("svg", { viewBox: "0 0 20 16", width: "20", height: "16", fill: "none", children: [
+        /* @__PURE__ */ jsx10("rect", { x: "2", y: "4", width: "5.5", height: "1", rx: ".5", fill: s, opacity: ".25" }),
+        /* @__PURE__ */ jsx10("rect", { x: "2", y: "6.5", width: "16", height: "5.5", rx: "1", stroke: s, strokeWidth: sw }),
+        /* @__PURE__ */ jsx10("rect", { x: "3.5", y: "8.5", width: "7", height: "1", rx: ".5", fill: s, opacity: ".12" })
       ] });
     case "search":
-      return /* @__PURE__ */ jsxs6("svg", { viewBox: "0 0 20 16", width: "20", height: "16", fill: "none", children: [
-        /* @__PURE__ */ jsx7("rect", { x: "2", y: "4.5", width: "16", height: "7", rx: "3.5", stroke: s, strokeWidth: sw }),
-        /* @__PURE__ */ jsx7("circle", { cx: "6", cy: "8", r: "2", stroke: s, strokeWidth: sw, opacity: ".3" }),
-        /* @__PURE__ */ jsx7("line", { x1: "7.5", y1: "9.5", x2: "9", y2: "11", stroke: s, strokeWidth: sw, opacity: ".3" }),
-        /* @__PURE__ */ jsx7("rect", { x: "9.5", y: "7.5", width: "6", height: "1", rx: ".5", fill: s, opacity: ".12" })
+      return /* @__PURE__ */ jsxs7("svg", { viewBox: "0 0 20 16", width: "20", height: "16", fill: "none", children: [
+        /* @__PURE__ */ jsx10("rect", { x: "2", y: "4.5", width: "16", height: "7", rx: "3.5", stroke: s, strokeWidth: sw }),
+        /* @__PURE__ */ jsx10("circle", { cx: "6", cy: "8", r: "2", stroke: s, strokeWidth: sw, opacity: ".3" }),
+        /* @__PURE__ */ jsx10("line", { x1: "7.5", y1: "9.5", x2: "9", y2: "11", stroke: s, strokeWidth: sw, opacity: ".3" }),
+        /* @__PURE__ */ jsx10("rect", { x: "9.5", y: "7.5", width: "6", height: "1", rx: ".5", fill: s, opacity: ".12" })
       ] });
     case "form":
-      return /* @__PURE__ */ jsxs6("svg", { viewBox: "0 0 20 16", width: "20", height: "16", fill: "none", children: [
-        /* @__PURE__ */ jsx7("rect", { x: "2", y: "1.5", width: "5.5", height: "1", rx: ".5", fill: s, opacity: ".25" }),
-        /* @__PURE__ */ jsx7("rect", { x: "2", y: "3.5", width: "16", height: "3", rx: ".75", stroke: s, strokeWidth: sw }),
-        /* @__PURE__ */ jsx7("rect", { x: "2", y: "8", width: "7", height: "1", rx: ".5", fill: s, opacity: ".25" }),
-        /* @__PURE__ */ jsx7("rect", { x: "2", y: "10", width: "16", height: "3", rx: ".75", stroke: s, strokeWidth: sw }),
-        /* @__PURE__ */ jsx7("rect", { x: "12", y: "14", width: "6", height: "2", rx: ".75", stroke: s, strokeWidth: sw })
+      return /* @__PURE__ */ jsxs7("svg", { viewBox: "0 0 20 16", width: "20", height: "16", fill: "none", children: [
+        /* @__PURE__ */ jsx10("rect", { x: "2", y: "1.5", width: "5.5", height: "1", rx: ".5", fill: s, opacity: ".25" }),
+        /* @__PURE__ */ jsx10("rect", { x: "2", y: "3.5", width: "16", height: "3", rx: ".75", stroke: s, strokeWidth: sw }),
+        /* @__PURE__ */ jsx10("rect", { x: "2", y: "8", width: "7", height: "1", rx: ".5", fill: s, opacity: ".25" }),
+        /* @__PURE__ */ jsx10("rect", { x: "2", y: "10", width: "16", height: "3", rx: ".75", stroke: s, strokeWidth: sw }),
+        /* @__PURE__ */ jsx10("rect", { x: "12", y: "14", width: "6", height: "2", rx: ".75", stroke: s, strokeWidth: sw })
       ] });
     case "tabs":
-      return /* @__PURE__ */ jsxs6("svg", { viewBox: "0 0 20 16", width: "20", height: "16", fill: "none", children: [
-        /* @__PURE__ */ jsx7("rect", { x: "1", y: "5", width: "18", height: "10", rx: "1", stroke: s, strokeWidth: sw }),
-        /* @__PURE__ */ jsx7("rect", { x: "1", y: "2", width: "6", height: "3.5", rx: ".75", stroke: s, strokeWidth: sw }),
-        /* @__PURE__ */ jsx7("rect", { x: "2.5", y: "3.25", width: "3", height: "1", rx: ".5", fill: s, opacity: ".25" }),
-        /* @__PURE__ */ jsx7("rect", { x: "7", y: "2", width: "6", height: "3.5", rx: ".75", stroke: s, strokeWidth: sw })
+      return /* @__PURE__ */ jsxs7("svg", { viewBox: "0 0 20 16", width: "20", height: "16", fill: "none", children: [
+        /* @__PURE__ */ jsx10("rect", { x: "1", y: "5", width: "18", height: "10", rx: "1", stroke: s, strokeWidth: sw }),
+        /* @__PURE__ */ jsx10("rect", { x: "1", y: "2", width: "6", height: "3.5", rx: ".75", stroke: s, strokeWidth: sw }),
+        /* @__PURE__ */ jsx10("rect", { x: "2.5", y: "3.25", width: "3", height: "1", rx: ".5", fill: s, opacity: ".25" }),
+        /* @__PURE__ */ jsx10("rect", { x: "7", y: "2", width: "6", height: "3.5", rx: ".75", stroke: s, strokeWidth: sw })
       ] });
     case "dropdown":
-      return /* @__PURE__ */ jsxs6("svg", { viewBox: "0 0 20 16", width: "20", height: "16", fill: "none", children: [
-        /* @__PURE__ */ jsx7("rect", { x: "2", y: "2", width: "16", height: "4", rx: "1", stroke: s, strokeWidth: sw }),
-        /* @__PURE__ */ jsx7("rect", { x: "3.5", y: "3.5", width: "7", height: "1", rx: ".5", fill: s, opacity: ".2" }),
-        /* @__PURE__ */ jsx7("path", { d: "M15 3.5l1.5 1.5L18 3.5", stroke: s, strokeWidth: sw, opacity: ".3" }),
-        /* @__PURE__ */ jsx7("rect", { x: "2", y: "7", width: "16", height: "7", rx: "1", stroke: s, strokeWidth: sw, strokeDasharray: "2 1", opacity: ".3" })
+      return /* @__PURE__ */ jsxs7("svg", { viewBox: "0 0 20 16", width: "20", height: "16", fill: "none", children: [
+        /* @__PURE__ */ jsx10("rect", { x: "2", y: "2", width: "16", height: "4", rx: "1", stroke: s, strokeWidth: sw }),
+        /* @__PURE__ */ jsx10("rect", { x: "3.5", y: "3.5", width: "7", height: "1", rx: ".5", fill: s, opacity: ".2" }),
+        /* @__PURE__ */ jsx10("path", { d: "M15 3.5l1.5 1.5L18 3.5", stroke: s, strokeWidth: sw, opacity: ".3" }),
+        /* @__PURE__ */ jsx10("rect", { x: "2", y: "7", width: "16", height: "7", rx: "1", stroke: s, strokeWidth: sw, strokeDasharray: "2 1", opacity: ".3" })
       ] });
     case "toggle":
-      return /* @__PURE__ */ jsxs6("svg", { viewBox: "0 0 20 16", width: "20", height: "16", fill: "none", children: [
-        /* @__PURE__ */ jsx7("rect", { x: "4", y: "5", width: "12", height: "6", rx: "3", stroke: s, strokeWidth: sw }),
-        /* @__PURE__ */ jsx7("circle", { cx: "13", cy: "8", r: "2", fill: s, opacity: ".3" })
+      return /* @__PURE__ */ jsxs7("svg", { viewBox: "0 0 20 16", width: "20", height: "16", fill: "none", children: [
+        /* @__PURE__ */ jsx10("rect", { x: "4", y: "5", width: "12", height: "6", rx: "3", stroke: s, strokeWidth: sw }),
+        /* @__PURE__ */ jsx10("circle", { cx: "13", cy: "8", r: "2", fill: s, opacity: ".3" })
       ] });
     case "avatar":
-      return /* @__PURE__ */ jsxs6("svg", { viewBox: "0 0 20 16", width: "20", height: "16", fill: "none", children: [
-        /* @__PURE__ */ jsx7("circle", { cx: "10", cy: "8", r: "6", stroke: s, strokeWidth: sw }),
-        /* @__PURE__ */ jsx7("circle", { cx: "10", cy: "6.5", r: "2", stroke: s, strokeWidth: sw }),
-        /* @__PURE__ */ jsx7("path", { d: "M6.5 13c0-2 1.5-3.5 3.5-3.5s3.5 1.5 3.5 3.5", stroke: s, strokeWidth: sw })
+      return /* @__PURE__ */ jsxs7("svg", { viewBox: "0 0 20 16", width: "20", height: "16", fill: "none", children: [
+        /* @__PURE__ */ jsx10("circle", { cx: "10", cy: "8", r: "6", stroke: s, strokeWidth: sw }),
+        /* @__PURE__ */ jsx10("circle", { cx: "10", cy: "6.5", r: "2", stroke: s, strokeWidth: sw }),
+        /* @__PURE__ */ jsx10("path", { d: "M6.5 13c0-2 1.5-3.5 3.5-3.5s3.5 1.5 3.5 3.5", stroke: s, strokeWidth: sw })
       ] });
     case "badge":
-      return /* @__PURE__ */ jsxs6("svg", { viewBox: "0 0 20 16", width: "20", height: "16", fill: "none", children: [
-        /* @__PURE__ */ jsx7("rect", { x: "3", y: "5", width: "14", height: "6", rx: "3", stroke: s, strokeWidth: sw }),
-        /* @__PURE__ */ jsx7("rect", { x: "6", y: "7.5", width: "8", height: "1", rx: ".5", fill: s, opacity: ".25" })
+      return /* @__PURE__ */ jsxs7("svg", { viewBox: "0 0 20 16", width: "20", height: "16", fill: "none", children: [
+        /* @__PURE__ */ jsx10("rect", { x: "3", y: "5", width: "14", height: "6", rx: "3", stroke: s, strokeWidth: sw }),
+        /* @__PURE__ */ jsx10("rect", { x: "6", y: "7.5", width: "8", height: "1", rx: ".5", fill: s, opacity: ".25" })
       ] });
     case "breadcrumb":
-      return /* @__PURE__ */ jsxs6("svg", { viewBox: "0 0 20 16", width: "20", height: "16", fill: "none", children: [
-        /* @__PURE__ */ jsx7("rect", { x: "1.5", y: "7", width: "3.5", height: "1", rx: ".5", fill: s, opacity: ".3" }),
-        /* @__PURE__ */ jsx7("path", { d: "M6.5 7l1 1-1 1", stroke: s, strokeWidth: sw, opacity: ".2" }),
-        /* @__PURE__ */ jsx7("rect", { x: "9", y: "7", width: "3.5", height: "1", rx: ".5", fill: s, opacity: ".2" }),
-        /* @__PURE__ */ jsx7("path", { d: "M14 7l1 1-1 1", stroke: s, strokeWidth: sw, opacity: ".2" }),
-        /* @__PURE__ */ jsx7("rect", { x: "16.5", y: "7", width: "2", height: "1", rx: ".5", fill: s, opacity: ".15" })
+      return /* @__PURE__ */ jsxs7("svg", { viewBox: "0 0 20 16", width: "20", height: "16", fill: "none", children: [
+        /* @__PURE__ */ jsx10("rect", { x: "1.5", y: "7", width: "3.5", height: "1", rx: ".5", fill: s, opacity: ".3" }),
+        /* @__PURE__ */ jsx10("path", { d: "M6.5 7l1 1-1 1", stroke: s, strokeWidth: sw, opacity: ".2" }),
+        /* @__PURE__ */ jsx10("rect", { x: "9", y: "7", width: "3.5", height: "1", rx: ".5", fill: s, opacity: ".2" }),
+        /* @__PURE__ */ jsx10("path", { d: "M14 7l1 1-1 1", stroke: s, strokeWidth: sw, opacity: ".2" }),
+        /* @__PURE__ */ jsx10("rect", { x: "16.5", y: "7", width: "2", height: "1", rx: ".5", fill: s, opacity: ".15" })
       ] });
     case "pagination":
-      return /* @__PURE__ */ jsxs6("svg", { viewBox: "0 0 20 16", width: "20", height: "16", fill: "none", children: [
-        /* @__PURE__ */ jsx7("rect", { x: "2", y: "5.5", width: "3.5", height: "5", rx: "1", stroke: s, strokeWidth: sw }),
-        /* @__PURE__ */ jsx7("rect", { x: "6.5", y: "5.5", width: "3.5", height: "5", rx: "1", stroke: s, strokeWidth: sw }),
-        /* @__PURE__ */ jsx7("rect", { x: "11", y: "5.5", width: "3.5", height: "5", rx: "1", fill: s, opacity: ".15", stroke: s, strokeWidth: sw }),
-        /* @__PURE__ */ jsx7("rect", { x: "15.5", y: "5.5", width: "3.5", height: "5", rx: "1", stroke: s, strokeWidth: sw })
+      return /* @__PURE__ */ jsxs7("svg", { viewBox: "0 0 20 16", width: "20", height: "16", fill: "none", children: [
+        /* @__PURE__ */ jsx10("rect", { x: "2", y: "5.5", width: "3.5", height: "5", rx: "1", stroke: s, strokeWidth: sw }),
+        /* @__PURE__ */ jsx10("rect", { x: "6.5", y: "5.5", width: "3.5", height: "5", rx: "1", stroke: s, strokeWidth: sw }),
+        /* @__PURE__ */ jsx10("rect", { x: "11", y: "5.5", width: "3.5", height: "5", rx: "1", fill: s, opacity: ".15", stroke: s, strokeWidth: sw }),
+        /* @__PURE__ */ jsx10("rect", { x: "15.5", y: "5.5", width: "3.5", height: "5", rx: "1", stroke: s, strokeWidth: sw })
       ] });
     case "progress":
-      return /* @__PURE__ */ jsxs6("svg", { viewBox: "0 0 20 16", width: "20", height: "16", fill: "none", children: [
-        /* @__PURE__ */ jsx7("rect", { x: "2", y: "7", width: "16", height: "2", rx: "1", stroke: s, strokeWidth: sw }),
-        /* @__PURE__ */ jsx7("rect", { x: "2", y: "7", width: "10", height: "2", rx: "1", fill: s, opacity: ".2" })
+      return /* @__PURE__ */ jsxs7("svg", { viewBox: "0 0 20 16", width: "20", height: "16", fill: "none", children: [
+        /* @__PURE__ */ jsx10("rect", { x: "2", y: "7", width: "16", height: "2", rx: "1", stroke: s, strokeWidth: sw }),
+        /* @__PURE__ */ jsx10("rect", { x: "2", y: "7", width: "10", height: "2", rx: "1", fill: s, opacity: ".2" })
       ] });
     case "toast":
-      return /* @__PURE__ */ jsxs6("svg", { viewBox: "0 0 20 16", width: "20", height: "16", fill: "none", children: [
-        /* @__PURE__ */ jsx7("rect", { x: "2", y: "4", width: "16", height: "8", rx: "1.5", stroke: s, strokeWidth: sw }),
-        /* @__PURE__ */ jsx7("circle", { cx: "5", cy: "8", r: "1.5", stroke: s, strokeWidth: sw, opacity: ".3" }),
-        /* @__PURE__ */ jsx7("rect", { x: "8", y: "6.5", width: "7", height: "1", rx: ".5", fill: s, opacity: ".25" }),
-        /* @__PURE__ */ jsx7("rect", { x: "8", y: "9", width: "5", height: "1", rx: ".5", fill: s, opacity: ".12" })
+      return /* @__PURE__ */ jsxs7("svg", { viewBox: "0 0 20 16", width: "20", height: "16", fill: "none", children: [
+        /* @__PURE__ */ jsx10("rect", { x: "2", y: "4", width: "16", height: "8", rx: "1.5", stroke: s, strokeWidth: sw }),
+        /* @__PURE__ */ jsx10("circle", { cx: "5", cy: "8", r: "1.5", stroke: s, strokeWidth: sw, opacity: ".3" }),
+        /* @__PURE__ */ jsx10("rect", { x: "8", y: "6.5", width: "7", height: "1", rx: ".5", fill: s, opacity: ".25" }),
+        /* @__PURE__ */ jsx10("rect", { x: "8", y: "9", width: "5", height: "1", rx: ".5", fill: s, opacity: ".12" })
       ] });
     case "tooltip":
-      return /* @__PURE__ */ jsxs6("svg", { viewBox: "0 0 20 16", width: "20", height: "16", fill: "none", children: [
-        /* @__PURE__ */ jsx7("rect", { x: "3", y: "3", width: "14", height: "7", rx: "1.5", stroke: s, strokeWidth: sw }),
-        /* @__PURE__ */ jsx7("rect", { x: "5.5", y: "5.5", width: "9", height: "1", rx: ".5", fill: s, opacity: ".25" }),
-        /* @__PURE__ */ jsx7("path", { d: "M9 10l1 2.5 1-2.5", stroke: s, strokeWidth: sw })
+      return /* @__PURE__ */ jsxs7("svg", { viewBox: "0 0 20 16", width: "20", height: "16", fill: "none", children: [
+        /* @__PURE__ */ jsx10("rect", { x: "3", y: "3", width: "14", height: "7", rx: "1.5", stroke: s, strokeWidth: sw }),
+        /* @__PURE__ */ jsx10("rect", { x: "5.5", y: "5.5", width: "9", height: "1", rx: ".5", fill: s, opacity: ".25" }),
+        /* @__PURE__ */ jsx10("path", { d: "M9 10l1 2.5 1-2.5", stroke: s, strokeWidth: sw })
       ] });
     case "pricing":
-      return /* @__PURE__ */ jsxs6("svg", { viewBox: "0 0 20 16", width: "20", height: "16", fill: "none", children: [
-        /* @__PURE__ */ jsx7("rect", { x: "2", y: "1", width: "16", height: "14", rx: "1.5", stroke: s, strokeWidth: sw }),
-        /* @__PURE__ */ jsx7("rect", { x: "6", y: "3", width: "8", height: "1.5", rx: ".5", fill: s, opacity: ".25" }),
-        /* @__PURE__ */ jsx7("rect", { x: "7", y: "5.5", width: "6", height: "2", rx: ".5", fill: s, opacity: ".15" }),
-        /* @__PURE__ */ jsx7("rect", { x: "5", y: "9", width: "10", height: "1", rx: ".5", fill: s, opacity: ".1" }),
-        /* @__PURE__ */ jsx7("rect", { x: "5", y: "11", width: "10", height: "1", rx: ".5", fill: s, opacity: ".1" }),
-        /* @__PURE__ */ jsx7("rect", { x: "6", y: "13", width: "8", height: "1.5", rx: ".5", fill: s, opacity: ".2" })
+      return /* @__PURE__ */ jsxs7("svg", { viewBox: "0 0 20 16", width: "20", height: "16", fill: "none", children: [
+        /* @__PURE__ */ jsx10("rect", { x: "2", y: "1", width: "16", height: "14", rx: "1.5", stroke: s, strokeWidth: sw }),
+        /* @__PURE__ */ jsx10("rect", { x: "6", y: "3", width: "8", height: "1.5", rx: ".5", fill: s, opacity: ".25" }),
+        /* @__PURE__ */ jsx10("rect", { x: "7", y: "5.5", width: "6", height: "2", rx: ".5", fill: s, opacity: ".15" }),
+        /* @__PURE__ */ jsx10("rect", { x: "5", y: "9", width: "10", height: "1", rx: ".5", fill: s, opacity: ".1" }),
+        /* @__PURE__ */ jsx10("rect", { x: "5", y: "11", width: "10", height: "1", rx: ".5", fill: s, opacity: ".1" }),
+        /* @__PURE__ */ jsx10("rect", { x: "6", y: "13", width: "8", height: "1.5", rx: ".5", fill: s, opacity: ".2" })
       ] });
     case "testimonial":
-      return /* @__PURE__ */ jsxs6("svg", { viewBox: "0 0 20 16", width: "20", height: "16", fill: "none", children: [
-        /* @__PURE__ */ jsx7("rect", { x: "2", y: "1", width: "16", height: "14", rx: "1.5", stroke: s, strokeWidth: sw }),
-        /* @__PURE__ */ jsx7("text", { x: "4", y: "5.5", fontSize: "4", fill: s, opacity: ".2", fontFamily: "serif", children: "\u201C" }),
-        /* @__PURE__ */ jsx7("rect", { x: "4", y: "7", width: "12", height: "1", rx: ".5", fill: s, opacity: ".15" }),
-        /* @__PURE__ */ jsx7("rect", { x: "4", y: "9", width: "9", height: "1", rx: ".5", fill: s, opacity: ".12" }),
-        /* @__PURE__ */ jsx7("circle", { cx: "5.5", cy: "12.5", r: "1.5", stroke: s, strokeWidth: sw, opacity: ".25" }),
-        /* @__PURE__ */ jsx7("rect", { x: "8", y: "12", width: "5", height: "1", rx: ".5", fill: s, opacity: ".15" })
+      return /* @__PURE__ */ jsxs7("svg", { viewBox: "0 0 20 16", width: "20", height: "16", fill: "none", children: [
+        /* @__PURE__ */ jsx10("rect", { x: "2", y: "1", width: "16", height: "14", rx: "1.5", stroke: s, strokeWidth: sw }),
+        /* @__PURE__ */ jsx10("text", { x: "4", y: "5.5", fontSize: "4", fill: s, opacity: ".2", fontFamily: "serif", children: "\u201C" }),
+        /* @__PURE__ */ jsx10("rect", { x: "4", y: "7", width: "12", height: "1", rx: ".5", fill: s, opacity: ".15" }),
+        /* @__PURE__ */ jsx10("rect", { x: "4", y: "9", width: "9", height: "1", rx: ".5", fill: s, opacity: ".12" }),
+        /* @__PURE__ */ jsx10("circle", { cx: "5.5", cy: "12.5", r: "1.5", stroke: s, strokeWidth: sw, opacity: ".25" }),
+        /* @__PURE__ */ jsx10("rect", { x: "8", y: "12", width: "5", height: "1", rx: ".5", fill: s, opacity: ".15" })
       ] });
     case "cta":
-      return /* @__PURE__ */ jsxs6("svg", { viewBox: "0 0 20 16", width: "20", height: "16", fill: "none", children: [
-        /* @__PURE__ */ jsx7("rect", { x: "1", y: "2", width: "18", height: "12", rx: "1", stroke: s, strokeWidth: sw }),
-        /* @__PURE__ */ jsx7("rect", { x: "5", y: "4.5", width: "10", height: "1.5", rx: ".5", fill: s, opacity: ".3" }),
-        /* @__PURE__ */ jsx7("rect", { x: "6", y: "7.5", width: "8", height: "1", rx: ".5", fill: s, opacity: ".15" }),
-        /* @__PURE__ */ jsx7("rect", { x: "7", y: "10", width: "6", height: "2.5", rx: "1", stroke: s, strokeWidth: sw })
+      return /* @__PURE__ */ jsxs7("svg", { viewBox: "0 0 20 16", width: "20", height: "16", fill: "none", children: [
+        /* @__PURE__ */ jsx10("rect", { x: "1", y: "2", width: "18", height: "12", rx: "1", stroke: s, strokeWidth: sw }),
+        /* @__PURE__ */ jsx10("rect", { x: "5", y: "4.5", width: "10", height: "1.5", rx: ".5", fill: s, opacity: ".3" }),
+        /* @__PURE__ */ jsx10("rect", { x: "6", y: "7.5", width: "8", height: "1", rx: ".5", fill: s, opacity: ".15" }),
+        /* @__PURE__ */ jsx10("rect", { x: "7", y: "10", width: "6", height: "2.5", rx: "1", stroke: s, strokeWidth: sw })
       ] });
     case "alert":
-      return /* @__PURE__ */ jsxs6("svg", { viewBox: "0 0 20 16", width: "20", height: "16", fill: "none", children: [
-        /* @__PURE__ */ jsx7("rect", { x: "2", y: "4", width: "16", height: "8", rx: "1.5", stroke: s, strokeWidth: sw }),
-        /* @__PURE__ */ jsx7("circle", { cx: "6", cy: "8", r: "2", stroke: s, strokeWidth: sw, opacity: ".3" }),
-        /* @__PURE__ */ jsx7("line", { x1: "6", y1: "7", x2: "6", y2: "8.5", stroke: s, strokeWidth: "0.6", opacity: ".5" }),
-        /* @__PURE__ */ jsx7("circle", { cx: "6", cy: "9.3", r: ".3", fill: s, opacity: ".5" }),
-        /* @__PURE__ */ jsx7("rect", { x: "9.5", y: "7", width: "6", height: "1", rx: ".5", fill: s, opacity: ".2" })
+      return /* @__PURE__ */ jsxs7("svg", { viewBox: "0 0 20 16", width: "20", height: "16", fill: "none", children: [
+        /* @__PURE__ */ jsx10("rect", { x: "2", y: "4", width: "16", height: "8", rx: "1.5", stroke: s, strokeWidth: sw }),
+        /* @__PURE__ */ jsx10("circle", { cx: "6", cy: "8", r: "2", stroke: s, strokeWidth: sw, opacity: ".3" }),
+        /* @__PURE__ */ jsx10("line", { x1: "6", y1: "7", x2: "6", y2: "8.5", stroke: s, strokeWidth: "0.6", opacity: ".5" }),
+        /* @__PURE__ */ jsx10("circle", { cx: "6", cy: "9.3", r: ".3", fill: s, opacity: ".5" }),
+        /* @__PURE__ */ jsx10("rect", { x: "9.5", y: "7", width: "6", height: "1", rx: ".5", fill: s, opacity: ".2" })
       ] });
     case "banner":
-      return /* @__PURE__ */ jsxs6("svg", { viewBox: "0 0 20 16", width: "20", height: "16", fill: "none", children: [
-        /* @__PURE__ */ jsx7("rect", { x: "1", y: "5", width: "18", height: "6", rx: "1", stroke: s, strokeWidth: sw }),
-        /* @__PURE__ */ jsx7("rect", { x: "4", y: "7.5", width: "8", height: "1", rx: ".5", fill: s, opacity: ".25" }),
-        /* @__PURE__ */ jsx7("rect", { x: "14", y: "7", width: "3.5", height: "2", rx: ".75", stroke: s, strokeWidth: sw })
+      return /* @__PURE__ */ jsxs7("svg", { viewBox: "0 0 20 16", width: "20", height: "16", fill: "none", children: [
+        /* @__PURE__ */ jsx10("rect", { x: "1", y: "5", width: "18", height: "6", rx: "1", stroke: s, strokeWidth: sw }),
+        /* @__PURE__ */ jsx10("rect", { x: "4", y: "7.5", width: "8", height: "1", rx: ".5", fill: s, opacity: ".25" }),
+        /* @__PURE__ */ jsx10("rect", { x: "14", y: "7", width: "3.5", height: "2", rx: ".75", stroke: s, strokeWidth: sw })
       ] });
     case "stat":
-      return /* @__PURE__ */ jsxs6("svg", { viewBox: "0 0 20 16", width: "20", height: "16", fill: "none", children: [
-        /* @__PURE__ */ jsx7("rect", { x: "3", y: "2", width: "14", height: "12", rx: "1.5", stroke: s, strokeWidth: sw }),
-        /* @__PURE__ */ jsx7("rect", { x: "6", y: "4.5", width: "8", height: "1", rx: ".5", fill: s, opacity: ".15" }),
-        /* @__PURE__ */ jsx7("rect", { x: "5", y: "7", width: "10", height: "2.5", rx: ".5", fill: s, opacity: ".3" }),
-        /* @__PURE__ */ jsx7("rect", { x: "7", y: "11", width: "6", height: "1", rx: ".5", fill: s, opacity: ".12" })
+      return /* @__PURE__ */ jsxs7("svg", { viewBox: "0 0 20 16", width: "20", height: "16", fill: "none", children: [
+        /* @__PURE__ */ jsx10("rect", { x: "3", y: "2", width: "14", height: "12", rx: "1.5", stroke: s, strokeWidth: sw }),
+        /* @__PURE__ */ jsx10("rect", { x: "6", y: "4.5", width: "8", height: "1", rx: ".5", fill: s, opacity: ".15" }),
+        /* @__PURE__ */ jsx10("rect", { x: "5", y: "7", width: "10", height: "2.5", rx: ".5", fill: s, opacity: ".3" }),
+        /* @__PURE__ */ jsx10("rect", { x: "7", y: "11", width: "6", height: "1", rx: ".5", fill: s, opacity: ".12" })
       ] });
     case "stepper":
-      return /* @__PURE__ */ jsxs6("svg", { viewBox: "0 0 20 16", width: "20", height: "16", fill: "none", children: [
-        /* @__PURE__ */ jsx7("circle", { cx: "4", cy: "8", r: "2", fill: s, opacity: ".2", stroke: s, strokeWidth: sw }),
-        /* @__PURE__ */ jsx7("line", { x1: "6", y1: "8", x2: "8", y2: "8", stroke: s, strokeWidth: ".4", opacity: ".3" }),
-        /* @__PURE__ */ jsx7("circle", { cx: "10", cy: "8", r: "2", stroke: s, strokeWidth: sw }),
-        /* @__PURE__ */ jsx7("line", { x1: "12", y1: "8", x2: "14", y2: "8", stroke: s, strokeWidth: ".4", opacity: ".3" }),
-        /* @__PURE__ */ jsx7("circle", { cx: "16", cy: "8", r: "2", stroke: s, strokeWidth: sw })
+      return /* @__PURE__ */ jsxs7("svg", { viewBox: "0 0 20 16", width: "20", height: "16", fill: "none", children: [
+        /* @__PURE__ */ jsx10("circle", { cx: "4", cy: "8", r: "2", fill: s, opacity: ".2", stroke: s, strokeWidth: sw }),
+        /* @__PURE__ */ jsx10("line", { x1: "6", y1: "8", x2: "8", y2: "8", stroke: s, strokeWidth: ".4", opacity: ".3" }),
+        /* @__PURE__ */ jsx10("circle", { cx: "10", cy: "8", r: "2", stroke: s, strokeWidth: sw }),
+        /* @__PURE__ */ jsx10("line", { x1: "12", y1: "8", x2: "14", y2: "8", stroke: s, strokeWidth: ".4", opacity: ".3" }),
+        /* @__PURE__ */ jsx10("circle", { cx: "16", cy: "8", r: "2", stroke: s, strokeWidth: sw })
       ] });
     case "tag":
-      return /* @__PURE__ */ jsxs6("svg", { viewBox: "0 0 20 16", width: "20", height: "16", fill: "none", children: [
-        /* @__PURE__ */ jsx7("rect", { x: "3", y: "5", width: "14", height: "6", rx: "1.5", stroke: s, strokeWidth: sw }),
-        /* @__PURE__ */ jsx7("rect", { x: "5.5", y: "7.5", width: "6", height: "1", rx: ".5", fill: s, opacity: ".25" }),
-        /* @__PURE__ */ jsx7("line", { x1: "14", y1: "6.5", x2: "15.5", y2: "9.5", stroke: s, strokeWidth: sw, opacity: ".2" }),
-        /* @__PURE__ */ jsx7("line", { x1: "15.5", y1: "6.5", x2: "14", y2: "9.5", stroke: s, strokeWidth: sw, opacity: ".2" })
+      return /* @__PURE__ */ jsxs7("svg", { viewBox: "0 0 20 16", width: "20", height: "16", fill: "none", children: [
+        /* @__PURE__ */ jsx10("rect", { x: "3", y: "5", width: "14", height: "6", rx: "1.5", stroke: s, strokeWidth: sw }),
+        /* @__PURE__ */ jsx10("rect", { x: "5.5", y: "7.5", width: "6", height: "1", rx: ".5", fill: s, opacity: ".25" }),
+        /* @__PURE__ */ jsx10("line", { x1: "14", y1: "6.5", x2: "15.5", y2: "9.5", stroke: s, strokeWidth: sw, opacity: ".2" }),
+        /* @__PURE__ */ jsx10("line", { x1: "15.5", y1: "6.5", x2: "14", y2: "9.5", stroke: s, strokeWidth: sw, opacity: ".2" })
       ] });
     case "rating":
-      return /* @__PURE__ */ jsxs6("svg", { viewBox: "0 0 20 16", width: "20", height: "16", fill: "none", children: [
-        /* @__PURE__ */ jsx7("path", { d: "M4 5.5l1 2 2.2.3-1.6 1.5.4 2.2L4 10.3l-2 1.2.4-2.2L.8 7.8 3 7.5z", fill: s, opacity: ".25" }),
-        /* @__PURE__ */ jsx7("path", { d: "M10 5.5l1 2 2.2.3-1.6 1.5.4 2.2L10 10.3l-2 1.2.4-2.2L6.8 7.8 9 7.5z", fill: s, opacity: ".25" }),
-        /* @__PURE__ */ jsx7("path", { d: "M16 5.5l1 2 2.2.3-1.6 1.5.4 2.2L16 10.3l-2 1.2.4-2.2-1.6-1.5 2.2-.3z", stroke: s, strokeWidth: sw, opacity: ".25" })
+      return /* @__PURE__ */ jsxs7("svg", { viewBox: "0 0 20 16", width: "20", height: "16", fill: "none", children: [
+        /* @__PURE__ */ jsx10("path", { d: "M4 5.5l1 2 2.2.3-1.6 1.5.4 2.2L4 10.3l-2 1.2.4-2.2L.8 7.8 3 7.5z", fill: s, opacity: ".25" }),
+        /* @__PURE__ */ jsx10("path", { d: "M10 5.5l1 2 2.2.3-1.6 1.5.4 2.2L10 10.3l-2 1.2.4-2.2L6.8 7.8 9 7.5z", fill: s, opacity: ".25" }),
+        /* @__PURE__ */ jsx10("path", { d: "M16 5.5l1 2 2.2.3-1.6 1.5.4 2.2L16 10.3l-2 1.2.4-2.2-1.6-1.5 2.2-.3z", stroke: s, strokeWidth: sw, opacity: ".25" })
       ] });
     case "map":
-      return /* @__PURE__ */ jsxs6("svg", { viewBox: "0 0 20 16", width: "20", height: "16", fill: "none", children: [
-        /* @__PURE__ */ jsx7("rect", { x: "2", y: "2", width: "16", height: "12", rx: "1", stroke: s, strokeWidth: sw }),
-        /* @__PURE__ */ jsx7("line", { x1: "2", y1: "6", x2: "18", y2: "10", stroke: s, strokeWidth: ".3", opacity: ".15" }),
-        /* @__PURE__ */ jsx7("line", { x1: "7", y1: "2", x2: "11", y2: "14", stroke: s, strokeWidth: ".3", opacity: ".15" }),
-        /* @__PURE__ */ jsx7("path", { d: "M10 5c-1.7 0-3 1.3-3 3 0 2.5 3 5 3 5s3-2.5 3-5c0-1.7-1.3-3-3-3z", fill: s, opacity: ".15", stroke: s, strokeWidth: sw })
+      return /* @__PURE__ */ jsxs7("svg", { viewBox: "0 0 20 16", width: "20", height: "16", fill: "none", children: [
+        /* @__PURE__ */ jsx10("rect", { x: "2", y: "2", width: "16", height: "12", rx: "1", stroke: s, strokeWidth: sw }),
+        /* @__PURE__ */ jsx10("line", { x1: "2", y1: "6", x2: "18", y2: "10", stroke: s, strokeWidth: ".3", opacity: ".15" }),
+        /* @__PURE__ */ jsx10("line", { x1: "7", y1: "2", x2: "11", y2: "14", stroke: s, strokeWidth: ".3", opacity: ".15" }),
+        /* @__PURE__ */ jsx10("path", { d: "M10 5c-1.7 0-3 1.3-3 3 0 2.5 3 5 3 5s3-2.5 3-5c0-1.7-1.3-3-3-3z", fill: s, opacity: ".15", stroke: s, strokeWidth: sw })
       ] });
     case "timeline":
-      return /* @__PURE__ */ jsxs6("svg", { viewBox: "0 0 20 16", width: "20", height: "16", fill: "none", children: [
-        /* @__PURE__ */ jsx7("line", { x1: "5", y1: "2", x2: "5", y2: "14", stroke: s, strokeWidth: ".4", opacity: ".25" }),
-        /* @__PURE__ */ jsx7("circle", { cx: "5", cy: "4", r: "1.5", fill: s, opacity: ".2", stroke: s, strokeWidth: sw }),
-        /* @__PURE__ */ jsx7("rect", { x: "8", y: "3", width: "8", height: "1", rx: ".5", fill: s, opacity: ".25" }),
-        /* @__PURE__ */ jsx7("circle", { cx: "5", cy: "8.5", r: "1.5", stroke: s, strokeWidth: sw }),
-        /* @__PURE__ */ jsx7("rect", { x: "8", y: "7.5", width: "6", height: "1", rx: ".5", fill: s, opacity: ".15" }),
-        /* @__PURE__ */ jsx7("circle", { cx: "5", cy: "13", r: "1.5", stroke: s, strokeWidth: sw }),
-        /* @__PURE__ */ jsx7("rect", { x: "8", y: "12", width: "7", height: "1", rx: ".5", fill: s, opacity: ".15" })
+      return /* @__PURE__ */ jsxs7("svg", { viewBox: "0 0 20 16", width: "20", height: "16", fill: "none", children: [
+        /* @__PURE__ */ jsx10("line", { x1: "5", y1: "2", x2: "5", y2: "14", stroke: s, strokeWidth: ".4", opacity: ".25" }),
+        /* @__PURE__ */ jsx10("circle", { cx: "5", cy: "4", r: "1.5", fill: s, opacity: ".2", stroke: s, strokeWidth: sw }),
+        /* @__PURE__ */ jsx10("rect", { x: "8", y: "3", width: "8", height: "1", rx: ".5", fill: s, opacity: ".25" }),
+        /* @__PURE__ */ jsx10("circle", { cx: "5", cy: "8.5", r: "1.5", stroke: s, strokeWidth: sw }),
+        /* @__PURE__ */ jsx10("rect", { x: "8", y: "7.5", width: "6", height: "1", rx: ".5", fill: s, opacity: ".15" }),
+        /* @__PURE__ */ jsx10("circle", { cx: "5", cy: "13", r: "1.5", stroke: s, strokeWidth: sw }),
+        /* @__PURE__ */ jsx10("rect", { x: "8", y: "12", width: "7", height: "1", rx: ".5", fill: s, opacity: ".15" })
       ] });
     case "fileUpload":
-      return /* @__PURE__ */ jsxs6("svg", { viewBox: "0 0 20 16", width: "20", height: "16", fill: "none", children: [
-        /* @__PURE__ */ jsx7("rect", { x: "3", y: "2", width: "14", height: "12", rx: "1.5", stroke: s, strokeWidth: sw, strokeDasharray: "2 1" }),
-        /* @__PURE__ */ jsx7("path", { d: "M10 10V5.5m0 0L7.5 8m2.5-2.5L12.5 8", stroke: s, strokeWidth: sw, opacity: ".3" }),
-        /* @__PURE__ */ jsx7("rect", { x: "7", y: "11.5", width: "6", height: "1", rx: ".5", fill: s, opacity: ".15" })
+      return /* @__PURE__ */ jsxs7("svg", { viewBox: "0 0 20 16", width: "20", height: "16", fill: "none", children: [
+        /* @__PURE__ */ jsx10("rect", { x: "3", y: "2", width: "14", height: "12", rx: "1.5", stroke: s, strokeWidth: sw, strokeDasharray: "2 1" }),
+        /* @__PURE__ */ jsx10("path", { d: "M10 10V5.5m0 0L7.5 8m2.5-2.5L12.5 8", stroke: s, strokeWidth: sw, opacity: ".3" }),
+        /* @__PURE__ */ jsx10("rect", { x: "7", y: "11.5", width: "6", height: "1", rx: ".5", fill: s, opacity: ".15" })
       ] });
     case "codeBlock":
-      return /* @__PURE__ */ jsxs6("svg", { viewBox: "0 0 20 16", width: "20", height: "16", fill: "none", children: [
-        /* @__PURE__ */ jsx7("rect", { x: "2", y: "2", width: "16", height: "12", rx: "1", stroke: s, strokeWidth: sw }),
-        /* @__PURE__ */ jsx7("circle", { cx: "4", cy: "4", r: ".6", fill: s, opacity: ".3" }),
-        /* @__PURE__ */ jsx7("circle", { cx: "5.5", cy: "4", r: ".6", fill: s, opacity: ".3" }),
-        /* @__PURE__ */ jsx7("circle", { cx: "7", cy: "4", r: ".6", fill: s, opacity: ".3" }),
-        /* @__PURE__ */ jsx7("rect", { x: "4", y: "7", width: "7", height: "1", rx: ".5", fill: s, opacity: ".2" }),
-        /* @__PURE__ */ jsx7("rect", { x: "6", y: "9", width: "5", height: "1", rx: ".5", fill: s, opacity: ".15" }),
-        /* @__PURE__ */ jsx7("rect", { x: "4", y: "11", width: "8", height: "1", rx: ".5", fill: s, opacity: ".12" })
+      return /* @__PURE__ */ jsxs7("svg", { viewBox: "0 0 20 16", width: "20", height: "16", fill: "none", children: [
+        /* @__PURE__ */ jsx10("rect", { x: "2", y: "2", width: "16", height: "12", rx: "1", stroke: s, strokeWidth: sw }),
+        /* @__PURE__ */ jsx10("circle", { cx: "4", cy: "4", r: ".6", fill: s, opacity: ".3" }),
+        /* @__PURE__ */ jsx10("circle", { cx: "5.5", cy: "4", r: ".6", fill: s, opacity: ".3" }),
+        /* @__PURE__ */ jsx10("circle", { cx: "7", cy: "4", r: ".6", fill: s, opacity: ".3" }),
+        /* @__PURE__ */ jsx10("rect", { x: "4", y: "7", width: "7", height: "1", rx: ".5", fill: s, opacity: ".2" }),
+        /* @__PURE__ */ jsx10("rect", { x: "6", y: "9", width: "5", height: "1", rx: ".5", fill: s, opacity: ".15" }),
+        /* @__PURE__ */ jsx10("rect", { x: "4", y: "11", width: "8", height: "1", rx: ".5", fill: s, opacity: ".12" })
       ] });
     case "calendar":
-      return /* @__PURE__ */ jsxs6("svg", { viewBox: "0 0 20 16", width: "20", height: "16", fill: "none", children: [
-        /* @__PURE__ */ jsx7("rect", { x: "2", y: "3", width: "16", height: "12", rx: "1", stroke: s, strokeWidth: sw }),
-        /* @__PURE__ */ jsx7("line", { x1: "2", y1: "6.5", x2: "18", y2: "6.5", stroke: s, strokeWidth: ".4", opacity: ".25" }),
-        /* @__PURE__ */ jsx7("rect", { x: "5", y: "4", width: "1", height: "1.5", rx: ".3", fill: s, opacity: ".2" }),
-        /* @__PURE__ */ jsx7("rect", { x: "14", y: "4", width: "1", height: "1.5", rx: ".3", fill: s, opacity: ".2" }),
-        /* @__PURE__ */ jsx7("circle", { cx: "7", cy: "9", r: ".6", fill: s, opacity: ".2" }),
-        /* @__PURE__ */ jsx7("circle", { cx: "10", cy: "9", r: ".6", fill: s, opacity: ".2" }),
-        /* @__PURE__ */ jsx7("circle", { cx: "13", cy: "9", r: ".6", fill: s, opacity: ".3" }),
-        /* @__PURE__ */ jsx7("circle", { cx: "7", cy: "12", r: ".6", fill: s, opacity: ".2" }),
-        /* @__PURE__ */ jsx7("circle", { cx: "10", cy: "12", r: ".6", fill: s, opacity: ".2" })
+      return /* @__PURE__ */ jsxs7("svg", { viewBox: "0 0 20 16", width: "20", height: "16", fill: "none", children: [
+        /* @__PURE__ */ jsx10("rect", { x: "2", y: "3", width: "16", height: "12", rx: "1", stroke: s, strokeWidth: sw }),
+        /* @__PURE__ */ jsx10("line", { x1: "2", y1: "6.5", x2: "18", y2: "6.5", stroke: s, strokeWidth: ".4", opacity: ".25" }),
+        /* @__PURE__ */ jsx10("rect", { x: "5", y: "4", width: "1", height: "1.5", rx: ".3", fill: s, opacity: ".2" }),
+        /* @__PURE__ */ jsx10("rect", { x: "14", y: "4", width: "1", height: "1.5", rx: ".3", fill: s, opacity: ".2" }),
+        /* @__PURE__ */ jsx10("circle", { cx: "7", cy: "9", r: ".6", fill: s, opacity: ".2" }),
+        /* @__PURE__ */ jsx10("circle", { cx: "10", cy: "9", r: ".6", fill: s, opacity: ".2" }),
+        /* @__PURE__ */ jsx10("circle", { cx: "13", cy: "9", r: ".6", fill: s, opacity: ".3" }),
+        /* @__PURE__ */ jsx10("circle", { cx: "7", cy: "12", r: ".6", fill: s, opacity: ".2" }),
+        /* @__PURE__ */ jsx10("circle", { cx: "10", cy: "12", r: ".6", fill: s, opacity: ".2" })
       ] });
     case "notification":
-      return /* @__PURE__ */ jsxs6("svg", { viewBox: "0 0 20 16", width: "20", height: "16", fill: "none", children: [
-        /* @__PURE__ */ jsx7("rect", { x: "2", y: "3", width: "16", height: "10", rx: "1.5", stroke: s, strokeWidth: sw }),
-        /* @__PURE__ */ jsx7("circle", { cx: "5.5", cy: "8", r: "2", stroke: s, strokeWidth: sw, opacity: ".25" }),
-        /* @__PURE__ */ jsx7("rect", { x: "9", y: "6", width: "6", height: "1", rx: ".5", fill: s, opacity: ".25" }),
-        /* @__PURE__ */ jsx7("rect", { x: "9", y: "8.5", width: "4.5", height: "1", rx: ".5", fill: s, opacity: ".12" }),
-        /* @__PURE__ */ jsx7("circle", { cx: "16.5", cy: "4.5", r: "1.5", fill: s, opacity: ".25" })
+      return /* @__PURE__ */ jsxs7("svg", { viewBox: "0 0 20 16", width: "20", height: "16", fill: "none", children: [
+        /* @__PURE__ */ jsx10("rect", { x: "2", y: "3", width: "16", height: "10", rx: "1.5", stroke: s, strokeWidth: sw }),
+        /* @__PURE__ */ jsx10("circle", { cx: "5.5", cy: "8", r: "2", stroke: s, strokeWidth: sw, opacity: ".25" }),
+        /* @__PURE__ */ jsx10("rect", { x: "9", y: "6", width: "6", height: "1", rx: ".5", fill: s, opacity: ".25" }),
+        /* @__PURE__ */ jsx10("rect", { x: "9", y: "8.5", width: "4.5", height: "1", rx: ".5", fill: s, opacity: ".12" }),
+        /* @__PURE__ */ jsx10("circle", { cx: "16.5", cy: "4.5", r: "1.5", fill: s, opacity: ".25" })
       ] });
     case "productCard":
-      return /* @__PURE__ */ jsxs6("svg", { viewBox: "0 0 20 16", width: "20", height: "16", fill: "none", children: [
-        /* @__PURE__ */ jsx7("rect", { x: "3", y: "1", width: "14", height: "14", rx: "1.5", stroke: s, strokeWidth: sw }),
-        /* @__PURE__ */ jsx7("rect", { x: "3", y: "1", width: "14", height: "6", rx: "1", fill: s, opacity: ".04" }),
-        /* @__PURE__ */ jsx7("rect", { x: "5", y: "8.5", width: "7", height: "1", rx: ".5", fill: s, opacity: ".25" }),
-        /* @__PURE__ */ jsx7("rect", { x: "5", y: "10.5", width: "4", height: "1.5", rx: ".5", fill: s, opacity: ".15" }),
-        /* @__PURE__ */ jsx7("rect", { x: "12", y: "12", width: "4", height: "2", rx: ".75", stroke: s, strokeWidth: sw })
+      return /* @__PURE__ */ jsxs7("svg", { viewBox: "0 0 20 16", width: "20", height: "16", fill: "none", children: [
+        /* @__PURE__ */ jsx10("rect", { x: "3", y: "1", width: "14", height: "14", rx: "1.5", stroke: s, strokeWidth: sw }),
+        /* @__PURE__ */ jsx10("rect", { x: "3", y: "1", width: "14", height: "6", rx: "1", fill: s, opacity: ".04" }),
+        /* @__PURE__ */ jsx10("rect", { x: "5", y: "8.5", width: "7", height: "1", rx: ".5", fill: s, opacity: ".25" }),
+        /* @__PURE__ */ jsx10("rect", { x: "5", y: "10.5", width: "4", height: "1.5", rx: ".5", fill: s, opacity: ".15" }),
+        /* @__PURE__ */ jsx10("rect", { x: "12", y: "12", width: "4", height: "2", rx: ".75", stroke: s, strokeWidth: sw })
       ] });
     case "profile":
-      return /* @__PURE__ */ jsxs6("svg", { viewBox: "0 0 20 16", width: "20", height: "16", fill: "none", children: [
-        /* @__PURE__ */ jsx7("circle", { cx: "10", cy: "5", r: "3", stroke: s, strokeWidth: sw }),
-        /* @__PURE__ */ jsx7("rect", { x: "5", y: "10", width: "10", height: "1.5", rx: ".5", fill: s, opacity: ".25" }),
-        /* @__PURE__ */ jsx7("rect", { x: "7", y: "12.5", width: "6", height: "1", rx: ".5", fill: s, opacity: ".12" })
+      return /* @__PURE__ */ jsxs7("svg", { viewBox: "0 0 20 16", width: "20", height: "16", fill: "none", children: [
+        /* @__PURE__ */ jsx10("circle", { cx: "10", cy: "5", r: "3", stroke: s, strokeWidth: sw }),
+        /* @__PURE__ */ jsx10("rect", { x: "5", y: "10", width: "10", height: "1.5", rx: ".5", fill: s, opacity: ".25" }),
+        /* @__PURE__ */ jsx10("rect", { x: "7", y: "12.5", width: "6", height: "1", rx: ".5", fill: s, opacity: ".12" })
       ] });
     case "drawer":
-      return /* @__PURE__ */ jsxs6("svg", { viewBox: "0 0 20 16", width: "20", height: "16", fill: "none", children: [
-        /* @__PURE__ */ jsx7("rect", { x: "9", y: "1", width: "10", height: "14", rx: "1", stroke: s, strokeWidth: sw }),
-        /* @__PURE__ */ jsx7("rect", { x: "10.5", y: "4", width: "5", height: "1", rx: ".5", fill: s, opacity: ".25" }),
-        /* @__PURE__ */ jsx7("rect", { x: "10.5", y: "6.5", width: "7", height: "1", rx: ".5", fill: s, opacity: ".15" }),
-        /* @__PURE__ */ jsx7("rect", { x: "10.5", y: "9", width: "6", height: "1", rx: ".5", fill: s, opacity: ".15" }),
-        /* @__PURE__ */ jsx7("rect", { x: "1", y: "1", width: "7", height: "14", rx: "1", stroke: s, strokeWidth: sw, opacity: ".15" })
+      return /* @__PURE__ */ jsxs7("svg", { viewBox: "0 0 20 16", width: "20", height: "16", fill: "none", children: [
+        /* @__PURE__ */ jsx10("rect", { x: "9", y: "1", width: "10", height: "14", rx: "1", stroke: s, strokeWidth: sw }),
+        /* @__PURE__ */ jsx10("rect", { x: "10.5", y: "4", width: "5", height: "1", rx: ".5", fill: s, opacity: ".25" }),
+        /* @__PURE__ */ jsx10("rect", { x: "10.5", y: "6.5", width: "7", height: "1", rx: ".5", fill: s, opacity: ".15" }),
+        /* @__PURE__ */ jsx10("rect", { x: "10.5", y: "9", width: "6", height: "1", rx: ".5", fill: s, opacity: ".15" }),
+        /* @__PURE__ */ jsx10("rect", { x: "1", y: "1", width: "7", height: "14", rx: "1", stroke: s, strokeWidth: sw, opacity: ".15" })
       ] });
     case "popover":
-      return /* @__PURE__ */ jsxs6("svg", { viewBox: "0 0 20 16", width: "20", height: "16", fill: "none", children: [
-        /* @__PURE__ */ jsx7("rect", { x: "3", y: "2", width: "14", height: "9", rx: "1.5", stroke: s, strokeWidth: sw }),
-        /* @__PURE__ */ jsx7("rect", { x: "5", y: "4.5", width: "8", height: "1", rx: ".5", fill: s, opacity: ".25" }),
-        /* @__PURE__ */ jsx7("rect", { x: "5", y: "7", width: "6", height: "1", rx: ".5", fill: s, opacity: ".15" }),
-        /* @__PURE__ */ jsx7("path", { d: "M9 11l1 2.5 1-2.5", stroke: s, strokeWidth: sw })
+      return /* @__PURE__ */ jsxs7("svg", { viewBox: "0 0 20 16", width: "20", height: "16", fill: "none", children: [
+        /* @__PURE__ */ jsx10("rect", { x: "3", y: "2", width: "14", height: "9", rx: "1.5", stroke: s, strokeWidth: sw }),
+        /* @__PURE__ */ jsx10("rect", { x: "5", y: "4.5", width: "8", height: "1", rx: ".5", fill: s, opacity: ".25" }),
+        /* @__PURE__ */ jsx10("rect", { x: "5", y: "7", width: "6", height: "1", rx: ".5", fill: s, opacity: ".15" }),
+        /* @__PURE__ */ jsx10("path", { d: "M9 11l1 2.5 1-2.5", stroke: s, strokeWidth: sw })
       ] });
     case "logo":
-      return /* @__PURE__ */ jsxs6("svg", { viewBox: "0 0 20 16", width: "20", height: "16", fill: "none", children: [
-        /* @__PURE__ */ jsx7("rect", { x: "2", y: "3", width: "10", height: "10", rx: "2", stroke: s, strokeWidth: sw }),
-        /* @__PURE__ */ jsx7("path", { d: "M5 9.5l2-4 2 4", stroke: s, strokeWidth: sw, opacity: ".3" }),
-        /* @__PURE__ */ jsx7("rect", { x: "14", y: "6", width: "4", height: "1", rx: ".5", fill: s, opacity: ".2" }),
-        /* @__PURE__ */ jsx7("rect", { x: "14", y: "8.5", width: "3", height: "1", rx: ".5", fill: s, opacity: ".12" })
+      return /* @__PURE__ */ jsxs7("svg", { viewBox: "0 0 20 16", width: "20", height: "16", fill: "none", children: [
+        /* @__PURE__ */ jsx10("rect", { x: "2", y: "3", width: "10", height: "10", rx: "2", stroke: s, strokeWidth: sw }),
+        /* @__PURE__ */ jsx10("path", { d: "M5 9.5l2-4 2 4", stroke: s, strokeWidth: sw, opacity: ".3" }),
+        /* @__PURE__ */ jsx10("rect", { x: "14", y: "6", width: "4", height: "1", rx: ".5", fill: s, opacity: ".2" }),
+        /* @__PURE__ */ jsx10("rect", { x: "14", y: "8.5", width: "3", height: "1", rx: ".5", fill: s, opacity: ".12" })
       ] });
     case "faq":
-      return /* @__PURE__ */ jsxs6("svg", { viewBox: "0 0 20 16", width: "20", height: "16", fill: "none", children: [
-        /* @__PURE__ */ jsx7("text", { x: "2.5", y: "5.5", fontSize: "4", fill: s, opacity: ".3", fontWeight: "bold", children: "?" }),
-        /* @__PURE__ */ jsx7("rect", { x: "7", y: "3", width: "10", height: "1", rx: ".5", fill: s, opacity: ".25" }),
-        /* @__PURE__ */ jsx7("rect", { x: "7", y: "5.5", width: "8", height: "1", rx: ".5", fill: s, opacity: ".12" }),
-        /* @__PURE__ */ jsx7("text", { x: "2.5", y: "11.5", fontSize: "4", fill: s, opacity: ".3", fontWeight: "bold", children: "?" }),
-        /* @__PURE__ */ jsx7("rect", { x: "7", y: "9", width: "9", height: "1", rx: ".5", fill: s, opacity: ".25" }),
-        /* @__PURE__ */ jsx7("rect", { x: "7", y: "11.5", width: "7", height: "1", rx: ".5", fill: s, opacity: ".12" })
+      return /* @__PURE__ */ jsxs7("svg", { viewBox: "0 0 20 16", width: "20", height: "16", fill: "none", children: [
+        /* @__PURE__ */ jsx10("text", { x: "2.5", y: "5.5", fontSize: "4", fill: s, opacity: ".3", fontWeight: "bold", children: "?" }),
+        /* @__PURE__ */ jsx10("rect", { x: "7", y: "3", width: "10", height: "1", rx: ".5", fill: s, opacity: ".25" }),
+        /* @__PURE__ */ jsx10("rect", { x: "7", y: "5.5", width: "8", height: "1", rx: ".5", fill: s, opacity: ".12" }),
+        /* @__PURE__ */ jsx10("text", { x: "2.5", y: "11.5", fontSize: "4", fill: s, opacity: ".3", fontWeight: "bold", children: "?" }),
+        /* @__PURE__ */ jsx10("rect", { x: "7", y: "9", width: "9", height: "1", rx: ".5", fill: s, opacity: ".25" }),
+        /* @__PURE__ */ jsx10("rect", { x: "7", y: "11.5", width: "7", height: "1", rx: ".5", fill: s, opacity: ".12" })
       ] });
     case "gallery":
-      return /* @__PURE__ */ jsxs6("svg", { viewBox: "0 0 20 16", width: "20", height: "16", fill: "none", children: [
-        /* @__PURE__ */ jsx7("rect", { x: "1.5", y: "1.5", width: "5", height: "5", rx: ".75", stroke: s, strokeWidth: sw }),
-        /* @__PURE__ */ jsx7("rect", { x: "7.5", y: "1.5", width: "5", height: "5", rx: ".75", stroke: s, strokeWidth: sw }),
-        /* @__PURE__ */ jsx7("rect", { x: "13.5", y: "1.5", width: "5", height: "5", rx: ".75", stroke: s, strokeWidth: sw }),
-        /* @__PURE__ */ jsx7("rect", { x: "1.5", y: "9.5", width: "5", height: "5", rx: ".75", stroke: s, strokeWidth: sw }),
-        /* @__PURE__ */ jsx7("rect", { x: "7.5", y: "9.5", width: "5", height: "5", rx: ".75", stroke: s, strokeWidth: sw }),
-        /* @__PURE__ */ jsx7("rect", { x: "13.5", y: "9.5", width: "5", height: "5", rx: ".75", stroke: s, strokeWidth: sw })
+      return /* @__PURE__ */ jsxs7("svg", { viewBox: "0 0 20 16", width: "20", height: "16", fill: "none", children: [
+        /* @__PURE__ */ jsx10("rect", { x: "1.5", y: "1.5", width: "5", height: "5", rx: ".75", stroke: s, strokeWidth: sw }),
+        /* @__PURE__ */ jsx10("rect", { x: "7.5", y: "1.5", width: "5", height: "5", rx: ".75", stroke: s, strokeWidth: sw }),
+        /* @__PURE__ */ jsx10("rect", { x: "13.5", y: "1.5", width: "5", height: "5", rx: ".75", stroke: s, strokeWidth: sw }),
+        /* @__PURE__ */ jsx10("rect", { x: "1.5", y: "9.5", width: "5", height: "5", rx: ".75", stroke: s, strokeWidth: sw }),
+        /* @__PURE__ */ jsx10("rect", { x: "7.5", y: "9.5", width: "5", height: "5", rx: ".75", stroke: s, strokeWidth: sw }),
+        /* @__PURE__ */ jsx10("rect", { x: "13.5", y: "9.5", width: "5", height: "5", rx: ".75", stroke: s, strokeWidth: sw })
       ] });
     case "checkbox":
-      return /* @__PURE__ */ jsxs6("svg", { viewBox: "0 0 20 16", width: "20", height: "16", fill: "none", children: [
-        /* @__PURE__ */ jsx7("rect", { x: "5", y: "4", width: "8", height: "8", rx: "1.5", stroke: s, strokeWidth: sw }),
-        /* @__PURE__ */ jsx7("path", { d: "M7.5 8l1.5 1.5 3-3", stroke: s, strokeWidth: sw, opacity: ".35" })
+      return /* @__PURE__ */ jsxs7("svg", { viewBox: "0 0 20 16", width: "20", height: "16", fill: "none", children: [
+        /* @__PURE__ */ jsx10("rect", { x: "5", y: "4", width: "8", height: "8", rx: "1.5", stroke: s, strokeWidth: sw }),
+        /* @__PURE__ */ jsx10("path", { d: "M7.5 8l1.5 1.5 3-3", stroke: s, strokeWidth: sw, opacity: ".35" })
       ] });
     case "radio":
-      return /* @__PURE__ */ jsxs6("svg", { viewBox: "0 0 20 16", width: "20", height: "16", fill: "none", children: [
-        /* @__PURE__ */ jsx7("circle", { cx: "10", cy: "8", r: "4", stroke: s, strokeWidth: sw }),
-        /* @__PURE__ */ jsx7("circle", { cx: "10", cy: "8", r: "2", fill: s, opacity: ".3" })
+      return /* @__PURE__ */ jsxs7("svg", { viewBox: "0 0 20 16", width: "20", height: "16", fill: "none", children: [
+        /* @__PURE__ */ jsx10("circle", { cx: "10", cy: "8", r: "4", stroke: s, strokeWidth: sw }),
+        /* @__PURE__ */ jsx10("circle", { cx: "10", cy: "8", r: "2", fill: s, opacity: ".3" })
       ] });
     case "slider":
-      return /* @__PURE__ */ jsxs6("svg", { viewBox: "0 0 20 16", width: "20", height: "16", fill: "none", children: [
-        /* @__PURE__ */ jsx7("rect", { x: "2", y: "7.5", width: "16", height: "1", rx: ".5", fill: s, opacity: ".15" }),
-        /* @__PURE__ */ jsx7("rect", { x: "2", y: "7.5", width: "10", height: "1", rx: ".5", fill: s, opacity: ".25" }),
-        /* @__PURE__ */ jsx7("circle", { cx: "12", cy: "8", r: "2.5", stroke: s, strokeWidth: sw })
+      return /* @__PURE__ */ jsxs7("svg", { viewBox: "0 0 20 16", width: "20", height: "16", fill: "none", children: [
+        /* @__PURE__ */ jsx10("rect", { x: "2", y: "7.5", width: "16", height: "1", rx: ".5", fill: s, opacity: ".15" }),
+        /* @__PURE__ */ jsx10("rect", { x: "2", y: "7.5", width: "10", height: "1", rx: ".5", fill: s, opacity: ".25" }),
+        /* @__PURE__ */ jsx10("circle", { cx: "12", cy: "8", r: "2.5", stroke: s, strokeWidth: sw })
       ] });
     case "datePicker":
-      return /* @__PURE__ */ jsxs6("svg", { viewBox: "0 0 20 16", width: "20", height: "16", fill: "none", children: [
-        /* @__PURE__ */ jsx7("rect", { x: "2", y: "1", width: "16", height: "5", rx: "1", stroke: s, strokeWidth: sw }),
-        /* @__PURE__ */ jsx7("rect", { x: "3.5", y: "3", width: "5", height: "1", rx: ".5", fill: s, opacity: ".2" }),
-        /* @__PURE__ */ jsx7("rect", { x: "14", y: "2.5", width: "2.5", height: "2", rx: ".5", fill: s, opacity: ".12" }),
-        /* @__PURE__ */ jsx7("rect", { x: "2", y: "7", width: "16", height: "8", rx: "1", stroke: s, strokeWidth: sw, strokeDasharray: "2 1", opacity: ".3" }),
-        /* @__PURE__ */ jsx7("circle", { cx: "6", cy: "10", r: ".6", fill: s, opacity: ".2" }),
-        /* @__PURE__ */ jsx7("circle", { cx: "10", cy: "10", r: ".6", fill: s, opacity: ".3" }),
-        /* @__PURE__ */ jsx7("circle", { cx: "14", cy: "10", r: ".6", fill: s, opacity: ".2" }),
-        /* @__PURE__ */ jsx7("circle", { cx: "6", cy: "13", r: ".6", fill: s, opacity: ".2" }),
-        /* @__PURE__ */ jsx7("circle", { cx: "10", cy: "13", r: ".6", fill: s, opacity: ".2" })
+      return /* @__PURE__ */ jsxs7("svg", { viewBox: "0 0 20 16", width: "20", height: "16", fill: "none", children: [
+        /* @__PURE__ */ jsx10("rect", { x: "2", y: "1", width: "16", height: "5", rx: "1", stroke: s, strokeWidth: sw }),
+        /* @__PURE__ */ jsx10("rect", { x: "3.5", y: "3", width: "5", height: "1", rx: ".5", fill: s, opacity: ".2" }),
+        /* @__PURE__ */ jsx10("rect", { x: "14", y: "2.5", width: "2.5", height: "2", rx: ".5", fill: s, opacity: ".12" }),
+        /* @__PURE__ */ jsx10("rect", { x: "2", y: "7", width: "16", height: "8", rx: "1", stroke: s, strokeWidth: sw, strokeDasharray: "2 1", opacity: ".3" }),
+        /* @__PURE__ */ jsx10("circle", { cx: "6", cy: "10", r: ".6", fill: s, opacity: ".2" }),
+        /* @__PURE__ */ jsx10("circle", { cx: "10", cy: "10", r: ".6", fill: s, opacity: ".3" }),
+        /* @__PURE__ */ jsx10("circle", { cx: "14", cy: "10", r: ".6", fill: s, opacity: ".2" }),
+        /* @__PURE__ */ jsx10("circle", { cx: "6", cy: "13", r: ".6", fill: s, opacity: ".2" }),
+        /* @__PURE__ */ jsx10("circle", { cx: "10", cy: "13", r: ".6", fill: s, opacity: ".2" })
       ] });
     case "skeleton":
-      return /* @__PURE__ */ jsxs6("svg", { viewBox: "0 0 20 16", width: "20", height: "16", fill: "none", children: [
-        /* @__PURE__ */ jsx7("rect", { x: "2", y: "2", width: "16", height: "3", rx: "1", fill: s, opacity: ".08" }),
-        /* @__PURE__ */ jsx7("rect", { x: "2", y: "7", width: "10", height: "2", rx: ".75", fill: s, opacity: ".08" }),
-        /* @__PURE__ */ jsx7("rect", { x: "2", y: "11", width: "13", height: "2", rx: ".75", fill: s, opacity: ".08" })
+      return /* @__PURE__ */ jsxs7("svg", { viewBox: "0 0 20 16", width: "20", height: "16", fill: "none", children: [
+        /* @__PURE__ */ jsx10("rect", { x: "2", y: "2", width: "16", height: "3", rx: "1", fill: s, opacity: ".08" }),
+        /* @__PURE__ */ jsx10("rect", { x: "2", y: "7", width: "10", height: "2", rx: ".75", fill: s, opacity: ".08" }),
+        /* @__PURE__ */ jsx10("rect", { x: "2", y: "11", width: "13", height: "2", rx: ".75", fill: s, opacity: ".08" })
       ] });
     case "chip":
-      return /* @__PURE__ */ jsxs6("svg", { viewBox: "0 0 20 16", width: "20", height: "16", fill: "none", children: [
-        /* @__PURE__ */ jsx7("rect", { x: "1.5", y: "5", width: "10", height: "6", rx: "3", fill: s, opacity: ".08", stroke: s, strokeWidth: sw }),
-        /* @__PURE__ */ jsx7("rect", { x: "4", y: "7.5", width: "4", height: "1", rx: ".5", fill: s, opacity: ".25" }),
-        /* @__PURE__ */ jsx7("line", { x1: "9.5", y1: "6.5", x2: "10.5", y2: "9.5", stroke: s, strokeWidth: sw, opacity: ".2" }),
-        /* @__PURE__ */ jsx7("line", { x1: "10.5", y1: "6.5", x2: "9.5", y2: "9.5", stroke: s, strokeWidth: sw, opacity: ".2" }),
-        /* @__PURE__ */ jsx7("rect", { x: "13", y: "5", width: "5.5", height: "6", rx: "3", stroke: s, strokeWidth: sw, opacity: ".25" })
+      return /* @__PURE__ */ jsxs7("svg", { viewBox: "0 0 20 16", width: "20", height: "16", fill: "none", children: [
+        /* @__PURE__ */ jsx10("rect", { x: "1.5", y: "5", width: "10", height: "6", rx: "3", fill: s, opacity: ".08", stroke: s, strokeWidth: sw }),
+        /* @__PURE__ */ jsx10("rect", { x: "4", y: "7.5", width: "4", height: "1", rx: ".5", fill: s, opacity: ".25" }),
+        /* @__PURE__ */ jsx10("line", { x1: "9.5", y1: "6.5", x2: "10.5", y2: "9.5", stroke: s, strokeWidth: sw, opacity: ".2" }),
+        /* @__PURE__ */ jsx10("line", { x1: "10.5", y1: "6.5", x2: "9.5", y2: "9.5", stroke: s, strokeWidth: sw, opacity: ".2" }),
+        /* @__PURE__ */ jsx10("rect", { x: "13", y: "5", width: "5.5", height: "6", rx: "3", stroke: s, strokeWidth: sw, opacity: ".25" })
       ] });
     case "icon":
-      return /* @__PURE__ */ jsx7("svg", { viewBox: "0 0 20 16", width: "20", height: "16", fill: "none", children: /* @__PURE__ */ jsx7("path", { d: "M10 3l1.5 3 3.5.5-2.5 2.5.5 3.5L10 11l-3 1.5.5-3.5L5 6.5l3.5-.5z", stroke: s, strokeWidth: sw, opacity: ".3" }) });
+      return /* @__PURE__ */ jsx10("svg", { viewBox: "0 0 20 16", width: "20", height: "16", fill: "none", children: /* @__PURE__ */ jsx10("path", { d: "M10 3l1.5 3 3.5.5-2.5 2.5.5 3.5L10 11l-3 1.5.5-3.5L5 6.5l3.5-.5z", stroke: s, strokeWidth: sw, opacity: ".3" }) });
     case "spinner":
-      return /* @__PURE__ */ jsxs6("svg", { viewBox: "0 0 20 16", width: "20", height: "16", fill: "none", children: [
-        /* @__PURE__ */ jsx7("circle", { cx: "10", cy: "8", r: "5", stroke: s, strokeWidth: sw, opacity: ".12" }),
-        /* @__PURE__ */ jsx7("path", { d: "M10 3a5 5 0 0 1 5 5", stroke: s, strokeWidth: sw, opacity: ".35", strokeLinecap: "round" })
+      return /* @__PURE__ */ jsxs7("svg", { viewBox: "0 0 20 16", width: "20", height: "16", fill: "none", children: [
+        /* @__PURE__ */ jsx10("circle", { cx: "10", cy: "8", r: "5", stroke: s, strokeWidth: sw, opacity: ".12" }),
+        /* @__PURE__ */ jsx10("path", { d: "M10 3a5 5 0 0 1 5 5", stroke: s, strokeWidth: sw, opacity: ".35", strokeLinecap: "round" })
       ] });
     case "feature":
-      return /* @__PURE__ */ jsxs6("svg", { viewBox: "0 0 20 16", width: "20", height: "16", fill: "none", children: [
-        /* @__PURE__ */ jsx7("rect", { x: "2", y: "2", width: "5", height: "5", rx: "1.5", stroke: s, strokeWidth: sw }),
-        /* @__PURE__ */ jsx7("path", { d: "M4.5 3.5v3m-1.5-1.5h3", stroke: s, strokeWidth: sw, opacity: ".25" }),
-        /* @__PURE__ */ jsx7("rect", { x: "9", y: "2.5", width: "8", height: "1.5", rx: ".5", fill: s, opacity: ".25" }),
-        /* @__PURE__ */ jsx7("rect", { x: "9", y: "5.5", width: "6", height: "1", rx: ".5", fill: s, opacity: ".12" }),
-        /* @__PURE__ */ jsx7("rect", { x: "2", y: "10", width: "5", height: "5", rx: "1.5", stroke: s, strokeWidth: sw }),
-        /* @__PURE__ */ jsx7("rect", { x: "9", y: "10.5", width: "7", height: "1.5", rx: ".5", fill: s, opacity: ".25" }),
-        /* @__PURE__ */ jsx7("rect", { x: "9", y: "13.5", width: "5", height: "1", rx: ".5", fill: s, opacity: ".12" })
+      return /* @__PURE__ */ jsxs7("svg", { viewBox: "0 0 20 16", width: "20", height: "16", fill: "none", children: [
+        /* @__PURE__ */ jsx10("rect", { x: "2", y: "2", width: "5", height: "5", rx: "1.5", stroke: s, strokeWidth: sw }),
+        /* @__PURE__ */ jsx10("path", { d: "M4.5 3.5v3m-1.5-1.5h3", stroke: s, strokeWidth: sw, opacity: ".25" }),
+        /* @__PURE__ */ jsx10("rect", { x: "9", y: "2.5", width: "8", height: "1.5", rx: ".5", fill: s, opacity: ".25" }),
+        /* @__PURE__ */ jsx10("rect", { x: "9", y: "5.5", width: "6", height: "1", rx: ".5", fill: s, opacity: ".12" }),
+        /* @__PURE__ */ jsx10("rect", { x: "2", y: "10", width: "5", height: "5", rx: "1.5", stroke: s, strokeWidth: sw }),
+        /* @__PURE__ */ jsx10("rect", { x: "9", y: "10.5", width: "7", height: "1.5", rx: ".5", fill: s, opacity: ".25" }),
+        /* @__PURE__ */ jsx10("rect", { x: "9", y: "13.5", width: "5", height: "1", rx: ".5", fill: s, opacity: ".12" })
       ] });
     case "team":
-      return /* @__PURE__ */ jsxs6("svg", { viewBox: "0 0 20 16", width: "20", height: "16", fill: "none", children: [
-        /* @__PURE__ */ jsx7("circle", { cx: "5", cy: "5", r: "2.5", stroke: s, strokeWidth: sw }),
-        /* @__PURE__ */ jsx7("rect", { x: "2.5", y: "9", width: "5", height: "1", rx: ".5", fill: s, opacity: ".2" }),
-        /* @__PURE__ */ jsx7("circle", { cx: "15", cy: "5", r: "2.5", stroke: s, strokeWidth: sw }),
-        /* @__PURE__ */ jsx7("rect", { x: "12.5", y: "9", width: "5", height: "1", rx: ".5", fill: s, opacity: ".2" }),
-        /* @__PURE__ */ jsx7("circle", { cx: "10", cy: "5", r: "2.5", stroke: s, strokeWidth: sw, opacity: ".5" }),
-        /* @__PURE__ */ jsx7("rect", { x: "7.5", y: "9", width: "5", height: "1", rx: ".5", fill: s, opacity: ".15" }),
-        /* @__PURE__ */ jsx7("rect", { x: "4", y: "12", width: "12", height: "1", rx: ".5", fill: s, opacity: ".1" })
+      return /* @__PURE__ */ jsxs7("svg", { viewBox: "0 0 20 16", width: "20", height: "16", fill: "none", children: [
+        /* @__PURE__ */ jsx10("circle", { cx: "5", cy: "5", r: "2.5", stroke: s, strokeWidth: sw }),
+        /* @__PURE__ */ jsx10("rect", { x: "2.5", y: "9", width: "5", height: "1", rx: ".5", fill: s, opacity: ".2" }),
+        /* @__PURE__ */ jsx10("circle", { cx: "15", cy: "5", r: "2.5", stroke: s, strokeWidth: sw }),
+        /* @__PURE__ */ jsx10("rect", { x: "12.5", y: "9", width: "5", height: "1", rx: ".5", fill: s, opacity: ".2" }),
+        /* @__PURE__ */ jsx10("circle", { cx: "10", cy: "5", r: "2.5", stroke: s, strokeWidth: sw, opacity: ".5" }),
+        /* @__PURE__ */ jsx10("rect", { x: "7.5", y: "9", width: "5", height: "1", rx: ".5", fill: s, opacity: ".15" }),
+        /* @__PURE__ */ jsx10("rect", { x: "4", y: "12", width: "12", height: "1", rx: ".5", fill: s, opacity: ".1" })
       ] });
     case "login":
-      return /* @__PURE__ */ jsxs6("svg", { viewBox: "0 0 20 16", width: "20", height: "16", fill: "none", children: [
-        /* @__PURE__ */ jsx7("rect", { x: "3", y: "1", width: "14", height: "14", rx: "1.5", stroke: s, strokeWidth: sw }),
-        /* @__PURE__ */ jsx7("rect", { x: "6", y: "3", width: "8", height: "1.5", rx: ".5", fill: s, opacity: ".25" }),
-        /* @__PURE__ */ jsx7("rect", { x: "5", y: "5.5", width: "10", height: "3", rx: ".75", stroke: s, strokeWidth: sw }),
-        /* @__PURE__ */ jsx7("rect", { x: "5", y: "9.5", width: "10", height: "3", rx: ".75", stroke: s, strokeWidth: sw }),
-        /* @__PURE__ */ jsx7("rect", { x: "6.5", y: "13.5", width: "7", height: "2", rx: ".75", fill: s, opacity: ".2" })
+      return /* @__PURE__ */ jsxs7("svg", { viewBox: "0 0 20 16", width: "20", height: "16", fill: "none", children: [
+        /* @__PURE__ */ jsx10("rect", { x: "3", y: "1", width: "14", height: "14", rx: "1.5", stroke: s, strokeWidth: sw }),
+        /* @__PURE__ */ jsx10("rect", { x: "6", y: "3", width: "8", height: "1.5", rx: ".5", fill: s, opacity: ".25" }),
+        /* @__PURE__ */ jsx10("rect", { x: "5", y: "5.5", width: "10", height: "3", rx: ".75", stroke: s, strokeWidth: sw }),
+        /* @__PURE__ */ jsx10("rect", { x: "5", y: "9.5", width: "10", height: "3", rx: ".75", stroke: s, strokeWidth: sw }),
+        /* @__PURE__ */ jsx10("rect", { x: "6.5", y: "13.5", width: "7", height: "2", rx: ".75", fill: s, opacity: ".2" })
       ] });
     case "contact":
-      return /* @__PURE__ */ jsxs6("svg", { viewBox: "0 0 20 16", width: "20", height: "16", fill: "none", children: [
-        /* @__PURE__ */ jsx7("rect", { x: "2", y: "1", width: "16", height: "14", rx: "1.5", stroke: s, strokeWidth: sw }),
-        /* @__PURE__ */ jsx7("rect", { x: "4", y: "3", width: "5", height: "1", rx: ".5", fill: s, opacity: ".2" }),
-        /* @__PURE__ */ jsx7("rect", { x: "4", y: "5", width: "12", height: "2.5", rx: ".75", stroke: s, strokeWidth: sw }),
-        /* @__PURE__ */ jsx7("rect", { x: "4", y: "8.5", width: "12", height: "4", rx: ".75", stroke: s, strokeWidth: sw }),
-        /* @__PURE__ */ jsx7("rect", { x: "11", y: "13.5", width: "5", height: "1.5", rx: ".5", fill: s, opacity: ".2" })
+      return /* @__PURE__ */ jsxs7("svg", { viewBox: "0 0 20 16", width: "20", height: "16", fill: "none", children: [
+        /* @__PURE__ */ jsx10("rect", { x: "2", y: "1", width: "16", height: "14", rx: "1.5", stroke: s, strokeWidth: sw }),
+        /* @__PURE__ */ jsx10("rect", { x: "4", y: "3", width: "5", height: "1", rx: ".5", fill: s, opacity: ".2" }),
+        /* @__PURE__ */ jsx10("rect", { x: "4", y: "5", width: "12", height: "2.5", rx: ".75", stroke: s, strokeWidth: sw }),
+        /* @__PURE__ */ jsx10("rect", { x: "4", y: "8.5", width: "12", height: "4", rx: ".75", stroke: s, strokeWidth: sw }),
+        /* @__PURE__ */ jsx10("rect", { x: "11", y: "13.5", width: "5", height: "1.5", rx: ".5", fill: s, opacity: ".2" })
       ] });
     default:
       return null;
   }
 }
 function ComponentGrid({ activeType, onSelect, onDragStart, scrollRef, fadeClass, blankCanvas }) {
-  return /* @__PURE__ */ jsx7("div", { ref: scrollRef, className: `${styles_module_default3.placeScroll} ${fadeClass || ""}`, children: COMPONENT_REGISTRY.map((section) => /* @__PURE__ */ jsxs6("div", { className: styles_module_default3.paletteSection, children: [
-    /* @__PURE__ */ jsx7("div", { className: styles_module_default3.paletteSectionTitle, children: section.section }),
-    section.items.map((item) => /* @__PURE__ */ jsxs6(
-      "div",
+  return /* @__PURE__ */ jsx10("div", { ref: scrollRef, className: `${styles_module_default4.placeScroll} ${fadeClass || ""}`, children: COMPONENT_REGISTRY.map((section) => /* @__PURE__ */ jsxs7("div", { className: styles_module_default4.paletteSection, children: [
+    /* @__PURE__ */ jsx10("div", { className: styles_module_default4.paletteSectionTitle, children: section.section }),
+    section.items.map((item) => /* @__PURE__ */ jsxs7(
+      "button",
       {
-        className: `${styles_module_default3.paletteItem} ${activeType === item.type ? styles_module_default3.active : ""} ${blankCanvas ? styles_module_default3.wireframe : ""}`,
+        type: "button",
+        "aria-pressed": activeType === item.type,
+        className: `${styles_module_default4.paletteItem} ${activeType === item.type ? styles_module_default4.active : ""} ${blankCanvas ? styles_module_default4.wireframe : ""}`,
         onClick: () => onSelect(item.type),
         onMouseDown: (e) => {
           if (e.button === 0) onDragStart(item.type, e);
         },
         children: [
-          /* @__PURE__ */ jsx7("div", { className: styles_module_default3.paletteItemIcon, children: /* @__PURE__ */ jsx7(PaletteIconSvg, { type: item.type }) }),
-          /* @__PURE__ */ jsx7("span", { className: styles_module_default3.paletteItemLabel, children: item.label })
+          /* @__PURE__ */ jsx10("span", { className: styles_module_default4.paletteItemIcon, "aria-hidden": "true", children: /* @__PURE__ */ jsx10(PaletteIconSvg, { type: item.type }) }),
+          /* @__PURE__ */ jsx10("span", { className: styles_module_default4.paletteItemLabel, children: item.label })
         ]
       },
       item.type
@@ -3815,14 +5174,14 @@ function ComponentGrid({ activeType, onSelect, onDragStart, scrollRef, fadeClass
   ] }, section.section)) });
 }
 function RollingCount({ value, suffix }) {
-  const [prev, setPrev] = useState4(null);
-  const [prevSuffix, setPrevSuffix] = useState4(suffix);
-  const [dir, setDir] = useState4("up");
-  const cur = useRef4(value);
-  const curSuffix = useRef4(suffix);
-  const timer = useRef4();
+  const [prev, setPrev] = useState8(null);
+  const [prevSuffix, setPrevSuffix] = useState8(suffix);
+  const [dir, setDir] = useState8("up");
+  const cur = useRef8(value);
+  const curSuffix = useRef8(suffix);
+  const timer = useRef8();
   const suffixChanged = prev !== null && prevSuffix !== suffix;
-  useEffect4(() => {
+  useEffect6(() => {
     if (value !== cur.current) {
       if (value === 0) {
         cur.current = value;
@@ -3841,34 +5200,34 @@ function RollingCount({ value, suffix }) {
       curSuffix.current = suffix;
     }
   }, [value, suffix]);
-  if (prev === null) return /* @__PURE__ */ jsxs6(Fragment3, { children: [
+  if (prev === null) return /* @__PURE__ */ jsxs7(Fragment3, { children: [
     value,
     suffix ? ` ${suffix}` : ""
   ] });
   if (suffixChanged) {
-    return /* @__PURE__ */ jsxs6("span", { className: styles_module_default3.rollingWrap, children: [
-      /* @__PURE__ */ jsxs6("span", { style: { visibility: "hidden" }, children: [
+    return /* @__PURE__ */ jsxs7("span", { className: styles_module_default4.rollingWrap, children: [
+      /* @__PURE__ */ jsxs7("span", { style: { visibility: "hidden" }, children: [
         value,
         " ",
         suffix
       ] }),
-      /* @__PURE__ */ jsxs6("span", { className: `${styles_module_default3.rollingNum} ${dir === "up" ? styles_module_default3.exitUp : styles_module_default3.exitDown}`, children: [
+      /* @__PURE__ */ jsxs7("span", { className: `${styles_module_default4.rollingNum} ${dir === "up" ? styles_module_default4.exitUp : styles_module_default4.exitDown}`, children: [
         prev,
         " ",
         prevSuffix
       ] }, `o${prev}-${value}`),
-      /* @__PURE__ */ jsxs6("span", { className: `${styles_module_default3.rollingNum} ${dir === "up" ? styles_module_default3.enterUp : styles_module_default3.enterDown}`, children: [
+      /* @__PURE__ */ jsxs7("span", { className: `${styles_module_default4.rollingNum} ${dir === "up" ? styles_module_default4.enterUp : styles_module_default4.enterDown}`, children: [
         value,
         " ",
         suffix
       ] }, `n${value}`)
     ] });
   }
-  return /* @__PURE__ */ jsxs6(Fragment3, { children: [
-    /* @__PURE__ */ jsxs6("span", { className: styles_module_default3.rollingWrap, children: [
-      /* @__PURE__ */ jsx7("span", { style: { visibility: "hidden" }, children: value }),
-      /* @__PURE__ */ jsx7("span", { className: `${styles_module_default3.rollingNum} ${dir === "up" ? styles_module_default3.exitUp : styles_module_default3.exitDown}`, children: prev }, `o${prev}-${value}`),
-      /* @__PURE__ */ jsx7("span", { className: `${styles_module_default3.rollingNum} ${dir === "up" ? styles_module_default3.enterUp : styles_module_default3.enterDown}`, children: value }, `n${value}`)
+  return /* @__PURE__ */ jsxs7(Fragment3, { children: [
+    /* @__PURE__ */ jsxs7("span", { className: styles_module_default4.rollingWrap, children: [
+      /* @__PURE__ */ jsx10("span", { style: { visibility: "hidden" }, children: value }),
+      /* @__PURE__ */ jsx10("span", { className: `${styles_module_default4.rollingNum} ${dir === "up" ? styles_module_default4.exitUp : styles_module_default4.exitDown}`, children: prev }, `o${prev}-${value}`),
+      /* @__PURE__ */ jsx10("span", { className: `${styles_module_default4.rollingNum} ${dir === "up" ? styles_module_default4.enterUp : styles_module_default4.enterDown}`, children: value }, `n${value}`)
     ] }),
     suffix ? ` ${suffix}` : ""
   ] });
@@ -3890,44 +5249,20 @@ function DesignPalette({
   onWireframePurposeChange,
   Tooltip: Tooltip2
 }) {
-  const [mounted, setMounted] = useState4(false);
-  const [animClass, setAnimClass] = useState4("exit");
-  const [footerVisible, setFooterVisible] = useState4(false);
-  const [footerCollapsed, setFooterCollapsed] = useState4(true);
-  const lastFooterCount = useRef4(0);
-  const lastFooterSuffix = useRef4("");
-  const rafRef = useRef4(0);
-  const exitTimerRef = useRef4();
-  const placeScrollRef = useRef4(null);
-  const [placeFade, setPlaceFade] = useState4("");
-  useEffect4(() => {
-    if (visible) {
-      setMounted(true);
-      clearTimeout(exitTimerRef.current);
-      cancelAnimationFrame(rafRef.current);
-      rafRef.current = originalRequestAnimationFrame(() => {
-        rafRef.current = originalRequestAnimationFrame(() => {
-          setAnimClass("enter");
-        });
-      });
-    } else {
-      cancelAnimationFrame(rafRef.current);
-      setAnimClass("exit");
-      clearTimeout(exitTimerRef.current);
-      exitTimerRef.current = originalSetTimeout(() => {
-        setMounted(false);
-        onExited?.();
-      }, 200);
-    }
-    return () => cancelAnimationFrame(rafRef.current);
-  }, [visible]);
+  const { ref: panelRef, mounted } = usePanelPresence(visible, { onExited });
+  const [footerVisible, setFooterVisible] = useState8(false);
+  const [footerCollapsed, setFooterCollapsed] = useState8(true);
+  const lastFooterCount = useRef8(0);
+  const lastFooterSuffix = useRef8("");
+  const placeScrollRef = useRef8(null);
+  const [placeFade, setPlaceFade] = useState8("");
   const hasFooterContent = placementCount > 0 || sectionCount > 0;
   const totalCount = placementCount + sectionCount;
   if (totalCount > 0) {
     lastFooterCount.current = totalCount;
     lastFooterSuffix.current = blankCanvas ? totalCount === 1 ? "Component" : "Components" : totalCount === 1 ? "Change" : "Changes";
   }
-  useEffect4(() => {
+  useEffect6(() => {
     if (hasFooterContent) {
       if (!footerVisible) {
         setFooterCollapsed(true);
@@ -3946,12 +5281,11 @@ function DesignPalette({
       return () => clearTimeout(t);
     }
   }, [hasFooterContent]);
-  useEffect4(() => {
-    if (!mounted) return;
+  useEffect6(() => {
+    if (!visible) return;
     const el = placeScrollRef.current;
     if (!el) return;
     const update = () => setPlaceFade(scrollFadeClass(el));
-    update();
     el.addEventListener("scroll", update, { passive: true });
     const ro = new ResizeObserver(update);
     ro.observe(el);
@@ -3959,70 +5293,70 @@ function DesignPalette({
       el.removeEventListener("scroll", update);
       ro.disconnect();
     };
-  }, [mounted]);
+  }, [visible]);
   if (!mounted) return null;
   const footerParts = [];
   if (placementCount > 0) footerParts.push("placed");
   if (sectionCount > 0) footerParts.push("captured");
-  return /* @__PURE__ */ jsxs6(
+  return /* @__PURE__ */ jsxs7(
     "div",
     {
-      className: `${styles_module_default3.palette} ${styles_module_default3[animClass]} ${!isDarkMode ? styles_module_default3.light : ""}`,
+      className: `${styles_module_default4.palette} ${!isDarkMode ? styles_module_default4.light : ""}`,
+      ref: (node) => {
+        panelRef.current = node;
+        node?.toggleAttribute("inert", !visible);
+      },
+      "aria-hidden": !visible,
       "data-feedback-toolbar": true,
       "data-agentation-palette": true,
       onClick: (e) => e.stopPropagation(),
       onMouseDown: (e) => e.stopPropagation(),
-      onTransitionEnd: (e) => {
-        if (e.target !== e.currentTarget) return;
-        if (!visible) {
-          clearTimeout(exitTimerRef.current);
-          setMounted(false);
-          setAnimClass("exit");
-          onExited?.();
-        }
-      },
       children: [
-        /* @__PURE__ */ jsxs6("div", { className: styles_module_default3.paletteHeader, children: [
-          /* @__PURE__ */ jsx7("div", { className: styles_module_default3.paletteHeaderTitle, children: "Layout Mode" }),
-          /* @__PURE__ */ jsxs6("div", { className: styles_module_default3.paletteHeaderDesc, children: [
+        /* @__PURE__ */ jsxs7("div", { className: styles_module_default4.paletteHeader, children: [
+          /* @__PURE__ */ jsx10("div", { className: styles_module_default4.paletteHeaderTitle, children: "Layout Mode" }),
+          /* @__PURE__ */ jsxs7("div", { className: styles_module_default4.paletteHeaderDesc, children: [
             "Rearrange and resize existing elements, add new components, and explore layout ideas. Agent results may vary.",
             " ",
-            /* @__PURE__ */ jsx7("a", { href: "https://agentation.dev/features#layout-mode", target: "_blank", rel: "noopener noreferrer", children: "Learn more." })
+            /* @__PURE__ */ jsx10("a", { href: "https://agentation.com/features#layout-mode", target: "_blank", rel: "noopener noreferrer", children: "Learn more." })
           ] })
         ] }),
-        /* @__PURE__ */ jsxs6(
-          "div",
+        /* @__PURE__ */ jsxs7(
+          "button",
           {
-            className: `${styles_module_default3.canvasToggle} ${blankCanvas ? styles_module_default3.active : ""}`,
+            type: "button",
+            "aria-pressed": blankCanvas,
+            className: `${styles_module_default4.canvasToggle} ${blankCanvas ? styles_module_default4.active : ""}`,
             onClick: () => onBlankCanvasChange(!blankCanvas),
             children: [
-              /* @__PURE__ */ jsx7("span", { className: styles_module_default3.canvasToggleIcon, children: /* @__PURE__ */ jsxs6("svg", { viewBox: "0 0 14 14", width: "14", height: "14", fill: "none", children: [
-                /* @__PURE__ */ jsx7("rect", { x: "1", y: "1", width: "12", height: "12", rx: "2", stroke: "currentColor", strokeWidth: "1" }),
-                /* @__PURE__ */ jsx7("circle", { cx: "4.5", cy: "4.5", r: "0.8", fill: "currentColor", opacity: ".6" }),
-                /* @__PURE__ */ jsx7("circle", { cx: "7", cy: "4.5", r: "0.8", fill: "currentColor", opacity: ".6" }),
-                /* @__PURE__ */ jsx7("circle", { cx: "9.5", cy: "4.5", r: "0.8", fill: "currentColor", opacity: ".6" }),
-                /* @__PURE__ */ jsx7("circle", { cx: "4.5", cy: "7", r: "0.8", fill: "currentColor", opacity: ".6" }),
-                /* @__PURE__ */ jsx7("circle", { cx: "7", cy: "7", r: "0.8", fill: "currentColor", opacity: ".6" }),
-                /* @__PURE__ */ jsx7("circle", { cx: "9.5", cy: "7", r: "0.8", fill: "currentColor", opacity: ".6" }),
-                /* @__PURE__ */ jsx7("circle", { cx: "4.5", cy: "9.5", r: "0.8", fill: "currentColor", opacity: ".6" }),
-                /* @__PURE__ */ jsx7("circle", { cx: "7", cy: "9.5", r: "0.8", fill: "currentColor", opacity: ".6" }),
-                /* @__PURE__ */ jsx7("circle", { cx: "9.5", cy: "9.5", r: "0.8", fill: "currentColor", opacity: ".6" })
+              /* @__PURE__ */ jsx10("span", { className: styles_module_default4.canvasToggleIcon, "aria-hidden": "true", children: /* @__PURE__ */ jsxs7("svg", { viewBox: "0 0 14 14", width: "14", height: "14", fill: "none", children: [
+                /* @__PURE__ */ jsx10("rect", { x: "1", y: "1", width: "12", height: "12", rx: "2", stroke: "currentColor", strokeWidth: "1" }),
+                /* @__PURE__ */ jsx10("circle", { cx: "4.5", cy: "4.5", r: "0.8", fill: "currentColor", opacity: ".6" }),
+                /* @__PURE__ */ jsx10("circle", { cx: "7", cy: "4.5", r: "0.8", fill: "currentColor", opacity: ".6" }),
+                /* @__PURE__ */ jsx10("circle", { cx: "9.5", cy: "4.5", r: "0.8", fill: "currentColor", opacity: ".6" }),
+                /* @__PURE__ */ jsx10("circle", { cx: "4.5", cy: "7", r: "0.8", fill: "currentColor", opacity: ".6" }),
+                /* @__PURE__ */ jsx10("circle", { cx: "7", cy: "7", r: "0.8", fill: "currentColor", opacity: ".6" }),
+                /* @__PURE__ */ jsx10("circle", { cx: "9.5", cy: "7", r: "0.8", fill: "currentColor", opacity: ".6" }),
+                /* @__PURE__ */ jsx10("circle", { cx: "4.5", cy: "9.5", r: "0.8", fill: "currentColor", opacity: ".6" }),
+                /* @__PURE__ */ jsx10("circle", { cx: "7", cy: "9.5", r: "0.8", fill: "currentColor", opacity: ".6" }),
+                /* @__PURE__ */ jsx10("circle", { cx: "9.5", cy: "9.5", r: "0.8", fill: "currentColor", opacity: ".6" })
               ] }) }),
-              /* @__PURE__ */ jsx7("span", { className: styles_module_default3.canvasToggleLabel, children: "Wireframe New Page" })
+              /* @__PURE__ */ jsx10("span", { className: styles_module_default4.canvasToggleLabel, children: "Wireframe New Page" })
             ]
           }
         ),
-        /* @__PURE__ */ jsx7("div", { className: `${styles_module_default3.wireframePurposeWrap} ${!blankCanvas ? styles_module_default3.collapsed : ""}`, children: /* @__PURE__ */ jsx7("div", { className: styles_module_default3.wireframePurposeInner, children: /* @__PURE__ */ jsx7(
+        /* @__PURE__ */ jsx10("div", { className: `${styles_module_default4.wireframePurposeWrap} ${!blankCanvas ? styles_module_default4.collapsed : ""}`, "aria-hidden": !blankCanvas, ref: (node) => {
+          node?.toggleAttribute("inert", !blankCanvas);
+        }, children: /* @__PURE__ */ jsx10("div", { className: styles_module_default4.wireframePurposeInner, children: /* @__PURE__ */ jsx10(
           "textarea",
           {
-            className: styles_module_default3.wireframePurposeInput,
+            className: styles_module_default4.wireframePurposeInput,
             placeholder: "Describe this page to provide additional context for your agent.",
             value: wireframePurpose,
             onChange: (e) => onWireframePurposeChange(e.target.value),
             rows: 2
           }
         ) }) }),
-        /* @__PURE__ */ jsx7(
+        /* @__PURE__ */ jsx10(
           ComponentGrid,
           {
             activeType,
@@ -4033,9 +5367,9 @@ function DesignPalette({
             blankCanvas
           }
         ),
-        footerVisible && /* @__PURE__ */ jsx7("div", { className: `${styles_module_default3.paletteFooterWrap} ${footerCollapsed ? styles_module_default3.footerHidden : ""}`, children: /* @__PURE__ */ jsx7("div", { className: styles_module_default3.paletteFooterInner, children: /* @__PURE__ */ jsx7("div", { className: styles_module_default3.paletteFooterInnerContent, children: /* @__PURE__ */ jsxs6("div", { className: styles_module_default3.paletteFooter, children: [
-          /* @__PURE__ */ jsx7("span", { className: styles_module_default3.paletteFooterCount, children: /* @__PURE__ */ jsx7(RollingCount, { value: lastFooterCount.current, suffix: lastFooterSuffix.current }) }),
-          /* @__PURE__ */ jsx7("button", { className: styles_module_default3.paletteFooterClear, onClick: onClearPlacements, children: "Clear" })
+        footerVisible && /* @__PURE__ */ jsx10("div", { className: `${styles_module_default4.paletteFooterWrap} ${footerCollapsed ? styles_module_default4.footerHidden : ""}`, children: /* @__PURE__ */ jsx10("div", { className: styles_module_default4.paletteFooterInner, children: /* @__PURE__ */ jsx10("div", { className: styles_module_default4.paletteFooterInnerContent, children: /* @__PURE__ */ jsxs7("div", { className: styles_module_default4.paletteFooter, children: [
+          /* @__PURE__ */ jsx10("span", { className: styles_module_default4.paletteFooterCount, children: /* @__PURE__ */ jsx10(RollingCount, { value: lastFooterCount.current, suffix: lastFooterSuffix.current }) }),
+          /* @__PURE__ */ jsx10("button", { className: styles_module_default4.paletteFooterClear, onClick: onClearPlacements, children: "Clear" })
         ] }) }) }) })
       ]
     }
@@ -4043,443 +5377,7 @@ function DesignPalette({
 }
 
 // src/components/design-mode/rearrange.tsx
-import { useState as useState5, useCallback as useCallback4, useEffect as useEffect5, useRef as useRef5 } from "react";
-
-// src/utils/element-identification.ts
-function getParentElement(element) {
-  if (element.parentElement) {
-    return element.parentElement;
-  }
-  const root = element.getRootNode();
-  if (root instanceof ShadowRoot) {
-    return root.host;
-  }
-  return null;
-}
-function closestCrossingShadow(element, selector) {
-  let current = element;
-  while (current) {
-    if (current.matches(selector)) return current;
-    current = getParentElement(current);
-  }
-  return null;
-}
-function isInShadowDOM(element) {
-  return element.getRootNode() instanceof ShadowRoot;
-}
-function getShadowHost(element) {
-  const root = element.getRootNode();
-  if (root instanceof ShadowRoot) {
-    return root.host;
-  }
-  return null;
-}
-function getElementPath(target, maxDepth = 4) {
-  const parts = [];
-  let current = target;
-  let depth = 0;
-  while (current && depth < maxDepth) {
-    const tag = current.tagName.toLowerCase();
-    if (tag === "html" || tag === "body") break;
-    let identifier = tag;
-    if (current.id) {
-      identifier = `#${current.id}`;
-    } else if (current.className && typeof current.className === "string") {
-      const meaningfulClass = current.className.split(/\s+/).find((c) => c.length > 2 && !c.match(/^[a-z]{1,2}$/) && !c.match(/[A-Z0-9]{5,}/));
-      if (meaningfulClass) {
-        identifier = `.${meaningfulClass.split("_")[0]}`;
-      }
-    }
-    const nextParent = getParentElement(current);
-    if (!current.parentElement && nextParent) {
-      identifier = `\u27E8shadow\u27E9 ${identifier}`;
-    }
-    parts.unshift(identifier);
-    current = nextParent;
-    depth++;
-  }
-  return parts.join(" > ");
-}
-function identifyElement(target) {
-  const path = getElementPath(target);
-  if (target.dataset.element) {
-    return { name: target.dataset.element, path };
-  }
-  const tag = target.tagName.toLowerCase();
-  if (["path", "circle", "rect", "line", "g"].includes(tag)) {
-    const svg = closestCrossingShadow(target, "svg");
-    if (svg) {
-      const parent = getParentElement(svg);
-      if (parent instanceof HTMLElement) {
-        const parentName = identifyElement(parent).name;
-        return { name: `graphic in ${parentName}`, path };
-      }
-    }
-    return { name: "graphic element", path };
-  }
-  if (tag === "svg") {
-    const parent = getParentElement(target);
-    if (parent?.tagName.toLowerCase() === "button") {
-      const btnText = parent.textContent?.trim();
-      return { name: btnText ? `icon in "${btnText}" button` : "button icon", path };
-    }
-    return { name: "icon", path };
-  }
-  if (tag === "button") {
-    const text = target.textContent?.trim();
-    const ariaLabel = target.getAttribute("aria-label");
-    if (ariaLabel) return { name: `button [${ariaLabel}]`, path };
-    return { name: text ? `button "${text.slice(0, 25)}"` : "button", path };
-  }
-  if (tag === "a") {
-    const text = target.textContent?.trim();
-    const href = target.getAttribute("href");
-    if (text) return { name: `link "${text.slice(0, 25)}"`, path };
-    if (href) return { name: `link to ${href.slice(0, 30)}`, path };
-    return { name: "link", path };
-  }
-  if (tag === "input") {
-    const type = target.getAttribute("type") || "text";
-    const placeholder = target.getAttribute("placeholder");
-    const name = target.getAttribute("name");
-    if (placeholder) return { name: `input "${placeholder}"`, path };
-    if (name) return { name: `input [${name}]`, path };
-    return { name: `${type} input`, path };
-  }
-  if (["h1", "h2", "h3", "h4", "h5", "h6"].includes(tag)) {
-    const text = target.textContent?.trim();
-    return { name: text ? `${tag} "${text.slice(0, 35)}"` : tag, path };
-  }
-  if (tag === "p") {
-    const text = target.textContent?.trim();
-    if (text) return { name: `paragraph: "${text.slice(0, 40)}${text.length > 40 ? "..." : ""}"`, path };
-    return { name: "paragraph", path };
-  }
-  if (tag === "span" || tag === "label") {
-    const text = target.textContent?.trim();
-    if (text && text.length < 40) return { name: `"${text}"`, path };
-    return { name: tag, path };
-  }
-  if (tag === "li") {
-    const text = target.textContent?.trim();
-    if (text && text.length < 40) return { name: `list item: "${text.slice(0, 35)}"`, path };
-    return { name: "list item", path };
-  }
-  if (tag === "blockquote") return { name: "blockquote", path };
-  if (tag === "code") {
-    const text = target.textContent?.trim();
-    if (text && text.length < 30) return { name: `code: \`${text}\``, path };
-    return { name: "code", path };
-  }
-  if (tag === "pre") return { name: "code block", path };
-  if (tag === "img") {
-    const alt = target.getAttribute("alt");
-    return { name: alt ? `image "${alt.slice(0, 30)}"` : "image", path };
-  }
-  if (tag === "video") return { name: "video", path };
-  if (["div", "section", "article", "nav", "header", "footer", "aside", "main"].includes(tag)) {
-    const className = target.className;
-    const role = target.getAttribute("role");
-    const ariaLabel = target.getAttribute("aria-label");
-    if (ariaLabel) return { name: `${tag} [${ariaLabel}]`, path };
-    if (role) return { name: `${role}`, path };
-    if (typeof className === "string" && className) {
-      const words = className.split(/[\s_-]+/).map((c) => c.replace(/[A-Z0-9]{5,}.*$/, "")).filter((c) => c.length > 2 && !/^[a-z]{1,2}$/.test(c)).slice(0, 2);
-      if (words.length > 0) return { name: words.join(" "), path };
-    }
-    return { name: tag === "div" ? "container" : tag, path };
-  }
-  return { name: tag, path };
-}
-function getNearbyText(element) {
-  const texts = [];
-  const ownText = element.textContent?.trim();
-  if (ownText && ownText.length < 100) {
-    texts.push(ownText);
-  }
-  const prev = element.previousElementSibling;
-  if (prev) {
-    const prevText = prev.textContent?.trim();
-    if (prevText && prevText.length < 50) {
-      texts.unshift(`[before: "${prevText.slice(0, 40)}"]`);
-    }
-  }
-  const next = element.nextElementSibling;
-  if (next) {
-    const nextText = next.textContent?.trim();
-    if (nextText && nextText.length < 50) {
-      texts.push(`[after: "${nextText.slice(0, 40)}"]`);
-    }
-  }
-  return texts.join(" ");
-}
-function identifyAnimationElement(target) {
-  if (target.dataset.element) return target.dataset.element;
-  const tag = target.tagName.toLowerCase();
-  if (tag === "path") return "path";
-  if (tag === "circle") return "circle";
-  if (tag === "rect") return "rectangle";
-  if (tag === "line") return "line";
-  if (tag === "ellipse") return "ellipse";
-  if (tag === "polygon") return "polygon";
-  if (tag === "g") return "group";
-  if (tag === "svg") return "svg";
-  if (tag === "button") {
-    const text = target.textContent?.trim();
-    return text ? `button "${text}"` : "button";
-  }
-  if (tag === "input") {
-    const type = target.getAttribute("type") || "text";
-    return `input (${type})`;
-  }
-  if (tag === "span" || tag === "p" || tag === "label") {
-    const text = target.textContent?.trim();
-    if (text && text.length < 30) return `"${text}"`;
-    return "text";
-  }
-  if (tag === "div") {
-    const className = target.className;
-    if (typeof className === "string" && className) {
-      const words = className.split(/[\s_-]+/).map((c) => c.replace(/[A-Z0-9]{5,}.*$/, "")).filter((c) => c.length > 2 && !/^[a-z]{1,2}$/.test(c)).slice(0, 2);
-      if (words.length > 0) {
-        return words.join(" ");
-      }
-    }
-    return "container";
-  }
-  return tag;
-}
-function getNearbyElements(element) {
-  const parent = getParentElement(element);
-  if (!parent) return "";
-  const elementRoot = element.getRootNode();
-  const children = elementRoot instanceof ShadowRoot && element.parentElement ? Array.from(element.parentElement.children) : Array.from(parent.children);
-  const siblings = children.filter(
-    (child) => child !== element && child instanceof HTMLElement
-  );
-  if (siblings.length === 0) return "";
-  const siblingIds = siblings.slice(0, 4).map((sib) => {
-    const tag = sib.tagName.toLowerCase();
-    const className = sib.className;
-    let cls = "";
-    if (typeof className === "string" && className) {
-      const meaningful = className.split(/\s+/).map((c) => c.replace(/[_][a-zA-Z0-9]{5,}.*$/, "")).find((c) => c.length > 2 && !/^[a-z]{1,2}$/.test(c));
-      if (meaningful) cls = `.${meaningful}`;
-    }
-    if (tag === "button" || tag === "a") {
-      const text = sib.textContent?.trim().slice(0, 15);
-      if (text) return `${tag}${cls} "${text}"`;
-    }
-    return `${tag}${cls}`;
-  });
-  const parentTag = parent.tagName.toLowerCase();
-  let parentId = parentTag;
-  if (typeof parent.className === "string" && parent.className) {
-    const parentCls = parent.className.split(/\s+/).map((c) => c.replace(/[_][a-zA-Z0-9]{5,}.*$/, "")).find((c) => c.length > 2 && !/^[a-z]{1,2}$/.test(c));
-    if (parentCls) parentId = `.${parentCls}`;
-  }
-  const total = parent.children.length;
-  const suffix = total > siblingIds.length + 1 ? ` (${total} total in ${parentId})` : "";
-  return siblingIds.join(", ") + suffix;
-}
-function getElementClasses(target) {
-  const className = target.className;
-  if (typeof className !== "string" || !className) return "";
-  const classes = className.split(/\s+/).filter((c) => c.length > 0).map((c) => {
-    const match = c.match(/^([a-zA-Z][a-zA-Z0-9_-]*?)(?:_[a-zA-Z0-9]{5,})?$/);
-    return match ? match[1] : c;
-  }).filter((c, i, arr) => arr.indexOf(c) === i);
-  return classes.join(", ");
-}
-var DEFAULT_STYLE_VALUES = /* @__PURE__ */ new Set([
-  "none",
-  "normal",
-  "auto",
-  "0px",
-  "rgba(0, 0, 0, 0)",
-  "transparent",
-  "static",
-  "visible"
-]);
-var TEXT_ELEMENTS = /* @__PURE__ */ new Set([
-  "p",
-  "span",
-  "h1",
-  "h2",
-  "h3",
-  "h4",
-  "h5",
-  "h6",
-  "label",
-  "li",
-  "td",
-  "th",
-  "blockquote",
-  "figcaption",
-  "caption",
-  "legend",
-  "dt",
-  "dd",
-  "pre",
-  "code",
-  "em",
-  "strong",
-  "b",
-  "i",
-  "a",
-  "time",
-  "cite",
-  "q"
-]);
-var FORM_INPUT_ELEMENTS = /* @__PURE__ */ new Set(["input", "textarea", "select"]);
-var MEDIA_ELEMENTS = /* @__PURE__ */ new Set(["img", "video", "canvas", "svg"]);
-var CONTAINER_ELEMENTS = /* @__PURE__ */ new Set([
-  "div",
-  "section",
-  "article",
-  "nav",
-  "header",
-  "footer",
-  "aside",
-  "main",
-  "ul",
-  "ol",
-  "form",
-  "fieldset"
-]);
-function getDetailedComputedStyles(target) {
-  if (typeof window === "undefined") return {};
-  const styles = window.getComputedStyle(target);
-  const result = {};
-  const tag = target.tagName.toLowerCase();
-  let properties;
-  if (TEXT_ELEMENTS.has(tag)) {
-    properties = ["color", "fontSize", "fontWeight", "fontFamily", "lineHeight"];
-  } else if (tag === "button" || tag === "a" && target.getAttribute("role") === "button") {
-    properties = ["backgroundColor", "color", "padding", "borderRadius", "fontSize"];
-  } else if (FORM_INPUT_ELEMENTS.has(tag)) {
-    properties = ["backgroundColor", "color", "padding", "borderRadius", "fontSize"];
-  } else if (MEDIA_ELEMENTS.has(tag)) {
-    properties = ["width", "height", "objectFit", "borderRadius"];
-  } else if (CONTAINER_ELEMENTS.has(tag)) {
-    properties = ["display", "padding", "margin", "gap", "backgroundColor"];
-  } else {
-    properties = ["color", "fontSize", "margin", "padding", "backgroundColor"];
-  }
-  for (const prop of properties) {
-    const cssPropertyName = prop.replace(/([A-Z])/g, "-$1").toLowerCase();
-    const value = styles.getPropertyValue(cssPropertyName);
-    if (value && !DEFAULT_STYLE_VALUES.has(value)) {
-      result[prop] = value;
-    }
-  }
-  return result;
-}
-var FORENSIC_PROPERTIES = [
-  // Colors
-  "color",
-  "backgroundColor",
-  "borderColor",
-  // Typography
-  "fontSize",
-  "fontWeight",
-  "fontFamily",
-  "lineHeight",
-  "letterSpacing",
-  "textAlign",
-  // Box model
-  "width",
-  "height",
-  "padding",
-  "margin",
-  "border",
-  "borderRadius",
-  // Layout & positioning
-  "display",
-  "position",
-  "top",
-  "right",
-  "bottom",
-  "left",
-  "zIndex",
-  "flexDirection",
-  "justifyContent",
-  "alignItems",
-  "gap",
-  // Visual effects
-  "opacity",
-  "visibility",
-  "overflow",
-  "boxShadow",
-  // Transform
-  "transform"
-];
-function getForensicComputedStyles(target) {
-  if (typeof window === "undefined") return "";
-  const styles = window.getComputedStyle(target);
-  const parts = [];
-  for (const prop of FORENSIC_PROPERTIES) {
-    const cssPropertyName = prop.replace(/([A-Z])/g, "-$1").toLowerCase();
-    const value = styles.getPropertyValue(cssPropertyName);
-    if (value && !DEFAULT_STYLE_VALUES.has(value)) {
-      parts.push(`${cssPropertyName}: ${value}`);
-    }
-  }
-  return parts.join("; ");
-}
-function parseComputedStylesString(stylesStr) {
-  if (!stylesStr) return void 0;
-  const result = {};
-  const parts = stylesStr.split(";").map((p) => p.trim()).filter(Boolean);
-  for (const part of parts) {
-    const colonIndex = part.indexOf(":");
-    if (colonIndex > 0) {
-      const key = part.slice(0, colonIndex).trim();
-      const value = part.slice(colonIndex + 1).trim();
-      if (key && value) {
-        result[key] = value;
-      }
-    }
-  }
-  return Object.keys(result).length > 0 ? result : void 0;
-}
-function getAccessibilityInfo(target) {
-  const parts = [];
-  const role = target.getAttribute("role");
-  const ariaLabel = target.getAttribute("aria-label");
-  const ariaDescribedBy = target.getAttribute("aria-describedby");
-  const tabIndex = target.getAttribute("tabindex");
-  const ariaHidden = target.getAttribute("aria-hidden");
-  if (role) parts.push(`role="${role}"`);
-  if (ariaLabel) parts.push(`aria-label="${ariaLabel}"`);
-  if (ariaDescribedBy) parts.push(`aria-describedby="${ariaDescribedBy}"`);
-  if (tabIndex) parts.push(`tabindex=${tabIndex}`);
-  if (ariaHidden === "true") parts.push("aria-hidden");
-  const focusable = target.matches("a, button, input, select, textarea, [tabindex]");
-  if (focusable) parts.push("focusable");
-  return parts.join(", ");
-}
-function getFullElementPath(target) {
-  const parts = [];
-  let current = target;
-  while (current && current.tagName.toLowerCase() !== "html") {
-    const tag = current.tagName.toLowerCase();
-    let identifier = tag;
-    if (current.id) {
-      identifier = `${tag}#${current.id}`;
-    } else if (current.className && typeof current.className === "string") {
-      const cls = current.className.split(/\s+/).map((c) => c.replace(/[_][a-zA-Z0-9]{5,}.*$/, "")).find((c) => c.length > 2);
-      if (cls) identifier = `${tag}.${cls}`;
-    }
-    const nextParent = getParentElement(current);
-    if (!current.parentElement && nextParent) {
-      identifier = `\u27E8shadow\u27E9 ${identifier}`;
-    }
-    parts.unshift(identifier);
-    current = nextParent;
-  }
-  return parts.join(" > ");
-}
+import { useState as useState9, useCallback as useCallback7, useEffect as useEffect7, useRef as useRef9 } from "react";
 
 // src/components/design-mode/section-detection.ts
 var SECTION_TAGS = /* @__PURE__ */ new Set([
@@ -4656,7 +5554,7 @@ function captureElement(el) {
 }
 
 // src/components/design-mode/rearrange.tsx
-import { Fragment as Fragment4, jsx as jsx8, jsxs as jsxs7 } from "react/jsx-runtime";
+import { Fragment as Fragment4, jsx as jsx11, jsxs as jsxs8 } from "react/jsx-runtime";
 var SECTION_COLOR = { bg: "rgba(59, 130, 246, 0.08)", border: "rgba(59, 130, 246, 0.5)", pill: "#3b82f6" };
 var HANDLES = ["nw", "n", "ne", "e", "se", "s", "sw", "w"];
 var MIN_SIZE2 = 24;
@@ -4739,39 +5637,32 @@ function pickTarget(el) {
   }
   return null;
 }
-function RearrangeOverlay({ rearrangeState, onChange, isDarkMode, exiting, className: extraClassName, blankCanvas, extraSnapRects, onSelectionChange, deselectSignal, onDragMove, onDragEnd, clearSignal }) {
+function RearrangeOverlay({ rearrangeState, onChange, isDarkMode, exiting, className: extraClassName, blankCanvas, extraSnapRects, onSelectionChange, deselectSignal, onDragMove, onDragEnd, clearing }) {
   const { sections } = rearrangeState;
-  const rearrangeStateRef = useRef5(rearrangeState);
+  const rearrangeStateRef = useRef9(rearrangeState);
   rearrangeStateRef.current = rearrangeState;
-  const [selectedIds, setSelectedIds] = useState5(/* @__PURE__ */ new Set());
-  const [exitingAll, setExitingAll] = useState5(false);
-  const clearRef = useRef5(clearSignal);
-  useEffect5(() => {
-    if (clearSignal !== void 0 && clearSignal !== clearRef.current) {
-      clearRef.current = clearSignal;
-      if (sections.length > 0) {
-        setExitingAll(true);
-      }
-    }
-  }, [clearSignal, sections.length]);
-  const deselectRef = useRef5(deselectSignal);
-  useEffect5(() => {
+  const [selectedIds, setSelectedIds] = useState9(/* @__PURE__ */ new Set());
+  useEffect7(() => {
+    if (clearing) setSelectedIds(/* @__PURE__ */ new Set());
+  }, [clearing]);
+  const deselectRef = useRef9(deselectSignal);
+  useEffect7(() => {
     if (deselectSignal !== deselectRef.current) {
       deselectRef.current = deselectSignal;
       setSelectedIds(/* @__PURE__ */ new Set());
     }
   }, [deselectSignal]);
-  const [editingId, setEditingId] = useState5(null);
-  const [editExiting, setEditExiting] = useState5(false);
-  const editHadNoteRef = useRef5(false);
-  const handleDoubleClick = useCallback4((id) => {
+  const [editingId, setEditingId] = useState9(null);
+  const [editExiting, setEditExiting] = useState9(false);
+  const editHadNoteRef = useRef9(false);
+  const handleDoubleClick = useCallback7((id) => {
     const s2 = sections.find((sec) => sec.id === id);
     if (!s2) return;
     editHadNoteRef.current = !!s2.note;
     setEditingId(id);
     setEditExiting(false);
   }, [sections]);
-  const dismissEdit = useCallback4(() => {
+  const dismissEdit = useCallback7(() => {
     if (!editingId) return;
     setEditExiting(true);
     originalSetTimeout(() => {
@@ -4779,7 +5670,7 @@ function RearrangeOverlay({ rearrangeState, onChange, isDarkMode, exiting, class
       setEditExiting(false);
     }, 150);
   }, [editingId]);
-  const submitEdit = useCallback4((text) => {
+  const submitEdit = useCallback7((text) => {
     if (!editingId) return;
     onChange({
       ...rearrangeState,
@@ -4787,48 +5678,48 @@ function RearrangeOverlay({ rearrangeState, onChange, isDarkMode, exiting, class
     });
     dismissEdit();
   }, [editingId, sections, rearrangeState, onChange, dismissEdit]);
-  useEffect5(() => {
+  useEffect7(() => {
     if (exiting && editingId) dismissEdit();
   }, [exiting]);
-  const [exitingIds, setExitingIds] = useState5(/* @__PURE__ */ new Set());
-  const lastNoteTextRef = useRef5(/* @__PURE__ */ new Map());
-  const [hoverHighlight, setHoverHighlight] = useState5(null);
-  const [sizeIndicator, setSizeIndicator] = useState5(null);
-  const [snapGuides, setSnapGuides] = useState5([]);
-  const [scrollY, setScrollY] = useState5(0);
-  const interactionRef = useRef5(null);
-  const seenGhostIdsRef = useRef5(/* @__PURE__ */ new Set());
-  const firstActionRef = useRef5(/* @__PURE__ */ new Map());
-  const [dragPositions, setDragPositions] = useState5(/* @__PURE__ */ new Map());
-  const [exitingConnectors, setExitingConnectors] = useState5(/* @__PURE__ */ new Map());
-  const prevChangedIdsRef = useRef5(/* @__PURE__ */ new Set());
-  const lastChangedRectsRef = useRef5(/* @__PURE__ */ new Map());
-  const onSelectionChangeRef = useRef5(onSelectionChange);
+  const [exitingIds, setExitingIds] = useState9(/* @__PURE__ */ new Set());
+  const lastNoteTextRef = useRef9(/* @__PURE__ */ new Map());
+  const [hoverHighlight, setHoverHighlight] = useState9(null);
+  const [sizeIndicator, setSizeIndicator] = useState9(null);
+  const [snapGuides, setSnapGuides] = useState9([]);
+  const [scrollY, setScrollY] = useState9(0);
+  const interactionRef = useRef9(null);
+  const seenGhostIdsRef = useRef9(/* @__PURE__ */ new Set());
+  const firstActionRef = useRef9(/* @__PURE__ */ new Map());
+  const [dragPositions, setDragPositions] = useState9(/* @__PURE__ */ new Map());
+  const [exitingConnectors, setExitingConnectors] = useState9(/* @__PURE__ */ new Map());
+  const prevChangedIdsRef = useRef9(/* @__PURE__ */ new Set());
+  const lastChangedRectsRef = useRef9(/* @__PURE__ */ new Map());
+  const onSelectionChangeRef = useRef9(onSelectionChange);
   onSelectionChangeRef.current = onSelectionChange;
-  const onDragMoveRef = useRef5(onDragMove);
+  const onDragMoveRef = useRef9(onDragMove);
   onDragMoveRef.current = onDragMove;
-  const onDragEndRef = useRef5(onDragEnd);
+  const onDragEndRef = useRef9(onDragEnd);
   onDragEndRef.current = onDragEnd;
-  useEffect5(() => {
+  useEffect7(() => {
     if (blankCanvas) setSelectedIds(/* @__PURE__ */ new Set());
   }, [blankCanvas]);
-  const [outlinesReady, setOutlinesReady] = useState5(
+  const [outlinesReady, setOutlinesReady] = useState9(
     () => !rearrangeState.sections.some((s2) => {
       const o = s2.originalRect, c = s2.currentRect;
       return Math.abs(o.x - c.x) > 1 || Math.abs(o.y - c.y) > 1 || Math.abs(o.width - c.width) > 1 || Math.abs(o.height - c.height) > 1;
     })
   );
-  useEffect5(() => {
+  useEffect7(() => {
     if (!outlinesReady) {
       const timer = originalSetTimeout(() => setOutlinesReady(true), 380);
       return () => clearTimeout(timer);
     }
   }, []);
-  const capturedSelectors = useRef5(/* @__PURE__ */ new Set());
-  useEffect5(() => {
+  const capturedSelectors = useRef9(/* @__PURE__ */ new Set());
+  useEffect7(() => {
     capturedSelectors.current = new Set(sections.map((s2) => s2.selector));
   }, [sections]);
-  useEffect5(() => {
+  useEffect7(() => {
     const onScroll = () => setScrollY(window.scrollY);
     onScroll();
     window.addEventListener("scroll", onScroll, { passive: true });
@@ -4838,7 +5729,7 @@ function RearrangeOverlay({ rearrangeState, onChange, isDarkMode, exiting, class
       window.removeEventListener("resize", onScroll);
     };
   }, []);
-  useEffect5(() => {
+  useEffect7(() => {
     const handleMouseMove = (e) => {
       if (interactionRef.current) {
         setHoverHighlight(null);
@@ -4882,18 +5773,20 @@ function RearrangeOverlay({ rearrangeState, onChange, isDarkMode, exiting, class
     document.addEventListener("mousemove", handleMouseMove, { passive: true });
     return () => document.removeEventListener("mousemove", handleMouseMove);
   }, [sections]);
-  useEffect5(() => {
+  useEffect7(() => {
     const prev = document.body.style.userSelect;
+    document.body.style.webkitUserSelect = "none";
     document.body.style.userSelect = "none";
     return () => {
+      document.body.style.webkitUserSelect = prev;
       document.body.style.userSelect = prev;
     };
   }, []);
-  useEffect5(() => {
+  useEffect7(() => {
     const handleMouseDown = (e) => {
       if (interactionRef.current) return;
       if (e.button !== 0) return;
-      const el = e.target;
+      const el = e.composedPath()[0] ?? e.target;
       if (!el || el.closest("[data-feedback-toolbar]")) return;
       if (el.closest("[data-design-placement]")) return;
       if (el.closest("[data-annotation-popup]")) return;
@@ -4946,7 +5839,7 @@ function RearrangeOverlay({ rearrangeState, onChange, isDarkMode, exiting, class
           const snappedDy = dy + snap.dy;
           lastDx = snappedDx;
           lastDy = snappedDy;
-          const outlineEl = document.querySelector(`[data-rearrange-section="${section.id}"]`);
+          const outlineEl = getOverlayRoot().querySelector(`[data-rearrange-section="${section.id}"]`);
           if (outlineEl) outlineEl.style.transform = `translate(${snappedDx}px, ${snappedDy}px)`;
           setDragPositions(/* @__PURE__ */ new Map([[section.id, { x: startPos.x + snappedDx, y: startPos.y + snappedDy, width: section.currentRect.width, height: section.currentRect.height }]]));
           onDragMoveRef.current?.(snappedDx, snappedDy);
@@ -4957,7 +5850,7 @@ function RearrangeOverlay({ rearrangeState, onChange, isDarkMode, exiting, class
           interactionRef.current = null;
           setSnapGuides([]);
           setDragPositions(/* @__PURE__ */ new Map());
-          const outlineEl = document.querySelector(`[data-rearrange-section="${section.id}"]`);
+          const outlineEl = getOverlayRoot().querySelector(`[data-rearrange-section="${section.id}"]`);
           if (outlineEl) outlineEl.style.transform = "";
           if (moved) {
             onChange({
@@ -5000,9 +5893,9 @@ function RearrangeOverlay({ rearrangeState, onChange, isDarkMode, exiting, class
     document.addEventListener("mousedown", handleMouseDown, true);
     return () => document.removeEventListener("mousedown", handleMouseDown, true);
   }, [sections, rearrangeState, onChange]);
-  useEffect5(() => {
+  useEffect7(() => {
     const handleKeyDown = (e) => {
-      const t = e.target;
+      const t = e.composedPath()[0] || e.target;
       if (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable) return;
       if ((e.key === "Backspace" || e.key === "Delete") && selectedIds.size > 0) {
         e.preventDefault();
@@ -5048,11 +5941,11 @@ function RearrangeOverlay({ rearrangeState, onChange, isDarkMode, exiting, class
     document.addEventListener("keydown", handleKeyDown);
     return () => document.removeEventListener("keydown", handleKeyDown);
   }, [selectedIds, sections, rearrangeState, onChange]);
-  const handleOutlineMouseDown = useCallback4(
+  const handleOutlineMouseDown = useCallback7(
     (e, id) => {
       if (e.button !== 0) return;
       const target = e.target;
-      if (target.closest(`.${styles_module_default3.handle}`) || target.closest(`.${styles_module_default3.deleteButton}`)) return;
+      if (target.closest(`.${styles_module_default4.handle}`) || target.closest(`.${styles_module_default4.deleteButton}`)) return;
       e.preventDefault();
       e.stopPropagation();
       let newSelected;
@@ -5082,7 +5975,7 @@ function RearrangeOverlay({ rearrangeState, onChange, isDarkMode, exiting, class
       const dragEls = /* @__PURE__ */ new Map();
       for (const s2 of sections) {
         if (newSelected.has(s2.id)) {
-          const outlineEl = document.querySelector(`[data-rearrange-section="${s2.id}"]`);
+          const outlineEl = getOverlayRoot().querySelector(`[data-rearrange-section="${s2.id}"]`);
           dragEls.set(s2.id, {
             outlineEl,
             curW: s2.currentRect.width,
@@ -5173,7 +6066,7 @@ function RearrangeOverlay({ rearrangeState, onChange, isDarkMode, exiting, class
     },
     [selectedIds, sections, rearrangeState, onChange]
   );
-  const handleResizeMouseDown = useCallback4(
+  const handleResizeMouseDown = useCallback7(
     (e, id, dir) => {
       e.preventDefault();
       e.stopPropagation();
@@ -5187,7 +6080,7 @@ function RearrangeOverlay({ rearrangeState, onChange, isDarkMode, exiting, class
       const origRect = section.originalRect;
       const aspectRatio = startRect.width / startRect.height;
       let lastRect = { ...startRect };
-      const resizeOutlineEl = document.querySelector(`[data-rearrange-section="${id}"]`);
+      const resizeOutlineEl = getOverlayRoot().querySelector(`[data-rearrange-section="${id}"]`);
       const onMove = (ev) => {
         const dx = ev.clientX - startX;
         const dy = ev.clientY - startY;
@@ -5250,7 +6143,7 @@ function RearrangeOverlay({ rearrangeState, onChange, isDarkMode, exiting, class
     },
     [sections, rearrangeState, onChange, scrollY]
   );
-  const handleDelete = useCallback4(
+  const handleDelete = useCallback7(
     (id) => {
       setExitingIds((prev) => {
         const next = new Set(prev);
@@ -5323,7 +6216,7 @@ function RearrangeOverlay({ rearrangeState, onChange, isDarkMode, exiting, class
   for (const s2 of changedSections) {
     lastChangedRectsRef.current.set(s2.id, { currentRect: s2.currentRect, originalRect: s2.originalRect, isFixed: s2.isFixed });
   }
-  useEffect5(() => {
+  useEffect7(() => {
     const prev = prevChangedIdsRef.current;
     prevChangedIdsRef.current = currentChangedIds;
     const exiting2 = /* @__PURE__ */ new Map();
@@ -5353,17 +6246,20 @@ function RearrangeOverlay({ rearrangeState, onChange, isDarkMode, exiting, class
       return () => clearTimeout(timer);
     }
   }, [changedKey, sections]);
-  return /* @__PURE__ */ jsxs7(Fragment4, { children: [
-    /* @__PURE__ */ jsxs7(
+  const overlayRef = useRef9(null);
+  const getOverlayRoot = () => overlayRef.current?.getRootNode() ?? document;
+  return /* @__PURE__ */ jsxs8(Fragment4, { children: [
+    /* @__PURE__ */ jsxs8(
       "div",
       {
-        className: `${styles_module_default3.rearrangeOverlay} ${!isDarkMode ? styles_module_default3.light : ""} ${exiting ? styles_module_default3.overlayExiting : ""}${extraClassName ? ` ${extraClassName}` : ""}`,
+        ref: overlayRef,
+        className: `${styles_module_default4.rearrangeOverlay} ${!isDarkMode ? styles_module_default4.light : ""} ${exiting ? styles_module_default4.overlayExiting : ""}${extraClassName ? ` ${extraClassName}` : ""}`,
         "data-feedback-toolbar": true,
         children: [
-          hoverHighlight && /* @__PURE__ */ jsx8(
+          hoverHighlight && /* @__PURE__ */ jsx11(
             "div",
             {
-              className: styles_module_default3.hoverHighlight,
+              className: styles_module_default4.hoverHighlight,
               style: { left: hoverHighlight.x, top: hoverHighlight.y, width: hoverHighlight.w, height: hoverHighlight.h }
             }
           ),
@@ -5372,38 +6268,38 @@ function RearrangeOverlay({ rearrangeState, onChange, isDarkMode, exiting, class
             const screenY = section.isFixed ? rect.y : rect.y - scrollY;
             const color = SECTION_COLOR;
             const isSelected = selectedIds.has(section.id);
-            return /* @__PURE__ */ jsxs7(
+            return /* @__PURE__ */ jsxs8(
               "div",
               {
                 "data-rearrange-section": section.id,
-                className: `${styles_module_default3.sectionOutline} ${isSelected ? styles_module_default3.selected : ""} ${exitingAll || exiting || exitingIds.has(section.id) ? styles_module_default3.exiting : ""}`,
+                className: `${styles_module_default4.sectionOutline} ${isSelected ? styles_module_default4.selected : ""} ${clearing || exiting || exitingIds.has(section.id) ? styles_module_default4.exiting : ""}`,
                 style: { left: rect.x, top: screenY, width: rect.width, height: rect.height, borderColor: color.border, backgroundColor: color.bg, ...outlinesReady ? {} : { opacity: 0, animation: "none", transition: "none" } },
                 onMouseDown: (e) => handleOutlineMouseDown(e, section.id),
                 onDoubleClick: () => handleDoubleClick(section.id),
                 children: [
-                  /* @__PURE__ */ jsx8("span", { className: styles_module_default3.sectionLabel, style: { backgroundColor: color.pill }, children: section.label }),
-                  /* @__PURE__ */ jsx8("span", { className: `${styles_module_default3.sectionAnnotation} ${section.note ? styles_module_default3.annotationVisible : ""}`, children: (() => {
+                  /* @__PURE__ */ jsx11("span", { className: styles_module_default4.sectionLabel, style: { backgroundColor: color.pill }, children: section.label }),
+                  /* @__PURE__ */ jsx11("span", { className: `${styles_module_default4.sectionAnnotation} ${section.note ? styles_module_default4.annotationVisible : ""}`, children: (() => {
                     if (section.note) lastNoteTextRef.current.set(section.id, section.note);
                     return section.note || lastNoteTextRef.current.get(section.id) || "";
                   })() }),
-                  /* @__PURE__ */ jsxs7("span", { className: styles_module_default3.sectionDimensions, children: [
+                  /* @__PURE__ */ jsxs8("span", { className: styles_module_default4.sectionDimensions, children: [
                     Math.round(rect.width),
                     " \xD7 ",
                     Math.round(rect.height)
                   ] }),
-                  /* @__PURE__ */ jsx8(
+                  /* @__PURE__ */ jsx11(
                     "div",
                     {
-                      className: styles_module_default3.deleteButton,
+                      className: styles_module_default4.deleteButton,
                       onMouseDown: (e) => e.stopPropagation(),
                       onClick: () => handleDelete(section.id),
                       children: "\u2715"
                     }
                   ),
-                  HANDLES.map((dir) => /* @__PURE__ */ jsx8(
+                  HANDLES.map((dir) => /* @__PURE__ */ jsx11(
                     "div",
                     {
-                      className: `${styles_module_default3.handle} ${styles_module_default3[`handle${dir.charAt(0).toUpperCase()}${dir.slice(1)}`]}`,
+                      className: `${styles_module_default4.handle} ${styles_module_default4[`handle${dir.charAt(0).toUpperCase()}${dir.slice(1)}`]}`,
                       onMouseDown: (e) => handleResizeMouseDown(e, section.id, dir)
                     },
                     dir
@@ -5423,51 +6319,51 @@ function RearrangeOverlay({ rearrangeState, onChange, isDarkMode, exiting, class
             if (blankCanvas && settled) return null;
             const isNewGhost = !seenGhostIdsRef.current.has(section.id);
             if (isNewGhost) seenGhostIdsRef.current.add(section.id);
-            return /* @__PURE__ */ jsxs7(
+            return /* @__PURE__ */ jsxs8(
               "div",
               {
                 "data-rearrange-section": section.id,
-                className: `${styles_module_default3.ghostOutline} ${isSelected ? styles_module_default3.selected : ""} ${exitingAll || exiting || exitingIds.has(section.id) ? styles_module_default3.exiting : ""}`,
+                className: `${styles_module_default4.ghostOutline} ${isSelected ? styles_module_default4.selected : ""} ${clearing || exiting || exitingIds.has(section.id) ? styles_module_default4.exiting : ""}`,
                 style: { left: rect.x, top: screenY, width: rect.width, height: rect.height, ...outlinesReady ? {} : { opacity: 0, animation: "none", transition: "none" }, ...!isNewGhost ? { animation: "none" } : {} },
                 onMouseDown: (e) => handleOutlineMouseDown(e, section.id),
                 onDoubleClick: () => handleDoubleClick(section.id),
                 children: [
-                  /* @__PURE__ */ jsx8("span", { className: styles_module_default3.sectionLabel, style: { backgroundColor: SECTION_COLOR.pill }, children: section.label }),
-                  /* @__PURE__ */ jsx8("span", { className: `${styles_module_default3.sectionAnnotation} ${section.note ? styles_module_default3.annotationVisible : ""}`, children: (() => {
+                  /* @__PURE__ */ jsx11("span", { className: styles_module_default4.sectionLabel, style: { backgroundColor: SECTION_COLOR.pill }, children: section.label }),
+                  /* @__PURE__ */ jsx11("span", { className: `${styles_module_default4.sectionAnnotation} ${section.note ? styles_module_default4.annotationVisible : ""}`, children: (() => {
                     if (section.note) lastNoteTextRef.current.set(section.id, section.note);
                     return section.note || lastNoteTextRef.current.get(section.id) || "";
                   })() }),
-                  /* @__PURE__ */ jsxs7("span", { className: styles_module_default3.sectionDimensions, children: [
+                  /* @__PURE__ */ jsxs8("span", { className: styles_module_default4.sectionDimensions, children: [
                     Math.round(rect.width),
                     " \xD7 ",
                     Math.round(rect.height)
                   ] }),
-                  /* @__PURE__ */ jsx8(
+                  /* @__PURE__ */ jsx11(
                     "div",
                     {
-                      className: styles_module_default3.deleteButton,
+                      className: styles_module_default4.deleteButton,
                       onMouseDown: (e) => e.stopPropagation(),
                       onClick: () => handleDelete(section.id),
                       children: "\u2715"
                     }
                   ),
-                  HANDLES.map((dir) => /* @__PURE__ */ jsx8(
+                  HANDLES.map((dir) => /* @__PURE__ */ jsx11(
                     "div",
                     {
-                      className: `${styles_module_default3.handle} ${styles_module_default3[`handle${dir.charAt(0).toUpperCase()}${dir.slice(1)}`]}`,
+                      className: `${styles_module_default4.handle} ${styles_module_default4[`handle${dir.charAt(0).toUpperCase()}${dir.slice(1)}`]}`,
                       onMouseDown: (e) => handleResizeMouseDown(e, section.id, dir)
                     },
                     dir
                   )),
-                  /* @__PURE__ */ jsx8("span", { className: styles_module_default3.ghostBadge, children: (() => {
+                  /* @__PURE__ */ jsx11("span", { className: styles_module_default4.ghostBadge, children: (() => {
                     const first = firstActionRef.current.get(section.id);
                     if (moved && resized) {
                       const [a, b] = first === "resize" ? ["Resize", "Move"] : ["Move", "Resize"];
-                      return /* @__PURE__ */ jsxs7(Fragment4, { children: [
+                      return /* @__PURE__ */ jsxs8(Fragment4, { children: [
                         "Suggested ",
                         a,
                         " ",
-                        /* @__PURE__ */ jsxs7("span", { className: styles_module_default3.ghostBadgeExtra, children: [
+                        /* @__PURE__ */ jsxs8("span", { className: styles_module_default4.ghostBadgeExtra, children: [
                           "& ",
                           b
                         ] })
@@ -5501,7 +6397,7 @@ function RearrangeOverlay({ rearrangeState, onChange, isDarkMode, exiting, class
         }
       }
       if (connectorSections.length === 0) return null;
-      return /* @__PURE__ */ jsxs7("svg", { className: `${styles_module_default3.connectorSvg} ${exitingAll || exiting ? styles_module_default3.connectorExiting : ""}`, children: [
+      return /* @__PURE__ */ jsxs8("svg", { className: `${styles_module_default4.connectorSvg} ${clearing || exiting ? styles_module_default4.connectorExiting : ""}`, children: [
         connectorSections.map(({ id, orig, target, isFixed, isSelected, isExiting }) => {
           const ox = orig.x + orig.width / 2;
           const oy = (isFixed ? orig.y : orig.y - scrollY) + orig.height / 2;
@@ -5520,11 +6416,11 @@ function RearrangeOverlay({ rearrangeState, onChange, isDarkMode, exiting, class
           const isDragging = dragPositions.has(id);
           const baseOpacity = isDragging || isSelected ? 1 : 0.4;
           const dotBaseOpacity = isDragging || isSelected ? 1 : 0.5;
-          return /* @__PURE__ */ jsxs7("g", { className: isExiting ? styles_module_default3.connectorExiting : "", children: [
-            /* @__PURE__ */ jsx8(
+          return /* @__PURE__ */ jsxs8("g", { className: isExiting ? styles_module_default4.connectorExiting : "", children: [
+            /* @__PURE__ */ jsx11(
               "path",
               {
-                className: styles_module_default3.connectorLine,
+                className: styles_module_default4.connectorLine,
                 d: `M ${ox} ${oy} Q ${cpx} ${cpy} ${cx} ${cy}`,
                 fill: "none",
                 stroke: "rgba(59, 130, 246, 0.45)",
@@ -5532,11 +6428,11 @@ function RearrangeOverlay({ rearrangeState, onChange, isDarkMode, exiting, class
                 opacity: baseOpacity * proximityScale
               }
             ),
-            /* @__PURE__ */ jsx8("circle", { className: styles_module_default3.connectorDot, cx: ox, cy: oy, r: 4 * proximityScale, fill: "rgba(59, 130, 246, 0.8)", stroke: "#fff", strokeWidth: "1.5", opacity: dotBaseOpacity * proximityScale, filter: "url(#connDotShadow)" }),
-            /* @__PURE__ */ jsx8("circle", { className: styles_module_default3.connectorDot, cx, cy, r: 4 * proximityScale, fill: "rgba(59, 130, 246, 0.8)", stroke: "#fff", strokeWidth: "1.5", opacity: dotBaseOpacity * proximityScale, filter: "url(#connDotShadow)" })
+            /* @__PURE__ */ jsx11("circle", { className: styles_module_default4.connectorDot, cx: ox, cy: oy, r: 4 * proximityScale, fill: "rgba(59, 130, 246, 0.8)", stroke: "#fff", strokeWidth: "1.5", opacity: dotBaseOpacity * proximityScale, filter: "url(#connDotShadow)" }),
+            /* @__PURE__ */ jsx11("circle", { className: styles_module_default4.connectorDot, cx, cy, r: 4 * proximityScale, fill: "rgba(59, 130, 246, 0.8)", stroke: "#fff", strokeWidth: "1.5", opacity: dotBaseOpacity * proximityScale, filter: "url(#connDotShadow)" })
           ] }, `conn-${id}`);
         }),
-        /* @__PURE__ */ jsx8("defs", { children: /* @__PURE__ */ jsx8("filter", { id: "connDotShadow", x: "-50%", y: "-50%", width: "200%", height: "200%", children: /* @__PURE__ */ jsx8("feDropShadow", { dx: "0", dy: "0.5", stdDeviation: "1", floodOpacity: "0.15" }) }) })
+        /* @__PURE__ */ jsx11("defs", { children: /* @__PURE__ */ jsx11("filter", { id: "connDotShadow", x: "-50%", y: "-50%", width: "200%", height: "200%", children: /* @__PURE__ */ jsx11("feDropShadow", { dx: "0", dy: "0.5", stdDeviation: "1", floodOpacity: "0.15" }) }) })
       ] });
     })(),
     editingId && (() => {
@@ -5558,7 +6454,7 @@ function RearrangeOverlay({ rearrangeState, onChange, isDarkMode, exiting, class
       } else {
         popupStyle = { left: popupLeft, top: Math.max(80, window.innerHeight / 2 - 80) };
       }
-      return /* @__PURE__ */ jsx8(
+      return /* @__PURE__ */ jsx11(
         AnnotationPopupCSS,
         {
           element: es.label,
@@ -5576,11 +6472,11 @@ function RearrangeOverlay({ rearrangeState, onChange, isDarkMode, exiting, class
         }
       );
     })(),
-    sizeIndicator && /* @__PURE__ */ jsx8("div", { className: styles_module_default3.sizeIndicator, style: { left: sizeIndicator.x, top: sizeIndicator.y }, "data-feedback-toolbar": true, children: sizeIndicator.text }),
-    snapGuides.map((g, i) => /* @__PURE__ */ jsx8(
+    sizeIndicator && /* @__PURE__ */ jsx11("div", { className: styles_module_default4.sizeIndicator, style: { left: sizeIndicator.x, top: sizeIndicator.y }, "data-feedback-toolbar": true, children: sizeIndicator.text }),
+    snapGuides.map((g, i) => /* @__PURE__ */ jsx11(
       "div",
       {
-        className: styles_module_default3.guideLine,
+        className: styles_module_default4.guideLine,
         style: g.axis === "x" ? { position: "fixed", left: g.pos, top: 0, width: 1, height: "100vh" } : { position: "fixed", left: 0, top: g.pos - scrollY, width: "100vw", height: 1 }
       },
       `${g.axis}-${g.pos}-${i}`
@@ -6142,6 +7038,10 @@ function generateDesignOutput(placements, viewport, options, detailLevel = "stan
       const label = COMPONENT_MAP[c.type]?.label || c.type;
       out += `${i + 1}. **${label}** \u2014 \`${Math.round(c.width)}\xD7${Math.round(c.height)}px\` at \`(${Math.round(c.x)}, ${Math.round(c.y)})\`
 `;
+      if (c.text) {
+        out += `   - Note: "${c.text}"
+`;
+      }
     });
     return out;
   }
@@ -6153,6 +7053,10 @@ function generateDesignOutput(placements, viewport, options, detailLevel = "stan
     const rect = { x: c.x, y: c.y, width: c.width, height: c.height };
     out += `${i + 1}. **${label}** \u2014 \`${Math.round(c.width)}\xD7${Math.round(c.height)}px\` at \`(${Math.round(c.x)}, ${Math.round(c.y)})\`
 `;
+    if (c.text) {
+      out += `   - Note: "${c.text}"
+`;
+    }
     const ctx = getSpatialContext(rect);
     const includeLeftRight = detailLevel === "detailed" || detailLevel === "forensic";
     const lines = formatSpatialLines(ctx, { includeLeftRight });
@@ -6278,7 +7182,8 @@ function generateRearrangeOutput(state, detailLevel = "standard", viewport) {
     const c = s2.currentRect;
     const posMoved = Math.abs(o.x - c.x) > 1 || Math.abs(o.y - c.y) > 1;
     const sizeChanged = Math.abs(o.width - c.width) > 1 || Math.abs(o.height - c.height) > 1;
-    if (!posMoved && !sizeChanged) {
+    const hasNote = !!s2.note;
+    if (!posMoved && !sizeChanged && !hasNote) {
       if (detailLevel === "forensic") {
         changed.push({ section: s2, posMoved: false, sizeChanged: false });
       }
@@ -6287,7 +7192,8 @@ function generateRearrangeOutput(state, detailLevel = "standard", viewport) {
     changed.push({ section: s2, posMoved, sizeChanged });
   }
   if (changed.length === 0) return "";
-  if (detailLevel !== "forensic" && changed.every((e) => !e.posMoved && !e.sizeChanged)) return "";
+  if (detailLevel !== "forensic" && changed.every((e) => !e.posMoved && !e.sizeChanged && !e.section.note))
+    return "";
   let out = "## Suggested Layout Changes\n\n";
   const vw = viewport ? viewport.width : typeof window !== "undefined" ? window.innerWidth : 0;
   const vh = viewport ? viewport.height : typeof window !== "undefined" ? window.innerHeight : 0;
@@ -6312,8 +7218,15 @@ function generateRearrangeOutput(state, detailLevel = "standard", viewport) {
     const o = s2.originalRect;
     const c = s2.currentRect;
     if (!posMoved && !sizeChanged) {
-      out += `- ${s2.label} \u2014 unchanged at (${Math.round(c.x)}, ${Math.round(c.y)}) ${Math.round(c.width)}\xD7${Math.round(c.height)}px
+      if (s2.note) {
+        out += `- **${s2.label}** \u2014 note only
 `;
+        out += `  - Note: "${s2.note}"
+`;
+      } else {
+        out += `- ${s2.label} \u2014 unchanged at (${Math.round(c.x)}, ${Math.round(c.y)}) ${Math.round(c.width)}\xD7${Math.round(c.height)}px
+`;
+      }
       continue;
     }
     if (detailLevel === "compact") {
@@ -6327,6 +7240,10 @@ function generateRearrangeOutput(state, detailLevel = "standard", viewport) {
         out += `- Suggested: resize **${s2.label}** to ${Math.round(c.width)}\xD7${Math.round(c.height)}px
 `;
       }
+      if (s2.note) {
+        out += `  - Note: "${s2.note}"
+`;
+      }
       continue;
     }
     if (posMoved && sizeChanged) {
@@ -6337,6 +7254,10 @@ function generateRearrangeOutput(state, detailLevel = "standard", viewport) {
 `;
     } else {
       out += `- Suggested: resize **${s2.label}** from ${Math.round(o.width)}\xD7${Math.round(o.height)}px to ${Math.round(c.width)}\xD7${Math.round(c.height)}px
+`;
+    }
+    if (s2.note) {
+      out += `  - Note: "${s2.note}"
 `;
     }
     if (posMoved) {
@@ -6624,6 +7545,9 @@ async function getSession(endpoint, sessionId) {
   return response.json();
 }
 async function syncAnnotation(endpoint, sessionId, annotation) {
+  if (!annotation.elementPath && (annotation.element === "body" || annotation.element === "html")) {
+    annotation = { ...annotation, elementPath: annotation.element };
+  }
   const response = await fetch(`${endpoint}/sessions/${sessionId}/annotations`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -7047,7 +7971,7 @@ function getReactComponentName(element, config) {
 }
 
 // src/utils/source-location.ts
-import React from "react";
+import * as React from "react";
 var FIBER_TAGS = {
   FunctionComponent: 0,
   ClassComponent: 1,
@@ -7219,7 +8143,7 @@ function getReactDispatcher() {
   }
   return null;
 }
-function parseComponentFrame(stack) {
+function parseComponentFrame(stack, functionName) {
   const lines = stack.split("\n");
   const skipPatterns = [
     /source-location/,
@@ -7231,6 +8155,10 @@ function parseComponentFrame(stack) {
     /react\.development/,
     /react\.production/,
     /chunk-[A-Z0-9]+/i,
+    /\/_next\/static\/chunks\//,
+    /\/\.vite\/deps\//,
+    /\/_astro\//,
+    /\/assets\/[^\s/]+[-.][\w-]{8,}\.m?js(?:[?:]|$)/,
     /react-stack-bottom-frame/,
     /react-reconciler/,
     /scheduler/,
@@ -7243,6 +8171,10 @@ function parseComponentFrame(stack) {
     const trimmed = line.trim();
     if (!trimmed) continue;
     if (skipPatterns.some((p) => p.test(trimmed))) continue;
+    if (functionName) {
+      const name = functionName.replace(/^bound /, "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      if (!new RegExp(`(?:at (?:Object\\.)?|^)${name}(?: \\(|@| \\[)`).test(trimmed)) continue;
+    }
     const match = v8Re.exec(trimmed) || webkitRe.exec(trimmed);
     if (match) {
       return {
@@ -7296,7 +8228,7 @@ function probeComponentSource(fiber) {
       fn({});
     } catch (e) {
       if (e instanceof Error && e.message === "probe" && e.stack) {
-        const frame = parseComponentFrame(e.stack);
+        const frame = parseComponentFrame(e.stack, fn.name);
         if (frame) {
           const cleaned = cleanSourcePath(frame.fileName);
           result = {
@@ -7388,20 +8320,6 @@ function findNearestComponentSource(element, maxAncestors = 10) {
   return getSourceLocation(element);
 }
 
-// src/components/page-toolbar-css/styles.module.scss
-var css5 = '.styles-module__toolbar___wNsdK svg[fill=none],\n.styles-module__markersLayer___-25j1 svg[fill=none],\n.styles-module__fixedMarkersLayer___ffyX6 svg[fill=none] {\n  fill: none !important;\n}\n.styles-module__toolbar___wNsdK svg[fill=none] :not([fill]),\n.styles-module__markersLayer___-25j1 svg[fill=none] :not([fill]),\n.styles-module__fixedMarkersLayer___ffyX6 svg[fill=none] :not([fill]) {\n  fill: none !important;\n}\n\n.styles-module__controlsContent___9GJWU :where(button, input, select, textarea, label) {\n  background: unset;\n  border: unset;\n  border-radius: unset;\n  padding: unset;\n  margin: unset;\n  color: unset;\n  font-family: unset;\n  font-weight: unset;\n  font-style: unset;\n  line-height: unset;\n  letter-spacing: unset;\n  text-transform: unset;\n  text-decoration: unset;\n  box-shadow: unset;\n  outline: unset;\n}\n\n@keyframes styles-module__toolbarEnter___u8RRu {\n  from {\n    opacity: 0;\n    transform: scale(0.5) rotate(90deg);\n  }\n  to {\n    opacity: 1;\n    transform: scale(1) rotate(0deg);\n  }\n}\n@keyframes styles-module__toolbarHide___y8kaT {\n  from {\n    opacity: 1;\n    transform: scale(1);\n  }\n  to {\n    opacity: 0;\n    transform: scale(0.8);\n  }\n}\n@keyframes styles-module__badgeEnter___mVQLj {\n  from {\n    opacity: 0;\n    transform: scale(0);\n  }\n  to {\n    opacity: 1;\n    transform: scale(1);\n  }\n}\n@keyframes styles-module__scaleIn___c-r1K {\n  from {\n    opacity: 0;\n    transform: scale(0.85);\n  }\n  to {\n    opacity: 1;\n    transform: scale(1);\n  }\n}\n@keyframes styles-module__scaleOut___Wctwz {\n  from {\n    opacity: 1;\n    transform: scale(1);\n  }\n  to {\n    opacity: 0;\n    transform: scale(0.85);\n  }\n}\n@keyframes styles-module__slideUp___kgD36 {\n  from {\n    opacity: 0;\n    transform: scale(0.85) translateY(8px);\n  }\n  to {\n    opacity: 1;\n    transform: scale(1) translateY(0);\n  }\n}\n@keyframes styles-module__slideDown___zcdje {\n  from {\n    opacity: 1;\n    transform: scale(1) translateY(0);\n  }\n  to {\n    opacity: 0;\n    transform: scale(0.85) translateY(8px);\n  }\n}\n@keyframes styles-module__fadeIn___b9qmf {\n  from {\n    opacity: 0;\n  }\n  to {\n    opacity: 1;\n  }\n}\n@keyframes styles-module__fadeOut___6Ut6- {\n  from {\n    opacity: 1;\n  }\n  to {\n    opacity: 0;\n  }\n}\n@keyframes styles-module__hoverHighlightIn___6WYHY {\n  from {\n    opacity: 0;\n    transform: scale(0.98);\n  }\n  to {\n    opacity: 1;\n    transform: scale(1);\n  }\n}\n@keyframes styles-module__hoverTooltipIn___FYGQx {\n  from {\n    opacity: 0;\n    transform: scale(0.95) translateY(4px);\n  }\n  to {\n    opacity: 1;\n    transform: scale(1) translateY(0);\n  }\n}\n.styles-module__disableTransitions___EopxO :is(*, *::before, *::after) {\n  transition: none !important;\n}\n\n.styles-module__toolbar___wNsdK {\n  position: fixed;\n  bottom: 1.25rem;\n  right: 1.25rem;\n  width: 337px;\n  z-index: 100000;\n  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;\n  pointer-events: none;\n  transition: left 0s, top 0s, right 0s, bottom 0s;\n}\n\n:where(.styles-module__toolbar___wNsdK) {\n  bottom: 1.25rem;\n  right: 1.25rem;\n}\n\n.styles-module__toolbarContainer___dIhma {\n  position: relative;\n  user-select: none;\n  margin-left: auto;\n  align-self: flex-end;\n  display: flex;\n  align-items: center;\n  justify-content: center;\n  background: #1a1a1a;\n  color: #fff;\n  border: none;\n  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2), 0 4px 16px rgba(0, 0, 0, 0.1);\n  pointer-events: auto;\n  transition: width 0.4s cubic-bezier(0.19, 1, 0.22, 1), transform 0.4s cubic-bezier(0.19, 1, 0.22, 1);\n}\n.styles-module__toolbarContainer___dIhma.styles-module__entrance___sgHd8 {\n  animation: styles-module__toolbarEnter___u8RRu 0.5s cubic-bezier(0.34, 1.2, 0.64, 1) forwards;\n}\n.styles-module__toolbarContainer___dIhma.styles-module__hiding___1td44 {\n  animation: styles-module__toolbarHide___y8kaT 0.4s cubic-bezier(0.4, 0, 1, 1) forwards;\n  pointer-events: none;\n}\n.styles-module__toolbarContainer___dIhma.styles-module__collapsed___Rydsn {\n  width: 44px;\n  height: 44px;\n  border-radius: 22px;\n  padding: 0;\n  cursor: pointer;\n}\n.styles-module__toolbarContainer___dIhma.styles-module__collapsed___Rydsn svg {\n  margin-top: -1px;\n}\n.styles-module__toolbarContainer___dIhma.styles-module__collapsed___Rydsn:hover {\n  background: #2a2a2a;\n}\n.styles-module__toolbarContainer___dIhma.styles-module__collapsed___Rydsn:active {\n  transform: scale(0.95);\n}\n.styles-module__toolbarContainer___dIhma.styles-module__expanded___ofKPx {\n  height: 44px;\n  border-radius: 1.5rem;\n  padding: 0.375rem;\n  width: 297px;\n}\n.styles-module__toolbarContainer___dIhma.styles-module__expanded___ofKPx.styles-module__serverConnected___Gfbou {\n  width: 337px;\n}\n\n.styles-module__toggleContent___0yfyP {\n  position: absolute;\n  display: flex;\n  align-items: center;\n  justify-content: center;\n  transition: opacity 0.1s cubic-bezier(0.19, 1, 0.22, 1);\n}\n.styles-module__toggleContent___0yfyP.styles-module__visible___KHwEW {\n  opacity: 1;\n  visibility: visible;\n  pointer-events: auto;\n}\n.styles-module__toggleContent___0yfyP.styles-module__hidden___Ae8H4 {\n  opacity: 0;\n  pointer-events: none;\n}\n\n.styles-module__controlsContent___9GJWU {\n  display: flex;\n  align-items: center;\n  gap: 0.375rem;\n  transition: filter 0.8s cubic-bezier(0.19, 1, 0.22, 1), opacity 0.8s cubic-bezier(0.19, 1, 0.22, 1), transform 0.6s cubic-bezier(0.19, 1, 0.22, 1);\n}\n.styles-module__controlsContent___9GJWU.styles-module__visible___KHwEW {\n  opacity: 1;\n  filter: blur(0px);\n  transform: scale(1);\n  visibility: visible;\n  pointer-events: auto;\n}\n.styles-module__controlsContent___9GJWU.styles-module__hidden___Ae8H4 {\n  pointer-events: none;\n  opacity: 0;\n  filter: blur(10px);\n  transform: scale(0.4);\n}\n\n.styles-module__badge___2XsgF {\n  position: absolute;\n  top: -13px;\n  right: -13px;\n  user-select: none;\n  min-width: 18px;\n  height: 18px;\n  padding: 0 5px;\n  border-radius: 9px;\n  background-color: var(--agentation-color-accent);\n  color: white;\n  font-size: 0.625rem;\n  font-weight: 600;\n  display: flex;\n  align-items: center;\n  justify-content: center;\n  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15), inset 0 0 0 1px rgba(255, 255, 255, 0.04);\n  opacity: 1;\n  transition: transform 0.3s ease, opacity 0.2s ease;\n  transform: scale(1);\n}\n.styles-module__badge___2XsgF.styles-module__fadeOut___6Ut6- {\n  opacity: 0;\n  transform: scale(0);\n  pointer-events: none;\n}\n.styles-module__badge___2XsgF.styles-module__entrance___sgHd8 {\n  animation: styles-module__badgeEnter___mVQLj 0.3s cubic-bezier(0.34, 1.2, 0.64, 1) 0.4s both;\n}\n\n.styles-module__controlButton___8Q0jc {\n  position: relative;\n  cursor: pointer;\n  display: flex;\n  align-items: center;\n  justify-content: center;\n  width: 34px;\n  height: 34px;\n  border-radius: 50%;\n  border: none;\n  background: transparent;\n  color: rgba(255, 255, 255, 0.85);\n  transition: background-color 0.15s ease, color 0.15s ease, transform 0.1s ease, opacity 0.2s ease;\n}\n.styles-module__controlButton___8Q0jc:hover:not(:disabled):not([data-active=true]):not([data-failed=true]):not([data-auto-sync=true]):not([data-error=true]):not([data-no-hover=true]) {\n  background: rgba(255, 255, 255, 0.12);\n  color: #fff;\n}\n.styles-module__controlButton___8Q0jc:active:not(:disabled) {\n  transform: scale(0.92);\n}\n.styles-module__controlButton___8Q0jc:disabled {\n  opacity: 0.35;\n  cursor: not-allowed;\n}\n.styles-module__controlButton___8Q0jc[data-active=true] {\n  color: var(--agentation-color-blue);\n  background-color: color-mix(in srgb, var(--agentation-color-blue) 25%, transparent);\n}\n.styles-module__controlButton___8Q0jc[data-error=true] {\n  color: var(--agentation-color-red);\n  background-color: color-mix(in srgb, var(--agentation-color-red) 25%, transparent);\n}\n.styles-module__controlButton___8Q0jc[data-danger]:hover:not(:disabled):not([data-active=true]):not([data-failed=true]) {\n  background-color: color-mix(in srgb, var(--agentation-color-red) 25%, transparent);\n  color: var(--agentation-color-red);\n}\n.styles-module__controlButton___8Q0jc[data-no-hover=true], .styles-module__controlButton___8Q0jc.styles-module__statusShowing___te6iu {\n  cursor: default;\n  pointer-events: none;\n  background: transparent !important;\n}\n.styles-module__controlButton___8Q0jc[data-auto-sync=true] {\n  color: var(--agentation-color-green);\n  background: transparent;\n  cursor: default;\n}\n.styles-module__controlButton___8Q0jc[data-failed=true] {\n  color: var(--agentation-color-red);\n  background-color: color-mix(in srgb, var(--agentation-color-red) 25%, transparent);\n}\n\n.styles-module__buttonBadge___NeFWb {\n  position: absolute;\n  top: 0px;\n  right: 0px;\n  min-width: 16px;\n  height: 16px;\n  padding: 0 4px;\n  border-radius: 8px;\n  background-color: var(--agentation-color-accent);\n  color: white;\n  font-size: 0.625rem;\n  font-weight: 600;\n  display: flex;\n  align-items: center;\n  justify-content: center;\n  box-shadow: 0 0 0 2px #1a1a1a, 0 1px 3px rgba(0, 0, 0, 0.2);\n  pointer-events: none;\n}\n[data-agentation-theme=light] .styles-module__buttonBadge___NeFWb {\n  box-shadow: 0 0 0 2px #fff, 0 1px 3px rgba(0, 0, 0, 0.2);\n}\n\n@keyframes styles-module__mcpIndicatorPulseConnected___EDodZ {\n  0%, 100% {\n    box-shadow: 0 0 0 0 color-mix(in srgb, var(--agentation-color-green) 50%, transparent);\n  }\n  50% {\n    box-shadow: 0 0 0 5px color-mix(in srgb, var(--agentation-color-green) 0%, transparent);\n  }\n}\n@keyframes styles-module__mcpIndicatorPulseConnecting___cCYte {\n  0%, 100% {\n    box-shadow: 0 0 0 0 color-mix(in srgb, var(--agentation-color-yellow) 50%, transparent);\n  }\n  50% {\n    box-shadow: 0 0 0 5px color-mix(in srgb, var(--agentation-color-yellow) 0%, transparent);\n  }\n}\n.styles-module__mcpIndicator___zGJeL {\n  position: absolute;\n  top: 3px;\n  right: 3px;\n  width: 6px;\n  height: 6px;\n  border-radius: 50%;\n  pointer-events: none;\n  transition: background-color 0.3s ease, opacity 0.15s ease, transform 0.15s ease;\n  opacity: 1;\n  transform: scale(1);\n}\n.styles-module__mcpIndicator___zGJeL.styles-module__connected___7c28g {\n  background-color: var(--agentation-color-green);\n  animation: styles-module__mcpIndicatorPulseConnected___EDodZ 2.5s ease-in-out infinite;\n}\n.styles-module__mcpIndicator___zGJeL.styles-module__connecting___uo-CW {\n  background-color: var(--agentation-color-yellow);\n  animation: styles-module__mcpIndicatorPulseConnecting___cCYte 1.5s ease-in-out infinite;\n}\n.styles-module__mcpIndicator___zGJeL.styles-module__hidden___Ae8H4 {\n  opacity: 0;\n  transform: scale(0);\n  animation: none;\n}\n\n@keyframes styles-module__connectionPulse___-Zycw {\n  0%, 100% {\n    opacity: 1;\n    transform: scale(1);\n  }\n  50% {\n    opacity: 0.6;\n    transform: scale(0.9);\n  }\n}\n.styles-module__connectionIndicatorWrapper___L-e-3 {\n  width: 8px;\n  height: 34px;\n  margin-left: 6px;\n  margin-right: 6px;\n}\n\n.styles-module__connectionIndicator___afk9p {\n  position: relative;\n  width: 8px;\n  height: 8px;\n  border-radius: 50%;\n  opacity: 0;\n  transition: opacity 0.3s ease, background-color 0.3s ease;\n  cursor: default;\n}\n\n.styles-module__connectionIndicatorVisible___C-i5B {\n  opacity: 1;\n}\n\n.styles-module__connectionIndicatorConnected___IY8pR {\n  background-color: var(--agentation-color-green);\n  animation: styles-module__connectionPulse___-Zycw 2.5s ease-in-out infinite;\n}\n\n.styles-module__connectionIndicatorDisconnected___kmpaZ {\n  background-color: var(--agentation-color-red);\n  animation: none;\n}\n\n.styles-module__connectionIndicatorConnecting___QmSLH {\n  background-color: var(--agentation-color-yellow);\n  animation: styles-module__connectionPulse___-Zycw 1s ease-in-out infinite;\n}\n\n.styles-module__buttonWrapper___rBcdv {\n  position: relative;\n  display: flex;\n  align-items: center;\n  justify-content: center;\n}\n.styles-module__buttonWrapper___rBcdv:hover .styles-module__buttonTooltip___Burd9 {\n  opacity: 1;\n  visibility: visible;\n  transform: translateX(-50%) scale(1);\n  transition-delay: 0.85s;\n}\n.styles-module__buttonWrapper___rBcdv:has(.styles-module__controlButton___8Q0jc:disabled):hover .styles-module__buttonTooltip___Burd9 {\n  opacity: 0;\n  visibility: hidden;\n}\n\n.styles-module__tooltipsInSession___-0lHH .styles-module__buttonWrapper___rBcdv:hover .styles-module__buttonTooltip___Burd9 {\n  transition-delay: 0s;\n}\n\n.styles-module__sendButtonWrapper___UUxG6 {\n  width: 0;\n  opacity: 0;\n  overflow: hidden;\n  pointer-events: none;\n  margin-left: -0.375rem;\n  transition: width 0.4s cubic-bezier(0.19, 1, 0.22, 1), opacity 0.3s cubic-bezier(0.19, 1, 0.22, 1), margin 0.4s cubic-bezier(0.19, 1, 0.22, 1);\n}\n.styles-module__sendButtonWrapper___UUxG6 .styles-module__controlButton___8Q0jc {\n  transform: scale(0.8);\n  transition: transform 0.4s cubic-bezier(0.19, 1, 0.22, 1);\n}\n.styles-module__sendButtonWrapper___UUxG6.styles-module__sendButtonVisible___WPSQU {\n  width: 34px;\n  opacity: 1;\n  overflow: visible;\n  pointer-events: auto;\n  margin-left: 0;\n}\n.styles-module__sendButtonWrapper___UUxG6.styles-module__sendButtonVisible___WPSQU .styles-module__controlButton___8Q0jc {\n  transform: scale(1);\n}\n\n.styles-module__buttonTooltip___Burd9 {\n  position: absolute;\n  bottom: calc(100% + 14px);\n  left: 50%;\n  transform: translateX(-50%) scale(0.95);\n  padding: 6px 10px;\n  background: #1a1a1a;\n  color: rgba(255, 255, 255, 0.9);\n  font-size: 12px;\n  font-weight: 500;\n  border-radius: 8px;\n  white-space: nowrap;\n  opacity: 0;\n  visibility: hidden;\n  pointer-events: none;\n  z-index: 100001;\n  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);\n  transition: opacity 0.135s ease, transform 0.135s ease, visibility 0.135s ease;\n}\n.styles-module__buttonTooltip___Burd9::after {\n  content: "";\n  position: absolute;\n  top: calc(100% - 4px);\n  left: 50%;\n  transform: translateX(-50%) rotate(45deg);\n  width: 8px;\n  height: 8px;\n  background: #1a1a1a;\n  border-radius: 0 0 2px 0;\n}\n\n.styles-module__shortcut___lEAQk {\n  margin-left: 4px;\n  opacity: 0.5;\n}\n\n.styles-module__tooltipBelow___m6ats .styles-module__buttonTooltip___Burd9 {\n  bottom: auto;\n  top: calc(100% + 14px);\n  transform: translateX(-50%) scale(0.95);\n}\n.styles-module__tooltipBelow___m6ats .styles-module__buttonTooltip___Burd9::after {\n  top: -4px;\n  bottom: auto;\n  border-radius: 2px 0 0 0;\n}\n\n.styles-module__tooltipBelow___m6ats .styles-module__buttonWrapper___rBcdv:hover .styles-module__buttonTooltip___Burd9 {\n  transform: translateX(-50%) scale(1);\n}\n\n.styles-module__tooltipsHidden___VtLJG .styles-module__buttonTooltip___Burd9 {\n  opacity: 0 !important;\n  visibility: hidden !important;\n  transition: none !important;\n}\n\n.styles-module__tooltipVisible___0jcCv,\n.styles-module__tooltipsHidden___VtLJG .styles-module__tooltipVisible___0jcCv {\n  opacity: 1 !important;\n  visibility: visible !important;\n  transform: translateX(-50%) scale(1) !important;\n  transition-delay: 0s !important;\n}\n\n.styles-module__buttonWrapperAlignLeft___myzIp .styles-module__buttonTooltip___Burd9 {\n  left: 50%;\n  transform: translateX(-12px) scale(0.95);\n}\n.styles-module__buttonWrapperAlignLeft___myzIp .styles-module__buttonTooltip___Burd9::after {\n  left: 16px;\n}\n.styles-module__buttonWrapperAlignLeft___myzIp:hover .styles-module__buttonTooltip___Burd9 {\n  transform: translateX(-12px) scale(1);\n}\n\n.styles-module__tooltipBelow___m6ats .styles-module__buttonWrapperAlignLeft___myzIp .styles-module__buttonTooltip___Burd9 {\n  transform: translateX(-12px) scale(0.95);\n}\n.styles-module__tooltipBelow___m6ats .styles-module__buttonWrapperAlignLeft___myzIp:hover .styles-module__buttonTooltip___Burd9 {\n  transform: translateX(-12px) scale(1);\n}\n\n.styles-module__buttonWrapperAlignRight___HCQFR .styles-module__buttonTooltip___Burd9 {\n  left: 50%;\n  transform: translateX(calc(-100% + 12px)) scale(0.95);\n}\n.styles-module__buttonWrapperAlignRight___HCQFR .styles-module__buttonTooltip___Burd9::after {\n  left: auto;\n  right: 8px;\n}\n.styles-module__buttonWrapperAlignRight___HCQFR:hover .styles-module__buttonTooltip___Burd9 {\n  transform: translateX(calc(-100% + 12px)) scale(1);\n}\n\n.styles-module__tooltipBelow___m6ats .styles-module__buttonWrapperAlignRight___HCQFR .styles-module__buttonTooltip___Burd9 {\n  transform: translateX(calc(-100% + 12px)) scale(0.95);\n}\n.styles-module__tooltipBelow___m6ats .styles-module__buttonWrapperAlignRight___HCQFR:hover .styles-module__buttonTooltip___Burd9 {\n  transform: translateX(calc(-100% + 12px)) scale(1);\n}\n\n.styles-module__divider___c--s1 {\n  width: 1px;\n  height: 12px;\n  background: rgba(255, 255, 255, 0.15);\n  margin: 0 0.125rem;\n}\n\n.styles-module__overlay___Q1O9y {\n  position: fixed;\n  inset: 0;\n  z-index: 99997;\n  pointer-events: none;\n}\n.styles-module__overlay___Q1O9y > * {\n  pointer-events: auto;\n}\n\n.styles-module__hoverHighlight___ogakW {\n  position: fixed;\n  border: 2px solid color-mix(in srgb, var(--agentation-color-accent) 50%, transparent);\n  border-radius: 4px;\n  background-color: color-mix(in srgb, var(--agentation-color-accent) 4%, transparent);\n  pointer-events: none !important;\n  box-sizing: border-box;\n  will-change: opacity;\n  contain: layout style;\n}\n.styles-module__hoverHighlight___ogakW.styles-module__enter___WFIki {\n  animation: styles-module__hoverHighlightIn___6WYHY 0.12s ease-out forwards;\n}\n\n.styles-module__multiSelectOutline___cSJ-m {\n  position: fixed;\n  border: 2px dashed color-mix(in srgb, var(--agentation-color-green) 60%, transparent);\n  border-radius: 4px;\n  pointer-events: none !important;\n  background-color: color-mix(in srgb, var(--agentation-color-green) 5%, transparent);\n  box-sizing: border-box;\n  will-change: opacity;\n}\n.styles-module__multiSelectOutline___cSJ-m.styles-module__enter___WFIki {\n  animation: styles-module__fadeIn___b9qmf 0.15s ease-out forwards;\n}\n.styles-module__multiSelectOutline___cSJ-m.styles-module__exit___fyOJ0 {\n  animation: styles-module__fadeOut___6Ut6- 0.15s ease-out forwards;\n}\n\n.styles-module__singleSelectOutline___QhX-O {\n  position: fixed;\n  border: 2px solid color-mix(in srgb, var(--agentation-color-blue) 60%, transparent);\n  border-radius: 4px;\n  pointer-events: none !important;\n  background-color: color-mix(in srgb, var(--agentation-color-blue) 5%, transparent);\n  box-sizing: border-box;\n  will-change: opacity;\n}\n.styles-module__singleSelectOutline___QhX-O.styles-module__enter___WFIki {\n  animation: styles-module__fadeIn___b9qmf 0.15s ease-out forwards;\n}\n.styles-module__singleSelectOutline___QhX-O.styles-module__exit___fyOJ0 {\n  animation: styles-module__fadeOut___6Ut6- 0.15s ease-out forwards;\n}\n\n.styles-module__hoverTooltip___bvLk7 {\n  position: fixed;\n  font-size: 0.6875rem;\n  font-weight: 500;\n  color: #fff;\n  background: rgba(0, 0, 0, 0.85);\n  padding: 0.35rem 0.6rem;\n  border-radius: 0.375rem;\n  pointer-events: none !important;\n  white-space: nowrap;\n  max-width: 280px;\n  overflow: hidden;\n  text-overflow: ellipsis;\n}\n.styles-module__hoverTooltip___bvLk7.styles-module__enter___WFIki {\n  animation: styles-module__hoverTooltipIn___FYGQx 0.1s ease-out forwards;\n}\n\n.styles-module__hoverReactPath___gx1IJ {\n  font-size: 0.625rem;\n  color: rgba(255, 255, 255, 0.6);\n  margin-bottom: 0.15rem;\n  overflow: hidden;\n  text-overflow: ellipsis;\n}\n\n.styles-module__hoverElementName___QMLMl {\n  overflow: hidden;\n  text-overflow: ellipsis;\n}\n\n.styles-module__markersLayer___-25j1 {\n  position: absolute;\n  top: 0;\n  left: 0;\n  right: 0;\n  height: 0;\n  z-index: 99998;\n  pointer-events: none;\n}\n.styles-module__markersLayer___-25j1 > * {\n  pointer-events: auto;\n}\n\n.styles-module__fixedMarkersLayer___ffyX6 {\n  position: fixed;\n  top: 0;\n  left: 0;\n  right: 0;\n  bottom: 0;\n  z-index: 99998;\n  pointer-events: none;\n}\n.styles-module__fixedMarkersLayer___ffyX6 > * {\n  pointer-events: auto;\n}\n\n.styles-module__marker___6sQrs {\n  position: absolute;\n  width: 22px;\n  height: 22px;\n  background: var(--agentation-color-blue);\n  color: white;\n  border-radius: 50%;\n  display: flex;\n  align-items: center;\n  justify-content: center;\n  font-size: 0.6875rem;\n  font-weight: 600;\n  transform: translate(-50%, -50%) scale(1);\n  opacity: 1;\n  cursor: pointer;\n  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2), inset 0 0 0 1px rgba(0, 0, 0, 0.04);\n  user-select: none;\n  will-change: transform, opacity;\n  contain: layout style;\n  z-index: 1;\n}\n.styles-module__marker___6sQrs:hover {\n  z-index: 2;\n}\n.styles-module__marker___6sQrs:not(.styles-module__enter___WFIki):not(.styles-module__exit___fyOJ0):not(.styles-module__clearing___FQ--7) {\n  transition: background-color 0.15s ease, transform 0.1s ease;\n}\n.styles-module__marker___6sQrs.styles-module__enter___WFIki {\n  animation: styles-module__markerIn___5FaAP 0.25s cubic-bezier(0.22, 1, 0.36, 1) both;\n}\n.styles-module__marker___6sQrs.styles-module__exit___fyOJ0 {\n  animation: styles-module__markerOut___GU5jX 0.2s ease-out both;\n  pointer-events: none;\n}\n.styles-module__marker___6sQrs.styles-module__clearing___FQ--7 {\n  animation: styles-module__markerOut___GU5jX 0.15s ease-out both;\n  pointer-events: none;\n}\n.styles-module__marker___6sQrs:not(.styles-module__enter___WFIki):not(.styles-module__exit___fyOJ0):not(.styles-module__clearing___FQ--7):hover {\n  transform: translate(-50%, -50%) scale(1.1);\n}\n.styles-module__marker___6sQrs.styles-module__pending___2IHLC {\n  position: fixed;\n  background-color: var(--agentation-color-blue);\n  cursor: default;\n}\n.styles-module__marker___6sQrs.styles-module__fixed___dBMHC {\n  position: fixed;\n}\n.styles-module__marker___6sQrs.styles-module__multiSelect___YWiuz {\n  background-color: var(--agentation-color-green);\n  width: 26px;\n  height: 26px;\n  border-radius: 6px;\n  font-size: 0.75rem;\n}\n.styles-module__marker___6sQrs.styles-module__multiSelect___YWiuz.styles-module__pending___2IHLC {\n  background-color: var(--agentation-color-green);\n}\n.styles-module__marker___6sQrs.styles-module__hovered___ZgXIy {\n  background-color: var(--agentation-color-red);\n}\n\n.styles-module__renumber___nCTxD {\n  display: block;\n  animation: styles-module__renumberRoll___Wgbq3 0.2s ease-out;\n}\n\n@keyframes styles-module__renumberRoll___Wgbq3 {\n  0% {\n    transform: translateX(-40%);\n    opacity: 0;\n  }\n  100% {\n    transform: translateX(0);\n    opacity: 1;\n  }\n}\n.styles-module__markerTooltip___aLJID {\n  position: absolute;\n  top: calc(100% + 10px);\n  left: 50%;\n  transform: translateX(-50%) scale(0.909);\n  z-index: 100002;\n  background: #1a1a1a;\n  padding: 8px 0.75rem;\n  border-radius: 0.75rem;\n  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;\n  font-weight: 400;\n  color: #fff;\n  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3), 0 0 0 1px rgba(255, 255, 255, 0.08);\n  min-width: 120px;\n  max-width: 200px;\n  pointer-events: none;\n  cursor: default;\n}\n.styles-module__markerTooltip___aLJID.styles-module__enter___WFIki {\n  animation: styles-module__tooltipIn___0N31w 0.1s ease-out forwards;\n}\n\n.styles-module__markerQuote___FHmrz {\n  display: block;\n  font-size: 12px;\n  font-style: italic;\n  color: rgba(255, 255, 255, 0.6);\n  margin-bottom: 0.3125rem;\n  line-height: 1.4;\n  white-space: nowrap;\n  overflow: hidden;\n  text-overflow: ellipsis;\n}\n\n.styles-module__markerNote___QkrrS {\n  display: block;\n  font-size: 13px;\n  font-weight: 400;\n  line-height: 1.4;\n  color: #fff;\n  white-space: nowrap;\n  overflow: hidden;\n  text-overflow: ellipsis;\n  padding-bottom: 2px;\n}\n\n.styles-module__markerHint___2iF-6 {\n  display: block;\n  font-size: 0.625rem;\n  font-weight: 400;\n  color: rgba(255, 255, 255, 0.6);\n  margin-top: 0.375rem;\n  white-space: nowrap;\n}\n\n.styles-module__settingsPanel___OxX3Y {\n  position: absolute;\n  right: 5px;\n  bottom: calc(100% + 0.5rem);\n  z-index: 1;\n  overflow: hidden;\n  background: #1c1c1c;\n  border-radius: 1rem;\n  padding: 13px 0 16px;\n  min-width: 205px;\n  cursor: default;\n  opacity: 1;\n  box-shadow: 0 1px 8px rgba(0, 0, 0, 0.25), 0 0 0 1px rgba(0, 0, 0, 0.04);\n  transition: background-color 0.25s ease, box-shadow 0.25s ease;\n}\n.styles-module__settingsPanel___OxX3Y::before, .styles-module__settingsPanel___OxX3Y::after {\n  content: "";\n  position: absolute;\n  top: 0;\n  bottom: 0;\n  width: 16px;\n  z-index: 2;\n  pointer-events: none;\n}\n.styles-module__settingsPanel___OxX3Y::before {\n  left: 0;\n  background: linear-gradient(to right, #1c1c1c 0%, transparent 100%);\n}\n.styles-module__settingsPanel___OxX3Y::after {\n  right: 0;\n  background: linear-gradient(to left, #1c1c1c 0%, transparent 100%);\n}\n.styles-module__settingsPanel___OxX3Y .styles-module__settingsHeader___pwDY9,\n.styles-module__settingsPanel___OxX3Y .styles-module__settingsBrand___0gJeM,\n.styles-module__settingsPanel___OxX3Y .styles-module__settingsBrandSlash___uTG18,\n.styles-module__settingsPanel___OxX3Y .styles-module__settingsVersion___TUcFq,\n.styles-module__settingsPanel___OxX3Y .styles-module__settingsSection___m-YM2,\n.styles-module__settingsPanel___OxX3Y .styles-module__settingsLabel___8UjfX,\n.styles-module__settingsPanel___OxX3Y .styles-module__cycleButton___FMKfw,\n.styles-module__settingsPanel___OxX3Y .styles-module__cycleDot___nPgLY,\n.styles-module__settingsPanel___OxX3Y .styles-module__dropdownButton___16NPz,\n.styles-module__settingsPanel___OxX3Y .styles-module__toggleLabel___Xm8Aa,\n.styles-module__settingsPanel___OxX3Y .styles-module__customCheckbox___U39ax,\n.styles-module__settingsPanel___OxX3Y .styles-module__sliderLabel___U8sPr,\n.styles-module__settingsPanel___OxX3Y .styles-module__slider___GLdxp,\n.styles-module__settingsPanel___OxX3Y .styles-module__themeToggle___2rUjA {\n  transition: background-color 0.25s ease, color 0.25s ease, border-color 0.25s ease;\n}\n.styles-module__settingsPanel___OxX3Y.styles-module__enter___WFIki {\n  opacity: 1;\n  transform: translateY(0) scale(1);\n  filter: blur(0px);\n  transition: opacity 0.2s ease, transform 0.2s ease, filter 0.2s ease;\n}\n.styles-module__settingsPanel___OxX3Y.styles-module__exit___fyOJ0 {\n  opacity: 0;\n  transform: translateY(8px) scale(0.95);\n  filter: blur(5px);\n  pointer-events: none;\n  transition: opacity 0.1s ease, transform 0.1s ease, filter 0.1s ease;\n}\n[data-agentation-theme=dark] .styles-module__settingsPanel___OxX3Y {\n  background: #1a1a1a;\n  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3), 0 0 0 1px rgba(255, 255, 255, 0.08);\n}\n[data-agentation-theme=dark] .styles-module__settingsPanel___OxX3Y .styles-module__settingsLabel___8UjfX {\n  color: rgba(255, 255, 255, 0.6);\n}\n[data-agentation-theme=dark] .styles-module__settingsPanel___OxX3Y .styles-module__settingsOption___UNa12 {\n  color: rgba(255, 255, 255, 0.85);\n}\n[data-agentation-theme=dark] .styles-module__settingsPanel___OxX3Y .styles-module__settingsOption___UNa12:hover {\n  background: rgba(255, 255, 255, 0.1);\n}\n[data-agentation-theme=dark] .styles-module__settingsPanel___OxX3Y .styles-module__settingsOption___UNa12.styles-module__selected___OwRqP {\n  background: rgba(255, 255, 255, 0.15);\n  color: #fff;\n}\n[data-agentation-theme=dark] .styles-module__settingsPanel___OxX3Y .styles-module__toggleLabel___Xm8Aa {\n  color: rgba(255, 255, 255, 0.85);\n}\n\n.styles-module__settingsPanelContainer___Xksv8 {\n  overflow: visible;\n  position: relative;\n  display: flex;\n  padding: 0 1rem;\n}\n\n.styles-module__settingsPage___6YfHH {\n  min-width: 100%;\n  flex-shrink: 0;\n  transition: transform 0.2s ease, opacity 0.2s ease;\n  transition-delay: 0s;\n  opacity: 1;\n}\n\n.styles-module__settingsPage___6YfHH.styles-module__slideLeft___Ps01J {\n  transform: translateX(-24px);\n  opacity: 0;\n  pointer-events: none;\n}\n\n.styles-module__automationsPage___uvCq6 {\n  position: absolute;\n  top: 0;\n  left: 24px;\n  width: 100%;\n  height: 100%;\n  padding: 3px 1rem 0;\n  box-sizing: border-box;\n  display: flex;\n  flex-direction: column;\n  transition: transform 0.2s ease, opacity 0.2s ease;\n  opacity: 0;\n  pointer-events: none;\n}\n\n.styles-module__automationsPage___uvCq6.styles-module__slideIn___4-qXe {\n  transform: translateX(-24px);\n  opacity: 1;\n  pointer-events: auto;\n}\n\n.styles-module__settingsNavLink___wCzJt {\n  display: flex;\n  align-items: center;\n  justify-content: space-between;\n  width: 100%;\n  padding: 0;\n  border: none;\n  background: transparent;\n  font-family: inherit;\n  font-size: 0.8125rem;\n  font-weight: 400;\n  color: rgba(255, 255, 255, 0.5);\n  cursor: pointer;\n  transition: color 0.15s ease;\n}\n.styles-module__settingsNavLink___wCzJt:hover {\n  color: rgba(255, 255, 255, 0.9);\n}\n[data-agentation-theme=light] .styles-module__settingsNavLink___wCzJt {\n  color: rgba(0, 0, 0, 0.5);\n}\n[data-agentation-theme=light] .styles-module__settingsNavLink___wCzJt:hover {\n  color: rgba(0, 0, 0, 0.8);\n}\n.styles-module__settingsNavLink___wCzJt svg {\n  color: rgba(255, 255, 255, 0.4);\n  transition: color 0.15s ease;\n}\n.styles-module__settingsNavLink___wCzJt:hover svg {\n  color: #fff;\n}\n[data-agentation-theme=light] .styles-module__settingsNavLink___wCzJt svg {\n  color: rgba(0, 0, 0, 0.25);\n}\n[data-agentation-theme=light] .styles-module__settingsNavLink___wCzJt:hover svg {\n  color: rgba(0, 0, 0, 0.8);\n}\n\n.styles-module__settingsNavLinkRight___ZWwhj {\n  display: flex;\n  align-items: center;\n  gap: 6px;\n}\n\n.styles-module__mcpNavIndicator___cl9pO {\n  width: 8px;\n  height: 8px;\n  border-radius: 50%;\n  flex-shrink: 0;\n}\n.styles-module__mcpNavIndicator___cl9pO.styles-module__connected___7c28g {\n  background-color: var(--agentation-color-green);\n  animation: styles-module__mcpPulse___uNggr 2.5s ease-in-out infinite;\n}\n.styles-module__mcpNavIndicator___cl9pO.styles-module__connecting___uo-CW {\n  background-color: var(--agentation-color-yellow);\n  animation: styles-module__mcpPulse___uNggr 1.5s ease-in-out infinite;\n}\n\n.styles-module__settingsBackButton___bIe2j {\n  display: flex;\n  align-items: center;\n  gap: 4px;\n  padding: 6px 0 12px 0;\n  margin: -6px 0 0.5rem 0;\n  border: none;\n  border-bottom: 1px solid rgba(255, 255, 255, 0.07);\n  border-radius: 0;\n  background: transparent;\n  font-family: inherit;\n  font-size: 0.8125rem;\n  font-weight: 500;\n  letter-spacing: -0.15px;\n  color: #fff;\n  cursor: pointer;\n  transition: transform 0.12s cubic-bezier(0.32, 0.72, 0, 1);\n}\n.styles-module__settingsBackButton___bIe2j svg {\n  opacity: 0.4;\n  flex-shrink: 0;\n  transition: opacity 0.15s ease, transform 0.18s cubic-bezier(0.32, 0.72, 0, 1);\n}\n.styles-module__settingsBackButton___bIe2j:hover {\n  border-bottom-color: rgba(255, 255, 255, 0.07);\n}\n.styles-module__settingsBackButton___bIe2j:hover svg {\n  opacity: 1;\n}\n[data-agentation-theme=light] .styles-module__settingsBackButton___bIe2j {\n  color: rgba(0, 0, 0, 0.85);\n  border-bottom-color: rgba(0, 0, 0, 0.08);\n}\n[data-agentation-theme=light] .styles-module__settingsBackButton___bIe2j:hover {\n  border-bottom-color: rgba(0, 0, 0, 0.08);\n}\n\n.styles-module__automationHeader___InP0r {\n  display: flex;\n  align-items: center;\n  gap: 0.125rem;\n  font-size: 0.8125rem;\n  font-weight: 400;\n  color: #fff;\n}\n[data-agentation-theme=light] .styles-module__automationHeader___InP0r {\n  color: rgba(0, 0, 0, 0.85);\n}\n\n.styles-module__automationDescription___NKlmo {\n  font-size: 0.6875rem;\n  font-weight: 300;\n  color: rgba(255, 255, 255, 0.5);\n  margin-top: 2px;\n  line-height: 14px;\n}\n[data-agentation-theme=light] .styles-module__automationDescription___NKlmo {\n  color: rgba(0, 0, 0, 0.5);\n}\n\n.styles-module__learnMoreLink___8xv-x {\n  color: rgba(255, 255, 255, 0.8);\n  text-decoration: underline dotted;\n  text-decoration-color: rgba(255, 255, 255, 0.2);\n  text-underline-offset: 2px;\n  transition: color 0.15s ease;\n}\n.styles-module__learnMoreLink___8xv-x:hover {\n  color: #fff;\n}\n[data-agentation-theme=light] .styles-module__learnMoreLink___8xv-x {\n  color: rgba(0, 0, 0, 0.6);\n  text-decoration-color: rgba(0, 0, 0, 0.2);\n}\n[data-agentation-theme=light] .styles-module__learnMoreLink___8xv-x:hover {\n  color: rgba(0, 0, 0, 0.85);\n}\n\n.styles-module__autoSendRow___UblX5 {\n  display: flex;\n  align-items: center;\n  gap: 8px;\n}\n\n.styles-module__autoSendLabel___icDc2 {\n  font-size: 0.6875rem;\n  font-weight: 400;\n  color: rgba(255, 255, 255, 0.4);\n  transition: color 0.15s ease;\n}\n.styles-module__autoSendLabel___icDc2.styles-module__active___-zoN6 {\n  color: #66b8ff;\n  color: color(display-p3 0.4 0.72 1);\n}\n[data-agentation-theme=light] .styles-module__autoSendLabel___icDc2 {\n  color: rgba(0, 0, 0, 0.4);\n}\n[data-agentation-theme=light] .styles-module__autoSendLabel___icDc2.styles-module__active___-zoN6 {\n  color: var(--agentation-color-blue);\n}\n\n.styles-module__webhookUrlInput___2375C {\n  display: block;\n  width: 100%;\n  flex: 1;\n  min-height: 60px;\n  box-sizing: border-box;\n  margin-top: 11px;\n  padding: 8px 10px;\n  border: 1px solid rgba(255, 255, 255, 0.1);\n  border-radius: 6px;\n  background: rgba(255, 255, 255, 0.03);\n  font-family: inherit;\n  font-size: 0.75rem;\n  font-weight: 400;\n  color: #fff;\n  outline: none;\n  resize: none;\n  user-select: text;\n  transition: border-color 0.15s ease, background-color 0.15s ease, box-shadow 0.15s ease;\n}\n.styles-module__webhookUrlInput___2375C::placeholder {\n  color: rgba(255, 255, 255, 0.3);\n}\n.styles-module__webhookUrlInput___2375C:focus {\n  border-color: rgba(255, 255, 255, 0.3);\n  background: rgba(255, 255, 255, 0.08);\n}\n[data-agentation-theme=light] .styles-module__webhookUrlInput___2375C {\n  border-color: rgba(0, 0, 0, 0.1);\n  background: rgba(0, 0, 0, 0.03);\n  color: rgba(0, 0, 0, 0.85);\n}\n[data-agentation-theme=light] .styles-module__webhookUrlInput___2375C::placeholder {\n  color: rgba(0, 0, 0, 0.3);\n}\n[data-agentation-theme=light] .styles-module__webhookUrlInput___2375C:focus {\n  border-color: rgba(0, 0, 0, 0.25);\n  background: rgba(0, 0, 0, 0.05);\n}\n\n.styles-module__settingsHeader___pwDY9 {\n  display: flex;\n  align-items: center;\n  justify-content: space-between;\n  min-height: 24px;\n  margin-bottom: 0.5rem;\n  padding-bottom: 9px;\n  border-bottom: 1px solid rgba(255, 255, 255, 0.07);\n}\n\n.styles-module__settingsBrand___0gJeM {\n  font-size: 0.8125rem;\n  font-weight: 600;\n  letter-spacing: -0.0094em;\n  color: #fff;\n  text-decoration: none;\n}\n\n.styles-module__settingsBrandSlash___uTG18 {\n  color: var(--agentation-color-accent);\n  transition: color 0.2s ease;\n}\n\n.styles-module__settingsVersion___TUcFq {\n  font-size: 11px;\n  font-weight: 400;\n  color: rgba(255, 255, 255, 0.4);\n  margin-left: auto;\n  letter-spacing: -0.0094em;\n}\n\n.styles-module__settingsSection___m-YM2 + .styles-module__settingsSection___m-YM2 {\n  margin-top: 0.5rem;\n  padding-top: 0.5rem;\n  border-top: 1px solid rgba(255, 255, 255, 0.07);\n}\n.styles-module__settingsSection___m-YM2.styles-module__settingsSectionExtraPadding___jdhFV {\n  padding-top: calc(0.5rem + 4px);\n}\n\n.styles-module__settingsSectionGrow___h-5HZ {\n  flex: 1;\n  display: flex;\n  flex-direction: column;\n}\n\n.styles-module__settingsRow___3sdhc {\n  display: flex;\n  align-items: center;\n  justify-content: space-between;\n  min-height: 24px;\n}\n.styles-module__settingsRow___3sdhc.styles-module__settingsRowMarginTop___zA0Sp {\n  margin-top: 8px;\n}\n\n.styles-module__dropdownContainer___BVnxe {\n  position: relative;\n}\n\n.styles-module__dropdownButton___16NPz {\n  display: flex;\n  align-items: center;\n  gap: 0.5rem;\n  padding: 0.25rem 0.5rem;\n  border: none;\n  border-radius: 0.375rem;\n  background: transparent;\n  font-size: 0.8125rem;\n  font-weight: 600;\n  color: #fff;\n  cursor: pointer;\n  transition: background-color 0.15s ease, color 0.15s ease;\n  letter-spacing: -0.0094em;\n}\n.styles-module__dropdownButton___16NPz:hover {\n  background: rgba(255, 255, 255, 0.08);\n}\n.styles-module__dropdownButton___16NPz svg {\n  opacity: 0.6;\n}\n\n.styles-module__cycleButton___FMKfw {\n  display: flex;\n  align-items: center;\n  gap: 0.5rem;\n  padding: 0;\n  border: none;\n  background: transparent;\n  font-size: 0.8125rem;\n  font-weight: 500;\n  color: #fff;\n  cursor: pointer;\n  letter-spacing: -0.0094em;\n}\n[data-agentation-theme=light] .styles-module__cycleButton___FMKfw {\n  color: rgba(0, 0, 0, 0.85);\n}\n.styles-module__cycleButton___FMKfw:disabled {\n  opacity: 0.35;\n  cursor: not-allowed;\n}\n\n.styles-module__settingsRowDisabled___EgS0V .styles-module__settingsLabel___8UjfX {\n  color: rgba(255, 255, 255, 0.2);\n}\n[data-agentation-theme=light] .styles-module__settingsRowDisabled___EgS0V .styles-module__settingsLabel___8UjfX {\n  color: rgba(0, 0, 0, 0.2);\n}\n.styles-module__settingsRowDisabled___EgS0V .styles-module__toggleSwitch___l4Ygm {\n  opacity: 0.4;\n  cursor: not-allowed;\n}\n\n@keyframes styles-module__cycleTextIn___Q6zJf {\n  0% {\n    opacity: 0;\n    transform: translateY(-6px);\n  }\n  100% {\n    opacity: 1;\n    transform: translateY(0);\n  }\n}\n.styles-module__cycleButtonText___fD1LR {\n  display: inline-block;\n  animation: styles-module__cycleTextIn___Q6zJf 0.2s ease-out;\n}\n\n.styles-module__cycleDots___LWuoQ {\n  display: flex;\n  flex-direction: column;\n  gap: 2px;\n}\n\n.styles-module__cycleDot___nPgLY {\n  width: 3px;\n  height: 3px;\n  border-radius: 50%;\n  background: rgba(255, 255, 255, 0.3);\n  transform: scale(0.667);\n  transition: background-color 0.25s ease-out, transform 0.25s ease-out;\n}\n.styles-module__cycleDot___nPgLY.styles-module__active___-zoN6 {\n  background: #fff;\n  transform: scale(1);\n}\n[data-agentation-theme=light] .styles-module__cycleDot___nPgLY {\n  background: rgba(0, 0, 0, 0.2);\n}\n[data-agentation-theme=light] .styles-module__cycleDot___nPgLY.styles-module__active___-zoN6 {\n  background: rgba(0, 0, 0, 0.7);\n}\n\n.styles-module__dropdownMenu___k73ER {\n  position: absolute;\n  right: 0;\n  top: calc(100% + 0.25rem);\n  background: #1a1a1a;\n  border-radius: 0.5rem;\n  padding: 0.25rem;\n  min-width: 120px;\n  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3), 0 0 0 1px rgba(255, 255, 255, 0.1);\n  z-index: 10;\n  animation: styles-module__scaleIn___c-r1K 0.15s ease-out;\n}\n\n.styles-module__dropdownItem___ylsLj {\n  width: 100%;\n  display: flex;\n  align-items: center;\n  padding: 0.5rem 0.625rem;\n  border: none;\n  border-radius: 0.375rem;\n  background: transparent;\n  font-size: 0.8125rem;\n  font-weight: 500;\n  color: rgba(255, 255, 255, 0.85);\n  cursor: pointer;\n  text-align: left;\n  transition: background-color 0.15s ease, color 0.15s ease;\n  letter-spacing: -0.0094em;\n}\n.styles-module__dropdownItem___ylsLj:hover {\n  background: rgba(255, 255, 255, 0.08);\n}\n.styles-module__dropdownItem___ylsLj.styles-module__selected___OwRqP {\n  background: rgba(255, 255, 255, 0.12);\n  color: #fff;\n  font-weight: 600;\n}\n\n.styles-module__settingsLabel___8UjfX {\n  font-size: 0.8125rem;\n  font-weight: 400;\n  letter-spacing: -0.0094em;\n  color: rgba(255, 255, 255, 0.5);\n  display: flex;\n  align-items: center;\n  gap: 0.125rem;\n}\n[data-agentation-theme=light] .styles-module__settingsLabel___8UjfX {\n  color: rgba(0, 0, 0, 0.5);\n}\n\n.styles-module__settingsLabelMarker___ewdtV {\n  padding-top: 3px;\n  margin-bottom: 10px;\n}\n\n.styles-module__settingsOptions___LyrBA {\n  display: flex;\n  gap: 0.25rem;\n}\n\n.styles-module__settingsOption___UNa12 {\n  flex: 1;\n  display: flex;\n  align-items: center;\n  justify-content: center;\n  gap: 0.25rem;\n  padding: 0.375rem 0.5rem;\n  border: none;\n  border-radius: 0.375rem;\n  background: transparent;\n  font-size: 0.6875rem;\n  font-weight: 500;\n  color: rgba(0, 0, 0, 0.7);\n  cursor: pointer;\n  transition: background-color 0.15s ease, color 0.15s ease;\n}\n.styles-module__settingsOption___UNa12:hover {\n  background: rgba(0, 0, 0, 0.05);\n}\n.styles-module__settingsOption___UNa12.styles-module__selected___OwRqP {\n  background: color-mix(in srgb, var(--agentation-color-blue) 15%, transparent);\n  color: var(--agentation-color-blue);\n}\n\n.styles-module__sliderContainer___ducXj {\n  display: flex;\n  flex-direction: column;\n  gap: 0.5rem;\n}\n\n.styles-module__slider___GLdxp {\n  -webkit-appearance: none;\n  appearance: none;\n  width: 100%;\n  height: 4px;\n  background: rgba(255, 255, 255, 0.15);\n  border-radius: 2px;\n  outline: none;\n  cursor: pointer;\n}\n.styles-module__slider___GLdxp::-webkit-slider-thumb {\n  -webkit-appearance: none;\n  appearance: none;\n  width: 14px;\n  height: 14px;\n  background: white;\n  border-radius: 50%;\n  cursor: pointer;\n  transition: transform 0.15s ease, box-shadow 0.15s ease;\n  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);\n}\n.styles-module__slider___GLdxp::-moz-range-thumb {\n  width: 14px;\n  height: 14px;\n  background: white;\n  border: none;\n  border-radius: 50%;\n  cursor: pointer;\n  transition: transform 0.15s ease, box-shadow 0.15s ease;\n  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);\n}\n.styles-module__slider___GLdxp:hover::-webkit-slider-thumb {\n  transform: scale(1.15);\n  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);\n}\n.styles-module__slider___GLdxp:hover::-moz-range-thumb {\n  transform: scale(1.15);\n  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);\n}\n\n.styles-module__sliderLabels___FhLDB {\n  display: flex;\n  justify-content: space-between;\n}\n\n.styles-module__sliderLabel___U8sPr {\n  font-size: 0.625rem;\n  font-weight: 500;\n  color: rgba(255, 255, 255, 0.4);\n  cursor: pointer;\n  transition: color 0.15s ease;\n}\n.styles-module__sliderLabel___U8sPr:hover {\n  color: rgba(255, 255, 255, 0.7);\n}\n.styles-module__sliderLabel___U8sPr.styles-module__active___-zoN6 {\n  color: rgba(255, 255, 255, 0.9);\n}\n\n.styles-module__colorOptions___iHCNX {\n  display: flex;\n  gap: 0.5rem;\n  margin-top: 0.375rem;\n  margin-bottom: 1px;\n}\n\n.styles-module__colorOption___IodiY {\n  display: block;\n  width: 20px;\n  height: 20px;\n  border-radius: 50%;\n  border: 2px solid transparent;\n  background-color: var(--swatch);\n  cursor: pointer;\n  transition: transform 0.2s cubic-bezier(0.25, 1, 0.5, 1);\n}\n@supports (color: color(display-p3 0 0 0)) {\n  .styles-module__colorOption___IodiY {\n    background-color: var(--swatch-p3);\n  }\n}\n.styles-module__colorOption___IodiY:hover {\n  transform: scale(1.15);\n}\n.styles-module__colorOption___IodiY.styles-module__selected___OwRqP {\n  transform: scale(0.83);\n}\n\n.styles-module__colorOptionRing___U2xpo {\n  display: flex;\n  width: 24px;\n  height: 24px;\n  border: 2px solid transparent;\n  border-radius: 50%;\n  transition: border-color 0.3s ease;\n}\n.styles-module__colorOptionRing___U2xpo.styles-module__selected___OwRqP {\n  border-color: var(--swatch);\n}\n@supports (color: color(display-p3 0 0 0)) {\n  .styles-module__colorOptionRing___U2xpo.styles-module__selected___OwRqP {\n    border-color: var(--swatch-p3);\n  }\n}\n\n.styles-module__settingsToggle___fBrFn {\n  display: flex;\n  align-items: center;\n  gap: 0.5rem;\n  cursor: pointer;\n}\n.styles-module__settingsToggle___fBrFn + .styles-module__settingsToggle___fBrFn {\n  margin-top: calc(0.5rem + 6px);\n}\n.styles-module__settingsToggle___fBrFn input[type=checkbox] {\n  position: absolute;\n  opacity: 0;\n  width: 0;\n  height: 0;\n}\n.styles-module__settingsToggle___fBrFn.styles-module__settingsToggleMarginBottom___MZUyF {\n  margin-bottom: calc(0.5rem + 6px);\n}\n\n.styles-module__customCheckbox___U39ax {\n  position: relative;\n  width: 14px;\n  height: 14px;\n  border: 1px solid rgba(255, 255, 255, 0.2);\n  border-radius: 4px;\n  background: rgba(255, 255, 255, 0.05);\n  display: flex;\n  align-items: center;\n  justify-content: center;\n  flex-shrink: 0;\n  transition: background-color 0.25s ease, border-color 0.25s ease;\n}\n.styles-module__customCheckbox___U39ax svg {\n  color: #1a1a1a;\n  opacity: 1;\n  transition: opacity 0.15s ease;\n}\ninput[type=checkbox]:checked + .styles-module__customCheckbox___U39ax {\n  border-color: rgba(255, 255, 255, 0.3);\n  background: rgb(255, 255, 255);\n}\n[data-agentation-theme=light] .styles-module__customCheckbox___U39ax {\n  border: 1px solid rgba(0, 0, 0, 0.15);\n  background: #fff;\n}\n[data-agentation-theme=light] .styles-module__customCheckbox___U39ax.styles-module__checked___mnZLo {\n  border-color: #1a1a1a;\n  background: #1a1a1a;\n}\n[data-agentation-theme=light] .styles-module__customCheckbox___U39ax.styles-module__checked___mnZLo svg {\n  color: #fff;\n}\n\n.styles-module__toggleLabel___Xm8Aa {\n  font-size: 0.8125rem;\n  font-weight: 400;\n  color: rgba(255, 255, 255, 0.5);\n  letter-spacing: -0.0094em;\n  display: flex;\n  align-items: center;\n  gap: 0.25rem;\n}\n[data-agentation-theme=light] .styles-module__toggleLabel___Xm8Aa {\n  color: rgba(0, 0, 0, 0.5);\n}\n\n.styles-module__toggleSwitch___l4Ygm {\n  position: relative;\n  display: inline-block;\n  width: 24px;\n  height: 16px;\n  flex-shrink: 0;\n  cursor: pointer;\n  transition: background-color 0.2s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.2s cubic-bezier(0.4, 0, 0.2, 1);\n}\n.styles-module__toggleSwitch___l4Ygm input {\n  opacity: 0;\n  width: 0;\n  height: 0;\n}\n.styles-module__toggleSwitch___l4Ygm input:checked + .styles-module__toggleSlider___wprIn {\n  background-color: var(--agentation-color-blue);\n}\n.styles-module__toggleSwitch___l4Ygm input:checked + .styles-module__toggleSlider___wprIn::before {\n  transform: translateX(8px);\n}\n.styles-module__toggleSwitch___l4Ygm.styles-module__disabled___332Jw {\n  opacity: 0.4;\n}\n.styles-module__toggleSwitch___l4Ygm.styles-module__disabled___332Jw .styles-module__toggleSlider___wprIn {\n  cursor: not-allowed;\n}\n\n.styles-module__toggleSlider___wprIn {\n  position: absolute;\n  cursor: pointer;\n  inset: 0;\n  border-radius: 16px;\n  background: #484848;\n}\n[data-agentation-theme=light] .styles-module__toggleSlider___wprIn {\n  background: #dddddd;\n}\n.styles-module__toggleSlider___wprIn::before {\n  content: "";\n  position: absolute;\n  height: 12px;\n  width: 12px;\n  left: 2px;\n  bottom: 2px;\n  background: white;\n  border-radius: 50%;\n  transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1);\n}\n\n@keyframes styles-module__mcpPulse___uNggr {\n  0% {\n    box-shadow: 0 0 0 0 color-mix(in srgb, var(--agentation-color-green) 50%, transparent);\n  }\n  70% {\n    box-shadow: 0 0 0 6px color-mix(in srgb, var(--agentation-color-green) 0%, transparent);\n  }\n  100% {\n    box-shadow: 0 0 0 0 color-mix(in srgb, var(--agentation-color-green) 0%, transparent);\n  }\n}\n@keyframes styles-module__mcpPulseError___fov9B {\n  0% {\n    box-shadow: 0 0 0 0 color-mix(in srgb, var(--agentation-color-red) 50%, transparent);\n  }\n  70% {\n    box-shadow: 0 0 0 6px color-mix(in srgb, var(--agentation-color-red) 0%, transparent);\n  }\n  100% {\n    box-shadow: 0 0 0 0 color-mix(in srgb, var(--agentation-color-red) 0%, transparent);\n  }\n}\n.styles-module__mcpStatusDot___ibgkc {\n  width: 8px;\n  height: 8px;\n  border-radius: 50%;\n  flex-shrink: 0;\n}\n.styles-module__mcpStatusDot___ibgkc.styles-module__connecting___uo-CW {\n  background-color: var(--agentation-color-yellow);\n  animation: styles-module__mcpPulse___uNggr 1.5s infinite;\n}\n.styles-module__mcpStatusDot___ibgkc.styles-module__connected___7c28g {\n  background-color: var(--agentation-color-green);\n  animation: styles-module__mcpPulse___uNggr 2.5s ease-in-out infinite;\n}\n.styles-module__mcpStatusDot___ibgkc.styles-module__disconnected___cHPxR {\n  background-color: var(--agentation-color-red);\n  animation: styles-module__mcpPulseError___fov9B 2s infinite;\n}\n\n.styles-module__drawCanvas___7cG9U {\n  position: fixed;\n  inset: 0;\n  z-index: 99996;\n  pointer-events: none !important;\n}\n.styles-module__drawCanvas___7cG9U.styles-module__active___-zoN6 {\n  pointer-events: auto !important;\n  cursor: crosshair !important;\n}\n.styles-module__drawCanvas___7cG9U.styles-module__active___-zoN6[data-stroke-hover] {\n  cursor: pointer !important;\n}\n\n.styles-module__dragSelection___kZLq2 {\n  position: fixed;\n  top: 0;\n  left: 0;\n  border: 2px solid color-mix(in srgb, var(--agentation-color-green) 60%, transparent);\n  border-radius: 4px;\n  background-color: color-mix(in srgb, var(--agentation-color-green) 8%, transparent);\n  pointer-events: none;\n  z-index: 99997;\n  will-change: transform, width, height;\n  contain: layout style;\n}\n\n.styles-module__dragCount___KM90j {\n  position: absolute;\n  top: 50%;\n  left: 50%;\n  transform: translate(-50%, -50%);\n  background-color: var(--agentation-color-green);\n  color: white;\n  font-size: 0.875rem;\n  font-weight: 600;\n  padding: 0.25rem 0.5rem;\n  border-radius: 1rem;\n  min-width: 1.5rem;\n  text-align: center;\n}\n\n.styles-module__highlightsContainer___-0xzG {\n  position: fixed;\n  top: 0;\n  left: 0;\n  pointer-events: none;\n  z-index: 99996;\n}\n\n.styles-module__selectedElementHighlight___fyVlI {\n  position: fixed;\n  top: 0;\n  left: 0;\n  border: 2px solid color-mix(in srgb, var(--agentation-color-green) 50%, transparent);\n  border-radius: 4px;\n  background: color-mix(in srgb, var(--agentation-color-green) 6%, transparent);\n  pointer-events: none;\n  will-change: transform, width, height;\n  contain: layout style;\n}\n\n[data-agentation-theme=light] .styles-module__toolbarContainer___dIhma {\n  background: #fff;\n  color: rgba(0, 0, 0, 0.85);\n  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08), 0 4px 16px rgba(0, 0, 0, 0.06), 0 0 0 1px rgba(0, 0, 0, 0.04);\n}\n[data-agentation-theme=light] .styles-module__toolbarContainer___dIhma.styles-module__collapsed___Rydsn:hover {\n  background: #f5f5f5;\n}\n[data-agentation-theme=light] .styles-module__controlButton___8Q0jc {\n  color: rgba(0, 0, 0, 0.5);\n}\n[data-agentation-theme=light] .styles-module__controlButton___8Q0jc:hover:not(:disabled):not([data-active=true]):not([data-failed=true]):not([data-auto-sync=true]):not([data-error=true]):not([data-no-hover=true]) {\n  background: rgba(0, 0, 0, 0.06);\n  color: rgba(0, 0, 0, 0.85);\n}\n[data-agentation-theme=light] .styles-module__controlButton___8Q0jc[data-active=true] {\n  color: var(--agentation-color-blue);\n  background: color-mix(in srgb, var(--agentation-color-blue) 15%, transparent);\n}\n[data-agentation-theme=light] .styles-module__controlButton___8Q0jc[data-error=true] {\n  color: var(--agentation-color-red);\n  background: color-mix(in srgb, var(--agentation-color-red) 15%, transparent);\n}\n[data-agentation-theme=light] .styles-module__controlButton___8Q0jc[data-danger]:hover:not(:disabled):not([data-active=true]):not([data-failed=true]) {\n  color: var(--agentation-color-red);\n  background: color-mix(in srgb, var(--agentation-color-red) 15%, transparent);\n}\n[data-agentation-theme=light] .styles-module__controlButton___8Q0jc[data-auto-sync=true] {\n  color: var(--agentation-color-green);\n  background: transparent;\n}\n[data-agentation-theme=light] .styles-module__controlButton___8Q0jc[data-failed=true] {\n  color: var(--agentation-color-red);\n  background: color-mix(in srgb, var(--agentation-color-red) 15%, transparent);\n}\n[data-agentation-theme=light] .styles-module__buttonTooltip___Burd9 {\n  background: #fff;\n  color: rgba(0, 0, 0, 0.85);\n  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08), 0 4px 16px rgba(0, 0, 0, 0.06), 0 0 0 1px rgba(0, 0, 0, 0.04);\n}\n[data-agentation-theme=light] .styles-module__buttonTooltip___Burd9::after {\n  background: #fff;\n}\n[data-agentation-theme=light] .styles-module__divider___c--s1 {\n  background: rgba(0, 0, 0, 0.1);\n}';
-var classNames5 = { "toolbar": "styles-module__toolbar___wNsdK", "markersLayer": "styles-module__markersLayer___-25j1", "fixedMarkersLayer": "styles-module__fixedMarkersLayer___ffyX6", "controlsContent": "styles-module__controlsContent___9GJWU", "disableTransitions": "styles-module__disableTransitions___EopxO", "toolbarContainer": "styles-module__toolbarContainer___dIhma", "entrance": "styles-module__entrance___sgHd8", "toolbarEnter": "styles-module__toolbarEnter___u8RRu", "hiding": "styles-module__hiding___1td44", "toolbarHide": "styles-module__toolbarHide___y8kaT", "collapsed": "styles-module__collapsed___Rydsn", "expanded": "styles-module__expanded___ofKPx", "serverConnected": "styles-module__serverConnected___Gfbou", "toggleContent": "styles-module__toggleContent___0yfyP", "visible": "styles-module__visible___KHwEW", "hidden": "styles-module__hidden___Ae8H4", "badge": "styles-module__badge___2XsgF", "fadeOut": "styles-module__fadeOut___6Ut6-", "badgeEnter": "styles-module__badgeEnter___mVQLj", "controlButton": "styles-module__controlButton___8Q0jc", "statusShowing": "styles-module__statusShowing___te6iu", "buttonBadge": "styles-module__buttonBadge___NeFWb", "mcpIndicator": "styles-module__mcpIndicator___zGJeL", "connected": "styles-module__connected___7c28g", "mcpIndicatorPulseConnected": "styles-module__mcpIndicatorPulseConnected___EDodZ", "connecting": "styles-module__connecting___uo-CW", "mcpIndicatorPulseConnecting": "styles-module__mcpIndicatorPulseConnecting___cCYte", "connectionIndicatorWrapper": "styles-module__connectionIndicatorWrapper___L-e-3", "connectionIndicator": "styles-module__connectionIndicator___afk9p", "connectionIndicatorVisible": "styles-module__connectionIndicatorVisible___C-i5B", "connectionIndicatorConnected": "styles-module__connectionIndicatorConnected___IY8pR", "connectionPulse": "styles-module__connectionPulse___-Zycw", "connectionIndicatorDisconnected": "styles-module__connectionIndicatorDisconnected___kmpaZ", "connectionIndicatorConnecting": "styles-module__connectionIndicatorConnecting___QmSLH", "buttonWrapper": "styles-module__buttonWrapper___rBcdv", "buttonTooltip": "styles-module__buttonTooltip___Burd9", "tooltipsInSession": "styles-module__tooltipsInSession___-0lHH", "sendButtonWrapper": "styles-module__sendButtonWrapper___UUxG6", "sendButtonVisible": "styles-module__sendButtonVisible___WPSQU", "shortcut": "styles-module__shortcut___lEAQk", "tooltipBelow": "styles-module__tooltipBelow___m6ats", "tooltipsHidden": "styles-module__tooltipsHidden___VtLJG", "tooltipVisible": "styles-module__tooltipVisible___0jcCv", "buttonWrapperAlignLeft": "styles-module__buttonWrapperAlignLeft___myzIp", "buttonWrapperAlignRight": "styles-module__buttonWrapperAlignRight___HCQFR", "divider": "styles-module__divider___c--s1", "overlay": "styles-module__overlay___Q1O9y", "hoverHighlight": "styles-module__hoverHighlight___ogakW", "enter": "styles-module__enter___WFIki", "hoverHighlightIn": "styles-module__hoverHighlightIn___6WYHY", "multiSelectOutline": "styles-module__multiSelectOutline___cSJ-m", "fadeIn": "styles-module__fadeIn___b9qmf", "exit": "styles-module__exit___fyOJ0", "singleSelectOutline": "styles-module__singleSelectOutline___QhX-O", "hoverTooltip": "styles-module__hoverTooltip___bvLk7", "hoverTooltipIn": "styles-module__hoverTooltipIn___FYGQx", "hoverReactPath": "styles-module__hoverReactPath___gx1IJ", "hoverElementName": "styles-module__hoverElementName___QMLMl", "marker": "styles-module__marker___6sQrs", "clearing": "styles-module__clearing___FQ--7", "markerIn": "styles-module__markerIn___5FaAP", "markerOut": "styles-module__markerOut___GU5jX", "pending": "styles-module__pending___2IHLC", "fixed": "styles-module__fixed___dBMHC", "multiSelect": "styles-module__multiSelect___YWiuz", "hovered": "styles-module__hovered___ZgXIy", "renumber": "styles-module__renumber___nCTxD", "renumberRoll": "styles-module__renumberRoll___Wgbq3", "markerTooltip": "styles-module__markerTooltip___aLJID", "tooltipIn": "styles-module__tooltipIn___0N31w", "markerQuote": "styles-module__markerQuote___FHmrz", "markerNote": "styles-module__markerNote___QkrrS", "markerHint": "styles-module__markerHint___2iF-6", "settingsPanel": "styles-module__settingsPanel___OxX3Y", "settingsHeader": "styles-module__settingsHeader___pwDY9", "settingsBrand": "styles-module__settingsBrand___0gJeM", "settingsBrandSlash": "styles-module__settingsBrandSlash___uTG18", "settingsVersion": "styles-module__settingsVersion___TUcFq", "settingsSection": "styles-module__settingsSection___m-YM2", "settingsLabel": "styles-module__settingsLabel___8UjfX", "cycleButton": "styles-module__cycleButton___FMKfw", "cycleDot": "styles-module__cycleDot___nPgLY", "dropdownButton": "styles-module__dropdownButton___16NPz", "toggleLabel": "styles-module__toggleLabel___Xm8Aa", "customCheckbox": "styles-module__customCheckbox___U39ax", "sliderLabel": "styles-module__sliderLabel___U8sPr", "slider": "styles-module__slider___GLdxp", "themeToggle": "styles-module__themeToggle___2rUjA", "settingsOption": "styles-module__settingsOption___UNa12", "selected": "styles-module__selected___OwRqP", "settingsPanelContainer": "styles-module__settingsPanelContainer___Xksv8", "settingsPage": "styles-module__settingsPage___6YfHH", "slideLeft": "styles-module__slideLeft___Ps01J", "automationsPage": "styles-module__automationsPage___uvCq6", "slideIn": "styles-module__slideIn___4-qXe", "settingsNavLink": "styles-module__settingsNavLink___wCzJt", "settingsNavLinkRight": "styles-module__settingsNavLinkRight___ZWwhj", "mcpNavIndicator": "styles-module__mcpNavIndicator___cl9pO", "mcpPulse": "styles-module__mcpPulse___uNggr", "settingsBackButton": "styles-module__settingsBackButton___bIe2j", "automationHeader": "styles-module__automationHeader___InP0r", "automationDescription": "styles-module__automationDescription___NKlmo", "learnMoreLink": "styles-module__learnMoreLink___8xv-x", "autoSendRow": "styles-module__autoSendRow___UblX5", "autoSendLabel": "styles-module__autoSendLabel___icDc2", "active": "styles-module__active___-zoN6", "webhookUrlInput": "styles-module__webhookUrlInput___2375C", "settingsSectionExtraPadding": "styles-module__settingsSectionExtraPadding___jdhFV", "settingsSectionGrow": "styles-module__settingsSectionGrow___h-5HZ", "settingsRow": "styles-module__settingsRow___3sdhc", "settingsRowMarginTop": "styles-module__settingsRowMarginTop___zA0Sp", "dropdownContainer": "styles-module__dropdownContainer___BVnxe", "settingsRowDisabled": "styles-module__settingsRowDisabled___EgS0V", "toggleSwitch": "styles-module__toggleSwitch___l4Ygm", "cycleButtonText": "styles-module__cycleButtonText___fD1LR", "cycleTextIn": "styles-module__cycleTextIn___Q6zJf", "cycleDots": "styles-module__cycleDots___LWuoQ", "dropdownMenu": "styles-module__dropdownMenu___k73ER", "scaleIn": "styles-module__scaleIn___c-r1K", "dropdownItem": "styles-module__dropdownItem___ylsLj", "settingsLabelMarker": "styles-module__settingsLabelMarker___ewdtV", "settingsOptions": "styles-module__settingsOptions___LyrBA", "sliderContainer": "styles-module__sliderContainer___ducXj", "sliderLabels": "styles-module__sliderLabels___FhLDB", "colorOptions": "styles-module__colorOptions___iHCNX", "colorOption": "styles-module__colorOption___IodiY", "colorOptionRing": "styles-module__colorOptionRing___U2xpo", "settingsToggle": "styles-module__settingsToggle___fBrFn", "settingsToggleMarginBottom": "styles-module__settingsToggleMarginBottom___MZUyF", "checked": "styles-module__checked___mnZLo", "toggleSlider": "styles-module__toggleSlider___wprIn", "disabled": "styles-module__disabled___332Jw", "mcpStatusDot": "styles-module__mcpStatusDot___ibgkc", "disconnected": "styles-module__disconnected___cHPxR", "mcpPulseError": "styles-module__mcpPulseError___fov9B", "drawCanvas": "styles-module__drawCanvas___7cG9U", "dragSelection": "styles-module__dragSelection___kZLq2", "dragCount": "styles-module__dragCount___KM90j", "highlightsContainer": "styles-module__highlightsContainer___-0xzG", "selectedElementHighlight": "styles-module__selectedElementHighlight___fyVlI", "scaleOut": "styles-module__scaleOut___Wctwz", "slideUp": "styles-module__slideUp___kgD36", "slideDown": "styles-module__slideDown___zcdje" };
-if (typeof document !== "undefined") {
-  let style = document.getElementById("feedback-tool-styles-page-toolbar-css-styles");
-  if (!style) {
-    style = document.createElement("style");
-    style.id = "feedback-tool-styles-page-toolbar-css-styles";
-    document.head.appendChild(style);
-  }
-  style.textContent = css5;
-}
-var styles_module_default4 = classNames5;
-
 // src/utils/generate-output.ts
 var OUTPUT_DETAIL_OPTIONS = [
   { value: "compact", label: "Compact" },
@@ -7409,11 +8327,18 @@ var OUTPUT_DETAIL_OPTIONS = [
   { value: "detailed", label: "Detailed" },
   { value: "forensic", label: "Forensic" }
 ];
-function generateOutput(annotations, pathname, detailLevel = "standard") {
-  if (annotations.length === 0) return "";
-  const viewport = typeof window !== "undefined" ? `${window.innerWidth}\xD7${window.innerHeight}` : "unknown";
+function generateOutputHeader(pathname, appName) {
   let output = `## Page Feedback: ${pathname}
 `;
+  const name = appName?.replace(/[\r\n\t]+/g, " ").trim();
+  if (name) output += `**App:** ${name.replace(/[\\`*_\[\]<>]/g, "\\$&")}
+`;
+  return output;
+}
+function generateOutput(annotations, pathname, detailLevel = "standard", options = {}) {
+  if (annotations.length === 0) return "";
+  const viewport = typeof window !== "undefined" ? `${window.innerWidth}\xD7${window.innerHeight}` : "unknown";
+  let output = generateOutputHeader(pathname, options.appName);
   if (detailLevel === "forensic") {
     output += `
 **Environment:**
@@ -7536,217 +8461,607 @@ function generateOutput(annotations, pathname, detailLevel = "standard") {
   return output.trim();
 }
 
-// src/components/page-toolbar-css/annotation-marker/styles.module.scss
-var css6 = '@keyframes styles-module__markerIn___x4G8D {\n  0% {\n    opacity: 0;\n    transform: translate(-50%, -50%) scale(0.3);\n  }\n  100% {\n    opacity: 1;\n    transform: translate(-50%, -50%) scale(1);\n  }\n}\n@keyframes styles-module__markerOut___6VhQN {\n  0% {\n    opacity: 1;\n    transform: translate(-50%, -50%) scale(1);\n  }\n  100% {\n    opacity: 0;\n    transform: translate(-50%, -50%) scale(0.3);\n  }\n}\n@keyframes styles-module__tooltipIn___aJslQ {\n  from {\n    opacity: 0;\n    transform: translateX(-50%) translateY(2px) scale(0.891);\n  }\n  to {\n    opacity: 1;\n    transform: translateX(-50%) translateY(0) scale(0.909);\n  }\n}\n@keyframes styles-module__renumberRoll___akV9B {\n  0% {\n    transform: translateX(-40%);\n    opacity: 0;\n  }\n  100% {\n    transform: translateX(0);\n    opacity: 1;\n  }\n}\n.styles-module__marker___9CKF7 {\n  position: absolute;\n  width: 22px;\n  height: 22px;\n  background: var(--agentation-color-blue);\n  color: white;\n  border-radius: 50%;\n  display: flex;\n  align-items: center;\n  justify-content: center;\n  font-size: 0.6875rem;\n  font-weight: 600;\n  transform: translate(-50%, -50%) scale(1);\n  opacity: 1;\n  cursor: pointer;\n  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2), inset 0 0 0 1px rgba(0, 0, 0, 0.04);\n  user-select: none;\n  will-change: transform, opacity;\n  contain: layout style;\n  z-index: 1;\n}\n.styles-module__marker___9CKF7:hover {\n  z-index: 2;\n}\n.styles-module__marker___9CKF7:not(.styles-module__enter___8kI3q):not(.styles-module__exit___KBdR3):not(.styles-module__clearing___8rM7K) {\n  transition: background-color 0.15s ease, transform 0.1s ease;\n}\n.styles-module__marker___9CKF7.styles-module__enter___8kI3q {\n  animation: styles-module__markerIn___x4G8D 0.25s cubic-bezier(0.22, 1, 0.36, 1) both;\n}\n.styles-module__marker___9CKF7.styles-module__exit___KBdR3 {\n  animation: styles-module__markerOut___6VhQN 0.2s ease-out both;\n  pointer-events: none;\n}\n.styles-module__marker___9CKF7.styles-module__clearing___8rM7K {\n  animation: styles-module__markerOut___6VhQN 0.15s ease-out both;\n  pointer-events: none;\n}\n.styles-module__marker___9CKF7:not(.styles-module__enter___8kI3q):not(.styles-module__exit___KBdR3):not(.styles-module__clearing___8rM7K):hover {\n  transform: translate(-50%, -50%) scale(1.1);\n}\n.styles-module__marker___9CKF7.styles-module__pending___BiY-U {\n  position: fixed;\n  background-color: var(--agentation-color-blue);\n  cursor: default;\n}\n.styles-module__marker___9CKF7.styles-module__fixed___aKrQO {\n  position: fixed;\n}\n.styles-module__marker___9CKF7.styles-module__multiSelect___CPfTC {\n  background-color: var(--agentation-color-green);\n  width: 26px;\n  height: 26px;\n  border-radius: 6px;\n  font-size: 0.75rem;\n}\n.styles-module__marker___9CKF7.styles-module__multiSelect___CPfTC.styles-module__pending___BiY-U {\n  background-color: var(--agentation-color-green);\n}\n.styles-module__marker___9CKF7.styles-module__hovered___-mg2N {\n  background-color: var(--agentation-color-red);\n}\n\n.styles-module__renumber___16lvD {\n  display: block;\n  animation: styles-module__renumberRoll___akV9B 0.2s ease-out;\n}\n\n.styles-module__markerTooltip___-VUm- {\n  position: absolute;\n  top: calc(100% + 10px);\n  left: 50%;\n  transform: translateX(-50%) scale(0.909);\n  z-index: 100002;\n  background: #1a1a1a;\n  padding: 8px 0.75rem;\n  border-radius: 0.75rem;\n  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;\n  font-weight: 400;\n  color: #fff;\n  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3), 0 0 0 1px rgba(255, 255, 255, 0.08);\n  min-width: 120px;\n  max-width: 200px;\n  pointer-events: none;\n  cursor: default;\n}\n.styles-module__markerTooltip___-VUm-.styles-module__enter___8kI3q {\n  animation: styles-module__tooltipIn___aJslQ 0.1s ease-out forwards;\n}\n\n.styles-module__markerQuote___tQake {\n  display: block;\n  font-size: 12px;\n  font-style: italic;\n  color: rgba(255, 255, 255, 0.6);\n  margin-bottom: 0.3125rem;\n  line-height: 1.4;\n  white-space: nowrap;\n  overflow: hidden;\n  text-overflow: ellipsis;\n}\n\n.styles-module__markerNote___Rh4eI {\n  display: block;\n  font-size: 13px;\n  font-weight: 400;\n  line-height: 1.4;\n  color: #fff;\n  white-space: nowrap;\n  overflow: hidden;\n  text-overflow: ellipsis;\n  padding-bottom: 2px;\n}\n\n[data-agentation-theme=light] .styles-module__markerTooltip___-VUm- {\n  background: #fff;\n  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.12), 0 0 0 1px rgba(0, 0, 0, 0.06);\n}\n[data-agentation-theme=light] .styles-module__markerTooltip___-VUm- .styles-module__markerQuote___tQake {\n  color: rgba(0, 0, 0, 0.5);\n}\n[data-agentation-theme=light] .styles-module__markerTooltip___-VUm- .styles-module__markerNote___Rh4eI {\n  color: rgba(0, 0, 0, 0.85);\n}';
-var classNames6 = { "marker": "styles-module__marker___9CKF7", "enter": "styles-module__enter___8kI3q", "exit": "styles-module__exit___KBdR3", "clearing": "styles-module__clearing___8rM7K", "markerIn": "styles-module__markerIn___x4G8D", "markerOut": "styles-module__markerOut___6VhQN", "pending": "styles-module__pending___BiY-U", "fixed": "styles-module__fixed___aKrQO", "multiSelect": "styles-module__multiSelect___CPfTC", "hovered": "styles-module__hovered___-mg2N", "renumber": "styles-module__renumber___16lvD", "renumberRoll": "styles-module__renumberRoll___akV9B", "markerTooltip": "styles-module__markerTooltip___-VUm-", "tooltipIn": "styles-module__tooltipIn___aJslQ", "markerQuote": "styles-module__markerQuote___tQake", "markerNote": "styles-module__markerNote___Rh4eI" };
-if (typeof document !== "undefined") {
-  let style = document.getElementById("feedback-tool-styles-annotation-marker-styles");
-  if (!style) {
-    style = document.createElement("style");
-    style.id = "feedback-tool-styles-annotation-marker-styles";
-    document.head.appendChild(style);
-  }
-  style.textContent = css6;
+// src/utils/copy-format.ts
+function formatCopyOutput(annotations, markdown, format = "markdown") {
+  if (format === "markdown") return markdown;
+  return [
+    ...new Set(
+      annotations.map((annotation) => {
+        if (format === "source") return annotation.sourceFile;
+        if (format === "classes") return annotation.cssClasses;
+        return annotation.attributes?.[format.attribute];
+      }).filter((value) => typeof value === "string" && value.length > 0)
+    )
+  ].join("\n");
 }
-var styles_module_default5 = classNames6;
+
+// src/utils/clipboard.ts
+async function copyTextToClipboard(text) {
+  if (typeof window === "undefined") return false;
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text);
+      return true;
+    }
+  } catch {
+  }
+  return copyTextViaExecCommand(text);
+}
+function copyTextViaExecCommand(text) {
+  const textarea = document.createElement("textarea");
+  let activeElement = document.activeElement;
+  while (activeElement?.shadowRoot?.activeElement) {
+    activeElement = activeElement.shadowRoot.activeElement;
+  }
+  const input = activeElement instanceof HTMLInputElement || activeElement instanceof HTMLTextAreaElement ? activeElement : null;
+  const inputSelection = input && input.selectionStart !== null ? { start: input.selectionStart, end: input.selectionEnd, direction: input.selectionDirection } : null;
+  const selection = document.getSelection();
+  const previousRanges = selection ? Array.from({ length: selection.rangeCount }, (_, i) => selection.getRangeAt(i).cloneRange()) : [];
+  try {
+    textarea.value = text;
+    textarea.setAttribute("readonly", "");
+    textarea.style.cssText = "position:fixed;left:-9999px;top:0;opacity:0;pointer-events:none;";
+    document.body.appendChild(textarea);
+    textarea.focus({ preventScroll: true });
+    textarea.select();
+    textarea.setSelectionRange(0, text.length);
+    return document.execCommand("copy");
+  } catch {
+    return false;
+  } finally {
+    textarea.remove();
+    if (activeElement instanceof HTMLElement && activeElement.isConnected) {
+      activeElement.focus({ preventScroll: true });
+      if (input && inputSelection) {
+        input.setSelectionRange(inputSelection.start, inputSelection.end, inputSelection.direction);
+      }
+    }
+    if (selection) {
+      selection.removeAllRanges();
+      for (const range of previousRanges) selection.addRange(range);
+    }
+  }
+}
+
+// src/utils/shadow-sync.ts
+function pagePath(url) {
+  if (!url) return url;
+  try {
+    const parsed = new URL(url, "http://agentation.invalid");
+    return parsed.pathname + parsed.search + parsed.hash;
+  } catch {
+    return url;
+  }
+}
+function createShadowSync(transport, ids, existing = []) {
+  const entries = /* @__PURE__ */ new Map();
+  const unclaimed = new Map(existing.map((annotation) => [annotation.id, annotation]));
+  let disposed = false;
+  async function flush(id, entry) {
+    if (disposed || entry.running || entry.timer) return;
+    const desired = entry.desired;
+    const serverId = ids.get(id);
+    if (!desired && !serverId) {
+      entries.delete(id);
+      ids.delete(id);
+      return;
+    }
+    const signature = desired ? JSON.stringify(desired) : void 0;
+    if (desired && serverId && entry.synced === signature) return;
+    entry.running = true;
+    try {
+      if (!desired) {
+        await transport.remove(serverId);
+        ids.delete(id);
+        entry.synced = void 0;
+      } else if (!serverId) {
+        ids.set(id, "");
+        const created = await transport.create(desired);
+        ids.set(id, created.id);
+        entry.synced = signature;
+      } else {
+        await transport.update(serverId, desired);
+        entry.synced = signature;
+      }
+      entry.retries = 0;
+      entry.running = false;
+      if (!disposed && entries.get(id) === entry) void flush(id, entry);
+    } catch (error) {
+      entry.running = false;
+      if (!disposed && entries.get(id) === entry) {
+        console.warn("[Agentation] Failed to sync layout feedback:", error);
+        if (ids.get(id) && entry.retries < 3) {
+          const delay = 500 * 2 ** entry.retries++;
+          entry.timer = originalSetTimeout(() => {
+            entry.timer = void 0;
+            void flush(id, entry);
+          }, delay);
+        }
+      }
+    }
+  }
+  return {
+    replace(annotations) {
+      const desired = new Map(annotations.map((annotation) => [annotation.id, annotation]));
+      for (const [id, annotation] of desired) {
+        let entry = entries.get(id);
+        if (!entry) {
+          entry = { running: false, retries: 0 };
+          entries.set(id, entry);
+          const saved = [...unclaimed.values()].find((remote) => remote.kind === annotation.kind && pagePath(remote.url) === pagePath(annotation.url) && (annotation.kind === "placement" ? remote.timestamp === annotation.timestamp && remote.element === annotation.element : remote.element === annotation.element));
+          if (saved) {
+            ids.set(id, saved.id);
+            unclaimed.delete(saved.id);
+          }
+        }
+        if (JSON.stringify(entry.desired) !== JSON.stringify(annotation)) {
+          entry.retries = 0;
+          if (entry.timer) clearTimeout(entry.timer);
+          entry.timer = void 0;
+        }
+        entry.desired = annotation;
+      }
+      for (const [id, entry] of entries) {
+        if (!desired.has(id)) entry.desired = void 0;
+        void flush(id, entry);
+      }
+    },
+    forget(id) {
+      const entry = entries.get(id);
+      if (entry?.timer) clearTimeout(entry.timer);
+      entries.delete(id);
+      ids.delete(id);
+    },
+    dispose() {
+      disposed = true;
+      for (const entry of entries.values()) {
+        if (entry.timer) clearTimeout(entry.timer);
+      }
+    }
+  };
+}
+
+// src/utils/session-resolutions.ts
+function subscribeSessionResolutions(endpoint, sessionId, hasPending, onResolved) {
+  let disposed = false;
+  let disconnect;
+  let retry;
+  let retryDelay = 1e3;
+  let request;
+  const apply = (annotation) => {
+    if (!disposed && (annotation?.status === "resolved" || annotation?.status === "dismissed")) {
+      onResolved(annotation);
+    }
+  };
+  const reconcile = async () => {
+    if (disposed || request || !hasPending()) return;
+    const current = new AbortController();
+    request = current;
+    const timeout = originalSetTimeout(() => current.abort(), 5e3);
+    try {
+      const response = await fetch(`${endpoint}/sessions/${sessionId}`, { signal: current.signal });
+      if (!response.ok) return;
+      const session = await response.json();
+      if (!disposed && !current.signal.aborted && Array.isArray(session.annotations)) {
+        session.annotations.forEach(apply);
+      }
+    } catch {
+    } finally {
+      clearTimeout(timeout);
+      if (request === current) request = void 0;
+    }
+  };
+  const connect = () => {
+    if (disposed) return;
+    const source = new EventSource(`${endpoint}/sessions/${sessionId}/events`);
+    const open = () => {
+      retryDelay = 1e3;
+      void reconcile();
+    };
+    const update = (event) => {
+      try {
+        apply(JSON.parse(event.data).payload);
+      } catch {
+      }
+    };
+    const error = () => {
+      if (source.readyState !== EventSource.CLOSED || disposed || retry !== void 0) return;
+      disconnect?.();
+      retry = originalSetTimeout(() => {
+        retry = void 0;
+        connect();
+      }, retryDelay);
+      retryDelay = Math.min(retryDelay * 2, 1e4);
+    };
+    source.addEventListener("open", open);
+    source.addEventListener("annotation.updated", update);
+    source.addEventListener("error", error);
+    disconnect = () => {
+      source.removeEventListener("open", open);
+      source.removeEventListener("annotation.updated", update);
+      source.removeEventListener("error", error);
+      source.close();
+    };
+  };
+  connect();
+  const interval = originalSetInterval(() => {
+    void reconcile();
+  }, 1e4);
+  return () => {
+    disposed = true;
+    disconnect?.();
+    if (retry !== void 0) clearTimeout(retry);
+    clearInterval(interval);
+    request?.abort();
+  };
+}
+
+// src/components/page-toolbar-css/annotation-card/index.tsx
+import {
+  forwardRef as forwardRef3,
+  useImperativeHandle as useImperativeHandle3,
+  useLayoutEffect as useLayoutEffect6,
+  useRef as useRef10
+} from "react";
+
+// src/components/page-toolbar-css/annotation-card/styles.module.scss
+var css6 = ".styles-module__surface___7qnpJ {\n  padding: 0;\n  width: var(--preview-width, 200px);\n  max-width: calc(100vw - 24px);\n  overflow: auto;\n  opacity: 0;\n  visibility: hidden;\n  pointer-events: none;\n  border-radius: 12px;\n  z-index: inherit;\n  will-change: auto;\n  transform: translateX(-50%);\n  transition: left 200ms cubic-bezier(0.2, 0.8, 0.2, 1), top 200ms cubic-bezier(0.2, 0.8, 0.2, 1), transform 200ms cubic-bezier(0.2, 0.8, 0.2, 1), width 200ms cubic-bezier(0.2, 0.8, 0.2, 1), opacity 100ms ease-out, visibility 0s 200ms;\n}\n.styles-module__surface___7qnpJ[data-positioning] {\n  transition: none;\n}\n.styles-module__surface___7qnpJ[data-direct-entry] *, .styles-module__surface___7qnpJ[data-direct-entry] *::before, .styles-module__surface___7qnpJ[data-direct-entry] *::after {\n  transition: none !important;\n}\n.styles-module__surface___7qnpJ[data-state=preview], .styles-module__surface___7qnpJ[data-state=edit] {\n  opacity: 1;\n  visibility: visible;\n  transition-delay: 0s;\n}\n.styles-module__surface___7qnpJ[data-state=edit], .styles-module__surface___7qnpJ[data-annotation-popup][data-state=hidden] {\n  width: 280px;\n  border-radius: 16px;\n}\n.styles-module__surface___7qnpJ[data-state=edit] {\n  pointer-events: auto;\n}\n.styles-module__surface___7qnpJ[data-state=preview] {\n  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3), 0 0 0 1px rgba(255, 255, 255, 0.08);\n}\n[data-agentation-theme=light] .styles-module__surface___7qnpJ[data-state=preview] {\n  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.12), 0 0 0 1px rgba(0, 0, 0, 0.06);\n}\n\n@media (prefers-reduced-motion: reduce) {\n  .styles-module__surface___7qnpJ {\n    transition: opacity 100ms ease-out, visibility 0s 100ms;\n  }\n}";
+var styles_module_default5 = { "surface": "styles-module__surface___7qnpJ" };
+
+// src/components/page-toolbar-css/annotation-card/index.tsx
+import { jsx as jsx12 } from "react/jsx-runtime";
+var AnnotationCard = forwardRef3(function AnnotationCard2({
+  annotation,
+  editing,
+  exiting,
+  restorePreview,
+  editorProps,
+  lightMode,
+  scrollY,
+  onExited
+}, ref) {
+  const previous = useRef10({ annotation, editorProps });
+  const displayed = annotation ?? previous.current.annotation;
+  const formProps = annotation ? editorProps : previous.current.editorProps;
+  const surfaceRef = useRef10(null);
+  const editorRef = useRef10(null);
+  const previousId = useRef10();
+  const previousScroll = useRef10(scrollY);
+  const mode = editing && !exiting ? "edit" : annotation && (!editing || restorePreview) ? "preview" : "hidden";
+  const preview = mode === "preview" || !editing;
+  useLayoutEffect6(() => {
+    if (annotation) previous.current = { annotation, editorProps };
+  }, [annotation, editorProps]);
+  useLayoutEffect6(() => {
+    const surface = surfaceRef.current;
+    if (!surface || !displayed) return;
+    const directEntry = mode === "edit" && (previousId.current !== displayed.id || surface.dataset.state === "hidden" && getComputedStyle(surface).opacity === "0");
+    if (directEntry) surface.dataset.directEntry = "true";
+    const position = () => {
+      const x = displayed.x / 100 * window.innerWidth;
+      const y = displayed.isFixed ? displayed.y : displayed.y - scrollY;
+      const showingPreview = mode === "preview" || !editing;
+      const previewWidth = parseFloat(surface.style.getPropertyValue("--preview-width")) || 200;
+      const compactWidth = Math.min(previewWidth, window.innerWidth - 24);
+      const previewLeft = Math.max(12, Math.min(
+        window.innerWidth - compactWidth - 12,
+        x - compactWidth / 2
+      ));
+      const width = showingPreview ? compactWidth : Math.min(280, window.innerWidth - 24);
+      const margin = Math.min(showingPreview ? 12 : 20, (window.innerWidth - width) / 2);
+      const above = y > window.innerHeight - (showingPreview ? 101 : 290);
+      surface.style.left = `${Math.max(margin, Math.min(window.innerWidth - width - margin, previewLeft))}px`;
+      surface.style.right = "auto";
+      surface.style.top = `${Math.max(12, Math.min(window.innerHeight - 12, y + (above ? -21 : 21)))}px`;
+      surface.style.bottom = "auto";
+      surface.style.transform = above ? "translateY(-100%)" : "translateY(0)";
+      surface.style.maxHeight = `${Math.max(100, above ? y - 33 : window.innerHeight - y - 33)}px`;
+    };
+    const jump = previousId.current !== displayed.id || previousScroll.current !== scrollY || surface.dataset.state === "hidden";
+    if (jump) surface.dataset.positioning = "true";
+    position();
+    if (jump || directEntry) surface.getBoundingClientRect();
+    delete surface.dataset.positioning;
+    delete surface.dataset.directEntry;
+    surface.dataset.state = mode;
+    surface.inert = mode !== "edit";
+    previousId.current = displayed.id;
+    previousScroll.current = scrollY;
+    const onResize = () => {
+      surface.dataset.positioning = "true";
+      position();
+      surface.getBoundingClientRect();
+      delete surface.dataset.positioning;
+    };
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, [
+    displayed?.id,
+    displayed?.x,
+    displayed?.y,
+    displayed?.isFixed,
+    mode,
+    editing,
+    scrollY,
+    displayed?.comment
+  ]);
+  useLayoutEffect6(() => {
+    if (editing && !exiting) editorRef.current?.focus();
+  }, [editing, exiting, displayed?.id]);
+  useExitCompletion(surfaceRef, exiting, onExited);
+  useImperativeHandle3(
+    ref,
+    () => ({
+      shake() {
+        surfaceRef.current?.animate?.(
+          [
+            { translate: "0px" },
+            { translate: "-3px" },
+            { translate: "3px" },
+            { translate: "-2px" },
+            { translate: "2px" },
+            { translate: "0px" }
+          ],
+          { duration: 250 }
+        );
+        editorRef.current?.focus();
+      }
+    }),
+    []
+  );
+  if (!displayed || !formProps) return null;
+  return /* @__PURE__ */ jsx12(
+    "div",
+    {
+      ref: surfaceRef,
+      className: `${styles_module_default.popup} ${styles_module_default5.surface} ${lightMode ? styles_module_default.light : ""}`,
+      "data-feedback-toolbar": true,
+      "data-annotation-card": true,
+      "data-annotation-popup": editing ? "" : void 0,
+      "data-state": "hidden",
+      "aria-hidden": mode === "hidden",
+      onClick: (event) => event.stopPropagation(),
+      onKeyDownCapture: (event) => {
+        if (event.key !== "Escape" || event.nativeEvent.isComposing || !editing)
+          return;
+        event.preventDefault();
+        event.stopPropagation();
+        formProps.onCancel();
+      },
+      children: /* @__PURE__ */ jsx12(
+        AnnotationEditor,
+        {
+          ref: editorRef,
+          ...formProps,
+          variant: "card",
+          preview,
+          resetOnPreview: !editing,
+          disabled: !editing || exiting
+        },
+        displayed.id
+      )
+    }
+  );
+});
 
 // src/components/page-toolbar-css/annotation-marker/index.tsx
-import { jsx as jsx9, jsxs as jsxs8 } from "react/jsx-runtime";
-function AnnotationMarker({
+import { memo, useLayoutEffect as useLayoutEffect7, useRef as useRef11, useState as useState10 } from "react";
+
+// src/components/page-toolbar-css/annotation-marker/styles.module.scss
+var css7 = "@keyframes styles-module__markerIn___x4G8D {\n  0% {\n    opacity: 0;\n    transform: translate(-50%, -50%) scale(0.3);\n  }\n  100% {\n    opacity: 1;\n    transform: translate(-50%, -50%) scale(1);\n  }\n}\n@keyframes styles-module__markerOut___6VhQN {\n  0% {\n    opacity: 1;\n    transform: translate(-50%, -50%) scale(1);\n  }\n  100% {\n    opacity: 0;\n    transform: translate(-50%, -50%) scale(0.3);\n  }\n}\n@keyframes styles-module__renumberRoll___akV9B {\n  0% {\n    transform: translateX(-40%);\n    opacity: 0;\n  }\n  100% {\n    transform: translateX(0);\n    opacity: 1;\n  }\n}\n.styles-module__marker___9CKF7 {\n  padding: 0;\n  border: 0;\n  box-sizing: border-box;\n  font-family: inherit;\n  line-height: 1;\n  text-align: center;\n  appearance: none;\n  position: absolute;\n  width: 22px;\n  height: 22px;\n  background: var(--agentation-color-blue);\n  color: white;\n  border-radius: 50%;\n  display: flex;\n  align-items: center;\n  justify-content: center;\n  font-size: 0.6875rem;\n  font-weight: 600;\n  transform: translate(-50%, -50%) scale(1);\n  opacity: 1;\n  cursor: pointer;\n  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2), inset 0 0 0 1px rgba(0, 0, 0, 0.04);\n  -webkit-user-select: none;\n  user-select: none;\n  will-change: transform, opacity;\n  contain: layout style;\n  z-index: 1;\n}\n.styles-module__marker___9CKF7 > * {\n  pointer-events: none;\n}\n.styles-module__marker___9CKF7:focus-visible {\n  outline: 2px solid var(--agentation-color-accent);\n  outline-offset: 3px;\n}\n.styles-module__marker___9CKF7:hover, .styles-module__marker___9CKF7:focus-visible, .styles-module__marker___9CKF7.styles-module__previewVisible___imMag {\n  z-index: 2;\n}\n.styles-module__marker___9CKF7:not(.styles-module__enter___8kI3q):not(.styles-module__exit___KBdR3):not(.styles-module__clearing___8rM7K):not(.styles-module__confirm___BtMvq) {\n  transition: background-color 0.15s ease, transform 0.1s ease, z-index 0s 0.1s;\n}\n.styles-module__marker___9CKF7:not(.styles-module__enter___8kI3q):not(.styles-module__exit___KBdR3):not(.styles-module__clearing___8rM7K):not(.styles-module__confirm___BtMvq):hover, .styles-module__marker___9CKF7:not(.styles-module__enter___8kI3q):not(.styles-module__exit___KBdR3):not(.styles-module__clearing___8rM7K):not(.styles-module__confirm___BtMvq):focus-visible, .styles-module__marker___9CKF7:not(.styles-module__enter___8kI3q):not(.styles-module__exit___KBdR3):not(.styles-module__clearing___8rM7K):not(.styles-module__confirm___BtMvq).styles-module__previewVisible___imMag {\n  transition-delay: 0s;\n}\n.styles-module__marker___9CKF7.styles-module__enter___8kI3q {\n  animation: styles-module__markerIn___x4G8D 0.25s cubic-bezier(0.22, 1, 0.36, 1) both;\n}\n.styles-module__marker___9CKF7.styles-module__confirm___BtMvq {\n  animation: styles-module__markerConfirm___RT4Sk 220ms ease-out both;\n}\n.styles-module__marker___9CKF7.styles-module__exit___KBdR3 {\n  animation: styles-module__markerOut___6VhQN 0.2s ease-out both;\n  pointer-events: none;\n}\n.styles-module__marker___9CKF7.styles-module__clearing___8rM7K {\n  animation: styles-module__markerOut___6VhQN 0.15s ease-out both;\n  pointer-events: none;\n}\n.styles-module__marker___9CKF7:not(.styles-module__enter___8kI3q):not(.styles-module__exit___KBdR3):not(.styles-module__clearing___8rM7K):not(.styles-module__confirm___BtMvq):hover {\n  transform: translate(-50%, -50%) scale(1.1);\n}\n.styles-module__marker___9CKF7.styles-module__pending___BiY-U {\n  background-color: var(--agentation-color-blue);\n  cursor: default;\n}\n.styles-module__marker___9CKF7.styles-module__pending___BiY-U.styles-module__exit___KBdR3 {\n  animation-duration: 150ms;\n}\n.styles-module__marker___9CKF7.styles-module__multiSelect___CPfTC {\n  background-color: var(--agentation-color-green);\n  width: 26px;\n  height: 26px;\n  border-radius: 6px;\n  font-size: 0.75rem;\n}\n.styles-module__marker___9CKF7.styles-module__multiSelect___CPfTC.styles-module__pending___BiY-U {\n  background-color: var(--agentation-color-green);\n}\n.styles-module__marker___9CKF7.styles-module__hovered___-mg2N {\n  background-color: var(--agentation-color-red);\n}\n\n.styles-module__renumber___16lvD {\n  display: block;\n  animation: styles-module__renumberRoll___akV9B 0.2s ease-out;\n}\n\n@keyframes styles-module__markerConfirm___RT4Sk {\n  0% {\n    transform: translate(-50%, -50%) scale(1);\n  }\n  25% {\n    transform: translate(-50%, -50%) scale(0.94);\n  }\n  65% {\n    transform: translate(-50%, -50%) scale(1.06);\n  }\n  100% {\n    transform: translate(-50%, -50%) scale(1);\n  }\n}\n.styles-module__number___1JFu9 {\n  display: block;\n}\n\n.styles-module__numberGlyph___qchdk {\n  display: block;\n  opacity: 1;\n  transform: translateY(0);\n  filter: blur(0);\n  transition: opacity 140ms ease-out, transform 180ms cubic-bezier(0.22, 1, 0.36, 1), filter 140ms ease-out;\n}\n\n.styles-module__actionGlyph___AFRt0 {\n  position: absolute;\n  inset: 0;\n  display: grid;\n  place-items: center;\n  opacity: 0;\n  transform: translateY(2px) scale(0.8) rotate(-12deg);\n  filter: blur(1px);\n  transition: opacity 120ms ease-out, transform 160ms cubic-bezier(0.22, 1, 0.36, 1), filter 120ms ease-out;\n}\n\n.styles-module__actionVisible___Kb--l .styles-module__numberGlyph___qchdk {\n  opacity: 0;\n  transform: translateY(-2px) scale(0.8);\n  filter: blur(1px);\n}\n.styles-module__actionVisible___Kb--l .styles-module__actionGlyph___AFRt0 {\n  opacity: 1;\n  transform: translateY(0) scale(1) rotate(0);\n  filter: blur(0);\n}\n\n.styles-module__plus___xslMP {\n  position: absolute;\n  inset: 0;\n  display: grid;\n  place-items: center;\n  opacity: 0;\n  transform: rotate(-90deg) scale(0.6);\n  filter: blur(1px);\n  transition: opacity 100ms ease-out, transform 140ms ease-out, filter 100ms ease-out;\n  pointer-events: none;\n}\n\n.styles-module__pending___BiY-U .styles-module__numberGlyph___qchdk {\n  opacity: 0;\n  transform: translateY(5px);\n  filter: blur(2px);\n}\n.styles-module__pending___BiY-U .styles-module__plus___xslMP {\n  opacity: 1;\n  transform: rotate(0) scale(1);\n  filter: blur(0);\n}\n\n@media (prefers-reduced-motion: reduce) {\n  .styles-module__marker___9CKF7.styles-module__enter___8kI3q, .styles-module__marker___9CKF7.styles-module__exit___KBdR3, .styles-module__marker___9CKF7.styles-module__clearing___8rM7K, .styles-module__marker___9CKF7.styles-module__confirm___BtMvq {\n    animation-duration: 1ms;\n    animation-delay: 0ms !important;\n  }\n  .styles-module__numberGlyph___qchdk, .styles-module__actionGlyph___AFRt0, .styles-module__plus___xslMP {\n    transition: opacity 100ms ease-out;\n    transform: none;\n    filter: none;\n  }\n  .styles-module__pending___BiY-U .styles-module__numberGlyph___qchdk, .styles-module__pending___BiY-U .styles-module__plus___xslMP,\n  .styles-module__actionVisible___Kb--l .styles-module__numberGlyph___qchdk, .styles-module__actionVisible___Kb--l .styles-module__actionGlyph___AFRt0 {\n    transform: none;\n    filter: none;\n  }\n}";
+var styles_module_default6 = { "marker": "styles-module__marker___9CKF7", "previewVisible": "styles-module__previewVisible___imMag", "enter": "styles-module__enter___8kI3q", "exit": "styles-module__exit___KBdR3", "clearing": "styles-module__clearing___8rM7K", "confirm": "styles-module__confirm___BtMvq", "markerIn": "styles-module__markerIn___x4G8D", "markerConfirm": "styles-module__markerConfirm___RT4Sk", "markerOut": "styles-module__markerOut___6VhQN", "pending": "styles-module__pending___BiY-U", "multiSelect": "styles-module__multiSelect___CPfTC", "hovered": "styles-module__hovered___-mg2N", "renumber": "styles-module__renumber___16lvD", "renumberRoll": "styles-module__renumberRoll___akV9B", "number": "styles-module__number___1JFu9", "numberGlyph": "styles-module__numberGlyph___qchdk", "actionGlyph": "styles-module__actionGlyph___AFRt0", "actionVisible": "styles-module__actionVisible___Kb--l", "plus": "styles-module__plus___xslMP" };
+
+// src/components/page-toolbar-css/annotation-marker/index.tsx
+import { jsx as jsx13, jsxs as jsxs9 } from "react/jsx-runtime";
+var AnnotationMarker = memo(function AnnotationMarker2({
   annotation,
+  pending: pending2 = false,
   globalIndex,
   layerIndex,
   layerSize,
   isExiting,
   isClearing,
   isAnimated,
+  isNew,
   isHovered,
-  isDeleting,
+  isRemoving,
+  onRemoveComplete,
   isEditingAny,
   renumberFrom,
   markerClickBehavior,
-  tooltipStyle,
   onHoverEnter,
+  onEnterComplete,
   onHoverLeave,
   onClick,
   onContextMenu
 }) {
-  const showDeleteState = (isHovered || isDeleting) && !isEditingAny;
-  const showDeleteHover = showDeleteState && markerClickBehavior === "delete";
+  const [hasEntered, setHasEntered] = useState10(isAnimated);
+  const beganPending = useRef11(pending2);
+  const [hasConfirmed, setHasConfirmed] = useState10(false);
+  const confirming = beganPending.current && !pending2 && hasEntered && !hasConfirmed;
+  useLayoutEffect7(() => {
+    if (isExiting) setHasEntered(false);
+  }, [isExiting]);
+  const markerRef = useRef11(null);
+  const restingContent = useRef11({ action: false, delete: false });
+  const action = isHovered && !isEditingAny;
+  const deleteHover = action && markerClickBehavior === "delete";
+  useLayoutEffect7(() => {
+    if (!isRemoving) restingContent.current = { action, delete: deleteHover };
+  }, [isRemoving, action, deleteHover]);
+  const showAction = isRemoving ? restingContent.current.action : action;
+  const showDeleteHover = isRemoving ? restingContent.current.delete : deleteHover;
+  useExitCompletion(markerRef, isRemoving, () => onRemoveComplete(annotation.id));
   const isMulti = annotation.isMultiSelect;
   const markerColor = isMulti ? "var(--agentation-color-green)" : "var(--agentation-color-accent)";
-  const animClass = isExiting ? styles_module_default5.exit : isClearing ? styles_module_default5.clearing : !isAnimated ? styles_module_default5.enter : "";
-  const animationDelay = isExiting ? `${(layerSize - 1 - layerIndex) * 20}ms` : `${layerIndex * 20}ms`;
-  return /* @__PURE__ */ jsxs8(
-    "div",
+  const animClass = isClearing ? styles_module_default6.clearing : isExiting || isRemoving ? styles_module_default6.exit : confirming ? styles_module_default6.confirm : !isAnimated && !hasEntered ? styles_module_default6.enter : "";
+  const animationDelay = isClearing ? `${Math.min(layerIndex * 20, 120)}ms` : isRemoving || pending2 || confirming ? "0ms" : isExiting ? `${(layerSize - 1 - layerIndex) * 20}ms` : `${isNew ? 0 : layerIndex * 20}ms`;
+  return /* @__PURE__ */ jsxs9(
+    "button",
     {
-      className: `${styles_module_default5.marker} ${isMulti ? styles_module_default5.multiSelect : ""} ${animClass} ${showDeleteHover ? styles_module_default5.hovered : ""}`,
-      "data-annotation-marker": true,
+      ref: markerRef,
+      type: "button",
+      "aria-label": pending2 ? "Pending annotation" : `${markerClickBehavior === "delete" ? "Delete" : "Edit"} annotation ${globalIndex + 1}: ${annotation.element}`,
+      disabled: pending2 || isExiting || isRemoving || isClearing,
+      tabIndex: pending2 || isEditingAny ? -1 : 0,
+      className: `${styles_module_default6.marker} ${pending2 ? styles_module_default6.pending : ""} ${isMulti ? styles_module_default6.multiSelect : ""} ${animClass} ${!pending2 && showAction ? styles_module_default6.actionVisible : ""} ${showDeleteHover ? styles_module_default6.hovered : ""} ${isHovered && !isEditingAny && !isRemoving ? styles_module_default6.previewVisible : ""}`,
+      "data-annotation-marker": pending2 ? void 0 : "",
+      "data-annotation-pending": pending2 ? "" : void 0,
       style: {
         left: `${annotation.x}%`,
         top: annotation.y,
         backgroundColor: showDeleteHover ? void 0 : markerColor,
         animationDelay
       },
-      onMouseEnter: () => onHoverEnter(annotation),
-      onMouseLeave: onHoverLeave,
+      onAnimationEnd: (event) => {
+        if (event.target !== event.currentTarget) return;
+        if (animClass === styles_module_default6.enter || animClass === styles_module_default6.confirm) {
+          setHasEntered(true);
+          if (!pending2) setHasConfirmed(true);
+          if (!pending2) onEnterComplete(annotation.id);
+        }
+      },
+      onMouseOver: () => {
+        if (!pending2) onHoverEnter(annotation);
+      },
+      onMouseOut: (event) => {
+        const next = event.relatedTarget;
+        if (!(next instanceof Node) || !event.currentTarget.contains(next)) {
+          onHoverLeave(annotation.id);
+        }
+      },
+      onFocus: (event) => {
+        if (!pending2 && event.currentTarget.matches(":focus-visible")) onHoverEnter(annotation);
+      },
+      onBlur: () => onHoverLeave(annotation.id),
       onClick: (e) => {
         e.stopPropagation();
-        if (!isExiting) onClick(annotation);
+        if (!pending2 && !isExiting && !isRemoving) onClick(annotation, e.currentTarget);
       },
       onContextMenu: onContextMenu ? (e) => {
         if (markerClickBehavior === "delete") {
           e.preventDefault();
           e.stopPropagation();
-          if (!isExiting) onContextMenu(annotation);
+          if (!pending2 && !isExiting && !isRemoving) onContextMenu(annotation, e.currentTarget);
         }
       } : void 0,
       children: [
-        showDeleteState ? showDeleteHover ? /* @__PURE__ */ jsx9(IconXmark, { size: isMulti ? 18 : 16 }) : /* @__PURE__ */ jsx9(IconEdit, { size: 16 }) : /* @__PURE__ */ jsx9(
+        /* @__PURE__ */ jsx13(
           "span",
           {
-            className: renumberFrom !== null && globalIndex >= renumberFrom ? styles_module_default5.renumber : void 0,
-            children: globalIndex + 1
-          }
+            className: `${styles_module_default6.number} ${renumberFrom !== null && globalIndex >= renumberFrom ? styles_module_default6.renumber : ""}`,
+            "aria-hidden": "true",
+            children: /* @__PURE__ */ jsx13("span", { className: styles_module_default6.numberGlyph, children: globalIndex + 1 })
+          },
+          globalIndex
         ),
-        isHovered && !isEditingAny && /* @__PURE__ */ jsxs8(
-          "div",
-          {
-            className: `${styles_module_default5.markerTooltip} ${styles_module_default5.enter}`,
-            style: tooltipStyle,
-            children: [
-              /* @__PURE__ */ jsxs8("span", { className: styles_module_default5.markerQuote, children: [
-                annotation.element,
-                annotation.selectedText && ` "${annotation.selectedText.slice(0, 30)}${annotation.selectedText.length > 30 ? "..." : ""}"`
-              ] }),
-              /* @__PURE__ */ jsx9("span", { className: styles_module_default5.markerNote, children: annotation.comment })
-            ]
-          }
-        )
+        /* @__PURE__ */ jsx13("span", { className: styles_module_default6.actionGlyph, "aria-hidden": "true", children: markerClickBehavior === "delete" ? /* @__PURE__ */ jsx13(IconXmark, { size: isMulti ? 18 : 16 }) : /* @__PURE__ */ jsx13(IconEdit, { size: 16 }) }),
+        beganPending.current && /* @__PURE__ */ jsx13("span", { className: styles_module_default6.plus, "aria-hidden": "true", children: /* @__PURE__ */ jsx13(IconPlus, { size: 12 }) })
       ]
     }
   );
-}
-function PendingMarker({
-  x,
-  y,
-  isMultiSelect,
-  isExiting
-}) {
-  return /* @__PURE__ */ jsx9(
-    "div",
-    {
-      className: `${styles_module_default5.marker} ${styles_module_default5.pending} ${isMultiSelect ? styles_module_default5.multiSelect : ""} ${isExiting ? styles_module_default5.exit : styles_module_default5.enter}`,
-      style: {
-        left: `${x}%`,
-        top: y,
-        backgroundColor: isMultiSelect ? "var(--agentation-color-green)" : "var(--agentation-color-accent)"
-      },
-      children: /* @__PURE__ */ jsx9(IconPlus, { size: 12 })
-    }
-  );
-}
-function ExitingMarker({ annotation, fixed }) {
-  const isMulti = annotation.isMultiSelect;
-  return /* @__PURE__ */ jsx9(
-    "div",
-    {
-      className: `${styles_module_default5.marker} ${fixed ? styles_module_default5.fixed : ""} ${styles_module_default5.hovered} ${isMulti ? styles_module_default5.multiSelect : ""} ${styles_module_default5.exit}`,
-      "data-annotation-marker": true,
-      style: {
-        left: `${annotation.x}%`,
-        top: annotation.y
-      },
-      children: /* @__PURE__ */ jsx9(IconXmark, { size: isMulti ? 12 : 10 })
-    }
-  );
-}
+});
+
+// src/components/page-toolbar-css/settings-panel/index.tsx
+import { memo as memo2, useLayoutEffect as useLayoutEffect8, useRef as useRef12 } from "react";
 
 // src/components/switch/styles.module.scss
-var css7 = ".styles-module__switchContainer___Ka-AB {\n  display: flex;\n  align-items: center;\n  position: relative;\n  padding: 2px;\n  width: 24px;\n  height: 16px;\n  border-radius: 8px;\n  background-color: #cdcdcd;\n  transition: background-color 0.15s, opacity 0.15s;\n}\n[data-agentation-theme=dark] .styles-module__switchContainer___Ka-AB {\n  background-color: #484848;\n}\n.styles-module__switchContainer___Ka-AB:has(.styles-module__switchInput___kYDSD:checked) {\n  background-color: var(--agentation-color-blue);\n}\n.styles-module__switchContainer___Ka-AB:has(.styles-module__switchInput___kYDSD:disabled) {\n  opacity: 0.3;\n}\n\n.styles-module__switchInput___kYDSD {\n  position: absolute;\n  z-index: 1;\n  inset: 0;\n  border-radius: inherit;\n  opacity: 0;\n  cursor: pointer;\n}\n.styles-module__switchInput___kYDSD:disabled {\n  cursor: not-allowed;\n}\n\n.styles-module__switchThumb___4sCPH {\n  border-radius: 50%;\n  width: 12px;\n  height: 12px;\n  background-color: #fff;\n  transition: transform 0.15s;\n}\n.styles-module__switchContainer___Ka-AB:has(.styles-module__switchInput___kYDSD:checked) .styles-module__switchThumb___4sCPH {\n  transform: translateX(8px);\n}";
-var classNames7 = { "switchContainer": "styles-module__switchContainer___Ka-AB", "switchInput": "styles-module__switchInput___kYDSD", "switchThumb": "styles-module__switchThumb___4sCPH" };
-if (typeof document !== "undefined") {
-  let style = document.getElementById("feedback-tool-styles-switch-styles");
-  if (!style) {
-    style = document.createElement("style");
-    style.id = "feedback-tool-styles-switch-styles";
-    document.head.appendChild(style);
-  }
-  style.textContent = css7;
-}
-var styles_module_default6 = classNames7;
+var css8 = ".styles-module__switchContainer___Ka-AB {\n  display: flex;\n  align-items: center;\n  position: relative;\n  padding: 2px;\n  width: 24px;\n  height: 16px;\n  border-radius: 8px;\n  background-color: #cdcdcd;\n  transition: background-color 0.15s, opacity 0.15s;\n}\n[data-agentation-theme=dark] .styles-module__switchContainer___Ka-AB {\n  background-color: #484848;\n}\n.styles-module__switchContainer___Ka-AB:has(.styles-module__switchInput___kYDSD:checked) {\n  background-color: var(--agentation-color-blue);\n}\n.styles-module__switchContainer___Ka-AB:has(.styles-module__switchInput___kYDSD:disabled) {\n  opacity: 0.3;\n}\n\n.styles-module__switchInput___kYDSD {\n  position: absolute;\n  z-index: 1;\n  inset: 0;\n  border-radius: inherit;\n  opacity: 0;\n  cursor: pointer;\n}\n.styles-module__switchInput___kYDSD:disabled {\n  cursor: not-allowed;\n}\n\n.styles-module__switchThumb___4sCPH {\n  border-radius: 50%;\n  width: 12px;\n  height: 12px;\n  background-color: #fff;\n  transition: transform 0.15s;\n}\n.styles-module__switchContainer___Ka-AB[data-checked] .styles-module__switchThumb___4sCPH {\n  transform: translateX(8px);\n}";
+var styles_module_default7 = { "switchContainer": "styles-module__switchContainer___Ka-AB", "switchInput": "styles-module__switchInput___kYDSD", "switchThumb": "styles-module__switchThumb___4sCPH" };
 
 // src/components/switch/index.tsx
-import { jsx as jsx10, jsxs as jsxs9 } from "react/jsx-runtime";
-var Switch = ({ className = "", ...props }) => {
-  return /* @__PURE__ */ jsxs9("div", { className: `${styles_module_default6.switchContainer} ${className}`, children: [
-    /* @__PURE__ */ jsx10("input", { className: styles_module_default6.switchInput, type: "checkbox", ...props }),
-    /* @__PURE__ */ jsx10("div", { className: styles_module_default6.switchThumb })
-  ] });
+import { jsx as jsx14, jsxs as jsxs10 } from "react/jsx-runtime";
+var Switch = ({
+  className = "",
+  checked,
+  onChange,
+  ...props
+}) => {
+  return /* @__PURE__ */ jsxs10(
+    "div",
+    {
+      className: `${styles_module_default7.switchContainer} ${className}`,
+      "data-checked": checked ? "" : void 0,
+      children: [
+        /* @__PURE__ */ jsx14(
+          "input",
+          {
+            className: styles_module_default7.switchInput,
+            checked,
+            onChange,
+            type: "checkbox",
+            ...props
+          }
+        ),
+        /* @__PURE__ */ jsx14("div", { className: styles_module_default7.switchThumb })
+      ]
+    }
+  );
 };
 
 // src/components/page-toolbar-css/settings-panel/checkbox-field/index.tsx
 import { useId } from "react";
 
 // src/components/checkbox/styles.module.scss
-var css8 = ".styles-module__checkboxContainer___joqZk {\n  display: flex;\n  justify-content: center;\n  align-items: center;\n  position: relative;\n  border: 1px solid rgba(26, 26, 26, 0.2);\n  border-radius: 4px;\n  width: 14px;\n  height: 14px;\n  background-color: #fff;\n  transition: background-color 0.2s ease;\n}\n[data-agentation-theme=dark] .styles-module__checkboxContainer___joqZk {\n  border-color: rgba(255, 255, 255, 0.2);\n  background-color: #252525;\n}\n.styles-module__checkboxContainer___joqZk:has(.styles-module__checkboxInput___ECzzO:checked) {\n  background-color: #1a1a1a;\n}\n[data-agentation-theme=dark] .styles-module__checkboxContainer___joqZk:has(.styles-module__checkboxInput___ECzzO:checked) {\n  background-color: #fff;\n}\n\n.styles-module__checkboxInput___ECzzO {\n  position: absolute;\n  z-index: 1;\n  inset: -1px;\n  border-radius: inherit;\n  opacity: 0;\n  cursor: pointer;\n}\n\n.styles-module__checkboxCheck___fUXpr {\n  color: #fafafa;\n}\n[data-agentation-theme=dark] .styles-module__checkboxCheck___fUXpr {\n  color: #1a1a1a;\n}\n\n.styles-module__checkboxCheckPath___cDyh8 {\n  stroke-dasharray: 9.29px;\n  stroke-dashoffset: 9.29px;\n  color: #fafafa;\n  transition: stroke-dashoffset 0.1s ease;\n}\n[data-agentation-theme=dark] .styles-module__checkboxCheckPath___cDyh8 {\n  color: #1a1a1a;\n}\n.styles-module__checkboxContainer___joqZk:has(.styles-module__checkboxInput___ECzzO:checked) .styles-module__checkboxCheckPath___cDyh8 {\n  transition-duration: 0.2s;\n  stroke-dashoffset: 0;\n}";
-var classNames8 = { "checkboxContainer": "styles-module__checkboxContainer___joqZk", "checkboxInput": "styles-module__checkboxInput___ECzzO", "checkboxCheck": "styles-module__checkboxCheck___fUXpr", "checkboxCheckPath": "styles-module__checkboxCheckPath___cDyh8" };
-if (typeof document !== "undefined") {
-  let style = document.getElementById("feedback-tool-styles-checkbox-styles");
-  if (!style) {
-    style = document.createElement("style");
-    style.id = "feedback-tool-styles-checkbox-styles";
-    document.head.appendChild(style);
-  }
-  style.textContent = css8;
-}
-var styles_module_default7 = classNames8;
+var css9 = ".styles-module__checkboxContainer___joqZk {\n  display: flex;\n  justify-content: center;\n  align-items: center;\n  position: relative;\n  border: 1px solid rgba(26, 26, 26, 0.2);\n  border-radius: 4px;\n  width: 14px;\n  height: 14px;\n  background-color: #fff;\n  transition: background-color 0.2s ease;\n}\n[data-agentation-theme=dark] .styles-module__checkboxContainer___joqZk {\n  border-color: rgba(255, 255, 255, 0.2);\n  background-color: #252525;\n}\n.styles-module__checkboxContainer___joqZk:has(.styles-module__checkboxInput___ECzzO:checked) {\n  background-color: #1a1a1a;\n}\n[data-agentation-theme=dark] .styles-module__checkboxContainer___joqZk:has(.styles-module__checkboxInput___ECzzO:checked) {\n  background-color: #fff;\n}\n\n.styles-module__checkboxInput___ECzzO {\n  position: absolute;\n  z-index: 1;\n  inset: -1px;\n  border-radius: inherit;\n  opacity: 0;\n  cursor: pointer;\n}\n\n.styles-module__checkboxCheck___fUXpr {\n  color: #fafafa;\n}\n[data-agentation-theme=dark] .styles-module__checkboxCheck___fUXpr {\n  color: #1a1a1a;\n}\n\n.styles-module__checkboxCheckPath___cDyh8 {\n  stroke-dasharray: 9.29px;\n  stroke-dashoffset: 9.29px;\n  color: #fafafa;\n  transition: stroke-dashoffset 0.1s ease;\n}\n[data-agentation-theme=dark] .styles-module__checkboxCheckPath___cDyh8 {\n  color: #1a1a1a;\n}\n.styles-module__checkboxContainer___joqZk[data-checked] .styles-module__checkboxCheckPath___cDyh8 {\n  transition-duration: 0.2s;\n  stroke-dashoffset: 0;\n}";
+var styles_module_default8 = { "checkboxContainer": "styles-module__checkboxContainer___joqZk", "checkboxInput": "styles-module__checkboxInput___ECzzO", "checkboxCheck": "styles-module__checkboxCheck___fUXpr", "checkboxCheckPath": "styles-module__checkboxCheckPath___cDyh8" };
 
 // src/components/checkbox/index.tsx
-import { jsx as jsx11, jsxs as jsxs10 } from "react/jsx-runtime";
-var Checkbox = ({ className = "", ...props }) => {
-  return /* @__PURE__ */ jsxs10("div", { className: `${styles_module_default7.checkboxContainer} ${className}`, children: [
-    /* @__PURE__ */ jsx11("input", { className: styles_module_default7.checkboxInput, type: "checkbox", ...props }),
-    /* @__PURE__ */ jsx11(
-      "svg",
-      {
-        className: styles_module_default7.checkboxCheck,
-        width: "14",
-        height: "14",
-        viewBox: "0 0 14 14",
-        fill: "none",
-        children: /* @__PURE__ */ jsx11(
-          "path",
+import { jsx as jsx15, jsxs as jsxs11 } from "react/jsx-runtime";
+var Checkbox = ({
+  className = "",
+  checked,
+  onChange,
+  ...props
+}) => {
+  return /* @__PURE__ */ jsxs11(
+    "div",
+    {
+      className: `${styles_module_default8.checkboxContainer} ${className}`,
+      "data-checked": checked ? "" : void 0,
+      children: [
+        /* @__PURE__ */ jsx15(
+          "input",
           {
-            className: styles_module_default7.checkboxCheckPath,
-            d: "M3.94 7L6.13 9.19L10.5 4.81",
-            stroke: "currentColor",
-            strokeWidth: "1.5",
-            strokeLinecap: "round",
-            strokeLinejoin: "round"
+            className: styles_module_default8.checkboxInput,
+            type: "checkbox",
+            checked,
+            onChange,
+            ...props
+          }
+        ),
+        /* @__PURE__ */ jsx15(
+          "svg",
+          {
+            className: styles_module_default8.checkboxCheck,
+            width: "14",
+            height: "14",
+            viewBox: "0 0 14 14",
+            fill: "none",
+            children: /* @__PURE__ */ jsx15(
+              "path",
+              {
+                className: styles_module_default8.checkboxCheckPath,
+                d: "M3.94 7L6.13 9.19L10.5 4.81",
+                stroke: "currentColor",
+                strokeWidth: "1.5",
+                strokeLinecap: "round",
+                strokeLinejoin: "round"
+              }
+            )
           }
         )
-      }
-    )
-  ] });
+      ]
+    }
+  );
 };
 
 // src/components/page-toolbar-css/settings-panel/checkbox-field/styles.module.scss
-var css9 = ".styles-module__container___w8eAF {\n  display: flex;\n  align-items: center;\n  height: 24px;\n}\n\n.styles-module__label___J5mxE {\n  padding-inline: 8px 2px;\n  line-height: 20px;\n  font-size: 13px;\n  letter-spacing: -0.15px;\n  color: rgba(26, 26, 26, 0.5);\n  cursor: pointer;\n}\n[data-agentation-theme=dark] .styles-module__label___J5mxE {\n  color: rgba(255, 255, 255, 0.5);\n}";
-var classNames9 = { "container": "styles-module__container___w8eAF", "label": "styles-module__label___J5mxE" };
-if (typeof document !== "undefined") {
-  let style = document.getElementById("feedback-tool-styles-checkbox-field-styles");
-  if (!style) {
-    style = document.createElement("style");
-    style.id = "feedback-tool-styles-checkbox-field-styles";
-    document.head.appendChild(style);
-  }
-  style.textContent = css9;
-}
-var styles_module_default8 = classNames9;
+var css10 = ".styles-module__container___w8eAF {\n  display: flex;\n  align-items: center;\n  height: 24px;\n}\n\n.styles-module__label___J5mxE {\n  padding-inline: 8px 2px;\n  line-height: 20px;\n  font-size: 13px;\n  letter-spacing: -0.15px;\n  color: rgba(26, 26, 26, 0.5);\n  -webkit-user-select: none;\n  user-select: none;\n  cursor: pointer;\n}\n[data-agentation-theme=dark] .styles-module__label___J5mxE {\n  color: rgba(255, 255, 255, 0.5);\n}";
+var styles_module_default9 = { "container": "styles-module__container___w8eAF", "label": "styles-module__label___J5mxE" };
 
 // src/components/page-toolbar-css/settings-panel/checkbox-field/index.tsx
-import { jsx as jsx12, jsxs as jsxs11 } from "react/jsx-runtime";
+import { jsx as jsx16, jsxs as jsxs12 } from "react/jsx-runtime";
 var CheckboxField = ({
   className = "",
   label,
@@ -7756,30 +9071,20 @@ var CheckboxField = ({
   ...props
 }) => {
   const id = useId();
-  return /* @__PURE__ */ jsxs11("div", { className: `${styles_module_default8.container} ${className}`, ...props, children: [
-    /* @__PURE__ */ jsx12(Checkbox, { id, onChange, checked }),
-    /* @__PURE__ */ jsx12("label", { className: styles_module_default8.label, htmlFor: id, children: label }),
-    tooltip && /* @__PURE__ */ jsx12(HelpTooltip, { content: tooltip })
+  return /* @__PURE__ */ jsxs12("div", { className: `${styles_module_default9.container} ${className}`, ...props, children: [
+    /* @__PURE__ */ jsx16(Checkbox, { id, onChange, checked }),
+    /* @__PURE__ */ jsx16("label", { className: styles_module_default9.label, htmlFor: id, children: label }),
+    tooltip && /* @__PURE__ */ jsx16(HelpTooltip, { content: tooltip })
   ] });
 };
 
 // src/components/page-toolbar-css/settings-panel/styles.module.scss
-var css10 = '@keyframes styles-module__cycleTextIn___VBNTi {\n  0% {\n    opacity: 0;\n    transform: translateY(-6px);\n  }\n  100% {\n    opacity: 1;\n    transform: translateY(0);\n  }\n}\n@keyframes styles-module__scaleIn___QpQ8E {\n  from {\n    opacity: 0;\n    transform: scale(0.85);\n  }\n  to {\n    opacity: 1;\n    transform: scale(1);\n  }\n}\n@keyframes styles-module__mcpPulse___5Q3Jj {\n  0% {\n    box-shadow: 0 0 0 0 color-mix(in srgb, var(--agentation-color-green) 50%, transparent);\n  }\n  70% {\n    box-shadow: 0 0 0 6px color-mix(in srgb, var(--agentation-color-green) 0%, transparent);\n  }\n  100% {\n    box-shadow: 0 0 0 0 color-mix(in srgb, var(--agentation-color-green) 0%, transparent);\n  }\n}\n@keyframes styles-module__mcpPulseError___VHxhx {\n  0% {\n    box-shadow: 0 0 0 0 color-mix(in srgb, var(--agentation-color-red) 50%, transparent);\n  }\n  70% {\n    box-shadow: 0 0 0 6px color-mix(in srgb, var(--agentation-color-red) 0%, transparent);\n  }\n  100% {\n    box-shadow: 0 0 0 0 color-mix(in srgb, var(--agentation-color-red) 0%, transparent);\n  }\n}\n@keyframes styles-module__themeIconIn___qUWMV {\n  0% {\n    opacity: 0;\n    transform: scale(0.8) rotate(-30deg);\n  }\n  100% {\n    opacity: 1;\n    transform: scale(1) rotate(0deg);\n  }\n}\n.styles-module__settingsPanel___qNkn- {\n  position: absolute;\n  right: 5px;\n  bottom: calc(100% + 0.5rem);\n  z-index: 1;\n  overflow: hidden;\n  background: #1c1c1c;\n  border-radius: 16px;\n  padding: 12px 0;\n  width: 100%;\n  max-width: 253px;\n  min-width: 205px;\n  cursor: default;\n  opacity: 1;\n  box-shadow: 0 1px 8px rgba(0, 0, 0, 0.25), 0 0 0 1px rgba(0, 0, 0, 0.04);\n  transition: background-color 0.25s ease, box-shadow 0.25s ease;\n}\n.styles-module__settingsPanel___qNkn-::before, .styles-module__settingsPanel___qNkn-::after {\n  content: "";\n  position: absolute;\n  top: 0;\n  bottom: 0;\n  width: 16px;\n  z-index: 2;\n  pointer-events: none;\n}\n.styles-module__settingsPanel___qNkn-::before {\n  left: 0;\n  background: linear-gradient(to right, #1c1c1c 0%, transparent 100%);\n}\n.styles-module__settingsPanel___qNkn-::after {\n  right: 0;\n  background: linear-gradient(to left, #1c1c1c 0%, transparent 100%);\n}\n.styles-module__settingsPanel___qNkn- .styles-module__settingsHeader___Fn1DP,\n.styles-module__settingsPanel___qNkn- .styles-module__settingsBrand___OoKlM,\n.styles-module__settingsPanel___qNkn- .styles-module__settingsBrandSlash___Q-AU9,\n.styles-module__settingsPanel___qNkn- .styles-module__settingsVersion___rXmL9,\n.styles-module__settingsPanel___qNkn- .styles-module__settingsSection___n5V-4,\n.styles-module__settingsPanel___qNkn- .styles-module__settingsLabel___VCVOQ,\n.styles-module__settingsPanel___qNkn- .styles-module__cycleButton___XMBx3,\n.styles-module__settingsPanel___qNkn- .styles-module__cycleDot___zgSXY,\n.styles-module__settingsPanel___qNkn- .styles-module__dropdownButton___mKHe8,\n.styles-module__settingsPanel___qNkn- .styles-module__sliderLabel___6K5v1,\n.styles-module__settingsPanel___qNkn- .styles-module__slider___v5z-c,\n.styles-module__settingsPanel___qNkn- .styles-module__themeToggle___3imlT {\n  transition: background-color 0.25s ease, color 0.25s ease, border-color 0.25s ease;\n}\n.styles-module__settingsPanel___qNkn-.styles-module__enter___wginS {\n  opacity: 1;\n  transform: translateY(0) scale(1);\n  filter: blur(0px);\n  transition: opacity 0.2s ease, transform 0.2s ease, filter 0.2s ease;\n}\n.styles-module__settingsPanel___qNkn-.styles-module__exit___A4iJc {\n  opacity: 0;\n  transform: translateY(8px) scale(0.95);\n  filter: blur(5px);\n  pointer-events: none;\n  transition: opacity 0.1s ease, transform 0.1s ease, filter 0.1s ease;\n}\n[data-agentation-theme=dark] .styles-module__settingsPanel___qNkn- {\n  background: #1a1a1a;\n  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3), 0 0 0 1px rgba(255, 255, 255, 0.08);\n}\n[data-agentation-theme=dark] .styles-module__settingsPanel___qNkn- .styles-module__settingsLabel___VCVOQ {\n  color: rgba(255, 255, 255, 0.6);\n}\n[data-agentation-theme=dark] .styles-module__settingsPanel___qNkn- .styles-module__settingsOption___JoyH- {\n  color: rgba(255, 255, 255, 0.85);\n}\n[data-agentation-theme=dark] .styles-module__settingsPanel___qNkn- .styles-module__settingsOption___JoyH-:hover {\n  background: rgba(255, 255, 255, 0.1);\n}\n[data-agentation-theme=dark] .styles-module__settingsPanel___qNkn- .styles-module__settingsOption___JoyH-.styles-module__selected___k1-Vq {\n  background: rgba(255, 255, 255, 0.15);\n  color: #fff;\n}\n\n.styles-module__settingsPanelContainer___5it-H {\n  overflow: visible;\n  position: relative;\n  display: flex;\n  padding: 0 16px;\n}\n\n.styles-module__settingsPage___BMn-3 {\n  min-width: 100%;\n  flex-basis: 0;\n  flex-shrink: 0;\n  transition: transform 0.2s ease, opacity 0.2s ease;\n  transition-delay: 0s;\n  opacity: 1;\n}\n\n.styles-module__settingsPage___BMn-3.styles-module__slideLeft___qUvW4 {\n  transform: translateX(-24px);\n  opacity: 0;\n  pointer-events: none;\n}\n\n.styles-module__automationsPage___N7By0 {\n  position: absolute;\n  top: 0;\n  left: 24px;\n  width: 100%;\n  height: 100%;\n  padding: 0 16px 4px;\n  box-sizing: border-box;\n  display: flex;\n  flex-direction: column;\n  transition: transform 0.2s ease, opacity 0.2s ease;\n  opacity: 0;\n  pointer-events: none;\n}\n\n.styles-module__automationsPage___N7By0.styles-module__slideIn___uXDSu {\n  transform: translateX(-24px);\n  opacity: 1;\n  pointer-events: auto;\n}\n\n.styles-module__settingsHeader___Fn1DP {\n  display: flex;\n  align-items: center;\n  justify-content: space-between;\n  height: 24px;\n}\n\n.styles-module__settingsBrand___OoKlM {\n  font-size: 0.8125rem;\n  font-weight: 600;\n  letter-spacing: -0.0094em;\n  color: #fff;\n  text-decoration: none;\n}\n\n.styles-module__settingsBrandSlash___Q-AU9 {\n  color: var(--agentation-color-accent);\n  transition: color 0.2s ease;\n}\n\n.styles-module__settingsVersion___rXmL9 {\n  font-size: 11px;\n  font-weight: 400;\n  color: rgba(255, 255, 255, 0.4);\n  margin-left: auto;\n  letter-spacing: -0.0094em;\n}\n\n.styles-module__themeToggle___3imlT {\n  display: flex;\n  align-items: center;\n  justify-content: center;\n  width: 22px;\n  height: 22px;\n  margin-left: 8px;\n  border: none;\n  border-radius: 6px;\n  background: transparent;\n  color: rgba(255, 255, 255, 0.4);\n  transition: background-color 0.15s ease, color 0.15s ease;\n  cursor: pointer;\n}\n.styles-module__themeToggle___3imlT:hover {\n  background: rgba(255, 255, 255, 0.1);\n  color: rgba(255, 255, 255, 0.8);\n}\n[data-agentation-theme=light] .styles-module__themeToggle___3imlT {\n  color: rgba(0, 0, 0, 0.4);\n}\n[data-agentation-theme=light] .styles-module__themeToggle___3imlT:hover {\n  background: rgba(0, 0, 0, 0.06);\n  color: rgba(0, 0, 0, 0.7);\n}\n\n.styles-module__themeIconWrapper___pyaYa {\n  display: flex;\n  align-items: center;\n  justify-content: center;\n  position: relative;\n  width: 20px;\n  height: 20px;\n}\n\n.styles-module__themeIcon___w7lAm {\n  display: flex;\n  align-items: center;\n  justify-content: center;\n  animation: styles-module__themeIconIn___qUWMV 0.35s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;\n}\n\n.styles-module__settingsSectionGrow___eZTRw {\n  flex: 1;\n  display: flex;\n  flex-direction: column;\n}\n\n.styles-module__settingsRow___y-tDE {\n  display: flex;\n  align-items: center;\n  justify-content: space-between;\n  min-height: 24px;\n}\n.styles-module__settingsRow___y-tDE.styles-module__settingsRowMarginTop___uLpGb {\n  margin-top: 8px;\n}\n\n.styles-module__settingsRowDisabled___ydl3Q .styles-module__settingsLabel___VCVOQ {\n  color: rgba(255, 255, 255, 0.2);\n}\n[data-agentation-theme=light] .styles-module__settingsRowDisabled___ydl3Q .styles-module__settingsLabel___VCVOQ {\n  color: rgba(0, 0, 0, 0.2);\n}\n\n.styles-module__settingsLabel___VCVOQ {\n  display: flex;\n  align-items: center;\n  column-gap: 2px;\n  line-height: 20px;\n  font-size: 13px;\n  font-weight: 400;\n  letter-spacing: -0.15px;\n  color: rgba(255, 255, 255, 0.5);\n}\n[data-agentation-theme=light] .styles-module__settingsLabel___VCVOQ {\n  color: rgba(0, 0, 0, 0.5);\n}\n\n.styles-module__cycleButton___XMBx3 {\n  display: flex;\n  align-items: center;\n  gap: 0.5rem;\n  padding: 0;\n  border: none;\n  background: transparent;\n  font-size: 0.8125rem;\n  font-weight: 500;\n  color: #fff;\n  cursor: pointer;\n  letter-spacing: -0.0094em;\n}\n[data-agentation-theme=light] .styles-module__cycleButton___XMBx3 {\n  color: rgba(0, 0, 0, 0.85);\n}\n.styles-module__cycleButton___XMBx3:disabled {\n  opacity: 0.35;\n  cursor: not-allowed;\n}\n\n.styles-module__cycleButtonText___mbbnD {\n  display: inline-block;\n  animation: styles-module__cycleTextIn___VBNTi 0.2s ease-out;\n}\n\n.styles-module__cycleDots___ehp6i {\n  display: flex;\n  flex-direction: column;\n  gap: 2px;\n}\n\n.styles-module__cycleDot___zgSXY {\n  width: 3px;\n  height: 3px;\n  border-radius: 50%;\n  background: rgba(255, 255, 255, 0.3);\n  transform: scale(0.667);\n  transition: background-color 0.25s ease-out, transform 0.25s ease-out;\n}\n.styles-module__cycleDot___zgSXY.styles-module__active___dpAhM {\n  background: #fff;\n  transform: scale(1);\n}\n[data-agentation-theme=light] .styles-module__cycleDot___zgSXY {\n  background: rgba(0, 0, 0, 0.2);\n}\n[data-agentation-theme=light] .styles-module__cycleDot___zgSXY.styles-module__active___dpAhM {\n  background: rgba(0, 0, 0, 0.7);\n}\n\n.styles-module__colorOptions___pbxZx {\n  display: flex;\n  justify-content: space-between;\n  align-items: center;\n  margin-top: 6px;\n  height: 26px;\n}\n\n.styles-module__colorOption___Co955 {\n  padding: 0;\n  position: relative;\n  border-radius: 50%;\n  width: 20px;\n  height: 20px;\n  background-color: #fff;\n  cursor: pointer;\n}\n[data-agentation-theme=dark] .styles-module__colorOption___Co955 {\n  background-color: #1a1a1a;\n}\n.styles-module__colorOption___Co955::before, .styles-module__colorOption___Co955::after {\n  content: "";\n  position: absolute;\n  inset: 0;\n  border-radius: 50%;\n  background-color: var(--swatch);\n  transition: opacity 0.2s, transform 0.2s;\n}\n@supports (color: color(display-p3 0 0 0)) {\n  .styles-module__colorOption___Co955::before, .styles-module__colorOption___Co955::after {\n    --color: var(--swatch-p3);\n  }\n}\n.styles-module__colorOption___Co955::after {\n  z-index: -1;\n  transform: scale(1.2);\n  opacity: 0;\n}\n.styles-module__colorOption___Co955.styles-module__selected___k1-Vq::before {\n  transform: scale(0.8);\n}\n.styles-module__colorOption___Co955.styles-module__selected___k1-Vq::after {\n  opacity: 1;\n}\n\n.styles-module__settingsNavLink___uYIwM {\n  display: flex;\n  align-items: center;\n  justify-content: space-between;\n  width: 100%;\n  height: 24px;\n  padding: 0;\n  border: none;\n  background: transparent;\n  font-family: inherit;\n  line-height: 20px;\n  font-size: 13px;\n  font-weight: 400;\n  color: rgba(255, 255, 255, 0.5);\n  transition: color 0.15s ease;\n  cursor: pointer;\n}\n.styles-module__settingsNavLink___uYIwM:hover {\n  color: rgba(255, 255, 255, 0.9);\n}\n.styles-module__settingsNavLink___uYIwM svg {\n  color: rgba(255, 255, 255, 0.4);\n  transition: color 0.15s ease;\n}\n.styles-module__settingsNavLink___uYIwM:hover svg {\n  color: #fff;\n}\n[data-agentation-theme=light] .styles-module__settingsNavLink___uYIwM {\n  color: rgba(0, 0, 0, 0.5);\n}\n[data-agentation-theme=light] .styles-module__settingsNavLink___uYIwM:hover {\n  color: rgba(0, 0, 0, 0.8);\n}\n[data-agentation-theme=light] .styles-module__settingsNavLink___uYIwM svg {\n  color: rgba(0, 0, 0, 0.25);\n}\n[data-agentation-theme=light] .styles-module__settingsNavLink___uYIwM:hover svg {\n  color: rgba(0, 0, 0, 0.8);\n}\n\n.styles-module__settingsNavLinkRight___XBUzC {\n  display: flex;\n  align-items: center;\n  gap: 6px;\n}\n\n.styles-module__settingsBackButton___fflll {\n  display: flex;\n  align-items: center;\n  gap: 4px;\n  height: 24px;\n  background: transparent;\n  font-family: inherit;\n  line-height: 20px;\n  font-size: 13px;\n  font-weight: 500;\n  letter-spacing: -0.15px;\n  color: #fff;\n  cursor: pointer;\n  transition: transform 0.12s cubic-bezier(0.32, 0.72, 0, 1);\n}\n.styles-module__settingsBackButton___fflll svg {\n  opacity: 0.4;\n  flex-shrink: 0;\n  transition: opacity 0.15s ease, transform 0.18s cubic-bezier(0.32, 0.72, 0, 1);\n}\n.styles-module__settingsBackButton___fflll:hover svg {\n  opacity: 1;\n}\n[data-agentation-theme=light] .styles-module__settingsBackButton___fflll {\n  color: rgba(0, 0, 0, 0.85);\n  border-bottom-color: rgba(0, 0, 0, 0.08);\n}\n\n.styles-module__automationHeader___Avra9 {\n  display: flex;\n  align-items: center;\n  gap: 0.125rem;\n  font-size: 0.8125rem;\n  font-weight: 400;\n  color: #fff;\n}\n[data-agentation-theme=light] .styles-module__automationHeader___Avra9 {\n  color: rgba(0, 0, 0, 0.85);\n}\n\n.styles-module__automationDescription___vFTmJ {\n  font-size: 0.6875rem;\n  font-weight: 300;\n  color: rgba(255, 255, 255, 0.5);\n  margin-top: 2px;\n  line-height: 14px;\n}\n[data-agentation-theme=light] .styles-module__automationDescription___vFTmJ {\n  color: rgba(0, 0, 0, 0.5);\n}\n\n.styles-module__learnMoreLink___cG7OI {\n  color: rgba(255, 255, 255, 0.8);\n  text-decoration-line: underline;\n  text-decoration-style: dotted;\n  text-decoration-color: rgba(255, 255, 255, 0.2);\n  text-underline-offset: 2px;\n  transition: color 0.15s ease;\n}\n.styles-module__learnMoreLink___cG7OI:hover {\n  color: #fff;\n}\n[data-agentation-theme=light] .styles-module__learnMoreLink___cG7OI {\n  color: rgba(0, 0, 0, 0.6);\n  text-decoration-color: rgba(0, 0, 0, 0.2);\n}\n[data-agentation-theme=light] .styles-module__learnMoreLink___cG7OI:hover {\n  color: rgba(0, 0, 0, 0.85);\n}\n\n.styles-module__autoSendContainer___VpkXk {\n  display: flex;\n  align-items: center;\n}\n\n.styles-module__autoSendLabel___ngNdC {\n  padding-inline-end: 8px;\n  font-size: 11px;\n  font-weight: 400;\n  color: rgba(255, 255, 255, 0.4);\n  transition: color 0.15s, opacity 0.15s;\n  cursor: pointer;\n}\n.styles-module__autoSendLabel___ngNdC.styles-module__active___dpAhM {\n  color: #66b8ff;\n  color: color(display-p3 0.4 0.72 1);\n}\n[data-agentation-theme=light] .styles-module__autoSendLabel___ngNdC {\n  color: rgba(0, 0, 0, 0.4);\n}\n[data-agentation-theme=light] .styles-module__autoSendLabel___ngNdC.styles-module__active___dpAhM {\n  color: var(--agentation-color-blue);\n}\n.styles-module__autoSendLabel___ngNdC.styles-module__disabled___9AZYS {\n  opacity: 0.3;\n  cursor: not-allowed;\n}\n\n.styles-module__mcpStatusDot___8AMxP {\n  width: 8px;\n  height: 8px;\n  border-radius: 50%;\n  flex-shrink: 0;\n}\n.styles-module__mcpStatusDot___8AMxP.styles-module__connecting___QEO1r {\n  background-color: var(--agentation-color-yellow);\n  animation: styles-module__mcpPulse___5Q3Jj 1.5s infinite;\n}\n.styles-module__mcpStatusDot___8AMxP.styles-module__connected___WyFkx {\n  background-color: var(--agentation-color-green);\n  animation: styles-module__mcpPulse___5Q3Jj 2.5s ease-in-out infinite;\n}\n.styles-module__mcpStatusDot___8AMxP.styles-module__disconnected___mvmvQ {\n  background-color: var(--agentation-color-red);\n  animation: styles-module__mcpPulseError___VHxhx 2s infinite;\n}\n\n.styles-module__mcpNavIndicator___auBHI {\n  width: 8px;\n  height: 8px;\n  border-radius: 50%;\n  flex-shrink: 0;\n}\n.styles-module__mcpNavIndicator___auBHI.styles-module__connected___WyFkx {\n  background-color: var(--agentation-color-green);\n  animation: styles-module__mcpPulse___5Q3Jj 2.5s ease-in-out infinite;\n}\n.styles-module__mcpNavIndicator___auBHI.styles-module__connecting___QEO1r {\n  background-color: var(--agentation-color-yellow);\n  animation: styles-module__mcpPulse___5Q3Jj 1.5s ease-in-out infinite;\n}\n\n.styles-module__webhookUrlInput___WDDDC {\n  display: block;\n  width: 100%;\n  flex: 1;\n  min-height: 60px;\n  box-sizing: border-box;\n  margin-top: 11px;\n  padding: 8px 10px;\n  border: 1px solid rgba(255, 255, 255, 0.1);\n  border-radius: 6px;\n  background: rgba(255, 255, 255, 0.03);\n  font-family: inherit;\n  font-size: 0.75rem;\n  font-weight: 400;\n  color: #fff;\n  outline: none;\n  resize: none;\n  user-select: text;\n  transition: border-color 0.15s ease, background-color 0.15s ease, box-shadow 0.15s ease;\n}\n.styles-module__webhookUrlInput___WDDDC::placeholder {\n  color: rgba(255, 255, 255, 0.3);\n}\n.styles-module__webhookUrlInput___WDDDC:focus {\n  border-color: rgba(255, 255, 255, 0.3);\n  background: rgba(255, 255, 255, 0.08);\n}\n[data-agentation-theme=light] .styles-module__webhookUrlInput___WDDDC {\n  border-color: rgba(0, 0, 0, 0.1);\n  background: rgba(0, 0, 0, 0.03);\n  color: rgba(0, 0, 0, 0.85);\n}\n[data-agentation-theme=light] .styles-module__webhookUrlInput___WDDDC::placeholder {\n  color: rgba(0, 0, 0, 0.3);\n}\n[data-agentation-theme=light] .styles-module__webhookUrlInput___WDDDC:focus {\n  border-color: rgba(0, 0, 0, 0.25);\n  background: rgba(0, 0, 0, 0.05);\n}\n\n[data-agentation-theme=light] .styles-module__settingsPanel___qNkn- {\n  background: #fff;\n  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08), 0 4px 16px rgba(0, 0, 0, 0.06), 0 0 0 1px rgba(0, 0, 0, 0.04);\n}\n[data-agentation-theme=light] .styles-module__settingsPanel___qNkn-::before {\n  background: linear-gradient(to right, #fff 0%, transparent 100%);\n}\n[data-agentation-theme=light] .styles-module__settingsPanel___qNkn-::after {\n  background: linear-gradient(to left, #fff 0%, transparent 100%);\n}\n[data-agentation-theme=light] .styles-module__settingsPanel___qNkn- .styles-module__settingsHeader___Fn1DP {\n  border-bottom-color: rgba(0, 0, 0, 0.08);\n}\n[data-agentation-theme=light] .styles-module__settingsPanel___qNkn- .styles-module__settingsBrand___OoKlM {\n  color: #E5484D;\n}\n[data-agentation-theme=light] .styles-module__settingsPanel___qNkn- .styles-module__settingsVersion___rXmL9 {\n  color: rgba(0, 0, 0, 0.4);\n}\n[data-agentation-theme=light] .styles-module__settingsPanel___qNkn- .styles-module__settingsSection___n5V-4 {\n  border-top-color: rgba(0, 0, 0, 0.08);\n}\n[data-agentation-theme=light] .styles-module__settingsPanel___qNkn- .styles-module__settingsLabel___VCVOQ {\n  color: rgba(0, 0, 0, 0.5);\n}\n[data-agentation-theme=light] .styles-module__settingsPanel___qNkn- .styles-module__cycleButton___XMBx3 {\n  color: rgba(0, 0, 0, 0.85);\n}\n[data-agentation-theme=light] .styles-module__settingsPanel___qNkn- .styles-module__cycleDot___zgSXY {\n  background: rgba(0, 0, 0, 0.2);\n}\n[data-agentation-theme=light] .styles-module__settingsPanel___qNkn- .styles-module__cycleDot___zgSXY.styles-module__active___dpAhM {\n  background: rgba(0, 0, 0, 0.7);\n}\n[data-agentation-theme=light] .styles-module__settingsPanel___qNkn- .styles-module__dropdownButton___mKHe8 {\n  color: rgba(0, 0, 0, 0.85);\n}\n[data-agentation-theme=light] .styles-module__settingsPanel___qNkn- .styles-module__dropdownButton___mKHe8:hover {\n  background: rgba(0, 0, 0, 0.05);\n}\n\n.styles-module__checkboxField___ZrSqv:not(:first-child) {\n  margin-top: 8px;\n}\n\n.styles-module__divider___h6Yux {\n  margin-block: 8px;\n  width: 100%;\n  height: 1px;\n  background-color: rgba(26, 26, 26, 0.07);\n}\n[data-agentation-theme=dark] .styles-module__divider___h6Yux {\n  background-color: rgba(255, 255, 255, 0.07);\n}';
-var classNames10 = { "settingsPanel": "styles-module__settingsPanel___qNkn-", "settingsHeader": "styles-module__settingsHeader___Fn1DP", "settingsBrand": "styles-module__settingsBrand___OoKlM", "settingsBrandSlash": "styles-module__settingsBrandSlash___Q-AU9", "settingsVersion": "styles-module__settingsVersion___rXmL9", "settingsSection": "styles-module__settingsSection___n5V-4", "settingsLabel": "styles-module__settingsLabel___VCVOQ", "cycleButton": "styles-module__cycleButton___XMBx3", "cycleDot": "styles-module__cycleDot___zgSXY", "dropdownButton": "styles-module__dropdownButton___mKHe8", "sliderLabel": "styles-module__sliderLabel___6K5v1", "slider": "styles-module__slider___v5z-c", "themeToggle": "styles-module__themeToggle___3imlT", "enter": "styles-module__enter___wginS", "exit": "styles-module__exit___A4iJc", "settingsOption": "styles-module__settingsOption___JoyH-", "selected": "styles-module__selected___k1-Vq", "settingsPanelContainer": "styles-module__settingsPanelContainer___5it-H", "settingsPage": "styles-module__settingsPage___BMn-3", "slideLeft": "styles-module__slideLeft___qUvW4", "automationsPage": "styles-module__automationsPage___N7By0", "slideIn": "styles-module__slideIn___uXDSu", "themeIconWrapper": "styles-module__themeIconWrapper___pyaYa", "themeIcon": "styles-module__themeIcon___w7lAm", "themeIconIn": "styles-module__themeIconIn___qUWMV", "settingsSectionGrow": "styles-module__settingsSectionGrow___eZTRw", "settingsRow": "styles-module__settingsRow___y-tDE", "settingsRowMarginTop": "styles-module__settingsRowMarginTop___uLpGb", "settingsRowDisabled": "styles-module__settingsRowDisabled___ydl3Q", "cycleButtonText": "styles-module__cycleButtonText___mbbnD", "cycleTextIn": "styles-module__cycleTextIn___VBNTi", "cycleDots": "styles-module__cycleDots___ehp6i", "active": "styles-module__active___dpAhM", "colorOptions": "styles-module__colorOptions___pbxZx", "colorOption": "styles-module__colorOption___Co955", "settingsNavLink": "styles-module__settingsNavLink___uYIwM", "settingsNavLinkRight": "styles-module__settingsNavLinkRight___XBUzC", "settingsBackButton": "styles-module__settingsBackButton___fflll", "automationHeader": "styles-module__automationHeader___Avra9", "automationDescription": "styles-module__automationDescription___vFTmJ", "learnMoreLink": "styles-module__learnMoreLink___cG7OI", "autoSendContainer": "styles-module__autoSendContainer___VpkXk", "autoSendLabel": "styles-module__autoSendLabel___ngNdC", "disabled": "styles-module__disabled___9AZYS", "mcpStatusDot": "styles-module__mcpStatusDot___8AMxP", "connecting": "styles-module__connecting___QEO1r", "mcpPulse": "styles-module__mcpPulse___5Q3Jj", "connected": "styles-module__connected___WyFkx", "disconnected": "styles-module__disconnected___mvmvQ", "mcpPulseError": "styles-module__mcpPulseError___VHxhx", "mcpNavIndicator": "styles-module__mcpNavIndicator___auBHI", "webhookUrlInput": "styles-module__webhookUrlInput___WDDDC", "checkboxField": "styles-module__checkboxField___ZrSqv", "divider": "styles-module__divider___h6Yux", "scaleIn": "styles-module__scaleIn___QpQ8E" };
-if (typeof document !== "undefined") {
-  let style = document.getElementById("feedback-tool-styles-settings-panel-styles");
-  if (!style) {
-    style = document.createElement("style");
-    style.id = "feedback-tool-styles-settings-panel-styles";
-    document.head.appendChild(style);
-  }
-  style.textContent = css10;
-}
-var styles_module_default9 = classNames10;
+var css11 = '@keyframes styles-module__cycleTextIn___VBNTi {\n  0% {\n    opacity: 0;\n    transform: translateY(-6px);\n  }\n  100% {\n    opacity: 1;\n    transform: translateY(0);\n  }\n}\n@keyframes styles-module__scaleIn___QpQ8E {\n  from {\n    opacity: 0;\n    transform: scale(0.85);\n  }\n  to {\n    opacity: 1;\n    transform: scale(1);\n  }\n}\n@keyframes styles-module__mcpPulse___5Q3Jj {\n  0% {\n    box-shadow: 0 0 0 0 color-mix(in srgb, var(--agentation-color-green) 50%, transparent);\n  }\n  70% {\n    box-shadow: 0 0 0 6px color-mix(in srgb, var(--agentation-color-green) 0%, transparent);\n  }\n  100% {\n    box-shadow: 0 0 0 0 color-mix(in srgb, var(--agentation-color-green) 0%, transparent);\n  }\n}\n@keyframes styles-module__mcpPulseError___VHxhx {\n  0% {\n    box-shadow: 0 0 0 0 color-mix(in srgb, var(--agentation-color-red) 50%, transparent);\n  }\n  70% {\n    box-shadow: 0 0 0 6px color-mix(in srgb, var(--agentation-color-red) 0%, transparent);\n  }\n  100% {\n    box-shadow: 0 0 0 0 color-mix(in srgb, var(--agentation-color-red) 0%, transparent);\n  }\n}\n@keyframes styles-module__themeIconIn___qUWMV {\n  0% {\n    opacity: 0;\n    transform: scale(0.8) rotate(-30deg);\n  }\n  100% {\n    opacity: 1;\n    transform: scale(1) rotate(0deg);\n  }\n}\n.styles-module__settingsPanel___qNkn- :where(button, a, input, select, textarea):focus-visible {\n  outline: 2px solid var(--agentation-color-accent);\n  outline-offset: 2px;\n}\n.styles-module__settingsPanel___qNkn- {\n  position: absolute;\n  right: 5px;\n  bottom: calc(100% + 0.5rem);\n  z-index: 1;\n  overflow: hidden;\n  background: #1c1c1c;\n  border-radius: 16px;\n  padding: 12px 0;\n  width: 253px;\n  max-width: calc(100vw - 20px);\n  cursor: default;\n  opacity: 1;\n  box-shadow: 0 1px 8px rgba(0, 0, 0, 0.25), 0 0 0 1px rgba(0, 0, 0, 0.04);\n  transition: background-color 0.25s ease, box-shadow 0.25s ease;\n}\n.styles-module__settingsPanel___qNkn-::before, .styles-module__settingsPanel___qNkn-::after {\n  content: "";\n  position: absolute;\n  top: 0;\n  bottom: 0;\n  width: 16px;\n  z-index: 2;\n  pointer-events: none;\n}\n.styles-module__settingsPanel___qNkn-::before {\n  left: 0;\n  background: linear-gradient(to right, #1c1c1c 0%, transparent 100%);\n}\n.styles-module__settingsPanel___qNkn-::after {\n  right: 0;\n  background: linear-gradient(to left, #1c1c1c 0%, transparent 100%);\n}\n.styles-module__settingsPanel___qNkn- .styles-module__settingsHeader___Fn1DP,\n.styles-module__settingsPanel___qNkn- .styles-module__settingsBrand___OoKlM,\n.styles-module__settingsPanel___qNkn- .styles-module__settingsVersion___rXmL9,\n.styles-module__settingsPanel___qNkn- .styles-module__settingsSection___n5V-4,\n.styles-module__settingsPanel___qNkn- .styles-module__settingsLabel___VCVOQ,\n.styles-module__settingsPanel___qNkn- .styles-module__cycleButton___XMBx3,\n.styles-module__settingsPanel___qNkn- .styles-module__cycleDot___zgSXY,\n.styles-module__settingsPanel___qNkn- .styles-module__dropdownButton___mKHe8,\n.styles-module__settingsPanel___qNkn- .styles-module__sliderLabel___6K5v1,\n.styles-module__settingsPanel___qNkn- .styles-module__slider___v5z-c,\n.styles-module__settingsPanel___qNkn- .styles-module__themeToggle___3imlT {\n  transition: background-color 0.25s ease, color 0.25s ease, border-color 0.25s ease;\n}\n.styles-module__settingsPanel___qNkn- {\n  opacity: 0;\n  transform: translateY(var(--panel-offset-y, 4px)) scale(0.98);\n  transform-origin: var(--panel-origin, bottom right);\n  filter: blur(2px);\n  pointer-events: none;\n  visibility: hidden;\n  transition: opacity 120ms cubic-bezier(0.25, 0.46, 0.45, 0.94), transform 120ms cubic-bezier(0.25, 0.46, 0.45, 0.94), filter 120ms cubic-bezier(0.25, 0.46, 0.45, 0.94);\n}\n.styles-module__settingsPanel___qNkn-[data-panel-present=true] {\n  visibility: visible;\n}\n.styles-module__settingsPanel___qNkn-[data-panel-open=true] {\n  opacity: 1;\n  transform: translateY(0) scale(1);\n  filter: blur(0);\n  pointer-events: auto;\n  transition-duration: 160ms;\n}\n@media (prefers-reduced-motion: reduce) {\n  .styles-module__settingsPanel___qNkn- {\n    transition: none;\n    transform: none;\n    filter: none;\n  }\n}\n.styles-module__settingsPanel___qNkn-.styles-module__below___Vpv-k {\n  --panel-offset-y: -4px;\n  --panel-origin: top right;\n}\n[data-agentation-theme=dark] .styles-module__settingsPanel___qNkn- {\n  background: #1a1a1a;\n  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3), 0 0 0 1px rgba(255, 255, 255, 0.08);\n}\n[data-agentation-theme=dark] .styles-module__settingsPanel___qNkn- .styles-module__settingsLabel___VCVOQ {\n  color: rgba(255, 255, 255, 0.6);\n}\n[data-agentation-theme=dark] .styles-module__settingsPanel___qNkn- .styles-module__settingsOption___JoyH- {\n  color: rgba(255, 255, 255, 0.85);\n}\n[data-agentation-theme=dark] .styles-module__settingsPanel___qNkn- .styles-module__settingsOption___JoyH-:hover {\n  background: rgba(255, 255, 255, 0.1);\n}\n[data-agentation-theme=dark] .styles-module__settingsPanel___qNkn- .styles-module__settingsOption___JoyH-.styles-module__selected___k1-Vq {\n  background: rgba(255, 255, 255, 0.15);\n  color: #fff;\n}\n\n.styles-module__settingsPanelContainer___5it-H {\n  overflow: visible;\n  position: relative;\n  display: flex;\n  padding: 0 16px;\n}\n\n.styles-module__settingsPage___BMn-3 {\n  min-width: 100%;\n  flex-basis: 0;\n  flex-shrink: 0;\n  transition: transform 0.2s ease, opacity 0.2s ease;\n  transition-delay: 0s;\n  opacity: 1;\n}\n\n.styles-module__settingsPage___BMn-3.styles-module__slideLeft___qUvW4 {\n  transform: translateX(-24px);\n  opacity: 0;\n  pointer-events: none;\n}\n\n.styles-module__automationsPage___N7By0 {\n  position: absolute;\n  top: 0;\n  left: 24px;\n  width: 100%;\n  height: 100%;\n  padding: 0 16px 4px;\n  box-sizing: border-box;\n  display: flex;\n  flex-direction: column;\n  transition: transform 0.2s ease, opacity 0.2s ease;\n  opacity: 0;\n  pointer-events: none;\n}\n\n.styles-module__automationsPage___N7By0.styles-module__slideIn___uXDSu {\n  transform: translateX(-24px);\n  opacity: 1;\n  pointer-events: auto;\n}\n\n.styles-module__settingsHeader___Fn1DP {\n  display: flex;\n  align-items: center;\n  justify-content: space-between;\n  height: 24px;\n}\n\n.styles-module__settingsBrand___OoKlM {\n  display: flex;\n  align-items: center;\n  font-size: 0.8125rem;\n  font-weight: 500;\n  letter-spacing: -0.0094em;\n  color: #bbb;\n  text-decoration: none;\n}\n\n.styles-module__settingsVersion___rXmL9 {\n  font-size: 11px;\n  font-weight: 400;\n  color: rgba(255, 255, 255, 0.4);\n  margin-left: 6px;\n  letter-spacing: -0.0094em;\n}\n\n.styles-module__themeToggle___3imlT {\n  display: flex;\n  align-items: center;\n  justify-content: center;\n  width: 22px;\n  height: 22px;\n  margin-left: auto;\n  border: none;\n  border-radius: 6px;\n  background: transparent;\n  color: rgba(255, 255, 255, 0.4);\n  transition: background-color 0.15s ease, color 0.15s ease;\n  cursor: pointer;\n}\n.styles-module__themeToggle___3imlT:hover {\n  background: rgba(255, 255, 255, 0.1);\n  color: rgba(255, 255, 255, 0.8);\n}\n[data-agentation-theme=light] .styles-module__themeToggle___3imlT {\n  color: rgba(0, 0, 0, 0.4);\n}\n[data-agentation-theme=light] .styles-module__themeToggle___3imlT:hover {\n  background: rgba(0, 0, 0, 0.06);\n  color: rgba(0, 0, 0, 0.7);\n}\n\n.styles-module__themeIconWrapper___pyaYa {\n  display: flex;\n  align-items: center;\n  justify-content: center;\n  position: relative;\n  width: 20px;\n  height: 20px;\n}\n\n.styles-module__themeIcon___w7lAm {\n  display: flex;\n  align-items: center;\n  justify-content: center;\n  animation: styles-module__themeIconIn___qUWMV 0.35s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;\n}\n\n.styles-module__settingsSectionGrow___eZTRw {\n  flex: 1;\n  display: flex;\n  flex-direction: column;\n}\n\n.styles-module__settingsRow___y-tDE {\n  display: flex;\n  align-items: center;\n  justify-content: space-between;\n  min-height: 24px;\n}\n.styles-module__settingsRow___y-tDE.styles-module__settingsRowMarginTop___uLpGb {\n  margin-top: 8px;\n}\n\n.styles-module__settingsRowDisabled___ydl3Q .styles-module__settingsLabel___VCVOQ {\n  color: rgba(255, 255, 255, 0.2);\n}\n[data-agentation-theme=light] .styles-module__settingsRowDisabled___ydl3Q .styles-module__settingsLabel___VCVOQ {\n  color: rgba(0, 0, 0, 0.2);\n}\n\n.styles-module__settingsLabel___VCVOQ {\n  display: flex;\n  align-items: center;\n  column-gap: 2px;\n  line-height: 20px;\n  font-size: 13px;\n  font-weight: 400;\n  letter-spacing: -0.15px;\n  color: rgba(255, 255, 255, 0.5);\n}\n[data-agentation-theme=light] .styles-module__settingsLabel___VCVOQ {\n  color: rgba(0, 0, 0, 0.5);\n}\n\n.styles-module__cycleButton___XMBx3 {\n  display: flex;\n  align-items: center;\n  gap: 0.5rem;\n  padding: 0;\n  border: none;\n  background: transparent;\n  font-size: 0.8125rem;\n  font-weight: 500;\n  color: #fff;\n  cursor: pointer;\n  letter-spacing: -0.0094em;\n}\n[data-agentation-theme=light] .styles-module__cycleButton___XMBx3 {\n  color: rgba(0, 0, 0, 0.85);\n}\n.styles-module__cycleButton___XMBx3:disabled {\n  opacity: 0.35;\n  cursor: not-allowed;\n}\n\n.styles-module__cycleButtonText___mbbnD {\n  display: inline-block;\n  animation: styles-module__cycleTextIn___VBNTi 0.2s ease-out;\n}\n\n.styles-module__cycleDots___ehp6i {\n  display: flex;\n  flex-direction: column;\n  gap: 2px;\n}\n\n.styles-module__cycleDot___zgSXY {\n  width: 3px;\n  height: 3px;\n  border-radius: 50%;\n  background: rgba(255, 255, 255, 0.3);\n  transform: scale(0.667);\n  transition: background-color 0.25s ease-out, transform 0.25s ease-out;\n}\n.styles-module__cycleDot___zgSXY.styles-module__active___dpAhM {\n  background: #fff;\n  transform: scale(1);\n}\n[data-agentation-theme=light] .styles-module__cycleDot___zgSXY {\n  background: rgba(0, 0, 0, 0.2);\n}\n[data-agentation-theme=light] .styles-module__cycleDot___zgSXY.styles-module__active___dpAhM {\n  background: rgba(0, 0, 0, 0.7);\n}\n\n.styles-module__colorOptions___pbxZx {\n  display: flex;\n  justify-content: space-between;\n  align-items: center;\n  margin-top: 6px;\n  height: 26px;\n}\n\n.styles-module__colorOption___Co955 {\n  padding: 0;\n  position: relative;\n  border-radius: 50%;\n  width: 20px;\n  height: 20px;\n  background-color: #fff;\n  cursor: pointer;\n}\n[data-agentation-theme=dark] .styles-module__colorOption___Co955 {\n  background-color: #1a1a1a;\n}\n.styles-module__colorOption___Co955::before, .styles-module__colorOption___Co955::after {\n  content: "";\n  position: absolute;\n  inset: 0;\n  border-radius: 50%;\n  background-color: var(--swatch);\n  transition: opacity 0.2s, transform 0.2s;\n}\n@supports (color: color(display-p3 0 0 0)) {\n  .styles-module__colorOption___Co955::before, .styles-module__colorOption___Co955::after {\n    --color: var(--swatch-p3);\n  }\n}\n.styles-module__colorOption___Co955::after {\n  z-index: -1;\n  transform: scale(1.2);\n  opacity: 0;\n}\n.styles-module__colorOption___Co955.styles-module__selected___k1-Vq::before {\n  transform: scale(0.8);\n}\n.styles-module__colorOption___Co955.styles-module__selected___k1-Vq::after {\n  opacity: 1;\n}\n\n.styles-module__settingsNavLink___uYIwM {\n  display: flex;\n  align-items: center;\n  justify-content: space-between;\n  width: 100%;\n  height: 24px;\n  padding: 0;\n  border: none;\n  background: transparent;\n  font-family: inherit;\n  line-height: 20px;\n  font-size: 13px;\n  font-weight: 400;\n  color: rgba(255, 255, 255, 0.5);\n  transition: color 0.15s ease;\n  cursor: pointer;\n}\n.styles-module__settingsNavLink___uYIwM:hover {\n  color: rgba(255, 255, 255, 0.9);\n}\n.styles-module__settingsNavLink___uYIwM svg {\n  color: rgba(255, 255, 255, 0.4);\n  transition: color 0.15s ease;\n}\n.styles-module__settingsNavLink___uYIwM:hover svg {\n  color: #fff;\n}\n[data-agentation-theme=light] .styles-module__settingsNavLink___uYIwM {\n  color: rgba(0, 0, 0, 0.5);\n}\n[data-agentation-theme=light] .styles-module__settingsNavLink___uYIwM:hover {\n  color: rgba(0, 0, 0, 0.8);\n}\n[data-agentation-theme=light] .styles-module__settingsNavLink___uYIwM svg {\n  color: rgba(0, 0, 0, 0.25);\n}\n[data-agentation-theme=light] .styles-module__settingsNavLink___uYIwM:hover svg {\n  color: rgba(0, 0, 0, 0.8);\n}\n\n.styles-module__settingsNavLinkRight___XBUzC {\n  display: flex;\n  align-items: center;\n  gap: 6px;\n}\n\n.styles-module__settingsBackButton___fflll {\n  display: flex;\n  align-items: center;\n  gap: 4px;\n  height: 24px;\n  border: none;\n  background: transparent;\n  font-family: inherit;\n  line-height: 20px;\n  font-size: 13px;\n  font-weight: 500;\n  letter-spacing: -0.15px;\n  color: #fff;\n  cursor: pointer;\n  transition: transform 0.12s cubic-bezier(0.32, 0.72, 0, 1);\n}\n.styles-module__settingsBackButton___fflll svg {\n  opacity: 0.4;\n  flex-shrink: 0;\n  transition: opacity 0.15s ease, transform 0.18s cubic-bezier(0.32, 0.72, 0, 1);\n}\n.styles-module__settingsBackButton___fflll:hover svg {\n  opacity: 1;\n}\n[data-agentation-theme=light] .styles-module__settingsBackButton___fflll {\n  color: rgba(0, 0, 0, 0.85);\n  border-bottom-color: rgba(0, 0, 0, 0.08);\n}\n\n.styles-module__automationHeader___Avra9 {\n  display: flex;\n  align-items: center;\n  gap: 0.125rem;\n  font-size: 0.8125rem;\n  font-weight: 400;\n  color: #fff;\n}\n[data-agentation-theme=light] .styles-module__automationHeader___Avra9 {\n  color: rgba(0, 0, 0, 0.85);\n}\n\n.styles-module__automationDescription___vFTmJ {\n  font-size: 0.6875rem;\n  font-weight: 300;\n  color: rgba(255, 255, 255, 0.5);\n  margin-top: 2px;\n  line-height: 14px;\n}\n[data-agentation-theme=light] .styles-module__automationDescription___vFTmJ {\n  color: rgba(0, 0, 0, 0.5);\n}\n\n.styles-module__learnMoreLink___cG7OI {\n  color: rgba(255, 255, 255, 0.8);\n  text-decoration-line: underline;\n  text-decoration-style: dotted;\n  text-decoration-color: rgba(255, 255, 255, 0.2);\n  text-underline-offset: 2px;\n  transition: color 0.15s ease;\n}\n.styles-module__learnMoreLink___cG7OI:hover {\n  color: #fff;\n}\n[data-agentation-theme=light] .styles-module__learnMoreLink___cG7OI {\n  color: rgba(0, 0, 0, 0.6);\n  text-decoration-color: rgba(0, 0, 0, 0.2);\n}\n[data-agentation-theme=light] .styles-module__learnMoreLink___cG7OI:hover {\n  color: rgba(0, 0, 0, 0.85);\n}\n\n.styles-module__autoSendContainer___VpkXk {\n  display: flex;\n  align-items: center;\n}\n\n.styles-module__autoSendLabel___ngNdC {\n  padding-inline-end: 8px;\n  font-size: 11px;\n  font-weight: 400;\n  color: rgba(255, 255, 255, 0.4);\n  transition: color 0.15s, opacity 0.15s;\n  cursor: pointer;\n}\n.styles-module__autoSendLabel___ngNdC.styles-module__active___dpAhM {\n  color: #66b8ff;\n  color: color(display-p3 0.4 0.72 1);\n}\n[data-agentation-theme=light] .styles-module__autoSendLabel___ngNdC {\n  color: rgba(0, 0, 0, 0.4);\n}\n[data-agentation-theme=light] .styles-module__autoSendLabel___ngNdC.styles-module__active___dpAhM {\n  color: var(--agentation-color-blue);\n}\n.styles-module__autoSendLabel___ngNdC.styles-module__disabled___9AZYS {\n  opacity: 0.3;\n  cursor: not-allowed;\n}\n\n.styles-module__mcpStatusDot___8AMxP {\n  width: 8px;\n  height: 8px;\n  border-radius: 50%;\n  flex-shrink: 0;\n}\n.styles-module__mcpStatusDot___8AMxP.styles-module__connecting___QEO1r {\n  background-color: var(--agentation-color-yellow);\n  animation: styles-module__mcpPulse___5Q3Jj 1.5s infinite;\n}\n.styles-module__mcpStatusDot___8AMxP.styles-module__connected___WyFkx {\n  background-color: var(--agentation-color-green);\n  animation: styles-module__mcpPulse___5Q3Jj 2.5s ease-in-out infinite;\n}\n.styles-module__mcpStatusDot___8AMxP.styles-module__disconnected___mvmvQ {\n  background-color: var(--agentation-color-red);\n  animation: styles-module__mcpPulseError___VHxhx 2s infinite;\n}\n\n.styles-module__mcpNavIndicator___auBHI {\n  width: 8px;\n  height: 8px;\n  border-radius: 50%;\n  flex-shrink: 0;\n}\n.styles-module__mcpNavIndicator___auBHI.styles-module__connected___WyFkx {\n  background-color: var(--agentation-color-green);\n  animation: styles-module__mcpPulse___5Q3Jj 2.5s ease-in-out infinite;\n}\n.styles-module__mcpNavIndicator___auBHI.styles-module__connecting___QEO1r {\n  background-color: var(--agentation-color-yellow);\n  animation: styles-module__mcpPulse___5Q3Jj 1.5s ease-in-out infinite;\n}\n\n.styles-module__webhookUrlInput___WDDDC {\n  display: block;\n  width: 100%;\n  flex: 1;\n  min-height: 60px;\n  box-sizing: border-box;\n  margin-top: 11px;\n  padding: 8px 10px;\n  border: 1px solid rgba(255, 255, 255, 0.1);\n  border-radius: 6px;\n  background: rgba(255, 255, 255, 0.03);\n  font-family: inherit;\n  font-size: 0.75rem;\n  font-weight: 400;\n  color: #fff;\n  outline: none;\n  resize: none;\n  user-select: text;\n  transition: border-color 0.15s ease, background-color 0.15s ease, box-shadow 0.15s ease;\n}\n.styles-module__webhookUrlInput___WDDDC::placeholder {\n  color: rgba(255, 255, 255, 0.3);\n}\n.styles-module__webhookUrlInput___WDDDC:focus {\n  border-color: rgba(255, 255, 255, 0.3);\n  background: rgba(255, 255, 255, 0.08);\n}\n[data-agentation-theme=light] .styles-module__webhookUrlInput___WDDDC {\n  border-color: rgba(0, 0, 0, 0.1);\n  background: rgba(0, 0, 0, 0.03);\n  color: rgba(0, 0, 0, 0.85);\n}\n[data-agentation-theme=light] .styles-module__webhookUrlInput___WDDDC::placeholder {\n  color: rgba(0, 0, 0, 0.3);\n}\n[data-agentation-theme=light] .styles-module__webhookUrlInput___WDDDC:focus {\n  border-color: rgba(0, 0, 0, 0.25);\n  background: rgba(0, 0, 0, 0.05);\n}\n\n[data-agentation-theme=light] .styles-module__settingsPanel___qNkn- {\n  background: #fff;\n  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08), 0 4px 16px rgba(0, 0, 0, 0.06), 0 0 0 1px rgba(0, 0, 0, 0.04);\n}\n[data-agentation-theme=light] .styles-module__settingsPanel___qNkn-::before {\n  background: linear-gradient(to right, #fff 0%, transparent 100%);\n}\n[data-agentation-theme=light] .styles-module__settingsPanel___qNkn-::after {\n  background: linear-gradient(to left, #fff 0%, transparent 100%);\n}\n[data-agentation-theme=light] .styles-module__settingsPanel___qNkn- .styles-module__settingsHeader___Fn1DP {\n  border-bottom-color: rgba(0, 0, 0, 0.08);\n}\n[data-agentation-theme=light] .styles-module__settingsPanel___qNkn- .styles-module__settingsBrand___OoKlM {\n  color: #333;\n}\n[data-agentation-theme=light] .styles-module__settingsPanel___qNkn- .styles-module__settingsVersion___rXmL9 {\n  color: rgba(0, 0, 0, 0.4);\n}\n[data-agentation-theme=light] .styles-module__settingsPanel___qNkn- .styles-module__settingsSection___n5V-4 {\n  border-top-color: rgba(0, 0, 0, 0.08);\n}\n[data-agentation-theme=light] .styles-module__settingsPanel___qNkn- .styles-module__settingsLabel___VCVOQ {\n  color: rgba(0, 0, 0, 0.5);\n}\n[data-agentation-theme=light] .styles-module__settingsPanel___qNkn- .styles-module__cycleButton___XMBx3 {\n  color: rgba(0, 0, 0, 0.85);\n}\n[data-agentation-theme=light] .styles-module__settingsPanel___qNkn- .styles-module__cycleDot___zgSXY {\n  background: rgba(0, 0, 0, 0.2);\n}\n[data-agentation-theme=light] .styles-module__settingsPanel___qNkn- .styles-module__cycleDot___zgSXY.styles-module__active___dpAhM {\n  background: rgba(0, 0, 0, 0.7);\n}\n[data-agentation-theme=light] .styles-module__settingsPanel___qNkn- .styles-module__dropdownButton___mKHe8 {\n  color: rgba(0, 0, 0, 0.85);\n}\n[data-agentation-theme=light] .styles-module__settingsPanel___qNkn- .styles-module__dropdownButton___mKHe8:hover {\n  background: rgba(0, 0, 0, 0.05);\n}\n\n.styles-module__checkboxField___ZrSqv:not(:first-child) {\n  margin-top: 8px;\n}\n\n.styles-module__divider___h6Yux {\n  margin-block: 8px;\n  width: 100%;\n  height: 1px;\n  background-color: rgba(26, 26, 26, 0.07);\n}\n[data-agentation-theme=dark] .styles-module__divider___h6Yux {\n  background-color: rgba(255, 255, 255, 0.07);\n}';
+var styles_module_default10 = { "settingsPanel": "styles-module__settingsPanel___qNkn-", "settingsHeader": "styles-module__settingsHeader___Fn1DP", "settingsBrand": "styles-module__settingsBrand___OoKlM", "settingsVersion": "styles-module__settingsVersion___rXmL9", "settingsSection": "styles-module__settingsSection___n5V-4", "settingsLabel": "styles-module__settingsLabel___VCVOQ", "cycleButton": "styles-module__cycleButton___XMBx3", "cycleDot": "styles-module__cycleDot___zgSXY", "dropdownButton": "styles-module__dropdownButton___mKHe8", "sliderLabel": "styles-module__sliderLabel___6K5v1", "slider": "styles-module__slider___v5z-c", "themeToggle": "styles-module__themeToggle___3imlT", "below": "styles-module__below___Vpv-k", "settingsOption": "styles-module__settingsOption___JoyH-", "selected": "styles-module__selected___k1-Vq", "settingsPanelContainer": "styles-module__settingsPanelContainer___5it-H", "settingsPage": "styles-module__settingsPage___BMn-3", "slideLeft": "styles-module__slideLeft___qUvW4", "automationsPage": "styles-module__automationsPage___N7By0", "slideIn": "styles-module__slideIn___uXDSu", "themeIconWrapper": "styles-module__themeIconWrapper___pyaYa", "themeIcon": "styles-module__themeIcon___w7lAm", "themeIconIn": "styles-module__themeIconIn___qUWMV", "settingsSectionGrow": "styles-module__settingsSectionGrow___eZTRw", "settingsRow": "styles-module__settingsRow___y-tDE", "settingsRowMarginTop": "styles-module__settingsRowMarginTop___uLpGb", "settingsRowDisabled": "styles-module__settingsRowDisabled___ydl3Q", "cycleButtonText": "styles-module__cycleButtonText___mbbnD", "cycleTextIn": "styles-module__cycleTextIn___VBNTi", "cycleDots": "styles-module__cycleDots___ehp6i", "active": "styles-module__active___dpAhM", "colorOptions": "styles-module__colorOptions___pbxZx", "colorOption": "styles-module__colorOption___Co955", "settingsNavLink": "styles-module__settingsNavLink___uYIwM", "settingsNavLinkRight": "styles-module__settingsNavLinkRight___XBUzC", "settingsBackButton": "styles-module__settingsBackButton___fflll", "automationHeader": "styles-module__automationHeader___Avra9", "automationDescription": "styles-module__automationDescription___vFTmJ", "learnMoreLink": "styles-module__learnMoreLink___cG7OI", "autoSendContainer": "styles-module__autoSendContainer___VpkXk", "autoSendLabel": "styles-module__autoSendLabel___ngNdC", "disabled": "styles-module__disabled___9AZYS", "mcpStatusDot": "styles-module__mcpStatusDot___8AMxP", "connecting": "styles-module__connecting___QEO1r", "mcpPulse": "styles-module__mcpPulse___5Q3Jj", "connected": "styles-module__connected___WyFkx", "disconnected": "styles-module__disconnected___mvmvQ", "mcpPulseError": "styles-module__mcpPulseError___VHxhx", "mcpNavIndicator": "styles-module__mcpNavIndicator___auBHI", "webhookUrlInput": "styles-module__webhookUrlInput___WDDDC", "checkboxField": "styles-module__checkboxField___ZrSqv", "divider": "styles-module__divider___h6Yux", "scaleIn": "styles-module__scaleIn___QpQ8E" };
 
 // src/components/page-toolbar-css/settings-panel/index.tsx
-import { jsx as jsx13, jsxs as jsxs12 } from "react/jsx-runtime";
-function SettingsPanel({
+import { jsx as jsx17, jsxs as jsxs13 } from "react/jsx-runtime";
+var SettingsPanel = memo2(function SettingsPanel2({
   settings,
   onSettingsChange,
   isDarkMode,
@@ -7787,62 +9092,81 @@ function SettingsPanel({
   isDevMode,
   connectionStatus,
   endpoint,
-  isVisible,
+  onExited,
+  isOpen,
   toolbarNearBottom,
   settingsPage,
   onSettingsPageChange,
   onHideToolbar
 }) {
-  return /* @__PURE__ */ jsx13(
+  const { ref: panelRef } = usePanelPresence(isOpen, { keepMounted: true, onExited });
+  const navRef = useRef12(null);
+  const backRef = useRef12(null);
+  const focusPageRef = useRef12(false);
+  useLayoutEffect8(() => {
+    if (!isOpen || !focusPageRef.current) return;
+    focusPageRef.current = false;
+    (settingsPage === "automations" ? backRef : navRef).current?.focus();
+  }, [isOpen, settingsPage]);
+  const themeToggleLabel = isDarkMode ? "Switch to light mode" : "Switch to dark mode";
+  return /* @__PURE__ */ jsx17(
     "div",
     {
-      className: `${styles_module_default9.settingsPanel} ${isVisible ? styles_module_default9.enter : styles_module_default9.exit}`,
-      inert: !isVisible,
-      "aria-hidden": !isVisible,
+      className: `${styles_module_default10.settingsPanel} ${toolbarNearBottom ? styles_module_default10.below : ""}`,
       style: toolbarNearBottom ? { bottom: "auto", top: "calc(100% + 0.5rem)" } : void 0,
       "data-agentation-settings-panel": true,
-      children: /* @__PURE__ */ jsxs12("div", { className: styles_module_default9.settingsPanelContainer, children: [
-        /* @__PURE__ */ jsxs12(
+      ref: (node) => {
+        panelRef.current = node;
+        node?.toggleAttribute("inert", !isOpen);
+      },
+      role: "group",
+      "aria-label": "Feedback settings",
+      "aria-hidden": !isOpen,
+      children: /* @__PURE__ */ jsxs13("div", { className: styles_module_default10.settingsPanelContainer, children: [
+        /* @__PURE__ */ jsxs13(
           "div",
           {
-            className: `${styles_module_default9.settingsPage} ${settingsPage === "automations" ? styles_module_default9.slideLeft : ""}`,
-            inert: settingsPage === "automations",
-            "aria-hidden": settingsPage === "automations",
+            className: `${styles_module_default10.settingsPage} ${settingsPage === "automations" ? styles_module_default10.slideLeft : ""}`,
+            ref: (node) => {
+              node?.toggleAttribute("inert", settingsPage !== "main");
+            },
+            "aria-hidden": settingsPage !== "main",
             children: [
-              /* @__PURE__ */ jsxs12("div", { className: styles_module_default9.settingsHeader, children: [
-                /* @__PURE__ */ jsx13("a", { className: styles_module_default9.settingsBrand, href: "https://agentation.com", target: "_blank", rel: "noopener noreferrer", children: /* @__PURE__ */ jsx13("svg", { width: "72", height: "16", viewBox: "0 0 676 151", fill: "none", xmlns: "http://www.w3.org/2000/svg", children: /* @__PURE__ */ jsx13("path", { d: "M79.6666 100.561L104.863 15.5213C107.828 4.03448 99.1201 -3.00582 88.7449 1.25541L3.52015 39.6065C1.48217 40.5329 0 42.7562 0 45.1647C0 48.6848 2.77907 51.4639 6.29922 51.4639C7.22558 51.4639 8.15193 51.2786 9.07829 50.9081L93.7472 12.7422C97.2674 11.0748 93.7472 8.29572 92.6356 12.1864L67.624 97.2259C66.5123 100.931 69.4767 105.193 73.7379 105.193C76.517 105.193 79.1108 103.155 79.6666 100.561ZM663.641 100.005C665.679 107.231 677.537 104.081 675.499 96.8553L666.05 66.2856C663.456 57.7631 655.489 55.7251 648.82 61.098L618.991 86.6654C617.324 87.9623 621.029 89.815 621.214 88.1476L625.846 61.6538C626.958 55.3546 624.179 50.5375 615.841 50.5375L579.158 51.0934C576.008 51.0934 578.417 53.8724 578.417 57.022C578.417 60.1716 580.825 61.6538 583.975 61.6538L616.212 60.9127C616.397 60.9127 614.544 59.6158 614.544 59.8011L609.727 88.7034C607.875 99.6344 617.694 102.784 626.031 95.7437L655.86 70.1763L654.192 69.6205L663.641 100.005ZM571.191 89.0739C555.443 88.7034 562.298 61.4685 578.787 61.8391C594.72 62.0243 587.124 89.2592 571.191 89.0739ZM571.006 100.375C601.575 100.931 611.024 51.6492 579.158 51.0934C547.847 50.5375 540.065 99.8197 571.006 100.375ZM521.909 46.4616C525.985 46.4616 529.505 42.9414 529.505 38.6802C529.505 34.4189 525.985 31.0841 521.909 31.0841C517.833 31.0841 514.127 34.6042 514.127 38.6802C514.127 42.7562 517.648 46.4616 521.909 46.4616ZM472.256 103.525C493.192 103.71 515.98 73.3259 519.13 62.3949L509.866 60.9127C505.234 73.3259 497.638 101.672 519.871 102.043C536.545 102.228 552.479 85.3685 563.595 70.1763C564.151 69.2499 564.706 68.1383 564.706 66.8414C564.706 63.6918 563.965 61.098 560.816 61.098C558.963 61.098 557.296 62.0243 556.184 63.5065C546.365 77.0313 530.802 90.9266 522.094 90.7414C511.904 90.5561 517.462 71.4732 519.871 64.9887C523.391 55.7251 512.831 53.5019 509.681 60.9127C506.531 68.6941 488.19 92.4088 475.035 92.2235C467.439 92.0383 464.29 83.8863 472.441 59.9864L486.707 17.7445C487.634 14.4097 485.41 10.519 481.334 10.519C478.741 10.519 476.517 12.1864 475.962 14.4097L461.696 56.4662C451.506 86.4801 455.211 103.155 472.256 103.525ZM447.43 42.5709L496.527 41.4593C499.306 41.4593 501.529 39.0507 501.529 36.2717C501.529 33.3073 499.306 31.0841 496.341 31.0841L447.245 32.1957C444.466 32.1957 442.242 34.4189 442.242 37.3833C442.242 40.1624 444.466 42.5709 447.43 42.5709ZM422.974 106.304C435.387 106.489 457.249 94.8173 472.441 53.8724C473.553 50.7228 472.071 48.3143 468.365 48.3143C466.142 48.3143 464.29 49.6112 463.548 51.6492C450.394 87.2212 431.682 96.1142 424.456 95.929C419.454 95.929 417.972 93.3352 418.713 85.5538C419.454 78.1429 410.376 74.9933 406.114 81.1073C401.297 87.777 394.442 94.2615 385.549 94.0763C370.172 93.891 376.471 67.0267 399.815 67.3972C408.338 67.5825 414.452 71.4732 417.045 76.6608C417.786 78.3282 419.454 79.6251 421.492 79.6251C424.271 79.6251 426.679 77.2166 426.679 74.4375C426.679 73.6964 426.494 72.9553 426.124 72.2143C421.862 63.6918 412.414 57.3926 400 57.2073C363.502 56.6515 353.497 104.451 383.326 104.822C397.036 105.193 410.005 94.0763 413.34 85.9243C412.599 86.8507 408.338 86.6654 408.523 84.4422C407.411 97.4111 410.931 106.119 422.974 106.304ZM335.897 104.266C335.897 115.012 347.569 117.606 347.569 103.34C347.569 89.0739 358.5 54.4282 361.464 45.1647L396.666 43.6825C405.929 43.1267 404.262 33.1221 397.036 33.3073L364.984 34.4189L368.875 22.7469C369.801 20.1531 370.542 17.9298 370.542 16.2624C370.542 13.4833 368.504 11.8159 365.911 11.8159C362.946 11.8159 360.352 12.7422 357.573 21.0794L352.942 35.16L330.153 36.0864C326.263 36.4569 323.483 38.1244 323.483 41.6445C323.483 45.5352 326.448 47.0174 330.709 46.8321L349.421 45.9058C345.901 56.6515 335.897 90.7414 335.897 104.266ZM186.939 78.6988C193.979 56.4662 212.877 54.984 212.877 62.9507C212.877 68.3236 203.984 77.0313 186.939 78.6988ZM113.942 150.955C142.844 152.437 159.704 111.492 160.63 80.5515C161.556 73.3259 153.96 70.3616 148.773 75.7344C141.918 83.1453 129.505 93.1499 119.685 93.1499C103.011 93.1499 116.165 59.8011 143.956 59.8011C149.514 59.8011 153.59 61.6538 156.184 64.0623C160.815 68.3236 170.82 62.0243 165.818 56.0957C161.927 51.4639 155.072 48.129 144.882 48.129C102.455 48.129 83.7426 105.007 116.721 105.007C134.692 105.007 151.367 88.3329 155.257 82.7747C154.516 83.5158 149.329 81.2925 149.699 79.4398L149.143 83.5158C148.958 107.045 134.322 141.506 116.536 139.838C113.386 139.468 112.089 137.43 112.089 134.836C112.089 128.907 122.094 119.273 145.067 113.53C159.518 109.824 152.293 101.487 143.4 104.081C111.163 113.53 99.6759 127.425 99.6759 137.8C99.6759 145.026 105.605 150.584 113.942 150.955ZM194.72 109.454C214.359 109.454 239 95.3732 251.228 77.9577C250.301 82.96 246.596 96.8553 246.596 101.487C246.596 110.01 254.748 109.454 261.232 102.784L288.097 75.5491L290.32 85.7391C293.284 99.4491 299.213 104.822 308.847 104.822C326.263 104.822 342.196 85.7391 349.421 74.8081L344.049 63.6918C339.787 74.8081 321.631 92.5941 311.626 92.5941C306.994 92.5941 304.771 89.815 303.289 83.7011L300.325 71.2879C297.916 60.7275 289.023 58.3189 279.018 68.1383L261.788 84.8127L264.382 69.991C266.235 59.2453 255.674 58.1337 250.116 65.915C241.779 77.0313 216.767 97.7817 196.387 97.7817C187.865 97.7817 185.456 93.7057 185.456 88.3329C230.848 84.998 239.185 47.2027 208.986 47.2027C172.858 47.2027 157.11 109.454 194.72 109.454Z", fill: "currentColor" }) }) }),
-                /* @__PURE__ */ jsxs12("p", { className: styles_module_default9.settingsVersion, children: [
+              /* @__PURE__ */ jsxs13("div", { className: styles_module_default10.settingsHeader, children: [
+                /* @__PURE__ */ jsx17("a", { className: styles_module_default10.settingsBrand, href: "https://agentation.com", target: "_blank", rel: "noopener noreferrer", "aria-label": "Agentation", children: "Agentation" }),
+                /* @__PURE__ */ jsxs13("p", { className: styles_module_default10.settingsVersion, children: [
                   "v",
-                  "3.0.2"
+                  "3.1.2"
                 ] }),
-                /* @__PURE__ */ jsx13(
+                /* @__PURE__ */ jsx17(
                   "button",
                   {
-                    className: styles_module_default9.themeToggle,
+                    className: styles_module_default10.themeToggle,
                     onClick: onToggleTheme,
-                    title: isDarkMode ? "Switch to light mode" : "Switch to dark mode",
-                    children: /* @__PURE__ */ jsx13("span", { className: styles_module_default9.themeIconWrapper, children: /* @__PURE__ */ jsx13(
+                    title: themeToggleLabel,
+                    "aria-label": themeToggleLabel,
+                    children: /* @__PURE__ */ jsx17("span", { className: styles_module_default10.themeIconWrapper, children: /* @__PURE__ */ jsx17(
                       "span",
                       {
-                        className: styles_module_default9.themeIcon,
-                        children: isDarkMode ? /* @__PURE__ */ jsx13(IconSun, { size: 20 }) : /* @__PURE__ */ jsx13(IconMoon, { size: 20 })
+                        className: styles_module_default10.themeIcon,
+                        children: isDarkMode ? /* @__PURE__ */ jsx17(IconSun, { size: 20 }) : /* @__PURE__ */ jsx17(IconMoon, { size: 20 })
                       },
                       isDarkMode ? "sun" : "moon"
                     ) })
                   }
                 )
               ] }),
-              /* @__PURE__ */ jsx13("div", { className: styles_module_default9.divider }),
-              /* @__PURE__ */ jsxs12("div", { className: styles_module_default9.settingsSection, children: [
-                /* @__PURE__ */ jsxs12("div", { className: styles_module_default9.settingsRow, children: [
-                  /* @__PURE__ */ jsxs12("div", { className: styles_module_default9.settingsLabel, children: [
+              /* @__PURE__ */ jsx17("div", { className: styles_module_default10.divider }),
+              /* @__PURE__ */ jsxs13("div", { className: styles_module_default10.settingsSection, children: [
+                /* @__PURE__ */ jsxs13("div", { className: styles_module_default10.settingsRow, children: [
+                  /* @__PURE__ */ jsxs13("div", { className: styles_module_default10.settingsLabel, children: [
                     "Output Detail",
-                    /* @__PURE__ */ jsx13(HelpTooltip, { content: "Controls how much detail is included in the copied output" })
+                    /* @__PURE__ */ jsx17(HelpTooltip, { content: "Controls how much detail is included in the copied output" })
                   ] }),
-                  /* @__PURE__ */ jsxs12(
+                  /* @__PURE__ */ jsxs13(
                     "button",
                     {
-                      className: styles_module_default9.cycleButton,
+                      className: styles_module_default10.cycleButton,
                       onClick: () => {
                         const currentIndex = OUTPUT_DETAIL_OPTIONS.findIndex(
                           (opt) => opt.value === settings.outputDetail
@@ -7853,20 +9177,20 @@ function SettingsPanel({
                         });
                       },
                       children: [
-                        /* @__PURE__ */ jsx13(
+                        /* @__PURE__ */ jsx17(
                           "span",
                           {
-                            className: styles_module_default9.cycleButtonText,
+                            className: styles_module_default10.cycleButtonText,
                             children: OUTPUT_DETAIL_OPTIONS.find(
                               (opt) => opt.value === settings.outputDetail
                             )?.label
                           },
                           settings.outputDetail
                         ),
-                        /* @__PURE__ */ jsx13("span", { className: styles_module_default9.cycleDots, children: OUTPUT_DETAIL_OPTIONS.map((option) => /* @__PURE__ */ jsx13(
+                        /* @__PURE__ */ jsx17("span", { className: styles_module_default10.cycleDots, children: OUTPUT_DETAIL_OPTIONS.map((option) => /* @__PURE__ */ jsx17(
                           "span",
                           {
-                            className: `${styles_module_default9.cycleDot} ${settings.outputDetail === option.value ? styles_module_default9.active : ""}`
+                            className: `${styles_module_default10.cycleDot} ${settings.outputDetail === option.value ? styles_module_default10.active : ""}`
                           },
                           option.value
                         )) })
@@ -7874,23 +9198,24 @@ function SettingsPanel({
                     }
                   )
                 ] }),
-                /* @__PURE__ */ jsxs12(
+                /* @__PURE__ */ jsxs13(
                   "div",
                   {
-                    className: `${styles_module_default9.settingsRow} ${styles_module_default9.settingsRowMarginTop} ${!isDevMode ? styles_module_default9.settingsRowDisabled : ""}`,
+                    className: `${styles_module_default10.settingsRow} ${styles_module_default10.settingsRowMarginTop} ${!isDevMode ? styles_module_default10.settingsRowDisabled : ""}`,
                     children: [
-                      /* @__PURE__ */ jsxs12("div", { className: styles_module_default9.settingsLabel, children: [
+                      /* @__PURE__ */ jsxs13("div", { className: styles_module_default10.settingsLabel, children: [
                         "React Components",
-                        /* @__PURE__ */ jsx13(
+                        /* @__PURE__ */ jsx17(
                           HelpTooltip,
                           {
                             content: !isDevMode ? "Disabled \u2014 production builds minify component names, making detection unreliable. Use in development mode." : "Include React component names in annotations"
                           }
                         )
                       ] }),
-                      /* @__PURE__ */ jsx13(
+                      /* @__PURE__ */ jsx17(
                         Switch,
                         {
+                          "aria-label": "React Components",
                           checked: isDevMode && settings.reactEnabled,
                           onChange: (e) => onSettingsChange({ reactEnabled: e.target.checked }),
                           disabled: !isDevMode
@@ -7899,18 +9224,19 @@ function SettingsPanel({
                     ]
                   }
                 ),
-                /* @__PURE__ */ jsxs12(
+                /* @__PURE__ */ jsxs13(
                   "div",
                   {
-                    className: `${styles_module_default9.settingsRow} ${styles_module_default9.settingsRowMarginTop}`,
+                    className: `${styles_module_default10.settingsRow} ${styles_module_default10.settingsRowMarginTop}`,
                     children: [
-                      /* @__PURE__ */ jsxs12("div", { className: styles_module_default9.settingsLabel, children: [
+                      /* @__PURE__ */ jsxs13("div", { className: styles_module_default10.settingsLabel, children: [
                         "Hide Until Restart",
-                        /* @__PURE__ */ jsx13(HelpTooltip, { content: "Hides the toolbar until you open a new tab" })
+                        /* @__PURE__ */ jsx17(HelpTooltip, { content: "Hides the toolbar until you open a new tab" })
                       ] }),
-                      /* @__PURE__ */ jsx13(
+                      /* @__PURE__ */ jsx17(
                         Switch,
                         {
+                          "aria-label": "Hide Until Restart",
                           checked: false,
                           onChange: (e) => {
                             if (e.target.checked) onHideToolbar();
@@ -7921,33 +9247,34 @@ function SettingsPanel({
                   }
                 )
               ] }),
-              /* @__PURE__ */ jsx13("div", { className: styles_module_default9.divider }),
-              /* @__PURE__ */ jsxs12("div", { className: styles_module_default9.settingsSection, children: [
-                /* @__PURE__ */ jsx13(
+              /* @__PURE__ */ jsx17("div", { className: styles_module_default10.divider }),
+              /* @__PURE__ */ jsxs13("div", { className: styles_module_default10.settingsSection, children: [
+                /* @__PURE__ */ jsx17(
                   "div",
                   {
-                    className: `${styles_module_default9.settingsLabel} ${styles_module_default9.settingsLabelMarker}`,
+                    className: `${styles_module_default10.settingsLabel} ${styles_module_default10.settingsLabelMarker}`,
                     children: "Marker Color"
                   }
                 ),
-                /* @__PURE__ */ jsx13("div", { className: styles_module_default9.colorOptions, children: COLOR_OPTIONS.map((color) => /* @__PURE__ */ jsx13(
+                /* @__PURE__ */ jsx17("div", { className: styles_module_default10.colorOptions, children: COLOR_OPTIONS.map((color) => /* @__PURE__ */ jsx17(
                   "button",
                   {
-                    className: `${styles_module_default9.colorOption} ${settings.annotationColorId === color.id ? styles_module_default9.selected : ""}`,
+                    className: `${styles_module_default10.colorOption} ${settings.annotationColorId === color.id ? styles_module_default10.selected : ""}`,
                     style: {
                       "--swatch": color.srgb,
                       "--swatch-p3": color.p3
                     },
                     onClick: () => onSettingsChange({ annotationColorId: color.id }),
                     title: color.label,
+                    "aria-label": color.label,
                     type: "button"
                   },
                   color.id
                 )) })
               ] }),
-              /* @__PURE__ */ jsx13("div", { className: styles_module_default9.divider }),
-              /* @__PURE__ */ jsxs12("div", { className: styles_module_default9.settingsSection, children: [
-                /* @__PURE__ */ jsx13(
+              /* @__PURE__ */ jsx17("div", { className: styles_module_default10.divider }),
+              /* @__PURE__ */ jsxs13("div", { className: styles_module_default10.settingsSection, children: [
+                /* @__PURE__ */ jsx17(
                   CheckboxField,
                   {
                     className: "checkbox-field",
@@ -7957,32 +9284,37 @@ function SettingsPanel({
                     tooltip: "Automatically clear annotations after copying"
                   }
                 ),
-                /* @__PURE__ */ jsx13(
+                /* @__PURE__ */ jsx17(
                   CheckboxField,
                   {
-                    className: styles_module_default9.checkboxField,
+                    className: styles_module_default10.checkboxField,
                     label: "Block page interactions",
                     checked: settings.blockInteractions,
                     onChange: (e) => onSettingsChange({ blockInteractions: e.target.checked })
                   }
                 )
               ] }),
-              /* @__PURE__ */ jsx13("div", { className: styles_module_default9.divider }),
-              /* @__PURE__ */ jsxs12(
+              /* @__PURE__ */ jsx17("div", { className: styles_module_default10.divider }),
+              /* @__PURE__ */ jsxs13(
                 "button",
                 {
-                  className: styles_module_default9.settingsNavLink,
-                  onClick: () => onSettingsPageChange("automations"),
+                  className: styles_module_default10.settingsNavLink,
+                  ref: navRef,
+                  onClick: (event) => {
+                    focusPageRef.current = event.detail === 0;
+                    event.currentTarget.blur();
+                    onSettingsPageChange("automations");
+                  },
                   children: [
-                    /* @__PURE__ */ jsx13("span", { children: "Manage MCP & Webhooks" }),
-                    /* @__PURE__ */ jsxs12("span", { className: styles_module_default9.settingsNavLinkRight, children: [
-                      endpoint && connectionStatus !== "disconnected" && /* @__PURE__ */ jsx13(
+                    /* @__PURE__ */ jsx17("span", { children: "Manage MCP & Webhooks" }),
+                    /* @__PURE__ */ jsxs13("span", { className: styles_module_default10.settingsNavLinkRight, children: [
+                      endpoint && connectionStatus !== "disconnected" && /* @__PURE__ */ jsx17(
                         "span",
                         {
-                          className: `${styles_module_default9.mcpNavIndicator} ${styles_module_default9[connectionStatus]}`
+                          className: `${styles_module_default10.mcpNavIndicator} ${styles_module_default10[connectionStatus]}`
                         }
                       ),
-                      /* @__PURE__ */ jsx13(
+                      /* @__PURE__ */ jsx17(
                         "svg",
                         {
                           width: "16",
@@ -7990,7 +9322,7 @@ function SettingsPanel({
                           viewBox: "0 0 16 16",
                           fill: "none",
                           xmlns: "http://www.w3.org/2000/svg",
-                          children: /* @__PURE__ */ jsx13(
+                          children: /* @__PURE__ */ jsx17(
                             "path",
                             {
                               d: "M7.5 12.5L12 8L7.5 3.5",
@@ -8009,54 +9341,62 @@ function SettingsPanel({
             ]
           }
         ),
-        /* @__PURE__ */ jsxs12(
+        /* @__PURE__ */ jsxs13(
           "div",
           {
-            className: `${styles_module_default9.settingsPage} ${styles_module_default9.automationsPage} ${settingsPage === "automations" ? styles_module_default9.slideIn : ""}`,
-            inert: settingsPage !== "automations",
+            className: `${styles_module_default10.settingsPage} ${styles_module_default10.automationsPage} ${settingsPage === "automations" ? styles_module_default10.slideIn : ""}`,
+            ref: (node) => {
+              node?.toggleAttribute("inert", settingsPage !== "automations");
+            },
             "aria-hidden": settingsPage !== "automations",
             children: [
-              /* @__PURE__ */ jsxs12(
+              /* @__PURE__ */ jsxs13(
                 "button",
                 {
-                  className: styles_module_default9.settingsBackButton,
-                  onClick: () => onSettingsPageChange("main"),
+                  className: styles_module_default10.settingsBackButton,
+                  ref: backRef,
+                  "aria-label": "Back to settings",
+                  onClick: (event) => {
+                    focusPageRef.current = event.detail === 0;
+                    event.currentTarget.blur();
+                    onSettingsPageChange("main");
+                  },
                   children: [
-                    /* @__PURE__ */ jsx13(IconChevronLeft, { size: 16 }),
-                    /* @__PURE__ */ jsx13("span", { children: "Manage MCP & Webhooks" })
+                    /* @__PURE__ */ jsx17(IconChevronLeft, { size: 16 }),
+                    /* @__PURE__ */ jsx17("span", { children: "Manage MCP & Webhooks" })
                   ]
                 }
               ),
-              /* @__PURE__ */ jsx13("div", { className: styles_module_default9.divider }),
-              /* @__PURE__ */ jsxs12("div", { className: styles_module_default9.settingsSection, children: [
-                /* @__PURE__ */ jsxs12("div", { className: styles_module_default9.settingsRow, children: [
-                  /* @__PURE__ */ jsxs12("span", { className: styles_module_default9.automationHeader, children: [
+              /* @__PURE__ */ jsx17("div", { className: styles_module_default10.divider }),
+              /* @__PURE__ */ jsxs13("div", { className: styles_module_default10.settingsSection, children: [
+                /* @__PURE__ */ jsxs13("div", { className: styles_module_default10.settingsRow, children: [
+                  /* @__PURE__ */ jsxs13("span", { className: styles_module_default10.automationHeader, children: [
                     "MCP Connection",
-                    /* @__PURE__ */ jsx13(HelpTooltip, { content: "Connect via Model Context Protocol to let AI agents like Claude Code receive annotations in real-time." })
+                    /* @__PURE__ */ jsx17(HelpTooltip, { content: "Connect via Model Context Protocol to let AI agents like Claude Code receive annotations in real-time." })
                   ] }),
-                  endpoint && /* @__PURE__ */ jsx13(
+                  endpoint && /* @__PURE__ */ jsx17(
                     "div",
                     {
-                      className: `${styles_module_default9.mcpStatusDot} ${styles_module_default9[connectionStatus]}`,
+                      className: `${styles_module_default10.mcpStatusDot} ${styles_module_default10[connectionStatus]}`,
                       title: connectionStatus === "connected" ? "Connected" : connectionStatus === "connecting" ? "Connecting..." : "Disconnected"
                     }
                   )
                 ] }),
-                /* @__PURE__ */ jsxs12(
+                /* @__PURE__ */ jsxs13(
                   "p",
                   {
-                    className: styles_module_default9.automationDescription,
+                    className: styles_module_default10.automationDescription,
                     style: { paddingBottom: 6 },
                     children: [
                       "MCP connection allows agents to receive and act on annotations.",
                       " ",
-                      /* @__PURE__ */ jsx13(
+                      /* @__PURE__ */ jsx17(
                         "a",
                         {
-                          href: "https://agentation.dev/mcp",
+                          href: "https://agentation.com/mcp",
                           target: "_blank",
                           rel: "noopener noreferrer",
-                          className: styles_module_default9.learnMoreLink,
+                          className: styles_module_default10.learnMoreLink,
                           children: "Learn more"
                         }
                       )
@@ -8064,27 +9404,27 @@ function SettingsPanel({
                   }
                 )
               ] }),
-              /* @__PURE__ */ jsx13("div", { className: styles_module_default9.divider }),
-              /* @__PURE__ */ jsxs12(
+              /* @__PURE__ */ jsx17("div", { className: styles_module_default10.divider }),
+              /* @__PURE__ */ jsxs13(
                 "div",
                 {
-                  className: `${styles_module_default9.settingsSection} ${styles_module_default9.settingsSectionGrow}`,
+                  className: `${styles_module_default10.settingsSection} ${styles_module_default10.settingsSectionGrow}`,
                   children: [
-                    /* @__PURE__ */ jsxs12("div", { className: styles_module_default9.settingsRow, children: [
-                      /* @__PURE__ */ jsxs12("span", { className: styles_module_default9.automationHeader, children: [
+                    /* @__PURE__ */ jsxs13("div", { className: styles_module_default10.settingsRow, children: [
+                      /* @__PURE__ */ jsxs13("span", { className: styles_module_default10.automationHeader, children: [
                         "Webhooks",
-                        /* @__PURE__ */ jsx13(HelpTooltip, { content: "Send annotation data to any URL endpoint when annotations change. Useful for custom integrations." })
+                        /* @__PURE__ */ jsx17(HelpTooltip, { content: "Send annotation data to any URL endpoint when annotations change. Useful for custom integrations." })
                       ] }),
-                      /* @__PURE__ */ jsxs12("div", { className: styles_module_default9.autoSendContainer, children: [
-                        /* @__PURE__ */ jsx13(
+                      /* @__PURE__ */ jsxs13("div", { className: styles_module_default10.autoSendContainer, children: [
+                        /* @__PURE__ */ jsx17(
                           "label",
                           {
                             htmlFor: "agentation-auto-send",
-                            className: `${styles_module_default9.autoSendLabel} ${settings.webhooksEnabled ? styles_module_default9.active : ""} ${!settings.webhookUrl ? styles_module_default9.disabled : ""}`,
+                            className: `${styles_module_default10.autoSendLabel} ${settings.webhooksEnabled ? styles_module_default10.active : ""} ${!settings.webhookUrl ? styles_module_default10.disabled : ""}`,
                             children: "Auto-Send"
                           }
                         ),
-                        /* @__PURE__ */ jsx13(
+                        /* @__PURE__ */ jsx17(
                           Switch,
                           {
                             id: "agentation-auto-send",
@@ -8097,12 +9437,13 @@ function SettingsPanel({
                         )
                       ] })
                     ] }),
-                    /* @__PURE__ */ jsx13("p", { className: styles_module_default9.automationDescription, children: "The webhook URL will receive live annotation changes and annotation data." }),
-                    /* @__PURE__ */ jsx13(
+                    /* @__PURE__ */ jsx17("p", { className: styles_module_default10.automationDescription, children: "The webhook URL will receive live annotation changes and annotation data." }),
+                    /* @__PURE__ */ jsx17(
                       "textarea",
                       {
-                        className: styles_module_default9.webhookUrlInput,
+                        className: styles_module_default10.webhookUrlInput,
                         placeholder: "Webhook URL",
+                        "aria-label": "Webhook URL",
                         value: settings.webhookUrl,
                         onKeyDown: (e) => e.stopPropagation(),
                         onChange: (e) => onSettingsChange({ webhookUrl: e.target.value })
@@ -8117,12 +9458,55 @@ function SettingsPanel({
       ] })
     }
   );
+});
+
+// src/components/page-toolbar-css/hover-tooltip.tsx
+import { useLayoutEffect as useLayoutEffect9, useRef as useRef13 } from "react";
+import { jsx as jsx18, jsxs as jsxs14 } from "react/jsx-runtime";
+function HoverTooltip({ x, y, elementName, reactComponents }) {
+  const ref = useRef13(null);
+  useLayoutEffect9(() => {
+    const tooltip = ref.current;
+    if (!tooltip) return;
+    const position = () => {
+      const width = tooltip.offsetWidth;
+      const height = tooltip.offsetHeight;
+      tooltip.style.left = `${Math.max(8, Math.min(x, window.innerWidth - width - 8))}px`;
+      const preferredTop = y - height - 8;
+      tooltip.style.top = `${Math.max(8, Math.min(preferredTop, window.innerHeight - height - 8))}px`;
+    };
+    position();
+    window.addEventListener("resize", position);
+    return () => window.removeEventListener("resize", position);
+  }, [x, y, elementName, reactComponents]);
+  return /* @__PURE__ */ jsxs14("div", { ref, className: `${styles_module_default3.hoverTooltip} ${styles_module_default3.enter}`, children: [
+    reactComponents && /* @__PURE__ */ jsx18("div", { className: styles_module_default3.hoverReactPath, children: reactComponents }),
+    /* @__PURE__ */ jsx18("div", { className: styles_module_default3.hoverElementName, children: elementName })
+  ] });
 }
 
+// src/components/reset.scss
+var css12 = '@charset "UTF-8";\n/* Reset box-model and set borders */\n/* ============================================ */\n*,\n::before,\n::after {\n  border-width: 0;\n  border-style: solid;\n  box-sizing: border-box;\n}\n\n/* Document */\n/* ============================================ */\n/**\n * 1. Correct line height in all browsers.\n * 2. Prevent adjustments of font size after orientation changes in iOS.\n * 3. Remove gray overlay on links for iOS.\n * 4. Render kerning consistently in all browsers.\n * 5. Correct font smoothing for macOS.\n */\n:host {\n  /* Inherited properties cross the shadow boundary, so a host page\'s\n     text-transform, letter-spacing or font would otherwise restyle the UI. */\n  font: 400 16px/1.5 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;\n  font-variant: normal;\n  color: initial;\n  letter-spacing: normal;\n  word-spacing: normal;\n  text-transform: none;\n  text-align: start;\n  text-indent: 0;\n  text-shadow: none;\n  white-space: normal;\n  direction: ltr;\n  writing-mode: horizontal-tb;\n  hyphens: manual;\n  word-break: normal;\n  overflow-wrap: normal;\n  tab-size: 8;\n  list-style: none;\n  quotes: initial;\n  caret-color: auto;\n  user-select: auto;\n  -webkit-text-fill-color: initial;\n  -webkit-text-stroke: 0;\n  text-rendering: auto;\n  -webkit-text-size-adjust: 100%; /* 2 */\n  -webkit-tap-highlight-color: transparent; /* 3 */\n  font-feature-settings: "kern"; /* 4 */\n  -webkit-font-feature-settings: "kern"; /* 5 */\n  -moz-font-feature-settings: "kern"; /* 5 */\n  -webkit-font-smoothing: antialiased; /* 5 */\n  -moz-osx-font-smoothing: grayscale; /* 5 */\n}\n\n/* Vertical rhythm */\n/* ============================================ */\np,\ntable,\nblockquote,\naddress,\npre,\niframe,\nform,\nfigure,\ndl {\n  margin: 0;\n}\n\n/* Headings */\n/* ============================================ */\nh1,\nh2,\nh3,\nh4,\nh5,\nh6 {\n  margin: 0;\n  font-size: inherit;\n  font-weight: inherit;\n}\n\n/* Lists (enumeration) */\n/* ============================================ */\nul,\nol,\nmenu {\n  list-style: none;\n  margin: 0;\n  padding: 0;\n}\n\n/* Lists (definition) */\n/* ============================================ */\ndd {\n  margin-left: 0;\n}\n\n/* Grouping content */\n/* ============================================ */\n/**\n * 1. Add the correct box sizing in Firefox.\n * 2. Show the overflow in Edge and IE.\n */\nhr {\n  clear: both;\n  margin: 0;\n  border-top-width: 1px;\n  height: 0; /* 1 */\n  box-sizing: content-box; /* 1 */\n  overflow: visible; /* 2 */\n  color: inherit;\n}\n\n/**\n * 1. Correct the inheritance and scaling of font size in all browsers.\n * 2. Correct the odd `em` font sizing in all browsers.\n * 3. Wrap lines by default instead of overflow.\n */\npre {\n  font-family: inherit; /* 1 */\n  font-size: inherit; /* 2 */\n  white-space: pre-line; /* 3 */\n}\n\naddress {\n  font-style: inherit;\n}\n\n/* Text-level semantics */\n/* ============================================ */\n/**\n * Remove the gray background on active links in IE 10.\n */\na {\n  background-color: transparent;\n  text-decoration: none;\n  color: inherit;\n}\n\n/**\n * 1. Remove the bottom border in Chrome 57-\n * 2. Add the correct text decoration in Chrome, Edge, IE, Opera, and Safari.\n */\nabbr[title] {\n  border-bottom: none; /* 1 */\n  text-decoration: none; /* 2 */\n}\n\n/**\n * Add the correct font weight in Chrome, Edge, and Safari.\n */\nb,\nstrong {\n  font-weight: bolder;\n}\n\n/**\n * 1. Correct the inheritance and scaling of font size in all browsers.\n * 2. Correct the odd `em` font sizing in all browsers.\n */\ncode,\nkbd,\nsamp {\n  font-family: "Menlo", "Monaco", "Consolas", "Courier New", monospace; /* 1 */\n  font-size: inherit; /* 2 */\n}\n\n/**\n * Add the correct font size in all browsers.\n */\nsmall {\n  font-size: 80%;\n}\n\n/**\n * Prevent `sub` and `sup` elements from affecting the line height in all browsers.\n */\nsub,\nsup {\n  position: relative;\n  vertical-align: baseline;\n  line-height: 0;\n  font-size: 75%;\n}\n\nsub {\n  bottom: -0.25em;\n}\n\nsup {\n  top: -0.5em;\n}\n\n/* Replaced content */\n/* ============================================ */\n/**\n * Prevent vertical alignment issues.\n */\nsvg,\nimg,\nembed,\nobject,\niframe {\n  vertical-align: bottom;\n}\n\n/*\n * 1. Remove image default bottom space.\n * 2. Prevent image from overflowing the container.\n */\nimg {\n  display: block;\n  max-width: 100%;\n}\n\n/**\n * Prevent alignment issues on Safari.\n */\n@supports (background: -webkit-named-image(i)) {\n  svg {\n    will-change: transform;\n  }\n}\n/* Forms */\n/* ============================================ */\n/**\n * Reset form fields to make them styleable.\n * 1. Make form elements stylable across systems iOS especially.\n * 2. Inherit text-transform from parent.\n */\nbutton,\ninput,\noptgroup,\nselect,\ntextarea {\n  -webkit-appearance: none; /* 1 */\n  appearance: none;\n  border-radius: 0;\n  margin: 0;\n  padding: 0;\n  background: transparent;\n  vertical-align: middle;\n  text-align: inherit;\n  text-transform: inherit; /* 2 */\n  font: inherit;\n  color: inherit;\n}\n\n/**\n * Correct cursors for clickable elements.\n */\nbutton,\n[type=button],\n[type=reset],\n[type=submit] {\n  cursor: pointer;\n}\n\nbutton:disabled,\n[type=button]:disabled,\n[type=reset]:disabled,\n[type=submit]:disabled {\n  cursor: default;\n}\n\n/**\n * Clickable labels and selects.\n */\nselect,\nlabel {\n  cursor: pointer;\n}\n\n/**\n * Improve outlines for Firefox and unify style with input elements & buttons.\n */\n:-moz-focusring {\n  outline: auto;\n}\n\nselect:disabled {\n  opacity: inherit;\n}\n\n/**\n * 1. Remove padding.\n */\noption {\n  padding: 0; /* 1 */\n}\n\n/**\n * Reset to invisible\n */\nfieldset {\n  margin: 0;\n  padding: 0;\n  min-width: 0;\n}\n\nlegend {\n  display: contents;\n  padding: 0;\n}\n\n/**\n * Add the correct vertical alignment in Chrome, Firefox, and Opera.\n */\nprogress {\n  vertical-align: baseline;\n}\n\n/**\n * Remove the default vertical scrollbar in IE 10+.\n */\ntextarea {\n  overflow: auto;\n}\n\n/**\n * Remove increment and decrement buttons in Chrome.\n */\n[type=number]::-webkit-inner-spin-button,\n[type=number]::-webkit-outer-spin-button {\n  -webkit-appearance: none;\n}\n\n/**\n * Correct the outline style in Safari.\n */\n[type=search] {\n  outline-offset: -2px;\n}\n\n/**\n * Remove the inner padding in Chrome and Safari on macOS.\n */\n[type=search]::-webkit-search-decoration {\n  -webkit-appearance: none;\n}\n\n/*\n * Remove the \u2018X\u2019 from Chrome and Safari.\n */\n[type=search]::-webkit-search-decoration,\n[type=search]::-webkit-search-cancel-button,\n[type=search]::-webkit-search-results-button,\n[type=search]::-webkit-search-results-decoration {\n  display: none;\n}\n\n/**\n * 1. Hide file input completely.\n * 2. Remove selected file text.\n * 3. Set cursor to pointer for all browsers.\n */\n[type=file] {\n  opacity: 0; /* 1 */\n  font-size: 0; /* 2 */\n  cursor: pointer; /* 3 */\n}\n\n/**\n	* Fix appearance for Firefox\n	*/\n[type=number] {\n  -moz-appearance: textfield;\n}\n\n/**\n * Set cursor to pointer for all browsers.\n */\n[type=range] {\n  cursor: pointer;\n}\n\n/**\n * Reset slider thumbs to make them styleable.\n */\n[type=range]::-webkit-slider-thumb {\n  -webkit-appearance: none;\n  appearance: none;\n}\n\n[type=range]::-moz-range-thumb {\n  -moz-appearance: none;\n  appearance: none;\n  border-width: 0;\n  border-radius: 0;\n  background-color: transparent;\n}\n\n/* Interactive */\n/* ============================================ */\n/*\n * Add the correct display in Edge, IE 10+, and Firefox.\n */\ndetails {\n  display: block;\n}\n\n/*\n * Add the correct display in all browsers.\n */\nsummary {\n  display: list-item;\n}\n\n/*\n * Remove outline for editable content.\n */\n[contenteditable]:focus {\n  outline: auto;\n}\n\n/* Tables */\n/* ============================================ */\n/**\n1. Correct table border color inheritance in all Chrome and Safari.\n*/\ntable {\n  border-color: inherit; /* 1 */\n  border-collapse: collapse;\n}\n\ncaption {\n  text-align: left;\n}\n\ntd,\nth {\n  vertical-align: top;\n  padding: 0;\n}\n\nth {\n  text-align: left;\n  font-weight: inherit;\n}\n\n/* Misc */\n/* ============================================ */\n/*\n * Make placeholder style consistent across all browsers.\n */\n::placeholder {\n  color: #999;\n  opacity: 1;\n}\n\n/*\n * Hide focus outline but keep it visible for Windows High Contrast Mode.\n */\n:focus {\n  outline-style: solid;\n  outline-color: transparent;\n}\n\n/*\n * Hide input arrow when used with datalist.\n */\n::-webkit-calendar-picker-indicator {\n  display: none !important;\n}';
+
 // src/components/page-toolbar-css/index.tsx
-import { Fragment as Fragment5, jsx as jsx14, jsxs as jsxs13 } from "react/jsx-runtime";
-function identifyElementWithReact(element, reactMode = "filtered") {
-  const { name: elementName, path } = identifyElement(element);
+import { Fragment as Fragment5, jsx as jsx19, jsxs as jsxs15 } from "react/jsx-runtime";
+import { createElement } from "react";
+var shadowCss = [
+  css12,
+  css4,
+  css,
+  css9,
+  css5,
+  css3,
+  css2,
+  css7,
+  css6,
+  css10,
+  css11,
+  css8
+].join("\n");
+function identifyElementWithReact(element, reactMode = "filtered", attributeNames) {
+  const { name: elementName, path } = identifyElement(element, attributeNames);
   if (reactMode === "off") {
     return { name: elementName, elementName, path, reactComponents: null };
   }
@@ -8160,6 +9544,7 @@ var OUTPUT_TO_REACT_MODE = {
   detailed: "smart",
   forensic: "all"
 };
+var isPrimaryMultiSelectModifierActive = (event) => event.metaKey || event.ctrlKey;
 var COLOR_OPTIONS = [
   { id: "indigo", label: "Indigo", srgb: "#6155F5", p3: "color(display-p3 0.38 0.33 0.96)" },
   { id: "blue", label: "Blue", srgb: "#0088FF", p3: "color(display-p3 0.00 0.53 1.00)" },
@@ -8169,47 +9554,32 @@ var COLOR_OPTIONS = [
   { id: "orange", label: "Orange", srgb: "#FF8D28", p3: "color(display-p3 1.00 0.55 0.16)" },
   { id: "red", label: "Red", srgb: "#FF383C", p3: "color(display-p3 1.00 0.22 0.24)" }
 ];
-var injectAgentationColorTokens = () => {
-  if (typeof document === "undefined") return;
-  if (document.getElementById("agentation-color-tokens")) return;
-  const style = document.createElement("style");
-  style.id = "agentation-color-tokens";
-  style.textContent = [
-    ...COLOR_OPTIONS.map((c) => `
+var agentationColorTokensCss = [
+  ...COLOR_OPTIONS.map(
+    (c) => `
+    [data-agentation-accent="${c.id}"] {
+      --agentation-color-accent: ${c.srgb};
+    }
+    @supports (color: color(display-p3 0 0 0)) {
       [data-agentation-accent="${c.id}"] {
-        --agentation-color-accent: ${c.srgb};
+        --agentation-color-accent: ${c.p3};
       }
-
-      @supports (color: color(display-p3 0 0 0)) {
-        [data-agentation-accent="${c.id}"] {
-          --agentation-color-accent: ${c.p3};
-        }
-      }
-    `),
-    `:root {
-      ${COLOR_OPTIONS.map((c) => `--agentation-color-${c.id}: ${c.srgb};`).join("\n")}
-    }`,
-    `@supports (color: color(display-p3 0 0 0)) {
-      :root {
-        ${COLOR_OPTIONS.map((c) => `--agentation-color-${c.id}: ${c.p3};`).join("\n")}
-      }
-    }`
-  ].join("");
-  document.head.appendChild(style);
-};
-injectAgentationColorTokens();
-function deepElementFromPoint(x, y) {
-  let element = document.elementFromPoint(x, y);
-  if (!element) return null;
-  while (element?.shadowRoot) {
-    const deeper = element.shadowRoot.elementFromPoint(x, y);
-    if (!deeper || deeper === element) break;
-    element = deeper;
-  }
-  return element;
-}
+    }
+  `
+  ),
+  `:host {
+    ${COLOR_OPTIONS.map((c) => `--agentation-color-${c.id}: ${c.srgb};`).join("\n")}
+  }`,
+  `@supports (color: color(display-p3 0 0 0)) {
+    :host {
+      ${COLOR_OPTIONS.map((c) => `--agentation-color-${c.id}: ${c.p3};`).join("\n")}
+    }
+  }`
+].join("");
 function isElementFixed(element) {
-  let current = element;
+  let outer = element;
+  for (let frame = parentFrame(outer.ownerDocument); frame; frame = parentFrame(outer.ownerDocument)) outer = frame;
+  let current = outer;
   while (current && current !== document.body) {
     const style = window.getComputedStyle(current);
     const position = style.position;
@@ -8221,7 +9591,7 @@ function isElementFixed(element) {
   return false;
 }
 function isRenderableAnnotation(annotation) {
-  return annotation.status !== "resolved" && annotation.status !== "dismissed";
+  return annotation.kind !== "placement" && annotation.kind !== "rearrange" && annotation.status !== "resolved" && annotation.status !== "dismissed";
 }
 function detectSourceFile(element) {
   const result = getSourceLocation(element);
@@ -8231,7 +9601,33 @@ function detectSourceFile(element) {
   }
   return void 0;
 }
-function PageFeedbackToolbarCSS({
+function PageFeedbackToolbarCSS(props = {}) {
+  const pathname = usePagePath(props.useHashLocation ?? false);
+  const activeState = useState11(false);
+  const portalHost = useFeedbackPortal(props.portalContainer);
+  if (!portalHost) return null;
+  return createPortal3(/* @__PURE__ */ createElement(
+    PageFeedbackToolbarForRoute,
+    {
+      ...props,
+      key: props.useHashLocation ? pathname : void 0,
+      pathname,
+      activeState,
+      portalHost
+    }
+  ), portalHost);
+}
+function PageFeedbackToolbarForRoute({
+  pathname,
+  activeState,
+  portalHost,
+  useHashLocation = false,
+  appName,
+  enableKeyboardShortcuts = true,
+  identifyingAttributes = DEFAULT_IDENTIFYING_ATTRIBUTES,
+  copyFormat = "markdown",
+  onOpenSource,
+  portalContainer,
   demoAnnotations,
   demoDelay = 1e3,
   enableDemoMode = false,
@@ -8247,80 +9643,176 @@ function PageFeedbackToolbarCSS({
   onSessionCreated,
   webhookUrl,
   className: userClassName
-} = {}) {
-  const [isActive, setIsActive] = useState6(false);
-  const [annotations, setAnnotations] = useState6([]);
-  const [showMarkers, setShowMarkers] = useState6(true);
-  const [isToolbarHidden, setIsToolbarHidden] = useState6(() => loadToolbarHidden());
-  const [isToolbarHiding, setIsToolbarHiding] = useState6(false);
-  const portalWrapperRef = useRef6(null);
-  useEffect6(() => {
+}) {
+  const [isActive, setIsActive] = activeState;
+  const [, updateFrameScroll] = useState11(0);
+  const [pageEvents] = useState11(() => createPageEvents(document, () => updateFrameScroll((value) => value + 1)));
+  useEffect8(() => {
+    pageEvents.start();
+    return () => pageEvents.stop();
+  }, [pageEvents]);
+  const copyAttribute = typeof copyFormat === "object" ? copyFormat.attribute : void 0;
+  const attributeNames = useMemo2(() => copyAttribute ? [...identifyingAttributes, copyAttribute] : identifyingAttributes, [identifyingAttributes, copyAttribute]);
+  const routeAlive = useRef14(true);
+  useLayoutEffect10(() => {
+    routeAlive.current = true;
+    return () => {
+      routeAlive.current = false;
+    };
+  }, []);
+  const routeTask = useCallback8(
+    (work) => useHashLocation ? runPageTask(JSON.stringify([endpoint, pathname]), work) : work(),
+    [endpoint, pathname, useHashLocation]
+  );
+  const serverIds = useRef14(/* @__PURE__ */ new Map());
+  const deletedIds = useRef14(/* @__PURE__ */ new Set());
+  const keepFeedback = (annotation) => isRenderableAnnotation(annotation) && !deletedIds.current.has(annotation.id);
+  const syncPageAnnotation = async (...args) => {
+    const saved = await syncAnnotation(...args);
+    const sent = args[2];
+    const localId = sent.id;
+    if (localId) {
+      serverIds.current.set(localId, saved.id);
+      if (deletedIds.current.has(localId)) deletedIds.current.add(saved.id);
+    }
+    if (!useHashLocation) {
+      const pagePath2 = new URL(sent.url || window.location.href).pathname;
+      const latest = loadAnnotations(pagePath2).find((a) => a.id === localId);
+      try {
+        if (deletedIds.current.has(localId)) {
+          await deleteAnnotation(args[0], saved.id);
+        } else if (latest && latest.comment !== sent.comment) {
+          await updateAnnotation(args[0], saved.id, { comment: latest.comment });
+          return { ...saved, comment: latest.comment };
+        }
+      } catch (error) {
+        console.warn("[Agentation] Failed to apply changes made during sync:", error);
+      }
+    }
+    return saved;
+  };
+  const scopeSession = (session) => useHashLocation ? { ...session, annotations: session.annotations.filter((a) => !deletedIds.current.has(a.id) && matchesPage(a.url || session.url, pathname, window.location.origin)) } : session;
+  const latestPathname = useRef14(pathname);
+  latestPathname.current = pathname;
+  const applySessionFeedback = (before, incoming, sessionId, pagePath2 = pathname) => {
+    const merged = mergeSessionFeedback(before, loadAnnotations(pagePath2), incoming, serverIds.current).filter(keepFeedback);
+    if (pagePath2 === latestPathname.current && routeAlive.current) setAnnotations(merged);
+    saveAnnotationsWithSyncMarker(pagePath2, merged, sessionId);
+  };
+  const [annotations, setAnnotations] = useState11([]);
+  const [showMarkers, setShowMarkers] = useState11(true);
+  const [isToolbarHidden, setIsToolbarHidden] = useState11(() => loadToolbarHidden());
+  const [isToolbarHiding, setIsToolbarHiding] = useState11(false);
+  useLayoutEffect10(() => {
+    installAnimationFreeze();
+  }, []);
+  const portalWrapperRef = useRef14(null);
+  const launcherRef = useRef14(null);
+  const controlsRef = useRef14(null);
+  const settingsButtonRef = useRef14(null);
+  const focusControlsOnOpenRef = useRef14(false);
+  const focusLauncherOnCloseRef = useRef14(false);
+  const focusSettingsOnOpenRef = useRef14(false);
+  useLayoutEffect10(() => {
+    if (isActive && focusControlsOnOpenRef.current) {
+      focusControlsOnOpenRef.current = false;
+      controlsRef.current?.querySelector("button:not(:disabled)")?.focus();
+    } else if (!isActive && focusLauncherOnCloseRef.current) {
+      focusLauncherOnCloseRef.current = false;
+      launcherRef.current?.focus();
+    }
+  }, [isActive]);
+  useEffect8(() => {
     const stop = (e) => {
       const wrapper = portalWrapperRef.current;
-      if (wrapper && wrapper.contains(e.target)) {
+      if (wrapper && e.composedPath().includes(wrapper)) {
         e.stopPropagation();
       }
     };
     const events = ["mousedown", "click", "pointerdown"];
-    events.forEach((evt) => document.body.addEventListener(evt, stop));
+    events.forEach((evt) => portalHost.addEventListener(evt, stop));
     return () => {
-      events.forEach((evt) => document.body.removeEventListener(evt, stop));
+      events.forEach((evt) => portalHost.removeEventListener(evt, stop));
     };
+  }, [portalHost]);
+  const [markersVisible, setMarkersVisible] = useState11(false);
+  const [markersExiting, setMarkersExiting] = useState11(false);
+  const [hoverInfo, setHoverInfo] = useState11(null);
+  const [hoverPosition, setHoverPosition] = useState11({ x: 0, y: 0 });
+  const [pendingAnnotation, setPendingAnnotation] = useState11(null);
+  const [copied, setCopied] = useState11(false);
+  const copyAction = useLatestAction();
+  const sendAction = useLatestAction();
+  const [sendState, setSendState] = useState11("idle");
+  const [isClearing, setIsClearing] = useState11(false);
+  const clearingIds = useRef14(/* @__PURE__ */ new Set());
+  const pendingClearIds = useRef14(/* @__PURE__ */ new Set());
+  const clearLayoutTimer = useRef14();
+  const finishClearBatch = useCallback8(() => {
+    if (!clearingIds.current.size && !clearLayoutTimer.current) setIsClearing(false);
   }, []);
-  const [markersVisible, setMarkersVisible] = useState6(false);
-  const [markersExiting, setMarkersExiting] = useState6(false);
-  const [hoverInfo, setHoverInfo] = useState6(null);
-  const [hoverPosition, setHoverPosition] = useState6({ x: 0, y: 0 });
-  const [pendingAnnotation, setPendingAnnotation] = useState6(null);
-  const [copied, setCopied] = useState6(false);
-  const [sendState, setSendState] = useState6("idle");
-  const [cleared, setCleared] = useState6(false);
-  const [isClearing, setIsClearing] = useState6(false);
-  const [hoveredMarkerId, setHoveredMarkerId] = useState6(null);
-  const [hoveredTargetElement, setHoveredTargetElement] = useState6(null);
-  const [hoveredTargetElements, setHoveredTargetElements] = useState6([]);
-  const [deletingMarkerId, setDeletingMarkerId] = useState6(null);
-  const [renumberFrom, setRenumberFrom] = useState6(null);
-  const [editingAnnotation, setEditingAnnotation] = useState6(
+  useEffect8(() => () => clearTimeout(clearLayoutTimer.current), []);
+  const [hoveredMarkerId, setHoveredMarkerId] = useState11(null);
+  const [hoveredTargetElement, setHoveredTargetElement] = useState11(null);
+  const [hoveredTargetElements, setHoveredTargetElements] = useState11([]);
+  const [renumberFrom, setRenumberFrom] = useState11(null);
+  const renumberTimeoutRef = useRef14(null);
+  useEffect8(() => () => {
+    if (renumberTimeoutRef.current) clearTimeout(renumberTimeoutRef.current);
+  }, []);
+  const [editingAnnotation, setEditingAnnotation] = useState11(
     null
   );
-  const [editingTargetElement, setEditingTargetElement] = useState6(null);
-  const [editingTargetElements, setEditingTargetElements] = useState6([]);
-  const [scrollY, setScrollY] = useState6(0);
-  const [isScrolling, setIsScrolling] = useState6(false);
-  const [mounted, setMounted] = useState6(false);
-  const [isFrozen, setIsFrozen] = useState6(false);
-  const [showSettings, setShowSettings] = useState6(false);
-  const [showSettingsVisible, setShowSettingsVisible] = useState6(false);
-  const [settingsPage, setSettingsPage] = useState6(
+  const editingTriggerRef = useRef14(null);
+  const editingFromKeyboardRef = useRef14(false);
+  const [restoreEditPreview, setRestoreEditPreview] = useState11(false);
+  useLayoutEffect10(() => {
+    if (editingAnnotation || !editingTriggerRef.current) return;
+    const trigger = editingTriggerRef.current;
+    editingTriggerRef.current = null;
+    if (pendingAnnotation) return;
+    const target = isActive && trigger.isConnected && !trigger.disabled ? trigger : launcherRef.current;
+    target?.focus({ preventScroll: true });
+  }, [editingAnnotation, isActive, pendingAnnotation]);
+  const [editingTargetElement, setEditingTargetElement] = useState11(null);
+  const [editingTargetElements, setEditingTargetElements] = useState11([]);
+  const [scrollY, setScrollY] = useState11(0);
+  const [isScrolling, setIsScrolling] = useState11(false);
+  const [mounted, setMounted] = useState11(false);
+  const [isFrozen, setIsFrozen] = useState11(false);
+  const [showSettings, setShowSettings] = useState11(false);
+  const [settingsPage, setSettingsPage] = useState11(
     "main"
   );
-  const [tooltipsHidden, setTooltipsHidden] = useState6(false);
-  const [isDesignMode, setIsDesignMode] = useState6(false);
-  const [designOverlayExiting, setDesignOverlayExiting] = useState6(false);
-  const [designPlacements, setDesignPlacements] = useState6([]);
-  const [activeDesignComponent, setActiveDesignComponent] = useState6(null);
-  const designPlacementsLoaded = useRef6(false);
-  const [blankCanvas, setBlankCanvas] = useState6(false);
-  const [canvasReady, setCanvasReady] = useState6(false);
-  const [canvasOpacity, setCanvasOpacity] = useState6(1);
-  const [canvasPurpose, setCanvasPurpose] = useState6("new-page");
-  const [wireframePurpose, setWireframePurpose] = useState6("");
-  const [designInteracting, setDesignInteracting] = useState6(false);
-  const [rearrangeState, setRearrangeState] = useState6(null);
-  const rearrangeLoaded = useRef6(false);
-  const exploreStashRef = useRef6({ rearrange: null, placements: [] });
-  const wireframeStashRef = useRef6({ rearrange: null, placements: [] });
-  const [designDeselectSignal, setDesignDeselectSignal] = useState6(0);
-  const [rearrangeDeselectSignal, setRearrangeDeselectSignal] = useState6(0);
-  const [designClearSignal, setDesignClearSignal] = useState6(0);
-  const [rearrangeClearSignal, setRearrangeClearSignal] = useState6(0);
-  const designSelectedIdsRef = useRef6(/* @__PURE__ */ new Set());
-  const rearrangeSelectedIdsRef = useRef6(/* @__PURE__ */ new Set());
-  const crossDragStartRef = useRef6(null);
-  const designExitTimer = useRef6();
+  const [tooltipsHidden, setTooltipsHidden] = useState11(false);
+  const [isDesignMode, setIsDesignMode] = useState11(false);
+  const [designOverlayExiting, setDesignOverlayExiting] = useState11(false);
+  const [designPlacements, setDesignPlacements] = useState11([]);
+  const [activeDesignComponent, setActiveDesignComponent] = useState11(null);
+  const designPlacementsLoaded = useRef14(false);
+  const [blankCanvas, setBlankCanvas] = useState11(false);
+  const [canvasReady, setCanvasReady] = useState11(false);
+  const [canvasOpacity, setCanvasOpacity] = useState11(1);
+  const [canvasPurpose, setCanvasPurpose] = useState11("new-page");
+  const [wireframePurpose, setWireframePurpose] = useState11("");
+  const [designInteracting, setDesignInteracting] = useState11(false);
+  const [rearrangeState, setRearrangeState] = useState11(null);
+  const rearrangeLoaded = useRef14(false);
+  const exploreStashRef = useRef14({ rearrange: null, placements: [] });
+  const wireframeStashRef = useRef14({ rearrange: null, placements: [] });
+  const [designDeselectSignal, setDesignDeselectSignal] = useState11(0);
+  const [rearrangeDeselectSignal, setRearrangeDeselectSignal] = useState11(0);
+  const [clearingPlacements, setClearingPlacements] = useState11([]);
+  const [clearingRearrange, setClearingRearrange] = useState11(null);
+  const layoutSnapshot = useRef14({ designPlacements, rearrangeState, blankCanvas, wireframePurpose });
+  layoutSnapshot.current = { designPlacements, rearrangeState, blankCanvas, wireframePurpose };
+  const clearingLayout = useRef14({ placements: clearingPlacements, rearrange: clearingRearrange });
+  const designSelectedIdsRef = useRef14(/* @__PURE__ */ new Set());
+  const rearrangeSelectedIdsRef = useRef14(/* @__PURE__ */ new Set());
+  const crossDragStartRef = useRef14(null);
+  const designExitTimer = useRef14();
   const canvasShouldBeVisible = isDesignMode && isActive && !designOverlayExiting && blankCanvas;
-  useEffect6(() => {
+  useEffect8(() => {
     if (canvasShouldBeVisible) {
       setCanvasReady(false);
       const raf = originalRequestAnimationFrame(() => {
@@ -8331,27 +9823,28 @@ function PageFeedbackToolbarCSS({
       setCanvasReady(false);
     }
   }, [canvasShouldBeVisible]);
-  const placementAnnotationMap = useRef6(/* @__PURE__ */ new Map());
-  const rearrangeAnnotationMap = useRef6(/* @__PURE__ */ new Map());
-  const rearrangeDebounceTimer = useRef6();
-  const [isDrawMode, setIsDrawMode] = useState6(false);
-  const [drawStrokes, setDrawStrokes] = useState6([]);
-  const drawStrokesRef = useRef6(drawStrokes);
+  const placementAnnotationMap = useRef14(/* @__PURE__ */ new Map());
+  const existingLayoutAnnotations = useRef14([]);
+  const rearrangeAnnotationMap = useRef14(/* @__PURE__ */ new Map());
+  const layoutSync = useRef14(null);
+  const [isDrawMode, setIsDrawMode] = useState11(false);
+  const [drawStrokes, setDrawStrokes] = useState11([]);
+  const drawStrokesRef = useRef14(drawStrokes);
   drawStrokesRef.current = drawStrokes;
-  const [hoveredDrawingIdx, setHoveredDrawingIdx] = useState6(null);
-  const drawCanvasRef = useRef6(null);
-  const isDrawingRef = useRef6(false);
-  const currentStrokeRef = useRef6([]);
-  const dimAmountRef = useRef6(0);
-  const visualHighlightRef = useRef6(null);
-  const exitingStrokeIdRef = useRef6(null);
-  const exitingAlphaRef = useRef6(1);
-  const [tooltipSessionActive, setTooltipSessionActive] = useState6(false);
-  const tooltipSessionTimerRef = useRef6(
+  const [hoveredDrawingIdx, setHoveredDrawingIdx] = useState11(null);
+  const drawCanvasRef = useRef14(null);
+  const isDrawingRef = useRef14(false);
+  const currentStrokeRef = useRef14([]);
+  const dimAmountRef = useRef14(0);
+  const visualHighlightRef = useRef14(null);
+  const exitingStrokeIdRef = useRef14(null);
+  const exitingAlphaRef = useRef14(1);
+  const [tooltipSessionActive, setTooltipSessionActive] = useState11(false);
+  const tooltipSessionTimerRef = useRef14(
     null
   );
-  const [pendingMultiSelectElements, setPendingMultiSelectElements] = useState6([]);
-  const modifiersHeldRef = useRef6({ cmd: false, shift: false });
+  const [pendingMultiSelectElements, setPendingMultiSelectElements] = useState11([]);
+  const legacyMultiSelectRef = useRef14(false);
   const hideTooltipsUntilMouseLeave = () => {
     setTooltipsHidden(true);
   };
@@ -8374,13 +9867,13 @@ function PageFeedbackToolbarCSS({
     setTooltipSessionActive(false);
     showTooltipsAgain();
   };
-  useEffect6(() => {
+  useEffect8(() => {
     return () => {
       if (tooltipSessionTimerRef.current)
         clearTimeout(tooltipSessionTimerRef.current);
     };
   }, []);
-  const [settings, setSettings] = useState6(() => {
+  const [settings, setSettings] = useState11(() => {
     try {
       const saved = JSON.parse(localStorage.getItem("feedback-toolbar-settings") ?? "");
       return {
@@ -8392,71 +9885,70 @@ function PageFeedbackToolbarCSS({
       return DEFAULT_SETTINGS;
     }
   });
-  const [isDarkMode, setIsDarkMode] = useState6(true);
-  const [showEntranceAnimation, setShowEntranceAnimation] = useState6(false);
-  const toggleTheme = () => {
-    portalWrapperRef.current?.classList.add(styles_module_default4.disableTransitions);
+  const [isDarkMode, setIsDarkMode] = useState11(true);
+  const [showEntranceAnimation, setShowEntranceAnimation] = useState11(false);
+  const updateSettings = useCallback8((patch) => {
+    setSettings((current) => ({ ...current, ...patch }));
+  }, []);
+  const toggleTheme = useCallback8(() => {
+    portalWrapperRef.current?.classList.add(styles_module_default3.disableTransitions);
     setIsDarkMode((previous) => !previous);
     originalRequestAnimationFrame(() => {
-      portalWrapperRef.current?.classList.remove(styles_module_default4.disableTransitions);
+      portalWrapperRef.current?.classList.remove(styles_module_default3.disableTransitions);
     });
-  };
+  }, []);
   const isDevMode = process.env.NODE_ENV === "development" || isReactPage();
   const effectiveReactMode = isDevMode && settings.reactEnabled ? OUTPUT_TO_REACT_MODE[settings.outputDetail] : "off";
-  const [currentSessionId, setCurrentSessionId] = useState6(
-    initialSessionId ?? null
+  const [currentSessionId, setCurrentSessionId] = useState11(
+    useHashLocation ? null : initialSessionId ?? null
   );
-  const sessionInitializedRef = useRef6(false);
-  const [connectionStatus, setConnectionStatus] = useState6(endpoint ? "connecting" : "disconnected");
-  const [toolbarPosition, setToolbarPosition] = useState6(null);
-  const [isDraggingToolbar, setIsDraggingToolbar] = useState6(false);
-  const [dragStartPos, setDragStartPos] = useState6(null);
-  const justFinishedToolbarDragRef = useRef6(false);
-  const [animatedMarkers, setAnimatedMarkers] = useState6(
-    /* @__PURE__ */ new Set()
-  );
-  const [exitingMarkers, setExitingMarkers] = useState6(/* @__PURE__ */ new Set());
-  const [pendingExiting, setPendingExiting] = useState6(false);
-  const [editExiting, setEditExiting] = useState6(false);
-  const [isDragging, setIsDragging] = useState6(false);
-  const mouseDownPosRef = useRef6(null);
-  const dragStartRef = useRef6(null);
-  const dragRectRef = useRef6(null);
-  const highlightsContainerRef = useRef6(null);
-  const justFinishedDragRef = useRef6(false);
-  const lastElementUpdateRef = useRef6(0);
-  const recentlyAddedIdRef = useRef6(null);
-  const prevConnectionStatusRef = useRef6(null);
+  const sessionInitializedRef = useRef14(false);
+  const [connectionStatus, setConnectionStatus] = useState11(endpoint ? "connecting" : "disconnected");
+  const [toolbarPosition, setToolbarPosition] = useState11(null);
+  const [isDraggingToolbar, setIsDraggingToolbar] = useState11(false);
+  const toolbarDragRef = useRef14(null);
+  const justFinishedToolbarDragRef = useRef14(false);
+  const animatedMarkers = useRef14(/* @__PURE__ */ new Set());
+  const markerKeys = useRef14(/* @__PURE__ */ new Map());
+  const handleMarkerEntered = useCallback8((id) => {
+    animatedMarkers.current.add(id);
+    if (recentlyAddedIdRef.current === id) recentlyAddedIdRef.current = null;
+  }, []);
+  const [exitingMarkers, setExitingMarkers] = useState11(/* @__PURE__ */ new Set());
+  const [pendingExiting, setPendingExiting] = useState11(false);
+  const [editExiting, setEditExiting] = useState11(false);
+  const [isDragging, setIsDragging] = useState11(false);
+  const mouseDownPosRef = useRef14(null);
+  const dragStartRef = useRef14(null);
+  const dragRectRef = useRef14(null);
+  const highlightsContainerRef = useRef14(null);
+  const justFinishedDragRef = useRef14(false);
+  const lastElementUpdateRef = useRef14(0);
+  const recentlyAddedIdRef = useRef14(null);
+  const prevConnectionStatusRef = useRef14(null);
   const DRAG_THRESHOLD = 8;
   const ELEMENT_UPDATE_THROTTLE = 50;
-  const popupRef = useRef6(null);
-  const editPopupRef = useRef6(null);
-  const scrollTimeoutRef = useRef6(null);
-  const pathname = typeof window !== "undefined" ? window.location.pathname : "/";
-  useEffect6(() => {
-    if (showSettings) {
-      setShowSettingsVisible(true);
-    } else {
-      setTooltipsHidden(false);
-      setSettingsPage("main");
-      const timer = originalSetTimeout(() => setShowSettingsVisible(false), 0);
-      return () => clearTimeout(timer);
+  const popupRef = useRef14(null);
+  const editPopupRef = useRef14(null);
+  const scrollTimeoutRef = useRef14(null);
+  const finishSettingsExit = useCallback8(() => setSettingsPage("main"), []);
+  useEffect8(() => {
+    if (!showSettings) setTooltipsHidden(false);
+  }, [showSettings]);
+  useLayoutEffect10(() => {
+    if (showSettings && focusSettingsOnOpenRef.current) {
+      focusSettingsOnOpenRef.current = false;
+      portalWrapperRef.current?.querySelector(
+        "[data-agentation-settings-panel] button"
+      )?.focus();
     }
   }, [showSettings]);
   const shouldShowMarkers = isActive && showMarkers && !isDesignMode;
-  useEffect6(() => {
+  useEffect8(() => {
     if (shouldShowMarkers) {
       setMarkersExiting(false);
       setMarkersVisible(true);
-      setAnimatedMarkers(/* @__PURE__ */ new Set());
-      const timer = originalSetTimeout(() => {
-        setAnimatedMarkers((prev) => {
-          const newSet = new Set(prev);
-          annotations.forEach((a) => newSet.add(a.id));
-          return newSet;
-        });
-      }, 350);
-      return () => clearTimeout(timer);
+      animatedMarkers.current.clear();
     } else if (markersVisible) {
       setMarkersExiting(true);
       const timer = originalSetTimeout(() => {
@@ -8466,7 +9958,7 @@ function PageFeedbackToolbarCSS({
       return () => clearTimeout(timer);
     }
   }, [shouldShowMarkers]);
-  useEffect6(() => {
+  useEffect8(() => {
     setMounted(true);
     setScrollY(window.scrollY);
     const stored = loadAnnotations(pathname);
@@ -8494,7 +9986,7 @@ function PageFeedbackToolbarCSS({
     } catch (e) {
     }
   }, [pathname]);
-  useEffect6(() => {
+  useEffect8(() => {
     if (mounted) {
       localStorage.setItem(
         "feedback-toolbar-settings",
@@ -8502,7 +9994,7 @@ function PageFeedbackToolbarCSS({
       );
     }
   }, [settings, mounted]);
-  useEffect6(() => {
+  useEffect8(() => {
     if (mounted) {
       localStorage.setItem(
         "feedback-toolbar-theme",
@@ -8510,8 +10002,8 @@ function PageFeedbackToolbarCSS({
       );
     }
   }, [isDarkMode, mounted]);
-  const prevDraggingRef = useRef6(false);
-  useEffect6(() => {
+  const prevDraggingRef = useRef14(false);
+  useEffect8(() => {
     const wasDragging = prevDraggingRef.current;
     prevDraggingRef.current = isDraggingToolbar;
     if (wasDragging && !isDraggingToolbar && toolbarPosition && mounted) {
@@ -8521,10 +10013,11 @@ function PageFeedbackToolbarCSS({
       );
     }
   }, [isDraggingToolbar, toolbarPosition, mounted]);
-  useEffect6(() => {
+  useEffect8(() => {
     if (!endpoint || !mounted || sessionInitializedRef.current) return;
     sessionInitializedRef.current = true;
     setConnectionStatus("connecting");
+    const currentUrl = window.location.href;
     const initSession = async () => {
       try {
         const storedSessionId = loadSessionId(pathname);
@@ -8532,15 +10025,19 @@ function PageFeedbackToolbarCSS({
         let sessionEstablished = false;
         if (sessionIdToJoin) {
           try {
-            const session = await getSession(endpoint, sessionIdToJoin);
-            setCurrentSessionId(session.id);
-            setConnectionStatus("connected");
+            const beforeJoin = loadAnnotations(pathname);
+            const session = scopeSession(await getSession(endpoint, sessionIdToJoin));
+            existingLayoutAnnotations.current = session.annotations.filter((a) => a.kind === "placement" || a.kind === "rearrange");
+            if (routeAlive.current) {
+              setCurrentSessionId(session.id);
+              setConnectionStatus("connected");
+            }
             saveSessionId(pathname, session.id);
             sessionEstablished = true;
-            const allLocalAnnotations = loadAnnotations(pathname);
-            const serverIds = new Set(session.annotations.map((a) => a.id));
+            const allLocalAnnotations = loadAnnotations(pathname).filter(isRenderableAnnotation);
+            const serverIds2 = new Set(session.annotations.map((a) => a.id));
             const localToMerge = allLocalAnnotations.filter((a) => {
-              if (serverIds.has(a.id)) return false;
+              if (serverIds2.has(a.id)) return false;
               return true;
             });
             if (localToMerge.length > 0) {
@@ -8548,7 +10045,7 @@ function PageFeedbackToolbarCSS({
               const pageUrl = `${baseUrl}${pathname}`;
               const results = await Promise.allSettled(
                 localToMerge.map(
-                  (annotation) => syncAnnotation(endpoint, session.id, {
+                  (annotation) => syncPageAnnotation(endpoint, session.id, {
                     ...annotation,
                     sessionId: session.id,
                     url: pageUrl
@@ -8569,21 +10066,9 @@ function PageFeedbackToolbarCSS({
                 ...session.annotations,
                 ...syncedAnnotations
               ];
-              setAnnotations(allAnnotations.filter(isRenderableAnnotation));
-              saveAnnotationsWithSyncMarker(
-                pathname,
-                allAnnotations.filter(isRenderableAnnotation),
-                session.id
-              );
+              applySessionFeedback(beforeJoin, allAnnotations, session.id);
             } else {
-              setAnnotations(
-                session.annotations.filter(isRenderableAnnotation)
-              );
-              saveAnnotationsWithSyncMarker(
-                pathname,
-                session.annotations.filter(isRenderableAnnotation),
-                session.id
-              );
+              applySessionFeedback(beforeJoin, session.annotations, session.id);
             }
           } catch (joinError) {
             console.warn(
@@ -8594,29 +10079,30 @@ function PageFeedbackToolbarCSS({
           }
         }
         if (!sessionEstablished) {
-          const currentUrl = typeof window !== "undefined" ? window.location.href : "/";
           const session = await createSession(endpoint, currentUrl);
-          setCurrentSessionId(session.id);
-          setConnectionStatus("connected");
           saveSessionId(pathname, session.id);
-          onSessionCreated?.(session.id);
-          const allAnnotations = loadAllAnnotations();
+          if (routeAlive.current) {
+            setCurrentSessionId(session.id);
+            setConnectionStatus("connected");
+            onSessionCreated?.(session.id);
+          }
+          const allAnnotations = useHashLocation ? /* @__PURE__ */ new Map([[pathname, loadAnnotations(pathname)]]) : loadAllAnnotations();
           const baseUrl = typeof window !== "undefined" ? window.location.origin : "";
           const syncPromises = [];
-          for (const [pagePath, annotations2] of allAnnotations) {
+          for (const [pagePath2, annotations2] of allAnnotations) {
             const unsyncedAnnotations = annotations2.filter(
-              (a) => !a._syncedTo
+              (a) => isRenderableAnnotation(a) && !a._syncedTo
             );
             if (unsyncedAnnotations.length === 0) continue;
-            const pageUrl = `${baseUrl}${pagePath}`;
-            const isCurrentPage = pagePath === pathname;
+            const pageUrl = `${baseUrl}${pagePath2}`;
+            const isCurrentPage = pagePath2 === pathname;
             syncPromises.push(
               (async () => {
                 try {
                   const targetSession = isCurrentPage ? session : await createSession(endpoint, pageUrl);
                   const results = await Promise.allSettled(
                     unsyncedAnnotations.map(
-                      (annotation) => syncAnnotation(endpoint, targetSession.id, {
+                      (annotation) => syncPageAnnotation(endpoint, targetSession.id, {
                         ...annotation,
                         sessionId: targetSession.id,
                         url: pageUrl
@@ -8633,28 +10119,10 @@ function PageFeedbackToolbarCSS({
                     );
                     return unsyncedAnnotations[i];
                   });
-                  const renderableSyncedAnnotations = syncedAnnotations.filter(
-                    isRenderableAnnotation
-                  );
-                  saveAnnotationsWithSyncMarker(
-                    pagePath,
-                    renderableSyncedAnnotations,
-                    targetSession.id
-                  );
-                  if (isCurrentPage) {
-                    const originalIds = new Set(
-                      unsyncedAnnotations.map((a) => a.id)
-                    );
-                    setAnnotations((prev) => {
-                      const newDuringSync = prev.filter(
-                        (a) => !originalIds.has(a.id)
-                      );
-                      return [...renderableSyncedAnnotations, ...newDuringSync];
-                    });
-                  }
+                  applySessionFeedback(unsyncedAnnotations, syncedAnnotations, targetSession.id, pagePath2);
                 } catch (err) {
                   console.warn(
-                    `[Agentation] Failed to sync annotations for ${pagePath}:`,
+                    `[Agentation] Failed to sync annotations for ${pagePath2}:`,
                     err
                   );
                 }
@@ -8664,16 +10132,16 @@ function PageFeedbackToolbarCSS({
           await Promise.allSettled(syncPromises);
         }
       } catch (error) {
-        setConnectionStatus("disconnected");
+        if (routeAlive.current) setConnectionStatus("disconnected");
         console.warn(
           "[Agentation] Failed to initialize session, using local storage:",
           error
         );
       }
     };
-    initSession();
-  }, [endpoint, initialSessionId, mounted, onSessionCreated, pathname]);
-  useEffect6(() => {
+    void routeTask(initSession);
+  }, [endpoint, initialSessionId, mounted, onSessionCreated, pathname, routeTask]);
+  useEffect8(() => {
     if (!endpoint || !mounted) return;
     const checkHealth = async () => {
       try {
@@ -8691,61 +10159,76 @@ function PageFeedbackToolbarCSS({
     const interval = originalSetInterval(checkHealth, 1e4);
     return () => clearInterval(interval);
   }, [endpoint, mounted]);
-  useEffect6(() => {
+  const currentAnnotationsRef = useRef14(annotations);
+  const hasPendingFeedbackRef = useRef14(false);
+  useLayoutEffect10(() => {
+    currentAnnotationsRef.current = annotations;
+    hasPendingFeedbackRef.current = annotations.length > 0 || designPlacements.length > 0 || (rearrangeState?.sections.length ?? 0) > 0;
+  }, [annotations, designPlacements.length, rearrangeState?.sections.length]);
+  const finishMarkerRemoval = useCallback8((id) => {
+    const wasClearing = clearingIds.current.has(id);
+    if (wasClearing) {
+      pendingClearIds.current.delete(id);
+      if (pendingClearIds.current.size) return;
+    }
+    const removed = wasClearing ? new Set(clearingIds.current) : /* @__PURE__ */ new Set([id]);
+    if (wasClearing) {
+      clearingIds.current.clear();
+      finishClearBatch();
+    }
+    for (const removedId of removed) {
+      markerKeys.current.delete(removedId);
+      animatedMarkers.current.delete(removedId);
+    }
+    setAnnotations((previous) => previous.filter((a) => !removed.has(a.id)));
+    setExitingMarkers((previous) => new Set([...previous].filter((id2) => !removed.has(id2))));
+    const notes = wasClearing ? [] : currentAnnotationsRef.current.filter((a) => a.kind !== "placement" && a.kind !== "rearrange");
+    const index = notes.findIndex((a) => a.id === id);
+    if (index >= 0 && index < notes.length - 1) {
+      setRenumberFrom((previous) => previous === null ? index : Math.min(previous, index));
+      if (renumberTimeoutRef.current) clearTimeout(renumberTimeoutRef.current);
+      renumberTimeoutRef.current = originalSetTimeout(() => setRenumberFrom(null), 200);
+    }
+  }, [finishClearBatch]);
+  useEffect8(() => {
     if (!endpoint || !mounted || !currentSessionId) return;
-    const eventSource = new EventSource(
-      `${endpoint}/sessions/${currentSessionId}/events`
-    );
-    const removedStatuses = ["resolved", "dismissed"];
-    const handler = (e) => {
-      try {
-        const event = JSON.parse(e.data);
-        if (removedStatuses.includes(event.payload?.status)) {
-          const id = event.payload.id;
-          const kind = event.payload.kind;
-          if (kind === "placement") {
-            for (const [placementId, annotationId] of placementAnnotationMap.current) {
-              if (annotationId === id) {
-                placementAnnotationMap.current.delete(placementId);
-                setDesignPlacements((prev) => prev.filter((p) => p.id !== placementId));
-                break;
-              }
-            }
-          } else if (kind === "rearrange") {
-            for (const [sectionId, annotationId] of rearrangeAnnotationMap.current) {
-              if (annotationId === id) {
-                rearrangeAnnotationMap.current.delete(sectionId);
-                setRearrangeState((prev) => {
-                  if (!prev) return null;
-                  const remaining = prev.sections.filter((s2) => s2.id !== sectionId);
-                  if (remaining.length === 0) return null;
-                  return { ...prev, sections: remaining };
-                });
-                break;
-              }
-            }
-          } else {
-            setExitingMarkers((prev) => new Set(prev).add(id));
-            originalSetTimeout(() => {
-              setAnnotations((prev) => prev.filter((a) => a.id !== id));
-              setExitingMarkers((prev) => {
-                const next = new Set(prev);
-                next.delete(id);
-                return next;
-              });
-            }, 150);
+    const remove = (annotation) => {
+      const { id, kind } = annotation;
+      if (kind === "placement") {
+        for (const [placementId, annotationId] of placementAnnotationMap.current) {
+          if (annotationId === id) {
+            layoutSync.current?.placements.forget(placementId);
+            setDesignPlacements((prev) => prev.filter((p) => p.id !== placementId));
+            break;
           }
         }
-      } catch {
+      } else if (kind === "rearrange") {
+        for (const [sectionId, annotationId] of rearrangeAnnotationMap.current) {
+          if (annotationId === id) {
+            layoutSync.current?.rearrange.forget(sectionId);
+            setRearrangeState((prev) => {
+              if (!prev) return null;
+              const remaining = prev.sections.filter((s2) => s2.id !== sectionId);
+              if (remaining.length === 0) return null;
+              return { ...prev, sections: remaining };
+            });
+            break;
+          }
+        }
+      } else {
+        if (!currentAnnotationsRef.current.some((a) => a.id === id)) return;
+        setExitingMarkers((prev) => new Set(prev).add(id));
       }
     };
-    eventSource.addEventListener("annotation.updated", handler);
-    return () => {
-      eventSource.removeEventListener("annotation.updated", handler);
-      eventSource.close();
-    };
+    const stop = subscribeSessionResolutions(
+      endpoint,
+      currentSessionId,
+      () => hasPendingFeedbackRef.current,
+      remove
+    );
+    return stop;
   }, [endpoint, mounted, currentSessionId]);
-  useEffect6(() => {
+  useEffect8(() => {
     if (!endpoint || !mounted) return;
     const wasDisconnected = prevConnectionStatusRef.current === "disconnected";
     const isNowConnected = connectionStatus === "connected";
@@ -8753,7 +10236,7 @@ function PageFeedbackToolbarCSS({
     if (wasDisconnected && isNowConnected) {
       const syncLocalAnnotations = async () => {
         try {
-          const localAnnotations = loadAnnotations(pathname);
+          const localAnnotations = loadAnnotations(pathname).filter(isRenderableAnnotation);
           if (localAnnotations.length === 0) return;
           const baseUrl = typeof window !== "undefined" ? window.location.origin : "";
           const pageUrl = `${baseUrl}${pathname}`;
@@ -8761,7 +10244,7 @@ function PageFeedbackToolbarCSS({
           let serverAnnotations = [];
           if (sessionId) {
             try {
-              const session = await getSession(endpoint, sessionId);
+              const session = scopeSession(await getSession(endpoint, sessionId));
               serverAnnotations = session.annotations;
             } catch {
               sessionId = null;
@@ -8770,15 +10253,15 @@ function PageFeedbackToolbarCSS({
           if (!sessionId) {
             const newSession = await createSession(endpoint, pageUrl);
             sessionId = newSession.id;
-            setCurrentSessionId(sessionId);
+            if (routeAlive.current) setCurrentSessionId(sessionId);
             saveSessionId(pathname, sessionId);
           }
-          const serverIds = new Set(serverAnnotations.map((a) => a.id));
-          const unsyncedLocal = localAnnotations.filter((a) => !serverIds.has(a.id));
+          const serverIds2 = new Set(serverAnnotations.map((a) => a.id));
+          const unsyncedLocal = localAnnotations.filter((a) => !serverIds2.has(a.id));
           if (unsyncedLocal.length > 0) {
             const results = await Promise.allSettled(
               unsyncedLocal.map(
-                (annotation) => syncAnnotation(endpoint, sessionId, {
+                (annotation) => syncPageAnnotation(endpoint, sessionId, {
                   ...annotation,
                   sessionId,
                   url: pageUrl
@@ -8793,24 +10276,16 @@ function PageFeedbackToolbarCSS({
               return unsyncedLocal[i];
             });
             const allAnnotations = [...serverAnnotations, ...syncedAnnotations];
-            const renderableAnnotations = allAnnotations.filter(
-              isRenderableAnnotation
-            );
-            setAnnotations(renderableAnnotations);
-            saveAnnotationsWithSyncMarker(
-              pathname,
-              renderableAnnotations,
-              sessionId
-            );
+            applySessionFeedback(localAnnotations, allAnnotations, sessionId);
           }
         } catch (err) {
           console.warn("[Agentation] Failed to sync on reconnect:", err);
         }
       };
-      syncLocalAnnotations();
+      void routeTask(syncLocalAnnotations);
     }
-  }, [connectionStatus, endpoint, mounted, currentSessionId, pathname]);
-  const hideToolbarTemporarily = useCallback5(() => {
+  }, [connectionStatus, endpoint, mounted, currentSessionId, pathname, routeTask]);
+  const hideToolbarTemporarily = useCallback8(() => {
     if (isToolbarHiding) return;
     setIsToolbarHiding(true);
     setShowSettings(false);
@@ -8821,7 +10296,7 @@ function PageFeedbackToolbarCSS({
       setIsToolbarHiding(false);
     }, 400);
   }, [isToolbarHiding]);
-  useEffect6(() => {
+  useEffect8(() => {
     if (!enableDemoMode) return;
     if (!mounted || !demoAnnotations || demoAnnotations.length === 0) return;
     if (annotations.length > 0) return;
@@ -8837,7 +10312,7 @@ function PageFeedbackToolbarCSS({
         originalSetTimeout(() => {
           const element = document.querySelector(demo.selector);
           if (!element) return;
-          const rect = element.getBoundingClientRect();
+          const rect = viewportRect(element);
           const { name, path } = identifyElement(element);
           const newAnnotation = {
             id: `demo-${Date.now()}-${index}`,
@@ -8865,9 +10340,10 @@ function PageFeedbackToolbarCSS({
       timeoutIds.forEach(clearTimeout);
     };
   }, [enableDemoMode, mounted, demoAnnotations, demoDelay]);
-  useEffect6(() => {
+  useEffect8(() => {
     const handleScroll = () => {
       setScrollY(window.scrollY);
+      updateFrameScroll((value) => value + 1);
       setIsScrolling(true);
       if (scrollTimeoutRef.current) {
         clearTimeout(scrollTimeoutRef.current);
@@ -8876,42 +10352,45 @@ function PageFeedbackToolbarCSS({
         setIsScrolling(false);
       }, 150);
     };
-    window.addEventListener("scroll", handleScroll, { passive: true });
+    pageEvents.addEventListener("scroll", handleScroll, { passive: true, capture: true });
     return () => {
-      window.removeEventListener("scroll", handleScroll);
+      pageEvents.removeEventListener("scroll", handleScroll, true);
       if (scrollTimeoutRef.current) {
         clearTimeout(scrollTimeoutRef.current);
       }
     };
-  }, []);
-  useEffect6(() => {
-    if (mounted && annotations.length > 0) {
+  }, [pageEvents]);
+  useEffect8(() => {
+    if (!mounted) return;
+    const saved = annotations.filter((a) => !exitingMarkers.has(a.id));
+    if (saved.length > 0) {
       if (currentSessionId) {
-        saveAnnotationsWithSyncMarker(pathname, annotations, currentSessionId);
+        saveAnnotationsWithSyncMarker(pathname, saved, currentSessionId);
       } else {
-        saveAnnotations(pathname, annotations);
+        saveAnnotations(pathname, saved);
       }
-    } else if (mounted && annotations.length === 0) {
+    } else {
       localStorage.removeItem(getStorageKey(pathname));
     }
-  }, [annotations, pathname, mounted, currentSessionId]);
-  useEffect6(() => {
+  }, [annotations, pathname, mounted, currentSessionId, isClearing, exitingMarkers]);
+  useEffect8(() => {
     if (mounted && !designPlacementsLoaded.current) {
       designPlacementsLoaded.current = true;
       const stored = loadDesignPlacements(pathname);
       if (stored.length > 0) setDesignPlacements(stored);
     }
   }, [mounted, pathname]);
-  useEffect6(() => {
+  useEffect8(() => {
     if (mounted && designPlacementsLoaded.current && !blankCanvas) {
-      if (designPlacements.length > 0) {
-        saveDesignPlacements(pathname, designPlacements);
+      const saved = designPlacements.filter((p) => !clearingPlacements.includes(p));
+      if (saved.length > 0) {
+        saveDesignPlacements(pathname, saved);
       } else {
         clearDesignPlacements(pathname);
       }
     }
-  }, [designPlacements, pathname, mounted, blankCanvas]);
-  useEffect6(() => {
+  }, [designPlacements, pathname, mounted, blankCanvas, clearingPlacements]);
+  useEffect8(() => {
     if (mounted && !rearrangeLoaded.current) {
       rearrangeLoaded.current = true;
       const stored = loadRearrangeState(pathname);
@@ -8927,17 +10406,17 @@ function PageFeedbackToolbarCSS({
       }
     }
   }, [mounted, pathname]);
-  useEffect6(() => {
+  useEffect8(() => {
     if (mounted && rearrangeLoaded.current && !blankCanvas) {
-      if (rearrangeState) {
+      if (rearrangeState && rearrangeState !== clearingRearrange) {
         saveRearrangeState(pathname, rearrangeState);
       } else {
         clearRearrangeState(pathname);
       }
     }
-  }, [rearrangeState, pathname, mounted, blankCanvas]);
-  const wireframeLoaded = useRef6(false);
-  useEffect6(() => {
+  }, [rearrangeState, pathname, mounted, blankCanvas, clearingRearrange]);
+  const wireframeLoaded = useRef14(false);
+  useEffect8(() => {
     if (mounted && !wireframeLoaded.current) {
       wireframeLoaded.current = true;
       const stored = loadWireframeState(pathname);
@@ -8950,8 +10429,8 @@ function PageFeedbackToolbarCSS({
       }
     }
   }, [mounted, pathname]);
-  useEffect6(() => {
-    if (!mounted || !wireframeLoaded.current) return;
+  useEffect8(() => {
+    if (!mounted || !wireframeLoaded.current || isClearing) return;
     const stash = wireframeStashRef.current;
     if (blankCanvas) {
       const hasContent = (rearrangeState?.sections?.length ?? 0) > 0 || designPlacements.length > 0 || wireframePurpose;
@@ -8968,8 +10447,8 @@ function PageFeedbackToolbarCSS({
         clearWireframeState(pathname);
       }
     }
-  }, [rearrangeState, designPlacements, wireframePurpose, blankCanvas, pathname, mounted]);
-  useEffect6(() => {
+  }, [rearrangeState, designPlacements, wireframePurpose, blankCanvas, pathname, mounted, isClearing]);
+  useEffect8(() => {
     if (isDesignMode && !rearrangeState) {
       setRearrangeState({
         sections: [],
@@ -8978,221 +10457,85 @@ function PageFeedbackToolbarCSS({
       });
     }
   }, [isDesignMode, rearrangeState]);
-  useEffect6(() => {
+  useEffect8(() => {
     if (!endpoint || !currentSessionId) return;
-    const currentMap = placementAnnotationMap.current;
-    const currentIds = new Set(designPlacements.map((p) => p.id));
-    for (const p of designPlacements) {
-      if (currentMap.has(p.id)) continue;
-      currentMap.set(p.id, "");
-      const pageUrl = typeof window !== "undefined" ? window.location.pathname + window.location.search + window.location.hash : pathname;
-      syncAnnotation(endpoint, currentSessionId, {
-        id: p.id,
-        x: p.x / window.innerWidth * 100,
-        y: p.y,
-        comment: `Place ${p.type} at (${Math.round(p.x)}, ${Math.round(p.y)}), ${p.width}\xD7${p.height}px${p.text ? ` \u2014 "${p.text}"` : ""}`,
-        element: `[design:${p.type}]`,
-        elementPath: "[placement]",
-        timestamp: p.timestamp,
-        url: pageUrl,
-        intent: "change",
-        severity: "important",
-        kind: "placement",
-        placement: {
-          componentType: p.type,
-          width: p.width,
-          height: p.height,
-          scrollY: p.scrollY,
-          text: p.text
-        }
-      }).then((serverAnnotation) => {
-        if (currentMap.has(p.id)) {
-          currentMap.set(p.id, serverAnnotation.id);
-        }
-      }).catch((err) => {
-        console.warn("[Agentation] Failed to sync placement annotation:", err);
-        currentMap.delete(p.id);
-      });
+    const transport = {
+      create: (annotation) => routeTask(() => syncAnnotation(endpoint, currentSessionId, annotation)),
+      update: (id, annotation) => routeTask(() => updateAnnotation(endpoint, id, annotation)),
+      remove: (id) => routeTask(() => deleteAnnotation(endpoint, id))
+    };
+    placementAnnotationMap.current = /* @__PURE__ */ new Map();
+    rearrangeAnnotationMap.current = /* @__PURE__ */ new Map();
+    const queues = {
+      placements: createShadowSync(transport, placementAnnotationMap.current, existingLayoutAnnotations.current.filter((a) => a.kind === "placement")),
+      rearrange: createShadowSync(transport, rearrangeAnnotationMap.current, existingLayoutAnnotations.current.filter((a) => a.kind === "rearrange"))
+    };
+    layoutSync.current = queues;
+    return () => {
+      queues.placements.dispose();
+      queues.rearrange.dispose();
+      if (layoutSync.current === queues) layoutSync.current = null;
+    };
+  }, [endpoint, currentSessionId, pathname, routeTask]);
+  useEffect8(() => {
+    const pageUrl = window.location.pathname + window.location.search + window.location.hash;
+    layoutSync.current?.placements.replace(designPlacements.filter((p) => !clearingPlacements.includes(p)).map((p) => ({
+      id: p.id,
+      x: p.x / window.innerWidth * 100,
+      y: p.y,
+      comment: `Place ${p.type} at (${Math.round(p.x)}, ${Math.round(p.y)}), ${p.width}\xD7${p.height}px${p.text ? ` \u2014 "${p.text}"` : ""}`,
+      element: `[design:${p.type}]`,
+      elementPath: "[placement]",
+      timestamp: p.timestamp,
+      url: pageUrl,
+      intent: "change",
+      severity: "important",
+      kind: "placement",
+      placement: { componentType: p.type, width: p.width, height: p.height, scrollY: p.scrollY, text: p.text }
+    })));
+  }, [designPlacements, endpoint, currentSessionId, pathname, clearingPlacements]);
+  useEffect8(() => {
+    const queues = layoutSync.current;
+    if (!queues) return;
+    if (rearrangeState === clearingRearrange) {
+      queues.rearrange.replace([]);
+      return;
     }
-    for (const [placementId, annotationId] of currentMap) {
-      if (!currentIds.has(placementId)) {
-        currentMap.delete(placementId);
-        if (annotationId) {
-          deleteAnnotation(endpoint, annotationId).catch(() => {
-          });
-        }
-      }
-    }
-  }, [designPlacements, endpoint, currentSessionId, pathname]);
-  useEffect6(() => {
-    if (!endpoint || !currentSessionId) return;
-    if (rearrangeDebounceTimer.current) {
-      clearTimeout(rearrangeDebounceTimer.current);
-    }
-    rearrangeDebounceTimer.current = originalSetTimeout(() => {
-      const currentMap = rearrangeAnnotationMap.current;
-      if (!rearrangeState || rearrangeState.sections.length === 0) {
-        for (const [, annotationId] of currentMap) {
-          if (annotationId) {
-            deleteAnnotation(endpoint, annotationId).catch(() => {
-            });
-          }
-        }
-        currentMap.clear();
-        return;
-      }
-      const currentIds = new Set(rearrangeState.sections.map((s2) => s2.id));
-      const pageUrl = typeof window !== "undefined" ? window.location.pathname + window.location.search + window.location.hash : pathname;
-      for (const section of rearrangeState.sections) {
+    const timer = originalSetTimeout(() => {
+      const pageUrl = window.location.pathname + window.location.search + window.location.hash;
+      const annotations2 = [];
+      for (const section of rearrangeState?.sections ?? []) {
         const orig = section.originalRect;
         const curr = section.currentRect;
         const hasMoved = Math.abs(orig.x - curr.x) > 1 || Math.abs(orig.y - curr.y) > 1 || Math.abs(orig.width - curr.width) > 1 || Math.abs(orig.height - curr.height) > 1;
-        if (!hasMoved) {
-          const existingId = currentMap.get(section.id);
-          if (existingId) {
-            currentMap.delete(section.id);
-            deleteAnnotation(endpoint, existingId).catch(() => {
-            });
-          }
-          continue;
-        }
-        const existingAnnotationId = currentMap.get(section.id);
-        if (existingAnnotationId) {
-          updateAnnotation(endpoint, existingAnnotationId, {
-            comment: `Move ${section.label} section (${section.tagName}) \u2014 from (${Math.round(orig.x)},${Math.round(orig.y)}) ${Math.round(orig.width)}\xD7${Math.round(orig.height)} to (${Math.round(curr.x)},${Math.round(curr.y)}) ${Math.round(curr.width)}\xD7${Math.round(curr.height)}`
-          }).catch((err) => {
-            console.warn("[Agentation] Failed to update rearrange annotation:", err);
-          });
-        } else {
-          currentMap.set(section.id, "");
-          syncAnnotation(endpoint, currentSessionId, {
-            id: section.id,
-            x: curr.x / window.innerWidth * 100,
-            y: curr.y,
-            comment: `Move ${section.label} section (${section.tagName}) \u2014 from (${Math.round(orig.x)},${Math.round(orig.y)}) ${Math.round(orig.width)}\xD7${Math.round(orig.height)} to (${Math.round(curr.x)},${Math.round(curr.y)}) ${Math.round(curr.width)}\xD7${Math.round(curr.height)}`,
-            element: section.selector,
-            elementPath: "[rearrange]",
-            timestamp: Date.now(),
-            url: pageUrl,
-            intent: "change",
-            severity: "important",
-            kind: "rearrange",
-            rearrange: {
-              selector: section.selector,
-              label: section.label,
-              tagName: section.tagName,
-              originalRect: orig,
-              currentRect: curr
-            }
-          }).then((serverAnnotation) => {
-            if (currentMap.has(section.id)) {
-              currentMap.set(section.id, serverAnnotation.id);
-            }
-          }).catch((err) => {
-            console.warn("[Agentation] Failed to sync rearrange annotation:", err);
-            currentMap.delete(section.id);
-          });
-        }
+        if (!hasMoved && !section.note) continue;
+        const notePart = section.note ? ` \u2014 "${section.note}"` : "";
+        annotations2.push({
+          id: section.id,
+          x: curr.x / window.innerWidth * 100,
+          y: curr.y,
+          comment: hasMoved ? `Move ${section.label} section (${section.tagName}) \u2014 from (${Math.round(orig.x)},${Math.round(orig.y)}) ${Math.round(orig.width)}\xD7${Math.round(orig.height)} to (${Math.round(curr.x)},${Math.round(curr.y)}) ${Math.round(curr.width)}\xD7${Math.round(curr.height)}${notePart}` : `Note on ${section.label} section (${section.tagName})${notePart}`,
+          element: section.selector,
+          elementPath: "[rearrange]",
+          timestamp: rearrangeState.detectedAt,
+          url: pageUrl,
+          intent: "change",
+          severity: "important",
+          kind: "rearrange",
+          rearrange: { selector: section.selector, label: section.label, tagName: section.tagName, originalRect: orig, currentRect: curr }
+        });
       }
-      for (const [sectionId, annotationId] of currentMap) {
-        if (!currentIds.has(sectionId)) {
-          currentMap.delete(sectionId);
-          if (annotationId) {
-            deleteAnnotation(endpoint, annotationId).catch(() => {
-            });
-          }
-        }
-      }
+      queues.rearrange.replace(annotations2);
     }, 300);
-    return () => {
-      if (rearrangeDebounceTimer.current) {
-        clearTimeout(rearrangeDebounceTimer.current);
-      }
-    };
-  }, [rearrangeState, endpoint, currentSessionId, pathname]);
-  const rearrangeMovedEls = useRef6(/* @__PURE__ */ new Map());
-  useLayoutEffect(() => {
-    const sections = rearrangeState?.sections ?? [];
-    const active = /* @__PURE__ */ new Set();
-    if ((isDesignMode || designOverlayExiting) && isActive) {
-      for (const s2 of sections) {
-        active.add(s2.id);
-        try {
-          const el = document.querySelector(s2.selector);
-          if (!el) continue;
-          if (!rearrangeMovedEls.current.has(s2.id)) {
-            const origStyles = {
-              transform: el.style.transform,
-              transformOrigin: el.style.transformOrigin,
-              opacity: el.style.opacity,
-              position: el.style.position,
-              zIndex: el.style.zIndex,
-              display: el.style.display
-            };
-            const ancestors = [];
-            let parent = el.parentElement;
-            while (parent && parent !== document.body) {
-              const cs = getComputedStyle(parent);
-              if (cs.overflow !== "visible" || cs.overflowX !== "visible" || cs.overflowY !== "visible") {
-                ancestors.push({ el: parent, overflow: parent.style.overflow });
-                parent.style.overflow = "visible";
-              }
-              parent = parent.parentElement;
-            }
-            const computed = getComputedStyle(el);
-            if (computed.display === "inline") {
-              el.style.display = "inline-block";
-            }
-            rearrangeMovedEls.current.set(s2.id, { el, origStyles, ancestors });
-            el.style.transformOrigin = "top left";
-            el.style.zIndex = "9999";
-          }
-        } catch {
-        }
-      }
-    }
-    for (const [id, entry] of rearrangeMovedEls.current) {
-      if (!active.has(id)) {
-        const { el, origStyles, ancestors } = entry;
-        el.style.transition = "transform 0.4s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.4s cubic-bezier(0.22, 1, 0.36, 1)";
-        el.style.transform = origStyles.transform;
-        el.style.transformOrigin = origStyles.transformOrigin;
-        el.style.opacity = origStyles.opacity;
-        el.style.position = origStyles.position;
-        el.style.zIndex = origStyles.zIndex;
-        rearrangeMovedEls.current.delete(id);
-        originalSetTimeout(() => {
-          el.style.transition = "";
-          el.style.display = origStyles.display;
-          for (const a of ancestors) {
-            a.el.style.overflow = a.overflow;
-          }
-        }, 450);
-      }
-    }
-  }, [rearrangeState, isDesignMode, designOverlayExiting, isActive]);
-  useEffect6(() => {
-    return () => {
-      for (const [, entry] of rearrangeMovedEls.current) {
-        const { el, origStyles, ancestors } = entry;
-        el.style.transition = "transform 0.4s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.4s cubic-bezier(0.22, 1, 0.36, 1)";
-        el.style.transform = origStyles.transform;
-        el.style.transformOrigin = origStyles.transformOrigin;
-        el.style.opacity = origStyles.opacity;
-        el.style.position = origStyles.position;
-        el.style.zIndex = origStyles.zIndex;
-        originalSetTimeout(() => {
-          el.style.transition = "";
-          el.style.display = origStyles.display;
-          for (const a of ancestors) {
-            a.el.style.overflow = a.overflow;
-          }
-        }, 450);
-      }
-      rearrangeMovedEls.current.clear();
-    };
+    return () => clearTimeout(timer);
+  }, [rearrangeState, endpoint, currentSessionId, pathname, clearingRearrange]);
+  const openDesignMode = useCallback8(() => {
+    clearTimeout(designExitTimer.current);
+    setDesignOverlayExiting(false);
+    setIsDesignMode(true);
   }, []);
-  const closeDesignMode = useCallback5(() => {
+  useEffect8(() => () => clearTimeout(designExitTimer.current), []);
+  const closeDesignMode = useCallback8(() => {
     setDesignOverlayExiting(true);
     setIsDesignMode(false);
     setActiveDesignComponent(null);
@@ -9201,7 +10544,11 @@ function PageFeedbackToolbarCSS({
       setDesignOverlayExiting(false);
     }, 300);
   }, []);
-  const deactivate = useCallback5(() => {
+  const deactivate = useCallback8(() => {
+    const root = launcherRef.current?.getRootNode();
+    focusLauncherOnCloseRef.current = !!root?.activeElement && !!portalWrapperRef.current?.contains(root.activeElement);
+    if (focusLauncherOnCloseRef.current) root?.activeElement?.blur();
+    setShowSettings(false);
     if (isDesignMode) {
       setDesignOverlayExiting(true);
       setIsDesignMode(false);
@@ -9213,35 +10560,40 @@ function PageFeedbackToolbarCSS({
     }
     setIsActive(false);
   }, [isDesignMode]);
-  const freezeAnimations = useCallback5(() => {
+  const freezeAnimations = useCallback8(() => {
     if (isFrozen) return;
     freeze();
     setIsFrozen(true);
   }, [isFrozen]);
-  const unfreezeAnimations = useCallback5(() => {
+  const unfreezeAnimations = useCallback8(() => {
     if (!isFrozen) return;
     unfreeze();
     setIsFrozen(false);
   }, [isFrozen]);
-  const toggleFreeze = useCallback5(() => {
+  const toggleFreeze = useCallback8(() => {
     if (isFrozen) {
       unfreezeAnimations();
     } else {
       freezeAnimations();
     }
   }, [isFrozen, freezeAnimations, unfreezeAnimations]);
-  const createMultiSelectPendingAnnotation = useCallback5(() => {
-    if (pendingMultiSelectElements.length === 0) return;
-    const firstItem = pendingMultiSelectElements[0];
+  const createMultiSelectPendingAnnotation = useCallback8((items = pendingMultiSelectElements) => {
+    const selection = items.filter((item) => item.element.isConnected);
+    if (selection.length === 0) {
+      setPendingMultiSelectElements([]);
+      return;
+    }
+    const firstItem = selection[0];
     const firstEl = firstItem.element;
-    const isMulti = pendingMultiSelectElements.length > 1;
-    const freshRects = pendingMultiSelectElements.map(
-      (item) => item.element.getBoundingClientRect()
+    const isMulti = selection.length > 1;
+    const freshRects = selection.map(
+      (item) => viewportRect(item.element)
     );
     if (!isMulti) {
       const rect = freshRects[0];
       const isFixed = isElementFixed(firstEl);
       setPendingAnnotation({
+        id: Date.now().toString(),
         x: rect.left / window.innerWidth * 100,
         y: isFixed ? rect.top : rect.top + window.scrollY,
         clientY: rect.top,
@@ -9262,7 +10614,9 @@ function PageFeedbackToolbarCSS({
         cssClasses: getElementClasses(firstEl),
         nearbyText: getNearbyText(firstEl),
         reactComponents: firstItem.reactComponents,
-        sourceFile: detectSourceFile(firstEl)
+        targetElement: firstEl,
+        sourceFile: detectSourceFile(firstEl),
+        attributes: captureElementAttributes(firstEl, attributeNames)
       });
     } else {
       const bounds = {
@@ -9271,25 +10625,26 @@ function PageFeedbackToolbarCSS({
         right: Math.max(...freshRects.map((r) => r.right)),
         bottom: Math.max(...freshRects.map((r) => r.bottom))
       };
-      const names = pendingMultiSelectElements.slice(0, 5).map((item) => item.name).join(", ");
-      const suffix = pendingMultiSelectElements.length > 5 ? ` +${pendingMultiSelectElements.length - 5} more` : "";
+      const names = selection.slice(0, 5).map((item) => item.name).join(", ");
+      const suffix = selection.length > 5 ? ` +${selection.length - 5} more` : "";
       const elementBoundingBoxes = freshRects.map((rect) => ({
         x: rect.left,
         y: rect.top + window.scrollY,
         width: rect.width,
         height: rect.height
       }));
-      const lastItem = pendingMultiSelectElements[pendingMultiSelectElements.length - 1];
+      const lastItem = selection[selection.length - 1];
       const lastEl = lastItem.element;
       const lastRect = freshRects[freshRects.length - 1];
       const lastCenterX = lastRect.left + lastRect.width / 2;
       const lastCenterY = lastRect.top + lastRect.height / 2;
       const lastIsFixed = isElementFixed(lastEl);
       setPendingAnnotation({
+        id: Date.now().toString(),
         x: lastCenterX / window.innerWidth * 100,
         y: lastIsFixed ? lastCenterY : lastCenterY + window.scrollY,
         clientY: lastCenterY,
-        element: `${pendingMultiSelectElements.length} elements: ${names}${suffix}`,
+        element: `${selection.length} elements: ${names}${suffix}`,
         elementPath: "multi-select",
         boundingBox: {
           x: bounds.left,
@@ -9300,7 +10655,7 @@ function PageFeedbackToolbarCSS({
         isMultiSelect: true,
         isFixed: lastIsFixed,
         elementBoundingBoxes,
-        multiSelectElements: pendingMultiSelectElements.map((item) => item.element),
+        multiSelectElements: selection.map((item) => item.element),
         targetElement: lastEl,
         // Anchor marker/popup to last clicked element
         fullPath: getFullElementPath(firstEl),
@@ -9310,13 +10665,14 @@ function PageFeedbackToolbarCSS({
         nearbyElements: getNearbyElements(firstEl),
         cssClasses: getElementClasses(firstEl),
         nearbyText: getNearbyText(firstEl),
-        sourceFile: detectSourceFile(firstEl)
+        sourceFile: detectSourceFile(firstEl),
+        attributes: captureElementAttributes(firstEl, attributeNames)
       });
     }
     setPendingMultiSelectElements([]);
     setHoverInfo(null);
-  }, [pendingMultiSelectElements]);
-  useEffect6(() => {
+  }, [pendingMultiSelectElements, attributeNames]);
+  useEffect8(() => {
     if (!isActive) {
       setPendingAnnotation(null);
       setEditingAnnotation(null);
@@ -9325,18 +10681,18 @@ function PageFeedbackToolbarCSS({
       setHoverInfo(null);
       setShowSettings(false);
       setPendingMultiSelectElements([]);
-      modifiersHeldRef.current = { cmd: false, shift: false };
+      legacyMultiSelectRef.current = false;
       if (isFrozen) {
         unfreezeAnimations();
       }
     }
   }, [isActive, isFrozen, unfreezeAnimations]);
-  useEffect6(() => {
+  useEffect8(() => {
     return () => {
       unfreeze();
     };
   }, []);
-  useEffect6(() => {
+  useEffect8(() => {
     if (!isActive) return;
     const textElementsSelector = [
       "p",
@@ -9378,58 +10734,102 @@ function PageFeedbackToolbarCSS({
       "sup",
       "[contenteditable]"
     ].join(", ");
-    const notAgentationSelector = `:not([data-agentation-root]):not([data-agentation-root] *)`;
     const style = document.createElement("style");
-    style.id = "feedback-cursor-styles";
+    style.id = "agentation-cursor";
     style.textContent = `
-      body ${notAgentationSelector} {
-        cursor: crosshair !important;
-      }
-
-      body :is(${textElementsSelector})${notAgentationSelector} {
-        cursor: text !important;
-      }
+      body { cursor: crosshair !important; }
+      body :is(${textElementsSelector}) { cursor: text !important; }
     `;
     document.head.appendChild(style);
     return () => {
-      const existingStyle = document.getElementById("feedback-cursor-styles");
+      const existingStyle = document.getElementById("agentation-cursor");
       if (existingStyle) existingStyle.remove();
     };
   }, [isActive]);
-  useEffect6(() => {
+  useEffect8(() => {
     if (hoveredDrawingIdx !== null && isActive) {
       document.documentElement.setAttribute("data-drawing-hover", "");
       return () => document.documentElement.removeAttribute("data-drawing-hover");
     }
   }, [hoveredDrawingIdx, isActive]);
-  useEffect6(() => {
-    if (!isActive || pendingAnnotation || isDrawMode || isDesignMode) return;
-    const handleMouseMove = (e) => {
-      const target = e.composedPath()[0] || e.target;
-      if (closestCrossingShadow(target, "[data-feedback-toolbar]")) {
+  useEffect8(() => {
+    if (!isActive || pendingAnnotation || editingAnnotation || isDrawMode || isDesignMode) return;
+    let lastMouse = null;
+    const evaluateHover = (x, y, piercing) => {
+      const normalElement = deepElementFromPoint(x, y);
+      const elementUnder = piercing ? pierceElementFromPoint(x, y) : normalElement;
+      if (!elementUnder || closestCrossingShadow(
+        elementUnder,
+        "[data-feedback-toolbar], [data-annotation-popup], [data-annotation-marker]"
+      )) {
         setHoverInfo(null);
         return;
       }
-      const elementUnder = deepElementFromPoint(e.clientX, e.clientY);
-      if (!elementUnder || closestCrossingShadow(elementUnder, "[data-feedback-toolbar]")) {
-        setHoverInfo(null);
-        return;
-      }
-      const { name, elementName, path, reactComponents } = identifyElementWithReact(elementUnder, effectiveReactMode);
-      const rect = elementUnder.getBoundingClientRect();
+      const { name, elementName, path, reactComponents } = identifyElementWithReact(elementUnder, effectiveReactMode, attributeNames);
       setHoverInfo({
         element: name,
         elementName,
         elementPath: path,
-        rect,
-        reactComponents
+        rect: viewportRect(elementUnder),
+        reactComponents,
+        isPiercing: piercing && elementUnder !== normalElement
       });
-      setHoverPosition({ x: e.clientX, y: e.clientY });
+      setHoverPosition({ x, y });
     };
-    document.addEventListener("mousemove", handleMouseMove);
-    return () => document.removeEventListener("mousemove", handleMouseMove);
-  }, [isActive, pendingAnnotation, isDrawMode, isDesignMode, effectiveReactMode, drawStrokes]);
-  const startEditAnnotation = useCallback5((annotation) => {
+    const handleMouseMove = (e) => {
+      const target = e.composedPath()[0] || e.target;
+      if (closestCrossingShadow(
+        target,
+        "[data-feedback-toolbar], [data-annotation-popup], [data-annotation-marker]"
+      )) {
+        lastMouse = null;
+        setHoverInfo(null);
+        return;
+      }
+      lastMouse = { x: e.clientX, y: e.clientY };
+      evaluateHover(e.clientX, e.clientY, isPrimaryMultiSelectModifierActive(e));
+    };
+    const handleKeyChange = (e) => {
+      if ((e.key === "Meta" || e.key === "Control") && lastMouse) {
+        evaluateHover(lastMouse.x, lastMouse.y, isPrimaryMultiSelectModifierActive(e));
+      }
+    };
+    const clearHover = () => {
+      lastMouse = null;
+      setHoverInfo(null);
+    };
+    pageEvents.addEventListener("mousemove", handleMouseMove);
+    pageEvents.addEventListener("keydown", handleKeyChange);
+    pageEvents.addEventListener("keyup", handleKeyChange);
+    pageEvents.addEventListener("mouseleave", clearHover);
+    window.addEventListener("blur", clearHover);
+    return () => {
+      pageEvents.removeEventListener("mousemove", handleMouseMove);
+      pageEvents.removeEventListener("keydown", handleKeyChange);
+      pageEvents.removeEventListener("keyup", handleKeyChange);
+      pageEvents.removeEventListener("mouseleave", clearHover);
+      window.removeEventListener("blur", clearHover);
+    };
+  }, [isActive, pendingAnnotation, editingAnnotation, isDrawMode, isDesignMode, effectiveReactMode, attributeNames]);
+  const startEditAnnotation = useCallback8((annotation, trigger) => {
+    if (editingAnnotation && !editExiting) {
+      editPopupRef.current?.shake();
+      return;
+    }
+    if (pendingAnnotation && !pendingExiting) {
+      const draft = portalWrapperRef.current?.querySelector(
+        "[data-annotation-popup]:not([data-annotation-card]) textarea"
+      );
+      if (draft?.value.trim()) {
+        popupRef.current?.shake();
+        return;
+      }
+      setPendingExiting(true);
+    }
+    editingTriggerRef.current = trigger ?? null;
+    editingFromKeyboardRef.current = trigger?.matches(":focus-visible") ?? false;
+    setRestoreEditPreview(false);
+    setEditExiting(false);
     setEditingAnnotation(annotation);
     setHoveredMarkerId(null);
     setHoveredTargetElement(null);
@@ -9439,7 +10839,7 @@ function PageFeedbackToolbarCSS({
       for (const bb of annotation.elementBoundingBoxes) {
         const centerX = bb.x + bb.width / 2;
         const centerY = bb.y + bb.height / 2 - window.scrollY;
-        const el = deepElementFromPoint(centerX, centerY);
+        const el = annotationElementFromPoint(centerX, centerY, bb);
         if (el) elements.push(el);
       }
       setEditingTargetElements(elements);
@@ -9448,9 +10848,9 @@ function PageFeedbackToolbarCSS({
       const bb = annotation.boundingBox;
       const centerX = bb.x + bb.width / 2;
       const centerY = annotation.isFixed ? bb.y + bb.height / 2 : bb.y + bb.height / 2 - window.scrollY;
-      const el = deepElementFromPoint(centerX, centerY);
+      const el = annotationElementFromPoint(centerX, centerY, bb);
       if (el) {
-        const elRect = el.getBoundingClientRect();
+        const elRect = viewportRect(el);
         const widthRatio = elRect.width / bb.width;
         const heightRatio = elRect.height / bb.height;
         if (widthRatio < 0.5 || heightRatio < 0.5) {
@@ -9466,27 +10866,31 @@ function PageFeedbackToolbarCSS({
       setEditingTargetElement(null);
       setEditingTargetElements([]);
     }
-  }, []);
-  useEffect6(() => {
+  }, [pendingAnnotation, pendingExiting, editingAnnotation, editExiting]);
+  useEffect8(() => {
     if (!isActive || isDrawMode || isDesignMode) return;
     const handleClick = (e) => {
       if (justFinishedDragRef.current) {
         justFinishedDragRef.current = false;
+        e.preventDefault();
+        e.stopPropagation();
         return;
       }
       const target = e.composedPath()[0] || e.target;
       if (closestCrossingShadow(target, "[data-feedback-toolbar]")) return;
       if (closestCrossingShadow(target, "[data-annotation-popup]")) return;
       if (closestCrossingShadow(target, "[data-annotation-marker]")) return;
-      if (e.metaKey && e.shiftKey && !pendingAnnotation && !editingAnnotation) {
+      if (isPrimaryMultiSelectModifierActive(e) && !pendingAnnotation && !editingAnnotation) {
         e.preventDefault();
         e.stopPropagation();
-        const elementUnder2 = deepElementFromPoint(e.clientX, e.clientY);
+        legacyMultiSelectRef.current = e.shiftKey;
+        const elementUnder2 = pierceElementFromPoint(e.clientX, e.clientY);
         if (!elementUnder2) return;
-        const rect2 = elementUnder2.getBoundingClientRect();
+        const rect2 = viewportRect(elementUnder2);
         const { name: name2, path: path2, reactComponents: reactComponents2 } = identifyElementWithReact(
           elementUnder2,
-          effectiveReactMode
+          effectiveReactMode,
+          attributeNames
         );
         const existingIndex = pendingMultiSelectElements.findIndex(
           (item) => item.element === elementUnder2
@@ -9513,11 +10917,11 @@ function PageFeedbackToolbarCSS({
         target,
         "button, a, input, select, textarea, [role='button'], [onclick]"
       );
-      if (settings.blockInteractions && isInteractive) {
+      if (settings.blockInteractions) {
         e.preventDefault();
         e.stopPropagation();
       }
-      if (pendingAnnotation) {
+      if (pendingAnnotation && !pendingExiting) {
         if (isInteractive && !settings.blockInteractions) {
           return;
         }
@@ -9525,7 +10929,7 @@ function PageFeedbackToolbarCSS({
         popupRef.current?.shake();
         return;
       }
-      if (editingAnnotation) {
+      if (editingAnnotation && !editExiting) {
         if (isInteractive && !settings.blockInteractions) {
           return;
         }
@@ -9538,20 +10942,23 @@ function PageFeedbackToolbarCSS({
       if (!elementUnder) return;
       const { name, path, reactComponents } = identifyElementWithReact(
         elementUnder,
-        effectiveReactMode
+        effectiveReactMode,
+        attributeNames
       );
-      const rect = elementUnder.getBoundingClientRect();
+      const rect = viewportRect(elementUnder);
       const x = e.clientX / window.innerWidth * 100;
       const isFixed = isElementFixed(elementUnder);
       const y = isFixed ? e.clientY : e.clientY + window.scrollY;
-      const selection = window.getSelection();
+      const selection = elementUnder.ownerDocument.defaultView?.getSelection();
       let selectedText;
       if (selection && selection.toString().trim().length > 0) {
         selectedText = selection.toString().trim().slice(0, 500);
       }
       const computedStylesObj = getDetailedComputedStyles(elementUnder);
       const computedStylesStr = getForensicComputedStyles(elementUnder);
+      setPendingExiting(false);
       setPendingAnnotation({
+        id: Date.now().toString(),
         x,
         y,
         clientY: e.clientY,
@@ -9574,54 +10981,58 @@ function PageFeedbackToolbarCSS({
         nearbyElements: getNearbyElements(elementUnder),
         reactComponents: reactComponents ?? void 0,
         sourceFile: detectSourceFile(elementUnder),
+        attributes: captureElementAttributes(elementUnder, attributeNames),
+        frame: captureFrameContext(elementUnder, e.clientX, e.clientY),
         targetElement: elementUnder
         // Store for live position queries
       });
       setHoverInfo(null);
     };
-    document.addEventListener("click", handleClick, true);
-    return () => document.removeEventListener("click", handleClick, true);
+    pageEvents.addEventListener("click", handleClick, true);
+    return () => pageEvents.removeEventListener("click", handleClick, true);
   }, [
     isActive,
     isDrawMode,
     isDesignMode,
     pendingAnnotation,
+    pendingExiting,
     editingAnnotation,
+    editExiting,
     settings.blockInteractions,
     effectiveReactMode,
+    attributeNames,
     pendingMultiSelectElements
   ]);
-  useEffect6(() => {
+  useEffect8(() => {
     if (!isActive) return;
-    const handleKeyDown = (e) => {
-      if (e.key === "Meta") modifiersHeldRef.current.cmd = true;
-      if (e.key === "Shift") modifiersHeldRef.current.shift = true;
-    };
     const handleKeyUp = (e) => {
-      const wasHoldingBoth = modifiersHeldRef.current.cmd && modifiersHeldRef.current.shift;
-      if (e.key === "Meta") modifiersHeldRef.current.cmd = false;
-      if (e.key === "Shift") modifiersHeldRef.current.shift = false;
-      const nowHoldingBoth = modifiersHeldRef.current.cmd && modifiersHeldRef.current.shift;
-      if (wasHoldingBoth && !nowHoldingBoth && pendingMultiSelectElements.length > 0) {
+      const releasedPrimary = (e.key === "Meta" || e.key === "Control") && !isPrimaryMultiSelectModifierActive(e);
+      const releasedLegacyShift = e.key === "Shift" && legacyMultiSelectRef.current;
+      if ((releasedPrimary || releasedLegacyShift) && !dragStartRef.current && pendingMultiSelectElements.length > 0) {
         createMultiSelectPendingAnnotation();
       }
     };
     const handleBlur = () => {
-      modifiersHeldRef.current = { cmd: false, shift: false };
+      legacyMultiSelectRef.current = false;
       setPendingMultiSelectElements([]);
+      setHoverInfo(null);
+      mouseDownPosRef.current = null;
+      dragStartRef.current = null;
+      setIsDragging(false);
+      highlightsContainerRef.current?.replaceChildren();
     };
-    document.addEventListener("keydown", handleKeyDown);
-    document.addEventListener("keyup", handleKeyUp);
+    pageEvents.addEventListener("keyup", handleKeyUp);
     window.addEventListener("blur", handleBlur);
     return () => {
-      document.removeEventListener("keydown", handleKeyDown);
-      document.removeEventListener("keyup", handleKeyUp);
+      pageEvents.removeEventListener("keyup", handleKeyUp);
       window.removeEventListener("blur", handleBlur);
     };
   }, [isActive, pendingMultiSelectElements, createMultiSelectPendingAnnotation]);
-  useEffect6(() => {
+  useEffect8(() => {
     if (!isActive || pendingAnnotation || isDrawMode || isDesignMode) return;
     const handleMouseDown = (e) => {
+      if (e.button !== 0) return;
+      justFinishedDragRef.current = false;
       const target = e.composedPath()[0] || e.target;
       if (closestCrossingShadow(target, "[data-feedback-toolbar]")) return;
       if (closestCrossingShadow(target, "[data-annotation-marker]")) return;
@@ -9665,16 +11076,16 @@ function PageFeedbackToolbarCSS({
         "SUB",
         "SUP"
       ]);
-      if (textTags.has(target.tagName) || target.isContentEditable) {
+      if (!isPrimaryMultiSelectModifierActive(e) && (textTags.has(target.tagName) || target.isContentEditable)) {
         return;
       }
       e.preventDefault();
       mouseDownPosRef.current = { x: e.clientX, y: e.clientY };
     };
-    document.addEventListener("mousedown", handleMouseDown);
-    return () => document.removeEventListener("mousedown", handleMouseDown);
+    pageEvents.addEventListener("mousedown", handleMouseDown);
+    return () => pageEvents.removeEventListener("mousedown", handleMouseDown);
   }, [isActive, pendingAnnotation, isDrawMode, isDesignMode]);
-  useEffect6(() => {
+  useEffect8(() => {
     if (!isActive || pendingAnnotation) return;
     const handleMouseMove = (e) => {
       if (!mouseDownPosRef.current) return;
@@ -9728,12 +11139,12 @@ function PageFeedbackToolbarCSS({
             if (el instanceof HTMLElement) candidateElements.add(el);
           }
         }
-        const nearbyElements = document.querySelectorAll(
+        const nearbyElements = pageEvents.querySelectorAll(
           "button, a, input, img, p, h1, h2, h3, h4, h5, h6, li, label, td, th, div, span, section, article, aside, nav"
         );
         for (const el of nearbyElements) {
           if (el instanceof HTMLElement) {
-            const rect = el.getBoundingClientRect();
+            const rect = viewportRect(el);
             const centerX = rect.left + rect.width / 2;
             const centerY = rect.top + rect.height / 2;
             const centerInside = centerX >= left && centerX <= right && centerY >= top && centerY <= bottom;
@@ -9772,7 +11183,7 @@ function PageFeedbackToolbarCSS({
         for (const el of candidateElements) {
           if (closestCrossingShadow(el, "[data-feedback-toolbar]") || closestCrossingShadow(el, "[data-annotation-marker]"))
             continue;
-          const rect = el.getBoundingClientRect();
+          const rect = viewportRect(el);
           if (rect.width > window.innerWidth * 0.8 && rect.height > window.innerHeight * 0.5)
             continue;
           if (rect.width < 10 || rect.height < 10) continue;
@@ -9807,7 +11218,7 @@ function PageFeedbackToolbarCSS({
             let div = container.children[i];
             if (!div) {
               div = document.createElement("div");
-              div.className = styles_module_default4.selectedElementHighlight;
+              div.className = styles_module_default3.selectedElementHighlight;
               container.appendChild(div);
             }
             div.style.transform = `translate(${rect.left}px, ${rect.top}px)`;
@@ -9817,10 +11228,10 @@ function PageFeedbackToolbarCSS({
         }
       }
     };
-    document.addEventListener("mousemove", handleMouseMove, { passive: true });
-    return () => document.removeEventListener("mousemove", handleMouseMove);
+    pageEvents.addEventListener("mousemove", handleMouseMove, { passive: true });
+    return () => pageEvents.removeEventListener("mousemove", handleMouseMove);
   }, [isActive, pendingAnnotation, isDragging, DRAG_THRESHOLD]);
-  useEffect6(() => {
+  useEffect8(() => {
     if (!isActive) return;
     const handleMouseUp = (e) => {
       const wasDragging = isDragging;
@@ -9833,11 +11244,11 @@ function PageFeedbackToolbarCSS({
         const bottom = Math.max(dragStart.y, e.clientY);
         const allMatching = [];
         const selector = "button, a, input, img, p, h1, h2, h3, h4, h5, h6, li, label, td, th";
-        document.querySelectorAll(selector).forEach((el) => {
+        pageEvents.querySelectorAll(selector).forEach((el) => {
           if (!(el instanceof HTMLElement)) return;
           if (closestCrossingShadow(el, "[data-feedback-toolbar]") || closestCrossingShadow(el, "[data-annotation-marker]"))
             return;
-          const rect = el.getBoundingClientRect();
+          const rect = viewportRect(el);
           if (rect.width > window.innerWidth * 0.8 && rect.height > window.innerHeight * 0.5)
             return;
           if (rect.width < 10 || rect.height < 10) return;
@@ -9852,54 +11263,72 @@ function PageFeedbackToolbarCSS({
         );
         const x = e.clientX / window.innerWidth * 100;
         const y = e.clientY + window.scrollY;
+        const shouldAccumulateMultiSelect = (isPrimaryMultiSelectModifierActive(e) || pendingMultiSelectElements.length > 0) && !pendingAnnotation && !editingAnnotation;
         if (finalElements.length > 0) {
-          const bounds = finalElements.reduce(
-            (acc, { rect }) => ({
-              left: Math.min(acc.left, rect.left),
-              top: Math.min(acc.top, rect.top),
-              right: Math.max(acc.right, rect.right),
-              bottom: Math.max(acc.bottom, rect.bottom)
-            }),
-            {
-              left: Infinity,
-              top: Infinity,
-              right: -Infinity,
-              bottom: -Infinity
+          if (shouldAccumulateMultiSelect) {
+            const combined = [...pendingMultiSelectElements];
+            for (const { element, rect } of finalElements) {
+              if (combined.some((item) => item.element === element)) continue;
+              const { name, path, reactComponents } = identifyElementWithReact(element, effectiveReactMode, attributeNames);
+              combined.push({ element, rect, name, path, reactComponents: reactComponents ?? void 0 });
             }
-          );
-          const elementNames = finalElements.slice(0, 5).map(({ element }) => identifyElement(element).name).join(", ");
-          const suffix = finalElements.length > 5 ? ` +${finalElements.length - 5} more` : "";
-          const firstElement = finalElements[0].element;
-          const firstElementComputedStyles = getDetailedComputedStyles(firstElement);
-          const firstElementComputedStylesStr = getForensicComputedStyles(firstElement);
-          setPendingAnnotation({
-            x,
-            y,
-            clientY: e.clientY,
-            element: `${finalElements.length} elements: ${elementNames}${suffix}`,
-            elementPath: "multi-select",
-            boundingBox: {
-              x: bounds.left,
-              y: bounds.top + window.scrollY,
-              width: bounds.right - bounds.left,
-              height: bounds.bottom - bounds.top
-            },
-            isMultiSelect: true,
-            // Forensic data from first element
-            fullPath: getFullElementPath(firstElement),
-            accessibility: getAccessibilityInfo(firstElement),
-            computedStyles: firstElementComputedStylesStr,
-            computedStylesObj: firstElementComputedStyles,
-            nearbyElements: getNearbyElements(firstElement),
-            cssClasses: getElementClasses(firstElement),
-            nearbyText: getNearbyText(firstElement),
-            sourceFile: detectSourceFile(firstElement)
-          });
-        } else {
+            legacyMultiSelectRef.current = e.shiftKey;
+            if (isPrimaryMultiSelectModifierActive(e)) setPendingMultiSelectElements(combined);
+            else createMultiSelectPendingAnnotation(combined);
+          } else {
+            const bounds = finalElements.reduce(
+              (acc, { rect }) => ({
+                left: Math.min(acc.left, rect.left),
+                top: Math.min(acc.top, rect.top),
+                right: Math.max(acc.right, rect.right),
+                bottom: Math.max(acc.bottom, rect.bottom)
+              }),
+              {
+                left: Infinity,
+                top: Infinity,
+                right: -Infinity,
+                bottom: -Infinity
+              }
+            );
+            const elementNames = finalElements.slice(0, 5).map(({ element }) => identifyElement(element).name).join(", ");
+            const suffix = finalElements.length > 5 ? ` +${finalElements.length - 5} more` : "";
+            const firstElement = finalElements[0].element;
+            const firstElementComputedStyles = getDetailedComputedStyles(firstElement);
+            const firstElementComputedStylesStr = getForensicComputedStyles(firstElement);
+            setPendingAnnotation({
+              id: Date.now().toString(),
+              x,
+              y,
+              clientY: e.clientY,
+              element: `${finalElements.length} elements: ${elementNames}${suffix}`,
+              elementPath: "multi-select",
+              boundingBox: {
+                x: bounds.left,
+                y: bounds.top + window.scrollY,
+                width: bounds.right - bounds.left,
+                height: bounds.bottom - bounds.top
+              },
+              isMultiSelect: true,
+              // Forensic data from first element
+              fullPath: getFullElementPath(firstElement),
+              accessibility: getAccessibilityInfo(firstElement),
+              computedStyles: firstElementComputedStylesStr,
+              computedStylesObj: firstElementComputedStyles,
+              nearbyElements: getNearbyElements(firstElement),
+              cssClasses: getElementClasses(firstElement),
+              nearbyText: getNearbyText(firstElement),
+              sourceFile: detectSourceFile(firstElement),
+              attributes: captureElementAttributes(firstElement, attributeNames)
+            });
+          }
+        } else if (shouldAccumulateMultiSelect && !isPrimaryMultiSelectModifierActive(e)) {
+          createMultiSelectPendingAnnotation();
+        } else if (!shouldAccumulateMultiSelect) {
           const width = Math.abs(right - left);
           const height = Math.abs(bottom - top);
           if (width > 20 && height > 20) {
             setPendingAnnotation({
+              id: Date.now().toString(),
               x,
               y,
               clientY: e.clientY,
@@ -9926,10 +11355,19 @@ function PageFeedbackToolbarCSS({
         highlightsContainerRef.current.innerHTML = "";
       }
     };
-    document.addEventListener("mouseup", handleMouseUp);
-    return () => document.removeEventListener("mouseup", handleMouseUp);
-  }, [isActive, isDragging]);
-  const fireWebhook = useCallback5(
+    pageEvents.addEventListener("mouseup", handleMouseUp);
+    return () => pageEvents.removeEventListener("mouseup", handleMouseUp);
+  }, [
+    isActive,
+    isDragging,
+    pendingAnnotation,
+    editingAnnotation,
+    effectiveReactMode,
+    attributeNames,
+    pendingMultiSelectElements,
+    createMultiSelectPendingAnnotation
+  ]);
+  const fireWebhook = useCallback8(
     async (event, payload, force) => {
       const targetUrl = settings.webhookUrl || webhookUrl;
       if (!targetUrl || !settings.webhooksEnabled && !force) return false;
@@ -9952,11 +11390,11 @@ function PageFeedbackToolbarCSS({
     },
     [webhookUrl, settings.webhookUrl, settings.webhooksEnabled]
   );
-  const addAnnotation = useCallback5(
+  const addAnnotation = useCallback8(
     (comment) => {
-      if (!pendingAnnotation) return;
+      if (!pendingAnnotation || pendingAnnotation.isSubmitted) return;
       const newAnnotation = {
-        id: Date.now().toString(),
+        id: pendingAnnotation.id,
         x: pendingAnnotation.x,
         y: pendingAnnotation.y,
         comment,
@@ -9975,6 +11413,8 @@ function PageFeedbackToolbarCSS({
         nearbyElements: pendingAnnotation.nearbyElements,
         reactComponents: pendingAnnotation.reactComponents,
         sourceFile: pendingAnnotation.sourceFile,
+        attributes: pendingAnnotation.attributes,
+        frame: pendingAnnotation.frame,
         elementBoundingBoxes: pendingAnnotation.elementBoundingBoxes,
         // Protocol fields for server sync
         ...endpoint && currentSessionId ? {
@@ -9984,35 +11424,31 @@ function PageFeedbackToolbarCSS({
         } : {}
       };
       setAnnotations((prev) => [...prev, newAnnotation]);
+      setPendingAnnotation({ ...pendingAnnotation, isSubmitted: true });
       recentlyAddedIdRef.current = newAnnotation.id;
-      originalSetTimeout(() => {
-        recentlyAddedIdRef.current = null;
-      }, 300);
-      originalSetTimeout(() => {
-        setAnimatedMarkers((prev) => new Set(prev).add(newAnnotation.id));
-      }, 250);
       onAnnotationAdd?.(newAnnotation);
       fireWebhook("annotation.add", { annotation: newAnnotation });
       setPendingExiting(true);
-      originalSetTimeout(() => {
-        setPendingAnnotation(null);
-        setPendingExiting(false);
-      }, 150);
       window.getSelection()?.removeAllRanges();
       if (endpoint && currentSessionId) {
-        syncAnnotation(endpoint, currentSessionId, newAnnotation).then((serverAnnotation) => {
+        routeTask(async () => {
+          const serverAnnotation = await syncPageAnnotation(endpoint, currentSessionId, newAnnotation);
+          if (useHashLocation) {
+            const saved = loadAnnotations(pathname);
+            saveAnnotationsWithSyncMarker(pathname, saved.map((a) => a.id === newAnnotation.id ? { ...a, id: serverAnnotation.id } : a), currentSessionId);
+          }
+          if (!routeAlive.current || deletedIds.current.has(newAnnotation.id)) return;
           if (serverAnnotation.id !== newAnnotation.id) {
+            markerKeys.current.set(serverAnnotation.id, newAnnotation.id);
+            if (recentlyAddedIdRef.current === newAnnotation.id) recentlyAddedIdRef.current = serverAnnotation.id;
             setAnnotations(
               (prev) => prev.map(
                 (a) => a.id === newAnnotation.id ? { ...a, id: serverAnnotation.id } : a
               )
             );
-            setAnimatedMarkers((prev) => {
-              const next = new Set(prev);
-              next.delete(newAnnotation.id);
-              next.add(serverAnnotation.id);
-              return next;
-            });
+            if (animatedMarkers.current.delete(newAnnotation.id)) {
+              animatedMarkers.current.add(serverAnnotation.id);
+            }
           }
         }).catch((error) => {
           console.warn("[Agentation] Failed to sync annotation:", error);
@@ -10024,60 +11460,45 @@ function PageFeedbackToolbarCSS({
       onAnnotationAdd,
       fireWebhook,
       endpoint,
-      currentSessionId
+      currentSessionId,
+      routeTask,
+      pathname,
+      useHashLocation
     ]
   );
-  const cancelAnnotation = useCallback5(() => {
+  const cancelAnnotation = useCallback8(() => {
     setPendingExiting(true);
-    originalSetTimeout(() => {
-      setPendingAnnotation(null);
-      setPendingExiting(false);
-    }, 150);
   }, []);
-  const deleteAnnotation2 = useCallback5(
+  const finishPendingExit = useCallback8(() => {
+    setPendingAnnotation(null);
+    setPendingExiting(false);
+  }, []);
+  const deleteAnnotation2 = useCallback8(
     (id) => {
-      const deletedIndex = annotations.findIndex((a) => a.id === id);
-      const deletedAnnotation = annotations[deletedIndex];
+      if (deletedIds.current.has(id)) return;
+      deletedIds.current.add(id);
+      const deletedAnnotation = annotations.find((a) => a.id === id);
       if (editingAnnotation?.id === id) {
+        setRestoreEditPreview(false);
         setEditExiting(true);
-        originalSetTimeout(() => {
-          setEditingAnnotation(null);
-          setEditingTargetElement(null);
-          setEditingTargetElements([]);
-          setEditExiting(false);
-        }, 150);
       }
-      setDeletingMarkerId(id);
       setExitingMarkers((prev) => new Set(prev).add(id));
       if (deletedAnnotation) {
         onAnnotationDelete?.(deletedAnnotation);
         fireWebhook("annotation.delete", { annotation: deletedAnnotation });
       }
       if (endpoint) {
-        deleteAnnotation(endpoint, id).catch((error) => {
+        routeTask(() => deleteAnnotation(endpoint, serverIds.current.get(id) ?? id)).catch((error) => {
           console.warn(
             "[Agentation] Failed to delete annotation from server:",
             error
           );
         });
       }
-      originalSetTimeout(() => {
-        setAnnotations((prev) => prev.filter((a) => a.id !== id));
-        setExitingMarkers((prev) => {
-          const next = new Set(prev);
-          next.delete(id);
-          return next;
-        });
-        setDeletingMarkerId(null);
-        if (deletedIndex < annotations.length - 1) {
-          setRenumberFrom(deletedIndex);
-          originalSetTimeout(() => setRenumberFrom(null), 200);
-        }
-      }, 150);
     },
-    [annotations, editingAnnotation, onAnnotationDelete, fireWebhook, endpoint]
+    [annotations, editingAnnotation, onAnnotationDelete, fireWebhook, endpoint, routeTask]
   );
-  const handleMarkerHover = useCallback5(
+  const handleMarkerHover = useCallback8(
     (annotation) => {
       if (!annotation) {
         setHoveredMarkerId(null);
@@ -10091,10 +11512,7 @@ function PageFeedbackToolbarCSS({
         for (const bb of annotation.elementBoundingBoxes) {
           const centerX = bb.x + bb.width / 2;
           const centerY = bb.y + bb.height / 2 - window.scrollY;
-          const allEls = document.elementsFromPoint(centerX, centerY);
-          const el = allEls.find(
-            (e) => !e.closest("[data-annotation-marker]") && !e.closest("[data-agentation-root]")
-          );
+          const el = annotationElementFromPoint(centerX, centerY, bb);
           if (el) elements.push(el);
         }
         setHoveredTargetElements(elements);
@@ -10103,9 +11521,9 @@ function PageFeedbackToolbarCSS({
         const bb = annotation.boundingBox;
         const centerX = bb.x + bb.width / 2;
         const centerY = annotation.isFixed ? bb.y + bb.height / 2 : bb.y + bb.height / 2 - window.scrollY;
-        const el = deepElementFromPoint(centerX, centerY);
+        const el = annotationElementFromPoint(centerX, centerY, bb);
         if (el) {
-          const elRect = el.getBoundingClientRect();
+          const elRect = viewportRect(el);
           const widthRatio = elRect.width / bb.width;
           const heightRatio = elRect.height / bb.height;
           if (widthRatio < 0.5 || heightRatio < 0.5) {
@@ -10124,10 +11542,11 @@ function PageFeedbackToolbarCSS({
     },
     []
   );
-  const updateAnnotation2 = useCallback5(
+  const updateAnnotation2 = useCallback8(
     (newComment) => {
       if (!editingAnnotation) return;
       const updatedAnnotation = { ...editingAnnotation, comment: newComment };
+      setEditingAnnotation(updatedAnnotation);
       setAnnotations(
         (prev) => prev.map(
           (a) => a.id === editingAnnotation.id ? updatedAnnotation : a
@@ -10136,44 +11555,78 @@ function PageFeedbackToolbarCSS({
       onAnnotationUpdate?.(updatedAnnotation);
       fireWebhook("annotation.update", { annotation: updatedAnnotation });
       if (endpoint) {
-        updateAnnotation(endpoint, editingAnnotation.id, {
+        routeTask(() => updateAnnotation(endpoint, serverIds.current.get(editingAnnotation.id) ?? editingAnnotation.id, {
           comment: newComment
-        }).catch((error) => {
+        })).catch((error) => {
           console.warn(
             "[Agentation] Failed to update annotation on server:",
             error
           );
         });
       }
+      setRestoreEditPreview(editingFromKeyboardRef.current || !!editingTriggerRef.current?.matches(":hover"));
       setEditExiting(true);
-      originalSetTimeout(() => {
-        setEditingAnnotation(null);
-        setEditingTargetElement(null);
-        setEditingTargetElements([]);
-        setEditExiting(false);
-      }, 150);
     },
-    [editingAnnotation, onAnnotationUpdate, fireWebhook, endpoint]
+    [editingAnnotation, onAnnotationUpdate, fireWebhook, endpoint, routeTask]
   );
-  const cancelEditAnnotation = useCallback5(() => {
+  const cancelEditAnnotation = useCallback8(() => {
+    setRestoreEditPreview(editingFromKeyboardRef.current || !!editingTriggerRef.current?.matches(":hover"));
     setEditExiting(true);
-    originalSetTimeout(() => {
-      setEditingAnnotation(null);
-      setEditingTargetElement(null);
-      setEditingTargetElements([]);
-      setEditExiting(false);
-    }, 150);
   }, []);
-  const clearAll = useCallback5(() => {
-    const count = annotations.length;
-    const hasDesign = designPlacements.length > 0 || !!rearrangeState;
-    if (count === 0 && drawStrokes.length === 0 && !hasDesign) return;
-    onAnnotationsClear?.(annotations);
-    fireWebhook("annotations.clear", { annotations });
+  const finishEditExit = useCallback8(() => {
+    if (restoreEditPreview && editingAnnotation && !pendingAnnotation) setHoveredMarkerId(editingAnnotation.id);
+    setEditingAnnotation(null);
+    setEditingTargetElement(null);
+    setEditingTargetElements([]);
+    setEditExiting(false);
+  }, [restoreEditPreview, editingAnnotation, pendingAnnotation]);
+  const clearLayout = useCallback8((placements, rearrange) => {
+    if (!placements.length && !rearrange) return;
+    setIsClearing(true);
+    const layoutBatch = {
+      placements: [...clearingLayout.current.placements, ...placements],
+      rearrange: rearrange ?? clearingLayout.current.rearrange
+    };
+    clearingLayout.current = layoutBatch;
+    setClearingPlacements(layoutBatch.placements);
+    setClearingRearrange(layoutBatch.rearrange);
+    clearTimeout(clearLayoutTimer.current);
+    clearLayoutTimer.current = originalSetTimeout(() => {
+      setDesignPlacements((previous) => previous.filter((p) => !layoutBatch.placements.includes(p)));
+      setRearrangeState((previous) => previous === layoutBatch.rearrange ? null : previous);
+      clearingLayout.current = { placements: [], rearrange: null };
+      setClearingPlacements([]);
+      setClearingRearrange(null);
+      clearLayoutTimer.current = void 0;
+      finishClearBatch();
+    }, 200);
+  }, [finishClearBatch]);
+  const clearAll = useCallback8(() => {
+    if (!routeAlive.current) return;
+    const live = new Map(currentAnnotationsRef.current.map((note) => [note.id, note]));
+    const batch = [];
+    for (const note of annotations) {
+      const now = live.get(serverIds.current.get(note.id) ?? note.id) ?? live.get(note.id);
+      if (now && now.comment === note.comment && !deletedIds.current.has(now.id) && !batch.includes(now)) batch.push(now);
+    }
+    const count = batch.length;
+    const currentLayout = layoutSnapshot.current;
+    const placements = designPlacements.filter((p) => currentLayout.designPlacements.includes(p) && !clearingLayout.current.placements.includes(p));
+    const rearrange = rearrangeState === currentLayout.rearrangeState && rearrangeState !== clearingLayout.current.rearrange ? rearrangeState : null;
+    const strokes = drawStrokes.filter((stroke) => drawStrokesRef.current.includes(stroke));
+    if (count === 0 && strokes.length === 0 && placements.length === 0 && !rearrange) return;
+    for (const annotation of batch) {
+      deletedIds.current.add(annotation.id);
+      clearingIds.current.add(annotation.id);
+      pendingClearIds.current.add(annotation.id);
+    }
+    setExitingMarkers((previous) => /* @__PURE__ */ new Set([...previous, ...batch.map((a) => a.id)]));
+    onAnnotationsClear?.(batch);
+    fireWebhook("annotations.clear", { annotations: batch });
     if (endpoint) {
       Promise.all(
-        annotations.map(
-          (a) => deleteAnnotation(endpoint, a.id).catch((error) => {
+        batch.map(
+          (a) => routeTask(() => deleteAnnotation(endpoint, serverIds.current.get(a.id) ?? a.id)).catch((error) => {
             console.warn(
               "[Agentation] Failed to delete annotation from server:",
               error
@@ -10181,66 +11634,39 @@ function PageFeedbackToolbarCSS({
           })
         )
       );
-      for (const [, annotationId] of placementAnnotationMap.current) {
-        if (annotationId) {
-          deleteAnnotation(endpoint, annotationId).catch(() => {
-          });
-        }
-      }
-      placementAnnotationMap.current.clear();
-      for (const [, annotationId] of rearrangeAnnotationMap.current) {
-        if (annotationId) {
-          deleteAnnotation(endpoint, annotationId).catch(() => {
-          });
-        }
-      }
-      rearrangeAnnotationMap.current.clear();
     }
     setIsClearing(true);
-    setCleared(true);
-    setDrawStrokes([]);
-    const canvas = drawCanvasRef.current;
-    if (canvas) {
-      const ctx = canvas.getContext("2d");
-      if (ctx) ctx.clearRect(0, 0, canvas.width, canvas.height);
+    setDrawStrokes((previous) => previous.filter((stroke) => !strokes.includes(stroke)));
+    if (strokes.length > 0 && strokes.length === drawStrokesRef.current.length) {
+      const canvas = drawCanvasRef.current;
+      canvas?.getContext("2d")?.clearRect(0, 0, canvas.width, canvas.height);
     }
-    if (designPlacements.length > 0 || rearrangeState) {
-      setDesignClearSignal((n) => n + 1);
-      setRearrangeClearSignal((n) => n + 1);
-      originalSetTimeout(() => {
-        setDesignPlacements([]);
-        setRearrangeState(null);
-      }, 200);
+    clearLayout(placements, rearrange);
+    if (blankCanvas === currentLayout.blankCanvas && wireframePurpose === currentLayout.wireframePurpose && designPlacements === currentLayout.designPlacements && rearrangeState === currentLayout.rearrangeState) {
+      if (blankCanvas) setBlankCanvas(false);
+      if (wireframePurpose) setWireframePurpose("");
+      wireframeStashRef.current = { rearrange: null, placements: [] };
+      clearWireframeState(pathname);
     }
-    if (blankCanvas) setBlankCanvas(false);
-    if (wireframePurpose) setWireframePurpose("");
-    wireframeStashRef.current = { rearrange: null, placements: [] };
-    clearWireframeState(pathname);
-    const totalAnimationTime = count * 30 + 200;
-    originalSetTimeout(() => {
-      setAnnotations([]);
-      setAnimatedMarkers(/* @__PURE__ */ new Set());
-      localStorage.removeItem(getStorageKey(pathname));
-      setIsClearing(false);
-    }, totalAnimationTime);
-    originalSetTimeout(() => setCleared(false), 1500);
-  }, [pathname, annotations, drawStrokes, designPlacements, rearrangeState, blankCanvas, wireframePurpose, onAnnotationsClear, fireWebhook, endpoint]);
-  const copyOutput = useCallback5(async () => {
+    finishClearBatch();
+  }, [pathname, annotations, drawStrokes, designPlacements, rearrangeState, blankCanvas, wireframePurpose, onAnnotationsClear, fireWebhook, endpoint, routeTask, finishClearBatch, clearLayout]);
+  const copyOutput = useCallback8(async () => {
+    const action = copyAction.start();
     const displayUrl = typeof window !== "undefined" ? window.location.pathname + window.location.search + window.location.hash : pathname;
     const wireframeOnly = isDesignMode && blankCanvas;
     let output;
     if (wireframeOnly) {
       if (designPlacements.length === 0 && !rearrangeState && !wireframePurpose) return;
-      output = "";
+      output = appName ? generateOutputHeader(displayUrl, appName) : "";
     } else {
       output = generateOutput(
         annotations,
         displayUrl,
-        settings.outputDetail
+        settings.outputDetail,
+        { appName }
       );
       if (!output && drawStrokes.length === 0 && designPlacements.length === 0 && !rearrangeState) return;
-      if (!output) output = `## Page Feedback: ${displayUrl}
-`;
+      if (!output) output = generateOutputHeader(displayUrl, appName);
     }
     if (!wireframeOnly && drawStrokes.length > 0) {
       const linkedDrawingIndices = /* @__PURE__ */ new Set();
@@ -10351,17 +11777,19 @@ function PageFeedbackToolbarCSS({
         output += "\n" + rearrangeOutput;
       }
     }
-    if (copyToClipboard) {
-      try {
-        await navigator.clipboard.writeText(output);
-      } catch {
-      }
+    output = formatCopyOutput(annotations, output, copyFormat);
+    if (!output) {
+      setCopied(false);
+      return;
     }
+    const copiedOk = !copyToClipboard || await copyTextToClipboard(output);
     onCopy?.(output);
-    setCopied(true);
-    originalSetTimeout(() => setCopied(false), 2e3);
+    if (!copyAction.isCurrent(action)) return;
+    setCopied(copiedOk);
+    if (!copiedOk) return;
+    copyAction.schedule(action, () => setCopied(false), 2e3);
     if (settings.autoClearAfterCopy) {
-      originalSetTimeout(() => clearAll(), 500);
+      copyAction.schedule(action, clearAll, 500);
     }
   }, [
     annotations,
@@ -10375,21 +11803,30 @@ function PageFeedbackToolbarCSS({
     pathname,
     settings.outputDetail,
     effectiveReactMode,
+    attributeNames,
     settings.autoClearAfterCopy,
     clearAll,
+    copyAction,
     copyToClipboard,
+    copyFormat,
+    appName,
     onCopy
   ]);
-  const sendToWebhook = useCallback5(async () => {
+  const hasWebhookTarget = isValidUrl(settings.webhookUrl) || isValidUrl(webhookUrl || "");
+  const canSend = onSubmit != null || hasWebhookTarget && !settings.webhooksEnabled;
+  const toolbarContentWidth = isActive ? canSend ? 337 : 297 : 44;
+  const sendToWebhook = useCallback8(async () => {
+    const action = sendAction.start();
+    const submissionUrl = typeof window !== "undefined" ? window.location.href : pathname;
     const displayUrl = typeof window !== "undefined" ? window.location.pathname + window.location.search + window.location.hash : pathname;
     let output = generateOutput(
       annotations,
       displayUrl,
-      settings.outputDetail
+      settings.outputDetail,
+      { appName }
     );
     if (!output && designPlacements.length === 0 && !rearrangeState) return;
-    if (!output) output = `## Page Feedback: ${displayUrl}
-`;
+    if (!output) output = generateOutputHeader(displayUrl, appName);
     if (designPlacements.length > 0) {
       output += "\n" + generateDesignOutput(designPlacements, {
         width: window.innerWidth,
@@ -10405,19 +11842,26 @@ function PageFeedbackToolbarCSS({
         output += "\n" + rearrangeOutput;
       }
     }
-    if (onSubmit) {
-      onSubmit(output, annotations);
-    }
     setSendState("sending");
-    await new Promise((resolve) => originalSetTimeout(resolve, 150));
-    const success = await fireWebhook("submit", { output, annotations }, true);
+    let callbackOk = true;
+    try {
+      await onSubmit?.(output, annotations);
+    } catch (error) {
+      console.warn("[Agentation] Submit callback failed:", error);
+      callbackOk = false;
+    }
+    if (!sendAction.isCurrent(action)) return;
+    const webhookOk = hasWebhookTarget ? await fireWebhook("submit", { output, annotations, url: submissionUrl }, true) : true;
+    const success = callbackOk && webhookOk && canSend;
+    if (!sendAction.isCurrent(action)) return;
     setSendState(success ? "sent" : "failed");
-    originalSetTimeout(() => setSendState("idle"), 2500);
+    sendAction.schedule(action, () => setSendState("idle"), 2500);
     if (success && settings.autoClearAfterCopy) {
-      originalSetTimeout(() => clearAll(), 500);
+      sendAction.schedule(action, clearAll, 500);
     }
   }, [
     onSubmit,
+    appName,
     fireWebhook,
     annotations,
     designPlacements,
@@ -10427,26 +11871,43 @@ function PageFeedbackToolbarCSS({
     pathname,
     settings.outputDetail,
     effectiveReactMode,
+    attributeNames,
     settings.autoClearAfterCopy,
-    clearAll
+    clearAll,
+    hasWebhookTarget,
+    canSend,
+    sendAction
   ]);
-  useEffect6(() => {
-    if (!dragStartPos) return;
+  useEffect8(() => {
     const DRAG_THRESHOLD2 = 10;
+    const endDrag = (released = false) => {
+      if (toolbarDragRef.current?.dragging) {
+        justFinishedToolbarDragRef.current = released;
+        setIsDraggingToolbar(false);
+      }
+      toolbarDragRef.current = null;
+    };
     const handleMouseMove = (e) => {
+      const dragStartPos = toolbarDragRef.current;
+      if (!dragStartPos) return;
+      if ((e.buttons & 1) === 0) {
+        endDrag();
+        return;
+      }
       const deltaX = e.clientX - dragStartPos.x;
       const deltaY = e.clientY - dragStartPos.y;
       const distance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
-      if (!isDraggingToolbar && distance > DRAG_THRESHOLD2) {
+      if (!dragStartPos.dragging && distance > DRAG_THRESHOLD2) {
+        dragStartPos.dragging = true;
         setIsDraggingToolbar(true);
       }
-      if (isDraggingToolbar || distance > DRAG_THRESHOLD2) {
+      if (dragStartPos.dragging) {
         let newX = dragStartPos.toolbarX + deltaX;
         let newY = dragStartPos.toolbarY + deltaY;
         const padding = 20;
         const wrapperWidth = 337;
         const toolbarHeight = 44;
-        const contentWidth = isActive ? connectionStatus === "connected" ? 297 : 257 : 44;
+        const contentWidth = toolbarContentWidth;
         const contentOffset = wrapperWidth - contentWidth;
         const minX = padding - contentOffset;
         const maxX = window.innerWidth - padding - wrapperWidth;
@@ -10458,40 +11919,40 @@ function PageFeedbackToolbarCSS({
         setToolbarPosition({ x: newX, y: newY });
       }
     };
-    const handleMouseUp = () => {
-      if (isDraggingToolbar) {
-        justFinishedToolbarDragRef.current = true;
-      }
-      setIsDraggingToolbar(false);
-      setDragStartPos(null);
-    };
-    document.addEventListener("mousemove", handleMouseMove);
-    document.addEventListener("mouseup", handleMouseUp);
+    const handleMouseUp = () => endDrag(true);
+    const handleBlur = () => endDrag();
+    pageEvents.addEventListener("mousemove", handleMouseMove);
+    pageEvents.addEventListener("mouseup", handleMouseUp, true);
+    window.addEventListener("blur", handleBlur);
     return () => {
-      document.removeEventListener("mousemove", handleMouseMove);
-      document.removeEventListener("mouseup", handleMouseUp);
+      pageEvents.removeEventListener("mousemove", handleMouseMove);
+      pageEvents.removeEventListener("mouseup", handleMouseUp, true);
+      window.removeEventListener("blur", handleBlur);
     };
-  }, [dragStartPos, isDraggingToolbar, isActive, connectionStatus]);
-  const handleToolbarMouseDown = useCallback5(
+  }, [toolbarContentWidth]);
+  const handleToolbarMouseDown = useCallback8(
     (e) => {
-      if (e.target.closest("button") || e.target.closest("[data-agentation-settings-panel]")) {
+      justFinishedToolbarDragRef.current = false;
+      toolbarDragRef.current = null;
+      if (e.button !== 0 || e.target.closest("button") && (e.target.closest("button") !== launcherRef.current || isActive) || e.target.closest("[data-agentation-settings-panel]")) {
         return;
       }
       const toolbarParent = e.currentTarget.parentElement;
       if (!toolbarParent) return;
-      const rect = toolbarParent.getBoundingClientRect();
-      const currentX = toolbarPosition?.x ?? rect.left;
-      const currentY = toolbarPosition?.y ?? rect.top;
-      setDragStartPos({
+      const rect = viewportRect(toolbarParent);
+      toolbarDragRef.current = {
         x: e.clientX,
         y: e.clientY,
-        toolbarX: currentX,
-        toolbarY: currentY
-      });
+        // A viewport correction may still be moving. Grab what is on screen,
+        // not the destination stored in state.
+        toolbarX: rect.left,
+        toolbarY: rect.top,
+        dragging: false
+      };
     },
-    [toolbarPosition]
+    [isActive]
   );
-  useEffect6(() => {
+  useLayoutEffect10(() => {
     if (!toolbarPosition) return;
     const constrainPosition = () => {
       const padding = 20;
@@ -10499,7 +11960,7 @@ function PageFeedbackToolbarCSS({
       const toolbarHeight = 44;
       let newX = toolbarPosition.x;
       let newY = toolbarPosition.y;
-      const contentWidth = isActive ? connectionStatus === "connected" ? 297 : 257 : 44;
+      const contentWidth = toolbarContentWidth;
       const contentOffset = wrapperWidth - contentWidth;
       const minX = padding - contentOffset;
       const maxX = window.innerWidth - padding - wrapperWidth;
@@ -10515,12 +11976,24 @@ function PageFeedbackToolbarCSS({
     constrainPosition();
     window.addEventListener("resize", constrainPosition);
     return () => window.removeEventListener("resize", constrainPosition);
-  }, [toolbarPosition, isActive, connectionStatus]);
-  useEffect6(() => {
+  }, [toolbarPosition, toolbarContentWidth]);
+  useEffect8(() => {
+    if (!enableKeyboardShortcuts) return;
     const handleKeyDown = (e) => {
-      const target = e.target;
-      const isTyping = target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable;
+      if (e.defaultPrevented || e.isComposing || e.altKey) return;
+      const target = e.composedPath()[0] || e.target;
+      const isTyping = target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.tagName === "SELECT" || target.isContentEditable;
       if (e.key === "Escape") {
+        if (portalContainer && !pendingAnnotation && !editingAnnotation && (isActive || showSettings || isDesignMode || isDrawMode || pendingMultiSelectElements.length)) {
+          e.preventDefault();
+          e.stopPropagation();
+        }
+        if (showSettings) {
+          e.preventDefault();
+          setShowSettings(false);
+          settingsButtonRef.current?.focus();
+          return;
+        }
         if (isDesignMode) {
           if (activeDesignComponent) {
             setActiveDesignComponent(null);
@@ -10537,10 +12010,10 @@ function PageFeedbackToolbarCSS({
           setPendingMultiSelectElements([]);
           return;
         }
-        if (pendingAnnotation) {
+        if (pendingAnnotation || editingAnnotation) {
         } else if (isActive) {
           hideTooltipsUntilMouseLeave();
-          setIsActive(false);
+          deactivate();
         }
       }
       if ((e.metaKey || e.ctrlKey) && e.shiftKey && (e.key === "f" || e.key === "F")) {
@@ -10549,11 +12022,14 @@ function PageFeedbackToolbarCSS({
         if (isActive) {
           deactivate();
         } else {
+          launcherRef.current?.blur();
+          focusControlsOnOpenRef.current = true;
           setIsActive(true);
         }
         return;
       }
-      if (isTyping || e.metaKey || e.ctrlKey) return;
+      if (!isActive || isTyping || e.metaKey || e.ctrlKey) return;
+      if (e.repeat) return;
       if (e.key === "p" || e.key === "P") {
         e.preventDefault();
         hideTooltipsUntilMouseLeave();
@@ -10568,7 +12044,7 @@ function PageFeedbackToolbarCSS({
         if (isDesignMode) {
           closeDesignMode();
         } else {
-          setIsDesignMode(true);
+          openDesignMode();
         }
       }
       if (e.key === "h" || e.key === "H") {
@@ -10595,17 +12071,20 @@ function PageFeedbackToolbarCSS({
         }
       }
       if (e.key === "s" || e.key === "S") {
-        const hasValidWebhook = isValidUrl(settings.webhookUrl) || isValidUrl(webhookUrl || "");
-        if (annotations.length > 0 && hasValidWebhook && sendState === "idle") {
+        if (annotations.length > 0 && canSend && sendState === "idle") {
           e.preventDefault();
           hideTooltipsUntilMouseLeave();
           sendToWebhook();
         }
       }
     };
-    document.addEventListener("keydown", handleKeyDown);
-    return () => document.removeEventListener("keydown", handleKeyDown);
+    const capture = !!portalContainer;
+    pageEvents.addEventListener("keydown", handleKeyDown, capture);
+    return () => pageEvents.removeEventListener("keydown", handleKeyDown, capture);
   }, [
+    enableKeyboardShortcuts,
+    portalContainer,
+    editingAnnotation,
     isActive,
     isDrawMode,
     isDesignMode,
@@ -10614,135 +12093,146 @@ function PageFeedbackToolbarCSS({
     rearrangeState,
     pendingAnnotation,
     annotations.length,
-    settings.webhookUrl,
-    webhookUrl,
+    canSend,
     sendState,
     sendToWebhook,
     toggleFreeze,
     copyOutput,
     clearAll,
-    pendingMultiSelectElements
+    pendingMultiSelectElements,
+    showSettings,
+    deactivate,
+    openDesignMode,
+    closeDesignMode
   ]);
+  const hasAnnotations = annotations.length > 0;
+  const projectFrameAnnotation2 = createFrameProjector();
+  const markerAnnotations = annotations.filter(
+    (a) => a.kind !== "placement" && a.kind !== "rearrange"
+  );
+  const visibleAnnotations = markerAnnotations.flatMap((annotation, index) => {
+    const projected = projectFrameAnnotation2(annotation);
+    return projected ? [{ annotation: projected, index }] : [];
+  });
+  const pendingMarker = pendingAnnotation && !pendingAnnotation.isSubmitted ? projectFrameAnnotation2({ ...pendingAnnotation, comment: "", timestamp: 0 }) : null;
+  const renderedMarkers = [
+    ...markersVisible ? visibleAnnotations.map((item) => ({ ...item, pending: false })) : [],
+    ...pendingMarker ? [{ annotation: pendingMarker, index: markerAnnotations.length, pending: true }] : []
+  ];
+  useEffect8(() => {
+    const renderedIds = new Set(markersVisible && !isToolbarHidden ? visibleAnnotations.map(({ annotation }) => annotation.id) : []);
+    if (recentlyAddedIdRef.current && !renderedIds.has(recentlyAddedIdRef.current)) {
+      recentlyAddedIdRef.current = null;
+    }
+    for (const id of exitingMarkers) {
+      if (!renderedIds.has(id)) finishMarkerRemoval(id);
+    }
+  });
+  useEffect8(() => {
+    if (editingAnnotation && exitingMarkers.has(editingAnnotation.id)) {
+      setRestoreEditPreview(false);
+      setEditExiting(true);
+    }
+  }, [editingAnnotation, exitingMarkers]);
+  const handleMarkerEnter = useCallback8((annotation) => {
+    if (!markersExiting && annotation.id !== recentlyAddedIdRef.current) {
+      handleMarkerHover(annotation);
+    }
+  }, [markersExiting, handleMarkerHover]);
+  const handleMarkerLeave = useCallback8((id) => {
+    if (hoveredMarkerId === id) handleMarkerHover(null);
+  }, [hoveredMarkerId, handleMarkerHover]);
+  const handleMarkerClick = useCallback8((annotation, trigger) => {
+    if (editingAnnotation && !editExiting) {
+      editPopupRef.current?.shake();
+      return;
+    }
+    if (pendingExiting) finishPendingExit();
+    if (settings.markerClickBehavior === "delete") deleteAnnotation2(annotation.id);
+    else startEditAnnotation(annotation, trigger);
+  }, [settings.markerClickBehavior, deleteAnnotation2, startEditAnnotation, pendingExiting, finishPendingExit, editingAnnotation, editExiting]);
+  const cardAnnotation = editingAnnotation ?? (shouldShowMarkers && !pendingAnnotation && !isClearing ? annotations.find((a) => a.id === hoveredMarkerId && !exitingMarkers.has(a.id)) : null);
+  const freezeLabel = isFrozen ? "Resume animations" : "Pause animations";
+  const designModeLabel = isDesignMode ? "Exit layout mode" : "Layout mode";
+  const markersLabel = showMarkers ? "Hide markers" : "Show markers";
+  const metadataCopy = copyFormat !== "markdown";
+  const missingCopyMetadata = metadataCopy && !formatCopyOutput(annotations, "", copyFormat);
+  const copyLabel = typeof copyFormat === "object" ? `Copy ${copyFormat.attribute}` : copyFormat === "source" ? "Copy source paths" : copyFormat === "classes" ? "Copy classes" : isDesignMode && blankCanvas ? "Copy layout" : "Copy feedback";
+  const controlTabIndex = isActive ? 0 : -1;
   if (!mounted) return null;
   if (isToolbarHidden) return null;
-  const hasAnnotations = annotations.length > 0;
-  const visibleAnnotations = annotations.filter(
-    (a) => !exitingMarkers.has(a.id) && a.kind !== "placement" && a.kind !== "rearrange"
-  );
-  const hasVisibleAnnotations = visibleAnnotations.length > 0;
-  const exitingAnnotationsList = annotations.filter(
-    (a) => exitingMarkers.has(a.id)
-  );
-  const getTooltipPosition = (annotation) => {
-    const tooltipMaxWidth = 200;
-    const tooltipEstimatedHeight = 80;
-    const markerSize = 22;
-    const gap = 10;
-    const markerX = annotation.x / 100 * window.innerWidth;
-    const markerY = typeof annotation.y === "string" ? parseFloat(annotation.y) : annotation.y;
-    const styles = {};
-    const spaceBelow = window.innerHeight - markerY - markerSize - gap;
-    if (spaceBelow < tooltipEstimatedHeight) {
-      styles.top = "auto";
-      styles.bottom = `calc(100% + ${gap}px)`;
-    }
-    const centerX = markerX - tooltipMaxWidth / 2;
-    const edgePadding = 10;
-    if (centerX < edgePadding) {
-      const offset = edgePadding - centerX;
-      styles.left = `calc(50% + ${offset}px)`;
-    } else if (centerX + tooltipMaxWidth > window.innerWidth - edgePadding) {
-      const overflow = centerX + tooltipMaxWidth - (window.innerWidth - edgePadding);
-      styles.left = `calc(50% - ${overflow}px)`;
-    }
-    return styles;
-  };
-  return createPortal2(
-    /* @__PURE__ */ jsxs13("div", { ref: portalWrapperRef, style: { display: "contents" }, "data-agentation-theme": isDarkMode ? "dark" : "light", "data-agentation-accent": settings.annotationColorId, "data-agentation-root": "", children: [
-      /* @__PURE__ */ jsx14(
+  return /* @__PURE__ */ jsxs15(ShadowRoot, { host: "agentation-toolbar", className: userClassName, children: [
+    /* @__PURE__ */ jsxs15("style", { "data-agentation-styles": "toolbar", children: [
+      shadowCss,
+      agentationColorTokensCss
+    ] }),
+    /* @__PURE__ */ jsxs15("div", { ref: portalWrapperRef, className: styles_module_default3.positionContext, style: { display: "contents" }, "data-agentation-theme": isDarkMode ? "dark" : "light", "data-agentation-accent": settings.annotationColorId, "data-agentation-root": "", children: [
+      /* @__PURE__ */ jsx19(
         "div",
         {
-          className: `${styles_module_default4.toolbar}${userClassName ? ` ${userClassName}` : ""}`,
+          className: styles_module_default3.toolbar,
           "data-feedback-toolbar": true,
           "data-agentation-toolbar": true,
+          "data-dragging": isDraggingToolbar || void 0,
           style: toolbarPosition ? {
             left: toolbarPosition.x,
             top: toolbarPosition.y,
             right: "auto",
             bottom: "auto"
           } : void 0,
-          children: /* @__PURE__ */ jsxs13(
+          children: /* @__PURE__ */ jsxs15(
             "div",
             {
-              className: `${styles_module_default4.toolbarContainer} ${isActive ? styles_module_default4.expanded : styles_module_default4.collapsed} ${showEntranceAnimation ? styles_module_default4.entrance : ""} ${isToolbarHiding ? styles_module_default4.hiding : ""} ${!settings.webhooksEnabled && (isValidUrl(settings.webhookUrl) || isValidUrl(webhookUrl || "")) ? styles_module_default4.serverConnected : ""}`,
-              onClick: !isActive ? (e) => {
-                if (justFinishedToolbarDragRef.current) {
-                  justFinishedToolbarDragRef.current = false;
-                  e.preventDefault();
-                  return;
-                }
-                setIsActive(true);
-              } : void 0,
+              className: `${styles_module_default3.toolbarContainer} ${isActive ? styles_module_default3.expanded : styles_module_default3.collapsed} ${showEntranceAnimation ? styles_module_default3.entrance : ""} ${isToolbarHiding ? styles_module_default3.hiding : ""} ${canSend ? styles_module_default3.serverConnected : ""}`,
               onMouseDown: handleToolbarMouseDown,
-              role: !isActive ? "button" : void 0,
-              tabIndex: !isActive ? 0 : -1,
-              title: !isActive ? "Start feedback mode" : void 0,
               children: [
-                /* @__PURE__ */ jsxs13(
+                /* @__PURE__ */ jsxs15(
                   "div",
                   {
-                    className: `${styles_module_default4.toggleContent} ${!isActive ? styles_module_default4.visible : styles_module_default4.hidden}`,
-                    children: [
-                      /* @__PURE__ */ jsx14(IconListSparkle, { size: 24 }),
-                      hasVisibleAnnotations && /* @__PURE__ */ jsx14(
-                        "span",
-                        {
-                          className: `${styles_module_default4.badge} ${isActive ? styles_module_default4.fadeOut : ""} ${showEntranceAnimation ? styles_module_default4.entrance : ""}`,
-                          children: visibleAnnotations.length
-                        }
-                      )
-                    ]
-                  }
-                ),
-                /* @__PURE__ */ jsxs13(
-                  "div",
-                  {
-                    className: `${styles_module_default4.controlsContent} ${isActive ? styles_module_default4.visible : styles_module_default4.hidden} ${toolbarPosition && toolbarPosition.y < 100 ? styles_module_default4.tooltipBelow : ""} ${tooltipsHidden || showSettings ? styles_module_default4.tooltipsHidden : ""} ${tooltipSessionActive ? styles_module_default4.tooltipsInSession : ""}`,
-                    inert: !isActive,
+                    className: `${styles_module_default3.controlsContent} ${isActive ? styles_module_default3.visible : styles_module_default3.hidden} ${toolbarPosition && toolbarPosition.y < 100 ? styles_module_default3.tooltipBelow : ""} ${tooltipsHidden || showSettings ? styles_module_default3.tooltipsHidden : ""} ${tooltipSessionActive ? styles_module_default3.tooltipsInSession : ""}`,
+                    ref: (node) => {
+                      controlsRef.current = node;
+                      node?.toggleAttribute("inert", !isActive);
+                    },
+                    role: "group",
+                    "aria-label": "Feedback controls",
                     "aria-hidden": !isActive,
                     onMouseEnter: handleControlsMouseEnter,
                     onMouseLeave: handleControlsMouseLeave,
                     children: [
-                      /* @__PURE__ */ jsxs13(
+                      /* @__PURE__ */ jsxs15(
                         "div",
                         {
-                          className: `${styles_module_default4.buttonWrapper} ${toolbarPosition && toolbarPosition.x < 120 ? styles_module_default4.buttonWrapperAlignLeft : ""}`,
+                          className: `${styles_module_default3.buttonWrapper} ${toolbarPosition && toolbarPosition.x < 120 ? styles_module_default3.buttonWrapperAlignLeft : ""}`,
                           children: [
-                            /* @__PURE__ */ jsx14(
+                            /* @__PURE__ */ jsx19(
                               "button",
                               {
-                                className: styles_module_default4.controlButton,
+                                className: styles_module_default3.controlButton,
                                 onClick: (e) => {
                                   e.stopPropagation();
                                   hideTooltipsUntilMouseLeave();
                                   toggleFreeze();
                                 },
                                 "data-active": isFrozen,
-                                children: /* @__PURE__ */ jsx14(IconPausePlayAnimated, { size: 24, isPaused: isFrozen })
+                                "aria-label": freezeLabel,
+                                "aria-pressed": isFrozen,
+                                tabIndex: controlTabIndex,
+                                children: /* @__PURE__ */ jsx19(IconPausePlayAnimated, { size: 24, isPaused: isFrozen })
                               }
                             ),
-                            /* @__PURE__ */ jsxs13("span", { className: styles_module_default4.buttonTooltip, children: [
-                              isFrozen ? "Resume animations" : "Pause animations",
-                              /* @__PURE__ */ jsx14("span", { className: styles_module_default4.shortcut, children: "P" })
+                            /* @__PURE__ */ jsxs15("span", { className: styles_module_default3.buttonTooltip, children: [
+                              freezeLabel,
+                              enableKeyboardShortcuts && /* @__PURE__ */ jsx19("span", { className: styles_module_default3.shortcut, children: "P" })
                             ] })
                           ]
                         }
                       ),
-                      /* @__PURE__ */ jsxs13("div", { className: styles_module_default4.buttonWrapper, children: [
-                        /* @__PURE__ */ jsx14(
+                      /* @__PURE__ */ jsxs15("div", { className: styles_module_default3.buttonWrapper, children: [
+                        /* @__PURE__ */ jsx19(
                           "button",
                           {
-                            className: `${styles_module_default4.controlButton} ${!isDarkMode ? styles_module_default4.light : ""}`,
+                            className: `${styles_module_default3.controlButton} ${!isDarkMode ? styles_module_default3.light : ""}`,
                             onClick: (e) => {
                               e.stopPropagation();
                               hideTooltipsUntilMouseLeave();
@@ -10752,99 +12242,108 @@ function PageFeedbackToolbarCSS({
                               if (isDesignMode) {
                                 closeDesignMode();
                               } else {
-                                setIsDesignMode(true);
+                                openDesignMode();
                               }
                             },
                             "data-active": isDesignMode,
+                            "aria-label": designModeLabel,
+                            "aria-pressed": isDesignMode,
+                            tabIndex: controlTabIndex,
                             style: isDesignMode && blankCanvas ? { color: "#f97316", background: "rgba(249, 115, 22, 0.25)" } : void 0,
-                            children: /* @__PURE__ */ jsx14(IconLayout, { size: 21 })
+                            children: /* @__PURE__ */ jsx19(IconLayout, { size: 21 })
                           }
                         ),
-                        /* @__PURE__ */ jsxs13("span", { className: styles_module_default4.buttonTooltip, children: [
-                          isDesignMode ? "Exit layout mode" : "Layout mode",
-                          /* @__PURE__ */ jsx14("span", { className: styles_module_default4.shortcut, children: "L" })
+                        /* @__PURE__ */ jsxs15("span", { className: styles_module_default3.buttonTooltip, children: [
+                          designModeLabel,
+                          enableKeyboardShortcuts && /* @__PURE__ */ jsx19("span", { className: styles_module_default3.shortcut, children: "L" })
                         ] })
                       ] }),
-                      /* @__PURE__ */ jsxs13("div", { className: styles_module_default4.buttonWrapper, children: [
-                        /* @__PURE__ */ jsx14(
+                      /* @__PURE__ */ jsxs15("div", { className: styles_module_default3.buttonWrapper, children: [
+                        /* @__PURE__ */ jsx19(
                           "button",
                           {
-                            className: styles_module_default4.controlButton,
+                            className: styles_module_default3.controlButton,
                             onClick: (e) => {
                               e.stopPropagation();
                               hideTooltipsUntilMouseLeave();
                               setShowMarkers(!showMarkers);
                             },
                             disabled: !hasAnnotations || isDesignMode,
-                            children: /* @__PURE__ */ jsx14(IconEyeAnimated, { size: 24, isOpen: showMarkers })
+                            "aria-label": markersLabel,
+                            tabIndex: controlTabIndex,
+                            children: /* @__PURE__ */ jsx19(IconEyeAnimated, { size: 24, isOpen: showMarkers })
                           }
                         ),
-                        /* @__PURE__ */ jsxs13("span", { className: styles_module_default4.buttonTooltip, children: [
-                          showMarkers ? "Hide markers" : "Show markers",
-                          /* @__PURE__ */ jsx14("span", { className: styles_module_default4.shortcut, children: "H" })
+                        /* @__PURE__ */ jsxs15("span", { className: styles_module_default3.buttonTooltip, children: [
+                          markersLabel,
+                          enableKeyboardShortcuts && /* @__PURE__ */ jsx19("span", { className: styles_module_default3.shortcut, children: "H" })
                         ] })
                       ] }),
-                      /* @__PURE__ */ jsxs13("div", { className: styles_module_default4.buttonWrapper, children: [
-                        /* @__PURE__ */ jsx14(
+                      /* @__PURE__ */ jsxs15("div", { className: styles_module_default3.buttonWrapper, children: [
+                        /* @__PURE__ */ jsx19(
                           "button",
                           {
-                            className: `${styles_module_default4.controlButton} ${copied ? styles_module_default4.statusShowing : ""}`,
+                            className: `${styles_module_default3.controlButton} ${copied ? styles_module_default3.statusShowing : ""}`,
                             onClick: (e) => {
                               e.stopPropagation();
                               hideTooltipsUntilMouseLeave();
                               copyOutput();
                             },
-                            disabled: isDesignMode && blankCanvas ? designPlacements.length === 0 && !rearrangeState?.sections?.length : !hasAnnotations && drawStrokes.length === 0 && designPlacements.length === 0 && !rearrangeState?.sections?.length,
+                            disabled: missingCopyMetadata || (isDesignMode && blankCanvas ? designPlacements.length === 0 && !rearrangeState?.sections?.length : !hasAnnotations && drawStrokes.length === 0 && designPlacements.length === 0 && !rearrangeState?.sections?.length),
                             "data-active": copied,
-                            children: /* @__PURE__ */ jsx14(IconCopyAnimated, { size: 24, copied, tint: isDesignMode && blankCanvas && (designPlacements.length > 0 || !!rearrangeState?.sections?.length) ? "#f97316" : void 0 })
+                            "aria-label": copyLabel,
+                            tabIndex: controlTabIndex,
+                            children: /* @__PURE__ */ jsx19(IconCopyAnimated, { size: 24, copied, tint: isDesignMode && blankCanvas && (designPlacements.length > 0 || !!rearrangeState?.sections?.length) ? "#f97316" : void 0 })
                           }
                         ),
-                        /* @__PURE__ */ jsxs13("span", { className: styles_module_default4.buttonTooltip, children: [
-                          isDesignMode && blankCanvas ? "Copy layout" : "Copy feedback",
-                          /* @__PURE__ */ jsx14("span", { className: styles_module_default4.shortcut, children: "C" })
+                        /* @__PURE__ */ jsxs15("span", { className: styles_module_default3.buttonTooltip, children: [
+                          missingCopyMetadata ? "No matching metadata" : copyLabel,
+                          enableKeyboardShortcuts && /* @__PURE__ */ jsx19("span", { className: styles_module_default3.shortcut, children: "C" })
                         ] })
                       ] }),
-                      /* @__PURE__ */ jsxs13(
+                      /* @__PURE__ */ jsxs15(
                         "div",
                         {
-                          className: `${styles_module_default4.buttonWrapper} ${styles_module_default4.sendButtonWrapper} ${isActive && !settings.webhooksEnabled && (isValidUrl(settings.webhookUrl) || isValidUrl(webhookUrl || "")) ? styles_module_default4.sendButtonVisible : ""}`,
+                          className: `${styles_module_default3.buttonWrapper} ${styles_module_default3.sendButtonWrapper} ${isActive && canSend ? styles_module_default3.sendButtonVisible : ""}`,
                           children: [
-                            /* @__PURE__ */ jsxs13(
+                            /* @__PURE__ */ jsxs15(
                               "button",
                               {
-                                className: `${styles_module_default4.controlButton} ${sendState === "sent" || sendState === "failed" ? styles_module_default4.statusShowing : ""}`,
+                                className: `${styles_module_default3.controlButton} ${sendState === "sent" || sendState === "failed" ? styles_module_default3.statusShowing : ""}`,
                                 onClick: (e) => {
                                   e.stopPropagation();
                                   hideTooltipsUntilMouseLeave();
                                   sendToWebhook();
                                 },
-                                disabled: !hasAnnotations || !isValidUrl(settings.webhookUrl) && !isValidUrl(webhookUrl || "") || sendState === "sending",
+                                disabled: !hasAnnotations || !canSend || sendState === "sending",
                                 "data-no-hover": sendState === "sent" || sendState === "failed",
-                                tabIndex: isValidUrl(settings.webhookUrl) || isValidUrl(webhookUrl || "") ? 0 : -1,
+                                tabIndex: isActive && canSend ? 0 : -1,
+                                "aria-label": "Send Annotations",
+                                "aria-hidden": !canSend,
                                 children: [
-                                  /* @__PURE__ */ jsx14(IconSendArrow, { size: 24, state: sendState }),
-                                  hasAnnotations && sendState === "idle" && /* @__PURE__ */ jsx14(
+                                  /* @__PURE__ */ jsx19(IconSendArrow, { size: 24, state: sendState }),
+                                  hasAnnotations && sendState === "idle" && /* @__PURE__ */ jsx19(
                                     "span",
                                     {
-                                      className: styles_module_default4.buttonBadge,
+                                      className: styles_module_default3.buttonBadge,
                                       children: annotations.length
                                     }
                                   )
                                 ]
                               }
                             ),
-                            /* @__PURE__ */ jsxs13("span", { className: styles_module_default4.buttonTooltip, children: [
+                            /* @__PURE__ */ jsxs15("span", { className: styles_module_default3.buttonTooltip, children: [
                               "Send Annotations",
-                              /* @__PURE__ */ jsx14("span", { className: styles_module_default4.shortcut, children: "S" })
+                              enableKeyboardShortcuts && /* @__PURE__ */ jsx19("span", { className: styles_module_default3.shortcut, children: "S" })
                             ] })
                           ]
                         }
                       ),
-                      /* @__PURE__ */ jsxs13("div", { className: styles_module_default4.buttonWrapper, children: [
-                        /* @__PURE__ */ jsx14(
+                      /* @__PURE__ */ jsxs15("div", { className: styles_module_default3.buttonWrapper, children: [
+                        /* @__PURE__ */ jsx19(
                           "button",
                           {
-                            className: styles_module_default4.controlButton,
+                            className: styles_module_default3.controlButton,
                             onClick: (e) => {
                               e.stopPropagation();
                               hideTooltipsUntilMouseLeave();
@@ -10852,71 +12351,101 @@ function PageFeedbackToolbarCSS({
                             },
                             disabled: !hasAnnotations && drawStrokes.length === 0 && designPlacements.length === 0 && !rearrangeState?.sections?.length,
                             "data-danger": true,
-                            children: /* @__PURE__ */ jsx14(IconTrashAlt, { size: 24 })
+                            "aria-label": "Clear all",
+                            tabIndex: controlTabIndex,
+                            children: /* @__PURE__ */ jsx19(IconTrashAlt, { size: 24 })
                           }
                         ),
-                        /* @__PURE__ */ jsxs13("span", { className: styles_module_default4.buttonTooltip, children: [
+                        /* @__PURE__ */ jsxs15("span", { className: styles_module_default3.buttonTooltip, children: [
                           "Clear all",
-                          /* @__PURE__ */ jsx14("span", { className: styles_module_default4.shortcut, children: "X" })
+                          enableKeyboardShortcuts && /* @__PURE__ */ jsx19("span", { className: styles_module_default3.shortcut, children: "X" })
                         ] })
                       ] }),
-                      /* @__PURE__ */ jsxs13("div", { className: styles_module_default4.buttonWrapper, children: [
-                        /* @__PURE__ */ jsx14(
+                      /* @__PURE__ */ jsxs15("div", { className: styles_module_default3.buttonWrapper, children: [
+                        /* @__PURE__ */ jsx19(
                           "button",
                           {
-                            className: styles_module_default4.controlButton,
+                            ref: settingsButtonRef,
+                            "aria-label": "Settings",
+                            "aria-expanded": showSettings,
+                            tabIndex: controlTabIndex,
+                            className: styles_module_default3.controlButton,
                             onClick: (e) => {
                               e.stopPropagation();
                               hideTooltipsUntilMouseLeave();
                               if (isDesignMode) closeDesignMode();
+                              focusSettingsOnOpenRef.current = !showSettings && e.detail === 0;
                               setShowSettings(!showSettings);
                             },
-                            children: /* @__PURE__ */ jsx14(IconGear, { size: 24 })
+                            children: /* @__PURE__ */ jsx19(IconGear, { size: 24 })
                           }
                         ),
-                        endpoint && connectionStatus !== "disconnected" && /* @__PURE__ */ jsx14(
+                        endpoint && connectionStatus !== "disconnected" && /* @__PURE__ */ jsx19(
                           "span",
                           {
-                            className: `${styles_module_default4.mcpIndicator} ${styles_module_default4[connectionStatus]} ${showSettings ? styles_module_default4.hidden : ""}`,
+                            className: `${styles_module_default3.mcpIndicator} ${styles_module_default3[connectionStatus]} ${showSettings ? styles_module_default3.hidden : ""}`,
                             title: connectionStatus === "connected" ? "MCP Connected" : "MCP Connecting..."
                           }
                         ),
-                        /* @__PURE__ */ jsx14("span", { className: styles_module_default4.buttonTooltip, children: "Settings" })
+                        /* @__PURE__ */ jsx19("span", { className: styles_module_default3.buttonTooltip, children: "Settings" })
                       ] }),
-                      /* @__PURE__ */ jsx14(
+                      /* @__PURE__ */ jsx19(
                         "div",
                         {
-                          className: styles_module_default4.divider
+                          className: styles_module_default3.divider
                         }
                       ),
-                      /* @__PURE__ */ jsxs13(
-                        "div",
-                        {
-                          className: `${styles_module_default4.buttonWrapper} ${toolbarPosition && typeof window !== "undefined" && toolbarPosition.x > window.innerWidth - 120 ? styles_module_default4.buttonWrapperAlignRight : ""}`,
-                          children: [
-                            /* @__PURE__ */ jsx14(
-                              "button",
-                              {
-                                className: styles_module_default4.controlButton,
-                                onClick: (e) => {
-                                  e.stopPropagation();
-                                  hideTooltipsUntilMouseLeave();
-                                  deactivate();
-                                },
-                                children: /* @__PURE__ */ jsx14(IconXmarkLarge, { size: 24 })
-                              }
-                            ),
-                            /* @__PURE__ */ jsxs13("span", { className: styles_module_default4.buttonTooltip, children: [
-                              "Exit",
-                              /* @__PURE__ */ jsx14("span", { className: styles_module_default4.shortcut, children: "Esc" })
-                            ] })
-                          ]
-                        }
-                      )
+                      /* @__PURE__ */ jsx19("div", { className: styles_module_default3.togglePlaceholder, "aria-hidden": "true" })
                     ]
                   }
                 ),
-                /* @__PURE__ */ jsx14(
+                /* @__PURE__ */ jsxs15(
+                  "div",
+                  {
+                    className: `${styles_module_default3.buttonWrapper} ${styles_module_default3.toggleWrapper} ${toolbarPosition && toolbarPosition.y < 100 ? styles_module_default3.tooltipBelow : ""} ${!isActive || tooltipsHidden || showSettings ? styles_module_default3.tooltipsHidden : ""} ${tooltipSessionActive ? styles_module_default3.tooltipsInSession : ""} ${toolbarPosition && typeof window !== "undefined" && toolbarPosition.x > window.innerWidth - 120 ? styles_module_default3.buttonWrapperAlignRight : ""}`,
+                    onMouseEnter: handleControlsMouseEnter,
+                    onMouseLeave: handleControlsMouseLeave,
+                    children: [
+                      /* @__PURE__ */ jsx19(
+                        "button",
+                        {
+                          ref: launcherRef,
+                          type: "button",
+                          className: `${styles_module_default3.toggleContent} ${isActive ? styles_module_default3.expandedToggle : ""}`,
+                          "aria-label": isActive ? "Exit" : "Start feedback mode",
+                          "aria-expanded": isActive,
+                          "aria-keyshortcuts": enableKeyboardShortcuts ? "Meta+Shift+F Control+Shift+F" : void 0,
+                          title: isActive ? void 0 : enableKeyboardShortcuts ? "Start feedback mode (\u2318\u21E7F / Ctrl+Shift+F)" : "Start feedback mode",
+                          onClick: (e) => {
+                            if (justFinishedToolbarDragRef.current) {
+                              justFinishedToolbarDragRef.current = false;
+                              e.preventDefault();
+                              return;
+                            }
+                            e.stopPropagation();
+                            if (isActive) {
+                              hideTooltipsUntilMouseLeave();
+                              deactivate();
+                            } else {
+                              e.currentTarget.blur();
+                              focusControlsOnOpenRef.current = e.detail === 0;
+                              setIsActive(true);
+                            }
+                          },
+                          children: /* @__PURE__ */ jsxs15("span", { className: styles_module_default3.toggleIcon, children: [
+                            /* @__PURE__ */ jsx19(ToolbarToggleIcon, { active: isActive }),
+                            markerAnnotations.length > 0 && /* @__PURE__ */ jsx19("span", { className: `${styles_module_default3.badge} ${isActive ? styles_module_default3.fadeOut : ""} ${showEntranceAnimation ? styles_module_default3.entrance : ""}`, children: markerAnnotations.length })
+                          ] })
+                        }
+                      ),
+                      /* @__PURE__ */ jsxs15("span", { className: styles_module_default3.buttonTooltip, "aria-hidden": !isActive, children: [
+                        "Exit",
+                        enableKeyboardShortcuts && /* @__PURE__ */ jsx19("span", { className: styles_module_default3.shortcut, children: "Esc" })
+                      ] })
+                    ]
+                  }
+                ),
+                /* @__PURE__ */ jsx19(
                   DesignPalette,
                   {
                     visible: isDesignMode && isActive,
@@ -10941,15 +12470,7 @@ function PageFeedbackToolbarCSS({
                     },
                     placementCount: designPlacements.length,
                     onClearPlacements: () => {
-                      setDesignClearSignal((n) => n + 1);
-                      setRearrangeClearSignal((n) => n + 1);
-                      originalSetTimeout(() => {
-                        setRearrangeState({
-                          sections: [],
-                          originalOrder: [],
-                          detectedAt: Date.now()
-                        });
-                      }, 200);
+                      clearLayout(designPlacements, rearrangeState);
                     },
                     blankCanvas,
                     onBlankCanvasChange: (on) => {
@@ -10984,8 +12505,8 @@ function PageFeedbackToolbarCSS({
                         if (!didDrag && (Math.abs(dx) > 4 || Math.abs(dy) > 4)) {
                           didDrag = true;
                           preview = document.createElement("div");
-                          preview.className = `${styles_module_default3.dragPreview}${blankCanvas ? ` ${styles_module_default3.dragPreviewWireframe}` : ""}`;
-                          document.body.appendChild(preview);
+                          preview.className = `${styles_module_default4.dragPreview}${blankCanvas ? ` ${styles_module_default4.dragPreviewWireframe}` : ""}`;
+                          portalWrapperRef.current?.appendChild(preview);
                         }
                         if (!preview) return;
                         const dist = Math.max(0, toolbarTop - ev.clientY);
@@ -11007,7 +12528,7 @@ function PageFeedbackToolbarCSS({
                       const onUp = (ev) => {
                         window.removeEventListener("mousemove", onMove);
                         window.removeEventListener("mouseup", onUp);
-                        if (preview) document.body.removeChild(preview);
+                        if (preview) preview.remove();
                         if (didDrag) {
                           const w = def.width;
                           const h = def.height;
@@ -11035,17 +12556,18 @@ function PageFeedbackToolbarCSS({
                     }
                   }
                 ),
-                /* @__PURE__ */ jsx14(
+                /* @__PURE__ */ jsx19(
                   SettingsPanel,
                   {
                     settings,
-                    onSettingsChange: (patch) => setSettings((s2) => ({ ...s2, ...patch })),
+                    onSettingsChange: updateSettings,
                     isDarkMode,
                     onToggleTheme: toggleTheme,
                     isDevMode,
                     connectionStatus,
                     endpoint,
-                    isVisible: showSettingsVisible,
+                    onExited: finishSettingsExit,
+                    isOpen: isActive && showSettings,
                     toolbarNearBottom: !!toolbarPosition && toolbarPosition.y < 230,
                     settingsPage,
                     onSettingsPageChange: setSettingsPage,
@@ -11057,22 +12579,22 @@ function PageFeedbackToolbarCSS({
           )
         }
       ),
-      (isDesignMode || designOverlayExiting) && /* @__PURE__ */ jsx14(
+      (isDesignMode || designOverlayExiting) && /* @__PURE__ */ jsx19(
         "div",
         {
-          className: `${styles_module_default3.blankCanvas} ${canvasReady ? styles_module_default3.visible : ""} ${designInteracting ? styles_module_default3.gridActive : ""}`,
+          className: `${styles_module_default4.blankCanvas} ${canvasReady ? styles_module_default4.visible : ""} ${designInteracting ? styles_module_default4.gridActive : ""}`,
           style: { "--canvas-opacity": canvasOpacity },
           "data-feedback-toolbar": true
         }
       ),
-      isDesignMode && blankCanvas && canvasReady && /* @__PURE__ */ jsxs13("div", { className: styles_module_default3.wireframeNotice, "data-feedback-toolbar": true, children: [
-        /* @__PURE__ */ jsxs13("div", { className: styles_module_default3.wireframeOpacityRow, children: [
-          /* @__PURE__ */ jsx14("span", { className: styles_module_default3.wireframeOpacityLabel, children: "Toggle Opacity" }),
-          /* @__PURE__ */ jsx14(
+      isDesignMode && blankCanvas && canvasReady && /* @__PURE__ */ jsxs15("div", { className: styles_module_default4.wireframeNotice, "data-feedback-toolbar": true, children: [
+        /* @__PURE__ */ jsxs15("div", { className: styles_module_default4.wireframeOpacityRow, children: [
+          /* @__PURE__ */ jsx19("span", { className: styles_module_default4.wireframeOpacityLabel, children: "Toggle Opacity" }),
+          /* @__PURE__ */ jsx19(
             "input",
             {
               type: "range",
-              className: styles_module_default3.wireframeOpacitySlider,
+              className: styles_module_default4.wireframeOpacitySlider,
               min: 0,
               max: 1,
               step: 0.01,
@@ -11081,16 +12603,15 @@ function PageFeedbackToolbarCSS({
             }
           )
         ] }),
-        /* @__PURE__ */ jsxs13("div", { className: styles_module_default3.wireframeNoticeTitleRow, children: [
-          /* @__PURE__ */ jsx14("span", { className: styles_module_default3.wireframeNoticeTitle, children: "Wireframe Mode" }),
-          /* @__PURE__ */ jsx14("span", { className: styles_module_default3.wireframeNoticeDivider }),
-          /* @__PURE__ */ jsx14(
+        /* @__PURE__ */ jsxs15("div", { className: styles_module_default4.wireframeNoticeTitleRow, children: [
+          /* @__PURE__ */ jsx19("span", { className: styles_module_default4.wireframeNoticeTitle, children: "Wireframe Mode" }),
+          /* @__PURE__ */ jsx19("span", { className: styles_module_default4.wireframeNoticeDivider }),
+          /* @__PURE__ */ jsx19(
             "button",
             {
-              className: styles_module_default3.wireframeStartOver,
+              className: styles_module_default4.wireframeStartOver,
               onClick: () => {
-                setDesignClearSignal((n) => n + 1);
-                setRearrangeState({ sections: [], originalOrder: [], detectedAt: Date.now() });
+                clearLayout(designPlacements, rearrangeState);
                 wireframeStashRef.current = { rearrange: null, placements: [] };
                 setWireframePurpose("");
                 clearWireframeState(pathname);
@@ -11100,10 +12621,10 @@ function PageFeedbackToolbarCSS({
           )
         ] }),
         "Drag components onto the canvas.",
-        /* @__PURE__ */ jsx14("br", {}),
+        /* @__PURE__ */ jsx19("br", {}),
         "Copied output will only include the wireframed layout."
       ] }),
-      (isDesignMode || designOverlayExiting) && /* @__PURE__ */ jsx14(
+      (isDesignMode || designOverlayExiting) && /* @__PURE__ */ jsx19(
         DesignMode,
         {
           placements: designPlacements,
@@ -11116,7 +12637,7 @@ function PageFeedbackToolbarCSS({
           passthrough: !activeDesignComponent,
           extraSnapRects: rearrangeState?.sections.map((s2) => s2.currentRect),
           deselectSignal: designDeselectSignal,
-          clearSignal: designClearSignal,
+          clearingPlacements,
           wireframe: blankCanvas,
           onSelectionChange: (ids, isShift) => {
             designSelectedIdsRef.current = ids;
@@ -11140,7 +12661,7 @@ function PageFeedbackToolbarCSS({
               if (!selIds.has(s2.id)) continue;
               const start = crossDragStartRef.current.get(s2.id);
               if (!start) continue;
-              const outlineEl = document.querySelector(`[data-rearrange-section="${s2.id}"]`);
+              const outlineEl = portalWrapperRef.current?.querySelector(`[data-rearrange-section="${s2.id}"]`);
               if (outlineEl) outlineEl.style.transform = `translate(${dx}px, ${dy}px)`;
             }
           },
@@ -11150,7 +12671,7 @@ function PageFeedbackToolbarCSS({
             crossDragStartRef.current = null;
             if (!selIds.size || !rearrangeState || !starts) return;
             for (const id of selIds) {
-              const el = document.querySelector(`[data-rearrange-section="${id}"]`);
+              const el = portalWrapperRef.current?.querySelector(`[data-rearrange-section="${id}"]`);
               if (el) el.style.transform = "";
             }
             if (committed) {
@@ -11169,7 +12690,7 @@ function PageFeedbackToolbarCSS({
           }
         }
       ),
-      (isDesignMode || designOverlayExiting) && rearrangeState && /* @__PURE__ */ jsx14(
+      (isDesignMode || designOverlayExiting) && rearrangeState && /* @__PURE__ */ jsx19(
         RearrangeOverlay,
         {
           rearrangeState,
@@ -11178,7 +12699,7 @@ function PageFeedbackToolbarCSS({
           exiting: designOverlayExiting,
           blankCanvas,
           extraSnapRects: designPlacements.map((p) => ({ x: p.x, y: p.y, width: p.width, height: p.height })),
-          clearSignal: rearrangeClearSignal,
+          clearing: rearrangeState === clearingRearrange,
           deselectSignal: rearrangeDeselectSignal,
           onSelectionChange: (ids, isShift) => {
             rearrangeSelectedIdsRef.current = ids;
@@ -11199,7 +12720,7 @@ function PageFeedbackToolbarCSS({
               }
             }
             for (const id of selIds) {
-              const el = document.querySelector(`[data-design-placement="${id}"]`);
+              const el = portalWrapperRef.current?.querySelector(`[data-design-placement="${id}"]`);
               if (el) el.style.transform = `translate(${dx}px, ${dy}px)`;
             }
           },
@@ -11209,7 +12730,7 @@ function PageFeedbackToolbarCSS({
             crossDragStartRef.current = null;
             if (!selIds.size || !starts) return;
             for (const id of selIds) {
-              const el = document.querySelector(`[data-design-placement="${id}"]`);
+              const el = portalWrapperRef.current?.querySelector(`[data-design-placement="${id}"]`);
               if (el) el.style.transform = "";
             }
             if (committed) {
@@ -11222,95 +12743,106 @@ function PageFeedbackToolbarCSS({
           }
         }
       ),
-      /* @__PURE__ */ jsx14(
+      /* @__PURE__ */ jsx19(
         "canvas",
         {
           ref: drawCanvasRef,
-          className: `${styles_module_default4.drawCanvas} ${isDrawMode ? styles_module_default4.active : ""}`,
+          className: `${styles_module_default3.drawCanvas} ${isDrawMode ? styles_module_default3.active : ""}`,
+          "aria-hidden": "true",
           style: { opacity: shouldShowMarkers ? 1 : 0, transition: "opacity 0.15s ease" },
           "data-feedback-toolbar": true
         }
       ),
-      /* @__PURE__ */ jsxs13("div", { className: styles_module_default4.markersLayer, "data-feedback-toolbar": true, children: [
-        markersVisible && visibleAnnotations.filter((a) => !a.isFixed).map((annotation, layerIndex, arr) => /* @__PURE__ */ jsx14(
-          AnnotationMarker,
-          {
-            annotation,
-            globalIndex: visibleAnnotations.findIndex((a) => a.id === annotation.id),
-            layerIndex,
-            layerSize: arr.length,
-            isExiting: markersExiting,
-            isClearing,
-            isAnimated: animatedMarkers.has(annotation.id),
-            isHovered: !markersExiting && hoveredMarkerId === annotation.id,
-            isDeleting: deletingMarkerId === annotation.id,
-            isEditingAny: !!editingAnnotation,
-            renumberFrom,
-            markerClickBehavior: settings.markerClickBehavior,
-            tooltipStyle: getTooltipPosition(annotation),
-            onHoverEnter: (a) => !markersExiting && a.id !== recentlyAddedIdRef.current && handleMarkerHover(a),
-            onHoverLeave: () => handleMarkerHover(null),
-            onClick: (a) => settings.markerClickBehavior === "delete" ? deleteAnnotation2(a.id) : startEditAnnotation(a),
-            onContextMenu: startEditAnnotation
-          },
-          annotation.id
-        )),
-        markersVisible && !markersExiting && exitingAnnotationsList.filter((a) => !a.isFixed).map((a) => /* @__PURE__ */ jsx14(ExitingMarker, { annotation: a }, a.id))
-      ] }),
-      /* @__PURE__ */ jsxs13("div", { className: styles_module_default4.fixedMarkersLayer, "data-feedback-toolbar": true, children: [
-        markersVisible && visibleAnnotations.filter((a) => a.isFixed).map((annotation, layerIndex, arr) => /* @__PURE__ */ jsx14(
-          AnnotationMarker,
-          {
-            annotation,
-            globalIndex: visibleAnnotations.findIndex((a) => a.id === annotation.id),
-            layerIndex,
-            layerSize: arr.length,
-            isExiting: markersExiting,
-            isClearing,
-            isAnimated: animatedMarkers.has(annotation.id),
-            isHovered: !markersExiting && hoveredMarkerId === annotation.id,
-            isDeleting: deletingMarkerId === annotation.id,
-            isEditingAny: !!editingAnnotation,
-            renumberFrom,
-            markerClickBehavior: settings.markerClickBehavior,
-            tooltipStyle: getTooltipPosition(annotation),
-            onHoverEnter: (a) => !markersExiting && a.id !== recentlyAddedIdRef.current && handleMarkerHover(a),
-            onHoverLeave: () => handleMarkerHover(null),
-            onClick: (a) => settings.markerClickBehavior === "delete" ? deleteAnnotation2(a.id) : startEditAnnotation(a),
-            onContextMenu: startEditAnnotation
-          },
-          annotation.id
-        )),
-        markersVisible && !markersExiting && exitingAnnotationsList.filter((a) => a.isFixed).map((a) => /* @__PURE__ */ jsx14(ExitingMarker, { annotation: a, fixed: true }, a.id))
-      ] }),
-      isActive && /* @__PURE__ */ jsxs13(
+      /* @__PURE__ */ jsx19("div", { className: styles_module_default3.markersLayer, "data-feedback-toolbar": true, children: renderedMarkers.filter(({ annotation }) => !annotation.isFixed).map(({ annotation, index, pending: pending2 }, layerIndex, arr) => /* @__PURE__ */ jsx19(
+        AnnotationMarker,
+        {
+          annotation,
+          pending: pending2,
+          globalIndex: index,
+          layerIndex,
+          layerSize: arr.length,
+          isExiting: pending2 ? pendingExiting : markersExiting,
+          isClearing: clearingIds.current.has(annotation.id),
+          isAnimated: animatedMarkers.current.has(annotation.id),
+          isNew: recentlyAddedIdRef.current === annotation.id,
+          onEnterComplete: handleMarkerEntered,
+          isHovered: !markersExiting && hoveredMarkerId === annotation.id,
+          isRemoving: exitingMarkers.has(annotation.id),
+          onRemoveComplete: finishMarkerRemoval,
+          isEditingAny: !!editingAnnotation,
+          renumberFrom,
+          markerClickBehavior: settings.markerClickBehavior,
+          onHoverEnter: handleMarkerEnter,
+          onHoverLeave: handleMarkerLeave,
+          onClick: handleMarkerClick,
+          onContextMenu: startEditAnnotation
+        },
+        markerKeys.current.get(annotation.id) ?? annotation.id
+      )) }),
+      /* @__PURE__ */ jsx19("div", { className: styles_module_default3.fixedMarkersLayer, "data-feedback-toolbar": true, children: renderedMarkers.filter(({ annotation }) => annotation.isFixed).map(({ annotation, index, pending: pending2 }, layerIndex, arr) => /* @__PURE__ */ jsx19(
+        AnnotationMarker,
+        {
+          annotation,
+          pending: pending2,
+          globalIndex: index,
+          layerIndex,
+          layerSize: arr.length,
+          isExiting: pending2 ? pendingExiting : markersExiting,
+          isClearing: clearingIds.current.has(annotation.id),
+          isAnimated: animatedMarkers.current.has(annotation.id),
+          isNew: recentlyAddedIdRef.current === annotation.id,
+          onEnterComplete: handleMarkerEntered,
+          isHovered: !markersExiting && hoveredMarkerId === annotation.id,
+          isRemoving: exitingMarkers.has(annotation.id),
+          onRemoveComplete: finishMarkerRemoval,
+          isEditingAny: !!editingAnnotation,
+          renumberFrom,
+          markerClickBehavior: settings.markerClickBehavior,
+          onHoverEnter: handleMarkerEnter,
+          onHoverLeave: handleMarkerLeave,
+          onClick: handleMarkerClick,
+          onContextMenu: startEditAnnotation
+        },
+        markerKeys.current.get(annotation.id) ?? annotation.id
+      )) }),
+      isActive && hoverInfo && !pendingAnnotation && !editingAnnotation && !isScrolling && !isDragging && /* @__PURE__ */ jsx19(
+        HoverTooltip,
+        {
+          x: hoverPosition.x,
+          y: hoverPosition.y,
+          elementName: hoverInfo.elementName,
+          reactComponents: hoverInfo.reactComponents
+        }
+      ),
+      isActive && /* @__PURE__ */ jsxs15(
         "div",
         {
-          className: styles_module_default4.overlay,
+          className: styles_module_default3.overlay,
           "data-feedback-toolbar": true,
-          style: pendingAnnotation || editingAnnotation ? { zIndex: 99999 } : void 0,
+          style: pendingAnnotation || editingAnnotation ? { zIndex: "inherit" } : void 0,
           children: [
-            hoverInfo?.rect && !pendingAnnotation && !isScrolling && !isDragging && /* @__PURE__ */ jsx14(
+            hoverInfo?.rect && !pendingAnnotation && !isScrolling && !isDragging && /* @__PURE__ */ jsx19(
               "div",
               {
-                className: `${styles_module_default4.hoverHighlight} ${styles_module_default4.enter}`,
+                className: `${styles_module_default3.hoverHighlight} ${styles_module_default3.enter}`,
                 style: {
                   left: hoverInfo.rect.left,
                   top: hoverInfo.rect.top,
                   width: hoverInfo.rect.width,
                   height: hoverInfo.rect.height,
                   borderColor: "color-mix(in srgb, var(--agentation-color-accent) 50%, transparent)",
-                  backgroundColor: "color-mix(in srgb, var(--agentation-color-accent) 4%, transparent)"
+                  backgroundColor: "color-mix(in srgb, var(--agentation-color-accent) 4%, transparent)",
+                  ...hoverInfo.isPiercing ? { borderStyle: "dashed" } : {}
                 }
               }
             ),
-            pendingMultiSelectElements.filter((item) => document.contains(item.element)).map((item, index) => {
-              const rect = item.element.getBoundingClientRect();
+            pendingMultiSelectElements.filter((item) => item.element.isConnected).map((item, index) => {
+              const rect = viewportRect(item.element);
               const isMulti = pendingMultiSelectElements.length > 1;
-              return /* @__PURE__ */ jsx14(
+              return /* @__PURE__ */ jsx19(
                 "div",
                 {
-                  className: isMulti ? styles_module_default4.multiSelectOutline : styles_module_default4.singleSelectOutline,
+                  className: isMulti ? styles_module_default3.multiSelectOutline : styles_module_default3.singleSelectOutline,
                   style: {
                     position: "fixed",
                     left: rect.left,
@@ -11333,12 +12865,12 @@ function PageFeedbackToolbarCSS({
               if (!hoveredAnnotation?.boundingBox) return null;
               if (hoveredAnnotation.elementBoundingBoxes?.length) {
                 if (hoveredTargetElements.length > 0) {
-                  return hoveredTargetElements.filter((el) => document.contains(el)).map((el, index) => {
-                    const rect2 = el.getBoundingClientRect();
-                    return /* @__PURE__ */ jsx14(
+                  return hoveredTargetElements.filter((el) => el.isConnected).map((el, index) => {
+                    const rect2 = viewportRect(el);
+                    return /* @__PURE__ */ jsx19(
                       "div",
                       {
-                        className: `${styles_module_default4.multiSelectOutline} ${styles_module_default4.enter}`,
+                        className: `${styles_module_default3.multiSelectOutline} ${styles_module_default3.enter}`,
                         style: {
                           left: rect2.left,
                           top: rect2.top,
@@ -11351,10 +12883,10 @@ function PageFeedbackToolbarCSS({
                   });
                 }
                 return hoveredAnnotation.elementBoundingBoxes.map(
-                  (bb2, index) => /* @__PURE__ */ jsx14(
+                  (bb2, index) => /* @__PURE__ */ jsx19(
                     "div",
                     {
-                      className: `${styles_module_default4.multiSelectOutline} ${styles_module_default4.enter}`,
+                      className: `${styles_module_default3.multiSelectOutline} ${styles_module_default3.enter}`,
                       style: {
                         left: bb2.x,
                         top: bb2.y - scrollY,
@@ -11366,7 +12898,7 @@ function PageFeedbackToolbarCSS({
                   )
                 );
               }
-              const rect = hoveredTargetElement && document.contains(hoveredTargetElement) ? hoveredTargetElement.getBoundingClientRect() : null;
+              const rect = hoveredTargetElement && hoveredTargetElement.isConnected ? viewportRect(hoveredTargetElement) : null;
               const bb = rect ? { x: rect.left, y: rect.top, width: rect.width, height: rect.height } : {
                 x: hoveredAnnotation.boundingBox.x,
                 y: hoveredAnnotation.isFixed ? hoveredAnnotation.boundingBox.y : hoveredAnnotation.boundingBox.y - scrollY,
@@ -11374,10 +12906,10 @@ function PageFeedbackToolbarCSS({
                 height: hoveredAnnotation.boundingBox.height
               };
               const isMulti = hoveredAnnotation.isMultiSelect;
-              return /* @__PURE__ */ jsx14(
+              return /* @__PURE__ */ jsx19(
                 "div",
                 {
-                  className: `${isMulti ? styles_module_default4.multiSelectOutline : styles_module_default4.singleSelectOutline} ${styles_module_default4.enter}`,
+                  className: `${isMulti ? styles_module_default3.multiSelectOutline : styles_module_default3.singleSelectOutline} ${styles_module_default3.enter}`,
                   style: {
                     left: bb.x,
                     top: bb.y,
@@ -11391,35 +12923,15 @@ function PageFeedbackToolbarCSS({
                 }
               );
             })(),
-            hoverInfo && !pendingAnnotation && !isScrolling && !isDragging && /* @__PURE__ */ jsxs13(
-              "div",
-              {
-                className: `${styles_module_default4.hoverTooltip} ${styles_module_default4.enter}`,
-                style: {
-                  left: Math.max(
-                    8,
-                    Math.min(hoverPosition.x, window.innerWidth - 100)
-                  ),
-                  top: Math.max(
-                    hoverPosition.y - (hoverInfo.reactComponents ? 48 : 32),
-                    8
-                  )
-                },
-                children: [
-                  hoverInfo.reactComponents && /* @__PURE__ */ jsx14("div", { className: styles_module_default4.hoverReactPath, children: hoverInfo.reactComponents }),
-                  /* @__PURE__ */ jsx14("div", { className: styles_module_default4.hoverElementName, children: hoverInfo.elementName })
-                ]
-              }
-            ),
-            pendingAnnotation && /* @__PURE__ */ jsxs13(Fragment5, { children: [
+            pendingAnnotation && /* @__PURE__ */ jsxs15(Fragment5, { children: [
               pendingAnnotation.multiSelectElements?.length ? (
-                // Cmd+shift+click multi-select: show individual boxes with live positions
-                pendingAnnotation.multiSelectElements.filter((el) => document.contains(el)).map((el, index) => {
-                  const rect = el.getBoundingClientRect();
-                  return /* @__PURE__ */ jsx14(
+                // Modifier-click multi-select: show individual boxes with live positions
+                pendingAnnotation.multiSelectElements.filter((el) => el.isConnected).map((el, index) => {
+                  const rect = viewportRect(el);
+                  return /* @__PURE__ */ jsx19(
                     "div",
                     {
-                      className: `${styles_module_default4.multiSelectOutline} ${pendingExiting ? styles_module_default4.exit : styles_module_default4.enter}`,
+                      className: `${styles_module_default3.multiSelectOutline} ${pendingExiting ? styles_module_default3.exit : styles_module_default3.enter}`,
                       style: {
                         left: rect.left,
                         top: rect.top,
@@ -11432,14 +12944,14 @@ function PageFeedbackToolbarCSS({
                 })
               ) : (
                 // Single element or drag multi-select: show single box
-                pendingAnnotation.targetElement && document.contains(pendingAnnotation.targetElement) ? (
+                pendingAnnotation.targetElement && pendingAnnotation.targetElement.isConnected ? (
                   // Single-click: use live getBoundingClientRect for consistent positioning
                   (() => {
-                    const rect = pendingAnnotation.targetElement.getBoundingClientRect();
-                    return /* @__PURE__ */ jsx14(
+                    const rect = viewportRect(pendingAnnotation.targetElement);
+                    return /* @__PURE__ */ jsx19(
                       "div",
                       {
-                        className: `${styles_module_default4.singleSelectOutline} ${pendingExiting ? styles_module_default4.exit : styles_module_default4.enter}`,
+                        className: `${styles_module_default3.singleSelectOutline} ${pendingExiting ? styles_module_default3.exit : styles_module_default3.enter}`,
                         style: {
                           left: rect.left,
                           top: rect.top,
@@ -11453,10 +12965,10 @@ function PageFeedbackToolbarCSS({
                   })()
                 ) : (
                   // Drag selection or fallback: use stored boundingBox
-                  pendingAnnotation.boundingBox && /* @__PURE__ */ jsx14(
+                  pendingAnnotation.boundingBox && /* @__PURE__ */ jsx19(
                     "div",
                     {
-                      className: `${pendingAnnotation.isMultiSelect ? styles_module_default4.multiSelectOutline : styles_module_default4.singleSelectOutline} ${pendingExiting ? styles_module_default4.exit : styles_module_default4.enter}`,
+                      className: `${pendingAnnotation.isMultiSelect ? styles_module_default3.multiSelectOutline : styles_module_default3.singleSelectOutline} ${pendingExiting ? styles_module_default3.exit : styles_module_default3.enter}`,
                       style: {
                         left: pendingAnnotation.boundingBox.x,
                         top: pendingAnnotation.boundingBox.y - scrollY,
@@ -11472,169 +12984,151 @@ function PageFeedbackToolbarCSS({
                 )
               ),
               (() => {
-                const markerX = pendingAnnotation.x;
-                const markerY = pendingAnnotation.isFixed ? pendingAnnotation.y : pendingAnnotation.y - scrollY;
-                return /* @__PURE__ */ jsxs13(Fragment5, { children: [
-                  /* @__PURE__ */ jsx14(
-                    PendingMarker,
-                    {
-                      x: markerX,
-                      y: markerY,
-                      isMultiSelect: pendingAnnotation.isMultiSelect,
-                      isExiting: pendingExiting
-                    }
-                  ),
-                  /* @__PURE__ */ jsx14(
-                    AnnotationPopupCSS,
-                    {
-                      ref: popupRef,
-                      element: pendingAnnotation.element,
-                      selectedText: pendingAnnotation.selectedText,
-                      computedStyles: pendingAnnotation.computedStylesObj,
-                      placeholder: pendingAnnotation.element === "Area selection" ? "What should change in this area?" : pendingAnnotation.isMultiSelect ? "Feedback for this group of elements..." : "What should change?",
-                      onSubmit: addAnnotation,
-                      onCancel: cancelAnnotation,
-                      isExiting: pendingExiting,
-                      lightMode: !isDarkMode,
-                      accentColor: pendingAnnotation.isMultiSelect ? "var(--agentation-color-green)" : "var(--agentation-color-accent)",
-                      style: {
-                        // Popup is 280px wide, centered with translateX(-50%), so 140px each side
-                        // Clamp so popup stays 20px from viewport edges
-                        left: Math.max(
-                          160,
-                          Math.min(
-                            window.innerWidth - 160,
-                            markerX / 100 * window.innerWidth
-                          )
-                        ),
-                        // Position popup above or below marker to keep marker visible
-                        ...markerY > window.innerHeight - 290 ? { bottom: window.innerHeight - markerY + 20 } : { top: markerY + 20 }
-                      }
-                    }
-                  )
-                ] });
-              })()
-            ] }),
-            editingAnnotation && /* @__PURE__ */ jsxs13(Fragment5, { children: [
-              editingAnnotation.elementBoundingBoxes?.length ? (
-                // Cmd+shift+click: show individual element boxes (use live rects when available)
-                (() => {
-                  if (editingTargetElements.length > 0) {
-                    return editingTargetElements.filter((el) => document.contains(el)).map((el, index) => {
-                      const rect = el.getBoundingClientRect();
-                      return /* @__PURE__ */ jsx14(
-                        "div",
-                        {
-                          className: `${styles_module_default4.multiSelectOutline} ${styles_module_default4.enter}`,
-                          style: {
-                            left: rect.left,
-                            top: rect.top,
-                            width: rect.width,
-                            height: rect.height
-                          }
-                        },
-                        `edit-multi-live-${index}`
-                      );
-                    });
-                  }
-                  return editingAnnotation.elementBoundingBoxes.map(
-                    (bb, index) => /* @__PURE__ */ jsx14(
-                      "div",
-                      {
-                        className: `${styles_module_default4.multiSelectOutline} ${styles_module_default4.enter}`,
-                        style: {
-                          left: bb.x,
-                          top: bb.y - scrollY,
-                          width: bb.width,
-                          height: bb.height
-                        }
-                      },
-                      `edit-multi-${index}`
-                    )
-                  );
-                })()
-              ) : (
-                // Single element or drag multi-select: show single box
-                (() => {
-                  const rect = editingTargetElement && document.contains(editingTargetElement) ? editingTargetElement.getBoundingClientRect() : null;
-                  const bb = rect ? { x: rect.left, y: rect.top, width: rect.width, height: rect.height } : editingAnnotation.boundingBox ? {
-                    x: editingAnnotation.boundingBox.x,
-                    y: editingAnnotation.isFixed ? editingAnnotation.boundingBox.y : editingAnnotation.boundingBox.y - scrollY,
-                    width: editingAnnotation.boundingBox.width,
-                    height: editingAnnotation.boundingBox.height
-                  } : null;
-                  if (!bb) return null;
-                  return /* @__PURE__ */ jsx14(
-                    "div",
-                    {
-                      className: `${editingAnnotation.isMultiSelect ? styles_module_default4.multiSelectOutline : styles_module_default4.singleSelectOutline} ${styles_module_default4.enter}`,
-                      style: {
-                        left: bb.x,
-                        top: bb.y,
-                        width: bb.width,
-                        height: bb.height,
-                        ...editingAnnotation.isMultiSelect ? {} : {
-                          borderColor: "color-mix(in srgb, var(--agentation-color-accent) 60%, transparent)",
-                          backgroundColor: "color-mix(in srgb, var(--agentation-color-accent) 5%, transparent)"
-                        }
-                      }
-                    }
-                  );
-                })()
-              ),
-              /* @__PURE__ */ jsx14(
-                AnnotationPopupCSS,
-                {
-                  ref: editPopupRef,
-                  element: editingAnnotation.element,
-                  selectedText: editingAnnotation.selectedText,
-                  computedStyles: parseComputedStylesString(
-                    editingAnnotation.computedStyles
-                  ),
-                  placeholder: "Edit your feedback...",
-                  initialValue: editingAnnotation.comment,
-                  submitLabel: "Save",
-                  onSubmit: updateAnnotation2,
-                  onCancel: cancelEditAnnotation,
-                  onDelete: () => deleteAnnotation2(editingAnnotation.id),
-                  isExiting: editExiting,
-                  lightMode: !isDarkMode,
-                  accentColor: editingAnnotation.isMultiSelect ? "var(--agentation-color-green)" : "var(--agentation-color-accent)",
-                  style: (() => {
-                    const markerY = editingAnnotation.isFixed ? editingAnnotation.y : editingAnnotation.y - scrollY;
-                    return {
+                const positioned = projectFrameAnnotation2(pendingAnnotation) ?? pendingAnnotation;
+                const markerX = positioned.x;
+                const markerY = positioned.isFixed ? positioned.y : positioned.y - scrollY;
+                return /* @__PURE__ */ jsx19(Fragment5, { children: /* @__PURE__ */ jsx19(
+                  AnnotationPopupCSS,
+                  {
+                    ref: popupRef,
+                    element: pendingAnnotation.element,
+                    selectedText: pendingAnnotation.selectedText,
+                    allowEmpty: typeof copyFormat === "object" && !!pendingAnnotation.attributes?.[copyFormat.attribute],
+                    onOpenSource: onOpenSource && pendingAnnotation.sourceFile ? () => onOpenSource(pendingAnnotation.sourceFile) : void 0,
+                    computedStyles: pendingAnnotation.computedStylesObj,
+                    placeholder: typeof copyFormat === "object" && pendingAnnotation.attributes?.[copyFormat.attribute] ? "Add a note (optional)" : pendingAnnotation.element === "Area selection" ? "What should change in this area?" : pendingAnnotation.isMultiSelect ? "Feedback for this group of elements..." : "What should change?",
+                    onSubmit: addAnnotation,
+                    onExitComplete: finishPendingExit,
+                    onCancel: cancelAnnotation,
+                    isExiting: pendingExiting,
+                    lightMode: !isDarkMode,
+                    accentColor: pendingAnnotation.isMultiSelect ? "var(--agentation-color-green)" : "var(--agentation-color-accent)",
+                    style: {
                       // Popup is 280px wide, centered with translateX(-50%), so 140px each side
                       // Clamp so popup stays 20px from viewport edges
                       left: Math.max(
                         160,
                         Math.min(
                           window.innerWidth - 160,
-                          editingAnnotation.x / 100 * window.innerWidth
+                          markerX / 100 * window.innerWidth
                         )
                       ),
                       // Position popup above or below marker to keep marker visible
                       ...markerY > window.innerHeight - 290 ? { bottom: window.innerHeight - markerY + 20 } : { top: markerY + 20 }
-                    };
-                  })()
-                }
-              )
+                    }
+                  },
+                  pendingAnnotation.id
+                ) });
+              })()
             ] }),
-            isDragging && /* @__PURE__ */ jsxs13(Fragment5, { children: [
-              /* @__PURE__ */ jsx14("div", { ref: dragRectRef, className: styles_module_default4.dragSelection }),
-              /* @__PURE__ */ jsx14(
+            editingAnnotation && /* @__PURE__ */ jsx19(Fragment5, { children: editingAnnotation.elementBoundingBoxes?.length ? (
+              // Modifier-click: show individual element boxes (use live rects when available)
+              (() => {
+                if (editingTargetElements.length > 0) {
+                  return editingTargetElements.filter((el) => el.isConnected).map((el, index) => {
+                    const rect = viewportRect(el);
+                    return /* @__PURE__ */ jsx19(
+                      "div",
+                      {
+                        className: `${styles_module_default3.multiSelectOutline} ${styles_module_default3.enter}`,
+                        style: {
+                          left: rect.left,
+                          top: rect.top,
+                          width: rect.width,
+                          height: rect.height
+                        }
+                      },
+                      `edit-multi-live-${index}`
+                    );
+                  });
+                }
+                return editingAnnotation.elementBoundingBoxes.map(
+                  (bb, index) => /* @__PURE__ */ jsx19(
+                    "div",
+                    {
+                      className: `${styles_module_default3.multiSelectOutline} ${styles_module_default3.enter}`,
+                      style: {
+                        left: bb.x,
+                        top: bb.y - scrollY,
+                        width: bb.width,
+                        height: bb.height
+                      }
+                    },
+                    `edit-multi-${index}`
+                  )
+                );
+              })()
+            ) : (
+              // Single element or drag multi-select: show single box
+              (() => {
+                const rect = editingTargetElement && editingTargetElement.isConnected ? viewportRect(editingTargetElement) : null;
+                const bb = rect ? { x: rect.left, y: rect.top, width: rect.width, height: rect.height } : editingAnnotation.boundingBox ? {
+                  x: editingAnnotation.boundingBox.x,
+                  y: editingAnnotation.isFixed ? editingAnnotation.boundingBox.y : editingAnnotation.boundingBox.y - scrollY,
+                  width: editingAnnotation.boundingBox.width,
+                  height: editingAnnotation.boundingBox.height
+                } : null;
+                if (!bb) return null;
+                return /* @__PURE__ */ jsx19(
+                  "div",
+                  {
+                    className: `${editingAnnotation.isMultiSelect ? styles_module_default3.multiSelectOutline : styles_module_default3.singleSelectOutline} ${styles_module_default3.enter}`,
+                    style: {
+                      left: bb.x,
+                      top: bb.y,
+                      width: bb.width,
+                      height: bb.height,
+                      ...editingAnnotation.isMultiSelect ? {} : {
+                        borderColor: "color-mix(in srgb, var(--agentation-color-accent) 60%, transparent)",
+                        backgroundColor: "color-mix(in srgb, var(--agentation-color-accent) 5%, transparent)"
+                      }
+                    }
+                  }
+                );
+              })()
+            ) }),
+            isDragging && /* @__PURE__ */ jsxs15(Fragment5, { children: [
+              /* @__PURE__ */ jsx19("div", { ref: dragRectRef, className: styles_module_default3.dragSelection }),
+              /* @__PURE__ */ jsx19(
                 "div",
                 {
                   ref: highlightsContainerRef,
-                  className: styles_module_default4.highlightsContainer
+                  className: styles_module_default3.highlightsContainer
                 }
               )
             ] })
           ]
         }
+      ),
+      /* @__PURE__ */ jsx19(
+        AnnotationCard,
+        {
+          ref: editPopupRef,
+          annotation: cardAnnotation ? projectFrameAnnotation2(cardAnnotation) ?? editingAnnotation : null,
+          editing: !!editingAnnotation,
+          exiting: editExiting,
+          restorePreview: restoreEditPreview,
+          scrollY,
+          lightMode: !isDarkMode,
+          onExited: finishEditExit,
+          editorProps: cardAnnotation ? {
+            element: cardAnnotation.element,
+            selectedText: cardAnnotation.selectedText,
+            allowEmpty: typeof copyFormat === "object" && !!cardAnnotation.attributes?.[copyFormat.attribute],
+            onOpenSource: onOpenSource && cardAnnotation.sourceFile ? () => onOpenSource(cardAnnotation.sourceFile) : void 0,
+            computedStyles: parseComputedStylesString(cardAnnotation.computedStyles),
+            placeholder: "Edit your feedback...",
+            initialValue: cardAnnotation.comment,
+            submitLabel: "Save",
+            onSubmit: updateAnnotation2,
+            onCancel: cancelEditAnnotation,
+            onDelete: () => deleteAnnotation2(cardAnnotation.id),
+            accentColor: cardAnnotation.isMultiSelect ? "var(--agentation-color-green)" : "var(--agentation-color-accent)"
+          } : void 0
+        }
       )
-    ] }),
-    document.body
-  );
+    ] })
+  ] });
 }
 export {
   PageFeedbackToolbarCSS as Agentation,

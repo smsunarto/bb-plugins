@@ -48,6 +48,9 @@ const EVENT_SOURCE_CLOSED = 2;
 /** Delay before retrying a write that failed, so a down backend is not hammered. */
 const RETRY_DELAY_MS = 4_000;
 
+/** Element the toolbar renders into; its UI lives in this host's open shadow root. */
+const TOOLBAR_HOST = "agentation-toolbar";
+
 /** Per-route record of which annotation ids the server has already accepted. */
 const SYNCED_KEY_PREFIX = "bb-agentation-synced-";
 
@@ -109,9 +112,46 @@ function pageMeta(): PageMeta {
   };
 }
 
-/** Ignore clicks on the toolbar's own chrome when tracking the last target. */
-function isToolbarChrome(element: Element | null): boolean {
-  return Boolean(element?.closest("[data-agentation-root], [data-agentation-toolbar]"));
+/**
+ * Ignore clicks on the toolbar's own chrome when tracking the last target. A
+ * document listener sees clicks inside the shadow root retargeted to the host;
+ * tooltips portal to document.body under `data-feedback-toolbar`.
+ */
+export function isToolbarChrome(element: Element | null): boolean {
+  return Boolean(element?.closest(`${TOOLBAR_HOST}, [data-feedback-toolbar]`));
+}
+
+/**
+ * Whether the toolbar holds work a remount would destroy.
+ *
+ * The annotation popup keeps typed text in component state, so remounting
+ * throws it away — and a remount is most likely during watch mode, exactly
+ * when an agent resolves other annotations while the user writes the next
+ * one. The toolbar keeps a textarea mounted even with no popup open, so the
+ * presence of one says nothing; what matters is whether it currently holds a
+ * draft or the caret. An empty, unfocused field has nothing to lose.
+ */
+export function toolbarIsBusy(): boolean {
+  for (const host of document.querySelectorAll(TOOLBAR_HOST)) {
+    const root = host.shadowRoot;
+    if (!root) continue;
+    for (const field of root.querySelectorAll("textarea")) {
+      const rect = field.getBoundingClientRect();
+      if (
+        toolbarTextFieldIsBusy({
+          value: field.value,
+          focused: root.activeElement === field,
+          width: rect.width,
+          height: rect.height,
+          readOnly: field.readOnly,
+          settingsField: Boolean(field.closest("[data-agentation-settings-panel]")),
+        })
+      ) {
+        return true;
+      }
+    }
+  }
+  return false;
 }
 
 /**
@@ -441,37 +481,6 @@ export function startAnnotationToolbar(
 
   async function ensureSession(revision = routeRevision): Promise<string | null> {
     return sessionFor(meta, revision);
-  }
-
-  /**
-   * Whether the toolbar holds work a remount would destroy.
-   *
-   * The annotation popup keeps typed text in component state, so remounting
-   * throws it away — and a remount is most likely during watch mode, exactly
-   * when an agent resolves other annotations while the user writes the next
-   * one. The toolbar keeps a textarea mounted even with no popup open, so the
-   * presence of one says nothing; what matters is whether it currently holds a
-   * draft or the caret. An empty, unfocused field has nothing to lose.
-   */
-  function toolbarIsBusy(): boolean {
-    const fields = document.querySelectorAll<HTMLTextAreaElement>(
-      "[data-agentation-root] textarea",
-    );
-    for (const field of fields) {
-      const rect = field.getBoundingClientRect();
-      if (
-        toolbarTextFieldIsBusy({
-          value: field.value,
-          focused: document.activeElement === field,
-          width: rect.width,
-          height: rect.height,
-          settingsField: Boolean(field.closest("[data-agentation-settings-panel]")),
-        })
-      ) {
-        return true;
-      }
-    }
-    return false;
   }
 
   /**

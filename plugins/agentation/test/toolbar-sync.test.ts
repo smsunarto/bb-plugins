@@ -24,6 +24,7 @@ function field(
     focused: false,
     width: 240,
     height: 64,
+    readOnly: false,
     settingsField: false,
     ...overrides,
   };
@@ -56,6 +57,10 @@ test("annotation text and caret remain protected", () => {
     toolbarTextFieldIsBusy(field({ value: "hidden draft", width: 0, height: 0 })),
     false,
   );
+});
+
+test("a saved comment in a read-only marker preview does not block reconciliation", () => {
+  assert.equal(toolbarTextFieldIsBusy(field({ value: "saved comment", readOnly: true })), false);
 });
 
 test("only reconciled server snapshots advance the cursor", () => {

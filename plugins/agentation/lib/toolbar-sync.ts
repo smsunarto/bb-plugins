@@ -5,6 +5,7 @@ export interface ToolbarTextFieldState {
   focused: boolean;
   width: number;
   height: number;
+  readOnly: boolean;
   settingsField: boolean;
 }
 
@@ -13,10 +14,12 @@ export interface ToolbarTextFieldState {
  *
  * Agentation always mounts its settings textarea, even while the panel is
  * hidden. A saved webhook URL is durable settings state, not an annotation
- * draft, so it only blocks a remount while that field has the caret.
+ * draft, so it only blocks a remount while that field has the caret. The
+ * marker preview card stays mounted, hidden but laid out, with the saved
+ * comment in a read-only field; nothing typed there can be lost.
  */
 export function toolbarTextFieldIsBusy(field: ToolbarTextFieldState): boolean {
-  if (field.width === 0 || field.height === 0) return false;
+  if (field.width === 0 || field.height === 0 || field.readOnly) return false;
   if (field.settingsField) return field.focused;
   return field.focused || field.value.trim() !== "";
 }

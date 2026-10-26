@@ -1,14 +1,8 @@
-/* The toolbar portals itself to document.body and ships its own styles, so
-   there is nothing to theme here — only to place. bb's own overlays (dialogs,
+/* The toolbar renders into a shadow root on this host and ships its own
+   styles, so there is nothing to theme here — only to place. Agentation's
+   floating bar inherits the host's z-index. bb's own overlays (dialogs,
    the command menu, toasts) claim the top of the stacking order, and the
    toolbar has to sit above ordinary app chrome without covering them. */
 .bb-agentation-toolbar {
   z-index: 60;
-}
-
-/* Agentation 3.0.2 injects `svg[fill="none"] { fill: none !important; }`
-   globally for its design-mode overlay. Restore explicit `fill-current`
-   icons outside that overlay, including bb's native stop-run square. */
-svg[fill="none"].fill-current {
-  fill: currentColor !important;
 }

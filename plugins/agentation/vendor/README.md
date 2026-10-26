@@ -1,6 +1,6 @@
 # Vendored `agentation`
 
-`agentation/` is npm `agentation@3.0.2` with `agentation.patch` applied to
+`agentation/` is npm `agentation@3.1.2` with `agentation.patch` applied to
 `dist/index.js` and `dist/index.mjs`. Source maps are dropped; nothing else in
 the package is changed, and its `LICENSE` (PolyForm Shield 1.0.0) travels with
 the copy, as that licence requires of a modified redistribution.

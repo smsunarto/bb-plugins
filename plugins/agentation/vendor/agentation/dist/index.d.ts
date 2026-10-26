@@ -1,5 +1,4 @@
 import * as react from 'react';
-import * as react_jsx_runtime from 'react/jsx-runtime';
 
 type Annotation = {
     id: string;
@@ -26,6 +25,23 @@ type Annotation = {
     isFixed?: boolean;
     reactComponents?: string;
     sourceFile?: string;
+    attributes?: Record<string, string>;
+    frame?: {
+        path: Array<{
+            index: number;
+            id?: string;
+            url: string;
+        }>;
+        x: number;
+        y: number;
+        fixed: boolean;
+        boundingBox: {
+            x: number;
+            y: number;
+            width: number;
+            height: number;
+        };
+    };
     drawingIndex?: number;
     elementBoundingBoxes?: Array<{
         x: number;
@@ -81,6 +97,10 @@ type ThreadMessage = {
     timestamp: number;
 };
 
+type CopyFormat = "markdown" | "source" | "classes" | {
+    attribute: string;
+};
+
 type DemoAnnotation = {
     selector: string;
     comment: string;
@@ -98,8 +118,8 @@ type PageFeedbackToolbarCSSProps = {
     onAnnotationUpdate?: (annotation: Annotation) => void;
     /** Callback fired when all annotations are cleared. Receives the annotations that were cleared. */
     onAnnotationsClear?: (annotations: Annotation[]) => void;
-    /** Callback fired when the copy button is clicked. Receives the markdown output. */
-    onCopy?: (markdown: string) => void;
+    /** Callback fired after a Copy attempt. Receives formatted output even if clipboard access fails. */
+    onCopy?: (output: string) => void;
     /** Callback fired when "Send to Agent" is clicked. Receives the markdown output and annotations. */
     onSubmit?: (output: string, annotations: Annotation[]) => void;
     /** Whether to copy to clipboard when the copy button is clicked. Defaults to true. */
@@ -114,10 +134,24 @@ type PageFeedbackToolbarCSSProps = {
     webhookUrl?: string;
     /** Custom class name applied to the toolbar container. Use to adjust positioning or z-index. */
     className?: string;
+    /** Separate feedback and sessions by pathname + hash. Defaults to false. */
+    useHashLocation?: boolean;
+    /** Optional app name included in copied and submitted feedback. */
+    appName?: string;
+    /** Enable global keyboard shortcuts. Popup Enter/Escape remain available. Defaults to true. */
+    enableKeyboardShortcuts?: boolean;
+    /** Stable data attributes used in element paths. Replaces the default identifying list. */
+    identifyingAttributes?: readonly string[];
+    /** Format the Copy action. Send to Agent always receives structured markdown. */
+    copyFormat?: CopyFormat;
+    /** Show Open in editor when source metadata exists. The host chooses the editor integration. */
+    onOpenSource?: (sourceFile: string) => void;
+    /** Mount inside a host modal/popover to share its focus and top layer. Defaults to document.body. */
+    portalContainer?: HTMLElement | ShadowRoot | null;
 };
 /** Alias for PageFeedbackToolbarCSSProps */
 type AgentationProps = PageFeedbackToolbarCSSProps;
-declare function PageFeedbackToolbarCSS({ demoAnnotations, demoDelay, enableDemoMode, onAnnotationAdd, onAnnotationDelete, onAnnotationUpdate, onAnnotationsClear, onCopy, onSubmit, copyToClipboard, endpoint, sessionId: initialSessionId, onSessionCreated, webhookUrl, className: userClassName, }?: PageFeedbackToolbarCSSProps): react.ReactPortal | null;
+declare function PageFeedbackToolbarCSS(props?: PageFeedbackToolbarCSSProps): react.ReactPortal | null;
 
 interface AnnotationPopupCSSProps {
     /** Element name to display in header */
@@ -138,12 +172,18 @@ interface AnnotationPopupCSSProps {
     onCancel: () => void;
     /** Called when delete button is clicked (only shown if provided) */
     onDelete?: () => void;
+    /** Optional host-provided action for opening the detected source in an editor. */
+    onOpenSource?: () => void;
+    /** Attribute-only selection can be saved without a feedback comment. */
+    allowEmpty?: boolean;
     /** Position styles (left, top) */
     style?: React.CSSProperties;
     /** Custom color for submit button and textarea focus (hex) */
     accentColor?: string;
     /** External exit state (parent controls exit animation) */
     isExiting?: boolean;
+    /** Called after the externally controlled exit animation finishes. */
+    onExitComplete?: () => void;
     /** Light mode styling */
     lightMode?: boolean;
     /** Computed styles for the selected element */
@@ -157,121 +197,121 @@ declare const AnnotationPopupCSS: react.ForwardRefExoticComponent<AnnotationPopu
 
 declare const IconClose: ({ size }: {
     size?: number;
-}) => react_jsx_runtime.JSX.Element;
+}) => react.JSX.Element;
 declare const IconPlus: ({ size }: {
     size?: number;
-}) => react_jsx_runtime.JSX.Element;
+}) => react.JSX.Element;
 declare const IconCheck: ({ size }: {
     size?: number;
-}) => react_jsx_runtime.JSX.Element;
+}) => react.JSX.Element;
 declare const IconCheckSmall: ({ size }: {
     size?: number;
-}) => react_jsx_runtime.JSX.Element;
+}) => react.JSX.Element;
 declare const IconListSparkle: ({ size, style, }: {
     size?: number;
     style?: React.CSSProperties;
-}) => react_jsx_runtime.JSX.Element;
+}) => react.JSX.Element;
 declare const IconHelp: ({ size, ...props }: {
     size?: number;
-} & React.SVGProps<SVGSVGElement>) => react_jsx_runtime.JSX.Element;
+} & React.SVGProps<SVGSVGElement>) => react.JSX.Element;
 declare const IconCheckSmallAnimated: ({ size }: {
     size?: number;
-}) => react_jsx_runtime.JSX.Element;
+}) => react.JSX.Element;
 declare const IconCopyAlt: ({ size }: {
     size?: number;
-}) => react_jsx_runtime.JSX.Element;
+}) => react.JSX.Element;
 declare const IconCopyAnimated: ({ size, copied, tint, }: {
     size?: number;
     copied?: boolean;
     tint?: string;
-}) => react_jsx_runtime.JSX.Element;
+}) => react.JSX.Element;
 declare const IconSendArrow: ({ size, state, }: {
     size?: number;
     state?: "idle" | "sending" | "sent" | "failed";
-}) => react_jsx_runtime.JSX.Element;
+}) => react.JSX.Element;
 declare const IconSendAnimated: ({ size, sent, }: {
     size?: number;
     sent?: boolean;
-}) => react_jsx_runtime.JSX.Element;
+}) => react.JSX.Element;
 declare const IconEye: ({ size }: {
     size?: number;
-}) => react_jsx_runtime.JSX.Element;
+}) => react.JSX.Element;
 declare const IconEyeAlt: ({ size }: {
     size?: number;
-}) => react_jsx_runtime.JSX.Element;
+}) => react.JSX.Element;
 declare const IconEyeClosed: ({ size }: {
     size?: number;
-}) => react_jsx_runtime.JSX.Element;
+}) => react.JSX.Element;
 declare const IconEyeAnimated: ({ size, isOpen, }: {
     size?: number;
     isOpen?: boolean;
-}) => react_jsx_runtime.JSX.Element;
+}) => react.JSX.Element;
 declare const IconPausePlayAnimated: ({ size, isPaused, }: {
     size?: number;
     isPaused?: boolean;
-}) => react_jsx_runtime.JSX.Element;
+}) => react.JSX.Element;
 declare const IconEyeMinus: ({ size }: {
     size?: number;
-}) => react_jsx_runtime.JSX.Element;
+}) => react.JSX.Element;
 declare const IconGear: ({ size }: {
     size?: number;
-}) => react_jsx_runtime.JSX.Element;
+}) => react.JSX.Element;
 declare const IconPauseAlt: ({ size }: {
     size?: number;
-}) => react_jsx_runtime.JSX.Element;
+}) => react.JSX.Element;
 declare const IconPause: ({ size }: {
     size?: number;
-}) => react_jsx_runtime.JSX.Element;
+}) => react.JSX.Element;
 declare const IconPlayAlt: ({ size }: {
     size?: number;
-}) => react_jsx_runtime.JSX.Element;
+}) => react.JSX.Element;
 declare const IconTrashAlt: ({ size }: {
     size?: number;
-}) => react_jsx_runtime.JSX.Element;
+}) => react.JSX.Element;
 declare const IconChatEllipsis: ({ size, style, }: {
     size?: number;
     style?: React.CSSProperties;
-}) => react_jsx_runtime.JSX.Element;
+}) => react.JSX.Element;
 declare const IconCheckmark: ({ size }: {
     size?: number;
-}) => react_jsx_runtime.JSX.Element;
+}) => react.JSX.Element;
 declare const IconCheckmarkLarge: ({ size }: {
     size?: number;
-}) => react_jsx_runtime.JSX.Element;
+}) => react.JSX.Element;
 declare const IconCheckmarkCircle: ({ size }: {
     size?: number;
-}) => react_jsx_runtime.JSX.Element;
+}) => react.JSX.Element;
 declare const IconXmark: ({ size }: {
     size?: number;
-}) => react_jsx_runtime.JSX.Element;
+}) => react.JSX.Element;
 declare const IconXmarkLarge: ({ size }: {
     size?: number;
-}) => react_jsx_runtime.JSX.Element;
+}) => react.JSX.Element;
 declare const IconSun: ({ size }: {
     size?: number;
-}) => react_jsx_runtime.JSX.Element;
+}) => react.JSX.Element;
 declare const IconMoon: ({ size }: {
     size?: number;
-}) => react_jsx_runtime.JSX.Element;
+}) => react.JSX.Element;
 declare const IconEdit: ({ size }: {
     size?: number;
-}) => react_jsx_runtime.JSX.Element;
+}) => react.JSX.Element;
 declare const IconTrash: ({ size }: {
     size?: number;
-}) => react_jsx_runtime.JSX.Element;
+}) => react.JSX.Element;
 declare const IconChevronLeft: ({ size }: {
     size?: number;
-}) => react_jsx_runtime.JSX.Element;
+}) => react.JSX.Element;
 declare const IconChevronRight: ({ size }: {
     size?: number;
-}) => react_jsx_runtime.JSX.Element;
+}) => react.JSX.Element;
 declare const AnimatedBunny: ({ size, color, }: {
     size?: number;
     color?: string;
-}) => react_jsx_runtime.JSX.Element;
+}) => react.JSX.Element;
 declare const IconLayout: ({ size }: {
     size?: number;
-}) => react_jsx_runtime.JSX.Element;
+}) => react.JSX.Element;
 
 /**
  * Finds the closest ancestor matching a selector, crossing shadow DOM boundaries.
@@ -289,11 +329,11 @@ declare function getShadowHost(element: Element): Element | null;
  * Gets a readable path for an element (e.g., "article > section > p")
  * Supports elements inside shadow DOM by crossing shadow boundaries.
  */
-declare function getElementPath(target: HTMLElement, maxDepth?: number): string;
+declare function getElementPath(target: HTMLElement, maxDepth?: number, attributeNames?: readonly string[]): string;
 /**
  * Identifies an element and returns a human-readable name + path
  */
-declare function identifyElement(target: HTMLElement): {
+declare function identifyElement(target: HTMLElement, attributeNames?: readonly string[]): {
     name: string;
     path: string;
 };

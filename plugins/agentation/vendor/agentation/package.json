@@ -1,6 +1,6 @@
 {
   "name": "agentation",
-  "version": "3.0.2",
+  "version": "3.1.2",
   "description": "Visual feedback for AI coding agents",
   "sideEffects": false,
   "license": "PolyForm-Shield-1.0.0",
@@ -23,14 +23,6 @@
   "files": [
     "dist"
   ],
-  "scripts": {
-    "build": "tsup",
-    "watch": "tsup --watch",
-    "dev": "pnpm build && pnpm watch",
-    "test": "vitest run",
-    "test:watch": "vitest",
-    "prepublishOnly": "pnpm build"
-  },
   "peerDependencies": {
     "react": ">=18.0.0",
     "react-dom": ">=18.0.0"
@@ -44,20 +36,28 @@
     }
   },
   "devDependencies": {
-    "@testing-library/react": "^16.0.0",
-    "@types/node": "^20.0.0",
-    "@types/react": "^18.2.0",
-    "@types/react-dom": "^18.2.0",
-    "@vitejs/plugin-react": "^4.3.0",
-    "esbuild-sass-plugin": "^3.6.0",
-    "jsdom": "^25.0.0",
-    "postcss": "^8.5.6",
+    "@testing-library/react": "^16.3.3",
+    "@types/node": "^20.19.43",
+    "@types/react": "^18.3.31",
+    "@types/react-dom": "^18.3.7",
+    "@vitejs/plugin-react": "^4.7.0",
+    "esbuild": "^0.27.7",
+    "esbuild-sass-plugin": "^3.7.0",
+    "jsdom": "^25.0.1",
+    "postcss": "^8.5.28",
     "postcss-modules": "^6.0.1",
-    "react": "^18.2.0",
-    "react-dom": "^18.2.0",
-    "sass": "^1.97.2",
-    "tsup": "^8.0.0",
-    "typescript": "^5.0.0",
-    "vitest": "^2.0.0"
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "sass": "^1.104.1",
+    "tsup": "^8.5.1",
+    "typescript": "^5.9.3",
+    "vitest": "^2.1.9"
+  },
+  "scripts": {
+    "build": "tsup",
+    "watch": "tsup --watch",
+    "dev": "pnpm build && pnpm watch",
+    "test": "vitest run",
+    "test:watch": "vitest"
   }
 }
