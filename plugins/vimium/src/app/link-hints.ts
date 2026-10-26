@@ -298,6 +298,15 @@ const NON_TEXT_INPUT_TYPES = new Set([
   "submit",
 ]);
 
+/**
+ * True when the key belongs to a text field. A window listener sees events
+ * from inside a shadow root (Agentation's annotation popup, for one)
+ * retargeted to the host, so read the original target from the composed path.
+ */
+function isEditableEvent(event: Event): boolean {
+  return isEditableTarget(event.composedPath()[0] ?? event.target);
+}
+
 function isEditableTarget(target: EventTarget | null): boolean {
   if (!(target instanceof Element)) return false;
   return isEditableProbe({
@@ -836,7 +845,7 @@ export function mountLinkHints(context: PluginContentScriptContext): PluginConte
         metaKey: event.metaKey,
         altKey: event.altKey,
         shiftKey: event.shiftKey,
-        editableTarget: isEditableTarget(event.target),
+        editableTarget: isEditableEvent(event),
       });
       if (shortcut !== null) {
         if (shortcut.kind === "undo-archive" && event.repeat) return;
@@ -855,7 +864,7 @@ export function mountLinkHints(context: PluginContentScriptContext): PluginConte
         metaKey: event.metaKey,
         altKey: event.altKey,
         shiftKey: event.shiftKey,
-        editableTarget: isEditableTarget(event.target),
+        editableTarget: isEditableEvent(event),
       });
       if (!trigger) return;
       const opened = isForceChord(event) ? enterTopLevelDismissing() : enterTopLevel();

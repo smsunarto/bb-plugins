@@ -223,6 +223,30 @@ describe("mountLinkHints", () => {
     controller.abort();
   });
 
+  test("keys typed into a field inside a shadow root stay with the field", () => {
+    const controller = newController();
+    const dispose = mountLinkHints(contextWith(controller.signal));
+
+    // Agentation's annotation popup renders its textarea in an open shadow
+    // root, so a window listener sees the event retargeted to the host.
+    document.body.innerHTML =
+      '<button id="only">Only</button><agentation-toolbar></agentation-toolbar>';
+    giveRect(document.getElementById("only") as HTMLElement, 10, 10);
+    const root = (document.querySelector("agentation-toolbar") as HTMLElement).attachShadow({
+      mode: "open",
+    });
+    const editor = document.createElement("textarea");
+    root.append(editor);
+
+    for (const key of ["f", "i", "j"]) {
+      expect(pressKey(key, editor, { composed: true })).toBe(true);
+    }
+    expect(document.querySelector(".vimium-hint-layer")).toBeNull();
+
+    void dispose();
+    controller.abort();
+  });
+
   test("plain i focuses the composer from idle and active hint modes", () => {
     const controller = newController();
     const dispose = mountLinkHints(contextWith(controller.signal));
