@@ -1,5 +1,6 @@
 import { briefRecipe, generationImagePaths, type GenerationJob } from "../../shared/generation.ts";
 import { nodeFingerprint } from "./canvas-generation.ts";
+import { boardFreshness } from "./canvas-freshness.ts";
 import { graphEdges } from "../../shared/canvas-connections.ts";
 import { nodeTakes } from "../../shared/takes.ts";
 import { nodeReviews, reviewLimit } from "../../shared/review.ts";
@@ -578,12 +579,18 @@ export async function loadCanvas(
   const evidence = captures.filter(({ type }) => type === "image" || type === "video");
   const evidenceRuns = await readEvidenceRuns(files, evidence);
   const { jobs, workspacePath, stale } = snapshotJobs(snapshot);
+  const read = { documents, assets, generationJobs: jobs };
   return {
     workspace: {
       game,
       index,
       indexRevision,
-      boards,
+      // Held runs are the server's own; the generation service adds them to what it serves.
+      boards: boards.map((entry) => ({
+        ...entry,
+        freshness: boardFreshness(entry.board, read),
+        pending: {},
+      })),
       documents,
       assets,
       evidence,

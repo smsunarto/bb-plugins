@@ -42,7 +42,14 @@ export async function readWorkspace(
       return uncertain(read.workspace);
     }
     if (!refreshed.changed || pass > 0)
-      return { ...read.workspace, generationJobs: refreshed.jobs };
+      return {
+        ...read.workspace,
+        generationJobs: refreshed.jobs,
+        boards: read.workspace.boards.map((entry) => ({
+          ...entry,
+          pending: refreshed.pending[entry.board.id] ?? {},
+        })),
+      };
     read = await loadCanvas(ctx.bb, gameId, options);
   }
 }

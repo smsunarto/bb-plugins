@@ -53,6 +53,11 @@ export const agentSelection = z.strictObject({
   serviceTier: serviceTier.optional(),
 });
 export type AgentSelection = z.output<typeof agentSelection>;
+/** The BB agent saved on a text or agent node, when one was chosen. */
+export const nodeAgent = (node: { data: Record<string, unknown> }): AgentSelection | undefined => {
+  const parsed = agentSelection.safeParse(node.data.agent);
+  return parsed.success ? parsed.data : undefined;
+};
 export const textRequest = z.strictObject({
   kind: z.literal("text"),
   prompt: brief,
@@ -225,7 +230,10 @@ export function generationImagePaths(request: MediaRequest): string[] {
 export const generationTarget = z.strictObject({
   boardId: generationId,
   nodeId: generationId,
+  /** The node and its sources as they were, which guards what a text result may overwrite. */
   fingerprint: z.string(),
+  /** What the run was made from: the node's brief and settings, and what its inputs fed it. */
+  inputs: z.string().optional(),
   imageRevisions: z
     .array(z.strictObject({ path: mediaPath, sha256: z.string().regex(/^[a-f0-9]{64}$/) }))
     .min(1)
@@ -293,6 +301,11 @@ export const canvasGenerationInput = z.strictObject({
   reviewAssetId: z.string().min(1).max(100).optional(),
   /** Have an image node's judge choose between its shortlist, or its takes, instead. */
   judge: z.literal(true).optional(),
+  /**
+   * Run the node's inputs that have no output first, inputs before dependents, and the node
+   * once they land. Without it a node whose input has no output fails at once.
+   */
+  upstream: z.literal(true).optional(),
 });
 export const generationControlInput = z.strictObject({
   gameId: generationId,
@@ -445,6 +458,27 @@ function normalizeVideo(
 }
 
 export const canvasDirectInput = canvasGenerationInput.extend({
+  threadId: z.string().nullable(),
+});
+/** Where a run stopped for a person: the step whose approved input it just made. */
+export const runGate = z.strictObject({
+  nodeId: generationId,
+  port: z.string(),
+  sourceId: generationId,
+});
+/** What a canvas run started: the jobs dispatched now, and the nodes held until inputs land. */
+export const canvasRunResult = z.strictObject({
+  jobs: z.array(generationJob),
+  waiting: z.array(generationId),
+  gate: runGate.optional(),
+});
+export type CanvasRunResult = z.output<typeof canvasRunResult>;
+/** Drops a run held for a node, when it is still the one the caller saw. */
+export const cancelCanvasRunInput = z.strictObject({
+  gameId: generationId,
+  boardId: generationId,
+  nodeId: generationId,
+  requestId: generationId,
   threadId: z.string().nullable(),
 });
 export const canvasDirectControl = generationControlInput.extend({

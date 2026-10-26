@@ -265,7 +265,7 @@ for (const control of ["directControl", "control"] as const) {
         "generation jobs",
       );
       pause.resume();
-      expect((await submission).job.status).toBe("running");
+      expect((await submission).jobs[0]!.status).toBe("running");
       expect(await status).toMatchObject({
         job: {
           id: "variation-request",
@@ -300,7 +300,7 @@ test("listing an older successful job cannot release a checkout while its retry 
       requestId: "variation-request",
       threadId: "thread",
     };
-    expect((await f.generations.direct(input)).job.status).toBe("running");
+    expect((await f.generations.direct(input)).jobs[0]!.status).toBe("running");
     await f.completeHostJob();
     pause = f.pauseSourceRead();
     const retry = f.generations.direct(input);
@@ -314,7 +314,7 @@ test("listing an older successful job cannot release a checkout while its retry 
       "generation jobs",
     );
     pause.resume();
-    expect(await retry).toMatchObject({ created: false, job: { status: "succeeded" } });
+    expect(await retry).toMatchObject({ jobs: [{ status: "succeeded" }], waiting: [] });
     expect(await listing).toMatchObject([{ id: "variation-request", status: "succeeded" }]);
     expect(f.slots.beginRelease(f.leased.id, "thread", f.leased.leaseId!).state).toBe("releasing");
   } finally {
@@ -338,10 +338,10 @@ for (const entry of ["direct", "canvas"] as const) {
       };
       const result =
         entry === "direct"
-          ? await f.generations.direct({ ...input, threadId: "thread" })
-          : await f.generations.canvas(input, "thread");
-      expect(result.created).toBe(true);
-      expect(result.job).toMatchObject({
+          ? (await f.generations.direct({ ...input, threadId: "thread" })).jobs[0]!
+          : ((await f.generations.canvas(input, "thread")) as { created: boolean; job: unknown })
+              .job;
+      expect(result).toMatchObject({
         id: "variation-request",
         request: { kind: "image", prompt: "Refine Hero", images: [snapshot] },
         target: {
@@ -415,7 +415,7 @@ test("canvas runs ignore a thread from another project unless it holds the check
   const open = await fixture({ registered: false });
   try {
     const result = await open.generations.direct(await input(open));
-    expect([result.created, result.job.threadId]).toEqual([true, null]);
+    expect(result.jobs.map((job) => job.threadId)).toEqual([null]);
   } finally {
     await open.dispose();
   }

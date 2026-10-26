@@ -1,6 +1,6 @@
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import type { z } from "zod";
-import type { Board, CanvasNode } from "../../shared/schema.ts";
+import type { Board, CanvasNode, Freshness, PendingRun } from "../../shared/schema.ts";
 import { canvasContextInput } from "../../shared/canvas-agent.ts";
 import { providerCapabilities } from "../../shared/generation.ts";
 import { nodeInputs } from "../../shared/recipes.ts";
@@ -13,6 +13,8 @@ const history = new Set(["takes", "reviews", "judgements"]);
 function semanticNode(
   { position: _position, width: _width, height: _height, ...node }: CanvasNode,
   board: Board,
+  freshness: Freshness | undefined,
+  pending: PendingRun | undefined,
 ) {
   const data: CanvasNode["data"] = {};
   const omittedDataKeys: string[] = [];
@@ -28,7 +30,15 @@ function semanticNode(
         connected: refs.length,
       }),
   );
-  return { ...node, data, omittedDataKeys, inputPorts };
+  return {
+    ...node,
+    data,
+    omittedDataKeys,
+    inputPorts,
+    /** Whether the output was made from the current brief and inputs; see workspace freshness. */
+    freshness: freshness ?? "unknown",
+    ...(pending ? { pendingRun: pending } : {}),
+  };
 }
 
 /** A page always makes progress, and reports exactly which collection it pages. */
@@ -79,6 +89,7 @@ function fieldPage(
 export async function readCanvasContext(
   bb: BbPluginApi,
   input: z.output<typeof canvasContextInput>,
+  pending: Record<string, Record<string, PendingRun>> = {},
 ) {
   const workspace = await loadWorkspace(bb, input.gameId);
   const main = workspace.documents.find((doc) => doc.id === workspace.index.mainDocumentId);
@@ -125,7 +136,8 @@ export async function readCanvasContext(
   }
   const selected = workspace.boards.find(({ board }) => board.id === input.boardId);
   if (!selected) throw new Error(`Board ${input.boardId} does not exist.`);
-  const { board, revision } = selected;
+  const { board, revision, freshness } = selected;
+  const held = pending[board.id] ?? {};
   const boardHeader = {
     ...header,
     board: { id: board.id, name: board.name, revision, path: `canvas/boards/${board.id}.json` },
@@ -139,7 +151,7 @@ export async function readCanvasContext(
     ? board.nodes.filter(({ id }) => input.nodeIds!.includes(id))
     : board.nodes;
   return page(
-    nodes.map((node) => semanticNode(node, board)),
+    nodes.map((node) => semanticNode(node, board, freshness[node.id], held[node.id])),
     input,
     { ...boardHeader, section: "nodes" },
   );

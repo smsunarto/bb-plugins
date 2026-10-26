@@ -43,6 +43,8 @@ function workspace(boardRevision = revision("content-1")): Workspace {
     boards: [
       {
         revision: boardRevision,
+        freshness: {},
+        pending: {},
         board: {
           version: 1,
           id: "main",

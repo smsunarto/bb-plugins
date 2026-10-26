@@ -51,7 +51,9 @@ export function withSavedBoard(
     ...held,
     // It no longer matches the fingerprint the server gave, so the next read sends everything.
     fingerprint: undefined,
-    boards: held.boards.map((entry) => (entry.board.id === board.id ? { board, revision } : entry)),
+    boards: held.boards.map((entry) =>
+      entry.board.id === board.id ? { ...entry, board, revision } : entry,
+    ),
   };
 }
 

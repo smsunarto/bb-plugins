@@ -30,7 +30,7 @@ import {
 } from "../../shared/judge.ts";
 import type { Workspace, Board, CanvasNode } from "../../shared/schema.ts";
 import { files as instructions } from "./instructions.ts";
-import { nodeBriefRecipe, nodeInputs, nodeRecipe } from "../../shared/recipes.ts";
+import { nodeBriefRecipe, nodeInputs, nodeRecipe, recipeModel } from "../../shared/recipes.ts";
 import type { InputRef } from "../../shared/inputs.ts";
 
 import { inputReference as reference } from "../../shared/canvas-agent.ts";
@@ -62,6 +62,28 @@ export function nodeFingerprint(
   board: Board,
   workspace: Pick<Workspace, "documents" | "assets">,
 ) {
+  return fingerprint(node, board, workspace, "node");
+}
+/**
+ * What a run is made from: the node's own brief and settings, and what each input feeds it,
+ * which is a text node's text, a document's revision, or a media node's pick. Edits to an
+ * input's own brief change nothing here until that input's pick changes.
+ */
+export function inputFingerprint(
+  node: CanvasNode,
+  board: Board,
+  workspace: Pick<Workspace, "documents" | "assets">,
+) {
+  return fingerprint(node, board, workspace, "inputs");
+}
+/** The output fields of a text node; its generated text is not an input to itself. */
+const textOutputs = new Set(["text", "generatedTextPath"]);
+function fingerprint(
+  node: CanvasNode,
+  board: Board,
+  workspace: Pick<Workspace, "documents" | "assets">,
+  scope: "node" | "inputs",
+) {
   const refs = references(node);
   const assetIds = new Set(refs.flatMap((ref) => (ref.type === "library" ? [ref.assetId] : [])));
   const dependencies = refs.flatMap((ref) => (ref.type === "node" ? [ref.nodeId] : []));
@@ -80,6 +102,12 @@ export function nodeFingerprint(
     )
       assetIds.add(other.data.assetId);
     const doc = workspace.documents.find((item) => item.id === other.data.documentId);
+    if (scope === "inputs")
+      return other.type === "text"
+        ? { id, text: other.data.text }
+        : other.type === "document"
+          ? { id, documentRevision: doc?.revision }
+          : { id, assetId: other.data.assetId };
     return Object.assign(
       {},
       { id },
@@ -94,8 +122,13 @@ export function nodeFingerprint(
       ? { id, name: asset.name, path: asset.path, type: asset.type }
       : { id, missing: true };
   });
+  const own = semantic(node);
+  if (scope === "inputs" && node.type === "text")
+    own.data = Object.fromEntries(
+      Object.entries(own.data).filter(([key]) => !textOutputs.has(key)),
+    );
   return createHash("sha256")
-    .update(JSON.stringify({ node: semantic(node), sources, ...(assets.length ? { assets } : {}) }))
+    .update(JSON.stringify({ node: own, sources, ...(assets.length ? { assets } : {}) }))
     .digest("hex");
 }
 export function canvasRequest(workspace: Workspace, input: z.output<typeof canvasGenerationInput>) {
@@ -214,7 +247,10 @@ function mediaCanvasRequest(
     boardId: input.boardId,
     nodeId: input.nodeId,
     fingerprint: nodeFingerprint(node, board, workspace),
+    inputs: inputFingerprint(node, board, workspace),
   };
+  // A direct run generates with the node's model; an agent may name another.
+  const model = input.model ?? (node.type === "text" ? undefined : recipeModel(node));
   if (input.brief) {
     const recipe = nodeBriefRecipe(node);
     if (!recipe) throw new Error("Select an image or video node to write its brief.");
@@ -282,7 +318,7 @@ function mediaCanvasRequest(
     );
     return {
       kind,
-      ...(input.model ? { model: input.model } : {}),
+      ...(model ? { model } : {}),
       approvedImagePath: front,
       ...(Object.keys(views).length ? { views } : {}),
       targetPolycount: node.data.targetPolycount,
@@ -319,7 +355,7 @@ function mediaCanvasRequest(
           kind,
           prompt,
           ...agent,
-          ...(input.model ? { model: input.model } : {}),
+          ...(model ? { model } : {}),
           images: [...new Set(paths)],
           ...(kind === "agent" ? { files: [...new Set(modelPaths)] } : {}),
           ...labels,
@@ -332,7 +368,7 @@ function mediaCanvasRequest(
             ? {
                 kind,
                 prompt,
-                ...(input.model ? { model: input.model } : {}),
+                ...(model ? { model } : {}),
                 imagePath: frames[0],
                 endImagePath: frames[1],
                 duration: node.data.duration,
@@ -341,7 +377,7 @@ function mediaCanvasRequest(
             : {
                 kind,
                 prompt,
-                ...(input.model ? { model: input.model } : {}),
+                ...(model ? { model } : {}),
                 images: [...new Set(paths)],
                 ...labels,
                 aspectRatio: node.data.aspectRatio,

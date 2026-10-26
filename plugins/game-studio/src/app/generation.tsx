@@ -1,11 +1,8 @@
 import { nodeRecipe, recipes } from "../shared/recipes.ts";
+export { nodeBatch, runsDirectly } from "../shared/recipes.ts";
 import type { CanvasNode, GenerationRecipe, NodeKind } from "../shared/schema.ts";
-import {
-  agentSelection,
-  modelEditDefaults,
-  rigTypes,
-  type AgentSelection,
-} from "../shared/generation.ts";
+import { modelEditDefaults, rigTypes, type AgentSelection } from "../shared/generation.ts";
+export { nodeAgent } from "../shared/generation.ts";
 
 export type NodePatch = Record<string, CanvasNode["data"][string]>;
 
@@ -57,11 +54,6 @@ const optionLabels: Record<string, (option: string | number) => string> = {
   animation: (option) => String(option).replace(/^preset:/, ""),
 };
 const numeric = new Set(["duration", "batch"]);
-/** Images per Nano Banana run; each image is its own request. */
-export const nodeBatch = (node: CanvasNode) =>
-  nodeRecipe(node)?.id === "nano-banana" && [2, 4].includes(Number(node.data.batch))
-    ? Number(node.data.batch)
-    : 1;
 /** The model a node's output comes from. Text is the user's own, so it names none. */
 export const nodeModelLabel = (node: CanvasNode) =>
   node.type === "text" || node.type === "agent" ? undefined : nodeRecipe(node)?.label;
@@ -70,11 +62,6 @@ export const agentLabel = (agent: AgentSelection) =>
   [agent.model, agent.reasoningLevel, agent.serviceTier !== "default" && agent.serviceTier]
     .filter(Boolean)
     .join(" · ");
-/** The BB agent saved on a text node, when one was chosen. */
-export const nodeAgent = (node: CanvasNode): AgentSelection | undefined => {
-  const parsed = agentSelection.safeParse(node.data.agent);
-  return parsed.success ? parsed.data : undefined;
-};
 /** The field holding a node's brief, when it can generate. */
 export const promptField = (kind: NodeKind) =>
   kind === "text" || kind === "agent"
@@ -150,7 +137,3 @@ export function GenerationSettings({
     </div>
   );
 }
-
-/** Whether running the node generates on the canvas instead of preparing a request. */
-export const runsDirectly = (node: CanvasNode) =>
-  node.type === "text" || node.type === "agent" || !!nodeRecipe(node)?.direct;

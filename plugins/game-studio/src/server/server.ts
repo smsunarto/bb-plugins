@@ -40,6 +40,7 @@ import { FalOAuth } from "./lib/fal-oauth.ts";
 import { falAuth } from "./rpc/fal-auth.ts";
 import { auth } from "./command/auth.ts";
 import { generateCanvas } from "./rpc/generate-canvas.ts";
+import { cancelCanvasRun } from "./rpc/cancel-canvas-run.ts";
 import { canvasGenerationStatus } from "./rpc/canvas-generation-status.ts";
 import { briefTemplates } from "./rpc/brief-templates.ts";
 import { registerRequestMention } from "./lib/request-mention.ts";
@@ -50,6 +51,7 @@ export default definePlugin({
     canvasContext: canvasContextRpc,
     briefTemplates,
     generateCanvas,
+    cancelCanvasRun,
     canvasGenerationStatus,
     falAuth,
     listUnityEditors,
@@ -98,16 +100,18 @@ export default definePlugin({
       },
     });
     bb.onDispose(() => falOAuth.dispose());
+    const generations = new Generations(
+      bb,
+      async (provider) => ({
+        vertexProject: (await generationSettings.get()).vertexProject?.trim() || undefined,
+        ...(provider === "fal" ? { falAccessToken: await falOAuth.accessToken() } : {}),
+      }),
+      slotStore,
+    );
+    bb.onDispose(() => generations.dispose());
     return {
       falOAuth,
-      generations: new Generations(
-        bb,
-        async (provider) => ({
-          vertexProject: (await generationSettings.get()).vertexProject?.trim() || undefined,
-          ...(provider === "fal" ? { falAccessToken: await falOAuth.accessToken() } : {}),
-        }),
-        slotStore,
-      ),
+      generations,
       unityEditors,
       unitySlots,
       slotProvisioning: new SlotProvisioning(bb, unitySlots),

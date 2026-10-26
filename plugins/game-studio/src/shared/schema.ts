@@ -142,11 +142,31 @@ export const evidenceRunSchema = z.object({
     .optional(),
   files: z.array(assetSchema).min(1).max(100),
 });
+/**
+ * Whether a node's output was made from its current brief and inputs: `stale` when the pick
+ * predates them, `missing` without an output, `unknown` for uploads and outputs made elsewhere.
+ */
+export const freshnessSchema = z.enum(["missing", "fresh", "stale", "unknown"]);
+export type Freshness = z.infer<typeof freshnessSchema>;
+/** A run the server holds for a node until its inputs have outputs. */
+export const pendingRunSchema = z.object({
+  requestId: z.string(),
+  requestedAt: z.number(),
+  /** Why its last dispatch attempt failed; it is tried again when its inputs change. */
+  error: z.string().optional(),
+});
+export type PendingRun = z.infer<typeof pendingRunSchema>;
+export const workspaceBoardSchema = z.object({
+  board: boardSchema,
+  revision: z.string(),
+  freshness: z.record(z.string(), freshnessSchema).default({}),
+  pending: z.record(z.string(), pendingRunSchema).default({}),
+});
 export const workspaceSchema = z.object({
   game: gameSchema,
   index: indexSchema,
   indexRevision: z.string(),
-  boards: z.array(z.object({ board: boardSchema, revision: z.string() })),
+  boards: z.array(workspaceBoardSchema),
   documents: z.array(documentSchema),
   assets: z.array(assetSchema),
   evidence: z.array(assetSchema).default([]),

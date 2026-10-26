@@ -1,23 +1,32 @@
+import { randomUUID } from "node:crypto";
 import { GenerationWork } from "./generation-work.ts";
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import type { z } from "zod";
 import { studioHostContract } from "../../shared/host-contract.ts";
 import {
   mediaRequest,
+  nodeAgent,
   normalizeMediaRequest,
   runsOnBb,
+  type AgentSelection,
+  type CanvasRunResult,
   type MediaRequest,
   type GenerationJob,
   type canvasGenerationInput,
   type generationControlInput,
   type canvasDirectInput,
   type canvasDirectControl,
+  type cancelCanvasRunInput,
 } from "../../shared/generation.ts";
 import { getGame, loadCanvas, loadWorkspace, adoptGeneration } from "./studio.ts";
 import type { SlotStore } from "./slot-store.ts";
 import { canvasRequest, judgeRequest, retryRequest, reviewRequest } from "./canvas-generation.ts";
 import { judgeRequestId, nodeJudgeSettings, runCandidates } from "../../shared/judge.ts";
-import { nodeTakes, takeRun } from "../../shared/takes.ts";
+import { batchRequestId, nodeTakes, takeRun } from "../../shared/takes.ts";
+import { inputsReady, planRun } from "../../shared/canvas-plan.ts";
+import { nodeBatch } from "../../shared/recipes.ts";
+import { CanvasRunStore, type HeldRun } from "./canvas-runs.ts";
+import type { Board, CanvasNode, Workspace } from "../../shared/schema.ts";
 import { nodeReviewSettings, reviewRequestId } from "../../shared/review.ts";
 import { captureCanvasInputs } from "./generation-inputs.ts";
 import { CanvasText } from "./canvas-text.ts";
@@ -28,6 +37,10 @@ import { canvasContextInput, canvasEditInput } from "../../shared/canvas-agent.t
 
 type Credentials = { vertexProject?: string; falAccessToken?: string };
 type Game = Awaited<ReturnType<typeof getGame>>;
+type RunInput = z.output<typeof canvasGenerationInput> & { threadId: string | null };
+const running = (job: GenerationJob) => job.status === "queued" || job.status === "running";
+/** How often a game with held runs is read while no studio reads it. */
+const ADVANCE_EVERY_MS = 20_000;
 type AdoptionResult = {
   job: GenerationJob;
   adoption: Awaited<ReturnType<typeof adoptGeneration>> | { deferred: true; reason: string };
@@ -54,8 +67,12 @@ export class Generations {
   private readonly work: GenerationWork;
   private readonly text: CanvasText;
   private readonly collection: CanvasCollection;
+  private readonly runs: CanvasRunStore;
   private readonly adoptions = new Map<string, Promise<AdoptionResult>>();
   private readonly jobOperations = new Map<string, Promise<unknown>>();
+  private readonly advances = new Map<string, Promise<void>>();
+  private readonly drivers = new Map<string, ReturnType<typeof setTimeout>>();
+  private disposed = false;
   constructor(
     bb: BbPluginApi,
     settings: (provider: MediaRequest["model"]["provider"]) => Promise<Credentials>,
@@ -67,6 +84,14 @@ export class Generations {
     this.work = new GenerationWork(slots);
     this.text = new CanvasText(bb);
     this.collection = new CanvasCollection(bb, slots, this.work);
+    this.runs = new CanvasRunStore(slots.db);
+    // Runs held before a restart go on without a studio reading them.
+    for (const gameId of this.runs.games()) this.drive(gameId);
+  }
+  dispose() {
+    this.disposed = true;
+    for (const timer of this.drivers.values()) clearTimeout(timer);
+    this.drivers.clear();
   }
   private async credentials(provider: MediaRequest["model"]["provider"]): Promise<Credentials> {
     const settings = await this.settings(provider);
@@ -135,7 +160,7 @@ export class Generations {
       jobs[index] = refreshed.job;
     }
     this.collection.schedule(game.id);
-    return { jobs, changed };
+    return { jobs, changed, pending: this.runs.pending(game.id) };
   }
   private async refreshCanvasJob(game: Game, job: GenerationJob) {
     const key = this.jobKey(game, job.id);
@@ -198,16 +223,199 @@ export class Generations {
     this.slots.editorAccess(game.hostId, resolved.workspacePath, `canvas:${game.id}`);
     return { game: { ...game, rootPath: resolved.workspacePath }, thread: null };
   }
-  async direct(input: z.output<typeof canvasDirectInput>) {
+  /** A run from the canvas: the node's missing inputs first when asked, then the node. */
+  async direct(input: z.output<typeof canvasDirectInput>): Promise<CanvasRunResult> {
     const { game, thread } = await this.canvasGame(input.gameId, input.threadId);
     const workspace = await loadWorkspace(this.bb, input.gameId);
-    const prepared = canvasRequest(workspace, input);
-    if (!["image", "text", "agent", "model-edit"].includes(prepared.request.kind))
-      throw new Error("Direct canvas generation supports image, text, agent and Tripo nodes.");
-    return this.dispatch(game, input.requestId, prepared.request, thread, prepared.target, {
-      kind: "canvas",
+    if (input.brief || input.reviewAssetId || input.judge || !input.upstream) {
+      const prepared = canvasRequest(workspace, input);
+      const job = await this.dispatch(
+        game,
+        input.requestId,
+        prepared.request,
+        thread,
+        prepared.target,
+        { kind: "canvas", gameId: game.id },
+      );
+      return { jobs: [job.job], waiting: [] };
+    }
+    const result = await this.runPlan(game, thread, workspace, input, true);
+    if (result.waiting.length) this.drive(game.id);
+    return result;
+  }
+  /** Drops a run held for a node, when it is still the run the caller saw. */
+  async cancel(input: z.output<typeof cancelCanvasRunInput>) {
+    const { game } = await this.canvasGame(input.gameId, input.threadId, false);
+    return {
+      cancelled: this.runs.release(game.id, input.boardId, input.nodeId, input.requestId),
+    };
+  }
+  /**
+   * Starts what the node needs: inputs without an output run now when their own inputs are
+   * ready, else wait as held runs; the node itself runs once they have landed. An input a
+   * person approves before use (a front view, a UV candidate) ends the run there.
+   */
+  private async runPlan(
+    game: Game,
+    thread: string | null,
+    workspace: Workspace,
+    input: RunInput,
+    batched: boolean,
+  ): Promise<CanvasRunResult> {
+    const selected = workspace.boards.find(({ board }) => board.id === input.boardId);
+    if (!selected || selected.revision !== input.revision)
+      throw new Error(
+        "The board changed. Read canvas_context and review the current brief before generating.",
+      );
+    const board = selected.board;
+    const plan = planRun(board, input.nodeId);
+    if (plan.issues.length) throw new Error(plan.issues.map(({ message }) => message).join(" "));
+    const agent = runAgent(input);
+    const jobs: GenerationJob[] = [];
+    const waiting: string[] = [];
+    for (const id of plan.queue) {
+      const node = board.nodes.find((node) => node.id === id)!;
+      const isTarget = id === input.nodeId;
+      // An input already generating, or held for another run, is waited for, not started twice.
+      if (
+        !isTarget &&
+        (this.runs.get(game.id, board.id, id) ||
+          workspace.generationJobs.some(
+            (job) =>
+              job.target?.boardId === board.id &&
+              job.target.nodeId === id &&
+              running(job) &&
+              job.request.kind !== "text",
+          ))
+      ) {
+        waiting.push(id);
+        continue;
+      }
+      const run = {
+        gameId: game.id,
+        boardId: board.id,
+        nodeId: id,
+        requestId: isTarget ? input.requestId : randomUUID(),
+        threadId: thread,
+        agent,
+        batch: isTarget && batched ? nodeBatch(node) : 1,
+      };
+      if (!inputsReady(board, node)) {
+        this.runs.hold(run);
+        waiting.push(id);
+        continue;
+      }
+      jobs.push(...(await this.dispatchNode(game, thread, workspace, board, node, run)));
+    }
+    return { jobs, waiting, ...(plan.gate ? { gate: plan.gate } : {}) };
+  }
+  /** Dispatches one node's run from the saved board, as a batch when its model makes several. */
+  private async dispatchNode(
+    game: Game,
+    thread: string | null,
+    workspace: Workspace,
+    board: Board,
+    node: CanvasNode,
+    run: Pick<HeldRun, "requestId" | "agent" | "batch">,
+  ) {
+    const revision = workspace.boards.find((entry) => entry.board.id === board.id)!.revision;
+    const agent = nodeAgent(node) ?? run.agent ?? undefined;
+    const prepared = canvasRequest(workspace, {
       gameId: game.id,
+      requestId: run.requestId,
+      boardId: board.id,
+      nodeId: node.id,
+      revision,
+      ...(agent && runsOnBbNode(node)
+        ? {
+            textProviderId: agent.providerId,
+            model: { provider: "bb", id: agent.model },
+            reasoningLevel: agent.reasoningLevel,
+            ...(agent.serviceTier ? { serviceTier: agent.serviceTier } : {}),
+          }
+        : {}),
     });
+    const ids =
+      run.batch > 1
+        ? Array.from({ length: run.batch }, (_, index) => batchRequestId(run.requestId, index))
+        : [run.requestId];
+    const results = await Promise.all(
+      ids.map((id) =>
+        this.dispatch(game, id, prepared.request, thread, prepared.target, {
+          kind: "canvas",
+          gameId: game.id,
+        }),
+      ),
+    );
+    return results.map(({ job }) => job);
+  }
+  /**
+   * Dispatches held runs whose inputs have landed. One at a time per game; a run whose job
+   * already exists is released without building its request again, so a lost response or a
+   * restart never submits a second generation under its id.
+   */
+  advance(gameId: string): Promise<void> {
+    const previous = this.advances.get(gameId);
+    if (previous) return previous;
+    const pending = this.advanceNow(gameId).finally(() => {
+      if (this.advances.get(gameId) === pending) this.advances.delete(gameId);
+    });
+    this.advances.set(gameId, pending);
+    return pending;
+  }
+  private async advanceNow(gameId: string) {
+    const held = this.runs.list(gameId);
+    if (!held.length) return;
+    const workspace = await loadWorkspace(this.bb, gameId);
+    for (const run of held) {
+      const selected = workspace.boards.find(({ board }) => board.id === run.boardId);
+      const node = selected?.board.nodes.find(({ id }) => id === run.nodeId);
+      if (!selected || !node) {
+        this.runs.release(gameId, run.boardId, run.nodeId, run.requestId);
+        continue;
+      }
+      const submitted = new Set([run.requestId, batchRequestId(run.requestId, 0)]);
+      if (workspace.generationJobs.some((job) => submitted.has(job.id))) {
+        this.runs.release(gameId, run.boardId, run.nodeId, run.requestId);
+        continue;
+      }
+      if (!inputsReady(selected.board, node)) continue;
+      try {
+        const { game, thread } = await this.canvasGame(gameId, run.threadId);
+        await this.dispatchNode(game, thread, workspace, selected.board, node, run);
+        this.runs.release(gameId, run.boardId, run.nodeId, run.requestId);
+      } catch (error) {
+        this.runs.fail(
+          gameId,
+          run.boardId,
+          run.nodeId,
+          error instanceof Error ? error.message : String(error),
+        );
+      }
+    }
+  }
+  /** Keeps a game with held runs moving while no studio reads it: adopt, advance, repeat. */
+  private drive(gameId: string) {
+    if (this.disposed || this.drivers.has(gameId)) return;
+    const timer = setTimeout(() => {
+      this.drivers.delete(gameId);
+      void this.tick(gameId);
+    }, ADVANCE_EVERY_MS);
+    timer.unref?.();
+    this.drivers.set(gameId, timer);
+  }
+  private async tick(gameId: string) {
+    if (this.disposed || !this.runs.list(gameId).length) return;
+    try {
+      const read = await loadCanvas(this.bb, gameId);
+      await this.refresh(read.workspace.game, read);
+      await this.advance(gameId);
+    } catch (error) {
+      this.bb.log.warn(
+        `Could not advance held canvas runs: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+    if (this.runs.list(gameId).length) this.drive(gameId);
   }
   async directControl(input: z.output<typeof canvasDirectControl>) {
     const { game, thread } = await this.canvasGame(
@@ -231,7 +439,7 @@ export class Generations {
   }
   async context(input: z.output<typeof canvasContextInput>, threadId?: string) {
     await this.game(input.gameId, threadId, "read");
-    return readCanvasContext(this.bb, input);
+    return readCanvasContext(this.bb, input, this.runs.pending(input.gameId));
   }
   async editCanvas(input: z.output<typeof canvasEditInput>, threadId?: string) {
     await this.game(input.gameId, threadId);
@@ -332,8 +540,19 @@ export class Generations {
     }
   }
   async canvas(input: z.output<typeof canvasGenerationInput>, threadId?: string) {
-    await this.game(input.gameId, threadId);
+    const game = await this.game(input.gameId, threadId);
     const workspace = await loadWorkspace(this.bb, input.gameId);
+    if (input.upstream && !input.brief && !input.reviewAssetId && !input.judge) {
+      const result = await this.runPlan(
+        game,
+        threadId!,
+        workspace,
+        { ...input, threadId: threadId! },
+        false,
+      );
+      if (result.waiting.length) this.drive(game.id);
+      return result;
+    }
     const { request, target } = canvasRequest(workspace, input);
     return this.start(input.gameId, input.requestId, request, threadId, target);
   }
@@ -531,6 +750,8 @@ export class Generations {
           await this.reviewRun(game, job, adoption.candidateAssetIds);
           await this.judgeRun(game, job);
         }
+        // A landed output may be what a held run was waiting for.
+        if (adoption.attached) await this.advance(game.id);
         return { job, adoption };
       } finally {
         this.work.settled(game.hostId, game.rootPath, job.id);
@@ -544,3 +765,16 @@ export class Generations {
     }
   }
 }
+
+/** The BB agent a run names for its text and agent steps, as the canvas composer selected it. */
+function runAgent(input: RunInput): AgentSelection | null {
+  if (!input.textProviderId || input.model?.provider !== "bb" || !input.model.id) return null;
+  return {
+    providerId: input.textProviderId,
+    model: input.model.id,
+    reasoningLevel: input.reasoningLevel ?? "default",
+    ...(input.serviceTier ? { serviceTier: input.serviceTier } : {}),
+  };
+}
+const runsOnBbNode = (node: Pick<CanvasNode, "type">) =>
+  node.type === "text" || node.type === "agent";
