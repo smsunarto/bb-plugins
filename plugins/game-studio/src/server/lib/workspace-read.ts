@@ -1,21 +1,27 @@
 import { createHash } from "node:crypto";
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
-import type { Workspace } from "../../shared/schema.ts";
+import type { PendingRun, Workspace } from "../../shared/schema.ts";
 import type { Generations } from "./generations.ts";
 import { loadCanvas } from "./studio.ts";
 
 export type WorkspaceContext = { bb: BbPluginApi; generations?: Generations };
 
-function uncertain(workspace: Workspace): Workspace {
+/** The workspace with its runs' status in doubt; held runs are the server's own and stay shown. */
+function uncertain(
+  workspace: Workspace,
+  pending: Record<string, Record<string, PendingRun>>,
+): Workspace {
   return {
     ...workspace,
+    boards: workspace.boards.map((entry) =>
+      Object.assign({}, entry, { pending: pending[entry.board.id] ?? {} }),
+    ),
     generationJobs: workspace.generationJobs.map((job) =>
       ["queued", "running"].includes(job.status)
-        ? {
-            ...job,
+        ? Object.assign({}, job, {
             status: "uncertain" as const,
             detail: "Could not refresh generation status. Check the saved job before resuming.",
-          }
+          })
         : job,
     ),
   };
@@ -34,21 +40,20 @@ export async function readWorkspace(
   let read = await loadCanvas(ctx.bb, gameId, options);
   if (!ctx.generations) return read.workspace;
   for (let pass = 0; ; pass++) {
-    if (read.stale) return uncertain(read.workspace);
+    if (read.stale) return uncertain(read.workspace, ctx.generations.pending(gameId));
     let refreshed;
     try {
       refreshed = await ctx.generations.refresh(read.workspace.game, read);
     } catch {
-      return uncertain(read.workspace);
+      return uncertain(read.workspace, ctx.generations.pending(gameId));
     }
     if (!refreshed.changed || pass > 0)
       return {
         ...read.workspace,
         generationJobs: refreshed.jobs,
-        boards: read.workspace.boards.map((entry) => ({
-          ...entry,
-          pending: refreshed.pending[entry.board.id] ?? {},
-        })),
+        boards: read.workspace.boards.map((entry) =>
+          Object.assign({}, entry, { pending: refreshed.pending[entry.board.id] ?? {} }),
+        ),
       };
     read = await loadCanvas(ctx.bb, gameId, options);
   }

@@ -8,7 +8,6 @@ import {
   nodeAgent,
   normalizeMediaRequest,
   runsOnBb,
-  type AgentSelection,
   type CanvasRunResult,
   type MediaRequest,
   type GenerationJob,
@@ -25,7 +24,12 @@ import { judgeRequestId, nodeJudgeSettings, runCandidates } from "../../shared/j
 import { batchRequestId, nodeTakes, takeRun } from "../../shared/takes.ts";
 import { inputsReady, planRun } from "../../shared/canvas-plan.ts";
 import { nodeBatch } from "../../shared/recipes.ts";
-import { CanvasRunStore, type HeldRun } from "./canvas-runs.ts";
+import {
+  CanvasRunStore,
+  type HeldRun,
+  type HeldRunAgent,
+  type HeldRunOptions,
+} from "./canvas-runs.ts";
 import type { Board, CanvasNode, Workspace } from "../../shared/schema.ts";
 import { nodeReviewSettings, reviewRequestId } from "../../shared/review.ts";
 import { captureCanvasInputs } from "./generation-inputs.ts";
@@ -39,8 +43,18 @@ type Credentials = { vertexProject?: string; falAccessToken?: string };
 type Game = Awaited<ReturnType<typeof getGame>>;
 type RunInput = z.output<typeof canvasGenerationInput> & { threadId: string | null };
 const running = (job: GenerationJob) => job.status === "queued" || job.status === "running";
-/** How often a game with held runs is read while no studio reads it. */
+/** A text job that serves a media node (its brief, review, or judgement), not a node's own output. */
+const auxiliary = (job: GenerationJob) =>
+  job.request.kind === "text" &&
+  !!(job.request.briefFor || job.request.reviewOf || job.request.judgeOf);
+/** How often a game with held runs is read while no studio reads it, and the most it backs off to. */
 const ADVANCE_EVERY_MS = 20_000;
+const ADVANCE_MAX_MS = 10 * 60_000;
+/** The request ids a run submits: one, or its batch. */
+const batchIds = (run: Pick<HeldRun, "requestId" | "batch">) =>
+  run.batch > 1
+    ? Array.from({ length: run.batch }, (_, index) => batchRequestId(run.requestId, index))
+    : [run.requestId];
 type AdoptionResult = {
   job: GenerationJob;
   adoption: Awaited<ReturnType<typeof adoptGeneration>> | { deferred: true; reason: string };
@@ -71,7 +85,12 @@ export class Generations {
   private readonly adoptions = new Map<string, Promise<AdoptionResult>>();
   private readonly jobOperations = new Map<string, Promise<unknown>>();
   private readonly advances = new Map<string, Promise<void>>();
+  /** Games whose landing signal arrived while a dispatch pass ran, so one more pass follows. */
+  private readonly again = new Set<string>();
+  /** One plan, dispatch, or cancel at a time per game, so two never read one workspace and start one input twice. */
+  private readonly locks = new Map<string, Promise<unknown>>();
   private readonly drivers = new Map<string, ReturnType<typeof setTimeout>>();
+  private readonly delays = new Map<string, number>();
   private disposed = false;
   constructor(
     bb: BbPluginApi,
@@ -86,12 +105,23 @@ export class Generations {
     this.collection = new CanvasCollection(bb, slots, this.work);
     this.runs = new CanvasRunStore(slots.db);
     // Runs held before a restart go on without a studio reading them.
-    for (const gameId of this.runs.games()) this.drive(gameId);
+    for (const gameId of this.runs.games()) this.drive(gameId, ADVANCE_EVERY_MS);
   }
   dispose() {
     this.disposed = true;
     for (const timer of this.drivers.values()) clearTimeout(timer);
     this.drivers.clear();
+  }
+  /** The held runs of a game by board and node, as a workspace read shows them. */
+  pending(gameId: string) {
+    return this.runs.pending(gameId);
+  }
+  private exclusive<T>(gameId: string, action: () => Promise<T>): Promise<T> {
+    const next = (this.locks.get(gameId) ?? Promise.resolve()).catch(() => undefined).then(action);
+    this.locks.set(gameId, next);
+    return next.finally(() => {
+      if (this.locks.get(gameId) === next) this.locks.delete(gameId);
+    });
   }
   private async credentials(provider: MediaRequest["model"]["provider"]): Promise<Credentials> {
     const settings = await this.settings(provider);
@@ -226,8 +256,8 @@ export class Generations {
   /** A run from the canvas: the node's missing inputs first when asked, then the node. */
   async direct(input: z.output<typeof canvasDirectInput>): Promise<CanvasRunResult> {
     const { game, thread } = await this.canvasGame(input.gameId, input.threadId);
-    const workspace = await loadWorkspace(this.bb, input.gameId);
     if (input.brief || input.reviewAssetId || input.judge || !input.upstream) {
+      const workspace = await loadWorkspace(this.bb, input.gameId);
       const prepared = canvasRequest(workspace, input);
       const job = await this.dispatch(
         game,
@@ -239,16 +269,24 @@ export class Generations {
       );
       return { jobs: [job.job], waiting: [] };
     }
-    const result = await this.runPlan(game, thread, workspace, input, true);
-    if (result.waiting.length) this.drive(game.id);
+    const result = await this.exclusive(game.id, async () =>
+      this.runPlan(game, thread, await loadWorkspace(this.bb, input.gameId), input, true),
+    );
+    if (result.waiting.length) this.drive(game.id, ADVANCE_EVERY_MS);
     return result;
   }
-  /** Drops a run held for a node, when it is still the run the caller saw. */
+  /**
+   * Drops a run held for a node, when it is still the run the caller saw, and the inputs that
+   * run was making and that still wait. Inputs already generating finish as takes. The game's
+   * lock keeps a dispatch pass from starting the run under a cancellation that reported success.
+   */
   async cancel(input: z.output<typeof cancelCanvasRunInput>) {
     const { game } = await this.canvasGame(input.gameId, input.threadId, false);
-    return {
-      cancelled: this.runs.release(game.id, input.boardId, input.nodeId, input.requestId),
-    };
+    return this.exclusive(game.id, async () => {
+      const cancelled = this.runs.release(game.id, input.boardId, input.nodeId, input.requestId);
+      if (cancelled) this.runs.releaseOrigin(game.id, input.requestId);
+      return { cancelled };
+    });
   }
   /**
    * Starts what the node needs: inputs without an output run now when their own inputs are
@@ -285,7 +323,7 @@ export class Generations {
               job.target?.boardId === board.id &&
               job.target.nodeId === id &&
               running(job) &&
-              job.request.kind !== "text",
+              !auxiliary(job),
           ))
       ) {
         waiting.push(id);
@@ -298,6 +336,8 @@ export class Generations {
         requestId: isTarget ? input.requestId : randomUUID(),
         threadId: thread,
         agent,
+        options: isTarget ? runOptions(input) : null,
+        origin: isTarget ? null : input.requestId,
         batch: isTarget && batched ? nodeBatch(node) : 1,
       };
       if (!inputsReady(board, node)) {
@@ -309,14 +349,18 @@ export class Generations {
     }
     return { jobs, waiting, ...(plan.gate ? { gate: plan.gate } : {}) };
   }
-  /** Dispatches one node's run from the saved board, as a batch when its model makes several. */
+  /**
+   * Dispatches one node's run from the saved board, as a batch when its model makes several;
+   * `only` names the batch requests still to submit after a partial submission.
+   */
   private async dispatchNode(
     game: Game,
     thread: string | null,
     workspace: Workspace,
     board: Board,
     node: CanvasNode,
-    run: Pick<HeldRun, "requestId" | "agent" | "batch">,
+    run: Pick<HeldRun, "requestId" | "agent" | "options" | "batch">,
+    only?: string[],
   ) {
     const revision = workspace.boards.find((entry) => entry.board.id === board.id)!.revision;
     const agent = nodeAgent(node) ?? run.agent ?? undefined;
@@ -326,21 +370,18 @@ export class Generations {
       boardId: board.id,
       nodeId: node.id,
       revision,
+      ...run.options,
       ...(agent && runsOnBbNode(node)
         ? {
             textProviderId: agent.providerId,
             model: { provider: "bb", id: agent.model },
-            reasoningLevel: agent.reasoningLevel,
+            ...(agent.reasoningLevel ? { reasoningLevel: agent.reasoningLevel } : {}),
             ...(agent.serviceTier ? { serviceTier: agent.serviceTier } : {}),
           }
         : {}),
     });
-    const ids =
-      run.batch > 1
-        ? Array.from({ length: run.batch }, (_, index) => batchRequestId(run.requestId, index))
-        : [run.requestId];
     const results = await Promise.all(
-      ids.map((id) =>
+      (only ?? batchIds(run)).map((id) =>
         this.dispatch(game, id, prepared.request, thread, prepared.target, {
           kind: "canvas",
           gameId: game.id,
@@ -356,8 +397,17 @@ export class Generations {
    */
   advance(gameId: string): Promise<void> {
     const previous = this.advances.get(gameId);
-    if (previous) return previous;
-    const pending = this.advanceNow(gameId).finally(() => {
+    if (previous) {
+      // A landing that arrives mid-pass may postdate the pass's read: one more pass follows.
+      this.again.add(gameId);
+      return previous;
+    }
+    const pending = (async () => {
+      do {
+        this.again.delete(gameId);
+        await this.exclusive(gameId, () => this.advanceNow(gameId));
+      } while (this.again.has(gameId));
+    })().finally(() => {
       if (this.advances.get(gameId) === pending) this.advances.delete(gameId);
     });
     this.advances.set(gameId, pending);
@@ -367,6 +417,7 @@ export class Generations {
     const held = this.runs.list(gameId);
     if (!held.length) return;
     const workspace = await loadWorkspace(this.bb, gameId);
+    const jobs = new Set(workspace.generationJobs.map((job) => job.id));
     for (const run of held) {
       const selected = workspace.boards.find(({ board }) => board.id === run.boardId);
       const node = selected?.board.nodes.find(({ id }) => id === run.nodeId);
@@ -374,15 +425,16 @@ export class Generations {
         this.runs.release(gameId, run.boardId, run.nodeId, run.requestId);
         continue;
       }
-      const submitted = new Set([run.requestId, batchRequestId(run.requestId, 0)]);
-      if (workspace.generationJobs.some((job) => submitted.has(job.id))) {
+      // A batch whose first requests reached the host before a crash finishes with the rest.
+      const missing = batchIds(run).filter((id) => !jobs.has(id));
+      if (!missing.length) {
         this.runs.release(gameId, run.boardId, run.nodeId, run.requestId);
         continue;
       }
-      if (!inputsReady(selected.board, node)) continue;
+      if (missing.length === run.batch && !inputsReady(selected.board, node)) continue;
       try {
         const { game, thread } = await this.canvasGame(gameId, run.threadId);
-        await this.dispatchNode(game, thread, workspace, selected.board, node, run);
+        await this.dispatchNode(game, thread, workspace, selected.board, node, run, missing);
         this.runs.release(gameId, run.boardId, run.nodeId, run.requestId);
       } catch (error) {
         this.runs.fail(
@@ -394,28 +446,43 @@ export class Generations {
       }
     }
   }
-  /** Keeps a game with held runs moving while no studio reads it: adopt, advance, repeat. */
-  private drive(gameId: string) {
-    if (this.disposed || this.drivers.has(gameId)) return;
+  /**
+   * Keeps a game with held runs moving while no studio reads it: adopt, advance, repeat. A
+   * sooner wake replaces a later one, so a new run is not left waiting out a backed-off delay.
+   */
+  private drive(gameId: string, delay: number) {
+    if (this.disposed) return;
+    const current = this.delays.get(gameId);
+    if (this.drivers.has(gameId) && current !== undefined && current <= delay) return;
+    clearTimeout(this.drivers.get(gameId));
     const timer = setTimeout(() => {
       this.drivers.delete(gameId);
-      void this.tick(gameId);
-    }, ADVANCE_EVERY_MS);
+      this.delays.delete(gameId);
+      void this.tick(gameId, delay);
+    }, delay);
     timer.unref?.();
     this.drivers.set(gameId, timer);
+    this.delays.set(gameId, delay);
   }
-  private async tick(gameId: string) {
+  private async tick(gameId: string, delay: number) {
     if (this.disposed || !this.runs.list(gameId).length) return;
+    let failed = false;
     try {
       const read = await loadCanvas(this.bb, gameId);
       await this.refresh(read.workspace.game, read);
       await this.advance(gameId);
     } catch (error) {
+      failed = true;
       this.bb.log.warn(
         `Could not advance held canvas runs: ${error instanceof Error ? error.message : String(error)}`,
       );
     }
-    if (this.runs.list(gameId).length) this.drive(gameId);
+    const held = this.runs.list(gameId);
+    if (!held.length) return;
+    // Runs that keep failing, or a checkout that cannot be read, are tried less and less often
+    // until a new run or a cancel changes things; a person sees the error on the card meanwhile.
+    const stuck = failed || held.every((run) => run.error);
+    this.drive(gameId, stuck ? Math.min(delay * 2, ADVANCE_MAX_MS) : ADVANCE_EVERY_MS);
   }
   async directControl(input: z.output<typeof canvasDirectControl>) {
     const { game, thread } = await this.canvasGame(
@@ -541,18 +608,20 @@ export class Generations {
   }
   async canvas(input: z.output<typeof canvasGenerationInput>, threadId?: string) {
     const game = await this.game(input.gameId, threadId);
-    const workspace = await loadWorkspace(this.bb, input.gameId);
     if (input.upstream && !input.brief && !input.reviewAssetId && !input.judge) {
-      const result = await this.runPlan(
-        game,
-        threadId!,
-        workspace,
-        { ...input, threadId: threadId! },
-        false,
+      const result = await this.exclusive(game.id, async () =>
+        this.runPlan(
+          game,
+          threadId!,
+          await loadWorkspace(this.bb, input.gameId),
+          { ...input, threadId: threadId! },
+          false,
+        ),
       );
-      if (result.waiting.length) this.drive(game.id);
+      if (result.waiting.length) this.drive(game.id, ADVANCE_EVERY_MS);
       return result;
     }
+    const workspace = await loadWorkspace(this.bb, input.gameId);
     const { request, target } = canvasRequest(workspace, input);
     return this.start(input.gameId, input.requestId, request, threadId, target);
   }
@@ -767,13 +836,22 @@ export class Generations {
 }
 
 /** The BB agent a run names for its text and agent steps, as the canvas composer selected it. */
-function runAgent(input: RunInput): AgentSelection | null {
+function runAgent(input: RunInput): HeldRunAgent | null {
   if (!input.textProviderId || input.model?.provider !== "bb" || !input.model.id) return null;
   return {
     providerId: input.textProviderId,
     model: input.model.id,
-    reasoningLevel: input.reasoningLevel ?? "default",
+    ...(input.reasoningLevel ? { reasoningLevel: input.reasoningLevel } : {}),
     ...(input.serviceTier ? { serviceTier: input.serviceTier } : {}),
+  };
+}
+/** What the target keeps of the caller's request: a media model it chose, and its approval. */
+function runOptions(input: RunInput): HeldRunOptions | null {
+  const model = input.model && input.model.provider !== "bb" ? input.model : undefined;
+  if (!model && !input.approvedImagePath) return null;
+  return {
+    ...(model ? { model } : {}),
+    ...(input.approvedImagePath ? { approvedImagePath: input.approvedImagePath } : {}),
   };
 }
 const runsOnBbNode = (node: Pick<CanvasNode, "type">) =>

@@ -1,5 +1,6 @@
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
-import { agentSelection, type AgentSelection } from "../../shared/generation.ts";
+import type { z } from "zod";
+import { agentSelection, canvasGenerationInput } from "../../shared/generation.ts";
 import type { PendingRun } from "../../shared/schema.ts";
 
 /*
@@ -10,6 +11,12 @@ import type { PendingRun } from "../../shared/schema.ts";
  */
 
 type Db = ReturnType<BbPluginApi["storage"]["database"]>;
+/** A run's agent as the canvas composer sent it; the level may be left to the provider. */
+export const heldRunAgent = agentSelection.partial({ reasoningLevel: true });
+export type HeldRunAgent = z.output<typeof heldRunAgent>;
+/** What a held run keeps of its request besides the node: the caller's model and approval. */
+export const heldRunOptions = canvasGenerationInput.pick({ model: true, approvedImagePath: true });
+export type HeldRunOptions = z.output<typeof heldRunOptions>;
 export type HeldRun = {
   gameId: string;
   boardId: string;
@@ -18,7 +25,11 @@ export type HeldRun = {
   /** The requesting thread, which must still own a registered checkout when the run dispatches. */
   threadId: string | null;
   /** The BB agent for text and agent steps that pin none themselves. */
-  agent: AgentSelection | null;
+  agent: HeldRunAgent | null;
+  /** The caller's model and approval for the target node; inputs run from their recipes. */
+  options: HeldRunOptions | null;
+  /** The target request this run was made for, when it is one of that run's inputs. */
+  origin: string | null;
   batch: number;
   requestedAt: number;
   error: string | null;
@@ -30,6 +41,8 @@ type Row = {
   request: string;
   thread: string | null;
   agent: string | null;
+  options: string | null;
+  origin: string | null;
   batch: number;
   requested: number;
   error: string | null;
@@ -43,18 +56,22 @@ export class CanvasRunStore {
     this.db = db;
     db.exec(`CREATE TABLE IF NOT EXISTS ${table} (
       game TEXT NOT NULL, board TEXT NOT NULL, node TEXT NOT NULL, request TEXT NOT NULL,
-      thread TEXT, agent TEXT, batch INTEGER NOT NULL, requested INTEGER NOT NULL, error TEXT,
+      thread TEXT, agent TEXT, options TEXT, origin TEXT,
+      batch INTEGER NOT NULL, requested INTEGER NOT NULL, error TEXT,
       PRIMARY KEY (game, board, node))`);
   }
   private static run(row: Row): HeldRun {
-    const parsed = row.agent ? agentSelection.safeParse(JSON.parse(row.agent)) : undefined;
+    const agent = row.agent ? heldRunAgent.safeParse(JSON.parse(row.agent)) : undefined;
+    const options = row.options ? heldRunOptions.safeParse(JSON.parse(row.options)) : undefined;
     return {
       gameId: row.game,
       boardId: row.board,
       nodeId: row.node,
       requestId: row.request,
       threadId: row.thread,
-      agent: parsed?.success ? parsed.data : null,
+      agent: agent?.success ? agent.data : null,
+      options: options?.success ? options.data : null,
+      origin: row.origin,
       batch: row.batch,
       requestedAt: row.requested,
       error: row.error,
@@ -64,8 +81,9 @@ export class CanvasRunStore {
   hold(run: Omit<HeldRun, "error" | "requestedAt"> & { requestedAt?: number }) {
     this.db
       .prepare(
-        `INSERT OR REPLACE INTO ${table} (game, board, node, request, thread, agent, batch, requested, error)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL)`,
+        `INSERT OR REPLACE INTO ${table}
+           (game, board, node, request, thread, agent, options, origin, batch, requested, error)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)`,
       )
       .run(
         run.gameId,
@@ -74,6 +92,8 @@ export class CanvasRunStore {
         run.requestId,
         run.threadId,
         run.agent ? JSON.stringify(run.agent) : null,
+        run.options ? JSON.stringify(run.options) : null,
+        run.origin,
         run.batch,
         run.requestedAt ?? Date.now(),
       );
@@ -107,6 +127,11 @@ export class CanvasRunStore {
           .prepare(`DELETE FROM ${table} WHERE game = ? AND board = ? AND node = ?`)
           .run(gameId, boardId, nodeId);
     return result.changes > 0;
+  }
+  /** Drops the held inputs a cancelled target run was making. */
+  releaseOrigin(gameId: string, origin: string): number {
+    return this.db.prepare(`DELETE FROM ${table} WHERE game = ? AND origin = ?`).run(gameId, origin)
+      .changes;
   }
   fail(gameId: string, boardId: string, nodeId: string, error: string) {
     this.db

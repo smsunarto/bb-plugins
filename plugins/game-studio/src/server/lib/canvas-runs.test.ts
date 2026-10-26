@@ -152,6 +152,8 @@ async function fixture() {
       image("concept", "Concept art", ["note"]),
       image("final", "Final render", ["concept"]),
       image("alt", "Alternate render", ["concept"]),
+      image("sketch", "Poster sketch", ["concept"]),
+      image("poster", "Poster", ["sketch"]),
       {
         id: "mesh",
         type: "model-3d",
@@ -299,9 +301,75 @@ test("a held run whose job already exists is released without a second submissio
     requestId: "final-request",
     threadId: "thread",
     agent: null,
+    options: null,
+    origin: null,
     batch: 1,
   });
   await f.generations.advance("orbit");
   expect(f.starts).toHaveLength(2);
   expect(f.runs.list("orbit")).toEqual([]);
+  // A batch whose first request reached the host before a crash finishes with the rest.
+  f.hostJobs.set(
+    "batch-request-b0",
+    generationJob.parse({
+      version: 1,
+      id: "batch-request-b0",
+      threadId: "thread",
+      origin: { kind: "canvas", gameId: "orbit" },
+      createdAt: 1,
+      updatedAt: 1,
+      status: "running",
+      request: { kind: "image", prompt: "Final render" },
+      target: { boardId: "main", nodeId: "final", fingerprint: "f" },
+      outputs: [],
+    }),
+  );
+  f.runs.hold({
+    gameId: "orbit",
+    boardId: "main",
+    nodeId: "final",
+    requestId: "batch-request",
+    threadId: "thread",
+    agent: null,
+    options: null,
+    origin: null,
+    batch: 4,
+  });
+  await f.generations.advance("orbit");
+  expect(
+    f.starts
+      .slice(2)
+      .map((start) => start.jobId)
+      .sort(),
+  ).toEqual(["batch-request-b1", "batch-request-b2", "batch-request-b3"]);
+  expect(f.runs.list("orbit")).toEqual([]);
+});
+
+test("cancelling a waiting run drops the inputs it was making that still wait", async () => {
+  const f = await fixture();
+  // poster <- sketch <- concept: the concept starts, the sketch and poster wait.
+  const result = await f.run("poster");
+  expect(result.jobs.map((job) => job.target?.nodeId)).toEqual(["concept"]);
+  expect(result.waiting).toEqual(["sketch", "poster"]);
+  expect(
+    f.runs
+      .list("orbit")
+      .map((run) => [run.nodeId, run.origin])
+      .sort(),
+  ).toEqual([
+    ["poster", null],
+    ["sketch", "poster-request"],
+  ]);
+  await f.generations.cancel({
+    gameId: "orbit",
+    boardId: "main",
+    nodeId: "poster",
+    requestId: "poster-request",
+    threadId: "thread",
+  });
+  expect(f.runs.list("orbit")).toEqual([]);
+  // The concept keeps generating and lands as its own take; nothing else starts.
+  await f.completeHostJob(f.starts[0]!.jobId);
+  await f.generations.list("orbit");
+  expect(f.starts).toHaveLength(1);
 });

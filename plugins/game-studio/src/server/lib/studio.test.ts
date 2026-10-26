@@ -2251,6 +2251,7 @@ test("a generation status service outage preserves the workspace and marks pendi
         list: async () => {
           throw new Error("Host unavailable");
         },
+        pending: () => ({}),
       } as never,
     },
     { gameId: game.id },
