@@ -1,28 +1,24 @@
+import { graphEdges, type GraphEdge } from "../shared/canvas-connections.ts";
 import { filterNodeReferences } from "../shared/node-references.ts";
-import type { Edge, Viewport } from "@xyflow/react";
+import type { Viewport } from "@xyflow/react";
 import type { Board, CanvasNode } from "../shared/schema.ts";
 
 /** Build the persisted board from the draft, dropping references to removed nodes. */
 export function boardSnapshot(
   board: Board,
   nodes: CanvasNode[],
-  edges: Edge[],
+  edges: GraphEdge[],
   viewport: Viewport,
 ): Board {
   const ids = new Set(nodes.map((node) => node.id));
+  const kept = nodes.map((node) => {
+    const data = filterNodeReferences(node.data, (id) => ids.has(id));
+    return Object.assign({}, node, { data });
+  });
   return {
     ...board,
-    nodes: nodes.map((node) => {
-      const data = filterNodeReferences(node.data, (id) => ids.has(id));
-      return Object.assign({}, node, { data });
-    }),
-    edges: edges
-      .filter((edge) => ids.has(edge.source) && ids.has(edge.target))
-      .map(({ id, source, target, sourceHandle }) => {
-        const edge: Board["edges"][number] = { id, source, target };
-        if (sourceHandle) edge.sourceHandle = sourceHandle;
-        return edge;
-      }),
+    nodes: kept,
+    edges: graphEdges(kept, edges),
     editorLayout: {
       ...board.editorLayout,
       fitView: false,
@@ -80,7 +76,8 @@ function mergeById<T extends { id: string }>(
 }
 /**
  * Rebase the local draft onto a newer saved board. Generation results, agents and other
- * tabs write the board on disk; unsaved local edits stay on top of their changes.
+ * tabs write the board on disk; unsaved local edits stay on top of their changes. Wires
+ * follow the merged inputs.
  */
 export function rebaseBoard(base: Board, local: Board, remote: Board): Board {
   const nodes = mergeById(base.nodes, local.nodes, remote.nodes, (b, l, r) => ({
@@ -96,7 +93,7 @@ export function rebaseBoard(base: Board, local: Board, remote: Board): Board {
   return {
     ...mergeRecord(base, local, remote),
     nodes,
-    edges: mergeById(base.edges, local.edges, remote.edges, (b, l, r) => (equal(l, b) ? r : l)),
+    edges: graphEdges(nodes, [...local.edges, ...remote.edges]),
     editorLayout: {
       ...mergeRecord(base.editorLayout, local.editorLayout, remote.editorLayout),
       nodes: Object.fromEntries(Object.entries(layout).filter(([id]) => ids.has(id))),

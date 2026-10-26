@@ -183,7 +183,9 @@ test("native edits build connected workflows, merge brief data and preserve outp
     resolution: "1K",
     images: [{ type: "node", nodeId: "note0", studioEdgeId: "brief-concept", port: "text" }],
   });
-  expect(saved.board.edges).toEqual([{ id: "brief-concept", source: "note0", target: "concept" }]);
+  expect(saved.board.edges).toEqual([
+    { id: "brief-concept", source: "note0", target: "concept", targetHandle: "text" },
+  ]);
   await f.edit([{ op: "disconnect", id: "brief-concept" }]);
   expect((await f.snapshot()).board.nodes[1]!.data.images).toEqual([]);
   expect(f.calls).not.toContain("start");

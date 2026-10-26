@@ -33,13 +33,15 @@ export const boardSchema = z.object({
   name: z.string().max(120).optional(),
   viewport: z.object({ width: z.number().positive(), height: z.number().positive() }),
   nodes: z.array(nodeSchema).max(2000),
+  /** Derived from node inputs (src/shared/canvas-connections.ts); persisted for readers and ids. */
   edges: z
     .array(
       z.object({
         id: idSchema,
         source: idSchema,
         target: idSchema,
-        sourceHandle: z.string().optional(),
+        /** The input port the wire lands on. */
+        targetHandle: z.string().optional(),
       }),
     )
     .max(8000),

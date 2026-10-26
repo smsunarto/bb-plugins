@@ -17,6 +17,7 @@ import {
   connectAssetInput,
   disconnectInput,
   removeInput,
+  withEdges,
 } from "../../shared/canvas-connections.ts";
 import { nodeRefs } from "../../shared/inputs.ts";
 import { reviewSettings } from "../../shared/review.ts";
@@ -172,7 +173,7 @@ export function applyCanvasEdits(workspace: Workspace, input: z.output<typeof ca
   }
   for (const node of board.nodes.filter((node) => validate.has(node.id)))
     validateNodeInputs(node, board, workspace);
-  return boardSchema.parse(board);
+  return boardSchema.parse(withEdges(board));
 }
 
 export async function editCanvas(bb: BbPluginApi, input: z.output<typeof canvasEditInput>) {

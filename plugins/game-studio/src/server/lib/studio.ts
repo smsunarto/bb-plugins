@@ -1,5 +1,6 @@
 import { briefRecipe, generationImagePaths, type GenerationJob } from "../../shared/generation.ts";
 import { nodeFingerprint } from "./canvas-generation.ts";
+import { graphEdges } from "../../shared/canvas-connections.ts";
 import { nodeTakes } from "../../shared/takes.ts";
 import { nodeReviews, reviewLimit } from "../../shared/review.ts";
 import { judgeChoice, judgeLimit, nodeJudgements } from "../../shared/judge.ts";
@@ -536,7 +537,9 @@ async function loadBoard(files: Reader, id: string): Promise<{ board: Board; rev
       ...(position.height === undefined ? {} : { height: position.height }),
     };
   });
-  const board = boardSchema.parse({ ...content, nodes, editorLayout: layout });
+  const parsed = boardSchema.parse({ ...content, nodes, editorLayout: layout });
+  // Wires follow saved inputs; persisted edges only lend ids to inputs saved without one.
+  const board = { ...parsed, edges: graphEdges(parsed.nodes, parsed.edges) };
   checkBoard(board);
   return {
     board,
@@ -711,14 +714,15 @@ export async function inspectUnity(bb: BbPluginApi, input: z.infer<typeof inspec
 export async function saveBoard(bb: BbPluginApi, input: z.infer<typeof saveBoardInput>) {
   return serialized(bb, input.gameId, async () => {
     const game = await getGame(bb, input.gameId);
-    checkBoard(input.board);
+    const board = { ...input.board, edges: graphEdges(input.board.nodes, input.board.edges) };
+    checkBoard(board);
     let previous: z.infer<typeof boardRevisionSchema>;
     try {
       previous = boardRevisionSchema.parse(JSON.parse(input.revision));
     } catch {
       throw new Error("The board revision is invalid. Reload the workspace before saving.");
     }
-    const { content, layout } = splitBoard(input.board);
+    const { content, layout } = splitBoard(board);
     const saved = await bb.hosts.experimental_client({ contract: studioHostContract }).call(
       "saveCanvasBoard",
       {

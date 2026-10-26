@@ -25,31 +25,14 @@ const board: Board = {
   editorLayout: { version: 1, view: "canvas", nodes: {}, viewport: { x: 0, y: 0, zoom: 1 } },
 };
 
-it("saves a new unnamed-handle connection as valid RPC JSON", () => {
-  const saved = boardSnapshot(
-    board,
-    board.nodes,
-    [{ id: "link", source: "note", target: "image", sourceHandle: null, targetHandle: null }],
-    { x: -80, y: 120, zoom: 0.5 },
-  );
+it("saves the wires its inputs derive as valid RPC JSON", () => {
+  const saved = boardSnapshot(board, board.nodes, [], { x: -80, y: 120, zoom: 0.5 });
   // The RPC boundary rejects explicit undefined values even in optional fields.
   expect(z.record(z.string(), z.json()).parse(saved).edges).toStrictEqual([
-    { id: "link", source: "note", target: "image" },
+    { id: "link", source: "note", target: "image", targetHandle: "text" },
   ]);
   expect(saved.editorLayout.viewport).toStrictEqual({ x: -80, y: 120, zoom: 0.5 });
   expect(saved.editorLayout.fitView).toBe(false);
-});
-
-it("keeps named source handles in the saved connection", () => {
-  const saved = boardSnapshot(
-    board,
-    board.nodes,
-    [{ id: "link", source: "note", target: "image", sourceHandle: "output" }],
-    { x: 0, y: 0, zoom: 1 },
-  );
-  expect(saved.edges).toStrictEqual([
-    { id: "link", source: "note", target: "image", sourceHandle: "output" },
-  ]);
 });
 
 it("removes deleted-node connections and references while preserving library assets and draft positions", () => {
