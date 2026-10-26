@@ -144,6 +144,6 @@ export default definePlugin({
       canvas_context: canvasContext,
       canvas_edit: canvasEdit,
     },
-    skills: ["game-studio", "unity-editors"],
+    skills: ["game-studio", "unity-editors", "assemble-unity-scene"],
   },
 });
