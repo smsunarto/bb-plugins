@@ -166,8 +166,6 @@ where the component supports them.
 | Agent Instructions    | Rule editor, scopes, loading and errors                                        |
 | Agentation            | Annotation list, empty and error states                                        |
 | Amp                   | Oracle results, running trace, missing and invalid reports                     |
-| Canvas                | Cards, sections, callouts, tables, controls, task lists, charts                |
-| Cloudflare            | Notices, badges, copy control, quick-share lifecycle                           |
 | Code Review           | Review and branch status, findings, comments, file tree, refresh state         |
 | Devin                 | Starting and active Cloud session banners                                      |
 | Dotfiles              | Source and Markdown editors, host picker, offline and missing repository       |

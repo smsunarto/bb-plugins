@@ -172,5 +172,5 @@ The build and verify scripts call the bb CLI directly (`bb plugin build .`), so 
 bb 0.44 checkout must be on PATH. Run the query and UI checklist against the dev
 instance after the plugin is installed and running.
 
-BB supplies the read-only Pierre diff runtime. Markdown files reuse the Docs rich editor, including its source toggle. Other files use
-CodeMirror, the same source editor used by Docs. No separate editor worker assets are required.
+BB supplies the read-only Pierre diff runtime. All files, including Markdown, use
+the CodeMirror source editor. No separate editor worker assets are required.

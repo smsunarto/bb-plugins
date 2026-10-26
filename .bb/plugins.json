@@ -20,10 +20,6 @@
       "source": "./plugins/amp"
     },
     {
-      "name": "cloudflare",
-      "source": "./plugins/cloudflare"
-    },
-    {
       "name": "code-review",
       "source": "./plugins/code-review"
     },

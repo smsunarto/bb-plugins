@@ -1,11 +1,10 @@
-import { useEffect, useLayoutEffect, useRef, useState, type ReactElement } from "react";
+import { useEffect, useLayoutEffect, useRef, type ReactElement } from "react";
 import { basicSetup } from "codemirror";
 import { Annotation, EditorState, StateEffect } from "@codemirror/state";
 import { EditorView, keymap } from "@codemirror/view";
 import { tags } from "@lezer/highlight";
 import { HighlightStyle, syntaxHighlighting, LanguageDescription } from "@codemirror/language";
 import { languages } from "@codemirror/language-data";
-import { MarkdownEditor } from "@smsunarto/bb-plugin-canvas/editor";
 import type { RepoPath } from "./route.ts";
 
 export interface WorkingFileEditorProps {
@@ -113,44 +112,6 @@ function SourceEditor({ path, value, onChange, onSave }: WorkingFileEditorProps)
   return <div ref={container} className="min-h-0 flex-1 overflow-hidden" />;
 }
 
-function RichEditor(props: WorkingFileEditorProps): ReactElement {
-  const [initialValue, setInitialValue] = useState(props.value);
-  const lastValue = useRef(props.value);
-  useEffect(() => {
-    if (props.value !== lastValue.current) {
-      lastValue.current = props.value;
-      setInitialValue(props.value);
-    }
-  }, [props.value]);
-  return (
-    <div
-      className="flex min-h-0 flex-1 flex-col"
-      onBlur={(event) => {
-        if (!event.currentTarget.contains(event.relatedTarget)) props.onSave();
-      }}
-    >
-      <MarkdownEditor
-        initialValue={initialValue}
-        notePath={props.path}
-        previewBaseUrl=""
-        onFirstRender={() => {}}
-        onMarkdownChange={(next) => {
-          lastValue.current = next;
-          props.onChange(next);
-        }}
-        onProposalApplied={(result) => {
-          lastValue.current = result.content;
-          props.onChange(result.content);
-        }}
-      />
-    </div>
-  );
-}
-
 export function WorkingFileEditor(props: WorkingFileEditorProps): ReactElement {
-  return /\.(md|mdx|markdown)$/i.test(props.path) ? (
-    <RichEditor key={props.path} {...props} />
-  ) : (
-    <SourceEditor {...props} />
-  );
+  return <SourceEditor {...props} />;
 }

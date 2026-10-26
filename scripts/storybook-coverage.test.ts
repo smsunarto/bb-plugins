@@ -10,11 +10,6 @@ const surfaces: Record<string, Record<string, string[]>> = {
   "agent-instructions": { rules: ["RuleCard"], screens: ["../src/app/app"] },
   agentation: { panel: ["AnnotationPanel"] },
   amp: { oracle: ["../app"] },
-  canvas: {
-    components: ["componentTable", "CanvasStateProvider"],
-    charts: ["BarChart", "LineChart", "PieChart", "UsageBar"],
-  },
-  cloudflare: { controls: ["Notice", "CopyButton", "Badge"], shares: ["QuickShareCard"] },
   "code-review": {
     comments: ["CommentForm"],
     explorer: ["FileExplorer"],
@@ -141,8 +136,7 @@ test("stories are grouped into Components or Screens", () => {
 test("plugin styles apply to component and screen previews", () => {
   for (const root of ["Components", "Screens"]) {
     expect(previewSurfaceClass(`${root}/Game Studio/Canvas`)).toBe("gs-app");
-    expect(previewSurfaceClass(`${root}/Cloudflare/Quick shares`)).toBe("cf-panel");
     expect(previewSurfaceClass(`${root}/Tasks/Views`)).toBeUndefined();
-    expect(previewSurfaceClass(`${root}/Cloudflare Other/Panel`)).toBeUndefined();
+    expect(previewSurfaceClass(`${root}/Game Studio Other/Panel`)).toBeUndefined();
   }
 });

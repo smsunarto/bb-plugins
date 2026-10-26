@@ -43,7 +43,7 @@ test("Release Please covers enabled publishable targets with the existing tag co
     })),
   ].filter(
     (target) =>
-      !["plugins/agent-proxy", "plugins/cloudflare", "plugins/traces"].includes(
+      !["plugins/agent-proxy", "plugins/traces"].includes(
         target.relativePath,
       ),
   );

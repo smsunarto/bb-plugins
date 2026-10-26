@@ -4,10 +4,8 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   Activity01Icon,
-  ArtboardIcon,
   ChatFeedbackIcon,
   CheckListIcon,
-  CloudServerIcon,
   DashboardSpeed02Icon,
   Doc01Icon,
   FileEditIcon,
@@ -238,10 +236,6 @@ const customIcons = {
     name: "ChatFeedback",
     nodes: ChatFeedbackIcon,
   },
-  canvas: {
-    name: "Artboard",
-    nodes: ArtboardIcon,
-  },
   // Amp ships its own wordmark glyph, so this entry renders Sourcegraph's mark
   // rather than a stand-in from the icon set. `src/amp-brand.ts` is the single
   // source for those paths — the plugin writes the same art into bb's config.
@@ -254,10 +248,6 @@ const customIcons = {
   devin: {
     name: "Devin (brand mark)",
     brand: { paths: DEVIN_LOGO_PATHS, viewBox: DEVIN_LOGO_VIEW_BOX },
-  },
-  cloudflare: {
-    name: "CloudServer",
-    nodes: CloudServerIcon,
   },
   "prompt-editor": {
     name: "EditFile",

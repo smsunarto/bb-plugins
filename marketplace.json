@@ -8,7 +8,7 @@
     {
       "id": "agentation",
       "displayName": "Agentation",
-      "description": "Point at any part of the bb UI \u2014 including plugin surfaces \u2014 and turn it into structured AFS 1.1 feedback that bb agents can read, answer, and resolve.",
+      "description": "Point at any part of the bb UI — including plugin surfaces — and turn it into structured AFS 1.1 feedback that bb agents can read, answer, and resolve.",
       "icon": {
         "url": "plugins/agentation/assets/icon.svg"
       },
@@ -42,26 +42,6 @@
           "subdir": "plugins/amp",
           "range": "*",
           "tagPrefix": "amp/"
-        }
-      }
-    },
-    {
-      "id": "cloudflare",
-      "displayName": "Cloudflare",
-      "description": "Share development servers through Cloudflare Tunnel with Zero Trust access controls.",
-      "icon": {
-        "url": "plugins/cloudflare/assets/icon.svg"
-      },
-      "author": {
-        "name": "Scott Sunarto",
-        "github": "smsunarto"
-      },
-      "source": {
-        "git": {
-          "url": "https://github.com/smsunarto/bb-plugins",
-          "subdir": "plugins/cloudflare",
-          "range": "*",
-          "tagPrefix": "cloudflare/"
         }
       }
     },
@@ -108,7 +88,7 @@
     {
       "id": "gitbutler",
       "displayName": "GitButler",
-      "description": "Browse a GitButler workspace \u2014 stacks, branches, commits, uncommitted work, and diffs \u2014 from a bb thread panel.",
+      "description": "Browse a GitButler workspace — stacks, branches, commits, uncommitted work, and diffs — from a bb thread panel.",
       "icon": {
         "url": "plugins/gitbutler/assets/icon.svg"
       },
