@@ -4,6 +4,10 @@ import type { ComposerMention } from "@get-bb/plugin-sdk/app";
 import { createElement, Fragment } from "react";
 
 installDom();
+// installDom keeps node's Event classes; Radix dispatches its custom events on
+// jsdom nodes, which accept only jsdom's own.
+const jsdomWindow = window as unknown as { Event: typeof Event; CustomEvent: typeof CustomEvent };
+Object.assign(globalThis, { Event: jsdomWindow.Event, CustomEvent: jsdomWindow.CustomEvent });
 // jsdom has no matchMedia; the vendored Dialog reads it to pick its layout.
 window.matchMedia ??= (query: string) =>
   ({
@@ -18,11 +22,22 @@ window.matchMedia ??= (query: string) =>
   }) as MediaQueryList;
 const { renderSlot } = await import("@get-bb/plugin-sdk/testing/app");
 const { useComposer } = await import("@get-bb/plugin-sdk/app");
-const { act, cleanup, fireEvent, waitFor } = await import("@testing-library/react");
+const { act, cleanup, fireEvent, screen, waitFor } = await import("@testing-library/react");
 const { AgentationStagingBanner } = await import("../components/staging-banner.tsx");
 const { ANNOTATION_MENTION_PROVIDER, annotationMentionItemId } =
   await import("../lib/staging-display.ts");
 afterEach(cleanup);
+
+// The list opens from the pill into a portal outside the slot container.
+async function openList(
+  slot: { findByRole: (role: string, options: { name: string }) => Promise<HTMLElement> },
+  count: number,
+) {
+  fireEvent.click(
+    await slot.findByRole("button", { name: `${count} annotation${count === 1 ? "" : "s"}` }),
+  );
+  return screen;
+}
 
 const PLUGIN_ID = "agentation";
 const THREAD_ID = "thr_review";
@@ -96,8 +111,11 @@ test("the mention button appends the annotation pill after the draft and focuses
       }),
     },
   });
-  fireEvent.click(await slot.findByRole("button", { name: "Mention annotation in composer" }));
+  const list = await openList(slot, 1);
+  fireEvent.click(await list.findByRole("button", { name: "Mention annotation in composer" }));
 
+  // The list closes first, then hands focus back to the composer.
+  await waitFor(() => expect(slot.inspection.composer.focusCount).toBe(1));
   const { draft, focusCount } = slot.inspection.composer;
   expect(draft.mentions).toHaveLength(1);
   const [pill] = draft.mentions;
@@ -147,7 +165,8 @@ test("sending an annotation removes only its pill and keeps later mentions align
       },
     },
   });
-  const [sendFirst] = await slot.findAllByRole("button", {
+  const list = await openList(slot, 2);
+  const [sendFirst] = await list.findAllByRole("button", {
     name: "Send annotation to this thread",
   });
   await act(async () => {
@@ -189,7 +208,7 @@ test("a submitted draft re-reads the staged list at once", async () => {
       },
     },
   );
-  await slot.findByText("Annotations");
+  await slot.findByRole("button", { name: "1 annotation" });
   const before = reads;
 
   await act(async () => {
@@ -212,13 +231,16 @@ test("the new-thread composer offers mentions instead of sends", async () => {
       }),
     },
   });
-  await slot.findByText("Annotations");
-  expect(slot.queryByRole("button", { name: "Send all" })).toBeNull();
-  expect(slot.queryByRole("button", { name: "Send annotation to this thread" })).toBeNull();
+  const list = await openList(slot, 2);
+  await list.findByRole("button", { name: "Mention all" });
+  expect(list.queryByRole("button", { name: /Send all/ })).toBeNull();
+  expect(list.queryByRole("button", { name: "Send annotation to this thread" })).toBeNull();
 
-  const [mentionFirst] = slot.getAllByRole("button", { name: "Mention annotation in composer" });
+  const [mentionFirst] = list.getAllByRole("button", { name: "Mention annotation in composer" });
   fireEvent.click(mentionFirst!);
-  fireEvent.click(slot.getByRole("button", { name: "Mention all" }));
+  await waitFor(() => expect(list.queryByRole("button", { name: /Mention all/ })).toBeNull());
+  await openList(slot, 2);
+  fireEvent.click(await list.findByRole("button", { name: /Mention all/ }));
 
   // The pills name no thread; the dispatch that creates the thread assigns them.
   const { draft } = slot.inspection.composer;

@@ -1,4 +1,12 @@
-import { useCallback, useEffect, useId, useRef, useState } from "react";
+import {
+  type PointerEvent,
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useId,
+  useRef,
+  useState,
+} from "react";
 import {
   experimental_usePluginId,
   useComposer,
@@ -9,6 +17,9 @@ import {
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { useIsCompactViewport } from "@/components/ui/hooks/use-compact-viewport";
+import { cn } from "@/lib/utils";
 import {
   Dialog,
   DialogContent,
@@ -96,7 +107,8 @@ function StagedAnnotations({ threadId }: { threadId: string | null }) {
   useEffect(() => composer.onSubmitted(() => void refresh()), [composer, refresh]);
 
   // Append the pills after the draft's last word, as typing them there would.
-  // Pills already in the draft are not repeated.
+  // Pills already in the draft are not repeated. The list returns focus to the
+  // composer once it has closed.
   const mentionAnnotations = (items: readonly { id: string; label: string }[]) => {
     const { text, mentions } = composer.draft;
     const present = new Set(
@@ -116,7 +128,6 @@ function StagedAnnotations({ threadId }: { threadId: string | null }) {
       const separator = text.length === 0 || /\s$/u.test(text) ? "" : " ";
       composer.insert([separator, ...parts], { at: "end" });
     }
-    composer.focus();
   };
 
   // An annotation that left staging must leave the draft too, or its pill
@@ -250,149 +261,123 @@ function StagedAnnotations({ threadId }: { threadId: string | null }) {
   const isMutating =
     isSending || sendingId !== null || discardingId !== null || isDiscarding || discardIds !== null;
 
-  // A failed read offers only a retry; a new-thread draft has no thread to
-  // send to, so it mentions everything instead.
   const sendAll = () =>
     void sendAnnotations(
       annotations.map((annotation) => annotation.id),
       null,
     );
-  const primaryAction =
-    error && annotations.length === 0
-      ? { label: "Retry", icon: null, run: () => void refresh() }
-      : threadId === null
-        ? { label: "Mention all", icon: "AtSign" as const, run: mentionAll }
-        : { label: isSending ? "Sending…" : "Send all", icon: "ArrowUp" as const, run: sendAll };
+
+  if (error) {
+    return (
+      <div data-agentation-staging-banner="" className="flex min-w-0 items-center gap-1.5">
+        <span
+          role="alert"
+          title={error}
+          className="inline-flex min-w-0 max-w-[320px] items-center gap-1 rounded-full border border-border bg-card px-2 py-1.5 text-sm text-destructive"
+        >
+          <Icon name="ChatFeedback" className="size-3.5 shrink-0" aria-hidden="true" />
+          <span className="truncate pe-1 font-medium">Couldn't load annotations</span>
+          <span className="sr-only">: {error}</span>
+        </span>
+        <Button type="button" size="sm" variant="ghost" onClick={() => void refresh()}>
+          Retry
+        </Button>
+      </div>
+    );
+  }
+
+  const rows = annotations.map((annotation) => {
+    const location = annotationSourceLabel(annotation.bb, threadTitles);
+    return {
+      annotation,
+      label: annotationMentionLabel(annotation, location),
+      parts: { ...annotationMentionLabelParts(annotation, location), comment: annotation.comment },
+    };
+  });
 
   return (
     <>
-      <div
-        data-agentation-staging-banner=""
-        className="min-w-0 max-w-full rounded-lg border border-border bg-card px-3 pb-3 pt-2"
-      >
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div className="min-w-0">
-            <div className="flex items-center gap-2">
-              <Icon
-                name="ChatFeedback"
-                className="size-4 shrink-0 text-muted-foreground"
-                aria-hidden="true"
-              />
-              <p className="text-sm font-medium text-foreground">Annotations</p>
+      <div data-agentation-staging-banner="" className="flex min-w-0 max-w-full items-center">
+        <AnnotationsPill
+          count={annotations.length}
+          disabled={isMutating}
+          onDiscardAll={openDiscardAll}
+          renderHeader={(dismiss) => (
+            <div className="flex min-w-0 items-center justify-between gap-2 px-2.5 py-1.5">
+              <p className="truncate text-xs font-medium text-muted-foreground">
+                {annotationCountLabel(annotations.length)}
+              </p>
+              <div className="flex shrink-0 items-center gap-1">
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  className="h-7 px-2"
+                  disabled={isMutating}
+                  onClick={() => {
+                    mentionAll();
+                    dismiss(() => composer.focus());
+                  }}
+                >
+                  <Icon name="AtSign" aria-hidden="true" />
+                  Mention all
+                </Button>
+                {threadId === null ? null : (
+                  <Button
+                    type="button"
+                    size="sm"
+                    className="h-7 px-2"
+                    disabled={isMutating}
+                    onClick={sendAll}
+                  >
+                    <Icon name="ArrowUp" aria-hidden="true" />
+                    {isSending ? "Sending…" : "Send all"}
+                  </Button>
+                )}
+                <Button
+                  type="button"
+                  size="icon"
+                  variant="ghost"
+                  className="size-7 text-muted-foreground hover:text-destructive"
+                  disabled={isMutating}
+                  aria-label="Discard all staged annotations"
+                  onClick={() => dismiss(openDiscardAll)}
+                >
+                  <Icon name="Trash2" aria-hidden="true" />
+                </Button>
+              </div>
             </div>
-          </div>
-
-          <div className="flex flex-wrap items-center gap-1.5 sm:shrink-0 sm:justify-end">
-            {annotations.length > 0 ? (
-              <Button
-                type="button"
-                size="sm"
-                variant="ghost"
-                disabled={isMutating}
-                onClick={openDiscardAll}
-              >
-                Discard all
-              </Button>
-            ) : null}
-            <Button type="button" size="sm" disabled={isMutating} onClick={primaryAction.run}>
-              {primaryAction.icon ? <Icon name={primaryAction.icon} aria-hidden="true" /> : null}
-              {primaryAction.label}
-            </Button>
-          </div>
-        </div>
-
-        {error ? (
-          <p className="mt-2 text-xs text-destructive" role="alert">
-            {error}
-          </p>
-        ) : (
-          <ul
-            className="mt-2 max-h-40 space-y-1 overflow-x-hidden overflow-y-auto border-t border-border pt-2"
-            aria-busy={isSending || sendingId !== null || discardingId !== null}
-          >
-            {annotations.map((annotation) => {
-              const isSendingAnnotation = sendingId === annotation.id;
-              const isDiscardingAnnotation = discardingId === annotation.id;
-              const location = annotationSourceLabel(annotation.bb, threadTitles);
-              const label = annotationMentionLabel(annotation, location);
-              const labelParts = annotationMentionLabelParts(annotation, location);
-              return (
-                <li key={annotation.id} className="flex w-full min-w-0 items-center gap-2 text-xs">
-                  <span id={`${annotationDescriptionPrefix}-${annotation.id}`} className="sr-only">
-                    {label}
-                  </span>
-                  <span
-                    className="flex min-w-0 flex-1 items-baseline gap-1.5 overflow-hidden"
-                    aria-hidden="true"
-                  >
-                    <span className="max-w-[30%] shrink-0 truncate text-muted-foreground">
-                      [{labelParts.location}]
-                    </span>
-                    <span className="max-w-[30%] shrink-0 truncate font-mono text-[11px] text-foreground/80">
-                      {labelParts.target}
-                    </span>
-                    <span className="shrink-0 text-muted-foreground/50">→</span>
-                    <span className="min-w-0 flex-1 truncate font-medium text-foreground">
-                      {labelParts.comment}
-                    </span>
-                  </span>
-                  <Button
-                    type="button"
-                    size="icon"
-                    variant="ghost"
-                    className="h-7 w-7 shrink-0 text-muted-foreground hover:text-foreground"
-                    disabled={isMutating}
-                    aria-label="Mention annotation in composer"
-                    aria-describedby={`${annotationDescriptionPrefix}-${annotation.id}`}
-                    onClick={() => mentionAnnotations([{ id: annotation.id, label }])}
-                  >
-                    <Icon name="AtSign" aria-hidden="true" />
-                  </Button>
-                  {threadId === null ? null : (
-                    <Button
-                      type="button"
-                      size="icon"
-                      variant="ghost"
-                      className="h-7 w-7 shrink-0 text-muted-foreground hover:text-foreground"
-                      disabled={isMutating}
-                      aria-label={
-                        isSendingAnnotation
-                          ? "Sending annotation to this thread"
-                          : "Send annotation to this thread"
-                      }
-                      aria-describedby={`${annotationDescriptionPrefix}-${annotation.id}`}
-                      onClick={() => void sendAnnotations([annotation.id], annotation.id)}
-                    >
-                      <Icon
-                        name={isSendingAnnotation ? "Spinner" : "ArrowUp"}
-                        className={isSendingAnnotation ? "animate-spin" : undefined}
-                        aria-hidden="true"
-                      />
-                    </Button>
-                  )}
-                  <Button
-                    type="button"
-                    size="icon"
-                    variant="ghost"
-                    className="h-7 w-7 shrink-0 text-muted-foreground hover:text-destructive"
-                    disabled={isMutating}
-                    aria-label={
-                      isDiscardingAnnotation ? "Discarding annotation" : "Discard annotation"
-                    }
-                    aria-describedby={`${annotationDescriptionPrefix}-${annotation.id}`}
-                    onClick={() => void discardOne(annotation)}
-                  >
-                    <Icon
-                      name={isDiscardingAnnotation ? "Spinner" : "Trash2"}
-                      className={isDiscardingAnnotation ? "animate-spin" : undefined}
-                      aria-hidden="true"
-                    />
-                  </Button>
-                </li>
-              );
-            })}
-          </ul>
-        )}
+          )}
+          renderList={(dismiss) => (
+            <ol
+              className="flex flex-col divide-y divide-border"
+              aria-busy={isSending || sendingId !== null || discardingId !== null}
+            >
+              {rows.map(({ annotation, label, parts }, index) => (
+                <AnnotationRow
+                  key={annotation.id}
+                  number={index + 1}
+                  label={label}
+                  parts={parts}
+                  descriptionId={`${annotationDescriptionPrefix}-${annotation.id}`}
+                  disabled={isMutating}
+                  isSending={sendingId === annotation.id}
+                  isDiscarding={discardingId === annotation.id}
+                  onMention={() => {
+                    mentionAnnotations([{ id: annotation.id, label }]);
+                    dismiss(() => composer.focus());
+                  }}
+                  onSend={
+                    threadId === null
+                      ? null
+                      : () => void sendAnnotations([annotation.id], annotation.id)
+                  }
+                  onDiscard={() => void discardOne(annotation)}
+                />
+              ))}
+            </ol>
+          )}
+        />
       </div>
 
       <Dialog
@@ -437,6 +422,254 @@ function StagedAnnotations({ threadId }: { threadId: string | null }) {
         </DialogContent>
       </Dialog>
     </>
+  );
+}
+
+function annotationCountLabel(count: number): string {
+  return `${count} annotation${count === 1 ? "" : "s"}`;
+}
+
+// Matches the host's hover-card timing: brief enough to feel attached to the
+// pill, long enough to cross the gap into the list.
+const HOVER_CLOSE_DELAY_MS = 100;
+
+/** Closes the list, then runs `after` once focus is free to move. */
+type DismissList = (after?: () => void) => void;
+
+/**
+ * The staged batch as one composer attachment pill. A mouse hover previews
+ * the list above the composer without taking focus; a click or keyboard
+ * activation opens it for interaction. Its × discards the batch.
+ */
+function AnnotationsPill({
+  count,
+  disabled,
+  renderHeader,
+  renderList,
+  onDiscardAll,
+}: {
+  count: number;
+  disabled: boolean;
+  renderHeader: (dismiss: DismissList) => ReactNode;
+  renderList: (dismiss: DismissList) => ReactNode;
+  onDiscardAll: () => void;
+}) {
+  const isCompact = useIsCompactViewport();
+  const [open, setOpen] = useState(false);
+  // "hover" previews follow the pointer and never move focus; "pinned" lists
+  // came from a click or key and behave like an ordinary popover.
+  const mode = useRef<"hover" | "pinned" | null>(null);
+  const closeTimer = useRef<number | null>(null);
+  // Set when the list closes for an action that decides where focus goes.
+  const afterClose = useRef<(() => void) | null>(null);
+  const restoreFocus = useRef(true);
+
+  const cancelClose = () => {
+    if (closeTimer.current !== null) window.clearTimeout(closeTimer.current);
+    closeTimer.current = null;
+  };
+  useEffect(() => cancelClose, []);
+
+  const changeOpen = (next: boolean) => {
+    cancelClose();
+    if (next) {
+      mode.current ??= "pinned";
+      restoreFocus.current = true;
+    } else {
+      // A preview never took focus, so it must not hand focus to the pill.
+      if (mode.current === "hover") restoreFocus.current = false;
+      mode.current = null;
+    }
+    setOpen(next);
+  };
+  const dismiss: DismissList = (after) => {
+    afterClose.current = after ?? null;
+    restoreFocus.current = false;
+    mode.current = null;
+    cancelClose();
+    setOpen(false);
+  };
+  const runAfterClose = () => {
+    const after = afterClose.current;
+    afterClose.current = null;
+    after?.();
+  };
+
+  // Compact windows show the list as a modal drawer, which opens by tap only.
+  const isHover = (event: PointerEvent) => event.pointerType === "mouse" && !isCompact;
+  const hoverOpen = (event: PointerEvent) => {
+    if (!isHover(event)) return;
+    cancelClose();
+    if (open) return;
+    mode.current = "hover";
+    restoreFocus.current = false;
+    setOpen(true);
+  };
+  const hoverClose = (event: PointerEvent) => {
+    if (!isHover(event) || mode.current !== "hover") return;
+    cancelClose();
+    closeTimer.current = window.setTimeout(() => changeOpen(false), HOVER_CLOSE_DELAY_MS);
+  };
+  const label = annotationCountLabel(count);
+
+  return (
+    <Popover open={open} onOpenChange={changeOpen}>
+      <div
+        className="group relative inline-flex min-w-0 max-w-[320px]"
+        onPointerEnter={hoverOpen}
+        onPointerLeave={hoverClose}
+      >
+        <PopoverTrigger asChild>
+          <button
+            type="button"
+            onClick={(event) => {
+              // Clicking a hover preview pins it instead of closing it.
+              if (open && mode.current === "hover") {
+                event.preventDefault();
+                cancelClose();
+                mode.current = "pinned";
+              }
+            }}
+            className="inline-flex min-w-0 max-w-full items-center gap-1 rounded-full border border-border bg-card px-2 py-1.5 text-sm text-foreground transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring [@media(hover:none)]:pe-7"
+          >
+            <Icon
+              name="ChatFeedback"
+              className="size-3.5 shrink-0 text-muted-foreground"
+              aria-hidden="true"
+            />
+            <span className="truncate pe-1 font-medium">{label}</span>
+          </button>
+        </PopoverTrigger>
+        <button
+          type="button"
+          aria-label="Discard all staged annotations"
+          disabled={disabled}
+          onClick={() => dismiss(onDiscardAll)}
+          className="pointer-events-none absolute top-1/2 right-1 flex size-5 -translate-y-1/2 items-center justify-center rounded-full border border-border bg-card text-foreground opacity-0 transition-opacity before:pointer-events-none before:absolute before:inset-y-0 before:-left-6 before:right-full before:bg-linear-to-r before:from-transparent before:to-card before:content-[''] group-hover:pointer-events-auto group-hover:opacity-100 group-hover:before:to-accent hover:bg-accent focus-visible:pointer-events-auto focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-0 [@media(hover:none)]:pointer-events-auto [@media(hover:none)]:opacity-100"
+        >
+          <Icon name="X" className="size-3" aria-hidden="true" />
+        </button>
+      </div>
+      <PopoverContent
+        side="top"
+        align="start"
+        mobileTitle={label}
+        className={cn(
+          "flex flex-col divide-y divide-border text-sm",
+          !isCompact && "max-h-80 w-96 max-w-[calc(100vw-2rem)] overflow-y-auto p-0",
+        )}
+        onPointerEnter={hoverOpen}
+        onPointerLeave={hoverClose}
+        onOpenAutoFocus={(event) => {
+          if (mode.current === "hover") event.preventDefault();
+        }}
+        onCloseAutoFocus={(event) => {
+          if (!restoreFocus.current) event.preventDefault();
+          runAfterClose();
+        }}
+        onMobileContentAnimationEnd={(isOpen) => {
+          if (!isOpen) runAfterClose();
+        }}
+      >
+        {renderHeader(dismiss)}
+        {renderList(dismiss)}
+      </PopoverContent>
+    </Popover>
+  );
+}
+
+function AnnotationRow({
+  number,
+  label,
+  parts,
+  descriptionId,
+  disabled,
+  isSending,
+  isDiscarding,
+  onMention,
+  onSend,
+  onDiscard,
+}: {
+  number: number;
+  label: string;
+  parts: { location: string; target: string; comment: string };
+  descriptionId: string;
+  disabled: boolean;
+  isSending: boolean;
+  isDiscarding: boolean;
+  onMention: () => void;
+  onSend: (() => void) | null;
+  onDiscard: () => void;
+}) {
+  const action = "size-7 shrink-0 text-muted-foreground hover:text-foreground";
+  return (
+    <li className="flex min-w-0 items-start gap-2 px-2.5 py-2">
+      <span id={descriptionId} className="sr-only">
+        {label}
+      </span>
+      <span className="shrink-0 pt-0.5 text-muted-foreground" aria-hidden="true">
+        {number}.
+      </span>
+      <div className="flex min-w-0 flex-1 flex-col gap-1.5 pt-0.5" aria-hidden="true">
+        <div className="flex min-w-0 items-center gap-1.5 text-xs leading-4 text-muted-foreground">
+          <span className="inline-flex min-w-0 max-w-[60%] shrink-0 items-center rounded-sm border border-border bg-muted px-1.5 py-px font-mono text-[11px] leading-[14px] font-medium">
+            <span className="truncate">{parts.target}</span>
+          </span>
+          <span className="min-w-0 truncate">{parts.location}</span>
+        </div>
+        <p className="break-words whitespace-pre-wrap text-foreground">{parts.comment}</p>
+      </div>
+      <div className="flex shrink-0 items-center">
+        <Button
+          type="button"
+          size="icon"
+          variant="ghost"
+          className={action}
+          disabled={disabled}
+          aria-label="Mention annotation in composer"
+          aria-describedby={descriptionId}
+          onClick={onMention}
+        >
+          <Icon name="AtSign" aria-hidden="true" />
+        </Button>
+        {onSend === null ? null : (
+          <Button
+            type="button"
+            size="icon"
+            variant="ghost"
+            className={action}
+            disabled={disabled}
+            aria-label={
+              isSending ? "Sending annotation to this thread" : "Send annotation to this thread"
+            }
+            aria-describedby={descriptionId}
+            onClick={onSend}
+          >
+            <Icon
+              name={isSending ? "Spinner" : "ArrowUp"}
+              className={isSending ? "animate-spin" : undefined}
+              aria-hidden="true"
+            />
+          </Button>
+        )}
+        <Button
+          type="button"
+          size="icon"
+          variant="ghost"
+          className="size-7 shrink-0 text-muted-foreground hover:text-destructive"
+          disabled={disabled}
+          aria-label={isDiscarding ? "Discarding annotation" : "Discard annotation"}
+          aria-describedby={descriptionId}
+          onClick={onDiscard}
+        >
+          <Icon
+            name={isDiscarding ? "Spinner" : "Trash2"}
+            className={isDiscarding ? "animate-spin" : undefined}
+            aria-hidden="true"
+          />
+        </Button>
+      </div>
+    </li>
   );
 }
 

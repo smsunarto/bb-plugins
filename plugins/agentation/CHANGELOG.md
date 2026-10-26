@@ -14,6 +14,7 @@
 - Name the sidebar row an annotation on bb's Navigation plugin points at, and the `navPanel` entry behind it.
 - Record whether an annotated plugin ships with bb (bundled thread list, Navigation) or was installed, and where from.
 - Show staged annotations in the new-thread composer. Pills mentioned there are assigned to the thread their first message creates and re-stage when its turn ends unresolved.
+- Show the staged batch as a compact `N annotations` composer pill, modeled on the Codex app. Hover or click it for a numbered list with each annotation's element, location, and full comment, plus mention, send, and discard actions.
 - Keep turn assignments across a restart or plugin safe mode while their thread is still mid-turn, instead of re-staging them.
 - Reopen the toolbar's event stream when it closes for good (a plugin reload, a server restart, the tunnel's offline page) or goes silent past two heartbeats, instead of polling every 4 seconds until the page reloads. The healthy safety-net poll drops from 30 seconds to 5 minutes, toolbars skip pulls for other pages' changes, and an unchanged pull no longer carries the annotation list.
 - The review panel, its header, and every staged-annotation banner share one request per change and skip changes that cannot affect them. Panel actions show their result at once instead of waiting for a refetch.
