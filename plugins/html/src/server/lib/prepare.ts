@@ -1,9 +1,8 @@
-import { injectHtmlRenderBootstrap } from "../../shared/html-render.ts";
-
 /**
- * Turns an agent's page into the stored document: rejects viewport-height
- * units, injects the theme bootstrap, and inlines local images. Ported from
- * T3 Code's `HtmlRender.ts`; images come from the thread's machine.
+ * Turns an agent's page into the stored page: rejects viewport-height units
+ * and inlines local images. Ported from T3 Code's `HtmlRender.ts`; images come
+ * from the thread's machine. Its runtime is added where it is shown, with that
+ * viewer's theme.
  */
 
 const MIB = 1024 * 1024;
@@ -201,11 +200,7 @@ export async function inlineLocalImages(
   return { html: parts.join(""), missing: paths.filter((path) => !dataUris.has(path)) };
 }
 
-/**
- * The stored document. The bootstrap goes in first so its head scan never
- * runs over inlined image data.
- */
 export async function preparePage(html: string, readFile: ReadLocalFile) {
   rejectViewportHeight(html);
-  return inlineLocalImages(injectHtmlRenderBootstrap(html), readFile);
+  return inlineLocalImages(html, readFile);
 }

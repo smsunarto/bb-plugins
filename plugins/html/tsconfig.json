@@ -3,13 +3,17 @@
   "compilerOptions": {
     "target": "es2023",
     "lib": ["es2023", "dom", "dom.iterable"],
-    "types": ["node", "bun-types/test"],
+    "types": ["node"],
     "jsx": "react-jsx",
     "erasableSyntaxOnly": true,
     "noUncheckedIndexedAccess": true,
     "useUnknownInCatchVariables": true,
     "noImplicitOverride": true,
     "noFallthroughCasesInSwitch": true,
-    "noImplicitReturns": true
-  }
+    "noImplicitReturns": true,
+    "paths": {
+      "@/*": ["./*"]
+    }
+  },
+  "exclude": ["dist", "node_modules", "vendor/build-video-player.ts"]
 }

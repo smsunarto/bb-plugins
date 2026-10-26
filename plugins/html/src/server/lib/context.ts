@@ -1,14 +1,20 @@
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import type { Context } from "@bb-kit/core/plugin";
+import { openDatabase } from "./database.ts";
 import { imageTooLargeError } from "./prepare.ts";
 import type { ReadLocalFile } from "./prepare.ts";
 import { createPageStore } from "./store.ts";
 import type { PageStore } from "./store.ts";
+import { createWidgetStateStore } from "./widget-state.ts";
 
 const MAX_CONCURRENT_BROWSERS = 2;
 
 export interface HtmlServices {
   store: PageStore;
+  /** Saved visualization state and Tweak changes. */
+  states: ReturnType<typeof createWidgetStateStore>;
+  /** Rejects a thread id bb does not know, so state cannot be kept for one. */
+  requireThread(threadId: string): Promise<void>;
   settings: { get(): Promise<{ chromePath: string; chromeNoSandbox: boolean }> };
   /** Runs `task` once one of the bounded browser slots is free, unless `signal` aborts first. */
   withBrowser<T>(task: () => Promise<T>, signal?: AbortSignal): Promise<T>;
@@ -95,8 +101,23 @@ export function createServices(bb: BbPluginApi): HtmlServices {
     };
   }
 
+  async function requireThread(threadId: string): Promise<void> {
+    try {
+      const thread = await bb.sdk.threads.get({ threadId });
+      if (!thread || thread.id !== threadId) throw new Error("Thread does not exist");
+    } catch (error) {
+      throw new Error(
+        `Visualization state thread ${JSON.stringify(threadId)} is unavailable: ${error instanceof Error ? error.message : String(error)}`,
+        { cause: error },
+      );
+    }
+  }
+
+  const database = openDatabase(bb);
   return {
-    store: createPageStore(bb),
+    store: createPageStore(database),
+    states: createWidgetStateStore(database),
+    requireThread,
     settings: {
       async get() {
         const values = await settings.get();

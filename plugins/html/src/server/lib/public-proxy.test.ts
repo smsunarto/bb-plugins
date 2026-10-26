@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "vitest";
 import { createServer, connect } from "node:net";
 import { isLocalAddress, startPublicProxy } from "./public-proxy.ts";
 

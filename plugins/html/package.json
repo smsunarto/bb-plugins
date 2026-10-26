@@ -1,7 +1,7 @@
 {
   "name": "@smsunarto/bb-plugin-html",
   "version": "0.1.0",
-  "description": "Agents preview self-contained HTML pages in headless Chrome and show them inline in the thread, following bb's theme.",
+  "description": "Agents show interactive visualizations, HTML pages, recordings, and Markdown inline in the thread, following bb's theme.",
   "private": true,
   "license": "MIT",
   "author": "Scott Sunarto",
@@ -20,8 +20,8 @@
     "bbPluginSdk": ">=0.6.75"
   },
   "bb": {
-    "name": "HTML pages",
-    "description": "Agents preview HTML pages in headless Chrome and show them inline in the thread.",
+    "name": "HTML visualizations",
+    "description": "Agents show interactive visualizations, HTML pages, recordings, and Markdown inline in the thread.",
     "branding": {
       "icon": "./assets/icon.svg",
       "logo": {
@@ -30,12 +30,16 @@
       }
     },
     "server": "./src/server/server.ts",
-    "app": "./src/app/app.tsx"
+    "app": "./src/app/app.tsx",
+    "skills": [
+      "skills"
+    ]
   },
   "keywords": [
     "bb",
     "bb-plugin",
-    "html"
+    "html",
+    "inline-visualizations"
   ],
   "files": [
     "dist/*.js",
@@ -43,32 +47,47 @@
     "dist/*.json",
     "assets/",
     "instructions/",
+    "skills/",
     "src/",
+    "vendor/video-player.ts",
     "README.md",
-    "LICENSE"
+    "LICENSE",
+    "THIRD_PARTY_NOTICES.md"
   ],
   "dependencies": {
     "@bb-kit/core": "workspace:*",
+    "mdast-util-from-markdown": "2.0.3",
+    "mdast-util-gfm": "3.1.0",
+    "mdast-util-to-markdown": "2.1.2",
+    "mediabunny": "1.61.5",
+    "micromark-extension-gfm": "3.0.0",
     "zod": "^4.4.3"
   },
   "devDependencies": {
+    "@bb-plugins/ui": "workspace:*",
     "@get-bb/plugin-sdk": "0.6.75",
+    "@testing-library/react": "16.3.2",
     "@types/node": "^22.0.0",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
-    "bun-types": "^1.4.0",
+    "@videojs/html": "10.1.0",
+    "clsx": "^2.1.1",
+    "jsdom": "25.0.1",
     "react": "19.2.8",
     "react-dom": "19.2.8",
+    "tailwind-merge": "^3.4.0",
     "tsx": "4.23.12",
-    "typescript": "^6.0.0"
+    "typescript": "^6.0.0",
+    "vitest": "^4.1.1"
   },
   "scripts": {
     "dev": "bb plugin dev .",
     "build": "bb plugin build .",
     "lint": "oxlint",
     "typecheck": "tsc --noEmit",
-    "test": "bun test --timeout=30000",
+    "test": "vitest run --config vitest.config.ts",
     "check": "node --import tsx ../../packages/bb-kit-dev/src/bin.ts check",
+    "vendor:player": "bun vendor/build-video-player.ts",
     "clean": "rm -rf dist"
   }
 }

@@ -1,1 +1,0 @@
-Read the latest saved visualization state and tweaks in this thread. Optionally select an absolute file path or messageId. Returns up to 20 recent snapshots as JSON, bounded to 64 KiB without truncating JSON values.

@@ -5,7 +5,6 @@ import { fileURLToPath } from "node:url";
 import {
   Activity01Icon,
   ArtboardIcon,
-  BrowserIcon,
   ChatFeedbackIcon,
   CheckListIcon,
   CloudServerIcon,
@@ -256,12 +255,6 @@ const customIcons = {
         },
       ],
     ],
-  },
-  // Upstream bb inline-vis, which this plugin was forked from, declares BB's
-  // named "AppWindow" icon, which bb maps to Hugeicons' Browser glyph.
-  "scott-inline-vis": {
-    name: "Browser",
-    nodes: BrowserIcon,
   },
   html: {
     name: "WebDesign01",

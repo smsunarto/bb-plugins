@@ -242,9 +242,9 @@ export const BB_DEFAULT_THEME_TOKENS: Readonly<Record<ThemeAppearance, BbThemeTo
 };
 
 /**
- * Maps bb's tokens onto the page variables the agent prompt names. `--accent`
- * is the brand color rather than a neutral hover surface, so it follows bb's
- * timeline accent; status `-foreground` variables are text in that hue.
+ * The one variable set every page and fragment gets, mapped from bb's tokens.
+ * `--accent` is the brand color rather than a neutral hover surface, so it
+ * follows bb's timeline accent; status `-foreground` variables are text in that hue.
  */
 export function htmlRenderTheme(
   tokens: Partial<BbThemeTokens>,
@@ -295,6 +295,26 @@ export function htmlRenderTheme(
       "--chart-4": token("--ansi-5"),
       "--chart-5": token("--ansi-1"),
       "--chart-6": token("--ansi-2"),
+      // The visualization runtime's names for the same palette.
+      "--viz-series-1": accent,
+      "--viz-series-2": token("--ansi-6"),
+      "--viz-series-3": token("--ansi-3"),
+      "--viz-series-4": token("--ansi-5"),
+      "--viz-series-5": token("--ansi-1"),
+      "--viz-series-6": token("--ansi-2"),
+      "--red": token("--ansi-1"),
+      "--green": token("--ansi-2"),
+      "--yellow": token("--ansi-3"),
+      "--blue": token("--ansi-4"),
+      "--purple": token("--ansi-5"),
+      "--cyan": token("--ansi-6"),
+      "--orange": mix(token("--ansi-1"), 45, token("--ansi-3")),
+      "--ansi-1": token("--ansi-1"),
+      "--ansi-2": token("--ansi-2"),
+      "--ansi-3": token("--ansi-3"),
+      "--ansi-4": token("--ansi-4"),
+      "--ansi-5": token("--ansi-5"),
+      "--ansi-6": token("--ansi-6"),
       "--radius": token("--radius"),
       "--font-sans": fonts?.sans ?? token("--font-sans"),
       "--font-mono": fonts?.mono ?? token("--font-mono"),
@@ -346,12 +366,6 @@ export function htmlRenderResult(id: string | number) {
   return { jsonrpc: "2.0", id, result: {} } as const;
 }
 
-const THEME_FRAGMENT_KEY = "html-theme";
-
-export function htmlRenderThemeFragment(theme: HtmlRenderTheme): string {
-  return `#${THEME_FRAGMENT_KEY}=${encodeURIComponent(JSON.stringify(theme))}`;
-}
-
 export function htmlRenderThemeMessage(theme: HtmlRenderTheme) {
   return {
     jsonrpc: "2.0",
@@ -367,27 +381,43 @@ const BASE_CSS =
   ":where(:focus-visible){outline:2px solid var(--ring)}:focus-visible{outline-width:2px!important;outline-offset:-2px!important}" +
   ":where(img:not(a[href] img,button img)){cursor:zoom-in}";
 
+// The client's theme values come from computed styles; keep them inside their declaration.
 function rootRule(theme: HtmlRenderTheme): string {
   const declarations = Object.entries(theme.variables)
-    .map(([name, value]) => `${name}:${value};`)
+    .filter(([name]) => /^--[a-z0-9-]+$/.test(name))
+    .map(([name, value]) => `${name}:${String(value).replace(/[;{}<>]/g, "")};`)
     .join("");
-  return `:root{color-scheme:${theme.appearance};${declarations}}`;
+  return `:root{color-scheme:${theme.appearance === "light" ? "light" : "dark"};${declarations}}`;
 }
 
-// Apply overridable theme CSS before paint and strip the fragment before routing.
-// Links and image clicks go to the host, which opens them outside the sandbox.
-const BOOTSTRAP_SCRIPT = `(function(){var s=document.getElementById("html-theme"),n=0;if(!s)return;var b=${JSON.stringify(BASE_CSS)};function a(t){if(!t||typeof t!=="object"||!t.variables||typeof t.variables!=="object")return;var c=":root{color-scheme:"+(t.appearance==="light"?"light":"dark")+";";for(var k in t.variables){if(/^--[a-z0-9-]+$/.test(k))c+=k+":"+String(t.variables[k]).replace(/[;{}<>]/g,"")+";";}s.textContent=c+"}"+b;}try{var m=/[#&]${THEME_FRAGMENT_KEY}=([^&]*)/.exec(location.hash);if(m){a(JSON.parse(decodeURIComponent(m[1])));history.replaceState(history.state,"",location.pathname+location.search);}}catch(e){}window.addEventListener("message",function(e){var d=e.data,p=d&&d.params;if(e.source===window.parent&&d&&d.jsonrpc==="2.0"&&d.method===${JSON.stringify(HOST_CONTEXT_CHANGED_METHOD)}&&p&&p.styles)a({appearance:p.theme,variables:p.styles.variables});});document.addEventListener("click",function(e){var l=e.isTrusted?e.composedPath().find(function(t){return t&&t.matches&&t.matches("a[href]");}):null,u;if(!l)return;try{u=new URL(l.getAttribute("href"),document.baseURI);}catch(x){return;}if(!/^https?:$/.test(u.protocol)||u.href.split("#")[0]===location.href.split("#")[0])return;if(window.parent!==window){e.preventDefault();window.parent.postMessage({jsonrpc:"2.0",id:"html-link-"+(++n),method:${JSON.stringify(OPEN_LINK_METHOD)},params:{url:u.href}},"*");}else{l.setAttribute("target","_blank");l.setAttribute("rel","noopener");}},true);if(window.parent!==window){var h,o,z=function(){var r=document.documentElement,v=Math.ceil(r.scrollHeight>r.clientHeight?r.scrollHeight:r.getBoundingClientRect().height);if(v===h)return;h=v;window.parent.postMessage({jsonrpc:"2.0",method:${JSON.stringify(SIZE_CHANGED_METHOD)},params:{height:v}},"*");};if(window.ResizeObserver){o=new ResizeObserver(z);o.observe(document.documentElement);}document.addEventListener("DOMContentLoaded",function(){if(o&&document.body)o.observe(document.body);z();});window.addEventListener("load",z);window.addEventListener("click",function(e){var t=e.composedPath()[0],u;if(!e.isTrusted||e.defaultPrevented||e.button!==0||e.metaKey||e.ctrlKey||e.shiftKey||e.altKey||!t||t.tagName!=="IMG"||t.closest("a[href],button"))return;u=t.currentSrc||t.src;if(u)setTimeout(function(){if(!e.defaultPrevented)window.parent.postMessage({jsonrpc:"2.0",method:${JSON.stringify(OPEN_IMAGE_METHOD)},params:{src:u,name:t.alt||t.title||""}},"*");});});}})();`;
+// Clicked http(s) links go to the host, which opens them outside the sandbox.
+const LINK_SCRIPT = `document.addEventListener("click",function(e){var l=e.isTrusted?e.composedPath().find(function(t){return t&&t.matches&&t.matches("a[href]");}):null,u;if(!l)return;try{u=new URL(l.getAttribute("href"),document.baseURI);}catch(x){return;}if(!/^https?:$/.test(u.protocol)||u.href.split("#")[0]===location.href.split("#")[0])return;if(window.parent!==window){e.preventDefault();window.parent.postMessage({jsonrpc:"2.0",id:"html-link-"+Math.random().toString(36).slice(2),method:${JSON.stringify(OPEN_LINK_METHOD)},params:{url:u.href}},"*");}else{l.setAttribute("target","_blank");l.setAttribute("rel","noopener");}},true);`;
 
-function bootstrapMarkup(markup: string): string {
+// The frame allows forms so submit handlers run, but a submission nothing handled
+// would navigate the frame away from its document.
+const SUBMIT_SCRIPT = `window.addEventListener("submit",function(e){if(!e.defaultPrevented)e.preventDefault();});`;
+
+/** The link bridge alone, for fragments, whose runtime owns theme and size. */
+export const HTML_RENDER_LINK_SCRIPT = `(function(){${LINK_SCRIPT}${SUBMIT_SCRIPT}})();`;
+
+// Theme updates restyle the page in place; size and image clicks go to the host.
+const BOOTSTRAP_SCRIPT = `(function(){var s=document.getElementById("html-theme");if(!s)return;var b=${JSON.stringify(BASE_CSS)};function a(t){if(!t||typeof t!=="object"||!t.variables||typeof t.variables!=="object")return;var c=":root{color-scheme:"+(t.appearance==="light"?"light":"dark")+";";for(var k in t.variables){if(/^--[a-z0-9-]+$/.test(k))c+=k+":"+String(t.variables[k]).replace(/[;{}<>]/g,"")+";";}s.textContent=c+"}"+b;}window.addEventListener("message",function(e){var d=e.data,p=d&&d.params;if(e.source===window.parent&&d&&d.jsonrpc==="2.0"&&d.method===${JSON.stringify(HOST_CONTEXT_CHANGED_METHOD)}&&p&&p.styles)a({appearance:p.theme,variables:p.styles.variables});});${LINK_SCRIPT}${SUBMIT_SCRIPT}if(window.parent!==window){var h,o,z=function(){var r=document.documentElement,v=Math.ceil(r.scrollHeight>r.clientHeight?r.scrollHeight:r.getBoundingClientRect().height);if(v===h)return;h=v;window.parent.postMessage({jsonrpc:"2.0",method:${JSON.stringify(SIZE_CHANGED_METHOD)},params:{height:v}},"*");};if(window.ResizeObserver){o=new ResizeObserver(z);o.observe(document.documentElement);}document.addEventListener("DOMContentLoaded",function(){if(o&&document.body)o.observe(document.body);z();});window.addEventListener("load",z);window.addEventListener("click",function(e){var t=e.composedPath()[0],u;if(!e.isTrusted||e.defaultPrevented||e.button!==0||e.metaKey||e.ctrlKey||e.shiftKey||e.altKey||!t||t.tagName!=="IMG"||t.closest("a[href],button"))return;u=t.currentSrc||t.src;if(u)setTimeout(function(){if(!e.defaultPrevented)window.parent.postMessage({jsonrpc:"2.0",method:${JSON.stringify(OPEN_IMAGE_METHOD)},params:{src:u,name:t.alt||t.title||""}},"*");});});}})();`;
+
+/** Without a theme the page follows the viewer's light or dark preference. */
+function themeCss(theme: HtmlRenderTheme | undefined): string {
+  if (theme) return rootRule(theme) + BASE_CSS;
   const dark = htmlRenderTheme(BB_DEFAULT_THEME_TOKENS.dark, "dark");
   const light = htmlRenderTheme(BB_DEFAULT_THEME_TOKENS.light, "light");
-  const defaultCss = `${rootRule(dark)}@media (prefers-color-scheme: light){${rootRule(light)}}${BASE_CSS}`;
+  return `${rootRule(dark)}@media (prefers-color-scheme: light){${rootRule(light)}}${BASE_CSS}`;
+}
+
+function bootstrapMarkup(markup: string, theme: HtmlRenderTheme | undefined): string {
   return [
     /<meta\s[^>]*charset/i.test(markup.slice(0, 4096)) ? "" : '<meta charset="utf-8">',
     /<meta\s[^>]*name\s*=\s*["']?viewport/i.test(markup)
       ? ""
       : '<meta name="viewport" content="width=device-width, initial-scale=1">',
-    `<style id="html-theme">${defaultCss}</style>`,
+    `<style id="html-theme">${themeCss(theme)}</style>`,
     `<script>${BOOTSTRAP_SCRIPT}</script>`,
   ].join("");
 }
@@ -419,9 +449,10 @@ const blankNonMarkup = (html: string) => {
   return parts.join("");
 };
 
-export function injectHtmlRenderBootstrap(html: string): string {
+/** Gives a full document the page theme, content-fit height, and host links and images. */
+export function injectHtmlRenderBootstrap(html: string, theme?: HtmlRenderTheme): string {
   const scan = blankNonMarkup(html);
-  const markup = bootstrapMarkup(scan);
+  const markup = bootstrapMarkup(scan, theme);
   const headOpen = /<head(?:\s[^>]*)?>/i.exec(scan);
   if (headOpen) {
     const at = headOpen.index + headOpen[0].length;

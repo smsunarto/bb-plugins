@@ -36,6 +36,7 @@ const surfaces: Record<string, Record<string, string[]>> = {
     history: ["OperationHistory"],
   },
   "gtd-sidebar": { threads: ["ThreadCard", "RenameProvider"], indicators: ["StatusGlyph"] },
+  html: { tweaks: ["TweakPanel"] },
   "kitchen-sink": { comparison: ["SmartImageCompareDirective", "DevinIcon"] },
   monokai: {
     "bb-monokai": [
@@ -48,7 +49,6 @@ const surfaces: Record<string, Record<string, string[]>> = {
   "prompt-editor": { editor: ["../src/app/app"] },
   "remind-me": { reminders: ["../src/app/app"] },
   "scott-docs": { documents: ["../app"], cards: ["../app"] },
-  "scott-inline-vis": { tweaks: ["TweakPanel"] },
   "scott-tasks": {
     views: ["ListView", "BoardView", "DetailView", "ManagePanel"],
     controls: ["StatusIcon", "PriorityIcon", "ColorSwatchPicker", "CheckboxField", "ConfirmDialog"],

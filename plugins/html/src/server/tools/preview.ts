@@ -1,12 +1,13 @@
 import { defineTool } from "@bb-kit/core/tools";
 import type { ToolContext } from "@bb-kit/core/tools";
 import { z } from "zod";
+import { fragmentDocument, isFragment } from "../../shared/fragment-runtime.ts";
 import {
   BB_DEFAULT_THEME_TOKENS,
   HTML_RENDER_COLUMN_WIDTH,
   HTML_RENDER_MEASURE_FONTS,
   htmlRenderTheme,
-  htmlRenderThemeFragment,
+  injectHtmlRenderBootstrap,
 } from "../../shared/html-render.ts";
 import { chromeLaunchHint, chromeMissingMessage, findChrome } from "../lib/browser.ts";
 import type { HtmlContext } from "../lib/context.ts";
@@ -59,9 +60,11 @@ export const preview = defineTool({
           captureHtmlScreenshot({
             executable,
             noSandbox: settings.chromeNoSandbox,
-            html: prepared.html,
+            // The runtime the thread will give it: a fragment's, or a document's bootstrap.
+            html: isFragment(prepared.html)
+              ? fragmentDocument(prepared.html, { token: "preview", theme, state: null })
+              : injectHtmlRenderBootstrap(prepared.html, theme),
             width,
-            urlFragment: htmlRenderThemeFragment(theme),
             appearance,
             signal,
           }),

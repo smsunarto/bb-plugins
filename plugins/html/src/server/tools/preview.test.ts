@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "vitest";
 import { createServer } from "node:http";
 import { findChrome } from "../lib/browser.ts";
 import { preview } from "./preview.ts";
@@ -15,9 +15,9 @@ function context() {
 }
 
 describe.skipIf(chrome === undefined)("html_preview with headless Chrome", () => {
-  test("measures the page, captures a PNG, and reports console output", async () => {
+  test("measures a document, captures a PNG, and reports console output", async () => {
     const result = (await preview.execute(context(), {
-      html: '<div style="height:300px">Chart</div><script>console.warn("drawn")</script>',
+      html: '<!doctype html><html><body><div style="height:300px">Chart</div><script>console.warn("drawn")</script></body></html>',
       width: 500,
     })) as { content: Array<{ type: string; text?: string; data?: string }>; isError?: boolean };
     expect(result.isError).toBeUndefined();
@@ -26,6 +26,18 @@ describe.skipIf(chrome === undefined)("html_preview with headless Chrome", () =>
     expect(summary.consoleMessages).toEqual([{ level: "warning", text: "drawn" }]);
     const png = Buffer.from(result.content[1]!.data!, "base64");
     expect(png.subarray(1, 4).toString()).toBe("PNG");
+  }, 30_000);
+
+  test("previews a fragment inside the visualization runtime the thread gives it", async () => {
+    const result = (await preview.execute(context(), {
+      html: '<div style="height:300px">Chart</div><script>console.warn(typeof bb.setWidgetState)</script>',
+      width: 500,
+    })) as { content: Array<{ type: string; text?: string }>; isError?: boolean };
+    expect(result.isError).toBeUndefined();
+    const summary = JSON.parse(result.content[0]!.text!);
+    // The runtime's body padding is 12px above and below.
+    expect(summary).toMatchObject({ contentHeight: 324 });
+    expect(summary.consoleMessages).toEqual([{ level: "warning", text: "function" }]);
   }, 30_000);
 
   // Chrome's Local Network Access also blocks loopback; public-proxy.test.ts checks the proxy alone.

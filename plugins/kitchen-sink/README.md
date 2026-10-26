@@ -70,7 +70,7 @@ Add `annotations='[{"x":72,"y":38,"label":"Background removed","side":"after"}]'
 
 ## Inline visualizations
 
-`::inline-vis` moved to its own plugin, [`scott-inline-vis`](../scott-inline-vis/README.md), so its lineage from bb's forkable built-in stays clean.
+`::inline-vis` moved to its own plugin, now [`html`](../html/README.md), so its lineage from bb's forkable built-in stays clean.
 
 ## Add a command
 

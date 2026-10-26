@@ -1,19 +1,7 @@
 import { randomBytes } from "node:crypto";
-import type { BbPluginApi } from "@get-bb/plugin-sdk";
+import type { Database } from "./database.ts";
 
 /** Published pages, kept in the plugin's database on the bb server. */
-
-const MIGRATIONS = [
-  `CREATE TABLE pages (
-    id TEXT PRIMARY KEY,
-    thread_id TEXT NOT NULL,
-    title TEXT NOT NULL,
-    height INTEGER NOT NULL,
-    html TEXT NOT NULL,
-    created_at INTEGER NOT NULL
-  )`,
-  `CREATE INDEX pages_thread ON pages (thread_id)`,
-];
 
 export interface PageStore {
   save(page: { threadId: string; title: string; height: number; html: string }): string;
@@ -21,9 +9,7 @@ export interface PageStore {
   deleteThread(threadId: string): void;
 }
 
-export function createPageStore(bb: BbPluginApi): PageStore {
-  const database = bb.storage.database();
-  bb.storage.migrate(database, MIGRATIONS);
+export function createPageStore(database: Database): PageStore {
   const insert = database.prepare(
     "INSERT INTO pages (id, thread_id, title, height, html, created_at) VALUES (?, ?, ?, ?, ?, ?)",
   );

@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "vitest";
 import { readHtmlRenderDirective } from "../../shared/html-render.ts";
 import { render } from "./render.ts";
 
@@ -43,8 +43,8 @@ describe("html_render", () => {
     expect(reference).toEqual({ id: expect.any(String), title: "Greeting", height: 120 });
     const page = pages.get(reference!.id);
     expect(page?.threadId).toBe("thr_1");
-    expect(page?.html).toContain('<style id="html-theme">');
-    expect(page?.html.endsWith("<p>Hi</p>")).toBe(true);
+    // The viewer adds the runtime with its own theme, so the page is stored as written.
+    expect(page?.html).toBe("<p>Hi</p>");
   });
 
   test("returns page errors to the agent instead of storing", async () => {

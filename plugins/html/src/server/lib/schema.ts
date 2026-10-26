@@ -5,4 +5,6 @@ export const html = z
   .string()
   .min(1)
   .max(HTML_RENDER_MAX_HTML_LENGTH)
-  .describe("A complete, self-contained HTML document.");
+  .describe(
+    "A complete, self-contained HTML document, or a fragment for the visualization runtime.",
+  );

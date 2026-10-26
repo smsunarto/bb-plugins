@@ -197,8 +197,8 @@ CI checks the fingerprint, re-exports, and each consumer's built CSS.
 
 Release Please tracks plugin paths. A shared UI change must include a change under
 every consuming plugin path and release those consumers together: agent-instructions,
-agentation, code-review, dotfiles, gh-stack, gitbutler, gtd-sidebar, scott-docs,
-scott-inline-vis, scott-tasks, and whiteboard. Private plugins use the same rebuild
+agentation, code-review, dotfiles, gh-stack, gitbutler, gtd-sidebar, html, scott-docs,
+scott-tasks, and whiteboard. Private plugins use the same rebuild
 step when installed from source.
 
 The manager, docs, story surfaces, portals, and code highlighting use Monokai.

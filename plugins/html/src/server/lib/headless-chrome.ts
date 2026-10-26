@@ -336,14 +336,14 @@ async function launchBrowser(input: {
       sessionId,
     );
 
-    async function load(body: string, urlFragment: string): Promise<number> {
+    async function load(body: string): Promise<number> {
       const loaded = new Promise<void>((resolve, reject) => {
         events.loaded = { resolve, reject };
       });
       events.body = body;
       const navigation = await send<{ errorText?: string }>(
         "Page.navigate",
-        { url: `${PAGE_URL}${urlFragment}` },
+        { url: PAGE_URL },
         sessionId,
       );
       if (navigation.errorText) throw new HtmlRenderBrowserError("the page could not be opened");
@@ -413,7 +413,6 @@ export async function captureHtmlScreenshot(input: {
   noSandbox: boolean;
   html: string;
   width: number;
-  urlFragment: string;
   appearance: ThemeAppearance;
   signal?: AbortSignal;
 }): Promise<HtmlScreenshot> {
@@ -450,7 +449,7 @@ export async function captureHtmlScreenshot(input: {
       // A timeout or cancel can settle the race while the browser starts.
       if (finished) await browser.close();
       const page = await browser.openPage(input.width, input.appearance);
-      const contentHeight = await page.load(pageBody(input.html), input.urlFragment);
+      const contentHeight = await page.load(pageBody(input.html));
       const capturedHeight = Math.max(1, Math.min(contentHeight, MAX_CAPTURE_HEIGHT));
       const png = await page.screenshot(capturedHeight);
       return { png, contentHeight, capturedHeight, consoleMessages: page.consoleMessages() };
