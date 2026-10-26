@@ -21,6 +21,7 @@ import {
   ListSettingIcon,
   PanelLeftIcon,
   Settings01Icon,
+  WebDesign01Icon,
   WhiteboardIcon,
 } from "@hugeicons/core-free-icons";
 import { workspacePlugins } from "./plugin-package";
@@ -261,6 +262,10 @@ const customIcons = {
   "scott-inline-vis": {
     name: "Browser",
     nodes: BrowserIcon,
+  },
+  html: {
+    name: "WebDesign01",
+    nodes: WebDesign01Icon,
   },
   monokai: {
     name: "Palette",

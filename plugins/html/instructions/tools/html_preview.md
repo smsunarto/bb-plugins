@@ -1,0 +1,1 @@
+Check an HTML page before html_render. Returns PNG, contentHeight, and console output. Inline <style> and <script>. Local images as absolute paths are inlined. Remote URLs load as-is. Theme and layout rules are in html_render.

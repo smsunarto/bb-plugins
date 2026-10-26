@@ -621,6 +621,25 @@
         "vaul": "^1.1.2",
       },
     },
+    "plugins/html": {
+      "name": "@smsunarto/bb-plugin-html",
+      "version": "0.1.0",
+      "dependencies": {
+        "@bb-kit/core": "workspace:*",
+        "zod": "^4.4.3",
+      },
+      "devDependencies": {
+        "@get-bb/plugin-sdk": "0.6.75",
+        "@types/node": "^22.0.0",
+        "@types/react": "^19.0.0",
+        "@types/react-dom": "^19.0.0",
+        "bun-types": "^1.4.0",
+        "react": "19.2.8",
+        "react-dom": "19.2.8",
+        "tsx": "4.23.12",
+        "typescript": "^6.0.0",
+      },
+    },
     "plugins/kitchen-sink": {
       "name": "@smsunarto/bb-plugin-kitchen-sink",
       "version": "0.1.0",
@@ -1845,6 +1864,8 @@
     "@smsunarto/bb-plugin-gitbutler": ["@smsunarto/bb-plugin-gitbutler@workspace:plugins/gitbutler"],
 
     "@smsunarto/bb-plugin-gtd-sidebar": ["@smsunarto/bb-plugin-gtd-sidebar@workspace:plugins/gtd-sidebar"],
+
+    "@smsunarto/bb-plugin-html": ["@smsunarto/bb-plugin-html@workspace:plugins/html"],
 
     "@smsunarto/bb-plugin-kitchen-sink": ["@smsunarto/bb-plugin-kitchen-sink@workspace:plugins/kitchen-sink"],
 

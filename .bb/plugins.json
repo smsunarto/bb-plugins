@@ -52,6 +52,10 @@
       "source": "./plugins/gtd-sidebar"
     },
     {
+      "name": "html",
+      "source": "./plugins/html"
+    },
+    {
       "name": "monokai",
       "source": "./plugins/monokai"
     },
