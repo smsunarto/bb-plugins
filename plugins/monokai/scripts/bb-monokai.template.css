@@ -1767,8 +1767,8 @@ diffs-container {
 
 /* bb fades every finished tool row to 40%, which turns a run of calls into one
  * gray block. Codex keeps the row at full strength and fades only the target:
- * the verb ("Read", "Searched for") and icon stay muted, the path or query
- * steps down to readback. */
+ * the verb ("Read", "Searched for") stays muted; the icon and the path or
+ * query step down to readback. */
 .dark [data-timeline-row-list] .rounded-md.text-muted-foreground.opacity-40 {
   opacity: 1;
 }
@@ -1783,9 +1783,22 @@ diffs-container {
   display: flex;
 }
 
-.dark [data-timeline-row-list] span.inline-flex.gap-1\.5 > svg.size-3\.5 {
+/* Turn row icons copy T3 Code's work log: a 16px glyph at stroke 2 (a 1.33px
+ * line) in its muted ink at 70% opacity, 10px from the label. The readback
+ * tier is the ladder step at that blend (74% x 70% = 52%, readback 55%).
+ * T3 centres the glyph in a 24px slot; only the trailing 4px is added, so
+ * glyphs stay on bb's row edge. Plugin icons are mask spans with no stroke;
+ * icons bb registers are spans around an svg, so they take the stroke too. */
+.dark [data-timeline-row-list] span.inline-flex.gap-1\.5 > [data-icon-root].size-3\.5 {
   width: 16px;
   height: 16px;
+  margin-inline-end: 4px;
+  color: var(--readback-foreground);
+}
+
+.dark [data-timeline-row-list] span.inline-flex.gap-1\.5 > svg[data-icon-root].size-3\.5 *,
+.dark [data-timeline-row-list] span.inline-flex.gap-1\.5 > span[data-icon-root].size-3\.5 > svg * {
+  stroke-width: 2;
 }
 
 /* Message hover actions draw 12px icons on a 24px grid with a 1.5 stroke,

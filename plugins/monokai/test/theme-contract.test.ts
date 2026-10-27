@@ -289,6 +289,12 @@ describe("bb Monokai contract audit", () => {
       ".dark [data-timeline-row-list] span.text-sm.leading-5 {\n  font-size: var(--agent-fluid-size);\n  line-height: 1.5;",
     );
     expect(theme).toContain(
+      ".dark [data-timeline-row-list] span.inline-flex.gap-1\\.5 > [data-icon-root].size-3\\.5 {\n  width: 16px;\n  height: 16px;\n  margin-inline-end: 4px;\n  color: var(--readback-foreground);",
+    );
+    expect(theme).toContain(
+      ".dark [data-timeline-row-list] span.inline-flex.gap-1\\.5 > svg[data-icon-root].size-3\\.5 *,\n.dark [data-timeline-row-list] span.inline-flex.gap-1\\.5 > span[data-icon-root].size-3\\.5 > svg * {\n  stroke-width: 2;",
+    );
+    expect(theme).toContain(
       ".dark .review-canvas-root[data-review-theme] .review-document {\n  --wb-text: calc(var(--agent-fluid-size) * 15 / 14);\n}",
     );
     expect(theme).toContain(
