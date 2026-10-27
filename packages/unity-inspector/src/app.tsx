@@ -1,5 +1,6 @@
 import { useState, type ReactNode } from "react";
-import type { UnityDiff, UnityCitation } from "./model.ts";
+import { unityYamlKind } from "./model.ts";
+import type { UnityCitation, UnityDiff, UnityMetaDiff } from "./model.ts";
 import "./app.css";
 
 const labels: Record<string, string> = {
@@ -17,14 +18,41 @@ const labels: Record<string, string> = {
   m_GameObject: "GameObject",
   m_Component: "Components",
 };
+/** A serialized field name as the Inspector shows it: `m_assetBundleName` reads "Asset Bundle Name". */
 function propertyLabel(path: string): string {
   return path
     .split(".")
-    .map(
-      (part) => labels[part] ?? part.replace(/^(?:m_|_)/, "").replace(/([a-z])([A-Z])/g, "$1 $2"),
-    )
+    .map((part) => {
+      const words = part.replace(/^(?:m_|_)/, "").replace(/([a-z])([A-Z])/g, "$1 $2");
+      return labels[part] ?? words.charAt(0).toUpperCase() + words.slice(1);
+    })
     .join(" › ");
 }
+const COLOR = /^\{r: (-?[\d.e-]+), g: (-?[\d.e-]+), b: (-?[\d.e-]+), a: (-?[\d.e-]+)\}$/;
+
+/** A serialized Unity color as CSS, so a changed tint shows as a swatch. */
+function cssColor(value: string): string | null {
+  const match = COLOR.exec(value);
+  if (!match) return null;
+  const [r, g, b, a] = match.slice(1).map(Number) as [number, number, number, number];
+  if (![r, g, b, a].every(Number.isFinite)) return null;
+  const channel = (value: number) => Math.round(Math.min(1, Math.max(0, value)) * 255);
+  return `rgb(${channel(r)} ${channel(g)} ${channel(b)} / ${Math.min(1, Math.max(0, a))})`;
+}
+
+function Value({ value, missing = "Not present" }: { value: string | null; missing?: string }) {
+  if (value === null) return <code>{missing}</code>;
+  const color = cssColor(value);
+  return (
+    <code>
+      {color ? (
+        <span className="unity-diff-swatch" style={{ background: color }} aria-hidden="true" />
+      ) : null}
+      {value}
+    </code>
+  );
+}
+
 function ChangeBadge({ status }: { status: "added" | "removed" | "modified" }) {
   return <span className={`unity-diff-badge unity-diff-${status}`}>{status}</span>;
 }
@@ -73,15 +101,15 @@ function ComponentCard({
                   </th>
                   {"value" in property ? (
                     <td>
-                      <code>{property.value}</code>
+                      <Value value={property.value} />
                     </td>
                   ) : (
                     <>
                       <td className="unity-diff-before">
-                        <code>{property.before ?? "Not present"}</code>
+                        <Value value={property.before} />
                       </td>
                       <td className="unity-diff-after">
-                        <code>{property.after ?? "Not present"}</code>
+                        <Value value={property.after} />
                       </td>
                     </>
                   )}
@@ -106,7 +134,8 @@ function UnityInspector({
   diff: UnityDiff | UnityCitation;
   citation?: boolean;
   path: string;
-  raw: ReactNode;
+  /** The YAML to toggle to. Without it, there is no toggle: the host shows text its own way. */
+  raw?: ReactNode;
 }) {
   const [yaml, setYaml] = useState(false);
   const componentCount = diff.groups.reduce((sum, group) => sum + group.components.length, 0);
@@ -117,18 +146,20 @@ function UnityInspector({
     >
       <div className="unity-diff-toolbar">
         <div className="unity-diff-title">
-          <strong>{`${/\.unity$/i.test(path) ? "Scene" : "Prefab"} ${citation ? "properties" : "changes"}`}</strong>
+          <strong>{`${unityYamlKind(path) ?? "Asset"} ${citation ? "properties" : "changes"}`}</strong>
           <span>
             {diff.groups.length} {diff.groups.length === 1 ? "object" : "objects"} ·{" "}
             {componentCount} {componentCount === 1 ? "component" : "components"} ·{" "}
             {diff.propertyCount} {diff.propertyCount === 1 ? "property" : "properties"}
           </span>
         </div>
-        <button type="button" aria-pressed={yaml} onClick={() => setYaml((value) => !value)}>
-          {yaml ? "Object view" : "Raw YAML"}
-        </button>
+        {raw === undefined ? null : (
+          <button type="button" aria-pressed={yaml} onClick={() => setYaml((value) => !value)}>
+            {yaml ? "Object view" : "Raw YAML"}
+          </button>
+        )}
       </div>
-      {yaml ? (
+      {yaml && raw !== undefined ? (
         raw
       ) : (
         <div className="unity-diff-groups">
@@ -165,7 +196,7 @@ function UnityInspector({
   );
 }
 
-export function UnityDiffView(props: { diff: UnityDiff; path: string; raw: ReactNode }) {
+export function UnityDiffView(props: { diff: UnityDiff; path: string; raw?: ReactNode }) {
   return <UnityInspector {...props} />;
 }
 export function UnityCitationView({
@@ -177,4 +208,105 @@ export function UnityCitationView({
   raw: ReactNode;
 }) {
   return <UnityInspector diff={citation} citation {...props} />;
+}
+
+/** A `.meta` change: its GUID, its importer, and every import setting that moved. */
+export function UnityMetaDiffView({
+  diff,
+  path,
+  raw,
+}: {
+  diff: UnityMetaDiff;
+  path: string;
+  raw?: ReactNode;
+}) {
+  const [yaml, setYaml] = useState(false);
+  const { guid, importer } = diff;
+  const guidChanged = guid.before !== null && guid.after !== null && guid.before !== guid.after;
+  return (
+    <section className="unity-diff" aria-label={`Import settings changes in ${path}`}>
+      <div className="unity-diff-toolbar">
+        <div className="unity-diff-title">
+          <strong>Import settings changes</strong>
+          <span>
+            {importer.after ?? importer.before ?? "No importer"} · {diff.propertyCount}{" "}
+            {diff.propertyCount === 1 ? "setting" : "settings"}
+          </span>
+        </div>
+        {raw === undefined ? null : (
+          <button type="button" aria-pressed={yaml} onClick={() => setYaml((value) => !value)}>
+            {yaml ? "Settings view" : "Raw YAML"}
+          </button>
+        )}
+      </div>
+      {yaml && raw !== undefined ? (
+        raw
+      ) : (
+        <div className="unity-diff-groups">
+          {guidChanged ? (
+            <p className="unity-diff-warning" role="alert">
+              The GUID changed. Scenes, prefabs, and materials that reference this asset by its old
+              GUID lose the reference.
+            </p>
+          ) : null}
+          <dl className="unity-meta-facts">
+            <dt>GUID</dt>
+            <dd>
+              {guid.before === guid.after ? (
+                <code>{guid.after ?? "None"}</code>
+              ) : (
+                <>
+                  <code className="unity-diff-before">{guid.before ?? "None"}</code>
+                  {" → "}
+                  <code className="unity-diff-after">{guid.after ?? "None"}</code>
+                </>
+              )}
+            </dd>
+            <dt>Importer</dt>
+            <dd>
+              {importer.before === importer.after ? (
+                <code>{importer.after ?? "None"}</code>
+              ) : (
+                <>
+                  <code className="unity-diff-before">{importer.before ?? "None"}</code>
+                  {" → "}
+                  <code className="unity-diff-after">{importer.after ?? "None"}</code>
+                </>
+              )}
+            </dd>
+          </dl>
+          {diff.properties.length ? (
+            <div className="unity-diff-object unity-diff-table-wrap">
+              <table className="unity-diff-properties">
+                <thead>
+                  <tr>
+                    <th scope="col">Setting</th>
+                    <th scope="col">Before</th>
+                    <th scope="col">After</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {diff.properties.map((property) => (
+                    <tr key={property.path}>
+                      <th scope="row" title={property.path}>
+                        {propertyLabel(property.path)}
+                      </th>
+                      <td className="unity-diff-before">
+                        <Value value={property.before} />
+                      </td>
+                      <td className="unity-diff-after">
+                        <Value value={property.after} />
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <p className="unity-diff-empty">No import settings changed.</p>
+          )}
+        </div>
+      )}
+    </section>
+  );
 }

@@ -1,5 +1,13 @@
 import { expect, test } from "bun:test";
-import { buildUnityDiff, buildUnityCitation, parseUnityObjects } from "../src/parse.ts";
+import { isUnityMeta, unityYamlKind } from "../src/model.ts";
+import {
+  UnityLimitError,
+  buildUnityCitation,
+  buildUnityDiff,
+  buildUnityDiffAsync,
+  buildUnityMetaDiff,
+  parseUnityObjects,
+} from "../src/parse.ts";
 import { applyUnityPatch } from "../src/patch.ts";
 
 const before = `%YAML 1.1
@@ -237,4 +245,88 @@ test("reverse application verifies recorded after lines and preserves newline ma
       true,
     ),
   ).toBe("old");
+});
+
+test("a null patch compares whole files, so changes outside any hunk still show", () => {
+  const result = buildUnityDiff(before, after, null);
+  expect(result.propertyCount).toBe(2);
+  expect(result.groups[0]!.components.map((item) => item.type)).toEqual([
+    "Transform",
+    "PlayerMovement",
+  ]);
+});
+
+test("the async diff matches the sync diff and stops when aborted", async () => {
+  expect(await buildUnityDiffAsync(before, after, null, { sliceMs: 0 })).toEqual(
+    buildUnityDiff(before, after, null),
+  );
+  const controller = new AbortController();
+  controller.abort();
+  await expect(
+    buildUnityDiffAsync(before, after, null, { signal: controller.signal }),
+  ).rejects.toThrow();
+});
+
+test("too many changed properties is a limit, not a parse failure", () => {
+  const items = Array.from({ length: 5_100 }, (_, index) => `  f${index}: ${index}`).join("\n");
+  const big = `--- !u!114 &1\nMonoBehaviour:\n${items}\n`;
+  expect(() => buildUnityDiff("", big, null)).toThrow(UnityLimitError);
+});
+
+test("asset kinds cover Unity's YAML formats case-insensitively", () => {
+  expect(unityYamlKind("Assets/Main.unity")).toBe("Scene");
+  expect(unityYamlKind("Assets/Hero.PREFAB")).toBe("Prefab");
+  expect(unityYamlKind("Assets/Skin.mat")).toBe("Material");
+  expect(unityYamlKind("Assets/Run.anim")).toBe("Animation clip");
+  expect(unityYamlKind("Assets/Hero.cs")).toBeNull();
+  expect(isUnityMeta("Assets/Hero.prefab.meta")).toBe(true);
+});
+
+const meta = (guid: string, size: number, android: number) => `fileFormatVersion: 2
+guid: ${guid}
+TextureImporter:
+  serializedVersion: 12
+  maxTextureSize: ${size}
+  platformSettings:
+  - serializedVersion: 3
+    buildTarget: DefaultTexturePlatform
+    maxTextureSize: 2048
+  - serializedVersion: 3
+    buildTarget: Android
+    maxTextureSize: ${android}
+  spriteBorder: {x: 0, y: 0, z: 0, w: 0}
+  userData:
+`;
+
+test("meta diffs flag GUID changes and key platform settings by target", () => {
+  const diff = buildUnityMetaDiff(
+    meta("00000000000000000000000000000001", 2048, 1024),
+    meta("0a1b2c3d4e5f60718293a4b5c6d7e8f9", 1024, 512),
+  );
+  expect(diff.guid).toEqual({
+    before: "00000000000000000000000000000001",
+    after: "0a1b2c3d4e5f60718293a4b5c6d7e8f9",
+  });
+  expect(diff.importer).toEqual({ before: "TextureImporter", after: "TextureImporter" });
+  expect(diff.properties).toEqual([
+    { path: "maxTextureSize", before: "2048", after: "1024" },
+    { path: "platformSettings[Android].maxTextureSize", before: "1024", after: "512" },
+  ]);
+});
+
+test("an added meta file lists its settings with nothing before", () => {
+  const diff = buildUnityMetaDiff("", meta("00000000000000000000000000000001", 2048, 1024));
+  expect(diff.guid.before).toBeNull();
+  expect(diff.properties.every((property) => property.before === null)).toBe(true);
+  expect(diff.properties.find((property) => property.path === "spriteBorder")?.after).toBe(
+    "{x: 0, y: 0, z: 0, w: 0}",
+  );
+});
+
+test("a setting Unity saved empty reads as an empty string, not null", () => {
+  const prefabMeta = (bundle: string) =>
+    `fileFormatVersion: 2\nguid: 0a1b2c3d4e5f60718293a4b5c6d7e8f9\nPrefabImporter:\n  assetBundleName: ${bundle}\n`;
+  expect(buildUnityMetaDiff(prefabMeta(""), prefabMeta("characters")).properties).toEqual([
+    { path: "assetBundleName", before: '""', after: '"characters"' },
+  ]);
 });
