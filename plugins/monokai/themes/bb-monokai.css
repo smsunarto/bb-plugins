@@ -647,25 +647,30 @@
   background-color: #151515;
 }
 
-/* Conversation links read as one quiet blue label, then reveal their inline
- * hit area on hover. The fill is the accent at 15% alpha so the conversation
- * ground remains part of the resulting color instead of introducing another
- * opaque surface. Negative inline margins preserve surrounding prose spacing. */
+/* Conversation links copy T3 Code: plain accent text with no underline, then
+ * a dotted underline on hover or keyboard focus. The dots are a background
+ * so they sit under descenders without moving the line box. */
 .dark [data-message-column] [data-markdown-preview] a.underline,
 .dark .bb-markdown-prose a {
   color: var(--primary);
   text-decoration-line: none;
-  border-radius: 0.375rem;
-  padding: 0.0625rem 0.25rem;
-  margin-inline: -0.25rem;
-  box-decoration-break: clone;
-  -webkit-box-decoration-break: clone;
+}
+
+.dark [data-message-column] [data-markdown-preview] a.underline:focus-visible,
+.dark .bb-markdown-prose a:focus-visible {
+  background-image: radial-gradient(circle, currentcolor 0.75px, transparent 1px);
+  background-position: left bottom;
+  background-repeat: repeat-x;
+  background-size: 4px 2px;
 }
 
 @media (hover: hover) {
   .dark [data-message-column] [data-markdown-preview] a.underline:hover,
   .dark .bb-markdown-prose a:hover {
-    background-color: #88c0d026;
+    background-image: radial-gradient(circle, currentcolor 0.75px, transparent 1px);
+    background-position: left bottom;
+    background-repeat: repeat-x;
+    background-size: 4px 2px;
   }
 }
 
@@ -1396,151 +1401,135 @@ diffs-container {
   }
 }
 
-/* Agent replies copy the Codex app's markdown geometry, measured from its
- * renderer: every gap, size, and leading is a multiple of one quarter of the
- * body size (3.5px at 14px). Colors stay on this palette's roles. Scoped to
- * the agent column and the editable Docs/Canvas adapters; user bubbles keep bb's compact markdown. Bold weight, the
- * gap under headings and paragraphs, and the gap between list items keep bb's
- * own values, which read less packed than Codex's. */
+/* Agent replies copy T3 Code's chat markdown (`.chat-markdown` in its
+ * index.css). T3 sets prose in `text-sm` (0.875rem) at `leading-relaxed`, and
+ * every gap, size, and radius is a rem multiple. --agent-md-rem rebuilds that
+ * rem from the prose size, so at the 14px laptop size every value matches T3
+ * and it scales with the fluid size elsewhere. Colors stay on this palette's
+ * roles. Scoped to the agent column and the editable Docs/Canvas adapters;
+ * user bubbles keep bb's compact markdown. Element rules skip plugin cards
+ * (message directives mount inside [data-bb-plugin-root]), which own their
+ * own spacing. */
 .dark [data-message-column].group\/message [data-markdown-preview],
 .dark .bb-markdown-prose,
 .dark .canvas-prose [data-markdown-preview] {
-  --agent-md-space: calc(var(--agent-fluid-size) / 4);
+  --agent-md-rem: calc(var(--agent-fluid-size) / 0.875);
   --md-table-start-offset: 0px;
-  font-weight: 430;
+  font-weight: 400;
+  line-height: 1.625;
 }
 
-.dark [data-message-column].group\/message [data-markdown-preview] :is(strong, b),
+.dark [data-message-column].group\/message [data-markdown-preview] :is(strong, b):not([data-bb-plugin-root] *),
 .dark .bb-markdown-prose :is(strong, b) {
-  font-weight: 700;
-}
-
-.dark [data-message-column].group\/message [data-markdown-preview] th,
-.dark .bb-markdown-prose th {
   font-weight: 600;
 }
 
-/* Codex keeps an agent's single newlines as line breaks. bb's renderer leaves
- * them in the paragraph text, so pre-line shows them. A hard break renders as
- * a <br> followed by that same newline, so the <br> would double it. */
-.dark [data-message-column].group\/message [data-markdown-preview] p,
-.dark .bb-markdown-prose p {
-  white-space: pre-line;
+/* T3 gives every block one 0.65rem margin and lets neighbours collapse, so
+ * paragraphs, lists, quotes, code, and tables sit one gap apart. */
+.dark [data-message-column].group\/message [data-markdown-preview] :is(p, ul, ol, blockquote, hr):not([data-bb-plugin-root] *),
+.dark .bb-markdown-prose :is(p, ul, ol, blockquote, hr) {
+  margin: calc(var(--agent-md-rem) * 0.65) 0;
 }
 
-/* BB already supplies these margins in the stream. Editable prose needs the
- * same defaults because it does not use BB's Markdown element renderers. */
-.dark .bb-markdown-prose p {
-  margin: 0 0 8px;
-}
-
-.dark [data-message-column].group\/message [data-markdown-preview] p > br {
-  display: none;
-}
-
-.dark [data-message-column].group\/message [data-markdown-preview] > p:where(:not(:first-child)),
-.dark .bb-markdown-prose > p:where(:not(:first-child)) {
-  margin-top: calc(var(--agent-md-space) * 2);
-}
-
-.dark [data-message-column].group\/message [data-markdown-preview] > p + p,
-.dark .bb-markdown-prose > p + p {
-  margin-top: calc(var(--agent-md-space) * 4);
-}
-
-.dark [data-message-column].group\/message [data-markdown-preview] > :is(h1, h2, h3) + p,
-.dark [data-message-column].group\/message [data-markdown-preview] h4 + p,
-.dark .bb-markdown-prose > :is(h1, h2, h3) + p,
-.dark .bb-markdown-prose h4 + p {
+.dark [data-message-column].group\/message [data-markdown-preview] > :first-child:not([data-bb-plugin-root] *),
+.dark .bb-markdown-prose > :first-child {
   margin-top: 0;
 }
 
-.dark [data-message-column].group\/message [data-markdown-preview] :is(h1, h2, h3, h4, h5, h6),
+.dark [data-message-column].group\/message [data-markdown-preview] > :last-child:not([data-bb-plugin-root] *),
+.dark .bb-markdown-prose > :last-child {
+  margin-bottom: 0;
+}
+
+.dark [data-message-column].group\/message [data-markdown-preview] :is(h1, h2, h3, h4, h5, h6):not([data-bb-plugin-root] *),
 .dark .bb-markdown-prose :is(h1, h2, h3, h4, h5, h6) {
+  margin: calc(var(--agent-md-rem) * 1.25) 0 calc(var(--agent-md-rem) * 0.5);
   color: var(--foreground);
   font-weight: 600;
+  line-height: 1.3;
   letter-spacing: normal;
   text-transform: none;
 }
 
-.dark [data-message-column].group\/message [data-markdown-preview] h1,
+.dark [data-message-column].group\/message [data-markdown-preview] h1:not([data-bb-plugin-root] *),
 .dark .bb-markdown-prose h1 {
-  margin: calc(var(--agent-md-space) * 4) 0 8px;
-  font-size: calc(var(--agent-md-space) * 6);
-  line-height: calc(var(--agent-md-space) * 8);
+  font-size: calc(var(--agent-md-rem) * 1.25);
 }
 
-.dark [data-message-column].group\/message [data-markdown-preview] h2,
+.dark [data-message-column].group\/message [data-markdown-preview] h2:not([data-bb-plugin-root] *),
 .dark .bb-markdown-prose h2 {
-  margin: calc(var(--agent-md-space) * 4) 0 8px;
-  font-size: calc(var(--agent-md-space) * 5);
-  line-height: calc(var(--agent-md-space) * 7);
+  font-size: calc(var(--agent-md-rem) * 1.125);
 }
 
-.dark [data-message-column].group\/message [data-markdown-preview] h3,
+.dark [data-message-column].group\/message [data-markdown-preview] h3:not([data-bb-plugin-root] *),
 .dark .bb-markdown-prose h3 {
-  margin: calc(var(--agent-md-space) * 4) 0 8px;
-  font-size: calc(var(--agent-md-space) * 4.5);
-  line-height: calc(var(--agent-md-space) * 7);
+  font-size: var(--agent-md-rem);
 }
 
-.dark [data-message-column].group\/message [data-markdown-preview] h4,
-.dark .bb-markdown-prose h4 {
-  margin: calc(var(--agent-md-space) * 4) 0 0;
-  font-size: calc(var(--agent-md-space) * 4);
-  line-height: calc(var(--agent-md-space) * 6);
+.dark [data-message-column].group\/message [data-markdown-preview] :is(h4, h5, h6):not([data-bb-plugin-root] *),
+.dark .bb-markdown-prose :is(h4, h5, h6) {
+  font-size: calc(var(--agent-md-rem) * 0.875);
 }
 
-.dark [data-message-column].group\/message [data-markdown-preview] :is(h5, h6),
-.dark .bb-markdown-prose :is(h5, h6) {
-  margin: 0;
-  font-size: calc(var(--agent-md-space) * 4);
-  line-height: calc(var(--agent-md-space) * 6.5);
+.dark [data-message-column].group\/message [data-markdown-preview] h6:not([data-bb-plugin-root] *),
+.dark .bb-markdown-prose h6 {
+  color: var(--muted-foreground);
 }
 
-.dark [data-message-column].group\/message [data-markdown-preview] :is(ul, ol),
+.dark [data-message-column].group\/message [data-markdown-preview] :is(ul, ol):not([data-bb-plugin-root] *),
 .dark .bb-markdown-prose :is(ul, ol) {
-  margin: 0;
-  padding-inline-start: calc(var(--agent-md-space) * 6.5);
+  padding-inline-start: calc(var(--agent-md-rem) * 1.25);
 }
 
-.dark [data-message-column].group\/message [data-markdown-preview] :is(ul, ol) ul,
-.dark .bb-markdown-prose :is(ul, ol) ul {
+.dark [data-message-column].group\/message [data-markdown-preview] ul:not([data-bb-plugin-root] *),
+.dark .bb-markdown-prose ul {
+  list-style-type: disc;
+}
+
+.dark [data-message-column].group\/message [data-markdown-preview] ol:not([data-bb-plugin-root] *),
+.dark .bb-markdown-prose ol {
+  list-style-type: decimal;
+}
+
+.dark [data-message-column].group\/message [data-markdown-preview] ul ul:not([data-bb-plugin-root] *),
+.dark .bb-markdown-prose ul ul {
   list-style-type: circle;
 }
 
-.dark [data-message-column].group\/message [data-markdown-preview] :is(ul, ol) :is(ul, ol) ul,
-.dark .bb-markdown-prose :is(ul, ol) :is(ul, ol) ul {
+.dark [data-message-column].group\/message [data-markdown-preview] ul ul ul:not([data-bb-plugin-root] *),
+.dark .bb-markdown-prose ul ul ul {
   list-style-type: square;
 }
 
-.dark [data-message-column].group\/message [data-markdown-preview] li,
+.dark [data-message-column].group\/message [data-markdown-preview] ol ol:not([data-bb-plugin-root] *),
+.dark .bb-markdown-prose ol ol {
+  list-style-type: lower-alpha;
+}
+
+.dark [data-message-column].group\/message [data-markdown-preview] ol ol ol:not([data-bb-plugin-root] *),
+.dark .bb-markdown-prose ol ol ol {
+  list-style-type: lower-roman;
+}
+
+.dark [data-message-column].group\/message [data-markdown-preview] ol > li:not([data-bb-plugin-root] *)::marker,
+.dark .bb-markdown-prose ol > li::marker {
+  font-variant-numeric: tabular-nums;
+}
+
+.dark [data-message-column].group\/message [data-markdown-preview] li:not([data-bb-plugin-root] *),
 .dark .bb-markdown-prose li {
-  padding-inline-start: calc(var(--agent-md-space) * 1.5);
-}
-
-.dark .bb-markdown-prose li {
-  margin: 0 0 4px;
-}
-
-.dark [data-message-column].group\/message [data-markdown-preview] li::marker,
-.dark .bb-markdown-prose li::marker {
-  font-weight: 600;
-}
-
-.dark [data-message-column].group\/message [data-markdown-preview] li > p,
-.dark .bb-markdown-prose li > p {
   margin: 0;
 }
 
-.dark [data-message-column].group\/message [data-markdown-preview] li > p + p,
-.dark .bb-markdown-prose li > p + p {
-  margin-top: calc(var(--agent-md-space) * 4);
+.dark [data-message-column].group\/message [data-markdown-preview] li + li:not([data-bb-plugin-root] *),
+.dark .bb-markdown-prose li + li {
+  margin-top: calc(var(--agent-md-rem) * 0.25);
 }
 
-/* Task checkboxes are Codex's 14px rounded box with Lucide's check. bb
- * renders native inputs, which take no pseudo-elements, so the box, fill, and
- * check are mask layers over the ink: 12% edge like --border, 8% fill like
+/* bb drops GFM's task-list-item class, and the theme avoids :has(), so the
+ * bullet stays and the box sits after it. The box is a 14px rounded square
+ * with Lucide's check, drawn as mask layers over the ink because native
+ * inputs take no pseudo-elements: 12% edge like --border, 8% fill like
  * --accent. */
 .dark [data-message-column].group\/message [data-markdown-preview] li > input[type="checkbox"],
 .dark .bb-markdown-prose li > input[type="checkbox"],
@@ -1549,68 +1538,27 @@ diffs-container {
   appearance: none;
   width: 14px;
   height: 14px;
-  margin: 0 calc(var(--agent-md-space) * 1.5) 0 0;
-  vertical-align: -0.125rem;
+  margin: 0 0.35em 0.15em 0;
+  vertical-align: middle;
   background-color: var(--foreground);
-  mask: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 14 14'><rect x='0.5' y='0.5' width='13' height='13' rx='4.5' fill='none' stroke='black' stroke-opacity='0.12'/></svg>") center / 14px no-repeat;
+  mask: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 14 14'><rect x='0.5' y='0.5' width='13' height='13' rx='3.5' fill='none' stroke='black' stroke-opacity='0.12'/></svg>") center / 14px no-repeat;
 }
 
 .dark [data-message-column].group\/message [data-markdown-preview] li > input[type="checkbox"]:checked,
 .dark .bb-markdown-prose li > input[type="checkbox"]:checked,
 .dark .bb-markdown-prose li > label > input[type="checkbox"]:checked,
 .dark .bb-markdown-prose li[role="checkbox"][aria-checked="true"]::before {
-  mask-image: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 14 14'><rect width='14' height='14' rx='5' fill-opacity='0.08'/><rect x='0.5' y='0.5' width='13' height='13' rx='4.5' fill='none' stroke='black' stroke-opacity='0.12'/><svg x='1' y='1' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='black' stroke-linecap='round' stroke-linejoin='round' stroke-width='2'><path d='M20 6 9 17l-5-5'/></svg></svg>");
+  mask-image: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 14 14'><rect width='14' height='14' rx='4' fill-opacity='0.08'/><rect x='0.5' y='0.5' width='13' height='13' rx='3.5' fill='none' stroke='black' stroke-opacity='0.12'/><svg x='1' y='1' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='black' stroke-linecap='round' stroke-linejoin='round' stroke-width='2'><path d='M20 6 9 17l-5-5'/></svg></svg>");
 }
 
-/* The quote rule is an inset bar, not a border, so it stops short of the
- * quote's padding like Codex's. */
-.dark [data-message-column].group\/message [data-markdown-preview] blockquote,
+/* T3's quote rule is a 2px edge at 35% of the text color. The ladder's 30%
+ * faint tier is the nearest role. Quoted text keeps the body color. */
+.dark [data-message-column].group\/message [data-markdown-preview] blockquote:not([data-bb-plugin-root] *),
 .dark .bb-markdown-prose blockquote {
-  position: relative;
-  margin: 0 0 calc(var(--agent-md-space) * 2);
-  border-left: 0;
-  padding: calc(var(--agent-md-space) * 2) 0 calc(var(--agent-md-space) * 2)
-    calc(var(--agent-md-space) * 6);
-  color: var(--foreground);
+  border-inline-start: 2px solid var(--subtle-foreground);
+  padding-inline-start: calc(var(--agent-md-rem) * 0.8);
+  color: inherit;
   font-style: normal;
-}
-
-.dark [data-message-column].group\/message [data-markdown-preview] blockquote::after,
-.dark .bb-markdown-prose blockquote::after {
-  content: "";
-  position: absolute;
-  inset-block: calc(var(--agent-md-space) * 2);
-  inset-inline-start: 0;
-  width: var(--agent-md-space);
-  border-radius: calc(var(--agent-md-space) / 2);
-  background-color: var(--border);
-}
-
-.dark [data-message-column].group\/message [data-markdown-preview] blockquote > p,
-.dark .bb-markdown-prose blockquote > p {
-  margin: 0;
-  font-weight: 400;
-}
-
-.dark [data-message-column].group\/message [data-markdown-preview] :is(blockquote, li) > :last-child,
-.dark [data-message-column].group\/message [data-markdown-preview] > :last-child,
-.dark .bb-markdown-prose :is(blockquote, li) > :last-child,
-.dark .bb-markdown-prose > :last-child {
-  margin-bottom: 0;
-}
-
-.dark [data-message-column].group\/message [data-markdown-preview] :is(blockquote, li) > :first-child,
-.dark [data-message-column].group\/message [data-markdown-preview] > :first-child,
-.dark [data-message-column].group\/message [data-markdown-preview] hr + *,
-.dark .bb-markdown-prose :is(blockquote, li) > :first-child,
-.dark .bb-markdown-prose > :first-child,
-.dark .bb-markdown-prose hr + * {
-  margin-top: 0;
-}
-
-.dark [data-message-column].group\/message [data-markdown-preview] hr,
-.dark .bb-markdown-prose hr {
-  margin: calc(var(--agent-md-space) * 7) 0;
 }
 
 /* The stream sets --md-table-start-offset above for BB's newer table layout.
@@ -1621,7 +1569,7 @@ diffs-container {
 .dark [data-message-column].group\/message [data-markdown-preview] .my-2[style*="--md-table-start-offset"],
 .dark .bb-markdown-prose .my-2[style*="--md-table-start-offset"] {
   justify-content: flex-start;
-  margin-block: calc(var(--agent-md-space) * 4) 0;
+  margin-block: calc(var(--agent-md-rem) * 0.65);
 }
 
 .dark [data-message-column].group\/message [data-markdown-preview] .my-2.flex.justify-center > div,
@@ -1631,76 +1579,67 @@ diffs-container {
   margin-inline-start: var(--agent-md-table-shift);
 }
 
-.dark [data-message-column].group\/message [data-markdown-preview] table,
+/* T3's redesign tables: row rules only, a 600-weight header that does not
+ * wrap, outer columns flush with the prose, and cells one step under body
+ * size. */
+.dark [data-message-column].group\/message [data-markdown-preview] table:not([data-bb-plugin-root] *),
 .dark .bb-markdown-prose table {
   min-width: var(--md-content-w, 100%);
   border: 0;
-  border-collapse: separate;
-  border-spacing: 0;
-  font-size: max(13px, calc(var(--agent-md-space) * 3.5));
-  font-variant-numeric: tabular-nums;
-  line-height: calc(var(--agent-md-space) * 6.5);
+  border-collapse: collapse;
+  font-size: calc(var(--agent-md-rem) * 0.875);
 }
 
-.dark [data-message-column].group\/message [data-markdown-preview] thead,
+.dark [data-message-column].group\/message [data-markdown-preview] thead:not([data-bb-plugin-root] *),
 .dark .bb-markdown-prose thead {
   background-color: transparent;
 }
 
-.dark [data-message-column].group\/message [data-markdown-preview] :is(th, td),
+.dark [data-message-column].group\/message [data-markdown-preview] :is(th, td):not([data-bb-plugin-root] *),
 .dark .bb-markdown-prose :is(th, td) {
   border: 0;
+  border-bottom: 1px solid var(--border-hairline);
+  padding: calc(var(--agent-md-rem) * 0.45) calc(var(--agent-md-rem) * 0.75);
+  text-align: start;
+  text-wrap: pretty;
   vertical-align: top;
 }
 
-.dark [data-message-column].group\/message [data-markdown-preview] th,
-.dark .bb-markdown-prose th {
-  border-bottom: 1px solid var(--border);
-  padding: calc(var(--agent-md-space) * 2) calc(var(--agent-md-space) * 6)
-    calc(var(--agent-md-space) * 2) 0;
-  line-height: calc(var(--agent-md-space) * 4);
+.dark [data-message-column].group\/message [data-markdown-preview] :is(th, td):first-child:not([data-bb-plugin-root] *),
+.dark .bb-markdown-prose :is(th, td):first-child {
+  padding-inline-start: 0;
 }
 
-.dark [data-message-column].group\/message [data-markdown-preview] th:last-child,
-.dark .bb-markdown-prose th:last-child {
-  padding-inline-end: calc(var(--agent-md-space) * 10);
-}
-
-.dark [data-message-column].group\/message [data-markdown-preview] td,
-.dark .bb-markdown-prose td {
-  padding: calc(var(--agent-md-space) * 2.5) calc(var(--agent-md-space) * 6)
-    calc(var(--agent-md-space) * 2.5) 0;
-}
-
-.dark [data-message-column].group\/message [data-markdown-preview] td:last-child,
-.dark .bb-markdown-prose td:last-child {
+.dark [data-message-column].group\/message [data-markdown-preview] :is(th, td):last-child:not([data-bb-plugin-root] *),
+.dark .bb-markdown-prose :is(th, td):last-child {
   padding-inline-end: 0;
 }
 
-.dark [data-message-column].group\/message [data-markdown-preview] tbody tr:not(:last-child) td,
-.dark .bb-markdown-prose tbody tr:not(:last-child) td {
-  border-bottom: 1px solid var(--border-hairline);
-}
-
-.dark [data-message-column].group\/message [data-markdown-preview] tbody tr:last-child td,
-.dark .bb-markdown-prose tbody tr:last-child td {
-  padding-bottom: calc(var(--agent-md-space) * 6);
+.dark [data-message-column].group\/message [data-markdown-preview] th:not([data-bb-plugin-root] *),
+.dark .bb-markdown-prose th {
+  padding-block: calc(var(--agent-md-rem) * 0.55);
+  font-weight: 600;
+  white-space: nowrap;
 }
 
 .dark [data-message-column].group\/message [data-markdown-preview] code.bg-muted\/70,
 .dark .bb-markdown-prose :not(pre) > code {
-  border-radius: 6px;
-  padding: 1px 6px;
-  font-size: 0.92em;
+  border: 1px solid transparent;
+  border-radius: calc(var(--agent-md-rem) * 0.25);
+  padding: 0.1em 0.35em;
+  font-size: 0.85em;
   line-height: inherit;
 }
 
-/* Fenced blocks: a 48px header row, 20px gutters, and 13px code. :where()
- * lets the first- and last-child resets above trim the outer margins. */
+/* Fenced blocks: T3's 8px borderless card, a 6px/12px header with an 11px
+ * mono label, 24px actions with 12px glyphs, and 13px code at snug leading.
+ * :where() lets the first- and last-child resets above trim the outer
+ * margins. */
 .dark [data-message-column].group\/message [data-markdown-preview] :where(.bg-surface-recessed.my-2.rounded-md),
 .dark .bb-markdown-prose :where(.bg-surface-recessed.my-2.rounded-md) {
-  margin: calc(var(--agent-md-space) * 5) 0;
-  border-radius: 20px;
+  margin: calc(var(--agent-md-rem) * 0.65) 0;
+  border-color: transparent;
+  border-radius: 8px;
 }
 
 .dark
@@ -1709,8 +1648,8 @@ diffs-container {
   .bg-surface-recessed.my-2.rounded-md
   > .flex.justify-between:first-child,
 .dark .bb-markdown-prose .bg-surface-recessed.my-2.rounded-md > .flex.justify-between:first-child {
-  min-height: 48px;
-  padding: 6px 6px 6px 20px;
+  gap: 8px;
+  padding: 6px 6px 0 12px;
 }
 
 .dark
@@ -1720,32 +1659,53 @@ diffs-container {
   > .flex.justify-between:first-child
   > span,
 .dark .bb-markdown-prose .bg-surface-recessed.my-2.rounded-md > .flex.justify-between:first-child > span {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  font-family: var(--font-sans);
+  font-family: var(--font-mono);
   font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.06em;
-  line-height: 20px;
+  font-weight: 400;
+  letter-spacing: normal;
+  line-height: 16px;
+  text-transform: none;
 }
 
-/* Lucide's code-xml glyph leads every label. It is a mask over currentColor
- * so the icon follows the label's muted ink. Its 1.6 stroke at 20px draws the
- * same 1.33px line as the 16px wrap and copy icons beside it. */
 .dark
   [data-message-column].group\/message
   [data-markdown-preview]
   .bg-surface-recessed.my-2.rounded-md
   > .flex.justify-between:first-child
-  > span::before,
-.dark .bb-markdown-prose .bg-surface-recessed.my-2.rounded-md > .flex.justify-between:first-child > span::before {
-  content: "";
-  flex: none;
-  width: 20px;
-  height: 20px;
-  background-color: currentColor;
-  mask: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.6'><path d='m18 16 4-4-4-4'/><path d='m6 8-4 4 4 4'/><path d='m14.5 4-5 16'/></svg>") center / 20px no-repeat;
+  button,
+.dark .bb-markdown-prose .bg-surface-recessed.my-2.rounded-md > .flex.justify-between:first-child button {
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+}
+
+.dark
+  [data-message-column].group\/message
+  [data-markdown-preview]
+  .bg-surface-recessed.my-2.rounded-md
+  > .flex.justify-between:first-child
+  button
+  svg,
+.dark .bb-markdown-prose .bg-surface-recessed.my-2.rounded-md > .flex.justify-between:first-child button svg {
+  width: 12px;
+  height: 12px;
+}
+
+@media (hover: hover) {
+  .dark
+    [data-message-column].group\/message
+    [data-markdown-preview]
+    .bg-surface-recessed.my-2.rounded-md
+    > .flex.justify-between:first-child
+    button:hover,
+  .dark .bb-markdown-prose .bg-surface-recessed.my-2.rounded-md > .flex.justify-between:first-child button:hover {
+    background-color: var(--state-hover);
+  }
+}
+
+.dark [data-message-column].group\/message [data-markdown-preview] pre.bb-code-highlight,
+.dark .bb-markdown-prose pre.bb-code-highlight {
+  padding: calc(var(--agent-md-rem) * 0.8) calc(var(--agent-md-rem) * 0.9);
 }
 
 /* A fence without a language has an empty label; name it plain text. */
@@ -1759,57 +1719,6 @@ diffs-container {
   content: "text";
 }
 
-/* Wrap and copy take Codex's 36px round targets with 16px glyphs. */
-.dark
-  [data-message-column].group\/message
-  [data-markdown-preview]
-  .bg-surface-recessed.my-2.rounded-md
-  > .flex.justify-between:first-child
-  > div,
-.dark .bb-markdown-prose .bg-surface-recessed.my-2.rounded-md > .flex.justify-between:first-child > div {
-  gap: 1px;
-}
-
-.dark
-  [data-message-column].group\/message
-  [data-markdown-preview]
-  .bg-surface-recessed.my-2.rounded-md
-  > .flex.justify-between:first-child
-  button,
-.dark .bb-markdown-prose .bg-surface-recessed.my-2.rounded-md > .flex.justify-between:first-child button {
-  width: 36px;
-  height: 36px;
-  border-radius: 9999px;
-}
-
-.dark
-  [data-message-column].group\/message
-  [data-markdown-preview]
-  .bg-surface-recessed.my-2.rounded-md
-  > .flex.justify-between:first-child
-  button
-  svg,
-.dark .bb-markdown-prose .bg-surface-recessed.my-2.rounded-md > .flex.justify-between:first-child button svg {
-  width: 16px;
-  height: 16px;
-}
-
-@media (hover: hover) {
-  .dark
-    [data-message-column].group\/message
-    [data-markdown-preview]
-    .bg-surface-recessed.my-2.rounded-md
-    > .flex.justify-between:first-child
-    button:hover {
-    background-color: var(--state-hover);
-  }
-}
-
-.dark [data-message-column].group\/message [data-markdown-preview] pre.bb-code-highlight,
-.dark .bb-markdown-prose pre.bb-code-highlight {
-  padding: 0 20px 12px;
-}
-
 @media (min-width: 768px), (pointer: fine) {
   .dark [data-message-column].group\/message [data-markdown-preview] pre.bb-code-highlight > code {
     font-size: 13px;
@@ -1820,36 +1729,8 @@ diffs-container {
     [data-markdown-preview]
     pre.bb-code-highlight
     > code:not(.language-diagram, .language-patch) {
-    line-height: 20px;
+    line-height: 1.375;
   }
-}
-
-/* Links lead with a 16px Lucide glyph and a 3px gap, at medium weight: a
- * globe for web and in-page links, an envelope for mail. Footnote markers
- * stay bare, and file links keep bb's own open-file glyph. */
-.dark [data-message-column] [data-markdown-preview] a.underline:not([data-footnote-ref], [data-footnote-backref], [href^="file:"]),
-.dark .bb-markdown-prose a:not([data-footnote-ref], [data-footnote-backref], [href^="file:"]) {
-  font-weight: 500;
-}
-
-.dark
-  [data-message-column]
-  [data-markdown-preview]
-  a.underline:not([data-footnote-ref], [data-footnote-backref], [href^="file:"])::before,
-.dark .bb-markdown-prose a:not([data-footnote-ref], [data-footnote-backref], [href^="file:"])::before {
-  content: "";
-  display: inline-block;
-  width: 16px;
-  height: 16px;
-  margin-inline-end: 3px;
-  vertical-align: text-top;
-  background-color: currentColor;
-  mask: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-linecap='round' stroke-linejoin='round' stroke-width='2'><circle cx='12' cy='12' r='10'/><path d='M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20'/><path d='M2 12h20'/></svg>") center / 16px no-repeat;
-}
-
-.dark [data-message-column] [data-markdown-preview] a.underline[href^="mailto:"]::before,
-.dark .bb-markdown-prose a[href^="mailto:"]::before {
-  mask-image: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-linecap='round' stroke-linejoin='round' stroke-width='2'><path d='m22 7-8.991 5.727a2 2 0 0 1-2.009 0L2 7'/><rect x='2' y='4' width='20' height='16' rx='2'/></svg>");
 }
 
 /* Code inside a link reads as the link: it takes the link color over the
@@ -1927,46 +1808,54 @@ diffs-container {
  * code body without applying prose rules to CodeMirror's toolbar. */
 .dark .bb-markdown-prose pre:not(.bb-code-highlight),
 .dark .bb-markdown-prose .canvas-mdx-code {
-  margin: calc(var(--agent-md-space) * 5) 0;
-  border: 1px solid var(--border);
-  border-radius: 20px;
+  margin: calc(var(--agent-md-rem) * 0.65) 0;
+  border: 1px solid transparent;
+  border-radius: 8px;
   background-color: #181818;
   font-size: 13px;
-  font-weight: 430;
-  line-height: 20px;
+  font-weight: 400;
+  line-height: 1.375;
   overflow: hidden;
 }
 .dark .bb-markdown-prose pre:not(.bb-code-highlight) {
-  padding: 12px 20px;
+  padding: calc(var(--agent-md-rem) * 0.8) calc(var(--agent-md-rem) * 0.9);
   overflow-x: auto;
 }
 .dark .bb-markdown-prose .canvas-mdx-code > div {
   background: transparent;
 }
 .dark .bb-markdown-prose .canvas-mdx-code > div > div:first-child {
-  min-height: 48px;
-  padding: 6px;
+  padding: 6px 6px 0 12px;
   border: 0;
 }
 .dark .bb-markdown-prose .canvas-mdx-code > div > div:nth-child(2) {
-  padding: 0 20px 12px;
+  padding: calc(var(--agent-md-rem) * 0.8) calc(var(--agent-md-rem) * 0.9);
 }
 .dark .bb-markdown-prose .canvas-mdx-code .cm-editor {
   font-size: 13px;
-  font-weight: 430;
-  line-height: 20px;
+  font-weight: 400;
+  line-height: 1.375;
+}
+/* TipTap wraps every list item and table cell in a paragraph, even in a
+ * compact list, so the adapter drops those margins to keep T3's tight
+ * 0.25rem item gap and its cell padding. */
+.dark .bb-markdown-prose :is(li, th, td) > p,
+.dark .bb-markdown-prose li > div > p {
+  margin: 0;
+}
+.dark .bb-markdown-prose li > p + p,
+.dark .bb-markdown-prose li > div > p + p {
+  margin-top: calc(var(--agent-md-rem) * 0.65);
 }
 .dark .bb-markdown-prose .tableWrapper {
-  margin: calc(var(--agent-md-space) * 4) 0 0;
+  margin: calc(var(--agent-md-rem) * 0.65) 0;
 }
-.dark .bb-markdown-prose li > div > p { margin: 0; }
-.dark .bb-markdown-prose li > div > p + p { margin-top: calc(var(--agent-md-space) * 4); }
 
 /* Lexical uses a pseudo-element checkbox rather than a native input. Its
  * click target still owns the interaction while the stream owns the shape. */
 .dark .bb-markdown-prose li[role="checkbox"] {
   margin-inline: 0;
-  padding-inline-start: calc(14px + var(--agent-md-space) * 1.5);
+  padding-inline-start: calc(14px + 0.35em);
   padding-inline-end: 0;
   text-decoration: none;
 }

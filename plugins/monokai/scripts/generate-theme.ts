@@ -693,20 +693,11 @@ const requiredRules: Array<{
     declarations: {
       color: "var(--primary)",
       "text-decoration-line": "none",
-      "border-radius": "0.375rem",
-      padding: "0.0625rem 0.25rem",
-      "margin-inline": "-0.25rem",
-      "box-decoration-break": "clone",
-      "-webkit-box-decoration-break": "clone",
     },
   },
   {
     selector: ".dark code.bg-muted\\/70",
     declarations: { "background-color": "var(--accent)" },
-  },
-  {
-    selector: ".dark [data-message-column] [data-markdown-preview] a.underline:hover",
-    declarations: { "background-color": roleValues["accent.hoverSurface"] },
   },
   {
     selector: ".dark button.bg-primary",

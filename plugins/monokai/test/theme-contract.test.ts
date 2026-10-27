@@ -81,12 +81,12 @@ describe("bb Monokai surface palette", () => {
     );
   });
 
-  test("styles conversation links with an alpha-derived accent hover surface", () => {
+  test("styles conversation links as accent text with T3's dotted hover underline", () => {
     expect(theme).toContain(
-      ".dark [data-message-column] [data-markdown-preview] a.underline,\n.dark .bb-markdown-prose a {\n  color: var(--primary);\n  text-decoration-line: none;",
+      ".dark [data-message-column] [data-markdown-preview] a.underline,\n.dark .bb-markdown-prose a {\n  color: var(--primary);\n  text-decoration-line: none;\n}",
     );
     expect(theme).toContain(
-      "@media (hover: hover) {\n  .dark [data-message-column] [data-markdown-preview] a.underline:hover,\n  .dark .bb-markdown-prose a:hover {\n    background-color: #88c0d026;",
+      "@media (hover: hover) {\n  .dark [data-message-column] [data-markdown-preview] a.underline:hover,\n  .dark .bb-markdown-prose a:hover {\n    background-image: radial-gradient(circle, currentcolor 0.75px, transparent 1px);",
     );
   });
 });
@@ -238,20 +238,33 @@ describe("bb Monokai contract audit", () => {
     );
   });
 
-  test("sets agent replies and trace rows on the Codex rhythm", () => {
+  test("sets agent replies on T3 Code's markdown geometry and trace rows on the Codex rhythm", () => {
     const agent = ".dark [data-message-column].group\\/message [data-markdown-preview]";
     expect(theme).toContain(
-      `${agent},\n.dark .bb-markdown-prose,\n.dark .canvas-prose [data-markdown-preview] {\n  --agent-md-space: calc(var(--agent-fluid-size) / 4);\n  --md-table-start-offset: 0px;\n  font-weight: 430;`,
+      `${agent},\n.dark .bb-markdown-prose,\n.dark .canvas-prose [data-markdown-preview] {\n  --agent-md-rem: calc(var(--agent-fluid-size) / 0.875);\n  --md-table-start-offset: 0px;\n  font-weight: 400;\n  line-height: 1.625;`,
     );
     expect(theme).toContain(
-      `${agent} h1,\n.dark .bb-markdown-prose h1 {\n  margin: calc(var(--agent-md-space) * 4) 0 8px;\n  font-size: calc(var(--agent-md-space) * 6);`,
+      `${agent} :is(p, ul, ol, blockquote, hr):not([data-bb-plugin-root] *),\n.dark .bb-markdown-prose :is(p, ul, ol, blockquote, hr) {\n  margin: calc(var(--agent-md-rem) * 0.65) 0;`,
     );
     expect(theme).toContain(
-      `${agent} > p + p,\n.dark .bb-markdown-prose > p + p {\n  margin-top: calc(var(--agent-md-space) * 4);`,
+      `${agent} h1:not([data-bb-plugin-root] *),\n.dark .bb-markdown-prose h1 {\n  font-size: calc(var(--agent-md-rem) * 1.25);`,
     );
-    expect(theme).toContain(".dark .bb-markdown-prose li {\n  margin: 0 0 4px;");
     expect(theme).toContain(
-      `${agent} :is(strong, b),\n.dark .bb-markdown-prose :is(strong, b) {\n  font-weight: 700;`,
+      `${agent} li + li:not([data-bb-plugin-root] *),\n.dark .bb-markdown-prose li + li {\n  margin-top: calc(var(--agent-md-rem) * 0.25);`,
+    );
+    expect(theme).toContain(
+      `${agent} :is(strong, b):not([data-bb-plugin-root] *),\n.dark .bb-markdown-prose :is(strong, b) {\n  font-weight: 600;`,
+    );
+    // T3 renders single newlines as CommonMark soft breaks, not line breaks.
+    expect(theme).not.toMatch(
+      /\[data-markdown-preview\][^{]*\bp\b[^{]*\{[^}]*white-space: pre-line/,
+    );
+    // Plugin cards mounted in a reply keep their own spacing, and the
+    // block-margin rule must not outrank the first- and last-child resets.
+    expect(theme).toContain(`${agent} > :first-child${":not([data-bb-plugin-root] *)"},`);
+    // TipTap wraps list items and cells in paragraphs; the adapter resets them.
+    expect(theme).toContain(
+      ".dark .bb-markdown-prose :is(li, th, td) > p,\n.dark .bb-markdown-prose li > div > p {\n  margin: 0;",
     );
     expect(theme).toContain('.dark [data-timeline-row-list="top-level"] {\n  gap: 8px;\n}');
     expect(theme).toContain('.dark [data-timeline-row-list="bundle"] {\n  gap: 0;');
@@ -266,11 +279,9 @@ describe("bb Monokai contract audit", () => {
     );
     expect(theme).toContain('> span:empty::after {\n  content: "text";');
     expect(theme).toContain(
-      "  button,\n.dark .bb-markdown-prose .bg-surface-recessed.my-2.rounded-md > .flex.justify-between:first-child button {\n  width: 36px;\n  height: 36px;",
+      "  button,\n.dark .bb-markdown-prose .bg-surface-recessed.my-2.rounded-md > .flex.justify-between:first-child button {\n  width: 24px;\n  height: 24px;",
     );
-    expect(theme).toContain(
-      'a.underline[href^="mailto:"]::before,\n.dark .bb-markdown-prose a[href^="mailto:"]::before {\n  mask-image: url(',
-    );
+    expect(theme).not.toContain('a.underline[href^="mailto:"]::before');
     expect(theme).toContain(
       "a.underline code.bg-muted\\/70,\n.dark .bb-markdown-prose a :not(pre) > code {\n  color: inherit;",
     );
