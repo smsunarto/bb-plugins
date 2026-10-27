@@ -268,9 +268,8 @@ describe("bb Monokai contract audit", () => {
     );
     expect(theme).toContain('.dark [data-timeline-row-list="top-level"] {\n  gap: 8px;\n}');
     expect(theme).toContain('.dark [data-timeline-row-list="bundle"] {\n  gap: 0;');
-    expect(theme).toContain(
-      ".dark [data-timeline-row-list] .rounded-md.text-muted-foreground.opacity-40 {\n  opacity: 1;",
-    );
+    // bb's past-row dim (opacity-40) applies; the theme does not undo it.
+    expect(theme).not.toContain(".rounded-md.text-muted-foreground.opacity-40");
     // bb's 20px action row holds the absolutely positioned hover actions.
     // Collapsing it lets them spill over the next timeline item.
     expect(theme).not.toContain(".relative.w-full.h-5");
@@ -354,10 +353,11 @@ describe("bb Monokai contract audit", () => {
     expect(theme).toContain("  --font-terminal: var(--terminal-font-family);\n");
   });
 
-  test("keeps one fade on timeline status decorations", () => {
+  test("keeps one fade on timeline status decorations without undoing bb's past-row dim", () => {
     expect(theme).toContain(
-      ".dark .group\\/timeline-row > button[aria-expanded] > span > .opacity-40,\n.dark .group\\/timeline-row > button[aria-expanded] .text-subtle-foreground.opacity-75 {\n  opacity: 1;\n}",
+      ".dark .group\\/timeline-row > button[aria-expanded] .text-subtle-foreground.opacity-75 {\n  opacity: 1;\n}",
     );
+    expect(theme).not.toContain("button[aria-expanded] > span > .opacity-40");
   });
 
   test("keeps wrapped inline code chips padded and rounded on each line", () => {

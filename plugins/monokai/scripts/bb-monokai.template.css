@@ -497,13 +497,12 @@
 }
 
 /* bb's collapsed timeline toggles ("Ran 2 commands", "Thought 3s",
- * "Worked for 5m") wrap their label in an opacity-40 span under a subtle or
- * muted button: 30% x 40% is ~12% alpha, which vanishes on this ground. Status
- * decorations ("1 error") also fade their subtle span to 75%. Drop the
- * multipliers and keep one fade per span: subtle lifts to readback, muted
- * stays muted, so "Worked for" still sits under its duration. Hover and focus
- * climb one step as upstream intends. */
-.dark .group\/timeline-row > button[aria-expanded] > span > .opacity-40,
+ * "Worked for 5m") use a subtle or muted button, and bb's 40% past-row dim
+ * applies to finished ones. Subtle at 30% would fall to ~12% alpha under that
+ * dim, so subtle lifts to readback; muted stays muted, so "Worked for" still
+ * sits under its duration. Status decorations ("1 error") fade their subtle
+ * span to 75% on top; drop that second fade. Hover and focus climb one step
+ * as upstream intends. */
 .dark .group\/timeline-row > button[aria-expanded] .text-subtle-foreground.opacity-75 {
   opacity: 1;
 }
@@ -1765,14 +1764,9 @@ diffs-container {
   padding-bottom: 8px;
 }
 
-/* bb fades every finished tool row to 40%, which turns a run of calls into one
- * gray block. Codex keeps the row at full strength and fades only the target:
- * the verb ("Read", "Searched for") stays muted; the icon and the path or
- * query step down to readback. */
-.dark [data-timeline-row-list] .rounded-md.text-muted-foreground.opacity-40 {
-  opacity: 1;
-}
-
+/* The verb ("Read", "Searched for") stays muted; the icon and the path or
+ * query step down to readback. bb's 40% past-row dim applies on top, on both
+ * static and expandable rows. */
 .dark [data-timeline-row-list] span.text-sm.leading-5 > span.shrink-0.whitespace-pre + span.min-w-0.truncate {
   color: var(--readback-foreground);
 }
