@@ -58,6 +58,19 @@ export const conditionSchema = z.discriminatedUnion("kind", [
     labels: z.array(z.string()).min(1),
   }),
   z.object({ kind: z.literal("author"), logins: z.array(z.string()).min(1) }),
+  z.object({
+    kind: z.literal("exclude_author"),
+    logins: z
+      .array(
+        z
+          .string()
+          .trim()
+          .transform((login) => login.replace(/^@/, "").toLowerCase())
+          .pipe(z.string().min(1)),
+      )
+      .min(1)
+      .transform((logins) => [...new Set(logins)]),
+  }),
   z.object({ kind: z.literal("title_matches"), regex: z.string().min(1) }),
   z.object({
     kind: z.literal("max_changed_files"),

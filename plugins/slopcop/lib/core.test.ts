@@ -15,7 +15,7 @@ import {
 import { buildPrompt } from "./dispatch";
 import { verifyLive, verifyShadow } from "./verify";
 import { toIssue, toIssueNumbers, toPullRequest, type GhClient, type GhComment } from "./gh";
-import type { GitHubIssue, PullRequest, Rule } from "./types";
+import { conditionSchema, type GitHubIssue, type PullRequest, type Rule } from "./types";
 import { resolveThreadSectionId } from "./sections";
 import { expandHome } from "./paths";
 import { createStore, MIGRATIONS, repairKeywordSchema } from "./db";
@@ -78,6 +78,51 @@ function makeIssue(overrides: Partial<GitHubIssue> = {}): GitHubIssue {
     ...overrides,
   };
 }
+
+describe("PR author exclusions", () => {
+  const exclusion = conditionSchema.parse({
+    kind: "exclude_author",
+    logins: [" @Dana ", "DANA", "dependabot[bot]"],
+  });
+
+  it("normalizes usernames and rejects empty entries", () => {
+    expect(exclusion).toEqual({ kind: "exclude_author", logins: ["dana", "dependabot[bot]"] });
+    expect(conditionSchema.safeParse({ kind: "exclude_author", logins: ["@"] }).success).toBe(
+      false,
+    );
+    expect(conditionSchema.safeParse({ kind: "exclude_author", logins: [] }).success).toBe(false);
+  });
+
+  it("excludes trusted PR authors for automatic and manual checks", () => {
+    const rule = makeRule({
+      conditions: [exclusion],
+      triggers: ["ready_for_review", "new_commits"],
+    });
+    for (const trigger of ["ready_for_review", "new_commits", "manual"] as const) {
+      expect(evaluateRule(rule, makePr({ author: { login: "DANA" } }), trigger)).toMatchObject({
+        matched: false,
+        reason: expect.stringContaining("PR author is excluded"),
+      });
+    }
+    expect(
+      evaluateRule(rule, makePr({ author: { login: "someone-else" } }), "manual").matched,
+    ).toBe(true);
+  });
+
+  it("keeps exclusions when comment requests replace the association trust gate", () => {
+    const rule = makeRule({ conditions: [exclusion], triggers: ["comment_matches"] });
+    expect(evaluateRule(rule, makePr(), "comment_matches", { skipAuthorTrust: true }).matched).toBe(
+      false,
+    );
+  });
+
+  it("leaves issue authors and rules without exclusions unchanged", () => {
+    expect(evaluateRule(makeRule({ conditions: [exclusion] }), makeIssue(), "manual").matched).toBe(
+      true,
+    );
+    expect(evaluateRule(makeRule(), makePr(), "manual").matched).toBe(true);
+  });
+});
 
 describe("GitHub issue mapping", () => {
   it("maps issue fields and rejects pull requests from the issue endpoint", () => {

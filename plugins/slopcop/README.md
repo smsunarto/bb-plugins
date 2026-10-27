@@ -216,6 +216,15 @@ a rule that listens to both target types.
 
 ## Rules
 
+Exclude specific PR authors in the rule editor's **Exclude PR authors** field, or from the CLI:
+
+```sh
+bb slopcop rules edit <rule> --exclude-author "username,dependabot[bot]"
+bb slopcop rules edit <rule> --exclude-author "" # clear the exclusion list
+```
+
+Usernames match case-insensitively and may include `@`. The list applies to PRs, including comment-triggered reviews; issue authors are unaffected. Editing the list replaces it. Manual `--force` retains its existing behavior of overriding rule filters.
+
 | Field             | Meaning                                                                                       |
 | ----------------- | --------------------------------------------------------------------------------------------- |
 | `repo`            | One `owner/repo` per rule                                                                     |

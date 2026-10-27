@@ -9,7 +9,7 @@
 // seeding props. Before those existed, re-opening a rule showed project
 // defaults and re-saving silently overwrote the stored model, permission mode,
 // and machine — so these props are what make editing a rule non-destructive.
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useId, useMemo, useState } from "react";
 import {
   definePluginApp,
   experimental_NewThreadComposer as NewThreadComposer,
@@ -117,6 +117,8 @@ function describeCondition(condition: ConditionView): string {
       return `skip label ${(condition.labels ?? []).join(", ")}`;
     case "author":
       return `author ${(condition.logins ?? []).join(", ")}`;
+    case "exclude_author":
+      return `exclude PR author ${(condition.logins ?? []).map((login) => `@${login}`).join(", ")}`;
     case "title_matches":
       return `title /${condition.regex}/`;
     case "max_changed_files":
@@ -406,9 +408,21 @@ function RuleEditor({ rule, onDone }: { rule: RuleView | null; onDone: () => voi
       ", ",
     ),
   );
+  const excludedAuthorsId = useId();
+  const [excludedAuthors, setExcludedAuthors] = useState(() =>
+    (rule?.conditions ?? [])
+      .filter((condition) => condition.kind === "exclude_author")
+      .flatMap((condition) => condition.logins ?? [])
+      .join(", "),
+  );
+  const excludedAuthorsError = excludedAuthors.split(",").some((value) => value.trim() === "@")
+    ? "Add a GitHub username after @."
+    : null;
 
   const conditions = useMemo(() => {
-    const list: ConditionView[] = [];
+    const list = (rule?.conditions ?? []).filter(
+      (condition) => !["paths", "base_branch", "exclude_author"].includes(condition.kind),
+    );
     const globs = pathGlobs
       .split(",")
       .map((value) => value.trim())
@@ -419,8 +433,13 @@ function RuleEditor({ rule, onDone }: { rule: RuleView | null; onDone: () => voi
       .map((value) => value.trim())
       .filter(Boolean);
     if (bases.length > 0) list.push({ kind: "base_branch", globs: bases });
+    const logins = excludedAuthors
+      .split(",")
+      .map((value) => value.trim())
+      .filter(Boolean);
+    if (logins.length > 0) list.push({ kind: "exclude_author", logins });
     return list;
-  }, [pathGlobs, baseBranch]);
+  }, [rule, pathGlobs, baseBranch, excludedAuthors]);
 
   const listensForPullRequests = triggers.some(
     (trigger) => trigger === "ready_for_review" || trigger === "new_commits",
@@ -442,6 +461,10 @@ function RuleEditor({ rule, onDone }: { rule: RuleView | null; onDone: () => voi
       if (triggers.length === 0) {
         toast.error("Select at least one trigger");
         throw new Error("missing trigger");
+      }
+      if (excludedAuthorsError !== null) {
+        toast.error(excludedAuthorsError);
+        throw new Error("invalid excluded PR author");
       }
       const keywords = commentKeywords
         .split(",")
@@ -498,6 +521,7 @@ function RuleEditor({ rule, onDone }: { rule: RuleView | null; onDone: () => voi
     [
       commentKeywords,
       conditions,
+      excludedAuthorsError,
       mode,
       name,
       onDone,
@@ -615,6 +639,29 @@ function RuleEditor({ rule, onDone }: { rule: RuleView | null; onDone: () => voi
             placeholder="main"
           />
         </label>
+      </div>
+
+      <div className="flex flex-col gap-1.5">
+        <label htmlFor={excludedAuthorsId} className="text-xs font-semibold text-muted-foreground">
+          Exclude PR authors
+        </label>
+        <Input
+          id={excludedAuthorsId}
+          aria-describedby={`${excludedAuthorsId}-hint`}
+          aria-invalid={excludedAuthorsError !== null}
+          value={excludedAuthors}
+          onChange={(event) => setExcludedAuthors(event.target.value)}
+          placeholder="username, dependabot[bot]"
+        />
+        <span id={`${excludedAuthorsId}-hint`} className="text-xs text-muted-foreground">
+          Comma-separated GitHub usernames, with or without @. Matches ignore case. Leave empty to
+          review all qualifying authors.
+        </span>
+        {excludedAuthorsError !== null ? (
+          <span role="alert" className="text-xs text-destructive-text">
+            {excludedAuthorsError}
+          </span>
+        ) : null}
       </div>
 
       <div className="rounded-lg border border-border bg-surface-recessed p-3">

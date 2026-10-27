@@ -51,6 +51,11 @@ Flags: `--name --repo --project --provider --model --reasoning --permission
 --trigger --keyword --requester-trust --live --shadow --disabled --hidden
 --visible`.
 
+Use `--exclude-author "username,dependabot[bot]"` to replace a rule's excluded
+PR authors, or `--exclude-author ""` to clear them. Matching ignores case and
+accepts an optional `@`. Exclusions apply to comment-triggered PR reviews too;
+issue rules are unaffected. `dispatch --force` can override this filter.
+
 To run only after a request, use `--trigger comment_matches` and a literal
 keyword such as `--keyword "@slopcop"`. Add `pr_description_matches` to check
 the initial ready PR description. Use `--dedupe once_per_trigger_event` so each

@@ -1112,6 +1112,15 @@ function createServices(bb: BbPluginApi) {
         if (skipLabel !== undefined) {
           conditions.push({ kind: "missing_label", labels: skipLabel });
         }
+        const excludedAuthors = list("exclude-author");
+        if (excludedAuthors !== undefined) {
+          for (let index = conditions.length - 1; index >= 0; index -= 1) {
+            if (conditions[index]?.kind === "exclude_author") conditions.splice(index, 1);
+          }
+          if (excludedAuthors.length > 0) {
+            conditions.push({ kind: "exclude_author", logins: excludedAuthors });
+          }
+        }
 
         const parsedTriggers = list("trigger") ?? existing?.triggers ?? ["ready_for_review"];
         const keywordTrigger = parsedTriggers.some((trigger) =>
@@ -1408,6 +1417,11 @@ const options = {
   paths: { type: "string", description: "Match comma-separated changed-file globs." },
   label: { type: "string", description: "Require comma-separated labels." },
   "skip-label": { type: "string", description: "Exclude comma-separated labels." },
+  "exclude-author": {
+    type: "string",
+    description:
+      "Replace excluded PR authors (comma-separated usernames, optional @); use an empty string to clear.",
+  },
   trigger: { type: "string", description: "Comma-separated trigger names." },
   keyword: { type: "string", description: "Comma-separated literal request keywords." },
   base: { type: "string", description: "Match a base branch glob." },
@@ -1531,6 +1545,7 @@ export default definePlugin({
         "paths",
         "label",
         "skip-label",
+        "exclude-author",
         "trigger",
         "keyword",
         "base",

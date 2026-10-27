@@ -127,6 +127,8 @@ function describeCondition(condition: Condition): string {
       return `carries excluded label ${condition.labels.join(", ")}`;
     case "author":
       return `author is not in ${condition.logins.join(", ")}`;
+    case "exclude_author":
+      return `PR author is excluded by this rule (${condition.logins.map((login) => `@${login}`).join(", ")})`;
     case "title_matches":
       return `title does not match /${condition.regex}/`;
     case "max_changed_files":
@@ -148,6 +150,13 @@ function evaluateCondition(condition: Condition, target: GitHubTarget): boolean 
       return !target.labels.some((label) => condition.labels.includes(label.name));
     case "author":
       return condition.logins.includes(target.author?.login ?? "");
+    case "exclude_author":
+      return (
+        target.kind === "issue" ||
+        !condition.logins.some(
+          (login) => login.toLowerCase() === (target.author?.login ?? "").toLowerCase(),
+        )
+      );
     case "title_matches":
       try {
         return new RegExp(condition.regex).test(target.title);
