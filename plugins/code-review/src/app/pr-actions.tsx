@@ -103,7 +103,11 @@ function PrActionDialog({
   const [chosenMethod, setMethod] = useState<MergeMethod>("squash");
   const policy = rpc.prActionState.useQuery(
     { account: pr.account, ref: pr.ref },
-    { staleTime: 0, refetchOnMount: "always" },
+    {
+      staleTime: 0,
+      refetchOnMount: "always",
+      refetchInterval: (query) => (query.state.data?.mergeStateStatus === "UNKNOWN" ? 2000 : false),
+    },
   );
   const mutation = rpc.prAction.useMutation();
   const method = policy.data?.methods.includes(chosenMethod)
