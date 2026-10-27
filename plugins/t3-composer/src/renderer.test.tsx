@@ -8,6 +8,18 @@ import type {
 } from "@get-bb/plugin-sdk/app";
 import { SaveDraftAction } from "./SaveDraftAction";
 
+// The SDK harness draws other plugins' actions as nothing; mark where BB's group mounts.
+vi.mock("@get-bb/plugin-sdk/app", async (importOriginal) => {
+  const sdk = await importOriginal<typeof import("@get-bb/plugin-sdk/app")>();
+  return {
+    ...sdk,
+    experimental_useComposerContributions: () => ({
+      ...sdk.experimental_useComposerContributions(),
+      Actions: () => <span data-testid="plugin-actions" />,
+    }),
+  };
+});
+
 async function mountComposer(
   inputOverrides: Partial<ExperimentalComposerInput> = {},
   scope: ExperimentalComposerRendererApi["view"]["scope"] = { kind: "new-thread", projectId: "p1" },
@@ -82,6 +94,28 @@ describe("T3 composer SDK integration", () => {
       slot.lifecycle.unmount();
     }
   }, 15000);
+
+  it("shows other plugins' actions beside Save draft, but not in compact composers", async () => {
+    const expanded = await mountComposer();
+    try {
+      const actions = await expanded.slot.findByTestId("plugin-actions");
+      const rightCluster = actions.closest(
+        "[data-promptbox-standard-actions]:not([data-promptbox-expanded-only])",
+      );
+      expect(rightCluster?.querySelector("[data-promptbox-submit-group]")).toBeTruthy();
+    } finally {
+      expanded.slot.lifecycle.unmount();
+    }
+    const compact = await mountComposer({
+      compact: { when: "always", placeholder: "Follow up" },
+    });
+    try {
+      expect(compact.slot.container.querySelector("[data-t3-composer-save-action]")).toBeTruthy();
+      expect(compact.slot.queryByTestId("plugin-actions")).toBeNull();
+    } finally {
+      compact.slot.lifecycle.unmount();
+    }
+  });
 
   it("retains the host model picker and submits the draft through the host action", async () => {
     const { slot, run } = await mountComposer();

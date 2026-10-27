@@ -3230,6 +3230,7 @@ export function PromptBoxInternal({
                 inert={showVoiceActionGroup ? true : undefined}
               >
                 <>
+                  {!showCompactLayout ? <contributions.Actions /> : null}
                   <span data-t3-composer-save-action="" className="contents">
                     <SaveDraftAction
                       available={contributions.sendMenuItems.some(
