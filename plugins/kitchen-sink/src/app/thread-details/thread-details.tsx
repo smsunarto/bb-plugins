@@ -13,7 +13,16 @@ import {
 } from "@get-bb/plugin-sdk/app";
 import { PluginQueryBoundary, pluginQueryClient } from "@bb-kit/core/rpc/query";
 import * as Popover from "@radix-ui/react-popover";
-import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
+import {
+  useCallback,
+  useEffect,
+  useId,
+  useRef,
+  useState,
+  useSyncExternalStore,
+  type ReactNode,
+} from "react";
+import { createPortal } from "react-dom";
 import { toast } from "sonner";
 import { z } from "zod";
 
@@ -39,8 +48,12 @@ import {
   cx,
 } from "./rows.tsx";
 import { ScriptDialog, type ScriptDraft } from "./script-dialog.tsx";
+import { useCardVisibility, type StreamDockLayout } from "./stream-dock.ts";
 
 export const THREAD_DETAILS_TITLE = "Thread details";
+
+const CARD_CLASS =
+  "w-[min(280px,calc(100vw-1rem))] overflow-hidden rounded-2xl border border-border/70 bg-popover/95 text-popover-foreground shadow-xl backdrop-blur-xl outline-none";
 
 /** The slice of bb--github-pr-status's contract this card reads and writes. */
 const githubPrStatus = defineRpcContract({
@@ -217,49 +230,51 @@ export type ScriptsState =
   | { state: "failed"; message: string; retry(): void }
   | { state: "ready"; scripts: readonly ProjectScript[] };
 
-function ThreadDetails({ threadId, projectId }: PluginThreadHeaderActionProps) {
-  const [open, setOpen] = useState(false);
+function ThreadDetails({ threadId, projectId, isCompactViewport }: PluginThreadHeaderActionProps) {
+  const trigger = useRef<HTMLButtonElement>(null);
+  const cardId = useId();
+  const { layout, open, popoverOpen, setPopoverOpen, toggle } = useCardVisibility(
+    trigger,
+    !isCompactViewport,
+  );
   const [editor, setEditor] = useState<ScriptEditor>(null);
   // Kept here, not in the card, so it survives the card closing when a script's terminal opens.
   const [lastRunId, setLastRunId] = useState<string | null>(null);
-  const trigger = useRef<HTMLButtonElement>(null);
   const sidebar = useSidebarThreads();
   const thread = sidebar.threads.find((candidate) => candidate.id === threadId) ?? null;
   const project = sidebar.projects.find((candidate) => candidate.id === projectId) ?? null;
-  const scriptsInput = { projectId };
-  const scripts = rpc.projectScripts.useQuery(scriptsInput, {
-    enabled: open || editor !== null,
-    staleTime: 30_000,
-  });
-  const save = rpc.saveProjectScript.useMutation({
-    onSuccess: (result) =>
-      pluginQueryClient.setQueryData(rpc.projectScripts.queryKey(scriptsInput), result),
-  });
-  const saveEdit = (edit: ProjectScriptEdit, done: string) =>
-    save.mutate(
-      { projectId, edit },
-      {
-        onSuccess: () => {
-          setEditor(null);
-          toast.success(done);
-        },
-        onError: (error) =>
-          toast.error("Could not save the script", { description: error.message }),
-      },
-    );
-  const scriptsState: ScriptsState = scripts.isSuccess
-    ? { state: "ready", scripts: scripts.data.scripts }
-    : scripts.isError
-      ? { state: "failed", message: scripts.error.message, retry: () => void scripts.refetch() }
-      : { state: "loading" };
+  const { scriptsState, saveEdit, saving } = useProjectScripts(
+    projectId,
+    open || editor !== null,
+    () => setEditor(null),
+  );
+  const details = thread ? (
+    <DetailsCard
+      threadId={threadId}
+      thread={thread}
+      scripts={scriptsState}
+      lastRunId={lastRunId}
+      onRunScript={setLastRunId}
+      onEditScript={(script) => {
+        setPopoverOpen(false);
+        setEditor({ script });
+      }}
+      open={open}
+    />
+  ) : (
+    <ThreadMissing status={sidebar.status} />
+  );
   return (
     <>
-      <Popover.Root open={open} onOpenChange={setOpen}>
-        <Popover.Trigger asChild>
+      <Popover.Root open={!layout && popoverOpen} onOpenChange={setPopoverOpen}>
+        <Popover.Anchor asChild>
           <button
             ref={trigger}
             type="button"
             aria-label={THREAD_DETAILS_TITLE}
+            aria-expanded={open}
+            aria-controls={open ? cardId : undefined}
+            onClick={toggle}
             className={cx(
               "inline-flex size-7 items-center justify-center rounded-md text-muted-foreground outline-none hover:bg-foreground/[0.06] hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring max-md:pointer-coarse:size-9",
               open && "bg-foreground/[0.06] text-foreground",
@@ -267,47 +282,50 @@ function ThreadDetails({ threadId, projectId }: PluginThreadHeaderActionProps) {
           >
             <Icon name="AlignLeft" aria-hidden className="size-4" />
           </button>
-        </Popover.Trigger>
+        </Popover.Anchor>
         <Popover.Portal>
           <Popover.Content
             {...PORTAL_SCOPE}
+            id={cardId}
             align="end"
             sideOffset={8}
             collisionPadding={8}
             aria-label={THREAD_DETAILS_TITLE}
+            // The button toggles the popover itself; dismissing on its press would reopen it.
+            onInteractOutside={(event) => {
+              if (trigger.current?.contains(event.target as Node)) event.preventDefault();
+            }}
+            // The anchor is not Radix's trigger, so return focus to the button ourselves.
+            onCloseAutoFocus={(event) => {
+              event.preventDefault();
+              trigger.current?.focus();
+            }}
             // Focus the card, not its first row, so opening by pointer shows no ring; Tab still enters the rows.
             onOpenAutoFocus={(event) => {
               event.preventDefault();
               (event.currentTarget as HTMLElement | null)?.focus();
             }}
-            className="z-40 w-[min(280px,calc(100vw-1rem))] overflow-hidden rounded-2xl border border-border/70 bg-popover/95 text-popover-foreground shadow-xl backdrop-blur-xl outline-none data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95"
+            className={cx(
+              CARD_CLASS,
+              "z-40 data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95",
+            )}
           >
             <div className="max-h-[min(calc(100dvh-6.5rem),calc(var(--radix-popover-content-available-height)-0.5rem))] overflow-y-auto">
-              {thread ? (
-                <DetailsCard
-                  threadId={threadId}
-                  thread={thread}
-                  scripts={scriptsState}
-                  lastRunId={lastRunId}
-                  onRunScript={setLastRunId}
-                  onEditScript={(script) => {
-                    setOpen(false);
-                    setEditor({ script });
-                  }}
-                  open={open}
-                />
-              ) : (
-                <ThreadMissing status={sidebar.status} />
-              )}
+              {details}
             </div>
           </Popover.Content>
         </Popover.Portal>
       </Popover.Root>
+      {layout && open ? (
+        <DockedCard id={cardId} layout={layout}>
+          {details}
+        </DockedCard>
+      ) : null}
       {editor ? (
         <ScriptDialog
           script={editor.script}
           projectName={project?.name ?? null}
-          pending={save.isPending}
+          pending={saving}
           returnFocus={trigger}
           onClose={() => setEditor(null)}
           onDelete={() => {
@@ -324,6 +342,61 @@ function ThreadDetails({ threadId, projectId }: PluginThreadHeaderActionProps) {
         />
       ) : null}
     </>
+  );
+}
+
+/** The project's scripts, read while the card or the script editor needs them. */
+function useProjectScripts(projectId: string, enabled: boolean, onSaved: () => void) {
+  const scriptsInput = { projectId };
+  const scripts = rpc.projectScripts.useQuery(scriptsInput, { enabled, staleTime: 30_000 });
+  const save = rpc.saveProjectScript.useMutation({
+    onSuccess: (result) =>
+      pluginQueryClient.setQueryData(rpc.projectScripts.queryKey(scriptsInput), result),
+  });
+  const saveEdit = (edit: ProjectScriptEdit, done: string) =>
+    save.mutate(
+      { projectId, edit },
+      {
+        onSuccess: () => {
+          onSaved();
+          toast.success(done);
+        },
+        onError: (error) =>
+          toast.error("Could not save the script", { description: error.message }),
+      },
+    );
+  const scriptsState: ScriptsState = scripts.isSuccess
+    ? { state: "ready", scripts: scripts.data.scripts }
+    : scripts.isError
+      ? { state: "failed", message: scripts.error.message, retry: () => void scripts.refetch() }
+      : { state: "loading" };
+  return { scriptsState, saveEdit, saving: save.isPending };
+}
+
+/** The card floating over the top right of bb's thread stream, below the header. */
+function DockedCard({
+  id,
+  layout,
+  children,
+}: {
+  id: string;
+  layout: StreamDockLayout;
+  children: ReactNode;
+}) {
+  return createPortal(
+    <section
+      {...PORTAL_SCOPE}
+      id={id}
+      aria-label={THREAD_DETAILS_TITLE}
+      style={{ top: layout.top, right: layout.right, maxHeight: layout.maxHeight }}
+      className={cx(
+        CARD_CLASS,
+        "fixed z-30 flex origin-top-right flex-col animate-in fade-in-0 zoom-in-95",
+      )}
+    >
+      <div className="min-h-0 overflow-y-auto">{children}</div>
+    </section>,
+    document.body,
   );
 }
 
