@@ -83,6 +83,8 @@ test("html_render routes fragment authors to the bundled html skill", async () =
   await plugin(bb);
 
   expect(harness.registrations.instructionProvider).toBeNull();
+  const render = harness.registrations.agentTools.find((tool) => tool.name === "html_render");
+  expect(render?.instructions).toBe(files.read("tools/html_render.instructions"));
   expect(files.read("tools/html_render")).toContain("read the `html` skill");
   const skill = fileURLToPath(new URL("../../skills/html/SKILL.md", import.meta.url));
   expect((await stat(skill)).isFile()).toBe(true);

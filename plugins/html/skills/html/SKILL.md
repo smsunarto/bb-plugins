@@ -11,9 +11,9 @@ Use this skill when a visual helps someone understand behavior, compare options,
 
 Choose the smallest format that answers the request:
 
-- Use ordinary Markdown for tables and prose
-- Use Mermaid for labeled connections that don't change with input
-- Use HTML for adjustable inputs, spatial behavior, simulations, and interactive comparisons
+- Use ordinary Markdown for prose and simple tables that already answer the request
+- Use Mermaid for simple labeled connections that don't need an HTML page
+- Use HTML when a chart, table, diagram, image collage, or mockup would communicate more clearly than prose, including adjustable inputs, spatial behavior, simulations, and interactive comparisons
 - Use standard plotting tools for scientific figures or charts intended for export or publication
 
 A website, component, or app request remains project work. A conversation page does not replace that deliverable.
