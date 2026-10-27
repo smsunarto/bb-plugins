@@ -10,7 +10,11 @@
     "name": "SlopCop",
     "description": "Automated GitHub issue and PR rules that dispatch BB agents.",
     "branding": {
-      "icon": "./assets/icon.svg"
+      "icon": "./assets/icon.svg",
+      "logo": {
+        "light": "./assets/logo.svg",
+        "dark": "./assets/logo-dark.svg"
+      }
     },
     "server": "./server.ts",
     "app": "./app.tsx",

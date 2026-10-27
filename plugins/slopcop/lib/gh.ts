@@ -163,10 +163,13 @@ export function toIssueNumbers(raw: unknown): number[] {
 
 export function createGhClient(ghPath: string, timeoutMs = 30_000): GhClient {
   const apiRows = async (endpoint: string): Promise<unknown[]> => {
-    const stdout = await run(ghPath, ["api", "--paginate", "--slurp", endpoint], timeoutMs);
-    const parsed: unknown = JSON.parse(stdout);
-    if (!Array.isArray(parsed)) return [];
-    return parsed.flatMap((page) => (Array.isArray(page) ? page : [page]));
+    // --jq emits one compact JSON row per line across all pages, including on
+    // Ubuntu's older gh releases that do not implement --slurp.
+    const stdout = await run(ghPath, ["api", "--paginate", endpoint, "--jq", ".[]"], timeoutMs);
+    return stdout
+      .split("\n")
+      .filter((line) => line.trim() !== "")
+      .map((line) => JSON.parse(line) as unknown);
   };
   const api = async (endpoint: string): Promise<GhComment[]> =>
     (await apiRows(endpoint)).map(toComment);
