@@ -35,7 +35,7 @@ per agent. The toolbar talks to bb's own origin, so annotating through
 | Surface                    | What it does                                                      |
 | -------------------------- | ----------------------------------------------------------------- |
 | Toolbar                    | Mounts over the whole bb app, on every route.                     |
-| Thread composer banner     | Shows the staged batch in every open thread and assigns it there. |
+| Composer action button     | Shows the staged batch in every open thread and assigns it there. |
 | `Agentation` nav panel     | The backlog: triage, reply, resolve, dismiss, and re-stage.       |
 | `agentation_*` agent tools | Nine tools for the read → fix → resolve loop.                     |
 | `bb agentation`            | The same operations from a shell.                                 |

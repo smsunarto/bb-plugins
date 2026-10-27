@@ -1,7 +1,7 @@
 // One request per key at a time, shared by every component that asks.
 //
 // An `annotations` broadcast reaches every mounted review panel, panel header,
-// and staging banner in the same tick, and each used to send its own request.
+// and staged-annotations action in the same tick, and each used to send its own request.
 // Calls made before a request starts join it. A call made while one is in
 // flight gets one follow-up that starts after it, because the in-flight answer
 // may predate the change the caller just heard about; later callers join that

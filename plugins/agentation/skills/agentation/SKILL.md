@@ -12,7 +12,7 @@ selector, and — for React trees — the component path. Your job is to turn th
 into a code change and close the loop.
 
 Annotations first enter a shared staging area. The human assigns a staged batch
-from the composer banner in the thread that should own it. The capture route is
+from the composer action button in the thread that should own it. The capture route is
 source context, not the delivery target.
 
 ## The loop

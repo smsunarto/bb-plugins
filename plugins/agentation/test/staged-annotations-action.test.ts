@@ -23,7 +23,8 @@ window.matchMedia ??= (query: string) =>
 const { renderSlot } = await import("@get-bb/plugin-sdk/testing/app");
 const { useComposer } = await import("@get-bb/plugin-sdk/app");
 const { act, cleanup, fireEvent, screen, waitFor } = await import("@testing-library/react");
-const { AgentationStagingBanner } = await import("../components/staging-banner.tsx");
+const { AgentationStagedAnnotationsAction } =
+  await import("../components/staged-annotations-action.tsx");
 const { ANNOTATION_MENTION_PROVIDER, annotationMentionItemId } =
   await import("../lib/staging-display.ts");
 afterEach(cleanup);
@@ -78,14 +79,14 @@ function annotationPill(
   };
 }
 
-function renderBanner(options: {
+function renderAction(options: {
   text?: string;
   mentions?: readonly ComposerMention[];
   newThread?: boolean;
   rpc: Record<string, (input: unknown) => unknown>;
 }) {
   return renderSlot(
-    { component: AgentationStagingBanner },
+    { component: AgentationStagedAnnotationsAction },
     {},
     {
       pluginId: PLUGIN_ID,
@@ -102,7 +103,7 @@ function renderBanner(options: {
 }
 
 test("the mention button appends the annotation pill after the draft and focuses it", async () => {
-  const slot = renderBanner({
+  const slot = renderAction({
     text: "Fix",
     rpc: {
       listStagedAnnotations: () => ({
@@ -150,7 +151,7 @@ test("sending an annotation removes only its pill and keeps later mentions align
   const threadFrom = keptFrom + keptText.length + 1;
 
   let annotations = [staged("ann_1", "Save is misaligned"), staged("ann_2", "Wrong color")];
-  const slot = renderBanner({
+  const slot = renderAction({
     text,
     mentions: [
       sent,
@@ -184,18 +185,18 @@ test("sending an annotation removes only its pill and keeps later mentions align
 
 test("a submitted draft re-reads the staged list at once", async () => {
   // Stand in for the user pressing Enter in the same composer.
-  function BannerWithSubmit() {
+  function ActionWithSubmit() {
     const composer = useComposer();
     return createElement(
       Fragment,
       null,
-      createElement(AgentationStagingBanner),
+      createElement(AgentationStagedAnnotationsAction),
       createElement("button", { type: "button", onClick: () => void composer.submit() }, "Enter"),
     );
   }
   let reads = 0;
   const slot = renderSlot(
-    { component: BannerWithSubmit },
+    { component: ActionWithSubmit },
     {},
     {
       pluginId: PLUGIN_ID,
@@ -220,7 +221,7 @@ test("a submitted draft re-reads the staged list at once", async () => {
 });
 
 test("the new-thread composer offers mentions instead of sends", async () => {
-  const slot = renderBanner({
+  const slot = renderAction({
     newThread: true,
     text: "Fix",
     mentions: [],

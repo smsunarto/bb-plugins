@@ -71,10 +71,10 @@ export function listStagedAnnotations(db: Database): StoredAnnotation[] {
 }
 
 /**
- * Atomically discard the exact staged snapshot a banner displayed.
+ * Atomically discard the exact staged snapshot the composer action displayed.
  *
  * A concurrent send or discard makes the request stale and changes nothing.
- * Feedback staged after the banner rendered is not part of the requested ids,
+ * Feedback staged after the composer action rendered is not part of the requested ids,
  * so it remains available for the next action. Discarded feedback becomes a
  * normal human-dismissed annotation and can be reopened from the review panel.
  */
@@ -141,7 +141,7 @@ export function listAnnotationRoutings(
 }
 
 /**
- * Atomically claim the exact snapshot a banner displayed.
+ * Atomically claim the exact snapshot the composer action displayed.
  *
  * A second pane gets `stale` if any requested item is no longer staged. New
  * annotations that were not in this snapshot remain staged for a later send.
