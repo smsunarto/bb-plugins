@@ -230,17 +230,18 @@ function AmpOrbBanner() {
   );
 }
 
-/** New-thread composer action, rendered only while this composer's provider
- *  picker selects Amp. The composer reports its own selection, so split panes
- *  and an overflowed action row each gate on their own composer, and an
- *  unresolved picker (no `providerId` yet) keeps the button off a Claude or
+/** New-thread composer banner, rendered only while this composer's provider
+ *  picker selects Amp. It is a banner rather than an action so that, while
+ *  hidden, it does not hold one of bb's three inline action slots. The
+ *  composer reports its own selection, so split panes each gate on their own
+ *  composer, and an unresolved picker (no `providerId` yet) keeps the button off a Claude or
  *  Codex composer. Pressing it arms a one-shot Orb intent on the server;
  *  nothing is typed into the draft. The next Amp thread bb creates claims the
  *  intent, so the armed state lives server-side, and every reappearance
  *  re-reads it. Nothing here disarms on the way off Amp: the read makes a
  *  returning armed intent visible before the user can send. The intent's own
  *  10-minute expiry bounds the rest. */
-function OrbToggleAction() {
+function OrbToggleBanner() {
   const composer = useComposer();
   const visible = composer.selection?.providerId === AMP_AGENT.providerId;
   const rpc = useRpc<typeof rpcContract>();
@@ -283,21 +284,23 @@ function OrbToggleAction() {
   };
   if (!visible) return null;
   return (
-    <button
-      aria-pressed={pressed}
-      className="amp-orb-toggle"
-      disabled={composer.isSubmitting}
-      onClick={toggle}
-      title="Run this thread in an Amp Orb cloud sandbox"
-      type="button"
-    >
-      <svg aria-hidden="true" className="amp-orb-toggle-logo" viewBox={AMP_LOGO_VIEW_BOX}>
-        {AMP_LOGO_PATHS.map((path) => (
-          <path d={path} fill="currentColor" key={path} />
-        ))}
-      </svg>
-      Orb
-    </button>
+    <div className="mb-2 flex">
+      <button
+        aria-pressed={pressed}
+        className="amp-orb-toggle"
+        disabled={composer.isSubmitting}
+        onClick={toggle}
+        title="Run this thread in an Amp Orb cloud sandbox"
+        type="button"
+      >
+        <svg aria-hidden="true" className="amp-orb-toggle-logo" viewBox={AMP_LOGO_VIEW_BOX}>
+          {AMP_LOGO_PATHS.map((path) => (
+            <path d={path} fill="currentColor" key={path} />
+          ))}
+        </svg>
+        Orb
+      </button>
+    </div>
   );
 }
 
@@ -311,7 +314,7 @@ export default definePluginApp(
     app.composer.customize({
       id: "orb-toggle",
       scopes: ["new-thread"],
-      actions: [{ id: "orb-toggle", component: OrbToggleAction }],
+      banners: [{ id: "orb-toggle", chrome: "bare", component: OrbToggleBanner }],
     });
 
     app.composer.customize({

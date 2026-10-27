@@ -109,14 +109,16 @@ function markIntentStale(queryClient: QueryClient): void {
   void queryClient.invalidateQueries({ queryKey: rpc.cloudIntent.queryKey(), refetchType: "none" });
 }
 
-/** New-thread action, shown while Devin is selected. Pressing it arms Devin
+/** New-thread banner, shown while Devin is selected. It is a banner rather
+ *  than an action so that, while hidden, it does not hold one of bb's three
+ *  inline action slots. Pressing it arms Devin
  *  Cloud for the next thread on the server; the thread's first command claims
  *  it. The server owns the armed state; a reappearance re-reads it once the
  *  last read is stale or a submit may have consumed it. */
 function CloudToggle() {
   const composer = useComposer();
-  // The composer reports its picker's provider, so split panes and an
-  // overflowed action row each gate on their own composer.
+  // The composer reports its picker's provider, so split panes each gate on
+  // their own composer.
   const visible = composer.selection?.providerId === DEVIN_PROVIDER_ID;
   const queryClient = useQueryClient();
   const intent = rpc.cloudIntent.useQuery({
@@ -156,17 +158,19 @@ function CloudToggle() {
   };
   if (!visible) return null;
   return (
-    <button
-      aria-pressed={pressed}
-      className="devin-cloud-toggle"
-      disabled={submitting}
-      onClick={toggle}
-      title="Run this thread on a Devin Cloud VM"
-      type="button"
-    >
-      <DevinLogo />
-      Cloud
-    </button>
+    <div className="mb-2 flex">
+      <button
+        aria-pressed={pressed}
+        className="devin-cloud-toggle"
+        disabled={submitting}
+        onClick={toggle}
+        title="Run this thread on a Devin Cloud VM"
+        type="button"
+      >
+        <DevinLogo />
+        Cloud
+      </button>
+    </div>
   );
 }
 
@@ -242,7 +246,7 @@ function CloudBanner() {
   );
 }
 
-function CloudToggleAction() {
+function CloudToggleBanner() {
   return (
     <PluginQueryBoundary>
       <CloudToggle />
@@ -264,10 +268,11 @@ export default definePluginApp((app) => {
   app.composer.customize({
     id: "cloud-toggle",
     scopes: ["new-thread"],
-    actions: [
+    banners: [
       {
         id: "cloud-toggle",
-        component: CloudToggleAction,
+        chrome: "bare",
+        component: CloudToggleBanner,
       },
     ],
   });

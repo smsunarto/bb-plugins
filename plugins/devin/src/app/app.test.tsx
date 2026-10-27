@@ -142,11 +142,14 @@ test("a starting banner reconciles once realtime reconnects", async () => {
   expect(banner.slot.getByText("Active")).toBeTruthy();
 });
 
-async function cloudToggleAction() {
+async function cloudToggleBanner() {
   const app = await loadPluginApp(() => import("./app.tsx"));
-  const action = app.composerCustomizations.find((c) => c.id === "cloud-toggle")?.actions?.[0];
-  if (!action) throw new Error("Missing Cloud toggle");
-  return action;
+  const customization = app.composerCustomizations.find((c) => c.id === "cloud-toggle");
+  // A hidden action would still hold one of bb's three inline action slots.
+  expect(customization?.actions).toBeUndefined();
+  const banner = customization?.banners?.[0];
+  if (!banner) throw new Error("Missing Cloud toggle");
+  return banner;
 }
 
 const TOGGLE_RPC = {
@@ -155,7 +158,7 @@ const TOGGLE_RPC = {
 };
 
 test("the Cloud toggle shows only while the composer's selected provider is Devin", async () => {
-  const action = await cloudToggleAction();
+  const toggle = await cloudToggleBanner();
   const cases = [
     { selection: { providerId: "devin", model: "swe-1.6" }, visible: true },
     { selection: { providerId: "claude-code" }, visible: false },
@@ -164,7 +167,7 @@ test("the Cloud toggle shows only while the composer's selected provider is Devi
   ];
   for (const { selection, visible } of cases) {
     const slot = renderSlot(
-      action,
+      toggle,
       {},
       {
         pluginId: "devin",
@@ -182,8 +185,8 @@ test("the Cloud toggle shows only while the composer's selected provider is Devi
 });
 
 test("the Cloud toggle follows the provider picker as the user switches", async () => {
-  const action = await cloudToggleAction();
-  const Toggle = action.component;
+  const toggle = await cloudToggleBanner();
+  const Toggle = toggle.component;
   function PickerAndToggle() {
     const composer = useComposer();
     return (

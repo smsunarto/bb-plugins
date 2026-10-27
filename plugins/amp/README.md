@@ -80,7 +80,7 @@ optional.
 ### Local and Orb
 
 Amp runs against the bb environment's working directory. To use Amp Orb
-instead, press the **Orb** toggle in the composer, then send the first prompt
+instead, press the **Orb** toggle above the composer, then send the first prompt
 of a new thread. The toggle shows only while Amp is the selected provider.
 Pressing it arms Orb for the next thread and adds nothing to the prompt text.
 An armed toggle expires after 10 minutes if no thread is started.

@@ -10,12 +10,13 @@ import { AMP_AGENT } from "../src/execution-target.ts";
 
 const app = await loadPluginApp(appModule);
 
-const toggleAction = (() => {
+const toggleBanner = (() => {
   const customization = app.composerCustomizations.find((entry) => entry.id === "orb-toggle");
   assert.ok(customization, "the orb-toggle composer customization is registered");
-  const action = customization.actions?.find((entry) => entry.id === "orb-toggle");
-  assert.ok(action, "the orb-toggle action is registered");
-  return action;
+  const banner = customization.banners?.find((entry) => entry.id === "orb-toggle");
+  assert.ok(banner, "the orb-toggle banner is registered");
+  assert.equal(customization.actions, undefined, "Orb holds no inline action slot");
+  return banner;
 })();
 
 const NEW_THREAD = { kind: "new-thread", projectId: "prj_1" } as const;
@@ -31,7 +32,7 @@ function ToggleWithPicker() {
     null,
     createElement("button", { onClick: pick(AMP_AGENT.providerId), type: "button" }, "Pick Amp"),
     createElement("button", { onClick: pick("claude-code"), type: "button" }, "Pick Claude"),
-    createElement(toggleAction.component),
+    createElement(toggleBanner.component),
   );
 }
 

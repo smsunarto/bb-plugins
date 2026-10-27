@@ -29,7 +29,7 @@ Pick **Devin** in bb's provider list and start a thread.
 ### Local and Cloud
 
 Devin runs in the bb environment's working directory by default. To run a
-thread on a Devin Cloud VM, press **Cloud** in the new-thread composer, then
+thread on a Devin Cloud VM, press **Cloud** above the new-thread composer, then
 send the first prompt. The toggle shows only while Devin is selected, and an
 armed toggle expires after 10 minutes.
 
