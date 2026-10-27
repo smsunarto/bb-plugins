@@ -1,0 +1,1 @@
+Pick the machine this task should run on. First satisfy what the task needs from the operating system (for example iOS or macOS work needs a Mac). Among machines that qualify, prefer one that is idle with low CPU load, free memory, and free disk. Follow the user's routing rules when they apply.

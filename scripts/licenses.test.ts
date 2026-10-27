@@ -23,9 +23,12 @@ describe("licensing", () => {
   });
 
   for (const plugin of plugins) {
-    test(`${plugin.id} carries a LICENSE identical to the root`, () => {
+    test(`${plugin.id} carries its complete MIT notice`, () => {
       const root = readFileSync(join(ROOT, "LICENSE"), "utf8");
-      expect(readFileSync(join(plugin.dir, "LICENSE"), "utf8")).toBe(root);
+      const expected = ["magic-compose", "slopcop"].includes(plugin.id)
+        ? root.replace(/Copyright \(c\) [^\n]+/, "Copyright (c) 2026 Sawyer Hood")
+        : root;
+      expect(readFileSync(join(plugin.dir, "LICENSE"), "utf8")).toBe(expected);
     });
 
     test(`${plugin.id} declares an allowed licence in its manifest`, () => {

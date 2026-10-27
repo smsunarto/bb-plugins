@@ -1,0 +1,1 @@
+Pick how much reasoning effort the model should spend on this task. Quick, mechanical, or clearly specified tasks need little. Ambiguous, multi-step, architectural, or high-stakes tasks need more. Follow the user's routing rules when they apply.

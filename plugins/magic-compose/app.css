@@ -1,0 +1,134 @@
+/* While Magic Compose is still deciding where the draft should run, lib/composer-dom.ts
+   holds the send, and this makes the button look held. */
+[data-app-composer][data-magic-compose="pending"]
+  button[type="submit"][data-promptbox-submit-action] {
+  cursor: progress;
+  opacity: 0.45;
+}
+
+/* The Magic Compose wand. Its stick and its two sparkles are drawn as separate parts so
+   each can move. Off, it is still. On, a slow rainbow drifts across the
+   sparkles and nothing else moves. While Jev decides, the sparkles flicker in
+   turn. Clicking it flicks the stick. Each time Magic Compose moves the composer's
+   pickers, and when it is switched on, the wand casts: the sparkles pop and a
+   few motes come off the tip. */
+.magic-compose-wand {
+  overflow: visible;
+}
+
+.magic-compose-wand .stick {
+  /* The end of the handle, which a flick of the wrist turns about. */
+  transform-box: view-box;
+  transform-origin: 85.4% 89.6%;
+}
+
+/* Only a click flicks it: Magic Compose moving the pickers mid-sentence should not. */
+.magic-compose-wand[data-flick] .stick {
+  animation: magic-compose-flick 620ms cubic-bezier(0.3, 1.4, 0.5, 1);
+}
+
+.magic-compose-wand .sparkle,
+.magic-compose-wand .mote {
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+.magic-compose-wand .mote {
+  opacity: 0;
+}
+
+.magic-compose-wand[data-cast] .sparkle {
+  animation: magic-compose-pop 620ms cubic-bezier(0.3, 1.6, 0.5, 1) backwards;
+}
+
+.magic-compose-wand[data-cast] .mote {
+  animation: magic-compose-mote 700ms ease-out;
+}
+
+/* After the cast rule so that, while both apply, the wand keeps deciding. */
+.magic-compose-wand[data-state="pending"] .sparkle {
+  animation: magic-compose-flicker 900ms ease-in-out infinite;
+}
+
+/* The second of each pair runs behind the first. */
+.magic-compose-wand[data-cast] .sparkle + .sparkle {
+  animation-delay: 90ms;
+}
+
+.magic-compose-wand[data-state="pending"] .sparkle + .sparkle {
+  animation-delay: -450ms;
+}
+
+.magic-compose-wand[data-cast] .mote + .mote {
+  animation-delay: 60ms;
+}
+
+.magic-compose-wand[data-cast] .mote + .mote + .mote {
+  animation-delay: 120ms;
+}
+
+@keyframes magic-compose-flick {
+  0%,
+  100% {
+    transform: rotate(0deg);
+  }
+  25% {
+    transform: rotate(14deg);
+  }
+  55% {
+    transform: rotate(-16deg);
+  }
+}
+
+@keyframes magic-compose-pop {
+  0% {
+    opacity: 0;
+    transform: scale(0);
+  }
+  60% {
+    opacity: 1;
+    transform: scale(1.4);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes magic-compose-mote {
+  0% {
+    opacity: 0;
+    transform: translate(0, 0) scale(1);
+  }
+  20% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: translate(var(--dx), var(--dy)) scale(0.3);
+  }
+}
+
+@keyframes magic-compose-flicker {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.45;
+    transform: scale(0.6);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .magic-compose-wand .stick,
+  .magic-compose-wand .sparkle,
+  .magic-compose-wand .mote {
+    animation: none !important;
+  }
+
+  .magic-compose-wand[data-state="pending"] {
+    opacity: 0.6;
+  }
+}

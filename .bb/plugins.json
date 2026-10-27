@@ -82,6 +82,14 @@
     {
       "name": "whiteboard",
       "source": "./plugins/whiteboard"
+    },
+    {
+      "name": "magic-compose",
+      "source": "./plugins/magic-compose"
+    },
+    {
+      "name": "slopcop",
+      "source": "./plugins/slopcop"
     }
   ]
 }

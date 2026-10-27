@@ -38,6 +38,8 @@ const surfaces: Record<string, Record<string, string[]>> = {
   "gtd-sidebar": { threads: ["ThreadCard", "RenameProvider"], indicators: ["StatusGlyph"] },
   html: { tweaks: ["TweakPanel"] },
   "kitchen-sink": { comparison: ["SmartImageCompareDirective", "DevinIcon"] },
+  "magic-compose": { composer: ["../app", "composerAction"] },
+  slopcop: { rules: ["../app", "nav"] },
   monokai: {
     "bb-monokai": [
       "export:Foundations",

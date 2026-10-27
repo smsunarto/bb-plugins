@@ -1,0 +1,1 @@
+Pick the AI coding model best suited to carry out this task. Use each model's description and the user's routing rules. Prefer cheaper, faster models for simple tasks and the strongest models for hard or open-ended ones.

@@ -1,0 +1,188 @@
+#!/usr/bin/env node
+// A `gh` wrapper that authenticates as a SlopCop GitHub App installation.
+//
+// Why a wrapper and not an env var on the BB process: the operator's own `gh`
+// login must keep working on the same machine. `gh` prefers GH_TOKEN over the
+// keyring, so exporting it globally would hijack every interactive `gh` call.
+// Scoping it to one wrapper binary keeps the bot identity confined to the
+// processes SlopCop drives — the backend poller and the threads it spawns.
+//
+// The review agent is told to run this command, never to handle a token. The
+// private key and the minted token stay outside the agent's context entirely.
+//
+// Usage: slopcop-gh pr review 12 --comment --body "..."
+//        slopcop-gh slopcop-login          # prints "<app-slug>[bot]"
+//
+// Config, in ~/.slopcop/app.json (or $SLOPCOP_HOME/app.json):
+//   {
+//     "appId": "123456",
+//     "installationId": "78901234",
+//     "privateKeyPath": "~/.slopcop/slopcop.private-key.pem"
+//   }
+// Each value also reads from SLOPCOP_APP_ID, SLOPCOP_INSTALLATION_ID and
+// SLOPCOP_PRIVATE_KEY_PATH, which take precedence over the file.
+import { createSign } from "node:crypto";
+import { spawn } from "node:child_process";
+import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
+import { homedir } from "node:os";
+import { join, resolve } from "node:path";
+
+const HOME = process.env.SLOPCOP_HOME ?? join(homedir(), ".slopcop");
+const CACHE_PATH = join(HOME, "token.cache.json");
+// Installation tokens live one hour. Refresh early so a long review never
+// posts with a token that expires mid-run.
+const REFRESH_MARGIN_MS = 10 * 60 * 1000;
+
+function fail(message) {
+  process.stderr.write(`slopcop-gh: ${message}\n`);
+  process.exit(1);
+}
+
+function expandHome(path) {
+  return path.startsWith("~/") ? join(homedir(), path.slice(2)) : path;
+}
+
+function readConfig() {
+  let file = {};
+  try {
+    file = JSON.parse(readFileSync(join(HOME, "app.json"), "utf8"));
+  } catch (error) {
+    if (error.code !== "ENOENT") fail(`cannot read app.json: ${error.message}`);
+  }
+  const appId = process.env.SLOPCOP_APP_ID ?? file.appId;
+  const installationId =
+    process.env.SLOPCOP_INSTALLATION_ID ?? file.installationId;
+  const privateKeyPath =
+    process.env.SLOPCOP_PRIVATE_KEY_PATH ?? file.privateKeyPath;
+  if (!appId || !installationId || !privateKeyPath) {
+    fail(
+      "missing appId, installationId or privateKeyPath — set them in " +
+        `${join(HOME, "app.json")} or in the SLOPCOP_* environment variables`,
+    );
+  }
+  return {
+    appId: String(appId),
+    installationId: String(installationId),
+    privateKeyPath: resolve(expandHome(String(privateKeyPath))),
+  };
+}
+
+function base64url(input) {
+  return Buffer.from(input).toString("base64url");
+}
+
+/** A short-lived App JWT. GitHub rejects any `exp` more than 10 minutes out. */
+function buildAppJwt(config) {
+  let privateKey;
+  try {
+    privateKey = readFileSync(config.privateKeyPath, "utf8");
+  } catch (error) {
+    fail(`cannot read private key: ${error.message}`);
+  }
+  const now = Math.floor(Date.now() / 1000);
+  // The clock skew allowance is GitHub's own recommendation.
+  const payload = { iat: now - 60, exp: now + 540, iss: config.appId };
+  const signingInput = `${base64url(
+    JSON.stringify({ alg: "RS256", typ: "JWT" }),
+  )}.${base64url(JSON.stringify(payload))}`;
+  const signer = createSign("RSA-SHA256");
+  signer.update(signingInput);
+  return `${signingInput}.${signer.sign(privateKey, "base64url")}`;
+}
+
+function readCachedToken() {
+  try {
+    const cached = JSON.parse(readFileSync(CACHE_PATH, "utf8"));
+    if (
+      typeof cached.token === "string" &&
+      typeof cached.expiresAt === "number" &&
+      cached.expiresAt - Date.now() > REFRESH_MARGIN_MS
+    ) {
+      return cached.token;
+    }
+  } catch {
+    // A missing or corrupt cache is not an error. Mint a new token.
+  }
+  return null;
+}
+
+function writeCachedToken(token, expiresAt) {
+  try {
+    mkdirSync(HOME, { recursive: true, mode: 0o700 });
+    writeFileSync(CACHE_PATH, JSON.stringify({ token, expiresAt }), {
+      mode: 0o600,
+    });
+  } catch (error) {
+    // A cache write failure only costs an extra mint on the next call.
+    process.stderr.write(`slopcop-gh: cannot cache token: ${error.message}\n`);
+  }
+}
+
+async function mintToken(config) {
+  const response = await fetch(
+    `https://api.github.com/app/installations/${config.installationId}/access_tokens`,
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${buildAppJwt(config)}`,
+        Accept: "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28",
+        "User-Agent": "slopcop-gh",
+      },
+    },
+  );
+  const body = await response.text();
+  if (!response.ok) {
+    fail(`token request failed (${response.status}): ${body.trim()}`);
+  }
+  const parsed = JSON.parse(body);
+  const expiresAt = Date.parse(parsed.expires_at);
+  writeCachedToken(parsed.token, Number.isNaN(expiresAt) ? 0 : expiresAt);
+  return parsed.token;
+}
+
+/**
+ * An installation token has no `GET /user`. GitHub offers no whoami for one,
+ * so the bot login is derived from the app slug, which needs the App JWT.
+ * SlopCop calls this when `api user` fails, to keep the account-based comment
+ * attribution in `verifyLive` working under a bot identity.
+ */
+async function printLogin(config) {
+  const response = await fetch("https://api.github.com/app", {
+    headers: {
+      Authorization: `Bearer ${buildAppJwt(config)}`,
+      Accept: "application/vnd.github+json",
+      "X-GitHub-Api-Version": "2022-11-28",
+      "User-Agent": "slopcop-gh",
+    },
+  });
+  const body = await response.text();
+  if (!response.ok) fail(`app lookup failed (${response.status}): ${body.trim()}`);
+  const slug = JSON.parse(body).slug;
+  if (typeof slug !== "string" || slug.length === 0) fail("app has no slug");
+  process.stdout.write(`${slug}[bot]\n`);
+}
+
+async function main() {
+  const config = readConfig();
+  if (process.argv[2] === "slopcop-login") {
+    await printLogin(config);
+    return;
+  }
+  const token = readCachedToken() ?? (await mintToken(config));
+  const env = { ...process.env, GH_TOKEN: token };
+  // GITHUB_TOKEN would otherwise win in some `gh` code paths, and the operator
+  // may well have one exported for unrelated work.
+  delete env.GITHUB_TOKEN;
+  const child = spawn(process.env.SLOPCOP_GH_BINARY ?? "gh", process.argv.slice(2), {
+    env,
+    stdio: "inherit",
+  });
+  child.on("error", (error) => fail(`cannot run gh: ${error.message}`));
+  child.on("exit", (code, signal) => {
+    if (signal !== null) process.kill(process.pid, signal);
+    process.exit(code ?? 1);
+  });
+}
+
+main().catch((error) => fail(error.message));
