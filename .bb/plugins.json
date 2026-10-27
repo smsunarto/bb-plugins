@@ -64,10 +64,6 @@
       "source": "./plugins/prompt-editor"
     },
     {
-      "name": "remind-me",
-      "source": "./plugins/remind-me"
-    },
-    {
       "name": "my-stack",
       "source": "./plugins/my-stack"
     },

@@ -178,7 +178,6 @@ where the component supports them.
 | Kitchen Sink          | Image comparison, annotations, invalid paths, branding                         |
 | Monokai               | Theme foundations, chrome, content palettes, surface composition               |
 | Prompt Editor         | Tool browser, file editor, empty and error states                              |
-| Reminders             | Saved cards, loading, empty and error states                                   |
 | Docs                  | Note browser, Markdown editor, HTML card, invalid link                         |
 | Inline Visualizations | Tweak controls, saving, read-only, original and empty states                   |
 | Tasks                 | List, board, detail and activity, labels/presets/folders, controls and dialogs |

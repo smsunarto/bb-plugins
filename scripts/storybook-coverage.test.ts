@@ -47,7 +47,6 @@ const surfaces: Record<string, Record<string, string[]>> = {
     ],
   },
   "prompt-editor": { editor: ["../src/app/app"] },
-  "remind-me": { reminders: ["../src/app/app"] },
   "scott-docs": { documents: ["../app"], cards: ["../app"] },
   "scott-tasks": {
     views: ["ListView", "BoardView", "DetailView", "ManagePanel"],

@@ -735,28 +735,6 @@
         "typescript": "^6.0.0",
       },
     },
-    "plugins/remind-me": {
-      "name": "@smsunarto/bb-plugin-remind-me",
-      "version": "0.1.0",
-      "dependencies": {
-        "@bb-kit/core": "workspace:*",
-        "@tanstack/react-query": "^5.101.4",
-        "zod": "^4.4.3",
-      },
-      "devDependencies": {
-        "@get-bb/plugin-sdk": "0.6.75",
-        "@testing-library/react": "16.3.2",
-        "@types/node": "^22.0.0",
-        "@types/react": "^19.0.0",
-        "@types/react-dom": "^19.0.0",
-        "bun-types": "^1.4.0",
-        "jsdom": "25.0.1",
-        "react": "19.2.8",
-        "react-dom": "19.2.8",
-        "tsx": "4.23.12",
-        "typescript": "^6.0.0",
-      },
-    },
     "plugins/scott-docs": {
       "name": "@smsunarto/bb-plugin-scott-docs",
       "version": "0.2.3",
@@ -1858,8 +1836,6 @@
     "@smsunarto/bb-plugin-my-stack": ["@smsunarto/bb-plugin-my-stack@workspace:plugins/my-stack"],
 
     "@smsunarto/bb-plugin-prompt-editor": ["@smsunarto/bb-plugin-prompt-editor@workspace:plugins/prompt-editor"],
-
-    "@smsunarto/bb-plugin-remind-me": ["@smsunarto/bb-plugin-remind-me@workspace:plugins/remind-me"],
 
     "@smsunarto/bb-plugin-scott-docs": ["@smsunarto/bb-plugin-scott-docs@workspace:plugins/scott-docs"],
 

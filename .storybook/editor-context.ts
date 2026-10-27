@@ -29,7 +29,6 @@ const placements: Record<string, EditorContext> = {
   "Code Review": { placement: "page", title: "Review" },
   Tasks: { placement: "page", title: "Tasks" },
   Dotfiles: { placement: "page", title: "Dotfiles" },
-  Reminders: { placement: "page", title: "Reminders" },
   Cloudflare: { placement: "page", title: "Cloudflare" },
   Agentation: { placement: "page", title: "Agentation" },
   Traces: { placement: "page", title: "Traces" },
