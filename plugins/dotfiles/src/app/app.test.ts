@@ -63,7 +63,7 @@ function server(selected: string, connected = true) {
   };
 }
 
-test("the nav panel keeps the dotfiles route and registers both fixed tabs", async () => {
+test("the nav panel keeps the dotfiles route and registers its fixed tabs", async () => {
   const captured = await loadPluginApp(() => import("./app.tsx"));
   const panel = captured.navPanels[0];
   assert.ok(panel, "app.tsx registers one nav panel");
@@ -84,6 +84,13 @@ test("the nav panel keeps the dotfiles route and registers both fixed tabs", asy
       {
         id: "files",
         title: "Files",
+        context: { kind: "nav-panel", panelId: "dotfiles" },
+        availability: "fixed",
+        layout: "flush",
+      },
+      {
+        id: "workflows",
+        title: "Workflows",
         context: { kind: "nav-panel", panelId: "dotfiles" },
         availability: "fixed",
         layout: "flush",
@@ -146,6 +153,82 @@ test("the page prompts for a selection at the panel root", async () => {
   const panel = captured.navPanels[0];
   assert.ok(panel, "app.tsx registers one nav panel");
   const slot = renderSlot(panel, { subPath: "" }, { rpc: server("host_server") });
-  await slot.findByText("Select a file in the Files tab.");
+  await slot.findByText("Select a file in the Files or Workflows tab.");
+  slot.unmount();
+});
+
+test("workflows open their source on the picked machine and stay out of Files", async () => {
+  const captured = await loadPluginApp(() => import("./app.tsx"));
+  const workflowPath =
+    ".dotfiles/.agents/plugins/scott-engineering/skills/dev/playbooks/feature.md";
+  const backend = server("host_mac");
+  const rpc = {
+    ...backend,
+    overview: async (input: unknown) => ({
+      ...(await backend.overview(input)),
+      groups: [
+        {
+          id: "agents",
+          title: "Agent config",
+          files: [{ path: ".dotfiles/mcp.json", title: "MCP servers", exists: true, dirty: false }],
+        },
+        {
+          id: "workflows",
+          title: "Engineering workflows",
+          files: [{ path: workflowPath, title: "Feature", exists: true, dirty: true }],
+        },
+      ],
+    }),
+  };
+  const workflows = renderSlot(fixedTab(captured, "workflows"), { subPath: "" }, { rpc });
+  await workflows.findByText(/After saving, run Refresh agent skills/);
+  fireEvent.click(await workflows.findByRole("button", { name: /^Feature/ }));
+  assert.ok(workflows.navigateCalls.some((call) => JSON.stringify(call).includes(workflowPath)));
+  assert.equal(workflows.queryByRole("button", { name: "MCP servers" }), null);
+  assert.deepEqual(workflows.rpcCalls.find((call) => call.method === "overview")?.input, {
+    hostId: "host_mac",
+  });
+  workflows.unmount();
+
+  const files = renderSlot(fixedTab(captured, "files"), { subPath: "" }, { rpc });
+  await files.findByRole("button", { name: "MCP servers" });
+  assert.equal(files.queryByRole("button", { name: /^Feature/ }), null);
+  files.unmount();
+});
+
+test("review editing remains reachable when the dotfiles machine is offline", async () => {
+  const captured = await loadPluginApp(() => import("./app.tsx"));
+  const slot = renderSlot(
+    fixedTab(captured, "workflows"),
+    { subPath: "" },
+    { rpc: server("host_mac", false) },
+  );
+  await slot.findByText("Local Mac is not connected.");
+  assert.equal(
+    slot.getByRole("link", { name: /Review workflow/ }).getAttribute("href"),
+    "/plugins/prompt-editor/prompt-editor/code-review/file/skills/review/SKILL.md",
+  );
+  slot.unmount();
+});
+
+test("the refresh action targets the machine selected in Dotfiles", async () => {
+  const captured = await loadPluginApp(() => import("./app.tsx"));
+  const slot = renderSlot(
+    fixedTab(captured, "tasks"),
+    { subPath: "" },
+    {
+      rpc: {
+        ...server("host_mac"),
+        runTask: async () => ({ exitCode: 0, output: "Copies match sources" }),
+      },
+    },
+  );
+  await slot.findByText("Runs on Local Mac");
+  fireEvent.click(slot.getByRole("button", { name: "Refresh agent skills" }));
+  await slot.findByText("Copies match sources");
+  assert.deepEqual(slot.rpcCalls.find((call) => call.method === "runTask")?.input, {
+    hostId: "host_mac",
+    task: "install:agent-plugins",
+  });
   slot.unmount();
 });

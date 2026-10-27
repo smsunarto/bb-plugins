@@ -48,7 +48,7 @@ function DotfilesPageBody(props: PluginNavPanelProps): ReactElement {
   if (nav.path === null) {
     return (
       <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
-        Select a file in the Files tab.
+        Select a file in the Files or Workflows tab.
       </div>
     );
   }

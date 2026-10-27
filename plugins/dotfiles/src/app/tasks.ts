@@ -5,10 +5,13 @@ import { rpc, type RPCInput } from "./rpc.ts";
 
 type TaskId = RPCInput<"runTask">["task"];
 
-export type QuickTask = Extract<TaskId, "render" | "check" | "apply:dry" | "sync:pull"> | "publish";
+export type QuickTask =
+  | Extract<TaskId, "render" | "install:agent-plugins" | "check" | "apply:dry" | "sync:pull">
+  | "publish";
 
 export const quickTasks: readonly QuickTask[] = [
   "render",
+  "install:agent-plugins",
   "check",
   "apply:dry",
   "sync:pull",

@@ -40,7 +40,13 @@ function TasksTabBody(): ReactElement {
                   else if (ready !== null) tasks.run(task, ready.host);
                 }}
               >
-                {isRunning ? `${label}…` : label}
+                {task === "install:agent-plugins"
+                  ? isRunning
+                    ? "Refreshing agent skills…"
+                    : "Refresh agent skills"
+                  : isRunning
+                    ? `${label}…`
+                    : label}
               </Button>
             );
           })}

@@ -1,6 +1,7 @@
 import { useState } from "react";
 import type { ReactElement } from "react";
 import type { PluginNavPanelProps } from "@get-bb/plugin-sdk/app";
+import { UrlLink } from "@get-bb/plugin-sdk/app";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import {
@@ -30,7 +31,7 @@ interface PendingRemoval extends SkillRow {
   readonly host: ReadyOverview["host"];
 }
 
-function FilesTabBody(props: PluginNavPanelProps): ReactElement {
+function FilesTabBody(props: PluginNavPanelProps & { workflows: boolean }): ReactElement {
   const nav = useDotfilesRoute(props.subPath);
   const overview = usePanelOverview();
   const [pendingRemoval, setPendingRemoval] = useState<PendingRemoval | null>(null);
@@ -75,6 +76,12 @@ function FilesTabBody(props: PluginNavPanelProps): ReactElement {
           {ready !== undefined && <span className="min-w-0 truncate">{ready.repoPath}</span>}
         </div>
       </div>
+      {props.workflows && (
+        <p className="shrink-0 border-b border-border px-4 py-3 text-xs text-muted-foreground">
+          After saving, run Refresh agent skills in Tasks to update installed copies, then start a
+          new agent session.
+        </p>
+      )}
       {overview.isPending ? (
         <div className="h-full" aria-busy="true" aria-label="Loading dotfiles" />
       ) : overview.isError ? (
@@ -92,21 +99,37 @@ function FilesTabBody(props: PluginNavPanelProps): ReactElement {
         </div>
       ) : (
         <div className="min-h-0 flex-1 overflow-y-auto p-2">
-          {ready.groups.map((group) => (
-            <div key={group.id} className="mb-3">
-              <div className="px-2 pb-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                {group.title}
+          {ready.groups
+            .filter((group) => (group.id === "workflows") === props.workflows)
+            .map((group) => (
+              <div key={group.id} className="mb-3">
+                <div className="px-2 pb-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                  {group.title}
+                </div>
+                {group.files.map((item) => (
+                  <FileRow
+                    key={item.path}
+                    item={item}
+                    nav={nav}
+                    onRemove={(row) => setPendingRemoval({ ...row, host: ready.host })}
+                  />
+                ))}
               </div>
-              {group.files.map((item) => (
-                <FileRow
-                  key={item.path}
-                  item={item}
-                  nav={nav}
-                  onRemove={(row) => setPendingRemoval({ ...row, host: ready.host })}
-                />
-              ))}
-            </div>
-          ))}
+            ))}
+        </div>
+      )}
+      {props.workflows && (
+        <div className="shrink-0 border-t border-border p-2">
+          <div className="px-2 pb-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+            Review
+          </div>
+          <UrlLink
+            className="block w-full rounded-md px-2 py-1 text-left text-sm text-foreground hover:bg-accent/50"
+            href="/plugins/prompt-editor/prompt-editor/code-review/file/skills/review/SKILL.md"
+          >
+            Review workflow
+            <span className="block text-xs text-muted-foreground">Edit in Prompt Editor</span>
+          </UrlLink>
         </div>
       )}
       {pendingRemoval !== null && (
@@ -198,7 +221,17 @@ export function DotfilesFilesTab(props: PluginNavPanelProps): ReactElement {
   return (
     <PluginQueryBoundary>
       <div className="flex h-full min-h-0 flex-col bg-sidebar">
-        <FilesTabBody {...props} />
+        <FilesTabBody {...props} workflows={false} />
+      </div>
+    </PluginQueryBoundary>
+  );
+}
+
+export function DotfilesWorkflowsTab(props: PluginNavPanelProps): ReactElement {
+  return (
+    <PluginQueryBoundary>
+      <div className="flex h-full min-h-0 flex-col bg-sidebar">
+        <FilesTabBody {...props} workflows />
       </div>
     </PluginQueryBoundary>
   );

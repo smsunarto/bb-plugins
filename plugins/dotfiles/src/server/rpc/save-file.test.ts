@@ -93,3 +93,33 @@ test("writes to the machine the draft was read from", async () => {
 
   assert.deepEqual(writes, ["host_mac:/dotfiles/AGENTS.md = next"]);
 });
+
+test("workflow edits use the selected host and retain optimistic save conflicts", async () => {
+  const path = ".dotfiles/.agents/plugins/scott-engineering/skills/dev/playbooks/feature.md";
+  const ctx = createFakeContext({
+    writeFile: async (repo, file, content, sha) => {
+      assert.equal(repo.hostId, "host_mac");
+      assert.equal(file, path);
+      assert.equal(content, "updated workflow");
+      assert.equal(sha, "before");
+      return { outcome: "conflict" };
+    },
+  });
+  assert.deepEqual(
+    await saveFile.execute(ctx, {
+      hostId: "host_mac",
+      path,
+      content: "updated workflow",
+      expectedSha256: "before",
+    }),
+    { outcome: "conflict" },
+  );
+  await assert.rejects(
+    async () =>
+      saveFile.execute(ctx, {
+        path: ".dotfiles/.agents/plugins/scott-engineering/skills/dev/playbooks/../../../../.ssh/id_ed25519",
+        content: "x",
+      }),
+    /not a tweakable file/,
+  );
+});

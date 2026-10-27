@@ -9,12 +9,21 @@ test("builds the overview from static files, discovered skills, and git state", 
     inspect: async (target) =>
       cleanRepo(target, {
         branch: "feature",
-        entries: [{ status: "M", path: ".dotfiles/mcp.json" }],
+        entries: [
+          { status: "M", path: ".dotfiles/mcp.json" },
+          {
+            status: "M",
+            path: ".dotfiles/.agents/plugins/scott-engineering/skills/dev/playbooks/feature.md",
+          },
+        ],
         skills: [
           { path: ".dotfiles/.agents/skills/example/SKILL.md", title: "example" },
           { path: ".dotfiles/.agents/skills/Foo_Bar/SKILL.md", title: "Foo_Bar" },
         ],
-        missingPaths: ["mise.linux.toml"],
+        missingPaths: [
+          "mise.linux.toml",
+          ".dotfiles/.agents/plugins/scott-engineering/skills/dev/playbooks/bug-fix.md",
+        ],
       }),
   });
 
@@ -46,6 +55,11 @@ test("builds the overview from static files, discovered skills, and git state", 
     ],
   });
   assert.equal(result.groups[0]?.files[0]?.dirty, true);
+  const workflows = result.groups.find((group) => group.id === "workflows");
+  assert.ok(workflows);
+  assert.equal(workflows.files.find((file) => file.title === "Feature")?.dirty, true);
+  assert.equal(workflows.files.find((file) => file.title === "Bug fix")?.exists, false);
+  assert.ok(workflows.files.every((file) => file.removeSkillName === undefined));
   assert.equal(
     result.groups.flatMap((group) => group.files).find((file) => file.path === "mise.linux.toml")
       ?.exists,

@@ -6,6 +6,7 @@ import { z } from "zod";
 
 export const taskIds = [
   "render",
+  "install:agent-plugins",
   "check",
   "check:location",
   "check:mise",
@@ -29,6 +30,10 @@ export interface TaskDefinition {
 }
 
 export const taskDefinitions: Readonly<Record<TaskId, TaskDefinition>> = {
+  "install:agent-plugins": {
+    command: "mise run install:agent-plugins && mise run check:live",
+    summary: "Refresh installed agent skills and verify they match their sources",
+  },
   render: {
     command: "mise run render",
     summary: "Render agent configs and settings overlays",
@@ -137,6 +142,49 @@ const staticGroups: readonly TweakableGroupDefinition[] = [
         note: "Renders into ~/.codex/AGENTS.md",
         render: true,
       },
+    ],
+  },
+  {
+    id: "workflows",
+    title: "Engineering workflows",
+    files: [
+      {
+        path: ".dotfiles/.agents/plugins/scott-engineering/skills/dev/SKILL.md",
+        title: "Engineering guide",
+      },
+      ...(
+        [
+          ["investigation", "Investigation"],
+          ["bug-fix", "Bug fix"],
+          ["feature", "Feature"],
+          ["refactoring", "Refactoring"],
+          ["perf-issue", "Performance issue"],
+          ["hillclimb", "Hillclimb"],
+          ["runtime-forensics", "Runtime forensics"],
+          ["trace-forensics", "Trace forensics"],
+          ["prototype", "Prototype"],
+          ["visual-parity", "Visual parity"],
+          ["authoring-a-skill", "Authoring a skill"],
+          ["autonomous-run", "Autonomous run"],
+          ["session-pickup", "Session pickup"],
+          ["pause-safely", "Pause safely"],
+          ["opening-a-pr", "Opening a pull request"],
+        ] satisfies readonly (readonly [string, string])[]
+      ).map(([name, title]) => ({
+        path: `.dotfiles/.agents/plugins/scott-engineering/skills/dev/playbooks/${name}.md`,
+        title,
+      })),
+      ...(
+        [
+          ["prove-it-works", "Verification: prove it works"],
+          ["test-behavior-not-implementation", "Verification: test behavior"],
+          ["sequence-verifiable-units", "Verification: verifiable units"],
+          ["exhaust-the-design-space", "Design: compare alternatives"],
+        ] satisfies readonly (readonly [string, string])[]
+      ).map(([name, title]) => ({
+        path: `.dotfiles/.agents/plugins/scott-engineering/skills/dev/references/principles/${name}.md`,
+        title,
+      })),
     ],
   },
   {

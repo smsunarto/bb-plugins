@@ -31,3 +31,12 @@ test("runs on the machine the panel asked for", async () => {
     [["host_mac", "mise run render"]],
   );
 });
+
+test("refreshes and verifies installed agent copies on the selected machine", async () => {
+  const ctx = createFakeContext();
+  await runTask.execute(ctx, { hostId: "host_mac", task: "install:agent-plugins" });
+  assert.deepEqual(
+    ctx.git.run.mock.calls.map(([target, command]) => [target.hostId, command]),
+    [["host_mac", "mise run install:agent-plugins && mise run check:live"]],
+  );
+});
