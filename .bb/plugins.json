@@ -4,6 +4,10 @@
   "name": "bb-plugins",
   "plugins": [
     {
+      "name": "t3-composer",
+      "source": "./plugins/t3-composer"
+    },
+    {
       "name": "agentation",
       "source": "./plugins/agentation"
     },

@@ -1,0 +1,223 @@
+/* Geometry from T3 Code's ComposerSurface, ChatComposer and ComposerControl.
+   BB owns its color palette and the controls passed through the renderer SDK. */
+[data-t3-composer][data-promptbox] {
+  container-type: inline-size;
+  container-name: t3-composer;
+  min-width: 0;
+  padding: 0;
+  border: 1px solid color-mix(in srgb, var(--foreground) 5%, transparent);
+  border-radius: 12px;
+  background: var(--agent-surface-background, var(--card));
+  box-shadow: none;
+  color: var(--foreground);
+  font-family: var(--font-sans);
+}
+
+[data-t3-composer][data-promptbox] [data-promptbox-editor-scroll] {
+  border-radius: 11px 11px 0 0;
+  background: transparent;
+  padding: 16px 16px 8px;
+  font-size: 14px;
+  line-height: 1.625;
+}
+
+[data-t3-composer][data-promptbox]:not([data-promptbox-compact]) [data-promptbox-editor-scroll] {
+  min-height: 94px !important;
+}
+
+[data-t3-composer][data-promptbox] [data-promptbox-editor-content] .ProseMirror {
+  font-family: var(--font-sans);
+  line-height: 1.625;
+}
+
+[data-t3-composer][data-promptbox]
+  [data-promptbox-editor-content]
+  .ProseMirror
+  p.is-editor-empty:first-child::before {
+  color: var(--muted-foreground);
+  font-weight: 400;
+  opacity: 0.55;
+}
+
+[data-t3-composer][data-promptbox] [data-promptbox-action-row] {
+  min-width: 0;
+  flex-wrap: nowrap;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 0 16px 16px;
+}
+
+[data-t3-composer][data-promptbox] [data-t3-composer-controls] {
+  display: flex;
+  flex: 1 1 0%;
+  flex-wrap: wrap;
+  align-items: center;
+  min-width: 0;
+  gap: 0;
+}
+
+[data-t3-composer][data-promptbox] [data-t3-composer-controls] > * {
+  min-width: 0;
+  max-width: 100%;
+}
+
+[data-t3-composer][data-promptbox] [data-t3-composer-controls] :is(button, [role="combobox"]) {
+  height: 28px;
+  min-height: 28px;
+  min-width: 0;
+  max-width: 100%;
+  gap: 6px;
+  padding: 0 8px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  box-shadow: none;
+  color: color-mix(in srgb, var(--foreground) 80%, transparent);
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 20px;
+}
+
+[data-t3-composer][data-promptbox]
+  [data-t3-composer-controls]
+  :is(button, [role="combobox"]):hover {
+  background: var(--accent);
+  color: var(--foreground);
+}
+
+[data-t3-composer][data-promptbox] [data-promptbox-standard-actions] {
+  min-width: 0;
+}
+
+[data-t3-composer][data-promptbox]
+  [data-promptbox-action-row]
+  > [data-promptbox-standard-actions]:last-child {
+  flex-wrap: nowrap;
+  gap: 8px;
+}
+
+[data-t3-composer][data-promptbox] [data-t3-composer-actions-menu] {
+  width: 28px;
+  height: 28px;
+  min-height: 28px;
+  margin: 0;
+  padding: 0;
+  border-radius: 8px;
+  color: var(--muted-foreground);
+}
+
+[data-t3-composer][data-promptbox] [data-t3-composer-voice]:not([data-promptbox-submit-action]) {
+  width: 28px;
+  height: 28px;
+  min-height: 28px;
+  padding: 0;
+  border-radius: 8px;
+  color: var(--muted-foreground);
+}
+
+[data-t3-composer][data-promptbox] [data-promptbox-submit-action] {
+  flex-shrink: 0;
+  width: 32px;
+  height: 32px;
+  min-width: 32px;
+  min-height: 32px;
+  margin: 0;
+  padding: 0;
+  border-radius: 6px;
+  background: var(--primary);
+  color: var(--primary-foreground);
+  box-shadow: none;
+  transition:
+    transform 150ms,
+    background-color 150ms;
+}
+
+[data-t3-composer][data-promptbox] [data-promptbox-submit-action]:enabled:hover {
+  transform: scale(1.05);
+  background: color-mix(in srgb, var(--primary) 90%, var(--background));
+}
+
+[data-t3-composer][data-promptbox] [data-promptbox-submit-action]:disabled {
+  background: color-mix(in srgb, var(--foreground) 12%, transparent);
+  color: var(--muted-foreground);
+  opacity: 1;
+}
+
+[data-t3-composer][data-promptbox] [data-promptbox-submit-label] {
+  display: none;
+}
+
+[data-t3-composer][data-promptbox] [data-t3-composer-stop] {
+  background: var(--secondary);
+  color: var(--foreground);
+}
+
+[data-t3-composer][data-promptbox] [data-t3-composer-save-draft] {
+  width: 28px;
+  min-width: 28px;
+  height: 28px;
+  min-height: 28px;
+  padding: 0;
+  border-radius: 6px;
+  color: var(--muted-foreground);
+}
+
+[data-t3-composer][data-promptbox][data-promptbox-compact] [data-promptbox-editor-scroll] {
+  padding: 0 8px 0 12px;
+}
+
+[data-t3-composer][data-promptbox][data-promptbox-compact] [data-promptbox-action-row] {
+  gap: 0;
+  padding: 0 8px 0 0;
+}
+
+@container t3-composer (max-width: 520px) {
+  [data-t3-composer][data-promptbox] [data-promptbox-editor-scroll] {
+    padding: 14px 12px 8px;
+  }
+
+  [data-t3-composer][data-promptbox] [data-promptbox-action-row] {
+    flex-wrap: wrap;
+    padding: 0 12px 12px;
+  }
+
+  [data-t3-composer][data-promptbox]
+    [data-promptbox-action-row]
+    > [data-promptbox-standard-actions]:last-child {
+    margin-left: auto;
+  }
+
+  [data-t3-composer][data-promptbox] [data-t3-composer-controls] :is(button, [role="combobox"]) {
+    font-size: 12px;
+  }
+}
+
+@media (pointer: coarse) {
+  [data-t3-composer][data-promptbox] [data-promptbox-editor-scroll] {
+    font-size: 16px;
+  }
+
+  [data-t3-composer][data-promptbox] [data-promptbox-submit-action] {
+    width: 36px;
+    height: 36px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-t3-composer][data-promptbox] [data-promptbox-submit-action] {
+    transition: none;
+  }
+}
+
+[data-t3-composer][data-promptbox] [data-t3-composer-submit-kind="MessageSquarePlus"] {
+  width: auto;
+  gap: 6px;
+  padding: 0 12px;
+  border-radius: 9999px;
+}
+
+[data-t3-composer][data-promptbox]
+  [data-t3-composer-submit-kind="MessageSquarePlus"]
+  [data-promptbox-submit-label] {
+  display: inline;
+}
