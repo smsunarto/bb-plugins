@@ -388,7 +388,7 @@ function ReviewCard({
           ) : null}
         </div>
       ) : null}
-      <div className="flex justify-end border-t border-border p-2.5">
+      <div className="flex justify-end p-2.5">
         <Button
           size="sm"
           variant="outline"
@@ -434,7 +434,7 @@ function reviewLabels({
 function FilePreview({ files }: { files: readonly ChangedFile[] }) {
   if (files.length === 0) return null;
   return (
-    <ul className="m-0 list-none border-t border-border px-3 py-1.5">
+    <ul className="m-0 list-none px-3 py-1.5">
       {files.slice(0, 3).map((file) => (
         <li key={file.path} className="flex items-center gap-2 py-1">
           <Icon
