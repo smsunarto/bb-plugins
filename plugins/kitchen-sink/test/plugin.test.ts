@@ -20,6 +20,9 @@ test("the plugin loads against the fake host and registers every mention provide
 
   expect(harness.registrations.rpcMethods).toEqual([
     "renderEmbed",
+    "projectScripts",
+    "saveProjectScript",
+    "askAgent",
     "exportUnityClaims",
     "getRpivTodos",
   ]);
@@ -32,8 +35,23 @@ test("the plugin loads against the fake host and registers every mention provide
   ).toEqual([
     [
       "renderEmbed",
-      "Smart Embed citations.",
+      "Smart Embed citations and thread details actions.",
       "Render a Smart Embed: a source citation, a recorded turn or commit diff, or a saved patch.",
+    ],
+    [
+      "projectScripts",
+      "Smart Embed citations and thread details actions.",
+      "List the project scripts the thread details card runs.",
+    ],
+    [
+      "saveProjectScript",
+      "Smart Embed citations and thread details actions.",
+      "Add, replace, or delete one project script the thread details card runs.",
+    ],
+    [
+      "askAgent",
+      "Smart Embed citations and thread details actions.",
+      "Ask a thread's agent to commit, push, or open its pull request.",
     ],
   ]);
   expect(harness.registrations.mentionProviders.map((provider) => provider.id)).toEqual(

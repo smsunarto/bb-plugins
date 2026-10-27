@@ -22,6 +22,10 @@ import { DevinIcon } from "./devin-branding.tsx";
 import { SendHaptic } from "./send-haptic.tsx";
 import { TodoBanner } from "./rpiv-todo/banner.tsx";
 import { SmartImageCompareDirective } from "./smart-image-compare.tsx";
+import {
+  THREAD_DETAILS_TITLE,
+  ThreadDetailsHeaderAction,
+} from "./thread-details/thread-details.tsx";
 import "./app.css";
 import "./rpiv-todo/style.css";
 import "./timeline-motion/timeline-motion.css";
@@ -299,6 +303,11 @@ export default definePluginApp((app) => {
     id: "thread-activity-probe",
     title: PROBE_GROUP_TITLE,
     component: ThreadActivityProbe,
+  });
+  app.slots.experimental_threadHeaderAction({
+    id: "thread-details",
+    title: THREAD_DETAILS_TITLE,
+    component: ThreadDetailsHeaderAction,
   });
   app.contentScripts.register({
     id: "timeline-motion",

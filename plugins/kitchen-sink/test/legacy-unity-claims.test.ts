@@ -19,6 +19,9 @@ test("the retired manager exports durable claims without registering Unity contr
   );
   expect(harness.registrations.rpcMethods).toEqual([
     "renderEmbed",
+    "projectScripts",
+    "saveProjectScript",
+    "askAgent",
     "exportUnityClaims",
     "getRpivTodos",
   ]);

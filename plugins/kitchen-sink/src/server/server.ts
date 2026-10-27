@@ -8,15 +8,21 @@ import { registerTimelineMotionSettings } from "./lib/timeline-motion.ts";
 import { registerRpivTodos } from "./lib/rpiv-todos.ts";
 import { mentionProviders } from "./mentions.ts";
 import { renderEmbed } from "./rpc/render-embed.ts";
+import { projectScripts } from "./rpc/project-scripts.ts";
+import { saveProjectScript } from "./rpc/save-project-script.ts";
+import { askAgent } from "./rpc/ask-agent.ts";
 
 export default definePlugin({
   pluginId: "kitchen-sink",
   rpc: {
     renderEmbed,
+    projectScripts,
+    saveProjectScript,
+    askAgent,
   },
   rpcPublication: {
     discoverable: true,
-    description: "Smart Embed citations.",
+    description: "Smart Embed citations and thread details actions.",
   },
   setup({ bb }) {
     registerLegacyUnityClaims(bb);
