@@ -14,6 +14,10 @@ For assembling or revising a Unity scene against a Game Studio render target,
 read [assemble-unity-scene](../assemble-unity-scene/SKILL.md). It owns the living
 `SCENE.md`, Tripo asset acceptance, and integrated visual handoff checks.
 
+For Rive game menus, HUDs, or interactive components, read
+[rive-ui-design](../rive-ui-design/SKILL.md). It covers visual layout, responsive
+behavior, mobile usability, motion interruptions, and target-runtime verification.
+
 Read `game_studio_canvas_context` before design or media work. Use the native
 `game_studio_generate_image`, `game_studio_generate_video`, or
 `game_studio_generate_3d_asset` tools, or `game_studio_generate_canvas_media` for
