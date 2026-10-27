@@ -134,8 +134,8 @@ usage. User errors (unknown id, missing reason) exit 1 with a hint.
 | --------------------------------- | ------------------------------------------- |
 | Days to keep resolved annotations | Retention for the nightly prune. Default 7. |
 
-Toolbar visibility is live state, not a setting. Toggle it with **Show toolbar**
-/ **Hide toolbar** in the panel header, or with `bb agentation toolbar off`.
+Toolbar visibility is live state, not a setting. Use **Toggle Agentation toolbar**
+in the sidebar footer, or `bb agentation toolbar off`.
 
 When Agentation has no saved theme, it starts with the opposite of bb's resolved
 theme: light on dark bb, dark on light bb. Agentation's own theme control then
@@ -143,8 +143,8 @@ saves your choice, and later bb theme changes do not replace it.
 
 ## Troubleshooting
 
-**The toolbar is not there.** Run `bb agentation toolbar on`, or use **Show
-toolbar** in the panel header.
+**The toolbar is not there.** Run `bb agentation toolbar on`, or use **Toggle
+Agentation toolbar** in the sidebar footer.
 
 **An agent resolved an annotation but the marker is still on the page.** The
 toolbar refreshes within about a second. While the annotation popup holds typed

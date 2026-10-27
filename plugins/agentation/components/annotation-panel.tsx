@@ -460,16 +460,14 @@ export function AnnotationPanel() {
 /** Rendered by the host into the shared panel title bar. */
 export function AnnotationPanelHeader() {
   const rpc = useRpc<typeof rpcContract>();
-  const [enabled, setEnabled] = useState<boolean | null>(null);
   const [pending, setPending] = useState(0);
 
   const load = useCallback(async () => {
     try {
       const result = await sharedRequest("getConfig", () => rpc.call("getConfig"));
-      setEnabled(result.config.toolbarEnabled);
       setPending(result.counts.pending);
     } catch {
-      setEnabled(null);
+      // Keep the last count visible while the connection recovers.
     }
   }, [rpc]);
 
@@ -492,23 +490,6 @@ export function AnnotationPanelHeader() {
   return (
     <div className="flex items-center gap-2">
       {pending > 0 ? <span className="text-xs text-muted-foreground">{pending} open</span> : null}
-      <Button
-        size="sm"
-        variant="outline"
-        disabled={enabled === null}
-        onClick={() => {
-          const next = !enabled;
-          setEnabled(next);
-          void rpc.call("setToolbarEnabled", { enabled: next }).catch((cause: unknown) => {
-            setEnabled(!next);
-            toast.error("Could not change the toolbar", {
-              description: cause instanceof Error ? cause.message : String(cause),
-            });
-          });
-        }}
-      >
-        {enabled === false ? "Show toolbar" : "Hide toolbar"}
-      </Button>
     </div>
   );
 }
