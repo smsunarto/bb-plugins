@@ -4,6 +4,7 @@ import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 import { afterAll, afterEach, beforeEach, describe, it, jest } from "bun:test";
 import type { PluginBrowserBbSdk, PluginSidebarThread } from "@get-bb/plugin-sdk/app";
+import type { LifecycleApi } from "../hooks/use-lifecycle.ts";
 
 type Reviews = Awaited<ReturnType<PluginBrowserBbSdk["threads"]["list"]>>;
 
@@ -152,6 +153,17 @@ if (process.env.GTD_LIFECYCLE_TEST_CHILD !== "1") {
     });
   }
 
+  // bb's cached reads answer, then TanStack Query notifies on a zero-delay
+  // timer, which the fake clock holds until it moves.
+  async function flush() {
+    for (let round = 0; round < 2; round++) {
+      await act(async () => {});
+      await act(async () => {
+        jest.advanceTimersByTime(0);
+      });
+    }
+  }
+
   // Newer ICU puts a narrow no-break space before "AM".
   function toastTitles(): string[] {
     return Array.from(document.querySelectorAll("[data-sonner-toast] [data-title]")).map((title) =>
@@ -252,7 +264,7 @@ if (process.env.GTD_LIFECYCLE_TEST_CHILD !== "1") {
           } as never,
         },
       );
-      await act(async () => {});
+      await flush();
       return {
         slot,
         signal: (kind = "status-changed") => notify(kind),
@@ -415,7 +427,11 @@ if (process.env.GTD_LIFECYCLE_TEST_CHILD !== "1") {
 
     it("reconciles missed completion after reconnect", async () => {
       let reviews = [review()];
-      const { slot } = await mountReviews(async () => reviews);
+      let calls = 0;
+      const { slot } = await mountReviews(async () => {
+        calls += 1;
+        return reviews;
+      });
       assert.equal(slot.container.textContent, "other:nextAction:true,parent:waiting:false");
       await slot.behavior.setRealtimeConnectionState("reconnecting");
       reviews = [];
@@ -425,13 +441,19 @@ if (process.env.GTD_LIFECYCLE_TEST_CHILD !== "1") {
       });
       assert.equal(slot.container.textContent, "other:nextAction:true,parent:nextAction:true");
       slot.lifecycle.unmount();
-      assert.equal(jest.getTimerCount(), 0);
+      const before = calls;
+      await act(async () => {
+        jest.advanceTimersByTime(60_000);
+      });
+      assert.equal(calls, before);
     });
 
     it("cancels a scheduled retry and its lookup signal on unmount", async () => {
       let fail = false;
+      let calls = 0;
       let signal: AbortSignal | undefined;
       const { slot, change } = await mountReviews(async (args) => {
+        calls += 1;
         signal = args?.signal;
         if (fail) throw new Error("offline");
         return [review()];
@@ -439,11 +461,15 @@ if (process.env.GTD_LIFECYCLE_TEST_CHILD !== "1") {
       assert.equal(slot.container.textContent, "other:nextAction:true,parent:waiting:false");
       fail = true;
       await change();
-      assert.equal(jest.getTimerCount(), 1);
       assert.equal(signal?.aborted, false);
       slot.lifecycle.unmount();
       assert.equal(signal?.aborted, true);
-      assert.equal(jest.getTimerCount(), 0);
+      // The retry that was due never runs.
+      const before = calls;
+      await act(async () => {
+        jest.advanceTimersByTime(60_000);
+      });
+      assert.equal(calls, before);
     });
   });
 
@@ -495,7 +521,7 @@ if (process.env.GTD_LIFECYCLE_TEST_CHILD !== "1") {
           } as never,
         },
       );
-      await act(async () => {});
+      await flush();
       fireEvent.click(slot.getByRole("button", { name: "Park" }));
       assert.equal(slot.getByRole("status").textContent, "snoozed,snoozed");
       await act(async () => fail(new Error("offline")));
@@ -523,14 +549,16 @@ if (process.env.GTD_LIFECYCLE_TEST_CHILD !== "1") {
           } as never,
         },
       );
-      await act(async () => {});
+      await flush();
       fireEvent.click(slot.getByRole("button", { name: "Wake" }));
       assert.equal(slot.getByRole("status").textContent, "active,active");
       await act(async () => fail(new Error("offline")));
       assert.equal(slot.getByRole("status").textContent, "snoozed,snoozed");
     });
 
-    it("keeps a fast Undo visible while snooze is pending and sends it afterwards", async () => {
+    // Separate requests can arrive out of order, so the Undo waits for its
+    // snooze to answer; it still draws on the click.
+    it("draws a fast Undo at once and sends it after the snooze answers", async () => {
       let finish!: (value: { ok: boolean; rows: LifecycleRow[] }) => void;
       const pending = new Promise((resolve) => {
         finish = resolve;
@@ -553,14 +581,88 @@ if (process.env.GTD_LIFECYCLE_TEST_CHILD !== "1") {
           } as never,
         },
       );
-      await act(async () => {});
+      await flush();
       fireEvent.click(slot.getByRole("button", { name: "Park" }));
       fireEvent.click(slot.getByRole("button", { name: "Wake" }));
-      await act(async () => {});
+      await flush();
       assert.equal(slot.getByRole("status").textContent, "active,active");
       assert.deepEqual(calls, ["park"]);
       await act(async () => finish({ ok: true, rows: familyRows(Date.now() + 60_000) }));
+      await flush();
       assert.deepEqual(calls, ["park", "wake"]);
+      assert.equal(slot.getByRole("status").textContent, "active,active");
+    });
+
+    // bb has nothing to predict on before the first read lands.
+    it("parks a family clicked before the first read lands and keeps it once the write answers", async () => {
+      let answer!: (value: { ok: boolean; rows: LifecycleRow[] }) => void;
+      const slot = renderSlot(
+        { component: EditableProbe },
+        {},
+        {
+          rpc: {
+            listLifecycle: () => new Promise(() => {}),
+            snooze: () =>
+              new Promise((resolve) => {
+                answer = resolve;
+              }),
+          } as never,
+        },
+      );
+      await flush();
+      fireEvent.click(slot.getByRole("button", { name: "Park" }));
+      assert.equal(slot.getByRole("status").textContent, "snoozed,snoozed");
+      await flush();
+      await act(async () => answer({ ok: true, rows: familyRows(Date.now() + 60_000) }));
+      await flush();
+      assert.equal(slot.getByRole("status").textContent, "snoozed,snoozed");
+    });
+
+    it("keeps a saved park on screen when the first read then fails", async () => {
+      let failRead!: (error: Error) => void;
+      const read = new Promise((_resolve, reject) => {
+        failRead = reject;
+      });
+      const slot = renderSlot(
+        { component: EditableProbe },
+        {},
+        {
+          rpc: {
+            listLifecycle: () => read,
+            snooze: () => ({ ok: true, rows: familyRows(Date.now() + 60_000) }),
+          } as never,
+        },
+      );
+      await flush();
+      fireEvent.click(slot.getByRole("button", { name: "Park" }));
+      await flush();
+      assert.equal(slot.getByRole("status").textContent, "snoozed,snoozed");
+      await act(async () => failRead(new Error("offline")));
+      await flush();
+      assert.equal(slot.getByRole("status").textContent, "snoozed,snoozed");
+    });
+
+    it("drops a park clicked before the first read lands when its write fails", async () => {
+      let fail!: (error: Error) => void;
+      const slot = renderSlot(
+        { component: EditableProbe },
+        {},
+        {
+          rpc: {
+            listLifecycle: () => new Promise(() => {}),
+            snooze: () =>
+              new Promise((_resolve, reject) => {
+                fail = reject;
+              }),
+          } as never,
+        },
+      );
+      await flush();
+      fireEvent.click(slot.getByRole("button", { name: "Park" }));
+      assert.equal(slot.getByRole("status").textContent, "snoozed,snoozed");
+      await flush();
+      await act(async () => fail(new Error("offline")));
+      await flush();
       assert.equal(slot.getByRole("status").textContent, "active,active");
     });
 
@@ -576,12 +678,12 @@ if (process.env.GTD_LIFECYCLE_TEST_CHILD !== "1") {
           } as never,
         },
       );
-      await act(async () => {});
+      await flush();
       fireEvent.click(slot.getByRole("button", { name: "Park" }));
       assert.equal(slot.getByRole("status").textContent, "snoozed,snoozed");
     });
 
-    it("keeps a write's answer over a re-read that started before it", async () => {
+    it("keeps a snooze drawn over a re-read that started before it", async () => {
       let reads = 0;
       let stored: LifecycleRow[] = [];
       let finishRead!: (value: { rows: LifecycleRow[] }) => void;
@@ -604,16 +706,17 @@ if (process.env.GTD_LIFECYCLE_TEST_CHILD !== "1") {
           } as never,
         },
       );
-      await act(async () => {});
-      await slot.behavior.emitRealtime("lifecycle", { kind: "lifecycle" });
-      await act(async () => {
-        jest.advanceTimersByTime(50);
-      });
+      await flush();
+      void slot.behavior.experimental_invalidateRpc(["lifecycle"]);
+      await flush();
       assert.equal(reads, 2);
       fireEvent.click(slot.getByRole("button", { name: "Park" }));
-      await act(async () => {});
+      await flush();
       assert.equal(slot.getByRole("status").textContent, "snoozed,snoozed");
+      // The stale answer is dropped and the read runs again after the write.
       await act(async () => finishRead({ rows: [] }));
+      await flush();
+      assert.equal(reads, 3);
       assert.equal(slot.getByRole("status").textContent, "snoozed,snoozed");
     });
 
@@ -635,99 +738,95 @@ if (process.env.GTD_LIFECYCLE_TEST_CHILD !== "1") {
           } as never,
         },
       );
-      await act(async () => {});
+      await flush();
       fireEvent.click(slot.getByRole("button", { name: "Park" }));
-      await act(async () => {});
+      await flush();
       const parked = familyRows(Date.now() + 60_000);
       stored = [];
-      await slot.behavior.emitRealtime("lifecycle", { kind: "lifecycle" });
-      await act(async () => {
-        jest.advanceTimersByTime(50);
-      });
+      await slot.behavior.experimental_invalidateRpc(["lifecycle"]);
+      await flush();
       assert.equal(slot.getByRole("status").textContent, "snoozed,snoozed");
       // The answer is the snapshot from when the park ran, before the wake.
       await act(async () => answer({ ok: true, rows: parked }));
-      await act(async () => {});
+      await flush();
       assert.equal(slot.getByRole("status").textContent, "active,active");
     });
 
-    it("reads again after a write when it dropped a read that overlapped the write", async () => {
-      // The park answers with a snapshot that predates another window's wake,
-      // and the re-read that saw the wake started before that answer.
-      let reads = 0;
-      let stored: LifecycleRow[] = [];
-      let answer!: (value: { ok: boolean; rows: LifecycleRow[] }) => void;
-      let finishRead!: (value: { rows: LifecycleRow[] }) => void;
+    it("keeps the shelves when a refresh fails", async () => {
+      let fail = false;
       const slot = renderSlot(
         { component: EditableProbe },
         {},
         {
           rpc: {
             listLifecycle: () => {
-              reads += 1;
-              if (reads !== 2) return { rows: stored };
-              return new Promise((resolve) => {
-                finishRead = resolve;
-              });
+              if (fail) throw new Error("offline");
+              return { rows: familyRows(Date.now() + 60_000) };
             },
-            snooze: () =>
-              new Promise((resolve) => {
-                answer = resolve;
-              }),
           } as never,
         },
       );
-      await act(async () => {});
-      fireEvent.click(slot.getByRole("button", { name: "Park" }));
-      await act(async () => {});
-      const parked = familyRows(Date.now() + 60_000);
-      await slot.behavior.emitRealtime("lifecycle", { kind: "lifecycle" });
-      await act(async () => {
-        jest.advanceTimersByTime(50);
-      });
-      assert.equal(reads, 2);
-      stored = [];
-      await act(async () => answer({ ok: true, rows: parked }));
-      await act(async () => finishRead({ rows: [] }));
-      await act(async () => {});
-      assert.equal(reads, 3);
-      assert.equal(slot.getByRole("status").textContent, "active,active");
+      await flush();
+      assert.equal(slot.getByRole("status").textContent, "snoozed,snoozed");
+      fail = true;
+      await slot.behavior.experimental_invalidateRpc(["lifecycle"]);
+      await flush();
+      assert.equal(slot.getByRole("status").textContent, "snoozed,snoozed");
+    });
+
+    // Most refreshes re-read a list that has not changed. Keeping the same
+    // answer is what stops each of those from re-partitioning the sidebar.
+    it("keeps its classification when a refresh changes nothing", async () => {
+      const seen: LifecycleApi[] = [];
+      const rows = familyRows(Date.now() + 60_000);
+      function IdentityProbe() {
+        seen.push(useLifecycle([thread("t")]));
+        return null;
+      }
+      const slot = renderSlot(
+        { component: IdentityProbe },
+        {},
+        { rpc: { listLifecycle: () => ({ rows }) } as never },
+      );
+      await flush();
+      const settled = seen.at(-1);
+      await slot.behavior.experimental_invalidateRpc(["lifecycle"]);
+      await flush();
+      assert.equal(seen.at(-1), settled);
     });
 
     it("wakes a snooze that already elapsed when its row arrives on a stale clock", async () => {
       const mountedAt = Date.now();
       let rows: LifecycleRow[] = [];
       const slot = mount(() => rows);
-      await act(async () => {});
+      await flush();
       assert.equal(slot.container.textContent, "active");
 
       // Nothing is snoozed, so no timer ever armed: the rendered clock is
       // still the mount-time one while the wall clock runs ahead.
       jest.advanceTimersByTime(30_000);
+      // bb's query cache keeps timers of its own.
+      const cacheTimers = jest.getTimerCount();
 
       // Another window parked this thread at t+5s for a t+20s wake. The
-      // publish arrives at t+30s: past the wake in wall-clock terms, yet
+      // refresh arrives at t+30s: past the wake in wall-clock terms, yet
       // still ahead of the rendered clock.
       rows = [{ threadId: "t", snoozedUntil: mountedAt + 20_000, snoozedAt: mountedAt + 5_000 }];
-      await slot.behavior.emitRealtime("lifecycle", { kind: "lifecycle" });
-      await act(async () => {
-        jest.advanceTimersByTime(50);
-      });
+      await slot.behavior.experimental_invalidateRpc(["lifecycle"]);
+      await flush();
       assert.equal(slot.container.textContent, "active");
-      assert.equal(jest.getTimerCount(), 0);
+      assert.equal(jest.getTimerCount(), cacheTimers);
     });
 
     it("still arms a timer for a wake that is ahead of the wall clock", async () => {
       const mountedAt = Date.now();
       let rows: LifecycleRow[] = [];
       const slot = mount(() => rows);
-      await act(async () => {});
+      await flush();
 
       rows = [{ threadId: "t", snoozedUntil: mountedAt + 10_000, snoozedAt: mountedAt }];
-      await slot.behavior.emitRealtime("lifecycle", { kind: "lifecycle" });
-      await act(async () => {
-        jest.advanceTimersByTime(50);
-      });
+      await slot.behavior.experimental_invalidateRpc(["lifecycle"]);
+      await flush();
       assert.equal(slot.container.textContent, "snoozed");
 
       await act(async () => {
@@ -739,7 +838,7 @@ if (process.env.GTD_LIFECYCLE_TEST_CHILD !== "1") {
     it("confirms a snooze with its wake time and undoes it from the toast", async () => {
       const until = snoozeUntilTomorrow(new Date());
       const slot = mountSnooze(until);
-      await act(async () => {});
+      await flush();
       fireEvent.click(slot.getByRole("button", { name: "Snooze" }));
       await settle();
       // A second press replaces the toast rather than stacking another.

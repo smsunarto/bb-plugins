@@ -1,5 +1,4 @@
-// No zod here: the sidebar bundle imports this module. The server's schema in
-// machine-visibility-store.ts is checked against these types.
+// The contract's schema in rpc-contract.ts is checked against these types.
 export type MachineVisibilityChange =
   | { kind: "all" }
   | { kind: "set"; machineId: string; visible: boolean; machineIds: string[] }

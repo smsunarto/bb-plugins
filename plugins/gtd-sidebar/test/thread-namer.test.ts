@@ -185,16 +185,11 @@ describe("thread naming progress", () => {
       const finished = await operation;
       assert.equal(finished.ok, outcome !== "failure");
       assert.deepEqual(namer.listNamingThreads(), []);
-      assert.deepEqual(
-        host.harness.inspection.realtimeSignals.map(({ channel, payload }) => ({
-          channel,
-          payload,
-        })),
-        [
-          { channel: "lifecycle", payload: { kind: "naming", threadId: THREAD_ID } },
-          { channel: "lifecycle", payload: { kind: "naming", threadId: THREAD_ID } },
-        ],
-      );
+      // Once when naming starts, once when it ends.
+      assert.deepEqual(host.harness.inspection.experimental_rpcInvalidations, [
+        ["naming"],
+        ["naming"],
+      ]);
       await host.harness.lifecycle.dispose();
     });
   }

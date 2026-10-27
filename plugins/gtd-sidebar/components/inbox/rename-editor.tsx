@@ -1,14 +1,8 @@
 // Ported from get-bb/bb `plugins/thread-list/app/rows/SidebarRenameEditor.tsx`
 // at desktop-v0.44.0 (MIT), without the clear button bb draws for names that
 // can fall back to a default. A thread title cannot.
-import {
-  useEffect,
-  useId,
-  useRef,
-  useSyncExternalStore,
-  type RefObject,
-  type SyntheticEvent,
-} from "react";
+import { useEffect, useId, useRef, type RefObject, type SyntheticEvent } from "react";
+import { useStore } from "zustand";
 import { cn } from "../../lib/utils";
 import type { RenameStore } from "./inline-rename";
 
@@ -48,7 +42,7 @@ export function RenameEditor({
   store: RenameStore;
   inputRef: RefObject<HTMLInputElement | null>;
 }) {
-  const session = useSyncExternalStore(store.subscribe, store.get);
+  const session = useStore(store, (state) => state.session);
   const isPending = Boolean(session?.pending);
   const groupRef = useRef<HTMLSpanElement>(null);
   const anchorRef = useRef<HTMLElement | null>(null);
@@ -65,7 +59,7 @@ export function RenameEditor({
       input?.focus({ preventScroll: true });
       // A fresh editor offers the whole name; one remounted mid-edit (the row
       // moved shelves) keeps the draft and puts the caret after it.
-      const current = store.get();
+      const current = store.getState().session;
       if (current === null || current.draft === current.name) input?.select();
       else input?.setSelectionRange(current.draft.length, current.draft.length);
       openingRef.current = false;
@@ -90,13 +84,13 @@ export function RenameEditor({
     restoreFocusRef.current = restore;
     const input = inputRef.current;
     input?.setSelectionRange(input.value.length, input.value.length);
-    const saved = await store.save();
+    const saved = await store.getState().save();
     if (saved && restoreFocusRef.current) restoreFocus();
   };
 
   const cancel = (restore: boolean) => {
     if (isPending) return;
-    store.cancel();
+    store.getState().cancel();
     if (restore) restoreFocus();
   };
 
@@ -168,7 +162,7 @@ export function RenameEditor({
         spellCheck={false}
         value={session.draft}
         readOnly={isPending || session.cannotRetry}
-        onChange={(event) => store.change(event.target.value)}
+        onChange={(event) => store.getState().change(event.target.value)}
         onCompositionStart={() => {
           composingRef.current = true;
         }}

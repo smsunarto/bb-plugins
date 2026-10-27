@@ -1,11 +1,21 @@
-import { useCallback, useMemo, useRef, useState } from "react";
-import { useRpc } from "@get-bb/plugin-sdk/app";
-import type { gtdSidebarRpcContract } from "../server";
+import { useMemo, useRef, useState } from "react";
+import {
+  experimental_useRpcMutation as useRpcMutation,
+  experimental_useRpcQuery as useRpcQuery,
+} from "@get-bb/plugin-sdk/app";
+import { gtdSidebarRpcContract } from "../lib/rpc-contract";
 import { useCommittedEvent } from "./use-committed-event";
-import { useLifecycleChannelList } from "./use-lifecycle-channel-list";
+import { useRetained } from "./use-retained";
 
-const COLLAPSED_REFRESHES = ["collapsed"] as const;
 const NO_FAMILIES: readonly string[] = [];
+
+/** A fold this window asked for that its fold read may not show. */
+interface FoldIntent {
+  collapsed: boolean;
+  /** Unanswered: it holds over every read. */
+  pending: boolean;
+}
+const NO_INTENTS: ReadonlyMap<string, FoldIntent> = new Map();
 
 export interface CollapsedThreadsApi {
   /** Thread ids whose children are folded away. */
@@ -13,108 +23,107 @@ export interface CollapsedThreadsApi {
   toggleThread(threadId: string): void;
 }
 
-/** Two fold lists are the same when they hold exactly the same ids. */
-export function collapsedThreadsMatch(
-  current: ReadonlySet<string>,
-  threadIds: readonly string[],
-): boolean {
-  return current.size === threadIds.length && threadIds.every((id) => current.has(id));
-}
-
 /**
  * thread-list's `collapsedThreads` preference as the inbox's fold state — the
  * same list the built-in sidebar folds by, so a family folded there is folded
  * here, and the fold survives a reload.
  *
- * A toggle applies locally first so the row folds on the click, then writes
- * the fold it wants through the backend. The backend reconciles thread-list's
- * preference and publishes changes on `lifecycle` for every window.
+ * The read is bb's cached `listCollapsedThreads`, keyed by the roster's
+ * families: the backend folds families it has not seen before answering. A
+ * new family set is a new read, so the last answer stays on screen while it
+ * loads, and the new families stay folded until it lands.
  *
- * A read that overlaps a fold may predate it, so it is dropped, and only the
- * newest fold's answer lands: an older one would refold a family the user has
- * since opened. The backend publishes each change once, so whatever a dropped
- * read carried comes from one more read once the last fold settles.
+ * A toggle folds on the click and holds here, not as a bb prediction: bb
+ * predicts only on the read keyed by the families at the click, and the
+ * roster can move to another family set's cached read before a read taken
+ * after the write lands. While its write is out the fold holds over every
+ * read. Once answered, saved or not (host unreachable, thread-list off), it
+ * holds until the read shows it or a read of the same families lands; that
+ * read also carries any newer fold another window made.
  */
 export function useCollapsedThreads(
   familyIds: readonly string[] = NO_FAMILIES,
 ): CollapsedThreadsApi {
   // Thread status updates replace the roster without changing its families.
-  // Keep the read stable so those updates cannot cancel an in-flight preference.
+  // Key the read on the sorted ids so those updates reuse it.
   const familyKey = [...new Set(familyIds)].sort().join("\u0000");
-  const families = useMemo(
-    () => (familyKey ? familyKey.split("\u0000") : NO_FAMILIES),
+  const input = useMemo(
+    () => ({ familyIds: familyKey ? familyKey.split("\u0000") : [...NO_FAMILIES] }),
     [familyKey],
   );
-  const rpc = useRpc<typeof gtdSidebarRpcContract>();
-  const [savedFolds, setCollapsedThreads] = useState<ReadonlySet<string>>(() => new Set());
-  const [initialized, setInitialized] = useState<ReadonlySet<string>>(() => new Set());
-  // New families stay folded while their persisted preference is loading.
-  const collapsedThreads = useMemo(
-    () => new Set([...savedFolds, ...families.filter((id) => !initialized.has(id))]),
-    [savedFolds, families, initialized],
+  const { data, error, isFetching } = useRpcQuery({
+    contract: gtdSidebarRpcContract,
+    method: "listCollapsedThreads",
+    input,
+  });
+  const answer = useMemo(
+    () =>
+      data === undefined ? undefined : { familyIds: input.familyIds, threadIds: data.threadIds },
+    [data, input],
   );
-  const writes = useRef({ sent: 0, settled: 0, reads: 0, dropped: false });
-  const applyList = useCallback((threadIds: readonly string[]) => {
-    setCollapsedThreads((current) =>
-      collapsedThreadsMatch(current, threadIds) ? current : new Set(threadIds),
+  const shown = useRetained(answer);
+
+  const [intents, setIntents] = useState(NO_INTENTS);
+  // A read of the same families landed when its data changed (nothing
+  // predicts on it), or, since an unchanged answer keeps the old data, when a
+  // fetch finished cleanly or a success cleared a failed refresh. The error is
+  // a new object each render, so only whether there is one is compared.
+  const failed = error !== null;
+  const [checked, setChecked] = useState({ input, data, failed, isFetching });
+  if (
+    input !== checked.input ||
+    data !== checked.data ||
+    failed !== checked.failed ||
+    isFetching !== checked.isFetching
+  ) {
+    setChecked({ input, data, failed, isFetching });
+    const landed =
+      input === checked.input &&
+      data !== undefined &&
+      !failed &&
+      (data !== checked.data || (checked.isFetching && !isFetching) || checked.failed);
+    const held = new Map(
+      [...intents].filter(
+        ([id, intent]) =>
+          intent.pending ||
+          (!landed && (data === undefined || data.threadIds.includes(id) !== intent.collapsed)),
+      ),
     );
-  }, []);
-  const markInitialized = useCallback((ids: readonly string[]) => {
-    setInitialized((current) =>
-      ids.every((id) => current.has(id)) ? current : new Set([...current, ...ids]),
-    );
-  }, []);
-  const { refresh } = useLifecycleChannelList(
-    useCallback(async () => {
-      const state = writes.current;
-      const sent = state.sent === state.settled ? state.sent : -1;
-      state.reads += 1;
-      try {
-        return { ...(await rpc.call("listCollapsedThreads", { familyIds: [...families] })), sent };
-      } finally {
-        state.reads -= 1;
-      }
-    }, [rpc, families]),
-    useCallback(
-      (result) => {
-        if (result.sent === writes.current.sent) {
-          applyList(result.threadIds);
-          markInitialized(families);
-        } else writes.current.dropped = true;
-      },
-      [applyList, markInitialized, families],
-    ),
-    COLLAPSED_REFRESHES,
-  );
+    if (held.size !== intents.size) setIntents(held);
+  }
+
+  const collapsedThreads = useMemo(() => {
+    const folded = new Set(shown?.threadIds);
+    const answered = new Set(shown?.familyIds);
+    for (const id of input.familyIds) if (!answered.has(id)) folded.add(id);
+    for (const [id, intent] of intents) {
+      if (intent.collapsed) folded.add(id);
+      else folded.delete(id);
+    }
+    return folded;
+  }, [shown, input, intents]);
+
+  const { mutate } = useRpcMutation({
+    contract: gtdSidebarRpcContract,
+    method: "setThreadCollapsed",
+  });
+  // Each family's newest toggle; an older write's answer leaves it alone.
+  const lastWrite = useRef(0);
+  const newest = useRef(new Map<string, number>());
   const toggleThread = useCommittedEvent((threadId: string) => {
     const collapsed = !collapsedThreads.has(threadId);
-    markInitialized([threadId]);
-    const write = ++writes.current.sent;
-    setCollapsedThreads((current) => {
-      const next = new Set(current);
-      if (collapsed) next.add(threadId);
-      else next.delete(threadId);
-      return next;
-    });
-    void (async () => {
-      try {
-        const result = await rpc.call("setThreadCollapsed", { threadId, collapsed });
-        if (write === writes.current.sent) applyList(result.threadIds);
-      } catch {
-        // The fold already happened on screen; a write that fails (host
-        // unreachable, thread-list off) is not saved, and stays only until a
-        // read replaces it.
-      } finally {
-        const state = writes.current;
-        state.settled += 1;
-        // A read still in flight began before this answer and will be dropped;
-        // the new read supersedes it.
-        if (state.settled === state.sent && (state.dropped || state.reads > 0)) {
-          state.dropped = false;
-          refresh();
-        }
-      }
-    })();
+    const write = ++lastWrite.current;
+    newest.current.set(threadId, write);
+    const answered = () => {
+      setIntents((current) =>
+        newest.current.get(threadId) === write
+          ? new Map(current).set(threadId, { collapsed, pending: false })
+          : current,
+      );
+      return undefined;
+    };
+    setIntents((current) => new Map(current).set(threadId, { collapsed, pending: true }));
+    mutate({ threadId, collapsed }).then(answered, answered);
   });
   return { collapsedThreads, toggleThread };
 }

@@ -102,8 +102,8 @@ describe("shared folds", () => {
     try {
       await flush();
       const collapsedSignals = () =>
-        harness.inspection.realtimeSignals.filter(
-          ({ payload }) => (payload as { kind?: string }).kind === "collapsed",
+        harness.inspection.experimental_rpcInvalidations.filter((tags) =>
+          tags?.includes("collapsed"),
         ).length;
       assert.equal(collapsedSignals(), 0);
 
@@ -126,7 +126,7 @@ describe("shared folds", () => {
       );
       assert.deepEqual(writes, [{ key: "collapsedThreads", value: ["theirs", "mine"] }]);
 
-      // The window's own write already published; the next pass stays quiet.
+      // The window's own write already invalidated; the next pass stays quiet.
       const afterWrites = collapsedSignals();
       mock.timers.tick(2000);
       await flush();

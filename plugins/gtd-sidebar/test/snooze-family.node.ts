@@ -44,6 +44,46 @@ describe("family snooze RPC", () => {
       });
       assert.deepEqual(await harness.behavior.callRpc("listLifecycle", {}), { rows: [] });
       assert.equal(harness.inspection.sdk.callsTo("threads.update").length, 0);
+      // Each write refreshes every window's lifecycle read.
+      assert.deepEqual(harness.inspection.experimental_rpcInvalidations, [
+        ["lifecycle"],
+        ["lifecycle"],
+      ]);
+    } finally {
+      await harness.lifecycle.dispose();
+    }
+  });
+
+  // The sidebar sends an Undo without waiting for its snooze. The snooze's
+  // family read can be the slower one, and the wake must still land last.
+  it("applies a snooze and its Undo in the order they arrive", async () => {
+    let releaseSnoozeRead!: () => void;
+    const snoozeRead = new Promise<void>((resolve) => {
+      releaseSnoozeRead = resolve;
+    });
+    let reads = 0;
+    const { bb, harness } = createFakePluginHost({
+      pluginId: "gtd-sidebar",
+      sdk: {
+        subscribe: () => () => {},
+        threads: {
+          list: async () => {
+            if (++reads === 1) await snoozeRead;
+            return [];
+          },
+        },
+      },
+    });
+    await plugin(bb);
+    try {
+      const snooze = harness.behavior.callRpc("snooze", {
+        threadId: "root",
+        snoozedUntil: Date.now() + 86_400_000,
+      });
+      const wake = harness.behavior.callRpc("unsnooze", { threadId: "root" });
+      releaseSnoozeRead();
+      await Promise.all([snooze, wake]);
+      assert.deepEqual(await harness.behavior.callRpc("listLifecycle", {}), { rows: [] });
     } finally {
       await harness.lifecycle.dispose();
     }

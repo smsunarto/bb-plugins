@@ -5,22 +5,18 @@ import plugin from "../server.ts";
 
 const machineIds = ["studio", "server", "laptop"];
 
-test("machine commands merge across windows, guard the last machine, persist, and publish once", async () => {
+test("machine commands merge across windows, guard the last machine, persist, and invalidate each window", async () => {
   let { bb, harness } = createFakePluginHost({
     pluginId: "gtd-sidebar",
     sdk: { subscribe: () => () => {} },
   });
   await plugin(bb);
   try {
+    // Every accepted command refreshes every window's read, so a window's
+    // prediction always meets a confirmed read.
     const signals = () =>
-      harness.inspection.realtimeSignals.filter(
-        (signal) =>
-          signal.channel === "lifecycle" &&
-          typeof signal.payload === "object" &&
-          signal.payload !== null &&
-          "kind" in signal.payload &&
-          signal.payload.kind === "machines",
-      ).length;
+      harness.inspection.experimental_rpcInvalidations.filter((tags) => tags?.includes("machines"))
+        .length;
     assert.deepEqual(await harness.behavior.callRpc("listMachineVisibility", {}), {
       hiddenMachineIds: [],
     });
@@ -46,7 +42,8 @@ test("machine commands merge across windows, guard the last machine, persist, an
         machineIds,
       });
     }
-    assert.equal(signals(), 2);
+    // Neither changes anything, yet each still refreshes the windows.
+    assert.equal(signals(), 4);
     ({ bb, harness } = await harness.lifecycle.reload(plugin));
     assert.deepEqual(await harness.behavior.callRpc("listMachineVisibility", {}), {
       hiddenMachineIds: ["server", "studio"],
@@ -64,7 +61,7 @@ test("machine commands merge across windows, guard the last machine, persist, an
     });
     const before = signals();
     await harness.behavior.callRpc("changeMachineVisibility", { kind: "all" });
-    assert.equal(signals(), before);
+    assert.equal(signals(), before + 1);
   } finally {
     await harness.lifecycle.dispose();
   }
@@ -74,19 +71,16 @@ test("a failed machine save does not poison subsequent changes", async () => {
   const { createMachineVisibilityStore } = await import("../lib/machine-visibility-store.ts");
   const { bb, harness } = createFakePluginHost({ pluginId: "gtd-sidebar" });
   let fail = true;
-  const store = createMachineVisibilityStore(
-    {
-      ...bb.storage.kv,
-      set: async (key, value) => {
-        if (fail) {
-          fail = false;
-          throw new Error("disk unavailable");
-        }
-        await bb.storage.kv.set(key, value);
-      },
+  const store = createMachineVisibilityStore({
+    ...bb.storage.kv,
+    set: async (key, value) => {
+      if (fail) {
+        fail = false;
+        throw new Error("disk unavailable");
+      }
+      await bb.storage.kv.set(key, value);
     },
-    () => {},
-  );
+  });
   const command = { kind: "set", machineId: "studio", visible: false, machineIds } as const;
   try {
     await assert.rejects(

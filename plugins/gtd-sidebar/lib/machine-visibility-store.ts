@@ -2,24 +2,11 @@ import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import { z } from "zod";
 import { changeHiddenMachines, type MachineVisibilityChange } from "./machine-visibility.ts";
 
-const machineId = z.string().min(1);
-export const machineVisibilityChangeSchema = z.discriminatedUnion("kind", [
-  z.object({ kind: z.literal("all") }),
-  z.object({
-    kind: z.literal("set"),
-    machineId,
-    visible: z.boolean(),
-    machineIds: z.array(machineId).min(1),
-  }),
-  z.object({ kind: z.literal("only"), machineId, machineIds: z.array(machineId).min(1) }),
-]) satisfies z.ZodType<MachineVisibilityChange>;
-const hiddenIdsSchema = z.array(machineId);
+const hiddenIdsSchema = z.array(z.string().min(1));
 const STORAGE_KEY = "hiddenMachineIds";
 
-export function createMachineVisibilityStore(
-  kv: BbPluginApi["storage"]["kv"],
-  onChange: () => void,
-) {
+/** Changes run one at a time; the RPC contract invalidates every window's read. */
+export function createMachineVisibilityStore(kv: BbPluginApi["storage"]["kv"]) {
   // A value an older build or a hand edit left behind hides nothing.
   const read = async () => {
     const saved = hiddenIdsSchema.safeParse(await kv.get(STORAGE_KEY));
@@ -34,7 +21,6 @@ export function createMachineVisibilityStore(
         const next = changeHiddenMachines(current, change);
         if (current.length !== next.length || current.some((id) => !next.includes(id))) {
           await kv.set(STORAGE_KEY, next);
-          onChange();
         }
         return next;
       });

@@ -1,23 +1,15 @@
-import { useCallback, useState } from "react";
-import { useRpc } from "@get-bb/plugin-sdk/app";
-import type { gtdSidebarRpcContract } from "../server";
-import { useLifecycleChannelList } from "./use-lifecycle-channel-list";
+import { useMemo } from "react";
+import { experimental_useRpcQuery as useRpcQuery } from "@get-bb/plugin-sdk/app";
+import { gtdSidebarRpcContract } from "../lib/rpc-contract";
 
-const NAMING_REFRESHES = ["naming"] as const;
+const NAMING_READ = {};
 
+/** Threads whose title the backend is generating, refreshed as naming starts and ends. */
 export function useNamingThreads(): ReadonlySet<string> {
-  const rpc = useRpc<typeof gtdSidebarRpcContract>();
-  const [naming, setNaming] = useState<ReadonlySet<string>>(() => new Set());
-  useLifecycleChannelList(
-    useCallback(() => rpc.call("listNamingThreads", {}), [rpc]),
-    useCallback((threadIds: string[]) => {
-      setNaming((current) =>
-        current.size === threadIds.length && threadIds.every((id) => current.has(id))
-          ? current
-          : new Set(threadIds),
-      );
-    }, []),
-    NAMING_REFRESHES,
-  );
-  return naming;
+  const { data } = useRpcQuery({
+    contract: gtdSidebarRpcContract,
+    method: "listNamingThreads",
+    input: NAMING_READ,
+  });
+  return useMemo(() => new Set(data), [data]);
 }

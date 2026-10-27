@@ -1,8 +1,9 @@
 // Ported from get-bb/bb `plugins/thread-list/app/rows/SidebarInlineRename.tsx`
 // at desktop-v0.44.0 (MIT). Trimmed to threads: GTD renames nothing else in
 // place, so the kinds, clear, and length limit bb uses for sections and
-// machines are gone. The session lives in a store rather than React state, so
-// a keystroke redraws the editor alone, not every memoized row in the list.
+// machines are gone. The session lives in a Zustand store rather than React
+// state, so a keystroke redraws the editor alone, not every memoized row in
+// the list: each row selects only whether it is the one being renamed.
 // The session is keyed by thread, not by the row that opened it: GTD moves a
 // row between shelves while the list is live, and the remounted row picks
 // the open editor and its draft back up instead of orphaning them.
@@ -13,10 +14,11 @@ import {
   useContext,
   useRef,
   useState,
-  useSyncExternalStore,
   type MouseEvent,
   type ReactNode,
 } from "react";
+import { useStore } from "zustand";
+import { createStore, type StoreApi } from "zustand/vanilla";
 import { useIsCompactViewport } from "../ui/hooks/use-compact-viewport";
 import { RenameEditor, renameError } from "./rename-editor";
 
@@ -31,77 +33,79 @@ export interface RenameSession {
 
 type RenameThread = (threadId: string, title: string) => Promise<unknown>;
 
-function createRenameStore(rename: { current: RenameThread }) {
-  let session: RenameSession | null = null;
-  let startRequest = 0;
-  const listeners = new Set<() => void>();
-  const update = (next: RenameSession | null) => {
-    session = next;
-    for (const listener of listeners) listener();
-  };
-
-  const save = (): Promise<boolean> => {
-    const current = session;
-    if (!current) return Promise.resolve(false);
-    if (current.pending) return current.pending;
-    if (current.cannotRetry) return Promise.resolve(false);
-    const value = current.draft.trim();
-    if (!value) {
-      update({ ...current, error: "Name cannot be empty." });
-      return Promise.resolve(false);
-    }
-    if (value === current.name.trim()) {
-      update(null);
-      return Promise.resolve(true);
-    }
-    const pending = Promise.resolve()
-      .then(() => rename.current(current.threadId, value))
-      .then(
-        () => {
-          update(null);
-          return true;
-        },
-        (error: unknown) => {
-          // The draft survives a failed save, so a retry sends the same name.
-          update({ ...current, pending: null, ...renameError(error) });
-          return false;
-        },
-      );
-    update({ ...current, pending, error: null });
-    return pending;
-  };
-
-  return {
-    get: () => session,
-    subscribe(listener: () => void) {
-      listeners.add(listener);
-      return () => listeners.delete(listener);
-    },
-    save,
-    async start(args: Pick<RenameSession, "threadId" | "name">) {
-      const request = ++startRequest;
-      const current = session;
-      if (current?.threadId === args.threadId) return;
-      // One editor at a time: the open one saves before another row opens,
-      // and an invalid draft keeps it open.
-      if (current && !(await save())) return;
-      if (request !== startRequest) return;
-      update({ ...args, draft: args.name, pending: null, error: null, cannotRetry: false });
-    },
-    cancel() {
-      if (session?.pending) return;
-      ++startRequest;
-      update(null);
-    },
-    change(draft: string) {
-      if (session && !session.pending) {
-        update({ ...session, draft, error: null, cannotRetry: false });
-      }
-    },
-  };
+export interface RenameState {
+  session: RenameSession | null;
+  save(): Promise<boolean>;
+  start(args: Pick<RenameSession, "threadId" | "name">): Promise<void>;
+  cancel(): void;
+  change(draft: string): void;
 }
 
-export type RenameStore = ReturnType<typeof createRenameStore>;
+function createRenameStore(rename: { current: RenameThread }) {
+  let startRequest = 0;
+  return createStore<RenameState>()((set, get) => {
+    const update = (session: RenameSession | null) => set({ session });
+
+    const save = (): Promise<boolean> => {
+      const current = get().session;
+      if (!current) return Promise.resolve(false);
+      if (current.pending) return current.pending;
+      if (current.cannotRetry) return Promise.resolve(false);
+      const value = current.draft.trim();
+      if (!value) {
+        update({ ...current, error: "Name cannot be empty." });
+        return Promise.resolve(false);
+      }
+      if (value === current.name.trim()) {
+        update(null);
+        return Promise.resolve(true);
+      }
+      const pending = Promise.resolve()
+        .then(() => rename.current(current.threadId, value))
+        .then(
+          () => {
+            update(null);
+            return true;
+          },
+          (error: unknown) => {
+            // The draft survives a failed save, so a retry sends the same name.
+            update({ ...current, pending: null, ...renameError(error) });
+            return false;
+          },
+        );
+      update({ ...current, pending, error: null });
+      return pending;
+    };
+
+    return {
+      session: null,
+      save,
+      async start(args) {
+        const request = ++startRequest;
+        const current = get().session;
+        if (current?.threadId === args.threadId) return;
+        // One editor at a time: the open one saves before another row opens,
+        // and an invalid draft keeps it open.
+        if (current && !(await save())) return;
+        if (request !== startRequest) return;
+        update({ ...args, draft: args.name, pending: null, error: null, cannotRetry: false });
+      },
+      cancel() {
+        if (get().session?.pending) return;
+        ++startRequest;
+        update(null);
+      },
+      change(draft) {
+        const session = get().session;
+        if (session && !session.pending) {
+          update({ ...session, draft, error: null, cannotRetry: false });
+        }
+      },
+    };
+  });
+}
+
+export type RenameStore = StoreApi<RenameState>;
 const RenameContext = createContext<RenameStore | null>(null);
 
 /**
@@ -136,9 +140,9 @@ export function useThreadRename(threadId: string, name: string) {
   const compact = useIsCompactViewport();
   const inputRef = useRef<HTMLInputElement>(null);
   const pendingMenuRename = useRef<(() => void) | null>(null);
-  const isEditing = useSyncExternalStore(store.subscribe, () => store.get()?.threadId === threadId);
+  const isEditing = useStore(store, (state) => state.session?.threadId === threadId);
   const startEditing = useCallback(() => {
-    void store.start({ threadId, name });
+    void store.getState().start({ threadId, name });
   }, [name, store, threadId]);
 
   return {

@@ -1,7 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { createCollapsedThreadsStore, withThreadCollapsed } from "../lib/collapsed-threads.ts";
-import { collapsedThreadsMatch } from "../hooks/use-collapsed-threads.ts";
 
 interface CallArgs {
   pluginId: string;
@@ -79,8 +78,6 @@ it("sets membership without disturbing other folds", () => {
   assert.deepEqual(withThreadCollapsed(["a", "b", "c"], "b", false), ["a", "c"]);
   assert.deepEqual(withThreadCollapsed(["a", "b"], "b", true), ["a", "b"]);
   assert.deepEqual(withThreadCollapsed(["a"], "b", false), ["a"]);
-  assert.equal(collapsedThreadsMatch(new Set(["a", "b"]), ["b", "a"]), true);
-  assert.equal(collapsedThreadsMatch(new Set(["a"]), ["b"]), false);
 });
 
 describe("thread-list shared folds", () => {

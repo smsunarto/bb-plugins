@@ -4,27 +4,18 @@
 // Putting them on the thread would mean a schema change, a wire change, and a
 // HOST_DAEMON_PROTOCOL_VERSION bump for something only this sidebar
 // understands. Here, uninstalling the plugin removes this database with it.
-import {
-  cliCommand,
-  defineCli,
-  defineRpcContract,
-  PluginCliError,
-  type BbPluginApi,
-} from "@get-bb/plugin-sdk";
-import { z } from "zod";
+import { cliCommand, defineCli, PluginCliError, type BbPluginApi } from "@get-bb/plugin-sdk";
 // Relative, not the `@/` alias the frontend uses: bb loads this file directly
 // as a path source, so nothing rewrites tsconfig paths for it.
 import { gtdSidebarHostContract } from "./lib/host-contract.ts";
-import {
-  createMachineVisibilityStore,
-  machineVisibilityChangeSchema,
-} from "./lib/machine-visibility-store.ts";
+import { createMachineVisibilityStore } from "./lib/machine-visibility-store.ts";
 import { createCollapsedThreadsStore } from "./lib/collapsed-threads.ts";
 import { createThreadNester } from "./lib/nest-thread.ts";
 import { threadFamilyIds } from "./lib/thread-family.ts";
 import { createThreadNamer, subscribeToThreadNaming } from "./thread-namer.ts";
 import { createThreadTitleInference } from "./thread-title-inference.ts";
 import { RETIRED_PROJECT_MIGRATIONS } from "./lib/retired-project-migrations.ts";
+import { GTD_TAGS, gtdSidebarRpcContract } from "./lib/rpc-contract.ts";
 
 // Append-only: bb applies these by position, so the retired `settled_at` and
 // `archived_thread_ids` columns stay declared and simply go unread.
@@ -51,108 +42,12 @@ interface LifecycleDbRow {
   snoozed_at: number | null;
 }
 
-const threadIdSchema = z.object({ threadId: z.string().trim().min(1) });
-const lifecycleRowsSchema = z.array(
-  z.object({
-    threadId: z.string(),
-    snoozedUntil: z.number().nullable(),
-    snoozedAt: z.number().nullable(),
-  }),
-);
-const lifecycleWriteSchema = z.object({ ok: z.boolean(), rows: lifecycleRowsSchema });
 /** The host's 5 s limit on `but status`, plus the trip to and from the machine. */
 const BRANCH_SUMMARY_TIMEOUT_MS = 8_000;
 /** How often the backend checks thread-list for folds made in bb's sidebar. */
 const FOLD_CHECK_MS = 2_000;
 /** The slowest check while thread-list keeps failing. */
 const FOLD_CHECK_MAX_MS = 30_000;
-
-export const gtdSidebarRpcContract = defineRpcContract({
-  // Saving the hidden machines rather than the shown ones lets a machine bb
-  // adds later show. Changes are relayed on `LIFECYCLE_CHANNEL`.
-  listMachineVisibility: {
-    experimental_description: "Machines hidden from the thread list, as host IDs.",
-    input: z.object({}),
-    output: z.object({ hiddenMachineIds: z.array(z.string()) }),
-  },
-  changeMachineVisibility: {
-    experimental_description:
-      "Show or hide one machine's threads, show only one machine, or show every machine.",
-    input: machineVisibilityChangeSchema,
-    output: z.object({ hiddenMachineIds: z.array(z.string()) }),
-  },
-  listNamingThreads: {
-    experimental_description: "Threads whose title the plugin is currently generating.",
-    input: z.object({}),
-    output: z.array(z.string()),
-  },
-  listEnvironmentBranches: {
-    experimental_description:
-      "GitButler branch labels for plain (non-worktree) checkouts, when the setting is on.",
-    input: z.object({ environmentIds: z.array(z.string().trim().min(1)).max(100) }),
-    output: z.object({
-      environments: z.array(
-        z.object({
-          environmentId: z.string(),
-          label: z.string(),
-        }),
-      ),
-    }),
-  },
-  listLifecycle: {
-    experimental_description: "Every snoozed thread with its wake time.",
-    input: z.object({}),
-    output: z.object({ rows: lifecycleRowsSchema }),
-  },
-  /**
-   * The built-in thread-list plugin's persisted family folds, shared by both
-   * sidebars. Changes are relayed on `LIFECYCLE_CHANNEL`.
-   */
-  listCollapsedThreads: {
-    experimental_description:
-      "Initialize unseen families as collapsed, then list folds shared with bb's own sidebar.",
-    input: z.object({ familyIds: z.array(z.string().trim().min(1)).default([]) }),
-    output: z.object({ threadIds: z.array(z.string()) }),
-  },
-  setThreadCollapsed: {
-    experimental_description: "Fold or unfold one thread family.",
-    input: z.object({ threadId: z.string().trim().min(1), collapsed: z.boolean() }),
-    output: z.object({ threadIds: z.array(z.string()) }),
-  },
-  // Both writes answer with every row after the write, so the window that
-  // made it confirms without waiting for the publish and a re-read.
-  snooze: {
-    experimental_description: "Park a thread and its family until an absolute wake time.",
-    input: z.object({
-      threadId: z.string().trim().min(1),
-      // Absolute wake time, so a snooze means the same thing on every device.
-      snoozedUntil: z.number().int().positive(),
-    }),
-    output: lifecycleWriteSchema,
-  },
-  unsnooze: {
-    experimental_description: "Wake a snoozed thread and its family now.",
-    input: threadIdSchema,
-    output: lifecycleWriteSchema,
-  },
-  /**
-   * bb's own re-parent, made by dropping one row onto another (nest) or onto
-   * a project header (`parentThreadId: null`, back to the top level). The
-   * sidebar hears the move through bb's thread feed, so nothing is published
-   * here. `reason` names the check a refused drop failed.
-   */
-  nestThread: {
-    experimental_description: "Re-parent a thread under another thread, or back to the top level.",
-    input: z.object({
-      threadId: z.string().trim().min(1),
-      parentThreadId: z.string().trim().min(1).nullable(),
-    }),
-    output: z.object({ ok: z.boolean(), reason: z.string().optional() }),
-  },
-});
-
-/** Channel the frontend re-reads on. */
-export const LIFECYCLE_CHANNEL = "lifecycle";
 
 export default async function plugin(bb: BbPluginApi) {
   const host = bb.hosts.experimental_client({ contract: gtdSidebarHostContract });
@@ -234,8 +129,18 @@ export default async function plugin(bb: BbPluginApi) {
 
   const clear = (threadId: string): void => {
     if (deleteSnooze.run(threadId).changes > 0) {
-      bb.realtime.publish(LIFECYCLE_CHANNEL, { kind: "lifecycle", threadId });
+      bb.rpc.experimental_invalidate([GTD_TAGS.lifecycle]);
     }
+  };
+
+  // Snooze and wake run one at a time in arrival order. Each reads the family
+  // before it writes, so an Undo that follows its snooze could otherwise
+  // finish first and leave the thread parked.
+  let lifecycleWrites: Promise<unknown> = Promise.resolve();
+  const serializeLifecycle = <T>(write: () => Promise<T>): Promise<T> => {
+    const result = lifecycleWrites.then(write);
+    lifecycleWrites = result.catch(() => {});
+    return result;
   };
 
   /** One page is already generous; the loop is for the account that isn't. */
@@ -264,12 +169,10 @@ export default async function plugin(bb: BbPluginApi) {
     signal: foldsLifetime.signal,
     // Whichever call saw the change, a window's fold or the check below,
     // every window re-reads.
-    onChange: () => bb.realtime.publish(LIFECYCLE_CHANNEL, { kind: "collapsed" }),
+    onChange: () => bb.rpc.experimental_invalidate([GTD_TAGS.collapsed]),
   });
   const threadNester = createThreadNester(bb.sdk.threads);
-  const machineVisibility = createMachineVisibilityStore(bb.storage.kv, () =>
-    bb.realtime.publish(LIFECYCLE_CHANNEL, { kind: "machines" }),
-  );
+  const machineVisibility = createMachineVisibilityStore(bb.storage.kv);
 
   bb.rpc.register(
     gtdSidebarRpcContract,
@@ -330,23 +233,24 @@ export default async function plugin(bb: BbPluginApi) {
       async listLifecycle() {
         return { rows: readAll() };
       },
-      async snooze({ threadId, snoozedUntil }) {
-        const ids = await familyIds(threadId);
-        const snoozedAt = Date.now();
-        db.transaction(() => {
-          for (const id of ids) writeSnooze.run(id, snoozedUntil, snoozedAt);
-        })();
-        bb.realtime.publish(LIFECYCLE_CHANNEL, { kind: "lifecycle", threadId });
-        return { ok: true, rows: readAll() };
-      },
-      async unsnooze({ threadId }) {
-        const ids = await familyIds(threadId);
-        db.transaction(() => {
-          for (const id of ids) deleteSnooze.run(id);
-        })();
-        bb.realtime.publish(LIFECYCLE_CHANNEL, { kind: "lifecycle", threadId });
-        return { ok: true, rows: readAll() };
-      },
+      // The contract's `invalidates` refreshes every window's lifecycle read.
+      snooze: ({ threadId, snoozedUntil }) =>
+        serializeLifecycle(async () => {
+          const ids = await familyIds(threadId);
+          const snoozedAt = Date.now();
+          db.transaction(() => {
+            for (const id of ids) writeSnooze.run(id, snoozedUntil, snoozedAt);
+          })();
+          return { ok: true, rows: readAll() };
+        }),
+      unsnooze: ({ threadId }) =>
+        serializeLifecycle(async () => {
+          const ids = await familyIds(threadId);
+          db.transaction(() => {
+            for (const id of ids) deleteSnooze.run(id);
+          })();
+          return { ok: true, rows: readAll() };
+        }),
       async nestThread({ threadId, parentThreadId }) {
         const result = await threadNester.nest(threadId, parentThreadId);
         if (!result.ok) {
@@ -382,7 +286,7 @@ export default async function plugin(bb: BbPluginApi) {
   // `listPreferences` declares no tags a cross-plugin query could refresh
   // on, and `collapsedThreads` is not one of bb's synced UI preferences. So
   // check on the server rather than adding WAN polling in every window; the
-  // store publishes what changed.
+  // store invalidates the fold read when something changed.
   // Checks never overlap. While thread-list cannot answer (turned off, missing,
   // or hung) they back off to 30 s, and only the outage and the recovery log.
   let foldTimer: ReturnType<typeof setTimeout> | undefined;

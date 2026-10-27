@@ -4,13 +4,11 @@ import {
   canPark,
   formatWakeTime,
   nextWakeDelayMs,
-  refreshRetryDelayMs,
+  predictLifecycleRows,
   resolveShelf,
-  rowsMatch,
   snoozeUntilTomorrow,
   snoozeWakeLabel,
   MAX_TIMEOUT_MS,
-  REFRESH_RETRY_DELAYS_MS,
   type ThreadActivitySignals,
   type ThreadLifecycleRow,
 } from "../lib/lifecycle.ts";
@@ -97,33 +95,38 @@ describe("resolveShelf", () => {
   });
 });
 
-describe("rowsMatch", () => {
-  const asMap = (rows: readonly ThreadLifecycleRow[]) =>
-    new Map(rows.map((entry) => [entry.threadId, entry]));
+describe("predictLifecycleRows", () => {
+  const stored = [
+    row({ threadId: "parent", snoozedUntil: 9_000, snoozedAt: 500 }),
+    row({ threadId: "other", snoozedUntil: 7_000, snoozedAt: 400 }),
+  ];
 
-  // A seeded list agrees with the response that follows it, and with every
-  // publish any window makes afterwards. Recognising that is what keeps a
-  // no-op refresh from re-partitioning the whole sidebar.
-  it("matches a list that says what the rows already say", () => {
-    const rows = [
-      row({ threadId: "a", snoozedUntil: 9_000, snoozedAt: 500 }),
-      row({ threadId: "b" }),
-    ];
-    assert.equal(rowsMatch(asMap(rows), [...rows].reverse()), true);
-  });
-
-  it("notices a timestamp that moved", () => {
-    assert.equal(
-      rowsMatch(asMap([row({ threadId: "a", snoozedUntil: 9_000, snoozedAt: 500 })]), [
-        row({ threadId: "a", snoozedUntil: 9_000, snoozedAt: 900 }),
-      ]),
-      false,
+  it("parks the whole family and leaves other rows alone", () => {
+    assert.deepEqual(
+      predictLifecycleRows(stored, {
+        threadIds: ["parent", "child"],
+        snooze: { snoozedUntil: 20_000, snoozedAt: 1_000 },
+      }),
+      [
+        row({ threadId: "other", snoozedUntil: 7_000, snoozedAt: 400 }),
+        row({ threadId: "parent", snoozedUntil: 20_000, snoozedAt: 1_000 }),
+        row({ threadId: "child", snoozedUntil: 20_000, snoozedAt: 1_000 }),
+      ],
     );
   });
 
-  it("notices a row that arrived or left", () => {
-    assert.equal(rowsMatch(asMap([row({ threadId: "a" })]), []), false);
-    assert.equal(rowsMatch(asMap([row({ threadId: "a" })]), [row({ threadId: "b" })]), false);
+  it("wakes the whole family", () => {
+    assert.deepEqual(predictLifecycleRows(stored, { threadIds: ["parent"], snooze: null }), [
+      row({ threadId: "other", snoozedUntil: 7_000, snoozedAt: 400 }),
+    ]);
+  });
+
+  // bb replays a prediction over every newer read, so it must not touch the
+  // rows it was given.
+  it("leaves its input untouched", () => {
+    const before = structuredClone(stored);
+    predictLifecycleRows(stored, { threadIds: ["parent"], snooze: null });
+    assert.deepEqual(stored, before);
   });
 });
 
@@ -184,25 +187,5 @@ describe("nextWakeDelayMs", () => {
   // immediately, turning one snooze into a tight re-arm loop.
   it("clamps a far-future wake to the maximum timeout", () => {
     assert.equal(nextWakeDelayMs([Number.MAX_SAFE_INTEGER], 0), MAX_TIMEOUT_MS);
-  });
-});
-
-describe("refreshRetryDelayMs", () => {
-  it("grows the wait with each attempt", () => {
-    const delays = REFRESH_RETRY_DELAYS_MS.map((_, attempt) => refreshRetryDelayMs(attempt));
-    assert.deepEqual(delays, [...REFRESH_RETRY_DELAYS_MS]);
-    assert.deepEqual(
-      [...delays].sort((left, right) => (left ?? 0) - (right ?? 0)),
-      delays,
-    );
-  });
-
-  // The bound is the point. A read that keeps asking forever would spend
-  // requests hiding a backend that is properly down, which the reconnect path
-  // already handles.
-  it("stops once the attempts are spent", () => {
-    assert.equal(refreshRetryDelayMs(REFRESH_RETRY_DELAYS_MS.length), null);
-    assert.equal(refreshRetryDelayMs(REFRESH_RETRY_DELAYS_MS.length + 10), null);
-    assert.equal(refreshRetryDelayMs(-1), null);
   });
 });

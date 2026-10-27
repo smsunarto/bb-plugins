@@ -10,7 +10,7 @@ describe("deletion refresh routing", () => {
     { label: "old archive", archivedAt: 1, snoozed: false, kinds: [] },
     { label: "snoozed", archivedAt: null, snoozed: true, kinds: ["lifecycle"] },
     // The Settled shelf is the host's own archive view now; a deletion there
-    // reaches every window through bb's thread feed, not this channel.
+    // reaches every window through bb's thread feed, not this plugin's reads.
     { label: "recent archive", archivedAt: Date.now(), snoozed: false, kinds: [] },
     {
       label: "recent archive with a snooze row",
@@ -33,14 +33,11 @@ describe("deletion refresh routing", () => {
             snoozedUntil: Date.now() + SETTLED_WINDOW_MS,
           });
         }
-        const before = harness.inspection.realtimeSignals.length;
+        const before = harness.inspection.experimental_rpcInvalidations.length;
         await harness.behavior.emitThreadEvent("thread.deleted", { thread });
         assert.deepEqual(
-          harness.inspection.realtimeSignals.slice(before).map(({ channel, payload }) => ({
-            channel,
-            payload,
-          })),
-          kinds.map((kind) => ({ channel: "lifecycle", payload: { kind, threadId: "removed" } })),
+          harness.inspection.experimental_rpcInvalidations.slice(before),
+          kinds.map((kind) => [kind]),
         );
         assert.deepEqual(await harness.behavior.callRpc("listLifecycle", {}), { rows: [] });
       } finally {

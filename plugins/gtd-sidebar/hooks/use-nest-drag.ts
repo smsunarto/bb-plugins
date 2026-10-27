@@ -16,7 +16,7 @@ import {
 } from "@dnd-kit/core";
 import { hasSortableData, sortableKeyboardCoordinates } from "@dnd-kit/sortable";
 import { useRpc } from "@get-bb/plugin-sdk/app";
-import type { gtdSidebarRpcContract } from "../server";
+import type { gtdSidebarRpcContract } from "../lib/rpc-contract";
 import { useCommittedEvent } from "./use-committed-event";
 import type { InboxShelf } from "../lib/inbox-tree";
 import { projectDropEdge, type ProjectDropEdge } from "../lib/project-groups";

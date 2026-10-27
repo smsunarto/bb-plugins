@@ -75,56 +75,26 @@ export function resolveShelf(
 }
 
 /**
- * Whether a fresh list says exactly what the rows already on screen say.
- *
- * Most responses do: every realtime publish any window makes re-reads the
- * list, and most of those reads change nothing. Swapping the map in anyway
- * would re-partition and re-sort every thread, all to arrive back where the
- * screen already was.
+ * A snooze or wake this window made, as it draws before the backend's read
+ * confirms it. `snooze` null is a wake.
  */
-export function rowsMatch(
-  current: ReadonlyMap<string, ThreadLifecycleRow>,
-  next: readonly ThreadLifecycleRow[],
-): boolean {
-  if (current.size !== next.length) return false;
-  return next.every((row) => {
-    const existing = current.get(row.threadId);
-    return (
-      existing !== undefined &&
-      existing.snoozedUntil === row.snoozedUntil &&
-      existing.snoozedAt === row.snoozedAt
-    );
-  });
-}
-
-/**
- * A snooze or wake this window made that the backend has not answered yet.
- * `snooze` null is a wake.
- */
-export interface PendingLifecycleWrite {
-  id: number;
+export interface LifecyclePrediction {
   threadIds: readonly string[];
   snooze: { snoozedUntil: number; snoozedAt: number } | null;
 }
 
 /**
- * The stored rows as this window draws them: its unanswered writes on top,
- * oldest first, so the row moves on the click. Dropping a write, answered or
- * failed, is all a rollback needs.
+ * The stored rows with one prediction on top. Pure: bb replays it over every
+ * newer read until one taken after the write lands.
  */
-export function withPendingWrites(
-  rows: ReadonlyMap<string, ThreadLifecycleRow>,
-  pending: readonly PendingLifecycleWrite[],
-): ReadonlyMap<string, ThreadLifecycleRow> {
-  if (pending.length === 0) return rows;
-  const drawn = new Map(rows);
-  for (const write of pending) {
-    for (const threadId of write.threadIds) {
-      if (write.snooze === null) drawn.delete(threadId);
-      else drawn.set(threadId, { threadId, ...write.snooze });
-    }
-  }
-  return drawn;
+export function predictLifecycleRows(
+  rows: readonly ThreadLifecycleRow[],
+  { threadIds, snooze }: LifecyclePrediction,
+): ThreadLifecycleRow[] {
+  const family = new Set(threadIds);
+  const others = rows.filter((row) => !family.has(row.threadId));
+  if (snooze === null) return others;
+  return [...others, ...threadIds.map((threadId) => ({ threadId, ...snooze }))];
 }
 
 const MINUTE_MS = 60_000;
@@ -187,25 +157,4 @@ export function nextWakeDelayMs(snoozedUntilValues: readonly number[], now: numb
   if (upcoming.length === 0) return null;
   const soonest = Math.min(...upcoming);
   return Math.min(Math.max(0, soonest - now) + 50, MAX_TIMEOUT_MS);
-}
-
-/**
- * How long to wait before re-reading a list whose read rejected, by attempt
- * number, and null once the attempts are spent.
- *
- * Neither list read has another way back from a rejection. A publish only
- * follows a mutation somebody makes, and the re-connect read needs the socket
- * to have actually dropped — a plugin backend that answers one request badly
- * over a channel that stays up produces neither, so without this a single blip
- * strands the mount for as long as the user leaves it open.
- *
- * Three retries inside seven seconds cover the blip. A backend that is properly
- * down is the reconnect path's problem, and a retry loop held open for it would
- * only spend requests hiding it.
- */
-export const REFRESH_RETRY_DELAYS_MS: readonly number[] = [1_000, 2_000, 4_000];
-
-export function refreshRetryDelayMs(attempt: number): number | null {
-  if (attempt < 0 || attempt >= REFRESH_RETRY_DELAYS_MS.length) return null;
-  return REFRESH_RETRY_DELAYS_MS[attempt] ?? null;
 }

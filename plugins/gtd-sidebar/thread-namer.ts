@@ -9,6 +9,7 @@ import {
   type ThreadNamingSkipReason,
 } from "./lib/thread-naming.ts";
 import type { ThreadTitleInference } from "./thread-title-inference.ts";
+import { GTD_TAGS } from "./lib/rpc-contract.ts";
 
 const EVENT_PAGE_SIZE = 100;
 const PROJECT_TITLE_INSTRUCTIONS_PATH = ".agents/GTD_NAMING.md";
@@ -54,7 +55,7 @@ export function createThreadNamer(
   const automaticRequests = new Map<string, number>();
   bb.onDispose(() => {
     naming.clear();
-    bb.realtime.publish("lifecycle", { kind: "naming" });
+    bb.rpc.experimental_invalidate([GTD_TAGS.naming]);
   });
   bb.events.on("thread.deleted", ({ thread }) => {
     automaticRequests.delete(thread.id);
@@ -80,7 +81,7 @@ export function createThreadNamer(
           );
         } finally {
           if (naming.delete(threadId)) {
-            bb.realtime.publish("lifecycle", { kind: "naming", threadId });
+            bb.rpc.experimental_invalidate([GTD_TAGS.naming]);
           }
         }
       });
@@ -154,7 +155,7 @@ async function performThreadNaming(
       automaticRequests.set(threadId, plan.writeGuard.expectedRequestSeq);
     }
     naming.add(threadId);
-    bb.realtime.publish("lifecycle", { kind: "naming", threadId });
+    bb.rpc.experimental_invalidate([GTD_TAGS.naming]);
     const output = await options.inference.complete({
       environmentId: thread.environmentId,
       prompt: plan.prompt,

@@ -4,9 +4,9 @@ import { DndContext, DragOverlay } from "@dnd-kit/core";
 import { SortableContext, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import {
   experimental_useProviders as useProviders,
+  experimental_useRpcQuery as useRpcQuery,
   experimental_useSidebarThreads as useSidebarThreads,
   useBbNavigate,
-  useRpc,
   useSdk,
   useSettings,
   type PluginSidebarThread,
@@ -20,7 +20,7 @@ import { Select, SelectContent, SelectItem, SelectValue } from "../ui/select";
 import { ThreadCard } from "./thread-card";
 import { SlimRow } from "./slim-row";
 import type { ActiveThreadShelf, RowCommand } from "./thread-actions";
-import type { gtdSidebarRpcContract } from "../../server";
+import { gtdSidebarRpcContract } from "../../lib/rpc-contract";
 import { useCollapsedThreads } from "../../hooks/use-collapsed-threads";
 import { useMachineVisibility } from "../../hooks/use-machine-visibility";
 import { useNamingThreads } from "../../hooks/use-naming-threads";
@@ -64,7 +64,8 @@ import { ProjectGroup, SortableProjectGroup } from "./project-group";
 import { isShelvedThread } from "../../lib/settled-threads";
 import { retainUnchangedThreads } from "../../lib/stable-threads";
 import { useMinuteClock } from "../../hooks/use-minute-clock";
-import { gitButlerLabelsMatch, resolveSidebarBranchLabel } from "../../lib/gitbutler";
+import { useRetained } from "../../hooks/use-retained";
+import { resolveSidebarBranchLabel } from "../../lib/gitbutler";
 import { filterHiddenMachines, sidebarMachines } from "../../lib/machines";
 import { MachineVisibilityPicker, ScopeTrigger, scopeItemClassName } from "./machine-scope-picker";
 import { MachineAppearanceProvider } from "./machine-appearance";
@@ -990,12 +991,19 @@ function useStableThreads(threads: readonly PluginSidebarThread[]): readonly Plu
   }, [threads]);
 }
 
+const NO_LABELS: ReadonlyMap<string, string> = new Map();
+
+/**
+ * GitButler's branch labels for plain checkouts, re-read on a fixed beat while
+ * the list is open: a checkout's applied branches change without bb hearing
+ * of it. A new set of checkouts keeps the last labels until its read lands,
+ * and a failed read keeps them too; bb's own label remains the fallback.
+ */
 function useGitButlerLabels(
   threads: readonly PluginSidebarThread[],
   enabled: boolean,
 ): ReadonlyMap<string, string> {
-  const rpc = useRpc<typeof gtdSidebarRpcContract>();
-  const gitButlerEnvironmentIds = useMemo(
+  const environmentKey = useMemo(
     () =>
       [
         ...new Set(
@@ -1008,49 +1016,36 @@ function useGitButlerLabels(
               : [];
           }),
         ),
-      ].sort(),
+      ]
+        .sort()
+        .join("\u0000"),
     [threads],
   );
-  const gitButlerEnvironmentKey = gitButlerEnvironmentIds.join("\u0000");
-  const [gitButlerLabels, setGitButlerLabels] = useState<ReadonlyMap<string, string>>(
-    () => new Map(),
+  const input = useMemo(
+    () => ({ environmentIds: environmentKey ? environmentKey.split("\u0000") : [] }),
+    [environmentKey],
   );
-
+  const active = enabled && input.environmentIds.length > 0;
+  const { data, refetch } = useRpcQuery({
+    contract: gtdSidebarRpcContract,
+    method: "listEnvironmentBranches",
+    input,
+    enabled: active,
+  });
+  const reread = useCommittedEvent(refetch);
   useEffect(() => {
-    if (!enabled || gitButlerEnvironmentKey.length === 0) {
-      setGitButlerLabels((current) => (current.size === 0 ? current : new Map()));
-      return;
-    }
-
-    const environmentIds = gitButlerEnvironmentKey.split("\u0000");
-    let cancelled = false;
-    const refresh = async () => {
-      try {
-        const result = await rpc.call("listEnvironmentBranches", { environmentIds });
-        if (!cancelled) {
-          const next = new Map(
-            result.environments.map((environment) => [
-              environment.environmentId,
-              environment.label,
-            ]),
-          );
-          setGitButlerLabels((current) => (gitButlerLabelsMatch(current, next) ? current : next));
-        }
-      } catch {
-        // Keep the last known virtual branch. The host may reconnect before
-        // the next bounded refresh, and bb's own label remains the fallback.
-      }
-    };
-
-    void refresh();
-    const timer = setInterval(() => void refresh(), GITBUTLER_REFRESH_MS);
-    return () => {
-      cancelled = true;
-      clearInterval(timer);
-    };
-  }, [enabled, gitButlerEnvironmentKey, rpc]);
-
-  return enabled ? gitButlerLabels : new Map();
+    if (!active) return;
+    const timer = setInterval(() => void reread(), GITBUTLER_REFRESH_MS);
+    return () => clearInterval(timer);
+  }, [active, reread]);
+  const labels = useRetained(active ? data : undefined);
+  return useMemo(
+    () =>
+      active && labels !== undefined
+        ? new Map(labels.environments.map(({ environmentId, label }) => [environmentId, label]))
+        : NO_LABELS,
+    [active, labels],
+  );
 }
 
 /** Wait for plugin shelf reads before deciding whether the list is empty. */

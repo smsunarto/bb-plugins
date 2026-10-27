@@ -1,26 +1,37 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useRpc } from "@get-bb/plugin-sdk/app";
+import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  experimental_useRpcMutation as useRpcMutation,
+  experimental_useRpcQuery as useRpcQuery,
+  type ExperimentalRpcOptimisticCache,
+} from "@get-bb/plugin-sdk/app";
 import type { PluginSidebarThread } from "@get-bb/plugin-sdk";
 import { toast } from "sonner";
-import type { gtdSidebarRpcContract } from "../server";
 import {
   canPark,
   formatWakeTime,
   isThreadWorking,
   nextWakeDelayMs,
+  predictLifecycleRows,
   resolveShelf,
-  rowsMatch,
-  withPendingWrites,
-  type PendingLifecycleWrite,
+  type LifecyclePrediction,
   type ThreadActivitySignals,
   type ThreadLifecycleRow,
   type ThreadShelf,
 } from "../lib/lifecycle";
+import { gtdSidebarRpcContract } from "../lib/rpc-contract";
 import { rosterFamilyIds } from "../lib/thread-family";
 import { useCommittedEvent } from "./use-committed-event";
-import { useLifecycleChannelList } from "./use-lifecycle-channel-list";
+import { useOrderedWrites } from "./use-ordered-writes";
+import { usePaintGate } from "./use-paint-gate";
 
-const LIFECYCLE_REFRESHES = ["lifecycle"] as const;
+const LIFECYCLE_READ = {};
+
+interface LifecycleWrite {
+  threadId: string;
+  /** null wakes the family. */
+  snoozedUntil: number | null;
+  prediction: LifecyclePrediction;
+}
 
 function signalsFor(thread: PluginSidebarThread): ThreadActivitySignals {
   return {
@@ -51,52 +62,75 @@ export interface LifecycleApi {
 /**
  * Reads the plugin's own lifecycle store and classifies threads onto shelves.
  *
+ * The rows are bb's cached `listLifecycle` read, so a remounted sidebar draws
+ * the last shelves at once and every window refreshes when the backend
+ * invalidates the read. A refresh that fails keeps the rows on screen.
+ *
  * `now` is state, not a render-time clock read: a snooze that elapses must
  * move its row without waiting for an unrelated re-render, and re-reading the
  * clock during render would make the classification unstable.
  *
- * Snooze and wake draw on the click. The family comes from `threads`, the
- * sidebar's own roster, and sits on top of the stored rows until the backend
- * answers with every row after its write; a failed write simply drops off.
- * The backend's database stays the record, so other devices follow its
- * publish as before.
- *
- * A write's answer is a snapshot from when it ran, and it can arrive after a
- * newer read, for example one showing another window's Wake. So once the
- * last write settles, one more read starts, and whatever it finds stands.
+ * Snooze and wake draw on the click: the family comes from `threads`, the
+ * sidebar's own roster. Writes go out one at a time in click order, so an
+ * Undo always lands after its snooze; each draws here until it answers, and
+ * bb's prediction then holds it until a read taken after the write lands. A
+ * failed write drops it. Before the first read lands, writes draw over the
+ * rows the newest write answered with. The backend's database stays the
+ * record.
  */
 export function useLifecycle(threads: readonly PluginSidebarThread[]): LifecycleApi {
-  const rpc = useRpc<typeof gtdSidebarRpcContract>();
-  const [rows, setRows] = useState<ReadonlyMap<string, ThreadLifecycleRow>>(() => new Map());
-  const [pending, setPending] = useState<readonly PendingLifecycleWrite[]>([]);
-  const lastWriteId = useRef(0);
-  // Counts answered writes. A read that started before one may predate it,
-  // and is dropped; the read after the last write settles replaces it.
-  const answeredWrites = useRef(0);
-  const unsettledWrites = useRef(0);
-  const writes = useRef<Promise<void>>(Promise.resolve());
+  const { data, isLoading } = useRpcQuery({
+    contract: gtdSidebarRpcContract,
+    method: "listLifecycle",
+    input: LIFECYCLE_READ,
+  });
+  const shelvesReady = usePaintGate(isLoading);
   const [now, setNow] = useState(() => Date.now());
-  // Most publishes re-read a list that has not changed. `rowsMatch` is what
-  // stops each of those from re-partitioning the whole sidebar.
-  const applyRows = useCallback((next: readonly ThreadLifecycleRow[]) => {
-    setRows((current) =>
-      rowsMatch(current, next) ? current : new Map(next.map((row) => [row.threadId, row])),
+
+  // bb asks for a write's prediction once, while `mutate` runs. The family and
+  // its timestamp are fixed before then, so replaying the update is pure.
+  const nextPrediction = useRef<LifecyclePrediction | null>(null);
+  const optimistic = (
+    _input: unknown,
+    cache: ExperimentalRpcOptimisticCache<typeof gtdSidebarRpcContract>,
+  ) => {
+    const prediction = nextPrediction.current;
+    if (prediction === null) return;
+    cache.update("listLifecycle", LIFECYCLE_READ, (current) => ({
+      rows: predictLifecycleRows(current.rows, prediction),
+    }));
+  };
+  const snoozeWrite = useRpcMutation({
+    contract: gtdSidebarRpcContract,
+    method: "snooze",
+    optimistic,
+  });
+  const wakeWrite = useRpcMutation({
+    contract: gtdSidebarRpcContract,
+    method: "unsnooze",
+    optimistic,
+  });
+
+  const writes = useOrderedWrites(({ threadId, snoozedUntil, prediction }: LifecycleWrite) => {
+    nextPrediction.current = prediction;
+    try {
+      return snoozedUntil === null
+        ? wakeWrite.mutate({ threadId })
+        : snoozeWrite.mutate({ threadId, snoozedUntil });
+    } finally {
+      nextPrediction.current = null;
+    }
+  });
+  const base = data?.rows ?? writes.answer?.rows;
+  // bb keeps an unchanged read's rows, so a refresh that changes nothing
+  // leaves the map, and the sidebar's partition, alone.
+  const drawn = useMemo(() => {
+    const rows = writes.unsettled.reduce<readonly ThreadLifecycleRow[]>(
+      (current, { prediction }) => predictLifecycleRows(current, prediction),
+      base ?? [],
     );
-  }, []);
-  const { ready: shelvesReady, refresh: reconcile } = useLifecycleChannelList(
-    useCallback(async () => {
-      const answered = answeredWrites.current;
-      return { ...(await rpc.call("listLifecycle", {})), answered };
-    }, [rpc]),
-    useCallback(
-      (result) => {
-        if (result.answered === answeredWrites.current) applyRows(result.rows);
-      },
-      [applyRows],
-    ),
-    LIFECYCLE_REFRESHES,
-  );
-  const drawn = useMemo(() => withPendingWrites(rows, pending), [rows, pending]);
+    return new Map(rows.map((row) => [row.threadId, row]));
+  }, [base, writes.unsettled]);
 
   // Arm one timer for the soonest wake instead of polling: the shelf empties
   // the moment a snooze expires, and nothing ticks while nothing is snoozed.
@@ -122,51 +156,27 @@ export function useLifecycle(threads: readonly PluginSidebarThread[]): Lifecycle
     return () => clearTimeout(timer);
   }, [now, drawn]);
 
-  // Undo can follow a snooze before it answers. Writes reach the backend in
-  // the order they were made, while each one draws at once.
   const write = useCommittedEvent((threadId: string, snoozedUntil: number | null) => {
     const threadIds = rosterFamilyIds(threads, threadId);
     const family = new Set(threadIds);
-    const id = ++lastWriteId.current;
-    unsettledWrites.current += 1;
-    setPending((current) => [
-      ...current,
-      {
-        id,
-        threadIds,
-        // Never earlier than the family's latest attention: bb stamps that
-        // on its own clock, and a snooze that predates it wakes at once.
-        snooze:
-          snoozedUntil === null
-            ? null
-            : {
-                snoozedUntil,
-                snoozedAt: Math.max(
-                  Date.now(),
-                  ...threads
-                    .filter((thread) => family.has(thread.id))
-                    .map((thread) => thread.latestAttentionAt),
-                ),
-              },
-      },
-    ]);
-    const send = async (): Promise<void> => {
-      try {
-        const result =
-          snoozedUntil === null
-            ? await rpc.call("unsnooze", { threadId })
-            : await rpc.call("snooze", { threadId, snoozedUntil });
-        answeredWrites.current += 1;
-        applyRows(result.rows);
-      } finally {
-        setPending((current) => current.filter((entry) => entry.id !== id));
-        unsettledWrites.current -= 1;
-        if (unsettledWrites.current === 0) reconcile();
-      }
+    const prediction: LifecyclePrediction = {
+      threadIds,
+      // Never earlier than the family's latest attention: bb stamps that on
+      // its own clock, and a snooze that predates it wakes at once.
+      snooze:
+        snoozedUntil === null
+          ? null
+          : {
+              snoozedUntil,
+              snoozedAt: Math.max(
+                Date.now(),
+                ...threads
+                  .filter((thread) => family.has(thread.id))
+                  .map((thread) => thread.latestAttentionAt),
+              ),
+            },
     };
-    const written = writes.current.then(send);
-    writes.current = written.catch(() => {});
-    return written;
+    return writes.write({ threadId, snoozedUntil, prediction });
   });
 
   return useMemo<LifecycleApi>(() => {

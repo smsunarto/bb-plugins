@@ -1,69 +1,57 @@
-import { useCallback, useMemo, useRef, useState } from "react";
-import { useRpc } from "@get-bb/plugin-sdk/app";
+import { useMemo } from "react";
+import {
+  experimental_useRpcMutation as useRpcMutation,
+  experimental_useRpcQuery as useRpcQuery,
+} from "@get-bb/plugin-sdk/app";
 import { toast } from "sonner";
-import type { gtdSidebarRpcContract } from "../server";
 import { changeHiddenMachines, type MachineVisibilityChange } from "../lib/machine-visibility";
 import { machineVisibility, type SidebarMachine } from "../lib/machines";
+import { gtdSidebarRpcContract } from "../lib/rpc-contract";
 import { useCommittedEvent } from "./use-committed-event";
-import { useLifecycleChannelList } from "./use-lifecycle-channel-list";
+import { useOrderedWrites } from "./use-ordered-writes";
+import { usePaintGate } from "./use-paint-gate";
 
-const MACHINE_REFRESHES = ["machines"] as const;
-interface PendingChange {
-  id: number;
-  change: MachineVisibilityChange;
-}
+const MACHINES_READ = {};
 
+/**
+ * The saved machine choice, as bb's cached read. A change draws on the click
+ * and changes go out one at a time in click order. Commands describe the
+ * result they want, so each unanswered one draws over any newer read, another
+ * window's change included, and bb's prediction then holds it until a
+ * confirmed read lands. Before the first read lands, changes draw over the
+ * newest answer a write returned, or over showing every machine. A failed
+ * change drops off with a toast.
+ */
 export function useMachineVisibility(machines: readonly SidebarMachine[]) {
-  const rpc = useRpc<typeof gtdSidebarRpcContract>();
-  const [state, setState] = useState<{ confirmed: string[]; pending: PendingChange[] }>({
-    confirmed: [],
-    pending: [],
+  const { data, isLoading } = useRpcQuery({
+    contract: gtdSidebarRpcContract,
+    method: "listMachineVisibility",
+    input: MACHINES_READ,
   });
-  const writes = useRef({ sent: 0, settled: 0, queue: Promise.resolve() });
-  const { ready, refresh } = useLifecycleChannelList(
-    useCallback(async () => {
-      const { sent, settled } = writes.current;
-      const version = sent === settled ? sent : -1;
-      const result = await rpc.call("listMachineVisibility", {});
-      return { ...result, version };
-    }, [rpc]),
-    useCallback((result) => {
-      const { sent, settled } = writes.current;
-      if (result.version !== sent || sent !== settled) return;
-      setState({ confirmed: result.hiddenMachineIds, pending: [] });
-    }, []),
-    MACHINE_REFRESHES,
-  );
+  const ready = usePaintGate(isLoading);
+  const { mutate } = useRpcMutation({
+    contract: gtdSidebarRpcContract,
+    method: "changeMachineVisibility",
+    optimistic: (command, cache) =>
+      cache.update("listMachineVisibility", MACHINES_READ, (current) => ({
+        hiddenMachineIds: changeHiddenMachines(current.hiddenMachineIds, command),
+      })),
+  });
+  const writes = useOrderedWrites((command: MachineVisibilityChange) => mutate(command));
   const change = useCommittedEvent((command: MachineVisibilityChange) => {
-    const id = ++writes.current.sent;
-    setState((current) => ({ ...current, pending: [...current.pending, { id, change: command }] }));
-    // Keep this window's clicks in order even when a later RPC would travel faster.
-    writes.current.queue = writes.current.queue.then(async () => {
-      try {
-        const result = await rpc.call("changeMachineVisibility", command);
-        setState((current) => ({
-          confirmed: result.hiddenMachineIds,
-          pending: current.pending.filter((pending) => pending.id !== id),
-        }));
-      } catch {
-        setState((current) => ({
-          ...current,
-          pending: current.pending.filter((pending) => pending.id !== id),
-        }));
-        toast.error("Couldn’t save visible machines. Please try again.");
-      } finally {
-        writes.current.settled += 1;
-        if (writes.current.sent === writes.current.settled) refresh();
-      }
-      return undefined;
+    writes.write(command).catch(() => {
+      toast.error("Couldn’t save visible machines. Please try again.");
     });
   });
-  const visibility = useMemo(() => {
-    const hiddenIds = state.pending.reduce(
-      (hidden, pending) => changeHiddenMachines(hidden, pending.change),
-      state.confirmed,
-    );
-    return machineVisibility(machines, hiddenIds);
-  }, [machines, state]);
+  // An answer only matters until the first read lands.
+  const base = data?.hiddenMachineIds ?? writes.answer?.hiddenMachineIds;
+  const visibility = useMemo(
+    () =>
+      machineVisibility(
+        machines,
+        writes.unsettled.reduce<string[]>(changeHiddenMachines, base ?? []),
+      ),
+    [machines, base, writes.unsettled],
+  );
   return { ...visibility, ready, change };
 }
