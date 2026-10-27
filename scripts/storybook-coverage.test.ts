@@ -49,6 +49,7 @@ const surfaces: Record<string, Record<string, string[]>> = {
     views: ["ListView", "BoardView", "DetailView", "ManagePanel"],
     controls: ["StatusIcon", "PriorityIcon", "ColorSwatchPicker", "CheckboxField", "ConfirmDialog"],
   },
+  "t3-composer": { mentions: ["MentionMenu"] },
   traces: { inspector: ["JsonView", "QueryError", "Pages"] },
   vimium: { hints: ["mountPluginContentScripts", "../src/app/app"] },
   whiteboard: { markdown: ["AgentMarkdown", "EmptyState"], files: ["DiffFileTree"] },

@@ -25,9 +25,12 @@ describe("licensing", () => {
   for (const plugin of plugins) {
     test(`${plugin.id} carries its complete MIT notice`, () => {
       const root = readFileSync(join(ROOT, "LICENSE"), "utf8");
-      const expected = ["magic-compose", "slopcop"].includes(plugin.id)
-        ? root.replace(/Copyright \(c\) [^\n]+/, "Copyright (c) 2026 Sawyer Hood")
-        : root;
+      const expected =
+        plugin.id === "t3-composer"
+          ? root.replace(/Copyright \(c\) [^\n]+/, "Copyright (c) 2026 Michael Yong")
+          : ["magic-compose", "slopcop"].includes(plugin.id)
+            ? root.replace(/Copyright \(c\) [^\n]+/, "Copyright (c) 2026 Sawyer Hood")
+            : root;
       expect(readFileSync(join(plugin.dir, "LICENSE"), "utf8")).toBe(expected);
     });
 

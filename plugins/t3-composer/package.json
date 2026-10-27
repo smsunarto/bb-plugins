@@ -67,5 +67,16 @@
     "vitest": "4.1.11"
   },
   "license": "MIT",
-  "author": "Scott Sunarto"
+  "author": "Scott Sunarto",
+  "files": [
+    "dist/",
+    "app.tsx",
+    "app.css",
+    "server.ts",
+    "src/",
+    "components/",
+    "README.md",
+    "LICENSE",
+    "THIRD_PARTY_NOTICES.md"
+  ]
 }
