@@ -21,7 +21,7 @@ import type {
 } from "../shared/schema.ts";
 import { useBranchReviewed, withReviewedFiles } from "./branch-review.ts";
 import { Button } from "./components/ui/button.tsx";
-import { PANEL_PATH, plural, shortSha } from "./format.ts";
+import { PANEL_PATH, shortSha } from "./format.ts";
 import { useLocalBranch } from "./local-branch-query.ts";
 import { errorText } from "./notice.tsx";
 import { rpc } from "./rpc.ts";
@@ -388,10 +388,7 @@ function ReviewCard({
           ) : null}
         </div>
       ) : null}
-      <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border p-2.5">
-        <span aria-live="polite" className="text-[11px] text-muted-foreground tabular-nums">
-          {labels.progress}
-        </span>
+      <div className="flex justify-end border-t border-border p-2.5">
         <Button
           size="sm"
           variant="outline"
@@ -427,16 +424,11 @@ function reviewLabels({
   else if (loading) status = "Loading";
   else if (ready) status = "Ready";
   else if (count > 0) status = "In review";
-  const progress = issue
-    ? "Progress unavailable"
-    : loading
-      ? "Loading changes…"
-      : `${count} of ${plural(total, "file")} reviewed`;
   let action = "Review changes";
   if (unavailable) action = "Open Review";
   else if (updated) action = "Review latest changes";
   else if (ready) action = "Open reviewed changes";
-  return { ready, status, progress, action };
+  return { ready, status, action };
 }
 
 function FilePreview({ files }: { files: readonly ChangedFile[] }) {
