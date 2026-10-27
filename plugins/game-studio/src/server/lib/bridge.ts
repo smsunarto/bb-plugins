@@ -28,6 +28,28 @@ type Route = Parameters<BbPluginApi["http"]["route"]>[2];
 type RouteContext = Parameters<Route>[0];
 type ThreadRecord = Awaited<ReturnType<BbPluginApi["sdk"]["threads"]["get"]>>;
 
+/**
+ * The threads the bridge has spawned, kept in the plugin's database: the Worker may read and
+ * stop those, and none of the other threads on this bb.
+ */
+function spawnedThreads(bb: BbPluginApi) {
+  const db = bb.storage.database();
+  db.exec(
+    "CREATE TABLE IF NOT EXISTS bridge_threads (thread TEXT PRIMARY KEY, created TEXT NOT NULL)",
+  );
+  return {
+    add(threadId: string) {
+      db.prepare("INSERT OR IGNORE INTO bridge_threads (thread, created) VALUES (?, ?)").run(
+        threadId,
+        new Date().toISOString(),
+      );
+    },
+    has(threadId: string): boolean {
+      return !!db.prepare("SELECT 1 FROM bridge_threads WHERE thread = ?").get(threadId);
+    },
+  };
+}
+
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), {
     status,
@@ -71,6 +93,17 @@ async function place(bb: BbPluginApi, placement: BridgePlacement) {
         ? `No bb machine is named ${placement.machine}.`
         : "No bb machine is available to run the thread.",
     );
+  if (placement.rootPath) {
+    // A path is only run in when bb already has an environment there: the Worker names paths
+    // it was told about, and a wrong or forged one must not open a thread anywhere else.
+    const known = await bb.sdk.environments.list({
+      ...(placement.projectId ? { projectId: placement.projectId } : {}),
+      hostId: host.id,
+      path: placement.rootPath,
+    });
+    if (!known.some((environment) => environment.path === placement.rootPath))
+      throw new Error(`bb has no checkout at ${placement.rootPath} on ${host.name}.`);
+  }
   if (placement.projectId) return { hostId: host.id, projectId: placement.projectId };
   const projects = await bb.sdk.projects.list({ includePersonal: true });
   const personal = projects.find((project) => project.kind === "personal");
@@ -79,6 +112,11 @@ async function place(bb: BbPluginApi, placement: BridgePlacement) {
 }
 
 export function mountBridge(bb: BbPluginApi, pluginVersion: string) {
+  const spawned = spawnedThreads(bb);
+  const own = (threadId: string) => {
+    if (!spawned.has(threadId))
+      throw new Error(`Thread ${threadId} was not started by Game Studio.`);
+  };
   // Typed by the schema's own `parse`, so the shared package's zod copy needs no type identity here.
   const route = <S extends Schema>(
     path: string,
@@ -136,10 +174,12 @@ export function mountBridge(bb: BbPluginApi, pluginVersion: string) {
         ...request.images.map((url) => ({ type: "image" as const, url })),
       ],
     });
+    spawned.add(thread.id);
     return describe(thread);
   });
 
   route("/threads/get", bridgeThreadRequestSchema, async ({ threadId }) => {
+    own(threadId);
     try {
       return describe(await bb.sdk.threads.get({ threadId }));
     } catch (error) {
@@ -149,6 +189,7 @@ export function mountBridge(bb: BbPluginApi, pluginVersion: string) {
   });
 
   route("/threads/output", bridgeThreadRequestSchema, async ({ threadId }) => {
+    own(threadId);
     const thread = await bb.sdk.threads.get({ threadId });
     const status = bridgeStatus(thread);
     const output =
@@ -159,6 +200,7 @@ export function mountBridge(bb: BbPluginApi, pluginVersion: string) {
   });
 
   route("/threads/stop", bridgeThreadRequestSchema, async ({ threadId }) => {
+    own(threadId);
     await bb.sdk.threads.stop({ threadId });
     return describe(await bb.sdk.threads.get({ threadId }));
   });

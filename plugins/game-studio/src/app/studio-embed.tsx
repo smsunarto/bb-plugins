@@ -60,7 +60,8 @@ export function StudioEmbed({
   const frame = useRef<HTMLIFrameElement>(null);
   const [connected, setConnected] = useState(false);
   const [quiet, setQuiet] = useState(false);
-  // The frame keeps its own navigation; only a new studio or a new game remounts it.
+  // The frame keeps its own navigation; the parent keys this component by studio and game, so a
+  // new game or a new studio URL remounts it with a new page.
   const [src] = useState(() => studioPageUrl(studioUrl, gameId));
   const origin = new URL(src).origin;
   useEffect(() => {
@@ -106,8 +107,8 @@ export function StudioEmbed({
       </div>
       {quiet && !connected && (
         <p className="gs-embed-hint">
-          The studio has not answered. If it shows a sign-in page or stays blank, your browser
-          may be keeping its sign-in cookie out of this frame:{" "}
+          The studio has not answered. If it shows a sign-in page or stays blank, your browser may
+          be keeping its sign-in cookie out of this frame:{" "}
           <a href={opened} target="_blank" rel="noreferrer">
             open the studio in a tab
           </a>

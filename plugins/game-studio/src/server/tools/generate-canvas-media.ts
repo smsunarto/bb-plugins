@@ -7,9 +7,10 @@ export const generateCanvasMedia = defineTool({
   parameters: canvasGenerationInput,
   async execute(ctx: ToolContext<StudioContext>, input) {
     const { gameId, ...rest } = input;
-    const { api, threadId } = await toolSession(ctx, gameId, ctx.tool.threadId ?? undefined);
+    const session = await toolSession(ctx, gameId, ctx.tool.threadId ?? undefined);
+    const { api, threadId } = session;
     return JSON.stringify(
-      await withApproval({ bb: ctx.bb, api, gameId, threadId }, () =>
+      await withApproval({ bb: ctx.bb, gameId, ...session }, () =>
         api.generations.canvas(gameId, { ...rest, threadId }),
       ),
     );

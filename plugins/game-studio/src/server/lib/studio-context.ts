@@ -15,8 +15,9 @@ export type StudioContext = { bb: BbPluginApi; studio: StudioClient };
 export async function toolSession(ctx: StudioContext, gameId: string, threadId?: string) {
   if (!threadId) throw new Error("Game Studio tools run in a bb thread.");
   const api = await ctx.studio.client();
-  await gameForThread(ctx.bb, api, gameId, threadId);
-  return { api, threadId };
+  const recheck = () => gameForThread(ctx.bb, api, gameId, threadId);
+  await recheck();
+  return { api, threadId, recheck };
 }
 
 /** A generation the agent wrote itself, approved in the thread when the studio asks. */
@@ -29,7 +30,7 @@ export async function startGeneration(
   target?: GenerationJob["target"],
 ): Promise<Exclude<GenerationStartResponse, { approvalRequired: true }> | Declined> {
   const session = await toolSession(ctx, gameId, threadId);
-  return withApproval({ bb: ctx.bb, api: session.api, gameId, threadId: session.threadId }, () =>
+  return withApproval({ bb: ctx.bb, gameId, ...session }, () =>
     session.api.generations.start(gameId, {
       requestId,
       request,

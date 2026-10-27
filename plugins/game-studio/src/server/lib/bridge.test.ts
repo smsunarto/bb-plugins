@@ -1,5 +1,9 @@
 import { expect, test } from "bun:test";
-import { createFakePluginHost, makeHostResponse, makeThreadResponse } from "@get-bb/plugin-sdk/testing";
+import {
+  createFakePluginHost,
+  makeHostResponse,
+  makeThreadResponse,
+} from "@get-bb/plugin-sdk/testing";
 import plugin from "../server.ts";
 
 /*
@@ -36,6 +40,11 @@ test("spawn places a hidden thread on the named machine in the game's checkout",
           makeHostResponse({ id: "host-b", name: "spare", status: "disconnected" }),
         ],
       },
+      // bb knows the game checkout at /game on cardinal, and nothing at /elsewhere.
+      environments: {
+        list: async (args?: { path?: string }) =>
+          (args?.path === "/game" ? [{ id: "env_game", path: "/game" }] : []) as never,
+      },
       threads: {
         spawn: async (args: unknown) => {
           spawned.push(args);
@@ -55,6 +64,15 @@ test("spawn places a hidden thread on the named machine in the game's checkout",
   });
   expect(status).toBe(200);
   expect(body).toEqual({ threadId: "thr_new", status: "queued", title: "Write the brief" });
+  // A path bb has no checkout at never gets a thread, whatever the Worker was told.
+  const elsewhere = await post(harness, "/threads/spawn", {
+    title: "Write the brief",
+    prompt: "Write a brief.",
+    placement: { projectId: "project", machine: "cardinal", rootPath: "/elsewhere" },
+  });
+  expect(elsewhere.status).toBe(500);
+  expect(elsewhere.body.error).toMatch(/no checkout at \/elsewhere/);
+  expect(spawned).toHaveLength(1);
   expect(spawned[0]).toMatchObject({
     projectId: "project",
     visibility: "hidden",
@@ -111,13 +129,23 @@ test("spawn without a project uses the personal workspace on a connected machine
   });
 });
 
-test("get, output and stop speak the bridge's statuses", async () => {
+test("get, output and stop speak the bridge's statuses, for the threads it spawned", async () => {
   let status: "active" | "idle" | "error" = "active";
   const stops: unknown[] = [];
   const { bb, harness } = createFakePluginHost({
     pluginId: "game-studio",
     sdk: {
+      hosts: {
+        list: async () => [
+          makeHostResponse({ id: "host-a", name: "cardinal", status: "connected" }),
+        ],
+      },
+      projects: {
+        list: async () => [{ id: "proj_personal", kind: "personal", name: "Personal" }] as never,
+      },
       threads: {
+        spawn: async (args: { title?: string }) =>
+          makeThreadResponse({ id: args.title ?? "thr_untitled", status: "pending" }),
         get: async ({ threadId }: { threadId: string }) => {
           if (threadId === "gone") throw new Error("Thread not found");
           return makeThreadResponse({
@@ -136,6 +164,15 @@ test("get, output and stop speak the bridge's statuses", async () => {
     },
   });
   await plugin(bb);
+  // The bridge spawned thr_1, gone and old; any other thread on this bb is not its to touch.
+  for (const id of ["thr_1", "gone", "old"])
+    await post(harness, "/threads/spawn", { title: id, prompt: "Go." });
+  const foreign = await post(harness, "/threads/get", { threadId: "thr_someone_elses" });
+  expect(foreign.status).toBe(500);
+  expect(foreign.body.error).toMatch(/not started by Game Studio/);
+  expect((await post(harness, "/threads/stop", { threadId: "thr_someone_elses" })).status).toBe(
+    500,
+  );
   expect((await post(harness, "/threads/get", { threadId: "thr_1" })).body).toEqual({
     threadId: "thr_1",
     status: "active",

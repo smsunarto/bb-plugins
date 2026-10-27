@@ -1,4 +1,8 @@
-import { APPROVAL_RENDERER, type Game, REQUEST_MENTION_PROVIDER } from "@argus-labs/game-studio-api";
+import {
+  APPROVAL_RENDERER,
+  type Game,
+  REQUEST_MENTION_PROVIDER,
+} from "@argus-labs/game-studio-api";
 import { PluginQueryBoundary } from "@bb-kit/core/rpc/query";
 import {
   definePluginApp,
@@ -66,7 +70,11 @@ export function sameCheckout(game: Game, thread: PluginSidebarThread) {
   );
 }
 /** The game a thread works on: the one naming it, else the one connected to its checkout. */
-function threadGame(games: readonly Game[] | null | undefined, thread: PluginSidebarThread | undefined, threadId: string | undefined) {
+function threadGame(
+  games: readonly Game[] | null | undefined,
+  thread: PluginSidebarThread | undefined,
+  threadId: string | undefined,
+) {
   if (!games) return undefined;
   return (
     games.find((game) => threadId && game.threadId === threadId) ??
@@ -81,7 +89,8 @@ function StudioComposerBridge() {
   const overview = rpc.overview.useQuery({}, { staleTime: 15_000 });
   const [error, setError] = useState("");
   const scope = composer.scope;
-  const scopeThread = scope.kind === "thread" ? scope.threadId : scope.kind === "new-thread" ? null : undefined;
+  const scopeThread =
+    scope.kind === "thread" ? scope.threadId : scope.kind === "new-thread" ? null : undefined;
   const loaded = overview.data !== undefined;
   const games = overview.data?.games;
   useEffect(() => {
@@ -164,11 +173,12 @@ function StudioPanel({
     <>
       {error && (
         <Notice>
-          Agent tools are off until the plugin&apos;s settings name the studio&apos;s Access
-          service token. {error}
+          Agent tools are off until the plugin&apos;s settings name the studio&apos;s Access service
+          token. {error}
         </Notice>
       )}
       <StudioEmbed
+        key={`${studioUrl}|${game?.id ?? ""}`}
         studioUrl={studioUrl}
         gameId={game?.id ?? null}
         threadId={threadId ?? null}
@@ -214,6 +224,7 @@ function StudioNavigation({ subPath }: PluginNavPanelProps) {
   const game = gameId ? overview.data.games?.find((entry) => entry.id === gameId) : undefined;
   return (
     <StudioEmbed
+      key={`${overview.data.studioUrl}|${game?.id ?? gameId ?? ""}`}
       studioUrl={overview.data.studioUrl}
       gameId={game?.id ?? gameId ?? null}
       threadId={null}

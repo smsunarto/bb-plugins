@@ -85,7 +85,10 @@ require re-adoption.
 ## Development
 
 The plugin depends on `@argus-labs/game-studio-api` from the monorepo's
-`pkg/game-studio-api`, linked with `bun link` while the API settles. This
+`pkg/game-studio-api` through `bun link`, by decision: the package is not
+published. Every checkout that loads this plugin, including the one the live
+bb server reads, needs the monorepo beside it with `bun link` run in
+`pkg/game-studio-api` and `bun install` run here. This
 plugin's checks are `bun run typecheck`, `bun run test`, `bun run check`, and
 `bun run build` from its directory; the tests stand in a fake studio behind
 `fetch`, so they need no Worker.

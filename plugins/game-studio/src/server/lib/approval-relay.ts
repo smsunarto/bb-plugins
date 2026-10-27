@@ -42,6 +42,8 @@ export type RelayContext = {
   api: GameStudioClient;
   gameId: string;
   threadId: string;
+  /** Checks again that the thread may still act on the game; the form may have waited ten minutes. */
+  recheck?: () => Promise<unknown>;
 };
 
 /**
@@ -54,7 +56,7 @@ export async function withApproval<T>(
 ): Promise<T | Declined> {
   const first = await attempt();
   if (!needsApproval(first)) return first;
-  const { payload } = first;
+  const { payload, approvalId } = first;
   const summary = payload.items
     .map(
       (item) =>
@@ -82,8 +84,11 @@ export async function withApproval<T>(
   if (result.outcome === "cancelled") return declined(result.reason);
   const answer = generationApprovalResponse.safeParse(result.value);
   if (!answer.success || !answer.data.approved) return declined();
+  // The thread or the game's checkout may have moved while the person decided.
+  await ctx.recheck?.();
+  // The studio keeps what it asked; the answer names the ask rather than restating it.
   await ctx.api.approvals.approve(ctx.gameId, {
-    payload,
+    approvalId,
     grantGame: answer.data.grantGame === true,
     threadId: ctx.threadId,
   });

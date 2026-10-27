@@ -3,7 +3,7 @@ Edit a saved Game Studio workflow atomically. Use this to change node briefs, se
 BEFORE CALLING
 
 - Read `game_studio_canvas_context` and pass its exact `board.revision` as `revision`.
-- Use the game's thread checkout and own its Rampage slot when registered. Submit one coherent batch per change so the person can review and undo it together.
+- Use a thread in the game's BB project and, when the game is connected to one, its checkout. Submit one coherent batch per change so the person can review and undo it together.
 
 EDIT OPERATIONS
 
@@ -19,7 +19,7 @@ RUNNING WITH AN EDIT
 
 - `dryRun:true` validates the supplied revision without writing.
 - Add `run:{nodeId,requestId}` to run a node of the edited board and upstream inputs that lack outputs after saving, as with `game_studio_generate_canvas_media` and `upstream:true`.
-- A paid run asks for approval before anything is saved. The immediate response is a waiting notice; a later message contains the saved edit and run, or `{declined:true,saved:false,reason}` with the board unchanged.
+- A paid run asks for approval before anything is saved. The call waits up to ten minutes for the person's answer and returns the saved edit and run, or `{declined:true,saved:false,reason}` with the board unchanged.
 - Without `run`, editing does not generate media or spend credits.
 
 RETURNS AND RECOVERY

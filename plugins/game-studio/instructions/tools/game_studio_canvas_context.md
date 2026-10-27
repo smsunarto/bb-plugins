@@ -1,7 +1,7 @@
 Read the saved Game Studio workflow before planning, editing, or generating assets. Returns bounded pages of boards, nodes, assets, or documents, with the exact revisions needed by edit and generation tools.
 
 BEFORE CALLING
-Use a thread in the game's BB project and checkout. Reading does not require its registered slot lease.
+Reads need no particular thread; edits and generations do. The studio web app shows the same boards to the person.
 
 INPUTS
 
@@ -14,7 +14,5 @@ RETURNS AND NEXT STEP
 
 - Node freshness is `missing` (no output), `fresh` (picked from the current brief and inputs), `stale` (brief or input changed), or `unknown` (import or a run without an input record).
 - `pendingRun` identifies a run held until its inputs land, with its request ID and any error that prevented it from starting.
-- `mediaDir` is the host folder containing staged `canvas/staging` and `canvas/inputs` files as `staging/` and `inputs/`, outside the checkout.
+- Files live in Game Studio, not in the game's checkout: read and write them through the studio's tools, by the paths this read lists.
 - Pass the returned `board.revision` exactly to `game_studio_canvas_edit` or `game_studio_generate_canvas_media`. Read again after changes.
-
-CLI equivalent: `bb game-studio rpc canvasContext '{"gameId":"...","boardId":"..."}'`.

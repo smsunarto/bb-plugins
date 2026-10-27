@@ -47,7 +47,14 @@ const payload = {
   gameId: "game",
   gameName: "Orbit",
   items: [
-    { requestId: "req", title: "A moon icon", kind: "image", provider: "google", count: 1, retries: 0 },
+    {
+      requestId: "req",
+      title: "A moon icon",
+      kind: "image",
+      provider: "google",
+      count: 1,
+      retries: 0,
+    },
   ],
 };
 
@@ -73,7 +80,15 @@ test("a generation the studio holds for approval is approved in the thread and s
     "POST /api/games/game/generations": () =>
       approved
         ? { body: { created: true, job: job("req", "image") } }
-        : { status: 202, body: { approvalRequired: true, payload, detail: "Approve first." } },
+        : {
+            status: 202,
+            body: {
+              approvalRequired: true,
+              approvalId: "ask-1",
+              payload,
+              detail: "Approve first.",
+            },
+          },
     "POST /api/games/game/approvals": () => {
       approved += 1;
       return { body: { approved: 1, grant: null } };
@@ -93,9 +108,12 @@ test("a generation the studio holds for approval is approved in the thread and s
   );
   expect(result).toMatchObject({ created: true, job: { id: "req", status: "queued" } });
   const paths = studio.calls.map((call) => `${call.method} ${call.path}`);
+  // The thread is checked against the game again after the person answered, then the answer
+  // is recorded and the request made once more.
   expect(paths).toEqual([
     "GET /api/games",
     "POST /api/games/game/generations",
+    "GET /api/games",
     "POST /api/games/game/approvals",
     "POST /api/games/game/generations",
   ]);
@@ -104,8 +122,12 @@ test("a generation the studio holds for approval is approved in the thread and s
     expect(call.headers.get("cf-access-client-id")).toBe("client-id.access");
     expect(call.headers.get("cf-access-client-secret")).toBe("client-secret");
   }
-  expect(studio.calls[2]!.body).toEqual({ payload, grantGame: true, threadId: "thread" });
-  expect(studio.calls[3]!.body).toMatchObject({
+  expect(studio.calls[3]!.body).toEqual({
+    approvalId: "ask-1",
+    grantGame: true,
+    threadId: "thread",
+  });
+  expect(studio.calls[4]!.body).toMatchObject({
     requestId: "req",
     threadId: "thread",
     request: { kind: "image", prompt: "A moon icon" },
@@ -118,7 +140,7 @@ test("a declined approval submits nothing and tells the agent why", async () => 
     "GET /api/games": () => ({ body: { games: [fakeGame()] } }),
     "POST /api/games/game/generations": () => ({
       status: 202,
-      body: { approvalRequired: true, payload, detail: "Approve first." },
+      body: { approvalRequired: true, approvalId: "ask-2", payload, detail: "Approve first." },
     }),
   });
   cleanups.push(studio.restore);
@@ -141,7 +163,11 @@ test("a thread outside the game's checkout may not generate for it", async () =>
   const studio = fakeStudio({
     "GET /api/games": () => ({
       body: {
-        games: [fakeGame({ checkout: { projectId: "project", hostId: "remote", rootPath: "/elsewhere" } })],
+        games: [
+          fakeGame({
+            checkout: { projectId: "project", hostId: "remote", rootPath: "/elsewhere" },
+          }),
+        ],
       },
     }),
   });

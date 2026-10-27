@@ -1,10 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { installDom } from "@bb-kit/core/testing";
 import type { Game } from "@argus-labs/game-studio-api";
-import type {
-  ExperimentalThreadActionTabProps,
-  PluginSidebarThread,
-} from "@get-bb/plugin-sdk/app";
+import type { ExperimentalThreadActionTabProps, PluginSidebarThread } from "@get-bb/plugin-sdk/app";
 import type { ComponentType } from "react";
 
 installDom();
@@ -30,7 +27,7 @@ const game: Game = {
   kind: "unity",
   createdAt: 1,
   threadId: "thread-main",
-  previewPath: null,
+  previewPath: "index.html",
   checkout: { projectId: "project-rampage", hostId: "host-mac", rootPath: "/games/rampage" },
 };
 const overview = () => ({ studioUrl: "https://studio.test", games: [game], error: null });
@@ -72,7 +69,7 @@ describe("thread Studio tab", () => {
   it("embeds the thread's game and offers the studio in a tab", async () => {
     const slot = renderSlot(
       tab(),
-      { threadId: "thread-main", params: null, projectId: game.checkout!.projectId },
+      { threadId: "thread-main", params: null, projectId: game.checkout!.projectId } as never,
       { rpc: { overview } },
     );
     const link = (await slot.findByRole("link", { name: "Open" })) as HTMLAnchorElement;
@@ -86,7 +83,7 @@ describe("thread Studio tab", () => {
   it("embeds the gallery for a thread without a game and warns when tools are off", async () => {
     const slot = renderSlot(
       tab(),
-      { threadId: "thread-other", params: null, projectId: null },
+      { threadId: "thread-other", params: null, projectId: null } as never,
       {
         rpc: {
           overview: () => ({
@@ -229,7 +226,9 @@ describe("studio requests in the composer", () => {
         },
       },
     ]);
-    expect(slot.inspection.composer.draft.text).toMatch(/^Implement the jump\. \S.*Game Studio · build $/);
+    expect(slot.inspection.composer.draft.text).toMatch(
+      /^Implement the jump\. \S.*Game Studio · build $/,
+    );
   });
 
   it("leaves another thread's requests alone", async () => {
