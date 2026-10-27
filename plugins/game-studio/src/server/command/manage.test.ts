@@ -87,7 +87,7 @@ test("the management CLI rejects command execution and removed flags before cont
 test("Game Studio exposes both workflows and the consolidated Unity tools to agents", async () => {
   const { bb, harness } = createFakePluginHost({
     pluginId: "game-studio",
-    agentSkillIds: ["game-studio", "unity-editors"],
+    agentSkillIds: ["game-studio", "unity-editors", "assemble-unity-scene"],
     sdk: { plugins: { list: async () => ({ plugins: [] }) } },
   });
   await plugin(bb);
@@ -97,6 +97,6 @@ test("Game Studio exposes both workflows and the consolidated Unity tools to age
   expect(configuration.tools.map((tool) => tool.name)).toEqual(
     expect.arrayContaining(["game_studio_manage", "game_studio_slots"]),
   );
-  expect(configuration.skills).toEqual(["game-studio", "unity-editors"]);
+  expect(configuration.skills).toEqual(["game-studio", "unity-editors", "assemble-unity-scene"]);
   await harness.lifecycle.dispose();
 });

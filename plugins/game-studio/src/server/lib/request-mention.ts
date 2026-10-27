@@ -1,6 +1,6 @@
+import { REQUEST_MENTION_PROVIDER, requestMentionSchema } from "@argus-labs/game-studio-api";
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
-import { REQUEST_MENTION_PROVIDER, requestMentionSchema } from "../../shared/request-mention.ts";
-import { prompt } from "./studio.ts";
+import type { StudioClient } from "./studio-client.ts";
 
 function parseRequestMentionId(itemId: string) {
   try {
@@ -13,15 +13,16 @@ function parseRequestMentionId(itemId: string) {
   }
 }
 
-/** Programmatic context pills resolve current project files when the user sends. */
-export function registerRequestMention(bb: BbPluginApi): void {
+/** Programmatic context pills resolve the studio's prepared text when the person sends. */
+export function registerRequestMention(bb: BbPluginApi, studio: StudioClient): void {
   bb.ui.registerMentionProvider({
     id: REQUEST_MENTION_PROVIDER,
     label: "Game Studio context",
     search: () => [],
     async resolve(itemId) {
-      const { request, ...input } = parseRequestMentionId(itemId);
-      const { context } = await prompt(bb, input, request);
+      const { gameId, ...input } = parseRequestMentionId(itemId);
+      const api = await studio.client();
+      const { context } = await api.canvas.prompt(gameId, input);
       return { context };
     },
   });

@@ -1,16 +1,25 @@
-import { useState } from "react";
+import { generationApprovalPayload, itemBudget, modelLabel } from "@argus-labs/game-studio-api";
 import type { PluginPendingInteractionProps } from "@get-bb/plugin-sdk/app";
-import { generationApprovalPayload, itemBudget } from "../shared/approvals.ts";
-import { modelLabel } from "../shared/recipes.ts";
-import { kindInfo } from "./canvas-cards.ts";
+import { useState } from "react";
 import { Icon } from "./icons.tsx";
-import type { NodeKind } from "../shared/schema.ts";
 
 /*
- * The form an agent's paid run waits on, in the thread beside the canvas. It lists what the
+ * The form an agent's paid run waits on, in the thread beside the studio. It lists what the
  * run makes and on which model; approving once covers the whole run, and a checkbox approves
- * the game's later agent runs until bb restarts or the person turns it off in the studio.
+ * the game's later agent runs until the person turns it off in the studio.
  */
+const kindIcons: Record<string, string> = {
+  text: "Type",
+  image: "Image",
+  video: "Video",
+  asset: "Music",
+  "model-3d": "Box",
+  "animate-3d": "Box",
+  agent: "Bot",
+  document: "FileText",
+  table: "Table",
+};
+
 export function GenerationApproval({ interaction, submit }: PluginPendingInteractionProps) {
   const parsed = generationApprovalPayload.safeParse(interaction.payload);
   const [grantGame, setGrantGame] = useState(false);
@@ -31,22 +40,19 @@ export function GenerationApproval({ interaction, submit }: PluginPendingInterac
         The agent wants to generate for <strong>{gameName}</strong>:
       </p>
       <ul>
-        {items.map((item) => {
-          const info = kindInfo(item.kind as NodeKind);
-          return (
-            <li key={item.requestId}>
-              <Icon name={info.icon} />
-              <span className="gs-approval-title">{item.title}</span>
-              <span className="gs-approval-model">
-                {modelLabel(item.provider, item.model)}
-                {item.count > 1 ? ` ×${item.count}` : ""}
-                {item.retries > 0
-                  ? ` · up to ${item.retries} retr${item.retries === 1 ? "y" : "ies"}`
-                  : ""}
-              </span>
-            </li>
-          );
-        })}
+        {items.map((item) => (
+          <li key={item.requestId}>
+            <Icon name={kindIcons[item.kind] ?? "Sparkles"} />
+            <span className="gs-approval-title">{item.title}</span>
+            <span className="gs-approval-model">
+              {modelLabel(item.provider, item.model)}
+              {item.count > 1 ? ` ×${item.count}` : ""}
+              {item.retries > 0
+                ? ` · up to ${item.retries} retr${item.retries === 1 ? "y" : "ies"}`
+                : ""}
+            </span>
+          </li>
+        ))}
       </ul>
       <label className="gs-approval-grant">
         <input
@@ -54,7 +60,7 @@ export function GenerationApproval({ interaction, submit }: PluginPendingInterac
           checked={grantGame}
           onChange={(event) => setGrantGame(event.target.checked)}
         />
-        Approve the agent&apos;s later runs for {gameName} until bb restarts
+        Approve the agent&apos;s later runs for {gameName} until it is turned off in the studio
       </label>
       <footer>
         <small>

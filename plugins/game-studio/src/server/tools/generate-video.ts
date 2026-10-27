@@ -1,14 +1,13 @@
+import { generationId, videoRequest } from "@argus-labs/game-studio-api";
 import { defineTool, type ToolContext } from "@bb-kit/core/tools";
-import { videoRequest, generationId } from "../../shared/generation.ts";
-import type { GenerationContext } from "../lib/generations.ts";
+import { type StudioContext, startGeneration } from "../lib/studio-context.ts";
 export const generateVideo = defineTool({
-  parameters: videoRequest
-    .omit({ kind: true })
-    .extend({ gameId: generationId, requestId: generationId }),
-  async execute(ctx: ToolContext<GenerationContext>, input) {
+  parameters: videoRequest.omit({ kind: true }).extend({ gameId: generationId, requestId: generationId }),
+  async execute(ctx: ToolContext<StudioContext>, input) {
     const { gameId, requestId, ...request } = input;
     return JSON.stringify(
-      await ctx.generations.start(
+      await startGeneration(
+        ctx,
         gameId,
         requestId,
         { ...request, kind: "video" },

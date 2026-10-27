@@ -1,7 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { installDom } from "@bb-kit/core/testing";
-import type { ComposerSelection, PluginSidebarThread } from "@get-bb/plugin-sdk/app";
-import type { Game } from "../shared/schema.ts";
+import type { Game } from "@argus-labs/game-studio-api";
+import type {
+  ExperimentalThreadActionTabProps,
+  PluginSidebarThread,
+} from "@get-bb/plugin-sdk/app";
+import type { ComponentType } from "react";
 
 installDom();
 // Testing Library restores this flag after the first file that imports it; later files that call
@@ -9,9 +13,9 @@ installDom();
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 const { loadPluginApp, renderSlot } = await import("@get-bb/plugin-sdk/testing/app");
 const { pluginQueryClient } = await import("@bb-kit/core/rpc/query");
-const { act, cleanup, fireEvent } = await import("@testing-library/react");
-const { useComposer } = await import("@get-bb/plugin-sdk/app");
-const { appendStudioRequest, selectedAgent } = await import("./studio-composer.ts");
+const { act, cleanup, fireEvent, waitFor } = await import("@testing-library/react");
+const { studioRequests } = await import("./studio-requests.ts");
+const { studioPageUrl } = await import("./studio-embed.tsx");
 const app = await loadPluginApp(() => import("./app.tsx"));
 
 beforeEach(() => pluginQueryClient.clear());
@@ -23,15 +27,13 @@ afterEach(() => {
 const game: Game = {
   id: "rampage",
   name: "Rampage",
-  projectId: "project-rampage",
-  hostId: "host-mac",
-  rootPath: "/games/rampage",
   kind: "unity",
   createdAt: 1,
   threadId: "thread-main",
-  previewPath: "index.html",
+  previewPath: null,
+  checkout: { projectId: "project-rampage", hostId: "host-mac", rootPath: "/games/rampage" },
 };
-const overview = () => ({ games: [game], hosts: [], projects: [] });
+const overview = () => ({ studioUrl: "https://studio.test", games: [game], error: null });
 
 describe("Game Studio registrations", () => {
   it("keeps the thread Studio tab id so saved tabs and layouts reopen", () => {
@@ -46,6 +48,57 @@ describe("Game Studio registrations", () => {
       { id: "studio", context: { kind: "thread" }, availability: "action", layout: "flush" },
     ]);
     expect(app.newThreadPanelActions.map((action) => action.id)).toEqual(["studio"]);
+    expect(app.pendingInteractions.map((entry) => entry.id)).toEqual(["generation-approval"]);
+    expect(app.composerCustomizations.map((entry) => entry.id)).toEqual(["studio-native-composer"]);
+  });
+});
+
+describe("studio page urls", () => {
+  it("opens a game's page or the gallery, marked as embedded", () => {
+    expect(studioPageUrl("https://studio.test/", "a b")).toBe(
+      "https://studio.test/games/a%20b?embed=1",
+    );
+    expect(studioPageUrl("https://studio.test", null)).toBe("https://studio.test/?embed=1");
+  });
+});
+
+describe("thread Studio tab", () => {
+  const tab = () => {
+    const registration = app.tabs.find((entry) => entry.id === "studio");
+    if (!registration) throw new Error("Missing the Studio tab");
+    return { component: registration.component as ComponentType<ExperimentalThreadActionTabProps> };
+  };
+
+  it("embeds the thread's game and offers the studio in a tab", async () => {
+    const slot = renderSlot(
+      tab(),
+      { threadId: "thread-main", params: null, projectId: game.checkout!.projectId },
+      { rpc: { overview } },
+    );
+    const link = (await slot.findByRole("link", { name: "Open" })) as HTMLAnchorElement;
+    const frame = slot.container.querySelector("iframe");
+    expect(frame?.src).toBe("https://studio.test/games/rampage?embed=1");
+    expect(frame?.title).toBe("Rampage");
+    expect(link.href).toBe("https://studio.test/games/rampage");
+    expect(link.target).toBe("_blank");
+  });
+
+  it("embeds the gallery for a thread without a game and warns when tools are off", async () => {
+    const slot = renderSlot(
+      tab(),
+      { threadId: "thread-other", params: null, projectId: null },
+      {
+        rpc: {
+          overview: () => ({
+            studioUrl: "https://studio.test",
+            games: null,
+            error: "Set the Cloudflare Access client ID and secret.",
+          }),
+        },
+      },
+    );
+    expect((await slot.findByRole("alert")).textContent).toContain("Access client ID and secret");
+    expect(slot.container.querySelector("iframe")?.src).toBe("https://studio.test/?embed=1");
   });
 });
 
@@ -59,25 +112,25 @@ describe("thread Info Game row", () => {
   it("names the thread's game and opens it in the Studio tab", async () => {
     const slot = renderSlot(
       row(),
-      { threadId: "thread-main", projectId: game.projectId, environment: null },
+      { threadId: "thread-main", projectId: game.checkout!.projectId, environment: null },
       { rpc: { overview } },
     );
     fireEvent.click(await slot.findByRole("button", { name: "Rampage" }));
     expect(slot.inspection.navigateCalls).toEqual([
-      { method: "openThreadPanel", options: { actionId: "studio" } },
+      { method: "openThreadPanel", options: { actionId: "studio", params: { gameId: "rampage" } } },
     ]);
   });
 
   it("matches a thread working in the game's checkout", async () => {
     const thread = {
       id: "thread-side",
-      projectId: game.projectId,
-      host: { id: game.hostId },
+      projectId: game.checkout!.projectId,
+      host: { id: game.checkout!.hostId },
       environment: { path: "/games/rampage/" },
     } as unknown as PluginSidebarThread;
     const slot = renderSlot(
       row(),
-      { threadId: "thread-side", projectId: game.projectId, environment: null },
+      { threadId: "thread-side", projectId: game.checkout!.projectId, environment: null },
       { rpc: { overview }, sidebarThreads: { threads: [thread] } },
     );
     expect(await slot.findByRole("button", { name: "Rampage" })).toBeTruthy();
@@ -86,7 +139,7 @@ describe("thread Info Game row", () => {
   it("shows nothing for a thread without a game", async () => {
     const slot = renderSlot(
       row(),
-      { threadId: "thread-other", projectId: game.projectId, environment: null },
+      { threadId: "thread-other", projectId: game.checkout!.projectId, environment: null },
       { rpc: { overview } },
     );
     await act(() => new Promise((resolve) => setTimeout(resolve, 20)));
@@ -95,90 +148,105 @@ describe("thread Info Game row", () => {
   });
 });
 
-describe("Studio composer requests", () => {
-  function RequestButton({ prompt }: { prompt: string }) {
-    const composer = useComposer();
-    return (
-      <button
-        onClick={() =>
-          appendStudioRequest(composer, prompt, {
-            id: '{"action":"build"}',
-            label: "Studio · build",
-          })
-        }
-      >
-        Prepare
-      </button>
+describe("studio requests in the composer", () => {
+  const banner = () => {
+    const customization = app.composerCustomizations.find(
+      (entry) => entry.id === "studio-native-composer",
     );
-  }
+    const registration = customization?.banners?.[0];
+    if (!registration) throw new Error("Missing the composer banner");
+    return registration;
+  };
+  const request = {
+    prompt: "Implement the jump.",
+    request: { id: "req_1", action: "build", createdAt: 1, path: "canvas/requests/req_1.json" },
+    input: { gameId: "rampage", action: "build", documentId: "design" },
+  };
 
-  it("appends the prompt and its request pill on a new paragraph", async () => {
+  it("names the thread on the game, then appends the prompt and its pill", async () => {
+    const named: unknown[] = [];
     const slot = renderSlot(
-      { component: RequestButton },
-      { prompt: "Implement the jump." },
+      banner(),
+      {},
       {
         pluginId: "game-studio",
+        rpc: {
+          overview,
+          nameThread: (input: unknown) => {
+            named.push(input);
+            return { game };
+          },
+        },
         composer: { scope: { kind: "thread", threadId: "thread-main" }, text: "Context first.  " },
       },
     );
-    fireEvent.click(await slot.findByRole("button", { name: "Prepare" }));
+    await act(async () => {
+      studioRequests.post({ threadId: "thread-main", ...request });
+    });
+    await waitFor(() => expect(slot.inspection.composer.draft.mentions).toHaveLength(1));
+    expect(named).toEqual([{ gameId: "rampage", threadId: "thread-main" }]);
     const { text, mentions } = slot.inspection.composer.draft;
     const [mention] = mentions;
-    // The host serializes the pill's text; the request rides on the pill, not on that text.
     const pill = mention ? text.slice(mention.from, mention.to) : "";
-    expect(pill).toContain("Studio · build");
+    expect(pill).toContain("Game Studio · build");
     expect(text).toBe(`Context first.\n\nImplement the jump. ${pill} `);
     expect(mentions).toEqual([
       {
         from: "Context first.\n\nImplement the jump. ".length,
         to: "Context first.\n\nImplement the jump. ".length + pill.length,
-        label: "Studio · build",
+        label: "Game Studio · build",
         kind: "plugin",
         pluginId: "game-studio",
         provider: "request",
-        id: '{"action":"build"}',
+        id: JSON.stringify({ ...request.input, request: request.request }),
         icon: null,
       },
     ]);
     expect(slot.inspection.composer.focusCount).toBe(1);
   });
 
-  it("starts an empty draft with the prompt", async () => {
+  it("selects the game's checkout for a new thread", async () => {
     const slot = renderSlot(
-      { component: RequestButton },
-      { prompt: "Playtest the level." },
-      { composer: { scope: { kind: "new-thread", projectId: null } } },
+      banner(),
+      {},
+      {
+        pluginId: "game-studio",
+        rpc: { overview },
+        composer: { scope: { kind: "new-thread", projectId: null } },
+      },
     );
-    fireEvent.click(await slot.findByRole("button", { name: "Prepare" }));
-    const { text, mentions } = slot.inspection.composer.draft;
-    expect(text).toMatch(/^Playtest the level\. \S.*Studio · build $/);
-    expect(mentions.map(({ from }) => from)).toEqual(["Playtest the level. ".length]);
-  });
-});
-
-describe("composer agent selection", () => {
-  it("keeps the picked model's own reasoning level and service tier", () => {
-    const selection: ComposerSelection = {
-      providerId: "codex",
-      model: "gpt-6.1-sol",
-      reasoningLevel: "ultracode",
-      serviceTier: "ultrafast",
-    };
-    expect(selectedAgent(selection, "high")).toEqual({
-      providerId: "codex",
-      model: "gpt-6.1-sol",
-      reasoningLevel: "ultracode",
-      serviceTier: "ultrafast",
+    await act(async () => {
+      studioRequests.post({ threadId: null, ...request });
     });
+    await waitFor(() => expect(slot.inspection.composer.draft.mentions).toHaveLength(1));
+    expect(slot.inspection.composer.selections).toEqual([
+      {
+        projectId: "project-rampage",
+        environment: {
+          type: "host",
+          hostId: "host-mac",
+          workspace: { type: "unmanaged", path: "/games/rampage" },
+        },
+      },
+    ]);
+    expect(slot.inspection.composer.draft.text).toMatch(/^Implement the jump\. \S.*Game Studio · build $/);
   });
 
-  it("waits for a picked provider and model", () => {
-    expect(selectedAgent(null, "high")).toBeUndefined();
-    expect(selectedAgent({ providerId: "codex" }, "high")).toBeUndefined();
-    expect(selectedAgent({ providerId: "codex", model: "gpt-6" }, "high")).toEqual({
-      providerId: "codex",
-      model: "gpt-6",
-      reasoningLevel: "high",
+  it("leaves another thread's requests alone", async () => {
+    const slot = renderSlot(
+      banner(),
+      {},
+      {
+        pluginId: "game-studio",
+        rpc: { overview },
+        composer: { scope: { kind: "thread", threadId: "thread-other" } },
+      },
+    );
+    await act(async () => {
+      studioRequests.post({ threadId: "thread-main", ...request });
     });
+    await act(() => new Promise((resolve) => setTimeout(resolve, 20)));
+    expect(slot.inspection.composer.draft.text).toBe("");
+    expect(studioRequests.take("thread-main")).toHaveLength(1);
   });
 });

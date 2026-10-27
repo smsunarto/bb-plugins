@@ -24,11 +24,7 @@ const surfaces: Record<string, Record<string, string[]>> = {
   },
   devin: { cloud: ["../src/app/app"] },
   dotfiles: { editor: ["WorkingFileEditor", "HostPicker"], screens: ["DotfilesPage"] },
-  "game-studio": {
-    canvas: ["StudioCanvas"],
-    generation: ["GenerationSettings", "CanvasInputs", "BriefStarters"],
-    review: ["VerdictBadge"],
-  },
+  "game-studio": { approval: ["GenerationApproval"] },
   "gh-stack": { files: ["ChangedFileTree"], stack: ["../app"] },
   gitbutler: {
     files: ["FileList", "WorkspaceSkeleton", "Notice"],

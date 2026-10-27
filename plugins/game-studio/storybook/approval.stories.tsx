@@ -1,7 +1,7 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { expect, fn, userEvent, waitFor, within } from "storybook/test";
 import { GenerationApproval } from "../src/app/generation-approval";
-import "../src/app/studio.css";
+import "../src/app/app.css";
 
 const interaction = {
   id: "int-1",

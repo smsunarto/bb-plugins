@@ -21,35 +21,27 @@ a saved node. Provider CLI commands and credentials are internal details. Keep
 a stable requestId and poll `game_studio_generation` to collect outputs. Resume
 only a confirmed existing task; never resubmit an uncertain paid request.
 
-Run `bb game-studio rpc overview '{}'` to list registered games, and `canvasContext`
-with `{"gameId":"..."}` for a bounded overview; `get` returns the full workspace and
-can be large. Use the CLI for reads. Generation and board edits go through the native
-tools: a paid generation an agent starts waits for the person's approval there, and
-an edit made there is shown to the person with an undo. The studio's own mutation
-RPCs skip both.
-Use the returned project's host and root path; never assume the game lives on
-the BB server. Inspect current CLI metadata for mutation input schemas.
+Run `bb game-studio rpc overview '{}'` to list the studio's games and the studio's
+URL, and `game_studio_canvas_context` with `{"gameId":"..."}` for a bounded overview.
+The studio's files live in the Game Studio web app, not in the game's checkout:
+read and change them only through the native tools. A paid generation an agent
+starts waits for the person's approval there, and an edit made there is shown to
+the person with an undo. A game connected to a checkout accepts edits and
+generations only from threads in that BB project and checkout; the overview names
+them under `checkout`.
 
-Projects store their design as ordinary `canvas/` files compatible with the
-OhMyGame workspace model: index, boards, editor layouts, Markdown documents,
-and an asset catalog. Read the files before changing them. Keep content and
-user layout separate and preserve stable node and asset identifiers.
+The studio keeps a game's design as the OhMyGame workspace model: index, boards,
+Markdown documents, and an asset catalog. Keep content and layout separate and
+preserve stable node and asset identifiers. A stale revision means someone else
+changed the file: reread and merge the intended change rather than retrying
+over their work.
 
-Accepted requests carry a descriptor and a path under `canvas/requests/`. Keep
-each request's independent progress JSON current, preserving `id`, `action`,
-`createdAt`, and `threadId`. Use `running`, `done`, `failed`, or `uncertain` based
-on actual verification. An idle thread is not proof of completion. After receiving the request in BB’s native chat, initialize its progress file
-with your current thread id through `recordRequest` or the project files.
-Preparing an unsent composer draft must not create progress files.
+A request the person sends from the studio arrives with a context pill that
+carries its descriptor. Report progress in the thread; an idle thread is not
+proof of completion. Preparing an unsent composer draft records nothing.
 
-To update a document or board through RPC, send the revision returned by `get`.
-A stale revision means someone else changed the file: reread and merge the
-intended change. Do not retry with a new revision while discarding their work.
-
-Use `updateGame` to set a verified web build's preview entry, for example
-`{"gameId":"...","previewPath":"dist/index.html"}`. Static builds must use
-relative asset URLs to load through BB's leased preview subpath. Use existing
-engine tooling for native games. A loaded preview is not a completed playtest.
+Builds and playtests happen in the game's checkout with the engine's own
+tooling. A loaded preview is not a completed playtest.
 
 ## Agent canvas workflow
 
@@ -57,7 +49,6 @@ Use the native canvas tools to author workflows instead of writing board-editing
 scripts in each game repository. `game_studio_canvas_context({gameId})` lists
 boards and their revisions. Read one board with `{gameId,boardId}`; use
 `nodeIds:["concept"]` to focus a correction. Follow `nextOffset` until null.
-The CLI's matching read is `bb game-studio rpc canvasContext '{"gameId":"..."}'`.
 The main document is returned as a path and revision; read it when design context
 is needed. `section:"assets"` or `section:"documents"` pages those catalogs.
 `omittedDataKeys` names bulky fields. To recover one exactly, request

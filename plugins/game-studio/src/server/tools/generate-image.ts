@@ -1,14 +1,15 @@
+import { generationId, imageRequest } from "@argus-labs/game-studio-api";
 import { defineTool, type ToolContext } from "@bb-kit/core/tools";
-import { imageRequest, generationId } from "../../shared/generation.ts";
-import type { GenerationContext } from "../lib/generations.ts";
+import { type StudioContext, startGeneration } from "../lib/studio-context.ts";
 export const generateImage = defineTool({
   parameters: imageRequest
     .omit({ kind: true, imageReferenceKey: true })
     .extend({ gameId: generationId, requestId: generationId }),
-  async execute(ctx: ToolContext<GenerationContext>, input) {
+  async execute(ctx: ToolContext<StudioContext>, input) {
     const { gameId, requestId, ...request } = input;
     return JSON.stringify(
-      await ctx.generations.start(
+      await startGeneration(
+        ctx,
         gameId,
         requestId,
         { ...request, kind: "image" },

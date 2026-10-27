@@ -1,7 +1,7 @@
 {
   "name": "@smsunarto/bb-plugin-game-studio",
   "version": "0.1.0",
-  "description": "A native BB game studio adapted from OhMyGame, with a design canvas, assets, agent threads, and playable previews.",
+  "description": "Game Studio in BB: embeds the studio web app beside your threads, gives agents its API as tools, and runs Unity Editors and checkout slots on BB machines.",
   "license": "MIT AND Apache-2.0",
   "author": "Scott Sunarto",
   "type": "module",
@@ -48,14 +48,11 @@
   },
   "dependencies": {
     "@bb-kit/core": "workspace:*",
-    "@dagrejs/dagre": "3.1.1",
     "@tanstack/react-query": "^5.101.4",
-    "@xyflow/react": "12.11.3",
     "better-sqlite3": "^12.0.0",
     "lucide-react": "1.57.0",
-    "mediabunny": "1.61.5",
-    "three": "0.186.1",
-    "zod": "^4.4.3"
+    "zod": "^4.4.3",
+    "@argus-labs/game-studio-api": "link:@argus-labs/game-studio-api"
   },
   "devDependencies": {
     "@get-bb/plugin-sdk": "0.6.75",
@@ -63,7 +60,6 @@
     "@types/node": "^22.0.0",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
-    "@types/three": "0.186.0",
     "bun-types": "^1.4.0",
     "react": "19.2.8",
     "react-dom": "19.2.8",

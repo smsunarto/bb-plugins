@@ -1,0 +1,434 @@
+/* Workspace layout adapted from OhMyGame; modified for BB and Unity. Apache-2.0. */
+.gs-app {
+  container: studio / inline-size;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  color: var(--foreground);
+  background: var(--background);
+  font: 13px/1.45 var(--font-sans, system-ui);
+  box-sizing: border-box;
+}
+.gs-app * {
+  box-sizing: border-box;
+}
+.gs-unity-checkout-inputs {
+  container: none;
+  position: relative;
+  flex: 0 1 auto;
+  width: auto;
+  max-width: 130px;
+  height: auto;
+}
+.gs-unity-checkout-inputs summary {
+  cursor: pointer;
+  white-space: nowrap;
+  padding: 6px 8px;
+  border-radius: 6px;
+  max-width: 130px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.gs-unity-checkout-announcement {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+.gs-unity-checkout-inputs summary:hover {
+  background: var(--state-hover);
+}
+.gs-unity-checkout-inputs summary:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+/* The thread Info tab's Game row, drawn inside BB's own row rather than a Studio surface. */
+.gs-info-link {
+  display: block;
+  max-width: 100%;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--foreground);
+  font: inherit;
+  font-size: 12px;
+  text-align: start;
+  cursor: pointer;
+}
+.gs-info-link:hover {
+  text-decoration: underline;
+}
+.gs-info-link:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+.gs-unity-checkout-panel {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 8px);
+  z-index: 50;
+  width: 320px;
+  max-width: calc(100vw - 32px);
+  padding: 12px;
+  display: grid;
+  gap: 6px;
+  background: var(--surface-raised);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: var(--shadow-md);
+}
+.gs-unity-checkout-row {
+  display: flex;
+  align-items: start;
+  gap: 6px;
+  min-width: 0;
+}
+.gs-unity-checkout-row select {
+  flex: 1;
+  width: 0;
+}
+.gs-unity-checkout-inputs p {
+  color: var(--muted-foreground);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.gs-app button,
+.gs-app input,
+.gs-app select,
+.gs-app textarea {
+  font: inherit;
+  color: inherit;
+}
+.gs-app button,
+.gs-app select {
+  cursor: pointer;
+}
+.gs-app button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 32px;
+  padding: 6px 10px;
+  background: var(--surface-raised);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  transition:
+    background-color 120ms ease-out,
+    border-color 120ms ease-out;
+}
+.gs-app button:hover:not(:disabled) {
+  background: var(--state-hover);
+}
+.gs-app button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.gs-app button:focus-visible,
+.gs-app input:focus-visible,
+.gs-app textarea:focus-visible,
+.gs-app select:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+.gs-app input,
+.gs-app select,
+.gs-app textarea {
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface-recessed);
+  padding: 7px 9px;
+  caret-color: var(--primary);
+}
+.gs-app textarea {
+  line-height: 1.6;
+}
+.gs-app label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 12px;
+}
+.gs-app svg {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+}
+.gs-app h1,
+.gs-app h2,
+.gs-app p {
+  margin: 0;
+}
+.gs-app h1 {
+  font-size: 22px;
+  font-weight: 600;
+  letter-spacing: -0.5px;
+}
+.gs-app h2 {
+  font-size: 14px;
+  font-weight: 600;
+}
+.gs-app code,
+.gs-app pre {
+  font-family: var(--font-mono, monospace);
+  font-size: 11px;
+}
+.gs-app a {
+  color: var(--primary);
+  text-decoration: none;
+}
+.gs-app a:hover {
+  text-decoration: underline;
+}
+.gs-app .gs-primary {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: var(--primary-foreground);
+}
+.gs-app .gs-primary:hover:not(:disabled) {
+  background: var(--primary);
+  color: var(--primary-foreground);
+  filter: brightness(1.06);
+}
+.gs-app .gs-danger {
+  color: var(--destructive-text);
+}
+.gs-muted {
+  color: var(--muted-foreground);
+  font-size: 12px;
+}
+.gs-spacer {
+  flex: 1;
+}
+.gs-truncate {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.gs-app .gs-icon {
+  width: 32px;
+  height: 32px;
+  min-height: 32px;
+  flex-shrink: 0;
+  padding: 5px;
+  background: transparent;
+  border: 0;
+}
+.gs-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.gs-notice {
+  padding: 10px 14px;
+  background: var(--surface-destructive);
+  color: var(--destructive-text);
+  border-bottom: 1px solid var(--surface-destructive-border);
+  font-size: 12px;
+}
+.gs-notice button {
+  margin-left: 8px;
+}
+.gs-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  min-height: 280px;
+  text-align: center;
+  padding: 24px;
+}
+.gs-empty > svg {
+  width: 38px;
+  height: 38px;
+  color: var(--muted-foreground);
+}
+.gs-empty h2 {
+  font-weight: 500;
+  font-size: 17px;
+}
+.gs-empty p {
+  max-width: 400px;
+}
+.gs-warning {
+  color: var(--warning-text);
+  font-size: 12px;
+}
+.gs-success {
+  color: var(--success-foreground);
+  font-size: 12px;
+}
+.gs-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 7px;
+  font-size: 11px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  color: var(--muted-foreground);
+  white-space: nowrap;
+}
+
+.gs-approval {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px;
+  font-size: 12px;
+}
+.gs-approval p {
+  margin: 0;
+}
+.gs-approval ul {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.gs-approval li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.gs-approval li > svg {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+  color: var(--muted-foreground);
+}
+.gs-approval-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.gs-approval-model {
+  margin-left: auto;
+  flex-shrink: 0;
+  color: var(--muted-foreground);
+}
+.gs-approval-grant {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted-foreground);
+}
+.gs-approval footer {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.gs-approval footer small {
+  margin-right: auto;
+  color: var(--muted-foreground);
+}
+.gs-approval-approve {
+  background: var(--gs-accent, var(--primary));
+  color: var(--primary-foreground, #181818);
+  font-weight: 600;
+}
+.gs-approval-error {
+  margin: 0;
+  padding: 10px 12px;
+  color: var(--destructive-text);
+  font-size: 12px;
+}
+
+/* A game whose agent runs the person approved in advance; one click asks again. */
+.gs-app .gs-grant {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: 4px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--ansi-10, #9ddd54) 20%, transparent);
+  color: var(--ansi-10, #9ddd54);
+  font-size: 11px;
+}
+.gs-app .gs-grant svg {
+  width: 12px;
+  height: 12px;
+}
+
+/* The studio web app, embedded beside the thread. */
+.gs-embed {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+}
+.gs-embed-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 36px;
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--border);
+  font-size: 12px;
+}
+.gs-embed-bar .gs-muted {
+  min-width: 0;
+}
+.gs-embed-bar a {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+  padding: 4px 8px;
+  border-radius: 6px;
+  color: var(--foreground);
+}
+.gs-embed-bar a:hover {
+  background: var(--state-hover);
+  text-decoration: none;
+}
+.gs-embed-bar a svg {
+  width: 14px;
+  height: 14px;
+}
+.gs-embed-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted-foreground);
+  white-space: nowrap;
+}
+.gs-embed-status .gs-status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--muted-foreground);
+}
+.gs-embed-status[data-connected="true"] .gs-status-dot {
+  background: var(--ansi-10, #9ddd54);
+}
+.gs-embed iframe {
+  flex: 1;
+  width: 100%;
+  min-height: 0;
+  border: 0;
+  background: var(--background);
+}
+.gs-embed-hint {
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+  color: var(--muted-foreground);
+  font-size: 12px;
+}
+.gs-embed-hint a {
+  color: var(--primary);
+}
