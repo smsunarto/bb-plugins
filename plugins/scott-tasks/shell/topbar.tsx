@@ -1,13 +1,17 @@
-import { useCallback, useMemo } from "react";
+import { useMemo } from "react";
+import { eq, isNull } from "@tanstack/react-db";
 import type { Project, Task } from "../shared/contract.js";
+import { sortTasks } from "../shared/sort.js";
 import { groupTasksByStatus } from "../views/list/lib.js";
-import { listAllTasks, useTasksQuery } from "./data.js";
+import { tasksCollection } from "./collections.js";
+import { useTasksLiveQuery } from "./data.js";
+import { refreshTasks } from "./sync.js";
+import { useTasksUi } from "./ui-store.js";
 import type { ResolvedTasksRoute, TaskViewMode, TasksRoute } from "./routes.js";
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
 import { cn } from "@/lib/utils";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { useTasksRefresh } from "./refresh.js";
 
 const REFRESH_TASKS_LABEL = "Refresh tasks";
 
@@ -19,7 +23,7 @@ interface PagerPosition {
 }
 
 export function pagerPosition(tasks: readonly Task[], taskKey: string): PagerPosition | null {
-  const ordered = groupTasksByStatus(tasks).flatMap((group) => group.tasks);
+  const ordered = groupTasksByStatus(sortTasks(tasks, "manual")).flatMap((group) => group.tasks);
   const wanted = taskKey.toUpperCase();
   const index = ordered.findIndex((task) => task.key.toUpperCase() === wanted);
   if (index === -1) return null;
@@ -40,18 +44,17 @@ function TaskPager({
   projectId: string | null;
   onNavigate: (route: TasksRoute) => void;
 }) {
-  const siblings = useTasksQuery(
-    async (rpc) =>
-      listAllTasks(rpc, {
-        ...(projectId === null ? {} : { projectId }),
-        parentTaskId: null,
-      }),
-    ["tasks:changed"],
-    [projectId],
-  );
+  const siblings = useTasksLiveQuery(["task-pager", projectId], (q) => {
+    const topLevel = q
+      .from({ task: tasksCollection })
+      .where(({ task }) => isNull(task.parentTaskId));
+    return projectId === null
+      ? topLevel
+      : topLevel.where(({ task }) => eq(task.projectId, projectId));
+  });
   const position = useMemo(
-    () => (siblings.data ? pagerPosition(siblings.data, taskKey) : null),
-    [siblings.data, taskKey],
+    () => (siblings.isReady && siblings.data ? pagerPosition(siblings.data, taskKey) : null),
+    [siblings.isReady, siblings.data, taskKey],
   );
   if (!position) return null;
   const step = (key: string | null) => {
@@ -117,12 +120,7 @@ function ViewToggle({
 }
 
 function RefreshTasksButton() {
-  const { refresh, isRefreshing } = useTasksRefresh();
-
-  const handleRefresh = useCallback(() => {
-    if (isRefreshing) return;
-    refresh();
-  }, [isRefreshing, refresh]);
+  const isRefreshing = useTasksUi((state) => state.refreshing);
 
   return (
     <TooltipProvider delayDuration={300}>
@@ -136,7 +134,7 @@ function RefreshTasksButton() {
             aria-label={REFRESH_TASKS_LABEL}
             aria-busy={isRefreshing}
             disabled={isRefreshing}
-            onClick={handleRefresh}
+            onClick={refreshTasks}
           >
             <Icon name="RotateCcw" className={cn("size-3.5", isRefreshing && "animate-spin")} />
           </Button>

@@ -1,12 +1,15 @@
 import { useMemo, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import type { Folder, Label, Preset } from "../../shared/contract.js";
 import { errorMessage } from "../../shared/errors.js";
+import { machinesQuery } from "../../shell/query.js";
 import {
   listAllTasks,
   useFolders,
+  useLabels,
   usePresets,
   useProjects,
-  useTasksQuery,
+  queryError,
   useTasksRpc,
 } from "../../shell/data.js";
 import {
@@ -105,12 +108,10 @@ function LabelsSection() {
   const projectList = projects.data ?? [];
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
   const projectId = selectedProjectId ?? projectList[0]?.id ?? null;
-  const labels = useTasksQuery(
-    async (rpc) =>
-      projectId ? (await rpc.call("listLabels", { projectId })).labels : ([] as Label[]),
-    ["projects:changed"],
-    [projectId],
-  );
+  const allLabels = useLabels();
+  const labels = {
+    data: allLabels.data?.filter((label) => label.projectId === projectId),
+  };
   const [editingId, setEditingId] = useState<string | null>(null);
   const { error, run } = useActionError();
   const [confirmDelete, setConfirmDelete] = useState<{
@@ -255,7 +256,7 @@ function LabelsSection() {
 function PresetsSection() {
   const rpc = useTasksRpc();
   const presets = usePresets();
-  const machines = useTasksQuery(async (rpc) => (await rpc.call("listMachines", {})).machines, []);
+  const machines = useQuery(machinesQuery);
   const [dialog, setDialog] = useState<{
     key: number;
     editing: Preset | null;
@@ -264,7 +265,7 @@ function PresetsSection() {
 
   const save = async (editing: Preset | null, draft: PresetDraft) => {
     await savePresetDraft(rpc, editing, draft);
-    presets.refresh();
+    void presets.refetch();
   };
 
   return (
@@ -344,7 +345,7 @@ function PresetsSection() {
                         setError(null);
                         rpc
                           .call("deletePreset", { presetId: preset.id })
-                          .then(() => presets.refresh())
+                          .then(() => presets.refetch())
                           .catch((deleteError: unknown) => setError(errorMessage(deleteError)));
                       }}
                     >
@@ -498,7 +499,7 @@ function FoldersSection() {
     [folderList],
   );
 
-  const impactError = folders.error ?? projects.error;
+  const impactError = queryError(folders.error ?? projects.error);
   const impactReady =
     impactError === null &&
     folders.data !== undefined &&
@@ -579,8 +580,8 @@ function FoldersSection() {
                 folderId: target.id,
               });
               if (!result.deleted) {
-                folders.refresh();
-                projects.refresh();
+                void folders.refetch();
+                void projects.refetch();
                 throw new Error(`Folder “${target.name}” was already deleted.`);
               }
             });

@@ -1194,7 +1194,7 @@ describe("Tasks RPC domain API", () => {
     await harness.dispose();
   });
 
-  it("lists the tasks a thread is attached to, once each", async () => {
+  it("lists a thread's task links and every task's live links in one read each", async () => {
     const { bb, harness } = createFakePluginHost({ pluginId: "tasks" });
     const store = createStore(bb);
     registerTasksApi(bb, store);
@@ -1202,27 +1202,83 @@ describe("Tasks RPC domain API", () => {
     const first = store.tasks.createTask({ projectId: project.id, title: "First" });
     const second = store.tasks.createTask({ projectId: project.id, title: "Second" });
     const unrelated = store.tasks.createTask({ projectId: project.id, title: "Unrelated" });
-    for (const [taskId, threadId] of [
-      [first.id, "thr_worker000"],
-      [second.id, "thr_worker000"],
-      [unrelated.id, "thr_other0000"],
+    for (const [taskId, threadId, liveStatus] of [
+      [first.id, "thr_worker000", "working"],
+      [second.id, "thr_worker000", "completed"],
+      [unrelated.id, "thr_other0000", "starting"],
     ] as const) {
       store.tasks.upsertTaskThread({
         taskId,
         threadId,
         presetName: "Default",
         title: threadId,
-        liveStatus: "working",
+        liveStatus,
       });
     }
 
-    const result = tasksRpcContract.listThreadTasks.output.parse(
-      await harness.callRpc("listThreadTasks", { threadId: "thr_worker000" }),
+    const byThread = tasksRpcContract.listTaskThreadsByThread.output.parse(
+      await harness.callRpc("listTaskThreadsByThread", { threadId: "thr_worker000" }),
     );
-    expect(result.tasks.map((task) => task.key).sort()).toEqual(["LNK-1", "LNK-2"]);
+    expect(byThread.taskThreads.map((link) => link.taskId).sort()).toEqual(
+      [first.id, second.id].sort(),
+    );
     await expect(
-      harness.callRpc("listThreadTasks", { threadId: "thr_none00000" }),
-    ).resolves.toEqual({ tasks: [] });
+      harness.callRpc("listTaskThreadsByThread", { threadId: "thr_none00000" }),
+    ).resolves.toEqual({ taskThreads: [] });
+
+    const active = tasksRpcContract.listActiveTaskThreads.output.parse(
+      await harness.callRpc("listActiveTaskThreads", null),
+    );
+    expect(active.taskThreads.map((link) => link.taskId).sort()).toEqual(
+      [first.id, unrelated.id].sort(),
+    );
+
+    await harness.dispose();
+  });
+
+  it("reads tasks by id, labels across projects, and attachment counts in one call each", async () => {
+    const { bb, harness } = createFakePluginHost({ pluginId: "tasks" });
+    const store = createStore(bb);
+    registerTasksApi(bb, store);
+    const alpha = store.tasks.createProject({ name: "Alpha", prefix: "ALP", color: "blue" });
+    const beta = store.tasks.createProject({ name: "Beta", prefix: "BET", color: "green" });
+    const first = store.tasks.createTask({ projectId: alpha.id, title: "First" });
+    const second = store.tasks.createTask({ projectId: beta.id, title: "Second" });
+    store.tasks.createTask({ projectId: beta.id, title: "Third" });
+    store.tasks.createLabel({ projectId: alpha.id, name: "Bug", color: "red" });
+    store.tasks.createLabel({ projectId: beta.id, name: "Docs", color: "blue" });
+    for (const fileName of ["a.txt", "b.txt"]) {
+      store.tasks.createAttachment({
+        taskId: first.id,
+        fileName,
+        mime: "text/plain",
+        sizeBytes: 1,
+        blobPath: `blobs/${fileName}`,
+        isImage: false,
+      });
+    }
+
+    const byId = tasksRpcContract.listTasks.output.parse(
+      await harness.callRpc("listTasks", { taskIds: [second.id, first.id] }),
+    );
+    expect(byId.tasks.map((task) => task.title).sort()).toEqual(["First", "Second"]);
+    await expect(harness.callRpc("listTasks", { taskIds: [] })).resolves.toMatchObject({
+      tasks: [],
+    });
+
+    const labels = tasksRpcContract.listLabels.output.parse(
+      await harness.callRpc("listLabels", {}),
+    );
+    expect(labels.labels.map((label) => label.name)).toEqual(["Bug", "Docs"]);
+
+    await expect(
+      harness.callRpc("countTaskAttachments", { taskIds: [first.id, second.id, first.id] }),
+    ).resolves.toEqual({
+      counts: [
+        { taskId: first.id, count: 2 },
+        { taskId: second.id, count: 0 },
+      ],
+    });
 
     await harness.dispose();
   });

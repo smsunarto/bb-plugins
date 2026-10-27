@@ -1,31 +1,35 @@
 import {
   useEffect,
+  useMemo,
   useRef,
   useState,
   type PointerEvent as ReactPointerEvent,
   type ReactNode,
 } from "react";
+import { eq } from "@tanstack/react-db";
 import { type Label, type Task, type TaskStatus, type TaskThread } from "../../shared/contract.js";
 import {
-  listAllTasks,
-  signalTaskIds,
-  useTasksQuery,
-  type TaskSignal,
-  useTasksRpc,
-  type TasksRpc,
+  attachmentCountsCollection,
+  moveBoardTask,
+  tasksCollection,
+} from "../../shell/collections.js";
+import {
+  tasksLoadError,
+  useActiveThreads,
+  useLabels,
+  useTasksLiveQuery,
 } from "../../shell/data.js";
 import { useTasksNavigation } from "../../shell/routes.js";
-import { NewTaskDialog } from "../manage/new-task-dialog.js";
+import { useTasksUi } from "../../shell/ui-store.js";
 import {
-  applyBoardMove,
   BOARD_STATUSES,
   dropIndexForPointer,
   dropNeighborsForIndex,
   visibleBoardStatuses,
 } from "./drop-position.js";
 import { PriorityIcon, StatusIcon } from "./icons.js";
-import { isActiveThread } from "../detail/meta.js";
 import { STATUS_LABELS } from "../list/lib.js";
+import { byManualOrder } from "../../shared/sort.js";
 import { Button } from "@/components/ui/button";
 import { DelayedLoading } from "@/components/ui/delayed-loading";
 import { Icon } from "@/components/ui/icon";
@@ -35,175 +39,64 @@ import { cn } from "@/lib/utils";
 const DRAG_THRESHOLD_PX = 5;
 
 interface BoardCardMeta {
-  workingThreads: TaskThread[];
+  workingThreads: readonly TaskThread[];
   attachmentCount: number;
   subDone: number;
   subTotal: number;
 }
 
-interface BoardData {
-  tasks: Task[];
-  subtasks: Task[];
-  labelsById: Map<string, Label>;
-  metaByTaskId: Map<string, BoardCardMeta>;
-}
+const NO_THREADS: readonly TaskThread[] = [];
 
-const EMPTY_META: BoardCardMeta = {
-  workingThreads: [],
-  attachmentCount: 0,
-  subDone: 0,
-  subTotal: 0,
-};
-
-async function fetchBoard(rpc: TasksRpc, projectId: string): Promise<BoardData> {
-  const tasks = await listAllTasks(rpc, { projectId });
-  const topLevel = tasks.filter((task) => task.parentTaskId === null);
-
-  const labels = await rpc.call("listLabels", { projectId }).then(
-    (result) => result.labels,
-    () => [],
+/**
+ * The project's tasks, each joined to its attachment count. Sub-tasks ride
+ * along for the cards' progress; the counts load for exactly these cards.
+ */
+function useBoardData(projectId: string) {
+  const board = useTasksLiveQuery(["board", projectId], (q) =>
+    q
+      .from({ task: tasksCollection })
+      .where(({ task }) => eq(task.projectId, projectId))
+      .leftJoin({ attachments: attachmentCountsCollection }, ({ task, attachments }) =>
+        eq(task.id, attachments.taskId),
+      ),
   );
-  const subProgress = new Map<string, { done: number; total: number }>();
-  for (const task of tasks) {
-    if (task.parentTaskId === null) continue;
-    const entry = subProgress.get(task.parentTaskId) ?? { done: 0, total: 0 };
-    entry.total += 1;
-    if (task.status === "done") entry.done += 1;
-    subProgress.set(task.parentTaskId, entry);
-  }
-  const activeTaskIds = await listAllTasks(rpc, {
-    projectId,
-    activeOnly: true,
-  }).then(
-    (result) => new Set(result.map((task) => task.id)),
-    () => new Set<string>(),
-  );
-  const workingByTaskId = new Map<string, TaskThread[]>();
-  await Promise.all(
-    topLevel
-      .filter((task) => activeTaskIds.has(task.id))
-      .map(async (task) => {
-        const threads = await rpc.call("listTaskThreads", { taskId: task.id }).then(
-          (result) => result.taskThreads,
-          () => [],
-        );
-        workingByTaskId.set(task.id, threads.filter(isActiveThread));
-      }),
-  );
-  const attachmentCounts = new Map<string, number>();
-  await Promise.all(
-    topLevel.map(async (task) => {
-      const count = await rpc.call("listAttachments", { taskId: task.id }).then(
-        (result) => result.attachments.length,
-        () => 0,
-      );
-      attachmentCounts.set(task.id, count);
-    }),
-  );
-
-  return {
-    tasks: topLevel,
-    subtasks: tasks.filter((task) => task.parentTaskId !== null),
-    labelsById: new Map(labels.map((label) => [label.id, label])),
-    metaByTaskId: new Map(
-      topLevel.map((task) => [
-        task.id,
-        {
-          workingThreads: workingByTaskId.get(task.id) ?? [],
-          attachmentCount: attachmentCounts.get(task.id) ?? 0,
-          subDone: subProgress.get(task.id)?.done ?? 0,
-          subTotal: subProgress.get(task.id)?.total ?? 0,
-        },
-      ]),
-    ),
-  };
-}
-
-async function workingThreadsFor(rpc: TasksRpc, taskId: string): Promise<TaskThread[]> {
-  return rpc.call("listTaskThreads", { taskId }).then(
-    (result) => result.taskThreads.filter(isActiveThread),
-    () => [],
-  );
-}
-
-async function patchBoard(
-  rpc: TasksRpc,
-  projectId: string,
-  current: BoardData,
-  signals: readonly TaskSignal[],
-): Promise<BoardData | null> {
-  if (signals.some((signal) => signal.channel === "projects:changed")) {
-    return null;
-  }
-  const changedIds = signalTaskIds(signals, "tasks:changed");
-  const fetched = await Promise.all(
-    changedIds.map(async (taskId) => {
-      const { task } = await rpc.call("getTask", { taskId });
-      return [taskId, task] as const;
-    }),
-  );
-  const changed = new Map(fetched);
-  const keep = (task: Task) => !changed.has(task.id);
-  const tasks = current.tasks.filter(keep);
-  const subtasks = current.subtasks.filter(keep);
-  const metaByTaskId = new Map(current.metaByTaskId);
-  for (const taskId of changed.keys()) metaByTaskId.delete(taskId);
-  const refreshedCards: Task[] = [];
-  for (const task of changed.values()) {
-    if (task === null || task.projectId !== projectId) continue;
-    if (task.parentTaskId === null) {
-      tasks.push(task);
-      refreshedCards.push(task);
-    } else {
-      subtasks.push(task);
+  const activeThreads = useActiveThreads();
+  const labels = useLabels();
+  const data = useMemo(() => {
+    if (!board.isReady) return undefined;
+    const tasks: Task[] = [];
+    const attachmentCounts = new Map<string, number>();
+    const progress = new Map<string, { done: number; total: number }>();
+    for (const { task, attachments } of board.data ?? []) {
+      if (task.parentTaskId === null) {
+        tasks.push(task);
+        attachmentCounts.set(task.id, attachments?.count ?? 0);
+        continue;
+      }
+      const entry = progress.get(task.parentTaskId) ?? { done: 0, total: 0 };
+      entry.total += 1;
+      if (task.status === "done") entry.done += 1;
+      progress.set(task.parentTaskId, entry);
     }
-  }
-  const topLevelIds = new Set(tasks.map((task) => task.id));
-  const threadIds = signalTaskIds(signals, "threads:changed").filter(
-    (taskId) => topLevelIds.has(taskId) && !changed.has(taskId),
-  );
-  await Promise.all([
-    ...refreshedCards.map(async (task) => {
-      const [workingThreads, attachmentCount] = await Promise.all([
-        workingThreadsFor(rpc, task.id),
-        rpc.call("listAttachments", { taskId: task.id }).then(
-          (result) => result.attachments.length,
-          () => 0,
-        ),
-      ]);
-      metaByTaskId.set(task.id, {
-        ...EMPTY_META,
-        workingThreads,
-        attachmentCount,
-      });
-    }),
-    ...threadIds.map(async (taskId) => {
-      const workingThreads = await workingThreadsFor(rpc, taskId);
-      metaByTaskId.set(taskId, {
-        ...(metaByTaskId.get(taskId) ?? EMPTY_META),
-        workingThreads,
-      });
-    }),
-  ]);
-  const progress = new Map<string, { done: number; total: number }>();
-  for (const task of subtasks) {
-    if (task.parentTaskId === null) continue;
-    const entry = progress.get(task.parentTaskId) ?? { done: 0, total: 0 };
-    entry.total += 1;
-    if (task.status === "done") entry.done += 1;
-    progress.set(task.parentTaskId, entry);
-  }
-  for (const task of tasks) {
-    const meta = metaByTaskId.get(task.id) ?? EMPTY_META;
-    const entry = progress.get(task.id);
-    metaByTaskId.set(task.id, {
-      ...meta,
-      subDone: entry?.done ?? 0,
-      subTotal: entry?.total ?? 0,
+    tasks.sort(byManualOrder);
+    const metaFor = (taskId: string): BoardCardMeta => ({
+      workingThreads: activeThreads.get(taskId) ?? NO_THREADS,
+      attachmentCount: attachmentCounts.get(taskId) ?? 0,
+      subDone: progress.get(taskId)?.done ?? 0,
+      subTotal: progress.get(taskId)?.total ?? 0,
     });
-  }
-  tasks.sort((a, b) => a.position - b.position || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
-  return { ...current, tasks, subtasks, metaByTaskId };
+    return { columns: groupColumns(tasks), metaFor };
+  }, [board.isReady, board.data, activeThreads]);
+  const labelsById = useMemo(
+    () =>
+      new Map(
+        (labels.data ?? [])
+          .filter((label) => label.projectId === projectId)
+          .map((label) => [label.id, label]),
+      ),
+    [labels.data, projectId],
+  );
+  return { data, labelsById, isError: board.isError, retry: board.retry };
 }
 
 type ColumnMap = Record<TaskStatus, Task[]>;
@@ -232,7 +125,7 @@ interface DragState {
   dropIndex: number;
 }
 
-function WorkingAgentsChip({ threads }: { threads: TaskThread[] }) {
+function WorkingAgentsChip({ threads }: { threads: readonly TaskThread[] }) {
   if (threads.length === 0) return null;
   return (
     <span className="flex min-w-0 items-center gap-1 font-medium text-success">
@@ -340,30 +233,14 @@ interface BoardViewProps {
 }
 
 export function BoardView({ projectId }: BoardViewProps) {
-  const rpc = useTasksRpc();
   const navigation = useTasksNavigation();
-  const board = useTasksQuery<BoardData>(
-    (queryRpc) => fetchBoard(queryRpc, projectId),
-    ["tasks:changed", "projects:changed", "threads:changed"],
-    [projectId],
-    {
-      applySignals: (queryRpc, current, signals) =>
-        patchBoard(queryRpc, projectId, current, signals),
-    },
-  );
-
-  const [columns, setColumns] = useState<ColumnMap | undefined>(undefined);
-  useEffect(() => {
-    setColumns(undefined);
-  }, [projectId]);
-  useEffect(() => {
-    if (board.data) setColumns(groupColumns(board.data.tasks));
-  }, [board.data]);
+  const openNewTask = useTasksUi((state) => state.openNewTask);
+  const board = useBoardData(projectId);
+  const columns = board.data?.columns;
   const columnsRef = useRef(columns);
   columnsRef.current = columns;
 
   const [drag, setDrag] = useState<DragState | null>(null);
-  const [quickAddStatus, setQuickAddStatus] = useState<TaskStatus | null>(null);
   const boardRef = useRef<HTMLDivElement | null>(null);
   const columnRefs = useRef(new Map<TaskStatus, HTMLDivElement>());
   const cardRefs = useRef(new Map<string, HTMLDivElement>());
@@ -414,21 +291,12 @@ export function BoardView({ projectId }: BoardViewProps) {
       taskId,
       dropIndex,
     );
-    setColumns(applyBoardMove(current, taskId, toStatus, dropIndex));
-    void rpc
-      .call("boardMove", {
-        taskId,
-        status: toStatus,
-        beforeTaskId: neighbors.beforeTaskId,
-        afterTaskId: neighbors.afterTaskId,
-        authorName: "You",
-      })
-      .then(
-        (result) => {
-          if (!result.ok) board.refresh();
-        },
-        () => board.refresh(),
-      );
+    // A card deleted mid-drag has nothing left to move.
+    if (!tasksCollection.has(taskId)) return;
+    // The card moves at once; a refused move puts it back.
+    moveBoardTask({ taskId, status: toStatus, ...neighbors })
+      .when("settled")
+      .catch(() => {});
   };
 
   const handleCardPointerDown = (event: ReactPointerEvent<HTMLDivElement>, task: Task) => {
@@ -498,12 +366,12 @@ export function BoardView({ projectId }: BoardViewProps) {
     navigation.go({ kind: "task", taskKey: task.key });
   };
 
-  if (columns === undefined) {
-    if (board.error) {
+  if (columns === undefined || board.data === undefined) {
+    if (board.isError) {
       return (
         <div className="flex h-full flex-col items-center justify-center gap-3 p-6 text-sm text-muted-foreground">
-          <p>Failed to load the board: {board.error}</p>
-          <Button variant="outline" size="sm" onClick={board.refresh}>
+          <p>Failed to load the board: {tasksLoadError()}</p>
+          <Button variant="outline" size="sm" onClick={board.retry}>
             Retry
           </Button>
         </div>
@@ -512,8 +380,8 @@ export function BoardView({ projectId }: BoardViewProps) {
     return <BoardSkeleton />;
   }
 
-  const labelsById = board.data?.labelsById ?? new Map<string, Label>();
-  const metaByTaskId = board.data?.metaByTaskId ?? new Map<string, BoardCardMeta>();
+  const { labelsById } = board;
+  const { metaFor } = board.data;
   const ghostTask = drag
     ? Object.values(columns)
         .flat()
@@ -536,7 +404,7 @@ export function BoardView({ projectId }: BoardViewProps) {
           key={task.id}
           task={task}
           labelsById={labelsById}
-          meta={metaByTaskId.get(task.id) ?? EMPTY_META}
+          meta={metaFor(task.id)}
           dragging={drag?.taskId === task.id}
           cardRef={(element) => {
             if (element) cardRefs.current.set(task.id, element);
@@ -560,7 +428,7 @@ export function BoardView({ projectId }: BoardViewProps) {
             size="icon"
             className="ml-auto size-6 text-muted-foreground"
             aria-label={`New ${STATUS_LABELS[status]} task`}
-            onClick={() => setQuickAddStatus(status)}
+            onClick={() => openNewTask({ projectId, status })}
           >
             <Icon name="Plus" className="size-3.5" />
           </Button>
@@ -600,22 +468,9 @@ export function BoardView({ projectId }: BoardViewProps) {
             width: drag.width,
           }}
         >
-          <TaskCard
-            task={ghostTask}
-            labelsById={labelsById}
-            meta={metaByTaskId.get(ghostTask.id) ?? EMPTY_META}
-            ghost
-          />
+          <TaskCard task={ghostTask} labelsById={labelsById} meta={metaFor(ghostTask.id)} ghost />
         </div>
       ) : null}
-      <NewTaskDialog
-        open={quickAddStatus !== null}
-        onOpenChange={(open) => {
-          if (!open) setQuickAddStatus(null);
-        }}
-        projectId={projectId}
-        defaultStatus={quickAddStatus ?? undefined}
-      />
     </div>
   );
 }

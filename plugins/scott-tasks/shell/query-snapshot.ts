@@ -10,19 +10,8 @@ export function querySnapshotStorageKey(name: string): string {
 
 let prunedOtherVersions = false;
 
-const claimedRevisions = new Map<string, number>();
-const writtenRevisions = new Map<string, number>();
-
 export function resetQuerySnapshotStateForTest(): void {
   prunedOtherVersions = false;
-  claimedRevisions.clear();
-  writtenRevisions.clear();
-}
-
-export function claimQuerySnapshotRevision(name: string): number {
-  const revision = (claimedRevisions.get(name) ?? 0) + 1;
-  claimedRevisions.set(name, revision);
-  return revision;
 }
 
 function pruneOtherSnapshotVersions(): void {
@@ -56,10 +45,9 @@ export function readQuerySnapshot<T>(name: string, schema: z.ZodType<T>): T | un
   }
 }
 
-export function writeQuerySnapshot(name: string, value: unknown, revision: number): void {
+/** Called with the query cache's accepted result, so a superseded read never lands here. */
+export function writeQuerySnapshot(name: string, value: unknown): void {
   pruneOtherSnapshotVersions();
-  if (revision < (writtenRevisions.get(name) ?? 0)) return;
-  writtenRevisions.set(name, revision);
   try {
     window.localStorage.setItem(querySnapshotStorageKey(name), JSON.stringify(value));
   } catch {}

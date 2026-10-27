@@ -23,6 +23,7 @@ const app = await loadPluginApp(() => import("../app"));
 const { parseTasksRoute, tasksRouteToSubPath } = await import("./routes.js");
 const { pagerPosition } = await import("./topbar.js");
 const { loadViewMode } = await import("./view-preference.js");
+const { LIST_PREFERENCE_STORAGE_KEY } = await import("../views/list/list-preference.js");
 const { querySnapshotStorageKey, resetQuerySnapshotStateForTest } =
   await import("./query-snapshot.js");
 
@@ -77,6 +78,7 @@ function seededRpc(overrides: Record<string, unknown> = {}) {
       projects: [{ projectId: PROJECT_ID, taskCount: 3, activeAgentCount: 1 }],
     }),
     listTasks: () => ({ tasks: [] }),
+    listActiveTaskThreads: () => ({ taskThreads: [] }),
     getTaskByKey: () => ({ task: null }),
     ...overrides,
   };
@@ -379,35 +381,24 @@ describe("tasks app shell", () => {
     let listProjectCalls = 0;
     let holdProjects = false;
     let releaseProjects: (() => void) | undefined;
-    const page = renderSlot(
-      app.navPanels[0]!,
-      { subPath: "all" },
-      {
-        rpc: seededRpc({
-          listTasks: () => {
-            listTaskCalls += 1;
-            return { tasks: [] };
-          },
-        }),
+    // Every surface's RPC client reaches the same plugin endpoint.
+    const rpc = seededRpc({
+      listTasks: () => {
+        listTaskCalls += 1;
+        return { tasks: [] };
       },
-    );
-    const panel = renderSlot(
-      navigationRegistration,
-      { subPath: "all" },
-      {
-        rpc: seededRpc({
-          listProjects: async () => {
-            listProjectCalls += 1;
-            if (holdProjects) {
-              await new Promise<void>((resolve) => {
-                releaseProjects = resolve;
-              });
-            }
-            return { projects: [project] };
-          },
-        }),
+      listProjects: async () => {
+        listProjectCalls += 1;
+        if (holdProjects) {
+          await new Promise<void>((resolve) => {
+            releaseProjects = resolve;
+          });
+        }
+        return { projects: [project] };
       },
-    );
+    });
+    const page = renderSlot(app.navPanels[0]!, { subPath: "all" }, { rpc });
+    const panel = renderSlot(navigationRegistration, { subPath: "all" }, { rpc });
     await page.findByRole("button", { name: "Refresh tasks" });
     await panel.findByText("Tasks Plugin");
     const initialTaskCalls = listTaskCalls;
@@ -771,9 +762,12 @@ describe("tasks app shell", () => {
           return calls === 1 ? older.promise : { projects: [newerProject] };
         },
       });
-      renderSlot(navigationRegistration, { subPath: "" }, { rpc });
-      const second = renderSlot(navigationRegistration, { subPath: "" }, { rpc });
-      await second.findByText("Newer truth");
+      const slot = renderSlot(navigationRegistration, { subPath: "" }, { rpc });
+      await waitFor(() => expect(calls).toBe(1));
+      // A reconnect re-reads while the first read is still in flight.
+      await slot.behavior.setRealtimeConnectionState("reconnecting");
+      await slot.behavior.setRealtimeConnectionState("connected");
+      await slot.findByText("Newer truth");
       await waitFor(() =>
         expect(JSON.parse(window.localStorage.getItem(projectsKey) ?? "null")).toEqual([
           newerProject,
@@ -783,6 +777,7 @@ describe("tasks app shell", () => {
       await act(async () => {
         await older.promise;
       });
+      expect(slot.queryByText("Older truth")).toBeNull();
       expect(JSON.parse(window.localStorage.getItem(projectsKey) ?? "null")).toEqual([
         newerProject,
       ]);
@@ -821,8 +816,8 @@ describe("tasks app shell", () => {
     ];
     const rpc = seededRpc({
       listLabels: () => ({ labels: [] }),
-      listTasks: (input: { activeOnly?: boolean }) =>
-        input.activeOnly === true ? Promise.reject(new Error("active fetch failed")) : { tasks },
+      listTasks: () => ({ tasks }),
+      listActiveTaskThreads: () => Promise.reject(new Error("active fetch failed")),
     });
     const Panel = app.navPanels[0]!.component;
     const slot = renderSlot(app.navPanels[0]!, { subPath: "all" }, { rpc });
@@ -830,6 +825,7 @@ describe("tasks app shell", () => {
 
     slot.lifecycle.rerender(<Panel subPath="active" />);
     await slot.findByText("Couldn't load tasks");
+    expect(slot.getByText("active fetch failed")).toBeDefined();
     expect(slot.queryByText("Scope truth")).toBeNull();
     expect(slot.queryByText("No agents working right now")).toBeNull();
   });
@@ -860,8 +856,7 @@ describe("tasks app shell", () => {
     const pendingAll: Array<() => void> = [];
     const rpc = seededRpc({
       listLabels: () => ({ labels: [] }),
-      listTasks: (input: { activeOnly?: boolean; statuses?: string[] }) => {
-        if (input.activeOnly === true) return { tasks: [] };
+      listTasks: (input: { statuses?: string[] }) => {
         const matching = tasks.filter(
           (task) => input.statuses === undefined || input.statuses.includes(task.status),
         );
@@ -872,21 +867,48 @@ describe("tasks app shell", () => {
       },
     });
     const Panel = app.navPanels[0]!.component;
-    const slot = renderSlot(app.navPanels[0]!, { subPath: "all" }, { rpc });
-    await slot.findByText("Scope truth");
-
-    slot.lifecycle.rerender(<Panel subPath="active" />);
+    const slot = renderSlot(app.navPanels[0]!, { subPath: "active" }, { rpc });
     await slot.findByText("No agents working right now");
 
     deferAll = true;
     slot.lifecycle.rerender(<Panel subPath="all" />);
     await waitFor(() => expect(pendingAll.length).toBeGreaterThan(0));
     expect(slot.queryByText("No tasks yet")).toBeNull();
-    expect(slot.queryByText("Scope truth")).toBeNull();
+    expect(slot.queryByText("No agents working right now")).toBeNull();
     act(() => {
       for (const release of pendingAll.splice(0)) release();
     });
     await slot.findByText("Scope truth");
+  });
+
+  it("loads closed rows once a stored status filter is cleared", async () => {
+    window.localStorage.setItem(
+      LIST_PREFERENCE_STORAGE_KEY,
+      JSON.stringify({
+        version: 1,
+        scopes: {
+          all: { filters: { statuses: ["todo"], priorities: [], labelNames: [] }, sort: "manual" },
+        },
+      }),
+    );
+    const open = { ...pagerTask("TSK-1", "todo", 1), title: "Open work" };
+    const finished = { ...pagerTask("TSK-2", "done", 2), title: "Finished work" };
+    const rpc = seededRpc({
+      listLabels: () => ({ labels: [] }),
+      listTasks: (input: { statuses?: string[] }) => ({
+        tasks: [open, finished].filter(
+          (task) => input.statuses === undefined || input.statuses.includes(task.status),
+        ),
+      }),
+    });
+    const slot = renderSlot(app.navPanels[0]!, { subPath: "all" }, { rpc });
+    await slot.findByText("Open work");
+    expect(slot.queryByText("Finished work")).toBeNull();
+
+    fireEvent.keyDown(slot.getByRole("button", { name: /^Status/ }), { key: "Enter" });
+    fireEvent.click(await slot.findByRole("menuitemcheckbox", { name: /Todo/ }));
+    await slot.findByText("Finished work");
+    expect(slot.getByText("Open work")).toBeDefined();
   });
 
   it("renders board and task subPaths without plugin-owned sidebar chrome", async () => {

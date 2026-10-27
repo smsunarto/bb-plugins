@@ -1,15 +1,16 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { eq } from "@tanstack/react-db";
 import type {
   ExperimentalThreadActionTabProps,
   PluginMessageDirectiveProps,
 } from "@get-bb/plugin-sdk";
-import { useBbNavigate, useRealtime } from "@get-bb/plugin-sdk/app";
+import { useBbNavigate } from "@get-bb/plugin-sdk/app";
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
 import { Skeleton } from "@/components/ui/skeleton";
 import type { Task } from "../../shared/contract.js";
-import { useTasksRpc } from "../../shell/data.js";
-import { TasksRefreshProvider } from "../../shell/refresh.js";
+import { tasksCollection } from "../../shell/collections.js";
+import { TasksDataRoot } from "../../shell/data-root.js";
+import { useTasksLiveQuery } from "../../shell/data.js";
 import { PANEL_PATH, tasksRouteToSubPath } from "../../shell/routes.js";
 import { DetailView } from "../detail/index.js";
 import { PRIORITY_LABELS, STATUS_LABELS } from "../list/lib.js";
@@ -23,53 +24,28 @@ type TaskEmbedState =
   | { kind: "not_found" }
   | { kind: "error" };
 
+/** The card's task, live: realtime patches and edits elsewhere redraw it. */
 function useTaskEmbed(taskKey: string): {
   state: TaskEmbedState;
   retry: () => void;
 } {
-  const rpc = useTasksRpc();
-  const [state, setState] = useState<TaskEmbedState>({ kind: "loading" });
-  const seqRef = useRef(0);
-  const stateRef = useRef(state);
-  stateRef.current = state;
-
-  const refresh = useCallback(() => {
-    if (taskKey === "") return;
-    const seq = ++seqRef.current;
-    rpc.call("getTaskByKey", { taskKey }).then(
-      ({ task }) => {
-        if (seq !== seqRef.current) return;
-        setState(task ? { kind: "found", task } : { kind: "not_found" });
-      },
-      () => {
-        if (seq !== seqRef.current) return;
-        setState({ kind: "error" });
-      },
-    );
-  }, [rpc, taskKey]);
-
-  useEffect(() => {
-    setState({ kind: "loading" });
-    refresh();
-  }, [refresh]);
-
-  const onEvent = useCallback(
-    (matches: (task: Task) => boolean) => {
-      const current = stateRef.current;
-      if (current.kind !== "found" || matches(current.task)) refresh();
-    },
-    [refresh],
+  const key = taskKey.toUpperCase();
+  const query = useTasksLiveQuery(["task-by-key", key], (q) =>
+    key === ""
+      ? undefined
+      : q
+          .from({ task: tasksCollection })
+          .where(({ task }) => eq(task.key, key))
+          .findOne(),
   );
-  useRealtime("tasks:changed", (payload) => {
-    const taskId = isRecord(payload) ? payload.taskId : undefined;
-    onEvent((task) => typeof taskId !== "string" || taskId === task.id);
-  });
-  useRealtime("projects:changed", (payload) => {
-    const projectId = isRecord(payload) ? payload.projectId : undefined;
-    onEvent((task) => typeof projectId !== "string" || projectId === task.projectId);
-  });
-
-  return { state, retry: refresh };
+  const state: TaskEmbedState = query.isError
+    ? { kind: "error" }
+    : !query.isReady
+      ? { kind: "loading" }
+      : query.data === undefined
+        ? { kind: "not_found" }
+        : { kind: "found", task: query.data };
+  return { state, retry: query.retry };
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -117,7 +93,15 @@ function embedAriaLabel(task: Task): string {
   return `${parts.join(", ")} — open in side panel`;
 }
 
-export function TaskDirectiveCard({ attributes }: PluginMessageDirectiveProps) {
+export function TaskDirectiveCard(props: PluginMessageDirectiveProps) {
+  return (
+    <TasksDataRoot>
+      <TaskDirectiveCardContent {...props} />
+    </TasksDataRoot>
+  );
+}
+
+function TaskDirectiveCardContent({ attributes }: PluginMessageDirectiveProps) {
   const navigate = useBbNavigate();
   const taskKey = attributes.key?.trim() ?? "";
   const fallbackTitle = attributes.title?.trim() || null;
@@ -262,8 +246,8 @@ function TaskEmbedPanelContent({ params }: ExperimentalThreadActionTabProps) {
 
 export function TaskEmbedPanel(props: ExperimentalThreadActionTabProps) {
   return (
-    <TasksRefreshProvider>
+    <TasksDataRoot>
       <TaskEmbedPanelContent {...props} />
-    </TasksRefreshProvider>
+    </TasksDataRoot>
   );
 }

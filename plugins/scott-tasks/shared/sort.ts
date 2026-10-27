@@ -18,9 +18,23 @@ function byDueDate(a: Task, b: Task): number {
   return a.dueDate < b.dueDate ? -1 : a.dueDate > b.dueDate ? 1 : 0;
 }
 
+function compareText(a: string, b: string): number {
+  return a < b ? -1 : a > b ? 1 : 0;
+}
+
+/** The server's manual order: project, status, then board position. */
+export function byManualOrder(a: Task, b: Task): number {
+  return (
+    compareText(a.projectId, b.projectId) ||
+    compareText(a.status, b.status) ||
+    a.position - b.position ||
+    compareText(a.id, b.id)
+  );
+}
+
 export function sortTasks(tasks: readonly Task[], sort: TaskSort): Task[] {
-  if (sort === "manual") return [...tasks];
+  if (sort === "manual") return [...tasks].sort(byManualOrder);
   const [primary, secondary] =
     sort === "priority" ? [byPriority, byDueDate] : [byDueDate, byPriority];
-  return [...tasks].sort((a, b) => primary(a, b) || secondary(a, b));
+  return [...tasks].sort((a, b) => primary(a, b) || secondary(a, b) || byManualOrder(a, b));
 }

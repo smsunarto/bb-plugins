@@ -88,6 +88,9 @@
     "@hugeicons/react": "^1.1.6",
     "@radix-ui/react-slot": "^1.3.0",
     "@radix-ui/react-tabs": "^1.1.17",
+    "@tanstack/query-db-collection": "1.4.8",
+    "@tanstack/react-db": "0.5.12",
+    "@tanstack/react-query": "^5.101.4",
     "@tiptap/core": "^2.27.2",
     "@tiptap/extension-bubble-menu": "^2.27.2",
     "@tiptap/extension-image": "^2.27.2",
@@ -104,6 +107,7 @@
     "@tiptap/suggestion": "^2.27.2",
     "cmdk": "^1.1.1",
     "tiptap-markdown": "^0.8.10",
-    "zod": "^4.3.6"
+    "zod": "^4.3.6",
+    "zustand": "^5.0.16"
   }
 }

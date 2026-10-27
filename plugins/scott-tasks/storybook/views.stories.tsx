@@ -7,8 +7,8 @@ import { ListView } from "../views/list";
 import { BoardView } from "../views/board";
 import { ManagePanel } from "../views/manage/manage-panel";
 import { DetailView } from "../views/detail";
-import { TasksRefreshProvider } from "../shell/refresh";
-import { resetQuerySnapshotStateForTest } from "../shell/query-snapshot";
+import { TasksDataRoot } from "../shell/data-root";
+import { resetTasksDataForTest } from "../shell/testing";
 import { makeTask, rpcInput } from "../test-fixtures";
 import { tasksRpcContract, type Task } from "../shared/contract";
 
@@ -128,6 +128,20 @@ const tasks: Task[] = [
 tasksRpcContract.listTasks.output.parse({ tasks, nextCursor: null });
 tasksRpcContract.listProjects.output.parse({ projects: [project] });
 tasksRpcContract.listLabels.output.parse({ labels });
+const workingThread = tasksRpcContract.listActiveTaskThreads.output.parse({
+  taskThreads: [
+    {
+      id: "01HZZZZZZZZZZZZZZZZZZZZTH1",
+      taskId: tasks[0]!.id,
+      threadId: "thr_review_recovery",
+      presetName: "Implementation",
+      title: "Preserve cached reviews across reconnects",
+      liveStatus: "working",
+      attachedAt: "2026-10-23T09:10:00.000Z",
+      updatedAt: "2026-10-23T10:40:00.000Z",
+    },
+  ],
+}).taskThreads[0]!;
 let currentTasks: Task[] = structuredClone(tasks);
 function fixture(
   mode: "populated" | "empty" | "loading" | "error" = "populated",
@@ -162,21 +176,13 @@ function fixture(
       getTask: (raw) => ({
         task: currentTasks.find((task) => task.id === rpcInput(raw).taskId) ?? null,
       }),
-      listTaskThreads: (raw) =>
-        tasksRpcContract.listTaskThreads.output.parse({
-          taskThreads: [
-            {
-              id: "01HZZZZZZZZZZZZZZZZZZZZTH1",
-              taskId: tasks[0]!.id,
-              threadId: "thr_review_recovery",
-              presetName: "Implementation",
-              title: "Preserve cached reviews across reconnects",
-              liveStatus: "working",
-              attachedAt: "2026-10-23T09:10:00.000Z",
-              updatedAt: "2026-10-23T10:40:00.000Z",
-            },
-          ].filter(() => rpcInput(raw).taskId === tasks[0]!.id),
-        }),
+      listTaskThreads: (raw) => ({
+        taskThreads: [workingThread].filter((link) => link.taskId === rpcInput(raw).taskId),
+      }),
+      listActiveTaskThreads: () => ({ taskThreads: [workingThread] }),
+      countTaskAttachments: (raw) => ({
+        counts: (rpcInput(raw).taskIds as string[]).map((taskId) => ({ taskId, count: 0 })),
+      }),
       listComments: (raw) =>
         tasksRpcContract.listComments.output.parse({
           comments: [
@@ -225,7 +231,7 @@ function fixture(
 }
 function TasksView({ view }: { view: "list" | "board" | "detail" | "manage" }) {
   return (
-    <TasksRefreshProvider>
+    <TasksDataRoot>
       <div style={{ height: "100%", minHeight: 0 }}>
         {view === "list" ? (
           <ListView projectId={projectId} />
@@ -237,7 +243,7 @@ function TasksView({ view }: { view: "list" | "board" | "detail" | "manage" }) {
           <DetailView taskKey="TSK-1" />
         )}
       </div>
-    </TasksRefreshProvider>
+    </TasksDataRoot>
   );
 }
 const meta = {
@@ -246,9 +252,10 @@ const meta = {
   tags: ["autodocs"],
   args: { view: "list" },
   parameters: { ...screenParameters, host: fixture() },
-  beforeEach: () => {
+  beforeEach: async () => {
     currentTasks = structuredClone(tasks);
-    resetQuerySnapshotStateForTest();
+    // The Tasks cache outlives a mount by design; each story starts from a cold one.
+    await resetTasksDataForTest();
     // Only Storybook's origin is touched; each story starts without prior task snapshots or filters.
     for (const key of Object.keys(localStorage))
       if (key.startsWith("bb-tasks:")) localStorage.removeItem(key);

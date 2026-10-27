@@ -462,6 +462,7 @@ export const tasksRpcContract = defineRpcContract({
   listTasks: {
     input: z
       .object({
+        taskIds: z.array(idSchema).max(TASKS_PAGE_MAX_LIMIT).optional(),
         projectId: idSchema.optional(),
         statuses: z.array(taskStatusSchema).optional(),
         priorities: z.array(taskPrioritySchema).optional(),
@@ -512,7 +513,8 @@ export const tasksRpcContract = defineRpcContract({
     output: z.object({ deleted: z.boolean() }).strict(),
   },
   listLabels: {
-    input: z.object({ projectId: idSchema }).strict(),
+    // Without a project, every project's labels in one read.
+    input: z.object({ projectId: idSchema.optional() }).strict(),
     output: z.object({ labels: z.array(labelSchema) }).strict(),
   },
   createComment: {
@@ -538,6 +540,17 @@ export const tasksRpcContract = defineRpcContract({
     input: z.object({ taskId: idSchema }).strict(),
     output: z.object({ attachments: z.array(attachmentSchema) }).strict(),
   },
+  // One row per requested task, so a board reads every card's count at once.
+  countTaskAttachments: {
+    input: z.object({ taskIds: z.array(idSchema).max(TASKS_PAGE_MAX_LIMIT) }).strict(),
+    output: z
+      .object({
+        counts: z.array(
+          z.object({ taskId: idSchema, count: z.number().int().nonnegative() }).strict(),
+        ),
+      })
+      .strict(),
+  },
   deleteAttachment: {
     input: z
       .object({
@@ -551,9 +564,14 @@ export const tasksRpcContract = defineRpcContract({
     input: z.object({ taskId: idSchema }).strict(),
     output: z.object({ taskThreads: z.array(taskThreadSchema) }).strict(),
   },
-  listThreadTasks: {
+  // Every task's live (starting or working) agent threads in one read.
+  listActiveTaskThreads: {
+    input: z.null(),
+    output: z.object({ taskThreads: z.array(taskThreadSchema) }).strict(),
+  },
+  listTaskThreadsByThread: {
     input: z.object({ threadId: z.string().startsWith("thr_") }).strict(),
-    output: z.object({ tasks: z.array(taskSchema) }).strict(),
+    output: z.object({ taskThreads: z.array(taskThreadSchema) }).strict(),
   },
   listTaskPullRequests: {
     input: z.object({ taskId: idSchema }).strict(),

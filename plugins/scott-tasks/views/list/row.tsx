@@ -2,7 +2,6 @@ import { memo, useState } from "react";
 import type { Label, Project, Task, TaskThread } from "../../shared/contract.js";
 import { Icon } from "@/components/ui/icon";
 import { cn } from "@/lib/utils";
-import type { TaskRowMeta } from "./data.js";
 import { activeWorkLabel, formatDueDate, partitionLabels } from "./lib.js";
 import type { EditFn } from "./property-menus.js";
 import { isBareKey, PriorityEditor, StatusEditor, TaskContextMenu } from "./property-menus.js";
@@ -69,7 +68,8 @@ function LabelChips({ task, labelsById }: { task: Task; labelsById: Map<string, 
 
 interface TaskRowProps {
   task: Task;
-  meta: TaskRowMeta | undefined;
+  /** The task's live agent threads, if any. */
+  activeThreads: readonly TaskThread[] | undefined;
   project: Project | undefined;
   showProject: boolean;
   labelsById: Map<string, Label>;
@@ -81,7 +81,7 @@ interface TaskRowProps {
 
 export const TaskRow = memo(function TaskRow({
   task,
-  meta,
+  activeThreads,
   project,
   showProject,
   labelsById,
@@ -141,7 +141,7 @@ export const TaskRow = memo(function TaskRow({
           {task.title}
         </span>
         <span className="col-start-3 row-start-2 flex min-w-0 items-center gap-1.5 justify-self-end text-xs text-subtle-foreground @max-md:overflow-hidden @md:shrink-0">
-          {meta ? <ActiveChip threads={meta.activeThreads} /> : null}
+          {activeThreads ? <ActiveChip threads={activeThreads} /> : null}
           <LabelChips task={task} labelsById={labelsById} />
           {task.dueDate !== null ? (
             <span className={`${RAIL_CHIP_CLASS} shrink-0 tabular-nums`}>

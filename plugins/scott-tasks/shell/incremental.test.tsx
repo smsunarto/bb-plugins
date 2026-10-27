@@ -50,7 +50,7 @@ function task(key: string, status: Task["status"], position: number) {
 interface Counters {
   listTasks: number;
   getTask: string[];
-  listAttachments: string[];
+  countTaskAttachments: string[];
 }
 
 function trackedRpc(store: Map<string, Task>, counters: Counters) {
@@ -64,10 +64,10 @@ function trackedRpc(store: Map<string, Task>, counters: Counters) {
     listLabels: () => ({ labels: [] }),
     listComments: () => ({ comments: [] }),
     listTaskThreads: () => ({ taskThreads: [] }),
+    listActiveTaskThreads: () => ({ taskThreads: [] }),
     getTaskByKey: () => ({ task: null }),
-    listTasks: (input: { statuses?: string[]; activeOnly?: boolean }) => {
+    listTasks: (input: { statuses?: string[] }) => {
       counters.listTasks += 1;
-      if (input.activeOnly === true) return { tasks: [] };
       return {
         tasks: [...store.values()].filter(
           (entry) =>
@@ -81,9 +81,9 @@ function trackedRpc(store: Map<string, Task>, counters: Counters) {
       counters.getTask.push(input.taskId);
       return { task: store.get(input.taskId) ?? null };
     },
-    listAttachments: (input: { taskId: string }) => {
-      counters.listAttachments.push(input.taskId);
-      return { attachments: [] };
+    countTaskAttachments: (input: { taskIds: string[] }) => {
+      counters.countTaskAttachments.push(...input.taskIds);
+      return { counts: input.taskIds.map((taskId) => ({ taskId, count: 0 })) };
     },
   };
   return handlers as never;
@@ -94,7 +94,7 @@ function seed(...tasks: Task[]) {
 }
 
 function counters(): Counters {
-  return { listTasks: 0, getTask: [], listAttachments: [] };
+  return { listTasks: 0, getTask: [], countTaskAttachments: [] };
 }
 
 beforeEach(() => window.localStorage.clear());
@@ -228,7 +228,7 @@ describe("incremental board updates", () => {
     );
     await slot.findByText("TSK-2 title");
     const settledList = calls.listTasks;
-    const settledAttachments = calls.listAttachments.length;
+    const settledAttachments = calls.countTaskAttachments.length;
 
     store.set(first.id, {
       ...first,
@@ -241,8 +241,34 @@ describe("incremental board updates", () => {
     });
     await slot.findByText("TSK-1 moved");
     expect(calls.getTask).toEqual([first.id]);
-    expect(calls.listAttachments.slice(settledAttachments)).toEqual([first.id]);
+    expect(calls.countTaskAttachments.slice(settledAttachments)).toEqual([first.id]);
     expect(calls.listTasks).toBe(settledList);
+  });
+
+  it("counts a card's attachments again on its next signal after the count failed", async () => {
+    const first = task("TSK-1", "todo", 1);
+    const store = seed(first);
+    const calls = counters();
+    const rpc = trackedRpc(store, calls) as Record<string, (input: never) => unknown>;
+    const countTaskAttachments = rpc.countTaskAttachments!;
+    let countsUp = false;
+    rpc.countTaskAttachments = (input) => {
+      if (!countsUp) throw new Error("attachments offline");
+      return countTaskAttachments(input);
+    };
+    const slot = renderSlot(
+      app.navPanels[0]!,
+      { subPath: `${PROJECT_ID}?view=board` },
+      { rpc: rpc as never },
+    );
+    await slot.findByText("TSK-1 title");
+    await waitFor(() =>
+      expect(slot.rpcCalls.some((call) => call.method === "countTaskAttachments")).toBe(true),
+    );
+
+    countsUp = true;
+    await slot.emitRealtime("tasks:changed", { taskId: first.id, projectId: PROJECT_ID });
+    await waitFor(() => expect(calls.countTaskAttachments).toEqual([first.id]));
   });
 
   it("ignores thread signals for tasks outside the board", async () => {

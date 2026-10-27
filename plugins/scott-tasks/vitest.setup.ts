@@ -1,6 +1,7 @@
 import { installTestPluginRuntime } from "@get-bb/plugin-sdk/testing/app";
 import { configure } from "@testing-library/react";
-import { beforeEach } from "vitest";
+import { afterEach, beforeEach } from "vitest";
+import { resetTasksDataForTest } from "./shell/testing.js";
 
 if (typeof window !== "undefined") installTestPluginRuntime();
 
@@ -34,3 +35,6 @@ if (typeof window !== "undefined" && !window.matchMedia) {
 beforeEach(() => {
   if (typeof window !== "undefined") window.localStorage.clear();
 });
+
+// The Tasks cache outlives a mount by design; tests start from a cold one.
+afterEach(resetTasksDataForTest);

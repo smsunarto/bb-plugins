@@ -1,136 +1,108 @@
+import { eq, inArray, isNull, or, type InitialQueryBuilder } from "@tanstack/react-db";
 import {
-  listAllTasks,
-  listTasksOpenFirst,
-  patchTasks,
-  signalTaskIds,
-  useTasksQuery,
-  type TaskSignal,
-  type TasksRpc,
-} from "../../shell/data.js";
-import type { Label, Task, TaskPriority, TaskStatus, TaskThread } from "../../shared/contract.js";
-import { isActiveThread } from "../detail/meta.js";
+  CLOSED_TASK_STATUSES,
+  OPEN_TASK_STATUSES,
+  tasksCollection,
+} from "../../shell/collections.js";
+import { tasksLoadError, useActiveTasks, useTasksLiveQuery } from "../../shell/data.js";
+import type { Task, TaskPriority, TaskStatus } from "../../shared/contract.js";
+import { matchesFilters } from "./lib.js";
 
 interface ListTaskFilters {
+  statuses: readonly TaskStatus[];
+  priorities: readonly TaskPriority[];
+  /** Null leaves labels unfiltered; empty matches nothing. */
+  labelIds: readonly string[] | null;
+}
+
+interface ListScope {
+  projectId: string | null;
   statuses: readonly TaskStatus[];
   priorities: readonly TaskPriority[];
   labelIds: readonly string[] | null;
 }
 
-function belongsToList(task: Task, projectId: string | null, filters: ListTaskFilters): boolean {
-  if (task.parentTaskId !== null) return false;
-  if (projectId !== null && task.projectId !== projectId) return false;
-  if (filters.statuses.length > 0 && !filters.statuses.includes(task.status)) {
-    return false;
+function listQuery(q: InitialQueryBuilder, scope: ListScope) {
+  let query = q.from({ task: tasksCollection }).where(({ task }) => isNull(task.parentTaskId));
+  const { projectId, statuses, priorities, labelIds } = scope;
+  if (projectId !== null) query = query.where(({ task }) => eq(task.projectId, projectId));
+  if (statuses.length > 0) query = query.where(({ task }) => inArray(task.status, [...statuses]));
+  if (priorities.length > 0) {
+    query = query.where(({ task }) => inArray(task.priority, [...priorities]));
   }
-  if (filters.priorities.length > 0 && !filters.priorities.includes(task.priority)) {
-    return false;
+  if (labelIds !== null) {
+    query = query.where(({ task }) => {
+      const [first, second, ...rest] = labelIds.map((labelId) => inArray(labelId, task.labelIds));
+      if (first === undefined) return inArray(task.id, []);
+      return second === undefined ? first : or(first, second, ...rest);
+    });
   }
-  if (filters.labelIds !== null) {
-    const wanted = new Set(filters.labelIds);
-    if (!task.labelIds.some((labelId) => wanted.has(labelId))) return false;
-  }
-  return true;
+  return query;
 }
 
+export interface ListTasksResult {
+  tasks: Task[] | undefined;
+  isLoading: boolean;
+  error: string | null;
+  retry: () => void;
+}
+
+/**
+ * The list's top-level tasks. Without a status filter, open tasks load
+ * apart from closed ones and paint as soon as they arrive.
+ */
 export function useListTasks(
   projectId: string | null,
   activeOnly: boolean,
   filters: ListTaskFilters,
-) {
-  const query = {
-    ...(projectId === null ? {} : { projectId }),
-    ...(filters.priorities.length > 0 ? { priorities: [...filters.priorities] } : {}),
-    ...(filters.labelIds !== null ? { labelIds: [...filters.labelIds] } : {}),
-    activeOnly,
-    parentTaskId: null,
+): ListTasksResult {
+  const split = !activeOnly && filters.statuses.length === 0;
+  const scope = (statuses: readonly TaskStatus[]): ListScope => ({
+    projectId,
+    statuses,
+    priorities: filters.priorities,
+    labelIds: filters.labelIds,
+  });
+  const primaryScope = scope(split ? OPEN_TASK_STATUSES : filters.statuses);
+  // A key names whether its query runs: a live query rebuilds only when its key changes.
+  const primary = useTasksLiveQuery(
+    ["list-tasks", "primary", activeOnly ? null : primaryScope],
+    (q) => (activeOnly ? undefined : listQuery(q, primaryScope)),
+  );
+  const closedScope = scope(CLOSED_TASK_STATUSES);
+  const closed = useTasksLiveQuery(["list-tasks", "closed", split ? closedScope : null], (q) =>
+    split ? listQuery(q, closedScope) : undefined,
+  );
+  const active = useActiveTasks({ topLevelOnly: true, enabled: activeOnly });
+
+  if (activeOnly) {
+    const { labelIds } = filters;
+    const tasks = active.data?.filter(
+      (task) =>
+        (projectId === null || task.projectId === projectId) &&
+        labelIds?.length !== 0 &&
+        matchesFilters(task, filters.statuses, filters.priorities, labelIds ?? []),
+    );
+    return {
+      tasks,
+      isLoading: active.isLoading,
+      error: active.error,
+      retry: active.retry,
+    };
+  }
+  const failed = primary.isError || (split && closed.isError);
+  const retry = () => {
+    primary.retry();
+    closed.retry();
   };
-  return useTasksQuery<Task[]>(
-    async (rpc, publish) =>
-      filters.statuses.length > 0 || activeOnly
-        ? listAllTasks(rpc, {
-            ...query,
-            ...(filters.statuses.length > 0 ? { statuses: [...filters.statuses] } : {}),
-          })
-        : listTasksOpenFirst(rpc, query, publish),
-    activeOnly ? ["tasks:changed", "threads:changed"] : ["tasks:changed"],
-    [
-      projectId,
-      activeOnly,
-      filters.statuses.join(),
-      filters.priorities.join(),
-      filters.labelIds === null ? "" : `active:${filters.labelIds.join()}`,
-    ],
-    activeOnly
-      ? {}
-      : {
-          applySignals: (rpc, current, signals) =>
-            patchTasks(rpc, current, signalTaskIds(signals, "tasks:changed"), (task) =>
-              belongsToList(task, projectId, filters),
-            ),
-        },
-  );
-}
-
-export function useLabels(projectIds: readonly string[]) {
-  return useTasksQuery<Label[]>(
-    async (rpc) => {
-      const results = await Promise.all(
-        projectIds.map((projectId) => rpc.call("listLabels", { projectId })),
-      );
-      return results.flatMap((result) => result.labels);
-    },
-    ["projects:changed"],
-    [projectIds.join()],
-  );
-}
-
-export interface TaskRowMeta {
-  activeThreads: TaskThread[];
-}
-
-async function activeThreadsFor(rpc: TasksRpc, taskId: string): Promise<TaskThread[]> {
-  const { taskThreads } = await rpc.call("listTaskThreads", { taskId });
-  return taskThreads.filter(isActiveThread);
-}
-
-async function patchListMeta(
-  rpc: TasksRpc,
-  current: ReadonlyMap<string, TaskRowMeta>,
-  signals: readonly TaskSignal[],
-): Promise<Map<string, TaskRowMeta>> {
-  const taskIds = new Set([
-    ...signalTaskIds(signals, "threads:changed"),
-    ...signalTaskIds(signals, "tasks:changed"),
-  ]);
-  const next = new Map(current);
-  await Promise.all(
-    [...taskIds].map(async (taskId) => {
-      const activeThreads = await activeThreadsFor(rpc, taskId);
-      if (activeThreads.length > 0) next.set(taskId, { activeThreads });
-      else next.delete(taskId);
-    }),
-  );
-  return next;
-}
-
-export function useTaskListMeta(projectId: string | null) {
-  return useTasksQuery<Map<string, TaskRowMeta>>(
-    async (rpc) => {
-      const activeTasks = await listAllTasks(rpc, {
-        ...(projectId === null ? {} : { projectId }),
-        activeOnly: true,
-        parentTaskId: null,
-      });
-      const entries = await Promise.all(
-        activeTasks.map(
-          async (task) =>
-            [task.id, { activeThreads: await activeThreadsFor(rpc, task.id) }] as const,
-        ),
-      );
-      return new Map(entries.filter(([, meta]) => meta.activeThreads.length > 0));
-    },
-    ["threads:changed", "tasks:changed"],
-    [projectId],
-    { applySignals: patchListMeta },
-  );
+  if (failed) return { tasks: undefined, isLoading: false, error: tasksLoadError(), retry };
+  if (!primary.isReady) return { tasks: undefined, isLoading: true, error: null, retry };
+  return {
+    tasks: split
+      ? [...(primary.data ?? []), ...(closed.isReady ? (closed.data ?? []) : [])]
+      : primary.data,
+    isLoading: split && !closed.isReady,
+    error: null,
+    retry,
+  };
 }

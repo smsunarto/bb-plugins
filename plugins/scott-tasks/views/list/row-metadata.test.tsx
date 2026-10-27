@@ -99,6 +99,11 @@ function renderList(fixture: ListFixture) {
         listTaskThreads: (input: unknown) => ({
           taskThreads: fixture.threadsByTask?.[String(rpcInput(input).taskId)] ?? [],
         }),
+        listActiveTaskThreads: () => ({
+          taskThreads: Object.values(fixture.threadsByTask ?? {})
+            .flat()
+            .filter((link) => link.liveStatus === "starting" || link.liveStatus === "working"),
+        }),
         listComments: () => {
           calls.listComments += 1;
           return { comments: [] };

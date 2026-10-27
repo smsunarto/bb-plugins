@@ -4,7 +4,7 @@ import { renderSlot } from "@get-bb/plugin-sdk/testing/app";
 import { afterEach, expect, it, vi } from "vitest";
 import type { Task } from "../../shared/contract.js";
 import { makeTask } from "../../test-fixtures.js";
-import { TasksRefreshProvider } from "../../shell/refresh.js";
+import { TasksDataRoot } from "../../shell/data-root.js";
 
 vi.mock("../../shell/routes.js", () => ({ useTasksNavigation: () => ({ go() {} }) }));
 vi.mock("../../editor/tasks-editor.js", () => ({ TasksEditor: () => null }));
@@ -26,11 +26,13 @@ const task = makeTask({ key: "TSK-1", title: "Original title", status: "todo" })
 const WRITTEN_AT = "2026-07-16T00:00:00.000Z";
 const LATER = "2026-07-17T00:00:00.000Z";
 let server: Task = task;
+/** How a realtime patch reads the task; a test may hold one read open. */
+let readTask: () => unknown = () => ({ task: server });
 function Harness() {
   return (
-    <TasksRefreshProvider>
+    <TasksDataRoot>
       <DetailView taskKey={task.key} />
-    </TasksRefreshProvider>
+    </TasksDataRoot>
   );
 }
 function mount(update: () => Promise<unknown>) {
@@ -40,6 +42,7 @@ function mount(update: () => Promise<unknown>) {
     {
       rpc: {
         getTaskByKey: () => ({ task: server }),
+        getTask: () => readTask(),
         listProjects: () => ({ projects: [] }),
         listTasks: () => ({ tasks: [] }),
         listLabels: () => ({ labels: [] }),
@@ -56,6 +59,7 @@ type Slot = ReturnType<typeof mount>;
 afterEach(() => {
   cleanup();
   server = task;
+  readTask = () => ({ task: server });
 });
 
 async function refetch(slot: Slot, next: Task) {
@@ -100,42 +104,55 @@ it("rolls back a rejected title", async () => {
   expect(titleOf(slot)).toBe("Original title");
 });
 
-it("keeps an edit through a stale refetch and drops it once the server carries it", async () => {
+it("keeps an edit through a stale refetch and reconciles once the write lands", async () => {
   const write = deferredUpdate();
   const slot = mount(write.update);
   fireEvent.click(await slot.findByRole("button", { name: "todo" }));
 
   // A refetch from before the write lands leaves the pending edit on screen.
   await refetch(slot, { ...task, title: "Stale refetch" });
-  await waitFor(() => expect(titleOf(slot)).toBe("Stale refetch"));
+  await act(() => new Promise((resolve) => setTimeout(resolve, 80)));
   expect(slot.getByRole("button", { name: "done" })).toBeTruthy();
 
-  await write.finish({ ok: true, task: { ...task, status: "done", updatedAt: WRITTEN_AT } });
+  // The confirmed row carries the edit and whatever else the server holds.
+  await write.finish({
+    ok: true,
+    task: { ...task, title: "Stale refetch", status: "done", updatedAt: WRITTEN_AT },
+  });
+  await waitFor(() => expect(titleOf(slot)).toBe("Stale refetch"));
   expect(slot.getByRole("button", { name: "done" })).toBeTruthy();
 
   await refetch(slot, { ...task, title: "Caught up", status: "done", updatedAt: WRITTEN_AT });
   await waitFor(() => expect(titleOf(slot)).toBe("Caught up"));
-  expect(slot.getByRole("button", { name: "done" })).toBeTruthy();
 
-  // Nothing overlays the task any more, so even an older server value draws.
-  await refetch(slot, { ...task, title: "Caught up", status: "in_progress" });
+  // Nothing overlays the task any more, so any later server value draws.
+  await refetch(slot, { ...task, title: "Caught up", status: "in_progress", updatedAt: LATER });
   expect(await slot.findByRole("button", { name: "in_progress" })).toBeTruthy();
 });
 
-it("shows a newer server value that lands after a successful edit", async () => {
+it("drops a read that started before the write and shows later server values", async () => {
   const write = deferredUpdate();
   const slot = mount(write.update);
   const title = await slot.findByRole("textbox", { name: "Task title" });
   title.textContent = "Edited title";
   fireEvent.blur(title);
+
+  // A realtime read starts before the write commits and answers after it.
+  let answerStaleRead!: () => void;
+  readTask = () =>
+    new Promise((resolve) => {
+      answerStaleRead = () => resolve({ task: { ...task, status: "in_progress" } });
+    });
+  await slot.emitRealtime("tasks:changed", { taskId: task.id, projectId: task.projectId });
+  await waitFor(() => expect(answerStaleRead).toBeDefined());
   await write.finish({ ok: true, task: { ...task, title: "Edited title", updatedAt: WRITTEN_AT } });
-
-  // A refetch older than the write keeps the edit.
-  await refetch(slot, { ...task, status: "in_progress" });
-  await slot.findByRole("button", { name: "in_progress" });
+  await act(async () => answerStaleRead());
+  await act(() => new Promise((resolve) => setTimeout(resolve, 80)));
   expect(titleOf(slot)).toBe("Edited title");
+  expect(slot.getByRole("button", { name: "todo" })).toBeTruthy();
 
-  // An agent renames the task before the view's refetch observes the edit.
+  // An agent renames the task afterwards.
+  readTask = () => ({ task: server });
   await refetch(slot, { ...task, title: "Agent title", updatedAt: LATER });
   await waitFor(() => expect(titleOf(slot)).toBe("Agent title"));
 });

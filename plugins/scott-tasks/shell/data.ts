@@ -1,383 +1,139 @@
-import { useCallback, useEffect, useRef, useState } from "react";
-import { useRealtime, useRpc } from "@get-bb/plugin-sdk/app";
-import type { z } from "zod";
+import { useCallback, useMemo, useState } from "react";
+import { useRpc } from "@get-bb/plugin-sdk/app";
+import { useQuery, type QueryKey } from "@tanstack/react-query";
 import {
-  TASK_STATUSES,
-  tasksRpcContract,
-  type TasksRpcContract,
-  type Task,
-  type TaskPriority,
-  type TaskStatus,
-} from "../shared/contract.js";
+  inArray,
+  isNull,
+  useLiveQuery,
+  type Context,
+  type InitialQueryBuilder,
+  type LiveQueryKey,
+  type QueryBuilder,
+} from "@tanstack/react-db";
+import type { TasksRpcContract, TaskThread } from "../shared/contract.js";
 import { errorMessage } from "../shared/errors.js";
-import { TASKS_PAGE_MAX_LIMIT, type TaskSort } from "../shared/pagination.js";
 import type { MentionItem } from "../editor/extensions.js";
+import { ACTIVE_THREAD_STATUSES, taskThreadsCollection, tasksCollection } from "./collections.js";
 import {
-  claimQuerySnapshotRevision,
-  readQuerySnapshot,
-  writeQuerySnapshot,
-} from "./query-snapshot.js";
-import { useTasksRefresh } from "./refresh.js";
+  foldersQuery,
+  labelsQuery,
+  presetsQuery,
+  projectsQuery,
+  sidebarSummaryQuery,
+  tasksQueryClient,
+} from "./query.js";
+import { refetchFailedReads } from "./sync.js";
+import { useTasksUi } from "./ui-store.js";
+
+export { listAllTasks, OPEN_TASK_STATUSES } from "./collections.js";
+export type { TasksRpc } from "./query.js";
 
 export function useTasksRpc() {
   return useRpc<TasksRpcContract>();
 }
 
-export type TasksRpc = ReturnType<typeof useTasksRpc>;
+export const useFolders = () => useQuery(foldersQuery);
+export const useProjects = () => useQuery(projectsQuery);
+export const usePresets = () => useQuery(presetsQuery);
+export const useSidebarSummary = () => useQuery(sidebarSummaryQuery);
+export const useLabels = () => useQuery(labelsQuery);
 
-interface TaskListQuery {
-  projectId?: string;
-  statuses?: TaskStatus[];
-  priorities?: TaskPriority[];
-  labelIds?: string[];
-  activeOnly?: boolean;
-  parentTaskId?: string | null;
-  search?: string;
-  sort?: TaskSort;
+/** The message for a failed read, or null. */
+export function queryError(error: unknown): string | null {
+  return error === null || error === undefined ? null : errorMessage(error);
 }
 
-export async function listAllTasks(rpc: TasksRpc, input: TaskListQuery = {}): Promise<Task[]> {
-  const tasks: Task[] = [];
-  let cursor: string | undefined;
-  do {
-    const page = await rpc.call("listTasks", {
-      ...input,
-      limit: TASKS_PAGE_MAX_LIMIT,
-      ...(cursor === undefined ? {} : { cursor }),
-    });
-    tasks.push(...page.tasks);
-    cursor = page.nextCursor ?? undefined;
-  } while (cursor !== undefined);
-  return tasks;
-}
-
-export const OPEN_TASK_STATUSES: readonly TaskStatus[] = TASK_STATUSES.filter(
-  (status) => status !== "done" && status !== "canceled",
-);
-
-const CLOSED_TASK_STATUSES: readonly TaskStatus[] = ["done", "canceled"];
-
-export async function listTasksOpenFirst(
-  rpc: TasksRpc,
-  input: Omit<TaskListQuery, "statuses">,
-  publish: (open: Task[]) => void,
-): Promise<Task[]> {
-  const openRequest = listAllTasks(rpc, {
-    ...input,
-    statuses: [...OPEN_TASK_STATUSES],
-  }).then((open) => {
-    publish(open);
-    return open;
+/**
+ * A live query over the Tasks collections. `queryKey` names everything the
+ * query closes over, including whether it runs at all. A failed load retries after the next realtime batch,
+ * reconnect, or refresh, or when `retry` is called.
+ */
+export function useTasksLiveQuery<TContext extends Context>(
+  queryKey: LiveQueryKey,
+  query: (q: InitialQueryBuilder) => QueryBuilder<TContext> | undefined | null,
+) {
+  const generation = useTasksUi((state) => state.syncGeneration);
+  const [attempt, setAttempt] = useState<{ count: number; failedAt: number | null }>({
+    count: 0,
+    failedAt: null,
   });
-  const closedRequest = listAllTasks(rpc, {
-    ...input,
-    statuses: [...CLOSED_TASK_STATUSES],
-  });
-  const [open, closed] = await Promise.all([openRequest, closedRequest]);
-  const byId = new Map<string, Task>();
-  for (const task of open) byId.set(task.id, task);
-  for (const task of closed) byId.set(task.id, task);
-  return [...byId.values()];
-}
-
-export async function patchTasks(
-  rpc: TasksRpc,
-  current: readonly Task[],
-  taskIds: readonly string[],
-  belongs: (task: Task) => boolean,
-): Promise<Task[]> {
-  if (taskIds.length === 0) return [...current];
-  const fetched = await Promise.all(
-    taskIds.map(async (taskId) => {
-      const { task } = await rpc.call("getTask", { taskId });
-      return [taskId, task] as const;
-    }),
-  );
-  const updates = new Map(fetched);
-  const next: Task[] = [];
-  for (const task of current) {
-    if (!updates.has(task.id)) {
-      next.push(task);
-      continue;
-    }
-    const updated = updates.get(task.id) ?? null;
-    updates.delete(task.id);
-    if (updated !== null && belongs(updated)) next.push(updated);
+  const live = useLiveQuery({ queryKey: [...queryKey, attempt.count], query });
+  // A live query stays failed, so the retry is a new one; sync has re-read the failed subsets.
+  if (live.isError && attempt.failedAt === null) {
+    setAttempt({ count: attempt.count, failedAt: generation });
+  } else if (live.isError && attempt.failedAt !== generation) {
+    setAttempt({ count: attempt.count + 1, failedAt: null });
   }
-  for (const task of updates.values()) {
-    if (task !== null && belongs(task)) next.push(task);
-  }
-  return next;
-}
-
-const INVALIDATION_CHANNELS = [
-  "tasks:changed",
-  "projects:changed",
-  "comments:changed",
-  "threads:changed",
-] as const;
-
-type InvalidationChannel = (typeof INVALIDATION_CHANNELS)[number];
-
-export interface TaskSignal {
-  channel: InvalidationChannel;
-  taskId: string | null;
-}
-
-const SIGNAL_BATCH_MS = 50;
-
-function signalTaskId(payload: unknown): string | null {
-  if (typeof payload !== "object" || payload === null) return null;
-  const taskId: unknown = Reflect.get(payload, "taskId");
-  return typeof taskId === "string" ? taskId : null;
-}
-
-export function signalTaskIds(
-  signals: readonly TaskSignal[],
-  channel: InvalidationChannel,
-): string[] {
-  const ids = new Set<string>();
-  for (const signal of signals) {
-    if (signal.channel === channel && signal.taskId !== null) {
-      ids.add(signal.taskId);
-    }
-  }
-  return [...ids];
-}
-
-function useSignalBatches(
-  channels: readonly InvalidationChannel[],
-  onBatch: (signals: TaskSignal[]) => void,
-): void {
-  const ref = useRef({ channels, onBatch });
-  ref.current = { channels, onBatch };
-  const pending = useRef<TaskSignal[]>([]);
-  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  useEffect(
-    () => () => {
-      if (timer.current !== null) clearTimeout(timer.current);
-      timer.current = null;
-      pending.current = [];
-    },
-    [],
-  );
-  const push = useCallback((channel: InvalidationChannel, payload: unknown) => {
-    if (!ref.current.channels.includes(channel)) return;
-    pending.current.push({ channel, taskId: signalTaskId(payload) });
-    if (timer.current !== null) return;
-    timer.current = setTimeout(() => {
-      timer.current = null;
-      const batch = pending.current;
-      pending.current = [];
-      if (batch.length > 0) ref.current.onBatch(batch);
-    }, SIGNAL_BATCH_MS);
+  const retry = useCallback(() => {
+    refetchFailedReads();
+    setAttempt((current) => ({ count: current.count + 1, failedAt: null }));
   }, []);
-  useRealtime("tasks:changed", (payload) => push("tasks:changed", payload));
-  useRealtime("projects:changed", (payload) => push("projects:changed", payload));
-  useRealtime("comments:changed", (payload) => push("comments:changed", payload));
-  useRealtime("threads:changed", (payload) => push("threads:changed", payload));
+  return { ...live, retry };
 }
 
-interface TasksQuery<T> {
-  data: T | undefined;
-  error: string | null;
-  isLoading: boolean;
-  refresh: () => void;
+/**
+ * Why a tasks read failed, for a failed live query's message. Each subset is
+ * its own Query, so a later success elsewhere leaves this one's error intact.
+ */
+export function tasksLoadError(collectionKey: QueryKey = ["tasks"]): string {
+  const [failed] = tasksQueryClient
+    .getQueryCache()
+    .findAll({
+      queryKey: collectionKey,
+      type: "active",
+      predicate: (query) => query.state.status === "error",
+    })
+    .sort((a, b) => b.state.errorUpdatedAt - a.state.errorUpdatedAt);
+  return failed === undefined ? "Tasks are unavailable" : errorMessage(failed.state.error);
 }
 
-interface TasksQuerySnapshot<T> {
-  name: string;
-  schema: z.ZodType<T>;
+function useActiveThreadLinks() {
+  const links = useTasksLiveQuery(["active-task-threads"], (q) =>
+    q
+      .from({ link: taskThreadsCollection })
+      .where(({ link }) => inArray(link.liveStatus, [...ACTIVE_THREAD_STATUSES])),
+  );
+  const byTaskId = useMemo(() => {
+    const grouped = new Map<string, TaskThread[]>();
+    for (const link of links.data ?? []) {
+      const taskLinks = grouped.get(link.taskId);
+      if (taskLinks) taskLinks.push(link);
+      else grouped.set(link.taskId, [link]);
+    }
+    return grouped;
+  }, [links.data]);
+  return { links, byTaskId };
 }
 
-type ApplySignals<T> = (
-  rpc: TasksRpc,
-  current: T,
-  signals: readonly TaskSignal[],
-) => Promise<T | null>;
+/** Every task's live agent threads, grouped by task. */
+export function useActiveThreads(): ReadonlyMap<string, TaskThread[]> {
+  return useActiveThreadLinks().byTaskId;
+}
 
-export function useTasksQuery<T>(
-  fetcher: (rpc: TasksRpc, publish: (partial: T) => void) => Promise<T>,
-  channels: readonly InvalidationChannel[],
-  deps: readonly unknown[] = [],
-  options: {
-    snapshot?: TasksQuerySnapshot<T>;
-    applySignals?: ApplySignals<T>;
-  } = {},
-): TasksQuery<T> {
-  const rpc = useTasksRpc();
-  const { generation, beginGenerationWork, endGenerationWork } = useTasksRefresh();
-  const fetcherRef = useRef(fetcher);
-  fetcherRef.current = fetcher;
-  const snapshotRef = useRef(options.snapshot);
-  snapshotRef.current = options.snapshot;
-  const applySignalsRef = useRef(options.applySignals);
-  applySignalsRef.current = options.applySignals;
-  const [state, setState] = useState<{
-    data: T | undefined;
-    error: string | null;
-    isLoading: boolean;
-  }>(() => ({
-    data:
-      options.snapshot === undefined
-        ? undefined
-        : readQuerySnapshot(options.snapshot.name, options.snapshot.schema),
-    error: null,
-    isLoading: true,
-  }));
-  const seqRef = useRef(0);
-  const dataRef = useRef(state.data);
-  const inFlightRef = useRef(0);
-  const patchChainRef = useRef<Promise<void>>(Promise.resolve());
-  const previousGenerationRef = useRef(generation);
-  const depsKey = JSON.stringify(deps);
-  const dataDepsKeyRef = useRef(depsKey);
-  const refresh = useCallback(() => {
-    const seq = ++seqRef.current;
-    const snapshot = snapshotRef.current;
-    const snapshotRevision = snapshot === undefined ? 0 : claimQuerySnapshotRevision(snapshot.name);
-    let settled = false;
-    const publish = (partial: T) => {
-      if (settled || seq !== seqRef.current) return;
-      dataDepsKeyRef.current = depsKey;
-      dataRef.current = partial;
-      setState({ data: partial, error: null, isLoading: true });
-    };
-    inFlightRef.current += 1;
-    return fetcherRef
-      .current(rpc, publish)
-      .then(
-        (data) => {
-          settled = true;
-          if (snapshot !== undefined) {
-            writeQuerySnapshot(snapshot.name, data, snapshotRevision);
-          }
-          if (seq !== seqRef.current) return;
-          dataDepsKeyRef.current = depsKey;
-          dataRef.current = data;
-          setState({ data, error: null, isLoading: false });
-        },
-        (error: unknown) => {
-          settled = true;
-          if (seq !== seqRef.current) return;
-          const keepsData = dataDepsKeyRef.current === depsKey;
-          if (!keepsData) dataRef.current = undefined;
-          setState((current) => ({
-            data: keepsData ? current.data : undefined,
-            error: errorMessage(error),
-            isLoading: false,
-          }));
-        },
-      )
-      .finally(() => {
-        inFlightRef.current -= 1;
-      });
-  }, [rpc, depsKey]);
-  useEffect(() => {
-    const generationBumped = previousGenerationRef.current !== generation;
-    previousGenerationRef.current = generation;
-    setState((current) => ({ ...current, isLoading: true }));
-    if (generationBumped) beginGenerationWork();
-    let settled = false;
-    const finish = () => {
-      if (!generationBumped || settled) return;
-      settled = true;
-      endGenerationWork();
-    };
-    void refresh().finally(finish);
-    return () => {
-      finish();
-    };
-  }, [refresh, generation, beginGenerationWork, endGenerationWork]);
-  const onSignals = useCallback(
-    (signals: TaskSignal[]) => {
-      const apply = applySignalsRef.current;
-      if (
-        apply === undefined ||
-        dataRef.current === undefined ||
-        inFlightRef.current > 0 ||
-        signals.some((signal) => signal.taskId === null)
-      ) {
-        void refresh();
-        return;
-      }
-      const seq = seqRef.current;
-      patchChainRef.current = patchChainRef.current.then(async () => {
-        const current = dataRef.current;
-        if (seq !== seqRef.current) return;
-        if (current === undefined) {
-          void refresh();
-          return;
-        }
-        let next: T | null;
-        try {
-          next = await apply(rpc, current, signals);
-        } catch {
-          next = null;
-        }
-        if (seq !== seqRef.current) return;
-        if (next === null) {
-          void refresh();
-          return;
-        }
-        if (next === current) return;
-        dataRef.current = next;
-        setState((previous) => ({ ...previous, data: next }));
-      });
+/** Tasks with a live agent thread; `topLevelOnly` leaves out sub-tasks. */
+export function useActiveTasks({
+  topLevelOnly = false,
+  enabled = true,
+}: { topLevelOnly?: boolean; enabled?: boolean } = {}) {
+  const { links, byTaskId } = useActiveThreadLinks();
+  const taskIds = useMemo(() => [...byTaskId.keys()].sort(), [byTaskId]);
+  const runs = enabled && links.isReady;
+  const tasks = useTasksLiveQuery(["active-tasks", topLevelOnly, runs ? taskIds : null], (q) => {
+    if (!runs) return undefined;
+    const active = q.from({ task: tasksCollection }).where(({ task }) => inArray(task.id, taskIds));
+    return topLevelOnly ? active.where(({ task }) => isNull(task.parentTaskId)) : active;
+  });
+  const ready = links.isReady && tasks.isReady;
+  const failed = links.isError || tasks.isError;
+  return {
+    data: ready ? tasks.data : undefined,
+    error: failed ? tasksLoadError(links.isError ? ["taskThreads"] : ["tasks"]) : null,
+    isLoading: !failed && !ready,
+    retry: () => {
+      links.retry();
+      tasks.retry();
     },
-    [refresh, rpc],
-  );
-  useSignalBatches(channels, onSignals);
-  return { ...state, refresh };
-}
-
-const foldersSnapshot = {
-  name: "folders",
-  schema: tasksRpcContract.listFolders.output.shape.folders,
-};
-
-export function useFolders() {
-  return useTasksQuery(
-    async (rpc) => (await rpc.call("listFolders")).folders,
-    ["projects:changed"],
-    [],
-    { snapshot: foldersSnapshot },
-  );
-}
-
-const projectsSnapshot = {
-  name: "projects",
-  schema: tasksRpcContract.listProjects.output.shape.projects,
-};
-
-export function useProjects() {
-  return useTasksQuery(
-    async (rpc) => (await rpc.call("listProjects", {})).projects,
-    ["projects:changed"],
-    [],
-    { snapshot: projectsSnapshot },
-  );
-}
-
-export function usePresets() {
-  return useTasksQuery(
-    async (rpc) => (await rpc.call("listPresets")).presets,
-    ["projects:changed"],
-  );
-}
-
-const sidebarSummarySnapshot = {
-  name: "sidebar-summary",
-  schema: tasksRpcContract.sidebarSummary.output.shape.projects,
-};
-
-export function useSidebarSummary() {
-  return useTasksQuery(
-    async (rpc) => (await rpc.call("sidebarSummary")).projects,
-    ["tasks:changed", "projects:changed", "threads:changed"],
-    [],
-    { snapshot: sidebarSummarySnapshot },
-  );
+  };
 }
 
 export function useMentionItems() {
@@ -407,12 +163,5 @@ export function useMentionItems() {
       ];
     },
     [rpc],
-  );
-}
-
-export function useActiveTasks() {
-  return useTasksQuery(
-    async (rpc) => listAllTasks(rpc, { activeOnly: true }),
-    ["tasks:changed", "threads:changed"],
   );
 }

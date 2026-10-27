@@ -719,6 +719,7 @@ export function registerHandlers(
     },
     listTasks(input) {
       const page = store.tasks.listTasksPage({
+        taskIds: input.taskIds,
         projectId: input.projectId,
         statuses: input.statuses,
         priorities: input.priorities,
@@ -834,6 +835,10 @@ export function registerHandlers(
         attachments: store.tasks.listAttachmentsForTask(input.taskId).map(attachmentMetadata),
       };
     },
+    countTaskAttachments(input) {
+      const counts = store.tasks.countAttachmentsForTasks([...new Set(input.taskIds)]);
+      return { counts: [...counts].map(([taskId, count]) => ({ taskId, count })) };
+    },
     async deleteAttachment(input) {
       try {
         const attachment = await deleteAttachmentById(bb, store.tasks, input.attachmentId, {
@@ -862,15 +867,11 @@ export function registerHandlers(
     listTaskThreads(input) {
       return { taskThreads: store.tasks.listTaskThreads(input.taskId) };
     },
-    listThreadTasks(input) {
-      const tasks: Task[] = [];
-      for (const taskThread of store.tasks.listTaskThreadsByThreadId(input.threadId)) {
-        const task = store.tasks.getTask(taskThread.taskId);
-        if (task && !tasks.some((listed) => listed.id === task.id)) {
-          tasks.push(apiTask(store, task));
-        }
-      }
-      return { tasks };
+    listActiveTaskThreads() {
+      return { taskThreads: store.tasks.listActiveTaskThreads() };
+    },
+    listTaskThreadsByThread(input) {
+      return { taskThreads: store.tasks.listTaskThreadsByThreadId(input.threadId) };
     },
     async listTaskPullRequests(input) {
       return listTaskPullRequests(bb, store, input.taskId);

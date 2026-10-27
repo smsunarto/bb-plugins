@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { TaskStatus } from "../../shared/contract.js";
 import {
-  applyBoardMove,
   dropIndexForPointer,
   dropNeighborsForIndex,
   visibleBoardStatuses,
@@ -107,35 +106,5 @@ describe("dropIndexForPointer", () => {
 
   it("returns 0 for an empty column", () => {
     expect(dropIndexForPointer([], 42)).toBe(0);
-  });
-});
-
-describe("applyBoardMove", () => {
-  const task = (id: string, status: TaskStatus) => ({ id, status });
-  const columns = () => ({
-    backlog: [task("a", "backlog"), task("b", "backlog")],
-    todo: [task("c", "todo")],
-    in_progress: [],
-    in_review: [],
-    done: [],
-    canceled: [],
-  });
-
-  it("moves a card across columns and updates its status", () => {
-    const next = applyBoardMove(columns(), "a", "todo", 1);
-    expect(next.backlog.map((t) => t.id)).toEqual(["b"]);
-    expect(next.todo.map((t) => t.id)).toEqual(["c", "a"]);
-    expect(next.todo[1]).toEqual({ id: "a", status: "todo" });
-  });
-
-  it("reorders within a column using the dragged-excluded index", () => {
-    const next = applyBoardMove(columns(), "a", "backlog", 1);
-    expect(next.backlog.map((t) => t.id)).toEqual(["b", "a"]);
-  });
-
-  it("leaves the board unchanged for an unknown task", () => {
-    const next = applyBoardMove(columns(), "nope", "todo", 0);
-    expect(next.backlog.map((t) => t.id)).toEqual(["a", "b"]);
-    expect(next.todo.map((t) => t.id)).toEqual(["c"]);
   });
 });

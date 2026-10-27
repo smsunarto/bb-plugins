@@ -27,7 +27,7 @@ import {
 } from "@/components/ui/context-menu";
 import { Icon } from "@/components/ui/icon";
 import { cn } from "@/lib/utils";
-import type { TaskEdit } from "./optimistic.js";
+import type { TaskEdit } from "../../shell/collections.js";
 import { PriorityIcon, StatusIcon } from "./icons.js";
 import {
   DUE_DATE_PRESETS,

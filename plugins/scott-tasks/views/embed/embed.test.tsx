@@ -2,7 +2,7 @@
 import { cleanup, fireEvent, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { loadPluginApp, renderSlot } from "@get-bb/plugin-sdk/testing/app";
-import { makeTask } from "../../test-fixtures.js";
+import { makeTask, rpcInput } from "../../test-fixtures.js";
 
 if (!window.matchMedia) {
   window.matchMedia = (query: string) => ({
@@ -196,10 +196,18 @@ describe("Task directive card", () => {
 
   it("refetches on matching realtime payloads and ignores unrelated ones", async () => {
     const slot = renderSlot(app.messageDirectives[0]!, directiveProps({ key: "TSK-4" }), {
-      rpc: { getTaskByKey: () => ({ task }) },
+      rpc: {
+        getTaskByKey: () => ({ task }),
+        getTask: (input: unknown) => ({ task: rpcInput(input).taskId === TASK_ID ? task : null }),
+      },
     });
     await slot.findByText("Ship task embeds");
-    const calls = () => slot.rpcCalls.filter((call) => call.method === "getTaskByKey").length;
+    const calls = () =>
+      slot.rpcCalls.filter(
+        (call) =>
+          call.method === "getTaskByKey" ||
+          (call.method === "getTask" && (call.input as { taskId: string }).taskId === TASK_ID),
+      ).length;
     const baseline = calls();
 
     await slot.emitRealtime("tasks:changed", {
@@ -285,6 +293,22 @@ describe("Task embed panel", () => {
 
 describe("Thread Info tasks section", () => {
   const infoProps = { threadId: "thr_worker", projectId: "proj_1", environment: null };
+  const link = {
+    id: "01HZZZZZZZZZZZZZZZZZZZZZH1",
+    taskId: TASK_ID,
+    threadId: "thr_worker",
+    presetName: "Sonnet · high",
+    title: "Worker",
+    liveStatus: "working" as const,
+    attachedAt: "2026-07-15T00:00:00.000Z",
+    updatedAt: "2026-07-15T00:00:00.000Z",
+  };
+  const linkedTasks = (input: unknown) => {
+    const { taskIds } = rpcInput(input);
+    return {
+      tasks: [task].filter((entry) => !Array.isArray(taskIds) || taskIds.includes(entry.id)),
+    };
+  };
 
   it("registers in bb's related group", () => {
     expect(app.threadInfoSections).toMatchObject([{ id: "tasks", group: "1_related", order: 5 }]);
@@ -294,12 +318,15 @@ describe("Thread Info tasks section", () => {
     const openThreadPanel = vi.fn(() => true);
     const slot = renderSlot(app.threadInfoSections[0]!, infoProps, {
       openThreadPanel,
-      rpc: { listThreadTasks: () => ({ tasks: [task] }) },
+      rpc: {
+        listTaskThreadsByThread: () => ({ taskThreads: [link] }),
+        listTasks: linkedTasks,
+      },
     });
 
     fireEvent.click(await slot.findByText("Ship task embeds"));
     expect(slot.rpcCalls).toContainEqual({
-      method: "listThreadTasks",
+      method: "listTaskThreadsByThread",
       input: { threadId: "thr_worker" },
     });
     expect(slot.getByText("TSK-4")).toBeTruthy();
@@ -311,16 +338,21 @@ describe("Thread Info tasks section", () => {
   });
 
   it("stays hidden until a task is attached to the thread", async () => {
-    let tasks: (typeof task)[] = [];
+    let links: (typeof link)[] = [];
     const slot = renderSlot(app.threadInfoSections[0]!, infoProps, {
-      rpc: { listThreadTasks: () => ({ tasks }) },
+      rpc: {
+        listTaskThreadsByThread: () => ({ taskThreads: links }),
+        listTasks: linkedTasks,
+      },
     });
     await waitFor(() =>
-      expect(slot.rpcCalls.filter(({ method }) => method === "listThreadTasks")).toHaveLength(1),
+      expect(
+        slot.rpcCalls.filter(({ method }) => method === "listTaskThreadsByThread"),
+      ).toHaveLength(1),
     );
     expect(slot.container.textContent).toBe("");
 
-    tasks = [task];
+    links = [link];
     await slot.behavior.emitRealtime("threads:changed", { taskId: TASK_ID });
     expect(await slot.findByText("Ship task embeds")).toBeTruthy();
   });

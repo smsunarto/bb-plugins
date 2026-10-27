@@ -1,12 +1,12 @@
 import type { PluginNavPanelProps } from "@get-bb/plugin-sdk/app";
 import { useActiveTasks, useFolders, usePresets, useProjects, useSidebarSummary } from "./data.js";
-import { TasksRefreshProvider } from "./refresh.js";
+import { TasksDataRoot } from "./data-root.js";
 import { parseTasksRoute, useTasksNavigation } from "./routes.js";
 import { TasksSidebar } from "./sidebar.js";
 import { NewProjectDialog } from "../views/manage/new-project-dialog.js";
 import { useState } from "react";
 
-function isAwaitingFirstResult(query: { data: unknown; error: string | null }): boolean {
+function isAwaitingFirstResult(query: { data: unknown; error: unknown }): boolean {
   return query.data === undefined && query.error === null;
 }
 
@@ -44,8 +44,8 @@ function TasksNavigationPanelContent({ subPath }: PluginNavPanelProps) {
 
 export function TasksNavigationPanel(props: PluginNavPanelProps) {
   return (
-    <TasksRefreshProvider>
+    <TasksDataRoot>
       <TasksNavigationPanelContent {...props} />
-    </TasksRefreshProvider>
+    </TasksDataRoot>
   );
 }

@@ -204,6 +204,8 @@ function normalizedFilterValues(values: readonly string[] | undefined) {
 
 function taskQueryFingerprint(filters: ListTasksFilters, sort: TaskSort): string {
   const normalized = JSON.stringify({
+    // Only id-scoped reads carry taskIds, so every other cursor keeps its fingerprint.
+    ...(filters.taskIds === undefined ? {} : { taskIds: normalizedFilterValues(filters.taskIds) }),
     projectId: filters.projectId ?? null,
     statuses: normalizedFilterValues(filters.statuses),
     priorities: normalizedFilterValues(filters.priorities),
@@ -777,6 +779,18 @@ export function createTasksStore(db: PluginDatabase) {
     const clauses: string[] = [];
     const parameters: Record<string, SqlParameter> = {};
 
+    if (filters.taskIds !== undefined) {
+      if (filters.taskIds.length === 0) {
+        clauses.push("0 = 1");
+      } else {
+        const names = filters.taskIds.map((taskId, index) => {
+          const name = `taskId${index}`;
+          parameters[name] = taskId;
+          return `@${name}`;
+        });
+        clauses.push(`t.id IN (${names.join(", ")})`);
+      }
+    }
     if (filters.projectId !== undefined) {
       clauses.push("t.project_id = @projectId");
       parameters.projectId = filters.projectId;
@@ -1182,7 +1196,13 @@ export function createTasksStore(db: PluginDatabase) {
     return requireLabel(id);
   }
 
-  function listLabels(projectId: string): Label[] {
+  function listLabels(projectId?: string): Label[] {
+    if (projectId === undefined) {
+      return db
+        .prepare<[], LabelRow>("SELECT * FROM labels ORDER BY name COLLATE NOCASE, id")
+        .all()
+        .map(labelFromRow);
+    }
     return db
       .prepare<[string], LabelRow>(
         "SELECT * FROM labels WHERE project_id = ? ORDER BY name COLLATE NOCASE, id",
@@ -1392,6 +1412,22 @@ export function createTasksStore(db: PluginDatabase) {
       .map(attachmentFromRow);
   }
 
+  function countAttachmentsForTasks(taskIds: readonly string[]): Map<string, number> {
+    const counts = new Map<string, number>(taskIds.map((taskId) => [taskId, 0]));
+    if (taskIds.length === 0) return counts;
+    const rows = db
+      .prepare<string[], { task_id: string; count: number }>(
+        `
+        SELECT task_id, COUNT(*) AS count FROM attachments
+        WHERE task_id IN (${taskIds.map(() => "?").join(", ")})
+        GROUP BY task_id
+      `,
+      )
+      .all(...taskIds);
+    for (const row of rows) counts.set(row.task_id, row.count);
+    return counts;
+  }
+
   function listAttachmentsForComment(commentId: string): Attachment[] {
     return db
       .prepare<[string], AttachmentRow>(
@@ -1504,6 +1540,19 @@ export function createTasksStore(db: PluginDatabase) {
     const thread = getTaskThreadByThreadId(input.taskId, input.threadId);
     if (!thread) throw new Error("Task thread upsert failed");
     return thread;
+  }
+
+  function listActiveTaskThreads(): TaskThread[] {
+    return db
+      .prepare<[], TaskThreadRow>(
+        `
+        SELECT * FROM task_threads
+        WHERE live_status IN ('starting', 'working')
+        ORDER BY attached_at DESC, id DESC
+      `,
+      )
+      .all()
+      .map(taskThreadFromRow);
   }
 
   function listTaskThreads(taskId: string): TaskThread[] {
@@ -1700,6 +1749,7 @@ export function createTasksStore(db: PluginDatabase) {
     createAttachment,
     getAttachment,
     listAttachmentsForTask,
+    countAttachmentsForTasks,
     listAttachmentsForComment,
     listCommentAttachmentsForTask,
     updateAttachment,
@@ -1709,6 +1759,7 @@ export function createTasksStore(db: PluginDatabase) {
     getTaskThreadByThreadId,
     listTaskThreadsByThreadId,
     listTaskThreads,
+    listActiveTaskThreads,
     updateTaskThreadStatus,
     deleteTaskThread,
     createPreset,

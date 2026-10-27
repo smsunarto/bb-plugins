@@ -20,13 +20,13 @@ if (!window.matchMedia) {
 
 installTestPluginRuntime();
 const { PropertiesRail } = await import("./rail");
-const { TasksRefreshProvider } = await import("../../shell/refresh");
+const { TasksDataRoot } = await import("../../shell/data-root");
 
 function RailHarness(props: ComponentProps<typeof PropertiesRail>) {
   return (
-    <TasksRefreshProvider>
+    <TasksDataRoot>
       <PropertiesRail {...props} />
-    </TasksRefreshProvider>
+    </TasksDataRoot>
   );
 }
 

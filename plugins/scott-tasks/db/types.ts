@@ -169,6 +169,7 @@ export interface UpdateTaskInput {
 }
 
 export interface ListTasksFilters {
+  taskIds?: readonly string[];
   projectId?: string;
   statuses?: readonly TaskStatus[];
   priorities?: readonly TaskPriority[];

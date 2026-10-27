@@ -19,7 +19,8 @@ import { ManagePanel } from "../views/manage/manage-panel.js";
 import { EmptyState } from "../components/empty-state.js";
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
-import { TasksRefreshProvider } from "./refresh.js";
+import { TasksDataRoot } from "./data-root.js";
+import { useTasksUi } from "./ui-store.js";
 
 const BOARD_MIN_WIDTH = 448;
 
@@ -74,7 +75,9 @@ function TasksAppShellContent({ subPath }: PluginNavPanelProps) {
     }),
     [tasksNavigation],
   );
-  const [newTaskOpen, setNewTaskOpen] = useState(false);
+  const newTask = useTasksUi((state) => state.newTask);
+  const openNewTask = useTasksUi((state) => state.openNewTask);
+  const closeNewTask = useTasksUi((state) => state.closeNewTask);
   const [newProjectOpen, setNewProjectOpen] = useState(false);
 
   const mainRef = useRef<HTMLElement>(null);
@@ -124,11 +127,11 @@ function TasksAppShellContent({ subPath }: PluginNavPanelProps) {
       if (isEditableTarget(event.target)) return;
       if (hasOpenOverlay()) return;
       event.preventDefault();
-      setNewTaskOpen(true);
+      openNewTask({ projectId: newTaskProjectId });
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, []);
+  }, [openNewTask, newTaskProjectId]);
 
   return (
     <div className="relative flex h-full min-h-0 bg-background text-foreground">
@@ -147,7 +150,7 @@ function TasksAppShellContent({ subPath }: PluginNavPanelProps) {
                 }
           }
           onNavigate={navigation.go}
-          onNewTask={() => setNewTaskOpen(true)}
+          onNewTask={() => openNewTask({ projectId: newTaskProjectId })}
           onBack={backFromTask}
         />
         <div className="min-h-0 flex-1 overflow-auto">
@@ -169,9 +172,12 @@ function TasksAppShellContent({ subPath }: PluginNavPanelProps) {
         </div>
       </main>
       <NewTaskDialog
-        open={newTaskOpen}
-        onOpenChange={setNewTaskOpen}
-        projectId={newTaskProjectId}
+        open={newTask !== null}
+        onOpenChange={(open) => {
+          if (!open) closeNewTask();
+        }}
+        projectId={newTask?.projectId ?? null}
+        defaultStatus={newTask?.status}
       />
       <NewProjectDialog open={newProjectOpen} onOpenChange={setNewProjectOpen} />
     </div>
@@ -180,8 +186,8 @@ function TasksAppShellContent({ subPath }: PluginNavPanelProps) {
 
 export function TasksAppShell(props: PluginNavPanelProps) {
   return (
-    <TasksRefreshProvider>
+    <TasksDataRoot>
       <TasksAppShellContent {...props} />
-    </TasksRefreshProvider>
+    </TasksDataRoot>
   );
 }

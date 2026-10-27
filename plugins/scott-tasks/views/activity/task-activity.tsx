@@ -10,7 +10,9 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import { cn } from "@/lib/utils";
 import { TasksEditor } from "../../editor/tasks-editor.js";
 import { useBbNavigate } from "@get-bb/plugin-sdk/app";
-import { useMentionItems, useTasksQuery, useTasksRpc } from "../../shell/data.js";
+import { useQuery } from "@tanstack/react-query";
+import { useMentionItems, useTasksRpc } from "../../shell/data.js";
+import { commentsQuery } from "../../shell/query.js";
 import { Lightbox } from "../detail/attachments.js";
 import {
   AttachmentChip,
@@ -28,11 +30,7 @@ import { CommentAuthor } from "./comment-author.js";
 import { CommentProviderAvatar } from "./provider-logo.js";
 
 function useActivityFeed(taskId: string) {
-  return useTasksQuery<DisplayComment[]>(
-    async (rpc) => (await rpc.call("listComments", { taskId })).comments,
-    ["comments:changed", "tasks:changed"],
-    [taskId],
-  );
+  return useQuery(commentsQuery(taskId));
 }
 
 type AgentNotificationTarget =
@@ -427,7 +425,9 @@ export function TaskActivity({ taskId }: TaskActivityProps) {
             "before:absolute before:bottom-1.5 before:left-[11px] before:top-1.5 before:w-px before:bg-border-hairline",
         )}
       >
-        {feed.error ? <div className="text-xs text-destructive">{feed.error}</div> : null}
+        {feed.error ? (
+          <div className="text-xs text-destructive">{errorMessage(feed.error)}</div>
+        ) : null}
         {comments.length === 0 && !feed.isLoading && !feed.error ? (
           <div className="text-xs text-muted-foreground">No activity yet.</div>
         ) : null}

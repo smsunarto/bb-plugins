@@ -118,6 +118,24 @@ const labelsA = [
   },
 ];
 
+const activeTasks = [
+  task(PROJECT_A, 9, "in_progress", "high"),
+  task(PROJECT_B, 9, "in_progress", "high"),
+];
+
+function workingThread(item: Task) {
+  return {
+    id: `01HZZZZZZZZZZZZZZZZZZZZH${item.id.slice(-3)}`,
+    taskId: item.id,
+    threadId: `thr_${item.key}`,
+    presetName: "Sonnet · high",
+    title: "Worker",
+    liveStatus: "working" as const,
+    attachedAt: "2026-07-15T00:00:00.000Z",
+    updatedAt: "2026-07-15T00:00:00.000Z",
+  };
+}
+
 function baseRpc(
   overrides: Record<string, unknown> = {},
   listTasksCalls: Record<string, unknown>[] = [],
@@ -127,18 +145,17 @@ function baseRpc(
     listFolders: () => ({ folders: [] }),
     listPresets: () => ({ presets: [] }),
     sidebarSummary: () => ({ projects: [] }),
-    listLabels: (input: unknown) => ({
-      labels: rpcInput(input).projectId === PROJECT_A ? labelsA : [],
-    }),
+    listLabels: (input: unknown) => {
+      const { projectId } = rpcInput(input);
+      return { labels: projectId === undefined || projectId === PROJECT_A ? labelsA : [] };
+    },
+    listActiveTaskThreads: () => ({ taskThreads: activeTasks.map(workingThread) }),
     listTasks: (raw: unknown) => {
       const input = rpcInput(raw);
       listTasksCalls.push(input);
       let tasks: Task[];
-      if (input.activeOnly) {
-        tasks = [
-          task(PROJECT_A, 9, "in_progress", "high"),
-          task(PROJECT_B, 9, "in_progress", "high"),
-        ];
+      if (Array.isArray(input.taskIds)) {
+        tasks = activeTasks.filter((item) => (input.taskIds as string[]).includes(item.id));
       } else if (input.projectId === PROJECT_A) {
         tasks = tasksA.map((item, index) =>
           index === 0
@@ -292,17 +309,7 @@ describe("list filter/sort preference persistence", () => {
     await selectSort(allSlot, "Priority");
     allSlot.lifecycle.unmount();
 
-    const activeSlot = renderSlot(
-      registration,
-      { subPath: "active" },
-      {
-        rpc: baseRpc({
-          listTasks: () => ({
-            tasks: [task(PROJECT_A, 9, "in_progress", "high")],
-          }),
-        }),
-      },
-    );
+    const activeSlot = renderSlot(registration, { subPath: "active" }, { rpc: baseRpc() });
     await activeSlot.findByText("ALP-9");
     expect(activeSlot.getByRole("button", { name: /Sort/ }).textContent).not.toContain("Priority");
   });
@@ -369,15 +376,11 @@ describe("list filter/sort preference persistence", () => {
     const slot = renderSlot(app.navPanels[0]!, { subPath: PROJECT_A }, { rpc });
     await slot.findByRole("button", { name: /^Label/ });
     expect(slot.getByRole("button", { name: /^Label/ }).textContent).toContain("DeletedLabel");
-    await waitFor(() => {
-      expect(
-        listTasksCalls.some((call) => Array.isArray(call.labelIds) && call.labelIds.length === 0),
-      ).toBe(true);
-    });
-    await waitFor(() => {
-      expect(slot.queryByText("ALP-1")).toBeNull();
-      expect(slot.queryByText("ALP-2")).toBeNull();
-    });
+    // A label set that resolves to nothing needs no read.
+    await slot.findByText("No tasks match these filters");
+    expect(slot.queryByText("ALP-1")).toBeNull();
+    expect(slot.queryByText("ALP-2")).toBeNull();
+    expect(listTasksCalls.some((call) => Array.isArray(call.labelIds))).toBe(false);
   });
 });
 

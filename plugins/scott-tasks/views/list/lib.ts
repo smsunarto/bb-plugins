@@ -121,3 +121,16 @@ export const DUE_DATE_PRESETS: readonly [label: string, days: number][] = [
   ["Tomorrow", 1],
   ["Next week", 7],
 ];
+
+export function matchesFilters(
+  task: Task,
+  statuses: readonly TaskStatus[],
+  priorities: readonly TaskPriority[],
+  labelIds: readonly string[],
+): boolean {
+  return (
+    (statuses.length === 0 || statuses.includes(task.status)) &&
+    (priorities.length === 0 || priorities.includes(task.priority)) &&
+    (labelIds.length === 0 || task.labelIds.some((id) => labelIds.includes(id)))
+  );
+}

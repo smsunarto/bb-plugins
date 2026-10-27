@@ -11,7 +11,9 @@ import type {
 } from "../../shared/contract.js";
 import { TASK_PRIORITIES, TASK_STATUSES } from "../../shared/contract.js";
 import { errorMessage } from "../../shared/errors.js";
-import { useTasksQuery, useTasksRpc } from "../../shell/data.js";
+import { useQuery } from "@tanstack/react-query";
+import { useTasksRpc } from "../../shell/data.js";
+import { bbProjectsQuery } from "../../shell/query.js";
 import { PriorityIcon, StatusIcon, formatDueDate, isActiveThread } from "./meta.js";
 import { DUE_DATE_PRESETS, localIsoDate, PRIORITY_LABELS, STATUS_LABELS } from "../list/lib.js";
 import { DispatchControl } from "./threads.js";
@@ -389,10 +391,7 @@ export function PropertiesRail({
 }) {
   const taskLabels = (labels ?? []).filter((label) => task.labelIds.includes(label.id));
   const active = threads.filter(isActiveThread);
-  const bbProjects = useTasksQuery(
-    async (query) => (await query.call("listBbProjects")).bbProjects,
-    ["projects:changed"],
-  );
+  const bbProjects = useQuery(bbProjectsQuery);
   return (
     <aside className={cn("w-56 shrink-0 py-10 pl-2 pr-6", className)}>
       <h2 className="mb-1.5 text-xs font-semibold text-muted-foreground">Properties</h2>

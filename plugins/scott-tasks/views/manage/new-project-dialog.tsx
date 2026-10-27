@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
-import { useFolders, useProjects, useTasksQuery, useTasksRpc } from "../../shell/data.js";
+import { useQuery } from "@tanstack/react-query";
+import { useFolders, useProjects, useTasksRpc } from "../../shell/data.js";
+import { bbProjectsQuery } from "../../shell/query.js";
 import { useTasksNavigation } from "../../shell/routes.js";
 import { PROJECT_PREFIX_PATTERN } from "../../shared/contract.js";
 import { errorMessage } from "../../shared/errors.js";
@@ -56,10 +58,7 @@ export function NewProjectDialog({ open, onOpenChange }: NewProjectDialogProps) 
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const bbProjects = useTasksQuery(
-    async (rpc) => (await rpc.call("listBbProjects")).bbProjects,
-    [],
-  );
+  const bbProjects = useQuery(bbProjectsQuery);
   const bbProjectList = bbProjects.data ?? [];
 
   useEffect(() => {
