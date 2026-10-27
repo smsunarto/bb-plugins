@@ -1797,13 +1797,62 @@ diffs-container {
   stroke-width: 2;
 }
 
-/* Message hover actions draw 12px icons on a 24px grid with a 1.5 stroke,
- * a 0.75px line that blurs across device pixels. At 16px the line is 1px,
- * the size bb already uses on touch. The 20px buttons keep their size, so
- * bb's row layout math is unchanged. */
-.dark [data-message-column] .absolute.top-0 > button.size-5 > [data-icon-root].size-3 {
-  width: 16px;
-  height: 16px;
+/* Message hover actions copy T3 Code's ghost `xs` buttons: a 12px glyph in
+ * a 26x24 hit fill with an 8px radius, accent on hover or while the menu is
+ * open. bb decides how many actions fit inline from its own 20px boxes and
+ * gaps, so those boxes keep their size and the fill is a pseudo-element
+ * 3px wider and 2px taller on each side. The row is overflow-hidden; padding
+ * offset by equal negative margins (on top of bb's own inset) gives the fill
+ * room without moving a glyph or shrinking the space bb measured. Phones keep
+ * bb's 28px touch targets and no fill. */
+@media (min-width: 768px), (pointer: fine) {
+  .dark [data-message-column] .absolute.top-0.flex.max-w-full.gap-2.overflow-hidden {
+    max-width: calc(100% + 6px);
+    padding: 2px 3px;
+    margin-top: -2px;
+  }
+
+  .dark [data-message-column] .absolute.top-0.left-0.-ml-1 {
+    margin-left: -7px;
+  }
+
+  .dark [data-message-column] .absolute.top-0.right-\[13px\] {
+    margin-right: -3px;
+  }
+
+  .dark [data-message-column] .absolute.top-0 > button.size-5 {
+    position: relative;
+    isolation: isolate;
+  }
+
+  .dark [data-message-column] .absolute.top-0 > button.size-5::before {
+    content: "";
+    position: absolute;
+    inset: -2px -3px;
+    z-index: -1;
+    border-radius: 8px;
+  }
+
+  .dark [data-message-column] .absolute.top-0 > button.size-5[data-state="open"]::before {
+    background-color: var(--accent);
+  }
+}
+
+/* The fill pseudo-element exists only in the block above, so phones draw none. */
+@media (hover: hover) {
+  .dark [data-message-column] .absolute.top-0 > button.size-5:hover {
+    color: var(--foreground);
+  }
+
+  .dark [data-message-column] .absolute.top-0 > button.size-5:hover::before {
+    background-color: var(--accent);
+  }
+}
+
+/* Hugeicons draw a 1.5 stroke on a 24px grid, a 0.75px line at 12px that
+ * blurs across device pixels. Stroke 2 draws T3's crisp 1px line. */
+.dark [data-message-column] .absolute.top-0 > button.size-5 > svg[data-icon-root].size-3 * {
+  stroke-width: 2;
 }
 
 .dark [data-timeline-row-list] span.text-sm.leading-5 {

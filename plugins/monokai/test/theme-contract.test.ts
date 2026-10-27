@@ -273,8 +273,14 @@ describe("bb Monokai contract audit", () => {
     // bb's 20px action row holds the absolutely positioned hover actions.
     // Collapsing it lets them spill over the next timeline item.
     expect(theme).not.toContain(".relative.w-full.h-5");
+    // bb counts inline actions from its 20px boxes, so the T3 fill is drawn
+    // outside them instead of resizing the buttons.
+    expect(theme).not.toContain("padding-inline: 7px");
     expect(theme).toContain(
-      ".dark [data-message-column] .absolute.top-0 > button.size-5 > [data-icon-root].size-3 {\n  width: 16px;\n  height: 16px;",
+      '.dark [data-message-column] .absolute.top-0 > button.size-5::before {\n    content: "";\n    position: absolute;\n    inset: -2px -3px;\n    z-index: -1;\n    border-radius: 8px;',
+    );
+    expect(theme).toContain(
+      ".dark [data-message-column] .absolute.top-0 > button.size-5 > svg[data-icon-root].size-3 * {\n  stroke-width: 2;",
     );
     expect(theme).toContain('> span:empty::after {\n  content: "text";');
     expect(theme).toContain(
