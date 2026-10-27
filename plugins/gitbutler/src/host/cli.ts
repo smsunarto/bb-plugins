@@ -1,4 +1,4 @@
-import { execFile } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import { access } from "node:fs/promises";
 import { homedir } from "node:os";
 import { delimiter, join } from "node:path";
@@ -234,22 +234,21 @@ export async function runGit(
   return result.stdout;
 }
 
-/** Git plumbing such as diff and merge-tree uses exit 1 for a meaningful result. */
-export async function runGitCommand(
+/**
+ * Configured SSH commands can be wrappers or PuTTY, and must retain Git's
+ * own precedence and arguments. Use stock SSH's noninteractive mode only
+ * when the network command has no custom SSH configuration.
+ */
+async function networkEnvironment(
   cwd: string,
   args: readonly string[],
   signal: AbortSignal,
-  input?: string,
-  env?: NodeJS.ProcessEnv,
-): Promise<{ stdout: string; stderr: string; code: number | null }> {
-  const environment = { ...process.env, ...env };
-  // Configured SSH commands can be wrappers or PuTTY, and must retain Git's
-  // own precedence and arguments. Use stock SSH's noninteractive mode only
-  // when the network command has no custom SSH configuration.
+  environment: NodeJS.ProcessEnv,
+): Promise<NodeJS.ProcessEnv> {
   let commandIndex = 0;
   while (args[commandIndex] === "-c" || args[commandIndex] === "-C") commandIndex += 2;
   if (
-    ["fetch", "push", "pull", "clone", "ls-remote"].includes(args[commandIndex] ?? "") &&
+    ["fetch", "push", "pull", "clone", "ls-remote", "lfs"].includes(args[commandIndex] ?? "") &&
     environment["GIT_SSH_COMMAND"] === undefined &&
     environment["GIT_SSH"] === undefined
   ) {
@@ -263,6 +262,74 @@ export async function runGitCommand(
     );
     if (configured.code === 1) environment["GIT_SSH_COMMAND"] = "ssh -oBatchMode=yes";
   }
+  return environment;
+}
+
+/**
+ * Run git with its stdout written to `sink`, or dropped without one, for
+ * output that is binary or too large to hold as a string.
+ */
+export async function pipeGit(
+  cwd: string,
+  args: readonly string[],
+  signal: AbortSignal,
+  options: { input?: string; sink?: NodeJS.WritableStream; env?: NodeJS.ProcessEnv } = {},
+): Promise<void> {
+  const environment = await networkEnvironment(cwd, args, signal, {
+    ...process.env,
+    ...options.env,
+  });
+  const exited = ownProcess(cwd);
+  const stderr: string[] = [];
+  let stderrLength = 0;
+  const code = await new Promise<number | null>((settle, fail) => {
+    const child = spawn("git", args, {
+      cwd,
+      signal,
+      windowsHide: true,
+      stdio: [
+        options.input === undefined ? "ignore" : "pipe",
+        options.sink ? "pipe" : "ignore",
+        "pipe",
+      ],
+      env: { ...environment, PATH: searchPath(environment), GIT_TERMINAL_PROMPT: "0" },
+    });
+    child.on("error", fail);
+    child.stderr?.setEncoding("utf8");
+    child.stderr?.on("data", (chunk: string) => {
+      if (stderrLength < 64 * 1024) stderr.push(chunk);
+      stderrLength += chunk.length;
+    });
+    const written = options.sink
+      ? new Promise<void>((done, broke) => {
+          child.stdout!.pipe(options.sink!);
+          options.sink!.on("finish", done);
+          options.sink!.on("error", broke);
+        })
+      : Promise.resolve();
+    child.stdin?.on("error", () => undefined);
+    child.stdin?.end(options.input);
+    child.on("close", (status) => void written.then(() => settle(status), fail));
+  })
+    .catch(async (error: unknown) => {
+      if (signal.aborted) throw new Error("aborted");
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") throw await spawnFailure("git", cwd);
+      throw error;
+    })
+    .finally(() => void exited());
+  if (signal.aborted) throw new Error("aborted");
+  if (code !== 0) throw new ButFailedError(firstLine(stderr.join("")) || "git failed.");
+}
+
+/** Git plumbing such as diff and merge-tree uses exit 1 for a meaningful result. */
+export async function runGitCommand(
+  cwd: string,
+  args: readonly string[],
+  signal: AbortSignal,
+  input?: string,
+  env?: NodeJS.ProcessEnv,
+): Promise<{ stdout: string; stderr: string; code: number | null }> {
+  const environment = await networkEnvironment(cwd, args, signal, { ...process.env, ...env });
   const result = await run("git", args, cwd, signal, input, environment);
   if (signal.aborted) throw new Error("aborted");
   if (result.spawnFailed) throw await spawnFailure("git", cwd);

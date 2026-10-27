@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { experimental_defineHostEntry } from "@get-bb/plugin-sdk/host";
 import type { ExperimentalHostRpcContext } from "@get-bb/plugin-sdk/host";
 import { gitbutlerHostContract, gitbutlerHostSignals } from "../shared/host-contract.ts";
@@ -10,6 +11,7 @@ import type {
 import { runAction } from "./actions.ts";
 import { readParkedBranches } from "./branches.ts";
 import { ButFailedError, ButMissingError, ButSetupRequiredError, runBut, runGit } from "./cli.ts";
+import { describeBlob, readBlobChunk } from "./blobs.ts";
 import { readBaseHistory, readCheckoutHead } from "./history.ts";
 import { prepareGitCheckoutChild, runGitAction } from "./git-actions.ts";
 import { readGitCheckout, readGitPatches, readGitWorkspace } from "./git-workspace.ts";
@@ -60,6 +62,24 @@ async function resolveHostRepository(input: HostTarget, signal: AbortSignal) {
  */
 function checkoutOf(path: string, signal: AbortSignal) {
   return remember(`checkout\0${path}`, signal, (shared) => readGitCheckout(path, shared));
+}
+
+/**
+ * Another plugin names the path, so only a GitButler workspace bb knows here
+ * is read. A preview reads a file in several calls, so the answer is kept for
+ * a few seconds, and a path bb knows directly skips the search below the rest.
+ */
+async function requireKnownWorkspace(
+  within: readonly string[],
+  path: string,
+  signal: AbortSignal,
+): Promise<void> {
+  const paths = createHash("sha256").update(within.join("\0")).digest("hex");
+  const known = await remember(`known-workspace\0${path}\0${paths}`, signal, (shared) =>
+    isKnownWorkspace(within.includes(path) ? [path] : within, path, shared),
+  );
+  if (!known)
+    throw new NoRepositoryError("That is not a GitButler workspace bb knows on this machine.");
 }
 
 /** Classify a failure so the panel can explain it instead of showing a stack. */
@@ -380,6 +400,29 @@ export default experimental_defineHostEntry({
       }
       const output = await showCommit(repository.path, source.commitId, context.signal);
       return patchesFromGit(output, MAX_PATCH_CHARS);
+    },
+
+    async blobs(input, context) {
+      const repository = await resolveHostRepository(input, context.signal);
+      await requireKnownWorkspace(input.within, repository.path, context.signal);
+      const items = await Promise.all(
+        input.items.map(({ rev, path }) =>
+          describeBlob(repository.path, rev, path, context.signal),
+        ),
+      );
+      return { items };
+    },
+
+    async blobChunk(input, context) {
+      const repository = await resolveHostRepository(input, context.signal);
+      await requireKnownWorkspace(input.within, repository.path, context.signal);
+      return readBlobChunk(
+        repository.path,
+        input.object,
+        input.offset,
+        input.length,
+        context.signal,
+      );
     },
 
     async prepareCheckoutChild(input, context) {

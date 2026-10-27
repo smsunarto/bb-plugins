@@ -2,6 +2,8 @@ import { definePlugin } from "@bb-kit/core/plugin";
 import { offerPanelTab } from "./lib/panel-tab.ts";
 import { publishWorkspaceChanged, relayRepositoryChanges } from "./lib/workspace-signal.ts";
 import { baseHistory } from "./rpc/base-history.ts";
+import { branchBlobChunk } from "./rpc/branch-blob-chunk.ts";
+import { branchBlobs } from "./rpc/branch-blobs.ts";
 import { branchPatches } from "./rpc/branch-patches.ts";
 import { butAction } from "./rpc/but-action.ts";
 import { checkoutChatTarget } from "./rpc/checkout-chat-target.ts";
@@ -42,6 +44,8 @@ export default definePlugin({
     unpublishedBranches,
     unpublishedBranchesAt,
     branchPatches,
+    branchBlobs,
+    branchBlobChunk,
   },
   setup({ bb }) {
     bb.onDispose(relayRepositoryChanges(bb));

@@ -2,6 +2,9 @@ import { defineRpcContract } from "@get-bb/plugin-sdk";
 import { z } from "zod";
 import {
   baseHistorySchema,
+  blobDescriptorSchema,
+  blobObjectSchema,
+  blobPathSchema,
   branchNameSchema,
   butActionSchema,
   hostButActionResponseSchema,
@@ -36,6 +39,11 @@ const target = z.object({
     .optional(),
 });
 
+/** How long the host may spend fetching a Git LFS object a chunk names. */
+export const LFS_DOWNLOAD_MS = 120_000;
+/** A chunk's call allows that download, plus the read. */
+export const BLOB_CHUNK_TIMEOUT_MS = LFS_DOWNLOAD_MS + 15_000;
+
 export const gitbutlerHostContract = defineRpcContract({
   repositories: {
     input: target.strict(),
@@ -60,6 +68,35 @@ export const gitbutlerHostContract = defineRpcContract({
   patches: {
     input: target.extend({ source: z.union([patchSourceSchema, rangeSourceSchema]) }).strict(),
     output: patchesSchema,
+  },
+  /** What each path holds at its commit, in a workspace among `within`. */
+  blobs: {
+    input: target
+      .extend({
+        within: z.array(z.string()),
+        items: z
+          .array(z.object({ rev: commitIdSchema, path: blobPathSchema }).strict())
+          .min(1)
+          .max(8),
+      })
+      .strict(),
+    output: z.object({ items: z.array(blobDescriptorSchema) }).strict(),
+  },
+  /** One range of a blob or LFS object, base64. LFS objects download into the checkout's store first. */
+  blobChunk: {
+    input: target
+      .extend({
+        within: z.array(z.string()),
+        object: blobObjectSchema,
+        offset: z.number().int().nonnegative(),
+        length: z
+          .number()
+          .int()
+          .min(1)
+          .max(4 * 1024 * 1024),
+      })
+      .strict(),
+    output: z.object({ size: z.number().int().nonnegative(), content: z.string() }).strict(),
   },
   butAction: {
     input: target

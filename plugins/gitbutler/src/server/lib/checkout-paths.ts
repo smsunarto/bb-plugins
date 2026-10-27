@@ -1,4 +1,5 @@
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
+import { createMemo, type Memo } from "../../shared/memo.ts";
 
 /**
  * Every checkout path bb knows, by machine: project sources and ready
@@ -28,4 +29,18 @@ export async function knownCheckoutPaths(bb: BbPluginApi) {
     const known = paths.get(host.id);
     return host.status === "connected" && known ? [{ host, paths: [...known] }] : [];
   });
+}
+
+/** How long a file preview's reads reuse the checkout paths: one preview is many calls. */
+const RECENT_MS = 5_000;
+const recent = new WeakMap<BbPluginApi, Memo>();
+
+/** {@link knownCheckoutPaths}, shared by the reads of one file preview. */
+export function recentCheckoutPaths(bb: BbPluginApi): ReturnType<typeof knownCheckoutPaths> {
+  let memo = recent.get(bb);
+  if (!memo) {
+    memo = createMemo({ ttlMs: RECENT_MS });
+    recent.set(bb, memo);
+  }
+  return memo.read("paths", () => knownCheckoutPaths(bb));
 }

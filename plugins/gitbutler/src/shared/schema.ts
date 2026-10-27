@@ -253,6 +253,47 @@ export const patchesSchema = z
   .strict();
 
 /**
+ * What a path holds at a commit, read without its content: another plugin's
+ * preview decides from this whether, and how, to read the file.
+ */
+export const blobDescriptorSchema = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("missing") }).strict(),
+  z
+    .object({
+      kind: z.literal("blob"),
+      oid: z.string(),
+      size: z.number().int().nonnegative(),
+      /** A Git LFS pointer's object, and whether this checkout's store holds it already. */
+      lfs: z
+        .object({ oid: z.string(), size: z.number().int().nonnegative(), local: z.boolean() })
+        .strict()
+        .nullable(),
+    })
+    .strict(),
+  z.object({ kind: z.literal("symlink"), target: z.string() }).strict(),
+  z.object({ kind: z.literal("submodule"), oid: z.string() }).strict(),
+]);
+export type BlobDescriptor = z.infer<typeof blobDescriptorSchema>;
+
+/** The content a chunk reads: a Git blob, or the Git LFS object a pointer names. */
+export const blobObjectSchema = z.discriminatedUnion("kind", [
+  z
+    .object({ kind: z.literal("git"), oid: z.string().regex(/^[0-9a-f]{40}(?:[0-9a-f]{24})?$/) })
+    .strict(),
+  z
+    .object({
+      kind: z.literal("lfs"),
+      oid: z.string().regex(/^[0-9a-f]{64}$/),
+      size: z.number().int().nonnegative(),
+    })
+    .strict(),
+]);
+export type BlobObject = z.infer<typeof blobObjectSchema>;
+
+/** A file in a range, `base..head`, as a branch review names it. */
+export const blobPathSchema = z.string().min(1).max(4096);
+
+/**
  * A branch name as an argv value. No whitespace, and no leading dash, so `but`
  * can never read it as a flag. No leading `refs/` either: `but` reads
  * `refs/heads/topic` as the full name of `topic`, another branch. Git applies
