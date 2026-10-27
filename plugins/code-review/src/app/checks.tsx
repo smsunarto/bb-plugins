@@ -1,6 +1,7 @@
 import { useEffect, useId, useState } from "react";
 import type { ReactNode } from "react";
 import { UrlLink, experimental_Icon as Icon } from "@get-bb/plugin-sdk/app";
+import { checksRunning } from "../shared/schema.ts";
 import type { Check, Checks, PullRequest } from "../shared/schema.ts";
 import { Button } from "./components/ui/button.tsx";
 import { Skeleton } from "./components/ui/skeleton.tsx";
@@ -45,13 +46,6 @@ export function groupChecks(checks: readonly Check[]): CheckGroup[] {
     title,
     checks: checks.filter((check) => states.includes(check.state)),
   })).filter((group) => group.checks.length > 0);
-}
-
-/** True while GitHub still has a check running, so the tab keeps polling. */
-export function checksRunning(data: Checks | undefined): boolean {
-  return (
-    data?.state === "pending" || (data?.checks.some((check) => check.state === "pending") ?? false)
-  );
 }
 
 /** `45s`, `2m 05s`, `1h 12m`. Null when either end is missing or out of order. */

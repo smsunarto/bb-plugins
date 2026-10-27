@@ -1,6 +1,7 @@
 import type { Context } from "@bb-kit/core/plugin";
 import type { BlobReader } from "./blobs.ts";
 import type { GitHub } from "./gh.ts";
+import type { PrWatcher } from "./pr-watch.ts";
 import type { Store } from "./store.ts";
 import type { UnityPreviews } from "./unity-preview.ts";
 
@@ -10,4 +11,5 @@ export type CodeReviewContext = Context<{
   store: Store;
   blobs: BlobReader;
   unity: UnityPreviews;
+  watcher: PrWatcher;
 }>;

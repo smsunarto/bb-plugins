@@ -633,6 +633,43 @@ export const checksSchema = z.object({
 });
 export type Checks = z.infer<typeof checksSchema>;
 
+/** True while GitHub still has a check running, so readers keep polling. */
+export function checksRunning(data: Checks | undefined): boolean {
+  return (
+    data?.state === "pending" || (data?.checks.some((check) => check.state === "pending") ?? false)
+  );
+}
+
+// ── Pull request watches ─────────────────────────────────────────────────
+
+/**
+ * A pull request an agent watches from its thread, as the server's latest
+ * read found it. The card above the thread's composer shows it.
+ */
+export const prWatchSchema = z.object({
+  ref: prRefSchema,
+  account: accountSchema,
+  url: z.string(),
+  title: z.string(),
+  state: prStateSchema,
+  /** GitHub's `mergeStateStatus`: `CLEAN`, `BEHIND`, `DIRTY`, `BLOCKED`, and so on. */
+  mergeState: z.string().nullable(),
+  checks: checksSchema,
+  startedAt: z.string(),
+  polledAt: z.string(),
+  /** Why the latest read failed. The rest is the read before it. */
+  error: z.string().nullable(),
+  /** The watch stopped and its last news has not reached the thread yet. */
+  ended: z.boolean(),
+});
+export type PrWatch = z.infer<typeof prWatchSchema>;
+
+export const prWatchesSchema = z.object({ watches: z.array(prWatchSchema) });
+export type PrWatches = z.infer<typeof prWatchesSchema>;
+
+/** Realtime channel the server publishes `{ threadId }` on when a thread's watches change. */
+export const PR_WATCH_CHANNEL = "pr-watch";
+
 // ── bb reviews and linked threads ─────────────────────────────────────
 
 /** P0 blocks release, P1 is urgent, P2 is an ordinary defect, P3 is low impact. */

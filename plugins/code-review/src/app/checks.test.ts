@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
+import { checksRunning } from "../shared/schema.ts";
 import type { Check } from "../shared/schema.ts";
-import { checkDuration, checksRunning, groupChecks } from "./checks.tsx";
+import { checkDuration, groupChecks } from "./checks.tsx";
 import { checkNames, fixDraftKey } from "./fix-dialog.tsx";
 
 function check(id: string, state: Check["state"], extra: Partial<Check> = {}): Check {

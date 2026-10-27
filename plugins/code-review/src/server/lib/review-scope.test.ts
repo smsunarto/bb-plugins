@@ -7,14 +7,18 @@ import {
 } from "@get-bb/plugin-sdk/testing";
 import plugin from "../server.ts";
 
-test("Review supplies the review skill to authors and withholds it from answering children", async () => {
-  const f = createFakePluginHost({ pluginId: "code-review", agentSkillIds: ["review"] });
+test("Review supplies its skills and PR watch to authors and withholds them from answering children", async () => {
+  const f = createFakePluginHost({
+    pluginId: "code-review",
+    agentSkillIds: ["review", "babysit-pr"],
+  });
   await plugin(f.bb);
   try {
     const author = await f.harness.behavior.resolveAgentConfiguration(
       makePluginAgentConfigurationContext(),
     );
-    assert.deepEqual(author.skills, ["review"]);
+    assert.deepEqual(author.skills, ["review", "babysit-pr"]);
+    assert.ok(author.tools.some((tool) => tool.name === "code_review_watch_pr"));
     const skill = readFileSync(new URL("../../../skills/review/SKILL.md", import.meta.url), "utf8");
     const titles = [...skill.matchAll(/--title "([^"\n]+)"/g)].map((match) =>
       match[1]!
@@ -27,6 +31,7 @@ test("Review supplies the review skill to authors and withholds it from answerin
         makePluginAgentConfigurationContext({ thread: { title, parentThreadId: "author" } }),
       );
       assert.deepEqual(child.skills, [], title);
+      assert.ok(!child.tools.some((tool) => tool.name === "code_review_watch_pr"), title);
     }
     for (const pluginId of ["side-chat", "review"]) {
       const result = await f.harness.behavior.resolveAgentConfiguration(

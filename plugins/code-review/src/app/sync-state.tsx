@@ -33,7 +33,7 @@ export function pageSync(own: SyncQuery, parts: readonly SyncQuery[]): SyncQuery
 /** How often "Updated 2m ago" moves on. */
 const TICK_MS = 30_000;
 
-function useNow(): number {
+export function useNow(): number {
   const [now, setNow] = useState(Date.now);
   useEffect(() => {
     const timer = window.setInterval(() => setNow(Date.now()), TICK_MS);

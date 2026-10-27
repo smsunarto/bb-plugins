@@ -8,6 +8,7 @@ import { publishActivity } from "./lib/activity.ts";
 import { serveBlob } from "./lib/blob-route.ts";
 import { createBlobReader } from "./lib/blobs.ts";
 import { createGitHub } from "./lib/gh.ts";
+import { createPrWatcher } from "./lib/pr-watch.ts";
 import { createStore } from "./lib/store.ts";
 import { reviewSkills } from "./lib/review-scope.ts";
 import { createUnityPreviews } from "./lib/unity-preview.ts";
@@ -28,6 +29,7 @@ import { localBranch } from "./rpc/local-branch.ts";
 import { localBranches } from "./rpc/local-branches.ts";
 import { localChanges } from "./rpc/local-changes.ts";
 import { sharedComparison } from "./rpc/shared-comparison.ts";
+import { prWatches } from "./rpc/pr-watches.ts";
 import { pullRequest } from "./rpc/pull-request.ts";
 import { replyDraft } from "./rpc/reply-draft.ts";
 import { reviewInstructions } from "./rpc/review-instructions.ts";
@@ -38,10 +40,12 @@ import { startFix } from "./rpc/start-fix.ts";
 import { startLocalReview } from "./rpc/start-local-review.ts";
 import { startReview } from "./rpc/start-review.ts";
 import { status } from "./rpc/status.ts";
+import { stopPrWatch } from "./rpc/stop-pr-watch.ts";
 import { submitReview } from "./rpc/submit-review.ts";
 import { unityPreview } from "./rpc/unity-preview.ts";
 import { reportFindings } from "./tools/report-findings.ts";
 import { shareChanges } from "./tools/share-changes.ts";
+import { watchPr } from "./tools/watch-pr.ts";
 
 export default definePlugin({
   pluginId: "code-review",
@@ -55,6 +59,7 @@ export default definePlugin({
       store: createStore(bb.storage.kv),
       blobs,
       unity: createUnityPreviews(blobs),
+      watcher: createPrWatcher({ bb, github }),
     };
   },
   rpc: {
@@ -87,13 +92,15 @@ export default definePlugin({
     startLocalReview,
     fileBlobs,
     unityPreview,
+    prWatches,
+    stopPrWatch,
   },
   agents: {
     files: instructionFiles(import.meta.url),
     skills: reviewSkills,
-    tools: { report_findings: reportFindings, share_changes: shareChanges },
+    tools: { report_findings: reportFindings, share_changes: shareChanges, watch_pr: watchPr },
   },
-  setup({ bb, store, blobs }) {
+  setup({ bb, store, blobs, watcher }) {
     // Previews read whole files from here: images, models, audio, fonts.
     bb.http.route("GET", BLOB_PATH, (context) => serveBlob(blobs, context.req.raw));
     // three.js and its loaders, imported by the app only when a card shows a model or game image.
@@ -106,12 +113,18 @@ export default definePlugin({
         headers: { ...headers, "content-type": "text/javascript; charset=utf-8" },
       });
     });
-    // A review or fix that stops working changes what its pull request or branch shows.
+    // A review or fix that stops working changes what its pull request or branch shows,
+    // and a thread that stops working can hear what its watched pull requests did meanwhile.
     const settled = async ({ thread }: { thread: { id: string } }) => {
       const linked = await store.linkForThread(thread.id);
       if (linked) publishActivity(bb, linked.key);
+      await watcher.flush(thread.id);
     };
     bb.events.on("thread.idle", settled);
     bb.events.on("thread.failed", settled);
+    const gone = ({ thread }: { thread: { id: string } }) => watcher.forget(thread.id);
+    bb.events.on("thread.archived", gone);
+    bb.events.on("thread.deleted", gone);
+    bb.background.service("pr-watch", { start: (signal) => watcher.run(signal) });
   },
 });

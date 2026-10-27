@@ -45,7 +45,7 @@ const REF = { owner: "cli", repo: "cli", number: 9000 };
 async function load() {
   const { bb, harness } = createFakePluginHost({
     pluginId: "code-review",
-    agentSkillIds: ["review"],
+    agentSkillIds: ["review", "babysit-pr"],
     sdk: {
       threads: {
         get: async ({ threadId }) => ({
@@ -81,6 +81,7 @@ test("registers every RPC and answers them over the host boundary", async () => 
     "localBranch",
     "localBranches",
     "localChanges",
+    "prWatches",
     "pullRequest",
     "replyDraft",
     "reviewInstructions",
@@ -93,6 +94,7 @@ test("registers every RPC and answers them over the host boundary", async () => 
     "startLocalReview",
     "startReview",
     "status",
+    "stopPrWatch",
     "submitReview",
     "unityPreview",
   ]);
@@ -127,7 +129,7 @@ test("only a review thread gets the findings tool, and its report reaches the pa
     "code_review_report_findings",
     "code_review_share_changes",
   ]);
-  expect(await tools({})).toEqual(["code_review_share_changes"]);
+  expect(await tools({})).toEqual(["code_review_share_changes", "code_review_watch_pr"]);
   expect(harness.inspection.registrations.agentTools[0]?.description).toStartWith(
     "Report findings from a pull request or an unpublished branch",
   );

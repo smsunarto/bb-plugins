@@ -4,6 +4,7 @@ import type { CreateFakePluginHostOptions } from "@get-bb/plugin-sdk/testing";
 import type { CodeReviewContext } from "../src/server/lib/context.ts";
 import { createBlobReader } from "../src/server/lib/blobs.ts";
 import { type GhRunner, type RunResult, createGh, createGitHub } from "../src/server/lib/gh.ts";
+import { createPrWatcher } from "../src/server/lib/pr-watch.ts";
 import { createUnityPreviews } from "../src/server/lib/unity-preview.ts";
 import { createStore } from "../src/server/lib/store.ts";
 
@@ -200,6 +201,7 @@ export function fakeContext(
     store: createStore(host.bb.storage.kv),
     blobs,
     unity: createUnityPreviews(blobs),
+    watcher: createPrWatcher({ bb: host.bb, github: fake.github }),
   };
   return { ctx, harness: host.harness, ...fake };
 }

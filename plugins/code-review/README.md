@@ -58,6 +58,19 @@ compact card in the reply: changed files, line counts, review progress, and
 marks. When the shared branch moves, it warns and offers **Review latest
 changes**.
 
+## Babysitting a pull request
+
+The `babysit-pr` skill walks an agent through a pull request's review and CI.
+It waits with `code_review_watch_pr`: bb reads the pull request every half
+minute while checks run, every minute otherwise, and wakes the thread when a
+check fails, all checks finish, someone else comments or reviews, the branch
+conflicts or falls behind, or the pull request merges or closes. News that
+lands while the agent works arrives as one message when its turn ends.
+
+While a thread watches, a card above its composer shows each pull request's
+checks. Expand a row for the check list, open it in Review or on GitHub, or
+stop watching. Stopping from the card does not tell the agent.
+
 ## A pull request
 
 The description, labels, reviewers, checks, review findings, linked bb threads,
@@ -139,7 +152,7 @@ adapted from Codex's own review agent. The Prompt Editor plugin can edit them.
 
 In bb's plugin storage: local file review marks by branch and comparison, your pins and the account that pinned each, your
 review instructions, and which bb threads were started for which pull
-request or unpublished branch, with each review's findings. Everything else is read from GitHub when you open it.
+request or unpublished branch, with each review's findings, and each watched pull request's latest read. Everything else is read from GitHub when you open it.
 
 ## Development
 

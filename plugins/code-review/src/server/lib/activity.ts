@@ -18,7 +18,7 @@ import type { Link, Store } from "./store.ts";
 const RUNNING = new Set<LinkedThread["status"]>(["pending", "starting", "active", "stopping"]);
 
 /** The SDK's `BbHttpError` carries the HTTP status. The plugin SDK does not export the class. */
-function isNotFound(error: unknown): boolean {
+export function isNotFound(error: unknown): boolean {
   return typeof error === "object" && error !== null && "status" in error && error.status === 404;
 }
 
