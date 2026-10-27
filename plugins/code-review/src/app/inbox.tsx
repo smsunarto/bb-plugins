@@ -761,7 +761,7 @@ function Row({
       <span className="flex w-full items-center gap-1 text-[11px] text-muted-foreground">
         {showAccount ? (
           <span className="inline-flex shrink-0" title={`As ${pr.account}`}>
-            <span>As {pr.account}</span>
+            <span>As {pr.account}, </span>
           </span>
         ) : null}
         <span className="shrink-0 tabular-nums">#{pr.ref.number}</span>

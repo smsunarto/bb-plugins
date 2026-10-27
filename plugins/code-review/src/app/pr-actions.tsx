@@ -36,11 +36,7 @@ function actionsFor(pr: PullRequest): PrAction[] {
 
 /** A confirmation captures the displayed head and acting account. */
 export function PrActions({ pr }: { pr: PullRequest }) {
-  const [confirm, setConfirm] = useState<{
-    action: PrAction;
-    headRefOid: string;
-    baseRefName: string;
-  } | null>(null);
+  const [confirm, setConfirm] = useState<{ action: PrAction; headRefOid: string } | null>(null);
   const controls = useRef<HTMLDivElement>(null);
   return (
     <div ref={controls} tabIndex={-1} className="flex min-w-0 flex-wrap gap-1 outline-none">
@@ -50,9 +46,7 @@ export function PrActions({ pr }: { pr: PullRequest }) {
           variant="outline"
           size="sm"
           className="h-7 px-2 text-xs"
-          onClick={() =>
-            setConfirm({ action, headRefOid: pr.headRefOid, baseRefName: pr.baseRefName })
-          }
+          onClick={() => setConfirm({ action, headRefOid: pr.headRefOid })}
         >
           {LABEL[action]}
         </Button>
@@ -69,7 +63,7 @@ export function PrActions({ pr }: { pr: PullRequest }) {
   );
 }
 
-function refreshPr(pr: Pick<PullRequest, "ref">) {
+function refreshPr(pr: PullRequest) {
   void pluginQueryClient.invalidateQueries({ queryKey: rpc.inbox.queryKey() });
   for (const method of ["pullRequest", "checks", "prActionState"]) {
     void pluginQueryClient.invalidateQueries({
@@ -89,34 +83,26 @@ function PrActionDialog({
   pr,
   action,
   headRefOid,
-  baseRefName,
   onClose,
   onReturnFocus,
 }: {
   pr: PullRequest;
   action: PrAction;
   headRefOid: string;
-  baseRefName: string;
   onClose: () => void;
   onReturnFocus: () => void;
 }) {
   const [chosenMethod, setMethod] = useState<MergeMethod>("squash");
   const policy = rpc.prActionState.useQuery(
     { account: pr.account, ref: pr.ref },
-    {
-      staleTime: 0,
-      refetchOnMount: "always",
-      refetchInterval: (query) => (query.state.data?.mergeStateStatus === "UNKNOWN" ? 2000 : false),
-    },
+    { staleTime: 0, refetchOnMount: "always" },
   );
-  const mutation = rpc.prAction.useMutation({
-    onSettled: (_data, _error, variables) => refreshPr(variables),
-  });
+  const mutation = rpc.prAction.useMutation();
   const method = policy.data?.methods.includes(chosenMethod)
     ? chosenMethod
     : (policy.data?.methods[0] ?? chosenMethod);
   const issue = policy.data
-    ? prActionIssue({ policy: policy.data, action, headRefOid, baseRefName, method })
+    ? prActionIssue({ policy: policy.data, action, headRefOid, method })
     : "Checking permissions and merge requirements…";
   const canConfirm = !mutation.isPending && !policy.isFetching && !policy.isError && !issue;
   const close = () => {
@@ -140,7 +126,6 @@ function PrActionDialog({
           <DialogTitle>{LABEL[action]}</DialogTitle>
           <DialogDescription>
             {pr.ref.owner}/{pr.ref.repo}#{pr.ref.number}: {pr.title}. Acting as {pr.account}.
-            Destination: {baseRefName}.
           </DialogDescription>
         </DialogHeader>
         {action === "merge" ? (
@@ -193,8 +178,8 @@ function PrActionDialog({
             disabled={!canConfirm}
             onClick={() =>
               mutation.mutate(
-                { account: pr.account, ref: pr.ref, action, headRefOid, baseRefName, method },
-                { onSuccess: onClose },
+                { account: pr.account, ref: pr.ref, action, headRefOid, method },
+                { onSuccess: onClose, onSettled: () => refreshPr(pr) },
               )
             }
           >

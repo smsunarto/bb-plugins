@@ -142,8 +142,6 @@ test("unpublished branches get an inbox tab with a count, and a row opens its br
   const tab = await slot.findByRole("tab", { name: /Unpublished/ });
   await slot.findByText("Rate-limit the login endpoint");
   await waitFor(() => expect(tab.textContent).toBe("Unpublished2"));
-  await slot.findByText("Rate-limit the login endpoint");
-  await waitFor(() => expect(tab.textContent).toBe("Unpublished2"));
   expect(slot.getAllByRole("tab").map((each) => each.textContent)).toEqual([
     "Assigned to me3",
     "Authored by me1",

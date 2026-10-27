@@ -9,7 +9,6 @@ function setup(
     state: string;
     isDraft: boolean;
     headRefOid: string;
-    baseRefName: string;
     mergeStateStatus: string;
     viewerCanUpdate: boolean;
   }) => void = () => {},
@@ -19,7 +18,6 @@ function setup(
     state: "OPEN",
     isDraft: false,
     headRefOid: "a".repeat(40),
-    baseRefName: "main",
     mergeStateStatus: "CLEAN",
     viewerCanUpdate: true,
   };
@@ -57,7 +55,6 @@ test("merge acts as the selected account and sends the confirmed head and method
     ref,
     action: "merge",
     headRefOid,
-    baseRefName: "main",
     method: "squash",
   });
   expect(calls.at(-1)).toEqual({
@@ -80,7 +77,6 @@ for (const action of ["close", "reopen", "draft", "ready"] as const) {
       ref,
       action,
       headRefOid,
-      baseRefName: "main",
       method: "squash",
     });
     expect(textCalls).toEqual([
@@ -107,7 +103,6 @@ test("a changed head cannot merge", async () => {
       ref,
       action: "merge",
       headRefOid: "old-head",
-      baseRefName: "main",
       method: "squash",
     }),
   ).rejects.toThrow("branch changed");
@@ -122,7 +117,6 @@ test("GitHub refusing a merge never reports success", async () => {
       ref,
       action: "merge",
       headRefOid,
-      baseRefName: "main",
       method: "squash",
     }),
   ).rejects.toThrow("Merge refused");
@@ -140,7 +134,6 @@ test("a draft cannot merge and a merged PR cannot close", async () => {
         ref,
         action: state === "draft" ? "merge" : "close",
         headRefOid,
-        baseRefName: "main",
         method: "squash",
       }),
     ).rejects.toThrow();
@@ -161,7 +154,6 @@ test("blocked branch rules and forbidden updates fail before a write", async () 
         ref,
         action: mode === "blocked" ? "merge" : "close",
         headRefOid,
-        baseRefName: "main",
         method: "squash",
       }),
     ).rejects.toThrow();
@@ -178,26 +170,8 @@ test("repository-disallowed merge methods are refused", async () => {
       ref,
       action: "merge",
       headRefOid,
-      baseRefName: "main",
       method: "rebase",
     }),
   ).rejects.toThrow("does not allow");
-  expect(calls.some((call) => call.kind === "rest")).toBe(false);
-});
-
-test("a retargeted destination cannot merge", async () => {
-  const { ctx, calls, headRefOid } = setup((pr) => {
-    pr.baseRefName = "release";
-  });
-  await expect(
-    callProcedure(prAction, ctx, {
-      account: "octocat",
-      ref,
-      action: "merge",
-      headRefOid,
-      baseRefName: "main",
-      method: "squash",
-    }),
-  ).rejects.toThrow("destination branch changed");
   expect(calls.some((call) => call.kind === "rest")).toBe(false);
 });

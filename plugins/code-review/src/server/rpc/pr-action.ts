@@ -11,14 +11,13 @@ export const prAction = defineMutation({
     ref: prRefSchema,
     action: z.enum(["close", "reopen", "draft", "ready", "merge"]),
     headRefOid: z.string().min(1),
-    baseRefName: z.string().min(1),
     method: z.enum(["merge", "squash", "rebase"]),
   }),
   output: z.strictObject({ message: z.string() }),
-  async execute(ctx: CodeReviewContext, { account, ref, action, headRefOid, baseRefName, method }) {
+  async execute(ctx: CodeReviewContext, { account, ref, action, headRefOid, method }) {
     const gh = ctx.github.as(account);
     const pr = await loadPrActionState(gh, ref);
-    const issue = prActionIssue({ policy: pr, action, headRefOid, baseRefName, method });
+    const issue = prActionIssue({ policy: pr, action, headRefOid, method });
     if (issue) throw new Error(issue);
     if (action === "merge") {
       const result = z.object({ merged: z.boolean(), message: z.string() }).parse(
