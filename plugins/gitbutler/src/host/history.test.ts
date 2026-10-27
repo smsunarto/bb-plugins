@@ -26,7 +26,19 @@ beforeAll(async () => {
   for (const subject of SUBJECTS) {
     await writeFile(join(repository, "file.txt"), `${subject}\n`);
     await runGit(repository, ["add", "file.txt"], signal);
-    await runGit(repository, ["commit", "--quiet", "--allow-empty-message", "-m", subject], signal);
+    await runGit(
+      repository,
+      [
+        "commit",
+        "--quiet",
+        "--allow-empty-message",
+        "--author",
+        "Test Person <test@example.com>",
+        "-m",
+        subject,
+      ],
+      signal,
+    );
   }
   await runGit(repository, ["switch", "--quiet", "-c", "gitbutler/workspace"], signal);
 });

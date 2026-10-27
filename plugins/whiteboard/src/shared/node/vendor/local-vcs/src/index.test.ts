@@ -97,13 +97,13 @@ describe("local vcs", () => {
     execGit(rootPath, ["config", "user.name", "Test User"]);
     writeFileSync(path.join(rootPath, "app.ts"), "one\n");
     execGit(rootPath, ["add", "app.ts"]);
-    execGit(rootPath, ["commit", "-m", "base"]);
+    execGit(rootPath, ["commit", "-m", "base", "--author", "Test User <test@example.com>"]);
     const baseRef = execGitOutput(rootPath, ["rev-parse", "HEAD"]);
     writeFileSync(path.join(rootPath, "app.ts"), "one\ntwo\n");
-    execGit(rootPath, ["commit", "-am", "first change"]);
+    execGit(rootPath, ["commit", "-am", "first change", "--author", "Test User <test@example.com>"]);
     writeFileSync(path.join(rootPath, "other.ts"), "new\n");
     execGit(rootPath, ["add", "other.ts"]);
-    execGit(rootPath, ["commit", "-m", "second change"]);
+    execGit(rootPath, ["commit", "-m", "second change", "--author", "Test User <test@example.com>"]);
     const headRef = execGitOutput(rootPath, ["rev-parse", "HEAD"]);
 
     const commits = await listCommitRange({ rootPath, baseRef, headRef });

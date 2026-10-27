@@ -1,0 +1,51 @@
+#!/usr/bin/env bash
+# Configure the device-local half of the workspace appearance baseline.
+# The dev-instance profile selects bb Monokai on the server.
+set -eEuo pipefail
+
+session="${1:?pass a browser session}"
+url="${2:?pass the dev app URL}"
+
+# Test browsers should not consume memory for an hour after an abandoned run.
+browser() { agent-browser --session "${session}" --idle-timeout "${VERIFY_BROWSER_IDLE_TIMEOUT:-10m}" "$@"; }
+capture_failure() {
+  browser snapshot -i >&2 || true
+  browser screenshot body /tmp/review-appearance-failure.png >&2 || true
+}
+trap capture_failure ERR
+wait_for_menu() {
+  browser wait --fn '(() => { const menu = document.querySelector("[role=menu]"); return menu && menu.getAnimations({subtree:true}).every(animation => animation.playState !== "running"); })()'
+}
+
+browser set viewport 1728 1117 2
+browser set media dark
+browser open "${url%/}/settings/appearance"
+browser wait --load networkidle
+browser wait --fn 'document.querySelector("button[aria-label=Theme]") !== null || Array.from(document.querySelectorAll("button")).some(button => button.textContent.trim() === "Skip setup")'
+# Fresh isolated runtimes can redirect to onboarding before appearance loads.
+if browser snapshot -i | rg -q 'button "Skip setup"'; then
+  browser find role button click --name 'Skip setup' --exact
+  browser wait --fn 'localStorage.getItem("bb.onboarding.seen") === "1"'
+fi
+browser wait --fn 'document.fonts.status === "loaded" && getComputedStyle(document.body).fontFamily.includes("Inter")' || {
+  browser eval '({fontStatus:document.fonts.status,fontFamily:getComputedStyle(document.body).fontFamily,palette:document.querySelector("button[aria-label=Palette]")?.textContent})'
+  browser screenshot body /tmp/review-appearance-failure.png
+  exit 1
+}
+browser wait --fn 'document.querySelector("button[aria-label=Theme]") !== null'
+browser find role button click --name Theme --exact
+browser wait --text Dark
+wait_for_menu
+browser find role menuitem click --name Dark --exact
+browser wait --fn 'document.querySelector("button[aria-label=Theme]")?.textContent.trim() === "Dark"'
+# Radix keeps the page out of the accessibility tree during the exit animation.
+browser wait --fn '!document.querySelector("[role=menu]") && !document.querySelector(`button[aria-label="Sidebar thread list"]`)?.closest(`[aria-hidden="true"], [inert]`)'
+browser find role button click --name 'Sidebar thread list' --exact
+browser wait --text 'Next Action and Waiting, with the newest arrivals first.'
+wait_for_menu
+browser find role menuitem click --name 'GTD Sidebar (inbox) gtd-sidebar plugin. Next Action and Waiting, with the newest arrivals first.' --exact
+browser wait --fn 'document.querySelector(`button[aria-label="Sidebar thread list"]`)?.textContent.trim() === "GTD Sidebar (inbox)"'
+browser wait --fn 'document.querySelector("button[aria-label=Palette]")?.textContent.trim() === "bb Monokai" && getComputedStyle(document.body).fontFamily.includes("Inter")'
+browser find role button click --name Home --exact
+browser wait --fn 'document.querySelector("[data-gtd-sidebar-thread-list]") !== null'
+printf 'browser: bb Monokai, Dark, and GTD Sidebar are ready\n'
