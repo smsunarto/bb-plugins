@@ -16,6 +16,7 @@ export async function loadPrActionState(gh: Gh, ref: PrRef) {
           state: z.enum(["OPEN", "CLOSED", "MERGED"]),
           isDraft: z.boolean(),
           headRefOid: z.string(),
+          baseRefName: z.string(),
           mergeStateStatus: z.string(),
           viewerCanUpdate: z.boolean(),
         }),
@@ -26,7 +27,7 @@ export async function loadPrActionState(gh: Gh, ref: PrRef) {
         `query PrActionState($owner: String!, $name: String!, $number: Int!) {
     repository(owner: $owner, name: $name) {
       mergeCommitAllowed squashMergeAllowed rebaseMergeAllowed viewerPermission
-      pullRequest(number: $number) { state isDraft headRefOid mergeStateStatus viewerCanUpdate }
+      pullRequest(number: $number) { state isDraft headRefOid baseRefName mergeStateStatus viewerCanUpdate }
     }
   }`,
         { owner: ref.owner, name: ref.repo, number: ref.number },

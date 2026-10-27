@@ -36,7 +36,11 @@ function actionsFor(pr: PullRequest): PrAction[] {
 
 /** A confirmation captures the displayed head and acting account. */
 export function PrActions({ pr }: { pr: PullRequest }) {
-  const [confirm, setConfirm] = useState<{ action: PrAction; headRefOid: string } | null>(null);
+  const [confirm, setConfirm] = useState<{
+    action: PrAction;
+    headRefOid: string;
+    baseRefName: string;
+  } | null>(null);
   const controls = useRef<HTMLDivElement>(null);
   return (
     <div ref={controls} tabIndex={-1} className="flex min-w-0 flex-wrap gap-1 outline-none">
@@ -46,7 +50,9 @@ export function PrActions({ pr }: { pr: PullRequest }) {
           variant="outline"
           size="sm"
           className="h-7 px-2 text-xs"
-          onClick={() => setConfirm({ action, headRefOid: pr.headRefOid })}
+          onClick={() =>
+            setConfirm({ action, headRefOid: pr.headRefOid, baseRefName: pr.baseRefName })
+          }
         >
           {LABEL[action]}
         </Button>
@@ -83,12 +89,14 @@ function PrActionDialog({
   pr,
   action,
   headRefOid,
+  baseRefName,
   onClose,
   onReturnFocus,
 }: {
   pr: PullRequest;
   action: PrAction;
   headRefOid: string;
+  baseRefName: string;
   onClose: () => void;
   onReturnFocus: () => void;
 }) {
@@ -102,7 +110,7 @@ function PrActionDialog({
     ? chosenMethod
     : (policy.data?.methods[0] ?? chosenMethod);
   const issue = policy.data
-    ? prActionIssue({ policy: policy.data, action, headRefOid, method })
+    ? prActionIssue({ policy: policy.data, action, headRefOid, baseRefName, method })
     : "Checking permissions and merge requirements…";
   const canConfirm = !mutation.isPending && !policy.isFetching && !policy.isError && !issue;
   const close = () => {
@@ -126,6 +134,7 @@ function PrActionDialog({
           <DialogTitle>{LABEL[action]}</DialogTitle>
           <DialogDescription>
             {pr.ref.owner}/{pr.ref.repo}#{pr.ref.number}: {pr.title}. Acting as {pr.account}.
+            Destination: {baseRefName}.
           </DialogDescription>
         </DialogHeader>
         {action === "merge" ? (
@@ -178,7 +187,7 @@ function PrActionDialog({
             disabled={!canConfirm}
             onClick={() =>
               mutation.mutate(
-                { account: pr.account, ref: pr.ref, action, headRefOid, method },
+                { account: pr.account, ref: pr.ref, action, headRefOid, baseRefName, method },
                 { onSuccess: onClose, onSettled: () => refreshPr(pr) },
               )
             }

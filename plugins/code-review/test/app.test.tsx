@@ -230,7 +230,7 @@ test("with several accounts, each row names its account and the inbox narrows to
   const slot = await inboxTab("", twoAccounts);
   await slot.findByText("Rate-limit the login endpoint");
   expect(
-    within(slot.getByRole("button", { name: /Rate-limit/ })).getByText("As scott"),
+    within(slot.getByRole("button", { name: /Rate-limit/ })).getByText("As scott,"),
   ).toBeTruthy();
 
   fireEvent.click(slot.getByRole("button", { name: "Accounts: all" }));

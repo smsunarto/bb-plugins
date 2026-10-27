@@ -6,6 +6,7 @@ export const prActionStateSchema = z.object({
   state: z.enum(["OPEN", "CLOSED", "MERGED"]),
   isDraft: z.boolean(),
   headRefOid: z.string(),
+  baseRefName: z.string(),
   mergeStateStatus: z.string(),
   canUpdate: z.boolean(),
   canMerge: z.boolean(),
@@ -18,11 +19,13 @@ export function prActionIssue({
   policy,
   action,
   headRefOid,
+  baseRefName,
   method,
 }: {
   policy: PrActionState;
   action: PrAction;
   headRefOid: string;
+  baseRefName: string;
   method: MergeMethod;
 }): string | null {
   if (policy.state === "MERGED") return "This pull request is already merged.";
@@ -38,6 +41,8 @@ export function prActionIssue({
   if (!policy.canMerge) return "This account cannot merge this pull request.";
   if (policy.headRefOid !== headRefOid)
     return "The branch changed. Review the latest commit before merging.";
+  if (policy.baseRefName !== baseRefName)
+    return "The destination branch changed. Refresh before merging.";
   if (policy.isDraft) return "Mark the pull request ready before merging.";
   if (!["CLEAN", "HAS_HOOKS", "UNSTABLE"].includes(policy.mergeStateStatus))
     return `GitHub blocks merging: ${policy.mergeStateStatus}. Resolve the requirements or use GitHub for merge queues.`;
