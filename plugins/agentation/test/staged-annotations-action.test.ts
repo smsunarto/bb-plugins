@@ -83,6 +83,7 @@ function renderAction(options: {
   text?: string;
   mentions?: readonly ComposerMention[];
   newThread?: boolean;
+  submittingBlockedReason?: string;
   rpc: Record<string, (input: unknown) => unknown>;
 }) {
   return renderSlot(
@@ -96,6 +97,7 @@ function renderAction(options: {
           : { kind: "thread", threadId: THREAD_ID },
         text: options.text ?? "",
         mentions: options.mentions ?? [],
+        submittingBlockedReason: options.submittingBlockedReason,
       },
       rpc: options.rpc,
     },
@@ -220,7 +222,7 @@ test("a submitted draft re-reads the staged list at once", async () => {
   await waitFor(() => expect(reads).toBe(before + 1));
 });
 
-test("the new-thread composer offers mentions instead of sends", async () => {
+test("the new-thread composer offers mentions and send all", async () => {
   const slot = renderAction({
     newThread: true,
     text: "Fix",
@@ -234,7 +236,7 @@ test("the new-thread composer offers mentions instead of sends", async () => {
   });
   const list = await openList(slot, 2);
   await list.findByRole("button", { name: "Mention all" });
-  expect(list.queryByRole("button", { name: /Send all/ })).toBeNull();
+  await list.findByRole("button", { name: "Send all" });
   expect(list.queryByRole("button", { name: "Send annotation to this thread" })).toBeNull();
 
   const [mentionFirst] = list.getAllByRole("button", { name: "Mention annotation in composer" });
@@ -250,4 +252,85 @@ test("the new-thread composer offers mentions instead of sends", async () => {
     annotationMentionItemId("ann_2", null),
   ]);
   expect(draft.text.startsWith("Fix ")).toBe(true);
+});
+
+test("send all submits the new-thread draft with every staged annotation", async () => {
+  const slot = renderAction({
+    newThread: true,
+    rpc: {
+      listStagedAnnotations: () => ({
+        annotations: [staged("ann_1", "Save is misaligned"), staged("ann_2", "Wrong color")],
+        threadTitles: {},
+      }),
+    },
+  });
+  const list = await openList(slot, 2);
+  await act(async () => {
+    fireEvent.click(await list.findByRole("button", { name: "Send all" }));
+  });
+
+  expect(slot.inspection.composer.submits).toHaveLength(1);
+  expect(slot.inspection.composer.draft.text).toBe("");
+  expect(slot.inspection.rpcCalls.some((call) => call.method === "sendStagedAnnotations")).toBe(
+    false,
+  );
+});
+
+test("send all sends the complete staged batch to an existing thread", async () => {
+  let annotations = [staged("ann_1", "Save is misaligned"), staged("ann_2", "Wrong color")];
+  const slot = renderAction({
+    text: "Keep this draft",
+    rpc: {
+      listStagedAnnotations: () => ({ annotations, threadTitles: {} }),
+      sendStagedAnnotations: () => {
+        annotations = [];
+        return {
+          outcome: "sent",
+          sentIds: ["ann_1", "ann_2"],
+          remainingCount: 0,
+          message: "Sent 2.",
+        };
+      },
+    },
+  });
+  const list = await openList(slot, 2);
+  await act(async () => {
+    fireEvent.click(await list.findByRole("button", { name: "Send all" }));
+  });
+
+  expect(slot.inspection.rpcCalls).toContainEqual({
+    method: "sendStagedAnnotations",
+    input: { annotationIds: ["ann_1", "ann_2"], threadId: THREAD_ID },
+  });
+  expect(slot.inspection.composer.draft.text).toBe("Keep this draft");
+  await waitFor(() => expect(slot.queryByRole("button", { name: "2 annotations" })).toBeNull());
+});
+
+test("a blocked new-thread send retains the draft with every annotation pill for retry", async () => {
+  const slot = renderAction({
+    newThread: true,
+    text: "Fix these",
+    submittingBlockedReason: "Choose a provider",
+    rpc: {
+      listStagedAnnotations: () => ({
+        annotations: [staged("ann_1", "Save is misaligned"), staged("ann_2", "Wrong color")],
+        threadTitles: {},
+      }),
+    },
+  });
+  const list = await openList(slot, 2);
+  await act(async () => {
+    fireEvent.click(await list.findByRole("button", { name: "Send all" }));
+  });
+
+  expect(slot.inspection.composer.submits).toHaveLength(0);
+  expect(slot.inspection.composer.draft.text.startsWith("Fix these ")).toBe(true);
+  expect(
+    slot.inspection.composer.draft.mentions.flatMap((mention) =>
+      mention.kind === "plugin" ? [mention.id] : [],
+    ),
+  ).toEqual([
+    annotationMentionItemId("ann_1", null),
+    annotationMentionItemId("ann_2", null),
+  ]);
 });

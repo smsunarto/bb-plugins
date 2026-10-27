@@ -9603,7 +9603,12 @@ function detectSourceFile(element) {
 }
 function PageFeedbackToolbarCSS(props = {}) {
   const pathname = usePagePath(props.useHashLocation ?? false);
-  const activeState = useState11(false);
+  const [active, setActive] = useState11(props.active ?? false);
+  const setFeedbackActive = useCallback8((next) => {
+    setActive(next);
+    props.onActiveChange?.(next);
+  }, [props.onActiveChange]);
+  const activeState = [active, setFeedbackActive];
   const portalHost = useFeedbackPortal(props.portalContainer);
   if (!portalHost) return null;
   return createPortal3(/* @__PURE__ */ createElement(
@@ -9642,9 +9647,13 @@ function PageFeedbackToolbarForRoute({
   sessionId: initialSessionId,
   onSessionCreated,
   webhookUrl,
-  className: userClassName
+  className: userClassName,
+  active: controlledActive,
+  hideLauncher = false,
+  getLauncherElement
 }) {
   const [isActive, setIsActive] = activeState;
+  const isToolbarControl = (element) => getLauncherElement?.()?.contains(element) || closestCrossingShadow(element, "[data-feedback-toolbar]");
   const [, updateFrameScroll] = useState11(0);
   const [pageEvents] = useState11(() => createPageEvents(document, () => updateFrameScroll((value) => value + 1)));
   useEffect8(() => {
@@ -9706,22 +9715,27 @@ function PageFeedbackToolbarForRoute({
   useLayoutEffect10(() => {
     installAnimationFreeze();
   }, []);
+  const [mounted, setMounted] = useState11(false);
   const portalWrapperRef = useRef14(null);
   const launcherRef = useRef14(null);
   const controlsRef = useRef14(null);
   const settingsButtonRef = useRef14(null);
-  const focusControlsOnOpenRef = useRef14(false);
+  const focusControlsOnOpenRef = useRef14(Boolean(controlledActive));
   const focusLauncherOnCloseRef = useRef14(false);
+  const invokingElementRef = useRef14(null);
   const focusSettingsOnOpenRef = useRef14(false);
   useLayoutEffect10(() => {
-    if (isActive && focusControlsOnOpenRef.current) {
+    if (isActive && document.activeElement instanceof HTMLElement && document.activeElement !== document.body && document.activeElement.tagName !== "AGENTATION-TOOLBAR") {
+      invokingElementRef.current = document.activeElement;
+    }
+    if (isActive && focusControlsOnOpenRef.current && controlsRef.current) {
       focusControlsOnOpenRef.current = false;
-      controlsRef.current?.querySelector("button:not(:disabled)")?.focus();
+      controlsRef.current.querySelector("button:not(:disabled)")?.focus();
     } else if (!isActive && focusLauncherOnCloseRef.current) {
       focusLauncherOnCloseRef.current = false;
-      launcherRef.current?.focus();
+      (hideLauncher ? getLauncherElement?.() ?? invokingElementRef.current : launcherRef.current)?.focus();
     }
-  }, [isActive]);
+  }, [isActive, mounted, isToolbarHidden, hideLauncher, getLauncherElement]);
   useEffect8(() => {
     const stop = (e) => {
       const wrapper = portalWrapperRef.current;
@@ -9778,7 +9792,6 @@ function PageFeedbackToolbarForRoute({
   const [editingTargetElements, setEditingTargetElements] = useState11([]);
   const [scrollY, setScrollY] = useState11(0);
   const [isScrolling, setIsScrolling] = useState11(false);
-  const [mounted, setMounted] = useState11(false);
   const [isFrozen, setIsFrozen] = useState11(false);
   const [showSettings, setShowSettings] = useState11(false);
   const [settingsPage, setSettingsPage] = useState11(
@@ -10559,7 +10572,18 @@ function PageFeedbackToolbarForRoute({
       }, 300);
     }
     setIsActive(false);
-  }, [isDesignMode]);
+  }, [isDesignMode, setIsActive]);
+  useEffect8(() => {
+    if (controlledActive && isToolbarHidden) {
+      saveToolbarHidden(false);
+      setIsToolbarHidden(false);
+    }
+    if (controlledActive === undefined || controlledActive === isActive) return;
+    if (controlledActive) {
+      focusControlsOnOpenRef.current = true;
+      setIsActive(true);
+    } else deactivate();
+  }, [controlledActive, isActive, isToolbarHidden, setIsActive, deactivate]);
   const freezeAnimations = useCallback8(() => {
     if (isFrozen) return;
     freeze();
@@ -10758,7 +10782,7 @@ function PageFeedbackToolbarForRoute({
     const evaluateHover = (x, y, piercing) => {
       const normalElement = deepElementFromPoint(x, y);
       const elementUnder = piercing ? pierceElementFromPoint(x, y) : normalElement;
-      if (!elementUnder || closestCrossingShadow(
+      if (!elementUnder || getLauncherElement?.()?.contains(elementUnder) || closestCrossingShadow(
         elementUnder,
         "[data-feedback-toolbar], [data-annotation-popup], [data-annotation-marker]"
       )) {
@@ -10778,7 +10802,7 @@ function PageFeedbackToolbarForRoute({
     };
     const handleMouseMove = (e) => {
       const target = e.composedPath()[0] || e.target;
-      if (closestCrossingShadow(
+      if (getLauncherElement?.()?.contains(target) || closestCrossingShadow(
         target,
         "[data-feedback-toolbar], [data-annotation-popup], [data-annotation-marker]"
       )) {
@@ -10810,7 +10834,7 @@ function PageFeedbackToolbarForRoute({
       pageEvents.removeEventListener("mouseleave", clearHover);
       window.removeEventListener("blur", clearHover);
     };
-  }, [isActive, pendingAnnotation, editingAnnotation, isDrawMode, isDesignMode, effectiveReactMode, attributeNames]);
+  }, [isActive, pendingAnnotation, editingAnnotation, isDrawMode, isDesignMode, effectiveReactMode, attributeNames, getLauncherElement]);
   const startEditAnnotation = useCallback8((annotation, trigger) => {
     if (editingAnnotation && !editExiting) {
       editPopupRef.current?.shake();
@@ -10877,7 +10901,7 @@ function PageFeedbackToolbarForRoute({
         return;
       }
       const target = e.composedPath()[0] || e.target;
-      if (closestCrossingShadow(target, "[data-feedback-toolbar]")) return;
+      if (isToolbarControl(target)) return;
       if (closestCrossingShadow(target, "[data-annotation-popup]")) return;
       if (closestCrossingShadow(target, "[data-annotation-marker]")) return;
       if (isPrimaryMultiSelectModifierActive(e) && !pendingAnnotation && !editingAnnotation) {
@@ -11001,7 +11025,8 @@ function PageFeedbackToolbarForRoute({
     settings.blockInteractions,
     effectiveReactMode,
     attributeNames,
-    pendingMultiSelectElements
+    pendingMultiSelectElements,
+    getLauncherElement
   ]);
   useEffect8(() => {
     if (!isActive) return;
@@ -11034,7 +11059,7 @@ function PageFeedbackToolbarForRoute({
       if (e.button !== 0) return;
       justFinishedDragRef.current = false;
       const target = e.composedPath()[0] || e.target;
-      if (closestCrossingShadow(target, "[data-feedback-toolbar]")) return;
+      if (isToolbarControl(target)) return;
       if (closestCrossingShadow(target, "[data-annotation-marker]")) return;
       if (closestCrossingShadow(target, "[data-annotation-popup]")) return;
       const textTags = /* @__PURE__ */ new Set([
@@ -11181,7 +11206,7 @@ function PageFeedbackToolbarForRoute({
           "NAV"
         ]);
         for (const el of candidateElements) {
-          if (closestCrossingShadow(el, "[data-feedback-toolbar]") || closestCrossingShadow(el, "[data-annotation-marker]"))
+          if (isToolbarControl(el) || closestCrossingShadow(el, "[data-annotation-marker]"))
             continue;
           const rect = viewportRect(el);
           if (rect.width > window.innerWidth * 0.8 && rect.height > window.innerHeight * 0.5)
@@ -11230,7 +11255,7 @@ function PageFeedbackToolbarForRoute({
     };
     pageEvents.addEventListener("mousemove", handleMouseMove, { passive: true });
     return () => pageEvents.removeEventListener("mousemove", handleMouseMove);
-  }, [isActive, pendingAnnotation, isDragging, DRAG_THRESHOLD]);
+  }, [isActive, pendingAnnotation, isDragging, DRAG_THRESHOLD, getLauncherElement]);
   useEffect8(() => {
     if (!isActive) return;
     const handleMouseUp = (e) => {
@@ -11246,7 +11271,7 @@ function PageFeedbackToolbarForRoute({
         const selector = "button, a, input, img, p, h1, h2, h3, h4, h5, h6, li, label, td, th";
         pageEvents.querySelectorAll(selector).forEach((el) => {
           if (!(el instanceof HTMLElement)) return;
-          if (closestCrossingShadow(el, "[data-feedback-toolbar]") || closestCrossingShadow(el, "[data-annotation-marker]"))
+          if (isToolbarControl(el) || closestCrossingShadow(el, "[data-annotation-marker]"))
             return;
           const rect = viewportRect(el);
           if (rect.width > window.innerWidth * 0.8 && rect.height > window.innerHeight * 0.5)
@@ -11728,7 +11753,7 @@ function PageFeedbackToolbarForRoute({
         for (const p of samplePoints) {
           const el = deepElementFromPoint(p.x, p.y);
           if (!el || seenElements.has(el)) continue;
-          if (closestCrossingShadow(el, "[data-feedback-toolbar]")) continue;
+          if (isToolbarControl(el)) continue;
           seenElements.add(el);
           const { name } = identifyElement(el);
           if (!elementNames.includes(name)) {
@@ -12174,7 +12199,7 @@ function PageFeedbackToolbarForRoute({
           "data-feedback-toolbar": true,
           "data-agentation-toolbar": true,
           "data-dragging": isDraggingToolbar || void 0,
-          style: toolbarPosition ? {
+          style: hideLauncher && !isActive ? { display: "none" } : toolbarPosition ? {
             left: toolbarPosition.x,
             top: toolbarPosition.y,
             right: "auto",
@@ -12193,6 +12218,10 @@ function PageFeedbackToolbarForRoute({
                     ref: (node) => {
                       controlsRef.current = node;
                       node?.toggleAttribute("inert", !isActive);
+                      if (node && isActive && focusControlsOnOpenRef.current) {
+                        focusControlsOnOpenRef.current = false;
+                        node.querySelector("button:not(:disabled)")?.focus();
+                      }
                     },
                     role: "group",
                     "aria-label": "Feedback controls",

@@ -7,6 +7,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { flushSync } from "react-dom";
 import {
   experimental_usePluginId,
   useComposer,
@@ -43,8 +44,8 @@ import type { rpcContract } from "@/server.ts";
 
 /**
  * `threadId` is null in the new-thread composer: no thread exists to send to
- * yet, so the action only mentions annotations, and the dispatch that creates
- * the thread assigns them.
+ * yet, so sending mentions the annotations and submits the composer. The
+ * dispatch that creates the thread assigns them.
  */
 function StagedAnnotations({ threadId }: { threadId: string | null }) {
   const rpc = useRpc<typeof rpcContract>();
@@ -162,7 +163,7 @@ function StagedAnnotations({ threadId }: { threadId: string | null }) {
     );
 
   const sendAnnotations = async (annotationIds: string[], sendingAnnotationId: string | null) => {
-    if (actionInFlight.current || threadId === null) return;
+    if (actionInFlight.current) return;
     if (annotationIds.length === 0) return;
 
     actionInFlight.current = true;
@@ -170,6 +171,27 @@ function StagedAnnotations({ threadId }: { threadId: string | null }) {
     if (sendingAnnotationId === null) setIsSending(true);
     else setSendingId(sendingAnnotationId);
     try {
+      if (threadId === null) {
+        const selectedIds = new Set(annotationIds);
+        // Submit checks the host editor's rendered readiness. Commit the pills
+        // first so an initially empty composer is ready on this same click.
+        flushSync(() =>
+          mentionAnnotations(
+            annotations
+              .filter((annotation) => selectedIds.has(annotation.id))
+              .map((annotation) => ({
+                id: annotation.id,
+                label: annotationMentionLabel(
+                  annotation,
+                  annotationSourceLabel(annotation.bb, threadTitles),
+                ),
+              })),
+          ),
+        );
+        await composer.submit();
+        await refresh();
+        return;
+      }
       const result = await rpc.call("sendStagedAnnotations", {
         annotationIds,
         threadId,
@@ -305,11 +327,11 @@ function StagedAnnotations({ threadId }: { threadId: string | null }) {
       <AnnotationsAction
         count={annotations.length}
         renderHeader={(dismiss) => (
-          <div className="flex min-w-0 items-center justify-between gap-2 px-2.5 py-1.5">
+          <div className="flex min-w-0 flex-wrap items-center justify-between gap-2 px-2.5 py-1.5">
             <p className="truncate text-xs font-medium text-muted-foreground">
               {annotationCountLabel(annotations.length)}
             </p>
-            <div className="flex shrink-0 items-center gap-1">
+            <div className="flex min-w-0 flex-wrap items-center gap-1">
               <Button
                 type="button"
                 size="sm"
@@ -324,18 +346,16 @@ function StagedAnnotations({ threadId }: { threadId: string | null }) {
                 <Icon name="AtSign" aria-hidden="true" />
                 Mention all
               </Button>
-              {threadId === null ? null : (
-                <Button
-                  type="button"
-                  size="sm"
-                  className="h-7 px-2"
-                  disabled={isMutating}
-                  onClick={sendAll}
-                >
-                  <Icon name="ArrowUp" aria-hidden="true" />
-                  {isSending ? "Sending…" : "Send all"}
-                </Button>
-              )}
+              <Button
+                type="button"
+                size="sm"
+                className="h-7 px-2"
+                disabled={isMutating}
+                onClick={sendAll}
+              >
+                <Icon name="ArrowUp" aria-hidden="true" />
+                {isSending ? "Sending…" : "Send all"}
+              </Button>
               <Button
                 type="button"
                 size="icon"

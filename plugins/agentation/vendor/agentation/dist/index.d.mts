@@ -134,6 +134,14 @@ type PageFeedbackToolbarCSSProps = {
     webhookUrl?: string;
     /** Custom class name applied to the toolbar container. Use to adjust positioning or z-index. */
     className?: string;
+    /** Control feedback mode from a host launcher. */
+    active?: boolean;
+    /** Report changes from Escape and the toolbar controls. */
+    onActiveChange?: (active: boolean) => void;
+    /** Hide the collapsed floating launcher; expanded controls and markers remain. */
+    hideLauncher?: boolean;
+    /** Host launcher excluded from targeting and used to restore keyboard focus. */
+    getLauncherElement?: () => HTMLElement | null;
     /** Separate feedback and sessions by pathname + hash. Defaults to false. */
     useHashLocation?: boolean;
     /** Optional app name included in copied and submitted feedback. */

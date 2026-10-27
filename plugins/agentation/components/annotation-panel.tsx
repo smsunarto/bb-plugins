@@ -419,8 +419,8 @@ export function AnnotationPanel() {
           <div className="rounded-lg border border-dashed border-border p-6 text-center">
             <p className="text-sm text-foreground">No annotations here yet.</p>
             <p className="mt-1 text-xs text-muted-foreground">
-              Open the Agentation toolbar in the bottom-right corner of bb, click any element —
-              including one drawn by a plugin — and describe what should change.
+              Open Agentation from the sidebar footer, click any element — including one drawn by a
+              plugin — and describe what should change.
             </p>
           </div>
         ) : (

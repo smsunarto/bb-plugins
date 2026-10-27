@@ -10,13 +10,24 @@ import {
 import { AgentationStagedAnnotationsAction } from "@/components/staged-annotations-action.tsx";
 import { AnnotationToolbarOverlay } from "@/components/annotation-toolbar.tsx";
 import { createRpcClient } from "@/lib/plugin-rpc.ts";
+import {
+  activateFeedbackMode,
+  FEEDBACK_MODE_LABEL,
+  feedbackModeSnapshot,
+  setFeedbackModeActive,
+} from "@/lib/feedback-mode.ts";
 import type { rpcContract } from "@/server.ts";
 
 async function toggleToolbar(): Promise<void> {
+  if (feedbackModeSnapshot()) {
+    setFeedbackModeActive(false);
+    return;
+  }
   try {
     const rpc = createRpcClient<typeof rpcContract>("agentation");
     const { config } = await rpc.call("getConfig");
-    await rpc.call("setToolbarEnabled", { enabled: !config.toolbarEnabled });
+    if (!config.toolbarEnabled) await rpc.call("setToolbarEnabled", { enabled: true });
+    activateFeedbackMode();
   } catch (cause) {
     toast.error("Could not change the toolbar", {
       description: cause instanceof Error ? cause.message : String(cause),
@@ -30,7 +41,7 @@ export default definePluginApp((app) => {
   app.experimental_sidebarFooter.register({
     kind: "action",
     id: "toggle-toolbar",
-    label: "Toggle Agentation toolbar",
+    label: FEEDBACK_MODE_LABEL,
     icon: "ChatFeedback",
     onActivate() {
       toolbarToggle = toolbarToggle.then(toggleToolbar);

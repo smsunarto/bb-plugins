@@ -75,7 +75,7 @@ set up.
 
 ## Usage
 
-**1. Point at it** — click the toolbar in the bottom-right corner of bb, then click
+**1. Point at it** — click Agentation in bb's sidebar footer, then click
 any element, including a plugin's own surface. Select several to annotate them
 together, write what should change, and press **Add**.
 
@@ -83,6 +83,8 @@ together, write what should change, and press **Add**.
 every open thread shows the same batch above its composer. Send one annotation
 from its row, mention it in the composer, or press **Send all** to send the full
 batch. A mention removes that annotation from staging when the message is sent.
+In a new-thread composer, **Send all** includes the staged annotations in your
+draft and submits it with the provider and environment selected in the composer.
 If the agent finishes without resolving it, the annotation returns to staging.
 
 Choose **When sending to an active thread** in Agentation settings. **Default**

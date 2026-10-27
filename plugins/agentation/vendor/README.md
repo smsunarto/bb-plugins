@@ -1,8 +1,8 @@
 # Vendored `agentation`
 
 `agentation/` is npm `agentation@3.1.2` with `agentation.patch` applied to
-`dist/index.js` and `dist/index.mjs`. Source maps are dropped; nothing else in
-the package is changed, and its `LICENSE` (PolyForm Shield 1.0.0) travels with
+the runtime bundles and their type declarations. Source maps are dropped; its
+`LICENSE` (PolyForm Shield 1.0.0) travels with
 the copy, as that licence requires of a modified redistribution.
 
 ## Why it is vendored rather than patched
@@ -12,6 +12,13 @@ recognises only React 18's fiber markers. bb bundles every plugin frontend as
 production and mounts React 19, so the stock package disables inspection on a
 page it could inspect. The patch keys the check on the host page instead and
 adds React 19's `__reactContainer$` root marker.
+
+The wrapper also accepts `active`, `onActiveChange`, and `hideLauncher` so bb's
+sidebar footer can control feedback mode. External deactivation uses the
+toolbar's existing cleanup, including leaving layout mode. Only the collapsed
+floating launcher is hidden; expanded tools and annotation markers remain.
+`getLauncherElement` resolves the host's current footer button for targeting
+exclusion and keyboard focus restoration.
 
 Bun applies `patchedDependencies` in this workspace only. bb builds a `git:`
 install itself, after an `npm install` that knows nothing about that field — so
