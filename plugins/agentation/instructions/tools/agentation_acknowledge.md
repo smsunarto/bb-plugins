@@ -1,1 +1,1 @@
-Mark an annotation as acknowledged so the human can see you have picked it up.
+Mark an annotation as acknowledged when you pick up its feedback, so the human sees you are working on it. Use the `annotationId` from an annotation batch. After fixing it, call `agentation_resolve`; if you decide not to act, call `agentation_dismiss` with a reason.

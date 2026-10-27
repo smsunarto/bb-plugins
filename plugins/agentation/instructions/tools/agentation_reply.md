@@ -1,1 +1,1 @@
-Add a message to an annotation's thread — ask a clarifying question, or report progress. The human reads and answers it in the Agentation panel.
+Ask for clarification or report progress in an annotation's thread. Pass the `annotationId` from a feedback batch and your `message`; the human reads and answers it in the Agentation panel. Use `agentation_acknowledge`, `agentation_resolve`, or `agentation_dismiss` to change the annotation's status.

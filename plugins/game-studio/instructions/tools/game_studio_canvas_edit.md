@@ -1,1 +1,30 @@
-Edit an existing saved Game Studio workflow atomically using its exact board revision. operations (1–100): add_node with node:{id,type,title?,description?,data}; update_node with id and patch:{title?,description?,data?}; move_node with id and position:{x,y}; remove_node with id; connect with id,source,target,port?; disconnect with edge id; connect_asset with target,assetId,port? for a catalog image; remove_input with id and input:{key:"images"|"references",index} or input:{key:"promptSource"}. Add nodes before connecting them in the same batch. Uses the canvas UI's node defaults. Updates merge data keys and preserve outputs, histories, and untouched layout; generation history keys cannot be overwritten. Configure review:{enabled:true,retries:0,criteria:"..."} and judge:{enabled:true,criteria:"..."} in data. Connect writes both the visible wire and the model input and validates port type/capacity. Video ports: start/end; Tripo P2: front/left/back/right. Tripo processing recipes use model. For Smart UV use type:model-3d with data.recipe:tripo-smart-uv, then tripo-apply-uv; connect the chosen candidate to Apply UV before texture/PBR. An uploaded model can be selected with assetId on a model-3d node. Use connect/disconnect for node wires and connect_asset/remove_input for library or wireless inputs. remove_input indexes address the exact saved arrays, and remove any wire once its last corresponding input is removed. Library images/references may also be supplied on add_node; only existing image assets are accepted. Removing a node cleans incident wires and references, including promptSource. dryRun:true validates against the supplied revision without writing. Add run:{nodeId,requestId} to run a node of the edited board as soon as the edit is saved, its inputs without an output first (as game_studio_generate_canvas_media with upstream:true); the result then carries run:{jobs,waiting,gate?}, and a dry run carries run:{planned} instead. A paid run asks the person before anything is saved: the tool answers with a waiting notice, and the result arrives later as a message, either the saved edit with its run, or {declined:true,saved:false,reason} with the board unchanged. When the edit saves but the run cannot start, the result is the saved edit with run:{error}; use its revision for the next call. A saved edit returns editId; the studio shows the person what each edit changed and can put it back while it is still the board's latest content, so prefer one coherent batch per change over many small ones. A stale revision is rejected: reread the affected nodes, merge, then retry. Adds use estimated placement; move_node sets explicit positions until the next canvas open, which automatically arranges measured cards. Use the canvas UI's Arrange button for layout based on measured cards. Without run, it does not run generation or spend credits. Requires the game's thread checkout and owned Rampage slot when registered.
+Edit a saved Game Studio workflow atomically. Use this to change node briefs, settings, or connections; use `game_studio_generate_canvas_media` to run an unchanged saved node.
+
+BEFORE CALLING
+
+- Read `game_studio_canvas_context` and pass its exact `board.revision` as `revision`.
+- Use the game's thread checkout and own its Rampage slot when registered. Submit one coherent batch per change so the person can review and undo it together.
+
+EDIT OPERATIONS
+
+- Submit 1–100 operations. Add nodes before connecting them in the same batch. New nodes use the canvas UI's defaults.
+- `update_node` merges data keys, preserving outputs, histories, and untouched layout. Generation history keys cannot be overwritten. Configure node `review` with `{enabled:true,retries:0,criteria:"..."}` and `judge` with `{enabled:true,criteria:"..."}` in data.
+- Use `connect` and `disconnect` for node wires; `connect_asset` and `remove_input` for library or wireless inputs. Connections update both the visible wire and model input, validating port type and capacity.
+- Video ports are `start` and `end`; Tripo P2 views are `front`, `left`, `back`, and `right`. Tripo processing recipes use the `model` port. Smart UV uses `type:"model-3d"` with `data.recipe:"tripo-smart-uv"`, followed by `tripo-apply-uv`; connect the chosen candidate to Apply UV before texture/PBR.
+- Select an uploaded model with `assetId` on a model-3d node. Library `images` and `references` on a new node must name existing image assets.
+- `remove_input` addresses the exact saved array index for images or references, or selects `promptSource`. It removes the wire once its last corresponding input is removed. Removing a node cleans its incident wires and references, including `promptSource`.
+- Adds use estimated placement. `move_node` positions last until the next canvas open, which automatically arranges measured cards. Use the canvas UI's Arrange button for measured layout.
+
+RUNNING WITH AN EDIT
+
+- `dryRun:true` validates the supplied revision without writing.
+- Add `run:{nodeId,requestId}` to run a node of the edited board and upstream inputs that lack outputs after saving, as with `game_studio_generate_canvas_media` and `upstream:true`.
+- A paid run asks for approval before anything is saved. The immediate response is a waiting notice; a later message contains the saved edit and run, or `{declined:true,saved:false,reason}` with the board unchanged.
+- Without `run`, editing does not generate media or spend credits.
+
+RETURNS AND RECOVERY
+
+- A saved edit returns `editId`, which the studio can use to put the change back while it is the board's latest content.
+- The result carries `run:{jobs,waiting,gate?}`; a dry run returns `run:{planned}`. Collect started jobs with `game_studio_generation`.
+- If saving succeeds but the run cannot start, the result still describes the saved edit, with `run:{error}`. Use that saved revision for the next call.
+- A stale revision is rejected: reread the affected nodes, merge the intended change, and retry with the new revision.

@@ -1,3 +1,32 @@
-Generate from a saved image, video, or 3D canvas node and its saved references, using the exact board revision returned by game_studio_canvas_context. For Tripo P2 the node's Front input is the approved image; pass its path as approvedImagePath to confirm it. Connected Left, Back and Right inputs are sent as further views. Video uses the Start and End inputs as its frames. Without model, the node's recipe names it. Returns {created, job} for the one persisted asynchronous job; collect it with game_studio_generation. With upstream:true it returns {jobs, waiting, gate?} instead: the jobs started now, the nodes waiting for inputs, and the gate it stopped at. Pass upstream:true to run the node's inputs that have no output first, inputs before dependents, and the node once they land; the server holds the waiting run and starts it when its inputs arrive, or stops before a step that consumes an approved input (a Tripo front view, a UV candidate) and reports that gate. Without upstream, a node whose input has no output fails at once. Image, video, and 3D outputs attach to the node as takes even after its brief changes; a brief written with brief:true lands only while the saved brief is unchanged. Each node's freshness in game_studio_canvas_context says whether its pick still reflects its brief and inputs. Unsaved UI drafts are never submitted. A paid generation (Google, Midjourney, Fal, or Tripo) that an agent starts waits for the person's approval first: the tool answers with a waiting notice, and its result arrives later as a message, either the started job or {declined:true,reason,detail}, where reason is "declined", "timeout" (nobody answered within ten minutes), or why the form closed; none of these means the person saw and refused it except "declined". Approval covers the run's batch and the retries its node's review may add; a game the person approved in advance, or an earlier approval of the same request id that still has budget, skips the form. BB-model runs never ask.
+Generate from a saved image, video, or 3D canvas node and its saved references. Use this when the output should attach to a node; use the standalone image, video, or 3D generation tools for a direct brief or approved image outside the canvas.
 
-Tripo model-3d recipes use the model port: tripo-smart-uv generates one UV candidate; inspect its GLB in the model viewer's UV mode, choose its take, then run a connected tripo-apply-uv node. Only the applied output can feed tripo-texture or tripo-pbr. Source task and candidate operator identities come from saved jobs. Locally changed GLB bytes are snapshotted and imported as a new Tripo model; modified candidates must be regenerated before application.
+BEFORE CALLING
+
+- Read `game_studio_canvas_context` and pass the exact returned board revision.
+- Only saved inputs are submitted; unsaved UI drafts are excluded. Without a model override, the node's recipe selects the model.
+- For Tripo P2, confirm the approved Front input with `approvedImagePath`. Connected Left, Back, and Right inputs supply further views. Video uses connected Start and End inputs as its frames.
+
+UPSTREAM RUNS
+
+- Set `upstream:true` to first run inputs that have no output, then their dependents and the target node. The server holds waiting nodes until their inputs land.
+- A run stops at a step requiring an approved input, such as a Tripo front view or UV candidate, and reports a `gate`. Without upstream mode, an input without output fails the call immediately.
+
+TRIPO PROCESSING
+
+- Processing recipes use the `model` port. `tripo-smart-uv` generates a UV candidate: inspect its GLB in the model viewer's UV mode, choose its take, then run a connected `tripo-apply-uv` node.
+- Only the applied output can feed `tripo-texture` or `tripo-pbr`. Source task and candidate operator identities come from saved jobs.
+- Locally changed GLB bytes are snapshotted and imported as a new Tripo model. Regenerate modified candidates before application.
+
+RETURNS AND NEXT STEP
+
+- A started single-node run returns `{created,job}`. With upstream mode, returns `{jobs,waiting,gate?}`: started jobs, nodes waiting for inputs, and the approved-input gate it stopped at.
+- Collect started jobs with `game_studio_generation`. Image, video, and 3D outputs attach as takes even if the node brief has changed; a `brief:true` result lands only while the saved brief is unchanged.
+- Read `game_studio_canvas_context` again to check whether the chosen output is fresh for the current brief and inputs.
+
+APPROVAL AND RETRIES
+
+- Paid Google, Midjourney, Fal, or Tripo runs wait for the person's approval. The immediate response is a waiting notice; a later message contains the started job or `{declined:true,reason,detail}`.
+- Only `reason: "declined"` means the person refused. `"timeout"` means nobody answered within ten minutes; other reasons explain why the form closed.
+- Approval covers the run's batch and any retries its node review may add. A game approved in advance, or a previous approval for the same request ID with remaining budget, skips the form. BB-model runs never ask.
+- Preserve `requestId` across retries. While approval is pending, wait for the later message; do not poll an unsubmitted request ID with `game_studio_generation`, because a missing-job status retires that ID.
+- Once a job or held run is returned, use its job/request ID with `game_studio_generation` to collect or reconcile it. After a confirmed failed dispatch, status can reconcile a missing host job before a new authorized submission. Never silently switch providers.

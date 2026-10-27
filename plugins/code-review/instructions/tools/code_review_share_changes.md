@@ -1,10 +1,12 @@
-Create a clickable Review card for changes ready for the human to inspect.
-For a local change, pass the task's committed GitButler branch name; hostId and
-path disambiguate the same branch on multiple machines. For a GitHub pull request,
-pass its URL or owner/repo#123 and optionally the GitHub account to read it as.
-Returns a ::code-review directive. Put the returned directive verbatim on its own
-line in the assistant response, outside code fences. The card opens Changes and
-shows per-file review progress. Local marks belong to the exact base and head;
-new commits start unchecked. The card warns when a shared branch has moved and
-explicitly offers its latest changes. Checkboxes record human review progress;
-they do not submit a GitHub review, merge, or publish anything.
+Create a clickable Review card when committed changes are ready for the human to inspect. Use `code_review_report_findings` instead to deliver an agent review's findings to the panel.
+
+INPUTS
+
+- For an unpublished local change, pass the task's committed GitButler branch name. Supply `hostId` and `path` to disambiguate the same branch across machines or checkouts.
+- For a GitHub pull request, pass its URL or `owner/repo#123`, with an optional GitHub `account`. If a local branch already has a pull request, use the PR target.
+
+RETURNS AND NEXT STEP
+Returns a `::code-review` directive. Put it verbatim on its own line in the assistant response, outside code fences. The card opens Changes and shows per-file review progress.
+
+REVIEW STATE
+Local review marks belong to the exact base and head; new commits start unchecked. If the shared branch moves, the card warns and offers its latest changes. Checkboxes record human review progress; they do not submit a GitHub review, merge, or publish anything.

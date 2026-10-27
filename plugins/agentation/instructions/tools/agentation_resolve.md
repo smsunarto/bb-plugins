@@ -1,1 +1,1 @@
-Mark an annotation as resolved after you have fixed it. The marker disappears from the human's toolbar. Include a short summary of what changed.
+Mark an annotation as resolved after you fix its feedback, using the `annotationId` from the batch. Include a short `summary` of what changed. Resolution removes the marker from the human's toolbar. Use `agentation_dismiss` with a reason when you decide not to act on the feedback.
