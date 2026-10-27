@@ -659,19 +659,6 @@
         "zod": "^4.3.6",
       },
     },
-    "plugins/my-stack": {
-      "name": "@smsunarto/bb-plugin-my-stack",
-      "version": "0.1.0",
-      "dependencies": {
-        "@bb-kit/core": "workspace:*",
-      },
-      "devDependencies": {
-        "@get-bb/plugin-sdk": "0.6.75",
-        "@types/node": "^22.0.0",
-        "tsx": "4.23.12",
-        "typescript": "^6.0.0",
-      },
-    },
     "plugins/prompt-editor": {
       "name": "@smsunarto/bb-plugin-prompt-editor",
       "version": "0.1.0",
@@ -1807,8 +1794,6 @@
     "@smsunarto/bb-plugin-magic-compose": ["@smsunarto/bb-plugin-magic-compose@workspace:plugins/magic-compose"],
 
     "@smsunarto/bb-plugin-monokai": ["@smsunarto/bb-plugin-monokai@workspace:plugins/monokai"],
-
-    "@smsunarto/bb-plugin-my-stack": ["@smsunarto/bb-plugin-my-stack@workspace:plugins/my-stack"],
 
     "@smsunarto/bb-plugin-prompt-editor": ["@smsunarto/bb-plugin-prompt-editor@workspace:plugins/prompt-editor"],
 

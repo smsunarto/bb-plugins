@@ -41,12 +41,7 @@ test("Release Please covers enabled publishable targets with the existing tag co
       name: plugin.name,
       version: plugin.manifest.version,
     })),
-  ].filter(
-    (target) =>
-      !["plugins/agent-proxy", "plugins/traces"].includes(
-        target.relativePath,
-      ),
-  );
+  ].filter((target) => target.relativePath !== "plugins/traces");
   const expectedPaths = targets.map((target) => target.relativePath).sort();
 
   expect(config["bootstrap-sha"]).toBe("da91c8346edea3232888503164125ca39eed5486");

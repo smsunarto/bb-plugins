@@ -304,21 +304,6 @@ const customIcons = {
     name: "PanelLeft",
     nodes: PanelLeftIcon,
   },
-  "my-stack": {
-    name: "My Stack",
-    nodes: [
-      [
-        "path",
-        {
-          d: "m3 7 9-4 9 4-9 4-9-4Zm0 5 9 4 9-4M3 17l9 4 9-4",
-          stroke: "currentColor",
-          strokeWidth: "1.5",
-          strokeLinecap: "round",
-          strokeLinejoin: "round",
-        },
-      ],
-    ],
-  },
   // Upstream bb Tasks, which this plugin was forked from, declares BB's named
   // "ListTodo" icon, which bb maps to Hugeicons' CheckList glyph.
   "scott-tasks": {
