@@ -46,6 +46,18 @@ export function banner(app: CapturedPluginApp, id: string) {
   if (!Component) throw new Error(`Missing composer banner: ${id}`);
   return <Component />;
 }
+export function composerAction(app: CapturedPluginApp, id: string) {
+  const Component = app.composerCustomizations
+    .flatMap((item) => item.actions ?? [])
+    .find((item) => item.id === id)?.component;
+  if (!Component) throw new Error(`Missing composer action: ${id}`);
+  // The host mounts each action in a fixed-height row cell.
+  return (
+    <div className="flex h-9 max-h-9 items-center overflow-hidden">
+      <Component />
+    </div>
+  );
+}
 
 /** CSS scopes required by each plugin's own presentation components. */
 export function previewSurfaceClass(title: string): string | undefined {

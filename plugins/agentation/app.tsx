@@ -6,7 +6,7 @@ import {
   AnnotationPanel,
   AnnotationPanelHeader,
 } from "@/components/annotation-panel.tsx";
-import { AgentationStagingBanner } from "@/components/staging-banner.tsx";
+import { AgentationStagedAnnotationsAction } from "@/components/staged-annotations-action.tsx";
 import { AnnotationToolbarOverlay } from "@/components/annotation-toolbar.tsx";
 
 export default definePluginApp((app) => {
@@ -18,13 +18,7 @@ export default definePluginApp((app) => {
   app.composer.customize({
     id: "staged-annotations",
     scopes: ["thread", "new-thread"],
-    banners: [
-      {
-        id: "staged-annotations",
-        chrome: "bare",
-        component: AgentationStagingBanner,
-      },
-    ],
+    actions: [{ id: "staged-annotations", component: AgentationStagedAnnotationsAction }],
   });
 
   app.slots.navPanel({

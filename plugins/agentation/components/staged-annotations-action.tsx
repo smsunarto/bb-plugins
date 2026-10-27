@@ -43,7 +43,7 @@ import type { rpcContract } from "@/server.ts";
 
 /**
  * `threadId` is null in the new-thread composer: no thread exists to send to
- * yet, so the banner only mentions annotations, and the dispatch that creates
+ * yet, so the action only mentions annotations, and the dispatch that creates
  * the thread assigns them.
  */
 function StagedAnnotations({ threadId }: { threadId: string | null }) {
@@ -59,6 +59,8 @@ function StagedAnnotations({ threadId }: { threadId: string | null }) {
   const [discardIds, setDiscardIds] = useState<string[] | null>(null);
   const [isDiscarding, setIsDiscarding] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Re-keys the alert so a retry that fails the same way is announced again.
+  const [failures, setFailures] = useState(0);
   const refreshSequence = useRef(0);
   const actionInFlight = useRef(false);
   const annotationDescriptionPrefix = useId();
@@ -66,7 +68,7 @@ function StagedAnnotations({ threadId }: { threadId: string | null }) {
   const refresh = useCallback(async () => {
     const sequence = ++refreshSequence.current;
     try {
-      // Every thread composer in every pane shows this banner; they share
+      // Every thread composer in every pane shows this action; they share
       // one request per change.
       const result = await sharedRequest("listStagedAnnotations", () =>
         rpc.call("listStagedAnnotations"),
@@ -82,6 +84,7 @@ function StagedAnnotations({ threadId }: { threadId: string | null }) {
       setAnnotations([]);
       setThreadTitles({});
       setError(cause instanceof Error ? cause.message : String(cause));
+      setFailures((count) => count + 1);
     } finally {
       if (sequence === refreshSequence.current) setIsLoading(false);
     }
@@ -103,7 +106,7 @@ function StagedAnnotations({ threadId }: { threadId: string | null }) {
   );
 
   // A submitted draft consumes its annotation pills; the server assigns those
-  // annotations while resolving the mentions, so re-read the banner at once.
+  // annotations while resolving the mentions, so re-read the list at once.
   useEffect(() => composer.onSubmitted(() => void refresh()), [composer, refresh]);
 
   // Append the pills after the draft's last word, as typing them there would.
@@ -269,20 +272,22 @@ function StagedAnnotations({ threadId }: { threadId: string | null }) {
 
   if (error) {
     return (
-      <div data-agentation-staging-banner="" className="flex min-w-0 items-center gap-1.5">
-        <span
-          role="alert"
-          title={error}
-          className="inline-flex min-w-0 max-w-[320px] items-center gap-1 rounded-full border border-border bg-card px-2 py-1.5 text-sm text-destructive"
+      <span className="contents" title={`Couldn't load annotations: ${error}`}>
+        <Button
+          type="button"
+          variant="ghost"
+          data-agentation-staging-action=""
+          aria-label="Retry loading annotations"
+          className={cn(ACTION_BUTTON_CLASS, "text-destructive")}
+          onClick={() => void refresh()}
         >
-          <Icon name="ChatFeedback" className="size-3.5 shrink-0" aria-hidden="true" />
-          <span className="truncate pe-1 font-medium">Couldn't load annotations</span>
-          <span className="sr-only">: {error}</span>
-        </span>
-        <Button type="button" size="sm" variant="ghost" onClick={() => void refresh()}>
-          Retry
+          <Icon name="ChatFeedback" className="size-4 shrink-0" aria-hidden="true" />
+          <span className="text-xs font-medium">Retry</span>
         </Button>
-      </div>
+        <span key={failures} role="alert" className="sr-only">
+          Couldn't load annotations: {error}
+        </span>
+      </span>
     );
   }
 
@@ -297,88 +302,84 @@ function StagedAnnotations({ threadId }: { threadId: string | null }) {
 
   return (
     <>
-      <div data-agentation-staging-banner="" className="flex min-w-0 max-w-full items-center">
-        <AnnotationsPill
-          count={annotations.length}
-          disabled={isMutating}
-          onDiscardAll={openDiscardAll}
-          renderHeader={(dismiss) => (
-            <div className="flex min-w-0 items-center justify-between gap-2 px-2.5 py-1.5">
-              <p className="truncate text-xs font-medium text-muted-foreground">
-                {annotationCountLabel(annotations.length)}
-              </p>
-              <div className="flex shrink-0 items-center gap-1">
+      <AnnotationsAction
+        count={annotations.length}
+        renderHeader={(dismiss) => (
+          <div className="flex min-w-0 items-center justify-between gap-2 px-2.5 py-1.5">
+            <p className="truncate text-xs font-medium text-muted-foreground">
+              {annotationCountLabel(annotations.length)}
+            </p>
+            <div className="flex shrink-0 items-center gap-1">
+              <Button
+                type="button"
+                size="sm"
+                variant="ghost"
+                className="h-7 px-2"
+                disabled={isMutating}
+                onClick={() => {
+                  mentionAll();
+                  dismiss(() => composer.focus());
+                }}
+              >
+                <Icon name="AtSign" aria-hidden="true" />
+                Mention all
+              </Button>
+              {threadId === null ? null : (
                 <Button
                   type="button"
                   size="sm"
-                  variant="ghost"
                   className="h-7 px-2"
                   disabled={isMutating}
-                  onClick={() => {
-                    mentionAll();
-                    dismiss(() => composer.focus());
-                  }}
+                  onClick={sendAll}
                 >
-                  <Icon name="AtSign" aria-hidden="true" />
-                  Mention all
+                  <Icon name="ArrowUp" aria-hidden="true" />
+                  {isSending ? "Sending…" : "Send all"}
                 </Button>
-                {threadId === null ? null : (
-                  <Button
-                    type="button"
-                    size="sm"
-                    className="h-7 px-2"
-                    disabled={isMutating}
-                    onClick={sendAll}
-                  >
-                    <Icon name="ArrowUp" aria-hidden="true" />
-                    {isSending ? "Sending…" : "Send all"}
-                  </Button>
-                )}
-                <Button
-                  type="button"
-                  size="icon"
-                  variant="ghost"
-                  className="size-7 text-muted-foreground hover:text-destructive"
-                  disabled={isMutating}
-                  aria-label="Discard all staged annotations"
-                  onClick={() => dismiss(openDiscardAll)}
-                >
-                  <Icon name="Trash2" aria-hidden="true" />
-                </Button>
-              </div>
+              )}
+              <Button
+                type="button"
+                size="icon"
+                variant="ghost"
+                className="size-7 text-muted-foreground hover:text-destructive"
+                disabled={isMutating}
+                aria-label="Discard all staged annotations"
+                onClick={() => dismiss(openDiscardAll)}
+              >
+                <Icon name="Trash2" aria-hidden="true" />
+              </Button>
             </div>
-          )}
-          renderList={(dismiss) => (
-            <ol
-              className="flex flex-col divide-y divide-border"
-              aria-busy={isSending || sendingId !== null || discardingId !== null}
-            >
-              {rows.map(({ annotation, label, parts }, index) => (
-                <AnnotationRow
-                  key={annotation.id}
-                  number={index + 1}
-                  label={label}
-                  parts={parts}
-                  descriptionId={`${annotationDescriptionPrefix}-${annotation.id}`}
-                  disabled={isMutating}
-                  isSending={sendingId === annotation.id}
-                  isDiscarding={discardingId === annotation.id}
-                  onMention={() => {
-                    mentionAnnotations([{ id: annotation.id, label }]);
-                    dismiss(() => composer.focus());
-                  }}
-                  onSend={
-                    threadId === null
-                      ? null
-                      : () => void sendAnnotations([annotation.id], annotation.id)
-                  }
-                  onDiscard={() => void discardOne(annotation)}
-                />
-              ))}
-            </ol>
-          )}
-        />
-      </div>
+          </div>
+        )}
+        renderList={(dismiss) => (
+          <ol
+            className="flex flex-col divide-y divide-border"
+            aria-busy={isSending || sendingId !== null || discardingId !== null}
+          >
+            {rows.map(({ annotation, label, parts }, index) => (
+              <AnnotationRow
+                key={annotation.id}
+                number={index + 1}
+                label={label}
+                parts={parts}
+                descriptionId={`${annotationDescriptionPrefix}-${annotation.id}`}
+                disabled={isMutating}
+                isSending={sendingId === annotation.id}
+                isDiscarding={discardingId === annotation.id}
+                onMention={() => {
+                  mentionAnnotations([{ id: annotation.id, label }]);
+                  dismiss(() => composer.focus());
+                }}
+                onSend={
+                  threadId === null
+                    ? null
+                    : () => void sendAnnotations([annotation.id], annotation.id)
+                }
+                onDiscard={() => void discardOne(annotation)}
+              />
+            ))}
+          </ol>
+        )}
+      />
 
       <Dialog
         open={discardIds !== null}
@@ -425,34 +426,34 @@ function StagedAnnotations({ threadId }: { threadId: string | null }) {
   );
 }
 
+// The host mounts each action in a 36px-high cell that clips overflow, so the
+// button keeps one height on every pointer and leaves room for its focus ring.
+const ACTION_BUTTON_CLASS = "mx-px h-8 shrink-0 px-2";
+
 function annotationCountLabel(count: number): string {
   return `${count} annotation${count === 1 ? "" : "s"}`;
 }
 
 // Matches the host's hover-card timing: brief enough to feel attached to the
-// pill, long enough to cross the gap into the list.
+// button, long enough to cross the gap into the list.
 const HOVER_CLOSE_DELAY_MS = 100;
 
 /** Closes the list, then runs `after` once focus is free to move. */
 type DismissList = (after?: () => void) => void;
 
 /**
- * The staged batch as one composer attachment pill. A mouse hover previews
- * the list above the composer without taking focus; a click or keyboard
- * activation opens it for interaction. Its × discards the batch.
+ * The staged batch as one button in the composer's action row. A mouse hover
+ * previews the list above the composer without taking focus; a click or
+ * keyboard activation opens it for interaction.
  */
-function AnnotationsPill({
+function AnnotationsAction({
   count,
-  disabled,
   renderHeader,
   renderList,
-  onDiscardAll,
 }: {
   count: number;
-  disabled: boolean;
   renderHeader: (dismiss: DismissList) => ReactNode;
   renderList: (dismiss: DismissList) => ReactNode;
-  onDiscardAll: () => void;
 }) {
   const isCompact = useIsCompactViewport();
   const [open, setOpen] = useState(false);
@@ -476,7 +477,7 @@ function AnnotationsPill({
       mode.current ??= "pinned";
       restoreFocus.current = true;
     } else {
-      // A preview never took focus, so it must not hand focus to the pill.
+      // A preview never took focus, so it must not hand focus to the button.
       if (mode.current === "hover") restoreFocus.current = false;
       mode.current = null;
     }
@@ -514,42 +515,31 @@ function AnnotationsPill({
 
   return (
     <Popover open={open} onOpenChange={changeOpen}>
-      <div
-        className="group relative inline-flex min-w-0 max-w-[320px]"
-        onPointerEnter={hoverOpen}
-        onPointerLeave={hoverClose}
-      >
-        <PopoverTrigger asChild>
-          <button
-            type="button"
-            onClick={(event) => {
-              // Clicking a hover preview pins it instead of closing it.
-              if (open && mode.current === "hover") {
-                event.preventDefault();
-                cancelClose();
-                mode.current = "pinned";
-              }
-            }}
-            className="inline-flex min-w-0 max-w-full items-center gap-1 rounded-full border border-border bg-card px-2 py-1.5 text-sm text-foreground transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring [@media(hover:none)]:pe-7"
-          >
-            <Icon
-              name="ChatFeedback"
-              className="size-3.5 shrink-0 text-muted-foreground"
-              aria-hidden="true"
-            />
-            <span className="truncate pe-1 font-medium">{label}</span>
-          </button>
-        </PopoverTrigger>
-        <button
+      <PopoverTrigger asChild>
+        <Button
           type="button"
-          aria-label="Discard all staged annotations"
-          disabled={disabled}
-          onClick={() => dismiss(onDiscardAll)}
-          className="pointer-events-none absolute top-1/2 right-1 flex size-5 -translate-y-1/2 items-center justify-center rounded-full border border-border bg-card text-foreground opacity-0 transition-opacity before:pointer-events-none before:absolute before:inset-y-0 before:-left-6 before:right-full before:bg-linear-to-r before:from-transparent before:to-card before:content-[''] group-hover:pointer-events-auto group-hover:opacity-100 group-hover:before:to-accent hover:bg-accent focus-visible:pointer-events-auto focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-0 [@media(hover:none)]:pointer-events-auto [@media(hover:none)]:opacity-100"
+          variant="ghost"
+          data-agentation-staging-action=""
+          aria-label={label}
+          onPointerEnter={hoverOpen}
+          onPointerLeave={hoverClose}
+          onClick={(event) => {
+            // Clicking a hover preview pins it instead of closing it.
+            if (open && mode.current === "hover") {
+              event.preventDefault();
+              cancelClose();
+              mode.current = "pinned";
+            }
+          }}
+          className={cn(
+            ACTION_BUTTON_CLASS,
+            "gap-1 text-muted-foreground data-[state=open]:bg-state-active data-[state=open]:text-foreground",
+          )}
         >
-          <Icon name="X" className="size-3" aria-hidden="true" />
-        </button>
-      </div>
+          <Icon name="ChatFeedback" className="size-4 shrink-0" aria-hidden="true" />
+          <span className="text-xs font-medium tabular-nums">{count}</span>
+        </Button>
+      </PopoverTrigger>
       <PopoverContent
         side="top"
         align="start"
@@ -673,7 +663,7 @@ function AnnotationRow({
   );
 }
 
-export function AgentationStagingBanner() {
+export function AgentationStagedAnnotationsAction() {
   const { scope } = useComposer();
   if (scope.kind === "thread") return <StagedAnnotations threadId={scope.threadId} />;
   if (scope.kind === "new-thread") return <StagedAnnotations threadId={null} />;

@@ -1,7 +1,6 @@
 import { isolatedParameters } from "../../../.storybook/layout";
-import { shows } from "../../../.storybook/ready";
 import { RegisteredSurface } from "../../../.storybook/host";
-import { banner } from "../../../.storybook/surfaces";
+import { composerAction } from "../../../.storybook/surfaces";
 import { expect, userEvent, waitFor, within } from "storybook/test";
 import type { Meta, StoryObj } from "@storybook/react-vite";
 
@@ -65,7 +64,7 @@ async function opensList({ canvasElement }: { canvasElement: HTMLElement }) {
 const meta = {
   title: "Components/Agentation/Staged annotations",
   component: RegisteredSurface,
-  args: { source, select: (app) => banner(app, "staged-annotations") },
+  args: { source, select: (app) => composerAction(app, "staged-annotations") },
   parameters: {
     ...isolatedParameters,
     host: host({ kind: "thread", threadId: "thr_story" }, listed),
@@ -95,21 +94,39 @@ export const NewThread: Story = {
   },
 };
 
+let failedReads = 0;
+
+/** A failed read becomes a Retry action that reads the list again. */
 export const LoadFailed: Story = {
   parameters: {
     host: host(
       { kind: "thread", threadId: "thr_story" },
       {
         listStagedAnnotations: () => {
+          failedReads += 1;
           throw new Error("Agentation server unavailable");
         },
       },
     ),
   },
-  play: shows("Couldn't load annotations"),
+  play: async ({ canvasElement }) => {
+    const retry = await within(canvasElement).findByRole(
+      "button",
+      { name: "Retry loading annotations" },
+      { timeout: 15000 },
+    );
+    await expect(retry).toBeVisible();
+    await expect(retry.closest("[title]")).toHaveAttribute(
+      "title",
+      "Couldn't load annotations: Agentation server unavailable",
+    );
+    const before = failedReads;
+    await userEvent.click(retry);
+    await waitFor(() => expect(failedReads).toBe(before + 1));
+  },
 };
 
-const pill = (canvasElement: HTMLElement) =>
+const actionButton = (canvasElement: HTMLElement) =>
   within(canvasElement).findByRole("button", { name: "3 annotations" }, { timeout: 15000 });
 const listHeader = (canvasElement: HTMLElement) =>
   within(canvasElement.ownerDocument.body).queryByRole("button", { name: /Mention all/ });
@@ -117,7 +134,7 @@ const listHeader = (canvasElement: HTMLElement) =>
 /** Keyboard activation moves focus into the list so every action is reachable. */
 export const KeyboardOpen: Story = {
   play: async ({ canvasElement }) => {
-    (await pill(canvasElement)).focus();
+    (await actionButton(canvasElement)).focus();
     await userEvent.keyboard("{Enter}");
     await waitFor(() => expect(listHeader(canvasElement)).toBeVisible());
     const content = canvasElement.ownerDocument.querySelector(
@@ -134,7 +151,7 @@ export const KeyboardOpen: Story = {
 /** Clicking a hover preview keeps the list open after the pointer leaves. */
 export const PinnedByClick: Story = {
   play: async ({ canvasElement }) => {
-    const trigger = await pill(canvasElement);
+    const trigger = await actionButton(canvasElement);
     await userEvent.hover(trigger);
     await waitFor(() => expect(listHeader(canvasElement)).toBeVisible());
     await userEvent.click(trigger);
@@ -151,7 +168,7 @@ export const HoverKeepsDraftFocus: Story = {
     draft.setAttribute("aria-label", "Draft");
     canvasElement.append(draft);
     draft.focus();
-    const trigger = await pill(canvasElement);
+    const trigger = await actionButton(canvasElement);
     await userEvent.hover(trigger);
     await waitFor(() => expect(listHeader(canvasElement)).toBeVisible());
     await expect(draft).toHaveFocus();
