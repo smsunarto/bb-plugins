@@ -140,9 +140,12 @@ const reviewed: AgentActivity = {
 test("unpublished branches get an inbox tab with a count, and a row opens its branch", async () => {
   const slot = await inboxTab("");
   const tab = await slot.findByRole("tab", { name: /Unpublished/ });
+  await slot.findByText("Rate-limit the login endpoint");
+  await waitFor(() => expect(tab.textContent).toBe("Unpublished2"));
+  await slot.findByText("Rate-limit the login endpoint");
+  await waitFor(() => expect(tab.textContent).toBe("Unpublished2"));
   expect(slot.getAllByRole("tab").map((each) => each.textContent)).toEqual([
-    "Assigned to me2",
-    "My team1",
+    "Assigned to me3",
     "Authored by me1",
     "Unpublished2",
   ]);
@@ -165,19 +168,15 @@ test("unpublished branches get an inbox tab with a count, and a row opens its br
   slot.lifecycle.unmount();
 });
 
-test("without the GitButler plugin there is no Unpublished tab, even for a reader who left it open", async () => {
+test("without GitButler Unpublished stays selectable and explains why branches are unavailable", async () => {
   window.localStorage.setItem("bb-plugin-code-review:inbox-section", "unpublished");
   const slot = await inboxTab("", {
     ...baseRpc,
     localBranches: () => ({ available: false, reason: "Install and enable the GitButler plugin." }),
   });
-  // The pull requests show once GitButler has answered that it is not there.
-  await slot.findByText("Rate-limit the login endpoint");
-  expect(slot.getAllByRole("tab").map((each) => each.textContent)).toEqual([
-    "Assigned to me2",
-    "My team1",
-    "Authored by me1",
-  ]);
+  expect(await slot.findByText("Install and enable the GitButler plugin.")).toBeTruthy();
+  expect(slot.getByRole("tab", { name: /Unpublished/ }).getAttribute("aria-selected")).toBe("true");
+  expect(slot.getByRole("button", { name: "Try again" })).toBeTruthy();
   slot.lifecycle.unmount();
 });
 

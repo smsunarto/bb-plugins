@@ -1,5 +1,4 @@
 import { useEffect, useId, useState } from "react";
-import type { ReactNode } from "react";
 import { UrlLink, experimental_Icon as Icon } from "@get-bb/plugin-sdk/app";
 import { checksRunning } from "../shared/schema.ts";
 import type { Check, Checks, PullRequest } from "../shared/schema.ts";
@@ -89,7 +88,7 @@ export function useChecks({
 }
 
 /** The pull request's checks, worst first, and the way to hand failures to an agent. */
-export function ChecksList({ pr, compact = false }: { pr: PullRequest; compact?: boolean }) {
+export function ChecksList({ pr }: { pr: PullRequest }) {
   const checks = useChecks(pr);
   if (checks.isPending) return <ChecksSkeleton />;
   if (checks.isLoadingError) {
@@ -123,13 +122,13 @@ export function ChecksList({ pr, compact = false }: { pr: PullRequest; compact?:
           </p>
         </div>
       ) : (
-        <CheckGroups pr={pr} data={checks.data} compact={compact} />
+        <CheckGroups pr={pr} data={checks.data} />
       )}
     </div>
   );
 }
 
-function CheckGroups({ pr, data, compact }: { pr: PullRequest; data: Checks; compact: boolean }) {
+function CheckGroups({ pr, data }: { pr: PullRequest; data: Checks }) {
   const groups = groupChecks(data.checks);
   const failing = groups.find((group) => group.id === "failing")?.checks ?? [];
   // Every failure starts selected, including ones that fail after the tab
@@ -148,30 +147,21 @@ function CheckGroups({ pr, data, compact }: { pr: PullRequest; data: Checks; com
 
   return (
     <div className="flex flex-col gap-2.5">
-      {groups.map((group) => (
-        <CheckSection
-          key={group.id}
-          group={group}
-          defaultOpen={group.id !== "other" && (!compact || group.id !== "passed")}
-          action={
-            group.id === "failing" ? (
-              <FixButton
-                count={selected.length}
-                onFix={() => setFix({ open: true, checks: selected })}
-              />
-            ) : null
-          }
-        >
-          {group.checks.map((check) => (
+      {failing.length ? (
+        <FixButton count={selected.length} onFix={() => setFix({ open: true, checks: selected })} />
+      ) : null}
+      <ul aria-label="Check runs" className="min-w-0 list-none divide-y divide-border">
+        {groups
+          .flatMap((group) => [...group.checks].sort((a, b) => a.name.localeCompare(b.name)))
+          .map((check) => (
             <CheckRow
               key={check.id}
               check={check}
-              selected={group.id === "failing" ? !excluded.has(check.id) : null}
+              selected={check.state === "failure" ? !excluded.has(check.id) : null}
               onSelect={(include) => toggle(check.id, include)}
             />
           ))}
-        </CheckSection>
-      ))}
+      </ul>
       <FixDialog
         pr={pr}
         checks={fix.checks}
@@ -206,56 +196,6 @@ function FixButton({ count, onFix }: { count: number; onFix: () => void }) {
     <span className="ms-auto shrink-0" title={reason}>
       {button}
     </span>
-  );
-}
-
-function CheckSection({
-  group,
-  defaultOpen,
-  action,
-  children,
-}: {
-  group: CheckGroup;
-  defaultOpen: boolean;
-  action: ReactNode;
-  children: ReactNode;
-}) {
-  const [open, setOpen] = useState(defaultOpen);
-  const listId = useId();
-  return (
-    <section
-      className="overflow-hidden rounded-lg border border-border bg-card"
-      aria-label={group.title}
-    >
-      <div className="flex min-h-9 items-center gap-2 pe-2.5">
-        <button
-          type="button"
-          className="flex h-9 min-w-0 flex-1 cursor-pointer items-center gap-2 ps-2.5 text-start focus-visible:-outline-offset-2"
-          aria-expanded={open}
-          aria-controls={listId}
-          onClick={() => setOpen((current) => !current)}
-        >
-          <Icon
-            name="ChevronDown"
-            className={cn(
-              "size-3 shrink-0 text-muted-foreground transition-transform motion-reduce:transition-none",
-              !open && "-rotate-90",
-            )}
-            aria-hidden
-          />
-          <span className="truncate font-semibold">{group.title}</span>
-          <span className="inline-flex h-4.5 shrink-0 items-center rounded-full bg-secondary px-1.5 text-[11px] font-semibold tabular-nums text-secondary-foreground">
-            {group.checks.length}
-          </span>
-        </button>
-        {action}
-      </div>
-      {open ? (
-        <ul id={listId} className="list-none divide-y divide-border border-t border-border">
-          {children}
-        </ul>
-      ) : null}
-    </section>
   );
 }
 
@@ -351,5 +291,15 @@ function ChecksSkeleton() {
         </div>
       ))}
     </output>
+  );
+}
+
+/** Kept in the file rail on wide panels, with an inline fallback when it is hidden. */
+export function PrChecks({ pr }: { pr: PullRequest }) {
+  return (
+    <section aria-label="Checks" data-cr-section="checks" className="min-w-0">
+      <h2 className="mb-2 text-xs font-semibold text-foreground">Checks</h2>
+      <ChecksList pr={pr} />
+    </section>
   );
 }

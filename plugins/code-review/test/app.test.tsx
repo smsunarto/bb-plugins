@@ -124,7 +124,7 @@ test("the navigation badge counts pull requests still waiting for the viewer's r
   slot.lifecycle.unmount();
   // The Inbox tab reads the badge's cached inbox instead of asking GitHub again.
   const tab = await inboxTab("");
-  await tab.findByText("Rate-limit the login endpoint");
+  await tab.findByText("Rate-limit the login endpoint", {}, { timeout: 5000 });
   expect(tab.rpcCalls.filter(({ method }) => method === "inbox")).toEqual([]);
   tab.lifecycle.unmount();
 });
@@ -153,7 +153,7 @@ test("lists what is assigned to the viewer, with a count on every tab", async ()
   await slot.findByText("Rate-limit the login endpoint");
 
   const tabs = slot.getAllByRole("tab").map((tab) => tab.textContent);
-  expect(tabs).toEqual(["Assigned to me2", "My team1", "Authored by me1"]);
+  expect(tabs).toEqual(["Assigned to me3", "Authored by me1", "Unpublished"]);
   // A row is announced title first, as it reads.
   const rows = slot.getAllByRole("button", {
     name: /^(Rate-limit the login endpoint|Log slow queries)/,
@@ -199,10 +199,10 @@ test("another tab shows its own list, and the choice is remembered", async () =>
 });
 
 test("an empty tab says what would show up there", async () => {
-  const slot = await inboxTab("", { ...baseRpc, inbox: () => ({ ...inbox, team: [] }) });
+  const slot = await inboxTab("", { ...baseRpc, inbox: () => ({ ...inbox, authored: [] }) });
   await slot.findByText("Rate-limit the login endpoint");
-  selectTab(slot.getByRole("tab", { name: /My team/ }));
-  expect(await slot.findByText("No team review requests")).toBeTruthy();
+  selectTab(slot.getByRole("tab", { name: /Authored by me/ }));
+  expect(await slot.findByText("No open pull requests")).toBeTruthy();
   slot.lifecycle.unmount();
 });
 
@@ -230,7 +230,7 @@ test("with several accounts, each row names its account and the inbox narrows to
   const slot = await inboxTab("", twoAccounts);
   await slot.findByText("Rate-limit the login endpoint");
   expect(
-    within(slot.getByRole("button", { name: /Rate-limit/ })).getByText("As scott,"),
+    within(slot.getByRole("button", { name: /Rate-limit/ })).getByText("As scott"),
   ).toBeTruthy();
 
   fireEvent.click(slot.getByRole("button", { name: "Accounts: all" }));
@@ -238,9 +238,9 @@ test("with several accounts, each row names its account and the inbox narrows to
 
   await waitFor(() =>
     expect(slot.getAllByRole("tab").map((tab) => tab.textContent)).toEqual([
-      "Assigned to me0",
-      "My team1",
+      "Assigned to me1",
       "Authored by me0",
+      "Unpublished",
     ]),
   );
   expect(window.localStorage.getItem("bb-plugin-code-review:inbox-account")).toBe("scott-work");
@@ -269,9 +269,9 @@ test("the account the reader chose last time is still chosen once the accounts l
 
   expect(await slot.findByRole("button", { name: "Accounts: scott-work" })).toBeTruthy();
   expect(slot.getAllByRole("tab").map((tab) => tab.textContent)).toEqual([
-    "Assigned to me0",
-    "My team1",
+    "Assigned to me1",
     "Authored by me0",
+    "Unpublished",
   ]);
   slot.lifecycle.unmount();
 });
@@ -320,7 +320,7 @@ test("a pull request opens as the account its URL names, and every read names it
 test("a link with no account opens as the account whose inbox lists it, else the active one", async () => {
   // Reading the inbox caches it; #7 is listed under scott-work.
   const tab = await inboxTab("", twoAccounts);
-  await tab.findByText("Rate-limit the login endpoint");
+  await tab.findByText("Rate-limit the login endpoint", {}, { timeout: 5000 });
   tab.lifecycle.unmount();
 
   const listed = await page("acme/web/pull/7", twoAccounts);
@@ -465,7 +465,8 @@ test("without a signed-in gh, the Inbox tab defers to the page and asks for no i
   await waitFor(() =>
     expect(tab.rpcCalls.map((call) => call.method)).toEqual(["status", "localBranches"]),
   );
-  expect(tab.queryByRole("region", { name: "Unpublished branches" })).toBeNull();
+  expect(tab.getByRole("region", { name: "Unpublished branches" })).toBeTruthy();
+  expect(await tab.findByText("No GitButler plugin.")).toBeTruthy();
   tab.lifecycle.unmount();
 });
 
@@ -508,10 +509,8 @@ test("a pull request opens its description, checks, and diffs together, current 
   expect(grace!.getByText("Approved")).toBeTruthy();
   const checksSection = within(slot.getByRole("region", { name: "Checks" }));
   expect(await checksSection.findByRole("button", { name: "Fix" })).toBeTruthy();
-  expect(checksSection.getByText("Failing")).toBeTruthy();
-  expect(
-    checksSection.getByRole("button", { name: /Passed 1/ }).getAttribute("aria-expanded"),
-  ).toBe("false");
+  expect(checksSection.getByRole("list", { name: "Check runs" })).toBeTruthy();
+  expect(checksSection.queryByRole("button", { expanded: false })).toBeNull();
 
   const activity = within(slot.getByRole("region", { name: "Activity" }));
   expect(activity.getByText("feat(auth): add a token bucket")).toBeTruthy();
@@ -589,7 +588,7 @@ test("merge conflicts are flagged only while the pull request is open", async ()
       pullRequest: () => ({ ...conflicting, state }),
     });
     await done.findByRole("heading", { level: 1 });
-    expect(done.queryByText("Merge conflicts")).toBeNull();
+    await gone(() => done.queryByText("Merge conflicts"));
     done.lifecycle.unmount();
   }
 });

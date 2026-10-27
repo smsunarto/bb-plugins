@@ -117,7 +117,7 @@ export function Section({
   return (
     <section aria-labelledby={id} className={cn("min-w-0", className)}>
       <div className="mb-2 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
-        <h2 id={id} className="text-[11px] font-semibold text-subtle-foreground">
+        <h2 id={id} className="text-xs font-semibold text-foreground">
           {title}
         </h2>
         {aside}

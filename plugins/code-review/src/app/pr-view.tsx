@@ -3,6 +3,7 @@ import { pluginQueryClient } from "@bb-kit/core/rpc/query";
 import { useState } from "react";
 import { prKey, prSubPath, sameAccount, sameRef } from "../shared/schema.ts";
 import type { Checks, Inbox, InboxPr, PrRef, PrTab, PullRequest } from "../shared/schema.ts";
+import { PrActions } from "./pr-actions.tsx";
 import { PrReview } from "./changes.tsx";
 import { useChecks } from "./checks.tsx";
 import { ReviewWithBbButton } from "./bb-review.tsx";
@@ -19,7 +20,7 @@ import { SyncState, pageSync, useReconcile } from "./sync-state.tsx";
 import type { SyncQuery } from "./sync-state.tsx";
 import { AccountAvatar, Avatar, PrStateBadge, Timestamp } from "./status.tsx";
 import { SubmitReviewButton } from "./submit-review.tsx";
-import { PrOverview } from "./summary.tsx";
+import { Labels, PrOverview } from "./summary.tsx";
 
 /** How often an open pull request is read again, for new pushes, reviews, and comments. */
 const PR_REFRESH_MS = 60_000;
@@ -97,6 +98,7 @@ function Loaded({ pr, tab, pullRequest }: { pr: PullRequest; tab: PrTab; pullReq
       <header className="shrink-0 border-b border-border bg-background px-3 py-2.5">
         <div className="flex flex-wrap items-start gap-x-3 gap-y-2">
           <div className="flex min-w-0 flex-1 basis-64 items-start gap-1">
+            <PrStateBadge state={pr.state} isDraft={pr.isDraft} className="mt-0.5 shrink-0" />
             <h1 className="min-w-0 text-sm leading-snug font-semibold [overflow-wrap:anywhere]">
               {pr.title}{" "}
               <span className="font-normal text-muted-foreground tabular-nums">
@@ -107,6 +109,9 @@ function Loaded({ pr, tab, pullRequest }: { pr: PullRequest; tab: PrTab; pullReq
           <Toolbar pr={pr} />
         </div>
         <Meta pr={pr} tab={tab} sync={sync} />
+        <div className="mt-2 empty:hidden">
+          <Labels pr={pr} />
+        </div>
       </header>
       <PrReview pr={pr} section={tab} overview={<PrOverview pr={pr} />} />
     </div>
@@ -123,13 +128,15 @@ function Meta({ pr, tab, sync }: { pr: PullRequest; tab: PrTab; sync: SyncQuery 
     : `${pr.headRepository?.split("/")[0] ?? ""}:${pr.headRefName}`;
   return (
     <div className="mt-1.5 flex flex-wrap items-center gap-x-2.5 gap-y-1 text-[11px] text-muted-foreground">
-      <PrStateBadge state={pr.state} isDraft={pr.isDraft} />
       <span>
         {pr.ref.owner}/{pr.ref.repo}
       </span>
-      <span className="flex min-w-0 items-center gap-1 font-mono" translate="no">
+      <span
+        className="flex min-w-0 max-w-full basis-64 items-center gap-1 font-mono"
+        translate="no"
+      >
         <span className="sr-only">Merging </span>
-        <span className="truncate rounded bg-secondary px-1 text-foreground" title={head}>
+        <span className="min-w-0 truncate rounded bg-secondary px-1 text-foreground" title={head}>
           {head}
         </span>
         <Icon name="ArrowRight" className="size-3 shrink-0" aria-hidden />
@@ -230,7 +237,7 @@ function Toolbar({ pr }: { pr: PullRequest }) {
     <div
       role="toolbar"
       aria-label="Pull request actions"
-      className="flex shrink-0 items-center gap-1"
+      className="flex min-w-0 flex-wrap items-center gap-1"
     >
       <PinButton pr={pr} />
       <Tip label="Open on GitHub">
@@ -239,11 +246,12 @@ function Toolbar({ pr }: { pr: PullRequest }) {
           aria-label="Open on GitHub"
           className={cn(buttonVariants({ variant: "ghost", size: "icon" }), ICON_BUTTON)}
         >
-          <Icon name="ExternalLink" aria-hidden />
+          <Icon name="Github" aria-hidden />
         </UrlLink>
       </Tip>
       <ReviewWithBbButton pr={pr} />
       <SubmitReviewButton pr={pr} />
+      <PrActions pr={pr} />
     </div>
   );
 }

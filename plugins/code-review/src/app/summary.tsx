@@ -6,7 +6,6 @@ import {
 } from "@get-bb/plugin-sdk/app";
 import { prSubPath } from "../shared/schema.ts";
 import type { Check, PullRequest, ReviewState, StackPr, TimelineItem } from "../shared/schema.ts";
-import { ChecksList, useChecks } from "./checks.tsx";
 import { FindingsCard, LinkedThreads } from "./bb-review.tsx";
 import { PANEL_PATH, plural, shortSha, subject } from "./format.ts";
 import { cn } from "./lib/utils.ts";
@@ -38,59 +37,36 @@ const REVIEW_VERB: Record<ReviewState, string> = {
   pending: "started a review",
 };
 
-/*
- * Narrow, the summary is one column: what the pull request is, the review's
- * findings, who and what it waits on, then the history. Wide, the waiting-on
- * part moves to a side column. While narrow, the main column's wrapper is
- * `display: contents`, so `order` can put the side column between its parts.
- */
+/** Review context comes before the description; checks live beside the file tree. */
 export function PrOverview({ pr }: { pr: PullRequest }) {
-  const checks = useChecks(pr);
   return (
-    <div className="@container/summary">
-      {/* GitHub keeps saying CONFLICTING once a pull request is closed or merged. */}
+    <div className="flex min-w-0 flex-col gap-5">
       {pr.state === "open" && pr.mergeable === "conflicting" ? (
-        <Notice tone="error" title="Merge conflicts" className="mb-4">
+        <Notice tone="error" title="Merge conflicts">
           This branch conflicts with {pr.baseRefName}. Resolve them before it can merge.
         </Notice>
       ) : null}
-
-      <div className="flex flex-col gap-5 @3xl/summary:flex-row @3xl/summary:items-start">
-        <div className="contents @3xl/summary:flex @3xl/summary:min-w-0 @3xl/summary:flex-1 @3xl/summary:flex-col @3xl/summary:gap-5">
-          <Description pr={pr} />
-          <div className="order-2 min-w-0 empty:hidden">
-            <FindingsCard pr={pr} />
-          </div>
-          <section data-cr-section="checks" aria-label="Checks" className="order-3 min-w-0">
-            <div className="mb-2 flex flex-wrap items-center gap-x-2 gap-y-1">
-              <h2 className="text-xs font-medium text-foreground">Checks</h2>
-              {checks.data ? (
-                <span className="text-[11px] text-muted-foreground">
-                  {checkCounts(checks.data.checks)}
-                </span>
-              ) : null}
-            </div>
-            <ChecksList pr={pr} compact />
-          </section>
-          <Activity pr={pr} />
-        </div>
-        <div className="order-3 flex min-w-0 flex-col gap-5 @3xl/summary:w-64 @3xl/summary:shrink-0">
-          <Reviewers pr={pr} />
-          <LinkedThreads pr={pr} />
-          <Labels pr={pr} />
-          <Stack pr={pr} />
-        </div>
+      <LinkedThreads pr={pr} />
+      <div className="min-w-0 empty:hidden">
+        <FindingsCard pr={pr} />
       </div>
+      <Reviewers pr={pr} />
+      <Stack pr={pr} />
+      <Description pr={pr} />
+      <Activity pr={pr} />
     </div>
   );
 }
 
 function Description({ pr }: { pr: PullRequest }) {
   return (
-    <Section title="Description" className="order-1">
+    <Section title="Description">
       <div className="rounded-lg border border-border bg-card px-3.5 py-3">
         {pr.body.trim() ? (
-          <Markdown content={pr.body} className="min-w-0 text-xs [overflow-wrap:anywhere]" />
+          <Markdown
+            content={pr.body}
+            className="bb-markdown-prose min-w-0 [overflow-wrap:anywhere]"
+          />
         ) : (
           <p className="text-muted-foreground italic">No description provided.</p>
         )}
@@ -124,27 +100,25 @@ function Reviewers({ pr }: { pr: PullRequest }) {
   );
 }
 
-function Labels({ pr }: { pr: PullRequest }) {
+export function Labels({ pr }: { pr: PullRequest }) {
   if (pr.labels.length === 0) return null;
   return (
-    <Section title="Labels">
-      <ul className="flex flex-wrap gap-1">
-        {pr.labels.map((label) => (
-          <li
-            key={label.name}
-            className="inline-flex h-5 items-center gap-1 rounded-full border border-border px-2 text-[11px]"
-          >
-            {/* GitHub's own label colour, the one thing that tells labels apart at a glance. */}
-            <span
-              aria-hidden
-              className="size-2 shrink-0 rounded-full"
-              style={{ backgroundColor: `#${label.color}` }}
-            />
-            {label.name}
-          </li>
-        ))}
-      </ul>
-    </Section>
+    <ul aria-label="Labels" className="flex min-w-0 flex-wrap gap-1">
+      {pr.labels.map((label) => (
+        <li
+          key={label.name}
+          className="inline-flex h-5 items-center gap-1 rounded-full border border-border px-2 text-[11px]"
+        >
+          {/* GitHub's own label colour, the one thing that tells labels apart at a glance. */}
+          <span
+            aria-hidden
+            className="size-2 shrink-0 rounded-full"
+            style={{ backgroundColor: `#${label.color}` }}
+          />
+          {label.name}
+        </li>
+      ))}
+    </ul>
   );
 }
 
@@ -198,7 +172,7 @@ function StackRow({ pr, item }: { pr: PullRequest; item: StackPr }) {
 
 function Activity({ pr }: { pr: PullRequest }) {
   return (
-    <Section title="Activity" className="order-4">
+    <Section title="Activity">
       {pr.timeline.length === 0 ? (
         <p className="text-muted-foreground">No activity yet.</p>
       ) : (

@@ -202,8 +202,7 @@ const SPLIT = "h-7 text-xs max-md:pointer-coarse:h-9 [&_[data-icon-root]]:size-3
 /**
  * Starts a read-only review of the pull request's or branch's head on bb's
  * default agent. While one is running on this head, the button opens it
- * instead of starting another. The gear edits the instructions every review
- * gets.
+ * instead of starting another.
  */
 export function ReviewWithBbButton(target: ReviewTarget) {
   const subject = reviewSubject(target);
@@ -211,7 +210,6 @@ export function ReviewWithBbButton(target: ReviewTarget) {
   const client = rpc.useClient();
   const activity = useAgentActivity(target);
   const running = activeReview(activity.data, subject.revision);
-  const [editing, setEditing] = useState(false);
   const start = useMutation({
     mutationFn: () => subject.startReview(client),
     onSuccess({ threadId }) {
@@ -237,7 +235,7 @@ export function ReviewWithBbButton(target: ReviewTarget) {
       <Button
         variant="outline"
         size="sm"
-        className={cn(SPLIT, "gap-1.5 rounded-e-none px-2.5")}
+        className={cn(SPLIT, "gap-1.5 px-2.5")}
         disabled={start.isPending}
         aria-busy={start.isPending}
         onClick={() => {
@@ -252,16 +250,6 @@ export function ReviewWithBbButton(target: ReviewTarget) {
         )}
         {running ? "Reviewing…" : start.isPending ? "Starting…" : "Review with bb"}
       </Button>
-      <Button
-        variant="outline"
-        size="sm"
-        className={cn(SPLIT, "-ms-px w-7 rounded-s-none px-0 max-md:pointer-coarse:w-9")}
-        aria-label="bb review instructions"
-        onClick={() => setEditing(true)}
-      >
-        <Icon name="Settings" aria-hidden />
-      </Button>
-      <ReviewInstructionsDialog open={editing} onOpenChange={setEditing} />
     </div>
   );
 }

@@ -5,7 +5,7 @@ import { FileTree, useFileTree } from "@pierre/trees/react";
 import type { ChangedFile } from "../shared/schema.ts";
 
 type ExplorerFile = Pick<ChangedFile, "path" | "status"> &
-  Partial<Pick<ChangedFile, "additions" | "deletions">>;
+  Partial<Pick<ChangedFile, "additions" | "deletions" | "generated">>;
 type Entry = { id: string; file: ExplorerFile };
 const NO_THREADS: ReadonlyMap<string, number> = new Map();
 const STATUS: Record<Exclude<ChangedFile["status"], "unchanged">, GitStatus> = {
@@ -56,6 +56,7 @@ function gitStatus(entries: readonly Entry[]): GitStatusEntry[] {
 
 function decoration(file: ExplorerFile, threads: number): FileTreeRowDecoration | null {
   const parts = [];
+  if (file.generated) parts.push({ text: "Generated ", color: "var(--muted-foreground)" });
   if (threads > 0) parts.push({ text: `${threads} comments `, color: "var(--muted-foreground)" });
   if (file.additions !== undefined)
     parts.push({ text: `+${file.additions} `, color: "var(--diff-added)" });
@@ -65,7 +66,7 @@ function decoration(file: ExplorerFile, threads: number): FileTreeRowDecoration 
     ? {
         text: parts.map((part) => part.text).join(""),
         parts,
-        title: `${file.path}: ${parts.map((part) => part.text).join("")}`,
+        title: `${file.generated ? "Generated file: " : ""}${file.path}: ${parts.map((part) => part.text).join("")}`,
       }
     : null;
 }
@@ -100,6 +101,11 @@ export function FileExplorer({
     icons: "standard",
     density: "compact",
     itemHeight: 28,
+    unsafeCSS: `
+      [data-type="item"]:has([title^="Generated file:"]) { color: var(--muted-foreground); }
+      [data-type="item"]:has([title^="Generated file:"]) [data-item-section],
+      [data-type="item"]:has([title^="Generated file:"]) [style*="color"] { color: var(--muted-foreground) !important; }
+    `,
     search: false,
     stickyFolders: false,
     renderRowDecoration: ({ item }) => {

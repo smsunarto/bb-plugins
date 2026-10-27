@@ -155,22 +155,16 @@ function reviewed(findings: Finding[], headRefOid = HEAD, baseRefName = BASE): A
 
 // ── Checks ───────────────────────────────────────────────────────────────
 
-test("checks are grouped worst first, and skipped ones stay folded away", async () => {
+test("checks are sorted worst first in one expanded list", async () => {
   const slot = mount(ChecksList, { checks: () => checks });
   await slot.findByText("test");
-
-  const sections = slot.getAllByRole("region").map((section) => section.getAttribute("aria-label"));
-  expect(sections).toEqual(["Failing", "In progress", "Passed", "Skipped, neutral, or cancelled"]);
-  const failing = within(slot.getByRole("region", { name: "Failing" }));
-  expect(failing.getByText("CI · Process completed with exit code 1.")).toBeTruthy();
-  expect(failing.getByText("2m 05s")).toBeTruthy();
-  expect(failing.getByRole("link", { name: "Details for test" }).getAttribute("href")).toBe(
-    "https://github.com/acme/api/actions/runs/1/job/1",
-  );
-  expect(slot.queryByText("deploy-preview")).toBeNull();
-
-  fireEvent.click(slot.getByRole("button", { name: /Skipped, neutral, or cancelled/ }));
+  expect(slot.getAllByRole("list")).toHaveLength(1);
+  expect(slot.queryAllByRole("button", { expanded: false })).toHaveLength(0);
+  expect(slot.getByText("CI · Process completed with exit code 1.")).toBeTruthy();
+  expect(slot.getByText("2m 05s")).toBeTruthy();
   expect(slot.getByText("deploy-preview")).toBeTruthy();
+  const rows = within(slot.getByRole("list")).getAllByRole("listitem");
+  expect(rows[0]!.textContent).toContain("test");
   slot.lifecycle.unmount();
 });
 
@@ -386,28 +380,10 @@ test("a review running on this head and base is the one the button opens", async
   slot.lifecycle.unmount();
 });
 
-test("the gear edits the standing review instructions", async () => {
-  const rpc: Handlers = {
-    agentActivity: () => noActivity,
-    reviewInstructions: () => ({ instructions: "Flag missing tests." }),
-    setReviewInstructions: (input: { instructions: string }) => input,
-  };
-  const slot = mount(ReviewWithBbButton, rpc);
-  fireEvent.click(await slot.findByRole("button", { name: "bb review instructions" }));
-
-  const field = (await slot.findByRole("textbox", {
-    name: "Review instructions",
-  })) as HTMLTextAreaElement;
-  expect(field.value).toBe("Flag missing tests.");
-  expect(slot.getByText("Standing criteria and report format for every bb review")).toBeTruthy();
-  expect((slot.getByRole("button", { name: "Save" }) as HTMLButtonElement).disabled).toBe(true);
-
-  fireEvent.change(field, { target: { value: "Flag missing tests.\nIgnore style." } });
-  fireEvent.click(slot.getByRole("button", { name: "Save" }));
-  await gone(() => slot.queryByRole("textbox", { name: "Review instructions" }));
-  expect(slot.rpcCalls.find((call) => call.method === "setReviewInstructions")?.input).toEqual({
-    instructions: "Flag missing tests.\nIgnore style.",
-  });
+test("the review button has no settings option", async () => {
+  const slot = mount(ReviewWithBbButton, { agentActivity: () => noActivity });
+  await slot.findByRole("button", { name: "Review with bb" });
+  expect(slot.queryByRole("button", { name: "bb review instructions" })).toBeNull();
   slot.lifecycle.unmount();
 });
 

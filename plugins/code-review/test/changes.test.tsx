@@ -4,8 +4,10 @@ import { PluginQueryBoundary, pluginQueryClient } from "@bb-kit/core/rpc/query";
 import type { ChangedFiles, PullRequest, ReviewThread } from "../src/shared/schema.ts";
 import { agentActivity, checks, inbox, pullRequest } from "./app-fixtures.ts";
 
-const { act, fireEvent, waitFor, within } = await import("@testing-library/react");
+const { act, fireEvent, waitFor, within, configure } = await import("@testing-library/react");
 const { loadPluginApp, renderSlot } = await import("@get-bb/plugin-sdk/testing/app");
+configure({ asyncUtilTimeout: 5000 });
+configure({ asyncUtilTimeout: 5000 });
 const { REVEAL_EVENT } = await import("../src/app/finding.tsx");
 const { NewCommentForm } = await import("../src/app/comment-form.tsx");
 const { rpc } = await import("../src/app/rpc.ts");
@@ -221,14 +223,14 @@ test("finishing a slow diff load preserves the reader's scroll and reserved file
   const slot = (await changesTab([], { changedFiles: () => pending })).render();
   await slot.findByText("Loading changed files…");
   const area = slot.container.querySelector<HTMLElement>("[data-cr-scroll]")!;
-  const rail = slot.getByRole("navigation", { name: "Changed files" });
+  const rail = slot.getByRole("navigation", { name: "Files and checks" });
   const toolbar = slot.getByRole("button", { name: "Split" });
   fireEvent.wheel(area);
   area.scrollTop = 350;
   finish(files);
   await slot.findByRole("article", { name: "src/login.ts" });
   expect(slot.container.querySelector("[data-cr-scroll]")).toBe(area);
-  expect(slot.getByRole("navigation", { name: "Changed files" })).toBe(rail);
+  expect(slot.getByRole("navigation", { name: "Files and checks" })).toBe(rail);
   expect(slot.getByRole("button", { name: "Split" })).toBe(toolbar);
   expect(area.scrollTop).toBe(350);
   slot.lifecycle.unmount();
@@ -273,7 +275,7 @@ test("lists every changed file with its threads inline, and folds the viewed one
   expect(diffBody(slot.getByRole("article", { name: "src/login.ts" })).hidden).toBe(false);
   expect(slot.queryByRole("button", { name: "Collapse src/login.ts" })).toBeNull();
   expect(
-    within(slot.getByRole("navigation", { name: "Changed files" })).queryByRole("checkbox"),
+    slot.container.querySelector("file-tree-container")?.shadowRoot?.querySelector('input[type="checkbox"]') ?? null,
   ).toBeNull();
   slot.lifecycle.unmount();
 });

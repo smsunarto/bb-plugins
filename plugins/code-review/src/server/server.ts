@@ -30,6 +30,8 @@ import { localBranches } from "./rpc/local-branches.ts";
 import { localChanges } from "./rpc/local-changes.ts";
 import { sharedComparison } from "./rpc/shared-comparison.ts";
 import { prWatches } from "./rpc/pr-watches.ts";
+import { prActionState } from "./rpc/pr-action-state.ts";
+import { prAction } from "./rpc/pr-action.ts";
 import { pullRequest } from "./rpc/pull-request.ts";
 import { replyDraft } from "./rpc/reply-draft.ts";
 import { reviewInstructions } from "./rpc/review-instructions.ts";
@@ -66,6 +68,8 @@ export default definePlugin({
     status,
     inbox,
     pullRequest,
+    prAction,
+    prActionState,
     changedFiles,
     checks,
     agentActivity,

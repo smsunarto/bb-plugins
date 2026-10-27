@@ -3,7 +3,6 @@ import type { ClipboardEvent, KeyboardEvent, ReactNode } from "react";
 import { experimental_Icon as Icon, useBbNavigate } from "@get-bb/plugin-sdk/app";
 import type { ExperimentalBadge } from "@get-bb/plugin-sdk/app";
 import {
-  INBOX_SECTIONS,
   branchSubPath,
   parsePrReference,
   prKey,
@@ -60,11 +59,11 @@ export function useLocalBranches() {
 }
 
 /** The inbox's tabs: the pull request queues, then branches with no pull request yet. */
-const INBOX_TABS = [...INBOX_SECTIONS, "unpublished"] as const;
+const INBOX_TABS = ["assigned", "authored", "unpublished"] as const;
 type InboxTab = (typeof INBOX_TABS)[number];
 
 const SECTIONS: readonly {
-  id: InboxSection;
+  id: Exclude<InboxSection, "team">;
   label: string;
   empty: { title: string; detail: string };
 }[] = [
@@ -73,15 +72,8 @@ const SECTIONS: readonly {
     label: "Assigned to me",
     empty: {
       title: "Nothing waiting on you",
-      detail: "Pull requests that request your review or are assigned to you show up here.",
-    },
-  },
-  {
-    id: "team",
-    label: "My team",
-    empty: {
-      title: "No team review requests",
-      detail: "Pull requests that request a review from one of your teams show up here.",
+      detail:
+        "Pull requests assigned to you or requesting your or your team’s review show up here.",
     },
   },
   {
@@ -178,7 +170,7 @@ export function Inbox({
   const inbox = useInbox();
   useReconcile();
   const branches = useLocalBranches();
-  const { section, setTab, unpublished } = useInboxTab(branches);
+  const { section, setTab } = useInboxTab();
   const accounts = inbox.data?.accounts ?? [];
   // The account the reader last chose, kept across visits.
   const [chosenAccount, setAccount] = useStoredChoice(
@@ -244,28 +236,36 @@ export function Inbox({
               value={id}
               label={label}
               title={label}
-              count={shown?.[id].length}
+              count={
+                shown
+                  ? id === "assigned"
+                    ? new Set(
+                        [...shown.assigned, ...shown.team].map((pr) => prKey(pr.ref).toLowerCase()),
+                      ).size
+                    : shown[id].length
+                  : undefined
+              }
             />
           ))}
-          {unpublished ? (
+          {
             <InboxTabTrigger
               value="unpublished"
               label="Unpublished"
               title="Unpublished branches"
               count={branches.data?.available ? branches.data.branches.length : undefined}
             />
-          ) : null}
+          }
         </TabsList>
         <div data-inbox-scroll className="min-h-0 flex-1 overflow-y-auto px-1.5 pt-1 pb-6">
           {/* The Unpublished tab says its own state, so the pull requests' waits for theirs. */}
           {section === "unpublished" && !shown ? null : (
             <SectionPanes inbox={inbox} shown={shown} selected={selected} />
           )}
-          {unpublished ? (
+          {
             <TabsContent value="unpublished" className="mt-0 focus-visible:ring-0">
               <Unpublished query={branches} selected={selectedBranch} />
             </TabsContent>
-          ) : null}
+          }
         </div>
       </Tabs>
     </div>
@@ -273,18 +273,11 @@ export function Inbox({
 }
 
 /**
- * The open tab, as the reader last chose it, kept across visits. Unpublished
- * shows once GitButler answers. A reader who left it open keeps it while the
- * first read is out, instead of seeing it jump in later.
+ * Every queue remains selectable during discovery, including Unpublished.
  */
-function useInboxTab(branches: ReturnType<typeof useLocalBranches>) {
-  const [chosen, setTab] = useStoredChoice("inbox-section", INBOX_TABS, "assigned");
-  const unpublished =
-    branches.data?.available === true ||
-    branches.isError ||
-    (branches.isPending && chosen === "unpublished");
-  const section = chosen === "unpublished" && !unpublished ? "assigned" : chosen;
-  return { section, setTab, unpublished };
+function useInboxTab() {
+  const [section, setTab] = useStoredChoice("inbox-section", INBOX_TABS, "assigned");
+  return { section, setTab };
 }
 
 function InboxTabTrigger({
@@ -571,7 +564,14 @@ function SectionRows({
   selected: PrRef | null;
   empty: { title: string; detail: string };
 }) {
-  const prs = inbox[section];
+  const prs =
+    section === "assigned"
+      ? [
+          ...new Map(
+            [...inbox.assigned, ...inbox.team].map((pr) => [prKey(pr.ref).toLowerCase(), pr]),
+          ).values(),
+        ]
+      : inbox[section];
   if (prs.length === 0) {
     return (
       <div className="flex flex-col items-center px-4 py-10 text-center text-muted-foreground">
@@ -594,17 +594,20 @@ function Group({
   label,
   icon,
   hidden = false,
+  repo = false,
   children,
 }: {
   label: string;
   icon?: string;
   hidden?: boolean;
+  repo?: boolean;
   children: ReactNode;
 }) {
   const id = useId();
+  const Heading = repo ? "h4" : "h3";
   return (
     <section aria-labelledby={id} className="mt-1.5">
-      <h3
+      <Heading
         id={id}
         className={cn(
           "flex items-center gap-1 px-1.5 pt-1.5 pb-1 text-[11px] font-medium text-subtle-foreground",
@@ -613,7 +616,7 @@ function Group({
       >
         {icon ? <Icon name={icon} className="size-3" aria-hidden /> : null}
         {label}
-      </h3>
+      </Heading>
       {children}
     </section>
   );
@@ -648,20 +651,29 @@ function Rows({
   prs: readonly InboxPr[];
   selected: PrRef | null;
 }) {
-  return (
-    <ul className="flex flex-col gap-px">
-      {prs.map((pr) => (
-        <li key={prKey(pr.ref)}>
-          <Row
-            pr={pr}
-            selected={selected !== null && sameRef(selected, pr.ref)}
-            pinned={inbox.pinned.some((item) => sameRef(item.ref, pr.ref))}
-            showAccount={inbox.accounts.length > 1}
-          />
-        </li>
-      ))}
-    </ul>
-  );
+  const repos = new Map<string, InboxPr[]>();
+  for (const pr of prs) {
+    const key = `${pr.ref.owner}/${pr.ref.repo}`;
+    const group = repos.get(key) ?? [];
+    group.push(pr);
+    repos.set(key, group);
+  }
+  return [...repos].map(([repo, items]) => (
+    <Group key={repo} label={repo} repo>
+      <ul className="flex flex-col gap-px">
+        {items.map((pr) => (
+          <li key={prKey(pr.ref)}>
+            <Row
+              pr={pr}
+              selected={selected !== null && sameRef(selected, pr.ref)}
+              pinned={inbox.pinned.some((item) => sameRef(item.ref, pr.ref))}
+              showAccount={inbox.accounts.length > 1}
+            />
+          </li>
+        ))}
+      </ul>
+    </Group>
+  ));
 }
 
 /** What the row says about review: the verdict on the account's own work, or its part in someone else's. */
@@ -749,13 +761,9 @@ function Row({
       <span className="flex w-full items-center gap-1 text-[11px] text-muted-foreground">
         {showAccount ? (
           <span className="inline-flex shrink-0" title={`As ${pr.account}`}>
-            <AccountAvatar login={pr.account} className="size-3" />
-            <span className="sr-only">As {pr.account}, </span>
+            <span>As {pr.account}</span>
           </span>
         ) : null}
-        <span className="min-w-0 truncate">
-          {pr.ref.owner}/{pr.ref.repo}
-        </span>
         <span className="shrink-0 tabular-nums">#{pr.ref.number}</span>
         {pinned ? (
           <span className="inline-flex shrink-0">
@@ -825,6 +833,17 @@ function Unpublished({
       </ul>
     );
   }
+  if (branches && !branches.available) {
+    return (
+      <Notice
+        tone="info"
+        title="Unpublished branches unavailable"
+        action={<RetryButton onRetry={() => void query.refetch()} />}
+      >
+        {branches.reason}
+      </Notice>
+    );
+  }
   if (query.isError) {
     return (
       <Notice
@@ -847,7 +866,6 @@ function Unpublished({
  */
 export function UnpublishedOnly({ selected }: { selected: string | null }) {
   const query = useLocalBranches();
-  if (query.data && !query.data.available) return null;
   return (
     <section aria-label="Unpublished branches" className="flex min-h-0 flex-col px-1.5">
       <h2 className="px-1 pt-1 font-semibold text-foreground">Unpublished branches</h2>

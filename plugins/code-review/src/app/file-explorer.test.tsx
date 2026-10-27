@@ -212,3 +212,26 @@ test("row decorations retain comment counts and line deltas and refresh independ
     slot.lifecycle.unmount();
   }
 });
+
+test("generated files stay navigable and carry a muted generated decoration across refresh", async () => {
+  const generated = [{ path: "bun.lock", status: "modified" as const, generated: true }];
+  const { slot, row, calls } = await explorer(generated);
+  try {
+    expect(row("bun.lock").textContent).toContain("Generated");
+    expect(row("bun.lock").querySelector('[title^="Generated file:"]')).toBeTruthy();
+    fireEvent.click(row("bun.lock"));
+    expect(calls).toEqual(["bun.lock"]);
+    slot.lifecycle.rerender(
+      <FileExplorer
+        files={[{ ...generated[0]!, generated: false }]}
+        current="bun.lock"
+        onSelect={(path) => calls.push(path)}
+      />,
+    );
+    await waitFor(() =>
+      expect(row("bun.lock").querySelector('[title^="Generated file:"]')).toBeNull(),
+    );
+  } finally {
+    slot.lifecycle.unmount();
+  }
+});

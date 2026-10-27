@@ -1,3 +1,4 @@
+import { PrChecks } from "./checks.tsx";
 import {
   useCallback,
   useEffect,
@@ -231,6 +232,14 @@ function usePinFocus(
     if (!focus || !area || !content) return;
     const place = () => {
       if ("section" in focus) {
+        if (focus.section === "checks") {
+          const checks = area
+            .closest("[data-review-layout]")
+            ?.querySelector<HTMLElement>('[data-cr-section="checks"]');
+          const rail = checks?.closest<HTMLElement>("[data-review-rail-scroll]");
+          if (checks && rail) scrollWithin(rail, checks, 8);
+          return;
+        }
         const destination = area.querySelector(`[data-cr-section="${focus.section}"]`);
         if (destination) scrollWithin(area, destination, 12);
         return;
@@ -244,6 +253,7 @@ function usePinFocus(
       else scrollWithin(area, card, SCROLL_MARGIN_PX);
     };
     place();
+    if ("section" in focus && focus.section === "checks") return;
     const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(place);
     observer?.observe(content);
     if (area.firstElementChild && area.firstElementChild !== content)
@@ -625,11 +635,12 @@ function ChangesView({
 
   return (
     <ReviewLayout
-      hasFiles={!ready || all.length > 0}
+      hasFiles={Boolean(pr) || !ready || all.length > 0}
       scroller={scroller}
       overview={overview}
       rail={
         <FilePanel
+          pr={pr}
           open={railOpen}
           pending={pending}
           filter={filter}
@@ -795,6 +806,7 @@ function ViewedErrors({ pull }: { pull: string }) {
 
 /** The left column: the filter, then the file list. Wide panes only. */
 function FilePanel({
+  pr,
   open,
   pending,
   filter,
@@ -806,6 +818,7 @@ function FilePanel({
   reveal,
   threadsByPath,
 }: {
+  pr: PullRequest | null;
   reveal: FileFocus | null;
   threadsByPath: ReadonlyMap<string, readonly ReviewThread[]>;
   open: boolean;
@@ -823,13 +836,21 @@ function FilePanel({
   );
   return (
     <nav
-      aria-label="Changed files"
+      aria-label={pr ? "Files and checks" : "Changed files"}
       className={cn(
-        "hidden w-64 shrink-0 flex-col border-r border-border",
-        open && "@3xl/changes:flex",
+        "shrink-0 flex-col border-border",
+        pr
+          ? "flex max-h-64 w-full border-b @3xl/changes:max-h-none @3xl/changes:w-64 @3xl/changes:border-r @3xl/changes:border-b-0"
+          : "hidden w-64 border-r",
+        !pr && open && "@3xl/changes:flex",
       )}
     >
-      <div className="flex flex-col gap-1.5 border-b border-border p-2">
+      <div
+        className={cn(
+          "hidden flex-col gap-1.5 border-b border-border p-2",
+          open && "@3xl/changes:flex",
+        )}
+      >
         <Input
           type="search"
           disabled={pending}
@@ -845,18 +866,27 @@ function FilePanel({
           </p>
         ) : null}
       </div>
-      {pending ? (
-        <Loading label="Loading files…" rows={8} className="p-3" />
-      ) : (
-        <FileExplorer
-          files={files}
-          current={current}
-          onSelect={onSelect}
-          filtering={filter.trim().length > 0}
-          reveal={reveal}
-          threadsByPath={threadCounts}
-        />
-      )}
+      <div data-review-rail-scroll className="flex min-h-0 flex-1 flex-col overflow-y-auto">
+        <div className={cn("hidden min-h-36 flex-1 flex-col", open && "@3xl/changes:flex")}>
+          {pending ? (
+            <Loading label="Loading files…" rows={8} className="p-3" />
+          ) : (
+            <FileExplorer
+              files={files}
+              current={current}
+              onSelect={onSelect}
+              filtering={filter.trim().length > 0}
+              reveal={reveal}
+              threadsByPath={threadCounts}
+            />
+          )}
+        </div>
+        {pr ? (
+          <div className="shrink-0 border-t border-border p-2">
+            <PrChecks pr={pr} />
+          </div>
+        ) : null}
+      </div>
     </nav>
   );
 }
