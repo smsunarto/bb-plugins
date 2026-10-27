@@ -45,6 +45,10 @@ used up, the REST limit is separate and usually still has room. Use
 
 ## Reviews
 
+When the change has already been reviewed in BB, proceed without waiting for
+GitHub Actions Claude or Cubic review jobs. Continue to satisfy other required
+CI checks.
+
 Only act on checks and comments newer than the latest push. Verify every bot
 finding against the source before changing code. Fix real findings and CI
 failures, distinguish repository failures from infrastructure flakes, and reply
