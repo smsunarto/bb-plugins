@@ -1,3 +1,4 @@
+import { unityDiffSchema, unityMetaDiffSchema } from "@bb-plugins/unity-inspector/model";
 import { z } from "zod";
 
 /*
@@ -482,14 +483,85 @@ export const changedFileSchema = z.object({
 });
 export type ChangedFile = z.infer<typeof changedFileSchema>;
 
+const commitOidSchema = z.string().regex(/^[0-9a-f]{40}(?:[0-9a-f]{24})?$/, "Not a commit id.");
+
+/**
+ * Where both sides of a diff's files are read, pinned by commit so a file's
+ * preview shows the very comparison its patch does. A pull request's base
+ * side is the merge base of `base` and `head`, as GitHub diffs it; a local
+ * branch's is `base` itself.
+ */
+export const comparisonSchema = z.discriminatedUnion("kind", [
+  z.strictObject({
+    kind: z.literal("github"),
+    account: accountSchema,
+    owner: z.string().regex(/^[A-Za-z0-9_.-]+$/),
+    repo: z.string().regex(/^[A-Za-z0-9_.-]+$/),
+    /** `owner/repo` the head commits were pushed to: a fork's own Git LFS store holds its files. */
+    headRepository: z
+      .string()
+      .regex(/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/)
+      .nullable(),
+    base: commitOidSchema,
+    head: commitOidSchema,
+  }),
+  z.strictObject({
+    kind: z.literal("local"),
+    hostId: z.string().min(1).max(256),
+    path: z.string().min(1).max(4096),
+    base: commitOidSchema,
+    head: commitOidSchema,
+  }),
+]);
+export type Comparison = z.infer<typeof comparisonSchema>;
+export type ComparisonSide = "base" | "head";
+
 export const changedFilesSchema = z.object({
   /** The head commit these patches belong to. */
   headRefOid: z.string(),
   /** The base branch these patches compare against. */
   baseRefName: z.string(),
+  /** Where previews read whole files. Null when the read could not pin both commits. */
+  comparison: comparisonSchema.nullable(),
   files: z.array(changedFileSchema),
 });
 export type ChangedFiles = z.infer<typeof changedFilesSchema>;
+
+/** A Git LFS pointer's object. */
+export const lfsObjectSchema = z.strictObject({
+  oid: z.string().regex(/^[0-9a-f]{64}$/),
+  size: z.number().int().nonnegative(),
+});
+export type LfsObject = z.infer<typeof lfsObjectSchema>;
+
+/** What one side of a changed file holds, read without its content. */
+export const blobDescriptorSchema = z.discriminatedUnion("kind", [
+  /** Not in that commit: the file was added or deleted. */
+  z.strictObject({ kind: z.literal("missing") }),
+  z.strictObject({
+    kind: z.literal("blob"),
+    /** The bytes Git stores: a pointer's own size for a Git LFS file. */
+    size: z.number().int().nonnegative(),
+    lfs: lfsObjectSchema.nullable(),
+  }),
+  z.strictObject({ kind: z.literal("symlink"), target: z.string() }),
+  z.strictObject({ kind: z.literal("submodule") }),
+]);
+export type BlobDescriptor = z.infer<typeof blobDescriptorSchema>;
+
+export const fileBlobsSchema = z.strictObject({
+  base: blobDescriptorSchema,
+  head: blobDescriptorSchema,
+});
+export type FileBlobs = z.infer<typeof fileBlobsSchema>;
+
+/** A Unity asset's change as objects and properties, or why only its text diff shows. */
+export const unityPreviewSchema = z.discriminatedUnion("state", [
+  z.strictObject({ state: z.literal("objects"), diff: unityDiffSchema }),
+  z.strictObject({ state: z.literal("meta"), diff: unityMetaDiffSchema }),
+  z.strictObject({ state: z.literal("unavailable"), reason: z.string() }),
+]);
+export type UnityPreview = z.infer<typeof unityPreviewSchema>;
 
 // ── Unpublished branches ─────────────────────────────────────────────────
 

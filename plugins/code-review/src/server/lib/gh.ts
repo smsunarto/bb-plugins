@@ -330,6 +330,12 @@ export type GitHub = {
   accounts(): Promise<string[]>;
   /** gh acting as `login`, one of `accounts()`. */
   as(login: string): Gh;
+  /**
+   * `login`'s token, for the reads `gh` cannot carry: file bytes, which its
+   * output decodes as text, and Git LFS downloads, which are not GitHub's API.
+   * Held only in memory, like the tokens every call passes to `gh`.
+   */
+  token(login: string): Promise<string>;
 };
 
 /**
@@ -412,6 +418,22 @@ export function createGitHub(run: GhRunner = execGh, now = Date.now): GitHub {
 
   return {
     accounts: async () => (await listAccounts()).map((a) => a.login),
+    async token(login) {
+      if (!accountSchema.safeParse(login).success) {
+        throw new GhError("failed", `${login} is not a GitHub login.`);
+      }
+      const token =
+        (await environment(login))["GH_TOKEN"] ??
+        process.env["GH_TOKEN"] ??
+        process.env["GITHUB_TOKEN"];
+      if (!token) {
+        throw new GhError(
+          "unauthenticated",
+          `GitHub CLI has no token for @${login}. Run \`gh auth login\`.`,
+        );
+      }
+      return token;
+    },
     as(login) {
       // A login reaches `gh auth token --user`: one that could read as a flag stops here.
       if (!accountSchema.safeParse(login).success) {

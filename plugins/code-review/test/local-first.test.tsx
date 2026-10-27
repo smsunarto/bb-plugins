@@ -60,6 +60,7 @@ test("confirmed snapshots restore status, inbox, PR, diff revision and checks sy
   writer.setQueryData(rpc.changedFiles.queryKey(input), {
     headRefOid: "old-head",
     baseRefName: "old-base",
+    comparison: null,
     files: [],
   });
   writer.setQueryData(rpc.checks.queryKey(input), {
@@ -76,6 +77,7 @@ test("confirmed snapshots restore status, inbox, PR, diff revision and checks sy
   expect(reader.getQueryData<ChangedFiles>(rpc.changedFiles.queryKey(input))).toEqual({
     headRefOid: "old-head",
     baseRefName: "old-base",
+    comparison: null,
     files: [],
   });
   expect(reader.getQueryData(rpc.checks.queryKey(input))).toMatchObject({ headRefOid: "old-head" });

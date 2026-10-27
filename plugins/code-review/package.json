@@ -40,6 +40,7 @@
     "instructions/",
     "playbooks/",
     "skills/",
+    "vendor/three-kit.ts",
     "src/",
     "!src/**/*.test.ts",
     "!src/**/*.test.tsx",
@@ -48,6 +49,7 @@
   ],
   "dependencies": {
     "@bb-kit/core": "workspace:*",
+    "@bb-plugins/unity-inspector": "workspace:*",
     "@pierre/trees": "1.0.0-beta.6",
     "@radix-ui/react-slot": "^1.3.0",
     "@radix-ui/react-tabs": "^1.1.17",
@@ -56,6 +58,7 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
+    "@bb-plugins/ui": "workspace:*",
     "@get-bb/plugin-sdk": "0.6.75",
     "@pierre/diffs": "^1.2.9",
     "@radix-ui/react-dialog": "^1.1.19",
@@ -65,6 +68,7 @@
     "@types/node": "^22.0.0",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
+    "@types/three": "0.186.0",
     "bun-types": "^1.4.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
@@ -73,9 +77,9 @@
     "react-dom": "19.2.8",
     "sonner": "^1.7.4",
     "tailwind-merge": "^3.4.0",
+    "three": "0.186.1",
     "tsx": "4.23.12",
-    "typescript": "^6.0.0",
-    "@bb-plugins/ui": "workspace:*"
+    "typescript": "^6.0.0"
   },
   "scripts": {
     "dev": "bb plugin dev .",
@@ -84,6 +88,7 @@
     "typecheck": "tsc --noEmit",
     "test": "BUN_JSC_useFTLJIT=0 bun test --timeout=30000",
     "check": "node --import tsx ../../packages/bb-kit-dev/src/bin.ts check",
-    "clean": "rm -rf dist"
+    "clean": "rm -rf dist",
+    "vendor:three": "bun vendor/build-three-kit.ts"
   }
 }

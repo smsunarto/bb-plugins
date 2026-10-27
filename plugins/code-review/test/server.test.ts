@@ -75,6 +75,7 @@ test("registers every RPC and answers them over the host boundary", async () => 
     "deleteDraft",
     "discardReview",
     "editDraft",
+    "fileBlobs",
     "fixChecksPrompt",
     "inbox",
     "localBranch",
@@ -93,6 +94,7 @@ test("registers every RPC and answers them over the host boundary", async () => 
     "startReview",
     "status",
     "submitReview",
+    "unityPreview",
   ]);
   expect(await harness.behavior.callRpc("status")).toEqual({
     ok: true,

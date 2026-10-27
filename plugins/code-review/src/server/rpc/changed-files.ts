@@ -9,6 +9,6 @@ export const changedFiles = defineQuery({
   input: z.strictObject({ account: accountSchema, ref: prRefSchema }),
   output: changedFilesSchema,
   async execute(ctx: CodeReviewContext, { account, ref }) {
-    return loadChangedFiles(ctx.github.as(account), ref);
+    return loadChangedFiles(ctx.github.as(account), ref, account);
   },
 });

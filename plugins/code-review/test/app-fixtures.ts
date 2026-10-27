@@ -236,6 +236,13 @@ export const localBranches: LocalBranches = {
 export const localChanges: ChangedFiles = {
   headRefOid: localBranch.head,
   baseRefName: localBranch.base,
+  comparison: {
+    kind: "local",
+    hostId: localBranch.hostId,
+    path: localBranch.path,
+    base: localBranch.base,
+    head: localBranch.head,
+  },
   files: [
     {
       path: "src/limit.ts",

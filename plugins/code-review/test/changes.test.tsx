@@ -76,6 +76,7 @@ const pr: PullRequest = {
 const files: ChangedFiles = {
   headRefOid: pr.headRefOid,
   baseRefName: pr.baseRefName,
+  comparison: null,
   files: [
     {
       path: "src/login.ts",

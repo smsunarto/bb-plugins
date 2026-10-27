@@ -2,7 +2,9 @@ import { readFileSync } from "node:fs";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import type { CreateFakePluginHostOptions } from "@get-bb/plugin-sdk/testing";
 import type { CodeReviewContext } from "../src/server/lib/context.ts";
+import { createBlobReader } from "../src/server/lib/blobs.ts";
 import { type GhRunner, type RunResult, createGh, createGitHub } from "../src/server/lib/gh.ts";
+import { createUnityPreviews } from "../src/server/lib/unity-preview.ts";
 import { createStore } from "../src/server/lib/store.ts";
 
 /*
@@ -191,10 +193,13 @@ export function fakeContext(
 ) {
   const host = createFakePluginHost({ pluginId: "code-review", sdk });
   const fake = fakeGh(routes);
+  const blobs = createBlobReader({ bb: host.bb, github: fake.github });
   const ctx: CodeReviewContext = {
     bb: host.bb,
     github: fake.github,
     store: createStore(host.bb.storage.kv),
+    blobs,
+    unity: createUnityPreviews(blobs),
   };
   return { ctx, harness: host.harness, ...fake };
 }

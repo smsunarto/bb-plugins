@@ -1,12 +1,13 @@
 import { createHash } from "node:crypto";
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import { z } from "zod";
-import type {
-  ChangedFile,
-  ChangedFiles,
-  FileStatus,
-  LocalBranch,
-  LocalBranches,
+import {
+  type ChangedFile,
+  type ChangedFiles,
+  type FileStatus,
+  type LocalBranch,
+  type LocalBranches,
+  comparisonSchema,
 } from "../../shared/schema.ts";
 import type { Store } from "./store.ts";
 import { isGenerated, parseGitattributes } from "./generated.ts";
@@ -159,9 +160,17 @@ export async function loadLocalChanges(
     outputSchema: patches,
   });
   const rules = parseGitattributes("");
+  const comparison = comparisonSchema.safeParse({
+    kind: "local",
+    hostId: range.hostId,
+    path: range.path,
+    base: range.base,
+    head: range.head,
+  });
   return {
     headRefOid: range.head,
     baseRefName: range.base,
+    comparison: comparison.success ? comparison.data : null,
     files: read.files.map((file): ChangedFile => {
       const patch = file.truncated ? null : hunks(file.patch);
       const { additions, deletions } = countLines(patch);

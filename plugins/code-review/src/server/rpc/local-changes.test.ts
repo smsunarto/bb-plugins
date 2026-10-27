@@ -35,6 +35,7 @@ test("a branch's changes are read from its machine, labeled by its range", async
   expect(await callProcedure(localChanges, ctx, RANGE)).toEqual({
     headRefOid: TOP,
     baseRefName: BOTTOM,
+    comparison: { kind: "local", ...RANGE },
     files: [
       {
         path: "a.ts",

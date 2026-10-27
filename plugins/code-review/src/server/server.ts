@@ -2,10 +2,15 @@ import { instructionFiles } from "@bb-kit/core/instructions";
 import { definePlugin } from "@bb-kit/core/plugin";
 import { playbook } from "./command/playbook.ts";
 import { prompt } from "./command/prompt.ts";
+import threeKitSource, { THREE_KIT_ETAG } from "../../vendor/three-kit.ts";
+import { BLOB_PATH, THREE_KIT_PATH } from "../shared/blob-url.ts";
 import { publishActivity } from "./lib/activity.ts";
+import { serveBlob } from "./lib/blob-route.ts";
+import { createBlobReader } from "./lib/blobs.ts";
 import { createGitHub } from "./lib/gh.ts";
 import { createStore } from "./lib/store.ts";
 import { reviewSkills } from "./lib/review-scope.ts";
+import { createUnityPreviews } from "./lib/unity-preview.ts";
 import { addDraftComment } from "./rpc/add-draft-comment.ts";
 import { agentActivity } from "./rpc/agent-activity.ts";
 import { branchActivity } from "./rpc/branch-activity.ts";
@@ -13,6 +18,7 @@ import { branchReviewed } from "./rpc/branch-reviewed.ts";
 import { setBranchViewed } from "./rpc/set-branch-viewed.ts";
 import { changedFiles } from "./rpc/changed-files.ts";
 import { checks } from "./rpc/checks.ts";
+import { fileBlobs } from "./rpc/file-blobs.ts";
 import { deleteDraft } from "./rpc/delete-draft.ts";
 import { discardReview } from "./rpc/discard-review.ts";
 import { editDraft } from "./rpc/edit-draft.ts";
@@ -33,6 +39,7 @@ import { startLocalReview } from "./rpc/start-local-review.ts";
 import { startReview } from "./rpc/start-review.ts";
 import { status } from "./rpc/status.ts";
 import { submitReview } from "./rpc/submit-review.ts";
+import { unityPreview } from "./rpc/unity-preview.ts";
 import { reportFindings } from "./tools/report-findings.ts";
 import { shareChanges } from "./tools/share-changes.ts";
 
@@ -41,7 +48,14 @@ export default definePlugin({
   cliName: "review",
   command: { playbook, prompt },
   services(bb) {
-    return { github: createGitHub(), store: createStore(bb.storage.kv) };
+    const github = createGitHub();
+    const blobs = createBlobReader({ bb, github });
+    return {
+      github,
+      store: createStore(bb.storage.kv),
+      blobs,
+      unity: createUnityPreviews(blobs),
+    };
   },
   rpc: {
     status,
@@ -71,13 +85,27 @@ export default definePlugin({
     branchReviewed,
     setBranchViewed,
     startLocalReview,
+    fileBlobs,
+    unityPreview,
   },
   agents: {
     files: instructionFiles(import.meta.url),
     skills: reviewSkills,
     tools: { report_findings: reportFindings, share_changes: shareChanges },
   },
-  setup({ bb, store }) {
+  setup({ bb, store, blobs }) {
+    // Previews read whole files from here: images, models, audio, fonts.
+    bb.http.route("GET", BLOB_PATH, (context) => serveBlob(blobs, context.req.raw));
+    // three.js and its loaders, imported by the app only when a card shows a model or game image.
+    bb.http.route("GET", THREE_KIT_PATH, (context) => {
+      const headers = { etag: THREE_KIT_ETAG, "cache-control": "no-cache" };
+      if (context.req.header("if-none-match") === THREE_KIT_ETAG) {
+        return new Response(null, { status: 304, headers });
+      }
+      return new Response(threeKitSource, {
+        headers: { ...headers, "content-type": "text/javascript; charset=utf-8" },
+      });
+    });
     // A review or fix that stops working changes what its pull request or branch shows.
     const settled = async ({ thread }: { thread: { id: string } }) => {
       const linked = await store.linkForThread(thread.id);

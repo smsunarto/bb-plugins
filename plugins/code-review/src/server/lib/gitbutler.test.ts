@@ -174,6 +174,7 @@ test("a branch's patches become changed files: hunks only, counted, and labeled 
   expect(await loadLocalChanges(bb, range)).toEqual({
     headRefOid: TOP,
     baseRefName: BOTTOM,
+    comparison: { kind: "local", ...range },
     files: [
       {
         path: "src/login.ts",

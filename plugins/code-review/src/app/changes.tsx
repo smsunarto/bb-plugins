@@ -377,7 +377,12 @@ function refreshDiff({ account, ref }: Pick<PullRequest, "account" | "ref">): Pr
 // ── The review surface ────────────────────────────────────────────────────
 
 type ReviewOverview = { overview: ReactNode; section: PrTab };
-const EMPTY_CHANGED: ChangedFiles = { headRefOid: "", baseRefName: "", files: [] };
+const EMPTY_CHANGED: ChangedFiles = {
+  headRefOid: "",
+  baseRefName: "",
+  comparison: null,
+  files: [],
+};
 
 export function PrReview({ pr, ...page }: { pr: PullRequest } & ReviewOverview) {
   // Filter, folds, and focus belong to one pull request.
@@ -678,6 +683,8 @@ function ChangesView({
             onOpenChange={setOpen}
             onViewedChange={onViewedChange}
             reviewLabel={reviewLabel}
+            // A cache written before previews existed has no comparison.
+            comparison={changed.comparison ?? null}
           />
         ))}
         <OrphanThreads pr={pr} groups={orphans} />

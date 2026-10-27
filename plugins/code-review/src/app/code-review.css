@@ -32,3 +32,21 @@
   --trees-font-size-override: 12px;
   --trees-padding-inline-override: 8px;
 }
+
+/* Transparent pixels in an image preview show over a checkerboard of the theme's own tones. */
+.cr-checker {
+  background-color: var(--background);
+  background-image: conic-gradient(
+    var(--muted) 25%,
+    transparent 0 50%,
+    var(--muted) 0 75%,
+    transparent 0
+  );
+  background-size: 16px 16px;
+}
+
+/* The file card's header is already sticky; the Unity view's own toolbar scrolls with it. */
+.cr-unity .unity-diff-toolbar {
+  position: static;
+  border-top: 0;
+}

@@ -1,5 +1,5 @@
 import { memo, useEffect, useId, useMemo, useRef, useState } from "react";
-import type { RefObject } from "react";
+import type { ReactNode, RefObject } from "react";
 import {
   UrlLink,
   experimental_Icon as Icon,
@@ -7,9 +7,12 @@ import {
 } from "@get-bb/plugin-sdk/app";
 import { FileDiff, useStableCallback } from "@pierre/diffs/react";
 import type { FileDiffMetadata, SelectedLineRange } from "@pierre/diffs/react";
+import { lfsFromPatch } from "../shared/lfs.ts";
+import { type Preview, previewOf } from "../shared/previews.ts";
 import { sameRevision } from "../shared/schema.ts";
 import type {
   ChangedFile,
+  Comparison,
   DiffRevision,
   DiffSide,
   FileStatus,
@@ -21,7 +24,7 @@ import { Button } from "./components/ui/button.tsx";
 import { CONTROL_HOVER_TRANSITION } from "./components/ui/motion.ts";
 import { ReviewMark } from "./bb-review.tsx";
 import { FindingCard } from "./finding.tsx";
-import { plural } from "./format.ts";
+import { formatBytes, plural } from "./format.ts";
 import { cn } from "./lib/utils.ts";
 import {
   commentTarget,
@@ -37,6 +40,8 @@ import {
 } from "./patch.ts";
 import type { Annotation, AnnotationData, CommentTarget, DiffLines } from "./patch.ts";
 import { NewCommentForm } from "./comment-form.tsx";
+import { Segmented } from "./previews/common.tsx";
+import { FilePreview } from "./previews/file-preview.tsx";
 import { ReviewThreadView } from "./review-thread.tsx";
 import { Chip } from "./status.tsx";
 
@@ -123,6 +128,12 @@ function useGithubFileUrl(prUrl: string | null, path: string): string | null {
   return url;
 }
 
+type View = "preview" | "diff";
+const VIEWS: readonly { value: View; label: string }[] = [
+  { value: "preview", label: "Preview" },
+  { value: "diff", label: "Diff" },
+];
+
 function FileHeader({
   file,
   open,
@@ -131,6 +142,9 @@ function FileHeader({
   githubUrl,
   onViewedChange,
   reviewLabel,
+  view,
+  onView,
+  lfs,
 }: {
   file: ChangedFile;
   open: boolean;
@@ -140,6 +154,11 @@ function FileHeader({
   /** Null until review marks are available. */
   onViewedChange: ((viewed: boolean) => void) | null;
   reviewLabel: string;
+  /** The body's view, when the file has both a preview and a text diff. */
+  view: View | null;
+  onView: (view: View) => void;
+  /** The Git LFS object sizes a pointer diff names, before and after. */
+  lfs: { base: number | null; head: number | null } | null;
 }) {
   const status = STATUS_LOOK[file.status];
   const shown = file.previousPath ? `${file.previousPath} → ${file.path}` : file.path;
@@ -209,7 +228,18 @@ function FileHeader({
             Changed
           </Chip>
         ) : null}
+        {lfs ? (
+          <Chip
+            tone="text-muted-foreground"
+            title={`Stored with Git LFS: ${lfs.base === null ? "new" : formatBytes(lfs.base)} → ${lfs.head === null ? "deleted" : formatBytes(lfs.head)}`}
+          >
+            LFS
+          </Chip>
+        ) : null}
       </h3>
+      {open && view ? (
+        <Segmented label={`Show ${file.path} as`} options={VIEWS} value={view} onChange={onView} />
+      ) : null}
       <span className="flex shrink-0 items-center gap-2 text-[11px] tabular-nums">
         {threadCount > 0 ? (
           <span
@@ -564,6 +594,23 @@ function Diff({
  * threads, findings off the diff), then the diff. Parsed only while open, so
  * a folded card costs nothing.
  */
+/** A preview mounts once its card nears the viewport, as a diff does. */
+function NearView({ children }: { children: ReactNode }) {
+  const box = useRef<HTMLDivElement>(null);
+  const near = useNearView(box);
+  return <div ref={box}>{near ? children : <div aria-hidden className="h-40" />}</div>;
+}
+
+/** What the card can show besides text, and whether it shows that first. */
+function previewFor(file: ChangedFile, comparison: Comparison | null) {
+  if (!comparison) return null;
+  const preview = previewOf(file.path);
+  const lfs = lfsFromPatch(file.patch);
+  // A file with no text diff still has sizes and downloads to show.
+  if (!preview && !lfs && file.patch) return null;
+  return { comparison, preview, lfs };
+}
+
 function FileBody({
   pr,
   file,
@@ -574,6 +621,9 @@ function FileBody({
   diffStyle,
   focus,
   githubUrl,
+  preview,
+  view,
+  onView,
 }: {
   pr: PullRequest | null;
   file: ChangedFile;
@@ -584,6 +634,9 @@ function FileBody({
   diffStyle: DiffStyle;
   focus: { line: number; side: DiffSide } | null;
   githubUrl: string | null;
+  preview: { comparison: Comparison; preview: Preview | null } | null;
+  view: View;
+  onView: (view: View) => void;
 }) {
   const parsed = useMemo(() => parseFilePatch(file), [file]);
   const lines = useMemo(() => (parsed ? diffLines(parsed) : NO_LINES), [parsed]);
@@ -596,7 +649,7 @@ function FileBody({
     [placedThreads, placedFindings],
   );
 
-  if (!parsed) {
+  if (!parsed || (preview && view === "preview")) {
     return (
       <>
         {/* With no diff, no thread has a row, so every one is listed. */}
@@ -608,7 +661,17 @@ function FileBody({
           findingsStale={findingsStale}
           revision={revision}
         />
-        <NoDiff file={file} githubUrl={githubUrl} />
+        {preview ? (
+          <NearView>
+            <FilePreview
+              comparison={preview.comparison}
+              file={file}
+              preview={preview.preview}
+              onShowText={parsed ? () => onView("diff") : null}
+            />
+          </NearView>
+        ) : null}
+        {!parsed && !preview?.preview ? <NoDiff file={file} githubUrl={githubUrl} /> : null}
       </>
     );
   }
@@ -678,9 +741,12 @@ export const DiffFile = memo(function DiffFile({
   onOpenChange,
   onViewedChange,
   reviewLabel = "Viewed",
+  comparison = null,
 }: {
   pr: PullRequest | null;
   file: ChangedFile;
+  /** Where whole files are read for previews. Null shows text diffs only. */
+  comparison?: Comparison | null;
   /** The head these patches belong to. New comments are counted against it. */
   headRefOid: string;
   /** The base these patches compare against. A retarget changes it without a new head. */
@@ -701,6 +767,16 @@ export const DiffFile = memo(function DiffFile({
   const githubUrl = useGithubFileUrl(pr?.url ?? null, file.path);
   const folded = !open && startsFolded(file);
   const revision = useMemo(() => ({ headRefOid, baseRefName }), [headRefOid, baseRefName]);
+  const preview = useMemo(() => previewFor(file, comparison), [file, comparison]);
+  const [chosen, setChosen] = useState<View>("preview");
+  // A line asked for (a finding, a thread) is on the text diff.
+  useEffect(() => {
+    if (focus && file.patch) setChosen("diff");
+  }, [focus, file.patch]);
+  const view: View = preview ? chosen : "diff";
+  const lfs = preview?.lfs
+    ? { base: preview.lfs.base?.size ?? null, head: preview.lfs.head?.size ?? null }
+    : null;
 
   return (
     // Clipped, not hidden: hidden overflow would make the card the sticky
@@ -719,6 +795,9 @@ export const DiffFile = memo(function DiffFile({
         githubUrl={githubUrl}
         reviewLabel={reviewLabel}
         onViewedChange={onViewedChange ? (viewed) => onViewedChange(file, viewed) : null}
+        view={preview && file.patch ? view : null}
+        onView={setChosen}
+        lfs={lfs}
       />
       {folded ? <FoldedDiffHint file={file} onShow={() => onOpenChange(file.path, true)} /> : null}
       <div id={bodyId} hidden={!open}>
@@ -733,6 +812,9 @@ export const DiffFile = memo(function DiffFile({
             diffStyle={diffStyle}
             focus={focus}
             githubUrl={githubUrl}
+            preview={preview}
+            view={view}
+            onView={setChosen}
           />
         ) : null}
       </div>

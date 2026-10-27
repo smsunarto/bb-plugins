@@ -74,6 +74,34 @@ controls stay visible as you scroll.
 
 Existing links to Summary, Changes, or Checks open this page at that section.
 
+### Previews
+
+On **Changes**, a file a text diff cannot show well gets a preview of both
+versions, read at the same commits as the diff. **Preview** and **Diff**
+switch between the preview and its text, which stays the place for line
+comments.
+
+- **Images**: PNG, JPEG, GIF, WebP, AVIF, BMP, SVG, and ICO, plus TGA, TIFF,
+  PSD, EXR, and HDR decoded in the browser. Compare them side by side, with a
+  swipe, or as an onion skin.
+- **Models**: glTF, GLB, FBX, OBJ, STL, PLY, Collada, and 3MF, orbited
+  together, with mesh, vertex, triangle, and material counts. Files a model
+  names, such as a `.bin`, `.mtl`, or texture, are read beside it. Draco and
+  KTX2 compression are not decoded.
+- **Audio, video, and fonts** play or render in the browser.
+- **Unity assets** saved as text YAML (scenes, prefabs, materials,
+  animations, and other `.asset` kinds) show the objects, components, and
+  properties that changed. A `.meta` file shows its importer settings and
+  warns when its GUID changes.
+- **Git LFS**: a pointer is read through to its object. On GitHub, objects
+  come from the repository's LFS storage, the pull request's fork first; an
+  LFS server named in `.lfsconfig` elsewhere is not read. On an unpublished
+  branch, they come from the checkout's LFS store, fetched from its remote
+  when missing.
+
+Previews read files up to 64 MiB, and Unity assets up to 16 MiB. Decoded
+images stop at 8192 × 4096 pixels, or 4096 × 4096 for EXR and HDR.
+
 ## Review with bb
 
 **Review with bb** starts a thread on bb's default agent, at high reasoning,

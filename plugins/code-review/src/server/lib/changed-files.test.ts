@@ -145,6 +145,7 @@ test("renames keep their old path, binaries have no patch, and later pages of ma
   expect(changed).toEqual({
     headRefOid: "abc",
     baseRefName: "main",
+    comparison: null,
     files: [
       {
         path: "new.ts",
@@ -222,6 +223,7 @@ test("a push between reads loads again, and patches carry the head they were rea
   expect(changed).toEqual({
     headRefOid: "new",
     baseRefName: "main",
+    comparison: null,
     files: [
       {
         path: "a.ts",
@@ -254,6 +256,7 @@ test("a retarget between reads loads again, and patches carry the base they comp
   expect(changed).toEqual({
     headRefOid: "abc",
     baseRefName: "release",
+    comparison: null,
     files: [
       {
         path: "a.ts",
@@ -316,4 +319,40 @@ test("files the head's .gitattributes marks linguist-generated read as generated
   expect(changed.files.filter((file) => file.generated).map((file) => file.path)).toEqual([
     "pkg/cmdutil/auth_check_test.go",
   ]);
+});
+
+test("the files name both commits a preview reads, pinned in the same read as the patches", async () => {
+  const base = "4b825dc642cb6eb9a060e54bf8d69288fbee4904";
+  const page = recordedMarks();
+  const { gh } = fakeGh({
+    graphql: {
+      ChangedFiles: {
+        repository: {
+          pullRequest: {
+            ...page.repository.pullRequest,
+            baseRefOid: base,
+            headRepository: { nameWithOwner: "fork/cli" },
+          },
+        },
+      },
+      PullRequestHead: head(CLI_HEAD),
+    },
+    rest: { [FILES_PATH]: fixtureText("rest-files-cli-9000.ndjson") },
+  });
+
+  const changed = await loadChangedFiles(
+    gh,
+    { owner: "cli", repo: "cli", number: 9000 },
+    "octocat",
+  );
+
+  expect(changed.comparison).toEqual({
+    kind: "github",
+    account: "octocat",
+    owner: "cli",
+    repo: "cli",
+    headRepository: "fork/cli",
+    base,
+    head: CLI_HEAD,
+  });
 });

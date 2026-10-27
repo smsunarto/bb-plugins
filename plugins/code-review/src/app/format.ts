@@ -70,3 +70,22 @@ export function threadLines(
     ? `Lines ${thread.startLine} to ${line}${base}`
     : `Line ${line}${base}`;
 }
+
+/** A byte count as a person reads it: `812 B`, `14.2 KB`, `3.1 MB`. */
+export function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  const units = ["KB", "MB", "GB"];
+  let value = bytes / 1024;
+  let unit = 0;
+  while (value >= 1024 && unit < units.length - 1) {
+    value /= 1024;
+    unit++;
+  }
+  return `${value >= 100 ? Math.round(value) : value.toFixed(1)} ${units[unit]}`;
+}
+
+/** How a size changed, signed: `+1.2 KB`, `−340 B`, or nothing for no change. */
+export function bytesDelta(before: number, after: number): string | null {
+  if (before === after) return null;
+  return `${after > before ? "+" : "−"}${formatBytes(Math.abs(after - before))}`;
+}
