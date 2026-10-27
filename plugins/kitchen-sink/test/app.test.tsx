@@ -135,10 +135,18 @@ test("refetches in place when the server reports the thread's workspace changed"
   const before = await slot.findByTestId("bb-diff");
   expect(before.textContent).toContain("# v1");
 
-  await slot.emitRealtime(WORKSPACE_CHANGED_CHANNEL, { threadId: "other", reason: "idle" });
+  await slot.emitRealtime(WORKSPACE_CHANGED_CHANNEL, {
+    threadId: "other",
+    parentThreadId: null,
+    reason: "idle",
+  });
   expect(slot.rpcCalls).toHaveLength(1);
 
-  await slot.emitRealtime(WORKSPACE_CHANGED_CHANNEL, { threadId: "thread-1", reason: "idle" });
+  await slot.emitRealtime(WORKSPACE_CHANGED_CHANNEL, {
+    threadId: "thread-1",
+    parentThreadId: null,
+    reason: "idle",
+  });
   await slot.findByText((_, node) => node?.textContent?.includes("# v2") === true, {
     selector: "pre",
   });
@@ -154,7 +162,11 @@ test("frees the thread's entries when it is deleted and refetches after a reconn
   await slot.findByTestId("bb-diff");
   expect(embedCache.size).toBe(1);
 
-  await slot.emitRealtime(WORKSPACE_CHANGED_CHANNEL, { threadId: "thread-1", reason: "deleted" });
+  await slot.emitRealtime(WORKSPACE_CHANGED_CHANNEL, {
+    threadId: "thread-1",
+    parentThreadId: null,
+    reason: "deleted",
+  });
   // The entry is freed; the still-mounted embed starts over with a fresh fetch.
   await slot.findByTestId("bb-diff");
   expect(slot.rpcCalls).toHaveLength(2);

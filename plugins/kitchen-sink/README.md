@@ -96,9 +96,10 @@ Append a `PluginMentionProviderRegistration` to `mentionProviders` in `src/serve
 
 ## Turn completion sound
 
-Kitchen Sink plays a sound in your browser when a thread becomes idle, so you
+Kitchen Sink plays a sound in your browser when a top-level thread becomes idle, so you
 hear it on the machine you are using, wherever the BB server runs. It also plays
-while the thread is focused or the tab is in the background.
+while the thread is focused or the tab is in the background. Subthread completion
+stays silent.
 
 - **Sound:** Cursor's completion sound, the asset the retired Notify plugin used.
   The server reads it from any connected machine with Cursor at

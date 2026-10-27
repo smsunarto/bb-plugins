@@ -38,7 +38,14 @@ export function CompletionSound() {
   const elected = usePlayerElection(player);
   useRealtime(WORKSPACE_CHANGED_CHANNEL, (payload) => {
     const parsed = workspaceChangedSignalSchema.safeParse(payload);
-    if (parsed.success && parsed.data.reason === "idle" && elected.current) void player.play();
+    if (
+      parsed.success &&
+      parsed.data.reason === "idle" &&
+      parsed.data.parentThreadId === null &&
+      elected.current
+    ) {
+      void player.play();
+    }
   });
   return null;
 }

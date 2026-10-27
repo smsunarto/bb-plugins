@@ -7,12 +7,19 @@ import { WORKSPACE_CHANGED_CHANNEL, type WorkspaceChangedSignal } from "../../sh
  * app can free or refresh the embeds it cached for that thread.
  */
 export function registerWorkspaceSignals(bb: BbPluginApi): void {
-  const publish = (threadId: string, reason: WorkspaceChangedSignal["reason"]) => {
-    const signal: WorkspaceChangedSignal = { threadId, reason };
+  const publish = (
+    thread: { id: string; parentThreadId: string | null },
+    reason: WorkspaceChangedSignal["reason"],
+  ) => {
+    const signal: WorkspaceChangedSignal = {
+      threadId: thread.id,
+      parentThreadId: thread.parentThreadId,
+      reason,
+    };
     bb.realtime.publish(WORKSPACE_CHANGED_CHANNEL, signal);
   };
-  bb.events.on("thread.idle", ({ thread }) => publish(thread.id, "idle"));
-  bb.events.on("thread.failed", ({ thread }) => publish(thread.id, "failed"));
-  bb.events.on("thread.archived", ({ thread }) => publish(thread.id, "archived"));
-  bb.events.on("thread.deleted", ({ thread }) => publish(thread.id, "deleted"));
+  bb.events.on("thread.idle", ({ thread }) => publish(thread, "idle"));
+  bb.events.on("thread.failed", ({ thread }) => publish(thread, "failed"));
+  bb.events.on("thread.archived", ({ thread }) => publish(thread, "archived"));
+  bb.events.on("thread.deleted", ({ thread }) => publish(thread, "deleted"));
 }

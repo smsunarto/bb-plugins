@@ -146,7 +146,7 @@ async function openTab() {
   return renderSlot(overlay, {}, { pluginId: "kitchen-sink" });
 }
 
-const idle = { threadId: "thr_done", reason: "idle" };
+const idle = { threadId: "thr_done", parentThreadId: null, reason: "idle" };
 
 test("an idle thread plays Cursor's sound from the plugin route, and nothing else does", async () => {
   const tab = await openTab();
@@ -158,6 +158,21 @@ test("an idle thread plays Cursor's sound from the plugin route, and nothing els
   await tab.behavior.emitRealtime(WORKSPACE_CHANGED_CHANNEL, idle);
   expect(played).toEqual([SOUND_PATH, SOUND_PATH]);
   expect(chimed).toEqual([]);
+  tab.unmount();
+});
+
+test("subthread completion stays silent, including the synthesized fallback", async () => {
+  playOutcome = () => Promise.reject(new DOMException("no source", "NotSupportedError"));
+  const tab = await openTab();
+  await tab.behavior.emitRealtime(WORKSPACE_CHANGED_CHANNEL, {
+    ...idle,
+    parentThreadId: "thr_parent",
+  });
+  expect(played).toEqual([]);
+  expect(chimed).toEqual([]);
+
+  await tab.behavior.emitRealtime(WORKSPACE_CHANGED_CHANNEL, idle);
+  await waitFor(() => expect(chimed).toEqual([880, 1318.5]));
   tab.unmount();
 });
 

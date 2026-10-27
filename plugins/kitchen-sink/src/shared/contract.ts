@@ -70,13 +70,14 @@ export type SmartEmbedsRpcContract = {
 /**
  * Realtime channel the server publishes on when a thread's workspace may have
  * changed. The app drops or refreshes cached embeds for that thread, and plays
- * the completion sound when the reason is `idle`.
+ * the completion sound when a top-level thread becomes `idle`.
  */
 export const WORKSPACE_CHANGED_CHANNEL = "workspace-changed";
 
 export const workspaceChangedSignalSchema = z
   .object({
     threadId: z.string().min(1),
+    parentThreadId: z.string().min(1).nullable(),
     reason: z.enum(["idle", "failed", "archived", "deleted"]),
   })
   .strict();

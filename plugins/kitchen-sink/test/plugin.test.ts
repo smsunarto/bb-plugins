@@ -141,9 +141,40 @@ test("publishes a workspace-changed signal when a thread settles, fails, or goes
   expect(
     harness.realtimeSignals.filter((entry) => entry.channel === WORKSPACE_CHANGED_CHANNEL),
   ).toEqual([
-    { channel: WORKSPACE_CHANGED_CHANNEL, payload: { threadId: "thread-9", reason: "idle" } },
-    { channel: WORKSPACE_CHANGED_CHANNEL, payload: { threadId: "thread-9", reason: "failed" } },
-    { channel: WORKSPACE_CHANGED_CHANNEL, payload: { threadId: "thread-9", reason: "archived" } },
-    { channel: WORKSPACE_CHANGED_CHANNEL, payload: { threadId: "thread-9", reason: "deleted" } },
+    {
+      channel: WORKSPACE_CHANGED_CHANNEL,
+      payload: { threadId: "thread-9", parentThreadId: null, reason: "idle" },
+    },
+    {
+      channel: WORKSPACE_CHANGED_CHANNEL,
+      payload: { threadId: "thread-9", parentThreadId: null, reason: "failed" },
+    },
+    {
+      channel: WORKSPACE_CHANGED_CHANNEL,
+      payload: { threadId: "thread-9", parentThreadId: null, reason: "archived" },
+    },
+    {
+      channel: WORKSPACE_CHANGED_CHANNEL,
+      payload: { threadId: "thread-9", parentThreadId: null, reason: "deleted" },
+    },
+  ]);
+});
+
+test("subthread completion still refreshes embeds and carries its parent ID", async () => {
+  const { bb, harness } = createFakePluginHost({ pluginId: "kitchen-sink" });
+  await plugin(bb);
+  const thread = makeThreadResponse({ id: "child", parentThreadId: "parent" });
+  await harness.emitThreadEvent("thread.idle", { thread, lastAssistantText: null });
+  expect(
+    harness.realtimeSignals.filter((entry) => entry.channel === WORKSPACE_CHANGED_CHANNEL),
+  ).toEqual([
+    {
+      channel: WORKSPACE_CHANGED_CHANNEL,
+      payload: {
+        threadId: "child",
+        parentThreadId: "parent",
+        reason: "idle",
+      },
+    },
   ]);
 });
