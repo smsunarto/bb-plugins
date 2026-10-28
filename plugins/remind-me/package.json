@@ -41,7 +41,7 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
-    "@get-bb/plugin-sdk": "0.6.75",
+    "@get-bb/plugin-sdk": "0.6.79",
     "@types/node": "^22.0.0",
     "@testing-library/react": "16.3.2",
     "@types/react": "^19.0.0",
