@@ -1,4 +1,4 @@
-Create a clickable Review card when committed changes are ready for the human to inspect. Use `code_review_report_findings` instead to deliver an agent review's findings to the panel.
+Create a clickable Review card when committed changes are ready for the human to inspect. Use `code_review_report_findings` instead to deliver an agent review's findings to the panel, and `code_review_share_landed` once the work has merged or reached the default branch.
 
 INPUTS
 

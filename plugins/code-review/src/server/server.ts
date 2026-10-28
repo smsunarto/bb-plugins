@@ -8,6 +8,7 @@ import { serveBlob } from "./lib/blob-route.ts";
 import { createBlobReader } from "./lib/blobs.ts";
 import type { CodeReviewContext, CodeReviewServices } from "./lib/context.ts";
 import { createGitHub } from "./lib/gh.ts";
+import { forgetLanded, watchLanded } from "./lib/landed.ts";
 import { createPrWatcher } from "./lib/pr-watch.ts";
 import { createStore } from "./lib/store.ts";
 import { reviewSkills } from "./lib/review-scope.ts";
@@ -20,6 +21,7 @@ import { setBranchViewed, setBranchViewedContract } from "./rpc/set-branch-viewe
 import { changedFiles, changedFilesContract } from "./rpc/changed-files.ts";
 import { checks, checksContract } from "./rpc/checks.ts";
 import { fileBlobs, fileBlobsContract } from "./rpc/file-blobs.ts";
+import { landed, landedContract } from "./rpc/landed.ts";
 import { deleteDraft, deleteDraftContract } from "./rpc/delete-draft.ts";
 import { discardReview, discardReviewContract } from "./rpc/discard-review.ts";
 import { editDraft, editDraftContract } from "./rpc/edit-draft.ts";
@@ -50,6 +52,7 @@ import { submitReview, submitReviewContract } from "./rpc/submit-review.ts";
 import { unityPreview, unityPreviewContract } from "./rpc/unity-preview.ts";
 import { reportFindings, reportFindingsEnabled } from "./tools/report-findings.ts";
 import { shareChanges } from "./tools/share-changes.ts";
+import { shareLanded, shareLandedEnabled } from "./tools/share-landed.ts";
 import { watchPr, watchPrEnabled } from "./tools/watch-pr.ts";
 
 export const contract = defineRpcContract({
@@ -86,6 +89,7 @@ export const contract = defineRpcContract({
   unityPreview: unityPreviewContract,
   prWatches: prWatchesContract,
   stopPrWatch: stopPrWatchContract,
+  landed: landedContract,
 });
 
 function createServices(bb: BbPluginApi): CodeReviewServices {
@@ -137,6 +141,7 @@ export default async function plugin(bb: BbPluginApi): Promise<void> {
     unityPreview: (input) => unityPreview(ctx, input),
     prWatches: (input) => prWatches(ctx, input),
     stopPrWatch: (input) => stopPrWatch(ctx, input),
+    landed: (input) => landed(ctx, input),
   });
   bb.cli.register(
     defineCli({
@@ -148,12 +153,14 @@ export default async function plugin(bb: BbPluginApi): Promise<void> {
   bb.agents.registerTool(reportFindings(ctx));
   bb.agents.registerTool(shareChanges(ctx));
   bb.agents.registerTool(watchPr(ctx));
-  // Review threads get the findings tool; authors get the watch tool and the skills.
+  bb.agents.registerTool(shareLanded(ctx));
+  // Review threads get the findings tool; authors get the watch and landed tools and the skills.
   bb.agents.configure((session) => ({
     tools: [
       ...(reportFindingsEnabled(session) ? ["code_review_report_findings"] : []),
       "code_review_share_changes",
       ...(watchPrEnabled(session) ? ["code_review_watch_pr"] : []),
+      ...(shareLandedEnabled(session) ? ["code_review_share_landed"] : []),
     ],
     skills: reviewSkills(session),
   }));
@@ -179,8 +186,12 @@ export default async function plugin(bb: BbPluginApi): Promise<void> {
   };
   bb.events.on("thread.idle", settled);
   bb.events.on("thread.failed", settled);
-  const gone = ({ thread }: { thread: { id: string } }) => watcher.forget(thread.id);
+  const gone = async ({ thread }: { thread: { id: string } }) => {
+    await Promise.all([watcher.forget(thread.id), forgetLanded(ctx, thread.id)]);
+  };
   bb.events.on("thread.archived", gone);
   bb.events.on("thread.deleted", gone);
   bb.background.service("pr-watch", { start: (signal) => watcher.run(signal) });
+  // Listed work that lands after the agent's turn still launches the thread's title.
+  bb.background.service("landed", { start: (signal) => watchLanded(ctx, signal) });
 }

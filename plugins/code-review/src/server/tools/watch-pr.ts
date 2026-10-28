@@ -3,6 +3,7 @@ import { z } from "zod";
 import { accountSchema, parsePrReference, prKey } from "../../shared/schema.ts";
 import type { CodeReviewContext } from "../lib/context.ts";
 import { files } from "../lib/instructions.ts";
+import { reopenLanded } from "../lib/landed.ts";
 import { ownsPullRequests } from "../lib/review-scope.ts";
 
 const parameters = z.strictObject({
@@ -31,7 +32,12 @@ export function watchPr(ctx: CodeReviewContext) {
     ) {
       const ref = parsePrReference(reference);
       if (!ref) throw new Error("Use a GitHub pull request URL or owner/repo#123.");
-      if (!stop) return ctx.watcher.watch(threadId, ref, account);
+      if (!stop) {
+        const watching = await ctx.watcher.watch(threadId, ref, account);
+        // An open pull request means the thread's work has not all landed.
+        await reopenLanded(ctx, threadId, ref);
+        return watching;
+      }
       return (await ctx.watcher.stop(threadId, ref))
         ? `Stopped watching ${prKey(ref)}.`
         : `This thread was not watching ${prKey(ref)}.`;

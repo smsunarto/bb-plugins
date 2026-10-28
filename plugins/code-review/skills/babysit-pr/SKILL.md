@@ -86,3 +86,6 @@ explicitly requested it; otherwise report that the PR is ready. Right before a
 merge, run `git fetch` and check the PR again. Never merge when it is BEHIND or
 DIRTY, or when base commits that landed after the last green run touch this
 PR's files. Rebase, push, and wait for green again.
+
+After the PR merges, call `code_review_share_landed` with all of the thread's
+pull requests and pushed commits, and include its directive in your reply.
