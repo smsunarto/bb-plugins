@@ -1,4 +1,4 @@
-import { useComposerView } from "@get-bb/plugin-sdk/app";
+import { useComposer } from "@get-bb/plugin-sdk/app";
 import { useEffect, useRef } from "react";
 
 /**
@@ -13,7 +13,7 @@ import { useEffect, useRef } from "react";
  * device → Haptics switch still applies.
  */
 export function SendHaptic() {
-  useSendHaptic(useComposerView().run.isSubmitting);
+  useSendHaptic(useComposer().isSubmitting);
   return null;
 }
 

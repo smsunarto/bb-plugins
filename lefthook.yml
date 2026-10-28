@@ -14,5 +14,8 @@ pre-commit:
 
 pre-push:
   jobs:
+    # Git exports GIT_DIR to hooks. Left set, fixture tests that run git in a
+    # scratch repo act on this repository instead (setting core.bare, moving
+    # branches), and from a linked worktree that is the shared .git.
     - name: check repository
-      run: bun run typecheck && bun run test
+      run: unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE && bun run typecheck && bun run test

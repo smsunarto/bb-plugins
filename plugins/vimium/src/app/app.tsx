@@ -1,14 +1,15 @@
 import "./app.css";
 import { useEffect } from "react";
-import { definePluginApp, experimental_useSidebarThreadActions } from "@get-bb/plugin-sdk/app";
+import { definePluginApp, useBbNavigate } from "@get-bb/plugin-sdk/app";
 import { mountLinkHints, setWindowedThreadOpener } from "./link-hints.ts";
 
+/** Opens a windowed-out sidebar row, which has no link to click, through bb's own navigation. */
 function ThreadNavigationBridge() {
-  const threadActions = experimental_useSidebarThreadActions();
+  const navigate = useBbNavigate();
   useEffect(() => {
-    setWindowedThreadOpener((threadId) => threadActions.open(threadId));
+    setWindowedThreadOpener((threadId) => navigate.toThread(threadId));
     return () => setWindowedThreadOpener(null);
-  }, [threadActions]);
+  }, [navigate]);
   return null;
 }
 

@@ -1,7 +1,7 @@
 {
   "name": "@smsunarto/bb-plugin-scott-inline-vis",
   "version": "0.1.0",
-  "description": "Render absolute-path HTML visualizations and Markdown documents inline in assistant messages.",
+  "description": "Render HTML visualizations from absolute-path files or fenced blocks, and Markdown documents, inline in assistant messages.",
   "private": true,
   "license": "MIT",
   "author": "Scott Sunarto",
@@ -16,12 +16,12 @@
   },
   "type": "module",
   "engines": {
-    "bb": ">=0.44.0 <1.0.0",
-    "bbPluginSdk": ">=0.5.29"
+    "bb": ">=0.47.0 <1.0.0",
+    "bbPluginSdk": ">=0.6.75"
   },
   "bb": {
     "name": "Inline visualizations",
-    "description": "Render absolute-path HTML visualizations and Markdown documents inline in assistant messages.",
+    "description": "Render HTML visualizations from absolute-path files or fenced blocks, and Markdown documents, inline in assistant messages.",
     "branding": {
       "icon": "./assets/icon.svg",
       "logo": {
@@ -91,7 +91,7 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
-    "@get-bb/plugin-sdk": "0.5.29",
+    "@get-bb/plugin-sdk": "0.6.79",
     "@testing-library/react": "16.3.2",
     "@types/node": "^22.0.0",
     "@types/react": "^19.0.0",

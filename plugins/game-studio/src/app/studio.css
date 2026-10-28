@@ -48,6 +48,27 @@
   outline: 2px solid var(--primary);
   outline-offset: 2px;
 }
+/* The thread Info tab's Game row, drawn inside BB's own row rather than a Studio surface. */
+.gs-info-link {
+  display: block;
+  max-width: 100%;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--foreground);
+  font: inherit;
+  font-size: 12px;
+  text-align: start;
+  cursor: pointer;
+}
+.gs-info-link:hover {
+  text-decoration: underline;
+}
+.gs-info-link:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
 .gs-unity-checkout-panel {
   position: absolute;
   right: 0;

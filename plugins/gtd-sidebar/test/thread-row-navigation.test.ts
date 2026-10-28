@@ -5,15 +5,17 @@ import { fileURLToPath } from "node:url";
 import { afterAll, afterEach, beforeEach, describe, it, mock, spyOn } from "bun:test";
 import type {
   BbNavigate,
-  PluginSidebarPullRequest,
+  PluginBoundThreadAction,
   PluginSidebarThread,
-  PluginSidebarThreadActions,
   PluginSidebarThreadsState,
+  PluginThreadActionEntry,
+  PluginThreadActionTarget,
   PluginThreadListProps,
 } from "@get-bb/plugin-sdk/app";
 import type { RenderedSlot } from "@get-bb/plugin-sdk/testing/app";
 import type { PointerEvent } from "react";
 import type { LifecycleApi } from "../hooks/use-lifecycle.ts";
+import type { RowPullRequest } from "../lib/pull-requests.ts";
 import { changeHiddenMachines } from "../lib/machine-visibility.ts";
 import { machineVisibilityChangeSchema } from "../lib/machine-visibility-store.ts";
 import { machineColors } from "../lib/machine-colors.ts";
@@ -92,7 +94,7 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
     await import("@testing-library/react");
   const { installTestPluginRuntime, renderSlot } = await import("@get-bb/plugin-sdk/testing/app");
   installTestPluginRuntime();
-  const { createContext, createElement, startTransition, Suspense, useContext, useMemo } =
+  const { createContext, createElement, startTransition, Suspense, useContext, useMemo, useRef } =
     await import("react");
   const sdk = { ...(await import("@get-bb/plugin-sdk/app")) };
 
@@ -101,11 +103,15 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
     /** bb's primary host. Unset leaves the read unanswered, as at startup. */
     primaryHostId?: string | null;
     sidebar: PluginSidebarThreadsState;
-    actions: Partial<PluginSidebarThreadActions>;
+    /** What bb's navigation, title write and thread actions run into. */
+    actions: HostActions;
     navigate: Partial<BbNavigate>;
     lifecycle: LifecycleApi;
     unarchive: (args: { threadId: string }) => Promise<{ ok: true }>;
-    pullRequests: Readonly<Record<string, PluginSidebarPullRequest>>;
+    /** GitHub PR Status rows, keyed by environment id. */
+    pullRequests: Readonly<Record<string, RowPullRequest>>;
+    /** A plugin's per-thread notification level, offered as a choice list. */
+    notifications?: Readonly<Record<string, string>>;
     splitThreads: readonly string[];
     focusedSplitThread?: string;
     splitEnabled: boolean;
@@ -120,20 +126,23 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
     assert.ok(host);
     return host;
   }
-  const useActions = mock(() => ({
-    ...sdk.experimental_useSidebarThreadActions(),
-    ...useHost().actions,
-  }));
   mock.module("@get-bb/plugin-sdk/app", () => ({
     ...sdk,
     experimental_useSidebarThreads: () => useHost().sidebar,
     // bb's client is stable for the plugin's lifetime; effects keyed on it
     // must not refire on every render here either.
     useSdk: () => {
-      const { unarchive, primaryHostId } = useHost();
+      const { unarchive, primaryHostId, actions } = useHost();
+      const rename = useRef(actions.rename);
+      rename.current = actions.rename;
       return useMemo(
         () => ({
-          threads: { unarchive, list: async () => [] },
+          threads: {
+            unarchive,
+            update: ({ threadId, title }: { threadId: string; title: string }) =>
+              rename.current(threadId, title),
+            list: async () => [],
+          },
           subscribe: () => () => {},
           system: {
             config: () =>
@@ -145,8 +154,15 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
         [unarchive, primaryHostId],
       );
     },
-    experimental_useSidebarThreadActions: useActions,
-    useBbNavigate: () => ({ ...sdk.useBbNavigate(), ...useHost().navigate }),
+    useBbNavigate: () => {
+      const host = useHost();
+      return {
+        ...sdk.useBbNavigate(),
+        toThread: host.actions.open,
+        toCompose: host.actions.openNewThread,
+        ...host.navigate,
+      };
+    },
     experimental_useSidebarThreadSplit: (threadId: string) => {
       const host = useHost();
       return {
@@ -169,10 +185,29 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
           : {},
       };
     },
-    experimental_useSidebarThreadPullRequest: (threadId: string) => ({
-      isLoading: false,
-      pullRequest: useHost().pullRequests[threadId] ?? null,
-    }),
+    // GitHub PR Status's keyed read, answered from the host's rows. The
+    // stored row keeps its identity, as the shared query cache's does.
+    experimental_useRpcKeyedQuery: (options: {
+      pluginId?: string;
+      method: string;
+      keys: readonly string[];
+    }) => {
+      const { pullRequests } = useHost();
+      assert.equal(options.pluginId, "bb--github-pr-status");
+      assert.equal(options.method, "pullRequests");
+      const data = Object.fromEntries(
+        options.keys.map((key) => {
+          const pullRequest = pullRequests[key];
+          return [
+            key,
+            pullRequest === undefined
+              ? { outcome: "absent" }
+              : { outcome: "available", pullRequest },
+          ];
+        }),
+      );
+      return { data, error: null, isLoading: false, isFetching: false, refetch: async () => {} };
+    },
   }));
   mock.module("../hooks/use-lifecycle.ts", () => ({ useLifecycle: () => useHost().lifecycle }));
   mock.module("../hooks/use-naming-threads.ts", () => ({
@@ -271,16 +306,123 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
     } satisfies LifecycleApi;
   }
 
+  /**
+   * bb's navigation (`toThread`, `toCompose`), its silent title write, and
+   * what each of bb's thread actions does when run.
+   */
   function actions() {
     return {
-      open: mock<PluginSidebarThreadActions["open"]>(() => {}),
-      openNewThread: mock<PluginSidebarThreadActions["openNewThread"]>(() => {}),
-      archive: mock<PluginSidebarThreadActions["archive"]>(() => {}),
-      setPinned: mock<PluginSidebarThreadActions["setPinned"]>(async () => {}),
-      setRead: mock<PluginSidebarThreadActions["setRead"]>(async () => {}),
-      rename: mock<PluginSidebarThreadActions["rename"]>(async () => {}),
-      requestDelete: mock<PluginSidebarThreadActions["requestDelete"]>(() => {}),
+      open: mock<BbNavigate["toThread"]>(() => {}),
+      openNewThread: mock<BbNavigate["toCompose"]>(() => {}),
+      rename: mock(async (_threadId: string, _title: string) => {}),
+      copyLink: mock((_threadId: string) => {}),
+      setPinned: mock((_threadId: string, _pinned: boolean) => {}),
+      setRead: mock((_threadId: string, _read: boolean) => {}),
+      setNotifications: mock((_threadId: string, _level: string | undefined) => {}),
+      archive: mock((_threadId: string) => {}),
+      requestDelete: mock((_threadId: string) => {}),
     };
+  }
+  type HostActions = ReturnType<typeof actions>;
+
+  /**
+   * bb's thread action registry as it evaluates one thread: its own actions
+   * in its menu order and groups, and, where the host sets a level, a
+   * plugin's Notifications choice list.
+   */
+  function registryEntries(
+    target: PluginThreadActionTarget,
+    requestRename: (threadId: string) => void,
+    host: HostState,
+    inbox: PluginThreadListProps,
+  ): PluginThreadActionEntry[] {
+    const calls = host.actions;
+    const entry = (
+      key: string,
+      group: string,
+      action: Omit<PluginBoundThreadAction, "run">,
+      run: (value?: string) => void,
+    ): PluginThreadActionEntry => ({
+      key,
+      pluginId: key.slice(0, key.indexOf("/")),
+      group,
+      action: { ...action, run: async (value) => run(value) },
+    });
+    const entries: PluginThreadActionEntry[] = [];
+    // bb offers no split on a phone, nor for the thread already in focus.
+    if (!inbox.isCompactViewport && target.id !== inbox.activeThreadId) {
+      entries.push(
+        entry("bb--core/split", "1_open", { label: "Open in split", icon: "Columns2" }, () =>
+          calls.open(target.id, { split: true }),
+        ),
+      );
+    }
+    entries.push(
+      entry("bb--core/copyLink", "1_open", { label: "Copy link", icon: "Copy" }, () =>
+        calls.copyLink(target.id),
+      ),
+    );
+    const pinned = target.pinnedAt !== null;
+    entries.push(
+      entry(
+        "bb--core/pin",
+        "1_state",
+        { label: pinned ? "Unpin" : "Pin", icon: pinned ? "PinOff" : "Pin" },
+        () => calls.setPinned(target.id, !pinned),
+      ),
+    );
+    entries.push(
+      entry(
+        "bb--core/read",
+        "1_state",
+        { label: target.isUnread ? "Mark read" : "Mark unread", icon: "MailOpen" },
+        () => calls.setRead(target.id, target.isUnread),
+      ),
+    );
+    const level = host.notifications?.[target.id];
+    if (level !== undefined) {
+      entries.push(
+        entry(
+          "bb--push-notifications/notifications",
+          "1_state",
+          {
+            label: "Notifications",
+            detail: level === "muted" ? "Muted" : "All activity",
+            icon: "Notification",
+            choices: {
+              items: [
+                { id: "all", label: "All activity", selected: level === "all" },
+                { id: "muted", label: "Muted", selected: level === "muted" },
+              ],
+              hint: "Children follow their parent.",
+            },
+          },
+          (value) => calls.setNotifications(target.id, value),
+        ),
+      );
+    }
+    entries.push(
+      entry("bb--core/rename", "2_organize", { label: "Rename", icon: "Edit" }, () =>
+        requestRename(target.id),
+      ),
+    );
+    entries.push(
+      entry(
+        "bb--core/archive",
+        "4_lifecycle",
+        { label: target.archivedAt === null ? "Archive" : "Unarchive", icon: "Archive" },
+        () => calls.archive(target.id),
+      ),
+    );
+    entries.push(
+      entry(
+        "bb--core/delete",
+        "4_lifecycle",
+        { label: "Delete", icon: "Trash2", variant: "destructive" },
+        () => calls.requestDelete(target.id),
+      ),
+    );
+    return entries;
   }
 
   function hostState(threads: readonly PluginSidebarThread[]): HostState {
@@ -341,6 +483,8 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
     };
     let hiddenMachineIds: string[] = [];
     const slot = renderSlot({ component: Inbox }, current, {
+      threadActions: (target, { requestRename }) =>
+        registryEntries(target, requestRename, current.host, current.inbox),
       ...options,
       settings,
       rpc: {
@@ -462,7 +606,6 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
     configure({ reactStrictMode: false });
     localStorage.clear();
     rowBodyRender.mockClear();
-    useActions.mockClear();
   });
 
   afterEach(() => cleanup());
@@ -773,10 +916,8 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
         assert.deepEqual(order, ["pinned", "a", "b", "c", "waiting", "snoozed", "settled"]);
         const retained = order.map((id) => row(view.slot, id));
         rowBodyRender.mockClear();
-        useActions.mockClear();
         view.update({ host: { ...host } });
         assert.equal(rowBodyRender.mock.calls.length, 0);
-        assert.equal(useActions.mock.calls.length, 1);
         view.updateInbox({ activeThreadId: "b", onNavigate: () => {} });
         assert.equal(rowBodyRender.mock.calls.length, 2);
         assert.equal(row(view.slot, "a").parentElement!.dataset.sidebarThreadActive, undefined);
@@ -957,7 +1098,17 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
 
     it("renders changed title, status, PR and split tint while retaining other rows", () => {
       const a = thread("a");
-      const b = thread("b");
+      const b = thread("b", {
+        environment: {
+          id: "env-b",
+          name: "env-b",
+          branchName: null,
+          path: null,
+          isWorktree: true,
+          providerId: null,
+          workspaceDisplayKind: null,
+        },
+      });
       let host = hostState([a, b]);
       const view = mount(host);
       rowBodyRender.mockClear();
@@ -992,7 +1143,7 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
       assert.equal(rowBodyRender.mock.calls.length, 1);
       assert.ok(within(row(view.slot, "b").parentElement!).getByLabelText("Thread failed"));
 
-      const pullRequest: PluginSidebarPullRequest = {
+      const pullRequest: RowPullRequest = {
         number: 12,
         title: "Row rendering",
         url: "https://example.com/pull/12",
@@ -1000,7 +1151,7 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
         attention: "checks_failed",
       };
       rowBodyRender.mockClear();
-      host = { ...host, pullRequests: { b: pullRequest } };
+      host = { ...host, pullRequests: { "env-b": pullRequest } };
       view.update({ host });
       assert.equal(rowBodyRender.mock.calls.length, 1);
       const pr = view.slot.getByRole("link", { name: "#12" });
@@ -1008,7 +1159,10 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
       assert.equal(pr.getAttribute("title"), pullRequest.title);
       assert.ok(pr.classList.contains("text-destructive-text"));
       rowBodyRender.mockClear();
-      host = { ...host, pullRequests: { b: { ...pullRequest, attention: "ready_to_merge" } } };
+      host = {
+        ...host,
+        pullRequests: { "env-b": { ...pullRequest, attention: "ready_to_merge" } },
+      };
       view.update({ host });
       assert.equal(rowBodyRender.mock.calls.length, 1);
       assert.ok(
@@ -1273,7 +1427,7 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
         fireEvent.click(toggle);
         fireEvent.click(view.slot.getByRole("button", { name: "New thread in Two" }));
         assert.deepEqual(currentActions.openNewThread.mock.calls, [
-          [{ projectId: "two", hostId: undefined, focusPrompt: true }],
+          [{ projectId: "two", focusPrompt: true }],
         ]);
         assert.equal(onNavigate.mock.calls.length, 1);
         assert.equal(toggle.getAttribute("aria-expanded"), "false");
@@ -1353,7 +1507,7 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
       );
       fireEvent.click(view.slot.getByRole("button", { name: "New thread in One" }));
       assert.deepEqual(currentActions.openNewThread.mock.calls, [
-        [{ projectId: "one", hostId: undefined, focusPrompt: true }],
+        [{ projectId: "one", focusPrompt: true }],
       ]);
       await act(async () => {});
     });
@@ -2095,9 +2249,20 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
         actions: currentActions,
       };
       mount(host, { activeThreadId: "a" });
-      settleThread("a");
+      act(() => settleThread("a"));
       assert.deepEqual(currentActions.open.mock.calls, [["b"]]);
       assert.deepEqual(currentActions.archive.mock.calls, [["a"]]);
+    });
+
+    it("never runs bb's Archive on a thread that is already settled", () => {
+      // An archived thread's Archive entry is Unarchive, so a settle from the
+      // palette on a Settled row must leave it where it is.
+      const currentActions = actions();
+      const host = { ...hostState([thread("a"), settledThread("old")]), actions: currentActions };
+      mount(host, { activeThreadId: "old" });
+      act(() => settleThread("old"));
+      assert.equal(currentActions.archive.mock.calls.length, 0);
+      assert.equal(currentActions.open.mock.calls.length, 0);
     });
 
     it("settles against reordered rows while the selected row remains memoized", () => {
@@ -2212,12 +2377,14 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
       });
       view.updateInbox({ onNavigate });
       assert.equal(rowBodyRender.mock.calls.length, 0);
+      // Every shelf opens through bb's navigation, which applies its own split
+      // rules, archived threads included.
       fireEvent.click(row(view.slot, "settled"), { ctrlKey: true });
-      assert.deepEqual(toThread.mock.calls, [["settled"]]);
-      assert.equal(currentActions.open.mock.calls.length, 0);
+      assert.deepEqual(toThread.mock.calls, [["settled", { split: true }]]);
       assert.equal(onNavigate.mock.calls.length, 1);
       fireEvent.click(row(view.slot, "snoozed"));
-      assert.deepEqual(currentActions.open.mock.calls, [["snoozed", { split: false }]]);
+      assert.deepEqual(toThread.mock.calls[1], ["snoozed"]);
+      assert.equal(currentActions.open.mock.calls.length, 0);
       assert.equal(onNavigate.mock.calls.length, 2);
       fireEvent.click(rowButton(view.slot, "snoozed", "Wake now"));
       fireEvent.click(rowButton(view.slot, "settled", "Un-settle"));
@@ -2273,9 +2440,9 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
             "Settle",
             "Snooze until tomorrow",
             ...(!isCompactViewport ? ["Open in split"] : []),
-            "Copy thread link",
-            "Mark unread",
+            "Copy link",
             "Pin",
+            "Mark unread",
             "Rename",
             "Delete",
           ],
@@ -2291,12 +2458,10 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
         fireEvent.click(screen.getByRole("menuitem", { name: "Mark unread" }));
         assert.deepEqual(currentActions.setRead.mock.calls, [["a", false]]);
 
-        const writeText = mock(async (_text: string) => {});
-        Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText } });
         await openMenu(row(view.slot, "a"), isCompactViewport);
-        fireEvent.click(screen.getByRole("menuitem", { name: "Copy thread link" }));
+        fireEvent.click(screen.getByRole("menuitem", { name: "Copy link" }));
         await act(async () => {});
-        assert.deepEqual(writeText.mock.calls, [["http://localhost/projects/one/threads/a"]]);
+        assert.deepEqual(currentActions.copyLink.mock.calls, [["a"]]);
 
         await openMenu(row(view.slot, "a"), isCompactViewport);
         fireEvent.click(screen.getByRole("menuitem", { name: "Rename" }));
@@ -2330,6 +2495,57 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
         fireEvent.click(screen.getByRole("menuitem", { name: "Mark read" }));
         assert.deepEqual(currentActions.setRead.mock.calls, [["a", true]]);
         await act(async () => {});
+      },
+    );
+
+    it.each([false, true])(
+      "lists another plugin's choice action and runs the pick with mobile=%s",
+      async (isCompactViewport) => {
+        const currentActions = actions();
+        const host = {
+          ...hostState([thread("a"), thread("b")]),
+          actions: currentActions,
+          notifications: { a: "all" },
+        };
+        const view = mount(host, { activeThreadId: "b", isCompactViewport });
+        await openMenu(row(view.slot, "a"), isCompactViewport);
+        // It joins bb's state group, after Pin and Mark unread, and its current
+        // value is read out with its name.
+        const names = screen
+          .getAllByRole("menuitem")
+          .map((item) => item.getAttribute("aria-label") ?? item.textContent);
+        assert.equal(
+          names.indexOf("Notifications, All activity"),
+          names.indexOf("Mark unread") + 1,
+        );
+        const trigger = screen.getByRole("menuitem", { name: "Notifications, All activity" });
+        if (isCompactViewport) {
+          // The phone sheet swaps to the choice list in place, with Back.
+          fireEvent.click(trigger);
+          await act(async () => {});
+          assert.deepEqual(
+            screen.getAllByRole("menuitem").map((item) => item.textContent),
+            ["Back", "All activity", "Muted"],
+          );
+          fireEvent.click(screen.getByRole("menuitem", { name: "Back" }));
+          await act(async () => {});
+          fireEvent.click(screen.getByRole("menuitem", { name: "Notifications, All activity" }));
+          await act(async () => {});
+        } else {
+          // A submenu off its row, on the same material as the menu.
+          fireEvent.click(trigger);
+          const submenu = await screen.findByRole("menu", { name: "Notifications" });
+          assert.equal(submenu.style.background, "transparent");
+          assert.match(submenu.firstElementChild?.className ?? "", /backdrop-blur-xl/);
+        }
+        assert.ok(screen.getByText("Children follow their parent."));
+        assert.equal(
+          screen.getByRole("menuitem", { name: "All activity" }).getAttribute("aria-current"),
+          "true",
+        );
+        fireEvent.click(screen.getByRole("menuitem", { name: "Muted" }));
+        await act(async () => {});
+        assert.deepEqual(currentActions.setNotifications.mock.calls, [["a", "muted"]]);
       },
     );
 

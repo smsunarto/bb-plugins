@@ -23,8 +23,8 @@
   "type": "module",
   "private": true,
   "engines": {
-    "bb": ">=0.40.0 <1.0.0",
-    "bbPluginSdk": ">=0.4.39"
+    "bb": ">=0.47.0 <1.0.0",
+    "bbPluginSdk": ">=0.6.75"
   },
   "bb": {
     "name": "Vimium",
@@ -56,7 +56,7 @@
     "@bb-kit/core": "workspace:*"
   },
   "devDependencies": {
-    "@get-bb/plugin-sdk": "0.5.29",
+    "@get-bb/plugin-sdk": "0.6.79",
     "@pierre/diffs": "^1.2.9",
     "@radix-ui/react-alert-dialog": "^1.1.19",
     "@radix-ui/react-context-menu": "^2.3.3",

@@ -26,8 +26,8 @@
     "instructions/"
   ],
   "engines": {
-    "bb": ">=0.46",
-    "bbPluginSdk": ">=0.5.29 <0.7"
+    "bb": ">=0.47.0",
+    "bbPluginSdk": ">=0.6.75 <0.7"
   },
   "bb": {
     "name": "Game Studio",
@@ -58,7 +58,7 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
-    "@get-bb/plugin-sdk": "0.5.29",
+    "@get-bb/plugin-sdk": "0.6.79",
     "@types/better-sqlite3": "^7.6.12",
     "@types/node": "^22.0.0",
     "@types/react": "^19.0.0",

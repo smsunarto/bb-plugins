@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, expect, test } from "bun:test";
 import { installDom } from "@bb-kit/core/testing";
+import type { ExperimentalThreadActionTabProps } from "@get-bb/plugin-sdk/app";
+import type { ComponentType } from "react";
 import type { Reminder } from "../shared/reminder.ts";
 
 installDom();
@@ -27,9 +29,13 @@ async function renderReminders(page: boolean) {
     if (!registration) throw new Error("Missing reminders page");
     return renderSlot(registration, { subPath: "" }, options);
   }
-  const registration = app.threadPanelActions[0];
+  const registration = app.tabs.find(
+    (tab) =>
+      tab.id === "reminders" && tab.context.kind === "thread" && tab.availability === "action",
+  );
   if (!registration) throw new Error("Missing reminders panel");
-  return renderSlot(registration, { threadId: "thr_target", params: null }, options);
+  const component = registration.component as ComponentType<ExperimentalThreadActionTabProps>;
+  return renderSlot({ component }, { threadId: "thr_target", params: null }, options);
 }
 
 test("adds a saved note to the thread draft without submitting it or navigating away", async () => {

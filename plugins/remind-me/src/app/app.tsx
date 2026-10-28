@@ -191,7 +191,9 @@ export default definePluginApp((app) => {
     path: "reminders",
     component: RemindersPage,
   });
-  app.slots.threadPanelAction({
+  app.slots.experimental_tab({
+    context: { kind: "thread" },
+    availability: "action",
     id: "reminders",
     title: "Reminders",
     icon: "Bookmark",

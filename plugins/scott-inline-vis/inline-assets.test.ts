@@ -5,10 +5,11 @@ import {
   type InlineAssetChunk,
   injectWideEscapeBridge,
   prepareInlineAssets,
+  prepareInlineDocument,
   resolvePreviewAssetUrl,
 } from "./inline-assets.ts";
 import { BufferSource, EncodedPacketSink, Input, MP4 } from "mediabunny";
-import { chunkedResponse, mp4File, STREAM_TYPE } from "./mp4-fixture.ts";
+import { blobText, chunkedResponse, mp4File, STREAM_TYPE } from "./mp4-fixture.ts";
 
 afterEach(() => vi.restoreAllMocks());
 const text = (value: string) => new TextEncoder().encode(value);
@@ -92,7 +93,7 @@ test("reads an asset through the authenticated preview boundary", async () => {
     redirect: "error",
     signal,
   });
-  expect(await blob.text()).toBe("video");
+  expect(await blobText(blob)).toBe("video");
   expect(create).not.toHaveBeenCalled();
 });
 
@@ -412,7 +413,7 @@ test("leaves a video it cannot rewrap to its Blob", async () => {
   const onChunk = vi.fn();
   const blob = await fetchInlineAsset(asset!, new AbortController().signal, onChunk);
   expect(onChunk).not.toHaveBeenCalled();
-  expect(await blob.text()).toBe("not an mp4");
+  expect(await blobText(blob)).toBe("not an mp4");
   expect(blob.type).toBe("video/webm");
 });
 
@@ -669,4 +670,14 @@ test("local-media Escape leaves Wide view with a persistent manual popover", asy
     "*",
   );
   dom.window.close();
+});
+
+test("prepares HTML written in a reply without fetching its relative media", () => {
+  const prepared = prepareInlineDocument('<img src="chart.png"><video src="clip.mp4"></video>');
+  expect(prepared.assets).toEqual([]);
+  const doc = new DOMParser().parseFromString(prepared.html, "text/html");
+  expect(doc.querySelector("img")?.getAttribute("src")).toBe("chart.png");
+  expect(doc.querySelector("video")?.getAttribute("src")).toBe("clip.mp4");
+  expect(doc.querySelector("base")).toBeNull();
+  expect(prepared.html).toContain(`token:${JSON.stringify(prepared.token)}`);
 });

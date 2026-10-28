@@ -39,17 +39,12 @@ export const imageRequest = z.strictObject({
 /** Media models whose prompts a BB model can write from a prompting guide. */
 export const briefRecipe = z.enum(["nano-banana", "concept-art", "omni-video", "fal-video"]);
 export type BriefRecipe = z.output<typeof briefRecipe>;
-export const reasoningLevel = z.enum([
-  "none",
-  "low",
-  "medium",
-  "high",
-  "xhigh",
-  "ultracode",
-  "max",
-  "ultra",
-]);
-export const serviceTier = z.enum(["default", "fast"]);
+/**
+ * Reasoning levels and service tiers are ids the selected model declares, as BB's SDK types them,
+ * so a model's own levels and tiers (such as Codex Ultrafast) round-trip through a saved node.
+ */
+export const reasoningLevel = z.string().min(1).max(100);
+export const serviceTier = z.string().min(1).max(100);
 /** The BB agent a text node or a review runs on, as `experimental_ProviderModelPicker` resolves it. */
 export const agentSelection = z.strictObject({
   providerId: z.string().min(1).max(100),

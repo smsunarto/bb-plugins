@@ -53,9 +53,6 @@ const scenarios: Record<string, (db: Db) => unknown> = {
   "binding undefined throws": (db) =>
     // @ts-expect-error -- deliberately unbindable: upstream must never rely on it
     outcome(() => db.prepare("SELECT ? v").get(undefined)),
-  "binding a boolean throws": (db) =>
-    // @ts-expect-error -- deliberately unbindable: upstream must never rely on it
-    outcome(() => db.prepare("SELECT ?, ? v").get(1, true)),
   "named parameters bind": (db) => ({ ...db.prepare("SELECT :a v").get({ a: 1 }) }),
   "a syntax error throws": (db) => outcome(() => db.exec("SELEC 1")),
   "a unique violation throws": (db) => {
@@ -103,6 +100,21 @@ describe("DatabaseSync over better-sqlite3", () => {
     });
     expect(scenarios["a foreign key violation throws"]!(new NodeDatabaseSync(":memory:"))).toEqual({
       error: { name: "Error", message: "FOREIGN KEY constraint failed", code: "ERR_SQLITE_ERROR" },
+    });
+  });
+
+  // Not a parity scenario: Node 22's node:sqlite throws here, Node 24's binds
+  // 1 and 0. The adapter keeps throwing, since upstream never binds booleans.
+  it("refuses to bind a boolean", () => {
+    installDatabaseOpener((path, options) => new BetterSqlite3(path, options));
+    const db = new DatabaseSync(":memory:");
+    // @ts-expect-error -- deliberately unbindable: upstream must never rely on it
+    expect(outcome(() => db.prepare("SELECT ?, ? v").get(1, true))).toEqual({
+      error: {
+        name: "TypeError",
+        message: "Provided value cannot be bound to SQLite parameter 2.",
+        code: "ERR_INVALID_ARG_TYPE",
+      },
     });
   });
 

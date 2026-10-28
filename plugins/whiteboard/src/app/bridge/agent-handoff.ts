@@ -1,6 +1,9 @@
+import type { ComposerInsertPart } from "@get-bb/plugin-sdk/app";
 import {
+  SESSION_MENTION_PROVIDER,
   type SelectionHandoff,
   selectionHandoff,
+  sessionMentionId,
 } from "../../shared/contracts/selection-handoff.ts";
 
 /**
@@ -42,4 +45,23 @@ export async function copyText(
   if (!sink || !parsed.success) return false;
   sink(parsed.data);
   return true;
+}
+
+/**
+ * What "Add to chat" appends to a composer: the selection as a Markdown quote,
+ * then, on the next line, a pill naming the session version it came from.
+ */
+export function handoffParts(handoff: SelectionHandoff): ComposerInsertPart[] {
+  const pill = {
+    provider: SESSION_MENTION_PROVIDER,
+    id: sessionMentionId(handoff),
+    label: handoff.title,
+  };
+  const text = handoff.quote.replace(/\r\n?/gu, "\n").trim();
+  if (text.length === 0) return [pill, " "];
+  const quote = text
+    .split("\n")
+    .map((line) => (line.length > 0 ? `> ${line}` : ">"))
+    .join("\n");
+  return [`${quote}\n`, pill, " "];
 }

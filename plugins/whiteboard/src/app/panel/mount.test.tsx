@@ -17,7 +17,7 @@ const sdk = vi.hoisted(() => ({
   realtime: new Map<string, (payload: unknown) => void>(),
   connection: "connected" as "connected" | "connecting" | "reconnecting",
   context: { projectId: null as string | null, threadId: null as string | null },
-  composer: { addQuote: (_text: string) => {}, insertMention: (_mention: unknown) => {} },
+  composer: { insert: (_parts: unknown, _options?: unknown) => {}, focus: () => {} },
   navigate: {
     toPluginPanel: (_path: string, _options?: unknown) => {},
     toCompose: (_options?: unknown) => {},
@@ -561,24 +561,27 @@ describe("WhiteboardMount", () => {
   });
 
   it("adds a canvas selection to the thread composer, or to bb compose from the full page", async () => {
-    const addQuote = vi.spyOn(sdk.composer, "addQuote");
-    const insertMention = vi.spyOn(sdk.composer, "insertMention");
+    const insert = vi.spyOn(sdk.composer, "insert");
+    const focus = vi.spyOn(sdk.composer, "focus");
     const toCompose = vi.spyOn(sdk.navigate, "toCompose");
     const handoff = (quote: string) => ({ quote, sessionId: SESSION, version: 2, title: "Auth" });
     const pill = { provider: "session", id: `${SESSION}@2`, label: "Auth" };
+    const atEnd = { at: "end", block: true };
     const thread = render(<WhiteboardMount sessionId={SESSION} threadId="thread-1" info={INFO} />);
     const threadCanvas = await screen.findByTestId("api-canvas");
     expect(await copyText("agent context", handoff("quote text"), threadCanvas)).toBe(true);
-    expect(addQuote.mock.calls).toEqual([["quote text"]]);
-    expect(insertMention.mock.calls).toEqual([[pill]]);
+    expect(insert.mock.calls).toEqual([[["> quote text\n", pill, " "], atEnd]]);
+    expect(focus).toHaveBeenCalledTimes(1);
     expect(toCompose).not.toHaveBeenCalled();
     thread.unmount();
 
     render(<WhiteboardMount sessionId={SESSION} info={INFO} />);
     const pageCanvas = await screen.findByTestId("api-canvas");
     expect(await copyText("agent context", handoff("from the full page"), pageCanvas)).toBe(true);
-    expect(addQuote.mock.calls).toEqual([["quote text"], ["from the full page"]]);
-    expect(insertMention.mock.calls).toEqual([[pill], [pill]]);
+    expect(insert.mock.calls).toEqual([
+      [["> quote text\n", pill, " "], atEnd],
+      [["> from the full page\n", pill, " "], atEnd],
+    ]);
     expect(toCompose.mock.calls).toEqual([[{ focusPrompt: true }]]);
   });
 

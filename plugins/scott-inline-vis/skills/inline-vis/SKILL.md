@@ -5,7 +5,7 @@ description: "Show interactive explanations, charts, simulations, comparisons, U
 
 # Show a preview in conversation
 
-Use this skill when a visual helps someone understand behavior, compare options, or review an interface in chat. Write the preview file on the thread host and emit its absolute path. Verify the preview before the final handoff.
+Use this skill when a visual helps someone understand behavior, compare options, or review an interface in chat. Write a small fragment directly in the reply as a fenced block, or write a preview file on the thread host and emit its absolute path. Verify the preview before the final handoff.
 
 ## Choose the format
 
@@ -18,6 +18,32 @@ Choose the smallest format that answers the request:
 - Preview existing Markdown plans, summaries, and reports with the same directive
 
 A website, component, or app request remains project work. A conversation preview does not replace that deliverable.
+
+## Choose the form
+
+| Form                               | Use it for                                                                                              |
+| ---------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| ` ```scott-inline-vis ` block      | A small, self-contained HTML fragment written in the reply. Nothing is written to disk                  |
+| `::inline-vis{file="…"}` directive | Larger previews, Markdown, local media, saved state, shared Tweak adjustments, and files the user keeps |
+
+## Write a fenced block
+
+Open a fenced code block with the language `scott-inline-vis` and put the HTML in its body. Author it like a fragment file, following the rest of this skill:
+
+````text
+```scott-inline-vis
+<div id="latency-viz">…</div>
+<script>…</script>
+```
+````
+
+- The block renders when its closing fence arrives. While it streams, the card shows "Writing visualization…". A reply that ends before the closing fence, or an empty block, shows as an ordinary code block
+- Use four backticks around the block when the HTML itself contains three
+- Fragments receive the full runtime and size to their content. A full document uses a fixed 224px viewport with Wide view, so prefer a fragment. The block takes no attributes
+- The block has no directory. Inline CSS, JavaScript, and data, or load them from absolute `https://` URLs. Relative image and video paths do not load
+- `bb.setWidgetState` keeps values only while the preview stays open, and `inline_vis_get_state` cannot read them. The Tweak panel adjusts the preview without **Add changes to chat**. `bb.sendFollowUp` works as in a file preview. Use a file when state or adjustments must persist or reach the agent
+- The header's code button shows the block's source. Every character is part of your reply, so keep the block small
+- The language is `scott-inline-vis`. bb's built-in renderer owns the `inline-vis` fence language, and installing this plugin turns that renderer off, so an `inline-vis` fence usually stays an ordinary code block
 
 ## Emit the directive
 
@@ -105,7 +131,7 @@ Omit `height` for fragments that follow their content. A body ResizeObserver rep
 
 Set `height="480"` only when a fixed viewport is useful. Explicit heights must be whole numbers from 120 through 1200. Documents and Markdown retain a fixed 224px default when `height` is absent.
 
-Verify the rendered preview before the final handoff. For bb-specific behavior, first post a complete preview directive so its iframe exists. Inspect that frame, fix the file, and collapse/reopen it to check corrections. Re-emit the verified preview in the final response.
+Verify the rendered preview before the final handoff. For bb-specific behavior, first post a complete preview directive or fenced block so its iframe exists. Inspect that frame, fix the file, and collapse/reopen it to check corrections. A fenced block changes only in a new message. Re-emit the verified preview in the final response.
 
 Check these behaviors:
 

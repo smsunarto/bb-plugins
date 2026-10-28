@@ -1,7 +1,8 @@
-import { createElement, useMemo } from "react";
+import { createElement, useContext, useEffect, useMemo } from "react";
 import type { ReactElement, ReactNode } from "react";
 import {
   QueryClient,
+  QueryClientContext,
   QueryClientProvider,
   useMutation as useTanStackMutation,
   useQuery as useTanStackQuery,
@@ -200,20 +201,28 @@ function procedureHooks(key: string): RuntimeProcedureHooks {
     },
     useQuery(...args) {
       const transport = useTransport();
+      const client = usePluginQueryClient();
       const { input, options } = readUseQueryArguments(args);
       // The derived fields come LAST — options can never override them.
-      return useTanStackQuery({
-        ...options,
-        queryKey: deriveQueryKey(key, input),
-        queryFn: () => transport.call(key, wireInput(input)),
-      });
+      return useTanStackQuery(
+        {
+          ...options,
+          queryKey: deriveQueryKey(key, input),
+          queryFn: () => transport.call(key, wireInput(input)),
+        },
+        client,
+      );
     },
     useMutation(options) {
       const transport = useTransport();
-      return useTanStackMutation({
-        ...(options as object | undefined),
-        mutationFn: (variables: unknown) => transport.call(key, wireInput(variables)),
-      });
+      const client = usePluginQueryClient();
+      return useTanStackMutation(
+        {
+          ...(options as object | undefined),
+          mutationFn: (variables: unknown) => transport.call(key, wireInput(variables)),
+        },
+        client,
+      );
     },
   };
 }
@@ -280,8 +289,31 @@ export const pluginQueryClient = new QueryClient({
 });
 
 /**
+ * The client the accessors read: the nearest `PluginQueryBoundary`'s, or
+ * `pluginQueryClient` outside one. Hook slots, such as a nav panel's
+ * `experimental_useBadge`, run in the plugin's scope but outside any
+ * component the plugin renders, so no boundary can wrap them. Outside one,
+ * the hook mounts the shared client as `QueryClientProvider` would, so its
+ * reconnect and focus listeners stay on while only such hooks remain.
+ */
+function usePluginQueryClient(): QueryClient {
+  const boundary = useContext(QueryClientContext);
+  const client = boundary ?? pluginQueryClient;
+  const fallback = boundary === undefined;
+  useEffect(() => {
+    if (!fallback) return;
+    client.mount();
+    return () => client.unmount();
+  }, [client, fallback]);
+  return client;
+}
+
+/**
  * The provider a plugin UI mounts at each registered component's root.
  * Every mount shares `pluginQueryClient` unless `client` overrides it.
+ * The accessors fall back to that shared client without it; mount it to
+ * pass another client or to call TanStack's own hooks, such as
+ * `useQueryClient`.
  */
 export function PluginQueryBoundary(props: {
   children?: ReactNode;

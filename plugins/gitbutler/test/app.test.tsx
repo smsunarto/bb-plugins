@@ -2,7 +2,9 @@ import { beforeEach, expect, onTestFinished, setSystemTime, test } from "bun:tes
 import { environmentManager } from "@tanstack/react-query";
 import { pluginQueryClient } from "@bb-kit/core/rpc/query";
 import { installDom } from "@bb-kit/core/testing";
-import type { RenderSlotOptions } from "@get-bb/plugin-sdk/testing/app";
+import type { ExperimentalThreadActionTabProps } from "@get-bb/plugin-sdk/app";
+import type { RenderSlotOptions, RenderedSlot } from "@get-bb/plugin-sdk/testing/app";
+import type { ComponentType } from "react";
 import { machineColors } from "../src/app/machine-colors.ts";
 import { parseOplog, parseWorkspace } from "../src/host/parse.ts";
 import type { Checkout, CheckoutSelection, Workspace } from "../src/shared/schema.ts";
@@ -74,10 +76,14 @@ function answeringWithBoard(rpc: Fakes): Fakes {
 
 async function panel(rpc: Fakes, options: Omit<RenderSlotOptions, "rpc" | "context"> = {}) {
   const app = await loadPluginApp(() => import("../src/app/app.tsx"));
-  const registration = app.threadPanelActions[0]!;
-  expect(registration.id).toBe("gitbutler");
+  // Saved tabs and the server's tab writer name the tab by this id.
+  const registration = app.tabs.find(
+    (tab) =>
+      tab.id === "gitbutler" && tab.context.kind === "thread" && tab.availability === "action",
+  )!;
+  expect(registration.layout).toBe("flush");
   return renderSlot(
-    registration,
+    { component: registration.component as ComponentType<ExperimentalThreadActionTabProps> },
     { threadId: "thread-1", params: null },
     {
       ...options,
@@ -85,6 +91,13 @@ async function panel(rpc: Fakes, options: Omit<RenderSlotOptions, "rpc" | "conte
       context: { threadId: "thread-1", projectId: "project-1" },
     },
   );
+}
+
+/** What the panel asked the agent: one entry per Markdown quote it appended to the draft. */
+function asked(slot: RenderedSlot): string[] {
+  const text = slot.inspection.composer.text.trim();
+  if (!text) return [];
+  return text.split("\n\n").map((quote) => quote.replace(/^> ?/gmu, ""));
 }
 
 /** `board` as the host answers it for the repository asked for. */
@@ -744,6 +757,126 @@ test("the header draws nothing outside a GitButler workspace", async () => {
   await waitFor(() => expect(asked).toBe(true));
   expect(slot.queryByRole("button")).toBeNull();
   slot.lifecycle.unmount();
+});
+
+async function infoSection(
+  workspaceResult: () => unknown,
+  environment: { id: string } | null = { id: "env-1" },
+) {
+  const app = await loadPluginApp(() => import("../src/app/app.tsx"));
+  const registration = app.threadInfoSections.find((section) => section.id === "branches")!;
+  expect(registration.group).toBe("2_changes");
+  return renderSlot(
+    registration,
+    { threadId: "thread-1", projectId: "project-1", environment },
+    {
+      rpc: { workspace: workspaceResult } as never,
+      context: { threadId: "thread-1", projectId: "project-1" },
+    },
+  );
+}
+
+test("the Info tab names the applied GitButler branches, which bb's Branch row cannot", async () => {
+  const slot = await infoSection(() => workspace);
+  const section = within(await slot.findByRole("region", { name: "GitButler branches" }));
+  const rows = section.getAllByRole("listitem").map((row) => row.textContent);
+  // Each stack top first, so a stacked branch names the one it is on.
+  expect(rows).toEqual(["scott/topon scott/bottom#42", "scott/bottom", "scott/experimental"]);
+  fireEvent.click(section.getByRole("button", { name: "scott/bottom" }));
+  expect(slot.inspection.navigateCalls).toEqual([
+    { method: "openThreadPanel", options: { actionId: "gitbutler" } },
+  ]);
+  slot.lifecycle.unmount();
+});
+
+test("the Info tab reads the board again when an agent's turn ends on its environment", async () => {
+  let board: Workspace = workspace;
+  const slot = await infoSection(() => board);
+  await slot.findByRole("region", { name: "GitButler branches" });
+  board = {
+    ...workspace,
+    stacks: [
+      workspace.stacks[0]!,
+      {
+        ...workspace.stacks[0]!,
+        key: "scott/new",
+        branches: [{ ...workspace.stacks[0]!.branches[1]!, name: "scott/new", reviewId: null }],
+      },
+    ],
+  };
+  const reads = () => slot.inspection.rpcCalls.filter((call) => call.method === "workspace");
+  expect(reads()).toHaveLength(1);
+  // Another environment's turn is not this board's.
+  await slot.emitRealtime("workspace-changed", {
+    environmentId: "env-2",
+    threadId: "thread-9",
+    parentThreadId: null,
+  });
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  expect(reads()).toHaveLength(1);
+  await slot.emitRealtime("workspace-changed", {
+    environmentId: "env-1",
+    threadId: "thread-1",
+    parentThreadId: null,
+  });
+  await waitFor(() => expect(slot.getByRole("button", { name: "scott/new" })).toBeTruthy());
+  expect(reads()).toHaveLength(2);
+  slot.lifecycle.unmount();
+});
+
+test("the Info tab keeps the last branches while the host is away and recovers on its signal", async () => {
+  pluginQueryClient.clear();
+  let board: Workspace = workspace;
+  const slot = await infoSection(() => board);
+  await slot.findByRole("region", { name: "GitButler branches" });
+  const reads = () => slot.inspection.rpcCalls.filter((call) => call.method === "workspace");
+  const turnEnded = { environmentId: "env-1", threadId: "thread-1", parentThreadId: null };
+  // An offline host answers with an error board, not a failed call.
+  board = { ...workspace, state: "error", reason: "host offline", stacks: [] };
+  await slot.emitRealtime("workspace-changed", turnEnded);
+  await waitFor(() => expect(reads()).toHaveLength(2));
+  await waitFor(() =>
+    expect(slot.getByText("Couldn't refresh. Showing the last workspace.")).toBeTruthy(),
+  );
+  expect(slot.getByRole("button", { name: "scott/bottom" })).toBeTruthy();
+  // The error board names the same environment, so its signal still reaches the section.
+  board = workspace;
+  await slot.emitRealtime("workspace-changed", turnEnded);
+  await waitFor(() => expect(reads()).toHaveLength(3));
+  await waitFor(() =>
+    expect(slot.queryByText("Couldn't refresh. Showing the last workspace.")).toBeNull(),
+  );
+  expect(slot.getByRole("button", { name: "scott/bottom" })).toBeTruthy();
+  slot.lifecycle.unmount();
+});
+
+test("the Info tab adds nothing for ordinary Git, other states, or a thread without a checkout", async () => {
+  const native = await infoSection(() => ({
+    ...workspace,
+    checkoutIdentity: {
+      path: "/work/bb-plugins",
+      branch: "scott/top",
+      head: "a".repeat(40),
+      origin: "github.com/scott/bb-plugins",
+      commonDir: "/work/bb-plugins/.git",
+      kind: "git",
+    },
+  }));
+  await waitFor(() => expect(native.inspection.rpcCalls).toHaveLength(1));
+  expect(native.queryByRole("region")).toBeNull();
+  native.lifecycle.unmount();
+
+  pluginQueryClient.clear();
+  const setup = await infoSection(() => ({ ...workspace, state: "setupRequired", stacks: [] }));
+  await waitFor(() => expect(setup.inspection.rpcCalls).toHaveLength(1));
+  expect(setup.queryByRole("region")).toBeNull();
+  setup.lifecycle.unmount();
+
+  const none = await infoSection(() => workspace, null);
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  expect(none.inspection.rpcCalls).toEqual([]);
+  expect(none.queryByRole("region")).toBeNull();
+  none.lifecycle.unmount();
 });
 
 function recordActions(result: () => unknown = () => ({ status: "done" })) {
@@ -2317,7 +2450,7 @@ test("a turn ending reads the workspace again, and a turn of this thread's famil
   });
   await waitFor(() => expect(reads).toBe(before + 2));
   fireEvent.click(await uncommitted.findByRole("button", { name: "Ask agent to commit" }));
-  expect(slot.inspection.composer.quotes).toEqual([
+  expect(asked(slot)).toEqual([
     "These 3 files are uncommitted: bun.lock, plugins/gitbutler/LICENSE, gone.ts. Commit them to the right branch with but.",
   ]);
   expect(slot.inspection.composer.focusCount).toBe(1);
@@ -2790,7 +2923,7 @@ test("ask-agent buttons quote what they are about into the thread's composer", a
   const files = await waitFor(() => slot.getByRole("region", { name: "Changed files" }));
   fireEvent.click(within(files).getByTitle("src/app/app.tsx"));
   fireEvent.click(await slot.findByRole("button", { name: "Reword" }));
-  expect(slot.inspection.composer.quotes).toEqual([
+  expect(asked(slot)).toEqual([
     "Branch scott/top: 1 commit, pushed, PR #42",
     "Checks are failing on branch scott/top (PR #42). Find the failing check and fix it.",
     'Reword commit 8f4598a (change syvmzmsvwkuzpwuuxyvnmywkktuzxqul) "feat(top): add the thing" with `but reword`.',
@@ -2816,7 +2949,7 @@ test("a quote names the repository when the environment holds several", async ()
   });
   await waitFor(() => expect(slot.getByText("scott/top")).toBeTruthy());
   fireEvent.click(slot.getByRole("button", { name: "Ask agent about scott/top" }));
-  expect(slot.inspection.composer.quotes).toEqual([
+  expect(asked(slot)).toEqual([
     "Branch scott/top: 1 commit, pushed, PR #42\n\nRepository: repos/api",
   ]);
   slot.lifecycle.unmount();
@@ -2954,7 +3087,7 @@ test("the history screen lists GitButler's operations and asks the agent to rest
   expect(slot.getByText("Create commit")).toBeTruthy();
   expect(slot.getByText("Merge upstream")).toBeTruthy();
   fireEvent.click(slot.getByRole("button", { name: "Ask agent to restore snapshot 22c2d57" }));
-  expect(slot.inspection.composer.quotes).toEqual([
+  expect(asked(slot)).toEqual([
     "Restore the GitButler workspace to snapshot 22c2d57fb4e93d0fbb45aad16aea1b513b6596d5 (Squash commit) with `but oplog restore`.",
   ]);
 
@@ -3100,7 +3233,7 @@ test("shows an isolated checkout's actual branch, path, and latest commit with a
   expect(card.queryByText(/Unpushed|Pushed|Ahead|Behind|Diverged/)).toBeNull();
   expect(card.queryByRole("button", { name: /Push|Land|Delete/ })).toBeNull();
   expect(card.getByRole("button", { name: `Open checkout ${checkout.path}` })).toBeTruthy();
-  expect(slot.inspection.composer.quotes).toEqual([]);
+  expect(asked(slot)).toEqual([]);
 
   const toggle = card.getByRole("button", { expanded: true });
   fireEvent.click(toggle);
@@ -3207,9 +3340,7 @@ test("lists the branches the workspace does not apply, closed until asked", asyn
   expect(parked.getByText("scott/old")).toBeTruthy();
   expect(parked.getByText("Showing the most recently updated branches only.")).toBeTruthy();
   fireEvent.click(parked.getByRole("button", { name: "Ask agent to apply scott/parked" }));
-  expect(slot.inspection.composer.quotes).toEqual([
-    "Apply branch scott/parked to the workspace with but.",
-  ]);
+  expect(asked(slot)).toEqual(["Apply branch scott/parked to the workspace with but."]);
   slot.lifecycle.unmount();
 });
 
@@ -3411,7 +3542,7 @@ test("isolated checkout diffs, file preview, history and agent quotes use its pa
       ),
   ).toBe(true);
   fireEvent.click(slot.getByRole("button", { name: "Ask agent about commit 730b2a1" }));
-  expect(slot.inspection.composer.quotes.at(-1)).toContain(
+  expect(asked(slot).at(-1)).toContain(
     `Checkout: ${JSON.stringify(isolatedCheckout.path)}\nMachine: laptop\nVersion control: Git`,
   );
   fireEvent.click(slot.getByRole("button", { name: "Back to workspace" }));
@@ -3659,7 +3790,7 @@ test("native history asks use the saved Git intents and exact checkout guidance 
   ];
   for (const [label, intent] of cases) {
     fireEvent.click(await slot.findByRole("button", { name: label }));
-    const quote = slot.inspection.composer.quotes.at(-1)!;
+    const quote = asked(slot).at(-1)!;
     expect(quote).toBe(
       `${intent}\n\nCommit: 730b2a16bda1bd8bdc4572bd9f4df70f50505f90\nSubject: "fix(bottom): repair it"\n\nCheckout: ${JSON.stringify(isolatedCheckout.path)}\nMachine: laptop\nVersion control: Git\nUse native Git on this checkout. Do not run \`but\` or \`but setup\`.`,
     );
@@ -3716,10 +3847,10 @@ test("native uncommitted asks quote a Git commit intent with the selected files 
     parentThreadId: "thread-1",
   });
   fireEvent.click(await slot.findByRole("button", { name: "Ask agent to commit" }));
-  expect(slot.inspection.composer.quotes.at(-1)).toBe(
+  expect(asked(slot).at(-1)).toBe(
     `Commit these uncommitted files to the intended branch.\n\nFiles: ["native.ts"]\n\nCheckout: ${JSON.stringify(isolatedCheckout.path)}\nMachine: laptop\nVersion control: Git\nUse native Git on this checkout. Do not run \`but\` or \`but setup\`.`,
   );
-  expect(slot.inspection.composer.quotes.at(-1)).not.toContain("with but");
+  expect(asked(slot).at(-1)).not.toContain("with but");
   slot.lifecycle.unmount();
 });
 
@@ -3934,8 +4065,13 @@ function checkoutChatRpc() {
   };
 }
 
+/** Every native New thread the panel opened. */
+function composeCalls(slot: RenderedSlot) {
+  return slot.inspection.navigateCalls.filter((call) => call.method === "toCompose");
+}
+
 const newCheckoutChat = {
-  method: "openNewThread",
+  method: "toCompose",
   options: {
     projectId: "project-1",
     environmentId: "env-isolated",
@@ -3969,10 +4105,10 @@ test("New chat reads nothing until it is clicked, then shows opening progress un
   await waitFor(() => expect(button.textContent).toContain("Opening…"));
   expect(button.hasAttribute("disabled")).toBe(true);
   expect(button.getAttribute("aria-busy")).toBe("true");
-  expect(slot.inspection.sidebarActionCalls).toEqual([]);
+  expect(composeCalls(slot)).toEqual([]);
 
   finishOpening(fixture.checkoutChatTarget());
-  await waitFor(() => expect(slot.inspection.sidebarActionCalls).toEqual([newCheckoutChat]));
+  await waitFor(() => expect(composeCalls(slot)).toEqual([newCheckoutChat]));
   await waitFor(() => expect(button.hasAttribute("disabled")).toBe(false));
   expect(button.textContent).toContain("New chat");
   expect(button.getAttribute("aria-busy")).toBe("false");
@@ -3985,7 +4121,7 @@ test("checkout cards and the opened checkout launch native New thread in the exa
   const button = await slot.findByRole("button", { name: label });
   await waitFor(() => expect(button.hasAttribute("disabled")).toBe(false));
   fireEvent.click(button);
-  await waitFor(() => expect(slot.inspection.sidebarActionCalls).toEqual([newCheckoutChat]));
+  await waitFor(() => expect(composeCalls(slot)).toEqual([newCheckoutChat]));
   expect(
     slot.inspection.rpcCalls.findLast((call) => call.method === "checkoutChatTarget")?.input,
   ).toEqual({
@@ -4003,9 +4139,7 @@ test("checkout cards and the opened checkout launch native New thread in the exa
   const header = slot.getByRole("button", { name: label });
   await waitFor(() => expect(header.hasAttribute("disabled")).toBe(false));
   fireEvent.click(header);
-  await waitFor(() =>
-    expect(slot.inspection.sidebarActionCalls).toEqual([newCheckoutChat, newCheckoutChat]),
-  );
+  await waitFor(() => expect(composeCalls(slot)).toEqual([newCheckoutChat, newCheckoutChat]));
   slot.lifecycle.unmount();
 });
 
@@ -4037,7 +4171,7 @@ test("Git-only checkouts explain why New chat is unavailable once clicked, and O
   expect(headerDescription?.getAttribute("title")).toBe(reason);
   expect(slot.getByText(isolatedCheckout.path)).toBeTruthy();
   expect(slot.getByRole("button", { name: "Back to main checkout" })).toBeTruthy();
-  expect(slot.inspection.sidebarActionCalls).toEqual([]);
+  expect(composeCalls(slot)).toEqual([]);
   slot.lifecycle.unmount();
 });
 
@@ -4056,11 +4190,11 @@ test("New chat rechecks a checkout that lost its reusable environment after disc
   });
   fireEvent.click(button);
   await slot.findByText("The checkout's BB environment is no longer ready.");
-  expect(slot.inspection.sidebarActionCalls).toEqual([]);
+  expect(composeCalls(slot)).toEqual([]);
   ready = true;
   await waitFor(() => expect(button.hasAttribute("disabled")).toBe(false));
   fireEvent.click(button);
-  await waitFor(() => expect(slot.inspection.sidebarActionCalls).toEqual([newCheckoutChat]));
+  await waitFor(() => expect(composeCalls(slot)).toEqual([newCheckoutChat]));
   expect(slot.queryByText("The checkout's BB environment is no longer ready.")).toBeNull();
   slot.lifecycle.unmount();
 });
@@ -4084,7 +4218,7 @@ test("New chat keeps the checkout visible after a network failure and can retry"
   expect(slot.getByRole("button", { name: `Open checkout ${isolatedCheckout.path}` })).toBeTruthy();
   fail = false;
   fireEvent.click(button);
-  await waitFor(() => expect(slot.inspection.sidebarActionCalls).toEqual([newCheckoutChat]));
+  await waitFor(() => expect(composeCalls(slot)).toEqual([newCheckoutChat]));
   slot.lifecycle.unmount();
 });
 
@@ -4112,9 +4246,9 @@ test("a late New chat preflight cannot navigate after the reader opens another b
   await waitFor(() =>
     expect(slot.getByRole("button", { name: label }).textContent).toContain("New chat"),
   );
-  expect(slot.inspection.sidebarActionCalls).toEqual([]);
+  expect(composeCalls(slot)).toEqual([]);
   fireEvent.click(slot.getByRole("button", { name: label }));
-  await waitFor(() => expect(slot.inspection.sidebarActionCalls).toEqual([newCheckoutChat]));
+  await waitFor(() => expect(composeCalls(slot)).toEqual([newCheckoutChat]));
   slot.lifecycle.unmount();
 });
 
@@ -4143,7 +4277,7 @@ test("A later New chat click's answer replaces an earlier failed click's error",
   state = "ready";
   await waitFor(() => expect(button.hasAttribute("disabled")).toBe(false));
   fireEvent.click(button);
-  await waitFor(() => expect(slot.inspection.sidebarActionCalls).toEqual([newCheckoutChat]));
+  await waitFor(() => expect(composeCalls(slot)).toEqual([newCheckoutChat]));
   expect(slot.queryByText("Restore this checkout's existing BB thread.")).toBeNull();
   slot.lifecycle.unmount();
 });

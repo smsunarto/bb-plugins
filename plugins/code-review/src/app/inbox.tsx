@@ -1,6 +1,7 @@
 import { useEffect, useId, useRef, useState } from "react";
 import type { ClipboardEvent, KeyboardEvent, ReactNode } from "react";
 import { experimental_Icon as Icon, useBbNavigate } from "@get-bb/plugin-sdk/app";
+import type { ExperimentalBadge } from "@get-bb/plugin-sdk/app";
 import {
   INBOX_SECTIONS,
   branchSubPath,
@@ -41,7 +42,7 @@ import {
 
 /** How often the inbox asks GitHub again while anything showing it is mounted. */
 const INBOX_REFRESH_MS = 120_000;
-/** Every reader of the inbox passes these, so the page, the sidebar count, and the pin share one poll. */
+/** Every reader of the inbox passes these, so the page, the navigation badge, and the pin share one poll. */
 export const INBOX_QUERY = { staleTime: 30_000, refetchInterval: INBOX_REFRESH_MS } as const;
 
 export function useInbox() {
@@ -106,19 +107,15 @@ export function needsReviewCount(inbox: InboxData): number {
   return waiting.size;
 }
 
-/** The sidebar row's trailing count. Nothing when no review is waiting, or GitHub is unreachable. */
-export function NeedsReviewCount() {
+/**
+ * The Review destination's navigation badge: how many pull requests wait for
+ * the viewer's review. None when nothing waits, or GitHub is unreachable.
+ */
+export function useNeedsReviewBadge(): ExperimentalBadge | null {
   const inbox = useInbox();
   const count = inbox.data ? needsReviewCount(inbox.data) : 0;
   if (count === 0) return null;
-  return (
-    <span
-      className="text-muted-foreground tabular-nums"
-      title={`${plural(count, "pull request")} waiting for your review`}
-    >
-      {count}
-    </span>
-  );
+  return { count, label: `${plural(count, "pull request")} waiting for your review` };
 }
 
 /** Opens a pull request as `account`, or as whichever account the page picks when none is given. */

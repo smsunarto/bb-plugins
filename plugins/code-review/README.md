@@ -5,7 +5,7 @@ you, each pull request's description, diff, and checks, draft comments on
 any line, a one-click bb review, and **Submit review** to post it all.
 
 It is a bb take on [Codex Code Review](https://learn.chatgpt.com/docs/code-review),
-with local branch reviews alongside pull requests. Open **Review** in the sidebar.
+with local branch reviews alongside pull requests. Open **Review** from bb's navigation.
 
 ## Nothing posts until you submit
 
@@ -25,8 +25,8 @@ There is no local copy of a draft to fall out of step with GitHub.
 - **Pinned**: any pull request you pin, open or not, in pin order. A pinned
   pull request that was deleted, or that you lost access to, drops out.
 
-The sidebar badge counts the pull requests in the first two sections that
-you have not reviewed yet.
+The badge on **Review** in bb's navigation counts the pull requests in the
+first two sections that you have not reviewed yet.
 
 With more than one account signed in to `gh`, the inbox merges every
 account's pull requests, and **Accounts** narrows it to one. A pull request

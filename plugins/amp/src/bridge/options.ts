@@ -7,8 +7,9 @@
  * Sketch deviations, forced by the verified `BridgeExecutionOptions` schema
  * (provider-bridge.d.ts:4713-4755): the sketch's `serviceTier: "priority"`,
  * `permissionMode: "bypass"`, and `reasoningLevel: "minimal"` vocabulary
- * does not exist. Real enums: serviceTier `default | fast`; permissionMode
- * `accept-edits | auto | full`; reasoningLevel
+ * does not exist. Real values: serviceTier `default | fast`; permissionMode
+ * `accept-edits | auto | full`; reasoningLevel is an open string since SDK
+ * 0.6 (models declare their own levels), with bb's ladder
  * `none | low | medium | high | xhigh | max | ultra | ultracode`.
  * `promptMode: "plan"` has no Amp equivalent and is ignored here; whether to
  * declare it unsupported is a declaration concern (U6).
@@ -79,8 +80,9 @@ export function toAmpPermissions(disallowed: readonly string[]): AmpPermissionRu
 }
 
 /**
- * bb reasoning ladder → Amp's four modes. Exhaustive over the verified enum;
- * an absent level means the bb default, which maps to Amp "medium".
+ * bb reasoning ladder → Amp's four modes. An absent level means the bb
+ * default, and a level outside bb's ladder (the SDK no longer closes the set)
+ * gets the same Amp "medium" the model catalog declares as its default.
  */
 function modeFor(level: BridgeExecutionOptions["reasoningLevel"]): SessionShape["mode"] {
   switch (level) {
@@ -97,5 +99,7 @@ function modeFor(level: BridgeExecutionOptions["reasoningLevel"]): SessionShape[
     case "ultra":
     case "ultracode":
       return "ultra";
+    default:
+      return "medium";
   }
 }

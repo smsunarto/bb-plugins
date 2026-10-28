@@ -13,7 +13,8 @@ import type * as NodeSqlite from "node:sqlite";
  * - BLOB columns read back as `Uint8Array`, not `Buffer`.
  * - `get`/`all` on a statement that returns no rows yield `undefined`/`[]`.
  * - Positional values other than null, numbers, bigints, strings and byte
- *   views (`undefined`, booleans) throw `node:sqlite`'s TypeError.
+ *   views (`undefined`, booleans) throw `node:sqlite`'s TypeError. Node 24's
+ *   `node:sqlite` binds booleans as 1 and 0; Node 22's throws, as this does.
  * - SQLite errors are plain `Error`s with code `ERR_SQLITE_ERROR` and the
  *   same message. Upstream's 500 envelope names the code
  *   ("Review operation failed (ERR_SQLITE_ERROR)…").

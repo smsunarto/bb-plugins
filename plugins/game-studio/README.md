@@ -5,7 +5,9 @@ A native BB studio for Unity projects, adapted from
 conversation in BB’s native main chat. The Unity workflow, design document,
 asset canvas, staging library, and playtest evidence live in BB’s right sidebar.
 
-Open **Game Studio** from a thread’s panel launcher or header button.
+Open **Game Studio** from a thread’s panel launcher or header button. A thread
+that works on a connected game shows it as the **Game** row in its Info tab,
+which also opens Studio.
 The navigation gallery opens projects beside their native BB thread. Studio
 contains no embedded chat or composer. Actions add a request to the main chat’s
 native composer for you to review and send; BB owns the agent and its settings.

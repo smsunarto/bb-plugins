@@ -7,8 +7,8 @@
   "author": "Scott Sunarto",
   "type": "module",
   "engines": {
-    "bb": ">=0.46.0 <1.0.0",
-    "bbPluginSdk": ">=0.6.37"
+    "bb": ">=0.47.0 <1.0.0",
+    "bbPluginSdk": ">=0.6.75"
   },
   "bb": {
     "name": "Remind Me",
@@ -41,7 +41,7 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
-    "@get-bb/plugin-sdk": "0.6.37",
+    "@get-bb/plugin-sdk": "0.6.79",
     "@types/node": "^22.0.0",
     "@testing-library/react": "16.3.2",
     "@types/react": "^19.0.0",
