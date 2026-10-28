@@ -667,7 +667,6 @@ function Rows({
               pr={pr}
               selected={selected !== null && sameRef(selected, pr.ref)}
               pinned={inbox.pinned.some((item) => sameRef(item.ref, pr.ref))}
-              showAccount={inbox.accounts.length > 1}
             />
           </li>
         ))}
@@ -725,18 +724,7 @@ function RowButton({
   );
 }
 
-function Row({
-  pr,
-  selected,
-  pinned,
-  showAccount,
-}: {
-  pr: InboxPr;
-  selected: boolean;
-  pinned: boolean;
-  /** gh has several accounts, so the row says which one it waits on. */
-  showAccount: boolean;
-}) {
+function Row({ pr, selected, pinned }: { pr: InboxPr; selected: boolean; pinned: boolean }) {
   const open = useOpenPr();
   const prefetch = usePrPrefetch();
   return (
@@ -759,11 +747,6 @@ function Row({
         </time>
       </span>
       <span className="flex w-full items-center gap-1 text-[11px] text-muted-foreground">
-        {showAccount ? (
-          <span className="inline-flex shrink-0" title={`As ${pr.account}`}>
-            <span>As {pr.account}, </span>
-          </span>
-        ) : null}
         <span className="shrink-0 tabular-nums">#{pr.ref.number}</span>
         {pinned ? (
           <span className="inline-flex shrink-0">
