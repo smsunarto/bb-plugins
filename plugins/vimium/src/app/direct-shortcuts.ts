@@ -15,6 +15,7 @@ export type DirectShortcut =
   | { readonly kind: "thread-step"; readonly step: -1 | 1 }
   | { readonly kind: "settle-thread" }
   | { readonly kind: "undo-archive" }
+  | { readonly kind: "cheatsheet" }
   | { readonly kind: "scroll"; readonly motion: ScrollMotion };
 
 function pinnedControl(char: string): DirectShortcut {
@@ -50,6 +51,7 @@ export const DIRECT_SHORTCUTS: ReadonlyMap<string, DirectShortcut> = new Map([
   ["j", { kind: "scroll", motion: "down" }],
   ["k", { kind: "scroll", motion: "up" }],
   ["J", { kind: "scroll", motion: "bottom" }],
+  ["?", { kind: "cheatsheet" }],
 ]);
 
 /** The keydown facts the direct-shortcut decision reads. */

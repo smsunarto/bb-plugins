@@ -2,16 +2,17 @@ import "./helpers/dom.ts";
 import { afterEach, describe, expect, test } from "bun:test";
 import type { PluginContentScriptContext } from "@get-bb/plugin-sdk/app";
 import { loadPluginApp, renderSlot } from "@get-bb/plugin-sdk/testing/app";
-import { mountLinkHints, setWindowedThreadOpener } from "../src/app/link-hints.ts";
+import { CHEATSHEET } from "../src/app/cheatsheet.ts";
+import { mountLinkHints, setBbNavigation } from "../src/app/link-hints.ts";
 
-function pressKey(key: string): boolean {
+function pressKey(key: string, repeat = false): boolean {
   return window.dispatchEvent(
-    new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true }),
+    new KeyboardEvent("keydown", { key, repeat, bubbles: true, cancelable: true }),
   );
 }
 
 afterEach(() => {
-  setWindowedThreadOpener(null);
+  setBbNavigation(null);
   document.body.innerHTML = "";
   window.history.pushState({}, "", "/");
 });
@@ -45,6 +46,41 @@ describe("thread navigation overlay", () => {
     expect(pressKey("]")).toBe(true);
     expect(slot.inspection.navigateCalls).toHaveLength(1);
 
+    void dispose();
+    controller.abort();
+  });
+
+  test("? opens the cheatsheet page, which lists every section", async () => {
+    const app = await loadPluginApp(() => import("../src/app/app.tsx"));
+    const overlay = app.appOverlays.find(({ id }) => id === "thread-navigation")!;
+    const slot = renderSlot(overlay, {});
+    const controller = new window.AbortController();
+    const dispose = mountLinkHints({
+      pluginId: "vimium",
+      generation: 1,
+      signal: controller.signal,
+    });
+
+    expect(pressKey("?")).toBe(false);
+    // Holding the key does not push the page again.
+    pressKey("?", true);
+    // On the page, `?` replaces its entry instead of stacking one.
+    window.history.pushState({}, "", "/plugins/vimium/cheatsheet");
+    pressKey("?");
+    expect(slot.inspection.navigateCalls).toEqual([
+      { method: "toPluginPanel", path: "cheatsheet", options: { replace: false } },
+      { method: "toPluginPanel", path: "cheatsheet", options: { replace: true } },
+    ]);
+
+    const panel = app.navPanels.find(({ path }) => path === "cheatsheet")!;
+    const page = renderSlot(panel, { subPath: "" });
+    for (const section of CHEATSHEET) {
+      expect(page.getByRole("heading", { name: section.title })).toBeDefined();
+    }
+    expect(page.getByText("Open this cheatsheet")).toBeDefined();
+
+    page.lifecycle.unmount();
+    slot.lifecycle.unmount();
     void dispose();
     controller.abort();
   });

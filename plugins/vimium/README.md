@@ -27,6 +27,7 @@ Outside a text field, these keys act without a hint prompt:
 - `e` settles the focused thread, including a child in a split pane. This needs a sidebar with a settle button on each row, such as gtd-sidebar. If the focused split thread's row is collapsed, expand it before settling.
 - `E` (Shift+e) undoes the newest archive notification while it is visible and opens the restored thread. Clicking that notification's Undo button also opens the thread.
 - `i` focuses the composer.
+- `?` opens the Vimium Cheatsheet page, which lists every key on this page.
 
 A direct key with nothing to act on, such as `e` on a settings page or `j` on a page without a conversation, falls through to bb. Inside a text field every key is just typing. In hint mode `[`, `]`, `e`, `j`, `k`, and `a` keep their hint meanings below.
 

@@ -267,11 +267,18 @@ const WINDOWED_THREAD_SELECTOR = "[data-sidebar-windowed-nav]";
 // commands skip them, so stepping does too.
 const THREAD_OVERFLOW_SELECTOR = "[data-sidebar-overflow='true']";
 
-let openWindowedThread: ((threadId: string) => void) | null = null;
+/** BB's own navigation, for destinations with no link on screen to click. */
+export interface BbNavigation {
+  /** Opens a windowed-out sidebar row. */
+  readonly openThread: (threadId: string) => void;
+  readonly openCheatsheet: () => void;
+}
 
-/** The app overlay supplies BB's own navigation for rows without a mounted link. */
-export function setWindowedThreadOpener(opener: ((threadId: string) => void) | null): void {
-  openWindowedThread = opener;
+let bbNavigation: BbNavigation | null = null;
+
+/** The app overlay supplies BB's navigation while it is mounted. */
+export function setBbNavigation(navigation: BbNavigation | null): void {
+  bbNavigation = navigation;
 }
 
 // gtd-sidebar parks a settle button beside each inbox row's anchor. It only
@@ -758,6 +765,10 @@ export function mountLinkHints(context: PluginContentScriptContext): PluginConte
       }
       case "thread-search":
         return openThreadSearch();
+      case "cheatsheet":
+        if (bbNavigation === null) return false;
+        bbNavigation.openCheatsheet();
+        return true;
       case "control": {
         const control = findControl(shortcut.selector);
         if (control === null) return false;
@@ -776,8 +787,8 @@ export function mountLinkHints(context: PluginContentScriptContext): PluginConte
         if (row === undefined) return false;
         if (row.element) activate(row.element);
         else {
-          if (openWindowedThread === null) return false;
-          openWindowedThread(row.id);
+          if (bbNavigation === null) return false;
+          bbNavigation.openThread(row.id);
         }
         return true;
       }
@@ -848,7 +859,9 @@ export function mountLinkHints(context: PluginContentScriptContext): PluginConte
         editableTarget: isEditableEvent(event),
       });
       if (shortcut !== null) {
-        if (shortcut.kind === "undo-archive" && event.repeat) return;
+        // A held key repeats; neither one-shot action should run again.
+        if ((shortcut.kind === "undo-archive" || shortcut.kind === "cheatsheet") && event.repeat)
+          return;
         // A shortcut with nothing to act on leaves the key to bb.
         if (!runDirectShortcut(shortcut)) return;
         event.preventDefault();

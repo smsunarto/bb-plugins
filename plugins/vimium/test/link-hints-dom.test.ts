@@ -1,7 +1,7 @@
 import "./helpers/dom.ts";
 import { afterEach, describe, expect, mock, test } from "bun:test";
 import type { PluginContentScriptContext } from "@get-bb/plugin-sdk/app";
-import { mountLinkHints, setWindowedThreadOpener } from "../src/app/link-hints.ts";
+import { mountLinkHints, setBbNavigation } from "../src/app/link-hints.ts";
 
 function contextWith(signal: AbortSignal): PluginContentScriptContext {
   return { pluginId: "vimium", generation: 1, signal };
@@ -173,7 +173,7 @@ function installMenuTrigger(
 }
 
 afterEach(() => {
-  setWindowedThreadOpener(null);
+  setBbNavigation(null);
   document.body.innerHTML = "";
 });
 
@@ -1363,7 +1363,7 @@ describe("mountLinkHints", () => {
       '<div data-sidebar-windowed-nav="thr_2:proj_a thr_3:proj_a"></div>' +
       '<a data-sidebar-thread-id="thr_4" data-sidebar-thread-shortcut-target href="#">Four</a>';
     const opened: string[] = [];
-    setWindowedThreadOpener((id) => opened.push(id));
+    setBbNavigation({ openThread: (id) => opened.push(id), openCheatsheet: () => {} });
 
     window.history.pushState({}, "", "/threads/thr_1");
     expect(pressKey("]")).toBe(false);
@@ -1374,7 +1374,7 @@ describe("mountLinkHints", () => {
 
     // Without the SDK bridge, the key falls through instead of claiming a
     // navigation that cannot happen.
-    setWindowedThreadOpener(null);
+    setBbNavigation(null);
     window.history.pushState({}, "", "/threads/thr_1");
     expect(pressKey("]")).toBe(true);
     expect(opened).toEqual(["thr_2", "thr_2"]);
