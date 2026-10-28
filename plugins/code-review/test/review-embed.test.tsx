@@ -1,4 +1,6 @@
 import "./dom.ts";
+import { makeQueueEntry } from "@get-bb/plugin-sdk/testing";
+import type { PluginBrowserBbSdk } from "@get-bb/plugin-sdk/app";
 import { beforeEach, expect, test } from "bun:test";
 import { queryClient } from "../src/app/query.ts";
 import { timeoutManager } from "@tanstack/react-query";
@@ -112,6 +114,7 @@ async function card(
   attributes: Record<string, string>,
   paths: string[] = [],
   overrides: Record<string, (input: never) => unknown> = {},
+  send: PluginBrowserBbSdk["threads"]["send"] = async () => ({ ok: true, delivery: "sent" }),
 ) {
   const app = await loadPluginApp(() => import("../src/app/app.tsx"));
   const directive = app.messageDirectives.find((each) => each.id === "code-review");
@@ -125,6 +128,8 @@ async function card(
       openWorkspaceFile: null,
     },
     {
+      sdk: { threads: { send } },
+      context: { threadId: "different-active-thread" },
       rpc: {
         localBranch: () => localBranch,
         localChanges: () => localChanges,
@@ -578,6 +583,114 @@ test("reconnection retries a failed shared checkout lookup on a card", async () 
     await slot.behavior.setRealtimeConnectionState("connected");
     await slot.findByText("src/limit.ts");
   } finally {
+    slot.lifecycle.unmount();
+  }
+});
+
+const shipTargets: Record<string, string>[] = [{ branch: localBranch.id }, { pr: "owner/repo#7" }];
+for (const attributes of shipTargets) {
+  test(`Ship it sends to the card's thread for ${"branch" in attributes ? "branches" : "PRs"}`, async () => {
+    const messages: unknown[] = [];
+    let finish: (() => void) | undefined;
+    const slot = await card(attributes, [], {}, async (message) => {
+      messages.push(message);
+      await new Promise<void>((resolve) => {
+        finish = resolve;
+      });
+      return { ok: true, delivery: "sent" };
+    });
+    try {
+      fireEvent.click(await slot.findByRole("button", { name: "Ship it" }));
+      await waitFor(() =>
+        expect(messages).toEqual([
+          {
+            threadId: "thread-1",
+            mode: "queue-if-active",
+            input: [{ type: "text", text: "ship it", mentions: [] }],
+          },
+        ]),
+      );
+      const pending = await slot.findByRole("button", { name: "Sending…" });
+      expect(pending.hasAttribute("disabled")).toBe(true);
+      fireEvent.click(pending);
+      expect(messages).toHaveLength(1);
+      finish?.();
+      expect((await slot.findByRole("button", { name: "Sent" })).hasAttribute("disabled")).toBe(
+        true,
+      );
+    } finally {
+      finish?.();
+      slot.lifecycle.unmount();
+    }
+  });
+}
+
+test("Ship it shows a send failure and allows retry", async () => {
+  let attempts = 0;
+  const slot = await card({ branch: localBranch.id }, [], {}, async () => {
+    if (++attempts === 1) throw new Error("Connection lost");
+    return { ok: true, delivery: "sent" };
+  });
+  try {
+    fireEvent.click(await slot.findByRole("button", { name: "Ship it" }));
+    await slot.findByText("Could not send: Connection lost");
+    fireEvent.click(slot.getByRole("button", { name: "Ship it" }));
+    await slot.findByRole("button", { name: "Sent" });
+    expect(attempts).toBe(2);
+    expect(slot.queryByText("Could not send: Connection lost")).toBeNull();
+  } finally {
+    slot.lifecycle.unmount();
+  }
+});
+
+test("Ship it reports queued delivery on a busy thread", async () => {
+  const slot = await card({ branch: localBranch.id }, [], {}, async () => ({
+    ok: true,
+    delivery: "queued",
+    queuedMessage: makeQueueEntry({ threadId: "thread-1" }),
+  }));
+  try {
+    fireEvent.click(await slot.findByRole("button", { name: "Ship it" }));
+    expect((await slot.findByRole("button", { name: "Queued" })).hasAttribute("disabled")).toBe(
+      true,
+    );
+  } finally {
+    slot.lifecycle.unmount();
+  }
+});
+
+test("Ship it keeps sending state when branch discovery replaces the loading card", async () => {
+  let discover: ((value: typeof localBranch) => void) | undefined;
+  let deliver: (() => void) | undefined;
+  let sends = 0;
+  const slot = await card(
+    { branch: localBranch.id },
+    [],
+    {
+      localBranch: () =>
+        new Promise<typeof localBranch>((resolve) => {
+          discover = resolve;
+        }),
+    },
+    async () => {
+      sends++;
+      await new Promise<void>((resolve) => {
+        deliver = resolve;
+      });
+      return { ok: true, delivery: "sent" };
+    },
+  );
+  try {
+    fireEvent.click(await slot.findByRole("button", { name: "Ship it" }));
+    await slot.findByRole("button", { name: "Sending…" });
+    discover?.(localBranch);
+    await slot.findByText(localBranch.branch);
+    expect(slot.getByRole("button", { name: "Sending…" }).hasAttribute("disabled")).toBe(true);
+    deliver?.();
+    await slot.findByRole("button", { name: "Sent" });
+    expect(sends).toBe(1);
+  } finally {
+    deliver?.();
     slot.lifecycle.unmount();
   }
 });

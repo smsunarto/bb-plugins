@@ -1,7 +1,8 @@
+import { createContext, useContext } from "react";
 import { z } from "zod";
-import { QueryClientProvider } from "@tanstack/react-query";
+import { QueryClientProvider, useMutation } from "@tanstack/react-query";
 import { queryClient } from "./query.ts";
-import { experimental_Icon as Icon, useBbNavigate } from "@get-bb/plugin-sdk/app";
+import { experimental_Icon as Icon, useBbNavigate, useSdk } from "@get-bb/plugin-sdk/app";
 import type { PluginMessageDirectiveProps } from "@get-bb/plugin-sdk/app";
 import {
   accountSchema,
@@ -28,6 +29,24 @@ import { errorText } from "./notice.tsx";
 import { useRpcQuery } from "./rpc.ts";
 import { useReconcile } from "./sync-state.tsx";
 
+const ShipContext = createContext<ReturnType<typeof useShipMutation> | null>(null);
+
+function useShipMutation(threadId: string) {
+  const sdk = useSdk();
+  return useMutation(
+    {
+      mutationFn: () =>
+        sdk.threads.send({
+          threadId,
+          mode: "queue-if-active",
+          input: [{ type: "text", text: "ship it", mentions: [] }],
+        }),
+      retry: false,
+    },
+    queryClient,
+  );
+}
+
 const REVIEW_QUERY = {
   staleTime: 30_000,
   refetchInterval: 30_000,
@@ -48,20 +67,23 @@ const attributesSchema = z.union([
 
 export function ReviewEmbed({ attributes, source, message }: PluginMessageDirectiveProps) {
   useReconcile();
+  const ship = useShipMutation(message.threadId);
   const parsed = attributesSchema.safeParse(attributes);
   if (!parsed.success) return <code>{source}</code>;
   return (
     <QueryClientProvider client={queryClient}>
-      {"branch" in parsed.data ? (
-        <BranchEmbed
-          id={parsed.data.branch}
-          base={parsed.data.base}
-          head={parsed.data.head}
-          threadId={message.threadId}
-        />
-      ) : (
-        <PrEmbed refValue={parsed.data.pr} account={parsed.data.account} />
-      )}
+      <ShipContext.Provider value={ship}>
+        {"branch" in parsed.data ? (
+          <BranchEmbed
+            id={parsed.data.branch}
+            base={parsed.data.base}
+            head={parsed.data.head}
+            threadId={message.threadId}
+          />
+        ) : (
+          <PrEmbed refValue={parsed.data.pr} account={parsed.data.account} />
+        )}
+      </ShipContext.Provider>
     </QueryClientProvider>
   );
 }
@@ -376,18 +398,49 @@ function ReviewCard({
           ) : null}
         </div>
       ) : null}
-      <div className="px-3 pt-1 pb-3">
+      <div className="flex flex-wrap gap-2 px-3 pt-1 pb-3">
         <Button
           size="sm"
           variant={issue ? "outline" : "default"}
-          className="h-7 w-full gap-1.5 text-xs"
+          className="h-7 min-w-0 flex-1 gap-1.5 text-xs"
           onClick={() => navigate.toPluginPanel(PANEL_PATH, { subPath })}
         >
           {actionLabel ?? labels.action}
           <Icon name="ArrowUpRight" className="size-3" aria-hidden />
         </Button>
+        <ShipItButton />
       </div>
     </section>
+  );
+}
+
+function ShipItButton() {
+  const ship = useContext(ShipContext);
+  if (!ship) return null;
+  return (
+    <>
+      <Button
+        size="sm"
+        variant="outline"
+        className="h-7 gap-1.5 text-xs"
+        disabled={ship.isPending || ship.isSuccess}
+        onClick={() => ship.mutate()}
+      >
+        {ship.isPending
+          ? "Sending…"
+          : ship.isSuccess
+            ? ship.data.delivery === "queued"
+              ? "Queued"
+              : "Sent"
+            : "Ship it"}
+        <Icon name={ship.isSuccess ? "Check" : "Send"} className="size-3" aria-hidden />
+      </Button>
+      {ship.isError ? (
+        <p role="alert" className="m-0 w-full text-[11px] text-destructive">
+          Could not send: {errorText(ship.error)}
+        </p>
+      ) : null}
+    </>
   );
 }
 
