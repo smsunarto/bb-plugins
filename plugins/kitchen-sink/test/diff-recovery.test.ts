@@ -49,7 +49,11 @@ function setup() {
         get: async () => ({ environmentId: "e" }),
         storageLocation: async () => ({ hostId: "h", storageRootPath: "/storage/t" }),
       },
-      environments: { get: getEnvironment, diff, status },
+      environments: { get: getEnvironment },
+      plugins: {
+        callRpc: ({ method, input }: { method: string; input: unknown }) =>
+          method === "workspaceStatus" ? status() : diff(input),
+      },
       files: { read },
     },
   } as unknown as BbPluginApi;
@@ -78,8 +82,7 @@ describe("historical evidence", () => {
     const first = await loadDiffEmbed(bb, request);
     expect(diff).toHaveBeenCalledWith({
       environmentId: "e",
-      target: "all",
-      mergeBaseBranch: "origin/main",
+      target: { type: "all", mergeBaseBranch: "origin/main" },
     });
     diff.mockRejectedValue(new Error("shipped"));
     expect(await loadDiffEmbed(bb, request)).toEqual(first);
@@ -91,7 +94,7 @@ describe("historical evidence", () => {
     expect(await loadDiffEmbed(bb, { ...input, source: "commit", sha })).toMatchObject({
       source: `Commit: ${sha}`,
     });
-    expect(diff).toHaveBeenLastCalledWith({ environmentId: "e", target: "commit", sha });
+    expect(diff).toHaveBeenLastCalledWith({ environmentId: "e", target: { type: "commit", sha } });
   });
   test("missing exact turn never uses another turn or current workspace", async () => {
     const { bb, diff } = setup();
@@ -267,8 +270,7 @@ test("workspace uses BB's detected default branch when no comparison is saved", 
   });
   expect(diff).toHaveBeenCalledWith({
     environmentId: "e",
-    target: "all",
-    mergeBaseBranch: "trunk",
+    target: { type: "all", mergeBaseBranch: "trunk" },
   });
 });
 
@@ -313,8 +315,7 @@ test("workspace= diffs the environment anchored at another project's checkout", 
   });
   expect(diff).toHaveBeenCalledWith({
     environmentId: "env_bbp",
-    target: "all",
-    mergeBaseBranch: "origin/main",
+    target: { type: "all", mergeBaseBranch: "origin/main" },
   });
 });
 
@@ -388,7 +389,10 @@ describe("workspace= on a project checked out on several machines", () => {
       status: "ready",
       source: `${label}: branch and uncommitted changes at first display`,
     });
-    expect(diff).toHaveBeenCalledWith({ environmentId, target: "all", mergeBaseBranch: "main" });
+    expect(diff).toHaveBeenCalledWith({
+      environmentId,
+      target: { type: "all", mergeBaseBranch: "main" },
+    });
   });
 });
 
@@ -407,7 +411,10 @@ test("workspace= resolves a thread selector through that thread's environment", 
   expect(
     await loadDiffEmbed(bb, { ...input, source: "commit", sha, workspace: "thr_other" }),
   ).toMatchObject({ source: `Commit: ${sha} in Other checkout` });
-  expect(diff).toHaveBeenLastCalledWith({ environmentId: "env_other", target: "commit", sha });
+  expect(diff).toHaveBeenLastCalledWith({
+    environmentId: "env_other",
+    target: { type: "commit", sha },
+  });
 });
 
 test("workspace= is rejected on a recorded-turn diff", async () => {

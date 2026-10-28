@@ -2,7 +2,7 @@ import {
   experimental_InfoList as InfoList,
   experimental_InfoListRow as InfoListRow,
   experimental_InfoSection as InfoSection,
-  useBbNavigate,
+  experimental_useAppPanel,
   type ExperimentalThreadInfoProps,
 } from "@get-bb/plugin-sdk/app";
 import { useMemo } from "react";
@@ -17,7 +17,7 @@ import { STATUS_LABELS } from "../list/lib.js";
 const THREAD_INFO_TASK_LIMIT = 3;
 
 function ThreadTaskRow({ task }: { task: Task }) {
-  const navigate = useBbNavigate();
+  const panel = experimental_useAppPanel();
   return (
     <InfoListRow
       leading={<StatusIcon status={task.status} className="size-3" />}
@@ -26,8 +26,8 @@ function ThreadTaskRow({ task }: { task: Task }) {
       title={task.title}
       context={task.key}
       onSelect={() =>
-        navigate.openThreadPanel({
-          actionId: "task",
+        panel.openTab({
+          tab: { id: "task", context: { kind: "thread" }, availability: "action" },
           title: task.key,
           params: { taskKey: task.key },
         })

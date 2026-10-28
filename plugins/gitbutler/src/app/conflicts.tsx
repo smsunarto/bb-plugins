@@ -91,7 +91,7 @@ export function Conflicts({
                   <button
                     type="button"
                     className="cursor-pointer text-start underline-offset-2 hover:underline"
-                    onClick={() => openFile(path, null)}
+                    onClick={() => openFile.open(path, null)}
                   >
                     {path}
                   </button>

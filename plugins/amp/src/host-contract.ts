@@ -30,10 +30,12 @@ export const oracleReportSchema = z.object({
 
 export const ampHostContract = defineRpcContract({
   oracleReport: {
+    experimental_retryable: true,
     input: z.object({ reportId: z.string().uuid() }).strict(),
     output: z.object({ report: oracleReportSchema.nullable() }).strict(),
   },
   cliStatus: {
+    experimental_retryable: true,
     input: z.object({}).strict(),
     output: z.object({ path: z.string().nullable() }).strict(),
   },

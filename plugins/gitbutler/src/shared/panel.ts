@@ -2,6 +2,11 @@ import { z } from "zod";
 
 /** The thread panel action id. The app registers it and the server opens a tab for it. */
 export const PANEL_ACTION_ID = "gitbutler";
+export const GITBUTLER_TAB = {
+  id: PANEL_ACTION_ID,
+  context: { kind: "thread" },
+  availability: "action",
+} as const;
 
 /**
  * Realtime channel the server signals on when a workspace may have changed.

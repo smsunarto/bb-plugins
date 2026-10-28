@@ -12,7 +12,7 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
-    "@get-bb/plugin-sdk": "0.6.75",
+    "@get-bb/plugin-sdk": "0.6.94",
     "@types/node": "^22.0.0",
     "typescript": "^6.0.0",
     "vitest": "^4.1.1"

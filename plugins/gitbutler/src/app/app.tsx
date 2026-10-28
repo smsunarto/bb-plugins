@@ -20,19 +20,19 @@ import {
   experimental_InfoListRow as InfoListRow,
   experimental_InfoSection as InfoSection,
   experimental_THREAD_INFO_SECTION_GROUPS,
+  experimental_useAppPanel,
   useBbContext,
-  useBbNavigate,
   useRealtime,
   useRealtimeConnectionState,
 } from "@get-bb/plugin-sdk/app";
 import type {
   ExperimentalThreadInfoProps,
-  PluginThreadHeaderActionProps,
+  PluginThreadActionDataInput,
 } from "@get-bb/plugin-sdk/app";
-import { QueryClientProvider } from "@tanstack/react-query";
+import { QueryClientProvider, useQueries } from "@tanstack/react-query";
 import { queryClient } from "./query.ts";
 import {
-  PANEL_ACTION_ID,
+  GITBUTLER_TAB,
   WORKSPACE_CHANGED_CHANNEL,
   workspaceChangedSchema,
 } from "../shared/panel.ts";
@@ -86,7 +86,7 @@ import { CheckoutChatActions } from "./checkout-chat.tsx";
 import { CheckoutLabel, MachineColorProvider } from "./checkout-label.tsx";
 import { ParkedBranches } from "./parked-branches.tsx";
 import { SAFETY_POLL_MS } from "./query-client.ts";
-import { useRpcQuery, rpcQueryKey } from "./rpc.ts";
+import { useGitButlerRpc, useRpcQuery, rpcQueryKey } from "./rpc.ts";
 import { readStored, storedAnswer } from "./stored-queries.ts";
 import { relativeTime, shortId, subject } from "./format.ts";
 import { When } from "./when.tsx";
@@ -1555,50 +1555,44 @@ function GitButlerApp({ threadId }: { threadId?: string }) {
 /** How long the header trusts an answer that is not a GitButler board. */
 const NOT_READY_STALE_MS = 60_000;
 
-function HeaderButton({ threadId, isCompactViewport }: PluginThreadHeaderActionProps) {
-  const navigate = useBbNavigate();
-  const repositoryKey = useStoredRepository(threadId) ?? undefined;
-  const workspace = useRpcQuery(
-    "workspace",
-    { threadId, repositoryKey },
+function useHeaderActionData({ threadIds }: PluginThreadActionDataInput) {
+  const repositories = useSyncExternalStore(
+    subscribeRepository,
+    () => JSON.stringify(threadIds.map(readRepository)),
+    () => "[]",
+  );
+  const inputs = useMemo(() => {
+    // The snapshot contains only strings or null, produced above from storage.
+    const selected: unknown[] = JSON.parse(repositories);
+    return threadIds.map((threadId, index) => ({
+      threadId,
+      ...(typeof selected[index] === "string" ? { repositoryKey: selected[index] } : {}),
+    }));
+  }, [threadIds, repositories]);
+  const rpc = useGitButlerRpc();
+  return useQueries(
     {
-      ...storedAnswer("workspace", { threadId, repositoryKey }),
-      // A GitButler board is read once a session, not on every visit. Any
-      // other answer, such as an environment still being made, may change.
-      staleTime: (query) =>
-        query.state.data?.state === "ready" ? Number.POSITIVE_INFINITY : NOT_READY_STALE_MS,
-      gcTime: Number.POSITIVE_INFINITY,
+      queries: inputs.map((input) => ({
+        ...storedAnswer("workspace", input),
+        queryKey: rpcQueryKey("workspace", input),
+        queryFn: () => rpc.call("workspace", input),
+        staleTime: (query: { state: { data?: Workspace } }) =>
+          query.state.data?.state === "ready" ? Number.POSITIVE_INFINITY : NOT_READY_STALE_MS,
+        gcTime: Number.POSITIVE_INFINITY,
+      })),
+      combine: (results): Readonly<Record<string, boolean>> =>
+        Object.fromEntries(
+          inputs.map((input, index) => {
+            const state = results[index]?.data?.state;
+            return [
+              input.threadId,
+              state === "ready" ||
+                (state === "error" && readStored("workspace", input) !== undefined),
+            ];
+          }),
+        ),
     },
-  );
-  const state = workspace.data?.state;
-  // A failed read is often a passing one. A workspace that has read cleanly
-  // before keeps its button through it, as the panel keeps its board.
-  const readyBefore = useMemo(
-    () => state === "error" && readStored("workspace", { threadId, repositoryKey }) !== undefined,
-    [state, threadId, repositoryKey],
-  );
-  if (state !== "ready" && !readyBefore) return null;
-  return (
-    // bb's own toolbar buttons (the editor picker beside this one) are an
-    // outline button with this sizing, so the two read as one row of controls.
-    <Button
-      variant="outline"
-      size="sm"
-      className="h-7 gap-1.5 border-border/70 px-2 text-xs font-normal text-foreground shadow-none max-md:pointer-coarse:h-9"
-      aria-label={HEADER_LABEL}
-      onClick={() => navigate.openThreadPanel({ actionId: PANEL_ACTION_ID })}
-    >
-      <GitButlerMark className="size-4 shrink-0" />
-      {isCompactViewport ? null : HEADER_LABEL}
-    </Button>
-  );
-}
-
-function HeaderAction(props: PluginThreadHeaderActionProps) {
-  return (
-    <QueryClientProvider client={queryClient}>
-      <HeaderButton key={props.threadId} {...props} />
-    </QueryClientProvider>
+    queryClient,
   );
 }
 
@@ -1661,7 +1655,7 @@ function useInfoBoard(threadId: string): ShownWorkspace {
  * bb's row already names, or before a board is read.
  */
 function BranchesInfo({ threadId }: ExperimentalThreadInfoProps) {
-  const navigate = useBbNavigate();
+  const panel = experimental_useAppPanel();
   const { data: board, stale } = useInfoBoard(threadId);
   if (board?.state !== "ready" || board.checkoutIdentity?.kind === "git") return null;
   const branches = board.stacks.flatMap((stack) =>
@@ -1671,7 +1665,7 @@ function BranchesInfo({ threadId }: ExperimentalThreadInfoProps) {
     })),
   );
   if (branches.length === 0) return null;
-  const open = () => navigate.openThreadPanel({ actionId: PANEL_ACTION_ID });
+  const open = () => panel.openTab({ tab: GITBUTLER_TAB });
   return (
     <InfoSection
       label="GitButler branches"
@@ -1720,15 +1714,27 @@ function BranchesInfoSection(props: ExperimentalThreadInfoProps) {
 }
 
 export default definePluginApp((app) => {
-  app.slots.experimental_threadHeaderAction({
+  app.slots.experimental_threadAction({
     id: "open",
     title: "GitButler",
-    component: HeaderAction,
+    icon: "GitBranch",
+    group: "workspace",
+    order: 10,
+    placement: "header",
+    useData: useHeaderActionData,
+    item: ({ thread, data, experimental_panel }) =>
+      data?.[thread.id]
+        ? {
+            label: HEADER_LABEL,
+            icon: "GitBranch",
+            run: () => {
+              experimental_panel.openTab({ tab: GITBUTLER_TAB });
+            },
+          }
+        : null,
   });
   app.slots.experimental_tab({
-    context: { kind: "thread" },
-    availability: "action",
-    id: PANEL_ACTION_ID,
+    ...GITBUTLER_TAB,
     title: "GitButler",
     icon: "GitBranch",
     component: GitButlerApp,

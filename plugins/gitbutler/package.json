@@ -15,8 +15,8 @@
     "access": "public"
   },
   "engines": {
-    "bb": ">=0.47.0 <1.0.0",
-    "bbPluginSdk": ">=0.6.75"
+    "bb": ">=0.48.0 <1.0.0",
+    "bbPluginSdk": ">=0.6.94"
   },
   "bb": {
     "name": "GitButler",
@@ -53,7 +53,7 @@
   "devDependencies": {
     "@bb-plugins/testing": "workspace:*",
     "@bb-plugins/ui": "workspace:*",
-    "@get-bb/plugin-sdk": "0.6.75",
+    "@get-bb/plugin-sdk": "0.6.94",
     "@pierre/diffs": "^1.2.9",
     "@testing-library/react": "16.3.2",
     "@types/node": "^22.0.0",

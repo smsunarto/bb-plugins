@@ -8,6 +8,7 @@ const repoPath = z.string().min(1);
 /** What the server asks of the machine that holds the dotfiles checkout. */
 export const dotfilesHostContract = defineRpcContract({
   inspect: {
+    experimental_retryable: true,
     input: z.object({ repoPath }).strict(),
     output: z
       .object({
@@ -23,6 +24,7 @@ export const dotfilesHostContract = defineRpcContract({
       .strict(),
   },
   readHead: {
+    experimental_retryable: true,
     input: z.object({ repoPath, path: z.string().min(1) }).strict(),
     output: z.object({ content: z.string().nullable() }).strict(),
   },

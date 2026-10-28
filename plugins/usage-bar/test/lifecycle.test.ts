@@ -11,14 +11,16 @@ import { runMenuBar } from "../src/server/lib/menu-bar.ts";
 
 /**
  * Build the helper in a fresh process whose HOME has no cached binary and whose
- * PATH holds only the given shell `tools`, and report how the build failed.
+ * PATH leads with the given shell `tools`, and report how the build failed.
+ * Shadow xcode-select by default: the SDK can also discover system tools even
+ * when a service's PATH is empty, including a real Xcode install on macOS.
  */
 async function buildWith(tools: Record<string, string>) {
   const home = await mkdtemp(join(tmpdir(), "usage-bar-build-"));
   const bin = join(home, "bin");
   try {
     await mkdir(bin);
-    for (const [name, script] of Object.entries(tools)) {
+    for (const [name, script] of Object.entries({ "xcode-select": "exit 1", ...tools })) {
       await writeFile(join(bin, name), `#!/bin/sh\n${script}\n`, { mode: 0o755 });
     }
     const helper = join(import.meta.dirname, "../src/host/helper.ts");

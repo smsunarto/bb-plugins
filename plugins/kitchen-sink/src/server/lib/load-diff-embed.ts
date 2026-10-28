@@ -1,6 +1,11 @@
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import { join } from "node:path";
 import type { RenderEmbedInput, RenderEmbedOutput } from "../../shared/contract.ts";
+import {
+  gitDiffSchema,
+  gitWorkspaceStatusSchema,
+  type GitDiffTarget,
+} from "../../shared/git-contract.ts";
 import { rangePatch } from "./diff-range.ts";
 import { relativeEmbedPath, splitPatchFiles } from "./patch-file.ts";
 import { readDiffSnapshot, saveDiffSnapshot, snapshotDatabase } from "./diff-snapshot.ts";
@@ -88,13 +93,18 @@ async function gitSource(
     if (!thread.environmentId) throw new Error("This thread has no workspace environment.");
     environmentId = thread.environmentId;
   }
-  let target: Parameters<BbPluginApi["sdk"]["environments"]["diff"]>[0];
-  if (input.source === "commit") target = { environmentId, target: "commit", sha: input.sha! };
+  let target: GitDiffTarget;
+  if (input.source === "commit") target = { type: "commit", sha: input.sha! };
   else {
     const environment = await bb.sdk.environments.get({ environmentId });
     let mergeBaseBranch = environment.mergeBaseBranch ?? environment.defaultBranch;
     if (!mergeBaseBranch) {
-      const status = await bb.sdk.environments.status({ environmentId });
+      const status = await bb.sdk.plugins.callRpc({
+        pluginId: "bb--git",
+        method: "workspaceStatus",
+        input: { environmentId },
+        outputSchema: gitWorkspaceStatusSchema,
+      });
       if (status.outcome === "available")
         mergeBaseBranch =
           status.workspace.mergeBase?.mergeBaseBranch ?? status.workspace.branch.defaultBranch;
@@ -103,9 +113,14 @@ async function gitSource(
       throw new Error(
         "No workspace comparison branch is selected. Select a base in BB or use an exact commit.",
       );
-    target = { environmentId, target: "all", mergeBaseBranch };
+    target = { type: "all", mergeBaseBranch };
   }
-  const result = await bb.sdk.environments.diff(target);
+  const result = await bb.sdk.plugins.callRpc({
+    pluginId: "bb--git",
+    method: "diff",
+    input: { environmentId, target },
+    outputSchema: gitDiffSchema,
+  });
   if (result.outcome !== "available")
     throw new Error(result.outcome === "unavailable" ? result.failure.message : result.message);
   if (result.diff.truncated)

@@ -40,7 +40,8 @@ and history.
 ## Thread header and tab
 
 - In a GitButler workspace, the thread header has a **View in GitButler**
-  button that opens the GitButler tab.
+  button that opens the GitButler tab. On compact screens and narrow split
+  panes, the action appears in the thread menu.
 - The first time a thread runs in a GitButler workspace, the GitButler tab is
   added to its side panel without taking focus. A closed tab stays closed.
 - The thread's **Info** tab lists the applied **GitButler branches** with their

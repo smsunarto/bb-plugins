@@ -3,8 +3,8 @@
   "version": "0.1.0",
   "type": "module",
   "engines": {
-    "bb": ">=0.46",
-    "bbPluginSdk": ">=0.5.29"
+    "bb": ">=0.48.0 <1.0.0",
+    "bbPluginSdk": ">=0.6.94"
   },
   "bb": {
     "name": "GCP Machine",
@@ -22,7 +22,7 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
-    "@get-bb/plugin-sdk": "0.6.75",
+    "@get-bb/plugin-sdk": "0.6.94",
     "@types/node": "^22.0.0",
     "tsx": "4.23.12",
     "typescript": "^6.0.0"

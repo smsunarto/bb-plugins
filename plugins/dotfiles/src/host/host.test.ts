@@ -155,10 +155,11 @@ test("a missing checkout reads as missing, with ~ expanded on this machine", asy
 });
 
 test("tasks run in the checkout through the login shell, output merged for display", async () => {
-  expect(await host.experimental_call("run", { repoPath: repo, command: "pwd" })).toEqual({
-    exitCode: 0,
-    output: `${noise}${await realpath(repo)}\n`,
-  });
+  const result = await host.experimental_call("run", { repoPath: repo, command: "pwd" });
+  expect(result.exitCode).toBe(0);
+  // Separate stdout/stderr pipes can arrive in either order.
+  expect(result.output).toContain(noise);
+  expect(result.output.replace(noise, "")).toBe(`${await realpath(repo)}\n`);
   expect(await host.experimental_call("run", { repoPath: repo, command: "exit 3" })).toEqual({
     exitCode: 3,
     output: noise,

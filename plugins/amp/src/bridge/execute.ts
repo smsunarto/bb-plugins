@@ -4,7 +4,8 @@
 // @ampcode/sdk code. `createAmpExecute` produces the `AmpExecuteFn` the
 // conversation layer consumes, so everything above this module stays
 // protocol-level.
-import { spawn, type ChildProcess } from "node:child_process";
+import type { ChildProcess } from "node:child_process";
+import { experimental_spawnHostProcess as spawn } from "@get-bb/plugin-sdk/process";
 import { once } from "node:events";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";

@@ -90,7 +90,10 @@ export function firstChangedLine(parsed: Parsed | null): number | null {
 export type FileWorkspace = Pick<Workspace, "environmentId" | "repositoryKey">;
 
 /** Opens a repository file in bb's preview, at `line` when there is one. */
-export type OpenFile = (path: string, line: number | null) => void;
+export type OpenFile = {
+  revision: string | null;
+  open(path: string, line: number | null): void;
+};
 
 /**
  * The preview request for a file of this repository. bb names a workspace file
@@ -101,6 +104,7 @@ export type OpenFile = (path: string, line: number | null) => void;
 export function filePreview(
   workspace: FileWorkspace | undefined,
   checkout?: CheckoutSelection,
+  revision?: string | null,
 ): ((path: string, line: number | null) => ExperimentalFileOpenOptions) | null {
   if (checkout)
     return (path, line) => ({
@@ -119,6 +123,7 @@ export function filePreview(
       kind: "workspace",
       environmentId,
       path: repositoryKey === "." ? path : `${repositoryKey}/${path}`,
+      ...(repositoryKey === "." && revision ? { experimental_ref: revision } : {}),
     },
     location: line === null ? null : { kind: "line", line, column: null },
   });
@@ -129,19 +134,34 @@ export function filePreview(
  * The same function until the repository changes, so the diff cards it is
  * handed to skip rendering while the reader moves through the file list.
  */
-export function useOpenFile(workspace: FileWorkspace | undefined): OpenFile | null {
+export function useOpenFile(
+  workspace: FileWorkspace | undefined,
+  source: PatchSource = { kind: "uncommitted" },
+): OpenFile | null {
   const navigate = useBbNavigate();
   const checkout = useBoardWorkspace()?.checkout;
   const environmentId = workspace?.environmentId ?? null;
   const repositoryKey = workspace?.repositoryKey ?? null;
+  // BB resolves revisions in the environment root repository. Nested repositories
+  // and absolute host targets can only open their current working-copy files.
+  const revision =
+    !checkout &&
+    repositoryKey === "." &&
+    source.kind === "commit" &&
+    /^[0-9a-fA-F]{4,40}$/.test(source.commitId)
+      ? source.commitId
+      : null;
   return useMemo(() => {
-    const preview = filePreview({ environmentId, repositoryKey }, checkout);
+    const preview = filePreview({ environmentId, repositoryKey }, checkout, revision);
     // bb hosts from before the preview have no such method.
     if (!preview || typeof navigate.experimental_openFilePreview !== "function") return null;
-    return (path, line) => {
-      navigate.experimental_openFilePreview(preview(path, line));
+    return {
+      revision,
+      open(path, line) {
+        navigate.experimental_openFilePreview(preview(path, line));
+      },
     };
-  }, [navigate, environmentId, repositoryKey, checkout]);
+  }, [navigate, environmentId, repositoryKey, checkout, revision]);
 }
 
 const ICON_BUTTON = cn(
@@ -260,13 +280,12 @@ function fileQuote(path: string, commit: string | null): string {
   return commit ? `${path} in commit ${commit}` : `${path} (uncommitted)`;
 }
 
-type Opener = { label: string; run: () => void };
+type Opener = { label: string; run: () => void; currentVersion?: true };
 
 /**
- * The preview reads the worktree, so a commit's file opens as it is now, at
- * its top: the commit's line numbers are off by whatever changed the file
- * since. A deleted file has nothing to open, and neither does an upstream
- * commit's, which is not in the worktree until it is pulled.
+ * Root-repository previews read a commit's file at that revision. Nested
+ * repositories and absolute host targets open the worktree at its top, since
+ * their previews cannot select a revision. Deleted files have nothing to open.
  */
 function fileOpener(
   file: FilePatch,
@@ -276,10 +295,22 @@ function fileOpener(
 ): Opener | null {
   if (!openFile || file.kind === "deleted") return null;
   if (source.kind === "uncommitted") {
-    return { label: `Open ${file.path}`, run: () => openFile(file.path, firstChangedLine(parsed)) };
+    return {
+      label: `Open ${file.path}`,
+      run: () => openFile.open(file.path, firstChangedLine(parsed)),
+    };
   }
+  if (openFile.revision)
+    return {
+      label: `Open ${file.path} at ${shortId(openFile.revision)}`,
+      run: () => openFile.open(file.path, firstChangedLine(parsed)),
+    };
   if (source.where === "upstream") return null;
-  return { label: `Open current version of ${file.path}`, run: () => openFile(file.path, null) };
+  return {
+    label: `Open current version of ${file.path}`,
+    run: () => openFile.open(file.path, null),
+    currentVersion: true,
+  };
 }
 
 /** A diff too large to show, cut short or left out, and where to read it instead. */
@@ -305,7 +336,7 @@ function TooLarge({
         className="cursor-pointer underline underline-offset-2"
         onClick={opener.run}
       >
-        {commit ? "Open the current file" : "Open the file"}
+        {commit && opener.currentVersion ? "Open the current file" : "Open the file"}
       </button>
       {` to read ${rest}.`}
     </>
@@ -544,7 +575,7 @@ export function FileCards({
   const [mode] = useListMode();
   const [active, setActive] = useState(initialPath);
   const section = useRef<HTMLElement>(null);
-  const openFile = useOpenFile(workspace);
+  const openFile = useOpenFile(workspace, source);
   const { patches, files, changes, totals, truncated } = usePatches(
     threadId,
     repositoryKey,

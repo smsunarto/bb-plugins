@@ -5,7 +5,7 @@ import { instructionFiles } from "@bb-plugins/instructions";
 // view --json for the panel, plus sync / submit / init actions.
 import { defineRpcContract, type BbPluginApi, type PluginRpcHandlers } from "@get-bb/plugin-sdk";
 import { z } from "zod";
-import { execFile } from "node:child_process";
+import { experimental_execHostFileCallback as execFile } from "@get-bb/plugin-sdk/process";
 import { existsSync } from "node:fs";
 import {
   buildChangeSet,
@@ -388,7 +388,7 @@ function runCmd(
     execFile(
       command,
       args,
-      { cwd, timeout: timeoutMs, maxBuffer: 4 * 1024 * 1024 },
+      { cwd, timeout: timeoutMs, maxBuffer: 4 * 1024 * 1024, encoding: "utf8" },
       (error, stdout, stderr) => {
         const err = error as (Error & { code?: number | string; killed?: boolean }) | null;
         resolve({

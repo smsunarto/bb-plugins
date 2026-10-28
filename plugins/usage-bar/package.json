@@ -13,8 +13,8 @@
   "type": "module",
   "private": true,
   "engines": {
-    "bb": ">=0.44.0 <1.0.0",
-    "bbPluginSdk": ">=0.5.29"
+    "bb": ">=0.48.0 <1.0.0",
+    "bbPluginSdk": ">=0.6.94"
   },
   "bb": {
     "name": "Usage Bar",
@@ -44,7 +44,7 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
-    "@get-bb/plugin-sdk": "0.6.75",
+    "@get-bb/plugin-sdk": "0.6.94",
     "@types/node": "^22.0.0",
     "bun-types": "^1.4.0",
     "tsx": "4.23.12",

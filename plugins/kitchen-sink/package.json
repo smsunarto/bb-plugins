@@ -26,7 +26,7 @@
   "type": "module",
   "private": true,
   "engines": {
-    "bb": ">=0.47.0 <1.0.0",
+    "bb": ">=0.48.0 <1.0.0",
     "bbPluginSdk": ">=0.6.75"
   },
   "bb": {

@@ -19,6 +19,7 @@ export const machineStatsSchema = z
 
 export const hostContract = defineRpcContract({
   stats: {
+    experimental_retryable: true,
     input: z.null(),
     output: machineStatsSchema,
   },

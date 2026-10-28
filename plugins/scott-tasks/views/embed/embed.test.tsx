@@ -102,15 +102,15 @@ describe("Task directive card", () => {
   });
 
   it("opens the side panel on primary click and the Tasks app from the arrow", async () => {
-    const openThreadPanel = vi.fn(() => true);
+    const openTab = vi.fn(() => true);
     const slot = renderSlot(app.messageDirectives[0]!, directiveProps({ key: "TSK-4" }), {
-      openThreadPanel,
+      experimental_panel: { openTab },
       rpc: { getTaskByKey: () => ({ task }) },
     });
 
     fireEvent.click(await slot.findByText("Ship task embeds"));
-    expect(openThreadPanel).toHaveBeenCalledWith({
-      actionId: "task",
+    expect(openTab).toHaveBeenCalledWith({
+      tab: { id: "task", context: { kind: "thread" }, availability: "action" },
       title: "TSK-4",
       params: { taskKey: "TSK-4" },
     });
@@ -248,7 +248,7 @@ describe("Task embed panel", () => {
   it("renders the task detail for the panel params and links to the app", async () => {
     const slot = renderSlot(
       app.threadPanelActions[0]!,
-      { threadId: "thr_1", params: { taskKey: "TSK-4" } },
+      { threadId: "thr_1", environment: null, params: { taskKey: "TSK-4" } },
       {
         rpc: taskDetailRpc(() => ({ task })),
       },
@@ -266,7 +266,7 @@ describe("Task embed panel", () => {
     let title = "Stale embedded detail";
     const slot = renderSlot(
       app.threadPanelActions[0]!,
-      { threadId: "thr_1", params: { taskKey: "TSK-4" } },
+      { threadId: "thr_1", environment: null, params: { taskKey: "TSK-4" } },
       {
         realtimeConnectionState: "connected",
         rpc: taskDetailRpc(() => ({ task: { ...task, title } })),
@@ -284,7 +284,7 @@ describe("Task embed panel", () => {
   it("shows a hint when opened without a task key", () => {
     const slot = renderSlot(
       app.threadPanelActions[0]!,
-      { threadId: "thr_1", params: null },
+      { threadId: "thr_1", environment: null, params: null },
       { rpc: {} },
     );
     slot.getByText("Open a task card from a message to view it here.");
@@ -315,9 +315,9 @@ describe("Thread Info tasks section", () => {
   });
 
   it("lists the thread's tasks and opens one beside the thread", async () => {
-    const openThreadPanel = vi.fn(() => true);
+    const openTab = vi.fn(() => true);
     const slot = renderSlot(app.threadInfoSections[0]!, infoProps, {
-      openThreadPanel,
+      experimental_panel: { openTab },
       rpc: {
         listTaskThreadsByThread: () => ({ taskThreads: [link] }),
         listTasks: linkedTasks,
@@ -330,8 +330,8 @@ describe("Thread Info tasks section", () => {
       input: { threadId: "thr_worker" },
     });
     expect(slot.getByText("TSK-4")).toBeTruthy();
-    expect(openThreadPanel).toHaveBeenCalledWith({
-      actionId: "task",
+    expect(openTab).toHaveBeenCalledWith({
+      tab: { id: "task", context: { kind: "thread" }, availability: "action" },
       title: "TSK-4",
       params: { taskKey: "TSK-4" },
     });

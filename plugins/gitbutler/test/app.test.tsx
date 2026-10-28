@@ -2,7 +2,13 @@ import { beforeEach, expect, onTestFinished, setSystemTime, test } from "bun:tes
 import { environmentManager } from "@tanstack/react-query";
 import { queryClient } from "../src/app/query.ts";
 import { installDom } from "@bb-plugins/testing";
-import type { ExperimentalThreadActionTabProps } from "@get-bb/plugin-sdk/app";
+import {
+  experimental_useAppPanel,
+  useBbNavigate,
+  useSdk,
+  type ExperimentalThreadActionTabProps,
+  type PluginThreadActionTarget,
+} from "@get-bb/plugin-sdk/app";
 import type { RenderSlotOptions, RenderedSlot } from "@get-bb/plugin-sdk/testing/app";
 import type { ComponentType } from "react";
 import { machineColors } from "../src/app/machine-colors.ts";
@@ -84,7 +90,7 @@ async function panel(rpc: Fakes, options: Omit<RenderSlotOptions, "rpc" | "conte
   expect(registration.layout).toBe("flush");
   return renderSlot(
     { component: registration.component as ComponentType<ExperimentalThreadActionTabProps> },
-    { threadId: "thread-1", params: null },
+    { threadId: "thread-1", params: null, environment: null },
     {
       ...options,
       rpc: answeringWithBoard(rpc) as never,
@@ -716,17 +722,68 @@ test("says so when the GitButler CLI is missing on the host", async () => {
   slot.lifecycle.unmount();
 });
 
-async function header(workspaceResult: () => unknown, isCompactViewport = false) {
+function actionThread(id: string): PluginThreadActionTarget {
+  return {
+    id,
+    projectId: "project-1",
+    parentThreadId: null,
+    archivedAt: null,
+    pinnedAt: null,
+    sectionId: null,
+    isUnread: false,
+    status: "idle",
+    environment: null,
+  };
+}
+
+async function header(workspaceResult: (input: never) => unknown, threadIds = ["thread-1"]) {
   const app = await loadPluginApp(() => import("../src/app/app.tsx"));
-  const registration = app.threadHeaderActions[0]!;
-  return renderSlot(
-    registration,
-    { threadId: "thread-1", projectId: "project-1", isCompactViewport },
+  const registration = app.threadActions.find((action) => action.id === "open")!;
+  expect(registration.placement).toBe("header");
+  const useHeaderData =
+    registration.useData ??
+    (() => {
+      throw new Error("The header must load workspace state");
+    });
+  let visibleThreadIds = threadIds;
+  function HeaderProbe() {
+    const data = useHeaderData({ threadIds: visibleThreadIds });
+    const experimental_panel = experimental_useAppPanel();
+    const sdk = useSdk();
+    const navigate = useBbNavigate();
+    return (
+      <>
+        {visibleThreadIds.map((id) => {
+          const item = registration.item({
+            thread: actionThread(id),
+            data,
+            sdk,
+            navigate,
+            experimental_panel,
+          });
+          return item ? (
+            <button key={id} onClick={() => item.run({ requestRename() {} })}>
+              {item.label}
+            </button>
+          ) : null;
+        })}
+      </>
+    );
+  }
+  const slot = renderSlot(
+    { component: HeaderProbe },
+    {},
     {
       rpc: { workspace: workspaceResult } as never,
       context: { threadId: "thread-1", projectId: "project-1" },
     },
   );
+  return Object.assign(slot, {
+    setThreadIds(next: string[]) {
+      visibleThreadIds = next;
+      slot.lifecycle.rerender(<HeaderProbe />);
+    },
+  });
 }
 
 test("the header button opens the GitButler tab", async () => {
@@ -735,17 +792,22 @@ test("the header button opens the GitButler tab", async () => {
   const button = await waitFor(() => slot.getByRole("button", { name: "View in GitButler" }));
   expect(button.textContent).toBe("View in GitButler");
   fireEvent.click(button);
-  expect(slot.inspection.navigateCalls).toEqual([
-    { method: "openThreadPanel", options: { actionId: "gitbutler" } },
+  expect(slot.inspection.experimental_panelCalls).toEqual([
+    {
+      method: "openTab",
+      options: { tab: { id: "gitbutler", context: { kind: "thread" }, availability: "action" } },
+    },
   ]);
   slot.lifecycle.unmount();
 });
 
-test("the header button is icon-only on compact viewports", async () => {
-  const slot = await header(() => workspace, true);
-  const button = await waitFor(() => slot.getByRole("button", { name: "View in GitButler" }));
-  expect(button.textContent).toBe("");
-  slot.lifecycle.unmount();
+test("the host owns responsive header placement and no legacy header is registered", async () => {
+  const app = await loadPluginApp(() => import("../src/app/app.tsx"));
+  expect(app.threadHeaderActions).toHaveLength(0);
+  const action = app.threadActions.find((entry) => entry.id === "open")!;
+  expect(action.placement).toBe("header");
+  expect(action.group).toBe("workspace");
+  expect(action.icon).toBe("GitBranch");
 });
 
 test("the header draws nothing outside a GitButler workspace", async () => {
@@ -756,6 +818,35 @@ test("the header draws nothing outside a GitButler workspace", async () => {
   });
   await waitFor(() => expect(asked).toBe(true));
   expect(slot.queryByRole("button")).toBeNull();
+  slot.lifecycle.unmount();
+});
+
+test("a slow visible thread does not block another header, and returning ids reuse cache", async () => {
+  const calls: string[] = [];
+  const slot = await header(
+    (input: { threadId: string }) => {
+      calls.push(input.threadId);
+      return input.threadId === "slow" ? new Promise(() => {}) : workspace;
+    },
+    ["thread-1", "slow"],
+  );
+  await slot.findByRole("button", { name: "View in GitButler" });
+  expect(calls.sort()).toEqual(["slow", "thread-1"]);
+  slot.setThreadIds([]);
+  expect(slot.queryByRole("button")).toBeNull();
+  slot.setThreadIds(["thread-1"]);
+  await slot.findByRole("button", { name: "View in GitButler" });
+  expect(calls.filter((id) => id === "thread-1")).toHaveLength(1);
+  slot.lifecycle.unmount();
+});
+
+test("the header stays available when an error follows a stored board", async () => {
+  const first = await panel(baseRpc);
+  await first.findByRole("article", { name: "Branch scott/top" });
+  first.lifecycle.unmount();
+  queryClient.clear();
+  const slot = await header(() => ({ ...workspace, state: "error" }));
+  await slot.findByRole("button", { name: "View in GitButler" });
   slot.lifecycle.unmount();
 });
 
@@ -783,8 +874,11 @@ test("the Info tab names the applied GitButler branches, which bb's Branch row c
   // Each stack top first, so a stacked branch names the one it is on.
   expect(rows).toEqual(["scott/topon scott/bottom#42", "scott/bottom", "scott/experimental"]);
   fireEvent.click(section.getByRole("button", { name: "scott/bottom" }));
-  expect(slot.inspection.navigateCalls).toEqual([
-    { method: "openThreadPanel", options: { actionId: "gitbutler" } },
+  expect(slot.inspection.experimental_panelCalls).toEqual([
+    {
+      method: "openTab",
+      options: { tab: { id: "gitbutler", context: { kind: "thread" }, availability: "action" } },
+    },
   ]);
   slot.lifecycle.unmount();
 });
@@ -2864,7 +2958,7 @@ test("Open shows the file in bb's preview, under its repository, at its first ch
   slot.lifecycle.unmount();
 });
 
-test("a commit's file opens as it is now, at its top, and an upstream commit's not at all", async () => {
+test("a root repository's committed file opens at its revision and first change, including upstream commits", async () => {
   const slot = await panel({
     ...baseRpc,
     patches: () => ({ files: [patch("bun.lock")], truncated: false }),
@@ -2880,20 +2974,60 @@ test("a commit's file opens as it is now, at its top, and an upstream commit's n
   };
 
   await openFrom("feat(top): add the thing");
-  fireEvent.click(slot.getByRole("button", { name: "Open current version of bun.lock" }));
+  fireEvent.click(slot.getByRole("button", { name: "Open bun.lock at 8f4598a" }));
   expect(slot.inspection.navigateCalls).toEqual([
     {
       method: "experimental_openFilePreview",
       options: {
-        target: { kind: "workspace", environmentId: "env-1", path: "bun.lock" },
-        location: null,
+        target: {
+          kind: "workspace",
+          environmentId: "env-1",
+          path: "bun.lock",
+          experimental_ref: "8f4598a1eaca7d3d7080a6756164040f0707d0d5",
+        },
+        location: { kind: "line", line: 1, column: null },
       },
     },
   ]);
   fireEvent.click(slot.getByRole("button", { name: "Back to workspace" }));
 
   await openFrom("chore: someone else's push");
-  expect(slot.queryByRole("button", { name: /^Open .*bun\.lock$/ })).toBeNull();
+  fireEvent.click(slot.getByRole("button", { name: "Open bun.lock at 1111111" }));
+  expect(slot.inspection.navigateCalls.at(-1)).toEqual({
+    method: "experimental_openFilePreview",
+    options: {
+      target: {
+        kind: "workspace",
+        environmentId: "env-1",
+        path: "bun.lock",
+        experimental_ref: "1111111111111111111111111111111111111111",
+      },
+      location: { kind: "line", line: 1, column: null },
+    },
+  });
+  slot.lifecycle.unmount();
+});
+
+test("a nested repository's committed file explicitly opens the current version at its top", async () => {
+  const slot = await panel({
+    ...baseRpc,
+    workspace: () => ({ ...workspace, repositoryKey: "repos/app" }),
+    patches: () => ({ files: [patch("bun.lock")], truncated: false }),
+  });
+  fireEvent.click(await slot.findByText("feat(top): add the thing"));
+  const files = await slot.findByRole("region", { name: "Changed files" });
+  fireEvent.click(within(files).getByTitle("bun.lock"));
+  fireEvent.click(await slot.findByRole("button", { name: "Open current version of bun.lock" }));
+  expect(slot.queryByRole("button", { name: "Open bun.lock at 8f4598a" })).toBeNull();
+  expect(slot.inspection.navigateCalls).toEqual([
+    {
+      method: "experimental_openFilePreview",
+      options: {
+        target: { kind: "workspace", environmentId: "env-1", path: "repos/app/bun.lock" },
+        location: null,
+      },
+    },
+  ]);
   slot.lifecycle.unmount();
 });
 

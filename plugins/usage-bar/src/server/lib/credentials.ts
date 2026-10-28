@@ -1,8 +1,7 @@
-import { execFile } from "node:child_process";
+import { experimental_execHostFile as run } from "@get-bb/plugin-sdk/process";
 import { readFile } from "node:fs/promises";
 import { homedir, userInfo } from "node:os";
 import { join } from "node:path";
-import { promisify } from "node:util";
 import { z } from "zod";
 
 /**
@@ -11,8 +10,6 @@ import { z } from "zod";
  * CLI owns. An expired token yields null, and the account shows no extras until
  * its owner refreshes it.
  */
-
-const run = promisify(execFile);
 
 export interface LocalCredential {
   token: string;

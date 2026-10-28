@@ -45,7 +45,7 @@
   },
   "devDependencies": {
     "@bb-plugins/testing": "workspace:*",
-    "@get-bb/plugin-sdk": "0.6.75",
+    "@get-bb/plugin-sdk": "0.6.94",
     "@testing-library/react": "16.3.2",
     "@types/node": "^22.0.0",
     "@types/react": "^19.0.0",

@@ -8,7 +8,7 @@
         "@bb-plugins/ui": "workspace:*",
         "@fontsource-variable/inter": "5.3.0",
         "@fontsource/ibm-plex-mono": "5.3.0",
-        "@get-bb/plugin-sdk": "0.6.75",
+        "@get-bb/plugin-sdk": "0.6.94",
         "@hugeicons/core-free-icons": "4.2.3",
         "@sentry/cli": "3.7.0",
         "@storybook/addon-docs": "10.6.3",
@@ -62,7 +62,7 @@
         "zod": "^4.4.3",
       },
       "devDependencies": {
-        "@get-bb/plugin-sdk": "0.6.75",
+        "@get-bb/plugin-sdk": "0.6.94",
         "@types/node": "^22.0.0",
         "typescript": "^6.0.0",
         "vitest": "^4.1.1",
@@ -158,7 +158,7 @@
       "devDependencies": {
         "@bb-plugins/testing": "workspace:*",
         "@bb-plugins/ui": "workspace:*",
-        "@get-bb/plugin-sdk": "0.6.75",
+        "@get-bb/plugin-sdk": "0.6.94",
         "@radix-ui/react-slot": "^1.3.0",
         "@testing-library/react": "16.3.2",
         "@types/node": "^22.0.0",
@@ -187,7 +187,7 @@
         "@bb-plugins/icons": "workspace:*",
         "@bb-plugins/testing": "workspace:*",
         "@bb-plugins/ui": "workspace:*",
-        "@get-bb/plugin-sdk": "0.6.75",
+        "@get-bb/plugin-sdk": "0.6.94",
         "@pierre/diffs": "^1.2.9",
         "@radix-ui/react-alert-dialog": "^1.1.19",
         "@radix-ui/react-context-menu": "^2.3.3",
@@ -223,7 +223,7 @@
         "zod": "^4.3.6",
       },
       "devDependencies": {
-        "@get-bb/plugin-sdk": "0.6.75",
+        "@get-bb/plugin-sdk": "0.6.94",
         "@pierre/diffs": "^1.2.9",
         "@radix-ui/react-alert-dialog": "^1.1.19",
         "@radix-ui/react-context-menu": "^2.3.3",
@@ -265,7 +265,7 @@
       "devDependencies": {
         "@bb-plugins/testing": "workspace:*",
         "@bb-plugins/ui": "workspace:*",
-        "@get-bb/plugin-sdk": "0.6.75",
+        "@get-bb/plugin-sdk": "0.6.94",
         "@pierre/diffs": "^1.2.9",
         "@radix-ui/react-dialog": "^1.1.19",
         "@radix-ui/react-popover": "^1.1.19",
@@ -298,7 +298,7 @@
       },
       "devDependencies": {
         "@bb-plugins/testing": "workspace:*",
-        "@get-bb/plugin-sdk": "0.6.75",
+        "@get-bb/plugin-sdk": "0.6.94",
         "@types/node": "^22.0.0",
         "@types/react": "^19.0.0",
         "@types/react-dom": "^19.0.0",
@@ -329,7 +329,7 @@
       "devDependencies": {
         "@bb-plugins/testing": "workspace:*",
         "@bb-plugins/ui": "workspace:*",
-        "@get-bb/plugin-sdk": "0.6.75",
+        "@get-bb/plugin-sdk": "0.6.94",
         "@radix-ui/react-alert-dialog": "^1.1.19",
         "@radix-ui/react-context-menu": "^2.3.3",
         "@radix-ui/react-dialog": "^1.1.19",
@@ -367,7 +367,7 @@
         "zod": "^4.4.3",
       },
       "devDependencies": {
-        "@get-bb/plugin-sdk": "0.6.75",
+        "@get-bb/plugin-sdk": "0.6.94",
         "@types/node": "^22.0.0",
         "tsx": "4.23.12",
         "typescript": "^6.0.0",
@@ -431,7 +431,7 @@
       "devDependencies": {
         "@bb-plugins/icons": "workspace:*",
         "@bb-plugins/ui": "workspace:*",
-        "@get-bb/plugin-sdk": "0.6.75",
+        "@get-bb/plugin-sdk": "0.6.94",
         "@pierre/diffs": "^1.2.9",
         "@radix-ui/react-alert-dialog": "^1.1.19",
         "@radix-ui/react-context-menu": "^2.3.3",
@@ -471,7 +471,7 @@
       "devDependencies": {
         "@bb-plugins/testing": "workspace:*",
         "@bb-plugins/ui": "workspace:*",
-        "@get-bb/plugin-sdk": "0.6.75",
+        "@get-bb/plugin-sdk": "0.6.94",
         "@pierre/diffs": "^1.2.9",
         "@testing-library/react": "16.3.2",
         "@types/node": "^22.0.0",
@@ -507,7 +507,7 @@
         "@bb-plugins/codex-inference": "workspace:*",
         "@bb-plugins/testing": "workspace:*",
         "@bb-plugins/ui": "workspace:*",
-        "@get-bb/plugin-sdk": "0.6.75",
+        "@get-bb/plugin-sdk": "0.6.94",
         "@pierre/diffs": "^1.2.9",
         "@radix-ui/react-alert-dialog": "^1.1.19",
         "@radix-ui/react-context-menu": "^2.3.3",
@@ -544,7 +544,7 @@
       },
       "devDependencies": {
         "@bb-plugins/ui": "workspace:*",
-        "@get-bb/plugin-sdk": "0.6.75",
+        "@get-bb/plugin-sdk": "0.6.94",
         "@testing-library/react": "16.3.2",
         "@types/node": "^22.0.0",
         "@types/react": "^19.0.0",
@@ -603,7 +603,7 @@
         "zod": "^4.3.6",
       },
       "devDependencies": {
-        "@get-bb/plugin-sdk": "0.6.75",
+        "@get-bb/plugin-sdk": "0.6.94",
         "@pierre/diffs": "^1.2.9",
         "@radix-ui/react-alert-dialog": "^1.1.19",
         "@radix-ui/react-context-menu": "^2.3.3",
@@ -635,7 +635,7 @@
       "name": "@smsunarto/bb-plugin-monokai",
       "version": "0.5.0",
       "devDependencies": {
-        "@get-bb/plugin-sdk": "0.6.75",
+        "@get-bb/plugin-sdk": "0.6.94",
         "@pierre/diffs": "^1.2.9",
         "@storybook/react-vite": "10.6.3",
         "@types/better-sqlite3": "^7.6.12",
@@ -663,7 +663,7 @@
       },
       "devDependencies": {
         "@bb-plugins/testing": "workspace:*",
-        "@get-bb/plugin-sdk": "0.6.75",
+        "@get-bb/plugin-sdk": "0.6.94",
         "@testing-library/react": "16.3.2",
         "@types/node": "^22.0.0",
         "@types/react": "^19.0.0",
@@ -704,7 +704,7 @@
       },
       "devDependencies": {
         "@bb-plugins/ui": "workspace:*",
-        "@get-bb/plugin-sdk": "0.6.75",
+        "@get-bb/plugin-sdk": "0.6.94",
         "@radix-ui/react-dialog": "^1.1.19",
         "@radix-ui/react-select": "^2.3.3",
         "@radix-ui/react-tooltip": "^1.2.12",
@@ -760,7 +760,7 @@
       },
       "devDependencies": {
         "@bb-plugins/ui": "workspace:*",
-        "@get-bb/plugin-sdk": "0.6.75",
+        "@get-bb/plugin-sdk": "0.6.94",
         "@radix-ui/react-context-menu": "^2.3.3",
         "@radix-ui/react-dialog": "^1.1.19",
         "@radix-ui/react-dropdown-menu": "^2.1.20",
@@ -802,7 +802,7 @@
         "zod": "^4.3.6",
       },
       "devDependencies": {
-        "@get-bb/plugin-sdk": "0.6.75",
+        "@get-bb/plugin-sdk": "0.6.94",
         "@pierre/diffs": "^1.2.9",
         "@radix-ui/react-alert-dialog": "^1.1.19",
         "@radix-ui/react-context-menu": "^2.3.3",
@@ -854,7 +854,7 @@
         "zod": "^4.3.6",
       },
       "devDependencies": {
-        "@get-bb/plugin-sdk": "0.6.79",
+        "@get-bb/plugin-sdk": "0.6.94",
         "@testing-library/dom": "^10.4.1",
         "@testing-library/react": "^16.3.2",
         "@types/mdast": "^4.0.4",
@@ -877,7 +877,7 @@
         "zod": "^4.4.3",
       },
       "devDependencies": {
-        "@get-bb/plugin-sdk": "0.6.75",
+        "@get-bb/plugin-sdk": "0.6.94",
         "@testing-library/react": "16.3.2",
         "@types/node": "^22.0.0",
         "@types/react": "^19.0.0",
@@ -897,7 +897,7 @@
         "zod": "^4.4.3",
       },
       "devDependencies": {
-        "@get-bb/plugin-sdk": "0.6.75",
+        "@get-bb/plugin-sdk": "0.6.94",
         "@types/node": "^22.0.0",
         "bun-types": "^1.4.0",
         "tsx": "4.23.12",
@@ -908,7 +908,7 @@
       "name": "@smsunarto/bb-plugin-vimium",
       "version": "0.1.0",
       "devDependencies": {
-        "@get-bb/plugin-sdk": "0.6.75",
+        "@get-bb/plugin-sdk": "0.6.94",
         "@pierre/diffs": "^1.2.9",
         "@radix-ui/react-alert-dialog": "^1.1.19",
         "@radix-ui/react-context-menu": "^2.3.3",
@@ -1258,7 +1258,7 @@
 
     "@fontsource/ibm-plex-mono": ["@fontsource/ibm-plex-mono@5.3.0", "", {}, "sha512-eTgnZjZEGk1QtD3ZstF+Vclo2HLAni8YMy34/DxllwZvyz1lR/1RF/xTiAquOBO7MvqBx8D2Ig2WCPMVfdZu7Q=="],
 
-    "@get-bb/plugin-sdk": ["@get-bb/plugin-sdk@0.6.75", "", { "dependencies": { "@tanstack/react-query": "^5.62.0", "cross-spawn": "^7.0.6", "zod": "^4.6.5" }, "peerDependencies": { "@testing-library/react": "^16.3.2", "@types/better-sqlite3": "^7.6.12", "@types/react": "^19.0.0", "better-sqlite3": ">=12", "cron-parser": "^5.5.0", "hono": "^4.11.9", "react": "^19.0.0", "react-dom": "^19.0.0" }, "optionalPeers": ["@testing-library/react", "@types/better-sqlite3", "@types/react", "better-sqlite3", "cron-parser", "hono", "react", "react-dom"] }, "sha512-6aODJQ2k/OiphNImdmcM2MKMjUQAZQIA9nICEX3HOIhcegxa96B7K4ZfDn1AVxh/dpRR/M6gk3t7kUpIGQjtnw=="],
+    "@get-bb/plugin-sdk": ["@get-bb/plugin-sdk@0.6.94", "", { "dependencies": { "@tanstack/react-query": "^5.62.0", "cross-spawn": "^7.0.6", "zod": "^4.6.5" }, "peerDependencies": { "@testing-library/react": "^16.3.2", "@types/better-sqlite3": "^7.6.12", "@types/react": "^19.0.0", "better-sqlite3": ">=12", "cron-parser": "^5.5.0", "hono": "^4.11.9", "react": "^19.0.0", "react-dom": "^19.0.0" }, "optionalPeers": ["@testing-library/react", "@types/better-sqlite3", "@types/react", "better-sqlite3", "cron-parser", "hono", "react", "react-dom"] }, "sha512-si/PixMDGmpWyKHDdjjegJr5dGCykmq+XZfnrOVl1SlYexvqZbp1a5jY7BG8711AQN2YKeayXmhxufl4cpMxDg=="],
 
     "@hono/node-server": ["@hono/node-server@2.0.12", "", { "peerDependencies": { "hono": "^4" } }, "sha512-eWpQYr67tqJLeaSUl0Q+TquuYfUdTibpOJlUMV2FfUP7+KqCC5TufnwnlXL6mobZBJbGAYRd7ZvEBDCbLInjhg=="],
 
@@ -3304,6 +3304,8 @@
 
     "@smsunarto/bb-plugin-gtd-sidebar/typescript": ["typescript@7.0.2", "", { "optionalDependencies": { "@typescript/typescript-aix-ppc64": "7.0.2", "@typescript/typescript-darwin-arm64": "7.0.2", "@typescript/typescript-darwin-x64": "7.0.2", "@typescript/typescript-freebsd-arm64": "7.0.2", "@typescript/typescript-freebsd-x64": "7.0.2", "@typescript/typescript-linux-arm": "7.0.2", "@typescript/typescript-linux-arm64": "7.0.2", "@typescript/typescript-linux-loong64": "7.0.2", "@typescript/typescript-linux-mips64el": "7.0.2", "@typescript/typescript-linux-ppc64": "7.0.2", "@typescript/typescript-linux-riscv64": "7.0.2", "@typescript/typescript-linux-s390x": "7.0.2", "@typescript/typescript-linux-x64": "7.0.2", "@typescript/typescript-netbsd-arm64": "7.0.2", "@typescript/typescript-netbsd-x64": "7.0.2", "@typescript/typescript-openbsd-arm64": "7.0.2", "@typescript/typescript-openbsd-x64": "7.0.2", "@typescript/typescript-sunos-x64": "7.0.2", "@typescript/typescript-win32-arm64": "7.0.2", "@typescript/typescript-win32-x64": "7.0.2" }, "bin": { "tsc": "bin/tsc" } }, "sha512-8FYau96o3NKOhbjKi/qNvG/W5jhzxkbdm5sj9AbZ/5T5sWqn3hJgLfGx27sRKZWTvyzCP8dLRBTf5tBTSRVUNA=="],
 
+    "@smsunarto/bb-plugin-kitchen-sink/@get-bb/plugin-sdk": ["@get-bb/plugin-sdk@0.6.75", "", { "dependencies": { "@tanstack/react-query": "^5.62.0", "cross-spawn": "^7.0.6", "zod": "^4.6.5" }, "peerDependencies": { "@testing-library/react": "^16.3.2", "@types/better-sqlite3": "^7.6.12", "@types/react": "^19.0.0", "better-sqlite3": ">=12", "cron-parser": "^5.5.0", "hono": "^4.11.9", "react": "^19.0.0", "react-dom": "^19.0.0" }, "optionalPeers": ["@testing-library/react", "@types/better-sqlite3", "@types/react", "better-sqlite3", "cron-parser", "hono", "react", "react-dom"] }, "sha512-6aODJQ2k/OiphNImdmcM2MKMjUQAZQIA9nICEX3HOIhcegxa96B7K4ZfDn1AVxh/dpRR/M6gk3t7kUpIGQjtnw=="],
+
     "@smsunarto/bb-plugin-monokai/typescript": ["typescript@7.0.2", "", { "optionalDependencies": { "@typescript/typescript-aix-ppc64": "7.0.2", "@typescript/typescript-darwin-arm64": "7.0.2", "@typescript/typescript-darwin-x64": "7.0.2", "@typescript/typescript-freebsd-arm64": "7.0.2", "@typescript/typescript-freebsd-x64": "7.0.2", "@typescript/typescript-linux-arm": "7.0.2", "@typescript/typescript-linux-arm64": "7.0.2", "@typescript/typescript-linux-loong64": "7.0.2", "@typescript/typescript-linux-mips64el": "7.0.2", "@typescript/typescript-linux-ppc64": "7.0.2", "@typescript/typescript-linux-riscv64": "7.0.2", "@typescript/typescript-linux-s390x": "7.0.2", "@typescript/typescript-linux-x64": "7.0.2", "@typescript/typescript-netbsd-arm64": "7.0.2", "@typescript/typescript-netbsd-x64": "7.0.2", "@typescript/typescript-openbsd-arm64": "7.0.2", "@typescript/typescript-openbsd-x64": "7.0.2", "@typescript/typescript-sunos-x64": "7.0.2", "@typescript/typescript-win32-arm64": "7.0.2", "@typescript/typescript-win32-x64": "7.0.2" }, "bin": { "tsc": "bin/tsc" } }, "sha512-8FYau96o3NKOhbjKi/qNvG/W5jhzxkbdm5sj9AbZ/5T5sWqn3hJgLfGx27sRKZWTvyzCP8dLRBTf5tBTSRVUNA=="],
 
     "@smsunarto/bb-plugin-scott-docs/typescript": ["typescript@7.0.2", "", { "optionalDependencies": { "@typescript/typescript-aix-ppc64": "7.0.2", "@typescript/typescript-darwin-arm64": "7.0.2", "@typescript/typescript-darwin-x64": "7.0.2", "@typescript/typescript-freebsd-arm64": "7.0.2", "@typescript/typescript-freebsd-x64": "7.0.2", "@typescript/typescript-linux-arm": "7.0.2", "@typescript/typescript-linux-arm64": "7.0.2", "@typescript/typescript-linux-loong64": "7.0.2", "@typescript/typescript-linux-mips64el": "7.0.2", "@typescript/typescript-linux-ppc64": "7.0.2", "@typescript/typescript-linux-riscv64": "7.0.2", "@typescript/typescript-linux-s390x": "7.0.2", "@typescript/typescript-linux-x64": "7.0.2", "@typescript/typescript-netbsd-arm64": "7.0.2", "@typescript/typescript-netbsd-x64": "7.0.2", "@typescript/typescript-openbsd-arm64": "7.0.2", "@typescript/typescript-openbsd-x64": "7.0.2", "@typescript/typescript-sunos-x64": "7.0.2", "@typescript/typescript-win32-arm64": "7.0.2", "@typescript/typescript-win32-x64": "7.0.2" }, "bin": { "tsc": "bin/tsc" } }, "sha512-8FYau96o3NKOhbjKi/qNvG/W5jhzxkbdm5sj9AbZ/5T5sWqn3hJgLfGx27sRKZWTvyzCP8dLRBTf5tBTSRVUNA=="],
@@ -3317,8 +3319,6 @@
     "@smsunarto/bb-plugin-scott-tasks/jsdom": ["jsdom@29.1.1", "", { "dependencies": { "@asamuzakjp/css-color": "^5.1.11", "@asamuzakjp/dom-selector": "^7.1.1", "@bramus/specificity": "^2.4.2", "@csstools/css-syntax-patches-for-csstree": "^1.1.3", "@exodus/bytes": "^1.15.0", "css-tree": "^3.2.1", "data-urls": "^7.0.0", "decimal.js": "^10.6.0", "html-encoding-sniffer": "^6.0.0", "is-potential-custom-element-name": "^1.0.1", "lru-cache": "^11.3.5", "parse5": "^8.0.1", "saxes": "^6.0.0", "symbol-tree": "^3.2.4", "tough-cookie": "^6.0.1", "undici": "^7.25.0", "w3c-xmlserializer": "^5.0.0", "webidl-conversions": "^8.0.1", "whatwg-mimetype": "^5.0.0", "whatwg-url": "^16.0.1", "xml-name-validator": "^5.0.0" }, "peerDependencies": { "canvas": "^3.0.0" }, "optionalPeers": ["canvas"] }, "sha512-ECi4Fi2f7BdJtUKTflYRTiaMxIB0O6zfR1fX0GXpUrf6flp8QIYn1UT20YQqdSOfk2dfkCwS8LAFoJDEppNK5Q=="],
 
     "@smsunarto/bb-plugin-slopcop/@hugeicons/core-free-icons": ["@hugeicons/core-free-icons@4.3.5", "", {}, "sha512-Sv+NjHRPnQk+yZsGCMcGznCHdTfJR9PMMOEKcJYAQU4gy90dmlc9PwdtvYOImBZIjiheMsTLL5eMn2DmHxUiUg=="],
-
-    "@smsunarto/bb-plugin-t3-composer/@get-bb/plugin-sdk": ["@get-bb/plugin-sdk@0.6.79", "", { "dependencies": { "@tanstack/react-query": "^5.62.0", "cross-spawn": "^7.0.6", "zod": "^4.6.5" }, "peerDependencies": { "@testing-library/react": "^16.3.2", "@types/better-sqlite3": "^7.6.12", "@types/react": "^19.0.0", "better-sqlite3": ">=12", "cron-parser": "^5.5.0", "hono": "^4.11.9", "react": "^19.0.0", "react-dom": "^19.0.0" }, "optionalPeers": ["@testing-library/react", "@types/better-sqlite3", "@types/react", "better-sqlite3", "cron-parser", "hono", "react", "react-dom"] }, "sha512-JLIxwxouKpsDXlWRU+IoR07Yc7jZ/z4JUhFKRhugD7VeLAx8dY+8p6x5LLuCKwC60YEqFYcRFTRFxWHjH/tKKg=="],
 
     "@smsunarto/bb-plugin-t3-composer/@tiptap/core": ["@tiptap/core@3.32.0", "", { "peerDependencies": { "@tiptap/pm": "3.32.0" } }, "sha512-Ghh2h02GKSqzytQGcLV4espYOG4EHxjj0MsrUB2Vnr47xmlZYRf6r7k2J09H+JpBdaGrWwrTkyBEi5i3c3yy2Q=="],
 
@@ -3341,6 +3341,8 @@
     "@smsunarto/bb-plugin-t3-composer/@tiptap/react": ["@tiptap/react@3.32.0", "", { "dependencies": { "@types/use-sync-external-store": "^0.0.6", "fast-equals": "^5.3.3", "use-sync-external-store": "^1.4.0" }, "optionalDependencies": { "@tiptap/extension-bubble-menu": "3.32.0", "@tiptap/extension-floating-menu": "3.32.0" }, "peerDependencies": { "@tiptap/core": "3.32.0", "@tiptap/pm": "3.32.0", "@types/react": "^17.0.0 || ^18.0.0 || ^19.0.0", "@types/react-dom": "^17.0.0 || ^18.0.0 || ^19.0.0", "react": "^17.0.0 || ^18.0.0 || ^19.0.0", "react-dom": "^17.0.0 || ^18.0.0 || ^19.0.0" } }, "sha512-+iS9RKj6Ve8SXqJ49xptDiifF7PQXmUOh4cjMu+BCXXqKphQkiUccvbWYAeOJCTceM01wWgFhrpfy8qG+CHJYw=="],
 
     "@smsunarto/bb-plugin-t3-composer/@tiptap/suggestion": ["@tiptap/suggestion@3.32.0", "", { "peerDependencies": { "@floating-ui/dom": "^1.0.0", "@tiptap/core": "3.32.0", "@tiptap/pm": "3.32.0" } }, "sha512-5PbouU06zaZ7n4uyYzeNN/jBFVmGsHZ6c56MvN7M33echERAhu1L1X71Up0U6GK/pJfyugX7WbluBehJDPQeSQ=="],
+
+    "@smsunarto/bb-plugin-whiteboard/@get-bb/plugin-sdk": ["@get-bb/plugin-sdk@0.6.75", "", { "dependencies": { "@tanstack/react-query": "^5.62.0", "cross-spawn": "^7.0.6", "zod": "^4.6.5" }, "peerDependencies": { "@testing-library/react": "^16.3.2", "@types/better-sqlite3": "^7.6.12", "@types/react": "^19.0.0", "better-sqlite3": ">=12", "cron-parser": "^5.5.0", "hono": "^4.11.9", "react": "^19.0.0", "react-dom": "^19.0.0" }, "optionalPeers": ["@testing-library/react", "@types/better-sqlite3", "@types/react", "better-sqlite3", "cron-parser", "hono", "react", "react-dom"] }, "sha512-6aODJQ2k/OiphNImdmcM2MKMjUQAZQIA9nICEX3HOIhcegxa96B7K4ZfDn1AVxh/dpRR/M6gk3t7kUpIGQjtnw=="],
 
     "@smsunarto/bb-plugin-whiteboard/zod": ["zod@4.4.3", "", {}, "sha512-ytENFjIJFl2UwYglde2jchW2Hwm4GJFLDiSXWdTrJQBIN9Fcyp7n4DhxJEiWNAJMV1/BqWfW/kkg71UDcHJyTQ=="],
 
@@ -3489,6 +3491,8 @@
     "@smsunarto/bb-plugin-t3-composer/@tiptap/react/@tiptap/extension-bubble-menu": ["@tiptap/extension-bubble-menu@3.32.0", "", { "dependencies": { "@floating-ui/dom": "^1.0.0" }, "peerDependencies": { "@tiptap/core": "3.32.0", "@tiptap/pm": "3.32.0" } }, "sha512-X3ll8i9Z8QNvt7+tcqlwopJG+68ugO13Av0Ox4Ico+jXcTnFdDuKQJBSI9sLuMR5vTQOeTHhKYXhjF88aahMSA=="],
 
     "@smsunarto/bb-plugin-t3-composer/@tiptap/react/@tiptap/extension-floating-menu": ["@tiptap/extension-floating-menu@3.32.0", "", { "peerDependencies": { "@floating-ui/dom": "^1.0.0", "@tiptap/core": "3.32.0", "@tiptap/pm": "3.32.0" } }, "sha512-AzKCWceL+4Q1pTc8Whw1kPqN/aYGPQ70/jXPsblWl501t/pXi6Kz0Pi/NggKkuu73VGjykh68YYf/dcOJ/mPZQ=="],
+
+    "@smsunarto/bb-plugin-whiteboard/@get-bb/plugin-sdk/zod": ["zod@4.6.7", "", {}, "sha512-g8W2D2kU6a8untc053fX1uVBKzM7yqAxW/3zwk83+6RyF2+SKOuV+c0wBDhUwzV1PaGapmZH+rmcUzPf+3CGwg=="],
 
     "@tailwindcss/node/lightningcss/lightningcss-android-arm64": ["lightningcss-android-arm64@1.32.0", "", { "os": "android", "cpu": "arm64" }, "sha512-YK7/ClTt4kAK0vo6w3X+Pnm0D2cf2vPHbhOXdoNti1Ga0al1P4TBZhwjATvjNwLEBCnKvjJc2jQgHXH0NEwlAg=="],
 

@@ -4,6 +4,7 @@ import {
   definePluginApp,
   experimental_copyToClipboard as copyToClipboard,
   experimental_FileLink as FileLink,
+  experimental_useAppPanel,
   useBbNavigate,
   useComposer,
   useRpc,
@@ -965,6 +966,7 @@ function InlineDocument({ document, openInTab }: { document: DocumentRef; openIn
 }
 
 function DocsDirectiveCard({ attributes }: PluginMessageDirectiveProps) {
+  const panel = experimental_useAppPanel();
   const navigate = useBbNavigate();
   const document = parseDocumentRef(attributes);
   if (!document) {
@@ -979,8 +981,8 @@ function DocsDirectiveCard({ attributes }: PluginMessageDirectiveProps) {
       subPath: `${document.vaultId}/${document.path}`,
     });
   const openPreview = () => {
-    const opened = navigate.openThreadPanel({
-      actionId: "document",
+    const opened = panel.openTab({
+      tab: { id: "document", context: { kind: "thread" }, availability: "action" },
       title: document.title,
       params: {
         vaultId: document.vaultId,
@@ -1059,8 +1061,8 @@ function HtmlPreview({ vaultId, path, title, panel = false }: DocumentRef & { pa
 }
 
 function DocumentPicker() {
+  const panel = experimental_useAppPanel();
   const [subPath, setSubPath] = useState("");
-  const navigate = useBbNavigate();
   return (
     <div className="flex h-full min-h-0 flex-col gap-3">
       <p className="text-sm text-muted-foreground">Choose a document to open.</p>
@@ -1075,8 +1077,8 @@ function DocumentPicker() {
               /\.(md|markdown|html?)$/i,
               "",
             );
-            navigate.openThreadPanel({
-              actionId: "document",
+            panel.openTab({
+              tab: { id: "document", context: { kind: "thread" }, availability: "action" },
               title,
               params: { vaultId, path: filePath, title },
             });

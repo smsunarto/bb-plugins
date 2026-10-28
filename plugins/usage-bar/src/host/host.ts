@@ -1,4 +1,5 @@
-import { type ChildProcessWithoutNullStreams, spawn } from "node:child_process";
+import type { ChildProcessWithoutNullStreams } from "node:child_process";
+import { experimental_spawnHostProcess as spawn } from "@get-bb/plugin-sdk/process";
 import { createInterface } from "node:readline";
 import {
   type ExperimentalHostRpcContext,

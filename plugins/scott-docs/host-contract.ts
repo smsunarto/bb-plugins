@@ -11,6 +11,7 @@ const sha256Schema = z.string().regex(/^[0-9a-f]{64}$/);
 
 export const docsHostContract = defineRpcContract({
   listPaths: {
+    experimental_retryable: true,
     input: z
       .object({
         path: z.string().min(1),
@@ -51,11 +52,13 @@ export const docsHostContract = defineRpcContract({
   },
   // Which of these watches the host still holds. A restarted daemon holds none.
   watchAlive: {
+    experimental_retryable: true,
     input: z.object({ vaultIds: z.array(z.string().min(1)).max(1_000) }).strict(),
     output: z.object({ live: z.array(z.string()) }).strict(),
   },
   // Whether a file exists, without moving its content off the host.
   statFile: {
+    experimental_retryable: true,
     input: z.object({ path: z.string().min(1) }).strict(),
     output: z
       .object({

@@ -30,6 +30,7 @@ import type {
   ProjectScript,
   ProjectScriptEdit,
 } from "../../shared/thread-details.ts";
+import { gitWorkspaceStatusSchema } from "../../shared/git-contract.ts";
 import { queryClient } from "../query.ts";
 // The SDK's cross-plugin `useRpcMutation` is aliased above; this plugin's own helper takes a local name.
 import { queryKey, useRpcMutation as usePluginMutation, useRpcQuery } from "../rpc.ts";
@@ -156,8 +157,11 @@ function useEnvironmentStatus(environmentId: string | null, open: boolean) {
     if (!last) setStatus(environmentId, { state: "loading" });
     const read = async () => {
       try {
-        const response = await sdk.environments.status({
-          environmentId,
+        const response = await sdk.plugins.callRpc({
+          pluginId: "bb--git",
+          method: "workspaceStatus",
+          input: { environmentId },
+          outputSchema: gitWorkspaceStatusSchema,
           signal: controller.signal,
         });
         if (response.outcome === "unavailable")
@@ -185,9 +189,7 @@ function useEnvironmentStatus(environmentId: string | null, open: boolean) {
   };
 }
 
-type EnvironmentStatusResponse = Awaited<
-  ReturnType<ReturnType<typeof useSdk>["environments"]["status"]>
->;
+type EnvironmentStatusResponse = z.infer<typeof gitWorkspaceStatusSchema>;
 
 function readyStatus(
   response: Exclude<EnvironmentStatusResponse, { outcome: "unavailable" }>,

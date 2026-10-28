@@ -82,9 +82,7 @@ async function renderCard(options: CardOptions) {
         projects: [{ id: "proj_1", name: "bb-plugins" } as never],
       },
       sdk: {
-        environments: {
-          status: statusRead,
-        },
+        plugins: { callRpc: statusRead },
         terminals: { create: create as never },
       },
       rpc: {

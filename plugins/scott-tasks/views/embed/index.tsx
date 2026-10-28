@@ -3,7 +3,7 @@ import type {
   ExperimentalThreadActionTabProps,
   PluginMessageDirectiveProps,
 } from "@get-bb/plugin-sdk";
-import { useBbNavigate } from "@get-bb/plugin-sdk/app";
+import { experimental_useAppPanel, useBbNavigate } from "@get-bb/plugin-sdk/app";
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -102,6 +102,7 @@ export function TaskDirectiveCard(props: PluginMessageDirectiveProps) {
 }
 
 function TaskDirectiveCardContent({ attributes }: PluginMessageDirectiveProps) {
+  const panel = experimental_useAppPanel();
   const navigate = useBbNavigate();
   const taskKey = attributes.key?.trim() ?? "";
   const fallbackTitle = attributes.title?.trim() || null;
@@ -174,8 +175,8 @@ function TaskDirectiveCardContent({ attributes }: PluginMessageDirectiveProps) {
 
   const { task } = state;
   const openInSidePanel = () => {
-    const opened = navigate.openThreadPanel({
-      actionId: "task",
+    const opened = panel.openTab({
+      tab: { id: "task", context: { kind: "thread" }, availability: "action" },
       title: task.key,
       params: { taskKey: task.key },
     });

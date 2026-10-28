@@ -1,14 +1,11 @@
 // Runs on every enrolled machine's daemon. BB's machine record carries no
 // operating system or load, so the server asks each machine directly.
-import { execFile } from "node:child_process";
+import { experimental_execHostFile as run } from "@get-bb/plugin-sdk/process";
 import { statfs } from "node:fs/promises";
 import os from "node:os";
-import { promisify } from "node:util";
 import { experimental_defineHostEntry } from "@get-bb/plugin-sdk/host";
 import { hostContract } from "./contract.js";
 import { parseVmStatAvailableBytes } from "./lib/vm-stat.js";
-
-const run = promisify(execFile);
 
 // os.freemem() on macOS counts only wired-free pages, so a healthy Mac reads
 // as nearly full. vm_stat also reports the reclaimable pages.

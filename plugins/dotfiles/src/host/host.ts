@@ -1,4 +1,7 @@
-import { execFile, spawn } from "node:child_process";
+import {
+  experimental_execHostFileCallback as execFile,
+  experimental_spawnHostProcess as spawn,
+} from "@get-bb/plugin-sdk/process";
 import { existsSync, readdirSync, realpathSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";

@@ -1,15 +1,12 @@
-import { execFile } from "node:child_process";
+import { experimental_execHostFile as run } from "@get-bb/plugin-sdk/process";
 import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
 import { mkdir, rename, rm, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { promisify } from "node:util";
 import claudeMark from "../../native/claude.svg" with { type: "text" };
 import codexMark from "../../native/codex.svg" with { type: "text" };
 import swiftSource from "../../native/UsageBar.swift" with { type: "text" };
-
-const run = promisify(execFile);
 
 /**
  * bb ships the host entry to each machine as one bundled file, so the helper's

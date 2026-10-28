@@ -8,7 +8,7 @@
  * below, which must run at module evaluation because the MCP child is plain
  * `node <artifact> --mcp-stdio` and nothing calls `start()` there.
  */
-import { spawn } from "node:child_process";
+import { experimental_spawnHostProcess as spawn } from "@get-bb/plugin-sdk/process";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
@@ -194,7 +194,7 @@ function threadCommand(cliPath: string) {
         { env: process.env, stdio: ["ignore", "ignore", "pipe"] },
       );
       let stderr = "";
-      child.stderr.on("data", (chunk: Buffer) => {
+      child.stderr?.on("data", (chunk: Buffer) => {
         stderr += chunk.toString();
       });
       child.on("error", (error) => {

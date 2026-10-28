@@ -15,8 +15,8 @@
     "access": "public"
   },
   "engines": {
-    "bb": ">=0.47.0 <1.0.0",
-    "bbPluginSdk": ">=0.6.75"
+    "bb": ">=0.48.0 <1.0.0",
+    "bbPluginSdk": ">=0.6.94"
   },
   "bb": {
     "name": "Traces",
@@ -48,7 +48,7 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
-    "@get-bb/plugin-sdk": "0.6.75",
+    "@get-bb/plugin-sdk": "0.6.94",
     "@testing-library/react": "16.3.2",
     "@types/node": "^22.0.0",
     "@types/react": "^19.0.0",

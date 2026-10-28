@@ -46,16 +46,23 @@ export const BLOB_CHUNK_TIMEOUT_MS = LFS_DOWNLOAD_MS + 15_000;
 
 export const gitbutlerHostContract = defineRpcContract({
   repositories: {
+    experimental_retryable: true,
     input: target.strict(),
     output: repositoriesSchema,
   },
-  repository: { input: target.strict(), output: resolvedRepositorySchema },
+  repository: {
+    experimental_retryable: true,
+    input: target.strict(),
+    output: resolvedRepositorySchema,
+  },
   checkoutIdentity: {
+    experimental_retryable: true,
     input: target.strict(),
     output: z.object({ key: z.string(), identity: checkoutIdentitySchema }).strict(),
   },
-  workspace: { input: target.strict(), output: hostWorkspaceSchema },
+  workspace: { experimental_retryable: true, input: target.strict(), output: hostWorkspaceSchema },
   baseHistory: {
+    experimental_retryable: true,
     input: target
       .extend({
         from: commitIdSchema,
@@ -66,6 +73,7 @@ export const gitbutlerHostContract = defineRpcContract({
     output: baseHistorySchema,
   },
   patches: {
+    experimental_retryable: true,
     input: target.extend({ source: z.union([patchSourceSchema, rangeSourceSchema]) }).strict(),
     output: patchesSchema,
   },
@@ -115,18 +123,24 @@ export const gitbutlerHostContract = defineRpcContract({
       .strict(),
     output: checkoutIdentitySchema,
   },
+  // Forge reads need the full transport budget instead of restarting halfway.
   reviewUrl: {
     input: target.extend({ branch: branchNameSchema }).strict(),
     output: reviewUrlSchema,
   },
   reviews: { input: target.strict(), output: reviewsSchema },
-  oplog: { input: target.strict(), output: oplogSchema },
-  parkedBranches: { input: target.strict(), output: parkedBranchesSchema },
-  origin: { input: target.strict(), output: repositoryOriginSchema },
+  oplog: { experimental_retryable: true, input: target.strict(), output: oplogSchema },
+  parkedBranches: {
+    experimental_retryable: true,
+    input: target.strict(),
+    output: parkedBranchesSchema,
+  },
+  origin: { experimental_retryable: true, input: target.strict(), output: repositoryOriginSchema },
   /**
    * Matching-origin checkouts among bb's known paths and their registered
    * linked worktrees. GitButler workspaces retain their stacks; other named
    * Git checkouts expose only a read-only branch and latest commit.
+   * Scans keep the full timeout: a transport retry discards their progress.
    */
   checkouts: {
     input: z

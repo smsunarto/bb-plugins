@@ -1,5 +1,4 @@
-import { execFile } from "node:child_process";
-import { promisify } from "node:util";
+import { experimental_execHostFile as exec } from "@get-bb/plugin-sdk/process";
 import { z } from "zod";
 import type { ExtrasUpdate } from "./extras.ts";
 
@@ -10,7 +9,6 @@ const FRESH_MS = 5 * 60_000;
  * menu poll, the 10 s OAuth timeout, and the 20 s CLI timeout, with slack.
  */
 const REFRESH_HEADROOM_MS = 90_000;
-const exec = promisify(execFile);
 
 /** CodexBar exposes display text, not grant handles or exact expiry timestamps. */
 export interface WebResetCredits {

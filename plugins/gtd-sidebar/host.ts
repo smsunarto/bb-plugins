@@ -1,12 +1,9 @@
-import { execFile } from "node:child_process";
-import { promisify } from "node:util";
+import { experimental_execHostFile as execFileAsync } from "@get-bb/plugin-sdk/process";
 import { experimental_defineHostEntry } from "@get-bb/plugin-sdk/host";
 import { completeCodexInference } from "@bb-plugins/codex-inference/client";
 import { toAiServiceFailure } from "@bb-plugins/codex-inference/failure";
 import { parseGitButlerBranchSummary } from "./lib/gitbutler.ts";
 import { gtdSidebarHostContract } from "./lib/host-contract.ts";
-
-const execFileAsync = promisify(execFile);
 
 export default experimental_defineHostEntry({
   contract: gtdSidebarHostContract,

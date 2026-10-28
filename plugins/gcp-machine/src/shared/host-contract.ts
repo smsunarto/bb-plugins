@@ -4,7 +4,7 @@ import { accessSchema, inspectionSchema, powerResultSchema, targetSchema } from 
 
 const base = z.object({ target: targetSchema, access: accessSchema });
 export const hostContract = defineRpcContract({
-  inspect: { input: base.strict(), output: inspectionSchema },
+  inspect: { input: base.strict(), output: inspectionSchema, experimental_retryable: true },
   power: {
     input: base.extend({ action: z.enum(["start", "stop"]), requestId: z.uuid() }).strict(),
     output: powerResultSchema,

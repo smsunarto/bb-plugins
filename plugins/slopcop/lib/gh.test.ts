@@ -1,7 +1,7 @@
 import { beforeEach, expect, it, vi } from "vitest";
-import { execFile } from "node:child_process";
+import { experimental_execHostFileCallback as execFile } from "@get-bb/plugin-sdk/process";
 import { createGhClient } from "./gh";
-vi.mock("node:child_process", () => ({ execFile: vi.fn() }));
+vi.mock("@get-bb/plugin-sdk/process", () => ({ experimental_execHostFileCallback: vi.fn() }));
 let output = "";
 beforeEach(() => {
   output = "";

@@ -12,6 +12,8 @@ test("the plugin imports only the public SDK and its declared dependencies", () 
       /^bun:test$/,
       /^zod$/,
       /^react$/,
+      // Public in SDK 0.6.94; its scanner's built-in list predates this export.
+      /^@get-bb\/plugin-sdk\/process$/,
       // Browser, server, and host telemetry use public @bb-plugins/sentry entrypoints.
       // The host paths stay lazy without a DSN.
       /^@bb-plugins\/sentry\/(?:app|node|performance|telemetry)$/,

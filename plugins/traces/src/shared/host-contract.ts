@@ -15,11 +15,11 @@ import {
 } from "./schema.ts";
 
 export const traceHostContract = defineRpcContract({
-  status: { input: z.object({}).strict(), output: statusSchema },
+  status: { experimental_retryable: true, input: z.object({}).strict(), output: statusSchema },
   scan: { input: scanInputSchema, output: statusSchema },
   configureSources: { input: configureInputSchema, output: statusSchema },
-  sessions: { input: sessionQuerySchema, output: sessionPageSchema },
-  events: { input: eventQuerySchema, output: eventPageSchema },
-  event: { input: eventInputSchema, output: eventDetailSchema },
-  raw: { input: rawInputSchema, output: rawPageSchema },
+  sessions: { experimental_retryable: true, input: sessionQuerySchema, output: sessionPageSchema },
+  events: { experimental_retryable: true, input: eventQuerySchema, output: eventPageSchema },
+  event: { experimental_retryable: true, input: eventInputSchema, output: eventDetailSchema },
+  raw: { experimental_retryable: true, input: rawInputSchema, output: rawPageSchema },
 });

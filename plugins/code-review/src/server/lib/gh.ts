@@ -1,4 +1,5 @@
-import { type ExecFileException, execFile } from "node:child_process";
+import type { ExecFileException } from "node:child_process";
+import { experimental_execHostFileCallback as execFile } from "@get-bb/plugin-sdk/process";
 import { accountSchema } from "../../shared/schema.ts";
 
 /*

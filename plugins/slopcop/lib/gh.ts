@@ -3,7 +3,7 @@
 // This is what makes verification independent of the agent: SlopCop reads PR
 // and comment state itself rather than trusting a transcript. Mirrors the
 // official github plugin's execFile approach.
-import { execFile } from "node:child_process";
+import { experimental_execHostFileCallback as execFile } from "@get-bb/plugin-sdk/process";
 import type { GitHubIssue, PullRequest, TriggerComment, TriggerCommentSource } from "./types";
 
 export class GhError extends Error {
@@ -49,7 +49,7 @@ function run(file: string, args: string[], timeoutMs: number): Promise<string> {
     execFile(
       file,
       args,
-      { timeout: timeoutMs, maxBuffer: 16 * 1024 * 1024 },
+      { timeout: timeoutMs, maxBuffer: 16 * 1024 * 1024, encoding: "utf8" },
       (error, stdout, stderr) => {
         if (error) {
           reject(

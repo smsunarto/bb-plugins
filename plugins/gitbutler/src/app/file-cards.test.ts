@@ -69,6 +69,39 @@ test("a child repository's file is named from the environment root", () => {
   });
 });
 
+test("a root repository's committed file preview selects its revision", () => {
+  const open = filePreview({ environmentId: "env_1", repositoryKey: "." }, undefined, "abc1234");
+  expect(open?.("src/a.ts", 12)).toEqual({
+    target: {
+      kind: "workspace",
+      environmentId: "env_1",
+      path: "src/a.ts",
+      experimental_ref: "abc1234",
+    },
+    location: { kind: "line", line: 12, column: null },
+  });
+});
+
+test("a nested repository's file preview keeps the working copy even when given a revision", () => {
+  const open = filePreview(
+    { environmentId: "env_1", repositoryKey: "repos/app" },
+    undefined,
+    "abc1234",
+  );
+  expect(open?.("src/a.ts", null)).toEqual({
+    target: { kind: "workspace", environmentId: "env_1", path: "repos/app/src/a.ts" },
+    location: null,
+  });
+});
+
+test("absolute host previews retain the working copy without a revision", () => {
+  const open = filePreview(undefined, { hostId: "host_1", path: "/repo" }, "abc1234");
+  expect(open?.("src/a.ts", null)).toEqual({
+    target: { kind: "host", hostId: "host_1", path: "/repo/src/a.ts" },
+    location: null,
+  });
+});
+
 test("nothing opens before the panel knows the environment and repository", () => {
   expect(filePreview({ environmentId: null, repositoryKey: null })).toBeNull();
   expect(filePreview({ environmentId: "env_1", repositoryKey: null })).toBeNull();
