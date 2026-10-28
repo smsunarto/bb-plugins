@@ -18,8 +18,8 @@ import {
  */
 
 export const LANDED_DIRECTIVE = "code-review-landed";
-/** Pull requests and commits one card lists, each. */
-export const MAX_LANDED = 10;
+/** Pull requests and commits one card lists, each, across all repositories. */
+export const MAX_LANDED = 25;
 
 const NAME = "[A-Za-z0-9_.-]+";
 const SHA = "[0-9a-fA-F]{7,64}";

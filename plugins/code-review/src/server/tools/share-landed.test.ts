@@ -4,6 +4,7 @@ import {
   makeThreadResponse,
 } from "@get-bb/plugin-sdk/testing";
 import { GraphqlFailure, fakeContext } from "../../../test/fake-gh.ts";
+import { parseLandedAttributes, landedTargetSchema } from "../../shared/landed.ts";
 import { recheckLanded } from "../lib/landed.ts";
 import { shareLanded, shareLandedEnabled } from "./share-landed.ts";
 import { watchPr } from "./watch-pr.ts";
@@ -19,6 +20,7 @@ const commit = (sha: string, message: string) => ({
 /** A GitHub with pull requests #7 and #9 and a commit, and a thread whose title the tool can set. */
 function setup(title: string | null = "Rate limit the API") {
   const github = {
+    repositoryStates: {} as Record<string, string>,
     states: { 7: "MERGED", 9: "OPEN" } as Record<number, string>,
     onMain: true,
     /** Holds pull request reads until it settles. */
@@ -29,7 +31,7 @@ function setup(title: string | null = "Rate limit the API") {
   const fake = fakeContext(
     {
       graphql: {
-        LandedPr: async ({ number }) => {
+        LandedPr: async ({ name, number }) => {
           if (github.hold) await github.hold;
           if (github.states[number as number] === undefined) {
             throw new GraphqlFailure(
@@ -42,7 +44,9 @@ function setup(title: string | null = "Rate limit the API") {
               pullRequest: {
                 url: `https://github.com/acme/api/pull/${String(number)}`,
                 title: `Pull request ${String(number)}`,
-                state: github.states[number as number],
+                state:
+                  github.repositoryStates[`${String(name)}#${String(number)}`] ??
+                  github.states[number as number],
               },
             },
           };
@@ -312,4 +316,85 @@ test("watching a listed pull request keeps it checked after the watch stops", as
   github.states[9] = "MERGED";
   await recheckLanded(ctx);
   expect(thread.title).toBe("🚀 Rate limit the API");
+});
+
+test("one card tracks 18 PRs across repositories, including equal PR numbers", async () => {
+  const { ctx, github, thread } = setup();
+  const refs = ["api", "web"].flatMap((repo) =>
+    Array.from({ length: 9 }, (_, i) => ({ owner: "acme", repo, number: i + 1 })),
+  );
+  for (let number = 1; number <= 9; number++) github.states[number] = "MERGED";
+  github.repositoryStates["api#9"] = "OPEN";
+  const schema = shareLanded(ctx).parameters;
+  const input = schema.parse({
+    pullRequests: refs.map((ref) => `${ref.owner}/${ref.repo}#${ref.number}`),
+  });
+  const result = await shareLanded(ctx).execute(input, tool);
+  const attributes = Object.fromEntries(
+    [...result.split("\n")[0]!.matchAll(/(\w+)="([^"]*)"/g)].map(([, key, value]) => [
+      key!,
+      value!,
+    ]),
+  );
+  const target = parseLandedAttributes(attributes);
+  expect(target?.prs).toEqual(refs);
+  expect(landedTargetSchema.parse(target).prs).toHaveLength(18);
+  expect(result).toEndWith(
+    "Not landed yet: acme/api#9 (open). The title gets 🚀 once all of it lands.",
+  );
+  expect(thread.title).toBe("Rate limit the API");
+  github.repositoryStates["api#9"] = "MERGED";
+  await recheckLanded(ctx);
+  expect(thread.title).toBe("🚀 Rate limit the API");
+});
+
+test("the tool, saved targets and directives share the 25-reference bound", () => {
+  const { ctx } = setup();
+  const prs = Array.from({ length: 25 }, (_, i) => ({
+    owner: "acme",
+    repo: "api",
+    number: i + 1,
+  }));
+  const commits = Array.from({ length: 25 }, (_, i) => ({
+    owner: "acme",
+    repo: `repo-${i}`,
+    sha: SHA,
+  }));
+  const input = {
+    pullRequests: prs.map((ref) => `acme/api#${ref.number}`),
+    commits: commits.map((ref) => `acme/${ref.repo}@${SHA}`),
+  };
+  expect(shareLanded(ctx).parameters.safeParse(input).success).toBe(true);
+  const target = { account: "octocat", prs, commits };
+  expect(landedTargetSchema.safeParse(target).success).toBe(true);
+  const attrs = {
+    account: "octocat",
+    prs: input.pullRequests.join(" "),
+    commits: input.commits.join(" "),
+  };
+  expect(parseLandedAttributes(attrs)).toEqual(target);
+  expect(
+    shareLanded(ctx).parameters.safeParse({ pullRequests: [...input.pullRequests, "acme/api#26"] })
+      .success,
+  ).toBe(false);
+  expect(
+    shareLanded(ctx).parameters.safeParse({ commits: [...input.commits, `acme/extra@${SHA}`] })
+      .success,
+  ).toBe(false);
+  expect(
+    landedTargetSchema.safeParse({
+      ...target,
+      prs: [...prs, { owner: "acme", repo: "api", number: 26 }],
+    }).success,
+  ).toBe(false);
+  expect(
+    landedTargetSchema.safeParse({
+      ...target,
+      commits: [...commits, { owner: "acme", repo: "extra", sha: SHA }],
+    }).success,
+  ).toBe(false);
+  expect(parseLandedAttributes({ ...attrs, prs: `${attrs.prs} acme/api#26` })).toBeNull();
+  expect(
+    parseLandedAttributes({ ...attrs, commits: `${attrs.commits} acme/extra@${SHA}` }),
+  ).toBeNull();
 });

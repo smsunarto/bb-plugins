@@ -7,6 +7,7 @@ USE WHEN
 
 INPUTS
 
+- A single card can include work from multiple repositories: pass all their references in one call, up to 25 pull requests and 25 commits.
 - `pullRequests`: URLs or `owner/repo#123` for every pull request this thread delivered, including ones that merged earlier and ones still open. Leave out a pull request closed without merging that another one replaced: it can never land, so it would keep the 🚀 off.
 - `commits`: `owner/repo@<sha>` or GitHub commit URLs for work pushed straight to the default branch. List the newest commit of each push; it covers the commits before it.
 - `account`: the GitHub login to read them as, when `gh` is signed in to several accounts. Defaults to gh's active account.

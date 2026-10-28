@@ -268,3 +268,37 @@ test("a commit shared by two repositories shows each repository's own landing", 
     slot.lifecycle.unmount();
   }
 });
+
+test("one card renders all 18 PRs across two repositories and navigates to the selected repo", async () => {
+  const prs = ["api", "web"].flatMap((repo) =>
+    Array.from({ length: 9 }, (_, i) => ({
+      ref: { owner: "acme", repo, number: i + 1 },
+      title: `${repo} change ${i + 1}`,
+      url: `https://github.com/acme/${repo}/pull/${i + 1}`,
+      state: "merged" as const,
+    })),
+  );
+  const slot = await card({
+    attributes: {
+      prs: prs.map(({ ref }) => `acme/${ref.repo}#${ref.number}`).join(" "),
+      account: "scott",
+    },
+    landed: () => ({ prs, commits: [] }),
+  });
+  try {
+    await slot.findByText("Landed");
+    expect(slot.getByText("18 pull requests")).toBeTruthy();
+    for (const pr of prs) expect(slot.getByText(pr.title)).toBeTruthy();
+    expect(slot.getAllByRole("button", { name: "Settle thread" })).toHaveLength(1);
+    fireEvent.click(slot.getByText("web change 9"));
+    expect(slot.navigateCalls.at(-1)).toEqual({
+      method: "toPluginPanel",
+      path: "code-review",
+      options: {
+        subPath: prSubPath({ owner: "acme", repo: "web", number: 9 }, "summary", "scott"),
+      },
+    });
+  } finally {
+    slot.lifecycle.unmount();
+  }
+});
