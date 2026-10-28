@@ -673,19 +673,18 @@
   }
 }
 
-/* Keep the new-thread composer at the conversation footer's position. The
- * desktop column fills its scroll viewport, with homepage sections above the
- * composer. Compact home already anchors it at the bottom. Both use the same
- * 0.5rem bottom inset, explicitly overriding bb's pb-4 utility. The desktop
- * column is the page container's .mx-auto.flex-col child; compact home's root
- * is not, and it keeps its own layout. */
-.dark #root-compose-main-panel .\@container\/page > .mx-auto.flex-col {
+/* Keep the new-thread composer at the conversation footer's position in both
+ * color modes. Current home wraps it in root-compose-compact-composer; older
+ * layouts put the prompt shell directly inside the column's child. Move that
+ * outer wrapper so additional composer wrappers do not break the alignment.
+ * Homepage sections stay above it; the column keeps its 0.5rem bottom padding. */
+#root-compose-main-panel .\@container\/page > .mx-auto.flex-col {
   min-height: 100%;
   padding-bottom: 0.5rem;
 }
 
-.dark
-  #root-compose-main-panel
+#root-compose-main-panel [data-testid="root-compose-compact-composer"],
+#root-compose-main-panel
   .\@container\/page
   > div
   > [data-promptbox-shell] {
@@ -702,7 +701,7 @@
  * correct while that composer sat at the top of the column. Anchored at the
  * footer it runs off the viewport, so open it upward like the follow-up
  * composer's own menu. */
-.dark #root-compose-main-panel [data-promptbox-typeahead-menu] {
+#root-compose-main-panel [data-promptbox-typeahead-menu] {
   top: auto;
   bottom: 100%;
   margin-top: 0;
