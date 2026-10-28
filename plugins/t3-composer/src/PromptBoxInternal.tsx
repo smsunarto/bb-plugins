@@ -3214,9 +3214,11 @@ export function PromptBoxInternal({
                       : "translate-y-0 opacity-100",
                   )}
                   inert={showVoiceActionGroup ? true : undefined}
-                  aria-live="polite"
                 >
-                  <div data-t3-composer-controls="">{executionControls}</div>
+                  <div data-t3-composer-controls="" aria-live="polite">
+                    {executionControls}
+                  </div>
+                  <contributions.Actions />
                 </div>
               ) : null}
               <div
@@ -3230,7 +3232,6 @@ export function PromptBoxInternal({
                 inert={showVoiceActionGroup ? true : undefined}
               >
                 <>
-                  {!showCompactLayout ? <contributions.Actions /> : null}
                   <span data-t3-composer-save-action="" className="contents">
                     <SaveDraftAction
                       available={contributions.sendMenuItems.some(

@@ -49,11 +49,47 @@
 
 [data-t3-composer][data-promptbox] [data-t3-composer-controls] {
   display: flex;
-  flex: 1 1 0%;
+  flex: 0 1 auto;
   flex-wrap: wrap;
   align-items: center;
   min-width: 0;
   gap: 0;
+  order: -2;
+}
+
+/* Keep the routing toggle beside the picker, ahead of the other plugin actions. */
+[data-t3-composer][data-promptbox]
+  [data-plugin-composer-action-plugin="magic-compose"]
+  [data-plugin-composer-action] {
+  order: -1;
+}
+
+[data-t3-composer][data-promptbox] [data-plugin-composer-action] {
+  height: 28px;
+  max-height: 28px;
+  overflow: visible;
+}
+
+[data-t3-composer][data-promptbox] [data-promptbox-expanded-only][data-promptbox-standard-actions] {
+  reading-flow: flex-visual;
+}
+
+[data-t3-composer][data-promptbox] [data-plugin-composer-action] button {
+  min-width: 28px;
+  height: 28px;
+  min-height: 28px;
+  padding: 0 4px;
+  border-radius: 8px;
+}
+
+[data-t3-composer][data-promptbox] [data-plugin-composer-action-plugin="magic-compose"] button {
+  width: 28px;
+  padding: 0;
+}
+
+[data-t3-composer][data-promptbox] [data-plugin-composer-action] button > svg {
+  width: 16px;
+  height: 16px;
 }
 
 [data-t3-composer][data-promptbox] [data-t3-composer-controls] > * {

@@ -95,14 +95,17 @@ describe("T3 composer SDK integration", () => {
     }
   }, 15000);
 
-  it("shows other plugins' actions beside Save draft, but not in compact composers", async () => {
+  it("shows plugin actions after the model controls, but not in compact composers", async () => {
     const expanded = await mountComposer();
     try {
       const actions = await expanded.slot.findByTestId("plugin-actions");
-      const rightCluster = actions.closest(
-        "[data-promptbox-standard-actions]:not([data-promptbox-expanded-only])",
-      );
-      expect(rightCluster?.querySelector("[data-promptbox-submit-group]")).toBeTruthy();
+      const modelControls = expanded.slot.container.querySelector("[data-t3-composer-controls]");
+      expect(modelControls?.nextElementSibling).toBe(actions);
+      expect(
+        actions
+          .closest("[data-promptbox-standard-actions]")
+          ?.querySelector("[data-promptbox-submit-group]"),
+      ).toBeNull();
     } finally {
       expanded.slot.lifecycle.unmount();
     }
