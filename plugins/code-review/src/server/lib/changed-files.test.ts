@@ -2,6 +2,7 @@ import { expect, test } from "bun:test";
 import { fakeGh, fixture, fixtureText } from "../../../test/fake-gh.ts";
 import type { DiffRevision } from "../../shared/schema.ts";
 import { loadChangedFiles, mapChangedFiles } from "./changed-files.ts";
+import { createGh } from "./gh.ts";
 
 const FILES_PATH = "repos/cli/cli/pulls/9000/files?per_page=100";
 const CLI_HEAD = "cc36d32a212a2b8b6611fb73549fe6d04fb6ec38";
@@ -319,6 +320,101 @@ test("files the head's .gitattributes marks linguist-generated read as generated
   expect(changed.files.filter((file) => file.generated).map((file) => file.path)).toEqual([
     "pkg/cmdutil/auth_check_test.go",
   ]);
+});
+
+const attributesPath = ["repository", "pullRequest", "commits", "nodes", 0, "commit", "file"];
+
+/** GitHub returns the file list alongside a NOT_FOUND error when .gitattributes is absent. */
+function missingAttributesGh(
+  errors: { type: string; path?: readonly (string | number)[] }[],
+  nullAt?: "repository" | "pullRequest" | "commits",
+) {
+  let pages = 0;
+  const gh = createGh(async (args, stdin) => {
+    if (args[1] !== "graphql") {
+      return { code: 0, stdout: fixtureText("rest-files-cli-9000.ndjson"), stderr: "" };
+    }
+    const { query } = JSON.parse(stdin ?? "{}");
+    if (!query.includes("query ChangedFiles(")) {
+      return { code: 0, stdout: JSON.stringify({ data: head(CLI_HEAD) }), stderr: "" };
+    }
+    pages++;
+    const recorded = fixture<{
+      repository: {
+        pullRequest: { files: { nodes: { path: string; viewerViewedState: string }[] } };
+      };
+    }>("changed-files-cli-9000.json");
+    const nodes = recorded.repository.pullRequest.files.nodes;
+    for (const node of nodes.slice(3)) node.viewerViewedState = "VIEWED";
+    const data = {
+      repository:
+        nullAt === "repository"
+          ? null
+          : {
+              pullRequest:
+                nullAt === "pullRequest"
+                  ? null
+                  : {
+                      ...recordedMarks().repository.pullRequest,
+                      commits:
+                        nullAt === "commits" ? null : { nodes: [{ commit: { file: null } }] },
+                      files: {
+                        pageInfo: {
+                          hasNextPage: pages === 1,
+                          endCursor: pages === 1 ? "next" : null,
+                        },
+                        nodes: pages === 1 ? nodes.slice(0, 2) : nodes.slice(2),
+                      },
+                    },
+            },
+    };
+    return { code: 1, stdout: JSON.stringify({ data, errors }), stderr: "" };
+  });
+  return { gh, pages: () => pages };
+}
+
+test("a missing .gitattributes still loads every page of patches and viewed marks", async () => {
+  const { gh, pages } = missingAttributesGh([{ type: "NOT_FOUND", path: attributesPath }]);
+
+  const changed = await loadChangedFiles(gh, { owner: "cli", repo: "cli", number: 9000 });
+
+  expect(pages()).toBe(2);
+  expect(changed.files).toHaveLength(4);
+  expect(changed.files.every((file) => file.patch && !file.generated)).toBe(true);
+  expect(changed.files.map((file) => file.viewed)).toEqual([
+    "unviewed",
+    "unviewed",
+    "unviewed",
+    "viewed",
+  ]);
+});
+
+test.each([
+  { type: "FORBIDDEN", path: attributesPath, code: "forbidden" },
+  { type: "RATE_LIMITED", code: "rate-limited" },
+])("a missing .gitattributes does not hide another $code failure", async ({ code, ...error }) => {
+  const { gh } = missingAttributesGh([{ type: "NOT_FOUND", path: attributesPath }, error]);
+
+  await expect(
+    loadChangedFiles(gh, { owner: "cli", repo: "cli", number: 9000 }),
+  ).rejects.toMatchObject({ code });
+});
+
+test.each(["repository", "pullRequest", "commits"] as const)(
+  "a missing .gitattributes cannot excuse a null %s ancestor",
+  async (nullAt) => {
+    const { gh } = missingAttributesGh([{ type: "NOT_FOUND", path: attributesPath }], nullAt);
+    await expect(
+      loadChangedFiles(gh, { owner: "cli", repo: "cli", number: 9000 }),
+    ).rejects.toMatchObject({ code: "not-found" });
+  },
+);
+
+test("a NOT_FOUND at a different leaf is not treated as a missing .gitattributes", async () => {
+  const { gh } = missingAttributesGh([{ type: "NOT_FOUND", path: [...attributesPath, "object"] }]);
+  await expect(
+    loadChangedFiles(gh, { owner: "cli", repo: "cli", number: 9000 }),
+  ).rejects.toMatchObject({ code: "not-found" });
 });
 
 test("the files name both commits a preview reads, pinned in the same read as the patches", async () => {

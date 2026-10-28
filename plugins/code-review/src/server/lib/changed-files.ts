@@ -120,7 +120,16 @@ export async function loadChangedFiles(
 async function readChangedFiles(gh: Gh, ref: PrRef, account: string | null): Promise<ChangedFiles> {
   const variables = { owner: ref.owner, name: ref.repo, number: ref.number };
   const page = (after: string | null) =>
-    gh.graphql(FILES_QUERY, { ...variables, after }) as Promise<FilesPage>;
+    gh.graphql(
+      FILES_QUERY,
+      { ...variables, after },
+      {
+        // GitHub returns the rest of the page with NOT_FOUND when this optional file is absent.
+        optionalNotFoundPaths: [
+          ["repository", "pullRequest", "commits", "nodes", 0, "commit", "file"],
+        ],
+      },
+    ) as Promise<FilesPage>;
   const {
     files: firstFiles,
     commits,

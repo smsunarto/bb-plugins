@@ -49,6 +49,8 @@ export type GraphqlOptions = {
    * them, such as one lookup among many. Any other missing root still fails.
    */
   optionalRoot?: (name: string) => boolean;
+  /** Exact nullable fields whose NOT_FOUND errors mean optional data is absent. */
+  optionalNotFoundPaths?: readonly (readonly (string | number)[])[];
 };
 
 export type Gh = {
@@ -162,32 +164,41 @@ export const execGh: GhRunner = (args, stdin, env = {}) =>
 type GraphQlError = { message?: string; type?: string; path?: (string | number)[] };
 type GraphQlResponse = { data?: unknown; errors?: GraphQlError[] };
 
-/** Where GitHub put the null an error left: a list item, or a root field the caller allows. */
-type Hole = { list: unknown[]; index: number } | { root: string };
+/** Where GitHub put the null an error left: a list item, or a field the caller allows. */
+type Hole = { list: unknown[]; index: number } | { field: string | number };
 
 /**
  * GitHub answers null for a node the viewer may not see (a search hit in an
  * org that enforces SAML, a cross-reference from a private repository, a
  * node deleted mid-query) and still answers the rest. The null bubbles up to
  * the nearest nullable field, so the first null along the error's path is
- * where it landed. Only a list item or an allowed root is a hole the answer
+ * where it landed. Only a list item or an allowed field is a hole the answer
  * survives: a root lookup like `repository(...)` that is missing or
  * forbidden keeps failing with its type.
  */
 function holeFor(data: unknown, error: GraphQlError, options: GraphqlOptions): Hole | null {
   if (error.type !== "FORBIDDEN" && error.type !== "NOT_FOUND") return null;
+  const path = error.path ?? [];
+  const optionalNotFound =
+    error.type === "NOT_FOUND" &&
+    options.optionalNotFoundPaths?.some(
+      (allowed) => allowed.length === path.length && allowed.every((part, i) => part === path[i]),
+    );
   let node = data;
-  for (const [depth, segment] of (error.path ?? []).entries()) {
+  for (const [depth, segment] of path.entries()) {
     if (node === null || typeof node !== "object") return null;
     const next = (node as Record<string | number, unknown>)[segment];
-    if (next === null) {
-      if (Array.isArray(node) && typeof segment === "number") return { list: node, index: segment };
-      if (depth === 0 && typeof segment === "string" && options.optionalRoot?.(segment)) {
-        return { root: segment };
-      }
-      return null;
+    if (next !== null) {
+      node = next;
+      continue;
     }
-    node = next;
+    if (Array.isArray(node) && typeof segment === "number") return { list: node, index: segment };
+    if (depth === 0 && typeof segment === "string" && options.optionalRoot?.(segment)) {
+      return { field: segment };
+    }
+    // Require the null at the exact path, not an ancestor that failed to load.
+    if (optionalNotFound && depth === path.length - 1) return { field: segment };
+    return null;
   }
   return null;
 }
