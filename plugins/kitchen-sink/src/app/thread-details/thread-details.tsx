@@ -461,22 +461,17 @@ function MachineRow({
 }) {
   const terminal = useThreadTerminal(threadId);
   const machine = thread.host?.name ?? "No machine";
-  const icons = (
-    <span className="flex shrink-0 items-center gap-1">
-      <RowIcon name="Laptop" />
-      <RowIcon name={environment?.isWorktree ? "FolderGit" : "Folder"} />
-    </span>
-  );
+  const icon = <RowIcon name="Laptop" />;
   if (!environment) {
     return (
       <InfoRow>
-        {icons}
+        {icon}
         <RowLabel>{machine}</RowLabel>
       </InfoRow>
     );
   }
   return (
-    <SelectRow icon={icons} label={machine}>
+    <SelectRow icon={icon} label={machine}>
       <MenuLabel>{environment.isWorktree ? "Worktree" : "Checkout"}</MenuLabel>
       {environment.path ? (
         <MenuItem
@@ -807,7 +802,7 @@ function ChangesRow({
       onClick={onRetry}
       disabled={offline || !status}
     >
-      <RowIcon name="RotateCcw" />
+      <RowIcon name="FileDiff" />
       <RowLabel>{text}</RowLabel>
       {stats}
     </Row>

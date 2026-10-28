@@ -29,7 +29,8 @@ export function cx(...classes: Array<string | false | null | undefined>): string
 const HOVER =
   "hover:bg-foreground/[0.035] data-[state=open]:bg-foreground/[0.035] [.dark_&]:hover:bg-foreground/[0.08] [.dark_&]:data-[state=open]:bg-foreground/[0.08]";
 const CONTROL =
-  "flex h-8 min-w-0 cursor-pointer items-center gap-2.5 rounded-lg border border-transparent bg-transparent px-2.5 text-left text-[13px] font-medium text-foreground/80 outline-none transition-[background-color,scale] focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring disabled:cursor-default disabled:opacity-60 [&:active:not([aria-haspopup]):not(:disabled)]:scale-[0.98]";
+  "flex h-8 min-w-0 cursor-pointer items-center rounded-lg border border-transparent bg-transparent text-left text-[13px] font-medium text-foreground/80 outline-none transition-[background-color,scale] focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring disabled:cursor-default disabled:opacity-60 [&:active:not([aria-haspopup]):not(:disabled)]:scale-[0.98]";
+const ROW_CONTENT = "gap-2.5 px-2.5";
 
 export function RowIcon({ name }: { name: string }) {
   return <Icon name={name} aria-hidden className="size-4 shrink-0 text-muted-foreground" />;
@@ -44,12 +45,20 @@ export function RowLabel({ children }: { children: ReactNode }) {
 }
 
 export function Row({ className, ...props }: ComponentPropsWithoutRef<"button">) {
-  return <button type="button" {...props} className={cx(CONTROL, "w-full", HOVER, className)} />;
+  return (
+    <button
+      type="button"
+      {...props}
+      className={cx(CONTROL, ROW_CONTENT, "w-full", HOVER, className)}
+    />
+  );
 }
 
 /** A static row: the same box as `Row`, for facts with no action. */
 export function InfoRow({ className, ...props }: ComponentPropsWithoutRef<"div">) {
-  return <div {...props} className={cx(CONTROL, "w-full cursor-default", className)} />;
+  return (
+    <div {...props} className={cx(CONTROL, ROW_CONTENT, "w-full cursor-default", className)} />
+  );
 }
 
 /** A primary action with a chevron menu beside it, as t3code's split rows. */
@@ -96,7 +105,7 @@ export function SplitPrimary({ className, ...props }: ComponentPropsWithoutRef<"
     <button
       type="button"
       {...props}
-      className={cx(CONTROL, "flex-1 rounded-e-none", HOVER, className)}
+      className={cx(CONTROL, ROW_CONTENT, "flex-1 rounded-e-none", HOVER, className)}
     />
   );
 }
