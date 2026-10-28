@@ -6,7 +6,7 @@ import { StrictMode, useState } from "react";
 import { afterEach, expect, test, vi } from "vitest";
 import type { ComposerMention } from "@get-bb/plugin-sdk/app";
 import { loadPluginApp, renderSlot as sdkRenderSlot } from "@get-bb/plugin-sdk/testing/app";
-import { chunkedResponse, mp4File, STREAM_TYPE } from "./mp4-fixture.ts";
+import { blobText, chunkedResponse, mp4File, STREAM_TYPE } from "./mp4-fixture.ts";
 import {
   widgetIdentitySchema,
   saveWidgetStateSchema,
@@ -402,7 +402,7 @@ test("inline-vis renders before media downloads and streams each asset to the op
     await waitFor(() => expect(port.postMessage).toHaveBeenCalledTimes(1));
     const [message] = port.postMessage.mock.calls[0]! as [{ key: string; blob: Blob }];
     expect(message.key).toBe("0");
-    expect(await message.blob.text()).toBe("image");
+    expect(await blobText(message.blob)).toBe("image");
     await waitFor(() => expect(pending).toHaveLength(2));
     expect(pending[1]!.url).toBe(`http://localhost:3000${LEASE_URL}/clip.mp4`);
     // A document that later takes over the same frame window, for example

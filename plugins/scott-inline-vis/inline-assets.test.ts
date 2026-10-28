@@ -9,7 +9,7 @@ import {
   resolvePreviewAssetUrl,
 } from "./inline-assets.ts";
 import { BufferSource, EncodedPacketSink, Input, MP4 } from "mediabunny";
-import { chunkedResponse, mp4File, STREAM_TYPE } from "./mp4-fixture.ts";
+import { blobText, chunkedResponse, mp4File, STREAM_TYPE } from "./mp4-fixture.ts";
 
 afterEach(() => vi.restoreAllMocks());
 const text = (value: string) => new TextEncoder().encode(value);
@@ -93,7 +93,7 @@ test("reads an asset through the authenticated preview boundary", async () => {
     redirect: "error",
     signal,
   });
-  expect(await blob.text()).toBe("video");
+  expect(await blobText(blob)).toBe("video");
   expect(create).not.toHaveBeenCalled();
 });
 
@@ -413,7 +413,7 @@ test("leaves a video it cannot rewrap to its Blob", async () => {
   const onChunk = vi.fn();
   const blob = await fetchInlineAsset(asset!, new AbortController().signal, onChunk);
   expect(onChunk).not.toHaveBeenCalled();
-  expect(await blob.text()).toBe("not an mp4");
+  expect(await blobText(blob)).toBe("not an mp4");
   expect(blob.type).toBe("video/webm");
 });
 

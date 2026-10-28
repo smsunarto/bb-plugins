@@ -58,3 +58,18 @@ export function chunkedResponse(chunks: Uint8Array[], type = "video/mp4") {
   });
   return new Response(body, { headers: { "content-type": type } });
 }
+
+/**
+ * A Blob's text. Under jsdom, Node 24's `Response.blob()` builds jsdom's Blob,
+ * which has no `text()`; Node 22's returns Node's own Blob, which jsdom's
+ * FileReader refuses.
+ */
+export function blobText(blob: Blob): Promise<string> {
+  if (typeof blob.text === "function") return blob.text();
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.addEventListener("load", () => resolve(reader.result as string));
+    reader.addEventListener("error", () => reject(reader.error));
+    reader.readAsText(blob);
+  });
+}
