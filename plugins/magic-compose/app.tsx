@@ -11,7 +11,7 @@ import {
   useState,
   useSyncExternalStore,
 } from "react";
-import { WandSparklesIcon } from "@hugeicons/core-free-icons";
+import { WandSparkles as WandSparklesIcon } from "@hugeicons/core-free-icons";
 import { definePluginApp, useComposer, useRpc } from "@get-bb/plugin-sdk/app";
 import type { rpcContract } from "./server";
 import { registerSettings } from "./settings";
