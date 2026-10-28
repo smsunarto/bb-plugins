@@ -7,6 +7,11 @@ import { useLayoutEffect, useState, type RefObject } from "react";
  */
 const STREAM_PANEL_SELECTOR =
   '[data-panel-id="thread-detail-timeline-panel"], [data-split-pane-id]';
+// BB keeps closed desktop panels mounted; compact panels live in a dialog portal.
+const RIGHT_PANEL_SELECTOR = '[id^="thread-detail-secondary-panel"] > aside[aria-hidden]';
+const DRAWER_PANEL_SELECTOR = '[role="dialog"] aside[aria-hidden]';
+const DRAWER_SELECTOR =
+  '[role="dialog"][data-state]:not([data-state="closed"]) aside[aria-hidden="false"]';
 /** Gap between the card and the stream's header and edges. */
 const INSET = 12;
 
@@ -41,7 +46,19 @@ export function useStreamDock(anchor: RefObject<HTMLElement | null>) {
   const [layout, setLayout] = useState<StreamDockLayout | null>(null);
   useLayoutEffect(() => {
     const panel = findStreamPanel(anchor.current);
+    const group = panel?.closest("[data-panel-group]") ?? panel;
+    const paneId = panel?.dataset.splitPaneId;
     const measure = () => {
+      const rightPanelOpen = [...(group?.querySelectorAll(RIGHT_PANEL_SELECTOR) ?? [])].some(
+        (aside) =>
+          aside.getAttribute("aria-hidden") === "false" &&
+          (aside.parentElement?.id === "thread-detail-secondary-panel" ||
+            (paneId && aside.parentElement?.id === `thread-detail-secondary-panel-${paneId}`)),
+      );
+      if (rightPanelOpen || document.querySelector(DRAWER_SELECTOR)) {
+        setLayout((previous) => (previous === null ? previous : null));
+        return;
+      }
       const box = panel?.getBoundingClientRect() ?? {
         top: 0,
         right: window.innerWidth,
@@ -80,12 +97,34 @@ export function useStreamDock(anchor: RefObject<HTMLElement | null>) {
     if (panel) resize.observe(panel);
     const size = new MutationObserver(measure);
     if (panel) size.observe(panel, { attributes: true, attributeFilter: ["data-panel-size"] });
+    const visibility = new MutationObserver((records) => {
+      const relevant = `${RIGHT_PANEL_SELECTOR}, ${DRAWER_PANEL_SELECTOR}, [role="dialog"]`;
+      if (
+        records.some((record) =>
+          record.type === "attributes"
+            ? record.target instanceof Element && record.target.matches(relevant)
+            : [...record.addedNodes, ...record.removedNodes].some(
+                (node) =>
+                  node instanceof Element &&
+                  (node.matches(relevant) || node.querySelector(relevant)),
+              ),
+        )
+      )
+        measure();
+    });
+    visibility.observe(document.body, {
+      subtree: true,
+      childList: true,
+      attributes: true,
+      attributeFilter: ["aria-hidden", "data-state"],
+    });
     const settled = ["animationend", "transitionend"] as const;
     for (const event of settled) window.addEventListener(event, settle, true);
     window.addEventListener("resize", measure);
     return () => {
       resize.disconnect();
       size.disconnect();
+      visibility.disconnect();
       for (const event of settled) window.removeEventListener(event, settle, true);
       window.removeEventListener("resize", measure);
     };

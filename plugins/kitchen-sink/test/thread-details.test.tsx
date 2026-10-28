@@ -241,7 +241,7 @@ function streamPanel(width: number) {
 
 const docked = () =>
   document.body.querySelector<HTMLElement>('section[aria-label="Thread details"]');
-test("the card stays visible with a side panel and ignores the old hidden preference", async () => {
+test("the card ignores the old hidden preference and stays visible while resizing", async () => {
   localStorage.setItem(PINNED, "false");
   const panel = streamPanel(900);
   const { slot } = await renderCard({ panel });
@@ -254,6 +254,57 @@ test("the card stays visible with a side panel and ignores the old hidden prefer
   slot.unmount();
   panel.remove();
   localStorage.removeItem(PINNED);
+});
+
+test("opening the right panel hides the card and closing it restores it", async () => {
+  const panel = streamPanel(900);
+  const group = document.createElement("div");
+  group.setAttribute("data-panel-group", "");
+  document.body.append(group);
+  group.append(panel);
+  const secondary = document.createElement("div");
+  secondary.id = "thread-detail-secondary-panel";
+  const aside = document.createElement("aside");
+  aside.setAttribute("aria-hidden", "true");
+  secondary.append(aside);
+  group.append(secondary);
+  const { slot } = await renderCard({ panel });
+  await waitFor(() => expect(docked()).toBeTruthy());
+  aside.setAttribute("aria-hidden", "false");
+  await waitFor(() => expect(docked()).toBeNull());
+  aside.setAttribute("aria-hidden", "true");
+  await waitFor(() => expect(docked()).toBeTruthy());
+  slot.unmount();
+  group.remove();
+});
+
+test("an initially open right panel and a compact drawer hide the card", async () => {
+  const panel = streamPanel(900);
+  const group = document.createElement("div");
+  group.setAttribute("data-panel-group", "");
+  document.body.append(group);
+  group.append(panel);
+  const secondary = document.createElement("div");
+  secondary.id = "thread-detail-secondary-panel";
+  secondary.innerHTML = '<aside aria-hidden="false"></aside>';
+  group.append(secondary);
+  const { slot } = await renderCard({ panel });
+  expect(docked()).toBeNull();
+  secondary.remove();
+  await waitFor(() => expect(docked()).toBeTruthy());
+  const drawer = document.createElement("div");
+  drawer.setAttribute("role", "dialog");
+  drawer.setAttribute("data-state", "full");
+  document.body.append(drawer);
+  // BB opens the drawer with a fallback before its real panel arrives.
+  await waitFor(() => expect(docked()).toBeTruthy());
+  drawer.innerHTML = '<aside aria-hidden="false"></aside>';
+  await waitFor(() => expect(docked()).toBeNull());
+  drawer.setAttribute("data-state", "closed");
+  await waitFor(() => expect(docked()).toBeTruthy());
+  slot.unmount();
+  drawer.remove();
+  group.remove();
 });
 
 test("narrow desktop streams show the card; mobile and collapsed streams hide it", async () => {
@@ -329,6 +380,38 @@ test("split-pane cards stay within their own pane", async () => {
   second.slot.unmount();
   left.remove();
   right.remove();
+});
+
+test("a shared right panel hides only its owning split pane's card", async () => {
+  const group = document.createElement("div");
+  group.setAttribute("data-panel-group", "");
+  document.body.append(group);
+  const first = streamPanel(500);
+  first.removeAttribute("data-panel-id");
+  first.dataset.splitPaneId = "pane-1";
+  const second = streamPanel(500);
+  second.removeAttribute("data-panel-id");
+  second.dataset.splitPaneId = "pane-2";
+  group.append(first, second);
+  const firstSlot = await renderCard({ panel: first });
+  const firstCard = docked()!;
+  const secondSlot = await renderCard({ panel: second });
+  const secondary = document.createElement("div");
+  secondary.id = "thread-detail-secondary-panel-pane-2";
+  secondary.innerHTML = '<aside aria-hidden="false"></aside>';
+  group.append(secondary);
+  await waitFor(() =>
+    expect(document.querySelectorAll('section[aria-label="Thread details"]').length).toBe(1),
+  );
+  expect(firstCard.isConnected).toBe(true);
+  const replacement = secondary.cloneNode(true) as HTMLElement;
+  replacement.id = "thread-detail-secondary-panel-pane-1";
+  secondary.replaceWith(replacement);
+  await waitFor(() => expect(firstCard.isConnected).toBe(false));
+  expect(document.querySelectorAll('section[aria-label="Thread details"]').length).toBe(1);
+  firstSlot.slot.unmount();
+  secondSlot.slot.unmount();
+  group.remove();
 });
 
 test("the header keyboard link focuses the card without toggling it", async () => {
