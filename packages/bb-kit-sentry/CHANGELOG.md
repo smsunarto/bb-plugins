@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.3.0](https://github.com/smsunarto/bb-plugins/compare/bb-kit-sentry/v0.2.0...bb-kit-sentry/v0.3.0) (2026-10-28)
+
+
+### Features
+
+* **bb-kit-sentry:** report failures from 0.6.75 slot fields and hooks ([3df5b7d](https://github.com/smsunarto/bb-plugins/commit/3df5b7d71cec14b4cc047bb0fe62cc2fe1538d54))
+
+
+### Bug Fixes
+
+* **bb-kit-sentry:** instrument app.commands.register ([42bcd43](https://github.com/smsunarto/bb-plugins/commit/42bcd43b4f66ba0cbc30681b844f569a9e3b1168))
+* **game-studio:** narrow resolved workspace path before slot lookup ([#145](https://github.com/smsunarto/bb-plugins/issues/145)) ([20e7c83](https://github.com/smsunarto/bb-plugins/commit/20e7c838ef0fc6b2171deb63a896ea578f0b424d))
+* **scott-engineering:** stop Arena rewrites repeating card labels ([69a5eb8](https://github.com/smsunarto/bb-plugins/commit/69a5eb8eaafc43c3d44c61e05bcc24ea6c6d2776))
+* **workspace:** resolve in-repo core consumers locally ([8bc9ab7](https://github.com/smsunarto/bb-plugins/commit/8bc9ab7a9e6b7f8c18282fc3db697f7a7a138648))
+
 ## [0.2.0](https://github.com/smsunarto/bb-plugins/compare/bb-kit-sentry/v0.1.0...bb-kit-sentry/v0.2.0) (2026-09-15)
 
 
