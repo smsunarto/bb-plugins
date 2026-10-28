@@ -360,7 +360,7 @@ function ReviewCard({
         </p>
       ) : null}
       {issue ? (
-        <div role="alert" className="border-t border-border px-3 py-2 text-[11px] text-destructive">
+        <div role="alert" className="px-3 py-2 text-[11px] text-destructive">
           {issue}{" "}
           <button type="button" className="cursor-pointer underline" onClick={onRetry}>
             Retry
