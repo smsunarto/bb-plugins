@@ -1,5 +1,4 @@
 import { expect, test } from "bun:test";
-import { callProcedure } from "@bb-kit/core/rpc";
 import { fakeContext } from "../../../test/fake-gh.ts";
 import { discardReview } from "./discard-review.ts";
 
@@ -12,8 +11,8 @@ test("deletes the pending review with its drafts", async () => {
       DiscardReview: { deletePullRequestReview: { clientMutationId: null } },
     },
   });
-  expect(
-    await callProcedure(discardReview, ctx, { account: "octocat", pullRequestId: "PR_1" }),
-  ).toEqual({ ok: true });
+  expect(await discardReview(ctx, { account: "octocat", pullRequestId: "PR_1" })).toEqual({
+    ok: true,
+  });
   expect(operations()).toEqual(["PendingReview", "DiscardReview"]);
 });

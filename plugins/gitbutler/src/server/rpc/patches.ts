@@ -1,4 +1,4 @@
-import { defineQuery } from "@bb-kit/core/rpc";
+import type { GitButlerContext } from "../lib/context.ts";
 import { z } from "zod";
 import {
   checkoutSelectionSchema,
@@ -8,7 +8,7 @@ import {
 } from "../../shared/schema.ts";
 import { hostClient, repositoryTarget, resolveTarget } from "../lib/target.ts";
 
-export const patches = defineQuery({
+export const patchesContract = {
   input: z
     .object({
       threadId: z.string().min(1),
@@ -18,16 +18,20 @@ export const patches = defineQuery({
     })
     .strict(),
   output: patchesSchema,
-  async execute(ctx, { threadId, checkout, repositoryKey, source }) {
-    const { target, reason } = await resolveTarget(ctx.bb, threadId, checkout, repositoryKey);
-    if (!target) throw new Error(reason);
-    return hostClient(ctx.bb).call(
-      "patches",
-      {
-        ...repositoryTarget(target, repositoryKey),
-        source,
-      },
-      { hostId: target.hostId },
-    );
-  },
-});
+};
+
+export async function patches(
+  ctx: GitButlerContext,
+  { threadId, checkout, repositoryKey, source }: z.output<typeof patchesContract.input>,
+): Promise<z.input<typeof patchesContract.output>> {
+  const { target, reason } = await resolveTarget(ctx.bb, threadId, checkout, repositoryKey);
+  if (!target) throw new Error(reason);
+  return hostClient(ctx.bb).call(
+    "patches",
+    {
+      ...repositoryTarget(target, repositoryKey),
+      source,
+    },
+    { hostId: target.hostId },
+  );
+}

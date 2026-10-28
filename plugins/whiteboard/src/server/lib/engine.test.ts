@@ -1,10 +1,9 @@
-import { definePlugin } from "@bb-kit/core/plugin";
-import { api } from "../rpc/api.ts";
-import { liveFile } from "../rpc/live-file.ts";
+import { api, apiContract } from "../rpc/api.ts";
+import { liveFile, liveFileContract } from "../rpc/live-file.ts";
 import { randomUUID } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
-import type { BbPluginApi } from "@get-bb/plugin-sdk";
+import { defineRpcContract, type BbPluginApi } from "@get-bb/plugin-sdk";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { PNG } from "pngjs";
@@ -135,11 +134,10 @@ beforeEach(async () => {
     },
   } as unknown as BbPluginApi;
   engine = createEngine(bb, settings);
-  await definePlugin({
-    pluginId: "whiteboard",
-    rpc: { api, liveFile },
-    services: () => ({ engine }),
-  })(bb);
+  bb.rpc.register(defineRpcContract({ api: apiContract, liveFile: liveFileContract }), {
+    api: (input) => api({ bb, engine }, input),
+    liveFile: (input) => liveFile({ bb, engine }, input),
+  });
   const registered = await post("/repositories", { path: repo.root });
   expect(registered.status).toBe(200);
   repositoryId = registered.body.id;

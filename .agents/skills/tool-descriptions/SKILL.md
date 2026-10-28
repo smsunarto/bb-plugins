@@ -31,7 +31,7 @@ Use exact tool and field names. Pair exceptional restrictions with the supported
 Follow [AGENTS.md](../../../AGENTS.md) for instruction-file storage and plugin verification. Keep each rule at the layer where the agent needs it:
 
 - **Tool description:** Selection, essential prerequisites, call semantics, and result handling. A selected tool should expose the critical rules needed to use it correctly.
-- **Thread snippet:** The trigger that makes the agent discover the tool before choosing it. Name the entry tool and point to detailed guidance. Stay within `TOOL_INSTRUCTIONS_MAX_CHARS` in the [instructions loader](../../../packages/bb-kit-core/src/instructions/instructions.ts); the host rejects oversized snippets.
+- **Thread snippet:** The trigger that makes the agent discover the tool before choosing it. Name the entry tool and point to detailed guidance. Stay within `TOOL_INSTRUCTIONS_MAX_CHARS` in the [instructions loader](../../../packages/instructions/src/instructions.ts); the host rejects oversized snippets.
 - **Skill or instructions tool:** Longer workflows, recipes, and conditional reference material. Keep the prerequisite to load them visible in the tool description.
 
 Repeat a critical prerequisite only where it must be visible independently. Share longer guidance through pointers instead of copying a server manual into every description. When inspecting an exposed MCP catalog, distinguish the individual description from shared server instructions and generated schema text before assessing length or duplication.
@@ -55,4 +55,4 @@ Inspect the PNG, consoleMessages, and any missingImages. Fix issues, then use
 
 Check that a reader can select the right tool, obtain every required input, recognize the result state, and continue or recover without guessing. Confirm named tools, skills, references, and field names exist. Check sibling descriptions for conflicting selection rules.
 
-For changed tool descriptions, run the affected plugin's `check` script where present; bb-kit's check validates description wiring and snippet limits. Use existing catalog or registration checks to inspect the advertised text and schema together, then follow the repository's reload and handoff rules. Source Markdown alone does not prove the agent receives it. For a skill-only change, validate its frontmatter and links; no plugin reload is needed.
+For changed tool descriptions, confirm the file name matches the registered tool name and the snippet stays under the limit. Use existing catalog or registration checks to inspect the advertised text and schema together, then follow the repository's reload and handoff rules. Source Markdown alone does not prove the agent receives it. For a skill-only change, validate its frontmatter and links; no plugin reload is needed.

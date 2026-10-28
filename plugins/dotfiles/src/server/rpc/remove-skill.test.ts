@@ -7,7 +7,7 @@ import { removeSkill } from "./remove-skill.ts";
 
 test("makes stale skill removal an expected outcome", async () => {
   const missing = createFakeContext();
-  assert.deepEqual(await removeSkill.execute(missing, { name: "example" }), {
+  assert.deepEqual(await removeSkill(missing, { name: "example" }), {
     outcome: "not-found",
   });
 
@@ -22,7 +22,7 @@ test("makes stale skill removal an expected outcome", async () => {
       return { exitCode: 0, output: "removed" };
     },
   });
-  assert.deepEqual(await removeSkill.execute(existing, { hostId: "host_mac", name: "example" }), {
+  assert.deepEqual(await removeSkill(existing, { hostId: "host_mac", name: "example" }), {
     outcome: "completed",
     exitCode: 0,
     output: "removed",
@@ -32,7 +32,7 @@ test("makes stale skill removal an expected outcome", async () => {
     { level: "info", message: "removing skill example on Local Mac via npx skills" },
   ]);
   await assert.rejects(
-    async () => removeSkill.execute(existing, { name: "../example" }),
+    async () => removeSkill(existing, { name: "../example" }),
     /invalid skill name/,
   );
 });

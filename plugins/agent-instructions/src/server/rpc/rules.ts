@@ -1,10 +1,15 @@
-import { defineQuery } from "@bb-kit/core/rpc";
-import type { Context } from "@bb-kit/core/plugin";
+import { z } from "zod";
 import { rulesStateSchema } from "../../shared/rules.ts";
-import type { RuleStore } from "../lib/store.ts";
+import type { AgentInstructionsContext } from "../lib/store.ts";
 
-export const rules = defineQuery({
+export const rulesContract = {
+  experimental_description: "List the instruction rules in order, with the revision they are at",
+  input: z.null(),
   output: rulesStateSchema,
-  description: "List the instruction rules in order, with the revision they are at",
-  execute: (ctx: Context<{ store: RuleStore }>) => ctx.store.state(),
-});
+};
+
+export async function rules(
+  ctx: AgentInstructionsContext,
+): Promise<z.input<typeof rulesContract.output>> {
+  return ctx.store.state();
+}

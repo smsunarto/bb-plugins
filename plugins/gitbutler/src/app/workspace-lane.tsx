@@ -18,7 +18,7 @@ import { CONTROL_HOVER_TRANSITION } from "./components/ui/motion.ts";
 import { cn } from "./lib/utils.ts";
 import { CommitRowsSkeleton, FileRowsSkeleton, Notice, errorText } from "./notice.tsx";
 import { BASE_HISTORY_PAGE, COMMIT_QUERY } from "./query-client.ts";
-import { rpc } from "./rpc.ts";
+import { useRpcQuery } from "./rpc.ts";
 import { storedAnswer } from "./stored-queries.ts";
 import { subject } from "./format.ts";
 import { When } from "./when.tsx";
@@ -539,7 +539,7 @@ const REVIEWS_POLL_MS = 5 * 60_000;
 
 /** A branch's review, from the one read every card of the repository shares. */
 function useBranchReview(target: WorkspaceTarget, branch: string): BranchReview | null {
-  const reviews = rpc.reviews.useQuery(target, {
+  const reviews = useRpcQuery("reviews", target, {
     ...storedAnswer("reviews", target),
     staleTime: REVIEWS_POLL_MS,
     refetchInterval: REVIEWS_POLL_MS,
@@ -611,7 +611,7 @@ function ReviewChip({
  */
 function useReviewLink(target: WorkspaceTarget, branch: string) {
   const navigate = useBbNavigate();
-  const link = rpc.reviewUrl.useQuery({ ...target, branch }, { enabled: false });
+  const link = useRpcQuery("reviewUrl", { ...target, branch }, { enabled: false });
   // This card's last click, not the shared cache: a lookup that failed before
   // the panel remounted is not news to a reader who has not clicked since.
   const [problem, setProblem] = useState<string | null>(null);
@@ -902,7 +902,7 @@ export function BaseCard({
     limit,
     checkout,
   };
-  const history = rpc.baseHistory.useQuery(input, {
+  const history = useRpcQuery("baseHistory", input, {
     ...storedAnswer("baseHistory", input),
     // History under a commit id never changes, so it is read once per base.
     ...COMMIT_QUERY,

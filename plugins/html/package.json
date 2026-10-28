@@ -55,7 +55,7 @@
     "THIRD_PARTY_NOTICES.md"
   ],
   "dependencies": {
-    "@bb-kit/core": "workspace:*",
+    "@bb-plugins/instructions": "workspace:*",
     "zod": "^4.4.3"
   },
   "devDependencies": {
@@ -81,7 +81,6 @@
     "lint": "oxlint",
     "typecheck": "tsc --noEmit",
     "test": "vitest run --config vitest.config.ts",
-    "check": "node --import tsx ../../packages/bb-kit-dev/src/bin.ts check",
     "vendor:player": "bun vendor/build-video-player.ts",
     "clean": "rm -rf dist"
   }

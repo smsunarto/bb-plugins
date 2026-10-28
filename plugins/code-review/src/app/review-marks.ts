@@ -1,5 +1,5 @@
 import { useMemo, useSyncExternalStore } from "react";
-import { pluginQueryClient } from "@bb-kit/core/rpc/query";
+import { queryClient } from "./query.ts";
 import type { QueryKey } from "@tanstack/react-query";
 import { branchReviewRange, prKey } from "../shared/schema.ts";
 import type {
@@ -12,7 +12,7 @@ import type {
 } from "../shared/schema.ts";
 import { useBranchReviewed, withReviewedFiles } from "./branch-review.ts";
 import { errorText } from "./notice.tsx";
-import { rpc } from "./rpc.ts";
+import { queryKey as rpcQueryKey, useCodeReviewRpc } from "./rpc.ts";
 
 /** The Changes view consumes one marks contract, regardless of where marks live. */
 export type ReviewMarks = {
@@ -26,9 +26,9 @@ export type ReviewMarks = {
 };
 
 export function usePrMarks(pr: PullRequest): ReviewMarks {
-  const client = rpc.useClient();
+  const client = useCodeReviewRpc();
   return useMemo(() => {
-    const queryKey = rpc.changedFiles.queryKey({ account: pr.account, ref: pr.ref });
+    const queryKey = rpcQueryKey("changedFiles", { account: pr.account, ref: pr.ref });
     return {
       label: "Viewed",
       errorKey: viewedKey(pr),
@@ -36,7 +36,7 @@ export function usePrMarks(pr: PullRequest): ReviewMarks {
       loadError: null,
       files: (files) => files,
       apply(path, viewed) {
-        pluginQueryClient.setQueryData<ChangedFiles>(queryKey, (current) =>
+        queryClient.setQueryData<ChangedFiles>(queryKey, (current) =>
           current
             ? {
                 ...current,
@@ -48,7 +48,7 @@ export function usePrMarks(pr: PullRequest): ReviewMarks {
         );
       },
       send: (path, viewed) =>
-        client.setViewed({ account: pr.account, pullRequestId: pr.id, path, viewed }),
+        client.call("setViewed", { account: pr.account, pullRequestId: pr.id, path, viewed }),
     };
   }, [client, pr]);
 }
@@ -57,11 +57,11 @@ export function useBranchMarks(
   branch: BranchReviewRange,
   query: ReturnType<typeof useBranchReviewed>,
 ): ReviewMarks | null {
-  const client = rpc.useClient();
+  const client = useCodeReviewRpc();
   return useMemo(() => {
     if (!query.data) return null;
     const range = branchReviewRange(branch);
-    const queryKey = rpc.branchReviewed.queryKey(range);
+    const queryKey = rpcQueryKey("branchReviewed", range);
     const paths = query.data.paths;
     return {
       label: "Reviewed",
@@ -70,14 +70,14 @@ export function useBranchMarks(
       loadError: query.error,
       files: (files) => withReviewedFiles(files, paths),
       apply(path, state) {
-        pluginQueryClient.setQueryData<BranchReviewed>(queryKey, (current) => {
+        queryClient.setQueryData<BranchReviewed>(queryKey, (current) => {
           const reviewed = new Set(current?.paths);
           if (state === "viewed") reviewed.add(path);
           else reviewed.delete(path);
           return { paths: [...reviewed] };
         });
       },
-      send: (path, viewed) => client.setBranchViewed({ ...range, path, viewed }),
+      send: (path, viewed) => client.call("setBranchViewed", { ...range, path, viewed }),
     };
   }, [client, branch, query.data, query.error]);
 }
@@ -145,7 +145,7 @@ export function useViewedToggle(
       const key = `${errorKey}:${file.path}`;
       const click = Symbol(file.path);
       const latest = () => viewedQueues.get(key)?.latest === click;
-      void pluginQueryClient.cancelQueries({ queryKey });
+      void queryClient.cancelQueries({ queryKey });
       marks.apply(file.path, viewed ? "viewed" : "unviewed");
       setOpen(file.path, !viewed);
       const send = async () => {
@@ -163,7 +163,7 @@ export function useViewedToggle(
             file.path,
             `Could not mark ${file.path} as ${viewed ? "" : "not "}${marks.label.toLowerCase()}. ${errorText(error)}`,
           );
-          void pluginQueryClient.invalidateQueries({ queryKey });
+          void queryClient.invalidateQueries({ queryKey });
         }
       };
       const queued: ViewedQueue = {

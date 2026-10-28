@@ -8,7 +8,7 @@ import {
   useRef,
   useState,
 } from "react";
-import { pluginQueryClient } from "@bb-kit/core/rpc/query";
+import { queryClient } from "./query.ts";
 import {
   experimental_Icon as Icon,
   experimental_useCodeTheme as useCodeTheme,
@@ -34,7 +34,7 @@ import { shortId } from "./format.ts";
 import { cn } from "./lib/utils.ts";
 import { FileRowsSkeleton, Notice, errorText } from "./notice.tsx";
 import { COMMIT_QUERY, REFRESH_INTERVAL_MS } from "./query-client.ts";
-import { rpc } from "./rpc.ts";
+import { rpcQueryKey, useGitButlerRpc } from "./rpc.ts";
 
 /** Room left above a file scrolled to, so its card's top edge stays in view. */
 const SCROLL_MARGIN_PX = 8;
@@ -409,19 +409,20 @@ const WORKTREE_PATCHES = { staleTime: REFRESH_INTERVAL_MS } as const;
 
 /** Shared by intent prefetch and visible diffs, including the workspace read. */
 function usePatchesQuery(threadId: string, repositoryKey: string | undefined, source: PatchSource) {
-  const client = rpc.useClient();
+  const client = useGitButlerRpc();
   const workspace = useBoardWorkspace();
+  // No key holding `undefined`: the call is sent as strict JSON.
   const input = {
     threadId,
-    repositoryKey,
+    ...(repositoryKey === undefined ? {} : { repositoryKey }),
     source,
     ...(workspace?.checkout ? { checkout: workspace.checkout } : {}),
   };
   return {
     // A thread can move while a request is in flight, and a commit cached in
     // one checkout may not exist in the next. Keep the RPC prefix for refresh.
-    queryKey: [...rpc.patches.queryKey(input), workspace],
-    queryFn: () => client.patches(input),
+    queryKey: [...rpcQueryKey("patches", input), workspace],
+    queryFn: () => client.call("patches", input),
     ...(source.kind === "commit" ? COMMIT_QUERY : WORKTREE_PATCHES),
   };
 }
@@ -445,7 +446,7 @@ export function usePatchesIntent(
   const start = () => {
     window.clearTimeout(timer.current);
     timer.current = window.setTimeout(() => {
-      void pluginQueryClient.prefetchQuery(query);
+      void queryClient.prefetchQuery(query);
     }, INTENT_DELAY_MS);
   };
   const stop = () => window.clearTimeout(timer.current);

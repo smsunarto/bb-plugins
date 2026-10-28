@@ -1,8 +1,7 @@
 import { expect, test } from "bun:test";
-import { callProcedure } from "@bb-kit/core/rpc";
 import { fakeContext } from "../../../test/fake-gh.ts";
 import { BOTTOM, TOP, fakeGitButler } from "../../../test/fake-gitbutler.ts";
-import { localChanges } from "./local-changes.ts";
+import { localChanges, localChangesContract } from "./local-changes.ts";
 
 const RANGE = { hostId: "host-1", path: "/home/example/git/api", base: BOTTOM, head: TOP };
 
@@ -32,7 +31,7 @@ test("a branch's changes are read from its machine, labeled by its range", async
     },
   );
 
-  expect(await callProcedure(localChanges, ctx, RANGE)).toEqual({
+  expect(await localChanges(ctx, RANGE)).toEqual({
     headRefOid: TOP,
     baseRefName: BOTTOM,
     comparison: { kind: "local", ...RANGE },
@@ -52,10 +51,8 @@ test("a branch's changes are read from its machine, labeled by its range", async
   expect(asked).toEqual([RANGE]);
 });
 
-test("a range end that is not a commit id is refused before anything runs", async () => {
-  const { ctx } = fakeContext({}, { plugins: fakeGitButler({}) });
-
-  await expect(
-    callProcedure(localChanges, ctx, { ...RANGE, head: "--output=/tmp/x" }),
-  ).rejects.toThrow("invalid input");
+test("a range end that is not a commit id is refused before anything runs", () => {
+  expect(localChangesContract.input.safeParse({ ...RANGE, head: "--output=/tmp/x" }).success).toBe(
+    false,
+  );
 });

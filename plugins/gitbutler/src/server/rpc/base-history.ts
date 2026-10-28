@@ -1,4 +1,4 @@
-import { defineQuery } from "@bb-kit/core/rpc";
+import type { GitButlerContext } from "../lib/context.ts";
 import { z } from "zod";
 import {
   checkoutSelectionSchema,
@@ -8,7 +8,7 @@ import {
 } from "../../shared/schema.ts";
 import { hostClient, repositoryTarget, resolveTarget } from "../lib/target.ts";
 
-export const baseHistory = defineQuery({
+export const baseHistoryContract = {
   input: z
     .object({
       threadId: z.string().min(1),
@@ -20,18 +20,29 @@ export const baseHistory = defineQuery({
     })
     .strict(),
   output: baseHistorySchema,
-  async execute(ctx, { threadId, checkout, repositoryKey, from, offset, limit }) {
-    const { target, reason } = await resolveTarget(ctx.bb, threadId, checkout, repositoryKey);
-    if (!target) return { commits: [], hasMore: false, reason };
-    return hostClient(ctx.bb).call(
-      "baseHistory",
-      {
-        ...repositoryTarget(target, repositoryKey),
-        from,
-        offset,
-        limit,
-      },
-      { hostId: target.hostId },
-    );
-  },
-});
+};
+
+export async function baseHistory(
+  ctx: GitButlerContext,
+  {
+    threadId,
+    checkout,
+    repositoryKey,
+    from,
+    offset,
+    limit,
+  }: z.output<typeof baseHistoryContract.input>,
+): Promise<z.input<typeof baseHistoryContract.output>> {
+  const { target, reason } = await resolveTarget(ctx.bb, threadId, checkout, repositoryKey);
+  if (!target) return { commits: [], hasMore: false, reason };
+  return hostClient(ctx.bb).call(
+    "baseHistory",
+    {
+      ...repositoryTarget(target, repositoryKey),
+      from,
+      offset,
+      limit,
+    },
+    { hostId: target.hostId },
+  );
+}

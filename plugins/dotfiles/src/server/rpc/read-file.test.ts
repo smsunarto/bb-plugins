@@ -7,13 +7,13 @@ import { readFile } from "./read-file.ts";
 test("reads only registered files", async () => {
   const ctx = createFakeContext();
 
-  assert.deepEqual(await readFile.execute(ctx, { path: ".dotfiles/mcp.json" }), {
+  assert.deepEqual(await readFile(ctx, { path: ".dotfiles/mcp.json" }), {
     content: "working",
     sha256: "sha-working",
     headContent: "head",
   });
   await assert.rejects(
-    async () => readFile.execute(ctx, { path: ".ssh/id_ed25519" }),
+    async () => readFile(ctx, { path: ".ssh/id_ed25519" }),
     /not a tweakable file/,
   );
 });
@@ -29,7 +29,7 @@ test("reads the working file and its HEAD from the requested machine", async () 
     readHeadFile: record("head"),
   });
 
-  await readFile.execute(ctx, { hostId: "host_mac", path: "AGENTS.md" });
+  await readFile(ctx, { hostId: "host_mac", path: "AGENTS.md" });
 
   assert.deepEqual(reads.sort(), [
     "head host_mac:/dotfiles/AGENTS.md",

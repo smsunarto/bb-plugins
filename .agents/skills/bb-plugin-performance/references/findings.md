@@ -2,7 +2,7 @@
 
 These notes preserve the investigation continued from @thread:thr_xq5yh2zqbw on September 30, 2026. The source facts below were checked in the local `bb` and `bb-plugins` checkouts. Previous runtime counts come from that thread's report and were not measured again while creating this skill.
 
-Paths beginning with `plugins/` or `packages/bb-kit-core/` belong to `bb-plugins`. The host source links assume `bb` is a sibling checkout. Recheck the installed builder and host before applying these facts to another version.
+Paths beginning with `plugins/` or `packages/` belong to `bb-plugins`. The host source links assume `bb` is a sibling checkout. Recheck the installed builder and host before applying these facts to another version.
 
 ## Host compilation and plugin compilation differ
 
@@ -36,7 +36,7 @@ These are historical diagnostic counts, not a benchmark or a latency guarantee. 
 
 The installed TanStack Query `useMutation` returns a newly spread result object on each render. Its `mutate` callback uses the existing observer, and `mutateAsync` exposes the observer's bound method. Stability applies within that observer's lifetime, not across remounts.
 
-bb-kit's [query accessors](../../../../packages/bb-kit-core/src/rpc/query/query.ts) delegate mutations to TanStack Query. The host thread page now depends on the needed functions, including `sendMessageAsync`, instead of capturing whole mutation results.
+Plugin RPC hooks are TanStack Query mutations. The host thread page now depends on the needed functions, including `sendMessageAsync`, instead of capturing whole mutation results.
 
 Recheck `node_modules/@tanstack/react-query/src/useMutation.ts` and `node_modules/@tanstack/query-core/src/mutationObserver.ts` when the dependency changes. Do not stabilize an entire result object and accidentally hide status updates.
 

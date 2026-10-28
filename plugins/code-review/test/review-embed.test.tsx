@@ -1,15 +1,15 @@
 import "./dom.ts";
 import { beforeEach, expect, test } from "bun:test";
-import { pluginQueryClient } from "@bb-kit/core/rpc/query";
+import { queryClient } from "../src/app/query.ts";
 import { timeoutManager } from "@tanstack/react-query";
 import { branchReviewRange, sharedComparisonSubPath } from "../src/shared/schema.ts";
-import { rpc } from "../src/app/rpc.ts";
+import { queryKey } from "../src/app/rpc.ts";
 import { localBranch, localChanges, pullRequest } from "./app-fixtures.ts";
 
 const { fireEvent, waitFor } = await import("@testing-library/react");
 const { loadPluginApp, renderSlot } = await import("@get-bb/plugin-sdk/testing/app");
 
-beforeEach(() => pluginQueryClient.clear());
+beforeEach(() => queryClient.clear());
 
 test("a pinned card stays usable while legacy branch discovery is still pending", async () => {
   const slot = await card(
@@ -159,8 +159,8 @@ test("the branch card opens Changes and shares live review progress", async () =
       options: { subPath: `branch/${localBranch.id}/changes` },
     },
   ]);
-  const { rpc } = await import("../src/app/rpc.ts");
-  pluginQueryClient.setQueryData(rpc.branchReviewed.queryKey(branchReviewRange(localBranch)), {
+  const { queryKey } = await import("../src/app/rpc.ts");
+  queryClient.setQueryData(queryKey("branchReviewed", branchReviewRange(localBranch)), {
     paths: ["src/limit.ts"],
   });
   await slot.findByText("Ready");
@@ -183,8 +183,8 @@ test("a failed branch-discovery refresh suppresses cached Ready and retries disc
   try {
     await slot.findByText("Ready");
     failing = true;
-    await pluginQueryClient.invalidateQueries({
-      queryKey: rpc.localBranch.queryKey({ id: localBranch.id }),
+    await queryClient.invalidateQueries({
+      queryKey: queryKey("localBranch", { id: localBranch.id }),
     });
     await slot.findByRole("alert");
     expect(slot.queryByText("Ready")).toBeNull();
@@ -352,7 +352,7 @@ test("BB reconnect refreshes the card's own branch revision", async () => {
 test("Review latest changes opens the card's revision even with an older inbox cached", async () => {
   const head = "d".repeat(40);
   const latest = { ...localBranch, head };
-  pluginQueryClient.setQueryData(rpc.localBranches.queryKey({}), {
+  queryClient.setQueryData(queryKey("localBranches", {}), {
     available: true,
     branches: [localBranch],
   });
@@ -444,10 +444,7 @@ test("a missing card does not retry or poll fleet discovery", async () => {
 
 test("a fresh cached original cannot report Ready when branch discovery and checkout reads fail", async () => {
   const { hostId, path, base, head } = localBranch;
-  pluginQueryClient.setQueryData(
-    rpc.localChanges.queryKey({ hostId, path, base, head }),
-    localChanges,
-  );
+  queryClient.setQueryData(queryKey("localChanges", { hostId, path, base, head }), localChanges);
   let reads = 0;
   const slot = await card({ branch: localBranch.id, base, head }, ["src/limit.ts"], {
     localBranch: () => {

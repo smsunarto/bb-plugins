@@ -1,4 +1,4 @@
-import type { Session } from "@bb-kit/core/tools";
+import type { PluginAgentConfigurationContext as Session } from "@get-bb/plugin-sdk";
 
 const quiet = new Set(["side-chat", "review"]);
 const answering = /^(Arena|Review) \((Claude|Codex)\)(?: — .+)?$/;
@@ -16,6 +16,6 @@ export function ownsPullRequests(session: Session): boolean {
   );
 }
 
-export function reviewSkills(_ctx: unknown, session: Session): string[] {
+export function reviewSkills(session: Session): string[] {
   return ownsPullRequests(session) ? ["review", "babysit-pr"] : [];
 }

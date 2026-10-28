@@ -1,0 +1,22 @@
+{
+  "name": "@bb-plugins/testing",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Test helpers shared by the plugins: a jsdom installer for component tests.",
+  "type": "module",
+  "exports": {
+    ".": "./src/install-dom.ts"
+  },
+  "peerDependencies": {
+    "jsdom": "*"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "jsdom": "^25.0.0",
+    "typescript": "^6.0.0"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "lint": "oxlint"
+  }
+}

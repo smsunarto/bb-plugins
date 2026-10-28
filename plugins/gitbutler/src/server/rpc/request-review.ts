@@ -1,4 +1,4 @@
-import { defineMutation } from "@bb-kit/core/rpc";
+import type { GitButlerContext } from "../lib/context.ts";
 import { z } from "zod";
 import {
   checkoutSelectionSchema,
@@ -10,11 +10,7 @@ import { reviewPrompt } from "../lib/prompts.ts";
 import { claimReviewRequest } from "../lib/review-requests.ts";
 import { locateRepository, spawnSubthread } from "../lib/subthreads.ts";
 
-/**
- * Create PR hands the branch to a visible child on the selected checkout.
- * The child uses GitButler or native Git according to that checkout's identity.
- */
-export const requestReview = defineMutation({
+export const requestReviewContract = {
   input: z
     .object({
       threadId: z.string().min(1),
@@ -27,28 +23,43 @@ export const requestReview = defineMutation({
     })
     .strict(),
   output: z.object({ threadId: z.string() }).strict(),
-  async execute(ctx, { threadId, checkout, repositoryKey, environmentId, observed, branch }) {
-    const repository = await locateRepository(
-      ctx.bb,
-      threadId,
-      repositoryKey,
-      environmentId,
-      checkout,
-      observed,
-      true,
+};
+
+/**
+ * Create PR hands the branch to a visible child on the selected checkout.
+ * The child uses GitButler or native Git according to that checkout's identity.
+ */
+export async function requestReview(
+  ctx: GitButlerContext,
+  {
+    threadId,
+    checkout,
+    repositoryKey,
+    environmentId,
+    observed,
+    branch,
+  }: z.output<typeof requestReviewContract.input>,
+): Promise<z.input<typeof requestReviewContract.output>> {
+  const repository = await locateRepository(
+    ctx.bb,
+    threadId,
+    repositoryKey,
+    environmentId,
+    checkout,
+    observed,
+    true,
+  );
+  if (repository.identity?.kind === "git" && repository.identity.branch !== branch) {
+    throw new Error(
+      "This checkout changed branches since the board was read. Refresh and try again.",
     );
-    if (repository.identity?.kind === "git" && repository.identity.branch !== branch) {
-      throw new Error(
-        "This checkout changed branches since the board was read. Refresh and try again.",
-      );
-    }
-    const childId = await claimReviewRequest(ctx.bb, threadId, repository, branch, () =>
-      spawnSubthread(ctx.bb, threadId, repository, {
-        operation: "review",
-        title: `Create PR for ${branch}`,
-        prompt: reviewPrompt(branch, repository.path, repository.identity?.kind),
-      }),
-    );
-    return { threadId: childId };
-  },
-});
+  }
+  const childId = await claimReviewRequest(ctx.bb, threadId, repository, branch, () =>
+    spawnSubthread(ctx.bb, threadId, repository, {
+      operation: "review",
+      title: `Create PR for ${branch}`,
+      prompt: reviewPrompt(branch, repository.path, repository.identity?.kind),
+    }),
+  );
+  return { threadId: childId };
+}

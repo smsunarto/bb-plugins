@@ -2,7 +2,7 @@ import { experimental_usePluginId as usePluginId } from "@get-bb/plugin-sdk/app"
 import type { Preview } from "../../shared/previews.ts";
 import type { ChangedFile, Comparison, FileBlobs } from "../../shared/schema.ts";
 import { Loading, Notice, RetryButton, errorText } from "../notice.tsx";
-import { rpc } from "../rpc.ts";
+import { useRpcQuery } from "../rpc.ts";
 import { DownloadLinks, StorageFacts, sideUrls } from "./common.tsx";
 import { ImageDiff } from "./image-diff.tsx";
 import { FontDiff, MediaDiff } from "./media.tsx";
@@ -50,7 +50,8 @@ function BinaryPreview({
   preview: Exclude<Preview, { kind: "unity" | "unity-meta" }> | null;
 }) {
   const pluginId = usePluginId();
-  const blobs = rpc.fileBlobs.useQuery(
+  const blobs = useRpcQuery(
+    "fileBlobs",
     { comparison, path: file.path, previousPath: file.previousPath },
     { staleTime: Number.POSITIVE_INFINITY, gcTime: 5 * 60_000 },
   );

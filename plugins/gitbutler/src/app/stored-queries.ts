@@ -1,6 +1,6 @@
 import { hashKey } from "@tanstack/react-query";
 import type { QueryKey } from "@tanstack/react-query";
-import { pluginQueryClient } from "@bb-kit/core/rpc/query";
+import { queryClient } from "./query.ts";
 import type { z } from "zod";
 import {
   baseHistorySchema,
@@ -11,7 +11,8 @@ import {
   workspaceSchema,
 } from "../shared/schema.ts";
 import { BASE_HISTORY_PAGE } from "./query-client.ts";
-import { rpc } from "./rpc.ts";
+import { rpcQueryKey } from "./rpc.ts";
+import type { RpcInput } from "./rpc.ts";
 
 /*
  * Answers worth drawing before the server replies, kept in localStorage.
@@ -92,7 +93,7 @@ const RULES = {
 
 type Method = keyof typeof RULES;
 type Data<M extends Method> = z.infer<(typeof RULES)[M]["schema"]>;
-type Input<M extends Method> = Parameters<(typeof rpc)[M]["queryKey"]>[0];
+type Input<M extends Method> = RpcInput<M> | undefined;
 type Entry = { at: number; data: unknown };
 
 function storage(): Storage | null {
@@ -178,7 +179,7 @@ function read(queryKey: QueryKey): Entry | undefined {
 // object, thanks to structural sharing, and is not written again.
 const written = new Map<string, unknown>();
 
-pluginQueryClient.getQueryCache().subscribe((event) => {
+queryClient.getQueryCache().subscribe((event) => {
   if (event.type !== "updated" || event.action.type !== "success") return;
   const { queryKey, state } = event.query;
   const rule = ruleFor(queryKey);
@@ -209,7 +210,7 @@ export function storedAnswer<M extends Method>(
 ): { initialData: () => Data<M> | undefined; initialDataUpdatedAt: () => number | undefined } {
   let entry: Entry | undefined | null = null;
   const once = () => {
-    if (entry === null) entry = read(rpc[method].queryKey(input as never));
+    if (entry === null) entry = read(rpcQueryKey(method, input as never));
     return entry;
   };
   return {
@@ -220,5 +221,5 @@ export function storedAnswer<M extends Method>(
 
 /** The stored answer for a read, if one is kept and still fits the schema. */
 export function readStored<M extends Method>(method: M, input: Input<M>): Data<M> | undefined {
-  return read(rpc[method].queryKey(input as never))?.data as Data<M> | undefined;
+  return read(rpcQueryKey(method, input as never))?.data as Data<M> | undefined;
 }

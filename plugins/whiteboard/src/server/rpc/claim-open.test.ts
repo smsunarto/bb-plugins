@@ -1,9 +1,9 @@
-import { definePlugin } from "@bb-kit/core/plugin";
+import { defineRpcContract } from "@get-bb/plugin-sdk";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { expect, test } from "vitest";
 import type { PendingOpen } from "../../shared/contracts/api-tunnel.ts";
 import type { Engine } from "../../shared/contracts/engine.ts";
-import { claimOpen } from "./claim-open.ts";
+import { claimOpen, claimOpenContract } from "./claim-open.ts";
 
 /** An engine with `waiting` opens; `asked` lists the claims it got. */
 async function start(waiting: Record<string, PendingOpen>, asked: unknown[][] = []) {
@@ -14,9 +14,9 @@ async function start(waiting: Record<string, PendingOpen>, asked: unknown[][] = 
     },
   } as unknown as Engine;
   const { bb, harness } = createFakePluginHost({ pluginId: "whiteboard" });
-  await definePlugin({ pluginId: "whiteboard", rpc: { claimOpen }, services: () => ({ engine }) })(
-    bb,
-  );
+  bb.rpc.register(defineRpcContract({ claimOpen: claimOpenContract }), {
+    claimOpen: (input) => claimOpen({ bb, engine }, input),
+  });
   return harness;
 }
 

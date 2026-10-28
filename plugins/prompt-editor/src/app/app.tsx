@@ -1,7 +1,6 @@
 import { definePluginApp, useBbNavigate } from "@get-bb/plugin-sdk/app";
 import type { PluginNavPanelProps } from "@get-bb/plugin-sdk/app";
-import { PluginQueryBoundary } from "@bb-kit/core/rpc/query";
-import { useQueryClient } from "@tanstack/react-query";
+import { QueryClientProvider, useQueryClient } from "@tanstack/react-query";
 import { useSyncExternalStore } from "react";
 import type {
   AgentFile,
@@ -11,7 +10,8 @@ import type {
   SaveResult,
   Tool,
 } from "../shared/schema.ts";
-import { rpc } from "./rpc.ts";
+import { queryClient } from "./query.ts";
+import { queryKey, useRpcMutation, useRpcQuery } from "./rpc.ts";
 import "./prompt-editor.css";
 
 const PANEL_PATH = "prompt-editor";
@@ -303,9 +303,9 @@ function FileEditor(props: {
 }) {
   const { plugin, file, draft, onDraft } = props;
   const ref = { pluginId: plugin.id, path: file.path };
-  const loaded = rpc.file.useQuery(ref);
+  const loaded = useRpcQuery("file", ref);
   const queryClient = useQueryClient();
-  const save = rpc.save.useMutation({
+  const save = useRpcMutation("save", {
     onSuccess: async (result, input) => {
       // Keep anything typed while the plugin reloaded, now based on the saved file.
       onDraft((current) =>
@@ -314,8 +314,8 @@ function FileEditor(props: {
           : { base: result.content, text: current.text },
       );
       await Promise.all([
-        queryClient.invalidateQueries({ queryKey: rpc.file.queryKey(ref) }),
-        queryClient.invalidateQueries({ queryKey: rpc.plugins.queryKey() }),
+        queryClient.invalidateQueries({ queryKey: queryKey("file", ref) }),
+        queryClient.invalidateQueries({ queryKey: queryKey("plugins") }),
       ]);
     },
   });
@@ -405,7 +405,7 @@ function FileEditor(props: {
 
 /** The Plugins tab in the page's right panel: every plugin's tools, prompts, and skills. */
 function PluginsTabBody({ subPath }: { subPath: string }) {
-  const plugins = rpc.plugins.useQuery();
+  const plugins = useRpcQuery("plugins", null);
   const dirty = useDrafts();
   const select = useSelect();
   if (plugins.isPending) return <p className="pe-panel pe-tab-state pe-meta">Loading plugins…</p>;
@@ -431,7 +431,7 @@ function PluginsTabBody({ subPath }: { subPath: string }) {
 }
 
 function PromptEditor({ subPath }: { subPath: string }) {
-  const plugins = rpc.plugins.useQuery();
+  const plugins = useRpcQuery("plugins", null);
   const drafts = useDrafts();
 
   if (plugins.isPending) return <main className="pe-panel pe-empty">Loading plugins…</main>;
@@ -475,17 +475,17 @@ function PromptEditor({ subPath }: { subPath: string }) {
 
 function PromptEditorPage({ subPath }: PluginNavPanelProps) {
   return (
-    <PluginQueryBoundary>
+    <QueryClientProvider client={queryClient}>
       <PromptEditor subPath={subPath} />
-    </PluginQueryBoundary>
+    </QueryClientProvider>
   );
 }
 
 function PluginsTab({ subPath }: PluginNavPanelProps) {
   return (
-    <PluginQueryBoundary>
+    <QueryClientProvider client={queryClient}>
       <PluginsTabBody subPath={subPath} />
-    </PluginQueryBoundary>
+    </QueryClientProvider>
   );
 }
 

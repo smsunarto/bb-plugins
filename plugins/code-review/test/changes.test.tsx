@@ -1,6 +1,7 @@
 import "./dom.ts";
 import { beforeEach, expect, jest, setSystemTime, test } from "bun:test";
-import { PluginQueryBoundary, pluginQueryClient } from "@bb-kit/core/rpc/query";
+import { QueryClientProvider } from "@tanstack/react-query";
+import { queryClient } from "../src/app/query.ts";
 import type { ChangedFiles, PullRequest, ReviewThread } from "../src/shared/schema.ts";
 import { agentActivity, checks, inbox, pullRequest } from "./app-fixtures.ts";
 
@@ -9,7 +10,7 @@ const { loadPluginApp, renderSlot } = await import("@get-bb/plugin-sdk/testing/a
 configure({ asyncUtilTimeout: 5000 });
 const { REVEAL_EVENT } = await import("../src/app/finding.tsx");
 const { NewCommentForm } = await import("../src/app/comment-form.tsx");
-const { rpc } = await import("../src/app/rpc.ts");
+const { queryKey } = await import("../src/app/rpc.ts");
 
 function diffBody(card: HTMLElement): HTMLElement {
   const id = within(card).getByRole("checkbox").getAttribute("aria-controls")!;
@@ -17,7 +18,7 @@ function diffBody(card: HTMLElement): HTMLElement {
 }
 
 beforeEach(() => {
-  pluginQueryClient.clear();
+  queryClient.clear();
   window.localStorage.clear();
 });
 
@@ -181,10 +182,9 @@ test("returning to Summary scrolls the mounted review back to its overview", asy
   // A background data refresh does not return the reader to the top.
   area.scrollTop = 300;
   await act(async () => {
-    pluginQueryClient.setQueryData(
-      rpc.changedFiles.queryKey({ account: pr.account, ref: pr.ref }),
-      { ...files },
-    );
+    queryClient.setQueryData(queryKey("changedFiles", { account: pr.account, ref: pr.ref }), {
+      ...files,
+    });
   });
   expect(area.scrollTop).toBe(300);
   slot.lifecycle.unmount();
@@ -280,11 +280,9 @@ test("lists every changed file with its threads inline, and folds the viewed one
 });
 
 test("a failed refresh keeps the files last read on screen and says they are not updated", async () => {
-  pluginQueryClient.setQueryData(
-    rpc.changedFiles.queryKey({ account: pr.account, ref: pr.ref }),
-    files,
-    { updatedAt: Date.now() - 60_000 },
-  );
+  queryClient.setQueryData(queryKey("changedFiles", { account: pr.account, ref: pr.ref }), files, {
+    updatedAt: Date.now() - 60_000,
+  });
   const slot = (
     await changesTab([], {
       changedFiles: () => {
@@ -842,8 +840,8 @@ test("files still behind after a read are read again later, then offer a refresh
 
   // A later read that slips back behind gets fresh tries, not the spent ones.
   act(() => {
-    void pluginQueryClient.invalidateQueries({
-      queryKey: rpc.changedFiles.queryKey({ account: pr.account, ref: pr.ref }),
+    void queryClient.invalidateQueries({
+      queryKey: queryKey("changedFiles", { account: pr.account, ref: pr.ref }),
     });
   });
   await waitFor(() => expect(held).toHaveLength(6));
@@ -893,8 +891,8 @@ test("a push to the pull request starts its spent tries over", async () => {
     // The pull request moves on, and the files are read again at once.
     current = { ...pr, headRefOid: "5".repeat(40) };
     await act(async () => {
-      await pluginQueryClient.invalidateQueries({
-        queryKey: rpc.pullRequest.queryKey({ account: pr.account, ref: pr.ref }),
+      await queryClient.invalidateQueries({
+        queryKey: queryKey("pullRequest", { account: pr.account, ref: pr.ref }),
       });
     });
     await tick(0);
@@ -933,7 +931,7 @@ test("a new comment on a range is one addDraftComment, then the form reports the
   const saved: string[] = [];
   let closed = 0;
   const Form = () => (
-    <PluginQueryBoundary>
+    <QueryClientProvider client={queryClient}>
       <NewCommentForm
         pr={pr}
         headRefOid="abc123"
@@ -943,7 +941,7 @@ test("a new comment on a range is one addDraftComment, then the form reports the
         onSaved={(threadId) => saved.push(threadId)}
         onClose={() => closed++}
       />
-    </PluginQueryBoundary>
+    </QueryClientProvider>
   );
   const slot = renderSlot({ component: Form }, {}, { rpc: handlers(calls) as never });
 
@@ -1008,7 +1006,7 @@ test("a Viewed error belongs to the account that wrote it, not to another readin
 
 test("comment text typed as one account does not open in the form of another", () => {
   const Form = ({ account }: { account: string }) => (
-    <PluginQueryBoundary>
+    <QueryClientProvider client={queryClient}>
       <NewCommentForm
         pr={{ ...pr, account }}
         headRefOid="abc123"
@@ -1018,7 +1016,7 @@ test("comment text typed as one account does not open in the form of another", (
         onSaved={() => {}}
         onClose={() => {}}
       />
-    </PluginQueryBoundary>
+    </QueryClientProvider>
   );
   const name = "Comment on line 5 of src/login.ts";
   const typed = renderSlot({ component: () => <Form account="scott" /> }, {}, { rpc: {} as never });

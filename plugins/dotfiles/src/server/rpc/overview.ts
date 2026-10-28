@@ -1,5 +1,4 @@
 import { z } from "zod";
-import { defineQuery } from "@bb-kit/core/rpc";
 import {
   gitEntrySchema,
   groupDefinitions,
@@ -31,7 +30,7 @@ function toOverviewGroup(
 
 const host = z.object({ id: z.string(), name: z.string() }).strict();
 
-export const overview = defineQuery({
+export const overviewContract = {
   input: z.object({ hostId: z.string().min(1).optional() }).strict(),
   output: z.discriminatedUnion("state", [
     z.object({ state: z.literal("offline"), host }).strict(),
@@ -67,31 +66,35 @@ export const overview = defineQuery({
       })
       .strict(),
   ]),
-  async execute(ctx: GitContext, { hostId }) {
-    const { git } = ctx;
-    const target = await git.target(hostId);
-    const machine = { id: target.hostId, name: target.hostName };
-    if (!target.connected) return { state: "offline" as const, host: machine };
-    const repo = await git.inspect(target);
-    const missingPaths = new Set(repo.missingPaths);
-    const dirtyPaths = new Set(repo.entries.map((entry) => entry.path));
-    const removableSkillNames = new Map(
-      repo.skills
-        .filter((skill) => isValidSkillName(skill.title))
-        .map((skill) => [skill.path, skill.title]),
-    );
-    return {
-      state: "ready" as const,
-      host: machine,
-      repoPath: repo.repoPath,
-      repoExists: repo.repoExists,
-      branch: repo.branch,
-      gitEntries: repo.entries,
-      groups: groupDefinitions(repo.skills).map((group) =>
-        toOverviewGroup(group, (path) => !missingPaths.has(path), dirtyPaths, removableSkillNames),
-      ),
-    };
-  },
-});
+};
 
-export type OverviewResult = z.infer<typeof overview.output>;
+export type OverviewResult = z.infer<typeof overviewContract.output>;
+
+export async function overview(
+  ctx: GitContext,
+  { hostId }: z.output<typeof overviewContract.input>,
+): Promise<z.input<typeof overviewContract.output>> {
+  const { git } = ctx;
+  const target = await git.target(hostId);
+  const machine = { id: target.hostId, name: target.hostName };
+  if (!target.connected) return { state: "offline" as const, host: machine };
+  const repo = await git.inspect(target);
+  const missingPaths = new Set(repo.missingPaths);
+  const dirtyPaths = new Set(repo.entries.map((entry) => entry.path));
+  const removableSkillNames = new Map(
+    repo.skills
+      .filter((skill) => isValidSkillName(skill.title))
+      .map((skill) => [skill.path, skill.title]),
+  );
+  return {
+    state: "ready" as const,
+    host: machine,
+    repoPath: repo.repoPath,
+    repoExists: repo.repoExists,
+    branch: repo.branch,
+    gitEntries: repo.entries,
+    groups: groupDefinitions(repo.skills).map((group) =>
+      toOverviewGroup(group, (path) => !missingPaths.has(path), dirtyPaths, removableSkillNames),
+    ),
+  };
+}

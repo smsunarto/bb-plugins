@@ -1,7 +1,6 @@
 import { expect, test } from "bun:test";
-import { callProcedure } from "@bb-kit/core/rpc";
 import { fakeContext } from "../../../test/fake-gh.ts";
-import { unityPreview } from "./unity-preview.ts";
+import { unityPreview, unityPreviewContract } from "./unity-preview.ts";
 
 const comparison = {
   kind: "local" as const,
@@ -15,6 +14,8 @@ test("answers a Unity asset's change in the shared schema", async () => {
   const { ctx } = fakeContext();
   ctx.unity.read = async () => ({ state: "unavailable", reason: "binary" });
   expect(
-    await callProcedure(unityPreview, ctx, { comparison, path: "Main.unity", previousPath: null }),
+    unityPreviewContract.output.parse(
+      await unityPreview(ctx, { comparison, path: "Main.unity", previousPath: null }),
+    ),
   ).toEqual({ state: "unavailable", reason: "binary" });
 });

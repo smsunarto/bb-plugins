@@ -52,9 +52,6 @@
     "src/server/",
     "src/app/"
   ],
-  "dependencies": {
-    "@bb-kit/core": "workspace:*"
-  },
   "devDependencies": {
     "@get-bb/plugin-sdk": "0.6.75",
     "@pierre/diffs": "^1.2.9",
@@ -87,7 +84,6 @@
     "lint": "oxlint",
     "typecheck": "tsc --noEmit",
     "test": "bun test --timeout=30000",
-    "check": "node --import tsx ../../packages/bb-kit-dev/src/bin.ts check",
     "clean": "rm -rf dist"
   }
 }

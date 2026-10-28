@@ -6,7 +6,7 @@
 // agent tools, the CLI, and "Send to agent" all return, so an annotation reads
 // the same wherever an agent meets it.
 
-import { instructionFiles } from "@bb-kit/core/instructions";
+import { instructionFiles } from "@bb-plugins/instructions";
 
 import type { Session, StoredAnnotation } from "./afs.ts";
 import { pluginUiSurfacePromptContext } from "./plugin-ui-surface-map.ts";

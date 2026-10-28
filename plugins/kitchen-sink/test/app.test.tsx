@@ -1,5 +1,5 @@
 import { expect, mock, test } from "bun:test";
-import { installDom } from "@bb-kit/core/testing";
+import { installDom } from "@bb-plugins/testing";
 import { readFile } from "node:fs/promises";
 import { parsePatchFiles } from "@pierre/diffs";
 

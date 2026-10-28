@@ -3,7 +3,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-libra
 import { toast } from "sonner";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ApiRequest, ApiResponse } from "../../shared/contracts/api-tunnel.ts";
-import { pluginQueryClient } from "@bb-kit/core/rpc/query";
+import { queryClient } from "../query.ts";
 import type {
   ReviewCanvasContent,
   ReviewSourceView,
@@ -70,7 +70,7 @@ vi.mock("../rpc.ts", () => {
     return { status: 200, contentType: "application/json", encoding: "utf8", body };
   };
   const client = { api };
-  return { rpc: { useClient: () => client } };
+  return { useWhiteboardRpc: () => client };
 });
 
 vi.mock("../vendor/review/app/src/api-canvas.tsx", () => ({
@@ -145,7 +145,7 @@ beforeEach(() => {
   rpcState.readGate = undefined;
   rpcState.commandGate = undefined;
   home.real = false;
-  pluginQueryClient.removeQueries({ queryKey: ["whiteboard", "catalog"] });
+  queryClient.removeQueries({ queryKey: ["whiteboard", "catalog"] });
   sdk.realtime.clear();
   sdk.connection = "connected";
   sdk.context = { projectId: null, threadId: null };

@@ -1,8 +1,7 @@
 import { expect, test } from "bun:test";
-import { callProcedure } from "@bb-kit/core/rpc";
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import type { HostCall } from "../../../test/harness.ts";
-import { branchPatches } from "./branch-patches.ts";
+import { branchPatches, branchPatchesContract } from "./branch-patches.ts";
 
 test("a branch's patches are a range diff on its own machine", async () => {
   const patches = { files: [], truncated: false };
@@ -31,7 +30,7 @@ test("a branch's patches are a range diff on its own machine", async () => {
   } as unknown as BbPluginApi;
 
   expect(
-    await branchPatches.execute({ bb } as never, {
+    await branchPatches({ bb } as never, {
       hostId: "laptop",
       path: "/Users/me/app",
       base: "aaaaaaaa",
@@ -51,14 +50,15 @@ test("a branch's patches are a range diff on its own machine", async () => {
 });
 
 test("a range is two commit ids, so neither can be read as a flag", async () => {
-  await expect(
-    callProcedure(branchPatches, { bb: {} } as never, {
+  // The host validates every call before it runs, so the handler never sees this.
+  expect(
+    branchPatchesContract.input.safeParse({
       hostId: "laptop",
       path: "/Users/me/app",
       base: "--output=/tmp/x",
       head: "bbbbbbbb",
-    }),
-  ).rejects.toThrow("invalid input");
+    }).success,
+  ).toBe(false);
 });
 
 test("a machine where bb knows no checkout is not asked", async () => {
@@ -78,7 +78,7 @@ test("a machine where bb knows no checkout is not asked", async () => {
   } as unknown as BbPluginApi;
 
   await expect(
-    branchPatches.execute({ bb } as never, {
+    branchPatches({ bb } as never, {
       hostId: "laptop",
       path: "/Users/me/app",
       base: "aaaaaaaa",

@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { installDom } from "@bb-kit/core/testing";
+import { installDom } from "@bb-plugins/testing";
 import { RPIV_TODO_CHANNEL } from "../src/shared/rpiv-todo.ts";
 installDom();
 const { act, fireEvent, waitFor } = await import("@testing-library/react");

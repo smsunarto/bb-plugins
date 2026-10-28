@@ -1,15 +1,17 @@
-import { defineCommand } from "@bb-kit/core/command";
-import { defineQuery, defineMutation } from "@bb-kit/core/rpc";
-import { definePlugin, type Context } from "@bb-kit/core/plugin";
-import type { PluginRpcHandlers, PluginCliPositional } from "@get-bb/plugin-sdk";
-
 // SlopCop — configurable GitHub issue and PR rules that dispatch BB agents.
 //
 // Flow: a watcher polls each watched repo with `gh`, detects the
 // draft -> ready-for-review edge, matches PRs against enabled rules, and spawns
 // a review thread per match. When that thread goes idle, SlopCop verifies the
 // outcome against GitHub itself rather than trusting the agent's transcript.
-import { defineRpcContract, type BbPluginApi } from "@get-bb/plugin-sdk";
+import {
+  cliCommand,
+  defineCli,
+  defineRpcContract,
+  type BbPluginApi,
+  type PluginCliPositional,
+  type PluginRpcHandlers,
+} from "@get-bb/plugin-sdk";
 import { z } from "zod";
 import { createGhClient, type GhClient } from "./lib/gh";
 import {
@@ -1413,6 +1415,8 @@ function createServices(bb: BbPluginApi) {
 }
 
 type Services = ReturnType<typeof createServices>;
+/** What every command receives: the host plus the plugin services. */
+type PluginContext = Readonly<{ bb: BbPluginApi } & Services>;
 const options = {
   paths: { type: "string", description: "Match comma-separated changed-file globs." },
   label: { type: "string", description: "Require comma-separated labels." },
@@ -1459,14 +1463,14 @@ type CommandSpec = {
   optionKeys: readonly (keyof typeof options)[];
   positionals?: readonly PluginCliPositional[];
 };
-function forwardCommand(spec: CommandSpec) {
+function forwardCommand(ctx: PluginContext, spec: CommandSpec) {
   const positionals = spec.positionals ?? [];
-  return defineCommand({
+  return cliCommand({
     summary: spec.summary,
     description: spec.description,
     options: Object.fromEntries(spec.optionKeys.map((key) => [key, options[key]])),
     positionals,
-    execute: (ctx: Context<Services>, input) =>
+    run: (input) =>
       ctx.runCli([
         spec.name,
         ...positionals.flatMap(({ name }) => {
@@ -1487,139 +1491,101 @@ function forwardCommand(spec: CommandSpec) {
   });
 }
 
-export default definePlugin({
-  pluginId: "slopcop",
-  services: createServices,
-  rpc: {
-    listRules: defineQuery({
-      output: rpcContract.listRules.output,
-      execute: (ctx: Context<Services>) => ctx.handlers.listRules(),
+export default async function plugin(bb: BbPluginApi): Promise<void> {
+  const ctx: PluginContext = Object.freeze({ bb, ...createServices(bb) });
+  bb.rpc.register(rpcContract, ctx.handlers);
+  bb.cli.register(
+    defineCli({
+      name: "slopcop",
+      summary: "CLI for the slopcop plugin",
+      commands: {
+        rules: forwardCommand(ctx, {
+          name: "rules",
+          summary: "List, add, edit, enable, disable, or remove rules",
+          description:
+            "Usage: bb slopcop rules [--json]; rules add --name <name> --repo <owner/repo> --project <project> [options]; rules edit <rule> [options]; rules enable|disable|rm <rule>. New rules use shadow mode.",
+          optionKeys: [
+            "paths",
+            "label",
+            "skip-label",
+            "exclude-author",
+            "trigger",
+            "keyword",
+            "base",
+            "name",
+            "repo",
+            "trust",
+            "requester-trust",
+            "prompt",
+            "dedupe",
+            "strategy",
+            "project",
+            "model",
+            "provider",
+            "reasoning",
+            "permission",
+            "json",
+            "disabled",
+            "live",
+            "shadow",
+            "hidden",
+            "visible",
+          ],
+          positionals: [
+            { name: "action", description: "add, edit, enable, disable, rm, or omit to list." },
+            { name: "rule", description: "Rule name or ID for edit, enable, disable, or rm." },
+          ],
+        }),
+        runs: forwardCommand(ctx, {
+          name: "runs",
+          summary: "Show recent review runs",
+          description: "Usage: bb slopcop runs [--rule <rule>] [--limit <count>] [--json].",
+          optionKeys: ["rule", "limit", "json"],
+          positionals: [],
+        }),
+        check: forwardCommand(ctx, {
+          name: "check",
+          summary: "Check a rule against a PR or issue",
+          description:
+            "Usage: bb slopcop check <rule> <number> [--issue] [--json]. Does not dispatch.",
+          optionKeys: ["issue", "json"],
+          positionals: [
+            { name: "rule", description: "Rule name or ID.", required: true },
+            { name: "number", description: "Pull request or issue number.", required: true },
+          ],
+        }),
+        dispatch: forwardCommand(ctx, {
+          name: "dispatch",
+          summary: "Dispatch a rule for a PR or issue",
+          description: "Usage: bb slopcop dispatch <rule> <number> [--issue] [--force] [--json].",
+          optionKeys: ["issue", "force", "json"],
+          positionals: [
+            { name: "rule", description: "Rule name or ID.", required: true },
+            { name: "number", description: "Pull request or issue number.", required: true },
+          ],
+        }),
+        verify: forwardCommand(ctx, {
+          name: "verify",
+          summary: "Verify a live run against GitHub",
+          description: "Usage: bb slopcop verify [run-id] [--json]. Defaults to the latest run.",
+          optionKeys: ["json"],
+          positionals: [{ name: "runId", description: "Run ID; omit for the latest run." }],
+        }),
+        show: forwardCommand(ctx, {
+          name: "show",
+          summary: "Show a run and its review body",
+          description: "Usage: bb slopcop show [run-id] [--json]. Defaults to the latest run.",
+          optionKeys: ["json"],
+          positionals: [{ name: "runId", description: "Run ID; omit for the latest run." }],
+        }),
+        status: forwardCommand(ctx, {
+          name: "status",
+          summary: "Show GitHub authentication and watched repositories",
+          description: "Usage: bb slopcop status [--json].",
+          optionKeys: ["json"],
+          positionals: [],
+        }),
+      },
     }),
-    saveRule: defineMutation({
-      input: rpcContract.saveRule.input,
-      output: rpcContract.saveRule.output,
-      execute: (ctx: Context<Services>, input) => ctx.handlers.saveRule(input),
-    }),
-    deleteRule: defineMutation({
-      input: rpcContract.deleteRule.input,
-      output: rpcContract.deleteRule.output,
-      execute: (ctx: Context<Services>, input) => ctx.handlers.deleteRule(input),
-    }),
-    setRuleEnabled: defineMutation({
-      input: rpcContract.setRuleEnabled.input,
-      output: rpcContract.setRuleEnabled.output,
-      execute: (ctx: Context<Services>, input) => ctx.handlers.setRuleEnabled(input),
-    }),
-    listRuns: defineQuery({
-      input: rpcContract.listRuns.input,
-      output: rpcContract.listRuns.output,
-      execute: (ctx: Context<Services>, input) => ctx.handlers.listRuns(input),
-    }),
-    getRunComments: defineQuery({
-      input: rpcContract.getRunComments.input,
-      output: rpcContract.getRunComments.output,
-      execute: (ctx: Context<Services>, input) => ctx.handlers.getRunComments(input),
-    }),
-    checkPr: defineMutation({
-      input: rpcContract.checkPr.input,
-      output: rpcContract.checkPr.output,
-      execute: (ctx: Context<Services>, input) => ctx.handlers.checkPr(input),
-    }),
-    dispatchNow: defineMutation({
-      input: rpcContract.dispatchNow.input,
-      output: rpcContract.dispatchNow.output,
-      execute: (ctx: Context<Services>, input) => ctx.handlers.dispatchNow(input),
-    }),
-    status: defineQuery({
-      output: rpcContract.status.output,
-      execute: (ctx: Context<Services>) => ctx.handlers.status(),
-    }),
-  },
-  command: {
-    rules: forwardCommand({
-      name: "rules",
-      summary: "List, add, edit, enable, disable, or remove rules",
-      description:
-        "Usage: bb slopcop rules [--json]; rules add --name <name> --repo <owner/repo> --project <project> [options]; rules edit <rule> [options]; rules enable|disable|rm <rule>. New rules use shadow mode.",
-      optionKeys: [
-        "paths",
-        "label",
-        "skip-label",
-        "exclude-author",
-        "trigger",
-        "keyword",
-        "base",
-        "name",
-        "repo",
-        "trust",
-        "requester-trust",
-        "prompt",
-        "dedupe",
-        "strategy",
-        "project",
-        "model",
-        "provider",
-        "reasoning",
-        "permission",
-        "json",
-        "disabled",
-        "live",
-        "shadow",
-        "hidden",
-        "visible",
-      ],
-      positionals: [
-        { name: "action", description: "add, edit, enable, disable, rm, or omit to list." },
-        { name: "rule", description: "Rule name or ID for edit, enable, disable, or rm." },
-      ],
-    }),
-    runs: forwardCommand({
-      name: "runs",
-      summary: "Show recent review runs",
-      description: "Usage: bb slopcop runs [--rule <rule>] [--limit <count>] [--json].",
-      optionKeys: ["rule", "limit", "json"],
-      positionals: [],
-    }),
-    check: forwardCommand({
-      name: "check",
-      summary: "Check a rule against a PR or issue",
-      description: "Usage: bb slopcop check <rule> <number> [--issue] [--json]. Does not dispatch.",
-      optionKeys: ["issue", "json"],
-      positionals: [
-        { name: "rule", description: "Rule name or ID.", required: true },
-        { name: "number", description: "Pull request or issue number.", required: true },
-      ],
-    }),
-    dispatch: forwardCommand({
-      name: "dispatch",
-      summary: "Dispatch a rule for a PR or issue",
-      description: "Usage: bb slopcop dispatch <rule> <number> [--issue] [--force] [--json].",
-      optionKeys: ["issue", "force", "json"],
-      positionals: [
-        { name: "rule", description: "Rule name or ID.", required: true },
-        { name: "number", description: "Pull request or issue number.", required: true },
-      ],
-    }),
-    verify: forwardCommand({
-      name: "verify",
-      summary: "Verify a live run against GitHub",
-      description: "Usage: bb slopcop verify [run-id] [--json]. Defaults to the latest run.",
-      optionKeys: ["json"],
-      positionals: [{ name: "runId", description: "Run ID; omit for the latest run." }],
-    }),
-    show: forwardCommand({
-      name: "show",
-      summary: "Show a run and its review body",
-      description: "Usage: bb slopcop show [run-id] [--json]. Defaults to the latest run.",
-      optionKeys: ["json"],
-      positionals: [{ name: "runId", description: "Run ID; omit for the latest run." }],
-    }),
-    status: forwardCommand({
-      name: "status",
-      summary: "Show GitHub authentication and watched repositories",
-      description: "Usage: bb slopcop status [--json].",
-      optionKeys: ["json"],
-      positionals: [],
-    }),
-  },
-});
+  );
+}

@@ -1,6 +1,6 @@
 import { test } from "bun:test";
 import assert from "node:assert/strict";
-import { PluginCliError } from "@bb-kit/core/command";
+import { PluginCliError } from "@get-bb/plugin-sdk";
 
 import { createFakeContext } from "../fake-context.ts";
 import { cleanRepo } from "../fake-git.ts";
@@ -14,12 +14,11 @@ test("check throws when the repo is missing", async () => {
   await assert.rejects(
     () =>
       Promise.resolve(
-        check.execute(
+        check(
           createFakeContext({
             inspect: async (target) => cleanRepo(target, { repoExists: false }),
           }),
-          args(),
-        ),
+        ).run(args(), {}),
       ),
     (error: unknown) => {
       assert.ok(error instanceof PluginCliError);
@@ -32,7 +31,7 @@ test("check throws when the repo is missing", async () => {
 
 test("check without a target runs the full check task", async () => {
   const ctx = createFakeContext();
-  const result = await check.execute(ctx, args());
+  const result = await check(ctx).run(args(), {});
   assert.deepEqual(result, {
     exitCode: 0,
     stdout: "ok",
@@ -58,7 +57,7 @@ test("check routes each named target to its check task", async () => {
   };
   for (const [target, command] of Object.entries(routes)) {
     const ctx = createFakeContext();
-    const result = await check.execute(ctx, args(target));
+    const result = await check(ctx).run(args(target), {});
     assert.deepEqual(result, {
       exitCode: 0,
       stdout: "ok",
@@ -72,12 +71,11 @@ test("check routes each named target to its check task", async () => {
 });
 
 test("check passes the task exit code and output through", async () => {
-  const result = await check.execute(
+  const result = await check(
     createFakeContext({
       run: async () => ({ exitCode: 3, output: "2 failures" }),
     }),
-    args("mise"),
-  );
+  ).run(args("mise"), {});
   assert.deepEqual(result, {
     exitCode: 3,
     stdout: "2 failures",
@@ -87,7 +85,7 @@ test("check passes the task exit code and output through", async () => {
 
 test("check with an unknown target throws", async () => {
   await assert.rejects(
-    () => Promise.resolve(check.execute(createFakeContext(), args("nope"))),
+    () => Promise.resolve(check(createFakeContext()).run(args("nope"), {})),
     (error: unknown) => {
       assert.ok(error instanceof PluginCliError);
       assert.equal(error.exitCode, 2);
@@ -98,18 +96,15 @@ test("check with an unknown target throws", async () => {
 });
 
 test("check runs on the invoking thread's machine and names it", async () => {
-  const ctx = {
-    ...createFakeContext({
-      threadHostId: async (threadId) => (threadId === "thread-on-mac" ? "host_mac" : undefined),
-      inspect: async (target) =>
-        cleanRepo(target, {
-          repoPath: target.hostId === "host_mac" ? "/Users/example/git/dotfiles" : "/dotfiles",
-        }),
-    }),
-    threadId: "thread-on-mac",
-  };
+  const ctx = createFakeContext({
+    threadHostId: async (threadId) => (threadId === "thread-on-mac" ? "host_mac" : undefined),
+    inspect: async (target) =>
+      cleanRepo(target, {
+        repoPath: target.hostId === "host_mac" ? "/Users/example/git/dotfiles" : "/dotfiles",
+      }),
+  });
 
-  const result = await check.execute(ctx, args("shell"));
+  const result = await check(ctx).run(args("shell"), { threadId: "thread-on-mac" });
 
   assert.deepEqual(result, {
     exitCode: 0,
@@ -133,7 +128,7 @@ test("check refuses an offline machine instead of reporting an empty repo", asyn
   });
 
   await assert.rejects(
-    () => Promise.resolve(check.execute(ctx, args())),
+    () => Promise.resolve(check(ctx).run(args(), {})),
     (error: unknown) => {
       assert.ok(error instanceof PluginCliError);
       assert.equal(error.message, "Local Mac is not connected");

@@ -2,7 +2,8 @@ import type { ReactElement } from "react";
 import type { PluginNavPanelProps } from "@get-bb/plugin-sdk/app";
 import { Button } from "@/components/ui/button";
 import { FileView } from "./file-view.tsx";
-import { PluginQueryBoundary } from "@bb-kit/core/rpc/query";
+import { QueryClientProvider } from "@tanstack/react-query";
+import { queryClient } from "./query.ts";
 import { usePanelOverview } from "./host-picker.tsx";
 import { useDotfilesRoute } from "./route.ts";
 import { errorMessage } from "./tasks.ts";
@@ -58,11 +59,11 @@ function DotfilesPageBody(props: PluginNavPanelProps): ReactElement {
 
 export function DotfilesPage(props: PluginNavPanelProps): ReactElement {
   return (
-    <PluginQueryBoundary>
+    <QueryClientProvider client={queryClient}>
       <div className="flex h-full min-h-0 flex-col">
         <DotfilesPageBody {...props} />
       </div>
-    </PluginQueryBoundary>
+    </QueryClientProvider>
   );
 }
 
@@ -87,8 +88,8 @@ function RepoStatusBadgeBody(): ReactElement | null {
 
 export function RepoStatusBadge(_props: PluginNavPanelProps): ReactElement {
   return (
-    <PluginQueryBoundary>
+    <QueryClientProvider client={queryClient}>
       <RepoStatusBadgeBody />
-    </PluginQueryBoundary>
+    </QueryClientProvider>
   );
 }

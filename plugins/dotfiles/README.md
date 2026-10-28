@@ -154,13 +154,13 @@ bun run dev        # watch + rebuild against the BB selected by the CLI
 bun run lint
 bun run typecheck
 bun run test       # node --test --import tsx
-bun run check      # @bb-kit/core static wiring check
 bun run build      # bb plugin build . — needs the bb CLI on PATH
-bun run verify     # lint + typecheck + tests + check + build
+bun run verify     # lint + typecheck + tests + build
 ```
 
-The plugin is written on `@bb-kit/core`. `src/server/server.ts` is the
-composition root: it declares the plugin id, the RPC, and the CLI. `src/server/git.ts`
+The plugin is written on the raw `@get-bb/plugin-sdk`. `src/server/server.ts` is the
+composition root: it declares the RPC contract, registers each RPC handler and CLI
+command, and wires Sentry reporting. `src/server/git.ts`
 picks the target machine and reaches it. `src/host/host.ts` runs on every bb host
 daemon and does the repo work there: git reads, skill discovery, `~` expansion, and
 tasks. `src/shared/` holds the domain values and the host contract.

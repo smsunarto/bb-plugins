@@ -1,4 +1,3 @@
-import { defineMutation } from "@bb-kit/core/rpc";
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import { z } from "zod";
 import { accountSchema, prKey, prRefSchema } from "../../shared/schema.ts";
@@ -20,7 +19,7 @@ const newThreadRequest = z.looseObject({
 });
 
 /** Starts the thread the reader composed to fix failing checks, linked to the pull request. */
-export const startFix = defineMutation({
+export const startFixContract = {
   input: z.strictObject({
     account: accountSchema,
     ref: prRefSchema,
@@ -28,22 +27,26 @@ export const startFix = defineMutation({
     request: newThreadRequest,
   }),
   output: z.strictObject({ threadId: z.string() }),
-  async execute(ctx: CodeReviewContext, { account, ref, headRefOid, request }) {
-    // `headRefOid` is the commit the failing checks ran on. Only GitHub knows
-    // the base, so it is read before anything starts.
-    const { baseRefName } = await loadPrHead(ctx.github.as(account), ref);
-    const thread = await ctx.bb.sdk.threads.spawn({
-      ...request,
-      title: `Fix checks on ${prKey(ref)}`,
-      visibility: "visible",
-      pluginMetadata: { kind: "fix", pr: prKey(ref) },
-    } as SpawnArgs);
-    await linkThread(ctx.bb, ctx.store, prKey(ref), {
-      threadId: thread.id,
-      kind: "fix",
-      headRefOid,
-      baseRefName,
-    });
-    return { threadId: thread.id };
-  },
-});
+};
+
+export async function startFix(
+  ctx: CodeReviewContext,
+  { account, ref, headRefOid, request }: z.output<typeof startFixContract.input>,
+): Promise<z.input<typeof startFixContract.output>> {
+  // `headRefOid` is the commit the failing checks ran on. Only GitHub knows
+  // the base, so it is read before anything starts.
+  const { baseRefName } = await loadPrHead(ctx.github.as(account), ref);
+  const thread = await ctx.bb.sdk.threads.spawn({
+    ...request,
+    title: `Fix checks on ${prKey(ref)}`,
+    visibility: "visible",
+    pluginMetadata: { kind: "fix", pr: prKey(ref) },
+  } as SpawnArgs);
+  await linkThread(ctx.bb, ctx.store, prKey(ref), {
+    threadId: thread.id,
+    kind: "fix",
+    headRefOid,
+    baseRefName,
+  });
+  return { threadId: thread.id };
+}

@@ -12,7 +12,7 @@ import {
 import type { ReactNode, RefObject } from "react";
 import { useIsMutating, useMutationState } from "@tanstack/react-query";
 import { experimental_Icon as Icon } from "@get-bb/plugin-sdk/app";
-import { pluginQueryClient } from "@bb-kit/core/rpc/query";
+import { queryClient } from "./query.ts";
 import type { ButAction, CheckoutSelection, Workspace } from "../shared/schema.ts";
 import { cn } from "./lib/utils.ts";
 
@@ -78,7 +78,7 @@ export function butWriteKey(target: Target) {
 
 /** Whether a `but` write to this workspace is running, from any card or the header. */
 export function useWriteBusy(target: Target): boolean {
-  return useIsMutating({ mutationKey: butWriteKey(target) }, pluginQueryClient) > 0;
+  return useIsMutating({ mutationKey: butWriteKey(target) }, queryClient) > 0;
 }
 
 export type WriteFailure = { id: number; action: ButAction; error: Error };
@@ -111,7 +111,7 @@ export function useLastWriteFailure(target: Target): WriteFailure | null {
         action: (mutation.state.variables as { action?: ButAction } | undefined)?.action,
       }),
     },
-    pluginQueryClient,
+    queryClient,
   );
   const last = writes.reduce<(typeof writes)[number] | null>(
     (latest, write) => (latest && latest.id > write.id ? latest : write),

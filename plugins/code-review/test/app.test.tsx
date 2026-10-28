@@ -1,6 +1,6 @@
 import "./dom.ts";
 import { beforeEach, expect, test } from "bun:test";
-import { pluginQueryClient } from "@bb-kit/core/rpc/query";
+import { queryClient } from "../src/app/query.ts";
 import { inboxFor } from "../src/app/inbox.tsx";
 import type { Inbox, PrRef, PullRequest } from "../src/shared/schema.ts";
 import {
@@ -19,7 +19,7 @@ const { loadPluginApp, renderSlot } = await import("@get-bb/plugin-sdk/testing/a
 // The cache and the remembered inbox tab outlive the page on purpose.
 // Between tests they must not.
 beforeEach(() => {
-  pluginQueryClient.clear();
+  queryClient.clear();
   window.localStorage.clear();
 });
 
@@ -582,7 +582,7 @@ test("merge conflicts are flagged only while the pull request is open", async ()
   open.lifecycle.unmount();
 
   for (const state of ["closed", "merged"] as const) {
-    pluginQueryClient.clear();
+    queryClient.clear();
     const done = await page(PR_PATH, {
       ...baseRpc,
       pullRequest: () => ({ ...conflicting, state }),
@@ -989,7 +989,7 @@ test("a refusal that lands as the popover closes is kept for the next opening", 
   await dialog.findByRole("button", { name: "Submitting…" });
 
   // Escape lands the moment the refusal is cached, before any render shows it.
-  const cache = pluginQueryClient.getMutationCache();
+  const cache = queryClient.getMutationCache();
   const stop = cache.subscribe((event) => {
     if (event.type !== "updated" || event.mutation.state.status !== "error") return;
     stop();

@@ -4,7 +4,7 @@ import {
   useBbNavigate,
 } from "@get-bb/plugin-sdk/app";
 import type { NewThreadRequest } from "@get-bb/plugin-sdk/app";
-import { pluginQueryClient } from "@bb-kit/core/rpc/query";
+import { queryClient } from "./query.ts";
 import { toast } from "sonner";
 import { prKey } from "../shared/schema.ts";
 import type { Check, PullRequest } from "../shared/schema.ts";
@@ -20,7 +20,7 @@ import {
 import { Skeleton } from "./components/ui/skeleton.tsx";
 import { cn } from "./lib/utils.ts";
 import { Notice, RetryButton, errorText } from "./notice.tsx";
-import { rpc } from "./rpc.ts";
+import { queryKey, useRpcQuery, useRpcMutation } from "./rpc.ts";
 
 /** Failing logs do not change once a check has failed, so the prompt keeps for a while. */
 const PROMPT_STALE_MS = 5 * 60_000;
@@ -92,11 +92,12 @@ function FixComposer({
 }) {
   const navigate = useBbNavigate();
   const checkIds = checks.map((check) => check.id);
-  const prompt = rpc.fixChecksPrompt.useQuery(
+  const prompt = useRpcQuery(
+    "fixChecksPrompt",
     { account: pr.account, ref: pr.ref, checkIds },
     { staleTime: PROMPT_STALE_MS, refetchOnWindowFocus: false },
   );
-  const start = rpc.startFix.useMutation();
+  const start = useRpcMutation("startFix");
 
   if (prompt.isPending) {
     return (
@@ -157,8 +158,8 @@ function FixComposer({
         headRefOid: pr.headRefOid,
         request: { ...request },
       });
-      void pluginQueryClient.invalidateQueries({
-        queryKey: rpc.agentActivity.queryKey({ ref: pr.ref }),
+      void queryClient.invalidateQueries({
+        queryKey: queryKey("agentActivity", { ref: pr.ref }),
       });
       onClose();
       navigate.toThread(threadId);

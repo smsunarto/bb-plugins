@@ -1,5 +1,4 @@
 import { expect, test } from "bun:test";
-import { callProcedure } from "@bb-kit/core/rpc";
 import { fakeContext } from "../../../test/fake-gh.ts";
 import { prAction } from "./pr-action.ts";
 
@@ -52,7 +51,7 @@ function setup(
 
 test("merge acts as the selected account and sends the confirmed head and method", async () => {
   const { ctx, calls, headRefOid } = setup();
-  await callProcedure(prAction, ctx, {
+  await prAction(ctx, {
     account: "octocat",
     ref,
     action: "merge",
@@ -75,7 +74,7 @@ for (const action of ["close", "reopen", "draft", "ready"] as const) {
       if (action === "reopen") pr.state = "CLOSED";
       if (action === "ready") pr.isDraft = true;
     });
-    await callProcedure(prAction, ctx, {
+    await prAction(ctx, {
       account: "octocat",
       ref,
       action,
@@ -102,7 +101,7 @@ for (const action of ["close", "reopen", "draft", "ready"] as const) {
 test("a changed head cannot merge", async () => {
   const { ctx, calls } = setup();
   await expect(
-    callProcedure(prAction, ctx, {
+    prAction(ctx, {
       account: "octocat",
       ref,
       action: "merge",
@@ -117,7 +116,7 @@ test("a changed head cannot merge", async () => {
 test("GitHub refusing a merge never reports success", async () => {
   const { ctx, headRefOid } = setup(() => {}, false);
   await expect(
-    callProcedure(prAction, ctx, {
+    prAction(ctx, {
       account: "octocat",
       ref,
       action: "merge",
@@ -135,7 +134,7 @@ test("a draft cannot merge and a merged PR cannot close", async () => {
       else pr.state = "MERGED";
     });
     await expect(
-      callProcedure(prAction, ctx, {
+      prAction(ctx, {
         account: "octocat",
         ref,
         action: state === "draft" ? "merge" : "close",
@@ -156,7 +155,7 @@ test("blocked branch rules and forbidden updates fail before a write", async () 
       else pr.viewerCanUpdate = false;
     });
     await expect(
-      callProcedure(prAction, ctx, {
+      prAction(ctx, {
         account: "octocat",
         ref,
         action: mode === "blocked" ? "merge" : "close",
@@ -173,7 +172,7 @@ test("blocked branch rules and forbidden updates fail before a write", async () 
 test("repository-disallowed merge methods are refused", async () => {
   const { ctx, headRefOid, calls } = setup();
   await expect(
-    callProcedure(prAction, ctx, {
+    prAction(ctx, {
       account: "octocat",
       ref,
       action: "merge",
@@ -190,7 +189,7 @@ test("a retargeted destination cannot merge", async () => {
     pr.baseRefName = "release";
   });
   await expect(
-    callProcedure(prAction, ctx, {
+    prAction(ctx, {
       account: "octocat",
       ref,
       action: "merge",

@@ -1,9 +1,12 @@
 import { readdir, readFile } from "node:fs/promises";
 import { join, posix, win32 } from "node:path";
-import { PluginCliError, type CommandContext } from "@bb-kit/core/command";
-import { instructionFiles } from "@bb-kit/core/instructions";
+import { PluginCliError, type BbPluginApi, type PluginCliContext } from "@get-bb/plugin-sdk";
+import { instructionFiles } from "@bb-plugins/instructions";
 import { parse } from "yaml";
 import { z } from "zod";
+
+/** What `bb review playbook` runs with: the host plus the invocation's thread and signal. */
+export type CommandContext = Readonly<{ bb: BbPluginApi } & PluginCliContext>;
 
 const directory = join(instructionFiles(import.meta.url).root, "playbooks");
 const metadata = z.object({ description: z.string().trim().min(1).max(1000) });

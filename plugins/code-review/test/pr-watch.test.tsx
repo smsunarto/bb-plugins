@@ -1,13 +1,13 @@
 import "./dom.ts";
 import { beforeEach, expect, test } from "bun:test";
-import { pluginQueryClient } from "@bb-kit/core/rpc/query";
+import { queryClient } from "../src/app/query.ts";
 import { PR_WATCH_CHANNEL, prSubPath } from "../src/shared/schema.ts";
 import type { PrWatch } from "../src/shared/schema.ts";
 
 const { fireEvent, waitFor, within } = await import("@testing-library/react");
 const { loadPluginApp, renderSlot } = await import("@get-bb/plugin-sdk/testing/app");
 
-beforeEach(() => pluginQueryClient.clear());
+beforeEach(() => queryClient.clear());
 
 const REF = { owner: "acme", repo: "api", number: 7 };
 

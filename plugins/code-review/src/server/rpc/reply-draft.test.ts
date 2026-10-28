@@ -1,5 +1,4 @@
 import { expect, test } from "bun:test";
-import { callProcedure } from "@bb-kit/core/rpc";
 import { fakeContext } from "../../../test/fake-gh.ts";
 import { replyDraft } from "./reply-draft.ts";
 
@@ -13,7 +12,7 @@ test("writes a draft reply into the pending review", async () => {
     },
   });
   expect(
-    await callProcedure(replyDraft, ctx, {
+    await replyDraft(ctx, {
       account: "octocat",
       pullRequestId: "PR_1",
       threadId: "T1",

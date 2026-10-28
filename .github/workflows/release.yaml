@@ -8,9 +8,6 @@ on:
         required: true
         type: choice
         options:
-          - packages/bb-kit-core
-          - packages/bb-kit-dev
-          - packages/bb-kit-sentry
           - plugins/agentation
           - plugins/amp
           - plugins/gh-stack
@@ -90,9 +87,6 @@ jobs:
           RELEASE_PATH: ${{ matrix.path }}
         run: |
           package_name="$(node -p "require('./$RELEASE_PATH/package.json').name")"
-          if [[ "$RELEASE_PATH" == plugins/* ]]; then
-            bun run build:framework
-          fi
           bun run --filter "$package_name" build
 
       - name: Verify packed GTD Sidebar before publishing

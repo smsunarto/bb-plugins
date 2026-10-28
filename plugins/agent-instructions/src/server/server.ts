@@ -1,25 +1,40 @@
-import { definePlugin } from "@bb-kit/core/plugin";
+import { defineCli, defineRpcContract, type BbPluginApi } from "@get-bb/plugin-sdk";
 import { add } from "./command/add.ts";
 import { list } from "./command/list.ts";
 import { preview } from "./command/preview.ts";
 import { remove } from "./command/remove.ts";
-import { openStore } from "./lib/store.ts";
-import { rules } from "./rpc/rules.ts";
-import { saveRules } from "./rpc/save-rules.ts";
-import { targets } from "./rpc/targets.ts";
+import { openStore, type AgentInstructionsContext } from "./lib/store.ts";
+import { rules, rulesContract } from "./rpc/rules.ts";
+import { saveRules, saveRulesContract } from "./rpc/save-rules.ts";
+import { targets, targetsContract } from "./rpc/targets.ts";
 
-export default definePlugin({
-  pluginId: "agent-instructions",
-  services: (bb) => ({ store: openStore(bb) }),
-  rpc: { rules, saveRules, targets },
-  command: { list, add, remove, preview },
-  async setup({ bb, store }) {
-    await store.load();
-    // `configure`, unlike `contributeInstructions`, sees the host, provider,
-    // and model a thread resolves with, which is what rules match on.
-    bb.agents.configure((session) => {
-      const instructions = store.resolve(session.thread.id, session);
-      return { tools: [], skills: [], ...(instructions === null ? {} : { instructions }) };
-    });
-  },
+export const contract = defineRpcContract({
+  rules: rulesContract,
+  saveRules: saveRulesContract,
+  targets: targetsContract,
 });
+
+export default async function plugin(bb: BbPluginApi): Promise<void> {
+  const ctx: AgentInstructionsContext = Object.freeze({ bb, store: openStore(bb) });
+  const { store } = ctx;
+  bb.rpc.register(contract, {
+    rules: () => rules(ctx),
+    saveRules: (input) => saveRules(ctx, input),
+    targets: () => targets(ctx),
+  });
+  bb.cli.register(
+    defineCli({
+      name: "agent-instructions",
+      summary: "CLI for the agent-instructions plugin",
+      commands: { list: list(ctx), add: add(ctx), remove: remove(ctx), preview: preview(ctx) },
+    }),
+  );
+
+  await store.load();
+  // `configure`, unlike `contributeInstructions`, sees the host, provider,
+  // and model a thread resolves with, which is what rules match on.
+  bb.agents.configure((session) => {
+    const instructions = store.resolve(session.thread.id, session);
+    return { tools: [], skills: [], ...(instructions === null ? {} : { instructions }) };
+  });
+}

@@ -1,12 +1,8 @@
-import { definePlugin } from "@bb-kit/core/plugin";
+import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import { draftDispatchDecision } from "./src/draft-dispatch";
 
-export default definePlugin({
-  pluginId: "t3-composer",
-  rpc: {},
-  setup({ bb }) {
-    bb.experimental_hooks.on("message.dispatch", (context) =>
-      draftDispatchDecision({ pluginId: bb.pluginId, context }),
-    );
-  },
-});
+export default async function plugin(bb: BbPluginApi): Promise<void> {
+  bb.experimental_hooks.on("message.dispatch", (context) =>
+    draftDispatchDecision({ pluginId: bb.pluginId, context }),
+  );
+}

@@ -1,4 +1,4 @@
-import { instructionFiles } from "@bb-kit/core/instructions";
+import { instructionFiles } from "@bb-plugins/instructions";
 
 export type NamingIntent = { kind: "automatic" } | { kind: "forced" };
 

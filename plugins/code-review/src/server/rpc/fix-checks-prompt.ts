@@ -1,4 +1,3 @@
-import { defineQuery } from "@bb-kit/core/rpc";
 import { z } from "zod";
 import { type Check, type PrRef, accountSchema, prRefSchema } from "../../shared/schema.ts";
 import { jobLogTail, loadChecks } from "../lib/checks.ts";
@@ -35,7 +34,7 @@ async function logOf(
  * of each failed job's log, plus the repository's bb project and a fresh
  * worktree in it, if there is a project.
  */
-export const fixChecksPrompt = defineQuery({
+export const fixChecksPromptContract = {
   input: z.strictObject({
     account: accountSchema,
     ref: prRefSchema,
@@ -55,26 +54,30 @@ export const fixChecksPrompt = defineQuery({
       })
       .nullable(),
   }),
-  async execute(ctx: CodeReviewContext, { account, ref, checkIds }) {
-    const gh = ctx.github.as(account);
-    const [pr, { checks }, project] = await Promise.all([
-      loadPrHead(gh, ref),
-      loadChecks(gh, ref),
-      findProject(ctx.bb, ref.owner, ref.repo),
-    ]);
-    const wanted = new Set(checkIds);
-    const selected = checks.filter((check) => wanted.has(check.id));
-    if (selected.length === 0) {
-      throw new Error("Those checks are no longer on the latest commit. Refresh and try again.");
-    }
-    const fetched = new Set(selected.filter(hasLog).slice(0, MAX_LOGS));
-    const failed = await Promise.all(
-      selected.map(async (check) => ({ check, log: await logOf(gh, ref, check, fetched) })),
-    );
-    return {
-      prompt: fixPrompt(pr, failed),
-      projectId: project?.id ?? null,
-      environment: project ? freshWorktree(project) : null,
-    };
-  },
-});
+};
+
+export async function fixChecksPrompt(
+  ctx: CodeReviewContext,
+  { account, ref, checkIds }: z.output<typeof fixChecksPromptContract.input>,
+): Promise<z.input<typeof fixChecksPromptContract.output>> {
+  const gh = ctx.github.as(account);
+  const [pr, { checks }, project] = await Promise.all([
+    loadPrHead(gh, ref),
+    loadChecks(gh, ref),
+    findProject(ctx.bb, ref.owner, ref.repo),
+  ]);
+  const wanted = new Set(checkIds);
+  const selected = checks.filter((check) => wanted.has(check.id));
+  if (selected.length === 0) {
+    throw new Error("Those checks are no longer on the latest commit. Refresh and try again.");
+  }
+  const fetched = new Set(selected.filter(hasLog).slice(0, MAX_LOGS));
+  const failed = await Promise.all(
+    selected.map(async (check) => ({ check, log: await logOf(gh, ref, check, fetched) })),
+  );
+  return {
+    prompt: fixPrompt(pr, failed),
+    projectId: project?.id ?? null,
+    environment: project ? freshWorktree(project) : null,
+  };
+}

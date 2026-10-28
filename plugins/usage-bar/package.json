@@ -41,7 +41,6 @@
     "src/"
   ],
   "dependencies": {
-    "@bb-kit/core": "workspace:*",
     "zod": "^4.4.3"
   },
   "devDependencies": {
@@ -57,7 +56,6 @@
     "lint": "oxlint",
     "typecheck": "tsc --noEmit",
     "test": "bun test --timeout=30000",
-    "check": "bb-kit check",
     "clean": "rm -rf dist"
   }
 }

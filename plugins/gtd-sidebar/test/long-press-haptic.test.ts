@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { afterEach, it } from "bun:test";
 import { createElement } from "react";
-import { installDom } from "@bb-kit/core/testing";
+import { installDom } from "@bb-plugins/testing";
 
 installDom();
 const { act, fireEvent, render } = await import("@testing-library/react");

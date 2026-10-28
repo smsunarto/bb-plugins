@@ -10,7 +10,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { PluginQueryBoundary } from "@bb-kit/core/rpc/query";
+import { QueryClientProvider } from "@tanstack/react-query";
+import { queryClient } from "./query.ts";
 import { usePanelOverview } from "./host-picker.tsx";
 import { quickTasks, useTasks } from "./tasks.ts";
 
@@ -118,10 +119,10 @@ function TasksTabBody(): ReactElement {
 
 export function DotfilesTasksTab(_props: PluginNavPanelProps): ReactElement {
   return (
-    <PluginQueryBoundary>
+    <QueryClientProvider client={queryClient}>
       <div className="flex h-full min-h-0 flex-col bg-sidebar">
         <TasksTabBody />
       </div>
-    </PluginQueryBoundary>
+    </QueryClientProvider>
   );
 }

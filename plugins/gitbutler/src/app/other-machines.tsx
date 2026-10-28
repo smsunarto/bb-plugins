@@ -8,7 +8,7 @@ import type { WorkspaceTarget } from "./branch-actions.tsx";
 import { Count } from "./file-list.tsx";
 import { subject } from "./format.ts";
 import { cn } from "./lib/utils.ts";
-import { rpc } from "./rpc.ts";
+import { useRpcQuery } from "./rpc.ts";
 import { storedAnswer } from "./stored-queries.ts";
 import { When } from "./when.tsx";
 import { BRANCH_LOOK, Chip, TONE } from "./workspace-lane.tsx";
@@ -232,7 +232,7 @@ export function OtherMachines({
   environmentId: string | null;
   onOpen?: ((checkout: Checkout) => void) | undefined;
 }) {
-  const query = rpc.otherMachines.useQuery(target, {
+  const query = useRpcQuery("otherMachines", target, {
     ...storedAnswer("otherMachines", target),
     staleTime: OTHER_MACHINES_POLL_MS,
     refetchInterval: OTHER_MACHINES_POLL_MS,

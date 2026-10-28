@@ -12,7 +12,7 @@ import { SourceMap, type SourceMapPayload, type SourceMapping } from "node:modul
 import { tmpdir } from "node:os";
 import { basename, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { sentryPluginRelease } from "../packages/bb-kit-sentry/src/telemetry.ts";
+import { sentryPluginRelease } from "../packages/sentry/src/telemetry.ts";
 import { derivePluginId } from "./plugin-package.ts";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));

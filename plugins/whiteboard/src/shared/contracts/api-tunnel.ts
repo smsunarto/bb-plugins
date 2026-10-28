@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 /**
- * The bb-kit RPC tunnel between the panel and the in-process Hono app
+ * The RPC tunnel between the panel and the in-process Hono app
  * (design §3.2). `path` is relative to `/reviews-api` and includes the query.
  */
 export const API_ORIGIN = "http://whiteboard.local";

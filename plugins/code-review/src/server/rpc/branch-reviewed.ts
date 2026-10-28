@@ -1,11 +1,15 @@
-import { defineQuery } from "@bb-kit/core/rpc";
 import { branchReviewedSchema, branchReviewRangeSchema } from "../../shared/schema.ts";
 import type { CodeReviewContext } from "../lib/context.ts";
+import type { z } from "zod";
 
-export const branchReviewed = defineQuery({
+export const branchReviewedContract = {
   input: branchReviewRangeSchema,
   output: branchReviewedSchema,
-  async execute(ctx: CodeReviewContext, range) {
-    return { paths: await ctx.store.branchReviewed(range) };
-  },
-});
+};
+
+export async function branchReviewed(
+  ctx: CodeReviewContext,
+  range: z.output<typeof branchReviewedContract.input>,
+): Promise<z.input<typeof branchReviewedContract.output>> {
+  return { paths: await ctx.store.branchReviewed(range) };
+}

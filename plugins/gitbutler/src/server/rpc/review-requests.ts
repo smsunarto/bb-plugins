@@ -1,4 +1,4 @@
-import { defineQuery } from "@bb-kit/core/rpc";
+import type { GitButlerContext } from "../lib/context.ts";
 import { z } from "zod";
 import {
   checkoutSelectionSchema,
@@ -8,8 +8,7 @@ import {
 import { readReviewRequests } from "../lib/review-requests.ts";
 import { locateForRead } from "../lib/subthreads.ts";
 
-/** The Create PR subthreads this thread started for the repository on screen. */
-export const reviewRequests = defineQuery({
+export const reviewRequestsContract = {
   input: z
     .object({
       threadId: z.string().min(1),
@@ -18,8 +17,13 @@ export const reviewRequests = defineQuery({
     })
     .strict(),
   output: reviewRequestsSchema,
-  async execute(ctx, { threadId, checkout, repositoryKey }) {
-    const repository = await locateForRead(ctx.bb, threadId, repositoryKey, checkout);
-    return { requests: await readReviewRequests(ctx.bb, threadId, repository) };
-  },
-});
+};
+
+/** The Create PR subthreads this thread started for the repository on screen. */
+export async function reviewRequests(
+  ctx: GitButlerContext,
+  { threadId, checkout, repositoryKey }: z.output<typeof reviewRequestsContract.input>,
+): Promise<z.input<typeof reviewRequestsContract.output>> {
+  const repository = await locateForRead(ctx.bb, threadId, repositoryKey, checkout);
+  return { requests: await readReviewRequests(ctx.bb, threadId, repository) };
+}

@@ -1,8 +1,8 @@
-import { definePlugin } from "@bb-kit/core/plugin";
+import { defineRpcContract } from "@get-bb/plugin-sdk";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { expect, test } from "vitest";
 import type { Engine } from "../../shared/contracts/engine.ts";
-import { liveFile } from "./live-file.ts";
+import { liveFile, liveFileContract } from "./live-file.ts";
 
 test("historical source stays readonly and invalid RPC inputs never reach the file reader", async () => {
   const { bb, harness } = createFakePluginHost({ pluginId: "whiteboard" });
@@ -13,9 +13,9 @@ test("historical source stays readonly and invalid RPC inputs never reach the fi
       return { status: 404, body: '{"error":"Review not found."}' };
     },
   } as unknown as Engine;
-  await definePlugin({ pluginId: "whiteboard", rpc: { liveFile }, services: () => ({ engine }) })(
-    bb,
-  );
+  bb.rpc.register(defineRpcContract({ liveFile: liveFileContract }), {
+    liveFile: (input) => liveFile({ bb, engine }, input),
+  });
   try {
     expect(
       await harness.behavior.callRpc("liveFile", {

@@ -4,7 +4,7 @@ import type { CheckoutSelection } from "../shared/schema.ts";
 import type { WorkspaceTarget } from "./branch-actions.tsx";
 import { Button } from "./components/ui/button.tsx";
 import { errorText } from "./notice.tsx";
-import { rpc } from "./rpc.ts";
+import { useRpcQuery } from "./rpc.ts";
 import { cn } from "./lib/utils.ts";
 
 type Props = {
@@ -39,7 +39,8 @@ function CheckoutChatControl({ target, environmentId, children }: Props) {
   const [opening, setOpening] = useState(false);
   // Read on click only. Each read walks the machine's environments and
   // threads, and its answer can change any time before the click anyway.
-  const query = rpc.checkoutChatTarget.useQuery(
+  const query = useRpcQuery(
+    "checkoutChatTarget",
     { ...target, ...(environmentId ? { environmentId } : {}) },
     { enabled: false, retry: false },
   );

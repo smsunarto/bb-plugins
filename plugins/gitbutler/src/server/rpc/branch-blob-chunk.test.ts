@@ -1,9 +1,8 @@
 import { BLOB_CHUNK_TIMEOUT_MS } from "../../shared/host-contract.ts";
 import { expect, test } from "bun:test";
-import { callProcedure } from "@bb-kit/core/rpc";
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import type { HostCall } from "../../../test/harness.ts";
-import { branchBlobChunk } from "./branch-blob-chunk.ts";
+import { branchBlobChunk, branchBlobChunkContract } from "./branch-blob-chunk.ts";
 
 test("a chunk is read on the branch's own machine", async () => {
   const calls: HostCall[] = [];
@@ -24,7 +23,7 @@ test("a chunk is read on the branch's own machine", async () => {
   } as unknown as BbPluginApi;
   const object = { kind: "git" as const, oid: "a".repeat(40) };
   expect(
-    await branchBlobChunk.execute({ bb } as never, {
+    await branchBlobChunk({ bb } as never, {
       hostId: "laptop",
       path: "/work/env",
       object,
@@ -41,13 +40,14 @@ test("a chunk is read on the branch's own machine", async () => {
 });
 
 test("an LFS oid must be sha256 hex, since the host turns it into a store path", async () => {
-  await expect(
-    callProcedure(branchBlobChunk, { bb: {} } as never, {
+  // The host validates every call before it runs, so the handler never sees this.
+  expect(
+    branchBlobChunkContract.input.safeParse({
       hostId: "laptop",
       path: "/work/env",
       object: { kind: "lfs", oid: "../../etc/passwd", size: 3 },
       offset: 0,
       length: 1024,
-    }),
-  ).rejects.toThrow("invalid input");
+    }).success,
+  ).toBe(false);
 });

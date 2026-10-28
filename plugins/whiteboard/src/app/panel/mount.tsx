@@ -6,7 +6,6 @@ import {
   useRealtime,
   useRealtimeConnectionState,
 } from "@get-bb/plugin-sdk/app";
-import { pluginQueryClient } from "@bb-kit/core/rpc/query";
 import { skipToken, useQuery } from "@tanstack/react-query";
 import {
   type ReactNode,
@@ -36,7 +35,8 @@ import { type LiveHub, createLiveHub } from "../bridge/live-watch.ts";
 import { PortalHost, createPortals } from "../bridge/portals.tsx";
 import { Button } from "../components/ui/button.tsx";
 import { UNAVAILABLE_TITLE } from "../lib/whiteboard-info.tsx";
-import { type WhiteboardRpcClient, rpc } from "../rpc.ts";
+import { queryClient } from "../query.ts";
+import { type WhiteboardRpcClient, useWhiteboardRpc } from "../rpc.ts";
 import "../styles/index.css";
 import { ApiCanvas } from "../vendor/review/app/src/api-canvas.tsx";
 import { createReviewFindHost } from "../vendor/review/app/src/review-find.tsx";
@@ -286,7 +286,7 @@ function HomeView({
   const catalog = useMemo(() => createCatalogEdits(queryKey), [queryKey]);
   const { data: reviews } = useQuery<readonly ReviewApiSummary[]>(
     { queryKey, queryFn: skipToken },
-    pluginQueryClient,
+    queryClient,
   );
   useEffect(() => {
     const abort = new AbortController();
@@ -340,7 +340,7 @@ export function WhiteboardMount({
   threadId?: string;
   info: InfoOutput;
 }) {
-  const rpcClient = rpc.useClient();
+  const rpcClient = useWhiteboardRpc();
   const navigate = useStableNavigate();
   const composer = useComposer();
   const hub = useLiveHub(rpcClient);

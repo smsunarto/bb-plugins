@@ -6,7 +6,7 @@ import {
   useBbNavigate,
   useRealtime,
 } from "@get-bb/plugin-sdk/app";
-import { pluginQueryClient } from "@bb-kit/core/rpc/query";
+import { queryClient } from "./query.ts";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import type { QueryKey } from "@tanstack/react-query";
 import { toast } from "sonner";
@@ -44,7 +44,7 @@ import type { RevealDetail } from "./finding.tsx";
 import { PANEL_PATH, plural, relativeTime, shortSha } from "./format.ts";
 import { cn } from "./lib/utils.ts";
 import { InlineError, Notice, RetryButton, Section, errorText } from "./notice.tsx";
-import { rpc } from "./rpc.ts";
+import { queryKey, useRpcQuery, useRpcMutation, useCodeReviewRpc, type Client } from "./rpc.ts";
 import { Timestamp } from "./status.tsx";
 
 /** How often linked threads are read again while one of them is working. */
@@ -85,8 +85,6 @@ export type ReviewTarget =
   | { pr: PullRequest; branch?: undefined }
   | { branch: LocalComparison & { branch: string }; pr?: undefined };
 
-type Client = ReturnType<typeof rpc.useClient>;
-
 /** Everything a pull request and a branch differ in, for the parts that show bb's work. */
 export type ReviewSubject = {
   /** The diff a review started now reads, and findings are current against. */
@@ -118,9 +116,9 @@ export function reviewSubject(target: ReviewTarget): ReviewSubject {
       // GitHub owners and repositories are case-insensitive, and the server
       // publishes the key in whatever case the thread was started with.
       key: prKey(pr.ref).toLowerCase(),
-      activityKey: rpc.agentActivity.queryKey({ ref: pr.ref }),
-      readActivity: (client) => client.agentActivity({ ref: pr.ref }),
-      startReview: (client) => client.startReview({ account: pr.account, ref: pr.ref }),
+      activityKey: queryKey("agentActivity", { ref: pr.ref }),
+      readActivity: (client) => client.call("agentActivity", { ref: pr.ref }),
+      startReview: (client) => client.call("startReview", { account: pr.account, ref: pr.ref }),
     };
   }
   const { branch } = target;
@@ -132,9 +130,9 @@ export function reviewSubject(target: ReviewTarget): ReviewSubject {
     changesPath: branchSubPath(branch.id, "changes"),
     pr: null,
     key: branchKey(branch.id),
-    activityKey: rpc.branchActivity.queryKey({ id: branch.id }),
-    readActivity: (client) => client.branchActivity({ id: branch.id }),
-    startReview: (client) => client.startLocalReview({ id: branch.id }),
+    activityKey: queryKey("branchActivity", { id: branch.id }),
+    readActivity: (client) => client.call("branchActivity", { id: branch.id }),
+    startReview: (client) => client.call("startLocalReview", { id: branch.id }),
   };
 }
 
@@ -146,7 +144,7 @@ export function reviewSubject(target: ReviewTarget): ReviewSubject {
  */
 export function useAgentActivity(target: ReviewTarget) {
   const subject = reviewSubject(target);
-  const client = rpc.useClient();
+  const client = useCodeReviewRpc();
   // Read through the client, so one hook serves either rpc. The cache key is the rpc's own.
   const activity = useQuery({
     queryKey: subject.activityKey,
@@ -157,7 +155,7 @@ export function useAgentActivity(target: ReviewTarget) {
     if (isActivityPayload(payload) && payload.key.toLowerCase() === subject.key) {
       // Every part of the page that shows activity hears the same signal.
       // The first starts the read, and the rest join it instead of restarting it.
-      void pluginQueryClient.invalidateQueries(
+      void queryClient.invalidateQueries(
         { queryKey: subject.activityKey },
         { cancelRefetch: false },
       );
@@ -180,13 +178,13 @@ function isActivityPayload(payload: unknown): payload is { key: string } {
  */
 function recordStarted(subject: ReviewSubject, thread: LinkedThread): void {
   const queryKey = subject.activityKey;
-  pluginQueryClient.setQueryData<AgentActivity>(queryKey, (current) =>
+  queryClient.setQueryData<AgentActivity>(queryKey, (current) =>
     // Asked again while a review of this head runs, the server returns that review.
     current && !current.threads.some((linked) => linked.threadId === thread.threadId)
       ? { ...current, threads: [thread, ...current.threads] }
       : current,
   );
-  void pluginQueryClient.invalidateQueries({ queryKey });
+  void queryClient.invalidateQueries({ queryKey });
 }
 
 // ── Review with bb ────────────────────────────────────────────────────
@@ -207,7 +205,7 @@ const SPLIT = "h-7 text-xs max-md:pointer-coarse:h-9 [&_[data-icon-root]]:size-3
 export function ReviewWithBbButton(target: ReviewTarget) {
   const subject = reviewSubject(target);
   const navigate = useBbNavigate();
-  const client = rpc.useClient();
+  const client = useCodeReviewRpc();
   const activity = useAgentActivity(target);
   const running = activeReview(activity.data, subject.revision);
   const start = useMutation({
@@ -281,7 +279,7 @@ export function ReviewInstructionsDialog({
 }
 
 function InstructionsForm({ onDone }: { onDone: () => void }) {
-  const stored = rpc.reviewInstructions.useQuery();
+  const stored = useRpcQuery("reviewInstructions", null);
   if (stored.isPending) {
     return (
       <output aria-busy className="block">
@@ -309,9 +307,9 @@ function InstructionsEditor({ initial, onDone }: { initial: string; onDone: () =
   const field = useRef<HTMLTextAreaElement>(null);
   // The text arrives after the dialog has placed focus, so it is moved here.
   useEffect(() => field.current?.focus(), []);
-  const save = rpc.setReviewInstructions.useMutation({
+  const save = useRpcMutation("setReviewInstructions", {
     onSuccess(saved) {
-      pluginQueryClient.setQueryData(rpc.reviewInstructions.queryKey(), saved);
+      queryClient.setQueryData(queryKey("reviewInstructions"), saved);
       toast.success("Saved review instructions");
       onDone();
     },

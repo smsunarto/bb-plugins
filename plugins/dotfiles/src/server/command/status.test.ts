@@ -1,6 +1,6 @@
 import { test } from "bun:test";
 import assert from "node:assert/strict";
-import { PluginCliError } from "@bb-kit/core/command";
+import { PluginCliError } from "@get-bb/plugin-sdk";
 
 import { createFakeContext } from "../fake-context.ts";
 import { cleanRepo } from "../fake-git.ts";
@@ -12,12 +12,11 @@ test("status throws when the repo is missing", async () => {
   await assert.rejects(
     () =>
       Promise.resolve(
-        status.execute(
+        status(
           createFakeContext({
             inspect: async (target) => cleanRepo(target, { repoExists: false }),
           }),
-          noArgs,
-        ),
+        ).run(noArgs, {}),
       ),
     (error: unknown) => {
       assert.ok(error instanceof PluginCliError);
@@ -29,7 +28,7 @@ test("status throws when the repo is missing", async () => {
 });
 
 test("status prints the branch and two-column entries", async () => {
-  const result = await status.execute(
+  const result = await status(
     createFakeContext({
       inspect: async (target) =>
         cleanRepo(target, {
@@ -40,8 +39,7 @@ test("status prints the branch and two-column entries", async () => {
           ],
         }),
     }),
-    noArgs,
-  );
+  ).run(noArgs, {});
   assert.deepEqual(result, {
     exitCode: 0,
     stdout: "branch: feature\nM  .dotfiles/mcp.json\n?? .dotfiles/new.txt",
@@ -50,7 +48,7 @@ test("status prints the branch and two-column entries", async () => {
 });
 
 test("status prints clean when there are no entries", async () => {
-  const result = await status.execute(createFakeContext(), noArgs);
+  const result = await status(createFakeContext()).run(noArgs, {});
   assert.deepEqual(result, {
     exitCode: 0,
     stdout: "branch: main\nclean",

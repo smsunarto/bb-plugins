@@ -1,8 +1,7 @@
 import { expect, test } from "bun:test";
-import { callProcedure } from "@bb-kit/core/rpc";
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import type { HostCall } from "../../../test/harness.ts";
-import { branchBlobs } from "./branch-blobs.ts";
+import { branchBlobs, branchBlobsContract } from "./branch-blobs.ts";
 
 function machine(calls: HostCall[], answer: unknown) {
   return {
@@ -28,7 +27,7 @@ test("descriptors are read on the branch's own machine, within the checkouts bb 
   const calls: HostCall[] = [];
   const answer = { items: [{ kind: "missing" as const }] };
   expect(
-    await branchBlobs.execute({ bb: machine(calls, answer) } as never, {
+    await branchBlobs({ bb: machine(calls, answer) } as never, {
       hostId: "laptop",
       path: "/Users/me/app",
       items: [{ rev: "aaaaaaaa", path: "Assets/hero.png" }],
@@ -48,11 +47,12 @@ test("descriptors are read on the branch's own machine, within the checkouts bb 
 });
 
 test("a revision is a commit id, so it can never be read as a flag", async () => {
-  await expect(
-    callProcedure(branchBlobs, { bb: {} } as never, {
+  // The host validates every call before it runs, so the handler never sees this.
+  expect(
+    branchBlobsContract.input.safeParse({
       hostId: "laptop",
       path: "/Users/me/app",
       items: [{ rev: "--output=/tmp/x", path: "a.png" }],
-    }),
-  ).rejects.toThrow("invalid input");
+    }).success,
+  ).toBe(false);
 });

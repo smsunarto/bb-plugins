@@ -1,4 +1,3 @@
-import type { Context } from "@bb-kit/core/plugin";
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import type { DevinTarget } from "../../shared/devin.ts";
 
@@ -78,8 +77,8 @@ export function createTargetStore(db: Database, now: () => number = Date.now) {
 
 export type TargetStore = ReturnType<typeof createTargetStore>;
 
-/** What `services` adds to every handler's ctx. */
-export type TargetsContext = Context<{ targets: TargetStore }>;
+/** What every RPC handler receives: the host plus the target store. */
+export type TargetsContext = Readonly<{ bb: BbPluginApi; targets: TargetStore }>;
 
 export function openTargetStore(bb: BbPluginApi): TargetStore {
   const db = bb.storage.database();

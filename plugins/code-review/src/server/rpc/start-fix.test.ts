@@ -1,7 +1,6 @@
 import { expect, test } from "bun:test";
-import { callProcedure } from "@bb-kit/core/rpc";
 import { fakeContext } from "../../../test/fake-gh.ts";
-import { startFix } from "./start-fix.ts";
+import { startFix, startFixContract } from "./start-fix.ts";
 
 const REQUEST = {
   projectId: "p-api",
@@ -38,7 +37,7 @@ test("spawns the composed thread, titled and linked to the pull request and its 
   const ref = { owner: "acme", repo: "api", number: 1034 };
 
   expect(
-    await callProcedure(startFix, ctx, {
+    await startFix(ctx, {
       account: "octocat",
       ref,
       headRefOid: "abc",
@@ -62,14 +61,13 @@ test("spawns the composed thread, titled and linked to the pull request and its 
   ]);
 });
 
-test("refuses something that is not a new-thread request", async () => {
-  const { ctx } = fakeContext();
-  await expect(
-    callProcedure(startFix, ctx, {
+test("refuses something that is not a new-thread request", () => {
+  expect(
+    startFixContract.input.safeParse({
       account: "octocat",
       ref: { owner: "acme", repo: "api", number: 1 },
       headRefOid: "abc",
       request: { prompt: "hi" },
-    }),
-  ).rejects.toThrow("invalid input");
+    }).success,
+  ).toBe(false);
 });

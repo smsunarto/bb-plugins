@@ -64,7 +64,7 @@ export interface WhiteboardSettings {
   subscribe(listener: (next: SettingsPayload, previous: SettingsPayload) => void): () => void;
 }
 
-/** bb-kit services: built once per load in `server.ts`. */
+/** Plugin services: built once per load in `server.ts`. */
 export type WhiteboardServices = {
   settings: WhiteboardSettings;
   engine: Engine;

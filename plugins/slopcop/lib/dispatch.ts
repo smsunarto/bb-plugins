@@ -1,4 +1,4 @@
-import { instructionFiles } from "@bb-kit/core/instructions";
+import { instructionFiles } from "@bb-plugins/instructions";
 const prompts = instructionFiles(import.meta.url);
 // Builds the prompt handed to the review agent.
 //

@@ -1,11 +1,8 @@
-import { defineCommand, PluginCliError, type CommandContext } from "@bb-kit/core/command";
-import type { Context } from "@bb-kit/core/plugin";
+import { cliCommand, PluginCliError } from "@get-bb/plugin-sdk";
 import { newRuleId, ruleSchema, type Rule } from "../../shared/rules.ts";
 import type { Target } from "../../shared/targets.ts";
-import type { RuleStore } from "../lib/store.ts";
+import type { AgentInstructionsContext } from "../lib/store.ts";
 import { describeConditions, loadTargets } from "../lib/targets.ts";
-
-type AddContext = CommandContext<Context<{ store: RuleStore }>>;
 
 const scope = (noun: string) =>
   ({
@@ -17,11 +14,11 @@ const scope = (noun: string) =>
   }) as const;
 
 /** The calling thread's own host, provider, and project, for `here`. */
-async function here(ctx: AddContext) {
-  if (!ctx.threadId) {
+async function here(ctx: AgentInstructionsContext, threadId: string | undefined) {
+  if (!threadId) {
     throw new PluginCliError('"here" only works inside a bb thread', { code: "no_thread" });
   }
-  const thread = await ctx.bb.sdk.threads.get({ threadId: ctx.threadId });
+  const thread = await ctx.bb.sdk.threads.get({ threadId });
   const environment = thread.environmentId
     ? await ctx.bb.sdk.environments.get({ environmentId: thread.environmentId })
     : null;
@@ -29,7 +26,8 @@ async function here(ctx: AddContext) {
 }
 
 async function resolveAll(
-  ctx: AddContext,
+  ctx: AgentInstructionsContext,
+  threadId: string | undefined,
   noun: "host" | "provider" | "project",
   values: readonly string[] | undefined,
   known: readonly Target[],
@@ -45,7 +43,7 @@ async function resolveAll(
     }
     const id =
       value === "here"
-        ? (await here(ctx))[noun]
+        ? (await here(ctx, threadId))[noun]
         : (known.find((target) => target.id === value)?.id ?? named[0]?.id);
     if (!id) {
       const options = known.map((target) => `${target.name} (${target.id})`).join(", ");
@@ -59,40 +57,50 @@ async function resolveAll(
   return [...new Set(ids)];
 }
 
-export const add = defineCommand({
-  summary: "Add an instruction rule, optionally scoped to hosts, providers, models, or projects",
-  positionals: [{ name: "text", description: "The instructions", required: true, variadic: true }],
-  options: {
-    name: { type: "string", description: "A label shown in settings", placeholder: "label" },
-    host: scope("host"),
-    provider: scope("provider"),
-    project: scope("project"),
-    model: {
-      type: "string",
-      repeatable: true,
-      split: ",",
-      description: "Only for models matching this glob, such as claude-opus-*",
-      placeholder: "glob",
-    },
-  },
-  async execute(ctx: AddContext, { positionals, options }) {
-    const targets = await loadTargets(ctx.bb);
-    const rule: Rule = ruleSchema.parse({
-      id: newRuleId(),
-      name: options.name ?? "",
-      enabled: true,
-      instructions: positionals.text.join(" "),
-      when: {
-        hosts: await resolveAll(ctx, "host", options.host, targets.hosts),
-        providers: await resolveAll(ctx, "provider", options.provider, targets.providers),
-        models: options.model ?? [],
-        projects: await resolveAll(ctx, "project", options.project, targets.projects),
+export function add(ctx: AgentInstructionsContext) {
+  return cliCommand({
+    summary: "Add an instruction rule, optionally scoped to hosts, providers, models, or projects",
+    positionals: [
+      { name: "text", description: "The instructions", required: true, variadic: true },
+    ],
+    options: {
+      name: { type: "string", description: "A label shown in settings", placeholder: "label" },
+      host: scope("host"),
+      provider: scope("provider"),
+      project: scope("project"),
+      model: {
+        type: "string",
+        repeatable: true,
+        split: ",",
+        description: "Only for models matching this glob, such as claude-opus-*",
+        placeholder: "glob",
       },
-    });
-    await ctx.store.update((rules) => [...rules, rule]);
-    return {
-      exitCode: 0,
-      stdout: `Added ${rule.id}, when ${describeConditions(rule.when, targets)}\n`,
-    };
-  },
-});
+    },
+    async run({ positionals, options }, { threadId }) {
+      const targets = await loadTargets(ctx.bb);
+      const rule: Rule = ruleSchema.parse({
+        id: newRuleId(),
+        name: options.name ?? "",
+        enabled: true,
+        instructions: positionals.text.join(" "),
+        when: {
+          hosts: await resolveAll(ctx, threadId, "host", options.host, targets.hosts),
+          providers: await resolveAll(
+            ctx,
+            threadId,
+            "provider",
+            options.provider,
+            targets.providers,
+          ),
+          models: options.model ?? [],
+          projects: await resolveAll(ctx, threadId, "project", options.project, targets.projects),
+        },
+      });
+      await ctx.store.update((rules) => [...rules, rule]);
+      return {
+        exitCode: 0,
+        stdout: `Added ${rule.id}, when ${describeConditions(rule.when, targets)}\n`,
+      };
+    },
+  });
+}

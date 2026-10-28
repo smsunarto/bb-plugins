@@ -1,6 +1,7 @@
 import "./dom.ts";
 import { beforeEach, expect, test } from "bun:test";
-import { PluginQueryBoundary, pluginQueryClient } from "@bb-kit/core/rpc/query";
+import { QueryClientProvider } from "@tanstack/react-query";
+import { queryClient } from "../src/app/query.ts";
 import type { ChangedFile, Comparison, FileBlobs, UnityPreview } from "../src/shared/schema.ts";
 import { pullRequest as pr } from "./app-fixtures.ts";
 
@@ -9,7 +10,7 @@ const { renderSlot } = await import("@get-bb/plugin-sdk/testing/app");
 const { DiffFile } = await import("../src/app/diff-file.tsx");
 
 beforeEach(() => {
-  pluginQueryClient.clear();
+  queryClient.clear();
 });
 
 const comparison: Comparison = {
@@ -44,7 +45,7 @@ function mount(
   withComparison: Comparison | null = comparison,
 ) {
   const View = () => (
-    <PluginQueryBoundary>
+    <QueryClientProvider client={queryClient}>
       <DiffFile
         pr={pr}
         file={shown}
@@ -60,7 +61,7 @@ function mount(
         onViewedChange={() => {}}
         comparison={withComparison}
       />
-    </PluginQueryBoundary>
+    </QueryClientProvider>
   );
   return renderSlot({ component: View }, {}, { rpc: rpc as never, pluginId: "code-review" });
 }

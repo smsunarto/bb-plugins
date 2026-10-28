@@ -43,7 +43,7 @@ describe("codeCitation", () => {
 test("reads citations through their environment host and root fence", async () => {
   const { ctx, read } = context();
   expect(
-    await renderEmbed.execute(ctx, { kind: "code", threadId: "t", path: "src/a.ts", start: 2 }),
+    await renderEmbed(ctx, { kind: "code", threadId: "t", path: "src/a.ts", start: 2 }),
   ).toMatchObject({ status: "ready", content: "one\ntwo\nthree", startLine: 1 });
   expect(read).toHaveBeenCalledWith({
     hostId: "h",
@@ -54,7 +54,7 @@ test("reads citations through their environment host and root fence", async () =
 test("rejects escaping paths and incomplete diff/patch requests", async () => {
   for (const path of ["../secret", "/etc/passwd", "a/../secret", "a\\secret"]) {
     const { ctx, read } = context();
-    expect(await renderEmbed.execute(ctx, { kind: "code", threadId: "t", path })).toMatchObject({
+    expect(await renderEmbed(ctx, { kind: "code", threadId: "t", path })).toMatchObject({
       status: "error",
     });
     expect(read).not.toHaveBeenCalled();
@@ -66,7 +66,7 @@ test("rejects escaping paths and incomplete diff/patch requests", async () => {
 });
 test("Unity citations show current values and malformed YAML falls back to source", async () => {
   const { ctx } = context("--- !u!1 &1\nGameObject:\n  m_Name: Player\n  m_IsActive: 1\n");
-  const result = await renderEmbed.execute(ctx, {
+  const result = await renderEmbed(ctx, {
     kind: "code",
     threadId: "t",
     path: "Player.prefab",
@@ -93,7 +93,7 @@ test("Unity citations show current values and malformed YAML falls back to sourc
   });
   const malformed = context("--- !u!1 &1\nGameObject: [broken");
   expect(
-    await renderEmbed.execute(malformed.ctx, { kind: "code", threadId: "t", path: "World.unity" }),
+    await renderEmbed(malformed.ctx, { kind: "code", threadId: "t", path: "World.unity" }),
   ).toMatchObject({ status: "ready", unityNotice: expect.any(String) });
 });
 
@@ -121,7 +121,7 @@ describe("cross-workspace citations", () => {
   test("workspace= reads the file from the named project checkout", async () => {
     const { ctx, read, bb } = context();
     bb.sdk.projects.list = async () => [project("proj_bb", "bb-plugins", "/bb-plugins")];
-    const result = await renderEmbed.execute(ctx, {
+    const result = await renderEmbed(ctx, {
       kind: "code",
       threadId: "t",
       path: "src/a.ts",
@@ -145,7 +145,7 @@ describe("cross-workspace citations", () => {
       hostId: "h",
       path: environmentId === "env_other" ? "/other" : "/workspace",
     })) as never;
-    const result = await renderEmbed.execute(ctx, {
+    const result = await renderEmbed(ctx, {
       kind: "code",
       threadId: "t",
       path: "src/a.ts",
@@ -162,7 +162,7 @@ describe("cross-workspace citations", () => {
   test("an unknown workspace selector is an explicit error", async () => {
     const { ctx, read } = context();
     expect(
-      await renderEmbed.execute(ctx, {
+      await renderEmbed(ctx, {
         kind: "code",
         threadId: "t",
         path: "src/a.ts",
@@ -187,7 +187,7 @@ describe("cross-workspace citations", () => {
         paths.map((path: string) => [path, path.startsWith("/bb-plugins")]),
       ),
     })) as never;
-    const result = await renderEmbed.execute(ctx, {
+    const result = await renderEmbed(ctx, {
       kind: "code",
       threadId: "t",
       path: "src/a.ts",
@@ -210,7 +210,7 @@ describe("cross-workspace citations", () => {
     bb.sdk.hosts.pathsExist = (async ({ paths }: { paths: string[] }) => ({
       existence: Object.fromEntries(paths.map((path: string) => [path, true])),
     })) as never;
-    const result = await renderEmbed.execute(ctx, {
+    const result = await renderEmbed(ctx, {
       kind: "code",
       threadId: "t",
       path: "src/a.ts",
@@ -233,7 +233,7 @@ describe("cross-workspace citations", () => {
     bb.sdk.hosts.pathsExist = (async ({ paths }: { paths: string[] }) => ({
       existence: Object.fromEntries(paths.map((path: string) => [path, true])),
     })) as never;
-    const result = await renderEmbed.execute(ctx, {
+    const result = await renderEmbed(ctx, {
       kind: "code",
       threadId: "t",
       path: "src/a.ts",
@@ -248,12 +248,12 @@ describe("cross-workspace citations", () => {
   test("a citation missing everywhere keeps the original error", async () => {
     const { ctx, read } = context();
     read.mockRejectedValueOnce(Object.assign(new Error("HTTP 404"), { status: 404 }));
-    expect(
-      await renderEmbed.execute(ctx, { kind: "code", threadId: "t", path: "src/a.ts" }),
-    ).toMatchObject({
-      status: "error",
-      message: "Could not load src/a.ts from any known workspace.",
-    });
+    expect(await renderEmbed(ctx, { kind: "code", threadId: "t", path: "src/a.ts" })).toMatchObject(
+      {
+        status: "error",
+        message: "Could not load src/a.ts from any known workspace.",
+      },
+    );
   });
 
   describe("a project checked out on several machines", () => {
@@ -304,7 +304,7 @@ describe("cross-workspace citations", () => {
           sources: [checkout(SERVER, "/srv/dotfiles", true), checkout(MAC, "/mac/dotfiles", false)],
         },
       ];
-      const result = await renderEmbed.execute(ctx, { kind: "code", threadId: "t", path: "a.ts" });
+      const result = await renderEmbed(ctx, { kind: "code", threadId: "t", path: "a.ts" });
       expect(result).toMatchObject({ status: "ready", workspace: "dotfiles" });
       expect(read).toHaveBeenLastCalledWith({
         hostId: MAC,
@@ -321,9 +321,10 @@ describe("cross-workspace citations", () => {
           sources: [checkout(SERVER, "/srv/dotfiles", true), checkout(MAC, "/mac/dotfiles", false)],
         },
       ];
-      expect(await renderEmbed.execute(ctx, { kind: "code", threadId: "t", path: "a.ts" })).toEqual(
-        { status: "error", message: "Could not load a.ts from any known workspace." },
-      );
+      expect(await renderEmbed(ctx, { kind: "code", threadId: "t", path: "a.ts" })).toEqual({
+        status: "error",
+        message: "Could not load a.ts from any known workspace.",
+      });
       expect(read).toHaveBeenCalledTimes(1);
     });
 
@@ -333,7 +334,7 @@ describe("cross-workspace citations", () => {
         project("proj_own", "dotfiles", "/mac/dotfiles", MAC),
         project("proj_bb", "bb-plugins", "/srv/bb-plugins", SERVER),
       ];
-      const result = await renderEmbed.execute(ctx, { kind: "code", threadId: "t", path: "a.ts" });
+      const result = await renderEmbed(ctx, { kind: "code", threadId: "t", path: "a.ts" });
       expect(result).toMatchObject({ status: "ready", workspace: "bb-plugins on linux-builder" });
       expect(read).toHaveBeenLastCalledWith({
         hostId: SERVER,
@@ -355,7 +356,7 @@ describe("cross-workspace citations", () => {
           ],
         },
       ];
-      const result = await renderEmbed.execute(ctx, {
+      const result = await renderEmbed(ctx, {
         kind: "code",
         threadId: "t",
         path: "a.ts",
@@ -375,7 +376,7 @@ describe("cross-workspace citations", () => {
         project("proj_own", "dotfiles", "/mac/dotfiles-main", MAC),
         project("proj_bb", "bb-plugins", "/srv/bb-plugins", SERVER),
       ];
-      const result = await renderEmbed.execute(ctx, { kind: "code", threadId: "t", path: "a.ts" });
+      const result = await renderEmbed(ctx, { kind: "code", threadId: "t", path: "a.ts" });
       expect(result).toMatchObject({ status: "ready", workspace: "bb-plugins on linux-builder" });
       expect(read).toHaveBeenLastCalledWith({
         hostId: SERVER,
@@ -389,12 +390,12 @@ describe("cross-workspace citations", () => {
     const { ctx, read, bb } = context();
     read.mockRejectedValueOnce(new Error("permission denied"));
     bb.sdk.hosts.pathsExist = mock(async () => ({ existence: {} })) as never;
-    expect(
-      await renderEmbed.execute(ctx, { kind: "code", threadId: "t", path: "src/a.ts" }),
-    ).toMatchObject({
-      status: "error",
-      message: "Could not load src/a.ts from this workspace.",
-    });
+    expect(await renderEmbed(ctx, { kind: "code", threadId: "t", path: "src/a.ts" })).toMatchObject(
+      {
+        status: "error",
+        message: "Could not load src/a.ts from this workspace.",
+      },
+    );
     expect(bb.sdk.hosts.pathsExist).not.toHaveBeenCalled();
   });
 });

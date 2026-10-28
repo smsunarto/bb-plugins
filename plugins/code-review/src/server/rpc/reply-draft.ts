@@ -1,11 +1,10 @@
-import { defineMutation } from "@bb-kit/core/rpc";
 import { z } from "zod";
 import { accountSchema } from "../../shared/schema.ts";
 import type { CodeReviewContext } from "../lib/context.ts";
 import { replyDraft as writeReply } from "../lib/drafts.ts";
 
 /** A draft reply to a review thread, held in the viewer's pending review. */
-export const replyDraft = defineMutation({
+export const replyDraftContract = {
   input: z.strictObject({
     account: accountSchema,
     pullRequestId: z.string().min(1),
@@ -17,7 +16,11 @@ export const replyDraft = defineMutation({
     commentId: z.string(),
     pendingReview: z.strictObject({ id: z.string(), draftCount: z.number().int().nonnegative() }),
   }),
-  async execute(ctx: CodeReviewContext, { account, ...reply }) {
-    return writeReply(ctx.github.as(account), reply);
-  },
-});
+};
+
+export async function replyDraft(
+  ctx: CodeReviewContext,
+  { account, ...reply }: z.output<typeof replyDraftContract.input>,
+): Promise<z.input<typeof replyDraftContract.output>> {
+  return writeReply(ctx.github.as(account), reply);
+}

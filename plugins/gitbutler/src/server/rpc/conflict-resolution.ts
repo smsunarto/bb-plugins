@@ -1,4 +1,4 @@
-import { defineQuery } from "@bb-kit/core/rpc";
+import type { GitButlerContext } from "../lib/context.ts";
 import { z } from "zod";
 import {
   checkoutSelectionSchema,
@@ -8,8 +8,7 @@ import {
 import { readConflictResolution } from "../lib/conflict-resolution.ts";
 import { locateForRead } from "../lib/subthreads.ts";
 
-/** The Resolve conflicts subthread of the repository on screen, whichever thread started it. */
-export const conflictResolution = defineQuery({
+export const conflictResolutionContract = {
   input: z
     .object({
       threadId: z.string().min(1),
@@ -18,8 +17,13 @@ export const conflictResolution = defineQuery({
     })
     .strict(),
   output: conflictResolutionSchema,
-  async execute(ctx, { threadId, checkout, repositoryKey }) {
-    const repository = await locateForRead(ctx.bb, threadId, repositoryKey, checkout);
-    return { subthread: await readConflictResolution(ctx.bb, repository) };
-  },
-});
+};
+
+/** The Resolve conflicts subthread of the repository on screen, whichever thread started it. */
+export async function conflictResolution(
+  ctx: GitButlerContext,
+  { threadId, checkout, repositoryKey }: z.output<typeof conflictResolutionContract.input>,
+): Promise<z.input<typeof conflictResolutionContract.output>> {
+  const repository = await locateForRead(ctx.bb, threadId, repositoryKey, checkout);
+  return { subthread: await readConflictResolution(ctx.bb, repository) };
+}

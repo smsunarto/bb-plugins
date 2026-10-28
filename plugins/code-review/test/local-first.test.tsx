@@ -1,7 +1,7 @@
 import "./dom.ts";
 import { afterEach, beforeEach, expect, test } from "bun:test";
-import { QueryClient, hashKey } from "@tanstack/react-query";
-import { PluginQueryBoundary, pluginQueryClient } from "@bb-kit/core/rpc/query";
+import { QueryClient, QueryClientProvider, hashKey } from "@tanstack/react-query";
+import { queryClient } from "../src/app/query.ts";
 import { installLocalCache, readDraftText, writeDraftText } from "../src/app/local-cache.ts";
 import { inbox, pullRequest } from "./app-fixtures.ts";
 import { inboxTabRegistration } from "./registrations.ts";
@@ -10,7 +10,7 @@ import type { PullRequest, Inbox, ChangedFiles } from "../src/shared/schema.ts";
 
 const { act, fireEvent, waitFor } = await import("@testing-library/react");
 const { renderSlot, loadPluginApp } = await import("@get-bb/plugin-sdk/testing/app");
-const { rpc } = await import("../src/app/rpc.ts");
+const { queryKey, useRpcQuery } = await import("../src/app/rpc.ts");
 const {
   useDraftPreview,
   useAddDraft,
@@ -25,16 +25,16 @@ const { NewCommentForm, useDraftText } = await import("../src/app/comment-form.t
 
 const disposers: (() => void)[] = [];
 beforeEach(() => {
-  pluginQueryClient.clear();
+  queryClient.clear();
   window.localStorage.clear();
   window.sessionStorage.clear();
 });
 afterEach(() => {
   for (const dispose of disposers.splice(0)) dispose();
-  pluginQueryClient.clear();
+  queryClient.clear();
 });
 const input = { account: pullRequest.account, ref: pullRequest.ref };
-const prKey = rpc.pullRequest.queryKey(input);
+const prKey = queryKey("pullRequest", input);
 
 function localClient() {
   const client = new QueryClient();
@@ -57,13 +57,13 @@ test("confirmed snapshots restore status, inbox, PR, diff revision and checks sy
   writer.setQueryData(["status"], { ok: true, login: "scott", accounts: ["scott"] });
   writer.setQueryData(["inbox"], inbox);
   writer.setQueryData(prKey, pullRequest);
-  writer.setQueryData(rpc.changedFiles.queryKey(input), {
+  writer.setQueryData(queryKey("changedFiles", input), {
     headRefOid: "old-head",
     baseRefName: "old-base",
     comparison: null,
     files: [],
   });
-  writer.setQueryData(rpc.checks.queryKey(input), {
+  writer.setQueryData(queryKey("checks", input), {
     headRefOid: "old-head",
     state: "success",
     checks: [],
@@ -74,13 +74,13 @@ test("confirmed snapshots restore status, inbox, PR, diff revision and checks sy
   expect(reader.getQueryData<Inbox>(["inbox"])).toEqual(inbox);
   expect(reader.getQueryData<PullRequest>(prKey)).toEqual(pullRequest);
   expect(reader.getQueryData(["status"])).toMatchObject({ ok: true });
-  expect(reader.getQueryData<ChangedFiles>(rpc.changedFiles.queryKey(input))).toEqual({
+  expect(reader.getQueryData<ChangedFiles>(queryKey("changedFiles", input))).toEqual({
     headRefOid: "old-head",
     baseRefName: "old-base",
     comparison: null,
     files: [],
   });
-  expect(reader.getQueryData(rpc.checks.queryKey(input))).toMatchObject({ headRefOid: "old-head" });
+  expect(reader.getQueryData(queryKey("checks", input))).toMatchObject({ headRefOid: "old-head" });
 });
 
 test("malformed, expired, other-version and wrong-account snapshots never enter the cache", () => {
@@ -110,7 +110,7 @@ test("accounts retain different copies of the same PR", () => {
   const stop = installLocalCache(writer, window.localStorage);
   writer.setQueryData(prKey, pullRequest);
   const otherInput = { ...input, account: "work" };
-  writer.setQueryData(rpc.pullRequest.queryKey(otherInput), {
+  writer.setQueryData(queryKey("pullRequest", otherInput), {
     ...pullRequest,
     account: "work",
     body: "Work-only pending review",
@@ -119,7 +119,7 @@ test("accounts retain different copies of the same PR", () => {
   const reader = localClient();
   disposers.push(installLocalCache(reader, window.localStorage));
   expect(reader.getQueryData<PullRequest>(prKey)).toEqual(pullRequest);
-  expect(reader.getQueryData(rpc.pullRequest.queryKey(otherInput))).toMatchObject({
+  expect(reader.getQueryData(queryKey("pullRequest", otherInput))).toMatchObject({
     account: "work",
     body: "Work-only pending review",
   });
@@ -130,14 +130,14 @@ test("bounded persistence evicts old PRs without losing the newest copy", () => 
   const stop = installLocalCache(writer, window.localStorage);
   for (let number = 1; number <= 45; number++) {
     const ref = { ...input.ref, number };
-    writer.setQueryData(rpc.pullRequest.queryKey({ ...input, ref }), { ...pullRequest, ref });
+    writer.setQueryData(queryKey("pullRequest", { ...input, ref }), { ...pullRequest, ref });
   }
   stop();
   expect(window.localStorage.length).toBeLessThanOrEqual(32);
   const reader = localClient();
   disposers.push(installLocalCache(reader, window.localStorage));
   expect(
-    reader.getQueryData(rpc.pullRequest.queryKey({ ...input, ref: { ...input.ref, number: 45 } })),
+    reader.getQueryData(queryKey("pullRequest", { ...input, ref: { ...input.ref, number: 45 } })),
   ).toBeDefined();
 });
 
@@ -160,20 +160,20 @@ test("snapshots read as an account gh signed out of are forgotten on disk and in
   const save = installLocalCache(writer, window.localStorage);
   writer.setQueryData(["status"], { ok: true, login: "scott", accounts: ["scott", "work"] });
   writer.setQueryData(prKey, pullRequest);
-  writer.setQueryData(rpc.pullRequest.queryKey(workInput), { ...pullRequest, account: "work" });
+  writer.setQueryData(queryKey("pullRequest", workInput), { ...pullRequest, account: "work" });
   save();
 
   const reader = localClient();
   const stop = installLocalCache(reader, window.localStorage);
-  expect(reader.getQueryData(rpc.pullRequest.queryKey(workInput))).toBeDefined();
+  expect(reader.getQueryData(queryKey("pullRequest", workInput))).toBeDefined();
   reader.setQueryData(["status"], { ok: true, login: "Scott", accounts: ["Scott"] });
   stop();
-  expect(reader.getQueryData(rpc.pullRequest.queryKey(workInput))).toBeUndefined();
+  expect(reader.getQueryData(queryKey("pullRequest", workInput))).toBeUndefined();
   expect(reader.getQueryData<PullRequest>(prKey)).toEqual(pullRequest);
 
   const after = localClient();
   disposers.push(installLocalCache(after, window.localStorage));
-  expect(after.getQueryData(rpc.pullRequest.queryKey(workInput))).toBeUndefined();
+  expect(after.getQueryData(queryKey("pullRequest", workInput))).toBeUndefined();
   expect(after.getQueryData<PullRequest>(prKey)).toEqual(pullRequest);
 });
 
@@ -246,7 +246,7 @@ const newInput = {
 };
 
 function DraftHarness() {
-  const query = rpc.pullRequest.useQuery(input);
+  const query = useRpcQuery("pullRequest", input);
   const pr = useDraftPreview(query.data)!;
   const add = useAddDraft(pr);
   const edit = useEditDraft(pr);
@@ -281,13 +281,13 @@ function DraftHarness() {
   );
 }
 function draftSlot(handlers: Record<string, (...args: never[]) => unknown>) {
-  pluginQueryClient.setQueryData(prKey, withDraft);
+  queryClient.setQueryData(prKey, withDraft);
   const slot = renderSlot(
     {
       component: () => (
-        <PluginQueryBoundary>
+        <QueryClientProvider client={queryClient}>
           <DraftHarness />
-        </PluginQueryBoundary>
+        </QueryClientProvider>
       ),
     },
     {},
@@ -302,11 +302,11 @@ test("edit previews immediately, survives a concurrent GitHub read, and rolls ba
   const slot = draftSlot({ editDraft: () => write.promise });
   fireEvent.click(slot.getByText("Edit"));
   await waitFor(() => expect(slot.getByTestId("comments").textContent).toContain("Edited"));
-  expect(pluginQueryClient.getQueryData<PullRequest>(prKey)?.threads[0]?.comments[0]?.body).toBe(
+  expect(queryClient.getQueryData<PullRequest>(prKey)?.threads[0]?.comments[0]?.body).toBe(
     "Original",
   );
   act(() =>
-    pluginQueryClient.setQueryData(prKey, {
+    queryClient.setQueryData(prKey, {
       ...withDraft,
       title: "Remote change",
       threads: [
@@ -320,7 +320,7 @@ test("edit previews immediately, survives a concurrent GitHub read, and rolls ba
   await waitFor(() =>
     expect(slot.getByTestId("comments").textContent).toContain("Changed on github.com"),
   );
-  expect(pluginQueryClient.getQueryData<PullRequest>(prKey)?.title).toBe("Remote change");
+  expect(queryClient.getQueryData<PullRequest>(prKey)?.title).toBe("Remote change");
 });
 
 test("delete disappears before GitHub answers, then restores on failure", async () => {
@@ -343,11 +343,11 @@ test("new comments preview while saving, keep their revision, and never persist 
   const slot = draftSlot({ addDraftComment: () => write.promise });
   fireEvent.click(slot.getByText("Add"));
   await waitFor(() => expect(slot.getByTestId("comments").textContent).toContain("New draft"));
-  act(() => pluginQueryClient.setQueryData(prKey, { ...withDraft, headRefOid: "new-head" }));
+  act(() => queryClient.setQueryData(prKey, { ...withDraft, headRefOid: "new-head" }));
   await waitFor(() =>
     expect(slot.getByTestId("comments").textContent).toContain('"isOutdated":true'),
   );
-  expect(pluginQueryClient.getQueryData<PullRequest>(prKey)?.threads).toHaveLength(1);
+  expect(queryClient.getQueryData<PullRequest>(prKey)?.threads).toHaveLength(1);
   write.reject(new Error("Head moved"));
   await slot.findByText("GitHub did not save your draft");
   expect(slot.getByTestId("comments").textContent).not.toContain("New draft");
@@ -405,10 +405,10 @@ test("successful saves clear recovery text after the form unmounts without waiti
     pendingReview: { id: string; draftCount: number };
   }>();
   const laterRead = deferred<PullRequest>();
-  pluginQueryClient.setQueryData(prKey, pullRequest);
+  queryClient.setQueryData(prKey, pullRequest);
   function Form() {
     return (
-      <PluginQueryBoundary>
+      <QueryClientProvider client={queryClient}>
         <NewCommentForm
           pr={pullRequest}
           path="src/a.ts"
@@ -418,7 +418,7 @@ test("successful saves clear recovery text after the form unmounts without waiti
           onSaved={() => {}}
           onClose={() => {}}
         />
-      </PluginQueryBoundary>
+      </QueryClientProvider>
     );
   }
   const slot = renderSlot(
@@ -440,7 +440,7 @@ test("successful saves clear recovery text after the form unmounts without waiti
     pendingReview: { id: "R1", draftCount: 1 },
   });
   await waitFor(() => expect(readDraftText(`new:scott:${pullRequest.id}:src/a.ts`)).toBe(""));
-  expect(pluginQueryClient.getQueryData<PullRequest>(prKey)?.threads[0]?.comments[0]?.body).toBe(
+  expect(queryClient.getQueryData<PullRequest>(prKey)?.threads[0]?.comments[0]?.body).toBe(
     "Keep until saved",
   );
 });
@@ -453,7 +453,7 @@ test("a restored inbox renders while GitHub status and inbox are still pending",
   const save = installLocalCache(writer, window.sessionStorage);
   writer.setQueryData(["inbox"], inbox, { updatedAt: Date.now() - 60_000 });
   save();
-  disposers.push(installLocalCache(pluginQueryClient, window.sessionStorage));
+  disposers.push(installLocalCache(queryClient, window.sessionStorage));
   const app = await loadPluginApp(() => import("../src/app/app.tsx"));
   const wait = deferred<never>();
   const slot = renderSlot(
@@ -489,12 +489,12 @@ test("a newer snapshot from another window updates only its account's confirmed 
   );
   expect(client.getQueryData<PullRequest>(prKey)?.title).toBe("Changed in another window");
   expect(
-    client.getQueryData(rpc.pullRequest.queryKey({ ...input, account: "work" })),
+    client.getQueryData(queryKey("pullRequest", { ...input, account: "work" })),
   ).toBeUndefined();
 });
 
 test("a cached PR still opens while status is unavailable and no inbox was retained", async () => {
-  pluginQueryClient.setQueryData(prKey, pullRequest);
+  queryClient.setQueryData(prKey, pullRequest);
   const app = await loadPluginApp(() => import("../src/app/app.tsx"));
   const pending = deferred<never>();
   const slot = renderSlot(
@@ -516,8 +516,8 @@ test("a cached PR still opens while status is unavailable and no inbox was retai
 });
 
 test("a cached PR does not open once gh reports no signed-in account", async () => {
-  pluginQueryClient.setQueryData(["inbox"], inbox);
-  pluginQueryClient.setQueryData(prKey, pullRequest);
+  queryClient.setQueryData(["inbox"], inbox);
+  queryClient.setQueryData(prKey, pullRequest);
   const app = await loadPluginApp(() => import("../src/app/app.tsx"));
   const pending = deferred<never>();
   const slot = renderSlot(
@@ -555,9 +555,9 @@ test("pending draft previews and failures never show under a different account",
   const otherSlot = renderSlot(
     {
       component: () => (
-        <PluginQueryBoundary>
+        <QueryClientProvider client={queryClient}>
           <Other />
-        </PluginQueryBoundary>
+        </QueryClientProvider>
       ),
     },
     {},
@@ -614,7 +614,7 @@ test("prefetch eviction retains the inbox and status needed for a cold reload", 
   writer.setQueryData(["inbox"], inbox, { updatedAt: Date.now() - 1000 });
   for (let number = 1; number <= 40; number++) {
     const ref = { ...input.ref, number };
-    writer.setQueryData(rpc.pullRequest.queryKey({ ...input, ref }), { ...pullRequest, ref });
+    writer.setQueryData(queryKey("pullRequest", { ...input, ref }), { ...pullRequest, ref });
   }
   save();
   const reader = localClient();
@@ -633,21 +633,21 @@ test("encoded account routes from the live BB router open the same PR", () => {
 });
 
 test("a seen PR restores synchronously from disk after memory cache eviction", async () => {
-  const save = installLocalCache(pluginQueryClient, window.localStorage);
-  pluginQueryClient.setQueryData(prKey, pullRequest);
+  const save = installLocalCache(queryClient, window.localStorage);
+  queryClient.setQueryData(prKey, pullRequest);
   window.dispatchEvent(new window.Event("pagehide"));
-  pluginQueryClient.removeQueries({ queryKey: prKey, exact: true });
+  queryClient.removeQueries({ queryKey: prKey, exact: true });
   const pending = deferred<PullRequest>();
   function View() {
-    const query = rpc.pullRequest.useQuery(input);
+    const query = useRpcQuery("pullRequest", input);
     return <output>{query.data?.title ?? "Loading"}</output>;
   }
   const slot = renderSlot(
     {
       component: () => (
-        <PluginQueryBoundary>
+        <QueryClientProvider client={queryClient}>
           <View />
-        </PluginQueryBoundary>
+        </QueryClientProvider>
       ),
     },
     {},
@@ -664,10 +664,10 @@ test("an acknowledged old save preserves newer unsent form text", async () => {
     commentId: string;
     pendingReview: { id: string; draftCount: number };
   }>();
-  pluginQueryClient.setQueryData(prKey, pullRequest);
+  queryClient.setQueryData(prKey, pullRequest);
   function Form() {
     return (
-      <PluginQueryBoundary>
+      <QueryClientProvider client={queryClient}>
         <NewCommentForm
           pr={pullRequest}
           path="src/a.ts"
@@ -677,7 +677,7 @@ test("an acknowledged old save preserves newer unsent form text", async () => {
           onSaved={() => {}}
           onClose={() => {}}
         />
-      </PluginQueryBoundary>
+      </QueryClientProvider>
     );
   }
   const slot = renderSlot(
@@ -716,7 +716,7 @@ test("out-of-order add acknowledgements cannot shrink the confirmed draft count"
   await waitFor(() => expect(slot.getByTestId("comments").textContent).toContain("New draft"));
   // Another client can acknowledge its own addition while this request is out.
   act(() =>
-    pluginQueryClient.setQueryData(prKey, {
+    queryClient.setQueryData(prKey, {
       ...withDraft,
       pendingReview: { id: "R1", body: "", draftCount: 2 },
       threads: [
@@ -734,9 +734,9 @@ test("out-of-order add acknowledgements cannot shrink the confirmed draft count"
     commentId: "C-first",
     pendingReview: { id: "R1", draftCount: 1 },
   });
-  await waitFor(() => expect(pluginQueryClient.isMutating()).toBe(0));
+  await waitFor(() => expect(queryClient.isMutating()).toBe(0));
   expect(
-    pluginQueryClient.getQueryData<PullRequest>(prKey)?.pendingReview?.draftCount,
+    queryClient.getQueryData<PullRequest>(prKey)?.pendingReview?.draftCount,
   ).toBeGreaterThanOrEqual(3);
 });
 
@@ -781,11 +781,11 @@ test("a read that lands after gh signs out of its account is not kept", async ()
   const stop = installLocalCache(client, window.localStorage);
   client.setQueryData(["status"], { ok: true, login: "scott", accounts: ["scott"] });
   // A PR read started as "work" before the sign-out answers afterwards.
-  client.setQueryData(rpc.pullRequest.queryKey(workInput), { ...pullRequest, account: "work" });
+  client.setQueryData(queryKey("pullRequest", workInput), { ...pullRequest, account: "work" });
   stop();
   const after = localClient();
   disposers.push(installLocalCache(after, window.localStorage));
-  expect(after.getQueryData(rpc.pullRequest.queryKey(workInput))).toBeUndefined();
+  expect(after.getQueryData(queryKey("pullRequest", workInput))).toBeUndefined();
 });
 
 test("unsent text typed as a signed-out account is forgotten with its reads", () => {
@@ -822,11 +822,11 @@ test("a first reply's save names GitHub's pending review even when the PR cannot
     },
   });
   act(() =>
-    pluginQueryClient.setQueryData(prKey, { ...withDraft, pendingReview: null, threads: [posted] }),
+    queryClient.setQueryData(prKey, { ...withDraft, pendingReview: null, threads: [posted] }),
   );
   fireEvent.click(slot.getByText("Reply"));
   write.resolve({ commentId: "C-reply", pendingReview: { id: "PRR_real", draftCount: 1 } });
   await waitFor(() =>
-    expect(pluginQueryClient.getQueryData<PullRequest>(prKey)?.pendingReview?.id).toBe("PRR_real"),
+    expect(queryClient.getQueryData<PullRequest>(prKey)?.pendingReview?.id).toBe("PRR_real"),
   );
 });

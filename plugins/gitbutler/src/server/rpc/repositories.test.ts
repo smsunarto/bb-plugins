@@ -6,7 +6,7 @@ test("returns the host's repository list", async () => {
   const listed = { repositories: [{ key: ".", name: "bb-plugins" }], reason: null };
   const { ctx, calls } = harness({ result: listed });
 
-  expect(await repositories.execute(ctx, { threadId: "t1" })).toEqual(listed);
+  expect(await repositories(ctx, { threadId: "t1" })).toEqual(listed);
   expect(calls[0]).toEqual({
     method: "repositories",
     input: { environmentPath: "/work" },
@@ -17,7 +17,7 @@ test("returns the host's repository list", async () => {
 test("returns an empty list with a reason when the thread has no environment", async () => {
   const { ctx, calls } = harness({ environment: null });
 
-  expect(await repositories.execute(ctx, { threadId: "t1" })).toEqual({
+  expect(await repositories(ctx, { threadId: "t1" })).toEqual({
     repositories: [],
     reason: "This thread has no project environment.",
   });

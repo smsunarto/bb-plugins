@@ -1,6 +1,3 @@
-import { definePlugin } from "@bb-kit/core/plugin";
+import type { BbPluginApi } from "@get-bb/plugin-sdk";
 
-export default definePlugin({
-  pluginId: "vimium",
-  rpc: {},
-});
+export default async function plugin(_bb: BbPluginApi): Promise<void> {}

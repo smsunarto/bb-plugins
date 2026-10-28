@@ -17,9 +17,7 @@ test("forwards the repository to the thread's host", async () => {
   };
   const { ctx, calls } = harness({ result: answer });
 
-  expect(await reviews.execute(ctx, { threadId: "t1", repositoryKey: "repos/api" })).toEqual(
-    answer,
-  );
+  expect(await reviews(ctx, { threadId: "t1", repositoryKey: "repos/api" })).toEqual(answer);
   expect(calls).toEqual([
     {
       method: "reviews",
@@ -32,7 +30,7 @@ test("forwards the repository to the thread's host", async () => {
 test("returns no reviews with a reason when the thread has no environment", async () => {
   const { ctx, calls } = harness({ environment: null });
 
-  expect(await reviews.execute(ctx, { threadId: "t1" })).toEqual({
+  expect(await reviews(ctx, { threadId: "t1" })).toEqual({
     reviews: [],
     reason: "This thread has no project environment.",
   });

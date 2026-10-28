@@ -1,7 +1,7 @@
 import { beforeEach, expect, onTestFinished, setSystemTime, test } from "bun:test";
 import { environmentManager } from "@tanstack/react-query";
-import { pluginQueryClient } from "@bb-kit/core/rpc/query";
-import { installDom } from "@bb-kit/core/testing";
+import { queryClient } from "../src/app/query.ts";
+import { installDom } from "@bb-plugins/testing";
 import type { ExperimentalThreadActionTabProps } from "@get-bb/plugin-sdk/app";
 import type { RenderSlotOptions, RenderedSlot } from "@get-bb/plugin-sdk/testing/app";
 import type { ComponentType } from "react";
@@ -43,7 +43,7 @@ workspace.stacks[0]!.branches[1]!.commits[0]!.conflicted = false;
 // The cache and the remembered repository outlive the panel on purpose.
 // Between tests they must not.
 beforeEach(() => {
-  pluginQueryClient.clear();
+  queryClient.clear();
   window.localStorage.clear();
 });
 
@@ -178,7 +178,7 @@ test("draws the last board and history at once after a reload, then checks them"
   first.lifecycle.unmount();
 
   // A reload: memory is gone, storage is not, and the server is slow.
-  pluginQueryClient.clear();
+  queryClient.clear();
   let release: () => void = () => {};
   const second = await panel({
     ...baseRpc,
@@ -203,7 +203,7 @@ test("does not draw a stored board for a workspace that stopped being one", asyn
   const first = await panel(baseRpc);
   await waitFor(() => expect(first.getByText("scott/top")).toBeTruthy());
   first.lifecycle.unmount();
-  pluginQueryClient.clear();
+  queryClient.clear();
 
   const notice = { ...workspace, state: "setupRequired" as const, stacks: [], base: null };
   const second = await panel({ ...baseRpc, workspace: () => notice });
@@ -213,7 +213,7 @@ test("does not draw a stored board for a workspace that stopped being one", asyn
   second.lifecycle.unmount();
 
   // The notice replaced the stored board, so the next reload starts clean.
-  pluginQueryClient.clear();
+  queryClient.clear();
   const third = await panel({ ...baseRpc, workspace: () => new Promise(() => {}) });
   expect(third.queryByText("scott/top")).toBeNull();
   expect(await third.findByText("Loading workspace…")).toBeTruthy();
@@ -510,7 +510,7 @@ for (const kind of ["commit", "uncommitted"] as const) {
         transition === "environment"
           ? { ...workspace, environmentId: "env-2" }
           : { ...workspace, repositoryKey: "repos/api" };
-      await pluginQueryClient.invalidateQueries({ queryKey: ["workspace"] });
+      await queryClient.invalidateQueries({ queryKey: ["workspace"] });
       await waitFor(() =>
         expect(slot.queryByRole("button", { name: "Back to workspace" })).toBeNull(),
       );
@@ -546,11 +546,11 @@ for (const kind of ["commit", "uncommitted"] as const) {
     expect(await slot.findByRole("button", { name: "Collapse bun.lock" })).toBeTruthy();
 
     board = { ...workspace };
-    await pluginQueryClient.invalidateQueries({ queryKey: ["workspace"] });
+    await queryClient.invalidateQueries({ queryKey: ["workspace"] });
     expect(slot.getByRole("button", { name: "Back to workspace" })).toBeTruthy();
 
     board = { ...workspace, state: "error", reason: "Host is offline" };
-    await pluginQueryClient.invalidateQueries({ queryKey: ["workspace"] });
+    await queryClient.invalidateQueries({ queryKey: ["workspace"] });
     expect(slot.getByRole("button", { name: "Back to workspace" })).toBeTruthy();
     expect(slot.getByRole("button", { name: "Collapse bun.lock" })).toBeTruthy();
     slot.lifecycle.unmount();
@@ -825,7 +825,7 @@ test("the Info tab reads the board again when an agent's turn ends on its enviro
 });
 
 test("the Info tab keeps the last branches while the host is away and recovers on its signal", async () => {
-  pluginQueryClient.clear();
+  queryClient.clear();
   let board: Workspace = workspace;
   const slot = await infoSection(() => board);
   await slot.findByRole("region", { name: "GitButler branches" });
@@ -866,7 +866,7 @@ test("the Info tab adds nothing for ordinary Git, other states, or a thread with
   expect(native.queryByRole("region")).toBeNull();
   native.lifecycle.unmount();
 
-  pluginQueryClient.clear();
+  queryClient.clear();
   const setup = await infoSection(() => ({ ...workspace, state: "setupRequired", stacks: [] }));
   await waitFor(() => expect(setup.inspection.rpcCalls).toHaveLength(1));
   expect(setup.queryByRole("region")).toBeNull();
@@ -1272,10 +1272,10 @@ test("hands the focus back to Land once, not each time a poll redraws it", async
   const composer = document.body.appendChild(document.createElement("textarea"));
   composer.focus();
   landed = true;
-  await pluginQueryClient.invalidateQueries();
+  await queryClient.invalidateQueries();
   await waitFor(() => expect(card.queryByRole("button", { name: "Land" })).toBeNull());
   landed = false;
-  await pluginQueryClient.invalidateQueries();
+  await queryClient.invalidateQueries();
   await waitFor(() => expect(card.getByRole("button", { name: "Land" })).toBeTruthy());
   expect(document.activeElement).toBe(composer);
   composer.remove();
@@ -1704,7 +1704,7 @@ test("Back puts the focus on the board when the row that opened the diff has gon
 
   // The agent commits the file while its diff is open.
   committed = true;
-  await pluginQueryClient.invalidateQueries();
+  await queryClient.invalidateQueries();
   await waitFor(() => expect(row.isConnected).toBe(false));
   fireEvent.click(back);
   // Not the page body, so Tab carries on from the top of the panel.
@@ -2110,7 +2110,7 @@ test("the header's Pull still asks its question after the reader looked at anoth
   fireEvent.change(slot.getByLabelText("Repository"), { target: { value: "repos/other" } });
   await waitFor(() => expect(slot.getByText("scott/top")).toBeTruthy());
   answer({ status: "confirm", risk: BOTH_AND_FILES });
-  await waitFor(() => expect(pluginQueryClient.isMutating()).toBe(0));
+  await waitFor(() => expect(queryClient.isMutating()).toBe(0));
   expect(slot.queryByText(/^Pulling leaves/)).toBeNull();
 
   fireEvent.change(slot.getByLabelText("Repository"), { target: { value: "." } });
@@ -2340,7 +2340,7 @@ test("a board drawn from storage takes no writes until it has been read again", 
   first.lifecycle.unmount();
 
   // A reload: the board comes back from storage while the server is slow.
-  pluginQueryClient.clear();
+  queryClient.clear();
   let release: () => void = () => {};
   const { actions, rpc } = recordActions();
   const slot = await panel({
@@ -2379,7 +2379,7 @@ test("conflicts on a board drawn from storage wait for a read before a subthread
   first.lifecycle.unmount();
 
   // A reload: the stored board still shows the conflicts, and the read is slow.
-  pluginQueryClient.clear();
+  queryClient.clear();
   let release: () => void = () => {};
   const requests: unknown[] = [];
   const slot = await panel({
@@ -2611,7 +2611,7 @@ test("the header reads nothing when a thread opens with its answer stored or in 
   expect(warm.getByRole("button", { name: "View in GitButler" })).toBeTruthy();
   warm.lifecycle.unmount();
   // Stored, as after a reload.
-  pluginQueryClient.clear();
+  queryClient.clear();
   const cold = await header(read);
   expect(cold.getByRole("button", { name: "View in GitButler" })).toBeTruthy();
   await new Promise((resolve) => setTimeout(resolve, 50));
@@ -2771,7 +2771,7 @@ for (const [shape, reshape] of BOTTOM_SHAPES) {
     const field = card.getByLabelText("New name for scott/bottom");
     fireEvent.change(field, { target: { value: "scott/base" } });
     fireEvent.keyDown(field, { key: "Enter" });
-    await waitFor(() => expect(pluginQueryClient.isMutating()).toBe(1));
+    await waitFor(() => expect(queryClient.isMutating()).toBe(1));
 
     // The reader moves on to a commit of the branch above, in the same stack.
     const above = slot.getByText("feat(top): add the thing").closest("button")!;
@@ -2781,7 +2781,7 @@ for (const [shape, reshape] of BOTTOM_SHAPES) {
     await waitFor(() =>
       expect(slot.getByRole("button", { name: "Rename branch scott/base" })).toBeTruthy(),
     );
-    await waitFor(() => expect(pluginQueryClient.isMutating()).toBe(0));
+    await waitFor(() => expect(queryClient.isMutating()).toBe(0));
     expect(above.isConnected).toBe(true);
     expect(document.activeElement).toBe(above);
     slot.lifecycle.unmount();
@@ -3594,7 +3594,7 @@ test("returning from a checkout clears its delete confirmation and late writes c
   await slot.findByRole("article", { name: "Branch scott/top" });
   await waitFor(() => expect(mainReads).toBe(3));
   finish({ status: "done" });
-  await waitFor(() => expect(pluginQueryClient.isMutating()).toBe(0));
+  await waitFor(() => expect(queryClient.isMutating()).toBe(0));
   expect(mainReads).toBe(3);
   expect(slot.queryByText("Pushed scott/bottom")).toBeNull();
   slot.lifecycle.unmount();
@@ -3670,7 +3670,7 @@ test("changing a selected checkout origin clears confirmations and ignores an ol
   await waitFor(() =>
     expect(
       (
-        pluginQueryClient.getQueryData([
+        queryClient.getQueryData([
           "workspace",
           { threadId: "thread-1", checkout: selectedCheckout },
         ]) as Workspace | undefined
@@ -3678,7 +3678,7 @@ test("changing a selected checkout origin clears confirmations and ignores an ol
     ).toBe(origin),
   );
   finish({ status: "done" });
-  await waitFor(() => expect(pluginQueryClient.isMutating()).toBe(0));
+  await waitFor(() => expect(queryClient.isMutating()).toBe(0));
   expect(slot.queryByText("Pushed scott/bottom")).toBeNull();
   card = within(slot.getByRole("article", { name: "Branch scott/bottom" }));
   fireEvent.click(card.getByRole("button", { name: "Land" }));
@@ -3694,7 +3694,7 @@ test("changing a selected checkout origin clears confirmations and ignores an ol
     observed: { branch: "scott/bottom", head: "a".repeat(40), origin: null },
   });
   finish({ status: "done" });
-  await waitFor(() => expect(pluginQueryClient.isMutating()).toBe(0));
+  await waitFor(() => expect(queryClient.isMutating()).toBe(0));
   slot.lifecycle.unmount();
 });
 
@@ -3718,13 +3718,13 @@ test("a write's board of a checkout that changed since is read again, not drawn"
       }),
   });
   const shown = () =>
-    pluginQueryClient.getQueryData([
+    queryClient.getQueryData([
       "workspace",
       { threadId: "thread-1", checkout: selectedCheckout },
     ]) as Workspace | undefined;
   const card = await openIsolated(slot);
   fireEvent.click(card.getByRole("button", { name: "Push" }));
-  await waitFor(() => expect(pluginQueryClient.isMutating()).toBe(1));
+  await waitFor(() => expect(queryClient.isMutating()).toBe(1));
   origin = "github.com/scott/repointed";
   fireEvent.click(slot.getByRole("button", { name: "Refresh" }));
   await waitFor(() => expect(shown()?.checkoutIdentity?.origin).toBe(origin));
@@ -3732,7 +3732,7 @@ test("a write's board of a checkout that changed since is read again, not drawn"
 
   // The board the push left was read before the checkout was repointed.
   finish({ result: { status: "done" }, workspace: isolatedBoard() });
-  await waitFor(() => expect(pluginQueryClient.isMutating()).toBe(0));
+  await waitFor(() => expect(queryClient.isMutating()).toBe(0));
   await waitFor(() => expect(reads).toBe(before + 1));
   expect(shown()?.checkoutIdentity?.origin).toBe("github.com/scott/repointed");
   slot.lifecycle.unmount();
@@ -3890,7 +3890,7 @@ test("native commit polls preserve a rename draft, focus, and an unrelated open 
   fireEvent.change(field, { target: { value: "scott/draft-to-keep" } });
   field.focus();
   selected = appendNativeCommit(selected);
-  await pluginQueryClient.invalidateQueries();
+  await queryClient.invalidateQueries();
   expect(await slot.findByText("feat: a new native commit")).toBeTruthy();
   expect(card.getByRole("textbox")).toBe(field);
   expect(field.value).toBe("scott/draft-to-keep");
@@ -3923,7 +3923,7 @@ test("native Land preserves its squash draft on a new commit and requires review
   fireEvent.change(draft, { target: { value: "Player-reviewed squash message" } });
   draft.focus();
   selected = appendNativeCommit(selected);
-  await pluginQueryClient.invalidateQueries();
+  await queryClient.invalidateQueries();
   const review = await card.findByRole("button", { name: "Review updated branch" });
   expect(draft.isConnected).toBe(true);
   expect(draft.value).toBe("Player-reviewed squash message");
@@ -3978,7 +3978,7 @@ for (const operation of ["Delete", "Force push"] as const) {
       }),
     );
     selected = appendNativeCommit(selected);
-    await pluginQueryClient.invalidateQueries();
+    await queryClient.invalidateQueries();
     fireEvent.click(await card.findByRole("button", { name: "Review updated branch" }));
     expect(actions).toEqual([]);
     fireEvent.click(card.getByRole("button", { name: operation }));
@@ -4014,7 +4014,7 @@ test("a native header Pull risk question is discarded when its observed tip chan
   fireEvent.click(slot.getByRole("button", HEADER_PULL));
   await slot.findByRole("button", { name: "Pull anyway" });
   selected = appendNativeCommit(selected);
-  await pluginQueryClient.invalidateQueries();
+  await queryClient.invalidateQueries();
   await waitFor(() => expect(slot.queryByRole("button", { name: "Pull anyway" })).toBeNull());
   fireEvent.click(slot.getByRole("button", HEADER_PULL));
   await waitFor(() => expect(actions).toHaveLength(2));
@@ -4038,7 +4038,7 @@ test("native Land warns about an unknown existing PR only when its commits will 
   fireEvent.click(card.getByRole("button", { name: "Cancel" }));
   selected = structuredClone(selected);
   selected.upstream!.behind = 2;
-  await pluginQueryClient.invalidateQueries();
+  await queryClient.invalidateQueries();
   await slot.findByText("2 behind");
   fireEvent.click(card.getByRole("button", { name: "Land" }));
   expect(card.getByText(/creates the landing commit on top of the newer target/)).toBeTruthy();
@@ -4097,7 +4097,7 @@ test("New chat reads nothing until it is clicked, then shows opening progress un
   expect(button.hasAttribute("disabled")).toBe(false);
   expect(button.textContent).toContain("New chat");
   // A card on screen is not a reason to ask: neither a mount nor a refresh reads it.
-  await pluginQueryClient.invalidateQueries();
+  await queryClient.invalidateQueries();
   await waitFor(() => expect(slot.getByText("scott/top")).toBeTruthy());
   expect(preflights()).toEqual([]);
 

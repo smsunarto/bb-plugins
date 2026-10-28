@@ -67,10 +67,10 @@ Apply the finding that the evidence supports:
 
 - **Subscriptions:** keep panel-only queries and derived state inside their consumer. Preserve query keys, enablement, error handling, and freshness behavior. Check whether moving a query delays its first request.
 - **Prop identity:** BB's current plugin app builder uses esbuild without React Compiler. Preserve unchanged inputs and use targeted `memo`, `useMemo`, or `useCallback` where measured work warrants them. Do not add memoization across every component.
-- **Mutation identity:** bb-kit's RPC hooks delegate to TanStack Query. Destructure the `mutate` or `mutateAsync` function you need instead of capturing the whole mutation result in callback dependencies. Preserve required status subscriptions.
+- **Mutation identity:** plugin RPC hooks are TanStack Query. Destructure the `mutate` or `mutateAsync` function you need instead of capturing the whole mutation result in callback dependencies. Preserve required status subscriptions.
 - **Mounts:** keep initialization bounded and avoid repeated synchronous scans. Closing a retained panel does not stop its effects. Gate background work using the surface's actual visibility contract, when available.
 - **State ownership:** preserve thread keys until every state value, ref, effect, subscription, and persisted write has a safe reset or lifetime. Test A-to-B navigation with different saved layouts before proposing key removal.
-- **Requests:** reuse typed bb-kit RPC queries and supported SDK realtime hooks. Filter irrelevant signals and coalesce redundant reads only when freshness and failure recovery remain correct. A debounce must not postpone updates forever under a continuous stream.
+- **Requests:** reuse the plugin's typed RPC queries and supported SDK realtime hooks. Filter irrelevant signals and coalesce redundant reads only when freshness and failure recovery remain correct. A debounce must not postpone updates forever under a continuous stream.
 - **Layout:** batch geometry reads before writes. Reuse the sidebar's shared overflow observer pattern instead of measuring each row while mounting it.
 - **DOM size:** consider the sidebar's existing windowing pattern for measured list costs. Preserve keyboard navigation, active or focused rows, sticky headers, and scroll position.
 - **CSS:** inspect style invalidation during thread updates and panel resize. Prefer explicit state attributes for measured broad relational selectors. Avoid indiscriminately deleting every `:has()` selector. Follow BB's prohibition on CSS `@scope`.

@@ -1,9 +1,9 @@
-import { definePlugin } from "@bb-kit/core/plugin";
+import { defineRpcContract } from "@get-bb/plugin-sdk";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { expect, test } from "vitest";
 import type { InfoInput } from "../../shared/contracts/api-tunnel.ts";
 import type { Engine } from "../../shared/contracts/engine.ts";
-import { info } from "./info.ts";
+import { info, infoContract } from "./info.ts";
 
 async function start() {
   const inputs: InfoInput[] = [];
@@ -18,13 +18,10 @@ async function start() {
       };
     },
   } as unknown as Engine;
-  const plugin = definePlugin({
-    pluginId: "whiteboard",
-    rpc: { info },
-    services: () => ({ engine }),
-  });
   const { bb, harness } = createFakePluginHost({ pluginId: "whiteboard" });
-  await plugin(bb);
+  bb.rpc.register(defineRpcContract({ info: infoContract }), {
+    info: (input) => info({ bb, engine }, input),
+  });
   return { harness, inputs };
 }
 

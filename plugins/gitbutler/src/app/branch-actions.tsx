@@ -1,8 +1,8 @@
 import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
-import type { Query, QueryKey } from "@tanstack/react-query";
+import type { Query } from "@tanstack/react-query";
 import { experimental_Icon as Icon, useBbNavigate } from "@get-bb/plugin-sdk/app";
-import { pluginQueryClient } from "@bb-kit/core/rpc/query";
+import { queryClient } from "./query.ts";
 import { branchNameSchema } from "../shared/schema.ts";
 import type {
   ActionRisk,
@@ -33,7 +33,8 @@ import { Button } from "./components/ui/button.tsx";
 import { upstreamLoss } from "../shared/upstream-loss.ts";
 import { squashMessage } from "./format.ts";
 import { cn } from "./lib/utils.ts";
-import { rpc } from "./rpc.ts";
+import { useRpcQuery, useRpcMutation } from "./rpc.ts";
+import type { Method } from "./rpc.ts";
 
 /**
  * The branch card's write side: rename on the name, and Pull, Push, Create PR,
@@ -93,13 +94,9 @@ function useFooterFocus(...busy: boolean[]) {
 }
 
 /** Whether a cached read is `method`'s answer for this thread. */
-function readOf(
-  method: { queryKey: () => QueryKey },
-  target: Pick<WorkspaceTarget, "threadId" | "checkout">,
-) {
-  const [name] = method.queryKey();
+function readOf(method: Method, target: Pick<WorkspaceTarget, "threadId" | "checkout">) {
   return (query: Query) =>
-    query.queryKey[0] === name &&
+    query.queryKey[0] === method &&
     (query.queryKey[1] as WorkspaceTarget | undefined)?.threadId === target.threadId &&
     (query.queryKey[1] as WorkspaceTarget | undefined)?.checkout?.hostId ===
       target.checkout?.hostId &&
@@ -134,27 +131,27 @@ export function refreshWorkspace(
 ): Promise<void> {
   const target = typeof aim === "string" ? { threadId: aim } : aim;
   if (target.checkout) {
-    void pluginQueryClient.invalidateQueries({
-      predicate: readOf(rpc.otherMachines, { threadId: target.threadId }),
+    void queryClient.invalidateQueries({
+      predicate: readOf("otherMachines", { threadId: target.threadId }),
     });
   }
-  const uncommitted = readOf(rpc.patches, target);
-  void pluginQueryClient.invalidateQueries({
+  const uncommitted = readOf("patches", target);
+  void queryClient.invalidateQueries({
     predicate: (query) =>
       uncommitted(query) &&
       (query.queryKey[1] as { source?: PatchSource }).source?.kind === "uncommitted",
   });
-  const methods = [
-    rpc.parkedBranches,
-    rpc.oplog,
-    ...(moved.reviews ? [rpc.reviews] : []),
-    ...(moved.subthreads ? [rpc.reviewRequests, rpc.conflictResolution] : []),
+  const methods: Method[] = [
+    "parkedBranches",
+    "oplog",
+    ...(moved.reviews ? ["reviews" as const] : []),
+    ...(moved.subthreads ? ["reviewRequests" as const, "conflictResolution" as const] : []),
   ];
   for (const method of methods) {
-    void pluginQueryClient.invalidateQueries({ predicate: readOf(method, target) });
+    void queryClient.invalidateQueries({ predicate: readOf(method, target) });
   }
   if (!moved.board) return Promise.resolve();
-  return pluginQueryClient.invalidateQueries({ predicate: readOf(rpc.workspace, target) });
+  return queryClient.invalidateQueries({ predicate: readOf("workspace", target) });
 }
 
 /** Whether two boards are of one checkout, as its path, Git directory, and origin say. */
@@ -172,7 +169,7 @@ const overtaken = new WeakSet<object>();
  * the board again once it lands. Whether such a write was running.
  */
 export function changedDuringWrite(target: Pick<WorkspaceTarget, "threadId" | "checkout">) {
-  const writes = pluginQueryClient.getMutationCache().findAll({
+  const writes = queryClient.getMutationCache().findAll({
     mutationKey: ["but-write"],
     status: "pending",
     predicate: (write) => {
@@ -195,9 +192,9 @@ export function changedDuringWrite(target: Pick<WorkspaceTarget, "threadId" | "c
  * while the write ran, which may be newer than the write's board.
  */
 async function showBoard(sent: WriteScope, board: Workspace, sentAt: number): Promise<boolean> {
-  const reads = pluginQueryClient
+  const reads = queryClient
     .getQueryCache()
-    .findAll({ predicate: readOf(rpc.workspace, sent) })
+    .findAll({ predicate: readOf("workspace", sent) })
     .filter((query) => {
       const shown = query.state.data as Workspace | undefined;
       return (
@@ -205,18 +202,18 @@ async function showBoard(sent: WriteScope, board: Workspace, sentAt: number): Pr
       );
     });
   if (reads.length === 0) {
-    await pluginQueryClient.invalidateQueries({ predicate: readOf(rpc.workspace, sent) });
+    await queryClient.invalidateQueries({ predicate: readOf("workspace", sent) });
     return false;
   }
   let landed = false;
   for (const read of reads) {
     if (!sameCheckout(read.state.data as Workspace, board)) {
-      await pluginQueryClient.invalidateQueries({ queryKey: read.queryKey, exact: true });
+      await queryClient.invalidateQueries({ queryKey: read.queryKey, exact: true });
       continue;
     }
     landed ||= read.state.dataUpdatedAt > sentAt;
-    await pluginQueryClient.cancelQueries({ queryKey: read.queryKey, exact: true });
-    pluginQueryClient.setQueryData(read.queryKey, board);
+    await queryClient.cancelQueries({ queryKey: read.queryKey, exact: true });
+    queryClient.setQueryData(read.queryKey, board);
   }
   return landed;
 }
@@ -234,7 +231,7 @@ async function showWrite(sent: WriteScope & { action: ButAction }, response?: Bu
   // A question changed nothing, though something else may have.
   if (!response.workspace) return changed ? refreshWorkspace(sent, ON_DISK) : undefined;
   const sentAt =
-    pluginQueryClient.getMutationCache().find({
+    queryClient.getMutationCache().find({
       predicate: (write) => write.state.variables === sent,
     })?.state.submittedAt ?? 0;
   const landed = await showBoard(sent, response.workspace, sentAt);
@@ -300,7 +297,7 @@ export function useButAction(
   useLayoutEffect(() => {
     currentAim.current = aim;
   }, [aim]);
-  const mutation = rpc.butAction.useMutation({
+  const mutation = useRpcMutation("butAction", {
     mutationKey: butWriteKey(scope),
     // Reported here, once the board shows the result, and not in `run`'s
     // callback: Delete and Land take the card, and that callback, away first.
@@ -512,13 +509,13 @@ const REVIEW_POLL_MS = 5_000;
  */
 function useReviewRequest(target: WorkspaceTarget, branch: string) {
   const board = useBoardWorkspace();
-  const requests = rpc.reviewRequests.useQuery(target, {
+  const requests = useRpcQuery("reviewRequests", target, {
     // Poll only while a subthread works, so the card sees it finish.
     refetchInterval: (query) =>
       query.state.data?.requests.some((request) => request.running) ? REVIEW_POLL_MS : false,
   });
   // Starting a subthread moves only its record. The PR it opens shows once it stops.
-  const mutation = rpc.requestReview.useMutation({
+  const mutation = useRpcMutation("requestReview", {
     onSettled: (_result, _error, sent) =>
       refreshWorkspace(sent, { board: false, reviews: false, subthreads: true }),
   });
@@ -527,7 +524,7 @@ function useReviewRequest(target: WorkspaceTarget, branch: string) {
   const wasRunning = useRef(running);
   useEffect(() => {
     if (wasRunning.current && !running) {
-      void pluginQueryClient.invalidateQueries({ predicate: readOf(rpc.reviews, target) });
+      void queryClient.invalidateQueries({ predicate: readOf("reviews", target) });
     }
     wasRunning.current = running;
   }, [running, target]);

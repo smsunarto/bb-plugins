@@ -1,10 +1,11 @@
-import { defineCommand, PluginCliError, type CommandContext } from "@bb-kit/core/command";
-import { PLUGIN_CLI_OUTPUT_MAX_BYTES } from "@get-bb/plugin-sdk";
-import { instructionFiles } from "@bb-kit/core/instructions";
+import { cliCommand, PLUGIN_CLI_OUTPUT_MAX_BYTES, PluginCliError } from "@get-bb/plugin-sdk";
+import { instructionFiles } from "@bb-plugins/instructions";
+import type { CodeReviewContext } from "../lib/context.ts";
 import {
   globalPlaybooks,
   projectPlaybooks,
   readPlaybook,
+  type CommandContext,
   type PlaybookLocation,
 } from "../lib/playbooks.ts";
 
@@ -70,68 +71,71 @@ function listResult({
   });
 }
 
-export const playbook = defineCommand({
-  summary: files.read("commands/playbook"),
-  options: {
-    name: { type: "string", description: files.read("commands/playbook-name") },
-    machine: { type: "string", description: files.read("commands/playbook-machine") },
-    directory: { type: "string", description: files.read("commands/playbook-directory") },
-    json: { type: "boolean", description: files.read("commands/playbook-json") },
-    offset: {
-      type: "integer",
-      min: 0,
-      max: 1000000,
-      default: 0,
-      description: files.read("commands/playbook-offset"),
+export function playbook({ bb }: CodeReviewContext) {
+  return cliCommand({
+    summary: files.read("commands/playbook"),
+    options: {
+      name: { type: "string", description: files.read("commands/playbook-name") },
+      machine: { type: "string", description: files.read("commands/playbook-machine") },
+      directory: { type: "string", description: files.read("commands/playbook-directory") },
+      json: { type: "boolean", description: files.read("commands/playbook-json") },
+      offset: {
+        type: "integer",
+        min: 0,
+        max: 1000000,
+        default: 0,
+        description: files.read("commands/playbook-offset"),
+      },
+      limit: {
+        type: "integer",
+        min: 1,
+        max: 256,
+        default: 50,
+        description: files.read("commands/playbook-limit"),
+      },
     },
-    limit: {
-      type: "integer",
-      min: 1,
-      max: 256,
-      default: 50,
-      description: files.read("commands/playbook-limit"),
+    async run({ options }, cli) {
+      const ctx: CommandContext = { bb, ...cli };
+      const locations = await globalPlaybooks();
+      const warnings: string[] = [];
+      if (options.name === undefined || options.name.startsWith("project/")) {
+        try {
+          const project = await projectPlaybooks(ctx, options);
+          locations.push(...project.locations);
+          warnings.push(...project.warnings);
+        } catch (error) {
+          if (
+            options.name !== undefined ||
+            (error instanceof PluginCliError && error.code === "invalid_project_location")
+          )
+            throw error;
+          warnings.push(`Project playbooks unavailable: ${diagnostic(error)}`);
+        }
+      }
+      if (options.name !== undefined) {
+        const location = locations.find((item) => item.id === options.name);
+        if (!location)
+          throw new PluginCliError(`Unknown review playbook: ${options.name}`, {
+            hint: warnings[0] ?? "Run bb review playbook to list available names.",
+          });
+        try {
+          const result = await readPlaybook(ctx, location);
+          return {
+            exitCode: 0,
+            stdout: options.json ? JSON.stringify(result) + "\n" : result.content,
+          };
+        } catch (error) {
+          throw new PluginCliError(`Cannot read ${location.id}: ${diagnostic(error)}`);
+        }
+      }
+      const index = await readIndex(ctx, locations);
+      return listResult({
+        playbooks: index.playbooks,
+        warnings: [...warnings, ...index.warnings],
+        json: options.json ?? false,
+        offset: options.offset,
+        limit: options.limit,
+      });
     },
-  },
-  async execute(ctx, { options }) {
-    const locations = await globalPlaybooks();
-    const warnings: string[] = [];
-    if (options.name === undefined || options.name.startsWith("project/")) {
-      try {
-        const project = await projectPlaybooks(ctx, options);
-        locations.push(...project.locations);
-        warnings.push(...project.warnings);
-      } catch (error) {
-        if (
-          options.name !== undefined ||
-          (error instanceof PluginCliError && error.code === "invalid_project_location")
-        )
-          throw error;
-        warnings.push(`Project playbooks unavailable: ${diagnostic(error)}`);
-      }
-    }
-    if (options.name !== undefined) {
-      const location = locations.find((item) => item.id === options.name);
-      if (!location)
-        throw new PluginCliError(`Unknown review playbook: ${options.name}`, {
-          hint: warnings[0] ?? "Run bb review playbook to list available names.",
-        });
-      try {
-        const result = await readPlaybook(ctx, location);
-        return {
-          exitCode: 0,
-          stdout: options.json ? JSON.stringify(result) + "\n" : result.content,
-        };
-      } catch (error) {
-        throw new PluginCliError(`Cannot read ${location.id}: ${diagnostic(error)}`);
-      }
-    }
-    const index = await readIndex(ctx, locations);
-    return listResult({
-      playbooks: index.playbooks,
-      warnings: [...warnings, ...index.warnings],
-      json: options.json ?? false,
-      offset: options.offset,
-      limit: options.limit,
-    });
-  },
-});
+  });
+}

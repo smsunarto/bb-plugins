@@ -1,5 +1,4 @@
 import { expect, test } from "bun:test";
-import { callProcedure } from "@bb-kit/core/rpc";
 import { fakeContext } from "../../../test/fake-gh.ts";
 import { editDraft } from "./edit-draft.ts";
 
@@ -10,7 +9,7 @@ test("rewrites the draft's body", async () => {
     },
   });
   expect(
-    await callProcedure(editDraft, ctx, {
+    await editDraft(ctx, {
       account: "octocat",
       commentId: "C1",
       body: "Rename it.",

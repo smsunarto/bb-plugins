@@ -27,6 +27,9 @@ export type RuleStore = {
   lastSession(threadId: string): Session | undefined;
 };
 
+/** What every RPC handler and command receives: the host plus the rule store. */
+export type AgentInstructionsContext = Readonly<{ bb: BbPluginApi; store: RuleStore }>;
+
 const REMEMBERED_SESSIONS = 200;
 
 export function openStore(bb: BbPluginApi): RuleStore {

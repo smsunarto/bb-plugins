@@ -14,7 +14,7 @@ test("lists the machines and the one the panel acts on", async () => {
     }),
   });
 
-  assert.deepEqual(await hosts.execute(ctx), {
+  assert.deepEqual(await hosts(ctx), {
     selectedHostId: "host_mac",
     hosts: [
       { id: "host_server", name: "linux-builder", connected: true },

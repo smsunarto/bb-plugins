@@ -1,7 +1,7 @@
 {
   "name": "@smsunarto/bb-plugin-gitbutler",
   "version": "0.2.0",
-  "description": "Browse a GitButler workspace \u2014 stacks, branches, commits, and diffs \u2014 from a bb thread panel.",
+  "description": "Browse a GitButler workspace — stacks, branches, commits, and diffs — from a bb thread panel.",
   "license": "MIT",
   "author": "Scott Sunarto",
   "homepage": "https://github.com/smsunarto/bb-plugins/tree/main/plugins/gitbutler",
@@ -44,13 +44,15 @@
     "LICENSE"
   ],
   "dependencies": {
-    "@bb-kit/core": "workspace:*",
+    "@bb-plugins/instructions": "workspace:*",
     "@radix-ui/react-slot": "^1.3.0",
     "@tanstack/react-query": "^5.101.4",
     "smol-toml": "1.8.0",
     "zod": "^4.4.3"
   },
   "devDependencies": {
+    "@bb-plugins/testing": "workspace:*",
+    "@bb-plugins/ui": "workspace:*",
     "@get-bb/plugin-sdk": "0.6.75",
     "@pierre/diffs": "^1.2.9",
     "@testing-library/react": "16.3.2",
@@ -65,8 +67,7 @@
     "react-dom": "19.2.8",
     "tailwind-merge": "^3.4.0",
     "tsx": "4.23.12",
-    "typescript": "^6.0.0",
-    "@bb-plugins/ui": "workspace:*"
+    "typescript": "^6.0.0"
   },
   "scripts": {
     "dev": "bb plugin dev .",
@@ -74,7 +75,6 @@
     "lint": "oxlint",
     "typecheck": "tsc --noEmit",
     "test": "bun test --timeout=30000",
-    "check": "node --import tsx ../../packages/bb-kit-dev/src/bin.ts check",
     "clean": "rm -rf dist"
   }
 }

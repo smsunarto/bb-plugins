@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
-import { sentryErrorReporter, type SentryPluginFailure } from "@bb-kit/sentry/node";
+import { sentryErrorReporter, type SentryPluginFailure } from "@bb-plugins/sentry/node";
 import { createAmpPlugin } from "../server.ts";
 
 test("Amp enables scrubbed telemetry through its plugin setting", async () => {

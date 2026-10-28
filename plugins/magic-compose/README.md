@@ -1,6 +1,6 @@
 # Magic Compose
 
-Forked from [SawyerHood/sawyer-plugins](https://github.com/SawyerHood/sawyer-plugins/tree/d3424f24e2cebe91da4e72cb38feb023da808922/plugins/magic-compose) at `d3424f24e2cebe91da4e72cb38feb023da808922`. Copyright and MIT license retained in [LICENSE](./LICENSE). Local packaging uses `@bb-kit/core` and this repository's SDK version.
+Forked from [SawyerHood/sawyer-plugins](https://github.com/SawyerHood/sawyer-plugins/tree/d3424f24e2cebe91da4e72cb38feb023da808922/plugins/magic-compose) at `d3424f24e2cebe91da4e72cb38feb023da808922`. Copyright and MIT license retained in [LICENSE](./LICENSE). Local packaging uses `@get-bb/plugin-sdk` at this repository's SDK version.
 A BB plugin that picks where a new thread runs. Switch on **Magic Compose**, the wand button beside the send button in the new-thread composer, and [Jev](https://typesafe.ai/blog/introducing-system-one-models-and-jev), TypeSafe's classifier model, chooses the project, machine, model, reasoning level, and environment as you type. It calls Jev with your own key, through the [Vercel AI Gateway](https://vercel.com/changelog/typesafe-ai-jev-now-available-on-ai-gateway), [OpenRouter](https://openrouter.ai/typesafe/jev-1.13), or both.
 
 - With Magic Compose on, the composer's pickers follow the draft: Jev is asked again as you type, and the project, machine, environment, model, and reasoning pickers move to its answer. Nothing is hidden, so you see every choice, and you send the thread yourself.

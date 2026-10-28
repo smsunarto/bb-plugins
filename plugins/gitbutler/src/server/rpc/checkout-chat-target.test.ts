@@ -139,7 +139,7 @@ function context() {
 
 test("returns the exact existing checkout environment without starting an agent", async () => {
   const fixture = context();
-  expect(await checkoutChatTarget.execute(fixture.ctx, input)).toEqual(ready);
+  expect(await checkoutChatTarget(fixture.ctx, input)).toEqual(ready);
   expect(fixture.spawned).toEqual([]);
   expect(fixture.calls).toContainEqual({
     method: "checkoutIdentity",
@@ -156,7 +156,7 @@ test("accepts the selected checkout alias but does not scan unrelated environmen
   const fixture = context();
   fixture.environments[0] = environment({ path: "/alias/task" });
   fixture.environments.push(environment({ id: "wrapper", path: "/wrapper" }));
-  expect(await checkoutChatTarget.execute(fixture.ctx, input)).toEqual(ready);
+  expect(await checkoutChatTarget(fixture.ctx, input)).toEqual(ready);
   expect(
     fixture.calls
       .filter(({ method }) => method === "checkoutIdentity")
@@ -178,17 +178,17 @@ test("orphan, foreign, non-ready and retiring environments never fall back to th
   ]) {
     const fixture = context();
     fixture.environments[0] = environment(overrides);
-    expect(await checkoutChatTarget.execute(fixture.ctx, input)).toEqual({
+    expect(await checkoutChatTarget(fixture.ctx, input)).toEqual({
       state: "unavailable",
       reason:
         "This checkout needs its own ready BB environment and a visible, unarchived thread before opening a new chat here.",
     });
     fixture.environments[0] = environment();
-    expect(await checkoutChatTarget.execute(fixture.ctx, input)).toEqual(ready);
+    expect(await checkoutChatTarget(fixture.ctx, input)).toEqual(ready);
   }
   const orphan = context();
   orphan.environments.length = 0;
-  expect(await checkoutChatTarget.execute(orphan.ctx, input)).toMatchObject({
+  expect(await checkoutChatTarget(orphan.ctx, input)).toMatchObject({
     state: "unavailable",
   });
 });
@@ -204,42 +204,42 @@ test("requires a visible, unarchived thread belonging to the exact environment, 
   ]) {
     const fixture = context();
     fixture.threads[0] = visibleThread(overrides);
-    expect(await checkoutChatTarget.execute(fixture.ctx, input)).toEqual({
+    expect(await checkoutChatTarget(fixture.ctx, input)).toEqual({
       state: "unavailable",
       reason:
         "This checkout needs a visible, unarchived thread in its ready BB environment before opening a new chat here.",
     });
     fixture.threads[0] = visibleThread();
-    expect(await checkoutChatTarget.execute(fixture.ctx, input)).toEqual(ready);
+    expect(await checkoutChatTarget(fixture.ctx, input)).toEqual(ready);
   }
 });
 
 test("does not choose between ambiguous environments even if one has no sidebar thread", async () => {
   const fixture = context();
   fixture.environments.push(environment({ id: "duplicate" }));
-  expect(await checkoutChatTarget.execute(fixture.ctx, input)).toEqual({
+  expect(await checkoutChatTarget(fixture.ctx, input)).toEqual({
     state: "unavailable",
     reason:
       "More than one BB environment matches this checkout. Open its existing thread to choose the intended environment.",
   });
   fixture.environments.pop();
-  expect(await checkoutChatTarget.execute(fixture.ctx, input)).toEqual(ready);
+  expect(await checkoutChatTarget(fixture.ctx, input)).toEqual(ready);
 });
 
 test("requires the checkout machine to be connected and active", async () => {
   const fixture = context();
   fixture.host.status = "disconnected";
-  expect(await checkoutChatTarget.execute(fixture.ctx, input)).toEqual({
+  expect(await checkoutChatTarget(fixture.ctx, input)).toEqual({
     state: "unavailable",
     reason: "Build must be connected and active before opening a chat.",
   });
   fixture.host.status = "connected";
   fixture.host.lifecycle.phase = "suspended";
-  expect(await checkoutChatTarget.execute(fixture.ctx, input)).toMatchObject({
+  expect(await checkoutChatTarget(fixture.ctx, input)).toMatchObject({
     state: "unavailable",
   });
   fixture.host.lifecycle.phase = "active";
-  expect(await checkoutChatTarget.execute(fixture.ctx, input)).toEqual(ready);
+  expect(await checkoutChatTarget(fixture.ctx, input)).toEqual(ready);
 });
 
 test("a forged checkout cannot bypass host provenance validation or supply browser authority", async () => {
@@ -251,12 +251,12 @@ test("a forged checkout cannot bypass host provenance validation or supply brows
   ).toThrow();
   const fixture = context();
   await expect(
-    checkoutChatTarget.execute(fixture.ctx, {
+    checkoutChatTarget(fixture.ctx, {
       ...input,
       checkout: { ...checkout, path: "/unrelated" },
     }),
   ).rejects.toThrow("no longer registered");
-  expect(await checkoutChatTarget.execute(fixture.ctx, input)).toEqual(ready);
+  expect(await checkoutChatTarget(fixture.ctx, input)).toEqual(ready);
   expect(fixture.spawned).toEqual([]);
 });
 
@@ -266,12 +266,12 @@ test("a parent environment move before or during target resolution rejects the s
     if (phase === "before") fixture.move();
     else if (phase === "origin") fixture.duringOrigin(fixture.move);
     else fixture.duringEnvironmentRead(fixture.move);
-    await expect(checkoutChatTarget.execute(fixture.ctx, input)).rejects.toThrow(
+    await expect(checkoutChatTarget(fixture.ctx, input)).rejects.toThrow(
       "moved to another environment",
     );
     expect(fixture.spawned).toEqual([]);
   }
-  expect(await checkoutChatTarget.execute(context().ctx, input)).toEqual(ready);
+  expect(await checkoutChatTarget(context().ctx, input)).toEqual(ready);
 });
 
 test("rechecks environment readiness before returning a native reuse target", async () => {
@@ -279,10 +279,10 @@ test("rechecks environment readiness before returning a native reuse target", as
   fixture.duringEnvironmentRead(() => {
     fixture.environments[0] = environment({ status: "destroyed" });
   });
-  expect(await checkoutChatTarget.execute(fixture.ctx, input)).toMatchObject({
+  expect(await checkoutChatTarget(fixture.ctx, input)).toMatchObject({
     state: "unavailable",
   });
-  expect(await checkoutChatTarget.execute(context().ctx, input)).toEqual(ready);
+  expect(await checkoutChatTarget(context().ctx, input)).toEqual(ready);
 });
 
 test("pages environment and visible-thread inventory without scanning unrelated checkout paths", async () => {
@@ -297,7 +297,7 @@ test("pages environment and visible-thread inventory without scanning unrelated 
       visibleThread({ id: `hidden-${index}`, visibility: "hidden" }),
     ),
   );
-  expect(await checkoutChatTarget.execute(fixture.ctx, input)).toEqual(ready);
+  expect(await checkoutChatTarget(fixture.ctx, input)).toEqual(ready);
   expect(
     fixture.calls
       .filter(({ method }) => method === "checkoutIdentity")
@@ -310,8 +310,6 @@ test("SDK inventory failures are surfaced instead of being treated as missing ch
   fixture.duringEnvironmentRead(() => {
     throw new Error("Inventory lookup failed");
   });
-  await expect(checkoutChatTarget.execute(fixture.ctx, input)).rejects.toThrow(
-    "Inventory lookup failed",
-  );
-  expect(await checkoutChatTarget.execute(context().ctx, input)).toEqual(ready);
+  await expect(checkoutChatTarget(fixture.ctx, input)).rejects.toThrow("Inventory lookup failed");
+  expect(await checkoutChatTarget(context().ctx, input)).toEqual(ready);
 });

@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState } from "react";
 import { experimental_Icon as Icon, useRealtimeConnectionState } from "@get-bb/plugin-sdk/app";
-import { pluginQueryClient } from "@bb-kit/core/rpc/query";
+import { queryClient } from "./query.ts";
 import type { InboxPr } from "../shared/schema.ts";
 import { absoluteTime, relativeTime } from "./format.ts";
 import { errorText } from "./notice.tsx";
-import { rpc } from "./rpc.ts";
+import { queryKey, useCodeReviewRpc } from "./rpc.ts";
 import { LOCAL_READS } from "./local-cache.ts";
 import { cn } from "./lib/utils.ts";
 
@@ -107,7 +107,7 @@ export function useReconcile(): void {
         "sharedComparison",
         "localChanges",
       ]) {
-        void pluginQueryClient.invalidateQueries({ queryKey: [method] }, { cancelRefetch: false });
+        void queryClient.invalidateQueries({ queryKey: [method] }, { cancelRefetch: false });
       }
     }
     previous.current = state;
@@ -118,7 +118,7 @@ export function useReconcile(): void {
 let activePrefetches = 0;
 /** A short hover/focus dwell, a two-read cap, and TanStack deduplication bound speculative work. */
 export function usePrPrefetch() {
-  const client = rpc.useClient();
+  const client = useCodeReviewRpc();
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   useEffect(
     () => () => {
@@ -132,9 +132,9 @@ export function usePrPrefetch() {
       if (activePrefetches >= 2) return;
       activePrefetches++;
       const input = { account: pr.account, ref: pr.ref };
-      const request = pluginQueryClient.prefetchQuery({
-        queryKey: rpc.pullRequest.queryKey(input),
-        queryFn: () => client.pullRequest(input),
+      const request = queryClient.prefetchQuery({
+        queryKey: queryKey("pullRequest", input),
+        queryFn: () => client.call("pullRequest", input),
         staleTime: 15_000,
       });
       void request.finally(() => {

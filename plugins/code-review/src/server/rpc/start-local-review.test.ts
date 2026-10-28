@@ -1,5 +1,4 @@
 import { expect, test } from "bun:test";
-import { callProcedure } from "@bb-kit/core/rpc";
 import { fakeContext } from "../../../test/fake-gh.ts";
 import { BOTTOM, TOP, UNPUBLISHED, fakeGitButler } from "../../../test/fake-gitbutler.ts";
 import { branchActivity } from "./branch-activity.ts";
@@ -48,7 +47,7 @@ function context(
 test("reviews the branch in the checkout that holds it, read-only, and links it to the branch", async () => {
   const { ctx, harness } = context();
 
-  expect(await callProcedure(startLocalReview, ctx, { id: RATE_LIMIT })).toEqual({
+  expect(await startLocalReview(ctx, { id: RATE_LIMIT })).toEqual({
     threadId: "thr_1",
   });
 
@@ -73,7 +72,7 @@ test("reviews the branch in the checkout that holds it, read-only, and links it 
   expect(prompt).toContain(`- Base: \`${BOTTOM}\`, the head of \`scott/login-copy\``);
   expect(prompt).toContain("Do not modify files, check out, reset, stash, clean, commit");
 
-  expect(await callProcedure(branchActivity, ctx, { id: RATE_LIMIT })).toMatchObject({
+  expect(await branchActivity(ctx, { id: RATE_LIMIT })).toMatchObject({
     threads: [
       {
         threadId: "thr_1",
@@ -89,12 +88,12 @@ test("reviews the branch in the checkout that holds it, read-only, and links it 
 test("asking again while the review of this head runs opens that review", async () => {
   const { ctx, harness, status } = context();
 
-  await callProcedure(startLocalReview, ctx, { id: RATE_LIMIT });
-  expect(await callProcedure(startLocalReview, ctx, { id: RATE_LIMIT })).toEqual({
+  await startLocalReview(ctx, { id: RATE_LIMIT });
+  expect(await startLocalReview(ctx, { id: RATE_LIMIT })).toEqual({
     threadId: "thr_1",
   });
   status.set("thr_1", "idle");
-  expect(await callProcedure(startLocalReview, ctx, { id: RATE_LIMIT })).toEqual({
+  expect(await startLocalReview(ctx, { id: RATE_LIMIT })).toEqual({
     threadId: "thr_2",
   });
   expect(harness.sdk.callsTo("threads.spawn")).toHaveLength(2);
@@ -114,7 +113,7 @@ test("the checkout's ready environment is reused, in its own project", async () 
     ],
   });
 
-  await callProcedure(startLocalReview, ctx, { id: RATE_LIMIT });
+  await startLocalReview(ctx, { id: RATE_LIMIT });
 
   expect(harness.sdk.callsTo("threads.spawn")[0]?.[0]).toMatchObject({
     projectId: "p-other",
@@ -125,7 +124,7 @@ test("the checkout's ready environment is reused, in its own project", async () 
 test("a checkout no project knows, with no GitHub origin, asks for a project", async () => {
   const { ctx, harness } = context();
 
-  await expect(callProcedure(startLocalReview, ctx, { id: NAV })).rejects.toThrow(
+  await expect(startLocalReview(ctx, { id: NAV })).rejects.toThrow(
     "Add web as a bb project to review it with bb.",
   );
   expect(harness.sdk.callsTo("threads.spawn")).toEqual([]);
@@ -143,7 +142,7 @@ test("a project whose source is the checkout takes it, whatever its remote", asy
     ],
   });
 
-  await callProcedure(startLocalReview, ctx, { id: NAV });
+  await startLocalReview(ctx, { id: NAV });
 
   expect(harness.sdk.callsTo("threads.spawn")[0]?.[0]).toMatchObject({
     projectId: "p-web",
@@ -158,7 +157,7 @@ test("a project whose source is the checkout takes it, whatever its remote", asy
 test("a branch that was published since the page loaded is not reviewed", async () => {
   const { ctx, harness } = context();
 
-  await expect(callProcedure(startLocalReview, ctx, { id: "000000000000" })).rejects.toThrow(
+  await expect(startLocalReview(ctx, { id: "000000000000" })).rejects.toThrow(
     "That branch has no unpublished commits any more",
   );
   expect(harness.sdk.callsTo("threads.spawn")).toEqual([]);
@@ -174,7 +173,7 @@ test("a checkout under an environment's repos/ is reviewed in that environment's
     ],
   });
 
-  await callProcedure(startLocalReview, ctx, { id: "51c60eab16c1" });
+  await startLocalReview(ctx, { id: "51c60eab16c1" });
 
   const [[spawn]] = harness.sdk.callsTo("threads.spawn") as [[Record<string, unknown>]];
   expect(spawn).toMatchObject({

@@ -1,7 +1,8 @@
 import type { ReactNode } from "react";
 import { UrlLink, experimental_Icon as Icon, useBbNavigate } from "@get-bb/plugin-sdk/app";
 import type { PluginNavPanelProps } from "@get-bb/plugin-sdk/app";
-import { PluginQueryBoundary, pluginQueryClient } from "@bb-kit/core/rpc/query";
+import { QueryClientProvider } from "@tanstack/react-query";
+import { queryClient } from "./query.ts";
 import {
   parseBranchSubPath,
   parseSharedComparisonSubPath,
@@ -20,7 +21,7 @@ import { SharedComparisonView } from "./shared-comparison.tsx";
 import { cn } from "./lib/utils.ts";
 import { Loading, Notice, RetryButton, errorText } from "./notice.tsx";
 import { PrView } from "./pr-view.tsx";
-import { rpc } from "./rpc.ts";
+import { queryKey, useRpcQuery } from "./rpc.ts";
 
 const SHELL = "flex h-full min-h-0 min-w-0 overflow-hidden bg-background text-xs text-foreground";
 const GH_INSTALL_URL = "https://cli.github.com";
@@ -35,16 +36,16 @@ const STATUS_QUERY = { staleTime: 5 * 60_000 } as const;
  */
 export function CodeReviewPage({ subPath }: PluginNavPanelProps) {
   return (
-    <PluginQueryBoundary>
+    <QueryClientProvider client={queryClient}>
       <TooltipProvider delayDuration={400}>
         <Page subPath={subPath} />
       </TooltipProvider>
-    </PluginQueryBoundary>
+    </QueryClientProvider>
   );
 }
 
 function Page({ subPath }: { subPath: string }) {
-  const status = rpc.status.useQuery(STATUS_QUERY);
+  const status = useRpcQuery("status", null, STATUS_QUERY);
   const comparison = parseSharedComparisonSubPath(subPath);
   if (comparison)
     return (
@@ -125,10 +126,10 @@ function signedOut(status: Status | undefined): boolean {
 
 /** A restored PR can open even when its inbox was evicted or GitHub is offline. */
 function cachedLoginFor(route: PrRoute | null): string | undefined {
-  const inbox = pluginQueryClient.getQueryData<InboxData>(rpc.inbox.queryKey());
+  const inbox = queryClient.getQueryData<InboxData>(queryKey("inbox"));
   if (inbox?.accounts[0]) return inbox.accounts[0];
   if (!route) return undefined;
-  return pluginQueryClient
+  return queryClient
     .getQueriesData<PullRequest>({ queryKey: ["pullRequest"] })
     .map(([, data]) => data)
     .find(
@@ -146,7 +147,7 @@ function cachedLoginFor(route: PrRoute | null): string | undefined {
  */
 function routeAccount(route: PrRoute, active: string): string {
   if (route.account) return route.account;
-  const inbox = pluginQueryClient.getQueryData<InboxData>(rpc.inbox.queryKey());
+  const inbox = queryClient.getQueryData<InboxData>(queryKey("inbox"));
   const listed = inbox
     ? [...inbox.assigned, ...inbox.team, ...inbox.authored, ...inbox.pinned].find((pr) =>
         sameRef(pr.ref, route.ref),
@@ -158,19 +159,19 @@ function routeAccount(route: PrRoute, active: string): string {
 /** The Inbox tab in the page's right panel: the viewer's queues, once gh can answer. */
 export function InboxTab({ subPath }: PluginNavPanelProps) {
   return (
-    <PluginQueryBoundary>
+    <QueryClientProvider client={queryClient}>
       <TooltipProvider delayDuration={400}>
         <InboxTabBody subPath={subPath} />
       </TooltipProvider>
-    </PluginQueryBoundary>
+    </QueryClientProvider>
   );
 }
 
 function InboxTabBody({ subPath }: { subPath: string }) {
-  const status = rpc.status.useQuery(STATUS_QUERY);
+  const status = useRpcQuery("status", null, STATUS_QUERY);
   if (
     status.data?.ok ||
-    (!signedOut(status.data) && pluginQueryClient.getQueryData<InboxData>(rpc.inbox.queryKey()))
+    (!signedOut(status.data) && queryClient.getQueryData<InboxData>(queryKey("inbox")))
   ) {
     return (
       <nav aria-label="Pull request inbox" className={cn(SHELL, "flex-col")}>

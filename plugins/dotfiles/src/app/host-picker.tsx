@@ -1,7 +1,7 @@
 import type { ReactElement } from "react";
 import { toast } from "sonner";
-import { pluginQueryClient } from "@bb-kit/core/rpc/query";
-import { rpc } from "./rpc.ts";
+import { queryClient } from "./query.ts";
+import { queryKey, useRpcMutation, useRpcQuery } from "./rpc.ts";
 import { errorMessage } from "./tasks.ts";
 
 /**
@@ -10,16 +10,16 @@ import { errorMessage } from "./tasks.ts";
  * or a draft never crosses to another machine's checkout.
  */
 export function usePanelOverview() {
-  const hosts = rpc.hosts.useQuery();
+  const hosts = useRpcQuery("hosts");
   // A failed host list leaves the pick to the server rather than stalling.
   const hostId = hosts.data?.selectedHostId ?? undefined;
-  return rpc.overview.useQuery({ hostId }, { enabled: !hosts.isPending });
+  return useRpcQuery("overview", { hostId }, { enabled: !hosts.isPending });
 }
 
 export function HostPicker(): ReactElement | null {
-  const hosts = rpc.hosts.useQuery();
-  const select = rpc.selectHost.useMutation({
-    onSuccess: () => pluginQueryClient.invalidateQueries({ queryKey: rpc.hosts.queryKey() }),
+  const hosts = useRpcQuery("hosts");
+  const select = useRpcMutation("selectHost", {
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKey("hosts") }),
     onError: (error) => toast.error(`Switching machine failed: ${errorMessage(error)}`),
   });
   if (hosts.data === undefined) return null;

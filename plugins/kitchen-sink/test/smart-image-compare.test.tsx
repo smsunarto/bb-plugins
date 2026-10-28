@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { installDom } from "@bb-kit/core/testing";
+import { installDom } from "@bb-plugins/testing";
 installDom();
 const { fireEvent, waitFor } = await import("@testing-library/react");
 const { renderSlot } = await import("@get-bb/plugin-sdk/testing/app");

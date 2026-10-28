@@ -1,6 +1,6 @@
 import { afterEach, test } from "bun:test";
 import assert from "node:assert/strict";
-import { installDom } from "@bb-kit/core/testing";
+import { installDom } from "@bb-plugins/testing";
 import type { PluginNavPanelProps } from "@get-bb/plugin-sdk/app";
 import type { ComponentType } from "react";
 
@@ -9,9 +9,9 @@ import type { ComponentType } from "react";
 installDom();
 const { loadPluginApp, renderSlot } = await import("@get-bb/plugin-sdk/testing/app");
 const { fireEvent } = await import("@testing-library/react");
-const { pluginQueryClient } = await import("@bb-kit/core/rpc/query");
+const { queryClient } = await import("./query.ts");
 
-afterEach(() => pluginQueryClient.clear());
+afterEach(() => queryClient.clear());
 
 type CapturedApp = Awaited<ReturnType<typeof loadPluginApp>>;
 

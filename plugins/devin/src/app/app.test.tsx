@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, expect, test } from "bun:test";
-import { installDom } from "@bb-kit/core/testing";
+import { installDom } from "@bb-plugins/testing";
 import type { PluginBrowserBbSdk } from "@get-bb/plugin-sdk/app";
 import type { CloudSessionView } from "../shared/devin.ts";
 
@@ -7,8 +7,8 @@ installDom();
 const { loadPluginApp, renderSlot } = await import("@get-bb/plugin-sdk/testing/app");
 const { useComposer } = await import("@get-bb/plugin-sdk/app");
 const { act, cleanup, fireEvent } = await import("@testing-library/react");
-const { pluginQueryClient } = await import("@bb-kit/core/rpc/query");
-beforeEach(() => pluginQueryClient.clear());
+const { queryClient } = await import("./query.ts");
+beforeEach(() => queryClient.clear());
 afterEach(cleanup);
 
 type ThreadChange = Parameters<

@@ -1,4 +1,4 @@
-import { instructionFiles } from "@bb-kit/core/instructions";
+import { instructionFiles } from "@bb-plugins/instructions";
 // @smsunarto/bb-plugin-gh-stack — stacked-PR visibility and actions for BB threads.
 //
 // Runs `gh stack` commands in a thread's workspace (server host):

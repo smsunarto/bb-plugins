@@ -1,5 +1,4 @@
 import { expect, test } from "bun:test";
-import { callProcedure } from "@bb-kit/core/rpc";
 import { fakeContext } from "../../../test/fake-gh.ts";
 import { agentActivity } from "./agent-activity.ts";
 
@@ -27,7 +26,7 @@ test("lists the threads started for the pull request with their live status", as
     baseRefName: "main",
   });
 
-  expect(await callProcedure(agentActivity, ctx, { ref })).toEqual({
+  expect(await agentActivity(ctx, { ref })).toEqual({
     threads: [
       {
         threadId: "t1",

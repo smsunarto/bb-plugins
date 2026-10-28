@@ -1,14 +1,17 @@
-import { defineCommand } from "@bb-kit/core/command";
-import { defineQuery, defineMutation } from "@bb-kit/core/rpc";
-import { definePlugin, type Context } from "@bb-kit/core/plugin";
-import type { PluginRpcHandlers, PluginCliPositional } from "@get-bb/plugin-sdk";
 import { parseReasoningLevel, DEFAULT_REASONING_LEVELS, REASONING_LEVELS } from "./lib/reasoning";
 
 // Magic Compose: route a new-thread prompt to a project, machine, model, and
 // reasoning level with Jev (TypeSafe's classifier) on the Vercel AI Gateway,
 // then start the thread there. app.tsx owns the composer toggle; this file
 // gathers the candidates, asks Jev, and spawns.
-import { defineRpcContract, type BbPluginApi } from "@get-bb/plugin-sdk";
+import {
+  cliCommand,
+  defineCli,
+  defineRpcContract,
+  type BbPluginApi,
+  type PluginCliPositional,
+  type PluginRpcHandlers,
+} from "@get-bb/plugin-sdk";
 import { z } from "zod";
 import { hostContract, machineStatsSchema } from "./contract";
 import {
@@ -1403,6 +1406,8 @@ const legacyRpcContract = defineRpcContract({
 });
 
 type Services = ReturnType<typeof createServices>;
+/** What every command receives: the host plus the plugin services. */
+type PluginContext = Readonly<{ bb: BbPluginApi } & Services>;
 const options = {
   days: { type: "string", description: "Look back this many days (1–90)." },
   map: {
@@ -1428,14 +1433,14 @@ type CommandSpec = {
   optionKeys: readonly (keyof typeof options)[];
   positionals?: readonly PluginCliPositional[];
 };
-function forwardCommand(spec: CommandSpec) {
+function forwardCommand(ctx: PluginContext, spec: CommandSpec) {
   const positionals = spec.positionals ?? [];
-  return defineCommand({
+  return cliCommand({
     summary: spec.summary,
     description: spec.description,
     options: Object.fromEntries(spec.optionKeys.map((key) => [key, options[key]])),
     positionals,
-    execute: (ctx: Context<Services>, input) =>
+    run: (input) =>
       ctx.runCli([
         spec.name,
         ...positionals.flatMap(({ name }) => {
@@ -1456,139 +1461,96 @@ function forwardCommand(spec: CommandSpec) {
   });
 }
 
-export default definePlugin({
-  pluginId: "magic-compose",
-  services: createServices,
-  setup: ({ bb, handlers }) => {
-    bb.rpc.register(legacyRpcContract, {
-      preferences_get: handlers.preferencesGet,
-      preferences_set: handlers.preferencesSet,
-      rotation_get: handlers.rotationGet,
-      rotation_set: handlers.rotationSet,
-      scope_get: handlers.scopeGet,
-      scope_set: handlers.scopeSet,
-      rotation_seed: handlers.rotationSeed,
-    });
-  },
-  rpc: {
-    status: defineQuery({
-      output: rpcContract.status.output,
-      execute: (ctx: Context<Services>) => ctx.handlers.status(),
+export default async function plugin(bb: BbPluginApi): Promise<void> {
+  const ctx: PluginContext = Object.freeze({ bb, ...createServices(bb) });
+  const { handlers } = ctx;
+  bb.rpc.register(rpcContract, handlers);
+  bb.cli.register(
+    defineCli({
+      name: "magic-compose",
+      summary: "CLI for the magic-compose plugin",
+      commands: {
+        route: forwardCommand(ctx, {
+          name: "route",
+          summary: "Show where Jev would send a prompt",
+          description:
+            "Usage: bb magic-compose route <prompt> [--json] [--profile]. Starts no thread.",
+          optionKeys: ["json", "profile"],
+          positionals: [
+            { name: "prompt", description: "Prompt to route.", required: true, variadic: true },
+          ],
+        }),
+        spawn: forwardCommand(ctx, {
+          name: "spawn",
+          summary: "Route a prompt and start its thread",
+          description: "Usage: bb magic-compose spawn <prompt> [--json] [--profile].",
+          optionKeys: ["json", "profile"],
+          positionals: [
+            {
+              name: "prompt",
+              description: "Prompt for the new thread.",
+              required: true,
+              variadic: true,
+            },
+          ],
+        }),
+        machines: forwardCommand(ctx, {
+          name: "machines",
+          summary: "Describe connected machines",
+          description: "Usage: bb magic-compose machines [--json].",
+          optionKeys: ["json"],
+          positionals: [],
+        }),
+        rotation: forwardCommand(ctx, {
+          name: "rotation",
+          summary: "Get the rotation or set it from JSON",
+          description:
+            "Use bb magic-compose rotation get [--json], or rotation set <json>. JSON is a list of {providerId, model, note, reasoningLevel}.",
+          optionKeys: ["json"],
+          positionals: [
+            { name: "action", description: "get (default) or set." },
+            { name: "json", description: "Rotation JSON for set.", variadic: true },
+          ],
+        }),
+        preferences: forwardCommand(ctx, {
+          name: "preferences",
+          summary: "Get preferences or set a key and value",
+          description:
+            "Use bb magic-compose preferences get [--json], or preferences set <key> <value>. Non-text values use JSON.",
+          optionKeys: ["json"],
+          positionals: [
+            { name: "action", description: "get (default) or set." },
+            { name: "key", description: "Preference name for set." },
+            { name: "value", description: "Preference value for set.", variadic: true },
+          ],
+        }),
+        history: forwardCommand(ctx, {
+          name: "history",
+          summary: "Show the models and effort you chose",
+          description:
+            "Usage: bb magic-compose history [--days 14] [--include-origin <plugin-id>]... [--json].",
+          optionKeys: ["days", "include-origin", "json"],
+          positionals: [],
+        }),
+        backtest: forwardCommand(ctx, {
+          name: "backtest",
+          summary: "Compare routing decisions with your past choices",
+          description:
+            "Usage: bb magic-compose backtest [--days 14] [--map <regex>=<model>]... [--exclude <regex>] [--limit 250] [--include-origin <plugin-id>]... [--json].",
+          optionKeys: ["days", "map", "exclude", "limit", "include-origin", "json"],
+          positionals: [],
+        }),
+      },
     }),
-    preferencesGet: defineQuery({
-      output: rpcContract.preferencesGet.output,
-      execute: (ctx: Context<Services>) => ctx.handlers.preferencesGet(),
-    }),
-    preferencesSet: defineMutation({
-      input: rpcContract.preferencesSet.input,
-      output: rpcContract.preferencesSet.output,
-      execute: (ctx: Context<Services>, input) => ctx.handlers.preferencesSet(input),
-    }),
-    machines: defineMutation({
-      output: rpcContract.machines.output,
-      execute: (ctx: Context<Services>) => ctx.handlers.machines(),
-    }),
-    warm: defineQuery({
-      output: rpcContract.warm.output,
-      execute: (ctx: Context<Services>) => ctx.handlers.warm(),
-    }),
-    rotationGet: defineQuery({
-      output: rpcContract.rotationGet.output,
-      execute: (ctx: Context<Services>) => ctx.handlers.rotationGet(),
-    }),
-    rotationSet: defineMutation({
-      input: rpcContract.rotationSet.input,
-      output: rpcContract.rotationSet.output,
-      execute: (ctx: Context<Services>, input) => ctx.handlers.rotationSet(input),
-    }),
-    scopeGet: defineQuery({
-      output: rpcContract.scopeGet.output,
-      execute: (ctx: Context<Services>) => ctx.handlers.scopeGet(),
-    }),
-    scopeSet: defineMutation({
-      input: rpcContract.scopeSet.input,
-      output: rpcContract.scopeSet.output,
-      execute: (ctx: Context<Services>, input) => ctx.handlers.scopeSet(input),
-    }),
-    rotationSeed: defineQuery({
-      output: rpcContract.rotationSeed.output,
-      execute: (ctx: Context<Services>) => ctx.handlers.rotationSeed(),
-    }),
-    preview: defineQuery({
-      input: rpcContract.preview.input,
-      output: rpcContract.preview.output,
-      execute: (ctx: Context<Services>, input) => ctx.handlers.preview(input),
-    }),
-  },
-  command: {
-    route: forwardCommand({
-      name: "route",
-      summary: "Show where Jev would send a prompt",
-      description: "Usage: bb magic-compose route <prompt> [--json] [--profile]. Starts no thread.",
-      optionKeys: ["json", "profile"],
-      positionals: [
-        { name: "prompt", description: "Prompt to route.", required: true, variadic: true },
-      ],
-    }),
-    spawn: forwardCommand({
-      name: "spawn",
-      summary: "Route a prompt and start its thread",
-      description: "Usage: bb magic-compose spawn <prompt> [--json] [--profile].",
-      optionKeys: ["json", "profile"],
-      positionals: [
-        {
-          name: "prompt",
-          description: "Prompt for the new thread.",
-          required: true,
-          variadic: true,
-        },
-      ],
-    }),
-    machines: forwardCommand({
-      name: "machines",
-      summary: "Describe connected machines",
-      description: "Usage: bb magic-compose machines [--json].",
-      optionKeys: ["json"],
-      positionals: [],
-    }),
-    rotation: forwardCommand({
-      name: "rotation",
-      summary: "Get the rotation or set it from JSON",
-      description:
-        "Use bb magic-compose rotation get [--json], or rotation set <json>. JSON is a list of {providerId, model, note, reasoningLevel}.",
-      optionKeys: ["json"],
-      positionals: [
-        { name: "action", description: "get (default) or set." },
-        { name: "json", description: "Rotation JSON for set.", variadic: true },
-      ],
-    }),
-    preferences: forwardCommand({
-      name: "preferences",
-      summary: "Get preferences or set a key and value",
-      description:
-        "Use bb magic-compose preferences get [--json], or preferences set <key> <value>. Non-text values use JSON.",
-      optionKeys: ["json"],
-      positionals: [
-        { name: "action", description: "get (default) or set." },
-        { name: "key", description: "Preference name for set." },
-        { name: "value", description: "Preference value for set.", variadic: true },
-      ],
-    }),
-    history: forwardCommand({
-      name: "history",
-      summary: "Show the models and effort you chose",
-      description:
-        "Usage: bb magic-compose history [--days 14] [--include-origin <plugin-id>]... [--json].",
-      optionKeys: ["days", "include-origin", "json"],
-      positionals: [],
-    }),
-    backtest: forwardCommand({
-      name: "backtest",
-      summary: "Compare routing decisions with your past choices",
-      description:
-        "Usage: bb magic-compose backtest [--days 14] [--map <regex>=<model>]... [--exclude <regex>] [--limit 250] [--include-origin <plugin-id>]... [--json].",
-      optionKeys: ["days", "map", "exclude", "limit", "include-origin", "json"],
-      positionals: [],
-    }),
-  },
-});
+  );
+  // Retain the upstream wire names for existing callers and the bundled tuning skill.
+  bb.rpc.register(legacyRpcContract, {
+    preferences_get: handlers.preferencesGet,
+    preferences_set: handlers.preferencesSet,
+    rotation_get: handlers.rotationGet,
+    rotation_set: handlers.rotationSet,
+    scope_get: handlers.scopeGet,
+    scope_set: handlers.scopeSet,
+    rotation_seed: handlers.rotationSeed,
+  });
+}

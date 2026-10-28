@@ -6,7 +6,7 @@ import { CopyButton } from "./copy-button.tsx";
 import { shortId } from "./format.ts";
 import { FileRowsSkeleton, Notice, errorText } from "./notice.tsx";
 import { REFRESH_INTERVAL_MS } from "./query-client.ts";
-import { rpc } from "./rpc.ts";
+import { useRpcQuery } from "./rpc.ts";
 import { When } from "./when.tsx";
 
 /**
@@ -61,7 +61,7 @@ function OperationRow({ entry }: { entry: OplogEntry }) {
 
 function Operations({ target }: { target: WorkspaceTarget }) {
   // Read again while open, as the board is: the agent can write while the reader looks.
-  const oplog = rpc.oplog.useQuery(target, {
+  const oplog = useRpcQuery("oplog", target, {
     staleTime: REFRESH_INTERVAL_MS,
     refetchInterval: REFRESH_INTERVAL_MS,
   });

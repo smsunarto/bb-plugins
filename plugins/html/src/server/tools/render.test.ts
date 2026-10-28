@@ -18,10 +18,11 @@ function context() {
       deleteThread() {},
     },
     threadFiles: () => async () => undefined,
-    tool: { threadId: "thr_1", projectId: "proj_1", signal: new AbortController().signal },
   };
-  return { ctx: ctx as never, pages };
+  return { tool: render(ctx as never), pages };
 }
+
+const invocation = { threadId: "thr_1", projectId: "proj_1", signal: new AbortController().signal };
 
 const text = (result: unknown) =>
   typeof result === "string"
@@ -30,8 +31,11 @@ const text = (result: unknown) =>
 
 describe("html_render", () => {
   test("stores the prepared page and returns its directive", async () => {
-    const { ctx, pages } = context();
-    const result = await render.execute(ctx, { html: "<p>Hi</p>", title: "Greeting", height: 120 });
+    const { tool, pages } = context();
+    const result = await tool.execute(
+      { html: "<p>Hi</p>", title: "Greeting", height: 120 },
+      invocation,
+    );
     const line = text(result)
       .split("\n")
       .find((entry) => entry.startsWith("::html-render{"));
@@ -48,18 +52,24 @@ describe("html_render", () => {
   });
 
   test("returns page errors to the agent instead of storing", async () => {
-    const { ctx, pages } = context();
-    const vh = await render.execute(ctx, {
-      html: "<style>body{height:100vh}</style>",
-      title: "x",
-      height: 80,
-    });
+    const { tool, pages } = context();
+    const vh = await tool.execute(
+      {
+        html: "<style>body{height:100vh}</style>",
+        title: "x",
+        height: 80,
+      },
+      invocation,
+    );
     expect(vh).toMatchObject({ isError: true });
-    const missing = await render.execute(ctx, {
-      html: '<img src="/nope.png">',
-      title: "x",
-      height: 80,
-    });
+    const missing = await tool.execute(
+      {
+        html: '<img src="/nope.png">',
+        title: "x",
+        height: 80,
+      },
+      invocation,
+    );
     expect(text(missing)).toContain("/nope.png");
     expect(pages.size).toBe(0);
   });

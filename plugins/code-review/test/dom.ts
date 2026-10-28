@@ -4,7 +4,7 @@
  * `await import(...)` after it): React DOM decides at load time whether the
  * document supports `input` events, and without them controlled fields break.
  */
-import { installDom } from "@bb-kit/core/testing";
+import { installDom } from "@bb-plugins/testing";
 
 installDom();
 

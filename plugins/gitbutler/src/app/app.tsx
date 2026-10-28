@@ -29,7 +29,8 @@ import type {
   ExperimentalThreadInfoProps,
   PluginThreadHeaderActionProps,
 } from "@get-bb/plugin-sdk/app";
-import { PluginQueryBoundary, pluginQueryClient } from "@bb-kit/core/rpc/query";
+import { QueryClientProvider } from "@tanstack/react-query";
+import { queryClient } from "./query.ts";
 import {
   PANEL_ACTION_ID,
   WORKSPACE_CHANGED_CHANNEL,
@@ -85,7 +86,7 @@ import { CheckoutChatActions } from "./checkout-chat.tsx";
 import { CheckoutLabel, MachineColorProvider } from "./checkout-label.tsx";
 import { ParkedBranches } from "./parked-branches.tsx";
 import { SAFETY_POLL_MS } from "./query-client.ts";
-import { rpc } from "./rpc.ts";
+import { useRpcQuery, rpcQueryKey } from "./rpc.ts";
 import { readStored, storedAnswer } from "./stored-queries.ts";
 import { relativeTime, shortId, subject } from "./format.ts";
 import { When } from "./when.tsx";
@@ -1276,7 +1277,8 @@ function WorkspaceBoard({
   const status = useTransientStatus();
   useMinuteTick();
 
-  const repositories = rpc.repositories.useQuery(
+  const repositories = useRpcQuery(
+    "repositories",
     { threadId },
     { ...storedAnswer("repositories", { threadId }), staleTime: 60_000 },
   );
@@ -1284,7 +1286,7 @@ function WorkspaceBoard({
     () => ({ threadId, repositoryKey, checkout }),
     [threadId, repositoryKey, checkout],
   );
-  const workspace = rpc.workspace.useQuery(readTarget, {
+  const workspace = useRpcQuery("workspace", readTarget, {
     ...storedAnswer("workspace", readTarget),
     refetchInterval: SAFETY_POLL_MS,
     refetchOnWindowFocus: true,
@@ -1384,7 +1386,7 @@ function WorkspaceBoard({
     void repositories.refetch();
     // Not part of refreshWorkspace, which every turn's end runs: no turn here
     // changes another machine, and the read reaches all of them.
-    void pluginQueryClient.invalidateQueries({ queryKey: rpc.otherMachines.queryKey() });
+    void queryClient.invalidateQueries({ queryKey: rpcQueryKey("otherMachines") });
     void refreshWorkspace(readTarget).finally(() => setRefreshing(false));
   };
   const syncing = refreshing || checkingFirst(workspace);
@@ -1534,11 +1536,11 @@ function GitButlerApp({ threadId }: { threadId?: string }) {
     );
   }
   return (
-    <PluginQueryBoundary>
+    <QueryClientProvider client={queryClient}>
       <MachineColorProvider>
         <WorkspacePanel key={resolved} threadId={resolved} />
       </MachineColorProvider>
-    </PluginQueryBoundary>
+    </QueryClientProvider>
   );
 }
 
@@ -1556,7 +1558,8 @@ const NOT_READY_STALE_MS = 60_000;
 function HeaderButton({ threadId, isCompactViewport }: PluginThreadHeaderActionProps) {
   const navigate = useBbNavigate();
   const repositoryKey = useStoredRepository(threadId) ?? undefined;
-  const workspace = rpc.workspace.useQuery(
+  const workspace = useRpcQuery(
+    "workspace",
     { threadId, repositoryKey },
     {
       ...storedAnswer("workspace", { threadId, repositoryKey }),
@@ -1593,9 +1596,9 @@ function HeaderButton({ threadId, isCompactViewport }: PluginThreadHeaderActionP
 
 function HeaderAction(props: PluginThreadHeaderActionProps) {
   return (
-    <PluginQueryBoundary>
+    <QueryClientProvider client={queryClient}>
       <HeaderButton key={props.threadId} {...props} />
-    </PluginQueryBoundary>
+    </QueryClientProvider>
   );
 }
 
@@ -1612,7 +1615,7 @@ function HeaderAction(props: PluginThreadHeaderActionProps) {
 function useInfoBoard(threadId: string): ShownWorkspace {
   const repositoryKey = useStoredRepository(threadId) ?? undefined;
   const input = useMemo(() => ({ threadId, repositoryKey }), [threadId, repositoryKey]);
-  const workspace = rpc.workspace.useQuery(input, {
+  const workspace = useRpcQuery("workspace", input, {
     ...storedAnswer("workspace", input),
     // Any other answer, such as no GitButler here, is trusted as long as the header trusts it.
     staleTime: (query) => (query.state.data?.state === "ready" ? 0 : NOT_READY_STALE_MS),
@@ -1622,8 +1625,8 @@ function useInfoBoard(threadId: string): ShownWorkspace {
   const board = shown.data;
   const refresh = useCallback(
     () =>
-      void pluginQueryClient.invalidateQueries(
-        { queryKey: rpc.workspace.queryKey(input), exact: true },
+      void queryClient.invalidateQueries(
+        { queryKey: rpcQueryKey("workspace", input), exact: true },
         { cancelRefetch: false },
       ),
     [input],
@@ -1710,9 +1713,9 @@ function BranchesInfo({ threadId }: ExperimentalThreadInfoProps) {
 function BranchesInfoSection(props: ExperimentalThreadInfoProps) {
   if (!props.environment) return null;
   return (
-    <PluginQueryBoundary>
+    <QueryClientProvider client={queryClient}>
       <BranchesInfo key={props.threadId} {...props} />
-    </PluginQueryBoundary>
+    </QueryClientProvider>
   );
 }
 

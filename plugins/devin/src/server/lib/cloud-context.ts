@@ -1,4 +1,4 @@
-import { instructionFiles } from "@bb-kit/core/instructions";
+import { instructionFiles } from "@bb-plugins/instructions";
 
 // Editable in the Prompt Editor plugin.
 const files = instructionFiles(import.meta.url);

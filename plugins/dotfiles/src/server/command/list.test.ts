@@ -1,6 +1,6 @@
 import { test } from "bun:test";
 import assert from "node:assert/strict";
-import { PluginCliError } from "@bb-kit/core/command";
+import { PluginCliError } from "@get-bb/plugin-sdk";
 
 import { createFakeContext } from "../fake-context.ts";
 import { cleanRepo } from "../fake-git.ts";
@@ -12,12 +12,11 @@ test("list throws when the repo is missing", async () => {
   await assert.rejects(
     () =>
       Promise.resolve(
-        list.execute(
+        list(
           createFakeContext({
             inspect: async (target) => cleanRepo(target, { repoExists: false }),
           }),
-          noArgs,
-        ),
+        ).run(noArgs, {}),
       ),
     (error: unknown) => {
       assert.ok(error instanceof PluginCliError);
@@ -29,7 +28,7 @@ test("list throws when the repo is missing", async () => {
 });
 
 test("list prints grouped files with bracketed flag suffixes", async () => {
-  const result = await list.execute(
+  const result = await list(
     createFakeContext({
       inspect: async (target) =>
         cleanRepo(target, {
@@ -37,8 +36,7 @@ test("list prints grouped files with bracketed flag suffixes", async () => {
           missingPaths: ["mise.linux.toml"],
         }),
     }),
-    noArgs,
-  );
+  ).run(noArgs, {});
   assert.equal(result.exitCode, 0);
   const stdout = result.stdout ?? "";
   assert.match(stdout, /^# Agent config$/m);

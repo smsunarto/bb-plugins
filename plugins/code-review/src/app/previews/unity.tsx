@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 import { UnityDiffView, UnityMetaDiffView } from "@bb-plugins/unity-inspector/app";
 import type { ChangedFile, Comparison } from "../../shared/schema.ts";
 import { Loading, Notice, RetryButton, errorText } from "../notice.tsx";
-import { rpc } from "../rpc.ts";
+import { useRpcQuery } from "../rpc.ts";
 
 /**
  * A Unity scene, prefab, asset, or `.meta` change as objects and properties.
@@ -22,7 +22,8 @@ export function UnityPreview({
   /** Shown under a reason when there is no text diff to fall back on: the file's sizes and downloads. */
   fallback: ReactNode;
 }) {
-  const preview = rpc.unityPreview.useQuery(
+  const preview = useRpcQuery(
+    "unityPreview",
     { comparison, path: file.path, previousPath: file.previousPath },
     // Pinned to commits: the answer never changes.
     { staleTime: Number.POSITIVE_INFINITY, gcTime: 5 * 60_000 },

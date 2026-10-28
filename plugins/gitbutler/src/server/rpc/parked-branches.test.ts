@@ -16,7 +16,7 @@ test("forwards the repository to the thread's host", async () => {
   };
   const { ctx, calls } = harness({ result: answer });
 
-  expect(await parkedBranches.execute(ctx, { threadId: "t1", repositoryKey: "." })).toEqual(answer);
+  expect(await parkedBranches(ctx, { threadId: "t1", repositoryKey: "." })).toEqual(answer);
   expect(calls).toEqual([
     {
       method: "parkedBranches",
@@ -29,7 +29,7 @@ test("forwards the repository to the thread's host", async () => {
 test("returns no branches with a reason when the thread has no environment", async () => {
   const { ctx, calls } = harness({ environment: null });
 
-  expect(await parkedBranches.execute(ctx, { threadId: "t1" })).toEqual({
+  expect(await parkedBranches(ctx, { threadId: "t1" })).toEqual({
     branches: [],
     hasMore: false,
     reason: "This thread has no project environment.",

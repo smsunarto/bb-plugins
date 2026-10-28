@@ -1,7 +1,6 @@
 import { expect, test } from "bun:test";
-import { callProcedure } from "@bb-kit/core/rpc";
 import { fakeContext, fixture, fixtureText } from "../../../test/fake-gh.ts";
-import { changedFiles } from "./changed-files.ts";
+import { changedFiles, changedFilesContract } from "./changed-files.ts";
 
 test("answers recorded changed files in the shared schema", async () => {
   const recorded = fixture<{ repository: { pullRequest: object } }>("changed-files-cli-9000.json");
@@ -25,10 +24,12 @@ test("answers recorded changed files in the shared schema", async () => {
     },
   });
 
-  const result = (await callProcedure(changedFiles, ctx, {
-    account: "octocat",
-    ref: { owner: "cli", repo: "cli", number: 9000 },
-  })) as { baseRefName: string; files: { path: string }[] };
+  const result = changedFilesContract.output.parse(
+    await changedFiles(ctx, {
+      account: "octocat",
+      ref: { owner: "cli", repo: "cli", number: 9000 },
+    }),
+  );
 
   expect(result.baseRefName).toBe("trunk");
   expect(result.files.map((file) => file.path)).toEqual([

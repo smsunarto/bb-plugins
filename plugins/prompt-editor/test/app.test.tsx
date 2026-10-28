@@ -1,15 +1,15 @@
-import { installDom } from "@bb-kit/core/testing";
+import { installDom } from "@bb-plugins/testing";
 import { beforeEach, expect, test } from "bun:test";
-import { pluginQueryClient } from "@bb-kit/core/rpc/query";
 import type { PluginNavPanelProps } from "@get-bb/plugin-sdk/app";
 import type { ComponentType } from "react";
+import { queryClient } from "../src/app/query.ts";
 import type { Plugin } from "../src/shared/schema.ts";
 
 installDom();
 const { fireEvent, within } = await import("@testing-library/react");
 const { loadPluginApp, renderSlot } = await import("@get-bb/plugin-sdk/testing/app");
 
-beforeEach(() => pluginQueryClient.clear());
+beforeEach(() => queryClient.clear());
 
 const notes: Plugin = {
   id: "notes",

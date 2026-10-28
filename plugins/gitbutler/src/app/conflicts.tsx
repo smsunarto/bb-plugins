@@ -1,7 +1,7 @@
 import { useRef } from "react";
 import type { ReactNode } from "react";
 import { experimental_Icon as Icon, useBbNavigate } from "@get-bb/plugin-sdk/app";
-import { pluginQueryClient } from "@bb-kit/core/rpc/query";
+import { queryClient } from "./query.ts";
 import type { Branch, Workspace } from "../shared/schema.ts";
 import { useBoardLive, useBoardWorkspace, writeScope } from "./board-context.tsx";
 import { Button } from "./components/ui/button.tsx";
@@ -9,7 +9,7 @@ import { listNames, useFocusAfter, writeBlocked } from "./branch-actions.tsx";
 import type { WorkspaceTarget } from "./branch-actions.tsx";
 import { useOpenFile } from "./file-cards.tsx";
 import { cn } from "./lib/utils.ts";
-import { rpc } from "./rpc.ts";
+import { useRpcQuery, useRpcMutation, rpcQueryKey } from "./rpc.ts";
 
 /**
  * Everything in the workspace that is conflicted, in one place at the top of
@@ -114,21 +114,21 @@ export function Conflicts({
  */
 function useConflictResolution(target: WorkspaceTarget) {
   const board = useBoardWorkspace();
-  const resolution = rpc.conflictResolution.useQuery(target, {
+  const resolution = useRpcQuery("conflictResolution", target, {
     // For as long as there are conflicts to show: the subthread stops, is
     // answered from elsewhere and starts again, or is started by another
     // thread on the same workspace.
     refetchInterval: POLL_MS,
   });
-  const mutation = rpc.resolveConflicts.useMutation({
+  const mutation = useRpcMutation("resolveConflicts", {
     // The answer names the subthread, so it is shown without reading it back.
     // A read still in flight began before the request and would hide it, so
     // it is dropped. Awaited, so the button gives way to the link in the
     // render the request ends in, and the focus follows.
     onSuccess: async ({ threadId }) => {
-      const queryKey = rpc.conflictResolution.queryKey(target);
-      await pluginQueryClient.cancelQueries({ queryKey });
-      pluginQueryClient.setQueryData(queryKey, { subthread: { threadId, running: true } });
+      const queryKey = rpcQueryKey("conflictResolution", target);
+      await queryClient.cancelQueries({ queryKey });
+      queryClient.setQueryData(queryKey, { subthread: { threadId, running: true } });
     },
   });
   return {

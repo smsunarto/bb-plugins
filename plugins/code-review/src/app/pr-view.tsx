@@ -1,5 +1,5 @@
 import { UrlLink, experimental_Icon as Icon, useBbNavigate } from "@get-bb/plugin-sdk/app";
-import { pluginQueryClient } from "@bb-kit/core/rpc/query";
+import { queryClient } from "./query.ts";
 import { useState } from "react";
 import { prKey, prSubPath, sameAccount, sameRef } from "../shared/schema.ts";
 import type { Checks, Inbox, InboxPr, PrRef, PrTab, PullRequest } from "../shared/schema.ts";
@@ -14,7 +14,7 @@ import { PANEL_PATH, plural } from "./format.ts";
 import { useInbox } from "./inbox.tsx";
 import { cn } from "./lib/utils.ts";
 import { Loading, Notice, RetryButton, Tip, errorText } from "./notice.tsx";
-import { rpc } from "./rpc.ts";
+import { queryKey, useRpcQuery, useRpcMutation } from "./rpc.ts";
 import { DraftSyncNotice, useDraftPreview } from "./draft-sync.tsx";
 import { SyncState, pageSync, useReconcile } from "./sync-state.tsx";
 import type { SyncQuery } from "./sync-state.tsx";
@@ -34,7 +34,8 @@ function useBackToInbox(): () => void {
 
 /** One pull request's details, checks, and diffs in a single review surface. */
 export function PrView({ prRef, account, tab }: { prRef: PrRef; account: string; tab: PrTab }) {
-  const pullRequest = rpc.pullRequest.useQuery(
+  const pullRequest = useRpcQuery(
+    "pullRequest",
     { account, ref: prRef },
     { staleTime: 15_000, refetchInterval: PR_REFRESH_MS },
   );
@@ -88,7 +89,8 @@ export function PrView({ prRef, account, tab }: { prRef: PrRef; account: string;
 function Loaded({ pr, tab, pullRequest }: { pr: PullRequest; tab: PrTab; pullRequest: SyncQuery }) {
   const checks = useChecks(pr);
   // All three reads contribute to the page's freshness and refresh action.
-  const files = rpc.changedFiles.useQuery(
+  const files = useRpcQuery(
+    "changedFiles",
     { account: pr.account, ref: pr.ref },
     { staleTime: 30_000 },
   );
@@ -189,7 +191,7 @@ function AccountSwitch({
   tab: PrTab;
 }) {
   const navigate = useBbNavigate();
-  const status = rpc.status.useQuery({ staleTime: 5 * 60_000 });
+  const status = useRpcQuery("status", null, { staleTime: 5 * 60_000 });
   const [open, setOpen] = useState(false);
   const accounts = status.data?.ok ? status.data.accounts : [];
   if (accounts.length < 2) return null;
@@ -292,19 +294,19 @@ function inboxEntry(pr: PullRequest, checks: Checks | undefined): InboxPr {
  */
 function PinButton({ pr }: { pr: PullRequest }) {
   const inbox = useInbox();
-  const setPinned = rpc.setPinned.useMutation();
+  const setPinned = useRpcMutation("setPinned");
   const pinned = inbox.data?.pinned.some((item) => sameRef(item.ref, pr.ref)) ?? false;
 
   const toggle = () => {
-    const key = rpc.inbox.queryKey();
-    const previous = pluginQueryClient.getQueryData<Inbox>(key);
+    const key = queryKey("inbox");
+    const previous = queryClient.getQueryData<Inbox>(key);
     const next = !pinned;
-    void pluginQueryClient.cancelQueries({ queryKey: key });
+    void queryClient.cancelQueries({ queryKey: key });
     if (previous) {
-      const checks = pluginQueryClient.getQueryData<Checks>(
-        rpc.checks.queryKey({ account: pr.account, ref: pr.ref }),
+      const checks = queryClient.getQueryData<Checks>(
+        queryKey("checks", { account: pr.account, ref: pr.ref }),
       );
-      pluginQueryClient.setQueryData<Inbox>(key, {
+      queryClient.setQueryData<Inbox>(key, {
         ...previous,
         pinned: next
           ? [...previous.pinned, inboxEntry(pr, checks)]
@@ -315,9 +317,9 @@ function PinButton({ pr }: { pr: PullRequest }) {
       { account: pr.account, ref: pr.ref, pinned: next },
       {
         onError: () => {
-          if (previous) pluginQueryClient.setQueryData(key, previous);
+          if (previous) queryClient.setQueryData(key, previous);
         },
-        onSettled: () => void pluginQueryClient.invalidateQueries({ queryKey: key }),
+        onSettled: () => void queryClient.invalidateQueries({ queryKey: key }),
       },
     );
   };

@@ -9,7 +9,7 @@ import { FixDialog } from "./fix-dialog.tsx";
 import { shortSha } from "./format.ts";
 import { cn } from "./lib/utils.ts";
 import { InlineError, Notice, RetryButton, errorText } from "./notice.tsx";
-import { rpc } from "./rpc.ts";
+import { useRpcQuery } from "./rpc.ts";
 import { ChecksStateIcon } from "./status.tsx";
 
 /** While a check runs, its state is read often; once all settle, now and then, for a new push. */
@@ -69,7 +69,8 @@ export function useChecks({
   account,
   headRefOid,
 }: Pick<PullRequest, "ref" | "account" | "headRefOid">) {
-  const checks = rpc.checks.useQuery(
+  const checks = useRpcQuery(
+    "checks",
     { account, ref },
     {
       staleTime: 10_000,

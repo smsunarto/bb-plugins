@@ -1,6 +1,6 @@
 import { mock, test } from "bun:test";
 import assert from "node:assert/strict";
-import { installDom } from "@bb-kit/core/testing";
+import { installDom } from "@bb-plugins/testing";
 import { EditorView } from "@codemirror/view";
 
 installDom();

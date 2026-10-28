@@ -1,5 +1,5 @@
-import { PluginQueryBoundary, pluginQueryClient } from "@bb-kit/core/rpc/query";
 import { definePluginApp, experimental_Icon as Icon } from "@get-bb/plugin-sdk/app";
+import { QueryClientProvider } from "@tanstack/react-query";
 import { useId, useLayoutEffect, useState, useSyncExternalStore } from "react";
 import { Button } from "../../components/ui/button.tsx";
 import { Input } from "../../components/ui/input.tsx";
@@ -15,7 +15,8 @@ import {
 } from "../shared/rules.ts";
 import type { Target, Targets } from "../shared/targets.ts";
 import { createRulesDraft } from "./draft.ts";
-import { rpc } from "./rpc.ts";
+import { queryClient } from "./query.ts";
+import { queryKey, useAgentInstructionsRpc, useRpcQuery } from "./rpc.ts";
 
 const AUTOSAVE_DELAY_MS = 500;
 
@@ -208,7 +209,7 @@ const rulesDraft = createRulesDraft({
   delayMs: AUTOSAVE_DELAY_MS,
   // A late response must not replace a newer revision another writer stored.
   onStored: (stored) =>
-    pluginQueryClient.setQueryData<RulesState>(rpc.rules.queryKey(), (cached) =>
+    queryClient.setQueryData<RulesState>(queryKey("rules"), (cached) =>
       cached && cached.revision >= stored.revision ? cached : stored,
     ),
 });
@@ -218,7 +219,8 @@ export function resetRulesDraftForTest() {
 }
 
 function useRulesDraft(server: RulesState) {
-  rulesDraft.connect(rpc.useClient().saveRules);
+  const client = useAgentInstructionsRpc();
+  rulesDraft.connect((input) => client.call("saveRules", input));
   if (rulesDraft.snapshot() === null) rulesDraft.receive(server);
   useLayoutEffect(() => rulesDraft.receive(server), [server]);
   const snapshot = useSyncExternalStore(rulesDraft.subscribe, rulesDraft.snapshot);
@@ -306,8 +308,8 @@ function RulesEditor({ server, targets }: { server: RulesState; targets: Targets
 
 function Loaded() {
   // Refetches on every visit, so the editor starts from the stored rules.
-  const rules = rpc.rules.useQuery();
-  const targets = rpc.targets.useQuery();
+  const rules = useRpcQuery("rules", null);
+  const targets = useRpcQuery("targets", null);
   if (rules.isError || targets.isError) {
     return (
       <p className="text-xs text-destructive" role="alert">
@@ -323,9 +325,9 @@ function Loaded() {
 
 function AgentInstructionsSettings() {
   return (
-    <PluginQueryBoundary>
+    <QueryClientProvider client={queryClient}>
       <Loaded />
-    </PluginQueryBoundary>
+    </QueryClientProvider>
   );
 }
 

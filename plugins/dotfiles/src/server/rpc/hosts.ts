@@ -1,8 +1,8 @@
 import { z } from "zod";
-import { defineQuery } from "@bb-kit/core/rpc";
 import type { GitContext } from "../git.ts";
 
-export const hosts = defineQuery({
+export const hostsContract = {
+  input: z.null(),
   output: z
     .object({
       selectedHostId: z.string().nullable(),
@@ -11,7 +11,8 @@ export const hosts = defineQuery({
       ),
     })
     .strict(),
-  execute(ctx: GitContext) {
-    return ctx.git.hosts();
-  },
-});
+};
+
+export function hosts(ctx: GitContext): Promise<z.input<typeof hostsContract.output>> {
+  return ctx.git.hosts();
+}

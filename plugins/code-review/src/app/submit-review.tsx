@@ -1,7 +1,7 @@
 import { useEffect, useId, useRef, useState } from "react";
 import type { RefObject } from "react";
 import { UrlLink, experimental_Icon as Icon } from "@get-bb/plugin-sdk/app";
-import { pluginQueryClient } from "@bb-kit/core/rpc/query";
+import { queryClient } from "./query.ts";
 import { useIsMutating, useMutationState } from "@tanstack/react-query";
 import type { MutationKey } from "@tanstack/react-query";
 import type { PullRequest, ReviewEvent } from "../shared/schema.ts";
@@ -11,7 +11,7 @@ import { Textarea } from "./components/ui/textarea.tsx";
 import { plural } from "./format.ts";
 import { cn } from "./lib/utils.ts";
 import { Notice, errorText } from "./notice.tsx";
-import { rpc } from "./rpc.ts";
+import { queryKey, useRpcMutation } from "./rpc.ts";
 import { draftKey, reviewScope, confirmReviewClosed } from "./draft-sync.tsx";
 import { useDraftText } from "./comment-form.tsx";
 import { draftTextKey } from "./local-cache.ts";
@@ -29,10 +29,10 @@ const EVENTS: readonly { id: ReviewEvent; label: string; detail: string }[] = [
 /** A review changes the pull request and the viewer's place in the inbox. */
 function refreshAfterReview(pr: PullRequest): Promise<unknown> {
   return Promise.all([
-    pluginQueryClient.invalidateQueries({
-      queryKey: rpc.pullRequest.queryKey({ account: pr.account, ref: pr.ref }),
+    queryClient.invalidateQueries({
+      queryKey: queryKey("pullRequest", { account: pr.account, ref: pr.ref }),
     }),
-    pluginQueryClient.invalidateQueries({ queryKey: rpc.inbox.queryKey() }),
+    queryClient.invalidateQueries({ queryKey: queryKey("inbox") }),
   ]);
 }
 
@@ -56,7 +56,7 @@ function reviewKeys(pr: PullRequest): { submit: MutationKey; discard: MutationKe
  * render that shows a request as out, so actions ask the cache, not the props.
  */
 function isOut(mutationKey: MutationKey): boolean {
-  return pluginQueryClient.isMutating({ mutationKey }) > 0;
+  return queryClient.isMutating({ mutationKey }) > 0;
 }
 
 function reviewInFlight(keys: ReturnType<typeof reviewKeys>): boolean {
@@ -95,7 +95,7 @@ const seenRefusals = new WeakSet<object>();
 
 /** Dismisses settled requests under a key, but not a refusal nobody has seen. One still out stays. */
 function forgetSettled(mutationKey: MutationKey): void {
-  const cache = pluginQueryClient.getMutationCache();
+  const cache = queryClient.getMutationCache();
   for (const mutation of cache.findAll({ mutationKey })) {
     const { status } = mutation.state;
     if (status === "pending") continue;
@@ -131,7 +131,7 @@ export function SubmitReviewButton({ pr }: { pr: PullRequest }) {
   };
   // Cleanup sits in the hook's options, not in a `mutate` callback, so it
   // runs whether or not the popover is open when GitHub answers.
-  const submit = rpc.submitReview.useMutation({
+  const submit = useRpcMutation("submitReview", {
     mutationKey: keys.submit,
     scope: reviewScope(pr),
     onSuccess: async (result) => {
@@ -142,7 +142,7 @@ export function SubmitReviewButton({ pr }: { pr: PullRequest }) {
       setSubmitted({ url: result.url });
     },
   });
-  const discard = rpc.discardReview.useMutation({
+  const discard = useRpcMutation("discardReview", {
     mutationKey: keys.discard,
     scope: reviewScope(pr),
     onSuccess: async () => {
@@ -228,8 +228,8 @@ function Submitted({ url, onClose }: { url: string | null; onClose: () => void }
   );
 }
 
-type SubmitMutation = ReturnType<typeof rpc.submitReview.useMutation>;
-type DiscardMutation = ReturnType<typeof rpc.discardReview.useMutation>;
+type SubmitMutation = ReturnType<typeof useRpcMutation<"submitReview">>;
+type DiscardMutation = ReturnType<typeof useRpcMutation<"discardReview">>;
 
 function draftsUnconfirmed(pr: PullRequest, writes: number): boolean {
   return writes > 0 || (pr.pendingReview?.id.startsWith("local:") ?? false);
@@ -275,7 +275,7 @@ function ReviewForm({
     if (
       empty ||
       syncingDrafts ||
-      pluginQueryClient.isMutating({ mutationKey: draftKey(pr) }) > 0 ||
+      queryClient.isMutating({ mutationKey: draftKey(pr) }) > 0 ||
       reviewInFlight(keys)
     )
       return;
@@ -484,7 +484,7 @@ function ConfirmDiscard({
           onClick={() => {
             // Deleting the drafts while they are being submitted would race the review.
             if (
-              pluginQueryClient.isMutating({ mutationKey: draftKey(pr) }) > 0 ||
+              queryClient.isMutating({ mutationKey: draftKey(pr) }) > 0 ||
               isOut(keys.discard) ||
               isOut(keys.submit)
             )

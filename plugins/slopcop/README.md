@@ -1,6 +1,6 @@
 # 🚨 SlopCop
 
-Forked from [SawyerHood/sawyer-plugins](https://github.com/SawyerHood/sawyer-plugins/tree/d3424f24e2cebe91da4e72cb38feb023da808922/plugins/slopcop) at `d3424f24e2cebe91da4e72cb38feb023da808922`. Copyright and MIT license retained in [LICENSE](./LICENSE). Local packaging uses `@bb-kit/core` and this repository's SDK version.
+Forked from [SawyerHood/sawyer-plugins](https://github.com/SawyerHood/sawyer-plugins/tree/d3424f24e2cebe91da4e72cb38feb023da808922/plugins/slopcop) at `d3424f24e2cebe91da4e72cb38feb023da808922`. Copyright and MIT license retained in [LICENSE](./LICENSE). Local packaging uses `@get-bb/plugin-sdk` at this repository's SDK version.
 A [BB](https://github.com/ymichael/bb) plugin that handles new GitHub issues and reviews pull requests.
 
 Define **rules** with a prompt, repository, triggers, and conditions. SlopCop watches

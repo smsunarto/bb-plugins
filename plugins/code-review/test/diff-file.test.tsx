@@ -1,7 +1,8 @@
 import "./dom.ts";
 import { beforeEach, expect, test } from "bun:test";
 import { useState } from "react";
-import { PluginQueryBoundary, pluginQueryClient } from "@bb-kit/core/rpc/query";
+import { QueryClientProvider } from "@tanstack/react-query";
+import { queryClient } from "../src/app/query.ts";
 import type { ChangedFile } from "../src/shared/schema.ts";
 import { pullRequest as pr } from "./app-fixtures.ts";
 
@@ -10,7 +11,7 @@ const { renderSlot } = await import("@get-bb/plugin-sdk/testing/app");
 const { DiffFile } = await import("../src/app/diff-file.tsx");
 
 beforeEach(() => {
-  pluginQueryClient.clear();
+  queryClient.clear();
 });
 
 function changed(overrides: Partial<ChangedFile> = {}): ChangedFile {
@@ -42,7 +43,7 @@ function mount(first: Shown, calls: Call[] = []) {
     const [shown, setShown] = useState(first);
     show = setShown;
     return (
-      <PluginQueryBoundary>
+      <QueryClientProvider client={queryClient}>
         <DiffFile
           pr={pr}
           file={shown.file}
@@ -57,7 +58,7 @@ function mount(first: Shown, calls: Call[] = []) {
           onOpenChange={() => {}}
           onViewedChange={() => {}}
         />
-      </PluginQueryBoundary>
+      </QueryClientProvider>
     );
   };
   const rpc = {

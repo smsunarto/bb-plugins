@@ -1,4 +1,3 @@
-import { defineMutation } from "@bb-kit/core/rpc";
 import { z } from "zod";
 import { accountSchema, diffSideSchema } from "../../shared/schema.ts";
 import type { CodeReviewContext } from "../lib/context.ts";
@@ -12,7 +11,7 @@ const line = z.number().int().positive();
  * `headRefOid` and `baseRefName` name the diff the line numbers were picked in.
  * The same draft sent again returns the thread it started and writes nothing.
  */
-export const addDraftComment = defineMutation({
+export const addDraftCommentContract = {
   input: z
     .strictObject({
       account: accountSchema,
@@ -42,7 +41,11 @@ export const addDraftComment = defineMutation({
     commentId: z.string(),
     pendingReview: z.strictObject({ id: z.string(), draftCount: z.number().int().nonnegative() }),
   }),
-  async execute(ctx: CodeReviewContext, { account, ...draft }) {
-    return writeDraft(ctx.github.as(account), draft);
-  },
-});
+};
+
+export async function addDraftComment(
+  ctx: CodeReviewContext,
+  { account, ...draft }: z.output<typeof addDraftCommentContract.input>,
+): Promise<z.input<typeof addDraftCommentContract.output>> {
+  return writeDraft(ctx.github.as(account), draft);
+}

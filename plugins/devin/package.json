@@ -52,11 +52,12 @@
     "LICENSE"
   ],
   "dependencies": {
-    "@bb-kit/core": "workspace:*",
+    "@bb-plugins/instructions": "workspace:*",
     "@tanstack/react-query": "^5.101.4",
     "zod": "^4.4.3"
   },
   "devDependencies": {
+    "@bb-plugins/testing": "workspace:*",
     "@get-bb/plugin-sdk": "0.6.75",
     "@types/node": "^22.0.0",
     "@types/react": "^19.0.0",
@@ -73,7 +74,6 @@
     "lint": "oxlint",
     "typecheck": "tsc --noEmit",
     "test": "node --test --import tsx 'src/**/*.test.ts' && bun test src/app --timeout=30000",
-    "check": "node --import tsx ../../packages/bb-kit-dev/src/bin.ts check",
     "clean": "rm -rf dist"
   }
 }

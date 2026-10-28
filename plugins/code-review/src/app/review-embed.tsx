@@ -1,5 +1,6 @@
 import { z } from "zod";
-import { PluginQueryBoundary } from "@bb-kit/core/rpc/query";
+import { QueryClientProvider } from "@tanstack/react-query";
+import { queryClient } from "./query.ts";
 import { experimental_Icon as Icon, useBbNavigate } from "@get-bb/plugin-sdk/app";
 import type { PluginMessageDirectiveProps } from "@get-bb/plugin-sdk/app";
 import {
@@ -24,7 +25,7 @@ import { Button } from "./components/ui/button.tsx";
 import { PANEL_PATH, shortSha } from "./format.ts";
 import { useLocalBranch } from "./local-branch-query.ts";
 import { errorText } from "./notice.tsx";
-import { rpc } from "./rpc.ts";
+import { useRpcQuery } from "./rpc.ts";
 import { useReconcile } from "./sync-state.tsx";
 
 const REVIEW_QUERY = {
@@ -50,7 +51,7 @@ export function ReviewEmbed({ attributes, source, message }: PluginMessageDirect
   const parsed = attributesSchema.safeParse(attributes);
   if (!parsed.success) return <code>{source}</code>;
   return (
-    <PluginQueryBoundary>
+    <QueryClientProvider client={queryClient}>
       {"branch" in parsed.data ? (
         <BranchEmbed
           id={parsed.data.branch}
@@ -61,7 +62,7 @@ export function ReviewEmbed({ attributes, source, message }: PluginMessageDirect
       ) : (
         <PrEmbed refValue={parsed.data.pr} account={parsed.data.account} />
       )}
-    </PluginQueryBoundary>
+    </QueryClientProvider>
   );
 }
 
@@ -135,7 +136,7 @@ function SharedCard({
   range: SharedComparisonInput;
   branchCheck: BranchCheck;
 }) {
-  const comparison = rpc.sharedComparison.useQuery(range, { staleTime: Infinity, retry: false });
+  const comparison = useRpcQuery("sharedComparison", range, { staleTime: Infinity, retry: false });
   if (comparison.data)
     return <SharedFilesCard comparison={comparison.data} range={range} branchCheck={branchCheck} />;
   return (
@@ -166,7 +167,7 @@ function SharedFilesCard({
   const { id: _id, ...location } = comparison;
   // A discovery failure may mean the checkout disconnected. Verify the pinned
   // range on each fallback entry, even if its cached files are still fresh.
-  const files = rpc.localChanges.useQuery(location, {
+  const files = useRpcQuery("localChanges", location, {
     staleTime: 30_000,
     refetchOnMount: "always",
     retry: false,
@@ -210,7 +211,8 @@ function LocalCard({
   onRetryDiscovery: () => void;
   original?: SharedComparisonInput;
 }) {
-  const files = rpc.localChanges.useQuery(
+  const files = useRpcQuery(
+    "localChanges",
     { hostId: branch.hostId, path: branch.path, base: branch.base, head: branch.head },
     { staleTime: 30_000 },
   );
@@ -245,7 +247,7 @@ function LocalCard({
 }
 
 function PrEmbed({ refValue, account: requested }: { refValue: PrRef; account?: string }) {
-  const status = rpc.status.useQuery({ staleTime: 5 * 60_000 });
+  const status = useRpcQuery("status", null, { staleTime: 5 * 60_000 });
   const account = requested ?? (status.data?.ok ? status.data.login : undefined);
   if (account) return <PrCard refValue={refValue} account={account} />;
   const issue = status.isError
@@ -265,8 +267,8 @@ function PrEmbed({ refValue, account: requested }: { refValue: PrRef; account?: 
 }
 
 function PrCard({ refValue, account }: { refValue: PrRef; account: string }) {
-  const pr = rpc.pullRequest.useQuery({ account, ref: refValue }, REVIEW_QUERY);
-  const changed = rpc.changedFiles.useQuery({ account, ref: refValue }, REVIEW_QUERY);
+  const pr = useRpcQuery("pullRequest", { account, ref: refValue }, REVIEW_QUERY);
+  const changed = useRpcQuery("changedFiles", { account, ref: refValue }, REVIEW_QUERY);
   const issue = pr.isError
     ? errorText(pr.error)
     : changed.isError

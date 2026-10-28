@@ -8,7 +8,7 @@ test("returns explicit save conflict and render outcomes", async () => {
     writeFile: async () => ({ outcome: "conflict" }),
   });
   assert.deepEqual(
-    await saveFile.execute(conflict, {
+    await saveFile(conflict, {
       path: ".dotfiles/mcp.json",
       content: "next",
       expectedSha256: "old",
@@ -18,7 +18,7 @@ test("returns explicit save conflict and render outcomes", async () => {
 
   const written = createFakeContext();
   assert.deepEqual(
-    await saveFile.execute(written, {
+    await saveFile(written, {
       path: ".dotfiles/mcp.json",
       content: "next",
       expectedSha256: "old",
@@ -30,7 +30,7 @@ test("returns explicit save conflict and render outcomes", async () => {
     },
   );
   assert.deepEqual(
-    await saveFile.execute(written, {
+    await saveFile(written, {
       path: ".dotfiles/.gitconfig",
       content: "next",
       expectedSha256: "old",
@@ -53,7 +53,7 @@ test("omitting expectedSha256 writes unconditionally", async () => {
   });
 
   assert.deepEqual(
-    await saveFile.execute(ctx, {
+    await saveFile(ctx, {
       path: ".dotfiles/mcp.json",
       content: "next",
     }),
@@ -71,7 +71,7 @@ test("saves only registered files", async () => {
 
   await assert.rejects(
     async () =>
-      saveFile.execute(ctx, {
+      saveFile(ctx, {
         path: ".ssh/id_ed25519",
         content: "next",
         expectedSha256: "old",
@@ -89,7 +89,7 @@ test("writes to the machine the draft was read from", async () => {
     },
   });
 
-  await saveFile.execute(ctx, { hostId: "host_mac", path: "AGENTS.md", content: "next" });
+  await saveFile(ctx, { hostId: "host_mac", path: "AGENTS.md", content: "next" });
 
   assert.deepEqual(writes, ["host_mac:/dotfiles/AGENTS.md = next"]);
 });
@@ -106,7 +106,7 @@ test("workflow edits use the selected host and retain optimistic save conflicts"
     },
   });
   assert.deepEqual(
-    await saveFile.execute(ctx, {
+    await saveFile(ctx, {
       hostId: "host_mac",
       path,
       content: "updated workflow",
@@ -116,7 +116,7 @@ test("workflow edits use the selected host and retain optimistic save conflicts"
   );
   await assert.rejects(
     async () =>
-      saveFile.execute(ctx, {
+      saveFile(ctx, {
         path: ".dotfiles/.agents/plugins/scott-engineering/skills/dev/playbooks/../../../../.ssh/id_ed25519",
         content: "x",
       }),

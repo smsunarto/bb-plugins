@@ -12,7 +12,7 @@ import {
   type WidgetStateSnapshot,
 } from "../shared/state-contract.ts";
 import { TWEAK_LIMITS, type TweakGroup } from "../shared/tweak-contract.ts";
-import { rpc as stateRpc } from "./rpc.ts";
+import { useHtmlRpc } from "./rpc.ts";
 
 // A collapsed preview unmounts. Its queued writes must finish before a new
 // instance restores the same widget, otherwise initial controls overwrite edits.
@@ -112,7 +112,7 @@ export function useWidgetState(
   label: string,
 ) {
   const key = JSON.stringify([pluginId, threadId, messageId, pageId]);
-  const rpc = stateRpc.useClient();
+  const rpc = useHtmlRpc();
   const composer = useComposer();
   const saved = useRef({
     state: "null",
@@ -158,7 +158,7 @@ export function useWidgetState(
             throw new Error(
               "Tweak changes exceed 16 KiB. Reduce or reset adjustments before saving.",
             );
-          return rpc.saveState({ ...input, fields });
+          return rpc.call("saveState", { ...input, fields });
         });
       pendingWrites.set(key, write);
       void write
@@ -203,7 +203,7 @@ export function useWidgetState(
       signal.throwIfAborted();
       let snapshot: WidgetStateSnapshot | null;
       try {
-        ({ snapshot } = await rpc.readState({ threadId, messageId, pageId }));
+        ({ snapshot } = await rpc.call("readState", { threadId, messageId, pageId }));
       } catch (error) {
         signal.throwIfAborted();
         readOnly.current = true;

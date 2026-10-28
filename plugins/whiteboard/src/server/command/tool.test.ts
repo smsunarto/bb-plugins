@@ -1,4 +1,4 @@
-import { definePlugin } from "@bb-kit/core/plugin";
+import { defineCli } from "@get-bb/plugin-sdk";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { expect, test } from "vitest";
 import { createSettings } from "../lib/settings.ts";
@@ -7,14 +7,14 @@ import { tool } from "./tool.ts";
 
 async function cli(handle: (request: Request) => Response | Promise<Response>) {
   const fake = fakeEngine(handle);
-  const plugin = definePlugin({
-    pluginId: "whiteboard",
-    rpc: {},
-    command: { tool },
-    services: (bb) => ({ engine: fake.engine, settings: createSettings(bb) }),
-  });
   const { bb, harness } = createFakePluginHost({ pluginId: "whiteboard" });
-  await plugin(bb);
+  bb.cli.register(
+    defineCli({
+      name: "whiteboard",
+      summary: "CLI for the whiteboard plugin",
+      commands: { tool: tool({ bb, engine: fake.engine, settings: createSettings(bb) }) },
+    }),
+  );
   return { run: (...argv: string[]) => harness.runCli(["tool", ...argv]), ...fake };
 }
 

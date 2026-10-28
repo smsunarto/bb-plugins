@@ -1,5 +1,4 @@
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
-import type { Context } from "@bb-kit/core/plugin";
 import { openDatabase } from "./database.ts";
 import { imageTooLargeError } from "./prepare.ts";
 import type { ReadLocalFile } from "./prepare.ts";
@@ -22,7 +21,8 @@ export interface HtmlServices {
   threadFiles(threadId: string, signal: AbortSignal): ReadLocalFile;
 }
 
-export type HtmlContext = Context<HtmlServices>;
+/** What every RPC handler and tool receives: the host plus the plugin services. */
+export type HtmlContext = Readonly<{ bb: BbPluginApi } & HtmlServices>;
 
 export function createServices(bb: BbPluginApi): HtmlServices {
   const settings = bb.settings.define({

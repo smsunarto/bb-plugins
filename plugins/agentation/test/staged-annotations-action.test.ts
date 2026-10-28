@@ -1,5 +1,5 @@
 import { afterEach, expect, test } from "bun:test";
-import { installDom } from "@bb-kit/core/testing";
+import { installDom } from "@bb-plugins/testing";
 import type { ComposerMention } from "@get-bb/plugin-sdk/app";
 import { createElement, Fragment } from "react";
 
@@ -329,8 +329,5 @@ test("a blocked new-thread send retains the draft with every annotation pill for
     slot.inspection.composer.draft.mentions.flatMap((mention) =>
       mention.kind === "plugin" ? [mention.id] : [],
     ),
-  ).toEqual([
-    annotationMentionItemId("ann_1", null),
-    annotationMentionItemId("ann_2", null),
-  ]);
+  ).toEqual([annotationMentionItemId("ann_1", null), annotationMentionItemId("ann_2", null)]);
 });

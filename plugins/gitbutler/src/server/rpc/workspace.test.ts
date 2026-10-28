@@ -16,7 +16,7 @@ const ready = {
 
 test("forwards the environment path and host to the host entry, and names the environment and machine", async () => {
   const { ctx, calls } = harness({ result: ready });
-  const result = await workspace.execute(ctx, { threadId: "t1" });
+  const result = await workspace(ctx, { threadId: "t1" });
 
   expect(result).toEqual({ ...ready, environmentId: "env-1", hostId: "host-1" });
   expect(calls).toEqual([
@@ -34,7 +34,7 @@ test("adds server-owned native agent requests to the exact checkout snapshot", a
     commonDir: "/work/main/.git",
   };
   const { ctx } = harness({ result: { ...ready, checkoutIdentity } });
-  const result = await workspace.execute(ctx, { threadId: "t1" });
+  const result = await workspace(ctx, { threadId: "t1" });
 
   expect(result.nativeAgentPrompts?.guidance).toContain('"machine": "host-1"');
   expect(result.nativeAgentPrompts?.guidance).toContain('"path": "/work/it\'s isolated"');
@@ -56,21 +56,19 @@ test("adds server-owned native agent requests to the exact checkout snapshot", a
   const managed = harness({
     result: { ...ready, checkoutIdentity: { ...checkoutIdentity, kind: "gitbutler" } },
   });
-  expect(await workspace.execute(managed.ctx, { threadId: "t1" })).not.toHaveProperty(
-    "nativeAgentPrompts",
-  );
+  expect(await workspace(managed.ctx, { threadId: "t1" })).not.toHaveProperty("nativeAgentPrompts");
 });
 
 test("forwards a chosen repository and omits the key when there is none", async () => {
   const chosen = harness({ result: ready });
-  await workspace.execute(chosen.ctx, { threadId: "t1", repositoryKey: "repos/app" });
+  await workspace(chosen.ctx, { threadId: "t1", repositoryKey: "repos/app" });
   expect(chosen.calls[0]?.input).toEqual({
     environmentPath: "/work",
     repositoryKey: "repos/app",
   });
 
   const unchosen = harness({ result: ready });
-  await workspace.execute(unchosen.ctx, { threadId: "t1" });
+  await workspace(unchosen.ctx, { threadId: "t1" });
   // bb's test host rejects an undefined value and the real one drops it, so
   // the key is left out rather than sent as undefined.
   expect(Object.keys(unchosen.calls[0]?.input as object)).toEqual(["environmentPath"]);
@@ -78,7 +76,7 @@ test("forwards a chosen repository and omits the key when there is none", async 
 
 test("explains a thread with no environment instead of calling the host", async () => {
   const { ctx, calls } = harness({ environment: null });
-  const result = await workspace.execute(ctx, { threadId: "t1" });
+  const result = await workspace(ctx, { threadId: "t1" });
 
   expect(result.state).toBe("noEnvironment");
   expect(result.reason).toBe("This thread has no project environment.");
@@ -91,7 +89,7 @@ test("explains an environment that is not ready yet", async () => {
   const { ctx, calls } = harness({
     environment: { hostId: "host-1", path: "/work", status: "starting" },
   });
-  const result = await workspace.execute(ctx, { threadId: "t1" });
+  const result = await workspace(ctx, { threadId: "t1" });
 
   expect(result.reason).toBe("This thread's environment is starting.");
   expect(calls).toEqual([]);
@@ -102,7 +100,7 @@ test("names a disconnected host as an error answer instead of throwing", async (
     error: new Error("Host is not connected"),
     host: { name: "Local Mac", status: "disconnected" },
   });
-  const result = await workspace.execute(ctx, { threadId: "t1" });
+  const result = await workspace(ctx, { threadId: "t1" });
 
   expect(result).toEqual({
     state: "error",
@@ -124,7 +122,5 @@ test("rethrows a failure on a host that is still connected", async () => {
     host: { name: "Local Mac", status: "connected" },
   });
 
-  await expect(workspace.execute(ctx, { threadId: "t1" })).rejects.toThrow(
-    "but exited with code 1",
-  );
+  await expect(workspace(ctx, { threadId: "t1" })).rejects.toThrow("but exited with code 1");
 });

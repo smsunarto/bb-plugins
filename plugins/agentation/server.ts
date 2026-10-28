@@ -90,7 +90,7 @@ import {
   threadTurnInProgress,
   turnAssignmentPhase,
 } from "./lib/delivery.ts";
-import { instructionFiles } from "@bb-kit/core/instructions";
+import { instructionFiles } from "@bb-plugins/instructions";
 
 // Agent-facing text, editable in the Prompt Editor plugin.
 const files = instructionFiles(import.meta.url);

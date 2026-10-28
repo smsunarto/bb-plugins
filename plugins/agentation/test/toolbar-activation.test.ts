@@ -1,5 +1,5 @@
 import { afterEach, expect, test } from "bun:test";
-import { installDom } from "@bb-kit/core/testing";
+import { installDom } from "@bb-plugins/testing";
 import { createElement, useState } from "react";
 import type { AgentationProps } from "../vendor/agentation/dist/index.mjs";
 import { FEEDBACK_MODE_LABEL, feedbackModeLauncher } from "../lib/feedback-mode.ts";
@@ -63,7 +63,9 @@ test("an initially active toolbar focuses its controls after mounting", async ()
   render(createElement<AgentationProps>(Agentation, { active: true, hideLauncher: true }));
   await waitFor(() =>
     expect(
-      document.querySelector("agentation-toolbar")?.shadowRoot?.activeElement?.getAttribute("aria-label"),
+      document
+        .querySelector("agentation-toolbar")
+        ?.shadowRoot?.activeElement?.getAttribute("aria-label"),
     ).toBe("Pause animations"),
   );
 });

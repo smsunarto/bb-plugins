@@ -64,7 +64,7 @@ function machines(answers: Record<string, unknown>) {
 test("asks every connected machine for its unpublished branches and names the machine", async () => {
   const { ctx, calls } = machines({ cardinal: { branches: [branch("scott/feature")] } });
 
-  expect(await unpublishedBranches.execute(ctx as never)).toEqual({
+  expect(await unpublishedBranches(ctx as never)).toEqual({
     branches: [{ ...branch("scott/feature"), hostId: "cardinal", machine: "linux-builder" }],
   });
   // The laptop failed and is left out; the sleeping machine is never asked.
@@ -84,7 +84,7 @@ test("asks every connected machine for its unpublished branches and names the ma
 
 test("a scoped lookup contacts only the named host and preserves the checkout boundary", async () => {
   const { ctx, calls } = machines({ cardinal: { branches: [branch("scott/feature")] } });
-  await unpublishedBranchesAt.execute(ctx as never, { hostId: "cardinal", path: "/work/app" });
+  await unpublishedBranchesAt(ctx as never, { hostId: "cardinal", path: "/work/app" });
   expect(calls).toEqual([
     {
       method: "unpublishedBranches",
@@ -92,10 +92,10 @@ test("a scoped lookup contacts only the named host and preserves the checkout bo
       options: { hostId: "cardinal", timeoutMs: 30_000 },
     },
   ]);
-  await expect(unpublishedBranchesAt.execute(ctx as never, { hostId: "laptop" })).rejects.toThrow(
+  await expect(unpublishedBranchesAt(ctx as never, { hostId: "laptop" })).rejects.toThrow(
     "not answering",
   );
-  await expect(unpublishedBranchesAt.execute(ctx as never, { hostId: "asleep" })).rejects.toThrow(
+  await expect(unpublishedBranchesAt(ctx as never, { hostId: "asleep" })).rejects.toThrow(
     "offline",
   );
 });

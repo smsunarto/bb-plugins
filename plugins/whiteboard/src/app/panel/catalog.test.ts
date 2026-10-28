@@ -1,5 +1,5 @@
 import { afterEach, expect, it, vi } from "vitest";
-import { pluginQueryClient } from "@bb-kit/core/rpc/query";
+import { queryClient } from "../query.ts";
 import type { ReviewApiSummary } from "../../shared/vendor/review-protocol/src/index.ts";
 import { SETTLE_LIMIT_MS, createCatalogEdits } from "./catalog.ts";
 
@@ -13,7 +13,7 @@ const row = (reviewId: string, dismissedAt: string | null = null): ReviewApiSumm
   repositoryName: "repo",
   viewedAt: null,
 });
-const read = () => pluginQueryClient.getQueryData<ReviewApiSummary[]>(key)!;
+const read = () => queryClient.getQueryData<ReviewApiSummary[]>(key)!;
 const gate = () => {
   let open!: () => void;
   let fail!: (error: Error) => void;
@@ -25,7 +25,7 @@ const gate = () => {
 };
 afterEach(() => {
   vi.useRealTimers();
-  pluginQueryClient.removeQueries({ queryKey: key });
+  queryClient.removeQueries({ queryKey: key });
 });
 
 it("shows a fast restore immediately, sends it after dismissal, and outlasts stale snapshots", async () => {

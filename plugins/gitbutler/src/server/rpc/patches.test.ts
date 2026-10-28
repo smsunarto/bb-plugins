@@ -20,7 +20,7 @@ test("forwards the patch source to the host entry", async () => {
   };
   const { ctx, calls } = harness({ result });
 
-  expect(await patches.execute(ctx, uncommitted)).toEqual(result);
+  expect(await patches(ctx, uncommitted)).toEqual(result);
   expect(calls[0]?.input).toEqual({
     environmentPath: "/work",
     source: { kind: "uncommitted" },
@@ -30,9 +30,7 @@ test("forwards the patch source to the host entry", async () => {
 test("fails loudly when the thread has no environment", async () => {
   const { ctx } = harness({ environment: null });
 
-  expect(patches.execute(ctx, uncommitted)).rejects.toThrow(
-    "This thread has no project environment.",
-  );
+  expect(patches(ctx, uncommitted)).rejects.toThrow("This thread has no project environment.");
 });
 
 test("names the machine when bb has lost the thread's host", async () => {
@@ -41,5 +39,5 @@ test("names the machine when bb has lost the thread's host", async () => {
     host: { name: "Local Mac", status: "disconnected" },
   });
 
-  await expect(patches.execute(ctx, uncommitted)).rejects.toThrow("Local Mac is not connected.");
+  await expect(patches(ctx, uncommitted)).rejects.toThrow("Local Mac is not connected.");
 });

@@ -2,13 +2,13 @@ import type { SharedComparisonInput } from "../shared/schema.ts";
 import { BranchReview } from "./changes.tsx";
 import { shortSha } from "./format.ts";
 import { Loading, Notice, RetryButton, errorText } from "./notice.tsx";
-import { rpc } from "./rpc.ts";
+import { useRpcQuery } from "./rpc.ts";
 import { useReconcile } from "./sync-state.tsx";
 
 /** The original comparison, independent of the branch's later publication or deletion. */
 export function SharedComparisonView({ range }: { range: SharedComparisonInput }) {
   useReconcile();
-  const comparison = rpc.sharedComparison.useQuery(range, { staleTime: Infinity, retry: false });
+  const comparison = useRpcQuery("sharedComparison", range, { staleTime: Infinity, retry: false });
   if (!comparison.data)
     return comparison.isError ? (
       <Notice

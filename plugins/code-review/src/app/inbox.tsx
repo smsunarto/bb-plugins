@@ -26,7 +26,7 @@ import { PANEL_PATH, absoluteTime, plural, relativeTime } from "./format.ts";
 import { useStoredChoice } from "./hooks/useStoredChoice.ts";
 import { cn, keepInView } from "./lib/utils.ts";
 import { Loading, Notice, RetryButton, Tip, errorText } from "./notice.tsx";
-import { rpc } from "./rpc.ts";
+import { useRpcQuery } from "./rpc.ts";
 import { SyncState, useReconcile, usePrPrefetch } from "./sync-state.tsx";
 import {
   AccountAvatar,
@@ -45,7 +45,7 @@ const INBOX_REFRESH_MS = 120_000;
 export const INBOX_QUERY = { staleTime: 30_000, refetchInterval: INBOX_REFRESH_MS } as const;
 
 export function useInbox() {
-  return rpc.inbox.useQuery(INBOX_QUERY);
+  return useRpcQuery("inbox", null, INBOX_QUERY);
 }
 
 /**
@@ -55,7 +55,7 @@ export function useInbox() {
 const LOCAL_BRANCHES_QUERY = { staleTime: 30_000, refetchInterval: INBOX_REFRESH_MS } as const;
 
 export function useLocalBranches() {
-  return rpc.localBranches.useQuery({}, LOCAL_BRANCHES_QUERY);
+  return useRpcQuery("localBranches", {}, LOCAL_BRANCHES_QUERY);
 }
 
 /** The inbox's tabs: the pull request queues, then branches with no pull request yet. */

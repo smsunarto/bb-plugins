@@ -1,7 +1,6 @@
 import { expect, test } from "bun:test";
-import { callProcedure } from "@bb-kit/core/rpc";
 import { fakeContext, fixture } from "../../../test/fake-gh.ts";
-import { inbox } from "./inbox.ts";
+import { inbox, inboxContract } from "./inbox.ts";
 import { setPinned } from "./set-pinned.ts";
 
 test("asks GitHub for the stored pins and answers a valid inbox", async () => {
@@ -11,10 +10,10 @@ test("asks GitHub for the stored pins and answers a valid inbox", async () => {
     { owner: "nope-nope-xyz", repo: "none", number: 1 },
     { owner: "cli", repo: "cli", number: 9001 },
   ]) {
-    await setPinned.execute(ctx, { account: "octocat", ref, pinned: true });
+    await setPinned(ctx, { account: "octocat", ref, pinned: true });
   }
 
-  const result = (await callProcedure(inbox, ctx, null)) as { pinned: { url: string }[] };
+  const result = inboxContract.output.parse(await inbox(ctx));
 
   expect(calls[0]).toMatchObject({
     variables: {

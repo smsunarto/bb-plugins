@@ -1,7 +1,7 @@
 import { useState } from "react";
 import type { RefObject } from "react";
 import type { TraceEvent } from "../shared/model.ts";
-import { rpc } from "./rpc.ts";
+import { useRpcQuery } from "./rpc.ts";
 import { Empty, Evidence, QueryError } from "./controls.tsx";
 import { defaultTraceRenderers } from "./renderers.tsx";
 import type { TraceRendererRegistry } from "./renderers.tsx";
@@ -11,7 +11,8 @@ import { decodeRawPage } from "./raw-text.ts";
 function RawRecord({ hostId, eventId }: { hostId: string; eventId: string }) {
   const [offsets, setOffsets] = useState([0]);
   const offset = offsets.at(-1) ?? 0;
-  const result = rpc.raw.useQuery(
+  const result = useRpcQuery(
+    "raw",
     { hostId, eventId, offset: Math.max(0, offset - 3), limit: 65_542 },
     { gcTime: 0, staleTime: 0, retry: false },
   );
@@ -105,7 +106,8 @@ export function Inspector({
   onBack?: () => void;
   renderers?: TraceRendererRegistry;
 }) {
-  const result = rpc.event.useQuery(
+  const result = useRpcQuery(
+    "event",
     { hostId, eventId: selected.id },
     { gcTime: 0, staleTime: 1000, retry: false },
   );

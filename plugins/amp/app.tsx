@@ -9,7 +9,7 @@ import {
   type PluginMessageDirectiveProps,
   type PluginTimelineRendererProps,
 } from "@get-bb/plugin-sdk/app";
-import { sentryAppTelemetry } from "@bb-kit/sentry/app";
+import { sentryAppTelemetry } from "@bb-plugins/sentry/app";
 import { PLUGIN_TELEMETRY } from "./shared/telemetry";
 import { ORACLE_DIRECTIVE_ID, type OracleReport } from "./src/oracle-directive";
 import { useOracleReport } from "./src/oracle-report-cache";

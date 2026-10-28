@@ -1,4 +1,7 @@
-import { createRPC } from "@bb-kit/core/rpc/query";
-import type plugin from "../server/server.ts";
+import { useRpc } from "@get-bb/plugin-sdk/app";
+import type { contract } from "../server/server.ts";
 
-export const rpc = createRPC<(typeof plugin)["rpc"]>();
+/** The typed client for this plugin's RPC methods, resolved per render. */
+export function useHtmlRpc() {
+  return useRpc<typeof contract>();
+}

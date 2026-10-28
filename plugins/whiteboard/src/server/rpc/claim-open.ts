@@ -1,7 +1,6 @@
-import type { Context } from "@bb-kit/core/plugin";
-import { defineMutation } from "@bb-kit/core/rpc";
+import type { z } from "zod";
 import { claimOpenInput, claimOpenOutput } from "../../shared/contracts/api-tunnel.ts";
-import type { WhiteboardServices } from "../../shared/contracts/engine.ts";
+import type { WhiteboardContext } from "../lib/context.ts";
 
 /**
  * A thread's header listener asks, on mount and reconnect, whether an agent
@@ -9,10 +8,11 @@ import type { WhiteboardServices } from "../../shared/contracts/engine.ts";
  * After focusing an open, it calls again with `after`, so the server forgets
  * it and no other pane or window focuses it.
  */
-export const claimOpen = defineMutation({
-  input: claimOpenInput,
-  output: claimOpenOutput,
-  async execute(ctx: Context<Pick<WhiteboardServices, "engine">>, input) {
-    return { open: await ctx.engine.claimOpen(input.threadId, input.after) };
-  },
-});
+export const claimOpenContract = { input: claimOpenInput, output: claimOpenOutput };
+
+export async function claimOpen(
+  ctx: WhiteboardContext<"engine">,
+  input: z.output<typeof claimOpenContract.input>,
+): Promise<z.input<typeof claimOpenContract.output>> {
+  return { open: await ctx.engine.claimOpen(input.threadId, input.after) };
+}

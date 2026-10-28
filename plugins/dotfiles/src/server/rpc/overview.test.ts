@@ -27,7 +27,7 @@ test("builds the overview from static files, discovered skills, and git state", 
       }),
   });
 
-  const result = await overview.execute(ctx, {});
+  const result = await overview(ctx, {});
 
   assert.equal(result.state, "ready");
   if (result.state !== "ready") return;
@@ -75,7 +75,7 @@ test("reads the machine the panel asked for", async () => {
       }),
   });
 
-  const result = await overview.execute(ctx, { hostId: "host_mac" });
+  const result = await overview(ctx, { hostId: "host_mac" });
 
   assert.equal(result.state, "ready");
   assert.deepEqual(result.host, { id: "host_mac", name: "Local Mac" });
@@ -95,7 +95,7 @@ test("names an offline machine instead of reading it", async () => {
     },
   });
 
-  assert.deepEqual(await overview.execute(ctx, { hostId: "host_mac" }), {
+  assert.deepEqual(await overview(ctx, { hostId: "host_mac" }), {
     state: "offline",
     host: { id: "host_mac", name: "Local Mac" },
   });
@@ -112,7 +112,7 @@ test("returns a stable missing-repository overview", async () => {
       }),
   });
 
-  const result = await overview.execute(ctx, {});
+  const result = await overview(ctx, {});
 
   assert.equal(result.state, "ready");
   if (result.state !== "ready") return;

@@ -1,5 +1,5 @@
 import { useRef, useState } from "react";
-import { pluginQueryClient } from "@bb-kit/core/rpc/query";
+import { queryClient } from "./query.ts";
 import { prRefSchema, sameRef, type PullRequest } from "../shared/schema.ts";
 import { prActionIssue, type PrAction, type MergeMethod } from "../shared/pr-actions.ts";
 import { Button } from "./components/ui/button.tsx";
@@ -12,7 +12,7 @@ import {
   DialogTitle,
 } from "./components/ui/dialog.tsx";
 import { errorText } from "./notice.tsx";
-import { rpc } from "./rpc.ts";
+import { queryKey, useRpcQuery, useRpcMutation } from "./rpc.ts";
 
 const LABEL: Record<PrAction, string> = {
   close: "Close PR",
@@ -70,9 +70,9 @@ export function PrActions({ pr }: { pr: PullRequest }) {
 }
 
 function refreshPr(pr: PullRequest) {
-  void pluginQueryClient.invalidateQueries({ queryKey: rpc.inbox.queryKey() });
+  void queryClient.invalidateQueries({ queryKey: queryKey("inbox") });
   for (const method of ["pullRequest", "checks", "prActionState"]) {
-    void pluginQueryClient.invalidateQueries({
+    void queryClient.invalidateQueries({
       queryKey: [method],
       predicate: (query) => {
         const input = query.queryKey[1];
@@ -101,7 +101,8 @@ function PrActionDialog({
   onReturnFocus: () => void;
 }) {
   const [chosenMethod, setMethod] = useState<MergeMethod>("squash");
-  const policy = rpc.prActionState.useQuery(
+  const policy = useRpcQuery(
+    "prActionState",
     { account: pr.account, ref: pr.ref },
     {
       staleTime: 0,
@@ -109,7 +110,7 @@ function PrActionDialog({
       refetchInterval: (query) => (query.state.data?.mergeStateStatus === "UNKNOWN" ? 2000 : false),
     },
   );
-  const mutation = rpc.prAction.useMutation();
+  const mutation = useRpcMutation("prAction");
   const method = policy.data?.methods.includes(chosenMethod)
     ? chosenMethod
     : (policy.data?.methods[0] ?? chosenMethod);

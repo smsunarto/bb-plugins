@@ -1,6 +1,6 @@
 import { useId } from "react";
 import { Markdown, experimental_Icon as Icon } from "@get-bb/plugin-sdk/app";
-import { pluginQueryClient } from "@bb-kit/core/rpc/query";
+import { queryClient } from "./query.ts";
 import { useMutationState } from "@tanstack/react-query";
 import type { Mutation, MutationKey } from "@tanstack/react-query";
 import { toast } from "sonner";
@@ -15,7 +15,7 @@ import type {
 import { Button } from "./components/ui/button.tsx";
 import { cn } from "./lib/utils.ts";
 import { errorText } from "./notice.tsx";
-import { rpc } from "./rpc.ts";
+import { queryKey, useRpcMutation } from "./rpc.ts";
 import { useAddDraft, draftKey as reviewDraftKey } from "./draft-sync.tsx";
 
 /**
@@ -82,7 +82,7 @@ function findingLines(finding: Finding): {
   };
 }
 
-type DraftMutation = ReturnType<typeof rpc.addDraftComment.useMutation>;
+type DraftMutation = ReturnType<typeof useRpcMutation<"addDraftComment">>;
 type DraftInput = Parameters<DraftMutation["mutate"]>[0];
 type DraftLines = Pick<ReviewThread, "path" | "line" | "side" | "startLine" | "startSide">;
 
@@ -223,7 +223,7 @@ function DraftCommentButton({
   stale: boolean;
 }) {
   const mutationKey = draftKey(pr);
-  const pullRequestKey = rpc.pullRequest.queryKey({ account: pr.account, ref: pr.ref });
+  const pullRequestKey = queryKey("pullRequest", { account: pr.account, ref: pr.ref });
   const add = useAddDraft(pr);
   // A write still out lives in the mutation cache, not in this card, so a
   // card mounted again meanwhile shows it too.
@@ -252,8 +252,8 @@ function DraftCommentButton({
       onClick={() => {
         // A second click can land before the render that disables the
         // button, so the caches decide whether the finding is out or saved.
-        const latest = pluginQueryClient.getQueryData<PullRequest>(pullRequestKey) ?? pr;
-        const out = pluginQueryClient.isMutating({
+        const latest = queryClient.getQueryData<PullRequest>(pullRequestKey) ?? pr;
+        const out = queryClient.isMutating({
           mutationKey,
           predicate: (mutation) => writesFinding(finding, mutation),
         });

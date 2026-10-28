@@ -1,11 +1,14 @@
-import { defineQuery } from "@bb-kit/core/rpc";
 import { z } from "zod";
 import type { CodeReviewContext } from "../lib/context.ts";
 
 /** What the reader wants every bb review to pay attention to. Empty when unset. */
-export const reviewInstructions = defineQuery({
+export const reviewInstructionsContract = {
+  input: z.null(),
   output: z.strictObject({ instructions: z.string() }),
-  async execute(ctx: CodeReviewContext) {
-    return { instructions: await ctx.store.instructions() };
-  },
-});
+};
+
+export async function reviewInstructions(
+  ctx: CodeReviewContext,
+): Promise<z.input<typeof reviewInstructionsContract.output>> {
+  return { instructions: await ctx.store.instructions() };
+}

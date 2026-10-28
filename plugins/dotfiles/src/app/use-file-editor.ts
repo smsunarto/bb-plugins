@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { pluginQueryClient } from "@bb-kit/core/rpc/query";
-import { rpc, type RPCOutput } from "./rpc.ts";
+import { queryClient } from "./query.ts";
+import { queryKey, useDotfilesRpc, useRpcQuery, type RPCOutput } from "./rpc.ts";
 import type { RepoPath } from "./route.ts";
 import { errorMessage, markRenderStale } from "./tasks.ts";
 
@@ -32,23 +32,23 @@ function commitWritten(
   result: { readonly sha256: string; readonly renderHint: boolean },
 ): void {
   if (result.renderHint) markRenderStale();
-  const key = rpc.readFile.queryKey({ hostId, path });
-  const cached = pluginQueryClient.getQueryData<ReadFileResult>(key);
+  const key = queryKey("readFile", { hostId, path });
+  const cached = queryClient.getQueryData<ReadFileResult>(key);
   if (cached !== undefined) {
-    pluginQueryClient.setQueryData<ReadFileResult>(key, {
+    queryClient.setQueryData<ReadFileResult>(key, {
       ...cached,
       content,
       sha256: result.sha256,
     });
   }
-  void pluginQueryClient.invalidateQueries({ queryKey: rpc.overview.queryKey() });
+  void queryClient.invalidateQueries({ queryKey: queryKey("overview") });
 }
 
 /** Edit `path` in `hostId`'s checkout. Every read and save names that machine. */
 export function useFileEditor(hostId: string, path: RepoPath): FileEditor {
   // staleTime Infinity: the draft, not the cache, is live while editing.
-  const file = rpc.readFile.useQuery({ hostId, path }, { staleTime: Number.POSITIVE_INFINITY });
-  const client = rpc.useClient();
+  const file = useRpcQuery("readFile", { hostId, path }, { staleTime: Number.POSITIVE_INFINITY });
+  const client = useDotfilesRpc();
 
   const draftRef = useRef<string | null>(null);
   const savedRef = useRef<string | null>(null);
@@ -95,12 +95,13 @@ export function useFileEditor(hostId: string, path: RepoPath): FileEditor {
         let unconditional = force;
         for (;;) {
           const submitted: string | null = draftRef.current;
-          if (submitted === null) return;
-          const result = await client.saveFile({
+          const expectedSha256: string | null = shaRef.current;
+          if (submitted === null || expectedSha256 === null) return;
+          const result: RPCOutput<"saveFile"> = await client.call("saveFile", {
             hostId,
             path,
             content: submitted,
-            ...(unconditional ? {} : { expectedSha256: shaRef.current }),
+            ...(unconditional ? {} : { expectedSha256 }),
           });
           if (result.outcome === "conflict") {
             conflictRef.current = true;
@@ -133,7 +134,7 @@ export function useFileEditor(hostId: string, path: RepoPath): FileEditor {
       const sha = shaRef.current;
       if (draft === null || sha === null || draft === savedRef.current) return;
       const flushOnUnmount = async (): Promise<void> => {
-        const result = await client.saveFile({
+        const result = await client.call("saveFile", {
           hostId,
           path,
           content: draft,

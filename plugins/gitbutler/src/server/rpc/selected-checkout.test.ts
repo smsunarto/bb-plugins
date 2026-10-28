@@ -192,14 +192,13 @@ const target = {
 
 test("selected reads all route through the selected host with server-owned provenance", async () => {
   const scenarios = [
-    () => workspace.execute(ctx, { threadId: "t1", repositoryKey: "repos/api", checkout }),
-    () =>
-      baseHistory.execute(ctx, { threadId: "t1", checkout, from: "abcd", offset: 0, limit: 20 }),
-    () => patches.execute(ctx, { threadId: "t1", checkout, source: { kind: "uncommitted" } }),
-    () => reviews.execute(ctx, { threadId: "t1", checkout }),
-    () => reviewUrl.execute(ctx, { threadId: "t1", checkout, branch: "scott/task" }),
-    () => oplog.execute(ctx, { threadId: "t1", checkout }),
-    () => parkedBranches.execute(ctx, { threadId: "t1", checkout }),
+    () => workspace(ctx, { threadId: "t1", repositoryKey: "repos/api", checkout }),
+    () => baseHistory(ctx, { threadId: "t1", checkout, from: "abcd", offset: 0, limit: 20 }),
+    () => patches(ctx, { threadId: "t1", checkout, source: { kind: "uncommitted" } }),
+    () => reviews(ctx, { threadId: "t1", checkout }),
+    () => reviewUrl(ctx, { threadId: "t1", checkout, branch: "scott/task" }),
+    () => oplog(ctx, { threadId: "t1", checkout }),
+    () => parkedBranches(ctx, { threadId: "t1", checkout }),
   ];
   const { ctx, calls } = context();
   for (const read of scenarios) await read();
@@ -229,7 +228,7 @@ test("selected reads all route through the selected host with server-owned prove
 
 test("selected write preserves parent environment pin, selected host and observed branch tip", async () => {
   const { ctx, calls } = context();
-  expect(await butAction.execute(ctx, { ...scope, action })).toMatchObject({
+  expect(await butAction(ctx, { ...scope, action })).toMatchObject({
     result: { status: "done" },
     // The board it left, drawn for the checkout's machine.
     workspace: { state: "ready", environmentId: "env-1", hostId: "host-2" },
@@ -251,13 +250,13 @@ test("selected write preserves parent environment pin, selected host and observe
 
 test("a selected board's read tells the next write where the checkout is: one host call", async () => {
   const { ctx, calls } = context();
-  await workspace.execute(ctx, { threadId: "t1", repositoryKey: "repos/api", checkout });
+  await workspace(ctx, { threadId: "t1", repositoryKey: "repos/api", checkout });
   calls.length = 0;
-  await butAction.execute(ctx, { ...scope, action });
+  await butAction(ctx, { ...scope, action });
   expect(calls.map(({ method }) => method)).toEqual(["butAction"]);
   // The subthread records of the board on screen need no host call either.
-  await reviewRequests.execute(ctx, { threadId: "t1", repositoryKey: "repos/api", checkout });
-  await conflictResolution.execute(ctx, { threadId: "t1", repositoryKey: "repos/api", checkout });
+  await reviewRequests(ctx, { threadId: "t1", repositoryKey: "repos/api", checkout });
+  await conflictResolution(ctx, { threadId: "t1", repositoryKey: "repos/api", checkout });
   expect(calls.map(({ method }) => method)).toEqual(["butAction"]);
 });
 
@@ -269,7 +268,7 @@ test("browser cannot supply authoritative roots or origin, unknown and offline m
   for (const hostId of ["invented", "offline"]) {
     const { ctx, calls } = context();
     await expect(
-      butAction.execute(ctx, { ...scope, checkout: { ...checkout, hostId }, action }),
+      butAction(ctx, { ...scope, checkout: { ...checkout, hostId }, action }),
     ).rejects.toThrow("not connected or has no known checkouts");
     expect(calls).toHaveLength(0);
   }
@@ -278,7 +277,7 @@ test("browser cannot supply authoritative roots or origin, unknown and offline m
 test("unregistered paths, missing origins and moved parent environments refuse before a host mutation", async () => {
   const unknown = context();
   await expect(
-    butAction.execute(unknown.ctx, {
+    butAction(unknown.ctx, {
       ...scope,
       checkout: { ...checkout, path: "/unrelated" },
       action,
@@ -286,10 +285,10 @@ test("unregistered paths, missing origins and moved parent environments refuse b
   ).rejects.toThrow("Checkout is not registered");
   const missing = context();
   missing.withoutOrigin();
-  await expect(butAction.execute(missing.ctx, { ...scope, action })).rejects.toThrow("no origin");
+  await expect(butAction(missing.ctx, { ...scope, action })).rejects.toThrow("no origin");
   const moved = context();
   moved.duringOrigin(moved.move);
-  await expect(butAction.execute(moved.ctx, { ...scope, action })).rejects.toThrow(
+  await expect(butAction(moved.ctx, { ...scope, action })).rejects.toThrow(
     "moved to another environment",
   );
   for (const fixture of [unknown, missing, moved]) {
@@ -299,9 +298,9 @@ test("unregistered paths, missing origins and moved parent environments refuse b
 
 test("PR and conflict children start at the canonical checkout and actual branch on its machine", async () => {
   const { ctx, spawned, children } = context();
-  await requestReview.execute(ctx, { ...scope, branch: "scott/task" });
+  await requestReview(ctx, { ...scope, branch: "scott/task" });
   children.set("child-1", { status: "idle", archivedAt: null });
-  await resolveConflicts.execute(ctx, scope);
+  await resolveConflicts(ctx, scope);
   for (const child of spawned)
     expect(child).toMatchObject({
       parentThreadId: "t1",
@@ -329,21 +328,21 @@ test("changed branch or head cannot start work for the board's old snapshot", as
   ]) {
     const fixture = context();
     Object.assign(fixture.identity, identity);
-    await expect(
-      requestReview.execute(fixture.ctx, { ...scope, branch: "scott/task" }),
-    ).rejects.toThrow("changed since the board was read");
+    await expect(requestReview(fixture.ctx, { ...scope, branch: "scott/task" })).rejects.toThrow(
+      "changed since the board was read",
+    );
     expect(fixture.spawned).toHaveLength(0);
   }
 });
 
 test("canonical checkout tracking is shared across parent panels and separated from the main checkout", async () => {
   const fixture = context();
-  await requestReview.execute(fixture.ctx, { ...scope, branch: "scott/task" });
+  await requestReview(fixture.ctx, { ...scope, branch: "scott/task" });
   expect(
-    await requestReview.execute(fixture.ctx, { ...scope, threadId: "t2", branch: "scott/task" }),
+    await requestReview(fixture.ctx, { ...scope, threadId: "t2", branch: "scott/task" }),
   ).toEqual({ threadId: "child-1" });
   fixture.calls.length = 0;
-  expect(await reviewRequests.execute(fixture.ctx, { threadId: "t2", checkout })).toEqual({
+  expect(await reviewRequests(fixture.ctx, { threadId: "t2", checkout })).toEqual({
     requests: [{ branch: "scott/task", threadId: "child-1", running: true }],
   });
   expect(fixture.calls.at(-1)).toEqual({
@@ -352,13 +351,13 @@ test("canonical checkout tracking is shared across parent panels and separated f
     input: target,
   });
   expect(fixture.calls.some(({ method }) => method === "workspace")).toBe(false);
-  expect(await reviewRequests.execute(fixture.ctx, { threadId: "t1" })).toEqual({ requests: [] });
+  expect(await reviewRequests(fixture.ctx, { threadId: "t1" })).toEqual({ requests: [] });
   fixture.children.set("child-1", { status: "idle", archivedAt: null });
-  await resolveConflicts.execute(fixture.ctx, scope);
-  expect(await conflictResolution.execute(fixture.ctx, { threadId: "t2", checkout })).toEqual({
+  await resolveConflicts(fixture.ctx, scope);
+  expect(await conflictResolution(fixture.ctx, { threadId: "t2", checkout })).toEqual({
     subthread: { threadId: "child-2", running: true },
   });
-  expect(await conflictResolution.execute(fixture.ctx, { threadId: "t1" })).toEqual({
+  expect(await conflictResolution(fixture.ctx, { threadId: "t1" })).toEqual({
     subthread: null,
   });
   expect(fixture.spawned).toHaveLength(2);
@@ -372,12 +371,12 @@ test("active, archived-but-running, and queued checkout owners block actions and
   ]) {
     const fixture = context();
     fixture.owners.push({ id: "owner", environmentPath: "/another-alias/task", ...owner });
-    await expect(butAction.execute(fixture.ctx, { ...scope, action })).rejects.toThrow(
+    await expect(butAction(fixture.ctx, { ...scope, action })).rejects.toThrow(
       "in use by Task owner (owner)",
     );
-    await expect(
-      requestReview.execute(fixture.ctx, { ...scope, branch: "scott/task" }),
-    ).rejects.toThrow("in use by Task owner");
+    await expect(requestReview(fixture.ctx, { ...scope, branch: "scott/task" })).rejects.toThrow(
+      "in use by Task owner",
+    );
     expect(fixture.calls.some(({ method }) => method === "butAction")).toBe(false);
     expect(fixture.spawned).toHaveLength(0);
   }
@@ -387,7 +386,7 @@ test("native child mutations require the observed branch and tip for selected an
   for (const selection of [checkout, undefined]) {
     const fixture = context();
     await expect(
-      requestReview.execute(fixture.ctx, {
+      requestReview(fixture.ctx, {
         threadId: "t1",
         environmentId: "env-1",
         checkout: selection,
@@ -395,7 +394,7 @@ test("native child mutations require the observed branch and tip for selected an
       }),
     ).rejects.toThrow("Refresh this checkout before starting work");
     await expect(
-      resolveConflicts.execute(fixture.ctx, {
+      resolveConflicts(fixture.ctx, {
         threadId: "t1",
         environmentId: "env-1",
         checkout: selection,
@@ -408,9 +407,9 @@ test("native child mutations require the observed branch and tip for selected an
 test("a native main checkout uses Git prompts while retaining the parent's environment", async () => {
   const fixture = context();
   const main = { threadId: "t1", environmentId: "env-1", observed };
-  await requestReview.execute(fixture.ctx, { ...main, branch: "scott/task" });
+  await requestReview(fixture.ctx, { ...main, branch: "scott/task" });
   fixture.children.set("child-1", { status: "idle", archivedAt: null });
-  await resolveConflicts.execute(fixture.ctx, main);
+  await resolveConflicts(fixture.ctx, main);
   expect(fixture.spawned).toHaveLength(2);
   for (const child of fixture.spawned)
     expect(child.environment).toEqual({ type: "reuse", environmentId: "env-1" });
@@ -423,7 +422,7 @@ test("a native main checkout uses Git prompts while retaining the parent's envir
 test("a detached native rebase conflict child keeps the exact checkout without switching a branch", async () => {
   const fixture = context();
   fixture.identity.branch = null;
-  await resolveConflicts.execute(fixture.ctx, {
+  await resolveConflicts(fixture.ctx, {
     ...scope,
     observed: { ...observed, branch: null },
   });
@@ -438,8 +437,8 @@ test("a detached native rebase conflict child keeps the exact checkout without s
 test("overlapping PR and conflict child requests cannot start two checkout owners", async () => {
   const fixture = context();
   const results = await Promise.allSettled([
-    requestReview.execute(fixture.ctx, { ...scope, branch: "scott/task" }),
-    resolveConflicts.execute(fixture.ctx, scope),
+    requestReview(fixture.ctx, { ...scope, branch: "scott/task" }),
+    resolveConflicts(fixture.ctx, scope),
   ]);
   expect(results.map(({ status }) => status).sort()).toEqual(["fulfilled", "rejected"]);
   const failed = results.find((result) => result.status === "rejected");
@@ -452,7 +451,7 @@ test("overlapping PR and conflict child requests cannot start two checkout owner
 test("native child spawn and resume require the host mutation preflight", async () => {
   const pr = context();
   pr.blockPreparation();
-  await expect(requestReview.execute(pr.ctx, { ...scope, branch: "scott/task" })).rejects.toThrow(
+  await expect(requestReview(pr.ctx, { ...scope, branch: "scott/task" })).rejects.toThrow(
     "applied to the main GitButler workspace",
   );
   expect(pr.spawned).toHaveLength(0);
@@ -462,10 +461,10 @@ test("native child spawn and resume require the host mutation preflight", async 
     input: { ...target, kind: "review", observed },
   });
   const conflicts = context();
-  await resolveConflicts.execute(conflicts.ctx, scope);
+  await resolveConflicts(conflicts.ctx, scope);
   conflicts.children.set("child-1", { status: "idle", archivedAt: null });
   conflicts.blockPreparation();
-  await expect(resolveConflicts.execute(conflicts.ctx, scope)).rejects.toThrow(
+  await expect(resolveConflicts(conflicts.ctx, scope)).rejects.toThrow(
     "applied to the main GitButler workspace",
   );
   expect(conflicts.spawned).toHaveLength(1);

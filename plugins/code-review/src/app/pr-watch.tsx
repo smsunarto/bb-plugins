@@ -7,7 +7,7 @@ import {
   useRealtime,
   useRealtimeConnectionState,
 } from "@get-bb/plugin-sdk/app";
-import { pluginQueryClient } from "@bb-kit/core/rpc/query";
+import { queryClient } from "./query.ts";
 import { PR_WATCH_CHANNEL, prKey, prSubPath } from "../shared/schema.ts";
 import type { Check, PrWatch } from "../shared/schema.ts";
 import { checkDuration } from "./checks.tsx";
@@ -15,7 +15,7 @@ import { CONTROL_HOVER_TRANSITION } from "./components/ui/motion.ts";
 import { PANEL_PATH, plural, relativeTime, shortSha } from "./format.ts";
 import { cn } from "./lib/utils.ts";
 import { errorText } from "./notice.tsx";
-import { rpc } from "./rpc.ts";
+import { queryKey as rpcQueryKey, useRpcQuery, useRpcMutation } from "./rpc.ts";
 import { ChecksStateIcon } from "./status.tsx";
 import { useNow } from "./sync-state.tsx";
 
@@ -37,8 +37,8 @@ const ACTION_CLASS = cn(
 
 export function usePrWatches(threadId: string) {
   const input = { threadId };
-  const queryKey = rpc.prWatches.queryKey(input);
-  const query = rpc.prWatches.useQuery(input, {
+  const queryKey = rpcQueryKey("prWatches", input);
+  const query = useRpcQuery("prWatches", input, {
     staleTime: 10_000,
     // A thread that watches nothing hears its first watch over realtime, or on reconnect.
     refetchInterval: (current) => (current.state.data?.watches.length ? WATCHING_POLL_MS : false),
@@ -47,7 +47,7 @@ export function usePrWatches(threadId: string) {
   const previous = useRef(connection);
   useEffect(() => {
     if (connection === "connected" && previous.current !== "connected") {
-      void pluginQueryClient.invalidateQueries({ queryKey }, { cancelRefetch: false });
+      void queryClient.invalidateQueries({ queryKey }, { cancelRefetch: false });
     }
     previous.current = connection;
   }, [connection, queryKey]);
@@ -57,7 +57,7 @@ export function usePrWatches(threadId: string) {
       payload !== null &&
       (payload as { threadId?: unknown }).threadId === threadId
     ) {
-      void pluginQueryClient.invalidateQueries({ queryKey }, { cancelRefetch: false });
+      void queryClient.invalidateQueries({ queryKey }, { cancelRefetch: false });
     }
   });
   return query;
@@ -149,9 +149,9 @@ function StateIcon({ watch }: { watch: PrWatch }) {
 function WatchedPullRequest({ threadId, watch }: { threadId: string; watch: PrWatch }) {
   const [expanded, setExpanded] = useState(false);
   const listId = useId();
-  const stop = rpc.stopPrWatch.useMutation({
+  const stop = useRpcMutation("stopPrWatch", {
     onSettled: () =>
-      pluginQueryClient.invalidateQueries({ queryKey: rpc.prWatches.queryKey({ threadId }) }),
+      queryClient.invalidateQueries({ queryKey: rpcQueryKey("prWatches", { threadId }) }),
   });
   const key = prKey(watch.ref);
   const summary = watchSummary(watch);

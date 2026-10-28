@@ -1,10 +1,10 @@
 import { beforeEach, expect, test } from "bun:test";
-import { pluginQueryClient } from "@bb-kit/core/rpc/query";
-import { installDom } from "@bb-kit/core/testing";
+import { queryClient } from "./query.ts";
+import { installDom } from "@bb-plugins/testing";
 import { parseWorkspace } from "../host/parse.ts";
 import type { Workspace } from "../shared/schema.ts";
 import { statusPayload } from "../../test/fixtures.ts";
-import { rpc } from "./rpc.ts";
+import { rpcQueryKey } from "./rpc.ts";
 import { readStored } from "./stored-queries.ts";
 
 installDom();
@@ -21,7 +21,7 @@ function board(state: Workspace["state"] = "ready"): Workspace {
 }
 
 function answer(data: Workspace): void {
-  pluginQueryClient.setQueryData(rpc.workspace.queryKey(input), data);
+  queryClient.setQueryData(rpcQueryKey("workspace", input), data);
 }
 
 /** The stored entries' keys, without the index. */
@@ -35,7 +35,7 @@ function storedKeys(): string[] {
 }
 
 beforeEach(() => {
-  pluginQueryClient.clear();
+  queryClient.clear();
   window.localStorage.clear();
 });
 
@@ -78,7 +78,7 @@ test("storage that refuses every write never fails the read", () => {
   try {
     const ready = board();
     expect(() => answer(ready)).not.toThrow();
-    expect(pluginQueryClient.getQueryData<unknown>(rpc.workspace.queryKey(input))).toBe(ready);
+    expect(queryClient.getQueryData<unknown>(rpcQueryKey("workspace", input))).toBe(ready);
   } finally {
     proto.setItem = setItem;
   }

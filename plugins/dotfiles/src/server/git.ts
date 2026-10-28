@@ -1,4 +1,3 @@
-import type { Context } from "@bb-kit/core/plugin";
 import type { BbPluginApi, ExperimentalHostClient } from "@get-bb/plugin-sdk";
 import { join } from "node:path";
 import type { TaskResult } from "../shared/domain.ts";
@@ -47,7 +46,7 @@ export interface DotfilesGit {
 }
 
 /** The `ctx` every rpc and command handler declares: the host plus `git`. */
-export type GitContext = Context<{ git: DotfilesGit }>;
+export type GitContext = Readonly<{ bb: BbPluginApi; git: DotfilesGit }>;
 
 export type DotfilesHostClient = Pick<ExperimentalHostClient<typeof dotfilesHostContract>, "call">;
 

@@ -5,7 +5,7 @@ import { status } from "./status.ts";
 
 test("names every signed-in account, the active one first", async () => {
   const { ctx } = fakeContext({ accounts: ["sms-yui", "smsunarto"] });
-  expect(await status.execute(ctx)).toEqual({
+  expect(await status(ctx)).toEqual({
     ok: true,
     login: "sms-yui",
     accounts: ["sms-yui", "smsunarto"],
@@ -15,7 +15,7 @@ test("names every signed-in account, the active one first", async () => {
 test("says what is wrong instead of throwing", async () => {
   const answer = (stderr: string, code?: number) => {
     const fail: GhRunner = async () => ({ code: code ?? 1, stdout: "", stderr });
-    return status.execute({ ...fakeContext().ctx, github: createGitHub(fail) });
+    return status({ ...fakeContext().ctx, github: createGitHub(fail) });
   };
 
   expect(await answer("ENOENT: gh not found", 127)).toEqual({

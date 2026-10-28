@@ -1,13 +1,16 @@
-import { defineMutation } from "@bb-kit/core/rpc";
-import type { Context } from "@bb-kit/core/plugin";
 import { z } from "zod";
 import { rulesSchema, saveResultSchema } from "../../shared/rules.ts";
-import type { RuleStore } from "../lib/store.ts";
+import type { AgentInstructionsContext } from "../lib/store.ts";
 
-export const saveRules = defineMutation({
+export const saveRulesContract = {
+  experimental_description: "Replace every instruction rule, unless they changed since `revision`",
   input: z.object({ rules: rulesSchema, revision: z.number().int().nonnegative() }),
   output: saveResultSchema,
-  description: "Replace every instruction rule, unless they changed since `revision`",
-  execute: (ctx: Context<{ store: RuleStore }>, input) =>
-    ctx.store.save(input.rules, input.revision),
-});
+};
+
+export async function saveRules(
+  ctx: AgentInstructionsContext,
+  input: z.output<typeof saveRulesContract.input>,
+): Promise<z.input<typeof saveRulesContract.output>> {
+  return ctx.store.save(input.rules, input.revision);
+}

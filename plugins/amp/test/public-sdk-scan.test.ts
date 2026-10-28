@@ -12,9 +12,9 @@ test("the plugin imports only the public SDK and its declared dependencies", () 
       /^bun:test$/,
       /^zod$/,
       /^react$/,
-      // Browser, server, and host telemetry use public bb-kit entrypoints.
+      // Browser, server, and host telemetry use public @bb-plugins/sentry entrypoints.
       // The host paths stay lazy without a DSN.
-      /^@bb-kit\/sentry\/(?:app|node|performance|telemetry)$/,
+      /^@bb-plugins\/sentry\/(?:app|node|performance|telemetry)$/,
       // The scanner extends its allowlist for `*.test.*` files only; the
       // manual parity recorder (test/helpers/record-parity.ts) legitimately
       // imports the same public testing kit the parity test uses.

@@ -8,21 +8,6 @@
   "tag-separator": "/",
   "pull-request-title-pattern": "Release ${component} ${version}",
   "packages": {
-    "packages/bb-kit-core": {
-      "release-type": "node",
-      "component": "bb-kit-core",
-      "package-name": "@bb-kit/core"
-    },
-    "packages/bb-kit-dev": {
-      "release-type": "node",
-      "component": "bb-kit-dev",
-      "package-name": "@bb-kit/dev"
-    },
-    "packages/bb-kit-sentry": {
-      "release-type": "node",
-      "component": "bb-kit-sentry",
-      "package-name": "@bb-kit/sentry"
-    },
     "plugins/agentation": {
       "release-type": "node",
       "component": "agentation",

@@ -7,7 +7,7 @@ test("each git action queues its instruction file as a message to the thread", a
   for (const action of AGENT_GIT_ACTIONS) {
     const send = mock(async () => ({}));
     const bb = { sdk: { threads: { send } } } as unknown as BbPluginApi;
-    expect(await askAgent.execute({ bb }, { threadId: "thr_1", action })).toEqual({ ok: true });
+    expect(await askAgent({ bb }, { threadId: "thr_1", action })).toEqual({ ok: true });
     const [args] = send.mock.calls[0] as unknown as [
       { threadId: string; mode: string; input: Array<{ text: string }> },
     ];

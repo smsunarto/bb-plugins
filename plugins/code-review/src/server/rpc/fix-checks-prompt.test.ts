@@ -1,5 +1,4 @@
 import { expect, test } from "bun:test";
-import { callProcedure } from "@bb-kit/core/rpc";
 import {
   type FakeGhRoutes,
   GhFailure,
@@ -52,7 +51,7 @@ test("fills the prompt with each selected failure and the end of its job log", a
     ],
   );
 
-  const { prompt, projectId, environment } = (await callProcedure(fixChecksPrompt, ctx, {
+  const { prompt, projectId, environment } = (await fixChecksPrompt(ctx, {
     account: "octocat",
     ref: REF,
     checkIds: ["run:110959498696", "run:110959498281", "run:110960956479", "run:gone"],
@@ -106,7 +105,7 @@ test("fetches at most three logs, and has no project for a repository bb does no
     { projects: { list: async () => [] } },
   );
 
-  const result = (await callProcedure(fixChecksPrompt, ctx, {
+  const result = (await fixChecksPrompt(ctx, {
     account: "octocat",
     ref: REF,
     checkIds: jobs.map((id) => `run:${id}`),
@@ -121,6 +120,6 @@ test("fetches at most three logs, and has no project for a repository bb does no
 test("checks that are gone from the head commit are refused", async () => {
   const { ctx } = context({});
   await expect(
-    callProcedure(fixChecksPrompt, ctx, { account: "octocat", ref: REF, checkIds: ["run:1"] }),
+    fixChecksPrompt(ctx, { account: "octocat", ref: REF, checkIds: ["run:1"] }),
   ).rejects.toThrow("Those checks are no longer on the latest commit. Refresh and try again.");
 });

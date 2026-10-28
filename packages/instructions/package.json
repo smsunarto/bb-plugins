@@ -1,0 +1,19 @@
+{
+  "name": "@bb-plugins/instructions",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Read a plugin's agent-facing Markdown from its instructions/ directory.",
+  "type": "module",
+  "exports": {
+    ".": "./src/instructions.ts"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^6.0.0"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "node --test src/*.test.ts",
+    "lint": "oxlint"
+  }
+}

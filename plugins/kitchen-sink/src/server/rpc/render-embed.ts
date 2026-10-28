@@ -1,6 +1,6 @@
 import { loadDiffEmbed } from "../lib/load-diff-embed.ts";
-import { defineQuery } from "@bb-kit/core/rpc";
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
+import type { z } from "zod";
 import { join } from "node:path";
 import { isUnityAsset } from "@bb-plugins/unity-inspector/model";
 import { buildUnityCitation } from "@bb-plugins/unity-inspector/parse";
@@ -11,6 +11,7 @@ import {
   type RenderEmbedOutput,
 } from "../../shared/contract.ts";
 import { codeCitation } from "../lib/code-citation.ts";
+import type { KitchenSinkContext } from "../lib/context.ts";
 import {
   candidateWorkspaceRoots,
   labelForeignHost,
@@ -175,41 +176,44 @@ function decorateUnityCitation(
   }
 }
 
-export const renderEmbed = defineQuery({
-  description:
+export const renderEmbedContract = {
+  experimental_description:
     "Render a Smart Embed: a source citation, a recorded turn or commit diff, or a saved patch.",
   input: renderEmbedInputSchema,
   output: renderEmbedOutputSchema,
-  async execute(ctx, input): Promise<RenderEmbedOutput> {
-    if (input.kind !== "code") return loadDiffEmbed(ctx.bb, input);
-    const path = relativePath(input.path);
-    if (path === null)
-      return { status: "error", message: "Expected a worktree-relative file path." };
-    try {
-      const { file, workspace } = await citationFile(ctx.bb, input, path);
-      if (file.contentEncoding !== "utf8")
-        return { status: "error", message: "Code citations require a UTF-8 text file." };
-      if (utf8Bytes(file.content) > MAX_FILE_BYTES)
-        return { status: "error", message: "This file is too large for an inline citation." };
-      const excerpt = codeCitation(path, file.content, input.start, input.end);
-      if ("error" in excerpt) return { status: "error", message: excerpt.error };
-      const output: Extract<RenderEmbedOutput, { status: "ready"; kind: "code" }> = {
-        status: "ready",
-        kind: "code",
-        path,
-        ...excerpt,
-        truncated: false,
-        ...(workspace ? { workspace } : {}),
-      };
-      decorateUnityCitation(ctx.bb, output, input, file.content);
-      return output;
-    } catch (error) {
-      ctx.bb.log.warn(`smart citation failed: ${String(error)}`);
-      const message =
-        error instanceof WorkspaceError
-          ? error.message
-          : `Could not load ${path} from this workspace.`;
-      return { status: "error", message };
-    }
-  },
-});
+};
+
+export async function renderEmbed(
+  ctx: KitchenSinkContext,
+  input: z.output<typeof renderEmbedContract.input>,
+): Promise<z.input<typeof renderEmbedContract.output>> {
+  if (input.kind !== "code") return loadDiffEmbed(ctx.bb, input);
+  const path = relativePath(input.path);
+  if (path === null) return { status: "error", message: "Expected a worktree-relative file path." };
+  try {
+    const { file, workspace } = await citationFile(ctx.bb, input, path);
+    if (file.contentEncoding !== "utf8")
+      return { status: "error", message: "Code citations require a UTF-8 text file." };
+    if (utf8Bytes(file.content) > MAX_FILE_BYTES)
+      return { status: "error", message: "This file is too large for an inline citation." };
+    const excerpt = codeCitation(path, file.content, input.start, input.end);
+    if ("error" in excerpt) return { status: "error", message: excerpt.error };
+    const output: Extract<RenderEmbedOutput, { status: "ready"; kind: "code" }> = {
+      status: "ready",
+      kind: "code",
+      path,
+      ...excerpt,
+      truncated: false,
+      ...(workspace ? { workspace } : {}),
+    };
+    decorateUnityCitation(ctx.bb, output, input, file.content);
+    return output;
+  } catch (error) {
+    ctx.bb.log.warn(`smart citation failed: ${String(error)}`);
+    const message =
+      error instanceof WorkspaceError
+        ? error.message
+        : `Could not load ${path} from this workspace.`;
+    return { status: "error", message };
+  }
+}

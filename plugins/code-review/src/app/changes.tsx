@@ -11,7 +11,7 @@ import {
 } from "react";
 import type { ReactNode, RefObject } from "react";
 import { experimental_Icon as Icon } from "@get-bb/plugin-sdk/app";
-import { pluginQueryClient } from "@bb-kit/core/rpc/query";
+import { queryClient } from "./query.ts";
 import type { UseQueryResult } from "@tanstack/react-query";
 import { prKey, sameRevision } from "../shared/schema.ts";
 import type {
@@ -39,7 +39,7 @@ import { useStoredChoice } from "./hooks/useStoredChoice.ts";
 import { cn } from "./lib/utils.ts";
 import { Loading, Notice, RetryButton, errorText } from "./notice.tsx";
 import { ReviewThreadView } from "./review-thread.tsx";
-import { rpc } from "./rpc.ts";
+import { queryKey, useRpcQuery } from "./rpc.ts";
 import { ReviewLayout } from "./review-layout.tsx";
 import { SyncState } from "./sync-state.tsx";
 import { useBranchReviewed } from "./branch-review.ts";
@@ -359,8 +359,8 @@ function useCatchUp(pr: PullRequest, changed: ChangedFiles | undefined): boolean
     if (!behind || count >= CATCH_UP_DELAYS_MS.length) return;
     let live = true;
     const timer = window.setTimeout(async () => {
-      await pluginQueryClient.invalidateQueries({
-        queryKey: rpc.changedFiles.queryKey({ account: pr.account, ref: pr.ref }),
+      await queryClient.invalidateQueries({
+        queryKey: queryKey("changedFiles", { account: pr.account, ref: pr.ref }),
       });
       if (live) setTries({ target, count: count + 1 });
     }, CATCH_UP_DELAYS_MS[count]);
@@ -378,8 +378,8 @@ function useCatchUp(pr: PullRequest, changed: ChangedFiles | undefined): boolean
  */
 function refreshDiff({ account, ref }: Pick<PullRequest, "account" | "ref">): Promise<unknown> {
   return Promise.all(
-    [rpc.pullRequest.queryKey({ account, ref }), rpc.changedFiles.queryKey({ account, ref })].map(
-      (queryKey) => pluginQueryClient.invalidateQueries({ queryKey }, { cancelRefetch: false }),
+    [queryKey("pullRequest", { account, ref }), queryKey("changedFiles", { account, ref })].map(
+      (queryKey) => queryClient.invalidateQueries({ queryKey }, { cancelRefetch: false }),
     ),
   );
 }
@@ -400,7 +400,8 @@ export function PrReview({ pr, ...page }: { pr: PullRequest } & ReviewOverview) 
 }
 
 function PrChanges({ pr, ...page }: { pr: PullRequest } & ReviewOverview) {
-  const files = rpc.changedFiles.useQuery(
+  const files = useRpcQuery(
+    "changedFiles",
     { account: pr.account, ref: pr.ref },
     { staleTime: 30_000 },
   );
@@ -419,7 +420,8 @@ export function BranchReview({
   branch,
   ...page
 }: { branch: LocalComparison & { branch: string } } & ReviewOverview) {
-  const files = rpc.localChanges.useQuery(
+  const files = useRpcQuery(
+    "localChanges",
     { hostId: branch.hostId, path: branch.path, base: branch.base, head: branch.head },
     { staleTime: 30_000 },
   );

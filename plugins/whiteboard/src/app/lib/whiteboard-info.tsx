@@ -1,11 +1,12 @@
-import { PluginQueryBoundary, pluginQueryClient } from "@bb-kit/core/rpc/query";
 import { useRealtime } from "@get-bb/plugin-sdk/app";
+import { QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import type { InfoOutput } from "../../shared/contracts/api-tunnel.ts";
 import { CHANNELS } from "../../shared/contracts/channels.ts";
 import { Button } from "../components/ui/button.tsx";
 import { EmptyState } from "../panel/empty-state.tsx";
-import { rpc } from "../rpc.ts";
+import { queryClient } from "../query.ts";
+import { queryKey, useRpcQuery } from "../rpc.ts";
 
 export const UNAVAILABLE_TITLE = "Whiteboard is unavailable.";
 
@@ -24,12 +25,12 @@ function InfoGate({
   sessionId?: string;
   children: (info: InfoOutput) => ReactNode;
 }) {
-  const query = rpc.info.useQuery({
+  const query = useRpcQuery("info", {
     ...(threadId ? { threadId } : {}),
     ...(sessionId ? { sessionId } : {}),
   });
   useRealtime(CHANNELS.settings, () => {
-    void pluginQueryClient.invalidateQueries({ queryKey: rpc.info.queryKey() });
+    void queryClient.invalidateQueries({ queryKey: queryKey("info") });
   });
   if (query.data) return <>{children(query.data)}</>;
   if (query.error) {
@@ -50,8 +51,8 @@ export function WhiteboardInfo(props: {
   children: (info: InfoOutput) => ReactNode;
 }) {
   return (
-    <PluginQueryBoundary>
+    <QueryClientProvider client={queryClient}>
       <InfoGate {...props} />
-    </PluginQueryBoundary>
+    </QueryClientProvider>
   );
 }

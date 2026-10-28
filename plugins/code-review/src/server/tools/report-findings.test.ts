@@ -1,12 +1,11 @@
 import { expect, test } from "bun:test";
 import { makePluginAgentConfigurationContext } from "@get-bb/plugin-sdk/testing";
 import { fakeContext } from "../../../test/fake-gh.ts";
-import { reportFindings } from "./report-findings.ts";
+import { reportFindings, reportFindingsEnabled } from "./report-findings.ts";
 
 test("only review threads the panel started get the tool", () => {
-  const { ctx } = fakeContext();
   const enabled = (pluginMetadata: Record<string, string>) =>
-    reportFindings.enabled!(ctx, makePluginAgentConfigurationContext({ pluginMetadata }));
+    reportFindingsEnabled(makePluginAgentConfigurationContext({ pluginMetadata }));
   expect(enabled({ kind: "review", pr: "cli/cli#9000" })).toBe(true);
   expect(enabled({ kind: "review", branch: "0a1b2c3d4e5f" })).toBe(true);
   expect(enabled({ kind: "fix", pr: "cli/cli#9000" })).toBe(false);
@@ -25,8 +24,7 @@ test("stores the findings against the reviewed commit and base, and tells open p
   });
   const tool = { threadId: "thr_review", projectId: "p-cli", signal: new AbortController().signal };
 
-  const result = await reportFindings.execute(
-    { ...ctx, tool },
+  const result = await reportFindings(ctx).execute(
     {
       summary: "  One real bug.  ",
       findings: [
@@ -57,6 +55,7 @@ test("stores the findings against the reviewed commit and base, and tells open p
         },
       ],
     },
+    tool,
   );
 
   expect(result).toBe("Reported 3 findings on cli/cli#9000.");
@@ -108,18 +107,16 @@ test("stores the findings against the reviewed commit and base, and tells open p
 test("a thread the panel did not start has nowhere to report to", async () => {
   const { ctx } = fakeContext();
   const tool = { threadId: "thr_other", projectId: "p", signal: new AbortController().signal };
-  await expect(
-    reportFindings.execute({ ...ctx, tool }, { summary: "", findings: [] }),
-  ).rejects.toThrow("This thread is not linked to a review, so there is nowhere to report to.");
+  await expect(reportFindings(ctx).execute({ summary: "", findings: [] }, tool)).rejects.toThrow(
+    "This thread is not linked to a review, so there is nowhere to report to.",
+  );
 });
 
 test("a finding outside the schema is rejected before it is stored", () => {
+  const { parameters } = reportFindings(fakeContext().ctx);
   const finding = { priority: 4, title: "x", body: "", path: "a", line: 1 };
-  expect(reportFindings.parameters.safeParse({ summary: "", findings: [finding] }).success).toBe(
-    false,
-  );
+  expect(parameters.safeParse({ summary: "", findings: [finding] }).success).toBe(false);
   expect(
-    reportFindings.parameters.safeParse({ summary: "", findings: [{ ...finding, priority: 0 }] })
-      .success,
+    parameters.safeParse({ summary: "", findings: [{ ...finding, priority: 0 }] }).success,
   ).toBe(true);
 });

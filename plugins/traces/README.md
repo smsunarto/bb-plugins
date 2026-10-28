@@ -47,7 +47,7 @@ The package exports `./model`, `./adapters`, `./renderers`, `./host`, and `./app
 
 ## Machine-readable access
 
-bb-kit exposes the same validated RPCs through `bb traces rpc <name> '<JSON object>'`. `overview` lists hosts and can resolve a BB thread to its provider session. `status`, `sessions`, `events`, `event`, and `raw` read a selected `hostId`. `scan` and `configureSources` manage the derived index.
+The same validated RPCs are available over the plugin's RPC endpoint, `POST /api/v1/plugins/traces/rpc/<name>` with a JSON object body. `overview` lists hosts and can resolve a BB thread to its provider session. `status`, `sessions`, `events`, `event`, and `raw` read a selected `hostId`. `scan` and `configureSources` manage the derived index.
 
 Responses carry `schemaVersion: 1`. Session and event queries use opaque cursors. Events include stable IDs, provider/native IDs, source line, JSON pointer, byte range, record hash, and adapter version. `raw` accepts an event ID, byte offset, and bounded limit, returning exact bytes as base64. This read surface supports later analysis tools. Automatic trace analysis is not included.
 

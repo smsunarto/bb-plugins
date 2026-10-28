@@ -106,7 +106,7 @@ test("asks each connected machine for its checkouts of the thread's origin", asy
     },
   });
 
-  expect(await otherMachines.execute(ctx, { threadId: "t1", repositoryKey: "." })).toEqual({
+  expect(await otherMachines(ctx, { threadId: "t1", repositoryKey: "." })).toEqual({
     checkouts: [
       {
         path: "/work/app-copy",
@@ -159,7 +159,7 @@ test("asks each connected machine for its checkouts of the thread's origin", asy
 test("a repository with no origin asks no other machine", async () => {
   const { ctx, calls } = machines({}, null);
 
-  expect(await otherMachines.execute(ctx, { threadId: "t1" })).toEqual({
+  expect(await otherMachines(ctx, { threadId: "t1" })).toEqual({
     checkouts: [],
     reason: null,
     environmentId: "env-1",
@@ -197,7 +197,7 @@ test("keeps isolated branch snapshots distinct by checkout on the same machine",
       ],
     },
   });
-  const result = await otherMachines.execute(ctx, { threadId: "t1" });
+  const result = await otherMachines(ctx, { threadId: "t1" });
   expect(result.environmentId).toBe("env-1");
   expect(result.reason).toBeNull();
   expect(result.checkouts).toEqual([
@@ -233,7 +233,7 @@ test("keeps isolated branch snapshots distinct by checkout on the same machine",
 test("a repository the thread's machine cannot read is a reason, not a failure", async () => {
   const { ctx, calls } = machines({}, "unreadable");
 
-  expect(await otherMachines.execute(ctx, { threadId: "t1" })).toEqual({
+  expect(await otherMachines(ctx, { threadId: "t1" })).toEqual({
     checkouts: [],
     reason: "No Git repository was found at the environment root or under its repos/ directory.",
     environmentId: "env-1",

@@ -1,4 +1,4 @@
-import { PluginCliError, type CommandContext } from "@bb-kit/core/command";
+import { PluginCliError, type PluginCliContext } from "@get-bb/plugin-sdk";
 import type { GitContext } from "../git.ts";
 import { overview, type OverviewResult } from "../rpc/overview.ts";
 
@@ -9,9 +9,12 @@ export type ReadyOverview = Extract<OverviewResult, { state: "ready" }>;
  * machine when its thread has an environment, else the panel's machine.
  * Throws when that machine is offline or has no repo at the path.
  */
-export async function commandCheckout(ctx: CommandContext<GitContext>): Promise<ReadyOverview> {
-  const hostId = ctx.threadId === undefined ? undefined : await ctx.git.threadHostId(ctx.threadId);
-  const snapshot = await overview.execute(ctx, { hostId });
+export async function commandCheckout(
+  ctx: GitContext,
+  cli: PluginCliContext,
+): Promise<ReadyOverview> {
+  const hostId = cli.threadId === undefined ? undefined : await ctx.git.threadHostId(cli.threadId);
+  const snapshot = await overview(ctx, { hostId });
   if (snapshot.state === "offline") {
     throw new PluginCliError(`${snapshot.host.name} is not connected`);
   }

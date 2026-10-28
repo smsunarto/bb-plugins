@@ -1,5 +1,5 @@
 import { beforeEach, expect, test } from "bun:test";
-import { installDom } from "@bb-kit/core/testing";
+import { installDom } from "@bb-plugins/testing";
 import type { Rule } from "../shared/rules.ts";
 import type { Targets } from "../shared/targets.ts";
 
@@ -28,7 +28,7 @@ const browser: Rule = {
   when: { hosts: ["host_mac"], providers: [], models: ["gpt-*"], projects: [] },
 };
 
-// bb-kit's query cache and the rules draft are module-level. Each test starts
+// The plugin's query cache and the rules draft are module-level. Each test starts
 // from an empty cache, and its server starts past every revision seen before,
 // because the draft only ever moves forward.
 let queryCache: { clear(): void; invalidateQueries(): Promise<void> } | undefined;
@@ -45,7 +45,7 @@ async function settings(
   }: { conflictAt?: number; reply?: Promise<void>; fetched?: () => Promise<void> } = {},
 ) {
   const app = await loadPluginApp(() => import("./app.tsx"));
-  queryCache ??= (await import("@bb-kit/core/rpc/query")).pluginQueryClient;
+  queryCache ??= (await import("./query.ts")).queryClient;
   const section = app.settingsSections[0];
   if (!section) throw new Error("app.tsx registers one settings section");
   startRevision += 100;

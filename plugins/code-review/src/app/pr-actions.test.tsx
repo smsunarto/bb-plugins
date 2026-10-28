@@ -1,12 +1,13 @@
 import "../../test/dom.ts";
 import { beforeEach, expect, test } from "bun:test";
-import { pluginQueryClient, PluginQueryBoundary } from "@bb-kit/core/rpc/query";
+import { QueryClientProvider } from "@tanstack/react-query";
+import { queryClient } from "./query.ts";
 import { inbox, pullRequest as pr } from "../../test/app-fixtures.ts";
 import { PrActions } from "./pr-actions.tsx";
-import { rpc } from "./rpc.ts";
+import { queryKey } from "./rpc.ts";
 const { fireEvent, waitFor, within } = await import("@testing-library/react");
 const { renderSlot } = await import("@get-bb/plugin-sdk/testing/app");
-beforeEach(() => pluginQueryClient.clear());
+beforeEach(() => queryClient.clear());
 const policy = {
   state: "OPEN",
   isDraft: false,
@@ -19,16 +20,16 @@ const policy = {
 };
 function Component() {
   return (
-    <PluginQueryBoundary>
+    <QueryClientProvider client={queryClient}>
       <PrActions pr={pr} />
-    </PluginQueryBoundary>
+    </QueryClientProvider>
   );
 }
 
 test("a write still invalidates all account copies after the panel unmounts", async () => {
-  const key = rpc.pullRequest.queryKey({ account: "another-account", ref: pr.ref });
-  pluginQueryClient.setQueryData(key, { ...pr, account: "another-account" });
-  pluginQueryClient.setQueryData(rpc.inbox.queryKey(), inbox);
+  const key = queryKey("pullRequest", { account: "another-account", ref: pr.ref });
+  queryClient.setQueryData(key, { ...pr, account: "another-account" });
+  queryClient.setQueryData(queryKey("inbox"), inbox);
   let finish!: (value: { message: string }) => void;
   let writes = 0;
   const pending = new Promise<{ message: string }>((resolve) => {
@@ -56,8 +57,8 @@ test("a write still invalidates all account copies after the panel unmounts", as
   await waitFor(() => expect(writes).toBe(1));
   slot.lifecycle.unmount();
   finish({ message: "Merged" });
-  await waitFor(() => expect(pluginQueryClient.getQueryState(key)?.isInvalidated).toBe(true));
-  expect(pluginQueryClient.getQueryState(rpc.inbox.queryKey())?.isInvalidated).toBe(true);
+  await waitFor(() => expect(queryClient.getQueryState(key)?.isInvalidated).toBe(true));
+  expect(queryClient.getQueryState(queryKey("inbox"))?.isInvalidated).toBe(true);
 });
 
 test("a freshly retargeted PR cannot be confirmed from the old dialog", async () => {

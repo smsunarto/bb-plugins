@@ -22,16 +22,16 @@ function context() {
 
 const script = (id: string) => ({ id, name: `Script ${id}`, command: `echo ${id}` });
 const list = async (ctx: ReturnType<typeof context>["ctx"]) =>
-  (await projectScripts.execute(ctx, { projectId: "p" })).scripts.map((entry) => entry.id);
+  (await projectScripts(ctx, { projectId: "p" })).scripts.map((entry) => entry.id);
 
 test("two clients adding scripts at once both keep theirs", async () => {
   const { ctx } = context();
   await Promise.all([
-    saveProjectScript.execute(ctx, {
+    saveProjectScript(ctx, {
       projectId: "p",
       edit: { kind: "upsert", script: script("b") },
     }),
-    saveProjectScript.execute(ctx, {
+    saveProjectScript(ctx, {
       projectId: "p",
       edit: { kind: "upsert", script: script("c") },
     }),
@@ -42,19 +42,19 @@ test("two clients adding scripts at once both keep theirs", async () => {
 test("an edit replaces one script and a delete removes only its own", async () => {
   const { ctx, rows } = context();
   for (const id of ["a", "b"])
-    await saveProjectScript.execute(ctx, {
+    await saveProjectScript(ctx, {
       projectId: "p",
       edit: { kind: "upsert", script: script(id) },
     });
-  await saveProjectScript.execute(ctx, {
+  await saveProjectScript(ctx, {
     projectId: "p",
     edit: { kind: "upsert", script: { ...script("a"), name: "Renamed" } },
   });
-  await saveProjectScript.execute(ctx, { projectId: "p", edit: { kind: "delete", scriptId: "b" } });
-  expect((await projectScripts.execute(ctx, { projectId: "p" })).scripts).toEqual([
+  await saveProjectScript(ctx, { projectId: "p", edit: { kind: "delete", scriptId: "b" } });
+  expect((await projectScripts(ctx, { projectId: "p" })).scripts).toEqual([
     { ...script("a"), name: "Renamed" },
   ]);
-  await saveProjectScript.execute(ctx, { projectId: "p", edit: { kind: "delete", scriptId: "a" } });
+  await saveProjectScript(ctx, { projectId: "p", edit: { kind: "delete", scriptId: "a" } });
   expect(rows.size).toBe(0);
 });
 

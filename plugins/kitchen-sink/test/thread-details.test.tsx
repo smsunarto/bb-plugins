@@ -1,5 +1,5 @@
 import { expect, mock, test } from "bun:test";
-import { installDom } from "@bb-kit/core/testing";
+import { installDom } from "@bb-plugins/testing";
 
 installDom();
 // installDom keeps node's Event classes; radix overlays dispatch theirs on jsdom nodes.
@@ -14,7 +14,7 @@ globalThis.ResizeObserver ??= class {
 };
 const { fireEvent, waitFor, within } = await import("@testing-library/react");
 const { loadPluginApp, renderSlot } = await import("@get-bb/plugin-sdk/testing/app");
-const { pluginQueryClient } = await import("@bb-kit/core/rpc/query");
+const { queryClient } = await import("../src/app/query.ts");
 
 const ENV = "env_1";
 const thread = {
@@ -55,7 +55,7 @@ type CardOptions = {
 };
 
 async function renderCard(options: CardOptions) {
-  pluginQueryClient.clear();
+  queryClient.clear();
   const app = await loadPluginApp(() => import("../src/app/app.tsx"));
   const registration = app.threadHeaderActions.find((action) => action.id === "thread-details");
   if (!registration) throw new Error("thread-details is not registered");

@@ -1,13 +1,13 @@
-import type { Context } from "@bb-kit/core/plugin";
-import { defineQuery } from "@bb-kit/core/rpc";
+import type { z } from "zod";
 import { infoInput, infoOutput } from "../../shared/contracts/api-tunnel.ts";
-import type { WhiteboardServices } from "../../shared/contracts/engine.ts";
+import type { WhiteboardContext } from "../lib/context.ts";
 
 /** App version and feature flags for a panel (design §3.2). Owned by WP8. */
-export const info = defineQuery({
-  input: infoInput,
-  output: infoOutput,
-  async execute(ctx: Context<Pick<WhiteboardServices, "engine">>, input) {
-    return ctx.engine.info(input);
-  },
-});
+export const infoContract = { input: infoInput, output: infoOutput };
+
+export async function info(
+  ctx: WhiteboardContext<"engine">,
+  input: z.output<typeof infoContract.input>,
+): Promise<z.input<typeof infoContract.output>> {
+  return ctx.engine.info(input);
+}

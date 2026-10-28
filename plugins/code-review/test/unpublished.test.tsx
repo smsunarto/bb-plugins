@@ -1,13 +1,13 @@
 import "./dom.ts";
 import { beforeEach, expect, test } from "bun:test";
-import { pluginQueryClient } from "@bb-kit/core/rpc/query";
+import { queryClient } from "../src/app/query.ts";
 import {
   AGENT_ACTIVITY_CHANNEL,
   branchReviewRange,
   sharedComparisonSubPath,
   parseSharedComparisonSubPath,
 } from "../src/shared/schema.ts";
-import { rpc } from "../src/app/rpc.ts";
+import { queryKey } from "../src/app/rpc.ts";
 import type { AgentActivity, LinkedThread } from "../src/shared/schema.ts";
 import { agentActivity, inbox, localBranch, localBranches, localChanges } from "./app-fixtures.ts";
 import { inboxTabRegistration } from "./registrations.ts";
@@ -22,7 +22,7 @@ function diffBody(card: HTMLElement): HTMLElement {
 }
 
 beforeEach(() => {
-  pluginQueryClient.clear();
+  queryClient.clear();
   window.localStorage.clear();
 });
 
@@ -207,7 +207,7 @@ test("a new local commit preserves the mounted overview and scroll area", async 
   fireEvent.wheel(area);
   area.scrollTop = 400;
   await act(async () => {
-    pluginQueryClient.setQueryData(rpc.localBranch.queryKey({ id: localBranch.id }), {
+    queryClient.setQueryData(queryKey("localBranch", { id: localBranch.id }), {
       ...localBranch,
       head: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
     });
@@ -261,7 +261,7 @@ test("local review progress survives remounts, is reversible, and reaches Ready"
     viewed: true,
   });
   first.lifecycle.unmount();
-  pluginQueryClient.clear();
+  queryClient.clear();
   const second = await page(`${BRANCH}/changes`, handlers);
   const checked = within(await second.findByRole("article", { name: "src/limit.ts" })).getByRole(
     "checkbox",
@@ -330,8 +330,8 @@ test("cached local checkboxes remain usable after a background read fails", asyn
   try {
     const card = await slot.findByRole("article", { name: "src/limit.ts" });
     failing = true;
-    await pluginQueryClient.invalidateQueries({
-      queryKey: rpc.branchReviewed.queryKey(branchReviewRange(localBranch)),
+    await queryClient.invalidateQueries({
+      queryKey: queryKey("branchReviewed", branchReviewRange(localBranch)),
     });
     await slot.findByText("Review progress could not load");
     fireEvent.click(within(card).getByRole("checkbox", { name: "Reviewed src/limit.ts" }));

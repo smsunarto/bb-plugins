@@ -3,8 +3,8 @@ import {
   sentryPluginEnvironment,
   sentryPerformanceReporter,
   type SentryPerformanceReporter,
-} from "@bb-kit/sentry/performance";
-import { sentryErrorReporter, type SentryPluginReporter } from "@bb-kit/sentry/node";
+} from "@bb-plugins/sentry/performance";
+import { sentryErrorReporter, type SentryPluginReporter } from "@bb-plugins/sentry/node";
 import { AMP_SENTRY_ENV, ampSentryRelease } from "../../lib/telemetry.ts";
 
 export const AMP_STARTUP_OPERATION = "cli.startup" as const;

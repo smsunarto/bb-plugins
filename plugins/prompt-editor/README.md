@@ -19,14 +19,14 @@ Open **Prompt Editor** in the bb nav rail. Each installed plugin lists:
 
 ## Making a plugin editable
 
-Keep agent text in Markdown and read it with `@bb-kit/core/instructions`:
+Keep agent text in Markdown and read it with `@bb-plugins/instructions`:
 
 ```ts
-import { instructionFiles } from "@bb-kit/core/instructions";
+import { instructionFiles } from "@bb-plugins/instructions";
 
 const files = instructionFiles(import.meta.url);
 
-bb.agent.registerTool({ name: "notes_find", ...files.tool("notes_find"), execute });
+bb.agents.registerTool({ name: "notes_find", ...files.tool("notes_find"), parameters, execute });
 files.read("review-title", { count });
 ```
 

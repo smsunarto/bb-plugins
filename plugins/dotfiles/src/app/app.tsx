@@ -1,5 +1,5 @@
 import { definePluginApp } from "@get-bb/plugin-sdk/app";
-import { sentryAppTelemetry } from "@bb-kit/sentry/app";
+import { sentryAppTelemetry } from "@bb-plugins/sentry/app";
 import { DotfilesFilesTab, DotfilesWorkflowsTab } from "./files-tab.tsx";
 import { DotfilesPage, RepoStatusBadge } from "./page.tsx";
 import { DotfilesTasksTab } from "./tasks-tab.tsx";

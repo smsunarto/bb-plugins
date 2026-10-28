@@ -19,7 +19,6 @@
     ]
   },
   "dependencies": {
-    "@bb-kit/core": "workspace:*",
     "zod": "^4.4.3"
   },
   "devDependencies": {
@@ -36,8 +35,7 @@
     "dev": "bb plugin dev .",
     "build": "bb plugin build .",
     "typecheck": "tsc --noEmit",
-    "test": "node --import tsx --test src/host/*.test.ts src/server/lib/*.test.ts src/server/command/*.test.ts",
-    "check": "node --import tsx ../../packages/bb-kit-dev/src/bin.ts check"
+    "test": "node --import tsx --test src/host/*.test.ts src/server/lib/*.test.ts src/server/command/*.test.ts"
   },
   "files": [
     "dist/*.js",

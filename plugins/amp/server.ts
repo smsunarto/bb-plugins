@@ -4,8 +4,8 @@
 // spawns the Amp CLI directly and drives it over its stream-json execute
 // wire. No separate bridge process, no launch spec.
 import { cliCommand, defineCli, defineRpcContract, type BbPluginApi } from "@get-bb/plugin-sdk";
-import { type SentryPluginReporter } from "@bb-kit/sentry/node";
-import { sentryPluginTelemetry } from "@bb-kit/sentry/telemetry";
+import { type SentryPluginReporter } from "@bb-plugins/sentry/node";
+import { sentryPluginTelemetry } from "@bb-plugins/sentry/telemetry";
 import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
@@ -28,7 +28,7 @@ import { PLUGIN_TELEMETRY } from "./shared/telemetry.js";
 
 // Amp's source entry lives at the plugin root. Published bundles have their
 // metadata beside this module, while source runs need the older nested-entry
-// fallback until every loaded bb-kit copy knows the root-source layout.
+// fallback until every loaded @bb-plugins/sentry copy knows the root-source layout.
 const telemetryEntryUrl = existsSync(new URL("./server.meta.json", import.meta.url))
   ? import.meta.url
   : new URL("./server/server.ts", import.meta.url);

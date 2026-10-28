@@ -1,7 +1,7 @@
 import { useRef, useState } from "react";
 import type { FormEvent } from "react";
 import type { SourceRoot, TraceStatus } from "../shared/schema.ts";
-import { rpc } from "./rpc.ts";
+import { useTracesRpc } from "./rpc.ts";
 import { providerLabel } from "./controls.tsx";
 
 export function Sources({
@@ -20,7 +20,7 @@ export function Sources({
   scanning: boolean;
 }) {
   const dialog = useRef<HTMLDialogElement | null>(null);
-  const client = rpc.useClient();
+  const client = useTracesRpc();
   const [roots, setRoots] = useState<SourceRoot[]>(
     status.roots.map(({ provider, path, enabled }) => ({ provider, path, enabled })),
   );
@@ -51,7 +51,7 @@ export function Sources({
     setBusy(true);
     setError("");
     try {
-      await client.configureSources({ hostId, roots });
+      await client.call("configureSources", { hostId, roots });
       onSaved();
       onClose();
     } catch (cause) {

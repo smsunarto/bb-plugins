@@ -6,7 +6,7 @@ import { useBoardWorkspace } from "./board-context.tsx";
 import type { WorkspaceTarget } from "./branch-actions.tsx";
 import { Count } from "./file-list.tsx";
 import { cn } from "./lib/utils.ts";
-import { rpc } from "./rpc.ts";
+import { useRpcQuery } from "./rpc.ts";
 import { storedAnswer } from "./stored-queries.ts";
 import { When } from "./when.tsx";
 
@@ -54,7 +54,7 @@ function ParkedRow({ branch }: { branch: ParkedBranch }) {
  * rewrites the workspace, so a row asks the agent to instead.
  */
 export function ParkedBranches({ target }: { target: WorkspaceTarget }) {
-  const parked = rpc.parkedBranches.useQuery(target, {
+  const parked = useRpcQuery("parkedBranches", target, {
     ...storedAnswer("parkedBranches", target),
     staleTime: PARKED_FRESH_MS,
     refetchInterval: PARKED_FRESH_MS,

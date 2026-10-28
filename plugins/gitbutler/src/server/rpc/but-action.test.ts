@@ -6,7 +6,7 @@ test("forwards the action to the thread's host with room for a slow push", async
   const { ctx, calls } = harness({ result: { result: { status: "done" }, board: null } });
   const action = { kind: "push" as const, branch: "scott/top", force: false, acceptedLoss: [] };
 
-  expect(await butAction.execute(ctx, { threadId: "t1", action })).toEqual({
+  expect(await butAction(ctx, { threadId: "t1", action })).toEqual({
     result: { status: "done" },
     workspace: null,
   });
@@ -25,7 +25,7 @@ test("forwards the workspace pull, which names no branch, and the host's questio
   const { ctx, calls } = harness({ result: { result: question, board: null } });
   const action = { kind: "updateWorkspace" as const, accepted: null };
 
-  expect(await butAction.execute(ctx, { threadId: "t1", action })).toEqual({
+  expect(await butAction(ctx, { threadId: "t1", action })).toEqual({
     result: question,
     workspace: null,
   });
@@ -36,7 +36,7 @@ test("does not reach a host when the thread has no environment", async () => {
   const { ctx, calls } = harness({ environment: null });
   const action = { kind: "land" as const, branch: "scott/top", message: null, accepted: null };
 
-  expect(butAction.execute(ctx, { threadId: "t1", action })).rejects.toThrow(
+  expect(butAction(ctx, { threadId: "t1", action })).rejects.toThrow(
     "This thread has no project environment.",
   );
   expect(calls).toHaveLength(0);
@@ -47,10 +47,10 @@ test("refuses a write aimed at a board read in another environment", async () =>
   const action = { kind: "land" as const, branch: "scott/top", message: null, accepted: null };
 
   await expect(
-    butAction.execute(ctx, { threadId: "t1", environmentId: "env-old", action }),
+    butAction(ctx, { threadId: "t1", environmentId: "env-old", action }),
   ).rejects.toThrow("This thread moved to another environment since the board was read.");
   expect(calls).toHaveLength(0);
-  expect(await butAction.execute(ctx, { threadId: "t1", environmentId: "env-1", action })).toEqual({
+  expect(await butAction(ctx, { threadId: "t1", environmentId: "env-1", action })).toEqual({
     result: { status: "done" },
     workspace: null,
   });
@@ -71,7 +71,7 @@ test("hands back the board the write left, as the panel draws it", async () => {
   const { ctx, calls } = harness({ result: { result: { status: "done" }, board } });
   const action = { kind: "delete" as const, branch: "scott/top", accepted: null };
 
-  expect(await butAction.execute(ctx, { threadId: "t1", action })).toEqual({
+  expect(await butAction(ctx, { threadId: "t1", action })).toEqual({
     result: { status: "done" },
     workspace: { ...board, environmentId: "env-1", hostId: "host-1" },
   });

@@ -11,7 +11,7 @@ import {
   type PluginSidebarThread,
   type PluginThreadHeaderActionProps,
 } from "@get-bb/plugin-sdk/app";
-import { PluginQueryBoundary, pluginQueryClient } from "@bb-kit/core/rpc/query";
+import { QueryClientProvider } from "@tanstack/react-query";
 import * as Popover from "@radix-ui/react-popover";
 import {
   useCallback,
@@ -31,7 +31,9 @@ import type {
   ProjectScript,
   ProjectScriptEdit,
 } from "../../shared/thread-details.ts";
-import { rpc } from "../rpc.ts";
+import { queryClient } from "../query.ts";
+// The SDK's cross-plugin `useRpcMutation` is aliased above; this plugin's own helper takes a local name.
+import { queryKey, useRpcMutation as usePluginMutation, useRpcQuery } from "../rpc.ts";
 import {
   InfoRow,
   MenuItem,
@@ -216,9 +218,9 @@ const numberFormat = new Intl.NumberFormat();
 
 export function ThreadDetailsHeaderAction(props: PluginThreadHeaderActionProps) {
   return (
-    <PluginQueryBoundary>
+    <QueryClientProvider client={queryClient}>
       <ThreadDetails key={props.threadId} {...props} />
-    </PluginQueryBoundary>
+    </QueryClientProvider>
   );
 }
 
@@ -348,10 +350,10 @@ function ThreadDetails({ threadId, projectId, isCompactViewport }: PluginThreadH
 /** The project's scripts, read while the card or the script editor needs them. */
 function useProjectScripts(projectId: string, enabled: boolean, onSaved: () => void) {
   const scriptsInput = { projectId };
-  const scripts = rpc.projectScripts.useQuery(scriptsInput, { enabled, staleTime: 30_000 });
-  const save = rpc.saveProjectScript.useMutation({
+  const scripts = useRpcQuery("projectScripts", scriptsInput, { enabled, staleTime: 30_000 });
+  const save = usePluginMutation("saveProjectScript", {
     onSuccess: (result) =>
-      pluginQueryClient.setQueryData(rpc.projectScripts.queryKey(scriptsInput), result),
+      queryClient.setQueryData(queryKey("projectScripts", scriptsInput), result),
   });
   const saveEdit = (edit: ProjectScriptEdit, done: string) =>
     save.mutate(
@@ -665,7 +667,7 @@ function PullRequestRow({
     method: "pullRequests",
     keys: open ? [environmentId] : [],
   });
-  const ask = rpc.askAgent.useMutation();
+  const ask = usePluginMutation("askAgent");
   const askAgent = (action: AgentGitAction, label: string) =>
     ask.mutate(
       { threadId, action },

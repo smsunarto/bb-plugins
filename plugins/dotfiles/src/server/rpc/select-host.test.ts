@@ -11,7 +11,7 @@ test("stores the picked machine", async () => {
     },
   });
 
-  assert.deepEqual(await selectHost.execute(ctx, { hostId: "host_mac" }), {
+  assert.deepEqual(await selectHost(ctx, { hostId: "host_mac" }), {
     selectedHostId: "host_mac",
   });
   assert.deepEqual(picked, ["host_mac"]);

@@ -4,7 +4,7 @@ import { useEffect, useLayoutEffect, useRef } from "react";
 import type { PendingOpen } from "../../shared/contracts/api-tunnel.ts";
 import { CHANNELS, openPayload } from "../../shared/contracts/channels.ts";
 import { PANEL_ACTION_ID } from "../../shared/contracts/panel.ts";
-import { type WhiteboardRpcClient, rpc } from "../rpc.ts";
+import { type WhiteboardRpcClient, useWhiteboardRpc } from "../rpc.ts";
 
 /**
  * Per thread, the newest open (`at`) this window focused. Module-level on
@@ -51,7 +51,7 @@ function focusOpen(
  */
 export function OpenListener({ threadId, isCompactViewport }: PluginThreadHeaderActionProps): null {
   const navigate = useBbNavigate();
-  const client = rpc.useClient();
+  const client = useWhiteboardRpc();
   const connected = useRealtimeConnectionState() === "connected";
   // What the pane shows, as committed, so a claim that lands after the pane
   // moved to another thread, turned compact or unmounted focuses nothing and

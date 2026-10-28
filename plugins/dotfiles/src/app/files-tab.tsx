@@ -12,9 +12,10 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { pluginQueryClient, PluginQueryBoundary } from "@bb-kit/core/rpc/query";
+import { QueryClientProvider } from "@tanstack/react-query";
+import { queryClient } from "./query.ts";
 import { HostPicker, usePanelOverview } from "./host-picker.tsx";
-import { rpc, type RPCOutput } from "./rpc.ts";
+import { queryKey, useRpcMutation, type RPCOutput } from "./rpc.ts";
 import { useDotfilesRoute, type DotfilesNavigation } from "./route.ts";
 import { errorMessage } from "./tasks.ts";
 
@@ -35,8 +36,8 @@ function FilesTabBody(props: PluginNavPanelProps & { workflows: boolean }): Reac
   const nav = useDotfilesRoute(props.subPath);
   const overview = usePanelOverview();
   const [pendingRemoval, setPendingRemoval] = useState<PendingRemoval | null>(null);
-  const removeSkillMutation = rpc.removeSkill.useMutation({
-    onSuccess: () => pluginQueryClient.invalidateQueries({ queryKey: rpc.overview.queryKey() }),
+  const removeSkillMutation = useRpcMutation("removeSkill", {
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKey("overview") }),
   });
 
   async function removeSkill({ name, path, host: machine }: PendingRemoval): Promise<void> {
@@ -219,20 +220,20 @@ function FileRow({
 
 export function DotfilesFilesTab(props: PluginNavPanelProps): ReactElement {
   return (
-    <PluginQueryBoundary>
+    <QueryClientProvider client={queryClient}>
       <div className="flex h-full min-h-0 flex-col bg-sidebar">
         <FilesTabBody {...props} workflows={false} />
       </div>
-    </PluginQueryBoundary>
+    </QueryClientProvider>
   );
 }
 
 export function DotfilesWorkflowsTab(props: PluginNavPanelProps): ReactElement {
   return (
-    <PluginQueryBoundary>
+    <QueryClientProvider client={queryClient}>
       <div className="flex h-full min-h-0 flex-col bg-sidebar">
         <FilesTabBody {...props} workflows />
       </div>
-    </PluginQueryBoundary>
+    </QueryClientProvider>
   );
 }

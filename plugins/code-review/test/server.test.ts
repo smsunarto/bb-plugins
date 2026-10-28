@@ -81,6 +81,8 @@ test("registers every RPC and answers them over the host boundary", async () => 
     "localBranch",
     "localBranches",
     "localChanges",
+    "prAction",
+    "prActionState",
     "prWatches",
     "pullRequest",
     "replyDraft",

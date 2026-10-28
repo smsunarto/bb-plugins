@@ -1,0 +1,40 @@
+{
+  "name": "@bb-plugins/sentry",
+  "version": "0.2.0",
+  "private": true,
+  "description": "Privacy-first Sentry error and performance reporting for bb plugins.",
+  "license": "MIT",
+  "author": "Scott Sunarto",
+  "type": "module",
+  "engines": {
+    "node": ">=22.19.0"
+  },
+  "exports": {
+    "./context": "./src/context.ts",
+    "./app": "./src/app.ts",
+    "./node": "./src/node.ts",
+    "./performance": "./src/performance.ts",
+    "./telemetry": "./src/telemetry.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "node --test src/*.test.ts",
+    "lint": "oxlint"
+  },
+  "dependencies": {
+    "@sentry/browser": "10.72.0",
+    "@sentry/node": "10.72.0"
+  },
+  "peerDependencies": {
+    "react": ">=19"
+  },
+  "devDependencies": {
+    "@testing-library/react": "^16.3.0",
+    "@types/node": "^22.0.0",
+    "@types/react": "^19.2.0",
+    "jsdom": "^25.0.0",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0",
+    "typescript": "^6.0.0"
+  }
+}

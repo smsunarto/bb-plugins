@@ -13,7 +13,7 @@ import {
   TOOL_INSTRUCTIONS_SUFFIX,
   TOOLS_DIR,
   placeholders,
-} from "@bb-kit/core/instructions";
+} from "@bb-plugins/instructions";
 import type { AgentFile, FileContent, FileKind, Plugin, SaveInput } from "../../shared/schema.ts";
 
 /** The fields of bb's installed-plugin record this module reads. */

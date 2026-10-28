@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import type { RefObject } from "react";
 import type { TraceEvent, TraceSession } from "../shared/model.ts";
 import type { EventQuery } from "../shared/schema.ts";
-import { rpc } from "./rpc.ts";
+import { useRpcQuery } from "./rpc.ts";
 import {
   Empty,
   Pages,
@@ -87,7 +87,8 @@ export function Timeline({
 }) {
   const [cursors, setCursors] = useState<(string | undefined)[]>([undefined]);
   const page = cursors.length - 1;
-  const result = rpc.events.useQuery(
+  const result = useRpcQuery(
+    "events",
     {
       hostId,
       sessionId: session.id,

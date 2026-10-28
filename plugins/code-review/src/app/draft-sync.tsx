@@ -1,10 +1,10 @@
 import { useSyncExternalStore } from "react";
 import { notifyManager, useMutation, useIsMutating } from "@tanstack/react-query";
 import type { QueryClient } from "@tanstack/react-query";
-import { pluginQueryClient } from "@bb-kit/core/rpc/query";
+import { queryClient } from "./query.ts";
 import type { PullRequest, ReviewThread, ThreadComment } from "../shared/schema.ts";
 import { sameRevision } from "../shared/schema.ts";
-import { rpc } from "./rpc.ts";
+import { queryKey as rpcQueryKey, useCodeReviewRpc, type Input } from "./rpc.ts";
 import { Notice, errorText } from "./notice.tsx";
 import { confirmDraftText, draftTextKey } from "./local-cache.ts";
 
@@ -64,7 +64,7 @@ class DraftJournal {
       this.operations.delete(id);
       if (commit)
         this.client.setQueryData<PullRequest>(
-          rpc.pullRequest.queryKey({ account: operation.pr.account, ref: operation.pr.ref }),
+          rpcQueryKey("pullRequest", { account: operation.pr.account, ref: operation.pr.ref }),
           (current) => (current ? commit(current) : undefined),
         );
       if (error) this.errors.set(identity(operation.pr), errorText(error));
@@ -82,7 +82,7 @@ class DraftJournal {
     return this.errors.get(identity(pr));
   }
 }
-const journal = new DraftJournal(pluginQueryClient);
+const journal = new DraftJournal(queryClient);
 
 export function useDraftPreview(pr: PullRequest | undefined): PullRequest | undefined {
   useSyncExternalStore(journal.subscribe, journal.snapshot, journal.snapshot);
@@ -123,8 +123,8 @@ function useDraftMutation<In, Out>(
     onMutate: (input) => {
       const account = pr.account.toLowerCase();
       if (
-        pluginQueryClient.isMutating({ mutationKey: ["submitReview", account, pr.id] }) ||
-        pluginQueryClient.isMutating({ mutationKey: ["discardReview", account, pr.id] })
+        queryClient.isMutating({ mutationKey: ["submitReview", account, pr.id] }) ||
+        queryClient.isMutating({ mutationKey: ["discardReview", account, pr.id] })
       ) {
         throw new Error("Wait for the review to finish before changing its drafts.");
       }
@@ -133,16 +133,16 @@ function useDraftMutation<In, Out>(
     },
     onSuccess: async (output, input, id) => {
       // Cancel any older read before committing the acknowledged result.
-      await pluginQueryClient.cancelQueries({
-        queryKey: rpc.pullRequest.queryKey({ account: pr.account, ref: pr.ref }),
+      await queryClient.cancelQueries({
+        queryKey: rpcQueryKey("pullRequest", { account: pr.account, ref: pr.ref }),
       });
       journal.finish(id, commit(input, output));
       const text = savedText?.(input);
       if (text) confirmDraftText(text.key, text.body);
-      void pluginQueryClient.invalidateQueries({
-        queryKey: rpc.pullRequest.queryKey({ account: pr.account, ref: pr.ref }),
+      void queryClient.invalidateQueries({
+        queryKey: rpcQueryKey("pullRequest", { account: pr.account, ref: pr.ref }),
       });
-      void pluginQueryClient.invalidateQueries({ queryKey: rpc.inbox.queryKey() });
+      void queryClient.invalidateQueries({ queryKey: rpcQueryKey("inbox") });
     },
     onError: (error, _input, id) => {
       if (id) journal.finish(id, undefined, error);
@@ -188,11 +188,8 @@ function acknowledged(
   };
 }
 
-type Client = ReturnType<typeof rpc.useClient>;
-type Input<M extends keyof Client> = Parameters<Client[M]>[0];
-
 export function useAddDraft(pr: PullRequest) {
-  const client = rpc.useClient();
+  const client = useCodeReviewRpc();
   const add =
     (input: Input<"addDraftComment">, threadId: string, commentId: string): Change =>
     (current) => {
@@ -221,7 +218,7 @@ export function useAddDraft(pr: PullRequest) {
   return useDraftMutation(
     pr,
     "add",
-    client.addDraftComment,
+    (input: Input<"addDraftComment">) => client.call("addDraftComment", input),
     (input, id) => add(input, id, id),
     (input, output) => (current) =>
       acknowledged(current, add(input, output.threadId, output.commentId)(current), output),
@@ -233,7 +230,7 @@ export function useAddDraft(pr: PullRequest) {
 }
 
 export function useReplyDraft(pr: PullRequest) {
-  const client = rpc.useClient();
+  const client = useCodeReviewRpc();
   const reply =
     (input: Input<"replyDraft">, id: string): Change =>
     (current) => {
@@ -253,7 +250,7 @@ export function useReplyDraft(pr: PullRequest) {
   return useDraftMutation(
     pr,
     "reply",
-    client.replyDraft,
+    (input: Input<"replyDraft">) => client.call("replyDraft", input),
     reply,
     (input, output) => (current) =>
       acknowledged(current, reply(input, output.commentId)(current), output),
@@ -262,7 +259,7 @@ export function useReplyDraft(pr: PullRequest) {
 }
 
 export function useEditDraft(pr: PullRequest) {
-  const client = rpc.useClient();
+  const client = useCodeReviewRpc();
   const edit =
     (input: Input<"editDraft">): Change =>
     (current) => ({
@@ -277,7 +274,7 @@ export function useEditDraft(pr: PullRequest) {
   return useDraftMutation(
     pr,
     "edit",
-    client.editDraft,
+    (input: Input<"editDraft">) => client.call("editDraft", input),
     edit,
     (input) => edit(input),
     (input) => ({ key: draftTextKey.edit(pr, input.commentId), body: input.body }),
@@ -285,7 +282,7 @@ export function useEditDraft(pr: PullRequest) {
 }
 
 export function useDeleteDraft(pr: PullRequest) {
-  const client = rpc.useClient();
+  const client = useCodeReviewRpc();
   const remove =
     (input: Input<"deleteDraft">): Change =>
     (current) => {
@@ -306,14 +303,20 @@ export function useDeleteDraft(pr: PullRequest) {
           .filter((thread) => thread.comments.length > 0),
       };
     };
-  return useDraftMutation(pr, "delete", client.deleteDraft, remove, (input) => remove(input));
+  return useDraftMutation(
+    pr,
+    "delete",
+    (input: Input<"deleteDraft">) => client.call("deleteDraft", input),
+    remove,
+    (input) => remove(input),
+  );
 }
 
 /** Apply an acknowledged submit/discard without keeping old drafts until a network read. */
 export async function confirmReviewClosed(pr: PullRequest): Promise<void> {
-  const queryKey = rpc.pullRequest.queryKey({ account: pr.account, ref: pr.ref });
-  await pluginQueryClient.cancelQueries({ queryKey });
-  pluginQueryClient.setQueryData<PullRequest>(queryKey, (current) =>
+  const queryKey = rpcQueryKey("pullRequest", { account: pr.account, ref: pr.ref });
+  await queryClient.cancelQueries({ queryKey });
+  queryClient.setQueryData<PullRequest>(queryKey, (current) =>
     current
       ? {
           ...current,

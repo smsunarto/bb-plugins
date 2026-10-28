@@ -7,13 +7,46 @@ import {
   type PluginAppSource,
   type RenderSlotOptions,
 } from "@get-bb/plugin-sdk/testing/app";
-import { PluginQueryBoundary, pluginQueryClient } from "@bb-kit/core/rpc/query";
-import { QueryClient } from "@tanstack/react-query";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { queryClient as agentInstructionsQueries } from "../plugins/agent-instructions/src/app/query.ts";
+import { queryClient as codeReviewQueries } from "../plugins/code-review/src/app/query.ts";
+import { queryClient as devinQueries } from "../plugins/devin/src/app/query.ts";
+import { queryClient as dotfilesQueries } from "../plugins/dotfiles/src/app/query.ts";
+import { queryClient as gitbutlerQueries } from "../plugins/gitbutler/src/app/query.ts";
+import { queryClient as kitchenSinkQueries } from "../plugins/kitchen-sink/src/app/query.ts";
+import { queryClient as promptEditorQueries } from "../plugins/prompt-editor/src/app/query.ts";
+import { queryClient as tracesQueries } from "../plugins/traces/src/app/query.ts";
+import { queryClient as whiteboardQueries } from "../plugins/whiteboard/src/app/query.ts";
 
 import { monokaiCodeTheme } from "./monokai";
 
 installTestPluginRuntime();
-pluginQueryClient.setDefaultOptions({ queries: { retry: false } });
+/** Docs pages render many stories at once; they share one cache so each story does not refetch. */
+const docsQueryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+/**
+ * Each plugin app owns its query cache (`src/app/query.ts`). A story must start
+ * from an empty cache and see a failed fake RPC immediately, so every plugin
+ * client is cleared between stories and retries are off. Add a plugin here
+ * when it gains a `query.ts`; otherwise its Loading and Error stories show the
+ * previous story's data.
+ */
+const PLUGIN_QUERY_CLIENTS: readonly QueryClient[] = [
+  agentInstructionsQueries,
+  codeReviewQueries,
+  devinQueries,
+  dotfilesQueries,
+  gitbutlerQueries,
+  kitchenSinkQueries,
+  promptEditorQueries,
+  tracesQueries,
+  whiteboardQueries,
+];
+for (const client of PLUGIN_QUERY_CLIENTS) {
+  client.setDefaultOptions({ queries: { retry: false } });
+}
+function clearPluginQueries() {
+  for (const client of PLUGIN_QUERY_CLIENTS) client.clear();
+}
 
 const DEFAULT_OPTIONS: RenderSlotOptions = {};
 
@@ -44,7 +77,7 @@ function FixtureContent({
 }) {
   return (
     <FixtureBoundary onError={onError}>
-      <PluginQueryBoundary client={queryClient}>{children}</PluginQueryBoundary>
+      <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
     </FixtureBoundary>
   );
 }
@@ -89,7 +122,7 @@ export function HostFixture({
 }) {
   const [queryClient] = useState(() =>
     sharedQueryClient
-      ? pluginQueryClient
+      ? docsQueryClient
       : new QueryClient({ defaultOptions: { queries: { retry: false } } }),
   );
   const host = useRef<HTMLDivElement>(null);
@@ -108,6 +141,7 @@ export function HostFixture({
       if (sharedQueryClient) {
         queryClient.clear();
       }
+      clearPluginQueries();
       try {
         slot = renderSlot(
           { component: FixtureContent },
@@ -135,6 +169,7 @@ export function HostFixture({
         mounted?.lifecycle.unmount();
         mounted?.container.remove();
         queryClient.clear();
+        clearPluginQueries();
       });
     };
   }, [storyId, options, queryClient, sharedQueryClient]);

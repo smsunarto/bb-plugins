@@ -17,7 +17,7 @@ test("forwards the repository to the thread's host", async () => {
   };
   const { ctx, calls } = harness({ result: answer });
 
-  expect(await oplog.execute(ctx, { threadId: "t1" })).toEqual(answer);
+  expect(await oplog(ctx, { threadId: "t1" })).toEqual(answer);
   expect(calls).toEqual([
     { method: "oplog", input: { environmentPath: "/work" }, options: { hostId: "host-1" } },
   ]);
@@ -28,7 +28,7 @@ test("returns no entries with a reason while the environment is not ready", asyn
     environment: { id: "env-1", hostId: "host-1", path: "/work", status: "starting" },
   });
 
-  expect(await oplog.execute(ctx, { threadId: "t1" })).toEqual({
+  expect(await oplog(ctx, { threadId: "t1" })).toEqual({
     entries: [],
     reason: "This thread's environment is starting.",
   });

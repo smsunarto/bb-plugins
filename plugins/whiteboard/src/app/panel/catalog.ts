@@ -1,5 +1,5 @@
-import { pluginQueryClient } from "@bb-kit/core/rpc/query";
 import { skipToken } from "@tanstack/react-query";
+import { queryClient } from "../query.ts";
 import type { ReviewApiSummary } from "../../shared/vendor/review-protocol/src/index.ts";
 
 export type CatalogAction = "dismiss" | "restore" | "delete";
@@ -47,9 +47,7 @@ const catalogs = new WeakMap<object, ReturnType<typeof newCatalogEdits>>();
 
 /** Share pending edits across Home mounts for the lifetime of their cached query. */
 export function createCatalogEdits(queryKey: readonly unknown[]) {
-  const query = pluginQueryClient
-    .getQueryCache()
-    .build(pluginQueryClient, { queryKey, queryFn: skipToken });
+  const query = queryClient.getQueryCache().build(queryClient, { queryKey, queryFn: skipToken });
   let catalog = catalogs.get(query);
   if (!catalog) {
     catalog = newCatalogEdits(queryKey);
@@ -64,7 +62,7 @@ export function createCatalogEdits(queryKey: readonly unknown[]) {
  * pending and a snapshot agrees with the latest, or that edit expires.
  */
 function newCatalogEdits(queryKey: readonly unknown[]) {
-  let server = pluginQueryClient.getQueryData<readonly ReviewApiSummary[]>(queryKey) ?? [];
+  let server = queryClient.getQueryData<readonly ReviewApiSummary[]>(queryKey) ?? [];
   let edits: Edit[] = [];
   const writes = new Map<string, Promise<void>>();
   const reconcile = () => {
@@ -76,7 +74,7 @@ function newCatalogEdits(queryKey: readonly unknown[]) {
         done.add(reviewId);
     }
     if (done.size) edits = edits.filter((edit) => !done.has(edit.reviewId));
-    pluginQueryClient.setQueryData(queryKey, applyEdits(server, edits));
+    queryClient.setQueryData(queryKey, applyEdits(server, edits));
   };
   return {
     receive(next: readonly ReviewApiSummary[]) {

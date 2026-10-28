@@ -73,7 +73,6 @@ test("the plugin registers its RPC and CLI against the fake host", async () => {
     "check",
     "list",
     "render",
-    "rpc",
     "status",
     "sync",
   ]);

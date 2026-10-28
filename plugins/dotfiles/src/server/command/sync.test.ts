@@ -1,6 +1,6 @@
 import { test } from "bun:test";
 import assert from "node:assert/strict";
-import { PluginCliError } from "@bb-kit/core/command";
+import { PluginCliError } from "@get-bb/plugin-sdk";
 
 import { createFakeContext } from "../fake-context.ts";
 import { cleanRepo } from "../fake-git.ts";
@@ -14,12 +14,11 @@ test("sync throws when the repo is missing", async () => {
   await assert.rejects(
     () =>
       Promise.resolve(
-        sync.execute(
+        sync(
           createFakeContext({
             inspect: async (target) => cleanRepo(target, { repoExists: false }),
           }),
-          args(false),
-        ),
+        ).run(args(false), {}),
       ),
     (error: unknown) => {
       assert.ok(error instanceof PluginCliError);
@@ -34,7 +33,7 @@ test("sync without --publish runs the pull-only task", async () => {
   const ctx = createFakeContext({
     run: async () => ({ exitCode: 0, output: "pulled" }),
   });
-  const result = await sync.execute(ctx, args(false));
+  const result = await sync(ctx).run(args(false), {});
   assert.deepEqual(result, {
     exitCode: 0,
     stdout: "pulled",
@@ -50,7 +49,7 @@ test("sync --publish publishes instead of pulling", async () => {
   const ctx = createFakeContext({
     run: async () => ({ exitCode: 1, output: "push rejected" }),
   });
-  const result = await sync.execute(ctx, args(true));
+  const result = await sync(ctx).run(args(true), {});
   assert.deepEqual(result, {
     exitCode: 1,
     stdout: "push rejected",

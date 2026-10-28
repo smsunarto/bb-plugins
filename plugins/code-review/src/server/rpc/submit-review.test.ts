@@ -1,7 +1,6 @@
 import { expect, test } from "bun:test";
-import { callProcedure } from "@bb-kit/core/rpc";
 import { fakeContext } from "../../../test/fake-gh.ts";
-import { submitReview } from "./submit-review.ts";
+import { submitReview, submitReviewContract } from "./submit-review.ts";
 
 test("submits the pending review and answers its URL", async () => {
   const { ctx, calls } = fakeContext({
@@ -15,7 +14,7 @@ test("submits the pending review and answers its URL", async () => {
     },
   });
   expect(
-    await callProcedure(submitReview, ctx, {
+    await submitReview(ctx, {
       account: "octocat",
       pullRequestId: "PR_1",
       headRefOid: "abc",
@@ -31,15 +30,14 @@ test("submits the pending review and answers its URL", async () => {
   });
 });
 
-test("rejects an event GitHub does not have", async () => {
-  const { ctx } = fakeContext();
-  await expect(
-    callProcedure(submitReview, ctx, {
+test("rejects an event GitHub does not have", () => {
+  expect(
+    submitReviewContract.input.safeParse({
       account: "octocat",
       pullRequestId: "PR_1",
       headRefOid: "abc",
       event: "MERGE",
       body: "",
-    }),
-  ).rejects.toThrow("invalid input");
+    }).success,
+  ).toBe(false);
 });

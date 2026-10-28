@@ -1,12 +1,14 @@
-import { defineQuery } from "@bb-kit/core/rpc";
+import { z } from "zod";
 import { inboxSchema } from "../../shared/schema.ts";
 import type { CodeReviewContext } from "../lib/context.ts";
 import { loadInboxes } from "../lib/inbox.ts";
 
 /** Open pull requests waiting on each signed-in account, their own, and their pins. */
-export const inbox = defineQuery({
+export const inboxContract = {
+  input: z.null(),
   output: inboxSchema,
-  async execute(ctx: CodeReviewContext) {
-    return loadInboxes(ctx.github, await ctx.store.pins());
-  },
-});
+};
+
+export async function inbox(ctx: CodeReviewContext): Promise<z.input<typeof inboxContract.output>> {
+  return loadInboxes(ctx.github, await ctx.store.pins());
+}

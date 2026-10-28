@@ -1,10 +1,11 @@
 import { definePluginApp } from "@get-bb/plugin-sdk/app";
-import { PluginQueryBoundary } from "@bb-kit/core/rpc/query";
+import { QueryClientProvider } from "@tanstack/react-query";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { CSSProperties, RefObject } from "react";
 import type { TraceEvent, TraceSession } from "../shared/model.ts";
 import type { EventQuery } from "../shared/schema.ts";
-import { rpc } from "./rpc.ts";
+import { queryClient } from "./query.ts";
+import { useRpcQuery, useTracesRpc } from "./rpc.ts";
 import {
   Empty,
   QueryError,
@@ -183,8 +184,8 @@ export function TraceWorkbench({
   hostPicker: React.ReactNode;
   renderers?: TraceRendererRegistry;
 }) {
-  const client = rpc.useClient();
-  const status = rpc.status.useQuery({ hostId }, { refetchInterval: 3000, retry: false });
+  const client = useTracesRpc();
+  const status = useRpcQuery("status", { hostId }, { refetchInterval: 3000, retry: false });
   const [session, setSession] = useState<TraceSession | null>(null);
   const [selected, setSelected] = useState<TraceEvent | null>(null);
   const [provider, setProvider] = useState(initialProvider ?? "");
@@ -239,7 +240,7 @@ export function TraceWorkbench({
     setRefreshing(true);
     setError("");
     try {
-      await client.scan({ hostId, verify });
+      await client.call("scan", { hostId, verify });
       await status.refetch();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Unable to refresh traces.");
@@ -412,7 +413,8 @@ function TracesPanel({
   threadId?: string;
   renderers?: TraceRendererRegistry;
 }) {
-  const overview = rpc.overview.useQuery(
+  const overview = useRpcQuery(
+    "overview",
     { threadId },
     {
       staleTime: 10_000,
@@ -459,9 +461,9 @@ function TracesPanel({
 export function createTracesApp(options: { renderers?: TraceRendererRegistry } = {}) {
   function TracesApp({ threadId }: { threadId?: string }) {
     return (
-      <PluginQueryBoundary>
+      <QueryClientProvider client={queryClient}>
         <TracesPanel threadId={threadId} renderers={options.renderers} />
-      </PluginQueryBoundary>
+      </QueryClientProvider>
     );
   }
   function TracesNav() {

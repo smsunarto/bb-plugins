@@ -1,11 +1,11 @@
 import "./dom.ts";
 import { beforeEach, expect, test } from "bun:test";
-import { pluginQueryClient } from "@bb-kit/core/rpc/query";
+import { queryClient } from "../src/app/query.ts";
 import { PrActions } from "../src/app/pr-actions.tsx";
 import { pullRequest } from "./app-fixtures.ts";
 const { fireEvent, waitFor, within } = await import("@testing-library/react");
 const { renderSlot } = await import("@get-bb/plugin-sdk/testing/app");
-beforeEach(() => pluginQueryClient.clear());
+beforeEach(() => queryClient.clear());
 
 test("an open merge dialog refreshes unknown mergeability until GitHub computes it", async () => {
   let reads = 0;
@@ -34,9 +34,7 @@ test("an open merge dialog refreshes unknown mergeability until GitHub computes 
     await waitFor(
       () =>
         expect(
-          within(dialog)
-            .getByRole("button", { name: "Merge PR" })
-            .hasAttribute("disabled"),
+          within(dialog).getByRole("button", { name: "Merge PR" }).hasAttribute("disabled"),
         ).toBe(false),
       { timeout: 5000 },
     );

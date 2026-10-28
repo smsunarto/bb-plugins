@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import { useQueryClient } from "@tanstack/react-query";
+import { QueryClientProvider, useQueryClient } from "@tanstack/react-query";
 import type { QueryClient } from "@tanstack/react-query";
-import { PluginQueryBoundary } from "@bb-kit/core/rpc/query";
 import {
   definePluginApp,
   experimental_copyToClipboard,
@@ -12,7 +11,8 @@ import {
 import type { PluginBrowserBbSdk } from "@get-bb/plugin-sdk/app";
 import { DEVIN_LOGO_PATHS, DEVIN_LOGO_VIEW_BOX } from "../shared/devin-brand.ts";
 import { cloudSessionSettled, DEVIN_PROVIDER_ID } from "../shared/devin.ts";
-import { rpc } from "./rpc.ts";
+import { queryClient } from "./query.ts";
+import { queryKey, useRpcMutation, useRpcQuery } from "./rpc.ts";
 import "./devin.css";
 
 /** Only this toggle and a thread's first command change the armed intent, and
@@ -43,7 +43,8 @@ function useCloudSession(threadId: string | null) {
   const sdk = useSdk();
   const connection = useRealtimeConnectionState();
   const composer = useComposer();
-  const session = rpc.cloudSession.useQuery(
+  const session = useRpcQuery(
+    "cloudSession",
     { threadId: threadId ?? "" },
     {
       enabled: threadId !== null,
@@ -61,7 +62,7 @@ function useCloudSession(threadId: string | null) {
   // in flight may predate the change, so it gets one follow-up after it.
   const refresh = useRef(() => {});
   refresh.current = () => {
-    const key = rpc.cloudSession.queryKey({ threadId: threadId ?? "" });
+    const key = queryKey("cloudSession", { threadId: threadId ?? "" });
     const inFlight = queryClient.getQueryState(key)?.fetchStatus === "fetching";
     const read = refetch({ cancelRefetch: false });
     if (inFlight) void read.then(() => refetch({ cancelRefetch: false }));
@@ -106,7 +107,7 @@ function DevinLogo() {
 /** A press, or the new thread's first command consuming an armed intent,
  *  outdates the cached read, so the toggle's next appearance asks again. */
 function markIntentStale(queryClient: QueryClient): void {
-  void queryClient.invalidateQueries({ queryKey: rpc.cloudIntent.queryKey(), refetchType: "none" });
+  void queryClient.invalidateQueries({ queryKey: queryKey("cloudIntent"), refetchType: "none" });
 }
 
 /** New-thread banner, shown while Devin is selected. It is a banner rather
@@ -121,11 +122,11 @@ function CloudToggle() {
   // their own composer.
   const visible = composer.selection?.providerId === DEVIN_PROVIDER_ID;
   const queryClient = useQueryClient();
-  const intent = rpc.cloudIntent.useQuery({
+  const intent = useRpcQuery("cloudIntent", null, {
     enabled: visible,
     staleTime: CLOUD_INTENT_STALE_MS,
   });
-  const setIntent = rpc.setCloudIntent.useMutation();
+  const setIntent = useRpcMutation("setCloudIntent");
   const [pressed, setPressed] = useState(false);
   /** A read fetched before the latest press describes the state that press
    *  replaced, so only a newer read may overwrite the button. */
@@ -248,17 +249,17 @@ function CloudBanner() {
 
 function CloudToggleBanner() {
   return (
-    <PluginQueryBoundary>
+    <QueryClientProvider client={queryClient}>
       <CloudToggle />
-    </PluginQueryBoundary>
+    </QueryClientProvider>
   );
 }
 
 function CloudSessionBanner() {
   return (
-    <PluginQueryBoundary>
+    <QueryClientProvider client={queryClient}>
       <CloudBanner />
-    </PluginQueryBoundary>
+    </QueryClientProvider>
   );
 }
 

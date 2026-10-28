@@ -1,4 +1,4 @@
-import { instructionFiles } from "@bb-kit/core/instructions";
+import { instructionFiles } from "@bb-plugins/instructions";
 const files = instructionFiles(import.meta.url);
 // The routing decision: turn a prompt plus candidate projects, models, and
 // machines into Jev questions. Pure logic; server.ts supplies the data and the

@@ -8,7 +8,7 @@
 
 ## Dev Preferences
 
-- Author every new plugin with the bb-kit framework (`@bb-kit/core`).
+- Author plugins directly against `@get-bb/plugin-sdk`: `defineRpcContract` + `bb.rpc.register`, `cliCommand`/`defineCli` + `bb.cli.register`, `bb.agents.registerTool`, and `useRpc` with TanStack Query in the app. Read `plugins/html` for the reference layout. Workspace packages under `packages/` export source, never `dist/`.
 - If something can be done through bb-plugin, do it through bb-plugin. If it's possible through bb-plugin, but it is hacky (no easy way to do it via the bb SDK, flag it to the user for approval first).
 - If an implementation is ONLY possible through modification of bb's core app, flag to the user for approval first. DO NOT start work on bb core app without explicit approval.
 - UI components: https://ui.shadcn.com
@@ -16,7 +16,7 @@
 - Prefer to use an existing color palette from `/plugins/monokai` theme. If a new color is needed, it should be added to the theme before being used. This is so that when we update the theme, the color change is applied to all plugins that use it.
 - Always check whether the SDK provides an API that can be used to achieve the desired functionality before handrolling our own solution.
 - Before adding or changing an agent tool, or reviewing its description, read and follow [tool-descriptions](.agents/skills/tool-descriptions/SKILL.md).
-- Keep agent-facing text (thread instructions, prompts, tool descriptions) in `<plugin>/instructions/` and read it with `instructionFiles` from `@bb-kit/core/instructions`. Tool descriptions go in `instructions/tools/<tool>.md`, with an optional `<tool>.instructions.md` thread snippet. The Prompt Editor plugin edits these files, so do not inline agent text in code.
+- Keep agent-facing text (thread instructions, prompts, tool descriptions) in `<plugin>/instructions/` and read it with `instructionFiles` from `@bb-plugins/instructions`. Tool descriptions go in `instructions/tools/<tool>.md`, with an optional `<tool>.instructions.md` thread snippet. The Prompt Editor plugin edits these files, so do not inline agent text in code.
 
 ## Local-first plugin design
 
@@ -95,4 +95,3 @@ When communicating the handoff:
 
 - When you capture plugin screenshots, follow the `bb-plugin-screenshots` skill.
 - Do not point `BB_SERVER_URL` at the dev App port, point it the Server port.
-- Do not put helpers beside `src/server/server.ts`. `check` treats every `.ts` file in `src/server/rpc`, `src/server/command`, and `src/server/tools` as a wired unit.

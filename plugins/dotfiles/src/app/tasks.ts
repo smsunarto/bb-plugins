@@ -1,7 +1,7 @@
 import { useSyncExternalStore } from "react";
 import { toast } from "sonner";
-import { pluginQueryClient } from "@bb-kit/core/rpc/query";
-import { rpc, type RPCInput } from "./rpc.ts";
+import { queryClient } from "./query.ts";
+import { queryKey, useDotfilesRpc, type RPCInput } from "./rpc.ts";
 
 type TaskId = RPCInput<"runTask">["task"];
 
@@ -78,7 +78,7 @@ export interface Tasks {
 }
 
 export function useTasks(): Tasks {
-  const client = rpc.useClient();
+  const client = useDotfilesRpc();
   const { current, renderStale } = useSyncExternalStore(subscribe, getSnapshot);
   return {
     current,
@@ -91,8 +91,8 @@ export function useTasks(): Tasks {
         try {
           const result =
             task === "publish"
-              ? await client.publish({ hostId: host.id })
-              : await client.runTask({ hostId: host.id, task });
+              ? await client.call("publish", { hostId: host.id })
+              : await client.call("runTask", { hostId: host.id, task });
           const clearsRenderStale =
             result.exitCode === 0 && (task === "render" || task === "publish");
           emit({
@@ -108,7 +108,7 @@ export function useTasks(): Tasks {
           if (result.exitCode === 0) toast.success(`${id} succeeded on ${host.name}`);
           else toast.error(`${id} on ${host.name} exited with code ${result.exitCode}`);
           if (task === "sync:pull" || task === "publish") {
-            await pluginQueryClient.invalidateQueries({ queryKey: rpc.readFile.queryKey() });
+            await queryClient.invalidateQueries({ queryKey: queryKey("readFile") });
           }
         } catch (error) {
           emit({
@@ -117,7 +117,7 @@ export function useTasks(): Tasks {
           });
           toast.error(`${task} failed: ${errorMessage(error)}`);
         } finally {
-          await pluginQueryClient.invalidateQueries({ queryKey: rpc.overview.queryKey() });
+          await queryClient.invalidateQueries({ queryKey: queryKey("overview") });
         }
       })();
     },

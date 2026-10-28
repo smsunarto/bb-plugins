@@ -1,7 +1,7 @@
 import "../../test/dom.ts";
 import { beforeEach, expect, test } from "bun:test";
 import type { ComponentType } from "react";
-import { pluginQueryClient } from "@bb-kit/core/rpc/query";
+import { queryClient } from "./query.ts";
 import { pullRequest } from "../../test/app-fixtures.ts";
 import { AGENT_ACTIVITY_CHANNEL } from "../shared/schema.ts";
 import type {
@@ -17,23 +17,23 @@ import type {
 const { fireEvent, waitFor, within } = await import("@testing-library/react");
 const { installTestPluginRuntime, renderSlot } = await import("@get-bb/plugin-sdk/testing/app");
 installTestPluginRuntime();
-const { PluginQueryBoundary } = await import("@bb-kit/core/rpc/query");
+const { QueryClientProvider } = await import("@tanstack/react-query");
 const { ChecksList } = await import("./checks.tsx");
 const { FindingsCard, LinkedThreads, ReviewWithBbButton } = await import("./bb-review.tsx");
 const { FindingCard } = await import("./finding.tsx");
 const { SubmitReviewButton } = await import("./submit-review.tsx");
-const { rpc: pluginRpc } = await import("./rpc.ts");
+const { queryKey, useRpcQuery } = await import("./rpc.ts");
 
-beforeEach(() => pluginQueryClient.clear());
+beforeEach(() => queryClient.clear());
 
 type Handlers = Record<string, (input: never) => unknown>;
 
 /** Mounts one of the pull request's parts the way the page does: inside the plugin's query cache. */
 function mount(Part: ComponentType<{ pr: PullRequest }>, rpc: Handlers) {
   const Bounded = (props: { pr: PullRequest }) => (
-    <PluginQueryBoundary>
+    <QueryClientProvider client={queryClient}>
       <Part {...props} />
-    </PluginQueryBoundary>
+    </QueryClientProvider>
   );
   return renderSlot({ component: Bounded }, { pr }, { rpc: rpc as never });
 }
@@ -44,10 +44,7 @@ function mount(Part: ComponentType<{ pr: PullRequest }>, rpc: Handlers) {
  */
 function live(Part: ComponentType<{ pr: PullRequest }>, options: { staleTime?: number } = {}) {
   return function Live({ pr: first }: { pr: PullRequest }) {
-    const read = pluginRpc.pullRequest.useQuery(
-      { account: first.account, ref: first.ref },
-      options,
-    );
+    const read = useRpcQuery("pullRequest", { account: first.account, ref: first.ref }, options);
     return read.data ? <Part pr={read.data} /> : null;
   };
 }
@@ -64,8 +61,8 @@ function gone(query: () => HTMLElement | null) {
 }
 
 function readPullRequestAgain() {
-  return pluginQueryClient.invalidateQueries({
-    queryKey: pluginRpc.pullRequest.queryKey({
+  return queryClient.invalidateQueries({
+    queryKey: queryKey("pullRequest", {
       account: pullRequest.account,
       ref: pullRequest.ref,
     }),
@@ -187,7 +184,7 @@ test("a background poll leaves the checks where they are: the page header report
   });
   await slot.findByText("test");
   slow = true;
-  const poll = pluginQueryClient.refetchQueries();
+  const poll = queryClient.refetchQueries();
   await waitFor(() => expect(release).toBeDefined());
   expect(slot.queryByText("Syncing with GitHub…")).toBeNull();
   release();
@@ -207,7 +204,7 @@ test("a failed background read keeps the checks and the selection, and says so",
   fireEvent.click(slot.getByRole("checkbox", { name: "Include test in the fix" }));
 
   failing = true;
-  await pluginQueryClient.refetchQueries();
+  await queryClient.refetchQueries();
   expect(await slot.findByText(/^Could not load the latest checks: /)).toBeTruthy();
   expect(slot.getByText("test")).toBeTruthy();
   const boxes = slot.getAllByRole("checkbox") as HTMLInputElement[];
@@ -477,8 +474,8 @@ test("a finding becomes a draft comment in the pending review", async () => {
     startSide: "RIGHT",
   });
   // The summary typed so far stays, and the count is the server's.
-  const cached = pluginQueryClient.getQueryData<PullRequest>(
-    pluginRpc.pullRequest.queryKey({ account: pr.account, ref: pr.ref }),
+  const cached = queryClient.getQueryData<PullRequest>(
+    queryKey("pullRequest", { account: pr.account, ref: pr.ref }),
   );
   expect(cached?.pendingReview).toEqual({
     id: "PRR_pending",
@@ -530,8 +527,8 @@ test("a finding can be drafted again once its draft leaves the pending review", 
   fireEvent.click(await slot.findByRole("button", { name: "Add as draft comment" }));
   expect(await slot.findByText("In your pending review")).toBeTruthy();
   // The read after adding it lands, with the draft in it.
-  await pluginQueryClient.refetchQueries(
-    { queryKey: pluginRpc.pullRequest.queryKey({ account: pr.account, ref: pr.ref }) },
+  await queryClient.refetchQueries(
+    { queryKey: queryKey("pullRequest", { account: pr.account, ref: pr.ref }) },
     { cancelRefetch: false },
   );
   expect(slot.getByText("In your pending review")).toBeTruthy();
@@ -671,9 +668,9 @@ test("a finding saved while an older read is out still shows saved when the view
   // The viewer leaves before GitHub answers, and the older read lands last.
   first.lifecycle.unmount();
   answer();
-  await waitFor(() => expect(pluginQueryClient.isMutating()).toBe(0));
+  await waitFor(() => expect(queryClient.isMutating()).toBe(0));
   landOlder();
-  await waitFor(() => expect(pluginQueryClient.isFetching()).toBe(0));
+  await waitFor(() => expect(queryClient.isFetching()).toBe(0));
 
   const again = mount(live(FindingsCard, PAGE_READ), rpc);
   expect(await again.findByText("In your pending review")).toBeTruthy();
@@ -701,8 +698,8 @@ test("the first draft starts a pending review that can be submitted or discarded
   });
   fireEvent.click(await slot.findByRole("button", { name: "Add as draft comment" }));
   expect(await slot.findByText("In your pending review")).toBeTruthy();
-  const cached = pluginQueryClient.getQueryData<PullRequest>(
-    pluginRpc.pullRequest.queryKey({ account: pr.account, ref: pr.ref }),
+  const cached = queryClient.getQueryData<PullRequest>(
+    queryKey("pullRequest", { account: pr.account, ref: pr.ref }),
   );
   expect(cached?.pendingReview).toEqual({ id: "PRR_new", body: "", draftCount: 1 });
 
@@ -743,7 +740,7 @@ test("a finding being saved is sent once also from the pull request opened under
   await waitFor(() => expect(upper!.getAttribute("aria-busy")).toBe("true"));
 
   answer();
-  await waitFor(() => expect(pluginQueryClient.isMutating()).toBe(0));
+  await waitFor(() => expect(queryClient.isMutating()).toBe(0));
   expect(draftWrites(slot)).toHaveLength(1);
   slot.lifecycle.unmount();
 });
@@ -857,7 +854,7 @@ test("a clean review says so, and no review shows nothing", async () => {
   const clean = mount(FindingsCard, { agentActivity: () => reviewed([]) });
   expect(await clean.findByText("No findings.")).toBeTruthy();
   clean.lifecycle.unmount();
-  pluginQueryClient.clear();
+  queryClient.clear();
 
   const none = mount(FindingsCard, { agentActivity: () => noActivity });
   await waitFor(() => expect(none.rpcCalls).toHaveLength(1));
