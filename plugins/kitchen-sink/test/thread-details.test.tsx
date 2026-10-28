@@ -13,6 +13,7 @@ globalThis.ResizeObserver ??= class {
   disconnect() {}
 };
 const { fireEvent, waitFor, within } = await import("@testing-library/react");
+const { createElement } = await import("react");
 const { loadPluginApp, renderSlot } = await import("@get-bb/plugin-sdk/testing/app");
 const { queryClient } = await import("../src/app/query.ts");
 
@@ -115,11 +116,19 @@ async function renderCard(options: CardOptions) {
       } as never,
     },
   );
-  return { slot, send, create, statusRead };
+  const setCompact = (compact: boolean) =>
+    slot.rerender(
+      createElement(registration.component, {
+        threadId: "thr_1",
+        projectId: "proj_1",
+        isCompactViewport: compact,
+      }),
+    );
+  return { slot, send, create, statusRead, setCompact };
 }
 
 async function mountCard(options: CardOptions) {
-  const { slot, send, create, statusRead } = await renderCard(options);
+  const { slot, send, create, statusRead, setCompact } = await renderCard(options);
   const card = await waitFor(() => {
     const element = document.body.querySelector<HTMLElement>(
       'section[aria-label="Thread details"]',
@@ -127,7 +136,7 @@ async function mountCard(options: CardOptions) {
     if (!element) throw new Error("card not open");
     return element;
   });
-  return { slot, card, send, create, statusRead };
+  return { slot, card, send, create, statusRead, setCompact };
 }
 
 test("the card shows the machine, script, branch, PR, and change rows", async () => {
@@ -247,16 +256,22 @@ test("the card stays visible with a side panel and ignores the old hidden prefer
   localStorage.removeItem(PINNED);
 });
 
-test("narrow streams and phones show the card automatically; collapsed streams hide it", async () => {
+test("narrow desktop streams show the card; mobile and collapsed streams hide it", async () => {
   for (const [width, compact] of [
     [300, false],
     [0, false],
     [900, true],
   ] as const) {
     const panel = streamPanel(width);
-    const { slot } = await renderCard({ panel, compact });
-    if (width === 0) expect(docked()).toBeNull();
+    const { slot, statusRead } = await renderCard({ panel, compact });
+    if (width === 0 || compact) expect(docked()).toBeNull();
     else await waitFor(() => expect(docked()).toBeTruthy());
+    if (compact) {
+      expect(
+        within(slot.container).queryByRole("link", { name: "Go to thread details" }),
+      ).toBeNull();
+      expect(statusRead).not.toHaveBeenCalled();
+    }
     expect(within(slot.container).queryByRole("button", { name: "Thread details" })).toBeNull();
     slot.unmount();
     panel.remove();
@@ -273,6 +288,23 @@ test("checkout status can refresh while the card stays visible", async () => {
   await waitFor(() => expect(within(card).getByText("+42")).toBeTruthy());
   expect(statusRead.mock.calls.length).toBeGreaterThan(before);
   expect(document.body.contains(card)).toBe(true);
+  slot.unmount();
+});
+
+test("resizing to mobile hides the card without losing an open script draft", async () => {
+  const { slot, card, setCompact } = await mountCard({});
+  const add = await waitFor(() => within(card).getByText("Add project script"));
+  fireEvent.click(add);
+  const dialog = within(document.body).getByRole("dialog", { name: "Add project script" });
+  fireEvent.change(within(dialog).getByLabelText("Name"), { target: { value: "My script" } });
+  fireEvent.change(within(dialog).getByLabelText("Command"), { target: { value: "bun run dev" } });
+  setCompact(true);
+  expect(docked()).toBeNull();
+  expect(document.body.contains(dialog)).toBe(true);
+  setCompact(false);
+  expect(docked()).toBeTruthy();
+  expect(within(dialog).getByLabelText<HTMLInputElement>("Name").value).toBe("My script");
+  expect(within(dialog).getByLabelText<HTMLTextAreaElement>("Command").value).toBe("bun run dev");
   slot.unmount();
 });
 

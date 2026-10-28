@@ -231,12 +231,12 @@ export type ScriptsState =
   | { state: "failed"; message: string; retry(): void }
   | { state: "ready"; scripts: readonly ProjectScript[] };
 
-function ThreadDetails({ threadId, projectId }: PluginThreadHeaderActionProps) {
+function ThreadDetails({ threadId, projectId, isCompactViewport }: PluginThreadHeaderActionProps) {
   const anchor = useRef<HTMLSpanElement>(null);
   const card = useRef<HTMLElement>(null);
   const cardId = useId();
   const layout = useStreamDock(anchor);
-  const open = layout !== null;
+  const open = layout !== null && !isCompactViewport;
   const [editor, setEditor] = useState<ScriptEditor>(null);
   // Keep the last run across card layout changes.
   const [lastRunId, setLastRunId] = useState<string | null>(null);
@@ -266,16 +266,18 @@ function ThreadDetails({ threadId, projectId }: PluginThreadHeaderActionProps) {
   return (
     <>
       <span ref={anchor} className="inline-block h-7 w-0">
-        <a
-          href={`#${cardId}`}
-          className="sr-only focus:not-sr-only focus:absolute focus:z-50 focus:rounded-md focus:bg-popover focus:p-2"
-          onClick={(event) => {
-            event.preventDefault();
-            card.current?.focus();
-          }}
-        >
-          Go to thread details
-        </a>
+        {open ? (
+          <a
+            href={`#${cardId}`}
+            className="sr-only focus:not-sr-only focus:absolute focus:z-50 focus:rounded-md focus:bg-popover focus:p-2"
+            onClick={(event) => {
+              event.preventDefault();
+              card.current?.focus();
+            }}
+          >
+            Go to thread details
+          </a>
+        ) : null}
       </span>
       {layout && open ? (
         <DockedCard id={cardId} layout={layout} cardRef={card}>
