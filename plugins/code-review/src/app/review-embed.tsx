@@ -376,11 +376,11 @@ function ReviewCard({
           ) : null}
         </div>
       ) : null}
-      <div className="flex justify-end p-2.5">
+      <div className="px-3 pt-1 pb-3">
         <Button
           size="sm"
-          variant="outline"
-          className="h-7 gap-1.5 text-xs"
+          variant={issue ? "outline" : "default"}
+          className="h-7 w-full gap-1.5 text-xs"
           onClick={() => navigate.toPluginPanel(PANEL_PATH, { subPath })}
         >
           {actionLabel ?? labels.action}
