@@ -211,6 +211,15 @@
         "unicorn/prefer-array-find": "warn",
         "unicorn/prefer-string-starts-ends-with": "warn"
       }
+    },
+    {
+      "files": ["plugins/boat-sandbox/components/ui/**"],
+      "rules": {
+        "complexity/complexity": "off",
+        "jsx-a11y/no-noninteractive-tabindex": "off",
+        "jsx-a11y/prefer-tag-over-role": "off",
+        "react/refs": "off"
+      }
     }
   ]
 }
