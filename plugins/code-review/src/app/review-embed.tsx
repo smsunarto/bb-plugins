@@ -86,10 +86,6 @@ function BranchEmbed({
         discoveryIssue={branches.isError ? errorText(branches.error) : undefined}
         onRetryDiscovery={() => void branches.refetch()}
         original={base && head ? { id, base, head, threadId } : undefined}
-        updated={
-          (head !== undefined && head !== branch.head) ||
-          (base !== undefined && base !== branch.base)
-        }
       />
     );
   if (base && head) {
@@ -200,13 +196,11 @@ function SharedFilesCard({
 
 function LocalCard({
   branch,
-  updated,
   discoveryIssue,
   onRetryDiscovery,
   original,
 }: {
   branch: LocalBranch;
-  updated: boolean;
   discoveryIssue?: string;
   onRetryDiscovery: () => void;
   original?: SharedComparisonInput;
@@ -236,7 +230,6 @@ function LocalCard({
       loading={!files.data || !reviewed.data}
       issue={issue}
       fallbackSubPath={discoveryIssue && original ? sharedComparisonSubPath(original) : undefined}
-      updated={updated}
       onRetry={() => {
         onRetryDiscovery();
         void files.refetch();
@@ -299,7 +292,6 @@ function ReviewCard({
   files,
   loading,
   issue,
-  updated = false,
   unavailable = false,
   onRetry,
   actionLabel,
@@ -312,7 +304,6 @@ function ReviewCard({
   files?: readonly ChangedFile[];
   loading: boolean;
   issue?: string;
-  updated?: boolean;
   unavailable?: boolean;
   onRetry: () => void;
   actionLabel?: string;
@@ -322,7 +313,7 @@ function ReviewCard({
   const navigate = useBbNavigate();
   const count = files?.filter((file) => file.viewed === "viewed").length ?? 0;
   const total = files?.length ?? 0;
-  const labels = reviewLabels({ count, total, loading, issue, updated, unavailable });
+  const labels = reviewLabels({ count, total, loading, issue, unavailable });
   return (
     <section
       aria-label="Changes for review"
@@ -350,11 +341,6 @@ function ReviewCard({
         </div>
       </div>
       {files ? <FilePreview files={files} /> : null}
-      {updated ? (
-        <p className="m-0 border-t border-border px-3 py-2 text-[11px] text-warning-text">
-          New changes since this card was shared.
-        </p>
-      ) : null}
       {branchCheck ? (
         <p className="m-0 border-t border-border px-3 py-2 text-[11px] text-muted-foreground">
           {branchCheck.pending ? (
@@ -410,25 +396,22 @@ function reviewLabels({
   total,
   loading,
   issue,
-  updated,
   unavailable,
 }: {
   count: number;
   total: number;
   loading: boolean;
   issue: string | undefined;
-  updated: boolean;
   unavailable: boolean;
 }) {
   const ready = !loading && !issue && total > 0 && count === total;
-  let status = "Needs review";
+  let status: string | null = null;
   if (issue) status = "Unavailable";
   else if (loading) status = "Loading";
   else if (ready) status = "Ready";
   else if (count > 0) status = "In review";
   let action = "Review changes";
   if (unavailable) action = "Open Review";
-  else if (updated) action = "Review latest changes";
   else if (ready) action = "Open reviewed changes";
   return { ready, status, action };
 }

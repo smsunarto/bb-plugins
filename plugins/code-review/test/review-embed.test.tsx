@@ -66,7 +66,7 @@ test("a shipped branch card opens its original comparison and preserves its revi
     },
   );
   try {
-    await slot.findByText("1 of 1 file reviewed");
+    await slot.findByText("Ready");
     expect(slot.getByText("Shared changes")).toBeTruthy();
     expect(slot.getByText("src/limit.ts")).toBeTruthy();
     expect(slot.queryByRole("alert")).toBeNull();
@@ -102,7 +102,7 @@ test("a shipped card with an offline checkout never reports cached review marks 
   try {
     await slot.findByText("Checkout host is offline");
     expect(slot.queryByText("Ready")).toBeNull();
-    expect(slot.getByText("Progress unavailable")).toBeTruthy();
+    expect(slot.getByText("Unavailable")).toBeTruthy();
   } finally {
     slot.lifecycle.unmount();
   }
@@ -148,9 +148,10 @@ test("the branch card opens Changes and shares live review progress", async () =
     base: localBranch.base,
     head: localBranch.head,
   });
-  await slot.findByText("0 of 1 file reviewed");
+  await slot.findByText("src/limit.ts");
   expect(slot.getByText("scott/rate-limit")).toBeTruthy();
   expect(slot.getByText("src/limit.ts")).toBeTruthy();
+  expect(slot.queryByText("Needs review")).toBeNull();
   fireEvent.click(slot.getByRole("button", { name: "Review changes" }));
   expect(slot.navigateCalls).toEqual([
     {
@@ -188,7 +189,7 @@ test("a failed branch-discovery refresh suppresses cached Ready and retries disc
     });
     await slot.findByRole("alert");
     expect(slot.queryByText("Ready")).toBeNull();
-    expect(slot.getByText("Progress unavailable")).toBeTruthy();
+    expect(slot.getByText("Unavailable")).toBeTruthy();
     expect(slot.getByText(localBranch.branch)).toBeTruthy();
     expect(slot.queryByText("Shared changes")).toBeNull();
     fireEvent.click(slot.getByRole("button", { name: "Review original comparison" }));
@@ -223,13 +224,13 @@ test("a newer realtime update supersedes a progress read already in flight", asy
     },
   });
   try {
-    await slot.findByText("0 of 1 file reviewed");
+    await slot.findByText("src/limit.ts");
     await slot.emitRealtime("branch-review", branchReviewRange(localBranch));
     await waitFor(() => expect(reads).toBe(2));
     await slot.emitRealtime("branch-review", branchReviewRange(localBranch));
     await slot.findByText("Ready");
     finishOld?.({ paths: [] });
-    await waitFor(() => expect(slot.getByText("1 of 1 file reviewed")).toBeTruthy());
+    await waitFor(() => expect(slot.getByText("Ready")).toBeTruthy());
   } finally {
     finishOld?.({ paths: [] });
     slot.lifecycle.unmount();
@@ -240,7 +241,7 @@ test("BB realtime reconnection refreshes local review marks", async () => {
   let paths: string[] = [];
   const slot = await card({ branch: localBranch.id }, [], { branchReviewed: () => ({ paths }) });
   try {
-    await slot.findByText("0 of 1 file reviewed");
+    await slot.findByText("src/limit.ts");
     await slot.behavior.setRealtimeConnectionState("reconnecting");
     paths = ["src/limit.ts"];
     await slot.behavior.setRealtimeConnectionState("connected");
@@ -279,18 +280,22 @@ test("an open PR card polls GitHub and drops Ready when the PR changes", async (
   try {
     await slot.findByText("Ready");
     moved = true;
-    await slot.findByText("0 of 1 file reviewed");
-    expect(slot.queryByText("Ready")).toBeNull();
+    await waitFor(() => {
+      expect(slot.queryByText("Ready")).toBeNull();
+      expect(slot.queryByText("Unavailable")).toBeNull();
+      expect(slot.queryByText("Loading")).toBeNull();
+    });
   } finally {
     slot.lifecycle.unmount();
     timeoutManager.setTimeoutProvider(timers);
   }
 });
 
-test("a moved branch explicitly offers its latest changes", async () => {
+test("a moved branch shows its current changes without a special update state", async () => {
   const slot = await card({ branch: localBranch.id, head: "f".repeat(40) });
-  await slot.findByText("New changes since this card was shared.");
-  expect(slot.getByRole("button", { name: "Review latest changes" })).toBeTruthy();
+  await slot.findByText("src/limit.ts");
+  expect(slot.queryByText("New changes since this card was shared.")).toBeNull();
+  expect(slot.getByRole("button", { name: "Review changes" })).toBeTruthy();
   expect(slot.queryByText("Ready")).toBeNull();
   slot.lifecycle.unmount();
 });
@@ -325,7 +330,7 @@ test("a branch card renders even while fleet discovery never answers", async () 
     },
   });
   try {
-    await slot.findByText("0 of 1 file reviewed");
+    await slot.findByText("src/limit.ts");
     expect(slot.getByText("src/limit.ts")).toBeTruthy();
     expect(fleetReads).toBe(0);
   } finally {
@@ -339,17 +344,27 @@ test("BB reconnect refreshes the card's own branch revision", async () => {
     localBranch: () => ({ ...localBranch, head: moved ? "d".repeat(40) : localBranch.head }),
   });
   try {
-    await slot.findByText("0 of 1 file reviewed");
+    await slot.findByText("src/limit.ts");
     await slot.behavior.setRealtimeConnectionState("reconnecting");
     moved = true;
     await slot.behavior.setRealtimeConnectionState("connected");
-    await slot.findByText("New changes since this card was shared.");
+    await waitFor(() =>
+      expect(
+        slot.rpcCalls.some(
+          (call) =>
+            call.method === "localChanges" &&
+            (call.input as { head: string }).head === "d".repeat(40),
+        ),
+      ).toBe(true),
+    );
+    await slot.findByText(/→ ddddddd$/);
+    expect(slot.queryByText("New changes since this card was shared.")).toBeNull();
   } finally {
     slot.lifecycle.unmount();
   }
 });
 
-test("Review latest changes opens the card's revision even with an older inbox cached", async () => {
+test("Review changes opens the card's revision even with an older inbox cached", async () => {
   const head = "d".repeat(40);
   const latest = { ...localBranch, head };
   queryClient.setQueryData(queryKey("localBranches", {}), {
@@ -365,7 +380,8 @@ test("Review latest changes opens the card's revision even with an older inbox c
   });
   let page: Awaited<ReturnType<typeof renderSlot>> | undefined;
   try {
-    fireEvent.click(await slot.findByRole("button", { name: "Review latest changes" }));
+    await slot.findByText(localBranch.branch);
+    fireEvent.click(await slot.findByRole("button", { name: "Review changes" }));
     const navigation = slot.navigateCalls.at(-1)!;
     if (navigation.method !== "toPluginPanel") throw new Error("Expected review panel navigation");
     const app = await loadPluginApp(() => import("../src/app/app.tsx"));
@@ -433,7 +449,7 @@ test("a missing card does not retry or poll fleet discovery", async () => {
     await slot.findByRole("alert");
     await new Promise((resolve) => setTimeout(resolve, 40));
     expect(reads).toBe(1);
-    expect(slot.getByText("Progress unavailable")).toBeTruthy();
+    expect(slot.getByText("Unavailable")).toBeTruthy();
     fireEvent.click(slot.getByRole("button", { name: "Retry" }));
     await waitFor(() => expect(reads).toBe(2));
   } finally {
@@ -519,12 +535,13 @@ test("a successful original comparison can retry discovery and restore a moved b
     },
   );
   try {
-    await slot.findByText("0 of 1 file reviewed");
+    await slot.findByText("src/limit.ts");
     recovered = true;
     fireEvent.click(slot.getByRole("button", { name: "Check latest branch" }));
     await slot.findByText(localBranch.branch);
-    await slot.findByText("New changes since this card was shared.");
-    fireEvent.click(slot.getByRole("button", { name: "Review latest changes" }));
+    await slot.findByText("src/limit.ts");
+    expect(slot.queryByText("New changes since this card was shared.")).toBeNull();
+    fireEvent.click(slot.getByRole("button", { name: "Review changes" }));
     expect(slot.navigateCalls.at(-1)).toEqual({
       method: "toPluginPanel",
       path: "code-review",
@@ -559,7 +576,7 @@ test("reconnection retries a failed shared checkout lookup on a card", async () 
     await slot.behavior.setRealtimeConnectionState("reconnecting");
     recovered = true;
     await slot.behavior.setRealtimeConnectionState("connected");
-    await slot.findByText("0 of 1 file reviewed");
+    await slot.findByText("src/limit.ts");
   } finally {
     slot.lifecycle.unmount();
   }

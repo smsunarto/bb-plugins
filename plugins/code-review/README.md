@@ -55,8 +55,7 @@ Agents can call `code_review_share_changes` with a committed GitButler branch
 or GitHub pull request. Its returned `::code-review` directive renders a
 compact card in the reply: changed files, line counts, review progress, and
 **Review changes** to jump to the diffs on the review page. The card updates with your review
-marks. When the shared branch moves, it warns and offers **Review latest
-changes**.
+marks and follows the branch’s current changes.
 
 ## Babysitting a pull request
 

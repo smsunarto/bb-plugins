@@ -9,4 +9,4 @@ RETURNS AND NEXT STEP
 Returns a `::code-review` directive. Put it verbatim on its own line in the assistant response, outside code fences. The card opens Changes and shows per-file review progress.
 
 REVIEW STATE
-Local review marks belong to the exact base and head; new commits start unchecked. If the shared branch moves, the card warns and offers its latest changes. Checkboxes record human review progress; they do not submit a GitHub review, merge, or publish anything.
+Local review marks belong to the exact base and head; new commits start unchecked. The card follows the branch’s current changes. Checkboxes record human review progress; they do not submit a GitHub review, merge, or publish anything.
