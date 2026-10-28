@@ -54,7 +54,7 @@ import { useStreamDock, type StreamDockLayout } from "./stream-dock.ts";
 export const THREAD_DETAILS_TITLE = "Thread details";
 
 const CARD_CLASS =
-  "w-[min(280px,calc(100vw-1rem))] overflow-hidden rounded-2xl border border-border/70 bg-popover/95 text-popover-foreground shadow-xl backdrop-blur-xl outline-none";
+  "w-[min(280px,calc(100vw-1rem))] overflow-hidden rounded-2xl border border-foreground/10 bg-popover/95 text-popover-foreground backdrop-blur-xl outline-none";
 
 /** The slice of bb--github-pr-status's contract this card reads and writes. */
 const githubPrStatus = defineRpcContract({

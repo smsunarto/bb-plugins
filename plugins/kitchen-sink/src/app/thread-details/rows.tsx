@@ -26,16 +26,21 @@ export function cx(...classes: Array<string | false | null | undefined>): string
   return classes.filter(Boolean).join(" ");
 }
 
-const HOVER = "hover:bg-foreground/[0.06] data-[state=open]:bg-foreground/[0.06]";
+const HOVER =
+  "hover:bg-foreground/[0.035] data-[state=open]:bg-foreground/[0.035] [.dark_&]:hover:bg-foreground/[0.08] [.dark_&]:data-[state=open]:bg-foreground/[0.08]";
 const CONTROL =
-  "flex h-8 min-w-0 cursor-pointer items-center gap-2.5 rounded-lg px-2.5 text-left text-[13px] font-medium text-foreground/80 outline-none transition-[background-color,scale] focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring disabled:cursor-default disabled:opacity-60 [&:active:not([aria-haspopup]):not(:disabled)]:scale-[0.98]";
+  "flex h-8 min-w-0 cursor-pointer items-center gap-2.5 rounded-lg border border-transparent bg-transparent px-2.5 text-left text-[13px] font-medium text-foreground/80 outline-none transition-[background-color,scale] focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring disabled:cursor-default disabled:opacity-60 [&:active:not([aria-haspopup]):not(:disabled)]:scale-[0.98]";
 
 export function RowIcon({ name }: { name: string }) {
   return <Icon name={name} aria-hidden className="size-4 shrink-0 text-muted-foreground" />;
 }
 
 export function RowLabel({ children }: { children: ReactNode }) {
-  return <span className="min-w-0 flex-1 truncate">{children}</span>;
+  return (
+    <span className="min-w-0 flex-1 overflow-x-clip overflow-y-visible whitespace-nowrap [text-box:trim-both_cap_alphabetic]">
+      {children}
+    </span>
+  );
 }
 
 export function Row({ className, ...props }: ComponentPropsWithoutRef<"button">) {
@@ -58,7 +63,12 @@ export function SplitRow({
   menu: ReactNode;
 }) {
   return (
-    <div className="group/split flex w-full items-center rounded-lg hover:bg-foreground/[0.06] has-[[data-state=open]]:bg-foreground/[0.06]">
+    <div
+      className={cx(
+        "group/split flex w-full items-center rounded-lg has-[[data-state=open]]:bg-foreground/[0.035] [.dark_&]:has-[[data-state=open]]:bg-foreground/[0.08]",
+        HOVER,
+      )}
+    >
       {primary}
       <span
         aria-hidden
@@ -69,7 +79,7 @@ export function SplitRow({
           <button
             type="button"
             aria-label={menuLabel}
-            className={cx(CONTROL, "w-8 shrink-0 justify-center px-0", HOVER)}
+            className={cx(CONTROL, "w-8 shrink-0 justify-center rounded-s-none px-0", HOVER)}
           >
             <RowIcon name="ChevronDown" />
           </button>
@@ -104,10 +114,26 @@ export function SelectRow({
   return (
     <Menu
       trigger={
-        <button type="button" aria-haspopup="menu" className={cx(CONTROL, "w-full pe-0", HOVER)}>
-          {icon}
-          <RowLabel>{label}</RowLabel>
-          <span className="flex h-full w-8 shrink-0 items-center justify-center">
+        <button
+          type="button"
+          aria-haspopup="menu"
+          className={cx(CONTROL, "group/select w-full gap-0 px-0", HOVER)}
+        >
+          <span
+            className={cx(
+              "flex h-full min-w-0 flex-1 items-center gap-2.5 rounded-s-lg px-2.5",
+              HOVER,
+            )}
+          >
+            {icon}
+            <RowLabel>{label}</RowLabel>
+          </span>
+          <span
+            className={cx(
+              "relative flex h-full w-8 shrink-0 items-center justify-center rounded-e-lg before:absolute before:-left-px before:top-1/2 before:h-4 before:w-px before:-translate-y-1/2 before:bg-transparent group-hover/select:before:bg-border/65 group-data-[state=open]/select:before:bg-border/65",
+              HOVER,
+            )}
+          >
             <RowIcon name="ChevronDown" />
           </span>
         </button>
