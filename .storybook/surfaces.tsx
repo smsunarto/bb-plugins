@@ -61,6 +61,5 @@ export function composerAction(app: CapturedPluginApp, id: string) {
 
 /** CSS scopes required by each plugin's own presentation components. */
 export function previewSurfaceClass(title: string): string | undefined {
-  if (/^(Components|Screens)\/Game Studio\//.test(title)) return "gs-app";
   return undefined;
 }

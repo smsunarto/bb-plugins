@@ -10,7 +10,6 @@ import {
   Doc01Icon,
   FileEditIcon,
   KeyboardIcon,
-  Joystick01Icon,
   GitBranchIcon,
   GitPullRequestIcon,
   KitchenUtensilsIcon,
@@ -288,10 +287,6 @@ const customIcons = {
   whiteboard: {
     name: "Whiteboard",
     nodes: WhiteboardIcon,
-  },
-  "game-studio": {
-    name: "Joystick",
-    nodes: Joystick01Icon,
   },
   "kitchen-sink": {
     name: "KitchenUtensils",

@@ -19,11 +19,6 @@ const surfaces: Record<string, Record<string, string[]>> = {
   },
   devin: { cloud: ["../src/app/app"] },
   dotfiles: { editor: ["WorkingFileEditor", "HostPicker"], screens: ["DotfilesPage"] },
-  "game-studio": {
-    canvas: ["StudioCanvas"],
-    generation: ["GenerationSettings", "CanvasInputs", "BriefStarters"],
-    review: ["VerdictBadge"],
-  },
   "gh-stack": { files: ["ChangedFileTree"], stack: ["../app"] },
   gitbutler: {
     files: ["FileList", "WorkspaceSkeleton", "Notice"],
@@ -136,7 +131,6 @@ test("stories are grouped into Components or Screens", () => {
 
 test("plugin styles apply to component and screen previews", () => {
   for (const root of ["Components", "Screens"]) {
-    expect(previewSurfaceClass(`${root}/Game Studio/Canvas`)).toBe("gs-app");
     expect(previewSurfaceClass(`${root}/Tasks/Views`)).toBeUndefined();
     expect(previewSurfaceClass(`${root}/Game Studio Other/Panel`)).toBeUndefined();
   }

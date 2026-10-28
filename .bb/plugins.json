@@ -32,10 +32,6 @@
       "source": "./plugins/dotfiles"
     },
     {
-      "name": "game-studio",
-      "source": "./plugins/game-studio"
-    },
-    {
       "name": "gcp-machine",
       "source": "./plugins/gcp-machine"
     },

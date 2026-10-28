@@ -17,8 +17,6 @@ export const ALLOWED_LICENSES: ReadonlySet<string> = new Set([
   "MIT",
   // agentation bundles the upstream `agentation` package into dist/app.js.
   "MIT AND PolyForm-Shield-1.0.0",
-  // game-studio adapts Apache-2.0 source from WhiteTowerAI/ohmygame.
-  "MIT AND Apache-2.0",
 ]);
 
 /** Paths that must never reach any npm package, whatever the allowlist says. */

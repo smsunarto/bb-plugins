@@ -139,16 +139,6 @@
         "vitest": "^4.1.1",
       },
     },
-    "packages/game-studio-api": {
-      "name": "@argus-labs/game-studio-api",
-      "version": "0.1.0",
-      "dependencies": {
-        "zod": "^4.4.3",
-      },
-      "devDependencies": {
-        "vitest": "4.1.11",
-      },
-    },
     "packages/markdown-prose": {
       "name": "@bb-plugins/markdown-prose",
       "version": "0.1.0",
@@ -396,30 +386,6 @@
         "tsx": "4.23.12",
         "typescript": "^6.0.0",
         "vaul": "^1.1.2",
-      },
-    },
-    "plugins/game-studio": {
-      "name": "@smsunarto/bb-plugin-game-studio",
-      "version": "0.1.0",
-      "dependencies": {
-        "@argus-labs/game-studio-api": "workspace:*",
-        "@bb-kit/core": "workspace:*",
-        "@tanstack/react-query": "^5.101.4",
-        "better-sqlite3": "^12.0.0",
-        "lucide-react": "1.57.0",
-        "zod": "^4.4.3",
-      },
-      "devDependencies": {
-        "@get-bb/plugin-sdk": "0.6.75",
-        "@types/better-sqlite3": "^7.6.12",
-        "@types/node": "^22.0.0",
-        "@types/react": "^19.0.0",
-        "@types/react-dom": "^19.0.0",
-        "bun-types": "^1.4.0",
-        "react": "19.2.8",
-        "react-dom": "19.2.8",
-        "tsx": "4.23.12",
-        "typescript": "^6.0.0",
       },
     },
     "plugins/gcp-machine": {
@@ -1029,8 +995,6 @@
   ],
   "packages": {
     "@adobe/css-tools": ["@adobe/css-tools@4.5.0", "", {}, "sha512-6OzddxPio9UiWTCemp4N8cYLV2ZN1ncRnV1cVGtve7dhPOtRkleRyx32GQCYSwDYgaHU3USMm84tNsvKzRCa1Q=="],
-
-    "@argus-labs/game-studio-api": ["@argus-labs/game-studio-api@workspace:packages/game-studio-api"],
 
     "@asamuzakjp/css-color": ["@asamuzakjp/css-color@5.1.11", "", { "dependencies": { "@asamuzakjp/generational-cache": "^1.0.1", "@csstools/css-calc": "^3.2.0", "@csstools/css-color-parser": "^4.1.0", "@csstools/css-parser-algorithms": "^4.0.0", "@csstools/css-tokenizer": "^4.0.0" } }, "sha512-KVw6qIiCTUQhByfTd78h2yD1/00waTmm9uy/R7Ck/ctUyAPj+AEDLkQIdJW0T8+qGgj3j5bpNKK7Q3G+LedJWg=="],
 
@@ -1789,8 +1753,6 @@
     "@smsunarto/bb-plugin-devin": ["@smsunarto/bb-plugin-devin@workspace:plugins/devin"],
 
     "@smsunarto/bb-plugin-dotfiles": ["@smsunarto/bb-plugin-dotfiles@workspace:plugins/dotfiles"],
-
-    "@smsunarto/bb-plugin-game-studio": ["@smsunarto/bb-plugin-game-studio@workspace:plugins/game-studio"],
 
     "@smsunarto/bb-plugin-gcp-machine": ["@smsunarto/bb-plugin-gcp-machine@workspace:plugins/gcp-machine"],
 
@@ -2673,8 +2635,6 @@
     "lru-cache": ["lru-cache@11.5.3", "", {}, "sha512-U4N8FgzmWxc8k1VH8Kr6lQg18U7Fjvby6wXHVRX/ZZ7IwWbRMgrRbP0Wrb5q5NVinryp4SQampHKdvtecItxUg=="],
 
     "lru_map": ["lru_map@0.4.1", "", {}, "sha512-I+lBvqMMFfqaV8CJCISjI3wbjmwVu/VyOoU7+qtu9d7ioW5klMgsTTiUOUp+DJvfTTzKXoPbyC6YfgkNcyPSOg=="],
-
-    "lucide-react": ["lucide-react@1.57.0", "", { "peerDependencies": { "@types/react": "*", "react": "^16.5.1 || ^17.0.0 || ^18.0.0 || ^19.0.0" }, "optionalPeers": ["@types/react"] }, "sha512-bXFZEucYhAzLD62Jse76AbTR6LiSLTn3Tqir2f1n8rZrWAdLodYy7jnRZSPIT89dRLk/IseMOUWG82wJtTyTTw=="],
 
     "luxon": ["luxon@3.7.2", "", {}, "sha512-vtEhXh/gNjI9Yg1u4jX/0YVPMvxzHuGgCm6tC5kZyb08yjGWGnqAjGJvcXbqQR2P3MyMEFnRbpcdFS6PBcLqew=="],
 
