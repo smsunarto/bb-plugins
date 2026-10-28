@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.1.0](https://github.com/smsunarto/bb-plugins/compare/bb-kit-core/v1.0.0...bb-kit-core/v1.1.0) (2026-10-28)
+
+
+### Features
+
+* **bb-kit:** allow a separate CLI root ([32225a0](https://github.com/smsunarto/bb-plugins/commit/32225a045d83b072a587bb77e4a858093b91488f))
+
+
+### Bug Fixes
+
+* **bb-kit-core:** let RPC query hooks run outside a query boundary ([8d5a4de](https://github.com/smsunarto/bb-plugins/commit/8d5a4de1ad170e56ad24b128e441406acc54394b))
+
 ## [1.0.0](https://github.com/smsunarto/bb-plugins/compare/bb-kit-core/v0.2.0...bb-kit-core/v1.0.0) (2026-10-20)
 
 
