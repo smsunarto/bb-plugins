@@ -687,7 +687,7 @@ export function Tests({ props }: { props: Props }) {
   if (depth > 0) return <div className="min-w-0 text-sm text-foreground">{body}</div>;
   return (
     <CardDepthContext value={1}>
-      <section className="min-w-0 rounded-xl border border-border bg-background p-4 text-sm text-foreground sm:px-5">{body}</section>
+      <section className="min-w-0 text-sm text-foreground">{body}</section>
     </CardDepthContext>
   );
 }

@@ -172,7 +172,7 @@ function UiFence({
         {...motion}
         role="status"
         aria-label="Building UI"
-        className="not-prose my-3 h-20 animate-pulse rounded-xl border border-border bg-surface-recessed"
+        className="not-prose my-3 h-20 animate-pulse rounded-xl bg-surface-recessed"
       />
     );
   }

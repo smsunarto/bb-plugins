@@ -36,7 +36,7 @@ import { AnswersContext } from "./runtime";
 import { FOCUS_RING, InMessageLine, SentLine } from "./components/inputs";
 import { useAnimationsOff } from "./components/motion";
 
-const CARD = "rounded-xl border border-border bg-background p-4 sm:px-5";
+const CARD = "border-0 bg-transparent p-0";
 const MIN_HEIGHT = 80;
 const MAX_HEIGHT = 1400;
 /** How often the streaming preview redraws; the first markup goes at once. */

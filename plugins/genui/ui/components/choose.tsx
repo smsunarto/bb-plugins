@@ -534,10 +534,6 @@ export function Carousel({ props }: { props: Props }) {
     edges.start && edges.end
       ? undefined
       : `linear-gradient(to right, transparent, #000 ${edges.start ? "0px" : EDGE_FADE}, #000 calc(100% - ${edges.end ? "0px" : EDGE_FADE}), transparent)`;
-  // Directly in the UI's frame the row bleeds to the frame's edges, so cards
-  // scroll out under its border instead of stopping at its padding.
-  const bleed = depth === 1;
-
   return (
     <div className="group/carousel relative min-w-0">
       <div
@@ -550,7 +546,6 @@ export function Carousel({ props }: { props: Props }) {
         style={{ maskImage: fade, WebkitMaskImage: fade }}
         className={cn(
           "@container min-w-0 snap-x snap-mandatory overflow-x-auto overflow-y-hidden overscroll-x-contain rounded-lg py-1 [scrollbar-width:none] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring [&::-webkit-scrollbar]:hidden",
-          bleed && "-mx-4 scroll-px-4 px-4 sm:-mx-5 sm:scroll-px-5 sm:px-5",
         )}
       >
         <div ref={track} className="flex w-max items-stretch gap-3">

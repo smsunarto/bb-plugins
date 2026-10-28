@@ -209,7 +209,7 @@ function Example({
   };
   return (
     <div data-gallery-entry={name} className="flex flex-col">
-      {near ? <ExampleBody example={example} /> : <div ref={placeholder} className="my-3 h-40 rounded-xl border border-border" />}
+      {near ? <ExampleBody example={example} /> : <div ref={placeholder} className="my-3 h-40" />}
     </div>
   );
 }

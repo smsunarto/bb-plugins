@@ -27,7 +27,7 @@ function CardTitle({ title, nested }: { title: string | null; nested: boolean })
 }
 
 /**
- * The outermost Card is the UI's one framed surface. A Card inside it is a
+ * The outermost Card sits unframed in the reply. A Card inside it is a
  * flat recessed tile (option cards, grouped sections): never a box in a box.
  */
 export function Card({ props }: { props: Props }) {
@@ -55,7 +55,7 @@ export function Card({ props }: { props: Props }) {
           outer.current = element;
         }}
         className={cn(
-          "min-w-0 rounded-xl border border-border bg-background p-4 text-sm text-foreground sm:px-5",
+          "min-w-0 text-sm text-foreground",
           SMOOTH_HEIGHT_CLASS,
         )}
       >
