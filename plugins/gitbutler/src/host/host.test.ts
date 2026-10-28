@@ -445,6 +445,7 @@ test("unpublishedBranches names each workspace branch with no review yet, and wh
   restore = await fakeBut(
     [
       `printf '%s\n' "$*" >> '${log}'`,
+      `if [ -f '${machine}/fail-b' ] && [ "$(basename "$PWD")" = b ]; then echo 'unreadable workspace' >&2; exit 1; fi`,
       `case "$1 $2" in`,
       `  "status --json") cat '${payload}' ;;`,
       `  *) echo "unexpected" >&2; exit 1 ;;`,
@@ -499,6 +500,49 @@ test("unpublishedBranches names each workspace branch with no review yet, and wh
       path: join(machine, "app"),
     }),
   ).rejects.toThrow("not a GitButler workspace bb knows");
+
+  // An environment can hold several repositories. Scope to all of its repos,
+  // preserving canonical paths even when the environment is reached by a symlink.
+  const environment = join(machine, "environment");
+  await mkdir(join(environment, "repos"), { recursive: true });
+  const a = join(environment, "repos", "a");
+  const b = join(environment, "repos", "b");
+  await runGit(machine, ["clone", "--quiet", join(machine, "app"), a], signal);
+  await runGit(machine, ["clone", "--quiet", join(machine, "app"), b], signal);
+  const alias = join(machine, "environment-link");
+  await symlink(environment, alias);
+  const multiple = await host.experimental_call("unpublishedBranches", {
+    paths: [alias, join(machine, "other")],
+    path: alias,
+  });
+  expect(multiple.branches.map((branch) => branch.path)).toEqual([
+    await realpath(a),
+    await realpath(a),
+    await realpath(b),
+    await realpath(b),
+  ]);
+  expect(await butCalls()).toHaveLength(4);
+  await expect(
+    host.experimental_call("unpublishedBranches", {
+      paths: [a],
+      path: alias,
+    }),
+  ).rejects.toThrow("not a GitButler workspace bb knows");
+  await writeFile(join(machine, "fail-b"), "");
+  await expect(
+    host.experimental_call("unpublishedBranches", {
+      paths: [alias],
+      path: alias,
+    }),
+  ).rejects.toThrow(`Could not read branches in ${await realpath(b)}:`);
+  expect(
+    (
+      await host.experimental_call("unpublishedBranches", {
+        paths: [alias],
+        path: a,
+      })
+    ).branches,
+  ).toHaveLength(2);
 });
 
 test("a range patch is everything the head changes since the base, from git", async () => {

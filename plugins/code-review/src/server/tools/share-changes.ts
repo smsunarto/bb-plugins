@@ -1,4 +1,5 @@
 import { z } from "zod";
+import type { PluginAgentToolContext } from "@get-bb/plugin-sdk";
 import { accountSchema, parsePrReference, prKey } from "../../shared/schema.ts";
 import type { CodeReviewContext } from "../lib/context.ts";
 import { loadLocalBranches, rememberBranch } from "../lib/gitbutler.ts";
@@ -26,25 +27,34 @@ export function shareChanges(ctx: CodeReviewContext) {
     name: "code_review_share_changes",
     ...files.tool("code_review_share_changes"),
     parameters,
-    async execute({ target }: z.output<typeof parameters>) {
+    async execute(
+      { target }: z.output<typeof parameters>,
+      { threadId, signal }: PluginAgentToolContext,
+    ) {
       if (target.kind === "pr") {
         const ref = parsePrReference(target.reference);
         if (!ref) throw new Error("Use a GitHub pull request URL or owner/repo#123.");
         return `::code-review{pr="${prKey(ref)}"${target.account ? ` account="${target.account}"` : ""}}`;
       }
-      const result = await loadLocalBranches(
-        ctx.bb,
-        undefined,
-        target.hostId
-          ? { hostId: target.hostId, ...(target.path ? { path: target.path } : {}) }
-          : undefined,
-      );
+      let scope: { hostId: string; path?: string };
+      if (target.hostId) {
+        scope = { hostId: target.hostId, ...(target.path ? { path: target.path } : {}) };
+      } else {
+        const thread = await ctx.bb.sdk.threads.get({ threadId, include: "environment" });
+        const environment = "environment" in thread ? thread.environment : null;
+        if (!environment?.path || environment.status !== "ready") {
+          throw new Error(
+            "This thread has no ready checkout. Supply hostId and path to share a branch from another checkout.",
+          );
+        }
+        scope = { hostId: environment.hostId, path: target.path ?? environment.path };
+      }
+      const result = await loadLocalBranches(ctx.bb, signal, scope);
       if (!result.available) throw new Error(result.reason);
       const matches = result.branches.filter(
         (branch) =>
           (branch.branch === target.branch || branch.id === target.branch) &&
-          (target.hostId === undefined || target.hostId === branch.hostId) &&
-          (target.path === undefined || target.path === branch.path),
+          scope.hostId === branch.hostId,
       );
       const branch = matches[0];
       if (!branch)

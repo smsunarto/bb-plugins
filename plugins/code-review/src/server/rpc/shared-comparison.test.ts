@@ -16,7 +16,7 @@ test("a shared comparison survives publication and reload using its saved checko
   let harness = initial;
   try {
     await harness.behavior.callAgentTool("code_review_share_changes", {
-      target: { kind: "branch", branch: branch.branch },
+      target: { kind: "branch", branch: branch.branch, hostId: branch.hostId, path: branch.path },
     });
     ({ harness } = await harness.lifecycle.reload(plugin));
     harness.sdk.stub("plugins.callRpc", async () => {

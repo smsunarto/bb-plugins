@@ -2,7 +2,7 @@ Create a clickable Review card when committed changes are ready for the human to
 
 INPUTS
 
-- For an unpublished local change, pass the task's committed GitButler branch name. Supply `hostId` and `path` to disambiguate the same branch across machines or checkouts.
+- For an unpublished local change, pass the task's committed GitButler branch name. It defaults to the calling thread's ready checkout and host. Supply `path` for another checkout on that host, or `hostId` and `path` for another machine. With `hostId` alone, it searches that host's checkouts and requires a unique match. If the thread has no ready checkout, supply `hostId` and `path`.
 - For a GitHub pull request, pass its URL or `owner/repo#123`, with an optional GitHub `account`. If a local branch already has a pull request, use the PR target.
 
 RETURNS AND NEXT STEP

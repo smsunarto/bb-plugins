@@ -320,22 +320,36 @@ export default experimental_defineHostEntry({
 
     async unpublishedBranches({ paths, path }, context) {
       if (path) {
-        const repository = await resolveRepository(path, undefined, context.signal);
-        if (
-          !(await isKnownWorkspace(
-            paths.includes(path) ? [path] : paths,
-            repository.path,
-            context.signal,
-          ))
-        )
+        const repositories = await findCheckouts([path], null, context.signal);
+        const known = await Promise.all(
+          repositories.map((repository) =>
+            isKnownWorkspace(
+              paths.includes(path) ? [path] : paths,
+              repository.path,
+              context.signal,
+            ),
+          ),
+        );
+        if (repositories.length === 0 || known.some((value) => !value))
           throw new NoRepositoryError(
             "That is not a GitButler workspace bb knows on this machine.",
           );
         return {
-          branches: await readUnpublished(
-            { ...repository, origin: await readOrigin(repository.path, context.signal) },
-            context.signal,
-          ),
+          branches: (
+            await Promise.all(
+              repositories.map(async (repository) => {
+                try {
+                  return await readUnpublished(repository, context.signal);
+                } catch (error) {
+                  if (context.signal.aborted) throw error;
+                  throw new Error(
+                    `Could not read branches in ${repository.path}: ${String(error)}. Target the intended checkout path directly.`,
+                    { cause: error },
+                  );
+                }
+              }),
+            )
+          ).flat(),
         };
       }
       const repositories = await findCheckouts(paths, null, context.signal);
