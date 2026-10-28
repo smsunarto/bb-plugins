@@ -1,0 +1,1 @@
+Benchmark(Load("data/vitest-bench.json"))

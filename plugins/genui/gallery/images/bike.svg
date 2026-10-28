@@ -1,0 +1,47 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="800" height="500" viewBox="0 0 800 500">
+<rect width="800" height="500" fill="#eef2f5"/>
+<ellipse cx="400" cy="462" rx="330" ry="10" fill="#d9dfe5"/>
+<g>
+  <circle cx="210" cy="330" r="116" fill="none" stroke="#262a31" stroke-width="16"/>
+  <circle cx="210" cy="330" r="104" fill="none" stroke="#a7b0ba" stroke-width="4"/>
+  <g stroke="#b9c1ca" stroke-width="1.6"><line x1="220.0" y1="330.0" x2="305.8" y2="365.0"/><line x1="219.4" y1="333.4" x2="288.1" y2="395.6"/><line x1="217.7" y1="336.4" x2="260.9" y2="418.4"/><line x1="215.0" y1="338.7" x2="227.6" y2="430.5"/><line x1="211.7" y1="339.8" x2="192.2" y2="430.4"/><line x1="208.3" y1="339.8" x2="158.9" y2="418.3"/><line x1="205.0" y1="338.7" x2="131.8" y2="395.5"/><line x1="202.3" y1="336.4" x2="114.1" y2="364.8"/><line x1="200.6" y1="333.4" x2="108.0" y2="329.9"/><line x1="200.0" y1="330.0" x2="114.2" y2="295.0"/><line x1="200.6" y1="326.6" x2="131.9" y2="264.4"/><line x1="202.3" y1="323.6" x2="159.1" y2="241.6"/><line x1="205.0" y1="321.3" x2="192.4" y2="229.5"/><line x1="208.3" y1="320.2" x2="227.8" y2="229.6"/><line x1="211.7" y1="320.2" x2="261.1" y2="241.7"/><line x1="215.0" y1="321.3" x2="288.2" y2="264.5"/><line x1="217.7" y1="323.6" x2="305.9" y2="295.2"/><line x1="219.4" y1="326.6" x2="312.0" y2="330.1"/></g>
+  <circle cx="210" cy="330" r="10" fill="#59616b"/>
+</g>
+<g>
+  <circle cx="590" cy="330" r="116" fill="none" stroke="#262a31" stroke-width="16"/>
+  <circle cx="590" cy="330" r="104" fill="none" stroke="#a7b0ba" stroke-width="4"/>
+  <g stroke="#b9c1ca" stroke-width="1.6"><line x1="600.0" y1="330.0" x2="685.8" y2="365.0"/><line x1="599.4" y1="333.4" x2="668.1" y2="395.6"/><line x1="597.7" y1="336.4" x2="640.9" y2="418.4"/><line x1="595.0" y1="338.7" x2="607.6" y2="430.5"/><line x1="591.7" y1="339.8" x2="572.2" y2="430.4"/><line x1="588.3" y1="339.8" x2="538.9" y2="418.3"/><line x1="585.0" y1="338.7" x2="511.8" y2="395.5"/><line x1="582.3" y1="336.4" x2="494.1" y2="364.8"/><line x1="580.6" y1="333.4" x2="488.0" y2="329.9"/><line x1="580.0" y1="330.0" x2="494.2" y2="295.0"/><line x1="580.6" y1="326.6" x2="511.9" y2="264.4"/><line x1="582.3" y1="323.6" x2="539.1" y2="241.6"/><line x1="585.0" y1="321.3" x2="572.4" y2="229.5"/><line x1="588.3" y1="320.2" x2="607.8" y2="229.6"/><line x1="591.7" y1="320.2" x2="641.1" y2="241.7"/><line x1="595.0" y1="321.3" x2="668.2" y2="264.5"/><line x1="597.7" y1="323.6" x2="685.9" y2="295.2"/><line x1="599.4" y1="326.6" x2="692.0" y2="330.1"/></g>
+  <circle cx="590" cy="330" r="10" fill="#59616b"/>
+</g>
+<!-- front disc brake -->
+<circle cx="590" cy="330" r="26" fill="none" stroke="#7d8792" stroke-width="5"/>
+<rect x="572" y="292" width="26" height="14" rx="4" fill="#e4572e" transform="rotate(20 585 299)"/>
+<!-- rear cassette and derailleur -->
+<circle cx="210" cy="330" r="18" fill="none" stroke="#59616b" stroke-width="6"/>
+<path d="M214 352 l-6 34 l18 8" fill="none" stroke="#3b4048" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+<!-- chain -->
+<g stroke="#3b4048" stroke-width="4" fill="none">
+  <line x1="385" y1="310" x2="210" y2="312"/>
+  <line x1="385" y1="370" x2="226" y2="392"/>
+</g>
+<!-- frame -->
+<g stroke="#1f8a70" stroke-width="14" stroke-linecap="round" stroke-linejoin="round" fill="none">
+  <path d="M210 330 L352 190 L385 340 Z"/>
+  <path d="M352 190 L548 178 L560 222 L385 340"/>
+  <line x1="340" y1="150" x2="352" y2="192"/>
+</g>
+<!-- fork and stem -->
+<g stroke="#262a31" stroke-linecap="round" fill="none">
+  <path d="M560 222 Q575 280 590 330" stroke-width="11"/>
+  <path d="M548 178 L542 146" stroke-width="10"/>
+  <path d="M530 140 L590 132 Q622 130 618 162 Q614 178 600 178" stroke-width="9" stroke-linejoin="round"/>
+</g>
+<rect x="592" y="132" width="10" height="16" rx="3" fill="#59616b"/>
+<!-- saddle -->
+<path d="M296 146 Q330 132 382 142 Q386 152 372 154 L312 156 Q292 156 296 146 Z" fill="#262a31"/>
+<!-- chainring and crank -->
+<circle cx="385" cy="340" r="30" fill="#eef2f5" stroke="#3b4048" stroke-width="5"/>
+<circle cx="385" cy="340" r="9" fill="#59616b"/>
+<line x1="385" y1="340" x2="412" y2="394" stroke="#3b4048" stroke-width="9" stroke-linecap="round"/>
+<rect x="398" y="392" width="34" height="9" rx="3" fill="#262a31"/>
+</svg>

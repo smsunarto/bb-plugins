@@ -1,0 +1,9 @@
+Acceptance({title: "Acceptance component, round 4", criteria: [
+  {name: "The gate example renders with no error lines", status: "passed", by: "gallery-shot.mjs", method: "Chromium at 1300 px; WebKit iPhone 15 emulation at 393 px, dark", at: "2026-10-10T02:02:37Z", evidence: [{image: "data/acceptance/shots/gate-light.png", label: "Desktop, light"}, {image: "data/acceptance/shots/gate-phone-dark.png", label: "Phone, dark"}]},
+  {name: "A cell opens its evidence at the marked lines", status: "passed", by: "gallery-shot.mjs", method: "--click on the paused-layout cell", at: "2026-10-10T02:02:37Z", evidence: "data/acceptance/shots/gate-cell-opened.png"},
+  {name: "An owner's complete: true is contradicted, not trusted", status: "passed", by: "vitest", evidence: {path: "data/acceptance/coil-gate.json", line: 3, label: "The gate result says it is complete"}},
+  {name: "Logic and fallback tests pass", status: "passed", by: "vitest", method: "npx vitest run core/acceptance.test.ts core/markdown-a4.test.ts", evidence: {text: " Test Files  2 passed (2)\n      Tests  26 passed (26)", label: "vitest"}},
+  {name: "A screen reader names every cell", status: "claimed", by: "the builder", note: "Each cell is a disclosure button named “criterion · column: status”. Not walked with VoiceOver.", evidence: {url: "https://www.w3.org/WAI/ARIA/apg/patterns/disclosure/", label: "WAI-ARIA disclosure pattern"}},
+  {name: "Renders in a DOM test", status: "no match", method: "npx vitest run -t \"Acceptance renders in a DOM\"", note: "The repo has no DOM test environment, so the filter matched nothing.", evidence: " Test Files  46 skipped (46)\n      Tests  564 skipped (564)"},
+  {name: "Renders on a physical iPhone", status: "not tested", needs: "Open the gallery on your iPhone", note: "Checked in WebKit with iPhone emulation only."}
+]})

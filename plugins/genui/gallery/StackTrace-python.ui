@@ -1,0 +1,1 @@
+StackTrace(Load("data/traces/python-chain.txt"), "python3 deploy.py deploy.json")

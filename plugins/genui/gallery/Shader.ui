@@ -1,0 +1,60 @@
+Card("Metaballs, raymarched", [
+  Shader(`
+// Four spheres orbit a fifth and melt into it (smooth union).
+float smin(float a, float b, float k) {
+  float h = clamp(0.5 + 0.5 * (b - a) / k, 0.0, 1.0);
+  return mix(b, a, h) - k * h * (1.0 - h);
+}
+
+float scene(vec3 p) {
+  float d = length(p) - 0.6;
+  for (int i = 0; i < 4; i++) {
+    float a = iTime * 0.7 + float(i) * 1.5708;
+    vec3 c = vec3(cos(a) * 0.95, sin(a * 1.3) * 0.35, sin(a) * 0.95);
+    d = smin(d, length(p - c) - 0.28, 0.35);
+  }
+  return d;
+}
+
+vec3 normalAt(vec3 p) {
+  vec2 e = vec2(0.001, 0.0);
+  return normalize(vec3(
+    scene(p + e.xyy) - scene(p - e.xyy),
+    scene(p + e.yxy) - scene(p - e.yxy),
+    scene(p + e.yyx) - scene(p - e.yyx)));
+}
+
+void mainImage(out vec4 fragColor, in vec2 fragCoord) {
+  // Scale by the shorter side so the subject fits a phone too.
+  vec2 uv = (2.0 * fragCoord - iResolution.xy) / min(iResolution.x, iResolution.y);
+  float yaw = iCamera.x;
+  float pitch = iCamera.y;
+  vec3 ro = vec3(cos(pitch) * sin(yaw), sin(pitch), cos(pitch) * cos(yaw)) * 3.4 / iCamera.z;
+  vec3 fw = normalize(-ro);
+  vec3 rt = normalize(cross(fw, vec3(0.0, 1.0, 0.0)));
+  vec3 up = cross(rt, fw);
+  vec3 rd = normalize(fw * 1.8 + rt * uv.x + up * uv.y);
+
+  float t = 0.0;
+  for (int i = 0; i < 96; i++) {
+    float d = scene(ro + rd * t);
+    if (d < 0.001 || t > 8.0) break;
+    t += d;
+  }
+  // Alpha 0 where the ray misses: the chat shows through.
+  if (t > 8.0) {
+    fragColor = vec4(0.0);
+    return;
+  }
+  vec3 p = ro + rd * t;
+  vec3 n = normalAt(p);
+  vec3 light = normalize(vec3(0.6, 0.8, 0.4));
+  float diffuse = max(dot(n, light), 0.0);
+  float rim = pow(1.0 - max(dot(n, -rd), 0.0), 3.0);
+  float spec = pow(max(dot(reflect(-light, n), -rd), 0.0), 40.0);
+  vec3 base = 0.5 + 0.5 * cos(vec3(0.0, 2.0, 4.0) + p.y * 2.0 + iTime * 0.3);
+  fragColor = vec4(base * (0.15 + 0.85 * diffuse) + rim * vec3(0.5, 0.7, 1.0) + spec, 1.0);
+}
+`, blend: "alpha", orbit: true, height: 340),
+  Text("Drag to orbit. Each pixel marches a ray until it touches the surface; no triangles involved.")
+])

@@ -1,0 +1,5 @@
+$guests = 6
+Card("Paella for your group", [
+  Stepper($guests, min: 1, max: 20, label: "Guests"),
+  Table(["Ingredient", "Amount"], [["Rice", fmt($guests * 90) + " g"], ["Stock", fmt($guests * 0.25, 2) + " l"], ["Saffron", fmt($guests * 0.05, 2) + " g"]])
+])

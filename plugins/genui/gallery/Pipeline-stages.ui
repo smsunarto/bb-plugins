@@ -1,0 +1,13 @@
+Pipeline({name: "Deploy web", branch: "release/2.4", sha: "9f1c2ab", stages: [
+  {name: "Build", status: "passed", duration: "1m 12s"},
+  {name: "Test", status: "failed", jobs: [
+    {name: "unit", status: "passed", duration: "2m 10s"},
+    {name: "e2e (chromium)", status: "failed", duration: "4m 02s", steps: [
+      {name: "Install browsers", status: "passed", duration: "38s"},
+      {name: "Run playwright", status: "failed", duration: "3m 20s", message: "3 failed: checkout.spec.ts › pays with a saved card"},
+      {name: "Upload report", status: "passed", duration: "4s"}
+    ]},
+    {name: "lint", status: "passed", duration: "48s"}
+  ]},
+  {name: "Deploy", status: "skipped"}
+]})

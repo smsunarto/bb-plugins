@@ -163,8 +163,14 @@ describe("pluginPackageProblems", () => {
       manifest.license = license;
       expect(pluginPackageProblems(manifest, [...paths, "THIRD_PARTY_NOTICES.md"])).toEqual([]);
     }
+    manifest.license = "BSD-3-Clause";
+    expect(pluginPackageProblems(manifest, paths).join("\n")).toContain("BSD-3-Clause");
+  });
+
+  test("accepts a standalone Apache license without compound-license notices", () => {
+    const { manifest, paths } = healthy();
     manifest.license = "Apache-2.0";
-    expect(pluginPackageProblems(manifest, paths).join("\n")).toContain("Apache-2.0");
+    expect(pluginPackageProblems(manifest, paths)).toEqual([]);
   });
 
   test("a licence beyond MIT has to ship the terms it adds", () => {

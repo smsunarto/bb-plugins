@@ -1,0 +1,9 @@
+$items = [{item: "Margherita pizza", price: 24, shared: true}, {item: "Bottle of wine", price: 32, shared: true}, {item: "Tiramisu", price: 9, shared: false}]
+$people = 3
+total = sum($items.map(r => r.price))
+shared = sum($items.filter(r => r.shared).map(r => r.price))
+Card("Split the bill", [
+  EditableTable($items, ["item", {key: "price", label: "Price ($)", type: "number"}, {key: "shared", type: "boolean"}]),
+  Stepper($people, 1, 20, label: "People sharing"),
+  Row([Metric("Total", "$" + fmt(total, 2)), Metric("Shared, per person", "$" + fmt(shared / $people, 2), tone: "good"), Metric("Not shared", "$" + fmt(total - shared, 2))])
+])

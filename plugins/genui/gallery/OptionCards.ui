@@ -1,0 +1,9 @@
+$mood = "meadow"
+Card("Pick a mood for the landing page", [Form([
+  OptionCards($mood, [
+    {value: "sky", title: "Open sky", detail: "Calm and airy, room for copy", image: "images/option-sky.webp"},
+    {value: "hilltop", title: "Hilltop", detail: "The horizon as a quiet divider", image: "images/option-hilltop.webp"},
+    {value: "meadow", title: "Meadow", detail: "Warm and busy; copy needs a scrim", image: "images/option-meadow.webp"},
+    {value: "flowers", title: "Wildflowers", detail: "Close up and playful", image: "images/option-flowers.webp"}
+  ], label: "Hero image")
+])])

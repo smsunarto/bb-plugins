@@ -1,0 +1,419 @@
+[
+  {
+    "assignees": [],
+    "author": {
+      "id": "MDQ6VXNlcjIxMDE0MA==",
+      "is_bot": false,
+      "login": "lukesandberg",
+      "name": "Luke Sandberg"
+    },
+    "isDraft": true,
+    "labels": [
+      {
+        "name": "Turbopack",
+        "color": "FF1E56"
+      },
+      {
+        "name": "created-by: Turbopack team",
+        "color": "000000"
+      }
+    ],
+    "number": 99968,
+    "state": "OPEN",
+    "title": "turbopack-node: make child IPC frame parsing linear",
+    "updatedAt": "2026-10-10T00:09:51Z",
+    "url": "https://github.com/vercel/next.js/pull/99968"
+  },
+  {
+    "assignees": [],
+    "author": {
+      "id": "MDQ6VXNlcjE4MDQwNA==",
+      "is_bot": false,
+      "login": "bgw",
+      "name": "Benjamin Woodruff ‮"
+    },
+    "isDraft": false,
+    "labels": [
+      {
+        "name": "Turbopack",
+        "color": "FF1E56"
+      },
+      {
+        "name": "created-by: Turbopack team",
+        "color": "000000"
+      },
+      {
+        "name": "tests",
+        "color": "ededed"
+      }
+    ],
+    "number": 99966,
+    "state": "OPEN",
+    "title": "Turbopack: Use the imagesize crate to correctly size AVIF images (still no optimization or encoding)",
+    "updatedAt": "2026-10-10T00:11:33Z",
+    "url": "https://github.com/vercel/next.js/pull/99966"
+  },
+  {
+    "assignees": [],
+    "author": {
+      "id": "MDQ6VXNlcjIxMDE0MA==",
+      "is_bot": false,
+      "login": "lukesandberg",
+      "name": "Luke Sandberg"
+    },
+    "isDraft": true,
+    "labels": [
+      {
+        "name": "Documentation",
+        "color": "C2E0C6"
+      },
+      {
+        "name": "Turbopack",
+        "color": "FF1E56"
+      },
+      {
+        "name": "created-by: Turbopack team",
+        "color": "000000"
+      },
+      {
+        "name": "tests",
+        "color": "ededed"
+      }
+    ],
+    "number": 99965,
+    "state": "OPEN",
+    "title": "Turbopack: support turbopackIgnore on new URL() and skip partially dynamic URLs in node_modules",
+    "updatedAt": "2026-10-09T23:56:46Z",
+    "url": "https://github.com/vercel/next.js/pull/99965"
+  },
+  {
+    "assignees": [],
+    "author": {
+      "id": "MDQ6VXNlcjE4MDQwNA==",
+      "is_bot": false,
+      "login": "bgw",
+      "name": "Benjamin Woodruff ‮"
+    },
+    "isDraft": false,
+    "labels": [
+      {
+        "name": "type: next",
+        "color": "f6aff7"
+      },
+      {
+        "name": "Turbopack",
+        "color": "FF1E56"
+      },
+      {
+        "name": "created-by: Turbopack team",
+        "color": "000000"
+      }
+    ],
+    "number": 99964,
+    "state": "OPEN",
+    "title": "Turbopack: Remove webp feature flag, always build with webp enabled",
+    "updatedAt": "2026-10-09T23:40:08Z",
+    "url": "https://github.com/vercel/next.js/pull/99964"
+  },
+  {
+    "assignees": [],
+    "author": {
+      "id": "MDQ6VXNlcjc1NTg0NA==",
+      "is_bot": false,
+      "login": "wbinnssmith",
+      "name": "Will Binns-Smith"
+    },
+    "isDraft": true,
+    "labels": [
+      {
+        "name": "type: next",
+        "color": "f6aff7"
+      },
+      {
+        "name": "Turbopack",
+        "color": "FF1E56"
+      },
+      {
+        "name": "created-by: Turbopack team",
+        "color": "000000"
+      },
+      {
+        "name": "tests",
+        "color": "ededed"
+      }
+    ],
+    "number": 99963,
+    "state": "OPEN",
+    "title": "Fix Turbopack CSS HMR initial-load race",
+    "updatedAt": "2026-10-09T21:56:06Z",
+    "url": "https://github.com/vercel/next.js/pull/99963"
+  },
+  {
+    "assignees": [],
+    "author": {
+      "id": "MDQ6VXNlcjc1NTg0NA==",
+      "is_bot": false,
+      "login": "wbinnssmith",
+      "name": "Will Binns-Smith"
+    },
+    "isDraft": true,
+    "labels": [
+      {
+        "name": "type: next",
+        "color": "f6aff7"
+      },
+      {
+        "name": "Turbopack",
+        "color": "FF1E56"
+      },
+      {
+        "name": "created-by: Turbopack team",
+        "color": "000000"
+      },
+      {
+        "name": "tests",
+        "color": "ededed"
+      }
+    ],
+    "number": 99962,
+    "state": "OPEN",
+    "title": "Build and analyze in one pass",
+    "updatedAt": "2026-10-09T23:33:06Z",
+    "url": "https://github.com/vercel/next.js/pull/99962"
+  },
+  {
+    "assignees": [],
+    "author": {
+      "id": "MDQ6VXNlcjE4MDQwNA==",
+      "is_bot": false,
+      "login": "bgw",
+      "name": "Benjamin Woodruff ‮"
+    },
+    "isDraft": false,
+    "labels": [
+      {
+        "name": "created-by: Turbopack team",
+        "color": "000000"
+      }
+    ],
+    "number": 99960,
+    "state": "OPEN",
+    "title": "Copy pnpm store to tmpfs for test fixtures",
+    "updatedAt": "2026-10-09T23:52:12Z",
+    "url": "https://github.com/vercel/next.js/pull/99960"
+  },
+  {
+    "assignees": [],
+    "author": {
+      "id": "MDQ6VXNlcjE4MDQwNA==",
+      "is_bot": false,
+      "login": "bgw",
+      "name": "Benjamin Woodruff ‮"
+    },
+    "isDraft": false,
+    "labels": [
+      {
+        "name": "Font (next/font)",
+        "color": "0D3A54"
+      },
+      {
+        "name": "created-by: Turbopack team",
+        "color": "000000"
+      }
+    ],
+    "number": 99959,
+    "state": "MERGED",
+    "title": "Upgrade Corepack to 0.34.7",
+    "updatedAt": "2026-10-09T23:15:33Z",
+    "url": "https://github.com/vercel/next.js/pull/99959"
+  },
+  {
+    "assignees": [],
+    "author": {
+      "id": "MDQ6VXNlcjE4MDQwNA==",
+      "is_bot": false,
+      "login": "bgw",
+      "name": "Benjamin Woodruff ‮"
+    },
+    "isDraft": false,
+    "labels": [
+      {
+        "name": "created-by: Turbopack team",
+        "color": "000000"
+      }
+    ],
+    "number": 99958,
+    "state": "MERGED",
+    "title": "Upgrade Turborepo to 2.11.7",
+    "updatedAt": "2026-10-09T23:15:32Z",
+    "url": "https://github.com/vercel/next.js/pull/99958"
+  },
+  {
+    "assignees": [],
+    "author": {
+      "id": "MDQ6VXNlcjE4MDQwNA==",
+      "is_bot": false,
+      "login": "bgw",
+      "name": "Benjamin Woodruff ‮"
+    },
+    "isDraft": false,
+    "labels": [
+      {
+        "name": "created-by: Turbopack team",
+        "color": "000000"
+      }
+    ],
+    "number": 99957,
+    "state": "MERGED",
+    "title": "Normalize pnpm store cache keys",
+    "updatedAt": "2026-10-09T23:15:31Z",
+    "url": "https://github.com/vercel/next.js/pull/99957"
+  },
+  {
+    "assignees": [],
+    "author": {
+      "id": "MDQ6VXNlcjIxMDE0MA==",
+      "is_bot": false,
+      "login": "lukesandberg",
+      "name": "Luke Sandberg"
+    },
+    "isDraft": false,
+    "labels": [
+      {
+        "name": "Turbopack",
+        "color": "FF1E56"
+      },
+      {
+        "name": "created-by: Turbopack team",
+        "color": "000000"
+      }
+    ],
+    "number": 99955,
+    "state": "OPEN",
+    "title": "[turbopack] Remove per-shard modified counts from snapshots",
+    "updatedAt": "2026-10-09T23:44:39Z",
+    "url": "https://github.com/vercel/next.js/pull/99955"
+  },
+  {
+    "assignees": [],
+    "author": {
+      "id": "U_kgDOBciXVg",
+      "is_bot": false,
+      "login": "frederikvonsperling",
+      "name": "Frederik von Sperling"
+    },
+    "isDraft": false,
+    "labels": [
+      {
+        "name": "examples",
+        "color": "ecffaf"
+      }
+    ],
+    "number": 99953,
+    "state": "OPEN",
+    "title": "examples(panda-css): upgrade PandaCSS to v2 in `examples/panda-css`",
+    "updatedAt": "2026-10-09T19:49:12Z",
+    "url": "https://github.com/vercel/next.js/pull/99953"
+  },
+  {
+    "assignees": [],
+    "author": {
+      "id": "MDQ6VXNlcjY2OTAxMjI4",
+      "is_bot": false,
+      "login": "aurorascharff",
+      "name": "Aurora Scharff"
+    },
+    "isDraft": true,
+    "labels": [
+      {
+        "name": "Documentation",
+        "color": "C2E0C6"
+      }
+    ],
+    "number": 99952,
+    "state": "OPEN",
+    "title": "docs: update production checklist for Cache Components",
+    "updatedAt": "2026-10-09T19:46:15Z",
+    "url": "https://github.com/vercel/next.js/pull/99952"
+  },
+  {
+    "assignees": [],
+    "author": {
+      "id": "MDQ6VXNlcjE4MDQwNA==",
+      "is_bot": false,
+      "login": "bgw",
+      "name": "Benjamin Woodruff ‮"
+    },
+    "isDraft": false,
+    "labels": [
+      {
+        "name": "Turbopack",
+        "color": "FF1E56"
+      },
+      {
+        "name": "created-by: Turbopack team",
+        "color": "000000"
+      }
+    ],
+    "number": 99951,
+    "state": "MERGED",
+    "title": "Turbopack: Ignore realpath errors during module resolution, matching node's behavior",
+    "updatedAt": "2026-10-09T20:09:08Z",
+    "url": "https://github.com/vercel/next.js/pull/99951"
+  },
+  {
+    "assignees": [],
+    "author": {
+      "id": "MDQ6VXNlcjI2MDc2OTM=",
+      "is_bot": false,
+      "login": "avens19",
+      "name": "Andrew Ovens"
+    },
+    "isDraft": false,
+    "labels": [
+      {
+        "name": "type: next",
+        "color": "f6aff7"
+      },
+      {
+        "name": "tests",
+        "color": "ededed"
+      }
+    ],
+    "number": 99950,
+    "state": "OPEN",
+    "title": "fix: Fix standalone package detection with custom output directories",
+    "updatedAt": "2026-10-09T17:15:28Z",
+    "url": "https://github.com/vercel/next.js/pull/99950"
+  },
+  {
+    "assignees": [
+      {
+        "id": "MDQ6VXNlcjEyMjkyMDQ3",
+        "login": "eps1lon",
+        "name": "Sebastian \"Sebbie\" Silbermann",
+        "databaseId": 12292047
+      }
+    ],
+    "author": {
+      "is_bot": true,
+      "login": "app/next-js-bot"
+    },
+    "isDraft": false,
+    "labels": [
+      {
+        "name": "type: next",
+        "color": "f6aff7"
+      },
+      {
+        "name": "type: react-sync",
+        "color": "ededed"
+      }
+    ],
+    "number": 99949,
+    "state": "OPEN",
+    "title": "Upgrade React from `b618bbb4-20261007` to `b618bbb4-20261007`",
+    "updatedAt": "2026-10-09T17:14:35Z",
+    "url": "https://github.com/vercel/next.js/pull/99949"
+  }
+]

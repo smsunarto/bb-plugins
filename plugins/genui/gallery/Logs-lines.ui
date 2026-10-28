@@ -1,0 +1,11 @@
+Logs([
+  "[info] shop api listening on :8080",
+  "[info] GET /health 200 2ms",
+  "[warn] slow query: SELECT * FROM carts WHERE id = $1 (812ms)",
+  "[info] GET /cart/c_41 200 840ms",
+  "[error] POST /cart/c_42/price 500: Cannot read properties of undefined (reading 'toEur')",
+  "    at lineTotal (data/traces/shop/pricing.mjs:10:46)",
+  "[info] GET /health 200 1ms",
+  "[info] GET /health 200 1ms",
+  "[info] GET /health 200 1ms"
+], "docker compose logs shop")

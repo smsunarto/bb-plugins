@@ -1,0 +1,4 @@
+Compare([
+  {src: "data/compare/status-before.png", label: "Light, 1x", meta: {viewport: "760 px", theme: "light", scale: "1x"}},
+  {src: "data/compare/status-dark-2x.png", label: "Dark, 2x", meta: {viewport: "760 px", theme: "dark", scale: "2x", device: "Retina display"}}
+])

@@ -1,0 +1,3 @@
+Card("Pull request #482", [
+  KeyValue({Branch: "fix/upload-race", Author: "sam", Checks: Badge("2 failing", tone: "bad"), Updated: "2 hours ago"})
+])

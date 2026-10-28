@@ -1,0 +1,13 @@
+/*
+ * The Animations setting, off (ui/components/motion.ts): no CSS transition or
+ * animation plays under an element marked with it. BB appends this file to
+ * the compiled utilities without scoping it, so every rule needs the
+ * attribute. !important also beats inline transitions (BB's drawer).
+ */
+[data-genui-motion="off"],
+[data-genui-motion="off"] *,
+[data-genui-motion="off"] ::before,
+[data-genui-motion="off"] ::after {
+  animation: none !important;
+  transition: none !important;
+}

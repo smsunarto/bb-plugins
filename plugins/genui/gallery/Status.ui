@@ -1,0 +1,9 @@
+Status([
+  {name: "Marketing site", status: "on-track", progress: 70, owner: "Marta Rossi", due: "2026-10-16", note: "Pricing page in review; the rest is live on staging."},
+  {name: "Onboarding", status: "at-risk", progress: 40, owner: "Jon Park", due: "2026-10-15", note: "Empty-state copy changed late. **Needs** a decision on the checklist order by Monday."},
+  {name: "Waitlist invites", status: "blocked", progress: 10, owner: "Marta Rossi", due: "2026-10-23", note: "DKIM record for `mail.orbit.example.com` not yet published by IT."},
+  {name: "Press kit", status: "off-track", progress: 60, owner: "Ana Lima", due: "2026-10-08", note: "Founder photos missing; slipped past the agency deadline."},
+  {name: "Load testing", status: "not-started", owner: "Dev Patel", due: "2026-10-20"},
+  {name: "Billing v2", status: "done", progress: 100, owner: "Jon Park", due: "2026-10-09"},
+  {name: "Legal review", status: "done", progress: 100, owner: "Jon Park", due: "2026-10-02", note: "Privacy policy and DPA signed off."}
+])

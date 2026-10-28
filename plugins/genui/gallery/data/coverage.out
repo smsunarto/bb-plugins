@@ -1,0 +1,23 @@
+mode: count
+data/src/semver/bump.go:18.2,21.21 4 11
+data/src/semver/bump.go:22.3,23.1 1 1
+data/src/semver/bump.go:24.2,25.29 2 10
+data/src/semver/bump.go:26.3,27.26 2 30
+data/src/semver/bump.go:28.4,29.1 1 0
+data/src/semver/bump.go:30.3,30.17 1 30
+data/src/semver/bump.go:32.2,32.63 1 10
+data/src/semver/bump.go:38.2,39.9 2 6
+data/src/semver/bump.go:40.3,41.1 1 1
+data/src/semver/bump.go:42.2,43.9 2 5
+data/src/semver/bump.go:44.3,45.1 1 0
+data/src/semver/bump.go:46.2,46.9 1 5
+data/src/semver/bump.go:48.3,48.17 1 2
+data/src/semver/bump.go:50.3,50.17 1 1
+data/src/semver/bump.go:52.3,52.17 1 1
+data/src/semver/bump.go:54.3,54.23 1 0
+data/src/semver/bump.go:56.2,56.15 1 1
+data/src/semver/bump.go:62.2,62.31 1 1
+data/src/semver/bump.go:64.3,64.41 1 1
+data/src/semver/bump.go:66.3,67.14 2 0
+data/src/semver/bump.go:69.3,70.18 2 0
+data/src/semver/bump.go:72.2,72.11 1 0

@@ -1,0 +1,10 @@
+Decision([
+  {name: "Cloudflare Workers", scores: {Latency: 9, Cost: 8, "Node compatibility": 6, "Vendor lock-in": 5}},
+  {name: "Fly.io", scores: {Latency: 7, Cost: 6, "Node compatibility": 10, "Vendor lock-in": 8}},
+  {name: "AWS Lambda", scores: {Latency: 5, Cost: 7, "Node compatibility": 9, "Vendor lock-in": 4}}
+], [
+  {name: "Latency", weight: 40},
+  {name: "Cost", weight: 25},
+  {name: "Node compatibility", weight: 25},
+  {name: "Vendor lock-in", weight: 10}
+])

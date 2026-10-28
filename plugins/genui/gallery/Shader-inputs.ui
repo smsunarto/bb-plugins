@@ -1,0 +1,22 @@
+$speed = 1
+$waves = 8
+$warm = false
+Card("Two-source interference", [
+  Shader(`
+// Two point sources send out ripples; where crests meet the light adds up,
+// where a crest meets a trough it cancels. speed, waves and warm are the inputs.
+void mainImage(out vec4 fragColor, in vec2 fragCoord) {
+  vec2 p = (2.0 * fragCoord - iResolution.xy) / min(iResolution.x, iResolution.y);
+  float t = iTime * speed;
+  vec2 a = vec2(cos(t * 0.7), sin(t * 0.9)) * 0.45;
+  vec2 b = vec2(cos(t * 0.5 + 2.0), sin(t * 0.6 + 1.0)) * 0.45;
+  float k = waves * 3.14159;
+  float w = sin(length(p - a) * k - t * 3.0) + sin(length(p - b) * k - t * 3.0);
+  float brightness = pow(0.5 + 0.25 * w, 4.0) * smoothstep(1.3, 0.3, length(p));
+  vec3 tint = mix(vec3(0.35, 0.65, 1.0), vec3(1.0, 0.55, 0.2), warm);
+  fragColor = vec4(tint * brightness * 1.6, 1.0);
+}
+`, inputs: {speed: $speed, waves: $waves, warm: $warm}, bloom: 0.8, height: 320),
+  Row([Slider($speed, 0, 3, 0.1, label: "Speed"), Slider($waves, 2, 20, 1, label: "Waves")]),
+  Toggle($warm, "Warm light")
+])

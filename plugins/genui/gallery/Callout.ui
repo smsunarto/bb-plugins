@@ -1,0 +1,4 @@
+Card("Before you upgrade", [
+  Callout("Back up the database first: the migration rewrites the orders table.", tone: "warn", title: "Irreversible migration"),
+  Callout("The upgrade takes about 4 minutes on a 2 GB database.", tone: "info")
+])

@@ -1,0 +1,1 @@
+npx vitest run --reporter=json --outputFile=$BB_THREAD_STORAGE/vitest.json · npx jest --json --outputFile=$BB_THREAD_STORAGE/jest.json · pytest --junitxml=$BB_THREAD_STORAGE/junit.xml (any JUnit XML works)

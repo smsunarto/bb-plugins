@@ -1,0 +1,4 @@
+$accent = "#2563EB"
+Card("Choose an accent", [Form([
+  Swatches(["#2563EB", {value: "oklch(0.62 0.17 150)", name: "Leaf"}, {value: "rebeccapurple", name: "Purple"}, {value: "#E11D48", name: "Rose"}, {value: "#F59E0B", name: "Amber"}], $accent, label: "Accent colour")
+])])

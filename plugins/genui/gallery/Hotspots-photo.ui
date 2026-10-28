@@ -1,0 +1,8 @@
+Card("What's in this scene", [
+  Hotspots("images/golden-hour.webp", [
+    {x: 62, y: 14, title: "Clouds", text: "Soft cumulus drifting across a clear sky."},
+    {x: 34, y: 61, title: "Fireflies", text: "Small green glints just above the grass."},
+    {x: 55, y: 82, title: "Wildflowers", text: "Pink and yellow flowers scattered through the meadow."},
+    {x: 99, y: 64, title: "Edge of the hill", text: "The slope falls away to the right."}
+  ])
+])

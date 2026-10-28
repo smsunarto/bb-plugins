@@ -1,0 +1,1 @@
+Dependencies({outdated: Load("data/npm-outdated.json"), audit: Load("data/npm-audit.json")})

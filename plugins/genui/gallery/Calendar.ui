@@ -1,0 +1,15 @@
+Card("Release plan", [
+  Calendar([
+    {date: "2026-10-05", title: "Feature freeze", tone: "warn"},
+    {date: "2026-10-09", title: "RC 1"},
+    {date: "2026-10-09", title: "Docs review"},
+    {date: "2026-10-14", title: "RC 2"},
+    {date: "2026-10-20", title: "Security review", tone: "bad"},
+    {date: "2026-10-20", title: "Changelog draft"},
+    {date: "2026-10-20", title: "Perf pass"},
+    {date: "2026-10-20", title: "Translations"},
+    {date: "2026-10-27", title: "Release 3.0", tone: "good"},
+    {date: "2026-11-03", title: "Retro", tone: "neutral"},
+    {date: "2026-11-17", title: "3.0.1 patch"}
+  ])
+])

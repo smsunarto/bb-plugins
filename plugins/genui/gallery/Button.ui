@@ -1,0 +1,5 @@
+Card("The tests pass. What next?", [
+  Button("Open the PR", variant: "primary", icon: "GitPullRequest"),
+  Button("Run the e2e suite first", icon: "Play"),
+  Button("Copy branch name", Copy("fix/upload-race"), icon: "Copy")
+])

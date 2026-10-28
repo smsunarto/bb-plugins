@@ -1,0 +1,4 @@
+Card("Why the build failed", [
+  Text("The type check failed in **src/api/users.ts**: `email` can be null."),
+  Details("Full compiler output", [Code("src/api/users.ts(42,18): error TS2322: Type 'string | null' is not assignable to type 'string'.", language: "text")])
+])

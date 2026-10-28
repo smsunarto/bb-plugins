@@ -1,0 +1,8 @@
+Card("Bike accessories under $60", [
+  Text("Three picks for commuting after dark. Tap one for the details."),
+  Grid([
+    Entity("Shackle 13 U-lock", kind: "product", image: "images/u-lock.svg", facts: {Price: "$54", Weight: "1.1 kg", Rating: "4.7", Shackle: "13 mm hardened steel", Keys: 3}, url: "https://example.com/shackle-13", note: "Fits most frames plus the rear wheel; the **sturdiest** of the three."),
+    Entity("Halo 800 front light", kind: "product", image: "images/front-light.svg", facts: {Price: "$39", Output: "800 lm", Runtime: "2 h on high", Charging: "USB-C"}, url: "https://example.com/halo-800", note: "Bright enough for unlit roads; the beam is cut so it doesn't dazzle drivers."),
+    Entity("Ding brass bell", kind: "product", image: "images/bell.svg", facts: {Price: "$18", Weight: "45 g"}, url: "https://example.com/ding", note: "One clear ring that carries over traffic.")
+  ])
+])

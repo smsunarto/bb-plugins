@@ -1,0 +1,9 @@
+Benchmark([
+  {name: "Binary archive off", metrics: {fps: 45.464, p99_ms: 41.675}, context: {workload: "2 min live match, 7 bots", thermal: "Serious"}},
+  {name: "Binary archive on, warm", metrics: {fps: 48.849, p99_ms: 41.675}, context: {workload: "2 min live match, 7 bots", thermal: "Fair → serious"}},
+  {name: "Probe correction + resource batching", metrics: {fps: 49.825, p99_ms: 29.173}, context: {workload: "2 min live match, 7 bots"}},
+  {name: "ThinLTO experiment", metrics: {fps: 49.683, p99_ms: 33.34}, context: {workload: "2 min live match, 7 bots"}},
+  {name: "Staging reuse enabled", metrics: {fps: 43.259, p99_ms: 33.34}, context: {workload: "2 min live match, 7 bots"}},
+  {name: "Direct arena writes", metrics: {fps: 37.7, p99_ms: 33.34}, context: {workload: "2 min live match, 7 bots", thermal: "Fair / serious"}},
+  {name: "Relaunch after the live match", status: "failed", metrics: {}, context: {workload: "live match, 2 bots", thermal: "Serious"}, note: "Stopped during GPU warm-up"}
+])

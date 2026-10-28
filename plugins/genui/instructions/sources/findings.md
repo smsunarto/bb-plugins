@@ -1,0 +1,1 @@
+npx eslint -f json . > $BB_THREAD_STORAGE/eslint.json · npx tsc --noEmit --pretty false > $BB_THREAD_STORAGE/tsc.txt · ruff check --output-format json > $BB_THREAD_STORAGE/ruff.json · SARIF from semgrep --sarif, CodeQL and others · oxlint -f json, biome lint --reporter=json · or a review written as the list

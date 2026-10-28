@@ -1,0 +1,5 @@
+{
+  "name": "TypeError",
+  "message": "undefined is not an object (evaluating 'result.score.toFixed')",
+  "stack": "@http://127.0.0.1:5173/data/traces/web/search.js:6:58\nmap@[native code]\nrenderResults@http://127.0.0.1:5173/data/traces/web/search.js:4:28\nonResponse@http://127.0.0.1:5173/data/traces/web/app.js:6:16"
+}

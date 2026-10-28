@@ -1,0 +1,76 @@
+{
+  "game": "Coil",
+  "verdict": "fix-required",
+  "findings": [
+    {
+      "id": "S1",
+      "severity": "P1",
+      "area": "shared shell",
+      "issue": "Pause drawer secondary text fails contrast in the dark theme",
+      "evidence": "Measured 3.1:1 for the drawer's secondary text at 390×844 (WCAG AA needs 4.5:1). This is a shared-shell defect visible in Coil, not a Coil-only stylesheet defect.",
+      "fix": "Raise the shell's muted text colour in the dark theme; every game inherits it.",
+      "status": "deferred",
+      "owner": "shared shell",
+      "round": 2,
+      "note": "Outside the Coil owner's folder. Handed to the shell owner with the contrast measurement."
+    },
+    {
+      "id": "S2",
+      "severity": "P1",
+      "area": "motion",
+      "issue": "Particles keep moving after reduced motion is turned on mid-game",
+      "evidence": "With `prefers-reduced-motion: reduce` emulated during play, the burst particles from a collision kept animating for about 2 s.",
+      "fix": "Clear live particles when the reduced-motion preference changes, not only when they spawn.",
+      "status": "fixed",
+      "owner": "Coil owner",
+      "round": 2,
+      "note": "Owner reports particles are cleared on the preference change; the reviewer has not re-run the reduced-motion probe."
+    },
+    {
+      "id": "S3",
+      "severity": "P2",
+      "area": "rendering",
+      "issue": "Canvas redraws every frame while the game is paused",
+      "evidence": "Paused for 10 s with the drawer open: the performance trace shows a full canvas redraw on every animation frame.",
+      "fix": "Make canvas timing event-driven while paused: redraw on resize and state changes only.",
+      "status": "confirmed",
+      "owner": "Coil owner",
+      "by": "reviewer",
+      "round": 2,
+      "note": "Re-traced after the fix: no redraws while paused, one redraw on resize."
+    },
+    {
+      "id": "S4",
+      "severity": "P2",
+      "area": "input",
+      "issue": "Touch steering target is smaller than 44 px in landscape",
+      "evidence": "At 844×390 the steering hit area measured 36×36 px.",
+      "fix": "Give the steering control a 44 px minimum hit area at every viewport.",
+      "status": "open",
+      "owner": "Coil owner",
+      "round": 2
+    },
+    {
+      "id": "S5",
+      "severity": "P2",
+      "area": "layout",
+      "issue": "Snake head overlaps the score HUD at the arena's top edge",
+      "evidence": "Screenshot at 1440×900: the head drew over the score while hugging the top wall.",
+      "fix": "Inset the arena by the HUD's height.",
+      "status": "rejected",
+      "owner": "Coil owner",
+      "round": 2,
+      "note": "Arena-only captures at 1440×900 and 390×844 keep the HUD outside the arena bounds. The overlap in the review screenshot is the debug overlay, which ships disabled."
+    }
+  ],
+  "evidence": [
+    "Source server, Chrome at 1440×900, 390×844 and 844×390",
+    "Reduced motion emulated in DevTools; keyboard and touch input exercised",
+    "Real model play not exercised: the inference lane was unavailable during the review"
+  ],
+  "artifacts": [
+    "review/coil/desktop-1440x900.png",
+    "review/coil/portrait-390x844-reduced-motion.png",
+    "review/coil/paused-trace.json"
+  ]
+}

@@ -1,0 +1,4 @@
+Compare([
+  {src: "data/compare/status-before.png", label: "Approved render", meta: {viewport: "760 px", theme: "light", scale: "1x", captured: "2026-10-10"}, note: "Status gallery example as BB renders it"},
+  {src: "data/compare/status-after.png", label: "This build", meta: {viewport: "760 px", theme: "light", scale: "1x", captured: "2026-10-10"}, note: "The same panel after one edit"}
+])

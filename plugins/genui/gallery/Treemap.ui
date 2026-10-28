@@ -1,0 +1,18 @@
+Treemap([
+  {path: "core/markdown.ts", bytes: 74222},
+  {path: "core/evaluate.ts", bytes: 29468},
+  {path: "core/validate.ts", bytes: 24407},
+  {path: "core/catalog.ts", bytes: 21582},
+  {path: "core/project.ts", bytes: 17762},
+  {path: "core/data.ts", bytes: 13375},
+  {path: "core/parser.ts", bytes: 12092},
+  {path: "ui/components/chartTypes.tsx", bytes: 30271},
+  {path: "ui/components/references.tsx", bytes: 29659},
+  {path: "ui/components/Tests.tsx", bytes: 27940},
+  {path: "ui/components/explain.tsx", bytes: 27234},
+  {path: "ui/components/Map.tsx", bytes: 26134},
+  {path: "ui/components/choose.tsx", bytes: 24078},
+  {path: "ui/components/Chart.tsx", bytes: 23272},
+  {path: "server.ts", bytes: 15774},
+  {path: "web/lookups.ts", bytes: 12767}
+])

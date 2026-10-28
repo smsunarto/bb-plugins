@@ -1,0 +1,153 @@
+{
+  "subject": "Coil redesign gate",
+  "complete": true,
+  "columns": [
+    "Source server",
+    "Published site"
+  ],
+  "limitations": [
+    "Portrait and landscape were checked in Chrome mobile emulation, not on a physical phone.",
+    "Rook billing is blocked, so no live Rook match ran on either surface."
+  ],
+  "criteria": [
+    {
+      "name": "Desktop layout fits the arena",
+      "detail": "1440×900, no scrollbars, HUD inside the frame",
+      "cells": {
+        "Source server": {
+          "status": "passed",
+          "by": "reviewer",
+          "method": "Chrome 1440×900",
+          "evidence": "data/acceptance/coil/viewport-lifecycle.json:4"
+        },
+        "Published site": {
+          "status": "passed",
+          "by": "gate",
+          "method": "public smoke, Chrome 1440×900"
+        }
+      }
+    },
+    {
+      "name": "Portrait controls fit",
+      "detail": "393×852",
+      "cells": {
+        "Source server": {
+          "status": "passed",
+          "by": "reviewer",
+          "method": "Chrome mobile emulation, not a physical phone",
+          "evidence": "data/acceptance/coil/viewport-lifecycle.json:10"
+        },
+        "Published site": {
+          "status": "not exercised",
+          "note": "The public smoke covers desktop only."
+        }
+      }
+    },
+    {
+      "name": "Landscape controls fit",
+      "cells": {
+        "Source server": {
+          "status": "passed",
+          "by": "reviewer",
+          "method": "Chrome mobile emulation",
+          "note": "Live landscape controls fit; the defect is the paused layout."
+        },
+        "Published site": "not exercised"
+      }
+    },
+    {
+      "name": "Paused layout in landscape",
+      "detail": "Pause, drawer and Escape keep the arena visible",
+      "cells": {
+        "Source server": {
+          "status": "failed",
+          "by": "reviewer",
+          "method": "Chrome mobile emulation 852×393",
+          "note": "Live landscape controls fit; the defect is the paused layout: the arena is hidden while paused.",
+          "evidence": "data/acceptance/coil/viewport-lifecycle.json:19-22"
+        },
+        "Published site": "not exercised"
+      }
+    },
+    {
+      "name": "Shell text contrast",
+      "cells": {
+        "Source server": {
+          "status": "failed",
+          "by": "reviewer",
+          "note": "This is a shared-shell defect visible in Coil, not a Coil-only stylesheet defect. The shared shell owns the fix."
+        },
+        "Published site": {
+          "status": "failed",
+          "by": "gate",
+          "note": "Same shared-shell stylesheet is live."
+        }
+      }
+    },
+    {
+      "name": "Reduced motion clears particles",
+      "cells": {
+        "Source server": {
+          "status": "fixed",
+          "by": "owner",
+          "note": "Owner says the particle layer now clears under reduced motion; the reviewer has not re-run it."
+        },
+        "Published site": "not exercised"
+      }
+    },
+    {
+      "name": "Plays a live Rook match",
+      "note": "Coil's live Rook test is unproven. Rook failed before it could run, on both surfaces, for the same billing reason.",
+      "by": "reviewer",
+      "cells": {
+        "Source server": {
+          "status": "blocked",
+          "note": "Rook failed before it could run: billing is blocked.",
+          "needs": "Restore Rook billing",
+          "evidence": "Coil's live Rook test is unproven. Rook failed before it could run."
+        },
+        "Published site": {
+          "status": "blocked",
+          "needs": "Restore Rook billing"
+        }
+      }
+    },
+    {
+      "name": "Plays a Wren match",
+      "cells": {
+        "Source server": {
+          "status": "verified",
+          "by": "a person",
+          "method": "human play-through"
+        },
+        "Published site": {
+          "status": "verified",
+          "by": "a person",
+          "method": "human play-through"
+        }
+      }
+    },
+    {
+      "name": "Local tests and build",
+      "cells": {
+        "Source server": {
+          "status": "owner-reported",
+          "method": "npm test && npm run build",
+          "note": "The owner's result says tests and build pass; the run's output is not attached."
+        },
+        "Published site": "n/a"
+      }
+    },
+    {
+      "name": "Public assets match the build",
+      "required": false,
+      "cells": {
+        "Source server": "n/a",
+        "Published site": {
+          "status": "not exercised",
+          "note": "The gate names public-asset-checksums.json as an output; this result does not include it."
+        }
+      }
+    }
+  ]
+}

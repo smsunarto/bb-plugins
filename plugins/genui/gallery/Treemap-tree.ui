@@ -1,0 +1,7 @@
+Treemap([
+  {name: "Compute", children: [{name: "EC2 · api", size: 4120}, {name: "EC2 · workers", size: 2380}, {name: "Lambda", size: 610}, {name: "Fargate", size: 940}]},
+  {name: "Storage", children: [{name: "S3", size: 1830}, {name: "EBS", size: 720}, {name: "Backups", size: 260}]},
+  {name: "Database", children: [{name: "RDS · primary", size: 2950}, {name: "RDS · replica", size: 1475}, {name: "ElastiCache", size: 540}]},
+  {name: "Network", size: 1610, children: [{name: "CloudFront", size: 690}, {name: "NAT gateway", size: 520}]},
+  {name: "Observability", size: 830}
+], "$")

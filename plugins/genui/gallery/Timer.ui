@@ -1,0 +1,4 @@
+Card("Focus session", [
+  Timer(1500, label: "Deep work"),
+  Text("Phone in another room; one task only.")
+])

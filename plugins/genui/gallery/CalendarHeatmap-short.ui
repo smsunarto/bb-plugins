@@ -1,0 +1,11 @@
+Card("Workouts", [
+  CalendarHeatmap([
+    {date: "2026-08-03", value: 30}, {date: "2026-08-05", value: 45}, {date: "2026-08-08", value: 60},
+    {date: "2026-08-11", value: 20}, {date: "2026-08-12", value: 40}, {date: "2026-08-15", value: 90},
+    {date: "2026-08-19", value: 35}, {date: "2026-08-22", value: 50}, {date: "2026-08-26", value: 30},
+    {date: "2026-08-29", value: 75}, {date: "2026-09-01", value: 40}, {date: "2026-09-02", value: 25},
+    {date: "2026-09-05", value: 60}, {date: "2026-09-09", value: 45}, {date: "2026-09-12", value: 80},
+    {date: "2026-09-16", value: 30}, {date: "2026-09-19", value: 55}, {date: "2026-09-23", value: 40},
+    {date: "2026-09-26", value: 70}, {date: "2026-09-30", value: 35}
+  ], label: "Minutes", tone: "good")
+])

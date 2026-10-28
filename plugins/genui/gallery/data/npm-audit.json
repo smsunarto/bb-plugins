@@ -1,0 +1,672 @@
+{
+ "auditReportVersion": 2,
+ "vulnerabilities": {
+  "axios": {
+   "name": "axios",
+   "severity": "high",
+   "isDirect": true,
+   "via": [
+    {
+     "source": 1097679,
+     "name": "axios",
+     "dependency": "axios",
+     "title": "Axios Cross-Site Request Forgery Vulnerability",
+     "url": "https://github.com/advisories/GHSA-wf5p-g6vw-rhxx",
+     "severity": "moderate",
+     "range": ">=0.8.1 <0.28.0"
+    },
+    {
+     "source": 1102326,
+     "name": "axios",
+     "dependency": "axios",
+     "title": "axios Inefficient Regular Expression Complexity vulnerability",
+     "url": "https://github.com/advisories/GHSA-cph5-m8f7-6c5x",
+     "severity": "high",
+     "range": "<0.21.2"
+    }
+   ],
+   "effects": [],
+   "range": "<=0.32.0",
+   "nodes": [
+    "node_modules/axios"
+   ],
+   "fixAvailable": {
+    "name": "axios",
+    "version": "0.21.4",
+    "isSemVerMajor": false
+   }
+  },
+  "body-parser": {
+   "name": "body-parser",
+   "severity": "high",
+   "isDirect": false,
+   "via": [
+    {
+     "source": 1099520,
+     "name": "body-parser",
+     "dependency": "body-parser",
+     "title": "body-parser vulnerable to denial of service when url encoding is enabled",
+     "url": "https://github.com/advisories/GHSA-qwcr-r2fm-qrc7",
+     "severity": "high",
+     "range": "<1.20.3"
+    },
+    {
+     "source": 1123977,
+     "name": "body-parser",
+     "dependency": "body-parser",
+     "title": "body-parser vulnerable to denial of service when invalid limit value silently disables size enforcement",
+     "url": "https://github.com/advisories/GHSA-v422-hmwv-36x6",
+     "severity": "low",
+     "range": "<1.20.6"
+    },
+    "qs"
+   ],
+   "effects": [
+    "express"
+   ],
+   "range": "<=1.20.5",
+   "nodes": [
+    "node_modules/body-parser"
+   ],
+   "fixAvailable": {
+    "name": "express",
+    "version": "4.22.3",
+    "isSemVerMajor": false
+   }
+  },
+  "cookie": {
+   "name": "cookie",
+   "severity": "low",
+   "isDirect": false,
+   "via": [
+    {
+     "source": 1103907,
+     "name": "cookie",
+     "dependency": "cookie",
+     "title": "cookie accepts cookie name, path, and domain with out of bounds characters",
+     "url": "https://github.com/advisories/GHSA-pxg6-pf52-xh8x",
+     "severity": "low",
+     "range": "<0.7.0"
+    }
+   ],
+   "effects": [
+    "express"
+   ],
+   "range": "<0.7.0",
+   "nodes": [
+    "node_modules/cookie"
+   ],
+   "fixAvailable": {
+    "name": "express",
+    "version": "4.22.3",
+    "isSemVerMajor": false
+   }
+  },
+  "esbuild": {
+   "name": "esbuild",
+   "severity": "moderate",
+   "isDirect": false,
+   "via": [
+    {
+     "source": 1102341,
+     "name": "esbuild",
+     "dependency": "esbuild",
+     "title": "esbuild enables any website to send any requests to the development server and read the response",
+     "url": "https://github.com/advisories/GHSA-67mh-4wv8-2f99",
+     "severity": "moderate",
+     "range": "<=0.24.2"
+    }
+   ],
+   "effects": [
+    "vite"
+   ],
+   "range": "<=0.24.2",
+   "nodes": [
+    "node_modules/esbuild"
+   ],
+   "fixAvailable": {
+    "name": "vitest",
+    "version": "1.6.1",
+    "isSemVerMajor": false
+   }
+  },
+  "express": {
+   "name": "express",
+   "severity": "high",
+   "isDirect": true,
+   "via": [
+    {
+     "source": 1100530,
+     "name": "express",
+     "dependency": "express",
+     "title": "express vulnerable to XSS via response.redirect()",
+     "url": "https://github.com/advisories/GHSA-qw6h-vgh9-j6wx",
+     "severity": "low",
+     "range": "<4.20.0"
+    },
+    {
+     "source": 1111636,
+     "name": "express",
+     "dependency": "express",
+     "title": "Express.js Open Redirect in malformed URLs",
+     "url": "https://github.com/advisories/GHSA-rv95-896h-c2vc",
+     "severity": "moderate",
+     "range": "<4.19.2"
+    },
+    "body-parser",
+    "cookie",
+    "path-to-regexp",
+    "qs",
+    "send",
+    "serve-static"
+   ],
+   "effects": [],
+   "range": "<=4.21.2 || 5.0.0-alpha.1 - 5.0.0",
+   "nodes": [
+    "node_modules/express"
+   ],
+   "fixAvailable": {
+    "name": "express",
+    "version": "4.22.3",
+    "isSemVerMajor": false
+   }
+  },
+  "lodash": {
+   "name": "lodash",
+   "severity": "high",
+   "isDirect": true,
+   "via": [
+    {
+     "source": 1106913,
+     "name": "lodash",
+     "dependency": "lodash",
+     "title": "Command Injection in lodash",
+     "url": "https://github.com/advisories/GHSA-35jh-r3h4-6jhm",
+     "severity": "high",
+     "range": "<4.17.21"
+    },
+    {
+     "source": 1106920,
+     "name": "lodash",
+     "dependency": "lodash",
+     "title": "Prototype Pollution in lodash",
+     "url": "https://github.com/advisories/GHSA-p6mc-m468-83gw",
+     "severity": "high",
+     "range": ">=3.7.0 <4.17.19"
+    }
+   ],
+   "effects": [],
+   "range": "<=4.17.23",
+   "nodes": [
+    "node_modules/lodash"
+   ],
+   "fixAvailable": {
+    "name": "lodash",
+    "version": "4.18.1",
+    "isSemVerMajor": false
+   }
+  },
+  "minimist": {
+   "name": "minimist",
+   "severity": "critical",
+   "isDirect": true,
+   "via": [
+    {
+     "source": 1097678,
+     "name": "minimist",
+     "dependency": "minimist",
+     "title": "Prototype Pollution in minimist",
+     "url": "https://github.com/advisories/GHSA-xvch-5gv4-984h",
+     "severity": "critical",
+     "range": ">=1.0.0 <1.2.6"
+    }
+   ],
+   "effects": [],
+   "range": "1.0.0 - 1.2.5",
+   "nodes": [
+    "node_modules/minimist"
+   ],
+   "fixAvailable": {
+    "name": "minimist",
+    "version": "1.2.8",
+    "isSemVerMajor": false
+   }
+  },
+  "next": {
+   "name": "next",
+   "severity": "critical",
+   "isDirect": true,
+   "via": [
+    {
+     "source": 1097295,
+     "name": "next",
+     "dependency": "next",
+     "title": "Next.js Server-Side Request Forgery in Server Actions",
+     "url": "https://github.com/advisories/GHSA-fr5h-rqp8-mj6g",
+     "severity": "high",
+     "range": ">=13.4.0 <14.1.1"
+    },
+    {
+     "source": 1099638,
+     "name": "next",
+     "dependency": "next",
+     "title": "Next.js Cache Poisoning",
+     "url": "https://github.com/advisories/GHSA-gp8f-8m3g-qvj9",
+     "severity": "high",
+     "range": ">=14.0.0 <14.2.10"
+    },
+    "postcss"
+   ],
+   "effects": [],
+   "range": "0.9.9 - 16.3.0-preview.10",
+   "nodes": [
+    "node_modules/next"
+   ],
+   "fixAvailable": {
+    "name": "next",
+    "version": "14.2.35",
+    "isSemVerMajor": false
+   }
+  },
+  "path-to-regexp": {
+   "name": "path-to-regexp",
+   "severity": "high",
+   "isDirect": false,
+   "via": [
+    {
+     "source": 1101850,
+     "name": "path-to-regexp",
+     "dependency": "path-to-regexp",
+     "title": "path-to-regexp outputs backtracking regular expressions",
+     "url": "https://github.com/advisories/GHSA-9wv6-86v2-598j",
+     "severity": "high",
+     "range": "<0.1.10"
+    },
+    {
+     "source": 1105199,
+     "name": "path-to-regexp",
+     "dependency": "path-to-regexp",
+     "title": "path-to-regexp contains a ReDoS",
+     "url": "https://github.com/advisories/GHSA-rhx6-c78j-4q9w",
+     "severity": "high",
+     "range": "<0.1.12"
+    }
+   ],
+   "effects": [
+    "express"
+   ],
+   "range": "<=0.1.12",
+   "nodes": [
+    "node_modules/path-to-regexp"
+   ],
+   "fixAvailable": {
+    "name": "express",
+    "version": "4.22.3",
+    "isSemVerMajor": false
+   }
+  },
+  "postcss": {
+   "name": "postcss",
+   "severity": "high",
+   "isDirect": false,
+   "via": [
+    {
+     "source": 1117015,
+     "name": "postcss",
+     "dependency": "postcss",
+     "title": "PostCSS has XSS via Unescaped </style> in its CSS Stringify Output",
+     "url": "https://github.com/advisories/GHSA-qx2v-qp2m-jg93",
+     "severity": "moderate",
+     "range": "<8.5.10"
+    },
+    {
+     "source": 1124252,
+     "name": "postcss",
+     "dependency": "postcss",
+     "title": "PostCSS: Arbitrary file read and information disclosure via attacker-controlled sourceMappingURL in CSS comments",
+     "url": "https://github.com/advisories/GHSA-6g55-p6wh-862q",
+     "severity": "high",
+     "range": "<=8.5.11"
+    }
+   ],
+   "effects": [
+    "next"
+   ],
+   "range": "<=8.5.22",
+   "nodes": [
+    "node_modules/postcss"
+   ],
+   "fixAvailable": {
+    "name": "next",
+    "version": "14.2.35",
+    "isSemVerMajor": false
+   }
+  },
+  "qs": {
+   "name": "qs",
+   "severity": "high",
+   "isDirect": false,
+   "via": [
+    {
+     "source": 1104120,
+     "name": "qs",
+     "dependency": "qs",
+     "title": "qs vulnerable to Prototype Pollution",
+     "url": "https://github.com/advisories/GHSA-hrpp-h998-j3pp",
+     "severity": "high",
+     "range": ">=6.7.0 <6.7.3"
+    },
+    {
+     "source": 1113161,
+     "name": "qs",
+     "dependency": "qs",
+     "title": "qs's arrayLimit bypass in comma parsing allows denial of service",
+     "url": "https://github.com/advisories/GHSA-w7fw-mjwx-w883",
+     "severity": "low",
+     "range": ">=6.7.0 <=6.14.1"
+    }
+   ],
+   "effects": [
+    "body-parser",
+    "express"
+   ],
+   "range": "<=6.15.3",
+   "nodes": [
+    "node_modules/qs"
+   ],
+   "fixAvailable": {
+    "name": "express",
+    "version": "4.22.3",
+    "isSemVerMajor": false
+   }
+  },
+  "semver": {
+   "name": "semver",
+   "severity": "high",
+   "isDirect": true,
+   "via": [
+    {
+     "source": 1112921,
+     "name": "semver",
+     "dependency": "semver",
+     "title": "semver vulnerable to Regular Expression Denial of Service",
+     "url": "https://github.com/advisories/GHSA-c2qf-rxjj-qqgw",
+     "severity": "high",
+     "range": ">=7.0.0 <7.5.2"
+    }
+   ],
+   "effects": [],
+   "range": "7.0.0 - 7.5.1",
+   "nodes": [
+    "node_modules/semver"
+   ],
+   "fixAvailable": {
+    "name": "semver",
+    "version": "7.8.5",
+    "isSemVerMajor": false
+   }
+  },
+  "send": {
+   "name": "send",
+   "severity": "low",
+   "isDirect": false,
+   "via": [
+    {
+     "source": 1109556,
+     "name": "send",
+     "dependency": "send",
+     "title": "send vulnerable to template injection that can lead to XSS",
+     "url": "https://github.com/advisories/GHSA-m6fv-jmcg-4jfg",
+     "severity": "low",
+     "range": "<0.19.0"
+    }
+   ],
+   "effects": [
+    "express",
+    "serve-static"
+   ],
+   "range": "<0.19.0",
+   "nodes": [
+    "node_modules/send"
+   ],
+   "fixAvailable": {
+    "name": "express",
+    "version": "4.22.3",
+    "isSemVerMajor": false
+   }
+  },
+  "serve-static": {
+   "name": "serve-static",
+   "severity": "low",
+   "isDirect": false,
+   "via": [
+    {
+     "source": 1100528,
+     "name": "serve-static",
+     "dependency": "serve-static",
+     "title": "serve-static vulnerable to template injection that can lead to XSS",
+     "url": "https://github.com/advisories/GHSA-cm22-4g7w-348p",
+     "severity": "low",
+     "range": "<1.16.0"
+    },
+    "send"
+   ],
+   "effects": [
+    "express"
+   ],
+   "range": "<=1.16.0",
+   "nodes": [
+    "node_modules/serve-static"
+   ],
+   "fixAvailable": {
+    "name": "express",
+    "version": "4.22.3",
+    "isSemVerMajor": false
+   }
+  },
+  "tinypool": {
+   "name": "tinypool",
+   "severity": "critical",
+   "isDirect": false,
+   "via": [
+    {
+     "source": 1241260,
+     "name": "tinypool",
+     "dependency": "tinypool",
+     "title": "Tinypool: Prototype Pollution gadget in worker options leads to Remote Code Execution",
+     "url": "https://github.com/advisories/GHSA-5gmw-xhrv-c9v3",
+     "severity": "critical",
+     "range": "<=2.1.0"
+    },
+    {
+     "source": 1241261,
+     "name": "tinypool",
+     "dependency": "tinypool",
+     "title": "Tinypool: Prototype Pollution Gadget to RCE in run() options",
+     "url": "https://github.com/advisories/GHSA-85c8-ppgw-ccpr",
+     "severity": "critical",
+     "range": "<2.1.2"
+    }
+   ],
+   "effects": [
+    "vitest"
+   ],
+   "range": "<=2.1.1",
+   "nodes": [
+    "node_modules/tinypool"
+   ],
+   "fixAvailable": {
+    "name": "vitest",
+    "version": "1.6.1",
+    "isSemVerMajor": false
+   }
+  },
+  "uuid": {
+   "name": "uuid",
+   "severity": "moderate",
+   "isDirect": true,
+   "via": [
+    {
+     "source": 1119441,
+     "name": "uuid",
+     "dependency": "uuid",
+     "title": "uuid: Missing buffer bounds check in v3/v5/v6 when buf is provided",
+     "url": "https://github.com/advisories/GHSA-w5hq-g745-h8pq",
+     "severity": "moderate",
+     "range": "<11.1.1"
+    }
+   ],
+   "effects": [],
+   "range": "<11.1.1",
+   "nodes": [
+    "node_modules/uuid"
+   ],
+   "fixAvailable": {
+    "name": "uuid",
+    "version": "14.0.2",
+    "isSemVerMajor": true
+   }
+  },
+  "vite": {
+   "name": "vite",
+   "severity": "high",
+   "isDirect": false,
+   "via": [
+    {
+     "source": 1116229,
+     "name": "vite",
+     "dependency": "vite",
+     "title": "Vite Vulnerable to Path Traversal in Optimized Deps `.map` Handling",
+     "url": "https://github.com/advisories/GHSA-4w7w-66w2-5vf9",
+     "severity": "moderate",
+     "range": "<=6.4.1"
+    },
+    {
+     "source": 1120784,
+     "name": "vite",
+     "dependency": "vite",
+     "title": "launch-editor: NTLMv2 hash disclosure via UNC path handling on Windows",
+     "url": "https://github.com/advisories/GHSA-v6wh-96g9-6wx3",
+     "severity": "moderate",
+     "range": "<=6.4.2"
+    },
+    "esbuild"
+   ],
+   "effects": [
+    "vite-node",
+    "vitest"
+   ],
+   "range": "<=6.4.2",
+   "nodes": [
+    "node_modules/vite"
+   ],
+   "fixAvailable": {
+    "name": "vitest",
+    "version": "1.6.1",
+    "isSemVerMajor": false
+   }
+  },
+  "vite-node": {
+   "name": "vite-node",
+   "severity": "moderate",
+   "isDirect": false,
+   "via": [
+    "vite"
+   ],
+   "effects": [
+    "vitest"
+   ],
+   "range": "<=2.2.0-beta.2",
+   "nodes": [
+    "node_modules/vite-node"
+   ],
+   "fixAvailable": {
+    "name": "vitest",
+    "version": "1.6.1",
+    "isSemVerMajor": false
+   }
+  },
+  "vitest": {
+   "name": "vitest",
+   "severity": "critical",
+   "isDirect": true,
+   "via": [
+    {
+     "source": 1117403,
+     "name": "vitest",
+     "dependency": "vitest",
+     "title": "Vitest allows Remote Code Execution when accessing a malicious website while Vitest API server is listening",
+     "url": "https://github.com/advisories/GHSA-9crc-q9x8-hgqq",
+     "severity": "critical",
+     "range": ">=1.0.0 <1.6.1"
+    },
+    {
+     "source": 1139528,
+     "name": "vitest",
+     "dependency": "vitest",
+     "title": "When Vitest UI server is listening, arbitrary file can be read and executed",
+     "url": "https://github.com/advisories/GHSA-5xrq-8626-4rwp",
+     "severity": "critical",
+     "range": "<3.2.6"
+    },
+    "tinypool",
+    "vite",
+    "vite-node"
+   ],
+   "effects": [],
+   "range": "<=4.0.0-beta.19",
+   "nodes": [
+    "node_modules/vitest"
+   ],
+   "fixAvailable": {
+    "name": "vitest",
+    "version": "1.6.1",
+    "isSemVerMajor": false
+   }
+  },
+  "zod": {
+   "name": "zod",
+   "severity": "moderate",
+   "isDirect": true,
+   "via": [
+    {
+     "source": 1099462,
+     "name": "zod",
+     "dependency": "zod",
+     "title": "Zod denial of service vulnerability",
+     "url": "https://github.com/advisories/GHSA-m95q-7qp3-xv42",
+     "severity": "moderate",
+     "range": "<=3.22.2"
+    }
+   ],
+   "effects": [],
+   "range": "<=3.22.2",
+   "nodes": [
+    "node_modules/zod"
+   ],
+   "fixAvailable": {
+    "name": "zod",
+    "version": "3.25.76",
+    "isSemVerMajor": false
+   }
+  }
+ },
+ "metadata": {
+  "vulnerabilities": {
+   "info": 0,
+   "low": 3,
+   "moderate": 4,
+   "high": 9,
+   "critical": 4,
+   "total": 20
+  },
+  "dependencies": {
+   "prod": 74,
+   "dev": 238,
+   "optional": 59,
+   "peer": 0,
+   "peerOptional": 0,
+   "total": 311
+  }
+ }
+}

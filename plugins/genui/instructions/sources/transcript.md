@@ -1,0 +1,1 @@
+whisper-cli -m ggml-base.en.bin -f call.wav -ojf -of $BB_THREAD_STORAGE/hyp (whisper.cpp) · whisper --word_timestamps True --output_format json · an .srt or .vtt as {name, text: Load(…)} · the reference as {name: "Reference", text} or timed words; audio: wav, mp3, m4a, flac, ogg (25 MB)

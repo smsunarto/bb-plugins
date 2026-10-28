@@ -1,0 +1,11 @@
+Card("Parts of a road bike", [
+  Text("Tap a number to see what each part does."),
+  Hotspots("images/bike.svg", [
+    {x: 42, y: 30, title: "Saddle", text: "Set the height so your knee stays **slightly bent** at the bottom of each stroke."},
+    {x: 75, y: 27, title: "Handlebars", text: "Drop bars give three hand positions: the tops, the hoods and the drops."},
+    {x: 73, y: 60, title: "Disc brake", text: "The caliper squeezes a rotor on the hub, so braking works the same in the wet."},
+    {x: 48, y: 68, title: "Chainring and cranks", text: "Your push on the pedals turns the cranks; the chainring passes it to the chain."},
+    {x: 27, y: 77, title: "Rear derailleur", text: "Moves the chain across the cassette when you shift."},
+    {x: 12, y: 66, title: "Tyres", text: "Wider tyres at lower pressure grip better and ride softer.\n\n- Road: 28 to 32 mm\n- Gravel: 38 mm and up"}
+  ])
+])

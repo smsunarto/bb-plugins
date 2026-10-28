@@ -1,0 +1,9 @@
+Tests([
+  {name: "cart › adds an item", status: "pass", file: "src/cart.test.ts", ms: 4},
+  {name: "cart › applies a coupon once", status: "fail", file: "src/cart.test.ts", line: 42, ms: 11, message: "expect(received).toBe(expected) // Object.is equality\n\nExpected: \u001b[32m90\u001b[39m\nReceived: \u001b[31m81\u001b[39m\n\n    at Object.<anonymous> (src/cart.test.ts:47:28)\n    at Promise.then.completed (node_modules/jest-circus/build/utils.js:298:28)"},
+  {name: "cart › removes an item", status: "pass", file: "src/cart.test.ts", ms: 3},
+  {name: "cart › keeps the cart across reloads", status: "todo", file: "src/cart.test.ts"},
+  {name: "checkout › charges the card", status: "pass", file: "src/checkout.test.ts", ms: 38},
+  {name: "checkout › retries a declined card", status: "skip", file: "src/checkout.test.ts", message: "needs the payments sandbox"},
+  {name: "checkout › sends the receipt", status: "pass", file: "src/checkout.test.ts", ms: 21}
+], "Unit tests")

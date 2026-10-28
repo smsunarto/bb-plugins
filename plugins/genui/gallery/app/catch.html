@@ -1,0 +1,196 @@
+<style>
+  .bar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 10px; }
+  .stats { margin-left: auto; color: var(--muted-foreground); font-variant-numeric: tabular-nums; }
+  .field { height: 260px; border: 1px solid var(--border); border-radius: 12px; background: var(--card); overflow: hidden; }
+  canvas { display: block; width: 100%; height: 100%; touch-action: none; }
+  .note { margin: 8px 0 0; color: var(--muted-foreground); font-size: 12px; }
+</style>
+<div class="bar">
+  <button type="button" id="start">Start</button>
+  <button type="button" id="pause" disabled>Pause</button>
+  <button type="button" id="share" disabled>Put my score in my message</button>
+  <span class="stats" id="stats" role="status">Score 0 · Best 0</span>
+</div>
+<div class="field">
+  <canvas id="game" tabindex="0" aria-label="Catch: move the basket with the left and right arrow keys or the pointer"></canvas>
+</div>
+<p class="note" id="note">Catch the falling dots; three misses end the game. Arrow keys or the pointer move the basket, Space pauses.</p>
+<script>
+(function () {
+  const canvas = document.getElementById("game");
+  const ctx = canvas.getContext("2d");
+  const startButton = document.getElementById("start");
+  const pauseButton = document.getElementById("pause");
+  const shareButton = document.getElementById("share");
+  const stats = document.getElementById("stats");
+  const note = document.getElementById("note");
+  const BASKET = 72;
+  const MAX_MISSES = 3;
+
+  // localStorage is saved with the reply, so the best score survives a reload.
+  const saved = Number(localStorage.getItem("catch.best"));
+  let best = Number.isInteger(saved) && saved > 0 ? saved : 0;
+  let state = "idle"; // idle | playing | paused | over
+  let width = 0, height = 0, frame = 0, last = 0;
+  let basket = 0.5, dots = [], score = 0, misses = 0, spawnIn = 0, flash = 0;
+  const keys = { left: false, right: false };
+
+  function color(name) {
+    return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  }
+
+  function resize() {
+    const ratio = window.devicePixelRatio || 1;
+    width = canvas.clientWidth;
+    height = canvas.clientHeight;
+    canvas.width = Math.round(width * ratio);
+    canvas.height = Math.round(height * ratio);
+    ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+    draw();
+  }
+
+  function showStats() {
+    stats.textContent = "Score " + score + " · Best " + best + (misses > 0 ? " · Missed " + misses + "/" + MAX_MISSES : "");
+  }
+
+  function start() {
+    dots = [];
+    score = misses = spawnIn = flash = 0;
+    basket = 0.5;
+    state = "playing";
+    startButton.textContent = "Restart";
+    pauseButton.disabled = false;
+    pauseButton.textContent = "Pause";
+    shareButton.disabled = true;
+    note.textContent = "Arrow keys or the pointer move the basket, Space pauses.";
+    showStats();
+    canvas.focus();
+    run();
+  }
+
+  function setPaused(paused) {
+    if (state !== "playing" && state !== "paused") return;
+    state = paused ? "paused" : "playing";
+    pauseButton.textContent = paused ? "Resume" : "Pause";
+    if (paused) {
+      cancelAnimationFrame(frame);
+      frame = 0;
+      draw();
+    } else run();
+  }
+
+  function gameOver() {
+    state = "over";
+    dots = [];
+    pauseButton.disabled = true;
+    if (score > best) {
+      best = score;
+      try {
+        localStorage.setItem("catch.best", String(best));
+      } catch (error) {
+        note.textContent = "Couldn't save the best score.";
+      }
+    }
+    shareButton.disabled = score === 0;
+    showStats();
+  }
+
+  // One animation loop: run() never starts a second one.
+  function run() {
+    if (frame !== 0) return;
+    last = performance.now();
+    frame = requestAnimationFrame(tick);
+  }
+
+  function tick(now) {
+    frame = 0;
+    if (state !== "playing") return;
+    step(Math.min((now - last) / 1000, 0.05));
+    last = now;
+    draw();
+    if (state === "playing") frame = requestAnimationFrame(tick);
+  }
+
+  function step(dt) {
+    basket = Math.min(1, Math.max(0, basket + ((keys.right ? 1 : 0) - (keys.left ? 1 : 0)) * 1.1 * dt));
+    spawnIn -= dt;
+    if (spawnIn <= 0) {
+      dots.push({ x: 0.05 + Math.random() * 0.9, y: -8, speed: 90 + score * 5 + Math.random() * 40 });
+      spawnIn = Math.max(0.35, 1.1 - score * 0.03);
+    }
+    const left = basket * (width - BASKET);
+    const top = height - 22;
+    for (const dot of dots) {
+      dot.y += dot.speed * dt;
+      const x = dot.x * width;
+      if (!dot.done && dot.y >= top - 6 && dot.y <= top + 10 && x >= left && x <= left + BASKET) {
+        dot.done = true;
+        score += 1;
+        // The catch flash is decoration: skipped when the reader asked for less motion.
+        flash = genui.reducedMotion ? 0 : 1;
+      } else if (!dot.done && dot.y > height + 8) {
+        dot.done = true;
+        misses += 1;
+      }
+    }
+    dots = dots.filter((dot) => !dot.done);
+    flash = Math.max(0, flash - dt * 4);
+    showStats();
+    if (misses >= MAX_MISSES) gameOver();
+  }
+
+  function draw() {
+    const foreground = color("--foreground");
+    ctx.clearRect(0, 0, width, height);
+    ctx.fillStyle = color("--accent");
+    for (const dot of dots) {
+      ctx.beginPath();
+      ctx.arc(dot.x * width, dot.y, 6, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    const left = basket * (width - BASKET);
+    ctx.fillStyle = flash > 0 ? color("--success") : foreground;
+    ctx.beginPath();
+    ctx.roundRect(left, height - 22, BASKET, 10, 5);
+    ctx.fill();
+    const message = { idle: "Press Start", paused: "Paused", over: "Game over: " + score }[state];
+    if (message) {
+      ctx.fillStyle = foreground;
+      ctx.font = "500 16px " + color("--font-sans");
+      ctx.textAlign = "center";
+      ctx.fillText(message, width / 2, height / 2);
+    }
+  }
+
+  function moveTo(event) {
+    if (state !== "playing") return;
+    const rect = canvas.getBoundingClientRect();
+    basket = Math.min(1, Math.max(0, (event.clientX - rect.left - BASKET / 2) / (rect.width - BASKET)));
+  }
+
+  function key(event, down) {
+    if (event.key === "ArrowLeft") keys.left = down;
+    else if (event.key === "ArrowRight") keys.right = down;
+    else if (event.key === " " && down) setPaused(state === "playing");
+    else return;
+    event.preventDefault();
+  }
+
+  startButton.addEventListener("click", start);
+  pauseButton.addEventListener("click", () => setPaused(state === "playing"));
+  shareButton.addEventListener("click", () => {
+    // genui.answer only works inside a click (or key, change) handler like this one.
+    const accepted = genui.answer("I scored " + score + " at Catch (best " + best + ").");
+    note.textContent = accepted ? "Your score is in your message box; send it when you like." : "Couldn't add it to your message.";
+  });
+  canvas.addEventListener("pointermove", moveTo);
+  canvas.addEventListener("pointerdown", moveTo);
+  canvas.addEventListener("keydown", (event) => key(event, true));
+  canvas.addEventListener("keyup", (event) => key(event, false));
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden) setPaused(true);
+  });
+  new ResizeObserver(resize).observe(canvas);
+  showStats();
+})();
+</script>

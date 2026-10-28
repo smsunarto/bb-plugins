@@ -1,0 +1,9 @@
+Card("Undo a pushed commit without rewriting history", [
+  Walkthrough([
+    {title: "Find the commit", body: "List recent commits on the branch and copy the hash of the one to undo.", code: "git log --oneline -5", language: "bash"},
+    {title: "Revert it", body: "`git revert` adds a **new** commit that applies the inverse change, so everyone who already pulled stays in sync.", code: "git revert 3f2a91c", language: "bash"},
+    {title: "Resolve conflicts if any", body: "If later commits touched the same lines, Git stops and marks the conflicts. Fix the files, then continue:", code: "git add -A\ngit revert --continue", language: "bash"},
+    {title: "Push", body: "Push the revert like any other commit. No force push is needed.", code: "git push", language: "bash"},
+    {title: "Check", body: "The branch now has both commits: the original and its revert. The working tree matches the state before the original commit."}
+  ])
+])

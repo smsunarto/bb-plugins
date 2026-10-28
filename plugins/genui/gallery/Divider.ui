@@ -1,0 +1,5 @@
+Card("Two ways to fix it", [
+  Text("**Quick:** default the field to an empty string."),
+  Divider(),
+  Text("**Right:** make the column NOT NULL and backfill old rows.")
+])

@@ -15,6 +15,8 @@ const ROOT = fileURLToPath(new URL("..", import.meta.url));
  */
 export const ALLOWED_LICENSES: ReadonlySet<string> = new Set([
   "MIT",
+  // GenUI retains its upstream Apache license.
+  "Apache-2.0",
   // agentation bundles the upstream `agentation` package into dist/app.js.
   "MIT AND PolyForm-Shield-1.0.0",
 ]);
@@ -325,7 +327,11 @@ export function packageProblems(manifest: PackageManifest, paths: readonly strin
   // A compound expression is there because the package bundles code under the
   // extra terms. Those terms have to travel with it, not stay in the repo.
   const license = manifest.license ?? "";
-  if (ALLOWED_LICENSES.has(license) && license !== "MIT" && !files.has("THIRD_PARTY_NOTICES.md")) {
+  if (
+    ALLOWED_LICENSES.has(license) &&
+    license.includes(" AND ") &&
+    !files.has("THIRD_PARTY_NOTICES.md")
+  ) {
     problems.push(
       `licence "${license}" adds terms beyond MIT, but the tarball carries no THIRD_PARTY_NOTICES.md stating them`,
     );

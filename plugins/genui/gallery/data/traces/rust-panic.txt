@@ -1,0 +1,16 @@
+
+thread 'main' (31274780) panicked at data/traces/rust/main.rs:6:17:
+WORKERS must be a whole number: ParseIntError { kind: InvalidDigit }
+stack backtrace:
+   0: __rustc::rust_begin_unwind
+   1: core::panicking::panic_fmt
+   2: core::result::unwrap_failed
+   3: <core::result::Result<usize, core::num::error::ParseIntError>>::expect
+             at /opt/homebrew/Cellar/rust/1.98.1/lib/rustlib/src/rust/library/core/src/result.rs:1183:23
+   4: main::workers
+             at ./data/traces/rust/main.rs:6:17
+   5: main::main
+             at ./data/traces/rust/main.rs:10:37
+   6: <fn() as core::ops::function::FnOnce<()>>::call_once
+             at /opt/homebrew/Cellar/rust/1.98.1/lib/rustlib/src/rust/library/core/src/ops/function.rs:250:5
+note: Some details are omitted, run with `RUST_BACKTRACE=full` for a verbose backtrace.

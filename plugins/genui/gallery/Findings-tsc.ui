@@ -1,0 +1,1 @@
+Findings(Load("data/tsc.txt"), "tsc --noEmit")

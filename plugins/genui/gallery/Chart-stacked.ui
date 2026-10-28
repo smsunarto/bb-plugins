@@ -1,0 +1,5 @@
+rows = Load("data/deploys.json")
+Card("Deploys", [
+  Chart("bar", rows.map(r => r.day), {Web: rows.map(r => r.web), Mobile: rows.map(r => r.mobile)}, stacked: true),
+  Table(["Day", "Web", "Mobile"], rows.map(r => [r.day, r.web, r.mobile]))
+])

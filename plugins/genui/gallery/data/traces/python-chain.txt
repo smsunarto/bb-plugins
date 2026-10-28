@@ -1,0 +1,30 @@
+Traceback (most recent call last):
+  File "data/traces/py/settings.py", line 13, in read_settings
+    return json.loads(text)
+  File "/Applications/Xcode.app/Contents/Developer/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/json/__init__.py", line 346, in loads
+    return _default_decoder.decode(s)
+  File "/Applications/Xcode.app/Contents/Developer/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/json/decoder.py", line 337, in decode
+    obj, end = self.raw_decode(s, idx=_w(s, 0).end())
+  File "/Applications/Xcode.app/Contents/Developer/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/json/decoder.py", line 353, in raw_decode
+    obj, end = self.scan_once(s, idx)
+json.decoder.JSONDecodeError: Expecting property name enclosed in double quotes: line 4 column 3 (char 45)
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "data/traces/py/deploy.py", line 10, in main
+    settings = read_settings(path)
+  File "data/traces/py/settings.py", line 15, in read_settings
+    raise SettingsError(f"{path} is not valid JSON") from error
+settings.SettingsError: data/traces/py/deploy.json is not valid JSON
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "data/traces/py/deploy.py", line 17, in <module>
+    main(sys.argv[1] if len(sys.argv) > 1 else "deploy.json")
+  File "data/traces/py/deploy.py", line 12, in main
+    settings = read_settings(FALLBACK)
+  File "data/traces/py/settings.py", line 10, in read_settings
+    with open(path) as handle:
+FileNotFoundError: [Errno 2] No such file or directory: 'deploy.defaults.json'

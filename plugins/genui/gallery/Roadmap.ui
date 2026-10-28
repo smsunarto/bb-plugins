@@ -1,0 +1,12 @@
+Roadmap([
+  {title: "Brand refresh", start: "2026-09-07", end: "2026-09-25", lane: "Design", status: "done", owner: "Ana Lima"},
+  {title: "Marketing site", start: "2026-09-21", end: "2026-10-16", lane: "Design", status: "active", progress: 70, owner: "Marta Rossi", after: "Brand refresh"},
+  {title: "Press kit", start: "2026-09-28", end: "2026-10-08", lane: "Design", status: "active", progress: 60, owner: "Ana Lima", detail: "Screenshots at 2× in light and dark; founder photos still missing."},
+  {title: "Billing v2", start: "2026-09-14", end: "2026-10-09", lane: "Product", status: "done", owner: "Jon Park"},
+  {title: "Onboarding checklist", start: "2026-10-01", days: 15, lane: "Product", status: "at-risk", progress: 40, owner: "Jon Park", detail: "Design changed late; the empty-state copy is not final."},
+  {title: "Waitlist invites", start: "2026-10-12", end: "2026-10-23", lane: "Product", status: "blocked", owner: "Marta Rossi", after: "Billing v2", detail: "Blocked on the sending domain's DKIM record."},
+  {title: "Load test at 5×", start: "2026-10-13", end: "2026-10-20", lane: "Infra", status: "planned", owner: "Dev Patel", after: "Onboarding checklist"},
+  {title: "Status page", start: "2026-10-19", end: "2026-10-27", lane: "Infra", status: "planned", owner: "Dev Patel"},
+  {title: "Public beta", milestone: "2026-10-26", lane: "Launch", after: "Load test at 5×"},
+  {title: "Launch day", milestone: "2026-11-03", lane: "Launch", after: "Public beta"}
+])

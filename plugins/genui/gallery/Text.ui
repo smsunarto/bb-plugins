@@ -1,0 +1,4 @@
+Card("Summary", [
+  Text("The cache was serving **stale prices** for up to 10 minutes after an update. Invalidation now runs on every write, so prices show within a second."),
+  Text("No data was lost.", tone: "good")
+])

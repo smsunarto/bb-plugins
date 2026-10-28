@@ -1,0 +1,8 @@
+Card("Bike lights by country", [
+  Text("Rules for lights after dark differ by country; these pages set them side by side [1] and give the UK rules in full [2]."),
+  Sources([
+    {url: "https://en.wikipedia.org/wiki/Bicycle_lighting", title: "Bicycle lighting", note: "Overview of the lighting rules in several countries"},
+    {url: "https://www.gov.uk/guidance/the-highway-code/rules-for-cyclists-59-to-82", title: "The Highway Code: rules for cyclists (59 to 82)", note: "Rule 60 covers lights and reflectors at night"},
+    "https://www.cyclinguk.org/article/cycling-guide/lights"
+  ])
+])

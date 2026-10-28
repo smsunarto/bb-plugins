@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="utf-8"?>
+<testsuites name="pytest tests">
+  <testsuite name="pytest" errors="1" failures="2" skipped="3" tests="18" time="2.874" timestamp="2026-10-09T21:14:03.512894+00:00" hostname="ci">
+    <testcase classname="tests.test_auth" name="test_login_with_valid_password" time="0.042" />
+    <testcase classname="tests.test_auth" name="test_login_rejects_wrong_password" time="0.038" />
+    <testcase classname="tests.test_auth" name="test_session_expires_after_idle_timeout" time="0.051" />
+    <testcase classname="tests.test_auth" name="test_refresh_token_rotates" time="0.067">
+      <failure message="AssertionError: assert 'tok_8f2c' != 'tok_8f2c'">client = &lt;FlaskClient &lt;Flask 'app'&gt;&gt;, user = &lt;User 42&gt;
+
+    def test_refresh_token_rotates(client, user):
+        first = login(client, user).json["refresh_token"]
+        response = client.post("/auth/refresh", json={"refresh_token": first})
+        second = response.json["refresh_token"]
+&gt;       assert second != first
+E       AssertionError: assert 'tok_8f2c' != 'tok_8f2c'
+
+tests/test_auth.py:61: AssertionError</failure>
+      <system-out>POST /auth/login 200 (12 ms)
+POST /auth/refresh 200 (4 ms)
+refresh: reusing token for user 42 (rotation disabled by ROTATE_REFRESH=0)</system-out>
+    </testcase>
+    <testcase classname="tests.test_auth" name="test_logout_revokes_tokens" time="0.033" />
+    <testcase classname="tests.test_auth" name="test_oauth_callback_with_github" time="0.000">
+      <skipped type="pytest.skip" message="GITHUB_CLIENT_ID is not set">tests/test_auth.py:88: GITHUB_CLIENT_ID is not set</skipped>
+    </testcase>
+    <testcase classname="tests.test_orders" name="test_create_order" time="0.118" />
+    <testcase classname="tests.test_orders" name="test_order_total_includes_tax" time="0.094">
+      <failure message="assert Decimal('107.99') == Decimal('108.00')">order_factory = &lt;function order_factory.&lt;locals&gt;.make at 0x104f3a8e0&gt;
+
+    def test_order_total_includes_tax(order_factory):
+        order = order_factory(items=[("SKU-1", 3, "33.33")], region="DE")
+&gt;       assert order.total == Decimal("108.00")
+E       AssertionError: assert Decimal('107.99') == Decimal('108.00')
+E        +  where Decimal('107.99') = &lt;Order 1001&gt;.total
+
+tests/test_orders.py:34: AssertionError</failure>
+    </testcase>
+    <testcase classname="tests.test_orders" name="test_cancel_order_refunds_payment" time="0.131" />
+    <testcase classname="tests.test_orders" name="test_list_orders_paginates" time="0.088" />
+    <testcase classname="tests.test_orders" name="test_bulk_import_10k_orders" time="0.000">
+      <skipped type="pytest.skip" message="slow: run with --runslow">tests/test_orders.py:112: slow: run with --runslow</skipped>
+    </testcase>
+    <testcase classname="tests.test_orders" name="test_currency_rounding_banker" time="0.012">
+      <skipped type="pytest.xfail" message="banker's rounding not implemented (#311)" />
+    </testcase>
+    <testcase classname="tests.test_reports" name="test_monthly_report_csv" time="0.402" />
+    <testcase classname="tests.test_reports" name="test_monthly_report_pdf" time="0.000">
+      <error message="failed on setup with &quot;sqlalchemy.exc.OperationalError: (psycopg.OperationalError) connection to server at &quot;localhost&quot; (127.0.0.1), port 5432 failed: Connection refused&quot;">@pytest.fixture(scope="module")
+    def reporting_db():
+&gt;       engine = create_engine(os.environ["REPORTING_DB_URL"])
+
+tests/conftest.py:48:
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+.venv/lib/python3.12/site-packages/sqlalchemy/engine/create.py:563: in create_engine
+    return engine_cls(pool, dialect, u, **engine_args)
+E   sqlalchemy.exc.OperationalError: (psycopg.OperationalError) connection to server at "localhost" (127.0.0.1), port 5432 failed: Connection refused
+
+.venv/lib/python3.12/site-packages/psycopg/connection.py:748: OperationalError</error>
+    </testcase>
+    <testcase classname="tests.test_reports" name="test_report_permissions" time="0.057" />
+    <testcase classname="tests.test_reports" name="test_report_timezone_is_utc" time="0.021" />
+    <testcase classname="tests.test_reports" name="test_empty_month_has_header_row" time="0.016" />
+  </testsuite>
+</testsuites>

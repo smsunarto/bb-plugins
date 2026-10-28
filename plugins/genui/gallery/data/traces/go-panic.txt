@@ -1,0 +1,16 @@
+panic: runtime error: index out of range [2] with length 2
+
+goroutine 1 [running]:
+main.newest.func1(0x102220d00?, 0x10209c9a4?)
+	data/traces/go/main.go:16 +0x84
+sort.insertionSort_func({0x161697b04dd8?, 0x161697b9a120?}, 0x0, 0x2)
+	/opt/homebrew/Cellar/go/1.27.1/libexec/src/sort/zsortfunc.go:12 +0xac
+sort.pdqsort_func({0x161697b04dd8?, 0x161697b9a120?}, 0x18?, 0x1021e1460?, 0x102220d00?)
+	/opt/homebrew/Cellar/go/1.27.1/libexec/src/sort/zsortfunc.go:73 +0x258
+sort.Slice({0x1021d7e28?, 0x161697bb6000?}, 0x161697b04dd8)
+	/opt/homebrew/Cellar/go/1.27.1/libexec/src/sort/slice.go:29 +0xc0
+main.newest({0x161697bb4000, 0x2, 0x2})
+	data/traces/go/main.go:15 +0x70
+main.main()
+	data/traces/go/main.go:26 +0xfc
+exit status 2

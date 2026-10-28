@@ -1,0 +1,179 @@
+{
+  "@types/node": {
+    "current": "20.19.43",
+    "wanted": "20.19.43",
+    "latest": "26.6.5",
+    "dependent": "npmproj",
+    "location": "/private/tmp/genui-c/npmproj/node_modules/@types/node",
+    "type": "devDependencies",
+    "homepage": "https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/node",
+    "dependedByLocation": ""
+  },
+  "axios": {
+    "current": "0.21.1",
+    "wanted": "0.21.1",
+    "latest": "1.20.0",
+    "dependent": "npmproj",
+    "location": "/private/tmp/genui-c/npmproj/node_modules/axios",
+    "type": "dependencies",
+    "homepage": "https://axios-http.com",
+    "dependedByLocation": ""
+  },
+  "chalk": {
+    "current": "4.1.2",
+    "wanted": "5.6.2",
+    "latest": "6.0.1",
+    "dependent": "npmproj",
+    "location": "/private/tmp/genui-c/npmproj/node_modules/chalk",
+    "type": "dependencies",
+    "homepage": "https://github.com/chalk/chalk#readme",
+    "dependedByLocation": ""
+  },
+  "date-fns": {
+    "current": "2.30.0",
+    "wanted": "2.30.0",
+    "latest": "4.4.0",
+    "dependent": "npmproj",
+    "location": "/private/tmp/genui-c/npmproj/node_modules/date-fns",
+    "type": "dependencies",
+    "dependedByLocation": ""
+  },
+  "dayjs": {
+    "wanted": "1.11.23",
+    "latest": "1.11.23",
+    "dependent": "npmproj",
+    "type": "dependencies",
+    "homepage": "https://day.js.org",
+    "dependedByLocation": ""
+  },
+  "eslint": {
+    "current": "8.57.0",
+    "wanted": "8.57.0",
+    "latest": "10.12.0",
+    "dependent": "npmproj",
+    "location": "/private/tmp/genui-c/npmproj/node_modules/eslint",
+    "type": "devDependencies",
+    "homepage": "https://eslint.org",
+    "dependedByLocation": ""
+  },
+  "express": {
+    "current": "4.17.1",
+    "wanted": "4.22.3",
+    "latest": "5.3.0",
+    "dependent": "npmproj",
+    "location": "/private/tmp/genui-c/npmproj/node_modules/express",
+    "type": "dependencies",
+    "homepage": "https://expressjs.com/",
+    "dependedByLocation": ""
+  },
+  "lodash": {
+    "current": "4.17.15",
+    "wanted": "4.18.1",
+    "latest": "4.18.1",
+    "dependent": "npmproj",
+    "location": "/private/tmp/genui-c/npmproj/node_modules/lodash",
+    "type": "dependencies",
+    "homepage": "https://lodash.com/",
+    "dependedByLocation": ""
+  },
+  "minimist": {
+    "current": "1.2.5",
+    "wanted": "1.2.5",
+    "latest": "1.2.8",
+    "dependent": "npmproj",
+    "location": "/private/tmp/genui-c/npmproj/node_modules/minimist",
+    "type": "dependencies",
+    "homepage": "https://github.com/minimistjs/minimist",
+    "dependedByLocation": ""
+  },
+  "next": {
+    "current": "14.0.0",
+    "wanted": "14.0.0",
+    "latest": "16.4.0",
+    "dependent": "npmproj",
+    "location": "/private/tmp/genui-c/npmproj/node_modules/next",
+    "type": "devDependencies",
+    "homepage": "https://nextjs.org",
+    "dependedByLocation": ""
+  },
+  "prettier": {
+    "current": "3.0.0",
+    "wanted": "3.9.9",
+    "latest": "3.9.9",
+    "dependent": "npmproj",
+    "location": "/private/tmp/genui-c/npmproj/node_modules/prettier",
+    "type": "devDependencies",
+    "homepage": "https://prettier.io",
+    "dependedByLocation": ""
+  },
+  "react": {
+    "current": "18.2.0",
+    "wanted": "18.3.1",
+    "latest": "19.3.0",
+    "dependent": "npmproj",
+    "location": "/private/tmp/genui-c/npmproj/node_modules/react",
+    "type": "dependencies",
+    "homepage": "https://react.dev/",
+    "dependedByLocation": ""
+  },
+  "react-dom": {
+    "current": "18.2.0",
+    "wanted": "18.3.1",
+    "latest": "19.3.0",
+    "dependent": "npmproj",
+    "location": "/private/tmp/genui-c/npmproj/node_modules/react-dom",
+    "type": "dependencies",
+    "homepage": "https://react.dev/",
+    "dependedByLocation": ""
+  },
+  "semver": {
+    "current": "7.5.1",
+    "wanted": "7.5.1",
+    "latest": "7.8.5",
+    "dependent": "npmproj",
+    "location": "/private/tmp/genui-c/npmproj/node_modules/semver",
+    "type": "dependencies",
+    "homepage": "https://github.com/npm/node-semver#readme",
+    "dependedByLocation": ""
+  },
+  "typescript": {
+    "current": "5.4.5",
+    "wanted": "5.9.3",
+    "latest": "7.0.2",
+    "dependent": "npmproj",
+    "location": "/private/tmp/genui-c/npmproj/node_modules/typescript",
+    "type": "devDependencies",
+    "homepage": "https://www.typescriptlang.org/",
+    "dependedByLocation": ""
+  },
+  "uuid": {
+    "current": "9.0.0",
+    "wanted": "9.0.0",
+    "latest": "14.0.2",
+    "dependent": "npmproj",
+    "location": "/private/tmp/genui-c/npmproj/node_modules/uuid",
+    "type": "dependencies",
+    "homepage": "https://github.com/uuidjs/uuid#readme",
+    "dependedByLocation": ""
+  },
+  "vitest": {
+    "current": "1.6.0",
+    "wanted": "1.6.1",
+    "latest": "5.0.3",
+    "dependent": "npmproj",
+    "location": "/private/tmp/genui-c/npmproj/node_modules/vitest",
+    "type": "devDependencies",
+    "homepage": "https://vitest.dev",
+    "dependedByLocation": ""
+  },
+  "zod": {
+    "current": "3.22.2",
+    "wanted": "3.25.76",
+    "latest": "4.6.5",
+    "dependent": "npmproj",
+    "location": "/private/tmp/genui-c/npmproj/node_modules/zod",
+    "type": "dependencies",
+    "homepage": "https://zod.dev",
+    "dependedByLocation": ""
+  }
+}

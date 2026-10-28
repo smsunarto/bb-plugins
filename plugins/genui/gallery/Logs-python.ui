@@ -1,0 +1,1 @@
+Logs(Load("data/logs/media-sync.log"), "python3 sync.py", 0)

@@ -1,0 +1,156 @@
+{
+ "diagnostics": [
+  {
+   "message": "Variable 'first' is declared but never used. Unused variables should start with a '_'.",
+   "code": "eslint(no-unused-vars)",
+   "severity": "warning",
+   "url": "https://oxc.rs/docs/guide/usage/linter/rules/eslint/no-unused-vars.html",
+   "help": "Consider removing this declaration.",
+   "filename": "data/src/mapMath.ts",
+   "labels": [
+    {
+     "label": "'first' is declared here",
+     "span": {
+      "offset": 2381,
+      "length": 5,
+      "line": 66,
+      "column": 9
+     }
+    }
+   ]
+  },
+  {
+   "message": "Variable 'zoom' is declared but never used. Unused variables should start with a '_'.",
+   "code": "eslint(no-unused-vars)",
+   "severity": "warning",
+   "url": "https://oxc.rs/docs/guide/usage/linter/rules/eslint/no-unused-vars.html",
+   "help": "Consider removing this declaration.",
+   "filename": "data/src/mapMath.ts",
+   "labels": [
+    {
+     "label": "'zoom' is declared here",
+     "span": {
+      "offset": 2832,
+      "length": 4,
+      "line": 73,
+      "column": 9
+     }
+    }
+   ]
+  },
+  {
+   "message": "Variable 'debug' is declared but never used. Unused variables should start with a '_'.",
+   "code": "eslint(no-unused-vars)",
+   "severity": "warning",
+   "url": "https://oxc.rs/docs/guide/usage/linter/rules/eslint/no-unused-vars.html",
+   "help": "Consider removing this declaration.",
+   "filename": "data/src/mapMath.ts",
+   "labels": [
+    {
+     "label": "'debug' is declared here",
+     "span": {
+      "offset": 3558,
+      "length": 5,
+      "line": 89,
+      "column": 9
+     }
+    }
+   ]
+  },
+  {
+   "message": "Expected === and instead saw ==",
+   "code": "eslint(eqeqeq)",
+   "severity": "error",
+   "url": "https://oxc.rs/docs/guide/usage/linter/rules/eslint/eqeqeq.html",
+   "help": "Prefer === operator",
+   "filename": "data/src/mapMath.ts",
+   "labels": [
+    {
+     "span": {
+      "offset": 2766,
+      "length": 2,
+      "line": 72,
+      "column": 59
+     }
+    }
+   ]
+  },
+  {
+   "message": "Unexpected `any`. Specify a different type.",
+   "code": "typescript(no-explicit-any)",
+   "severity": "error",
+   "url": "https://oxc.rs/docs/guide/usage/linter/rules/typescript/no-explicit-any.html",
+   "help": "Use `unknown` instead, this will force you to explicitly, and safely, assert the type is correct.",
+   "filename": "data/src/mapMath.ts",
+   "labels": [
+    {
+     "span": {
+      "offset": 3537,
+      "length": 3,
+      "line": 88,
+      "column": 79
+     }
+    }
+   ]
+  },
+  {
+   "message": "Identifier 'readFileSync' is imported but never used.",
+   "code": "eslint(no-unused-vars)",
+   "severity": "warning",
+   "url": "https://oxc.rs/docs/guide/usage/linter/rules/eslint/no-unused-vars.html",
+   "help": "Consider removing this import.",
+   "filename": "data/src/json-logic.ts",
+   "labels": [
+    {
+     "label": "'readFileSync' is imported here",
+     "span": {
+      "offset": 356,
+      "length": 12,
+      "line": 6,
+      "column": 10
+     }
+    }
+   ]
+  },
+  {
+   "message": "Unexpected `any`. Specify a different type.",
+   "code": "typescript(no-explicit-any)",
+   "severity": "error",
+   "url": "https://oxc.rs/docs/guide/usage/linter/rules/typescript/no-explicit-any.html",
+   "help": "Use `unknown` instead, this will force you to explicitly, and safely, assert the type is correct.",
+   "filename": "data/src/json-logic.ts",
+   "labels": [
+    {
+     "span": {
+      "offset": 1859,
+      "length": 3,
+      "line": 43,
+      "column": 83
+     }
+    }
+   ]
+  },
+  {
+   "message": "Expected === and instead saw ==",
+   "code": "eslint(eqeqeq)",
+   "severity": "error",
+   "url": "https://oxc.rs/docs/guide/usage/linter/rules/eslint/eqeqeq.html",
+   "help": "Prefer === operator",
+   "filename": "data/src/json-logic.ts",
+   "labels": [
+    {
+     "span": {
+      "offset": 2204,
+      "length": 2,
+      "line": 52,
+      "column": 53
+     }
+    }
+   ]
+  }
+ ],
+ "number_of_files": 2,
+ "number_of_rules": 128,
+ "threads_count": 10,
+ "start_time": 0.01053025
+}

@@ -1,0 +1,4 @@
+Card("Deploy finished", [
+  Text("**web** shipped to production in 2 min 14 s."),
+  Row([Metric("Requests", "18.2k"), Metric("Errors", "0.02%", tone: "good")])
+])

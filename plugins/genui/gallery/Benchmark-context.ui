@@ -1,0 +1,8 @@
+Benchmark([
+  {name: "Presented FPS, staging reuse off → on", before: 112.583, after: 114.88, unit: "fps", better: "higher", context: {device: "iPhone", thermal: "Nominal", workload: "replay ticks 147–347", build: "same binary"}},
+  {name: "p99 presentation cadence, staging reuse off → on", before: 16.67, after: 16.67, unit: "ms", context: {device: "iPhone", thermal: "Nominal", workload: "replay ticks 147–347", build: "same binary"}},
+  {name: "Render FPS, 60 → 120 Hz request", before: [58.19, 58.04], after: [70.13, 67.9], unit: "fps", better: "higher", varies: "display", context: {device: "iPhone", workload: "matched replay"}, contextBefore: {display: "60 Hz"}, contextAfter: {display: "120 Hz"}},
+  {name: "p95 frame time, 60 → 120 Hz request", before: [18.43, 18.49], after: [22.36, 25.01], unit: "ms", varies: "display", context: {device: "iPhone", workload: "matched replay"}, contextBefore: {display: "60 Hz"}, contextAfter: {display: "120 Hz"}},
+  {name: "Delivered FPS, binary archive off → on", before: 45.464, after: 48.849, unit: "fps", better: "higher", varies: "archive", context: {device: "iPhone", workload: "2 min live match, 7 bots"}, contextBefore: {archive: "off", thermal: "Serious throughout"}, contextAfter: {archive: "on, warm", thermal: "Fair → serious"}},
+  {name: "Presented FPS, earlier report → what you saw", before: 113.16, after: 72.9, unit: "fps", better: "higher", context: {device: "iPhone", workload: "30 s replay"}, contextBefore: {build: "resource-preparation candidate", thermal: "Nominal", display: "120 Hz requested"}, contextAfter: {build: "FPS counter build", thermal: "Fair / serious"}}
+])

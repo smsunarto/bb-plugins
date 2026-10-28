@@ -1,0 +1,16 @@
+1
+00:00:00,000 --> 00:00:04,200
+ Hello, hello, can you hear me speaking?
+
+2
+00:00:04,200 --> 00:00:07,200
+ Yes, I can hear you fine.
+
+3
+00:00:07,200 --> 00:00:10,700
+ Great, we have 25 minutes.
+
+4
+00:00:10,700 --> 00:00:16,300
+ Then, let us look at the transcript at 1949.
+

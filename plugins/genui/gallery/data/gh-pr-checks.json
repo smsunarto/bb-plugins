@@ -1,0 +1,272 @@
+[
+ {
+  "bucket": "pass",
+  "completedAt": "2026-10-09T16:37:27Z",
+  "link": "https://github.com/vitejs/vite/actions/runs/37959478199/job/113921588234",
+  "name": "Build & Test Failed",
+  "startedAt": "2026-10-09T16:37:22Z",
+  "state": "SUCCESS",
+  "workflow": "CI"
+ },
+ {
+  "bucket": "skipping",
+  "completedAt": "2026-10-09T16:37:18Z",
+  "link": "https://github.com/vitejs/vite/actions/runs/37959478199/job/113921592351",
+  "name": "Build & Test Passed or Skipped",
+  "startedAt": "2026-10-09T16:37:19Z",
+  "state": "SKIPPED",
+  "workflow": "CI"
+ },
+ {
+  "bucket": "pass",
+  "completedAt": "2026-10-09T16:37:02Z",
+  "link": "https://github.com/vitejs/vite/actions/runs/37959469650/job/113921422118",
+  "name": "Build & Test Failed",
+  "startedAt": "2026-10-09T16:36:58Z",
+  "state": "SUCCESS",
+  "workflow": "CI"
+ },
+ {
+  "bucket": "skipping",
+  "completedAt": "2026-10-09T16:36:54Z",
+  "link": "https://github.com/vitejs/vite/actions/runs/37959469650/job/113921424746",
+  "name": "Build & Test Passed or Skipped",
+  "startedAt": "2026-10-09T16:36:54Z",
+  "state": "SKIPPED",
+  "workflow": "CI"
+ },
+ {
+  "bucket": "fail",
+  "completedAt": "2026-10-09T16:37:00Z",
+  "link": "https://github.com/vitejs/vite/actions/runs/37959478199/job/113918440702",
+  "name": "Build&Test: node-26, ubuntu-latest",
+  "startedAt": "2026-10-09T16:32:57Z",
+  "state": "FAILURE",
+  "workflow": "CI"
+ },
+ {
+  "bucket": "pass",
+  "completedAt": "2026-10-09T16:35:56Z",
+  "link": "https://github.com/vitejs/vite/actions/runs/37959478199/job/113918440685",
+  "name": "Build&Test: node-24, ubuntu-latest",
+  "startedAt": "2026-10-09T16:32:42Z",
+  "state": "SUCCESS",
+  "workflow": "CI"
+ },
+ {
+  "bucket": "fail",
+  "completedAt": "2026-10-09T16:37:18Z",
+  "link": "https://github.com/vitejs/vite/actions/runs/37959478199/job/113918440632",
+  "name": "Build&Test: node-22, ubuntu-latest",
+  "startedAt": "2026-10-09T16:32:38Z",
+  "state": "FAILURE",
+  "workflow": "CI"
+ },
+ {
+  "bucket": "fail",
+  "completedAt": "2026-10-09T16:33:39Z",
+  "link": "https://github.com/vitejs/vite/actions/runs/37959478199/job/113918440567",
+  "name": "Build&Test: node-20, ubuntu-latest",
+  "startedAt": "2026-10-09T16:31:23Z",
+  "state": "FAILURE",
+  "workflow": "CI"
+ },
+ {
+  "bucket": "pass",
+  "completedAt": "2026-10-09T16:35:36Z",
+  "link": "https://github.com/vitejs/vite/actions/runs/37959469650/job/113918385680",
+  "name": "Build&Test: node-26, ubuntu-latest",
+  "startedAt": "2026-10-09T16:31:21Z",
+  "state": "SUCCESS",
+  "workflow": "CI"
+ },
+ {
+  "bucket": "pass",
+  "completedAt": "2026-10-09T16:35:03Z",
+  "link": "https://github.com/vitejs/vite/actions/runs/37959469650/job/113918385795",
+  "name": "Build&Test: node-20, ubuntu-latest",
+  "startedAt": "2026-10-09T16:30:15Z",
+  "state": "SUCCESS",
+  "workflow": "CI"
+ },
+ {
+  "bucket": "pass",
+  "completedAt": "2026-10-09T16:32:54Z",
+  "link": "https://github.com/vitejs/vite/actions/runs/37959478199/job/113918440746",
+  "name": "Build&Test: node-24, macos-latest",
+  "startedAt": "2026-10-09T16:30:13Z",
+  "state": "SUCCESS",
+  "workflow": "CI"
+ },
+ {
+  "bucket": "pass",
+  "completedAt": "2026-10-09T16:33:27Z",
+  "link": "https://github.com/vitejs/vite/actions/runs/37959469650/job/113918385625",
+  "name": "Build&Test: node-22, ubuntu-latest",
+  "startedAt": "2026-10-09T16:30:09Z",
+  "state": "SUCCESS",
+  "workflow": "CI"
+ },
+ {
+  "bucket": "pass",
+  "completedAt": "2026-10-09T16:30:04Z",
+  "link": "https://github.com/vitejs/vite/runs/113918603301",
+  "name": "CodeQL",
+  "startedAt": "2026-10-09T16:30:01Z",
+  "state": "SUCCESS",
+  "workflow": ""
+ },
+ {
+  "bucket": "pass",
+  "completedAt": "2026-10-09T16:35:58Z",
+  "link": "https://github.com/vitejs/vite/actions/runs/37959469650/job/113918385668",
+  "name": "Build&Test: node-24, windows-latest",
+  "startedAt": "2026-10-09T16:29:49Z",
+  "state": "SUCCESS",
+  "workflow": "CI"
+ },
+ {
+  "bucket": "pass",
+  "completedAt": "2026-10-09T16:36:17Z",
+  "link": "https://github.com/vitejs/vite/actions/runs/37959478199/job/113918440575",
+  "name": "Build&Test: node-24, windows-latest",
+  "startedAt": "2026-10-09T16:29:49Z",
+  "state": "SUCCESS",
+  "workflow": "CI"
+ },
+ {
+  "bucket": "pass",
+  "completedAt": "2026-10-09T16:36:54Z",
+  "link": "https://github.com/vitejs/vite/actions/runs/37959469650/job/113918385877",
+  "name": "Build&Test: node-24, macos-latest",
+  "startedAt": "2026-10-09T16:29:41Z",
+  "state": "SUCCESS",
+  "workflow": "CI"
+ },
+ {
+  "bucket": "pass",
+  "completedAt": "2026-10-09T16:29:41Z",
+  "link": "https://github.com/vitejs/vite/runs/113918445327",
+  "name": "zizmor",
+  "startedAt": "2026-10-09T16:29:38Z",
+  "state": "SUCCESS",
+  "workflow": ""
+ },
+ {
+  "bucket": "fail",
+  "completedAt": "2026-10-09T16:32:16Z",
+  "link": "https://github.com/vitejs/vite/actions/runs/37959469650/job/113918385620",
+  "name": "Build&Test: node-24, ubuntu-latest",
+  "startedAt": "2026-10-09T16:29:37Z",
+  "state": "FAILURE",
+  "workflow": "CI"
+ },
+ {
+  "bucket": "pass",
+  "completedAt": "2026-10-09T16:29:46Z",
+  "link": "https://github.com/vitejs/vite/actions/runs/37959478290/job/113918358403",
+  "name": "Run zizmor",
+  "startedAt": "2026-10-09T16:29:27Z",
+  "state": "SUCCESS",
+  "workflow": "Zizmor"
+ },
+ {
+  "bucket": "pass",
+  "completedAt": "2026-10-09T16:29:37Z",
+  "link": "https://github.com/vitejs/vite/actions/runs/37959478199/job/113918350079",
+  "name": "Get changed files",
+  "startedAt": "2026-10-09T16:29:27Z",
+  "state": "SUCCESS",
+  "workflow": "CI"
+ },
+ {
+  "bucket": "pass",
+  "completedAt": "2026-10-09T16:31:21Z",
+  "link": "https://github.com/vitejs/vite/actions/runs/37959478199/job/113918349761",
+  "name": "Lint: node-24, ubuntu-latest",
+  "startedAt": "2026-10-09T16:29:26Z",
+  "state": "SUCCESS",
+  "workflow": "CI"
+ },
+ {
+  "bucket": "pass",
+  "completedAt": "2026-10-09T16:29:30Z",
+  "link": "https://github.com/vitejs/vite/actions/runs/37959473446/job/113918333411",
+  "name": "Semantic Pull Request",
+  "startedAt": "2026-10-09T16:29:25Z",
+  "state": "SUCCESS",
+  "workflow": "Semantic Pull Request"
+ },
+ {
+  "bucket": "pass",
+  "completedAt": "2026-10-09T16:30:12Z",
+  "link": "https://github.com/vitejs/vite/actions/runs/37959471266/job/113918330702",
+  "name": "Analyze (actions)",
+  "startedAt": "2026-10-09T16:29:24Z",
+  "state": "SUCCESS",
+  "workflow": "CodeQL"
+ },
+ {
+  "bucket": "skipping",
+  "completedAt": "2026-10-09T16:29:23Z",
+  "link": "https://github.com/vitejs/vite/actions/runs/37959478129/job/113918351254",
+  "name": "preview",
+  "startedAt": "2026-10-09T16:29:24Z",
+  "state": "SKIPPED",
+  "workflow": "Preview release"
+ },
+ {
+  "bucket": "pass",
+  "completedAt": "2026-10-09T16:29:29Z",
+  "link": "https://github.com/vitejs/vite/actions/runs/37959469650/job/113918319941",
+  "name": "Get changed files",
+  "startedAt": "2026-10-09T16:29:22Z",
+  "state": "SUCCESS",
+  "workflow": "CI"
+ },
+ {
+  "bucket": "pass",
+  "completedAt": "2026-10-09T16:31:26Z",
+  "link": "https://github.com/vitejs/vite/actions/runs/37959469650/job/113918320309",
+  "name": "Lint: node-24, ubuntu-latest",
+  "startedAt": "2026-10-09T16:29:22Z",
+  "state": "SUCCESS",
+  "workflow": "CI"
+ },
+ {
+  "bucket": "skipping",
+  "completedAt": "2026-10-09T16:29:27Z",
+  "link": "https://app.netlify.com/projects/vite-docs-main/deploys/6ac91660817d3600085bb188",
+  "name": "Pages changed - vite-docs-main",
+  "startedAt": "2026-10-09T16:29:21Z",
+  "state": "NEUTRAL",
+  "workflow": ""
+ },
+ {
+  "bucket": "skipping",
+  "completedAt": "2026-10-09T16:29:29Z",
+  "link": "https://app.netlify.com/projects/vite-docs-main/deploys/6ac91660817d3600085bb188",
+  "name": "Redirect rules - vite-docs-main",
+  "startedAt": "2026-10-09T16:29:21Z",
+  "state": "NEUTRAL",
+  "workflow": ""
+ },
+ {
+  "bucket": "skipping",
+  "completedAt": "2026-10-09T16:29:28Z",
+  "link": "https://app.netlify.com/projects/vite-docs-main/deploys/6ac91660817d3600085bb188",
+  "name": "Header rules - vite-docs-main",
+  "startedAt": "2026-10-09T16:29:21Z",
+  "state": "NEUTRAL",
+  "workflow": ""
+ },
+ {
+  "bucket": "pass",
+  "completedAt": "0001-01-01T00:00:00Z",
+  "link": "https://app.netlify.com/projects/vite-docs-main/deploys/6ac91660817d3600085bb188",
+  "name": "netlify/vite-docs-main/deploy-preview",
+  "startedAt": "0001-01-01T00:00:00Z",
+  "state": "SUCCESS",
+  "workflow": ""
+ }
+]

@@ -1,0 +1,1 @@
+Board(Load("data/gh-prs-nextjs.json"), ["Draft", "Open", "Merged", "Closed"])

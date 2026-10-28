@@ -1,0 +1,8 @@
+Card("Tram 28, three ways", [
+  Gallery([
+    {src: "https://upload.wikimedia.org/wikipedia/commons/thumb/6/62/Tram_28_Lisbon_Portuguese.jpg/960px-Tram_28_Lisbon_Portuguese.jpg", caption: "From a link"},
+    {query: "Lisbon tram 28 night", caption: "Searched"},
+    {src: "images/golden-hour.webp", caption: "From a file"}
+  ], columns: 3),
+  Image("https://upload.wikimedia.org/wikipedia/commons/thumb/6/62/Tram_28_Lisbon_Portuguese.jpg/960px-Tram_28_Lisbon_Portuguese.jpg", alt: "Tram 28 through the proxy")
+])

@@ -1,0 +1,11 @@
+Waterfall([
+  {name: "POST /api/checkout", start: 0, duration: 486},
+  {name: "auth.verifySession", start: 4, duration: 22, depth: 1},
+  {name: "cart.load", start: 28, duration: 131, depth: 1},
+  {name: "SELECT cart_items", start: 31, duration: 96, depth: 2, tone: "warn", detail: "Seq scan on cart_items: no index on cart_id"},
+  {name: "pricing.quote", start: 129, duration: 28, depth: 2},
+  {name: "payments.charge", start: 162, duration: 268, depth: 1},
+  {name: "POST stripe.com/v1/payment_intents", start: 168, duration: 241, depth: 2},
+  {name: "orders.insert", start: 432, duration: 31, depth: 1},
+  {name: "email.enqueue", start: 465, duration: 12, depth: 1}
+])

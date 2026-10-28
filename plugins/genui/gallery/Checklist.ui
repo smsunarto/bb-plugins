@@ -1,0 +1,6 @@
+$done = ["Backups"]
+items = ["Backups", "Migrations", "Feature flags", "Changelog"]
+Card("Pre-release checklist", [
+  Checklist($done, items),
+  Progress($done.length, max: items.length, label: "Ready", tone: $done.length == items.length ? "good" : "info")
+])

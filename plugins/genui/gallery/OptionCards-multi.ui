@@ -1,0 +1,10 @@
+$features = ["sync"]
+Card("What should the starter include?", [
+  OptionCards($features, [
+    {value: "auth", title: "Sign-in", detail: "Email links and passkeys", icon: "UserRoundPlus"},
+    {value: "sync", title: "Offline sync", detail: "Local-first, merges conflicts", icon: "ArrowReloadHorizontal"},
+    {value: "search", title: "Search", detail: "Full-text over every note", icon: "Search"},
+    {value: "ci", title: "CI pipeline", detail: "Tests and previews on every push", icon: "Workflow"}
+  ], label: "Pick any"),
+  Text("Selected: " + ($features.length == 0 ? "nothing yet" : $features.join(", ")))
+])

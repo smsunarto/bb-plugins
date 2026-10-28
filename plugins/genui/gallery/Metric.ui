@@ -1,0 +1,3 @@
+Card("Bundle size", [
+  Row([Metric("JavaScript", "184 KB", note: "gzipped", tone: "good"), Metric("CSS", "22 KB"), Metric("Change", "−31%", note: "vs last release", tone: "good")])
+])

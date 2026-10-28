@@ -1,0 +1,5 @@
+$annual = false
+Card("Pro plan", [
+  Toggle($annual, "Bill yearly (2 months free)"),
+  Metric("Price", $annual ? "$240/yr" : "$24/mo", tone: "good")
+])

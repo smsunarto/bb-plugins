@@ -1,0 +1,1 @@
+Logs(Load("data/logs/vitest-run.log"), "npx vitest run", 1)

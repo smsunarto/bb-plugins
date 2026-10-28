@@ -1,0 +1,4 @@
+$primary = "#7A9E8E"
+Card("Calm meditation palette", [
+  Swatches([{value: "#3F5F52", name: "Deep (text, buttons)"}, {value: "#7A9E8E", name: "Primary"}, {value: "#E8C9A0", name: "Warm accent"}, {value: "#F7F5F0", name: "Background"}, {value: "#DCE8E2", name: "Soft (surfaces)"}, {value: "#2B2F33", name: "Ink"}], $primary, label: "Primary colour")
+])

@@ -309,6 +309,10 @@ const customIcons = {
     name: "WebDesign01",
     nodes: WebDesign01Icon,
   },
+  genui: {
+    name: "WebDesign01",
+    nodes: WebDesign01Icon,
+  },
   monokai: {
     name: "Palette",
     nodes: paletteIcon,

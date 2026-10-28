@@ -1,0 +1,612 @@
+{
+ "numTotalTestSuites": 19,
+ "numPassedTestSuites": 17,
+ "numFailedTestSuites": 2,
+ "numPendingTestSuites": 0,
+ "numTotalTests": 39,
+ "numPassedTests": 34,
+ "numFailedTests": 3,
+ "numPendingTests": 1,
+ "numTodoTests": 1,
+ "startTime": 1791586341356,
+ "success": false,
+ "testResults": [
+  {
+   "assertionResults": [
+    {
+     "ancestorTitles": [
+      "formMessage"
+     ],
+     "fullName": "formMessage lists every field at any depth in document order",
+     "status": "passed",
+     "title": "lists every field at any depth in document order",
+     "duration": 6.822,
+     "failureMessages": [],
+     "location": {
+      "line": 17,
+      "column": 3
+     }
+    },
+    {
+     "ancestorTitles": [
+      "formMessage"
+     ],
+     "fullName": "formMessage labels unlabeled fields with their state name",
+     "status": "passed",
+     "title": "labels unlabeled fields with their state name",
+     "duration": 0.903,
+     "failureMessages": [],
+     "location": {
+      "line": 32,
+      "column": 3
+     }
+    },
+    {
+     "ancestorTitles": [
+      "formMessage"
+     ],
+     "fullName": "formMessage does not add a colon after a question or colon label",
+     "status": "passed",
+     "title": "does not add a colon after a question or colon label",
+     "duration": 0.594,
+     "failureMessages": [],
+     "location": {
+      "line": 40,
+      "column": 3
+     }
+    },
+    {
+     "ancestorTitles": [
+      "formMessage"
+     ],
+     "fullName": "formMessage writes empty values as a dash",
+     "status": "passed",
+     "title": "writes empty values as a dash",
+     "duration": 1.075,
+     "failureMessages": [],
+     "location": {
+      "line": 48,
+      "column": 3
+     }
+    },
+    {
+     "ancestorTitles": [
+      "formMessage"
+     ],
+     "fullName": "formMessage joins lists, says Yes/No for booleans and formats numbers",
+     "status": "passed",
+     "title": "joins lists, says Yes/No for booleans and formats numbers",
+     "duration": 1.114,
+     "failureMessages": [],
+     "location": {
+      "line": 58,
+      "column": 3
+     }
+    },
+    {
+     "ancestorTitles": [
+      "formMessage"
+     ],
+     "fullName": "formMessage is empty for a form without fields",
+     "status": "passed",
+     "title": "is empty for a form without fields",
+     "duration": 0.365,
+     "failureMessages": [],
+     "location": {
+      "line": 79,
+      "column": 3
+     }
+    }
+   ],
+   "startTime": 1791586341618,
+   "endTime": 1791586341629.3645,
+   "status": "passed",
+   "message": "",
+   "name": "/workspace/bb-plugin-genui/core/form.test.ts"
+  },
+  {
+   "assertionResults": [
+    {
+     "ancestorTitles": [
+      "readJUnit"
+     ],
+     "fullName": "readJUnit reads a pytest report: failures, errors and skips with their messages and output",
+     "status": "passed",
+     "title": "reads a pytest report: failures, errors and skips with their messages and output",
+     "duration": 1.77,
+     "failureMessages": [],
+     "location": {
+      "line": 40,
+      "column": 3
+     }
+    },
+    {
+     "ancestorTitles": [
+      "readJUnit"
+     ],
+     "fullName": "readJUnit takes a lone testsuite root and inherits nested suite names and files",
+     "status": "passed",
+     "title": "takes a lone testsuite root and inherits nested suite names and files",
+     "duration": 0.149,
+     "failureMessages": [],
+     "location": {
+      "line": 60,
+      "column": 3
+     }
+    },
+    {
+     "ancestorTitles": [
+      "readJUnit"
+     ],
+     "fullName": "readJUnit keeps the trace and the message when the body does not repeat it",
+     "status": "passed",
+     "title": "keeps the trace and the message when the body does not repeat it",
+     "duration": 0.145,
+     "failureMessages": [],
+     "location": {
+      "line": 72,
+      "column": 3
+     }
+    },
+    {
+     "ancestorTitles": [
+      "readJUnit"
+     ],
+     "fullName": "readJUnit refuses XML that is not a JUnit report, saying what it is",
+     "status": "passed",
+     "title": "refuses XML that is not a JUnit report, saying what it is",
+     "duration": 0.119,
+     "failureMessages": [],
+     "location": {
+      "line": 79,
+      "column": 3
+     }
+    },
+    {
+     "ancestorTitles": [
+      "readJUnit"
+     ],
+     "fullName": "readJUnit refuses DOCTYPEs, so entity declarations can never expand",
+     "status": "passed",
+     "title": "refuses DOCTYPEs, so entity declarations can never expand",
+     "duration": 0.166,
+     "failureMessages": [],
+     "location": {
+      "line": 85,
+      "column": 3
+     }
+    },
+    {
+     "ancestorTitles": [
+      "readJUnit"
+     ],
+     "fullName": "readJUnit reports malformed XML with its line",
+     "status": "passed",
+     "title": "reports malformed XML with its line",
+     "duration": 0.242,
+     "failureMessages": [],
+     "location": {
+      "line": 95,
+      "column": 3
+     }
+    },
+    {
+     "ancestorTitles": [
+      "readJUnit"
+     ],
+     "fullName": "readJUnit refuses nesting deep enough to matter",
+     "status": "passed",
+     "title": "refuses nesting deep enough to matter",
+     "duration": 0.096,
+     "failureMessages": [],
+     "location": {
+      "line": 107,
+      "column": 3
+     }
+    },
+    {
+     "ancestorTitles": [
+      "readJUnit"
+     ],
+     "fullName": "readJUnit returns suites when there are more tests than one list holds",
+     "status": "passed",
+     "title": "returns suites when there are more tests than one list holds",
+     "duration": 1.914,
+     "failureMessages": [],
+     "location": {
+      "line": 111,
+      "column": 3
+     }
+    },
+    {
+     "ancestorTitles": [
+      "parseXml"
+     ],
+     "fullName": "parseXml skips comments and processing instructions and joins text around CDATA",
+     "status": "passed",
+     "title": "skips comments and processing instructions and joins text around CDATA",
+     "duration": 0.328,
+     "failureMessages": [],
+     "location": {
+      "line": 127,
+      "column": 3
+     }
+    }
+   ],
+   "startTime": 1791586341521,
+   "endTime": 1791586341526.3284,
+   "status": "passed",
+   "message": "",
+   "name": "/workspace/bb-plugin-genui/core/junit.test.ts"
+  },
+  {
+   "assertionResults": [
+    {
+     "ancestorTitles": [
+      "readTestRun: plain lists"
+     ],
+     "fullName": "readTestRun: plain lists reads the catalog shape, splitting `file:line` and counting by status",
+     "status": "passed",
+     "title": "reads the catalog shape, splitting `file:line` and counting by status",
+     "duration": 1.568,
+     "failureMessages": [],
+     "location": {
+      "line": 27,
+      "column": 3
+     }
+    },
+    {
+     "ancestorTitles": [
+      "readTestRun: plain lists"
+     ],
+     "fullName": "readTestRun: plain lists reads suites of tests, as a very large JUnit report arrives",
+     "status": "passed",
+     "title": "reads suites of tests, as a very large JUnit report arrives",
+     "duration": 0.147,
+     "failureMessages": [],
+     "location": {
+      "line": 47,
+      "column": 3
+     }
+    },
+    {
+     "ancestorTitles": [
+      "readTestRun: plain lists"
+     ],
+     "fullName": "readTestRun: plain lists says what it needs when nothing in the value is a test",
+     "status": "passed",
+     "title": "says what it needs when nothing in the value is a test",
+     "duration": 0.129,
+     "failureMessages": [],
+     "location": {
+      "line": 55,
+      "column": 3
+     }
+    },
+    {
+     "ancestorTitles": [
+      "readTestRun: plain lists"
+     ],
+     "fullName": "readTestRun: plain lists locates a failure with no line from the first app frame of its trace",
+     "status": "passed",
+     "title": "locates a failure with no line from the first app frame of its trace",
+     "duration": 1.231,
+     "failureMessages": [],
+     "location": {
+      "line": 64,
+      "column": 3
+     }
+    },
+    {
+     "ancestorTitles": [
+      "readTestRun: vitest and jest JSON"
+     ],
+     "fullName": "readTestRun: vitest and jest JSON reads files, names with their describe blocks, and the wall-clock duration",
+     "status": "passed",
+     "title": "reads files, names with their describe blocks, and the wall-clock duration",
+     "duration": 0.374,
+     "failureMessages": [],
+     "location": {
+      "line": 118,
+      "column": 3
+     }
+    },
+    {
+     "ancestorTitles": [
+      "testStatus"
+     ],
+     "fullName": "testStatus maps the reporters' words onto three statuses, keeping the telling ones",
+     "status": "passed",
+     "title": "maps the reporters' words onto three statuses, keeping the telling ones",
+     "duration": 0.129,
+     "failureMessages": [],
+     "location": {
+      "line": 134,
+      "column": 3
+     }
+    },
+    {
+     "ancestorTitles": [
+      "groupTests and text"
+     ],
+     "fullName": "groupTests and text groups by suite, else file, in first-seen order with counts and time",
+     "status": "passed",
+     "title": "groups by suite, else file, in first-seen order with counts and time",
+     "duration": 0.206,
+     "failureMessages": [],
+     "location": {
+      "line": 161,
+      "column": 3
+     }
+    },
+    {
+     "ancestorTitles": [
+      "groupTests and text"
+     ],
+     "fullName": "groupTests and text writes counts failures first and durations at a readable precision",
+     "status": "passed",
+     "title": "writes counts failures first and durations at a readable precision",
+     "duration": 0.166,
+     "failureMessages": [],
+     "location": {
+      "line": 175,
+      "column": 3
+     }
+    },
+    {
+     "ancestorTitles": [
+      "ANSI"
+     ],
+     "fullName": "ANSI splits colour runs and drops every other escape",
+     "status": "passed",
+     "title": "splits colour runs and drops every other escape",
+     "duration": 0.387,
+     "failureMessages": [],
+     "location": {
+      "line": 191,
+      "column": 3
+     }
+    },
+    {
+     "ancestorTitles": [
+      "ANSI"
+     ],
+     "fullName": "ANSI carries a colour across line breaks",
+     "status": "passed",
+     "title": "carries a colour across line breaks",
+     "duration": 0.216,
+     "failureMessages": [],
+     "location": {
+      "line": 208,
+      "column": 3
+     }
+    },
+    {
+     "ancestorTitles": [
+      "stack frames"
+     ],
+     "fullName": "stack frames reads the frames of each runtime's traces",
+     "status": "passed",
+     "title": "reads the frames of each runtime's traces",
+     "duration": 1.036,
+     "failureMessages": [],
+     "location": {
+      "line": 219,
+      "column": 3
+     }
+    },
+    {
+     "ancestorTitles": [
+      "stack frames"
+     ],
+     "fullName": "stack frames finds the first frame of the code under test",
+     "status": "passed",
+     "title": "finds the first frame of the code under test",
+     "duration": 0.36,
+     "failureMessages": [],
+     "location": {
+      "line": 246,
+      "column": 3
+     }
+    },
+    {
+     "ancestorTitles": [
+      "paths"
+     ],
+     "fullName": "paths gives BB a workspace-relative path or none",
+     "status": "passed",
+     "title": "gives BB a workspace-relative path or none",
+     "duration": 0.165,
+     "failureMessages": [],
+     "location": {
+      "line": 254,
+      "column": 3
+     }
+    },
+    {
+     "ancestorTitles": [
+      "paths"
+     ],
+     "fullName": "paths shortens absolute paths to the directory they share",
+     "status": "passed",
+     "title": "shortens absolute paths to the directory they share",
+     "duration": 0.124,
+     "failureMessages": [],
+     "location": {
+      "line": 263,
+      "column": 3
+     }
+    }
+   ],
+   "startTime": 1791586341506,
+   "endTime": 1791586341512.36,
+   "status": "passed",
+   "message": "",
+   "name": "/workspace/bb-plugin-genui/core/test-results.test.ts"
+  },
+  {
+   "assertionResults": [
+    {
+     "ancestorTitles": [
+      "report rendering"
+     ],
+     "fullName": "report rendering formats a minute with a leading zero",
+     "status": "failed",
+     "title": "formats a minute with a leading zero",
+     "duration": 2.888,
+     "failureMessages": [
+      "AssertionError: expected '1m 01s' to be '1m 1s' // Object.is equality\n    at /workspace/bb-plugin-genui/core/report-rendering.test.ts:7:36\n    at file:///workspace/bb-plugin-genui/node_modules/@vitest/runner/dist/chunk-artifact.js:302:11\n    at file:///workspace/bb-plugin-genui/node_modules/@vitest/runner/dist/chunk-artifact.js:1903:26\n    at file:///workspace/bb-plugin-genui/node_modules/@vitest/runner/dist/chunk-artifact.js:2326:20\n    at new Promise (<anonymous>)\n    at runWithCancel (file:///workspace/bb-plugin-genui/node_modules/@vitest/runner/dist/chunk-artifact.js:2323:10)\n    at file:///workspace/bb-plugin-genui/node_modules/@vitest/runner/dist/chunk-artifact.js:2305:20"
+     ],
+     "location": {
+      "line": 6,
+      "column": 3
+     }
+    },
+    {
+     "ancestorTitles": [
+      "report rendering"
+     ],
+     "fullName": "report rendering reads a JUnit report with a DOCTYPE",
+     "status": "failed",
+     "title": "reads a JUnit report with a DOCTYPE",
+     "duration": 2.6,
+     "failureMessages": [
+      "AssertionError: expected { ok: false, \u2026(1) } to match object { ok: true, value: [] }\n(1 matching property omitted from actual)\n    at Proxy.<anonymous> (file:///workspace/bb-plugin-genui/node_modules/@vitest/expect/dist/index.js:1283:10)\n    at Proxy.<anonymous> (file:///workspace/bb-plugin-genui/node_modules/@vitest/expect/dist/index.js:1156:15)\n    at Proxy.methodWrapper (file:///workspace/bb-plugin-genui/node_modules/chai/index.js:1737:25)\n    at /workspace/bb-plugin-genui/core/report-rendering.test.ts:12:20\n    at file:///workspace/bb-plugin-genui/node_modules/@vitest/runner/dist/chunk-artifact.js:302:11\n    at file:///workspace/bb-plugin-genui/node_modules/@vitest/runner/dist/chunk-artifact.js:1903:26"
+     ],
+     "location": {
+      "line": 10,
+      "column": 3
+     }
+    },
+    {
+     "ancestorTitles": [
+      "report rendering"
+     ],
+     "fullName": "report rendering counts skipped tests as passed",
+     "status": "failed",
+     "title": "counts skipped tests as passed",
+     "duration": 0.92,
+     "failureMessages": [
+      "AssertionError: expected { passed: +0, failed: +0, skipped: 1 } to deeply equal { passed: 1, failed: +0, skipped: +0 }\n    at /workspace/bb-plugin-genui/core/report-rendering.test.ts:17:40\n    at file:///workspace/bb-plugin-genui/node_modules/@vitest/runner/dist/chunk-artifact.js:302:11\n    at file:///workspace/bb-plugin-genui/node_modules/@vitest/runner/dist/chunk-artifact.js:1903:26\n    at file:///workspace/bb-plugin-genui/node_modules/@vitest/runner/dist/chunk-artifact.js:2326:20\n    at new Promise (<anonymous>)\n    at runWithCancel (file:///workspace/bb-plugin-genui/node_modules/@vitest/runner/dist/chunk-artifact.js:2323:10)\n    at file:///workspace/bb-plugin-genui/node_modules/@vitest/runner/dist/chunk-artifact.js:2305:20"
+     ],
+     "location": {
+      "line": 15,
+      "column": 3
+     }
+    },
+    {
+     "ancestorTitles": [
+      "report rendering"
+     ],
+     "fullName": "report rendering renders thousands of failures under 16 ms",
+     "status": "skipped",
+     "title": "renders thousands of failures under 16 ms",
+     "failureMessages": [],
+     "location": {
+      "line": 20,
+      "column": 6
+     },
+     "duration": null
+    },
+    {
+     "ancestorTitles": [
+      "report rendering"
+     ],
+     "fullName": "report rendering streams a report while the run is still going",
+     "status": "todo",
+     "title": "streams a report while the run is still going",
+     "failureMessages": [],
+     "location": {
+      "line": 21,
+      "column": 6
+     },
+     "duration": null
+    }
+   ],
+   "startTime": 1791586341521,
+   "endTime": 1791586341527.9204,
+   "status": "failed",
+   "message": "",
+   "name": "/workspace/bb-plugin-genui/core/report-rendering.test.ts"
+  },
+  {
+   "assertionResults": [
+    {
+     "ancestorTitles": [
+      "childPath"
+     ],
+     "fullName": "childPath writes JSONPath, bracketing keys that are not identifiers",
+     "status": "passed",
+     "title": "writes JSONPath, bracketing keys that are not identifiers",
+     "duration": 0.947,
+     "failureMessages": [],
+     "location": {
+      "line": 9,
+      "column": 3
+     }
+    },
+    {
+     "ancestorTitles": [
+      "visibleRows"
+     ],
+     "fullName": "visibleRows shows a container root's entries as the top level and only open containers' children",
+     "status": "passed",
+     "title": "shows a container root's entries as the top level and only open containers' children",
+     "duration": 0.86,
+     "failureMessages": [],
+     "location": {
+      "line": 20,
+      "column": 3
+     }
+    },
+    {
+     "ancestorTitles": [
+      "visibleRows"
+     ],
+     "fullName": "visibleRows pages long containers with a row for the rest",
+     "status": "passed",
+     "title": "pages long containers with a row for the rest",
+     "duration": 0.208,
+     "failureMessages": [],
+     "location": {
+      "line": 34,
+      "column": 3
+     }
+    },
+    {
+     "ancestorTitles": [
+      "visibleRows"
+     ],
+     "fullName": "visibleRows shows a scalar root as one row and stays iterative for deep values",
+     "status": "passed",
+     "title": "shows a scalar root as one row and stays iterative for deep values",
+     "duration": 12.935,
+     "failureMessages": [],
+     "location": {
+      "line": 41,
+      "column": 3
+     }
+    },
+    {
+     "ancestorTitles": [
+      "sizeText and copyText"
+     ],
+     "fullName": "sizeText and copyText counts keys and items, and copies strings bare and containers as JSON",
+     "status": "passed",
+     "title": "counts keys and items, and copies strings bare and containers as JSON",
+     "duration": 0.193,
+     "failureMessages": [],
+     "location": {
+      "line": 52,
+      "column": 3
+     }
+    }
+   ],
+   "startTime": 1791586341506,
+   "endTime": 1791586341521.1934,
+   "status": "passed",
+   "message": "",
+   "name": "/workspace/bb-plugin-genui/ui/components/json-logic.test.ts"
+  }
+ ]
+}

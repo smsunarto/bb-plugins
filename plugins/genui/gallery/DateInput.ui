@@ -1,0 +1,4 @@
+$launch = "2026-10-27"
+Card("Pick a launch date", [Form([
+  DateInput($launch, label: "Launch date")
+])])

@@ -1,0 +1,8 @@
+Card("Services", [
+  Grid([
+    Card("API", [Badge("Healthy", tone: "good"), Text("p95 120 ms")]),
+    Card("Worker", [Badge("Degraded", tone: "warn"), Text("Queue 4.2k")]),
+    Card("Search", [Badge("Healthy", tone: "good"), Text("p95 40 ms")]),
+    Card("Billing", [Badge("Down", tone: "bad"), Text("Since 09:12")])
+  ], columns: 2)
+])

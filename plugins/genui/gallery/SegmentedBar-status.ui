@@ -1,0 +1,8 @@
+Card("Test run #4182", [
+  SegmentedBar([
+    {label: "Passed", value: 1284, tone: "good"},
+    {label: "Flaky", value: 37, tone: "warn"},
+    {label: "Failed", value: 6, tone: "bad"},
+    {label: "Skipped", value: 2, tone: "neutral"}
+  ])
+])

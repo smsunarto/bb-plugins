@@ -1,0 +1,5 @@
+$name = "orbit-web"
+Card("New project", [
+  Input($name, label: "Project name", placeholder: "my-app"),
+  Text("It will deploy to **" + $name + ".workers.dev**.")
+])

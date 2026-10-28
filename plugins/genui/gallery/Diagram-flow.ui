@@ -1,0 +1,16 @@
+Card("How a waitlist sign-up is handled", [
+  Diagram(`flowchart TD
+  start((Form sent)) --> guard{Same origin and valid?}
+  guard -->|no| reject[400 or 403]
+  guard -->|yes| turnstile{Turnstile ok?}
+  turnstile -->|no| failed[400 turnstile-failed]
+  turnstile -->|yes| place[Take the next place]
+  place --> counter[(WaitlistCounter)]
+  place --> contacts[(Mailing list)]
+  contacts --> mail>Welcome email]
+  subgraph worker [Worker]
+    guard
+    turnstile
+    place
+  end`, {counter: "One SQL statement hands out the next number, so two joins never share a place.", mail: "Sent at once if the daily budget allows; otherwise the hourly cron sends it."})
+])

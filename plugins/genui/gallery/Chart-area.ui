@@ -1,0 +1,3 @@
+Card("Storage used", [
+  Chart("area", ["Jan", "Feb", "Mar", "Apr", "May", "Jun"], {Images: [12, 15, 19, 24, 30, 37], Logs: [4, 5, 5, 6, 8, 9]}, unit: "GB", stacked: true)
+])

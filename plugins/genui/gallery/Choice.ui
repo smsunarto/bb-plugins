@@ -1,0 +1,7 @@
+$seats = 10
+$plan = "Pro"
+price = $plan == "Pro" ? 29 : 12
+Card("Estimate", [Form([
+  Row([Choice($plan, ["Basic", "Pro"], label: "Plan"), Slider($seats, 1, 50, label: "Seats")]),
+  Metric("Total", "$" + fmt(price * $seats), tone: "good")
+])])

@@ -1,0 +1,4 @@
+$stars = 4
+Card("How useful was this review?", [Form([
+  Rating($stars, label: "Your rating")
+])])

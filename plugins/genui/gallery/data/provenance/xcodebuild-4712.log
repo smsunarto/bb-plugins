@@ -1,0 +1,19 @@
+$ git rev-parse HEAD
+d62fbf3033d1272f2091e392ffbb4674ac2dcfbd
+
+$ xcodebuild archive -scheme Orbit -configuration Release -archivePath build/Orbit-4712.xcarchive CURRENT_PROJECT_VERSION=4712
+Command line invocation:
+    /Applications/Xcode.app/Contents/Developer/usr/bin/xcodebuild archive -scheme Orbit -configuration Release -archivePath build/Orbit-4712.xcarchive CURRENT_PROJECT_VERSION=4712
+
+Build settings from command line:
+    CURRENT_PROJECT_VERSION = 4712
+
+note: Building targets in dependency order
+** ARCHIVE SUCCEEDED **
+
+$ xcodebuild -exportArchive -archivePath build/Orbit-4712.xcarchive -exportPath build/export-4712 -exportOptionsPlist ExportOptions.plist
+Exported Orbit to: /Users/sam/Projects/orbit/build/export-4712
+** EXPORT SUCCEEDED **
+
+$ shasum -a 256 build/export-4712/Orbit.ipa
+2e9d84b1c07f5a63e8d2b4c1f0a97e6d35c8b2a1f4e07d93c6b5a28e1f0d4c77  build/export-4712/Orbit.ipa

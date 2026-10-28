@@ -1,0 +1,21 @@
+data/traces/shop/cart.mjs:15
+    throw new Error(`Couldn't price cart ${cart.id}`, { cause: error });
+          ^
+
+Error: Couldn't price cart c_42
+    at priceCart (data/traces/shop/cart.mjs:15:11)
+    at data/traces/shop/cart.mjs:19:13
+    ... 2 lines matching cause stack trace ...
+    at async asyncRunEntryPointWithESMLoader (node:internal/modules/run_main:101:5) {
+  [cause]: TypeError: Cannot read properties of undefined (reading 'toEur')
+      at lineTotal (data/traces/shop/pricing.mjs:10:46)
+      at data/traces/shop/cart.mjs:13:37
+      at Array.map (<anonymous>)
+      at priceCart (data/traces/shop/cart.mjs:13:23)
+      at data/traces/shop/cart.mjs:19:13
+      at ModuleJob.run (node:internal/modules/esm/module_job:569:25)
+      at async node:internal/modules/esm/loader:650:26
+      at async asyncRunEntryPointWithESMLoader (node:internal/modules/run_main:101:5)
+}
+
+Node.js v26.8.1

@@ -1,0 +1,1 @@
+Tests(Load("data/vitest-junit.xml"), "vitest · JUnit reporter")

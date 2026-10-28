@@ -1,0 +1,4 @@
+2026-10-10 01:54:22 install  request  build=4712 artifact=/tmp/orbit-4712/Orbit.ipa target="Sam's iPhone 15 Pro" via=dev-laptop
+2026-10-10 01:54:31 install  scan     0 paired devices reachable over the network; scanning again
+2026-10-10 01:54:53 install  scan     0 paired devices reachable over the network
+2026-10-10 01:55:23 install  timeout  no install receipt and no job ID after 61 s

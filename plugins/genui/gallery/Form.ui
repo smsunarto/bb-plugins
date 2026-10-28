@@ -1,0 +1,6 @@
+$audience = "Everyone"
+$channels = []
+Card("A few questions first", [Form([
+  Choice($audience, ["Everyone", "Waitlist", "Beta testers"], label: "Who should get it?"),
+  Checklist($channels, ["Email", "Push", "In-app"], label: "Which channels?")
+])])

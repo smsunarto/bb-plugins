@@ -1,0 +1,17 @@
+{"level":30,"time":1791591331832,"pid":23437,"hostname":"build-07","service":"thumbnailer","queue":"thumbnails","concurrency":4,"msg":"worker started"}
+{"level":20,"time":1791591331833,"pid":23437,"hostname":"build-07","service":"thumbnailer","redis":"redis://127.0.0.1:6379/2","msg":"connected to queue"}
+{"level":20,"time":1791591331833,"pid":23437,"hostname":"build-07","service":"thumbnailer","job":"j_1041","file":"uploads/2026/10/beach.jpg","bytes":48211,"msg":"job picked up"}
+{"level":30,"time":1791591331852,"pid":23437,"hostname":"build-07","service":"thumbnailer","job":"j_1041","width":320,"height":240,"ms":19,"msg":"thumbnail written"}
+{"level":20,"time":1791591331852,"pid":23437,"hostname":"build-07","service":"thumbnailer","job":"j_1042","file":"uploads/2026/10/team.png","bytes":103882,"msg":"job picked up"}
+{"level":30,"time":1791591331886,"pid":23437,"hostname":"build-07","service":"thumbnailer","job":"j_1042","width":320,"height":240,"ms":33,"msg":"thumbnail written"}
+{"level":20,"time":1791591331886,"pid":23437,"hostname":"build-07","service":"thumbnailer","job":"j_1043","file":"uploads/2026/10/IMG_2291.heic","bytes":2210431,"msg":"job picked up"}
+{"level":50,"time":1791591331886,"pid":23437,"hostname":"build-07","service":"thumbnailer","job":"j_1043","err":{"type":"Error","message":"unsupported image format: uploads/2026/10/IMG_2291.heic","stack":"Error: unsupported image format: uploads/2026/10/IMG_2291.heic\n    at resize (file:///srv/thumbnailer/worker.mjs:7:41)\n    at file:///srv/thumbnailer/worker.mjs:25:23"},"file":"uploads/2026/10/IMG_2291.heic","attempt":3,"msg":"job failed after 3 attempts"}
+{"level":20,"time":1791591331887,"pid":23437,"hostname":"build-07","service":"thumbnailer","job":"j_1044","file":"uploads/2026/10/logo.svg","bytes":5120,"msg":"job picked up"}
+{"level":30,"time":1791591331894,"pid":23437,"hostname":"build-07","service":"thumbnailer","job":"j_1044","width":320,"height":240,"ms":7,"msg":"thumbnail written"}
+{"level":40,"time":1791591331894,"pid":23437,"hostname":"build-07","service":"thumbnailer","queue":"thumbnails","waiting":0,"msg":"queue empty, polling again in 2s"}
+{"level":40,"time":1791591331898,"pid":23437,"hostname":"build-07","service":"thumbnailer","queue":"thumbnails","waiting":0,"msg":"queue empty, polling again in 2s"}
+{"level":40,"time":1791591331901,"pid":23437,"hostname":"build-07","service":"thumbnailer","queue":"thumbnails","waiting":0,"msg":"queue empty, polling again in 2s"}
+{"level":40,"time":1791591331904,"pid":23437,"hostname":"build-07","service":"thumbnailer","queue":"thumbnails","waiting":0,"msg":"queue empty, polling again in 2s"}
+{"level":40,"time":1791591331908,"pid":23437,"hostname":"build-07","service":"thumbnailer","queue":"thumbnails","waiting":0,"msg":"queue empty, polling again in 2s"}
+{"level":40,"time":1791591331912,"pid":23437,"hostname":"build-07","service":"thumbnailer","queue":"thumbnails","waiting":0,"msg":"queue empty, polling again in 2s"}
+{"level":60,"time":1791591331917,"pid":23437,"hostname":"build-07","service":"thumbnailer","signal":"SIGTERM","msg":"shutting down"}

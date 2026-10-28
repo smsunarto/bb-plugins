@@ -1,0 +1,5 @@
+{
+  "deploy": {
+    "region": "eu-west-1",
+  }
+}

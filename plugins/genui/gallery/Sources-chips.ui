@@ -1,0 +1,4 @@
+Card("Sizing an image to its aspect ratio", [
+  Text("Give the box an `aspect-ratio` and a width; the height follows."),
+  Sources(["https://developer.mozilla.org/en-US/docs/Web/CSS/aspect-ratio", "https://www.w3.org/TR/css-sizing-4/", "https://web.dev/articles/aspect-ratio"])
+])

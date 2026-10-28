@@ -1,0 +1,10 @@
+Card("Moodboard: golden hour", [
+  Gallery([
+    {src: "images/golden-hour.webp", caption: "Our reference frame"},
+    {query: "wheat field sunset", caption: "Warm backlight"},
+    {query: "lavender field Provence", caption: "Soft purple accents"},
+    {src: "images/footer-planet.webp", caption: "Planet render"},
+    {query: "sunflower close up"},
+    {query: "misty morning meadow", caption: "Morning haze"}
+  ])
+])

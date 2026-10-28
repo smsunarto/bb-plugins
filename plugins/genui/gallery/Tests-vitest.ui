@@ -1,0 +1,1 @@
+Tests(Load("data/vitest-report.json"), "vitest")

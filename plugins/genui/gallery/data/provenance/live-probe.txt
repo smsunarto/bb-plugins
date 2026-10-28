@@ -1,0 +1,10 @@
+$ curl -sSI https://orbit.example.com/
+HTTP/2 200 
+date: Sat, 10 Oct 2026 01:48:31 GMT
+content-type: text/html
+cf-cache-status: HIT
+cache-control: public, max-age=0, must-revalidate
+etag: "cc74e9fd97f269ed9711b68676df4314"
+strict-transport-security: max-age=31536000; includeSubDomains
+server: cloudflare
+cf-ray: a481f69b78422f91-WAW

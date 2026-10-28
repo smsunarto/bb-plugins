@@ -1,0 +1,15 @@
+Exception in thread "main" java.lang.IllegalStateException: Failed to load order 1042
+	at com.acme.orders.OrderService.load(OrderService.java:48)
+	at com.acme.orders.OrderController.show(OrderController.java:31)
+	at java.base/jdk.internal.reflect.DirectMethodHandleAccessor.invoke(DirectMethodHandleAccessor.java:103)
+	at java.base/java.lang.reflect.Method.invoke(Method.java:580)
+	at org.springframework.web.method.support.InvocableHandlerMethod.doInvoke(InvocableHandlerMethod.java:255)
+	at org.springframework.web.servlet.DispatcherServlet.doDispatch(DispatcherServlet.java:1089)
+	at com.acme.orders.Application.main(Application.java:12)
+Caused by: java.sql.SQLTimeoutException: Statement cancelled due to timeout or client request
+	at org.postgresql.jdbc.PgStatement.executeInternal(PgStatement.java:497)
+	at org.postgresql.jdbc.PgPreparedStatement.executeQuery(PgPreparedStatement.java:134)
+	at com.zaxxer.hikari.pool.HikariProxyPreparedStatement.executeQuery(HikariProxyPreparedStatement.java)
+	at com.acme.orders.OrderRepository.findById(OrderRepository.java:77)
+	at com.acme.orders.OrderService.load(OrderService.java:44)
+	... 6 more

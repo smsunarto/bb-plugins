@@ -1,0 +1,6 @@
+Card("Endpoints", [
+  Table(["Endpoint", "Latency, last 24 h", "p95"], [
+    ["/api/search", Sparkline([120, 118, 130, 125, 160, 210, 190, 140], tone: "warn"), "210 ms"],
+    ["/api/users", Sparkline([40, 42, 41, 39, 43, 40, 38, 41], tone: "good"), "43 ms"]
+  ])
+])

@@ -1,0 +1,14 @@
+Acceptance({title: "Waitlist: go live", criteria: [
+  {name: "Mail provider 2FA on", status: "passed", by: "owner", at: "2026-10-08", method: "Logged out and in; a code was asked"},
+  {name: "Rate-limit rule on /api/waitlist", status: "verified", by: "agent", at: "2026-10-08", method: "12 quick curls from one machine", run: "rule 3c8d09ea", note: "Requests 11–14 in 10 s answered 429, other paths unaffected, lifted after 10 s.", evidence: {url: "https://developers.cloudflare.com/waf/rate-limiting-rules/", label: "Cloudflare: rate limiting rules"}},
+  {name: "WCAG 2.2 AA over 12 join states", status: "passed", by: "agent", method: "axe-core 4.10.3", note: "0 violations after fixing heading order, section spacing and greyed error text.", evidence: "docs/evidence/waitlist-a11y-2026-10-08.md"},
+  {name: "Mail provider webhooks: marketing and hard bounce", status: "done", by: "owner", at: "2026-10-08", run: "ids 5104417, 5104418", note: "Ticked with the ids; the result of the Verify step (a POST without the header answers 401) is not recorded."},
+  {name: "Sender domain orbit.example.com authenticated", status: "unverified", by: "agent", note: "The mail provider's API reports the domain verified. The box stays open until a test mail arrives From hello@orbit.example.com."},
+  {name: "The hero's action opens the email field in place", status: "not tested", note: "The action changed on 2026-10-08; the browser smoke predates the change and must be re-run. happy-dom covers only the focus hand-off.", evidence: "src/website/waitlist.test.ts"},
+  {name: "Manual screen-reader walk of the join", status: "pending", needs: "Walk the join with VoiceOver", note: "The axe-core audit is automated; the manual walk is an owner step."},
+  {name: "Public TestFlight link disabled or capped", needs: "Disable the public link or set a tester limit in App Store Connect", note: "While the link is open and uncapped, anyone who has it skips the waitlist.", evidence: {url: "https://developer.apple.com/help/app-store-connect/test-a-beta-version/invite-external-testers", label: "Apple: invite external testers"}},
+  {name: "Counsel review of consent without double opt-in", status: "pending", needs: "Send counsel docs/compliance/ and the legal memo"},
+  {name: "Launch-week mail plan", status: "needs decision", note: "Stay on Free and accept queued welcomes (up to about a day), or move to a Starter tier that covers the expected peak."},
+  {name: "Deploy from production and smoke the live site", status: "not tested", method: "npm run smoke -- https://orbit.example.com", note: "Waits on the owner steps above."},
+  {name: "Anonymous tracking for campaigns", status: "blocked", required: false, note: "Saving fails with “email not verified” although the sender and the domain are verified; the owner is asking the mail provider's support. Not needed before the first newsletter campaign."}
+]})

@@ -1,0 +1,4 @@
+Card("The branch is merged", [
+  Button("Delete the branch", variant: "destructive", icon: "Trash2"),
+  Button("Keep it", variant: "secondary")
+])

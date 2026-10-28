@@ -48,8 +48,8 @@
       "source": "./plugins/gtd-sidebar"
     },
     {
-      "name": "html",
-      "source": "./plugins/html"
+      "name": "genui",
+      "source": "./plugins/genui"
     },
     {
       "name": "monokai",

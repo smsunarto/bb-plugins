@@ -1,0 +1,3 @@
+Card("Signup funnel, September", [
+  Chart("funnel", ["Visited pricing", "Started trial", "Activated", "Paid"], [12400, 5210, 2380, 610])
+])

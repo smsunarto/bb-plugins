@@ -1,0 +1,8 @@
+Card("Open pull requests", [
+  List([
+    {title: "Fix race in the upload queue", detail: "#482 · sam · 2 checks failing", icon: "git-pull-request", tone: "bad", value: Badge("Failing", tone: "bad"), action: Send("Show me why #482 fails")},
+    {title: "Add dark mode to the settings page", detail: "#479 · maria · ready for review", icon: "git-pull-request", tone: "good", value: Badge("Ready", tone: "good"), action: Send("Review #479")},
+    {title: "Bump vitest to 4.1", detail: "#477 · dependabot", icon: "git-pull-request", value: "+12 −9", action: OpenUrl("https://github.com/vitest-dev/vitest/releases")},
+    {title: "Draft: rewrite the sync engine", detail: "#455 · sam · 3 weeks old", icon: "edit", tone: "warn", value: "draft"}
+  ])
+])

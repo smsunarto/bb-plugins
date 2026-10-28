@@ -1,0 +1,163 @@
+{
+  "title": "Baseline: tier × platform × engine",
+  "columns": [
+    "iPhone · Whisper",
+    "iPhone · LiteRT",
+    "Mac · Whisper",
+    "Mac · LiteRT",
+    "Simulator · Whisper",
+    "Simulator · LiteRT"
+  ],
+  "criteria": [
+    {
+      "name": "Tier 1 latency baseline",
+      "detail": "Paired baseline measurement recorded",
+      "cells": {
+        "iPhone · Whisper": {
+          "status": "blocked",
+          "note": "No physical phone was reachable from the operator host.",
+          "needs": "Connect the iPhone to the operator host and keep it unlocked",
+          "run": "baseline wave 1"
+        },
+        "iPhone · LiteRT": {
+          "status": "blocked",
+          "note": "No physical phone was reachable from the operator host.",
+          "needs": "Connect the iPhone to the operator host and keep it unlocked",
+          "run": "baseline wave 1"
+        },
+        "Mac · Whisper": {
+          "status": "captureBlocked",
+          "note": "The capture fixture is missing, so no latency was measured.",
+          "run": "baseline wave 1"
+        },
+        "Mac · LiteRT": {
+          "status": "captureBlocked",
+          "note": "The capture fixture is missing, so no latency was measured.",
+          "run": "baseline wave 1"
+        },
+        "Simulator · Whisper": {
+          "status": "blocked",
+          "note": "The operator had no simulator session to run in.",
+          "run": "baseline wave 1"
+        },
+        "Simulator · LiteRT": {
+          "status": "blocked",
+          "note": "The LiteRT model is not prepared for the simulator.",
+          "run": "baseline wave 1"
+        }
+      }
+    },
+    {
+      "name": "Tier 2 latency baseline",
+      "detail": "Paired baseline measurement recorded",
+      "cells": {
+        "iPhone · Whisper": {
+          "status": "blocked",
+          "note": "No physical phone was reachable from the operator host.",
+          "needs": "Connect the iPhone to the operator host and keep it unlocked",
+          "run": "baseline wave 1"
+        },
+        "iPhone · LiteRT": {
+          "status": "blocked",
+          "note": "No physical phone was reachable from the operator host.",
+          "needs": "Connect the iPhone to the operator host and keep it unlocked",
+          "run": "baseline wave 1"
+        },
+        "Mac · Whisper": {
+          "status": "captureBlocked",
+          "note": "The capture fixture is missing, so no latency was measured.",
+          "run": "baseline wave 1"
+        },
+        "Mac · LiteRT": {
+          "status": "captureBlocked",
+          "note": "The capture fixture is missing, so no latency was measured.",
+          "run": "baseline wave 1"
+        },
+        "Simulator · Whisper": {
+          "status": "blocked",
+          "note": "The operator had no simulator session to run in.",
+          "run": "baseline wave 1"
+        },
+        "Simulator · LiteRT": {
+          "status": "blocked",
+          "note": "The LiteRT model is not prepared for the simulator.",
+          "run": "baseline wave 1"
+        }
+      }
+    },
+    {
+      "name": "Tier 3 latency baseline",
+      "detail": "Paired baseline measurement recorded",
+      "cells": {
+        "iPhone · Whisper": {
+          "status": "blocked",
+          "note": "No physical phone was reachable from the operator host.",
+          "needs": "Connect the iPhone to the operator host and keep it unlocked",
+          "run": "baseline wave 1"
+        },
+        "iPhone · LiteRT": {
+          "status": "blocked",
+          "note": "No physical phone was reachable from the operator host.",
+          "needs": "Connect the iPhone to the operator host and keep it unlocked",
+          "run": "baseline wave 1"
+        },
+        "Mac · Whisper": {
+          "status": "captureBlocked",
+          "note": "The capture fixture is missing, so no latency was measured.",
+          "run": "baseline wave 1"
+        },
+        "Mac · LiteRT": {
+          "status": "captureBlocked",
+          "note": "The capture fixture is missing, so no latency was measured.",
+          "run": "baseline wave 1"
+        },
+        "Simulator · Whisper": {
+          "status": "blocked",
+          "note": "The operator had no simulator session to run in.",
+          "run": "baseline wave 1"
+        },
+        "Simulator · LiteRT": {
+          "status": "blocked",
+          "note": "The LiteRT model is not prepared for the simulator.",
+          "run": "baseline wave 1"
+        }
+      }
+    },
+    {
+      "name": "Tier 4 latency baseline",
+      "detail": "Paired baseline measurement recorded",
+      "cells": {
+        "iPhone · Whisper": {
+          "status": "blocked",
+          "note": "The tier 4 fixture is not authored yet.",
+          "run": "baseline wave 1"
+        },
+        "iPhone · LiteRT": {
+          "status": "blocked",
+          "note": "The tier 4 fixture is not authored yet.",
+          "run": "baseline wave 1"
+        },
+        "Mac · Whisper": {
+          "status": "blocked",
+          "note": "The tier 4 fixture is not authored yet.",
+          "run": "baseline wave 1"
+        },
+        "Mac · LiteRT": {
+          "status": "blocked",
+          "note": "The tier 4 fixture is not authored yet.",
+          "run": "baseline wave 1"
+        },
+        "Simulator · Whisper": {
+          "status": "blocked",
+          "note": "The tier 4 fixture is not authored yet.",
+          "run": "baseline wave 1"
+        },
+        "Simulator · LiteRT": {
+          "status": "blocked",
+          "note": "The tier 4 fixture is not authored yet.",
+          "run": "baseline wave 1"
+        }
+      }
+    }
+  ]
+}

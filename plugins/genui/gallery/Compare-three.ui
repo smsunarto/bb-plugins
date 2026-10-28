@@ -1,0 +1,7 @@
+Card("Status panel across three captures", [
+  Compare([
+    {src: "data/compare/status-before.png", label: "Approved", meta: {theme: "light", viewport: "760 px"}},
+    {src: "data/compare/status-after.png", label: "Regression", meta: {theme: "light", viewport: "760 px"}, note: "One value edited"},
+    {src: "data/compare/status-rerender.png", label: "Fixed", meta: {theme: "light", viewport: "760 px"}, note: "Rendered again from the approved state"}
+  ])
+])

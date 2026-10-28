@@ -1,0 +1,7 @@
+$budget = 1200
+$months = 6
+Card("Savings goal", [
+  Slider($budget, 100, 5000, 100, label: "Monthly saving ($)"),
+  Slider($months, 1, 24, label: "Months"),
+  Metric("You'll have", "$" + fmt($budget * $months), tone: "good")
+])

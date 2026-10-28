@@ -1,0 +1,8 @@
+Card("Coffee within a walk of the office", [
+  Map([
+    {name: "Fábrica Coffee Roasters", lat: 38.7167, lng: -9.1428, note: "Best filter coffee."},
+    {name: "Hello, Kristof", lat: 38.7105, lng: -9.1478, note: "Tiny; go early."},
+    {name: "Copenhagen Coffee Lab", lat: 38.7089, lng: -9.1520},
+    {name: "The Mill", lat: 38.7090, lng: -9.1525, note: "Brunch too."}
+  ])
+])

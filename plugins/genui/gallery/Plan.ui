@@ -1,0 +1,9 @@
+Plan([
+  {title: "Honour 429 and Retry-After in safeGet", detail: "Return the wait instead of failing, capped at 60 s; other 4xx stay errors.", files: ["web/net.ts:180"], risk: "medium", estimate: "2h"},
+  {title: "Replace the global limiter with a per-host token bucket", detail: "Commons 10/s, Photon 1/s (replaces `GEOCODE_SPACING_MS`), OSM tiles 2 in flight.", files: ["web/lookups.ts:48", "web/lookups.ts:27"], risk: "medium", estimate: "3h"},
+  {title: "Route search, geocode and tile requests through it", files: ["web/lookups.ts:198", "web/lookups.ts:222", "web/lookups.ts:246"], risk: "low", estimate: "1h"},
+  {title: "Keep 429s out of the cache", detail: "A rate-limited miss must not be stored for a day like a real miss.", files: ["web/cache.ts"], risk: "high", estimate: "1h"},
+  {title: "Show “rate limited, retrying” in Map and ImageSearch", files: ["ui/components/Map.tsx", "ui/components/webMedia.tsx"], risk: "low", estimate: "2h", optional: true},
+  {title: "Tests: bucket timing with fake timers, Retry-After parsing", files: ["web/web.test.ts"], risk: "low", estimate: "1.5h"},
+  {title: "Document the limits in the README", files: ["README.md:94"], estimate: "20m"}
+])

@@ -1,0 +1,7 @@
+Card("Server health", [
+  Grid([
+    Gauge(72, label: "CPU %"),
+    Gauge(6.8, max: 8, label: "Memory (GB)", tone: "warn"),
+    Gauge(99.4, min: 90, max: 100, label: "Uptime %", tone: "good")
+  ])
+])

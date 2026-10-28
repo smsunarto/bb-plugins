@@ -1,0 +1,6 @@
+Card("Lisbon's tram 28", [
+  Row([
+    ImageSearch("Lisbon tram 28", aspect: "tall"),
+    ImageSearch("Alfama Lisbon rooftops", aspect: "square")
+  ])
+])

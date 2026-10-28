@@ -1,0 +1,19 @@
+$ git rev-parse HEAD
+1a68a022fefb4c26ded1dbc0a1aa99d06ab79f87
+
+$ xcodebuild archive -scheme Orbit -configuration Release -archivePath build/Orbit-2811.xcarchive CURRENT_PROJECT_VERSION=2811
+Command line invocation:
+    /Applications/Xcode.app/Contents/Developer/usr/bin/xcodebuild archive -scheme Orbit -configuration Release -archivePath build/Orbit-2811.xcarchive CURRENT_PROJECT_VERSION=2811
+
+Build settings from command line:
+    CURRENT_PROJECT_VERSION = 2811
+
+note: Building targets in dependency order
+** ARCHIVE SUCCEEDED **
+
+$ xcodebuild -exportArchive -archivePath build/Orbit-2811.xcarchive -exportPath build/export-2811 -exportOptionsPlist ExportOptions.plist
+Exported Orbit to: /Users/sam/Projects/orbit/build/export-2811
+** EXPORT SUCCEEDED **
+
+$ shasum -a 256 build/export-2811/Orbit.ipa
+7c41f0d29b8e3a65c1f4e0a97d23b6c58e1f92a4d07b3c6e85f1a2d9c04b7e31  build/export-2811/Orbit.ipa

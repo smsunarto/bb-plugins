@@ -1,0 +1,3 @@
+Card("Retry with backoff", [
+  Code("for (let attempt = 0; attempt < 5; attempt++) {\n  try { return await send(); }\n  catch { await sleep(2 ** attempt * 100); }\n}", language: "typescript")
+])

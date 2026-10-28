@@ -1,0 +1,27 @@
+Card("Light trails", [
+  Shader(`
+// The image pass shows buffer 1 (iChannel0), tone-mapped.
+void mainImage(out vec4 fragColor, in vec2 fragCoord) {
+  vec3 light = texture(iChannel0, fragCoord / iResolution.xy).rgb;
+  fragColor = vec4(1.0 - exp(-light), 1.0);
+}
+`, buffers: [`
+// Buffer 1 reads its own previous frame as iChannel0, fades it and adds
+// three moving lights; holding the pointer down steers the first one.
+void mainImage(out vec4 fragColor, in vec2 fragCoord) {
+  vec3 previous = texture(iChannel0, fragCoord / iResolution.xy).rgb * 0.965;
+  float side = min(iResolution.x, iResolution.y);
+  vec2 p = (fragCoord - 0.5 * iResolution.xy) / side;
+  vec3 added = vec3(0.0);
+  for (int i = 0; i < 3; i++) {
+    float k = float(i);
+    vec2 c = 0.38 * vec2(sin(iTime * (1.1 + 0.3 * k) + k * 2.1), sin(iTime * (1.7 - 0.2 * k) + k));
+    if (i == 0 && iMouse.z > 0.0) c = (iMouse.xy - 0.5 * iResolution.xy) / side;
+    float glow = max(0.0025 / (dot(p - c, p - c) + 0.0004) - 0.01, 0.0);
+    added += glow * (0.5 + 0.5 * cos(vec3(0.0, 2.1, 4.2) + k * 2.0 + iTime * 0.5));
+  }
+  fragColor = vec4(previous + added * 0.08, 1.0);
+}
+`], bloom: 1, height: 320),
+  Text("Each frame keeps 96.5% of the last one, so the lights leave fading trails. Hold the pointer down to draw with the first light.")
+])

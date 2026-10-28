@@ -1,0 +1,14 @@
+Card("Portuguese pastries to try", [
+  Gallery([
+    {query: "pastel de nata", caption: "Pastel de nata"},
+    {query: "bola de berlim", caption: "Bola de Berlim"},
+    {query: "travesseiro de Sintra", caption: "Travesseiro"},
+    {query: "queijada de Sintra", caption: "Queijada"},
+    {query: "pão de ló", caption: "Pão de ló"},
+    {query: "ovos moles Aveiro", caption: "Ovos moles"},
+    {query: "bolo de arroz", caption: "Bolo de arroz"},
+    {query: "pastel de Tentúgal", caption: "Pastel de Tentúgal"},
+    {query: "Bolo Rei", caption: "Bolo Rei"},
+    {query: "broa de mel", caption: "Broa de mel"}
+  ])
+])

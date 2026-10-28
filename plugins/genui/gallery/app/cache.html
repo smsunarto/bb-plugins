@@ -1,0 +1,95 @@
+<style>
+  .controls { display: flex; flex-wrap: wrap; gap: 12px 20px; align-items: end; margin-bottom: 8px; }
+  .controls label { display: grid; gap: 4px; font-size: 12px; color: var(--muted-foreground); }
+  .controls input[type=number] { width: 9rem; }
+  [aria-invalid=true] { border-color: var(--destructive); }
+  .result { margin: 8px 0 0; }
+  @media (prefers-reduced-motion: no-preference) {
+    #db rect { transition: fill 0.2s, stroke 0.2s; }
+  }
+</style>
+<div class="controls">
+  <label for="rps">Requests per second
+    <input id="rps" type="number" min="1" max="100000" step="1" value="1000">
+  </label>
+  <label for="hit"><span>Cache hit rate: <span id="hitValue">80%</span></span>
+    <input id="hit" type="range" min="0" max="100" step="1" value="80">
+  </label>
+  <button type="button" id="reset">Reset</button>
+</div>
+<svg width="100%" viewBox="0 28 680 250" role="img" aria-labelledby="title">
+  <title id="title">Reads go through a cache; only misses reach the database</title>
+  <g class="tone-info">
+    <rect class="box" x="20" y="40" width="130" height="56" rx="8"/>
+    <text class="th" x="85" y="62" text-anchor="middle" dominant-baseline="central">Clients</text>
+    <text class="ts" x="85" y="80" text-anchor="middle" dominant-baseline="central">browsers, apps</text>
+  </g>
+  <rect class="box" x="250" y="40" width="130" height="56" rx="8"/>
+  <text class="th" x="315" y="62" text-anchor="middle" dominant-baseline="central">API</text>
+  <text class="ts" x="315" y="80" text-anchor="middle" dominant-baseline="central">checks the cache</text>
+  <g class="tone-accent">
+    <rect class="box" x="500" y="40" width="160" height="56" rx="8"/>
+    <text class="th" x="580" y="62" text-anchor="middle" dominant-baseline="central">Cache</text>
+    <text class="ts" x="580" y="80" text-anchor="middle" dominant-baseline="central">serves hits</text>
+  </g>
+  <g id="db" class="tone-good">
+    <rect class="box" x="500" y="170" width="160" height="56" rx="8"/>
+    <text class="th" x="580" y="192" text-anchor="middle" dominant-baseline="central">Database</text>
+    <text class="ts" id="dbLoad" x="580" y="210" text-anchor="middle" dominant-baseline="central"></text>
+  </g>
+  <line class="arr" x1="150" y1="68" x2="246" y2="68" marker-end="url(#genui-arrow)"/>
+  <text class="ts" id="inFlow" x="198" y="56" text-anchor="middle"></text>
+  <line class="arr" x1="380" y1="68" x2="496" y2="68" marker-end="url(#genui-arrow)"/>
+  <text class="ts" id="hitFlow" x="438" y="56" text-anchor="middle"></text>
+  <path class="arr" d="M315 96 V198 H496" marker-end="url(#genui-arrow)"/>
+  <text class="ts" id="missFlow" x="405" y="188" text-anchor="middle"></text>
+  <line class="leader" x1="580" y1="226" x2="580" y2="252"/>
+  <text class="ts" x="660" y="266" text-anchor="end">Assumed capacity: 2,000 reads/s</text>
+</svg>
+<p class="result" id="result" role="status"></p>
+<script>
+(function () {
+  const CAPACITY = 2000; // reads per second the database handles (an assumption, shown in the diagram)
+  const DEFAULTS = { rps: 1000, hit: 80 };
+  const rps = document.getElementById("rps");
+  const hit = document.getElementById("hit");
+  const result = document.getElementById("result");
+  const number = new Intl.NumberFormat();
+  const labels = ["inFlow", "hitFlow", "missFlow", "dbLoad"].map((id) => document.getElementById(id));
+
+  function update() {
+    const rate = hit.valueAsNumber;
+    document.getElementById("hitValue").textContent = rate + "%";
+    const requests = rps.valueAsNumber;
+    // min/max don't stop typing: check the number and its bounds, and never leave a stale result.
+    if (!Number.isFinite(requests) || requests < 1 || requests > 100000) {
+      rps.setAttribute("aria-invalid", "true");
+      labels.forEach((label) => (label.textContent = "—"));
+      document.getElementById("db").setAttribute("class", "");
+      result.textContent = "Enter requests per second from 1 to 100,000.";
+      return;
+    }
+    rps.removeAttribute("aria-invalid");
+    const misses = requests * (1 - rate / 100);
+    const load = misses / CAPACITY;
+    const tone = load > 1 ? "tone-bad" : load > 0.7 ? "tone-warn" : "tone-good";
+    labels[0].textContent = number.format(requests) + "/s";
+    labels[1].textContent = number.format(Math.round(requests - misses)) + " hits/s";
+    labels[2].textContent = number.format(Math.round(misses)) + " misses/s";
+    labels[3].textContent = Math.round(load * 100) + "% of capacity";
+    document.getElementById("db").setAttribute("class", tone);
+    result.textContent =
+      "The database gets " + number.format(Math.round(misses)) + " reads/s, " + Math.round(load * 100) + "% of its assumed 2,000/s" +
+      (load > 1 ? ": over capacity, so raise the hit rate or add replicas." : load > 0.7 ? ": close to capacity." : ".");
+  }
+
+  rps.addEventListener("input", update);
+  hit.addEventListener("input", update);
+  document.getElementById("reset").addEventListener("click", () => {
+    rps.value = String(DEFAULTS.rps);
+    hit.value = String(DEFAULTS.hit);
+    update();
+  });
+  update();
+})();
+</script>

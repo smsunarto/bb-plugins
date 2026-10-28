@@ -1,0 +1,10 @@
+Card("Orbit palette", [
+  Swatches([
+    {value: "#0B1020", name: "Night"},
+    {value: "#1E3A8A", name: "Deep blue"},
+    {value: "#38BDF8", name: "Sky"},
+    {value: "#A7F3D0", name: "Orbit green"},
+    {value: "#F9A8D4", name: "Petal"},
+    {value: "#FFFFFF", name: "Snow"}
+  ], label: "Tap a colour to copy it")
+])

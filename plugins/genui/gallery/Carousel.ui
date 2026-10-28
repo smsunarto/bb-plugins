@@ -1,0 +1,8 @@
+Card("Three ways to host the site", [
+  Carousel([
+    Card("Workers", [Badge("Recommended", tone: "good"), Text("Static assets and the API ship in one deploy."), Metric("Cold start", "~0 ms"), Button("Go with Workers")]),
+    Card("Pages", [Text("Git-driven builds with a preview per branch."), Metric("Build", "~40 s"), Button("Go with Pages")]),
+    Card("A small VPS", [Text("Full control; you patch and back it up yourself."), Metric("Cost", "$6/mo"), Button("Go with a VPS")]),
+    Card("Containers", [Text("One image everywhere; slower cold starts."), Metric("Cold start", "~2 s"), Button("Go with containers")])
+  ])
+])

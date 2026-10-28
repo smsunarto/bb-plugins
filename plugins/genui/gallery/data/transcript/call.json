@@ -1,0 +1,362 @@
+{
+ "tracks": [
+  {
+   "name": "Reference (script)",
+   "words": [
+    {
+     "text": "Hello",
+     "start": 0.3,
+     "end": 0.81,
+     "speaker": "Sam"
+    },
+    {
+     "text": "hello",
+     "start": 0.88,
+     "end": 1.389,
+     "speaker": "Sam"
+    },
+    {
+     "text": "can",
+     "start": 1.46,
+     "end": 1.891,
+     "speaker": "Sam"
+    },
+    {
+     "text": "you",
+     "start": 1.961,
+     "end": 2.353,
+     "speaker": "Sam"
+    },
+    {
+     "text": "hear",
+     "start": 2.423,
+     "end": 2.827,
+     "speaker": "Sam"
+    },
+    {
+     "text": "me",
+     "start": 2.897,
+     "end": 3.293,
+     "speaker": "Sam"
+    },
+    {
+     "text": "speaking",
+     "start": 3.363,
+     "end": 3.974,
+     "speaker": "Sam"
+    },
+    {
+     "text": "Yes",
+     "start": 4.424,
+     "end": 4.848,
+     "speaker": "Maya"
+    },
+    {
+     "text": "I",
+     "start": 4.918,
+     "end": 5.243,
+     "speaker": "Maya"
+    },
+    {
+     "text": "can",
+     "start": 5.313,
+     "end": 5.712,
+     "speaker": "Maya"
+    },
+    {
+     "text": "hear",
+     "start": 5.782,
+     "end": 6.064,
+     "speaker": "Maya"
+    },
+    {
+     "text": "you",
+     "start": 6.134,
+     "end": 6.411,
+     "speaker": "Maya"
+    },
+    {
+     "text": "fine",
+     "start": 6.481,
+     "end": 6.899,
+     "speaker": "Maya"
+    },
+    {
+     "text": "Great",
+     "start": 7.349,
+     "end": 7.821,
+     "speaker": "Sam"
+    },
+    {
+     "text": "we",
+     "start": 7.891,
+     "end": 8.3,
+     "speaker": "Sam"
+    },
+    {
+     "text": "have",
+     "start": 8.37,
+     "end": 8.724,
+     "speaker": "Sam"
+    },
+    {
+     "text": "twenty",
+     "start": 8.794,
+     "end": 9.343,
+     "speaker": "Sam"
+    },
+    {
+     "text": "five",
+     "start": 9.413,
+     "end": 9.812,
+     "speaker": "Sam"
+    },
+    {
+     "text": "minutes",
+     "start": 9.882,
+     "end": 10.438,
+     "speaker": "Sam"
+    },
+    {
+     "text": "Then",
+     "start": 10.888,
+     "end": 11.221,
+     "speaker": "Maya"
+    },
+    {
+     "text": "let",
+     "start": 11.291,
+     "end": 11.629,
+     "speaker": "Maya"
+    },
+    {
+     "text": "us",
+     "start": 11.699,
+     "end": 12.004,
+     "speaker": "Maya"
+    },
+    {
+     "text": "look",
+     "start": 12.074,
+     "end": 12.426,
+     "speaker": "Maya"
+    },
+    {
+     "text": "at",
+     "start": 12.496,
+     "end": 12.806,
+     "speaker": "Maya"
+    },
+    {
+     "text": "the",
+     "start": 12.876,
+     "end": 13.222,
+     "speaker": "Maya"
+    },
+    {
+     "text": "transcript",
+     "start": 13.292,
+     "end": 13.996,
+     "speaker": "Maya"
+    },
+    {
+     "text": "at",
+     "start": 14.066,
+     "end": 14.376,
+     "speaker": "Maya"
+    },
+    {
+     "text": "nineteen",
+     "start": 14.446,
+     "end": 15.105,
+     "speaker": "Maya"
+    },
+    {
+     "text": "forty",
+     "start": 15.175,
+     "end": 15.581,
+     "speaker": "Maya"
+    },
+    {
+     "text": "nine",
+     "start": 15.651,
+     "end": 16.074,
+     "speaker": "Maya"
+    }
+   ]
+  },
+  {
+   "name": "Streaming model (sample errors)",
+   "words": [
+    {
+     "text": "Hello",
+     "start": 0.33,
+     "end": 0.79,
+     "speaker": "Sam",
+     "confidence": 0.97
+    },
+    {
+     "text": "hello",
+     "start": 0.93,
+     "end": 1.4,
+     "speaker": "Sam",
+     "confidence": 0.95
+    },
+    {
+     "text": "Jeremy",
+     "start": 1.43,
+     "end": 3.32,
+     "speaker": "Sam",
+     "confidence": 0.41
+    },
+    {
+     "text": "speaking.",
+     "start": 3.34,
+     "end": 4.02,
+     "speaker": "Sam",
+     "confidence": 0.93
+    },
+    {
+     "text": "Yes,",
+     "start": 4.43,
+     "end": 4.82,
+     "speaker": "Sam",
+     "confidence": 0.9
+    },
+    {
+     "text": "I",
+     "start": 4.95,
+     "end": 5.22,
+     "speaker": "Sam",
+     "confidence": 0.88
+    },
+    {
+     "text": "can",
+     "start": 5.36,
+     "end": 5.72,
+     "speaker": "Maya",
+     "confidence": 0.96
+    },
+    {
+     "text": "hear",
+     "start": 5.75,
+     "end": 6.09,
+     "speaker": "Maya",
+     "confidence": 0.95
+    },
+    {
+     "text": "you",
+     "start": 6.11,
+     "end": 6.46,
+     "speaker": "Maya",
+     "confidence": 0.94
+    },
+    {
+     "text": "find.",
+     "start": 6.49,
+     "end": 6.87,
+     "speaker": "Maya",
+     "confidence": 0.52
+    },
+    {
+     "text": "Great,",
+     "start": 7.38,
+     "end": 7.66,
+     "speaker": "Sam",
+     "confidence": 0.96
+    },
+    {
+     "text": "so",
+     "start": 7.74,
+     "end": 7.9,
+     "speaker": "Sam",
+     "confidence": 0.38
+    },
+    {
+     "text": "we",
+     "start": 7.94,
+     "end": 8.31,
+     "speaker": "Sam",
+     "confidence": 0.94
+    },
+    {
+     "text": "have",
+     "start": 8.34,
+     "end": 8.75,
+     "speaker": "Sam",
+     "confidence": 0.95
+    },
+    {
+     "text": "25",
+     "start": 8.77,
+     "end": 9.86,
+     "speaker": "Sam",
+     "confidence": 0.91
+    },
+    {
+     "text": "minutes.",
+     "start": 9.89,
+     "end": 10.41,
+     "speaker": "Sam",
+     "confidence": 0.97
+    },
+    {
+     "text": "Then",
+     "start": 10.92,
+     "end": 11.2,
+     "speaker": "Maya",
+     "confidence": 0.92
+    },
+    {
+     "text": "let's",
+     "start": 11.34,
+     "end": 12.01,
+     "speaker": "Maya",
+     "confidence": 0.71
+    },
+    {
+     "text": "look",
+     "start": 12.04,
+     "end": 12.46,
+     "speaker": "Maya",
+     "confidence": 0.95
+    },
+    {
+     "text": "at",
+     "start": 12.48,
+     "end": 12.86,
+     "speaker": "Maya",
+     "confidence": 0.93
+    },
+    {
+     "text": "the",
+     "start": 12.89,
+     "end": 13.19,
+     "speaker": "Maya",
+     "confidence": 0.94
+    },
+    {
+     "text": "transcript",
+     "start": 13.32,
+     "end": 13.98,
+     "speaker": "Maya",
+     "confidence": 0.96
+    },
+    {
+     "text": "at",
+     "start": 14.12,
+     "end": 14.39,
+     "speaker": "Maya",
+     "confidence": 0.9
+    },
+    {
+     "text": "19:49.",
+     "start": 14.42,
+     "end": 16.1,
+     "speaker": "Maya",
+     "confidence": 0.86
+    }
+   ]
+  }
+ ]
+}

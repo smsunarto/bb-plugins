@@ -1,0 +1,3 @@
+Card("Checks", [
+  Table(["Check", "Status"], [["Lint", Badge("Passed", tone: "good")], ["Tests", Badge("2 failing", tone: "bad")], ["Types", Badge("Running", tone: "info")], ["Coverage", Badge("78%", tone: "warn")]])
+])

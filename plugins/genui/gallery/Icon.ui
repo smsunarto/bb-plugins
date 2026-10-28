@@ -1,0 +1,5 @@
+Card("Environments", [
+  Row([Icon("Cloud", tone: "good"), Text("Production: up")]),
+  Row([Icon("AlertTriangle", tone: "warn"), Text("Staging: slow")]),
+  Row([Icon("X", tone: "bad"), Text("Preview: down")])
+])

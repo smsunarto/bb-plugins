@@ -1,0 +1,1 @@
+Transcript([Load("data/transcript/call.json").tracks[0], Load("data/transcript/whisper-cpp-base.en-noisy.json"), Load("data/transcript/whisper-cpp-tiny.en-noisy.json"), {name: "mlx-whisper tiny.en", words: Load("data/transcript/mlx-whisper-tiny.en-noisy.json")}], "data/transcript/call-noisy.wav")

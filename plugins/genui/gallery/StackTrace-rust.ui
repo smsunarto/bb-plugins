@@ -1,0 +1,1 @@
+StackTrace(Load("data/traces/rust-panic.txt"))

@@ -1,0 +1,6 @@
+Estimate([
+  {title: "OAuth login with GitHub", low: 3, likely: 5, high: 8},
+  {title: "Team invites by email", low: 2, likely: 3, high: 5},
+  {title: "Billing page (Stripe portal)", low: 5, likely: 8, high: 13},
+  {title: "Audit log export", low: 8, likely: 5, high: 3}
+], "pts")

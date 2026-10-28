@@ -1,0 +1,293 @@
+[
+  {
+    "assignees": [],
+    "labels": [
+      {
+        "name": "Performance",
+        "color": "5101E2"
+      },
+      {
+        "name": "Turbopack",
+        "color": "FF1E56"
+      }
+    ],
+    "number": 99954,
+    "state": "OPEN",
+    "title": "Turbopack keeps unused exports of a namespace reached through another namespace (`lib.core.X`)",
+    "updatedAt": "2026-10-09T19:50:06Z",
+    "url": "https://github.com/vercel/next.js/issues/99954"
+  },
+  {
+    "assignees": [],
+    "labels": [
+      {
+        "name": "TypeScript",
+        "color": "226CDE"
+      }
+    ],
+    "number": 99919,
+    "state": "OPEN",
+    "title": "Unused imports in generated `.next/dev/types/validator.ts` fail type-check with `noUnusedLocals` for metadata-only apps (since 16.4.0)",
+    "updatedAt": "2026-10-09T09:30:36Z",
+    "url": "https://github.com/vercel/next.js/issues/99919"
+  },
+  {
+    "assignees": [],
+    "labels": [
+      {
+        "name": "Error Handling",
+        "color": "fd0e21"
+      }
+    ],
+    "number": 99915,
+    "state": "OPEN",
+    "title": "Code frames in next dev keep the startup terminal width after the terminal is resized",
+    "updatedAt": "2026-10-09T08:25:44Z",
+    "url": "https://github.com/vercel/next.js/issues/99915"
+  },
+  {
+    "assignees": [],
+    "labels": [
+      {
+        "name": "Server Actions",
+        "color": "EF04D1"
+      },
+      {
+        "name": "Not Found",
+        "color": "b60205"
+      }
+    ],
+    "number": 99913,
+    "state": "OPEN",
+    "title": "Server action that calls notFound() without JavaScript renders the not-found page without the root layout",
+    "updatedAt": "2026-10-09T07:56:02Z",
+    "url": "https://github.com/vercel/next.js/issues/99913"
+  },
+  {
+    "assignees": [],
+    "labels": [
+      {
+        "name": "Image (next/image)",
+        "color": "45ADE8"
+      },
+      {
+        "name": "Runtime",
+        "color": "f81ce5"
+      }
+    ],
+    "number": 99911,
+    "state": "OPEN",
+    "title": "Vercel: launcher crashes with Cannot find module './.next/server/pages/_next/image.js' when an image optimizer local source returns 5xx",
+    "updatedAt": "2026-10-09T23:00:04Z",
+    "url": "https://github.com/vercel/next.js/issues/99911"
+  },
+  {
+    "assignees": [],
+    "labels": [
+      {
+        "name": "CSS",
+        "color": "f1df06"
+      }
+    ],
+    "number": 99905,
+    "state": "OPEN",
+    "title": "`useServerInsertedHTML` output is duplicated in prerendered HTML with `cacheComponents`",
+    "updatedAt": "2026-10-08T23:16:10Z",
+    "url": "https://github.com/vercel/next.js/issues/99905"
+  },
+  {
+    "assignees": [],
+    "labels": [],
+    "number": 99903,
+    "state": "OPEN",
+    "title": "Entries regenerated after revalidateTag(tag, profile) are expired again when the profile's expire window ends",
+    "updatedAt": "2026-10-08T22:54:05Z",
+    "url": "https://github.com/vercel/next.js/issues/99903"
+  },
+  {
+    "assignees": [],
+    "labels": [
+      {
+        "name": "SWC",
+        "color": "006B75"
+      },
+      {
+        "name": "Turbopack",
+        "color": "FF1E56"
+      }
+    ],
+    "number": 99897,
+    "state": "OPEN",
+    "title": "Turbopack removes an IIFE in production builds when its inner callee is annotated /* @__PURE__ */",
+    "updatedAt": "2026-10-08T21:05:35Z",
+    "url": "https://github.com/vercel/next.js/issues/99897"
+  },
+  {
+    "assignees": [],
+    "labels": [
+      {
+        "name": "Dynamic Routes",
+        "color": "A4336B"
+      }
+    ],
+    "number": 99895,
+    "state": "OPEN",
+    "title": "@next/routing doesn't match dynamic API routes when i18n is configured",
+    "updatedAt": "2026-10-08T20:46:33Z",
+    "url": "https://github.com/vercel/next.js/issues/99895"
+  },
+  {
+    "assignees": [],
+    "labels": [
+      {
+        "name": "Turbopack",
+        "color": "FF1E56"
+      }
+    ],
+    "number": 99894,
+    "state": "OPEN",
+    "title": "Turbopack builds fail for edge route handlers when cacheHandlers is set",
+    "updatedAt": "2026-10-08T20:36:20Z",
+    "url": "https://github.com/vercel/next.js/issues/99894"
+  },
+  {
+    "assignees": [],
+    "labels": [],
+    "number": 99884,
+    "state": "OPEN",
+    "title": "A stale \"use cache\" hit replaces its own entry in the Resume Data Cache with the background revalidation, so dev reports uncached data and the runtime prefetch loses the entry",
+    "updatedAt": "2026-10-08T18:17:32Z",
+    "url": "https://github.com/vercel/next.js/issues/99884"
+  },
+  {
+    "assignees": [],
+    "labels": [
+      {
+        "name": "invalid link",
+        "color": "444444"
+      }
+    ],
+    "number": 99870,
+    "state": "CLOSED",
+    "title": "webpack: CSS from next/dynamic on one route is included in another route's entry CSS",
+    "updatedAt": "2026-10-08T14:32:32Z",
+    "url": "https://github.com/vercel/next.js/issues/99870"
+  },
+  {
+    "assignees": [],
+    "labels": [
+      {
+        "name": "Webpack",
+        "color": "FF1E56"
+      },
+      {
+        "name": "Lazy Loading",
+        "color": "D93F0B"
+      },
+      {
+        "name": "Performance",
+        "color": "5101E2"
+      },
+      {
+        "name": "invalid link",
+        "color": "444444"
+      },
+      {
+        "name": "CSS",
+        "color": "f1df06"
+      }
+    ],
+    "number": 99869,
+    "state": "CLOSED",
+    "title": "webpack: CSS from next/dynamic on one route is included in another route's entry CSS",
+    "updatedAt": "2026-10-08T14:18:54Z",
+    "url": "https://github.com/vercel/next.js/issues/99869"
+  },
+  {
+    "assignees": [],
+    "labels": [
+      {
+        "name": "invalid link",
+        "color": "444444"
+      }
+    ],
+    "number": 99868,
+    "state": "CLOSED",
+    "title": "webpack: CSS from next/dynamic on one route is included in another route's entry CSS",
+    "updatedAt": "2026-10-08T14:07:08Z",
+    "url": "https://github.com/vercel/next.js/issues/99868"
+  },
+  {
+    "assignees": [],
+    "labels": [
+      {
+        "name": "invalid link",
+        "color": "444444"
+      }
+    ],
+    "number": 99867,
+    "state": "CLOSED",
+    "title": "test please ignore",
+    "updatedAt": "2026-10-08T14:05:49Z",
+    "url": "https://github.com/vercel/next.js/issues/99867"
+  },
+  {
+    "assignees": [],
+    "labels": [],
+    "number": 99866,
+    "state": "OPEN",
+    "title": "cacheComponents: page past its expire returns 500 because unstable_cache skips the resume data cache (NEXT_STATIC_GEN_BAILOUT)",
+    "updatedAt": "2026-10-08T14:27:10Z",
+    "url": "https://github.com/vercel/next.js/issues/99866"
+  },
+  {
+    "assignees": [],
+    "labels": [],
+    "number": 99862,
+    "state": "OPEN",
+    "title": "revalidateTag(tag, 'max') cancels an earlier revalidateTag(tag, { expire: 0 }) on the same tag",
+    "updatedAt": "2026-10-08T12:40:52Z",
+    "url": "https://github.com/vercel/next.js/issues/99862"
+  },
+  {
+    "assignees": [],
+    "labels": [
+      {
+        "name": "Linking and Navigating",
+        "color": "EFE07C"
+      },
+      {
+        "name": "Dynamic Routes",
+        "color": "A4336B"
+      }
+    ],
+    "number": 99861,
+    "state": "OPEN",
+    "title": "cacheComponents: client navigation to a generateStaticParams path crashes with React #412 when a custom cacheHandler misses (fallback shell served as static RSC)",
+    "updatedAt": "2026-10-08T12:22:06Z",
+    "url": "https://github.com/vercel/next.js/issues/99861"
+  },
+  {
+    "assignees": [],
+    "labels": [
+      {
+        "name": "Turbopack",
+        "color": "FF1E56"
+      }
+    ],
+    "number": 99856,
+    "state": "OPEN",
+    "title": "`turbopackModuleFragments`: build panics with \"ModuleId not found for ident ... [app-client] (ecmascript) <internal part 0>\" when a function from a `\"use client\"` module is passed as a prop",
+    "updatedAt": "2026-10-08T11:54:12Z",
+    "url": "https://github.com/vercel/next.js/issues/99856"
+  },
+  {
+    "assignees": [],
+    "labels": [],
+    "number": 99850,
+    "state": "OPEN",
+    "title": "next build hangs when a static generation worker batch exceeds V8 max string length",
+    "updatedAt": "2026-10-08T08:32:59Z",
+    "url": "https://github.com/vercel/next.js/issues/99850"
+  }
+]

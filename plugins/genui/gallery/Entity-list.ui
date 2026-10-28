@@ -1,0 +1,6 @@
+Card("Around Meadow Hill", [
+  Entity("Meadow Hill campsite", kind: "place", image: "images/golden-hour.webp", facts: {Distance: "12 km", Pitches: 40, Open: "April to October", Showers: "Hot, free"}, url: "https://example.com/meadow-hill", note: "Open grass slopes above the valley; quiet after 10 pm. [Booking rules](https://example.com/meadow-hill/rules) apply in August."),
+  Entity("Ana Ruiz", kind: "person", facts: {Role: "Ranger", Walks: "Saturdays, 6 am"}, note: "Runs the guided dawn walks from the campsite gate."),
+  Entity("Valley Cycling Club", kind: "org", url: "https://example.com/club", note: "Weekend group rides; visitors welcome."),
+  Entity("Trail map", kind: "link", url: "https://example.com/trail-map.pdf")
+])

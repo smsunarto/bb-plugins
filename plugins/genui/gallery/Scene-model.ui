@@ -1,0 +1,9 @@
+Card("One pawn, two finishes", [
+  Scene([
+    {shape: "environment", src: "3d/studio.hdr", intensity: 1.2},
+    {shape: "model", src: "3d/pawn.glb", at: [-0.65, 0.6, 0], fit: 1.2},
+    {shape: "model", src: "3d/pawn.glb", at: [0.65, 0.6, 0], fit: 1.2, color: "#d4af37", metal: 1, roughness: 0.18},
+    {shape: "cylinder", at: [0, -0.08, 0], radius: 1.5, height: 0.08, color: "#2b2f36", roughness: 0.3, metal: 0.4, detail: 64}
+  ], spin: 0.25, camera: {pitch: 0.3}),
+  Text("The same glTF model twice: once in its own ivory material, once overridden to polished gold. Both pick up the studio HDR's softboxes as reflections.")
+])

@@ -1,0 +1,8 @@
+Json({
+  id: "evt_3PqK2v",
+  type: "invoice.paid",
+  livemode: false,
+  created: 1791580000,
+  data: {amount_paid: 4900, currency: "eur", customer: "cus_Q8x1", lines: [{description: "Pro plan × 1", amount: 4900}], discount: null},
+  "request id": "req_7Ab9"
+}, "webhook event")

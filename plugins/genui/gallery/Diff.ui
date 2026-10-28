@@ -1,0 +1,3 @@
+Card("The fix", [
+  Diff("--- a/src/api/users.ts\n+++ b/src/api/users.ts\n@@ -40,3 +40,3 @@\n export function display(user: User) {\n-  return user.email.toLowerCase();\n+  return (user.email ?? \"\").toLowerCase();\n }")
+])

@@ -1,0 +1,35 @@
+{
+  "info": {
+    "arguments": [
+      "devicectl",
+      "device",
+      "install",
+      "app",
+      "--device",
+      "00008130-0011223344556677",
+      "/tmp/orbit-2811/Orbit.ipa",
+      "--json-output",
+      "/tmp/orbit-2811/install.json"
+    ],
+    "commandType": "devicectl.device.install.app",
+    "environment": {
+      "TERM": "xterm-256color"
+    },
+    "jsonVersion": 2,
+    "outcome": "success",
+    "version": "518.33"
+  },
+  "result": {
+    "deviceIdentifier": "6B1F4C2E-93A7-4D58-B0E2-71C9A4F3D816",
+    "installedApplications": [
+      {
+        "bundleID": "com.example.orbit",
+        "databaseSequenceNumber": 2208,
+        "databaseUUID": "A4E1C93B-5D27-4F80-9B6E-2C71D0F8E5A3",
+        "installationURL": "file:///private/var/containers/Bundle/Application/3F9C2A71-8E4B-4D1C-A6F2-9B07E5D3C148/Orbit.app/",
+        "launchServicesIdentifier": "unknown",
+        "options": {}
+      }
+    ]
+  }
+}

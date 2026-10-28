@@ -1,0 +1,11 @@
+Findings({
+  game: "Snake",
+  verdict: "ship",
+  findings: [
+    {severity: "P2", area: "motion", issue: "Food pulse keeps scaling with reduced motion on", evidence: "Emulated `prefers-reduced-motion: reduce`: the food item still pulsed.", fix: "Swap the pulse for a static ring when reduced motion is on."},
+    {severity: "P2", area: "input", issue: "Escape closes the drawer but leaves the game paused", evidence: "Keyboard only at 1440×900: Escape closed the drawer; the next arrow key did nothing until Space.", fix: "Resume on drawer close when the drawer paused the game."},
+    {severity: "P2", area: "layout", issue: "Score wraps onto two lines in landscape", evidence: "844×390: scores above 999 wrap under the label.", fix: "Use tabular figures and keep the score on one line."},
+    {severity: "P2", area: "focus", issue: "Restart button has no visible focus ring", evidence: "Tabbing to Restart after game over shows no focus indicator.", fix: "Use the shell's focus ring on the restart button."},
+    {severity: "P2", area: "rendering", issue: "Grid lines shimmer at fractional device pixel ratios", evidence: "Chrome zoom 110 %: the arena grid lines flicker while the snake moves.", fix: "Snap grid lines to device pixels."}
+  ]
+}, "Snake review")

@@ -1,0 +1,1 @@
+Json(Load("data/github-release.json"), "GET /repos/vitest-dev/vitest/releases/latest")

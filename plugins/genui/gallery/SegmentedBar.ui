@@ -1,0 +1,8 @@
+Card("Where the week went", [
+  SegmentedBar([
+    {label: "Deep work", value: 18},
+    {label: "Meetings", value: 9.5},
+    {label: "Code review", value: 6},
+    {label: "Admin", value: 3, tone: "neutral"}
+  ], unit: "h")
+])

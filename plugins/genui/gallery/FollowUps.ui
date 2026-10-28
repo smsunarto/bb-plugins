@@ -1,0 +1,4 @@
+Card("Lisbon, five days", [
+  Text("Five days for two comes to about **€1,240**, flights included. Most of it is the flat (€610) and the flights (€380)."),
+  FollowUps(["Where can we save the most?", "Plan the five days hour by hour", "How does Porto compare for the same week?"])
+])

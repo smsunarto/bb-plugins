@@ -1,0 +1,15 @@
+Card("Sign-in with a magic link", [
+  Diagram(`sequenceDiagram
+  participant Browser
+  participant API
+  participant Mailer
+  Browser->>API: POST /login {email}
+  API->>Mailer: send link (token, 15 min)
+  Mailer-->>Browser: email with link
+  Browser->>API: GET /verify?token=…
+  API-->>Browser: session cookie`, {
+    Browser: "Never sees the token until the email arrives; the link opens a fresh tab.",
+    API: [Text("Stores only a **hash** of the token, so a database leak cannot sign anyone in."), Code("const hash = sha256(token)\nawait db.tokens.insert({ hash, email, expires })", "ts")],
+    Mailer: "Sends through the transactional provider. Bounces are logged, never retried."
+  })
+])

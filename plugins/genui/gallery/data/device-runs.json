@@ -1,0 +1,285 @@
+{
+  "metrics": {
+    "fps": {
+      "label": "FPS",
+      "unit": "fps",
+      "better": "higher"
+    },
+    "p95": {
+      "label": "p95 frame time",
+      "unit": "ms"
+    },
+    "p99": {
+      "label": "p99 frame interval",
+      "unit": "ms"
+    },
+    "footprint": {
+      "label": "Peak footprint",
+      "unit": "GB"
+    }
+  },
+  "groupBy": "workload",
+  "runs": [
+    {
+      "name": "Before memory work",
+      "metrics": {
+        "fps": 24.0,
+        "p95": 51.83
+      },
+      "context": {
+        "device": "iPhone",
+        "workload": "Rust replay",
+        "FPS measure": "average"
+      }
+    },
+    {
+      "name": "Probe-free Release build",
+      "metrics": {
+        "fps": 59.8,
+        "p95": 17.44
+      },
+      "context": {
+        "device": "iPhone",
+        "workload": "Rust replay",
+        "FPS measure": "average"
+      },
+      "note": "Same replay ticks as the run before"
+    },
+    {
+      "name": "60 Hz request, run 1",
+      "metrics": {
+        "fps": 58.19,
+        "p95": 18.43
+      },
+      "context": {
+        "device": "iPhone",
+        "workload": "matched replay",
+        "FPS measure": "render",
+        "display": "60 Hz requested"
+      }
+    },
+    {
+      "name": "60 Hz request, run 2",
+      "metrics": {
+        "fps": 58.04,
+        "p95": 18.49
+      },
+      "context": {
+        "device": "iPhone",
+        "workload": "matched replay",
+        "FPS measure": "render",
+        "display": "60 Hz requested"
+      }
+    },
+    {
+      "name": "120 Hz request, run 1",
+      "metrics": {
+        "fps": 70.13,
+        "p95": 22.36
+      },
+      "context": {
+        "device": "iPhone",
+        "workload": "matched replay",
+        "FPS measure": "render",
+        "display": "120 Hz requested"
+      }
+    },
+    {
+      "name": "120 Hz request, run 2",
+      "metrics": {
+        "fps": 67.9,
+        "p95": 25.01
+      },
+      "context": {
+        "device": "iPhone",
+        "workload": "matched replay",
+        "FPS measure": "render",
+        "display": "120 Hz requested"
+      }
+    },
+    {
+      "name": "Relaunch after the live match",
+      "status": "failed",
+      "metrics": {},
+      "context": {
+        "device": "iPhone",
+        "workload": "live match, 2 bots",
+        "thermal": "Serious"
+      },
+      "note": "Stopped during GPU warm-up; no crash or Jetsam report found"
+    },
+    {
+      "name": "Hot-device replay",
+      "metrics": {
+        "fps": 60.47,
+        "p95": 26.77
+      },
+      "context": {
+        "device": "iPhone",
+        "workload": "replay, length not stated",
+        "thermal": "Serious"
+      }
+    },
+    {
+      "name": "Resource-preparation candidate",
+      "metrics": {
+        "fps": 113.16
+      },
+      "context": {
+        "device": "iPhone",
+        "workload": "30 s replay",
+        "FPS measure": "presented",
+        "display": "120 Hz requested",
+        "thermal": "Nominal"
+      },
+      "note": "Pipelined rendering on; fails the clean-120 gate"
+    },
+    {
+      "name": "FPS counter hidden",
+      "metrics": {
+        "fps": 72.9
+      },
+      "context": {
+        "device": "iPhone",
+        "workload": "30 s replay",
+        "FPS measure": "presented",
+        "thermal": "Fair / serious"
+      }
+    },
+    {
+      "name": "FPS counter visible",
+      "metrics": {
+        "fps": 71.4
+      },
+      "context": {
+        "device": "iPhone",
+        "workload": "30 s replay",
+        "FPS measure": "presented",
+        "thermal": "Fair / serious"
+      }
+    },
+    {
+      "name": "FPS counter hidden again",
+      "metrics": {
+        "fps": 68.2
+      },
+      "context": {
+        "device": "iPhone",
+        "workload": "30 s replay",
+        "FPS measure": "presented",
+        "thermal": "Serious"
+      }
+    },
+    {
+      "name": "Staging reuse off (control)",
+      "metrics": {
+        "fps": 112.583,
+        "p99": 16.67
+      },
+      "context": {
+        "device": "iPhone",
+        "workload": "10 s replay pair",
+        "FPS measure": "presented",
+        "thermal": "Nominal"
+      }
+    },
+    {
+      "name": "Staging reuse on",
+      "metrics": {
+        "fps": 114.88,
+        "p99": 16.67
+      },
+      "context": {
+        "device": "iPhone",
+        "workload": "10 s replay pair",
+        "FPS measure": "presented",
+        "thermal": "Nominal"
+      },
+      "note": "Same binary, replay ticks 147–347"
+    },
+    {
+      "name": "Binary archive off",
+      "metrics": {
+        "fps": 45.464,
+        "p99": 41.675,
+        "footprint": 3.778
+      },
+      "context": {
+        "device": "iPhone",
+        "workload": "2 min live match, 7 bots",
+        "FPS measure": "delivered",
+        "thermal": "Serious"
+      },
+      "note": "Stable 120 Hz gate failed"
+    },
+    {
+      "name": "Binary archive on, warm",
+      "metrics": {
+        "fps": 48.849,
+        "p99": 41.675,
+        "footprint": 5.115
+      },
+      "context": {
+        "device": "iPhone",
+        "workload": "2 min live match, 7 bots",
+        "FPS measure": "delivered",
+        "thermal": "Fair → serious"
+      },
+      "note": "Stable 120 Hz gate failed"
+    },
+    {
+      "name": "Probe correction + resource batching",
+      "metrics": {
+        "fps": 49.825,
+        "p99": 29.173
+      },
+      "context": {
+        "device": "iPhone",
+        "workload": "2 min live match, 7 bots",
+        "FPS measure": "delivered"
+      },
+      "note": "Strict 120 gate failed"
+    },
+    {
+      "name": "ThinLTO experiment",
+      "metrics": {
+        "fps": 49.683,
+        "p99": 33.34
+      },
+      "context": {
+        "device": "iPhone",
+        "workload": "2 min live match, 7 bots",
+        "FPS measure": "delivered"
+      },
+      "note": "Strict 120 gate failed"
+    },
+    {
+      "name": "Staging reuse enabled",
+      "metrics": {
+        "fps": 43.259,
+        "p99": 33.34
+      },
+      "context": {
+        "device": "iPhone",
+        "workload": "2 min live match, 7 bots",
+        "FPS measure": "delivered"
+      },
+      "note": "Strict 120 gate failed"
+    },
+    {
+      "name": "Direct arena writes",
+      "metrics": {
+        "fps": 37.7,
+        "p99": 33.34,
+        "footprint": 3.966
+      },
+      "context": {
+        "device": "iPhone",
+        "workload": "2 min live match, 7 bots",
+        "FPS measure": "delivered",
+        "thermal": "Fair / serious"
+      },
+      "note": "37 Fair / 84 Serious thermal samples; strict 120 gate failed"
+    }
+  ]
+}

@@ -1,0 +1,133 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<testsuites name="vitest tests" tests="39" failures="3" errors="0" time="0.049152791">
+    <testsuite name="core/form.test.ts" timestamp="2026-10-09T22:52:21.641Z" hostname="ci" tests="6" failures="0" errors="0" skipped="0" time="0.01273125">
+        <testcase classname="core/form.test.ts" name="formMessage &gt; lists every field at any depth in document order" time="0.006821542">
+        </testcase>
+        <testcase classname="core/form.test.ts" name="formMessage &gt; labels unlabeled fields with their state name" time="0.000903458">
+        </testcase>
+        <testcase classname="core/form.test.ts" name="formMessage &gt; does not add a colon after a question or colon label" time="0.000594083">
+        </testcase>
+        <testcase classname="core/form.test.ts" name="formMessage &gt; writes empty values as a dash" time="0.001075042">
+        </testcase>
+        <testcase classname="core/form.test.ts" name="formMessage &gt; joins lists, says Yes/No for booleans and formats numbers" time="0.001114292">
+        </testcase>
+        <testcase classname="core/form.test.ts" name="formMessage &gt; is empty for a form without fields" time="0.000364542">
+        </testcase>
+    </testsuite>
+    <testsuite name="core/junit.test.ts" timestamp="2026-10-09T22:52:21.643Z" hostname="ci" tests="9" failures="0" errors="0" skipped="0" time="0.005765">
+        <testcase classname="core/junit.test.ts" name="readJUnit &gt; reads a pytest report: failures, errors and skips with their messages and output" time="0.001770333">
+        </testcase>
+        <testcase classname="core/junit.test.ts" name="readJUnit &gt; takes a lone testsuite root and inherits nested suite names and files" time="0.000148916">
+        </testcase>
+        <testcase classname="core/junit.test.ts" name="readJUnit &gt; keeps the trace and the message when the body does not repeat it" time="0.000145084">
+        </testcase>
+        <testcase classname="core/junit.test.ts" name="readJUnit &gt; refuses XML that is not a JUnit report, saying what it is" time="0.000119042">
+        </testcase>
+        <testcase classname="core/junit.test.ts" name="readJUnit &gt; refuses DOCTYPEs, so entity declarations can never expand" time="0.000166459">
+        </testcase>
+        <testcase classname="core/junit.test.ts" name="readJUnit &gt; reports malformed XML with its line" time="0.000242166">
+        </testcase>
+        <testcase classname="core/junit.test.ts" name="readJUnit &gt; refuses nesting deep enough to matter" time="0.000096125">
+        </testcase>
+        <testcase classname="core/junit.test.ts" name="readJUnit &gt; returns suites when there are more tests than one list holds" time="0.001914208">
+        </testcase>
+        <testcase classname="core/junit.test.ts" name="parseXml &gt; skips comments and processing instructions and joins text around CDATA" time="0.000328375">
+        </testcase>
+    </testsuite>
+    <testsuite name="core/test-results.test.ts" timestamp="2026-10-09T22:52:21.645Z" hostname="ci" tests="14" failures="0" errors="0" skipped="0" time="0.007273792">
+        <testcase classname="core/test-results.test.ts" name="readTestRun: plain lists &gt; reads the catalog shape, splitting `file:line` and counting by status" time="0.001567625">
+        </testcase>
+        <testcase classname="core/test-results.test.ts" name="readTestRun: plain lists &gt; reads suites of tests, as a very large JUnit report arrives" time="0.0001475">
+        </testcase>
+        <testcase classname="core/test-results.test.ts" name="readTestRun: plain lists &gt; says what it needs when nothing in the value is a test" time="0.000128541">
+        </testcase>
+        <testcase classname="core/test-results.test.ts" name="readTestRun: plain lists &gt; locates a failure with no line from the first app frame of its trace" time="0.001230917">
+        </testcase>
+        <testcase classname="core/test-results.test.ts" name="readTestRun: vitest and jest JSON &gt; reads files, names with their describe blocks, and the wall-clock duration" time="0.000373875">
+        </testcase>
+        <testcase classname="core/test-results.test.ts" name="testStatus &gt; maps the reporters&apos; words onto three statuses, keeping the telling ones" time="0.000128625">
+        </testcase>
+        <testcase classname="core/test-results.test.ts" name="groupTests and text &gt; groups by suite, else file, in first-seen order with counts and time" time="0.000205958">
+        </testcase>
+        <testcase classname="core/test-results.test.ts" name="groupTests and text &gt; writes counts failures first and durations at a readable precision" time="0.000165541">
+        </testcase>
+        <testcase classname="core/test-results.test.ts" name="ANSI &gt; splits colour runs and drops every other escape" time="0.000387041">
+        </testcase>
+        <testcase classname="core/test-results.test.ts" name="ANSI &gt; carries a colour across line breaks" time="0.000216209">
+        </testcase>
+        <testcase classname="core/test-results.test.ts" name="stack frames &gt; reads the frames of each runtime&apos;s traces" time="0.001036125">
+        </testcase>
+        <testcase classname="core/test-results.test.ts" name="stack frames &gt; finds the first frame of the code under test" time="0.00036">
+        </testcase>
+        <testcase classname="core/test-results.test.ts" name="paths &gt; gives BB a workspace-relative path or none" time="0.000164917">
+        </testcase>
+        <testcase classname="core/test-results.test.ts" name="paths &gt; shortens absolute paths to the directory they share" time="0.000124417">
+        </testcase>
+    </testsuite>
+    <testsuite name="core/report-rendering.test.ts" timestamp="2026-10-09T22:52:21.648Z" hostname="ci" tests="5" failures="3" errors="0" skipped="2" time="0.007355833">
+        <testcase classname="core/report-rendering.test.ts" name="report rendering &gt; formats a minute with a leading zero" time="0.002888208">
+            <failure message="expected &apos;1m 01s&apos; to be &apos;1m 1s&apos; // Object.is equality" type="AssertionError">
+AssertionError: expected &apos;1m 01s&apos; to be &apos;1m 1s&apos; // Object.is equality
+
+Expected: &quot;1m 1s&quot;
+Received: &quot;1m 01s&quot;
+
+ ❯ core/report-rendering.test.ts:7:36
+            </failure>
+        </testcase>
+        <testcase classname="core/report-rendering.test.ts" name="report rendering &gt; reads a JUnit report with a DOCTYPE" time="0.002600042">
+            <failure message="expected { ok: false, …(1) } to match object { ok: true, value: [] }
+(1 matching property omitted from actual)" type="AssertionError">
+AssertionError: expected { ok: false, …(1) } to match object { ok: true, value: [] }
+(1 matching property omitted from actual)
+
+- Expected
++ Received
+
+  {
+-   &quot;ok&quot;: true,
+-   &quot;value&quot;: [],
++   &quot;ok&quot;: false,
+  }
+
+ ❯ core/report-rendering.test.ts:12:20
+            </failure>
+        </testcase>
+        <testcase classname="core/report-rendering.test.ts" name="report rendering &gt; counts skipped tests as passed" time="0.000920333">
+            <failure message="expected { passed: +0, failed: +0, skipped: 1 } to deeply equal { passed: 1, failed: +0, skipped: +0 }" type="AssertionError">
+AssertionError: expected { passed: +0, failed: +0, skipped: 1 } to deeply equal { passed: 1, failed: +0, skipped: +0 }
+
+- Expected
++ Received
+
+  {
+    &quot;failed&quot;: 0,
+-   &quot;passed&quot;: 1,
+-   &quot;skipped&quot;: 0,
++   &quot;passed&quot;: 0,
++   &quot;skipped&quot;: 1,
+  }
+
+ ❯ core/report-rendering.test.ts:17:40
+            </failure>
+        </testcase>
+        <testcase classname="core/report-rendering.test.ts" name="report rendering &gt; renders thousands of failures under 16 ms" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="core/report-rendering.test.ts" name="report rendering &gt; streams a report while the run is still going" time="0">
+            <skipped/>
+        </testcase>
+    </testsuite>
+    <testsuite name="ui/components/json-logic.test.ts" timestamp="2026-10-09T22:52:21.652Z" hostname="ci" tests="5" failures="0" errors="0" skipped="0" time="0.016026916">
+        <testcase classname="ui/components/json-logic.test.ts" name="childPath &gt; writes JSONPath, bracketing keys that are not identifiers" time="0.000947375">
+        </testcase>
+        <testcase classname="ui/components/json-logic.test.ts" name="visibleRows &gt; shows a container root&apos;s entries as the top level and only open containers&apos; children" time="0.000859833">
+        </testcase>
+        <testcase classname="ui/components/json-logic.test.ts" name="visibleRows &gt; pages long containers with a row for the rest" time="0.000208416">
+        </testcase>
+        <testcase classname="ui/components/json-logic.test.ts" name="visibleRows &gt; shows a scalar root as one row and stays iterative for deep values" time="0.012934959">
+        </testcase>
+        <testcase classname="ui/components/json-logic.test.ts" name="sizeText and copyText &gt; counts keys and items, and copies strings bare and containers as JSON" time="0.000193416">
+        </testcase>
+    </testsuite>
+</testsuites>

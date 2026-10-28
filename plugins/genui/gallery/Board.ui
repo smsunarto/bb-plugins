@@ -1,0 +1,12 @@
+Board([
+  {key: "LCH-31", title: "Pricing page: annual toggle and EU VAT note", status: "in_progress", priority: "high", labels: ["web", "billing"], owner: "Marta Rossi", due: "2026-10-14", agentsWorking: 2, detail: "Toggle between monthly and annual plans; show VAT-inclusive prices for EU visitors.\n\n- [x] Toggle\n- [ ] VAT copy reviewed by finance"},
+  {key: "LCH-28", title: "Onboarding checklist in the empty project view", status: "in_review", priority: "medium", labels: ["app"], owner: "Jon Park", due: "2026-10-12", url: "https://github.com/get-bb/bb/issues/5268"},
+  {key: "LCH-25", title: "Press kit: screenshots at 2× for light and dark", status: "in_progress", priority: "medium", labels: ["marketing"], owner: "Ana Lima", due: "2026-10-07"},
+  {key: "LCH-33", title: "Status page on status.orbit.example.com", status: "todo", priority: "low", labels: ["infra"], due: "2026-10-23"},
+  {key: "LCH-34", title: "Load test the signup flow at 5× launch traffic", status: "todo", priority: "urgent", labels: ["infra", "launch-blocker"], owner: "Dev Patel", due: "2026-10-16"},
+  {key: "LCH-35", title: "Launch-day runbook and on-call rota", status: "todo", priority: "high", owner: "Dev Patel", due: "2026-10-21"},
+  {key: "LCH-29", title: "Waitlist invite emails (3 waves)", status: "blocked", priority: "high", labels: ["email"], owner: "Marta Rossi", due: "2026-10-09", detail: "Waiting on the sending domain's DKIM record."},
+  {key: "LCH-21", title: "Brand refresh: logo, colour tokens, favicon", status: "done", priority: "medium", labels: ["design"], owner: "Ana Lima"},
+  {key: "LCH-19", title: "Privacy policy and DPA reviewed by counsel", status: "done", priority: "high", labels: ["legal"], owner: "Jon Park"},
+  {key: "LCH-36", title: "Product Hunt listing copy", status: "backlog", priority: "none", labels: ["marketing"]}
+])

@@ -1,0 +1,22 @@
+months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+cities = [
+  {name: "Lisbon", color: "chart1", mm: [100, 87, 59, 64, 53, 17, 4, 6, 33, 99, 111, 127]},
+  {name: "London", color: "chart2", mm: [55, 41, 41, 44, 49, 45, 45, 50, 49, 69, 59, 55]},
+  {name: "Mumbai", color: "chart3", mm: [1, 0, 0, 1, 11, 579, 840, 586, 297, 57, 7, 1]}
+]
+x = month => month * 0.5 - 2.75
+z = row => row * 0.9 - 0.9
+bar = (city, row, mm, month) => [
+  {shape: "box", at: [x(month), max(mm / 250, 0.02) / 2, z(row)], size: [0.34, max(mm / 250, 0.02), 0.5], color: city.color, roughness: 0.35},
+  {shape: "point", at: [x(month), mm / 250 + 0.1, z(row)], radius: 3, color: city.color, hint: `${city.name}, ${months[month]}: ${mm} mm`}
+]
+Card("Monthly rainfall", [
+  Scene([
+    cities.map((city, row) => city.mm.map((mm, month) => bar(city, row, mm, month))),
+    // A floor under the bars, months along its front edge (every quarter, so they never crowd), cities at their row's start.
+    {shape: "box", at: [0, -0.03, 0], size: [6.3, 0.06, 2.7], color: "faint", roughness: 0.9},
+    [0, 3, 6, 9].map(month => ({shape: "label", at: [x(month), 0, 1.6], text: months[month]})),
+    cities.map((city, row) => ({shape: "label", at: [-3.85, 0.05, z(row)], text: city.name, color: city.color, size: "sm"}))
+  ], height: 360, camera: {yaw: 0.45, pitch: 0.42}),
+  Text("Mumbai's July alone (840 mm) brings more rain than London gets in a year. Hover a bar for its month; drag to turn.")
+])

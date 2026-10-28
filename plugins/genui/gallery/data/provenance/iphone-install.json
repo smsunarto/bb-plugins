@@ -1,0 +1,72 @@
+[
+  {
+    "name": "Checkout",
+    "status": "done",
+    "time": "2026-10-10T03:21:04+02:00",
+    "duration": "2s",
+    "facts": {
+      "branch": "main",
+      "sha": "1a68a022fefb4c26ded1dbc0a1aa99d06ab79f87",
+      "host": "build-mini",
+      "path": "~/Projects/orbit"
+    },
+    "detail": "Used the checkout's current branch. The request named feat/399; nothing switched to it.",
+    "evidence": "git -C ~/Projects/orbit rev-parse --abbrev-ref HEAD → main"
+  },
+  {
+    "name": "Build on build-mini",
+    "status": "done",
+    "time": "2026-10-10T03:25:20+02:00",
+    "duration": "4m 14s",
+    "facts": {
+      "branch": "main",
+      "sha": "1a68a022fefb4c26ded1dbc0a1aa99d06ab79f87",
+      "build": "2811",
+      "version": "1.4.0",
+      "artifact": "Orbit.ipa",
+      "digest": "sha256:7c41f0d29b8e3a65c1f4e0a97d23b6c58e1f92a4d07b3c6e85f1a2d9c04b7e31",
+      "host": "build-mini"
+    },
+    "evidence": "data/provenance/xcodebuild-2811.log"
+  },
+  {
+    "name": "Transfer to dev-laptop",
+    "status": "done",
+    "time": "2026-10-10T03:25:41+02:00",
+    "duration": "19s",
+    "facts": {
+      "artifact": "Orbit.ipa",
+      "digest": "sha256:7c41f0d29b8e3a65c1f4e0a97d23b6c58e1f92a4d07b3c6e85f1a2d9c04b7e31",
+      "host": "dev-laptop",
+      "path": "/tmp/orbit-2811/Orbit.ipa"
+    }
+  },
+  {
+    "name": "Install on iPhone",
+    "status": "done",
+    "time": "2026-10-10T03:27:19+02:00",
+    "duration": "1m 36s",
+    "facts": {
+      "branch": "main",
+      "sha": "1a68a02",
+      "build": "2811",
+      "version": "1.4.0",
+      "device": "Sam's iPhone 15 Pro",
+      "udid": "00008130-0011223344556677",
+      "host": "dev-laptop"
+    },
+    "detail": "Installed over the existing app; app data kept.",
+    "evidence": "data/provenance/devicectl-install.json"
+  },
+  {
+    "name": "Launch",
+    "status": "done",
+    "time": "2026-10-10T03:27:27+02:00",
+    "duration": "6s",
+    "facts": {
+      "build": "2811",
+      "device": "Sam's iPhone 15 Pro"
+    },
+    "evidence": "devicectl device process launch: pid 1873, still running after 5 s"
+  }
+]

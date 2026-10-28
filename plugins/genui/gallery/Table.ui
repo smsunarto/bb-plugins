@@ -1,0 +1,7 @@
+Card("Hosting options", [
+  Table(["Option", "Cost", "Cold start", "Notes"], [
+    ["Workers", "$5/mo", Badge("~0 ms", tone: "good"), "One deploy for assets and API"],
+    ["Pages", "Free", Badge("n/a", tone: "neutral"), "Static only"],
+    ["VPS", "$6/mo", Badge("none", tone: "good"), "You patch the OS"]
+  ])
+])

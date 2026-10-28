@@ -1,0 +1,6 @@
+Provenance([
+  {name: "Commit", status: "done", time: "2026-10-10T01:42:13+02:00", facts: {branch: "main", sha: "44f1d749f06f2a0f573f58dbd68289e510ab408b"}},
+  {name: "Build", status: "done", time: "2026-10-10T03:46:40+02:00", duration: "48s", facts: {sha: "44f1d74", host: "build-mini", artifact: "dist/"}},
+  {name: "Deploy to Cloudflare", status: "done", time: "2026-10-10T03:47:24+02:00", duration: "21s", facts: {sha: "44f1d74", url: "https://orbit.example.com"}, evidence: "wrangler deploy --tag 44f1d74: Current Version ID 6c0f2d8e-4b1a-4f7e-9a35-2d8c71e0b9f4"},
+  {name: "Probe live URL", status: "done", time: "2026-10-10T03:48:31+02:00", duration: "1s", facts: {sha: "44f1d74", url: "https://orbit.example.com", http: "200"}, evidence: ["data/provenance/live-probe.txt", {image: "data/provenance/live-home.jpg", label: "The live page at 393 px"}, "https://orbit.example.com/"]}
+])

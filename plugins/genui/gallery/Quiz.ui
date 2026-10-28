@@ -1,0 +1,6 @@
+Card("Git undo, quick check", [
+  Quiz([
+    {q: "Which command undoes a pushed commit without rewriting history?", options: ["git reset --hard", "git revert", "git checkout"], answer: 1, why: "revert adds a new commit that inverts the old one."},
+    {q: "What does git stash pop do?", options: ["Deletes the stash", "Applies the latest stash and drops it", "Lists stashes"], answer: 1}
+  ])
+])

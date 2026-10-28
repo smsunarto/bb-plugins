@@ -1,0 +1,12 @@
+Card("Three days in Lisbon and Sintra", [
+  Map([
+    {name: "Belém Tower", lat: 38.6916, lng: -9.2160, day: 1, wiki: "Belém Tower", note: "Opens 9:30; go before the coaches."},
+    {name: "Jerónimos Monastery", lat: 38.6979, lng: -9.2068, wiki: "Jerónimos Monastery", note: "Cloister ticket; pastéis de Belém next door."},
+    {name: "MAAT", lat: 38.6957, lng: -9.1946, wiki: "Museum of Art, Architecture and Technology", note: "Walk over the roof at sunset."},
+    {name: "Pena Palace", lat: 38.7876, lng: -9.3906, day: 2, wiki: "Pena Palace", note: "Book the 10:30 slot; the park takes two hours."},
+    {name: "Quinta da Regaleira", lat: 38.7963, lng: -9.3961, wiki: "Quinta da Regaleira", note: "Down the initiation well."},
+    {name: "Cabo da Roca", lat: 38.7804, lng: -9.4989, wiki: "Cabo da Roca", note: "Westernmost point of mainland Europe. Windy."},
+    {name: "Alfama", lat: 38.7118, lng: -9.1300, day: 3, wiki: "Alfama", note: "Tram 28 up, walk down."},
+    {name: "Time Out Market", lat: 38.7069, lng: -9.1459, note: "Dinner."}
+  ], route: true, tour: true)
+])

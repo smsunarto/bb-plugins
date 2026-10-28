@@ -1,0 +1,7 @@
+Card("Release notes", [
+  Stack([
+    Text("**2.4.0** adds offline mode."),
+    Text("Sync now retries with backoff instead of failing the whole batch."),
+    Callout("Requires iOS 17 or later.", tone: "info")
+  ])
+])

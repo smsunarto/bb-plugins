@@ -1,0 +1,9 @@
+Roadmap([
+  {title: "Private alpha", start: "2026-06-01", end: "2026-08-14", lane: "Orbit", status: "done"},
+  {title: "Public beta", start: "2026-08-17", end: "2026-10-30", lane: "Orbit", status: "active", progress: 75},
+  {title: "Launch", milestone: "2026-11-03", lane: "Orbit", after: "Public beta"},
+  {title: "Teams and SSO", start: "2026-10-19", end: "2027-01-29", lane: "Orbit", status: "planned", after: "Public beta"},
+  {title: "Mobile app", start: "2026-09-01", end: "2026-12-18", lane: "Mobile", status: "at-risk", progress: 30, owner: "Jon Park"},
+  {title: "Offline mode", start: "2027-01-04", end: "2027-03-26", lane: "Mobile", status: "planned", after: "Mobile app"},
+  {title: "SOC 2 Type I", start: "2026-07-06", end: "2026-10-02", lane: "Compliance", status: "blocked", progress: 80, owner: "Dev Patel", detail: "Auditor fieldwork moved; the report is late."}
+])

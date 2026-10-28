@@ -1,0 +1,8 @@
+Card("A day west of Lisbon", [
+  Map([
+    {name: "Belém Tower, Lisbon", note: "Go at opening, 9:30, before the coaches."},
+    {name: "Pena Palace, Sintra", note: "Book the 10:30 slot; the park takes two hours."},
+    {name: "Cabo da Roca", note: "Westernmost point of mainland Europe. Windy."},
+    {name: "Cascais", lat: 38.6979, lng: -9.4215, note: "Dinner by the marina; train back to Cais do Sodré."}
+  ], route: true)
+])

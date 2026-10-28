@@ -1,0 +1,1 @@
+a HAR: Playwright browser.newContext({recordHar: {path: "$BB_THREAD_STORAGE/page.har"}}), written when the context closes · a Chrome trace filtered to its slow events (jq '{traceEvents: [.traceEvents[] | select(.ph == "X" and .dur > 1000)]}') · or spans you timed, as the list

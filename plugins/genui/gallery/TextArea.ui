@@ -1,0 +1,4 @@
+$notes = ""
+Card("For the PR description", [Form([
+  TextArea($notes, label: "What should the reviewer know?", placeholder: "Context, risks, screenshots to check")
+])])

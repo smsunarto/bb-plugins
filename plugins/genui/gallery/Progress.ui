@@ -1,0 +1,4 @@
+Card("Migration", [
+  Progress(68, label: "Rows copied", tone: "info"),
+  Progress(3, max: 12, label: "Tables verified")
+])

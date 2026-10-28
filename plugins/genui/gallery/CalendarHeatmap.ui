@@ -1,0 +1,4 @@
+days = Load("data/activity.json")
+Card("Contributions", [
+  CalendarHeatmap(days, label: "Commits in the last year")
+])

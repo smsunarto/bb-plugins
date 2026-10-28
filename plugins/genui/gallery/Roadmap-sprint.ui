@@ -1,0 +1,8 @@
+Roadmap([
+  {title: "Pricing page", start: "2026-10-05", end: "2026-10-09", group: "Web", status: "done", owner: "Marta Rossi"},
+  {title: "VAT copy review", start: "2026-10-09", days: 3, group: "Web", status: "active", progress: 50, owner: "Marta Rossi", after: "Pricing page"},
+  {title: "Onboarding checklist", start: "2026-10-06", end: "2026-10-14", group: "App", status: "at-risk", progress: 45, owner: "Jon Park"},
+  {title: "Empty-state illustrations", start: "2026-10-12", end: "2026-10-15", group: "App", owner: "Ana Lima", after: "Onboarding checklist"},
+  {title: "Load test at 5×", start: "2026-10-13", end: "2026-10-16", group: "Infra", owner: "Dev Patel"},
+  {title: "Sprint review", milestone: "2026-10-16", group: "Infra"}
+])

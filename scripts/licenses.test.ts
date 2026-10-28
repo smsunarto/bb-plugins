@@ -1,5 +1,5 @@
 // Each plugin is published as its own npm package, so each one has to carry the
-// MIT notice itself — a LICENSE at the repo root is not in a leaf tarball. The
+// license itself — a LICENSE at the repo root is not in a leaf tarball. The
 // copies are only safe if nothing lets them drift, hence this suite.
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
@@ -23,7 +23,15 @@ describe("licensing", () => {
   });
 
   for (const plugin of plugins) {
-    test(`${plugin.id} carries its complete MIT notice`, () => {
+    test(`${plugin.id} carries its complete license`, () => {
+      if (plugin.manifest.license === "Apache-2.0") {
+        const text = readFileSync(join(plugin.dir, "LICENSE"), "utf8");
+        expect(text).toContain("Apache License");
+        expect(text).toContain("Version 2.0, January 2004");
+        expect(text).toContain("END OF TERMS AND CONDITIONS");
+        expect(text).toContain("APPENDIX: How to apply the Apache License to your work.");
+        return;
+      }
       const root = readFileSync(join(ROOT, "LICENSE"), "utf8");
       const expected =
         plugin.id === "t3-composer"

@@ -1,0 +1,4 @@
+Card("The footer art", [
+  Image("images/golden-hour.webp", alt: "A grassy hill at golden hour"),
+  Text("Rendered at 800 px wide; the 3200 px original is in public/assets/world/.")
+])

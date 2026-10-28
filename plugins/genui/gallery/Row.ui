@@ -1,0 +1,3 @@
+Card("This week", [
+  Row([Metric("Signups", "1,240", note: "+12%", tone: "good"), Metric("Churn", "2.1%", tone: "warn"), Metric("NPS", "48")])
+])

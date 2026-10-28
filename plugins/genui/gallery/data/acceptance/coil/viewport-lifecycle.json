@@ -1,0 +1,25 @@
+{
+  "game": "coil",
+  "viewports": [
+    { "name": "desktop", "width": 1440, "height": 900, "engine": "chromium", "arenaVisible": true, "scrollbars": false, "result": "pass" },
+    {
+      "name": "portrait",
+      "width": 393,
+      "height": 852,
+      "engine": "chromium-mobile-emulation",
+      "physicalDevice": false,
+      "controlsInside": true,
+      "result": "pass"
+    },
+    {
+      "name": "landscape-paused",
+      "width": 852,
+      "height": 393,
+      "engine": "chromium-mobile-emulation",
+      "state": "paused",
+      "arenaVisible": false,
+      "result": "fail",
+      "note": "the defect is the paused layout"
+    }
+  ]
+}

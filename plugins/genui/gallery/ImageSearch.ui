@@ -1,0 +1,4 @@
+Card("Slow-roasted lamb shoulder", [
+  ImageSearch("slow roasted lamb shoulder", alt: "Roast lamb shoulder with vegetables"),
+  Text("Rub with garlic, rosemary and salt; roast covered at **150 °C for 4 hours**, then uncovered at 220 °C for 20 minutes.")
+])

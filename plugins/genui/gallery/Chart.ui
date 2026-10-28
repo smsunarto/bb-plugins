@@ -1,0 +1,3 @@
+Card("Weekly active users", [
+  Chart("line", ["W1", "W2", "W3", "W4", "W5", "W6"], {Web: [820, 940, 910, 1080, 1210, 1340], iOS: [310, 360, 420, 470, 560, 610]}, source: "illustrative")
+])

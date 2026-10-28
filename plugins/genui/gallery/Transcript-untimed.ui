@@ -1,0 +1,1 @@
+Transcript([Load("data/transcript/call.json").tracks[0], {name: "whisper.cpp base.en (SRT)", text: Load("data/transcript/whisper-cpp-base.en.srt")}, {name: "Saved after Stop", text: "Yes I can hear you fine. Great, we have 25 minutes. Then let us look at the transcript at 19:49."}], "data/transcript/call.wav")
