@@ -61,6 +61,7 @@ async function renderCard(options: CardOptions) {
   if (!registration) throw new Error("thread-details is not registered");
   const send = mock(async (_input: unknown) => ({ ok: true }));
   const create = mock(async (_args: unknown) => ({ id: "term_1" }));
+  const statusRead = mock(async () => (options.status ?? workspaceStatus(2765, 161)) as never);
   // renderSlot appends its container to the body; route that one append into the panel.
   const { panel } = options;
   const append = document.body.appendChild;
@@ -81,7 +82,7 @@ async function renderCard(options: CardOptions) {
       },
       sdk: {
         environments: {
-          status: async () => (options.status ?? workspaceStatus(2765, 161)) as never,
+          status: statusRead,
         },
         terminals: { create: create as never },
       },
@@ -114,27 +115,26 @@ async function renderCard(options: CardOptions) {
       } as never,
     },
   );
-  return { slot, send, create };
+  return { slot, send, create, statusRead };
 }
 
 async function mountCard(options: CardOptions) {
-  const { slot, send, create } = await renderCard(options);
-  fireEvent.click(within(slot.container).getByRole("button", { name: "Thread details" }));
+  const { slot, send, create, statusRead } = await renderCard(options);
   const card = await waitFor(() => {
     const element = document.body.querySelector<HTMLElement>(
-      '[aria-label="Thread details"][role="dialog"]',
+      'section[aria-label="Thread details"]',
     );
     if (!element) throw new Error("card not open");
     return element;
   });
-  return { slot, card, send, create };
+  return { slot, card, send, create, statusRead };
 }
 
-test("the card shows the machine, editor, script, branch, PR, and change rows", async () => {
+test("the card shows the machine, script, branch, PR, and change rows", async () => {
   const { slot, card } = await mountCard({});
   const view = within(card);
   expect(view.getByText("Scott's MacBook Pro")).toBeTruthy();
-  expect(view.getByText("Open in editor")).toBeTruthy();
+  expect(view.queryByRole("button", { name: "Open in editor" })).toBeNull();
   await waitFor(() => expect(view.getByText("Add project script")).toBeTruthy());
   expect(view.getByText("scott/details")).toBeTruthy();
   await waitFor(() => expect(view.getByText("+2,765")).toBeTruthy());
@@ -232,37 +232,22 @@ function streamPanel(width: number) {
 
 const docked = () =>
   document.body.querySelector<HTMLElement>('section[aria-label="Thread details"]');
-const popover = () => document.body.querySelector('[aria-label="Thread details"][role="dialog"]');
-
-test("in bb's stream the card is pinned by default and hides while the side panel is open", async () => {
-  localStorage.removeItem(PINNED);
+test("the card stays visible with a side panel and ignores the old hidden preference", async () => {
+  localStorage.setItem(PINNED, "false");
   const panel = streamPanel(900);
   const { slot } = await renderCard({ panel });
-  const button = within(slot.container).getByRole("button", { name: "Thread details" });
-
   await waitFor(() => expect(docked()).toBeTruthy());
-  expect(popover()).toBeNull();
-
+  expect(within(slot.container).queryByRole("button", { name: "Thread details" })).toBeNull();
   panel.dataset.panelSize = "60.0";
-  await waitFor(() => expect(docked()).toBeNull());
-  // Peeking while the side panel is open leaves the card pinned.
-  fireEvent.click(button);
   await waitFor(() => expect(docked()).toBeTruthy());
-  fireEvent.click(button);
-  await waitFor(() => expect(docked()).toBeNull());
-  expect(localStorage.getItem(PINNED)).toBeNull();
-
-  panel.dataset.panelSize = "100.0";
-  await waitFor(() => expect(docked()).toBeTruthy());
-  fireEvent.click(button);
-  await waitFor(() => expect(docked()).toBeNull());
-  expect(localStorage.getItem(PINNED)).toBe("false");
+  fireEvent.keyDown(docked()!, { key: "Escape" });
+  expect(docked()).toBeTruthy();
   slot.unmount();
   panel.remove();
   localStorage.removeItem(PINNED);
 });
 
-test("a narrow stream, a collapsed one, or a phone uses the popover instead", async () => {
+test("narrow streams and phones show the card automatically; collapsed streams hide it", async () => {
   for (const [width, compact] of [
     [300, false],
     [0, false],
@@ -270,20 +255,53 @@ test("a narrow stream, a collapsed one, or a phone uses the popover instead", as
   ] as const) {
     const panel = streamPanel(width);
     const { slot } = await renderCard({ panel, compact });
-    expect(docked()).toBeNull();
-    fireEvent.click(within(slot.container).getByRole("button", { name: "Thread details" }));
-    await waitFor(() => expect(popover()).toBeTruthy());
-    expect(docked()).toBeNull();
+    if (width === 0) expect(docked()).toBeNull();
+    else await waitFor(() => expect(docked()).toBeTruthy());
+    expect(within(slot.container).queryByRole("button", { name: "Thread details" })).toBeNull();
     slot.unmount();
     panel.remove();
   }
 });
 
-test("Escape closes the popover and returns focus to the button", async () => {
+test("checkout status can refresh while the card stays visible", async () => {
+  const { slot, card, statusRead } = await mountCard({});
+  const refresh = within(card).getByRole("button", { name: "Refresh checkout status" });
+  await waitFor(() => expect(refresh.hasAttribute("disabled")).toBe(false));
+  const before = statusRead.mock.calls.length;
+  statusRead.mockImplementation(async () => workspaceStatus(42, 7) as never);
+  fireEvent.click(refresh);
+  await waitFor(() => expect(within(card).getByText("+42")).toBeTruthy());
+  expect(statusRead.mock.calls.length).toBeGreaterThan(before);
+  expect(document.body.contains(card)).toBe(true);
+  slot.unmount();
+});
+
+test("split-pane cards stay within their own pane", async () => {
+  const left = streamPanel(500);
+  left.removeAttribute("data-panel-id");
+  left.dataset.splitPaneId = "left";
+  const first = await renderCard({ panel: left });
+  const firstCard = docked()!;
+  expect(firstCard.style.right).toBe(`${window.innerWidth - 500 + 12}px`);
+  expect(firstCard.style.maxHeight).toBe("120px");
+  const right = streamPanel(500);
+  right.removeAttribute("data-panel-id");
+  right.dataset.splitPaneId = "right";
+  right.getBoundingClientRect = () =>
+    ({ top: 0, left: 500, right: 1000, bottom: 600, width: 500, height: 600 }) as DOMRect;
+  const second = await renderCard({ panel: right });
+  const cards = document.body.querySelectorAll<HTMLElement>('section[aria-label="Thread details"]');
+  expect(cards[1]?.style.right).toBe(`${Math.max(12, window.innerWidth - 1000 + 12)}px`);
+  expect(cards[1]?.style.right).not.toBe(firstCard.style.right);
+  first.slot.unmount();
+  second.slot.unmount();
+  left.remove();
+  right.remove();
+});
+
+test("the header keyboard link focuses the card without toggling it", async () => {
   const { slot, card } = await mountCard({});
-  const button = within(slot.container).getByRole("button", { name: "Thread details" });
-  fireEvent.keyDown(card, { key: "Escape" });
-  await waitFor(() => expect(popover()).toBeNull());
-  expect(document.activeElement).toBe(button);
+  fireEvent.click(within(slot.container).getByRole("link", { name: "Go to thread details" }));
+  expect(document.activeElement).toBe(card);
   slot.unmount();
 });

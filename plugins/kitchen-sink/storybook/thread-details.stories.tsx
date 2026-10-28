@@ -1,6 +1,5 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { useState, type ComponentType } from "react";
-import { userEvent, within } from "storybook/test";
 import { RegisteredSurface } from "../../../.storybook/host";
 import { shows } from "../../../.storybook/ready";
 
@@ -62,15 +61,9 @@ function host(options: {
   };
 }
 
-/** Open the card the way a reader does: click the header button. */
+/** Open the card the way a reader does: show the always-visible card. */
 async function openCard(context: { canvasElement: HTMLElement }) {
-  const button = await within(context.canvasElement).findByRole(
-    "button",
-    { name: "Thread details" },
-    { timeout: 15000 },
-  );
-  await userEvent.click(button);
-  await shows("Open in editor")({ canvasElement: context.canvasElement.ownerDocument.body });
+  await shows(thread.host.name)({ canvasElement: context.canvasElement.ownerDocument.body });
 }
 
 const meta = {
@@ -148,7 +141,7 @@ function StreamLayout({ Component }: { Component: ComponentType<Record<string, u
   );
 }
 
-/** Pinned over the stream; the side panel hides it and the button peeks at it. */
+/** Always visible over the stream, including beside an open side panel. */
 export const DockedInStream: Story = {
   args: {
     select: (app) => {
@@ -163,5 +156,5 @@ export const DockedInStream: Story = {
   },
   // The card portals to the document body, beside the stream rather than inside it.
   play: ({ canvasElement }) =>
-    shows("Open in editor")({ canvasElement: canvasElement.ownerDocument.body }),
+    shows(thread.host.name)({ canvasElement: canvasElement.ownerDocument.body }),
 };

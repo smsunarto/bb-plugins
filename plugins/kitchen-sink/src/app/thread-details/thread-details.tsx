@@ -1,7 +1,6 @@
 import { defineRpcContract } from "@get-bb/plugin-sdk";
 import {
   experimental_copyToClipboard as copyToClipboard,
-  experimental_Icon as Icon,
   experimental_useRpcKeyedQuery as useRpcKeyedQuery,
   experimental_useRpcMutation as useRpcMutation,
   experimental_useSidebarThreads as useSidebarThreads,
@@ -12,7 +11,6 @@ import {
   type PluginThreadHeaderActionProps,
 } from "@get-bb/plugin-sdk/app";
 import { QueryClientProvider } from "@tanstack/react-query";
-import * as Popover from "@radix-ui/react-popover";
 import {
   useCallback,
   useEffect,
@@ -21,6 +19,7 @@ import {
   useState,
   useSyncExternalStore,
   type ReactNode,
+  type RefObject,
 } from "react";
 import { createPortal } from "react-dom";
 import { toast } from "sonner";
@@ -50,7 +49,7 @@ import {
   cx,
 } from "./rows.tsx";
 import { ScriptDialog, type ScriptDraft } from "./script-dialog.tsx";
-import { useCardVisibility, type StreamDockLayout } from "./stream-dock.ts";
+import { useStreamDock, type StreamDockLayout } from "./stream-dock.ts";
 
 export const THREAD_DETAILS_TITLE = "Thread details";
 
@@ -119,8 +118,8 @@ type StatusEntry =
   | { state: "failed"; message: string; last: Extract<StatusEntry, { state: "ready" }> | null };
 
 /**
- * Environment status survives the card closing, so a reopened card draws the
- * last answer at once and refreshes behind it. Keyed by environment id.
+ * Environment status survives remounts, so the card draws the last answer at
+ * once and refreshes behind it. Keyed by environment id.
  */
 const statusCache = new Map<string, StatusEntry>();
 const statusListeners = new Set<() => void>();
@@ -232,15 +231,14 @@ export type ScriptsState =
   | { state: "failed"; message: string; retry(): void }
   | { state: "ready"; scripts: readonly ProjectScript[] };
 
-function ThreadDetails({ threadId, projectId, isCompactViewport }: PluginThreadHeaderActionProps) {
-  const trigger = useRef<HTMLButtonElement>(null);
+function ThreadDetails({ threadId, projectId }: PluginThreadHeaderActionProps) {
+  const anchor = useRef<HTMLSpanElement>(null);
+  const card = useRef<HTMLElement>(null);
   const cardId = useId();
-  const { layout, open, popoverOpen, setPopoverOpen, toggle } = useCardVisibility(
-    trigger,
-    !isCompactViewport,
-  );
+  const layout = useStreamDock(anchor);
+  const open = layout !== null;
   const [editor, setEditor] = useState<ScriptEditor>(null);
-  // Kept here, not in the card, so it survives the card closing when a script's terminal opens.
+  // Keep the last run across card layout changes.
   const [lastRunId, setLastRunId] = useState<string | null>(null);
   const sidebar = useSidebarThreads();
   const thread = sidebar.threads.find((candidate) => candidate.id === threadId) ?? null;
@@ -258,7 +256,6 @@ function ThreadDetails({ threadId, projectId, isCompactViewport }: PluginThreadH
       lastRunId={lastRunId}
       onRunScript={setLastRunId}
       onEditScript={(script) => {
-        setPopoverOpen(false);
         setEditor({ script });
       }}
       open={open}
@@ -268,58 +265,20 @@ function ThreadDetails({ threadId, projectId, isCompactViewport }: PluginThreadH
   );
   return (
     <>
-      <Popover.Root open={!layout && popoverOpen} onOpenChange={setPopoverOpen}>
-        <Popover.Anchor asChild>
-          <button
-            ref={trigger}
-            type="button"
-            aria-label={THREAD_DETAILS_TITLE}
-            aria-expanded={open}
-            aria-controls={open ? cardId : undefined}
-            onClick={toggle}
-            className={cx(
-              "inline-flex size-7 items-center justify-center rounded-md text-muted-foreground outline-none hover:bg-foreground/[0.06] hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring max-md:pointer-coarse:size-9",
-              open && "bg-foreground/[0.06] text-foreground",
-            )}
-          >
-            <Icon name="AlignLeft" aria-hidden className="size-4" />
-          </button>
-        </Popover.Anchor>
-        <Popover.Portal>
-          <Popover.Content
-            {...PORTAL_SCOPE}
-            id={cardId}
-            align="end"
-            sideOffset={8}
-            collisionPadding={8}
-            aria-label={THREAD_DETAILS_TITLE}
-            // The button toggles the popover itself; dismissing on its press would reopen it.
-            onInteractOutside={(event) => {
-              if (trigger.current?.contains(event.target as Node)) event.preventDefault();
-            }}
-            // The anchor is not Radix's trigger, so return focus to the button ourselves.
-            onCloseAutoFocus={(event) => {
-              event.preventDefault();
-              trigger.current?.focus();
-            }}
-            // Focus the card, not its first row, so opening by pointer shows no ring; Tab still enters the rows.
-            onOpenAutoFocus={(event) => {
-              event.preventDefault();
-              (event.currentTarget as HTMLElement | null)?.focus();
-            }}
-            className={cx(
-              CARD_CLASS,
-              "z-40 data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95",
-            )}
-          >
-            <div className="max-h-[min(calc(100dvh-6.5rem),calc(var(--radix-popover-content-available-height)-0.5rem))] overflow-y-auto">
-              {details}
-            </div>
-          </Popover.Content>
-        </Popover.Portal>
-      </Popover.Root>
+      <span ref={anchor} className="inline-block h-7 w-0">
+        <a
+          href={`#${cardId}`}
+          className="sr-only focus:not-sr-only focus:absolute focus:z-50 focus:rounded-md focus:bg-popover focus:p-2"
+          onClick={(event) => {
+            event.preventDefault();
+            card.current?.focus();
+          }}
+        >
+          Go to thread details
+        </a>
+      </span>
       {layout && open ? (
-        <DockedCard id={cardId} layout={layout}>
+        <DockedCard id={cardId} layout={layout} cardRef={card}>
           {details}
         </DockedCard>
       ) : null}
@@ -328,7 +287,7 @@ function ThreadDetails({ threadId, projectId, isCompactViewport }: PluginThreadH
           script={editor.script}
           projectName={project?.name ?? null}
           pending={saving}
-          returnFocus={trigger}
+          returnFocus={card}
           onClose={() => setEditor(null)}
           onDelete={() => {
             const target = editor.script;
@@ -380,17 +339,26 @@ function DockedCard({
   id,
   layout,
   children,
+  cardRef,
 }: {
   id: string;
   layout: StreamDockLayout;
   children: ReactNode;
+  cardRef: RefObject<HTMLElement | null>;
 }) {
   return createPortal(
     <section
       {...PORTAL_SCOPE}
+      ref={cardRef}
+      tabIndex={-1}
       id={id}
       aria-label={THREAD_DETAILS_TITLE}
-      style={{ top: layout.top, right: layout.right, maxHeight: layout.maxHeight }}
+      style={{
+        width: layout.width,
+        top: layout.top,
+        right: layout.right,
+        maxHeight: layout.maxHeight,
+      }}
       className={cx(
         CARD_CLASS,
         "fixed z-30 flex origin-top-right flex-col animate-in fade-in-0 zoom-in-95",
@@ -420,7 +388,6 @@ function DetailsCard({
   open: boolean;
 }) {
   const environment = thread.environment?.id ? thread.environment : null;
-  const hostId = thread.host?.id ?? null;
   const { entry, offline, retry } = useEnvironmentStatus(environment?.id ?? null, open);
   const status = entry?.state === "ready" ? entry : entry?.state === "failed" ? entry.last : null;
   const branch = status?.branch ?? environment?.branchName ?? null;
@@ -428,9 +395,6 @@ function DetailsCard({
     <>
       <Section label="Workspace" separated={false}>
         <MachineRow thread={thread} environment={environment} threadId={threadId} />
-        {environment?.path && hostId ? (
-          <OpenInEditorRow hostId={hostId} path={environment.path} />
-        ) : null}
         {environment ? (
           <ScriptsRow
             threadId={threadId}
@@ -531,24 +495,6 @@ function MachineRow({
         Open terminal
       </MenuItem>
     </SelectRow>
-  );
-}
-
-function OpenInEditorRow({ hostId, path }: { hostId: string; path: string }) {
-  const navigate = useBbNavigate();
-  // bb queues the folder for this client's preferred external target and reports failures itself.
-  return (
-    <Row
-      onClick={() =>
-        navigate.experimental_openFileExternally({
-          target: { kind: "host", hostId, path },
-          location: null,
-        })
-      }
-    >
-      <RowIcon name="Code" />
-      <RowLabel>Open in editor</RowLabel>
-    </Row>
   );
 }
 
@@ -854,11 +800,17 @@ function ChangesRow({
   }
   const text = changesText(status, label, offline);
   return (
-    <InfoRow className="text-muted-foreground">
-      <RowIcon name="FileDiff" />
+    <Row
+      className="text-muted-foreground"
+      title="Refresh checkout status"
+      aria-label="Refresh checkout status"
+      onClick={onRetry}
+      disabled={offline || !status}
+    >
+      <RowIcon name="RotateCcw" />
       <RowLabel>{text}</RowLabel>
       {stats}
-    </InfoRow>
+    </Row>
   );
 }
 
