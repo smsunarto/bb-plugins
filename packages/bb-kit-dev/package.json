@@ -1,6 +1,6 @@
 {
   "name": "@bb-kit/dev",
-  "version": "0.0.0",
+  "version": "1.0.0",
   "description": "Scaffolding and wiring checks for bb-kit plugins.",
   "license": "MIT",
   "author": "Scott Sunarto",
