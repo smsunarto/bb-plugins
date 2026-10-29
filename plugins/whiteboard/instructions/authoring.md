@@ -4,7 +4,7 @@ Write an interactive code walkthrough for a staff engineer. Start with the chang
 
 ## Start
 
-1. Read `whiteboard_session_capabilities`. Register the repository on its owning host, then create the review with the target the user requested. A GitHub PR can be created from `pullRequestUrl` alone. Use the returned target and resolved commits as the source of truth.
+1. Read `whiteboard_session_capabilities`. Register the repository on its owning host, then create the review with `source: "target"` and the target the user requested. A GitHub PR can be created with `source: "pull-request"` from `pullRequestUrl` alone. Use the returned target and resolved commits as the source of truth.
 2. For a PR, read its description for the author's stated purpose and requirements. Keep that context separate from what the code proves.
 3. Delegate Diff-view grouping to a subagent: "Call `whiteboard_session_get_instructions({topic:\"file-lenses\"})` and follow it for Whiteboard <sessionId>." Include the session ID and the returned target. The document and lenses use separate leases.
 4. Begin `whiteboard_session_activity` with a fresh `leaseId` and `scope: "document"`. Pass that lease on every document write. Renew it during long reads, update its focus as you work, and end it when finished.
@@ -22,7 +22,7 @@ Use top-level `section` components in this order. Omit sections the change does 
   - `flow_diagram` for branches, retries, and state transitions.
   - `database_lens` for stores, schema, and reads or writes.
   - `code_peek` for a contract's key types or interfaces.
-  Include decisions, tradeoffs, and alternatives when evidence supports them.
+    Include decisions, tradeoffs, and alternatives when evidence supports them.
 - **Implementation:** Follow the changed code from the user or agent entry point. Use `call_stack_diff` for the old and new paths, including unchanged steps needed to understand them. Use `code_peek` for the mechanism or invariant; link other code inline.
 
 ## Write and cite

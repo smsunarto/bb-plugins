@@ -112,6 +112,7 @@ describe("publishEngineChanges", () => {
       commandId: randomUUID(),
       operation: {
         type: "create",
+        source: "pins",
         title: "Plan",
         pins: { repositoryId: "repo", base: "a", head: "b" },
       },

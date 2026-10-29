@@ -254,7 +254,7 @@ async function progressApi() {
   const run = <Operation>(operation: Operation) =>
     store.execute({ commandId: randomUUID(), operation });
 
-  const { reviewId } = await run({ type: "create", title: "Folds", pins });
+  const { reviewId } = await run({ type: "create", source: "pins", title: "Folds", pins });
   await run({
     type: "lens",
     reviewId,
@@ -302,8 +302,7 @@ it("progress counts folded changes as done, overall, per lens and uncategorized"
   const { reviewId, client } = await progressApi();
   const progress = await client.read<ReviewProgress>(`/${reviewId}/progress`);
 
-  const lens = (id: string) =>
-    progress.lenses.find((lens) => lens.id === id)!.sources;
+  const lens = (id: string) => resolved(progress, id).sources;
 
   // 4+1 in api.rs (3 folded), 1+1 in each other file, the lockfile folded.
   expect(coverageProgress(progress.files)).toEqual({
@@ -345,10 +344,14 @@ it("progress counts folded changes as done, overall, per lens and uncategorized"
   const after = coverageProgress(viewed.files);
   expect(after.remaining).toEqual({ additions: 0, deletions: 0 });
   expect(after.state).toBe("viewed");
-  expect(
-    coverageProgress(
-      viewed.files,
-      viewed.lenses.find((lens) => lens.id === "lens-1")!.sources,
-    ).state,
-  ).toBe("viewed");
+  expect(coverageProgress(viewed.files, resolved(viewed, "lens-1").sources).state).toBe(
+    "viewed",
+  );
 });
+
+/** The lens the Diff view can scope to; an unavailable one fails the test. */
+function resolved(progress: ReviewProgress, id: string) {
+  const found = progress.lenses.find((lens) => lens.id === id)!;
+  if (found.state === "unavailable") throw new Error(found.reason);
+  return found;
+}

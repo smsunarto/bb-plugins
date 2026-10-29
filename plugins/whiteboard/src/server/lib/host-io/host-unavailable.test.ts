@@ -171,7 +171,7 @@ describe("creating a Whiteboard from a pull request URL across hosts", () => {
   const createFromUrl = (local: ReturnType<typeof open>) =>
     local.store.execute({
       commandId: randomUUID(),
-      operation: { type: "create", pullRequestUrl: url },
+      operation: { type: "create", source: "pull-request", pullRequestUrl: url },
     });
 
   it("skips a checkout whose host is offline and uses the next one", async () => {

@@ -42,7 +42,7 @@ afterEach(async () => {
 async function peek(side: "base" | "head", sourcePins = pins, file = "one-sided.ts") {
   const { reviewId } = await store.execute({
     commandId: randomUUID(),
-    operation: { type: "create", title: "Peek", pins: sourcePins },
+    operation: { type: "create", source: "pins", title: "Peek", pins: sourcePins },
   });
   const source = selectSource({ file, side, fromLine: 1, toLine: 1 });
   await store.execute({
@@ -70,7 +70,7 @@ it.each(["base", "head"] as const)("resolves a context peek available only on %s
 
   const progress = await reviewProgress(store, data, snapshot);
 
-  expect(progress.complete).toBe(true);
+  expect(progress.lenses.some((lens) => lens.state === "pending")).toBe(false);
   expect(progress.resolvedSelections[selectionKey(source)]).toEqual([
     { file: "one-sided.ts", side, fromLine: 1, toLine: 1 },
   ]);
@@ -146,12 +146,12 @@ it("keeps context pending until coverage finishes, then resolves unchanged lines
     fileSources: new Map(),
     alignments: new Map(),
   });
-  expect(pending.complete).toBe(false);
+  expect(pending.lenses.map((lens) => lens.state)).toEqual(["pending"]);
   expect(pending.unavailableSelections).toEqual({});
   expect(file).not.toHaveBeenCalled();
 
   const ready = await reviewProgress(store, data, snapshot);
-  expect(ready.complete).toBe(true);
+  expect(ready.lenses.some((lens) => lens.state === "pending")).toBe(false);
   expect(ready.resolvedSelections[selectionKey(source)]).toEqual([
     { file: "one-sided.ts", side: "base", fromLine: 1, toLine: 1 },
     { file: "one-sided.ts", side: "head", fromLine: 1, toLine: 1 },

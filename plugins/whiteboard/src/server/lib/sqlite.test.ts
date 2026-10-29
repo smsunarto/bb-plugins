@@ -176,7 +176,7 @@ describe("ReviewStore on bb.storage.database()", () => {
     const { db, store, harness } = storeOnBb();
     const command = {
       commandId: randomUUID(),
-      operation: { type: "create", title: "Replay", pins },
+      operation: { type: "create", source: "pins", title: "Replay", pins },
     };
     const first = await store.execute(command);
     expect(first).toMatchObject({ version: 0 });
@@ -202,7 +202,7 @@ describe("ReviewStore on bb.storage.database()", () => {
     const { store, harness } = storeOnBb();
     const { reviewId } = await store.execute({
       commandId: randomUUID(),
-      operation: { type: "create", title: "Lease", pins },
+      operation: { type: "create", source: "pins", title: "Lease", pins },
     });
     const owner = randomUUID();
     const other = randomUUID();
@@ -238,7 +238,7 @@ describe("ReviewStore on bb.storage.database()", () => {
 
     const { reviewId } = await store.execute({
       commandId: randomUUID(),
-      operation: { type: "create", title: "Doomed", pins },
+      operation: { type: "create", source: "pins", title: "Doomed", pins },
     });
     await store.execute({
       commandId: randomUUID(),

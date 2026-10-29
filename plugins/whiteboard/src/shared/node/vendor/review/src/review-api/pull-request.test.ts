@@ -208,13 +208,19 @@ describe("creating a review from a pull request URL alone", () => {
   });
 
   const createFromUrl = (
-    fields: {
-      title?: string;
-      target?: { kind: "commits"; repositoryId: string; head: string };
-    } = {},
+    fields:
+      | { title?: string }
+      | {
+          title: string;
+          target: { kind: "commits"; repositoryId: string; head: string };
+        } = {},
   ) =>
     local.store.execute(
-      command({ type: "create", pullRequestUrl: url, ...fields }),
+      command(
+        "target" in fields
+          ? { type: "create", source: "target", pullRequestUrl: url, ...fields }
+          : { type: "create", source: "pull-request", pullRequestUrl: url, ...fields },
+      ),
     );
 
   const upstreamHead = () => gitIn(upstream)("rev-parse", "refs/pull/7/head");
@@ -260,7 +266,7 @@ describe("creating a review from a pull request URL alone", () => {
 
   it("returns the existing review for a repeat, comparing against the PR's current head", async () => {
     await local.data.register(checkout);
-    const first = command({ type: "create", pullRequestUrl: url });
+    const first = command({ type: "create", source: "pull-request", pullRequestUrl: url });
     const created = await local.store.execute(first);
 
     expect(await createFromUrl()).toMatchObject({

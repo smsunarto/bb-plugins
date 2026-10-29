@@ -125,7 +125,12 @@ function newStore() {
 async function createSession(store: ReviewStore, title: string) {
   const result = await store.execute({
     commandId: randomUUID(),
-    operation: { type: "create", title, pins: { repositoryId: "repo", base: "a", head: "b" } },
+    operation: {
+      type: "create",
+      source: "pins",
+      title,
+      pins: { repositoryId: "repo", base: "a", head: "b" },
+    },
   });
   return result.reviewId;
 }
@@ -297,7 +302,12 @@ describe("open panel", () => {
       );
     const create = (title: string) => ({
       commandId: randomUUID(),
-      operation: { type: "create", title, pins: { repositoryId: "repo", base: "a", head: "b" } },
+      operation: {
+        type: "create",
+        source: "pins",
+        title,
+        pins: { repositoryId: "repo", base: "a", head: "b" },
+      },
     });
 
     const fromThread = await runWithThread({ threadId: "t1" }, () =>

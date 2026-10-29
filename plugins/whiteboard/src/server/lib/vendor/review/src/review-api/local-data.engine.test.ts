@@ -164,7 +164,7 @@ it("reads, resolves and retires a reference at its own pins in another repositor
   };
 
   const { reviewId } = await local.store.execute(
-    command({ type: "create", title: "Two repositories", pins }),
+    command({ type: "create", source: "pins", title: "Two repositories", pins }),
   );
 
   const peek = await insert(reviewId, {
@@ -346,7 +346,7 @@ it("opens a created review in Desktop unless the author opts out", async () => {
   const shown = await postJson(
     app,
     "/commands",
-    command({ type: "create", title: "Shown", pins }),
+    command({ type: "create", source: "pins", title: "Shown", pins }),
   );
 
   expect(shown.status).toBe(200);
@@ -359,6 +359,7 @@ it("opens a created review in Desktop unless the author opts out", async () => {
 
   const background = command({
     type: "create",
+    source: "pins",
     title: "Background",
     pins,
     open: false,
@@ -401,14 +402,14 @@ it("opens the PR's existing review that create returns instead of a new one", as
     await postJson(
       app,
       "/commands",
-      command({ type: "create", title: "PR", pins, pullRequestUrl }),
+      command({ type: "create", source: "pins", title: "PR", pins, pullRequestUrl }),
     )
   ).json();
 
   const again = await postJson(
     app,
     "/commands",
-    command({ type: "create", title: "PR again", pins, pullRequestUrl }),
+    command({ type: "create", source: "pins", title: "PR again", pins, pullRequestUrl }),
   );
 
   expect(again.status).toBe(200);
@@ -434,7 +435,7 @@ it("does not open a created review when Desktop is not attached", async () => {
   const response = await postJson(
     app,
     "/commands",
-    command({ type: "create", title: "Headless", pins }),
+    command({ type: "create", source: "pins", title: "Headless", pins }),
   );
 
   expect(response.status).toBe(200);
@@ -459,7 +460,7 @@ it("keeps a created review when Desktop fails to open it", async () => {
   const response = await postJson(
     app,
     "/commands",
-    command({ type: "create", title: "Saved anyway", pins }),
+    command({ type: "create", source: "pins", title: "Saved anyway", pins }),
   );
 
   expect(response.status).toBe(200);
@@ -473,7 +474,7 @@ it("keeps a created review when Desktop fails to open it", async () => {
 
 it("lists the full repository path and hydrates diff counts from pinned commits", async () => {
   await local.store.execute(
-    command({ type: "create", title: "Home metadata", pins }),
+    command({ type: "create", source: "pins", title: "Home metadata", pins }),
   );
   const app = createReviewApi(local.store, local.data);
   const first = await (await app.request("/?mode=textual")).json();
@@ -584,7 +585,7 @@ it("preserves map element and range details in upload errors", async () => {
 
 it("validates Markdown source links against the pinned files before saving", async () => {
   const { reviewId } = await local.store.execute(
-    command({ type: "create", title: "Links", pins }),
+    command({ type: "create", source: "pins", title: "Links", pins }),
   );
 
   await insert(reviewId, {
@@ -623,7 +624,7 @@ it("lists the version's commits and reads a selected commit's diff against its p
   );
 
   const review = await local.store.execute(
-    command({ type: "create", title: "Two commits", pins: updatedPins }),
+    command({ type: "create", source: "pins", title: "Two commits", pins: updatedPins }),
   );
 
   const app = new Hono().route(
@@ -691,7 +692,7 @@ it("lists the version's commits and reads a selected commit's diff against its p
 
 it("reads each version of one review at its own pins", async () => {
   const { reviewId } = await local.store.execute(
-    command({ type: "create", title: "Versions", pins }),
+    command({ type: "create", source: "pins", title: "Versions", pins }),
   );
 
   writeFileSync(
@@ -734,7 +735,7 @@ it("reads each version of one review at its own pins", async () => {
 
 it("serves a historical version's file at the pins that version was saved with", async () => {
   const { reviewId } = await local.store.execute(
-    command({ type: "create", title: "Snapshot", pins }),
+    command({ type: "create", source: "pins", title: "Snapshot", pins }),
   );
 
   await insert(reviewId, { type: "code_peek", source: selectSource(source) });
@@ -794,7 +795,7 @@ it("browses committed directories, including history, without listing untracked 
   );
 
   const { reviewId } = await local.store.execute(
-    command({ type: "create", title: "Tree", pins: nestedPins }),
+    command({ type: "create", source: "pins", title: "Tree", pins: nestedPins }),
   );
 
   writeFileSync(path.join(repository, "untracked.ts"), "Not in the review\n");
@@ -837,7 +838,7 @@ it("browses committed directories, including history, without listing untracked 
 
 it("reads pinned Git objects, rejects invalid evidence before saving, and retains registrations across restart", async () => {
   const review = await local.store.execute(
-    command({ type: "create", title: "Pinned", pins }),
+    command({ type: "create", source: "pins", title: "Pinned", pins }),
   );
 
   await insert(review.reviewId, {
@@ -972,7 +973,7 @@ it("rejects a code peek on blank lines but accepts a prose link to them", async 
 
 it("copies prose with the displayed version's title and immutable review identity", async () => {
   const { reviewId } = await local.store.execute(
-    command({ type: "create", title: "Original title", pins }),
+    command({ type: "create", source: "pins", title: "Original title", pins }),
   );
 
   await local.store.execute(
@@ -1003,7 +1004,7 @@ it("copies prose with the displayed version's title and immutable review identit
 
 it("copies code from historical pins after a repin, never from working-tree contents", async () => {
   const { reviewId } = await local.store.execute(
-    command({ type: "create", title: "Code", pins }),
+    command({ type: "create", source: "pins", title: "Code", pins }),
   );
 
   await local.store.execute(
@@ -1052,7 +1053,7 @@ it("copies code from historical pins after a repin, never from working-tree cont
 
 it("copies a diff selection from its pinned version and selected commit, and rejects another review", async () => {
   const { reviewId } = await local.store.execute(
-    command({ type: "create", title: "Code", pins }),
+    command({ type: "create", source: "pins", title: "Code", pins }),
   );
 
   await local.store.execute(
@@ -1107,7 +1108,7 @@ it("copies a diff selection from its pinned version and selected commit, and rej
 
 it("copies selected diff rows with rename paths without resolving an unavailable source", async () => {
   const { reviewId } = await local.store.execute(
-    command({ type: "create", title: "Rename", pins }),
+    command({ type: "create", source: "pins", title: "Rename", pins }),
   );
 
   // Use selected diff rows; the new path may not exist on the base commit.
@@ -1147,7 +1148,7 @@ it("copies selected diff rows with rename paths without resolving an unavailable
 
 it("reports invalid copy requests, unavailable versions, and missing source files as JSON errors", async () => {
   const { reviewId } = await local.store.execute(
-    command({ type: "create", title: "Errors", pins }),
+    command({ type: "create", source: "pins", title: "Errors", pins }),
   );
 
   const app = createReviewApi(local.store, local.data);
@@ -1188,6 +1189,7 @@ it("resolves omitted commit base once and preserves explicit parent comparisons"
   const result = await local.store.execute(
     command({
       type: "create",
+      source: "target",
       title: "Single commit",
       target: { kind: "commits", repositoryId, head: "HEAD" },
     }),
@@ -1237,6 +1239,7 @@ it("retains working source across authored versions, commits and retargeting", a
 
   const request = command({
     type: "create",
+    source: "target",
     title: "Working files",
     target: { kind: "worktree", repositoryId },
   });
@@ -1310,6 +1313,7 @@ it("reads symlink text and an unborn repository without following external links
   const result = await local.store.execute(
     command({
       type: "create",
+      source: "target",
       title: "Unborn",
       target: { kind: "worktree", repositoryId: repo.id },
     }),
@@ -1343,6 +1347,7 @@ it("keeps authored coordinates fixed as live source changes and warns only on un
   const result = await local.store.execute(
     command({
       type: "create",
+      source: "target",
       title: "Ranges",
       target: {
         kind: "worktree",
@@ -1390,6 +1395,7 @@ it("reads retained checkout for an older authored version", async () => {
   const result = await local.store.execute(
     command({
       type: "create",
+      source: "target",
       title: "Coherence",
       target: { kind: "worktree", repositoryId: pins.repositoryId },
     }),
@@ -1428,6 +1434,7 @@ it("keeps multiple worktrees bound to their selected directory and survives reop
   const one = await local.store.execute(
     command({
       type: "create",
+      source: "target",
       title: "First",
       target: { kind: "worktree", repositoryId: pins.repositoryId },
     }),
@@ -1436,6 +1443,7 @@ it("keeps multiple worktrees bound to their selected directory and survives reop
   const two = await local.store.execute(
     command({
       type: "create",
+      source: "target",
       title: "Second",
       target: { kind: "worktree", repositoryId: other.id },
     }),
@@ -1488,6 +1496,7 @@ it("includes saved additions and deletions while keeping ignored and binary sour
   const result = await local.store.execute(
     command({
       type: "create",
+      source: "target",
       title: "Files",
       target: { kind: "worktree", repositoryId: pins.repositoryId },
     }),
@@ -1533,6 +1542,7 @@ it.skipIf(spawnSync("jj", ["--version"]).status !== 0)(
     const result = await local.store.execute(
       command({
         type: "create",
+        source: "target",
         title: "jj working",
         target: { kind: "worktree", repositoryId: repo.id, base },
       }),
@@ -1560,6 +1570,7 @@ it("retargets a live review without losing authored content or component IDs", a
   const created = await local.store.execute(
     command({
       type: "create",
+      source: "target",
       title: "Retarget",
       target: {
         kind: "worktree",
@@ -1615,6 +1626,7 @@ it("leaves authored Markdown destinations unchanged when source lines move", asy
   const created = await local.store.execute(
     command({
       type: "create",
+      source: "target",
       title: "Links",
       target: {
         kind: "worktree",
@@ -1671,6 +1683,7 @@ it("does not report clean tracked symlinks and submodules as modified", async ()
   const created = await local.store.execute(
     command({
       type: "create",
+      source: "target",
       title: "Clean modes",
       target: { kind: "worktree", repositoryId: pins.repositoryId, base: head },
     }),
@@ -1719,6 +1732,7 @@ it("continues capturing after watchers fail and stop emitting changes", async ()
   const created = await local.store.execute(
     command({
       type: "create",
+      source: "target",
       title: "Watcher recovery",
       target: {
         kind: "worktree",
@@ -1753,6 +1767,7 @@ it("keeps live language identity across edits but replaces it with a checkout at
   const created = await local.store.execute(
     command({
       type: "create",
+      source: "target",
       title: "Environment identity",
       target: {
         kind: "worktree",
@@ -1789,7 +1804,7 @@ it("keeps live language identity across edits but replaces it with a checkout at
 
 it("marks a commit-pinned review unavailable while its repository is gone", async () => {
   const review = await local.store.execute(
-    command({ type: "create", title: "Moved repository", pins }),
+    command({ type: "create", source: "pins", title: "Moved repository", pins }),
   );
 
   const app = createReviewApi(local.store, local.data);
@@ -1819,7 +1834,7 @@ it("marks a commit-pinned review unavailable while its repository is gone", asyn
 
 it("never stores the unavailable flag on a version authored while degraded", async () => {
   const review = await local.store.execute(
-    command({ type: "create", title: "Edited while gone", pins }),
+    command({ type: "create", source: "pins", title: "Edited while gone", pins }),
   );
 
   const moved = `${repository}-moved`;
@@ -1841,7 +1856,7 @@ it("never stores the unavailable flag on a version authored while degraded", asy
 
 it("answers a source read with 404 while the checkout is gone", async () => {
   const review = await local.store.execute(
-    command({ type: "create", title: "Moved repository", pins }),
+    command({ type: "create", source: "pins", title: "Moved repository", pins }),
   );
 
   const app = createReviewApi(local.store, local.data);
@@ -1863,6 +1878,7 @@ it("marks a worktree review unavailable while its checkout is gone", async () =>
   const review = await local.store.execute(
     command({
       type: "create",
+      source: "target",
       title: "Moved worktree",
       target: { kind: "worktree", repositoryId: pins.repositoryId },
     }),
@@ -1932,7 +1948,7 @@ describe("review_diff", () => {
     );
 
     ({ reviewId } = await local.store.execute(
-      command({ type: "create", title: "Diff", pins: diffPins }),
+      command({ type: "create", source: "pins", title: "Diff", pins: diffPins }),
     ));
 
     const app = createReviewApi(local.store, local.data);
@@ -2067,6 +2083,7 @@ it("patches working files of a worktree review, untracked files included", async
   const { reviewId } = await local.store.execute(
     command({
       type: "create",
+      source: "target",
       title: "Working",
       target: { kind: "worktree", repositoryId: pins.repositoryId },
     }),
@@ -2099,7 +2116,7 @@ it("saves the head branch for pinned reviews and preserves it across checkout ch
   git("checkout", "-b", "feature/saved-head");
 
   const created = await local.store.execute(
-    command({ type: "create", title: "Branch provenance", pins }),
+    command({ type: "create", source: "pins", title: "Branch provenance", pins }),
   );
 
   expect(local.store.read(created.reviewId).origin?.branch).toBe(
@@ -2128,6 +2145,7 @@ it("saves the requested head branch for commit and live worktree targets", async
   const fixed = await local.store.execute(
     command({
       type: "create",
+      source: "target",
       title: "Named head",
       target: {
         kind: "commits",
@@ -2146,6 +2164,7 @@ it("saves the requested head branch for commit and live worktree targets", async
   const live = await local.store.execute(
     command({
       type: "create",
+      source: "target",
       title: "Live head",
       target: { kind: "worktree", repositoryId: pins.repositoryId },
     }),
@@ -2156,6 +2175,7 @@ it("saves the requested head branch for commit and live worktree targets", async
   const pinned = await local.store.execute(
     command({
       type: "create",
+      source: "target",
       title: "Resolved target",
       target: {
         kind: "commits",
@@ -2177,7 +2197,7 @@ it("does not invent a head branch for detached or unrelated pinned commits", asy
   git("checkout", "--detach", pins.head);
 
   const created = await local.store.execute(
-    command({ type: "create", title: "Detached", pins }),
+    command({ type: "create", source: "pins", title: "Detached", pins }),
   );
 
   expect(local.store.read(created.reviewId).origin?.branch).toBeUndefined();

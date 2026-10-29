@@ -66,8 +66,8 @@ const create = async (threadId?: string, live = false) => {
         type: "create",
         title: "Walkthrough",
         ...(live
-          ? { target: { kind: "worktree", repositoryId, base: repo.base } }
-          : { pins: { repositoryId, base: repo.base, head: repo.head } }),
+          ? { source: "target", target: { kind: "worktree", repositoryId, base: repo.base } }
+          : { source: "pins", pins: { repositoryId, base: repo.base, head: repo.head } }),
       },
     },
     threadId,
@@ -201,6 +201,7 @@ test("loopback calls retain thread context, create durable tabs, and follow rena
       commandId: randomUUID(),
       operation: {
         type: "create",
+        source: "pins",
         title: "First",
         pins: { repositoryId, base: repo.base, head: repo.head },
       },
@@ -470,6 +471,7 @@ test("host watching eventually invalidates cached working state after a real com
     commandId: randomUUID(),
     operation: {
       type: "create",
+      source: "target",
       title: "Working files",
       target: { kind: "worktree", repositoryId },
     },
@@ -683,6 +685,7 @@ test("a thread-less stack read asks the host of the session's repository", async
     commandId: randomUUID(),
     operation: {
       type: "create",
+      source: "pins",
       title: "Stacked",
       pins: { repositoryId, base: repo.base, head: repo.head },
       pullRequestUrl: "https://github.com/o/r/pull/7",
@@ -861,6 +864,7 @@ test.skipIf(!HAS_DIFFR)(
       commandId: randomUUID(),
       operation: {
         type: "create",
+        source: "target",
         title: "Dirty order",
         target: { kind: "worktree", repositoryId },
       },
@@ -1049,6 +1053,7 @@ test.skipIf(!HAS_DIFFR)(
       commandId: randomUUID(),
       operation: {
         type: "create",
+        source: "target",
         title: "Clean CRLF",
         target: { kind: "worktree", repositoryId },
       },

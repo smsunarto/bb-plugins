@@ -46,7 +46,7 @@ afterEach(async () => {
 const run = <Operation>(operation: Operation, leaseId?: string) =>
   store.execute({ commandId: randomUUID(), leaseId, operation });
 
-const create = () => run({ type: "create", title: "Lenses", pins });
+const create = () => run({ type: "create", source: "pins", title: "Lenses", pins });
 
 const lens = <Edit>(reviewId: string, edit: Edit, leaseId?: string) =>
   run({ type: "lens", reviewId, edit }, leaseId);

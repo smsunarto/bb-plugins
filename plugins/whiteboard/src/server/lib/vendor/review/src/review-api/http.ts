@@ -1216,7 +1216,7 @@ export function createReviewApi(
 
     if (
       input.operation.type === "create" &&
-      input.operation.kind === "scratchpad"
+      input.operation.source === "scratchpad"
     )
       refuseDisabledScratchpad(SCRATCHPAD_ID);
 
@@ -1277,7 +1277,7 @@ export function createReviewApi(
     if (result.created !== false)
       hooks.onReviewCreated?.({
         reviewId: result.reviewId,
-        kind: input.operation.kind === "scratchpad" ? "scratchpad" : "review",
+        kind: input.operation.source === "scratchpad" ? "scratchpad" : "review",
         blocks: store.read(result.reviewId).document.length,
         ...reviewRequestOrigin(context.req.raw.headers),
       });

@@ -39,6 +39,7 @@ beforeEach(async () => {
     commandId: randomUUID(),
     operation: {
       type: "create",
+      source: "pins",
       title: "Commits",
       pins: { repositoryId: "repo", base: "base-commit", head: "head-commit" },
     },
@@ -90,6 +91,7 @@ it("opens and creates without environmentIssues", async () => {
     commandId: randomUUID(),
     operation: {
       type: "create",
+      source: "pins",
       title: "Opened",
       pins: { repositoryId: "repo", base: "base-commit", head: "head-commit" },
     },

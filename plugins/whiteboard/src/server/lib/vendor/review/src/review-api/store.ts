@@ -74,6 +74,57 @@ export const SCRATCHPAD_TITLE = "Scratchpad";
 /** The create command that makes it, with one id so a repeat is a receipt. */
 const SCRATCHPAD_COMMAND_ID = "5c7a7c6e-0000-4000-8000-5c7a7c6e0000";
 
+const createTitle = z.string().trim().min(1);
+
+/** Return the existing review for pullRequestUrl instead of creating one. */
+const reuseExisting = z
+  .boolean()
+  .optional()
+  .describe(
+    "Default true: return the existing review for pullRequestUrl. false creates a separate review.",
+  );
+
+/** What a new review shows. `source` picks the variant; each names only the
+ * fields that variant reads. */
+const createOperation = z.discriminatedUnion("source", [
+  /** The one scratchpad: no target, no pins; every reference names its own. */
+  z.strictObject({ type: z.literal("create"), source: z.literal("scratchpad") }),
+  z.strictObject({
+    type: z.literal("create"),
+    source: z.literal("target"),
+    title: createTitle,
+    target: reviewTargetSchema,
+    pullRequestUrl: pullRequestUrl.optional(),
+    reuseExisting,
+  }),
+  z.strictObject({
+    type: z.literal("create"),
+    source: z.literal("pins"),
+    title: createTitle,
+    pins: pinsSchema,
+    pullRequestUrl: pullRequestUrl.optional(),
+    reuseExisting,
+  }),
+  /** The PR alone names the source; the host fetches it and titles the review. */
+  z.strictObject({
+    type: z.literal("create"),
+    source: z.literal("pull-request"),
+    pullRequestUrl,
+    /** Default: the PR title. */
+    title: createTitle.optional(),
+    repositoryId: z
+      .string()
+      .min(1)
+      .optional()
+      .describe(
+        "The registered checkout to fetch the PR into. Default: the existing review's, else the first registered checkout with a remote for the PR's repository.",
+      ),
+    reuseExisting,
+  }),
+]);
+
+export type CreateOperation = z.infer<typeof createOperation>;
+
 export const commandSchema = z.strictObject({
   commandId: z.uuid(),
   leaseId: z.uuid().optional(),
@@ -84,31 +135,7 @@ export const commandSchema = z.strictObject({
       reviewId,
       action: z.enum(["view", "dismiss", "restore"]),
     }),
-    z.strictObject({
-      type: z.literal("create"),
-      /** Required unless pullRequestUrl alone names the source; then the PR title. */
-      title: z.string().trim().min(1).optional(),
-      pins: pinsSchema.optional(),
-      target: reviewTargetSchema.optional(),
-      pullRequestUrl: pullRequestUrl.optional(),
-      /** With pullRequestUrl and no target: the checkout to fetch the PR into. */
-      repositoryId: z
-        .string()
-        .min(1)
-        .optional()
-        .describe(
-          "Only with pullRequestUrl and no target: the registered checkout to fetch the PR into. Default: the existing review's, else the first registered checkout with a remote for the PR's repository.",
-        ),
-      /** Return the existing review for pullRequestUrl instead of creating one. */
-      reuseExisting: z
-        .boolean()
-        .optional()
-        .describe(
-          "Default true: return the existing review for pullRequestUrl. false creates a separate review.",
-        ),
-      /** The one scratchpad: no target, no pins; every reference names its own. */
-      kind: z.literal("scratchpad").optional(),
-    }),
+    createOperation,
     z.strictObject({
       type: z.literal("set_target"),
       reviewId,
@@ -918,11 +945,7 @@ export class ReviewStore {
     try {
       await this.execute({
         commandId: id === SCRATCHPAD_ID ? SCRATCHPAD_COMMAND_ID : randomUUID(),
-        operation: {
-          type: "create",
-          title: SCRATCHPAD_TITLE,
-          kind: "scratchpad",
-        },
+        operation: { type: "create", source: "scratchpad" },
       });
     } catch (error) {
       if (!this.has(id)) throw error;
@@ -987,7 +1010,7 @@ export class ReviewStore {
 
         // SAFETY: receipts store only Results this method built, never caller-provided JSON.
         const result = JSON.parse(String(receipt.response)) as Result;
-        if (command.operation.type === "create" && command.operation.kind === "scratchpad" && result.reviewId !== this.scratchpadId())
+        if (command.operation.type === "create" && command.operation.source === "scratchpad" && result.reviewId !== this.scratchpadId())
           throw new ReviewInputError("Command ID belongs to another thread’s scratchpad.", 409);
         return result;
       }
@@ -1011,38 +1034,15 @@ export class ReviewStore {
           409,
         );
 
-      if (op.type === "create" && op.kind === "scratchpad") {
-        if (op.pins || op.target)
-          throw new ReviewInputError(
-            "A scratchpad has no target or pins of its own.",
-          );
-
+      if (op.type === "create" && op.source === "scratchpad") {
         const id = this.scratchpadId();
         if (!id) throw new ReviewInputError("Open the scratchpad from a BB thread.", 409);
         if (this.has(id))
           throw new ReviewInputError("The scratchpad already exists.", 409);
-      } else if (op.type === "create") {
-        if (op.pins && op.target)
-          throw new ReviewInputError(
-            "Supply exactly one of target or legacy pins.",
-          );
-
-        if (!op.pins && !op.target && !op.pullRequestUrl)
-          throw new ReviewInputError(
-            "Supply a target, legacy pins, or a pullRequestUrl.",
-          );
-
-        if (op.repositoryId && (op.pins || op.target))
-          throw new ReviewInputError(
-            "repositoryId applies only to a create from pullRequestUrl alone; put it in the target instead.",
-          );
-
-        if (!op.title && (op.pins || op.target))
-          throw new ReviewInputError("Supply a title.");
       }
 
       const requestedTarget =
-        op.type === "create" || op.type === "set_target"
+        op.type === "set_target" || (op.type === "create" && op.source === "target")
           ? op.target
           : undefined;
 
@@ -1057,6 +1057,7 @@ export class ReviewStore {
 
       if (
         op.type === "create" &&
+        op.source !== "scratchpad" &&
         op.pullRequestUrl &&
         op.reuseExisting !== false
       ) {
@@ -1068,7 +1069,7 @@ export class ReviewStore {
           const result = this.existingReview(
             found,
             others,
-            resolvedTarget?.pins ?? op.pins!,
+            op.source === "pins" ? op.pins : resolvedTarget!.pins,
             command.leaseId,
           );
 
@@ -1158,7 +1159,7 @@ export class ReviewStore {
       const id =
         op.type !== "create"
           ? op.reviewId
-          : op.kind === "scratchpad"
+          : op.source === "scratchpad"
             ? this.scratchpadId()!
             : randomUUID();
 
@@ -1166,7 +1167,7 @@ export class ReviewStore {
 
       let snapshot: Snapshot =
         op.type === "create"
-          ? createdSnapshot(id, op, resolvedTarget, fromPullRequest?.title)
+          ? createdSnapshot(id, op, resolvedTarget, fromPullRequest)
           : structuredClone(previous!);
 
       // Overlay state: a degraded read must not persist unavailability.
@@ -1219,7 +1220,8 @@ export class ReviewStore {
               assignFreshIds(block, (prefix) => `${prefix}-${++nextId}`);
           }
 
-          setPullRequest(snapshot, op.pullRequestUrl);
+          if (op.source !== "scratchpad")
+            setPullRequest(snapshot, op.pullRequestUrl);
           break;
         case "rename":
           snapshot.title = op.title;
@@ -1406,10 +1408,7 @@ export class ReviewStore {
 
     if (
       op.type !== "create" ||
-      op.kind ||
-      op.pins ||
-      op.target ||
-      !op.pullRequestUrl ||
+      op.source !== "pull-request" ||
       this.db
         .prepare("SELECT 1 FROM receipts WHERE command_id=?")
         .get(command.commandId)
@@ -1854,35 +1853,29 @@ function scopeOf(operation: { type: string }): LeaseScope {
  * is kept so stored JSON reads as it always has. */
 function createdSnapshot(
   id: string,
-  op: {
-    title?: string;
-    kind?: "scratchpad";
-    pins?: z.infer<typeof pinsSchema>;
-  },
+  op: CreateOperation,
   resolved: { target: ReviewTarget; pins: Pins } | undefined,
-  defaultTitle?: string,
+  pullRequest: ResolvedPullRequest | undefined,
 ): Snapshot {
-  const pins = resolved?.pins ?? op.pins;
-  const title = op.title ?? defaultTitle;
-
-  if (!title) throw new ReviewInputError("Supply a title.");
-
-  if (!pins)
+  if (op.source === "scratchpad")
     return {
       reviewId: id,
       version: 0,
-      title,
-      kind: op.kind,
+      title: SCRATCHPAD_TITLE,
+      kind: "scratchpad",
       document: [],
       createdAt: "",
     };
+
+  const title = op.source === "pull-request" ? (op.title ?? pullRequest!.title) : op.title;
+  const pins = op.source === "pins" ? op.pins : resolved!.pins;
 
   return {
     reviewId: id,
     version: 0,
     title,
     pins,
-    target: resolved?.target ?? { kind: "commits", ...pins },
+    target: op.source === "pins" ? { kind: "commits", ...pins } : resolved!.target,
     document: [],
     createdAt: "",
   };

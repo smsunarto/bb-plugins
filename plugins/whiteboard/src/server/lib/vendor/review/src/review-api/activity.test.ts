@@ -76,6 +76,7 @@ it("streams activity separately from document versions and closes the stream on 
 
   const { reviewId } = await command({
     type: "create",
+    source: "pins",
     title: "Activity",
     pins: { repositoryId: "repo", base: "base", head: "head" },
   });

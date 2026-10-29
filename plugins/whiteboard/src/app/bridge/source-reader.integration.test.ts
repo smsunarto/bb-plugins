@@ -78,6 +78,7 @@ it("refreshes dirty worktree source at the same authored version and retains his
       commandId: randomUUID(),
       operation: {
         type: "create",
+        source: "target",
         title: "Dirty source",
         target: { kind: "worktree", repositoryId: registered.body.id },
       },
@@ -155,6 +156,7 @@ it.each(["clean filter", "CRLF"])(
         commandId: randomUUID(),
         operation: {
           type: "create",
+          source: "target",
           title: "Filtered dirty source",
           target: { kind: "worktree", repositoryId: registered.body.id },
         },

@@ -19,6 +19,7 @@ import {
   type ReviewProviders,
   ReviewStore,
   SCRATCHPAD_ID,
+  commandSchema,
   inspectSnapshot,
 } from "./store.ts";
 
@@ -50,7 +51,7 @@ const request = <Operation>(operation: Operation) => ({
 });
 
 const create = () =>
-  store.execute(request({ type: "create", title: "Example", pins }));
+  store.execute(request({ type: "create", source: "pins", title: "Example", pins }));
 
 const edit = <Content>(reviewId: string, value: Content) =>
   store.execute(request({ type: "edit", reviewId, edit: value }));
@@ -89,6 +90,7 @@ describe("snapshot authoring", () => {
     const { reviewId } = await store.execute(
       request({
         type: "create",
+        source: "pins",
         title: "PR review",
         pins,
         pullRequestUrl: url,
@@ -194,6 +196,7 @@ describe("snapshot authoring", () => {
       store.execute(
         request({
           type: "create",
+          source: "pins",
           title: "Bad identity",
           pins,
           pullRequestUrl: url,
@@ -234,7 +237,7 @@ describe("snapshot authoring", () => {
   });
 
   it("deletes one review and its history, keeps other reviews, and cannot replay deleted content", async () => {
-    const input = request({ type: "create", title: "Delete me", pins });
+    const input = request({ type: "create", source: "pins", title: "Delete me", pins });
     const { reviewId } = await store.execute(input);
     const other = await create();
     await edit(reviewId, {
@@ -1307,7 +1310,7 @@ describe("snapshot authoring", () => {
     ]);
     await expect(
       store.execute(
-        request({ type: "create", title: "Another", kind: "scratchpad" }),
+        request({ type: "create", source: "scratchpad" }),
       ),
     ).rejects.toMatchObject({ status: 409 });
 
@@ -1484,6 +1487,7 @@ describe("create for a pull request", () => {
     store.execute(
       request({
         type: "create",
+        source: "pins",
         title: fields.title ?? "PR review",
         pins: fields.pins ?? pins,
         pullRequestUrl,
@@ -1552,18 +1556,19 @@ describe("create for a pull request", () => {
     const target = { kind: "commits", repositoryId: "repo", head: "main" };
 
     const { reviewId } = await store.execute(
-      request({ type: "create", title: "PR", target, pullRequestUrl: url }),
+      request({ type: "create", source: "target", title: "PR", target, pullRequestUrl: url }),
     );
 
     expect(
       await store.execute(
-        request({ type: "create", title: "PR", target, pullRequestUrl: url }),
+        request({ type: "create", source: "target", title: "PR", target, pullRequestUrl: url }),
       ),
     ).toMatchObject({ created: false, reviewId, headMoved: false });
     expect(
       await store.execute(
         request({
           type: "create",
+          source: "target",
           title: "PR",
           target: { ...target, head: "feature" },
           pullRequestUrl: url,
@@ -1621,7 +1626,7 @@ describe("create for a pull request", () => {
     });
     expect(
       await store.execute({
-        ...request({ type: "create", title: "PR", pins, pullRequestUrl: url }),
+        ...request({ type: "create", source: "pins", title: "PR", pins, pullRequestUrl: url }),
         leaseId,
       }),
     ).not.toHaveProperty("ownedBy");
@@ -1632,6 +1637,7 @@ describe("create for a pull request", () => {
 
     const repeat = request({
       type: "create",
+      source: "pins",
       title: "PR",
       pins,
       pullRequestUrl: url,
@@ -1680,12 +1686,13 @@ describe("create for a pull request", () => {
     providers.resolvePullRequest = resolvePullRequest;
 
     const untitled = await store.execute(
-      request({ type: "create", pullRequestUrl: url }),
+      request({ type: "create", source: "pull-request", pullRequestUrl: url }),
     );
 
     const titled = await store.execute(
       request({
         type: "create",
+        source: "pull-request",
         title: "Mine",
         pullRequestUrl: url,
         reuseExisting: false,
@@ -1705,31 +1712,24 @@ describe("create for a pull request", () => {
     ]);
 
     // A repeat prefers the checkout of the review it will find.
-    await store.execute(request({ type: "create", pullRequestUrl: url }));
+    await store.execute(request({ type: "create", source: "pull-request", pullRequestUrl: url }));
     expect(resolvePullRequest).toHaveBeenLastCalledWith(url, {
       id: undefined,
       preferred: "repo",
     });
   });
 
-  it("needs a source, and a title unless a PR supplies it", async () => {
-    await expect(
-      store.execute(request({ type: "create", title: "Nothing" })),
-    ).rejects.toThrow(/target, legacy pins, or a pullRequestUrl/);
-    await expect(
-      store.execute(request({ type: "create", pins })),
-    ).rejects.toThrow(/Supply a title/);
-    await expect(
-      store.execute(
-        request({
-          type: "create",
-          title: "Both",
-          pins,
-          pullRequestUrl: url,
-          repositoryId: "repo",
-        }),
-      ),
-    ).rejects.toThrow(/repositoryId applies only/);
-    expect(store.list()).toEqual([]);
+  it("names its source, and a title unless a PR supplies it", () => {
+    const accepts = (operation: unknown) =>
+      commandSchema.safeParse(request(operation)).success;
+
+    expect(accepts({ type: "create", title: "Nothing" })).toBe(false);
+    expect(accepts({ type: "create", source: "pins", pins })).toBe(false);
+    expect(accepts({ type: "create", source: "target", title: "T", target: { kind: "commits", ...pins }, pins })).toBe(false);
+    expect(accepts({ type: "create", source: "pins", title: "Both", pins, pullRequestUrl: url, repositoryId: "repo" })).toBe(false);
+    expect(accepts({ type: "create", source: "scratchpad", title: "Pad" })).toBe(false);
+    expect(accepts({ type: "create", source: "pins", title: "Pins", pins })).toBe(true);
+    expect(accepts({ type: "create", source: "pull-request", pullRequestUrl: url })).toBe(true);
+    expect(accepts({ type: "create", source: "pull-request", pullRequestUrl: url, title: "Mine", repositoryId: "repo", reuseExisting: false })).toBe(true);
   });
 });

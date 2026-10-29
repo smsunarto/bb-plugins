@@ -16,6 +16,7 @@ import { ReviewApiClient } from "../../../../../../shared/vendor/review/src/revi
 import { documentText } from "../../../../../../shared/vendor/review/src/review-api/document-text.ts";
 import { ReviewInputError } from "../../../../../../shared/vendor/review/src/review-api/document.ts";
 import { LocalReviewData } from "./local-data.ts";
+import type { ReviewProgress } from "./review-progress.ts";
 import {
   type ReviewProviders,
   ReviewStore,
@@ -51,7 +52,7 @@ const request = <Operation>(operation: Operation) => ({
 });
 
 const create = () =>
-  store.execute(request({ type: "create", title: "Example", pins }));
+  store.execute(request({ type: "create", source: "pins", title: "Example", pins }));
 
 const edit = <Content>(reviewId: string, value: Content) =>
   store.execute(request({ type: "edit", reviewId, edit: value }));
@@ -597,15 +598,15 @@ it("resolves file lenses to whole changed files, preserves empty groups, and sha
   }));
   const initial = await reviewProgress(store, data, store.read(reviewId));
   const [docs, guide, tests] = initial.lenses;
-  expect(docs.fileCount).toBe(1);
-  expect(docs.sources).toEqual([
+  const sources = [
     { side: "base", file: "docs/old.md", fromLine: 1, toLine: 3 },
     { side: "head" as const, file: "guide/intro.md", fromLine: 1, toLine: 3 },
-  ]);
-  expect(guide.sources).toEqual(docs.sources);
-  expect(tests.fileCount).toBe(0);
-  expect(tests.sources).toEqual([]);
-  expect(tests.unavailable).toBeTruthy();
+  ];
+  expect(docs).toMatchObject({ state: "ready", fileCount: 1, sources });
+  expect(guide).toMatchObject({ state: "ready", sources });
+  expect(tests).toMatchObject({ state: "unavailable", reason: expect.any(String) });
+  expect(docs.state).not.toBe("unavailable");
+  expect(guide.state).not.toBe("unavailable");
   store.updateViewedCoverage(
     reviewId,
     initial.files.map((file) => ({
@@ -616,8 +617,8 @@ it("resolves file lenses to whole changed files, preserves empty groups, and sha
     true,
   );
   const viewed = await reviewProgress(store, data, store.read(reviewId));
-  expect(coverageProgress(viewed.files, docs.sources).state).toBe("viewed");
-  expect(coverageProgress(viewed.files, guide.sources).state).toBe("viewed");
+  expect(coverageProgress(viewed.files, resolved(docs).sources).state).toBe("viewed");
+  expect(coverageProgress(viewed.files, resolved(guide).sources).state).toBe("viewed");
   expect(coverageProgress(viewed.files).total).toEqual({
     additions: 1,
     deletions: 1,
@@ -717,8 +718,10 @@ it("validates range lens evidence and scopes progress and Uncategorized to disti
   }));
   const result = await reviewProgress(store, data, store.read(reviewId));
 
-  const lens = result.lenses[0],
-    rest = result.lenses.find((lens) => lens.id === "automatic-uncategorized")!;
+  const lens = resolved(result.lenses[0]),
+    rest = resolved(
+      result.lenses.find((lens) => lens.id === "automatic-uncategorized")!,
+    );
 
   expect(result.lenses.map((lens) => lens.title)).toEqual([
     "One line",
@@ -768,9 +771,9 @@ it("validates range lens evidence and scopes progress and Uncategorized to disti
     ],
   });
   const stale = await reviewProgress(store, data, store.read(reviewId));
-  expect(stale.lenses[0].unavailable).toBeTruthy();
+  expect(stale.lenses[0]).toMatchObject({ state: "unavailable" });
   expect(
-    coverageProgress(stale.files, stale.lenses.at(-1)!.sources).total,
+    coverageProgress(stale.files, resolved(stale.lenses.at(-1)!).sources).total,
   ).toEqual({ additions: 3, deletions: 3 });
 });
 
@@ -832,9 +835,11 @@ it("returns coverage and lenses after initial files without requesting summary e
   const progress = await reviewProgress(store, data, store.read(reviewId));
   expect(progress.files[0].changed).toEqual({ base: [], head: [[0, 1]] });
   expect(
-    progress.lenses.find((lens) => lens.id === "automatic-uncategorized")
-      ?.sources,
-  ).toEqual([{ side: "head", file: "a.ts", fromLine: 1, toLine: 1 }]);
+    progress.lenses.find((lens) => lens.id === "automatic-uncategorized"),
+  ).toMatchObject({
+    state: "ready",
+    sources: [{ side: "head", file: "a.ts", fromLine: 1, toLine: 1 }],
+  });
   data.close();
 });
 
@@ -866,7 +871,10 @@ it("returns pending progress without waiting for coverage and signals completion
   try {
     const pending = await api.request(route);
     expect(pending.status).toBe(202);
-    expect(await pending.json()).toMatchObject({ complete: false, files: [] });
+    expect(await pending.json()).toMatchObject({
+      files: [],
+      lenses: [{ id: "automatic-uncategorized", state: "pending" }],
+    });
     expect(data.coverageRevision).toBe(0);
     release();
     await data.coverage(reviewId, pins, "textual");
@@ -1018,7 +1026,6 @@ it("makes a diagram step's selection usable before an unrelated file finishes co
       ).toHaveLength(1),
     );
     const partial = await (await api.request(route)).json();
-    expect(partial.complete).toBe(false);
     // A diagram is not a Diff-view lens: only the automatic lens is listed.
     expect(partial.lenses).toHaveLength(1);
     expect(partial.resolvedSelections[selectionKey(refs[0])]).toBeDefined();
@@ -1026,14 +1033,14 @@ it("makes a diagram step's selection usable before an unrelated file finishes co
     expect(partial.unavailableSelections).toEqual({});
     expect(partial.lenses.at(-1)).toMatchObject({
       id: "automatic-uncategorized",
-      pending: true,
+      state: "pending",
       sources: [],
     });
     release();
     await data.coverage(reviewId, pins, "textual");
     const complete = await (await api.request(route)).json();
-    expect(complete.complete).toBe(true);
-    expect(complete.lenses[0].pending).toBe(false);
+    expect(complete.lenses).toHaveLength(1);
+    expect(complete.lenses[0].state).not.toBe("pending");
     expect(complete.resolvedSelections[selectionKey(refs[1])]).toBeDefined();
   } finally {
     release();
@@ -1114,7 +1121,7 @@ it("reports a created review with the origin its headers claim", async () => {
     api.request("/commands", {
       method: "POST",
       headers: { "content-type": "application/json", ...headers },
-      body: JSON.stringify(request({ type: "create", title, pins })),
+      body: JSON.stringify(request({ type: "create", source: "pins", title, pins })),
     });
 
   expect(
@@ -1145,3 +1152,9 @@ it("reports a created review with the origin its headers claim", async () => {
   ]);
 });
 
+
+/** A lens the Diff view can scope to; an unavailable one fails the test. */
+function resolved(lens: ReviewProgress["lenses"][number]) {
+  if (lens.state === "unavailable") throw new Error(lens.reason);
+  return lens;
+}
