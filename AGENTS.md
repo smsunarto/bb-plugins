@@ -66,6 +66,7 @@ When you add, rename, or remove a catalog plugin, update both files in the same 
 
 Use BB's bundled `bb-plugin-authoring` skill and its `references/testing.md` for SDK tests and the live plugin loop.
 
+- Review UI and capture visual evidence using bb in a web browser, not the desktop app. Enable the Monokai plugin, select the **bb Monokai** theme, and set appearance to **Dark**. Confirm the rendered UI uses both before evaluating it.
 - Run focused tests with `@get-bb/plugin-sdk/testing`, `/testing/app`, or `/testing/host` for the affected contracts.
 - Use `bb plugin dev` when the affected plugin is not already watched. Inspect its source, status, logs, or RPC with BB's plugin commands.
 - When using another BB build, read its URLs and routing from BB's launcher. Use that checkout's `pnpm bb:dev` CLI against it.
