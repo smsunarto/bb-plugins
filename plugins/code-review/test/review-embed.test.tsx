@@ -456,6 +456,7 @@ test("a missing card does not retry or poll fleet discovery", async () => {
     await new Promise((resolve) => setTimeout(resolve, 40));
     expect(reads).toBe(1);
     expect(slot.getByText("Unavailable")).toBeTruthy();
+    expect(slot.getByRole("button", { name: "Open Review" })).toBeTruthy();
     fireEvent.click(slot.getByRole("button", { name: "Retry" }));
     await waitFor(() => expect(reads).toBe(2));
   } finally {

@@ -237,7 +237,13 @@ function originalCardModel(data: BranchCardData): CardModel {
   const { branches, original, fallback, shared, comparison, files, reviewed } = data;
   if (!original) {
     const issue = queryIssue(branches);
-    return { title: "Branch changes", subPath: "", loading: !issue, unavailable: !!issue, issue };
+    return {
+      title: "Branch changes",
+      subPath: "",
+      loading: !issue,
+      issue,
+      actionLabel: issue ? "Open Review" : undefined,
+    };
   }
   return {
     title: fallback && !branches.isFetching ? "Shared changes" : "Branch changes",
@@ -311,7 +317,6 @@ function ReviewCard({
   files,
   loading,
   issue,
-  unavailable = false,
   onRetry,
   actionLabel,
   branchCheck,
@@ -323,7 +328,6 @@ function ReviewCard({
   files?: readonly ChangedFile[];
   loading: boolean;
   issue?: string;
-  unavailable?: boolean;
   onRetry: () => void;
   actionLabel?: string;
   branchCheck?: BranchCheck;
@@ -334,7 +338,7 @@ function ReviewCard({
   const entrance = useEmbedEntrance(identity);
   const count = files?.filter((file) => file.viewed === "viewed").length ?? 0;
   const total = files?.length ?? 0;
-  const labels = reviewLabels({ count, total, loading, issue, unavailable });
+  const labels = reviewLabels({ count, total, loading, issue });
   return (
     <section
       ref={entrance}
@@ -477,13 +481,11 @@ function reviewLabels({
   total,
   loading,
   issue,
-  unavailable,
 }: {
   count: number;
   total: number;
   loading: boolean;
   issue: string | undefined;
-  unavailable: boolean;
 }) {
   const ready = !loading && !issue && total > 0 && count === total;
   let status: string | null = null;
@@ -491,9 +493,7 @@ function reviewLabels({
   else if (loading) status = "Loading";
   else if (ready) status = "Ready";
   else if (count > 0) status = "In review";
-  let action = "Review changes";
-  if (unavailable) action = "Open Review";
-  else if (ready) action = "Open reviewed changes";
+  const action = ready ? "Open reviewed changes" : "Review changes";
   return { ready, status, action };
 }
 
