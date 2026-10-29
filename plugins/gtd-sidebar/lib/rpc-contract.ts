@@ -32,8 +32,8 @@ const threadIdSchema = z.object({ threadId: z.string().trim().min(1) });
 const lifecycleRowsSchema = z.array(
   z.object({
     threadId: z.string(),
-    snoozedUntil: z.number().nullable(),
-    snoozedAt: z.number().nullable(),
+    snoozedUntil: z.number(),
+    snoozedAt: z.number(),
   }),
 );
 const lifecycleWriteSchema = z.object({ ok: z.boolean(), rows: lifecycleRowsSchema });

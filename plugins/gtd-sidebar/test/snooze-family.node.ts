@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { createFakePluginHost, makeThreadResponse } from "@get-bb/plugin-sdk/testing";
-import plugin, { type StoredLifecycleRow } from "../server.ts";
+import type { ThreadLifecycleRow } from "../lib/lifecycle.ts";
+import plugin from "../server.ts";
 
 describe("family snooze RPC", () => {
   it("stores one wake time for a parent and its descendants, then wakes them together", async () => {
@@ -29,9 +30,9 @@ describe("family snooze RPC", () => {
       const written = (await harness.behavior.callRpc("snooze", {
         threadId: "root",
         snoozedUntil: wakeAt,
-      })) as { ok: boolean; rows: StoredLifecycleRow[] };
+      })) as { ok: boolean; rows: ThreadLifecycleRow[] };
       const { rows } = (await harness.behavior.callRpc("listLifecycle", {})) as {
-        rows: StoredLifecycleRow[];
+        rows: ThreadLifecycleRow[];
       };
       // The write answers with the same rows a re-read would.
       assert.deepEqual(written, { ok: true, rows });
@@ -83,6 +84,29 @@ describe("family snooze RPC", () => {
       const wake = harness.behavior.callRpc("unsnooze", { threadId: "root" });
       releaseSnoozeRead();
       await Promise.all([snooze, wake]);
+      assert.deepEqual(await harness.behavior.callRpc("listLifecycle", {}), { rows: [] });
+    } finally {
+      await harness.lifecycle.dispose();
+    }
+  });
+
+  // Migrations are append-only, so the columns stay nullable. A row an older
+  // build left with one snooze time is dropped at the read rather than handed
+  // to the sidebar as a snooze that can never wake on activity.
+  it("omits a stored row that is missing either snooze time", async () => {
+    const { bb, harness } = createFakePluginHost({
+      pluginId: "gtd-sidebar",
+      sdk: { subscribe: () => () => {}, threads: { list: async () => [] } },
+    });
+    await plugin(bb);
+    try {
+      const insert = bb.storage
+        .database()
+        .prepare(
+          `INSERT INTO thread_lifecycle (thread_id, snoozed_until, snoozed_at) VALUES (?, ?, ?)`,
+        );
+      insert.run("no-start", Date.now() + 86_400_000, null);
+      insert.run("no-wake", null, Date.now());
       assert.deepEqual(await harness.behavior.callRpc("listLifecycle", {}), { rows: [] });
     } finally {
       await harness.lifecycle.dispose();

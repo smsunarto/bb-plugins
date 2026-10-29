@@ -8,6 +8,7 @@ import { cliCommand, defineCli, PluginCliError, type BbPluginApi } from "@get-bb
 // Relative, not the `@/` alias the frontend uses: bb loads this file directly
 // as a path source, so nothing rewrites tsconfig paths for it.
 import { gtdSidebarHostContract } from "./lib/host-contract.ts";
+import type { ThreadLifecycleRow } from "./lib/lifecycle.ts";
 import { createMachineVisibilityStore } from "./lib/machine-visibility-store.ts";
 import { createCollapsedThreadsStore } from "./lib/collapsed-threads.ts";
 import { createThreadNester } from "./lib/nest-thread.ts";
@@ -30,16 +31,11 @@ const migrations = [
   `DELETE FROM thread_lifecycle WHERE snoozed_until IS NULL`,
 ];
 
-export interface StoredLifecycleRow {
-  threadId: string;
-  snoozedUntil: number | null;
-  snoozedAt: number | null;
-}
-
+/** One row of the `readAll` SELECT, whose WHERE makes both times non-null. */
 interface LifecycleDbRow {
   thread_id: string;
-  snoozed_until: number | null;
-  snoozed_at: number | null;
+  snoozed_until: number;
+  snoozed_at: number;
 }
 
 /** The host's 5 s limit on `but status`, plus the trip to and from the machine. */
@@ -107,10 +103,15 @@ export default async function plugin(bb: BbPluginApi) {
   const db = bb.storage.database();
   bb.storage.migrate(db, [...migrations, ...RETIRED_PROJECT_MIGRATIONS]);
 
-  const readAll = (): StoredLifecycleRow[] =>
+  // The columns stay nullable because migrations are append-only, so the
+  // read drops any row an older build left with one time missing.
+  const readAll = (): ThreadLifecycleRow[] =>
     (
       db
-        .prepare(`SELECT thread_id, snoozed_until, snoozed_at FROM thread_lifecycle`)
+        .prepare(
+          `SELECT thread_id, snoozed_until, snoozed_at FROM thread_lifecycle
+             WHERE snoozed_until IS NOT NULL AND snoozed_at IS NOT NULL`,
+        )
         .all() as LifecycleDbRow[]
     ).map((row) => ({
       threadId: row.thread_id,

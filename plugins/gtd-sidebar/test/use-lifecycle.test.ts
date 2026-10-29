@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 import { afterAll, afterEach, beforeEach, describe, it, jest } from "bun:test";
 import type { PluginBrowserBbSdk, PluginSidebarThread } from "@get-bb/plugin-sdk/app";
 import type { LifecycleApi } from "../hooks/use-lifecycle.ts";
+import type { ThreadLifecycleRow } from "../lib/lifecycle.ts";
 
 type Reviews = Awaited<ReturnType<PluginBrowserBbSdk["threads"]["list"]>>;
 
@@ -52,12 +53,6 @@ if (process.env.GTD_LIFECYCLE_TEST_CHILD !== "1") {
   const { makeThreadResponse } = await import("@get-bb/plugin-sdk/testing");
   const { snoozeUntilTomorrow } = await import("../lib/lifecycle.ts");
 
-  interface LifecycleRow {
-    threadId: string;
-    snoozedUntil: number | null;
-    snoozedAt: number | null;
-  }
-
   function thread(id: string): PluginSidebarThread {
     return {
       id,
@@ -101,7 +96,7 @@ if (process.env.GTD_LIFECYCLE_TEST_CHILD !== "1") {
     return createElement("output", null, lifecycle.shelfFor(subject));
   }
 
-  function mount(rows: () => LifecycleRow[]) {
+  function mount(rows: () => ThreadLifecycleRow[]) {
     return renderSlot(
       { component: Probe },
       { subject: thread("t") },
@@ -475,7 +470,7 @@ if (process.env.GTD_LIFECYCLE_TEST_CHILD !== "1") {
 
   describe("useLifecycle", () => {
     /** The stored rows after parking the family until `until`. */
-    function familyRows(until: number): LifecycleRow[] {
+    function familyRows(until: number): ThreadLifecycleRow[] {
       return ["t", "child"].map((threadId) => ({
         threadId,
         snoozedAt: Date.now(),
@@ -559,7 +554,7 @@ if (process.env.GTD_LIFECYCLE_TEST_CHILD !== "1") {
     // Separate requests can arrive out of order, so the Undo waits for its
     // snooze to answer; it still draws on the click.
     it("draws a fast Undo at once and sends it after the snooze answers", async () => {
-      let finish!: (value: { ok: boolean; rows: LifecycleRow[] }) => void;
+      let finish!: (value: { ok: boolean; rows: ThreadLifecycleRow[] }) => void;
       const pending = new Promise((resolve) => {
         finish = resolve;
       });
@@ -595,7 +590,7 @@ if (process.env.GTD_LIFECYCLE_TEST_CHILD !== "1") {
 
     // bb has nothing to predict on before the first read lands.
     it("parks a family clicked before the first read lands and keeps it once the write answers", async () => {
-      let answer!: (value: { ok: boolean; rows: LifecycleRow[] }) => void;
+      let answer!: (value: { ok: boolean; rows: ThreadLifecycleRow[] }) => void;
       const slot = renderSlot(
         { component: EditableProbe },
         {},
@@ -685,8 +680,8 @@ if (process.env.GTD_LIFECYCLE_TEST_CHILD !== "1") {
 
     it("keeps a snooze drawn over a re-read that started before it", async () => {
       let reads = 0;
-      let stored: LifecycleRow[] = [];
-      let finishRead!: (value: { rows: LifecycleRow[] }) => void;
+      let stored: ThreadLifecycleRow[] = [];
+      let finishRead!: (value: { rows: ThreadLifecycleRow[] }) => void;
       const slot = renderSlot(
         { component: EditableProbe },
         {},
@@ -723,8 +718,8 @@ if (process.env.GTD_LIFECYCLE_TEST_CHILD !== "1") {
     it("ends on a newer read when an older write answers late", async () => {
       // This window parks the family and its answer is slow. Meanwhile another
       // window wakes it, and this window's re-read already shows the wake.
-      let stored: LifecycleRow[] = [];
-      let answer!: (value: { ok: boolean; rows: LifecycleRow[] }) => void;
+      let stored: ThreadLifecycleRow[] = [];
+      let answer!: (value: { ok: boolean; rows: ThreadLifecycleRow[] }) => void;
       const slot = renderSlot(
         { component: EditableProbe },
         {},
@@ -797,7 +792,7 @@ if (process.env.GTD_LIFECYCLE_TEST_CHILD !== "1") {
 
     it("wakes a snooze that already elapsed when its row arrives on a stale clock", async () => {
       const mountedAt = Date.now();
-      let rows: LifecycleRow[] = [];
+      let rows: ThreadLifecycleRow[] = [];
       const slot = mount(() => rows);
       await flush();
       assert.equal(slot.container.textContent, "active");
@@ -820,7 +815,7 @@ if (process.env.GTD_LIFECYCLE_TEST_CHILD !== "1") {
 
     it("still arms a timer for a wake that is ahead of the wall clock", async () => {
       const mountedAt = Date.now();
-      let rows: LifecycleRow[] = [];
+      let rows: ThreadLifecycleRow[] = [];
       const slot = mount(() => rows);
       await flush();
 

@@ -139,9 +139,7 @@ export function useLifecycle(threads: readonly PluginSidebarThread[]): Lifecycle
     // updated when a timer fires, so arming from it after a long idle period
     // would schedule a new snooze far too late.
     const armedAt = Date.now();
-    const snoozedUntilValues = [...drawn.values()].flatMap((row) =>
-      row.snoozedUntil === null ? [] : [row.snoozedUntil],
-    );
+    const snoozedUntilValues = [...drawn.values()].map((row) => row.snoozedUntil);
     // A wake that is past on the wall clock but still ahead of the rendered
     // clock arms nothing — `nextWakeDelayMs` drops it — and leaves the row
     // parked for good. Catch the rendered clock up and let the next pass arm

@@ -22,12 +22,13 @@ export function isThreadWorking(thread: PluginSidebarThread): boolean {
   );
 }
 
+/** A snoozed thread. A thread with no row is not snoozed. */
 export interface ThreadLifecycleRow {
   threadId: string;
-  /** Wake time for a snooze; null when it is not snoozed. */
-  snoozedUntil: number | null;
-  /** When the snooze was set — used to detect activity since. */
-  snoozedAt: number | null;
+  /** Wake time. */
+  snoozedUntil: number;
+  /** When the snooze was set; activity after this wakes the thread early. */
+  snoozedAt: number;
 }
 
 /** The activity signals that outrank a user's parking decision. */
@@ -64,13 +65,13 @@ export function resolveShelf(
   signals: ThreadActivitySignals,
   now: number,
 ): ThreadShelf {
-  if (row === undefined || row.snoozedUntil === null) return "active";
+  if (row === undefined) return "active";
   if (!canPark(signals)) return "active";
 
   // A timer that has elapsed wakes the thread; so does anything that
   // happened after the snooze was set.
   const wokeOnTimer = row.snoozedUntil <= now;
-  const wokeOnActivity = row.snoozedAt !== null && signals.latestAttentionAt > row.snoozedAt;
+  const wokeOnActivity = signals.latestAttentionAt > row.snoozedAt;
   return wokeOnTimer || wokeOnActivity ? "active" : "snoozed";
 }
 

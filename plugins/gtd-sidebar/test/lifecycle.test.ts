@@ -19,12 +19,9 @@ const quiet: ThreadActivitySignals = {
   latestAttentionAt: 0,
 };
 
-const row = (overrides: Partial<ThreadLifecycleRow> = {}): ThreadLifecycleRow => ({
-  threadId: "thr_1",
-  snoozedUntil: null,
-  snoozedAt: null,
-  ...overrides,
-});
+const row = (
+  snooze: Omit<ThreadLifecycleRow, "threadId"> & { threadId?: string },
+): ThreadLifecycleRow => ({ threadId: "thr_1", ...snooze });
 
 describe("canPark", () => {
   it("refuses while the agent is blocked on the user", () => {
@@ -45,10 +42,6 @@ describe("canPark", () => {
 describe("resolveShelf", () => {
   it("keeps an unparked thread active", () => {
     assert.equal(resolveShelf(undefined, quiet, 1_000), "active");
-  });
-
-  it("keeps a row with no snooze active", () => {
-    assert.equal(resolveShelf(row(), quiet, 1_000), "active");
   });
 
   it("keeps a snoozed thread hidden until its wake time", () => {
