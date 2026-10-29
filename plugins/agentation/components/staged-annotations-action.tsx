@@ -42,6 +42,21 @@ import {
 import { broadcastType, sharedRequest } from "@/lib/shared-request.ts";
 import type { rpcContract } from "@/server.ts";
 
+type Batch =
+  | { kind: "loading" }
+  // `attempt` re-keys the alert so a retry that fails the same way is
+  // announced again.
+  | { kind: "failed"; error: string; attempt: number }
+  | { kind: "ready"; annotations: StoredAnnotation[]; threadTitles: Record<string, string> };
+
+/** The one thing the list is doing; a `send` with no id sends the whole batch. */
+type Action =
+  | null
+  | { kind: "send"; id: string | null }
+  | { kind: "discard"; id: string }
+  | { kind: "confirm-discard"; ids: string[] }
+  | { kind: "discarding"; ids: string[] };
+
 /**
  * `threadId` is null in the new-thread composer: no thread exists to send to
  * yet, so sending mentions the annotations and submits the composer. The
@@ -51,19 +66,16 @@ function StagedAnnotations({ threadId }: { threadId: string | null }) {
   const rpc = useRpc<typeof rpcContract>();
   const composer = useComposer();
   const pluginId = experimental_usePluginId();
-  const [annotations, setAnnotations] = useState<StoredAnnotation[]>([]);
-  const [threadTitles, setThreadTitles] = useState<Record<string, string>>({});
-  const [isLoading, setIsLoading] = useState(true);
-  const [isSending, setIsSending] = useState(false);
-  const [sendingId, setSendingId] = useState<string | null>(null);
-  const [discardingId, setDiscardingId] = useState<string | null>(null);
-  const [discardIds, setDiscardIds] = useState<string[] | null>(null);
-  const [isDiscarding, setIsDiscarding] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  // Re-keys the alert so a retry that fails the same way is announced again.
-  const [failures, setFailures] = useState(0);
+  const [batch, setBatch] = useState<Batch>({ kind: "loading" });
+  // The ref answers "is something already running?" before React re-renders
+  // the disabled controls; the state copy is what the render reads.
+  const actionRef = useRef<Action>(null);
+  const [action, setActionState] = useState<Action>(null);
+  const setAction = (next: Action) => {
+    actionRef.current = next;
+    setActionState(next);
+  };
   const refreshSequence = useRef(0);
-  const actionInFlight = useRef(false);
   const annotationDescriptionPrefix = useId();
 
   const refresh = useCallback(async () => {
@@ -75,19 +87,19 @@ function StagedAnnotations({ threadId }: { threadId: string | null }) {
         rpc.call("listStagedAnnotations"),
       );
       if (sequence !== refreshSequence.current) return;
-      setAnnotations(result.annotations);
-      setThreadTitles(result.threadTitles);
-      setError(null);
+      setBatch({
+        kind: "ready",
+        annotations: result.annotations,
+        threadTitles: result.threadTitles,
+      });
     } catch (cause) {
       if (sequence !== refreshSequence.current) return;
-      // Never leave actions enabled against a list the server failed to
-      // verify. A successful later refresh replaces this empty snapshot.
-      setAnnotations([]);
-      setThreadTitles({});
-      setError(cause instanceof Error ? cause.message : String(cause));
-      setFailures((count) => count + 1);
-    } finally {
-      if (sequence === refreshSequence.current) setIsLoading(false);
+      const error = cause instanceof Error ? cause.message : String(cause);
+      setBatch((previous) => ({
+        kind: "failed",
+        error,
+        attempt: previous.kind === "failed" ? previous.attempt + 1 : 1,
+      }));
     }
   }, [rpc]);
 
@@ -151,43 +163,50 @@ function StagedAnnotations({ threadId }: { threadId: string | null }) {
     previousConnection.current = connection;
   }, [connection, refresh]);
 
-  const mentionAll = () =>
-    mentionAnnotations(
-      annotations.map((annotation) => ({
-        id: annotation.id,
-        label: annotationMentionLabel(
-          annotation,
-          annotationSourceLabel(annotation.bb, threadTitles),
-        ),
-      })),
+  if (batch.kind === "loading") return null;
+
+  if (batch.kind === "failed") {
+    return (
+      <span className="contents" title={`Couldn't load annotations: ${batch.error}`}>
+        <Button
+          type="button"
+          variant="ghost"
+          data-agentation-staging-action=""
+          aria-label="Retry loading annotations"
+          className={cn(ACTION_BUTTON_CLASS, "text-destructive")}
+          onClick={() => void refresh()}
+        >
+          <Icon name="ChatFeedback" className="size-4 shrink-0" aria-hidden="true" />
+          <span className="text-xs font-medium">Retry</span>
+        </Button>
+        <span key={batch.attempt} role="alert" className="sr-only">
+          Couldn't load annotations: {batch.error}
+        </span>
+      </span>
     );
+  }
+
+  if (batch.annotations.length === 0) return null;
+
+  const rows = batch.annotations.map((annotation) => {
+    const location = annotationSourceLabel(annotation.bb, batch.threadTitles);
+    return {
+      id: annotation.id,
+      label: annotationMentionLabel(annotation, location),
+      parts: { ...annotationMentionLabelParts(annotation, location), comment: annotation.comment },
+    };
+  });
 
   const sendAnnotations = async (annotationIds: string[], sendingAnnotationId: string | null) => {
-    if (actionInFlight.current) return;
-    if (annotationIds.length === 0) return;
-
-    actionInFlight.current = true;
+    if (actionRef.current) return;
+    setAction({ kind: "send", id: sendingAnnotationId });
     refreshSequence.current += 1;
-    if (sendingAnnotationId === null) setIsSending(true);
-    else setSendingId(sendingAnnotationId);
     try {
       if (threadId === null) {
         const selectedIds = new Set(annotationIds);
         // Submit checks the host editor's rendered readiness. Commit the pills
         // first so an initially empty composer is ready on this same click.
-        flushSync(() =>
-          mentionAnnotations(
-            annotations
-              .filter((annotation) => selectedIds.has(annotation.id))
-              .map((annotation) => ({
-                id: annotation.id,
-                label: annotationMentionLabel(
-                  annotation,
-                  annotationSourceLabel(annotation.bb, threadTitles),
-                ),
-              })),
-          ),
-        );
+        flushSync(() => mentionAnnotations(rows.filter((row) => selectedIds.has(row.id))));
         await composer.submit();
         await refresh();
         return;
@@ -212,20 +231,23 @@ function StagedAnnotations({ threadId }: { threadId: string | null }) {
       );
       await refresh();
     } finally {
-      if (sendingAnnotationId === null) setIsSending(false);
-      else setSendingId(null);
-      actionInFlight.current = false;
+      setAction(null);
     }
   };
 
-  const discardOne = async (annotation: StoredAnnotation) => {
-    if (actionInFlight.current) return;
-    actionInFlight.current = true;
+  const sendAll = () =>
+    void sendAnnotations(
+      rows.map((row) => row.id),
+      null,
+    );
+
+  const discardOne = async (annotationId: string) => {
+    if (actionRef.current) return;
+    setAction({ kind: "discard", id: annotationId });
     refreshSequence.current += 1;
-    setDiscardingId(annotation.id);
     try {
       const result = await rpc.call("discardStagedAnnotations", {
-        annotationIds: [annotation.id],
+        annotationIds: [annotationId],
       });
       if (result.outcome === "discarded") toast.success(result.message);
       else toast.warning(result.message);
@@ -237,99 +259,55 @@ function StagedAnnotations({ threadId }: { threadId: string | null }) {
       });
       await refresh();
     } finally {
-      setDiscardingId(null);
-      actionInFlight.current = false;
+      setAction(null);
     }
   };
 
-  const discardAll = async () => {
-    if (actionInFlight.current || discardIds === null || discardIds.length === 0) {
-      return;
-    }
+  const openDiscardAll = () => {
+    if (actionRef.current) return;
+    setAction({ kind: "confirm-discard", ids: rows.map((row) => row.id) });
+  };
 
-    actionInFlight.current = true;
+  const closeDiscardAll = () => {
+    if (actionRef.current?.kind === "confirm-discard") setAction(null);
+  };
+
+  const discardAll = async () => {
+    const confirmed = actionRef.current;
+    if (confirmed?.kind !== "confirm-discard") return;
+    setAction({ kind: "discarding", ids: confirmed.ids });
     refreshSequence.current += 1;
-    setIsDiscarding(true);
     try {
       const result = await rpc.call("discardStagedAnnotations", {
-        annotationIds: discardIds,
+        annotationIds: confirmed.ids,
       });
       if (result.outcome === "discarded") toast.success(result.message);
       else toast.warning(result.message);
       forgetMentions(result.discardedIds);
       await refresh();
-      setDiscardIds(null);
     } catch (cause) {
       toast.error("Could not discard the staged annotations", {
         description: cause instanceof Error ? cause.message : String(cause),
       });
       await refresh();
-      setDiscardIds(null);
     } finally {
-      setIsDiscarding(false);
-      actionInFlight.current = false;
+      setAction(null);
     }
   };
 
-  const openDiscardAll = () => {
-    if (actionInFlight.current || annotations.length === 0) return;
-    setDiscardIds(annotations.map((annotation) => annotation.id));
-  };
-
-  const closeDiscardAll = () => {
-    if (isDiscarding) return;
-    setDiscardIds(null);
-  };
-
-  if (isLoading || (annotations.length === 0 && error === null)) return null;
-
-  const isMutating =
-    isSending || sendingId !== null || discardingId !== null || isDiscarding || discardIds !== null;
-
-  const sendAll = () =>
-    void sendAnnotations(
-      annotations.map((annotation) => annotation.id),
-      null,
-    );
-
-  if (error) {
-    return (
-      <span className="contents" title={`Couldn't load annotations: ${error}`}>
-        <Button
-          type="button"
-          variant="ghost"
-          data-agentation-staging-action=""
-          aria-label="Retry loading annotations"
-          className={cn(ACTION_BUTTON_CLASS, "text-destructive")}
-          onClick={() => void refresh()}
-        >
-          <Icon name="ChatFeedback" className="size-4 shrink-0" aria-hidden="true" />
-          <span className="text-xs font-medium">Retry</span>
-        </Button>
-        <span key={failures} role="alert" className="sr-only">
-          Couldn't load annotations: {error}
-        </span>
-      </span>
-    );
-  }
-
-  const rows = annotations.map((annotation) => {
-    const location = annotationSourceLabel(annotation.bb, threadTitles);
-    return {
-      annotation,
-      label: annotationMentionLabel(annotation, location),
-      parts: { ...annotationMentionLabelParts(annotation, location), comment: annotation.comment },
-    };
-  });
+  const isMutating = action !== null;
+  const discard =
+    action?.kind === "confirm-discard" || action?.kind === "discarding" ? action : null;
+  const isDiscarding = discard?.kind === "discarding";
 
   return (
     <>
       <AnnotationsAction
-        count={annotations.length}
+        count={rows.length}
         renderHeader={(dismiss) => (
           <div className="flex min-w-0 flex-wrap items-center justify-between gap-2 px-2.5 py-1.5">
             <p className="truncate text-xs font-medium text-muted-foreground">
-              {annotationCountLabel(annotations.length)}
+              {annotationCountLabel(rows.length)}
             </p>
             <div className="flex min-w-0 flex-wrap items-center gap-1">
               <Button
@@ -339,7 +317,7 @@ function StagedAnnotations({ threadId }: { threadId: string | null }) {
                 className="h-7 px-2"
                 disabled={isMutating}
                 onClick={() => {
-                  mentionAll();
+                  mentionAnnotations(rows);
                   dismiss(() => composer.focus());
                 }}
               >
@@ -354,7 +332,7 @@ function StagedAnnotations({ threadId }: { threadId: string | null }) {
                 onClick={sendAll}
               >
                 <Icon name="ArrowUp" aria-hidden="true" />
-                {isSending ? "Sending…" : "Send all"}
+                {action?.kind === "send" && action.id === null ? "Sending…" : "Send all"}
               </Button>
               <Button
                 type="button"
@@ -373,28 +351,24 @@ function StagedAnnotations({ threadId }: { threadId: string | null }) {
         renderList={(dismiss) => (
           <ol
             className="flex flex-col divide-y divide-border"
-            aria-busy={isSending || sendingId !== null || discardingId !== null}
+            aria-busy={action !== null && action.kind !== "confirm-discard"}
           >
-            {rows.map(({ annotation, label, parts }, index) => (
+            {rows.map(({ id, label, parts }, index) => (
               <AnnotationRow
-                key={annotation.id}
+                key={id}
                 number={index + 1}
                 label={label}
                 parts={parts}
-                descriptionId={`${annotationDescriptionPrefix}-${annotation.id}`}
+                descriptionId={`${annotationDescriptionPrefix}-${id}`}
                 disabled={isMutating}
-                isSending={sendingId === annotation.id}
-                isDiscarding={discardingId === annotation.id}
+                isSending={action?.kind === "send" && action.id === id}
+                isDiscarding={action?.kind === "discard" && action.id === id}
                 onMention={() => {
-                  mentionAnnotations([{ id: annotation.id, label }]);
+                  mentionAnnotations([{ id, label }]);
                   dismiss(() => composer.focus());
                 }}
-                onSend={
-                  threadId === null
-                    ? null
-                    : () => void sendAnnotations([annotation.id], annotation.id)
-                }
-                onDiscard={() => void discardOne(annotation)}
+                onSend={threadId === null ? null : () => void sendAnnotations([id], id)}
+                onDiscard={() => void discardOne(id)}
               />
             ))}
           </ol>
@@ -402,18 +376,18 @@ function StagedAnnotations({ threadId }: { threadId: string | null }) {
       />
 
       <Dialog
-        open={discardIds !== null}
+        open={discard !== null}
         onOpenChange={(open) => {
           if (!open) closeDiscardAll();
         }}
       >
         <DialogContent>
-          {discardIds !== null ? (
+          {discard ? (
             <>
               <DialogHeader>
                 <DialogTitle>
-                  Discard all {discardIds.length} staged annotation
-                  {discardIds.length === 1 ? "" : "s"}?
+                  Discard all {discard.ids.length} staged annotation
+                  {discard.ids.length === 1 ? "" : "s"}?
                 </DialogTitle>
                 <DialogDescription>
                   This removes their markers from all bb pages and moves the feedback to the
@@ -432,10 +406,10 @@ function StagedAnnotations({ threadId }: { threadId: string | null }) {
                 <Button
                   type="button"
                   variant="destructive"
-                  disabled={isDiscarding || error !== null}
+                  disabled={isDiscarding}
                   onClick={() => void discardAll()}
                 >
-                  {isDiscarding ? "Discarding…" : `Discard all ${discardIds.length}`}
+                  {isDiscarding ? "Discarding…" : `Discard all ${discard.ids.length}`}
                 </Button>
               </DialogFooter>
             </>
