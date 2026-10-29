@@ -86,6 +86,10 @@
     {
       "name": "slopcop",
       "source": "./plugins/slopcop"
+    },
+    {
+      "name": "at-plugin",
+      "source": "./plugins/at-plugin"
     }
   ]
 }

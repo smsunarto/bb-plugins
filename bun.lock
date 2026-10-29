@@ -249,6 +249,19 @@
         "vaul": "^1.1.2",
       },
     },
+    "plugins/at-plugin": {
+      "name": "@smsunarto/bb-plugin-at-plugin",
+      "version": "0.1.0",
+      "dependencies": {
+        "@bb-plugins/instructions": "workspace:*",
+      },
+      "devDependencies": {
+        "@get-bb/plugin-sdk": "0.6.94",
+        "@types/node": "^22.0.0",
+        "typescript": "^6.0.0",
+        "vitest": "4.1.11",
+      },
+    },
     "plugins/boat-sandbox": {
       "name": "@smsunarto/bb-plugin-boat-sandbox",
       "version": "0.1.0",
@@ -1789,6 +1802,8 @@
     "@smsunarto/bb-plugin-agentation": ["@smsunarto/bb-plugin-agentation@workspace:plugins/agentation"],
 
     "@smsunarto/bb-plugin-amp": ["@smsunarto/bb-plugin-amp@workspace:plugins/amp"],
+
+    "@smsunarto/bb-plugin-at-plugin": ["@smsunarto/bb-plugin-at-plugin@workspace:plugins/at-plugin"],
 
     "@smsunarto/bb-plugin-boat-sandbox": ["@smsunarto/bb-plugin-boat-sandbox@workspace:plugins/boat-sandbox"],
 

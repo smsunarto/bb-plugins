@@ -1,0 +1,35 @@
+{
+  "name": "@smsunarto/bb-plugin-at-plugin",
+  "version": "0.1.0",
+  "type": "module",
+  "private": true,
+  "license": "UNLICENSED",
+  "description": "Mention installed plugins with #.",
+  "engines": {
+    "bb": ">=0.48.0 <1.0.0",
+    "bbPluginSdk": ">=0.6.94"
+  },
+  "bb": {
+    "name": "Installed Plugin Mentions",
+    "description": "Type # to find and mention your enabled, running plugins.",
+    "branding": {
+      "icon": "Target"
+    },
+    "server": "./server.ts",
+    "skills": []
+  },
+  "scripts": {
+    "build": "bb plugin build",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@bb-plugins/instructions": "workspace:*"
+  },
+  "devDependencies": {
+    "@get-bb/plugin-sdk": "0.6.94",
+    "@types/node": "^22.0.0",
+    "typescript": "^6.0.0",
+    "vitest": "4.1.11"
+  }
+}
