@@ -21,7 +21,6 @@ import {
   type ExperimentalComposerCommandSuggestion,
   type ExperimentalComposerEditor,
   type ExperimentalComposerEditorState,
-  type ExperimentalComposerAction,
   type ExperimentalComposerInput,
   type ExperimentalDroppedThreadMention,
   type ExperimentalComposerPromptAction as PromptBoxAction,
@@ -124,7 +123,7 @@ import {
   ComposerEditorSlot,
 } from "./ComposerEditorSlot";
 import { isModifierSubmitKeyEvent } from "./modifier-submit-key";
-import { composerSubmittingBlockedReason } from "./composer-submit-gate";
+import { describeSubmitBlocker, submitBlocker } from "./composer-submit-gate";
 
 const PROMPTBOX_MIN_HEIGHT = 68;
 const DEFAULT_MENTION_TRIGGER = "@";
@@ -2502,27 +2501,23 @@ export function PromptBoxInternal({
     [getTextBeforeCursor, insertTextAtCursor, sendVoiceTranscript, playVoiceCompletionTransition],
   );
 
-  const canSubmitActionAfterVoice = (action: ExperimentalComposerAction | null) =>
-    action !== null &&
-    (!action.requiresInput || hasSubmittableInput) &&
-    !isAttaching &&
-    !isSubmitting &&
-    !submitDisabled;
-  const canSubmitAction = (action: ExperimentalComposerAction | null) =>
-    canSubmitActionAfterVoice(action) && !showVoiceActionGroup;
-  const canSubmitVoiceTranscript =
-    hasSubmittableInput && canSubmitActionAfterVoice(primarySubmitAction);
-  const canPrimarySubmit = canSubmitAction(primarySubmitAction);
-  const canSubmit = hasSubmittableInput && canPrimarySubmit;
-  const canModifierSubmit = canSubmitAction(modifierSubmitAction);
-  const submittingBlockedReason = composerSubmittingBlockedReason({
-    canSubmit: canPrimarySubmit,
+  const submitContext = {
     hasSubmittableInput,
     isAttaching,
     isSubmitting,
     voiceActive: showVoiceActionGroup,
-    submitDisabledReason,
-  });
+    disabled: submitDisabled,
+    disabledReason: submitDisabledReason,
+  };
+  const primaryBlocker = submitBlocker(primarySubmitAction, submitContext);
+  const canPrimarySubmit = primaryBlocker === null;
+  const canSubmit = hasSubmittableInput && canPrimarySubmit;
+  const canSubmitVoiceTranscript =
+    hasSubmittableInput &&
+    submitBlocker(primarySubmitAction, submitContext, { allowVoice: true }) === null;
+  const canModifierSubmit =
+    modifierSubmitAction !== null && submitBlocker(modifierSubmitAction, submitContext) === null;
+  const submittingBlockedReason = describeSubmitBlocker(primaryBlocker);
   const composerEditorState = useMemo<ExperimentalComposerEditorState>(
     () => ({
       layout: composerLayout,

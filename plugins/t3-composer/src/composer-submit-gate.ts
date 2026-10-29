@@ -1,31 +1,51 @@
-export interface ComposerSubmitGateInput {
-  canSubmit: boolean;
+import type { ExperimentalComposerAction } from "@get-bb/plugin-sdk/app";
+
+/** What the composer knows when deciding whether an action may run, as BB reports it. */
+export interface ComposerSubmitContext {
   hasSubmittableInput: boolean;
   isAttaching: boolean;
   isSubmitting: boolean;
   voiceActive: boolean;
-  submitDisabledReason: string | undefined;
+  disabled: boolean;
+  disabledReason: string | undefined;
 }
 
-export function composerSubmittingBlockedReason({
-  canSubmit,
-  hasSubmittableInput,
-  isAttaching,
-  isSubmitting,
-  voiceActive,
-  submitDisabledReason,
-}: ComposerSubmitGateInput): string | null {
-  if (canSubmit) return null;
-  if (isAttaching) return "Uploading attachments...";
-  if (submitDisabledReason !== undefined) return submitDisabledReason;
-  if (voiceActive) return "Finish voice input first.";
-  if (isSubmitting) return "Submitting...";
-  return hasSubmittableInput ? "This composer can't submit right now." : "Type a message first.";
+export type SubmitBlocker =
+  | { by: "attaching" }
+  | { by: "disabled"; reason: string | undefined }
+  | { by: "voice" }
+  | { by: "submitting" }
+  | { by: "empty" };
+
+/**
+ * The first thing stopping `action`, in priority order, or null when it may run.
+ * `allowVoice` lets a finished voice transcript submit while voice input is still shown.
+ */
+export function submitBlocker(
+  action: ExperimentalComposerAction,
+  ctx: ComposerSubmitContext,
+  { allowVoice = false }: { allowVoice?: boolean } = {},
+): SubmitBlocker | null {
+  if (ctx.isAttaching) return { by: "attaching" };
+  if (ctx.disabled) return { by: "disabled", reason: ctx.disabledReason };
+  if (ctx.voiceActive && !allowVoice) return { by: "voice" };
+  if (ctx.isSubmitting) return { by: "submitting" };
+  if (action.requiresInput && !ctx.hasSubmittableInput) return { by: "empty" };
+  return null;
 }
 
-export function hasSubmittableComposerInput(draft: {
-  text: string;
-  attachments: readonly unknown[];
-}): boolean {
-  return draft.text.trim().length > 0 || draft.attachments.length > 0;
+export function describeSubmitBlocker(blocker: SubmitBlocker | null): string | null {
+  if (blocker === null) return null;
+  switch (blocker.by) {
+    case "attaching":
+      return "Uploading attachments...";
+    case "disabled":
+      return blocker.reason ?? "This composer can't submit right now.";
+    case "voice":
+      return "Finish voice input first.";
+    case "submitting":
+      return "Submitting...";
+    case "empty":
+      return "Type a message first.";
+  }
 }
