@@ -39,6 +39,16 @@ function useMagicMode(): boolean {
 
 type WandState = "off" | "on" | "pending" | "error";
 
+/**
+ * What the wand shows. On and off follow the toggle, as aria-pressed and the
+ * tooltip do: Magic Compose waits for the preferences and a composer before it
+ * acts, and the wand must not go dark meanwhile. The phase adds what it is doing.
+ */
+function wandState(enabled: boolean, snapshot: LiveFillSnapshot): WandState {
+  if (snapshot.phase === "pending" || snapshot.phase === "error") return snapshot.phase;
+  return enabled ? "on" : "off";
+}
+
 // The icon draws the stick first and then its two sparkles. They are rendered
 // as separate parts here so that app.css can move each on its own.
 const [WAND_STICK, ...WAND_SPARKLES] = WandSparklesIcon;
@@ -172,7 +182,7 @@ function MagicWand({
  */
 let lastKnownPreferences: Preferences | null = null;
 
-const NO_SESSION: LiveFillSnapshot = { enabled: false, pending: false, error: null };
+const NO_SESSION: LiveFillSnapshot = { phase: "off" };
 const getNoSession = () => NO_SESSION;
 const getNoCasts = () => 0;
 const subscribeToNothing = () => () => {};
@@ -283,8 +293,7 @@ function MagicToggle() {
   // The latest of the two is the one the wand is showing.
   const clickedLast = clicks.count > 0 && clicks.atMoves === moves;
 
-  const state: WandState =
-    snapshot.error !== null ? "error" : snapshot.pending ? "pending" : enabled ? "on" : "off";
+  const state = wandState(enabled, snapshot);
   return (
     <span ref={anchor} className="contents">
       <TooltipProvider>
@@ -319,8 +328,8 @@ function MagicToggle() {
             </Button>
           </TooltipTrigger>
           <TooltipContent>
-            {snapshot.error !== null
-              ? `Magic Compose: ${snapshot.error}`
+            {snapshot.phase === "error"
+              ? `Magic Compose: ${snapshot.message}`
               : enabled
                 ? "Magic Compose is on: Jev picks where this runs as you type"
                 : "Magic Compose: let Jev pick where this runs as you type"}

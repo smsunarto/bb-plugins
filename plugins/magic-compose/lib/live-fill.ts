@@ -1,8 +1,8 @@
 // Magic Compose, while it is on: the draft is routed again as it changes and the
 // composer's pickers follow it. This is the scheduling alone, free of React and
-// the DOM so it can be tested. It decides when to ask Jev and says, through
-// `pending`, when the draft on screen has not been decided yet, which is what
-// holds the send button.
+// the DOM so it can be tested. It decides when to ask Jev and says, through its
+// `pending` phase, when the draft on screen has not been decided yet, which is
+// what holds the send button.
 
 /** Let a burst of typing get going before its first request: no routing "F". */
 export const FIRST_DELAY_MS = 300;
@@ -13,13 +13,15 @@ export const PAUSE_MS = 700;
 /** A round slower than this fails, so send is never held for good. */
 export const ROUND_TIMEOUT_MS = 8_000;
 
-export interface LiveFillSnapshot {
-  enabled: boolean;
-  /** The draft on screen has not been routed and applied yet. */
-  pending: boolean;
-  /** Why the last round failed. Cleared when the draft changes or a round succeeds. */
-  error: string | null;
-}
+/** Which phase the draft on screen is in. A failed round lets the draft go: it is not pending. */
+export type LiveFillSnapshot =
+  | { phase: "off" }
+  // On, with nothing to decide: the draft is empty or the pickers already match it.
+  | { phase: "idle" }
+  // The draft on screen has not been routed and applied yet.
+  | { phase: "pending" }
+  // Why the last round failed. Cleared when the draft changes or on retry.
+  | { phase: "error"; message: string };
 
 export interface LiveFillDeps<Selection> {
   /** Ask Jev where `text` should run. */
@@ -46,10 +48,17 @@ export interface LiveFill {
   dispose(): void;
 }
 
-const OFF: LiveFillSnapshot = { enabled: false, pending: false, error: null };
+const OFF: LiveFillSnapshot = { phase: "off" };
 
 function messageOf(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+/** Whether a subscriber could tell the two apart. */
+function changed(a: LiveFillSnapshot, b: LiveFillSnapshot): boolean {
+  return (
+    a.phase !== b.phase || (a.phase === "error" && b.phase === "error" && a.message !== b.message)
+  );
 }
 
 export function createLiveFill<Selection>(deps: LiveFillDeps<Selection>): LiveFill {
@@ -73,20 +82,16 @@ export function createLiveFill<Selection>(deps: LiveFillDeps<Selection>): LiveFi
 
   const undecided = () => enabled && text !== "" && text !== settledText;
 
+  function phase(): LiveFillSnapshot {
+    if (!enabled) return OFF;
+    // A failed round lets the draft go rather than hold it on a broken connection.
+    if (error !== null) return { phase: "error", message: error };
+    return undecided() ? { phase: "pending" } : { phase: "idle" };
+  }
+
   function publish(): void {
-    const next: LiveFillSnapshot = {
-      enabled,
-      // A failed round lets the draft go rather than hold it on a broken connection.
-      pending: undecided() && error === null,
-      error,
-    };
-    if (
-      next.enabled === snapshot.enabled &&
-      next.pending === snapshot.pending &&
-      next.error === snapshot.error
-    ) {
-      return;
-    }
+    const next = phase();
+    if (!changed(next, snapshot)) return;
     snapshot = next;
     for (const listener of [...listeners]) listener();
   }

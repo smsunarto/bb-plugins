@@ -74,24 +74,29 @@ function createEntry(root: HTMLElement): Entry {
     clearTimer: (handle) => clearTimeout(handle as ReturnType<typeof setTimeout>),
   });
 
-  const held = () => holdSend && live.getSnapshot().pending;
+  const held = () => holdSend && live.getSnapshot().phase === "pending";
   const showHold = () => {
     if (held()) root.setAttribute(HOLD_ATTRIBUTE, "pending");
     else root.removeAttribute(HOLD_ATTRIBUTE);
   };
   const releaseHold = holdSubmit(root, held);
   const unsubscribe = live.subscribe(() => {
-    const { pending, error } = live.getSnapshot();
+    const snapshot = live.getSnapshot();
     showHold();
-    if (error === null) {
-      // A round that worked makes the next failure news again.
-      if (!pending) lastToasted = null;
-      return;
+    switch (snapshot.phase) {
+      case "pending":
+        return;
+      case "off":
+      case "idle":
+        // A round that worked makes the next failure news again.
+        lastToasted = null;
+        return;
+      case "error":
+        // Said once, not on every keystroke that fails the same way.
+        if (snapshot.message === lastToasted || entry.surfaces === 0) return;
+        lastToasted = snapshot.message;
+        toast.error(`Magic Compose: ${snapshot.message}`);
     }
-    // Said once, not on every keystroke that fails the same way.
-    if (error === lastToasted || entry.surfaces === 0) return;
-    lastToasted = error;
-    toast.error(`Magic Compose: ${error}`);
   });
 
   const entry: Entry = {

@@ -18,6 +18,7 @@
     "host.ts",
     "contract.ts",
     "app.tsx",
+    "app.test.tsx",
     "components",
     "lib",
     "*.d.ts",

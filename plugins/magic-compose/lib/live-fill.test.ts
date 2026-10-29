@@ -80,29 +80,29 @@ describe("createLiveFill", () => {
     h.live.setText("fix the bug");
     await h.advance(5_000);
     expect(h.routes).toHaveLength(0);
-    expect(h.live.getSnapshot()).toEqual({ enabled: false, pending: false, error: null });
+    expect(h.live.getSnapshot()).toEqual({ phase: "off" });
   });
 
   it("holds the draft from the first keystroke until its selection is applied", async () => {
     const h = harness();
     h.live.setEnabled(true);
     h.live.setText("fix the bug");
-    expect(h.live.getSnapshot().pending).toBe(true);
+    expect(h.live.getSnapshot().phase).toBe("pending");
 
     await h.advance(FIRST_DELAY_MS);
     expect(h.routes.map((route) => route.text)).toEqual(["fix the bug"]);
-    expect(h.live.getSnapshot().pending).toBe(true);
+    expect(h.live.getSnapshot().phase).toBe("pending");
 
     const release = h.holdApply();
     h.routes[0]?.resolve("codex");
     await h.flush();
     // Routed, but the composer has not taken it yet.
-    expect(h.live.getSnapshot().pending).toBe(true);
+    expect(h.live.getSnapshot().phase).toBe("pending");
 
     release();
     await h.flush();
     expect(h.applied).toEqual([{ selection: "codex", previous: null }]);
-    expect(h.live.getSnapshot().pending).toBe(false);
+    expect(h.live.getSnapshot().phase).toBe("idle");
   });
 
   it("does not route a draft that is empty or only spaces", async () => {
@@ -111,7 +111,7 @@ describe("createLiveFill", () => {
     h.live.setText("   ");
     await h.advance(5_000);
     expect(h.routes).toHaveLength(0);
-    expect(h.live.getSnapshot().pending).toBe(false);
+    expect(h.live.getSnapshot().phase).toBe("idle");
   });
 
   it("throttles while typing, keeps one request in the air, and ends on the final text", async () => {
@@ -139,7 +139,7 @@ describe("createLiveFill", () => {
         THROTTLE_MS,
       );
     }
-    expect(h.live.getSnapshot().pending).toBe(true);
+    expect(h.live.getSnapshot().phase).toBe("pending");
 
     // Typing stops: whatever is out lands, and one last round takes the final text.
     for (let i = 0; i < 5; i++) {
@@ -148,7 +148,7 @@ describe("createLiveFill", () => {
       await h.advance(THROTTLE_MS);
     }
     expect(h.routes.at(-1)?.text).toBe("x".repeat(20));
-    expect(h.live.getSnapshot().pending).toBe(false);
+    expect(h.live.getSnapshot().phase).toBe("idle");
     // Each apply was told what the composer held before it.
     expect(h.applied.map((entry) => entry.previous)).toEqual([
       null,
@@ -165,13 +165,13 @@ describe("createLiveFill", () => {
       h.live.setText("x".repeat(i));
       await h.advance(100);
       expect(h.routes).toHaveLength(0);
-      expect(h.live.getSnapshot().pending).toBe(true);
+      expect(h.live.getSnapshot().phase).toBe("pending");
     }
     await h.advance(PAUSE_MS);
     expect(h.routes.map((route) => route.text)).toEqual(["x".repeat(30)]);
     h.routes[0]?.resolve("codex");
     await h.flush();
-    expect(h.live.getSnapshot().pending).toBe(false);
+    expect(h.live.getSnapshot().phase).toBe("idle");
   });
 
   it("lets the draft go when a round fails, and tries again once it changes", async () => {
@@ -182,9 +182,8 @@ describe("createLiveFill", () => {
     h.routes[0]?.reject(new Error("Add an OpenRouter API key."));
     await h.flush();
     expect(h.live.getSnapshot()).toEqual({
-      enabled: true,
-      pending: false,
-      error: "Add an OpenRouter API key.",
+      phase: "error",
+      message: "Add an OpenRouter API key.",
     });
 
     // The same text is not hammered against a broken connection.
@@ -192,7 +191,7 @@ describe("createLiveFill", () => {
     expect(h.routes).toHaveLength(1);
 
     h.live.setText("fix the bug now");
-    expect(h.live.getSnapshot()).toEqual({ enabled: true, pending: true, error: null });
+    expect(h.live.getSnapshot()).toEqual({ phase: "pending" });
     await h.advance(THROTTLE_MS);
     expect(h.routes.map((route) => route.text)).toEqual(["fix the bug", "fix the bug now"]);
   });
@@ -206,11 +205,11 @@ describe("createLiveFill", () => {
     await h.flush();
 
     h.live.retry();
-    expect(h.live.getSnapshot()).toEqual({ enabled: true, pending: true, error: null });
+    expect(h.live.getSnapshot()).toEqual({ phase: "pending" });
     await h.advance(THROTTLE_MS);
     h.routes[1]?.resolve("codex");
     await h.flush();
-    expect(h.live.getSnapshot().pending).toBe(false);
+    expect(h.live.getSnapshot().phase).toBe("idle");
   });
 
   it("gives up on a round that never answers, so send is not held for good", async () => {
@@ -219,9 +218,8 @@ describe("createLiveFill", () => {
     h.live.setText("fix the bug");
     await h.advance(FIRST_DELAY_MS + ROUND_TIMEOUT_MS);
     expect(h.live.getSnapshot()).toEqual({
-      enabled: true,
-      pending: false,
-      error: "Magic Compose took too long to decide.",
+      phase: "error",
+      message: "Magic Compose took too long to decide.",
     });
     // The answer that finally comes is no longer wanted.
     h.routes[0]?.resolve("late");
@@ -238,7 +236,7 @@ describe("createLiveFill", () => {
     h.routes[0]?.resolve("codex");
     await h.flush();
     expect(h.applied).toEqual([]);
-    expect(h.live.getSnapshot()).toEqual({ enabled: false, pending: false, error: null });
+    expect(h.live.getSnapshot()).toEqual({ phase: "off" });
   });
 
   it("decides the draft afresh when Magic Compose comes back on", async () => {
@@ -248,11 +246,11 @@ describe("createLiveFill", () => {
     await h.advance(FIRST_DELAY_MS);
     h.routes[0]?.resolve("codex");
     await h.flush();
-    expect(h.live.getSnapshot().pending).toBe(false);
+    expect(h.live.getSnapshot().phase).toBe("idle");
 
     h.live.setEnabled(false);
     h.live.setEnabled(true);
-    expect(h.live.getSnapshot().pending).toBe(true);
+    expect(h.live.getSnapshot().phase).toBe("pending");
     await h.advance(THROTTLE_MS);
     h.routes[1]?.resolve("codex");
     await h.flush();
@@ -267,10 +265,10 @@ describe("createLiveFill", () => {
     await h.advance(FIRST_DELAY_MS);
     h.routes[0]?.resolve("codex");
     await h.flush();
-    expect(h.live.getSnapshot().pending).toBe(false);
+    expect(h.live.getSnapshot().phase).toBe("idle");
 
     h.live.reset();
-    expect(h.live.getSnapshot()).toEqual({ enabled: true, pending: true, error: null });
+    expect(h.live.getSnapshot()).toEqual({ phase: "pending" });
     await h.advance(THROTTLE_MS);
     h.routes[1]?.resolve("codex");
     await h.flush();
