@@ -53,17 +53,110 @@ function Value({ value, missing = "Not present" }: { value: string | null; missi
   );
 }
 
-function ChangeBadge({ status }: { status: "added" | "removed" | "modified" }) {
+type Badge = "added" | "removed" | "modified";
+/** A table row is the parsed property itself; the model's `kind` says which property shape every row has. */
+type DiffRow = UnityDiff["groups"][number]["components"][number]["properties"][number];
+type CitationRow = UnityCitation["groups"][number]["components"][number]["properties"][number];
+
+interface RenderComponent<Row> {
+  id: string;
+  type: string;
+  badge: Badge | null;
+  rows: readonly Row[];
+}
+interface RenderGroup<Row> {
+  id: string;
+  name: string;
+  hierarchy: string;
+  badge: Badge | null;
+  components: readonly RenderComponent<Row>[];
+}
+/**
+ * What the inspector draws. `kind` fixes the row payload (a diff row has `before` / `after`, a
+ * citation row has `value`) and selects the header, so the two cannot disagree.
+ */
+export type RenderModel =
+  | { kind: "diff"; propertyCount: number; groups: readonly RenderGroup<DiffRow>[] }
+  | { kind: "citation"; propertyCount: number; groups: readonly RenderGroup<CitationRow>[] };
+
+export function fromDiff(diff: UnityDiff): Extract<RenderModel, { kind: "diff" }> {
+  return {
+    kind: "diff",
+    propertyCount: diff.propertyCount,
+    groups: diff.groups.map((group) => ({
+      id: group.id,
+      name: group.name,
+      hierarchy: group.hierarchy,
+      badge: group.status,
+      components: group.components.map((component) => ({
+        id: component.id,
+        type: component.type,
+        badge: component.status,
+        rows: component.properties,
+      })),
+    })),
+  };
+}
+export function fromCitation(citation: UnityCitation): Extract<RenderModel, { kind: "citation" }> {
+  return {
+    kind: "citation",
+    propertyCount: citation.propertyCount,
+    groups: citation.groups.map((group) => ({
+      id: group.id,
+      name: group.name,
+      hierarchy: group.hierarchy,
+      badge: null,
+      components: group.components.map((component) => ({
+        id: component.id,
+        type: component.type,
+        badge: null,
+        rows: component.properties,
+      })),
+    })),
+  };
+}
+
+/** How one kind shows: the title word, the column headers, and the cells a row fills them with. */
+interface View<Row> {
+  label: string;
+  columns: readonly string[];
+  cells: (row: Row) => ReactNode;
+}
+const views: { diff: View<DiffRow>; citation: View<CitationRow> } = {
+  diff: {
+    label: "changes",
+    columns: ["Before", "After"],
+    cells: (row) => (
+      <>
+        <td className="unity-diff-before">
+          <Value value={row.before} />
+        </td>
+        <td className="unity-diff-after">
+          <Value value={row.after} />
+        </td>
+      </>
+    ),
+  },
+  citation: {
+    label: "properties",
+    columns: ["Value"],
+    cells: (row) => (
+      <td className="unity-diff-value">
+        <Value value={row.value} />
+      </td>
+    ),
+  },
+};
+
+function ChangeBadge({ status }: { status: Badge }) {
   return <span className={`unity-diff-badge unity-diff-${status}`}>{status}</span>;
 }
-function ComponentCard({
+function ComponentCard<Row extends DiffRow | CitationRow>({
   component,
-  citation,
+  view,
 }: {
-  component:
-    | UnityDiff["groups"][number]["components"][number]
-    | UnityCitation["groups"][number]["components"][number];
-  citation: boolean;
+  component: RenderComponent<Row>;
+  view: View<Row>;
 }) {
   return (
     <details className="unity-diff-component" open>
@@ -72,47 +165,31 @@ function ComponentCard({
         <span className="unity-diff-id" title="Unity file ID">
           #{component.id}
         </span>
-        {"status" in component ? <ChangeBadge status={component.status} /> : null}
+        {component.badge ? <ChangeBadge status={component.badge} /> : null}
       </summary>
-      {component.properties.length ? (
+      {component.rows.length ? (
         <div className="unity-diff-table-wrap">
           <table className="unity-diff-properties">
             <thead>
               <tr>
                 <th scope="col">Property</th>
-                {citation ? (
-                  <th scope="col">Value</th>
-                ) : (
-                  <>
-                    <th scope="col">Before</th>
-                    <th scope="col">After</th>
-                  </>
-                )}
+                {view.columns.map((column) => (
+                  <th key={column} scope="col">
+                    {column}
+                  </th>
+                ))}
               </tr>
             </thead>
             <tbody>
-              {component.properties.map((property) => (
-                <tr key={property.path}>
-                  <th scope="row" title={property.path}>
-                    {propertyLabel(property.label ?? property.path)}
-                    {property.target ? (
-                      <span className="unity-diff-property-target">#{property.target}</span>
+              {component.rows.map((row) => (
+                <tr key={row.path}>
+                  <th scope="row" title={row.path}>
+                    {propertyLabel(row.label ?? row.path)}
+                    {row.target ? (
+                      <span className="unity-diff-property-target">#{row.target}</span>
                     ) : null}
                   </th>
-                  {"value" in property ? (
-                    <td>
-                      <Value value={property.value} />
-                    </td>
-                  ) : (
-                    <>
-                      <td className="unity-diff-before">
-                        <Value value={property.before} />
-                      </td>
-                      <td className="unity-diff-after">
-                        <Value value={property.after} />
-                      </td>
-                    </>
-                  )}
+                  {view.cells(row)}
                 </tr>
               ))}
             </tbody>
@@ -124,33 +201,74 @@ function ComponentCard({
     </details>
   );
 }
+function Groups<Row extends DiffRow | CitationRow>({
+  groups,
+  view,
+}: {
+  groups: readonly RenderGroup<Row>[];
+  view: View<Row>;
+}) {
+  return (
+    <div className="unity-diff-groups">
+      {groups.map((group) => (
+        <details key={group.id} className="unity-diff-object" open>
+          <summary>
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.5"
+              aria-hidden="true"
+            >
+              <path d="m12 3 9 5v8l-9 5-9-5V8l9-5ZM3 8l9 5 9-5M12 13v8M7.5 5.5l9 5" />
+            </svg>
+            <span className="unity-diff-object-label">
+              {group.hierarchy ? (
+                <span className="unity-diff-hierarchy">{group.hierarchy} /</span>
+              ) : null}
+              <strong>{group.name}</strong>
+            </span>
+            {group.badge ? <ChangeBadge status={group.badge} /> : null}
+          </summary>
+          <div className="unity-diff-components">
+            {group.components.map((component) => (
+              <ComponentCard key={component.id} component={component} view={view} />
+            ))}
+          </div>
+        </details>
+      ))}
+    </div>
+  );
+}
 
 function UnityInspector({
-  diff,
+  model,
   path,
   raw,
-  citation = false,
 }: {
-  diff: UnityDiff | UnityCitation;
-  citation?: boolean;
+  model: RenderModel;
   path: string;
   /** The YAML to toggle to. Without it, there is no toggle: the host shows text its own way. */
   raw?: ReactNode;
 }) {
   const [yaml, setYaml] = useState(false);
-  const componentCount = diff.groups.reduce((sum, group) => sum + group.components.length, 0);
+  const { label } = views[model.kind];
+  const componentCount = model.groups.reduce((sum, group) => sum + group.components.length, 0);
+  const groups =
+    model.kind === "diff" ? (
+      <Groups groups={model.groups} view={views.diff} />
+    ) : (
+      <Groups groups={model.groups} view={views.citation} />
+    );
   return (
-    <section
-      className="unity-diff"
-      aria-label={`Unity ${citation ? "properties" : "changes"} in ${path}`}
-    >
+    <section className="unity-diff" aria-label={`Unity ${label} in ${path}`}>
       <div className="unity-diff-toolbar">
         <div className="unity-diff-title">
-          <strong>{`${unityYamlKind(path) ?? "Asset"} ${citation ? "properties" : "changes"}`}</strong>
+          <strong>{`${unityYamlKind(path) ?? "Asset"} ${label}`}</strong>
           <span>
-            {diff.groups.length} {diff.groups.length === 1 ? "object" : "objects"} ·{" "}
+            {model.groups.length} {model.groups.length === 1 ? "object" : "objects"} ·{" "}
             {componentCount} {componentCount === 1 ? "component" : "components"} ·{" "}
-            {diff.propertyCount} {diff.propertyCount === 1 ? "property" : "properties"}
+            {model.propertyCount} {model.propertyCount === 1 ? "property" : "properties"}
           </span>
         </div>
         {raw === undefined ? null : (
@@ -159,45 +277,20 @@ function UnityInspector({
           </button>
         )}
       </div>
-      {yaml && raw !== undefined ? (
-        raw
-      ) : (
-        <div className="unity-diff-groups">
-          {diff.groups.map((group) => (
-            <details key={group.id} className="unity-diff-object" open>
-              <summary>
-                <svg
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="1.5"
-                  aria-hidden="true"
-                >
-                  <path d="m12 3 9 5v8l-9 5-9-5V8l9-5ZM3 8l9 5 9-5M12 13v8M7.5 5.5l9 5" />
-                </svg>
-                <span className="unity-diff-object-label">
-                  {group.hierarchy ? (
-                    <span className="unity-diff-hierarchy">{group.hierarchy} /</span>
-                  ) : null}
-                  <strong>{group.name}</strong>
-                </span>
-                {"status" in group ? <ChangeBadge status={group.status} /> : null}
-              </summary>
-              <div className="unity-diff-components">
-                {group.components.map((component) => (
-                  <ComponentCard key={component.id} component={component} citation={citation} />
-                ))}
-              </div>
-            </details>
-          ))}
-        </div>
-      )}
+      {yaml && raw !== undefined ? raw : groups}
     </section>
   );
 }
 
-export function UnityDiffView(props: { diff: UnityDiff; path: string; raw?: ReactNode }) {
-  return <UnityInspector {...props} />;
+export function UnityDiffView({
+  diff,
+  ...props
+}: {
+  diff: UnityDiff;
+  path: string;
+  raw?: ReactNode;
+}) {
+  return <UnityInspector model={fromDiff(diff)} {...props} />;
 }
 export function UnityCitationView({
   citation,
@@ -207,7 +300,7 @@ export function UnityCitationView({
   path: string;
   raw: ReactNode;
 }) {
-  return <UnityInspector diff={citation} citation {...props} />;
+  return <UnityInspector model={fromCitation(citation)} {...props} />;
 }
 
 /** A `.meta` change: its GUID, its importer, and every import setting that moved. */
