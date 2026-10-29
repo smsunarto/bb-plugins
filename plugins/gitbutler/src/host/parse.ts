@@ -7,7 +7,7 @@ import type {
   Commit,
   FileChange,
   FilePatch,
-  HostWorkspace,
+  Board,
   OplogEntry,
   ParkedBranch,
   Patches,
@@ -208,21 +208,10 @@ function upstream(value: unknown): Upstream | null {
   };
 }
 
-/**
- * `repositoryKey` is the repository the host resolved. Callers that only read
- * the stacks leave it out.
- */
-export function parseWorkspace(
-  payload: unknown,
-  repoName: string,
-  repositoryKey: string | null = null,
-): HostWorkspace {
+/** The board `but status -u --json` reports. The host says which repository it is of. */
+export function parseWorkspace(payload: unknown): Board {
   const root = asObject(payload) ?? {};
   return {
-    state: "ready",
-    reason: null,
-    repositoryKey,
-    repoName,
     unassignedChanges: fileChanges(root["uncommittedChanges"]),
     stacks: byLastCommit(
       asArray(root["stacks"]).flatMap((entry) => {
@@ -303,7 +292,7 @@ export type UpdatePreview = {
 export function judgeBranchUpdate(statusPayload: unknown, previewPayload: unknown): UpdatePreview {
   const { replaced, owner, conflictedIn } = previewCommits(previewPayload);
   const moved = new Map<string, { from: string; to: string }>();
-  const commits = parseWorkspace(statusPayload, "").stacks.flatMap((stack) =>
+  const commits = parseWorkspace(statusPayload).stacks.flatMap((stack) =>
     stack.branches.flatMap((branch) => branch.commits.map((commit) => ({ branch, commit }))),
   );
   for (const { branch, commit } of commits) {
@@ -350,7 +339,7 @@ function previewCommits(previewPayload: unknown): {
  * Throws for a branch that left the workspace or whose name is such an id.
  */
 export function namedBranch(statusPayload: unknown, name: string): Branch {
-  const branch = parseWorkspace(statusPayload, "")
+  const branch = parseWorkspace(statusPayload)
     .stacks.flatMap((stack) => stack.branches)
     .find((candidate) => candidate.name === name);
   if (branch === undefined) throw new Error(`${name} is no longer in the workspace.`);
@@ -486,7 +475,7 @@ export function parseOplog(payload: unknown): OplogEntry[] {
  * modified, new and deleted ones included, so the kind comes from `but status`.
  */
 export function uncommittedKinds(statusPayload: unknown): Map<string, ChangeKind> {
-  const workspace = parseWorkspace(statusPayload, "");
+  const workspace = parseWorkspace(statusPayload);
   const changes = [
     ...workspace.unassignedChanges,
     ...workspace.stacks.flatMap((stack) => stack.assignedChanges),

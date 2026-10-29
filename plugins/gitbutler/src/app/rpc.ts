@@ -15,7 +15,10 @@ type Contract = typeof contract;
 export type Method = keyof Contract & string;
 export type RpcInput<M extends Method> = StandardSchemaV1InferInput<Contract[M]["input"]>;
 export type RpcOutput<M extends Method> = StandardSchemaV1InferOutput<Contract[M]["output"]>;
-type QueryOptions<Out> = Omit<UseQueryOptions<Out, Error, Out, QueryKey>, "queryKey" | "queryFn">;
+export type QueryOptions<Out> = Omit<
+  UseQueryOptions<Out, Error, Out, QueryKey>,
+  "queryKey" | "queryFn"
+>;
 type MutationOptions<M extends Method> = Omit<
   UseMutationOptions<RpcOutput<M>, Error, RpcInput<M>>,
   "mutationFn"
@@ -27,7 +30,7 @@ export function useGitButlerRpc() {
 }
 
 /** The wire input: `null` for none, and no key holding `undefined`, so `.strict()` inputs pass. */
-function wireInput(input: unknown): unknown {
+export function wireInput(input: unknown): unknown {
   if (input === undefined || input === null) return null;
   if (typeof input !== "object" || Array.isArray(input)) return input;
   return Object.fromEntries(Object.entries(input).filter(([, value]) => value !== undefined));
@@ -39,6 +42,15 @@ export function rpcQueryKey<M extends Method>(method: M, input?: RpcInput<M>): Q
   return wire === null ? [method] : [method, wire];
 }
 
+/** One call of an RPC method, with its input put on the wire and its answer typed by the contract. */
+export function callRpc<M extends Method>(
+  rpc: ReturnType<typeof useGitButlerRpc>,
+  method: M,
+  input: RpcInput<M>,
+): Promise<RpcOutput<M>> {
+  return rpc.call(method, wireInput(input) as never) as Promise<RpcOutput<M>>;
+}
+
 /** A read of one RPC method on the plugin's shared cache. */
 export function useRpcQuery<M extends Method>(
   method: M,
@@ -46,7 +58,7 @@ export function useRpcQuery<M extends Method>(
   options?: QueryOptions<RpcOutput<M>>,
 ): UseQueryResult<RpcOutput<M>, Error> {
   const rpc = useGitButlerRpc();
-  const queryFn = () => rpc.call(method, wireInput(input) as never) as Promise<RpcOutput<M>>;
+  const queryFn = () => callRpc(rpc, method, input);
   return useQuery({ ...options, queryKey: rpcQueryKey(method, input), queryFn }, queryClient);
 }
 
@@ -56,7 +68,6 @@ export function useRpcMutation<M extends Method>(
   options?: MutationOptions<M>,
 ): UseMutationResult<RpcOutput<M>, Error, RpcInput<M>> {
   const rpc = useGitButlerRpc();
-  const mutationFn = (variables: RpcInput<M>) =>
-    rpc.call(method, wireInput(variables) as never) as Promise<RpcOutput<M>>;
+  const mutationFn = (variables: RpcInput<M>) => callRpc(rpc, method, variables);
   return useMutation({ ...options, mutationFn }, queryClient);
 }

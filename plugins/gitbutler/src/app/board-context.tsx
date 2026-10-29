@@ -13,7 +13,12 @@ import type { ReactNode, RefObject } from "react";
 import { useIsMutating, useMutationState } from "@tanstack/react-query";
 import { experimental_Icon as Icon } from "@get-bb/plugin-sdk/app";
 import { queryClient } from "./query.ts";
-import type { ButAction, CheckoutSelection, Workspace } from "../shared/schema.ts";
+import type {
+  ButAction,
+  CheckoutIdentity,
+  CheckoutSelection,
+  NativeAgentPrompts,
+} from "../shared/schema.ts";
 import { cn } from "./lib/utils.ts";
 
 /*
@@ -35,7 +40,7 @@ export type WorkspaceIdentity = {
   environmentId: string;
   repositoryKey: string | null;
   checkout?: CheckoutSelection;
-  checkoutIdentity?: Workspace["checkoutIdentity"];
+  checkoutIdentity?: CheckoutIdentity;
 };
 
 type Target = {
@@ -287,7 +292,7 @@ type Board = {
   live: boolean;
   workspace: WorkspaceIdentity | null;
   currentWorkspace: RefObject<WorkspaceIdentity | null>;
-  nativeAgentPrompts: Workspace["nativeAgentPrompts"];
+  nativeAgentPrompts: NativeAgentPrompts | null;
   announce: (text: string) => void;
   focusAfterWrite: (kind: FocusRequest["kind"], branchName: string) => void;
 };
@@ -296,7 +301,7 @@ const BoardContext = createContext<Board>({
   live: true,
   workspace: null,
   currentWorkspace: { current: null },
-  nativeAgentPrompts: undefined,
+  nativeAgentPrompts: null,
   announce: () => {},
   focusAfterWrite: () => {},
 });
@@ -314,7 +319,7 @@ export function BoardProvider({
   workspace,
   root,
   status,
-  nativeAgentPrompts,
+  nativeAgentPrompts = null,
   children,
 }: {
   /** False while the board on screen came from storage and has not been read again. */
@@ -324,7 +329,7 @@ export function BoardProvider({
   /** The element holding the branch cards and the Refresh button. */
   root: RefObject<HTMLElement | null>;
   status?: TransientStatus;
-  nativeAgentPrompts?: Workspace["nativeAgentPrompts"];
+  nativeAgentPrompts?: NativeAgentPrompts | null;
   children: ReactNode;
 }) {
   const own = useTransientStatus();
@@ -377,7 +382,7 @@ export function useBoardWorkspace(): WorkspaceIdentity | null {
   return useContext(BoardContext).workspace;
 }
 
-export function useNativeAgentPrompts(): Workspace["nativeAgentPrompts"] {
+export function useNativeAgentPrompts(): NativeAgentPrompts | null {
   return useContext(BoardContext).nativeAgentPrompts;
 }
 

@@ -154,10 +154,16 @@ export function refreshWorkspace(
   return queryClient.invalidateQueries({ predicate: readOf("workspace", target) });
 }
 
-/** Whether two boards are of one checkout, as its path, Git directory, and origin say. */
+/**
+ * Whether two boards are of one checkout, as its path, Git directory, and
+ * origin say. Two answers without a board are of the same checkout, none.
+ */
 function sameCheckout(shown: Workspace, board: Workspace): boolean {
+  if (shown.state !== "ready" || board.state !== "ready") {
+    return shown.state !== "ready" && board.state !== "ready";
+  }
   const [a, b] = [shown.checkoutIdentity, board.checkoutIdentity];
-  return a?.path === b?.path && a?.commonDir === b?.commonDir && a?.origin === b?.origin;
+  return a.path === b.path && a.commonDir === b.commonDir && a.origin === b.origin;
 }
 
 /** Writes in flight, by their request, that a change seen meanwhile may have overtaken. */

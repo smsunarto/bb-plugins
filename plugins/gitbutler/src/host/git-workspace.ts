@@ -5,9 +5,9 @@ import type {
   Branch,
   Commit,
   FileChange,
-  HostWorkspace,
   Patches,
   PatchSource,
+  ReadyHostWorkspace,
 } from "../shared/schema.ts";
 import { ButFailedError, runGit, runGitCommand } from "./cli.ts";
 import { readCheckoutHead } from "./history.ts";
@@ -75,7 +75,7 @@ export type GitWorkspaceDetails = {
   pushRemote: string | null;
   configuredTracking: { remote: string; name: string } | null;
   base: string | null;
-  workspace: HostWorkspace;
+  workspace: ReadyHostWorkspace;
 };
 
 async function setting(cwd: string, key: string, signal: AbortSignal): Promise<string | null> {
@@ -320,9 +320,8 @@ export async function readGitWorkspaceDetails(
           ).trim(),
         )
       : 0;
-  const workspace: HostWorkspace = {
+  const workspace: ReadyHostWorkspace = {
     state: "ready",
-    reason: null,
     repositoryKey: repository.key,
     repoName: repository.name,
     unassignedChanges: status.changes,
@@ -349,7 +348,7 @@ export async function readGitWorkspaceDetails(
 export async function readGitWorkspace(
   repository: { path: string; name: string; key: string },
   signal: AbortSignal,
-): Promise<HostWorkspace> {
+): Promise<ReadyHostWorkspace> {
   return (await readGitWorkspaceDetails(repository, signal)).workspace;
 }
 

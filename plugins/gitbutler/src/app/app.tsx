@@ -29,7 +29,7 @@ import type {
   ExperimentalThreadInfoProps,
   PluginThreadActionDataInput,
 } from "@get-bb/plugin-sdk/app";
-import { QueryClientProvider, useQueries } from "@tanstack/react-query";
+import { QueryClientProvider, useQueries, useQuery } from "@tanstack/react-query";
 import { queryClient } from "./query.ts";
 import {
   GITBUTLER_TAB,
@@ -42,6 +42,7 @@ import type {
   Checkout,
   CheckoutSelection,
   PatchSource,
+  ReadyWorkspace,
   Repository,
   Stack,
   Upstream,
@@ -86,7 +87,8 @@ import { CheckoutChatActions } from "./checkout-chat.tsx";
 import { CheckoutLabel, MachineColorProvider } from "./checkout-label.tsx";
 import { ParkedBranches } from "./parked-branches.tsx";
 import { SAFETY_POLL_MS } from "./query-client.ts";
-import { useGitButlerRpc, useRpcQuery, rpcQueryKey } from "./rpc.ts";
+import { callRpc, useGitButlerRpc, useRpcQuery, rpcQueryKey } from "./rpc.ts";
+import type { QueryOptions, RpcInput } from "./rpc.ts";
 import { readStored, storedAnswer } from "./stored-queries.ts";
 import { relativeTime, shortId, subject } from "./format.ts";
 import { When } from "./when.tsx";
@@ -266,16 +268,15 @@ function Pill({ tone, title, children }: { tone: string; title?: string; childre
 }
 
 /** Quotes `but setup` to the agent. The panel itself never sets a repository up. */
-function AskToRunSetup({ repoName }: { repoName: string }) {
+function AskToRunSetup() {
   const ask = useAskAgent();
   if (!ask) return null;
-  const where = repoName ? `the ${repoName} repository` : "this repository";
   return (
     <Button
       variant="outline"
       size="sm"
       className="h-6 gap-1 px-2 text-xs font-normal"
-      onClick={() => ask(`Run \`but setup\` in ${where} to make it a GitButler project.`)}
+      onClick={() => ask("Run `but setup` in this repository to make it a GitButler project.")}
     >
       <Icon name="MessageSquarePlus" className="size-3" aria-hidden />
       Ask agent to run it
@@ -292,7 +293,7 @@ function UnavailableWorkspace({
   workspace,
   onRetry,
 }: {
-  workspace: Workspace;
+  workspace: Exclude<Workspace, { state: "ready" }>;
   onRetry: () => void;
 }) {
   const detail = workspace.reason;
@@ -332,7 +333,7 @@ function UnavailableWorkspace({
           </>
         }
         onRetry={onRetry}
-        action={<AskToRunSetup repoName={workspace.repoName} />}
+        action={<AskToRunSetup />}
       />
     );
   }
@@ -347,13 +348,7 @@ function UnavailableWorkspace({
     );
   }
   if (workspace.state === "noEnvironment") {
-    return (
-      <Notice
-        icon="Laptop"
-        title="No project environment"
-        detail={detail ?? "Attach this thread to an environment to see its GitButler workspace."}
-      />
-    );
+    return <Notice icon="Laptop" title="No project environment" detail={detail} />;
   }
   return (
     <Notice
@@ -675,7 +670,6 @@ function WorkspaceBody({
   onRetry: () => void;
 }) {
   const target = { threadId, repositoryKey, ...(checkout ? { checkout } : {}) };
-  const native = data.checkoutIdentity?.kind === "git";
   if (data.state !== "ready") {
     // Another machine's branches are worth seeing even where GitButler is not set up.
     return (
@@ -691,6 +685,7 @@ function WorkspaceBody({
       </div>
     );
   }
+  const native = data.checkoutIdentity.kind === "git";
   const keys = stackKeys(data.stacks);
   return (
     <>
@@ -951,14 +946,58 @@ function useMinuteTick(): void {
   }, []);
 }
 
-type ShownWorkspace = {
-  data: Workspace | undefined;
-  stale: string | null;
-  /** Whether the board was read since the panel opened, not drawn from storage or memory. */
-  live: boolean;
-};
+type WorkspaceInput = RpcInput<"workspace">;
 
-type LastReady = { repositoryKey: string | undefined; data: Workspace; live: boolean };
+/**
+ * Reads a board. A call that fails answers as an `error` board, as the server
+ * does for an offline host, so every failure reaches the panel the one way
+ * and keeps the last board on screen. The failed read was still of the
+ * environment and repository the last answer named, so the error names them
+ * too, and the signals for that environment keep reaching the panel. The
+ * query itself never fails, so TanStack does not retry it: the safety poll
+ * and the change signals read it again.
+ */
+function readWorkspace(
+  rpc: ReturnType<typeof useGitButlerRpc>,
+  input: WorkspaceInput,
+): Promise<Workspace> {
+  return callRpc(rpc, "workspace", input).catch((error: unknown): Workspace => {
+    const last = queryClient.getQueryData<Workspace>(rpcQueryKey("workspace", input));
+    return {
+      state: "error",
+      reason: errorText(error),
+      environmentId: last?.environmentId ?? null,
+      repositoryKey: last?.repositoryKey ?? null,
+    };
+  });
+}
+
+/** The workspace read, on the plugin's shared cache. */
+function useWorkspaceQuery(
+  input: WorkspaceInput,
+  options: QueryOptions<Workspace>,
+): UseQueryResult<Workspace, Error> {
+  const rpc = useGitButlerRpc();
+  return useQuery(
+    {
+      ...options,
+      queryKey: rpcQueryKey("workspace", input),
+      queryFn: () => readWorkspace(rpc, input),
+    },
+    queryClient,
+  );
+}
+
+/**
+ * The workspace to draw, a note when it is the last one that read cleanly
+ * rather than the latest answer, and whether it was read since the panel
+ * opened, not drawn from storage or memory.
+ */
+type ShownWorkspace =
+  | { data: Workspace; stale: string | null; live: boolean }
+  | { data: undefined; stale: null; live: boolean };
+
+type LastReady = { repositoryKey: string | undefined; data: ReadyWorkspace; live: boolean };
 
 /** The last ready board for this repository, and whether it was read since the panel opened. */
 function useLastReady(
@@ -976,12 +1015,11 @@ function useLastReady(
 }
 
 /**
- * The workspace to draw. A poll that fails after a good one keeps the board
- * the reader was using, with its open drafts and confirmations, and marks it
- * stale. Only a failure does: the other states are answers the reader has to
- * act on. The board kept is the current repository's, never another's. A
- * panel opened onto a failure has no board of its own yet, so the stored one
- * stands in.
+ * A read that fails after a good one keeps the board the reader was using,
+ * with its open drafts and confirmations, and marks it stale. Only a failure
+ * does: the other states are answers the reader has to act on. The board
+ * kept is the current repository's, never another's. A panel opened onto a
+ * failure has no board of its own yet, so the stored one stands in.
  */
 function useShownWorkspace(
   workspace: UseQueryResult<Workspace, Error>,
@@ -990,10 +1028,9 @@ function useShownWorkspace(
   checkout: CheckoutSelection | undefined,
 ): ShownWorkspace {
   const latest = workspace.data;
-  const read = workspace.isFetchedAfterMount && !workspace.isRefetchError;
+  const read = workspace.isFetchedAfterMount;
   const kept = useLastReady(latest, read, repositoryKey);
-  const failed = latest?.state === "error" || (latest === undefined && workspace.isError);
-  const fromStorage = failed && kept === null;
+  const fromStorage = latest?.state === "error" && kept === null;
   const stored = useMemo(
     () =>
       fromStorage
@@ -1001,13 +1038,12 @@ function useShownWorkspace(
         : undefined,
     [fromStorage, threadId, repositoryKey, checkout],
   );
-  const reason = latest?.state === "error" ? (latest.reason ?? "") : errorText(workspace.error);
-  const keptLive = kept !== null && kept.data === latest && kept.live;
-  if (failed && kept) return { data: kept.data, stale: reason, live: kept.live };
-  if (failed && stored) return { data: stored, stale: reason, live: false };
-  if (workspace.isRefetchError && latest?.state === "ready") {
-    return { data: latest, stale: errorText(workspace.error), live: keptLive };
+  if (latest === undefined) return { data: undefined, stale: null, live: read };
+  if (latest.state === "error") {
+    if (kept) return { data: kept.data, stale: latest.reason, live: kept.live };
+    if (stored) return { data: stored, stale: latest.reason, live: false };
   }
+  const keptLive = kept !== null && kept.data === latest && kept.live;
   return { data: latest, stale: null, live: read || keptLive };
 }
 
@@ -1034,8 +1070,9 @@ function useWorkspaceSignals(
   onTurnEnded: (signal: TurnEnded) => void,
 ): void {
   const environmentId = board?.environmentId;
-  const hostId = target.checkout?.hostId ?? board?.hostId;
-  const path = board?.checkoutIdentity?.path;
+  const ready = board?.state === "ready" ? board : undefined;
+  const hostId = target.checkout?.hostId ?? ready?.hostId;
+  const path = ready?.checkoutIdentity.path;
   useRealtime(WORKSPACE_CHANGED_CHANNEL, (payload) => {
     const parsed = workspaceChangedSchema.safeParse(payload);
     if (!parsed.success) return;
@@ -1120,8 +1157,9 @@ function WorkspaceHeader({
   onRefresh: () => void;
   onHistory: () => void;
 }) {
-  const ready = data?.state === "ready";
-  const upstream = data?.upstream ?? null;
+  const board = data?.state === "ready" ? data : undefined;
+  const ready = board !== undefined;
+  const upstream = board?.upstream ?? null;
   return (
     <header className={cn(HEADER, "flex-wrap gap-y-2")}>
       <div className="flex min-w-0 flex-[1_1_8rem] items-center gap-2">
@@ -1131,9 +1169,9 @@ function WorkspaceHeader({
         ) : (
           <span
             className="min-w-0 flex-1 truncate text-sm font-semibold"
-            title={data?.repoName || undefined}
+            title={board?.repoName || undefined}
           >
-            {data?.repoName || "GitButler"}
+            {board?.repoName || "GitButler"}
           </span>
         )}
         {upstream && upstream.behind > 0 ? (
@@ -1198,7 +1236,7 @@ function useBoardTarget(
 ) {
   const environmentId = data?.environmentId ?? null;
   const resolvedKey = data?.repositoryKey ?? null;
-  const checkoutIdentity = data?.checkoutIdentity;
+  const checkoutIdentity = data?.state === "ready" ? data.checkoutIdentity : undefined;
   return useMemo(() => {
     const identity = environmentId
       ? {
@@ -1286,12 +1324,13 @@ function WorkspaceBoard({
     () => ({ threadId, repositoryKey, checkout }),
     [threadId, repositoryKey, checkout],
   );
-  const workspace = useRpcQuery("workspace", readTarget, {
+  const workspace = useWorkspaceQuery(readTarget, {
     ...storedAnswer("workspace", readTarget),
     refetchInterval: SAFETY_POLL_MS,
     refetchOnWindowFocus: true,
   });
   const { data, stale, live } = useShownWorkspace(workspace, threadId, repositoryKey, checkout);
+  const ready = data?.state === "ready" ? data : undefined;
   const turnLeftWork = useTurnLeftWork(readTarget, repositoryKey, data);
   const { identity, target } = useBoardTarget(threadId, repositoryKey, data, checkout);
   const scope = writeScope(target, identity);
@@ -1375,7 +1414,7 @@ function WorkspaceBoard({
     (opener.isConnected ? opener : board.current)?.focus();
   }, [selection]);
 
-  const pull = useWorkspacePull(target, data?.upstream?.behind ?? 0, status.announce);
+  const pull = useWorkspacePull(target, ready?.upstream?.behind ?? 0, status.announce);
   const pullButton = usePullFocus(pull);
   const busy = useWriteBusy(target);
   // Asked here and not through the pull's own hook, which sits above the
@@ -1402,7 +1441,7 @@ function WorkspaceBoard({
       workspace={identity}
       root={board}
       status={status}
-      nativeAgentPrompts={data?.nativeAgentPrompts}
+      nativeAgentPrompts={ready?.nativeAgentPrompts ?? null}
     >
       <div className="relative h-full">
         <div
@@ -1436,7 +1475,7 @@ function WorkspaceBoard({
             pull={pull}
             pullButton={pullButton}
             blocked={pullBlocked}
-            native={data?.checkoutIdentity?.kind === "git"}
+            native={ready?.checkoutIdentity.kind === "git"}
           />
           <StaleNote reason={stale} onRetry={refresh} />
           <ScrollArea>
@@ -1461,13 +1500,6 @@ function WorkspaceBoard({
                   onRetry={refresh}
                 />
               </CommitExpansionContext.Provider>
-            ) : workspace.isError ? (
-              <Notice
-                icon="AlertCircle"
-                title="Could not read this workspace"
-                detail={errorText(workspace.error)}
-                onRetry={refresh}
-              />
             ) : (
               <WorkspaceSkeleton label="Loading workspace…" />
             )}
@@ -1552,8 +1584,18 @@ function GitButlerApp({ threadId }: { threadId?: string }) {
  * repository picker. Opening a thread reads nothing when the answer is
  * stored or in memory: the panel reads the board when it opens.
  */
-/** How long the header trusts an answer that is not a GitButler board. */
-const NOT_READY_STALE_MS = 60_000;
+/** How long the header and the Info tab trust a notice, such as no GitButler here. */
+const NOTICE_STALE_MS = 60_000;
+
+/**
+ * How long an answer is trusted before a mount or a focus reads it again: a
+ * board for `boardMs`, a notice for a minute, and a failed read not at all,
+ * since the next look may be the one that succeeds.
+ */
+function trustFor(data: Workspace | undefined, boardMs: number): number {
+  if (data?.state === "ready") return boardMs;
+  return data?.state === "error" ? 0 : NOTICE_STALE_MS;
+}
 
 function useHeaderActionData({ threadIds }: PluginThreadActionDataInput) {
   const repositories = useSyncExternalStore(
@@ -1575,9 +1617,9 @@ function useHeaderActionData({ threadIds }: PluginThreadActionDataInput) {
       queries: inputs.map((input) => ({
         ...storedAnswer("workspace", input),
         queryKey: rpcQueryKey("workspace", input),
-        queryFn: () => rpc.call("workspace", input),
+        queryFn: () => readWorkspace(rpc, input),
         staleTime: (query: { state: { data?: Workspace } }) =>
-          query.state.data?.state === "ready" ? Number.POSITIVE_INFINITY : NOT_READY_STALE_MS,
+          trustFor(query.state.data, Number.POSITIVE_INFINITY),
         gcTime: Number.POSITIVE_INFINITY,
       })),
       combine: (results): Readonly<Record<string, boolean>> =>
@@ -1609,10 +1651,10 @@ function useHeaderActionData({ threadIds }: PluginThreadActionDataInput) {
 function useInfoBoard(threadId: string): ShownWorkspace {
   const repositoryKey = useStoredRepository(threadId) ?? undefined;
   const input = useMemo(() => ({ threadId, repositoryKey }), [threadId, repositoryKey]);
-  const workspace = useRpcQuery("workspace", input, {
+  const workspace = useWorkspaceQuery(input, {
     ...storedAnswer("workspace", input),
-    // Any other answer, such as no GitButler here, is trusted as long as the header trusts it.
-    staleTime: (query) => (query.state.data?.state === "ready" ? 0 : NOT_READY_STALE_MS),
+    // Any other answer is trusted as long as the header trusts it.
+    staleTime: (query) => trustFor(query.state.data, 0),
     gcTime: Number.POSITIVE_INFINITY,
   });
   const shown = useShownWorkspace(workspace, threadId, repositoryKey, undefined);
@@ -1629,11 +1671,12 @@ function useInfoBoard(threadId: string): ShownWorkspace {
     const parsed = workspaceChangedSchema.safeParse(payload);
     if (!parsed.success || board === undefined) return;
     const signal = parsed.data;
-    const path = board.checkoutIdentity?.path;
     const ours =
       "environmentId" in signal
         ? signal.environmentId === board.environmentId
-        : signal.hostId === board.hostId && path !== undefined && signal.checkouts.includes(path);
+        : board.state === "ready" &&
+          signal.hostId === board.hostId &&
+          signal.checkouts.includes(board.checkoutIdentity.path);
     if (ours) refresh();
   });
   const connection = useRealtimeConnectionState();
@@ -1657,7 +1700,7 @@ function useInfoBoard(threadId: string): ShownWorkspace {
 function BranchesInfo({ threadId }: ExperimentalThreadInfoProps) {
   const panel = experimental_useAppPanel();
   const { data: board, stale } = useInfoBoard(threadId);
-  if (board?.state !== "ready" || board.checkoutIdentity?.kind === "git") return null;
+  if (board?.state !== "ready" || board.checkoutIdentity.kind === "git") return null;
   const branches = board.stacks.flatMap((stack) =>
     stack.branches.map((branch, index) => ({
       branch,

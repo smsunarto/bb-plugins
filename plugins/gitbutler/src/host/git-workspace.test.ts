@@ -14,6 +14,7 @@ import {
   readGitWorkspace,
 } from "./git-workspace.ts";
 import hostEntry from "./host.ts";
+import type { HostWorkspace, ReadyHostWorkspace } from "../shared/schema.ts";
 
 const signal = new AbortController().signal;
 const host = experimental_createHostEntryHarness(hostEntry);
@@ -37,6 +38,11 @@ async function observed() {
 }
 function selection() {
   return { paths: [main], origin: remote.replace(/\.git$/, "") };
+}
+/** The board a read answered with, or the reason it did not as a failure. */
+function ready(board: HostWorkspace): ReadyHostWorkspace {
+  if (board.state !== "ready") throw new Error(board.reason);
+  return board;
 }
 async function workspace() {
   return readGitWorkspace({ path: isolated, key: ".", name: "isolated" }, signal);
@@ -81,11 +87,12 @@ test("native board reads only its own commits, dirty files, base and checkout id
   await writeFile(join(isolated, "base.txt"), "local edit\n");
   await writeFile(join(isolated, "new file\nname.txt"), "new\n");
   await writeFile(join(main, "main-only.txt"), "keep main dirty\n");
-  const board = await host.experimental_call("workspace", {
-    environmentPath: isolated,
-    checkout: selection(),
-  });
-  expect(board.state).toBe("ready");
+  const board = ready(
+    await host.experimental_call("workspace", {
+      environmentPath: isolated,
+      checkout: selection(),
+    }),
+  );
   expect(board.stacks[0]?.branches[0]?.commits.map(({ message }) => message)).toEqual([
     "feat: second",
     "feat: first\n\nFirst body.",
@@ -191,10 +198,12 @@ test.each(["gitbutler/workspace", "gitbutler/edit", "gitbutler/internal"])(
     );
     const identity = await readGitCheckout(isolated, signal);
     expect(identity).toMatchObject({ kind: "gitbutler", branch: internal, head: tip });
-    const board = await host.experimental_call("workspace", {
-      environmentPath: isolated,
-      checkout: selection(),
-    });
+    const board = ready(
+      await host.experimental_call("workspace", {
+        environmentPath: isolated,
+        checkout: selection(),
+      }),
+    );
     expect(board.checkoutIdentity).toMatchObject({ kind: "gitbutler", branch: internal });
     expect(board.stacks).toEqual([]);
     await expect(
@@ -249,11 +258,12 @@ test("delete preserves current files and leaves the detached checkout readable",
       await runGit(main, ["for-each-ref", "--format=%(refname)", `refs/heads/${name}`], signal)
     ).trim(),
   ).toBe("");
-  const after = await host.experimental_call("workspace", {
-    environmentPath: isolated,
-    checkout: selection(),
-  });
-  expect(after.state).toBe("ready");
+  const after = ready(
+    await host.experimental_call("workspace", {
+      environmentPath: isolated,
+      checkout: selection(),
+    }),
+  );
   expect(after.stacks).toEqual([]);
   expect(after.base?.commitId).toBe(tip);
 });
@@ -913,8 +923,8 @@ test("child preflight shares branch guards and permits the actual detached rebas
   ).rejects.toThrow();
   const board = await workspace();
   expect(board.conflictedFiles).toEqual(["base.txt"]);
-  expect(board.checkoutIdentity?.branch).toBeNull();
-  const conflicted = board.checkoutIdentity!;
+  expect(board.checkoutIdentity.branch).toBeNull();
+  const conflicted = board.checkoutIdentity;
   const snapshot = { branch: conflicted.branch, head: conflicted.head, origin: conflicted.origin };
   expect(
     await host.experimental_call("prepareCheckoutChild", {

@@ -4,7 +4,6 @@ import {
   checkoutSelectionSchema,
   repositoryKeySchema,
   workspaceSchema,
-  type Workspace,
 } from "../../shared/schema.ts";
 import { boardFor } from "../lib/board.ts";
 import {
@@ -31,7 +30,7 @@ export async function workspace(
   { threadId, checkout, repositoryKey }: z.output<typeof workspaceContract.input>,
 ): Promise<z.input<typeof workspaceContract.output>> {
   const { target, reason } = await resolveTarget(ctx.bb, threadId, checkout, repositoryKey);
-  if (!target) return unavailable("noEnvironment", reason, null);
+  if (!target) return { state: "noEnvironment", reason, environmentId: null, repositoryKey: null };
   try {
     const read = await hostClient(ctx.bb).call(
       "workspace",
@@ -40,7 +39,7 @@ export async function workspace(
     );
     // Where the board was read is where its subthread records and its
     // selected checkout's next write look first.
-    if (read.repositoryKey !== null && read.checkoutIdentity) {
+    if (read.state === "ready") {
       const { path, commonDir } = read.checkoutIdentity;
       rememberLocation(ctx.bb, target, repositoryKey, {
         key: read.repositoryKey,
@@ -54,29 +53,11 @@ export async function workspace(
     // answer it keeps the last board on screen, without a retry or a server
     // warning on every poll.
     if (!(error instanceof HostOffline)) throw error;
-    return unavailable(
-      "error",
-      `${error.message} The workspace loads when it reconnects.`,
-      target.environmentId,
-    );
+    return {
+      state: "error",
+      reason: `${error.message} The workspace loads when it reconnects.`,
+      environmentId: target.environmentId,
+      repositoryKey: null,
+    };
   }
-}
-
-function unavailable(
-  state: "noEnvironment" | "error",
-  reason: string,
-  environmentId: string | null,
-): Workspace {
-  return {
-    state,
-    reason,
-    environmentId,
-    repositoryKey: null,
-    repoName: "",
-    unassignedChanges: [],
-    stacks: [],
-    base: null,
-    upstream: null,
-    conflictedFiles: [],
-  };
 }

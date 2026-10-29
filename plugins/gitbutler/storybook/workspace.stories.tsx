@@ -5,7 +5,7 @@ import { shows } from "../../../.storybook/ready";
 import { StackLane, UncommittedCard, CommitExpansionContext } from "../src/app/workspace-lane";
 import { BranchActions } from "../src/app/branch-actions";
 import { Conflicts } from "../src/app/conflicts";
-import type { Branch, Workspace } from "../src/shared/schema";
+import type { Branch, ReadyWorkspace } from "../src/shared/schema";
 import "../src/app/gitbutler.css";
 const target = { threadId: "thr_story", repositoryKey: "." };
 const branch: Branch = {
@@ -34,10 +34,19 @@ const changes = [
   { path: "src/reviews/__tests__/reconnect.test.ts", kind: "added" as const },
 ];
 const stack = { key: branch.name, branches: [branch], assignedChanges: changes };
-const workspace: Workspace = {
+const workspace: ReadyWorkspace = {
   state: "ready",
-  reason: null,
   environmentId: "env_story",
+  hostId: "host_story",
+  checkoutIdentity: {
+    path: "/work/atlas",
+    branch: "gitbutler/workspace",
+    head: "aabbccddeeff00112233aabbccddeeff00112233",
+    origin: "github.com/acme/atlas",
+    commonDir: "/work/atlas/.git",
+    kind: "gitbutler",
+  },
+  nativeAgentPrompts: null,
   repositoryKey: ".",
   repoName: "Atlas",
   unassignedChanges: changes,

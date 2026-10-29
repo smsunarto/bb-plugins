@@ -18,7 +18,7 @@ export async function readUnpublished(
   signal: AbortSignal,
 ): Promise<UnpublishedBranch[]> {
   const payload = await runBut(repository.path, ["status"], signal);
-  const { stacks } = parseWorkspace(payload, repository.name, repository.key);
+  const { stacks } = parseWorkspace(payload);
   // Branches run top to bottom in a stack, so the one under `i` is `i + 1`.
   const found = stacks.flatMap((stack) =>
     stack.branches.flatMap((branch, i) =>

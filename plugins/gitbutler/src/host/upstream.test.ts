@@ -2,7 +2,7 @@ import { afterAll, beforeAll, expect, test } from "bun:test";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { Branch, HostWorkspace } from "../shared/schema.ts";
+import type { Board, Branch } from "../shared/schema.ts";
 import { runGit } from "./cli.ts";
 import { compareWithRemotes, incoming } from "./upstream.ts";
 
@@ -41,12 +41,8 @@ function branch(name: string, upstream: number): Branch {
   };
 }
 
-function workspaceOf(...branches: Branch[]): HostWorkspace {
+function workspaceOf(...branches: Branch[]): Board {
   return {
-    state: "ready",
-    reason: null,
-    repositoryKey: ".",
-    repoName: "repo",
     unassignedChanges: [],
     stacks: branches.map((entry) => ({
       key: entry.name,

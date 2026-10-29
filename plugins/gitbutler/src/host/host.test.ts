@@ -114,10 +114,12 @@ test("workspace names the repository it resolved, and leaves the environment to 
   await answering({});
   const workspace = await host.experimental_call("workspace", { environmentPath: repository });
 
-  expect(workspace.state).toBe("ready");
-  expect(workspace.repositoryKey).toBe(".");
+  expect(workspace).toMatchObject({
+    state: "ready",
+    repositoryKey: ".",
+    upstream: { latest: { subject: "chore: upstream tip" } },
+  });
   expect("environmentId" in workspace).toBe(false);
-  expect(workspace.upstream?.latest?.subject).toBe("chore: upstream tip");
 });
 
 test("checkout identity resolves without GitButler status or remote comparison", async () => {
@@ -272,36 +274,38 @@ test("checkouts keeps GitButler workspaces and named clones of one origin, each 
 
   const real = await realpath(machine);
   expect(
-    answer.checkouts.map(({ path, state, stacks, gitBranch }) => ({
-      path,
-      state,
-      branches: gitBranch
-        ? [gitBranch.name]
-        : stacks.flatMap((stack) => stack.branches.map((branch) => branch.name)),
+    answer.checkouts.map((checkout) => ({
+      path: checkout.path,
+      kind: checkout.kind,
+      branches:
+        checkout.kind === "git"
+          ? [checkout.branch]
+          : checkout.kind === "gitbutler"
+            ? checkout.stacks.flatMap((stack) => stack.branches.map((branch) => branch.name))
+            : [],
     })),
   ).toEqual([
     {
       path: join(real, "app"),
-      state: "ready",
+      kind: "gitbutler",
       branches: ["scott/top", "scott/bottom", "scott/experimental"],
     },
     {
       path: join(real, "clone"),
-      state: "ready",
+      kind: "git",
       branches: ["main"],
     },
     {
       path: join(real, "env", "repos", "app"),
-      state: "ready",
+      kind: "gitbutler",
       branches: ["scott/top", "scott/bottom", "scott/experimental"],
     },
   ]);
   expect(answer.checkouts.find(({ path }) => path === join(real, "clone"))).toEqual({
+    kind: "git",
     path: join(real, "clone"),
-    state: "ready",
-    reason: null,
-    stacks: [],
-    gitBranch: { name: "main", head: null },
+    branch: "main",
+    head: null,
   });
   // The clone, the other repository, and the missing path never reach `but`.
   expect(await butCalls()).toEqual(["status -u --json", "status -u --json"]);
@@ -328,21 +332,20 @@ test("an unregistered linked checkout shows its actual branch and commit without
     origin: "github.com/acme/app",
   });
   expect(answer.checkouts.find(({ path }) => path === isolated)).toEqual({
+    kind: "git",
     path: isolated,
-    state: "ready",
-    reason: null,
-    stacks: [],
-    gitBranch: {
-      name: "scott/performance",
-      head: {
-        commitId: head,
-        message: "perf: measure connection\n\nPreserve this body.",
-        authorName: "Test Person",
-        createdAt: (await runGit(isolated, ["show", "-s", "--format=%aI", "HEAD"], signal)).trim(),
-      },
+    branch: "scott/performance",
+    head: {
+      commitId: head,
+      message: "perf: measure connection\n\nPreserve this body.",
+      authorName: "Test Person",
+      createdAt: (await runGit(isolated, ["show", "-s", "--format=%aI", "HEAD"], signal)).trim(),
     },
   });
-  expect(answer.checkouts.find(({ path }) => path === main)?.stacks).toHaveLength(2);
+  expect(answer.checkouts.find(({ path }) => path === main)).toMatchObject({
+    kind: "gitbutler",
+    stacks: [expect.anything(), expect.anything()],
+  });
   expect(await butCalls()).toEqual(["status -u --json"]);
 
   // A broken GitButler workspace leaves the healthy Git-only checkout visible.
@@ -353,14 +356,15 @@ test("an unregistered linked checkout shows its actual branch and commit without
     origin: "github.com/acme/app",
   });
   expect(partial.checkouts.find(({ path }) => path === main)).toEqual({
+    kind: "unavailable",
     path: main,
     state: "error",
     reason: "Error: Broken workspace",
-    stacks: [],
   });
-  expect(partial.checkouts.find(({ path }) => path === isolated)?.gitBranch?.head?.message).toBe(
-    "perf: measure connection\n\nPreserve this body.",
-  );
+  expect(partial.checkouts.find(({ path }) => path === isolated)).toMatchObject({
+    kind: "git",
+    head: { message: "perf: measure connection\n\nPreserve this body." },
+  });
 });
 
 /**

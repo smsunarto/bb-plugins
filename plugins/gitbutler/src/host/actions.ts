@@ -190,7 +190,7 @@ function changedCommits(name: string, had: number, has: number): string | null {
  * confirmed it. A message was written for the several commits they saw.
  */
 function landRefusal(status: unknown, branch: Branch, message: string | null): string | null {
-  const stack = parseWorkspace(status, "").stacks.find((entry) =>
+  const stack = parseWorkspace(status).stacks.find((entry) =>
     entry.branches.some((candidate) => candidate.name === branch.name),
   );
   if (stack?.branches.at(-1)?.name !== branch.name) {
@@ -318,7 +318,7 @@ async function checkUpstreamLoss(
   accepted: readonly string[],
   signal: AbortSignal,
 ): Promise<void> {
-  const workspace = await compareWithRemotes(cwd, parseWorkspace(status, ""), signal);
+  const workspace = await compareWithRemotes(cwd, parseWorkspace(status), signal);
   const stack = workspace.stacks.find((candidate) =>
     candidate.branches.some((entry) => entry.name === branch.name),
   )?.branches;

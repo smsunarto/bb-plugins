@@ -195,7 +195,7 @@ async function notApplied(cwd: string, branch: string, signal: AbortSignal) {
         (await readGitCheckout(path, signal)).kind !== "gitbutler"
       )
         return;
-      const workspace = parseWorkspace(await runBut(path, ["status"], signal), "");
+      const workspace = parseWorkspace(await runBut(path, ["status"], signal));
       if (workspace.stacks.some((stack) => stack.branches.some((entry) => entry.name === branch))) {
         throw new ButFailedError(
           "This branch is applied in the main GitButler workspace. Run its actions there before changing its shared ref from an isolated checkout.",

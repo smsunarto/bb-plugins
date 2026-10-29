@@ -1,4 +1,5 @@
 import { useState } from "react";
+import type { ReactNode } from "react";
 import { experimental_Icon as Icon } from "@get-bb/plugin-sdk/app";
 import type { Branch, Checkout } from "../shared/schema.ts";
 import { Button } from "./components/ui/button.tsx";
@@ -82,13 +83,11 @@ function BranchRow({ branch }: { branch: Branch }) {
   );
 }
 
-function GitBranchRow({ branch }: { branch: NonNullable<Checkout["gitBranch"]> }) {
+function GitBranchRow({ checkout }: { checkout: Extract<Checkout, { kind: "git" }> }) {
   const look = BRANCH_LOOK.unknown;
+  const { branch, head } = checkout;
   return (
-    <li
-      className="flex min-w-0 items-start gap-2 px-2.5 py-1.5"
-      aria-label={`Branch ${branch.name}`}
-    >
+    <li className="flex min-w-0 items-start gap-2 px-2.5 py-1.5" aria-label={`Branch ${branch}`}>
       <span
         className={cn(
           "mt-px flex size-4 shrink-0 items-center justify-center rounded",
@@ -100,18 +99,16 @@ function GitBranchRow({ branch }: { branch: NonNullable<Checkout["gitBranch"]> }
         <Icon name={look.icon} className="size-3 text-background" />
       </span>
       <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-        <span className="truncate font-medium" title={branch.name} translate="no">
-          {branch.name}
+        <span className="truncate font-medium" title={branch} translate="no">
+          {branch}
         </span>
-        <span className="truncate text-[11px] text-muted-foreground" title={branch.head?.message}>
-          {branch.head
-            ? `Latest commit · ${subject(branch.head.message)}`
-            : "Latest commit unavailable"}
+        <span className="truncate text-[11px] text-muted-foreground" title={head?.message}>
+          {head ? `Latest commit · ${subject(head.message)}` : "Latest commit unavailable"}
         </span>
       </span>
-      {branch.head ? (
+      {head ? (
         <When
-          value={branch.head.createdAt}
+          value={head.createdAt}
           className="shrink-0 text-[11px] tabular-nums text-muted-foreground"
         />
       ) : null}
@@ -119,35 +116,54 @@ function GitBranchRow({ branch }: { branch: NonNullable<Checkout["gitBranch"]> }
   );
 }
 
-function MachineBody({ checkout }: { checkout: Checkout }) {
-  if (checkout.state === "ready" && checkout.gitBranch) {
-    return (
-      <ul className="list-none border-t border-border">
-        <GitBranchRow branch={checkout.gitBranch} />
-      </ul>
-    );
-  }
-  if (checkout.state !== "ready" || checkout.stacks.length === 0) {
-    return (
-      <p className="border-t border-border px-2.5 py-1.5 text-[11px] text-muted-foreground">
-        {checkout.state === "ready" ? "No applied branches." : checkout.reason}
-      </p>
-    );
-  }
+/** Under the card's header in place of branch rows. */
+function MachineNote({ children }: { children: ReactNode }) {
   return (
-    // One group per stack, its branches top first as on this machine's board.
-    <ul className="list-none divide-y divide-border border-t border-border">
-      {checkout.stacks.map((stack) => (
-        <li key={stack.key}>
-          <ul className="list-none">
-            {stack.branches.map((branch) => (
-              <BranchRow key={branch.name} branch={branch} />
-            ))}
-          </ul>
-        </li>
-      ))}
-    </ul>
+    <p className="border-t border-border px-2.5 py-1.5 text-[11px] text-muted-foreground">
+      {children}
+    </p>
   );
+}
+
+function MachineBody({ checkout }: { checkout: Checkout }) {
+  switch (checkout.kind) {
+    case "git":
+      return (
+        <ul className="list-none border-t border-border">
+          <GitBranchRow checkout={checkout} />
+        </ul>
+      );
+    case "unavailable":
+      return <MachineNote>{checkout.reason}</MachineNote>;
+    case "gitbutler":
+      if (checkout.stacks.length === 0) return <MachineNote>No applied branches.</MachineNote>;
+      return (
+        // One group per stack, its branches top first as on this machine's board.
+        <ul className="list-none divide-y divide-border border-t border-border">
+          {checkout.stacks.map((stack) => (
+            <li key={stack.key}>
+              <ul className="list-none">
+                {stack.branches.map((branch) => (
+                  <BranchRow key={branch.name} branch={branch} />
+                ))}
+              </ul>
+            </li>
+          ))}
+        </ul>
+      );
+  }
+}
+
+/** How many branches the card lists: a named checkout's one, or a workspace's applied ones. */
+function branchCount(checkout: Checkout): number {
+  switch (checkout.kind) {
+    case "git":
+      return 1;
+    case "gitbutler":
+      return checkout.stacks.reduce((count, stack) => count + stack.branches.length, 0);
+    case "unavailable":
+      return 0;
+  }
 }
 
 function MachineCard({
@@ -162,9 +178,7 @@ function MachineCard({
   onOpen?: ((checkout: Checkout) => void) | undefined;
 }) {
   const [open, setOpen] = useState(true);
-  const branches = checkout.gitBranch
-    ? 1
-    : checkout.stacks.reduce((count, stack) => count + stack.branches.length, 0);
+  const branches = branchCount(checkout);
   return (
     <section
       className="overflow-hidden rounded-lg border border-border bg-card"
@@ -191,7 +205,7 @@ function MachineCard({
       {open ? (
         <>
           <MachineBody checkout={checkout} />
-          {onOpen && checkout.state === "ready" ? (
+          {onOpen && checkout.kind !== "unavailable" ? (
             <div className="border-t border-border px-3 py-2">
               <CheckoutChatActions
                 target={{ ...target, checkout: { hostId: checkout.hostId, path: checkout.path } }}

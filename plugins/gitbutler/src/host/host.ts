@@ -6,7 +6,7 @@ import type {
   ButActionResult,
   HostCheckout,
   HostWorkspace,
-  WorkspaceState,
+  UnavailableState,
 } from "../shared/schema.ts";
 import { runAction } from "./actions.ts";
 import { readParkedBranches } from "./branches.ts";
@@ -83,31 +83,13 @@ async function requireKnownWorkspace(
 }
 
 /** Classify a failure so the panel can explain it instead of showing a stack. */
-function unavailable(error: unknown): { state: WorkspaceState; reason: string } {
+function unavailable(error: unknown): { state: UnavailableState; reason: string } {
   if (error instanceof ButMissingError) return { state: "cliMissing", reason: error.message };
   if (error instanceof ButSetupRequiredError) {
     return { state: "setupRequired", reason: error.message };
   }
   if (error instanceof NoRepositoryError) return { state: "noRepository", reason: error.message };
   return { state: "error", reason: error instanceof Error ? error.message : String(error) };
-}
-
-function emptyWorkspace(
-  state: WorkspaceState,
-  reason: string,
-  repositoryKey: string | null,
-): HostWorkspace {
-  return {
-    state,
-    reason,
-    repositoryKey,
-    repoName: "",
-    unassignedChanges: [],
-    stacks: [],
-    base: null,
-    upstream: null,
-    conflictedFiles: [],
-  };
 }
 
 /** The board of one repository, or why there is none. */
@@ -121,19 +103,24 @@ async function readWorkspace(
     // One call carries the whole panel. `-u` attaches the upstream commits
     // that are not integrated yet; per-commit files come from `patches`.
     const payload = await runBut(repository.path, ["status", "-u"], signal);
-    const workspace = {
-      ...parseWorkspace(payload, repository.name, repository.key),
-      checkoutIdentity: identity,
-    };
+    const parsed = parseWorkspace(payload);
     // Without the comparison the cards keep GitButler's own labels.
-    return await compareWithRemotes(repository.path, workspace, signal).catch((error: unknown) => {
-      if (signal.aborted) throw error;
-      return workspace;
-    });
+    const board = await compareWithRemotes(repository.path, parsed, signal).catch(
+      (error: unknown) => {
+        if (signal.aborted) throw error;
+        return parsed;
+      },
+    );
+    return {
+      state: "ready",
+      checkoutIdentity: identity,
+      repositoryKey: repository.key,
+      repoName: repository.name,
+      ...board,
+    };
   } catch (error) {
     if (signal.aborted) throw error;
-    const { state, reason } = unavailable(error);
-    return emptyWorkspace(state, reason, repository.key);
+    return { ...unavailable(error), repositoryKey: repository.key };
   }
 }
 
@@ -153,7 +140,7 @@ type Context = ExperimentalHostRpcContext<typeof gitbutlerHostSignals>;
  */
 async function readBoard(repository: Repository, context: Context): Promise<HostWorkspace> {
   const board = await boardOf(repository, context.signal);
-  if (board.checkoutIdentity) {
+  if (board.state === "ready") {
     await keepWatching(board.checkoutIdentity, context).catch(() => undefined);
   }
   return board;
@@ -281,8 +268,7 @@ export default experimental_defineHostEntry({
         repository = await resolveHostRepository(input, context.signal);
       } catch (error) {
         if (context.signal.aborted) throw error;
-        const { state, reason } = unavailable(error);
-        return emptyWorkspace(state, reason, null);
+        return { ...unavailable(error), repositoryKey: null };
       }
       return readBoard(repository, context);
     },
@@ -295,25 +281,21 @@ export default experimental_defineHostEntry({
     async checkouts({ paths, origin }, context) {
       const repositories = await findBranchCheckouts(paths, origin, context.signal);
       const checkouts = await inBatches(repositories, async (repository): Promise<HostCheckout> => {
+        const { path } = repository;
         if (repository.kind === "git") {
           try {
-            return {
-              path: repository.path,
-              state: "ready",
-              reason: null,
-              stacks: [],
-              gitBranch: {
-                name: repository.branch,
-                head: await readCheckoutHead(repository.path, repository.branch, context.signal),
-              },
-            };
+            const head = await readCheckoutHead(path, repository.branch, context.signal);
+            return { kind: "git", path, branch: repository.branch, head };
           } catch (error) {
             if (context.signal.aborted) throw error;
-            return { path: repository.path, ...unavailable(error), stacks: [] };
+            return { kind: "unavailable", path, ...unavailable(error) };
           }
         }
-        const { state, reason, stacks } = await boardOf(repository, context.signal);
-        return { path: repository.path, state, reason, stacks };
+        const board = await boardOf(repository, context.signal);
+        if (board.state !== "ready") {
+          return { kind: "unavailable", path, state: board.state, reason: board.reason };
+        }
+        return { kind: "gitbutler", path, stacks: board.stacks };
       });
       return { checkouts };
     },

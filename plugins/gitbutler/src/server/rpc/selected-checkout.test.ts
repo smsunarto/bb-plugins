@@ -53,7 +53,6 @@ function context() {
   };
   const board = () => ({
     state: "ready",
-    reason: null,
     repositoryKey: ".",
     repoName: "api",
     unassignedChanges: [],

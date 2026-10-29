@@ -133,9 +133,8 @@ export const upstreamSchema = z
   })
   .strict();
 
-/** Why the panel has nothing to show. `ready` is the only usable state. */
-export const workspaceStateSchema = z.enum([
-  "ready",
+/** Why the panel has nothing to show instead of a board. */
+export const unavailableStateSchema = z.enum([
   "noEnvironment",
   "noRepository",
   "cliMissing",
@@ -153,44 +152,55 @@ export const nativeAgentPromptsSchema = z.strictObject({
   commit: z.string().min(1),
 });
 
-export const workspaceSchema = z
-  .object({
-    state: workspaceStateSchema,
-    checkoutIdentity: checkoutIdentitySchema.optional(),
-    nativeAgentPrompts: nativeAgentPromptsSchema.optional(),
-    reason: z.string().nullable(),
-    /**
-     * The thread's environment, so a panel can tell which workspace-changed
-     * signals are about it. Null when the thread has no usable environment.
-     */
-    environmentId: z.string().nullable(),
-    /**
-     * The machine the board was read on, so a panel can tell which
-     * repository-changed signals are about it. Boards stored by older
-     * builds lack it.
-     */
-    hostId: z.string().optional(),
-    /** The repository the host read, "." for the root. Null when it found none. */
-    repositoryKey: z.string().nullable(),
-    repoName: z.string(),
-    unassignedChanges: z.array(fileChangeSchema),
-    stacks: z.array(stackSchema),
-    base: baseCommitSchema.nullable(),
-    upstream: upstreamSchema.nullable(),
-    /**
-     * Uncommitted files holding conflict markers, which `but status` lists
-     * apart from the other changes. A pull or delete can leave them behind.
-     */
-    conflictedFiles: z.array(z.string()),
-  })
-  .strict();
+/** What `but status` reports, or the Git equivalent for a plain checkout. */
+export const boardSchema = z.strictObject({
+  unassignedChanges: z.array(fileChangeSchema),
+  stacks: z.array(stackSchema),
+  base: baseCommitSchema.nullable(),
+  upstream: upstreamSchema.nullable(),
+  /**
+   * Uncommitted files holding conflict markers, which `but status` lists
+   * apart from the other changes. A pull or delete can leave them behind.
+   */
+  conflictedFiles: z.array(z.string()),
+});
+
+/** A board, with the checkout and repository the host read it from. */
+const hostReadyWorkspaceSchema = boardSchema.extend({
+  state: z.literal("ready"),
+  checkoutIdentity: checkoutIdentitySchema,
+  /** The repository the host read, "." for the root. */
+  repositoryKey: z.string(),
+  repoName: z.string(),
+});
+
+/** Why the host read no board. `repositoryKey` is the repository it had resolved, if it got that far. */
+const hostUnavailableWorkspaceSchema = z.strictObject({
+  state: unavailableStateSchema,
+  reason: z.string(),
+  repositoryKey: z.string().nullable(),
+});
 
 /** What the host reads. The server adds environment identity and agent text. */
-export const hostWorkspaceSchema = workspaceSchema.omit({
-  environmentId: true,
-  hostId: true,
-  nativeAgentPrompts: true,
-});
+export const hostWorkspaceSchema = z.discriminatedUnion("state", [
+  hostReadyWorkspaceSchema,
+  hostUnavailableWorkspaceSchema,
+]);
+
+export const workspaceSchema = z.discriminatedUnion("state", [
+  hostReadyWorkspaceSchema.extend({
+    /** The thread's environment, so a panel can tell which workspace-changed signals are about it. */
+    environmentId: z.string(),
+    /** The machine the board was read on, so a panel can tell which repository-changed signals are about it. */
+    hostId: z.string(),
+    /** Null for a GitButler workspace, whose agent controls run `but` instead. */
+    nativeAgentPrompts: nativeAgentPromptsSchema.nullable(),
+  }),
+  hostUnavailableWorkspaceSchema.extend({
+    /** The thread's environment, or null when the thread has no usable one. */
+    environmentId: z.string().nullable(),
+  }),
+]);
 
 export const repositorySchema = z.object({ key: z.string(), name: z.string() }).strict();
 
@@ -469,21 +479,43 @@ export const repositoryOriginSchema = z
   .object({ path: z.string(), origin: originSchema.nullable() })
   .strict();
 
-/** A GitButler workspace or named Git checkout, read by that machine's host. */
-export const hostCheckoutSchema = z
-  .object({
-    path: z.string(),
-    state: workspaceStateSchema,
-    reason: z.string().nullable(),
-    stacks: z.array(stackSchema),
-    /** Read-only Git facts for a checkout that is not a GitButler workspace. */
-    gitBranch: z.strictObject({ name: z.string(), head: baseCommitSchema.nullable() }).optional(),
-  })
-  .strict();
+/** A GitButler workspace's applied stacks, read by that machine's host. */
+const gitbutlerCheckoutSchema = z.strictObject({
+  kind: z.literal("gitbutler"),
+  path: z.string(),
+  stacks: z.array(stackSchema),
+});
 
-export const checkoutSchema = hostCheckoutSchema
-  .extend({ hostId: z.string(), machine: z.string() })
-  .strict();
+/** Read-only Git facts for a named checkout that is not a GitButler workspace. */
+const gitCheckoutSchema = z.strictObject({
+  kind: z.literal("git"),
+  path: z.string(),
+  branch: z.string(),
+  head: baseCommitSchema.nullable(),
+});
+
+/** A checkout the host found but could not read. */
+const unavailableCheckoutSchema = z.strictObject({
+  kind: z.literal("unavailable"),
+  path: z.string(),
+  state: unavailableStateSchema,
+  reason: z.string(),
+});
+
+export const hostCheckoutSchema = z.discriminatedUnion("kind", [
+  gitbutlerCheckoutSchema,
+  gitCheckoutSchema,
+  unavailableCheckoutSchema,
+]);
+
+/** The machine a checkout is on, as the server names it. */
+const onMachine = { hostId: z.string(), machine: z.string() };
+
+export const checkoutSchema = z.discriminatedUnion("kind", [
+  gitbutlerCheckoutSchema.extend(onMachine),
+  gitCheckoutSchema.extend(onMachine),
+  unavailableCheckoutSchema.extend(onMachine),
+]);
 
 /**
  * The thread's repository as every other connected machine has it applied,
@@ -561,10 +593,13 @@ export type Branch = z.infer<typeof branchSchema>;
 export type Stack = z.infer<typeof stackSchema>;
 export type BaseCommit = z.infer<typeof baseCommitSchema>;
 export type Upstream = z.infer<typeof upstreamSchema>;
+export type Board = z.infer<typeof boardSchema>;
 export type Workspace = z.infer<typeof workspaceSchema>;
+export type ReadyWorkspace = Extract<Workspace, { state: "ready" }>;
 export type NativeAgentPrompts = z.infer<typeof nativeAgentPromptsSchema>;
 export type HostWorkspace = z.infer<typeof hostWorkspaceSchema>;
-export type WorkspaceState = z.infer<typeof workspaceStateSchema>;
+export type ReadyHostWorkspace = Extract<HostWorkspace, { state: "ready" }>;
+export type UnavailableState = z.infer<typeof unavailableStateSchema>;
 export type Repository = z.infer<typeof repositorySchema>;
 export type UnpublishedBranch = z.infer<typeof unpublishedBranchSchema>;
 export type PatchSource = z.infer<typeof patchSourceSchema>;

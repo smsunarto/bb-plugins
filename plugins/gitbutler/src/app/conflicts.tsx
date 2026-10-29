@@ -2,7 +2,7 @@ import { useRef } from "react";
 import type { ReactNode } from "react";
 import { experimental_Icon as Icon, useBbNavigate } from "@get-bb/plugin-sdk/app";
 import { queryClient } from "./query.ts";
-import type { Branch, Workspace } from "../shared/schema.ts";
+import type { Branch, ReadyWorkspace } from "../shared/schema.ts";
 import { useBoardLive, useBoardWorkspace, writeScope } from "./board-context.tsx";
 import { Button } from "./components/ui/button.tsx";
 import { listNames, useFocusAfter, writeBlocked } from "./branch-actions.tsx";
@@ -25,7 +25,7 @@ const POLL_MS = 5_000;
  * Branches holding a conflicted commit, in workspace order. `but push` refuses
  * them, and the branch cards take their push buttons away.
  */
-function conflictedBranches(workspace: Workspace) {
+function conflictedBranches(workspace: ReadyWorkspace) {
   return workspace.stacks
     .flatMap((stack) => stack.branches)
     .filter(
@@ -53,7 +53,7 @@ export function Conflicts({
   workspace,
 }: {
   target: WorkspaceTarget;
-  workspace: Workspace;
+  workspace: ReadyWorkspace;
 }) {
   const branches = conflictedBranches(workspace);
   const files = workspace.conflictedFiles;

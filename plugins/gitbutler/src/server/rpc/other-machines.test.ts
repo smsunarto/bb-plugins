@@ -97,29 +97,27 @@ test("asks each connected machine for its checkouts of the thread's origin", asy
     builder: {
       checkouts: [
         // The thread's own checkout, which the board already is.
-        { path: "/real/work/app", state: "ready", reason: null, stacks: [stack] },
-        { path: "/work/app-copy", state: "ready", reason: null, stacks: [] },
+        { kind: "gitbutler", path: "/real/work/app", stacks: [stack] },
+        { kind: "gitbutler", path: "/work/app-copy", stacks: [] },
       ],
     },
     laptop: {
-      checkouts: [{ path: "/Users/me/git/app", state: "ready", reason: null, stacks: [stack] }],
+      checkouts: [{ kind: "gitbutler", path: "/Users/me/git/app", stacks: [stack] }],
     },
   });
 
   expect(await otherMachines(ctx, { threadId: "t1", repositoryKey: "." })).toEqual({
     checkouts: [
       {
+        kind: "gitbutler",
         path: "/work/app-copy",
-        state: "ready",
-        reason: null,
         stacks: [],
         hostId: "builder",
         machine: "linux-builder",
       },
       {
+        kind: "gitbutler",
         path: "/Users/me/git/app",
-        state: "ready",
-        reason: null,
         stacks: [stack],
         hostId: "laptop",
         machine: "Local Mac",
@@ -171,29 +169,19 @@ test("keeps isolated branch snapshots distinct by checkout on the same machine",
   const { ctx } = machines({
     builder: {
       checkouts: [
-        { path: "/real/work/app", state: "ready", reason: null, stacks: [stack] },
+        { kind: "gitbutler", path: "/real/work/app", stacks: [stack] },
         {
+          kind: "git",
           path: "/work/app-performance",
-          state: "ready",
-          reason: null,
-          stacks: [],
-          gitBranch: {
-            name: "scott/performance",
-            head: {
-              commitId: "a".repeat(40),
-              message: "fix: preserve connection attempts",
-              authorName: "Scott",
-              createdAt: "2026-10-15T10:00:00Z",
-            },
+          branch: "scott/performance",
+          head: {
+            commitId: "a".repeat(40),
+            message: "fix: preserve connection attempts",
+            authorName: "Scott",
+            createdAt: "2026-10-15T10:00:00Z",
           },
         },
-        {
-          path: "/work/app-review",
-          state: "ready",
-          reason: null,
-          stacks: [],
-          gitBranch: { name: "scott/performance", head: null },
-        },
+        { kind: "git", path: "/work/app-review", branch: "scott/performance", head: null },
       ],
     },
   });
@@ -202,28 +190,23 @@ test("keeps isolated branch snapshots distinct by checkout on the same machine",
   expect(result.reason).toBeNull();
   expect(result.checkouts).toEqual([
     {
+      kind: "git",
       path: "/work/app-performance",
-      state: "ready",
-      reason: null,
-      stacks: [],
-      gitBranch: {
-        name: "scott/performance",
-        head: {
-          commitId: "a".repeat(40),
-          message: "fix: preserve connection attempts",
-          authorName: "Scott",
-          createdAt: "2026-10-15T10:00:00Z",
-        },
+      branch: "scott/performance",
+      head: {
+        commitId: "a".repeat(40),
+        message: "fix: preserve connection attempts",
+        authorName: "Scott",
+        createdAt: "2026-10-15T10:00:00Z",
       },
       hostId: "builder",
       machine: "linux-builder",
     },
     {
+      kind: "git",
       path: "/work/app-review",
-      state: "ready",
-      reason: null,
-      stacks: [],
-      gitBranch: { name: "scott/performance", head: null },
+      branch: "scott/performance",
+      head: null,
       hostId: "builder",
       machine: "linux-builder",
     },

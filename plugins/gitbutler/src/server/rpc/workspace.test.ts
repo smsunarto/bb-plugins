@@ -2,9 +2,18 @@ import { expect, test } from "bun:test";
 import { harness } from "../../../test/harness.ts";
 import { workspace } from "./workspace.ts";
 
+const identity = {
+  kind: "gitbutler" as const,
+  path: "/work",
+  branch: "gitbutler/workspace",
+  head: "a".repeat(40),
+  origin: "github.com/owner/project",
+  commonDir: "/work/.git",
+};
+
 const ready = {
   state: "ready" as const,
-  reason: null,
+  checkoutIdentity: identity,
   repositoryKey: ".",
   repoName: "bb-plugins",
   unassignedChanges: [],
@@ -18,7 +27,12 @@ test("forwards the environment path and host to the host entry, and names the en
   const { ctx, calls } = harness({ result: ready });
   const result = await workspace(ctx, { threadId: "t1" });
 
-  expect(result).toEqual({ ...ready, environmentId: "env-1", hostId: "host-1" });
+  expect(result).toEqual({
+    ...ready,
+    environmentId: "env-1",
+    hostId: "host-1",
+    nativeAgentPrompts: null,
+  });
   expect(calls).toEqual([
     { method: "workspace", input: { environmentPath: "/work" }, options: { hostId: "host-1" } },
   ]);
@@ -35,6 +49,7 @@ test("adds server-owned native agent requests to the exact checkout snapshot", a
   };
   const { ctx } = harness({ result: { ...ready, checkoutIdentity } });
   const result = await workspace(ctx, { threadId: "t1" });
+  if (result.state !== "ready") throw new Error(result.reason);
 
   expect(result.nativeAgentPrompts?.guidance).toContain('"machine": "host-1"');
   expect(result.nativeAgentPrompts?.guidance).toContain('"path": "/work/it\'s isolated"');
@@ -53,10 +68,11 @@ test("adds server-owned native agent requests to the exact checkout snapshot", a
     "commit",
   ]);
 
-  const managed = harness({
-    result: { ...ready, checkoutIdentity: { ...checkoutIdentity, kind: "gitbutler" } },
+  // A GitButler workspace's agent controls run `but` instead.
+  const managed = harness({ result: ready });
+  expect(await workspace(managed.ctx, { threadId: "t1" })).toMatchObject({
+    nativeAgentPrompts: null,
   });
-  expect(await workspace(managed.ctx, { threadId: "t1" })).not.toHaveProperty("nativeAgentPrompts");
 });
 
 test("forwards a chosen repository and omits the key when there is none", async () => {
@@ -78,10 +94,12 @@ test("explains a thread with no environment instead of calling the host", async 
   const { ctx, calls } = harness({ environment: null });
   const result = await workspace(ctx, { threadId: "t1" });
 
-  expect(result.state).toBe("noEnvironment");
-  expect(result.reason).toBe("This thread has no project environment.");
-  expect(result.environmentId).toBeNull();
-  expect(result.repositoryKey).toBeNull();
+  expect(result).toEqual({
+    state: "noEnvironment",
+    reason: "This thread has no project environment.",
+    environmentId: null,
+    repositoryKey: null,
+  });
   expect(calls).toEqual([]);
 });
 
@@ -91,7 +109,7 @@ test("explains an environment that is not ready yet", async () => {
   });
   const result = await workspace(ctx, { threadId: "t1" });
 
-  expect(result.reason).toBe("This thread's environment is starting.");
+  expect(result).toMatchObject({ reason: "This thread's environment is starting." });
   expect(calls).toEqual([]);
 });
 
@@ -107,12 +125,6 @@ test("names a disconnected host as an error answer instead of throwing", async (
     reason: "Local Mac is not connected. The workspace loads when it reconnects.",
     environmentId: "env-1",
     repositoryKey: null,
-    repoName: "",
-    unassignedChanges: [],
-    stacks: [],
-    base: null,
-    upstream: null,
-    conflictedFiles: [],
   });
 });
 

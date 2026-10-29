@@ -59,7 +59,14 @@ test("refuses a write aimed at a board read in another environment", async () =>
 test("hands back the board the write left, as the panel draws it", async () => {
   const board = {
     state: "ready" as const,
-    reason: null,
+    checkoutIdentity: {
+      kind: "gitbutler" as const,
+      path: "/work",
+      branch: "gitbutler/workspace",
+      head: "a".repeat(40),
+      origin: "github.com/acme/api",
+      commonDir: "/work/.git",
+    },
     repositoryKey: ".",
     repoName: "api",
     unassignedChanges: [],
@@ -73,7 +80,7 @@ test("hands back the board the write left, as the panel draws it", async () => {
 
   expect(await butAction(ctx, { threadId: "t1", action })).toEqual({
     result: { status: "done" },
-    workspace: { ...board, environmentId: "env-1", hostId: "host-1" },
+    workspace: { ...board, environmentId: "env-1", hostId: "host-1", nativeAgentPrompts: null },
   });
   // One host call: no read of the board before or after.
   expect(calls.map(({ method }) => method)).toEqual(["butAction"]);

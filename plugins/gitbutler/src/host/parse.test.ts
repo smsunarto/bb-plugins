@@ -23,10 +23,8 @@ import {
 } from "./parse.ts";
 
 test("parseWorkspace reads stacks, branches, and their commits", () => {
-  const workspace = parseWorkspace(statusPayload, "bb-plugins");
+  const workspace = parseWorkspace(statusPayload);
 
-  expect(workspace.state).toBe("ready");
-  expect(workspace.repoName).toBe("bb-plugins");
   expect(workspace.unassignedChanges).toEqual([
     { path: "bun.lock", kind: "modified" },
     { path: "plugins/gitbutler/LICENSE", kind: "added" },
@@ -54,7 +52,7 @@ test("parseWorkspace reads stacks, branches, and their commits", () => {
 
 test("parseWorkspace keys a stack by its bottom branch, not the CLI id", () => {
   // `but` reassigns cliIds on every invocation, so they cannot key React rows.
-  const workspace = parseWorkspace(statusPayload, "bb-plugins");
+  const workspace = parseWorkspace(statusPayload);
   expect(workspace.stacks.map((stack) => stack.key)).toEqual([
     "scott/bottom",
     "scott/experimental",
@@ -73,18 +71,15 @@ test("parseWorkspace leads with the most recently committed stack", () => {
       },
     ],
   });
-  const workspace = parseWorkspace(
-    {
-      stacks: [
-        stackWith("scott/empty"),
-        stackWith("scott/old", "2026-09-20T10:00:00+00:00"),
-        // Offsets differ, so the instant decides, not the string.
-        stackWith("scott/new", "2026-09-21T09:00:00+00:00", "2026-09-22T01:00:00-07:00"),
-        stackWith("scott/mid", "2026-09-22T07:00:00+00:00"),
-      ],
-    },
-    "repo",
-  );
+  const workspace = parseWorkspace({
+    stacks: [
+      stackWith("scott/empty"),
+      stackWith("scott/old", "2026-09-20T10:00:00+00:00"),
+      // Offsets differ, so the instant decides, not the string.
+      stackWith("scott/new", "2026-09-21T09:00:00+00:00", "2026-09-22T01:00:00-07:00"),
+      stackWith("scott/mid", "2026-09-22T07:00:00+00:00"),
+    ],
+  });
   expect(workspace.stacks.map((stack) => stack.key)).toEqual([
     "scott/new",
     "scott/mid",
@@ -94,7 +89,7 @@ test("parseWorkspace leads with the most recently committed stack", () => {
 });
 
 test("parseWorkspace maps push status and keeps the raw CLI string", () => {
-  const [first, second] = parseWorkspace(statusPayload, "bb-plugins").stacks;
+  const [first, second] = parseWorkspace(statusPayload).stacks;
   expect(first?.branches[0]?.status).toBe("pushed");
   expect(first?.branches[1]?.status).toBe("unpushed");
   // An unrecognised status degrades instead of failing the whole panel.
@@ -104,10 +99,9 @@ test("parseWorkspace maps push status and keeps the raw CLI string", () => {
 
 test("parseWorkspace tells a branch that is only ahead from one that diverged", () => {
   const withStatus = (branchStatus: string) =>
-    parseWorkspace(
-      { stacks: [{ branches: [{ name: "b", branchStatus, commits: [{ commitId: "c1" }] }] }] },
-      "repo",
-    ).stacks[0]?.branches[0];
+    parseWorkspace({
+      stacks: [{ branches: [{ name: "b", branchStatus, commits: [{ commitId: "c1" }] }] }],
+    }).stacks[0]?.branches[0];
   expect(withStatus("unpushedCommits")).toMatchObject({ status: "ahead", push: "push" });
   expect(withStatus("unpushedCommitsRequiringForce")).toMatchObject({
     status: "diverged",
@@ -116,14 +110,14 @@ test("parseWorkspace tells a branch that is only ahead from one that diverged", 
 });
 
 test("parseWorkspace reads the review id without its parentheses, and the CI verdict", () => {
-  const [top, bottom] = parseWorkspace(statusPayload, "bb-plugins").stacks[0]!.branches;
+  const [top, bottom] = parseWorkspace(statusPayload).stacks[0]!.branches;
   expect(top?.reviewId).toBe("#42");
   expect(top?.ci).toBe("failure");
   expect(bottom?.reviewId).toBeNull();
   expect(bottom?.ci).toBeNull();
 
   const ci = (value: object) =>
-    parseWorkspace({ stacks: [{ branches: [{ name: "b", reviewId: "(!7)", ci: value }] }] }, "r")
+    parseWorkspace({ stacks: [{ branches: [{ name: "b", reviewId: "(!7)", ci: value }] }] })
       .stacks[0]?.branches[0];
   expect(ci({ status: "inProgress", conclusion: "unknown" })).toMatchObject({
     reviewId: "!7",
@@ -135,7 +129,7 @@ test("parseWorkspace reads the review id without its parentheses, and the CI ver
 });
 
 test("parseWorkspace reads the base and upstream state", () => {
-  const workspace = parseWorkspace(statusPayload, "bb-plugins");
+  const workspace = parseWorkspace(statusPayload);
   expect(workspace.base).toEqual({
     commitId: "654681d034f5e25b7d987f0c8ed8a3c4118a72aa",
     message: "fix: the common base",
@@ -163,19 +157,16 @@ test("parseWorkspace names the resolved repository, and the upstream tip by its 
       },
     },
   };
-  const workspace = parseWorkspace(payload, "bb-plugins", ".");
-  expect(workspace.repositoryKey).toBe(".");
+  const workspace = parseWorkspace(payload);
   expect(workspace.upstream).toEqual({
     behind: 1,
     lastFetched: null,
     latest: { commitId: "2222222222222222222222222222222222222222", subject: "feat: one line" },
   });
-  // A caller that only reads the stacks names no repository.
-  expect(parseWorkspace(statusPayload, "bb-plugins").repositoryKey).toBeNull();
 });
 
 test("parseWorkspace survives a payload with nothing it expects", () => {
-  const workspace = parseWorkspace({ stacks: "not an array" }, "repo");
+  const workspace = parseWorkspace({ stacks: "not an array" });
   expect(workspace.stacks).toEqual([]);
   expect(workspace.base).toBeNull();
   expect(workspace.upstream).toBeNull();
@@ -454,9 +445,9 @@ test("parseGitLog returns nothing for an empty log", () => {
 });
 
 test("parseWorkspace lists files left with conflict markers, which status keeps apart", () => {
-  const workspace = parseWorkspace({ ...statusPayload, conflictedFiles: ["README.md", 7] }, "x");
+  const workspace = parseWorkspace({ ...statusPayload, conflictedFiles: ["README.md", 7] });
   expect(workspace.conflictedFiles).toEqual(["README.md"]);
-  expect(parseWorkspace(statusPayload, "x").conflictedFiles).toEqual([]);
+  expect(parseWorkspace(statusPayload).conflictedFiles).toEqual([]);
 });
 
 test("pullCheck reads which branches a workspace pull would leave conflicted", () => {

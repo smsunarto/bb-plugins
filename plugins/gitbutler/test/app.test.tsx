@@ -13,14 +13,19 @@ import type { RenderSlotOptions, RenderedSlot } from "@get-bb/plugin-sdk/testing
 import type { ComponentType } from "react";
 import { machineColors } from "../src/app/machine-colors.ts";
 import { parseOplog, parseWorkspace } from "../src/host/parse.ts";
-import type { Checkout, CheckoutSelection, Workspace } from "../src/shared/schema.ts";
+import type {
+  Checkout,
+  CheckoutSelection,
+  ReadyWorkspace,
+  Workspace,
+} from "../src/shared/schema.ts";
 import { oplogPayload, statusPayload } from "./fixtures.ts";
 
 installDom();
 // After the DOM exists: React DOM decides at load time whether the document
 // supports `input` events, and without one it falls back to an IE-only path
 // that breaks every controlled field.
-const { fireEvent, waitFor, within } = await import("@testing-library/react");
+const { act, fireEvent, waitFor, within } = await import("@testing-library/react");
 
 /*
  * jsdom ships no ResizeObserver or IntersectionObserver, and Pierre measures
@@ -37,11 +42,33 @@ class InertObserver {
 (globalThis as { IntersectionObserver?: unknown }).IntersectionObserver ??= InertObserver;
 const { loadPluginApp, renderSlot } = await import("@get-bb/plugin-sdk/testing/app");
 
-// The server adds which environment it read, which the host never knows.
-const workspace: Workspace = {
-  ...parseWorkspace(statusPayload, "bb-plugins", "."),
+// The server adds which environment and machine it read, which the host never knows.
+const workspace: ReadyWorkspace = {
+  state: "ready",
+  ...parseWorkspace(statusPayload),
+  repositoryKey: ".",
+  repoName: "bb-plugins",
   environmentId: "env-1",
+  hostId: "host-1",
+  checkoutIdentity: {
+    path: "/work/bb-plugins",
+    branch: "gitbutler/workspace",
+    head: "a".repeat(40),
+    origin: "github.com/scott/bb-plugins",
+    commonDir: "/work/bb-plugins/.git",
+    kind: "gitbutler",
+  },
+  nativeAgentPrompts: null,
 };
+
+/** The answer a read that found no board gives, named for the environment the server resolved. */
+function unavailable(
+  state: Exclude<Workspace["state"], "ready">,
+  reason: string,
+  environmentId: string | null = "env-1",
+): Workspace {
+  return { state, reason, environmentId, repositoryKey: null };
+}
 // The fixture's scott/bottom commit is conflicted, for the parser's tests.
 // `but` refuses to push or land that, and most cards here need both.
 workspace.stacks[0]!.branches[1]!.commits[0]!.conflicted = false;
@@ -211,7 +238,7 @@ test("does not draw a stored board for a workspace that stopped being one", asyn
   first.lifecycle.unmount();
   queryClient.clear();
 
-  const notice = { ...workspace, state: "setupRequired" as const, stacks: [], base: null };
+  const notice = unavailable("setupRequired", "No GitButler project found at .");
   const second = await panel({ ...baseRpc, workspace: () => notice });
   await waitFor(() =>
     expect(second.getByText("This repository is not a GitButler project")).toBeTruthy(),
@@ -314,7 +341,7 @@ test("keeps refresh reachable when the workspace query fails, and retries on cli
     },
   });
 
-  // One retry, then the failure shows.
+  // The failed call is drawn as an error board, Refresh beside it.
   await waitFor(() => expect(slot.getByText("Could not read this workspace")).toBeTruthy(), {
     timeout: 4_000,
   });
@@ -535,7 +562,7 @@ for (const kind of ["commit", "uncommitted"] as const) {
   }
 
   test(`an open ${kind} diff stays open across a refresh and a failed workspace poll`, async () => {
-    let board = workspace;
+    let board: Workspace = workspace;
     const slot = await panel({
       ...baseRpc,
       workspace: () => board,
@@ -555,7 +582,7 @@ for (const kind of ["commit", "uncommitted"] as const) {
     await queryClient.invalidateQueries({ queryKey: ["workspace"] });
     expect(slot.getByRole("button", { name: "Back to workspace" })).toBeTruthy();
 
-    board = { ...workspace, state: "error", reason: "Host is offline" };
+    board = unavailable("error", "Host is offline");
     await queryClient.invalidateQueries({ queryKey: ["workspace"] });
     expect(slot.getByRole("button", { name: "Back to workspace" })).toBeTruthy();
     expect(slot.getByRole("button", { name: "Collapse bun.lock" })).toBeTruthy();
@@ -684,15 +711,7 @@ test("a file opens every diff, scrolled to that file, and the list scrolls betwe
 test("tells the user how to fix a repository that GitButler has not set up", async () => {
   const slot = await panel({
     ...baseRpc,
-    workspace: () => ({
-      state: "setupRequired",
-      reason: "No GitButler project found at .",
-      repoName: "",
-      unassignedChanges: [],
-      stacks: [],
-      base: null,
-      upstream: null,
-    }),
+    workspace: () => unavailable("setupRequired", "No GitButler project found at ."),
   });
 
   await waitFor(() =>
@@ -705,15 +724,11 @@ test("tells the user how to fix a repository that GitButler has not set up", asy
 test("says so when the GitButler CLI is missing on the host", async () => {
   const slot = await panel({
     ...baseRpc,
-    workspace: () => ({
-      state: "cliMissing",
-      reason: "The GitButler CLI (but) is not installed on this environment's host.",
-      repoName: "",
-      unassignedChanges: [],
-      stacks: [],
-      base: null,
-      upstream: null,
-    }),
+    workspace: () =>
+      unavailable(
+        "cliMissing",
+        "The GitButler CLI (but) is not installed on this environment's host.",
+      ),
   });
 
   await waitFor(() =>
@@ -814,7 +829,7 @@ test("the header draws nothing outside a GitButler workspace", async () => {
   let asked = false;
   const slot = await header(() => {
     asked = true;
-    return { ...workspace, state: "setupRequired", stacks: [] };
+    return unavailable("setupRequired", "Not set up.");
   });
   await waitFor(() => expect(asked).toBe(true));
   expect(slot.queryByRole("button")).toBeNull();
@@ -845,8 +860,29 @@ test("the header stays available when an error follows a stored board", async ()
   await first.findByRole("article", { name: "Branch scott/top" });
   first.lifecycle.unmount();
   queryClient.clear();
-  const slot = await header(() => ({ ...workspace, state: "error" }));
+  const slot = await header(() => unavailable("error", "Host is offline"));
   await slot.findByRole("button", { name: "View in GitButler" });
+  slot.lifecycle.unmount();
+});
+
+test("the header reads a thread again when it returns after a read that threw", async () => {
+  let failing = true;
+  let reads = 0;
+  const slot = await header(() => {
+    reads += 1;
+    if (failing) throw new Error("socket closed");
+    return workspace;
+  });
+  await waitFor(() => expect(reads).toBe(1));
+  await waitFor(() => expect(queryClient.isFetching()).toBe(0));
+  expect(slot.queryByRole("button")).toBeNull();
+  // A failed read is not an answer to trust: the thread scrolling back into
+  // view reads it again, as it would with no answer at all.
+  failing = false;
+  slot.setThreadIds([]);
+  slot.setThreadIds(["thread-1"]);
+  await slot.findByRole("button", { name: "View in GitButler" });
+  expect(reads).toBe(2);
   slot.lifecycle.unmount();
 });
 
@@ -926,7 +962,7 @@ test("the Info tab keeps the last branches while the host is away and recovers o
   const reads = () => slot.inspection.rpcCalls.filter((call) => call.method === "workspace");
   const turnEnded = { environmentId: "env-1", threadId: "thread-1", parentThreadId: null };
   // An offline host answers with an error board, not a failed call.
-  board = { ...workspace, state: "error", reason: "host offline", stacks: [] };
+  board = unavailable("error", "host offline");
   await slot.emitRealtime("workspace-changed", turnEnded);
   await waitFor(() => expect(reads()).toHaveLength(2));
   await waitFor(() =>
@@ -941,6 +977,43 @@ test("the Info tab keeps the last branches while the host is away and recovers o
     expect(slot.queryByText("Couldn't refresh. Showing the last workspace.")).toBeNull(),
   );
   expect(slot.getByRole("button", { name: "scott/bottom" })).toBeTruthy();
+  slot.lifecycle.unmount();
+});
+
+/**
+ * Waits until the reads in flight have landed and reached the section, for
+ * answers the section draws nothing for, which no DOM change marks.
+ */
+async function answered(): Promise<void> {
+  await waitFor(() => expect(queryClient.isFetching()).toBe(0));
+  await act(() => new Promise<void>((resolve) => setTimeout(resolve, 0)));
+}
+
+test("the Info tab's environment signal still reaches it after a read that threw", async () => {
+  queryClient.clear();
+  let board: Workspace = unavailable("error", "host offline");
+  let failing = false;
+  let reads = 0;
+  const slot = await infoSection(() => {
+    reads += 1;
+    if (failing) throw new Error("socket closed");
+    return board;
+  });
+  await waitFor(() => expect(reads).toBe(1));
+  await answered();
+  expect(slot.queryByRole("region")).toBeNull();
+  const turnEnded = { environmentId: "env-1", threadId: "thread-1", parentThreadId: null };
+  // The read its signal starts fails outright, with no board to keep.
+  failing = true;
+  await slot.emitRealtime("workspace-changed", turnEnded);
+  await waitFor(() => expect(reads).toBe(2));
+  await answered();
+  // That failed read was still of this environment, so its next signal reads again.
+  failing = false;
+  board = workspace;
+  await slot.emitRealtime("workspace-changed", turnEnded);
+  await waitFor(() => expect(reads).toBe(3));
+  await slot.findByRole("region", { name: "GitButler branches" });
   slot.lifecycle.unmount();
 });
 
@@ -961,7 +1034,7 @@ test("the Info tab adds nothing for ordinary Git, other states, or a thread with
   native.lifecycle.unmount();
 
   queryClient.clear();
-  const setup = await infoSection(() => ({ ...workspace, state: "setupRequired", stacks: [] }));
+  const setup = await infoSection(() => unavailable("setupRequired", "Not set up."));
   await waitFor(() => expect(setup.inspection.rpcCalls).toHaveLength(1));
   expect(setup.queryByRole("region")).toBeNull();
   setup.lifecycle.unmount();
@@ -1432,21 +1505,13 @@ test("shows the CLI's refusal on the card that asked", async () => {
   slot.lifecycle.unmount();
 });
 
-const notReady = {
-  repoName: "",
-  unassignedChanges: [],
-  stacks: [],
-  base: null,
-  upstream: null,
-};
 const STALE = "Couldn't refresh. Showing the last workspace.";
 
 test("a refresh that reads an error keeps the board and says it is stale", async () => {
   let failing = false;
   const slot = await panel({
     ...baseRpc,
-    workspace: () =>
-      failing ? { ...notReady, state: "error", reason: "The repository is locked." } : workspace,
+    workspace: () => (failing ? unavailable("error", "The repository is locked.") : workspace),
   });
   await waitFor(() => expect(slot.getByText("scott/top")).toBeTruthy());
 
@@ -1469,14 +1534,7 @@ test("a cold panel on a disconnected machine names the machine, not GitButler", 
   const offline = "Local Mac is not connected. The workspace loads when it reconnects.";
   const slot = await panel({
     ...baseRpc,
-    workspace: () => ({
-      ...notReady,
-      state: "error",
-      reason: offline,
-      environmentId: "env-1",
-      repositoryKey: null,
-      conflictedFiles: [],
-    }),
+    workspace: () => unavailable("error", offline),
   });
 
   await waitFor(() => expect(slot.getByText("Could not read this workspace")).toBeTruthy());
@@ -2565,24 +2623,12 @@ test("a turn ending reads the workspace again, and a turn of this thread's famil
 });
 
 test("a change the host saw on disk reads this checkout's board again, and nothing else's", async () => {
-  const onDisk: Workspace = {
-    ...workspace,
-    hostId: "host-1",
-    checkoutIdentity: {
-      path: "/work/bb-plugins",
-      branch: "gitbutler/workspace",
-      head: "a".repeat(40),
-      origin: "github.com/scott/bb-plugins",
-      commonDir: "/work/bb-plugins/.git",
-      kind: "gitbutler",
-    },
-  };
   const reads = { workspace: 0, reviews: 0 };
   const slot = await panel({
     ...baseRpc,
     workspace: () => {
       reads.workspace += 1;
-      return onDisk;
+      return workspace;
     },
     reviews: () => {
       reads.reviews += 1;
@@ -2609,18 +2655,7 @@ test("a change the host saw on disk reads this checkout's board again, and nothi
 });
 
 test("a change seen on disk while the panel's write runs reads the board again once that write lands", async () => {
-  const behind: Workspace = {
-    ...structuredClone(workspace),
-    hostId: "host-1",
-    checkoutIdentity: {
-      path: "/work/bb-plugins",
-      branch: "gitbutler/workspace",
-      head: "a".repeat(40),
-      origin: "github.com/scott/bb-plugins",
-      commonDir: "/work/bb-plugins/.git",
-      kind: "gitbutler",
-    },
-  };
+  const behind = structuredClone(workspace);
   const top = behind.stacks[0]!.branches.find((branch) => branch.name === "scott/top")!;
   Object.assign(top, { status: "behind", push: "none", newUpstream: 1 });
   let reads = 0;
@@ -2668,7 +2703,7 @@ test("a change seen on disk while the panel's write runs reads the board again o
 });
 
 test("the header reads a thread outside GitButler again later, so a workspace made since shows", async () => {
-  let answer: unknown = { ...workspace, state: "noRepository", stacks: [] };
+  let answer: unknown = unavailable("noRepository", "No repository in this environment.");
   let reads = 0;
   const read = () => {
     reads += 1;
@@ -2830,7 +2865,7 @@ test("a rename gives the focus to the new name once its card is drawn", async ()
 });
 
 // The stack keeps its identity whatever its bottom branch holds.
-const BOTTOM_SHAPES: Array<[string, (board: Workspace) => void]> = [
+const BOTTOM_SHAPES: Array<[string, (board: ReadyWorkspace) => void]> = [
   ["a commit with a change id", () => {}],
   ["no commits", (board) => (board.stacks[0]!.branches[1]!.commits = [])],
   [
@@ -3267,17 +3302,16 @@ test("shows each other machine's applied branches, open, and Refresh reads them 
             hostId: "laptop",
             machine: "Local Mac",
             path: "/Users/me/git/bb-plugins",
-            state: "ready",
-            reason: null,
+            kind: "gitbutler",
             stacks: workspace.stacks.slice(0, 1),
           },
           {
             hostId: "gcp",
             machine: "gcp",
             path: "/home/me/bb-plugins",
+            kind: "unavailable",
             state: "cliMissing",
             reason: "The GitButler CLI (but) is not installed on this environment's host.",
-            stacks: [],
           },
         ],
         reason: null,
@@ -3311,12 +3345,11 @@ test("shows each other machine's applied branches, open, and Refresh reads them 
   slot.lifecycle.unmount();
 });
 
-const laptopCheckout = {
+const laptopCheckout: Checkout = {
   hostId: "laptop",
   machine: "Local Mac",
   path: "/Users/me/git/bb-plugins",
-  state: "ready",
-  reason: null,
+  kind: "gitbutler",
   stacks: workspace.stacks.slice(0, 1),
 };
 
@@ -3325,17 +3358,13 @@ test("shows an isolated checkout's actual branch, path, and latest commit with a
     hostId: "laptop",
     machine: "Local Mac",
     path: "/Users/me/git/bb-plugins-isolated",
-    state: "ready",
-    reason: null,
-    stacks: [],
-    gitBranch: {
-      name: "scott/isolated-feature",
-      head: {
-        commitId: "a".repeat(40),
-        message: "feat: show isolated branches\n\nKeep checkout identity visible.",
-        authorName: "Scott",
-        createdAt: "2026-10-15T12:00:00.000Z",
-      },
+    kind: "git",
+    branch: "scott/isolated-feature",
+    head: {
+      commitId: "a".repeat(40),
+      message: "feat: show isolated branches\n\nKeep checkout identity visible.",
+      authorName: "Scott",
+      createdAt: "2026-10-15T12:00:00.000Z",
     },
   };
   // build-box hashes to laptop's slot and sorts first, so only a roster-aware color moves laptop.
@@ -3358,7 +3387,7 @@ test("shows an isolated checkout's actual branch, path, and latest commit with a
   const branch = within(card.getByRole("listitem", { name: "Branch scott/isolated-feature" }));
   expect(branch.getByText("Latest commit · feat: show isolated branches")).toBeTruthy();
   expect(branch.getByText("Latest commit · feat: show isolated branches").title).toBe(
-    checkout.gitBranch.head.message,
+    checkout.head.message,
   );
   expect(
     branch.getByText((_, element) => element?.tagName === "TIME").getAttribute("datetime"),
@@ -3389,10 +3418,9 @@ test("keeps checkouts with the same branch on one machine distinct and does not 
           hostId: "laptop",
           machine: "Local Mac",
           path,
-          state: "ready",
-          reason: null,
-          stacks: [],
-          gitBranch: { name: "scott/same-name", head: null },
+          kind: "git",
+          branch: "scott/same-name",
+          head: null,
         }),
       ),
       reason: null,
@@ -3420,14 +3448,7 @@ test("keeps checkouts with the same branch on one machine distinct and does not 
 test("shows other machines' branches where this checkout is not a GitButler workspace", async () => {
   const slot = await panel({
     ...baseRpc,
-    workspace: () => ({
-      ...workspace,
-      state: "setupRequired",
-      reason: "Not set up.",
-      stacks: [],
-      base: null,
-      upstream: null,
-    }),
+    workspace: () => unavailable("setupRequired", "Not set up."),
     otherMachines: () => ({ checkouts: [laptopCheckout], reason: null, environmentId: "env-1" }),
   });
   expect(await slot.findByText("This repository is not a GitButler project")).toBeTruthy();
@@ -3494,7 +3515,7 @@ for (const clipboard of ["unavailable", "denied"] as const) {
     });
     const slot = await panel({
       ...baseRpc,
-      workspace: () => ({ ...workspace, state: "cliMissing", reason: "Install GitButler." }),
+      workspace: () => unavailable("cliMissing", "Install GitButler."),
     });
     onTestFinished(() => slot.lifecycle.unmount());
     const copy = await slot.findByRole("button", { name: "Copy command" });
@@ -3519,18 +3540,19 @@ for (const clipboard of ["unavailable", "denied"] as const) {
 }
 
 const isolatedCheckout: Checkout = {
-  ...laptopCheckout,
-  state: "ready",
+  hostId: laptopCheckout.hostId,
+  machine: laptopCheckout.machine,
   path: "/Users/me/git/bb-plugins-isolated",
-  stacks: [],
-  gitBranch: { name: "scott/bottom", head: null },
+  kind: "git",
+  branch: "scott/bottom",
+  head: null,
 };
 const selectedCheckout: CheckoutSelection = {
   hostId: isolatedCheckout.hostId,
   path: isolatedCheckout.path,
 };
 
-function isolatedBoard(): Workspace {
+function isolatedBoard(): ReadyWorkspace {
   return {
     ...workspace,
     nativeAgentPrompts: {
@@ -3574,7 +3596,7 @@ test("opens an isolated checkout with the main branch operations and routes push
       actions.push(input);
       if (input.action.kind === "rename") {
         selected.stacks[0]!.branches[0]!.name = input.action.name!;
-        selected.checkoutIdentity!.branch = input.action.name!;
+        selected.checkoutIdentity.branch = input.action.name!;
       }
       return { status: "done" };
     },
@@ -3742,7 +3764,7 @@ test("switching between isolated checkouts with the same branch clears confirmat
     workspace: (input: { checkout?: CheckoutSelection }) => {
       if (!input.checkout) return workspace;
       const board = isolatedBoard();
-      board.checkoutIdentity!.path = input.checkout.path;
+      board.checkoutIdentity.path = input.checkout.path;
       return board;
     },
     otherMachines: () => ({
@@ -3785,7 +3807,7 @@ test("changing a selected checkout origin clears confirmations and ignores an ol
     workspace: (input: { checkout?: CheckoutSelection }) => {
       if (!input.checkout) return workspace;
       const board = isolatedBoard();
-      board.checkoutIdentity!.origin = origin;
+      board.checkoutIdentity.origin = origin;
       return board;
     },
     otherMachines: () => ({ checkouts: [isolatedCheckout], reason: null, environmentId: "env-1" }),
@@ -3807,8 +3829,8 @@ test("changing a selected checkout origin clears confirmations and ignores an ol
         queryClient.getQueryData([
           "workspace",
           { threadId: "thread-1", checkout: selectedCheckout },
-        ]) as Workspace | undefined
-      )?.checkoutIdentity?.origin,
+        ]) as ReadyWorkspace | undefined
+      )?.checkoutIdentity.origin,
     ).toBe(origin),
   );
   finish({ status: "done" });
@@ -3842,7 +3864,7 @@ test("a write's board of a checkout that changed since is read again, not drawn"
       if (!input.checkout) return workspace;
       reads += 1;
       const board = isolatedBoard();
-      board.checkoutIdentity!.origin = origin;
+      board.checkoutIdentity.origin = origin;
       return board;
     },
     otherMachines: () => ({ checkouts: [isolatedCheckout], reason: null, environmentId: "env-1" }),
@@ -3855,27 +3877,27 @@ test("a write's board of a checkout that changed since is read again, not drawn"
     queryClient.getQueryData([
       "workspace",
       { threadId: "thread-1", checkout: selectedCheckout },
-    ]) as Workspace | undefined;
+    ]) as ReadyWorkspace | undefined;
   const card = await openIsolated(slot);
   fireEvent.click(card.getByRole("button", { name: "Push" }));
   await waitFor(() => expect(queryClient.isMutating()).toBe(1));
   origin = "github.com/scott/repointed";
   fireEvent.click(slot.getByRole("button", { name: "Refresh" }));
-  await waitFor(() => expect(shown()?.checkoutIdentity?.origin).toBe(origin));
+  await waitFor(() => expect(shown()?.checkoutIdentity.origin).toBe(origin));
   const before = reads;
 
   // The board the push left was read before the checkout was repointed.
   finish({ result: { status: "done" }, workspace: isolatedBoard() });
   await waitFor(() => expect(queryClient.isMutating()).toBe(0));
   await waitFor(() => expect(reads).toBe(before + 1));
-  expect(shown()?.checkoutIdentity?.origin).toBe("github.com/scott/repointed");
+  expect(shown()?.checkoutIdentity.origin).toBe("github.com/scott/repointed");
   slot.lifecycle.unmount();
 });
 
 test("native detached conflict resolution includes its observed null branch and origin", async () => {
   const selected = isolatedBoard();
   selected.stacks = [];
-  selected.checkoutIdentity!.branch = null;
+  selected.checkoutIdentity.branch = null;
   selected.conflictedFiles = ["README.md"];
   const requests: unknown[] = [];
   const slot = await panel({
@@ -3937,7 +3959,7 @@ test("native history asks use the saved Git intents and exact checkout guidance 
 test("native cached boards without current prompts hide agent asks until refreshed and never offer But apply or restore", async () => {
   const selected = isolatedBoard();
   const currentPrompts = selected.nativeAgentPrompts;
-  delete selected.nativeAgentPrompts;
+  selected.nativeAgentPrompts = null;
   const slot = await panel({
     ...baseRpc,
     workspace: (input: { checkout?: CheckoutSelection }) =>
@@ -3988,7 +4010,7 @@ test("native uncommitted asks quote a Git commit intent with the selected files 
   slot.lifecycle.unmount();
 });
 
-function appendNativeCommit(board: Workspace, tip = "b".repeat(40)): Workspace {
+function appendNativeCommit(board: ReadyWorkspace, tip = "b".repeat(40)): ReadyWorkspace {
   const next = structuredClone(board);
   const branch = next.stacks[0]!.branches[0]!;
   branch.commits = branch.commits.map((commit) => ({ ...commit, changeId: null }));
@@ -3998,7 +4020,7 @@ function appendNativeCommit(board: Workspace, tip = "b".repeat(40)): Workspace {
     changeId: null,
     message: "feat: a new native commit",
   });
-  next.checkoutIdentity!.head = tip;
+  next.checkoutIdentity.head = tip;
   return next;
 }
 
