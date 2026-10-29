@@ -95,7 +95,7 @@ test("registers one Review page with its Inbox tab, under the saved ids", async 
   expect(panel.id).toBe("code-review");
   expect(panel.title).toBe("Review");
   expect(panel.path).toBe("code-review");
-  expect(panel.icon).toBe("GitPullRequest");
+  expect(panel.icon).toBe("code-review/plugin");
   expect(panel.fixedTabs).toBeUndefined();
   // Saved panel layouts find the tab by panel id and tab id.
   expect(

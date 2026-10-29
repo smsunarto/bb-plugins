@@ -1143,7 +1143,7 @@ export default definePluginApp((app) => {
   app.slots.navPanel({
     id: "slopcop",
     title: "SlopCop",
-    icon: "AlertTriangle",
+    icon: "slopcop/plugin",
     path: "slopcop",
     component: SlopCopPanel,
   });

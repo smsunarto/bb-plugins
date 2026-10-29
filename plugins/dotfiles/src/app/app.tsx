@@ -12,7 +12,7 @@ export default definePluginApp(
     app.slots.navPanel({
       id: "dotfiles",
       title: "Dotfiles",
-      icon: "Settings",
+      icon: "dotfiles/plugin",
       path: "dotfiles",
       component: DotfilesPage,
       headerContent: RepoStatusBadge,

@@ -9,7 +9,7 @@ export default definePluginApp((app) => {
   app.slots.navPanel({
     id: "tasks",
     title: "Tasks",
-    icon: "ListTodo",
+    icon: "scott-tasks/plugin",
     path: "tasks",
     component: TasksAppShell,
     experimental_useBadge: useTasksBadge,

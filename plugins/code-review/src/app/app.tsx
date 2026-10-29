@@ -23,7 +23,7 @@ export default definePluginApp((app) => {
   app.slots.navPanel({
     id: "code-review",
     title: "Review",
-    icon: "GitPullRequest",
+    icon: "code-review/plugin",
     path: PANEL_PATH,
     component: CodeReviewPage,
     experimental_useBadge: useNeedsReviewBadge,

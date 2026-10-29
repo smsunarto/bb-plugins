@@ -28,5 +28,5 @@ export default definePluginApp((app) => {
     });
   }
   app.slots.messageDirective({ id: "ui", component: UiDirective });
-  app.slots.navPanel({ id: "gallery", title: "Gen-UI Gallery", icon: "GridView", path: "gallery", component: GalleryPanel });
+  app.slots.navPanel({ id: "gallery", title: "Gen-UI Gallery", icon: "genui/plugin", path: "gallery", component: GalleryPanel });
 });

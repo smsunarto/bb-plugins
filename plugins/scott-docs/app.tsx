@@ -2417,7 +2417,7 @@ export default definePluginApp((app) => {
   app.slots.navPanel({
     id: "docs",
     title: "Docs",
-    icon: "FileText",
+    icon: "scott-docs/plugin",
     path: "docs",
     component: NotesPanel,
   });

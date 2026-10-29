@@ -55,6 +55,9 @@
       "logo": {
         "light": "./assets/logo.svg",
         "dark": "./assets/logo-dark.svg"
+      },
+      "experimental_icons": {
+        "plugin": "./assets/icon.svg"
       }
     },
     "server": "./server.ts",

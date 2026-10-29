@@ -63,7 +63,7 @@ export default definePluginApp((app) => {
   app.slots.navPanel({
     id: "annotations",
     title: "Agentation",
-    icon: "ChatFeedback",
+    icon: "agentation/plugin",
     path: "annotations",
     component: AnnotationPanel,
     headerContent: AnnotationPanelHeader,

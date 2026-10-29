@@ -410,7 +410,7 @@ export default definePluginApp((app) => {
   app.slots.navPanel({
     id: "agent-instructions",
     title: "Agent instructions",
-    icon: "FileText",
+    icon: "agent-instructions/plugin",
     path: "instructions",
     component: AgentInstructionsPage,
   });

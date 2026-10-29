@@ -473,7 +473,7 @@ export function createTracesApp(options: { renderers?: TraceRendererRegistry } =
     app.slots.navPanel({
       id: "traces",
       title: "Traces",
-      icon: "Activity",
+      icon: "traces/plugin",
       path: "traces",
       component: TracesNav,
     });

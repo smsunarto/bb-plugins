@@ -28,7 +28,7 @@ export default definePluginApp((app) => {
   app.slots.navPanel({
     id: "cheatsheet",
     title: "Vimium Cheatsheet",
-    icon: "Keyboard",
+    icon: "vimium/plugin",
     path: CHEATSHEET_PATH,
     component: CheatsheetPage,
   });
