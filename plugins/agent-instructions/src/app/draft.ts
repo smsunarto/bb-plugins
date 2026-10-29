@@ -17,7 +17,7 @@ export type DraftSnapshot = {
 /**
  * The editable copy of the rules. Edits autosave after a pause, one save at a
  * time, each naming the revision it was based on so it cannot delete rules
- * added elsewhere. It outlives the settings page, so leaving the page never
+ * added elsewhere. It outlives the instructions page, so leaving the page never
  * drops a pending edit or a refused save.
  */
 export function createRulesDraft({

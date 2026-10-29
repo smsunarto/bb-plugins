@@ -3,7 +3,7 @@ import type { Meta, StoryObj } from "@storybook/react-vite";
 import { within } from "storybook/test";
 import { ready } from "../../../.storybook/ready";
 import { RegisteredSurface } from "../../../.storybook/host";
-import { settings } from "../../../.storybook/surfaces";
+import { nav } from "../../../.storybook/surfaces";
 import { resetRulesDraftForTest } from "../src/app/app";
 import type { RulesState } from "../src/shared/rules";
 const source = () => import("../src/app/app");
@@ -52,7 +52,7 @@ const meta = {
   parameters: screenParameters,
   title: "Screens/Agent Instructions/Rules editor",
   component: RegisteredSurface,
-  args: { source, select: settings },
+  args: { source, select: nav },
   play: ready,
 } satisfies Meta<typeof RegisteredSurface>;
 export default meta;
@@ -78,7 +78,7 @@ export const Populated: Story = {
   },
 };
 export const Loading: Story = {
-  render: () => <RegisteredSurface source={source} select={settings} />,
+  render: () => <RegisteredSurface source={source} select={nav} />,
   parameters: {
     host: {
       pluginId: "agent-instructions",
@@ -91,7 +91,7 @@ export const Loading: Story = {
   },
 };
 export const Error: Story = {
-  render: () => <RegisteredSurface source={source} select={settings} />,
+  render: () => <RegisteredSurface source={source} select={nav} />,
   parameters: {
     host: {
       pluginId: "agent-instructions",

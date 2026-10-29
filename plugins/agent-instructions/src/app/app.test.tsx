@@ -36,7 +36,7 @@ beforeEach(() => queryCache?.clear());
 let startRevision = 0;
 
 /** A fake server: `stored` is what bb holds, and every save bumps its revision. */
-async function settings(
+async function page(
   saved: Rule[],
   {
     conflictAt,
@@ -46,8 +46,10 @@ async function settings(
 ) {
   const app = await loadPluginApp(() => import("./app.tsx"));
   queryCache ??= (await import("./query.ts")).queryClient;
-  const section = app.settingsSections[0];
-  if (!section) throw new Error("app.tsx registers one settings section");
+  expect(app.settingsSections).toHaveLength(0);
+  const panel = app.navPanels[0];
+  if (!panel) throw new Error("app.tsx registers one navigation page");
+  expect(panel.path).toBe("instructions");
   startRevision += 100;
   const server = { revision: startRevision, rules: saved };
   const saves: Rule[][] = [];
@@ -79,7 +81,7 @@ async function settings(
     },
   };
   const open = async () => {
-    const slot = renderSlot(section, {}, { rpc });
+    const slot = renderSlot(panel, { subPath: "" }, { rpc });
     await slot.findByRole("button", { name: "Add rule" });
     return slot;
   };
@@ -87,7 +89,7 @@ async function settings(
 }
 
 test("a saved rule shows its scope by name", async () => {
-  const { slot } = await settings([browser]);
+  const { slot } = await page([browser]);
   expect(slot.getByRole("button", { name: "Scope: Build Mac · gpt-*" }).textContent).toBe(
     "Build Mac · gpt-*",
   );
@@ -99,7 +101,7 @@ test("a saved rule shows its scope by name", async () => {
 });
 
 test("scoping a rule to a provider autosaves it", async () => {
-  const { slot, saves } = await settings([browser]);
+  const { slot, saves } = await page([browser]);
   fireEvent.click(slot.getByRole("button", { name: "Scope: Build Mac · gpt-*" }));
   await act(async () => {
     fireEvent.click(slot.getByRole("button", { name: "Claude Code" }));
@@ -116,7 +118,7 @@ test("scoping a rule to a provider autosaves it", async () => {
 });
 
 test("a new rule applies everywhere until scoped", async () => {
-  const { slot, saves } = await settings([]);
+  const { slot, saves } = await page([]);
   expect(slot.getByText("No rules yet. A rule with no scope applies to every agent.")).toBeTruthy();
   fireEvent.click(slot.getByRole("button", { name: "Add rule" }));
   expect(slot.getByRole("button", { name: "Scope: Always" }).getAttribute("aria-expanded")).toBe(
@@ -140,7 +142,7 @@ test("a new rule applies everywhere until scoped", async () => {
 });
 
 test("a save refused for a stale revision offers to discard or overwrite", async () => {
-  const { slot, saves, server } = await settings([browser], { conflictAt: 0 });
+  const { slot, saves, server } = await page([browser], { conflictAt: 0 });
   fireEvent.change(slot.getByRole("textbox", { name: "Rule name" }), {
     target: { value: "Renamed" },
   });
@@ -160,7 +162,7 @@ test("a save refused for a stale revision offers to discard or overwrite", async
 });
 
 test("leaving the page saves an edit still waiting for its pause", async () => {
-  const { slot, saves } = await settings([browser]);
+  const { slot, saves } = await page([browser]);
   fireEvent.change(slot.getByRole("textbox", { name: "Rule name" }), {
     target: { value: "Renamed" },
   });
@@ -178,13 +180,13 @@ function deferred() {
   return { promise, release };
 }
 
-function names(slot: Awaited<ReturnType<typeof settings>>["slot"]) {
+function names(slot: Awaited<ReturnType<typeof page>>["slot"]) {
   return slot
     .getAllByRole("textbox", { name: "Rule name" })
     .map((input) => (input as HTMLInputElement).value);
 }
 
-function rename(slot: Awaited<ReturnType<typeof settings>>["slot"], name: string) {
+function rename(slot: Awaited<ReturnType<typeof page>>["slot"], name: string) {
   fireEvent.change(slot.getAllByRole("textbox", { name: "Rule name" })[0]!, {
     target: { value: name },
   });
@@ -192,7 +194,7 @@ function rename(slot: Awaited<ReturnType<typeof settings>>["slot"], name: string
 
 test("leaving during a save still stores the edit made after it", async () => {
   const reply = deferred();
-  const { slot, saves, server } = await settings([browser], { reply: reply.promise });
+  const { slot, saves, server } = await page([browser], { reply: reply.promise });
   rename(slot, "First");
   await waitFor(() => expect(saves).toHaveLength(1), { timeout: 2000 });
   rename(slot, "Second");
@@ -204,7 +206,7 @@ test("leaving during a save still stores the edit made after it", async () => {
 
 test("a late save response does not hide rules stored after it", async () => {
   const reply = deferred();
-  const { slot, saves, server } = await settings([browser], { reply: reply.promise });
+  const { slot, saves, server } = await page([browser], { reply: reply.promise });
   rename(slot, "Mine");
   await waitFor(() => expect(saves).toHaveLength(1), { timeout: 2000 });
   // Another writer stores a newer revision and the page refetches it before the reply lands.
@@ -224,7 +226,7 @@ test("a late save response does not hide rules stored after it", async () => {
 });
 
 test("a save refused after leaving the page is offered again on return", async () => {
-  const { slot, open, saves, server } = await settings([browser], { conflictAt: 0 });
+  const { slot, open, saves, server } = await page([browser], { conflictAt: 0 });
   rename(slot, "Mine");
   slot.unmount();
   await waitFor(() => expect(saves).toHaveLength(1), { timeout: 2000 });
@@ -239,7 +241,7 @@ test("a save refused after leaving the page is offered again on return", async (
 });
 
 test("overwriting and leaving at once still stores my rules", async () => {
-  const { slot, saves, server } = await settings([browser], { conflictAt: 0 });
+  const { slot, saves, server } = await page([browser], { conflictAt: 0 });
   rename(slot, "Mine");
   await slot.findByText("Rules changed elsewhere since this page loaded.");
   fireEvent.click(slot.getByRole("button", { name: "Overwrite with mine" }));
@@ -249,7 +251,7 @@ test("overwriting and leaving at once still stores my rules", async () => {
 });
 
 test("an edit after taking in a newer revision saves on that revision", async () => {
-  const { slot, saves, server } = await settings([browser]);
+  const { slot, saves, server } = await page([browser]);
   rename(slot, "One");
   await waitFor(() => expect(saves).toHaveLength(1), { timeout: 2000 });
   server.revision += 4;
@@ -264,7 +266,7 @@ test("an edit after taking in a newer revision saves on that revision", async ()
 
 test("reopening never shows a fetch older than the last save", async () => {
   let gate: Promise<void> | undefined;
-  const { slot, open, saves } = await settings([browser], {
+  const { slot, open, saves } = await page([browser], {
     fetched: () => gate ?? Promise.resolve(),
   });
   const slowFetch = deferred();

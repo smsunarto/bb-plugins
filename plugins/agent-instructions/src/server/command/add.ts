@@ -64,7 +64,7 @@ export function add(ctx: AgentInstructionsContext) {
       { name: "text", description: "The instructions", required: true, variadic: true },
     ],
     options: {
-      name: { type: "string", description: "A label shown in settings", placeholder: "label" },
+      name: { type: "string", description: "A label for the rule", placeholder: "label" },
       host: scope("host"),
       provider: scope("provider"),
       project: scope("project"),

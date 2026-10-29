@@ -323,20 +323,28 @@ function Loaded() {
   return <RulesEditor server={rules.data} targets={targets.data} />;
 }
 
-function AgentInstructionsSettings() {
+function AgentInstructionsPage() {
   return (
     <QueryClientProvider client={queryClient}>
-      <Loaded />
+      <div className="h-full min-h-0 overflow-y-auto p-4 md:p-5">
+        <div className="mx-auto w-full max-w-3xl space-y-4">
+          <p className="text-sm text-muted-foreground">
+            Rules appended to agent instructions. Scope a rule to a machine, provider, model, or
+            project. Changes apply when a thread's agent session next starts.
+          </p>
+          <Loaded />
+        </div>
+      </div>
     </QueryClientProvider>
   );
 }
 
 export default definePluginApp((app) => {
-  app.slots.settingsSection({
+  app.slots.navPanel({
     id: "agent-instructions",
     title: "Agent instructions",
-    description:
-      "Rules appended to agent instructions. Scope a rule to a machine, provider, model, or project. Changes apply when a thread's agent session next starts.",
-    component: AgentInstructionsSettings,
+    icon: "FileText",
+    path: "instructions",
+    component: AgentInstructionsPage,
   });
 });
