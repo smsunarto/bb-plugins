@@ -6,7 +6,7 @@ import type { rpcContract } from "./server";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ExecutionSettings } from "./execution-settings";
-import type { ThreadRequest } from "./lib/types";
+import type { Run, RunStatus, ThreadRequest } from "./lib/types";
 
 interface ConditionView {
   kind: string;
@@ -36,23 +36,6 @@ interface RuleView {
   dangerous: boolean;
 }
 
-interface RunView {
-  id: string;
-  ruleName: string;
-  repo: string;
-  targetKind: "pull_request" | "issue";
-  prNumber: number;
-  prTitle: string;
-  prAuthor: string;
-  status: string;
-  mode: string;
-  trigger: string;
-  detail: string | null;
-  threadId: string | null;
-  commentCount: number;
-  startedAt: number;
-}
-
 interface CommentView {
   githubId: string | null;
   kind: string;
@@ -70,7 +53,7 @@ const TRUST_LABEL: Record<string, string> = {
   anyone: "any author",
 };
 
-const STATUS_TONE: Record<string, string> = {
+const STATUS_TONE: Record<RunStatus, string> = {
   commented: "text-success-foreground bg-success/15",
   shadowed: "text-timeline-accent bg-timeline-accent/15",
   reviewing: "text-timeline-accent bg-timeline-accent/15",
@@ -922,7 +905,7 @@ function RuleEditor({ rule, onDone }: { rule: RuleView | null; onDone: () => voi
     </div>
   );
 }
-function Activity({ runs }: { runs: RunView[] }) {
+function Activity({ runs }: { runs: Run[] }) {
   const navigate = useBbNavigate();
   const rpc = useRpc<typeof rpcContract>();
   const [expanded, setExpanded] = useState<string | null>(null);
@@ -955,7 +938,7 @@ function Activity({ runs }: { runs: RunView[] }) {
           <div className="flex gap-3">
             <span
               className={`mt-0.5 h-fit min-w-[104px] rounded-md px-1.5 py-0.5 text-center text-xs font-semibold ${
-                STATUS_TONE[run.status] ?? "bg-surface-recessed"
+                STATUS_TONE[run.status]
               }`}
             >
               {run.status.replace(/_/g, " ")}
@@ -1040,7 +1023,7 @@ function SlopCopPanel() {
   const [tab, setTab] = useState<"rules" | "activity">("rules");
   const [editing, setEditing] = useState<RuleView | null | "new">(() => openRule);
   const [rules, setRules] = useState<RuleView[]>([]);
-  const [runs, setRuns] = useState<RunView[]>([]);
+  const [runs, setRuns] = useState<Run[]>([]);
   const [ghLogin, setGhLogin] = useState<string | null>(null);
 
   const refresh = useCallback(() => {
@@ -1048,7 +1031,7 @@ function SlopCopPanel() {
       setRules(result.rules as RuleView[]);
     });
     void rpc.call("listRuns", { limit: 50 }).then((result) => {
-      setRuns(result.runs as RunView[]);
+      setRuns(result.runs);
     });
     void rpc.call("status", null).then((result) => {
       setGhLogin(result.ghLogin);

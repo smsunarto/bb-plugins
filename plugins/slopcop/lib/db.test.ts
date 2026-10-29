@@ -14,7 +14,7 @@ function makeStore() {
   databases.push(database);
   for (const migration of MIGRATIONS) database.exec(migration);
   repairKeywordSchema(database);
-  return createStore(database);
+  return { database, store: createStore(database) };
 }
 
 function makeRun(overrides: Partial<Run> = {}): Run {
@@ -64,7 +64,7 @@ describe("issue persistence", () => {
   });
 
   it("round-trips the target kind and keeps PR dedupe separate", () => {
-    const store = makeStore();
+    const { store } = makeStore();
     store.insertRun(makeRun());
 
     expect(store.getRun("run_1")?.targetKind).toBe("issue");
@@ -73,7 +73,7 @@ describe("issue persistence", () => {
   });
 
   it("tracks the issue backlog independently from pull requests", () => {
-    const store = makeStore();
+    const { store } = makeStore();
     expect(store.isIssueBootstrapped("acme/widgets")).toBe(false);
     expect(store.hasSeenIssue("acme/widgets", 42)).toBe(false);
 
@@ -83,5 +83,29 @@ describe("issue persistence", () => {
     expect(store.isIssueBootstrapped("acme/widgets")).toBe(true);
     expect(store.hasSeenIssue("acme/widgets", 42)).toBe(true);
     expect(store.isBootstrapped("acme/widgets")).toBe(false);
+  });
+});
+
+describe("run rows", () => {
+  it("rejects a persisted status outside the enum instead of reading it as in progress", () => {
+    const { database, store } = makeStore();
+    store.insertRun(makeRun());
+    database.prepare(`UPDATE runs SET status = 'bogus' WHERE id = ?`).run("run_1");
+
+    expect(() => store.getRun("run_1")).toThrow();
+  });
+
+  it("lets the first finish claim a thread's run and stops counting it as reviewing", () => {
+    const { store } = makeStore();
+    store.insertRun(makeRun());
+    store.insertRun(makeRun({ id: "run_2", threadId: "thread_2" }));
+    expect(store.countReviewing()).toBe(2);
+
+    expect(store.claimFinished("thread_1", 5)?.id).toBe("run_1");
+    expect(store.claimFinished("thread_1", 6)).toBeNull();
+    expect(store.claimFinished("thread_none", 6)).toBeNull();
+
+    expect(store.countReviewing()).toBe(1);
+    expect(store.getRun("run_1")?.finishedAt).toBe(5);
   });
 });

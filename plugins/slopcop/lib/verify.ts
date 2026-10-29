@@ -8,8 +8,19 @@ import { attributeBody, hasVisibleHeader, parseMarker } from "./marker";
 import type { GhClient, GhComment } from "./gh";
 import type { CommentKind, RunComment, RunStatus, TargetKind } from "./types";
 
+/** The outcomes verification can conclude; the other statuses are set before or instead of it. */
+export type VerifiedStatus = Extract<
+  RunStatus,
+  | "commented"
+  | "commented_partial"
+  | "commented_unmarked"
+  | "commented_unattributed"
+  | "no_comment"
+  | "shadowed"
+>;
+
 export interface VerifyResult {
-  status: RunStatus;
+  status: VerifiedStatus;
   detail: string | null;
   comments: RunComment[];
 }

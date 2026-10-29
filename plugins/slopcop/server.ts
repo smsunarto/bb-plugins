@@ -34,24 +34,22 @@ import {
   isTrustedAuthor,
   matchesPrDescription,
 } from "./lib/matcher";
-import { verifyLive, verifyShadow } from "./lib/verify";
+import { verifyLive, verifyShadow, type VerifiedStatus, type VerifyResult } from "./lib/verify";
 import {
   authorTrustSchema,
   conditionSchema,
   dedupeSchema,
   reviewStrategySchema,
   ruleModeSchema,
+  runStatusSchema,
   threadRequestSchema,
   targetKindSchema,
   triggerSchema,
   visibilitySchema,
-  type GitHubIssue,
   type GitHubTarget,
   type PullRequest,
   type Rule,
-  type RunStatus,
   type Trigger,
-  type CommentTriggerEvent,
   type TriggerCommentSource,
 } from "./lib/types";
 
@@ -119,10 +117,10 @@ const runOutputSchema = z.object({
   prTitle: z.string(),
   prAuthor: z.string(),
   headSha: z.string(),
-  trigger: z.string(),
+  trigger: triggerSchema,
   triggerEventId: z.string().nullable(),
-  status: z.string(),
-  mode: z.string(),
+  status: runStatusSchema,
+  mode: ruleModeSchema,
   detail: z.string().nullable(),
   threadId: z.string().nullable(),
   commentCount: z.number(),
@@ -207,7 +205,7 @@ export const rpcContract = defineRpcContract({
  * Outcomes that need no human follow-up. Failures, empty runs, and attribution
  * drift keep their thread open so they stay visible in the sidebar.
  */
-const SETTLED_STATUSES: ReadonlySet<RunStatus> = new Set(["commented", "shadowed"]);
+const SETTLED_STATUSES: ReadonlySet<VerifiedStatus> = new Set(["commented", "shadowed"]);
 
 function newId(prefix: string): string {
   return `${prefix}_${Math.random().toString(36).slice(2, 10)}${Date.now().toString(36)}`;
@@ -811,24 +809,35 @@ function createServices(bb: BbPluginApi) {
         authenticatedLogin: ghLogin,
       });
 
-    const result =
-      run.mode === "shadow"
-        ? verifyShadow({ runId: run.id, finalMessage })
-        : await (async () => {
-            // GitHub's list endpoints can lag a just-submitted review, so a
-            // bare no_comment gets one retry before it is believed.
-            const first = await runVerify();
-            if (first.status !== "no_comment") return first;
-            await new Promise((resolve) => setTimeout(resolve, 4_000));
-            return runVerify();
-          })();
+    let result: VerifyResult;
+    try {
+      result =
+        run.mode === "shadow"
+          ? verifyShadow({ runId: run.id, finalMessage })
+          : await (async () => {
+              // GitHub's list endpoints can lag a just-submitted review, so a
+              // bare no_comment gets one retry before it is believed.
+              const first = await runVerify();
+              if (first.status !== "no_comment") return first;
+              await new Promise((resolve) => setTimeout(resolve, 4_000));
+              return runVerify();
+            })();
+    } catch (error) {
+      // The finish is already claimed, so no later thread event retries this
+      // run; record the failure and leave `bb slopcop verify` as the way back.
+      store.updateRun(run.id, {
+        status: "failed",
+        detail: `verification failed: ${error instanceof Error ? error.message : String(error)}`,
+      });
+      announce();
+      throw error;
+    }
 
     store.replaceComments(run.id, result.comments);
     store.updateRun(run.id, {
       status: result.status,
       detail: result.detail,
       commentCount: result.comments.length,
-      finishedAt: Date.now(),
     });
     announce();
     bb.log.info(
@@ -844,7 +853,7 @@ function createServices(bb: BbPluginApi) {
    * The run is already recorded, so a failed archive only leaves the thread
    * open for the human to settle.
    */
-  async function settleThread(threadId: string, status: RunStatus): Promise<void> {
+  async function settleThread(threadId: string, status: VerifiedStatus): Promise<void> {
     if (!SETTLED_STATUSES.has(status)) return;
     if (!(await readSettings()).settleFinishedThreads) return;
     try {

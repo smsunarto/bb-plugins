@@ -1,15 +1,16 @@
 // Persistence. Migrations are append-only by statement index — never reorder
 // or edit a shipped statement, only push new ones.
-import type {
-  Rule,
-  Run,
-  RunComment,
-  RunStatus,
-  Condition,
-  Trigger,
-  ThreadRequest,
-  CommentTriggerEvent,
-  TriggerCommentSource,
+import {
+  runStatusSchema,
+  triggerSchema,
+  type Rule,
+  type Run,
+  type RunComment,
+  type Condition,
+  type Trigger,
+  type ThreadRequest,
+  type CommentTriggerEvent,
+  type TriggerCommentSource,
 } from "./types";
 
 // The plugin SDK's database handle is better-sqlite3; typed structurally so
@@ -246,9 +247,9 @@ export function rowToRun(row: Row): Run {
     prTitle: text(row, "pr_title"),
     prAuthor: text(row, "pr_author"),
     headSha: text(row, "head_sha"),
-    trigger: text(row, "trigger", "manual") as Trigger,
+    trigger: triggerSchema.parse(row.trigger),
     triggerEventId: typeof row.trigger_event_id === "string" ? row.trigger_event_id : null,
-    status: text(row, "status", "dispatched") as RunStatus,
+    status: runStatusSchema.parse(row.status),
     mode: text(row, "mode", "shadow") === "live" ? "live" : "shadow",
     detail: typeof row.detail === "string" ? row.detail : null,
     threadId: typeof row.thread_id === "string" ? row.thread_id : null,
@@ -257,6 +258,12 @@ export function rowToRun(row: Row): Run {
     finishedAt: typeof row.finished_at === "number" ? row.finished_at : null,
   };
 }
+
+/**
+ * For dedupe, every run counts except one the gate skipped or one that failed;
+ * those leave the target open for another attempt.
+ */
+const COUNTS_AS_RUN = `status NOT IN ('skipped', 'failed')`;
 
 export function createStore(db: Database) {
   return {
@@ -434,7 +441,7 @@ export function createStore(db: Database) {
               .prepare(
                 `SELECT 1 AS hit FROM runs
                  WHERE rule_id = ? AND trigger_event_id = ?
-                   AND status NOT IN ('skipped', 'failed') LIMIT 1`,
+                   AND ${COUNTS_AS_RUN} LIMIT 1`,
               )
               .get(ruleId, triggerEventId)
           : headSha === null
@@ -443,7 +450,7 @@ export function createStore(db: Database) {
                   `SELECT 1 AS hit FROM runs
                  WHERE rule_id = ? AND repo = ? AND pr_number = ?
                    AND target_kind = ?
-                   AND status NOT IN ('skipped', 'failed') LIMIT 1`,
+                   AND ${COUNTS_AS_RUN} LIMIT 1`,
                 )
                 .get(ruleId, repo, prNumber, targetKind)
             : db
@@ -451,7 +458,7 @@ export function createStore(db: Database) {
                   `SELECT 1 AS hit FROM runs
                  WHERE rule_id = ? AND repo = ? AND pr_number = ? AND head_sha = ?
                    AND target_kind = ?
-                   AND status NOT IN ('skipped', 'failed') LIMIT 1`,
+                   AND ${COUNTS_AS_RUN} LIMIT 1`,
                 )
                 .get(ruleId, repo, prNumber, headSha, targetKind);
       return row !== undefined;
