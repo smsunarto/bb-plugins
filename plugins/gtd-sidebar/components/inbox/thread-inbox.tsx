@@ -539,15 +539,14 @@ function InboxList({
               count={shelvedTotal}
               searchQuery={searchQuery}
             >
-              {shelfViews.map(({ shelf, label, expanded, onToggle }) =>
+              {shelfViews.map(({ shelf, label, fold }) =>
                 groupedShelves[shelf].length > 0 ? (
                   <Shelf
                     key={label}
                     label={label}
                     count={shelves[shelf].length}
                     isCompactViewport={isCompactViewport}
-                    expanded={expanded}
-                    onToggle={onToggle}
+                    fold={fold}
                     measureRef={inboxWindow.measureRef}
                     measureIndex={windowLayout.headerIndex.get(shelfKey(shelf))}
                   >
@@ -573,12 +572,17 @@ function InboxList({
   );
 }
 
+/** A shelf's collapse toggle: its open state and the click that flips it. */
+interface ShelfFold {
+  expanded: boolean;
+  onToggle: () => void;
+}
+
 interface ShelfView {
   shelf: InboxShelf;
   label: string;
   /** Present on the shelves that fold; absent, the shelf always shows. */
-  expanded?: boolean;
-  onToggle?: () => void;
+  fold?: ShelfFold;
 }
 
 /**
@@ -608,20 +612,17 @@ function useShelfWindow(
     {
       shelf: "waiting",
       label: "Waiting",
-      expanded: waitingOpen,
-      onToggle: () => setShowWaiting((open) => !open),
+      fold: { expanded: waitingOpen, onToggle: () => setShowWaiting((open) => !open) },
     },
     {
       shelf: "snoozed",
       label: "Snoozed",
-      expanded: snoozedOpen,
-      onToggle: () => setShowSnoozed((open) => !open),
+      fold: { expanded: snoozedOpen, onToggle: () => setShowSnoozed((open) => !open) },
     },
     {
       shelf: "settled",
       label: "Settled",
-      expanded: settledOpen,
-      onToggle: () => setShowSettled((open) => !open),
+      fold: { expanded: settledOpen, onToggle: () => setShowSettled((open) => !open) },
     },
   ];
   const windowLayout = useMemo(
@@ -1085,15 +1086,13 @@ function InboxStatus({ children }: { children: React.ReactNode }) {
 }
 
 /**
- * A shelf of full cards. Passing `expanded` and `onToggle` turns the header
- * into a collapse toggle; without them the header is a plain label and the
- * rows always show.
+ * A shelf of full cards. Passing `fold` turns the header into a collapse
+ * toggle; without it the header is a plain label and the rows always show.
  */
 function Shelf({
   label,
   count,
-  expanded,
-  onToggle,
+  fold,
   children,
   isCompactViewport,
   measureRef,
@@ -1101,8 +1100,7 @@ function Shelf({
 }: {
   label: string;
   count: number;
-  expanded?: boolean;
-  onToggle?: () => void;
+  fold?: ShelfFold;
   children: React.ReactNode;
   isCompactViewport: boolean;
 } & HeaderMeasureProps) {
@@ -1111,8 +1109,7 @@ function Shelf({
       <ShelfHeader
         label={label}
         count={count}
-        expanded={expanded}
-        onToggle={onToggle}
+        fold={fold}
         isCompactViewport={isCompactViewport}
         measureRef={measureRef}
         measureIndex={measureIndex}
@@ -1120,10 +1117,10 @@ function Shelf({
       {/* Cards need a real gap, not a hairline: their own padding is 6px, so a
           1px seam let two stacked cards read as one block. Slim rows below get
           less — a single centred line already carries its own air. */}
-      {expanded === undefined ? (
+      {fold === undefined ? (
         children
       ) : (
-        <SlidingDisclosure open={expanded}>{children}</SlidingDisclosure>
+        <SlidingDisclosure open={fold.expanded}>{children}</SlidingDisclosure>
       )}
     </section>
   );
@@ -1137,27 +1134,25 @@ function Shelf({
 function ShelfHeader({
   label,
   count,
-  expanded,
-  onToggle,
+  fold,
   isCompactViewport,
   measureRef,
   measureIndex,
 }: {
   label: string;
   count: number;
-  expanded?: boolean;
-  onToggle?: () => void;
+  fold?: ShelfFold;
   isCompactViewport: boolean;
 } & HeaderMeasureProps) {
   const mutedClass = isCompactViewport ? "text-muted-foreground" : "text-muted-foreground/70";
   const title = (
     <span className={cn("text-2xs font-medium", mutedClass)}>
-      {expanded === false ? `${label} (${count})` : label}
+      {fold?.expanded === false ? `${label} (${count})` : label}
     </span>
   );
   const rule = <span className="h-px flex-1 bg-sidebar-border" />;
 
-  if (expanded === undefined || onToggle === undefined) {
+  if (fold === undefined) {
     return (
       <h2
         ref={measureRef}
@@ -1183,8 +1178,8 @@ function ShelfHeader({
     <h2 ref={measureRef} data-index={measureIndex} className="gtd-shelf-header flex">
       <button
         type="button"
-        onClick={onToggle}
-        aria-expanded={expanded}
+        onClick={fold.onToggle}
+        aria-expanded={fold.expanded}
         // Padded like a card, so the chevron ends on the same right edge as
         // every row's status and provider glyph. `cursor-pointer` is explicit
         // because Tailwind v4's preflight gives a button `cursor: default`,
@@ -1199,7 +1194,7 @@ function ShelfHeader({
         <span className={TRAILING_GLYPH_BOX_CLASS}>
           <Icon
             name="ChevronDown"
-            className={cn("size-3 gtd-chevron-motion", mutedClass, !expanded && "-rotate-90")}
+            className={cn("size-3 gtd-chevron-motion", mutedClass, !fold.expanded && "-rotate-90")}
           />
         </span>
       </button>
