@@ -237,6 +237,8 @@ const PROVIDERS = [
       { id: "high", label: "High" },
       { id: "max", label: "Max" },
     ],
+    // As the live provider does: Fast declared for the provider, no per-model list.
+    capabilities: { supportsServiceTier: true },
     serviceTiers: [
       { id: "default", label: "Default" },
       { id: "fast", label: "Fast" },
@@ -265,10 +267,20 @@ function catalogModel(model: string, displayName: string, extra: object = {}) {
 
 const MODELS: Record<string, object[]> = {
   "claude-code": [
-    catalogModel("claude-opus-5-5", "Opus 5.5", { supportedServiceTiers: [{ id: "fast" }] }),
+    catalogModel("claude-opus-5-5", "Opus 5.5"),
     catalogModel("claude-sonnet-5-5", "Sonnet 5.5"),
   ],
-  codex: [catalogModel("gpt-6.1-sol", "GPT-6.1-Sol"), catalogModel("gpt-6-luna", "GPT-6-Luna")],
+  codex: [
+    // As live: Daybreak is an on/off agent option, fixed on some models.
+    catalogModel("gpt-6.1-sol", "GPT-6.1-Sol", {
+      sessionOptions: [
+        { id: "daybreak", label: "Daybreak", type: "boolean", value: false, fixed: true },
+      ],
+    }),
+    catalogModel("gpt-6-luna", "GPT-6-Luna", {
+      sessionOptions: [{ id: "daybreak", label: "Daybreak", type: "boolean", value: false }],
+    }),
+  ],
   devin: [
     catalogModel("acp-default", "Agent default", {
       sessionOptions: [{ id: "mode", label: "Mode", type: "select", value: "a", values: [] }],
@@ -396,7 +408,7 @@ describe("T3 Code model picker", () => {
     }
   });
 
-  it("sets effort and fast mode from the traits menu", async () => {
+  it("sets effort from the effort panel", async () => {
     // jsdom has no PointerEvent, and Radix opens menus on a primary-button pointerdown.
     window.PointerEvent ??= class extends MouseEvent {} as typeof PointerEvent;
     const { slot } = await mountComposer({}, undefined, pickerOptions(OPUS_HIGH));
@@ -406,15 +418,43 @@ describe("T3 Code model picker", () => {
         expect(document.activeElement?.getAttribute("contenteditable")).toBe("true"),
       );
       fireEvent.pointerDown(traits, { button: 0, ctrlKey: false, pointerType: "mouse" });
-      expect(await slot.findByText("Fast mode")).toBeTruthy();
-      fireEvent.click(slot.getByRole("menuitemradio", { name: "Max" }));
+      const slider = await slot.findByRole("slider", { name: "Effort" });
+      // After a pointer open the menu has focus; Right reaches the slider, and Down from the
+      // slider reaches the reset button.
+      await waitFor(() => expect(document.activeElement?.getAttribute("role")).toBe("menu"));
+      fireEvent.keyDown(document.activeElement!, { key: "ArrowRight" });
+      expect(document.activeElement).toBe(slider);
+      fireEvent.keyDown(document.activeElement!, { key: "End" });
       await waitFor(() =>
         expect(slot.composer.selections.at(-1)).toMatchObject({ reasoningLevel: "max" }),
       );
-      fireEvent.pointerDown(traits, { button: 0, ctrlKey: false, pointerType: "mouse" });
-      fireEvent.click(await slot.findByRole("menuitemradio", { name: "On" }));
+      fireEvent.keyDown(document.activeElement!, { key: "ArrowDown" });
+      const reset = await slot.findByRole("menuitem", { name: "Reset effort to High" });
+      expect(document.activeElement).toBe(reset);
+      // Reset hides once the default applies, so it hands focus back to the slider first.
+      fireEvent.click(reset);
+      await waitFor(() =>
+        expect(slot.composer.selections.at(-1)).toMatchObject({ reasoningLevel: "high" }),
+      );
+      expect(document.activeElement).toBe(slider);
+    } finally {
+      slot.lifecycle.unmount();
+    }
+  });
+
+  it("cycles the speed from the bolt beside the model search", async () => {
+    const { slot } = await mountComposer({}, undefined, pickerOptions(OPUS_HIGH));
+    try {
+      await openModelPicker(slot);
+      fireEvent.click(slot.getByRole("button", { name: /^Speed: Normal/ }));
       await waitFor(() =>
         expect(slot.composer.selections.at(-1)).toMatchObject({ serviceTier: "fast" }),
+      );
+      // The picker stays open, the bolt now reads Fast, and the model pill names the speed.
+      expect(await slot.findByRole("button", { name: "Opus 5.5 · Fast" })).toBeTruthy();
+      fireEvent.click(await slot.findByRole("button", { name: /^Speed: Fast/ }));
+      await waitFor(() =>
+        expect(slot.composer.selections.at(-1)).toMatchObject({ serviceTier: "default" }),
       );
     } finally {
       slot.lifecycle.unmount();
@@ -481,7 +521,21 @@ describe("T3 Code model picker", () => {
     }
   });
 
-  it("keeps BB's picker for a model with agent options it cannot set", async () => {
+  it("shows these pickers for a model whose agent options are only on/off, as in a new Codex thread", async () => {
+    const { slot } = await mountComposer(
+      {},
+      undefined,
+      pickerOptions({ providerId: "codex", model: "gpt-6-luna", reasoningLevel: "high" }),
+    );
+    try {
+      expect(await slot.findByRole("button", { name: "GPT-6-Luna" })).toBeTruthy();
+      expect(slot.queryByText("Host model picker")).toBeNull();
+    } finally {
+      slot.lifecycle.unmount();
+    }
+  });
+
+  it("keeps BB's picker for a model with an agent option to choose from", async () => {
     const { slot } = await mountComposer(
       {},
       undefined,

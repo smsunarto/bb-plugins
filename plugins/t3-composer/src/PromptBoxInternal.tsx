@@ -2749,6 +2749,8 @@ export function PromptBoxInternal({
 
   const handlePromptBoxMouseDown = useCallback(
     (event: PromptBoxMouseDownEvent) => {
+      // React bubbles events from portaled menus here too; those are not the box's chrome.
+      if (!(event.target instanceof Node) || !event.currentTarget.contains(event.target)) return;
       if (!isPromptBoxChromeTarget(event.target)) return;
 
       const currentEditor = editorRef.current;

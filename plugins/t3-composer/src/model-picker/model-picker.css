@@ -24,6 +24,16 @@
   color: var(--foreground);
 }
 
+/* A narrow composer reads the effort word in the model name's colour. */
+@container t3-composer (max-width: 520px) {
+  [data-t3-composer][data-promptbox]
+    [data-t3-composer-controls]
+    [data-t3-model-controls]
+    [data-t3-traits-word] {
+    color: var(--foreground);
+  }
+}
+
 [data-t3-model-controls][data-pending] > button {
   opacity: 0.64;
 }

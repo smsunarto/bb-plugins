@@ -6,7 +6,7 @@ import {
 } from "@get-bb/plugin-sdk/app";
 import { isAnchorInteractive } from "@/components/ui/overlay-anchor";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import { findCatalogModel, useModelCatalog } from "./catalog";
+import { findCatalogModel, useModelCatalog, type CatalogModel } from "./catalog";
 import { ModelPicker } from "./ModelPicker";
 import { TraitsPicker } from "./TraitsPicker";
 import { buildTraits } from "./traits";
@@ -42,12 +42,21 @@ function ignoredPickMessage(requested: ComposerSelection, applied: ComposerSelec
 }
 
 /**
+ * Whether the model has an agent option only BB's picker can set: a list to choose from. An
+ * on/off option, such as Codex's Daybreak, keeps BB's value (off unless turned on there), so
+ * it need not cost the composer these pickers, here or in a new thread.
+ */
+function needsBbPicker(model: CatalogModel) {
+  return model.sessionOptions?.some((option) => option.type === "select") ?? false;
+}
+
+/**
  * T3 Code's model and traits pickers over BB's composer selection. Picks go
  * through `setSelection`, the same path as BB's picker, so a provider switch
  * in a thread starts BB's handoff. `fallback` is BB's own control: shown where
  * this composer's pickers are read-only, until the selected model's catalog
- * entry is known, and for models with agent options, which `setSelection`
- * cannot set.
+ * entry is known, and for models with an agent option to choose from, which
+ * `setSelection` cannot set.
  */
 export function ComposerModelControls(props: { fallback: ReactNode }) {
   const composer = useComposer();
@@ -62,19 +71,21 @@ export function ComposerModelControls(props: { fallback: ReactNode }) {
 
   const provider = catalog.providers.find((candidate) => candidate.id === selection.providerId);
   const model = findCatalogModel(catalog.catalogFor(selection.providerId).models, selection.model);
-  if (!model || model.sessionOptions?.length) return props.fallback;
+  if (!model || needsBbPicker(model)) return props.fallback;
+  const traits = buildTraits(provider, model, selection);
 
-  const apply = (requested: ComposerSelection) => {
+  /** Settles once BB has applied or refused the pick, so the effort slider can let go of it. */
+  const apply = (requested: ComposerSelection): Promise<unknown> => {
     const pick = ++latestPick.current;
     // BB disables its own picker while the agent waits on a question or approval and hides the
     // composer to show it; the SDK has no flag for that, so a hidden composer takes no picks.
     if (controlsRef.current && !isAnchorInteractive(controlsRef.current)) {
       setError("Answer the agent's question first.");
-      return;
+      return Promise.resolve();
     }
     setPending(true);
     setError(null);
-    composer
+    return composer
       .setSelection(requested)
       .then((applied) => {
         if (pick === latestPick.current) setError(ignoredPickMessage(requested, applied));
@@ -102,12 +113,13 @@ export function ComposerModelControls(props: { fallback: ReactNode }) {
           catalog={catalog}
           providerId={selection.providerId}
           model={selection.model}
-          onSelect={(providerId, nextModel) => apply({ providerId, model: nextModel })}
+          speed={traits.speed}
+          onSelect={(providerId, nextModel) => void apply({ providerId, model: nextModel })}
+          onSpeedChange={(serviceTier) => void apply({ serviceTier })}
         />
         <TraitsPicker
-          traits={buildTraits(provider, model, selection)}
+          effort={traits.effort}
           onEffortChange={(reasoningLevel) => apply({ reasoningLevel })}
-          onSpeedChange={(serviceTier) => apply({ serviceTier })}
         />
         {error ? (
           <span

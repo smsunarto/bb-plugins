@@ -248,14 +248,29 @@
   }
 
   [data-t3-composer][data-promptbox] [data-t3-composer-controls] :is(button, [role="combobox"]) {
-    padding: 0 8px;
+    padding: 0 6px;
     font-size: 13px;
   }
 
-  /* In a narrow composer the model collapses to its icon so the left cluster
-     keeps one row. */
-  [data-t3-composer][data-promptbox] [data-t3-model-picker-label] {
-    display: none;
+  /* In a narrow composer the model and effort stay on one line; an error
+     message takes a line of its own below them rather than shrinking to "…". */
+  [data-t3-composer][data-promptbox] [data-t3-composer-controls] {
+    flex-wrap: nowrap;
+  }
+
+  [data-t3-composer][data-promptbox] [data-t3-composer-controls]:has([role="alert"]) {
+    flex-wrap: wrap;
+  }
+
+  [data-t3-composer][data-promptbox] [data-t3-composer-controls] [role="alert"] {
+    flex-basis: 100%;
+    max-width: 100%;
+    margin-left: 0;
+    white-space: normal;
+  }
+
+  [data-t3-composer][data-promptbox] [data-t3-model-picker-trigger] > span {
+    gap: 4px;
   }
 }
 
@@ -439,6 +454,56 @@
   flex-wrap: wrap;
   column-gap: 4px;
   row-gap: 4px;
+}
+
+/* A narrow composer wraps other actions to a second row before it shortens the
+   model name, and keeps about "Opus 5.5" of it beside even "Extra High". */
+@container t3-composer (max-width: 520px) {
+  /* 3.5rem of name, the provider icon and its gap, and the pill's padding. */
+  [data-t3-composer][data-promptbox]
+    [data-t3-composer-controls]
+    button[data-t3-model-picker-trigger] {
+    min-width: calc(3.5rem + 32px);
+  }
+
+  /* The speed bolt and its gap. */
+  [data-t3-composer][data-promptbox]
+    [data-t3-composer-controls]
+    button[data-t3-model-picker-trigger]:has([data-t3-model-picker-speed]) {
+    min-width: calc(3.5rem + 52px);
+  }
+
+  [data-t3-composer][data-promptbox] [data-t3-permission] button {
+    padding: 0 6px;
+  }
+}
+
+/* On the narrowest phones the name alone identifies the model. */
+@container t3-composer (max-width: 330px) {
+  [data-t3-composer][data-promptbox]
+    [data-t3-model-picker-trigger]
+    > span
+    > :not([data-t3-model-picker-label], [data-t3-model-picker-speed]) {
+    display: none;
+  }
+
+  /* Tighter pills keep the add button, model and effort on one row on 360px phones. */
+  [data-t3-composer][data-promptbox] [data-t3-composer-controls] :is(button, [role="combobox"]),
+  [data-t3-composer][data-promptbox] [data-t3-permission] button {
+    padding: 0 4px;
+  }
+
+  [data-t3-composer][data-promptbox]
+    [data-t3-composer-controls]
+    button[data-t3-model-picker-trigger] {
+    min-width: calc(3.5rem + 8px);
+  }
+
+  [data-t3-composer][data-promptbox]
+    [data-t3-composer-controls]
+    button[data-t3-model-picker-trigger]:has([data-t3-model-picker-speed]) {
+    min-width: calc(3.5rem + 28px);
+  }
 }
 
 [data-t3-composer][data-promptbox] [data-promptbox-standard-actions] > * {

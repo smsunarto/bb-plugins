@@ -23,7 +23,10 @@ import {
   type ModelCatalog,
 } from "./catalog";
 import { favoriteKey, useFavoriteModels } from "./favorites";
+import { FastBolt } from "./glyphs";
 import { rankModelSearch } from "./model-search";
+import { SpeedToggle, speedCycle } from "./SpeedToggle";
+import type { SpeedTrait } from "./traits";
 
 type Tab = "favorites" | string;
 
@@ -67,8 +70,11 @@ export function ModelPicker(props: {
   catalog: ModelCatalog;
   providerId: string | undefined;
   model: string | undefined;
+  /** The selected model's speeds, set from the bolt beside the search box. */
+  speed: SpeedTrait | null;
   disabled?: boolean;
   onSelect(providerId: string, model: string): void;
+  onSpeedChange(tier: string): void;
 }) {
   const { catalog } = props;
   const [open, setOpen] = useState(false);
@@ -79,6 +85,8 @@ export function ModelPicker(props: {
     ? findCatalogModel(catalog.catalogFor(props.providerId).models, props.model)
     : undefined;
   const triggerLabel = activeModel?.displayName ?? props.model ?? "Choose model";
+  const activeSpeed = props.speed ? speedCycle(props.speed).active : null;
+  const triggerName = activeSpeed ? `${triggerLabel} · ${activeSpeed.label}` : triggerLabel;
   // Load while open, and again once a late routing or provider list arrives.
   const loadAll = useEffectEvent(() => catalog.loadAll());
   useEffect(() => {
@@ -94,7 +102,7 @@ export function ModelPicker(props: {
               ref={triggerRef}
               type="button"
               disabled={props.disabled}
-              aria-label={triggerLabel}
+              aria-label={triggerName}
               data-t3-model-picker-trigger=""
               className="min-w-0 max-w-48 shrink justify-between whitespace-nowrap sm:max-w-56"
             >
@@ -110,11 +118,16 @@ export function ModelPicker(props: {
                 <span className="min-w-0 flex-1 truncate" data-t3-model-picker-label="">
                   {triggerLabel}
                 </span>
+                {activeSpeed ? (
+                  <span data-t3-model-picker-speed="" className="flex shrink-0">
+                    <FastBolt ultra={activeSpeed.ultra} />
+                  </span>
+                ) : null}
               </span>
             </button>
           </PopoverTrigger>
         </TooltipTrigger>
-        <TooltipContent side="top">{triggerLabel}</TooltipContent>
+        <TooltipContent side="top">{triggerName}</TooltipContent>
       </Tooltip>
       <PopoverContent
         data-t3-model-picker-popover=""
@@ -129,6 +142,9 @@ export function ModelPicker(props: {
           catalog={catalog}
           providerId={props.providerId}
           model={activeModel?.model ?? props.model}
+          speedToggle={
+            props.speed ? <SpeedToggle speed={props.speed} onChange={props.onSpeedChange} /> : null
+          }
           onSelect={(providerId, model) => {
             props.onSelect(providerId, model);
             setOpen(false);
@@ -143,6 +159,8 @@ function ModelPickerContent(props: {
   catalog: ModelCatalog;
   providerId: string | undefined;
   model: string | undefined;
+  /** The selected model's speed bolt, at the end of the search row. */
+  speedToggle: ReactNode;
   onSelect(providerId: string, model: string): void;
 }) {
   const { catalog } = props;
@@ -308,8 +326,8 @@ function ModelPickerContent(props: {
             !isSearching && "border-l border-border/70",
           )}
         >
-          <div className="min-w-0 shrink-0 px-3 pt-2.5">
-            <div className="relative -translate-y-px border-b border-border/70 pb-1.5 transition-colors focus-within:border-ring">
+          <div className="flex min-w-0 shrink-0 items-start gap-1.5 px-3 pt-2.5">
+            <div className="relative min-w-0 flex-1 -translate-y-px border-b border-border/70 pb-1.5 transition-colors focus-within:border-ring">
               <Icon
                 name="Search"
                 aria-hidden
@@ -342,6 +360,7 @@ function ModelPickerContent(props: {
                 add or remove a favorite.
               </span>
             </div>
+            {props.speedToggle}
           </div>
           {/* A native <select> cannot show provider lines, jump keys or stars; the search box drives this listbox through aria-activedescendant. */}
           <div

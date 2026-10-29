@@ -39,15 +39,7 @@ export function buildTraits(
     };
   });
 
-  const tierLabels = new Map((provider?.serviceTiers ?? []).map((tier) => [tier.id, tier]));
-  const tiers = (model.supportedServiceTiers ?? [])
-    .filter((tier) => tier.id !== DEFAULT_SERVICE_TIER)
-    .map((tier) => ({
-      id: tier.id,
-      label: tier.label ?? tierLabels.get(tier.id)?.label ?? tier.id,
-      description: tier.description ?? tierLabels.get(tier.id)?.description,
-      isDefault: false,
-    }));
+  const tiers = modelServiceTiers(provider, model);
   const currentTier = selection.serviceTier ?? DEFAULT_SERVICE_TIER;
   const speed: SpeedTrait | null =
     tiers.length === 0
@@ -69,8 +61,30 @@ export function buildTraits(
   };
 }
 
-/** "Fast" or "Ultrafast" while a faster tier is chosen, for the trigger's bolt. */
-export function speedLabel(speed: SpeedTrait | null): "Fast" | "Ultrafast" | null {
-  if (!speed || speed.current === DEFAULT_SERVICE_TIER) return null;
-  return speed.current === "ultrafast" ? "Ultrafast" : "Fast";
+/**
+ * BB's rule (domain `resolveServiceTierOptions`): a provider that supports service tiers offers
+ * its declared tiers to every model, narrowed to the model's `supportedServiceTiers` when it
+ * lists them. Claude Code declares Fast this way, with no per-model list.
+ */
+function modelServiceTiers(
+  provider: CatalogProvider | undefined,
+  model: CatalogModel,
+): TraitOption[] {
+  if (!provider?.capabilities?.supportsServiceTier) return [];
+  const declared = (provider.serviceTiers ?? []).filter((tier) => tier.id !== DEFAULT_SERVICE_TIER);
+  const supported = model.supportedServiceTiers;
+  const byId = new Map((supported ?? []).map((tier) => [tier.id, tier]));
+  return declared.flatMap((tier) => {
+    const modelTier = byId.get(tier.id);
+    if (supported !== undefined && !modelTier) return [];
+    const description = modelTier?.description ?? tier.description;
+    return [
+      {
+        id: tier.id,
+        label: modelTier?.label ?? tier.label,
+        ...(description ? { description } : {}),
+        isDefault: false,
+      },
+    ];
+  });
 }

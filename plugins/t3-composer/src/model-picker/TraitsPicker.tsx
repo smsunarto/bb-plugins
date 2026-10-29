@@ -1,35 +1,39 @@
-// Adapted from T3 Code's TraitsPicker.tsx: a muted effort word that
-// reads on from the model name, a bolt for faster tiers, and an Effort/Speed menu.
+// Adapted from T3 Code's TraitsPicker.tsx: the effort word that reads on from the
+// model name, opening Codex's effort slider. The desktop menu is Codex's panel, with a
+// reset button beside the level's name; the phone sheet has a larger slider. Speed lives
+// in the model picker (SpeedToggle).
 import {
   DropdownMenu,
   DropdownMenuContent,
-  DropdownMenuGroup,
   DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { useRef, type KeyboardEvent } from "react";
+import { useIsCompactViewport } from "@/components/ui/hooks/use-compact-viewport";
+import { Icon } from "@/components/ui/icon";
 import { cn } from "@/lib/utils";
-import { FastBolt } from "./glyphs";
-import { DEFAULT_SERVICE_TIER, speedLabel, type TraitOption, type Traits } from "./traits";
+import { EffortSlider } from "./EffortSlider";
+import type { Traits } from "./traits";
+
+/** Keys that adjust the slider; Up and Down move between it and the reset button. */
+const SLIDER_KEYS = new Set(["ArrowLeft", "ArrowRight", "Home", "End"]);
 
 export function TraitsPicker(props: {
-  traits: Traits;
+  effort: Traits["effort"];
   disabled?: boolean;
-  onEffortChange(level: string): void;
-  onSpeedChange(tier: string): void;
+  onEffortChange(level: string): void | Promise<unknown>;
 }) {
-  const { effort, speed } = props.traits;
-  if (!effort && !speed) return null;
-  // T3 Code's default effort display: the level's name, not bars.
+  const { effort } = props;
+  // The same breakpoint at which DropdownMenuContent renders as a bottom sheet.
+  const isSheet = useIsCompactViewport();
+  const contentRef = useRef<HTMLDivElement>(null);
+  if (!effort) return null;
   const effortWord =
-    effort?.options.find((option) => option.id === effort.current)?.label ??
-    effort?.current ??
-    null;
-  const activeSpeed = speedLabel(speed);
-  const description = [effortWord ? `Effort: ${effortWord}` : null, activeSpeed]
-    .filter(Boolean)
-    .join(" · ");
+    effort.options.find((option) => option.id === effort.current)?.label ?? effort.current;
+  const slider = () => contentRef.current?.querySelector<HTMLElement>('[role="slider"]');
+  const reset = () =>
+    contentRef.current?.querySelector<HTMLElement>('[role="menuitem"]:not([data-disabled])');
+  const defaultEffort = effort.options.find((option) => option.isDefault);
 
   return (
     <DropdownMenu modal={false}>
@@ -37,102 +41,94 @@ export function TraitsPicker(props: {
         <button
           type="button"
           disabled={props.disabled}
-          aria-label={description || "Model options"}
-          title={description || undefined}
+          aria-label={effortWord ? `Effort: ${effortWord}` : "Effort"}
+          title={effortWord ? `Effort: ${effortWord}` : undefined}
           data-t3-traits-trigger=""
           data-t3-traits-word={effortWord ? "" : undefined}
           className="shrink-0 whitespace-nowrap"
         >
-          <span className="flex items-center gap-1.5">
-            {effortWord ? <span>{effortWord}</span> : null}
-            {activeSpeed ? <FastBolt ultra={activeSpeed === "Ultrafast"} /> : null}
-          </span>
+          {effortWord ?? "Effort"}
         </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent
+        ref={contentRef}
         data-t3-composer-menu=""
         align="start"
-        mobileTitle="Model options"
-        className="min-w-44 max-w-72"
+        mobileTitle="Effort"
+        className={isSheet ? undefined : "max-w-none"}
+        onKeyDown={(event) => {
+          if (isSheet) return;
+          const target = panelKeyTarget(event, reset(), slider());
+          if (!target) return;
+          event.preventDefault();
+          target.focus();
+        }}
       >
-        {effort ? (
-          <TraitSection
-            label="Effort"
-            options={effort.options}
-            current={effort.current}
-            onSelect={props.onEffortChange}
-          />
-        ) : null}
-        {speed ? (
-          <>
-            {effort ? <DropdownMenuSeparator /> : null}
-            {speed.kind === "toggle" ? (
-              <TraitSection
-                label={`${speed.tier.label} mode`}
-                options={[
-                  {
-                    id: speed.tier.id,
-                    label: "On",
-                    isDefault: false,
-                    ...(speed.tier.description ? { description: speed.tier.description } : {}),
-                  },
-                  { id: DEFAULT_SERVICE_TIER, label: "Off", isDefault: false },
-                ]}
-                current={speed.current === speed.tier.id ? speed.tier.id : DEFAULT_SERVICE_TIER}
-                onSelect={props.onSpeedChange}
+        <EffortSlider
+          options={effort.options}
+          current={effort.current}
+          large={isSheet}
+          focusFromKeyboard={!isSheet}
+          onChange={props.onEffortChange}
+          trailing={
+            !isSheet && defaultEffort ? (
+              <ResetButton
+                label={`Reset effort to ${defaultEffort.label}`}
+                // Hidden and disabled at the default rather than unmounted, so a hovered or
+                // focused reset never vanishes from under the pointer or the keyboard.
+                hidden={effort.current === defaultEffort.id}
+                onSelect={() => {
+                  // Keep focus in the panel once the default applies and the button hides.
+                  slider()?.focus();
+                  void props.onEffortChange(defaultEffort.id);
+                }}
               />
-            ) : (
-              <TraitSection
-                label="Speed"
-                options={speed.options}
-                current={speed.current}
-                onSelect={props.onSpeedChange}
-              />
-            )}
-          </>
-        ) : null}
+            ) : null
+          }
+          {...(isSheet ? {} : { onArrowUpDown: () => reset()?.focus() })}
+        />
       </DropdownMenuContent>
     </DropdownMenu>
   );
 }
 
-function TraitSection(props: {
-  label: string;
-  options: readonly TraitOption[];
-  current: string | null;
-  onSelect(id: string): void;
-}) {
+/**
+ * Where an arrow key in the desktop panel moves focus. After a pointer open the menu itself has
+ * focus: Left, Right, Home and End go to the slider, and Up and Down reach the reset button
+ * through Radix, or the slider when reset is hidden. ArrowDown on reset returns to the slider.
+ */
+function panelKeyTarget(
+  event: KeyboardEvent<HTMLDivElement>,
+  reset: HTMLElement | null | undefined,
+  slider: HTMLElement | null | undefined,
+) {
+  if (event.target === event.currentTarget) {
+    return SLIDER_KEYS.has(event.key) || (!reset && event.key.startsWith("Arrow")) ? slider : null;
+  }
+  return event.target === reset && event.key === "ArrowDown" ? slider : null;
+}
+
+/** The panel's reset button; a menu item so the menu's arrow keys reach it. */
+function ResetButton(props: { label: string; hidden: boolean; onSelect(): void }) {
   return (
-    <DropdownMenuGroup>
-      <DropdownMenuLabel className="pb-1 pt-1.5">{props.label}</DropdownMenuLabel>
-      {props.options.map((option) => {
-        const checked = option.id === props.current;
-        return (
-          <DropdownMenuItem
-            key={option.id}
-            role="menuitemradio"
-            aria-checked={checked}
-            onSelect={() => props.onSelect(option.id)}
-            className={cn("min-h-7 text-sm", checked && "bg-foreground/[0.08]")}
-          >
-            <span className="flex w-full min-w-0 flex-col">
-              <span className="flex min-w-0 items-center gap-1">
-                <span className="min-w-0 truncate">{option.label}</span>
-                {option.isDefault ? (
-                  <span className="inline-flex h-4 shrink-0 items-center rounded border border-border px-1 text-[10px] font-medium text-muted-foreground">
-                    Default
-                  </span>
-                ) : null}
-              </span>
-              {option.description ? (
-                <span className="max-w-56 text-pretty text-xs text-muted-foreground/80">
-                  {option.description}
-                </span>
-              ) : null}
-            </span>
-          </DropdownMenuItem>
-        );
-      })}
-    </DropdownMenuGroup>
+    <DropdownMenuItem
+      aria-label={props.label}
+      title={props.label}
+      // Typeahead matches this text; the icon gives the item none of its own.
+      textValue={props.label}
+      disabled={props.hidden}
+      aria-hidden={props.hidden || undefined}
+      // The panel stays open, as Codex's does.
+      onSelect={(event) => {
+        event.preventDefault();
+        props.onSelect();
+      }}
+      className={cn(
+        "size-8 justify-center rounded-md p-0 text-muted-foreground data-[highlighted]:text-foreground",
+        props.hidden && "invisible",
+      )}
+    >
+      <Icon name="RotateCcw" className="size-4" aria-hidden />
+    </DropdownMenuItem>
   );
 }
