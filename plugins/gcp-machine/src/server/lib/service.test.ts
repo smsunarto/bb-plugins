@@ -6,7 +6,7 @@ import {
   makeThreadResponse,
 } from "@get-bb/plugin-sdk/testing";
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
-import { IDLE_MS, type Resource } from "../../shared/schema.ts";
+import { IDLE_MS, type Inspection, type Resource } from "../../shared/schema.ts";
 import { createService } from "./service.ts";
 import { Store } from "./store.ts";
 
@@ -19,7 +19,14 @@ const resource: Resource = {
   access: { gcloudPath: "gcloud", account: "", sshUser: "test" },
   key: "enrollment",
 };
-const vm = { id: "1234", name: "test-vm", status: "RUNNING", persistentDisksOnly: true };
+const vm = {
+  kind: "present",
+  id: "1234",
+  name: "test-vm",
+  status: "RUNNING",
+  persistentDisksOnly: true,
+} satisfies Inspection;
+const missing = { kind: "missing", id: "1234", name: "test-vm" } satisfies Inspection;
 type Thread = Awaited<ReturnType<BbPluginApi["sdk"]["threads"]["list"]>>[number];
 type Env = Awaited<ReturnType<BbPluginApi["sdk"]["environments"]["list"]>>[number];
 const thread = (id = "thread"): Thread =>
@@ -75,7 +82,7 @@ function fixture() {
     power: [] as string[],
     powerFail: false,
     notSubmitted: false,
-    cloudStatus: "RUNNING",
+    cloud: vm as Inspection,
     bootstrapKeys: [] as string[],
   };
   const fake = createFakePluginHost({
@@ -113,7 +120,7 @@ function fixture() {
     experimental_callHostRpc: async ({ method, input }) => {
       if (method === "inspect") {
         await onInspect?.();
-        return { ...vm, status: state.cloudStatus };
+        return state.cloud;
       }
       if (method === "power") {
         const { action, requestId } = input as { action: string; requestId: string };
@@ -396,7 +403,7 @@ for (const cleanup of ["remove", "reconcileCleanup"] as const) {
     f.state.powerFail = true;
     await assert.rejects(provider.suspend!(lifecycleContext()), /connection lost/);
     assert.ok(f.store.pendingPower(resource.key));
-    f.state.cloudStatus = "NOT_FOUND";
+    f.state.cloud = missing;
     await provider[cleanup]({ ...lifecycleContext(), key: resource.key });
     assert.equal(f.store.pendingPower(resource.key), undefined);
     assert.equal(f.store.binding(), null);
@@ -424,7 +431,7 @@ test("an unreadable VM preserves an uncertain operation during removal", async (
 test("resume refuses a deleted VM without bootstrapping a replacement", async (t) => {
   const f = fixture();
   t.after(() => f.harness.lifecycle.dispose());
-  f.state.cloudStatus = "NOT_FOUND";
+  f.state.cloud = missing;
   const provider = f.harness.inspection.registrations.machineProviders.get("gcp-machine")!;
   await assert.rejects(provider.resume!(lifecycleContext()), /no longer exists/);
   assert.deepEqual(f.state.bootstrapKeys, []);
@@ -435,13 +442,30 @@ test("Wake starts a VM stopped outside BB and reports its actual connection stat
   const f = fixture();
   t.after(() => f.harness.lifecycle.dispose());
   f.host.status = "disconnected";
-  f.state.cloudStatus = "TERMINATED";
+  f.state.cloud = { ...vm, status: "TERMINATED" };
   const result = await f.service.wake();
   assert.equal(result.status, "disconnected");
   assert.equal(f.state.power.length, 1);
   assert.match(f.state.power[0]!, /^start:/);
   assert.deepEqual(f.state.bootstrapKeys, [resource.key]);
   assert.equal(f.harness.inspection.sdk.callsTo("hosts.experimental_resume").length, 0);
+});
+
+test("Wake reports a deleted VM instead of blaming the daemon connection", async (t) => {
+  const f = fixture();
+  t.after(() => f.harness.lifecycle.dispose());
+  f.host.status = "disconnected";
+  f.state.cloud = missing;
+  await assert.rejects(f.service.wake(), /no longer exists/);
+  assert.deepEqual(f.state.power, []);
+  assert.deepEqual(f.state.bootstrapKeys, []);
+});
+
+test("status reports a deleted VM as missing rather than as a VM without persistent disks", async (t) => {
+  const f = fixture();
+  t.after(() => f.harness.lifecycle.dispose());
+  f.state.cloud = missing;
+  assert.deepEqual((await f.service.status()).cloud, missing);
 });
 
 test("Wake repairs a disconnected daemon on a running VM using its enrollment key", async (t) => {

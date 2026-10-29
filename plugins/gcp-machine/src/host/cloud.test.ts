@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { GoogleCompute } from "../shared/node/cloud.ts";
 import { run, shellQuote, type Run } from "../shared/node/process.ts";
+import type { VmStatus } from "../shared/schema.ts";
 import { experimental_createHostEntryHarness } from "@get-bb/plugin-sdk/testing/host";
 import hostEntry from "./host.ts";
 
@@ -14,7 +15,7 @@ const target = {
 const access = { gcloudPath: "gcloud", account: "test@example.com", sshUser: "test" };
 const signal = new AbortController().signal;
 const requestId = "a5d08fa4-cd76-4294-a061-22d4732435d1";
-const instance = (status: string) => ({
+const instance = (status: VmStatus) => ({
   id: "1234",
   name: "test-vm",
   status,
@@ -61,6 +62,13 @@ test("replacing the VM or attaching Local SSD prevents any power request", async
     );
     assert.equal(f.calls.length, 1);
   }
+});
+
+test("a status this plugin does not model is refused before any write", async () => {
+  const f = cloud([{ ...instance("RUNNING"), status: "NOT_FOUND" }]);
+  const result = await f.client.power(target, access, "stop", requestId, signal);
+  assert.equal(result.outcome, "not-submitted");
+  assert.equal(f.calls.filter((call) => call.method === "POST").length, 0);
 });
 
 test("start waits for an existing stop and never submits repeated starts while booting", async () => {

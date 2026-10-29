@@ -6,7 +6,8 @@ description: Inspect the GCP Machine plugin's idle policy, diagnose wake failure
 # GCP Machine
 
 Run `bb gcp-machine status` first. Read `error`, `idleStatus`, `hostId`, and
-`cloud.status` separately: a running VM does not prove that its BB daemon is
+`cloud` separately: `cloud.kind` is `missing` when the pinned VM was deleted,
+and a `cloud.status` of `RUNNING` does not prove that its BB daemon is
 connected. Use `bb gcp-machine wake` for an explicit wake; thread work uses BB's
 native resume path. Verify the registered host is connected before reporting it
 ready for work.

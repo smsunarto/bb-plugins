@@ -76,7 +76,7 @@ export function createService(bb: BbPluginApi, now = Date.now) {
     }
     // Inspect without an intent first: bad credentials or identity cannot poison cleanup.
     const vm = await inspect(resource, requestSignal);
-    if (vm.status === "NOT_FOUND") {
+    if (vm.kind === "missing") {
       // Numeric IDs are immutable: a late operation cannot affect a replacement.
       store.finishPower(resource.key);
       return { outcome: "gone" as const };
@@ -217,7 +217,7 @@ export function createService(bb: BbPluginApi, now = Date.now) {
       }
       // Check cloud access and disks before BB interrupts its daemon for suspension.
       const vm = await inspect(binding.resource);
-      if (!vm.persistentDisksOnly || vm.status !== "RUNNING")
+      if (vm.kind === "missing" || !vm.persistentDisksOnly || vm.status !== "RUNNING")
         throw new Error("VM state does not permit an automatic stop.");
       const finalReason = await busyReason(bb, hostId, signal(45_000));
       const autoStop = (await settings.get()).autoStop;
@@ -404,6 +404,7 @@ export function createService(bb: BbPluginApi, now = Date.now) {
       const host = await bb.sdk.hosts.get({ hostId: binding.hostId, signal: signal() });
       if (host.lifecycle.phase === "active" && host.status !== "connected") {
         const vm = await inspect(binding.resource);
+        if (vm.kind === "missing") throw new Error("The pinned GCP VM no longer exists.");
         if (vm.status === "TERMINATED" || vm.status === "RUNNING") {
           const requestSignal = signal(22 * 60_000);
           if ((await power(binding.resource, "start", requestSignal)).outcome === "gone")

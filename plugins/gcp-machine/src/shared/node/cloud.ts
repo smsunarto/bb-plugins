@@ -1,7 +1,27 @@
 import { setTimeout as delay } from "node:timers/promises";
 import { z } from "zod";
-import { instanceSchema, type Access, type Inspection, type Target } from "../schema.ts";
+import {
+  instanceSchema,
+  type Access,
+  type Inspection,
+  type Target,
+  type VmStatus,
+} from "../schema.ts";
 import { run, shellQuote, type Run } from "./process.ts";
+
+type PowerAction = "start" | "stop";
+/** The settled state each action starts from and the one it ends in. */
+const TRANSITION = {
+  start: { from: "TERMINATED", to: "RUNNING" },
+  stop: { from: "RUNNING", to: "TERMINATED" },
+} as const satisfies Record<PowerAction, { from: VmStatus; to: VmStatus }>;
+/** Transitional states a power request waits out before deciding. */
+const SETTLING: ReadonlySet<VmStatus> = new Set([
+  "STOPPING",
+  "STAGING",
+  "PROVISIONING",
+  "REPAIRING",
+]);
 
 const operationSchema = z.object({
   name: z.string().regex(/^[a-zA-Z0-9_-]+$/),
@@ -76,20 +96,15 @@ export class GoogleCompute {
         signal,
       );
     } catch (error) {
-      if (error instanceof CloudHttpError && error.status === 404) {
-        return {
-          id: target.instanceId,
-          name: target.instance,
-          status: "NOT_FOUND",
-          persistentDisksOnly: false,
-        };
-      }
+      if (error instanceof CloudHttpError && error.status === 404)
+        return { kind: "missing", id: target.instanceId, name: target.instance };
       throw error;
     }
     const vm = instanceSchema.parse(data);
     if (vm.id !== target.instanceId || vm.name !== target.instance)
       throw new Error("GCP VM identity changed; refusing to control a replacement instance.");
     return {
+      kind: "present",
       id: vm.id,
       name: vm.name,
       status: vm.status,
@@ -104,12 +119,12 @@ export class GoogleCompute {
   async power(
     target: Target,
     access: Access,
-    action: "start" | "stop",
+    action: PowerAction,
     requestId: string,
     caller: AbortSignal,
   ) {
     const signal = AbortSignal.any([caller, AbortSignal.timeout(8 * 60_000)]);
-    const desired = action === "start" ? "RUNNING" : "TERMINATED";
+    const desired = TRANSITION[action].to;
     let prepared: { token: string; vm: Inspection };
     try {
       prepared = await this.preparePower(target, access, action, signal);
@@ -120,7 +135,7 @@ export class GoogleCompute {
       };
     }
     const { token, vm } = prepared;
-    if (vm.status === "NOT_FOUND") return { outcome: "gone" as const };
+    if (vm.kind === "missing") return { outcome: "gone" as const };
     if (vm.status === desired) return { outcome: "completed" as const, vm };
     let submitted: unknown;
     try {
@@ -149,6 +164,10 @@ export class GoogleCompute {
       };
     // A completed operation is followed by an authoritative VM read, not another write.
     const completed = await this.read(target, token, signal);
+    if (completed.kind === "missing")
+      throw new Error(
+        `Google completed ${action}, but the VM no longer exists. Retry to reconcile.`,
+      );
     if (completed.status !== desired)
       throw new Error(
         `Google completed ${action}, but the VM reports ${completed.status}. Retry to reconcile.`,
@@ -159,27 +178,25 @@ export class GoogleCompute {
   private async preparePower(
     target: Target,
     access: Access,
-    action: "start" | "stop",
+    action: PowerAction,
     signal: AbortSignal,
   ) {
     const token = await this.token(access, signal);
-    const desired = action === "start" ? "RUNNING" : "TERMINATED";
+    const { from, to } = TRANSITION[action];
     for (;;) {
       signal.throwIfAborted();
       const vm = await this.read(target, token, signal);
-      if (vm.status === "NOT_FOUND") return { token, vm };
+      if (vm.kind === "missing") return { token, vm };
       if (!vm.persistentDisksOnly)
         throw new Error(
           "Only VMs with persistent disks are supported. Refusing to risk Local SSD data.",
         );
-      if (vm.status === desired) return { token, vm };
-      if (["STOPPING", "STAGING", "PROVISIONING", "REPAIRING"].includes(vm.status)) {
+      if (vm.status === to) return { token, vm };
+      if (SETTLING.has(vm.status)) {
         await this.pause(signal);
         continue;
       }
-      if (vm.status !== (action === "start" ? "TERMINATED" : "RUNNING")) {
-        throw new Error(`Cannot ${action} a VM in ${vm.status} state.`);
-      }
+      if (vm.status !== from) throw new Error(`Cannot ${action} a VM in ${vm.status} state.`);
       return { token, vm };
     }
   }
@@ -233,7 +250,7 @@ export class GoogleCompute {
     for (let attempt = 0; ; attempt++) {
       signal.throwIfAborted();
       const vm = await this.inspect(target, access, signal);
-      if (vm.status !== "RUNNING")
+      if (vm.kind === "missing" || vm.status !== "RUNNING")
         throw new Error("The pinned VM must be running before BB can start its daemon.");
       const result = await this.execute(access.gcloudPath, commandArgs, {
         signal,
