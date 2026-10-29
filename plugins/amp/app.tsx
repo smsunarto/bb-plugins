@@ -11,46 +11,12 @@ import {
 } from "@get-bb/plugin-sdk/app";
 import { sentryAppTelemetry } from "@bb-plugins/sentry/app";
 import { PLUGIN_TELEMETRY } from "./shared/telemetry";
-import { ORACLE_DIRECTIVE_ID, type OracleReport } from "./src/oracle-directive";
+import { ORACLE_DIRECTIVE_ID } from "./src/oracle-directive";
 import { useOracleReport } from "./src/oracle-report-cache";
 import { useOrbUsage } from "./src/orb-usage-store";
 import { AMP_LOGO_PATHS, AMP_LOGO_VIEW_BOX } from "./src/amp-brand";
 import { AMP_AGENT } from "./src/execution-target";
 import type { rpcContract } from "./server";
-
-function TraceList({ report }: { report: OracleReport }) {
-  if (report.trace.length === 0) {
-    return <div className="text-xs text-muted-foreground">Oracle is reasoning…</div>;
-  }
-  return (
-    <ol className="space-y-2">
-      {report.trace.map((event) => (
-        <li key={event.id} className="grid grid-cols-[4.5rem_minmax(0,1fr)] gap-2 text-xs">
-          <span className="uppercase tracking-wide text-muted-foreground">{event.kind}</span>
-          <div className="min-w-0">
-            <div className="flex items-center gap-2 text-foreground">
-              <span className="truncate">{event.title}</span>
-              {event.status && (
-                <span
-                  className={
-                    event.status === "error" ? "text-destructive" : "text-muted-foreground"
-                  }
-                >
-                  {event.status}
-                </span>
-              )}
-            </div>
-            {event.content && (
-              <div className="mt-1 max-h-32 overflow-auto whitespace-pre-wrap break-words text-muted-foreground">
-                {event.content}
-              </div>
-            )}
-          </div>
-        </li>
-      ))}
-    </ol>
-  );
-}
 
 /** The Oracle report card. Two surfaces share it: the `amp/oracle` timeline
  *  renderer (new threads) and the legacy message directive (ACP-era threads,
@@ -102,26 +68,9 @@ function OracleCard({
       </summary>
       <div className="border-t border-border px-3 py-3">
         {running ? (
-          <div>
-            {state.report.trace.length > 0 && (
-              <div className="mb-2 text-xs font-medium text-foreground">Live trace</div>
-            )}
-            <TraceList report={state.report} />
-          </div>
+          <div className="text-xs text-muted-foreground">Oracle is reasoning…</div>
         ) : (
-          <>
-            <Markdown content={state.report.response} />
-            {state.report.trace.length > 0 && (
-              <details className="mt-3 border-t border-border pt-3">
-                <summary className="cursor-pointer text-xs font-medium text-muted-foreground">
-                  Trace · {state.report.trace.length} events
-                </summary>
-                <div className="mt-3">
-                  <TraceList report={state.report} />
-                </div>
-              </details>
-            )}
-          </>
+          <Markdown content={state.report.response} />
         )}
       </div>
     </details>

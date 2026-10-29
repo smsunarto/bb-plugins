@@ -28,7 +28,6 @@ function report(id: string, status: OracleReport["status"]): OracleReport {
     request: "Why does the cache miss?",
     response: status === "running" ? "" : "The key includes the timestamp.",
     status,
-    trace: [],
     createdAt: "2026-10-09T00:00:00.000Z",
   };
 }

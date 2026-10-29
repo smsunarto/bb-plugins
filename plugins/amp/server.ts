@@ -70,7 +70,7 @@ export const rpcContract = defineRpcContract({
   },
   getOracleReport: {
     experimental_description:
-      "Load a stored Amp Oracle report (request, response, and trace) by the id an amp/oracle timeline row carries, from the host that ran the thread.",
+      "Load a stored Amp Oracle report (request and response) by the id an amp/oracle timeline row carries, from the host that ran the thread.",
     input: z.object({ reportId: z.string().uuid(), threadId: z.string().min(1) }).strict(),
     output: z.object({
       report: oracleReportSchema.nullable(),

@@ -165,7 +165,7 @@ their native meaning.
 ### The Oracle card
 
 When Amp calls its Oracle sub-agent, the thread shows a collapsible card with the
-request, the response, and a trace that streams while it runs.
+request and the response.
 
 ## Diagnostics
 

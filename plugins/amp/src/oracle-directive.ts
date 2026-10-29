@@ -2,24 +2,11 @@ export const ORACLE_DIRECTIVE_ID = "amp-oracle";
 
 export type OracleReportStatus = "running" | "completed" | "error";
 
-export type OracleTraceKind = "thinking" | "message" | "tool";
-
-export interface OracleTraceEvent {
-  id: string;
-  toolCallId: string | null;
-  kind: OracleTraceKind;
-  title: string;
-  content: string | null;
-  status: OracleReportStatus | null;
-  createdAt: string;
-}
-
 export interface OracleReport {
   id: string;
   request: string | null;
   response: string;
   status: OracleReportStatus;
-  trace: OracleTraceEvent[];
   createdAt: string;
 }
 

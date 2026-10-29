@@ -11,7 +11,6 @@ const report = {
   response:
     "### Finding: a stale response can replace the selected checkout\n\nIn `use-review-query.ts`, the refresh callback writes its result without checking whether the reviewer has switched repositories. A slow response for Atlas/frontend can overwrite Atlas/api.\n\n**Recommendation:** capture the checkout key when the request starts, compare it before applying the result, and leave the previous snapshot visible during refresh.\n\n**Validation:** use two deferred requests, resolve the newer one first, then verify that the older response cannot change the selected file or comment draft.",
   status: "completed",
-  trace: [],
   createdAt: "2026-10-22T12:00:00Z",
 };
 const meta = {
@@ -31,29 +30,13 @@ export default meta;
 type Story = StoryObj<typeof meta>;
 export const Completed: Story = {};
 export const Running: Story = {
-  play: shows("Tracing the reconnect flow"),
+  play: shows("Oracle is reasoning…"),
   parameters: {
     host: {
       pluginId: "amp",
       rpc: {
         getOracleReport: () => ({
-          report: {
-            ...report,
-            id: "a2ebea6a-0d32-4e3a-9eba-789126676318",
-            status: "running",
-            trace: [
-              {
-                id: "step1",
-                kind: "thinking",
-                title: "Tracing the reconnect flow",
-                content:
-                  "Following the request callback through cache writes, then checking whether changing repositories invalidates in-flight work.",
-                toolCallId: null,
-                status: null,
-                createdAt: report.createdAt,
-              },
-            ],
-          },
+          report: { ...report, id: "a2ebea6a-0d32-4e3a-9eba-789126676318", status: "running" },
           error: null,
         }),
       },

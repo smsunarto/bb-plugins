@@ -14,17 +14,6 @@ export const oracleReportSchema = z.object({
   request: z.string().nullable(),
   response: z.string(),
   status: statusSchema,
-  trace: z.array(
-    z.object({
-      id: z.string(),
-      toolCallId: z.string().nullable(),
-      kind: z.enum(["thinking", "message", "tool"]),
-      title: z.string(),
-      content: z.string().nullable(),
-      status: statusSchema.nullable(),
-      createdAt: z.string(),
-    }),
-  ),
   createdAt: z.string(),
 });
 

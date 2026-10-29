@@ -214,7 +214,6 @@ function archiveArgv(ampThreadId: string, archived: boolean): string[] {
 
 function createOracleReports(): OracleReports {
   const reportStore = createFileOracleReportStore();
-  const completed = new Set<string>();
   return {
     begin(question) {
       const reportId = reportStore.start(question);
@@ -222,13 +221,12 @@ function createOracleReports(): OracleReports {
       return {
         reportId,
         write: (text) => {
-          completed.add(reportId);
           reportStore.complete(reportId, text, false);
         },
       };
     },
     finish(reportId, status) {
-      if (completed.delete(reportId)) return;
+      // A no-op once `write` settled the report: the store refuses a second completion.
       reportStore.complete(
         reportId,
         status === "error" ? "The Oracle call failed before producing a report." : "",
