@@ -1,3 +1,5 @@
+import { instructionLink } from "./instruction-link.ts";
+import { UrlLink } from "@get-bb/plugin-sdk/app";
 import type { ReactElement } from "react";
 import type { PluginNavPanelProps } from "@get-bb/plugin-sdk/app";
 import { Button } from "@/components/ui/button";
@@ -54,6 +56,15 @@ function DotfilesPageBody(props: PluginNavPanelProps): ReactElement {
     );
   }
   const { host: machine } = overview.data;
+  const instructionHref = instructionLink(nav.path, machine.id, overview.data.repoPath);
+  if (instructionHref)
+    return (
+      <div className="p-6 text-sm">
+        <UrlLink className="text-primary underline" href={instructionHref}>
+          Edit instructions and skills in Agent Instructions
+        </UrlLink>
+      </div>
+    );
   return <FileView key={`${machine.id}:${nav.path}`} host={machine} path={nav.path} />;
 }
 

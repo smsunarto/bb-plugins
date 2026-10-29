@@ -1,3 +1,4 @@
+import { instructionLink } from "./instruction-link.ts";
 import { useState } from "react";
 import type { ReactElement } from "react";
 import type { PluginNavPanelProps } from "@get-bb/plugin-sdk/app";
@@ -111,6 +112,7 @@ function FilesTabBody(props: PluginNavPanelProps & { workflows: boolean }): Reac
                   <FileRow
                     key={item.path}
                     item={item}
+                    instructionHref={instructionLink(item.path, ready.host.id, ready.repoPath)}
                     nav={nav}
                     onRemove={(row) => setPendingRemoval({ ...row, host: ready.host })}
                   />
@@ -171,10 +173,12 @@ function FilesTabBody(props: PluginNavPanelProps & { workflows: boolean }): Reac
 
 function FileRow({
   item,
+  instructionHref,
   nav,
   onRemove,
 }: {
   readonly item: OverviewFile;
+  readonly instructionHref: string | null;
   readonly nav: DotfilesNavigation;
   readonly onRemove: (row: SkillRow) => void;
 }): ReactElement {
@@ -186,23 +190,40 @@ function FileRow({
         selected ? "bg-accent text-accent-foreground" : "text-foreground hover:bg-accent/50"
       }`}
     >
-      <button
-        type="button"
-        disabled={!item.exists}
-        aria-current={selected ? "true" : undefined}
-        onClick={() => nav.open(item.path)}
-        className="flex min-w-0 flex-1 items-center gap-2 text-left disabled:cursor-not-allowed disabled:opacity-60"
-        title={item.note}
-      >
-        <span className="min-w-0 flex-1 truncate">{item.title}</span>
-        {!item.exists && <span className="text-xs text-destructive">missing</span>}
-        {item.dirty && (
-          <span
-            className="size-1.5 shrink-0 rounded-full bg-amber-500"
-            aria-label="uncommitted changes"
-          />
-        )}
-      </button>
+      {instructionHref ? (
+        <UrlLink
+          href={instructionHref}
+          className="flex min-w-0 flex-1 items-center gap-2 text-left"
+          title="Edit in Agent Instructions"
+        >
+          <span className="truncate">{item.title}</span>
+          {!item.exists && <span className="text-xs text-destructive">missing</span>}
+          {item.dirty && (
+            <span
+              className="size-1.5 shrink-0 rounded-full bg-amber-500"
+              aria-label="uncommitted changes"
+            />
+          )}
+        </UrlLink>
+      ) : (
+        <button
+          type="button"
+          disabled={!item.exists}
+          aria-current={selected ? "true" : undefined}
+          onClick={() => nav.open(item.path)}
+          className="flex min-w-0 flex-1 items-center gap-2 text-left disabled:cursor-not-allowed disabled:opacity-60"
+          title={item.note}
+        >
+          <span className="min-w-0 flex-1 truncate">{item.title}</span>
+          {!item.exists && <span className="text-xs text-destructive">missing</span>}
+          {item.dirty && (
+            <span
+              className="size-1.5 shrink-0 rounded-full bg-amber-500"
+              aria-label="uncommitted changes"
+            />
+          )}
+        </button>
+      )}
       {removeSkillName !== undefined && (
         <button
           type="button"

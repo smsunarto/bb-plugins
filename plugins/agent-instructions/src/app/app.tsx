@@ -1,3 +1,4 @@
+import { DocumentsPage, DocumentsTab } from "../documents/app.tsx";
 import { definePluginApp, experimental_Icon as Icon, useBbNavigate } from "@get-bb/plugin-sdk/app";
 import type { PluginNavPanelProps } from "@get-bb/plugin-sdk/app";
 import { PromptEditorPage, PluginsTab } from "../prompts/app/app.tsx";
@@ -348,6 +349,7 @@ function promptSubPath(subPath: string): string | null {
 function AgentInstructionsPage({ subPath }: PluginNavPanelProps) {
   const navigate = useBbNavigate();
   const prompts = promptSubPath(subPath);
+  const documents = /^(global|projects)(?:\/|$)/.test(subPath);
   return (
     <div className="flex h-full min-h-0 min-w-0 flex-col">
       <nav
@@ -355,12 +357,28 @@ function AgentInstructionsPage({ subPath }: PluginNavPanelProps) {
         className="flex shrink-0 flex-wrap gap-1 border-b border-border px-4 py-2"
       >
         <Button
-          variant={prompts === null ? "secondary" : "ghost"}
+          variant={prompts === null && !documents ? "secondary" : "ghost"}
           size="sm"
-          aria-pressed={prompts === null}
+          aria-pressed={prompts === null && !documents}
           onClick={() => navigate.toPluginPanel("instructions")}
         >
           Rules
+        </Button>
+        <Button
+          variant={subPath.startsWith("global") ? "secondary" : "ghost"}
+          size="sm"
+          aria-pressed={subPath.startsWith("global")}
+          onClick={() => navigate.toPluginPanel("instructions", { subPath: "global" })}
+        >
+          Global
+        </Button>
+        <Button
+          variant={subPath.startsWith("projects") ? "secondary" : "ghost"}
+          size="sm"
+          aria-pressed={subPath.startsWith("projects")}
+          onClick={() => navigate.toPluginPanel("instructions", { subPath: "projects" })}
+        >
+          Projects
         </Button>
         <Button
           variant={prompts !== null ? "secondary" : "ghost"}
@@ -372,7 +390,13 @@ function AgentInstructionsPage({ subPath }: PluginNavPanelProps) {
         </Button>
       </nav>
       <div className="min-h-0 min-w-0 flex-1">
-        {prompts === null ? <RulesPage /> : <PromptEditorPage subPath={prompts} />}
+        {documents ? (
+          <DocumentsPage subPath={subPath} />
+        ) : prompts === null ? (
+          <RulesPage />
+        ) : (
+          <PromptEditorPage subPath={prompts} />
+        )}
       </div>
     </div>
   );
@@ -389,6 +413,16 @@ export default definePluginApp((app) => {
     icon: "FileText",
     path: "instructions",
     component: AgentInstructionsPage,
+  });
+  app.slots.experimental_tab({
+    context: { kind: "nav-panel", panelId: "agent-instructions" },
+    availability: "fixed",
+    id: "files",
+    title: "Files",
+    icon: "FileText",
+    component: DocumentsTab,
+    useVisible: ({ subPath }) => /^(global|projects)(?:\/|$)/.test(subPath),
+    layout: "flush",
   });
   app.slots.experimental_tab({
     context: { kind: "nav-panel", panelId: "agent-instructions" },

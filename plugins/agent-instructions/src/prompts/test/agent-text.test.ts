@@ -1,5 +1,12 @@
 import { expect, test } from "bun:test";
-import { mkdtempSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
+import {
+  chmodSync,
+  statSync,
+  mkdtempSync,
+  readFileSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describePlugin, readAgentFile, saveAgentFile } from "../server/lib/agent-text.ts";
@@ -176,4 +183,44 @@ test("a symlinked directory cannot reach files outside the plugin", () => {
   expect(() => readAgentFile(p, "skills/secret.md")).toThrow(
     "notes has no agent file skills/secret.md",
   );
+});
+
+test("skill reference data files are readable and editable without placeholder restrictions", () => {
+  const p = plugin({ "skills/notes/references/example.json": '{"sample":"{{old}}"}\n' });
+  expect(readAgentFile(p, "skills/notes/references/example.json").placeholders).toEqual([]);
+  expect(
+    saveAgentFile(p, {
+      pluginId: p.id,
+      path: "skills/notes/references/example.json",
+      previous: '{"sample":"{{old}}"}\n',
+      content: '{"sample":"{{new}}"}',
+    }),
+  ).toBe('{"sample":"{{new}}"}');
+});
+
+test("saving a script reference preserves its executable mode", () => {
+  const p = plugin({ "skills/notes/references/check.sh": "#!/bin/sh\necho before\n" });
+  const path = `${p.rootDir}/skills/notes/references/check.sh`;
+  chmodSync(path, 0o755);
+  saveAgentFile(p, {
+    pluginId: p.id,
+    path: "skills/notes/references/check.sh",
+    previous: "#!/bin/sh\necho before\n",
+    content: "#!/bin/sh\necho after\n",
+  });
+  expect(statSync(path).mode & 0o777).toBe(0o755);
+});
+
+test("reference data saves preserve leading spaces and trailing newlines exactly", () => {
+  const p = plugin({ "skills/notes/references/data.csv": "  alpha,one\n" });
+  const content = "  alpha,two\n\n";
+  expect(
+    saveAgentFile(p, {
+      pluginId: p.id,
+      path: "skills/notes/references/data.csv",
+      previous: "  alpha,one\n",
+      content,
+    }),
+  ).toBe(content);
+  expect(readFileSync(join(p.rootDir, "skills/notes/references/data.csv"), "utf8")).toBe(content);
 });

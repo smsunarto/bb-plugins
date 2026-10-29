@@ -182,8 +182,9 @@ test("workflows open their source on the picked machine and stay out of Files", 
   };
   const workflows = renderSlot(fixedTab(captured, "workflows"), { subPath: "" }, { rpc });
   await workflows.findByText(/After saving, run Refresh agent skills/);
-  fireEvent.click(await workflows.findByRole("button", { name: /^Feature/ }));
-  assert.ok(workflows.navigateCalls.some((call) => JSON.stringify(call).includes(workflowPath)));
+  const workflow = await workflows.findByRole("link", { name: /^Feature/ });
+  assert.ok(workflow.getAttribute("href")?.includes("/global/at/host_mac/"));
+  assert.ok(workflow.getAttribute("href")?.endsWith(workflowPath));
   assert.equal(workflows.queryByRole("button", { name: "MCP servers" }), null);
   assert.deepEqual(workflows.rpcCalls.find((call) => call.method === "overview")?.input, {
     hostId: "host_mac",

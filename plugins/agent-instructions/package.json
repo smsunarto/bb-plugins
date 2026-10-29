@@ -2,7 +2,7 @@
   "name": "@smsunarto/bb-plugin-agent-instructions",
   "version": "0.1.0",
   "private": true,
-  "description": "Manage scoped agent rules and edit plugin prompts, tool descriptions, and skills.",
+  "description": "Manage global and project instructions, skills, references, and plugin prompts.",
   "license": "MIT",
   "author": "Scott Sunarto",
   "homepage": "https://github.com/smsunarto/bb-plugins/tree/main/plugins/agent-instructions",
@@ -13,12 +13,12 @@
   },
   "type": "module",
   "engines": {
-    "bb": ">=0.47.0 <1.0.0",
-    "bbPluginSdk": ">=0.6.75"
+    "bb": ">=0.48.0 <1.0.0",
+    "bbPluginSdk": ">=0.6.94"
   },
   "bb": {
     "name": "Agent instructions",
-    "description": "Manage scoped agent rules and edit plugin prompts, tool descriptions, and skills.",
+    "description": "Manage global and project instructions, skills, references, and plugin prompts.",
     "branding": {
       "icon": "./assets/icon.svg",
       "logo": {
@@ -27,7 +27,8 @@
       }
     },
     "server": "./src/server/server.ts",
-    "app": "./src/app/app.tsx"
+    "app": "./src/app/app.tsx",
+    "host": "./src/documents/host.ts"
   },
   "files": [
     "dist/*.js",

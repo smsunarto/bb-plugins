@@ -1,5 +1,8 @@
+import { textFilePattern } from "../../../shared/text-files.ts";
 import {
   existsSync,
+  chmodSync,
+  statSync,
   readdirSync,
   readFileSync,
   realpathSync,
@@ -33,13 +36,17 @@ const TOOL_FILE = new RegExp(
 );
 
 export function classify(path: string): { kind: FileKind; tool: string | null } | null {
-  if (!path.endsWith(".md")) return null;
+  if (!path.endsWith(".md"))
+    return path.startsWith(`${SKILLS_DIR}/`) && textFilePattern.test(path)
+      ? { kind: "reference", tool: null }
+      : null;
   const tool = TOOL_FILE.exec(path);
   if (tool) {
     return { kind: tool[2] ? "tool-instructions" : "tool-description", tool: tool[1] ?? null };
   }
   if (path.startsWith(`${INSTRUCTIONS_DIR}/`)) return { kind: "prompt", tool: null };
-  if (path.startsWith(`${SKILLS_DIR}/`)) return { kind: "skill", tool: null };
+  if (path.startsWith(`${SKILLS_DIR}/`))
+    return { kind: path.endsWith("/SKILL.md") ? "skill" : "reference", tool: null };
   return null;
 }
 
@@ -63,7 +70,11 @@ function markdownFiles(root: string, dir: string): string[] {
   const base = join(root, dir);
   if (!existsSync(base) || !staysInside(root, base)) return [];
   return readdirSync(base, { recursive: true, withFileTypes: true })
-    .filter((entry) => entry.isFile() && entry.name.endsWith(".md"))
+    .filter(
+      (entry) =>
+        entry.isFile() &&
+        (dir === SKILLS_DIR ? textFilePattern.test(entry.name) : entry.name.endsWith(".md")),
+    )
     .map((entry) => join(entry.parentPath, entry.name))
     .filter((path) => staysInside(root, path))
     .map((path) => relative(root, path).split(sep).join("/"))
@@ -130,7 +141,7 @@ function agentFile(plugin: InstalledPlugin, path: string): AgentFile {
 function contentOf(kind: FileKind, content: string): FileContent {
   return {
     content,
-    placeholders: kind === "skill" ? [] : placeholders(content),
+    placeholders: kind === "skill" || kind === "reference" ? [] : placeholders(content),
     maxChars: kind === "tool-instructions" ? TOOL_INSTRUCTIONS_MAX_CHARS : null,
   };
 }
@@ -138,6 +149,25 @@ function contentOf(kind: FileKind, content: string): FileContent {
 export function readAgentFile(plugin: InstalledPlugin, path: string): FileContent {
   const file = agentFile(plugin, path);
   return contentOf(file.kind, readFileSync(join(plugin.rootDir, file.path), "utf8"));
+}
+
+function validatePlaceholders(previous: string, text: string): void {
+  const before = new Set(placeholders(previous));
+  const after = new Set(placeholders(text));
+  const removed = [...before].filter((key) => !after.has(key));
+  const added = [...after].filter((key) => !before.has(key));
+  if (removed.length > 0 || added.length > 0) {
+    const list = (keys: string[]) => keys.map((key) => `{{${key}}}`).join(", ");
+    throw new Error(
+      [
+        "The plugin's code fills a fixed set of placeholders.",
+        removed.length > 0 ? `Put back ${list(removed)}.` : "",
+        added.length > 0 ? `Remove ${list(added)}.` : "",
+      ]
+        .filter(Boolean)
+        .join(" "),
+    );
+  }
 }
 
 /**
@@ -154,25 +184,9 @@ export function saveAgentFile(plugin: InstalledPlugin, input: SaveInput): string
       `${file.path} changed on disk since you opened it. Reload it to see the change.`,
     );
   }
-  const text = input.content.trim();
-  if (file.kind !== "skill") {
-    const before = new Set(placeholders(input.previous));
-    const after = new Set(placeholders(text));
-    const removed = [...before].filter((key) => !after.has(key));
-    const added = [...after].filter((key) => !before.has(key));
-    if (removed.length > 0 || added.length > 0) {
-      const list = (keys: string[]) => keys.map((key) => `{{${key}}}`).join(", ");
-      throw new Error(
-        [
-          "The plugin's code fills a fixed set of placeholders.",
-          removed.length > 0 ? `Put back ${list(removed)}.` : "",
-          added.length > 0 ? `Remove ${list(added)}.` : "",
-        ]
-          .filter(Boolean)
-          .join(" "),
-      );
-    }
-  }
+  const text = file.kind === "reference" ? input.content : input.content.trim();
+  if (file.kind !== "skill" && file.kind !== "reference")
+    validatePlaceholders(input.previous, text);
   if (file.kind === "tool-description" && text === "") {
     throw new Error("A tool needs a description.");
   }
@@ -183,8 +197,9 @@ export function saveAgentFile(plugin: InstalledPlugin, input: SaveInput): string
   }
   // Write beside the file and rename, so the plugin never reads half an edit.
   const temporary = `${absolute}.prompt-editor-${process.pid}`;
-  const written = `${text}\n`;
+  const written = file.kind === "reference" ? text : `${text}\n`;
   writeFileSync(temporary, written);
+  chmodSync(temporary, statSync(absolute).mode);
   renameSync(temporary, absolute);
   return written;
 }

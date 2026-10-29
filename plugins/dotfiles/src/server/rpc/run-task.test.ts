@@ -1,3 +1,4 @@
+import { cleanRepo, serverTarget } from "../fake-git.ts";
 import { test } from "bun:test";
 import assert from "node:assert/strict";
 import type { TaskResult } from "../../shared/domain.ts";
@@ -39,4 +40,27 @@ test("refreshes and verifies installed agent copies on the selected machine", as
     ctx.git.run.mock.calls.map(([target, command]) => [target.hostId, command]),
     [["host_mac", "mise run install:agent-plugins && mise run check:live"]],
   );
+});
+
+test("guarded apply refuses a different canonical checkout", async () => {
+  const ctx = createFakeContext();
+  await assert.rejects(
+    runTask(ctx, { task: "render", expectedRepoPath: "/different" }),
+    /another checkout/,
+  );
+  assert.equal(ctx.git.run.mock.calls.length, 0);
+});
+
+test("guarded apply runs the same target it validated even if settings change", async () => {
+  let configured = "/first";
+  const ctx = createFakeContext({
+    target: async () => ({ ...serverTarget, repoPath: configured }),
+    inspect: async (target) => {
+      configured = "/second";
+      return cleanRepo(target, { repoPath: "/first" });
+    },
+  });
+  await runTask(ctx, { task: "render", expectedRepoPath: "/first" });
+  assert.equal(ctx.git.target.mock.calls.length, 1);
+  assert.equal(ctx.git.run.mock.calls[0]?.[0].repoPath, "/first");
 });

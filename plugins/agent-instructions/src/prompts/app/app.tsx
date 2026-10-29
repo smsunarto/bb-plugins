@@ -49,6 +49,7 @@ const KIND_LABEL: Record<FileKind, string> = {
   "tool-instructions": "Tool thread snippet",
   prompt: "Prompt",
   skill: "Skill",
+  reference: "Reference file",
 };
 
 const draftKey = (pluginId: string, path: string) => `${pluginId}\u0000${path}`;
@@ -121,6 +122,7 @@ function PluginGroup(props: {
   );
   const prompts = plugin.files.filter((f) => f.kind === "prompt");
   const skills = plugin.files.filter((f) => f.kind === "skill");
+  const references = plugin.files.filter((f) => f.kind === "reference");
   const isSelected = (entry: Selection) =>
     selection !== null &&
     selection.pluginId === entry.pluginId &&
@@ -196,6 +198,8 @@ function PluginGroup(props: {
           {prompts.map((file) => fileRow(file, file.path.replace(/^instructions\//, "")))}
           {skills.length > 0 && <h3 className="pe-label">Skills</h3>}
           {skills.map((file) => fileRow(file, file.path.replace(/^skills\//, "")))}
+          {references.length > 0 && <h3 className="pe-label">Reference files</h3>}
+          {references.map((file) => fileRow(file, file.path.replace(/^skills\//, "")))}
         </div>
       )}
     </section>
@@ -332,7 +336,7 @@ function FileEditor(props: {
   }
   const original = draft?.base ?? loaded.data.content;
   const value = draft?.text ?? original;
-  const changed = value.trim() !== original.trim();
+  const changed = file.kind === "reference" ? value !== original : value.trim() !== original.trim();
   const moved = draft !== undefined && draft.base !== loaded.data.content;
   const chars = value.trim().length;
   const over = loaded.data.maxChars !== null && chars > loaded.data.maxChars;

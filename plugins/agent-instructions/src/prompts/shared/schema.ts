@@ -8,7 +8,7 @@ import { z } from "zod";
  *   instructions/**.md                         thread instructions and prompts
  *   skills/**.md                               skill text
  */
-export const fileKindSchema = z.enum(["tool-description", "tool-instructions", "prompt", "skill"]);
+export const fileKindSchema = z.enum(["tool-description", "tool-instructions", "prompt", "skill", "reference"]);
 export type FileKind = z.infer<typeof fileKindSchema>;
 
 export const agentFileSchema = z.object({

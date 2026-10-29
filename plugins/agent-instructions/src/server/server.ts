@@ -1,3 +1,5 @@
+import { documentContracts } from "../documents/model.ts";
+import { documentHandlers } from "../documents/server.ts";
 import { defineCli, defineRpcContract, type BbPluginApi } from "@get-bb/plugin-sdk";
 import { add } from "./command/add.ts";
 import { list } from "./command/list.ts";
@@ -11,6 +13,7 @@ import { targets, targetsContract } from "./rpc/targets.ts";
 import { promptContract, promptHandlers } from "../prompts/server/server.ts";
 
 export const contract = defineRpcContract({
+  ...documentContracts,
   plugins: promptContract.plugins,
   file: promptContract.file,
   save: promptContract.save,
@@ -24,6 +27,7 @@ export default async function plugin(bb: BbPluginApi): Promise<void> {
   const { store } = ctx;
   const prompts = promptHandlers(bb);
   bb.rpc.register(contract, {
+    ...documentHandlers(bb),
     plugins: prompts.plugins,
     file: prompts.file,
     save: prompts.save,

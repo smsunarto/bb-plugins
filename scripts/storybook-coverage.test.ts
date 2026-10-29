@@ -11,6 +11,7 @@ const surfaces: Record<string, Record<string, string[]>> = {
     rules: ["RuleCard"],
     screens: ["../src/app/app"],
     prompts: ["../src/app/app"],
+    documents: ["../src/app/app"],
   },
   agentation: { panel: ["AnnotationPanel"] },
   amp: { oracle: ["../app"] },

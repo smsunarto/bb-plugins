@@ -84,13 +84,15 @@ test("the plugin list is the page's Plugins tab, under its saved ids", async () 
   expect(panel.fixedTabs).toBeUndefined();
   // Saved panel layouts find the tab by panel id and tab id.
   expect(
-    app.tabs.map(({ id, title, context, availability, layout }) => ({
-      id,
-      title,
-      context,
-      availability,
-      layout,
-    })),
+    app.tabs
+      .filter((tab) => tab.id === "plugins")
+      .map(({ id, title, context, availability, layout }) => ({
+        id,
+        title,
+        context,
+        availability,
+        layout,
+      })),
   ).toEqual([
     {
       id: "plugins",
@@ -190,7 +192,7 @@ test("the consolidated page offers both editors and only shows Plugins for promp
   const app = await loadApp();
   const tab = app.tabs.find(
     (item): item is Extract<typeof item, { context: { kind: "nav-panel" } }> =>
-      item.context.kind === "nav-panel",
+      item.context.kind === "nav-panel" && item.id === "plugins",
   );
   if (!tab) throw new Error("Missing Plugins tab");
   expect(tab.useVisible?.({ subPath: "" })).toBe(false);
@@ -206,4 +208,31 @@ test("the consolidated page offers both editors and only shows Plugins for promp
     path: "instructions",
   });
   slot.lifecycle.unmount();
+});
+
+test("reference files allow whitespace-only edits", async () => {
+  const filePath = "skills/notes/references/data.csv";
+  const slot = renderSlot(
+    await registration(),
+    { subPath: `prompts/notes/file/${filePath}` },
+    {
+      rpc: {
+        plugins: () => ({
+          plugins: [
+            {
+              ...notes,
+              tools: [],
+              files: [{ path: filePath, kind: "reference", tool: null, chars: 12 }],
+            },
+          ],
+        }),
+        file: () => ({ content: "  alpha,one\n", placeholders: [], maxChars: null }),
+      },
+    },
+  );
+  fireEvent.change(await slot.findByRole("textbox", { name: filePath }), {
+    target: { value: "  alpha,one\n\n" },
+  });
+  expect(slot.getByRole("button", { name: "Save & reload" })).toHaveProperty("disabled", false);
+  slot.unmount();
 });

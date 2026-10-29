@@ -1,6 +1,6 @@
 # Agent Instructions
 
-Use **Rules** to manage scoped instructions. Use **Plugin prompts** to inspect and edit what your plugins tell agents: tool descriptions, tool thread snippets, prompts, and skills.
+Use **Rules** to manage scoped instructions. **Global** edits the authored instruction fragments, skills, and supporting files in a selected source project. **Projects** edits a registered checkout’s `AGENTS.md`, `CLAUDE.md`, `.bb/AGENTS.md`, and skills. Choose the project and machine explicitly; saves stay in that checkout. Use **Plugin prompts** to inspect and edit what your plugins tell agents: tool descriptions, tool thread snippets, prompts, and skills.
 
 Open **Agent instructions → Plugin prompts** in the bb nav rail. Each installed plugin lists:
 
@@ -9,6 +9,8 @@ Open **Agent instructions → Plugin prompts** in the bb nav rail. Each installe
 - **Skills**: `skills/**/*.md`.
 
 **Save & reload** (⌘S) writes the file into the plugin's source directory and reloads the plugin, so new tool descriptions reach agents at once.
+
+Global instruction fragments need **Apply instructions** after saving. Plugin skills need **Refresh installed skills**; standalone skills may already be linked into the agent’s home directory. Both apply actions verify that Dotfiles targets the same checkout. A receiving fleet sync may replace unpublished local changes. The bb-managed `bb-cli` skill is read-only.
 
 ## Limits
 
