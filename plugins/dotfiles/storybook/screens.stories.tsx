@@ -47,7 +47,6 @@ export const Populated: Story = {
         overview: () => ({
           state: "ready",
           host: { id: "host_local", name: "Design MacBook" },
-          repoExists: true,
           repoPath: "/home/maya/git/dotfiles",
           branch: "maya/shell-prompt",
           groups: [],
@@ -87,9 +86,8 @@ export const RepositoryMissing: Story = {
       rpc: {
         hosts: () => hosts,
         overview: () => ({
-          state: "ready",
+          state: "noRepository",
           host: { id: "host_local", name: "Design MacBook" },
-          repoExists: false,
           repoPath: "/home/maya/git/dotfiles",
         }),
       },

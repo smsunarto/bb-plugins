@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { taskDefinitions, taskIdSchema, taskResultSchema } from "../../shared/domain.ts";
-import type { GitContext } from "../git.ts";
+import { requireConnected, type GitContext } from "../git.ts";
 
 export const runTaskContract = {
   input: z
@@ -18,7 +18,7 @@ export async function runTask(
   { hostId, task, expectedRepoPath }: z.output<typeof runTaskContract.input>,
 ): Promise<z.input<typeof runTaskContract.output>> {
   const { git } = ctx;
-  const target = await git.target(hostId);
+  const target = requireConnected(await git.target(hostId));
   const executionTarget = expectedRepoPath ? await git.inspect(target) : target;
   if (expectedRepoPath && executionTarget.repoPath !== expectedRepoPath) {
     throw new Error(

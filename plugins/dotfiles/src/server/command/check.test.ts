@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { PluginCliError } from "@get-bb/plugin-sdk";
 
 import { createFakeContext } from "../fake-context.ts";
-import { cleanRepo } from "../fake-git.ts";
+import { cleanRepo, missingRepo } from "../fake-git.ts";
 import { check } from "./check.ts";
 
 function args(target?: string) {
@@ -16,7 +16,7 @@ test("check throws when the repo is missing", async () => {
       Promise.resolve(
         check(
           createFakeContext({
-            inspect: async (target) => cleanRepo(target, { repoExists: false }),
+            inspect: async (target) => missingRepo(target),
           }),
         ).run(args(), {}),
       ),
@@ -119,12 +119,7 @@ test("check runs on the invoking thread's machine and names it", async () => {
 
 test("check refuses an offline machine instead of reporting an empty repo", async () => {
   const ctx = createFakeContext({
-    target: async () => ({
-      hostId: "host_mac",
-      hostName: "Local Mac",
-      connected: false,
-      repoPath: "~/git/dotfiles",
-    }),
+    target: async () => ({ state: "offline", hostId: "host_mac", hostName: "Local Mac" }),
   });
 
   await assert.rejects(

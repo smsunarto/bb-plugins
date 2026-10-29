@@ -95,31 +95,21 @@ function FilesTabBody(props: PluginNavPanelProps & { workflows: boolean }): Reac
             Retry
           </Button>
         </div>
-      ) : ready === undefined ? (
+      ) : overview.data.state === "offline" ? (
         <div className="p-4 text-sm text-muted-foreground">
           {overview.data.host.name} is not connected.
         </div>
-      ) : (
-        <div className="min-h-0 flex-1 overflow-y-auto p-2">
-          {ready.groups
-            .filter((group) => (group.id === "workflows") === props.workflows)
-            .map((group) => (
-              <div key={group.id} className="mb-3">
-                <div className="px-2 pb-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                  {group.title}
-                </div>
-                {group.files.map((item) => (
-                  <FileRow
-                    key={item.path}
-                    item={item}
-                    instructionHref={instructionLink(item.path, ready.host.id, ready.repoPath)}
-                    nav={nav}
-                    onRemove={(row) => setPendingRemoval({ ...row, host: ready.host })}
-                  />
-                ))}
-              </div>
-            ))}
+      ) : overview.data.state === "noRepository" ? (
+        <div className="p-4 text-sm text-muted-foreground">
+          No dotfiles repository at {overview.data.repoPath}.
         </div>
+      ) : (
+        <FileList
+          overview={overview.data}
+          workflows={props.workflows}
+          nav={nav}
+          onRemove={setPendingRemoval}
+        />
       )}
       {props.workflows && (
         <div className="shrink-0 border-t border-border p-2">
@@ -168,6 +158,41 @@ function FilesTabBody(props: PluginNavPanelProps & { workflows: boolean }): Reac
         </Dialog>
       )}
     </>
+  );
+}
+
+function FileList({
+  overview: ready,
+  workflows,
+  nav,
+  onRemove,
+}: {
+  readonly overview: ReadyOverview;
+  readonly workflows: boolean;
+  readonly nav: DotfilesNavigation;
+  readonly onRemove: (removal: PendingRemoval) => void;
+}): ReactElement {
+  return (
+    <div className="min-h-0 flex-1 overflow-y-auto p-2">
+      {ready.groups
+        .filter((group) => (group.id === "workflows") === workflows)
+        .map((group) => (
+          <div key={group.id} className="mb-3">
+            <div className="px-2 pb-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+              {group.title}
+            </div>
+            {group.files.map((item) => (
+              <FileRow
+                key={item.path}
+                item={item}
+                instructionHref={instructionLink(item.path, ready.host.id, ready.repoPath)}
+                nav={nav}
+                onRemove={(row) => onRemove({ ...row, host: ready.host })}
+              />
+            ))}
+          </div>
+        ))}
+    </div>
   );
 }
 

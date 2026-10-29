@@ -1,5 +1,5 @@
 import { mock, type Mock } from "bun:test";
-import type { DotfilesGit, Repo, Target } from "./git.ts";
+import type { Checkout, ConnectedTarget, DotfilesGit, Repo } from "./git.ts";
 
 export interface FakeDotfilesGit extends DotfilesGit {
   readonly target: Mock<DotfilesGit["target"]>;
@@ -7,27 +7,28 @@ export interface FakeDotfilesGit extends DotfilesGit {
 }
 
 /** The bb server's own machine, which the fake resolves when no host is asked for. */
-export const serverTarget: Target = {
+export const serverTarget: ConnectedTarget = {
   hostId: "host_server",
   hostName: "linux-builder",
-  connected: true,
   repoPath: "~/git/dotfiles",
 };
 
 /** Another connected machine, for tests that target one explicitly. */
-export const macTarget: Target = {
+export const macTarget: ConnectedTarget = {
   hostId: "host_mac",
   hostName: "Local Mac",
-  connected: true,
   repoPath: "~/git/dotfiles",
 };
 
 /** A clean checkout on `target` with every fixed file present and no skills. */
-export function cleanRepo(target: Target = serverTarget, overrides: Partial<Repo> = {}): Repo {
+export function cleanRepo(
+  target: ConnectedTarget = serverTarget,
+  overrides: Partial<Repo> = {},
+): Repo {
   return {
     ...target,
+    repo: "found",
     repoPath: "/dotfiles",
-    repoExists: true,
     branch: "main",
     entries: [],
     skills: [],
@@ -36,10 +37,18 @@ export function cleanRepo(target: Target = serverTarget, overrides: Partial<Repo
   };
 }
 
+/** `target` with nothing at its repo path. */
+export function missingRepo(target: ConnectedTarget = serverTarget): Checkout {
+  return { ...target, repo: "missing", repoPath: "/dotfiles" };
+}
+
 export function createFakeGit(overrides: Partial<DotfilesGit> = {}): FakeDotfilesGit {
   const target = mock<DotfilesGit["target"]>(
     overrides.target ??
-      (async (hostId) => (hostId === macTarget.hostId ? macTarget : serverTarget)),
+      (async (hostId) => ({
+        state: "connected",
+        ...(hostId === macTarget.hostId ? macTarget : serverTarget),
+      })),
   );
   const run = mock<DotfilesGit["run"]>(
     overrides.run ?? (async () => ({ exitCode: 0, output: "ok" })),

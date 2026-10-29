@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { PluginCliError } from "@get-bb/plugin-sdk";
 
 import { createFakeContext } from "../fake-context.ts";
-import { cleanRepo } from "../fake-git.ts";
+import { missingRepo } from "../fake-git.ts";
 import type { DotfilesGit } from "../git.ts";
 import { cat } from "./cat.ts";
 
@@ -17,7 +17,7 @@ test("cat throws when the repo is missing", async () => {
       Promise.resolve(
         cat(
           createFakeContext({
-            inspect: async (target) => cleanRepo(target, { repoExists: false }),
+            inspect: async (target) => missingRepo(target),
           }),
         ).run(args(".dotfiles/mcp.json"), {}),
       ),

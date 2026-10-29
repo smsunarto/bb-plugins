@@ -54,7 +54,7 @@ test("guarded apply refuses a different canonical checkout", async () => {
 test("guarded apply runs the same target it validated even if settings change", async () => {
   let configured = "/first";
   const ctx = createFakeContext({
-    target: async () => ({ ...serverTarget, repoPath: configured }),
+    target: async () => ({ state: "connected", ...serverTarget, repoPath: configured }),
     inspect: async (target) => {
       configured = "/second";
       return cleanRepo(target, { repoPath: "/first" });

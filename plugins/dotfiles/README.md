@@ -131,7 +131,8 @@ stderr, so stdout stays the command's own output.
 
 | Symptom                                               | Cause                                                                                 |
 | ----------------------------------------------------- | ------------------------------------------------------------------------------------- |
-| Every row reads `missing`, branch reads `missing`     | `repoPath` does not exist on that machine, or the repo does not match the layout      |
+| `No dotfiles repository at <path>`                    | `repoPath` does not exist on that machine; `bb dotfiles` commands fail the same way   |
+| Every row reads `missing`                             | The repo exists but does not match the fixed layout                                   |
 | `<machine> is not connected`                          | That machine's bb host daemon is offline. Pick another machine or reconnect it        |
 | A task exits 127 with raw shell text                  | `mise`, `git`, or `npx` is not on `PATH` in the login shell the plugin resolved       |
 | A task appears to hang, then dumps all output at once | Expected. Output is buffered until the command exits. Tasks are killed at 300 seconds |

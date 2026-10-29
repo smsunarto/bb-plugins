@@ -199,18 +199,15 @@ export default experimental_defineHostEntry({
   handlers: {
     async inspect({ repoPath }, { signal }) {
       const expanded = expandHome(repoPath);
-      const repoExists = existsSync(expanded);
+      if (!existsSync(expanded)) return { repo: "missing" as const, repoPath: expanded };
       // bb's file API refuses a symlinked root, and ~/git/dotfiles is one on
       // some machines, so editor reads and writes use the real directory.
-      const root = repoExists ? realpathSync(expanded) : expanded;
-      const status = repoExists
-        ? await gitStatus(root, signal)
-        : { branch: "missing", entries: [] };
+      const root = realpathSync(expanded);
       return {
+        repo: "found" as const,
         repoPath: root,
-        repoExists,
-        ...status,
-        skills: repoExists ? discoverSkills(root) : [],
+        ...(await gitStatus(root, signal)),
+        skills: discoverSkills(root),
         missingPaths: fixedPaths.filter((path) => !existsSync(join(root, path))),
       };
     },

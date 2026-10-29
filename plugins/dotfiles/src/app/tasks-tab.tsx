@@ -20,7 +20,7 @@ function TasksTabBody(): ReactElement {
   const overview = usePanelOverview();
   const [confirmingPublish, setConfirmingPublish] = useState(false);
   const running = tasks.current?.status === "running";
-  const ready = overview.data?.state === "ready" && overview.data.repoExists ? overview.data : null;
+  const ready = overview.data?.state === "ready" ? overview.data : null;
   const disabled = running || ready === null;
 
   return (

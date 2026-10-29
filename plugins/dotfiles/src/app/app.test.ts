@@ -54,7 +54,6 @@ function server(selected: string, connected = true) {
         host,
         repoPath:
           hostId === "host_mac" ? "/Users/example/git/dotfiles" : "/home/codex/git/dotfiles",
-        repoExists: true,
         branch: "main",
         groups: [],
         gitEntries: [],
@@ -146,6 +145,34 @@ test("an offline machine is named instead of showing an empty file list", async 
 
   await slot.findByText("Local Mac is not connected.");
   slot.unmount();
+});
+
+test("a machine without a repository is named instead of drawing a branch", async () => {
+  const captured = await loadPluginApp(() => import("./app.tsx"));
+  const rpc = {
+    ...server("host_mac"),
+    overview: async () => ({
+      state: "noRepository" as const,
+      host: { id: "host_mac", name: "Local Mac" },
+      repoPath: "/Users/example/git/dotfiles",
+    }),
+  };
+
+  const files = renderSlot(fixedTab(captured, "files"), { subPath: "" }, { rpc });
+  await files.findByText("No dotfiles repository at /Users/example/git/dotfiles.");
+  assert.equal(files.queryByText("clean"), null);
+  assert.equal(files.queryByText("missing"), null);
+  files.unmount();
+
+  const panel = captured.navPanels[0];
+  assert.ok(panel?.headerContent, "the page registers a status badge");
+  const badge = renderSlot(
+    { component: panel.headerContent as ComponentType<PluginNavPanelProps> },
+    { subPath: "" },
+    { rpc },
+  );
+  await badge.findByText("Local Mac · no repository");
+  badge.unmount();
 });
 
 test("the page prompts for a selection at the panel root", async () => {

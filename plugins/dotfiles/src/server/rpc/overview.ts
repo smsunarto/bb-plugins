@@ -34,12 +34,12 @@ export const overviewContract = {
   input: z.object({ hostId: z.string().min(1).optional() }).strict(),
   output: z.discriminatedUnion("state", [
     z.object({ state: z.literal("offline"), host }).strict(),
+    z.object({ state: z.literal("noRepository"), host, repoPath: z.string() }).strict(),
     z
       .object({
         state: z.literal("ready"),
         host,
         repoPath: z.string(),
-        repoExists: z.boolean(),
         branch: z.string(),
         groups: z.array(
           z
@@ -77,8 +77,11 @@ export async function overview(
   const { git } = ctx;
   const target = await git.target(hostId);
   const machine = { id: target.hostId, name: target.hostName };
-  if (!target.connected) return { state: "offline" as const, host: machine };
+  if (target.state === "offline") return { state: "offline" as const, host: machine };
   const repo = await git.inspect(target);
+  if (repo.repo === "missing") {
+    return { state: "noRepository" as const, host: machine, repoPath: repo.repoPath };
+  }
   const missingPaths = new Set(repo.missingPaths);
   const dirtyPaths = new Set(repo.entries.map((entry) => entry.path));
   const removableSkillNames = new Map(
@@ -90,7 +93,6 @@ export async function overview(
     state: "ready" as const,
     host: machine,
     repoPath: repo.repoPath,
-    repoExists: repo.repoExists,
     branch: repo.branch,
     gitEntries: repo.entries,
     groups: groupDefinitions(repo.skills).map((group) =>

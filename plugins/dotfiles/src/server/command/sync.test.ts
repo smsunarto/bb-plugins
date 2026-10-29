@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { PluginCliError } from "@get-bb/plugin-sdk";
 
 import { createFakeContext } from "../fake-context.ts";
-import { cleanRepo } from "../fake-git.ts";
+import { missingRepo } from "../fake-git.ts";
 import { sync } from "./sync.ts";
 
 function args(publish: boolean) {
@@ -16,7 +16,7 @@ test("sync throws when the repo is missing", async () => {
       Promise.resolve(
         sync(
           createFakeContext({
-            inspect: async (target) => cleanRepo(target, { repoExists: false }),
+            inspect: async (target) => missingRepo(target),
           }),
         ).run(args(false), {}),
       ),

@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { isAllowedPath, needsRender } from "../../shared/domain.ts";
-import type { GitContext } from "../git.ts";
+import { requireConnected, requireRepo, type GitContext } from "../git.ts";
 
 export const saveFileContract = {
   input: z
@@ -30,7 +30,7 @@ export async function saveFile(
   { hostId, path, content, expectedSha256 }: z.output<typeof saveFileContract.input>,
 ): Promise<z.input<typeof saveFileContract.output>> {
   const { git } = ctx;
-  const repo = await git.inspect(await git.target(hostId));
+  const repo = requireRepo(await git.inspect(requireConnected(await git.target(hostId))));
   // Allowlist guard, duplicated with read-file.ts on purpose: rpc/
   // holds only units, so shared micro-logic stays inline.
   if (!isAllowedPath(path, repo.skills)) {

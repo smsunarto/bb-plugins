@@ -111,7 +111,8 @@ afterAll(async () => {
 test("git data stays clean when the login shell writes to stderr", async () => {
   const clean = await host.experimental_call("inspect", { repoPath: repo });
 
-  expect(clean.repoExists).toBe(true);
+  expect(clean.repo).toBe("found");
+  if (clean.repo !== "found") return;
   expect(clean.branch).toBe("main");
   expect(clean.entries).toEqual([]);
   expect(clean.skills).toEqual([
@@ -125,7 +126,7 @@ test("git data stays clean when the login shell writes to stderr", async () => {
 
   await writeFile(join(repo, "AGENTS.md"), "# dotfiles, edited\n");
   const dirty = await host.experimental_call("inspect", { repoPath: repo });
-  expect(dirty.entries).toEqual([{ status: "M", path: "AGENTS.md" }]);
+  expect(dirty).toMatchObject({ repo: "found", entries: [{ status: "M", path: "AGENTS.md" }] });
 });
 
 test("a symlinked checkout reports its real directory, which bb's file API accepts as a root", async () => {
@@ -134,21 +135,14 @@ test("a symlinked checkout reports its real directory, which bb's file API accep
 
   const linked = await host.experimental_call("inspect", { repoPath: link });
 
-  expect(linked.repoExists).toBe(true);
-  expect(linked.repoPath).toBe(await realpath(repo));
+  expect(linked).toMatchObject({ repo: "found", repoPath: await realpath(repo) });
 });
 
 test("a missing checkout reads as missing, with ~ expanded on this machine", async () => {
   const absent = `.dotfiles-host-test-${process.pid}`;
   const missing = await host.experimental_call("inspect", { repoPath: `~/${absent}` });
 
-  expect(missing).toMatchObject({
-    repoPath: join(homedir(), absent),
-    repoExists: false,
-    branch: "missing",
-    entries: [],
-    skills: [],
-  });
+  expect(missing).toEqual({ repo: "missing", repoPath: join(homedir(), absent) });
   expect(
     await host.experimental_call("readHead", { repoPath: `~/${absent}`, path: "AGENTS.md" }),
   ).toEqual({ content: null });

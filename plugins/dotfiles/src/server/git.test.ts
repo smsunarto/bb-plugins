@@ -1,7 +1,12 @@
 import { test } from "bun:test";
 import assert from "node:assert/strict";
 import { createFakePluginHost, makeHostResponse } from "@get-bb/plugin-sdk/testing";
-import { createDotfilesGit, type DotfilesHostClient } from "./git.ts";
+import {
+  createDotfilesGit,
+  requireConnected,
+  requireRepo,
+  type DotfilesHostClient,
+} from "./git.ts";
 
 const machines = {
   host_server: makeHostResponse({ id: "host_server", name: "linux-builder", status: "connected" }),
@@ -12,8 +17,8 @@ const machines = {
 type HostCall = { method: string; input: unknown; options: unknown };
 
 const inspection = {
+  repo: "found",
   repoPath: "/Users/example/git/dotfiles",
-  repoExists: true,
   branch: "main",
   entries: [],
   skills: [],
@@ -59,9 +64,9 @@ test("acts on the bb server's own machine until the panel picks another", async 
   const { git } = setup();
 
   assert.deepEqual(await git.target(undefined), {
+    state: "connected",
     hostId: "host_server",
     hostName: "linux-builder",
-    connected: true,
     repoPath: "~/git/dotfiles",
   });
 
@@ -74,7 +79,7 @@ test("acts on the bb server's own machine until the panel picks another", async 
 test("runs a task on the target machine with room for a five-minute task", async () => {
   const { git, calls } = setup();
 
-  await git.run(await git.target("host_dev"), "mise run check");
+  await git.run(requireConnected(await git.target("host_dev")), "mise run check");
 
   assert.deepEqual(calls, [
     {
@@ -88,8 +93,13 @@ test("runs a task on the target machine with room for a five-minute task", async
 test("names an offline machine instead of calling it", async () => {
   const { git, calls } = setup();
 
+  assert.deepEqual(await git.target("host_mac"), {
+    state: "offline",
+    hostId: "host_mac",
+    hostName: "Local Mac",
+  });
   await assert.rejects(
-    async () => git.run(await git.target("host_mac"), "mise run render"),
+    async () => git.run(requireConnected(await git.target("host_mac")), "mise run render"),
     /^Error: Local Mac is not connected\.$/,
   );
   assert.deepEqual(calls, []);
@@ -98,7 +108,7 @@ test("names an offline machine instead of calling it", async () => {
 test("reads and writes the checkout on the machine that was inspected", async () => {
   const { git, harness, calls } = setup();
 
-  const repo = await git.inspect(await git.target("host_dev"));
+  const repo = requireRepo(await git.inspect(requireConnected(await git.target("host_dev"))));
   await git.readFile(repo, "AGENTS.md");
   await git.writeFile(repo, "AGENTS.md", "next\n", "sha");
 

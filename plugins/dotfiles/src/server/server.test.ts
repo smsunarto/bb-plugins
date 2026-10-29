@@ -37,9 +37,10 @@ async function load(missing: readonly string[] = []) {
     },
     experimental_callHostRpc: async ({ method, hostId }) => {
       if (method === "run") return { exitCode: 0, output: `ran on ${hostId}\n` };
+      if (missing.includes(hostId)) return { repo: "missing", repoPath: checkouts[hostId] };
       return {
+        repo: "found",
         repoPath: checkouts[hostId],
-        repoExists: !missing.includes(hostId),
         branch: "main",
         entries: [],
         skills: [],

@@ -36,7 +36,7 @@ function DotfilesPageBody(props: PluginNavPanelProps): ReactElement {
       </div>
     );
   }
-  if (!overview.data.repoExists) {
+  if (overview.data.state === "noRepository") {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-2 p-6 text-center">
         <p className="text-sm text-foreground">
@@ -85,6 +85,13 @@ function RepoStatusBadgeBody(): ReactElement | null {
     return (
       <span className="truncate text-xs text-muted-foreground">
         {overview.data.host.name} · offline
+      </span>
+    );
+  }
+  if (overview.data.state === "noRepository") {
+    return (
+      <span className="truncate text-xs text-muted-foreground">
+        {overview.data.host.name} · no repository
       </span>
     );
   }

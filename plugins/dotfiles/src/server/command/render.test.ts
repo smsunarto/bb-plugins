@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { PluginCliError } from "@get-bb/plugin-sdk";
 
 import { createFakeContext } from "../fake-context.ts";
-import { cleanRepo } from "../fake-git.ts";
+import { missingRepo } from "../fake-git.ts";
 import { render } from "./render.ts";
 
 const noArgs = { options: {}, positionals: {}, passthrough: [], help: "" };
@@ -14,7 +14,7 @@ test("render throws when the repo is missing", async () => {
       Promise.resolve(
         render(
           createFakeContext({
-            inspect: async (target) => cleanRepo(target, { repoExists: false }),
+            inspect: async (target) => missingRepo(target),
           }),
         ).run(noArgs, {}),
       ),

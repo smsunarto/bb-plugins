@@ -6,17 +6,24 @@ import { dotfilesHostContract, type RepoInspection } from "../shared/host-contra
 /** The host kills a task at 300 s. The extra 10 s carries its output back. */
 const taskTimeoutMs = 310_000;
 
-/** The checkout a call acts on: one machine, and the repo path as configured. */
-export interface Target {
+/** The checkout a call acts on: one connected machine, and the repo path as configured. */
+export interface ConnectedTarget {
   readonly hostId: string;
   readonly hostName: string;
-  readonly connected: boolean;
   /** As configured. `~` expands on the target machine. */
   readonly repoPath: string;
 }
 
+/** The machine a call resolved to. Only a connected one can be read or run on. */
+export type Target =
+  | { readonly state: "offline"; readonly hostId: string; readonly hostName: string }
+  | ({ readonly state: "connected" } & ConnectedTarget);
+
 /** A target after the host read it. `repoPath` is now absolute. */
-export type Repo = Target & RepoInspection;
+export type Checkout = ConnectedTarget & RepoInspection;
+
+/** A checkout that holds a repository. */
+export type Repo = Extract<Checkout, { repo: "found" }>;
 
 export interface DotfilesHosts {
   /** The stored pick, else the bb server's own machine. */
@@ -32,7 +39,7 @@ export interface DotfilesGit {
   target(hostId: string | undefined): Promise<Target>;
   /** The machine an agent's thread runs on, when the thread has an environment. */
   threadHostId(threadId: string): Promise<string | undefined>;
-  inspect(target: Target): Promise<Repo>;
+  inspect(target: ConnectedTarget): Promise<Checkout>;
   readFile(repo: Repo, path: string): Promise<{ content: string; sha256: string }>;
   readHeadFile(repo: Repo, path: string): Promise<string | null>;
   writeFile(
@@ -41,7 +48,7 @@ export interface DotfilesGit {
     content: string,
     expectedSha256: string | undefined,
   ): Promise<{ outcome: "written"; sha256: string } | { outcome: "conflict" }>;
-  run(target: Target, command: string): Promise<TaskResult>;
+  run(target: ConnectedTarget, command: string): Promise<TaskResult>;
   removeSkill(repo: Repo, name: string): Promise<TaskResult>;
 }
 
@@ -54,8 +61,18 @@ function quoteShell(value: string): string {
   return `'${value.replaceAll("'", `'"'"'`)}'`;
 }
 
-function assertConnected(target: Target): void {
-  if (!target.connected) throw new Error(`${target.hostName} is not connected.`);
+/** `target` when its machine is connected; throws naming the machine otherwise. */
+export function requireConnected(target: Target): ConnectedTarget {
+  if (target.state === "offline") throw new Error(`${target.hostName} is not connected.`);
+  return target;
+}
+
+/** `checkout` when it holds a repository; throws naming the path and machine otherwise. */
+export function requireRepo(checkout: Checkout): Repo {
+  if (checkout.repo === "missing") {
+    throw new Error(`dotfiles repo not found at ${checkout.repoPath} on ${checkout.hostName}`);
+  }
+  return checkout;
 }
 
 export function createDotfilesGit(
@@ -82,8 +99,7 @@ export function createDotfilesGit(
     return configured || (await bb.sdk.system.config()).primaryHostId;
   }
 
-  async function run(target: Target, command: string): Promise<TaskResult> {
-    assertConnected(target);
+  async function run(target: ConnectedTarget, command: string): Promise<TaskResult> {
     return host.call(
       "run",
       { repoPath: target.repoPath, command },
@@ -115,12 +131,10 @@ export function createDotfilesGit(
       const hostId = requested ?? (await selectedHostId(configured.hostId));
       if (!hostId) throw new Error("No machine is selected. Pick one in the Dotfiles panel.");
       const machine = await bb.sdk.hosts.get({ hostId });
-      return {
-        hostId,
-        hostName: machine.name,
-        connected: machine.status === "connected",
-        repoPath: configured.repoPath,
-      };
+      if (machine.status !== "connected") {
+        return { state: "offline", hostId, hostName: machine.name };
+      }
+      return { state: "connected", hostId, hostName: machine.name, repoPath: configured.repoPath };
     },
 
     async threadHostId(threadId) {
@@ -129,7 +143,6 @@ export function createDotfilesGit(
     },
 
     async inspect(target) {
-      assertConnected(target);
       const inspection = await host.call(
         "inspect",
         { repoPath: target.repoPath },

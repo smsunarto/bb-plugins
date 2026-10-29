@@ -10,18 +10,27 @@ export const dotfilesHostContract = defineRpcContract({
   inspect: {
     experimental_retryable: true,
     input: z.object({ repoPath }).strict(),
-    output: z
-      .object({
-        /** Absolute, with `~` expanded on the host. */
-        repoPath: z.string(),
-        repoExists: z.boolean(),
-        branch: z.string(),
-        entries: z.array(gitEntrySchema),
-        skills: z.array(z.object({ path: z.string(), title: z.string() }).strict()),
-        /** Fixed file-list paths absent from the checkout. */
-        missingPaths: z.array(z.string()),
-      })
-      .strict(),
+    output: z.discriminatedUnion("repo", [
+      z
+        .object({
+          repo: z.literal("missing"),
+          /** Absolute, with `~` expanded on the host. */
+          repoPath: z.string(),
+        })
+        .strict(),
+      z
+        .object({
+          repo: z.literal("found"),
+          /** Absolute, with `~` expanded on the host. */
+          repoPath: z.string(),
+          branch: z.string(),
+          entries: z.array(gitEntrySchema),
+          skills: z.array(z.object({ path: z.string(), title: z.string() }).strict()),
+          /** Fixed file-list paths absent from the checkout. */
+          missingPaths: z.array(z.string()),
+        })
+        .strict(),
+    ]),
   },
   readHead: {
     experimental_retryable: true,

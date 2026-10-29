@@ -15,15 +15,16 @@ export async function commandCheckout(
 ): Promise<ReadyOverview> {
   const hostId = cli.threadId === undefined ? undefined : await ctx.git.threadHostId(cli.threadId);
   const snapshot = await overview(ctx, { hostId });
-  if (snapshot.state === "offline") {
-    throw new PluginCliError(`${snapshot.host.name} is not connected`);
+  switch (snapshot.state) {
+    case "offline":
+      throw new PluginCliError(`${snapshot.host.name} is not connected`);
+    case "noRepository":
+      throw new PluginCliError(
+        `dotfiles repo not found at ${snapshot.repoPath} on ${snapshot.host.name}`,
+      );
+    case "ready":
+      return snapshot;
   }
-  if (!snapshot.repoExists) {
-    throw new PluginCliError(
-      `dotfiles repo not found at ${snapshot.repoPath} on ${snapshot.host.name}`,
-    );
-  }
-  return snapshot;
 }
 
 /** The stderr line naming the machine and checkout a command acted on. */
