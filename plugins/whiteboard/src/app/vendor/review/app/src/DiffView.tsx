@@ -190,13 +190,12 @@ export function ReviewDiffView({
       >
         <div className="diff-global-progress">
           <span>
-            {lenses.error &&
-            !(lenses.progress && lenses.progress.complete !== false) ? (
+            {lenses.error && !lenses.complete ? (
               "Counts unavailable"
             ) : (
               <>
                 Remaining{" "}
-                {lenses.progress && lenses.progress.complete !== false ? (
+                {lenses.complete ? (
                   <DiffCounts progress={global} />
                 ) : (
                   <span className="diff-counts" aria-label="Counting changes">
@@ -206,7 +205,7 @@ export function ReviewDiffView({
               </>
             )}
           </span>
-          {lenses.progress && lenses.progress.complete !== false && (
+          {lenses.complete && (
             <span
               className="diff-progress-ring"
               role="progressbar"
@@ -243,11 +242,11 @@ export function ReviewDiffView({
             </div>
             {rows.items.map((item) => {
               const selected = lens?.id === item.id,
-                stats = lenses.stats(item.sources),
-                phase = rows.phases.get(item.id),
-                // Nothing to filter to, so the row greys out; a lens already
-                // selected can still be cleared.
-                empty = !item.pending && item.fileCount === 0;
+                // Nothing to filter to, so the row greys out.
+                unavailable = item.state === "unavailable",
+                sources = item.state === "unavailable" ? [] : item.sources,
+                stats = lenses.stats(sources),
+                phase = rows.phases.get(item.id);
 
               return (
                 <section
@@ -258,9 +257,9 @@ export function ReviewDiffView({
                 >
                   <div className="diff-lens-row">
                     <button
-                      className={`diff-lens-toggle ${selected ? "is-active" : ""} ${stats.state === "viewed" ? "is-viewed" : ""} ${empty ? "is-empty" : ""}`}
+                      className={`diff-lens-toggle ${selected ? "is-active" : ""} ${stats.state === "viewed" ? "is-viewed" : ""} ${unavailable ? "is-empty" : ""}`}
                       aria-pressed={selected}
-                      disabled={!!item.unavailable || (empty && !selected)}
+                      disabled={unavailable}
                       onClick={() =>
                         selected ? lenses.clear() : lenses.select(item.id)
                       }
@@ -270,8 +269,11 @@ export function ReviewDiffView({
                       <span
                         className="diff-lens-chip"
                         title={
-                          item.unavailable ??
-                          (selected ? "Clear lens filter" : item.title)
+                          item.state === "unavailable"
+                            ? item.reason
+                            : selected
+                              ? "Clear lens filter"
+                              : item.title
                         }
                       >
                         <FilterIcon />
@@ -284,14 +286,14 @@ export function ReviewDiffView({
                           </span>
                         )}
                       </span>
-                      {item.pending ? (
+                      {item.state === "pending" ? (
                         <span
                           className="diff-counts"
                           aria-label="Counting changes"
                         >
                           …
                         </span>
-                      ) : empty ? (
+                      ) : unavailable ? (
                         <span className="diff-counts">0 files</span>
                       ) : (
                         <DiffCounts progress={stats} />
@@ -299,13 +301,11 @@ export function ReviewDiffView({
                     </button>
                     <ViewedButton
                       progress={stats}
-                      disabled={
-                        lenses.busy || !!item.unavailable || !!item.pending
-                      }
+                      disabled={lenses.busy || item.state !== "ready"}
                       label={item.title}
                       onClick={() =>
                         void lenses.mark(
-                          item.sources,
+                          sources,
                           stats.state !== "viewed",
                           selected,
                         )

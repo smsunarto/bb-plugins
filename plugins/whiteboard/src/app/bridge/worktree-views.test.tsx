@@ -37,7 +37,7 @@ function mount(snapshot: Snapshot, version?: number) {
         if (url.pathname.endsWith("/commits") || url.pathname.endsWith("/history"))
           return Response.json([]);
         if (url.pathname.endsWith("/progress"))
-          return Response.json({ complete: true, files: [], lenses: [], resolvedSelections: {} });
+          return Response.json({ files: [], lenses: [], resolvedSelections: {} });
         if (url.pathname.endsWith("/agent-traces"))
           return Response.json({ ok: true, configured: false, sessions: [], sources: [] });
         return Response.json(snapshot);

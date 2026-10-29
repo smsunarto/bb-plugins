@@ -44,7 +44,6 @@ it("publishes the latest authored source version when pins do not change", async
           String(url).includes("/commits?")
             ? []
             : {
-                complete: true,
                 files: [],
                 lenses: [],
                 resolvedSelections: {},

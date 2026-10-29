@@ -11,7 +11,6 @@ import { type FileLineRange, fileLineRangeSchema } from "../../../../../../share
 import { type CoverageFile, emptyCoverage } from "../../../../../../shared/vendor/review/src/viewed-coverage.ts";
 import type { ComparisonCoverage } from "./comparison-coverage.ts";
 import {
-  type DiffLens,
   type Lens,
   UNCATEGORIZED_LENS_ID,
   lensSelections,
@@ -42,8 +41,18 @@ export const progressUpdateSchema = z.strictObject({
   viewed: z.boolean(),
 });
 
+/** How the Diff view lists a lens: resolved against complete coverage,
+ * still resolving against partial coverage, or nothing to show. */
+export type LensState =
+  | {
+      state: "ready" | "pending";
+      sources: FileLineRange[];
+      fileCount: number;
+      wholeFiles?: boolean;
+    }
+  | { state: "unavailable"; reason: string };
+
 export interface ReviewProgress {
-  complete?: boolean;
   unavailableSelections?: Record<string, string>;
   files: CoverageFile[];
   /** Changed files of the comparisons that references with their own pins
@@ -53,8 +62,9 @@ export interface ReviewProgress {
    * changed nothing at a cited path has an entry with no file for it. */
   referenceFiles?: Record<string, Record<string, CoverageFile>>;
   resolvedSelections: Record<string, FileLineRange[]>;
-  /** The review's file lenses, then the automatic "Uncategorized changes". */
-  lenses: (DiffLens & { unavailable?: string; pending?: boolean })[];
+  /** The review's file lenses, then the automatic "Uncategorized changes".
+   * Coverage is complete once no lens is pending. */
+  lenses: ({ id: string; title: string } & LensState)[];
 }
 
 /** Coverage survives new pins only when both complete file contents are unchanged. */
@@ -219,7 +229,8 @@ export async function reviewProgress(
   };
 
   const lenses: ReviewProgress["lenses"] = await Promise.all(
-    (snapshot.lenses ?? []).map(async (authored) => {
+    (snapshot.lenses ?? []).map(
+      async (authored): Promise<ReviewProgress["lenses"][number]> => {
       const lens = { id: authored.id, title: authored.title };
 
       try {
@@ -237,23 +248,23 @@ export async function reviewProgress(
           (source) => resolvedSelections[selectionKey(source)] ?? [],
         );
 
-        return {
-          ...lens,
-          ...resolved,
-          pending: !!partial,
-          unavailable:
-            partial || resolved.fileCount
-              ? undefined
-              : "No files match these targets",
-        };
+        if (!partial && !resolved.fileCount)
+          return {
+            ...lens,
+            state: "unavailable",
+            reason: "No files match these targets",
+          };
+
+        return { ...lens, ...resolved, state: partial ? "pending" : "ready" };
       } catch {
         return {
           ...lens,
-          sources: [],
-          unavailable: "Source links need updating at these pins",
+          state: "unavailable",
+          reason: "Source links need updating at these pins",
         };
       }
-    }),
+      },
+    ),
   );
 
   // Peeks share alignment resolution without claiming lens coverage.
@@ -273,37 +284,38 @@ export async function reviewProgress(
     ? []
     : uncategorizedSources(
         files,
-        lenses
-          .filter((lens) => !lens.unavailable)
-          .flatMap((lens) => lens.sources),
+        lenses.flatMap((lens) =>
+          lens.state === "unavailable" ? [] : lens.sources,
+        ),
       );
+
+  const fileCount = new Set(
+    uncategorized.map(
+      (source) =>
+        files.find(
+          (file) =>
+            source.file ===
+            (source.side === "base"
+              ? (file.previousPath ?? file.path)
+              : file.path),
+        )?.path ?? source.file,
+    ),
+  ).size;
 
   lenses.push({
     id: UNCATEGORIZED_LENS_ID,
     title: "Uncategorized changes",
-    sources: uncategorized,
-    wholeFiles: false,
-    fileCount: new Set(
-      uncategorized.map(
-        (source) =>
-          files.find(
-            (file) =>
-              source.file ===
-              (source.side === "base"
-                ? (file.previousPath ?? file.path)
-                : file.path),
-          )?.path ?? source.file,
-      ),
-    ).size,
-    pending: !!partial,
-    unavailable:
-      partial || uncategorized.length
-        ? undefined
-        : "All changed lines are covered by lenses",
+    ...(partial
+      ? { state: "pending", sources: [], wholeFiles: false, fileCount: 0 }
+      : uncategorized.length
+        ? { state: "ready", sources: uncategorized, wholeFiles: false, fileCount }
+        : {
+            state: "unavailable",
+            reason: "All changed lines are covered by lenses",
+          }),
   });
 
   return {
-    complete: !partial,
     files,
     referenceFiles,
     lenses,
@@ -332,9 +344,13 @@ export interface UncategorizedReport {
 export function uncategorizedReport(
   progress: ReviewProgress,
 ): UncategorizedReport {
+  const uncategorized = progress.lenses.find(
+    (lens) => lens.id === UNCATEGORIZED_LENS_ID,
+  );
   const sources =
-    progress.lenses.find((lens) => lens.id === UNCATEGORIZED_LENS_ID)
-      ?.sources ?? [];
+    uncategorized && uncategorized.state !== "unavailable"
+      ? uncategorized.sources
+      : [];
 
   const byPath = new Map<string, UncategorizedReport["files"][number]>();
 
@@ -379,8 +395,11 @@ export function lensReport(lenses: readonly Lens[], progress: ReviewProgress) {
 
       return {
         ...lens,
-        fileCount: resolved?.fileCount ?? 0,
-        ...(resolved?.unavailable && { unavailable: resolved.unavailable }),
+        fileCount:
+          resolved && resolved.state !== "unavailable" ? resolved.fileCount : 0,
+        ...(resolved?.state === "unavailable" && {
+          unavailable: resolved.reason,
+        }),
       };
     }),
     uncategorized: uncategorizedReport(progress),

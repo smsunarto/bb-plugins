@@ -151,7 +151,7 @@ export function CodePeekCard({
 
   const outcome = peekResolutionOutcome({
     resolvedCount: ranges.length,
-    complete: Boolean(lenses?.progress?.complete),
+    complete: Boolean(lenses?.complete),
     unavailable: Boolean(lenses?.progress?.unavailableSelections?.[key]),
     error: Boolean(lenses?.error),
   });

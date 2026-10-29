@@ -17,7 +17,6 @@ it("marks a lens's base and head ranges, preserves other changed lines and reloa
     { side: "head" as const, file: "order.ts", fromLine: 2, toLine: 2 },
   ];
   let progress: ReviewProgress = {
-    complete: true,
     files: [
       {
         path: "order.ts",
@@ -27,7 +26,7 @@ it("marks a lens's base and head ranges, preserves other changed lines and reloa
       },
     ],
     resolvedSelections: {},
-    lenses: [{ id: "queued", title: "Queued status range", sources, fileCount: 1 }],
+    lenses: [{ id: "queued", title: "Queued status range", state: "ready", sources, fileCount: 1 }],
   };
   const updates: unknown[] = [];
   const session = testReviewSession(
@@ -131,7 +130,6 @@ it("refreshes current progress on generation changes without a version bump and 
         reads.push(parsed);
         const fresh = parsed.searchParams.get("generation") === "dirty-two";
         return Response.json({
-          complete: true,
           files: [
             {
               path: "order.ts",

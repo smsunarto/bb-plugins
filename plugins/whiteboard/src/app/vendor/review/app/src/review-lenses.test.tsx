@@ -24,7 +24,9 @@ it("clears a lens without destroying the full comparison's native state", async 
             {
               id: "diagram",
               title: "Path",
+              state: "ready",
               sources: [{ side: "head", file: "a.ts", fromLine: 1, toLine: 8 }],
+              fileCount: 1,
             },
           ],
         }),

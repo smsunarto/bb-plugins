@@ -40,6 +40,8 @@ export interface ResolvedRange extends FileLineRange {
 interface Lenses {
   progress: ReviewProgress | null;
   lenses: ReviewProgress["lenses"];
+  /** Coverage answered and no lens is still resolving. */
+  complete: boolean;
   /** The lenses as authored on the version shown, targets and all. */
   authored: readonly Lens[];
   availability(
@@ -62,7 +64,10 @@ interface Lenses {
   structuralDiffEnabled: boolean;
 }
 
-export type ReviewLensView = Pick<Lenses, "progress" | "resolve" | "error">;
+export type ReviewLensView = Pick<
+  Lenses,
+  "progress" | "complete" | "resolve" | "error"
+>;
 
 const Context = createContext<Lenses | null>(null);
 
@@ -130,22 +135,30 @@ export function ReviewLensesProvider({
     return () => abort.abort();
   }, [client, route, snapshot.version, mode, coverageRevision, sourceGeneration]);
 
+  // Before the first answer, the authored lenses are listed as still resolving.
   const lenses: ReviewProgress["lenses"] = progress?.lenses ?? [
     ...(snapshot.lenses ?? []).map((lens) => ({
       id: lens.id,
       title: lens.title,
+      state: "pending" as const,
       sources: [],
-      pending: true,
+      fileCount: 0,
     })),
     {
       id: UNCATEGORIZED_LENS_ID,
       title: "Uncategorized changes",
+      state: "pending" as const,
       sources: [],
-      pending: true,
+      fileCount: 0,
     },
   ];
 
-  const item = lenses.find((item) => item.id === activeId);
+  const complete =
+    progress !== null && lenses.every((lens) => lens.state !== "pending");
+
+  const found = lenses.find((item) => item.id === activeId);
+  // select() refuses an unavailable lens, so an active one always resolved.
+  const item = found && found.state !== "unavailable" ? found : undefined;
   // Scope contains only resolved correspondence; navigation anchors are not coverage.
   const ranges = item?.sources ?? [];
   const scopeKey = JSON.stringify(ranges);
@@ -225,6 +238,7 @@ export function ReviewLensesProvider({
     () => ({
       progress,
       lenses,
+      complete,
       authored: snapshot.lenses ?? [],
       availability: (sources) => {
         if (
@@ -242,7 +256,7 @@ export function ReviewLensesProvider({
         )
           return "ready";
 
-        return progress?.complete === true ? "unavailable" : "pending";
+        return complete ? "unavailable" : "pending";
       },
       active,
       changedPaths,
@@ -251,7 +265,7 @@ export function ReviewLensesProvider({
       error,
       structuralDiffEnabled,
       select: (id) => {
-        if (lenses.some((item) => item.id === id && !item.unavailable))
+        if (lenses.some((item) => item.id === id && item.state !== "unavailable"))
           setActiveId(id);
       },
       clear: () => setActiveId(undefined),
@@ -297,6 +311,7 @@ export function ReviewLensesProvider({
     [
       progress,
       lenses,
+      complete,
       active,
       changedPaths,
       unfoldRanges,
