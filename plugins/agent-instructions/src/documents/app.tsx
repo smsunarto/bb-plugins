@@ -1,6 +1,6 @@
 import { useBbNavigate, type PluginNavPanelProps } from "@get-bb/plugin-sdk/app";
 import { QueryClientProvider, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useState, useSyncExternalStore } from "react";
+import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { Button } from "../../components/ui/button.tsx";
 import { queryClient } from "../app/query.ts";
 import { queryKey, useRpcMutation, useRpcQuery } from "../app/rpc.ts";
@@ -11,6 +11,8 @@ import {
   type DocumentSource,
   type StoredDocument,
 } from "./model.ts";
+
+import { DocumentTree } from "./file-tree.tsx";
 
 type Route = {
   scope: "global" | "project";
@@ -421,7 +423,12 @@ function DocumentsBody({ subPath, list = false }: PluginNavPanelProps & { list?:
           Choose a source project and checkout to edit its instructions and skills.
         </p>
       ) : list ? (
-        <DocumentList source={source} selectedPath={route.path} online={!!connected} />
+        <DocumentList
+          key={JSON.stringify(source)}
+          source={source}
+          selectedPath={route.path}
+          online={!!connected}
+        />
       ) : file ? (
         <div className="min-h-0 min-w-0 flex-1">
           <DocumentEditor key={identity(file)} file={file} online={!!connected} />
@@ -457,20 +464,18 @@ function DocumentList({
     { ...source, query: settledQuery },
     { enabled: online && !!settledQuery && files.data?.truncated === true },
   );
-  const paths = [...new Set([...(files.data?.files ?? []), ...(extra.data?.files ?? [])])]
-    .filter((path) => path.toLowerCase().includes(query.toLowerCase()))
-    .sort();
+  const paths = useMemo(
+    () =>
+      [...new Set([...(files.data?.files ?? []), ...(extra.data?.files ?? [])])]
+        .filter((path) => path.toLowerCase().includes(query.toLowerCase()))
+        .sort(),
+    [files.data, extra.data, query],
+  );
   const incomplete = settledQuery && extra.data ? extra.data.truncated : files.data?.truncated;
 
   const navigate = useBbNavigate();
   const open = (path: string) =>
     navigate.toPluginPanel("instructions", { subPath: routePath(source, path) });
-  const groups = new Map<string, string[]>();
-  for (const path of paths) {
-    const match = path.match(/^(.*?\/skills\/[^/]+)\//);
-    const group = match?.[1] ?? "Instructions";
-    groups.set(group, [...(groups.get(group) ?? []), path]);
-  }
   return (
     <div className="flex h-full min-h-0 flex-col gap-2 p-3">
       <input
@@ -500,35 +505,13 @@ function DocumentList({
           {warning}
         </p>
       ))}
-      <nav aria-label="Instruction and skill files" className="min-h-0 flex-1 overflow-y-auto">
+      <nav aria-label="Instruction and skill files" className="flex min-h-0 flex-1 flex-col">
         {!files.data && !files.isError && (
           <p className="text-sm">
             {online ? "Loading files…" : "This machine is offline and no file list is cached."}
           </p>
         )}
-        {[...groups].map(([group, paths]) => (
-          <details
-            key={group}
-            open={group === "Instructions" || !!query || paths.includes(selectedPath)}
-          >
-            <summary className="cursor-pointer break-words py-2 text-xs font-medium">
-              {group.replace(/^.*?\/skills\//, "")}
-            </summary>
-            {paths.map((path) => (
-              <button
-                key={path}
-                title={path}
-                className={`block w-full rounded-md px-2 py-1.5 text-left text-xs break-words hover:bg-accent ${path === selectedPath ? "bg-accent" : ""}`}
-                aria-current={path === selectedPath ? "page" : undefined}
-                onClick={() => open(path)}
-              >
-                {group === "Instructions"
-                  ? path.replace(/^\.dotfiles\/\.agents\/instructions\//, "")
-                  : path.slice(group.length + 1)}
-              </button>
-            ))}
-          </details>
-        ))}
+        <DocumentTree paths={paths} selectedPath={selectedPath} filtering={!!query} onOpen={open} />
         {files.data && paths.length === 0 && (
           <p className="p-2 text-sm text-muted-foreground">No matching files.</p>
         )}

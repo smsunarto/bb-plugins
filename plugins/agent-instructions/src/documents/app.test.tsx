@@ -3,7 +3,7 @@ import { beforeEach, expect, test } from "bun:test";
 import { fileSchema } from "./model.ts";
 installDom();
 const { loadPluginApp, renderSlot } = await import("@get-bb/plugin-sdk/testing/app");
-const { fireEvent, act } = await import("@testing-library/react");
+const { fireEvent, act, waitFor } = await import("@testing-library/react");
 const { queryClient } = await import("../app/query.ts");
 const { resetDocumentDraftsForTest } = await import("./app.tsx");
 beforeEach(() => {
@@ -197,12 +197,16 @@ async function fileList(online = true, truncated = false) {
 }
 test("typing filters a complete cached list without extra host requests", async () => {
   const slot = await fileList();
-  await slot.findByRole("button", { name: "AGENTS.md" });
+  const row = (path: string) =>
+    slot.container
+      .querySelector("file-tree-container")
+      ?.shadowRoot?.querySelector(`[data-item-path="${path}"]`);
+  await waitFor(() => expect(row("AGENTS.md")).toBeTruthy());
   fireEvent.change(slot.getByRole("textbox", { name: "Find instruction or skill file" }), {
     target: { value: ".agents" },
   });
-  await slot.findByRole("button", { name: "references/checklist.md" });
-  expect(slot.queryByRole("button", { name: "AGENTS.md" })).toBeNull();
+  await waitFor(() => expect(row(".agents/skills/sample/references/checklist.md")).toBeTruthy());
+  expect(row("AGENTS.md")).toBeNull();
   expect(slot.rpcCalls.filter((c) => c.method === "documentFiles")).toHaveLength(1);
   slot.unmount();
 });

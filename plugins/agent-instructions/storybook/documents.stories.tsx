@@ -1,3 +1,4 @@
+import { expect, userEvent, waitFor, within } from "storybook/test";
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { screenParameters } from "../../../.storybook/layout";
 import { RegisteredSurface } from "../../../.storybook/host";
@@ -77,5 +78,28 @@ export const Reference: Story = {
 };
 export const Files: Story = {
   args: { select: (app) => nav(app, "projects/project/linux/AGENTS.md", "files") },
-  play: shows("AGENTS.md"),
+  play: async ({ canvasElement }) => {
+    await ready({ canvasElement });
+    const row = (path: string) =>
+      canvasElement
+        .querySelector("file-tree-container")
+        ?.shadowRoot?.querySelector<HTMLElement>(`[data-item-path="${path}"]`);
+    await waitFor(() => expect(row("AGENTS.md")).toBeVisible());
+    expect(row("AGENTS.md")).toHaveAttribute("aria-selected", "true");
+    const folder = row(".agents/skills/review/")!;
+    await userEvent.click(folder);
+    await waitFor(() => expect(folder).toHaveAttribute("aria-expanded", "false"));
+    const search = within(canvasElement).getByRole("textbox", {
+      name: "Find instruction or skill file",
+    });
+    await userEvent.type(search, "checklist");
+    await waitFor(() => expect(row(".agents/skills/review/references/checklist.md")).toBeVisible());
+    expect(row("AGENTS.md")).toBeNull();
+    await userEvent.clear(search);
+    await waitFor(() =>
+      expect(row(".agents/skills/review/")).toHaveAttribute("aria-expanded", "false"),
+    );
+    await userEvent.click(row(".agents/skills/review/")!);
+    await waitFor(() => expect(row(".agents/skills/review/SKILL.md")).toBeVisible());
+  },
 };
