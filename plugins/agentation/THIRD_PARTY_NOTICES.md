@@ -1,7 +1,7 @@
 # Third-party notices
 
 This plugin ships bundled builds (`dist/server.js`, `dist/app.js`, `dist/app.css`)
-and generated icon artwork in `assets/`. The upstream works below are included in
+and inline icon artwork. The upstream works below are included in
 those files. Their licences apply to those parts, in addition to the plugin's own
 [MIT licence](LICENSE).
 
@@ -15,7 +15,7 @@ those files. Their licences apply to those parts, in addition to the plugin's ow
 | [@radix-ui/react-slot](https://www.npmjs.com/package/@radix-ui/react-slot), [@radix-ui/react-dialog](https://www.npmjs.com/package/@radix-ui/react-dialog) | `dist/app.js`                       | MIT                   |
 | [vaul](https://www.npmjs.com/package/vaul)                                                                                                                 | `dist/app.js`                       | MIT                   |
 | [sonner](https://www.npmjs.com/package/sonner)                                                                                                             | `dist/app.js`                       | MIT                   |
-| [@hugeicons/react](https://www.npmjs.com/package/@hugeicons/react), [@hugeicons/core-free-icons](https://www.npmjs.com/package/@hugeicons/core-free-icons) | `dist/app.js`, `assets/*.svg`       | MIT                   |
+| [@hugeicons/react](https://www.npmjs.com/package/@hugeicons/react), [@hugeicons/core-free-icons](https://www.npmjs.com/package/@hugeicons/core-free-icons) | `dist/app.js`                       | MIT                   |
 | [shadcn/ui](https://github.com/shadcn-ui/ui)                                                                                                               | `dist/app.js`, `dist/app.css`       | MIT                   |
 | [bb](https://github.com/get-bb/bb) plugin-registry components                                                                                              | `dist/app.js`, `dist/app.css`       | MIT                   |
 
@@ -80,8 +80,7 @@ bb                         Copyright (c) 2026 Michael Yong
 ```
 
 The `components/ui/` sources of this plugin are derived from shadcn/ui and from
-the bb app's own plugin-registry components. The icons in `assets/` are generated
-from `@hugeicons/core-free-icons`.
+the bb app's own plugin-registry components.
 
 ```text
 MIT License

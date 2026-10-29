@@ -51,9 +51,7 @@ Source: <https://github.com/shadcn-ui/ui>
 MIT License, Copyright (c) 2025 Hugeicons.
 
 Covers `@hugeicons/react` and the free icon artwork of `@hugeicons/core-free-icons`.
-The React component and the icon paths it draws are compiled into `dist/app.js`. The
-plugin icon and logos in `assets/icon.svg`, `assets/logo.svg` and `assets/logo-dark.svg`
-are Hugeicons free artwork.
+The React component and the icon paths it draws are compiled into `dist/app.js`.
 
 Source: <https://github.com/hugeicons/hugeicons-react>
 

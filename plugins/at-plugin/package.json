@@ -13,7 +13,11 @@
     "name": "Installed Plugin Mentions",
     "description": "Type # to find and mention your enabled, running plugins.",
     "branding": {
-      "icon": "Target"
+      "icon": "./assets/icon.svg",
+      "logo": {
+        "light": "./assets/logo.svg",
+        "dark": "./assets/logo-dark.svg"
+      }
     },
     "server": "./server.ts",
     "skills": []

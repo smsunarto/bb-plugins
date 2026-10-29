@@ -1,6 +1,5 @@
 /** Devin brand mark (the four-panel hexagon from Devin Desktop), one path per
- *  panel. `scripts/plugin-icons.ts` renders the plugin assets from it and the
- *  composer surfaces draw it inline. */
+ *  panel. The composer surfaces draw it inline. */
 export const DEVIN_LOGO_VIEW_BOX = "0 0 1024 1024";
 
 export const DEVIN_LOGO_PATHS = [

@@ -10,7 +10,11 @@
     "name": "GCP Machine",
     "description": "Start an existing GCP VM on demand and stop it after one hour without BB work.",
     "branding": {
-      "icon": "./assets/icon.svg"
+      "icon": "./assets/icon.svg",
+      "logo": {
+        "light": "./assets/logo.svg",
+        "dark": "./assets/logo-dark.svg"
+      }
     },
     "server": "./src/server/server.ts",
     "host": "./src/host/host.ts",

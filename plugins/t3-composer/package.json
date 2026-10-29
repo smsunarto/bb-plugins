@@ -12,7 +12,11 @@
     "name": "T3 Composer",
     "description": "BB composer with the layout and styling of T3 Code.",
     "branding": {
-      "icon": "MessageSquare"
+      "icon": "./assets/icon.svg",
+      "logo": {
+        "light": "./assets/logo.svg",
+        "dark": "./assets/logo-dark.svg"
+      }
     },
     "server": "./server.ts",
     "app": "./app.tsx",
