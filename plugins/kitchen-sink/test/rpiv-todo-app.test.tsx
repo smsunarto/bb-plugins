@@ -43,7 +43,9 @@ test("rejects stale responses across thread switches and refreshes after reconne
   await act(async () => resolveOld(result("Stale task")));
   expect(slot.queryByText("#1 Stale task")).toBeNull();
   await slot.behavior.setRealtimeConnectionState("reconnecting");
-  await slot.findByText("Reconnecting · showing saved tasks");
+  expect(slot.queryByRole("status")).toBeNull();
+  expect(slot.queryByText(/Reconnecting|Connecting/)).toBeNull();
+  expect(slot.getByText("#1 Current task")).toBeDefined();
   current = "Refreshed task";
   await slot.behavior.setRealtimeConnectionState("connected");
   await slot.findByText("#1 Refreshed task");
@@ -119,4 +121,42 @@ test("an idle context clear refreshes the banner through the public SDK subscrip
   await waitFor(() => expect(slot.queryByText("#1 Old task")).toBeNull());
   slot.unmount();
   expect(unsubscribed).toBe(true);
+});
+
+test("failed reads retain connected retry but hide empty banners during reconnect", async () => {
+  const slot = renderSlot(
+    { component: TodoBanner },
+    {},
+    {
+      composer: { scope: { kind: "thread", threadId: "empty-reconnect" } },
+      sdk: { subscribe: () => () => {} },
+      rpc: {
+        getRpivTodos: () => {
+          throw new Error("offline");
+        },
+      },
+    },
+  );
+  await waitFor(() => expect(slot.inspection.rpcCalls.length).toBeGreaterThan(0));
+  await act(async () => {});
+  await slot.findByRole("button", { name: "Retry" });
+  await slot.behavior.setRealtimeConnectionState("reconnecting");
+  expect(slot.container.textContent).toBe("");
+  slot.unmount();
+});
+
+test("hides an empty truncated snapshot during reconnect", async () => {
+  const slot = renderSlot(
+    { component: TodoBanner },
+    {},
+    {
+      composer: { scope: { kind: "thread", threadId: "truncated-reconnect" } },
+      sdk: { subscribe: () => () => {} },
+      rpc: { getRpivTodos: () => ({ items: [], truncated: true }) },
+    },
+  );
+  await slot.findByText("Loading task history…");
+  await slot.behavior.setRealtimeConnectionState("reconnecting");
+  expect(slot.container.textContent).toBe("");
+  slot.unmount();
 });

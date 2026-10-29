@@ -159,7 +159,7 @@ function ThreadTodoBanner({ threadId, running }: { threadId: string; running: bo
 
   const sorted = [...items].sort((a, b) => STATUS_ORDER[a.status] - STATUS_ORDER[b.status]);
 
-  if (sorted.length === 0 && !error && !truncated) return null;
+  if (sorted.length === 0 && (connection !== "connected" || (!error && !truncated))) return null;
 
   const completed = sorted.filter((item) => item.status === "completed").length;
   const current = sorted.find((item) => item.status === "in_progress");
@@ -192,17 +192,9 @@ function ThreadTodoBanner({ threadId, running }: { threadId: string; running: bo
           />
         </button>
       </div>
-      {error || truncated || connection !== "connected" ? (
+      {connection === "connected" && (error || truncated) ? (
         <output className="rpiv-todo-notice">
-          {connection === "connecting"
-            ? "Connecting…"
-            : connection === "reconnecting"
-              ? snapshot
-                ? "Reconnecting · showing saved tasks"
-                : "Reconnecting…"
-              : truncated
-                ? "Loading task history…"
-                : "Could not refresh tasks"}
+          {truncated ? "Loading task history…" : "Could not refresh tasks"}
           {error && connection === "connected" ? (
             <button type="button" onClick={() => refresh((value) => value + 1)}>
               Retry
