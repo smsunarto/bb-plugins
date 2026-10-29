@@ -10,12 +10,12 @@ import {
 } from "@get-bb/plugin-sdk/app";
 import { toast } from "sonner";
 import { Icon } from "@/components/ui/icon";
-import { snippetShown } from "../../core/data";
+import type { PropsOf } from "../../core/types";
 import { useCodeHeight } from "../codeHeight";
 import { useUiRuntime } from "../runtime";
 import { useSketchFont } from "../sketchFont";
 import { useBackdropColor, useDarkTheme } from "../theme";
-import { finiteNumber, optionalText, text, type Props } from "../values";
+import { optionalText, text, type Props } from "../values";
 import { DIAGRAM_SVG, DiagramDetails, DiagramViewer } from "./diagram";
 import { ErrorLine } from "./display";
 import { parseDetails } from "./explain-logic";
@@ -152,13 +152,12 @@ export function Code({ props }: { props: Props }) {
  * loads). BB's viewer numbers the lines it is given from 1, so the caption
  * carries the file's real line range.
  */
-export function Snippet({ props }: { props: Props }) {
+export function Snippet({ props }: { props: PropsOf<"Snippet"> }) {
   const { openFile } = useUiRuntime();
-  const path = text(props.path);
-  const requestedFrom = finiteNumber(props.from);
+  const { path, shown } = props;
+  const requestedFrom = props.from ?? null;
   const from = requestedFrom ?? 1;
-  const to = finiteNumber(props.to);
-  const shown = snippetShown(props);
+  const to = props.to ?? null;
   // The range asked for, until the lines on screen (clamped to the file and the line cap) replace it.
   const asked = to !== null ? `L${from}–${to}` : requestedFrom !== null ? `L${from}+` : null;
   const label = asked === null ? path : `${path} ${asked}`;

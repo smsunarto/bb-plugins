@@ -11,13 +11,13 @@ import {
   type KeyboardEvent,
   type ReactNode,
 } from "react";
-import type { Scalar } from "../../core/types";
+import type { PropsOf, Scalar } from "../../core/types";
 import { Icon } from "@/components/ui/icon";
 import { cn } from "@/lib/utils";
 import { resolveIconName } from "../icons";
 import { RenderNode } from "../render";
 import { CardDepthContext, NodeKeyContext, sentFor, useAnswers, useUiRuntime } from "../runtime";
-import { isBinding, list, nodes, optionalText, type Props } from "../values";
+import { list, nodes, type Props } from "../values";
 import { actionIntent, sendEffect, type SendEffect } from "./action-logic";
 import { cardOptions, followUpPrompts, sameColor, swatchColors, togglePick, type CardOption } from "./choose-logic";
 import { CheckMark, ErrorLine } from "./display";
@@ -177,21 +177,19 @@ function OptionCard({
  * semantics), a list state picks several (checkboxes). Picture options are
  * small tiles, two to a phone row; text options are wider, one to a phone row.
  */
-export function OptionCards({ props }: { props: Props }) {
+export function OptionCards({ props }: { props: PropsOf<"OptionCards"> }) {
   const { setValue } = useUiRuntime();
   const labelId = useId();
   const binding = props.value;
-  const options = cardOptions(props.options) ?? [];
+  const options = cardOptions(props.options);
   const values: Scalar[] = options.map((option) => option.value);
-  const multiple = isBinding(binding) && Array.isArray(binding.value);
-  const picked = isBinding(binding) ? (multiple ? list(binding.value) : [binding.value]) : [];
+  const multiple = Array.isArray(binding.value);
+  const picked = multiple ? list(binding.value) : [binding.value];
   const { group, onKeyDown } = useRovingRadios((index) => {
-    if (isBinding(binding) && !multiple) setValue(binding.name, values[index] ?? null);
+    if (!multiple) setValue(binding.name, values[index] ?? null);
   });
-  if (!isBinding(binding)) return <ErrorLine message="OptionCards needs a $state binding" />;
-  if (!Array.isArray(props.options)) return <ErrorLine message="OptionCards options must be a list" />;
   if (options.length === 0) return null;
-  const label = optionalText(props.label);
+  const label = props.label ?? null;
   const selected = multiple ? -1 : values.findIndex((value) => value === binding.value);
   const pictured = options.some((option) => option.image !== null);
   const grid: CSSProperties = {
@@ -248,19 +246,17 @@ function isCssColor(value: string): boolean {
  * Colour chips with name and value. Without a state it is a palette: a tap
  * copies the value. With a state it is a single-choice colour picker.
  */
-export function Swatches({ props }: { props: Props }) {
+export function Swatches({ props }: { props: PropsOf<"Swatches"> }) {
   const { setValue, run } = useUiRuntime();
   const labelId = useId();
-  const binding = props.value;
-  const picker = isBinding(binding);
+  const binding = props.value ?? null;
+  const picker = binding !== null;
   const parsed = swatchColors(props.colors, isCssColor);
-  const colors = parsed?.colors ?? [];
+  const colors = parsed.colors;
   const { group, onKeyDown } = useRovingRadios((index) => {
     if (picker && colors[index] !== undefined) setValue(binding.name, colors[index].value);
   });
-  if (parsed === null) return <ErrorLine message="Swatches colors must be a list" />;
-  if (props.value !== undefined && !picker) return <ErrorLine message="Swatches value must be a $state binding" />;
-  const label = optionalText(props.label);
+  const label = props.label ?? null;
   const selected = picker ? colors.findIndex((color) => sameColor(binding.value, color.value)) : -1;
   const invalid =
     parsed.invalid.length === 0 ? null : (

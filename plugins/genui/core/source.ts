@@ -1,7 +1,17 @@
 // Where a Table's, Chart's or Metric's numbers come from: the `source:` the
 // model wrote, else the files its data was Loaded from (`loadedFrom`, set by
 // the evaluator). Shared by the caption under the component and its markdown.
+import type { ComponentName } from "./catalog";
 import type { Value } from "./types";
+
+/** The components with a `source:` caption, which also carry `loadedFrom` when their data came from Load. */
+const SOURCED = { Table: true, Chart: true, Metric: true } as const satisfies Partial<Record<ComponentName, true>>;
+
+export type SourcedName = keyof typeof SOURCED;
+
+export function isSourced(type: ComponentName): type is SourcedName {
+  return Object.hasOwn(SOURCED, type);
+}
 
 export type SourceCaption =
   | { readonly kind: "text"; readonly text: string }

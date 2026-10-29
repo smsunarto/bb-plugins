@@ -1,6 +1,8 @@
-// Defensive readers for evaluated props. The core normalizes params by kind,
-// but plain objects in a spec can mimic node/action shapes, so every reader
-// checks the shape it relies on instead of trusting the declared kind.
+// Readers for evaluated props. The evaluator normalizes catalog params by
+// kind (core/evaluate.ts `param`) and `PropsOf` (core/types.ts) carries that
+// to the components typed by it; these readers are for content inside `any`
+// and `list` params, whose shapes the catalog does not describe, and for the
+// components still reading the untyped `Props` bag.
 import type { Action, Binding, Scalar, UiNode, Value } from "../core/types";
 
 export type Props = Readonly<Record<string, Value>>;

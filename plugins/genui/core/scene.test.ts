@@ -16,6 +16,13 @@ function render(source: string, state?: Record<string, Value>): { roots: UiNode[
   return { roots, messages: diagnostics.map((d) => d.message) };
 }
 
+/** `value` as the `type` node it is expected to be, so its props read typed. */
+function nodeOf<T extends UiNode["type"]>(value: UiNode, type: T): Extract<UiNode, { readonly type: T }> {
+  const is = (candidate: UiNode): candidate is Extract<UiNode, { readonly type: T }> => candidate.type === type;
+  if (!is(value)) throw new Error(`expected a ${type} node, got ${value.type}`);
+  return value;
+}
+
 function errors(source: string): string[] {
   return compile(source).diagnostics.filter((d) => d.severity === "error").map((d) => d.message);
 }
@@ -24,19 +31,18 @@ function errors(source: string): string[] {
 function shown(expression: string): string {
   const { roots, messages } = render(`Text(${expression})`);
   expect(messages).toEqual([]);
-  return String(roots[0].props.text);
+  return nodeOf(roots[0], "Text").props.text;
 }
 
 function sceneObjects(source: string): Value {
   const { roots, messages } = render(source);
   expect(messages).toEqual([]);
-  expect(roots[0].type).toBe("Scene");
-  return roots[0].props.objects;
+  return nodeOf(roots[0], "Scene").props.objects;
 }
 
 /** The function a `KeyValue({f: ...})` holds as its `f`. */
 function keyValueFunction(source: string): FunctionValue {
-  const pairs = render(source).roots[0].props.pairs;
+  const pairs = nodeOf(render(source).roots[0], "KeyValue").props.pairs;
   const fn = typeof pairs === "object" && pairs !== null && !Array.isArray(pairs) && "f" in pairs ? pairs.f : null;
   if (!isFunctionValue(fn)) throw new Error(`no function in ${source}`);
   return fn;
@@ -148,7 +154,7 @@ describe("Scene and Shader arguments", () => {
   it("turns objects that fail at t = 0 into an Error node naming the object", () => {
     const { roots, messages } = render('Card("x", [Scene([{shape: "sphere", at: [0, 0, 0]}, {shape: "box", at: [0, 0, 0], colour: "chart2"}])])');
     expect(messages).toEqual(["Scene: object 1 (box): unknown field `colour`. Did you mean `color`?"]);
-    expect((roots[0].props.children as UiNode[])[0].type).toBe("Error");
+    expect(nodeOf(roots[0], "Card").props.children[0].type).toBe("Error");
   });
 
   it("falls back to markdown lines", () => {

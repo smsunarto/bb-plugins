@@ -14,8 +14,18 @@ function render(source: string, state?: UiState): { roots: UiNode[]; messages: s
   return { roots, messages: diagnostics.map((d) => d.message) };
 }
 
-function children(node: UiNode): UiNode[] {
-  return node.props.children as UiNode[];
+/** `value` as the `type` node it is expected to be, so its props read typed. */
+function nodeOf<T extends UiNode["type"]>(value: UiNode, type: T): Extract<UiNode, { readonly type: T }> {
+  const is = (candidate: UiNode): candidate is Extract<UiNode, { readonly type: T }> => candidate.type === type;
+  if (!is(value)) throw new Error(`expected a ${type} node, got ${value.type}`);
+  return value;
+}
+
+/** The children of a container (Card, Row, Stack, …). */
+function children(node: UiNode): readonly UiNode[] {
+  const container = (candidate: UiNode): candidate is Extract<UiNode, { readonly props: { readonly children: unknown } }> => "children" in candidate.props;
+  if (!container(node)) throw new Error(`${node.type} has no children`);
+  return node.props.children;
 }
 
 function errors(source: string): string[] {
@@ -33,8 +43,7 @@ describe("new components", () => {
   ])
 ])`);
     expect(messages).toEqual([]);
-    const [tabs] = children(roots[0]);
-    expect(tabs.type).toBe("Tabs");
+    const tabs = nodeOf(children(roots[0])[0], "Tabs");
     expect(tabs.props.labels).toEqual(["Summary", "Risks"]);
     expect(children(tabs).map((panel) => panel.type)).toEqual(["Text", "Table"]);
   });
@@ -48,8 +57,7 @@ describe("new components", () => {
     ];
     const { roots, messages } = render(`Steps(${JSON.stringify(items)})`);
     expect(messages).toEqual([]);
-    expect(roots[0].type).toBe("Steps");
-    expect(roots[0].props.items).toEqual(items);
+    expect(nodeOf(roots[0], "Steps").props.items).toEqual(items);
   });
 
   it("render progress with optional max, label and tone", () => {
@@ -85,10 +93,10 @@ Card("Deploy", [
       label: "Release name",
       placeholder: "v1.2",
     });
-    expect(select.props.value).toEqual({ kind: "binding", name: "env", value: "production" });
-    expect(select.props.options).toEqual(["staging", "production"]);
-    expect(checklist.props.value).toEqual({ kind: "binding", name: "checks", value: ["tests", "lint"] });
-    expect(button.props.action).toEqual([
+    expect(nodeOf(select, "Select").props.value).toEqual({ kind: "binding", name: "env", value: "production" });
+    expect(nodeOf(select, "Select").props.options).toEqual(["staging", "production"]);
+    expect(nodeOf(checklist, "Checklist").props.value).toEqual({ kind: "binding", name: "checks", value: ["tests", "lint"] });
+    expect(nodeOf(button, "Button").props.action).toEqual([
       { kind: "action", type: "send", text: "Deploy v2 to production after tests, lint" },
     ] satisfies Action[]);
   });
@@ -106,10 +114,10 @@ describe("binding checks", () => {
     expect(checklist.diagnostics.map((d) => `${d.severity}: ${d.message}`)).toEqual([
       'warning: `Checklist` value needs a list state, but `$picked` starts as text; declare it as `$picked = []`',
     ]);
-    expect(render(`$picked = "a"\nChecklist($picked, ["a", "b"])`).roots[0].props.value).toMatchObject({ value: ["a"] });
-    expect(render(`$picked = ""\nChecklist($picked, ["a", "b"])`).roots[0].props.value).toMatchObject({ value: [] });
-    expect(render(`$q = 0\nInput($q)`).roots[0].props.value).toMatchObject({ value: "0" });
-    expect(render(`$n = "12"\nSlider($n, 0, 20)`).roots[0].props.value).toMatchObject({ value: 12 });
+    expect(nodeOf(render(`$picked = "a"\nChecklist($picked, ["a", "b"])`).roots[0], "Checklist").props.value).toMatchObject({ value: ["a"] });
+    expect(nodeOf(render(`$picked = ""\nChecklist($picked, ["a", "b"])`).roots[0], "Checklist").props.value).toMatchObject({ value: [] });
+    expect(nodeOf(render(`$q = 0\nInput($q)`).roots[0], "Input").props.value).toMatchObject({ value: "0" });
+    expect(nodeOf(render(`$n = "12"\nSlider($n, 0, 20)`).roots[0], "Slider").props.value).toMatchObject({ value: 12 });
   });
 
   it("reject state that has no lossless reading", () => {
@@ -147,7 +155,7 @@ options = ["tests", "lint", "types"]
 Row(options.map(o => Button(o, Set($picked, $picked.includes(o) ? $picked.filter(p => p != o) : options.filter(x => x == o || $picked.includes(x))))))`;
 
   function setActions(state?: UiState): Action[] {
-    return children(render(source, state).roots[0]).map((button) => (button.props.action as Action[])[0]);
+    return children(render(source, state).roots[0]).flatMap((button) => nodeOf(button, "Button").props.action ?? []);
   }
 
   it("removes a picked option and adds others in option order", () => {

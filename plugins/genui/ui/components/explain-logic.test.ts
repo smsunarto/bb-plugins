@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ComponentName } from "../../core/catalog";
-import type { UiNode, Value } from "../../core/types";
+import type { ComponentNode, PropsOf } from "../../core/types";
 import {
   addMonths,
   detailFor,
@@ -18,7 +18,7 @@ import {
   weekday,
 } from "./explain-logic";
 
-const node = (type: ComponentName, props: Record<string, Value> = {}): UiNode => ({ kind: "node", type, key: type, props });
+const node = <N extends ComponentName>(type: N, props: PropsOf<N>): ComponentNode<N> => ({ kind: "node", type, key: type, props });
 
 describe("mermaidNodeId", () => {
   const svg = "bb-mermaid-_r_2f_-1";
@@ -40,8 +40,8 @@ describe("mermaidNodeId", () => {
 
 describe("parseDetails and detailFor", () => {
   it("keeps text and components per node, dropping empty entries", () => {
-    const callout = node("Callout");
-    const details = parseDetails({ a: "**Alpha**", b: [node("Text"), callout], c: "  ", d: null });
+    const callout = node("Callout", { text: "" });
+    const details = parseDetails({ a: "**Alpha**", b: [node("Text", { text: "" }), callout], c: "  ", d: null });
     expect(details?.map((detail) => detail.key)).toEqual(["a", "b"]);
     expect(details?.[0]!.parts).toEqual(["**Alpha**"]);
     expect(details?.[1]!.parts).toHaveLength(2);
@@ -83,7 +83,7 @@ describe("parseListRows", () => {
     const rows = parseListRows([
       "Plain",
       { title: "PR 12", detail: "2 checks", icon: "git-pull-request", value: 3, tone: "good", action: send },
-      { title: "Badge", value: node("Badge"), tone: "nope", action: [send, { kind: "action", type: "bogus" }] },
+      { title: "Badge", value: node("Badge", { text: "" }), tone: "nope", action: [send, { kind: "action", type: "bogus" }] },
       { detail: "no title" },
       { title: "Empty value", value: " " },
     ]);

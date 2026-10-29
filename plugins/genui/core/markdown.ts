@@ -1,6 +1,6 @@
 // A static markdown rendering of an evaluated UI for clients that cannot run
 // it (mobile app, notifications, CLI): readable on a phone, no HTML.
-import { snippetShown, type LoadedData } from "./data";
+import type { LoadedData } from "./data";
 import { acceptanceVerdict, cellsLine, checkLabel, isCellGap, isGap, needsPlaces, ownerContradiction, readAcceptance, type Check, type Evidence as AcceptanceEvidence } from "./acceptance";
 import { conditionDifferences, conditionsWarning, readCompare, type CompareImage } from "./compare";
 import { analyse, countsText, describeRegion, formatClock, formatWer, readTracks } from "./transcript";
@@ -133,7 +133,7 @@ import {
 } from "./provenance";
 import { readScene, type Shape } from "./scene";
 import { sameCaption, sourceCaption, sourceFileLabel, type SourceCaption } from "./source";
-import type { UiNode, Value } from "./types";
+import type { ComponentNode, UiNode, Value } from "./types";
 
 const TONE_DOTS: Record<string, string> = { good: "🟢", warn: "🟠", bad: "🔴", info: "🔵", neutral: "⚪" };
 const STEP_MARKERS: Record<string, string> = { done: "✅ ", current: "▶️ ", blocked: "⛔ " };
@@ -253,7 +253,7 @@ function inline(value: Value | undefined): string {
 }
 
 /** A Button as an option: its label, `⚠ `-marked when destructive; icons have no text form. */
-function buttonLabel(node: UiNode): string {
+function buttonLabel(node: ComponentNode<"Button">): string {
   return `${node.props.variant === "destructive" ? "⚠ " : ""}${inline(node.props.label)}`;
 }
 
@@ -280,9 +280,10 @@ function fence(code: string, language: string): string {
 
 /** An input's label (its bound state's name when unlabeled) and current value. */
 function field(node: UiNode): { readonly label: string; readonly value: Value } {
-  const binding = node.props.value;
+  const props: Readonly<Record<string, Value>> = node.props;
+  const binding = props.value;
   const name = hasKind(binding, "binding") ? binding.name : "";
-  const label = inline(node.props.label) || name.charAt(0).toUpperCase() + name.slice(1);
+  const label = inline(props.label) || name.charAt(0).toUpperCase() + name.slice(1);
   return { label, value: hasKind(binding, "binding") ? binding.value : null };
 }
 
@@ -455,7 +456,7 @@ function block(node: UiNode): string {
 }
 
 function blockBody(node: UiNode): string {
-  const props = node.props;
+  const props: Readonly<Record<string, Value>> = node.props;
   switch (node.type) {
     case "Card": {
       const title = inline(props.title);
@@ -638,7 +639,7 @@ function blockBody(node: UiNode): string {
       return fence(inline(props.code), inline(props.language));
     case "Snippet": {
       const where = location(props.path, props.from, props.to);
-      const shown = snippetShown(props);
+      const shown = node.props.shown;
       switch (shown.status) {
         case "ready":
           return `${where}\n${fence(shown.code, inline(props.language))}`;
@@ -1243,7 +1244,7 @@ let projectAnswers: ReadonlyMap<string, ProjectResult> = new Map();
 
 /** The BB read a Project node needs, or why its props can't be read; null for other nodes. */
 function projectRequest(node: UiNode): Parsed<ProjectRequest> | null {
-  const props = node.props;
+  const props: Readonly<Record<string, Value>> = node.props;
   switch (node.type) {
     case "Changes": {
       const target = parseChangesTarget(props.target);
@@ -1319,6 +1320,7 @@ function moreLine(shown: number, total: number, noun: string): string {
 }
 
 function projectMarkdown(node: UiNode): string {
+  const props: Readonly<Record<string, Value>> = node.props;
   const text = PROJECT_TEXT[node.type];
   if (text === undefined) return "";
   const request = projectRequest(node);
@@ -1329,7 +1331,7 @@ function projectMarkdown(node: UiNode): string {
   if (!answer.ok) return `**${text.title}** · _${answer.message}_`;
   if ("scope" in answer) return changesMarkdown(answer);
   if ("commits" in answer) {
-    const limit = parseCommitLimit(node.props.limit);
+    const limit = parseCommitLimit(props.limit);
     return commitsMarkdown(answer, limit.ok ? limit.value : null);
   }
   if ("pullRequest" in answer) return pullRequestMarkdown(answer);

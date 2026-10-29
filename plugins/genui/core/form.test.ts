@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { compile, evaluate, formatDiagnostics, formMessage, initialState } from "./index";
 import { formFields } from "./form";
-import type { UiNode, UiState } from "./types";
+import type { UiState } from "./types";
 
 /** The message of the spec's first root, a Form. */
 function message(source: string, state?: UiState): string {
@@ -9,8 +9,8 @@ function message(source: string, state?: UiState): string {
   if (result.program === null) throw new Error(formatDiagnostics(result.diagnostics));
   const { roots, diagnostics } = evaluate(result.program, state ?? initialState(result.program));
   expect(diagnostics).toEqual([]);
-  const form: UiNode = roots[0];
-  expect(form.type).toBe("Form");
+  const [form] = roots;
+  if (form.type !== "Form") throw new Error(`expected a Form, got ${form.type}`);
   return formMessage(form);
 }
 
@@ -111,8 +111,9 @@ Form([Checklist($tags, ["a", "b"], label: "Tags")])`),
     const result = compile(`$name = ""
 $tags = []
 Form([Input($name, label: "Name"), Checklist($tags, ["a"])])`);
-    const form: UiNode = evaluate(result.program!, initialState(result.program!)).roots[0];
-    expect(formFields(form)).toEqual([
+    const [form] = evaluate(result.program!, initialState(result.program!)).roots;
+    if (form.type !== "Form") throw new Error(`expected a Form, got ${form.type}`);
+    expect(formFields(form.props.children)).toEqual([
       { name: "name", typed: true, line: "Name: —" },
       { name: "tags", typed: false, line: "tags: none (options: a)" },
     ]);

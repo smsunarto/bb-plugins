@@ -3,6 +3,7 @@
 // their numbers: color is never the only way to read them.
 import { useState } from "react";
 import { cn } from "@/lib/utils";
+import type { PropsOf } from "../../core/types";
 import { finiteNumber, formatNumber, isObject, list, optionalText, text, tone, type Props } from "../values";
 import { formatValue, mouseLeave, sliceColor, TONE_STROKE } from "./chartKit";
 import { dialPoint, intensity, percentages } from "./chartMath";
@@ -19,20 +20,19 @@ const DIAL_HEIGHT = DIAL_CENTER_Y + DIAL_STROKE / 2;
 const SLIDE = "duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] motion-reduce:transition-none";
 
 /** A semicircular dial: the arc fills from `min` (default 0) to `max` (default 100) up to `value`. */
-export function Gauge({ props }: { props: Props }) {
-  const value = finiteNumber(props.value);
-  const min = finiteNumber(props.min) ?? 0;
-  const max = finiteNumber(props.max) ?? 100;
-  const ratio = value === null ? 0 : intensity(value, min, max);
+export function Gauge({ props }: { props: PropsOf<"Gauge"> }) {
+  const { value } = props;
+  const min = props.min ?? 0;
+  const max = props.max ?? 100;
+  const ratio = intensity(value, min, max);
   // The arc draws from nothing to the value once; later values slide along it.
   const fill = useEntrance<SVGPathElement>({
     keyframes: [{ strokeDasharray: "0 1" }, { strokeDasharray: `${ratio} 1` }],
     duration: CHART_DRAW_MS,
   });
-  if (value === null) return <ErrorLine message="Gauge needs a number value" />;
   if (!(max > min)) return <ErrorLine message={`Gauge needs max above min (got ${formatNumber(min)} to ${formatNumber(max)})`} />;
-  const label = optionalText(props.label);
-  const color = TONE_STROKE[tone(props.tone)];
+  const label = props.label ?? null;
+  const color = TONE_STROKE[props.tone ?? "neutral"];
   const [x0, y0] = dialPoint(DIAL_WIDTH / 2, DIAL_CENTER_Y, DIAL_RADIUS, 0);
   const [x1, y1] = dialPoint(DIAL_WIDTH / 2, DIAL_CENTER_Y, DIAL_RADIUS, 1);
   const arc = `M${x0},${y0} A${DIAL_RADIUS},${DIAL_RADIUS} 0 0 1 ${x1},${y1}`;

@@ -26,7 +26,7 @@ function roots(source: string): UiNode[] {
   return result.roots;
 }
 
-const loadedFrom = (source: string) => roots(source).map((root) => root.props.loadedFrom ?? null);
+const loadedFrom = (source: string) => roots(source).map((root) => ("loadedFrom" in root.props ? root.props.loadedFrom : null));
 const markdown = (source: string) => toMarkdown(roots(source));
 
 describe("where a component's numbers come from", () => {
@@ -64,6 +64,7 @@ describe("where a component's numbers come from", () => {
 
   it("lets an explicit source win over the files", () => {
     const [table] = roots('Table(["Region"], Load("sales.csv").map(r => [r.region]), source: "CRM export, 2026-10-01")');
+    if (table.type !== "Table") throw new Error(`expected a Table, got ${table.type}`);
     expect(table.props.source).toBe("CRM export, 2026-10-01");
     expect(table.props.loadedFrom).toBeUndefined();
   });

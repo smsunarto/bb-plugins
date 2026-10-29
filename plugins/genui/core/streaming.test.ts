@@ -17,6 +17,13 @@ function render(source: string): UiNode[] | null {
   return program === null ? null : evaluate(program, initialState(program)).roots;
 }
 
+/** `value` as the `type` node it is expected to be, so its props read typed. */
+function nodeOf<T extends UiNode["type"]>(value: UiNode, type: T): Extract<UiNode, { readonly type: T }> {
+  const is = (candidate: UiNode): candidate is Extract<UiNode, { readonly type: T }> => candidate.type === type;
+  if (!is(value)) throw new Error(`expected a ${type} node, got ${value.type}`);
+  return value;
+}
+
 /** Every node in a rendered tree, including nodes nested in props. */
 function countNodes(value: Value): number {
   if (Array.isArray(value)) return value.reduce((total: number, item: Value) => total + countNodes(item), 0);
@@ -47,9 +54,8 @@ describe("compileStreaming", () => {
   });
 
   it("drops a half-written element after the last comma", () => {
-    const [row] = render(`Row([Metric("A", "1"), Met`) ?? [];
-    expect(row.type).toBe("Row");
-    expect((row.props.children as UiNode[]).map((node) => [node.type, node.props.label])).toEqual([["Metric", "A"]]);
+    const row = nodeOf((render(`Row([Metric("A", "1"), Met`) ?? [])[0], "Row");
+    expect(row.props.children.map((node) => [node.type, nodeOf(node, "Metric").props.label])).toEqual([["Metric", "A"]]);
   });
 
   it("closes an opening bracket as an empty list", () => {
@@ -72,12 +78,12 @@ describe("compileStreaming", () => {
     ] as const) {
       const [card] = render(source) ?? [];
       expect(card.type, source).toBe("Card");
-      expect((card.props.children as UiNode[]).map((node) => node.props), source).toEqual(shown);
+      expect(nodeOf(card, "Card").props.children.map((node) => node.props), source).toEqual(shown);
     }
   });
 
   it("grows prose as it streams, closing the string and any open ** or code span", () => {
-    const text = (source: string) => ((render(source)?.[0].props.children as UiNode[])[0]?.props as Record<string, Value>);
+    const text = (source: string): Readonly<Record<string, Value>> => nodeOf((render(source) ?? [])[0], "Card").props.children[0].props;
     expect(text(`Card("T", [Text("hello wor`).text).toBe("hello wor");
     expect(text(`Card("T", [Text('it\\'s a [b`).text).toBe("it's a [b");
     expect(text(`Card("T", [Text("ends in \\`).text).toBe("ends in ");
@@ -90,10 +96,9 @@ describe("compileStreaming", () => {
 
   it("does not count brackets inside strings", () => {
     const [a, c, row] = render(`Text("a [b")\nText("c (d {e")\nRow([Text("x"), Te`) ?? [];
-    expect([a.props.text, c.props.text]).toEqual(["a [b", "c (d {e"]);
-    expect(row.type).toBe("Row");
-    expect((row.props.children as UiNode[]).map((node) => node.props.text)).toEqual(["x"]);
-    expect(render("Text(`a ${\"]\"} [`)\nTe")?.map((node) => node.props.text)).toEqual(["a ] ["]);
+    expect([nodeOf(a, "Text").props.text, nodeOf(c, "Text").props.text]).toEqual(["a [b", "c (d {e"]);
+    expect(nodeOf(row, "Row").props.children.map((node) => nodeOf(node, "Text").props.text)).toEqual(["x"]);
+    expect(render("Text(`a ${\"]\"} [`)\nTe")?.map((node) => nodeOf(node, "Text").props.text)).toEqual(["a ] ["]);
   });
 
   it("returns no program while nothing renders yet", () => {
@@ -109,7 +114,7 @@ describe("compileStreaming", () => {
     expect(result.complete).toBe(false);
     expect(result.diagnostics.some((d) => d.severity === "error" && d.message.includes("Nope"))).toBe(true);
     const roots = evaluate(result.program!, {}).roots;
-    expect((roots[0].props.children as UiNode[]).map((node) => node.props.text)).toEqual(["a"]);
+    expect(nodeOf(roots[0], "Card").props.children.map((node) => nodeOf(node, "Text").props.text)).toEqual(["a"]);
   });
 
   it("compiles 50 truncations of a 3 KB spec quickly", () => {

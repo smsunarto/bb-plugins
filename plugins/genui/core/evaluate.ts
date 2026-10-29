@@ -4,7 +4,8 @@ import { DiagnosticList, type Pos } from "./diagnostics";
 import { dataKey, languageOf, loadsReached, snippetLines, snippetRangeError, type LoadedData, type SnippetShown } from "./data";
 import { sceneErrors } from "./scene";
 import { shaderErrors } from "./shader-args";
-import type { Action, Binding, Diagnostic, FunctionValue, UiNode, UiState, Value } from "./types";
+import { isSourced } from "./source";
+import type { Action, Binding, ComponentNode, Diagnostic, FunctionValue, PropsOf, UiNode, UiState, Value } from "./types";
 import {
   ACTION_SPECS,
   ARROW_ONLY,
@@ -23,8 +24,6 @@ const MAX_STRING_LENGTH = 100_000;
 const MAX_EVAL_DEPTH = 1_000;
 /** Data for callers that load no files: every `Load` reports it is still loading, every `Snippet` shows its loading state. */
 const NO_DATA: ReadonlyMap<string, LoadedData> = new Map();
-/** Components that credit the files their data came from (`loadedFrom`) when no `source:` says where. */
-const SOURCED: Partial<Record<string, true>> = { Table: true, Chart: true, Metric: true };
 /**
  * Per program, the files each sourced call's arguments Load, found once by
  * following its names to their definitions: evaluation runs on every input
@@ -472,7 +471,7 @@ class Interpreter {
         const value = this.param(param, arg, scope, `${call.name} ${param.name}`, key);
         if (value !== undefined) props[param.name] = value;
       });
-      if (SOURCED[type] && props.source === undefined) {
+      if (isSourced(type) && props.source === undefined) {
         const from = this.loadedFrom(call, spec);
         if (from.length > 0) props.loadedFrom = from;
       }
@@ -481,7 +480,10 @@ class Interpreter {
         const more = problems.length > 3 ? `; and ${problems.length - 3} more` : "";
         throw new RuntimeError(call.pos, `${type}: ${problems.slice(0, 3).join("; ")}${more}`);
       }
-      return this.made({ kind: "node", type, key, props: type === "Snippet" ? this.snippet(props) : props }, call.pos);
+      if (type === "Snippet") Object.assign(props, this.snippet(props));
+      // `param` normalized every argument to `spec`, the catalog entry for `type`, and the lines above added what
+      // AddedProps lists, so `props` is PropsOf<type>: the one place the pairing of `type` and `props` is asserted.
+      return this.made({ kind: "node", type, key, props } as ComponentNode, call.pos);
     } catch (error) {
       if (!(error instanceof RuntimeError)) throw error;
       const failure = this.recover(error, depth, suffix);
@@ -508,11 +510,12 @@ class Interpreter {
   }
 
   /**
-   * Snippet props: the requested range plus what is `shown` for it (data.ts
-   * SnippetShown): its lines from the raw file, a loading state while the
-   * file is read, or a file or range problem, never an Error node.
+   * What a Snippet carries beyond its params (AddedProps): `shown` (data.ts
+   * SnippetShown), its lines from the raw file, a loading state while the
+   * file is read, or a file or range problem, never an Error node; and the
+   * `language` of its path.
    */
-  private snippet(props: Readonly<Record<string, Value>>): Record<string, Value> {
+  private snippet(props: Readonly<Record<string, Value>>): Pick<PropsOf<"Snippet">, "shown" | "language"> {
     // `path` is a required string param and the others optional numbers, so these are the evaluated values.
     const path = typeof props.path === "string" ? props.path : "";
     const from = typeof props.from === "number" ? props.from : null;
@@ -525,7 +528,7 @@ class Interpreter {
       : !loaded.ok ? { status: "error", error: loaded.error }
       : typeof loaded.value !== "string" ? { status: "error", error: "not a text file" }
       : snippetLines(loaded.value, from, to);
-    return { path, from, to, shown, language: languageOf(path) };
+    return { shown, language: languageOf(path) };
   }
 
   /** Evaluates and normalizes one argument; `undefined` means an optional param passed as null. */

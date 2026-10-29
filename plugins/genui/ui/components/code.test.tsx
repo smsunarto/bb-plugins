@@ -3,7 +3,7 @@ import { act, useState } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import type * as PluginSdkApp from "@get-bb/plugin-sdk/app";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { Value } from "../../core/types";
+import type { SnippetShown } from "../../core/data";
 import { UiRuntimeContext, type UiRuntime } from "../runtime";
 import { Snippet, SourceView } from "./code";
 
@@ -106,7 +106,7 @@ describe("SourceView", () => {
 
 describe("Snippet", () => {
   /** A Snippet of src/app.ts lines 3–5 as the evaluator hands it over, with `shown` in one of its states. */
-  function snippet(shown: Value) {
+  function snippet(shown: SnippetShown) {
     act(() =>
       root.render(
         <UiRuntimeContext value={runtime}>

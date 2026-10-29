@@ -3,12 +3,12 @@
 // container query, so a narrow pane gets cards too). Totals are the spec's:
 // it reads the same state. The rules live in choose-logic.ts.
 import { useEffect, useId, useRef, useState, type CSSProperties } from "react";
-import type { Value } from "../../core/types";
+import type { PropsOf, Value } from "../../core/types";
 import { Button as BaseButton } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
 import { cn } from "@/lib/utils";
 import { useUiRuntime } from "../runtime";
-import { isBinding, optionalText, text, type Props } from "../values";
+import { text } from "../values";
 import {
   blankRow,
   parseNumberInput,
@@ -40,7 +40,7 @@ const ALIGN: Record<ColumnType, string> = {
   boolean: "text-center",
 };
 
-export function EditableTable({ props }: { props: Props }) {
+export function EditableTable({ props }: { props: PropsOf<"EditableTable"> }) {
   const { setValue } = useUiRuntime();
   const id = useId();
   const root = useRef<HTMLDivElement>(null);
@@ -54,13 +54,11 @@ export function EditableTable({ props }: { props: Props }) {
     root.current?.querySelector<HTMLElement>(selector)?.focus();
   });
   const binding = props.value;
-  if (!isBinding(binding)) return <ErrorLine message="EditableTable needs a $state binding" />;
   const rows = tableRows(binding.value);
   if (rows === null) return <ErrorLine message="EditableTable rows must be objects, one per row" />;
-  if (!Array.isArray(props.columns)) return <ErrorLine message="EditableTable columns must be a list" />;
   const columns = tableColumns(props.columns, rows);
   if (columns.length === 0) return null;
-  const label = optionalText(props.label);
+  const label = props.label ?? null;
   const name = label ?? binding.name;
   const grid = { "--cols": [...columns.map((column) => TRACK[column.type]), "2rem"].join(" ") } as CSSProperties;
 

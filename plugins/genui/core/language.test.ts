@@ -23,8 +23,18 @@ function render(source: string, state?: UiState): { roots: UiNode[]; messages: s
   return { roots, messages: diagnostics.map((d) => d.message) };
 }
 
-function children(node: UiNode): UiNode[] {
-  return node.props.children as UiNode[];
+/** `value` as the `type` node it is expected to be, so its props read typed. */
+function nodeOf<T extends UiNode["type"]>(value: UiNode, type: T): Extract<UiNode, { readonly type: T }> {
+  const is = (candidate: UiNode): candidate is Extract<UiNode, { readonly type: T }> => candidate.type === type;
+  if (!is(value)) throw new Error(`expected a ${type} node, got ${value.type}`);
+  return value;
+}
+
+/** The children of a container (Card, Row, Stack, …). */
+function children(node: UiNode): readonly UiNode[] {
+  const container = (candidate: UiNode): candidate is Extract<UiNode, { readonly props: { readonly children: unknown } }> => "children" in candidate.props;
+  if (!container(node)) throw new Error(`${node.type} has no children`);
+  return node.props.children;
 }
 
 function errors(source: string): string[] {
@@ -42,13 +52,12 @@ describe("instructions example", () => {
     const { roots, diagnostics } = evaluate(compiled, state);
     expect(diagnostics).toEqual([]);
     expect(roots).toHaveLength(1);
-    const [card] = roots;
-    expect(card.type).toBe("Card");
+    const card = nodeOf(roots[0], "Card");
     expect(card.props.title).toBe("Monthly estimate");
 
     const [inputs, metrics, button] = children(card);
-    const [choice, slider] = children(inputs);
-    expect(choice.type).toBe("Choice");
+    const [first, slider] = children(inputs);
+    const choice = nodeOf(first, "Choice");
     expect(choice.props.value).toEqual({ kind: "binding", name: "plan", value: "Pro" } satisfies Binding);
     expect(choice.props.options).toEqual(["Basic", "Pro"]);
     expect(slider.props).toEqual({
@@ -62,9 +71,9 @@ describe("instructions example", () => {
     expect(perSeat.props).toEqual({ label: "Per seat", value: "$29" });
     expect(total.props).toEqual({ label: "Total", value: "$290", tone: "good" });
 
-    expect(button.type).toBe("Button");
-    expect(button.props.label).toBe("Go with Pro");
-    expect(button.props.action).toEqual([
+    const send = nodeOf(button, "Button");
+    expect(send.props.label).toBe("Go with Pro");
+    expect(send.props.action).toEqual([
       { kind: "action", type: "send", text: "Let's go with Pro for 10 seats" },
     ] satisfies Action[]);
   });
@@ -74,8 +83,8 @@ describe("instructions example", () => {
     const before = evaluate(compiled, initialState(compiled)).roots[0];
     const after = evaluate(compiled, { seats: 1200, plan: "Basic" }).roots[0];
     const [, metrics, button] = children(after);
-    expect(children(metrics).map((m) => m.props.value)).toEqual(["$12", "$14,400"]);
-    expect(button.props.action).toEqual([
+    expect(children(metrics).map((m) => nodeOf(m, "Metric").props.value)).toEqual(["$12", "$14,400"]);
+    expect(nodeOf(button, "Button").props.action).toEqual([
       { kind: "action", type: "send", text: "Let's go with Basic for 1200 seats" },
     ]);
     expect(after.key).toBe(before.key);
@@ -88,7 +97,7 @@ describe("expressions", () => {
     const { roots } = render(`items = [{name: "a", n: 3}, {name: "b", n: 0}, {name: "c", n: 5}]
 Stack(items.filter(i => i.n > 0).map((i, k) => Badge(\`\${k + 1}. \${i.name}\`)))`);
     const badges = children(roots[0]);
-    expect(badges.map((b) => b.props.text)).toEqual(["1. a", "2. c"]);
+    expect(badges.map((b) => nodeOf(b, "Badge").props.text)).toEqual(["1. a", "2. c"]);
     expect(badges.map((b) => b.key)).toEqual(["2:48#0", "2:48#1"]);
   });
 
@@ -113,7 +122,7 @@ Stack([
   3.14159.toFixed(2)
 ])`);
     expect(messages).toEqual([]);
-    expect(children(roots[0]).map((t) => t.props.text)).toEqual([
+    expect(children(roots[0]).map((t) => nodeOf(t, "Text").props.text)).toEqual([
       "1,234.5 / 1,235 / 2.35 / -1,234,567.89",
       "21",
       "16",
@@ -139,7 +148,7 @@ Stack([
   it("builds Set actions evaluated against current state", () => {
     const { roots } = render(`$n = 2
 Button("Inc", [Set($n, $n + 1), Copy("n=" + $n)])`);
-    expect(roots[0].props.action).toEqual([
+    expect(nodeOf(roots[0], "Button").props.action).toEqual([
       { kind: "action", type: "set", name: "n", value: 3 },
       { kind: "action", type: "copy", text: "n=2" },
     ]);
@@ -151,7 +160,7 @@ Button("Inc", [Set($n, $n + 1), Copy("n=" + $n)])`);
   : "no"
 Text(label +
   "!")`);
-    expect(roots[0].props.text).toBe("yes!");
+    expect(nodeOf(roots[0], "Text").props.text).toBe("yes!");
   });
 
   it("raises to powers with maths precedence", () => {
@@ -163,7 +172,7 @@ Stack([
   2 ** -1
 ])`);
     expect(messages).toEqual([]);
-    expect(children(roots[0]).map((t) => t.props.text)).toEqual(["9096.98", "512", "-4", "0.5"]);
+    expect(children(roots[0]).map((t) => nodeOf(t, "Text").props.text)).toEqual(["9096.98", "512", "-4", "0.5"]);
   });
 
   it("accepts Math.* and Object.* spellings and iterates objects", () => {
@@ -175,7 +184,7 @@ Stack([
   values(deps).length
 ])`);
     expect(messages).toEqual([]);
-    expect(children(roots[0]).map((t) => t.props.text)).toEqual(["15", "react,zod", "react@19.0.0 zod@4.1.0", "2"]);
+    expect(children(roots[0]).map((t) => nodeOf(t, "Text").props.text)).toEqual(["15", "react,zod", "react@19.0.0 zod@4.1.0", "2"]);
   });
 });
 
@@ -189,7 +198,7 @@ Row([Metric("Bad", items), Metric("Good", "ok"), Text(items.length * {a: 1})])`)
     expect(good.props).toEqual({ label: "Good", value: "ok" });
     expect(text.type).toBe("Error");
     expect(messages).toHaveLength(2);
-    expect(String(bad.props.message)).toContain("Metric value");
+    expect(nodeOf(bad, "Error").props.message).toContain("Metric value");
   });
 
   it("rejects object literals posing as interpreter values", () => {
@@ -279,7 +288,7 @@ Stack(people.map(p => Metric(p, paid(p))))`;
 
   it("calls a declared function with its arguments, recomputing from state", () => {
     const compiled = program(SPLIT);
-    const metrics = (state: UiState) => children(evaluate(compiled, state).roots[0]).map((node) => node.props.value);
+    const metrics = (state: UiState) => children(evaluate(compiled, state).roots[0]).map((metric) => nodeOf(metric, "Metric").props.value);
     expect(metrics(initialState(compiled))).toEqual(["96", "54"]);
     expect(metrics({ rows: [{ who: "Ben", amount: 5 }] })).toEqual(["0", "5"]);
   });
@@ -287,7 +296,7 @@ Stack(people.map(p => Metric(p, paid(p))))`;
   it("passes null for missing arguments and sees only its parameters and top-level names", () => {
     const { roots, messages } = render(`rate = 2\nf = (a, b) => (b ?? 10) * a * rate\nText(fmt(f(3)))`);
     expect(messages).toEqual([]);
-    expect(roots[0].props.text).toBe("60");
+    expect(nodeOf(roots[0], "Text").props.text).toBe("60");
   });
 
   it("keys the components it makes by call site, so two calls keep separate state", () => {
@@ -300,7 +309,7 @@ Stack(people.map(p => Metric(p, paid(p))))`;
 describe("object keys", () => {
   it("reads bare words before the colon as one key", () => {
     const { roots } = render(`KeyValue({Good for: "views", Day 1: "Lisbon", Area: "Alfama"})`);
-    expect(Object.keys(roots[0].props.pairs as object)).toEqual(["Good for", "Day 1", "Area"]);
+    expect(Object.keys(nodeOf(roots[0], "KeyValue").props.pairs as object)).toEqual(["Good for", "Day 1", "Area"]);
   });
 });
 

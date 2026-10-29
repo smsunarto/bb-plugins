@@ -1,7 +1,9 @@
 // Shared contract between the language core (core/), the React renderer (ui/),
 // and the server tool (server.ts). Pure data: no React, no DOM, no Node APIs.
 
-import type { ComponentName } from "./catalog";
+import type { COMPONENTS, ComponentName, ParamSpec } from "./catalog";
+import type { SnippetShown } from "./data";
+import type { SourcedName } from "./source";
 
 /** A compile-time or evaluation-time problem, positioned in the UI source. */
 export interface Diagnostic {
@@ -46,23 +48,23 @@ export function isFunctionValue(value: unknown): value is FunctionValue {
 }
 
 /**
- * One evaluated catalog component. `props` are keyed by the catalog param
- * name; omitted optional params are absent (never `undefined` values).
- * `nodes` params arrive normalized as `UiNode[]`, `actions` params as
- * `Action[]`, and `binding` params as a `Binding`. A Table, Chart or Metric
- * without `source` whose data came from Load also has `loadedFrom: string[]`,
- * the paths in the order its arguments reach them.
+ * One evaluated catalog component: `type` names its catalog entry and `props`
+ * is what the evaluator built from that entry (PropsOf<type>), so a node whose
+ * props do not fit its type cannot be written. One union member per
+ * component; `N` selects members.
  */
-export interface ComponentNode {
-  readonly kind: "node";
-  readonly type: ComponentName;
-  /**
-   * Stable across re-evaluations of the same program so React keeps
-   * component identity: derived from the source position and list index.
-   */
-  readonly key: string;
-  readonly props: Readonly<Record<string, Value>>;
-}
+export type ComponentNode<N extends ComponentName = ComponentName> = {
+  [K in N]: {
+    readonly kind: "node";
+    readonly type: K;
+    /**
+     * Stable across re-evaluations of the same program so React keeps
+     * component identity: derived from the source position and list index.
+     */
+    readonly key: string;
+    readonly props: PropsOf<K>;
+  };
+}[N];
 
 /** A component that failed to evaluate: an error line renders in its place. */
 export interface ErrorNode {
@@ -102,6 +104,44 @@ export type Action =
     }
   | { readonly kind: "action"; readonly type: "openUrl"; readonly url: string }
   | { readonly kind: "action"; readonly type: "copy"; readonly text: string };
+
+/** The value the evaluator (core/evaluate.ts `param`) makes of one catalog param, by its kind. */
+type ParamValue<P extends ParamSpec> =
+  P["kind"] extends "binding" ? Binding
+  : P["kind"] extends "number" ? number
+  : P["kind"] extends "boolean" ? boolean
+  : P["kind"] extends "string" | "text" ? string
+  : P["kind"] extends "enum" ? (P extends { readonly values: readonly (infer V)[] } ? V : string)
+  : P["kind"] extends "list" ? readonly Value[]
+  : P["kind"] extends "nodes" ? readonly UiNode[]
+  : P["kind"] extends "actions" ? readonly Action[]
+  : Value;
+
+type ParamSpecOf<N extends ComponentName> = (typeof COMPONENTS)[N]["params"][number];
+
+/**
+ * What the evaluator adds beyond a component's catalog params (core/evaluate.ts
+ * `component`): a Snippet's `shown` lines and the `language` of its path; for
+ * a Table, Chart or Metric without `source` whose data came from Load,
+ * `loadedFrom`, the paths in the order its arguments reach them.
+ */
+type AddedProps<N extends ComponentName> = (N extends "Snippet" ? { readonly shown: SnippetShown; readonly language: string | null } : unknown) &
+  (N extends SourcedName ? { readonly loadedFrom?: readonly string[] } : unknown);
+
+/**
+ * A component's props as the evaluator builds them from its catalog entry:
+ * each param under its name, `?:` when optional, `| null` when nullable;
+ * omitted optional params are absent (never `undefined` values). `nodes`
+ * params arrive normalized as `UiNode[]`, `actions` params as `Action[]`,
+ * and `binding` params as a `Binding`. What the catalog does not describe
+ * (content inside `any` and `list` params) stays a Value for the component
+ * to read; AddedProps lists what the evaluator adds.
+ */
+export type PropsOf<N extends ComponentName> = {
+  readonly [P in ParamSpecOf<N> as P extends { readonly optional: true } ? never : P["name"]]: ParamValue<P> | (P extends { readonly nullable: true } ? null : never);
+} & {
+  readonly [P in ParamSpecOf<N> as P extends { readonly optional: true } ? P["name"] : never]?: ParamValue<P>;
+} & AddedProps<N>;
 
 /** Mutable state of one rendered UI: `$name` → value (keys exclude the `$`). */
 export type UiState = Readonly<Record<string, Value>>;

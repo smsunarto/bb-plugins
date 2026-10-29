@@ -74,7 +74,7 @@ export function interactions(roots: readonly UiNode[], state: UiState): Probe[] 
 }
 
 function nodeProbes(node: UiNode): [string, Value, string][] {
-  const { props } = node;
+  const props: Readonly<Record<string, Value>> = node.props;
   if (node.type === "Button") return setActions(props.action);
   const binding = isBinding(props.value) ? props.value : null;
   if (binding === null) return [];

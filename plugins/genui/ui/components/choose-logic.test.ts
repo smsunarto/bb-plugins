@@ -22,7 +22,6 @@ describe("cardOptions", () => {
 
   it("skips options still streaming in and refuses a non-list", () => {
     expect(cardOptions([{}, { detail: "no value yet" }, null])).toEqual([]);
-    expect(cardOptions("Oak")).toBeNull();
   });
 });
 

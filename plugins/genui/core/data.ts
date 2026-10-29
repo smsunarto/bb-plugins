@@ -186,15 +186,6 @@ export type SnippetShown =
   | { readonly status: "loading" }
   | { readonly status: "error"; readonly error: string };
 
-/**
- * A Snippet node's `shown` prop. Interpreter.snippet (core/evaluate.ts) is
- * its only writer and builds exactly a SnippetShown, so this names that
- * contract instead of re-checking it.
- */
-export function snippetShown(props: Readonly<Record<string, Value>>): SnippetShown {
-  return props.shown as SnippetShown;
-}
-
 /** Why `from`/`to` cannot address lines, or null; checked before the file arrives. */
 export function snippetRangeError(from: number | null, to: number | null): string | null {
   for (const [name, line] of [["from", from], ["to", to]] as const) {

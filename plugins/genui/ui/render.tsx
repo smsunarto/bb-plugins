@@ -1,10 +1,10 @@
-// Maps evaluated UiNodes onto the catalog components. Each component reads
-// its props defensively (see values.ts), so a malformed node degrades to an
-// Error line instead of breaking the message.
-import { Component, useContext, type ComponentType, type ReactNode } from "react";
+// Maps evaluated UiNodes onto the catalog components. A component's props
+// are what the evaluator built from its catalog entry (PropsOf); content
+// inside `any` and `list` params is read as it comes (see values.ts).
+import { Component, createElement, useContext, type ComponentType, type ReactNode } from "react";
 import type { ComponentName } from "../core/catalog";
-import { sourceCaption } from "../core/source";
-import type { UiNode } from "../core/types";
+import { isSourced, sourceCaption } from "../core/source";
+import type { ComponentNode, PropsOf, UiNode } from "../core/types";
 import { Acceptance } from "./components/Acceptance";
 import { CalendarHeatmap } from "./components/CalendarHeatmap";
 import { Benchmark } from "./components/Benchmark";
@@ -50,7 +50,6 @@ import { Waterfall } from "./components/Waterfall";
 import { Gallery, ImageSearch } from "./components/webMedia";
 import { Flashcards, Quiz, Timer } from "./components/widgets";
 import { InTableContext, NodeKeyContext } from "./runtime";
-import { text, type Props } from "./values";
 
 /** Components that need their node key (NodeKeyContext): a lone Button, and those that ask the user something. */
 const KEYED: Partial<Record<ComponentName, true>> = {
@@ -65,11 +64,8 @@ const KEYED: Partial<Record<ComponentName, true>> = {
   Pipeline: true,
 };
 
-/** Components with a `source:` caption (also the files their data was Loaded from). */
-const SOURCED: Partial<Record<ComponentName, true>> = { Table: true, Chart: true, Metric: true };
-
 /** One renderer per catalog component; a catalog entry without one fails to typecheck. */
-const RENDERERS = {
+const RENDERERS: { readonly [N in ComponentName]: ComponentType<{ props: PropsOf<N> }> } = {
   Card,
   Row,
   Stack,
@@ -158,7 +154,7 @@ const RENDERERS = {
   Transcript,
   Scene,
   Shader,
-} satisfies Record<ComponentName, ComponentType<{ props: Props }>>;
+};
 
 /**
  * `captioned: false` leaves out the source line, for a parent that shows one
@@ -167,29 +163,32 @@ const RENDERERS = {
  */
 export function RenderNode({ node, captioned = true }: { node: UiNode; captioned?: boolean }): ReactNode {
   const inTable = useContext(InTableContext);
-  if (node.type === "Error") return <ErrorLine message={text(node.props.message)} />;
-  if (node.type === "Loading") {
-    return <LoadingPlaceholder path={text(node.props.path)} component={typeof node.props.component === "string" ? node.props.component : null} />;
-  }
-  const Renderer: ComponentType<{ props: Props }> = RENDERERS[node.type];
-  if (KEYED[node.type]) {
-    return (
-      <NodeKeyContext value={node.key}>
-        <Renderer props={node.props} />
-      </NodeKeyContext>
-    );
-  }
-  if (SOURCED[node.type]) {
+  if (node.type === "Error") return <ErrorLine message={node.props.message} />;
+  if (node.type === "Loading") return <LoadingPlaceholder path={node.props.path} component={node.props.component} />;
+  return renderComponent(node, captioned && !inTable);
+}
+
+/**
+ * Generic over the component name, so `RENDERERS[node.type]` and `node.props`
+ * meet as one `PropsOf<N>`; looked up by the whole ComponentName union they
+ * would not pair. createElement rather than JSX: React's JSX typing
+ * (LibraryManagedAttributes) cannot resolve a component type that is still
+ * generic.
+ */
+function renderComponent<N extends ComponentName>(node: ComponentNode<N>, captioned: boolean): ReactNode {
+  const element = createElement(RENDERERS[node.type], { props: node.props });
+  if (KEYED[node.type]) return <NodeKeyContext value={node.key}>{element}</NodeKeyContext>;
+  if (isSourced(node.type)) {
     // Wrapped with or without a caption, so a `source:` arriving as the reply streams never remounts the component.
-    const caption = captioned && !inTable ? sourceCaption(node.props) : null;
+    const caption = captioned ? sourceCaption(node.props) : null;
     return (
       <div className="flex min-w-0 flex-col gap-1.5">
-        <Renderer props={node.props} />
+        {element}
         {caption === null ? null : <SourceLine caption={caption} />}
       </div>
     );
   }
-  return <Renderer props={node.props} />;
+  return element;
 }
 
 /**

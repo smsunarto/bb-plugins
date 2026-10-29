@@ -18,7 +18,9 @@ function gallery(name: string): Value {
 function inlineStages(example: string): Value {
   const { program } = compile(readFileSync(new URL(`../gallery/${example}`, import.meta.url), "utf8"));
   if (program === null) throw new Error(`${example} does not compile`);
-  return evaluate(program, initialState(program)).roots[0].props.stages ?? null;
+  const [root] = evaluate(program, initialState(program)).roots;
+  if (root.type !== "Provenance") throw new Error(`${example} does not render a Provenance`);
+  return root.props.stages;
 }
 
 const REQUESTED = { branch: "feat/399", device: "Sam's iPhone 15 Pro" };

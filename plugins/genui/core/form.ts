@@ -1,6 +1,6 @@
 // What a Form answers: a `Label: answer` line per field, which the answer
 // sheet (ui/answerSheet.ts) puts in the user's message as they fill it in.
-import type { Binding, UiNode, Value } from "./types";
+import type { Binding, ComponentNode, UiNode, Value } from "./types";
 
 /** The inputs a Form collects, in any layout inside it. */
 const FIELDS: Partial<Record<UiNode["type"], true>> = {
@@ -88,27 +88,28 @@ function collect(value: Value, fields: FormField[]): void {
     return;
   }
   if (!isNode(value)) return;
-  const binding = value.props.value;
+  const props: Readonly<Record<string, Value>> = value.props;
+  const binding = props.value;
   if (FIELDS[value.type] && isBinding(binding)) {
-    const label = typeof value.props.label === "string" ? value.props.label.trim() : "";
+    const label = typeof props.label === "string" ? props.label.trim() : "";
     // An unrated Rating holds 0: no answer, not a zero.
     const given = value.type === "Rating" && binding.value === 0 ? null : binding.value;
     // A list state with options to pick from is a multi-select (Checklist, OptionCards).
     const multi = Array.isArray(given) && (value.type === "Checklist" || value.type === "OptionCards");
-    const text = multi ? picks(given, optionValues(value.props.options)) : answer(given);
+    const text = multi ? picks(given, optionValues(props.options)) : answer(given);
     const name = label || binding.name;
     // A label that is a question or ends in a colon already reads as a prompt.
     const line = `${name}${/[?:]$/.test(name) ? "" : ":"} ${text || "—"}`;
     fields.push({ name: binding.name, typed: TYPED[value.type] === true, line });
     return;
   }
-  for (const prop of Object.values(value.props)) collect(prop, fields);
+  for (const prop of Object.values(props)) collect(prop, fields);
 }
 
-/** A Form's fields in document order, each with its answer line. */
-export function formFields(form: UiNode): FormField[] {
+/** A Form's fields in document order, each with its answer line; `children` are the Form's. */
+export function formFields(children: readonly UiNode[]): FormField[] {
   const fields: FormField[] = [];
-  collect(form.props.children ?? null, fields);
+  collect(children, fields);
   return fields;
 }
 
@@ -116,8 +117,8 @@ export function formFields(form: UiNode): FormField[] {
  * A Form's answer: `label: value` per field inside it (label, else state
  * name; lists joined; a multi-select's picks and the rest; Yes/No; empty "—").
  */
-export function formMessage(form: UiNode): string {
-  return formFields(form)
+export function formMessage(form: ComponentNode<"Form">): string {
+  return formFields(form.props.children)
     .map((field) => field.line)
     .join("\n");
 }

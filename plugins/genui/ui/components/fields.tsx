@@ -10,12 +10,11 @@ import {
   type KeyboardEvent,
   type PointerEvent,
 } from "react";
-import type { Value } from "../../core/types";
+import type { PropsOf, Value } from "../../core/types";
 import { Button as BaseButton } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { useUiRuntime } from "../runtime";
-import { ACCENT, isBinding, list, optionalText, text, type Props } from "../values";
-import { ErrorLine } from "./display";
+import { ACCENT, list, text } from "../values";
 import {
   addItem,
   isoDate,
@@ -68,12 +67,12 @@ const STEPPER_KEYS: Readonly<Record<string, number>> = {
 const STEP_BUTTON =
   "flex h-full w-8 shrink-0 cursor-pointer touch-manipulation items-center justify-center text-muted-foreground transition-colors duration-150 hover:bg-surface-recessed hover:text-foreground focus-visible:outline-none disabled:pointer-events-none disabled:opacity-35";
 
-export function Stepper({ props }: { props: Props }) {
+export function Stepper({ props }: { props: PropsOf<"Stepper"> }) {
   const { setValue } = useUiRuntime();
   const labelId = useId();
   const binding = props.value;
   const range = stepRange(props.min, props.max, props.step);
-  const current = isBinding(binding) ? stepperValue(binding.value, range) : 0;
+  const current = stepperValue(binding.value, range);
   // A held button steps faster than renders land, so it steps from here.
   const latest = useRef(current);
   const hold = useRef<number | undefined>(undefined);
@@ -86,8 +85,7 @@ export function Stepper({ props }: { props: Props }) {
     },
     [],
   );
-  if (!isBinding(binding)) return <ErrorLine message="Stepper needs a $state binding" />;
-  const label = optionalText(props.label);
+  const label = props.label ?? null;
   const move = (count: number): boolean => {
     const next = stepBy(latest.current, count, range);
     if (next === latest.current) return false;
@@ -180,13 +178,12 @@ export function Stepper({ props }: { props: Props }) {
 /** Radio-group arrow keys: next or previous option, wrapping. */
 const RADIO_KEYS: Readonly<Record<string, number>> = { ArrowDown: 1, ArrowRight: 1, ArrowUp: -1, ArrowLeft: -1 };
 
-export function Radio({ props }: { props: Props }) {
+export function Radio({ props }: { props: PropsOf<"Radio"> }) {
   const { setValue } = useUiRuntime();
   const labelId = useId();
   const group = useRef<HTMLDivElement>(null);
   const binding = props.value;
-  if (!isBinding(binding)) return <ErrorLine message="Radio needs a $state binding" />;
-  const label = optionalText(props.label);
+  const label = props.label ?? null;
   const options = radioOptions(props.options);
   const selected = options.findIndex((option) => option.value === binding.value);
   // Roving focus: Tab lands on the selected option, else the first.
@@ -264,7 +261,7 @@ export function Radio({ props }: { props: Props }) {
 
 // ── ListEditor ───────────────────────────────────────────────────────────────
 
-export function ListEditor({ props }: { props: Props }) {
+export function ListEditor({ props }: { props: PropsOf<"ListEditor"> }) {
   const { setValue } = useUiRuntime();
   const id = useId();
   const hintId = useId();
@@ -272,9 +269,8 @@ export function ListEditor({ props }: { props: Props }) {
   const [editing, setEditing] = useState<number | null>(null);
   const input = useRef<HTMLInputElement>(null);
   const binding = props.value;
-  if (!isBinding(binding)) return <ErrorLine message="ListEditor needs a $state binding" />;
-  const label = optionalText(props.label);
-  const placeholder = optionalText(props.placeholder) ?? "Add an item";
+  const label = props.label ?? null;
+  const placeholder = props.placeholder ?? "Add an item";
   const items = list(binding.value);
   const problem = itemProblem(items, draft);
   const add = () => {
@@ -445,13 +441,12 @@ function fitHeight(area: HTMLTextAreaElement) {
   area.style.overflowY = content > limit ? "auto" : "hidden";
 }
 
-export function TextArea({ props }: { props: Props }) {
+export function TextArea({ props }: { props: PropsOf<"TextArea"> }) {
   const { setValue } = useUiRuntime();
   const id = useId();
   const area = useRef<HTMLTextAreaElement>(null);
   const binding = props.value;
-  const bound = isBinding(binding);
-  const value = bound ? text(binding.value) : "";
+  const value = text(binding.value);
   useLayoutEffect(() => {
     if (area.current !== null) fitHeight(area.current);
   }, [value]);
@@ -467,10 +462,9 @@ export function TextArea({ props }: { props: Props }) {
     });
     observer.observe(element);
     return () => observer.disconnect();
-  }, [bound]);
-  if (!isBinding(binding)) return <ErrorLine message="TextArea needs a $state binding" />;
-  const label = optionalText(props.label);
-  const placeholder = optionalText(props.placeholder);
+  }, []);
+  const label = props.label ?? null;
+  const placeholder = props.placeholder ?? null;
   return (
     <div className="flex min-w-0 flex-col gap-1.5">
       {label === null ? null : (
@@ -497,12 +491,11 @@ export function TextArea({ props }: { props: Props }) {
 
 // ── DateInput ────────────────────────────────────────────────────────────────
 
-export function DateInput({ props }: { props: Props }) {
+export function DateInput({ props }: { props: PropsOf<"DateInput"> }) {
   const { setValue } = useUiRuntime();
   const id = useId();
   const binding = props.value;
-  if (!isBinding(binding)) return <ErrorLine message="DateInput needs a $state binding" />;
-  const label = optionalText(props.label);
+  const label = props.label ?? null;
   const date = isoDate(binding.value);
   return (
     <div className="flex min-w-0 flex-col gap-1.5">
@@ -555,14 +548,13 @@ function StarGlyph({ fill }: { fill: number }) {
   );
 }
 
-export function Rating({ props }: { props: Props }) {
+export function Rating({ props }: { props: PropsOf<"Rating"> }) {
   const { setValue } = useUiRuntime();
   const labelId = useId();
   const group = useRef<HTMLDivElement>(null);
   const [preview, setPreview] = useState<number | null>(null);
   const binding = props.value;
-  if (!isBinding(binding)) return <ErrorLine message="Rating needs a $state binding" />;
-  const label = optionalText(props.label);
+  const label = props.label ?? null;
   const max = ratingMax(props.max);
   const value = ratingValue(binding.value, max);
   const shown = preview ?? value;

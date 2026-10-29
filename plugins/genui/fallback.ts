@@ -25,7 +25,7 @@ import { projectRequests, toMarkdownWithProject } from "./core/markdown";
 import { projectRequestKey, type ProjectRequest, type ProjectResult } from "./core/project";
 import { readScene, sceneAssets } from "./core/scene";
 import { shaderInputNames, shaderPasses } from "./core/shader-args";
-import type { UiNode, Value } from "./core/types";
+import type { ComponentNode, UiNode, Value } from "./core/types";
 
 /** Fetches one file a spec reads: parsed for Load, raw text for Snippet. */
 type Loader = (request: DataRequest) => Promise<LoadedData>;
@@ -125,8 +125,10 @@ const SCENE_CHECK_TIME = 1.5;
 /** The largest 3D asset the renderer loads (load_asset). */
 const MAX_ASSET_BYTES = 10 * 1024 * 1024;
 
+type GpuNode = ComponentNode<"Scene" | "Shader">;
+
 /** Every Scene and Shader node in `roots`, children included. */
-function gpuNodes(value: Value | readonly UiNode[], out: UiNode[] = []): UiNode[] {
+function gpuNodes(value: Value | readonly UiNode[], out: GpuNode[] = []): GpuNode[] {
   if (Array.isArray(value)) {
     for (const item of value) gpuNodes(item, out);
   } else if (typeof value === "object" && value !== null && "kind" in value && value.kind === "node") {
@@ -156,12 +158,12 @@ async function gpuProblems(roots: readonly UiNode[], load: Loader): Promise<stri
   for (const node of gpuNodes(roots)) {
     const at = /^\d+:\d+/.exec(node.key)?.[0] ?? "1:1";
     if (node.type === "Scene") {
-      const later = readScene(node.props.objects ?? null, SCENE_CHECK_TIME);
+      const later = readScene(node.props.objects, SCENE_CHECK_TIME);
       for (const error of later.errors) problems.add(`${at} error: Scene at t=${SCENE_CHECK_TIME}: ${error}`);
-      const paths = [...sceneAssets(readScene(node.props.objects ?? null, 0).objects), ...sceneAssets(later.objects)];
+      const paths = [...sceneAssets(readScene(node.props.objects, 0).objects), ...sceneAssets(later.objects)];
       for (const path of paths) if (!assets.has(path)) assets.set(path, at);
     } else {
-      const textures = Array.isArray(node.props.textures) ? node.props.textures : [];
+      const textures = node.props.textures ?? [];
       for (const error of checkShader(shaderPasses(node.props), shaderInputNames(node.props), textures.length)) {
         problems.add(`${at} error: Shader: ${error}`);
       }

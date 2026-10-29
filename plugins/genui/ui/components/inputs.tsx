@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useId, useRef, useState, type ReactElement, type ReactNode } from "react";
-import type { Action, UiNode, Value } from "../../core/types";
+import type { Action, PropsOf, Value } from "../../core/types";
 import { Button as BaseButton } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
@@ -10,15 +10,13 @@ import {
   finiteNumber,
   formatNumber,
   isAction,
-  isBinding,
   isScalar,
   list,
-  optionalText,
   text,
   type Props,
 } from "../values";
 import { ACTION_GLYPHS, actionIntent, sendEffect } from "./action-logic";
-import { CheckMark, ErrorLine } from "./display";
+import { CheckMark } from "./display";
 // fields.tsx imports this module's field styles; Radio is only used at render time, so the cycle is safe.
 import { Radio } from "./fields";
 import { reducedMotion, useEntrance, type Entrance } from "./motion";
@@ -39,19 +37,15 @@ export const CAPTION = "text-xs leading-5 text-muted-foreground";
 const THUMB =
   "[&::-webkit-slider-thumb]:size-4 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:border [&::-webkit-slider-thumb]:border-border [&::-webkit-slider-thumb]:bg-background [&::-webkit-slider-thumb]:shadow-[0_1px_3px_rgb(0_0_0/0.18)] [&::-webkit-slider-thumb]:transition-transform active:[&::-webkit-slider-thumb]:scale-110 [&::-moz-range-thumb]:size-4 [&::-moz-range-thumb]:rounded-full [&::-moz-range-thumb]:border [&::-moz-range-thumb]:border-border [&::-moz-range-thumb]:bg-background [&::-moz-range-thumb]:shadow-[0_1px_3px_rgb(0_0_0/0.18)]";
 
-export function Slider({ props }: { props: Props }) {
+export function Slider({ props }: { props: PropsOf<"Slider"> }) {
   const { setValue } = useUiRuntime();
   const id = useId();
-  const binding = props.value;
-  if (!isBinding(binding)) return <ErrorLine message="Slider needs a $state binding" />;
-  const min = finiteNumber(props.min) ?? 0;
-  const max = Math.max(min, finiteNumber(props.max) ?? 100);
+  const { value: binding, min } = props;
+  const max = Math.max(min, props.max);
   // Integer bounds step by 1; fractional ranges get 100 stops.
-  const step =
-    finiteNumber(props.step) ??
-    (Number.isInteger(min) && Number.isInteger(max) ? 1 : (max - min) / 100);
+  const step = props.step ?? (Number.isInteger(min) && Number.isInteger(max) ? 1 : (max - min) / 100);
   const current = finiteNumber(binding.value) ?? min;
-  const label = optionalText(props.label);
+  const label = props.label ?? null;
   const fill = max === min ? 0 : ((Math.min(max, Math.max(min, current)) - min) / (max - min)) * 100;
   return (
     <div className="flex min-w-0 flex-col gap-2">
@@ -86,10 +80,9 @@ export function Slider({ props }: { props: Props }) {
   );
 }
 
-export function Toggle({ props }: { props: Props }) {
+export function Toggle({ props }: { props: PropsOf<"Toggle"> }) {
   const { setValue } = useUiRuntime();
   const binding = props.value;
-  if (!isBinding(binding)) return <ErrorLine message="Toggle needs a $state binding" />;
   const on = Boolean(binding.value);
   return (
     <button
@@ -112,7 +105,7 @@ export function Toggle({ props }: { props: Props }) {
           )}
         />
       </span>
-      <span className="min-w-0 truncate">{text(props.label)}</span>
+      <span className="min-w-0 truncate">{props.label}</span>
     </button>
   );
 }
@@ -122,19 +115,18 @@ const SEGMENT_MAX_OPTIONS = 5;
 const SEGMENT_MAX_LABEL = 24;
 const SEGMENT_MAX_TOTAL = 60;
 
-export function Choice({ props }: { props: Props }) {
+export function Choice({ props }: { props: PropsOf<"Choice"> }) {
   const { setValue } = useUiRuntime();
   const labelId = useId();
   const binding = props.value;
-  if (!isBinding(binding)) return <ErrorLine message="Choice needs a $state binding" />;
-  const options = list(props.options);
+  const options = props.options;
   const labels = options.map((option) => (isScalar(option) ? String(option) : null));
   const fits =
     options.length <= SEGMENT_MAX_OPTIONS &&
     labels.every((text) => text !== null && text.length <= SEGMENT_MAX_LABEL) &&
     labels.join("").length <= SEGMENT_MAX_TOTAL;
   if (!fits) return <Radio props={props} />;
-  const label = optionalText(props.label);
+  const label = props.label ?? null;
   return (
     <div className="flex min-w-0 flex-col gap-2">
       {label === null ? null : (
@@ -176,13 +168,12 @@ export function Choice({ props }: { props: Props }) {
   );
 }
 
-export function Input({ props }: { props: Props }) {
+export function Input({ props }: { props: PropsOf<"Input"> }) {
   const { setValue } = useUiRuntime();
   const id = useId();
   const binding = props.value;
-  if (!isBinding(binding)) return <ErrorLine message="Input needs a $state binding" />;
-  const label = optionalText(props.label);
-  const placeholder = optionalText(props.placeholder);
+  const label = props.label ?? null;
+  const placeholder = props.placeholder ?? null;
   return (
     <div className="flex min-w-0 flex-col gap-1.5">
       {label === null ? null : (
@@ -204,13 +195,12 @@ export function Input({ props }: { props: Props }) {
 }
 
 /** A native dropdown dressed as a field; option values are positions, so any scalar round-trips. */
-export function Select({ props }: { props: Props }) {
+export function Select({ props }: { props: PropsOf<"Select"> }) {
   const { setValue } = useUiRuntime();
   const id = useId();
   const binding = props.value;
-  if (!isBinding(binding)) return <ErrorLine message="Select needs a $state binding" />;
-  const label = optionalText(props.label);
-  const options = list(props.options).filter(isScalar);
+  const label = props.label ?? null;
+  const options = props.options.filter(isScalar);
   const selected = options.findIndex((option) => option === binding.value);
   return (
     <div className="flex min-w-0 flex-col gap-1.5">
@@ -250,13 +240,12 @@ export function Select({ props }: { props: Props }) {
 }
 
 /** Checkboxes over a list state: ticking adds the option (in option order), unticking removes it. */
-export function Checklist({ props }: { props: Props }) {
+export function Checklist({ props }: { props: PropsOf<"Checklist"> }) {
   const { setValue } = useUiRuntime();
   const labelId = useId();
   const binding = props.value;
-  if (!isBinding(binding)) return <ErrorLine message="Checklist needs a $state binding" />;
-  const label = optionalText(props.label);
-  const options = list(props.options).filter(isScalar);
+  const label = props.label ?? null;
+  const options = props.options.filter(isScalar);
   const picked = list(binding.value);
   const toggle = (option: Value) =>
     setValue(

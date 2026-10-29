@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { compile, dataKey, evaluate, formatDiagnostics, initialState, parseDataFile, specToMarkdown, toMarkdown } from "./index";
-import type { UiState, Value } from "./types";
+import type { PropsOf, UiState } from "./types";
 
 const EXAMPLE = `$seats = 10
 $plan = "Pro"
@@ -200,7 +200,7 @@ Form([Input($name)])`),
   });
 
   it("renders snippets with their code, location only while loading, and errors", () => {
-    const snippet = (props: Record<string, Value>): string =>
+    const snippet = (props: Partial<PropsOf<"Snippet">>): string =>
       toMarkdown([
         {
           kind: "node",

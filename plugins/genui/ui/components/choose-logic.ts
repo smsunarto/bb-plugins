@@ -24,11 +24,9 @@ function field(value: unknown): string | null {
  * OptionCards options: scalars, or `{value, title?, detail?, image?, icon?}`.
  * An object without a scalar `value` uses its title as the value; one with
  * neither is skipped (a streaming spec shows `{}` before its fields arrive).
- * Null when `options` is not a list.
  */
-export function cardOptions(options: Value | undefined): CardOption[] | null {
-  if (!Array.isArray(options)) return null;
-  return list(options).flatMap((item): CardOption[] => {
+export function cardOptions(options: readonly Value[]): CardOption[] {
+  return options.flatMap((item): CardOption[] => {
     if (isScalar(item)) {
       if (item === null) return [];
       return [{ value: item, title: String(item), detail: null, image: null, icon: null }];
@@ -75,16 +73,15 @@ export interface Swatch {
  * Swatches colours: CSS colour strings or `{value, name?}`. `isColor` decides
  * what counts (the renderer passes `CSS.supports("color", …)`); refused
  * entries are listed in `invalid`. `{}` and objects still missing their value
- * are skipped while a spec streams. Null when `colors` is not a list.
+ * are skipped while a spec streams.
  */
 export function swatchColors(
-  colors: Value | undefined,
+  colors: readonly Value[],
   isColor: (value: string) => boolean,
-): { readonly colors: Swatch[]; readonly invalid: string[] } | null {
-  if (!Array.isArray(colors)) return null;
+): { readonly colors: Swatch[]; readonly invalid: string[] } {
   const valid: Swatch[] = [];
   const invalid: string[] = [];
-  for (const item of list(colors)) {
+  for (const item of colors) {
     const entry: Readonly<Record<string, unknown>> = isObject(item) ? item : { value: item };
     if (entry.value === undefined || entry.value === null) continue;
     const value = typeof entry.value === "string" ? entry.value.trim() : "";

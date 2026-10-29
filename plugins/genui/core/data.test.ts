@@ -38,8 +38,18 @@ function failure(path: string, text: string): string {
   return result.error;
 }
 
-function children(node: UiNode): UiNode[] {
-  return node.props.children as UiNode[];
+/** `value` as the `type` node it is expected to be, so its props read typed. */
+function nodeOf<T extends UiNode["type"]>(value: UiNode, type: T): Extract<UiNode, { readonly type: T }> {
+  const is = (candidate: UiNode): candidate is Extract<UiNode, { readonly type: T }> => candidate.type === type;
+  if (!is(value)) throw new Error(`expected a ${type} node, got ${value.type}`);
+  return value;
+}
+
+/** The children of a container (Card, Row, Stack, …). */
+function children(node: UiNode): readonly UiNode[] {
+  const container = (candidate: UiNode): candidate is Extract<UiNode, { readonly props: { readonly children: unknown } }> => "children" in candidate.props;
+  if (!container(node)) throw new Error(`${node.type} has no children`);
+  return node.props.children;
 }
 
 describe("Load validation", () => {
@@ -215,10 +225,9 @@ describe("parseDataFile", () => {
     };
     const whole = run('Json(Load("big.json"))');
     expect(whole.diagnostics).toEqual([]);
-    expect((whole.roots[0].props.value as Value[]).length).toBe(LIMITS.listLength + 1);
+    expect(nodeOf(whole.roots[0], "Json").props.value).toHaveLength(LIMITS.listLength + 1);
     const mapped = run('Text(Load("big.json").map(r => r.i).length)');
-    expect(mapped.roots[0].type).toBe("Error");
-    expect(String(mapped.roots[0].props.message)).toContain(`lists are limited to ${LIMITS.listLength} items`);
+    expect(nodeOf(mapped.roots[0], "Error").props.message).toContain(`lists are limited to ${LIMITS.listLength} items`);
   });
 
   it("rejects data posing as interpreter values", () => {
@@ -247,11 +256,11 @@ Text("Footer")`;
     const { roots, diagnostics } = evaluate(program(SOURCE), {}, data);
     expect(diagnostics).toEqual([]);
     const [table, total] = children(roots[0]);
-    expect(table.props.rows).toEqual([
+    expect(nodeOf(table, "Table").props.rows).toEqual([
       ["EU", 120],
       ["US", 80],
     ]);
-    expect(total.props.text).toBe("Total: 200");
+    expect(nodeOf(total, "Text").props.text).toBe("Total: 200");
   });
 
   it("waits in place, as a loading placeholder and no diagnostic, while the file is being read", () => {
@@ -268,7 +277,7 @@ Text("Footer")`;
 
   it("waits as a whole when a top-level name or bare expression reads the file", () => {
     const { roots, diagnostics } = evaluate(program('rows = Load("todo.json")\nTable(["Task"], rows)\nrows.length'), {});
-    expect(roots.map((root) => [root.type, root.props.component])).toEqual([
+    expect(roots.map((root) => [root.type, nodeOf(root, "Loading").props.component])).toEqual([
       ["Loading", "Table"],
       ["Loading", null],
     ]);
@@ -291,7 +300,7 @@ Text("Footer")`;
     const data = new Map([ok("todo.json", '["Write", "Test"]')]);
     const state = initialState(compiled, data);
     expect(state).toEqual({ rows: ["Write", "Test"], done: [] });
-    expect(evaluate(compiled, state, data).roots[0].props.options).toEqual(["Write", "Test"]);
+    expect(nodeOf(evaluate(compiled, state, data).roots[0], "Checklist").props.options).toEqual(["Write", "Test"]);
     expect(initialState(compiled)).toEqual({ rows: null, done: [] });
   });
 });
@@ -323,7 +332,7 @@ describe("evaluate Snippet", () => {
   });
 
   it("defaults to the whole file and drops the final newline", () => {
-    expect(snippet('Snippet("a.py")', FILE)).toMatchObject({ from: null, to: null, shown: { code: "one\ntwo\nthree\nfour\nfive" } });
+    expect(snippet('Snippet("a.py")', FILE)).toEqual({ path: "a.py", shown: { status: "ready", code: "one\ntwo\nthree\nfour\nfive" }, language: "python" });
     expect(snippet('Snippet("a.py", 4)', "a\r\nb\r\nc\r\nd\r\ne")).toMatchObject({ shown: { code: "d\ne" } });
     expect(snippet('Snippet("a.py", to: 2)', FILE)).toMatchObject({ shown: { code: "one\ntwo" } });
   });
@@ -353,7 +362,7 @@ describe("evaluate Snippet", () => {
     const data = new Map([[dataKey({ path: "a.json", raw: false }), parseDataFile("a.json", '{"name": "x"}')]]);
     const [code, text] = children(evaluate(compiled, {}, data).roots[0]);
     expect(code.props).toMatchObject({ shown: { status: "loading" } });
-    expect(text.props.text).toBe("x");
+    expect(nodeOf(text, "Text").props.text).toBe("x");
   });
 
   it("reports file and range problems as `error`", () => {

@@ -1,10 +1,10 @@
 import { useContext, useEffect, useMemo, useRef, useState } from "react";
 import { formFields } from "../../core/form";
+import type { PropsOf } from "../../core/types";
 import { Button as BaseButton } from "@/components/ui/button";
 import { deferAnswer, flushAnswers } from "../answerSheet";
 import { RenderNodes } from "../render";
 import { NodeKeyContext, questionClosed, sentFor, useAnswers, UiRuntimeContext, useUiRuntime, type UiRuntime } from "../runtime";
-import { nodes, type Props } from "../values";
 import { actionIntent } from "./action-logic";
 import { ActionGlyph, ActionHint, InMessageLine, SentLine } from "./inputs";
 
@@ -26,11 +26,11 @@ const TYPING_PAUSE_MS = 300;
  * moved on, the fields stay visible read-only ("Sent" when it was sent).
  * Without a thread composer the Form keeps a Send button that posts it.
  */
-export function Form({ props }: { props: Props }) {
+export function Form({ props }: { props: PropsOf<"Form"> }) {
   const runtime = useUiRuntime();
   const { staged, sent, target, stage } = useAnswers();
   const question = useContext(NodeKeyContext);
-  const fields = formFields({ kind: "node", type: "Form", key: question, props });
+  const fields = formFields(props.children);
   const message = fields.map((field) => field.line).join("\n");
   const closed = questionClosed(sent, question, runtime.superseded);
   const answered = sentFor(sent, question) !== null;
@@ -94,7 +94,7 @@ export function Form({ props }: { props: Props }) {
       className={`m-0 flex min-w-0 flex-col gap-4 border-0 p-0 ${READ_ONLY}`}
     >
       <UiRuntimeContext value={inner}>
-        <RenderNodes nodes={nodes(props.children)} />
+        <RenderNodes nodes={props.children} />
       </UiRuntimeContext>
       {answered ? (
         <SentLine text={null} />
