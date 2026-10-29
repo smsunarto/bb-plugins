@@ -1,0 +1,37 @@
+/* The model picker, then its effort word reading on from the name: "Opus 5.5 High".
+   Scoped under [data-t3-model-controls] so these rules outrank app.css's control pills,
+   which load after this file. */
+[data-t3-composer-controls]
+  [data-t3-model-controls]
+  :is([data-t3-model-picker-trigger], [data-t3-traits-trigger]) {
+  display: inline-flex;
+  align-items: center;
+}
+
+/* Cancel the model pill's end padding and the row gap, leaving about a space before the word. */
+[data-t3-composer][data-promptbox]
+  [data-t3-composer-controls]
+  [data-t3-model-controls]
+  [data-t3-traits-trigger] {
+  margin-inline-start: -10px;
+  padding-inline-start: 4px;
+}
+
+/* Quieter than the model name. */
+[data-t3-composer][data-promptbox]
+  [data-t3-composer-controls]
+  [data-t3-model-controls]
+  [data-t3-traits-word] {
+  color: color-mix(in srgb, var(--foreground) 48%, transparent);
+}
+
+[data-t3-composer][data-promptbox]
+  [data-t3-composer-controls]
+  [data-t3-model-controls]
+  [data-t3-traits-word]:is(:hover, [data-state="open"]) {
+  color: var(--foreground);
+}
+
+[data-t3-model-controls][data-pending] > button {
+  opacity: 0.64;
+}

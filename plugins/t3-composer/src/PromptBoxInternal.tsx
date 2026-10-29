@@ -1,4 +1,5 @@
 import { SaveDraftAction } from "./SaveDraftAction";
+import { ComposerModelControls } from "./model-picker/ComposerModelControls";
 import {
   experimental_ComposerRoot as ComposerRoot,
   experimental_FailedVoiceRecordings as FailedVoiceRecordings,
@@ -3215,8 +3216,13 @@ export function PromptBoxInternal({
                   )}
                   inert={showVoiceActionGroup ? true : undefined}
                 >
+                  <ComposerPlusMenuSlot
+                    actions={promptActions}
+                    onAttach={onAttachFiles ? () => attachmentInputRef.current?.click() : undefined}
+                    onAction={applyPromptAction}
+                  />
                   <div data-t3-composer-controls="" aria-live="polite">
-                    {executionControls}
+                    <ComposerModelControls fallback={executionControls} />
                   </div>
                   <contributions.Actions />
                 </div>
@@ -3239,15 +3245,6 @@ export function PromptBoxInternal({
                       )}
                     />
                   </span>
-                  {!showCompactLayout ? (
-                    <ComposerPlusMenuSlot
-                      actions={promptActions}
-                      onAttach={
-                        onAttachFiles ? () => attachmentInputRef.current?.click() : undefined
-                      }
-                      onAction={applyPromptAction}
-                    />
-                  ) : null}
                   {compactBeforeSend}
                   {!showCompactLayout || showCompactVoiceAction ? (
                     <>
