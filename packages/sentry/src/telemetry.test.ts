@@ -5,6 +5,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { test } from "node:test";
+import { NOOP_REPORTER } from "./node.ts";
+import { NOOP_PERFORMANCE } from "./performance.ts";
 import {
   sentryPluginRelease,
   sentryPluginTelemetry,
@@ -23,8 +25,8 @@ test("telemetry stays disabled without SENTRY_DSN", () => {
         serverEntryUrl: fixture.serverEntryUrl,
         env,
       });
-      assert.equal(telemetry.errorReporter({ pluginId: "demo" }), undefined);
-      assert.equal(telemetry.performanceReporter({ pluginId: "demo" }), undefined);
+      assert.equal(telemetry.errorReporter({ pluginId: "demo" }), NOOP_REPORTER);
+      assert.equal(telemetry.performanceReporter({ pluginId: "demo" }), NOOP_PERFORMANCE);
     }
   } finally {
     fixture.cleanup();
@@ -38,7 +40,7 @@ test("telemetry stays disabled when artifact identity is missing or drifted", ()
     serverEntryUrl: pathToFileURL(join(tmpdir(), "bb-kit-sentry-nowhere", "server.js")).href,
     env,
   });
-  assert.equal(missing.errorReporter({ pluginId: "demo" }), undefined);
+  assert.equal(missing.errorReporter({ pluginId: "demo" }), NOOP_REPORTER);
 
   const drifted = createArtifactFixture("built", { pluginId: "other", pluginVersion: "9.9.9" });
   const malformed = createArtifactFixture("built", { pluginVersion: "9.9.9" });
@@ -49,8 +51,8 @@ test("telemetry stays disabled when artifact identity is missing or drifted", ()
         serverEntryUrl: fixture.serverEntryUrl,
         env,
       });
-      assert.equal(telemetry.errorReporter({ pluginId: "demo" }), undefined);
-      assert.equal(telemetry.performanceReporter({ pluginId: "demo" }), undefined);
+      assert.equal(telemetry.errorReporter({ pluginId: "demo" }), NOOP_REPORTER);
+      assert.equal(telemetry.performanceReporter({ pluginId: "demo" }), NOOP_PERFORMANCE);
     }
   } finally {
     drifted.cleanup();
@@ -72,12 +74,12 @@ test("enabled telemetry derives the release from every supported sidecar layout"
         tracesSampleRate: 1,
       });
       const errorReporter = telemetry.errorReporter({ pluginId: "demo" });
-      assert.notEqual(errorReporter, undefined);
-      await errorReporter?.dispose?.(1_000);
+      assert.notEqual(errorReporter, NOOP_REPORTER);
+      await errorReporter.dispose(1_000);
       const performance = telemetry.performanceReporter({ pluginId: "demo" });
-      assert.ok(performance);
+      assert.notEqual(performance, NOOP_PERFORMANCE);
       performance.start({ operation: "plugin.startup" }).finish("ok");
-      await performance.dispose?.(5_000);
+      await performance.dispose(5_000);
     }
     assert.equal(target.bodies.length, 3);
     for (const body of target.bodies) {
@@ -103,9 +105,8 @@ test("SENTRY_TRACES_SAMPLE_RATE overrides the sampling default", async () => {
       tracesSampleRate: 1,
     });
     const performance = telemetry.performanceReporter({ pluginId: "demo" });
-    assert.ok(performance);
     performance.start({ operation: "plugin.startup" }).finish("ok");
-    await performance.dispose?.(5_000);
+    await performance.dispose(5_000);
     assert.equal(target.bodies.length, 0);
   } finally {
     fixture.cleanup();
@@ -126,8 +127,6 @@ test("telemetry defaults on and both reporters inject one shared setting", async
     });
     const errorReporter = telemetry.errorReporter({ pluginId: "demo", host: settings.host });
     const performance = telemetry.performanceReporter({ pluginId: "demo", host: settings.host });
-    assert.ok(errorReporter);
-    assert.ok(performance);
     assert.equal(settings.defines.length, 1);
     assert.deepEqual(settings.defines[0], TELEMETRY_SETTINGS_BLOCK);
     assert.equal(TELEMETRY_SETTINGS_BLOCK.telemetry.default, true);
@@ -156,8 +155,6 @@ test("a stored opt-out sends nothing", async () => {
     });
     const errorReporter = telemetry.errorReporter({ pluginId: "demo", host: settings.host });
     const performance = telemetry.performanceReporter({ pluginId: "demo", host: settings.host });
-    assert.ok(errorReporter);
-    assert.ok(performance);
     errorReporter.capture({ boundary: "plugin.setup", error: new Error("boom") });
     performance.start({ operation: "plugin.startup" }).finish("ok");
     await errorReporter.dispose(5_000);
@@ -181,7 +178,6 @@ test("an opt-out through onChange applies to later operations", async () => {
       tracesSampleRate: 1,
     });
     const performance = telemetry.performanceReporter({ pluginId: "demo", host: settings.host });
-    assert.ok(performance);
     performance.start({ operation: "plugin.startup" }).finish("ok");
     await waitFor(() => target.bodies.length === 1);
     settings.change(false);
@@ -206,7 +202,6 @@ test("a failing settings store fails open to default-on", async () => {
       tracesSampleRate: 1,
     });
     const performance = telemetry.performanceReporter({ pluginId: "demo", host: settings.host });
-    assert.ok(performance);
     performance.start({ operation: "plugin.startup" }).finish("ok");
     await performance.dispose(5_000);
     assert.equal(target.bodies.length, 1);
@@ -228,7 +223,6 @@ test("the baked dsn option enables telemetry and SENTRY_DSN overrides it", async
       tracesSampleRate: 1,
     });
     const bakedPerformance = baked.performanceReporter({ pluginId: "demo" });
-    assert.ok(bakedPerformance);
     bakedPerformance.start({ operation: "plugin.startup" }).finish("ok");
     await bakedPerformance.dispose(5_000);
     assert.equal(target.bodies.length, 1);
@@ -241,7 +235,6 @@ test("the baked dsn option enables telemetry and SENTRY_DSN overrides it", async
       tracesSampleRate: 1,
     });
     const overriddenPerformance = overridden.performanceReporter({ pluginId: "demo" });
-    assert.ok(overriddenPerformance);
     overriddenPerformance.start({ operation: "plugin.startup" }).finish("ok");
     await overriddenPerformance.dispose(5_000);
     assert.equal(target.bodies.length, 2);

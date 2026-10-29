@@ -2,26 +2,27 @@
 
 `@bb-plugins/sentry` adds privacy-filtered Sentry reporting to bb plugin servers and browser apps.
 Reporting is on by default when a DSN is available. The server reporter adds a `telemetry` boolean
-to the plugin's bb settings so users can opt out. Each plugin gets an isolated client. A missing or
-blank DSN disables reporting.
+to the plugin's bb settings so users can opt out. Each plugin gets an isolated client. The factories
+take a non-empty DSN and always return a reporter. `sentryPluginTelemetry` (below) resolves the DSN
+and returns no-op reporters when telemetry is off, so callers never check for one.
 
 ```ts
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import { sentryErrorReporter } from "@bb-plugins/sentry/node";
 
 const errorReporter = sentryErrorReporter({
-  dsn: process.env.SENTRY_DSN,
+  dsn: "https://public-key@example.ingest.sentry.io/project-id",
   release: process.env.SENTRY_RELEASE,
   environment: process.env.SENTRY_ENVIRONMENT,
 });
 
 export default async function plugin(bb: BbPluginApi) {
   const reporter = errorReporter({ pluginId: "my-plugin", host: bb });
-  if (reporter) bb.onDispose(() => reporter.dispose(2_000));
+  bb.onDispose(() => reporter.dispose(2_000));
   try {
     register(bb, reporter);
   } catch (error) {
-    reporter?.capture({ boundary: "plugin.factory", error });
+    reporter.capture({ boundary: "plugin.factory", error });
     throw error;
   }
 }
@@ -66,13 +67,13 @@ SDK on the measured path:
 ```ts
 import { sentryPerformanceReporter } from "@bb-plugins/sentry/performance";
 
-const performance = sentryPerformanceReporter({ dsn: process.env.SENTRY_DSN })({
-  pluginId: "my-plugin",
-});
-const trace = performance?.start({ operation: "cli.startup", variant: "fresh" });
-trace?.checkpoint("spawned");
-trace?.checkpoint("protocol_ready");
-trace?.finish("ok");
+const performance = sentryPerformanceReporter({
+  dsn: "https://public-key@example.ingest.sentry.io/project-id",
+})({ pluginId: "my-plugin" });
+const trace = performance.start({ operation: "cli.startup", variant: "fresh" });
+trace.checkpoint("spawned");
+trace.checkpoint("protocol_ready");
+trace.finish("ok");
 ```
 
 Operation, variant, and checkpoint names must be static developer-authored values. Transaction

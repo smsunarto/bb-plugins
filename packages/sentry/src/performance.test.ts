@@ -5,11 +5,10 @@ import { createServer, type ServerResponse } from "node:http";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { setTimeout as delay } from "node:timers/promises";
 import { test } from "node:test";
-import { sentryPerformanceReporter } from "./performance.ts";
+import { NOOP_PERFORMANCE, sentryPerformanceReporter } from "./performance.ts";
 
-test("invalid DSNs and plugin identifiers disable performance reporting", () => {
+test("invalid DSNs and plugin identifiers yield the no-op reporter", () => {
   for (const dsn of [
-    undefined,
     "   ",
     "not-a-sentry-dsn",
     "ftp://public@example.com/1",
@@ -18,13 +17,13 @@ test("invalid DSNs and plugin identifiers disable performance reporting", () => 
     "https://public@example.com/1?secret=value",
     "https://public@example.com/1#fragment",
   ]) {
-    assert.equal(sentryPerformanceReporter({ dsn })({ pluginId: "demo" }), undefined);
+    assert.equal(sentryPerformanceReporter({ dsn })({ pluginId: "demo" }), NOOP_PERFORMANCE);
   }
   assert.equal(
     sentryPerformanceReporter({ dsn: "https://public@example.com/1" })({
       pluginId: "invalid plugin",
     }),
-    undefined,
+    NOOP_PERFORMANCE,
   );
 });
 
@@ -284,7 +283,7 @@ function createReporter(
     environment: "test",
     ...options,
   })({ pluginId: "demo" });
-  if (reporter === undefined) throw new Error("reporter was unexpectedly disabled");
+  if (reporter === NOOP_PERFORMANCE) throw new Error("reporter was unexpectedly disabled");
   return reporter;
 }
 

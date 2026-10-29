@@ -41,23 +41,23 @@ export const contract = defineRpcContract({
   selectHost: selectHostContract,
 });
 
-/** Sentry reporters; each is undefined when telemetry is off. */
+/** Sentry reporters; each is a no-op when telemetry is off. */
 interface Reporters {
-  readonly errors: SentryPluginReporter | undefined;
-  readonly performance: SentryPerformanceReporter | undefined;
+  readonly errors: SentryPluginReporter;
+  readonly performance: SentryPerformanceReporter;
 }
 
 const REPORTER_DISPOSE_TIMEOUT_MS = 2_000;
 
 export default async function plugin(bb: BbPluginApi): Promise<void> {
   const reporters = createReporters(bb);
-  const startup = reporters.performance?.start({ operation: "plugin.startup" });
+  const startup = reporters.performance.start({ operation: "plugin.startup" });
   try {
     registerPlugin(bb, reporters);
-    startup?.finish("ok");
+    startup.finish("ok");
   } catch (error) {
-    startup?.finish("error");
-    reporters.errors?.capture({ boundary: "plugin.factory", error });
+    startup.finish("error");
+    reporters.errors.capture({ boundary: "plugin.factory", error });
     await disposeReporters(reporters);
     throw error;
   }
@@ -98,20 +98,14 @@ function createReporters(bb: BbPluginApi): Reporters {
     errors: telemetry.errorReporter(scope),
     performance: telemetry.performanceReporter(scope),
   };
-  if (reporters.errors === undefined && reporters.performance === undefined) return reporters;
-  try {
-    bb.onDispose(() => disposeReporters(reporters));
-    return reporters;
-  } catch {
-    void disposeReporters(reporters);
-    return { errors: undefined, performance: undefined };
-  }
+  bb.onDispose(() => disposeReporters(reporters));
+  return reporters;
 }
 
 async function disposeReporters({ errors, performance }: Reporters): Promise<void> {
   await Promise.all([
-    errors?.dispose(REPORTER_DISPOSE_TIMEOUT_MS),
-    performance?.dispose(REPORTER_DISPOSE_TIMEOUT_MS),
+    errors.dispose(REPORTER_DISPOSE_TIMEOUT_MS),
+    performance.dispose(REPORTER_DISPOSE_TIMEOUT_MS),
   ]);
 }
 
@@ -153,14 +147,14 @@ async function observe<T>(
   const trace =
     traceOperation === undefined
       ? undefined
-      : reporters.performance?.start({ operation: traceOperation });
+      : reporters.performance.start({ operation: traceOperation });
   try {
     const result = await run();
     trace?.finish("ok");
     return result;
   } catch (error) {
     trace?.finish("error");
-    if (!expected(error)) reporters.errors?.capture({ boundary, operation, error });
+    if (!expected(error)) reporters.errors.capture({ boundary, operation, error });
     throw error;
   }
 }

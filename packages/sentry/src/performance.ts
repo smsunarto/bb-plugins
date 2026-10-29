@@ -9,7 +9,8 @@ const DEFAULT_REQUEST_TIMEOUT_MS = 10_000;
 const IDENTIFIER_PATTERN = /^[a-z0-9][a-z0-9._-]{0,127}$/u;
 
 export type SentryPerformanceReporterOptions = Readonly<{
-  dsn?: string;
+  /** Non-empty; `sentryPluginTelemetry` resolves it. A DSN that fails to parse reports nothing. */
+  dsn: string;
   release?: string;
   environment?: string;
   /** Defaults to 1; `sentryPluginTelemetry` lowers it to 0.1 for per-call traces. */
@@ -31,6 +32,18 @@ export interface SentryPerformanceReporter {
   start(args: Readonly<{ operation: string; variant?: string }>): PerformanceTrace;
   dispose(timeoutMs: number): Promise<void>;
 }
+
+/** Records nothing. What `NOOP_PERFORMANCE` starts. */
+export const NOOP_TRACE: PerformanceTrace = {
+  checkpoint: () => undefined,
+  finish: () => undefined,
+};
+
+/** Reports nothing: telemetry's off state, so callers never branch on presence. */
+export const NOOP_PERFORMANCE: SentryPerformanceReporter = {
+  start: () => NOOP_TRACE,
+  dispose: () => Promise.resolve(),
+};
 
 interface SentryEnvelopeTarget {
   readonly dsn: string;
@@ -56,14 +69,10 @@ export function sentryPerformanceReporter(
   options: SentryPerformanceReporterOptions,
 ): (
   context: Readonly<{ pluginId: string; host?: SentryTelemetryHost }>,
-) => SentryPerformanceReporter | undefined {
+) => SentryPerformanceReporter {
   return ({ pluginId, host }) => {
-    const dsn = options.dsn?.trim();
-    if (dsn === undefined || dsn.length === 0 || !isTelemetryIdentifier(pluginId)) {
-      return undefined;
-    }
-    const target = parseEnvelopeTarget(dsn);
-    if (target === undefined) return undefined;
+    const target = isTelemetryIdentifier(pluginId) ? parseEnvelopeTarget(options.dsn) : undefined;
+    if (target === undefined) return NOOP_PERFORMANCE;
     const gate = host === undefined ? undefined : telemetryGate(host);
 
     let closing: Promise<void> | undefined;

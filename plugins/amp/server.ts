@@ -108,20 +108,13 @@ const ORACLE_UNAVAILABLE =
 
 export function createAmpPlugin(errorReporter = telemetry.errorReporter) {
   return async function plugin(bb: BbPluginApi) {
-    let reporter = errorReporter({ pluginId: PLUGIN_TELEMETRY.pluginId, host: bb });
-    if (reporter !== undefined) {
-      try {
-        bb.onDispose(() => reporter?.dispose(2_000));
-      } catch {
-        void reporter.dispose(2_000);
-        reporter = undefined;
-      }
-    }
+    const reporter = errorReporter({ pluginId: PLUGIN_TELEMETRY.pluginId, host: bb });
+    bb.onDispose(() => reporter.dispose(2_000));
     try {
       await registerPlugin(bb, reporter);
     } catch (error) {
-      reporter?.capture({ boundary: "plugin.factory", error });
-      await reporter?.dispose(2_000);
+      reporter.capture({ boundary: "plugin.factory", error });
+      await reporter.dispose(2_000);
       throw error;
     }
   };
@@ -129,7 +122,7 @@ export function createAmpPlugin(errorReporter = telemetry.errorReporter) {
 
 export default createAmpPlugin();
 
-async function registerPlugin(bb: BbPluginApi, reporter: SentryPluginReporter | undefined) {
+async function registerPlugin(bb: BbPluginApi, reporter: SentryPluginReporter) {
   bb.log.info("loaded");
 
   const orb = createOrbIntent(
@@ -458,7 +451,7 @@ async function registerPlugin(bb: BbPluginApi, reporter: SentryPluginReporter | 
 }
 
 function observeFailure<T>(
-  reporter: SentryPluginReporter | undefined,
+  reporter: SentryPluginReporter,
   boundary: string,
   operation: string,
   callback: () => T,
@@ -467,13 +460,13 @@ function observeFailure<T>(
     const result = callback();
     if (result instanceof Promise) {
       return result.catch((error: unknown) => {
-        reporter?.capture({ boundary, operation, error });
+        reporter.capture({ boundary, operation, error });
         throw error;
       }) as T;
     }
     return result;
   } catch (error) {
-    reporter?.capture({ boundary, operation, error });
+    reporter.capture({ boundary, operation, error });
     throw error;
   }
 }

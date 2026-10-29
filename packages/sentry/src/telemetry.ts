@@ -4,8 +4,8 @@ import {
   sentryPluginRelease,
   type SentryPluginArtifactIdentity,
 } from "./context.ts";
-import { sentryErrorReporter } from "./node.ts";
-import { sentryPerformanceReporter } from "./performance.ts";
+import { NOOP_REPORTER, sentryErrorReporter } from "./node.ts";
+import { NOOP_PERFORMANCE, sentryPerformanceReporter } from "./performance.ts";
 
 export { sentryPluginRelease, type SentryPluginArtifactIdentity } from "./context.ts";
 
@@ -47,8 +47,8 @@ export interface SentryPluginTelemetry {
 }
 
 const DISABLED: SentryPluginTelemetry = {
-  errorReporter: () => undefined,
-  performanceReporter: () => undefined,
+  errorReporter: () => NOOP_REPORTER,
+  performanceReporter: () => NOOP_PERFORMANCE,
 };
 
 /**

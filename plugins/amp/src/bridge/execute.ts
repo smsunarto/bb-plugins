@@ -64,7 +64,7 @@ export type AmpExecuteFn = (args: {
   prompt: AmpExecutePrompt;
   signal?: AbortSignal;
   options?: AmpExecuteOptions;
-  trace?: AmpExecutionTrace;
+  trace: AmpExecutionTrace;
 }) => AsyncIterable<unknown>;
 
 export function createUserMessage(text: string): AmpUserInputMessage {
@@ -241,14 +241,14 @@ async function* runAmp(
   prompt: AmpExecutePrompt,
   signal: AbortSignal | undefined,
   options: AmpExecuteOptions,
-  trace: AmpExecutionTrace | undefined,
+  trace: AmpExecutionTrace,
 ): AsyncGenerator<unknown, void, undefined> {
   signal?.throwIfAborted();
   const reported = new Set<string>();
   const checkpoint = (name: AmpStartupCheckpoint): void => {
     if (reported.has(name)) return;
     reported.add(name);
-    trace?.checkpoint(name);
+    trace.checkpoint(name);
   };
   checkpoint("execute_entered");
   const env = { ...process.env, ...options.env };

@@ -1,10 +1,15 @@
 import { existsSync, readFileSync } from "node:fs";
 import {
+  NOOP_PERFORMANCE,
   sentryPluginEnvironment,
   sentryPerformanceReporter,
   type SentryPerformanceReporter,
 } from "@bb-plugins/sentry/performance";
-import { sentryErrorReporter, type SentryPluginReporter } from "@bb-plugins/sentry/node";
+import {
+  NOOP_REPORTER,
+  sentryErrorReporter,
+  type SentryPluginReporter,
+} from "@bb-plugins/sentry/node";
 import { AMP_SENTRY_ENV, ampSentryRelease } from "../../lib/telemetry.ts";
 
 export const AMP_STARTUP_OPERATION = "cli.startup" as const;
@@ -58,19 +63,19 @@ export function createAmpPerformanceReporter(
   pluginId: string,
   env: NodeJS.ProcessEnv = process.env,
   metaUrl?: URL,
-): SentryPerformanceReporter | undefined {
-  const dsn = env[AMP_SENTRY_ENV[0]];
-  if (dsn === undefined || dsn.trim().length === 0) return undefined;
+): SentryPerformanceReporter {
+  const dsn = env[AMP_SENTRY_ENV[0]]?.trim();
+  if (dsn === undefined || dsn.length === 0) return NOOP_PERFORMANCE;
   try {
     const meta = readAmpHostMeta(metaUrl ?? resolveAmpHostMetaUrl());
-    if (meta.pluginId !== pluginId) return undefined;
+    if (meta.pluginId !== pluginId) return NOOP_PERFORMANCE;
     return sentryPerformanceReporter({
       dsn,
       release: ampSentryRelease(meta),
       environment: sentryPluginEnvironment(env),
     })({ pluginId });
   } catch {
-    return undefined;
+    return NOOP_PERFORMANCE;
   }
 }
 
@@ -78,27 +83,27 @@ export function createAmpErrorReporter(
   pluginId: string,
   env: NodeJS.ProcessEnv = process.env,
   metaUrl?: URL,
-): SentryPluginReporter | undefined {
+): SentryPluginReporter {
   const dsn = env[AMP_SENTRY_ENV[0]]?.trim();
-  if (dsn === undefined || dsn.length === 0) return undefined;
+  if (dsn === undefined || dsn.length === 0) return NOOP_REPORTER;
   try {
     const identity = readAmpHostMeta(metaUrl ?? resolveAmpHostMetaUrl());
-    if (identity.pluginId !== pluginId) return undefined;
+    if (identity.pluginId !== pluginId) return NOOP_REPORTER;
     return sentryErrorReporter({
       dsn,
       release: ampSentryRelease(identity),
       environment: sentryPluginEnvironment(env),
     })({ pluginId });
   } catch {
-    return undefined;
+    return NOOP_REPORTER;
   }
 }
 
 export function startAmpStartupTrace(
-  reporter: SentryPerformanceReporter | undefined,
+  reporter: SentryPerformanceReporter,
   context: AmpStartupTraceContext,
-): AmpExecutionTrace | undefined {
-  return reporter?.start({
+): AmpExecutionTrace {
+  return reporter.start({
     operation: AMP_STARTUP_OPERATION,
     variant: ampStartupVariant(context),
   });

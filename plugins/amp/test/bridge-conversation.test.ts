@@ -8,6 +8,7 @@
 import assert from "node:assert/strict";
 import { mock, test } from "bun:test";
 import { setImmediate as tick } from "node:timers/promises";
+import { NOOP_TRACE } from "@bb-plugins/sentry/performance";
 import {
   createAmpConversation,
   createRetryState,
@@ -44,6 +45,7 @@ function depsFor(execute: AmpExecuteFn, overrides: Record<string, unknown> = {})
     execute,
     env: { TERM: "dumb" },
     retry: createRetryState(),
+    startTrace: () => NOOP_TRACE,
     ...overrides,
   } as Parameters<typeof createAmpConversation>[0]["deps"];
 }

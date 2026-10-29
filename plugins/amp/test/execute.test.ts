@@ -3,6 +3,7 @@ import { afterAll, test } from "bun:test";
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { NOOP_TRACE } from "@bb-plugins/sentry/performance";
 import { parseUnsupportedFlag } from "../src/bridge/events.ts";
 import {
   appendBoundedStderr,
@@ -341,6 +342,7 @@ test("createAmpExecute spawns the CLI with the built argv, merged settings, and 
   const messages = await collect(
     f.execute({
       prompt: "hello amp",
+      trace: NOOP_TRACE,
       options: {
         mode: "medium",
         thinking: true,
@@ -403,7 +405,9 @@ test("steering messages reach the CLI stdin verbatim, steer flag included", asyn
     yield createUserMessage("first");
     yield { ...createUserMessage("second"), steer: true };
   }
-  const messages = await collect(f.execute({ prompt: input(), options: { env: f.env } }));
+  const messages = await collect(
+    f.execute({ prompt: input(), options: { env: f.env }, trace: NOOP_TRACE }),
+  );
   // A framed prompt must announce itself, or real amp reads stdin as raw
   // text until EOF and times out against the held-open steering stdin.
   assert.ok((messages[0] as FakeHead).argv.includes("--stream-json-input"));
@@ -420,7 +424,11 @@ test("steering messages reach the CLI stdin verbatim, steer flag included", asyn
 test("non-JSON stdout lines are skipped, not fatal", async () => {
   const f = fixture();
   const messages = await collect(
-    f.execute({ prompt: "x", options: { env: { ...f.env, FAKE_GARBAGE: "1" } } }),
+    f.execute({
+      prompt: "x",
+      options: { env: { ...f.env, FAKE_GARBAGE: "1" } },
+      trace: NOOP_TRACE,
+    }),
   );
   assert.deepEqual(
     messages.map((m) => (m as { type: string }).type),
@@ -434,6 +442,7 @@ test("a nonzero exit surfaces the CLI stderr for the unsupported-flag retry", as
     collect(
       f.execute({
         prompt: "x",
+        trace: NOOP_TRACE,
         options: {
           mode: "medium",
           env: { ...f.env, FAKE_STDERR: "error: unknown option '--mode'\n", FAKE_EXIT: "2" },
@@ -454,7 +463,14 @@ test("an already-aborted signal refuses to spawn", async () => {
   const controller = new AbortController();
   controller.abort();
   await assert.rejects(
-    collect(f.execute({ prompt: "x", signal: controller.signal, options: { env: f.env } })),
+    collect(
+      f.execute({
+        prompt: "x",
+        signal: controller.signal,
+        options: { env: f.env },
+        trace: NOOP_TRACE,
+      }),
+    ),
   );
 });
 
@@ -467,7 +483,12 @@ test("aborting mid-run terminates the CLI", async () => {
       controller.signal.addEventListener("abort", () => resolve(undefined));
     });
   }
-  const run = f.execute({ prompt: input(), signal: controller.signal, options: { env: f.env } });
+  const run = f.execute({
+    prompt: input(),
+    signal: controller.signal,
+    options: { env: f.env },
+    trace: NOOP_TRACE,
+  });
   const iterator = run[Symbol.asyncIterator]();
   const head = await iterator.next();
   assert.equal((head.value as { type: string }).type, "argv");
@@ -489,6 +510,7 @@ test("mcpConfig with the orb executor fails fast", async () => {
       f.execute({
         prompt: "x",
         options: { executor: "orb", mcpConfig: { s: { command: "node" } }, env: f.env },
+        trace: NOOP_TRACE,
       }),
     ),
     /Orb/,

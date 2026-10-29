@@ -235,7 +235,7 @@ export interface AmpConversationDeps {
   retry: MutableRetryState;
   /** Starts one trace per actual CLI execution attempt. Runtime-derived
    * values are reduced to finite, non-sensitive dimensions before this call. */
-  startTrace?: (context: AmpStartupTraceContext) => AmpExecutionTrace | undefined;
+  startTrace: (context: AmpStartupTraceContext) => AmpExecutionTrace;
 }
 
 export interface AmpConversationArgs {
@@ -318,7 +318,7 @@ export function createAmpConversation(args: AmpConversationArgs): AmpConversatio
     for (let attempt = 0; ; attempt += 1) {
       let streamed = false;
       const attemptInput = new AbortController();
-      const trace = deps.startTrace?.({
+      const trace = deps.startTrace({
         executor: "local",
         continuation: continueFrom === null ? "fresh" : "continued",
         mcp: mcpConfig !== null && Object.keys(mcpConfig).length > 0,
@@ -329,9 +329,9 @@ export function createAmpConversation(args: AmpConversationArgs): AmpConversatio
       const finishTrace = (outcome: Parameters<AmpExecutionTrace["finish"]>[0]): void => {
         if (traceFinished) return;
         traceFinished = true;
-        trace?.finish(outcome);
+        trace.finish(outcome);
       };
-      trace?.checkpoint("attempt_entered");
+      trace.checkpoint("attempt_entered");
       try {
         const stream = deps.execute({
           prompt: input.stream(attemptInput.signal),
@@ -362,7 +362,7 @@ export function createAmpConversation(args: AmpConversationArgs): AmpConversatio
           !controller.signal.aborted &&
           !deps.retry.droppedOptions.has(unsupported)
         ) {
-          trace?.checkpoint("unsupported_flag");
+          trace.checkpoint("unsupported_flag");
           finishTrace("retry");
           deps.retry.drop(unsupported, flag);
           console.error(
@@ -463,7 +463,7 @@ export function runOrb(args: OrbRunArgs): OrbRun {
     // rejects an option before streaming anything, so no output duplicates.
     for (let attempt = 0; ; attempt += 1) {
       let streamed = false;
-      const trace = deps.startTrace?.({
+      const trace = deps.startTrace({
         executor: "orb",
         continuation: continueFrom === null ? "fresh" : "continued",
         mcp: false,
@@ -474,9 +474,9 @@ export function runOrb(args: OrbRunArgs): OrbRun {
       const finishTrace = (outcome: Parameters<AmpExecutionTrace["finish"]>[0]): void => {
         if (traceFinished) return;
         traceFinished = true;
-        trace?.finish(outcome);
+        trace.finish(outcome);
       };
-      trace?.checkpoint("attempt_entered");
+      trace.checkpoint("attempt_entered");
       try {
         const stream = deps.execute({
           prompt,
@@ -504,7 +504,7 @@ export function runOrb(args: OrbRunArgs): OrbRun {
           !controller.signal.aborted &&
           !deps.retry.droppedOptions.has(unsupported)
         ) {
-          trace?.checkpoint("unsupported_flag");
+          trace.checkpoint("unsupported_flag");
           finishTrace("retry");
           deps.retry.drop(unsupported, flag);
           console.error(
@@ -528,12 +528,12 @@ export function runOrb(args: OrbRunArgs): OrbRun {
 }
 
 function checkpointParsedBatch(
-  trace: AmpExecutionTrace | undefined,
+  trace: AmpExecutionTrace,
   batch: AmpEventBatch,
   finish: (outcome: Parameters<AmpExecutionTrace["finish"]>[0]) => void,
 ): void {
   if (batch.events.some((event) => event.kind === "init")) {
-    trace?.checkpoint("system_init");
+    trace.checkpoint("system_init");
   }
   if (
     batch.events.some(
@@ -544,7 +544,7 @@ function checkpointParsedBatch(
         event.kind === "toolStart",
     )
   ) {
-    trace?.checkpoint("first_model_event");
+    trace.checkpoint("first_model_event");
     finish("ok");
   }
 }

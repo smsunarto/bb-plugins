@@ -3,7 +3,8 @@ import { redactPluginError, sanitizeSentryEvent } from "./privacy.ts";
 import { telemetryGate, type SentryTelemetryHost, type TelemetryGate } from "./telemetry-gate.ts";
 
 export type SentryErrorReporterOptions = Readonly<{
-  dsn?: string;
+  /** Non-empty; `sentryPluginTelemetry` resolves and validates it. */
+  dsn: string;
   release?: string;
   environment?: string;
 }>;
@@ -19,20 +20,20 @@ export type SentryPluginReporter = {
   dispose(timeoutMs: number): Promise<void>;
 };
 
+/** Reports nothing: telemetry's off state, so callers never branch on presence. */
+export const NOOP_REPORTER: SentryPluginReporter = {
+  capture: () => undefined,
+  dispose: () => Promise.resolve(),
+};
+
 export function sentryErrorReporter(
   options: SentryErrorReporterOptions,
-): (
-  context: Readonly<{ pluginId: string; host?: SentryTelemetryHost }>,
-) => SentryPluginReporter | undefined {
+): (context: Readonly<{ pluginId: string; host?: SentryTelemetryHost }>) => SentryPluginReporter {
   return ({ pluginId, host }) => {
-    const dsn = options.dsn?.trim();
-    if (dsn === undefined || dsn.length === 0) {
-      return undefined;
-    }
     const gate = host === undefined ? undefined : telemetryGate(host);
 
     const client = new NodeClient({
-      dsn,
+      dsn: options.dsn,
       ...(options.release === undefined ? {} : { release: options.release }),
       ...(options.environment === undefined ? {} : { environment: options.environment }),
       integrations: [],

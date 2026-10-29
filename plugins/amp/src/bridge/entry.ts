@@ -116,8 +116,8 @@ interface ManagedSession {
 interface BridgeState {
   store: SessionStore;
   oracle: OracleReports;
-  errors: AmpErrorReporter | undefined;
-  performance: AmpPerformanceReporter | undefined;
+  errors: AmpErrorReporter;
+  performance: AmpPerformanceReporter;
 }
 
 let state: BridgeState | null = null;
@@ -666,7 +666,7 @@ function handleResponse(message: unknown): void {
   try {
     tracker.handleToolCallResponse(message as Parameters<typeof tracker.handleToolCallResponse>[0]);
   } catch (error) {
-    state?.errors?.capture({ boundary: "host.bridge", operation: "tool/call/response", error });
+    state?.errors.capture({ boundary: "host.bridge", operation: "tool/call/response", error });
     throw error;
   }
 }
@@ -699,7 +699,7 @@ export function handleLine(line: string): void {
         await handler(request.id, request.params);
       } catch (error) {
         if (!(error instanceof BridgeRecoveryError)) {
-          state?.errors?.capture({
+          state?.errors.capture({
             boundary: "host.bridge",
             operation: request.method,
             error,
@@ -724,15 +724,15 @@ export const experimental_providerBridge = experimental_defineProviderBridge({
         performance: createAmpPerformanceReporter(context.pluginId),
       };
     } catch (error) {
-      errors?.capture({ boundary: "host.bridge", operation: "bridge/start", error });
-      void errors?.dispose(2_000);
+      errors.capture({ boundary: "host.bridge", operation: "bridge/start", error });
+      void errors.dispose(2_000);
       throw error;
     }
     shutdownBridge = createIdempotentShutdown(async () => {
       for (const threadId of Array.from(sessions.keys())) {
         dropSession(threadId, "the bridge is shutting down");
       }
-      await Promise.all([state?.errors?.dispose(2_000), state?.performance?.dispose(2_000)]);
+      await Promise.all([state?.errors.dispose(2_000), state?.performance.dispose(2_000)]);
       state = null;
     });
   },

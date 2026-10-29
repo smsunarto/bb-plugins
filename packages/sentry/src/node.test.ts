@@ -3,11 +3,6 @@ import { createServer } from "node:http";
 import { test } from "node:test";
 import { sentryErrorReporter } from "./node.ts";
 
-test("missing and blank DSNs disable reporting", () => {
-  assert.equal(sentryErrorReporter({})({ pluginId: "demo" }), undefined);
-  assert.equal(sentryErrorReporter({ dsn: "   " })({ pluginId: "demo" }), undefined);
-});
-
 test("direct NodeClient sends one sanitized event and closes once", async () => {
   const target = await startEnvelopeTarget();
   try {
@@ -16,7 +11,6 @@ test("direct NodeClient sends one sanitized event and closes once", async () => 
       release: "demo@1.0.0",
       environment: "test",
     })({ pluginId: "demo" });
-    assert.ok(reporter);
     const failure = new Error("token=private");
     failure.stack =
       "PrivateError: token=private\n    at callback (/Users/alice/git/bb-plugins/plugins/demo/server.ts:7:3)";
@@ -55,8 +49,6 @@ test("factories use isolated clients and destinations", async () => {
     const secondReporter = sentryErrorReporter({ dsn: second.dsn, release: "second@1" })({
       pluginId: "second",
     });
-    assert.ok(firstReporter);
-    assert.ok(secondReporter);
     firstReporter.capture({ boundary: "plugin.factory", error: new Error("first") });
     secondReporter.capture({ boundary: "plugin.setup", error: new Error("second") });
     await Promise.all([firstReporter.dispose(5_000), secondReporter.dispose(5_000)]);

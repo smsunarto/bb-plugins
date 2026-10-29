@@ -6,6 +6,7 @@ import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { mkdtemp, rm } from "node:fs/promises";
 import { test } from "bun:test";
+import { NOOP_PERFORMANCE } from "@bb-plugins/sentry/performance";
 import { AMP_SENTRY_ENV, ampSentryRelease } from "../lib/telemetry.ts";
 import {
   ampStartupVariant,
@@ -34,7 +35,6 @@ test("Amp host errors use artifact identity and sanitized envelopes", async () =
       { SENTRY_DSN: target.dsn, SENTRY_ENVIRONMENT: "test" },
       pathToFileURL(metaPath),
     );
-    assert.ok(reporter);
     reporter.capture({
       boundary: "host.bridge",
       operation: "thread/start",
@@ -66,7 +66,6 @@ test("Amp derives the performance release from final host metadata", async () =>
       { SENTRY_DSN: target.dsn, SENTRY_ENVIRONMENT: "test" },
       pathToFileURL(metaPath),
     );
-    assert.ok(reporter);
     const trace = startAmpStartupTrace(reporter, {
       executor: "local",
       continuation: "fresh",
@@ -74,8 +73,8 @@ test("Amp derives the performance release from final host metadata", async () =>
       mode: "medium",
       attempt: 0,
     });
-    trace?.checkpoint("spawn_called");
-    trace?.finish("ok");
+    trace.checkpoint("spawn_called");
+    trace.finish("ok");
     await reporter.dispose(5_000);
 
     const event = parseEnvelopeEvent(target.bodies[0] ?? "");
@@ -99,7 +98,6 @@ test("Amp labels development traces from NODE_ENV", async () => {
       { SENTRY_DSN: target.dsn, NODE_ENV: "development" },
       pathToFileURL(metaPath),
     );
-    assert.ok(reporter);
     reporter.start({ operation: "cli.startup" }).finish("ok");
     await reporter.dispose(5_000);
     assert.equal(parseEnvelopeEvent(target.bodies[0] ?? "").environment, "development");
@@ -111,7 +109,7 @@ test("Amp labels development traces from NODE_ENV", async () => {
 test("a missing DSN avoids host metadata reads", () => {
   assert.equal(
     createAmpPerformanceReporter("amp", {}, new URL("file:///does/not/exist/host.meta.json")),
-    undefined,
+    NOOP_PERFORMANCE,
   );
 });
 
@@ -122,14 +120,20 @@ test("telemetry fails open when host metadata cannot identify this plugin", asyn
   try {
     assert.equal(
       createAmpPerformanceReporter("amp", env, pathToFileURL(join(dir, "missing.json"))),
-      undefined,
+      NOOP_PERFORMANCE,
     );
 
     writeFileSync(metaPath, "{not-json");
-    assert.equal(createAmpPerformanceReporter("amp", env, pathToFileURL(metaPath)), undefined);
+    assert.equal(
+      createAmpPerformanceReporter("amp", env, pathToFileURL(metaPath)),
+      NOOP_PERFORMANCE,
+    );
 
     writeFileSync(metaPath, JSON.stringify({ pluginId: "other", pluginVersion: "1.2.3" }));
-    assert.equal(createAmpPerformanceReporter("amp", env, pathToFileURL(metaPath)), undefined);
+    assert.equal(
+      createAmpPerformanceReporter("amp", env, pathToFileURL(metaPath)),
+      NOOP_PERFORMANCE,
+    );
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
