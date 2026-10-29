@@ -6,7 +6,7 @@ import { isRecord, parseMarkdownDocument } from "./markdown-document.js";
 import { DOCS_PATH_LIST_LIMIT, docsHostContract, docsHostSignals } from "./host-contract.js";
 import { isExcludedDocsPath } from "./path-policy.js";
 import {
-  defineRpcContract,
+  experimental_PluginRpcRefusal,
   PluginCliError,
   cliCommand,
   defineCli,
@@ -16,6 +16,23 @@ import {
   type PluginRpcHandlers,
 } from "@get-bb/plugin-sdk";
 import { z } from "zod";
+import {
+  VAULTS_TAG,
+  docsRpcContract,
+  documentTag,
+  errorMessage,
+  openedFileTag,
+  pathTags,
+  requireString,
+  syncScopeSchema,
+  syncSnapshotEntrySchema,
+  syncStateEntrySchema,
+  treeTag,
+  vaultPathSchema,
+  vaultTag,
+  type OpenerSource,
+  type Vault,
+} from "./contract.js";
 
 const DEFAULT_DIR = "~/Notes";
 const PREVIEW_LENGTH = 100;
@@ -24,6 +41,7 @@ const MAX_ATTACHMENT_BYTES = 20 * 1024 * 1024;
 const SYNC_STATE_FILE = ".bb-docs-state.json";
 const SYNC_STATE_VERSION = 1;
 const MENTION_SUMMARY_TTL_MS = 10_000;
+const PREVIEW_RENEW_BEFORE_MS = 2 * 60_000;
 // bb drops a mention provider after 2 s; answer with the vaults ready by then.
 const MENTION_VAULT_WAIT_MS = 1_500;
 const SUMMARY_READ_CONCURRENCY = 8;
@@ -117,101 +135,6 @@ interface ResolvedOpenerFile {
   hostId: string;
 }
 
-const vaultIdSchema = z.string().min(1).optional();
-const vaultSchema = z
-  .object({
-    id: z.string().min(1),
-    name: z.string().min(1),
-    hostId: z.string().min(1).nullable(),
-    rootPath: z.string().min(1),
-  })
-  .strict();
-// A refinement rather than a transform: discoverable RPC publishes output
-// schemas as JSON Schema, which cannot represent transforms. requireVaultPath
-// rejects every input that normalization would rewrite, and every handler
-// re-validates its paths, so validating without rewriting is equivalent.
-const vaultPathSchema = z.string().superRefine((value, context) => {
-  try {
-    requireVaultPath(value);
-  } catch (error) {
-    context.addIssue({
-      code: "custom",
-      message: errorMessage(error),
-    });
-  }
-});
-const vaultDirectorySchema = z.union([z.literal(""), vaultPathSchema]).optional();
-const openerSourceSchema = z
-  .object({
-    kind: z.enum(["workspace", "host", "thread-storage"]),
-    threadId: z.string().nullable(),
-    environmentId: z.string().nullable(),
-    projectId: z.string().nullable(),
-    experimental_hostId: z.string().min(1).optional(),
-  })
-  .strict();
-const fileReadSchema = z
-  .object({
-    path: z.string(),
-    content: z.string(),
-    contentEncoding: z.enum(["base64", "utf8"]),
-    mimeType: z.string().optional(),
-    sizeBytes: z.number().int().nonnegative(),
-    modifiedAtMs: z.number().nonnegative().optional(),
-    sha256: z.string(),
-  })
-  .strict();
-const fileWriteSchema = z.discriminatedUnion("outcome", [
-  z
-    .object({
-      outcome: z.literal("written"),
-      sha256: z.string(),
-      sizeBytes: z.number().int().nonnegative(),
-    })
-    .strict(),
-  z
-    .object({
-      outcome: z.literal("conflict"),
-      currentSha256: z.string().nullable(),
-    })
-    .strict(),
-]);
-const previewSchema = z
-  .object({
-    baseUrl: z.string().min(1),
-    expiresAtMs: z.number().nonnegative(),
-  })
-  .strict();
-const hostSchema = z
-  .object({
-    id: z.string().min(1),
-    name: z.string().min(1),
-    status: z.enum(["connected", "disconnected"]),
-    maxPermissionMode: z.enum(["full", "auto", "accept-edits"]),
-    lastSeenAt: z.number().nullable(),
-    lastRejectedProtocolVersion: z.number().int().positive().nullable(),
-    createdAt: z.number(),
-    updatedAt: z.number(),
-  })
-  .strip();
-const pathResultSchema = z.object({ path: z.string().min(1) }).strict();
-const okResultSchema = z.object({ ok: z.literal(true) }).strict();
-const syncScopeSchema = z.discriminatedUnion("kind", [
-  z.object({ kind: z.literal("all") }).strict(),
-  z.object({ kind: z.literal("file"), path: vaultPathSchema }).strict(),
-  z.object({ kind: z.literal("folder"), path: vaultPathSchema }).strict(),
-]);
-const syncStateEntrySchema = z
-  .object({
-    remotePath: vaultPathSchema,
-    localPath: vaultPathSchema,
-    sha256: z.string().min(1),
-    sizeBytes: z.number().int().nonnegative(),
-    contentEncoding: z.enum(["base64", "utf8"]),
-    mimeType: z.string().nullable(),
-    modifiedAtMs: z.number().nonnegative().nullable(),
-  })
-  .strict();
 const syncStateSchema = z
   .object({
     schemaVersion: z.literal(SYNC_STATE_VERSION),
@@ -222,324 +145,14 @@ const syncStateSchema = z
     directories: z.array(vaultPathSchema).max(MAX_TREE_ENTRIES),
   })
   .strict();
-const syncSnapshotEntrySchema = syncStateEntrySchema.extend({
-  content: z.string(),
-});
-const syncWriteSchema = z
-  .object({
-    path: vaultPathSchema,
-    content: z.string(),
-    contentEncoding: z.enum(["base64", "utf8"]),
-    expectedSha256: z.string().nullable(),
-  })
-  .strict();
-const syncDeleteSchema = z
-  .object({ path: vaultPathSchema, expectedSha256: z.string().min(1) })
-  .strict();
-
-type Vault = z.infer<typeof vaultSchema>;
 type SyncScope = z.infer<typeof syncScopeSchema>;
 type SyncStateEntry = z.infer<typeof syncStateEntrySchema>;
 type SyncState = z.infer<typeof syncStateSchema>;
 type SyncFile = z.infer<typeof syncSnapshotEntrySchema>;
-type OpenerSource = z.infer<typeof openerSourceSchema>;
-
-export const docsRpcContract = defineRpcContract({
-  readProposal: {
-    experimental_description:
-      "Read the pending or last resolved proposal for a note, with its version.",
-    input: z.object({ vaultId: vaultIdSchema, path: vaultPathSchema }).strict(),
-    output: proposalSchema.nullable(),
-  },
-  proposeNote: {
-    experimental_description:
-      "Propose a complete Markdown revision of a note without changing the file.",
-    input: z
-      .object({
-        vaultId: vaultIdSchema,
-        path: vaultPathSchema,
-        content: z.string(),
-        expectedSha256: z.string().min(1),
-        expectedVersion: z.number().int().positive().nullable(),
-      })
-      .strict(),
-    output: proposalSchema,
-  },
-  updateProposal: {
-    experimental_description: "Edit the candidate of a pending proposal, guarded by its version.",
-    input: z
-      .object({
-        vaultId: vaultIdSchema,
-        path: vaultPathSchema,
-        content: z.string(),
-        expectedVersion: z.number().int().positive(),
-      })
-      .strict(),
-    output: proposalSchema,
-  },
-  resolveProposal: {
-    experimental_description:
-      "Accept, reject, undo, or redo a note proposal, guarded by its version.",
-    input: z
-      .object({
-        vaultId: vaultIdSchema,
-        path: vaultPathSchema,
-        action: z.enum(["accept", "reject", "undo", "redo"]),
-        expectedVersion: z.number().int().positive(),
-      })
-      .strict(),
-    output: proposalSchema,
-  },
-  syncSnapshot: {
-    experimental_description:
-      "Snapshot a vault, folder, or file with content hashes for optimistic sync.",
-    input: z.object({ vaultId: vaultIdSchema, scope: syncScopeSchema }).strict(),
-    output: z
-      .object({
-        vault: vaultSchema,
-        scope: syncScopeSchema,
-        files: z.array(syncSnapshotEntrySchema),
-        directories: z.array(vaultPathSchema),
-      })
-      .strict(),
-  },
-  syncApply: {
-    experimental_description:
-      "Apply writes, deletes, and folder changes to a vault with sha256 conflict checks.",
-    input: z
-      .object({
-        vaultId: vaultIdSchema,
-        writes: z.array(syncWriteSchema).max(MAX_TREE_ENTRIES),
-        deletes: z.array(syncDeleteSchema).max(MAX_TREE_ENTRIES),
-        directories: z.array(vaultPathSchema).max(MAX_TREE_ENTRIES),
-        deleteDirectories: z.array(vaultPathSchema).max(MAX_TREE_ENTRIES),
-        dryRun: z.boolean(),
-      })
-      .strict(),
-    output: z
-      .object({
-        outcome: z.enum(["applied", "conflict", "partial"]),
-        written: z.array(syncStateEntrySchema),
-        deleted: z.array(vaultPathSchema),
-        createdDirectories: z.array(vaultPathSchema),
-        deletedDirectories: z.array(vaultPathSchema),
-        conflicts: z.array(
-          z
-            .object({
-              path: vaultPathSchema,
-              expectedSha256: z.string().nullable(),
-              currentSha256: z.string().nullable(),
-            })
-            .strict(),
-        ),
-        errors: z.array(z.object({ path: z.string(), message: z.string() }).strict()),
-      })
-      .strict(),
-  },
-  listNotes: {
-    experimental_description: "List vaults, hosts, and the notes and folders of one vault.",
-    input: z.object({ vaultId: vaultIdSchema }).strict(),
-    output: z
-      .object({
-        vaults: z.array(vaultSchema),
-        vault: vaultSchema,
-        hosts: z.array(hostSchema),
-        entries: z.array(
-          z
-            .object({
-              kind: z.enum(["file", "directory"]),
-              path: z.string(),
-            })
-            .strict(),
-        ),
-        entryOrder: z.array(z.string()),
-        notes: z.array(
-          z
-            .object({
-              path: z.string(),
-              title: z.string(),
-              preview: z.string(),
-              modifiedAtMs: z.number().nonnegative(),
-            })
-            .strict(),
-        ),
-        truncated: z.boolean(),
-        error: z.string().nullable(),
-      })
-      .strict(),
-  },
-  readNote: {
-    experimental_description: "Read one file from a vault with its sha256.",
-    input: z.object({ vaultId: vaultIdSchema, path: vaultPathSchema }).strict(),
-    output: fileReadSchema,
-  },
-  saveNote: {
-    experimental_description:
-      "Write one file to a vault, optionally guarded by an expected sha256.",
-    input: z
-      .object({
-        vaultId: vaultIdSchema,
-        path: vaultPathSchema,
-        content: z.string(),
-        expectedSha256: z.string().nullable().optional(),
-      })
-      .strict(),
-    output: fileWriteSchema,
-  },
-  createNote: {
-    experimental_description: "Create a new Markdown note in a vault folder.",
-    input: z
-      .object({
-        vaultId: vaultIdSchema,
-        parent: vaultDirectorySchema,
-        name: z.string().optional(),
-        content: z.string().optional(),
-      })
-      .strict(),
-    output: pathResultSchema,
-  },
-  deletePath: {
-    experimental_description: "Delete a file or folder from a vault.",
-    input: z
-      .object({
-        vaultId: vaultIdSchema,
-        path: vaultPathSchema,
-        recursive: z.boolean().optional(),
-      })
-      .strict(),
-    output: okResultSchema,
-  },
-  createFolder: {
-    experimental_description: "Create a folder in a vault.",
-    input: z.object({ vaultId: vaultIdSchema, path: vaultPathSchema }).strict(),
-    output: pathResultSchema,
-  },
-  reorderFiles: {
-    experimental_description: "Persist the display order of entries in a vault folder.",
-    input: z
-      .object({
-        vaultId: vaultIdSchema,
-        parent: vaultDirectorySchema,
-        paths: z.array(vaultPathSchema),
-      })
-      .strict(),
-    output: z.object({ paths: z.array(vaultPathSchema) }).strict(),
-  },
-  movePath: {
-    experimental_description: "Move or rename a file or folder within a vault.",
-    input: z
-      .object({
-        vaultId: vaultIdSchema,
-        from: vaultPathSchema,
-        to: vaultPathSchema,
-      })
-      .strict(),
-    output: pathResultSchema,
-  },
-  renameToTitle: {
-    experimental_description: "Rename a note file to match its Markdown title.",
-    input: z.object({ vaultId: vaultIdSchema, path: vaultPathSchema }).strict(),
-    output: pathResultSchema,
-  },
-  createVault: {
-    experimental_description: "Register a vault rooted at a host directory.",
-    input: z
-      .object({
-        name: z.string().min(1),
-        rootPath: z.string().min(1),
-        hostId: z.string().min(1).optional(),
-      })
-      .strict(),
-    output: vaultSchema,
-  },
-  setVaultHost: {
-    experimental_description:
-      "Bind a vault to the connected host that holds its folder, keeping its proposals and order.",
-    input: z.object({ vaultId: z.string().min(1), hostId: z.string().min(1) }).strict(),
-    output: vaultSchema,
-  },
-  removeVault: {
-    experimental_description: "Unregister a vault configuration.",
-    input: z.object({ vaultId: z.string().min(1) }).strict(),
-    output: okResultSchema,
-  },
-  uploadAttachment: {
-    experimental_description:
-      "Store an attachment beside a note and return its Markdown link path.",
-    input: z
-      .object({
-        vaultId: vaultIdSchema,
-        notePath: vaultPathSchema,
-        content: z.string().min(1),
-        name: z.string().min(1),
-      })
-      .strict(),
-    output: z
-      .object({
-        path: z.string().min(1),
-        markdownPath: z.string().min(1),
-        result: fileWriteSchema,
-      })
-      .strict(),
-  },
-  preparePreview: {
-    experimental_description: "Prepare a short-lived preview base URL for a vault file.",
-    input: z.object({ vaultId: vaultIdSchema, path: vaultPathSchema }).strict(),
-    output: previewSchema,
-  },
-  openFile: {
-    experimental_description: "Open a workspace, host, or thread-storage file with a preview URL.",
-    input: z.object({ source: openerSourceSchema, path: z.string().min(1) }).strict(),
-    output: z
-      .object({
-        file: fileReadSchema,
-        preview: previewSchema,
-        previewPath: z.string(),
-        hostId: z.string().min(1),
-      })
-      .strict(),
-  },
-  watchOpenedFile: {
-    experimental_description:
-      "Watch an opened workspace, host, or thread-storage file on its host and return its sha256. Renew within renewWithinMs; changes arrive on the opened-file-changed realtime channel.",
-    input: z.object({ source: openerSourceSchema, path: z.string().min(1) }).strict(),
-    output: z
-      .object({
-        watchId: z.string().min(1),
-        sha256: z.string().nullable(),
-        renewWithinMs: z.number().int().positive(),
-      })
-      .strict(),
-  },
-  saveOpenedFile: {
-    experimental_description:
-      "Save a workspace, host, or thread-storage file with an optional expected sha256.",
-    input: z
-      .object({
-        source: openerSourceSchema,
-        path: z.string().min(1),
-        content: z.string(),
-        expectedSha256: z.string().nullable().optional(),
-      })
-      .strict(),
-    output: fileWriteSchema,
-  },
-});
-
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
-}
 
 function requireRecord(value: unknown): Record<string, unknown> {
   if (!isRecord(value)) throw new Error("Expected an object");
   return value;
-}
-
-function requireString(value: unknown, field: string): string {
-  if (typeof value !== "string" || value.trim().length === 0) {
-    throw new Error(`"${field}" must be a non-empty string`);
-  }
-  return value.trim();
 }
 
 function optionalString(value: unknown): string | undefined {
@@ -734,17 +347,37 @@ export default async function plugin(bb: BbPluginApi) {
   // Opened files outside every vault, by watch id, with the host watching
   // each. A page renews its watch while it shows the file; a change, or the
   // loss of every watch on a restarted worker, reaches it as a realtime event.
+  type OpenedFileReader = {
+    tag: string;
+    sha256: string | null | undefined;
+    revision: number;
+    wake(): void;
+  };
+  const openedFileReaders = new Map<string, Set<OpenedFileReader>>();
   const openedFileWatches = new Map<string, string>();
   const offFileSignal = hostFiles.experimental_onSignal("fileChanged", ({ hostId, payload }) => {
     if (openedFileWatches.get(payload.watchId) !== hostId) return;
     bb.realtime.publish("opened-file-changed", payload);
+    const tags: string[] = [];
+    for (const reader of openedFileReaders.get(payload.watchId) ?? []) {
+      if (payload.sha256 === null || reader.sha256 !== payload.sha256) tags.push(reader.tag);
+      reader.sha256 = payload.sha256;
+      reader.revision += 1;
+    }
+    invalidate(tags);
   });
   const offFileExit = hostFiles.experimental_onWorkerExit(({ hostId }) => {
     for (const [watchId, watchHostId] of openedFileWatches) {
       if (watchHostId !== hostId) continue;
       openedFileWatches.delete(watchId);
-      // No hash: the page renews at once, which re-arms and compares.
+      for (const reader of openedFileReaders.get(watchId) ?? []) {
+        reader.sha256 = undefined;
+        reader.revision += 1;
+        reader.wake();
+      }
+      // Wake live readers so the restarted host re-arms immediately.
       bb.realtime.publish("opened-file-changed", { watchId });
+      invalidate([...(openedFileReaders.get(watchId) ?? [])].map((reader) => reader.tag));
     }
   });
   bb.onDispose(() => {
@@ -815,6 +448,7 @@ export default async function plugin(bb: BbPluginApi) {
       "INSERT INTO vaults (id, name, host_id, root_path, created_at) VALUES (?, ?, ?, ?, ?)",
     ).run("personal", "Personal", primaryHostId, rootPath, Date.now());
     bb.realtime.publish("vault-changed", { vaultId: "personal" });
+    invalidate([VAULTS_TAG, vaultTag("personal")]);
   }
 
   function listVaults(): Vault[] {
@@ -901,6 +535,7 @@ export default async function plugin(bb: BbPluginApi) {
     unboundCandidates.delete(vaultId);
     mentionSummaries.delete(vaultId);
     bb.realtime.publish("vault-changed", { vaultId });
+    invalidate([VAULTS_TAG, vaultTag(vaultId), treeTag(vaultId)]);
   }
 
   // A NULL-host vault was saved when NULL meant "the server's machine". bb
@@ -1041,6 +676,7 @@ export default async function plugin(bb: BbPluginApi) {
     }
   >();
   const mentionLifetime = new AbortController();
+  const treeSummaries = new Map<string, Map<string, string>>();
   bb.onDispose(() => {
     mentionLifetime.abort();
     mentionSummaries.clear();
@@ -1091,6 +727,7 @@ export default async function plugin(bb: BbPluginApi) {
         bb.sdk.hosts.list(),
       ]);
       const notes = await listNoteSummaries(vault, entries);
+      treeSummaries.set(vault.id, new Map(notes.map((note) => [note.path, note.title])));
       return {
         vaults: listVaults(),
         vault,
@@ -1133,7 +770,6 @@ export default async function plugin(bb: BbPluginApi) {
     contentEncoding?: "utf8" | "base64";
     expectedSha256?: unknown;
     createOnly?: boolean;
-    proposalOnly?: boolean;
   }) {
     const vault = getVault(args.vaultId);
     const relativePath = requireVaultPath(args.rawPath);
@@ -1154,15 +790,42 @@ export default async function plugin(bb: BbPluginApi) {
     if (result.outcome === "written") {
       mentionSummaries.delete(vault.id);
       rememberWrite(vault.id, relativePath, result.sha256);
+      invalidate([
+        ...pathTags(vault.id, relativePath),
+        ...(treeChangedBy(vault.id, relativePath, args.content, args.contentEncoding)
+          ? [treeTag(vault.id)]
+          : []),
+      ]);
       // The hash lets the session that saved skip re-reading its own write.
       bb.realtime.publish("vault-changed", {
         vaultId: vault.id,
         path: relativePath,
         sha256: result.sha256,
-        ...(args.proposalOnly ? { proposalOnly: true } : {}),
       });
     }
     return result;
+  }
+
+  function invalidate(tags: string[]): void {
+    if (tags.length > 0) bb.rpc.experimental_invalidate([...new Set(tags)]);
+  }
+
+  function treeChangedBy(
+    vaultId: string,
+    relativePath: string,
+    content: string,
+    contentEncoding: "utf8" | "base64" | undefined,
+  ): boolean {
+    if (!MARKDOWN_PATH.test(relativePath) || contentEncoding === "base64") return false;
+    const summaries = treeSummaries.get(vaultId);
+    if (!summaries) return true;
+    const next = deriveTitle(
+      content,
+      path.posix.basename(relativePath).replace(/\.(md|markdown)$/i, ""),
+    );
+    if (summaries.get(relativePath) === next) return false;
+    summaries.set(relativePath, next);
+    return true;
   }
 
   const vaultOperations = new Map<string, Promise<unknown>>();
@@ -1197,16 +860,7 @@ export default async function plugin(bb: BbPluginApi) {
     db.prepare(
       "INSERT INTO proposals (vault_id, path, data) VALUES (?, ?, ?) ON CONFLICT(vault_id, path) DO UPDATE SET data = excluded.data",
     ).run(proposal.vaultId, proposal.path, JSON.stringify(proposal));
-    bb.realtime.publish("vault-changed", {
-      vaultId: proposal.vaultId,
-      path: proposal.path,
-      proposalOnly: true,
-    });
-    bb.realtime.publish("proposal-changed", {
-      vaultId: proposal.vaultId,
-      path: proposal.path,
-      version: proposal.version,
-    });
+    invalidate([documentTag(proposal.vaultId, proposal.path)]);
     return proposal;
   }
 
@@ -1344,33 +998,36 @@ export default async function plugin(bb: BbPluginApi) {
     const vault = getVault(vaultId);
     const from = requireVaultPath(fromValue);
     const to = requireVaultPath(toValue);
-    return serializeVault(vault.id, async () => {
-      await bb.sdk.files.move({
-        ...hostArgs(vault),
-        sourcePath: absolutePath(vault, from),
-        destinationPath: absolutePath(vault, to),
-        rootPath: vault.rootPath,
-      });
-      db.transaction(() => {
-        const rows = db
-          .prepare(
-            "SELECT data FROM proposals WHERE vault_id = ? AND (path = ? OR substr(path, 1, length(?)) = ?)",
-          )
-          .all(vault.id, from, `${from}/`, `${from}/`);
-        deleteProposals(vault.id, from);
-        deleteProposals(vault.id, to);
-        const insert = db.prepare("INSERT INTO proposals (vault_id, path, data) VALUES (?, ?, ?)");
-        for (const row of rows) {
-          const { data } = z.object({ data: z.string() }).parse(row);
-          const proposal = proposalSchema.parse(JSON.parse(data));
-          proposal.path = to + proposal.path.slice(from.length);
-          insert.run(vault.id, proposal.path, JSON.stringify(proposal));
-        }
-      })();
-      mentionSummaries.delete(vault.id);
-      bb.realtime.publish("vault-changed", { vaultId: vault.id });
-      return { path: to };
+    return serializeVault(vault.id, () => moveWithinVault(vault, from, to));
+  }
+
+  async function moveWithinVault(vault: Vault, from: string, to: string) {
+    await bb.sdk.files.move({
+      ...hostArgs(vault),
+      sourcePath: absolutePath(vault, from),
+      destinationPath: absolutePath(vault, to),
+      rootPath: vault.rootPath,
     });
+    db.transaction(() => {
+      const rows = db
+        .prepare(
+          "SELECT data FROM proposals WHERE vault_id = ? AND (path = ? OR substr(path, 1, length(?)) = ?)",
+        )
+        .all(vault.id, from, `${from}/`, `${from}/`);
+      deleteProposals(vault.id, from);
+      deleteProposals(vault.id, to);
+      const insert = db.prepare("INSERT INTO proposals (vault_id, path, data) VALUES (?, ?, ?)");
+      for (const row of rows) {
+        const { data } = z.object({ data: z.string() }).parse(row);
+        const proposal = proposalSchema.parse(JSON.parse(data));
+        proposal.path = to + proposal.path.slice(from.length);
+        insert.run(vault.id, proposal.path, JSON.stringify(proposal));
+      }
+    })();
+    mentionSummaries.delete(vault.id);
+    treeSummaries.delete(vault.id);
+    invalidate([treeTag(vault.id), ...pathTags(vault.id, from), ...pathTags(vault.id, to)]);
+    return { path: to };
   }
 
   function deleteProposals(vaultId: string, relativePath: string) {
@@ -1395,7 +1052,8 @@ export default async function plugin(bb: BbPluginApi) {
       });
       deleteProposals(vault.id, relativePath);
       mentionSummaries.delete(vault.id);
-      bb.realtime.publish("vault-changed", { vaultId: vault.id });
+      treeSummaries.get(vault.id)?.delete(relativePath);
+      invalidate([treeTag(vault.id), ...pathTags(vault.id, relativePath)]);
       return { ok: true };
     });
   }
@@ -1756,6 +1414,7 @@ export default async function plugin(bb: BbPluginApi) {
     }
     const appliedCount =
       written.length + deleted.length + createdDirectories.length + deletedDirectories.length;
+    if (createdDirectories.length > 0) invalidate([treeTag(vault.id)]);
     return {
       outcome:
         errors.length > 0 || (conflicts.length > 0 && appliedCount > 0)
@@ -1770,6 +1429,69 @@ export default async function plugin(bb: BbPluginApi) {
       conflicts,
       errors,
     };
+  }
+
+  const previewLeases = new Map<string, Promise<{ baseUrl: string; expiresAtMs: number }>>();
+
+  function previewLease(vault: Vault) {
+    return targetPreviewLease({ hostId: vaultHostId(vault), rootPath: vault.rootPath });
+  }
+
+  async function targetPreviewLease(target: {
+    hostId: string;
+    rootPath: string;
+  }): Promise<{ baseUrl: string; expiresAtMs: number }> {
+    const key = JSON.stringify([target.hostId, target.rootPath]);
+    const cached = previewLeases.get(key);
+    if (cached) {
+      const lease = await cached.catch(() => null);
+      if (lease && lease.expiresAtMs - Date.now() > PREVIEW_RENEW_BEFORE_MS) return lease;
+      if (previewLeases.get(key) !== cached) return targetPreviewLease(target);
+    }
+    const next = bb.sdk.files.createPreview(target);
+    previewLeases.set(key, next);
+    next.catch(() => {
+      if (previewLeases.get(key) === next) previewLeases.delete(key);
+    });
+    return next;
+  }
+
+  function openedWatchId(target: { hostId: string; path: string }) {
+    return createHash("sha256")
+      .update(`${target.hostId}\0${target.path}`)
+      .digest("hex")
+      .slice(0, 32);
+  }
+
+  async function watchOpenedTarget(target: { hostId: string; path: string }, signal?: AbortSignal) {
+    const watchId = openedWatchId(target);
+    openedFileWatches.set(watchId, target.hostId);
+    const { sha256 } = await hostFiles.call(
+      "watchFile",
+      {
+        watchId,
+        path: target.path,
+        leaseMs: OPENED_FILE_LEASE_MS,
+      },
+      { hostId: target.hostId, ...(signal ? { signal } : {}) },
+    );
+    return { watchId, sha256, renewWithinMs: OPENED_FILE_LEASE_MS / 3 };
+  }
+
+  async function titleRenameTarget(
+    vault: Vault,
+    currentPath: string,
+    content: string,
+  ): Promise<string | null> {
+    if (!/^untitled(?: \d+)?\.(md|markdown)$/i.test(path.posix.basename(currentPath))) return null;
+    if (parseMarkdownDocument(content).title) return null;
+    const base = kebabCase(deriveTitle(content, ""));
+    if (!base) return null;
+    const parent = path.posix.dirname(currentPath);
+    const extension = path.posix.extname(currentPath);
+    const desired = parent === "." ? `${base}${extension}` : `${parent}/${base}${extension}`;
+    if (desired.toLowerCase() === currentPath.toLowerCase()) return null;
+    return (await readExistingFile(vault, desired)) === null ? desired : null;
   }
 
   const handlers: PluginRpcHandlers<typeof docsRpcContract> = {
@@ -1849,7 +1571,6 @@ export default async function plugin(bb: BbPluginApi) {
             rawPath: input.path,
             content: restoring ? proposal.baseContent : proposal.content,
             expectedSha256,
-            proposalOnly: true,
           });
           if (result.outcome === "conflict") throw new Error(conflictMessage);
           next.resolvedSha256 = result.sha256;
@@ -1871,6 +1592,51 @@ export default async function plugin(bb: BbPluginApi) {
     },
     async readNote(input) {
       return readFile(input.vaultId, input.path);
+    },
+    async readDocument(input) {
+      const vault = getVault(input.vaultId);
+      return serializeVault(vault.id, async () => {
+        const [file, preview] = await Promise.all([
+          readFile(vault.id, input.path).catch((error: unknown) => {
+            if (!isMissingFileError(error)) throw error;
+            throw new experimental_PluginRpcRefusal({
+              code: "not_found",
+              message: `Path does not exist: ${input.path}`,
+            });
+          }),
+          previewLease(vault),
+        ]);
+        return {
+          vaultId: vault.id,
+          path: input.path,
+          content: file.content,
+          sha256: file.sha256,
+          proposal: readProposal(vault.id, input.path),
+          preview,
+        };
+      });
+    },
+    async saveDocument(input) {
+      const vault = getVault(input.vaultId);
+      return serializeVault(vault.id, async () => {
+        const result = await writeFile({
+          vaultId: vault.id,
+          rawPath: input.path,
+          content: input.content,
+          expectedSha256: input.expectedSha256,
+        });
+        if (result.outcome === "conflict")
+          throw new experimental_PluginRpcRefusal({
+            code: "conflict",
+            message: "This document changed elsewhere.",
+          });
+        const destination = input.renameToTitle
+          ? await titleRenameTarget(vault, input.path, input.content)
+          : null;
+        if (destination === null) return { path: input.path, sha256: result.sha256 };
+        await moveWithinVault(vault, input.path, destination);
+        return { path: destination, sha256: result.sha256 };
+      });
     },
     async saveNote(input) {
       return serializeVault(getVault(input.vaultId).id, () =>
@@ -1897,7 +1663,7 @@ export default async function plugin(bb: BbPluginApi) {
         rootPath: vault.rootPath,
         recursive: false,
       });
-      bb.realtime.publish("vault-changed", { vaultId: vault.id });
+      invalidate([treeTag(vault.id)]);
       return { path: relativePath };
     },
     async reorderFiles(input) {
@@ -1937,7 +1703,7 @@ export default async function plugin(bb: BbPluginApi) {
         paths.forEach((filePath, position) => insert.run(vault.id, parent, filePath, position));
       });
       replaceOrder();
-      bb.realtime.publish("vault-changed", { vaultId: vault.id });
+      invalidate([treeTag(vault.id)]);
       return { paths };
     },
     async movePath(input) {
@@ -1983,7 +1749,7 @@ export default async function plugin(bb: BbPluginApi) {
       db.prepare(
         "INSERT INTO vaults (id, name, host_id, root_path, created_at) VALUES (?, ?, ?, ?, ?)",
       ).run(id, name, hostId, resolvedRoot, Date.now());
-      bb.realtime.publish("vault-changed", { vaultId: id });
+      invalidate([VAULTS_TAG, vaultTag(id)]);
       return getVault(id);
     },
     async setVaultHost(input) {
@@ -2021,7 +1787,8 @@ export default async function plugin(bb: BbPluginApi) {
           db.prepare("DELETE FROM vaults WHERE id = ?").run(id);
         })();
         mentionSummaries.delete(id);
-        bb.realtime.publish("vault-changed", { vaultId: id });
+        treeSummaries.delete(id);
+        invalidate([VAULTS_TAG, treeTag(id)]);
         return { ok: true as const };
       });
     },
@@ -2064,10 +1831,7 @@ export default async function plugin(bb: BbPluginApi) {
         hostArgs(vault),
       );
       if (file === null) throw new Error(`File not found: ${relativePath}`);
-      return bb.sdk.files.createPreview({
-        ...hostArgs(vault),
-        rootPath: vault.rootPath,
-      });
+      return previewLease(vault);
     },
     async openFile(input) {
       const target = await resolveOpenerFile(input.source, input.path);
@@ -2078,10 +1842,7 @@ export default async function plugin(bb: BbPluginApi) {
       };
       const [file, preview] = await Promise.all([
         bb.sdk.files.read(args),
-        bb.sdk.files.createPreview({
-          hostId: target.hostId,
-          rootPath: target.rootPath,
-        }),
+        targetPreviewLease({ hostId: target.hostId, rootPath: target.rootPath }),
       ]);
       const pathApi = path.win32.isAbsolute(target.rootPath) ? path.win32 : path.posix;
       return {
@@ -2093,17 +1854,7 @@ export default async function plugin(bb: BbPluginApi) {
     },
     async watchOpenedFile(input) {
       const target = await resolveOpenerFile(input.source, input.path);
-      const watchId = createHash("sha256")
-        .update(`${target.hostId}\0${target.path}`)
-        .digest("hex")
-        .slice(0, 32);
-      openedFileWatches.set(watchId, target.hostId);
-      const { sha256 } = await hostFiles.call(
-        "watchFile",
-        { watchId, path: target.path, leaseMs: OPENED_FILE_LEASE_MS },
-        { hostId: target.hostId },
-      );
-      return { watchId, sha256, renewWithinMs: OPENED_FILE_LEASE_MS / 3 };
+      return watchOpenedTarget(target);
     },
     async saveOpenedFile(input) {
       const target = await resolveOpenerFile(input.source, input.path);
@@ -2116,7 +1867,14 @@ export default async function plugin(bb: BbPluginApi) {
           ? { expectedSha256: input.expectedSha256 }
           : {}),
       });
-      if (result.outcome === "written") mentionSummaries.clear();
+      if (result.outcome === "written") {
+        mentionSummaries.clear();
+        for (const reader of openedFileReaders.get(openedWatchId(target)) ?? []) {
+          reader.sha256 = result.sha256;
+          reader.revision += 1;
+        }
+        invalidate([openedFileTag(input.source, input.path)]);
+      }
       return result;
     },
   };
@@ -3589,6 +3347,7 @@ export default async function plugin(bb: BbPluginApi) {
     for (const vault of removed) {
       mentionSummaries.delete(vault.id);
       bb.realtime.publish("vault-changed", { vaultId: vault.id });
+      invalidate([VAULTS_TAG, vaultTag(vault.id), treeTag(vault.id)]);
     }
     // On failure the watch-vaults service retries.
     await ensureDefaultVault().catch((error: unknown) =>
@@ -3632,6 +3391,11 @@ export default async function plugin(bb: BbPluginApi) {
       const changed = (vaultId: string, paths?: string[]) => {
         mentionSummaries.delete(vaultId);
         bb.realtime.publish("vault-changed", { vaultId, ...(paths ? { paths } : {}) });
+        invalidate(
+          paths
+            ? [treeTag(vaultId), ...paths.flatMap((p) => pathTags(vaultId, p))]
+            : [treeTag(vaultId), vaultTag(vaultId)],
+        );
       };
       // Re-arming publishes a change, since changes made while unwatched are unknown.
       const offSignal = hostFiles.experimental_onSignal("vaultChanged", ({ hostId, payload }) => {
@@ -3718,4 +3482,121 @@ export default async function plugin(bb: BbPluginApi) {
       }
     },
   });
+  bb.rpc.experimental_whileWatched("openFile", (read, signal) => {
+    if (!("input" in read)) return;
+    const input = docsRpcContract.openFile.input.safeParse(read.input);
+    if (!input.success) return;
+    void (async () => {
+      let watchId: string | undefined;
+      let pause: AbortController | null = null;
+      let wakeRequested = false;
+      let previousPreview: string | null = null;
+      let failures = 0;
+      const reader: OpenedFileReader = {
+        tag: openedFileTag(input.data.source, input.data.path),
+        sha256: undefined,
+        revision: 0,
+        wake() {
+          wakeRequested = true;
+          pause?.abort();
+        },
+      };
+      const detach = () => {
+        if (!watchId) return;
+        const readers = openedFileReaders.get(watchId);
+        readers?.delete(reader);
+        if (readers?.size === 0) {
+          openedFileReaders.delete(watchId);
+          openedFileWatches.delete(watchId);
+        }
+        watchId = undefined;
+      };
+      signal.addEventListener("abort", detach, { once: true });
+      try {
+        while (!signal.aborted) {
+          wakeRequested = false;
+          let delay = 1_000;
+          try {
+            const target = await resolveOpenerFile(input.data.source, input.data.path);
+            signal.throwIfAborted();
+            const nextWatchId = openedWatchId(target);
+            if (nextWatchId !== watchId) {
+              detach();
+              watchId = nextWatchId;
+              reader.sha256 = undefined;
+              const readers = openedFileReaders.get(watchId) ?? new Set<typeof reader>();
+              readers.add(reader);
+              openedFileReaders.set(watchId, readers);
+            }
+            const revision = reader.revision;
+            const watch = await watchOpenedTarget(target, signal);
+            signal.throwIfAborted();
+            const lease = await targetPreviewLease({
+              hostId: target.hostId,
+              rootPath: target.rootPath,
+            });
+            signal.throwIfAborted();
+            const hashChanged = reader.revision === revision && reader.sha256 !== watch.sha256;
+            if (reader.revision === revision) reader.sha256 = watch.sha256;
+            if (hashChanged || (previousPreview !== null && previousPreview !== lease.baseUrl))
+              invalidate([reader.tag]);
+            previousPreview = lease.baseUrl;
+            failures = 0;
+            delay = Math.min(
+              watch.renewWithinMs,
+              Math.max(1_000, lease.expiresAtMs - PREVIEW_RENEW_BEFORE_MS - Date.now() + 1_000),
+            );
+          } catch (error) {
+            if (signal.aborted) break;
+            if (failures === 0) bb.log.warn(`cannot watch opened file: ${errorMessage(error)}`);
+            delay = Math.min(30_000, 1_000 * 2 ** Math.min(failures, 5));
+            failures += 1;
+          }
+          if (wakeRequested) continue;
+          pause = new AbortController();
+          await waitForDelay(delay, AbortSignal.any([signal, pause.signal]));
+          pause = null;
+        }
+      } finally {
+        signal.removeEventListener("abort", detach);
+        detach();
+      }
+    })();
+  });
+  bb.rpc.experimental_whileWatched("preparePreview", (read, signal) => {
+    if (!("input" in read)) return;
+    const input = docsRpcContract.preparePreview.input.safeParse(read.input);
+    if (!input.success) return;
+    const vault = listVaults().find(
+      (candidate) => input.data.vaultId === undefined || candidate.id === input.data.vaultId,
+    );
+    if (vault) void renewPreviewWhileWatched(vault, input.data.path, signal);
+  });
+  bb.rpc.experimental_whileWatched("readDocument", (read, signal) => {
+    if (!("input" in read)) return;
+    const input = docsRpcContract.readDocument.input.safeParse(read.input);
+    if (!input.success) return;
+    const vault = listVaults().find((candidate) => candidate.id === input.data.vaultId);
+    if (!vault) return;
+    void renewPreviewWhileWatched(vault, input.data.path, signal);
+  });
+
+  async function renewPreviewWhileWatched(vault: Vault, relativePath: string, signal: AbortSignal) {
+    while (!signal.aborted) {
+      let lease: { expiresAtMs: number };
+      try {
+        lease = await previewLease(getVault(vault.id));
+      } catch {
+        await waitForDelay(5_000, signal);
+        continue;
+      }
+      await waitForDelay(
+        Math.max(1_000, lease.expiresAtMs - PREVIEW_RENEW_BEFORE_MS - Date.now() + 1_000),
+        signal,
+      );
+      if (!signal.aborted) invalidate([documentTag(vault.id, relativePath)]);
+    }
+  }
 }
+
+export { docsRpcContract } from "./contract.js";

@@ -16,9 +16,12 @@ the same `bb docs` command, so installing the fork disables `simple-notes` when
 it is enabled.
 
 Forked from [`get-bb/bb/plugins/docs`](https://github.com/get-bb/bb/tree/desktop-v0.44.0/plugins/docs).
-Last synced with upstream `main` at `80a98370e98c4a1e58ee9eabd49c759eb842a99c` on 2026-09-30, except
-[#4474](https://github.com/get-bb/bb/pull/4474) (unified composer API). That change
-needs Plugin SDK 0.6, which bb 0.44.0 does not provide. Shared UI
+Last synced with upstream `main` at `3bacfac9ed69d42392076e5b3da2815bec822cd8` on 2026-10-29.
+The fork retains its explicit host routing, native host watchers, Trees navigation,
+and Monokai Markdown presentation. Upstream live reads now share document updates,
+keep typing stable across saves and preview renewal, and offer Keep mine / Use theirs
+when another writer changes the document. Raw HTML blocks survive unrelated edits.
+Shared UI
 under `components/`, `hooks/`, and `lib/` is vendored from the bb plugin
 registry at `desktop-v0.44.0` (`components.json`).
 
@@ -61,7 +64,7 @@ registry at `desktop-v0.44.0` (`components.json`).
   rendered body and search preview, and is preserved byte-for-byte when the
   rich editor saves body changes. A document that opens with a thematic break
   instead keeps that content in the editor. Docs leaves the filename unchanged
-  on save when frontmatter sets the title; otherwise the H1 still drives it.
+  on save when frontmatter sets the title; otherwise the first H1 names a new Untitled document.
 - **Tables:** GitHub-flavored Markdown tables render as editable cells. Use Tab
   and Shift+Tab to move between cells (Tab from the final cell adds a row), and
   drag column boundaries to resize them. Saves remain portable Markdown.

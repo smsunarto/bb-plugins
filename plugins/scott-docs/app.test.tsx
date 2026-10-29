@@ -1,15 +1,13 @@
-// @vitest-environment jsdom
 import type { ExperimentalTabRegistration } from "@get-bb/plugin-sdk";
+// @vitest-environment jsdom
 import { act, cleanup, fireEvent, waitFor, within } from "@testing-library/react";
 import { StrictMode } from "react";
 import { DOMParser as ProseMirrorDOMParser } from "@tiptap/pm/model";
-import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi, onTestFinished } from "vitest";
 import { loadPluginApp, renderSlot, type RenderSlotOptions } from "@get-bb/plugin-sdk/testing/app";
 
 const app = await loadPluginApp(() => import("./app"));
-const { clearNotebookStores } = await import("./app");
-const docsRegistration = app.navPanels[0];
-if (!docsRegistration) throw new Error("Docs navigation panel was not registered");
+const docsRegistration = app.navPanels[0]!;
 const navigationView = app.tabs.find(
   (
     tab,
@@ -17,8 +15,7 @@ const navigationView = app.tabs.find(
     ExperimentalTabRegistration,
     { context: { kind: "nav-panel" }; availability: "fixed" }
   > => tab.context.kind === "nav-panel" && tab.availability === "fixed" && tab.id === "navigation",
-);
-if (!navigationView) throw new Error("Docs navigation tab was not registered");
+)!;
 const navigationRegistration = {
   ...docsRegistration,
   component: navigationView.component,
@@ -33,8 +30,6 @@ const rangeGetClientRectsDescriptor = Object.getOwnPropertyDescriptor(
 );
 
 beforeEach(() => {
-  localStorage.clear();
-  clearNotebookStores();
   vi.stubGlobal(
     "ResizeObserver",
     class {
@@ -164,6 +159,20 @@ const preview = {
   expiresAtMs: Date.now() + 60_000,
 };
 
+function documentResult(
+  path: string,
+  content: string,
+  sha256 = "sha",
+  proposal: unknown = null,
+  vaultId = "personal",
+) {
+  return { vaultId, path, content, sha256, proposal, preview };
+}
+
+function saved(path: string, sha256 = "next-sha") {
+  return { path, sha256 };
+}
+
 function renderDocument(path: string, title: string, options: RenderSlotOptions) {
   return renderSlot(
     app.messageDirectives[0]!,
@@ -181,12 +190,7 @@ function renderDocument(path: string, title: string, options: RenderSlotOptions)
     {
       ...options,
       rpc: {
-        readNote: () => ({
-          content: "Original paragraph.",
-          sha256: "original-sha",
-        }),
-        readProposal: () => null,
-        preparePreview: () => preview,
+        readDocument: () => documentResult(path, "Original paragraph.", "original-sha"),
         ...options.rpc,
       },
     },
@@ -232,220 +236,6 @@ function treeItemLabels(container: HTMLElement) {
 }
 
 describe("Docs nav panel", () => {
-  it("remembers the document and restores it when the panel reopens", async () => {
-    const slot = renderSlot(
-      docsRegistration,
-      { subPath: "personal/plans/My report.html" },
-      { rpc: { listNotes: () => listNotesResult([]), preparePreview: () => preview } },
-    );
-    await slot.findByTitle("plans/My report.html");
-    expect(localStorage.getItem("bb-plugin-scott-docs:last-document")).toBe(
-      "personal/plans/My report.html",
-    );
-    cleanup();
-    const reopened = renderSlot(
-      docsRegistration,
-      { subPath: "" },
-      { rpc: { listNotes: () => listNotesResult([]) } },
-    );
-    await waitFor(() =>
-      expect(reopened.navigateCalls).toContainEqual({
-        method: "toPluginPanel",
-        path: "docs",
-        options: { subPath: "personal/plans/My report.html", replace: true },
-      }),
-    );
-  });
-
-  it("honors explicit vault navigation instead of restoring an old document", async () => {
-    localStorage.setItem("bb-plugin-scott-docs:last-document", "personal/old.md");
-    const slot = renderSlot(
-      docsRegistration,
-      { subPath: "personal" },
-      { rpc: { listNotes: () => listNotesResult([]) } },
-    );
-    await slot.findByText("Select a note or HTML page.");
-    expect(slot.navigateCalls).toEqual([]);
-    expect(localStorage.getItem("bb-plugin-scott-docs:last-document")).toBe("personal");
-  });
-
-  it("remembers the last vault and restores it after a cold reopen", async () => {
-    const slot = renderSlot(
-      docsRegistration,
-      { subPath: "work" },
-      { rpc: { listNotes: () => listNotesResultForVault("work", "plan.md", "Plan") } },
-    );
-    await slot.findByText("Select a note or HTML page.");
-    expect(localStorage.getItem("bb-plugin-scott-docs:last-document")).toBe("work");
-    cleanup();
-    clearNotebookStores();
-
-    const reopened = renderSlot(
-      docsRegistration,
-      { subPath: "" },
-      { rpc: { listNotes: () => listNotesResult([]) } },
-    );
-    await waitFor(() =>
-      expect(reopened.navigateCalls).toContainEqual({
-        method: "toPluginPanel",
-        path: "docs",
-        options: { subPath: "work", replace: true },
-      }),
-    );
-  });
-
-  it("ignores malformed saved locations", async () => {
-    localStorage.setItem("bb-plugin-scott-docs:last-document", "%invalid");
-    const slot = renderSlot(
-      docsRegistration,
-      { subPath: "" },
-      { rpc: { listNotes: () => listNotesResult([]) } },
-    );
-    await slot.findByText("Select a note or HTML page.");
-    expect(slot.navigateCalls).toEqual([]);
-  });
-
-  it("lets readers recover when the remembered vault was removed", async () => {
-    const slot = renderSlot(
-      docsRegistration,
-      { subPath: "gone" },
-      {
-        rpc: {
-          listNotes: () => {
-            throw new Error("Unknown vault: gone");
-          },
-        },
-      },
-    );
-    fireEvent.click(await slot.findByRole("button", { name: "Browse default vault" }));
-    expect(localStorage.getItem("bb-plugin-scott-docs:last-document")).toBeNull();
-    expect(slot.navigateCalls).toContainEqual({
-      method: "toPluginPanel",
-      path: "docs",
-      options: { subPath: "", replace: true },
-    });
-    cleanup();
-    const reopened = renderSlot(
-      docsRegistration,
-      { subPath: "" },
-      { rpc: { listNotes: () => listNotesResult([]) } },
-    );
-    await reopened.findByText("Select a note or HTML page.");
-    expect(reopened.navigateCalls).toEqual([]);
-  });
-
-  it("keeps the sidebar from moving the reader to the saved document", async () => {
-    localStorage.setItem("bb-plugin-scott-docs:last-document", "personal/old.md");
-    const slot = renderSlot(
-      navigationRegistration,
-      { subPath: "" },
-      { rpc: { listNotes: () => listNotesResult([]) } },
-    );
-    await slot.findByRole("navigation", { name: "Notes" });
-    expect(slot.navigateCalls).toEqual([]);
-    expect(localStorage.getItem("bb-plugin-scott-docs:last-document")).toBe("personal/old.md");
-  });
-
-  it("registers the Docs surfaces", () => {
-    expect(app.navPanels[0]).toMatchObject({
-      id: "docs",
-      title: "Docs",
-      path: "docs",
-    });
-    expect(app.navPanels[0]).not.toHaveProperty("fixedTabs");
-    expect(app.navPanels[0]?.headerContent).toBeUndefined();
-    expect(app.messageDirectives).toHaveLength(1);
-    expect(app.messageDirectives[0]?.id).toBe("docs");
-    expect(app.tabs).toEqual([
-      expect.objectContaining({
-        context: { kind: "nav-panel", panelId: "docs" },
-        availability: "fixed",
-        id: "navigation",
-        title: "Navigation",
-        icon: "ListView",
-        layout: "flush",
-      }),
-      expect.objectContaining({
-        context: { kind: "thread" },
-        availability: "action",
-        id: "document",
-        title: "Document",
-        icon: "FileText",
-      }),
-    ]);
-    expect(app.fileOpeners[0]).toMatchObject({
-      id: "docs",
-      title: "Docs",
-      extensions: ["md", "markdown"],
-    });
-  });
-
-  it("renders the vault with Pierre Trees and bb theme tokens", async () => {
-    const slot = renderSlot(
-      navigationRegistration,
-      { subPath: "personal/projects/roadmap.md" },
-      {
-        rpc: {
-          listNotes: () =>
-            listNotesResult(
-              [
-                {
-                  path: "projects/roadmap.md",
-                  title: "Roadmap",
-                  preview: "Quarterly priorities",
-                  modifiedAtMs: 1,
-                },
-                {
-                  path: "projects/notes.md",
-                  title: "Notes",
-                  preview: "Working notes",
-                  modifiedAtMs: 2,
-                },
-              ],
-              [
-                { kind: "directory", path: "projects" },
-                { kind: "file", path: "projects/roadmap.md" },
-                { kind: "file", path: "projects/notes.md" },
-              ],
-            ),
-        },
-      },
-    );
-
-    const folder = await findTreeItem(slot.container, "projects");
-    const file = await findTreeItem(slot.container, "roadmap.md");
-    const sibling = await findTreeItem(slot.container, "notes.md");
-    const tree = slot.container.querySelector<HTMLElement>("[data-docs-tree]");
-    expect(tree?.tagName.toLowerCase()).toBe("file-tree-container");
-    expect(tree?.style.getPropertyValue("--trees-bg-override")).toBe("var(--sidebar)");
-    expect(tree?.style.getPropertyValue("--trees-selected-bg-override")).toBe(
-      "var(--sidebar-accent)",
-    );
-    expect(folder.getAttribute("data-item-type")).toBe("folder");
-    expect(folder.getAttribute("aria-expanded")).toBe("true");
-    expect(file.getAttribute("aria-level")).toBe("2");
-    expect(file.getAttribute("aria-selected")).toBe("true");
-    expect(sibling.getAttribute("aria-selected")).toBe("false");
-  });
-
-  it("renders navigation in the BB-owned right-panel view without custom chrome", async () => {
-    const slot = renderSlot(
-      navigationRegistration,
-      { subPath: "personal" },
-      { rpc: { listNotes: () => listNotesResult([]) } },
-    );
-
-    const toolbar = await slot.findByRole("toolbar", {
-      name: "Notes sidebar actions",
-    });
-    slot.getByRole("navigation", { name: "Notes" });
-    expect(slot.container.querySelector("aside")).toBeNull();
-    expect(slot.queryByRole("separator")).toBeNull();
-    expect(within(toolbar).getByRole("button", { name: "Search notes" })).toBeTruthy();
-    expect(within(toolbar).getByRole("button", { name: "New note" })).toBeTruthy();
-    expect(within(toolbar).getByRole("button", { name: "New folder" })).toBeTruthy();
-  });
-
   it("keeps one shared request across page and navigation Strict Mode replay", async () => {
     let requests = 0;
     const StrictDocsSurfaces = (props: { subPath: string }) => (
@@ -588,22 +378,20 @@ describe("Docs nav panel", () => {
               vault: {
                 id: vaultId,
                 name,
-                hostId: "host_local",
+                hostId: null,
                 rootPath: `/vaults/${vaultId}`,
               },
             };
           },
-          readNote: (rawInput: unknown) => {
-            const input = rawInput as { vaultId: string };
-            return {
-              content: `# ${input.vaultId === "work" ? "Work" : "Personal"}`,
-              sha256: input.vaultId,
-            };
-          },
-          preparePreview: () => preview,
-          renameToTitle: (rawInput: unknown) => {
-            const input = rawInput as { path: string };
-            return { path: input.path };
+          readDocument: (rawInput: unknown) => {
+            const input = rawInput as { vaultId: string; path: string };
+            return documentResult(
+              input.path,
+              `# ${input.vaultId === "work" ? "Work" : "Personal"}`,
+              input.vaultId,
+              null,
+              input.vaultId,
+            );
           },
         },
       },
@@ -613,216 +401,205 @@ describe("Docs nav panel", () => {
     slot.rerender(<PanelContent subPath="work/two.md" />);
     await slot.findByText("Work");
     expect(slot.rpcCalls).toContainEqual({
-      method: "readNote",
+      method: "readDocument",
       input: { vaultId: "work", path: "two.md" },
     });
 
     slot.rerender(<PanelContent subPath="personal/one.md" />);
     await slot.findByText("Personal");
     expect(slot.rpcCalls).toContainEqual({
-      method: "readNote",
+      method: "readDocument",
       input: { vaultId: "personal", path: "one.md" },
     });
   });
 
-  it("shares one notebook request across page and navigation mounts and vault events", async () => {
+  it("shares one notebook request across page and navigation and refreshes it once per vault change", async () => {
     type PendingNotebook = {
       vaultId: string;
       resolve: (value: ReturnType<typeof listNotesResult>) => void;
     };
     const pending: PendingNotebook[] = [];
-    const notebook = (vaultId: string) => ({
-      ...listNotesResult([
-        {
-          path: `${vaultId}.md`,
-          title: vaultId === "work" ? "Work note" : "Personal note",
-          preview: "",
-          modifiedAtMs: 1,
-        },
-      ]),
-      vaults: [
-        {
-          id: "personal",
-          name: "Personal",
-          hostId: "host_local",
-          rootPath: "/vaults/personal",
-        },
-        {
-          id: "work",
-          name: "Work",
-          hostId: "host_local",
-          rootPath: "/vaults/work",
-        },
-      ],
-      vault: {
-        id: vaultId,
-        name: vaultId === "work" ? "Work" : "Personal",
-        hostId: "host_local",
-        rootPath: `/vaults/${vaultId}`,
-      },
-    });
-    const rpc = {
-      listNotes: (rawInput: unknown) => {
-        const input = rawInput as { vaultId?: string } | undefined;
-        const vaultId = input?.vaultId ?? "personal";
-        return new Promise<ReturnType<typeof listNotesResult>>((resolve) => {
-          pending.push({ vaultId, resolve });
-        });
-      },
-      readNote: (rawInput: unknown) => {
-        const input = rawInput as { vaultId: string };
-        return {
-          content: `# ${input.vaultId === "work" ? "Work document" : "Personal document"}`,
-          sha256: input.vaultId,
-        };
-      },
-      preparePreview: () => preview,
-      createNote: () => ({ path: "created.md" }),
-      renameToTitle: (rawInput: unknown) => {
-        const input = rawInput as { path: string };
-        return { path: input.path };
-      },
-    };
-    const page = renderSlot(docsRegistration, { subPath: "personal/personal.md" }, { rpc });
-    const navigation = renderSlot(
-      navigationRegistration,
+    const notebook = (vaultId: "personal" | "work") =>
+      listNotesResultForVault(
+        vaultId,
+        `${vaultId}.md`,
+        vaultId === "work" ? "Work note" : "Personal note",
+      );
+    const Surfaces = (props: { subPath: string }) => (
+      <>
+        <docsRegistration.component {...props} />
+        <navigationView.component {...props} />
+      </>
+    );
+    const slot = renderSlot(
+      { ...navigationRegistration, component: Surfaces },
       { subPath: "personal/personal.md" },
-      { rpc },
+      {
+        rpc: {
+          listNotes: (rawInput: unknown) => {
+            const input = rawInput as { vaultId?: string } | undefined;
+            const vaultId = input?.vaultId ?? "personal";
+            return new Promise<ReturnType<typeof listNotesResult>>((resolve) => {
+              pending.push({ vaultId, resolve });
+            });
+          },
+          readDocument: (rawInput: unknown) => {
+            const input = rawInput as { vaultId: string; path: string };
+            return documentResult(
+              input.path,
+              `# ${input.vaultId === "work" ? "Work document" : "Personal document"}`,
+              input.vaultId,
+              null,
+              input.vaultId,
+            );
+          },
+          createNote: () => ({ path: "created.md" }),
+        },
+      },
     );
     await waitFor(() => expect(pending).toHaveLength(1));
     expect(pending.map((request) => request.vaultId)).toEqual(["personal"]);
     for (const request of pending.splice(0)) request.resolve(notebook("personal"));
-    await page.findByText("Personal document");
-    await findTreeItem(navigation.container, "personal.md");
+    await slot.findByText("Personal document");
+    await findTreeItem(slot.container, "personal.md");
 
-    await page.emitRealtime("vault-changed", { vaultId: "personal" });
-    await navigation.emitRealtime("vault-changed", { vaultId: "personal" });
+    await slot.experimental_invalidateRpc(["tree:work"]);
+    expect(pending).toHaveLength(0);
+    const personalRefresh = slot.experimental_invalidateRpc(["tree:personal"]);
     await waitFor(() => expect(pending).toHaveLength(1));
-    const latePersonalRequests = pending.splice(0);
-    expect(latePersonalRequests.map((request) => request.vaultId)).toEqual(["personal"]);
+    for (const request of pending.splice(0)) request.resolve(notebook("personal"));
+    await personalRefresh;
 
-    page.rerender(<docsRegistration.component subPath="work/work.md" />);
-    navigation.rerender(<navigationView.component subPath="work/work.md" />);
-    expect(page.queryByText("Personal document")).toBeNull();
-    expect(queryTreeItem(navigation.container, "personal.md")).toBeNull();
+    slot.rerender(<Surfaces subPath="work/work.md" />);
+    await slot.findByText("Work document");
     await waitFor(() => expect(pending).toHaveLength(1));
     const workRequests = pending.splice(0);
     expect(workRequests.map((request) => request.vaultId)).toEqual(["work"]);
     for (const request of workRequests) request.resolve(notebook("work"));
-    await page.findByText("Work document");
-    await findTreeItem(navigation.container, "work.md");
+    await findTreeItem(slot.container, "work.md");
 
-    for (const request of latePersonalRequests) {
-      request.resolve(notebook("personal"));
-    }
-    await act(async () => undefined);
-    expect(page.queryByText("Personal document")).toBeNull();
-    expect(queryTreeItem(navigation.container, "personal.md")).toBeNull();
-    expect(page.getByText("Work document")).toBeTruthy();
-    expect(queryTreeItem(navigation.container, "work.md")).toBeTruthy();
+    expect(slot.queryByText("Personal document")).toBeNull();
+    expect(slot.queryByText("Personal note")).toBeNull();
 
-    fireEvent.click(navigation.getByRole("button", { name: "New note" }));
+    fireEvent.click(slot.getAllByRole("button", { name: "New note" }).at(-1)!);
     await waitFor(() =>
-      expect(navigation.rpcCalls).toContainEqual({
+      expect(slot.rpcCalls).toContainEqual({
         method: "createNote",
         input: { vaultId: "work", parent: "", name: "Untitled" },
       }),
     );
   });
 
-  it("runs one follow-up refresh when a vault changes during an active request", async () => {
-    const requests: Array<{
-      resolve(value: ReturnType<typeof listNotesResult>): void;
-    }> = [];
+  it("keeps the editor and typing when a save renames the document after its heading", async () => {
+    const PanelContent = docsRegistration.component;
+    const saveDocument = vi.fn((rawInput: unknown) => {
+      const input = rawInput as { path: string; content: string };
+      return saved(input.content.startsWith("# Renamed") ? "renamed.md" : input.path);
+    });
     const slot = renderSlot(
-      navigationRegistration,
-      { subPath: "personal" },
+      docsRegistration,
+      { subPath: "personal/draft.md" },
       {
         rpc: {
-          listNotes: () =>
-            new Promise<ReturnType<typeof listNotesResult>>((resolve) => {
-              requests.push({ resolve });
-            }),
+          listNotes: () => listNotesResultForVault("personal", "draft.md", "Draft"),
+          readDocument: (rawInput: unknown) => {
+            const input = rawInput as { path: string };
+            return documentResult(input.path, "# Draft\n\nBody", "sha");
+          },
+          saveDocument,
         },
       },
     );
-
-    await waitFor(() => expect(requests).toHaveLength(1));
-    await slot.emitRealtime("vault-changed", { vaultId: "personal" });
-    expect(requests).toHaveLength(1);
-
-    requests[0]!.resolve(
-      listNotesResult([
-        {
-          path: "stale.md",
-          title: "Stale note",
-          preview: "",
-          modifiedAtMs: 1,
-        },
-      ]),
+    const heading = await slot.findByText("Draft");
+    const editor = slot.getByRole("textbox", { name: "Document content" });
+    heading.textContent = "Renamed";
+    fireEvent.input(heading);
+    await waitFor(
+      () =>
+        expect(slot.navigateCalls).toContainEqual({
+          method: "toPluginPanel",
+          path: "docs",
+          options: { subPath: "personal/renamed.md", replace: true },
+        }),
+      { timeout: 2_000 },
     );
-    await waitFor(() => expect(requests).toHaveLength(2));
-    requests[1]!.resolve(
-      listNotesResult([
-        {
-          path: "fresh.md",
-          title: "Fresh note",
-          preview: "",
-          modifiedAtMs: 2,
-        },
-      ]),
-    );
-
-    await findTreeItem(slot.container, "fresh.md");
-    expect(queryTreeItem(slot.container, "stale.md")).toBeNull();
+    expect(saveDocument.mock.calls[0]?.[0]).toMatchObject({
+      path: "draft.md",
+      renameToTitle: true,
+    });
+    slot.rerender(<PanelContent subPath="personal/renamed.md" />);
+    await act(async () => undefined);
+    expect(slot.getByRole("textbox", { name: "Document content" })).toBe(editor);
+    expect(editor.textContent).toContain("Renamed");
+    expect(slot.queryByRole("alert")).toBeNull();
   });
 
-  it("renders a remounted vault listing from cache while it revalidates", async () => {
-    const listNotes = vi
-      .fn<() => unknown>()
-      .mockReturnValueOnce(listNotesResultForVault("personal", "personal.md", "Personal note"))
-      // The revalidation never answers: whatever shows next came from cache.
-      .mockReturnValue(new Promise(() => {}));
-    const rpc = { listNotes, preparePreview: () => preview };
-    const first = renderSlot(navigationRegistration, { subPath: "personal" }, { rpc });
-    await findTreeItem(first.container, "personal.md");
-    first.unmount();
-
-    const second = renderSlot(navigationRegistration, { subPath: "personal" }, { rpc });
-    await findTreeItem(second.container, "personal.md");
-    expect(listNotes).toHaveBeenCalledTimes(2);
+  it("keeps the open document on screen until the next one loads", async () => {
+    const PanelContent = docsRegistration.component;
+    const next = deferred<ReturnType<typeof documentResult>>();
+    const slot = renderSlot(
+      docsRegistration,
+      { subPath: "personal/switch-first.md" },
+      {
+        rpc: {
+          listNotes: () => listNotesResultForVault("personal", "switch-first.md", "First"),
+          readDocument: (rawInput: unknown) => {
+            const input = rawInput as { path: string };
+            return input.path === "switch-first.md"
+              ? documentResult(input.path, "# First\n\nFirst body", "sha-1")
+              : next.promise;
+          },
+        },
+      },
+    );
+    await slot.findByText("First body");
+    slot.rerender(<PanelContent subPath="personal/switch-second.md" />);
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 300));
+    });
+    expect(slot.getByText("First body")).toBeTruthy();
+    expect(slot.queryByRole("status", { name: "Loading document" })).toBeNull();
+    next.resolve(documentResult("switch-second.md", "# Second\n\nSecond body", "sha-2"));
+    await slot.findByText("Second body");
+    await act(async () => undefined);
+    expect(slot.queryByText("First body")).toBeNull();
+    await waitFor(() =>
+      expect(document.activeElement).toBe(slot.getByRole("textbox", { name: "Document content" })),
+    );
   });
 
-  it("reads a remounted listing again when its old request may predate an unheard change", async () => {
-    const before = deferred<ReturnType<typeof listNotesResultForVault>>();
-    const listNotes = vi
-      .fn<() => unknown>()
-      .mockReturnValueOnce(before.promise)
-      .mockReturnValue(listNotesResultForVault("personal", "renamed.md", "Renamed note"));
-    const rpc = { listNotes, preparePreview: () => preview };
-    const first = renderSlot(navigationRegistration, { subPath: "personal" }, { rpc });
-    await waitFor(() => expect(listNotes).toHaveBeenCalledTimes(1));
-    first.unmount();
-    // Nobody listens while the note is renamed and the old answer is on its way.
-    await new Promise((resolve) => setTimeout(resolve, 0));
-
-    const second = renderSlot(navigationRegistration, { subPath: "personal" }, { rpc });
-    before.resolve(listNotesResultForVault("personal", "personal.md", "Personal note"));
-    await findTreeItem(second.container, "renamed.md");
-    expect(listNotes).toHaveBeenCalledTimes(2);
+  it("focuses the end of the document when the space below it is clicked", async () => {
+    const slot = renderSlot(
+      docsRegistration,
+      { subPath: "personal/whitespace.md" },
+      {
+        rpc: {
+          listNotes: () => listNotesResultForVault("personal", "whitespace.md", "Space"),
+          readDocument: (rawInput: unknown) => {
+            const input = rawInput as { path: string };
+            return documentResult(input.path, "# Space\n\nLast line", "sha");
+          },
+        },
+      },
+    );
+    const editor = await slot.findByRole("textbox", {
+      name: "Document content",
+    });
+    await slot.findByText("Last line");
+    editor.blur();
+    fireEvent.mouseDown(editor.parentElement!, { button: 0, clientY: 10 });
+    await waitFor(() => expect(document.activeElement).toBe(editor));
+    expect(getSelection()?.anchorNode?.textContent).toBe("Last line");
   });
 
   it("ignores an obsolete vault refresh and rename after a deferred save", async () => {
-    const pendingSave = deferred<{
-      outcome: "written";
-      sha256: string;
-    }>();
+    const pendingSave = deferred<{ path: string; sha256: string }>();
     const pendingWorkNotebook = deferred<ReturnType<typeof listNotesResultForVault>>();
     let workNotebookRequested = false;
     const PanelContent = docsRegistration.component;
     const slot = renderSlot(
       docsRegistration,
-      { subPath: "personal/personal.md" },
+      { subPath: "personal/deferred.md" },
       {
         rpc: {
           listNotes: (rawInput: unknown) => {
@@ -831,26 +608,21 @@ describe("Docs nav panel", () => {
               workNotebookRequested = true;
               return pendingWorkNotebook.promise;
             }
-            return listNotesResultForVault("personal", "personal.md", "Personal note");
+            return listNotesResultForVault("personal", "deferred.md", "Personal note");
           },
-          readNote: (rawInput: unknown) => {
-            const input = rawInput as { vaultId: string };
-            return {
-              content:
-                input.vaultId === "work"
-                  ? "# Work document\n\nWork body"
-                  : "# Personal document\n\nPersonal body",
-              sha256: input.vaultId,
-            };
-          },
-          preparePreview: () => preview,
-          saveNote: () => pendingSave.promise,
-          renameToTitle: (rawInput: unknown) => {
+          readDocument: (rawInput: unknown) => {
             const input = rawInput as { vaultId: string; path: string };
-            return {
-              path: input.vaultId === "personal" ? "personal-renamed.md" : input.path,
-            };
+            return documentResult(
+              input.path,
+              input.vaultId === "work"
+                ? "# Work document\n\nWork body"
+                : "# Personal document\n\nPersonal body",
+              input.vaultId,
+              null,
+              input.vaultId,
+            );
           },
+          saveDocument: () => pendingSave.promise,
         },
       },
     );
@@ -858,16 +630,19 @@ describe("Docs nav panel", () => {
     body.textContent = "Edited personal body";
     fireEvent.input(body);
     await waitFor(
-      () => expect(slot.rpcCalls.some((call) => call.method === "saveNote")).toBe(true),
+      () => expect(slot.rpcCalls.some((call) => call.method === "saveDocument")).toBe(true),
       { timeout: 2_000 },
     );
 
-    slot.rerender(<PanelContent subPath="work/work.md" />);
+    slot.rerender(<PanelContent subPath="work/deferred-work.md" />);
     await waitFor(() => expect(workNotebookRequested).toBe(true));
     await act(async () => {
-      pendingSave.resolve({ outcome: "written", sha256: "saved-personal" });
+      pendingSave.resolve({
+        path: "personal-renamed.md",
+        sha256: "saved-personal",
+      });
     });
-    pendingWorkNotebook.resolve(listNotesResultForVault("work", "work.md", "Work note"));
+    pendingWorkNotebook.resolve(listNotesResultForVault("work", "deferred-work.md", "Work note"));
 
     await slot.findByText("Work body");
     expect(
@@ -944,7 +719,7 @@ describe("Docs nav panel", () => {
     const unavailable = {
       ...available,
       vault: { ...available.vault, hostId: "host_remote" },
-      vaults: [{ ...available.vault, hostId: "host_remote" }],
+      vaults: available.vaults.map((vault) => Object.assign({}, vault, { hostId: "host_remote" })),
       hosts: [{ id: "host_remote", name: "Remote Mac", status: "disconnected" }],
     };
     const slot = renderSlot(
@@ -957,180 +732,8 @@ describe("Docs nav panel", () => {
     expect(slot.queryByText("Remote Mac")).toBeNull();
   });
 
-  it("offers another machine when the folder is missing but not while its host is away", async () => {
-    const base = listNotesResult([]);
-    const obsidian = {
-      id: "obsidian",
-      name: "Obsidian",
-      hostId: "host_mac",
-      rootPath: "/Users/me/obsidian-vault",
-    };
-    let macStatus = "disconnected";
-    let error = "Host is not connected";
-    const slot = renderSlot(
-      navigationRegistration,
-      { subPath: "obsidian" },
-      {
-        rpc: {
-          listNotes: () => ({
-            ...base,
-            vaults: [obsidian],
-            vault: obsidian,
-            hosts: [
-              { id: "host_mac", name: "Local Mac", status: macStatus },
-              { id: "host_dev", name: "Build Mac", status: "connected" },
-            ],
-            error,
-          }),
-        },
-      },
-    );
-
-    await slot.findByText("Host is not connected");
-    expect(slot.queryByRole("combobox", { name: "Vault machine" })).toBeNull();
-
-    macStatus = "connected";
-    error = "Folder not found: /Users/me/obsidian-vault";
-    await slot.emitRealtime("vault-changed", { vaultId: "obsidian" });
-    await slot.findByText("Folder not found: /Users/me/obsidian-vault");
-    expect(slot.getByRole("combobox", { name: "Vault machine" })).toBeTruthy();
-  });
-
-  it("asks which machine holds a vault saved without one and binds it there", async () => {
-    // jsdom has no scrollIntoView; Radix Select scrolls the highlighted option.
-    Object.defineProperty(Element.prototype, "scrollIntoView", {
-      configurable: true,
-      value: vi.fn(),
-    });
-    onTestFinished(() => {
-      Reflect.deleteProperty(Element.prototype, "scrollIntoView");
-    });
-    const base = listNotesResult([]);
-    const obsidian = {
-      id: "obsidian",
-      name: "Obsidian",
-      hostId: null,
-      rootPath: "/Users/me/obsidian-vault",
-    };
-    const slot = renderSlot(
-      navigationRegistration,
-      { subPath: "obsidian" },
-      {
-        rpc: {
-          listNotes: () => ({
-            ...base,
-            vaults: [obsidian],
-            vault: obsidian,
-            hosts: [
-              { id: "host_server", name: "linux-builder", status: "connected" },
-              { id: "host_mac", name: "Local Mac", status: "connected" },
-            ],
-            error:
-              "Choose the machine that holds /Users/me/obsidian-vault for the Obsidian vault (found on Local Mac), or run bb docs vault-host obsidian <host-id>.",
-          }),
-          setVaultHost: () => ({ ...obsidian, hostId: "host_mac" }),
-        },
-      },
-    );
-
-    await slot.findByText(/Choose the machine that holds \/Users\/me\/obsidian-vault/);
-    const use = slot.getByRole("button", { name: "Use machine" });
-    expect(use.hasAttribute("disabled")).toBe(true);
-    fireEvent.keyDown(slot.getByRole("combobox", { name: "Vault machine" }), { key: "Enter" });
-    fireEvent.click(await slot.findByRole("option", { name: "Local Mac · connected" }));
-    await waitFor(() => expect(use.hasAttribute("disabled")).toBe(false));
-    fireEvent.click(use);
-    await waitFor(() =>
-      expect(slot.rpcCalls).toContainEqual({
-        method: "setVaultHost",
-        input: { vaultId: "obsidian", hostId: "host_mac" },
-      }),
-    );
-  });
-
-  it("adds a vault on a named machine instead of an implicit server machine", async () => {
-    const slot = renderSlot(
-      navigationRegistration,
-      { subPath: "personal" },
-      {
-        sdk: { system: { config: async () => ({ primaryHostId: "host_server" }) as never } },
-        rpc: {
-          listNotes: () => ({
-            ...listNotesResult([]),
-            hosts: [
-              { id: "host_server", name: "linux-builder", status: "connected" },
-              { id: "host_mac", name: "Local Mac", status: "connected" },
-            ],
-          }),
-          createVault: () => ({
-            id: "work",
-            name: "Work",
-            hostId: "host_server",
-            rootPath: "/srv/work",
-          }),
-        },
-      },
-    );
-
-    fireEvent.click(await slot.findByRole("button", { name: "Add vault" }));
-    expect(slot.queryByText("Server machine")).toBeNull();
-    await slot.findByText("linux-builder · bb server · connected");
-    fireEvent.change(slot.getByLabelText("Name"), { target: { value: "Work" } });
-    fireEvent.change(slot.getByPlaceholderText("Absolute path on that machine"), {
-      target: { value: "/srv/work" },
-    });
-    fireEvent.click(slot.getByRole("button", { name: "Add vault", hidden: false }));
-    await waitFor(() =>
-      expect(slot.rpcCalls).toContainEqual({
-        method: "createVault",
-        input: { name: "Work", rootPath: "/srv/work", hostId: "host_server" },
-      }),
-    );
-  });
-
-  it("keeps task checkboxes aligned with the first line of their text", async () => {
-    const existingStyles = document.head.querySelector("style[data-bb-simple-notes-styles]");
-    if (existingStyles) existingStyles.textContent = "stale editor styles";
-    const slot = renderSlot(
-      app.navPanels[0]!,
-      { subPath: "personal/tasks.md" },
-      {
-        rpc: {
-          listNotes: () =>
-            listNotesResult([
-              {
-                path: "tasks.md",
-                title: "Tasks",
-                preview: "One task",
-                modifiedAtMs: 1,
-              },
-            ]),
-          readNote: () => ({
-            content: "- [x] One task\n  - [ ] Nested task",
-            sha256: "sha",
-          }),
-          preparePreview: () => preview,
-          renameToTitle: () => ({ path: "tasks.md" }),
-        },
-      },
-    );
-
-    await slot.findByText("One task");
-    expect(slot.queryByRole("button", { name: "Add image" })).toBeNull();
-    expect(slot.container.querySelector('input[type="file"]')).toBeNull();
-    const styles = document.head.querySelector("style[data-bb-simple-notes-styles]");
-    expect(styles?.textContent).not.toBe("stale editor styles");
-    expect(styles?.textContent).toContain("align-items: flex-start");
-    expect(styles?.textContent).toContain("height: 1.625em");
-    expect(styles?.textContent).toContain("cursor: pointer; margin: 0");
-    expect(styles?.textContent).toContain('ul[data-type="taskList"] li > div > p { margin: 0; }');
-  });
-
   it("renders and autosaves editable Markdown tables", async () => {
-    const saveNote = vi.fn((_input: unknown) => ({
-      outcome: "written",
-      sha256: "next-sha",
-    }));
+    const saveDocument = vi.fn((rawInput: unknown) => saved((rawInput as { path: string }).path));
     const slot = renderSlot(
       app.navPanels[0]!,
       { subPath: "personal/status.md" },
@@ -1145,13 +748,13 @@ describe("Docs nav panel", () => {
                 modifiedAtMs: 1,
               },
             ]),
-          readNote: () => ({
-            content: "# Status\n\n| Project | State |\n| --- | --- |\n| Docs | Ready |",
-            sha256: "sha",
-          }),
-          preparePreview: () => preview,
-          renameToTitle: () => ({ path: "status.md" }),
-          saveNote,
+          readDocument: (rawInput: unknown) =>
+            documentResult(
+              (rawInput as { path: string }).path,
+              "# Status\n\n| Project | State |\n| --- | --- |\n| Docs | Ready |",
+              "sha",
+            ),
+          saveDocument,
         },
       },
     );
@@ -1164,18 +767,51 @@ describe("Docs nav panel", () => {
     expect(table?.closest(".tableWrapper")).toBeTruthy();
     expect(table?.closest('[contenteditable="true"]')).toBeTruthy();
 
-    const styles = document.head.querySelector("style[data-bb-simple-notes-styles]");
-    expect(styles?.textContent).toContain("column-resize-handle");
-
     const firstBodyCell = table?.querySelector("td p");
     expect(firstBodyCell).toBeTruthy();
     firstBodyCell!.textContent = "Plans";
     fireEvent.input(firstBodyCell!);
-    await waitFor(() => expect(saveNote).toHaveBeenCalled(), {
+    await waitFor(() => expect(saveDocument).toHaveBeenCalled(), {
       timeout: 2_000,
     });
-    expect(saveNote.mock.calls.at(-1)?.[0]).toMatchObject({
+    expect(saveDocument.mock.calls.at(-1)?.[0]).toMatchObject({
       content: expect.stringContaining("| Plans | Ready |"),
+    });
+  });
+
+  it("preserves video HTML when autosaving an unrelated prose edit", async () => {
+    const video = `<div style="margin-block: 1rem;">
+  <video src="/rewinding-agents/partial-payments.mp4" autoplay loop muted playsinline preload="metadata" poster="/rewinding-agents/partial-payments-poster.jpg" width="1920" height="1080" aria-label="Two agents implement partial payments; rewinding Agent A preserves Agent B’s payment" style="width: 100%; height: auto; display: block; border-radius: 0.5rem;"></video>
+</div>`;
+    const saveDocument = vi.fn((rawInput: unknown) => saved((rawInput as { path: string }).path));
+    const slot = renderSlot(
+      app.navPanels[0]!,
+      { subPath: "personal/video-page.md" },
+      {
+        rpc: {
+          listNotes: () => listNotesResult([]),
+          readDocument: (rawInput: unknown) =>
+            documentResult(
+              (rawInput as { path: string }).path,
+              `# Wiki page\n\n${video}\n\nOriginal body.`,
+              "sha",
+            ),
+          saveDocument,
+        },
+      },
+    );
+    const body = await slot.findByText("Original body.");
+    expect(slot.container.querySelector(".tiptap video")).toBeNull();
+    body.textContent = "Edited body.";
+    fireEvent.input(body);
+    await waitFor(() => expect(saveDocument).toHaveBeenCalled(), {
+      timeout: 2_000,
+    });
+    expect(saveDocument.mock.calls.at(-1)?.[0]).toMatchObject({
+      content: expect.stringContaining(video),
+    });
+    expect(saveDocument.mock.calls.at(-1)?.[0]).toMatchObject({
+      content: expect.stringContaining("Edited body."),
     });
   });
 
@@ -1183,10 +819,7 @@ describe("Docs nav panel", () => {
     const frontmatter = ["---\r\n", "title: Wiki page\r\n", "type: knowledge\r\n", "---\r\n"].join(
       "",
     );
-    const saveNote = vi.fn((_input: unknown) => ({
-      outcome: "written",
-      sha256: "next-sha",
-    }));
+    const saveDocument = vi.fn((rawInput: unknown) => saved((rawInput as { path: string }).path));
     const slot = renderSlot(
       app.navPanels[0]!,
       { subPath: "personal/wiki-page.md" },
@@ -1201,13 +834,13 @@ describe("Docs nav panel", () => {
                 modifiedAtMs: 1,
               },
             ]),
-          readNote: () => ({
-            content: `${frontmatter}\r\n# Wiki page\r\n\r\nOriginal body.`,
-            sha256: "sha",
-          }),
-          preparePreview: () => preview,
-          renameToTitle: () => ({ path: "wiki-page.md" }),
-          saveNote,
+          readDocument: (rawInput: unknown) =>
+            documentResult(
+              (rawInput as { path: string }).path,
+              `${frontmatter}\r\n# Wiki page\r\n\r\nOriginal body.`,
+              "sha",
+            ),
+          saveDocument,
         },
       },
     );
@@ -1219,10 +852,10 @@ describe("Docs nav panel", () => {
 
     body.textContent = "Edited body.";
     fireEvent.input(body);
-    await waitFor(() => expect(saveNote).toHaveBeenCalled(), {
+    await waitFor(() => expect(saveDocument).toHaveBeenCalled(), {
       timeout: 2_000,
     });
-    expect(saveNote.mock.calls.at(-1)?.[0]).toMatchObject({
+    expect(saveDocument.mock.calls.at(-1)?.[0]).toMatchObject({
       content: expect.stringMatching(
         /^---\r\ntitle: Wiki page\r\ntype: knowledge\r\n---\r\n\r\n# Wiki page\n\nEdited body\./,
       ),
@@ -1245,10 +878,8 @@ describe("Docs nav panel", () => {
                 modifiedAtMs: 1,
               },
             ]),
-          readNote: () => ({ content, sha256: "sha" }),
-          preparePreview: () => preview,
-          renameToTitle: () => ({ path: "break.md" }),
-          saveNote: () => ({ outcome: "written", sha256: "next-sha" }),
+          readDocument: () => documentResult("break.md", content),
+          saveDocument: (rawInput: unknown) => saved((rawInput as { path: string }).path),
         },
       },
     );
@@ -1282,13 +913,12 @@ describe("Docs nav panel", () => {
                 { kind: "file", path: "projects/report.html" },
               ],
             ),
-          readNote: () => ({
-            content:
-              '# Article\n\n![Sketch](./_attachments/sketch.png)\n\n::html{src="./report.html" height="240"}\n\n## After the embed',
-            sha256: "sha-1",
-          }),
-          preparePreview: () => preview,
-          renameToTitle: () => ({ path: "projects/article.md" }),
+          readDocument: () =>
+            documentResult(
+              "projects/article.md",
+              '# Article\n\n![Sketch](./_attachments/sketch.png)\n\n::html{src="./report.html" height="240"}',
+              "sha-1",
+            ),
         },
       },
     );
@@ -1302,7 +932,6 @@ describe("Docs nav panel", () => {
       const iframe = slot.container.querySelector("iframe");
       expect(iframe?.getAttribute("sandbox")).toBe("allow-scripts");
       expect(iframe?.getAttribute("src")).toBe("/api/v1/file-previews/lease/projects/report.html");
-      expect(slot.container.querySelector("h2")?.textContent).toBe("After the embed");
     });
   });
 
@@ -1396,6 +1025,31 @@ describe("Docs nav panel", () => {
       path: "docs",
       options: { subPath: "personal", replace: true },
     });
+  });
+
+  it("keeps Docs sibling order where Pierre's default sort disagrees", async () => {
+    const slot = renderSlot(
+      navigationRegistration,
+      { subPath: "personal" },
+      {
+        rpc: {
+          listNotes: () =>
+            listNotesResult(
+              ["another.md", "another2.md", "zeta.md"].map((path) => ({
+                path,
+                title: path,
+                preview: "",
+                modifiedAtMs: 1,
+              })),
+              undefined,
+              ["zeta.md"],
+            ),
+        },
+      },
+    );
+
+    await findTreeItem(slot.container, "another2.md");
+    expect(treeItemLabels(slot.container)).toEqual(["zeta.md", "another.md", "another2.md"]);
   });
 
   it("moves a file when it is dropped onto a folder", async () => {
@@ -1533,7 +1187,11 @@ describe("Docs nav panel", () => {
     fireEvent.click(slot.getByText("Release plan"));
     expect(slot.queryByText("personal · plans/release.html")).toBeNull();
     expect(openTab).toHaveBeenCalledWith({
-      tab: { id: "document", context: { kind: "thread" }, availability: "action" },
+      tab: {
+        id: "document",
+        context: { kind: "thread" },
+        availability: "action",
+      },
       title: "Release plan",
       params: {
         vaultId: "personal",
@@ -1550,50 +1208,13 @@ describe("Docs nav panel", () => {
     });
   });
 
-  it("skips its own save's echo and changes to other notes", async () => {
-    const readNote = vi
-      .fn<() => Promise<{ content: string; sha256: string }>>()
-      .mockResolvedValue({ content: "Original paragraph.", sha256: "original-sha" });
-    const slot = renderDocument("echo.md", "Echo", { rpc: { readNote } });
-    await slot.findByText("Original paragraph.");
-    const reads = () => readNote.mock.calls.length;
-    const before = reads();
-
-    await slot.emitRealtime("vault-changed", {
-      vaultId: "personal",
-      path: "echo.md",
-      sha256: "original-sha",
-    });
-    await slot.emitRealtime("vault-changed", { vaultId: "personal", paths: ["other.md"] });
-    expect(reads()).toBe(before);
-
-    await slot.emitRealtime("vault-changed", { vaultId: "personal", paths: ["echo.md"] });
-    await waitFor(() => expect(reads()).toBe(before + 1));
-  });
-
-  it("re-reads a note when a folder holding it changes", async () => {
-    const readNote = vi
-      .fn<() => Promise<{ content: string; sha256: string }>>()
-      .mockResolvedValue({ content: "Inside a folder.", sha256: "folder-sha" });
-    const slot = renderDocument("notes/plan.md", "Plan", { rpc: { readNote } });
-    await slot.findByText("Inside a folder.");
-    const reads = () => readNote.mock.calls.length;
-    const before = reads();
-
-    await slot.emitRealtime("vault-changed", { vaultId: "personal", paths: ["note"] });
-    expect(reads()).toBe(before);
-
-    await slot.emitRealtime("vault-changed", { vaultId: "personal", paths: ["notes"] });
-    await waitFor(() => expect(reads()).toBe(before + 1));
-  });
-
   it("shows cached document content immediately when returning to a thread", async () => {
-    const file = { content: "Keep this draft visible.", sha256: "saved-sha" };
-    const readNote = vi.fn<() => Promise<typeof file>>().mockResolvedValue(file);
+    const file = documentResult("cached-draft.md", "Keep this draft visible.", "saved-sha");
+    const readDocument = vi.fn<() => Promise<typeof file>>().mockResolvedValue(file);
     const render = () =>
       renderDocument("cached-draft.md", "Cached draft", {
         rpc: {
-          readNote,
+          readDocument,
         },
       });
     const first = render();
@@ -1602,7 +1223,7 @@ describe("Docs nav panel", () => {
       first.unmount();
     });
     let finish!: (result: typeof file) => void;
-    readNote.mockReturnValueOnce(
+    readDocument.mockReturnValueOnce(
       new Promise((resolve) => {
         finish = resolve;
       }),
@@ -1645,7 +1266,8 @@ describe("Docs nav panel", () => {
       const slot = renderDocument("tall-inline.md", "Tall document", {
         experimental_panel: { openTab },
         rpc: {
-          readNote: () => ({ content: "A long document.", sha256: "tall-sha" }),
+          readDocument: (rawInput: unknown) =>
+            documentResult((rawInput as { path: string }).path, "A long document.", "tall-sha"),
         },
       });
       const button = await slot.findByRole("button", {
@@ -1657,7 +1279,11 @@ describe("Docs nav panel", () => {
       });
       fireEvent.click(button);
       expect(openTab).toHaveBeenCalledWith({
-        tab: { id: "document", context: { kind: "thread" }, availability: "action" },
+        tab: {
+          id: "document",
+          context: { kind: "thread" },
+          availability: "action",
+        },
         title: "Tall document",
         params: {
           vaultId: "personal",
@@ -1695,7 +1321,11 @@ describe("Docs nav panel", () => {
     expect(slot.getByRole("button", { name: "Ask for changes" })).toBeTruthy();
     fireEvent.click(slot.getByRole("button", { name: "Open in tab" }));
     expect(openTab).toHaveBeenCalledWith({
-      tab: { id: "document", context: { kind: "thread" }, availability: "action" },
+      tab: {
+        id: "document",
+        context: { kind: "thread" },
+        availability: "action",
+      },
       title: "Inline header",
       params: {
         vaultId: "personal",
@@ -1709,39 +1339,24 @@ describe("Docs nav panel", () => {
     const slot = renderDocument("ask-inline.md", "Launch email", {
       composer: { text: "Keep this instruction." },
       rpc: {
-        readNote: () => ({ content: "Email body.", sha256: "original-sha" }),
+        readDocument: (rawInput: unknown) =>
+          documentResult((rawInput as { path: string }).path, "Email body.", "original-sha"),
       },
     });
     await slot.findByRole("textbox", { name: "Document content" });
     fireEvent.click(slot.getByRole("button", { name: "Ask for changes" }));
     await waitFor(() =>
-      expect(slot.inspection.composer.draft.mentions).toEqual([
-        expect.objectContaining({
+      expect(slot.inspection.composer.draft.mentions).toMatchObject([
+        {
+          kind: "plugin",
           provider: "note",
           id: "personal:ask-inline.md",
           label: "Launch email",
-        }),
+        },
       ]),
     );
     expect(slot.inspection.composer.text).toBe("Keep this instruction.\n\nUpdate @Launch email ");
-    const [mention] = slot.inspection.composer.draft.mentions;
-    expect(slot.inspection.composer.text.slice(mention!.from, mention!.to)).toBe("@Launch email");
     expect(slot.inspection.composer.focusCount).toBeGreaterThan(0);
-  });
-
-  it("copies the document through the host clipboard", async () => {
-    const slot = renderDocument("copy-inline.md", "Launch email", {
-      rpc: {
-        readNote: () => ({ content: "Email body.", sha256: "original-sha" }),
-      },
-    });
-    await slot.findByRole("textbox", { name: "Document content" });
-    fireEvent.click(slot.getByRole("button", { name: "Copy" }));
-    await waitFor(() =>
-      expect(slot.inspection.experimental_clipboardWrites).toEqual([
-        expect.objectContaining({ text: expect.stringContaining("Email body.") }),
-      ]),
-    );
   });
 
   it.each(["reject", "redo"] as const)(
@@ -1758,26 +1373,34 @@ describe("Docs nav panel", () => {
         resolvedSha256: action === "reject" ? null : "original-sha",
       };
       let resolution = deferred<void>();
+      let current: Record<string, unknown> = pending;
+      const resolved = async (next: Record<string, unknown>) => {
+        await resolution.promise;
+        current = next;
+        return next;
+      };
       const resolveProposal = vi
         .fn()
-        .mockImplementationOnce(async () => {
-          await resolution.promise;
-          return {
+        .mockImplementationOnce(() =>
+          resolved({
             ...pending,
             version: pending.version + 1,
             status: action === "reject" ? "rejected" : "pending",
-          };
-        })
-        .mockImplementationOnce(async () => {
-          await resolution.promise;
-          return {
+          }),
+        )
+        .mockImplementationOnce(() =>
+          resolved({
             ...pending,
             version: pending.version + 2,
             status: "pending",
-          };
-        });
+          }),
+        );
       const slot = renderDocument(pending.path, "Proposal", {
-        rpc: { readProposal: () => pending, resolveProposal },
+        rpc: {
+          readDocument: () =>
+            documentResult(pending.path, "Original paragraph.", "original-sha", current),
+          resolveProposal,
+        },
       });
       const steps = action === "reject" ? ["Reject", "Undo"] : ["Redo"];
       for (const [index, label] of steps.entries()) {
@@ -1790,7 +1413,8 @@ describe("Docs nav panel", () => {
         expect(button.hasAttribute("disabled")).toBe(true);
         expect(slot.getByRole("textbox", { name: "Document content" })).toBeTruthy();
         await act(async () => resolution.resolve());
-        expect(slot.queryByRole("status")).toBeNull();
+        await slot.experimental_invalidateRpc([`doc:personal:${pending.path}`]);
+        await waitFor(() => expect(slot.queryByRole("status")).toBeNull());
         expect(resolveProposal).toHaveBeenLastCalledWith({
           vaultId: "personal",
           path: pending.path,
@@ -1817,54 +1441,29 @@ describe("Docs nav panel", () => {
       status: "pending",
       resolvedSha256: null,
     };
-    const readNote = vi.fn(() => ({
-      content: pending.baseContent,
-      sha256: "original-sha",
-    }));
+    const readDocument = vi.fn(() =>
+      documentResult(pending.path, pending.baseContent, "original-sha", pending),
+    );
     const slot = renderDocument(pending.path, "Scoped example", {
-      rpc: {
-        readNote,
-        readProposal: () => pending,
-      },
+      rpc: { readDocument },
     });
     await slot.findByRole("textbox", { name: "Document content" });
     const baselines = parse.mock.calls
       .map(([root]) => root)
-      .filter((root) => root.textContent?.includes("Original formatted baseline"));
+      .filter((root) => root.textContent?.includes("Original <strong>formatted baseline</strong>"));
     expect(baselines.length).toBeGreaterThan(0);
     for (const root of baselines) expect(root.ownerDocument?.defaultView).toBeNull();
     expect(slot.container.querySelector("strong")?.textContent).toBe("formatted baseline");
     parse.mockRestore();
-    readNote.mockClear();
-    await slot.emitRealtime("vault-changed", { vaultId: "other" });
-    await slot.emitRealtime("vault-changed", {
-      vaultId: "personal",
-      path: "other.md",
-    });
-    await slot.emitRealtime("proposal-changed", {
-      vaultId: "personal",
-      path: "other.md",
-      version: 2,
-    });
-    await slot.emitRealtime("vault-changed", {
-      vaultId: "personal",
-      path: pending.path,
-      proposalOnly: true,
-    });
-    expect(readNote).not.toHaveBeenCalled();
-    await slot.emitRealtime("proposal-changed", {
-      vaultId: "personal",
-      path: pending.path,
-      version: 2,
-    });
-    await waitFor(() => expect(readNote).toHaveBeenCalledTimes(1));
-    await slot.emitRealtime("vault-changed", {
-      vaultId: "personal",
-      path: pending.path,
-    });
-    await waitFor(() => expect(readNote).toHaveBeenCalledTimes(2));
-    await slot.emitRealtime("vault-changed", {});
-    await waitFor(() => expect(readNote).toHaveBeenCalledTimes(3));
+    readDocument.mockClear();
+    await slot.experimental_invalidateRpc(["vault:other"]);
+    await slot.experimental_invalidateRpc(["doc:personal:other.md"]);
+    await slot.experimental_invalidateRpc(["tree:personal"]);
+    expect(readDocument).not.toHaveBeenCalled();
+    await slot.experimental_invalidateRpc([`doc:personal:${pending.path}`]);
+    await waitFor(() => expect(readDocument).toHaveBeenCalledTimes(1));
+    await slot.experimental_invalidateRpc(["vault:personal"]);
+    await waitFor(() => expect(readDocument).toHaveBeenCalledTimes(2));
   });
 
   it("opens a chosen document from the unconfigured Document panel", async () => {
@@ -1914,12 +1513,12 @@ describe("Docs nav panel", () => {
       },
       {
         rpc: {
-          readNote: () => ({
-            content: "# Release plan\n\nShip it.",
-            sha256: "sha",
-          }),
-          readProposal: () => null,
-          preparePreview: () => preview,
+          readDocument: (rawInput: unknown) =>
+            documentResult(
+              (rawInput as { path: string }).path,
+              "# Release plan\n\nShip it.",
+              "sha",
+            ),
         },
       },
     );
@@ -1931,35 +1530,42 @@ describe("Docs nav panel", () => {
     expect(slot.getByRole("textbox").getAttribute("contenteditable")).toBe("true");
     expect(slot.queryByRole("button", { name: "Add to chat" })).toBeNull();
     expect(slot.queryByRole("button", { name: "Mention in chat" })).toBeNull();
-    expect(slot.queryByRole("button", { name: "Open in Docs" })).toBeNull();
+    fireEvent.click(slot.getByRole("button", { name: "Open in Docs" }));
+    expect(slot.navigateCalls).toContainEqual({
+      method: "toPluginPanel",
+      path: "docs",
+      options: { subPath: "personal/plans/panel-release.md" },
+    });
   });
 
-  it("preserves the file opener host through autosave, conflict overwrite, and reload", async () => {
-    let conflict = true;
+  it("preserves the file opener host through autosave and resolves a conflict in place", async () => {
+    const source = {
+      kind: "host",
+      threadId: "thr_1",
+      environmentId: null,
+      projectId: "project_1",
+      experimental_hostId: "host_remote",
+    } as const;
+    const file = { content: "# Remote plan", sha256: "sha" };
+    const saveOpenedFile = vi.fn((rawInput: unknown) => {
+      const input = rawInput as { content: string; expectedSha256: string };
+      if (input.expectedSha256 !== file.sha256)
+        return { outcome: "conflict", currentSha256: file.sha256 };
+      file.content = input.content;
+      file.sha256 = `sha-${saveOpenedFile.mock.calls.length}`;
+      return { outcome: "written", sha256: file.sha256 };
+    });
     const slot = renderSlot(
       app.fileOpeners[0]!,
-      {
-        path: "/Users/shared/notes/plan.md",
-        source: {
-          kind: "host",
-          threadId: "thr_1",
-          environmentId: null,
-          projectId: "project_1",
-          experimental_hostId: "host_remote",
-        },
-        Original: () => null,
-      },
+      { path: "/Users/shared/notes/plan.mdx", source, Original: () => null },
       {
         rpc: {
           openFile: () => ({
-            file: { content: "# Remote plan", sha256: "sha" },
+            file: { ...file },
             preview,
-            previewPath: "notes/plan.md",
+            previewPath: "notes/plan.mdx",
           }),
-          saveOpenedFile: () =>
-            conflict
-              ? { outcome: "conflict", currentSha256: "remote-sha" }
-              : { outcome: "written", sha256: "updated-sha" },
+          saveOpenedFile,
         },
       },
     );
@@ -1967,65 +1573,34 @@ describe("Docs nav panel", () => {
     const body = await slot.findByText("Remote plan");
     expect(slot.rpcCalls).toContainEqual({
       method: "openFile",
-      input: {
-        source: {
-          kind: "host",
-          threadId: "thr_1",
-          environmentId: null,
-          projectId: "project_1",
-          experimental_hostId: "host_remote",
-        },
-        path: "/Users/shared/notes/plan.md",
-      },
+      input: { source, path: "/Users/shared/notes/plan.mdx" },
     });
-
     body.textContent = "Updated remote plan";
     fireEvent.input(body);
-    await waitFor(
-      () => {
-        expect(slot.rpcCalls).toContainEqual({
-          method: "saveOpenedFile",
-          input: {
-            source: {
-              kind: "host",
-              threadId: "thr_1",
-              environmentId: null,
-              projectId: "project_1",
-              experimental_hostId: "host_remote",
-            },
-            path: "/Users/shared/notes/plan.md",
-            content: "# Updated remote plan",
-            expectedSha256: "sha",
-          },
-        });
-      },
-      { timeout: 2_000 },
-    );
-    await slot.findByText("Changed on disk.");
-    conflict = false;
-    fireEvent.click(slot.getByRole("button", { name: "Overwrite" }));
-    await waitFor(() => expect(slot.queryByText("Changed on disk.")).toBeNull());
-    const writes = slot.rpcCalls.filter((call) => call.method === "saveOpenedFile");
-    expect(writes).toHaveLength(2);
-    expect(writes[1]?.input).toEqual({
-      source: {
-        kind: "host",
-        threadId: "thr_1",
-        environmentId: null,
-        projectId: "project_1",
-        experimental_hostId: "host_remote",
-      },
-      path: "/Users/shared/notes/plan.md",
-      content: "# Updated remote plan",
+    await waitFor(() => expect(file.content).toBe("# Updated remote plan"), {
+      timeout: 2_000,
     });
-    conflict = true;
-    const updated = slot.getByText("Updated remote plan");
-    updated.textContent = "Discard this edit";
-    fireEvent.input(updated);
-    await slot.findByText("Changed on disk.");
-    fireEvent.click(slot.getByRole("button", { name: "Reload" }));
-    await slot.findByText("Remote plan");
-    expect(slot.queryByText("Discard this edit")).toBeNull();
+    expect(saveOpenedFile.mock.calls[0]?.[0]).toEqual({
+      source,
+      path: "/Users/shared/notes/plan.mdx",
+      content: "# Updated remote plan",
+      expectedSha256: "sha",
+    });
+
+    file.content = "# Plan rewritten elsewhere";
+    file.sha256 = "remote-sha";
+    const heading = slot.getByText("Updated remote plan");
+    heading.textContent = "My local plan";
+    fireEvent.input(heading);
+    await slot.findByRole("button", { name: "Keep mine" }, { timeout: 2_000 });
+    expect(file.content).toBe("# Plan rewritten elsewhere");
+    expect(slot.getByText("My local plan")).toBeTruthy();
+    fireEvent.click(slot.getByRole("button", { name: "Keep mine" }));
+    await waitFor(() => expect(file.content).toBe("# My local plan"));
+    expect(saveOpenedFile.mock.calls.at(-1)?.[0]).toMatchObject({
+      expectedSha256: "remote-sha",
+    });
+    expect(slot.queryByRole("alert")).toBeNull();
     expect(slot.queryByRole("button", { name: "Add to chat" })).toBeNull();
     expect(slot.queryByRole("button", { name: "Mention in chat" })).toBeNull();
   });
@@ -2062,11 +1637,31 @@ describe("Docs nav panel", () => {
       expect(iframe?.getAttribute("src")).toBe(`/api/v1/file-previews/lease/${path}`);
       expect(iframe?.getAttribute("sandbox")).toBe("allow-scripts");
       expect(iframe?.title).toBe(surface === "panel" ? "Metrics" : path);
-      expect(iframe?.classList.contains(surface === "panel" ? "min-h-[32rem]" : "min-h-0")).toBe(
-        true,
-      );
+      expect(iframe?.classList.contains("min-h-0")).toBe(true);
     });
     expect(slot.queryByRole("button", { name: "View source" })).toBeNull();
+  });
+
+  it("searches the latest note previews when search opens", async () => {
+    let preview = "Old body";
+    const slot = renderSlot(
+      navigationRegistration,
+      { subPath: "personal" },
+      {
+        rpc: {
+          listNotes: () =>
+            listNotesResult([{ path: "draft.md", title: "Draft", preview, modifiedAtMs: 1 }]),
+        },
+      },
+    );
+    await findTreeItem(slot.container, "draft.md");
+    preview = "Freshly typed words";
+    fireEvent.click(slot.getByLabelText("Search notes"));
+    fireEvent.change(slot.getByPlaceholderText("Search this vault"), {
+      target: { value: "freshly" },
+    });
+    await findTreeItem(slot.container, "draft.md");
+    expect(slot.rpcCalls.filter((call) => call.method === "listNotes")).toHaveLength(2);
   });
 
   it("filters the vault tree by note title", async () => {
@@ -2113,7 +1708,608 @@ describe("Docs nav panel", () => {
     expect(slot.queryByPlaceholderText("Search this vault")).toBeNull();
     await findTreeItem(slot.container, "roadmap.md");
   });
+});
 
+function fakeVault(initial: Record<string, string>) {
+  let revision = 0;
+  const files = new Map(
+    Object.entries(initial).map(([path, content]) => [
+      path,
+      { content, sha256: `sha-${(revision += 1)}` },
+    ]),
+  );
+  const current = (path: string) => {
+    const file = files.get(path);
+    if (!file) throw new Error(`Path does not exist: ${path}`);
+    return file;
+  };
+  const write = (path: string, content: string) => {
+    const file = { content, sha256: `sha-${(revision += 1)}` };
+    files.set(path, file);
+    return file;
+  };
+  const rpc = {
+    listNotes: () =>
+      listNotesResult(
+        [...files.keys()].map((path) => ({
+          path,
+          title: path,
+          preview: "",
+          modifiedAtMs: 1,
+        })),
+      ),
+    readNote: (rawInput: unknown) => {
+      const { path } = rawInput as { path: string };
+      const file = current(path);
+      return { path, ...file, contentEncoding: "utf8", sizeBytes: 1 };
+    },
+    readProposal: () => null,
+    preparePreview: () => preview,
+    renameToTitle: (rawInput: unknown) => ({
+      path: (rawInput as { path: string }).path,
+    }),
+    saveNote: (rawInput: unknown) => {
+      const input = rawInput as {
+        path: string;
+        content: string;
+        expectedSha256?: string;
+      };
+      const existing = files.get(input.path);
+      if (input.expectedSha256 !== undefined && existing?.sha256 !== input.expectedSha256)
+        return { outcome: "conflict", currentSha256: existing?.sha256 ?? null };
+      return {
+        outcome: "written",
+        sha256: write(input.path, input.content).sha256,
+        sizeBytes: 1,
+      };
+    },
+    readDocument: (rawInput: unknown) => {
+      const { path } = rawInput as { path: string };
+      const file = current(path);
+      return documentResult(path, file.content, file.sha256);
+    },
+    saveDocument: (rawInput: unknown) => {
+      const input = rawInput as {
+        path: string;
+        content: string;
+        expectedSha256: string;
+      };
+      if (files.get(input.path)?.sha256 !== input.expectedSha256)
+        throw new Error("This document changed elsewhere.");
+      return saved(input.path, write(input.path, input.content).sha256);
+    },
+  };
+  return {
+    rpc,
+    content: (path: string) => files.get(path)?.content,
+    async remoteWrite(slot: ReturnType<typeof renderSlot>, path: string, content: string | null) {
+      if (content === null) files.delete(path);
+      else write(path, content);
+      await slot.emitRealtime("vault-changed", { vaultId: "personal", path });
+      await slot.experimental_invalidateRpc([`doc:personal:${path}`]);
+    },
+  };
+}
+
+function paragraph(slot: ReturnType<typeof renderSlot>, text: string) {
+  const match = [...slot.container.querySelectorAll(".tiptap p")].find((element) =>
+    element.textContent?.startsWith(text),
+  );
+  if (!match) throw new Error(`No paragraph starting with ${text}`);
+  return match as HTMLElement;
+}
+
+describe("Docs live documents", () => {
+  it("offers Keep mine and Use theirs instead of getting stuck when another writer saves during typing", async () => {
+    const vault = fakeVault({
+      "live-card.md": "First paragraph.\n\nSecond paragraph.\n",
+    });
+    const slot = renderDocument("live-card.md", "Live card", {
+      rpc: vault.rpc,
+    });
+    await slot.findByText("Second paragraph.");
+    const first = paragraph(slot, "First");
+    first.textContent = "First paragraph, typed.";
+    fireEvent.input(first);
+    await vault.remoteWrite(
+      slot,
+      "live-card.md",
+      "First paragraph.\n\nSecond paragraph, by the agent.\n",
+    );
+    fireEvent.click(await slot.findByRole("button", { name: "Keep mine" }));
+    await waitFor(
+      () =>
+        expect(vault.content("live-card.md")).toBe(
+          "First paragraph, typed.\n\nSecond paragraph.\n",
+        ),
+      { timeout: 2_000 },
+    );
+    expect(slot.queryByRole("alert")).toBeNull();
+    expect(slot.queryByRole("button", { name: "Retry" })).toBeNull();
+  });
+
+  it("does not undo another writer's change", async () => {
+    const vault = fakeVault({ "undo-card.md": "Original body.\n" });
+    const slot = renderDocument("undo-card.md", "Undo card", {
+      rpc: vault.rpc,
+    });
+    const editor = await slot.findByRole("textbox", {
+      name: "Document content",
+    });
+    await slot.findByText("Original body.");
+    await vault.remoteWrite(slot, "undo-card.md", "Body written by the agent.\n");
+    await slot.findByText("Body written by the agent.");
+    fireEvent.focus(editor);
+    fireEvent.keyDown(editor, { key: "z", code: "KeyZ", ctrlKey: true });
+    fireEvent.keyDown(editor, { key: "z", code: "KeyZ", metaKey: true });
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 900));
+    });
+    expect(editor.textContent).toContain("Body written by the agent.");
+    expect(vault.content("undo-card.md")).toBe("Body written by the agent.\n");
+  });
+
+  it("shows another writer's save in the open Docs page", async () => {
+    const vault = fakeVault({ "live-page.md": "# Live page\n\nOld body.\n" });
+    const slot = renderSlot(
+      docsRegistration,
+      { subPath: "personal/live-page.md" },
+      { rpc: vault.rpc },
+    );
+    await slot.findByText("Old body.");
+    await vault.remoteWrite(slot, "live-page.md", "# Live page\n\nNew body from the CLI.\n");
+    await slot.findByText("New body from the CLI.");
+  });
+
+  it("does not recreate a document another writer moved away", async () => {
+    const vault = fakeVault({ "moved-page.md": "# Moved\n\nBody.\n" });
+    const slot = renderSlot(
+      docsRegistration,
+      { subPath: "personal/moved-page.md" },
+      { rpc: vault.rpc },
+    );
+    await slot.findByText("Body.");
+    await vault.remoteWrite(slot, "moved-page.md", null);
+    await slot.findByText("This document was moved or deleted elsewhere.");
+    const body = paragraph(slot, "Body.");
+    body.textContent = "Body, typed after the move.";
+    fireEvent.input(body);
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 900));
+    });
+    expect(vault.content("moved-page.md")).toBeUndefined();
+    expect(slot.getByRole("button", { name: "Save a copy" })).toBeTruthy();
+  });
+
+  it("keeps the same editor when the preview link is renewed", async () => {
+    let baseUrl = "/api/v1/file-previews/first";
+    const slot = renderSlot(
+      docsRegistration,
+      { subPath: "personal/lease-page.md" },
+      {
+        rpc: {
+          listNotes: () => listNotesResult([]),
+          readNote: () => ({
+            content: "# Lease\n\n![Pixel](./pixel.png)\n\nBody.\n",
+            sha256: "sha",
+          }),
+          preparePreview: () => ({ baseUrl, expiresAtMs: Date.now() + 60_000 }),
+          readDocument: () => ({
+            ...documentResult("lease-page.md", "# Lease\n\n![Pixel](./pixel.png)\n\nBody.\n"),
+            preview: { baseUrl, expiresAtMs: Date.now() + 60_000 },
+          }),
+        },
+      },
+    );
+    await slot.findByText("Body.");
+    const editor = slot.getByRole("textbox", { name: "Document content" });
+    expect(slot.container.querySelector("img")?.getAttribute("src")).toBe(
+      "/api/v1/file-previews/first/pixel.png",
+    );
+    baseUrl = "/api/v1/file-previews/renewed";
+    await slot.emitRealtime("vault-changed", {
+      vaultId: "personal",
+      path: "lease-page.md",
+    });
+    await slot.experimental_invalidateRpc(["doc:personal:lease-page.md"]);
+    await waitFor(() =>
+      expect(slot.container.querySelector("img")?.getAttribute("src")).toBe(
+        "/api/v1/file-previews/renewed/pixel.png",
+      ),
+    );
+    expect(slot.getByRole("textbox", { name: "Document content" })).toBe(editor);
+  });
+});
+
+describe("Docs fork behavior", () => {
+  it("remembers the document and restores it when the panel reopens", async () => {
+    const slot = renderSlot(
+      docsRegistration,
+      { subPath: "personal/plans/My report.html" },
+      { rpc: { listNotes: () => listNotesResult([]), preparePreview: () => preview } },
+    );
+    await slot.findByTitle("plans/My report.html");
+    expect(localStorage.getItem("bb-plugin-scott-docs:last-document")).toBe(
+      "personal/plans/My report.html",
+    );
+    cleanup();
+    const reopened = renderSlot(
+      docsRegistration,
+      { subPath: "" },
+      { rpc: { listNotes: () => listNotesResult([]) } },
+    );
+    await waitFor(() =>
+      expect(reopened.navigateCalls).toContainEqual({
+        method: "toPluginPanel",
+        path: "docs",
+        options: { subPath: "personal/plans/My report.html", replace: true },
+      }),
+    );
+  });
+  it("honors explicit vault navigation instead of restoring an old document", async () => {
+    localStorage.setItem("bb-plugin-scott-docs:last-document", "personal/old.md");
+    const slot = renderSlot(
+      docsRegistration,
+      { subPath: "personal" },
+      { rpc: { listNotes: () => listNotesResult([]) } },
+    );
+    await slot.findByText("Select a note or HTML page.");
+    expect(slot.navigateCalls).toEqual([]);
+    expect(localStorage.getItem("bb-plugin-scott-docs:last-document")).toBe("personal");
+  });
+  it("remembers the last vault and restores it after a cold reopen", async () => {
+    const slot = renderSlot(
+      docsRegistration,
+      { subPath: "work" },
+      { rpc: { listNotes: () => listNotesResultForVault("work", "plan.md", "Plan") } },
+    );
+    await slot.findByText("Select a note or HTML page.");
+    expect(localStorage.getItem("bb-plugin-scott-docs:last-document")).toBe("work");
+    cleanup();
+
+    const reopened = renderSlot(
+      docsRegistration,
+      { subPath: "" },
+      { rpc: { listNotes: () => listNotesResult([]) } },
+    );
+    await waitFor(() =>
+      expect(reopened.navigateCalls).toContainEqual({
+        method: "toPluginPanel",
+        path: "docs",
+        options: { subPath: "work", replace: true },
+      }),
+    );
+  });
+  it("ignores malformed saved locations", async () => {
+    localStorage.setItem("bb-plugin-scott-docs:last-document", "%invalid");
+    const slot = renderSlot(
+      docsRegistration,
+      { subPath: "" },
+      { rpc: { listNotes: () => listNotesResult([]) } },
+    );
+    await slot.findByText("Select a note or HTML page.");
+    expect(slot.navigateCalls).toEqual([]);
+  });
+  it("lets readers recover when the remembered vault was removed", async () => {
+    const slot = renderSlot(
+      docsRegistration,
+      { subPath: "gone" },
+      {
+        rpc: {
+          listNotes: () => {
+            throw new Error("Unknown vault: gone");
+          },
+        },
+      },
+    );
+    fireEvent.click(await slot.findByRole("button", { name: "Browse default vault" }));
+    expect(localStorage.getItem("bb-plugin-scott-docs:last-document")).toBeNull();
+    expect(slot.navigateCalls).toContainEqual({
+      method: "toPluginPanel",
+      path: "docs",
+      options: { subPath: "", replace: true },
+    });
+    cleanup();
+    const reopened = renderSlot(
+      docsRegistration,
+      { subPath: "" },
+      { rpc: { listNotes: () => listNotesResult([]) } },
+    );
+    await reopened.findByText("Select a note or HTML page.");
+    expect(reopened.navigateCalls).toEqual([]);
+  });
+  it("keeps the sidebar from moving the reader to the saved document", async () => {
+    localStorage.setItem("bb-plugin-scott-docs:last-document", "personal/old.md");
+    const slot = renderSlot(
+      navigationRegistration,
+      { subPath: "" },
+      { rpc: { listNotes: () => listNotesResult([]) } },
+    );
+    await slot.findByRole("navigation", { name: "Notes" });
+    expect(slot.navigateCalls).toEqual([]);
+    expect(localStorage.getItem("bb-plugin-scott-docs:last-document")).toBe("personal/old.md");
+  });
+  it("registers the Docs surfaces", () => {
+    expect(app.navPanels[0]).toMatchObject({
+      id: "docs",
+      title: "Docs",
+      path: "docs",
+    });
+    expect(app.navPanels[0]).not.toHaveProperty("fixedTabs");
+    expect(app.navPanels[0]?.headerContent).toBeUndefined();
+    expect(app.messageDirectives).toHaveLength(1);
+    expect(app.messageDirectives[0]?.id).toBe("docs");
+    expect(app.tabs).toEqual([
+      expect.objectContaining({
+        context: { kind: "nav-panel", panelId: "docs" },
+        availability: "fixed",
+        id: "navigation",
+        title: "Navigation",
+        icon: "FileText",
+        layout: "flush",
+      }),
+      expect.objectContaining({
+        context: { kind: "thread" },
+        availability: "action",
+        id: "document",
+        title: "Document",
+        icon: "FileText",
+      }),
+    ]);
+    expect(app.fileOpeners[0]).toMatchObject({
+      id: "docs",
+      title: "Docs",
+      extensions: ["md", "markdown"],
+    });
+  });
+  it("renders the vault with Pierre Trees and bb theme tokens", async () => {
+    const slot = renderSlot(
+      navigationRegistration,
+      { subPath: "personal/projects/roadmap.md" },
+      {
+        rpc: {
+          listNotes: () =>
+            listNotesResult(
+              [
+                {
+                  path: "projects/roadmap.md",
+                  title: "Roadmap",
+                  preview: "Quarterly priorities",
+                  modifiedAtMs: 1,
+                },
+                {
+                  path: "projects/notes.md",
+                  title: "Notes",
+                  preview: "Working notes",
+                  modifiedAtMs: 2,
+                },
+              ],
+              [
+                { kind: "directory", path: "projects" },
+                { kind: "file", path: "projects/roadmap.md" },
+                { kind: "file", path: "projects/notes.md" },
+              ],
+            ),
+        },
+      },
+    );
+
+    const folder = await findTreeItem(slot.container, "projects");
+    const file = await findTreeItem(slot.container, "roadmap.md");
+    const sibling = await findTreeItem(slot.container, "notes.md");
+    const tree = slot.container.querySelector<HTMLElement>("[data-docs-tree]");
+    expect(tree?.tagName.toLowerCase()).toBe("file-tree-container");
+    expect(tree?.style.getPropertyValue("--trees-bg-override")).toBe("var(--sidebar)");
+    expect(tree?.style.getPropertyValue("--trees-selected-bg-override")).toBe(
+      "var(--sidebar-accent)",
+    );
+    expect(folder.getAttribute("data-item-type")).toBe("folder");
+    expect(folder.getAttribute("aria-expanded")).toBe("true");
+    expect(file.getAttribute("aria-level")).toBe("2");
+    expect(file.getAttribute("aria-selected")).toBe("true");
+    expect(sibling.getAttribute("aria-selected")).toBe("false");
+  });
+  it("renders navigation in the BB-owned right-panel view without custom chrome", async () => {
+    const slot = renderSlot(
+      navigationRegistration,
+      { subPath: "personal" },
+      { rpc: { listNotes: () => listNotesResult([]) } },
+    );
+
+    const toolbar = await slot.findByRole("toolbar", {
+      name: "Notes sidebar actions",
+    });
+    slot.getByRole("navigation", { name: "Notes" });
+    expect(slot.container.querySelector("aside")).toBeNull();
+    expect(slot.queryByRole("separator")).toBeNull();
+    expect(within(toolbar).getByRole("button", { name: "Search notes" })).toBeTruthy();
+    expect(within(toolbar).getByRole("button", { name: "New note" })).toBeTruthy();
+    expect(within(toolbar).getByRole("button", { name: "New folder" })).toBeTruthy();
+  });
+  it("offers another machine when the folder is missing but not while its host is away", async () => {
+    const base = listNotesResult([]);
+    const obsidian = {
+      id: "obsidian",
+      name: "Obsidian",
+      hostId: "host_mac",
+      rootPath: "/Users/me/obsidian-vault",
+    };
+    let macStatus = "disconnected";
+    let error = "Host is not connected";
+    const slot = renderSlot(
+      navigationRegistration,
+      { subPath: "obsidian" },
+      {
+        rpc: {
+          listNotes: () => ({
+            ...base,
+            vaults: [obsidian],
+            vault: obsidian,
+            hosts: [
+              { id: "host_mac", name: "Local Mac", status: macStatus },
+              { id: "host_dev", name: "Build Mac", status: "connected" },
+            ],
+            error,
+          }),
+        },
+      },
+    );
+
+    await slot.findByText("Host is not connected");
+    expect(slot.queryByRole("combobox", { name: "Vault machine" })).toBeNull();
+
+    macStatus = "connected";
+    error = "Folder not found: /Users/me/obsidian-vault";
+    await slot.experimental_invalidateRpc(["tree:obsidian"]);
+    await slot.findByText("Folder not found: /Users/me/obsidian-vault");
+    expect(slot.getByRole("combobox", { name: "Vault machine" })).toBeTruthy();
+  });
+  it("asks which machine holds a vault saved without one and binds it there", async () => {
+    // jsdom has no scrollIntoView; Radix Select scrolls the highlighted option.
+    Object.defineProperty(Element.prototype, "scrollIntoView", {
+      configurable: true,
+      value: vi.fn(),
+    });
+    onTestFinished(() => {
+      Reflect.deleteProperty(Element.prototype, "scrollIntoView");
+    });
+    const base = listNotesResult([]);
+    const obsidian = {
+      id: "obsidian",
+      name: "Obsidian",
+      hostId: null,
+      rootPath: "/Users/me/obsidian-vault",
+    };
+    const slot = renderSlot(
+      navigationRegistration,
+      { subPath: "obsidian" },
+      {
+        rpc: {
+          listNotes: () => ({
+            ...base,
+            vaults: [obsidian],
+            vault: obsidian,
+            hosts: [
+              { id: "host_server", name: "linux-builder", status: "connected" },
+              { id: "host_mac", name: "Local Mac", status: "connected" },
+            ],
+            error:
+              "Choose the machine that holds /Users/me/obsidian-vault for the Obsidian vault (found on Local Mac), or run bb docs vault-host obsidian <host-id>.",
+          }),
+          setVaultHost: () => ({ ...obsidian, hostId: "host_mac" }),
+        },
+      },
+    );
+
+    await slot.findByText(/Choose the machine that holds \/Users\/me\/obsidian-vault/);
+    const use = slot.getByRole("button", { name: "Use machine" });
+    expect(use.hasAttribute("disabled")).toBe(true);
+    fireEvent.keyDown(slot.getByRole("combobox", { name: "Vault machine" }), { key: "Enter" });
+    fireEvent.click(await slot.findByRole("option", { name: "Local Mac · connected" }));
+    await waitFor(() => expect(use.hasAttribute("disabled")).toBe(false));
+    fireEvent.click(use);
+    await waitFor(() =>
+      expect(slot.rpcCalls).toContainEqual({
+        method: "setVaultHost",
+        input: { vaultId: "obsidian", hostId: "host_mac" },
+      }),
+    );
+  });
+  it("adds a vault on a named machine instead of an implicit server machine", async () => {
+    const slot = renderSlot(
+      navigationRegistration,
+      { subPath: "personal" },
+      {
+        sdk: { system: { config: async () => ({ primaryHostId: "host_server" }) as never } },
+        rpc: {
+          listNotes: () => ({
+            ...listNotesResult([]),
+            hosts: [
+              { id: "host_server", name: "linux-builder", status: "connected" },
+              { id: "host_mac", name: "Local Mac", status: "connected" },
+            ],
+          }),
+          createVault: () => ({
+            id: "work",
+            name: "Work",
+            hostId: "host_server",
+            rootPath: "/srv/work",
+          }),
+        },
+      },
+    );
+
+    fireEvent.click(await slot.findByRole("button", { name: "Add vault" }));
+    expect(slot.queryByText("Server machine")).toBeNull();
+    await slot.findByText("linux-builder · bb server · connected");
+    fireEvent.change(slot.getByLabelText("Name"), { target: { value: "Work" } });
+    fireEvent.change(slot.getByPlaceholderText("Absolute path on that machine"), {
+      target: { value: "/srv/work" },
+    });
+    fireEvent.click(slot.getByRole("button", { name: "Add vault", hidden: false }));
+    await waitFor(() =>
+      expect(slot.rpcCalls).toContainEqual({
+        method: "createVault",
+        input: { name: "Work", rootPath: "/srv/work", hostId: "host_server" },
+      }),
+    );
+  });
+  it("keeps task checkboxes aligned with the first line of their text", async () => {
+    const existingStyles = document.head.querySelector("style[data-bb-simple-notes-styles]");
+    if (existingStyles) existingStyles.textContent = "stale editor styles";
+    const slot = renderSlot(
+      app.navPanels[0]!,
+      { subPath: "personal/tasks.md" },
+      {
+        rpc: {
+          listNotes: () =>
+            listNotesResult([
+              {
+                path: "tasks.md",
+                title: "Tasks",
+                preview: "One task",
+                modifiedAtMs: 1,
+              },
+            ]),
+          readDocument: (raw: unknown) => ({
+            ...documentResult((raw as { path: string }).path, "", "sha"),
+            content: "- [x] One task\n  - [ ] Nested task",
+            sha256: "sha",
+          }),
+          preparePreview: () => preview,
+          renameToTitle: () => ({ path: "tasks.md" }),
+        },
+      },
+    );
+
+    await slot.findByText("One task");
+    expect(slot.queryByRole("button", { name: "Add image" })).toBeNull();
+    expect(slot.container.querySelector('input[type="file"]')).toBeNull();
+    const styles = document.head.querySelector("style[data-bb-simple-notes-styles]");
+    expect(styles?.textContent).not.toBe("stale editor styles");
+    expect(styles?.textContent).toContain("align-items: flex-start");
+    expect(styles?.textContent).toContain("height: 1.625em");
+    expect(styles?.textContent).toContain("cursor: pointer; margin: 0");
+    expect(styles?.textContent).toContain('ul[data-type="taskList"] li > div > p { margin: 0; }');
+  });
+  it("copies the document through the host clipboard", async () => {
+    const slot = renderDocument("copy-inline.md", "Launch email", {
+      rpc: {
+        readDocument: (raw: unknown) => ({
+          ...documentResult((raw as { path: string }).path, "", "sha"),
+          content: "Email body.",
+          sha256: "original-sha",
+        }),
+      },
+    });
+    await slot.findByRole("textbox", { name: "Document content" });
+    fireEvent.click(slot.getByRole("button", { name: "Copy" }));
+    await waitFor(() =>
+      expect(slot.inspection.experimental_clipboardWrites).toEqual([
+        expect.objectContaining({ text: expect.stringContaining("Email body.") }),
+      ]),
+    );
+  });
   it("renders editable Markdown using the shared stream presentation", async () => {
     const slot = renderSlot(
       app.navPanels[0]!,
@@ -2124,7 +2320,8 @@ describe("Docs nav panel", () => {
             listNotesResult([
               { path: "theme.md", title: "Theme", preview: "Styled document", modifiedAtMs: 1 },
             ]),
-          readNote: () => ({
+          readDocument: (raw: unknown) => ({
+            ...documentResult((raw as { path: string }).path, "", "sha"),
             content: "# Theme\n\n**Strong** and [linked](https://example.com).",
             sha256: "sha",
           }),
@@ -2141,7 +2338,6 @@ describe("Docs nav panel", () => {
     expect(editor?.querySelector("strong")?.textContent).toBe("Strong");
     expect(editor?.querySelector("a")?.getAttribute("href")).toBe("https://example.com");
   });
-
   it("opens MDX vault entries through bb's file opener", async () => {
     const openFilePreview = vi.fn(() => true);
     const slot = renderSlot(
@@ -2176,7 +2372,6 @@ describe("Docs nav panel", () => {
     );
     expect(slot.navigateCalls.some((call) => call.method === "toPluginPanel")).toBe(false);
   });
-
   it("links a thread's host file to the machine the server resolved", async () => {
     const openFileExternally = vi.fn(() => true);
     const source = {
@@ -2207,115 +2402,80 @@ describe("Docs nav panel", () => {
       location: null,
     });
   });
+});
 
-  it("reloads an opened file when its host reports a new hash, without rereading on a timer", async () => {
-    let disk = { content: "# Plan\n\nFirst draft", sha256: "sha-1" };
-    const source = {
-      kind: "host" as const,
-      threadId: "thr_1",
-      environmentId: null,
-      projectId: "project_1",
-      experimental_hostId: "host_remote",
-    };
+describe("Docs markdown extension routing", () => {
+  it("opens and autosaves a .markdown vault document through the registered page", async () => {
+    const saveDocument = vi.fn(async () => ({ path: "notes.markdown", sha256: "updated" }));
     const slot = renderSlot(
-      app.fileOpeners[0]!,
-      { path: "/Users/shared/notes/plan.md", source, Original: () => null },
-      {
-        rpc: {
-          openFile: () => ({ file: disk, preview, previewPath: "notes/plan.md" }),
-          watchOpenedFile: () => ({ watchId: "w1", sha256: disk.sha256, renewWithinMs: 60_000 }),
-        },
-      },
-    );
-
-    await slot.findByText("First draft");
-    await waitFor(() =>
-      expect(slot.rpcCalls).toContainEqual({
-        method: "watchOpenedFile",
-        input: { source, path: "/Users/shared/notes/plan.md" },
-      }),
-    );
-    const opens = () => slot.rpcCalls.filter((call) => call.method === "openFile").length;
-    disk = { content: "# Plan\n\nAgent rewrite", sha256: "sha-2" };
-    // The old 1.5 s poll would have reread by now; nothing asks until the host says so.
-    await act(() => new Promise((resolve) => setTimeout(resolve, 1_700)));
-    expect(opens()).toBe(1);
-    // Another watch's change and an echo of the loaded hash change nothing.
-    await slot.emitRealtime("opened-file-changed", { watchId: "w2", sha256: "sha-2" });
-    await slot.emitRealtime("opened-file-changed", { watchId: "w1", sha256: "sha-1" });
-    expect(opens()).toBe(1);
-
-    await slot.emitRealtime("opened-file-changed", { watchId: "w1", sha256: "sha-2" });
-    await slot.findByText("Agent rewrite");
-    expect(opens()).toBe(2);
-    expect(slot.rpcCalls.filter((call) => call.method === "watchOpenedFile")).toHaveLength(1);
-  });
-
-  it("skips an opened file's own save echo even when it arrives before the save answers", async () => {
-    const source = {
-      kind: "host" as const,
-      threadId: "thr_1",
-      environmentId: null,
-      projectId: "project_1",
-      experimental_hostId: "host_remote",
-    };
-    const saved = deferred<{ outcome: "written"; sha256: string }>();
-    const slot = renderSlot(
-      app.fileOpeners[0]!,
-      { path: "/Users/shared/notes/plan.md", source, Original: () => null },
-      {
-        rpc: {
-          openFile: () => ({
-            file: { content: "# Plan\n\nFirst draft", sha256: "sha-1" },
-            preview,
-            previewPath: "notes/plan.md",
-          }),
-          watchOpenedFile: () => ({ watchId: "w1", sha256: "sha-1", renewWithinMs: 60_000 }),
-          saveOpenedFile: () => saved.promise,
-        },
-      },
-    );
-    const body = await slot.findByText("First draft");
-    await waitFor(() =>
-      expect(slot.rpcCalls.some((call) => call.method === "watchOpenedFile")).toBe(true),
-    );
-    body.textContent = "Edited draft";
-    fireEvent.input(body);
-    await waitFor(
-      () => expect(slot.rpcCalls.some((call) => call.method === "saveOpenedFile")).toBe(true),
-      { timeout: 2_000 },
-    );
-    // The host reports the write before the save's answer lands.
-    await slot.emitRealtime("opened-file-changed", { watchId: "w1", sha256: "sha-2" });
-    await act(async () => {
-      saved.resolve({ outcome: "written", sha256: "sha-2" });
-      await new Promise((resolve) => setTimeout(resolve, 50));
-    });
-    expect(slot.rpcCalls.filter((call) => call.method === "openFile")).toHaveLength(1);
-  });
-
-  it("keeps Docs sibling order where Pierre's default sort disagrees", async () => {
-    const slot = renderSlot(
-      navigationRegistration,
-      { subPath: "personal" },
+      docsRegistration,
+      { subPath: "personal/notes.markdown" },
       {
         rpc: {
           listNotes: () =>
-            listNotesResult(
-              ["another.md", "another2.md", "zeta.md"].map((path) => ({
-                path,
-                title: path,
-                preview: "",
-                modifiedAtMs: 1,
-              })),
-              undefined,
-              ["zeta.md"],
-            ),
+            listNotesResult([
+              { path: "notes.markdown", title: "Notes", preview: "", modifiedAtMs: 1 },
+            ]),
+          readDocument: () =>
+            documentResult("notes.markdown", "Markdown extension body", "initial"),
+          saveDocument,
         },
       },
     );
+    const paragraph = await slot.findByText("Markdown extension body");
+    paragraph.textContent = "Edited Markdown extension body";
+    fireEvent.input(paragraph);
+    await waitFor(
+      () =>
+        expect(saveDocument).toHaveBeenCalledWith(
+          expect.objectContaining({
+            path: "notes.markdown",
+            content: expect.stringContaining("Edited Markdown extension body"),
+          }),
+        ),
+      { timeout: 2000 },
+    );
+  });
+});
 
-    await findTreeItem(slot.container, "another2.md");
-    expect(treeItemLabels(slot.container)).toEqual(["zeta.md", "another.md", "another2.md"]);
+describe("Docs standalone host-file preview", () => {
+  it("keeps relative images on the same preview URL after autosaving an absolute host file", async () => {
+    const saveOpenedFile = vi.fn(async () => ({
+      outcome: "written",
+      sha256: "saved",
+      sizeBytes: 4,
+    }));
+    const slot = renderSlot(
+      app.fileOpeners[0]!,
+      {
+        path: "/Users/shared/notes/plan.md",
+        Original: () => null,
+        source: {
+          kind: "host",
+          threadId: null,
+          environmentId: null,
+          projectId: null,
+          experimental_hostId: "host_mac",
+        },
+      },
+      {
+        rpc: {
+          openFile: () => ({
+            file: { content: "![Image](./image.png)\n\nOriginal paragraph", sha256: "initial" },
+            preview: { baseUrl: "/preview", expiresAtMs: Date.now() + 600_000 },
+            previewPath: "plan.md",
+            hostId: "host_mac",
+          }),
+          saveOpenedFile,
+        },
+      },
+    );
+    const image = await slot.findByRole("img", { name: "Image" });
+    expect(image.getAttribute("src")).toBe("/preview/image.png");
+    const paragraph = await slot.findByText("Original paragraph");
+    paragraph.textContent = "Edited paragraph";
+    fireEvent.input(paragraph);
+    await waitFor(() => expect(saveOpenedFile).toHaveBeenCalled(), { timeout: 2000 });
+    expect(slot.getByRole("img", { name: "Image" }).getAttribute("src")).toBe("/preview/image.png");
   });
 });

@@ -1,7 +1,7 @@
 # Third-party notices
 
 This plugin is forked from the built-in BB Docs plugin, last synced with
-upstream `main` at `80a98370e98c4a1e58ee9eabd49c759eb842a99c`.
+upstream `main` at `3bacfac9ed69d42392076e5b3da2815bec822cd8`.
 
 ## BB Docs
 

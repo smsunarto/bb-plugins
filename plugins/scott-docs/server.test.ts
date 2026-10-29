@@ -20,9 +20,16 @@ async function statFixture(filePath: string): Promise<FileStat> {
 // Docs lists vaults through its own host entry. Route that call to the fake
 // SDK file listing so fixtures, stubs, and recorded calls stay in one place.
 function createDocsHost(
-  options: FakeHostOptions & { statFile?: (filePath: string) => Promise<FileStat> },
+  options: FakeHostOptions & {
+    statFile?: (filePath: string) => Promise<FileStat>;
+    watchFile?: (input: {
+      path: string;
+      hostId: string;
+      signal?: AbortSignal;
+    }) => Promise<{ sha256: string | null }>;
+  },
 ) {
-  const { statFile = statFixture, ...hostOptions } = options;
+  const { statFile = statFixture, watchFile, ...hostOptions } = options;
   // Vault watches each host holds. Clearing a host's set is a daemon restart.
   const hostWatches = new Map<string, Set<string>>();
   const watchesOn = (hostId: string) => {
@@ -31,7 +38,7 @@ function createDocsHost(
   };
   const host: ReturnType<typeof createFakePluginHost> = createFakePluginHost({
     ...hostOptions,
-    experimental_callHostRpc: async ({ method, input, hostId }) => {
+    experimental_callHostRpc: async ({ method, input, hostId, signal }) => {
       const { vaultId, vaultIds } = input as { vaultId?: string; vaultIds?: string[] };
       if (method === "watchVault") {
         watchesOn(hostId).add(vaultId!);
@@ -49,6 +56,7 @@ function createDocsHost(
         return { file: stats ? { modifiedAtMs: 1, sizeBytes: stats.size } : null };
       }
       if (method === "watchFile") {
+        if (watchFile) return watchFile({ path: (input as { path: string }).path, hostId, signal });
         const content = await readFile((input as { path: string }).path).catch(() => null);
         return { sha256: content && createHash("sha256").update(content).digest("hex") };
       }
@@ -112,13 +120,17 @@ function insertPersonalVault(bb: ReturnType<typeof createDocsHost>["bb"], rootPa
     .run(rootPath, Date.now());
 }
 
-async function loadNotebook(notes: Record<string, string>) {
+async function loadNotebook(
+  notes: Record<string, string>,
+  controls: Pick<Parameters<typeof createDocsHost>[0], "watchFile"> = {},
+) {
   const directory = await mkdtemp(path.join(os.tmpdir(), "bb-simple-notes-"));
   temporaryDirectories.push(directory);
   await Promise.all(
     Object.entries(notes).map(([name, content]) => writeFile(path.join(directory, name), content)),
   );
   const host = createDocsHost({
+    ...controls,
     pluginId: "simple-notes",
     sdk: {
       files: {
@@ -1375,6 +1387,14 @@ describe("Docs vault operations", () => {
     const { watchId } = (await harness.callRpc("watchOpenedFile", { source, path: filePath })) as {
       watchId: string;
     };
+    const stopRead = harness.behavior.experimental_watchRpc("openFile", {
+      input: { source, path: filePath },
+    });
+    await waitForSignal(
+      () =>
+        harness.experimental_hostRpcCalls.filter((call) => call.method === "watchFile").length ===
+        2,
+    );
     const sha256 = "a".repeat(64);
     const published = harness.realtimeSignals.length;
 
@@ -1392,6 +1412,16 @@ describe("Docs vault operations", () => {
       expect.objectContaining({ channel: "opened-file-changed", payload: { watchId, sha256 } }),
       expect.objectContaining({ channel: "opened-file-changed", payload: { watchId } }),
     ]);
+    await waitForSignal(
+      () =>
+        harness.experimental_hostRpcCalls.filter((call) => call.method === "watchFile").length ===
+        3,
+    );
+    expect(harness.inspection.experimental_rpcInvalidations.flat()).toEqual(
+      expect.arrayContaining([expect.stringContaining("opened:")]),
+    );
+    stopRead();
+    await harness.lifecycle.dispose();
   });
 
   it("checks that a previewed note exists on its host without reading it", async () => {
@@ -2692,6 +2722,447 @@ describe("Docs across machines", () => {
       expect(readPaths().slice(3)).toEqual(["/vault/c.md"]);
     } finally {
       timeoutSpy.mockRestore();
+    }
+  });
+});
+
+describe("Docs upstream live reads on fork hosts", () => {
+  it("invalidates document reads after a save and a native host change", async () => {
+    const { harness } = await loadNotebook({ "plan.md": "# Plan" });
+    const service = harness.behavior.runService("watch-vaults");
+    try {
+      await waitForSignal(() =>
+        harness.experimental_hostRpcCalls.some((call) => call.method === "watchVault"),
+      );
+      await expect(
+        harness.behavior.callRpc("readDocument", { vaultId: "personal", path: "plan.md" }),
+      ).resolves.toMatchObject({ content: "# Plan", sha256: "test-sha", proposal: null });
+      await harness.behavior.callRpc("saveDocument", {
+        vaultId: "personal",
+        path: "plan.md",
+        content: "# Revised",
+        expectedSha256: "test-sha",
+        renameToTitle: false,
+      });
+      expect(harness.inspection.experimental_rpcInvalidations.flat()).toContain(
+        "doc:personal:plan.md",
+      );
+      harness.inspection.experimental_rpcInvalidations.length = 0;
+      await harness.behavior.experimental_emitHostSignal("host_primary", "vaultChanged", {
+        vaultId: "personal",
+        kind: "changed",
+        changes: [{ path: "plan.md", sha256: "e".repeat(64) }],
+      });
+      expect(harness.inspection.experimental_rpcInvalidations.flat()).toContain(
+        "doc:personal:plan.md",
+      );
+    } finally {
+      service.controller.abort();
+      await service.done;
+      await harness.lifecycle.dispose();
+    }
+  });
+});
+
+describe("Docs preview lease and extension regressions", () => {
+  it("shares previews across HTML and document reads, renews once near expiry, and isolates hosts", async () => {
+    const { harness } = await loadNotebook({ "plan.md": "# Plan", "page.html": "<p>Page</p>" });
+    const filePath = path.join(temporaryDirectories[0]!, "plan.md");
+    let now = Date.now();
+    const clock = vi.spyOn(Date, "now").mockImplementation(() => now);
+    let number = 0;
+    harness.sdk.stub("files.createPreview", async () => ({
+      baseUrl: `/preview-${++number}`,
+      expiresAtMs: now + 600_000,
+    }));
+    const source = {
+      kind: "host",
+      threadId: null,
+      environmentId: null,
+      projectId: null,
+      experimental_hostId: "host_primary",
+    };
+    try {
+      const first = await Promise.all([
+        harness.callRpc("preparePreview", { vaultId: "personal", path: "page.html" }),
+        harness.callRpc("readDocument", { vaultId: "personal", path: "plan.md" }),
+        harness.callRpc("openFile", { source, path: filePath }),
+      ]);
+      expect(number).toBe(1);
+      expect(first[0]).toMatchObject({ baseUrl: "/preview-1" });
+      expect(first[1]).toMatchObject({ preview: { baseUrl: "/preview-1" } });
+      expect(first[2]).toMatchObject({ preview: { baseUrl: "/preview-1" } });
+      now += 540_000;
+      const renewed = await Promise.all([
+        harness.callRpc("preparePreview", { vaultId: "personal", path: "page.html" }),
+        harness.callRpc("openFile", { source, path: filePath }),
+      ]);
+      expect(number).toBe(2);
+      expect(renewed[0]).toMatchObject({ baseUrl: "/preview-2" });
+      expect(renewed[1]).toMatchObject({ preview: { baseUrl: "/preview-2" } });
+      await harness.callRpc("openFile", {
+        source: { ...source, experimental_hostId: "host_other" },
+        path: filePath,
+      });
+      expect(number).toBe(3);
+    } finally {
+      clock.mockRestore();
+      await harness.lifecycle.dispose();
+    }
+  });
+  it("invalidates .markdown titles and keeps the extension when naming Untitled documents", async () => {
+    const { harness } = await loadNotebook({ "Untitled.markdown": "# Original" });
+    await harness.callRpc("listNotes", { vaultId: "personal" });
+    harness.inspection.experimental_rpcInvalidations.length = 0;
+    await harness.callRpc("saveDocument", {
+      vaultId: "personal",
+      path: "Untitled.markdown",
+      content: "# New title",
+      expectedSha256: "test-sha",
+      renameToTitle: false,
+    });
+    expect(harness.inspection.experimental_rpcInvalidations.flat()).toContain("tree:personal");
+    await expect(
+      harness.callRpc("saveDocument", {
+        vaultId: "personal",
+        path: "Untitled.markdown",
+        content: "# Rename",
+        expectedSha256: "test-sha",
+        renameToTitle: true,
+      }),
+    ).resolves.toMatchObject({ path: "rename.markdown" });
+    await harness.lifecycle.dispose();
+  });
+});
+
+describe("Docs opened-file producer recovery", () => {
+  it("retries transient arming and renewal failures without rereading unchanged documents", async () => {
+    let attempts = 0;
+    let failRenewal = false;
+    let sha256 = "a".repeat(64);
+    const { harness } = await loadNotebook(
+      { "plan.md": "# Plan" },
+      {
+        watchFile: async () => {
+          attempts += 1;
+          if (attempts === 1 || failRenewal) {
+            failRenewal = false;
+            throw new Error("host temporarily unavailable");
+          }
+          return { sha256 };
+        },
+      },
+    );
+    harness.sdk.stub("files.createPreview", async () => ({
+      baseUrl: "/stable-preview",
+      expiresAtMs: Date.now() + 600_000,
+    }));
+    vi.useFakeTimers();
+    const source = {
+      kind: "host",
+      threadId: null,
+      environmentId: null,
+      projectId: null,
+      experimental_hostId: "host_primary",
+    };
+    const stop = harness.behavior.experimental_watchRpc("openFile", {
+      input: { source, path: path.join(temporaryDirectories[0]!, "plan.md") },
+    });
+    try {
+      await vi.waitFor(() => expect(attempts).toBe(1));
+      await vi.advanceTimersByTimeAsync(1_000);
+      await vi.waitFor(() => expect(attempts).toBe(2));
+      harness.inspection.experimental_rpcInvalidations.length = 0;
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(attempts).toBe(3);
+      expect(harness.inspection.experimental_rpcInvalidations).toEqual([]);
+      failRenewal = true;
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(attempts).toBe(4);
+      sha256 = "b".repeat(64);
+      await vi.advanceTimersByTimeAsync(1_000);
+      expect(attempts).toBe(5);
+      expect(harness.inspection.experimental_rpcInvalidations.flat()).toEqual(
+        expect.arrayContaining([expect.stringContaining("opened:")]),
+      );
+      stop();
+      await vi.advanceTimersByTimeAsync(120_000);
+      expect(attempts).toBe(5);
+    } finally {
+      stop();
+      await harness.lifecycle.dispose();
+      vi.useRealTimers();
+    }
+  });
+  it("retains a write's newer hash when an older renewal response arrives later", async () => {
+    let calls = 0;
+    let complete!: (value: { sha256: string }) => void;
+    const stale = new Promise<{ sha256: string }>((resolve) => {
+      complete = resolve;
+    });
+    const { harness } = await loadNotebook(
+      { "plan.md": "# Plan" },
+      { watchFile: async () => (++calls === 2 ? stale : { sha256: "a".repeat(64) }) },
+    );
+    harness.sdk.stub("files.createPreview", async () => ({
+      baseUrl: "/stable-preview",
+      expiresAtMs: Date.now() + 600_000,
+    }));
+    harness.sdk.stub("files.write", async () => ({
+      outcome: "written" as const,
+      sha256: "b".repeat(64),
+      sizeBytes: 4,
+    }));
+    vi.useFakeTimers();
+    const source = {
+      kind: "host",
+      threadId: null,
+      environmentId: null,
+      projectId: null,
+      experimental_hostId: "host_primary",
+    };
+    const input = { source, path: path.join(temporaryDirectories[0]!, "plan.md") };
+    const stop = harness.behavior.experimental_watchRpc("openFile", { input });
+    try {
+      await vi.waitFor(() => expect(calls).toBe(1));
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(calls).toBe(2);
+      await harness.callRpc("saveOpenedFile", {
+        ...input,
+        content: "New",
+        expectedSha256: "a".repeat(64),
+      });
+      harness.inspection.experimental_rpcInvalidations.length = 0;
+      complete({ sha256: "a".repeat(64) });
+      await vi.advanceTimersByTimeAsync(0);
+      const watch = harness.experimental_hostRpcCalls.find((call) => call.method === "watchFile")!;
+      await harness.behavior.experimental_emitHostSignal("host_primary", "fileChanged", {
+        watchId: (watch.input as { watchId: string }).watchId,
+        sha256: "b".repeat(64),
+      });
+      expect(harness.inspection.experimental_rpcInvalidations).toEqual([]);
+      await harness.behavior.experimental_emitHostSignal("host_primary", "fileChanged", {
+        watchId: (watch.input as { watchId: string }).watchId,
+        sha256: null,
+      });
+      expect(harness.inspection.experimental_rpcInvalidations).toHaveLength(1);
+    } finally {
+      stop();
+      await harness.lifecycle.dispose();
+      vi.useRealTimers();
+    }
+  });
+});
+
+describe("Docs preview producers and subscription cleanup", () => {
+  it("renews a standalone preview at expiry without refreshing every unchanged hash poll", async () => {
+    const { harness } = await loadNotebook(
+      { "plan.md": "# Plan" },
+      { watchFile: async () => ({ sha256: "a".repeat(64) }) },
+    );
+    let previews = 0;
+    harness.sdk.stub("files.createPreview", async () => ({
+      baseUrl: `/preview-${++previews}`,
+      expiresAtMs: Date.now() + 600_000,
+    }));
+    vi.useFakeTimers();
+    const source = {
+      kind: "host",
+      threadId: null,
+      environmentId: null,
+      projectId: null,
+      experimental_hostId: "host_primary",
+    };
+    const stop = harness.behavior.experimental_watchRpc("openFile", {
+      input: { source, path: path.join(temporaryDirectories[0]!, "plan.md") },
+    });
+    try {
+      await vi.waitFor(() => expect(previews).toBe(1));
+      harness.inspection.experimental_rpcInvalidations.length = 0;
+      await vi.advanceTimersByTimeAsync(420_000);
+      expect(previews).toBe(1);
+      expect(harness.inspection.experimental_rpcInvalidations).toEqual([]);
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(previews).toBe(2);
+      expect(harness.inspection.experimental_rpcInvalidations).toHaveLength(1);
+      harness.inspection.experimental_rpcInvalidations.length = 0;
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(harness.inspection.experimental_rpcInvalidations).toEqual([]);
+    } finally {
+      stop();
+      await harness.lifecycle.dispose();
+      vi.useRealTimers();
+    }
+  });
+  it("renews HTML preview leases only while the preview is watched", async () => {
+    const { harness } = await loadNotebook({ "page.html": "<p>Page</p>" });
+    let previews = 0;
+    harness.sdk.stub("files.createPreview", async () => ({
+      baseUrl: `/preview-${++previews}`,
+      expiresAtMs: Date.now() + 600_000,
+    }));
+    vi.useFakeTimers();
+    const stop = harness.behavior.experimental_watchRpc("preparePreview", {
+      input: { vaultId: "personal", path: "page.html" },
+    });
+    try {
+      await vi.waitFor(() => expect(previews).toBe(1));
+      await vi.advanceTimersByTimeAsync(481_001);
+      expect(previews).toBe(2);
+      expect(harness.inspection.experimental_rpcInvalidations.flat()).toContain(
+        "doc:personal:page.html",
+      );
+      stop();
+      await vi.advanceTimersByTimeAsync(600_000);
+      expect(previews).toBe(2);
+    } finally {
+      stop();
+      await harness.lifecycle.dispose();
+      vi.useRealTimers();
+    }
+  });
+  it("detaches old host readers when renewal resolves the source to another host", async () => {
+    const { harness } = await loadNotebook(
+      { "plan.md": "# Plan" },
+      { watchFile: async () => ({ sha256: "a".repeat(64) }) },
+    );
+    let hostId = "host_first";
+    harness.sdk.stub("environments.get", async () => ({ id: "env", hostId }));
+    harness.sdk.stub("files.createPreview", async () => ({
+      baseUrl: `/preview-${hostId}`,
+      expiresAtMs: Date.now() + 600_000,
+    }));
+    vi.useFakeTimers();
+    const source = { kind: "host", threadId: null, environmentId: "env", projectId: null };
+    const stop = harness.behavior.experimental_watchRpc("openFile", {
+      input: { source, path: path.join(temporaryDirectories[0]!, "plan.md") },
+    });
+    const calls = () =>
+      harness.experimental_hostRpcCalls.filter((call) => call.method === "watchFile");
+    try {
+      await vi.waitFor(() => expect(calls()).toHaveLength(1));
+      hostId = "host_second";
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(calls()).toHaveLength(2);
+      const first = calls()[0]!.input as { watchId: string };
+      const second = calls()[1]!.input as { watchId: string };
+      expect(second.watchId).not.toBe(first.watchId);
+      harness.inspection.experimental_rpcInvalidations.length = 0;
+      await harness.behavior.experimental_emitHostSignal("host_first", "fileChanged", {
+        watchId: first.watchId,
+        sha256: "b".repeat(64),
+      });
+      expect(harness.inspection.experimental_rpcInvalidations).toEqual([]);
+      await harness.behavior.experimental_emitHostSignal("host_second", "fileChanged", {
+        watchId: second.watchId,
+        sha256: "b".repeat(64),
+      });
+      expect(harness.inspection.experimental_rpcInvalidations).toHaveLength(1);
+      stop();
+      await vi.advanceTimersByTimeAsync(0);
+      harness.inspection.experimental_rpcInvalidations.length = 0;
+      await harness.behavior.experimental_emitHostSignal("host_second", "fileChanged", {
+        watchId: second.watchId,
+        sha256: "c".repeat(64),
+      });
+      expect(harness.inspection.experimental_rpcInvalidations).toEqual([]);
+    } finally {
+      stop();
+      await harness.lifecycle.dispose();
+      vi.useRealTimers();
+    }
+  });
+  it("does not attach a reader when an arming call completes after subscription abort", async () => {
+    let resolve!: (value: { sha256: string }) => void;
+    const pending = new Promise<{ sha256: string }>((complete) => {
+      resolve = complete;
+    });
+    let started = false;
+    let requestSignal: AbortSignal | undefined;
+    const { harness } = await loadNotebook(
+      { "plan.md": "# Plan" },
+      {
+        watchFile: async ({ signal }) => {
+          started = true;
+          requestSignal = signal;
+          return pending;
+        },
+      },
+    );
+    vi.useFakeTimers();
+    const source = {
+      kind: "host",
+      threadId: null,
+      environmentId: null,
+      projectId: null,
+      experimental_hostId: "host_primary",
+    };
+    const stop = harness.behavior.experimental_watchRpc("openFile", {
+      input: { source, path: path.join(temporaryDirectories[0]!, "plan.md") },
+    });
+    try {
+      await vi.waitFor(() => expect(started).toBe(true));
+      stop();
+      expect(requestSignal?.aborted).toBe(true);
+      resolve({ sha256: "a".repeat(64) });
+      await vi.advanceTimersByTimeAsync(0);
+      const call = harness.experimental_hostRpcCalls.find((call) => call.method === "watchFile")!;
+      await harness.behavior.experimental_emitHostSignal("host_primary", "fileChanged", {
+        watchId: (call.input as { watchId: string }).watchId,
+        sha256: "b".repeat(64),
+      });
+      expect(harness.inspection.experimental_rpcInvalidations).toEqual([]);
+    } finally {
+      stop();
+      await harness.lifecycle.dispose();
+      vi.useRealTimers();
+    }
+  });
+});
+
+describe("Docs shared preview cancellation", () => {
+  it("detaches a stopped reader immediately while a reusable preview lease is still pending", async () => {
+    const { harness } = await loadNotebook(
+      { "plan.md": "# Plan" },
+      { watchFile: async () => ({ sha256: "a".repeat(64) }) },
+    );
+    let complete!: (value: { baseUrl: string; expiresAtMs: number }) => void;
+    const pending = new Promise<{ baseUrl: string; expiresAtMs: number }>((resolve) => {
+      complete = resolve;
+    });
+    let creating = false;
+    harness.sdk.stub("files.createPreview", async () => {
+      creating = true;
+      return pending;
+    });
+    const source = {
+      kind: "host",
+      threadId: null,
+      environmentId: null,
+      projectId: null,
+      experimental_hostId: "host_primary",
+    };
+    const stop = harness.behavior.experimental_watchRpc("openFile", {
+      input: { source, path: path.join(temporaryDirectories[0]!, "plan.md") },
+    });
+    try {
+      await waitForSignal(() => creating);
+      stop();
+      const call = harness.experimental_hostRpcCalls.find((call) => call.method === "watchFile")!;
+      await harness.behavior.experimental_emitHostSignal("host_primary", "fileChanged", {
+        watchId: (call.input as { watchId: string }).watchId,
+        sha256: "b".repeat(64),
+      });
+      expect(harness.inspection.experimental_rpcInvalidations).toEqual([]);
+      complete({ baseUrl: "/reusable-preview", expiresAtMs: Date.now() + 600_000 });
+      await expect(
+        harness.callRpc("preparePreview", { vaultId: "personal", path: "plan.md" }),
+      ).resolves.toMatchObject({ baseUrl: "/reusable-preview" });
+      expect(harness.sdk.callsTo("files.createPreview")).toHaveLength(1);
+    } finally {
+      complete({ baseUrl: "/reusable-preview", expiresAtMs: Date.now() + 600_000 });
+      stop();
+      await harness.lifecycle.dispose();
     }
   });
 });
