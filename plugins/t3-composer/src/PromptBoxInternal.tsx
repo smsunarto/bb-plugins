@@ -1,4 +1,5 @@
 import { SaveDraftAction } from "./SaveDraftAction";
+import { ComposerPermissionControl } from "./ComposerPermissionControl";
 import { ComposerModelControls } from "./model-picker/ComposerModelControls";
 import {
   experimental_ComposerRoot as ComposerRoot,
@@ -3057,6 +3058,24 @@ export function PromptBoxInternal({
               onRemoveAttachment={onUpdateAttachments ? removeAttachment : undefined}
             />
           ) : null}
+          {!showCompactLayout ? (
+            <>
+              <div data-promptbox-expanded-only="" inert={showVoiceActionGroup ? true : undefined}>
+                <AttachmentPreview
+                  attachments={attachments}
+                  pendingUploads={pendingUploads}
+                  attachmentProjectId={attachmentProjectId}
+                  expandedImageIndex={expandedImageIndex}
+                  onExpandedImageIndexChange={setExpandedImageIndex}
+                  onRemoveAttachment={onUpdateAttachments ? removeAttachment : undefined}
+                />
+
+                {attachmentError ? (
+                  <div className="mx-3 mb-1 mt-1 text-xs text-destructive">{attachmentError}</div>
+                ) : null}
+              </div>
+            </>
+          ) : null}
           <div
             data-promptbox-input-region=""
             aria-hidden={showCompactLayout && showVoiceActionGroup ? true : undefined}
@@ -3150,25 +3169,6 @@ export function PromptBoxInternal({
             </ComposerPopupHost>
           </>
 
-          {!showCompactLayout ? (
-            <>
-              <div data-promptbox-expanded-only="" inert={showVoiceActionGroup ? true : undefined}>
-                <AttachmentPreview
-                  attachments={attachments}
-                  pendingUploads={pendingUploads}
-                  attachmentProjectId={attachmentProjectId}
-                  expandedImageIndex={expandedImageIndex}
-                  onExpandedImageIndexChange={setExpandedImageIndex}
-                  onRemoveAttachment={onUpdateAttachments ? removeAttachment : undefined}
-                />
-
-                {attachmentError ? (
-                  <div className="mx-3 mb-1 mt-1 text-xs text-destructive">{attachmentError}</div>
-                ) : null}
-              </div>
-            </>
-          ) : null}
-
           <>
             <div
               data-promptbox-action-row=""
@@ -3224,6 +3224,7 @@ export function PromptBoxInternal({
                   <div data-t3-composer-controls="" aria-live="polite">
                     <ComposerModelControls fallback={executionControls} />
                   </div>
+                  <ComposerPermissionControl />
                   <contributions.Actions />
                 </div>
               ) : null}

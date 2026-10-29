@@ -201,7 +201,10 @@ function newThreadRouting(selection: ComposerSelection | null): CatalogRouting {
 }
 
 /** Resolves the composer's catalog routing; null while a thread's environment is still being read. */
-function useCatalogRouting(composer: PluginComposerApi, enabled: boolean): CatalogRouting | null {
+export function useCatalogRouting(
+  composer: PluginComposerApi,
+  enabled: boolean,
+): CatalogRouting | null {
   const sdk = useSdk();
   const threadId =
     composer.scope.kind === "new-thread" || !enabled ? null : composer.scope.threadId;

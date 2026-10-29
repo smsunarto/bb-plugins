@@ -8,12 +8,19 @@
   align-items: center;
 }
 
-/* Cancel the model pill's end padding and the row gap, leaving about a space before the word. */
+/* The model and effort pills touch, with about a space between the name and the word. */
+[data-t3-composer][data-promptbox]
+  [data-t3-composer-controls]
+  [data-t3-model-controls]
+  [data-t3-model-picker-trigger] {
+  padding-inline-end: 4px;
+}
+
 [data-t3-composer][data-promptbox]
   [data-t3-composer-controls]
   [data-t3-model-controls]
   [data-t3-traits-trigger] {
-  margin-inline-start: -10px;
+  margin-inline-start: -4px;
   padding-inline-start: 4px;
 }
 

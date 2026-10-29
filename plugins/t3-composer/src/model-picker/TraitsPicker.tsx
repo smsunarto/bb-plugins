@@ -49,7 +49,12 @@ export function TraitsPicker(props: {
           </span>
         </button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="start" mobileTitle="Model options" className="min-w-44 max-w-72">
+      <DropdownMenuContent
+        data-t3-composer-menu=""
+        align="start"
+        mobileTitle="Model options"
+        className="min-w-44 max-w-72"
+      >
         {effort ? (
           <TraitSection
             label="Effort"

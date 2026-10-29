@@ -115,18 +115,18 @@ export function PromptBoxActionsMenu({
           className={cn(
             COARSE_POINTER_PROMPT_ICON_ACTION_BUTTON_CLASS,
             CHROME_SUBTLE_ICON_BUTTON_FOREGROUND_CLASS,
-            "-ml-1.5",
           )}
         >
-          <Icon name={onAttach ? "Paperclip" : "Plus"} className="size-4" />
+          <Icon name="Plus" className="size-5" />
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent
         aria-label="Prompt actions"
+        data-t3-composer-menu=""
         align="start"
         side="bottom"
         sideOffset={4}
-        className="w-36"
+        className="w-64"
         mobileTitle="Prompt actions"
         onCloseAutoFocus={(event) => {
           if (selectedItemRef.current) {

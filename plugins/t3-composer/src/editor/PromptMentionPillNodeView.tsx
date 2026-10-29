@@ -9,6 +9,7 @@ import {
 import { cn } from "@/lib/utils";
 import { PromptMentionLinkContext } from "./prompt-mention-link";
 import { parsePromptEditorMentionAttrs } from "./prompt-editor-serialization";
+import { isContextMention } from "../context-mentions";
 
 const EDITOR_MENTION_PILL_CLASS = "group selection:bg-transparent [&_*]:selection:bg-transparent";
 
@@ -84,6 +85,8 @@ export function PromptMentionPillNodeView({ node, decorations }: NodeViewProps) 
         activate && "cursor-pointer",
       )}
       {...promptMentionClipboardAttributes(attrs.mention, attrs.serializedText)}
+      // The attachment row shows annotations and comments as chips instead.
+      data-t3-context-mention={isContextMention(attrs.mention) ? "" : undefined}
       role={activate ? "button" : undefined}
       tabIndex={activate ? 0 : undefined}
       aria-label={activationLabel}

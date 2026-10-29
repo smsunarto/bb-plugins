@@ -117,6 +117,7 @@ export function ModelPicker(props: {
         <TooltipContent side="top">{triggerLabel}</TooltipContent>
       </Tooltip>
       <PopoverContent
+        data-t3-model-picker-popover=""
         onOpenAutoFocus={(event) => {
           event.preventDefault();
           (event.currentTarget as HTMLElement | null)

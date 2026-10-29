@@ -8,7 +8,9 @@ import "./app.css";
 
 function T3Composer() {
   const { input } = useComposerRenderer();
-  return <PromptBoxInternal {...input} />;
+  // Like ChatGPT's, this composer never collapses: drop BB's collapse action and compact form.
+  const { onCollapse: _onCollapse, compact: _compact, ...expanded } = input;
+  return <PromptBoxInternal {...expanded} />;
 }
 
 export default definePluginApp((app) => {

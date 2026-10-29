@@ -17,7 +17,7 @@ import "./model-picker.css";
  * sent-message editors report a selection but show it read-only; BB marks a
  * sent-message editor only through its per-session key.
  */
-function hasEditablePickers(composer: PluginComposerApi) {
+export function hasEditablePickers(composer: PluginComposerApi) {
   return (
     composer.selection !== null &&
     composer.scope.kind !== "queued-message" &&

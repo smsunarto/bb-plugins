@@ -105,7 +105,7 @@ describe("T3 composer SDK integration", () => {
     }
   }, 15000);
 
-  it("shows plugin actions after the model controls, but not in compact composers", async () => {
+  it("shows plugin actions after the model controls", async () => {
     const expanded = await mountComposer();
     try {
       const actions = await expanded.slot.findByTestId("plugin-actions");
@@ -118,15 +118,6 @@ describe("T3 composer SDK integration", () => {
       ).toBeNull();
     } finally {
       expanded.slot.lifecycle.unmount();
-    }
-    const compact = await mountComposer({
-      compact: { when: "always", placeholder: "Follow up" },
-    });
-    try {
-      expect(compact.slot.container.querySelector("[data-t3-composer-save-action]")).toBeTruthy();
-      expect(compact.slot.queryByTestId("plugin-actions")).toBeNull();
-    } finally {
-      compact.slot.lifecycle.unmount();
     }
   });
 
@@ -179,12 +170,16 @@ describe("T3 composer SDK integration", () => {
     }
   });
 
-  it("renders a compact composer without the expanded model controls", async () => {
-    const { slot } = await mountComposer({ compact: { when: "always", placeholder: "Follow up" } });
+  it("stays expanded without a collapse button when BB asks for the compact form", async () => {
+    const { slot } = await mountComposer({
+      compact: { when: "always", placeholder: "Follow up" },
+      onCollapse: () => {},
+    });
     try {
-      expect(slot.queryByText("Host model picker")).toBeNull();
-      expect(slot.container.querySelector("[data-promptbox-compact]")).toBeTruthy();
-      expect(await slot.findByRole("button", { name: "Submit (Enter)" })).toBeTruthy();
+      expect(await slot.findByText("Host model picker")).toBeTruthy();
+      expect(slot.container.querySelector("[data-promptbox-compact]")).toBeNull();
+      expect(slot.container.querySelector("[data-promptbox-collapsed]")).toBeNull();
+      expect(slot.queryByRole("button", { name: "Collapse prompt box" })).toBeNull();
     } finally {
       slot.lifecycle.unmount();
     }

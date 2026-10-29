@@ -1,33 +1,44 @@
-/* Geometry from T3 Code's ComposerSurface, ChatComposer and ComposerControl.
+/* Geometry measured from the ChatGPT macOS app composer, with BB's 12px corner
+   radius: a surface with a hairline edge, a 14px/20px editor, 28px round icon buttons and pills,
+   and a solid round send button. Touch screens keep 36px targets and 16px text.
    BB owns its color palette and the controls passed through the renderer SDK. */
 [data-t3-composer][data-promptbox] {
   container-type: inline-size;
   container-name: t3-composer;
   min-width: 0;
-  padding: 0;
-  border: 1px solid color-mix(in srgb, var(--foreground) 5%, transparent);
+  padding: 8px;
+  border: 0;
   border-radius: 12px;
   background: var(--agent-surface-background, var(--card));
-  box-shadow: none;
+  box-shadow:
+    0 1px 2px color-mix(in srgb, var(--foreground) 4%, transparent),
+    0 0 0 0.5px color-mix(in srgb, var(--foreground) 8%, transparent);
   color: var(--foreground);
   font-family: var(--font-sans);
+}
+
+/* In dark themes ChatGPT lifts the surface well above the page and draws no
+   drop shadow; a foreground-colored shadow would read as a glow. */
+.dark [data-t3-composer][data-promptbox] {
+  background: color-mix(in srgb, var(--foreground) 14%, var(--background));
+  box-shadow: 0 0 0 0.5px color-mix(in srgb, var(--foreground) 18%, transparent);
 }
 
 [data-t3-composer][data-promptbox] [data-promptbox-editor-scroll] {
   border-radius: 11px 11px 0 0;
   background: transparent;
-  padding: 16px 16px 8px;
+  padding: 6px 4px 4px;
   font-size: 14px;
-  line-height: 1.625;
+  line-height: 20px;
 }
 
 [data-t3-composer][data-promptbox]:not([data-promptbox-compact]) [data-promptbox-editor-scroll] {
-  min-height: 94px !important;
+  min-height: 54px !important;
 }
 
 [data-t3-composer][data-promptbox] [data-promptbox-editor-content] .ProseMirror {
   font-family: var(--font-sans);
-  line-height: 1.625;
+  line-height: 20px;
 }
 
 [data-t3-composer][data-promptbox]
@@ -44,7 +55,20 @@
   flex-wrap: nowrap;
   justify-content: space-between;
   gap: 8px;
-  padding: 0 16px 16px;
+  padding: 0;
+}
+
+/* Left cluster: + menu, model pills, permission mode, then other plugins' actions. */
+[data-t3-composer][data-promptbox] [data-t3-composer-actions-menu] {
+  order: -3;
+}
+
+[data-t3-composer][data-promptbox] [data-t3-composer-controls] {
+  order: -2;
+}
+
+[data-t3-composer][data-promptbox] [data-t3-permission] {
+  order: -1;
 }
 
 [data-t3-composer][data-promptbox] [data-t3-composer-controls] {
@@ -53,11 +77,10 @@
   flex-wrap: wrap;
   align-items: center;
   min-width: 0;
-  gap: 0;
-  order: -2;
+  gap: 4px;
 }
 
-/* Keep the routing toggle beside the picker, ahead of the other plugin actions. */
+/* Keep the routing toggle ahead of the other plugin actions, after the permission mode. */
 [data-t3-composer][data-promptbox]
   [data-plugin-composer-action-plugin="magic-compose"]
   [data-plugin-composer-action] {
@@ -74,50 +97,33 @@
   reading-flow: flex-visual;
 }
 
-[data-t3-composer][data-promptbox] [data-plugin-composer-action] button {
-  min-width: 28px;
-  height: 28px;
-  min-height: 28px;
-  padding: 0 4px;
-  border-radius: 8px;
-}
-
-[data-t3-composer][data-promptbox] [data-plugin-composer-action-plugin="magic-compose"] button {
-  width: 28px;
-  padding: 0;
-}
-
-[data-t3-composer][data-promptbox] [data-plugin-composer-action] button > svg {
-  width: 16px;
-  height: 16px;
-}
-
 [data-t3-composer][data-promptbox] [data-t3-composer-controls] > * {
   min-width: 0;
   max-width: 100%;
 }
 
+/* Pills: model, effort and mode pickers. */
 [data-t3-composer][data-promptbox] [data-t3-composer-controls] :is(button, [role="combobox"]) {
   height: 28px;
   min-height: 28px;
   min-width: 0;
   max-width: 100%;
   gap: 6px;
-  padding: 0 8px;
-  border: 1px solid transparent;
-  border-radius: 8px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 9999px;
   background: transparent;
   box-shadow: none;
-  color: color-mix(in srgb, var(--foreground) 80%, transparent);
-  font-size: 14px;
-  font-weight: 500;
+  color: var(--foreground);
+  font-size: 13px;
+  font-weight: 400;
   line-height: 20px;
 }
 
 [data-t3-composer][data-promptbox]
   [data-t3-composer-controls]
-  :is(button, [role="combobox"]):hover {
-  background: var(--accent);
+  :is(button, [role="combobox"]):is(:hover, [data-state="open"], [aria-expanded="true"]) {
+  background: color-mix(in srgb, var(--foreground) 8%, transparent);
   color: var(--foreground);
 }
 
@@ -129,54 +135,82 @@
   [data-promptbox-action-row]
   > [data-promptbox-standard-actions]:last-child {
   flex-wrap: nowrap;
-  gap: 8px;
+  gap: 4px;
 }
 
-[data-t3-composer][data-promptbox] [data-t3-composer-actions-menu] {
+/* Round icon buttons: +, mic, save draft and plugin actions. */
+[data-t3-composer][data-promptbox]
+  :is(
+    [data-t3-composer-actions-menu],
+    [data-t3-composer-voice]:not([data-promptbox-submit-action]),
+    [data-t3-composer-save-draft]
+  ) {
   width: 28px;
+  min-width: 28px;
   height: 28px;
   min-height: 28px;
   margin: 0;
   padding: 0;
-  border-radius: 8px;
-  color: var(--muted-foreground);
+  border-radius: 9999px;
+  color: var(--foreground);
 }
 
-[data-t3-composer][data-promptbox] [data-t3-composer-voice]:not([data-promptbox-submit-action]) {
-  width: 28px;
-  height: 28px;
-  min-height: 28px;
-  padding: 0;
-  border-radius: 8px;
-  color: var(--muted-foreground);
+[data-t3-composer][data-promptbox]
+  :is(
+    [data-t3-composer-actions-menu],
+    [data-t3-composer-voice]:not([data-promptbox-submit-action]),
+    [data-t3-composer-save-draft]
+  ):hover {
+  background: color-mix(in srgb, var(--foreground) 8%, transparent);
 }
 
+[data-t3-composer][data-promptbox] [data-t3-composer-actions-menu] svg {
+  width: 18px;
+  height: 18px;
+}
+
+[data-t3-composer][data-promptbox]
+  :is([data-t3-composer-voice]:not([data-promptbox-submit-action]), [data-t3-composer-save-draft])
+  > svg {
+  width: 16px;
+  height: 16px;
+}
+
+/* Send, stop and voice: a solid circle in the foreground color. */
 [data-t3-composer][data-promptbox] [data-promptbox-submit-action] {
   flex-shrink: 0;
-  width: 32px;
-  height: 32px;
-  min-width: 32px;
-  min-height: 32px;
+  width: 28px;
+  height: 28px;
+  min-width: 28px;
+  min-height: 28px;
   margin: 0;
   padding: 0;
-  border-radius: 6px;
-  background: var(--primary);
-  color: var(--primary-foreground);
+  border-radius: 9999px;
+  background: var(--foreground);
+  color: var(--background);
   box-shadow: none;
-  transition:
-    transform 150ms,
-    background-color 150ms;
+  transition: opacity 150ms;
 }
 
 [data-t3-composer][data-promptbox] [data-promptbox-submit-action]:enabled:hover {
-  transform: scale(1.05);
-  background: color-mix(in srgb, var(--primary) 90%, var(--background));
+  background: var(--foreground);
+  opacity: 0.7;
 }
 
 [data-t3-composer][data-promptbox] [data-promptbox-submit-action]:disabled {
-  background: color-mix(in srgb, var(--foreground) 12%, transparent);
-  color: var(--muted-foreground);
-  opacity: 1;
+  background: var(--foreground);
+  color: var(--background);
+  opacity: 0.3;
+}
+
+[data-t3-composer][data-promptbox] [data-promptbox-submit-action] > svg {
+  width: 12px;
+  height: 12px;
+}
+
+[data-t3-composer][data-promptbox] [data-t3-composer-stop] > svg {
+  width: 10px;
+  height: 10px;
 }
 
 [data-t3-composer][data-promptbox] [data-promptbox-submit-label] {
@@ -184,22 +218,17 @@
 }
 
 [data-t3-composer][data-promptbox] [data-t3-composer-stop] {
-  background: var(--secondary);
-  color: var(--foreground);
+  background: var(--foreground);
+  color: var(--background);
 }
 
-[data-t3-composer][data-promptbox] [data-t3-composer-save-draft] {
-  width: 28px;
-  min-width: 28px;
-  height: 28px;
-  min-height: 28px;
+[data-t3-composer][data-promptbox][data-promptbox-compact] {
   padding: 0;
-  border-radius: 6px;
-  color: var(--muted-foreground);
+  border-radius: 9999px;
 }
 
 [data-t3-composer][data-promptbox][data-promptbox-compact] [data-promptbox-editor-scroll] {
-  padding: 0 8px 0 12px;
+  padding: 0 8px 0 18px;
 }
 
 [data-t3-composer][data-promptbox][data-promptbox-compact] [data-promptbox-action-row] {
@@ -208,13 +237,8 @@
 }
 
 @container t3-composer (max-width: 520px) {
-  [data-t3-composer][data-promptbox] [data-promptbox-editor-scroll] {
-    padding: 14px 12px 8px;
-  }
-
   [data-t3-composer][data-promptbox] [data-promptbox-action-row] {
     flex-wrap: wrap;
-    padding: 0 12px 12px;
   }
 
   [data-t3-composer][data-promptbox]
@@ -224,18 +248,14 @@
   }
 
   [data-t3-composer][data-promptbox] [data-t3-composer-controls] :is(button, [role="combobox"]) {
-    font-size: 12px;
-  }
-}
-
-@media (pointer: coarse) {
-  [data-t3-composer][data-promptbox] [data-promptbox-editor-scroll] {
-    font-size: 16px;
+    padding: 0 8px;
+    font-size: 13px;
   }
 
-  [data-t3-composer][data-promptbox] [data-promptbox-submit-action] {
-    width: 36px;
-    height: 36px;
+  /* In a narrow composer the model collapses to its icon so the left cluster
+     keeps one row. */
+  [data-t3-composer][data-promptbox] [data-t3-model-picker-label] {
+    display: none;
   }
 }
 
@@ -249,11 +269,469 @@
   width: auto;
   gap: 6px;
   padding: 0 12px;
-  border-radius: 9999px;
 }
 
 [data-t3-composer][data-promptbox]
   [data-t3-composer-submit-kind="MessageSquarePlus"]
   [data-promptbox-submit-label] {
   display: inline;
+}
+
+/* Permission mode, shown in the card where ChatGPT shows "Approve for me". BB's
+   copy in the context row is hidden while this one renders. */
+[data-t3-composer][data-promptbox] [data-t3-permission] button {
+  height: 28px;
+  min-height: 28px;
+  gap: 6px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 9999px;
+  background: transparent;
+  box-shadow: none;
+  font-size: 13px;
+  font-weight: 400;
+}
+
+[data-t3-composer][data-promptbox]
+  [data-t3-permission]
+  button:is(:hover, [data-state="open"], [aria-expanded="true"]) {
+  background: color-mix(in srgb, var(--foreground) 8%, transparent);
+}
+
+[data-t3-composer][data-promptbox] [data-t3-permission] button svg[data-icon="ChevronDown"] {
+  display: none;
+}
+
+/* BB's project, machine and branch row becomes ChatGPT's tray, attached above
+   the card. There is no SDK input for the row, so it is reordered and restyled
+   in place; BB still owns its pickers and hides it in narrow panes. */
+:is([data-follow-up-composer], [data-app-composer]):has(> [data-composer-box] [data-t3-composer]) {
+  display: flex;
+  flex-direction: column;
+  /* Doubles BB's 8px gap below the composer. */
+  margin-bottom: 8px;
+}
+
+/* Banners above the composer stay above the tray. */
+:is([data-follow-up-composer], [data-app-composer]):has(> [data-composer-box] [data-t3-composer])
+  > :not([data-composer-box], [data-follow-up-composer-footer], [data-new-thread-footer]) {
+  order: -2;
+}
+
+:is([data-follow-up-composer], [data-app-composer]) > [data-composer-box]:has([data-t3-composer]) {
+  position: relative;
+  z-index: 1;
+}
+
+:is([data-follow-up-composer], [data-app-composer]):has(> [data-composer-box] [data-t3-composer])
+  > :is([data-follow-up-composer-footer], [data-new-thread-footer]) {
+  --t3-tray-overlap: 12px;
+  position: relative;
+  min-height: 0;
+  max-height: none;
+  overflow: visible;
+  z-index: 0;
+  order: -1;
+  min-width: 0;
+  margin: 0 0 calc(-1 * var(--t3-tray-overlap));
+  padding: 4px 6px calc(4px + var(--t3-tray-overlap));
+  border-radius: 12px 12px 0 0;
+  background: color-mix(in srgb, var(--foreground) 5%, var(--background));
+  box-shadow: 0 0 0 0.5px color-mix(in srgb, var(--foreground) 8%, transparent);
+  color: color-mix(in srgb, var(--foreground) 80%, transparent);
+  font-size: 13px;
+}
+
+.dark
+  :is([data-follow-up-composer], [data-app-composer]):has(> [data-composer-box] [data-t3-composer])
+  > :is([data-follow-up-composer-footer], [data-new-thread-footer]) {
+  background: color-mix(in srgb, var(--foreground) 8%, var(--background));
+  box-shadow: 0 0 0 0.5px color-mix(in srgb, var(--foreground) 12%, transparent);
+}
+
+:is([data-follow-up-composer], [data-app-composer]):has(> [data-composer-box] [data-t3-composer])
+  > :is([data-follow-up-composer-footer], [data-new-thread-footer])
+  :is(button, [data-option-display], span:has(> svg[data-icon="Laptop"])) {
+  display: inline-flex;
+  align-items: center;
+  height: 28px;
+  min-height: 28px;
+  gap: 6px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 9999px;
+  background: transparent;
+  box-shadow: none;
+  font-size: 13px;
+}
+
+:is([data-follow-up-composer], [data-app-composer]):has(> [data-composer-box] [data-t3-composer])
+  > :is([data-follow-up-composer-footer], [data-new-thread-footer])
+  button:is(:hover, [data-state="open"], [aria-expanded="true"]) {
+  background: color-mix(in srgb, var(--foreground) 8%, transparent);
+  color: var(--foreground);
+}
+
+:is([data-follow-up-composer], [data-app-composer]):has(> [data-composer-box] [data-t3-composer])
+  > :is([data-follow-up-composer-footer], [data-new-thread-footer])
+  svg:not([viewBox="0 0 16 16"]) {
+  width: 16px;
+  height: 16px;
+}
+
+:is([data-follow-up-composer], [data-app-composer]):has(> [data-composer-box] [data-t3-composer])
+  > :is([data-follow-up-composer-footer], [data-new-thread-footer])
+  svg[data-icon="ChevronDown"] {
+  display: none;
+}
+
+/* Mirrors BB's rule that hides the row in a narrow pane. */
+@container follow-up-composer style(--follow-up-composer-container-compact: true) {
+  [data-follow-up-composer]:not([data-follow-up-composer-footer-visible]):has(
+      > [data-composer-box] [data-t3-composer]
+    )
+    > [data-follow-up-composer-footer] {
+    --t3-tray-overlap: 0px;
+    max-height: 0;
+    margin: 0;
+    padding: 0;
+    overflow: hidden;
+    box-shadow: none;
+  }
+}
+
+/* Hide BB's copy only once the card's picker has rendered. While BB disables its
+   copy (plan mode, a permission snapshot, a pending question), BB's copy shows
+   the effective mode, so it stays and the card's picker is hidden instead. */
+:is([data-follow-up-composer], [data-app-composer]):has(
+    > [data-composer-box] [data-t3-permission] button
+  )
+  > :is([data-follow-up-composer-footer], [data-new-thread-footer])
+  button[aria-label="Permission mode"]:not(:disabled) {
+  /* Outranks the tray's pill display, whose selector list is more specific. */
+  display: none !important;
+}
+
+:is([data-follow-up-composer], [data-app-composer]):has(
+    > :is([data-follow-up-composer-footer], [data-new-thread-footer])
+      button[aria-label="Permission mode"]:disabled
+  )
+  > [data-composer-box]
+  [data-t3-permission] {
+  display: none;
+}
+
+/* Contributed actions may contain labels. Keep their content and hit areas intact. */
+[data-t3-composer][data-promptbox] [data-plugin-composer-action] button {
+  min-width: 28px;
+  min-height: 28px;
+  padding: 0 6px;
+  border-radius: 9999px;
+}
+
+[data-t3-composer][data-promptbox] [data-plugin-composer-action] button > svg {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+}
+
+[data-t3-composer][data-promptbox] [data-promptbox-expanded-only][data-promptbox-standard-actions] {
+  flex-wrap: wrap;
+  column-gap: 4px;
+  row-gap: 4px;
+}
+
+[data-t3-composer][data-promptbox] [data-promptbox-standard-actions] > * {
+  flex-shrink: 0;
+}
+
+[data-t3-composer][data-promptbox] [data-t3-composer-controls] {
+  flex-shrink: 1;
+}
+
+[data-t3-composer][data-promptbox]
+  [data-t3-composer-controls]
+  :is(button, [role="combobox"])
+  > svg {
+  flex-shrink: 0;
+}
+
+[data-t3-composer][data-promptbox] button:focus-visible {
+  outline: 2px solid var(--foreground);
+  outline-offset: 2px;
+}
+
+[data-t3-composer][data-promptbox] [data-t3-composer-actions-menu][data-state="open"] {
+  background: color-mix(in srgb, var(--foreground) 8%, transparent);
+}
+
+[data-t3-composer-menu][role="menu"] {
+  max-width: calc(100vw - 24px);
+  border-radius: 12px;
+  padding: 4px;
+  background: color-mix(in srgb, var(--foreground) 9%, var(--background));
+  border: 1px solid color-mix(in srgb, var(--foreground) 12%, transparent);
+  box-shadow: 0 8px 24px color-mix(in srgb, var(--foreground) 12%, transparent);
+}
+
+.dark [data-t3-composer-menu][role="menu"] {
+  box-shadow: none;
+}
+
+[data-t3-composer-menu] [role="menuitem"] {
+  min-height: 28px;
+  border-radius: 9999px;
+  padding: 4px 10px;
+  gap: 8px;
+  font-size: 14px;
+}
+
+[data-t3-composer-menu] [role="menuitem"][data-highlighted] {
+  background: color-mix(in srgb, var(--foreground) 8%, transparent);
+}
+
+/* The theme also styles BB's native composer. This renderer owns its editor
+   geometry, including when the theme is injected after the plugin sheet. */
+[data-follow-up-composer]
+  [data-t3-composer][data-promptbox]:not([data-promptbox-compact])
+  [data-promptbox-input-region]
+  [data-promptbox-editor-scroll] {
+  min-height: 54px !important;
+  max-height: min(50dvh, var(--composer-editor-available-height, 100dvh)) !important;
+}
+
+[data-t3-composer][data-promptbox]:not([data-promptbox-compact]) [data-promptbox-editor-content] {
+  height: auto;
+  min-height: 20px;
+}
+
+[data-t3-composer][data-promptbox]:not([data-promptbox-compact])
+  [data-promptbox-editor-content]
+  .ProseMirror {
+  min-height: 20px;
+}
+
+/* Let a wrapped placeholder size the empty editor while the real caret stays
+   on its first line. The negative margin keeps the trailing break beside it. */
+[data-t3-composer][data-promptbox]:not([data-promptbox-compact])
+  [data-promptbox-editor-content]
+  .ProseMirror
+  :where(p.is-editor-empty:first-child) {
+  display: flow-root;
+}
+
+[data-t3-composer][data-promptbox]:not([data-promptbox-compact])
+  [data-promptbox-editor-content]
+  .ProseMirror
+  :where(p.is-editor-empty:first-child)::before {
+  height: auto;
+  width: 100%;
+  margin-right: -100%;
+}
+
+/* Touch screens keep 36px targets, and 16px text so iOS does not zoom on focus. */
+@media (pointer: coarse) {
+  [data-t3-composer][data-promptbox] [data-promptbox-editor-scroll] {
+    font-size: 16px;
+    line-height: 24px;
+  }
+
+  [data-t3-composer][data-promptbox] [data-promptbox-editor-content] .ProseMirror {
+    line-height: 24px;
+  }
+
+  [data-t3-composer][data-promptbox]
+    :is(
+      [data-t3-composer-actions-menu],
+      [data-t3-composer-voice]:not([data-promptbox-submit-action]),
+      [data-t3-composer-save-draft],
+      [data-promptbox-submit-action]
+    ) {
+    width: 36px;
+    min-width: 36px;
+    height: 36px;
+    min-height: 36px;
+  }
+
+  [data-t3-composer][data-promptbox] [data-t3-composer-submit-kind="MessageSquarePlus"] {
+    width: auto;
+  }
+
+  [data-t3-composer][data-promptbox] [data-promptbox-submit-action] > svg {
+    width: 14px;
+    height: 14px;
+  }
+
+  [data-t3-composer][data-promptbox] [data-t3-composer-controls] :is(button, [role="combobox"]),
+  [data-t3-composer][data-promptbox] [data-t3-permission] button,
+  :is([data-follow-up-composer], [data-app-composer]):has(> [data-composer-box] [data-t3-composer])
+    > :is([data-follow-up-composer-footer], [data-new-thread-footer])
+    button,
+  [data-t3-composer][data-promptbox] [data-plugin-composer-action] {
+    height: 36px;
+    min-height: 36px;
+    max-height: 36px;
+  }
+
+  [data-t3-composer][data-promptbox] [data-plugin-composer-action] button {
+    min-width: 36px;
+    min-height: 36px;
+  }
+
+  [data-t3-composer-menu] [role="menuitem"] {
+    min-height: 36px;
+  }
+}
+
+/* BB's project and machine menus, styled like ChatGPT's: a rounded sheet with
+   quiet headings and rounded rows. They portal out of the composer, so this
+   applies wherever BB shows them. */
+[data-bb-portaled-overlay][role="dialog"]:is([aria-label="Project"], [aria-label="Environment"]) {
+  overflow: hidden;
+  border: 0.5px solid color-mix(in srgb, var(--foreground) 12%, transparent);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--foreground) 9%, var(--background));
+  box-shadow: 0 8px 24px color-mix(in srgb, var(--foreground) 10%, transparent);
+  font-size: 13px;
+}
+
+.dark
+  [data-bb-portaled-overlay][role="dialog"]:is([aria-label="Project"], [aria-label="Environment"]) {
+  box-shadow: none;
+}
+
+:is([aria-label="Project"], [aria-label="Environment"])[data-bb-portaled-overlay] [cmdk-root] {
+  border-radius: inherit;
+  background: transparent;
+}
+
+:is([aria-label="Project"], [aria-label="Environment"])[data-bb-portaled-overlay]
+  [cmdk-input-wrapper] {
+  margin: 0 4px;
+  padding: 0 10px;
+  border-color: color-mix(in srgb, var(--foreground) 8%, transparent);
+}
+
+:is([aria-label="Project"], [aria-label="Environment"])[data-bb-portaled-overlay] [cmdk-input] {
+  height: 36px;
+  padding: 0;
+  font-size: 13px;
+}
+
+:is([aria-label="Project"], [aria-label="Environment"])[data-bb-portaled-overlay] [cmdk-group] {
+  padding: 4px;
+}
+
+:is([aria-label="Project"], [aria-label="Environment"])[data-bb-portaled-overlay]
+  [cmdk-group-heading] {
+  padding: 4px 10px;
+  color: color-mix(in srgb, var(--foreground) 50%, transparent);
+  font-size: 12px;
+  font-weight: 400;
+}
+
+:is([aria-label="Project"], [aria-label="Environment"])[data-bb-portaled-overlay] [cmdk-item] {
+  min-height: 28px;
+  gap: 8px;
+  padding: 4px 10px;
+  border-radius: 10px;
+  font-size: 13px;
+}
+
+:is([aria-label="Project"], [aria-label="Environment"])[data-bb-portaled-overlay]
+  [cmdk-item][data-selected="true"] {
+  background: color-mix(in srgb, var(--foreground) 8%, transparent);
+}
+
+:is([aria-label="Project"], [aria-label="Environment"])[data-bb-portaled-overlay] [cmdk-separator] {
+  margin: 0 10px;
+  background: color-mix(in srgb, var(--foreground) 8%, transparent);
+}
+
+@media (pointer: coarse) {
+  :is([aria-label="Project"], [aria-label="Environment"])[data-bb-portaled-overlay] [cmdk-item] {
+    min-height: 40px;
+  }
+}
+
+/* Annotations and comments show as chips in the attachment row. */
+[data-t3-composer] [data-t3-context-mention] {
+  display: none;
+}
+
+/* Like ChatGPT, a tile's remove button appears on hover or focus; touch screens always show it. */
+[data-t3-attachments] [data-t3-attachment-remove] {
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+
+[data-t3-attachments] > :is(:hover, :focus-within) [data-t3-attachment-remove] {
+  opacity: 1;
+}
+
+@media (pointer: coarse) {
+  [data-t3-attachments] [data-t3-attachment-remove] {
+    opacity: 1;
+  }
+}
+
+/* T3 Code's model picker, in the same sheet as the other composer menus. */
+[data-t3-model-picker-popover] {
+  padding: 0;
+  overflow: hidden;
+  border: 0.5px solid color-mix(in srgb, var(--foreground) 12%, transparent);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--foreground) 9%, var(--background));
+  box-shadow: 0 8px 24px color-mix(in srgb, var(--foreground) 10%, transparent);
+  font-size: 13px;
+}
+
+.dark [data-t3-model-picker-popover] {
+  box-shadow: none;
+}
+
+[data-t3-model-picker-popover] [data-t3-model-picker-rail] {
+  border-right: 0.5px solid color-mix(in srgb, var(--foreground) 8%, transparent);
+  background: transparent;
+}
+
+[data-t3-model-picker-popover] [data-t3-model-picker-rail] .bg-primary {
+  background: var(--foreground);
+}
+
+[data-t3-model-picker-popover] [data-t3-model-search] {
+  font-size: 13px;
+}
+
+[data-t3-model-picker-popover] .border-b,
+[data-t3-model-picker-popover] .border-t {
+  border-color: color-mix(in srgb, var(--foreground) 8%, transparent);
+}
+
+[data-t3-model-picker-popover] [role="option"] {
+  min-height: 28px;
+  padding: 4px 10px;
+  border-radius: 8px;
+  font-size: 13px;
+}
+
+[data-t3-model-picker-popover] [role="option"] :is(.text-sm) {
+  font-size: 13px;
+}
+
+[data-t3-model-picker-popover] [role="option"][aria-selected="true"] {
+  background: transparent;
+}
+
+[data-t3-model-picker-popover] [role="option"][data-highlighted] {
+  background: color-mix(in srgb, var(--foreground) 8%, transparent);
+  color: var(--foreground);
+}
+
+/* Shortcut hints read as quiet text rather than keycaps. */
+[data-t3-model-picker-popover] [role="option"] kbd {
+  background: transparent;
+  color: color-mix(in srgb, var(--foreground) 40%, transparent);
+  font-size: 12px;
+  font-weight: 400;
 }
