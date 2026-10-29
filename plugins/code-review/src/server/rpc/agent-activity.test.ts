@@ -38,13 +38,6 @@ test("lists the threads started for the pull request with their live status", as
         baseRefName: "main",
       },
     ],
-    latestReview: {
-      threadId: "t1",
-      headRefOid: "abc",
-      baseRefName: "main",
-      reportedAt: null,
-      summary: null,
-      findings: [],
-    },
+    latestReview: null,
   });
 });

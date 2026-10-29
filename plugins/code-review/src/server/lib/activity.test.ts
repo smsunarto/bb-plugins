@@ -99,7 +99,7 @@ test("linked threads read their live status; a deleted one reads as missing", as
   ]);
 });
 
-test("the review shown is the newest that reported, unless a newer one is still at work", async () => {
+test("the review shown is the newest that reported, even while a newer one is still at work", async () => {
   const threads: Record<string, { status: string }> = {
     r1: { status: "idle" },
     r2: { status: "idle" },
@@ -128,14 +128,8 @@ test("the review shown is the newest that reported, unless a newer one is still 
     headRefOid: "c",
     baseRefName: "main",
   });
-  expect((await agentActivity(bb, store, KEY)).latestReview).toEqual({
-    threadId: "r3",
-    headRefOid: "c",
-    baseRefName: "main",
-    reportedAt: null,
-    summary: null,
-    findings: [],
-  });
+  // r3 is at work: the thread says so, and r1's report stays the one to show.
+  expect((await agentActivity(bb, store, KEY)).latestReview).toEqual(run("r1", "a"));
   expect(await runningReview(bb, store, KEY, { headRefOid: "c", baseRefName: "main" })).toBe("r3");
   expect(await runningReview(bb, store, KEY, { headRefOid: "b", baseRefName: "main" })).toBeNull();
 

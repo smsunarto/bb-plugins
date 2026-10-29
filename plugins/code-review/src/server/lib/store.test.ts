@@ -58,7 +58,7 @@ test("links are newest first per subject, shared across case, and the oldest are
     threadId: "t2",
     headRefOid: "abc",
     baseRefName: "main",
-    reportedAt: null,
+    reportedAt: "2026-10-09T00:00:00Z",
     summary: null,
     findings: [],
   });
@@ -141,7 +141,11 @@ test("a record saved before a field existed is skipped, and the rest still read"
   };
   const { baseRefName: _, ...older } = { ...current, threadId: "thr_old" };
   await kv.set("links:cli/cli#7", [current, older]);
-  await kv.set("run:thr_old", { threadId: "thr_old", headRefOid: "abc", reportedAt: null });
+  await kv.set("run:thr_old", {
+    threadId: "thr_old",
+    headRefOid: "abc",
+    reportedAt: "2026-10-09T00:00:00Z",
+  });
   await kv.set("pins", [{ owner: "cli", repo: "cli", number: 7 }, { owner: "cli" }]);
 
   expect(await s.links("cli/cli#7")).toEqual([current]);

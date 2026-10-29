@@ -413,15 +413,7 @@ export function FindingsCard(target: ReviewTarget) {
         {running && running.threadId !== run?.threadId ? (
           <Reviewing headRefOid={subject.revision.headRefOid} />
         ) : null}
-        {run ? (
-          <ReviewBody
-            run={run}
-            busy={runThread ? isBusy(runThread) : false}
-            stale={stale}
-            pr={subject.pr}
-            onReveal={reveal}
-          />
-        ) : null}
+        {run ? <ReviewBody run={run} stale={stale} pr={subject.pr} onReveal={reveal} /> : null}
       </div>
     </Section>
   );
@@ -443,21 +435,16 @@ function OpenThreadLink({ thread }: { thread: LinkedThread | null }) {
   );
 }
 
-/** Said while a review runs: of the head, named when an older review's findings sit below. */
-function Reviewing({ headRefOid }: { headRefOid?: string }) {
+/** Said while a review of the head runs. An older review's findings may sit below it. */
+function Reviewing({ headRefOid }: { headRefOid: string }) {
   return (
     <output className="flex items-center gap-1.5 text-muted-foreground">
       <Icon name="Loading" className="size-3 shrink-0 motion-safe:animate-spin" aria-hidden />
       <span>
-        bb is reviewing
-        {headRefOid ? (
-          <>
-            {" "}
-            <span className="font-mono" translate="no">
-              {shortSha(headRefOid)}
-            </span>
-          </>
-        ) : null}
+        bb is reviewing{" "}
+        <span className="font-mono" translate="no">
+          {shortSha(headRefOid)}
+        </span>
         . Findings appear here when it reports.
       </span>
     </output>
@@ -489,12 +476,8 @@ function ReviewMeta({
       <span translate="no" className="font-mono" title="The commit bb reviewed">
         {shortSha(run.headRefOid)}
       </span>
-      {run.reportedAt ? (
-        <>
-          <span aria-hidden>·</span>
-          <Timestamp iso={run.reportedAt} />
-        </>
-      ) : null}
+      <span aria-hidden>·</span>
+      <Timestamp iso={run.reportedAt} />
       {stale ? (
         <span
           className="inline-flex h-4.5 items-center rounded-full bg-surface-attention px-1.5 text-[11px] font-semibold text-warning-text"
@@ -509,29 +492,16 @@ function ReviewMeta({
 
 function ReviewBody({
   run,
-  busy,
   stale,
   pr,
   onReveal,
 }: {
   run: ReviewRun;
-  /** The run's own thread is still working. */
-  busy: boolean;
   stale: boolean;
   /** The pull request findings can be drafted on. None for a branch. */
   pr: PullRequest | null;
   onReveal: (finding: Finding) => void;
 }) {
-  if (run.reportedAt === null) {
-    return busy ? (
-      <Reviewing />
-    ) : (
-      <p className="text-muted-foreground">
-        The review ended without reporting findings. Open the thread to see what happened, or start
-        another review.
-      </p>
-    );
-  }
   const findings = sortFindings(run.findings);
   return (
     <>

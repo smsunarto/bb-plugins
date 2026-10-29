@@ -23,6 +23,7 @@ const { FindingsCard, LinkedThreads, ReviewWithBbButton } = await import("./bb-r
 const { FindingCard } = await import("./finding.tsx");
 const { SubmitReviewButton } = await import("./submit-review.tsx");
 const { queryKey, useRpcQuery } = await import("./rpc.ts");
+const { shortSha } = await import("./format.ts");
 
 beforeEach(() => queryClient.clear());
 
@@ -862,22 +863,28 @@ test("a clean review says so, and no review shows nothing", async () => {
   none.lifecycle.unmount();
 });
 
-test("a review under way says bb is reviewing", async () => {
+const REVIEWING_HEAD = `bb is reviewing ${shortSha(HEAD)}. Findings appear here when it reports.`;
+
+test("a review under way says bb is reviewing the head", async () => {
   const activity: AgentActivity = {
     threads: [linked("thread-review", { status: "active" })],
-    latestReview: {
-      threadId: "thread-review",
-      headRefOid: HEAD,
-      baseRefName: BASE,
-      reportedAt: null,
-      summary: null,
-      findings: [],
-    },
+    latestReview: null,
   };
   const slot = mount(FindingsCard, { agentActivity: () => activity });
-  expect(
-    await slot.findByText("bb is reviewing. Findings appear here when it reports."),
-  ).toBeTruthy();
+  expect((await slot.findByRole("status")).textContent).toBe(REVIEWING_HEAD);
+  slot.lifecycle.unmount();
+});
+
+test("while a newer review runs, the last report's findings stay on screen under it", async () => {
+  const previous = reviewed([finding("f1")], OLD_HEAD);
+  const activity: AgentActivity = {
+    threads: [linked("thread-next", { status: "active" }), ...previous.threads],
+    latestReview: previous.latestReview,
+  };
+  const slot = mount(FindingsCard, { agentActivity: () => activity });
+  expect((await slot.findByRole("status")).textContent).toBe(REVIEWING_HEAD);
+  expect(slot.getByText("Bucket never refills")).toBeTruthy();
+  expect(slot.getByText("Stale")).toBeTruthy();
   slot.lifecycle.unmount();
 });
 

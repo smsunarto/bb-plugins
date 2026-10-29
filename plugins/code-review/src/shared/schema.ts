@@ -704,8 +704,8 @@ export const reviewRunSchema = z.object({
   /** The diff bb reviewed, which the findings' line numbers count in. */
   headRefOid: z.string(),
   baseRefName: z.string(),
-  /** Set once the review agent reports. Null while it is still reviewing. */
-  reportedAt: z.string().nullable(),
+  /** When the review agent reported. A review still under way has no run; its thread says so. */
+  reportedAt: z.string(),
   summary: z.string().nullable(),
   findings: z.array(findingSchema),
 });

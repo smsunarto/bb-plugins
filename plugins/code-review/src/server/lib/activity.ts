@@ -40,9 +40,8 @@ async function linkedThread(bb: BbPluginApi, link: Link): Promise<LinkedThread> 
 }
 
 /**
- * Linked threads, newest first, and the review to show. That is the newest
- * review that reported, unless a newer one is still at work: then it is
- * that one, with no findings yet, so the reader sees a review is under way.
+ * Linked threads, newest first, and the review to show: the newest that
+ * reported. A review still under way is one of the threads, with no run yet.
  */
 export async function agentActivity(
   bb: BbPluginApi,
@@ -55,17 +54,6 @@ export async function agentActivity(
     if (thread.kind !== "review") continue;
     const run = await store.run(thread.threadId);
     if (run) return { threads, latestReview: run };
-    if (RUNNING.has(thread.status)) {
-      const pending = {
-        threadId: thread.threadId,
-        headRefOid: thread.headRefOid,
-        baseRefName: thread.baseRefName,
-        reportedAt: null,
-        summary: null,
-        findings: [],
-      };
-      return { threads, latestReview: pending };
-    }
   }
   return { threads, latestReview: null };
 }
