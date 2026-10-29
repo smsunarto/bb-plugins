@@ -500,14 +500,31 @@ describe("boat sandbox plugin", () => {
     const result = await fake.harness.runCli(["machine", "inspect", HOST_ID, "--json"]);
     expect(result.exitCode).toBe(0);
     expect(JSON.parse(result.stdout)).toMatchObject({
-      values: { state: "running", sandboxId: "bx_00000001", type: "default", dataExpired: false },
+      state: "running",
+      sandboxId: "bx_00000001",
+      type: "default",
+      dataExpired: false,
+      error: null,
     });
     await provider.suspend!(lifecycleContext());
     await expect(
       fake.harness.callRpc("machine.inspect", { hostId: HOST_ID }),
     ).resolves.toMatchObject({
+      state: "stopped",
       summary: "Boat sandbox bx_00000001 is stopped.",
-      values: { state: "stopped" },
+    });
+  });
+
+  test("machine inspect reports a sandbox deleted outside bb as missing", async () => {
+    const { fake, provider, boat, createContext } = await setup();
+    await provider.create(createContext());
+    boat.sandboxes[0]!.deleted = true;
+    const result = await fake.harness.runCli(["machine", "inspect", HOST_ID, "--json"]);
+    expect(result.exitCode).toBe(0);
+    expect(JSON.parse(result.stdout)).toEqual({
+      state: "missing",
+      sandboxId: "bx_00000001",
+      summary: expect.stringMatching(/missing/),
     });
   });
 

@@ -3,6 +3,7 @@ import {
   SANDBOX_STATES,
   SANDBOX_TYPES,
   SAVED_SNAPSHOT_NAME_PATTERN,
+  type SandboxPhase,
   type SandboxState,
 } from "./constants.ts";
 
@@ -46,10 +47,20 @@ export const connectionStatusSchema = z.object({
 });
 export type ConnectionStatus = z.infer<typeof connectionStatusSchema>;
 
-export const machineInspectionSchema = z.object({
-  summary: z.string(),
-  values: z.object({
-    state: z.enum(["starting", "running", "stopping", "stopped", "error", "missing"]),
+/** Phases Boat still reports a sandbox in; `gone` is answered as `missing` instead. */
+const LIVE_PHASES = [
+  "starting",
+  "running",
+  "stopping",
+  "stopped",
+  "error",
+] as const satisfies readonly Exclude<SandboxPhase, "gone">[];
+
+/** Boat's view of a machine. A sandbox deleted outside bb has nothing to report beyond its id. */
+export const machineInspectionSchema = z.discriminatedUnion("state", [
+  z.object({ state: z.literal("missing"), sandboxId: z.string(), summary: z.string() }),
+  z.object({
+    state: z.enum(LIVE_PHASES),
     sandboxId: z.string(),
     type: sandboxTypeSchema,
     /** Boat's auto-stop deadline as epoch milliseconds, or null when auto-stop is off. */
@@ -57,8 +68,11 @@ export const machineInspectionSchema = z.object({
     hydrated: z.boolean().nullable(),
     /** True once Boat deleted the stopped sandbox's disk; it can no longer resume. */
     dataExpired: z.boolean(),
+    /** Boat's reason when `state` is `error`. */
+    error: z.string().nullable(),
+    summary: z.string(),
   }),
-});
+]);
 export type MachineInspection = z.infer<typeof machineInspectionSchema>;
 
 export const launchOptionsSchema = z.object({

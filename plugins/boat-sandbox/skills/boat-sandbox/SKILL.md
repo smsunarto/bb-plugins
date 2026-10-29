@@ -20,7 +20,9 @@ description: Create, inspect, stop or remove bb machines that run in Boat cloud 
 4. `bb boat machine inspect HOST_ID --json` reads Boat's state for a machine:
    `state` (starting, running, stopping, stopped, error, missing),
    `archiveAfter` (Boat's auto-stop deadline in epoch milliseconds, null when
-   off), `hydrated`, and `dataExpired`.
+   off), `hydrated`, `dataExpired`, and `error` (Boat's reason when the state
+   is error). A `missing` result carries only `state`, `sandboxId`, and
+   `summary`.
 
 Boat sandboxes cost money while they run. Create or resume one only when the
 task calls for it, and stop or remove it when the task ends.

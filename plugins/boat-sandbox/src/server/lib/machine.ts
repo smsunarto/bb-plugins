@@ -516,31 +516,29 @@ export function createBoatMachine(deps: BoatMachineDeps): BoatMachine {
     },
     async inspect(resource) {
       const sandbox = await this.observe(resource);
-      const phase = sandbox === null ? "missing" : phaseOf(sandbox.state);
-      const state = phase === "gone" ? "missing" : phase;
-      const archiveAfter =
-        sandbox?.archiveAfter === null || sandbox?.archiveAfter === undefined
-          ? null
-          : Date.parse(sandbox.archiveAfter);
-      const dataExpired = sandbox?.dataExpiredAt !== null && sandbox?.dataExpiredAt !== undefined;
-      const summary =
-        state === "missing"
-          ? `Boat sandbox ${resource.sandboxId} is missing; it was deleted outside bb and cannot be recovered.`
-          : dataExpired
-            ? `Boat sandbox ${resource.sandboxId} is stopped and its disk expired; it cannot resume.`
-            : state === "error"
-              ? `Boat sandbox ${resource.sandboxId} is in error (${sandbox?.error ?? "unknown cause"}); resume restores its newest snapshot.`
-              : `Boat sandbox ${resource.sandboxId} is ${state}.`;
-      return {
-        summary,
-        values: {
-          state,
+      const phase = sandbox === null ? "gone" : phaseOf(sandbox.state);
+      if (sandbox === null || phase === "gone") {
+        return {
+          state: "missing",
           sandboxId: resource.sandboxId,
-          type: sandbox?.type ?? resource.type,
-          archiveAfter: Number.isFinite(archiveAfter) ? archiveAfter : null,
-          hydrated: sandbox?.hydrated ?? null,
-          dataExpired,
-        },
+          summary: `Boat sandbox ${resource.sandboxId} is missing; it was deleted outside bb and cannot be recovered.`,
+        };
+      }
+      const dataExpired = sandbox.dataExpiredAt !== null;
+      const archiveAfter = sandbox.archiveAfter === null ? null : Date.parse(sandbox.archiveAfter);
+      return {
+        state: phase,
+        sandboxId: resource.sandboxId,
+        type: sandbox.type ?? resource.type,
+        archiveAfter: Number.isFinite(archiveAfter) ? archiveAfter : null,
+        hydrated: sandbox.hydrated,
+        dataExpired,
+        error: sandbox.error,
+        summary: dataExpired
+          ? `Boat sandbox ${resource.sandboxId} is stopped and its disk expired; it cannot resume.`
+          : phase === "error"
+            ? `Boat sandbox ${resource.sandboxId} is in error (${sandbox.error ?? "unknown cause"}); resume restores its newest snapshot.`
+            : `Boat sandbox ${resource.sandboxId} is ${phase}.`,
       };
     },
     close() {
