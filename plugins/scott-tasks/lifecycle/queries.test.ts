@@ -195,14 +195,12 @@ describe("lifecycle SQL scope", () => {
             );
             const recorded = f.store.tasks.listComments(task.id);
             expect(recorded).toHaveLength(comments);
-            expect(
-              recorded.every(
-                (comment) =>
-                  comment.kind === "system" &&
-                  comment.threadId === "thr_shared" &&
-                  comment.presetName === "Default",
-              ),
-            ).toBe(true);
+            for (const comment of recorded) {
+              expect(comment.source).toEqual({
+                kind: "system",
+                origin: { presetName: "Default", threadId: "thr_shared" },
+              });
+            }
             expect(f.store.tasks.getTask(task.id)!.status).toBe("backlog");
           }
           expect(f.store.tasks.getTaskThread(f.mappings[count]!.id)?.liveStatus).toBe("working");

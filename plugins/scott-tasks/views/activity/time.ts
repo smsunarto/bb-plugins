@@ -6,12 +6,9 @@ type CommentByline =
   | { kind: "text"; name: string };
 
 export function commentByline(comment: DisplayComment): CommentByline {
-  if (comment.kind === "agent" && comment.threadId !== null && comment.threadTitle !== null) {
-    return {
-      kind: "thread-link",
-      threadId: comment.threadId,
-      title: comment.threadTitle,
-    };
+  const { source } = comment;
+  if (source.kind === "agent" && source.threadTitle !== null) {
+    return { kind: "thread-link", threadId: source.threadId, title: source.threadTitle };
   }
   return { kind: "text", name: comment.authorName };
 }

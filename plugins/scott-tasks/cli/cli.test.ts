@@ -226,9 +226,8 @@ describe("bb tasks CLI", () => {
     expect(JSON.parse(stdout(commentResult))).toMatchObject({
       comment: {
         taskId: createPayload.task.id,
-        kind: "agent",
+        source: { kind: "agent", threadId: "thr_cli_worker" },
         authorName: "agent (thr_cli_worker)",
-        threadId: "thr_cli_worker",
         body: "Ready for review.",
         notifiedCount: 0,
       },
@@ -240,24 +239,27 @@ describe("bb tasks CLI", () => {
     expect(updatedShow.comments).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          kind: "system",
+          source: { kind: "system", origin: null },
           body: "Status changed to In Progress by cli",
         }),
         expect.objectContaining({
-          kind: "system",
+          source: { kind: "system", origin: null },
           body: "Priority changed to High by cli",
         }),
         expect.objectContaining({
-          kind: "agent",
-          body: "Ready for review.",
-          threadTitle: "CLI provider worker",
-          provider: {
-            id: "codex",
-            name: "Codex",
-            logoUrl: null,
-            icon: null,
-            strings: { iconTint: null },
+          source: {
+            kind: "agent",
+            threadId: "thr_cli_worker",
+            threadTitle: "CLI provider worker",
+            provider: {
+              id: "codex",
+              name: "Codex",
+              logoUrl: null,
+              icon: null,
+              strings: { iconTint: null },
+            },
           },
+          body: "Ready for review.",
         }),
       ]),
     );
@@ -1009,9 +1011,8 @@ describe("bb tasks CLI", () => {
     const taskStore = createStore(bb).tasks;
     taskStore.createComment({
       taskId: threads.task.id,
-      kind: "agent",
+      source: { kind: "agent", threadId: "thr_prior_worker" },
       authorName: "Prior worker",
-      threadId: "thr_prior_worker",
       body: "Prior reply from another agent.",
     });
 
@@ -1034,16 +1035,14 @@ describe("bb tasks CLI", () => {
     ).comment;
     expect(notified).toMatchObject({
       taskId: threads.task.id,
-      kind: "agent",
+      source: { kind: "agent", threadId: "thr_cli_sender" },
       authorName: "Custom CLI agent",
-      threadId: "thr_cli_sender",
       body: "Include the new edge case.",
       notifiedCount: 1,
     });
     expect(taskStore.getComment(notified.id)).toMatchObject({
-      kind: "agent",
+      source: { kind: "agent", threadId: "thr_cli_sender" },
       authorName: "Custom CLI agent",
-      threadId: "thr_cli_sender",
       notifiedCount: 1,
     });
     expect(harness.sdk.callsTo("threads.send")).toEqual([

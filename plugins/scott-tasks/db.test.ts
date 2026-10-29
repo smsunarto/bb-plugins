@@ -48,7 +48,7 @@ describe("tasks storage", () => {
       expect(
         db.prepare<[], { count: number }>("SELECT COUNT(*) AS count FROM schema_version").get()
           ?.count,
-      ).toBe(7);
+      ).toBe(8);
     } finally {
       await harness.dispose();
     }
@@ -663,13 +663,13 @@ describe("tasks storage", () => {
       const task = store.createTask({ projectId: project.id, title: "Task" });
       const later = store.createComment({
         taskId: task.id,
-        kind: "agent",
+        source: { kind: "agent", threadId: "thr_later" },
         authorName: "Agent",
         body: "Later",
       });
       const earlier = store.createComment({
         taskId: task.id,
-        kind: "user",
+        source: { kind: "user" },
         authorName: "Sawyer",
         body: "Earlier",
       });
@@ -683,6 +683,82 @@ describe("tasks storage", () => {
         "Earlier",
         "Later",
       ]);
+    } finally {
+      await harness.dispose();
+    }
+  });
+
+  it("rejects comment rows whose columns contradict their kind", async () => {
+    const { db, harness, store } = setup();
+    try {
+      const project = createProject(store, "BAD");
+      const task = store.createTask({ projectId: project.id, title: "Task" });
+      const insert = db.prepare<[string, string, string | null, string | null]>(
+        `
+        INSERT INTO comments (id, task_id, kind, author_name, preset_name, thread_id, body, notified_count, created_at)
+        VALUES ('01H00000000000000000000011', ?, ?, 'Legacy', ?, ?, 'Unlinked', 0, '2026-07-15T09:00:00.000Z')
+      `,
+      );
+      expect(() => insert.run(task.id, "agent", null, null)).toThrow(/CHECK constraint failed/);
+      expect(() => insert.run(task.id, "agent", "Default", "thr_reply")).toThrow(
+        /CHECK constraint failed/,
+      );
+      expect(() => insert.run(task.id, "system", "Default", null)).toThrow(
+        /CHECK constraint failed/,
+      );
+      expect(() => insert.run(task.id, "user", null, "thr_stray")).toThrow(
+        /CHECK constraint failed/,
+      );
+      expect(store.listComments(task.id)).toEqual([]);
+    } finally {
+      await harness.dispose();
+    }
+  });
+
+  it("normalizes legacy comment rows onto one source each and keeps their attachments", async () => {
+    const { db, harness, store } = setup();
+    try {
+      const project = createProject(store, "LEG");
+      const task = store.createTask({ projectId: project.id, title: "Task" });
+      // Rebuild the comments table at its version 1 shape, which admitted these rows.
+      db.pragma("foreign_keys = OFF");
+      db.exec("DROP TABLE comments; DELETE FROM schema_version WHERE version = 1");
+      createTasksStore(db);
+      const insert = db.prepare<[string, string, string, string | null, string | null, string]>(
+        `
+        INSERT INTO comments (id, task_id, kind, author_name, preset_name, thread_id, body, notified_count, created_at)
+        VALUES (?, ?, ?, 'Legacy', ?, ?, ?, 0, '2026-07-15T09:00:00.000Z')
+      `,
+      );
+      const unlinked = "01H00000000000000000000011";
+      insert.run(unlinked, task.id, "agent", null, null, "Unlinked reply");
+      insert.run("01H00000000000000000000012", task.id, "system", "Default", null, "Half dispatch");
+      insert.run("01H00000000000000000000013", task.id, "agent", "Default", "thr_linked", "Reply");
+      insert.run("01H00000000000000000000014", task.id, "user", null, "thr_stray", "Note");
+      db.prepare<[string]>(
+        `
+        INSERT INTO attachments (id, task_id, comment_id, file_name, mime, size_bytes, blob_path, is_image, created_at)
+        VALUES ('01H00000000000000000000021', NULL, ?, 'note.txt', 'text/plain', 1, 'blobs/note.txt', 0, '2026-07-15T09:00:00.000Z')
+      `,
+      ).run(unlinked);
+      db.prepare("DELETE FROM schema_version WHERE version = 8").run();
+
+      createTasksStore(db);
+
+      expect(store.listComments(task.id).map((comment) => [comment.body, comment.source])).toEqual([
+        ["Unlinked reply", { kind: "user" }],
+        ["Half dispatch", { kind: "system", origin: null }],
+        ["Reply", { kind: "agent", threadId: "thr_linked" }],
+        ["Note", { kind: "user" }],
+      ]);
+      expect(store.getLatestAgentComment(task.id, null)).toMatchObject({
+        body: "Reply",
+        source: { kind: "agent", threadId: "thr_linked" },
+      });
+      expect(
+        store.listAttachmentsForComment(unlinked).map((attachment) => attachment.owner),
+      ).toEqual([{ kind: "comment", commentId: unlinked }]);
+      expect(db.pragma("foreign_key_check")).toEqual([]);
     } finally {
       await harness.dispose();
     }
@@ -741,21 +817,19 @@ describe("tasks storage", () => {
       const task = store.createTask({ projectId: project.id, title: "Task" });
       const latest = store.createComment({
         taskId: task.id,
-        kind: "agent",
+        source: { kind: "agent", threadId: "thr_latest" },
         authorName: "Latest responder",
-        threadId: "thr_latest",
         body: "Latest agent reply",
       });
       const older = store.createComment({
         taskId: task.id,
-        kind: "agent",
+        source: { kind: "agent", threadId: "thr_older" },
         authorName: "Older responder",
-        threadId: "thr_older",
         body: "Older agent reply",
       });
       store.createComment({
         taskId: task.id,
-        kind: "user",
+        source: { kind: "user" },
         authorName: "Sawyer",
         body: "Newer user activity",
       });
@@ -767,7 +841,7 @@ describe("tasks storage", () => {
 
       expect(store.getLatestAgentComment(task.id, null)).toMatchObject({
         id: latest.id,
-        threadId: "thr_latest",
+        source: { threadId: "thr_latest" },
       });
     } finally {
       await harness.dispose();
@@ -782,17 +856,15 @@ describe("tasks storage", () => {
       const earlier = store.createComment({
         id: "01H00000000000000000000002",
         taskId: task.id,
-        kind: "agent",
+        source: { kind: "agent", threadId: "thr_earlier" },
         authorName: "Earlier responder",
-        threadId: "thr_earlier",
         body: "Earlier reply",
       });
       const later = store.createComment({
         id: "01H00000000000000000000001",
         taskId: task.id,
-        kind: "agent",
+        source: { kind: "agent", threadId: "thr_later" },
         authorName: "Later responder",
-        threadId: "thr_later",
         body: "Later reply",
       });
       const setCreatedAt = db.prepare<[string, string]>(
@@ -808,7 +880,7 @@ describe("tasks storage", () => {
       ]);
       expect(store.getLatestAgentComment(task.id, null)).toMatchObject({
         id: later.id,
-        threadId: "thr_later",
+        source: { threadId: "thr_later" },
       });
     } finally {
       await harness.dispose();

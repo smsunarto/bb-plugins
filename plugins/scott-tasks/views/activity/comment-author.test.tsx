@@ -6,12 +6,8 @@ import { CommentAuthor } from "./comment-author.js";
 
 afterEach(cleanup);
 
-const base: DisplayComment = {
-  id: "01HZZZZZZZZZZZZZZZZZZZZZC1",
-  taskId: "01HZZZZZZZZZZZZZZZZZZZZZT1",
+const agentSource = {
   kind: "agent",
-  authorName: "agent (thr_worker)",
-  presetName: null,
   threadId: "thr_worker",
   threadTitle: "Fix the login bug",
   provider: {
@@ -21,6 +17,12 @@ const base: DisplayComment = {
     icon: null,
     strings: { iconTint: null },
   },
+} satisfies DisplayComment["source"];
+const base: DisplayComment = {
+  id: "01HZZZZZZZZZZZZZZZZZZZZZC1",
+  taskId: "01HZZZZZZZZZZZZZZZZZZZZZT1",
+  source: agentSource,
+  authorName: "agent (thr_worker)",
   body: "Done",
   notifiedCount: 0,
   createdAt: "2026-07-15T00:00:00.000Z",
@@ -41,22 +43,22 @@ describe("CommentAuthor", () => {
 
   it("renders the author name as plain text when the title is unresolved", () => {
     const onOpenThread = vi.fn();
-    render(<CommentAuthor comment={{ ...base, threadTitle: null }} onOpenThread={onOpenThread} />);
+    render(
+      <CommentAuthor
+        comment={{ ...base, source: { ...agentSource, threadTitle: null } }}
+        onOpenThread={onOpenThread}
+      />,
+    );
 
     expect(screen.queryByRole("button")).toBeNull();
     expect(screen.getByText("agent (thr_worker)")).toBeTruthy();
     expect(onOpenThread).not.toHaveBeenCalled();
   });
 
-  it("never links a user comment even when a thread id and title are present", () => {
+  it("renders a user comment as its plain author name", () => {
     render(
       <CommentAuthor
-        comment={{
-          ...base,
-          kind: "user",
-          authorName: "You",
-          threadTitle: "Should be ignored",
-        }}
+        comment={{ ...base, source: { kind: "user" }, authorName: "You" }}
         onOpenThread={vi.fn()}
       />,
     );

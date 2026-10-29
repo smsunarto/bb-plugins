@@ -16,8 +16,10 @@ import {
   ULID_PATTERN,
 } from "../shared/contract.js";
 import type {
+  AgentComment,
   Attachment,
   Comment,
+  CommentSource,
   CreateAttachmentInput,
   CreateCommentInput,
   CreateFolderInput,
@@ -115,22 +117,28 @@ interface TaskLabelRow {
   label_id: string;
 }
 
-interface CommentRow {
+interface CommentRowFields {
   id: string;
   task_id: string;
-  kind: Comment["kind"];
   author_name: string;
-  preset_name: string | null;
-  thread_id: string | null;
   body: string;
   notified_count: number;
   created_at: string;
 }
 
-interface AttachmentRow {
+/** The source shapes the comments table's CHECK constraint admits. */
+type CommentRow = CommentRowFields &
+  (
+    | { kind: "user"; preset_name: null; thread_id: null }
+    | { kind: "agent"; preset_name: null; thread_id: string }
+    | { kind: "system"; preset_name: null; thread_id: null }
+    | { kind: "system"; preset_name: string; thread_id: string }
+  );
+
+type AgentCommentRow = Extract<CommentRow, { kind: "agent" }>;
+
+interface AttachmentRowFields {
   id: string;
-  task_id: string | null;
-  comment_id: string | null;
   file_name: string;
   mime: string;
   size_bytes: number;
@@ -138,6 +146,10 @@ interface AttachmentRow {
   is_image: number;
   created_at: string;
 }
+
+/** The owner shapes the attachments table's CHECK constraint admits. */
+type AttachmentRow = AttachmentRowFields &
+  ({ task_id: string; comment_id: null } | { task_id: null; comment_id: string });
 
 interface TaskThreadRow {
   id: string;
@@ -382,25 +394,60 @@ function taskLabelFromRow(row: TaskLabelRow): TaskLabel {
   return { taskId: row.task_id, labelId: row.label_id };
 }
 
-function commentFromRow(row: CommentRow): Comment {
+function commentSourceFromRow(row: CommentRow): CommentSource {
+  switch (row.kind) {
+    case "user":
+      return { kind: "user" };
+    case "agent":
+      return { kind: "agent", threadId: row.thread_id };
+    case "system":
+      return {
+        kind: "system",
+        origin:
+          row.thread_id === null ? null : { presetName: row.preset_name, threadId: row.thread_id },
+      };
+  }
+}
+
+/** The two nullable columns a comment source flattens into. */
+function commentSourceColumns(source: CommentSource): {
+  presetName: string | null;
+  threadId: string | null;
+} {
+  switch (source.kind) {
+    case "user":
+      return { presetName: null, threadId: null };
+    case "agent":
+      return { presetName: null, threadId: source.threadId };
+    case "system":
+      return source.origin === null
+        ? { presetName: null, threadId: null }
+        : { presetName: source.origin.presetName, threadId: source.origin.threadId };
+  }
+}
+
+function commentFields(row: CommentRow): Omit<Comment, "source"> {
   return {
     id: row.id,
     taskId: row.task_id,
-    kind: row.kind,
     authorName: row.author_name,
-    presetName: row.preset_name,
-    threadId: row.thread_id,
     body: row.body,
     notifiedCount: row.notified_count,
     createdAt: row.created_at,
   };
 }
 
+function commentFromRow(row: CommentRow): Comment {
+  return { ...commentFields(row), source: commentSourceFromRow(row) };
+}
+
 function attachmentFromRow(row: AttachmentRow): Attachment {
   return {
     id: row.id,
-    taskId: row.task_id,
-    commentId: row.comment_id,
+    owner:
+      row.task_id !== null
+        ? { kind: "task", taskId: row.task_id }
+        : { kind: "comment", commentId: row.comment_id },
     fileName: row.file_name,
     mime: row.mime,
     sizeBytes: row.size_bytes,
@@ -1285,11 +1332,12 @@ export function createTasksStore(db: PluginDatabase) {
   function createComment(input: CreateCommentInput): Comment {
     const id = createOrValidateUlid(input.id);
     requireTask(input.taskId);
+    const columns = commentSourceColumns(input.source);
     db.prepare<
       [
         string,
         string,
-        Comment["kind"],
+        CommentSource["kind"],
         string,
         string | null,
         string | null,
@@ -1307,10 +1355,10 @@ export function createTasksStore(db: PluginDatabase) {
     ).run(
       id,
       input.taskId,
-      input.kind,
+      input.source.kind,
       requireNonEmpty(input.authorName, "Comment authorName"),
-      input.presetName ?? null,
-      validateThreadId(input.threadId ?? null),
+      columns.presetName,
+      validateThreadId(columns.threadId),
       input.body,
       input.notifiedCount ?? 0,
       nowIso(),
@@ -1332,9 +1380,9 @@ export function createTasksStore(db: PluginDatabase) {
   function getLatestAgentComment(
     taskId: string,
     excludeCommentId: string | null,
-  ): Comment | undefined {
+  ): AgentComment | undefined {
     const row = db
-      .prepare<[string, string | null, string | null], CommentRow>(
+      .prepare<[string, string | null, string | null], AgentCommentRow>(
         `
         SELECT * FROM comments
         WHERE task_id = ?
@@ -1345,7 +1393,9 @@ export function createTasksStore(db: PluginDatabase) {
       `,
       )
       .get(taskId, excludeCommentId, excludeCommentId);
-    return row ? commentFromRow(row) : undefined;
+    return row
+      ? { ...commentFields(row), source: { kind: "agent", threadId: row.thread_id } }
+      : undefined;
   }
 
   function updateComment(id: string, input: UpdateCommentInput): Comment {

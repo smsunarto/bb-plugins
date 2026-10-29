@@ -245,10 +245,40 @@ const MIGRATIONS = [
     ALTER TABLE presets DROP COLUMN service_tier;
     ALTER TABLE presets RENAME COLUMN service_tier_open TO service_tier;
   `,
+  `
+    UPDATE comments SET kind = 'user' WHERE kind = 'agent' AND thread_id IS NULL;
+    UPDATE comments SET preset_name = NULL, thread_id = NULL WHERE kind = 'user';
+    UPDATE comments SET preset_name = NULL WHERE kind = 'agent';
+    UPDATE comments SET preset_name = NULL, thread_id = NULL
+      WHERE kind = 'system' AND (preset_name IS NULL) <> (thread_id IS NULL);
+
+    CREATE TABLE comments_with_source (
+      id TEXT PRIMARY KEY,
+      task_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+      kind TEXT NOT NULL,
+      author_name TEXT NOT NULL,
+      preset_name TEXT,
+      thread_id TEXT,
+      body TEXT NOT NULL,
+      notified_count INTEGER NOT NULL DEFAULT 0 CHECK (notified_count >= 0),
+      created_at TEXT NOT NULL,
+      CHECK (thread_id IS NULL OR thread_id GLOB 'thr_*'),
+      CHECK (
+        (kind = 'user' AND preset_name IS NULL AND thread_id IS NULL)
+        OR (kind = 'agent' AND preset_name IS NULL AND thread_id IS NOT NULL)
+        OR (kind = 'system' AND (preset_name IS NULL) = (thread_id IS NULL))
+      )
+    );
+    INSERT INTO comments_with_source
+      SELECT id, task_id, kind, author_name, preset_name, thread_id, body, notified_count, created_at
+      FROM comments ORDER BY rowid;
+    DROP TABLE comments;
+    ALTER TABLE comments_with_source RENAME TO comments;
+    CREATE INDEX idx_comments_task_order ON comments(task_id, created_at, id);
+  `,
 ] as const;
 
 export function initializeTasksSchema(db: PluginDatabase): void {
-  db.pragma("foreign_keys = ON");
   db.exec(`
     CREATE TABLE IF NOT EXISTS schema_version (
       version INTEGER PRIMARY KEY,
@@ -272,5 +302,12 @@ export function initializeTasksSchema(db: PluginDatabase): void {
     }
   });
 
-  migrate();
+  // A rebuilt table is dropped and recreated; with foreign keys on, the drop
+  // would cascade into the rows that reference it.
+  db.pragma("foreign_keys = OFF");
+  try {
+    migrate();
+  } finally {
+    db.pragma("foreign_keys = ON");
+  }
 }

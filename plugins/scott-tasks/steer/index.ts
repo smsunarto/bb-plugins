@@ -27,9 +27,9 @@ export async function deliverCommentToLatestAgent(
   if (!task) throw new Error(`Task not found: ${input.taskId}`);
 
   const latestReply = store.getLatestAgentComment(input.taskId, input.commentId);
-  if (!latestReply || latestReply.threadId === null) return 0;
+  if (!latestReply) return 0;
 
-  const threadId = latestReply.threadId;
+  const { threadId } = latestReply.source;
   const prompt = steerPrompt(task.key, input.authorName, input.body);
   try {
     const thread = await bb.sdk.threads.get({ threadId });

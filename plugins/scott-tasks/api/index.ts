@@ -27,6 +27,8 @@ import {
   type TasksDomainError,
   type CommentsChangedEvent,
   type CommentProvider,
+  type CommentSource,
+  type DisplayComment,
 } from "../shared/contract";
 
 interface TaskLabelIdRow {
@@ -275,7 +277,7 @@ function writeSystemComments(
   for (const body of bodies) {
     store.tasks.createComment({
       taskId,
-      kind: "system",
+      source: { kind: "system", origin: null },
       authorName,
       body,
       notifiedCount: 0,
@@ -313,9 +315,7 @@ async function resolveAgentThreadInfo(
 ): Promise<Map<string, AgentThreadInfo>> {
   const threadIds = new Set<string>();
   for (const comment of comments) {
-    if (comment.kind === "agent" && comment.threadId !== null) {
-      threadIds.add(comment.threadId);
-    }
+    if (comment.source.kind === "agent") threadIds.add(comment.source.threadId);
   }
   const infos = new Map<string, AgentThreadInfo>();
   await Promise.all(
@@ -365,12 +365,34 @@ async function resolveProviderBadges(
   return badges;
 }
 
+/** An agent comment's source with its thread's resolved title and provider badge. */
+function displayCommentSource(
+  source: CommentSource,
+  threadInfo: ReadonlyMap<string, AgentThreadInfo>,
+  providerBadges: ReadonlyMap<string, CommentProvider>,
+): DisplayComment["source"] {
+  if (source.kind !== "agent") return source;
+  const info = threadInfo.get(source.threadId);
+  return {
+    ...source,
+    threadTitle: info?.title ?? null,
+    provider:
+      info === undefined
+        ? null
+        : (providerBadges.get(info.providerId) ?? {
+            id: info.providerId,
+            name: info.providerId,
+            logoUrl: null,
+            icon: null,
+            strings: { iconTint: null },
+          }),
+  };
+}
+
 interface CreateCommentInput {
   taskId: string;
-  kind: StoredComment["kind"];
+  source: CommentSource;
   authorName: string;
-  presetName: string | null;
-  threadId: string | null;
   body: string;
   notify: boolean;
 }
@@ -383,10 +405,8 @@ export async function createComment(
   let comment = store.transaction(() =>
     store.tasks.createComment({
       taskId: input.taskId,
-      kind: input.kind,
+      source: input.source,
       authorName: input.authorName,
-      presetName: input.presetName,
-      threadId: input.threadId,
       body: input.body,
       notifiedCount: 0,
     }),
@@ -784,10 +804,8 @@ export function registerHandlers(
     async createComment(input) {
       const comment = await createComment(bb, store, {
         taskId: input.taskId,
-        kind: "user",
+        source: { kind: "user" },
         authorName: "You",
-        presetName: null,
-        threadId: null,
         body: input.body,
         notify: input.notify,
       });
@@ -795,38 +813,18 @@ export function registerHandlers(
     },
     async listComments(input) {
       const comments = store.tasks.listComments(input.taskId);
-      const attachmentsByComment = new Map<string, AttachmentMetadata[]>();
-      for (const attachment of store.tasks.listCommentAttachmentsForTask(input.taskId)) {
-        if (attachment.commentId === null) continue;
-        const list = attachmentsByComment.get(attachment.commentId) ?? [];
-        list.push(attachmentMetadata(attachment));
-        attachmentsByComment.set(attachment.commentId, list);
-      }
+      const attachmentsByComment = store.tasks.listCommentAttachmentsForTask(input.taskId);
       const threadInfo = await resolveAgentThreadInfo(bb, comments);
       const providerBadges = await resolveProviderBadges(bb, threadInfo);
       return {
-        comments: comments.map((comment) => {
-          const info =
-            comment.kind === "agent" && comment.threadId !== null
-              ? threadInfo.get(comment.threadId)
-              : undefined;
-          return {
-            ...comment,
-            attachments:
-              comment.kind === "system" ? [] : (attachmentsByComment.get(comment.id) ?? []),
-            threadTitle: info?.title ?? null,
-            provider:
-              info === undefined
-                ? null
-                : (providerBadges.get(info.providerId) ?? {
-                    id: info.providerId,
-                    name: info.providerId,
-                    logoUrl: null,
-                    icon: null,
-                    strings: { iconTint: null },
-                  }),
-          };
-        }),
+        comments: comments.map((comment) => ({
+          ...comment,
+          source: displayCommentSource(comment.source, threadInfo, providerBadges),
+          attachments:
+            comment.source.kind === "system"
+              ? []
+              : (attachmentsByComment.get(comment.id) ?? []).map(attachmentMetadata),
+        })),
       };
     },
     listAttachments(input) {

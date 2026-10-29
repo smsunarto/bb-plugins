@@ -50,32 +50,28 @@ afterEach(() => {
   rpcCall.mockReset();
 });
 
-function comment(
-  kind: DisplayComment["kind"],
-  threadId: string | null = null,
-  threadTitle: string | null = null,
-): DisplayComment {
+function comment(source: DisplayComment["source"]): DisplayComment {
+  const agent = source.kind === "agent";
   return {
-    id: `01HZZZZZZZZZZZZZZZZZZZZZ${kind === "agent" ? "A" : "U"}`,
+    id: `01HZZZZZZZZZZZZZZZZZZZZZ${agent ? "A" : "U"}`,
     taskId: "01HZZZZZZZZZZZZZZZZZZZZZT1",
-    kind,
-    authorName: kind === "agent" ? "Agent" : "You",
-    presetName: null,
-    threadId,
-    threadTitle,
+    source,
+    authorName: agent ? "Agent" : "You",
     body: "Reply",
     notifiedCount: 0,
     createdAt: "2026-07-15T00:00:00.000Z",
-    provider: null,
     attachments: [],
   };
+}
+
+function agentComment(threadId: string, threadTitle: string | null): DisplayComment {
+  return comment({ kind: "agent", threadId, threadTitle, provider: null });
 }
 
 describe("AttachmentTracks", () => {
   const attachment = (id: string, fileName: string, isImage: boolean): Attachment => ({
     id,
-    taskId: "01HZZZZZZZZZZZZZZZZZZZZZT1",
-    commentId: "01HZZZZZZZZZZZZZZZZZZZZZC1",
+    owner: { kind: "comment", commentId: "01HZZZZZZZZZZZZZZZZZZZZZC1" },
     fileName,
     mime: isImage ? "image/png" : "text/plain",
     sizeBytes: 1024,
@@ -116,18 +112,18 @@ describe("agent notification target", () => {
   it("uses the last agent reply rather than the last activity entry", () => {
     expect(
       agentNotificationTarget([
-        comment("agent", "thr_first", "First agent"),
-        comment("agent", "thr_latest", "Latest agent"),
-        comment("user"),
+        agentComment("thr_first", "First agent"),
+        agentComment("thr_latest", "Latest agent"),
+        comment({ kind: "user" }),
       ]),
     ).toEqual({ kind: "ready", title: "Latest agent" });
   });
 
   it("distinguishes no prior reply from an unavailable latest responder", () => {
-    expect(agentNotificationTarget([comment("user")])).toEqual({
+    expect(agentNotificationTarget([comment({ kind: "user" })])).toEqual({
       kind: "none",
     });
-    expect(agentNotificationTarget([comment("agent", "thr_private", null)])).toEqual({
+    expect(agentNotificationTarget([agentComment("thr_private", null)])).toEqual({
       kind: "unavailable",
     });
   });
@@ -254,9 +250,8 @@ async function renderComposerWithTask(options?: { body?: string; holdSend?: bool
   });
   store.tasks.createComment({
     taskId: task.id,
-    kind: "agent",
+    source: { kind: "agent", threadId: "thr_worker" },
     authorName: "Worker",
-    threadId: "thr_worker",
     body: "Ready for input",
   });
   rpcCall.mockImplementation(async (method, input) => {
@@ -271,10 +266,8 @@ async function renderComposerWithTask(options?: { body?: string; holdSend?: bool
     return {
       comment: await createComment(bb, store, {
         taskId: request.taskId,
-        kind: "user",
+        source: { kind: "user" },
         authorName: "You",
-        presetName: null,
-        threadId: null,
         body: request.body,
         notify: request.notify,
       }),

@@ -83,7 +83,7 @@ function formatComments(comments: readonly Comment[]): string {
   return comments
     .map(
       (comment) =>
-        `### ${comment.authorName} · ${comment.kind} · ${comment.createdAt}\n\n${comment.body}`,
+        `### ${comment.authorName} · ${comment.source.kind} · ${comment.createdAt}\n\n${comment.body}`,
     )
     .join("\n\n");
 }
@@ -289,10 +289,11 @@ export function createSystemComment(
 ): void {
   store.createComment({
     taskId: input.taskId,
-    kind: "system",
+    source: {
+      kind: "system",
+      origin: { presetName: input.presetName, threadId: input.threadId },
+    },
     authorName: SYSTEM_AUTHOR_NAME,
-    presetName: input.presetName,
-    threadId: input.threadId,
     body: input.body,
     notifiedCount: 0,
   });

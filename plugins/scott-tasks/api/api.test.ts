@@ -16,14 +16,13 @@ describe("Tasks RPC domain API", () => {
     const task = store.tasks.createTask({ projectId: project.id, title: "Activity attachments" });
     const comment = store.tasks.createComment({
       taskId: task.id,
-      kind: "user",
+      source: { kind: "user" },
       authorName: "You",
-      threadId: null,
       body: "See sketch",
       notifiedCount: 0,
     });
     const attachment = store.tasks.createAttachment({
-      commentId: comment.id,
+      owner: { kind: "comment", commentId: comment.id },
       fileName: "sketch.png",
       mime: "image/png",
       sizeBytes: 42,
@@ -32,23 +31,21 @@ describe("Tasks RPC domain API", () => {
     });
     store.tasks.createComment({
       taskId: task.id,
-      kind: "user",
+      source: { kind: "user" },
       authorName: "You",
-      threadId: null,
       body: "No files here",
       notifiedCount: 0,
     });
     const otherTask = store.tasks.createTask({ projectId: project.id, title: "Other task" });
     const otherComment = store.tasks.createComment({
       taskId: otherTask.id,
-      kind: "user",
+      source: { kind: "user" },
       authorName: "You",
-      threadId: null,
       body: "Another task's file",
       notifiedCount: 0,
     });
     store.tasks.createAttachment({
-      commentId: otherComment.id,
+      owner: { kind: "comment", commentId: otherComment.id },
       fileName: "other.png",
       mime: "image/png",
       sizeBytes: 7,
@@ -172,16 +169,14 @@ describe("Tasks RPC domain API", () => {
     }
     store.tasks.createComment({
       taskId: task.id,
-      kind: "agent",
+      source: { kind: "agent", threadId: "thr_one" },
       authorName: "First agent",
-      threadId: "thr_one",
       body: "First reply",
     });
     store.tasks.createComment({
       taskId: task.id,
-      kind: "agent",
+      source: { kind: "agent", threadId: "thr_two" },
       authorName: "Second agent",
-      threadId: "thr_two",
       body: "Latest reply",
     });
 
@@ -258,57 +253,43 @@ describe("Tasks RPC domain API", () => {
     });
     store.tasks.createComment({
       taskId: task.id,
-      kind: "agent",
+      source: { kind: "agent", threadId: "thr_titled" },
       authorName: "agent (thr_titled)",
-      threadId: "thr_titled",
       body: "Titled",
       notifiedCount: 0,
     });
     store.tasks.createComment({
       taskId: task.id,
-      kind: "agent",
+      source: { kind: "agent", threadId: "thr_fallback_only" },
       authorName: "agent (thr_fallback_only)",
-      threadId: "thr_fallback_only",
       body: "Fallback title",
       notifiedCount: 0,
     });
     store.tasks.createComment({
       taskId: task.id,
-      kind: "agent",
+      source: { kind: "agent", threadId: "thr_blank_title" },
       authorName: "agent (thr_blank_title)",
-      threadId: "thr_blank_title",
       body: "Blank title",
       notifiedCount: 0,
     });
     store.tasks.createComment({
       taskId: task.id,
-      kind: "agent",
+      source: { kind: "agent", threadId: "thr_side_chat" },
       authorName: "agent (thr_side_chat)",
-      threadId: "thr_side_chat",
       body: "Side chat",
       notifiedCount: 0,
     });
     store.tasks.createComment({
       taskId: task.id,
-      kind: "agent",
+      source: { kind: "agent", threadId: "thr_missing" },
       authorName: "agent (thr_missing)",
-      threadId: "thr_missing",
       body: "Missing thread",
       notifiedCount: 0,
     });
     store.tasks.createComment({
       taskId: task.id,
-      kind: "agent",
-      authorName: "agent (legacy)",
-      threadId: null,
-      body: "Legacy",
-      notifiedCount: 0,
-    });
-    store.tasks.createComment({
-      taskId: task.id,
-      kind: "user",
+      source: { kind: "user" },
       authorName: "You",
-      threadId: null,
       body: "Human note",
       notifiedCount: 0,
     });
@@ -316,16 +297,13 @@ describe("Tasks RPC domain API", () => {
     const result = tasksRpcContract.listComments.output.parse(
       await harness.callRpc("listComments", { taskId: task.id }),
     );
-    const titleByBody = new Map(
-      result.comments.map((comment) => [comment.body, comment.threadTitle]),
-    );
-    expect(titleByBody.get("Titled")).toBe("Fix the login bug");
-    expect(titleByBody.get("Fallback title")).toBe("Untitled work");
-    expect(titleByBody.get("Blank title")).toBe("Recovered fallback");
-    expect(titleByBody.get("Side chat")).toBeNull();
-    expect(titleByBody.get("Missing thread")).toBeNull();
-    expect(titleByBody.get("Legacy")).toBeNull();
-    expect(titleByBody.get("Human note")).toBeNull();
+    const sourceByBody = new Map(result.comments.map((comment) => [comment.body, comment.source]));
+    expect(sourceByBody.get("Titled")).toMatchObject({ threadTitle: "Fix the login bug" });
+    expect(sourceByBody.get("Fallback title")).toMatchObject({ threadTitle: "Untitled work" });
+    expect(sourceByBody.get("Blank title")).toMatchObject({ threadTitle: "Recovered fallback" });
+    expect(sourceByBody.get("Side chat")).toMatchObject({ threadTitle: null });
+    expect(sourceByBody.get("Missing thread")).toMatchObject({ threadTitle: null });
+    expect(sourceByBody.get("Human note")).toEqual({ kind: "user" });
     expect(harness.sdk.callsTo("threads.get")).toHaveLength(5);
     await harness.dispose();
   });
@@ -394,12 +372,11 @@ describe("Tasks RPC domain API", () => {
       projectId: project.id,
       title: "Provider badges",
     });
-    const agentComment = (body: string, threadId: string | null): void => {
+    const agentComment = (body: string, threadId: string): void => {
       store.tasks.createComment({
         taskId: task.id,
-        kind: "agent",
-        authorName: `agent (${threadId ?? "legacy"})`,
-        threadId,
+        source: { kind: "agent", threadId },
+        authorName: `agent (${threadId})`,
         body,
         notifiedCount: 0,
       });
@@ -409,12 +386,10 @@ describe("Tasks RPC domain API", () => {
     agentComment("Side chat", "thr_side_chat");
     agentComment("Uninstalled", "thr_uninstalled");
     agentComment("Missing thread", "thr_missing");
-    agentComment("Legacy", null);
     store.tasks.createComment({
       taskId: task.id,
-      kind: "user",
+      source: { kind: "user" },
       authorName: "You",
-      threadId: null,
       body: "Human note",
       notifiedCount: 0,
     });
@@ -423,38 +398,43 @@ describe("Tasks RPC domain API", () => {
       await harness.callRpc("listComments", { taskId: task.id }),
     );
     const byBody = new Map(result.comments.map((comment) => [comment.body, comment]));
-    expect(byBody.get("Codex")?.provider).toEqual({
+    const providerByBody = new Map(
+      result.comments.map((comment) => [
+        comment.body,
+        comment.source.kind === "agent" ? comment.source.provider : null,
+      ]),
+    );
+    expect(providerByBody.get("Codex")).toEqual({
       id: "codex",
       name: "Codex",
       logoUrl: null,
       icon: { glyph: "Check" },
       strings: { iconTint: { light: "#123456", dark: "#abcdef" } },
     });
-    expect(byBody.get("Custom logo")?.provider).toEqual({
+    expect(providerByBody.get("Custom logo")).toEqual({
       id: "acp-custom",
       name: "Custom Agent",
       logoUrl: "/api/v1/system/providers/acp-custom/logo",
       icon: null,
       strings: { iconTint: null },
     });
-    expect(byBody.get("Side chat")?.provider).toEqual({
+    expect(providerByBody.get("Side chat")).toEqual({
       id: "claude-code",
       name: "Claude Code",
       logoUrl: null,
       icon: null,
       strings: { iconTint: null },
     });
-    expect(byBody.get("Side chat")?.threadTitle).toBeNull();
-    expect(byBody.get("Uninstalled")?.provider).toEqual({
+    expect(byBody.get("Side chat")?.source).toMatchObject({ threadTitle: null });
+    expect(providerByBody.get("Uninstalled")).toEqual({
       id: "acp-gone",
       name: "acp-gone",
       logoUrl: null,
       icon: null,
       strings: { iconTint: null },
     });
-    expect(byBody.get("Missing thread")?.provider).toBeNull();
-    expect(byBody.get("Legacy")?.provider).toBeNull();
-    expect(byBody.get("Human note")?.provider).toBeNull();
+    expect(providerByBody.get("Missing thread")).toBeNull();
+    expect(byBody.get("Human note")?.source).toEqual({ kind: "user" });
     expect(harness.sdk.callsTo("providers.list")).toHaveLength(1);
     await harness.dispose();
   });
@@ -609,10 +589,8 @@ describe("Tasks RPC domain API", () => {
     );
     const agentComment = await createComment(bb, store, {
       taskId: task.id,
-      kind: "agent",
+      source: { kind: "agent", threadId: "thr_worker" },
       authorName: "Worker",
-      presetName: null,
-      threadId: "thr_worker",
       body: "Reporting progress.",
       notify: true,
     });
@@ -709,16 +687,14 @@ describe("Tasks RPC domain API", () => {
     }
     store.tasks.createComment({
       taskId: task.id,
-      kind: "agent",
+      source: { kind: "agent", threadId: "thr_success" },
       authorName: "Earlier agent",
-      threadId: "thr_success",
       body: "Earlier reply",
     });
     store.tasks.createComment({
       taskId: task.id,
-      kind: "agent",
+      source: { kind: "agent", threadId: "thr_failing" },
       authorName: "Latest agent",
-      threadId: "thr_failing",
       body: "Latest reply",
     });
 
@@ -763,7 +739,7 @@ describe("Tasks RPC domain API", () => {
     });
     const comment = store.tasks.createComment({
       taskId: task.id,
-      kind: "user",
+      source: { kind: "user" },
       authorName: "Sawyer",
       body: "Attached context",
     });
@@ -903,21 +879,21 @@ describe("Tasks RPC domain API", () => {
     expect(store.tasks.listComments(createResult.task.id)).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          kind: "system",
+          source: { kind: "system", origin: null },
           authorName: "Sawyer",
           body: "Status changed to In Review by Sawyer",
           notifiedCount: 0,
         }),
         expect.objectContaining({
-          kind: "system",
+          source: { kind: "system", origin: null },
           body: "Priority changed to High by Sawyer",
         }),
         expect.objectContaining({
-          kind: "system",
+          source: { kind: "system", origin: null },
           body: "Due date changed to 2026-07-20 by Sawyer",
         }),
         expect.objectContaining({
-          kind: "system",
+          source: { kind: "system", origin: null },
           body: "Labels changed to Backend by Sawyer",
         }),
       ]),

@@ -85,10 +85,11 @@ describe("task thread lifecycle", () => {
     expect(fixture.store.tasks.getTaskThread(fixture.taskThreadId)?.liveStatus).toBe("completed");
     expect(fixture.store.tasks.listComments(fixture.taskId)).toContainEqual(
       expect.objectContaining({
-        kind: "system",
+        source: {
+          kind: "system",
+          origin: { presetName: "GPT-5.6 · high", threadId: "thr_worker" },
+        },
         authorName: "Tasks",
-        presetName: "GPT-5.6 · high",
-        threadId: "thr_worker",
         body: 'Thread "Lifecycle worker" completed — final message posted · thr_worker',
       }),
     );
@@ -117,7 +118,7 @@ describe("task thread lifecycle", () => {
     const commentsAfterFailure = fixture.store.tasks.listComments(fixture.taskId);
     expect(commentsAfterFailure).toContainEqual(
       expect.objectContaining({
-        kind: "system",
+        source: expect.objectContaining({ kind: "system" }),
         body: 'Thread "Lifecycle worker" failed · thr_worker',
       }),
     );

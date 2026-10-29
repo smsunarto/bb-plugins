@@ -41,19 +41,14 @@ type AgentNotificationTarget =
 export function agentNotificationTarget(
   comments: readonly DisplayComment[],
 ): AgentNotificationTarget {
-  let latest: DisplayComment | undefined;
   for (let index = comments.length - 1; index >= 0; index -= 1) {
-    const comment = comments[index];
-    if (comment?.kind === "agent") {
-      latest = comment;
-      break;
-    }
+    const source = comments[index]?.source;
+    if (source?.kind !== "agent") continue;
+    return source.threadTitle === null
+      ? { kind: "unavailable" }
+      : { kind: "ready", title: source.threadTitle };
   }
-  if (!latest) return { kind: "none" };
-  if (latest.threadId === null || latest.threadTitle === null) {
-    return { kind: "unavailable" };
-  }
-  return { kind: "ready", title: latest.threadTitle };
+  return { kind: "none" };
 }
 
 function UserAvatar({ name }: { name: string }) {
@@ -183,25 +178,19 @@ function SystemEvent({ comment, nowMs }: { comment: Comment; nowMs: number }) {
 }
 
 function CommentCard({ comment, nowMs }: { comment: DisplayComment; nowMs: number }) {
-  const { attachments } = comment;
-  const agent = comment.kind === "agent";
+  const { attachments, source } = comment;
   const navigate = useBbNavigate();
   const [lightbox, setLightbox] = useState<Attachment | null>(null);
   return (
     <div className="relative mb-3.5 flex gap-2.5">
-      {agent ? (
-        <CommentProviderAvatar provider={comment.provider} />
+      {source.kind === "agent" ? (
+        <CommentProviderAvatar provider={source.provider} />
       ) : (
         <UserAvatar name={comment.authorName} />
       )}
       <div className="min-w-0 flex-1">
         <div className="mb-0.5 flex items-baseline gap-1.5 text-xs">
           <CommentAuthor comment={comment} onOpenThread={navigate.toThread} />
-          {agent && comment.presetName ? (
-            <span className="rounded-sm bg-secondary px-1 py-px text-2xs font-semibold text-muted-foreground">
-              {comment.presetName}
-            </span>
-          ) : null}
           <time className="text-2xs text-muted-foreground">
             {formatRelativeTime(comment.createdAt, nowMs)}
           </time>
@@ -217,7 +206,7 @@ function CommentCard({ comment, nowMs }: { comment: DisplayComment; nowMs: numbe
           <AttachmentTracks attachments={attachments} onOpenImage={setLightbox} />
         ) : null}
         {lightbox ? <Lightbox attachment={lightbox} onClose={() => setLightbox(null)} /> : null}
-        {comment.kind === "user" && comment.notifiedCount > 0 ? (
+        {source.kind === "user" && comment.notifiedCount > 0 ? (
           <div className="mt-1 flex items-center gap-1 text-2xs font-medium text-success">
             <HugeiconsIcon icon={Notification02Icon} className="size-2.5" />
             notified the last responding agent
@@ -433,7 +422,7 @@ export function TaskActivity({ taskId }: TaskActivityProps) {
           <div className="text-xs text-muted-foreground">No activity yet.</div>
         ) : null}
         {comments.map((comment) =>
-          comment.kind === "system" ? (
+          comment.source.kind === "system" ? (
             <SystemEvent key={comment.id} comment={comment} nowMs={nowMs} />
           ) : (
             <CommentCard key={comment.id} comment={comment} nowMs={nowMs} />

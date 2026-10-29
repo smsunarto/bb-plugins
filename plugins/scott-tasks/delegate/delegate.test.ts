@@ -142,17 +142,19 @@ describe("task delegation", () => {
     expect(store.tasks.listComments(task.id)).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          kind: "system",
+          source: {
+            kind: "system",
+            origin: { presetName: "Test worker", threadId: "thr_delegated" },
+          },
           authorName: "Tasks",
-          presetName: "Test worker",
-          threadId: "thr_delegated",
           body: "Status changed to In Progress · dispatched to Test worker",
         }),
         expect.objectContaining({
-          kind: "system",
+          source: {
+            kind: "system",
+            origin: { presetName: "Test worker", threadId: "thr_delegated" },
+          },
           authorName: "Tasks",
-          presetName: "Test worker",
-          threadId: "thr_delegated",
           body: "Dispatched to Test worker",
         }),
       ]),
@@ -804,10 +806,8 @@ describe("delegation seed prompt", () => {
       {
         id: "01J00000000000000000000004",
         taskId: task.id,
-        kind: "user",
+        source: { kind: "user" },
         authorName: "Sawyer",
-        presetName: null,
-        threadId: null,
         body: "Preserve the existing domain path.",
         notifiedCount: 0,
         createdAt: "2026-07-15T17:02:00.000Z",
@@ -815,10 +815,8 @@ describe("delegation seed prompt", () => {
       {
         id: "01J00000000000000000000005",
         taskId: task.id,
-        kind: "agent",
+        source: { kind: "agent", threadId: "thr_prior" },
         authorName: "Worker",
-        presetName: "Sonnet · high",
-        threadId: "thr_prior",
         body: "The schema study is complete.",
         notifiedCount: 0,
         createdAt: "2026-07-15T17:03:00.000Z",

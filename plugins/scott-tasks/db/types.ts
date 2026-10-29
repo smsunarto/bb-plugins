@@ -1,5 +1,7 @@
 import type { TaskSort } from "../shared/pagination.js";
 import type {
+  AttachmentOwner,
+  CommentSource,
   PRESET_ENVIRONMENT_KINDS,
   PresetPermissionMode,
   PresetReasoningLevel,
@@ -9,9 +11,7 @@ import type {
   TaskStatus,
 } from "../shared/contract.js";
 
-export type { TaskPriority, TaskStatus };
-
-type CommentKind = "user" | "agent" | "system";
+export type { CommentSource, TaskPriority, TaskStatus };
 
 export type TaskThreadLiveStatus = (typeof TASK_THREAD_LIVE_STATUSES)[number];
 
@@ -66,19 +66,18 @@ export interface TaskLabel {
 export interface Comment {
   id: string;
   taskId: string;
-  kind: CommentKind;
+  source: CommentSource;
   authorName: string;
-  presetName: string | null;
-  threadId: string | null;
   body: string;
   notifiedCount: number;
   createdAt: string;
 }
 
+export type AgentComment = Comment & { source: Extract<CommentSource, { kind: "agent" }> };
+
 export interface Attachment {
   id: string;
-  taskId: string | null;
-  commentId: string | null;
+  owner: AttachmentOwner;
   fileName: string;
   mime: string;
   sizeBytes: number;
@@ -208,10 +207,8 @@ export interface UpdateLabelInput {
 export interface CreateCommentInput {
   id?: string;
   taskId: string;
-  kind: CommentKind;
+  source: CommentSource;
   authorName: string;
-  presetName?: string | null;
-  threadId?: string | null;
   body: string;
   notifiedCount?: number;
 }

@@ -29,6 +29,8 @@ import {
   TASK_STATUSES,
   ULID_PATTERN,
   type Attachment,
+  type AttachmentOwner,
+  type DisplayComment,
   type Folder,
   type Label,
   type Project,
@@ -481,6 +483,12 @@ async function listTaskAttachments(
     ).attachments,
     ...comments.flatMap((comment) => comment.attachments),
   ];
+}
+
+// An agent comment shows as its thread; only it has a provider column.
+function commentAuthorColumns(comment: DisplayComment): [author: string, provider: string] {
+  if (comment.source.kind !== "agent") return [comment.authorName, "-"];
+  return [comment.source.threadTitle ?? comment.authorName, comment.source.provider?.name ?? "-"];
 }
 
 async function listPresets(domain: TasksDomain): Promise<Preset[]> {
@@ -1459,9 +1467,8 @@ export function registerTasksCli(
                   ["TIME", "KIND", "AUTHOR", "PROVIDER", "BODY"],
                   comments.map((comment) => [
                     comment.createdAt,
-                    comment.kind,
-                    comment.threadTitle ?? comment.authorName,
-                    comment.provider?.name ?? "-",
+                    comment.source.kind,
+                    ...commentAuthorColumns(comment),
                     comment.body,
                   ]),
                   "(none)",
@@ -1673,10 +1680,8 @@ export function registerTasksCli(
               }
               const comment = await createComment(bb, store, {
                 taskId: task.id,
-                kind: ctx.threadId ? "agent" : "user",
+                source: ctx.threadId ? { kind: "agent", threadId: ctx.threadId } : { kind: "user" },
                 authorName: input.options.author ?? taskAuthor(ctx),
-                presetName: null,
-                threadId: ctx.threadId ?? null,
                 body,
                 notify: input.options.notify,
               });

@@ -115,14 +115,33 @@ const labelSchema = z
   })
   .strict();
 
+const threadIdSchema = z.string().startsWith("thr_");
+
+// Who wrote a comment: a person, an agent in its thread, or the plugin itself,
+// which names the dispatch (preset and thread) it is reporting on when there is one.
+const userCommentSourceSchema = z.object({ kind: z.literal("user") }).strict();
+const agentCommentSourceSchema = z
+  .object({ kind: z.literal("agent"), threadId: threadIdSchema })
+  .strict();
+const systemCommentSourceSchema = z
+  .object({
+    kind: z.literal("system"),
+    origin: z.object({ presetName: z.string(), threadId: threadIdSchema }).strict().nullable(),
+  })
+  .strict();
+const commentSourceSchema = z.discriminatedUnion("kind", [
+  userCommentSourceSchema,
+  agentCommentSourceSchema,
+  systemCommentSourceSchema,
+]);
+export type CommentSource = z.infer<typeof commentSourceSchema>;
+
 const commentSchema = z
   .object({
     id: idSchema,
     taskId: idSchema,
-    kind: z.enum(["user", "agent", "system"]),
+    source: commentSourceSchema,
     authorName: z.string(),
-    presetName: z.string().nullable(),
-    threadId: z.string().startsWith("thr_").nullable(),
     body: z.string(),
     notifiedCount: z.number().int().nonnegative(),
     createdAt: z.string(),
@@ -162,11 +181,20 @@ const attachmentSchema = z
   })
   .strict();
 
-// A comment's attachments ride with it so the activity feed is one read.
+// A comment's attachments ride with it so the activity feed is one read, and an
+// agent comment carries its thread's resolved title and provider badge.
 const displayCommentSchema = commentSchema
   .extend({
-    threadTitle: z.string().nullable(),
-    provider: commentProviderSchema.nullable(),
+    source: z.discriminatedUnion("kind", [
+      userCommentSourceSchema,
+      agentCommentSourceSchema
+        .extend({
+          threadTitle: z.string().nullable(),
+          provider: commentProviderSchema.nullable(),
+        })
+        .strict(),
+      systemCommentSourceSchema,
+    ]),
     attachments: z.array(attachmentSchema),
   })
   .strict();

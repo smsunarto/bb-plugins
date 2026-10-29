@@ -45,12 +45,8 @@ describe("splitSystemBody", () => {
 });
 
 describe("commentByline", () => {
-  const base: DisplayComment = {
-    id: "01HZZZZZZZZZZZZZZZZZZZZZC1",
-    taskId: "01HZZZZZZZZZZZZZZZZZZZZZT1",
+  const agentSource = {
     kind: "agent",
-    authorName: "agent (thr_worker)",
-    presetName: null,
     threadId: "thr_worker",
     threadTitle: "Fix the login bug",
     provider: {
@@ -60,6 +56,12 @@ describe("commentByline", () => {
       icon: null,
       strings: { iconTint: null },
     },
+  } satisfies DisplayComment["source"];
+  const base: DisplayComment = {
+    id: "01HZZZZZZZZZZZZZZZZZZZZZC1",
+    taskId: "01HZZZZZZZZZZZZZZZZZZZZZT1",
+    source: agentSource,
+    authorName: "agent (thr_worker)",
     body: "Done",
     notifiedCount: 0,
     createdAt: "2026-07-15T00:00:00.000Z",
@@ -75,28 +77,17 @@ describe("commentByline", () => {
   });
 
   it("falls back to the author name when the thread title is unresolved", () => {
-    expect(commentByline({ ...base, threadTitle: null })).toEqual({
+    expect(commentByline({ ...base, source: { ...agentSource, threadTitle: null } })).toEqual({
       kind: "text",
       name: "agent (thr_worker)",
     });
   });
 
-  it("falls back to the author name for legacy agent comments with no thread", () => {
-    expect(commentByline({ ...base, threadId: null, threadTitle: null })).toEqual({
+  it("names user comments by their author", () => {
+    expect(commentByline({ ...base, source: { kind: "user" }, authorName: "You" })).toEqual({
       kind: "text",
-      name: "agent (thr_worker)",
+      name: "You",
     });
-  });
-
-  it("never links user comments even if a thread id is present", () => {
-    expect(
-      commentByline({
-        ...base,
-        kind: "user",
-        authorName: "You",
-        threadTitle: "Should be ignored",
-      }),
-    ).toEqual({ kind: "text", name: "You" });
   });
 });
 

@@ -101,7 +101,7 @@ function formatComments(comments: readonly Comment[]): string {
   return comments
     .map(
       (comment) =>
-        `### ${comment.authorName} · ${displayName(comment.kind)} · ${comment.createdAt}\n\n${comment.body}`,
+        `### ${comment.authorName} · ${displayName(comment.source.kind)} · ${comment.createdAt}\n\n${comment.body}`,
     )
     .join("\n\n");
 }

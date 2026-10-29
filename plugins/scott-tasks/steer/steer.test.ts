@@ -38,16 +38,14 @@ describe("comment notification delivery", () => {
     const { bb, db, harness, store, task } = setup();
     const older = store.createComment({
       taskId: task.id,
-      kind: "agent",
+      source: { kind: "agent", threadId: "thr_first" },
       authorName: "First agent",
-      threadId: "thr_first",
       body: "First reply",
     });
     const latest = store.createComment({
       taskId: task.id,
-      kind: "agent",
+      source: { kind: "agent", threadId: "thr_second" },
       authorName: "Second agent",
-      threadId: "thr_second",
       body: "Latest reply",
     });
     store.upsertTaskThread({
@@ -105,9 +103,8 @@ describe("comment notification delivery", () => {
     );
     store.createComment({
       taskId: task.id,
-      kind: "agent",
+      source: { kind: "agent", threadId: "thr_idle" },
       authorName: "Idle agent",
-      threadId: "thr_idle",
       body: "Ready for more context",
     });
 
@@ -134,29 +131,6 @@ describe("comment notification delivery", () => {
     expect(harness.sdk.callsTo("threads.send")).toEqual([]);
   });
 
-  it("does not fall back when the latest agent reply has no thread", async () => {
-    const { bb, harness, store, task } = setup();
-    store.createComment({
-      taskId: task.id,
-      kind: "agent",
-      authorName: "Older linked agent",
-      threadId: "thr_older",
-      body: "Older reply",
-    });
-    store.createComment({
-      taskId: task.id,
-      kind: "agent",
-      authorName: "Legacy agent",
-      body: "Latest unlinked reply",
-    });
-
-    await expect(
-      deliverCommentToLatestAgent(bb, store, { taskId: task.id, ...input }),
-    ).resolves.toBe(0);
-    expect(harness.sdk.callsTo("threads.get")).toEqual([]);
-    expect(harness.sdk.callsTo("threads.send")).toEqual([]);
-  });
-
   it("preserves side-chat privacy and does not fall back", async () => {
     const { bb, harness, store, task } = setup((threadId) =>
       makeThreadResponse({
@@ -169,9 +143,8 @@ describe("comment notification delivery", () => {
     );
     store.createComment({
       taskId: task.id,
-      kind: "agent",
+      source: { kind: "agent", threadId: "thr_side_chat" },
       authorName: "Side chat",
-      threadId: "thr_side_chat",
       body: "Private reply",
     });
 
@@ -186,9 +159,8 @@ describe("comment notification delivery", () => {
     const { bb, harness, store, task } = setup();
     store.createComment({
       taskId: task.id,
-      kind: "agent",
+      source: { kind: "agent", threadId: "thr_latest" },
       authorName: "Latest agent",
-      threadId: "thr_latest",
       body: "Latest reply",
     });
     harness.sdk.stub("threads.send", async () => {
