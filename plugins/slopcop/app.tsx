@@ -1,26 +1,11 @@
-// SlopCop side panel: rules, the rule editor, and the activity feed.
-//
-// The editor's prompt + agent configuration is BB's own new-thread composer.
-// It is uncontrolled — there is no value/onChange and the only readout is
-// onSubmit — so its submit button IS "save rule", and each rule gets its own
-// draftKey so switching rules loads the right prompt.
-//
-// The saved execution config is restored through the composer's `default*`
-// seeding props. Before those existed, re-opening a rule showed project
-// defaults and re-saving silently overwrote the stored model, permission mode,
-// and machine — so these props are what make editing a rule non-destructive.
 import { useCallback, useEffect, useId, useMemo, useState } from "react";
-import {
-  definePluginApp,
-  experimental_NewThreadComposer as NewThreadComposer,
-  useBbNavigate,
-  useRealtime,
-  useRpc,
-} from "@get-bb/plugin-sdk/app";
+import { definePluginApp, useBbNavigate, useRealtime, useRpc } from "@get-bb/plugin-sdk/app";
 import { toast } from "sonner";
 import type { rpcContract } from "./server";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { ExecutionSettings } from "./execution-settings";
+import type { ThreadRequest } from "./lib/types";
 
 interface ConditionView {
   kind: string;
@@ -43,7 +28,7 @@ interface RuleView {
   authorTrust: string;
   requesterTrust: string;
   prompt: string;
-  request: unknown;
+  request: ThreadRequest | null;
   dedupe: string;
   reviewStrategy: string;
   visibility: string;
@@ -146,12 +131,21 @@ function Chip({
   );
 }
 
-function Toggle({ on, onChange }: { on: boolean; onChange: (next: boolean) => void }) {
+function Toggle({
+  on,
+  onChange,
+  label,
+}: {
+  on: boolean;
+  onChange: (next: boolean) => void;
+  label: string;
+}) {
   return (
-    <span
+    <button
+      type="button"
+      aria-label={label}
       role="switch"
       aria-checked={on}
-      tabIndex={0}
       onClick={(event) => {
         event.stopPropagation();
         onChange(!on);
@@ -165,7 +159,7 @@ function Toggle({ on, onChange }: { on: boolean; onChange: (next: boolean) => vo
           on ? "left-[15px] bg-primary-foreground" : "left-0.5 bg-subtle-foreground"
         }`}
       />
-    </span>
+    </button>
   );
 }
 
@@ -202,15 +196,18 @@ function RulesList({
       {rules.map((rule) => (
         <div
           key={rule.id}
-          role="button"
-          tabIndex={0}
-          onClick={() => onEdit(rule)}
           className={`cursor-pointer rounded-lg border border-border bg-card p-3 text-left shadow-xs transition-colors hover:bg-state-hover ${
             rule.enabled ? "" : "opacity-60"
           }`}
         >
           <div className="flex items-center gap-2">
-            <span className="text-sm font-semibold">{rule.name}</span>
+            <button
+              type="button"
+              onClick={() => onEdit(rule)}
+              className="min-w-0 text-left text-sm font-semibold hover:underline"
+            >
+              {rule.name}
+            </button>
             <span className="rounded-md border border-border bg-surface-recessed px-1.5 py-px font-mono text-xs text-muted-foreground">
               {rule.repo}
             </span>
@@ -220,12 +217,26 @@ function RulesList({
               <Chip tone="guard">live</Chip>
             )}
             <span className="flex-1" />
-            <Toggle on={rule.enabled} onChange={(next) => onToggle(rule, next)} />
+            <Toggle
+              label={`Enable ${rule.name}`}
+              on={rule.enabled}
+              onChange={(next) => onToggle(rule, next)}
+            />
           </div>
           <div className="mt-2 flex flex-wrap gap-1.5">
             {rule.triggers.map((trigger) => (
               <Chip key={trigger} tone="trigger">
-                {trigger.replace(/_/g, " ")}
+                {
+                  (
+                    {
+                      ready_for_review: "PR ready for review",
+                      new_commits: "New commits",
+                      new_issue: "New issue",
+                      pr_description_matches: "PR description matches",
+                      comment_matches: "Comment matches",
+                    } as Record<string, string>
+                  )[trigger]
+                }
               </Chip>
             ))}
             {rule.commentKeywords.map((keyword) => (
@@ -252,21 +263,6 @@ function RulesList({
 }
 
 // --------------------------------------------------------------------------
-
-/** Best-effort plain text from the composer's structured prompt input. */
-function extractPromptText(input: unknown): string {
-  if (typeof input === "string") return input;
-  if (!Array.isArray(input)) return "";
-  return input
-    .map((part) => {
-      const row = part as { text?: unknown; content?: unknown };
-      if (typeof row.text === "string") return row.text;
-      if (typeof row.content === "string") return row.content;
-      return "";
-    })
-    .join("")
-    .trim();
-}
 
 /**
  * Run a rule against one PR on demand.
@@ -378,46 +374,113 @@ function RunOnTarget({ rule }: { rule: RuleView }) {
   );
 }
 
+interface RuleDraft {
+  name: string;
+  repo: string;
+  trust: string;
+  requesterTrust: string;
+  mode: string;
+  visibility: string;
+  prompt: string;
+  request: ThreadRequest;
+  triggers: string[];
+  commentKeywords: string;
+  pathGlobs: string;
+  baseBranch: string;
+  excludedAuthors: string;
+}
+// BB remounts nav panels when crossing its mobile layout breakpoint. Keep this
+// browser's in-progress editor until Save or Cancel, without writing the rule.
+const ruleDrafts = new Map<string, RuleDraft>();
+let openRule: RuleView | null | "new" = null;
+
 function RuleEditor({ rule, onDone }: { rule: RuleView | null; onDone: () => void }) {
   const rpc = useRpc<typeof rpcContract>();
-  const [name, setName] = useState(rule?.name ?? "");
-  const [repo, setRepo] = useState(rule?.repo ?? "");
-  const [trust, setTrust] = useState(rule?.authorTrust ?? "write_access");
-  const [requesterTrust, setRequesterTrust] = useState(rule?.requesterTrust ?? "write_access");
-  const [mode, setMode] = useState(rule?.mode ?? "shadow");
-  const [visibility, setVisibility] = useState(rule?.visibility ?? "visible");
+  const fieldId = useId();
+  const draftKey = rule?.id ?? "new";
+  const draft = ruleDrafts.get(draftKey);
+  const [name, setName] = useState(draft?.name ?? rule?.name ?? "");
+  const [repo, setRepo] = useState(draft?.repo ?? rule?.repo ?? "");
+  const [trust, setTrust] = useState(draft?.trust ?? rule?.authorTrust ?? "write_access");
+  const [requesterTrust, setRequesterTrust] = useState(
+    draft?.requesterTrust ?? rule?.requesterTrust ?? "write_access",
+  );
+  const [mode, setMode] = useState(draft?.mode ?? rule?.mode ?? "shadow");
+  const [visibility, setVisibility] = useState(draft?.visibility ?? rule?.visibility ?? "visible");
 
-  // The rule's stored NewThreadRequest, replayed into the composer so it opens
-  // showing what this rule actually runs with rather than project defaults.
-  const saved = (rule?.request ?? null) as {
-    projectId?: string;
-    providerId?: string;
-    model?: string;
-    reasoningLevel?: string;
-    serviceTier?: string;
-    permissionMode?: string;
-    environment?: unknown;
-  } | null;
-  const [triggers, setTriggers] = useState<string[]>(rule?.triggers ?? ["ready_for_review"]);
-  const [commentKeywords, setCommentKeywords] = useState((rule?.commentKeywords ?? []).join(", "));
+  const [prompt, setPrompt] = useState(draft?.prompt ?? rule?.prompt ?? "");
+  const [request, setRequest] = useState<ThreadRequest>(
+    draft?.request ??
+      rule?.request ?? {
+        projectId: "",
+        providerId: "codex",
+        model: "",
+        permissionMode: "auto",
+      },
+  );
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [triggers, setTriggers] = useState<string[]>(
+    draft?.triggers ?? rule?.triggers ?? ["ready_for_review"],
+  );
+  const [commentKeywords, setCommentKeywords] = useState(
+    draft?.commentKeywords ?? (rule?.commentKeywords ?? []).join(", "),
+  );
   const [pathGlobs, setPathGlobs] = useState<string>(
-    (rule?.conditions.find((condition) => condition.kind === "paths")?.globs ?? []).join(", "),
+    draft?.pathGlobs ??
+      (rule?.conditions.find((condition) => condition.kind === "paths")?.globs ?? []).join(", "),
   );
   const [baseBranch, setBaseBranch] = useState<string>(
-    (rule?.conditions.find((condition) => condition.kind === "base_branch")?.globs ?? []).join(
-      ", ",
-    ),
+    draft?.baseBranch ??
+      (rule?.conditions.find((condition) => condition.kind === "base_branch")?.globs ?? []).join(
+        ", ",
+      ),
   );
   const excludedAuthorsId = useId();
-  const [excludedAuthors, setExcludedAuthors] = useState(() =>
-    (rule?.conditions ?? [])
-      .filter((condition) => condition.kind === "exclude_author")
-      .flatMap((condition) => condition.logins ?? [])
-      .join(", "),
+  const [excludedAuthors, setExcludedAuthors] = useState(
+    () =>
+      draft?.excludedAuthors ??
+      (rule?.conditions ?? [])
+        .filter((condition) => condition.kind === "exclude_author")
+        .flatMap((condition) => condition.logins ?? [])
+        .join(", "),
   );
   const excludedAuthorsError = excludedAuthors.split(",").some((value) => value.trim() === "@")
     ? "Add a GitHub username after @."
     : null;
+
+  useEffect(() => {
+    ruleDrafts.set(draftKey, {
+      name,
+      repo,
+      trust,
+      requesterTrust,
+      mode,
+      visibility,
+      prompt,
+      request,
+      triggers,
+      commentKeywords,
+      pathGlobs,
+      baseBranch,
+      excludedAuthors,
+    });
+  }, [
+    draftKey,
+    name,
+    repo,
+    trust,
+    requesterTrust,
+    mode,
+    visibility,
+    prompt,
+    request,
+    triggers,
+    commentKeywords,
+    pathGlobs,
+    baseBranch,
+    excludedAuthors,
+  ]);
 
   const conditions = useMemo(() => {
     const list = (rule?.conditions ?? []).filter(
@@ -446,343 +509,417 @@ function RuleEditor({ rule, onDone }: { rule: RuleView | null; onDone: () => voi
   );
   const dangerous = trust === "anyone" && mode === "live" && listensForPullRequests;
 
-  const handleSubmit = useCallback(
-    async (request: unknown) => {
-      // Throwing keeps the composer draft intact, so a validation failure
-      // never costs the user what they typed.
-      if (name.trim().length === 0) {
-        toast.error("Give the rule a name first");
-        throw new Error("missing name");
-      }
-      if (!/^[\w.-]+\/[\w.-]+$/.test(repo.trim())) {
-        toast.error("Repository must look like owner/repo");
-        throw new Error("bad repo");
-      }
-      if (triggers.length === 0) {
-        toast.error("Select at least one trigger");
-        throw new Error("missing trigger");
-      }
-      if (excludedAuthorsError !== null) {
-        toast.error(excludedAuthorsError);
-        throw new Error("invalid excluded PR author");
-      }
-      const keywords = commentKeywords
-        .split(",")
-        .map((value) => value.trim())
-        .filter(Boolean);
-      const usesKeywordTrigger = triggers.some((trigger) =>
-        ["comment_matches", "pr_description_matches"].includes(trigger),
-      );
-      if (usesKeywordTrigger && keywords.length === 0) {
-        toast.error("Add at least one comment or description keyword");
-        throw new Error("missing keyword");
-      }
-      const input = (request as { input?: unknown }).input;
-      await rpc.call("saveRule", {
-        id: rule?.id ?? null,
-        rule: {
-          name: name.trim(),
-          repo: repo.trim(),
-          enabled: rule?.enabled ?? true,
-          mode: mode as "shadow" | "live",
-          triggers: triggers as (
-            | "ready_for_review"
-            | "new_commits"
-            | "new_issue"
-            | "pr_description_matches"
-            | "comment_matches"
-          )[],
-          commentKeywords: keywords,
-          conditions: conditions as never,
-          authorTrust: trust as "org_members" | "write_access" | "past_contributors" | "anyone",
-          requesterTrust: requesterTrust as
-            | "org_members"
-            | "write_access"
-            | "past_contributors"
-            | "anyone",
-          prompt: extractPromptText(input),
-          request: request as never,
-          dedupe: (rule?.dedupe ??
-            (usesKeywordTrigger ? "once_per_trigger_event" : "once_per_pr")) as
-            | "once_per_pr"
-            | "once_per_head_sha"
-            | "once_per_trigger_event",
-          reviewStrategy: (rule?.reviewStrategy ?? "update") as "update",
-          visibility: visibility as "visible" | "hidden",
-        },
-      });
-      toast.success(
-        mode === "shadow"
-          ? `Saved '${name}' in shadow mode — it reviews but posts nothing.`
-          : `Saved '${name}' — it will post reviews to ${repo}.`,
-      );
-      onDone();
-    },
-    [
-      commentKeywords,
-      conditions,
-      excludedAuthorsError,
-      mode,
-      name,
-      onDone,
-      repo,
-      requesterTrust,
-      rpc,
-      rule,
-      triggers,
-      trust,
-      visibility,
-    ],
-  );
+  const hasUnsavedChanges =
+    rule !== null &&
+    (name !== rule.name ||
+      repo !== rule.repo ||
+      prompt !== rule.prompt ||
+      mode !== rule.mode ||
+      visibility !== rule.visibility ||
+      trust !== rule.authorTrust ||
+      requesterTrust !== rule.requesterTrust ||
+      JSON.stringify(triggers) !== JSON.stringify(rule.triggers) ||
+      pathGlobs !==
+        (rule.conditions.find((condition) => condition.kind === "paths")?.globs ?? []).join(", ") ||
+      baseBranch !==
+        (rule.conditions.find((condition) => condition.kind === "base_branch")?.globs ?? []).join(
+          ", ",
+        ) ||
+      excludedAuthors !==
+        rule.conditions
+          .filter((condition) => condition.kind === "exclude_author")
+          .flatMap((condition) => condition.logins ?? [])
+          .join(", ") ||
+      commentKeywords !== rule.commentKeywords.join(", ") ||
+      JSON.stringify(request) !== JSON.stringify(rule.request));
+
+  const handleSubmit = useCallback(async () => {
+    if (name.trim().length === 0) {
+      throw new Error("Give the rule a name first");
+    }
+    if (!/^[\w.-]+\/[\w.-]+$/.test(repo.trim())) {
+      throw new Error("Repository must look like owner/repo");
+    }
+    if (triggers.length === 0) {
+      throw new Error("Select at least one trigger");
+    }
+    if (excludedAuthorsError !== null) {
+      throw new Error(excludedAuthorsError);
+    }
+    const keywords = commentKeywords
+      .split(",")
+      .map((value) => value.trim())
+      .filter(Boolean);
+    const usesKeywordTrigger = triggers.some((trigger) =>
+      ["comment_matches", "pr_description_matches"].includes(trigger),
+    );
+    if (usesKeywordTrigger && keywords.length === 0) {
+      throw new Error("Add at least one comment or description keyword");
+    }
+    if (
+      !request.projectId ||
+      !request.model ||
+      (!request.environment && (!rule?.request || request.projectId !== rule.request.projectId))
+    ) {
+      throw new Error("Choose a project, workspace, and model in Agent settings.");
+    }
+    await rpc.call("saveRule", {
+      id: rule?.id ?? null,
+      rule: {
+        name: name.trim(),
+        repo: repo.trim(),
+        enabled: rule?.enabled ?? true,
+        mode: mode as "shadow" | "live",
+        triggers: triggers as (
+          | "ready_for_review"
+          | "new_commits"
+          | "new_issue"
+          | "pr_description_matches"
+          | "comment_matches"
+        )[],
+        commentKeywords: keywords,
+        conditions: conditions as never,
+        authorTrust: trust as "org_members" | "write_access" | "past_contributors" | "anyone",
+        requesterTrust: requesterTrust as
+          | "org_members"
+          | "write_access"
+          | "past_contributors"
+          | "anyone",
+        prompt,
+        request,
+        dedupe: (rule?.dedupe ??
+          (usesKeywordTrigger ? "once_per_trigger_event" : "once_per_pr")) as
+          | "once_per_pr"
+          | "once_per_head_sha"
+          | "once_per_trigger_event",
+        reviewStrategy: (rule?.reviewStrategy ?? "update") as "update",
+        visibility: visibility as "visible" | "hidden",
+      },
+    });
+    toast.success(
+      mode === "shadow"
+        ? `Saved '${name}' in shadow mode — it reviews but posts nothing.`
+        : `Saved '${name}' — it will post reviews to ${repo}.`,
+    );
+    onDone();
+  }, [
+    commentKeywords,
+    conditions,
+    excludedAuthorsError,
+    mode,
+    name,
+    onDone,
+    repo,
+    requesterTrust,
+    rpc,
+    rule,
+    triggers,
+    trust,
+    visibility,
+    prompt,
+    request,
+  ]);
 
   return (
-    <div className="flex flex-col gap-4">
-      <div className="grid grid-cols-2 gap-3">
-        <label className="flex flex-col gap-1.5">
-          <span className="text-xs font-semibold text-muted-foreground">Rule name</span>
-          <Input
-            value={name}
-            onChange={(event) => setName(event.target.value)}
-            placeholder="security-sweep"
-          />
-        </label>
-        <label className="flex flex-col gap-1.5">
-          <span className="text-xs font-semibold text-muted-foreground">Repository</span>
-          <Input
-            value={repo}
-            onChange={(event) => setRepo(event.target.value)}
-            placeholder="owner/repo"
-          />
-        </label>
-      </div>
-
-      <div className="flex flex-col gap-1.5">
-        <span className="text-xs font-semibold text-muted-foreground">Trigger</span>
-        <div className="flex flex-wrap gap-1.5">
-          {[
-            "ready_for_review",
-            "new_commits",
-            "new_issue",
-            "pr_description_matches",
-            "comment_matches",
-          ].map((trigger) => (
-            <button
-              key={trigger}
-              type="button"
-              onClick={() =>
-                setTriggers((current) =>
-                  current.includes(trigger)
-                    ? current.filter((value) => value !== trigger)
-                    : [...current, trigger],
-                )
-              }
-              className={`rounded-md border px-2.5 py-1 text-xs ${
-                triggers.includes(trigger)
-                  ? "border-transparent bg-surface-selected font-semibold text-foreground"
-                  : "border-border text-muted-foreground"
-              }`}
-            >
-              {trigger.replace(/_/g, " ")}
-            </button>
-          ))}
+    <div className="@container min-w-0">
+      <form
+        className="flex min-w-0 flex-col gap-5"
+        onSubmit={(event) => {
+          event.preventDefault();
+          if (saving) return;
+          setSaving(true);
+          setSaveError(null);
+          void handleSubmit()
+            .catch((error: unknown) => {
+              setSaveError(
+                error instanceof Error ? error.message : "Could not save the rule. Try again.",
+              );
+            })
+            .finally(() => setSaving(false));
+        }}
+      >
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h2 className="text-base font-semibold">{rule ? "Edit rule" : "New rule"}</h2>
+          <span className="text-xs text-muted-foreground">
+            {rule?.enabled === false ? "Disabled" : "Enabled"}
+          </span>
         </div>
-      </div>
+        <fieldset disabled={saving} className="contents">
+          <div className="grid min-w-0 grid-cols-1 gap-3 @min-[480px]:grid-cols-2">
+            <label className="flex min-w-0 flex-col gap-1.5" htmlFor={`${fieldId}-name`}>
+              <span className="text-xs font-semibold text-muted-foreground">Rule name</span>
+              <Input
+                id={`${fieldId}-name`}
+                value={name}
+                onChange={(event) => setName(event.target.value)}
+                placeholder="security-sweep"
+              />
+            </label>
+            <label className="flex min-w-0 flex-col gap-1.5" htmlFor={`${fieldId}-repo`}>
+              <span className="text-xs font-semibold text-muted-foreground">Repository</span>
+              <Input
+                id={`${fieldId}-repo`}
+                value={repo}
+                onChange={(event) => setRepo(event.target.value)}
+                placeholder="owner/repo"
+              />
+            </label>
+          </div>
 
-      {triggers.some((trigger) =>
-        ["comment_matches", "pr_description_matches"].includes(trigger),
-      ) ? (
-        <div className="grid grid-cols-2 gap-3">
-          <label className="flex flex-col gap-1.5">
-            <span className="text-xs font-semibold text-muted-foreground">Match keywords</span>
-            <Input
-              value={commentKeywords}
-              onChange={(event) => setCommentKeywords(event.target.value)}
-              placeholder="@slopcop, slop check"
-            />
-          </label>
-          {triggers.includes("comment_matches") ? (
-            <label className="flex flex-col gap-1.5">
-              <span className="text-xs font-semibold text-muted-foreground">
-                Who can request a review
-              </span>
+          <div className="grid min-w-0 grid-cols-1 gap-3 @min-[480px]:grid-cols-2">
+            <label className="flex min-w-0 flex-col gap-1.5 text-xs font-semibold text-muted-foreground">
+              Review mode
               <select
-                value={requesterTrust}
-                onChange={(event) => setRequesterTrust(event.target.value)}
-                className="h-9 rounded-md border border-input bg-card px-2 text-xs"
+                value={mode}
+                onChange={(event) => setMode(event.target.value)}
+                className="h-9 rounded-md border border-input bg-card px-2 text-foreground"
+              >
+                <option value="shadow">Shadow — review without posting</option>
+                <option value="live">Live — post to GitHub</option>
+              </select>
+            </label>
+            <label className="flex min-w-0 flex-col gap-1.5 text-xs font-semibold text-muted-foreground">
+              Review threads
+              <select
+                value={visibility}
+                onChange={(event) => setVisibility(event.target.value)}
+                className="h-9 rounded-md border border-input bg-card px-2 text-foreground"
+              >
+                <option value="visible">Show in sidebar</option>
+                <option value="hidden">Hide from sidebar</option>
+              </select>
+            </label>
+          </div>
+          <div className="flex min-w-0 flex-col gap-1.5">
+            <h3 className="text-sm font-semibold">Run when</h3>
+            <div className="flex flex-wrap gap-1.5">
+              {[
+                "ready_for_review",
+                "new_commits",
+                "new_issue",
+                "pr_description_matches",
+                "comment_matches",
+              ].map((trigger) => (
+                <button
+                  key={trigger}
+                  type="button"
+                  aria-pressed={triggers.includes(trigger)}
+                  onClick={() =>
+                    setTriggers((current) =>
+                      current.includes(trigger)
+                        ? current.filter((value) => value !== trigger)
+                        : [...current, trigger],
+                    )
+                  }
+                  className={`rounded-md border px-2.5 py-1 text-xs ${
+                    triggers.includes(trigger)
+                      ? "border-transparent bg-surface-selected font-semibold text-foreground"
+                      : "border-border text-muted-foreground"
+                  }`}
+                >
+                  {
+                    (
+                      {
+                        ready_for_review: "PR ready for review",
+                        new_commits: "New commits",
+                        new_issue: "New issue",
+                        pr_description_matches: "PR description matches",
+                        comment_matches: "Comment matches",
+                      } as Record<string, string>
+                    )[trigger]
+                  }
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {triggers.some((trigger) =>
+            ["comment_matches", "pr_description_matches"].includes(trigger),
+          ) ? (
+            <div className="grid min-w-0 grid-cols-1 gap-3 @min-[480px]:grid-cols-2">
+              <label className="flex min-w-0 flex-col gap-1.5" htmlFor={`${fieldId}-keywords`}>
+                <span className="text-xs font-semibold text-muted-foreground">Match keywords</span>
+                <Input
+                  id={`${fieldId}-keywords`}
+                  value={commentKeywords}
+                  onChange={(event) => setCommentKeywords(event.target.value)}
+                  placeholder="@slopcop, slop check"
+                />
+              </label>
+              {triggers.includes("comment_matches") ? (
+                <label className="flex min-w-0 flex-col gap-1.5">
+                  <span className="text-xs font-semibold text-muted-foreground">
+                    Who can request a review
+                  </span>
+                  <select
+                    value={requesterTrust}
+                    onChange={(event) => setRequesterTrust(event.target.value)}
+                    className="h-9 rounded-md border border-input bg-card px-2 text-xs"
+                  >
+                    <option value="org_members">Organization members only</option>
+                    <option value="write_access">Write access only</option>
+                    <option value="past_contributors">Write access + past contributors</option>
+                    <option value="anyone">Anyone</option>
+                  </select>
+                </label>
+              ) : null}
+            </div>
+          ) : null}
+
+          <details className="border-t border-border pt-4">
+            <summary className="cursor-pointer text-sm font-semibold">
+              Filters &amp; author exclusions
+            </summary>
+            <div className="mt-3 space-y-3">
+              <div className="grid min-w-0 grid-cols-1 gap-3 @min-[480px]:grid-cols-2">
+                <label className="flex min-w-0 flex-col gap-1.5" htmlFor={`${fieldId}-paths`}>
+                  <span className="text-xs font-semibold text-muted-foreground">
+                    Changed paths match (PR only)
+                  </span>
+                  <Input
+                    id={`${fieldId}-paths`}
+                    value={pathGlobs}
+                    onChange={(event) => setPathGlobs(event.target.value)}
+                    placeholder="src/auth/**, src/payments/**"
+                  />
+                </label>
+                <label className="flex min-w-0 flex-col gap-1.5" htmlFor={`${fieldId}-branch`}>
+                  <span className="text-xs font-semibold text-muted-foreground">
+                    Base branch (PR only)
+                  </span>
+                  <Input
+                    id={`${fieldId}-branch`}
+                    value={baseBranch}
+                    onChange={(event) => setBaseBranch(event.target.value)}
+                    placeholder="main"
+                  />
+                </label>
+              </div>
+
+              <div className="flex min-w-0 flex-col gap-1.5">
+                <label
+                  htmlFor={excludedAuthorsId}
+                  className="text-xs font-semibold text-muted-foreground"
+                >
+                  Exclude PR authors
+                </label>
+                <Input
+                  id={excludedAuthorsId}
+                  aria-describedby={`${excludedAuthorsId}-hint`}
+                  aria-invalid={excludedAuthorsError !== null}
+                  value={excludedAuthors}
+                  onChange={(event) => setExcludedAuthors(event.target.value)}
+                  placeholder="username, dependabot[bot]"
+                />
+                <span id={`${excludedAuthorsId}-hint`} className="text-xs text-muted-foreground">
+                  Comma-separated GitHub usernames, with or without @. Matches ignore case. Leave
+                  empty to review all qualifying authors.
+                </span>
+                {excludedAuthorsError !== null ? (
+                  <span role="alert" className="text-xs text-destructive-text">
+                    {excludedAuthorsError}
+                  </span>
+                ) : null}
+              </div>
+            </div>
+          </details>
+          <div className="space-y-2">
+            <label className="flex flex-wrap items-center gap-2">
+              <span className="text-sm font-semibold">PR authors</span>
+              <span className="flex-1" />
+              <select
+                value={trust}
+                onChange={(event) => setTrust(event.target.value)}
+                className="rounded-md border border-input bg-card px-2 py-1 text-xs"
               >
                 <option value="org_members">Organization members only</option>
                 <option value="write_access">Write access only</option>
-                <option value="past_contributors">+ past contributors</option>
+                <option value="past_contributors">Write access + past contributors</option>
                 <option value="anyone">Anyone</option>
               </select>
             </label>
+            <p className="text-xs text-muted-foreground">
+              Past contributors have had a commit merged into the repository.
+            </p>
+            {trust === "anyone" ? (
+              <p className="mt-2 rounded-md bg-surface-attention p-2 text-xs leading-relaxed">
+                <b className="text-warning-text">!</b> Pull request rules can check out unvetted
+                code from strangers. Issue text can also carry prompt injection. Use the narrowest
+                suitable permission mode below.
+              </p>
+            ) : null}
+          </div>
+
+          <ExecutionSettings value={request} onChange={setRequest} />
+          <label className="flex min-w-0 flex-col gap-2">
+            <span className="text-sm font-semibold">Review instructions</span>
+            <textarea
+              value={prompt}
+              onChange={(event) => setPrompt(event.target.value)}
+              rows={7}
+              className="min-h-32 w-full resize-y rounded-md border border-input bg-background p-3 text-sm leading-relaxed focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+              placeholder="What should the agent check and report?"
+            />
+          </label>
+        </fieldset>
+        <div className="sticky bottom-0 -mx-1 flex flex-wrap items-center gap-2 border-t border-border bg-background px-1 py-3">
+          {saveError ? (
+            <p role="alert" className="w-full text-sm text-destructive-text">
+              {saveError}
+            </p>
           ) : null}
-        </div>
-      ) : null}
-
-      <div className="grid grid-cols-2 gap-3">
-        <label className="flex flex-col gap-1.5">
-          <span className="text-xs font-semibold text-muted-foreground">
-            Changed paths match (PR only)
-          </span>
-          <Input
-            value={pathGlobs}
-            onChange={(event) => setPathGlobs(event.target.value)}
-            placeholder="src/auth/**, src/payments/**"
-          />
-        </label>
-        <label className="flex flex-col gap-1.5">
-          <span className="text-xs font-semibold text-muted-foreground">Base branch (PR only)</span>
-          <Input
-            value={baseBranch}
-            onChange={(event) => setBaseBranch(event.target.value)}
-            placeholder="main"
-          />
-        </label>
-      </div>
-
-      <div className="flex flex-col gap-1.5">
-        <label htmlFor={excludedAuthorsId} className="text-xs font-semibold text-muted-foreground">
-          Exclude PR authors
-        </label>
-        <Input
-          id={excludedAuthorsId}
-          aria-describedby={`${excludedAuthorsId}-hint`}
-          aria-invalid={excludedAuthorsError !== null}
-          value={excludedAuthors}
-          onChange={(event) => setExcludedAuthors(event.target.value)}
-          placeholder="username, dependabot[bot]"
-        />
-        <span id={`${excludedAuthorsId}-hint`} className="text-xs text-muted-foreground">
-          Comma-separated GitHub usernames, with or without @. Matches ignore case. Leave empty to
-          review all qualifying authors.
-        </span>
-        {excludedAuthorsError !== null ? (
-          <span role="alert" className="text-xs text-destructive-text">
-            {excludedAuthorsError}
-          </span>
-        ) : null}
-      </div>
-
-      <div className="rounded-lg border border-border bg-surface-recessed p-3">
-        <div className="flex items-center gap-2">
-          <span className="text-sm font-semibold">Only handle trusted authors</span>
+          {dangerous ? (
+            <span className="text-xs text-warning-text">Live reviews from any author</span>
+          ) : null}
+          {rule ? (
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              disabled={saving}
+              className="text-destructive-text"
+              onClick={() => {
+                setSaving(true);
+                void rpc
+                  .call("deleteRule", { id: rule.id })
+                  .then(onDone)
+                  .catch((error: unknown) => {
+                    setSaveError(
+                      error instanceof Error ? error.message : "Could not delete the rule.",
+                    );
+                  })
+                  .finally(() => setSaving(false));
+              }}
+            >
+              Delete rule
+            </Button>
+          ) : null}
           <span className="flex-1" />
-          <select
-            value={trust}
-            onChange={(event) => setTrust(event.target.value)}
-            className="rounded-md border border-input bg-card px-2 py-1 text-xs"
-          >
-            <option value="org_members">Organization members only</option>
-            <option value="write_access">Write access only</option>
-            <option value="past_contributors">+ past contributors</option>
-            <option value="anyone">Anyone</option>
-          </select>
-        </div>
-        <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
-          Matches GitHub&apos;s <code className="font-mono">authorAssociation</code>. Note that{" "}
-          <b className="text-foreground">CONTRIBUTOR</b> only means &ldquo;has had a commit merged
-          before&rdquo; — not write access — so it is excluded from the default.
-        </p>
-        {trust === "anyone" ? (
-          <p className="mt-2 rounded-md bg-surface-attention p-2 text-xs leading-relaxed">
-            <b className="text-warning-text">!</b> Pull request rules can check out unvetted code
-            from strangers. Issue text can also carry prompt injection. Use the narrowest suitable
-            permission mode below.
-          </p>
-        ) : null}
-      </div>
-
-      <div className="flex flex-col gap-1.5">
-        <span className="text-xs font-semibold text-muted-foreground">
-          Agent instructions &amp; configuration
-          <span className="ml-1.5 font-normal text-subtle-foreground">
-            the composer&apos;s submit button saves the rule — it never starts a thread here
-          </span>
-        </span>
-        <NewThreadComposer
-          draftKey={`slopcop:rule:${rule?.id ?? "new"}`}
-          initialPrompt={rule?.prompt ?? ""}
-          defaultProjectId={saved?.projectId}
-          defaultProviderId={saved?.providerId}
-          defaultModel={saved?.model}
-          defaultReasoningLevel={saved?.reasoningLevel as never}
-          defaultServiceTier={saved?.serviceTier as never}
-          defaultPermissionMode={saved?.permissionMode as never}
-          defaultEnvironment={saved?.environment as never}
-          placeholder="Tell the agent how to handle the pull request or issue…"
-          layout="document"
-          onSubmit={handleSubmit}
-        />
-      </div>
-
-      {rule !== null ? <RunOnTarget rule={rule} /> : null}
-
-      <div className="flex items-center gap-2 border-t border-border pt-3">
-        <div className="flex gap-1.5">
-          {(["shadow", "live"] as const).map((value) => (
-            <button
-              key={value}
-              type="button"
-              onClick={() => setMode(value)}
-              className={`rounded-md border px-2.5 py-1 text-xs ${
-                mode === value
-                  ? "border-transparent bg-surface-selected font-semibold text-foreground"
-                  : "border-border text-muted-foreground"
-              }`}
-            >
-              {value === "shadow" ? "Shadow (post nothing)" : "Live (post to GitHub)"}
-            </button>
-          ))}
-        </div>
-        <div className="flex gap-1.5">
-          {(["visible", "hidden"] as const).map((value) => (
-            <button
-              key={value}
-              type="button"
-              onClick={() => setVisibility(value)}
-              title={
-                value === "hidden"
-                  ? "Keeps review threads out of the sidebar and raises no unread attention"
-                  : "Review threads appear in the sidebar so you can watch them"
-              }
-              className={`rounded-md border px-2.5 py-1 text-xs ${
-                visibility === value
-                  ? "border-transparent bg-surface-selected font-semibold text-foreground"
-                  : "border-border text-muted-foreground"
-              }`}
-            >
-              {value === "visible" ? "Visible threads" : "Hidden threads"}
-            </button>
-          ))}
-        </div>
-        {dangerous ? <span className="text-xs text-warning-text">⚠ live + any author</span> : null}
-        <span className="flex-1" />
-        {rule !== null ? (
-          <Button
-            variant="ghost"
-            size="sm"
-            className="text-destructive-text"
-            onClick={() => {
-              void rpc.call("deleteRule", { id: rule.id }).then(() => {
-                toast.success(`Deleted '${rule.name}'`);
-                onDone();
-              });
-            }}
-          >
-            Delete
+          <Button type="button" variant="outline" size="sm" onClick={onDone} disabled={saving}>
+            Cancel
           </Button>
-        ) : null}
-        <Button variant="outline" size="sm" onClick={onDone}>
-          Cancel
-        </Button>
-      </div>
+          <Button type="submit" size="sm" disabled={saving}>
+            {saving ? "Saving…" : "Save rule"}
+          </Button>
+        </div>
+      </form>
+      {rule ? (
+        <details className="mt-4 border-t border-border pt-4">
+          <summary className="cursor-pointer text-sm font-semibold">Test this rule</summary>
+          <div className="mt-3">
+            {hasUnsavedChanges ? (
+              <p className="text-xs text-muted-foreground">
+                Save your changes before testing this rule.
+              </p>
+            ) : (
+              <RunOnTarget rule={rule} />
+            )}
+          </div>
+        </details>
+      ) : null}
     </div>
   );
 }
-
-// --------------------------------------------------------------------------
-
 function Activity({ runs }: { runs: RunView[] }) {
   const navigate = useBbNavigate();
   const rpc = useRpc<typeof rpcContract>();
@@ -899,7 +1036,7 @@ function Activity({ runs }: { runs: RunView[] }) {
 function SlopCopPanel() {
   const rpc = useRpc<typeof rpcContract>();
   const [tab, setTab] = useState<"rules" | "activity">("rules");
-  const [editing, setEditing] = useState<RuleView | null | "new">(null);
+  const [editing, setEditing] = useState<RuleView | null | "new">(() => openRule);
   const [rules, setRules] = useState<RuleView[]>([]);
   const [runs, setRuns] = useState<RunView[]>([]);
   const [ghLogin, setGhLogin] = useState<string | null>(null);
@@ -928,6 +1065,8 @@ function SlopCopPanel() {
           <RuleEditor
             rule={editing === "new" ? null : editing}
             onDone={() => {
+              ruleDrafts.delete(editing === "new" ? "new" : editing.id);
+              openRule = null;
               setEditing(null);
               refresh();
             }}
@@ -963,7 +1102,13 @@ function SlopCopPanel() {
         ) : (
           <span className="text-xs text-subtle-foreground">gh: {ghLogin}</span>
         )}
-        <Button size="sm" onClick={() => setEditing("new")}>
+        <Button
+          size="sm"
+          onClick={() => {
+            openRule = "new";
+            setEditing("new");
+          }}
+        >
           New rule
         </Button>
       </div>
@@ -973,8 +1118,14 @@ function SlopCopPanel() {
           {tab === "rules" ? (
             <RulesList
               rules={rules}
-              onNew={() => setEditing("new")}
-              onEdit={(rule) => setEditing(rule)}
+              onNew={() => {
+                openRule = "new";
+                setEditing("new");
+              }}
+              onEdit={(rule) => {
+                openRule = rule;
+                setEditing(rule);
+              }}
               onToggle={(rule, enabled) => {
                 void rpc.call("setRuleEnabled", { id: rule.id, enabled }).then(refresh);
               }}
